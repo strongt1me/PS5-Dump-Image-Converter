@@ -1,2 +1,17 @@
 _live_task6_output/
 
+# Python cache and temporary artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Type/lint caches
+.mypy_cache/
+.ruff_cache/
+
