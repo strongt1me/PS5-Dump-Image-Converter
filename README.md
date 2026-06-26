@@ -4,6 +4,14 @@ Desktop-Tool (Tkinter) zum Konvertieren, Packen, Entpacken und Validieren von PS
 
 Aktueller Stand: v1.7.76
 
+## Dokumentation
+
+- Release-Dokumentation: DOKUMENTATION_RELEASE.md
+- Bedienung/Test 19-21: DOKUMENTATION_19_21.md
+- Kurz-Anleitung (1 Seite): KURZANLEITUNG.md
+- Kurz-Anleitung Endnutzer: KURZANLEITUNG_ENDNUTZER.md
+- Druckversion A4: KURZANLEITUNG_A4.md
+
 ## Funktionen
 
 Die GUI bietet 8 Aufgabenmodi:
@@ -119,6 +127,21 @@ Beispiel mit EV-Token:
 - Antivirus kann bei frischen Builds Warnungen ausloesen (False Positives moeglich).
 - Beim Schliessen waehrend laufender Aufgabe erscheint eine Abfrage zum Abbruch.
 - Die Quellen-Auswahl merkt sich den zuletzt geoeffneten Pfad (Fallback: Arbeitsplatz/Arbeitsverzeichnis).
+
+## Automatische Installation (Ressourcen 19-21)
+
+Im Ressourcen-Fenster gibt es drei neue Aktionen fuer automatische Hintergrund-Installation:
+
+1. OSFMount installieren
+2. Dokan2 installieren
+3. FileZilla installieren
+
+Verhalten:
+
+- Vor Download/Installation wird geprueft, ob das Tool bereits installiert ist.
+- Bei bereits installiertem Tool wird keine Neuinstallation ausgefuehrt.
+- Die Installation laeuft im Hintergrund (GUI bleibt bedienbar).
+- Einheitliche Status-/Dialogmeldungen mit Aufgaben-Praefix [19], [20], [21].
 
 ## Fehlerbehebung
 

@@ -22,6 +22,13 @@ REQUIRED_DIRS = ["sce_sys"]
 # Optionale aber typische Ordner
 OPTIONAL_DIRS = ["sce_module", "media", "data"]
 
+# Kritische Dateien für einen PS5-Dump (müssen auf jeden Fall vorhanden sein)
+CRITICAL_FILES = [
+    "eboot.bin",                    # PS5 Game Executable
+    "sce_sys/param.json",           # Game Metadaten (Title, Icon, etc.)
+    "sce_sys/pfs-version.dat",      # PFS-Version-Marker
+]
+
 # Bekannte PS5-Marker-Dateien die legitim leer sind (0 Bytes)
 # Format: Datei-Endung (case-insensitive)
 _KNOWN_EMPTY_SUFFIXES = (
@@ -94,6 +101,23 @@ class DumpValidator(BaseValidator):
             if not (root / req).is_dir():
                 result.add_error(f"Pflichtordner fehlt: {req}/")
                 result.summary["missing"].append(str(root / req))
+
+        # ── Kritische Dateien prüfen ────────────────────────────────────────
+        # Diese müssen für einen gültigen PS5-Dump vorhanden sein
+        missing_critical = []
+        for crit_file in CRITICAL_FILES:
+            crit_path = root / crit_file
+            if not crit_path.exists():
+                missing_critical.append(crit_file)
+                result.add_error(f"Kritische Datei fehlt: {crit_file}")
+                result.summary["missing"].append(str(crit_path))
+
+        # Wenn kritische Dateien fehlen → Dump wahrscheinlich beschädigt oder unvollständig
+        if missing_critical:
+            self._log.warning(
+                f"Kritische Dateien fehlen ({len(missing_critical)}): {', '.join(missing_critical)}"
+            )
+            result.summary["critical_missing"] = missing_critical
 
         # ── Leere Dateien prüfen ─────────────────────────────────────────────
         empty_files: list[str] = []

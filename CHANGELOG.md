@@ -2,6 +2,24 @@
 
 Alle nennenswerten Änderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [Unreleased] - 2026-06-26
+
+### Hinzugefuegt
+- Ressourcen-Fenster erweitert um 3 neue Aktionen fuer automatische Hintergrund-Installation:
+  - [19] OSFMount
+  - [20] Dokan2
+  - [21] FileZilla
+- Neue Dokumente:
+  - DOKUMENTATION_RELEASE.md
+  - DOKUMENTATION_19_21.md
+
+### Geaendert
+- Installer-Flow 19-21 prueft vor Download/Setup zuerst, ob das jeweilige Tool bereits installiert ist.
+- Status-/Dialogtexte fuer 19-21 vereinheitlicht und mit Aufgaben-Praefix [19]/[20]/[21] versehen.
+
+### Behoben
+- Thread-sichere UI-Updates in Hintergrundpfaden gehaertet (RuntimeError bei Shutdown/Mainloop-Rennen abgefangen).
+
 ## [v1.7.76] - 2026-06-25
 
 ### Hinzugefuegt
