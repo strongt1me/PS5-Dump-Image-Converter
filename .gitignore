@@ -15,3 +15,22 @@ htmlcov/
 .mypy_cache/
 .ruff_cache/
 
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Python packaging/build artifacts
+build/
+dist/
+*.egg-info/
+
+# IDE and editor settings
+.vscode/
+.idea/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
