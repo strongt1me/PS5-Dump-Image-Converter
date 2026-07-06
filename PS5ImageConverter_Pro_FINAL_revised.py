@@ -18,6 +18,7 @@ import lzma          # noqa: F401
 import multiprocessing
 import os
 import pathlib       # noqa: F401
+from pathlib import Path
 import pkgutil       # noqa: F401
 import queue
 import re
@@ -56,7 +57,7 @@ except ImportError:
     pass  # Optional: Fallback auf mkpfs --compress wenn nicht installiert
 
 # ---------------------------------------------------------------------------
-# Win32-Prozess-Flags (wie ps5-exfat-builder v3.6.4)
+# Win32-Prozess-Flags fuer Kindprozesse
 # ---------------------------------------------------------------------------
 # CREATE_NO_WINDOW unterdrueckt das Konsolenfenster von Kindprozessen.
 # Auf Nicht-Windows-Systemen ist der Wert 0 (kein Effekt).
@@ -64,7 +65,7 @@ _NO_WIN_FLAGS = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
 def _silent_startupinfo():
     """Erstellt ein STARTUPINFO-Objekt das GUI-Fenster von Kindprozessen
-    unterdrueckt (wie ps5-exfat-builder v3.6.4).
+    unterdrueckt (OSFMount-/Win32-Referenz).
 
     CREATE_NO_WINDOW allein unterdrueckt nur das Konsolenfenster.
     Wenn der Kindprozess eine GUI-Anwendung ist (z.B. OSFMount.exe ohne
@@ -2269,7 +2270,7 @@ class PS5ConverterGUI:
     ) -> bool:
         """Dismountet ein einzelnes OSFMount-Laufwerk sauber und vollständig.
 
-        Strategie (wie ps5-exfat-builder v3.6.4):
+        Strategie (OSFMount-/Dismount-Flow):
         1. Win32 FSCTL_DISMOUNT_VOLUME: alle offenen Handles auf dem Volume schließen.
         2. OSFMount -d -m X:  (bis zu `retries` Versuche mit steigender Wartezeit).
         3. OSFMount -d -m X: -F  (Force-Dismount als letzter Ausweg).
@@ -2369,7 +2370,7 @@ class PS5ConverterGUI:
                 logger.debug("OSFMount-Cleanup fehlgeschlagen: %s", exc)
 
         # Schritt 4: mountvol /D als letzter Fallback (Windows-eigener Dismount)
-        # Wie ps5-exfat-builder: wenn OSFMount komplett versagt, mountvol probieren
+        # Wenn OSFMount komplett versagt, mountvol als letzten Fallback probieren
         if not _dismounted:
             try:
                 _mv_ret = subprocess.run(
@@ -2611,7 +2612,7 @@ class PS5ConverterGUI:
 
     def _cleanup_stale_osfmounts(self) -> None:
         """Dismountet beim Programmstart alle verwaisten OSFMount-Laufwerke
-        mit bekannten OSFMount-Labels (wie ps5-exfat-builder v3.6.4).
+        mit bekannten OSFMount-Labels.
 
         Erkannte Labels: OSFIMG, PS5DATA, PS5IMG
         (z.B. nach einem Absturz oder unvollständigem Dismount in einer
@@ -5500,7 +5501,7 @@ class PS5ConverterGUI:
         if not clean:
             return
 
-        # Log-Tail-Puffer für _extract_failure_lines (wie ps5-exfat-builder)
+        # Log-Tail-Puffer für _extract_failure_lines
         # behält die letzten 60 Zeilen für Fehlerdiagnose
         try:
             if not hasattr(self, '_build_log_tail'):
@@ -5539,7 +5540,7 @@ class PS5ConverterGUI:
     def _extract_failure_lines(self) -> str:
         """Extrahiert die relevantesten Fehlerzeilen aus dem Log-Tail-Puffer.
 
-        Wie ps5-exfat-builder v3.6.4: Prioritaet:
+        Prioritaet der Fehlerextraktion:
           1. Zeilen mit [ERROR] / [FEHLER] / Exception / Access Denied
           2. Zeilen mit [WARN] / [WARNUNG] / Warning
           3. Letzte 5 Zeilen beliebigen Inhalts
@@ -6488,7 +6489,7 @@ class PS5ConverterGUI:
             return 1
 
     def _find_osfmount(self) -> str | None:
-        """Sucht OSFMount in bekannten Installationspfaden (wie ps5-exfat-builder v3.6.4).
+        """Sucht OSFMount in bekannten Installationspfaden.
 
         Suchreihenfolge:
         1. Benutzerdefinierter Pfad aus den Einstellungen.
@@ -7996,12 +7997,12 @@ class PS5ConverterGUI:
         p1_end: float, p2_end: float, p3_end: float,
         set_pct, set_status,
     ) -> bool:
-        """Aufgabe 1 via ps5-exfat-builder Methode.
+        """Aufgabe 1 via vendertem MkPFS exFAT-Writer.
 
-        Schritt 1: Game Dump Ordner -> exFAT-Image (make_image.bat + New-OsfExfatImage.ps1)
-        Schritt 2: exFAT-Image -> .ffpfsc (mkpfs pack file, ps5-exfat-builder Parameter)
+        Schritt 1: Game Dump Ordner -> exFAT-Image (vendorter MkPFS-Writer)
+        Schritt 2: exFAT-Image -> .ffpfsc (mkpfs pack file)
 
-        Identisch mit dem ps5-exfat-builder v3.6.4 Workflow.
+        Entspricht dem vendorten MkPFS-Workflow.
         """
         tmp_dir: str | None = None
         temp_exfat = ""
@@ -8037,18 +8038,18 @@ class PS5ConverterGUI:
         try:
             # ----------------------------------------------------------------
             # PHASE 2 – Schritt 1: Game Dump Ordner -> exFAT-Image
-            # Methode: ps5-exfat-builder (make_image.bat + New-OsfExfatImage.ps1)
+            # Methode: vendorter MkPFS-Writer
             # ----------------------------------------------------------------
             set_status("Phase 2/4 – exFAT-Image erstellen (Schritt 1/2)...")
             self._append_to_log(
-                ">>> Schritt 1 / 2: Game Dump Ordner -> exFAT-Image (ps5-exfat-builder Methode)...\n"
-                "[Info] Methode: make_image.bat + New-OsfExfatImage.ps1 (ps5-exfat-builder v3.6.4)\n"
+                ">>> Schritt 1 / 2: Game Dump Ordner -> exFAT-Image (vendorter MkPFS-Writer)...\n"
+                "[Info] Methode: vendorter MkPFS-Writer\n"
             )
             self.task_num_steps = 2
             self.task_step_ends = [p2_end, p3_end]
             self.task_current_step = 0
 
-            # eboot.bin Prüfung (ps5-exfat-builder Voraussetzung)
+            # eboot.bin Pruefung (MkPFS exFAT-Writer Voraussetzung)
             eboot_path = os.path.join(src, "eboot.bin")
             if not os.path.isfile(eboot_path):
                 self._append_to_log(
@@ -8100,13 +8101,13 @@ class PS5ConverterGUI:
 
             # ----------------------------------------------------------------
             # PHASE 3 – Schritt 2: exFAT-Image -> .ffpfsc
-            # Methode: mkpfs pack file (ps5-exfat-builder _pipeline_pack_to_ffpfsc)
+            # Methode: mkpfs pack file (vendorter MkPFS-Writer)
             # Parameter: --version PS5 --inode-bits 32 --cpu-count N --compression-level L
             # ----------------------------------------------------------------
             set_status("Phase 3/4 – Komprimiere nach FFPFSC (Schritt 2/2)...")
             self._append_to_log(
                 f"\n>>> Schritt 2 / 2: exFAT-Image -> .ffpfsc: {os.path.basename(final_output)}...\n"
-                "[Info] Methode: mkpfs pack file (ps5-exfat-builder _pipeline_pack_to_ffpfsc)\n"
+                "[Info] Methode: mkpfs pack file (vendorter MkPFS-Writer)\n"
             )
             self.task_current_step = 1
             if hasattr(self, "_mkpfs_eta_initial"):
@@ -8289,7 +8290,7 @@ class PS5ConverterGUI:
         self._append_to_log("\n" + "=" * 60 + "\n")
         self._append_to_log(">>> Aufgabe 8 – Dump Validator\n")
         self._append_to_log(f"    Quelle: {src}\n")
-        self._append_to_log("    Methode: ps5-exfat-builder v3.6.4\n")
+        self._append_to_log("    Methode: Legacy-ExFAT-Pruefung\n")
         self._append_to_log("=" * 60 + "\n\n")
 
         # ProgressEngine: Aufgabe 8 starten (Index 7)
@@ -8322,10 +8323,10 @@ class PS5ConverterGUI:
         tmp_exfat  = None  # temp .exfat wenn .ffpfsc entpackt wird  # noqa: F841
 
         # ------------------------------------------------------------------
-        # Hilfsfunktionen (ps5-exfat-builder Methode)
+        # Hilfsfunktionen
         # ------------------------------------------------------------------
         def _file_level_sanity(path: str):
-            """Schnelle Datei-Sanity-Prüfung ohne OSFMount (ps5-exfat-builder _verify_image_file_only)."""
+            """Schnelle Datei-Sanity-Prüfung ohne OSFMount."""
             if not os.path.isfile(path):
                 return False, "Datei existiert nicht"
             sz = os.path.getsize(path)
@@ -8350,7 +8351,7 @@ class PS5ConverterGUI:
             return True, ("Groesse %.2f GB, exFAT-Signatur bestaetigt" % (sz / 1024**3))
 
         def _mount_verify(path: str, src_folder: str = ""):
-            """Mount-basierte Verifikation (ps5-exfat-builder _verify_image)."""
+            """Mount-basierte Verifikation."""
             osf = self._find_osfmount()
             if not osf:
                 self._append_to_log("[VERIFY] OSFMount nicht gefunden – nur Datei-Sanity-Prüfung.\n")
@@ -8389,7 +8390,7 @@ class PS5ConverterGUI:
                             pass
 
             # Verwaiste OSFMount-Laufwerke aus frueheren Builds bereinigen
-            # (wie ps5-exfat-builder v3.6.4 _sweep_stale_osf_mounts)
+            # Verwaiste OSFMount-Laufwerke beim Start bereinigen
             # Verhindert dass ein verwaister Mount den naechsten Verify-Mount blockiert.
             try:
                 self._cleanup_stale_osfmounts()
@@ -8578,7 +8579,7 @@ class PS5ConverterGUI:
 
         try:
             if is_exfat:
-                # .exfat direkt validieren (ps5-exfat-builder _verify_image)
+                # .exfat direkt validieren
                 self._append_to_log("[INFO] Modus: .exfat-Datei\n")
                 self.root.after(0, lambda: self.status_label.config(text="Validator – .exfat Prüfen..."))
                 ok_final, msg = _mount_verify(src)
@@ -8842,6 +8843,53 @@ class PS5ConverterGUI:
         self._append_to_log("=" * 60 + "\n")
         self.progress_engine.commit_task()
         return ok_final
+
+    def _auto_generate_ampr_index(self, source_root: str) -> bool:
+        """Erzeugt bei Bedarf automatisch ``ampr_emu.index`` fuer Aufgabe 7.
+
+        Die Generierung ist nicht-blockierend: Fehler werden protokolliert,
+        aber der Gesamtvorgang laeuft weiter.
+        """
+        try:
+            root_path = Path(source_root).expanduser().resolve()
+        except Exception:
+            self._append_to_log("[AMPR] Ungueltiger Quellpfad, Index-Generierung uebersprungen.\n")
+            return False
+
+        if not root_path.is_dir():
+            self._append_to_log("[AMPR] Quellordner nicht gefunden, Index-Generierung uebersprungen.\n")
+            return False
+
+        # Komfort: Wenn direkt ein fakelib-Ordner uebergeben wurde,
+        # als AMPR-Root automatisch dessen Parent verwenden.
+        if root_path.name.lower() == "fakelib" and (root_path / "libSceAmpr.sprx").exists():
+            root_path = root_path.parent
+
+        try:
+            if not self.mkpfs_dir:
+                self.mkpfs_dir = self._extract_embedded_mkpfs()
+            if not self.mkpfs_dir:
+                self._append_to_log("[AMPR] MkPFS-Engine nicht verfuegbar, ueberspringe Auto-Generierung.\n")
+                return False
+            if self.mkpfs_dir not in sys.path:
+                sys.path.insert(0, self.mkpfs_dir)
+
+            from mkpfs.ampr import ensure_ampr_index  # noqa: PLC0415  # type: ignore[import-not-found]
+
+            marker = root_path / "fakelib" / "libSceAmpr.sprx"
+            index_path = ensure_ampr_index(root_path, enabled=True)
+            if index_path:
+                self._append_to_log(f"[AMPR] Automatisch generiert: {index_path}\n")
+                return True
+            if marker.exists():
+                self._append_to_log("[AMPR] Marker erkannt, Index konnte aber nicht erzeugt werden.\n")
+                return False
+
+            self._append_to_log("[AMPR] Uebersprungen (kein fakelib/libSceAmpr.sprx gefunden).\n")
+            return True
+        except Exception as exc:
+            self._append_to_log(f"[AMPR] Auto-Generierung fehlgeschlagen: {exc}\n")
+            return False
 
     # ------------------------------------------------------------------
     # Aufgabe 7: fakelib Manager
@@ -9495,7 +9543,7 @@ class PS5ConverterGUI:
             elif action in ("fakelib_add", "fakelib_replace"):
                 # Den ausgewählten Ordner selbst als 'fakelib' ins Stammverzeichnis kopieren.
                 # Der Ordner wird 1:1 als neuer 'fakelib'-Ordner übernommen (game/fakelib/).
-                # Identisch mit ps5-exfat-builder v3.6.4:
+                # Methodenhinweis:
                 #   - fakelib-Dateien gehen in search_root/fakelib/ (Unterordner)
                 #   - Backup existierender Dateien in originals_dir/fakelib/<rel_path>
                 add_src = _fakelib_src[0]
@@ -9560,7 +9608,7 @@ class PS5ConverterGUI:
                         os.makedirs(os.path.dirname(dst_f), exist_ok=True)
                         try:
                             fsize = os.path.getsize(src_f) if os.path.isfile(src_f) else 0
-                            # Backup vor überschreiben (wie ps5-exfat-builder)
+                            # Backup vor überschreiben
                             if os.path.isfile(dst_f):
                                 orig_fl = os.path.join(originals_dir, "fakelib", fl_rel)
                                 os.makedirs(os.path.dirname(orig_fl), exist_ok=True)
@@ -9734,6 +9782,11 @@ class PS5ConverterGUI:
                         self._append_to_log(f"[FEHLER] Entfernen fehlgeschlagen: {item_abs}\n  {exc}\n")
                 self._append_to_log(f"\n>>> {deleted_count} Eintrag/Eintraege entfernt.\n")
                 self._append_to_log(_container_hint)
+
+            if action != "cancel":
+                self._set_status("Aktualisiere AMPR-Index...")
+                self._append_to_log("\n>>> AMPR-Index (Auto-Generation) ...\n")
+                self._auto_generate_ampr_index(search_root)
 
             # Dump-Ordner: Fortschritt auf 98% setzen (kein Repack)
             if not is_container and action != "cancel":
@@ -10000,11 +10053,11 @@ class PS5ConverterGUI:
 
     # ──────────────────────────────────────────────────────────────────────
     # Aufgabe 5: .exfat → Game Dump Ordner (OSFMount + robocopy)
-    # Methodik: ps5-exfat-builder v3.6.4 _run_extract
+    # Methodik: OSFMount-/robocopy-Extraktion
     # ──────────────────────────────────────────────────────────────────────
     def _mode_exfat_to_folder(self, src: str, dst: str) -> bool:
         """Extrahiert eine .exfat-Datei in einen Game Dump Ordner.
-        Methodik (ps5-exfat-builder v3.6.4 _run_extract):
+        Methodik (OSFMount-/robocopy-Extraktion):
           1. OSFMount suchen (Registry + PATH)
           2. Freien Laufwerksbuchstaben finden (Z: abwärts)
           3. .exfat read-only mounten (OSFMount -a -t file -o ro,rem)
@@ -10029,7 +10082,7 @@ class PS5ConverterGUI:
         self._append_to_log(">>> Aufgabe 5 – exFAT zu Game Dump Ordner\n")
         self._append_to_log(f"    Quelle: {src}\n")
         self._append_to_log(f"    Ziel:   {dest_folder}\n")
-        self._append_to_log("    Methode: OSFMount + robocopy (ps5-exfat-builder v3.6.4)\n")
+        self._append_to_log("    Methode: OSFMount + robocopy\n")
         self._append_to_log("=" * 60 + "\n\n")
 
         # ProgressEngine: Aufgabe 5 starten (Index 4)
@@ -10237,12 +10290,12 @@ class PS5ConverterGUI:
 
     # ──────────────────────────────────────────────────────────────────────
     # Aufgabe 6: .ffpkg → Game Dump Ordner (UFS2Tool + robocopy)
-    # Methodik: ps5-exfat-builder v3.6.4 _ffpkg_mount_copy_extract
+    # Methodik: .ffpkg-Mount-Copy-Extraktion
     # ──────────────────────────────────────────────────────────────────────
 
     # ──────────────────────────────────────────────────────────────────────
     # Dokan2-Treiber: Prüfen und automatisch installieren
-    # Methodik: ps5-exfat-builder v3.6.4 _find_dokan_driver (erweitert)
+    # Methodik: Dokan-Treiber-Suche (erweitert)
     # ──────────────────────────────────────────────────────────────────────
     def _find_dokan_driver(self) -> bool:
         """Prüft ob ein verwendbarer Dokan2-Treiber installiert ist.
@@ -10250,8 +10303,8 @@ class PS5ConverterGUI:
           - dokan2.sys  (Kernel-Treiber)
           - dokan2.dll  (User-Mode Runtime)
         Die mitgelieferte DokanNet.dll ist nur der .NET-Wrapper.
-        Dokan v1 ist NICHT kompatibel – nur v2 funktioniert.
-        Identisch mit ps5-exfat-builder v3.6.4 _find_dokan_driver().
+        Dokan v1 ist NICHT kompatibel – nur v2 funktioniert.1
+        Referenz fuer die Dokan-Treiber-Suche.
         """
         if not sys.platform.startswith('win'):
             return False
@@ -10870,7 +10923,7 @@ class PS5ConverterGUI:
             f">>> .ExFat \u2192 .FFPFSC: {os.path.basename(src)} \u2192 {os.path.basename(final_output)}\n"
         )
         self._append_to_log(
-            "[Info] Methode: ps5-exfat-builder (mkpfs pack file, direkt, 1 Schritt)\n"
+            "[Info] Methode: vendorter MkPFS pack file (direkt, 1 Schritt)\n"
             "[Info] Die .exfat-Datei wird als einzelne Datei in den PFS-Container eingebettet.\n"
             "[Info] Auto-Profil: {name} | Quelle: {size:.2f} GB | "
             "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
@@ -10884,7 +10937,7 @@ class PS5ConverterGUI:
         )
 
         # Direkter Aufruf: .exfat \u2192 .ffpfsc (kein tmp_dir n\u00f6tig)
-        # Parameter identisch mit ps5-exfat-builder _pipeline_pack_to_ffpfsc:
+        # Parameter identisch mit dem vendorten MkPFS pack-file-Pfad:
         #   --version PS5 --inode-bits 32 --cpu-count N --compression-level L
         try:
             pack_ok = self._execute_mkpfs(
@@ -10916,284 +10969,84 @@ class PS5ConverterGUI:
         pct_start: float = 0.0,
         pct_end: float = 98.0,
     ) -> bool:
-        """Erstellt eine .exfat-Datei aus einem Spielordner (ps5-exfat-builder Methode).
+        """Erstellt eine .exfat-Datei aus einem Spielordner."""
 
-        Verwendet make_image.bat + New-OsfExfatImage.ps1 aus ps5-exfat-builder v3.6.4.
-        Diese Methode ist identisch mit dem ps5-exfat-builder Tool und erzeugt
-        garantiert gültige exFAT-Images für die PS5.
+        mkpfs_parent = self._extract_embedded_mkpfs()
+        if not mkpfs_parent:
+            self._append_to_log("[FEHLER] MkPFS-Engine nicht gefunden.\n")
+            return False
+        if mkpfs_parent not in sys.path:
+            sys.path.insert(0, mkpfs_parent)
 
-        Args:
-            src_dir:   Quellordner mit den Spieldaten.
-            out_file:  Zielpfad der zu erstellenden .exfat-Datei.
-            pct_start: Fortschritts-Startprozent (für eingebetteten Aufruf).
-            pct_end:   Fortschritts-Endprozent (für eingebetteten Aufruf).
+        from mkpfs.exfat_writer import iter_exfat_image
 
-        Returns:
-            True bei Erfolg.
-        """
-        # Base64-kodierte Skripte aus ps5-exfat-builder v3.6.4
-        _BAT_B64 = "QGVjaG8gb2ZmCnNldGxvY2FsIEVuYWJsZUV4dGVuc2lvbnMKClJFTSBtYWtlX2ltYWdlLmJhdCAodjUgLSByZXNpbGllbnQgdG8gd2VpcmQgJX5kcDAgKyBub24tTGF0aW4gcGF0aHMpClJFTQpSRU0gdjUgY2hhbmdlcyBmcm9tIHY0OgpSRU0gICAtIFB1bGwgdGhlIHNjcmlwdCBkaXJlY3RvcnkgZnJvbSBhbiBlbnYgdmFyIChFWEZBVF9TQ1JJUFRfRElSKQpSRU0gICAgIHNldCBieSB0aGUgUHl0aG9uIGNhbGxlciwgd2l0aCAlfmRwMCBhcyBmYWxsYmFjay4gU29tZQpSRU0gICAgIGVsZXZhdGVkL1VBQyBpbnZvY2F0aW9ucyBhbmQgbm9uLUxhdGluIFdpbmRvd3MgaW5zdGFsbHMgKEtvcmVhbiwKUkVNICAgICBKYXBhbmVzZSwgZXRjLikgZW5kIHVwIHdpdGggYW4gZW1wdHkgJX5kcDAsIHdoaWNoIG1hZGUgdGhlClJFTSAgICAgUFMxIGxvb2t1cCBmYWlsIHdpdGggYSBibGFuayAiUFMxIG5vdCBmb3VuZCBhdDoiIG1lc3NhZ2UuClJFTSAgIC0gRWNobyB0aGUgcmVzb2x2ZWQgJVNDUklQVCUgcGF0aCBCRUZPUkUgdGhlIGV4aXN0ZW5jZSBjaGVjayBzbwpSRU0gICAgIGRpYWdub3N0aWMgbG9ncyBhbHdheXMgc2hvdyB3aGF0IHdhcyBsb29rZWQgZm9yLgpSRU0gICAtIFF1b3RlIHRoZSBwYXRoIGluIGFsbCBlcnJvciBtZXNzYWdlcyBzbyBlbXB0eSBzdHJpbmdzIHJlbmRlcgpSRU0gICAgIGFzICIiIGluc3RlYWQgb2YgdmFuaXNoaW5nLgpSRU0KUkVNIHY0IGNoYW5nZXMgKGtlcHQpOgpSRU0gICAtIFJlcGxhY2VkIGBpZiBub3QgZXhpc3QgWCAoIC4uLiApYCBibG9ja3Mgd2l0aCBnb3RvLWJhc2VkClJFTSAgICAgZXJyb3IgaGFuZGxpbmcuIFRoZSBwYXJlbnRoZXNpc2VkLWJsb2NrIGZvcm0gYnJlYWtzIHdoZW4KUkVNICAgICB0aGUgUEFUSCBJVFNFTEYgY29udGFpbnMgcGFyZW50aGVzZXMuClJFTSB2MyBjaGFuZ2VzIChrZXB0KToKUkVNICAgLSBjbWQtbmF0aXZlIGVib290LmJpbiBjaGVjayAobm8gUG93ZXJTaGVsbCBzdWItcHJvY2VzcykKUkVNIHYyIGNoYW5nZXMgKGtlcHQpOgpSRU0gICAtIFRlc3QtUGF0aCBvbiBvdXRwdXQgZmlsZSBhdCBlbmQKUkVNICAgLSBQcm9wZXIgZXhpdC1jb2RlIHByb3BhZ2F0aW9uCgppZiAiJX4xIj09IiIgZ290byA6dXNhZ2UKaWYgIiV+MiI9PSIiIGdvdG8gOnVzYWdlCgpzZXQgIklNQUdFPSV+MSIKc2V0ICJTUkNESVI9JX4yIgpzZXQgIk9TRlBBVEg9JX4zIgpzZXQgIkNMVVNURVJTSVpFPSV+NCIKc2V0ICJTRUNUT1JTSVpFPSV+NSIKc2V0ICJDT1BZVEhSRUFEUz0lfjYiCnNldCAiUkVUUklFUz0lfjciCnNldCAiUkVUUllXQUlUPSV+OCIKc2V0ICJFWENMSElEREVOPSV+OSIKc2V0ICJJTUdTSVpFR0I9JUVYRkFUX0lNR1NJWkVHQiUiCgpSRU0gU3RyaXAgYW55IHRyYWlsaW5nIGJhY2tzbGFzaCBmcm9tIFNSQ0RJUi4KaWYgIiVTUkNESVI6fi0xJSI9PSJcIiBzZXQgIlNSQ0RJUj0lU1JDRElSOn4wLC0xJSIKCmVjaG8gW0lORk9dIFNvdXJjZSBmb2xkZXI6ICIlU1JDRElSJSIKZWNobyBbSU5GT10gT3V0cHV0IGltYWdlOiAgIiVJTUFHRSUiCgpSRU0gUmVzb2x2ZSB0aGUgc2NyaXB0IGRpcmVjdG9yeS4KUkVNICAgMS4gSWYgdGhlIFB5dGhvbiBjYWxsZXIgc2V0IEVYRkFUX1NDUklQVF9ESVIsIHVzZSB0aGF0LgpSRU0gICAyLiBPdGhlcndpc2UgZmFsbCBiYWNrIHRvICV+ZHAwICh0aGUgZGlyZWN0b3J5IG9mIFRISVMgYmF0KS4KUkVNIFNvbWUgZWxldmF0ZWQgY29udGV4dHMgZ2l2ZSBhbiBlbXB0eSAlfmRwMDsgdGhlIGVudiB2YXIgaXMgdGhlClJFTSBzYWZldHkgbmV0LiBTdHJpcCBhbnkgdHJhaWxpbmcgYmFja3NsYXNoIHNvIHRoZSBqb2luIGlzIGNsZWFuLgpzZXQgIlNDUklQVF9ESVI9JUVYRkFUX1NDUklQVF9ESVIlIgppZiAiJVNDUklQVF9ESVIlIj09IiIgc2V0ICJTQ1JJUFRfRElSPSV+ZHAwIgppZiAiJVNDUklQVF9ESVI6fi0xJSI9PSJcIiBzZXQgIlNDUklQVF9ESVI9JVNDUklQVF9ESVI6fjAsLTElIgoKc2V0ICJTQ1JJUFQ9JVNDUklQVF9ESVIlXE5ldy1Pc2ZFeGZhdEltYWdlLnBzMSIKZWNobyBbSU5GT10gUFMxIHNjcmlwdDogICAgIiVTQ1JJUFQlIgoKaWYgbm90IGV4aXN0ICIlU0NSSVBUJSIgZ290byA6bm9fcHMxCgpSRU0gU291cmNlLWZvbGRlciBleGlzdGVuY2UgY2hlY2suCmlmIG5vdCBleGlzdCAiJVNSQ0RJUiVcIiBnb3RvIDpub19zcmNkaXIKClJFTSBlYm9vdC5iaW4gZXhpc3RlbmNlIGNoZWNrLgppZiBub3QgZXhpc3QgIiVTUkNESVIlXGVib290LmJpbiIgZ290byA6bm9fZWJvb3QKCmVjaG8gW0lORk9dIGVib290LmJpbiBmb3VuZCwgcHJvY2VlZGluZyB0byBQb3dlclNoZWxsIGJ1aWxkLgoKc2V0IFBTX0FSR1M9LUltYWdlUGF0aCAiJUlNQUdFJSIgLVNvdXJjZURpciAiJVNSQ0RJUiUiIC1Gb3JjZU92ZXJ3cml0ZQppZiBub3QgIiVPU0ZQQVRIJSI9PSIiIHNldCBQU19BUkdTPSVQU19BUkdTJSAtT1NGTW91bnRQYXRoICIlT1NGUEFUSCUiCmlmIG5vdCAiJUNMVVNURVJTSVpFJSI9PSIiIHNldCBQU19BUkdTPSVQU19BUkdTJSAtQ2x1c3RlclNpemVPdmVycmlkZSAlQ0xVU1RFUlNJWkUlCmlmIG5vdCAiJVNFQ1RPUlNJWkUlIj09IiIgc2V0IFBTX0FSR1M9JVBTX0FSR1MlIC1TZWN0b3JTaXplICVTRUNUT1JTSVpFJQppZiBub3QgIiVDT1BZVEhSRUFEUyUiPT0iIiBzZXQgUFNfQVJHUz0lUFNfQVJHUyUgLUNvcHlUaHJlYWRzICVDT1BZVEhSRUFEUyUKaWYgbm90ICIlUkVUUklFUyUiPT0iIiBzZXQgUFNfQVJHUz0lUFNfQVJHUyUgLVJldHJpZXMgJVJFVFJJRVMlCmlmIG5vdCAiJVJFVFJZV0FJVCUiPT0iIiBzZXQgUFNfQVJHUz0lUFNfQVJHUyUgLVJldHJ5V2FpdCAlUkVUUllXQUlUJQppZiAiJUVYQ0xISURERU4lIj09IjEiIHNldCBQU19BUkdTPSVQU19BUkdTJSAtRXhjbHVkZUhpZGRlbgppZiBub3QgIiVJTUdTSVpFR0IlIj09IiIgc2V0IFBTX0FSR1M9JVBTX0FSR1MlIC1JbWFnZVNpemVHQk92ZXJyaWRlICVJTUdTSVpFR0IlCnBvd2Vyc2hlbGwuZXhlIC1Ob1Byb2ZpbGUgLUV4ZWN1dGlvblBvbGljeSBCeXBhc3MgLUZpbGUgIiVTQ1JJUFQlIiAlUFNfQVJHUyUKCnNldCAiUkM9JUVSUk9STEVWRUwlIgoKUkVNIHYzLjYuMjogdGhlIFBvd2VyU2hlbGwgZXhpdCBjb2RlIGlzIGdyb3VuZCB0cnV0aCwgTk9UIG1lcmUgZmlsZQpSRU0gZXhpc3RlbmNlLiBPU0ZNb3VudCBjcmVhdGVzIHRoZSAuZXhmYXQgY29udGFpbmVyIGF0IGZ1bGwgc2l6ZSB0aGUKUkVNIGluc3RhbnQgaXQgbW91bnRzLCBzbyB0aGUgZmlsZSBBTFdBWVMgZXhpc3RzIGV2ZW4gd2hlbiB0aGUgYnVpbGQKUkVNIGZhaWxzIHJpZ2h0IGFmdGVyIG1vdW50aW5nIChiZWZvcmUgZm9ybWF0L2NvcHkpLiBUaGUgb2xkIGNoZWNrClJFTSAiZmlsZSBleGlzdHMgPT4gc3VjY2VzcyIgbGF1bmRlcmVkIGEgZmFpbGVkLCBFTVBUWSBidWlsZCBpbnRvIGEKUkVNIHN1Y2Nlc3MgYW5kIGZlZCBhbiBlbXB0eSBpbWFnZSB0byB0aGUgLmZmcGZzYyBwYWNrZXIuIEZhaWwgb24gYW55ClJFTSBub24temVybyBleGl0LgppZiBub3QgJVJDJT09MCBnb3RvIDpwc19mYWlsZWQKaWYgbm90IGV4aXN0ICIlSU1BR0UlIiBnb3RvIDpub19vdXRwdXQKZWNobyBbT0tdIERvbmU6ICIlSU1BR0UlIgpleGl0IC9iIDAKCjpwc19mYWlsZWQKZWNobyBbRVJST1JdIFBvd2VyU2hlbGwgYnVpbGQgZmFpbGVkIChleGl0IGNvZGUgJVJDJSkuIFRoZSBpbWFnZSBpcwplY2hvIFtFUlJPUl0gaW5jb21wbGV0ZSBvciBlbXB0eSBhbmQgd2lsbCBOT1QgYmUgdXNlZC4KUkVNIFJlbW92ZSB0aGUgcGFydGlhbC9lbXB0eSBpbWFnZSBzbyBpdCBjYW4ndCBiZSBtaXN0YWtlbiBmb3IgYSBnb29kClJFTSBidWlsZCBieSBhIGxhdGVyIHN0ZXAgb3IgYnkgdGhlIHVzZXIuCmlmIGV4aXN0ICIlSU1BR0UlIiBkZWwgL2YgL3EgIiVJTUFHRSUiIDI+bnVsCmV4aXQgL2IgJVJDJQoKUkVNIEVycm9yIGhhbmRsZXJzLgoKOm5vX3BzMQplY2hvIFtFUlJPUl0gUFMxIG5vdCBmb3VuZCBhdDogIiVTQ1JJUFQlIgplY2hvIFtFUlJPUl0gKFNjcmlwdCBkaXJlY3Rvcnkgd2FzOiAiJVNDUklQVF9ESVIlIikKZWNobyBbRVJST1JdIChFWEZBVF9TQ1JJUFRfRElSIGVudiB2YXI6ICIlRVhGQVRfU0NSSVBUX0RJUiUiKQplY2hvIFtFUlJPUl0gKEJhdCdzIG93biAlJX5kcDAgd2FzOiAiJX5kcDAiKQpleGl0IC9iIDIKCjpub19zcmNkaXIKZWNobyBbRVJST1JdIFNvdXJjZSBmb2xkZXIgZG9lcyBub3QgZXhpc3Q6ICIlU1JDRElSJSIKZXhpdCAvYiAzCgo6bm9fZWJvb3QKZWNobyBbRVJST1JdIGVib290LmJpbiBub3QgZm91bmQgaW4gc291cmNlIGZvbGRlci4KZWNobyBbRVJST1JdIExvb2tlZCBmb3I6ICIlU1JDRElSJVxlYm9vdC5iaW4iCmVjaG8gW0VSUk9SXSBDb250ZW50cyBvZiBzb3VyY2UgZm9sZGVyOgpkaXIgL2IgIiVTUkNESVIlIiAyPm51bApleGl0IC9iIDQKCjpub19vdXRwdXQKZWNobyBbRVJST1JdIEJ1aWxkIGZpbmlzaGVkIGJ1dCBvdXRwdXQgZmlsZSBpcyBtaXNzaW5nOiAiJUlNQUdFJSIKZWNobyBbRVJST1JdIFBvd2VyU2hlbGwgZXhpdCBjb2RlIHdhcyAlUkMlCmlmICIlUkMlIj09IjAiIHNldCAiUkM9OTkiCmV4aXQgL2IgJVJDJQoKOnVzYWdlCmVjaG8gVXNhZ2U6ICV+bngwIGltYWdlLmV4ZmF0IHNvdXJjZV9mb2xkZXIKZXhpdCAvYiAxCg=="
-        _PS1_B64 = "PCMgIE5ldy1Pc2ZFeGZhdEltYWdlLnBzMSAodjIg4oCUIGxhcmdlLWdhbWUtZnJpZW5kbHkpCgogICAgUFVSUE9TRQogICAgLS0tLS0tLQogICAgQ3JlYXRlIGEgUkFXIGltYWdlIGZpbGUsIG1vdW50IGl0IHZpYSBPU0ZNb3VudCBhcyBhIGxvZ2ljYWwgdm9sdW1lLAogICAgZm9ybWF0IGl0IGFzIGV4RkFULCBhbmQgZWl0aGVyOgogICAgICAtIGZvcm1hdCArIGNvcHkgKyBkaXNtb3VudCAoZGVmYXVsdCksIG9yCiAgICAgIC0gY3JlYXRlICsgbW91bnQgb25seSBmb3IgbWFudWFsIHN0ZXBzLgoKICAgIENoYW5nZXMgZnJvbSB2MSAoTWF5IDIwMjYpCiAgICAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQogICAgLSBTaXppbmcgc2NhbiB1c2VzIFNUUkVBTUlORyBlbnVtZXJhdGlvbiB2aWEKICAgICAgW1N5c3RlbS5JTy5EaXJlY3RvcnldOjpFbnVtZXJhdGVGaWxlcyAvIEVudW1lcmF0ZURpcmVjdG9yaWVzLgogICAgICB2MSB1c2VkIEdldC1DaGlsZEl0ZW0gLVJlY3Vyc2Ugd2hpY2ggbWF0ZXJpYWxpc2VkIGV2ZXJ5IEZpbGVJbmZvCiAgICAgIGludG8gYSBQb3dlclNoZWxsIGFycmF5IOKAlCBmb3IgMjAway1maWxlIGdhbWVzIHRoaXMgT09NJ2Qgb3Igc3RhbGxlZAogICAgICB0aGUgZW50aXJlIFVJIGZvciA1KyBtaW51dGVzLiBUaGUgc3RyZWFtaW5nIHdhbGsgdXNlcyB+MCBSQU0gYW5kCiAgICAgIGlzIHJvdWdobHkgMTAweCBmYXN0ZXIuCiAgICAtIFNhZmV0eSBtYXJnaW4gY2FwIHJhaXNlZCBmcm9tIDJHQiAtPiA4R0Igc28gMTAwR0IrIGdhbWVzIGdldAogICAgICBwcm9wb3J0aW9uYWwgaGVhZHJvb20uCiAgICAtIFJvYm9jb3B5IHVzZXMgL0ogKHVuYnVmZmVyZWQgSS9PKSB3aGVuIHRoZSBzb3VyY2UgY29udGFpbnMgYW55CiAgICAgIGZpbGUgPj00R0IuIFdpdGhvdXQgaXQsIGh1Z2UgLnBrZyBmaWxlcyBibG93IG91dCB0aGUgV2luZG93cwogICAgICBmaWxlIGNhY2hlIGFuZCBzdGFsbCB0aGUgc3lzdGVtLgogICAgLSBSb2JvY29weSAvTVQgZGVmYXVsdCBpcyBub3cgYWRhcHRpdmU6IDggZm9yIEhERCBvciBuZXR3b3JrCiAgICAgIHNvdXJjZXMgKGF2b2lkcyBoZWFkIHRocmFzaGluZyAvIG5ldHdvcmsgc2F0dXJhdGlvbiksIDMyIGZvciBTU0QuCiAgICAgIENhbGxlciBjYW4gc3RpbGwgb3ZlcnJpZGUgdmlhIC1Db3B5VGhyZWFkcy4KICAgIC0gUm9ib2NvcHkgcmV0cnkgcGFpciBsb3dlcmVkIHRvIC9SOjIgL1c6MiAod2FzIDMvMykgc28gbG9ja2VkLWZpbGUKICAgICAgc3Rvcm1zIGNvc3QgbGVzcyB3YWxsIHRpbWUuIC9UQkQgYWRkZWQgdG8gZW5hYmxlIGxvbmdlciB0aHJlYWQKICAgICAgYmFja29mZi4gL0NPTVBSRVNTIGFkZGVkIChXaW5kb3dzIDExKyBTTUIgY29tcHJlc3Npb247IGlnbm9yZWQKICAgICAgZWxzZXdoZXJlKS4KICAgIC0gUHJvZ3Jlc3MgbGluZXMgZW1pdHRlZCBkdXJpbmcgZW51bWVyYXRpb246CiAgICAgICAgW0lORk9dIEVudW1lcmF0aW5nIGZpbGVzIC4uLgogICAgICAgIFtJTkZPXSBFbnVtZXJhdGlvbiBwcm9ncmVzczogTk4sTk5OIGZpbGVzIC8gTi5OTiBHQgogICAgICAgIFtJTkZPXSBFbnVtZXJhdGlvbiBkb25lOiBOTixOTk4gZmlsZXMgLyBOLk5OIEdCCiAgICAgIFBhcmVudCBwcm9jZXNzIGNhbiBwYXJzZSB0aGVzZSB0byBrZWVwIHRoZSBVSSByZXNwb25zaXZlLgoKICAgIFVTQUdFIChydW4gUG93ZXJTaGVsbCBhcyBBZG1pbmlzdHJhdG9yKQogICAgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0KICAgIDEpIEF1dG8tc2l6ZSAocmVjb21tZW5kZWQpOgogICAgICAgcG93ZXJzaGVsbC5leGUgLUV4ZWN1dGlvblBvbGljeSBCeXBhc3MgLUZpbGUgLlxOZXctT3NmRXhmYXRJbWFnZS5wczEgYAogICAgICAgICAtSW1hZ2VQYXRoICJDOlxpbWFnZXNcZGF0YS5pbWciIGAKICAgICAgICAgLVNvdXJjZURpciAiQzpccGF5bG9hZCIgYAogICAgICAgICAtTGFiZWwgIkRBVEEiIGAKICAgICAgICAgLUZvcmNlT3ZlcndyaXRlCgogICAgMikgRml4ZWQgc2l6ZToKICAgICAgIHBvd2Vyc2hlbGwuZXhlIC1FeGVjdXRpb25Qb2xpY3kgQnlwYXNzIC1GaWxlIC5cTmV3LU9zZkV4ZmF0SW1hZ2UucHMxIGAKICAgICAgICAgLUltYWdlUGF0aCAiQzpcaW1hZ2VzXGRhdGEuaW1nIiBgCiAgICAgICAgIC1Tb3VyY2VEaXIgIkM6XHBheWxvYWQiIGAKICAgICAgICAgLVNpemUgOEcgYAogICAgICAgICAtTGFiZWwgIkRBVEEiIGAKICAgICAgICAgLUZvcmNlT3ZlcndyaXRlCgogICAgUEFSQU1FVEVSUwogICAgLS0tLS0tLS0tLQogICAgLUltYWdlUGF0aCAgICAgICBPdXRwdXQgaW1hZ2UgZmlsZSBwYXRoLgogICAgLVNvdXJjZURpciAgICAgICBGb2xkZXIgdG8gY29weSBpbnRvIHRoZSBuZXcgdm9sdW1lLgogICAgLVNpemUgICAgICAgICAgICBPcHRpb25hbC4gSWYgb21pdHRlZCwgYW4gb3B0aW1hbCBzaXplIGlzIGNvbXB1dGVkLgogICAgLUxhYmVsICAgICAgICAgICBWb2x1bWUgbGFiZWwuCiAgICAtRm9yY2VPdmVyd3JpdGUgIFJlY3JlYXRlIGltYWdlIGlmIGl0IGFscmVhZHkgZXhpc3RzLgogICAgLUNyZWF0ZUVtcHR5QW5kTW91bnQKICAgICAgICAgICAgICAgICAgICAgQ3JlYXRlIGFuZCBtb3VudCBpbWFnZSBvbmx5LiBTa2lwIGZvcm1hdC9jb3B5LgogICAgLU9TRk1vdW50UGF0aCAgICBFeHBsaWNpdCBwYXRoIHRvIG9zZm1vdW50LmNvbSAvIE9TRk1vdW50LmV4ZS4KICAgIC1DbHVzdGVyU2l6ZU92ZXJyaWRlICBGb3JjZSBhIHNwZWNpZmljIGV4RkFUIGNsdXN0ZXIgc2l6ZSBpbiBieXRlcy4KICAgIC1TZWN0b3JTaXplICAgICAgNTEyIChkZWZhdWx0KSBvciA0MDk2LgogICAgLUNvcHlUaHJlYWRzICAgICBSb2JvY29weSAvTVQ6Ti4gMCA9IGF1dG8uIDEuLjEyOC4KICAgIC1SZXRyaWVzICAgICAgICAgUm9ib2NvcHkgL1I6Ti4gRGVmYXVsdCAyLgogICAgLVJldHJ5V2FpdCAgICAgICBSb2JvY29weSAvVzpOLiBEZWZhdWx0IDIuCiAgICAtRXhjbHVkZUhpZGRlbiAgIFBhc3MgL1hBOkggdG8gcm9ib2NvcHkuCiAgICAtSW1hZ2VTaXplR0JPdmVycmlkZQogICAgICAgICAgICAgICAgICAgICBGb3JjZSBpbWFnZSBzaXplIGluIEdCLiAwID0gYXV0by1jYWxjdWxhdGUuCiM+CgpbQ21kbGV0QmluZGluZygpXQpwYXJhbSgKICBbUGFyYW1ldGVyKE1hbmRhdG9yeSA9ICR0cnVlKV0KICBbc3RyaW5nXSRJbWFnZVBhdGgsCgogIFtQYXJhbWV0ZXIoTWFuZGF0b3J5ID0gJHRydWUpXQogIFtzdHJpbmddJFNvdXJjZURpciwKCiAgW1BhcmFtZXRlcihNYW5kYXRvcnkgPSAkZmFsc2UpXQogIFtzdHJpbmddJFNpemUsCgogIFtzdHJpbmddJExhYmVsID0gIk9TRklNRyIsCgogIFtzd2l0Y2hdJEZvcmNlT3ZlcndyaXRlLAoKICBbc3dpdGNoXSRDcmVhdGVFbXB0eUFuZE1vdW50LAoKICBbc3RyaW5nXSRPU0ZNb3VudFBhdGggPSAiIiwKCiAgW2ludF0kQ2x1c3RlclNpemVPdmVycmlkZSA9IDAsCgogICMgU2VjdG9yIHNpemUgZm9yIE9TRk1vdW50ICgtbyBzcyxOKS4gIDUxMiAoZGVmYXVsdCkgb3IgNDA5Ni4KICBbaW50XSRTZWN0b3JTaXplID0gNTEyLAoKICAjIE51bWJlciBvZiByb2JvY29weSBjb3B5IHRocmVhZHMgKC9NVDpOKS4gIDAgPSBhdXRvLWRldGVjdCwgMS4uMTI4IG1hbnVhbC4KICBbaW50XSRDb3B5VGhyZWFkcyA9IDAsCgogICMgUm9ib2NvcHkgcmV0cnkgY291bnQgKC9SOk4pLiAgRGVmYXVsdCBsb3dlcmVkIGZyb20gMyAtPiAyIHRvIGN1dAogICMgbG9ja2VkLWZpbGUgc3Rvcm0gd2FsbCB0aW1lLgogIFtpbnRdJFJldHJpZXMgPSAyLAoKICAjIFJvYm9jb3B5IHJldHJ5IHdhaXQgc2Vjb25kcyAoL1c6TikuICBEZWZhdWx0IGxvd2VyZWQgZnJvbSAzIC0+IDIuCiAgW2ludF0kUmV0cnlXYWl0ID0gMiwKCiAgIyBFeGNsdWRlIGhpZGRlbiBmaWxlcyBhbmQgZm9sZGVycwogIFtzd2l0Y2hdJEV4Y2x1ZGVIaWRkZW4sCgogICMgT3ZlcnJpZGUgaW1hZ2Ugc2l6ZSBpbiBHQiAoMCA9IGF1dG8tY2FsY3VsYXRlKQogIFtkb3VibGVdJEltYWdlU2l6ZUdCT3ZlcnJpZGUgPSAwCikKClNldC1TdHJpY3RNb2RlIC1WZXJzaW9uIExhdGVzdAokRXJyb3JBY3Rpb25QcmVmZXJlbmNlID0gIlN0b3AiCiRzY3JpcHRDdWx0dXJlID0gW1N5c3RlbS5HbG9iYWxpemF0aW9uLkN1bHR1cmVJbmZvXTo6R2V0Q3VsdHVyZUluZm8oImVuLVVTIikKW1N5c3RlbS5UaHJlYWRpbmcuVGhyZWFkXTo6Q3VycmVudFRocmVhZC5DdXJyZW50Q3VsdHVyZSA9ICRzY3JpcHRDdWx0dXJlCltTeXN0ZW0uVGhyZWFkaW5nLlRocmVhZF06OkN1cnJlbnRUaHJlYWQuQ3VycmVudFVJQ3VsdHVyZSA9ICRzY3JpcHRDdWx0dXJlCltTeXN0ZW0uR2xvYmFsaXphdGlvbi5DdWx0dXJlSW5mb106OkRlZmF1bHRUaHJlYWRDdXJyZW50Q3VsdHVyZSA9ICRzY3JpcHRDdWx0dXJlCltTeXN0ZW0uR2xvYmFsaXphdGlvbi5DdWx0dXJlSW5mb106OkRlZmF1bHRUaHJlYWRDdXJyZW50VUlDdWx0dXJlID0gJHNjcmlwdEN1bHR1cmUKCmZ1bmN0aW9uIFRlc3QtQWRtaW4gewogICRpZCA9IFtTZWN1cml0eS5QcmluY2lwYWwuV2luZG93c0lkZW50aXR5XTo6R2V0Q3VycmVudCgpCiAgJHAgID0gTmV3LU9iamVjdCBTZWN1cml0eS5QcmluY2lwYWwuV2luZG93c1ByaW5jaXBhbCgkaWQpCiAgcmV0dXJuICRwLklzSW5Sb2xlKFtTZWN1cml0eS5QcmluY2lwYWwuV2luZG93c0J1aWx0SW5Sb2xlXTo6QWRtaW5pc3RyYXRvcikKfQoKZnVuY3Rpb24gRmluZC1PU0ZNb3VudENvbSB7CiAgJGNtZCA9IEdldC1Db21tYW5kICJvc2Ztb3VudC5jb20iIC1FcnJvckFjdGlvbiBTaWxlbnRseUNvbnRpbnVlCiAgaWYgKCRjbWQpIHsgcmV0dXJuICRjbWQuU291cmNlIH0KICAkY21kID0gR2V0LUNvbW1hbmQgIk9TRk1vdW50LmV4ZSIgLUVycm9yQWN0aW9uIFNpbGVudGx5Q29udGludWUKICBpZiAoJGNtZCkgeyByZXR1cm4gJGNtZC5Tb3VyY2UgfQoKICAkY2FuZGlkYXRlcyA9IEAoCiAgICAiJHtlbnY6UHJvZ3JhbUZpbGVzfVxPU0ZNb3VudFxvc2Ztb3VudC5jb20iLAogICAgIiR7ZW52OlByb2dyYW1GaWxlc31cT1NGTW91bnRcT1NGTW91bnQuZXhlIiwKICAgICIke2VudjpQcm9ncmFtRmlsZXMoeDg2KX1cT1NGTW91bnRcb3NmbW91bnQuY29tIiwKICAgICIke2VudjpQcm9ncmFtRmlsZXMoeDg2KX1cT1NGTW91bnRcT1NGTW91bnQuZXhlIiwKICAgICIke2VudjpQcm9ncmFtRmlsZXN9XFBhc3NNYXJrXE9TRk1vdW50XG9zZm1vdW50LmNvbSIsCiAgICAiJHtlbnY6UHJvZ3JhbUZpbGVzfVxQYXNzTWFya1xPU0ZNb3VudFxPU0ZNb3VudC5leGUiLAogICAgIiR7ZW52OlByb2dyYW1GaWxlcyh4ODYpfVxQYXNzTWFya1xPU0ZNb3VudFxvc2Ztb3VudC5jb20iLAogICAgIiR7ZW52OlByb2dyYW1GaWxlcyh4ODYpfVxQYXNzTWFya1xPU0ZNb3VudFxPU0ZNb3VudC5leGUiCiAgKSB8IFdoZXJlLU9iamVjdCB7ICRfIC1hbmQgKFRlc3QtUGF0aCAkXykgfQoKICAkY2FuZGlkYXRlcyA9IEAoJGNhbmRpZGF0ZXMpCiAgaWYgKCRjYW5kaWRhdGVzLkNvdW50IC1ndCAwKSB7IHJldHVybiAkY2FuZGlkYXRlc1swXSB9CgogIHRocm93ICJPU0ZNb3VudCBub3QgZm91bmQuIEFkZCBPU0ZNb3VudCB0byBQQVRIIG9yIGluc3RhbGwgaXQgdG8gYSBzdGFuZGFyZCBsb2NhdGlvbi4iCn0KCmZ1bmN0aW9uIFBhcnNlLVNpemVUb0J5dGVzKFtzdHJpbmddJHMpIHsKICAkcyA9ICRzLlRyaW0oKQogIGlmICgkcyAtbWF0Y2ggJ15ccyooXGQrKVxzKihbYkJrS21NZ0d0VF0/KVxzKiQnKSB7CiAgICAkbnVtID0gW0ludDY0XSRtYXRjaGVzWzFdCiAgICAkdSAgID0gJG1hdGNoZXNbMl0KICAgIHN3aXRjaCAoJHUpIHsKICAgICAgJycgIHsgcmV0dXJuICRudW0gfQogICAgICAnYicgeyByZXR1cm4gJG51bSAqIDUxMiB9CiAgICAgICdCJyB7IHJldHVybiAkbnVtICogNTEyIH0KICAgICAgJ0snIHsgcmV0dXJuICRudW0gKiAxMDI0IH0KICAgICAgJ00nIHsgcmV0dXJuICRudW0gKiAxMDI0ICogMTAyNCB9CiAgICAgICdHJyB7IHJldHVybiAkbnVtICogMTAyNCAqIDEwMjQgKiAxMDI0IH0KICAgICAgJ1QnIHsgcmV0dXJuICRudW0gKiAxMDI0ICogMTAyNCAqIDEwMjQgKiAxMDI0IH0KICAgICAgJ2snIHsgcmV0dXJuICRudW0gKiAxMDAwIH0KICAgICAgJ20nIHsgcmV0dXJuICRudW0gKiAxMDAwICogMTAwMCB9CiAgICAgICdnJyB7IHJldHVybiAkbnVtICogMTAwMCAqIDEwMDAgKiAxMDAwIH0KICAgICAgJ3QnIHsgcmV0dXJuICRudW0gKiAxMDAwICogMTAwMCAqIDEwMDAgKiAxMDAwIH0KICAgICAgZGVmYXVsdCB7IHRocm93ICJVbmtub3duIHNpemUgc3VmZml4OiAnJHUnIiB9CiAgICB9CiAgfQogIHRocm93ICJGYWlsZWQgdG8gcGFyc2Ugc2l6ZSBzdHJpbmc6ICckcyciCn0KCiMgU3RlcCA1MCAodjIuNi4xKTogc2lsZW50IHByb2Nlc3MgbGF1bmNoZXIgZm9yIE9TRk1vdW50LgojIFBvd2VyU2hlbGwncyBgJmAgb3BlcmF0b3IgaW5oZXJpdHMgdGhlIHBhcmVudCdzIG5vLWNvbnNvbGUgc3RhdGUgYnV0CiMgZG9lc24ndCBzdXBwcmVzcyBhIGNoaWxkJ3MgR1VJIHdpbmRvdy4gV2hlbiAkb3NmIHBvaW50cyBhdCB0aGUgLmV4ZQojIEdVSSBiaW5hcnkgKGJlY2F1c2UgdGhlIHVzZXIgaW5zdGFsbGVkIHdpdGhvdXQgdGhlIC5jb20gQ0xJKSwgdGhlCiMgbWFpbiB3aW5kb3cgcG9wcyB1cCBtaWQtYnVpbGQuIFRoaXMgaGVscGVyIHVzZXMgUHJvY2Vzc1N0YXJ0SW5mbwojIHdpdGggQ3JlYXRlTm9XaW5kb3c9dHJ1ZSArIFdpbmRvd1N0eWxlPUhpZGRlbiB0byBzdXBwcmVzcyBpdCBmb3IKIyBib3RoIGNvbnNvbGUgKC5jb20pIGFuZCBHVUkgKC5leGUpIGJpbmFyaWVzLiBSZXR1cm5zIEB7IEV4aXRDb2RlOwojIFN0ZE91dDsgU3RkRXJyIH0uCiMgTm90ZTogdXNlcyB0aGUgLkFyZ3VtZW50cyBzdHJpbmcgcHJvcGVydHkgKG5vdCAuQXJndW1lbnRMaXN0KSBzbyBpdAojIHdvcmtzIG9uIFdpbmRvd3MgUG93ZXJTaGVsbCA1LjEsIG5vdCBqdXN0IFBTIDcrLiBBcmdzIGFyZSBxdW90ZWQKIyBkZWZlbnNpdmVseSB0byBoYW5kbGUgcGF0aHMgd2l0aCBzcGFjZXMuCmZ1bmN0aW9uIEludm9rZS1Pc2ZIaWRkZW4oW3N0cmluZ10kZXhlLCBbc3RyaW5nW11dJGFyZ0xpc3QpIHsKICAkcXVvdGVkID0gZm9yZWFjaCAoJGEgaW4gJGFyZ0xpc3QpIHsKICAgIGlmICgkYSAtbWF0Y2ggJ1tccyJdJykgewogICAgICAnIicgKyAoJGEgLXJlcGxhY2UgJyInLCAnXCInKSArICciJwogICAgfSBlbHNlIHsKICAgICAgJGEKICAgIH0KICB9CiAgJGFyZ1N0cmluZyA9ICgkcXVvdGVkIC1qb2luICcgJykKICAkcHNpID0gTmV3LU9iamVjdCBTeXN0ZW0uRGlhZ25vc3RpY3MuUHJvY2Vzc1N0YXJ0SW5mbwogICRwc2kuRmlsZU5hbWUgICAgICAgICAgICAgICA9ICRleGUKICAkcHNpLkFyZ3VtZW50cyAgICAgICAgICAgICAgPSAkYXJnU3RyaW5nCiAgJHBzaS5Vc2VTaGVsbEV4ZWN1dGUgICAgICAgID0gJGZhbHNlCiAgJHBzaS5DcmVhdGVOb1dpbmRvdyAgICAgICAgID0gJHRydWUKICAkcHNpLldpbmRvd1N0eWxlICAgICAgICAgICAgPSAnSGlkZGVuJwogICRwc2kuUmVkaXJlY3RTdGFuZGFyZE91dHB1dCA9ICR0cnVlCiAgJHBzaS5SZWRpcmVjdFN0YW5kYXJkRXJyb3IgID0gJHRydWUKICAkcCA9IE5ldy1PYmplY3QgU3lzdGVtLkRpYWdub3N0aWNzLlByb2Nlc3MKICAkcC5TdGFydEluZm8gPSAkcHNpCiAgW3ZvaWRdJHAuU3RhcnQoKQogICRzbyA9ICRwLlN0YW5kYXJkT3V0cHV0LlJlYWRUb0VuZCgpCiAgJHNlID0gJHAuU3RhbmRhcmRFcnJvci5SZWFkVG9FbmQoKQogICRwLldhaXRGb3JFeGl0KCkKICByZXR1cm4gQHsgRXhpdENvZGUgPSBbaW50XSRwLkV4aXRDb2RlOyBTdGRPdXQgPSAkc287IFN0ZEVyciA9ICRzZSB9Cn0KCmZ1bmN0aW9uIEZvcm1hdC1CeXRlcyhbSW50NjRdJGJ5dGVzKSB7CiAgaWYgKCRieXRlcyAtZ2UgMVRCKSB7IHJldHVybiAiezA6TjJ9IFRCIiAtZiAoJGJ5dGVzLzFUQikgfQogIGlmICgkYnl0ZXMgLWdlIDFHQikgeyByZXR1cm4gInswOk4yfSBHQiIgLWYgKCRieXRlcy8xR0IpIH0KICBpZiAoJGJ5dGVzIC1nZSAxTUIpIHsgcmV0dXJuICJ7MDpOMn0gTUIiIC1mICgkYnl0ZXMvMU1CKSB9CiAgaWYgKCRieXRlcyAtZ2UgMUtCKSB7IHJldHVybiAiezA6TjJ9IEtCIiAtZiAoJGJ5dGVzLzFLQikgfQogIHJldHVybiAiJGJ5dGVzIEIiCn0KCmZ1bmN0aW9uIEdldC1GcmVlRHJpdmVMZXR0ZXIgewogICR1c2VkID0gKEdldC1QU0RyaXZlIC1QU1Byb3ZpZGVyIEZpbGVTeXN0ZW0pLk5hbWUKICBmb3JlYWNoICgkY29kZSBpbiA2OC4uOTApIHsKICAgICRsZXR0ZXIgPSBbY2hhcl0kY29kZQogICAgaWYgKCR1c2VkIC1ub3Rjb250YWlucyBbc3RyaW5nXSRsZXR0ZXIpIHsgcmV0dXJuIFtzdHJpbmddJGxldHRlciB9CiAgfQogIHRocm93ICJObyBmcmVlIGRyaXZlIGxldHRlcnMgYXZhaWxhYmxlIChEOi4uWjopLiIKfQoKIyB2My42LjQgKGlzc3VlICM0Mik6IGZyZWUgYnl0ZXMgb24gdGhlIHZvbHVtZSBob2xkaW5nICRwYXRoLCBvciAtMSB3aGVuIGl0CiMgY2Fubm90IGJlIGRldGVybWluZWQgKFVOQyBzaGFyZXMsIHVubWFwcGVkL2V4b3RpYyB2b2x1bWVzKSBzbyBjYWxsZXJzIGNhbgojIFNLSVAgdGhlIGNoZWNrIHJhdGhlciB0aGFuIGZhaWwgaXQuIERyaXZlSW5mbyBvbmx5IC0gdGhpcyBzY3JpcHQKIyBkZWxpYmVyYXRlbHkgYXZvaWRzIFdNSSAoc2VlIHRoZSBtZWRpYS1kZXRlY3Rpb24gaGFuZyBoaXN0b3J5IGFib3ZlKS4KZnVuY3Rpb24gR2V0LUZyZWVCeXRlc0ZvclBhdGgoW3N0cmluZ10kcGF0aCkgewogIHRyeSB7CiAgICAkZnVsbCA9IFtTeXN0ZW0uSU8uUGF0aF06OkdldEZ1bGxQYXRoKCRwYXRoKQogICAgJHJvb3QgPSBbU3lzdGVtLklPLlBhdGhdOjpHZXRQYXRoUm9vdCgkZnVsbCkKICAgIGlmIChbc3RyaW5nXTo6SXNOdWxsT3JFbXB0eSgkcm9vdCkpIHsgcmV0dXJuIFtJbnQ2NF0oLTEpIH0KICAgIGlmICgkcm9vdC5TdGFydHNXaXRoKCdcXCcpKSB7IHJldHVybiBbSW50NjRdKC0xKSB9CiAgICAkZGkgPSBOZXctT2JqZWN0IFN5c3RlbS5JTy5Ecml2ZUluZm8oJHJvb3QpCiAgICBpZiAoJGRpIC1hbmQgJGRpLklzUmVhZHkpIHsgcmV0dXJuIFtJbnQ2NF0kZGkuQXZhaWxhYmxlRnJlZVNwYWNlIH0KICB9IGNhdGNoIHt9CiAgcmV0dXJuIFtJbnQ2NF0oLTEpCn0KCiMgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCiMgU1RSRUFNSU5HIGVudW1lcmF0aW9uIHJlc3VsdC4gT25lIHBhc3Mgb3ZlciB0aGUgdHJlZSwgfjAgUkFNLAojIGVtaXRzIHByb2dyZXNzIGxpbmVzIHBhcmVudCBwcm9jZXNzZXMgY2FuIHBhcnNlLgojIFJldHVybnMgYSBbUFNDdXN0b21PYmplY3RdIHdpdGg6CiMgICAuRmlsZUNvdW50ICAgLkRpckNvdW50ICAgLlJhd0J5dGVzICAgLkRhdGFCeXRlcyAoY2x1c3Rlci1hbGlnbmVkKQojICAgLkhhc0xhcmdlRmlsZSAoYW55IHNpbmdsZSBmaWxlID49IDFHQiDigJQgZHJpdmVzIC9KIGZsYWcgZGVjaXNpb247CiMgICAgICAgICAgICAgICAgICB2My42LjIgaG90Zml4IGxvd2VyZWQgdGhpcyBmcm9tIDRHQiwgc2VlIC9KIGJsb2NrKQojICAgLkxvbmdlc3RQYXRoCiMgLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tCmZ1bmN0aW9uIEdldC1Tb3VyY2VTdGF0cyhbc3RyaW5nXSRkaXIsIFtJbnQ2NF0kY2x1c3RlckJ5dGVzKSB7CiAgJGNsdXN0ZXIgPSBbSW50NjRdJGNsdXN0ZXJCeXRlcwogICRmaWxlQ291bnQgPSBbSW50NjRdMAogICRkaXJDb3VudCAgPSBbSW50NjRdMAogICRyYXdCeXRlcyAgPSBbSW50NjRdMAogICRkYXRhQnl0ZXMgPSBbSW50NjRdMAogICRoYXNMYXJnZSAgPSAkZmFsc2UKICAkbG9uZ2VzdFBhdGggPSBbSW50MzJdMAogICRsYXJnZVRocmVzaCA9IFtJbnQ2NF0oMSAqIDFHQikKCiAgV3JpdGUtSG9zdCAiW0lORk9dIEVudW1lcmF0aW5nIGZpbGVzIC4uLiIKICAkc3cgPSBbRGlhZ25vc3RpY3MuU3RvcHdhdGNoXTo6U3RhcnROZXcoKQoKICAjIFN0cmVhbSBkaXJlY3RvcmllcyAoY291bnRzIG9ubHkpLgogIHRyeSB7CiAgICAkZGlyRW51bSA9IFtTeXN0ZW0uSU8uRGlyZWN0b3J5XTo6RW51bWVyYXRlRGlyZWN0b3JpZXMoCiAgICAgICRkaXIsICcqJywgW1N5c3RlbS5JTy5TZWFyY2hPcHRpb25dOjpBbGxEaXJlY3RvcmllcykKICAgIGZvcmVhY2ggKCRkIGluICRkaXJFbnVtKSB7CiAgICAgICRkaXJDb3VudCsrCiAgICAgIGlmICgkZC5MZW5ndGggLWd0ICRsb25nZXN0UGF0aCkgeyAkbG9uZ2VzdFBhdGggPSAkZC5MZW5ndGggfQogICAgfQogIH0gY2F0Y2ggewogICAgV3JpdGUtSG9zdCAiW1dBUk5dIERpcmVjdG9yeSBlbnVtZXJhdGlvbiBlcnJvcjogJCgkXy5FeGNlcHRpb24uTWVzc2FnZSkiCiAgfQoKICAjIFN0cmVhbSBmaWxlcyAoY291bnRzICsgc2l6ZXMpLgogIHRyeSB7CiAgICAkZmlsZUVudW0gPSBbU3lzdGVtLklPLkRpcmVjdG9yeV06OkVudW1lcmF0ZUZpbGVzKAogICAgICAkZGlyLCAnKicsIFtTeXN0ZW0uSU8uU2VhcmNoT3B0aW9uXTo6QWxsRGlyZWN0b3JpZXMpCiAgICAkcHJvZ3Jlc3NFdmVyeSA9IDEwMDAwCiAgICBmb3JlYWNoICgkZiBpbiAkZmlsZUVudW0pIHsKICAgICAgJGZpbGVDb3VudCsrCiAgICAgIGlmICgkZi5MZW5ndGggLWd0ICRsb25nZXN0UGF0aCkgeyAkbG9uZ2VzdFBhdGggPSAkZi5MZW5ndGggfQogICAgICB0cnkgewogICAgICAgICRpbmZvID0gW1N5c3RlbS5JTy5GaWxlSW5mb106Om5ldygkZikKICAgICAgICAkbGVuID0gW0ludDY0XSRpbmZvLkxlbmd0aAogICAgICAgICRyYXdCeXRlcyArPSAkbGVuCiAgICAgICAgJGRhdGFCeXRlcyArPSBbSW50NjRdKFtNYXRoXTo6Q2VpbGluZygkbGVuIC8gW2RvdWJsZV0kY2x1c3RlcikgKiAkY2x1c3RlcikKICAgICAgICBpZiAoJGxlbiAtZ2UgJGxhcmdlVGhyZXNoKSB7ICRoYXNMYXJnZSA9ICR0cnVlIH0KICAgICAgfSBjYXRjaCB7CiAgICAgICAgIyBQZXJtaXNzaW9uIGRlbmllZCAvIHBoYW50b20gZmlsZSAvIGV0YyDigJQgc2tpcCBhbmQgY29udGludWUuCiAgICAgIH0KICAgICAgaWYgKCgkZmlsZUNvdW50ICUgJHByb2dyZXNzRXZlcnkpIC1lcSAwKSB7CiAgICAgICAgV3JpdGUtSG9zdCAoIltJTkZPXSBFbnVtZXJhdGlvbiBwcm9ncmVzczogezA6TjB9IGZpbGVzIC8gezF9IiAtZiBgCiAgICAgICAgICAkZmlsZUNvdW50LCAoRm9ybWF0LUJ5dGVzICRyYXdCeXRlcykpCiAgICAgIH0KICAgIH0KICB9IGNhdGNoIHsKICAgIFdyaXRlLUhvc3QgIltXQVJOXSBGaWxlIGVudW1lcmF0aW9uIGVycm9yOiAkKCRfLkV4Y2VwdGlvbi5NZXNzYWdlKSIKICB9CgogICRzdy5TdG9wKCkKICBXcml0ZS1Ib3N0ICgiW0lORk9dIEVudW1lcmF0aW9uIGRvbmU6IHswOk4wfSBmaWxlcywgezE6TjB9IGRpcnMsIHsyfSAoezM6TjF9cykiIC1mIGAKICAgICRmaWxlQ291bnQsICRkaXJDb3VudCwgKEZvcm1hdC1CeXRlcyAkcmF3Qnl0ZXMpLCAkc3cuRWxhcHNlZC5Ub3RhbFNlY29uZHMpCgogIHJldHVybiBbUFNDdXN0b21PYmplY3RdQHsKICAgIEZpbGVDb3VudCAgICA9ICRmaWxlQ291bnQKICAgIERpckNvdW50ICAgICA9ICRkaXJDb3VudAogICAgUmF3Qnl0ZXMgICAgID0gJHJhd0J5dGVzCiAgICBEYXRhQnl0ZXMgICAgPSAkZGF0YUJ5dGVzCiAgICBIYXNMYXJnZUZpbGUgPSAkaGFzTGFyZ2UKICAgIExvbmdlc3RQYXRoICA9ICRsb25nZXN0UGF0aAogIH0KfQoKZnVuY3Rpb24gR2V0LU9wdGltYWxJbWFnZVNpemVCeXRlc0Zyb21TdGF0cygkc3RhdHMsIFtpbnRdJGNsdXN0ZXJCeXRlcykgewogICRjbHVzdGVyID0gW0ludDY0XSRjbHVzdGVyQnl0ZXMKICBbSW50NjRdJG1ldGFGaXhlZCA9IDY0TUIKICBbSW50NjRdJG1pblNsYWNrID0gMTAyNE1CICAgICAjIHdhcyA1MTJNQiDigJQgMTAwR0IrIGdhbWVzIGNhbiBuZWVkIG1vcmUKICBbSW50NjRdJHNwYXJlTWluID0gMTAyNE1CICAgICAjIHdhcyA1MTJNQgogIFtJbnQ2NF0kc3BhcmVNYXggPSA4MTkyTUIgICAgICMgd2FzIDIwNDhNQiDigJQgcHJvcG9ydGlvbmFsIGhlYWRyb29tIGZvciBsYXJnZSBnYW1lcwogIFtJbnQ2NF0kZW50cnlNZXRhQnl0ZXMgPSA1MTIKCiAgW0ludDY0XSRkYXRhQnl0ZXMgPSBbSW50NjRdJHN0YXRzLkRhdGFCeXRlcwogIFtJbnQ2NF0kcmF3RmlsZUJ5dGVzID0gW0ludDY0XSRzdGF0cy5SYXdCeXRlcwoKICBbSW50NjRdJGRhdGFDbHVzdGVycyA9IFtJbnQ2NF0oW01hdGhdOjpDZWlsaW5nKCRkYXRhQnl0ZXMgLyBbZG91YmxlXSRjbHVzdGVyKSkKICBbSW50NjRdJGZhdEJ5dGVzID0gJGRhdGFDbHVzdGVycyAqIDQKICBbSW50NjRdJGJpdG1hcEJ5dGVzID0gW0ludDY0XShbTWF0aF06OkNlaWxpbmcoJGRhdGFDbHVzdGVycyAvIDguMCkpCiAgW0ludDY0XSRlbnRyeUJ5dGVzID0KICAgICAgKChbSW50NjRdJHN0YXRzLkZpbGVDb3VudCArIFtJbnQ2NF0kc3RhdHMuRGlyQ291bnQpICogJGVudHJ5TWV0YUJ5dGVzKQoKICBbSW50NjRdJGJhc2VUb3RhbCA9CiAgICAgICRkYXRhQnl0ZXMgKyAkZmF0Qnl0ZXMgKyAkYml0bWFwQnl0ZXMgKyAkZW50cnlCeXRlcyArICRtZXRhRml4ZWQKCiAgIyAxJSBvZiBiYXNlVG90YWwgYXMgc3BhcmUgKHdhcyAwLjUlKSwgY2FwcGVkIGF0IDhHQiAod2FzIDJHQikuCiAgIyBMYXJnZSBnYW1lcyBnZXQgcHJvcG9ydGlvbmFsIGhlYWRyb29tOyBzbWFsbCBnYW1lcyBhcmUgdW5hZmZlY3RlZAogICMgYmVjYXVzZSB0aGV5IGhpdCB0aGUgc3BhcmVNaW4gZmxvb3IuCiAgW0ludDY0XSRzcGFyZUJ5dGVzID0gW0ludDY0XShbTWF0aF06OkNlaWxpbmcoJGJhc2VUb3RhbCAvIDEwMC4wKSkKICBpZiAoJHNwYXJlQnl0ZXMgLWx0ICRzcGFyZU1pbikgeyAkc3BhcmVCeXRlcyA9ICRzcGFyZU1pbiB9CiAgaWYgKCRzcGFyZUJ5dGVzIC1ndCAkc3BhcmVNYXgpIHsgJHNwYXJlQnl0ZXMgPSAkc3BhcmVNYXggfQogIFtJbnQ2NF0kdG90YWwgPSAkYmFzZVRvdGFsICsgJHNwYXJlQnl0ZXMKCiAgW0ludDY0XSRtaW5Ub3RhbCA9ICRyYXdGaWxlQnl0ZXMgKyAkbWluU2xhY2sKICBpZiAoJHRvdGFsIC1sdCAkbWluVG90YWwpIHsgJHRvdGFsID0gJG1pblRvdGFsIH0KCiAgW0ludDY0XSRhbGlnbiA9IDFNQgogICR0b3RhbCA9IFtJbnQ2NF0oW01hdGhdOjpDZWlsaW5nKCR0b3RhbCAvIFtkb3VibGVdJGFsaWduKSAqICRhbGlnbikKICByZXR1cm4gJHRvdGFsCn0KCmZ1bmN0aW9uIFdhaXQtRm9yTG9naWNhbERyaXZlKFtzdHJpbmddJGRyaXZlTGV0dGVyLCBbaW50XSR0aW1lb3V0U2Vjb25kcyA9IDIwKSB7CiAgIyBXYWl0IGZvciB0aGUgZHJpdmUgTEVUVEVSIHRvIGV4aXN0LiBVc2VkIHJpZ2h0IGFmdGVyIE9TRk1vdW50IChiZWZvcmUKICAjIGZvcm1hdCkgQU5EIGFmdGVyIGZvcm1hdC4gQ3JpdGljYWw6IHJpZ2h0IGFmdGVyIG1vdW50IHRoZSB2b2x1bWUgaXMgUkFXCiAgIyAobm8gZmlsZXN5c3RlbSB5ZXQpLCBzbyB3ZSBtdXN0IE5PVCByZXF1aXJlIHRoZSBmaWxlc3lzdGVtIHJvb3QgdG8gYmUKICAjIGJyb3dzYWJsZSDigJQgVGVzdC1QYXRoICJEOlwiIHJldHVybnMgRkFMU0Ugb24gYSBSQVcgdm9sdW1lLCB3aGljaCBtYWRlIGFuCiAgIyBlYXJsaWVyIHZlcnNpb24gdGltZSBvdXQgaGVyZSBhbmQgc2tpcCB0aGUgd2hvbGUgZm9ybWF0K2NvcHksIHByb2R1Y2luZwogICMgYW4gZW1wdHkgaW1hZ2UuIFtTeXN0ZW0uSU8uRHJpdmVJbmZvXSBsaXN0cyB0aGUgZHJpdmUgbGV0dGVyIGFzIHNvb24gYXMKICAjIHRoZSBkZXZpY2UgaXMgcHJlc2VudCwgcmVnYXJkbGVzcyBvZiBmaWxlc3lzdGVtIHN0YXRlLCBhbmQgdXNlcyB0aGUKICAjIFdpbjMyIEFQSSAobm8gV01JLCBzbyBpdCBjYW4ndCBoYW5nIG9uIGEgd2VkZ2VkIFdNSSBzZXJ2aWNlKS4KICAkd2FudCA9ICRkcml2ZUxldHRlci5UcmltRW5kKCc6JykuVG9VcHBlckludmFyaWFudCgpCiAgJHN3ID0gW0RpYWdub3N0aWNzLlN0b3B3YXRjaF06OlN0YXJ0TmV3KCkKICB3aGlsZSAoJHN3LkVsYXBzZWQuVG90YWxTZWNvbmRzIC1sdCAkdGltZW91dFNlY29uZHMpIHsKICAgIHRyeSB7CiAgICAgICRwcmVzZW50ID0gW1N5c3RlbS5JTy5Ecml2ZUluZm9dOjpHZXREcml2ZXMoKSB8IFdoZXJlLU9iamVjdCB7CiAgICAgICAgJF8uTmFtZS5UcmltRW5kKCdcJykuVHJpbUVuZCgnOicpLlRvVXBwZXJJbnZhcmlhbnQoKSAtZXEgJHdhbnQKICAgICAgfQogICAgICBpZiAoJHByZXNlbnQpIHsgcmV0dXJuICR0cnVlIH0KICAgIH0gY2F0Y2gge30KICAgICMgRmFsbGJhY2s6IFRlc3QtUGF0aCBzdWNjZWVkcyBvbmNlIGEgZmlsZXN5c3RlbSBpcyBwcmVzZW50IChwb3N0LWZvcm1hdCkuCiAgICB0cnkgewogICAgICBpZiAoVGVzdC1QYXRoIC1MaXRlcmFsUGF0aCAoIiR7ZHJpdmVMZXR0ZXJ9OlwiKSkgeyByZXR1cm4gJHRydWUgfQogICAgfSBjYXRjaCB7fQogICAgU3RhcnQtU2xlZXAgLU1pbGxpc2Vjb25kcyAzMDAKICB9CiAgcmV0dXJuICRmYWxzZQp9CgpmdW5jdGlvbiBHZXQtTG9naWNhbERyaXZlRmlsZVN5c3RlbShbc3RyaW5nXSRkcml2ZUxldHRlcikgewogICMgdjMuNi4yOiB1c2UgW1N5c3RlbS5JTy5Ecml2ZUluZm9dIChXaW4zMiBBUEkpIGluc3RlYWQgb2YgV01JIHNvIGEKICAjIHdlZGdlZCBXTUkgc2VydmljZSBjYW4ndCBoYW5nIHRoZSBwb3N0LWZvcm1hdCBmaWxlc3lzdGVtIGNoZWNrLgogIHRyeSB7CiAgICAkZGkgPSBOZXctT2JqZWN0IFN5c3RlbS5JTy5Ecml2ZUluZm8oJGRyaXZlTGV0dGVyKQogICAgaWYgKCRkaSAtYW5kICRkaS5Jc1JlYWR5KSB7IHJldHVybiBbc3RyaW5nXSRkaS5Ecml2ZUZvcm1hdCB9CiAgfSBjYXRjaCB7fQogIHJldHVybiAiIgp9CgpmdW5jdGlvbiBHZXQtT3B0aW1hbEV4ZmF0Q2x1c3RlclNpemVGcm9tU3RhdHMoJHN0YXRzKSB7CiAgaWYgKCRzdGF0cy5GaWxlQ291bnQgLWVxIDApIHsgcmV0dXJuIDMyNzY4IH0KICBbSW50NjRdJGxhcmdlRmlsZVRocmVzaG9sZCA9IDFNQgogIFtJbnQ2NF0kYXZnRmlsZUJ5dGVzID0gW0ludDY0XSgkc3RhdHMuUmF3Qnl0ZXMgLyBbSW50NjRdJHN0YXRzLkZpbGVDb3VudCkKICBpZiAoJGF2Z0ZpbGVCeXRlcyAtZ2UgJGxhcmdlRmlsZVRocmVzaG9sZCkgeyByZXR1cm4gNjU1MzYgfQogIHJldHVybiAzMjc2OAp9CgpmdW5jdGlvbiBGb3JtYXQtQWxsb2NhdGlvblVuaXRBcmcoW2ludF0kY2x1c3RlclNpemUpIHsKICBpZiAoJGNsdXN0ZXJTaXplIC1nZSAxTUIgLWFuZCAoJGNsdXN0ZXJTaXplICUgMU1CKSAtZXEgMCkgewogICAgcmV0dXJuICJ7MH1NIiAtZiAoJGNsdXN0ZXJTaXplIC8gMU1CKQogIH0KICBpZiAoJGNsdXN0ZXJTaXplIC1nZSAxS0IgLWFuZCAoJGNsdXN0ZXJTaXplICUgMUtCKSAtZXEgMCkgewogICAgcmV0dXJuICJ7MH1LIiAtZiAoJGNsdXN0ZXJTaXplIC8gMUtCKQogIH0KICByZXR1cm4gIiRjbHVzdGVyU2l6ZSIKfQoKIyBEZXRlY3Qgd2hldGhlciB0aGUgc291cmNlJ3MgdW5kZXJseWluZyBwaHlzaWNhbCBkaXNrIGlzIGEgc3Bpbm5pbmcKIyBIREQgKHNsb3cgc2Vla3MgPT4gZmV3ZXIgdGhyZWFkcykgb3IgYSBuZXR3b3JrIHNoYXJlLiBSZXR1cm5zIG9uZSBvZjoKIyAgICdoZGQnIC8gJ3NzZCcgLyAnbmV0d29yaycgLyAndW5rbm93bicKZnVuY3Rpb24gR2V0LVNvdXJjZU1lZGlhS2luZChbc3RyaW5nXSRzb3VyY2VEaXIpIHsKICB0cnkgewogICAgJHJvb3QgPSBbU3lzdGVtLklPLlBhdGhdOjpHZXRQYXRoUm9vdCgkc291cmNlRGlyKQogICAgaWYgKFtzdHJpbmddOjpJc051bGxPckVtcHR5KCRyb290KSkgeyByZXR1cm4gJ3Vua25vd24nIH0KICAgIGlmICgkcm9vdC5TdGFydHNXaXRoKCdcXCcpKSB7IHJldHVybiAnbmV0d29yaycgfQoKICAgICRkcml2ZSA9ICRyb290LlRyaW1FbmQoJ1wnKS5UcmltRW5kKCc6JykKICAgICMgTVNGVF9QaHlzaWNhbERpc2suTWVkaWFUeXBlOiAwPVVuc3BlY2lmaWVkLCAzPUhERCwgND1TU0QsIDU9U0NNCiAgICAkcGFydCA9IEdldC1QYXJ0aXRpb24gLURyaXZlTGV0dGVyICRkcml2ZSAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8CiAgICAgICAgICAgIFNlbGVjdC1PYmplY3QgLUZpcnN0IDEKICAgIGlmICgkcGFydCkgewogICAgICAkZGlzayA9IEdldC1EaXNrIC1OdW1iZXIgJHBhcnQuRGlza051bWJlciAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZQogICAgICBpZiAoJGRpc2spIHsKICAgICAgICAkcGQgPSBHZXQtUGh5c2ljYWxEaXNrIC1FcnJvckFjdGlvbiBTaWxlbnRseUNvbnRpbnVlIHwKICAgICAgICAgICAgICBXaGVyZS1PYmplY3QgeyAkXy5EZXZpY2VJZCAtZXEgJGRpc2suTnVtYmVyIH0gfAogICAgICAgICAgICAgIFNlbGVjdC1PYmplY3QgLUZpcnN0IDEKICAgICAgICBpZiAoJHBkKSB7CiAgICAgICAgICBzd2l0Y2ggKFtpbnRdJHBkLk1lZGlhVHlwZSkgewogICAgICAgICAgICAzIHsgcmV0dXJuICdoZGQnIH0KICAgICAgICAgICAgNCB7IHJldHVybiAnc3NkJyB9CiAgICAgICAgICAgIDUgeyByZXR1cm4gJ3NzZCcgfQogICAgICAgICAgfQogICAgICAgIH0KICAgICAgfQogICAgfQogICAgIyBGYWxsYmFjayBjaGFpbiDigJQgR2V0LVBoeXNpY2FsRGlzayBmYWlscyBzdXJwcmlzaW5nbHkgb2Z0ZW4gb24KICAgICMgTlZNZSBkcml2ZXMgaW4gc29tZSBXaW5kb3dzIGJ1aWxkcy4gVHJ5IGEgY291cGxlIG9mIGFsdGVybmF0aXZlcy4KICAgIHRyeSB7CiAgICAgICRwZDIgPSBHZXQtQ2ltSW5zdGFuY2UgLU5hbWVzcGFjZSAncm9vdFxtaWNyb3NvZnRcd2luZG93c1xzdG9yYWdlJyBgCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgLUNsYXNzTmFtZSAnTVNGVF9QaHlzaWNhbERpc2snIGAKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8CiAgICAgICAgICAgICBTZWxlY3QtT2JqZWN0IC1GaXJzdCAxCiAgICAgIGlmICgkcGQyKSB7CiAgICAgICAgc3dpdGNoIChbaW50XSRwZDIuTWVkaWFUeXBlKSB7CiAgICAgICAgICAzIHsgcmV0dXJuICdoZGQnIH0KICAgICAgICAgIDQgeyByZXR1cm4gJ3NzZCcgfQogICAgICAgICAgNSB7IHJldHVybiAnc3NkJyB9CiAgICAgICAgfQogICAgICB9CiAgICB9IGNhdGNoIHt9CiAgICAjIExhc3QgcmVzb3J0OiBidXMgdHlwZSBoZXVyaXN0aWMuIE5WTWUvU0FUQSByZXBvcnRlZCBieQogICAgIyBXaW4zMl9EaXNrRHJpdmUgb2Z0ZW4gZ2l2ZXMgdXMgc29tZXRoaW5nIHVzYWJsZS4KICAgIHRyeSB7CiAgICAgICR3MzIgPSBHZXQtQ2ltSW5zdGFuY2UgV2luMzJfRGlza0RyaXZlIC1FcnJvckFjdGlvbiBTaWxlbnRseUNvbnRpbnVlIHwKICAgICAgICAgICAgIFNlbGVjdC1PYmplY3QgLUZpcnN0IDEKICAgICAgaWYgKCR3MzIgLWFuZCAkdzMyLkludGVyZmFjZVR5cGUpIHsKICAgICAgICAkaXQgPSAkdzMyLkludGVyZmFjZVR5cGUuVG9TdHJpbmcoKS5Ub0xvd2VySW52YXJpYW50KCkKICAgICAgICBpZiAoJGl0IC1tYXRjaCAnbnZtZXxzc2QnKSB7IHJldHVybiAnc3NkJyB9CiAgICAgICAgaWYgKCRpdCAtbWF0Y2ggJ2lkZXxzY3NpfHNhdGEnKSB7CiAgICAgICAgICAjIFNBVEEgY291bGQgYmUgZWl0aGVyIOKAlCBhc3N1bWUgU1NEIG9uIG1vZGVybiBzeXN0ZW1zIHNpbmNlCiAgICAgICAgICAjIHNwaW5uaW5nIEhERHMgYXJlIGluY3JlYXNpbmdseSByYXJlIG9uIHN5c3RlbSBkcml2ZXMuCiAgICAgICAgICByZXR1cm4gJ3NzZCcKICAgICAgICB9CiAgICAgIH0KICAgIH0gY2F0Y2gge30KICAgIHJldHVybiAndW5rbm93bicKICB9IGNhdGNoIHsKICAgIHJldHVybiAndW5rbm93bicKICB9Cn0KCmZ1bmN0aW9uIERpc21vdW50LU9zZlZvbHVtZShbc3RyaW5nXSRvc2ZQYXRoLCBbc3RyaW5nXSRtb3VudFBvaW50LCBbaW50XSRtYXhBdHRlbXB0cyA9IDYpIHsKICBpZiAoW3N0cmluZ106OklzTnVsbE9yV2hpdGVTcGFjZSgkbW91bnRQb2ludCkpIHsgcmV0dXJuICRmYWxzZSB9CgogICR0YXJnZXRzID0gQCgkbW91bnRQb2ludCkKICBpZiAoLW5vdCAkbW91bnRQb2ludC5FbmRzV2l0aCgiXCIpKSB7ICR0YXJnZXRzICs9ICIkbW91bnRQb2ludFwiIH0KCiAgZm9yICgkaSA9IDE7ICRpIC1sZSAkbWF4QXR0ZW1wdHM7ICRpKyspIHsKICAgIGZvcmVhY2ggKCR0YXJnZXQgaW4gJHRhcmdldHMpIHsKICAgICAgIyBTdGVwIDUwICh2Mi42LjEpOiB1c2UgdGhlIHNpbGVudCBoZWxwZXIgc28gZGlzbW91bnQgY2FuJ3QKICAgICAgIyBwb3AgdGhlIE9TRk1vdW50LmV4ZSBHVUkgd2hlbiB0aGUgLmV4ZSBpcyB0aGUgb25seSBiaW5hcnkKICAgICAgIyBhdmFpbGFibGUuIEhlbHBlciBoYW5kbGVzIHRoZSBzdGRlcnItYXMtc3VjY2VzcyBlZGdlIGNhc2UKICAgICAgIyBieSBnaXZpbmcgdXMgdGhlIGV4aXQgY29kZSBkaXJlY3RseS4KICAgICAgdHJ5IHsKICAgICAgICAkciA9IEludm9rZS1Pc2ZIaWRkZW4gJG9zZlBhdGggQCgnLWQnLCctbScsJHRhcmdldCkKICAgICAgICAkZG1FeGl0ID0gJHIuRXhpdENvZGUKICAgICAgfSBjYXRjaCB7CiAgICAgICAgJGRtRXhpdCA9IC0xCiAgICAgIH0KICAgICAgaWYgKCRkbUV4aXQgLWVxIDApIHsgcmV0dXJuICR0cnVlIH0KICAgIH0KICAgIFN0YXJ0LVNsZWVwIC1NaWxsaXNlY29uZHMgNTAwCiAgfQoKICByZXR1cm4gJGZhbHNlCn0KCmZ1bmN0aW9uIEludm9rZS1Gb3JtYXRWb2x1bWUoW3N0cmluZ10kZHJpdmVMZXR0ZXIsIFtpbnRdJGNsdXN0ZXJTaXplLCBbc3RyaW5nXSRsYWJlbCkgewogICR0YXJnZXQgPSAiJHtkcml2ZUxldHRlcn06IgogICRmaWxlU3lzdGVtID0gImV4RkFUIgogICRjbHVzdGVyQXJnID0gRm9ybWF0LUFsbG9jYXRpb25Vbml0QXJnIC1jbHVzdGVyU2l6ZSAkY2x1c3RlclNpemUKICAkYXR0ZW1wdHMgPSBAKAogICAgQHsgTmFtZSA9ICIkZmlsZVN5c3RlbSBxdWljayB3aXRoIHJlcXVlc3RlZCBhbGxvY2F0aW9uIHVuaXQiOyBBcmdzID0gQCgkdGFyZ2V0LCAiL0ZTOiRmaWxlU3lzdGVtIiwgIi9BOiRjbHVzdGVyQXJnIiwgIi9RIiwgIi9WOiRsYWJlbCIsICIvWCIsICIvWSIpIH0KICApCgogICRsYXN0Rm9ybWF0RXhpdENvZGUgPSAtMQogIGZvcmVhY2ggKCRhdHRlbXB0IGluICRhdHRlbXB0cykgewogICAgV3JpdGUtSG9zdCAiW0luZm9dIGZvcm1hdCBhdHRlbXB0OiAkKCRhdHRlbXB0Lk5hbWUpIgogICAgJHN0ZG91dFBhdGggPSBbU3lzdGVtLklPLlBhdGhdOjpHZXRUZW1wRmlsZU5hbWUoKQogICAgJHN0ZGVyclBhdGggPSBbU3lzdGVtLklPLlBhdGhdOjpHZXRUZW1wRmlsZU5hbWUoKQogICAgdHJ5IHsKICAgICAgJHByb2MgPSBTdGFydC1Qcm9jZXNzIC1GaWxlUGF0aCAiZm9ybWF0LmNvbSIgLUFyZ3VtZW50TGlzdCAkYXR0ZW1wdC5BcmdzIC1XYWl0IC1QYXNzVGhydSAtTm9OZXdXaW5kb3cgYAogICAgICAgIC1SZWRpcmVjdFN0YW5kYXJkT3V0cHV0ICRzdGRvdXRQYXRoIC1SZWRpcmVjdFN0YW5kYXJkRXJyb3IgJHN0ZGVyclBhdGgKICAgICAgJGxhc3RGb3JtYXRFeGl0Q29kZSA9IFtpbnRdJHByb2MuRXhpdENvZGUKCiAgICAgIGlmIChUZXN0LVBhdGggLUxpdGVyYWxQYXRoICRzdGRvdXRQYXRoKSB7CiAgICAgICAgR2V0LUNvbnRlbnQgLUxpdGVyYWxQYXRoICRzdGRvdXRQYXRoIC1FcnJvckFjdGlvbiBTaWxlbnRseUNvbnRpbnVlIHwgRm9yRWFjaC1PYmplY3QgeyBXcml0ZS1Ib3N0ICRfIH0KICAgICAgfQogICAgICBpZiAoVGVzdC1QYXRoIC1MaXRlcmFsUGF0aCAkc3RkZXJyUGF0aCkgewogICAgICAgIEdldC1Db250ZW50IC1MaXRlcmFsUGF0aCAkc3RkZXJyUGF0aCAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB8IEZvckVhY2gtT2JqZWN0IHsgV3JpdGUtSG9zdCAkXyB9CiAgICAgIH0KICAgIH0gZmluYWxseSB7CiAgICAgIFJlbW92ZS1JdGVtIC1MaXRlcmFsUGF0aCAkc3Rkb3V0UGF0aCwgJHN0ZGVyclBhdGggLUZvcmNlIC1FcnJvckFjdGlvbiBTaWxlbnRseUNvbnRpbnVlCiAgICB9CgogICAgaWYgKFdhaXQtRm9yTG9naWNhbERyaXZlIC1kcml2ZUxldHRlciAkZHJpdmVMZXR0ZXIgLXRpbWVvdXRTZWNvbmRzIDUpIHsKICAgICAgJGFjdHVhbEZzID0gR2V0LUxvZ2ljYWxEcml2ZUZpbGVTeXN0ZW0gLWRyaXZlTGV0dGVyICRkcml2ZUxldHRlcgogICAgICBpZiAoJGFjdHVhbEZzIC1hbmQgJGFjdHVhbEZzLlRvVXBwZXJJbnZhcmlhbnQoKSAtZXEgJGZpbGVTeXN0ZW0uVG9VcHBlckludmFyaWFudCgpKSB7CiAgICAgICAgV3JpdGUtSG9zdCAiW0luZm9dIGZvcm1hdCByZXN1bHQ6IGRldGVjdGVkIGZpbGVzeXN0ZW0gJyRhY3R1YWxGcycgb24gJHRhcmdldC4iCiAgICAgICAgcmV0dXJuCiAgICAgIH0KICAgIH0KCiAgICBXcml0ZS1Ib3N0ICJbSW5mb10gZm9ybWF0IGF0dGVtcHQgZmFpbGVkIChleGl0IGNvZGUgJGxhc3RGb3JtYXRFeGl0Q29kZSksIHJldHJ5aW5nLi4uIgogIH0KCiAgdGhyb3cgImZvcm1hdC5jb20gZmFpbGVkIGZvciAkdGFyZ2V0IGFmdGVyIGFsbCByZXRyeSBzdHJhdGVnaWVzLiBMYXN0IGV4aXQgY29kZTogJGxhc3RGb3JtYXRFeGl0Q29kZSIKfQoKIyAtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tIE1haW4gLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLQoKaWYgKC1ub3QgKFRlc3QtQWRtaW4pKSB7IHRocm93ICJQbGVhc2UgcnVuIFBvd2VyU2hlbGwgYXMgQWRtaW5pc3RyYXRvci4iIH0KaWYgKC1ub3QgKFRlc3QtUGF0aCAtTGl0ZXJhbFBhdGggJFNvdXJjZURpciAtUGF0aFR5cGUgQ29udGFpbmVyKSkgeyB0aHJvdyAiU291cmNlIGRpcmVjdG9yeSBub3QgZm91bmQ6ICRTb3VyY2VEaXIiIH0KaWYgKC1ub3QgKFRlc3QtUGF0aCAtTGl0ZXJhbFBhdGggKEpvaW4tUGF0aCAkU291cmNlRGlyICJlYm9vdC5iaW4iKSAtUGF0aFR5cGUgTGVhZikpIHsgdGhyb3cgImVib290LmJpbiBub3QgZm91bmQgaW4gc291cmNlIGRpcmVjdG9yeTogJFNvdXJjZURpciIgfQoKIyBFbnN1cmUgb3V0cHV0IGRpcmVjdG9yeSBleGlzdHMKJG91dERpciA9IFNwbGl0LVBhdGggLVBhcmVudCAkSW1hZ2VQYXRoCmlmICgkb3V0RGlyIC1hbmQgLW5vdCAoVGVzdC1QYXRoIC1MaXRlcmFsUGF0aCAkb3V0RGlyKSkgewogIE5ldy1JdGVtIC1JdGVtVHlwZSBEaXJlY3RvcnkgLVBhdGggJG91dERpciB8IE91dC1OdWxsCn0KCmlmIChUZXN0LVBhdGggLUxpdGVyYWxQYXRoICRJbWFnZVBhdGgpIHsKICBpZiAoLW5vdCAkRm9yY2VPdmVyd3JpdGUpIHsgdGhyb3cgIkltYWdlIGZpbGUgYWxyZWFkeSBleGlzdHM6ICRJbWFnZVBhdGguIFVzZSAtRm9yY2VPdmVyd3JpdGUgdG8gcmVwbGFjZSBpdC4iIH0KICBSZW1vdmUtSXRlbSAtTGl0ZXJhbFBhdGggJEltYWdlUGF0aCAtRm9yY2UKfQoKIyBTaW5nbGUgdHJlZSB3YWxrIOKAlCBkcml2ZXMgY2x1c3RlciBjaG9pY2UsIHNpemUgZXN0aW1hdGUsIC9KIGRlY2lzaW9uLAojIGFuZCBzdXJmYWNlIHVzZWZ1bCBzdGF0cyB0byB0aGUgcGFyZW50IHByb2Nlc3MuCltJbnQ2NF0kZXhwZWN0ZWRCeXRlcyA9IDAKW3N0cmluZ10kb3NmU2l6ZUFyZyA9ICRudWxsCltpbnRdJEV4ZmF0Q2x1c3RlclNpemUgPSAwCiRzdGF0cyA9ICRudWxsCgppZiAoJENsdXN0ZXJTaXplT3ZlcnJpZGUgLWd0IDApIHsKICAjIENhbGxlciBmb3JjZWQgYSBjbHVzdGVyIHNpemU7IHdlIHN0aWxsIG5lZWQgc3RhdHMgZm9yIHNpemluZy4KICAkRXhmYXRDbHVzdGVyU2l6ZSA9ICRDbHVzdGVyU2l6ZU92ZXJyaWRlCiAgJHN0YXRzID0gR2V0LVNvdXJjZVN0YXRzIC1kaXIgJFNvdXJjZURpciAtY2x1c3RlckJ5dGVzICRFeGZhdENsdXN0ZXJTaXplCiAgV3JpdGUtSG9zdCAiW0luZm9dIFVzaW5nIGN1c3RvbSBjbHVzdGVyIHNpemU6ICRDbHVzdGVyU2l6ZU92ZXJyaWRlIGJ5dGVzIgp9IGVsc2UgewogICMgRmlyc3QgcGFzcyBhdCBhIGRlZmF1bHQgY2x1c3RlciAoMzJLQikganVzdCB0byBjb3VudCBmaWxlcy4gV2UKICAjIHJlLWRlcml2ZSBjbHVzdGVyIGZyb20gdGhlIGF2Zy1maWxlLXNpemUgYmVsb3cg4oCUIHRoZSBkYXRhQnl0ZXMKICAjIGVzdGltYXRlIGlzIHJlY29tcHV0ZWQgdXNpbmcgdGhlIGNob3NlbiBjbHVzdGVyLgogICRzdGF0cyA9IEdldC1Tb3VyY2VTdGF0cyAtZGlyICRTb3VyY2VEaXIgLWNsdXN0ZXJCeXRlcyAzMjc2OAogICRFeGZhdENsdXN0ZXJTaXplID0gR2V0LU9wdGltYWxFeGZhdENsdXN0ZXJTaXplRnJvbVN0YXRzIC1zdGF0cyAkc3RhdHMKICBpZiAoJEV4ZmF0Q2x1c3RlclNpemUgLW5lIDMyNzY4KSB7CiAgICAjIFJlZmluZSBkYXRhQnl0ZXMgdXNpbmcgdGhlIGNob3NlbiBjbHVzdGVyIHNpemUuCiAgICAkc3RhdHMgPSBHZXQtU291cmNlU3RhdHMgLWRpciAkU291cmNlRGlyIC1jbHVzdGVyQnl0ZXMgJEV4ZmF0Q2x1c3RlclNpemUKICB9Cn0KCltib29sXSRzaXplUHJvdmlkZWQgPSAtbm90IFtzdHJpbmddOjpJc051bGxPcldoaXRlU3BhY2UoJFNpemUpCltpbnRdJFRhcmdldENsdXN0ZXJTaXplID0gJEV4ZmF0Q2x1c3RlclNpemUKCmlmICgtbm90ICRzaXplUHJvdmlkZWQpIHsKICBXcml0ZS1Ib3N0ICJbSW5mb10gU2l6ZSBub3QgcHJvdmlkZWQuIENvbXB1dGluZyBhbiBvcHRpbWFsIGltYWdlIHNpemUgZnJvbSAnJFNvdXJjZURpcicgLi4uIgogIGlmICgkSW1hZ2VTaXplR0JPdmVycmlkZSAtZ3QgMCkgewogICAgJGV4cGVjdGVkQnl0ZXMgPSBbSW50NjRdKCRJbWFnZVNpemVHQk92ZXJyaWRlICogMUdCKQogICAgV3JpdGUtSG9zdCAiW0lORk9dIEltYWdlIHNpemUgb3ZlcnJpZGU6ICRJbWFnZVNpemVHQk92ZXJyaWRlIEdCICgkZXhwZWN0ZWRCeXRlcyBieXRlcykiCiAgfSBlbHNlIHsKICAgICRleHBlY3RlZEJ5dGVzID0gR2V0LU9wdGltYWxJbWFnZVNpemVCeXRlc0Zyb21TdGF0cyAtc3RhdHMgJHN0YXRzIC1jbHVzdGVyQnl0ZXMgJFRhcmdldENsdXN0ZXJTaXplCiAgfQogICRvc2ZTaXplQXJnID0gIiRleHBlY3RlZEJ5dGVzIgp9IGVsc2UgewogICRleHBlY3RlZEJ5dGVzID0gUGFyc2UtU2l6ZVRvQnl0ZXMgJFNpemUKICAkb3NmU2l6ZUFyZyA9ICRTaXplCn0KCldyaXRlLUhvc3QgKCJbSW5mb10gQ29tcHV0ZWQgaW1hZ2Ugc2l6ZTogezB9ICh7MX0gYnl0ZXMpIiAtZiAoRm9ybWF0LUJ5dGVzICRleHBlY3RlZEJ5dGVzKSwgJGV4cGVjdGVkQnl0ZXMpCldyaXRlLUhvc3QgKCJbSW5mb10gU2VsZWN0ZWQgZmlsZXN5c3RlbTogZXhGQVQgKGNsdXN0ZXI9JFRhcmdldENsdXN0ZXJTaXplKSBmb3IgaW1hZ2Ugc2l6ZSB7MH0uIiAtZiAoRm9ybWF0LUJ5dGVzICRleHBlY3RlZEJ5dGVzKSkKCiMgdjMuNi40IChpc3N1ZSAjNDIpOiBmcmVlLXNwYWNlIHByZWZsaWdodC4gT1NGTW91bnQgYWxsb2NhdGVzIHRoZSBGVUxMCiMgY29udGFpbmVyIGZpbGUgdGhlIG1vbWVudCBpdCBhdHRhY2hlcyAoLXMgPGJ5dGVzPiksIHNvIGFuIG91dHB1dCBkcml2ZQojIHdpdGhvdXQgcm9vbSBmYWlscyBhdCBhdHRhY2ggd2l0aCBub3RoaW5nIGJ1dCBhIGJhcmUgT1NGTW91bnQgZXhpdCBjb2RlCiMgKCJPU0ZNb3VudCBmYWlsZWQgd2l0aCBleGl0IGNvZGUgTi4iKS4gQ2hlY2sgZmlyc3QgYW5kIGZhaWwgd2l0aCB0aGUKIyBhY3R1YWwgbnVtYmVycyBhbmQgYSB3YXkgb3V0LiAyNTYgTUIgaGVhZHJvb20gc28gdGhlIGRyaXZlIGlzIG5vdCBsZWZ0CiMgYXQgemVyby4gU2tpcHBlZCAod2l0aCBhIG5vdGUpIHdoZW4gZnJlZSBzcGFjZSBjYW5ub3QgYmUgZGV0ZXJtaW5lZAojIChVTkMgLyB1bm1hcHBlZCB2b2x1bWVzKSAtIHRoZSBhdHRhY2ggaXRzZWxmIHJlbWFpbnMgdGhlIGJhY2tzdG9wIHRoZXJlLgpbc3RyaW5nXSRzcGFjZVByb2JlUGF0aCA9ICRJbWFnZVBhdGgKaWYgKCRvdXREaXIpIHsgJHNwYWNlUHJvYmVQYXRoID0gJG91dERpciB9CltJbnQ2NF0kZnJlZUJ5dGVzID0gR2V0LUZyZWVCeXRlc0ZvclBhdGggLXBhdGggJHNwYWNlUHJvYmVQYXRoCmlmICgkZnJlZUJ5dGVzIC1nZSAwKSB7CiAgW0ludDY0XSRuZWVkQnl0ZXMgPSAkZXhwZWN0ZWRCeXRlcyArIChbSW50NjRdMjU2TUIpCiAgaWYgKCRmcmVlQnl0ZXMgLWx0ICRuZWVkQnl0ZXMpIHsKICAgIHRocm93ICgiTm90IGVub3VnaCBmcmVlIHNwYWNlIG9uIHRoZSBvdXRwdXQgZHJpdmUgZm9yIHRoZSBpbWFnZSAiICsKICAgICAgICAgICAiY29udGFpbmVyLiBUaGUgaW1hZ2UgbmVlZHMgJChGb3JtYXQtQnl0ZXMgJGV4cGVjdGVkQnl0ZXMpICIgKwogICAgICAgICAgICIocGx1cyAyNTYgTUIgaGVhZHJvb20pIGJ1dCBvbmx5ICQoRm9ybWF0LUJ5dGVzICRmcmVlQnl0ZXMpIGlzICIgKwogICAgICAgICAgICJmcmVlIGF0ICckc3BhY2VQcm9iZVBhdGgnLiBGcmVlIHVwIHNwYWNlIG9uIHRoYXQgZHJpdmUgb3IgIiArCiAgICAgICAgICAgImNob29zZSBhbiBvdXRwdXQgZm9sZGVyIG9uIGFub3RoZXIgZHJpdmUsIHRoZW4gcmVidWlsZC4iKQogIH0KICBXcml0ZS1Ib3N0ICgiW0luZm9dIEZyZWUtc3BhY2UgcHJlZmxpZ2h0IE9LOiB7MH0gZnJlZSBvbiB0aGUgb3V0cHV0IGRyaXZlOyB0aGUgaW1hZ2UgbmVlZHMgezF9LiIgLWYgKEZvcm1hdC1CeXRlcyAkZnJlZUJ5dGVzKSwgKEZvcm1hdC1CeXRlcyAkZXhwZWN0ZWRCeXRlcykpCn0gZWxzZSB7CiAgV3JpdGUtSG9zdCAiW1dBUk5dIENvdWxkIG5vdCBkZXRlcm1pbmUgZnJlZSBzcGFjZSBmb3IgdGhlIG91dHB1dCBwYXRoIChuZXR3b3JrIHNoYXJlIG9yIHVubWFwcGVkIHZvbHVtZSkgLSBza2lwcGluZyB0aGUgZnJlZS1zcGFjZSBwcmVmbGlnaHQuIgp9CgojIERlY2lkZSByb2JvY29weSAvTVQgZGVmYXVsdCBiYXNlZCBvbiBzb3VyY2UgbWVkaWEga2luZC4KIyB2My42LjI6IEdldC1Tb3VyY2VNZWRpYUtpbmQgcmVsaWVzIG9uIFdNSS9TdG9yYWdlIGNtZGxldHMKIyAoR2V0LVBoeXNpY2FsRGlzaywgR2V0LURpc2ssIEdldC1DaW1JbnN0YW5jZSkgd2hpY2ggY2FuIGJsb2NrCiMgSU5ERUZJTklURUxZIHdoZW4gdGhlIFdNSSBzZXJ2aWNlIG9yIHN0b3JhZ2Ugc3RhY2sgaXMgd2VkZ2VkIOKAlAojIG9ic2VydmVkIGluIHRoZSBmaWVsZCBhcyBhIGJ1aWxkIGZyb3plbiByaWdodCBhZnRlciB0aGUKIyAnU2VsZWN0ZWQgZmlsZXN5c3RlbScgbGluZS4gVHdvIGNoYW5nZXM6CiMgICAxKSBXaGVuIHRoZSBjYWxsZXIgcGFzc2VkIGFuIGV4cGxpY2l0IC1Db3B5VGhyZWFkcyAodGhlIGFwcCBhbHdheXMKIyAgICAgIGRvZXMpLCBza2lwIGRldGVjdGlvbiBlbnRpcmVseS4gSXRzIG9ubHkgb3RoZXIgY29uc3VtZXIsIHRoZQojICAgICAgL0NPTVBSRVNTIG5ldHdvcmsgY2hlY2ssIGlzIHNhdGlzZmllZCBieSBhIGNoZWFwIFVOQy1wcmVmaXgKIyAgICAgIHRlc3QgdGhhdCBuZXZlciB0b3VjaGVzIFdNSS4KIyAgIDIpIFdoZW4gZGV0ZWN0aW9uIElTIG5lZWRlZCAoYXV0byB0aHJlYWQgY291bnQpLCBydW4gaXQgaW4gYQojICAgICAgYmFja2dyb3VuZCBqb2Igd2l0aCBhIGhhcmQgOC1zZWNvbmQgdGltZW91dCBhbmQgZmFsbCBiYWNrIHRvCiMgICAgICAndW5rbm93bicgaWYgaXQgZG9lc24ndCBhbnN3ZXIgaW4gdGltZS4KW2Jvb2xdJHNvdXJjZUlzVW5jID0gJGZhbHNlCnRyeSB7CiAgJHJvb3RQcm9iZSA9IFtTeXN0ZW0uSU8uUGF0aF06OkdldFBhdGhSb290KCRTb3VyY2VEaXIpCiAgaWYgKCRyb290UHJvYmUgLWFuZCAkcm9vdFByb2JlLlN0YXJ0c1dpdGgoJ1xcJykpIHsgJHNvdXJjZUlzVW5jID0gJHRydWUgfQp9IGNhdGNoIHt9CltzdHJpbmddJG1lZGlhS2luZCA9ICd1bmtub3duJwppZiAoJENvcHlUaHJlYWRzIC1sZSAwKSB7CiAgV3JpdGUtSG9zdCAiW0luZm9dIERldGVjdGluZyBzb3VyY2UgbWVkaWEga2luZCAoOHMgdGltZW91dCkuLi4iCiAgJG1lZGlhSm9iID0gJG51bGwKICB0cnkgewogICAgJG1lZGlhSm9iID0gU3RhcnQtSm9iIC1TY3JpcHRCbG9jayAke2Z1bmN0aW9uOkdldC1Tb3VyY2VNZWRpYUtpbmR9IGAKICAgICAgICAgICAgICAgICAgICAgICAgICAtQXJndW1lbnRMaXN0ICRTb3VyY2VEaXIKICAgIGlmIChXYWl0LUpvYiAtSm9iICRtZWRpYUpvYiAtVGltZW91dCA4KSB7CiAgICAgICRqb2JSZXN1bHQgPSBSZWNlaXZlLUpvYiAtSm9iICRtZWRpYUpvYiAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZQogICAgICBpZiAoJGpvYlJlc3VsdCkgeyAkbWVkaWFLaW5kID0gW3N0cmluZ10kam9iUmVzdWx0IH0KICAgIH0gZWxzZSB7CiAgICAgIFdyaXRlLUhvc3QgIltXQVJOXSBNZWRpYSBkZXRlY3Rpb24gdGltZWQgb3V0IChXTUkgYnVzeT8pIC0gdXNpbmcgJ3Vua25vd24nLiIKICAgIH0KICB9IGNhdGNoIHsKICAgIFdyaXRlLUhvc3QgIltXQVJOXSBNZWRpYSBkZXRlY3Rpb24gZmFpbGVkOiAkKCRfLkV4Y2VwdGlvbi5NZXNzYWdlKSIKICB9IGZpbmFsbHkgewogICAgaWYgKCRtZWRpYUpvYikgeyBSZW1vdmUtSm9iIC1Kb2IgJG1lZGlhSm9iIC1Gb3JjZSAtRXJyb3JBY3Rpb24gU2lsZW50bHlDb250aW51ZSB9CiAgfQogIGlmICgkc291cmNlSXNVbmMpIHsgJG1lZGlhS2luZCA9ICduZXR3b3JrJyB9CiAgc3dpdGNoICgkbWVkaWFLaW5kKSB7CiAgICAnaGRkJyAgICAgeyAkQ29weVRocmVhZHMgPSA4IH0KICAgICduZXR3b3JrJyB7ICRDb3B5VGhyZWFkcyA9IDggfQogICAgJ3NzZCcgICAgIHsgJENvcHlUaHJlYWRzID0gMzIgfQogICAgZGVmYXVsdCAgIHsgJENvcHlUaHJlYWRzID0gMTYgfQogIH0KfSBlbHNlaWYgKCRzb3VyY2VJc1VuYykgewogICMgRXhwbGljaXQgdGhyZWFkIGNvdW50OiBvbmx5IHRoZSAvQ09NUFJFU1MgZGVjaXNpb24gbmVlZHMgdGhpcy4KICAkbWVkaWFLaW5kID0gJ25ldHdvcmsnCn0KV3JpdGUtSG9zdCAiW0luZm9dIFNvdXJjZSBtZWRpYTogJG1lZGlhS2luZCwgcm9ib2NvcHkgL01UOiRDb3B5VGhyZWFkcyIKCiMgRGVjaWRlIC9KICh1bmJ1ZmZlcmVkIEkvTykuIHYzLjYuMiBob3RmaXg6IHRoZSBvbGQgdHJpZ2dlciAoYW55IHNpbmdsZQojIGZpbGUgPj0gNEdCKSBtZWFzdXJlZCB0aGUgd3JvbmcgdGhpbmcuIEEgNzcgR0IgZ2FtZSBkdW1wIG1hZGUgb2YKIyAxMDBNQi0zR0IgZmlsZXMgZmxvb2RzIHRoZSBXaW5kb3dzIGNhY2hlIGV4YWN0bHkgdGhlIHNhbWUgYXMgb25lIGJpZwojIGZpbGUgd291bGQ6IHJvYm9jb3B5ICJmaW5pc2hlcyIgYXQgUkFNIHNwZWVkIChmaWVsZCByZXBvcnQ6IDc3IEdCIGluCiMgNzRzLCAxLjMgR0IvcyksIGFuZCB0aGUgRU5USVJFIHBoeXNpY2FsIHdyaXRlIGlzIHRoZW4gZGVmZXJyZWQgaW50bwojIHRoZSBwb3N0LWNvcHkgZmx1c2ggd2l0aCB6ZXJvIHByb2dyZXNzIG91dHB1dC4gVG90YWwgYnl0ZXMgaXMgd2hhdAojIG1hdHRlcnMg4oCUIHRyaWdnZXIgb24gYW55IGZpbGUgPj0gMUdCIE9SIGEgdG90YWwgcGF5bG9hZCA+PSAxNkdCIHNvCiMgd3JpdGVzIGRyYWluIHRvIGRpc2sgRFVSSU5HIHRoZSBjb3B5IChyZWFsIHNwZWVkL0VUQSBpbiB0aGUgVUkpIGFuZAojIHRoZSBlbmQgZmx1c2ggY29sbGFwc2VzIHRvIHNlY29uZHMuCltJbnQ2NF0kdW5idWZUb3RhbFRocmVzaCA9IFtJbnQ2NF0oMTYgKiAxR0IpCltib29sXSR1c2VVbmJ1ZmZlcmVkID0gKFtib29sXSRzdGF0cy5IYXNMYXJnZUZpbGUpIC1vciBgCiAgICAgICAgICAgICAgICAgICAgICAgKFtJbnQ2NF0kc3RhdHMuUmF3Qnl0ZXMgLWdlICR1bmJ1ZlRvdGFsVGhyZXNoKQppZiAoJHVzZVVuYnVmZmVyZWQpIHsKICBXcml0ZS1Ib3N0ICgiW0luZm9dIFVuYnVmZmVyZWQgSS9PIGVuZ2FnZWQgKGZpbGUgPj0xR0IgcHJlc2VudDogezB9OyB0b3RhbCBwYXlsb2FkOiB7MX0pLiBSb2JvY29weSB3aWxsIHVzZSAvSi4iIC1mIGAKICAgICRzdGF0cy5IYXNMYXJnZUZpbGUsIChGb3JtYXQtQnl0ZXMgJHN0YXRzLlJhd0J5dGVzKSkKfQoKIyBXYXJuIGFib3V0IGxvbmcgcGF0aHMuCmlmICgkc3RhdHMuTG9uZ2VzdFBhdGggLWdlIDI0MCkgewogIFdyaXRlLUhvc3QgIltXQVJOXSBMb25nZXN0IHNvdXJjZSBwYXRoIGlzICQoJHN0YXRzLkxvbmdlc3RQYXRoKSBjaGFycy4gUm9ib2NvcHkgc3VwcG9ydHMgbG9uZyBwYXRocyBidXQgc29tZSB0b29scyBtYXkgbm90LiIKfQoKaWYgKC1ub3QgW3N0cmluZ106OklzTnVsbE9yV2hpdGVTcGFjZSgkT1NGTW91bnRQYXRoKSAtYW5kIChUZXN0LVBhdGggJE9TRk1vdW50UGF0aCkpIHsKICAkb3NmID0gJE9TRk1vdW50UGF0aAp9IGVsc2UgewogICRvc2YgPSBGaW5kLU9TRk1vdW50Q29tCn0KCiMgU3RlcCA1MCAodjIuNi4xKTogcHJlZmVyIHRoZSAuY29tIENMSSB3cmFwcGVyIG92ZXIgdGhlIC5leGUgR1VJCiMgYmluYXJ5LiBPU0ZNb3VudC5leGUgcG9wcyBpdHMgbWFpbiB3aW5kb3cgaW4gc29tZSBzY2VuYXJpb3MgZXZlbgojIHdoZW4gaW52b2tlZCB3aXRoIENMSSBhcmdzICh0aGUgcGFyZW50J3MgQ1JFQVRFX05PX1dJTkRPVyBvbmx5CiMgaGlkZXMgdGhlIGNvbnNvbGUsIG5vdCBhIEdVSSkuIElmIGEgLmNvbSB3cmFwcGVyIHNpdHMgYmVzaWRlIHRoZQojIC5leGUgaW4gdGhlIHNhbWUgZm9sZGVyLCBzd2l0Y2ggdG8gaXQgc2lsZW50bHkuCmlmICgkb3NmIC1hbmQgKCRvc2YuVG9Mb3dlcigpLkVuZHNXaXRoKCcuZXhlJykpKSB7CiAgJGNvbVNpYmxpbmcgPSBKb2luLVBhdGggKFNwbGl0LVBhdGggLVBhcmVudCAkb3NmKSAnb3NmbW91bnQuY29tJwogIGlmIChUZXN0LVBhdGggJGNvbVNpYmxpbmcpIHsKICAgIFdyaXRlLUhvc3QgIltJbmZvXSBQcmVmZXJyaW5nIG9zZm1vdW50LmNvbSBDTEkgd3JhcHBlciBvdmVyIE9TRk1vdW50LmV4ZSAoR1VJKSBmb3Igc2lsZW50IG9wZXJhdGlvbi4iCiAgICAkb3NmID0gJGNvbVNpYmxpbmcKICB9Cn0KCltzdHJpbmddJERyaXZlTGV0dGVyID0gIiIKW3N0cmluZ10kTW91bnRQb2ludCA9ICIiCltib29sXSRNb3VudGVkID0gJGZhbHNlCltib29sXSRMZWF2ZU1vdW50ZWQgPSAkQ3JlYXRlRW1wdHlBbmRNb3VudC5Jc1ByZXNlbnQKCnRyeSB7CiAgJERyaXZlTGV0dGVyID0gR2V0LUZyZWVEcml2ZUxldHRlcgogICRNb3VudFBvaW50ID0gIiR7RHJpdmVMZXR0ZXJ9OiIKCiAgaWYgKCRDcmVhdGVFbXB0eUFuZE1vdW50KSB7CiAgICBXcml0ZS1Ib3N0ICJbMS8yXSBDcmVhdGluZyAmIG1vdW50aW5nIHRoZSBpbWFnZSB2aWEgT1NGTW91bnQgYXMgYSBsb2dpY2FsIHZvbHVtZSBvbiAkTW91bnRQb2ludCAuLi4iCiAgfSBlbHNlIHsKICAgIFdyaXRlLUhvc3QgIlsxLzRdIENyZWF0aW5nICYgbW91bnRpbmcgdGhlIGltYWdlIHZpYSBPU0ZNb3VudCBhcyBhIGxvZ2ljYWwgdm9sdW1lIG9uICRNb3VudFBvaW50IC4uLiIKICB9CiAgIyBPU0ZNb3VudCBvcHRpb25zLiBOT1RFOiBkbyBOT1QgcGFzcyBzZWN0b3Itc2l6ZSBmbGFncyBoZXJlIOKAlAogICMgJ3NzLDQwOTYnIHdhcyBhIGZpY3Rpb25hbCBvcHRpb24gdGhhdCB0cmlnZ2VyZWQgT1NGTW91bnQncwogICMgdXNhZ2UgYmFubmVyIChhbmQgYSBoYXJkIGZhaWx1cmUpIG9uIGV2ZXJ5IG1vZGVybiBidWlsZCBvZgogICMgdGhlIHRvb2wuIFRoZSBsb2dpY2FsIHNlY3RvciBzaXplIG9mIHRoZSBleEZBVCBmaWxlc3lzdGVtCiAgIyBpbnNpZGUgdGhlIGltYWdlIGlzIHNldCBieSBmb3JtYXQuY29tLCBub3QgYnkgT1NGTW91bnQuCiAgIyBPU0ZNb3VudC1zaWRlIGRlZmF1bHRzIChsb2dpY2FsIGVtdWxhdGlvbiwgNTEyLWJ5dGUgc2VjdG9ycykKICAjIGFyZSBleGFjdGx5IHdoYXQgd2Ugd2FudCBmb3IgYW4gZXhGQVQgaW1hZ2UgZmlsZS4KICAkb3NmT3B0cyA9ICJydyxyZW0iCiAgaWYgKCRTZWN0b3JTaXplIC1lcSA0MDk2KSB7CiAgICBXcml0ZS1Ib3N0ICJbSW5mb10gVXNlciBzZWxlY3RlZCBTZWN0b3JTaXplPTQwOTY7IHRoaXMgaXMgaG9ub3VyZWQgYnkgZm9ybWF0LmNvbSB3aGVuIGZvcm1hdHRpbmcgZXhGQVQsIGJ1dCBpcyBOT1QgcGFzc2VkIHRvIE9TRk1vdW50IChPU0ZNb3VudCBkb2Vzbid0IGFjY2VwdCBhIHNlY3Rvci1zaXplIG9wdGlvbikuIgogIH0KICBXcml0ZS1Ib3N0ICJbSW5mb10gT1NGTW91bnQgb3B0aW9uczogLW8gJG9zZk9wdHMgIChmaWxlc3lzdGVtIHNlY3RvciBzaXplOiAkU2VjdG9yU2l6ZSkiCiAgIyBTb21lIE9TRk1vdW50IGJ1aWxkcyB3cml0ZSB0aGVpciBiYW5uZXIgKCJQYXNzTWFyayBPU0ZNb3VudAogICMgQ29tbWFuZCBMaW5lIEludGVyZmFjZS4iKSB0byBzdGRlcnIgZXZlbiBvbiBhIHN1Y2Nlc3NmdWwgcnVuLgogICMgVW5kZXIgJEVycm9yQWN0aW9uUHJlZmVyZW5jZT0nU3RvcCcsIHRoYXQgc3RkZXJyIHdyaXRlIGJlY29tZXMKICAjIGEgdGVybWluYXRpbmcgTmF0aXZlQ29tbWFuZEVycm9yIEJFRk9SRSB3ZSBldmVyIGdldCB0byBjaGVjawogICMgJExBU1RFWElUQ09ERS4gVG8gYXZvaWQgdGhhdCwgdGVtcG9yYXJpbHkgcmVsYXggdGhlIHBvbGljeQogICMgZm9yIHRoZSBPU0ZNb3VudCBjYWxsIG9ubHksIHRoZW4gcmVzdG9yZSBpdC4gVHJ1dGggY29tZXMgZnJvbQogICMgdGhlIGV4aXQgY29kZS4KICAkcHJldkVBUCA9ICRFcnJvckFjdGlvblByZWZlcmVuY2UKICAkRXJyb3JBY3Rpb25QcmVmZXJlbmNlID0gJ0NvbnRpbnVlJwogIHRyeSB7CiAgICAjIE9TRk1vdW50IGFjY2VwdHMgYSBiYXJlIG51bWJlciBhcyBieXRlcy4gVGhlIHZhbGlkIHNpemUKICAgICMgc3VmZml4ZXMgYXJlIEssIE0sIEcsIFQg4oCUIE5PVCBCLiBBIHByZXZpb3VzICJmaXgiIGFwcGVuZGVkCiAgICAjICJCIiB0aGlua2luZyBpdCBtZWFudCBieXRlczsgT1NGTW91bnQgcmVqZWN0ZWQgdGhhdCB3aXRoCiAgICAjICJVbnN1cHBvcnRlZCBzaXplIHN1ZmZpeDogJ0InIi4gUGFzcyB0aGUgYnl0ZSBjb3VudCByYXcuCiAgICBXcml0ZS1Ib3N0ICJbSW5mb10gT1NGTW91bnQgc2l6ZSBhcmc6IC1zICRvc2ZTaXplQXJnIgogICAgV3JpdGUtSG9zdCAiW0luZm9dIE9TRk1vdW50IGNvbW1hbmQ6IGAiJG9zZmAiIC1hIC10IGZpbGUgLWYgYCIkSW1hZ2VQYXRoYCIgLXMgJG9zZlNpemVBcmcgLW0gJE1vdW50UG9pbnQgLW8gJG9zZk9wdHMiCiAgICAjIFN0ZXAgNTAgKHYyLjYuMSk6IGxhdW5jaCB3aXRoIENyZWF0ZU5vV2luZG93ICsgSGlkZGVuIHNvIHRoZQogICAgIyBPU0ZNb3VudC5leGUgR1VJIHdpbmRvdyBjYW4gbmV2ZXIgcG9wIHVwIG1pZC1idWlsZC4KICAgICRyID0gSW52b2tlLU9zZkhpZGRlbiAkb3NmIEAoJy1hJywnLXQnLCdmaWxlJywnLWYnLCRJbWFnZVBhdGgsCiAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAnLXMnLFtzdHJpbmddJG9zZlNpemVBcmcsJy1tJywkTW91bnRQb2ludCwKICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICctbycsJG9zZk9wdHMpCiAgICAkb3NmRXhpdCA9ICRyLkV4aXRDb2RlCiAgICAkb3V0ID0gKCRyLlN0ZE91dCArICRyLlN0ZEVycikuVHJpbSgpCiAgfSBmaW5hbGx5IHsKICAgICRFcnJvckFjdGlvblByZWZlcmVuY2UgPSAkcHJldkVBUAogIH0KICBpZiAoJG91dCkgeyBXcml0ZS1Ib3N0ICgkb3V0IHwgT3V0LVN0cmluZykuVHJpbSgpIH0KICBpZiAoJG9zZkV4aXQgLW5lIDApIHsKICAgICMgdjMuNi40IChpc3N1ZSAjNDIpOiB0cmFuc2xhdGUgY29tbW9uIE9TRk1vdW50IGF0dGFjaCBmYWlsdXJlcyBpbnRvCiAgICAjIHNvbWV0aGluZyBhIHVzZXIgY2FuIGFjdCBvbi4gT1NGTW91bnQncyBvd24gb3V0cHV0IChpZiBhbnkpIHdhcwogICAgIyBhbHJlYWR5IHByaW50ZWQgYWJvdmU7IHRoaXMgbWFwcyBpdHMga25vd24gcGhyYXNpbmdzIHRvIGEgY2F1c2UuCiAgICBbc3RyaW5nXSRvc2ZIaW50ID0gJycKICAgIFtzdHJpbmddJG9zZkxvdyA9ICcnCiAgICB0cnkgeyBpZiAoJG91dCkgeyAkb3NmTG93ID0gKFtzdHJpbmddJG91dCkuVG9Mb3dlckludmFyaWFudCgpIH0gfSBjYXRjaCB7fQogICAgaWYgKCRvc2ZMb3cgLW1hdGNoICdub3QgZW5vdWdofG5vIHNwYWNlfGluc3VmZmljaWVudHxkaXNrIGlzIGZ1bGx8ZGlzayBmdWxsJykgewogICAgICAkb3NmSGludCA9ICcgTGlrZWx5IGNhdXNlOiB0aGUgb3V0cHV0IGRyaXZlIHJhbiBvdXQgb2Ygc3BhY2UgZm9yIHRoZSBmdWxsLXNpemUgaW1hZ2UgY29udGFpbmVyIC0gZnJlZSB1cCBzcGFjZSBvciBwaWNrIGFuIG91dHB1dCBmb2xkZXIgb24gYW5vdGhlciBkcml2ZS4nCiAgICB9IGVsc2VpZiAoJG9zZkxvdyAtbWF0Y2ggJ2FjY2VzcyBpcyBkZW5pZWR8YWNjZXNzIGRlbmllZHxwZXJtaXNzaW9uJykgewogICAgICAkb3NmSGludCA9ICcgTGlrZWx5IGNhdXNlOiBhY2Nlc3MgZGVuaWVkIC0gYW50aXZpcnVzIG1heSBiZSBob2xkaW5nIHRoZSBuZXcgaW1hZ2UgZmlsZSwgb3IgdGhlIG91dHB1dCBmb2xkZXIgaXMgcHJvdGVjdGVkLiBUcnkgZXhjbHVkaW5nIHRoZSBvdXRwdXQgZm9sZGVyIGZyb20gcmVhbC10aW1lIHNjYW5uaW5nIGFuZCByZWJ1aWxkLicKICAgIH0gZWxzZWlmICgkb3NmTG93IC1tYXRjaCAnZHJpdmVyfHZpcnR1YWwgZGlza3xzZXJ2aWNlJykgewogICAgICAkb3NmSGludCA9ICcgTGlrZWx5IGNhdXNlOiB0aGUgT1NGTW91bnQgZHJpdmVyIGlzIG5vdCBsb2FkZWQuIFJlaW5zdGFsbCBPU0ZNb3VudCBhbmQgcmVib290IChhIHBlbmRpbmcgV2luZG93cyB1cGRhdGUgY2FuIGFsc28gYmxvY2sgZHJpdmVyIGxvYWRzKS4nCiAgICB9IGVsc2VpZiAoJG9zZkxvdyAtbWF0Y2ggJ2luIHVzZXxzaGFyaW5nIHZpb2xhdGlvbnxsb2NrZWR8YmVpbmcgdXNlZCcpIHsKICAgICAgJG9zZkhpbnQgPSAnIExpa2VseSBjYXVzZTogdGhlIGltYWdlIGZpbGUgb3IgdGhlIGNob3NlbiBkcml2ZSBsZXR0ZXIgaXMgaW4gdXNlIGJ5IGFub3RoZXIgcHJvZ3JhbS4gQ2xvc2Ugb3RoZXIgdG9vbHMgYW5kIHJlYnVpbGQuJwogICAgfQogICAgdGhyb3cgIk9TRk1vdW50IGZhaWxlZCB3aXRoIGV4aXQgY29kZSAkb3NmRXhpdC4kb3NmSGludCBPU0ZNb3VudCdzIG93biBtZXNzYWdlIChpZiBhbnkpIGlzIHByaW50ZWQgYWJvdmUgdGhpcyBsaW5lIC0gcGxlYXNlIGluY2x1ZGUgaXQgd2hlbiByZXBvcnRpbmcuIgogIH0KICAkTW91bnRlZCA9ICR0cnVlCiAgaWYgKC1ub3QgKFdhaXQtRm9yTG9naWNhbERyaXZlIC1kcml2ZUxldHRlciAkRHJpdmVMZXR0ZXIgLXRpbWVvdXRTZWNvbmRzIDIwKSkgewogICAgdGhyb3cgIk1vdW50ZWQgZHJpdmUgJE1vdW50UG9pbnQgZGlkIG5vdCBhcHBlYXIgaW4gdGltZS4iCiAgfQoKICAkZGVzdCA9ICIke0RyaXZlTGV0dGVyfTpcIgogIGlmICgkQ3JlYXRlRW1wdHlBbmRNb3VudCkgewogICAgV3JpdGUtSG9zdCAiWzIvMl0gRG9uZS4gRW1wdHkgaW1hZ2UgaXMgbW91bnRlZCBhdCAkZGVzdC4iCiAgICBXcml0ZS1Ib3N0ICJNYW51YWwgc3RlcHM6IgogICAgV3JpdGUtSG9zdCAiICAxKSBGb3JtYXQgJGRlc3QgYXMgZXhGQVQgKHJlY29tbWVuZGVkIGNsdXN0ZXI6IDY0S0IgZm9yIGxhcmdlLWZpbGUgc2V0cywgMzJLQiBmb3Igc21hbGwvbWl4ZWQgc2V0cykuIgogICAgV3JpdGUtSG9zdCAiICAyKSBDb3B5IGNvbnRlbnRzIG9mICckU291cmNlRGlyJyB0byAkZGVzdC4iCiAgICBXcml0ZS1Ib3N0ICIgIDMpIERpc21vdW50OiBgIiRvc2ZgIiAtZCAtbSAkTW91bnRQb2ludCIKICAgIHJldHVybgogIH0KCiAgV3JpdGUtSG9zdCAiWzIvNF0gRm9ybWF0dGluZyAkZGVzdCBhcyBleEZBVCAoY2x1c3Rlcj0kVGFyZ2V0Q2x1c3RlclNpemUsIGxhYmVsPSckTGFiZWwnKSB2aWEgZm9ybWF0LmNvbSAuLi4iCiAgSW52b2tlLUZvcm1hdFZvbHVtZSAtZHJpdmVMZXR0ZXIgJERyaXZlTGV0dGVyIC1jbHVzdGVyU2l6ZSAkVGFyZ2V0Q2x1c3RlclNpemUgLWxhYmVsICRMYWJlbAoKICBpZiAoLW5vdCAoVGVzdC1QYXRoICRkZXN0KSkgeyB0aHJvdyAiRHJpdmUgJGRlc3QgaXMgbm90IGFjY2Vzc2libGUgYWZ0ZXIgZm9ybWF0dGluZy4iIH0KCiAgV3JpdGUtSG9zdCAiWzMvNF0gQ29weWluZyBjb250ZW50cyBvZiAnJFNvdXJjZURpcicgLT4gJyRkZXN0JyAodGhyZWFkcz0kQ29weVRocmVhZHMpIC4uLiIKICAjIHYzLjYuMiBsaXZlLXByb2dyZXNzOiBlbWl0IHBlci1maWxlIGxpbmVzIHNvIHRoZSBVSSBjYW4gc2hvdyB0aGUKICAjIGN1cnJlbnQgZmlsZW5hbWUgYW5kIGFuIGV4YWN0IGNvcGllZC1maWxlIGNvdW50IOKAlCBidXQgT05MWSB3aGVuIHRoZQogICMgc291cmNlIGhhcyBhIG1hbmFnZWFibGUgZmlsZSBjb3VudC4gQWJvdmUgdGhlIHRocmVzaG9sZCB0aGUgcGVyLWZpbGUKICAjIHN0ZG91dCBmbG9vZCAoYW5kIHRoZSBwYXJlbnQncyBwZXItbGluZSBwYXJzaW5nKSBjb3N0cyBtb3JlIHRoYW4gaXQncwogICMgd29ydGgsIHNvIHdlIGtlZXAgL05GTCBhbmQgZmFsbCBiYWNrIHRvIHRoZSBmcmVlLXNwYWNlLzVzLXdhbGsgZGlzcGxheS4KICBbSW50NjRdJHBlckZpbGVUaHJlc2hvbGQgPSA1MDAwMAogIFtib29sXSRwZXJGaWxlTG9nID0gKCRzdGF0cy5GaWxlQ291bnQgLWd0IDAgLWFuZCAkc3RhdHMuRmlsZUNvdW50IC1sZSAkcGVyRmlsZVRocmVzaG9sZCkKICBpZiAoJHBlckZpbGVMb2cpIHsKICAgIFdyaXRlLUhvc3QgIltJTkZPXSBQZXItZmlsZSBjb3B5IGxvZ2dpbmcgT04gKCQoJHN0YXRzLkZpbGVDb3VudCkgZmlsZXMgPD0gJHBlckZpbGVUaHJlc2hvbGQpIgogICAgV3JpdGUtSG9zdCAiW1JPQk8tTU9ERV0gcGVyZmlsZSIKICB9IGVsc2UgewogICAgV3JpdGUtSG9zdCAiW0lORk9dIFBlci1maWxlIGNvcHkgbG9nZ2luZyBPRkYgKCQoJHN0YXRzLkZpbGVDb3VudCkgZmlsZXMgPiAkcGVyRmlsZVRocmVzaG9sZCkgLSB1c2luZyBzaXplL3NwZWVkL0VUQSIKICAgIFdyaXRlLUhvc3QgIltST0JPLU1PREVdIHN1bW1hcnkiCiAgfQogICRyb2JvQXJncyA9IEAoCiAgICAkU291cmNlRGlyLCAkZGVzdCwKICAgICIvRSIsICIvQ09QWTpEQVQiLCAiL0RDT1BZOkRBVCIsCiAgICAiL1I6JFJldHJpZXMiLCAiL1c6JFJldHJ5V2FpdCIKICApCiAgaWYgKCRwZXJGaWxlTG9nKSB7CiAgICAjIC9OREwgc3RpbGwgc3VwcHJlc3NlcyB0aGUgKG5vaXN5LCBsb3ctdmFsdWUpIGRpcmVjdG9yeSBsaXN0OyB3ZQogICAgIyBvbmx5IHdhbnQgdGhlIHBlci1maWxlIGxpbmVzLiAvTkMga2VlcHMgZWFjaCBsaW5lIGNvbXBhY3QuCiAgICAkcm9ib0FyZ3MgKz0gQCgiL05ETCIsICIvTkMiKQogIH0gZWxzZSB7CiAgICAkcm9ib0FyZ3MgKz0gQCgiL05GTCIsICIvTkRMIikKICB9CiAgJHJvYm9BcmdzICs9IEAoCiAgICAiL0VUQSIsCiAgICAiL1hGIiwgIiouZXhmYXQiLCAiL1hGIiwgIiouZmZwa2ciLAogICAgIi9NVDokQ29weVRocmVhZHMiCiAgKQogICMgVW5idWZmZXJlZCBJL08gZm9yIGh1Z2UgZmlsZXMg4oCUIG11c3QgY29tZSBCRUZPUkUgL01UIGluIGFyZ3VtZW50CiAgIyBvcmRlciBvbiBzb21lIFdpbmRvd3MgYnVpbGRzOyByb2JvY29weSBpcyB0b2xlcmFudCBidXQgd2UgYWRkIGl0CiAgIyBhZGphY2VudCB0byAvTVQgZm9yIGNsYXJpdHkuCiAgaWYgKCR1c2VVbmJ1ZmZlcmVkKSB7ICRyb2JvQXJncyArPSBAKCIvSiIpIH0KICAjIC9DT01QUkVTUyDigJQgV2luZG93cyAxMSsgU01CIGNvbXByZXNzaW9uIGZvciBuZXR3b3JrIHNvdXJjZXM7CiAgIyBpZ25vcmVkIG9uIGxvY2FsIGNvcGllcyBhbmQgcHJlLVdpbjExLiBGcmVlIGlmIGF2YWlsYWJsZS4KICBpZiAoJG1lZGlhS2luZCAtZXEgJ25ldHdvcmsnKSB7ICRyb2JvQXJncyArPSBAKCIvQ09NUFJFU1MiKSB9CiAgaWYgKCRFeGNsdWRlSGlkZGVuKSB7ICRyb2JvQXJncyArPSBAKCIvWEE6SCIpIH0KICAjIHJvYm9jb3B5IHdyaXRlcyBzb21lIHdhcm5pbmdzIChza2lwcGVkIGZpbGVzLCByZXRyaWVzKSB0byBzdGRlcnIKICAjIHVuZGVyIG5vcm1hbCBvcGVyYXRpb24uIFNhbWUgTmF0aXZlQ29tbWFuZEVycm9yIHByb2JsZW0gYXMKICAjIE9TRk1vdW50IGFib3ZlIOKAlCByZWxheCB0aGUgcG9saWN5IGZvciB0aGUgY2FsbCwgdXNlIHRoZSBleGl0CiAgIyBjb2RlIGFzIHRydXRoLgogICRwcmV2RUFQID0gJEVycm9yQWN0aW9uUHJlZmVyZW5jZQogICRFcnJvckFjdGlvblByZWZlcmVuY2UgPSAnQ29udGludWUnCiAgdHJ5IHsKICAgICYgcm9ib2NvcHkuZXhlIEByb2JvQXJncwogICAgJHJvYm9jb3B5RXhpdENvZGUgPSAkTEFTVEVYSVRDT0RFCiAgfSBmaW5hbGx5IHsKICAgICRFcnJvckFjdGlvblByZWZlcmVuY2UgPSAkcHJldkVBUAogIH0KICBpZiAoJHJvYm9jb3B5RXhpdENvZGUgLWdlIDE2KSB7CiAgICB0aHJvdyAicm9ib2NvcHkgc2VyaW91cyBlcnJvci4gRXhpdCBjb2RlOiAkcm9ib2NvcHlFeGl0Q29kZSIKICB9IGVsc2VpZiAoJHJvYm9jb3B5RXhpdENvZGUgLWd0IDcpIHsKICAgIFdyaXRlLUhvc3QgIltXQVJOXSByb2JvY29weSBjb21wbGV0ZWQgd2l0aCB3YXJuaW5ncyAoZXhpdCAkcm9ib2NvcHlFeGl0Q29kZSkuIFNvbWUgZmlsZXMgbWF5IGhhdmUgYmVlbiBza2lwcGVkIGR1ZSB0byBmaWxlIGxvY2tpbmcuIFRoZSBpbWFnZSBoYXMgYmVlbiBjcmVhdGVkLiIKICAgIFdyaXRlLUhvc3QgIltXQVJOXSBJZiB5b3Ugc2VlIEVSUk9SIDMyIChmaWxlIGluIHVzZSksIGNsb3NlIGFueSBhcHBzIHVzaW5nIHRoZSBzb3VyY2UgZm9sZGVyIChhbnRpdmlydXMsIFdpbmRvd3MgU2VhcmNoKSBhbmQgcmV0cnkuIgogIH0KCiAgIyB2My42LjI6IHZlcmlmeSB0aGUgY29weSBhY3R1YWxseSBsYW5kZWQgYmVmb3JlIHdlIGZsdXNoICsgZGlzbW91bnQuCiAgIyBTeW1wdG9tIHNlZW4gaW4gdGhlIGZpZWxkOiBhIGJ1aWxkICJmaW5pc2hlcyIgaW4gc2Vjb25kcyB3aXRoIGFuIGFsbW9zdAogICMgZW1wdHkgaW1hZ2UgKHJvYm9jb3B5IGNvcGllZCBub3RoaW5nIOKAlCBzdGFsZSBtb3VudCwgd3JvbmcgZGVzdCwgZXRjLikuCiAgIyBDb21wYXJlIGJ5dGVzLW9uLXZvbHVtZSBhZ2FpbnN0IHRoZSBzb3VyY2UncyBleHBlY3RlZCBkYXRhIHNpemU7IGlmIHRoZQogICMgZHJpdmUgaG9sZHMgZmFyIGxlc3MgdGhhbiBleHBlY3RlZCwgRkFJTCBsb3VkbHkgaW5zdGVhZCBvZiBzaGlwcGluZyBhbgogICMgZW1wdHkgaW1hZ2UuIFVzZXMgRHJpdmVJbmZvIChXaW4zMiBBUEksIG5vIFdNSSkuCiAgdHJ5IHsKICAgICRkaSA9IE5ldy1PYmplY3QgU3lzdGVtLklPLkRyaXZlSW5mbygkRHJpdmVMZXR0ZXIpCiAgICBpZiAoJGRpIC1hbmQgJGRpLklzUmVhZHkpIHsKICAgICAgJHVzZWRCeXRlcyA9ICRkaS5Ub3RhbFNpemUgLSAkZGkuQXZhaWxhYmxlRnJlZVNwYWNlCiAgICAgICMgRXhwZWN0IGF0IGxlYXN0IDkwJSBvZiB0aGUgc291cmNlIHJhdyBieXRlcyB0byBiZSBwcmVzZW50IG9uIHRoZQogICAgICAjIHZvbHVtZSAoYWxsb3cgaGVhZHJvb20gZm9yIGZpbGVzeXN0ZW0gb3ZlcmhlYWQgLyByb3VuZGluZykuCiAgICAgICRleHBlY3RNaW4gPSBbSW50NjRdKCRzdGF0cy5SYXdCeXRlcyAqIDAuOTApCiAgICAgIFdyaXRlLUhvc3QgKCJbSW5mb10gUG9zdC1jb3B5IGNoZWNrOiB2b2x1bWUgaG9sZHMgezB9LCBleHBlY3RlZCA+PSB7MX0uIiAtZiBgCiAgICAgICAgKEZvcm1hdC1CeXRlcyAkdXNlZEJ5dGVzKSwgKEZvcm1hdC1CeXRlcyAkZXhwZWN0TWluKSkKICAgICAgaWYgKCR1c2VkQnl0ZXMgLWx0ICRleHBlY3RNaW4pIHsKICAgICAgICB0aHJvdyAoIkNvcHkgdmVyaWZpY2F0aW9uIEZBSUxFRDogdGhlIG1vdW50ZWQgaW1hZ2UgaG9sZHMgb25seSAiICsKICAgICAgICAgICAgICAgIiQoRm9ybWF0LUJ5dGVzICR1c2VkQnl0ZXMpIGJ1dCB0aGUgc291cmNlIGlzICIgKwogICAgICAgICAgICAgICAiJChGb3JtYXQtQnl0ZXMgJHN0YXRzLlJhd0J5dGVzKS4gVGhlIGNvcHkgZGlkIG5vdCBjb21wbGV0ZSAiICsKICAgICAgICAgICAgICAgIihlbXB0eSBvciBwYXJ0aWFsIGltYWdlKS4gTm90IHNoaXBwaW5nIHRoaXMgaW1hZ2UuIikKICAgICAgfQogICAgICBXcml0ZS1Ib3N0ICJbSW5mb10gUG9zdC1jb3B5IGNoZWNrIHBhc3NlZC4iCiAgICB9IGVsc2UgewogICAgICBXcml0ZS1Ib3N0ICJbV0FSTl0gUG9zdC1jb3B5IGNoZWNrIHNraXBwZWQ6IGRyaXZlICREcml2ZUxldHRlciBub3QgcmVhZHkgZm9yIHNpemUgcXVlcnkuIgogICAgfQogIH0gY2F0Y2ggewogICAgIyBBIHZlcmlmaWNhdGlvbiBmYWlsdXJlIGlzIGZhdGFsIOKAlCByZS10aHJvdyBzbyB0aGUgYnVpbGQgcmVwb3J0cyBmYWlsdXJlCiAgICAjIGFuZCB0aGUgLmV4ZmF0IGlzbid0IHRyZWF0ZWQgYXMgZ29vZC4gKEZvcm1hdC1CeXRlcy90aHJvdyBhYm92ZS4pCiAgICB0aHJvdwogIH0KCiAgIyB2My42LjI6IGZsdXNoIHRoZSB2b2x1bWUgd3JpdGUgY2FjaGUgdG8gdGhlIGJhY2tpbmcgaW1hZ2UgQkVGT1JFCiAgIyBkaXNtb3VudGluZywgc28gYSBjYWxsZXIgdGhhdCByZWFkcyB0aGUgLmV4ZmF0IGltbWVkaWF0ZWx5IGFmdGVyCiAgIyAoZS5nLiB0byBwYWNrIGEgLmZmcGZzYykgbmV2ZXIgc2VlcyBhIGhhbGYtZHJhaW5lZCBpbWFnZS4KICAjCiAgIyB2My42LjIgaG90Zml4IGhpc3Rvcnk6IHRoZSBmaXJzdCBjdXQgdXNlZCBXcml0ZS1Wb2x1bWVDYWNoZSAoYSBTdG9yYWdlCiAgIyBDSU0gY21kbGV0IG9uIHRoZSBzYW1lIFdNSSBwcm92aWRlciB0aGlzIHNjcmlwdCBhbHJlYWR5IGFiYW5kb25lZCBmb3IKICAjIG1lZGlhIGRldGVjdGlvbik7IGl0IGh1bmcgMjIrIG1pbiBpbiBXTUkgb24gYSA3NyBHQiBidWlsZC4gVGhlIHNlY29uZAogICMgY3V0IG1vdmVkIEZsdXNoRmlsZUJ1ZmZlcnMgaW50byBhIFN0YXJ0LUpvYiBzY3JpcHRibG9jayBhbmQgdHJpcHBlZCBhCiAgIyBQb3dlclNoZWxsIHBhcnNlciBlcnJvci4gVGhpcyBjdXQga2VlcHMgaXQgZGVhZCBzaW1wbGU6IEFkZC1UeXBlIHRoZQogICMgUC9JbnZva2UgYXQgdG9wIHNjb3BlLCB0aGVuIG9uZSBpbmxpbmUgRmx1c2hGaWxlQnVmZmVycyBjYWxsLiBXaXRoIC9KCiAgIyBrZWVwaW5nIHRoZSBjYWNoZSBkcmFpbmVkIGR1cmluZyB0aGUgY29weSB0aGlzIHJldHVybnMgbmVhci1pbnN0YW50bHk7CiAgIyBpZiBGbHVzaEZpbGVCdWZmZXJzIGlzIHNvbWVob3cgc2xvdyBvciB1bmF2YWlsYWJsZSwgdGhlIGRpc21vdW50IHRoYXQKICAjIGZvbGxvd3MgcGVyZm9ybXMgaXRzIG93biBkcml2ZXItbGV2ZWwgZmx1c2ggYXMgdGhlIHNhZmV0eSBuZXQuCiAgJGZsdXNoVGFyZ2V0ID0gJERyaXZlTGV0dGVyICsgJzonCiAgV3JpdGUtSG9zdCAoIltJbmZvXSBGbHVzaGluZyB2b2x1bWUgd3JpdGUgY2FjaGUgdG8gaW1hZ2UgKEZsdXNoRmlsZUJ1ZmZlcnMgXFwuXHswfSkuLi4iIC1mICRmbHVzaFRhcmdldCkKICAkZmx1c2hTdyA9IFtEaWFnbm9zdGljcy5TdG9wd2F0Y2hdOjpTdGFydE5ldygpCiAgdHJ5IHsKICAgIGlmICgtbm90IChbU3lzdGVtLk1hbmFnZW1lbnQuQXV0b21hdGlvbi5QU1R5cGVOYW1lXSdWb2xGbHVzaCcpLlR5cGUpIHsKICAgICAgJGNzU2lnID0gJ3VzaW5nIFN5c3RlbTt1c2luZyBTeXN0ZW0uUnVudGltZS5JbnRlcm9wU2VydmljZXM7dXNpbmcgTWljcm9zb2Z0LldpbjMyLlNhZmVIYW5kbGVzO3B1YmxpYyBjbGFzcyBWb2xGbHVzaHtbRGxsSW1wb3J0KCJrZXJuZWwzMi5kbGwiLFNldExhc3RFcnJvcj10cnVlLENoYXJTZXQ9Q2hhclNldC5Vbmljb2RlKV1zdGF0aWMgZXh0ZXJuIFNhZmVGaWxlSGFuZGxlIENyZWF0ZUZpbGVXKHN0cmluZyBuLHVpbnQgYSx1aW50IHMsSW50UHRyIHNhLHVpbnQgYyx1aW50IGYsSW50UHRyIHQpO1tEbGxJbXBvcnQoImtlcm5lbDMyLmRsbCIsU2V0TGFzdEVycm9yPXRydWUpXXN0YXRpYyBleHRlcm4gYm9vbCBGbHVzaEZpbGVCdWZmZXJzKFNhZmVGaWxlSGFuZGxlIGgpO3B1YmxpYyBzdGF0aWMgdm9pZCBGbHVzaChzdHJpbmcgdm9sKXt2YXIgaD1DcmVhdGVGaWxlVyh2b2wsMHg0MDAwMDAwMCwweDAwMDAwMDAzLEludFB0ci5aZXJvLDMsMCxJbnRQdHIuWmVybyk7aWYoaC5Jc0ludmFsaWQpdGhyb3cgbmV3IEV4Y2VwdGlvbigiQ3JlYXRlRmlsZVcgZmFpbGVkOiAiK01hcnNoYWwuR2V0TGFzdFdpbjMyRXJyb3IoKSk7dHJ5e2lmKCFGbHVzaEZpbGVCdWZmZXJzKGgpKXRocm93IG5ldyBFeGNlcHRpb24oIkZsdXNoRmlsZUJ1ZmZlcnMgZmFpbGVkOiAiK01hcnNoYWwuR2V0TGFzdFdpbjMyRXJyb3IoKSk7fWZpbmFsbHl7aC5DbG9zZSgpO319fScKICAgICAgQWRkLVR5cGUgLVR5cGVEZWZpbml0aW9uICRjc1NpZyAtRXJyb3JBY3Rpb24gU3RvcAogICAgfQogICAgW1ZvbEZsdXNoXTo6Rmx1c2goJ1xcLlwnICsgJGZsdXNoVGFyZ2V0KQogICAgV3JpdGUtSG9zdCAoIltJbmZvXSBWb2x1bWUgY2FjaGUgZmx1c2hlZCBpbiB7MDpOMX1zLiIgLWYgJGZsdXNoU3cuRWxhcHNlZC5Ub3RhbFNlY29uZHMpCiAgfSBjYXRjaCB7CiAgICBXcml0ZS1Ib3N0ICJbV0FSTl0gRXhwbGljaXQgZmx1c2ggdW5hdmFpbGFibGUgb3IgZmFpbGVkICgkKCRfLkV4Y2VwdGlvbi5NZXNzYWdlKSk7IGRpc21vdW50IHBlcmZvcm1zIGl0cyBvd24gZHJpdmVyLWxldmVsIGZsdXNoLiIKICB9CgogIFdyaXRlLUhvc3QgIls0LzRdIERvbmUuIERpc21vdW50aW5nIE9TRk1vdW50IHZvbHVtZS4uLiIKfQpmaW5hbGx5IHsKICBpZiAoJE1vdW50ZWQgLWFuZCAtbm90ICRMZWF2ZU1vdW50ZWQgLWFuZCAtbm90IFtzdHJpbmddOjpJc051bGxPcldoaXRlU3BhY2UoJE1vdW50UG9pbnQpKSB7CiAgICB0cnkgewogICAgICAkY3VycmVudFBhdGggPSAoR2V0LUxvY2F0aW9uKS5QYXRoCiAgICAgIGlmICgkY3VycmVudFBhdGggLWxpa2UgIiRNb3VudFBvaW50KiIpIHsKICAgICAgICBTZXQtTG9jYXRpb24gIiRlbnY6U3lzdGVtRHJpdmVcIgogICAgICB9CiAgICB9IGNhdGNoIHsKICAgICAgIyBCZXN0IGVmZm9ydCBvbmx5LgogICAgfQoKICAgIGlmICgtbm90IChEaXNtb3VudC1Pc2ZWb2x1bWUgLW9zZlBhdGggJG9zZiAtbW91bnRQb2ludCAkTW91bnRQb2ludCAtbWF4QXR0ZW1wdHMgNikpIHsKICAgICAgV3JpdGUtV2FybmluZyAiRmFpbGVkIHRvIGRpc21vdW50IE9TRk1vdW50IHZvbHVtZSAoJE1vdW50UG9pbnQpOiBhY2Nlc3MgZGVuaWVkIG9yIHZvbHVtZSBidXN5LiIKICAgIH0KICB9Cn0KCldyaXRlLUhvc3QgIk9LOiBJbWFnZSBjcmVhdGVkIGF0OiAkSW1hZ2VQYXRoIgo="
+        src_path = Path(src_dir).expanduser().resolve()
+        out_path = Path(out_file).expanduser().resolve()
+        if not src_path.is_dir():
+            self._append_to_log(f"[FEHLER] Quellordner nicht gefunden: {src_path}\n")
+            return False
 
-        import base64 as _b64
+        eboot_path = src_path / "eboot.bin"
+        if not eboot_path.is_file():
+            self._append_to_log(
+                "[FEHLER] eboot.bin nicht im Quellordner gefunden. "
+                f"Gesucht: {eboot_path}\n"
+            )
+            return False
 
-        # Relative Ausgabepfade wuerden bei cwd=tmp_script_dir im Temp-Ordner landen.
-        # Daher immer auf absolute Pfade normalisieren.
-        src_dir = os.path.abspath(src_dir)
-        out_file = os.path.abspath(out_file)
-        out_parent = os.path.dirname(out_file)
-        if out_parent:
-            os.makedirs(out_parent, exist_ok=True)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        self._append_to_log("--- exFAT-Image erstellen (vendorter MkPFS-Writer) ---\n")
+        self._append_to_log(f"[Info] Quelle: {src_path}\n")
+        self._append_to_log(f"[Info] Ziel:   {out_path}\n")
 
-        tmp_script_dir: str | None = None
+        total_bytes_box = [0]
+        written_bytes = [0]
+        last_log_ts = [0.0]
+        self._copy_total_bytes = 0
+        self._copy_done_bytes = 0
+
+        def _on_layout(total_size: int) -> None:
+            total_bytes_box[0] = max(0, int(total_size))
+            self._copy_total_bytes = total_bytes_box[0]
+            self.task_total_source_bytes = total_bytes_box[0]
+
         try:
-            # OSFMount suchen / installieren
-            self._append_to_log("--- OSFMount prüfen ---\n")
-            osf_exe = self._find_osfmount()
-            if osf_exe is None:
-                self._append_to_log(
-                    "[Info] OSFMount nicht gefunden – wird automatisch installiert.\n"
-                )
-                if not self._install_osfmount():
-                    self._append_to_log(
-                        "[FEHLER] OSFMount konnte nicht installiert werden.\n"
-                        "         Bitte manuell von https://www.osforensics.com/tools/"
-                        "mount-disk-images.html installieren.\n"
-                    )
-                    return False
-                osf_exe = self._find_osfmount()
-                if osf_exe is None:
-                    self._append_to_log(
-                        "[FEHLER] OSFMount nach Installation immer noch nicht gefunden.\n"
-                    )
-                    return False
-            self._append_to_log(f"[OSFMount] Gefunden: {osf_exe}\n")
-
-            # Skripte in temp-Verzeichnis extrahieren
-            tmp_script_dir = self._mkdtemp(prefix="ps5conv_exfat_scripts_")
-            bat_path = os.path.join(tmp_script_dir, "make_image.bat")
-            ps1_path = os.path.join(tmp_script_dir, "New-OsfExfatImage.ps1")
-            with open(bat_path, "wb") as f:
-                f.write(_b64.b64decode(_BAT_B64))
-            with open(ps1_path, "wb") as f:
-                f.write(_b64.b64decode(_PS1_B64))
-
-            self._append_to_log("--- exFAT-Image erstellen (ps5-exfat-builder) ---\n")
-            self._append_to_log(f"[Info] Quelle: {src_dir}\n")
-            self._append_to_log(f"[Info] Ziel:   {out_file}\n")
-
-            # Fortschritt auf 5% setzen (Vorbereitung abgeschlossen)
-            self.task_progress = max(self.task_progress, pct_start + (pct_end - pct_start) * 0.05)
-
-            # make_image.bat aufrufen (wie ps5-exfat-builder)
-            # Argumente: IMAGE SRCDIR OSFPATH CLUSTERSIZE SECTORSIZE COPYTHREADS RETRIES RETRYWAIT EXCLHIDDEN
-            #
-            # FIX v1.7.58: Liste statt String-Argument für cmd.exe /c verwenden.
-            # Vorher: ["cmd.exe", "/c", '"bat_path" "out" "src" "osf"']
-            #   → cmd.exe entfernt die aeusseren Quotes und sieht \"bat_path\" als Befehl
-            #   → Fehler: "Der Befehl \"...\" ist falsch geschrieben"
-            # Jetzt: ["cmd.exe", "/c", bat_path, out_file, src_dir, osf_exe]
-            #   → Python's CreateProcess quotet jeden Eintrag korrekt
-            #   → Funktioniert auch bei Leerzeichen und 8.3-Kurzpfaden im TEMP-Verzeichnis
-            build_env = os.environ.copy()
-            build_env["EXFAT_SCRIPT_DIR"] = tmp_script_dir
-
-            _enc = "mbcs" if sys.platform.startswith("win") else "utf-8"
-            # Ausgabe zeilenweise loggen und Fortschritt schätzen
-            _pct_range = pct_end - pct_start
-            _phase_pct = pct_start + _pct_range * 0.05
-            _last_robo_pct = [-1]
-            _last_robo_zero_log_ts = [0.0]
-            _last_robo_probe_ts = [0.0]
-            _robo_drive = [""]
-            _robo_payload_bytes = [0]
-            _last_robo_copy_log_ts = [0.0]
-            _last_robo_copy_gb = [-1.0]
-            _last_probe_used_b = [-1]
-            _last_probe_ts = [0.0]
-            _speed_ema_bps = [0.0]
-            _last_trend_log_ts = [0.0]
-
-            self._copy_total_bytes = 0
-            self._copy_done_bytes = 0
-            self._copy_rate_bps = 0.0
-            self._copy_rate_trend = ""
-
-            def _on_make_image_line(line: str) -> bool:
-                nonlocal _phase_pct
-                line = line.rstrip()
-                if not line:
-                    return True
-                _low = line.lower()
-
-                # Mount-Laufwerk und erwartete Payload-Menge aus Script-Logs extrahieren.
-                if "[1/4]" in line and " on " in line:
-                    _m_drv = re.search(r" on ([A-Z]:)", line)
-                    if _m_drv:
-                        _robo_drive[0] = _m_drv.group(1)
-                if "enumeration done:" in _low:
-                    _m_gb = re.search(r"enumeration done:.*?,\s*([0-9]+(?:\.[0-9]+)?)\s*gb", _low)
-                    if _m_gb:
-                        try:
-                            _robo_payload_bytes[0] = int(float(_m_gb.group(1)) * (1024 ** 3))
-                        except Exception:
-                            pass
-                if _robo_payload_bytes[0] <= 0:
-                    _robo_payload_bytes[0] = int(getattr(self, "_last_source_size_bytes", 0) or 0)
-                if _robo_payload_bytes[0] > 0:
-                    self._copy_total_bytes = int(_robo_payload_bytes[0])
-
-                # Robocopy schreibt bei sehr vielen Dateien oft tausende "0%"-Zeilen.
-                # Diese Zeilen drosseln wir und mappen sinnvolle %-Spruenge auf Phase 3.
-                _m_robo_pct = re.match(r"^\s*(\d{1,3})%\s*$", line)
-                if _m_robo_pct:
-                    robo_pct = max(0, min(int(_m_robo_pct.group(1)), 100))
-                    if robo_pct == 0:
-                        now = time.monotonic()
-                        # Auch bei dauerhaften 0%-Zeilen echten Copy-Fortschritt via Laufwerksbelegung schätzen.
-                        if now - _last_robo_probe_ts[0] >= 3.0:
-                            drv = _robo_drive[0]
-                            payload_b = _robo_payload_bytes[0]
-                            if drv and payload_b > 0:
-                                try:
-                                    du = shutil.disk_usage(drv + "\\")
-                                    used_b = max(0, int(du.used) - (64 * 1024 * 1024))
-                                    frac = max(0.0, min(used_b / max(payload_b, 1), 0.995))
-                                    self._copy_total_bytes = int(payload_b)
-                                    self._copy_done_bytes = int(min(used_b, payload_b))
-
-                                    dt = max(0.001, now - (_last_probe_ts[0] or now))
-                                    if _last_probe_used_b[0] >= 0 and dt > 0:
-                                        inst_bps = max(0.0, (used_b - _last_probe_used_b[0]) / dt)
-                                        if _speed_ema_bps[0] <= 0.0:
-                                            _speed_ema_bps[0] = inst_bps
-                                        else:
-                                            _speed_ema_bps[0] = (_speed_ema_bps[0] * 0.72) + (inst_bps * 0.28)
-                                        trend = "stabil"
-                                        if inst_bps > _speed_ema_bps[0] * 1.08:
-                                            trend = "steigend"
-                                        elif inst_bps < _speed_ema_bps[0] * 0.92:
-                                            trend = "fallend"
-                                        self._copy_rate_bps = float(_speed_ema_bps[0])
-                                        self._copy_rate_trend = trend
-                                    _last_probe_used_b[0] = used_b
-                                    _last_probe_ts[0] = now
-
-                                    copy_mapped = pct_start + _pct_range * (0.50 + 0.44 * frac)
-                                    _phase_pct = max(_phase_pct, min(copy_mapped, pct_start + _pct_range * 0.94))
-                                    self.task_progress = max(self.task_progress, _phase_pct)
-                                    used_gb = used_b / (1024 ** 3)
-                                    total_gb = payload_b / (1024 ** 3)
-                                    rem_gb = max(0.0, (payload_b - used_b) / (1024 ** 3))
-                                    rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
-                                    trend_txt = str(getattr(self, "_copy_rate_trend", "") or "")
-                                    self.root.after(
-                                        0,
-                                        lambda u=used_gb, t=total_gb, r=rem_gb, sp=rate_mb, tr=trend_txt: self.status_label.config(
-                                            text=(
-                                                f"Phase 2/4 – Kopiere... {u:.2f}/{t:.2f} GB | "
-                                                f"Rest {r:.2f} GB | {sp:.1f} MB/s"
-                                                + (f" ({tr})" if tr else "")
-                                            )
-                                        ),
-                                    )
-                                    if (
-                                        now - _last_robo_copy_log_ts[0] >= 10.0
-                                        and (used_gb - _last_robo_copy_gb[0] >= 0.2)
-                                    ):
-                                        self._append_to_log(
-                                            f"[INFO] Robocopy Fortschritt: {used_gb:.2f}/{total_gb:.2f} GB "
-                                            f"(Rest {rem_gb:.2f} GB, ~{frac * 100.0:.1f}%, {rate_mb:.1f} MB/s"
-                                            + (f", Trend {trend_txt}" if trend_txt else "")
-                                            + ")\n"
-                                        )
-                                        _last_robo_copy_log_ts[0] = now
-                                        _last_robo_copy_gb[0] = used_gb
-                                    if now - _last_trend_log_ts[0] >= 20.0 and rate_mb > 0.0:
-                                        self._append_to_log(
-                                            f"[INFO] Copy-Rate: {rate_mb:.1f} MB/s | Trend: {trend_txt or 'stabil'}\n"
-                                        )
-                                        _last_trend_log_ts[0] = now
-                                except Exception:
-                                    pass
-                            _last_robo_probe_ts[0] = now
-                        if now - _last_robo_zero_log_ts[0] >= 6.0:
-                            self._append_to_log("[INFO] Robocopy laeuft ... (warte auf ersten Prozent-Impuls)\n")
-                            _last_robo_zero_log_ts[0] = now
-                        # Kein Log-Spam fuer wiederholtes 0%
-                    else:
-                        if robo_pct != _last_robo_pct[0]:
-                            self._append_to_log(f"[INFO] Robocopy: {robo_pct}%\n")
-                            _last_robo_pct[0] = robo_pct
-                        if self._copy_total_bytes > 0:
-                            est_done = int(self._copy_total_bytes * (robo_pct / 100.0))
-                            self._copy_done_bytes = max(self._copy_done_bytes, est_done)
-                        # Schritt 3/4 (Copy) sichtbar voranbringen: 50%..94% des Schrittbereichs.
-                        copy_mapped = pct_start + _pct_range * (0.50 + 0.44 * (robo_pct / 100.0))
-                        _phase_pct = max(_phase_pct, min(copy_mapped, pct_start + _pct_range * 0.94))
-                        self.task_progress = max(self.task_progress, _phase_pct)
+            self.task_progress = max(self.task_progress, pct_start + (pct_end - pct_start) * 0.03)
+            with out_path.open("wb") as out_handle:
+                for chunk in iter_exfat_image(src_path, on_layout=_on_layout):
                     if not self.is_running:
                         return False
-                    return True
+                    out_handle.write(chunk)
+                    written_bytes[0] += len(chunk)
+                    self._copy_done_bytes = written_bytes[0]
+                    total_bytes = max(1, total_bytes_box[0])
+                    progress_pct = pct_start + (written_bytes[0] / total_bytes) * (pct_end - pct_start)
+                    self.task_progress = max(self.task_progress, min(progress_pct, pct_end))
 
-                self._append_to_log(f"{line}\n")
-                # Fortschritt aus Log-Zeilen schätzen
-                if "[1/4]" in line or "mounting" in _low or "mounte" in _low:
-                    _phase_pct = pct_start + _pct_range * 0.15
-                elif "[2/4]" in line or "format" in _low:
-                    _phase_pct = pct_start + _pct_range * 0.30
-                elif "[3/4]" in line or "cop" in _low or "robocopy" in _low:
-                    _phase_pct = pct_start + _pct_range * 0.50
-                elif "[4/4]" in line or "dismount" in _low or "flush" in _low:
-                    _phase_pct = pct_start + _pct_range * 0.90
-                elif "[ok]" in _low or "done" in _low:
-                    _phase_pct = pct_start + _pct_range * 0.98
-                self.task_progress = max(self.task_progress, _phase_pct)
-                if not self.is_running:
-                    return False
-                return True
+                    now = time.monotonic()
+                    if now - last_log_ts[0] >= 8.0:
+                        last_log_ts[0] = now
+                        self.root.after(
+                            0,
+                            lambda s=self._fmt_bytes(written_bytes[0]), t=self._fmt_bytes(total_bytes_box[0]) if total_bytes_box[0] else "?": self.status_label.config(
+                                text=f"Phase 2/4 – exFAT-Image erstellt... {s}/{t}"
+                            ),
+                        )
+                        self._append_to_log(
+                            f"[INFO] exFAT-Writer: {written_bytes[0]}/{total_bytes_box[0] or 0} Bytes\n"
+                        )
 
-            # shell=False: cmd.exe mit Liste aufrufen (kein Shell-String-Parsing)
-            _cmd_exe = ["cmd.exe", "/c", bat_path, out_file, src_dir, osf_exe]
-            rc = self._run_subprocess_logged(
-                _cmd_exe,
-                timeout=24 * 60 * 60,
-                encoding=_enc,
-                errors="replace",
-                cwd=tmp_script_dir,
-                env=build_env,
-                line_callback=_on_make_image_line,
-            )
-
-            if rc == 130 and not self.is_running:
-                return False
-
-            if rc != 0:
-                self._append_to_log(
-                    f"[FEHLER] make_image.bat fehlgeschlagen (Code {rc}).\n"
-                    f"         Bitte OSFMount installieren: https://www.osforensics.com/tools/mount-disk-images.html\n"
-                )
-                return False
-
-            if not os.path.isfile(out_file):
+            if not out_path.is_file():
                 self._append_to_log("[FEHLER] Ausgabedatei wurde nicht erstellt.\n")
                 return False
 
-            if self._copy_total_bytes > 0:
-                self._copy_done_bytes = self._copy_total_bytes
+            self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
-            self._append_to_log(f"[OK] exFAT-Image erstellt: {out_file}\n")
+            self._append_to_log(f"[OK] exFAT-Image erstellt: {out_path}\n")
             return True
-
-        finally:
-            # Temp-Verzeichnis aufräumen
-            if tmp_script_dir and os.path.isdir(tmp_script_dir):
-                try:
-                    shutil.rmtree(tmp_script_dir, ignore_errors=True)
-                except Exception:
-                    pass
-            self._active_mount_drive = None
-            self._active_osf_exe = None
+        except Exception as exc:
+            self._append_to_log(f"[FEHLER] exFAT-Image konnte nicht erstellt werden: {exc}\n")
+            return False
 
     def _mode_unpack_to_exfat(self, src: str, dst: str) -> bool:
         """Entpackt eine .FFPFSC-Datei zu einer .ExFat-Datei (Aufgabe 2).
@@ -11324,11 +11177,10 @@ class PS5ConverterGUI:
                 # FALL B: pack-folder .ffpfsc (Aufgabe 1 Ausgabe)
                 # tmp_dir enthält den vollständigen Game-Dump (eboot.bin, sce_sys/, etc.).
                 #
-                # KORREKTE Methode: ps5-exfat-builder (make_image.bat + New-OsfExfatImage.ps1)
-                # Identisch mit dem ps5-exfat-builder Tool v3.6.4.
+                # KORREKTE Methode: vendorter MkPFS-Writer
                 self._append_to_log(
                     "[Info] Erkannt: pack-folder .ffpfsc (Aufgabe 1 Ausgabe)\n"
-                    "[Info] Methode: ps5-exfat-builder (make_image.bat + New-OsfExfatImage.ps1)\n"
+                    "[Info] Methode: vendorter MkPFS-Writer\n"
                 )
                 # Schritte: unpack(0-33%), exFAT-Image erstellen(33-100%)
                 self.task_num_steps = 2
@@ -11336,9 +11188,9 @@ class PS5ConverterGUI:
                 self.task_current_step = 1
 
                 self._append_to_log(
-                    "\n>>> Schritt 2 / 2: exFAT-Image erstellen (ps5-exfat-builder Methode)...\n"
+                    "\n>>> Schritt 2 / 2: exFAT-Image erstellen (vendorter MkPFS-Writer)...\n"
                 )
-                # eboot.bin Prüfung (ps5-exfat-builder Voraussetzung)
+                # eboot.bin Pruefung (MkPFS exFAT-Writer Voraussetzung)
                 eboot_path = os.path.join(tmp_dir, "eboot.bin")
                 if not os.path.isfile(eboot_path):
                     self._append_to_log(
@@ -11695,7 +11547,7 @@ class PS5ConverterGUI:
             # --- Schritt 3: Neues PS5-kompatibles .exfat erstellen ---
             self._append_to_log(
                 "\n>>> Schritt 3 / 3: Neues PS5-kompatibles exFAT-Image erstellen "
-                "(ps5-exfat-builder Methode)...\n"
+                "(vendorter MkPFS-Writer)...\n"
             )
             self.task_current_step = 2
             self.root.after(0, lambda: self.status_label.config(
@@ -12046,8 +11898,8 @@ class PS5ConverterGUI:
               "https://github.com/EchoStretch")
         _link("ELF Arsenal – Releases (soniciso)",
               "https://git.etawen.dev/soniciso/elf-arsenal/releases")
-        _link("PS5 exFAT Builder – Releases (kerrdec97)",
-              "https://github.com/kerrdec97/ps5-exfat-builder/releases")
+        _link("MkPFS – Releases (PSBrew)",
+              "https://github.com/PSBrew/MkPFS")
         _link("itsPLK @ GitHub",
               "https://github.com/itsPLK")
         _link("Gezine @ GitHub",
@@ -15005,4 +14857,5 @@ if __name__ == "__main__":
     root.after(2000, lambda: threading.Thread(target=_ensure_av_exclusion, daemon=True).start())
 
     root.mainloop()
+
 

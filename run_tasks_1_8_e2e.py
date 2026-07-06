@@ -63,6 +63,44 @@ def _resolve_game_folder(*candidates: Path) -> Path | None:
     return None
 
 
+def _resolve_dump_dir(repo: Path, dump_arg: str) -> Path:
+    """Resolve the dump directory from the user argument or local fallbacks.
+
+    Args:
+        repo: Repository root.
+        dump_arg: User-provided dump path, absolute or relative.
+
+    Returns:
+        Existing dump directory path.
+
+    Raises:
+        FileNotFoundError: When no suitable dump directory can be found.
+    """
+    candidates: list[Path] = []
+    raw_path = Path(dump_arg).expanduser()
+    if raw_path.is_absolute():
+        candidates.append(raw_path)
+    else:
+        candidates.append((repo / raw_path).resolve())
+        candidates.append(raw_path.resolve())
+
+    candidates.extend(
+        [
+            (repo / "_dummy_inputs" / "DummyDump").resolve(),
+            (repo / "Diverses" / "_dummy_inputs" / "DummyDump").resolve(),
+        ]
+    )
+
+    resolved = _resolve_game_folder(*candidates)
+    if resolved is not None:
+        return resolved.resolve()
+
+    raise FileNotFoundError(
+        "Dump-Ordner nicht gefunden: "
+        f"{raw_path} (auch keine lokalen Fallbacks wie _dummy_inputs/DummyDump gefunden)"
+    )
+
+
 def _run_cli_dump_validator(path: Path, output_json: Path) -> tuple[bool, str]:
     cmd = [
         sys.executable,
@@ -94,6 +132,23 @@ def _run_task(name: str, fn, result_store: dict, logs: dict, task_log: list[str]
         return False
 
 
+def _normalize_task_selector(task: str | None) -> str | None:
+    """Normalize a user-supplied task selector to the canonical task key.
+
+    Args:
+        task: User-supplied task token such as ``A1`` or ``A8``.
+
+    Returns:
+        Canonical task key like ``A1`` when recognized, otherwise ``None``.
+    """
+    if task is None:
+        return None
+    normalized = task.strip().upper()
+    if normalized in {f"A{i}" for i in range(1, 9)}:
+        return normalized
+    return None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="E2E-Runner fuer Aufgaben 1-8")
     parser.add_argument("--dump", default="DumpA", help="Pfad zum Dump-Ordner")
@@ -117,10 +172,19 @@ def main() -> int:
         default="",
         help="Pfad zu bestehender .ffpfsc-Datei aus Aufgabe 1 (fuer --skip-a1)",
     )
+    parser.add_argument(
+        "--task",
+        default="",
+        help="Nur eine Aufgabe ausfuehren (A1 bis A8), um Haenger gezielt zu isolieren",
+    )
     args = parser.parse_args()
 
+    selected_task: str | None = _normalize_task_selector(args.task)
+    if args.task and selected_task is None:
+        raise ValueError("--task muss A1, A2, A3, A4, A5, A6, A7 oder A8 sein")
+
     repo = Path(__file__).resolve().parent
-    dump_dir = (repo / args.dump).resolve() if not os.path.isabs(args.dump) else Path(args.dump)
+    dump_dir = _resolve_dump_dir(repo, args.dump)
 
     if args.ffpkg:
         ffpkg_path = Path(args.ffpkg).resolve() if not os.path.isabs(args.ffpkg) else Path(args.ffpkg)
@@ -174,6 +238,69 @@ def main() -> int:
     try:
         if not dump_dir.is_dir():
             raise FileNotFoundError(f"Dump-Ordner nicht gefunden: {dump_dir}")
+
+        if selected_task is not None:
+            single_results: dict[str, str] = {}
+            single_logs: dict[str, str] = {}
+
+            def _single_run(label: str, fn) -> None:
+                _prep()
+                _run_task(label, fn, single_results, single_logs, _task_log)
+
+            if selected_task == "A1":
+                _single_run("A1_pack_folder_to_ffpfsc", lambda: app._mode_pack_folder(str(dump_dir), str(out_dir)))
+            elif selected_task == "A2":
+                if not a1_out.exists():
+                    raise FileNotFoundError(f"A1-Artefakt fehlt fuer A2: {a1_out}")
+                _single_run("A2_ffpfsc_to_exfat", lambda: app._mode_unpack_to_exfat(str(a1_out), str(out_dir)))
+            elif selected_task == "A3":
+                if not a2_out.exists():
+                    raise FileNotFoundError(f"A2-Artefakt fehlt fuer A3: {a2_out}")
+                _single_run("A3_exfat_to_ffpfsc", lambda: app._mode_pack_file(str(a2_out), str(a3_out)))
+            elif selected_task == "A4":
+                if not a3_out.exists():
+                    raise FileNotFoundError(f"A3-Artefakt fehlt fuer A4: {a3_out}")
+                _single_run("A4_ffpfsc_to_game_folder", lambda: app._mode_unpack_to_game_folder(str(a3_out), str(out_dir)))
+            elif selected_task == "A5":
+                if not a2_out.exists():
+                    raise FileNotFoundError(f"A2-Artefakt fehlt fuer A5: {a2_out}")
+                _single_run("A5_exfat_to_game_folder", lambda: app._mode_exfat_to_folder(str(a2_out), str(a5_out)))
+            elif selected_task == "A6":
+                if not ffpkg_path or not ffpkg_path.is_file():
+                    raise FileNotFoundError("FFPKG-Datei fehlt fuer A6")
+                _single_run("A6_ffpkg_to_ffpfsc", lambda: app._mode_ffpkg_to_ffpfsc(str(ffpkg_path), str(out_dir)))
+            elif selected_task == "A7":
+                single_results["A7_fakelib_manager"] = "MANUAL_REQUIRED"
+            elif selected_task == "A8":
+                a8_ok_json = out_dir / "a8_ok.json"
+                a8_fail_json = out_dir / "a8_fail.json"
+                ok_cli_ok, ok_tail = _run_cli_dump_validator(dump_dir, a8_ok_json)
+                single_results["A8_OK_dump_validator"] = "PASS" if ok_cli_ok else "FAIL"
+                if ok_tail.strip():
+                    single_logs["A8_OK_dump_validator"] = ok_tail
+
+                broken = out_dir / "_tmp_dump_broken"
+                if broken.exists():
+                    shutil.rmtree(broken, ignore_errors=True)
+                broken.mkdir(parents=True, exist_ok=True)
+                (broken / "README.txt").write_text("intentionally broken dump\n", encoding="utf-8")
+
+                ok_cli_fail, fail_tail = _run_cli_dump_validator(broken, a8_fail_json)
+                single_results["A8_FAIL_dump_validator"] = "PASS" if not ok_cli_fail else "FAIL"
+                if fail_tail.strip():
+                    single_logs["A8_FAIL_dump_validator"] = fail_tail
+
+            report = {
+                "timestamp": datetime.now().isoformat(timespec="seconds"),
+                "results": single_results,
+                "output_dir": str(out_dir),
+                "logs": single_logs,
+                "selected_task": selected_task,
+            }
+            report_path = out_dir / f"e2e_report_{selected_task.lower()}.json"
+            report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(json.dumps({"output_dir": str(out_dir), "report": str(report_path), "results": single_results}, indent=2, ensure_ascii=False))
+            return 0
 
         is_admin = _is_admin()
 

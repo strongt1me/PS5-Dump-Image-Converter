@@ -111,16 +111,12 @@ foreach ($requiredFile in $requiredFiles) {
     }
 }
 
-# MkPFS 0.0.9 muss entweder als ZIP oder als entpackter Quellordner vorliegen
-$mkpfsZipOk = Test-Path "MkPFS-0.0.9.zip"
+# MkPFS 0.0.9 muss als entpackter Quellordner vorliegen
 $mkpfsSrcOk = Test-Path "MkPFS-0.0.9\mkpfs\__init__.py"
-if (-not ($mkpfsZipOk -or $mkpfsSrcOk)) {
-    Write-Host "      FEHLER: MkPFS 0.0.9 fehlt (erwartet: MkPFS-0.0.9.zip ODER MkPFS-0.0.9\\mkpfs\\__init__.py)" -ForegroundColor Red
+if (-not $mkpfsSrcOk) {
+    Write-Host "      FEHLER: MkPFS 0.0.9 fehlt (erwartet: MkPFS-0.0.9\\mkpfs\\__init__.py)" -ForegroundColor Red
     $missingFiles += "MkPFS 0.0.9"
 } else {
-    if ($mkpfsZipOk) {
-        Write-Host "      OK: MkPFS-0.0.9.zip" -ForegroundColor Green
-    }
     if ($mkpfsSrcOk) {
         Write-Host "      OK: MkPFS-0.0.9\\mkpfs\\__init__.py" -ForegroundColor Green
     }
@@ -128,7 +124,7 @@ if (-not ($mkpfsZipOk -or $mkpfsSrcOk)) {
 
 if ($missingFiles.Count -gt 0) {
     Write-Host ""
-    Write-Host "FEHLER: Pflicht-Dateien fehlen. Bitte alle Dateien aus dem ZIP entpacken." -ForegroundColor Red
+    Write-Host "FEHLER: Pflicht-Dateien fehlen. Bitte den Quellordner vollständig bereitstellen." -ForegroundColor Red
     exit 1
 }
 
