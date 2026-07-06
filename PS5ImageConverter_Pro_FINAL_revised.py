@@ -2720,30 +2720,67 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Minimieren fehlgeschlagen: %s", exc)
 
+    def _find_app_icon_file(self) -> str:
+        """Findet app_icon.ico im Runtime-/Bundle-Kontext."""
+        search_roots = []
+        meipass = getattr(sys, "_MEIPASS", "")
+        if meipass:
+            search_roots.append(str(meipass))
+
+        runtime_root = os.path.dirname(
+            sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+        )
+        search_roots.extend([runtime_root, os.getcwd()])
+
+        seen_roots: set[str] = set()
+        for root in search_roots:
+            norm_root = os.path.abspath(root)
+            if norm_root in seen_roots:
+                continue
+            seen_roots.add(norm_root)
+            candidate = os.path.join(norm_root, "app_icon.ico")
+            if os.path.isfile(candidate):
+                return candidate
+        return ""
+
+    def _apply_icon_to_window(self, win: tk.Misc) -> None:
+        """Setzt das App-Icon mit app_icon.ico als bevorzugter Quelle."""
+        try:
+            icon_file = self._find_app_icon_file()
+            if sys.platform == "win32" and icon_file:
+                win.iconbitmap(icon_file)
+                return
+
+            if icon_file:
+                img = ImageTk.PhotoImage(Image.open(icon_file))
+                win.iconphoto(True, img)
+                setattr(win, "_icon_ref", img)
+                return
+
+            ico_data = base64.b64decode(_APP_ICON_ICO_B64)
+            if sys.platform == "win32":
+                import tempfile as _tf
+                tmp = _tf.NamedTemporaryFile(suffix=".ico", delete=False)
+                tmp.write(ico_data)
+                tmp.close()
+                win.iconbitmap(tmp.name)
+                win.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
+                return
+
+            png_data = base64.b64decode(_APP_ICON_PNG32_B64)
+            img = ImageTk.PhotoImage(Image.open(io.BytesIO(png_data)))
+            win.iconphoto(True, img)
+            setattr(win, "_icon_ref", img)
+        except Exception as exc:
+            logger.debug("App-Icon konnte nicht gesetzt werden: %s", exc)
+
     def _apply_icon_to_toplevel(self, win: "tk.Toplevel") -> None:
         """Setzt das App-Icon (app_icon.ico) auf ein beliebiges Toplevel-Fenster.
 
         Identisch mit _apply_window_icon, aber für Toplevel-Fenster (nicht root).
         Wird von JS Loader, Credits, Theme-Dialog, Info-Popup usw. genutzt.
         """
-        try:
-            ico_data = base64.b64decode(_APP_ICON_ICO_B64)
-            if sys.platform == "win32":
-                import tempfile as _tf_tl
-                _tmp = _tf_tl.NamedTemporaryFile(suffix=".ico", delete=False)
-                _tmp.write(ico_data)
-                _tmp.close()
-                win.iconbitmap(_tmp.name)
-                win.after(5000, lambda p=_tmp.name: os.unlink(p) if os.path.exists(p) else None)
-            else:
-                from PIL import Image as _PILImg_tl, ImageTk as _PILITk_tl
-                import io as _io_tl
-                png_data = base64.b64decode(_APP_ICON_PNG32_B64)
-                _ph = _PILITk_tl.PhotoImage(_PILImg_tl.open(_io_tl.BytesIO(png_data)))
-                win.iconphoto(True, _ph)
-                win._icon_ref = _ph  # GC-Schutz
-        except Exception as exc:
-            logger.debug("Toplevel-Icon konnte nicht gesetzt werden: %s", exc)
+        self._apply_icon_to_window(win)
 
     def _apply_window_icon(self) -> None:
         """Setzt das App-Icon auf das Hauptfenster.
@@ -2756,24 +2793,7 @@ class PS5ConverterGUI:
         iconbitmap() gesetzt. Die Datei wird nach 5 Sekunden automatisch
         gelöscht (nach dem Laden haelt Windows eine interne Kopie).
         """
-        try:
-            ico_data = base64.b64decode(_APP_ICON_ICO_B64)
-            if sys.platform == "win32":
-                import tempfile as _tf
-                tmp = _tf.NamedTemporaryFile(suffix=".ico", delete=False)
-                tmp.write(ico_data)
-                tmp.close()
-                self.root.iconbitmap(tmp.name)
-                # Aufraeumen nach 5 Sekunden (Windows haelt interne Kopie)
-                self.root.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
-            else:
-                png_data = base64.b64decode(_APP_ICON_PNG32_B64)
-                img = ImageTk.PhotoImage(Image.open(io.BytesIO(png_data)))
-                self.root.iconphoto(True, img)
-                # Referenz halten damit GC das Bild nicht löscht
-                self._icon_photo = img
-        except Exception as exc:
-            logger.debug("App-Icon konnte nicht gesetzt werden: %s", exc)
+        self._apply_icon_to_window(self.root)
 
     def _show_context_menu(self, event: tk.Event) -> None:
         """Zeigt das Rechtsklick-Kontextmenü an."""
@@ -12161,20 +12181,7 @@ class PS5ConverterGUI:
 
         # App-Icon auf FTP-Fenster setzen (identisch mit Hauptfenster)
         try:
-            import base64 as _b64_icon, io as _io_icon, tempfile as _tf_icon
-            _ico_data = base64.b64decode(_APP_ICON_ICO_B64)
-            if sys.platform == "win32":
-                _tmp_ico = _tf_icon.NamedTemporaryFile(suffix=".ico", delete=False)
-                _tmp_ico.write(_ico_data)
-                _tmp_ico.close()
-                win.iconbitmap(_tmp_ico.name)
-                win.after(5000, lambda p=_tmp_ico.name: os.unlink(p) if os.path.exists(p) else None)
-            else:
-                from PIL import Image as _PILImg2, ImageTk as _PILITk2
-                _png_data = base64.b64decode(_APP_ICON_PNG32_B64)
-                _ftp_icon_photo = _PILITk2.PhotoImage(_PILImg2.open(_io_icon.BytesIO(_png_data)))
-                win.iconphoto(True, _ftp_icon_photo)
-                win._ftp_icon_ref = _ftp_icon_photo
+            self._apply_icon_to_window(win)
         except Exception:
             pass
 
