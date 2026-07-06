@@ -1678,11 +1678,10 @@ class PS5ConverterGUI:
                 report_root = "ps5converter_report"
                 report_parent = Path(self._get_config_path()).parent
 
-            out_dir = report_parent / f"{report_root}_json"
-            os.makedirs(out_dir, exist_ok=True)
+            os.makedirs(report_parent, exist_ok=True)
 
             filename = f"{report_root}.json"
-            report_path = os.path.join(out_dir, filename)
+            report_path = os.path.join(report_parent, filename)
             with open(report_path, "w", encoding="utf-8") as fh:
                 json.dump(report, fh, ensure_ascii=False, indent=2)
             self._task_report_path = report_path
@@ -9181,11 +9180,11 @@ class PS5ConverterGUI:
 
                     # JSON-Bericht automatisch neben der geprüften Quelle speichern
                     try:
-                        _raw_title = os.path.basename(src.rstrip("/\\"))
-                        _safe_title = re.sub(r'[\\/:*?"<>|]', '_', os.path.splitext(_raw_title)[0]).strip() or "ps5_validator"
-                        report_dir = os.path.join(os.path.dirname(src.rstrip("/\\")), f"{_safe_title}_json")
-                        os.makedirs(report_dir, exist_ok=True)
-                        report_path = os.path.join(report_dir, f"{_safe_title}.json")
+                            _raw_title = os.path.basename(src.rstrip("/\\"))
+                            _safe_title = re.sub(r'[\\/:*?"<>|]', '_', os.path.splitext(_raw_title)[0]).strip() or "ps5_validator"
+                            report_dir = os.path.dirname(src.rstrip("/\\"))
+                            os.makedirs(report_dir, exist_ok=True)
+                            report_path = os.path.join(report_dir, f"{_safe_title}.json")
                         with open(report_path, "w", encoding="utf-8") as _f:
                             json.dump(result.to_dict(), _f, indent=2, ensure_ascii=False)
                         self._append_to_log("[INFO] JSON-Bericht gespeichert: %s\n" % report_path)
