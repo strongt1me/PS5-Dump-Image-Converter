@@ -6336,7 +6336,10 @@ class PS5ConverterGUI:
             e = self._step_end()
             mapped = s + copy_frac * (e - s)
             # Nur vorwärts – niemals zurück
-            new_val = max(self.task_progress, min(mapped, e * 0.98))  # Max 98% während Copy läuft
+            # Schrittrelativer Safety-Cap (98% des aktuellen Schritts),
+            # damit spaete Schritte (z.B. 60..95) nicht bei ~93% festklemmen.
+            step_cap = s + (e - s) * 0.98
+            new_val = max(self.task_progress, min(mapped, step_cap))
             if new_val > self.task_progress:
                 self.task_progress = new_val
 
@@ -6353,8 +6356,11 @@ class PS5ConverterGUI:
             _cur = self.task_progress
             _s = self._step_start()
             _e = self._step_end()
-            # Creep-Decke setzen: maximal 1% vor dem aktuellen Schritt-Ende
-            _pulse_ceiling = max(_s, min(_e - 1.0, _e * 0.95))
+            # Creep-Decke schrittrelativ setzen:
+            # maximal 95% des aktuellen Schrittbereichs und nie spaeter als 1%
+            # vor dem Schritt-Ende.
+            _step_rel_95 = _s + (_e - _s) * 0.95
+            _pulse_ceiling = max(_s, min(_e - 1.0, _step_rel_95))
             # Nur creep wenn wir unten sind und wenn echte Daten nicht den Fortschritt treiben
             if _cur < _pulse_ceiling:
                 self.task_progress = min(
