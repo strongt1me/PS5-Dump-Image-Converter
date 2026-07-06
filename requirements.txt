@@ -1,5 +1,5 @@
-Pillow==12.2.0
+Pillow==12.3.0
 cryptography==49.0.0
-paramiko==3.5.1
+paramiko==5.0.0
 zstandard==0.25.0
 zlib-ng
