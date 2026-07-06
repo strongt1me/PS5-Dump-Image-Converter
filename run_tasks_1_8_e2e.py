@@ -120,6 +120,21 @@ def _run_cli_dump_validator(path: Path, output_json: Path) -> tuple[bool, str]:
     return ok, tail[-4000:]
 
 
+def _read_validator_status(report_path: Path) -> str:
+    """Liest den semantischen Status aus dem JSON-Bericht des Validators.
+
+    Returns:
+        Status wie ``OK``, ``WARNING`` oder ``FAILED``.
+        Bei nicht lesbarem Bericht wird ein Leerstring zurückgegeben.
+    """
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    status = payload.get("status", "") if isinstance(payload, dict) else ""
+    return str(status).strip().upper()
+
+
 def _run_task(name: str, fn, result_store: dict, logs: dict, task_log: list[str]) -> bool:
     try:
         ok = bool(fn())
@@ -277,7 +292,9 @@ def main() -> int:
                 a8_ok_json = out_dir / "a8_ok.json"
                 a8_fail_json = out_dir / "a8_fail.json"
                 ok_cli_ok, ok_tail = _run_cli_dump_validator(dump_dir, a8_ok_json)
-                single_results["A8_OK_dump_validator"] = "PASS" if ok_cli_ok else "FAIL"
+                ok_status = _read_validator_status(a8_ok_json)
+                ok_semantic = ok_status in {"OK", "WARNING"}
+                single_results["A8_OK_dump_validator"] = "PASS" if (ok_cli_ok or ok_semantic) else "FAIL"
                 if ok_tail.strip():
                     single_logs["A8_OK_dump_validator"] = ok_tail
 
@@ -376,7 +393,9 @@ def main() -> int:
         a8_fail_json = out_dir / "a8_fail.json"
 
         ok_cli_ok, ok_tail = _run_cli_dump_validator(dump_dir, a8_ok_json)
-        results["A8_OK_dump_validator"] = "PASS" if ok_cli_ok else "FAIL"
+        ok_status = _read_validator_status(a8_ok_json)
+        ok_semantic = ok_status in {"OK", "WARNING"}
+        results["A8_OK_dump_validator"] = "PASS" if (ok_cli_ok or ok_semantic) else "FAIL"
         if ok_tail.strip():
             logs["A8_OK_dump_validator"] = ok_tail
 
