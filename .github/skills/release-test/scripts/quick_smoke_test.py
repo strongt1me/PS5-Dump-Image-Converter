@@ -10,6 +10,7 @@ import sys
 import subprocess
 import time
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -134,9 +135,19 @@ class QuickSmokeTest:
         cmd = f'python "{str(test_file)}"'
         success, stdout, stderr = self.run_command(cmd, timeout=60)
         
-        # Prüfe auf bestandene Tests im Output
-        passed_count = stdout.count("CHECK")
-        details = f"{passed_count} Tests bestanden" if passed_count > 0 else "Keine Tests bestanden"
+        # Prüfe auf die echte Zusammenfassung des Build-Scripts.
+        # test_build_ready.py meldet z. B. "Ergebnis: 7/7 Tests bestanden"
+        # und verwendet [OK]-Marker, aber kein Literal "CHECK".
+        passed_count = 0
+        clean_stdout = re.sub(r"\x1b\[[0-9;]*m", "", stdout)
+        summary_match = re.search(r"Ergebnis:\s*(\d+)\s*/\s*(\d+)\s*Tests bestanden", clean_stdout)
+        if summary_match:
+            passed_count = int(summary_match.group(1))
+            total_count = int(summary_match.group(2))
+            details = f"{passed_count}/{total_count} Tests bestanden"
+        else:
+            passed_count = clean_stdout.count("[OK]")
+            details = f"{passed_count} Checks erkannt" if passed_count > 0 else "Keine Tests erkannt"
         
         self.print_check("Build-Readiness", success, details)
         self.results["build"] = success
