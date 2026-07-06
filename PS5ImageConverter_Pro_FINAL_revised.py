@@ -8039,6 +8039,17 @@ class PS5ConverterGUI:
                         f"{verification_result.get('detail', 'OK')}\n"
                     )
 
+                # Der eigentliche Abschlussbericht kann je nach Zielgrösse noch
+                # kurz Zeit benötigen. Sobald die Verifikation ok ist, den
+                # sichtbaren Fortschritt bereits an das Ende ziehen, damit die
+                # Anzeige nicht auf ~93 % stehen bleibt.
+                if completion_ok:
+                    self.task_progress = max(self.task_progress, 99.9)
+                    self.task_displayed = max(self.task_displayed, 99.9)
+                    pe = getattr(self, "progress_engine", None)
+                    if pe is not None:
+                        pe.finish_all()
+
                 report_path = self._write_task_report(
                     mode=mode,
                     src=src,
