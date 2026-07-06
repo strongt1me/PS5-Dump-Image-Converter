@@ -14298,6 +14298,32 @@ class PS5ConverterGUI:
                   font=("Segoe UI", 10, "bold"), padx=10, pady=2,
                   command=_browse_file).pack(side="left")
 
+        # Schnellauswahl: .elf-Dateien aus helloworld direkt senden
+        quick_elf_row = tk.Frame(file_frame, bg=c["bg_card"])
+        quick_elf_row.pack(fill="x", padx=10, pady=(0, 8))
+
+        tk.Label(quick_elf_row, text="Helloworld ELF:", width=16, anchor="w",
+                 bg=c["bg_card"], fg=c["fg_primary"],
+                 font=("Segoe UI", 10)).pack(side="left")
+
+        _helloworld_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "helloworld")
+        _helloworld_elfs = []
+        if _os.path.isdir(_helloworld_dir):
+            _helloworld_elfs = sorted(
+                [f for f in _os.listdir(_helloworld_dir) if f.lower().endswith(".elf")],
+                key=str.lower,
+            )
+
+        quick_elf_var = tk.StringVar(value=_helloworld_elfs[0] if _helloworld_elfs else "")
+        quick_elf_combo = ttk.Combobox(
+            quick_elf_row,
+            textvariable=quick_elf_var,
+            values=_helloworld_elfs,
+            state="readonly" if _helloworld_elfs else "disabled",
+            width=42,
+        )
+        quick_elf_combo.pack(side="left", fill="x", expand=True, padx=(4, 8))
+
         # ── Aktions-Buttons ──────────────────────────────────────────
         action_frame = tk.Frame(main, bg=c["bg_main"])
         action_frame.pack(fill="x", pady=(0, 8))
@@ -14312,20 +14338,20 @@ class PS5ConverterGUI:
             except Exception:
                 pass
 
-        def _send_file(port_var, label):
-            """Sendet die gewählte Datei via TCP-Socket."""
+        def _send_path(path: str, port_var, label: str):
+            """Sendet einen konkreten Dateipfad via TCP-Socket."""
             ip = ip_var.get().strip()
             try:
                 port = int(port_var.get().strip())
             except ValueError:
                 _log(f"[FEHLER] Ungültige Port-Nummer: {port_var.get()}")
                 return
-            path = file_var.get().strip()
             if not path or not _os.path.isfile(path):
-                _log("[FEHLER] Keine gültige Datei gewählt.")
+                _log(f"[FEHLER] Datei nicht gefunden: {path}")
                 return
             _save_ip_ini()
             _log(f"[{label}] Sende {_os.path.basename(path)} an {ip}:{port} ...")
+
             def _do_send():
                 import socket as _sock
                 try:
@@ -14341,8 +14367,27 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     _e = str(exc)
                     win.after(0, lambda _e=_e: _log(f"[{label}] FEHLER: {_e}"))
+
             import threading as _thr
             _thr.Thread(target=_do_send, daemon=True).start()
+
+        def _send_file(port_var, label):
+            """Sendet die gewählte Datei via TCP-Socket."""
+            path = file_var.get().strip()
+            if not path or not _os.path.isfile(path):
+                _log("[FEHLER] Keine gültige Datei gewählt.")
+                return
+            _send_path(path, port_var, label)
+
+        def _send_quick_elf():
+            """Sendet die im Dropdown ausgewählte Helloworld-ELF-Datei direkt."""
+            selected = quick_elf_var.get().strip()
+            if not selected:
+                _log("[FEHLER] Keine ELF-Datei aus helloworld ausgewählt.")
+                return
+            path = _os.path.join(_helloworld_dir, selected)
+            file_var.set(path)
+            _send_path(path, elf_port_var, "ELF")
 
         # JS senden
         tk.Button(action_frame,
@@ -14361,6 +14406,15 @@ class PS5ConverterGUI:
                   relief="flat", cursor="hand2",
                   font=("Segoe UI", 10, "bold"), padx=16, pady=7,
                   command=lambda: _send_file(elf_port_var, "ELF")).pack(side="left", padx=(0, 8))
+
+        tk.Button(action_frame,
+              text="Helloworld ELF direkt senden",
+              bg=c["accent_btn"], fg="white",
+              activebackground=c["accent_btn_hover"], activeforeground="white",
+              relief="flat", cursor="hand2",
+              font=("Segoe UI", 10, "bold"), padx=16, pady=7,
+              state=("normal" if _helloworld_elfs else "disabled"),
+              command=_send_quick_elf).pack(side="left", padx=(0, 8))
 
         # Log-Server starten/stoppen
         _logserver_state = {"running": False, "server": None}
@@ -14467,6 +14521,10 @@ class PS5ConverterGUI:
         # Willkommens-Nachricht
         _log("Y2JB Remote JS Loader v1.4 – bereit.")
         _log(f"PS5 IP: {ip_var.get()}  |  JS-Port: {js_port_var.get()}  |  ELF-Port: {elf_port_var.get()}")
+        if _helloworld_elfs:
+            _log(f"Helloworld ELF-Schnellzugriff aktiv ({len(_helloworld_elfs)} Dateien).")
+        else:
+            _log("[INFO] Kein helloworld/*.elf gefunden – Schnellzugriff deaktiviert.")
         _log("Workflow: 1. PS5 IP eingeben  2. Datei waehlen (Durchsuchen)  3. JS senden oder ELF senden")
         _log("Log-Server: Startet HTTP-Server auf Port 9099 für PS5-Logs.")
         _log("")
