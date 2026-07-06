@@ -3376,22 +3376,31 @@ class PS5ConverterGUI:
 
         try:
             os.makedirs(candidate, exist_ok=True)
-            probe = os.path.join(candidate, ".ps5conv_tmp_write_test")
-            with open(probe, "w", encoding="utf-8") as fh:
+            fd, probe = tempfile.mkstemp(prefix=".ps5conv_tmp_write_test_", dir=candidate)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("ok")
-            os.remove(probe)
             norm = os.path.normpath(candidate)
             if hasattr(self, "temp_path"):
                 self.temp_path.set(norm)
             self._save_setting("temp_dir", norm)
             return norm
         except Exception as exc:
-            logger.warning("Temp-Ordner nicht nutzbar (%s), nutze System-Temp.", exc)
+            _now = time.monotonic()
+            _last = float(getattr(self, "_temp_warn_last_ts", 0.0) or 0.0)
+            if _now - _last >= 60.0:
+                logger.warning("Temp-Ordner nicht nutzbar (%s), nutze System-Temp.", exc)
+                self._temp_warn_last_ts = _now
             fallback = os.path.normpath(tempfile.gettempdir())
             if hasattr(self, "temp_path"):
                 self.temp_path.set(fallback)
             self._save_setting("temp_dir", fallback)
             return fallback
+        finally:
+            try:
+                if 'probe' in locals() and probe:
+                    os.remove(probe)
+            except OSError:
+                pass
 
     def _browse_temp_dir(self) -> None:
         """Öffnet einen Verzeichnis-Dialog für den Temp-Ordner."""
@@ -6267,7 +6276,12 @@ class PS5ConverterGUI:
                 self._last_engine_output_ts = time.monotonic()
                 if not self._mkpfs_line_visible(line):
                     continue
-                visible_lines.append(line)
+                display_line = re.sub(
+                    r'ETA\s+(\d+(?:\.\d+)?)s',
+                    lambda m: f"ETA {self._fmt_eta(float(m.group(1)))}",
+                    line,
+                )
+                visible_lines.append(display_line)
                 # Fortschrittszeile: [###---]  45% scan
                 m = re.search(r'\[[#\-\s]*\]\s*(\d+(?:\.\d+)?)\s*%', line)
                 if m:
@@ -10577,10 +10591,10 @@ class PS5ConverterGUI:
                             rate = cur / el
                             pct = (min(99.0, cur / total_bytes[0] * 100.0)
                                    if total_bytes[0] else 0)
-                            el_str = "Elapsed: %dm %02ds" % (int(el // 60), int(el % 60))
+                            el_str = f"Laufzeit: {self._fmt_eta(el)}"
                             if rate > 0 and total_bytes[0] and cur < total_bytes[0]:
                                 left = (total_bytes[0] - cur) / rate
-                                eta = "~%dm %02ds left" % (int(left) // 60, int(left) % 60)
+                                eta = f"ETA: {self._fmt_eta(left)}"
                             else:
                                 eta = "Fast fertig..."
                             self.task_progress = pct
