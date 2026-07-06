@@ -2891,6 +2891,12 @@ class PS5ConverterGUI:
             self.root.attributes("-fullscreen", False)
         except Exception as exc:
             logger.debug("Vollbild-Deaktivierung fehlgeschlagen: %s", exc)
+        try:
+            # Fallback-Pfad: falls ein WM -fullscreen nicht unterstützt,
+            # eventuell gesetztes overrideredirect wieder zurücknehmen.
+            self.root.overrideredirect(False)
+        except Exception as exc:
+            logger.debug("Rahmen-Wiederherstellung fehlgeschlagen: %s", exc)
         self.root.geometry(f"{target_w}x{target_h}+{cx}+{cy}")
         self.is_fullscreen = False
         self._sync_docked_windows()
@@ -2899,7 +2905,16 @@ class PS5ConverterGUI:
         """Wechselt in den echten Vollbildmodus (rahmenlos, gesamter Bildschirm)."""
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        self.root.geometry(f"{sw}x{sh}+0+0")
+        try:
+            # Echter OS-Vollbildmodus: ohne Taskleiste und ohne Fensterrahmen.
+            self.root.attributes("-fullscreen", True)
+        except Exception as exc:
+            logger.debug("OS-Vollbild nicht verfügbar, nutze Fallback: %s", exc)
+            try:
+                self.root.overrideredirect(True)
+            except Exception as exc2:
+                logger.debug("overrideredirect-Fallback fehlgeschlagen: %s", exc2)
+            self.root.geometry(f"{sw}x{sh}+0+0")
         self.is_fullscreen = True
         self._sync_docked_windows()
 
