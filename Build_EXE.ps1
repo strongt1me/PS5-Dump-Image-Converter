@@ -6,14 +6,7 @@
 # =============================================================================
 
 param(
-    [switch]$SkipSigning,
-    [switch]$MitOnly,
-    [string]$SignPfxPath = "",
-    [SecureString]$SignPfxPassword = $null,
-    [string]$SignPfxSecretEnvVar = "PS5_SIGN_PFX_SECRET",
-    [switch]$SignEV,
-    [string]$SignTimestampUrl = "http://timestamp.digicert.com",
-    [switch]$RequireSignature
+    [switch]$MitOnly
 )
 
 # --- Selbst-Neustart mit Bypass-Policy (loest "Ausfuehrung deaktiviert"-Fehler) ---
@@ -56,129 +49,8 @@ Set-Location -Path $PSScriptRoot
 $EXE_VERSION = "v1.7.76"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
-# MIT-only ist der Standardmodus: keine EV/PFX/Store-Signierung.
-# -MitOnly kann optional explizit gesetzt werden, ist aber nicht erforderlich.
-$MitOnlyActive = $true
-if ($MitOnly -or $MitOnlyActive) {
-    if ($SignEV -or $RequireSignature -or -not [string]::IsNullOrWhiteSpace($SignPfxPath) -or $SignPfxPassword) {
-        Write-Host "" 
-        Write-Host "FEHLER: MIT-only Modus ist aktiv. EV/PFX/Zertifikat-Parameter sind deaktiviert." -ForegroundColor Red
-        Write-Host "        Bitte Signatur-Parameter entfernen und nur MIT-Lizenz-Flow verwenden." -ForegroundColor Yellow
-        Read-Host "Druecke Enter zum Beenden"
-        exit 1
-    }
-    $SkipSigning = $true
-}
-
-function Register-MitLicense {
-    param(
-        [string]$Version
-    )
-
-    $regPath = "HKCU:\Software\PS5DumpImageConverter\License"
-    $year = (Get-Date).Year
-    $mitLicenseText = @"
-MIT License
-
-Copyright (c) $year PS5 Dump & Image Converter Contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-"@
-
-    if (-not (Test-Path $regPath)) {
-        New-Item -Path $regPath -Force | Out-Null
-    }
-
-    $sha = [System.Security.Cryptography.SHA256]::Create()
-    try {
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($mitLicenseText)
-        $hashBytes = $sha.ComputeHash($bytes)
-        $hashHex = [BitConverter]::ToString($hashBytes).Replace("-", "").ToLowerInvariant()
-    } finally {
-        $sha.Dispose()
-    }
-
-    New-ItemProperty -Path $regPath -Name "LicenseName" -Value "MIT" -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $regPath -Name "SPDX" -Value "MIT" -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $regPath -Name "LicenseText" -Value $mitLicenseText -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $regPath -Name "LicenseHashSHA256" -Value $hashHex -PropertyType String -Force | Out-Null
-    $registeredAt = (Get-Date).ToUniversalTime().ToString("o")
-    New-ItemProperty -Path $regPath -Name "RegisteredAtUTC" -Value $registeredAt -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $regPath -Name "RegisteredBy" -Value $env:USERNAME -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $regPath -Name "BuildVersion" -Value $Version -PropertyType String -Force | Out-Null
-
-    return [PSCustomObject]@{
-        RegistryPath     = $regPath
-        LicenseName      = "MIT"
-        SPDX             = "MIT"
-        LicenseHashSHA256 = $hashHex
-        RegisteredAtUTC  = $registeredAt
-        BuildVersion     = $Version
-    }
-}
-
-function Get-CodeSigningCertificates {
-    $stores = @("Cert:\CurrentUser\My", "Cert:\LocalMachine\My")
-    $found = @()
-    foreach ($store in $stores) {
-        try {
-            $found += Get-ChildItem $store -ErrorAction Stop |
-                Where-Object EnhancedKeyUsageList -Match "Code Signing"
-        } catch {
-            # Zugriff auf Store kann je nach Kontext eingeschraenkt sein.
-        }
-    }
-    return $found
-}
-
-function Test-SigningPrerequisites {
-    param(
-        [switch]$SkipSigning,
-        [switch]$RequireSignature,
-        [switch]$SignEV,
-        [string]$SignPfxPath
-    )
-
-    if (-not $RequireSignature) {
-        return
-    }
-
-    if ($SkipSigning) {
-        throw "-RequireSignature kann nicht mit -SkipSigning kombiniert werden."
-    }
-
-    if ($SignEV) {
-        Write-Host "      Hinweis: EV-Modus aktiv. USB-Token und Middleware muessen verfuegbar sein." -ForegroundColor DarkGray
-        return
-    }
-
-    if (-not [string]::IsNullOrWhiteSpace($SignPfxPath)) {
-        if (-not (Test-Path $SignPfxPath)) {
-            throw "PFX-Datei fuer Pflichtsignierung nicht gefunden: $SignPfxPath"
-        }
-        return
-    }
-
-    $certs = Get-CodeSigningCertificates
-    if (-not $certs -or $certs.Count -eq 0) {
-        throw "Pflichtsignierung aktiv, aber kein Code-Signing-Zertifikat im Cert:\CurrentUser\My oder Cert:\LocalMachine\My gefunden."
-    }
+if ($MitOnly) {
+    Write-Host "      Hinweis: -MitOnly ist veraltet und hat keine zusaetzliche Wirkung." -ForegroundColor DarkGray
 }
 
 Write-Host ""
@@ -195,7 +67,6 @@ try {
     Write-Host "      $pyVer gefunden." -ForegroundColor Green
 } catch {
     Write-Host "FEHLER: Python nicht gefunden. Bitte von https://python.org installieren." -ForegroundColor Red
-    Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
 
@@ -208,7 +79,6 @@ Write-Host "      PyInstaller installieren/aktualisieren..." -ForegroundColor Gr
 pip install pyinstaller --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: PyInstaller konnte nicht installiert werden." -ForegroundColor Red
-    Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
 $pyiVer = pyinstaller --version 2>&1
@@ -224,56 +94,6 @@ pip install zlib-ng --upgrade --quiet
 Write-Host "      paramiko installieren/aktualisieren (SFTP-Unterstuetzung)..." -ForegroundColor Gray
 pip install paramiko --upgrade --quiet
 Write-Host "      Alle Pakete installiert." -ForegroundColor Green
-
-# --- Signatur-Vorpruefung (nur bei Pflichtsignierung) ---
-Write-Host ""
-Write-Host "[2a/5] Pruefe Signatur-Voraussetzungen..." -ForegroundColor Yellow
-if ($SkipSigning) {
-    Write-Host "      MIT-only Modus aktiv: Signaturpruefung uebersprungen." -ForegroundColor Green
-} else {
-    try {
-        Test-SigningPrerequisites -SkipSigning:$SkipSigning -RequireSignature:$RequireSignature -SignEV:$SignEV -SignPfxPath $SignPfxPath
-        Write-Host "      Signatur-Vorpruefung: OK" -ForegroundColor Green
-    } catch {
-        Write-Host "      FEHLER: $($_.Exception.Message)" -ForegroundColor Red
-        Read-Host "Druecke Enter zum Beenden"
-        exit 1
-    }
-}
-
-# --- MIT-Lizenz in Windows registrieren (vor EXE-Erstellung) ---
-Write-Host ""
-Write-Host "[2b/5] Registriere MIT-Lizenz in Windows (HKCU)..." -ForegroundColor Yellow
-try {
-    $licenseInfo = Register-MitLicense -Version $EXE_VERSION
-    Write-Host "      MIT-Lizenz erfolgreich registriert." -ForegroundColor Green
-    Write-Host "      Registry: $($licenseInfo.RegistryPath)" -ForegroundColor DarkGray
-    Write-Host "      SPDX: $($licenseInfo.SPDX)" -ForegroundColor DarkGray
-    Write-Host "      Hash (SHA256): $($licenseInfo.LicenseHashSHA256)" -ForegroundColor DarkGray
-    Write-Host "      Zeit (UTC): $($licenseInfo.RegisteredAtUTC)" -ForegroundColor DarkGray
-
-    # Gegenprüfung: Werte aus Registry zurücklesen und mit Soll vergleichen
-    $regCheck = Get-ItemProperty -Path $licenseInfo.RegistryPath -ErrorAction Stop
-    if ($regCheck.SPDX -ne $licenseInfo.SPDX) {
-        throw "SPDX-Mismatch (ist '$($regCheck.SPDX)', soll '$($licenseInfo.SPDX)')"
-    }
-    if ($regCheck.LicenseHashSHA256 -ne $licenseInfo.LicenseHashSHA256) {
-        throw "LicenseHashSHA256-Mismatch (Registry ungleich berechnetem Hash)"
-    }
-    if ($regCheck.BuildVersion -ne $licenseInfo.BuildVersion) {
-        throw "BuildVersion-Mismatch (ist '$($regCheck.BuildVersion)', soll '$($licenseInfo.BuildVersion)')"
-    }
-    if ([string]::IsNullOrWhiteSpace([string]$regCheck.RegisteredAtUTC)) {
-        throw "RegisteredAtUTC fehlt in der Registry"
-    }
-
-    Write-Host "      Registry-Verifikation: OK" -ForegroundColor Green
-    Write-Host "      Verifiziertes BuildVersion: $($regCheck.BuildVersion)" -ForegroundColor DarkGray
-} catch {
-    Write-Host "      FEHLER: MIT-Lizenz konnte nicht registriert werden: $($_.Exception.Message)" -ForegroundColor Red
-    Read-Host "Druecke Enter zum Beenden"
-    exit 1
-}
 
 # --- Schritt 3: Pflicht-Dateien pruefen ---
 Write-Host ""
@@ -313,7 +133,6 @@ if (-not ($mkpfsZipOk -or $mkpfsSrcOk)) {
 if ($missingFiles.Count -gt 0) {
     Write-Host ""
     Write-Host "FEHLER: Pflicht-Dateien fehlen. Bitte alle Dateien aus dem ZIP entpacken." -ForegroundColor Red
-    Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
 
@@ -332,7 +151,6 @@ Write-Host "[4/5] Extrahiere App-Icon..." -ForegroundColor Yellow
 python extract_icon.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: Icon-Extraktion fehlgeschlagen." -ForegroundColor Red
-    Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
 Write-Host "      app_icon.ico bereit." -ForegroundColor Green
@@ -349,7 +167,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "Tipp: Fehlermeldung oben lesen. Haeufige Ursachen:" -ForegroundColor Yellow
     Write-Host "  - Fehlende Pakete: pip install paramiko bcrypt" -ForegroundColor Yellow
     Write-Host "  - UPX nicht gefunden: Kein Problem, EXE wird trotzdem erstellt" -ForegroundColor Yellow
-    Read-Host "Druecke Enter zum Beenden"
     exit 1
 }
 
@@ -372,74 +189,4 @@ Write-Host "  Hinweis: Die EXE benoetigt Administratorrechte (UAC-Prompt beim St
 Write-Host "  Hinweis: Antivirenprogramme koennen die EXE faelschlicherweise blockieren." -ForegroundColor Gray
 Write-Host "           In diesem Fall: Ausnahme in Antivirus hinzufuegen." -ForegroundColor Gray
 
-# --- Automatische Signierung ---
-if (-not (Test-Path $exePath)) {
-    Write-Host "" 
-    Write-Host "  Signierung uebersprungen: EXE wurde nicht gefunden." -ForegroundColor Yellow
-} elseif ($SkipSigning) {
-    Write-Host "" 
-    Write-Host "  Signierung uebersprungen (Schalter -SkipSigning aktiv)." -ForegroundColor Yellow
-} else {
-    Write-Host ""
-    Write-Host "[SIGN] Starte automatische EXE-Signierung..." -ForegroundColor Yellow
-    $signScript = Join-Path $PSScriptRoot "Sign_EXE.ps1"
-    if (-not (Test-Path $signScript)) {
-        Write-Host "  FEHLER: Sign_EXE.ps1 wurde nicht gefunden." -ForegroundColor Red
-        if ($RequireSignature) {
-            Read-Host "Druecke Enter zum Beenden"
-            exit 1
-        }
-        Write-Host "  Build bleibt unsigniert (fortgesetzt, da -RequireSignature nicht gesetzt)." -ForegroundColor Yellow
-    } else {
-        $signArgs = @{
-            ExePath = $exePath
-            TimestampUrl = $SignTimestampUrl
-        }
-
-        if ($SignEV) {
-            $signArgs["EV"] = $true
-        } elseif (-not [string]::IsNullOrWhiteSpace($SignPfxPath)) {
-            $signArgs["PfxPath"] = $SignPfxPath
-            $effectivePfxPassword = $SignPfxPassword
-            if ($null -eq $effectivePfxPassword -and -not [string]::IsNullOrWhiteSpace($SignPfxSecretEnvVar)) {
-                $envSecret = [Environment]::GetEnvironmentVariable($SignPfxSecretEnvVar)
-                if (-not [string]::IsNullOrWhiteSpace($envSecret)) {
-                    $effectivePfxPassword = ConvertTo-SecureString -String $envSecret -AsPlainText -Force
-                }
-            }
-            if ($null -ne $effectivePfxPassword) {
-                $signArgs["PfxPassword"] = $effectivePfxPassword
-            }
-        }
-
-        & $signScript @signArgs
-        $signExit = $LASTEXITCODE
-
-        if ($signExit -ne 0) {
-            Write-Host "  Signierung fehlgeschlagen (Exit-Code: $signExit)." -ForegroundColor Red
-            if ($RequireSignature) {
-                Read-Host "Druecke Enter zum Beenden"
-                exit 1
-            }
-            Write-Host "  Build bleibt unsigniert (fortgesetzt, da -RequireSignature nicht gesetzt)." -ForegroundColor Yellow
-        }
-    }
-}
-
-if (Test-Path $exePath) {
-    try {
-        $sig = Get-AuthenticodeSignature -FilePath $exePath
-        if ($sig.Status -eq "Valid") {
-            Write-Host "  Signaturstatus: GUELTIG" -ForegroundColor Green
-        } elseif ($sig.Status -eq "NotSigned") {
-            Write-Host "  Signaturstatus: NICHT SIGNIERT" -ForegroundColor Yellow
-        } else {
-            Write-Host "  Signaturstatus: $($sig.Status)" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "  Signaturstatus konnte nicht ermittelt werden." -ForegroundColor Yellow
-    }
-}
-
 Write-Host ""
-Read-Host "Druecke Enter zum Beenden"
