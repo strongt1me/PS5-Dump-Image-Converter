@@ -10,9 +10,7 @@ param(
 )
 
 # --- Selbst-Neustart mit Bypass-Policy (loest "Ausfuehrung deaktiviert"-Fehler) ---
-if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage" -or
-    (Get-ExecutionPolicy -Scope Process) -eq "Restricted" -or
-    (Get-ExecutionPolicy -Scope Process) -eq "AllSigned") {
+if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
     $restartArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $PSCommandPath)
     foreach ($entry in $PSBoundParameters.GetEnumerator()) {
         $name = [string]$entry.Key
@@ -42,7 +40,6 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage" -or
     exit
 }
 
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
