@@ -98,7 +98,6 @@ Write-Host "[3/5] Pruefe Pflicht-Dateien..." -ForegroundColor Yellow
 $missingFiles = @()
 $requiredFiles = @(
     "PS5ImageConverter_Pro_FINAL_revised.py",
-    "ps5_ufs2tool_data.py",
     "PS5ImageConverter_Pro.spec",
     "app_icon.ico",
     "extract_icon.py"

@@ -91,7 +91,6 @@ def test_data_files():
     
     required_files = {
         'app_icon.ico': 'Anwendungsicon',
-        'ps5_ufs2tool_data.py': 'UFS2-Werkzeug-Daten',
         'helloworld/': 'Helloworld-Verzeichnis',
     }
     

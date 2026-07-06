@@ -26,6 +26,7 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 - Entfernt den veralteten EV-/PFX-/Code-Signing-Releasepfad aus den Build-Skripten.
 - MIT-Lizenz wird nur noch beim EXE-Start in HKCU registriert, nicht mehr waehrend des Builds.
 - Build-Starter arbeitet ohne Get-/Set-ExecutionPolicy-Abhaengigkeit und laeuft dadurch robuster in reduzierten PowerShell-Umgebungen.
+- Entfernt die ungenutzte UFS2Tool-/Dokan-Altintegration aus ps5-exfat-builder v3.6.4; Aufgabe 6 nutzt nur noch den aktuellen direkten .ffpkg -> .ffpfsc-Pfad.
 
 ## [v1.7.76] - 2026-07-06
 

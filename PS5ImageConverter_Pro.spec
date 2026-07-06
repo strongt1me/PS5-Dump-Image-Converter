@@ -10,7 +10,6 @@
 #
 # Alle Dateien muessen im selben Ordner liegen:
 #   PS5ImageConverter_Pro_FINAL_revised.py
-#   ps5_ufs2tool_data.py
 #   PS5ImageConverter_Pro.spec
 #   app_icon.ico
 #   helloworld/  (Ordner mit JS/ELF Dateien)
@@ -23,8 +22,6 @@ _here = os.path.dirname(os.path.abspath(SPEC))
 
 # Daten-Dateien die in die EXE eingebettet werden
 _datas = [
-    # ps5_ufs2tool_data.py muss im selben Verzeichnis wie die EXE liegen
-    (os.path.join(_here, 'ps5_ufs2tool_data.py'), '.'),
     # app_icon.ico fuer Fenster-Icon zur Laufzeit
     (os.path.join(_here, 'app_icon.ico'), '.'),
 ]
