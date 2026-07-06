@@ -12,6 +12,10 @@ __pycache__/
 .pytest_cache/
 .coverage
 htmlcov/
+_e2e_output*/
+_e2e*.log
+ampr_emu.index
+fakelib/
 
 # Type/lint caches
 .mypy_cache/
