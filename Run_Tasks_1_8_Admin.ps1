@@ -44,7 +44,7 @@ if (-not (Test-IsAdmin)) {
         $argList += @("-OutputDir", ('"' + $OutputDir + '"'))
     }
 
-    Start-Process -FilePath "powershell.exe" -Verb RunAs -ArgumentList ($argList -join " ") | Out-Null
+    Start-Process -FilePath "powershell.exe" -Verb RunAs -WorkingDirectory $repoRoot -ArgumentList ($argList -join " ") | Out-Null
     Write-Host "UAC-Dialog gestartet. Der Admin-Runner oeffnet in einem neuen Fenster."
     exit 0
 }

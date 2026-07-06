@@ -102,9 +102,11 @@ def _resolve_dump_dir(repo: Path, dump_arg: str) -> Path:
 
 
 def _run_cli_dump_validator(path: Path, output_json: Path) -> tuple[bool, str]:
+    repo = Path(__file__).resolve().parent
+    validator_script = repo / "ps5_validator" / "main.py"
     cmd = [
         sys.executable,
-        "ps5_validator/main.py",
+        str(validator_script),
         "--mode",
         "dump",
         "--path",
@@ -112,7 +114,7 @@ def _run_cli_dump_validator(path: Path, output_json: Path) -> tuple[bool, str]:
         "--output",
         str(output_json),
     ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = subprocess.run(cmd, capture_output=True, text=True, cwd=repo)
     ok = proc.returncode == 0
     tail = (proc.stdout or "") + ("\n" + proc.stderr if proc.stderr else "")
     return ok, tail[-4000:]

@@ -52,7 +52,7 @@ from PIL import Image, ImageFilter, ImageTk
 #  sein, damit die eingebettete mkpfs-Engine korrekt funktioniert)
 # ---------------------------------------------------------------------------
 try:
-    import zstandard  # noqa: F401  – fuer _compress_pfs_zstd (Zstd-Streaming)
+    import zstandard  # pyright: ignore[reportMissingImports]  # noqa: F401  – fuer _compress_pfs_zstd (Zstd-Streaming)
 except ImportError:
     pass  # Optional: Fallback auf mkpfs --compress wenn nicht installiert
 
@@ -2644,7 +2644,7 @@ class PS5ConverterGUI:
 
         # Zstandard verfügbar?
         try:
-            import zstandard as _zstd
+            import zstandard as _zstd  # pyright: ignore[reportMissingImports]
         except ImportError:
             self._append_to_log(
                 "[FEHLER] Zstandard-Bibliothek nicht gefunden.\n"
@@ -6104,7 +6104,7 @@ class PS5ConverterGUI:
         SKIP_EXTS = {".png", ".jpg", ".jpeg", ".mp4", ".webm", ".ogg", ".mp3",
                      ".opus", ".at9", ".avi", ".m2v", ".bik", ".usm"}
         try:
-            import zstandard as _zstd
+            import zstandard as _zstd  # pyright: ignore[reportMissingImports]
         except ImportError:
             return 0.88
         try:
@@ -6695,7 +6695,7 @@ class PS5ConverterGUI:
         try:
             # Performance-Optimierung: wenn vorhanden, nutze zlib_ng-Binding.
             # Importform muss zu MkPFS passen (from zlib_ng import zlib_ng as zlib).
-            from zlib_ng import zlib_ng as _zlib_ng_impl  # noqa: F401
+            from zlib_ng import zlib_ng as _zlib_ng_impl  # pyright: ignore[reportMissingImports]  # noqa: F401
         except Exception as exc:
             self._append_to_log(
                 "[WARNUNG] zlib_ng nicht kompatibel/verfuegbar; "
@@ -12380,7 +12380,7 @@ class PS5ConverterGUI:
 
         _paramiko: Any | None = None
         try:
-            import paramiko as _paramiko
+            import paramiko as _paramiko  # pyright: ignore[reportMissingImports]
             _HAS_PARAMIKO = True
         except ImportError:
             _HAS_PARAMIKO = False
