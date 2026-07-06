@@ -13,6 +13,7 @@ Tests:
 import sys
 import os
 import ast
+import importlib
 import re
 import time
 from pathlib import Path
@@ -106,6 +107,7 @@ def test_progress_engine():
         "Easing-Logik": "PROGRESS_EASING" in content,
         "Task-Progress-Tracking": "task_progress" in content,
         "Fortschrittsanzeige": "_update_progress_gui" in content,
+        "Keepalive trennt Output-Timestamp": "self._last_engine_output_ts = _now" not in content,
     }
     
     for check_name, result in checks.items():
@@ -114,6 +116,36 @@ def test_progress_engine():
     
     all_pass = all(checks.values())
     return all_pass
+
+def test_keepalive_regression():
+    print_header("TEST 3B: MkPFS-Keepalive-Regression")
+
+    try:
+        module = importlib.import_module("PS5ImageConverter_Pro_FINAL_revised")
+        gui = module.PS5ConverterGUI.__new__(module.PS5ConverterGUI)
+        gui._last_engine_output_ts = 123.0
+
+        log_calls = []
+        status_calls = []
+        gui._append_to_log = log_calls.append
+        gui._set_status = status_calls.append
+
+        gui._emit_processing_keepalive()
+
+        checks = {
+            "Keepalive loggt Hinweis": log_calls == ["[INFO] Verarbeitung laeuft ... bitte warten.\n"],
+            "Keepalive setzt Status": status_calls == ["Phase 3/4 – Verarbeitung laeuft ..."],
+            "Keepalive aendert keinen Output-Timestamp": gui._last_engine_output_ts == 123.0,
+        }
+
+        for check_name, result in checks.items():
+            status = "[OK]" if result else "[FAIL]"
+            print(f"  {status}  {check_name}")
+
+        return all(checks.values())
+    except Exception as e:
+        test_result("MkPFS-Keepalive-Regression", False, str(e))
+        return False
 
 # ============================================================================
 # 4. BUILD ABHÄNGIGKEITEN
@@ -235,6 +267,7 @@ def main():
     results["Syntax"] = test_syntax()
     results["Imports"] = test_imports()
     results["ProgressEngine"] = test_progress_engine()
+    results["KeepaliveRegression"] = test_keepalive_regression()
     results["BuildDeps"] = test_build_deps()
     results["FileIntegrity"] = test_file_integrity()
     results["CodeQuality"] = test_code_quality()

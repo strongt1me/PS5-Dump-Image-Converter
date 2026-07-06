@@ -376,6 +376,7 @@ class ProgressEngine:
             task_name: Anzeigename für das Status-Feedback.
         """
         self._task_idx = max(0, min(task_idx, self.NUM_TASKS - 1))
+        task_start = self._task_idx * self.TASK_WEIGHT
         self._phase = "prepare"
         self._payload_done = 0.0
         self._payload_total = 0.0
@@ -383,9 +384,11 @@ class ProgressEngine:
         self._task_t0 = time.monotonic()
         self._eta_seconds = None
         self._status_text = f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {task_name}"
-        # Fortschritt auf Aufgaben-Start setzen (nur vorwärts)
-        task_start = self._task_idx * self.TASK_WEIGHT
-        self._advance_raw(task_start)
+        # Neuer Task muss einen alten Lauf hart überschreiben.
+        # Sonst kann ein Resume-/Abbruch-Restwert (z. B. 93%) in den
+        # nächsten Task hineinragen und ETA/Status verfälschen.
+        self._raw_progress = task_start
+        self._displayed = task_start
 
     def begin_prepare(self, description: str = "Vorbereitung...") -> None:
         """Beginnt die Vorbereitungs-Phase (5 %).
@@ -1000,9 +1003,6 @@ class PS5ConverterGUI:
         # Ergänzt den Datei-Cache (_load_meta_cache) um schnelleren Zugriff.
         self._psstore_cache: dict[str, dict] = {}  # title_id -> meta_dict
         self._PSSTORE_CACHE_MAX: int = 50
-        # sys.argv-Lock: verhindert dass zwei Threads gleichzeitig sys.argv verändern
-        # (mkpfs wird via sys.argv-Manipulation aufgerufen – nicht thread-safe ohne Lock)
-        self._mkpfs_argv_lock: threading.Lock = threading.Lock()
 
         # Task-weite Fortschritts-Variablen (gelten über alle Schritte)
         # Werden einmalig in _launch_task gesetzt und nicht pro Schritt zurückgesetzt.
@@ -1028,6 +1028,7 @@ class PS5ConverterGUI:
         self._preflight_warnings: list[str] = []
         self._checkpoint_last_save_ts: float = 0.0
         self._task_report_path: str = ""
+        self._startup_temp_cleanup_prompted: bool = False
 
         # Aktiver OSFMount-Eintrag (für garantierten Dismount beim Programmende)
         self._active_mount_drive: str | None = None   # z.B. "Z"
@@ -1290,6 +1291,324 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Checkpoint konnte nicht gespeichert werden: %s", exc)
 
+    def _is_managed_temp_path(self, path_str: str) -> bool:
+        """Prüft, ob ein Pfad wie ein verwaltetes ps5conv-Tempartifakt aussieht."""
+        try:
+            if not path_str:
+                return False
+            norm = os.path.abspath(path_str)
+            temp_root = os.path.abspath(self._get_runtime_temp_dir())
+            try:
+                if os.path.commonpath([norm, temp_root]) == temp_root:
+                    return True
+            except ValueError:
+                pass
+
+            cur = norm
+            while True:
+                base = os.path.basename(cur).lower()
+                if base.startswith("ps5conv_"):
+                    return True
+                parent = os.path.dirname(cur)
+                if parent == cur:
+                    break
+                cur = parent
+        except Exception:
+            return False
+        return False
+
+    def _cleanup_checkpoint_artifacts(self, checkpoint: dict[str, Any] | None) -> None:
+        """Löscht bekannte Resume-Artefakte nach erfolgreichem Abschluss."""
+        if not isinstance(checkpoint, dict):
+            return
+
+        raw_paths: list[str] = []
+        for key in ("game_dump_dir", "temp_exfat", "tmp_dir"):
+            val = str(checkpoint.get(key, "") or "").strip()
+            if val:
+                raw_paths.append(os.path.abspath(val))
+
+        seen: set[str] = set()
+        # Tiefere Pfade zuerst, damit Einzelfälle protokolliert werden können;
+        # übergeordnete tmp_dir-Räumung fängt den Rest mit ab.
+        for candidate in sorted(raw_paths, key=len, reverse=True):
+            norm = os.path.abspath(candidate)
+            if norm in seen:
+                continue
+            seen.add(norm)
+            if not self._is_managed_temp_path(norm):
+                continue
+            try:
+                if os.path.isdir(norm):
+                    shutil.rmtree(norm, ignore_errors=True)
+                    self._append_to_log(f"[CLEANUP] Temp-Ordner gelöscht: {norm}\n")
+                elif os.path.isfile(norm):
+                    os.remove(norm)
+                    self._append_to_log(f"[CLEANUP] Temp-Datei gelöscht: {norm}\n")
+            except Exception as exc:
+                logger.debug("Temp-Artefakt konnte nicht gelöscht werden (%s): %s", norm, exc)
+
+    def _remove_runtime_checkpoint_jobs(self, checkpoint_keys: set[str]) -> None:
+        """Entfernt mehrere Checkpoint-Jobs, z. B. nach manuellem Altlast-Cleanup."""
+        if not checkpoint_keys:
+            return
+        try:
+            path = self._checkpoint_file_path()
+            if not os.path.isfile(path):
+                return
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            jobs = data.get("jobs", {}) if isinstance(data, dict) else {}
+            if not isinstance(jobs, dict):
+                return
+
+            changed = False
+            for key in checkpoint_keys:
+                if key in jobs:
+                    del jobs[key]
+                    changed = True
+            if changed:
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.debug("Checkpoint-Jobs konnten nicht bereinigt werden: %s", exc)
+
+    def _collect_stale_temp_cleanup_candidates(
+        self,
+        min_age_hours: float,
+    ) -> tuple[list[dict[str, Any]], set[str]]:
+        """Sammelt alte verwaltete Temp-Artefakte für optionales Startup-Cleanup."""
+        now = time.time()
+        candidate_map: dict[str, dict[str, Any]] = {}
+        checkpoint_keys: set[str] = set()
+
+        try:
+            cp_path = self._checkpoint_file_path()
+            if os.path.isfile(cp_path):
+                with open(cp_path, "r", encoding="utf-8") as fh:
+                    cp_data = json.load(fh)
+                cp_jobs = cp_data.get("jobs", {}) if isinstance(cp_data, dict) else {}
+                if isinstance(cp_jobs, dict):
+                    for cp_key, cp_val in cp_jobs.items():
+                        if not isinstance(cp_val, dict):
+                            continue
+                        ts_raw = cp_val.get("timestamp", 0.0)
+                        try:
+                            ts = float(ts_raw or 0.0)
+                        except Exception:
+                            ts = 0.0
+                        age_hours = (now - ts) / 3600.0 if ts > 0 else (min_age_hours + 1.0)
+                        if age_hours < min_age_hours:
+                            continue
+
+                        state = str(cp_val.get("state", "") or "").strip().lower()
+                        mode = str(cp_val.get("mode", "") or "").strip() or "unbekannt"
+                        found_paths = False
+                        for temp_key in ("game_dump_dir", "temp_exfat", "tmp_dir"):
+                            raw_path = str(cp_val.get(temp_key, "") or "").strip()
+                            if not raw_path:
+                                continue
+                            norm = os.path.abspath(raw_path)
+                            if not os.path.exists(norm) or not self._is_managed_temp_path(norm):
+                                continue
+                            found_paths = True
+                            prev = candidate_map.get(norm)
+                            if prev is None or float(prev.get("age_hours", 0.0) or 0.0) < age_hours:
+                                candidate_map[norm] = {
+                                    "path": norm,
+                                    "age_hours": age_hours,
+                                    "mode": mode,
+                                    "state": state or "unbekannt",
+                                    "checkpoint_key": cp_key,
+                                    "source": "checkpoint",
+                                }
+                        if found_paths:
+                            checkpoint_keys.add(str(cp_key))
+        except Exception as exc:
+            logger.debug("Startup-Temp-Cleanup: Checkpoints konnten nicht gelesen werden: %s", exc)
+
+        for root in self._temp_fallback_candidates(None):
+            try:
+                if not root or not os.path.isdir(root):
+                    continue
+                for name in os.listdir(root):
+                    if not str(name).lower().startswith("ps5conv_"):
+                        continue
+                    norm = os.path.abspath(os.path.join(root, name))
+                    if norm in candidate_map or not os.path.exists(norm):
+                        continue
+                    if not self._is_managed_temp_path(norm):
+                        continue
+                    try:
+                        age_hours = max(0.0, (now - os.path.getmtime(norm)) / 3600.0)
+                    except Exception:
+                        age_hours = 0.0
+                    if age_hours < min_age_hours:
+                        continue
+                    candidate_map[norm] = {
+                        "path": norm,
+                        "age_hours": age_hours,
+                        "mode": "orphaned-temp",
+                        "state": "orphaned",
+                        "checkpoint_key": "",
+                        "source": "filesystem",
+                    }
+            except Exception as exc:
+                logger.debug("Startup-Temp-Cleanup: Root %s konnte nicht gescannt werden: %s", root, exc)
+
+        selected: list[dict[str, Any]] = []
+        for info in sorted(candidate_map.values(), key=lambda item: (len(str(item.get("path", ""))), str(item.get("path", "")).lower())):
+            path_cur = str(info.get("path", "") or "")
+            if not path_cur:
+                continue
+            covered = False
+            for keep in selected:
+                keep_path = str(keep.get("path", "") or "")
+                if not keep_path:
+                    continue
+                try:
+                    if os.path.commonpath([path_cur, keep_path]) == keep_path:
+                        covered = True
+                        break
+                except ValueError:
+                    continue
+            if not covered:
+                selected.append(info)
+
+        return selected, checkpoint_keys
+
+    def _run_startup_temp_cleanup_scan(self) -> None:
+        """Erkennt alte Temp-Reste und bietet optionales Cleanup beim App-Start an."""
+        try:
+            if getattr(self, "_startup_temp_cleanup_prompted", False):
+                return
+            enabled = bool(self._load_setting("startup_temp_cleanup_enabled", True))
+            if not enabled:
+                return
+            min_age_raw = self._load_setting("startup_temp_cleanup_min_age_hours", 24.0)
+            try:
+                min_age_hours = max(1.0, float(cast(Any, min_age_raw) or 24.0))
+            except Exception:
+                min_age_hours = 24.0
+
+            candidates, checkpoint_keys = self._collect_stale_temp_cleanup_candidates(min_age_hours)
+            if not candidates:
+                return
+
+            total_bytes = 0
+            oldest_hours = 0.0
+            run_keys: set[str] = set()
+            mode_names: set[str] = set()
+            for info in candidates:
+                path_cur = str(info.get("path", "") or "")
+                oldest_hours = max(oldest_hours, float(info.get("age_hours", 0.0) or 0.0))
+                mode_name = str(info.get("mode", "") or "").strip()
+                if mode_name:
+                    mode_names.add(mode_name)
+                cp_key = str(info.get("checkpoint_key", "") or "").strip()
+                if cp_key:
+                    run_keys.add(cp_key)
+                try:
+                    if os.path.isdir(path_cur):
+                        total_bytes += int(self._get_path_size(path_cur))
+                    elif os.path.isfile(path_cur):
+                        total_bytes += int(os.path.getsize(path_cur))
+                except Exception:
+                    pass
+
+            summary = {
+                "artifact_count": len(candidates),
+                "run_count": len(run_keys),
+                "total_bytes": total_bytes,
+                "oldest_hours": oldest_hours,
+                "min_age_hours": min_age_hours,
+                "mode_names": sorted(mode_names),
+            }
+            self.root.after(
+                1200,
+                lambda c=candidates, keys=sorted(checkpoint_keys), s=summary: self._prompt_startup_temp_cleanup(c, keys, s),
+            )
+        except Exception as exc:
+            logger.debug("Startup-Temp-Cleanup-Scan fehlgeschlagen: %s", exc)
+
+    def _prompt_startup_temp_cleanup(
+        self,
+        candidates: list[dict[str, Any]],
+        checkpoint_keys: list[str],
+        summary: dict[str, Any],
+    ) -> None:
+        """Fragt beim Start, ob alte Temp-Reste bereinigt werden sollen."""
+        if getattr(self, "_startup_temp_cleanup_prompted", False):
+            return
+        if self.is_running:
+            self.root.after(5000, lambda: self._prompt_startup_temp_cleanup(candidates, checkpoint_keys, summary))
+            return
+
+        self._startup_temp_cleanup_prompted = True
+        artifact_count = int(summary.get("artifact_count", len(candidates)) or len(candidates))
+        run_count = int(summary.get("run_count", 0) or 0)
+        total_bytes = int(summary.get("total_bytes", 0) or 0)
+        oldest_hours = float(summary.get("oldest_hours", 0.0) or 0.0)
+        min_age_hours = float(summary.get("min_age_hours", 24.0) or 24.0)
+        mode_names = list(summary.get("mode_names", []) or [])
+        mode_preview = ", ".join(mode_names[:4]) if mode_names else "-"
+        if len(mode_names) > 4:
+            mode_preview += ", ..."
+
+        message = (
+            f"Es wurden {artifact_count} alte temporäre PS5Conv-Artefakte gefunden"
+            + (f" aus {run_count} früheren Läufen" if run_count > 0 else "")
+            + ".\n\n"
+            + f"Mindestalter: {min_age_hours:.0f}h\n"
+            + f"Ältester Fund: {oldest_hours:.1f}h\n"
+            + f"Geschätzte Größe: {self._fmt_bytes(total_bytes)}\n"
+            + f"Modi: {mode_preview}\n\n"
+            + "Wenn du jetzt bereinigst, gehen diese alten Resume-Zwischenstände verloren.\n"
+            + "Sollen die gefundenen Temp-Dateien und Temp-Ordner jetzt gelöscht werden?"
+        )
+        if not messagebox.askyesno("Alte Temp-Dateien gefunden", message, parent=self.root):
+            return
+
+        threading.Thread(
+            target=self._cleanup_startup_temp_candidates,
+            args=(candidates, set(checkpoint_keys)),
+            daemon=True,
+        ).start()
+
+    def _cleanup_startup_temp_candidates(
+        self,
+        candidates: list[dict[str, Any]],
+        checkpoint_keys: set[str],
+    ) -> None:
+        """Löscht bestätigte Startup-Altlasten im Hintergrund."""
+        deleted_count = 0
+        for info in candidates:
+            path_cur = str(info.get("path", "") or "").strip()
+            if not path_cur:
+                continue
+            try:
+                if os.path.isdir(path_cur):
+                    shutil.rmtree(path_cur, ignore_errors=True)
+                    if not os.path.exists(path_cur):
+                        deleted_count += 1
+                        self._append_to_log(f"[CLEANUP] Startup-Temp-Ordner gelöscht: {path_cur}\n")
+                elif os.path.isfile(path_cur):
+                    os.remove(path_cur)
+                    deleted_count += 1
+                    self._append_to_log(f"[CLEANUP] Startup-Temp-Datei gelöscht: {path_cur}\n")
+            except Exception as exc:
+                logger.debug("Startup-Temp-Artefakt konnte nicht gelöscht werden (%s): %s", path_cur, exc)
+
+        self._remove_runtime_checkpoint_jobs(checkpoint_keys)
+        if deleted_count > 0:
+            self._append_to_log(
+                f"[CLEANUP] Startup-Bereinigung abgeschlossen: {deleted_count} Altlast(en) entfernt.\n"
+            )
+            try:
+                self.root.after(0, lambda: self._set_status("Startup-Cleanup abgeschlossen."))
+            except Exception:
+                pass
+
     def _clear_runtime_checkpoint(self, mode: str, src: str, dst: str) -> None:
         """Entfernt den Checkpoint eines Jobs nach erfolgreichem Abschluss."""
         try:
@@ -1303,6 +1622,10 @@ class PS5ConverterGUI:
                 return
             key = self._checkpoint_key(mode, src, dst)
             if key in jobs:
+                checkpoint = jobs.get(key)
+                self._cleanup_checkpoint_artifacts(
+                    checkpoint if isinstance(checkpoint, dict) else None
+                )
                 del jobs[key]
                 with open(path, "w", encoding="utf-8") as fh:
                     json.dump(data, fh, ensure_ascii=False, indent=2)
@@ -2810,6 +3133,7 @@ class PS5ConverterGUI:
         """Startet blockierende Startarbeiten in Hintergrund-Threads."""
         threading.Thread(target=self._warmup_mkpfs_engine, daemon=True).start()
         threading.Thread(target=self._cleanup_stale_osfmounts, daemon=True).start()
+        threading.Thread(target=self._run_startup_temp_cleanup_scan, daemon=True).start()
 
     def _finish_startup_phase(self) -> None:
         """Markiert die kritische Startphase als abgeschlossen."""
@@ -6085,6 +6409,7 @@ class PS5ConverterGUI:
 
         self._task_thread = threading.Thread(
             target=self._run_engine_thread,
+            args=(mode, src, dst_for_checks),
             daemon=True,
         )
         self._task_thread.start()
@@ -6266,7 +6591,9 @@ class PS5ConverterGUI:
         # ------------------------------------------------------------------
         # 1. Engine-Queue lesen – jede Zeile ist ein echtes Ereignis
         # ------------------------------------------------------------------
+        progress_before_sources = float(getattr(self, "task_progress", 0.0) or 0.0)
         engine_pct: float | None = None
+        engine_phase = ""
         visible_lines: list[str] = []
         drained = 0
         max_drain_per_tick = 300
@@ -6284,16 +6611,17 @@ class PS5ConverterGUI:
                 )
                 visible_lines.append(display_line)
                 # Fortschrittszeile: [###---]  45% scan
-                m = re.search(r'\[[#\-\s]*\]\s*(\d+(?:\.\d+)?)\s*%', line)
+                m = re.search(r'\[[#\-\s]*\]\s*(\d+(?:\.\d+)?)\s*%\s*(\w+)?', line)
                 if m:
                     val = float(m.group(1))
                     if 0.0 <= val <= 100.0:
                         engine_pct = val
+                        engine_phase = str(m.group(2) or "").strip().lower()
                 # ETA-basierter Fortschritt für write-Phase:
                 # mkpfs gibt "ETA 9s", "ETA 8s" etc. aus – wir berechnen
                 # Fortschritt als 1 - (eta_aktuell / eta_initial)
                 eta_m = re.search(r'ETA\s+(\d+(?:\.\d+)?)s', line)
-                if eta_m:
+                if eta_m and not m:
                     eta_now = float(eta_m.group(1))
                     # Initiales ETA merken (groesstes bisher gesehenes ETA)
                     if not hasattr(self, '_mkpfs_eta_initial') or eta_now > self._mkpfs_eta_initial:
@@ -6340,7 +6668,12 @@ class PS5ConverterGUI:
             #   write            → 12–20 % (restliche 53.3%, vom file_monitor)
             s = self._step_start()
             e = self._step_end()
-            if engine_pct >= 100.0:
+            if engine_phase == "compress":
+                near_end = s + (e - s) * 0.99
+                mapped = s + (engine_pct / 100.0) * (near_end - s)
+                if mapped > self.task_progress:
+                    self.task_progress = mapped
+            elif engine_pct >= 100.0:
                 # 100% komprimiert: Finalisierungsphase startet.
                 # Direkt auf 99% des Schrittbereichs vorspulen, damit die Anzeige
                 # nicht bei ~93% stagniert während mkpfs den Output schreibt.
@@ -6365,7 +6698,8 @@ class PS5ConverterGUI:
         # Wird parallel zu Quelle 2 ausgewertet wenn _copy_total_bytes > 0.
         copy_total = getattr(self, "_copy_total_bytes", 0)
         copy_done  = getattr(self, "_copy_done_bytes", 0)
-        if copy_total > 0 and copy_done > 0 and copy_done <= copy_total:
+        has_copy_signal = copy_total > 0 and copy_done > 0 and copy_done <= copy_total
+        if has_copy_signal:
             copy_frac = min(copy_done / copy_total, 0.99)
             s = self._step_start()
             e = self._step_end()
@@ -6382,11 +6716,18 @@ class PS5ConverterGUI:
         # In den meisten Fällen sollten echte Datenquellen den Fortschritt treiben
         has_defined_steps = bool(getattr(self, "task_step_ends", None))
         step_active = int(getattr(self, "task_current_step", 0) or 0) > 0
+        has_engine_signal = engine_pct is not None
+        has_real_progress_signal = (
+            has_engine_signal
+            or has_copy_signal
+            or self.task_progress > progress_before_sources + 1e-6
+        )
         if (
             getattr(self, "is_running", False)
             and getattr(self, "monitor_active", False)
             and has_defined_steps
             and step_active
+            and not has_real_progress_signal
         ):
             _cur = self.task_progress
             _s = self._step_start()
@@ -7509,11 +7850,17 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     # mkpfs-Ausführung
     # ------------------------------------------------------------------
+    def _emit_processing_keepalive(self) -> None:
+        """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
+        self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
+        self._set_status("Phase 3/4 – Verarbeitung laeuft ...")
+
     def _execute_mkpfs(
         self,
         args: list[str],
         monitor_target_path: str | None = None,
         monitor_source_file: str | None = None,
+        enable_file_monitor: bool = True,
     ) -> bool:
         """Führt die mkpfs-Engine direkt im aktuellen Prozess aus.
 
@@ -7803,8 +8150,11 @@ class PS5ConverterGUI:
 
                 engine_done.wait(timeout=0.15)  # 150ms Intervall
 
-        file_monitor_thread = threading.Thread(target=_file_monitor, daemon=True)
-        file_monitor_thread.start()
+        file_monitor_thread: threading.Thread | None = None
+        is_pack_file_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "file"
+        if enable_file_monitor and monitor_target_path and not is_pack_file_cmd:
+            file_monitor_thread = threading.Thread(target=_file_monitor, daemon=True)
+            file_monitor_thread.start()
 
         # Auf Abschluss warten und dabei Abbruch-Anfragen prüfen
         abort_requested = False
@@ -7816,19 +8166,21 @@ class PS5ConverterGUI:
             _now = time.monotonic()
             _last_out = float(getattr(self, "_last_engine_output_ts", 0.0) or 0.0)
             if (_now - max(_last_keepalive, _last_out)) >= 8.0:
-                self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
-                self._set_status("Phase 3/4 – Verarbeitung laeuft ...")
+                self._emit_processing_keepalive()
                 _last_keepalive = _now
-                self._last_engine_output_ts = _now
+                # Keepalive darf keine echte Worker-Aktivitaet vortaeuschen.
+                # _last_engine_output_ts bleibt ausschliesslich vom Engine-Output getrieben.
 
         # Sicherstellen dass beide Threads fertig sind
         if abort_requested:
             # Beim Abbruch NICHT lange auf Join warten, damit die GUI sofort reagiert.
             engine_thread.join(timeout=0.2)
-            file_monitor_thread.join(timeout=0.2)
+            if file_monitor_thread is not None:
+                file_monitor_thread.join(timeout=0.2)
             return False
         engine_thread.join(timeout=10)
-        file_monitor_thread.join(timeout=2)
+        if file_monitor_thread is not None:
+            file_monitor_thread.join(timeout=2)
 
         # Queue vollständig leeren und Build-Summary parsen.
         remaining: list[str] = []
@@ -7871,15 +8223,12 @@ class PS5ConverterGUI:
     # Konvertierungs-Engine (läuft im Hintergrund-Thread)
     # ------------------------------------------------------------------
 
-    def _run_engine_thread(self) -> None:
+    def _run_engine_thread(self, mode: str, src: str, dst: str) -> None:
         """Führt den ausgewählten Konvertierungsmodus im Hintergrund aus.
 
         Diese Methode läuft in einem Daemon-Thread und kommuniziert mit
         dem Haupt-Thread ausschließlich über thread-sichere Methoden.
         """
-        mode = self.current_mode.get()
-        src = self.source_path.get().strip()
-        dst = self.dest_path.get().strip()
         cp_dst = dst if mode not in ("inspect",) else ""
         verification_result: dict[str, Any] | None = None
 
@@ -8538,7 +8887,11 @@ class PS5ConverterGUI:
                         f"[INFO] Zwischenstand für Resume erhalten: {temp_exfat}\n"
                     )
                 return False
-            set_pct(p2_end)
+            # Bei Resume von Schritt 2 nicht den alten Checkpoint-Fortschritt
+            # weiterverwenden. Der neue Pack-Lauf startet sichtbar am echten
+            # Schritt-2-Beginn (nach fertig erstelltem exFAT-Zwischenimage).
+            self.task_progress = p2_end
+            self.task_displayed = p2_end
             set_status("Phase 2/4 – exFAT-Image erstellt.")
             self._save_runtime_checkpoint(
                 mode="pack_folder",
@@ -8562,7 +8915,7 @@ class PS5ConverterGUI:
                 f"\n>>> Schritt 2 / 2: exFAT-Image -> .ffpfsc: {os.path.basename(final_output)}...\n"
                 "[Info] Methode: mkpfs pack file (vendorter MkPFS-Writer)\n"
             )
-            self.task_current_step = 1
+            self.task_current_step = 2
             if hasattr(self, "_mkpfs_eta_initial"):
                 del self._mkpfs_eta_initial
 
@@ -14355,7 +14708,7 @@ class PS5ConverterGUI:
         quick_elf_row = tk.Frame(file_frame, bg=c["bg_card"])
         quick_elf_row.pack(fill="x", padx=10, pady=(0, 8))
 
-        tk.Label(quick_elf_row, text="Helloworld ELF:", width=16, anchor="w",
+        tk.Label(quick_elf_row, text="Bereits implementierte Payloads:", width=28, anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
                  font=("Segoe UI", 10)).pack(side="left")
 
@@ -14461,7 +14814,7 @@ class PS5ConverterGUI:
                   command=lambda: _send_file(elf_port_var, "ELF")).pack(side="left", padx=(0, 8))
 
         tk.Button(action_frame,
-              text="Helloworld ELF direkt senden",
+              text="Payload Wahl - direkt senden",
               bg=c["accent_btn"], fg="white",
               activebackground=c["accent_btn_hover"], activeforeground="white",
               relief="flat", cursor="hand2",
