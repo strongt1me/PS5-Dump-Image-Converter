@@ -8,7 +8,7 @@
 param(
     [switch]$SkipSigning,
     [string]$SignPfxPath = "",
-    [string]$SignPfxPassword = "",
+    [SecureString]$SignPfxPassword = $null,
     [switch]$SignEV,
     [string]$SignTimestampUrl = "http://timestamp.digicert.com",
     [switch]$RequireSignature
@@ -198,7 +198,7 @@ if (-not (Test-Path $exePath)) {
             $signArgs["EV"] = $true
         } elseif (-not [string]::IsNullOrWhiteSpace($SignPfxPath)) {
             $signArgs["PfxPath"] = $SignPfxPath
-            if (-not [string]::IsNullOrWhiteSpace($SignPfxPassword)) {
+            if ($null -ne $SignPfxPassword) {
                 $signArgs["PfxPassword"] = $SignPfxPassword
             }
         }
