@@ -15227,8 +15227,73 @@ def _request_elevation() -> None:
         )
         _root.destroy()
 
+
+def _register_mit_license_runtime() -> tuple[bool, str]:
+    """Registriert die MIT-Lizenz in HKCU beim Programmstart.
+
+    Wird vor dem GUI-Start ausgefuehrt, damit die Lizenzmetadaten bei jedem
+    EXE-Start nachvollziehbar in der Windows-Registry vorhanden sind.
+    """
+    if sys.platform != "win32":
+        return (False, "Nicht-Windows: Registry-Registrierung uebersprungen")
+
+    try:
+        import winreg  # type: ignore[import]
+
+        reg_path = r"Software\PS5DumpImageConverter\License"
+        year = datetime.datetime.now().year
+        mit_text = (
+            "MIT License\n\n"
+            f"Copyright (c) {year} PS5 Dump & Image Converter Contributors\n\n"
+            "Permission is hereby granted, free of charge, to any person obtaining a copy\n"
+            "of this software and associated documentation files (the \"Software\"), to deal\n"
+            "in the Software without restriction, including without limitation the rights\n"
+            "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n"
+            "copies of the Software, and to permit persons to whom the Software is\n"
+            "furnished to do so, subject to the following conditions:\n\n"
+            "The above copyright notice and this permission notice shall be included in all\n"
+            "copies or substantial portions of the Software.\n\n"
+            "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
+            "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
+            "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
+            "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
+            "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
+            "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
+            "SOFTWARE.\n"
+        )
+
+        hash_hex = hashlib.sha256(mit_text.encode("utf-8")).hexdigest()
+        try:
+            registered_at = datetime.datetime.now(datetime.UTC).isoformat()
+        except Exception:
+            registered_at = datetime.datetime.utcnow().isoformat() + "Z"
+
+        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
+        try:
+            winreg.SetValueEx(key, "LicenseName", 0, winreg.REG_SZ, "MIT")
+            winreg.SetValueEx(key, "SPDX", 0, winreg.REG_SZ, "MIT")
+            winreg.SetValueEx(key, "LicenseText", 0, winreg.REG_SZ, mit_text)
+            winreg.SetValueEx(key, "LicenseHashSHA256", 0, winreg.REG_SZ, hash_hex)
+            winreg.SetValueEx(key, "RegisteredAtUTC", 0, winreg.REG_SZ, registered_at)
+            winreg.SetValueEx(key, "RegisteredBy", 0, winreg.REG_SZ, os.environ.get("USERNAME", "unknown"))
+            winreg.SetValueEx(key, "BuildVersion", 0, winreg.REG_SZ, APP_VERSION)
+            winreg.SetValueEx(key, "Source", 0, winreg.REG_SZ, "runtime-startup")
+        finally:
+            winreg.CloseKey(key)
+
+        msg = f"MIT-Lizenz in HKCU\\{reg_path} registriert"
+        logger.info("%s", msg)
+        return (True, msg)
+    except Exception as exc:
+        msg = f"MIT-Registry-Registrierung fehlgeschlagen: {exc}"
+        logger.warning("%s", msg)
+        return (False, msg)
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+
+    # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
+    _mit_ok, _mit_msg = _register_mit_license_runtime()
 
     # Administratorrechte prüfen – automatisch als Admin neu starten
     if sys.platform == "win32" and not _is_admin():
@@ -15251,6 +15316,12 @@ if __name__ == "__main__":
     # --- GUI aufbauen ---
     # Das App-Icon wird in PS5ConverterGUI.__init__ via _apply_window_icon() gesetzt.
     app = PS5ConverterGUI(root)
+
+    # Sichtbare Startmeldung zur MIT-Registry-Registrierung.
+    if _mit_ok:
+        app._append_to_log(f"[INFO] {_mit_msg}\n")
+    else:
+        app._append_to_log(f"[WARN] {_mit_msg}\n")
 
     # --- schließen-Handler ---
     root.protocol("WM_DELETE_WINDOW", app.on_closing)

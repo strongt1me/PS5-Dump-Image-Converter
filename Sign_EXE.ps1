@@ -52,14 +52,25 @@ Write-INFO "Suche signtool.exe ..."
 
 $signtool = $null
 
-# Bekannte Pfade für Windows SDK (verschiedene Versionen)
-$sdkPaths = @(
-    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
-    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe',
-    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe',
-    'C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe',
-    'C:\Program Files\Windows Kits\10\bin\x64\signtool.exe'
-)
+# Bekannte Pfade robust über Umgebungsvariablen aufbauen
+$sdkPaths = @()
+$sdkVersions = @("10.0.26100.0", "10.0.22621.0", "10.0.19041.0")
+
+$sdkRoots = @()
+if (-not [string]::IsNullOrWhiteSpace($env:ProgramFiles)) {
+    $sdkRoots += (Join-Path $env:ProgramFiles "Windows Kits\10\bin")
+}
+$pf86 = [Environment]::GetFolderPath("ProgramFilesX86")
+if (-not [string]::IsNullOrWhiteSpace($pf86)) {
+    $sdkRoots += (Join-Path $pf86 "Windows Kits\10\bin")
+}
+
+foreach ($root in $sdkRoots) {
+    foreach ($ver in $sdkVersions) {
+        $sdkPaths += (Join-Path $root "$ver\x64\signtool.exe")
+    }
+    $sdkPaths += (Join-Path $root "x64\signtool.exe")
+}
 
 foreach ($path in $sdkPaths) {
     if (Test-Path $path) {
@@ -70,11 +81,31 @@ foreach ($path in $sdkPaths) {
 
 # Dynamische Suche falls nicht gefunden
 if (-not $signtool) {
-    $found = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
-             Where-Object { $_.FullName -like "*x64*" } |
-             Sort-Object LastWriteTime -Descending |
-             Select-Object -First 1
-    if ($found) { $signtool = $found.FullName }
+    foreach ($root in $sdkRoots) {
+        if (-not (Test-Path $root)) {
+            continue
+        }
+        $found = Get-ChildItem $root -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+                 Where-Object { $_.FullName -like "*x64*" } |
+                 Sort-Object LastWriteTime -Descending |
+                 Select-Object -First 1
+        if ($found) {
+            $signtool = $found.FullName
+            break
+        }
+    }
+}
+
+# Letzter Fallback: PATH
+if (-not $signtool) {
+    try {
+        $cmd = Get-Command signtool.exe -ErrorAction Stop
+        if ($cmd -and $cmd.Source) {
+            $signtool = $cmd.Source
+        }
+    } catch {
+        # bewusst ignorieren, nachfolgend wird sauberer Fehler ausgegeben
+    }
 }
 
 if (-not $signtool) {
@@ -169,8 +200,16 @@ $signArgs = @(
 switch ($certSource) {
     "PFX" {
         $signArgs += "/f", $PfxPath
-        if ($PfxPassword -ne "") {
-            $signArgs += "/p", $PfxPassword
+        if ($null -ne $PfxPassword) {
+            $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($PfxPassword)
+            try {
+                $plainPwd = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr)
+            } finally {
+                [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+            }
+            if (-not [string]::IsNullOrWhiteSpace($plainPwd)) {
+                $signArgs += "/p", $plainPwd
+            }
         }
     }
     "EV-Token" {
@@ -190,7 +229,12 @@ $signArgs += "/v"
 $signArgs += $ExePath
 
 # Signiervorgang ausführen
-Write-INFO "Führe aus: signtool $($signArgs -join ' ')"
+$logArgs = @($signArgs)
+$pwdIdx = [Array]::IndexOf($logArgs, "/p")
+if ($pwdIdx -ge 0 -and ($pwdIdx + 1) -lt $logArgs.Count) {
+    $logArgs[$pwdIdx + 1] = "***"
+}
+Write-INFO "Führe aus: signtool $($logArgs -join ' ')"
 Write-Host ""
 
 & $signtool @signArgs
