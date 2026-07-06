@@ -8241,11 +8241,22 @@ class PS5ConverterGUI:
                         "verification": verification_result,
                     },
                 )
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Fehler",
+                    "Die Konvertierung ist fehlgeschlagen.\n\n"
+                    "Details stehen im Konsolen-Fenster\n"
+                    "(z. B. mkpfs Exit-Code oder Disk-Full-Meldung).",
+                ))
 
         except Exception as exc:
             self._append_to_log(f"\n[FEHLER] {exc}\n")
             logger.exception("Unerwarteter Fehler im Engine-Thread")
             self._set_status("Fehler.")
+            self.root.after(0, lambda e=str(exc): messagebox.showerror(
+                "Unerwarteter Fehler",
+                f"Die Konvertierung wurde durch einen unerwarteten Fehler\n"
+                f"abgebrochen:\n\n{e[:300]}",
+            ))
             self._reset_ui_after_task()
             verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
             report_path = self._write_task_report(
