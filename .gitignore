@@ -43,3 +43,6 @@ Thumbs.db
 # Local machine-specific config
 ip.ini
 
+# Generated release-gate runtime snapshot
+.github/skills/release-test/last_release_test_status.json
+
