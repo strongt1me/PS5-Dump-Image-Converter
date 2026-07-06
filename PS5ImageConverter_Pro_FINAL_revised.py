@@ -601,13 +601,10 @@ class ProgressEngine:
 
     @staticmethod
     def _fmt_eta(seconds: float) -> str:
-        """Formatiert ETA als mm:ss oder h:mm:ss."""
+        """Formatiert ETA konsequent als mm:ss (Gesamtminuten:Sekunden)."""
         total = max(0, int(round(seconds)))
-        h = total // 3600
-        m = (total % 3600) // 60
+        m = total // 60
         s = total % 60
-        if h > 0:
-            return f"{h}:{m:02d}:{s:02d}"
         return f"{m:02d}:{s:02d}"
 
     @staticmethod
