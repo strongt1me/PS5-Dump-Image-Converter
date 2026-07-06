@@ -16,6 +16,7 @@
 #   helloworld/  (Ordner mit JS/ELF Dateien)
 # =========================================================
 import os
+import glob
 
 # Pfad zum Projektordner (relativ zur .spec-Datei)
 _here = os.path.dirname(os.path.abspath(SPEC))
@@ -37,6 +38,17 @@ if os.path.isdir(_helloworld):
 _ip_ini = os.path.join(_here, 'ip.ini')
 if os.path.isfile(_ip_ini):
     _datas.append((_ip_ini, '.'))
+
+# Optionale MkPFS-Engine-ZIPs einbetten (z. B. MkPFS-0.0.9.zip).
+# Die App priorisiert zur Laufzeit automatisch die neueste gefundene Version.
+for _mkpfs_zip in glob.glob(os.path.join(_here, 'MkPFS-*.zip')):
+    if os.path.isfile(_mkpfs_zip):
+        _datas.append((_mkpfs_zip, '.'))
+
+# Optional: entpackten MkPFS-Quellordner einbetten (z. B. MkPFS-0.0.9/)
+for _mkpfs_src in glob.glob(os.path.join(_here, 'MkPFS-*')):
+    if os.path.isdir(_mkpfs_src) and os.path.isfile(os.path.join(_mkpfs_src, 'mkpfs', '__init__.py')):
+        _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
 
 a = Analysis(
     ['PS5ImageConverter_Pro_FINAL_revised.py'],

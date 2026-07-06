@@ -5,6 +5,15 @@
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
 # =============================================================================
 
+param(
+    [switch]$SkipSigning,
+    [string]$SignPfxPath = "",
+    [string]$SignPfxPassword = "",
+    [switch]$SignEV,
+    [string]$SignTimestampUrl = "http://timestamp.digicert.com",
+    [switch]$RequireSignature
+)
+
 # --- Selbst-Neustart mit Bypass-Policy (loest "Ausfuehrung deaktiviert"-Fehler) ---
 if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage" -or
     (Get-ExecutionPolicy -Scope Process) -eq "Restricted" -or
@@ -58,6 +67,8 @@ Write-Host "      cryptography installieren/aktualisieren..." -ForegroundColor G
 pip install cryptography --upgrade --quiet
 Write-Host "      zstandard installieren/aktualisieren..." -ForegroundColor Gray
 pip install zstandard --upgrade --quiet
+Write-Host "      zlib-ng installieren/aktualisieren (MkPFS-Abhaengigkeit)..." -ForegroundColor Gray
+pip install zlib-ng --upgrade --quiet
 Write-Host "      paramiko installieren/aktualisieren (SFTP-Unterstuetzung)..." -ForegroundColor Gray
 pip install paramiko --upgrade --quiet
 Write-Host "      Alle Pakete installiert." -ForegroundColor Green
@@ -65,22 +76,39 @@ Write-Host "      Alle Pakete installiert." -ForegroundColor Green
 # --- Schritt 3: Pflicht-Dateien pruefen ---
 Write-Host ""
 Write-Host "[3/5] Pruefe Pflicht-Dateien..." -ForegroundColor Yellow
-$missing = $false
-@(
+$missingFiles = @()
+$requiredFiles = @(
     "PS5ImageConverter_Pro_FINAL_revised.py",
     "ps5_ufs2tool_data.py",
     "PS5ImageConverter_Pro.spec",
     "app_icon.ico",
     "extract_icon.py"
-) | ForEach-Object {
-    if (-not (Test-Path $_)) {
-        Write-Host "      FEHLER: $_ fehlt!" -ForegroundColor Red
-        $missing = $true
+) 
+foreach ($requiredFile in $requiredFiles) {
+    if (-not (Test-Path $requiredFile)) {
+        Write-Host "      FEHLER: $requiredFile fehlt!" -ForegroundColor Red
+        $missingFiles += $requiredFile
     } else {
-        Write-Host "      OK: $_" -ForegroundColor Green
+        Write-Host "      OK: $requiredFile" -ForegroundColor Green
     }
 }
-if ($missing) {
+
+# MkPFS 0.0.9 muss entweder als ZIP oder als entpackter Quellordner vorliegen
+$mkpfsZipOk = Test-Path "MkPFS-0.0.9.zip"
+$mkpfsSrcOk = Test-Path "MkPFS-0.0.9\mkpfs\__init__.py"
+if (-not ($mkpfsZipOk -or $mkpfsSrcOk)) {
+    Write-Host "      FEHLER: MkPFS 0.0.9 fehlt (erwartet: MkPFS-0.0.9.zip ODER MkPFS-0.0.9\\mkpfs\\__init__.py)" -ForegroundColor Red
+    $missingFiles += "MkPFS 0.0.9"
+} else {
+    if ($mkpfsZipOk) {
+        Write-Host "      OK: MkPFS-0.0.9.zip" -ForegroundColor Green
+    }
+    if ($mkpfsSrcOk) {
+        Write-Host "      OK: MkPFS-0.0.9\\mkpfs\\__init__.py" -ForegroundColor Green
+    }
+}
+
+if ($missingFiles.Count -gt 0) {
     Write-Host ""
     Write-Host "FEHLER: Pflicht-Dateien fehlen. Bitte alle Dateien aus dem ZIP entpacken." -ForegroundColor Red
     Read-Host "Druecke Enter zum Beenden"
@@ -141,5 +169,68 @@ Write-Host ""
 Write-Host "  Hinweis: Die EXE benoetigt Administratorrechte (UAC-Prompt beim Start)." -ForegroundColor Gray
 Write-Host "  Hinweis: Antivirenprogramme koennen die EXE faelschlicherweise blockieren." -ForegroundColor Gray
 Write-Host "           In diesem Fall: Ausnahme in Antivirus hinzufuegen." -ForegroundColor Gray
+
+# --- Automatische Signierung ---
+if (-not (Test-Path $exePath)) {
+    Write-Host "" 
+    Write-Host "  Signierung uebersprungen: EXE wurde nicht gefunden." -ForegroundColor Yellow
+} elseif ($SkipSigning) {
+    Write-Host "" 
+    Write-Host "  Signierung uebersprungen (Schalter -SkipSigning aktiv)." -ForegroundColor Yellow
+} else {
+    Write-Host ""
+    Write-Host "[SIGN] Starte automatische EXE-Signierung..." -ForegroundColor Yellow
+    $signScript = Join-Path $PSScriptRoot "Sign_EXE.ps1"
+    if (-not (Test-Path $signScript)) {
+        Write-Host "  FEHLER: Sign_EXE.ps1 wurde nicht gefunden." -ForegroundColor Red
+        if ($RequireSignature) {
+            Read-Host "Druecke Enter zum Beenden"
+            exit 1
+        }
+        Write-Host "  Build bleibt unsigniert (fortgesetzt, da -RequireSignature nicht gesetzt)." -ForegroundColor Yellow
+    } else {
+        $signArgs = @{
+            ExePath = $exePath
+            TimestampUrl = $SignTimestampUrl
+        }
+
+        if ($SignEV) {
+            $signArgs["EV"] = $true
+        } elseif (-not [string]::IsNullOrWhiteSpace($SignPfxPath)) {
+            $signArgs["PfxPath"] = $SignPfxPath
+            if (-not [string]::IsNullOrWhiteSpace($SignPfxPassword)) {
+                $signArgs["PfxPassword"] = $SignPfxPassword
+            }
+        }
+
+        & $signScript @signArgs
+        $signExit = $LASTEXITCODE
+
+        if ($signExit -ne 0) {
+            Write-Host "  Signierung fehlgeschlagen (Exit-Code: $signExit)." -ForegroundColor Red
+            if ($RequireSignature) {
+                Read-Host "Druecke Enter zum Beenden"
+                exit 1
+            }
+            Write-Host "  Build bleibt unsigniert (fortgesetzt, da -RequireSignature nicht gesetzt)." -ForegroundColor Yellow
+        }
+    }
+}
+
+if (Test-Path $exePath) {
+    try {
+        $sig = Get-AuthenticodeSignature -FilePath $exePath
+        if ($sig.Status -eq "Valid") {
+            Write-Host "  Signaturstatus: GUELTIG" -ForegroundColor Green
+        } elseif ($sig.Status -eq "NotSigned") {
+            Write-Host "  Signaturstatus: NICHT SIGNIERT" -ForegroundColor Yellow
+        } else {
+            Write-Host "  Signaturstatus: $($sig.Status)" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "  Signaturstatus konnte nicht ermittelt werden." -ForegroundColor Yellow
+    }
+}
+
 Write-Host ""
 Read-Host "Druecke Enter zum Beenden"

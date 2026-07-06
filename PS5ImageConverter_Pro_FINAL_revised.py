@@ -7,7 +7,10 @@ import argparse       # noqa: F401
 import base64
 import ctypes
 import datetime      # noqa: F401
+import errno
+import glob
 import hashlib       # noqa: F401
+import importlib
 import io
 import json
 import logging
@@ -112,6 +115,9 @@ logger = logging.getLogger("PS5Converter")
 APP_VERSION = "v1.7.76"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
+# Verbindliche MkPFS-Version fuer Aufgaben 1-8.
+MKPFS_REQUIRED_VERSION = "0.0.9"
+
 WINDOW_MIN_WIDTH = 1100
 WINDOW_MIN_HEIGHT = 700
 WINDOW_WIDTH = 1366
@@ -130,6 +136,36 @@ PROGRESS_POLL_MS = 100
 PROGRESS_PULSE_CREEP = 0.5
 PROGRESS_EASING = 0.30
 PROGRESS_CATCH_UP = 2.0
+
+# Adaptive Pack-Profile fuer konsistente Standardwerte in Aufgabe 1/3/6.
+# Ziel: robuste Defaults je Workflow-Typ (Folder->ffpfsc, exfat->ffpfsc, ffpkg->ffpfsc)
+# mit groessenabhaengiger Worker-Drosselung gegen RAM-/I/O-Spitzen.
+PACK_PROFILE_MATRIX: dict[str, dict[str, Any]] = {
+    "pack_folder_step2": {
+        "profile": "folder_pipeline_balanced",
+        "level": 9,
+        "hard_cap": 4,
+        "size_caps": ((220.0, 2), (120.0, 3)),
+        "block_size": 65536,
+        "verify_after": True,
+    },
+    "pack_file": {
+        "profile": "archive_exfat_balanced",
+        "level": 8,
+        "hard_cap": 4,
+        "size_caps": ((160.0, 2), (80.0, 3)),
+        "block_size": 65536,
+        "verify_after": True,
+    },
+    "ffpkg_to_ffpfsc": {
+        "profile": "compat_ufs_safe",
+        "level": 7,
+        "hard_cap": 4,
+        "size_caps": ((180.0, 2), (90.0, 3)),
+        "block_size": 65536,
+        "verify_after": True,
+    },
+}
 
 # Datei-Handler fuer persistentes Logging (INFO+) in %TEMP%\ps5converter.log
 try:
@@ -745,6 +781,7 @@ class PS5ConverterGUI:
         self.current_mode = tk.StringVar(value="pack_folder")
         self.source_path = tk.StringVar(value=last_src)
         self.dest_path = tk.StringVar(value=last_dst)
+        self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
 
         # 4. Metadaten-Variablen initialisieren
         self._meta_labels: dict[str, tk.StringVar] = {}
@@ -753,9 +790,19 @@ class PS5ConverterGUI:
             self._meta_labels[key] = tk.StringVar(value="–")
         self._info_src_size_var = tk.StringVar(value="–")
         self._info_est_size_var = tk.StringVar(value="–")
+        self._patch_status_var = tk.StringVar(value="Bereit")
         self.info_cover_label: tk.Label | None = None
         self._cached_cover: "Image.Image | None" = None
         self._cached_title_id: str = ""
+        self._persisted_title_id: str = ""
+        try:
+            _saved_tid = self._sanitize_title_id(str(self._load_setting("last_title_id", "")))
+            if self._is_valid_title_id(_saved_tid):
+                self._cached_title_id = _saved_tid
+                self._persisted_title_id = _saved_tid
+                self._patch_status_var.set(f"Letzte Title-ID: {_saved_tid}")
+        except Exception as exc:
+            logger.debug("Gespeicherte last_title_id konnte nicht geladen werden: %s", exc)
         self._startup_complete = False
         self._bg_resize_after_id: str | None = None
         self._last_bg_resize_size: tuple[int, int] | None = None
@@ -974,6 +1021,15 @@ class PS5ConverterGUI:
         # Byte-genaue Fortschrittsmessung (Progress Driven by Real Events)
         self._copy_total_bytes: int = 0            # Gesamt-Bytes für Kopier-Phase
         self._copy_done_bytes: int = 0             # Bereits kopierte Bytes (thread-safe via GIL)
+        self._last_source_size_bytes: int = 0      # zuletzt berechnete Quellgroesse (background)
+        self._last_engine_output_ts: float = 0.0   # letzter sichtbarer Fortschrittsimpuls
+        self._eta_ui_seconds: float | None = None  # ETA nur fuer Anzeige (monoton fallend)
+        self._eta_ui_last_ts: float = 0.0          # Zeitstempel der letzten ETA-Anzeige
+        self._eta_ui_step: int = 0                 # Schritt fuer ETA-Reset
+        self._active_resume_checkpoint: dict[str, Any] | None = None
+        self._preflight_warnings: list[str] = []
+        self._checkpoint_last_save_ts: float = 0.0
+        self._task_report_path: str = ""
 
         # Aktiver OSFMount-Eintrag (für garantierten Dismount beim Programmende)
         self._active_mount_drive: str | None = None   # z.B. "Z"
@@ -1156,6 +1212,334 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.warning("Einstellung konnte nicht gespeichert werden: %s", exc)
 
+    def _checkpoint_file_path(self) -> str:
+        """Pfad der Laufzeit-Checkpoint-Datei."""
+        cfg = self._get_config_path()
+        base = os.path.dirname(cfg)
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "runtime_checkpoint.json")
+
+    def _checkpoint_key(self, mode: str, src: str, dst: str) -> str:
+        """Stabiler Schlüssel für einen Job (modus+src+dst)."""
+        sig = f"{mode}|{os.path.abspath(src)}|{os.path.abspath(dst or '')}"
+        return hashlib.sha1(sig.encode("utf-8", errors="ignore")).hexdigest()
+
+    def _load_runtime_checkpoint(self, mode: str, src: str, dst: str) -> dict[str, Any] | None:
+        """Lädt einen Checkpoint für den aktuellen Job, falls vorhanden."""
+        try:
+            path = self._checkpoint_file_path()
+            if not os.path.isfile(path):
+                return None
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            jobs = data.get("jobs", {}) if isinstance(data, dict) else {}
+            key = self._checkpoint_key(mode, src, dst)
+            cp = jobs.get(key)
+            return cp if isinstance(cp, dict) else None
+        except Exception as exc:
+            logger.debug("Checkpoint konnte nicht geladen werden: %s", exc)
+            return None
+
+    def _save_runtime_checkpoint(
+        self,
+        mode: str,
+        src: str,
+        dst: str,
+        state: str,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Speichert oder aktualisiert den Checkpoint des aktuellen Jobs."""
+        try:
+            path = self._checkpoint_file_path()
+            data: dict[str, Any] = {}
+            if os.path.isfile(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as fh:
+                        loaded = json.load(fh)
+                    if isinstance(loaded, dict):
+                        data = loaded
+                except Exception:
+                    data = {}
+            jobs_any = data.get("jobs")
+            if not isinstance(jobs_any, dict):
+                jobs_any = {}
+            jobs: dict[str, Any] = cast(dict[str, Any], jobs_any)
+            data["jobs"] = jobs
+
+            key = self._checkpoint_key(mode, src, dst)
+            prev_payload: dict[str, Any] = {}
+            _prev_any = jobs.get(key)
+            if isinstance(_prev_any, dict):
+                prev_payload = cast(dict[str, Any], _prev_any)
+            payload: dict[str, Any] = dict(prev_payload)
+            payload.update({
+                "mode": mode,
+                "src": os.path.abspath(src),
+                "dst": os.path.abspath(dst) if dst else "",
+                "state": state,
+                "task_progress": float(getattr(self, "task_progress", 0.0) or 0.0),
+                "task_current_step": int(getattr(self, "task_current_step", 0) or 0),
+                "task_num_steps": int(getattr(self, "task_num_steps", 0) or 0),
+                "timestamp": time.time(),
+                "updated": datetime.datetime.now().isoformat(timespec="seconds"),
+            })
+            if isinstance(extra, dict):
+                payload.update(extra)
+
+            jobs[key] = payload
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(data, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.debug("Checkpoint konnte nicht gespeichert werden: %s", exc)
+
+    def _clear_runtime_checkpoint(self, mode: str, src: str, dst: str) -> None:
+        """Entfernt den Checkpoint eines Jobs nach erfolgreichem Abschluss."""
+        try:
+            path = self._checkpoint_file_path()
+            if not os.path.isfile(path):
+                return
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            jobs = data.get("jobs", {}) if isinstance(data, dict) else {}
+            if not isinstance(jobs, dict):
+                return
+            key = self._checkpoint_key(mode, src, dst)
+            if key in jobs:
+                del jobs[key]
+                with open(path, "w", encoding="utf-8") as fh:
+                    json.dump(data, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.debug("Checkpoint konnte nicht entfernt werden: %s", exc)
+
+    def _run_preflight_checks(self, mode: str, src: str, dst: str) -> tuple[list[str], list[str]]:
+        """Führt eine Risikoanalyse vor Start aus und liefert (errors, warnings)."""
+        errors: list[str] = []
+        warnings: list[str] = []
+
+        if not os.path.exists(src):
+            errors.append(f"Quelle nicht gefunden: {src}")
+
+        if len(os.path.abspath(src)) > 240:
+            warnings.append("Quellpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.")
+        if dst and len(os.path.abspath(dst)) > 240:
+            warnings.append("Zielpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.")
+
+        try:
+            tmp_dir = self._get_runtime_temp_dir()
+            free_tmp = shutil.disk_usage(tmp_dir).free
+            if free_tmp < 4 * 1024 ** 3:
+                warnings.append(
+                    f"Temp-Ordner hat wenig freien Speicher: {self._fmt_bytes(int(free_tmp))}."
+                )
+        except Exception as exc:
+            warnings.append(f"Temp-Ordner konnte nicht geprüft werden: {exc}")
+
+        if mode not in ("inspect", "dump_validator") and dst and os.path.isdir(dst):
+            try:
+                free_dst = shutil.disk_usage(dst).free
+                if free_dst < 6 * 1024 ** 3:
+                    warnings.append(
+                        f"Zielordner hat wenig freien Speicher: {self._fmt_bytes(int(free_dst))}."
+                    )
+            except Exception as exc:
+                warnings.append(f"Zielspeicher konnte nicht geprüft werden: {exc}")
+
+        if mode in ("pack_folder", "unpack_to_exfat", "exfat_to_folder"):
+            osf = self._find_osfmount()
+            if not osf:
+                warnings.append("OSFMount nicht gefunden: Fallbacks/Teilschritte können langsamer oder unmöglich sein.")
+
+        return errors, warnings
+
+    def _verify_output_artifact(self, mode: str, final_path: str) -> dict[str, Any]:
+        """Verifiziert ein Ergebnisartefakt schnell und robust."""
+        result: dict[str, Any] = {
+            "ok": False,
+            "mode": mode,
+            "path": final_path or "",
+            "type": "none",
+            "size_bytes": 0,
+            "sha256": "",
+            "method": "",
+            "detail": "",
+        }
+
+        if not final_path:
+            result["ok"] = True
+            result["detail"] = "Kein finales Artefakt für diesen Modus."
+            return result
+
+        if not os.path.exists(final_path):
+            result["detail"] = "Ausgabepfad existiert nicht."
+            return result
+
+        if os.path.isdir(final_path):
+            count = 0
+            total = 0
+            for dirpath, _dirnames, filenames in os.walk(final_path):
+                for fn in filenames:
+                    p = os.path.join(dirpath, fn)
+                    try:
+                        total += os.path.getsize(p)
+                        count += 1
+                    except OSError:
+                        pass
+            result.update({
+                "type": "directory",
+                "size_bytes": int(total),
+                "method": "walk-count",
+                "ok": count > 0 and total > 0,
+                "detail": f"Dateien: {count}, Bytes: {total}",
+            })
+            return result
+
+        try:
+            size = os.path.getsize(final_path)
+        except OSError as exc:
+            result["detail"] = f"Dateigröße nicht lesbar: {exc}"
+            return result
+
+        result["type"] = "file"
+        result["size_bytes"] = int(size)
+        if size <= 0:
+            result["detail"] = "Datei ist leer (0 Bytes)."
+            return result
+
+        try:
+            h = hashlib.sha256()
+            with open(final_path, "rb") as fh:
+                if size <= 2 * 1024 ** 3:
+                    while True:
+                        chunk = fh.read(4 * 1024 * 1024)
+                        if not chunk:
+                            break
+                        h.update(chunk)
+                    result["method"] = "sha256-full"
+                else:
+                    sample = 8 * 1024 * 1024
+                    head = fh.read(sample)
+                    h.update(head)
+                    mid_off = max(0, (size // 2) - (sample // 2))
+                    fh.seek(mid_off)
+                    h.update(fh.read(sample))
+                    tail_off = max(0, size - sample)
+                    fh.seek(tail_off)
+                    h.update(fh.read(sample))
+                    h.update(str(size).encode("ascii", errors="ignore"))
+                    result["method"] = "sha256-sampled"
+            result["sha256"] = h.hexdigest()
+            result["ok"] = True
+            result["detail"] = "Verifizierung erfolgreich."
+            return result
+        except Exception as exc:
+            result["detail"] = f"Hash-Verifizierung fehlgeschlagen: {exc}"
+            return result
+
+    def _calc_pack_workers(
+        self,
+        level: int,
+        source_size_bytes: int,
+        hard_cap: int,
+    ) -> tuple[int, int]:
+        """Ermittelt eine sichere Worker-Anzahl fuer MkPFS-Packing."""
+        cores = os.cpu_count() or 4
+        ceil = max(1, min(max(1, hard_cap), cores - 1) if cores > 1 else 1)
+        frac = 0.5 + 0.5 * (max(1, min(9, level)) - 1) / 8.0
+        cap = max(2, int(round(ceil * frac))) if ceil >= 2 else 1
+        workers = max(1, min(ceil, cap))
+
+        # Extra-Schutz fuer sehr grosse Images.
+        if source_size_bytes >= int(160 * 1024**3):
+            workers = min(workers, 2)
+        elif source_size_bytes >= int(90 * 1024**3):
+            workers = min(workers, 3)
+        return workers, cores
+
+    def _resolve_pack_profile(
+        self,
+        mode: str,
+        source_size_bytes: int,
+    ) -> dict[str, Any]:
+        """Liefert das adaptive Pack-Profil fuer Aufgabe 1/3/6."""
+        cfg = PACK_PROFILE_MATRIX.get(mode, PACK_PROFILE_MATRIX["pack_file"])
+        size_gb = float(source_size_bytes) / float(1024**3) if source_size_bytes > 0 else 0.0
+
+        hard_cap = int(cfg.get("hard_cap", 4))
+        for threshold_gb, cap in cfg.get("size_caps", ()):  # groesstes zuerst
+            if size_gb >= float(threshold_gb):
+                hard_cap = min(hard_cap, int(cap))
+                break
+
+        level = int(cfg.get("level", 8))
+        workers, cores = self._calc_pack_workers(level, source_size_bytes, hard_cap)
+        return {
+            "profile": str(cfg.get("profile", "balanced")),
+            "level": level,
+            "cpu": workers,
+            "cores": cores,
+            "block_size": int(cfg.get("block_size", 65536)),
+            "verify_after": bool(cfg.get("verify_after", True)),
+            "size_gb": round(size_gb, 2),
+        }
+
+    def _write_task_report(
+        self,
+        mode: str,
+        src: str,
+        dst: str,
+        success: bool,
+        aborted: bool,
+        verification: dict[str, Any] | None,
+        warnings: list[str] | None = None,
+    ) -> str:
+        """Schreibt einen JSON-Abschlussbericht in das Zielverzeichnis."""
+        try:
+            end_ts = time.time()
+            start_ts = float(getattr(self, "task_start_time", 0.0) or 0.0)
+            duration = max(0.0, end_ts - start_ts) if start_ts > 0 else 0.0
+            report = {
+                "version": APP_VERSION,
+                "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+                "mode": mode,
+                "source": os.path.abspath(src),
+                "destination": os.path.abspath(dst) if dst else "",
+                "success": bool(success),
+                "aborted": bool(aborted),
+                "duration_seconds": round(duration, 2),
+                "task_progress": float(getattr(self, "task_progress", 0.0) or 0.0),
+                "task_steps": {
+                    "current": int(getattr(self, "task_current_step", 0) or 0),
+                    "total": int(getattr(self, "task_num_steps", 0) or 0),
+                },
+                "source_size_bytes": int(getattr(self, "task_total_source_bytes", 0) or 0),
+                "final_output": str(getattr(self, "task_final_output_path", "") or ""),
+                "warnings": warnings or [],
+                "verification": verification or {},
+                "failure_excerpt": self._extract_failure_lines(),
+            }
+
+            out_dir = ""
+            if dst and os.path.isdir(dst):
+                out_dir = dst
+            elif os.path.isfile(src):
+                out_dir = os.path.dirname(src)
+            elif os.path.isdir(src):
+                out_dir = src
+            else:
+                out_dir = os.path.dirname(self._get_config_path())
+            os.makedirs(out_dir, exist_ok=True)
+
+            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"ps5converter_report_{mode}_{stamp}.json"
+            report_path = os.path.join(out_dir, filename)
+            with open(report_path, "w", encoding="utf-8") as fh:
+                json.dump(report, fh, ensure_ascii=False, indent=2)
+            self._task_report_path = report_path
+            return report_path
+        except Exception as exc:
+            logger.debug("Report konnte nicht geschrieben werden: %s", exc)
+            return ""
+
     def _extract_embedded_mkpfs(self) -> str:
         """Extrahiert die eingebettete mkpfs-Engine in ein temporäres Verzeichnis.
 
@@ -1184,29 +1568,101 @@ class PS5ConverterGUI:
                     return os.path.dirname(dirpath)
             return base
 
-        def _do_extract(extract_dir: str) -> str:
+        def _do_extract(extract_dir: str, zip_path: str) -> str:
             """Extrahiert das ZIP und gibt den sys.path-Eintrag zurück."""
             os.makedirs(extract_dir, exist_ok=True)
-            zip_path = os.path.join(extract_dir, "MkPFS-0.0.8.zip")
-            if not os.path.exists(zip_path):
-                with open(zip_path, "wb") as fh:
-                    fh.write(base64.b64decode(_EMBEDDED))
             with ZipFile(zip_path) as z:
                 z.extractall(extract_dir)
             return _find_mkpfs_parent(extract_dir)
 
+        def _find_required_source_parent() -> str | None:
+            """Findet einen bereits bereitgestellten MkPFS-Quellordner (v0.0.9)."""
+            runtime_root = os.path.dirname(
+                sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+            )
+            search_roots = [runtime_root, os.getcwd()]
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                search_roots.insert(0, str(meipass))
+
+            seen_roots: set[str] = set()
+            for root in search_roots:
+                norm_root = os.path.abspath(root)
+                if norm_root in seen_roots:
+                    continue
+                seen_roots.add(norm_root)
+
+                # Variante A: entpackter Ordner "MkPFS-0.0.9/mkpfs"
+                cand_a = os.path.join(norm_root, f"MkPFS-{MKPFS_REQUIRED_VERSION}")
+                if os.path.isfile(os.path.join(cand_a, "mkpfs", "__init__.py")):
+                    return cand_a
+
+                # Variante B: direktes Paket "mkpfs" im Root
+                if os.path.isfile(os.path.join(norm_root, "mkpfs", "__init__.py")):
+                    return norm_root
+
+            return None
+
+        def _find_required_zip() -> str | None:
+            """Findet die verbindliche MkPFS-ZIP im Runtime-/Arbeitsverzeichnis."""
+            runtime_root = os.path.dirname(
+                sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+            )
+            search_roots = [runtime_root, os.getcwd()]
+            meipass = getattr(sys, "_MEIPASS", "")
+            if meipass:
+                search_roots.insert(0, str(meipass))
+            required_name = f"MkPFS-{MKPFS_REQUIRED_VERSION}.zip"
+
+            seen_roots: set[str] = set()
+            for root in search_roots:
+                norm_root = os.path.abspath(root)
+                if norm_root in seen_roots:
+                    continue
+                seen_roots.add(norm_root)
+                candidate = os.path.join(norm_root, required_name)
+                if os.path.isfile(candidate):
+                    return candidate
+            return None
+
+        # 1) Bevorzugt: bereitgestellter Quellordner (bereits entpackt)
+        _source_parent = _find_required_source_parent()
+        if _source_parent:
+            _parent_for_import = _find_mkpfs_parent(_source_parent)
+            if os.path.isdir(os.path.join(_parent_for_import, "mkpfs")):
+                self._append_to_log(
+                    f"[Engine] MkPFS v{MKPFS_REQUIRED_VERSION} Quellcode geladen: {_source_parent}\n"
+                )
+                return _parent_for_import
+
+        # 2) ZIP-Variante (inkl. PyInstaller _MEIPASS)
+        _selected_zip_path = _find_required_zip()
+        _version_tag = MKPFS_REQUIRED_VERSION.replace(".", "_")
+
+        if not _selected_zip_path:
+            self._append_to_log(
+                f"[FEHLER] MkPFS-{MKPFS_REQUIRED_VERSION}.zip nicht gefunden. "
+                f"Bitte Datei in den Programmordner legen.\n"
+            )
+            return ""
+
         # Primäres Zielverzeichnis in %TEMP%
-        extract_dir = os.path.join(tempfile.gettempdir(), "ps5converter_engine_v008")
+        extract_dir = os.path.join(self._get_runtime_temp_dir(), f"ps5converter_engine_v{_version_tag}")
 
         # Bereits extrahiert und mkpfs-Paket vorhanden?
         cached = _find_mkpfs_parent(extract_dir)
         if os.path.isdir(os.path.join(cached, "mkpfs")):
-            self._append_to_log(f"[Engine] Verwende gecachte Engine: {cached}\n")
+            self._append_to_log(
+                f"[Engine] Verwende gecachte Engine v{MKPFS_REQUIRED_VERSION}: {cached}\n"
+            )
             return cached
 
         # Neu extrahieren
         try:
-            result = _do_extract(extract_dir)
+            result = _do_extract(extract_dir, _selected_zip_path)
+            self._append_to_log(
+                f"[Engine] MkPFS v{MKPFS_REQUIRED_VERSION} geladen: {_selected_zip_path}\n"
+            )
             self._append_to_log(f"[Engine] Engine extrahiert nach: {result}\n")
             return result
         except PermissionError as exc:
@@ -1223,10 +1679,10 @@ class PS5ConverterGUI:
             os.path.dirname(sys.executable
                             if getattr(sys, "frozen", False)
                             else os.path.abspath(__file__)),
-            "engine_temp",
+            f"engine_temp_v{_version_tag}",
         )
         try:
-            result = _do_extract(local_dir)
+            result = _do_extract(local_dir, _selected_zip_path)
             self._append_to_log(f"[Engine] Fallback-Engine extrahiert nach: {result}\n")
             return result
         except Exception as exc:
@@ -1574,6 +2030,20 @@ class PS5ConverterGUI:
         self.dest_entry.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.dest_btn = ttk.Button(path_card, text="Ordner wählen", command=self._browse_dest)
         self.dest_btn.grid(row=3, column=2, padx=(10, 0), pady=(5, 0))
+
+        # Temp-Ordner für große temporäre Arbeitsdateien
+        self.temp_title = ttk.Label(
+            path_card,
+            text="TEMP-ORDNER",
+            font=("Segoe UI", 9, "bold"),
+            foreground=self._COLORS["fg_secondary"],
+            background=self._COLORS["bg_card"],
+        )
+        self.temp_title.grid(row=4, column=0, sticky="w", pady=(14, 0))
+        self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=("Segoe UI", 11))
+        self.temp_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.temp_btn = ttk.Button(path_card, text="Temp wählen", command=self._browse_temp_dir)
+        self.temp_btn.grid(row=5, column=2, padx=(10, 0), pady=(5, 0))
 
         # Kompressions-Level: Level 7 (Standard laut PS5-FFPFSC-PRO / Bizkut Backend)
         self.zstd_level = 7  # Standard-Level laut PS5-FFPFSC-PRO (Bizkut Backend)
@@ -2642,6 +3112,154 @@ class PS5ConverterGUI:
         if path:
             self.dest_path.set(os.path.normpath(path))
 
+    def _load_runtime_temp_dir(self) -> str:
+        """Lädt den benutzerkonfigurierten Temp-Ordner mit Fallback auf System-Temp."""
+        try:
+            saved = str(self._load_setting("temp_dir", "")).strip()
+            if saved and os.path.isdir(saved):
+                return os.path.normpath(saved)
+        except Exception as exc:
+            logger.debug("temp_dir konnte nicht geladen werden: %s", exc)
+        return os.path.normpath(tempfile.gettempdir())
+
+    def _get_runtime_temp_dir(self) -> str:
+        """Ermittelt einen gültigen, beschreibbaren Temp-Ordner zur Laufzeit."""
+        candidate = ""
+        if hasattr(self, "temp_path"):
+            candidate = str(self.temp_path.get()).strip()
+        if not candidate:
+            candidate = str(self._load_setting("temp_dir", "")).strip()
+        if not candidate:
+            candidate = tempfile.gettempdir()
+
+        try:
+            os.makedirs(candidate, exist_ok=True)
+            probe = os.path.join(candidate, ".ps5conv_tmp_write_test")
+            with open(probe, "w", encoding="utf-8") as fh:
+                fh.write("ok")
+            os.remove(probe)
+            norm = os.path.normpath(candidate)
+            if hasattr(self, "temp_path"):
+                self.temp_path.set(norm)
+            self._save_setting("temp_dir", norm)
+            return norm
+        except Exception as exc:
+            logger.warning("Temp-Ordner nicht nutzbar (%s), nutze System-Temp.", exc)
+            fallback = os.path.normpath(tempfile.gettempdir())
+            if hasattr(self, "temp_path"):
+                self.temp_path.set(fallback)
+            self._save_setting("temp_dir", fallback)
+            return fallback
+
+    def _browse_temp_dir(self) -> None:
+        """Öffnet einen Verzeichnis-Dialog für den Temp-Ordner."""
+        current = self.temp_path.get().strip() if hasattr(self, "temp_path") else ""
+        initial_dir = current if os.path.isdir(current) else tempfile.gettempdir()
+        path = filedialog.askdirectory(initialdir=initial_dir)
+        if path:
+            self.temp_path.set(os.path.normpath(path))
+            # Sofort validieren und persistent speichern
+            self._get_runtime_temp_dir()
+
+    def _temp_fallback_candidates(self, preferred: str | None = None) -> list[str]:
+        """Liefert deduplizierte Kandidaten für Temp-Arbeitsverzeichnisse."""
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def _add(path: str | None) -> None:
+            if not path:
+                return
+            p = os.path.normpath(str(path).strip())
+            if not p:
+                return
+            low = p.lower()
+            if low in seen:
+                return
+            seen.add(low)
+            candidates.append(p)
+
+        _add(preferred)
+        if hasattr(self, "temp_path"):
+            _add(self.temp_path.get())
+        _add(str(self._load_setting("temp_dir", "")).strip())
+        _add(tempfile.gettempdir())
+
+        try:
+            if hasattr(self, "dest_path"):
+                dst = str(self.dest_path.get()).strip()
+                if dst:
+                    dst_root = os.path.splitdrive(os.path.abspath(dst))[0]
+                    if dst_root:
+                        _add(os.path.join(dst_root + "\\", "ps5converter_temp"))
+        except Exception:
+            pass
+
+        try:
+            _add(os.getcwd())
+        except Exception:
+            pass
+
+        return candidates
+
+    def _is_temp_dir_usable(self, path: str) -> tuple[bool, str]:
+        """Prüft Schreibbarkeit und minimale freie Kapazität eines Temp-Ordners."""
+        probe = ""
+        try:
+            os.makedirs(path, exist_ok=True)
+            fd, probe = tempfile.mkstemp(prefix=".ps5conv_tmp_write_test_", dir=path)
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write("ok")
+            try:
+                free = shutil.disk_usage(path).free
+                if free < (1 * 1024 ** 3):
+                    return False, f"zu wenig freier Speicher ({self._fmt_bytes(int(free))})"
+            except Exception:
+                pass
+            return True, ""
+        except Exception as exc:
+            return False, str(exc)
+        finally:
+            if probe:
+                try:
+                    os.remove(probe)
+                except OSError:
+                    pass
+
+    def _mkdtemp(self, prefix: str, dir_path: str | None = None) -> str:
+        """Erzeugt ein Temp-Verzeichnis mit automatischem Fallback bei I/O-Engpässen."""
+        preferred = dir_path if dir_path else self._get_runtime_temp_dir()
+        errors: list[str] = []
+        chosen_dir: str | None = None
+        created_dir: str | None = None
+
+        for cand in self._temp_fallback_candidates(preferred):
+            ok, why = self._is_temp_dir_usable(cand)
+            if not ok:
+                errors.append(f"{cand}: {why}")
+                continue
+            try:
+                created_dir = tempfile.mkdtemp(prefix=prefix, dir=cand)
+                chosen_dir = os.path.normpath(cand)
+                break
+            except OSError as exc:
+                errors.append(f"{cand}: {exc}")
+                if exc.errno not in (errno.ENOSPC, errno.EACCES, errno.EPERM, errno.EIO):
+                    continue
+
+        if not created_dir or not chosen_dir:
+            detail = " | ".join(errors[-4:]) if errors else "unbekannter Fehler"
+            raise OSError(f"Kein nutzbarer Temp-Ordner gefunden: {detail}")
+
+        if os.path.normpath(preferred).lower() != chosen_dir.lower():
+            self._append_to_log(
+                f"[WARNUNG] Temp-Ordner gewechselt (I/O-Engpass): {preferred} -> {chosen_dir}\n"
+            )
+            if hasattr(self, "temp_path"):
+                self.temp_path.set(chosen_dir)
+            self._save_setting("temp_dir", chosen_dir)
+
+        return created_dir
+
     def _on_source_path_changed(self, *_args) -> None:
         """Berechnet Quellgröße, Endgrößen-Schätzung und befüllt die Info-Box.
 
@@ -2664,6 +3282,26 @@ class PS5ConverterGUI:
 
         src  = self.source_path.get().strip()
         mode = self.current_mode.get()
+
+        # Bei Quellen-/Moduswechsel alte Vorschau-Caches verwerfen, damit
+        # keine veralteten Metadaten/icon0-Kombinationen angezeigt werden.
+        try:
+            _ctx = (mode, os.path.abspath(src) if src else "")
+            if getattr(self, "_last_preview_ctx", None) != _ctx:
+                self._preview_cache.clear()
+                self._last_preview_ctx = _ctx
+                self._cached_cover = None
+                self._cached_title_id = ""
+                for _k, _var in self._meta_labels.items():
+                    if _k == "title":
+                        _var.set("Quelle wählen...")
+                    else:
+                        _var.set("–")
+                self._info_src_size_var.set("–")
+                self._info_est_size_var.set("–")
+                self._update_sidebar_preview(None, "")
+        except Exception:
+            pass
 
         # UI-Labels und Zielordner-Sichtbarkeit aktualisieren wenn Quelle sich ändert
         if mode == "fakelib_manager" and hasattr(self, "dest_title") and hasattr(self, "src_title"):
@@ -2719,12 +3357,24 @@ class PS5ConverterGUI:
             # verwerfen ihr Ergebnis, bevor sie die GUI aktualisieren.
             self._calc_generation += 1
             my_gen = self._calc_generation
+
+            # Sofortige Anzeige im Hauptthread, bevor irgendein Hintergrund-Thread startet.
+            # Das vermeidet wahrnehmbare Wartezeit in der Spiel-Infobox.
+            try:
+                quick_meta_now = self._quick_meta_from_path(src)
+                self._update_info_box(quick_meta_now, None, "…", "")
+                self._set_size_label_idle("…")
+            except Exception:
+                pass
+
             # Schritt 1: Sidebar-Vorschau sofort mit icon0.png laden (schnell, kein mkpfs)
             def _quick_preview() -> None:
                 try:
                     cover_img: "Image.Image | None" = None
                     if os.path.isdir(src):
-                        cover_img = self._load_cover_image(src)
+                        # Fuer die Sofortvorschau nur bekannte Standardpfade pruefen.
+                        # Tiefe Scans passieren spaeter im Hintergrund-Fallback.
+                        cover_img = self._load_cover_image(src, deep_scan=False)
                     else:
                         # Bei Dateien zuerst In-Memory-Cache nutzen; falls nicht vorhanden
                         # nur direkte Kandidaten pruefen (kein Verzeichnis-Scan).
@@ -2743,11 +3393,17 @@ class PS5ConverterGUI:
                                 parent, os.path.splitext(os.path.basename(src))[0]
                             )
                             candidates = [
-                                os.path.join(parent, "icon0.png"),
-                                os.path.join(parent, "sce_sys", "icon0.png"),
-                                os.path.join(base_folder, "icon0.png"),
                                 os.path.join(base_folder, "sce_sys", "icon0.png"),
+                                os.path.join(base_folder, "icon0.png"),
                             ]
+                            # Parent-Fallback nur in Modi, bei denen Sidecar-Struktur
+                            # neben der Quelldatei erwartbar ist. So vermeiden wir,
+                            # dass zufaellige icon0.png aus Fremdordnern angezeigt werden.
+                            if mode in ("pack_file", "exfat_to_folder"):
+                                candidates.extend([
+                                    os.path.join(parent, "sce_sys", "icon0.png"),
+                                    os.path.join(parent, "icon0.png"),
+                                ])
                             for _cp in candidates:
                                 if os.path.isfile(_cp):
                                     try:
@@ -2771,9 +3427,18 @@ class PS5ConverterGUI:
                     _quick_cover = None
                     if mode in ("pack_folder", "fakelib_manager") and os.path.isdir(src):
                         # --- Ordner-Modus (pack_folder / fakelib_manager): direkt aus Ordner lesen ---
+                        # Schritt 1: Fast-Path sofort anzeigen, bevor teure Größenberechnung läuft.
+                        quick_meta = self._quick_meta_from_path(src)
+                        if my_gen == self._calc_generation:
+                            self.root.after(
+                                0,
+                                lambda m=quick_meta: self._update_info_box(m, None, "…", "")
+                            )
+
                         total   = self._get_path_size(src)
+                        self._last_source_size_bytes = int(total)
                         src_str = self._fmt_bytes(total)
-                        # Schritt 1: sofort nur Quellgröße anzeigen
+                        # Schritt 2: Quellgröße nachreichen
                         self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
                         # Schritt 2: Zielgröße schätzen
                         try:
@@ -2783,23 +3448,34 @@ class PS5ConverterGUI:
                         except Exception:
                             est_str    = ""
                             label_text = f"{src_str} → ±10–30%"
-                        meta      = self._read_game_meta(src)
-                        cover_img = self._load_cover_image(src)
+                        # Nach der Schätzung nur die Zielgröße nachreichen.
+                        if my_gen == self._calc_generation:
+                            self.root.after(0, lambda s=src_str, e=est_str: self._update_info_box(quick_meta, None, s, e))
+                        meta, cover_img = self._read_game_meta_and_cover(src)
                     elif mode == "dump_validator" and os.path.isdir(src):
                         # --- Aufgabe 8: Dump-Ordner – Metadaten + Vorschau laden ---
+                        # Fast-Path zuerst, damit die Infobox sofort reagiert.
+                        quick_meta = self._quick_meta_from_path(src)
+                        if my_gen == self._calc_generation:
+                            self.root.after(
+                                0,
+                                lambda m=quick_meta: self._update_info_box(m, None, "…", "")
+                            )
+
                         total   = self._get_path_size(src)
+                        self._last_source_size_bytes = int(total)
                         src_str = self._fmt_bytes(total)
                         # Nur Quellgröße – keine Zielgröße bei Validator
                         self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
                         label_text = src_str
-                        meta      = self._read_game_meta(src)
-                        cover_img = self._load_cover_image(src)
+                        meta, cover_img = self._read_game_meta_and_cover(src)
                         est_str   = ""
                     elif mode in ("unpack_to_exfat", "pack_file", "inspect",
                                   "unpack_to_game_folder", "ffpkg_to_ffpfsc",
                                   "exfat_to_folder"):
                         # --- Datei-Modus: Größe berechnen, Metadaten NUR für Info-Box ---
                         total   = os.path.getsize(src)
+                        self._last_source_size_bytes = int(total)
                         src_str = self._fmt_bytes(total)
                         # Schritt 1: sofort nur Quellgröße anzeigen
                         self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
@@ -2835,6 +3511,7 @@ class PS5ConverterGUI:
                     elif mode in ("fakelib_manager", "dump_validator") and os.path.isfile(src):
                         # --- Datei-Modus für fakelib_manager / dump_validator ---
                         total   = os.path.getsize(src)
+                        self._last_source_size_bytes = int(total)
                         src_str = self._fmt_bytes(total)
                         # Nur Quellgröße anzeigen
                         self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
@@ -2888,6 +3565,7 @@ class PS5ConverterGUI:
             threading.Thread(target=_calc, daemon=True).start()
         else:
             # Kein gültiger Quellpfad: Info-Box verstecken, Button deaktivieren, Label leeren
+            self._last_source_size_bytes = 0
             if hasattr(self, "info_toggle_btn"):
                 self.info_toggle_btn.config(state=tk.DISABLED)
             self.root.after(0, self._hide_info_box)
@@ -2931,7 +3609,7 @@ class PS5ConverterGUI:
             base.upper(),
         )
         tid = m_tid.group(1) if m_tid else "–"
-        return {
+        quick_meta = {
             "title": title_guess,
             "title_id": tid,
             "version": "–",
@@ -2939,6 +3617,41 @@ class PS5ConverterGUI:
             "category": "–",
             "publisher": "–",
         }
+
+        # Sehr schneller param.json-Fast-Path (ohne tiefe Scans):
+        # bekannte Standardpfade pruefen und nur bessere Werte uebernehmen.
+        try:
+            candidate_roots: list[str] = []
+            if os.path.isdir(src):
+                candidate_roots.append(src)
+            else:
+                parent = os.path.dirname(src)
+                stem_dir = os.path.join(parent, os.path.splitext(os.path.basename(src))[0])
+                if os.path.isdir(stem_dir):
+                    candidate_roots.append(stem_dir)
+                if os.path.isdir(parent):
+                    candidate_roots.append(parent)
+
+            for root in candidate_roots:
+                fast_meta = self._read_game_meta(root, deep_scan=False)
+                if not isinstance(fast_meta, dict):
+                    continue
+                for k in ("title", "title_id", "version", "region", "category", "publisher"):
+                    val = str(fast_meta.get(k, "")).strip()
+                    if val and val not in {"–", "-", "Unbekannt"}:
+                        quick_meta[k] = val
+                # Sobald param.json greift, reichen die ersten Treffer.
+                if quick_meta.get("version", "–") != "–" or quick_meta.get("category", "–") != "–":
+                    break
+        except Exception as exc:
+            logger.debug("Quick-Param-Fast-Path fehlgeschlagen: %s", exc)
+
+        # Region ggf. final aus (evtl. inzwischen gefuellter) Title-ID ableiten.
+        if quick_meta.get("region", "–") in {"–", "-", ""}:
+            _qt = str(quick_meta.get("title_id", "")).strip()
+            if _qt and _qt not in {"–", "-"}:
+                quick_meta["region"] = self._region_from_title_id(_qt)
+        return quick_meta
 
     @staticmethod
     def _sanitize_title_id(title_id: str) -> str:
@@ -2955,7 +3668,7 @@ class PS5ConverterGUI:
         tid = cls._sanitize_title_id(title_id)
         return bool(re.fullmatch(r"(?:PPSA|PPSS|PPUS|PPJP|CUSA|PUSA|PCJS|PCAS|ECAS)\d{5}", tid))
 
-    def _read_game_meta(self, src: str) -> dict:
+    def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict:
         """Liest Spielmetadaten aus param.json oder param.sfo.
 
         Sucht zuerst nach param.json, dann als Fallback nach param.sfo.
@@ -2964,6 +3677,7 @@ class PS5ConverterGUI:
 
         Args:
             src: Pfad zum Quellordner.
+            deep_scan: Wenn True, werden auch Unterordner-Fallbacks genutzt.
         """
         meta: dict[str, str] = {
             "title":     "–",
@@ -2981,20 +3695,21 @@ class PS5ConverterGUI:
             os.path.join(src, "sce_sys", "param.json"),
         ]
         # Eine Ebene tiefer: src/GAMEID/sce_sys/param.json
-        try:
-            for _entry in os.listdir(src):
-                _json_candidates.append(os.path.join(src, _entry, "sce_sys", "param.json"))
-                _json_candidates.append(os.path.join(src, _entry, "param.json"))
-                if len(_json_candidates) > 22:
-                    break
-        except OSError:
-            pass
+        if deep_scan:
+            try:
+                for _entry in os.listdir(src):
+                    _json_candidates.append(os.path.join(src, _entry, "sce_sys", "param.json"))
+                    _json_candidates.append(os.path.join(src, _entry, "param.json"))
+                    if len(_json_candidates) > 22:
+                        break
+            except OSError:
+                pass
         for _cand in _json_candidates:
             if os.path.isfile(_cand):
                 json_path = _cand
                 break
         # --- Fallback: nur sce_sys-Unterordner bis Tiefe 2 prüfen (kein vollständiger Scan) ---
-        if not json_path:
+        if deep_scan and not json_path:
             try:
                 for _lvl1 in os.listdir(src):
                     _lvl1_path = os.path.join(src, _lvl1)
@@ -3141,20 +3856,21 @@ class PS5ConverterGUI:
             os.path.join(src, "param.sfo"),
             os.path.join(src, "sce_sys", "param.sfo"),
         ]
-        try:
-            for _entry in os.listdir(src):
-                _sfo_candidates.append(os.path.join(src, _entry, "sce_sys", "param.sfo"))
-                _sfo_candidates.append(os.path.join(src, _entry, "param.sfo"))
-                if len(_sfo_candidates) > 22:
-                    break
-        except OSError:
-            pass
+        if deep_scan:
+            try:
+                for _entry in os.listdir(src):
+                    _sfo_candidates.append(os.path.join(src, _entry, "sce_sys", "param.sfo"))
+                    _sfo_candidates.append(os.path.join(src, _entry, "param.sfo"))
+                    if len(_sfo_candidates) > 22:
+                        break
+            except OSError:
+                pass
         for _sc in _sfo_candidates:
             if os.path.isfile(_sc):
                 sfo_path = _sc
                 break
         # Letzter Fallback: Tiefe-2-Scan nur in sce_sys-Unterordnern
-        if not sfo_path:
+        if deep_scan and not sfo_path:
             try:
                 for _lvl1 in os.listdir(src):
                     _lvl1_path = os.path.join(src, _lvl1)
@@ -3209,7 +3925,7 @@ class PS5ConverterGUI:
 
         return meta
 
-    def _load_cover_image(self, src: str) -> Image.Image | None:
+    def _load_cover_image(self, src: str, deep_scan: bool = True) -> Image.Image | None:
         """Lädt icon0.png aus dem Quellordner – schnell via direkter Pfad-Prüfung.
         Prüft zuerst bekannte Standardpfade (sce_sys/icon0.png), dann erst os.walk.
         Args:
@@ -3223,17 +3939,18 @@ class PS5ConverterGUI:
             os.path.join(src, "sce_sys", "icon0.png"),
         ]
         # Auch eine Ebene tiefer: src/GAMEID/sce_sys/icon0.png
-        try:
-            for entry in os.listdir(src):
-                sub = os.path.join(src, entry, "sce_sys", "icon0.png")
-                _candidates.append(sub)
-                sub2 = os.path.join(src, entry, "icon0.png")
-                _candidates.append(sub2)
-                # Maximal 20 Einträge für den Schnellpfad
-                if len(_candidates) > 22:
-                    break
-        except OSError:
-            pass
+        if deep_scan:
+            try:
+                for entry in os.listdir(src):
+                    sub = os.path.join(src, entry, "sce_sys", "icon0.png")
+                    _candidates.append(sub)
+                    sub2 = os.path.join(src, entry, "icon0.png")
+                    _candidates.append(sub2)
+                    # Maximal 20 Einträge für den Schnellpfad
+                    if len(_candidates) > 22:
+                        break
+            except OSError:
+                pass
         for candidate in _candidates:
             if os.path.isfile(candidate):
                 try:
@@ -3243,65 +3960,140 @@ class PS5ConverterGUI:
                 except Exception:
                     return None
         # --- Fallback: nur sce_sys-Unterordner bis Tiefe 2 prüfen (kein vollständiger Scan) ---
-        try:
-            for _lvl1 in os.listdir(src):
-                _lvl1_path = os.path.join(src, _lvl1)
-                if not os.path.isdir(_lvl1_path):
-                    continue
-                # src/GAMEID/sce_sys/icon0.png und src/GAMEID/icon0.png
-                for _sub_path in (
-                    os.path.join(_lvl1_path, "sce_sys", "icon0.png"),
-                    os.path.join(_lvl1_path, "icon0.png"),
-                ):
-                    if os.path.isfile(_sub_path):
-                        try:
-                            img = Image.open(_sub_path)
-                            img.load()
-                            return img.convert("RGBA")
-                        except Exception:
-                            return None
-                # Tiefe 2: src/GAMEID/SUBDIR/sce_sys/icon0.png
-                try:
-                    for _lvl2 in os.listdir(_lvl1_path):
-                        _p2 = os.path.join(_lvl1_path, _lvl2, "sce_sys", "icon0.png")
-                        if os.path.isfile(_p2):
+        if deep_scan:
+            try:
+                for _lvl1 in os.listdir(src):
+                    _lvl1_path = os.path.join(src, _lvl1)
+                    if not os.path.isdir(_lvl1_path):
+                        continue
+                    # src/GAMEID/sce_sys/icon0.png und src/GAMEID/icon0.png
+                    for _sub_path in (
+                        os.path.join(_lvl1_path, "sce_sys", "icon0.png"),
+                        os.path.join(_lvl1_path, "icon0.png"),
+                    ):
+                        if os.path.isfile(_sub_path):
                             try:
-                                img = Image.open(_p2)
+                                img = Image.open(_sub_path)
                                 img.load()
                                 return img.convert("RGBA")
                             except Exception:
                                 return None
-                except OSError:
-                    pass
-        except OSError:
-            pass
+                    # Tiefe 2: src/GAMEID/SUBDIR/sce_sys/icon0.png
+                    try:
+                        for _lvl2 in os.listdir(_lvl1_path):
+                            _p2 = os.path.join(_lvl1_path, _lvl2, "sce_sys", "icon0.png")
+                            if os.path.isfile(_p2):
+                                try:
+                                    img = Image.open(_p2)
+                                    img.load()
+                                    return img.convert("RGBA")
+                                except Exception:
+                                    return None
+                    except OSError:
+                        pass
+            except OSError:
+                pass
 
         # Letzter Fallback: gezielte rekursive Suche. Das ist wichtig für
         # entpackte Container, deren Struktur tiefer verschachtelt ist als die
         # üblichen 1-2 Ebenen aus den Schnellpfaden.
+        if deep_scan:
+            try:
+                _seen_dirs = 0
+                for _root, _dirs, _files in os.walk(src):
+                    _seen_dirs += 1
+                    if _seen_dirs > 300:
+                        break
+                    _root_low = _root.replace("\\", "/").lower()
+                    for _fn in _files:
+                        if _fn.lower() != "icon0.png":
+                            continue
+                        # Bevorzugt Treffer innerhalb von sce_sys.
+                        if "sce_sys" not in _root_low and _seen_dirs < 300:
+                            continue
+                        _candidate = os.path.join(_root, _fn)
+                        try:
+                            img = Image.open(_candidate)
+                            img.load()
+                            return img.convert("RGBA")
+                        except Exception:
+                            continue
+            except OSError:
+                pass
+        return None
+
+    def _read_game_meta_and_cover(self, src: str) -> tuple[dict, Image.Image | None]:
+        """Liest Metadaten und Cover konsistent aus derselben Spielequelle.
+
+        Verhindert Mismatch-Situationen, in denen Titel und icon0 aus
+        unterschiedlichen Unterordnern stammen.
+        """
+        if not os.path.isdir(src):
+            return self._read_game_meta(src), self._load_cover_image(src)
+
+        hint_tid = ""
         try:
-            _seen_dirs = 0
-            for _root, _dirs, _files in os.walk(src):
-                _seen_dirs += 1
-                if _seen_dirs > 300:
-                    break
-                _root_low = _root.replace("\\", "/").lower()
-                for _fn in _files:
-                    if _fn.lower() != "icon0.png":
-                        continue
-                    # Bevorzugt Treffer innerhalb von sce_sys.
-                    if "sce_sys" not in _root_low and _seen_dirs < 300:
-                        continue
-                    _candidate = os.path.join(_root, _fn)
-                    try:
-                        img = Image.open(_candidate)
-                        img.load()
-                        return img.convert("RGBA")
-                    except Exception:
-                        continue
+            hint_src = os.path.basename(os.path.normpath(src)).upper()
+            m_hint = re.search(
+                r"(PPSA\d{5}|PPUS\d{5}|PPJP\d{5}|CUSA\d{5}|PUSA\d{5}|PCJS\d{5}|PCAS\d{5}|ECAS\d{5})",
+                hint_src,
+            )
+            if m_hint:
+                hint_tid = m_hint.group(1)
+        except Exception:
+            hint_tid = ""
+
+        candidates = [src]
+        try:
+            subdirs = [
+                os.path.join(src, entry)
+                for entry in sorted(os.listdir(src), key=lambda v: v.lower())
+                if os.path.isdir(os.path.join(src, entry))
+            ]
+            if hint_tid:
+                subdirs.sort(
+                    key=lambda p: (hint_tid not in os.path.basename(p).upper(), os.path.basename(p).lower())
+                )
+            candidates.extend(subdirs[:30])
         except OSError:
             pass
-        return None
+
+        # 1) Exakter Treffer: Title-ID passt zum Quellpfad-Hinweis.
+        if hint_tid:
+            for _cand in candidates:
+                meta = self._read_game_meta(_cand, deep_scan=False)
+                _tid = str(meta.get("title_id", "")).upper().strip()
+                if _tid == hint_tid:
+                    cover = self._load_cover_image(_cand, deep_scan=False)
+                    return meta, cover
+
+        # 2) Stabile Wahl: erst Metadaten-Kandidat bestimmen, Cover nur einmal laden.
+        best_meta = None
+        best_cand = None
+        for _cand in candidates:
+            meta = self._read_game_meta(_cand, deep_scan=False)
+            _title = str(meta.get("title", "–")).strip()
+            _tid = str(meta.get("title_id", "–")).strip()
+            _has_title = _title not in {"", "-", "–", "Unbekannt"}
+            _has_tid = _tid not in {"", "-", "–", "Unbekannt"}
+            if _has_title or _has_tid:
+                best_meta = meta
+                best_cand = _cand
+                # Volltreffer: sowohl Titel als auch Title-ID vorhanden.
+                if _has_title and _has_tid:
+                    break
+
+        if best_cand is not None and best_meta is not None:
+            cover = self._load_cover_image(best_cand, deep_scan=False)
+            return best_meta, cover
+
+        # 3) Letzter Schnellpfad: nur Cover falls keine Metadaten gefunden wurden.
+        for _cand in candidates:
+            cover = self._load_cover_image(_cand, deep_scan=False)
+            if cover is not None:
+                return self._read_game_meta(_cand, deep_scan=False), cover
+
+        return self._read_game_meta(src), self._load_cover_image(src)
 
     def _load_fallback_art_image(self, src: str) -> Image.Image | None:
         """Sucht ein alternatives Bild, wenn icon0.png fehlt.
@@ -3465,15 +4257,26 @@ class PS5ConverterGUI:
             _cache_key = None
         # --- .exfat-Modus (Aufgaben 3+5) und .ffpkg-Modus (Aufgabe 6): Metadaten aus Elternordner lesen ---
         if mode in ("pack_file", "ffpkg_to_ffpfsc", "exfat_to_folder") or src.lower().endswith(".exfat") or src.lower().endswith(".ffpkg"):
-            # Versuch 1: sce_sys neben der Datei suchen (falls vorhanden)
+            # Metadaten/Cover nur aus "vertrauenswuerdigen" Sidecar-Pfaden laden.
+            # Das verhindert falsche Infobox-Daten, wenn im Elternordner eine
+            # fremde param.* oder icon0.png liegt.
             parent = os.path.dirname(src)
-            meta      = self._read_game_meta(parent)
-            cover_img = self._load_cover_image(parent)
-            if meta["title"] == "–":
-                sce_sys = os.path.join(parent, "sce_sys")
-                if os.path.isdir(sce_sys):
-                    meta      = self._read_game_meta(sce_sys)
-                    cover_img = self._load_cover_image(sce_sys)
+            stem_dir = os.path.join(parent, os.path.splitext(os.path.basename(src))[0])
+            trusted_dirs: list[str] = []
+            if os.path.isdir(stem_dir):
+                trusted_dirs.append(stem_dir)
+            # Parent als Sidecar nur fuer exfat-Workflows zulassen.
+            if mode in ("pack_file", "exfat_to_folder") and os.path.isdir(os.path.join(parent, "sce_sys")):
+                trusted_dirs.append(parent)
+
+            meta = dict(empty_meta)
+            cover_img: Image.Image | None = None
+            for _cand_dir in trusted_dirs:
+                meta = self._read_game_meta(_cand_dir)
+                cover_img = self._load_cover_image(_cand_dir)
+                if meta.get("title", "–") != "–" or cover_img is not None:
+                    break
+
             # Versuch 2: Image temporär mounten und sce_sys darin lesen
             if meta["title"] == "–" and src.lower().endswith(".exfat"):
                 meta, cover_img = self._extract_meta_from_exfat_image(src)
@@ -3486,8 +4289,8 @@ class PS5ConverterGUI:
             return meta, cover_img
 
         # --- .ffpfsc-Modus (Aufgaben 2, 4, 5): PFS-API nutzen ---
-        tmp_outer = tempfile.mkdtemp(prefix="ps5conv_meta_outer_")
-        tmp_meta  = tempfile.mkdtemp(prefix="ps5conv_meta_files_")
+        tmp_outer = self._mkdtemp(prefix="ps5conv_meta_outer_")
+        tmp_meta  = self._mkdtemp(prefix="ps5conv_meta_files_")
         try:
             outer_cover_img: Image.Image | None = None
             # Sicherstellen dass mkpfs verfügbar ist
@@ -3722,10 +4525,16 @@ class PS5ConverterGUI:
 
         # ── Trennlinie + Patch-Header ────────────────────────────────────────────────────────────
         tk.Frame(container, bg=self._COLORS["border"], height=1).pack(fill="x", pady=(10, 4))
-        tk.Label(container, text="Updates / Patches",
-                 font=("Segoe UI", 9, "bold"),
-                 fg=self._COLORS["fg_accent"],
-                 bg=self._COLORS["bg_main"]).pack(anchor="w", pady=(0, 4))
+        patch_head = tk.Frame(container, bg=self._COLORS["bg_main"])
+        patch_head.pack(fill="x", pady=(0, 4))
+        tk.Label(patch_head, text="Updates / Patches",
+             font=("Segoe UI", 9, "bold"),
+             fg=self._COLORS["fg_accent"],
+             bg=self._COLORS["bg_main"]).pack(side="left", anchor="w")
+        tk.Label(patch_head, textvariable=self._patch_status_var,
+             font=("Segoe UI", 8),
+             fg=self._COLORS["fg_secondary"],
+             bg=self._COLORS["bg_main"]).pack(side="right", anchor="e")
 
         # ── Treeview (füllt restliche Höhe) ────────────────────────────────────────────────────────
         patch_outer = tk.Frame(container, bg=self._COLORS["bg_card"])
@@ -3822,21 +4631,7 @@ class PS5ConverterGUI:
             self._info_popup = self._build_info_popup()
             # Gecachtes Cover laden (180×180 passend zum Layout)
             if self._cached_cover is not None and self.info_cover_label is not None:
-                try:
-                    cover_copy = self._cached_cover.copy()
-                    cover_copy = cover_copy.resize(
-                        (176, 176), _LANCZOS
-                    ) if cover_copy.width > 0 and cover_copy.height > 0 else cover_copy
-                    bg_img = Image.new("RGB", (176, 176), tuple(
-                        int(self._COLORS["bg_card"].lstrip("#")[i:i+2], 16) for i in (0, 2, 4)
-                    ))
-                    offset = ((176 - cover_copy.width) // 2, (176 - cover_copy.height) // 2)
-                    bg_img.paste(cover_copy, offset)
-                    tk_img = ImageTk.PhotoImage(bg_img)
-                    self.info_cover_label.config(image=tk_img, text="")
-                    self.info_cover_label.image = tk_img  # type: ignore[attr-defined]
-                except Exception as exc:
-                    logger.debug("Cover-Bild in Info-Box konnte nicht gesetzt werden: %s", exc)
+                self._apply_info_cover(self._cached_cover)
             elif self.info_cover_label is not None:
                 # Ohne Cover trotzdem sichtbaren Platzhalter anzeigen
                 self.info_cover_label.config(
@@ -3848,16 +4643,7 @@ class PS5ConverterGUI:
                 self.info_cover_label.image = None  # type: ignore[attr-defined]
             # Gecachte Patch-Suche starten
             if self._cached_title_id:
-                # Treeview-Platzhalter setzen
-                if hasattr(self, "_patch_tree") and self._patch_tree is not None:
-                    try:
-                        if self._patch_tree.winfo_exists():
-                            for item in self._patch_tree.get_children():
-                                self._patch_tree.delete(item)
-                            self._patch_tree.insert("", "end",
-                                values=("-", "Suche nach Updates…", "-", "-", "-", "-"))
-                    except Exception as exc:
-                        logger.debug("Patch-Baum-Initialisierung fehlgeschlagen: %s", exc)
+                self._prepare_patch_lookup_ui(self._cached_title_id)
                 self._fetch_patches_async(self._cached_title_id)
         else:
             self._info_popup.deiconify()
@@ -3868,6 +4654,40 @@ class PS5ConverterGUI:
             _popup.after(350, lambda: _popup.attributes("-topmost", False))
             _popup.lift()
             _popup.focus_force()
+
+    def _apply_info_cover(self, cover: "Image.Image | None") -> None:
+        """Setzt das Cover im Info-Popup aus einem bereits geladenen PIL-Bild."""
+        if self.info_cover_label is None:
+            return
+        try:
+            if not self.info_cover_label.winfo_exists():
+                return
+        except Exception:
+            return
+
+        if cover is not None:
+            try:
+                cover_copy = cover.copy()
+                cover_copy.thumbnail((176, 176), _LANCZOS)  # type: ignore[arg-type]
+                bg = Image.new("RGB", (176, 176), tuple(
+                    int(self._COLORS["bg_card"].lstrip("#")[i:i+2], 16) for i in (0, 2, 4)
+                ))
+                offset = ((176 - cover_copy.width) // 2, (176 - cover_copy.height) // 2)
+                bg.paste(cover_copy, offset)
+                tk_img = ImageTk.PhotoImage(bg)
+                self.info_cover_label.config(image=tk_img, text="")
+                self.info_cover_label.image = tk_img  # type: ignore[attr-defined]
+                return
+            except Exception as exc:
+                logger.debug("Cover-Bild in Info-Box konnte nicht gesetzt werden: %s", exc)
+
+        self.info_cover_label.config(
+            image="",
+            text="○",
+            font=("Segoe UI", 64),
+            fg=self._COLORS["fg_secondary"],
+        )
+        self.info_cover_label.image = None  # type: ignore[attr-defined]
 
     def _update_sidebar_preview(self, cover: "Image.Image | None", title: str) -> None:
         """Aktualisiert die icon0.png-Vorschau in der Sidebar.
@@ -3907,6 +4727,10 @@ class PS5ConverterGUI:
             self._sidebar_preview_label_text.pack(anchor="center", pady=(0, 4))
             self._sidebar_preview_img_label.config(image=self._sidebar_preview_photo)
             self._sidebar_preview_img_label.pack(anchor="center", padx=0)
+            # Schnell geladenes Sidebar-Cover als gemeinsame Quelle für die Info-Box übernehmen.
+            self._cached_cover = cover
+            if self._info_popup is not None and self._info_popup.winfo_exists():
+                self._apply_info_cover(cover)
             # Spielname
             display_title = title.strip() if title.strip() else ""
             if display_title:
@@ -3940,6 +4764,14 @@ class PS5ConverterGUI:
     ) -> None:
         """Befüllt das Info-Popup mit Metadaten, Cover und Größenangaben.
 
+        # Relative Ausgabepfade wuerden bei cwd=tmp_script_dir im Temp-Ordner landen.
+        # Daher immer auf absolute Pfade normalisieren.
+        src_dir = os.path.abspath(src_dir)
+        out_file = os.path.abspath(out_file)
+        out_parent = os.path.dirname(out_file)
+        if out_parent:
+            os.makedirs(out_parent, exist_ok=True)
+
         Falls das Popup noch nicht existiert, wird es erstellt.
         Args:
             meta:    Normalisiertes Metadaten-Dict.
@@ -3956,7 +4788,8 @@ class PS5ConverterGUI:
         self._info_est_size_var.set(f"~{est_str}" if est_str else "–")
 
         # Cover-Bild im Cache speichern (wird beim Öffnen der Box geladen)
-        self._cached_cover = cover
+        if cover is not None:
+            self._cached_cover = cover
 
         # Sidebar-Vorschau aktualisieren
         title_str = meta.get("title", "") or ""
@@ -3968,22 +4801,20 @@ class PS5ConverterGUI:
         if self._is_valid_title_id(title_id):
             prev_id = getattr(self, "_cached_title_id", "")
             self._cached_title_id = title_id
+            if title_id != self._persisted_title_id:
+                self._persisted_title_id = title_id
+                self._save_setting("last_title_id", title_id)
             if self._info_popup is not None and self._info_popup.winfo_exists():
                 # Nur neu suchen wenn sich die Title-ID geändert hat
                 # (verhindert dass bereits angezeigte Ergebnisse gelöscht werden)
                 if title_id != prev_id:
-                    if hasattr(self, "_patch_tree") and self._patch_tree is not None:
-                        try:
-                            if self._patch_tree.winfo_exists():
-                                for item in self._patch_tree.get_children():
-                                    self._patch_tree.delete(item)
-                                self._patch_tree.insert("", "end",
-                                    values=("-", "Suche nach Updates…", "-", "-", "-", "-"))
-                        except Exception as exc:
-                            logger.debug("Patch-Suche fehlgeschlagen: %s", exc)
+                    self._prepare_patch_lookup_ui(title_id)
                     self._fetch_patches_async(title_id)
         else:
             self._cached_title_id = ""
+            if self._persisted_title_id:
+                self._persisted_title_id = ""
+                self._save_setting("last_title_id", "")
 
         # Cover-Bild im Popup aktualisieren (nur wenn Popup offen und Label existiert)
         popup_live = (
@@ -4003,36 +4834,29 @@ class PS5ConverterGUI:
             return
 
         if cover is not None:
-            try:
-                cover_copy = cover.copy()
-                cover_copy.thumbnail((176, 176), _LANCZOS)  # type: ignore[arg-type]
-                bg = Image.new("RGB", (176, 176), tuple(
-                    int(self._COLORS["bg_card"].lstrip("#")[i:i+2], 16) for i in (0, 2, 4)
-                ))
-                offset = ((176 - cover_copy.width) // 2, (176 - cover_copy.height) // 2)
-                bg.paste(cover_copy, offset)
-                tk_img = ImageTk.PhotoImage(bg)
-                if self.info_cover_label is not None:
-                    self.info_cover_label.config(image=tk_img, text="")
-                    self.info_cover_label.image = tk_img  # type: ignore[attr-defined]
-            except Exception:
-                if self.info_cover_label is not None:
-                    self.info_cover_label.config(image="", text="○",
-                        font=("Segoe UI", 40), fg=self._COLORS["fg_secondary"])
-                    self.info_cover_label.image = None  # type: ignore[attr-defined]
+            self._apply_info_cover(cover)
+        elif self._cached_cover is not None:
+            self._apply_info_cover(self._cached_cover)
         else:
-            if self.info_cover_label is not None:
-                self.info_cover_label.config(
-                    image="",
-                    text="○",
-                    font=("Segoe UI", 64),
-                    fg=self._COLORS["fg_secondary"],
-                )
-                self.info_cover_label.image = None  # type: ignore[attr-defined]
+            self._apply_info_cover(None)
 
     # ------------------------------------------------------------------
     # Patch-Suche
     # ------------------------------------------------------------------
+
+    def _prepare_patch_lookup_ui(self, title_id: str) -> None:
+        """Setzt Platzhalter und Status für laufende Patch-Suche."""
+        self._patch_status_var.set(f"Lade Updates für {title_id} ...")
+        if hasattr(self, "_patch_tree") and self._patch_tree is not None:
+            try:
+                if self._patch_tree.winfo_exists():
+                    for item in self._patch_tree.get_children():
+                        self._patch_tree.delete(item)
+                    self._patch_tree.insert(
+                        "", "end", values=("-", "Suche nach Updates... (0.0s)", "-", "-", "-", "-")
+                    )
+            except Exception as exc:
+                logger.debug("Patch-Placeholder konnte nicht gesetzt werden: %s", exc)
 
     def _fetch_patches_async(self, title_id: str) -> None:
         """Startet die Patch-Suche im Hintergrund-Thread.
@@ -4051,13 +4875,24 @@ class PS5ConverterGUI:
         if not self._is_valid_title_id(tid_upper):
             logger.debug("Patch-Suche übersprungen: ungültige Title-ID '%s'", title_id)
             return
+        _start_ts = _time_mod.perf_counter()
+        self.root.after(0, lambda t=tid_upper: self._patch_status_var.set(f"Lade Updates für {t} ..."))
+
+        def _elapsed() -> float:
+            return max(0.0, _time_mod.perf_counter() - _start_ts)
+
         # --- In-Memory-Cache prüfen ---
         _cached = self._patch_cache.get(tid_upper)
         if _cached is not None:
             _cache_ts, _cache_results = _cached
             if _time_mod.time() - _cache_ts < self._PATCH_CACHE_TTL:
                 # Cache-Treffer: sofort anzeigen
-                self.root.after(0, lambda r=_cache_results: self._display_patches(r, title_id))
+                self.root.after(
+                    0,
+                    lambda r=_cache_results: self._display_patches(
+                        r, title_id, elapsed_sec=_elapsed(), final=True, source="Cache"
+                    ),
+                )
                 return
         if tid_upper.startswith(("PPSA", "PPSS")):
             sites = [("https://prosperopatches.com", "PS5")]
@@ -4106,13 +4941,13 @@ class PS5ConverterGUI:
                 if m:
                     key = m.group(1)
                 if not key:
-                    m2 = re.search(r'id=["\']dynpatch["\'][^>]*data-key=["\']([a-f0-9]+)["\']', html)
+                    m2 = re.search(r"id=['\"]dynpatch['\"][^>]*data-key=['\"]([a-f0-9]+)['\"]", html)
                     if not m2:
-                        m2 = re.search(r'data-key=["\']([a-f0-9]+)["\'][^>]*id=["\']dynpatch["\']', html)
+                        m2 = re.search(r"data-key=['\"]([a-f0-9]+)['\"][^>]*id=['\"]dynpatch['\"]", html)
                     if m2:
                         key = m2.group(1)
                 if not key:
-                    m3 = re.search(r'data-key=["\']([0-9a-f]{40,})["\']', html)
+                    m3 = re.search(r"data-key=['\"]([0-9a-f]{40,})['\"]", html)
                     if m3:
                         key = m3.group(1)
                 if not key:
@@ -4164,7 +4999,7 @@ class PS5ConverterGUI:
                 return
             # Nur aktualisieren wenn Ergebnisse vorhanden oder final
             if results or final:
-                self._display_patches(results, title_id)
+                self._display_patches(results, title_id, elapsed_sec=_elapsed(), final=final, source="Online")
         def _worker():
             threads = []
             for base_url, platform in sites:
@@ -4178,13 +5013,25 @@ class PS5ConverterGUI:
             with _lock:
                 if _done_count[0] < _total:
                     _done_count[0] = _total
-                    self.root.after(0, lambda r=list(_all_results): self._display_patches(r, title_id))
+                    self.root.after(
+                        0,
+                        lambda r=list(_all_results): self._display_patches(
+                            r, title_id, elapsed_sec=_elapsed(), final=True, source="Online"
+                        ),
+                    )
                 # Ergebnisse im In-Memory-Cache speichern (auch leere Ergebnisse)
                 import time as _time_save
                 self._patch_cache[tid_upper] = (_time_save.time(), list(_all_results))
         threading.Thread(target=_worker, daemon=True).start()
 
-    def _display_patches(self, results: list, title_id: str) -> None:
+    def _display_patches(
+        self,
+        results: list,
+        title_id: str,
+        elapsed_sec: float | None = None,
+        final: bool = True,
+        source: str = "Online",
+    ) -> None:
         """Zeigt die gefundenen Patches im Treeview an."""
         if not hasattr(self, "_patch_tree") or self._patch_tree is None:
             return
@@ -4204,6 +5051,11 @@ class PS5ConverterGUI:
         if not results:
             self._patch_tree.insert("", "end",
                 values=("-", "Keine Updates gefunden", "-", "-", "-", "-"))
+            if final:
+                if elapsed_sec is not None:
+                    self._patch_status_var.set(f"Keine Updates ({source}, {elapsed_sec:.1f}s)")
+                else:
+                    self._patch_status_var.set(f"Keine Updates ({source})")
             return
 
         for platform, ver, size, fw, date, is_latest, page_url in results:
@@ -4216,6 +5068,13 @@ class PS5ConverterGUI:
                 tags=(row_tag,),
             )
             self._patch_urls[iid] = page_url
+        if elapsed_sec is not None:
+            if final:
+                self._patch_status_var.set(f"{len(results)} Updates geladen ({source}, {elapsed_sec:.1f}s)")
+            else:
+                self._patch_status_var.set(f"Zwischenergebnis: {len(results)} Updates ({elapsed_sec:.1f}s)")
+        elif final:
+            self._patch_status_var.set(f"{len(results)} Updates geladen ({source})")
         # Zeilenstile: neueste Version leicht hervorgehoben, sonst normal
         _accent = self._COLORS.get("fg_accent", self._THEMES["dunkel"]["fg_accent"])
         self._patch_tree.tag_configure("normal_row",
@@ -4295,12 +5154,10 @@ class PS5ConverterGUI:
     # Online-Metadaten: PlayStation Store API + Cache
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _get_meta_cache_dir() -> str:
+    def _get_meta_cache_dir(self) -> str:
         """Gibt das Cache-Verzeichnis für Metadaten zurück."""
-        import tempfile as _tmpfile
         import os as _os2
-        cache_dir = _os2.path.join(_tmpfile.gettempdir(), "ps5converter_meta_cache")
+        cache_dir = _os2.path.join(self._get_runtime_temp_dir(), "ps5converter_meta_cache")
         _os2.makedirs(cache_dir, exist_ok=True)
         return cache_dir
 
@@ -4462,14 +5319,14 @@ class PS5ConverterGUI:
             with urllib.request.urlopen(req, timeout=5) as r:
                 html = r.read().decode("utf-8", errors="replace")
             patterns = [
-                r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
-                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']twitter:image["\']',
-                r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
-                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
-                r'<meta[^>]+name=["\']image["\'][^>]+content=["\']([^"\']+)["\']',
-                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']image["\']',
-                r'(https://cdn\.prosperopatches\.com/titles/[^"\'\s>]+/icon0\.(?:webp|png|jpg|jpeg))',
-                r'(https://cdn\.prosperopatches\.com/titles/[^"\'\s>]+)',
+                r"<meta[^>]+name=['\"]twitter:image['\"][^>]+content=['\"]([^'\"]+)['\"]",
+                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+name=['\"]twitter:image['\"]",
+                r"<meta[^>]+property=['\"]og:image['\"][^>]+content=['\"]([^'\"]+)['\"]",
+                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+property=['\"]og:image['\"]",
+                r"<meta[^>]+name=['\"]image['\"][^>]+content=['\"]([^'\"]+)['\"]",
+                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+name=['\"]image['\"]",
+                r"(https://cdn\.prosperopatches\.com/titles/[^'\"\s>]+/icon0\.(?:webp|png|jpg|jpeg))",
+                r"(https://cdn\.prosperopatches\.com/titles/[^'\"\s>]+)",
             ]
             for pattern in patterns:
                 match = re.search(pattern, html, flags=re.IGNORECASE)
@@ -4726,10 +5583,13 @@ class PS5ConverterGUI:
             if hasattr(self, "progress_var"):
                 self.progress_var.set(value)
             if hasattr(self, "percent_label"):
-                # Runde auf ganze Zahl, aber zeige .5-Schritte bei 1-9% für flüssigere Anzeige
+                # Unter 10% feiner anzeigen, damit lange Analysephasen sichtbar voranschreiten.
                 if show_percent and value > 0:
-                    pct_int = int(value)
-                    self.percent_label.config(text=f"{pct_int}%")
+                    if value < 30.0:
+                        self.percent_label.config(text=f"{value:.1f}%")
+                    else:
+                        pct_int = int(value)
+                        self.percent_label.config(text=f"{pct_int}%")
                 else:
                     self.percent_label.config(text="")
             if size_text is not None and hasattr(self, "size_label"):
@@ -4762,6 +5622,7 @@ class PS5ConverterGUI:
         """Validiert Eingaben und startet den Konvertierungs-Thread."""
         src = self.source_path.get().strip()
         mode = self.current_mode.get()
+        dst_for_checks = self.dest_path.get().strip()
 
         # Quellpfad validieren
         if not src:
@@ -4787,6 +5648,61 @@ class PS5ConverterGUI:
             messagebox.showerror("Ungültige Quelle", error_msg)
             return
 
+        # Preflight-Risikoanalyse (vor UI-Start und Thread-Launch).
+        pf_errors, pf_warnings = self._run_preflight_checks(mode, src, dst_for_checks)
+        if pf_errors:
+            messagebox.showerror(
+                "Preflight fehlgeschlagen",
+                "Der Vorgang wurde vor dem Start gestoppt:\n\n- " + "\n- ".join(pf_errors),
+            )
+            return
+        self._preflight_warnings = list(pf_warnings)
+        if pf_warnings:
+            messagebox.showwarning(
+                "Preflight-Warnungen",
+                "Es wurden Risiken erkannt (Start wird fortgesetzt):\n\n- " + "\n- ".join(pf_warnings),
+            )
+
+        # Checkpoint/Resume: bei passendem Vorgängerlauf Wiederaufnahme anbieten.
+        self._active_resume_checkpoint = None
+        ck_dst = dst_for_checks if mode not in ("inspect",) else ""
+        resume_cp = self._load_runtime_checkpoint(mode, src, ck_dst)
+        if resume_cp:
+            state = str(resume_cp.get("state", "")).strip().lower()
+            if state in {"in_progress", "failed", "aborted"}:
+                ts = str(resume_cp.get("updated", "")).strip()
+                pct = float(resume_cp.get("task_progress", 0.0) or 0.0)
+                stage_key = str(resume_cp.get("stage", "")).strip()
+                stage_map = {
+                    "task_launch": "Start vorbereitet",
+                    "running": "Lauf aktiv",
+                    "engine_thread_start": "Engine gestartet",
+                    "pack_folder_prepare": "Aufgabe 1: Vorbereitung",
+                    "pack_folder_step1": "Aufgabe 1: Schritt 1 (Ordner -> exFAT)",
+                    "pack_folder_step2": "Aufgabe 1: Schritt 2 (exFAT -> ffpfsc)",
+                    "task2_start": "Aufgabe 2: Start",
+                    "task2_step1_running": "Aufgabe 2: Schritt 1 laeuft (Container entpacken)",
+                    "task2_step1_done": "Aufgabe 2: Schritt 1 fertig",
+                    "task2_step2_done": "Aufgabe 2: Schritt 2 fertig (Game-Dump extrahiert)",
+                    "completed": "Abgeschlossen",
+                    "verification_failed": "Verifizierung fehlgeschlagen",
+                    "mode_failed": "Modus fehlgeschlagen",
+                    "aborted": "Abgebrochen",
+                    "exception": "Ausnahmefehler",
+                }
+                stage_human = stage_map.get(stage_key, stage_key or "-")
+                do_resume = messagebox.askyesno(
+                    "Wiederaufnahme gefunden",
+                    "Es wurde ein unterbrochener Lauf gefunden.\n\n"
+                    f"Status: {state}\n"
+                    f"Stage: {stage_human}\n"
+                    f"Letzter Stand: {pct:.1f}%\n"
+                    f"Zeitpunkt: {ts or '-'}\n\n"
+                    "Soll versucht werden, den Lauf wieder aufzunehmen?",
+                )
+                if do_resume:
+                    self._active_resume_checkpoint = resume_cp
+
         # Zielpfad validieren (außer im Inspect-Modus)
         if mode not in ("inspect",):
             dst = self.dest_path.get().strip()
@@ -4801,9 +5717,18 @@ class PS5ConverterGUI:
                 return
 
         # Speicherplatz-Validierung (nur wenn Zielpfad bekannt)
+        # Keine rekursive Ordnergroessen-Berechnung im Hauptthread,
+        # damit die GUI bei grossen Dumps nicht auf "Keine Rueckmeldung" geht.
         if mode not in ("inspect", "fakelib_manager"):
             dst = self.dest_path.get().strip()
-            src_size = self._get_path_size(src)
+            src_size = 0
+            if os.path.isfile(src):
+                try:
+                    src_size = os.path.getsize(src)
+                except OSError:
+                    src_size = 0
+            elif os.path.isdir(src):
+                src_size = int(getattr(self, "_last_source_size_bytes", 0) or 0)
             if src_size > 0 and dst and os.path.isdir(dst):
                 try:
                     free = shutil.disk_usage(dst).free
@@ -4842,8 +5767,17 @@ class PS5ConverterGUI:
         if hasattr(self, "size_label"):
             self.size_label.config(text="")
         self.console_view.delete("1.0", tk.END)
+        effective_tmp = self._get_runtime_temp_dir()
+        self._append_to_log(f"[INFO] Starte Aufgabe: {mode}\n")
+        self._append_to_log(f"[INFO] Temp-Ordner: {effective_tmp}\n")
         self._set_status("Verarbeite...")
         self.is_running = True
+        if self._active_resume_checkpoint:
+            cp_pct = float(self._active_resume_checkpoint.get("task_progress", 0.0) or 0.0)
+            cp_state = str(self._active_resume_checkpoint.get("state", "")).strip() or "unbekannt"
+            self._append_to_log(
+                f"[INFO] Resume aktiv: letzter Stand {cp_pct:.1f}% (Status: {cp_state})\n"
+            )
 
         # Task-weite Fortschritts-Variablen zurücksetzen
         self.task_start_time         = time.monotonic()
@@ -4858,7 +5792,27 @@ class PS5ConverterGUI:
         self.task_stored_str         = ""
         self._copy_total_bytes       = 0
         self._copy_done_bytes        = 0
+        self._copy_rate_bps          = 0.0
+        self._copy_rate_trend        = ""
         self._mkpfs_eta_initial      = 0.0   # ETA-Fortschritt für write-Phase
+        self._last_engine_output_ts  = time.monotonic()
+        self._eta_ui_seconds         = None
+        self._eta_ui_last_ts         = self.task_start_time
+        self._eta_ui_step            = 0
+        self._task_report_path       = ""
+        self._checkpoint_last_save_ts = self.task_start_time
+
+        # Initialer Lauf-Checkpoint.
+        self._save_runtime_checkpoint(
+            mode=mode,
+            src=src,
+            dst=ck_dst,
+            state="in_progress",
+            extra={
+                "stage": "task_launch",
+                "preflight_warnings": list(self._preflight_warnings),
+            },
+        )
 
         # ProgressEngine zurücksetzen (neuer Lauf)
         self.progress_engine = ProgressEngine()
@@ -4968,7 +5922,12 @@ class PS5ConverterGUI:
         except Exception:
             return 0.88
 
-    def _get_path_size(self, path: str) -> int:
+    def _get_path_size(
+        self,
+        path: str,
+        progress_cb=None,
+        cancel_check=None,
+    ) -> int:
         """Berechnet die Gesamtgröße eines Pfades in Bytes (iterativ).
 
         Args:
@@ -4983,12 +5942,26 @@ class PS5ConverterGUI:
             if os.path.isfile(path):
                 return os.path.getsize(path)
             total = 0
+            scanned_files = 0
+            last_ping = time.monotonic()
             for dirpath, _dirnames, filenames in os.walk(path):
+                if callable(cancel_check) and cancel_check():
+                    return total
                 for filename in filenames:
+                    if callable(cancel_check) and cancel_check():
+                        return total
                     try:
                         total += os.path.getsize(os.path.join(dirpath, filename))
+                        scanned_files += 1
                     except OSError:
                         pass
+                    if callable(progress_cb):
+                        now = time.monotonic()
+                        if now - last_ping >= 1.0:
+                            progress_cb(total, scanned_files)
+                            last_ping = now
+            if callable(progress_cb):
+                progress_cb(total, scanned_files)
             return total
         except Exception as exc:
             logger.warning("Pfadgröße konnte nicht ermittelt werden: %s", exc)
@@ -5034,6 +6007,7 @@ class PS5ConverterGUI:
         try:
             while True:
                 line = self.engine_output_queue.get_nowait()
+                self._last_engine_output_ts = time.monotonic()
                 if not self._mkpfs_line_visible(line):
                     continue
                 self.console_view.insert(tk.END, line + "\n")
@@ -5118,7 +6092,14 @@ class PS5ConverterGUI:
 
         # Quelle 4: Pulse-Creep – nur als Fallback wenn sonst kein Fortschritt erkannt wird
         # In den meisten Fällen sollten echte Datenquellen den Fortschritt treiben
-        if getattr(self, "is_running", False) and getattr(self, "monitor_active", False):
+        has_defined_steps = bool(getattr(self, "task_step_ends", None))
+        step_active = int(getattr(self, "task_current_step", 0) or 0) > 0
+        if (
+            getattr(self, "is_running", False)
+            and getattr(self, "monitor_active", False)
+            and has_defined_steps
+            and step_active
+        ):
             _cur = self.task_progress
             _s = self._step_start()
             _e = self._step_end()
@@ -5143,7 +6124,13 @@ class PS5ConverterGUI:
             # (pe.raw_progress sollte nicht größer als task_progress sein)
             # Status-Label aktualisieren
             if pe_status:
-                self.root.after(0, lambda s=pe_status: self.status_label.config(text=s))
+                try:
+                    cur_status = str(self.status_label.cget("text")) if hasattr(self, "status_label") else ""
+                except Exception:
+                    cur_status = ""
+                # Explizite Phase-Texte nicht durch generische ETA-Texte überlagern.
+                if not cur_status.startswith("Phase "):
+                    self.root.after(0, lambda s=pe_status: self.status_label.config(text=s))
 
         # ------------------------------------------------------------------
         # 3. task_displayed via Easing annähern (nur vorwärts)
@@ -5170,6 +6157,37 @@ class PS5ConverterGUI:
         # Niemals 100% hier setzen – das obliegt _finish_success
         self.task_displayed = max(self.task_displayed, min(disp, 99.9))
 
+        # Periodischer Lauf-Checkpoint (alle 5s), damit Resume den letzten Stand kennt.
+        now_cp = time.monotonic()
+        if now_cp - float(getattr(self, "_checkpoint_last_save_ts", 0.0) or 0.0) >= 5.0:
+            try:
+                mode_var = getattr(self, "current_mode", None)
+                mode_cp = str(mode_var.get()) if mode_var is not None else ""
+            except Exception:
+                mode_cp = ""
+            try:
+                src_var = getattr(self, "source_path", None)
+                src_cp = str(src_var.get()).strip() if src_var is not None else ""
+            except Exception:
+                src_cp = ""
+            try:
+                dst_var = getattr(self, "dest_path", None)
+                dst_cp = str(dst_var.get()).strip() if dst_var is not None else ""
+            except Exception:
+                dst_cp = ""
+            if mode_cp and src_cp:
+                self._save_runtime_checkpoint(
+                    mode=mode_cp,
+                    src=src_cp,
+                    dst=dst_cp if mode_cp not in ("inspect",) else "",
+                    state="in_progress",
+                    extra={
+                        "stage": "running",
+                        "task_displayed": float(self.task_displayed),
+                    },
+                )
+            self._checkpoint_last_save_ts = now_cp
+
         # ------------------------------------------------------------------
         # 4. Groessen-Label & verbleibende Zeit (ETA)
         # ------------------------------------------------------------------
@@ -5178,6 +6196,25 @@ class PS5ConverterGUI:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
             else:
                 new_size = self.task_stored_str
+        elif self._copy_total_bytes > 0:
+            done_b = max(0, min(int(self._copy_done_bytes), int(self._copy_total_bytes)))
+            rem_b = max(0, int(self._copy_total_bytes) - done_b)
+            rate_bps = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0)
+            trend = str(getattr(self, "_copy_rate_trend", "") or "")
+            done_gb = done_b / (1024 ** 3)
+            total_gb = int(self._copy_total_bytes) / (1024 ** 3)
+            rem_gb = rem_b / (1024 ** 3)
+            if rate_bps > 0.0:
+                rate_mb = rate_bps / (1024 ** 2)
+                new_size = (
+                    f"Copy: {done_gb:.2f}/{total_gb:.2f} GB"
+                    f" | Rest: {rem_gb:.2f} GB"
+                    f" | {rate_mb:.1f} MB/s"
+                )
+                if trend:
+                    new_size += f" ({trend})"
+            else:
+                new_size = f"Copy: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
         elif self.task_total_source_bytes > 0:
             src_str = self._fmt_bytes(self.task_total_source_bytes)
             # Berechne verbleibende Größe basierend auf Fortschritt (0-100)
@@ -5190,15 +6227,40 @@ class PS5ConverterGUI:
         else:
             new_size = ""
         
-        # Füge ETA-Zeit hinzu wenn vorhanden (von ProgressEngine)
+        # ETA nur anzeigen wenn ein echter Schritt aktiv ist (nicht in langer Phase-1-Analyse),
+        # und die sichtbare ETA monoton fallend halten.
         if pe is not None:
-            eta_seconds = pe._estimate_eta_seconds()
-            if eta_seconds is not None and eta_seconds > 0:
-                eta_str = pe._fmt_eta(eta_seconds)
-                if new_size:
-                    new_size = f"{new_size} | ETA: {eta_str}"
-                else:
-                    new_size = f"ETA: {eta_str}"
+            step_active = int(getattr(self, "task_current_step", 0) or 0)
+            if step_active <= 0:
+                self._eta_ui_seconds = None
+                self._eta_ui_last_ts = time.monotonic()
+                self._eta_ui_step = 0
+            else:
+                eta_seconds = pe._estimate_eta_seconds()
+                if eta_seconds is not None and eta_seconds > 0:
+                    now = time.monotonic()
+                    if self._eta_ui_step != step_active:
+                        self._eta_ui_step = step_active
+                        self._eta_ui_seconds = eta_seconds
+                        self._eta_ui_last_ts = now
+                    else:
+                        prev = self._eta_ui_seconds
+                        dt = max(0.0, now - float(getattr(self, "_eta_ui_last_ts", now)))
+                        if prev is None:
+                            self._eta_ui_seconds = eta_seconds
+                        else:
+                            # Anzeige-Eta nicht ansteigen lassen; pro Sekunde sanft abzaehlen.
+                            decayed = max(0.0, prev - dt)
+                            self._eta_ui_seconds = min(float(eta_seconds), decayed)
+                        self._eta_ui_last_ts = now
+
+                    eta_show = self._eta_ui_seconds
+                    if eta_show is not None and eta_show > 0:
+                        eta_str = pe._fmt_eta(eta_show)
+                        if new_size:
+                            new_size = f"{new_size} | ETA: {eta_str}"
+                        else:
+                            new_size = f"ETA: {eta_str}"
 
         # ------------------------------------------------------------------
         # 5. GUI aktualisieren
@@ -5237,11 +6299,73 @@ class PS5ConverterGUI:
         step = max(1, self.task_current_step)
         return self._step_end_for(step)
 
+    def _ensure_mkpfs_runtime_dependencies(self) -> bool:
+        """Prüft kritische MkPFS-Laufzeitmodule und installiert fehlende Pakete.
+
+        Wird vor dem Start der Engine ausgeführt, damit typische Laufzeitabbrüche
+        wie ``ModuleNotFoundError: zlib_ng`` gar nicht erst auftreten.
+
+        Returns:gerne
+        
+            True wenn alle benötigten Module verfügbar sind, sonst False.
+        """
+        if getattr(self, "_mkpfs_runtime_deps_ok", False):
+            return True
+
+        # Modulname -> Pip-Paketname
+        required = {
+            "zlib_ng": "zlib-ng",
+            "zstandard": "zstandard",
+            "cryptography": "cryptography",
+        }
+
+        missing: list[tuple[str, str]] = []
+        for module_name, package_name in required.items():
+            try:
+                __import__(module_name)
+            except Exception:
+                missing.append((module_name, package_name))
+
+        if not missing:
+            self._mkpfs_runtime_deps_ok = True
+            return True
+
+        self._append_to_log(
+            "[Info] MkPFS-Abhängigkeiten prüfen: fehlend -> "
+            + ", ".join(m for m, _ in missing)
+            + "\n"
+        )
+
+        for module_name, package_name in missing:
+            self._append_to_log(
+                f"[Info] Installiere fehlendes Modul '{module_name}' via pip ({package_name})...\n"
+            )
+            rc = self._run_subprocess_logged(
+                [sys.executable, "-m", "pip", "install", "--upgrade", package_name],
+                timeout=15 * 60,
+            )
+            if rc != 0:
+                self._append_to_log(
+                    f"[FEHLER] Installation fehlgeschlagen für {package_name}.\n"
+                )
+                return False
+            try:
+                importlib.invalidate_caches()
+                __import__(module_name)
+            except Exception as exc:
+                self._append_to_log(
+                    f"[FEHLER] Modul {module_name} nach Installation nicht importierbar: {exc}\n"
+                )
+                return False
+
+        self._mkpfs_runtime_deps_ok = True
+        self._append_to_log("[OK] MkPFS-Abhängigkeiten bereit.\n")
+        return True
+
     # ------------------------------------------------------------------
     # Hilfsmethoden: Betriebssystem / externe Prozesse
     # ------------------------------------------------------------------
-    @staticmethod
-    def _mkpfs_line_visible(ln: str) -> bool:
+    def _mkpfs_line_visible(self, ln: str) -> bool:
         """Gibt True zurück wenn die mkpfs-Ausgabezeile im Log erscheinen soll."""
         ln_s = ln.strip()
         if not ln_s:
@@ -5250,7 +6374,7 @@ class PS5ConverterGUI:
         if ln_s.endswith(" not found"):
             return False
         # Reine Temp-Pfad-Zeilen unterdrücken (z.B. C:\Users\...\Temp\ps5conv_...)
-        _tmp = tempfile.gettempdir().lower()
+        _tmp = self._get_runtime_temp_dir().lower()
         if ln_s.lower().startswith(_tmp) and os.sep in ln_s:
             return False
         return True
@@ -5666,7 +6790,7 @@ class PS5ConverterGUI:
             return False
 
         url = "https://download.filezilla-project.org/client/FileZilla_latest_win64-setup.exe"
-        installer = os.path.join(tempfile.gettempdir(), "filezilla_setup.exe")
+        installer = os.path.join(self._get_runtime_temp_dir(), "filezilla_setup.exe")
 
         try:
             try:
@@ -5763,7 +6887,7 @@ class PS5ConverterGUI:
             True wenn die Installation erfolgreich war.
         """
         url = "https://www.osforensics.com/downloads/osfmount.exe"
-        installer = os.path.join(tempfile.gettempdir(), "osfmount_setup.exe")
+        installer = os.path.join(self._get_runtime_temp_dir(), "osfmount_setup.exe")
         try:
             self._append_to_log(f"[OSFMount] Lade Installer herunter: {url}\n")
             urllib.request.urlretrieve(url, installer)
@@ -5789,7 +6913,7 @@ class PS5ConverterGUI:
         if self._find_dokan_driver():
             return True
 
-        installer = os.path.join(tempfile.gettempdir(), "DokanSetup.exe")
+        installer = os.path.join(self._get_runtime_temp_dir(), "DokanSetup.exe")
         download_url = "https://github.com/dokan-dev/dokany/releases/latest/download/DokanSetup.exe"
 
         try:
@@ -5997,6 +7121,14 @@ class PS5ConverterGUI:
         if not self.is_running:
             return False
 
+        # Vorab-Dependency-Check (z. B. zlib_ng), um Laufzeitabbrüche
+        # bereits vor dem Engine-Thread zu vermeiden.
+        if not self._ensure_mkpfs_runtime_dependencies():
+            self._append_to_log(
+                "[FEHLER] MkPFS kann nicht gestartet werden: Laufzeit-Abhängigkeiten fehlen.\n"
+            )
+            return False
+
         self._append_to_log(f"Ausführung: mkpfs {' '.join(args)}\n")
 
         # Queue leeren (Reste aus vorherigem Aufruf entfernen)
@@ -6101,6 +7233,55 @@ class PS5ConverterGUI:
                 exit_code = cli_mkpfs_main(args) or 0
             except SystemExit as exc:
                 exit_code = exc.code if isinstance(exc.code, int) else 0
+            except ModuleNotFoundError as exc:
+                # MkPFS 0.0.9 nutzt zlib_ng. Wenn das Modul fehlt,
+                # versuchen wir eine einmalige automatische Nachinstallation.
+                if str(getattr(exc, "name", "")) == "zlib_ng":
+                    writer.write(
+                        "\n[WARNUNG] Python-Modul 'zlib_ng' fehlt. "
+                        "Versuche automatische Installation von 'zlib-ng'...\n"
+                    )
+                    try:
+                        pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "zlib-ng"]
+                        pip_proc = subprocess.run(
+                            pip_cmd,
+                            stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            creationflags=_NO_WIN_FLAGS,
+                            startupinfo=_silent_startupinfo(),
+                            check=False,
+                        )
+                        if pip_proc.stdout:
+                            writer.write(pip_proc.stdout)
+
+                        if pip_proc.returncode == 0:
+                            writer.write("[INFO] zlib-ng installiert. Starte mkpfs erneut...\n")
+                            import importlib as _importlib
+
+                            _importlib.invalidate_caches()
+                            from mkpfs.cli import cli_mkpfs_main as _cli_mkpfs_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+                            exit_code = _cli_mkpfs_main(args) or 0
+                        else:
+                            writer.write(
+                                "[FEHLER] Automatische Installation von zlib-ng fehlgeschlagen.\n"
+                                "         Bitte manuell ausführen: pip install zlib-ng\n"
+                            )
+                            exit_code = 1
+                    except Exception as install_exc:
+                        writer.write(
+                            f"[FEHLER] Auto-Installation zlib-ng fehlgeschlagen: {install_exc}\n"
+                            "         Bitte manuell ausführen: pip install zlib-ng\n"
+                        )
+                        exit_code = 1
+                else:
+                    error_msg = f"{type(exc).__name__}: {exc}"
+                    writer.write(f"\n[FEHLER] {error_msg}\n")
+                    writer.write(_tb.format_exc())
+                    exit_code = 1
             except Exception as exc:
                 error_msg = f"{type(exc).__name__}: {exc}"
                 writer.write(f"\n[FEHLER] {error_msg}\n")
@@ -6195,11 +7376,26 @@ class PS5ConverterGUI:
         file_monitor_thread.start()
 
         # Auf Abschluss warten und dabei Abbruch-Anfragen prüfen
+        abort_requested = False
+        _last_keepalive = time.monotonic()
         while not engine_done.wait(timeout=0.2):
             if not self.is_running:
+                abort_requested = True
                 break
+            _now = time.monotonic()
+            _last_out = float(getattr(self, "_last_engine_output_ts", 0.0) or 0.0)
+            if (_now - max(_last_keepalive, _last_out)) >= 8.0:
+                self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
+                self._set_status("Phase 3/4 – Verarbeitung laeuft ...")
+                _last_keepalive = _now
+                self._last_engine_output_ts = _now
 
         # Sicherstellen dass beide Threads fertig sind
+        if abort_requested:
+            # Beim Abbruch NICHT lange auf Join warten, damit die GUI sofort reagiert.
+            engine_thread.join(timeout=0.2)
+            file_monitor_thread.join(timeout=0.2)
+            return False
         engine_thread.join(timeout=10)
         file_monitor_thread.join(timeout=2)
 
@@ -6253,8 +7449,17 @@ class PS5ConverterGUI:
         mode = self.current_mode.get()
         src = self.source_path.get().strip()
         dst = self.dest_path.get().strip()
+        cp_dst = dst if mode not in ("inspect",) else ""
+        verification_result: dict[str, Any] | None = None
 
         self._save_paths(src, dst)
+        self._save_runtime_checkpoint(
+            mode=mode,
+            src=src,
+            dst=cp_dst,
+            state="in_progress",
+            extra={"stage": "engine_thread_start"},
+        )
 
         # Automatisch .ffpfsc-Erweiterung ergänzen
         if mode in ("unpack_to_exfat", "unpack_to_game_folder", "inspect"):
@@ -6437,6 +7642,57 @@ class PS5ConverterGUI:
                     text="Phase 4/4 – Abschlussprüfung erfolgreich."
                 ))
 
+                # Zusätzlicher Verifizierungsschritt für den Ergebnisreport.
+                verification_result = self._verify_output_artifact(mode, final_path)
+                if mode not in ("dump_validator",) and not bool(verification_result.get("ok", False)):
+                    completion_ok = False
+                    self._append_to_log(
+                        f"[WARNUNG] Verifizierung fehlgeschlagen: {verification_result.get('detail', 'unbekannt')}\n"
+                    )
+                else:
+                    self._append_to_log(
+                        f"[VERIFY] {verification_result.get('method', 'quick-check')}: "
+                        f"{verification_result.get('detail', 'OK')}\n"
+                    )
+
+                report_path = self._write_task_report(
+                    mode=mode,
+                    src=src,
+                    dst=dst,
+                    success=bool(completion_ok),
+                    aborted=False,
+                    verification=verification_result,
+                    warnings=list(getattr(self, "_preflight_warnings", []) or []),
+                )
+                if report_path:
+                    self._append_to_log(f"[REPORT] Bericht gespeichert: {report_path}\n")
+
+                if completion_ok:
+                    self._save_runtime_checkpoint(
+                        mode=mode,
+                        src=src,
+                        dst=cp_dst,
+                        state="success",
+                        extra={
+                            "stage": "completed",
+                            "report_path": report_path,
+                            "verification": verification_result,
+                        },
+                    )
+                    self._clear_runtime_checkpoint(mode=mode, src=src, dst=cp_dst)
+                else:
+                    self._save_runtime_checkpoint(
+                        mode=mode,
+                        src=src,
+                        dst=cp_dst,
+                        state="failed",
+                        extra={
+                            "stage": "verification_failed",
+                            "report_path": report_path,
+                            "verification": verification_result,
+                        },
+                    )
+
                 # Alle Abschluss-Updates in EINEM root.after-Aufruf buendeln.
                 # _finish_success wird nur aufgerufen wenn completion_ok=True.
                 def _finish_success(
@@ -6482,23 +7738,97 @@ class PS5ConverterGUI:
                     if hasattr(self, "percent_label"):
                         self.percent_label.grid_remove()
                     self.status_label.config(text="Phase 4/4 – Erfolgreich abgeschlossen.")
+                    _rep = str(getattr(self, "_task_report_path", "") or "")
+                    _msg = "Vorgang erfolgreich abgeschlossen!"
+                    if _rep:
+                        _msg += f"\n\nBericht:\n{_rep}"
                     messagebox.showinfo(
-                        "Erfolg", "Vorgang erfolgreich abgeschlossen!"
+                        "Erfolg", _msg
                     )
                 self.root.after(0, _finish_success)
 
             elif not self.is_running:
                 self._set_status("Abgebrochen.")
                 self._reset_ui_after_task()
+                verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+                report_path = self._write_task_report(
+                    mode=mode,
+                    src=src,
+                    dst=dst,
+                    success=False,
+                    aborted=True,
+                    verification=verification_result,
+                    warnings=list(getattr(self, "_preflight_warnings", []) or []),
+                )
+                if report_path:
+                    self._append_to_log(f"[REPORT] Bericht gespeichert: {report_path}\n")
+                self._save_runtime_checkpoint(
+                    mode=mode,
+                    src=src,
+                    dst=cp_dst,
+                    state="aborted",
+                    extra={
+                        "stage": "aborted",
+                        "report_path": report_path,
+                        "verification": verification_result,
+                    },
+                )
             else:
                 self._set_status("Fehler aufgetreten.")
                 self._reset_ui_after_task()
+                verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+                report_path = self._write_task_report(
+                    mode=mode,
+                    src=src,
+                    dst=dst,
+                    success=False,
+                    aborted=False,
+                    verification=verification_result,
+                    warnings=list(getattr(self, "_preflight_warnings", []) or []),
+                )
+                if report_path:
+                    self._append_to_log(f"[REPORT] Bericht gespeichert: {report_path}\n")
+                self._save_runtime_checkpoint(
+                    mode=mode,
+                    src=src,
+                    dst=cp_dst,
+                    state="failed",
+                    extra={
+                        "stage": "mode_failed",
+                        "report_path": report_path,
+                        "verification": verification_result,
+                    },
+                )
 
         except Exception as exc:
             self._append_to_log(f"\n[FEHLER] {exc}\n")
             logger.exception("Unerwarteter Fehler im Engine-Thread")
             self._set_status("Fehler.")
             self._reset_ui_after_task()
+            verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+            report_path = self._write_task_report(
+                mode=mode,
+                src=src,
+                dst=dst,
+                success=False,
+                aborted=False,
+                verification=verification_result,
+                warnings=list(getattr(self, "_preflight_warnings", []) or []),
+            )
+            if report_path:
+                self._append_to_log(f"[REPORT] Bericht gespeichert: {report_path}\n")
+            self._save_runtime_checkpoint(
+                mode=mode,
+                src=src,
+                dst=cp_dst,
+                state="failed",
+                extra={
+                    "stage": "exception",
+                    "error": str(exc),
+                    "report_path": report_path,
+                    "verification": verification_result,
+                },
+            )
         finally:
             self.is_running = False
             self.monitor_active = False
@@ -6549,11 +7879,11 @@ class PS5ConverterGUI:
 
         Verwendet die mkpfs-Binary zur PFS-Erstellung.
 
-        Fortschritts-Phasen:
-          Phase 1 – Vorbereitung:         0 –  5 %
-          Phase 2 – exFAT + PFS-Erstellung: 5 – 20 %
-          Phase 3 – FFPFSC-Kompression:  20 – 95 %
-          Phase 4 – Abschlussprüfung:   95 –100 %
+                Fortschritts-Phasen:
+                    Phase 1 – Vorbereitung:         0 –  5 %
+                    Phase 2 – exFAT-Erstellung:     5 – 60 %
+                    Phase 3 – FFPFSC-Kompression:  60 – 95 %
+                    Phase 4 – Abschlussprüfung:    95 –100 %
 
         Args:
             src: Quellordner.
@@ -6570,7 +7900,7 @@ class PS5ConverterGUI:
         self.progress_engine.begin_prepare("Quellordner analysieren...")
         # Phasengrenzen
         _P1_END = 5.0
-        _P2_END = 20.0
+        _P2_END = 60.0
         _P3_END = 95.0
         def _set_pct(val: float) -> None:
             if val > self.task_progress:
@@ -6588,7 +7918,49 @@ class PS5ConverterGUI:
             return False
         _set_pct(1.5)
 
-        self.task_total_source_bytes = self._get_path_size(src)
+        _last_phase1_log = [0.0]
+        _phase1_start = 1.5
+        _phase1_live_end = 4.9
+        _phase1_expected_total = [int(getattr(self, "_last_source_size_bytes", 0) or 0)]
+
+        def _phase1_scan_ping(done_bytes: int, scanned_files: int) -> None:
+            if not self.is_running:
+                return
+            # Phase-1-Fortschritt adaptiv an gescannter Groesse ausrichten.
+            # Wenn eine bekannte Gesamtgroesse existiert, mappe done_bytes auf 1.5..4.9%.
+            expected_total = _phase1_expected_total[0]
+            if expected_total > 0:
+                # Falls die Vorabschaetzung zu klein war, dynamisch nachziehen.
+                if done_bytes > expected_total:
+                    expected_total = int(done_bytes * 1.08)
+                    _phase1_expected_total[0] = expected_total
+                frac = max(0.0, min(done_bytes / max(expected_total, 1), 0.995))
+                mapped = _phase1_start + frac * (_phase1_live_end - _phase1_start)
+                _set_pct(mapped)
+            else:
+                # Ohne Vorabschaetzung weiterhin sanfter Vorlauf statt statischer Anzeige.
+                if self.task_progress < _phase1_live_end:
+                    _set_pct(min(_phase1_live_end, self.task_progress + 0.03))
+            self.root.after(
+                0,
+                lambda b=done_bytes: self.status_label.config(
+                    text=f"Phase 1/4 – Quellordner analysieren... {self._fmt_bytes(b)} gelesen"
+                ),
+            )
+            now = time.monotonic()
+            if now - _last_phase1_log[0] >= 8.0:
+                self._append_to_log(
+                    f"[INFO] Analyse laeuft: {scanned_files} Dateien, {self._fmt_bytes(done_bytes)}\n"
+                )
+                _last_phase1_log[0] = now
+
+        self.task_total_source_bytes = self._get_path_size(
+            src,
+            progress_cb=_phase1_scan_ping,
+            cancel_check=lambda: not self.is_running,
+        )
+        if not self.is_running:
+            return False
         _set_pct(3.0)
         _set_pct(_P1_END)
         _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
@@ -6614,8 +7986,37 @@ class PS5ConverterGUI:
 
         Identisch mit dem ps5-exfat-builder v3.6.4 Workflow.
         """
-        tmp_dir  = tempfile.mkdtemp(prefix="ps5conv_pack_")
-        temp_exfat = os.path.join(tmp_dir, os.path.basename(os.path.normpath(src)) + ".exfat")
+        tmp_dir: str | None = None
+        temp_exfat = ""
+        cleanup_tmp = True
+        step1_ok = False
+
+        # Resume-Pfad: vorhandenes Zwischen-Image aus Checkpoint verwenden.
+        cp = getattr(self, "_active_resume_checkpoint", None)
+        cp_tmp_dir = str(cp.get("tmp_dir", "")).strip() if isinstance(cp, dict) else ""
+        cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
+        if cp_tmp_dir and cp_temp_exfat and os.path.isfile(cp_temp_exfat):
+            tmp_dir = cp_tmp_dir
+            temp_exfat = cp_temp_exfat
+            self._append_to_log(
+                f"[RESUME] Verwende vorhandenes Zwischen-Image: {temp_exfat}\n"
+            )
+            step1_ok = True
+        else:
+            tmp_dir = self._mkdtemp(prefix="ps5conv_pack_")
+            temp_exfat = os.path.join(tmp_dir, os.path.basename(os.path.normpath(src)) + ".exfat")
+
+        self._save_runtime_checkpoint(
+            mode="pack_folder",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={
+                "stage": "pack_folder_prepare",
+                "tmp_dir": tmp_dir,
+                "temp_exfat": temp_exfat,
+            },
+        )
         try:
             # ----------------------------------------------------------------
             # PHASE 2 – Schritt 1: Game Dump Ordner -> exFAT-Image
@@ -6640,16 +8041,45 @@ class PS5ConverterGUI:
                 )
                 return False
 
-            step1_ok = self._create_exfat_from_folder(
-                src_dir=src,
-                out_file=temp_exfat,
-                pct_start=p1_end,
-                pct_end=p2_end,
-            )
+            if not step1_ok:
+                self._save_runtime_checkpoint(
+                    mode="pack_folder",
+                    src=src,
+                    dst=dst,
+                    state="in_progress",
+                    extra={
+                        "stage": "pack_folder_step1",
+                        "tmp_dir": tmp_dir,
+                        "temp_exfat": temp_exfat,
+                    },
+                )
+                step1_ok = self._create_exfat_from_folder(
+                    src_dir=src,
+                    out_file=temp_exfat,
+                    pct_start=p1_end,
+                    pct_end=p2_end,
+                )
             if not step1_ok or not self.is_running:
+                # Für Resume Temp-Daten behalten, wenn ein Zwischenstand existiert.
+                if os.path.isfile(temp_exfat):
+                    cleanup_tmp = False
+                    self._append_to_log(
+                        f"[INFO] Zwischenstand für Resume erhalten: {temp_exfat}\n"
+                    )
                 return False
             set_pct(p2_end)
             set_status("Phase 2/4 – exFAT-Image erstellt.")
+            self._save_runtime_checkpoint(
+                mode="pack_folder",
+                src=src,
+                dst=dst,
+                state="in_progress",
+                extra={
+                    "stage": "pack_folder_step2",
+                    "tmp_dir": tmp_dir,
+                    "temp_exfat": temp_exfat,
+                },
+            )
 
             # ----------------------------------------------------------------
             # PHASE 3 – Schritt 2: exFAT-Image -> .ffpfsc
@@ -6665,15 +8095,17 @@ class PS5ConverterGUI:
             if hasattr(self, "_mkpfs_eta_initial"):
                 del self._mkpfs_eta_initial
 
-            # ps5-exfat-builder _pfs_pack_tuning: Level 9, Worker-Cap = min(4, cores-1)
-            _level = 9
-            _cores = os.cpu_count() or 4
-            _ceil  = max(1, min(4, _cores - 1) if _cores > 1 else 1)
-            _frac  = 0.5 + 0.5 * (_level - 1) / 8.0
-            _cap   = max(2, int(round(_ceil * _frac))) if _ceil >= 2 else 1
-            _cpu   = max(1, min(_ceil, _cap))
+            profile = self._resolve_pack_profile("pack_folder_step2", self._get_path_size(temp_exfat))
             self._append_to_log(
-                f"[Info] Kompression Level: {_level} | Worker-Cap: {_cpu} (von {_cores} Kernen)\n"
+                "[Info] Auto-Profil: {name} | Quelle: {size:.2f} GB | "
+                "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
+                    name=profile["profile"],
+                    size=profile["size_gb"],
+                    lvl=profile["level"],
+                    cpu=profile["cpu"],
+                    cores=profile["cores"],
+                    blk=profile["block_size"],
+                )
             )
 
             pack_ok = self._execute_mkpfs(
@@ -6682,14 +8114,17 @@ class PS5ConverterGUI:
                     "--no-adjust-output-file-extension",
                     "--version", "PS5",
                     "--inode-bits", "32",
-                    "--cpu-count", str(_cpu),
-                    "--compression-level", str(_level),
+                    "--cpu-count", str(profile["cpu"]),
+                    "--compression-level", str(profile["level"]),
+                    "--block-size", str(profile["block_size"]),
                     temp_exfat, final_output,
                 ],
                 monitor_target_path=final_output,
                 monitor_source_file=temp_exfat,
             )
             if not pack_ok or not self.is_running:
+                if os.path.isfile(temp_exfat):
+                    cleanup_tmp = False
                 return False
             set_pct(p3_end)
             set_status("Phase 3/4 – Kompression abgeschlossen.")
@@ -6697,7 +8132,8 @@ class PS5ConverterGUI:
             set_pct(96.0)
             return True
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if cleanup_tmp and tmp_dir:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     def _mode_inspect(self, src: str) -> bool:
         """Zeigt Metadaten einer .FFPFSC-Datei an.
@@ -6732,8 +8168,8 @@ class PS5ConverterGUI:
         #   1. .ffpfsc → pfs_image.dat (nur der innere Container, ~1 Datei)
         #   2. pfs_image.dat via mkpfs-API öffnen und param.json/param.sfo
         #      direkt aus dem Inode-Tree lesen (kein Schreiben von Spieledaten)
-        tmp_outer = tempfile.mkdtemp(prefix="ps5conv_meta_outer_")
-        tmp_meta  = tempfile.mkdtemp(prefix="ps5conv_meta_files_")
+        tmp_outer = self._mkdtemp(prefix="ps5conv_meta_outer_")
+        tmp_meta  = self._mkdtemp(prefix="ps5conv_meta_files_")
         try:
             self._append_to_log("\n>>> Lese Metadaten aus Container...\n")
 
@@ -7454,10 +8890,10 @@ class PS5ConverterGUI:
             self.task_num_steps = 5
             self.task_step_ends = [15.0, 30.0, 50.0, 80.0, 100.0]
             is_container = True
-            tmp_extract = tempfile.mkdtemp(prefix="ps5conv_fakelib_")
+            tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_")
             self._append_to_log("[Info] Quelle: .ffpfsc \u2013 entpacke in tempor\u00e4res Verzeichnis...\n")
             self._set_status("Entpacke .ffpfsc...")
-            outer_tmp = tempfile.mkdtemp(prefix="ps5conv_fakelib_outer_")
+            outer_tmp = self._mkdtemp(prefix="ps5conv_fakelib_outer_")
             try:
                 self._execute_mkpfs(
                     ["unpack", "--overwrite", src, outer_tmp],
@@ -7492,7 +8928,7 @@ class PS5ConverterGUI:
             self.task_num_steps = 4
             self.task_step_ends = [25.0, 40.0, 65.0, 100.0]
             is_container = True
-            tmp_extract = tempfile.mkdtemp(prefix="ps5conv_fakelib_exfat_")
+            tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_exfat_")
             self._append_to_log("[Info] Quelle: .exfat – lese Stammverzeichnis...\n")
             self._set_status("Mounte .exfat...")
             # .exfat ist ein exFAT-Dateisystem-Image – muss via OSFMount gemountet werden
@@ -8314,7 +9750,7 @@ class PS5ConverterGUI:
 
                     self.task_progress = max(self.task_progress, _R1_START)
 
-                    tmp_repack = tempfile.mkdtemp(prefix="ps5conv_repack_")
+                    tmp_repack = self._mkdtemp(prefix="ps5conv_repack_")
                     temp_pfs = os.path.join(tmp_repack, "pfs_image.dat")
                     ok1 = False
                     _user_cancelled = False
@@ -8927,7 +10363,7 @@ class PS5ConverterGUI:
                 # 2. Herunterladen
                 lbl_status.config(text="Lade DokanSetup.exe herunter...")
                 dlg.update()
-                tmp_dir = _tmp.mkdtemp(prefix="ps5conv_dokan_")
+                tmp_dir = self._mkdtemp(prefix="ps5conv_dokan_")
                 installer_path = os.path.join(tmp_dir, "DokanSetup.exe")
 
                 def _progress(count, block_size, total_size):
@@ -9039,7 +10475,7 @@ class PS5ConverterGUI:
                 "(Enthält _UFS2TOOL_EXE_B64, _UFS2TOOL_DLL_B64, _DOKAN_B64)"
             )
 
-        tmp_dir = _tmp.mkdtemp(prefix="ps5conv_ufs2_")
+        tmp_dir = self._mkdtemp(prefix="ps5conv_ufs2_")
         files = [
             ("UFS2Tool.exe", _UFS2TOOL_EXE_B64),
             ("UFS2Tool.dll", _UFS2TOOL_DLL_B64),
@@ -9076,8 +10512,6 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        import os as _os
-
         base_name = os.path.splitext(os.path.basename(src))[0]
         if dst.lower().endswith(".ffpfsc"):
             final_output = dst
@@ -9101,13 +10535,7 @@ class PS5ConverterGUI:
             unit_label="Bytes",
         )
 
-        # Auto-Worker-Cap (identisch mit Aufgabe 3)
-        _level = 9
-        _cores = _os.cpu_count() or 4
-        _ceil  = max(1, min(4, _cores - 1) if _cores > 1 else 1)
-        _frac  = 0.5 + 0.5 * (_level - 1) / 8.0
-        _cap   = max(2, int(round(_ceil * _frac))) if _ceil >= 2 else 1
-        _cpu   = max(1, min(_ceil, _cap))
+        profile = self._resolve_pack_profile("ffpkg_to_ffpfsc", self.task_total_source_bytes)
 
         self.root.after(0, lambda: self.status_label.config(text="Konvertiere..."))
         self._append_to_log("\n" + "=" * 60 + "\n")
@@ -9116,7 +10544,17 @@ class PS5ConverterGUI:
         self._append_to_log(f"    Ziel:   {final_output}\n")
         self._append_to_log("    Methode: ps5-image-studio / Lazy_MkPFS pack_file (direkt, 1 Schritt)\n")
         self._append_to_log("    Die .ffpkg-Datei wird als einzelne Datei in den PFS-Container eingebettet.\n")
-        self._append_to_log(f"    Kompression Level: {_level} | Worker-Cap: {_cpu} (von {_cores} Kernen)\n")
+        self._append_to_log(
+            "    Auto-Profil: {name} | Quelle: {size:.2f} GB | "
+            "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
+                name=profile["profile"],
+                size=profile["size_gb"],
+                lvl=profile["level"],
+                cpu=profile["cpu"],
+                cores=profile["cores"],
+                blk=profile["block_size"],
+            )
+        )
         self._append_to_log("=" * 60 + "\n\n")
 
         # Direkter Aufruf: .ffpkg → .ffpfsc (kein tmp_dir noetig)
@@ -9128,8 +10566,9 @@ class PS5ConverterGUI:
                     "--no-adjust-output-file-extension",
                     "--version", "PS5",
                     "--inode-bits", "32",
-                    "--cpu-count", str(_cpu),
-                    "--compression-level", str(_level),
+                    "--cpu-count", str(profile["cpu"]),
+                    "--compression-level", str(profile["level"]),
+                    "--block-size", str(profile["block_size"]),
                     src, final_output,
                 ],
                 monitor_target_path=final_output,
@@ -9761,17 +11200,7 @@ class PS5ConverterGUI:
             unit_label="Bytes",
         )
 
-        # ps5-exfat-builder _pfs_pack_tuning Methode:
-        # Kompression Level 9 (Standard/sicher), Worker-Cap = min(4, cores-1)
-        # Level 9 hält die Worker-Anzahl niedrig und verhindert RAM-Overflow
-        # (mkpfs unbounded imap result backlog). Identisch mit ps5-exfat-builder v3.6.2+.
-        import os as _os
-        _level = 9  # Standard: sicher, verhindert RAM-Overflow
-        _cores = _os.cpu_count() or 4
-        _ceil  = max(1, min(4, _cores - 1) if _cores > 1 else 1)
-        _frac  = 0.5 + 0.5 * (_level - 1) / 8.0  # L1->0.5, L9->1.0
-        _cap   = max(2, int(round(_ceil * _frac))) if _ceil >= 2 else 1
-        _cpu   = max(1, min(_ceil, _cap))
+        profile = self._resolve_pack_profile("pack_file", self.task_total_source_bytes)
 
         self.root.after(0, lambda: self.status_label.config(text="Konvertiere..."))
         self._append_to_log(
@@ -9780,7 +11209,15 @@ class PS5ConverterGUI:
         self._append_to_log(
             "[Info] Methode: ps5-exfat-builder (mkpfs pack file, direkt, 1 Schritt)\n"
             "[Info] Die .exfat-Datei wird als einzelne Datei in den PFS-Container eingebettet.\n"
-            f"[Info] Kompression Level: {_level} | Worker-Cap: {_cpu} (von {_cores} Kernen)\n"
+            "[Info] Auto-Profil: {name} | Quelle: {size:.2f} GB | "
+            "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
+                name=profile["profile"],
+                size=profile["size_gb"],
+                lvl=profile["level"],
+                cpu=profile["cpu"],
+                cores=profile["cores"],
+                blk=profile["block_size"],
+            )
         )
 
         # Direkter Aufruf: .exfat \u2192 .ffpfsc (kein tmp_dir n\u00f6tig)
@@ -9793,8 +11230,9 @@ class PS5ConverterGUI:
                     "--no-adjust-output-file-extension",
                     "--version", "PS5",
                     "--inode-bits", "32",
-                    "--cpu-count", str(_cpu),
-                    "--compression-level", str(_level),
+                    "--cpu-count", str(profile["cpu"]),
+                    "--compression-level", str(profile["level"]),
+                    "--block-size", str(profile["block_size"]),
                     src, final_output,
                 ],
                 monitor_target_path=final_output,
@@ -9836,6 +11274,14 @@ class PS5ConverterGUI:
 
         import base64 as _b64
 
+        # Relative Ausgabepfade wuerden bei cwd=tmp_script_dir im Temp-Ordner landen.
+        # Daher immer auf absolute Pfade normalisieren.
+        src_dir = os.path.abspath(src_dir)
+        out_file = os.path.abspath(out_file)
+        out_parent = os.path.dirname(out_file)
+        if out_parent:
+            os.makedirs(out_parent, exist_ok=True)
+
         tmp_script_dir: str | None = None
         try:
             # OSFMount suchen / installieren
@@ -9861,7 +11307,7 @@ class PS5ConverterGUI:
             self._append_to_log(f"[OSFMount] Gefunden: {osf_exe}\n")
 
             # Skripte in temp-Verzeichnis extrahieren
-            tmp_script_dir = tempfile.mkdtemp(prefix="ps5conv_exfat_scripts_")
+            tmp_script_dir = self._mkdtemp(prefix="ps5conv_exfat_scripts_")
             bat_path = os.path.join(tmp_script_dir, "make_image.bat")
             ps1_path = os.path.join(tmp_script_dir, "New-OsfExfatImage.ps1")
             with open(bat_path, "wb") as f:
@@ -9893,15 +11339,142 @@ class PS5ConverterGUI:
             # Ausgabe zeilenweise loggen und Fortschritt schätzen
             _pct_range = pct_end - pct_start
             _phase_pct = pct_start + _pct_range * 0.05
+            _last_robo_pct = [-1]
+            _last_robo_zero_log_ts = [0.0]
+            _last_robo_probe_ts = [0.0]
+            _robo_drive = [""]
+            _robo_payload_bytes = [0]
+            _last_robo_copy_log_ts = [0.0]
+            _last_robo_copy_gb = [-1.0]
+            _last_probe_used_b = [-1]
+            _last_probe_ts = [0.0]
+            _speed_ema_bps = [0.0]
+            _last_trend_log_ts = [0.0]
+
+            self._copy_total_bytes = 0
+            self._copy_done_bytes = 0
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
 
             def _on_make_image_line(line: str) -> bool:
                 nonlocal _phase_pct
                 line = line.rstrip()
                 if not line:
                     return True
+                _low = line.lower()
+
+                # Mount-Laufwerk und erwartete Payload-Menge aus Script-Logs extrahieren.
+                if "[1/4]" in line and " on " in line:
+                    _m_drv = re.search(r" on ([A-Z]:)", line)
+                    if _m_drv:
+                        _robo_drive[0] = _m_drv.group(1)
+                if "enumeration done:" in _low:
+                    _m_gb = re.search(r"enumeration done:.*?,\s*([0-9]+(?:\.[0-9]+)?)\s*gb", _low)
+                    if _m_gb:
+                        try:
+                            _robo_payload_bytes[0] = int(float(_m_gb.group(1)) * (1024 ** 3))
+                        except Exception:
+                            pass
+                if _robo_payload_bytes[0] <= 0:
+                    _robo_payload_bytes[0] = int(getattr(self, "_last_source_size_bytes", 0) or 0)
+                if _robo_payload_bytes[0] > 0:
+                    self._copy_total_bytes = int(_robo_payload_bytes[0])
+
+                # Robocopy schreibt bei sehr vielen Dateien oft tausende "0%"-Zeilen.
+                # Diese Zeilen drosseln wir und mappen sinnvolle %-Spruenge auf Phase 3.
+                _m_robo_pct = re.match(r"^\s*(\d{1,3})%\s*$", line)
+                if _m_robo_pct:
+                    robo_pct = max(0, min(int(_m_robo_pct.group(1)), 100))
+                    if robo_pct == 0:
+                        now = time.monotonic()
+                        # Auch bei dauerhaften 0%-Zeilen echten Copy-Fortschritt via Laufwerksbelegung schätzen.
+                        if now - _last_robo_probe_ts[0] >= 3.0:
+                            drv = _robo_drive[0]
+                            payload_b = _robo_payload_bytes[0]
+                            if drv and payload_b > 0:
+                                try:
+                                    du = shutil.disk_usage(drv + "\\")
+                                    used_b = max(0, int(du.used) - (64 * 1024 * 1024))
+                                    frac = max(0.0, min(used_b / max(payload_b, 1), 0.995))
+                                    self._copy_total_bytes = int(payload_b)
+                                    self._copy_done_bytes = int(min(used_b, payload_b))
+
+                                    dt = max(0.001, now - (_last_probe_ts[0] or now))
+                                    if _last_probe_used_b[0] >= 0 and dt > 0:
+                                        inst_bps = max(0.0, (used_b - _last_probe_used_b[0]) / dt)
+                                        if _speed_ema_bps[0] <= 0.0:
+                                            _speed_ema_bps[0] = inst_bps
+                                        else:
+                                            _speed_ema_bps[0] = (_speed_ema_bps[0] * 0.72) + (inst_bps * 0.28)
+                                        trend = "stabil"
+                                        if inst_bps > _speed_ema_bps[0] * 1.08:
+                                            trend = "steigend"
+                                        elif inst_bps < _speed_ema_bps[0] * 0.92:
+                                            trend = "fallend"
+                                        self._copy_rate_bps = float(_speed_ema_bps[0])
+                                        self._copy_rate_trend = trend
+                                    _last_probe_used_b[0] = used_b
+                                    _last_probe_ts[0] = now
+
+                                    copy_mapped = pct_start + _pct_range * (0.50 + 0.44 * frac)
+                                    _phase_pct = max(_phase_pct, min(copy_mapped, pct_start + _pct_range * 0.94))
+                                    self.task_progress = max(self.task_progress, _phase_pct)
+                                    used_gb = used_b / (1024 ** 3)
+                                    total_gb = payload_b / (1024 ** 3)
+                                    rem_gb = max(0.0, (payload_b - used_b) / (1024 ** 3))
+                                    rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
+                                    trend_txt = str(getattr(self, "_copy_rate_trend", "") or "")
+                                    self.root.after(
+                                        0,
+                                        lambda u=used_gb, t=total_gb, r=rem_gb, sp=rate_mb, tr=trend_txt: self.status_label.config(
+                                            text=(
+                                                f"Phase 2/4 – Kopiere... {u:.2f}/{t:.2f} GB | "
+                                                f"Rest {r:.2f} GB | {sp:.1f} MB/s"
+                                                + (f" ({tr})" if tr else "")
+                                            )
+                                        ),
+                                    )
+                                    if (
+                                        now - _last_robo_copy_log_ts[0] >= 10.0
+                                        and (used_gb - _last_robo_copy_gb[0] >= 0.2)
+                                    ):
+                                        self._append_to_log(
+                                            f"[INFO] Robocopy Fortschritt: {used_gb:.2f}/{total_gb:.2f} GB "
+                                            f"(Rest {rem_gb:.2f} GB, ~{frac * 100.0:.1f}%, {rate_mb:.1f} MB/s"
+                                            + (f", Trend {trend_txt}" if trend_txt else "")
+                                            + ")\n"
+                                        )
+                                        _last_robo_copy_log_ts[0] = now
+                                        _last_robo_copy_gb[0] = used_gb
+                                    if now - _last_trend_log_ts[0] >= 20.0 and rate_mb > 0.0:
+                                        self._append_to_log(
+                                            f"[INFO] Copy-Rate: {rate_mb:.1f} MB/s | Trend: {trend_txt or 'stabil'}\n"
+                                        )
+                                        _last_trend_log_ts[0] = now
+                                except Exception:
+                                    pass
+                            _last_robo_probe_ts[0] = now
+                        if now - _last_robo_zero_log_ts[0] >= 6.0:
+                            self._append_to_log("[INFO] Robocopy laeuft ... (warte auf ersten Prozent-Impuls)\n")
+                            _last_robo_zero_log_ts[0] = now
+                        # Kein Log-Spam fuer wiederholtes 0%
+                    else:
+                        if robo_pct != _last_robo_pct[0]:
+                            self._append_to_log(f"[INFO] Robocopy: {robo_pct}%\n")
+                            _last_robo_pct[0] = robo_pct
+                        if self._copy_total_bytes > 0:
+                            est_done = int(self._copy_total_bytes * (robo_pct / 100.0))
+                            self._copy_done_bytes = max(self._copy_done_bytes, est_done)
+                        # Schritt 3/4 (Copy) sichtbar voranbringen: 50%..94% des Schrittbereichs.
+                        copy_mapped = pct_start + _pct_range * (0.50 + 0.44 * (robo_pct / 100.0))
+                        _phase_pct = max(_phase_pct, min(copy_mapped, pct_start + _pct_range * 0.94))
+                        self.task_progress = max(self.task_progress, _phase_pct)
+                    if not self.is_running:
+                        return False
+                    return True
+
                 self._append_to_log(f"{line}\n")
                 # Fortschritt aus Log-Zeilen schätzen
-                _low = line.lower()
                 if "[1/4]" in line or "mounting" in _low or "mounte" in _low:
                     _phase_pct = pct_start + _pct_range * 0.15
                 elif "[2/4]" in line or "format" in _low:
@@ -9943,6 +11516,8 @@ class PS5ConverterGUI:
                 self._append_to_log("[FEHLER] Ausgabedatei wurde nicht erstellt.\n")
                 return False
 
+            if self._copy_total_bytes > 0:
+                self._copy_done_bytes = self._copy_total_bytes
             self.task_progress = max(self.task_progress, pct_end)
             self._append_to_log(f"[OK] exFAT-Image erstellt: {out_file}\n")
             return True
@@ -9967,9 +11542,33 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
+        src = os.path.abspath(src)
+        dst = os.path.abspath(dst)
+        os.makedirs(dst, exist_ok=True)
+
         base_name = os.path.splitext(os.path.basename(src))[0]
         final_output = os.path.join(dst, f"{base_name}.exfat")
-        tmp_dir = tempfile.mkdtemp(prefix="ps5conv_exfat_")
+        cp = getattr(self, "_active_resume_checkpoint", None)
+        cp_stage = str(cp.get("stage", "")).strip() if isinstance(cp, dict) else ""
+        cp_tmp_dir = str(cp.get("tmp_dir", "")).strip() if isinstance(cp, dict) else ""
+        cp_game_dump_dir = str(cp.get("game_dump_dir", "")).strip() if isinstance(cp, dict) else ""
+
+        if cp_tmp_dir and os.path.isdir(cp_tmp_dir):
+            tmp_dir = cp_tmp_dir
+            self._append_to_log(f"[RESUME] Aufgabe 2: verwende Temp-Zwischenstand: {tmp_dir}\n")
+        else:
+            tmp_dir = self._mkdtemp(prefix="ps5conv_exfat_")
+
+        cleanup_tmp = True
+
+        def _fail_keep_tmp(reason: str = "") -> bool:
+            nonlocal cleanup_tmp
+            cleanup_tmp = False
+            if reason:
+                self._append_to_log(f"[INFO] Resume-Punkt gespeichert: {reason}\n")
+            if tmp_dir and os.path.isdir(tmp_dir):
+                self._append_to_log(f"[INFO] Zwischenstand behalten für Resume: {tmp_dir}\n")
+            return False
 
         self.task_final_output_path  = final_output
         self.task_total_source_bytes = self._get_path_size(src)
@@ -9987,18 +11586,64 @@ class PS5ConverterGUI:
             unit_label="Bytes",
         )
 
+        self._save_runtime_checkpoint(
+            mode="unpack_to_exfat",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={
+                "stage": "task2_start",
+                "tmp_dir": tmp_dir,
+                "final_output": final_output,
+            },
+        )
+
         try:
             self.root.after(0, lambda: self.status_label.config(text="Entpacke..."))
             self._append_to_log(">>> Schritt 1 / 2: Container entpacken...\n")
 
-            step1_ok = self._execute_mkpfs(
-                ["unpack", "--overwrite", src, tmp_dir],
-                monitor_target_path=tmp_dir,
-                monitor_source_file=src,
-            )
+            step1_ok = False
+            if cp_stage in {"task2_step1_done", "task2_step2_done"} and os.path.isdir(tmp_dir):
+                try:
+                    has_any = bool(os.listdir(tmp_dir))
+                except Exception:
+                    has_any = False
+                if has_any:
+                    step1_ok = True
+                    self._append_to_log("[RESUME] Schritt 1 uebersprungen (bereits entpackt).\n")
+
+            if not step1_ok:
+                self._save_runtime_checkpoint(
+                    mode="unpack_to_exfat",
+                    src=src,
+                    dst=dst,
+                    state="in_progress",
+                    extra={
+                        "stage": "task2_step1_running",
+                        "tmp_dir": tmp_dir,
+                        "final_output": final_output,
+                    },
+                )
+                step1_ok = self._execute_mkpfs(
+                    ["unpack", "--overwrite", src, tmp_dir],
+                    monitor_target_path=tmp_dir,
+                    monitor_source_file=src,
+                )
 
             if not step1_ok or not self.is_running:
-                return False
+                return _fail_keep_tmp("Schritt 1 nicht abgeschlossen")
+
+            self._save_runtime_checkpoint(
+                mode="unpack_to_exfat",
+                src=src,
+                dst=dst,
+                state="in_progress",
+                extra={
+                    "stage": "task2_step1_done",
+                    "tmp_dir": tmp_dir,
+                    "final_output": final_output,
+                },
+            )
 
             # Erkennen ob die .ffpfsc ein pack-folder (Aufgabe 1) oder
             # pack-file (Aufgabe 3) Container ist:
@@ -10038,7 +11683,7 @@ class PS5ConverterGUI:
                         f"[FEHLER] Gesucht: {eboot_path}\n"
                         "[FEHLER] Der Game-Dump muss eboot.bin im Root-Verzeichnis enthalten.\n"
                     )
-                    return False
+                    return _fail_keep_tmp("eboot.bin fehlt im Ordnerdump")
 
                 # Zieldatei vorab löschen falls vorhanden (Überschreiben)
                 if os.path.exists(final_output):
@@ -10054,7 +11699,7 @@ class PS5ConverterGUI:
                     pct_end=98.0,
                 )
                 if not exfat_ok or not self.is_running:
-                    return False
+                    return _fail_keep_tmp("exFAT-Erstellung aus Ordnerdump fehlgeschlagen")
 
                 self.task_final_output_path = final_output
                 self._append_to_log(f"[OK] Ausgabe: {final_output}\n")
@@ -10078,7 +11723,7 @@ class PS5ConverterGUI:
 
             if not pfs_file or not os.path.isfile(pfs_file):
                 self._append_to_log("[FEHLER] Keine Datei nach dem Entpacken gefunden.\n")
-                return False
+                return _fail_keep_tmp("Inneres Image nicht gefunden")
 
             self._append_to_log(
                 f"[Info] Erkannt: pack-file .ffpfsc\n"
@@ -10099,28 +11744,52 @@ class PS5ConverterGUI:
                 text="Aufgabe 2 – Inneres Image entpacken (mkpfs)..."))
 
             # Game-Dump Ordner im Temp-Verzeichnis
-            game_dump_dir = os.path.join(tmp_dir, "_game_dump_extracted")
-            os.makedirs(game_dump_dir, exist_ok=True)
+            if cp_stage == "task2_step2_done" and cp_game_dump_dir and os.path.isdir(cp_game_dump_dir):
+                game_dump_dir = cp_game_dump_dir
+                inner_unpack_ok = True
+                try:
+                    dump_files = os.listdir(game_dump_dir)
+                except Exception:
+                    dump_files = []
+                self._append_to_log("[RESUME] Schritt 2 uebersprungen (Game-Dump bereits extrahiert).\n")
+            else:
+                game_dump_dir = os.path.join(tmp_dir, "_game_dump_extracted")
+                os.makedirs(game_dump_dir, exist_ok=True)
 
-            # Versuche mkpfs unpack auf die entpackte Datei
-            inner_unpack_ok = self._execute_mkpfs(
-                ["unpack", "--overwrite", pfs_file, game_dump_dir],
-                monitor_target_path=game_dump_dir,
-                monitor_source_file=pfs_file,
-            )
+                # Versuche mkpfs unpack auf die entpackte Datei
+                inner_unpack_ok = self._execute_mkpfs(
+                    ["unpack", "--overwrite", pfs_file, game_dump_dir],
+                    monitor_target_path=game_dump_dir,
+                    monitor_source_file=pfs_file,
+                )
+                dump_files = []
 
             if not self.is_running:
-                return False
+                return _fail_keep_tmp("Abbruch waehrend Schritt 2")
 
             # Prüfe ob mkpfs unpack erfolgreich war (Game-Dump mit Dateien)
-            dump_files = []
             if inner_unpack_ok:
-                dump_files = os.listdir(game_dump_dir)
+                try:
+                    dump_files = os.listdir(game_dump_dir)
+                except Exception:
+                    dump_files = []
 
             if inner_unpack_ok and len(dump_files) > 0:
                 # PFS-Image erfolgreich entpackt → game_dump_dir enthält den Game-Dump
                 self._append_to_log(
                     f"[OK] PFS-Image entpackt: {len(dump_files)} Einträge in Game-Dump\n"
+                )
+                self._save_runtime_checkpoint(
+                    mode="unpack_to_exfat",
+                    src=src,
+                    dst=dst,
+                    state="in_progress",
+                    extra={
+                        "stage": "task2_step2_done",
+                        "tmp_dir": tmp_dir,
+                        "game_dump_dir": game_dump_dir,
+                        "final_output": final_output,
+                    },
                 )
             else:
                 # mkpfs konnte die Datei nicht entpacken → es ist ein exFAT-Image
@@ -10142,7 +11811,7 @@ class PS5ConverterGUI:
                         "         Bitte OSFMount installieren:\n"
                         "         https://www.osforensics.com/tools/mount-disk-images.html\n"
                     )
-                    return False
+                    return _fail_keep_tmp("OSFMount fehlt in Schritt 2")
 
                 self._append_to_log(f"[OSFMount] Gefunden: {osf_exe}\n")
 
@@ -10155,7 +11824,7 @@ class PS5ConverterGUI:
                         break
                 if not free_letter:
                     self._append_to_log("[FEHLER] Kein freier Laufwerksbuchstabe verfügbar.\n")
-                    return False
+                    return _fail_keep_tmp("Kein freier Laufwerksbuchstabe")
 
                 # game_dump_dir leeren (enthält evtl. Reste vom fehlgeschlagenen mkpfs)
                 shutil.rmtree(game_dump_dir, ignore_errors=True)
@@ -10170,19 +11839,28 @@ class PS5ConverterGUI:
                     self._append_to_log(
                         f"[INFO] Mounte {os.path.basename(pfs_file)} auf {free_letter}...\n"
                     )
-                    result = subprocess.run(
-                        [osf_exe, "-a", "-t", "file", "-f", pfs_file,
-                         "-m", free_letter, "-o", "ro,rem"],
-                        capture_output=True, text=True,
-                        creationflags=_NO_WIN_FLAGS,
-                        startupinfo=_silent_startupinfo()
-                    )
+                    try:
+                        result = subprocess.run(
+                            [osf_exe, "-a", "-t", "file", "-f", pfs_file,
+                             "-m", free_letter, "-o", "ro,rem"],
+                            capture_output=True, text=True,
+                            creationflags=_NO_WIN_FLAGS,
+                            startupinfo=_silent_startupinfo()
+                        )
+                    except OSError as exc:
+                        self._append_to_log(
+                            "[FEHLER] OSFMount konnte nicht gestartet werden.\n"
+                            f"         Grund: {exc}\n"
+                            "         Tipp: Bitte Programm/Terminal als Administrator starten\n"
+                            "         und prüfen, ob OSFMount korrekt installiert ist.\n"
+                        )
+                        return _fail_keep_tmp("OSFMount-Startfehler")
                     if result.returncode != 0:
                         self._append_to_log(
                             f"[FEHLER] Mount fehlgeschlagen (rc={result.returncode}): "
                             f"{result.stderr or result.stdout}\n"
                         )
-                        return False
+                        return _fail_keep_tmp("OSFMount-Mount fehlgeschlagen")
                     mount_ok = True
 
                     # Warten bis Laufwerk erscheint (max. 10s)
@@ -10195,7 +11873,7 @@ class PS5ConverterGUI:
                             f"[FEHLER] Laufwerk {free_letter} erschien nicht "
                             f"innerhalb von 10s.\n"
                         )
-                        return False
+                        return _fail_keep_tmp("Gemountetes Laufwerk erschien nicht")
 
                     self._append_to_log(f"[INFO] Laufwerk {free_letter} bereit.\n")
 
@@ -10211,9 +11889,95 @@ class PS5ConverterGUI:
                     self.root.after(0, lambda: self.status_label.config(
                         text="Aufgabe 2 – Dateien extrahieren (robocopy)..."))
 
+                    _robo_last_pct = [-1]
+                    _robo_last_zero_ts = [0.0]
+                    _dst_probe_last_ts = [0.0]
+                    _dst_probe_last_bytes = [-1]
+                    _robo_speed_ema = [0.0]
+                    _robo_payload = [max(1, int(os.path.getsize(pfs_file)))]
+                    _dst_drive = [os.path.splitdrive(game_dump_dir)[0] or ""]
+                    _dst_used_base = [0]
+                    try:
+                        if _dst_drive[0]:
+                            _dst_used_base[0] = int(shutil.disk_usage(_dst_drive[0] + "\\").used)
+                    except Exception:
+                        _dst_used_base[0] = 0
+
+                    self._copy_total_bytes = int(_robo_payload[0])
+                    self._copy_done_bytes = 0
+                    self._copy_rate_bps = 0.0
+                    self._copy_rate_trend = ""
+
                     def _log_robo_line(line: str) -> bool:
-                        if line.strip():
-                            self._append_to_log(line + "\n")
+                        _ln = line.strip()
+                        if not _ln:
+                            return self.is_running
+
+                        _m_pct = re.match(r"^(\d{1,3})%$", _ln)
+                        if _m_pct:
+                            pct = max(0, min(int(_m_pct.group(1)), 100))
+                            now = time.monotonic()
+                            if pct == 0:
+                                if now - _dst_probe_last_ts[0] >= 3.0:
+                                    try:
+                                        if _dst_drive[0]:
+                                            du = shutil.disk_usage(_dst_drive[0] + "\\")
+                                            used_b = max(0, int(du.used) - int(_dst_used_base[0]))
+                                            done_b = min(used_b, int(_robo_payload[0]))
+                                            self._copy_done_bytes = max(self._copy_done_bytes, done_b)
+                                            frac = max(0.0, min(done_b / max(_robo_payload[0], 1), 0.995))
+                                            mapped = 20.0 + (50.0 - 20.0) * frac
+                                            self.task_progress = max(self.task_progress, min(mapped, 49.5))
+
+                                            dt = max(0.001, now - (_dst_probe_last_ts[0] or now))
+                                            if _dst_probe_last_bytes[0] >= 0 and dt > 0:
+                                                inst_bps = max(0.0, (done_b - _dst_probe_last_bytes[0]) / dt)
+                                                if _robo_speed_ema[0] <= 0.0:
+                                                    _robo_speed_ema[0] = inst_bps
+                                                else:
+                                                    _robo_speed_ema[0] = _robo_speed_ema[0] * 0.70 + inst_bps * 0.30
+                                                trend = "stabil"
+                                                if inst_bps > _robo_speed_ema[0] * 1.08:
+                                                    trend = "steigend"
+                                                elif inst_bps < _robo_speed_ema[0] * 0.92:
+                                                    trend = "fallend"
+                                                self._copy_rate_bps = float(_robo_speed_ema[0])
+                                                self._copy_rate_trend = trend
+                                            _dst_probe_last_bytes[0] = done_b
+                                            _dst_probe_last_ts[0] = now
+
+                                            done_gb = done_b / (1024 ** 3)
+                                            total_gb = _robo_payload[0] / (1024 ** 3)
+                                            rem_gb = max(0.0, (int(_robo_payload[0]) - done_b) / (1024 ** 3))
+                                            rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
+                                            tr = str(getattr(self, "_copy_rate_trend", "") or "")
+                                            self.root.after(
+                                                0,
+                                                lambda d=done_gb, t=total_gb, r=rem_gb, sp=rate_mb, trd=tr: self.status_label.config(
+                                                    text=(
+                                                        f"Aufgabe 2 – Extrahiere... {d:.2f}/{t:.2f} GB | "
+                                                        f"Rest {r:.2f} GB | {sp:.1f} MB/s"
+                                                        + (f" ({trd})" if trd else "")
+                                                    )
+                                                ),
+                                            )
+                                    except Exception:
+                                        pass
+                                if now - _robo_last_zero_ts[0] >= 8.0:
+                                    self._append_to_log("[INFO] Aufgabe 2 Robocopy laeuft ... (0%-Zeilen gedrosselt)\n")
+                                    _robo_last_zero_ts[0] = now
+                                return self.is_running
+
+                            if pct != _robo_last_pct[0]:
+                                self._append_to_log(f"[INFO] Aufgabe 2 Robocopy: {pct}%\n")
+                                _robo_last_pct[0] = pct
+                            est_done = int(_robo_payload[0] * (pct / 100.0))
+                            self._copy_done_bytes = max(self._copy_done_bytes, est_done)
+                            mapped = 20.0 + (50.0 - 20.0) * (pct / 100.0)
+                            self.task_progress = max(self.task_progress, min(mapped, 49.5))
+                            return self.is_running
+
+                        self._append_to_log(_ln + "\n")
                         return self.is_running
 
                     rc = self._run_subprocess_logged(
@@ -10224,16 +11988,30 @@ class PS5ConverterGUI:
                         line_callback=_log_robo_line,
                     )
                     if rc == 130 and not self.is_running:
-                        return False
+                        return _fail_keep_tmp("Abbruch waehrend robocopy")
 
                     # robocopy: 0-7 = Erfolg, >=8 = Fehler
                     if rc >= 8:
                         self._append_to_log(
                             f"[FEHLER] robocopy fehlgeschlagen (rc={rc})\n"
                         )
-                        return False
+                        return _fail_keep_tmp("robocopy fehlgeschlagen")
 
+                    if self._copy_total_bytes > 0:
+                        self._copy_done_bytes = self._copy_total_bytes
                     self._append_to_log("[OK] Dateien erfolgreich extrahiert.\n")
+                    self._save_runtime_checkpoint(
+                        mode="unpack_to_exfat",
+                        src=src,
+                        dst=dst,
+                        state="in_progress",
+                        extra={
+                            "stage": "task2_step2_done",
+                            "tmp_dir": tmp_dir,
+                            "game_dump_dir": game_dump_dir,
+                            "final_output": final_output,
+                        },
+                    )
 
                 finally:
                     # Immer dismounten
@@ -10268,7 +12046,7 @@ class PS5ConverterGUI:
                     f"[FEHLER] Gesucht: {eboot_path}\n"
                     "[FEHLER] Der Game-Dump muss eboot.bin im Root-Verzeichnis enthalten.\n"
                 )
-                return False
+                return _fail_keep_tmp("eboot.bin fehlt vor Schritt 3")
 
             # Zieldatei vorab löschen falls vorhanden
             if os.path.exists(final_output):
@@ -10284,7 +12062,7 @@ class PS5ConverterGUI:
                 pct_end=98.0,
             )
             if not exfat_ok or not self.is_running:
-                return False
+                return _fail_keep_tmp("Schritt 3 exFAT-Erstellung fehlgeschlagen")
 
             self.task_final_output_path = final_output
             self._append_to_log(f"[OK] Ausgabe: {final_output}\n")
@@ -10293,7 +12071,8 @@ class PS5ConverterGUI:
             return True
 
         finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
+            if cleanup_tmp:
+                shutil.rmtree(tmp_dir, ignore_errors=True)
 
     # ------------------------------------------------------------------
     # Dialoge
@@ -10371,7 +12150,7 @@ class PS5ConverterGUI:
                  font=("Segoe UI", 10),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"]).pack(**pad)
 
-        tk.Label(inner, text="Engine: @Phoenixx1202 – mkpfs v0.0.8",
+        tk.Label(inner, text="Engine: @Phoenixx1202 - MkPFS v0.0.9",
                  font=("Segoe UI", 10),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"]).pack(**pad)
 
@@ -10407,7 +12186,7 @@ class PS5ConverterGUI:
             "Entwicklerinnen und Entwickler aus der PS5 Homebrew Community nicht möglich "
             "gewesen. Was hier entstanden ist, baut vollständig auf ihrem Wissen, ihrem Einsatz "
             "und ihrer Bereitschaft auf, Quellcode, Werkzeuge und Ideen frei zugänglich zu machen.\n\n"
-            "Ein besonderer Dank gilt @Phoenixx1202 (PSBrew), dessen Engine MkPFS v0.0.8 das "
+            "Ein besonderer Dank gilt @Phoenixx1202 (PSBrew), dessen Engine MkPFS das "
             "Herzstück dieses Programms bildet. Ohne seine Arbeit an der PFS-Image-Verarbeitung "
             "wäre die Kernfunktionalität schlicht nicht realisierbar gewesen.\n\n"
             "Ebenso gilt ein herzlicher Dank KryoMod und Renan Barreto, deren Vorarbeit und die "

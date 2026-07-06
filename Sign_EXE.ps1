@@ -4,9 +4,9 @@
 # =============================================================================
 
 param(
-    [string]$ExePath     = "dist\PS5_Dump_Image_Converter.exe",
+    [string]$ExePath     = "",
     [string]$PfxPath     = "",          # Pfad zur PFX-Datei (leer = Zertifikat aus Windows-Zertifikatspeicher)
-    [string]$PfxPassword = "",          # Passwort der PFX-Datei (leer lassen bei EV-Token)
+    [SecureString]$PfxPassword = $null, # Passwort der PFX-Datei (leer lassen bei EV-Token)
     [string]$TimestampUrl = "http://timestamp.digicert.com",
     [switch]$EV                         # EV-Zertifikat (Hardware-Token) – kein PFX nötig
 )
@@ -22,6 +22,17 @@ Write-Host "============================================================" -Foreg
 Write-Host "   PS5 Dump & Image Converter – Code Signing" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor DarkCyan
 Write-Host ""
+
+if ([string]::IsNullOrWhiteSpace($ExePath)) {
+    $candidate = Get-ChildItem "dist" -Filter "PS5_Dump_Image_Converter_*.exe" -File -ErrorAction SilentlyContinue |
+                 Sort-Object LastWriteTime -Descending |
+                 Select-Object -First 1
+    if ($candidate) {
+        $ExePath = $candidate.FullName
+    } elseif (Test-Path "dist\PS5_Dump_Image_Converter.exe") {
+        $ExePath = "dist\PS5_Dump_Image_Converter.exe"
+    }
+}
 
 # -----------------------------------------------------------------------------
 # 1. EXE-Datei prüfen
@@ -130,11 +141,14 @@ if ($EV) {
 Write-INFO "Prüfe Timestamp-Server: $TimestampUrl"
 try {
     $response = Invoke-WebRequest -Uri $TimestampUrl -Method Head -TimeoutSec 5 -ErrorAction Stop
-    Write-OK "Timestamp-Server erreichbar."
+    if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 400) {
+        Write-OK "Timestamp-Server erreichbar."
+    } else {
+        Write-WARN "Timestamp-Server antwortet mit HTTP $($response.StatusCode)."
+    }
 } catch {
     Write-WARN "Timestamp-Server nicht erreichbar – Signierung ohne Timestamp ist möglich, aber nicht empfohlen."
     Write-WARN "Die EXE verliert ihre Gültigkeit wenn das Zertifikat abläuft."
-    $response = $null
 }
 
 # -----------------------------------------------------------------------------
