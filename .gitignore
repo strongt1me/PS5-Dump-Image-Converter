@@ -1,5 +1,6 @@
 _live_task6_output/
 Diverses/
+helloworld/*.elf
 
 # Python cache and temporary artifacts
 __pycache__/
