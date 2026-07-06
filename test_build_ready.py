@@ -70,7 +70,7 @@ def test_spec_file():
             ('name=', 'Exe-Name'),
             ('datas=', 'Daten-Dateien'),
             ('hiddenimports=', 'Hidden Imports'),
-            ('PS5_Dump_Image_Converter_v1.7.77', 'Output-Dateiname'),
+            ('PS5_Dump_Image_Converter_v1.7.78', 'Output-Dateiname'),
         ]
         
         all_ok = True

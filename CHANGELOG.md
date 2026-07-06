@@ -21,6 +21,11 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 - 7444110 build: enforce MIT-only flow and runtime license registration
 - 3ff9c2b fix: correct PowerShell path escaping in Sign_EXE.ps1 for (x86) directories
 
+## [v1.7.78] - 2026-07-06
+
+- Entfernt die ungenutzte Legacy-UFS2Tool-/Dokan-Einbettung aus ps5-exfat-builder v3.6.4.
+- Aufgabe 6 nutzt nur noch den direkten aktuellen `.ffpkg -> .ffpfsc`-Pfad ohne alte Binär-Bundles.
+
 ## [v1.7.77] - 2026-07-06
 
 - Entfernt den veralteten EV-/PFX-/Code-Signing-Releasepfad aus den Build-Skripten.
