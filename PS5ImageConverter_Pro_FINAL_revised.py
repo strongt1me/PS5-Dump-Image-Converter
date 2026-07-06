@@ -112,7 +112,7 @@ logger = logging.getLogger("PS5Converter")
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.7.76"
+APP_VERSION = "v1.7.77"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Verbindliche MkPFS-Version fuer Aufgaben 1-8.

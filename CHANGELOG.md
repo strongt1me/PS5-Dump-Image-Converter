@@ -21,6 +21,12 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 - 7444110 build: enforce MIT-only flow and runtime license registration
 - 3ff9c2b fix: correct PowerShell path escaping in Sign_EXE.ps1 for (x86) directories
 
+## [v1.7.77] - 2026-07-06
+
+- Entfernt den veralteten EV-/PFX-/Code-Signing-Releasepfad aus den Build-Skripten.
+- MIT-Lizenz wird nur noch beim EXE-Start in HKCU registriert, nicht mehr waehrend des Builds.
+- Build-Starter arbeitet ohne Get-/Set-ExecutionPolicy-Abhaengigkeit und laeuft dadurch robuster in reduzierten PowerShell-Umgebungen.
+
 ## [v1.7.76] - 2026-07-06
 
 ### Security
