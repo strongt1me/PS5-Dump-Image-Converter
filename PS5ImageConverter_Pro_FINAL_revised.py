@@ -7573,6 +7573,13 @@ class PS5ConverterGUI:
         if monitor_target_path:
             self.task_current_step += 1
             self._monitor_target_path = monitor_target_path
+            # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
+            # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
+            self._copy_total_bytes = 0
+            self._copy_done_bytes  = 0
+            # ETA-Initialwert für diesen Schritt zurücksetzen
+            if hasattr(self, "_mkpfs_eta_initial"):
+                del self._mkpfs_eta_initial
             # Korrekte Quellgrösse: Ordner rekursiv messen, Datei direkt
             if monitor_source_file:
                 if os.path.isfile(monitor_source_file):
