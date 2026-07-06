@@ -54,11 +54,11 @@ $signtool = $null
 
 # Bekannte Pfade für Windows SDK (verschiedene Versionen)
 $sdkPaths = @(
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe",
-    "C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe",
-    "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe",
-    "C:\Program Files\Windows Kits\10\bin\x64\signtool.exe"
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe',
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.22621.0\x64\signtool.exe',
+    'C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\signtool.exe',
+    'C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe',
+    'C:\Program Files\Windows Kits\10\bin\x64\signtool.exe'
 )
 
 foreach ($path in $sdkPaths) {
@@ -70,7 +70,7 @@ foreach ($path in $sdkPaths) {
 
 # Dynamische Suche falls nicht gefunden
 if (-not $signtool) {
-    $found = Get-ChildItem "C:\Program Files (x86)\Windows Kits" -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
+    $found = Get-ChildItem 'C:\Program Files (x86)\Windows Kits' -Recurse -Filter "signtool.exe" -ErrorAction SilentlyContinue |
              Where-Object { $_.FullName -like "*x64*" } |
              Sort-Object LastWriteTime -Descending |
              Select-Object -First 1
