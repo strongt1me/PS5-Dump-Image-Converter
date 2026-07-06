@@ -1656,19 +1656,32 @@ class PS5ConverterGUI:
                 "failure_excerpt": self._extract_failure_lines(),
             }
 
-            out_dir = ""
-            if dst and os.path.isdir(dst):
-                out_dir = dst
+            final_output = str(getattr(self, "task_final_output_path", "") or "")
+            target_path = Path(final_output) if final_output else None
+            if target_path and target_path.exists():
+                if target_path.is_dir():
+                    report_root = target_path.name
+                    report_parent = target_path.parent
+                else:
+                    report_root = target_path.stem
+                    report_parent = target_path.parent
+            elif dst and os.path.isdir(dst):
+                report_root = Path(dst).name
+                report_parent = Path(dst).parent
             elif os.path.isfile(src):
-                out_dir = os.path.dirname(src)
+                report_root = Path(src).stem
+                report_parent = Path(src).parent
             elif os.path.isdir(src):
-                out_dir = src
+                report_root = Path(src).name
+                report_parent = Path(src).parent
             else:
-                out_dir = os.path.dirname(self._get_config_path())
+                report_root = "ps5converter_report"
+                report_parent = Path(self._get_config_path()).parent
+
+            out_dir = report_parent / f"{report_root}_json"
             os.makedirs(out_dir, exist_ok=True)
 
-            stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"ps5converter_report_{mode}_{stamp}.json"
+            filename = f"{report_root}.json"
             report_path = os.path.join(out_dir, filename)
             with open(report_path, "w", encoding="utf-8") as fh:
                 json.dump(report, fh, ensure_ascii=False, indent=2)
@@ -9155,38 +9168,16 @@ class PS5ConverterGUI:
                             self._append_to_log("           - Mit mehr freiem Speicherplatz neu versuchen\n")
                     self._append_to_log("-" * 60 + "\n")
 
-                    # JSON-Bericht (mit Ja/Nein-Abfrage)
+                    # JSON-Bericht automatisch neben der geprüften Quelle speichern
                     try:
-                        report_dir = src
                         _raw_title = os.path.basename(src.rstrip("/\\"))
                         _safe_title = re.sub(r'[\\/:*?"<>|]', '_', os.path.splitext(_raw_title)[0]).strip() or "ps5_validator"
-                        _report_filename = _safe_title + "_validator_report.json"
-                        _dlg_event  = threading.Event()
-                        _dlg_result = [False, ""]
-                        def _ask_save_report(_rd=report_dir, _rf=_report_filename, _res=result):
-                            _ans = messagebox.askyesno(
-                                "Bericht speichern",
-                                "Soll eine ps5_validator_report.json Datei erstellt werden?",
-                                icon="question")
-                            _dlg_result[0] = _ans
-                            if _ans:
-                                _path = filedialog.asksaveasfilename(
-                                    title="Bericht speichern unter",
-                                    initialdir=_rd, initialfile=_rf,
-                                    defaultextension=".json",
-                                    filetypes=[("JSON-Datei", "*.json"), ("Alle Dateien", "*.*")])
-                                _dlg_result[1] = _path or ""
-                            _dlg_event.set()
-                        self.root.after(0, _ask_save_report)
-                        _dlg_event.wait()
-                        if _dlg_result[0] and _dlg_result[1]:
-                            with open(_dlg_result[1], "w", encoding="utf-8") as _f:
-                                json.dump(result.to_dict(), _f, indent=2, ensure_ascii=False)
-                            self._append_to_log("[INFO] JSON-Bericht gespeichert: %s\n" % _dlg_result[1])
-                        elif _dlg_result[0]:
-                            self._append_to_log("[INFO] Speichern abgebrochen.\n")
-                        else:
-                            self._append_to_log("[INFO] JSON-Bericht wurde nicht gespeichert.\n")
+                        report_dir = os.path.join(os.path.dirname(src.rstrip("/\\")), f"{_safe_title}_json")
+                        os.makedirs(report_dir, exist_ok=True)
+                        report_path = os.path.join(report_dir, f"{_safe_title}.json")
+                        with open(report_path, "w", encoding="utf-8") as _f:
+                            json.dump(result.to_dict(), _f, indent=2, ensure_ascii=False)
+                        self._append_to_log("[INFO] JSON-Bericht gespeichert: %s\n" % report_path)
                     except Exception as exc:
                         self._append_to_log("[WARNUNG] Bericht konnte nicht gespeichert werden: %s\n" % exc)
 
