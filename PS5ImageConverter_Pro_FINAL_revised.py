@@ -6338,15 +6338,23 @@ class PS5ConverterGUI:
             # Spezifikation Phase 2:
             #   scan+read zusammen → 5–12 % (erste 46.7% des Schritts 5–20)
             #   write            → 12–20 % (restliche 53.3%, vom file_monitor)
-            s = self._step_start()   # 5.0
-            e = self._step_end()     # 20.0
-            # scan+read belegen den Bereich s..s+(e-s)*0.467 = 5..12
-            scan_read_end = s + (e - s) * (7.0 / 15.0)  # = 5 + 15*(7/15) = 12.0
-            mapped = s + engine_pct * (scan_read_end - s) / 100.0
-            # Nur vorwärts – niemals zurück (nutze task_progress als Minimum, nicht task_displayed)
-            new_val = max(self.task_progress, min(mapped, scan_read_end))
-            if new_val > self.task_progress:
-                self.task_progress = new_val
+            s = self._step_start()
+            e = self._step_end()
+            if engine_pct >= 100.0:
+                # 100% komprimiert: Finalisierungsphase startet.
+                # Direkt auf 99% des Schrittbereichs vorspulen, damit die Anzeige
+                # nicht bei ~93% stagniert während mkpfs den Output schreibt.
+                near_end = s + (e - s) * 0.99
+                if near_end > self.task_progress:
+                    self.task_progress = near_end
+            else:
+                # scan+read belegen den Bereich s..s+(e-s)*0.467
+                scan_read_end = s + (e - s) * (7.0 / 15.0)
+                mapped = s + engine_pct * (scan_read_end - s) / 100.0
+                # Nur vorwärts – niemals zurück
+                new_val = max(self.task_progress, min(mapped, scan_read_end))
+                if new_val > self.task_progress:
+                    self.task_progress = new_val
 
         # Quelle 2: Dateigrössen-Monitor (write-Phase).
         # Wird vom dedizierten _file_monitor-Thread in _execute_mkpfs direkt
