@@ -3374,6 +3374,7 @@ class PS5ConverterGUI:
         if not candidate:
             candidate = tempfile.gettempdir()
 
+        probe = ""
         try:
             os.makedirs(candidate, exist_ok=True)
             fd, probe = tempfile.mkstemp(prefix=".ps5conv_tmp_write_test_", dir=candidate)
@@ -6278,7 +6279,7 @@ class PS5ConverterGUI:
                     continue
                 display_line = re.sub(
                     r'ETA\s+(\d+(?:\.\d+)?)s',
-                    lambda m: f"ETA {self._fmt_eta(float(m.group(1)))}",
+                    lambda m: f"ETA {ProgressEngine._fmt_eta(float(m.group(1)))}",
                     line,
                 )
                 visible_lines.append(display_line)
@@ -10591,10 +10592,10 @@ class PS5ConverterGUI:
                             rate = cur / el
                             pct = (min(99.0, cur / total_bytes[0] * 100.0)
                                    if total_bytes[0] else 0)
-                            el_str = f"Laufzeit: {self._fmt_eta(el)}"
+                            el_str = f"Laufzeit: {ProgressEngine._fmt_eta(el)}"
                             if rate > 0 and total_bytes[0] and cur < total_bytes[0]:
                                 left = (total_bytes[0] - cur) / rate
-                                eta = f"ETA: {self._fmt_eta(left)}"
+                                eta = f"ETA: {ProgressEngine._fmt_eta(left)}"
                             else:
                                 eta = "Fast fertig..."
                             self.task_progress = pct
