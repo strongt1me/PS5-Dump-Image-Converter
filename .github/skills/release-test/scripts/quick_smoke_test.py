@@ -135,7 +135,7 @@ class QuickSmokeTest:
         
         # Prüfe auf bestandene Tests im Output
         passed_count = stdout.count("CHECK")
-        details = f"{passed_count} Tests bestanden" if passed_count > 0 else "Keine bestanden"
+        details = f"{passed_count} Tests bestanden" if passed_count > 0 else "Keine Tests bestanden"
         
         self.print_check("Build-Readiness", success, details)
         self.results["build"] = success
