@@ -9180,11 +9180,11 @@ class PS5ConverterGUI:
 
                     # JSON-Bericht automatisch neben der geprüften Quelle speichern
                     try:
-                            _raw_title = os.path.basename(src.rstrip("/\\"))
-                            _safe_title = re.sub(r'[\\/:*?"<>|]', '_', os.path.splitext(_raw_title)[0]).strip() or "ps5_validator"
-                            report_dir = os.path.dirname(src.rstrip("/\\"))
-                            os.makedirs(report_dir, exist_ok=True)
-                            report_path = os.path.join(report_dir, f"{_safe_title}.json")
+                        _raw_title = os.path.basename(src.rstrip("/\\"))
+                        _safe_title = re.sub(r'[\\/:*?"<>|]', '_', os.path.splitext(_raw_title)[0]).strip() or "ps5_validator"
+                        report_dir = os.path.dirname(src.rstrip("/\\"))
+                        os.makedirs(report_dir, exist_ok=True)
+                        report_path = os.path.join(report_dir, f"{_safe_title}.json")
                         with open(report_path, "w", encoding="utf-8") as _f:
                             json.dump(result.to_dict(), _f, indent=2, ensure_ascii=False)
                         self._append_to_log("[INFO] JSON-Bericht gespeichert: %s\n" % report_path)
