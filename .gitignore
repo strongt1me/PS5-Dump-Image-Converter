@@ -40,3 +40,6 @@ dist/
 .DS_Store
 Thumbs.db
 
+# Local machine-specific config
+ip.ini
+
