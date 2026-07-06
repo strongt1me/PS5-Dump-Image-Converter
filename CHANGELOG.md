@@ -21,6 +21,12 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 - 7444110 build: enforce MIT-only flow and runtime license registration
 - 3ff9c2b fix: correct PowerShell path escaping in Sign_EXE.ps1 for (x86) directories
 
+## [v1.7.79] - 2026-07-06
+
+- Aufgabe 7 erweitert: automatische AMPR-Index-Generierung (`ampr_emu.index`) nach fakelib-/Root-Aenderungen.
+- AMPR-Root-Erkennung verbessert: direkter `fakelib`-Pfad wird automatisch auf den Parent normalisiert.
+- E2E-/AMPR-Lokaldateien in `.gitignore` aufgenommen und Repo-Hygiene verbessert.
+
 ## [v1.7.78] - 2026-07-06
 
 - Entfernt die ungenutzte Legacy-UFS2Tool-/Dokan-Einbettung aus ps5-exfat-builder v3.6.4.
