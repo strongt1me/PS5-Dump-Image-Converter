@@ -158,16 +158,16 @@ def main() -> int:
     _task_log: list[str] = []
     _orig_append = app._append_to_log
 
-    def _capture_append(msg: str) -> None:
-        _task_log.append(msg)
-        _orig_append(msg)
+    def _capture_append(text: str) -> None:
+        _task_log.append(text)
+        _orig_append(text)
 
     app._append_to_log = _capture_append
 
     def _prep() -> None:
         _task_log.clear()
         app.is_running = True
-        app.cancel_requested = False
+        setattr(app, "cancel_requested", False)
         root.update_idletasks()
         root.update()
 

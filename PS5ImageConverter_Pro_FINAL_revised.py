@@ -5320,13 +5320,10 @@ class PS5ConverterGUI:
                 html = r.read().decode("utf-8", errors="replace")
             patterns = [
                 r"<meta[^>]+name=['\"]twitter:image['\"][^>]+content=['\"]([^'\"]+)['\"]",
-                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+name=['\"]twitter:image['\"]",
                 r"<meta[^>]+property=['\"]og:image['\"][^>]+content=['\"]([^'\"]+)['\"]",
-                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+property=['\"]og:image['\"]",
                 r"<meta[^>]+name=['\"]image['\"][^>]+content=['\"]([^'\"]+)['\"]",
-                r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+name=['\"]image['\"]",
-                r"(https://cdn\.prosperopatches\.com/titles/[^'\"\s>]+/icon0\.(?:webp|png|jpg|jpeg))",
-                r"(https://cdn\.prosperopatches\.com/titles/[^'\"\s>]+)",
+                r"(https://cdn\.prosperopatches\.com/titles/[^\s'\">;]+/icon0\.(?:webp|png|jpg|jpeg))",
+                r"(https://cdn\.prosperopatches\.com/titles/[^\s'\">;]+)",
             ]
             for pattern in patterns:
                 match = re.search(pattern, html, flags=re.IGNORECASE)

@@ -10,7 +10,7 @@ param(
     [switch]$MitOnly,
     [string]$SignPfxPath = "",
     [SecureString]$SignPfxPassword = $null,
-    [string]$SignPfxPasswordPlain = "",
+    [string]$SignPfxSecretEnvVar = "PS5_SIGN_PFX_SECRET",
     [switch]$SignEV,
     [string]$SignTimestampUrl = "http://timestamp.digicert.com",
     [switch]$RequireSignature
@@ -60,7 +60,7 @@ $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 # -MitOnly kann optional explizit gesetzt werden, ist aber nicht erforderlich.
 $MitOnlyActive = $true
 if ($MitOnly -or $MitOnlyActive) {
-    if ($SignEV -or $RequireSignature -or -not [string]::IsNullOrWhiteSpace($SignPfxPath) -or $SignPfxPassword -or -not [string]::IsNullOrWhiteSpace($SignPfxPasswordPlain)) {
+    if ($SignEV -or $RequireSignature -or -not [string]::IsNullOrWhiteSpace($SignPfxPath) -or $SignPfxPassword) {
         Write-Host "" 
         Write-Host "FEHLER: MIT-only Modus ist aktiv. EV/PFX/Zertifikat-Parameter sind deaktiviert." -ForegroundColor Red
         Write-Host "        Bitte Signatur-Parameter entfernen und nur MIT-Lizenz-Flow verwenden." -ForegroundColor Yellow
@@ -401,8 +401,11 @@ if (-not (Test-Path $exePath)) {
         } elseif (-not [string]::IsNullOrWhiteSpace($SignPfxPath)) {
             $signArgs["PfxPath"] = $SignPfxPath
             $effectivePfxPassword = $SignPfxPassword
-            if ($null -eq $effectivePfxPassword -and -not [string]::IsNullOrWhiteSpace($SignPfxPasswordPlain)) {
-                $effectivePfxPassword = ConvertTo-SecureString -String $SignPfxPasswordPlain -AsPlainText -Force
+            if ($null -eq $effectivePfxPassword -and -not [string]::IsNullOrWhiteSpace($SignPfxSecretEnvVar)) {
+                $envSecret = [Environment]::GetEnvironmentVariable($SignPfxSecretEnvVar)
+                if (-not [string]::IsNullOrWhiteSpace($envSecret)) {
+                    $effectivePfxPassword = ConvertTo-SecureString -String $envSecret -AsPlainText -Force
+                }
             }
             if ($null -ne $effectivePfxPassword) {
                 $signArgs["PfxPassword"] = $effectivePfxPassword
