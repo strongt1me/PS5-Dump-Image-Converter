@@ -21,8 +21,25 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 - 7444110 build: enforce MIT-only flow and runtime license registration
 - 3ff9c2b fix: correct PowerShell path escaping in Sign_EXE.ps1 for (x86) directories
 
-## [v1.7.79] - 2026-07-06
+## [v1.7.80] - 2026-07-06
 
+### Aufgabe 1 / MkPFS / Runtime
+- Resume fuer Aufgabe 1 verbessert: bei vorhandenem Zwischen-Image wird der lange Phase-1-Scan uebersprungen.
+- Doppelstart der App im EXE-/frozen-Modus behoben: `pip`-Aufrufe verwenden jetzt einen echten Python-/Py-Launcher statt `sys.executable -m pip`.
+- `zlib_ng` ist nicht mehr harte Pflichtabhaengigkeit; bei Python-3.14-/Wheel-Inkompatibilitaet faellt MkPFS automatisch auf stdlib-`zlib` zurueck.
+- Namenskollision in `MkPFS-0.0.9/mkpfs/logging.py` mit stdlib-`logging` behoben.
+
+### GUI / UX / Stabilitaet
+- Release-Test-Gate vor Task-Start eingefuehrt: Aufgaben mit Zielartefakt starten nur noch bei aktuellem PASS-Status aus den Release-Tests.
+- Sichtbare Release-Gate-Anzeige in der GUI ergaenzt (PASS/BLOCKIERT/N/A inkl. Suite/Alter/Legende).
+- GUI-Responsiveness bei langem MkPFS-Pack verbessert: Engine-Queue pro Tick begrenzt, Log-Ausgabe gebuendelt und `0% compress`-Spam gedrosselt.
+- Hintergrund-Installer zeigen waehrend laufender Aufgaben keine stoerenden modalen Popups mehr.
+
+### Tests / Verifizierung
+- Release-Test-Skripte schreiben jetzt einen maschinenlesbaren Statusreport fuer das Runtime-Gate.
+- Full Suite, Quick Smoke und Hotfix Smoke wurden mit dem neuen Workflow verifiziert.
+
+### Weitere Aenderungen
 - Aufgabe 7 erweitert: automatische AMPR-Index-Generierung (`ampr_emu.index`) nach fakelib-/Root-Aenderungen.
 - AMPR-Root-Erkennung verbessert: direkter `fakelib`-Pfad wird automatisch auf den Parent normalisiert.
 - E2E-/AMPR-Lokaldateien in `.gitignore` aufgenommen und Repo-Hygiene verbessert.

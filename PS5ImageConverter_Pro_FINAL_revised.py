@@ -113,7 +113,7 @@ logger = logging.getLogger("PS5Converter")
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.7.79"
+APP_VERSION = "v1.7.80"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Verbindliche MkPFS-Version fuer Aufgaben 1-8.
@@ -1312,6 +1312,143 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Checkpoint konnte nicht entfernt werden: %s", exc)
 
+    def _release_test_status_file_path(self) -> str:
+        """Pfad zur letzten Release-Test-Statusdatei im App-Konfigurationsordner."""
+        cfg = self._get_config_path()
+        base = os.path.dirname(cfg)
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "last_release_test_status.json")
+
+    def _load_release_test_status(self) -> dict[str, Any] | None:
+        """Lädt den zuletzt geschriebenen Release-Test-Status."""
+        candidates = [self._release_test_status_file_path()]
+        try:
+            repo_status = os.path.join(
+                os.getcwd(),
+                ".github",
+                "skills",
+                "release-test",
+                "last_release_test_status.json",
+            )
+            candidates.append(repo_status)
+        except Exception:
+            pass
+
+        for path in candidates:
+            try:
+                if not os.path.isfile(path):
+                    continue
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                if isinstance(data, dict):
+                    data["_status_path"] = path
+                    return data
+            except Exception as exc:
+                logger.debug("Release-Test-Status konnte nicht geladen werden (%s): %s", path, exc)
+        return None
+
+    def _check_release_test_gate(self, mode: str) -> tuple[bool, str]:
+        """Prueft die harte Start-Policy fuer Release-Tests.
+
+        Returns:
+            (True, info) wenn Start erlaubt, sonst (False, fehlertext).
+        """
+        # Nur fuer Aufgaben mit Zielartefakt erzwingen.
+        if mode in ("inspect", "dump_validator"):
+            return True, ""
+
+        enforce = bool(self._load_setting("enforce_release_test_gate", True))
+        if not enforce:
+            return True, ""
+
+        status = self._load_release_test_status()
+        if not status:
+            return False, (
+                "Kein Release-Test-Status gefunden.\n\n"
+                "Bitte zuerst mindestens einen der folgenden Tests erfolgreich ausfuehren:\n"
+                "- run_all_tests.py\n"
+                "- quick_smoke_test.py\n"
+                "- hotfix_smoke_test.py"
+            )
+
+        passed = bool(status.get("passed", False))
+        suite = str(status.get("suite", "")).strip() or "unbekannt"
+        epoch_raw = status.get("epoch", 0)
+        try:
+            epoch = float(epoch_raw or 0.0)
+        except Exception:
+            epoch = 0.0
+        if epoch <= 0:
+            return False, "Release-Test-Status ist unvollstaendig (kein Zeitstempel)."
+
+        age_hours = max(0.0, (time.time() - epoch) / 3600.0)
+        max_age_raw = self._load_setting("release_test_gate_max_age_hours", 24.0)
+        try:
+            max_age_hours = float(cast(Any, max_age_raw) or 24.0)
+        except Exception:
+            max_age_hours = 24.0
+
+        if not passed:
+            return False, (
+                f"Letzter Release-Test ({suite}) ist fehlgeschlagen.\n"
+                "Task-Start ist blockiert, bis ein Testlauf gruen ist."
+            )
+        if age_hours > max_age_hours:
+            return False, (
+                f"Letzter Release-Test ({suite}) ist zu alt: {age_hours:.1f}h.\n"
+                f"Erlaubt sind maximal {max_age_hours:.1f}h."
+            )
+
+        ts = str(status.get("timestamp", "")).strip()
+        return True, f"{suite} PASS @ {ts or '-'} ({age_hours:.1f}h alt)"
+
+    def _refresh_release_test_gate_badge(self) -> None:
+        """Aktualisiert die sichtbare Release-Gate-Statusanzeige im Hauptfenster."""
+        if not hasattr(self, "release_gate_label"):
+            return
+
+        mode = ""
+        try:
+            mode = str(self.current_mode.get()).strip()
+        except Exception:
+            mode = ""
+
+        if mode in ("inspect", "dump_validator"):
+            txt = "Release-Gate: [-] Nicht erforderlich fuer diesen Modus"
+            fg = self._COLORS.get("fg_secondary", "#9AA4BF")
+        else:
+            ok, info = self._check_release_test_gate(mode)
+            if ok:
+                txt = f"Release-Gate: [OK] PASS | {info}"
+                fg = self._COLORS.get("fg_success", "#2ECC71")
+            else:
+                short = (info or "Status unbekannt").splitlines()[0].strip()
+                txt = f"Release-Gate: [!] BLOCKIERT | {short}"
+                fg = self._COLORS.get("fg_warning", "#F1C40F")
+
+        try:
+            self.release_gate_label.config(text=txt, foreground=fg)
+            bg = self._COLORS.get("bg_main", "#0B1423")
+            sec = self._COLORS.get("fg_secondary", "#9AA4BF")
+            okc = self._COLORS.get("fg_success", "#2ECC71")
+            warn = self._COLORS.get("fg_warning", "#F1C40F")
+            if hasattr(self, "release_gate_legend_frame"):
+                self.release_gate_legend_frame.config(bg=bg)
+            if hasattr(self, "release_gate_legend_prefix"):
+                self.release_gate_legend_prefix.config(bg=bg, fg=sec)
+            if hasattr(self, "release_gate_legend_pass"):
+                self.release_gate_legend_pass.config(bg=bg, fg=okc)
+            if hasattr(self, "release_gate_legend_sep1"):
+                self.release_gate_legend_sep1.config(bg=bg, fg=sec)
+            if hasattr(self, "release_gate_legend_block"):
+                self.release_gate_legend_block.config(bg=bg, fg=warn)
+            if hasattr(self, "release_gate_legend_sep2"):
+                self.release_gate_legend_sep2.config(bg=bg, fg=sec)
+            if hasattr(self, "release_gate_legend_na"):
+                self.release_gate_legend_na.config(bg=bg, fg=sec)
+        except Exception as exc:
+            logger.debug("Release-Gate-Label konnte nicht aktualisiert werden: %s", exc)
+
     def _run_preflight_checks(self, mode: str, src: str, dst: str) -> tuple[list[str], list[str]]:
         """Führt eine Risikoanalyse vor Start aus und liefert (errors, warnings)."""
         errors: list[str] = []
@@ -2077,6 +2214,63 @@ class PS5ConverterGUI:
         # Größen- und ETA-Label (breiter für verbleibende Größe und ETA-Zeit)
         self.size_label = ttk.Label(action_bar, text="", font=("Segoe UI", 8), foreground=self._COLORS["fg_secondary"], wraplength=400)
         self.size_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
+        self.release_gate_label = ttk.Label(
+            action_bar,
+            text="Release-Gate: Pruefung...",
+            font=("Segoe UI", 8, "italic"),
+            foreground=self._COLORS["fg_secondary"],
+        )
+        self.release_gate_label.grid(row=1, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        self.release_gate_legend_frame = tk.Frame(action_bar, bg=self._COLORS["bg_main"])
+        self.release_gate_legend_frame.grid(row=1, column=4, sticky="e", pady=(6, 0))
+        self.release_gate_legend_prefix = tk.Label(
+            self.release_gate_legend_frame,
+            text="Legende:",
+            font=("Segoe UI", 8),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS["fg_secondary"],
+        )
+        self.release_gate_legend_prefix.pack(side="left")
+        self.release_gate_legend_pass = tk.Label(
+            self.release_gate_legend_frame,
+            text=" [OK] PASS",
+            font=("Segoe UI", 8, "bold"),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS.get("fg_success", "#2ECC71"),
+        )
+        self.release_gate_legend_pass.pack(side="left")
+        self.release_gate_legend_sep1 = tk.Label(
+            self.release_gate_legend_frame,
+            text=" |",
+            font=("Segoe UI", 8),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS["fg_secondary"],
+        )
+        self.release_gate_legend_sep1.pack(side="left")
+        self.release_gate_legend_block = tk.Label(
+            self.release_gate_legend_frame,
+            text=" [!] BLOCKIERT",
+            font=("Segoe UI", 8, "bold"),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS.get("fg_warning", "#F1C40F"),
+        )
+        self.release_gate_legend_block.pack(side="left")
+        self.release_gate_legend_sep2 = tk.Label(
+            self.release_gate_legend_frame,
+            text=" |",
+            font=("Segoe UI", 8),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS["fg_secondary"],
+        )
+        self.release_gate_legend_sep2.pack(side="left")
+        self.release_gate_legend_na = tk.Label(
+            self.release_gate_legend_frame,
+            text=" [-] N/A",
+            font=("Segoe UI", 8, "bold"),
+            bg=self._COLORS["bg_main"],
+            fg=self._COLORS["fg_secondary"],
+        )
+        self.release_gate_legend_na.pack(side="left")
 
         # Console (Dark Console Style)
         console_frame = ttk.Frame(content_area, style="Card.TFrame", padding=1)
@@ -2100,6 +2294,7 @@ class PS5ConverterGUI:
 
         # Initialen Modus setzen
         self._set_mode_from_sidebar("pack_folder", self._MODE_OPTIONS[0][0])
+        self._refresh_release_test_gate_badge()
 
     def _set_mode_from_sidebar(self, mode: str, full_text: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
@@ -2206,6 +2401,7 @@ class PS5ConverterGUI:
             )
         # Trigger Metadaten-Check
         self._on_source_path_changed()
+        self._refresh_release_test_gate_badge()
 
     # ------------------------------------------------------------------
     # Ereignishandler
@@ -2744,18 +2940,19 @@ class PS5ConverterGUI:
                 return candidate
         return ""
 
-    def _apply_icon_to_window(self, win: tk.Misc) -> None:
+    def _apply_icon_to_window(self, win: tk.Tk | tk.Toplevel) -> None:
         """Setzt das App-Icon mit app_icon.ico als bevorzugter Quelle."""
         try:
+            win_any = cast(Any, win)
             icon_file = self._find_app_icon_file()
             if sys.platform == "win32" and icon_file:
-                win.iconbitmap(icon_file)
+                win_any.iconbitmap(icon_file)
                 return
 
             if icon_file:
                 img = ImageTk.PhotoImage(Image.open(icon_file))
-                win.iconphoto(True, img)
-                setattr(win, "_icon_ref", img)
+                win_any.iconphoto(True, img)
+                setattr(win_any, "_icon_ref", img)
                 return
 
             ico_data = base64.b64decode(_APP_ICON_ICO_B64)
@@ -2764,14 +2961,14 @@ class PS5ConverterGUI:
                 tmp = _tf.NamedTemporaryFile(suffix=".ico", delete=False)
                 tmp.write(ico_data)
                 tmp.close()
-                win.iconbitmap(tmp.name)
-                win.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
+                win_any.iconbitmap(tmp.name)
+                win_any.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
                 return
 
             png_data = base64.b64decode(_APP_ICON_PNG32_B64)
             img = ImageTk.PhotoImage(Image.open(io.BytesIO(png_data)))
-            win.iconphoto(True, img)
-            setattr(win, "_icon_ref", img)
+            win_any.iconphoto(True, img)
+            setattr(win_any, "_icon_ref", img)
         except Exception as exc:
             logger.debug("App-Icon konnte nicht gesetzt werden: %s", exc)
 
@@ -5666,6 +5863,19 @@ class PS5ConverterGUI:
             messagebox.showerror("Ungültige Quelle", error_msg)
             return
 
+        # Harte Release-Test-Gate-Pruefung (4.0.2-Workflow).
+        gate_ok, gate_info = self._check_release_test_gate(mode)
+        if not gate_ok:
+            self._refresh_release_test_gate_badge()
+            messagebox.showerror(
+                "Release-Test-Gate blockiert",
+                gate_info,
+            )
+            return
+        if gate_info:
+            logger.info("Release-Test-Gate freigegeben: %s", gate_info)
+        self._refresh_release_test_gate_badge()
+
         # Preflight-Risikoanalyse (vor UI-Start und Thread-Launch).
         pf_errors, pf_warnings = self._run_preflight_checks(mode, src, dst_for_checks)
         if pf_errors:
@@ -5819,6 +6029,7 @@ class PS5ConverterGUI:
         self._eta_ui_step            = 0
         self._task_report_path       = ""
         self._checkpoint_last_save_ts = self.task_start_time
+        self._mkpfs_zero_compress_count = 0
 
         # Initialer Lauf-Checkpoint.
         self._save_runtime_checkpoint(
@@ -6022,14 +6233,17 @@ class PS5ConverterGUI:
         # 1. Engine-Queue lesen – jede Zeile ist ein echtes Ereignis
         # ------------------------------------------------------------------
         engine_pct: float | None = None
+        visible_lines: list[str] = []
+        drained = 0
+        max_drain_per_tick = 300
         try:
-            while True:
+            while drained < max_drain_per_tick:
                 line = self.engine_output_queue.get_nowait()
+                drained += 1
                 self._last_engine_output_ts = time.monotonic()
                 if not self._mkpfs_line_visible(line):
                     continue
-                self.console_view.insert(tk.END, line + "\n")
-                self.console_view.see(tk.END)
+                visible_lines.append(line)
                 # Fortschrittszeile: [###---]  45% scan
                 m = re.search(r'\[[#\-\s]*\]\s*(\d+(?:\.\d+)?)\s*%', line)
                 if m:
@@ -6066,6 +6280,12 @@ class PS5ConverterGUI:
                         self.task_stored_str = ms.group(1).strip()
         except queue.Empty:
             pass
+
+        # Log-Ausgabe bündeln: reduziert Tk-Repaint-Last massiv bei vielen Zeilen
+        # (z.B. tausende "0% compress"-Zeilen) und hält die GUI responsiv.
+        if visible_lines:
+            self.console_view.insert(tk.END, "\n".join(visible_lines) + "\n")
+            self.console_view.see(tk.END)
         # ------------------------------------------------------------------
         # 2. task_progress aktualisieren – ausschliesslich aus echten Quellen
         #    Quelle 0 (ProgressEngine): Gewichteter 5-Aufgaben-Fortschritt
@@ -6317,6 +6537,39 @@ class PS5ConverterGUI:
         step = max(1, self.task_current_step)
         return self._step_end_for(step)
 
+    def _build_pip_command(self, pip_args: list[str]) -> list[str]:
+        """Baut ein sicheres pip-Kommando ohne EXE-Selbststart.
+
+        In frozen Builds zeigt ``sys.executable`` auf die App-EXE. Ein Aufruf
+        ``sys.executable -m pip ...`` startet dann die GUI erneut statt pip.
+        Daher wird hier ein echter Python-/Py-Launcher bevorzugt.
+        """
+        # Normaler Python-Skriptmodus: aktueller Interpreter ist korrekt.
+        if not getattr(sys, "frozen", False):
+            return [sys.executable, "-m", "pip", *pip_args]
+
+        # Frozen/EXE: niemals sys.executable verwenden (vermeidet Doppelstart).
+        exe_dir = os.path.dirname(sys.executable)
+        candidates = [
+            os.path.join(exe_dir, "python.exe"),
+            os.path.join(exe_dir, "pythonw.exe"),
+            shutil.which("python"),
+        ]
+        for cand in candidates:
+            if not cand:
+                continue
+            try:
+                if os.path.isfile(cand) and os.path.abspath(cand) != os.path.abspath(sys.executable):
+                    return [cand, "-m", "pip", *pip_args]
+            except Exception:
+                continue
+
+        py_launcher = shutil.which("py")
+        if py_launcher:
+            return [py_launcher, "-m", "pip", *pip_args]
+
+        return []
+
     def _ensure_mkpfs_runtime_dependencies(self) -> bool:
         """Prüft kritische MkPFS-Laufzeitmodule und installiert fehlende Pakete.
 
@@ -6330,9 +6583,22 @@ class PS5ConverterGUI:
         if getattr(self, "_mkpfs_runtime_deps_ok", False):
             return True
 
-        # Modulname -> Pip-Paketname
+        # Lokaler Fallback-Pfad für Runtime-Module (wichtig für Umgebungen,
+        # in denen pip zwar installiert, die Pakete danach aber nicht im
+        # aktuellen Import-Pfad landen).
+        runtime_site_dir = os.path.join(
+            os.path.dirname(self._get_config_path()),
+            "runtime_site_packages",
+        )
+        try:
+            os.makedirs(runtime_site_dir, exist_ok=True)
+            if runtime_site_dir not in sys.path:
+                sys.path.insert(0, runtime_site_dir)
+        except Exception:
+            pass
+
+        # Harte Pflichtmodule (zlib_ng ist optional, MkPFS hat Fallback auf stdlib zlib).
         required = {
-            "zlib_ng": "zlib-ng",
             "zstandard": "zstandard",
             "cryptography": "cryptography",
         }
@@ -6358,8 +6624,23 @@ class PS5ConverterGUI:
             self._append_to_log(
                 f"[Info] Installiere fehlendes Modul '{module_name}' via pip ({package_name})...\n"
             )
+            pip_cmd = self._build_pip_command(
+                [
+                    "install",
+                    "--upgrade",
+                    "--disable-pip-version-check",
+                    package_name,
+                ]
+            )
+            if not pip_cmd:
+                self._append_to_log(
+                    "[FEHLER] Kein Python/Pip-Launcher gefunden (frozen Build).\n"
+                    "         Bitte manuell ausfuehren: py -m pip install --upgrade "
+                    f"{package_name}\n"
+                )
+                return False
             rc = self._run_subprocess_logged(
-                [sys.executable, "-m", "pip", "install", "--upgrade", package_name],
+                pip_cmd,
                 timeout=15 * 60,
             )
             if rc != 0:
@@ -6372,11 +6653,54 @@ class PS5ConverterGUI:
                 __import__(module_name)
             except Exception as exc:
                 self._append_to_log(
-                    f"[FEHLER] Modul {module_name} nach Installation nicht importierbar: {exc}\n"
+                    f"[WARNUNG] Modul {module_name} nach Standard-Installation nicht importierbar: {exc}\n"
+                    f"[Info] Versuche Fallback-Installation nach {runtime_site_dir}\n"
                 )
-                return False
+                pip_cmd_fallback = self._build_pip_command(
+                    [
+                        "install",
+                        "--upgrade",
+                        "--disable-pip-version-check",
+                        "--target",
+                        runtime_site_dir,
+                        package_name,
+                    ]
+                )
+                if not pip_cmd_fallback:
+                    self._append_to_log(
+                        "[FEHLER] Kein Python/Pip-Launcher fuer Fallback-Installation gefunden.\n"
+                    )
+                    return False
+                rc_fallback = self._run_subprocess_logged(
+                    pip_cmd_fallback,
+                    timeout=15 * 60,
+                )
+                if rc_fallback != 0:
+                    self._append_to_log(
+                        f"[FEHLER] Fallback-Installation fehlgeschlagen für {package_name}.\n"
+                    )
+                    return False
+                try:
+                    importlib.invalidate_caches()
+                    if runtime_site_dir not in sys.path:
+                        sys.path.insert(0, runtime_site_dir)
+                    __import__(module_name)
+                except Exception as exc2:
+                    self._append_to_log(
+                        f"[FEHLER] Modul {module_name} auch nach Fallback nicht importierbar: {exc2}\n"
+                    )
+                    return False
 
         self._mkpfs_runtime_deps_ok = True
+        try:
+            # Performance-Optimierung: wenn vorhanden, nutze zlib_ng-Binding.
+            # Importform muss zu MkPFS passen (from zlib_ng import zlib_ng as zlib).
+            from zlib_ng import zlib_ng as _zlib_ng_impl  # noqa: F401
+        except Exception as exc:
+            self._append_to_log(
+                "[WARNUNG] zlib_ng nicht kompatibel/verfuegbar; "
+                f"verwende stdlib zlib-Fallback ({exc}).\n"
+            )
         self._append_to_log("[OK] MkPFS-Abhängigkeiten bereit.\n")
         return True
 
@@ -6388,6 +6712,12 @@ class PS5ConverterGUI:
         ln_s = ln.strip()
         if not ln_s:
             return False
+        # Wiederholte 0%-Compress-Zeilen stark drosseln (Keep-Alive alle ~250 Zeilen),
+        # sonst kann die GUI bei sehr langen Läufen unresponsiv werden.
+        if re.search(r'^\[[#\-\s]*\]\s*0(?:\.0+)?%\s+compress\b', ln_s):
+            cnt = int(getattr(self, "_mkpfs_zero_compress_count", 0) or 0) + 1
+            self._mkpfs_zero_compress_count = cnt
+            return cnt == 1 or (cnt % 250 == 0)
         # "xyz not found" Warnungen von mkpfs unterdrücken
         if ln_s.endswith(" not found"):
             return False
@@ -7008,29 +7338,42 @@ class PS5ConverterGUI:
                 self._resource_install_running = False
 
             def _done() -> None:
+                # Während laufender Hauptaufgaben keine modalen Dialoge anzeigen,
+                # damit kein "zweites Fenster" den Workflow unterbricht.
+                allow_popup = not bool(getattr(self, "is_running", False))
                 if ok:
                     if already_installed:
                         self._set_status(f"{display_title} ist bereits installiert und einsatzbereit.")
-                        messagebox.showinfo(
-                            f"{display_title} bereits installiert",
-                            f"{display_title} ist bereits installiert.",
-                            parent=self.root,
-                        )
+                        # Bei "bereits installiert" nie Popup: nur Status/Log.
                     else:
                         self._set_status(f"{display_title} wurde erfolgreich installiert und ist einsatzbereit.")
-                        messagebox.showinfo(
-                            f"{display_title} installiert",
-                            f"{display_title} wurde erfolgreich installiert.",
-                            parent=self.root,
-                        )
+                        if allow_popup:
+                            messagebox.showinfo(
+                                f"{display_title} installiert",
+                                f"{display_title} wurde erfolgreich installiert.",
+                                parent=self.root,
+                            )
+                        else:
+                            try:
+                                self._append_to_log(f"[Info] {display_title} erfolgreich installiert.\n")
+                            except Exception:
+                                pass
                 else:
                     self._set_status(f"{display_title} Installation fehlgeschlagen.")
                     detail = f"\n\nDetails: {err_msg}" if err_msg else ""
-                    messagebox.showerror(
-                        f"{display_title} Installation fehlgeschlagen",
-                        f"{display_title} konnte nicht installiert werden.{detail}",
-                        parent=self.root,
-                    )
+                    if allow_popup:
+                        messagebox.showerror(
+                            f"{display_title} Installation fehlgeschlagen",
+                            f"{display_title} konnte nicht installiert werden.{detail}",
+                            parent=self.root,
+                        )
+                    else:
+                        try:
+                            self._append_to_log(
+                                f"[WARNUNG] {display_title} Installation fehlgeschlagen.{detail}\n"
+                            )
+                        except Exception:
+                            pass
 
             try:
                 self.root.after(0, _done)
@@ -7260,7 +7603,17 @@ class PS5ConverterGUI:
                         "Versuche automatische Installation von 'zlib-ng'...\n"
                     )
                     try:
-                        pip_cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "zlib-ng"]
+                        pip_cmd = self._build_pip_command(
+                            ["install", "--upgrade", "--disable-pip-version-check", "zlib-ng"]
+                        )
+                        if not pip_cmd:
+                            writer.write(
+                                "[FEHLER] Kein Python/Pip-Launcher gefunden (frozen Build).\n"
+                                "         Bitte manuell ausfuehren: py -m pip install --upgrade zlib-ng\n"
+                            )
+                            result["exit_code"] = 1
+                            engine_done.set()
+                            return
                         pip_proc = subprocess.run(
                             pip_cmd,
                             stdout=subprocess.PIPE,
@@ -7936,6 +8289,10 @@ class PS5ConverterGUI:
             return False
         _set_pct(1.5)
 
+        cp = getattr(self, "_active_resume_checkpoint", None)
+        cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
+        has_resume_exfat = bool(cp_temp_exfat and os.path.isfile(cp_temp_exfat))
+
         _last_phase1_log = [0.0]
         _phase1_start = 1.5
         _phase1_live_end = 4.9
@@ -7972,16 +8329,30 @@ class PS5ConverterGUI:
                 )
                 _last_phase1_log[0] = now
 
-        self.task_total_source_bytes = self._get_path_size(
-            src,
-            progress_cb=_phase1_scan_ping,
-            cancel_check=lambda: not self.is_running,
-        )
+        if has_resume_exfat:
+            try:
+                self.task_total_source_bytes = os.path.getsize(cp_temp_exfat)
+            except Exception:
+                self.task_total_source_bytes = 0
+            self._append_to_log(
+                f"[RESUME] Analyse uebersprungen, vorhandenes Zwischen-Image wird genutzt: {cp_temp_exfat}\n"
+            )
+            _set_pct(_P1_END)
+            _set_status("Phase 1/4 – Vorbereitung (Resume) abgeschlossen.")
+        else:
+            self.task_total_source_bytes = self._get_path_size(
+                src,
+                progress_cb=_phase1_scan_ping,
+                cancel_check=lambda: not self.is_running,
+            )
+            if not self.is_running:
+                return False
+            _set_pct(3.0)
+            _set_pct(_P1_END)
+            _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
+
         if not self.is_running:
             return False
-        _set_pct(3.0)
-        _set_pct(_P1_END)
-        _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
 
         # ----------------------------------------------------------------
         # mkpfs-Binary
@@ -10978,7 +11349,7 @@ class PS5ConverterGUI:
         if mkpfs_parent not in sys.path:
             sys.path.insert(0, mkpfs_parent)
 
-        from mkpfs.exfat_writer import iter_exfat_image
+        from mkpfs.exfat_writer import iter_exfat_image  # pyright: ignore[reportMissingImports]
 
         src_path = Path(src_dir).expanduser().resolve()
         out_path = Path(out_file).expanduser().resolve()
@@ -14255,6 +14626,8 @@ class PS5ConverterGUI:
             self.status_label.configure(foreground=c["fg_secondary"])
         if hasattr(self, "size_label"):
             self.size_label.configure(foreground=c["fg_secondary"])
+        if hasattr(self, "release_gate_label"):
+            self._refresh_release_test_gate_badge()
 
         # Sidebar-Buttons
         if hasattr(self, "mode_buttons"):

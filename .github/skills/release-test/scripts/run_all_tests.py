@@ -12,6 +12,8 @@ import os
 import sys
 import subprocess
 import time
+import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Farben für Output
@@ -209,7 +211,43 @@ class TestRunner:
             print(f"\n{RED}Unerwarteter Fehler: {e}{RESET}\n")
             return 1
 
+
+def _write_release_test_status(root: Path, suite: str, exit_code: int, results: dict, failed_tests: list[str]) -> None:
+    """Persistiert den letzten Teststatus fuer die Start-Gate-Pruefung."""
+    passed = exit_code == 0
+    payload = {
+        "suite": suite,
+        "passed": passed,
+        "exit_code": int(exit_code),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "epoch": time.time(),
+        "root": str(root),
+        "python": sys.executable,
+        "results": results,
+        "failed_tests": failed_tests,
+    }
+
+    out_paths: list[Path] = []
+    appdata = os.environ.get("APPDATA", "").strip()
+    if appdata:
+        out_paths.append(Path(appdata) / "PS5ImageConverterPro" / "last_release_test_status.json")
+    out_paths.append(root / ".github" / "skills" / "release-test" / "last_release_test_status.json")
+
+    for path in out_paths:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception as exc:
+            print(f"[WARN] Statusdatei konnte nicht geschrieben werden: {path} ({exc})")
+
 if __name__ == "__main__":
     runner = TestRunner()
     exit_code = runner.run_all()
+    _write_release_test_status(
+        root=runner.root,
+        suite="full",
+        exit_code=exit_code,
+        results=runner.results,
+        failed_tests=runner.failed_tests,
+    )
     sys.exit(exit_code)

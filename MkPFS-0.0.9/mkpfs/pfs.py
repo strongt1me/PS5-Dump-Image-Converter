@@ -30,7 +30,14 @@ from pathlib import Path
 from typing import BinaryIO, Protocol
 
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
-from zlib_ng import zlib_ng as zlib
+
+try:
+    from zlib_ng import zlib_ng as zlib
+except Exception:
+    # Python-Versionen ohne kompatibles zlib_ng-Binary (z. B. 3.14 aktuell)
+    # nutzen den sicheren Standard-Fallback. Das ist funktional korrekt,
+    # aber unter Last ggf. etwas langsamer als zlib_ng.
+    import zlib
 
 from . import consts
 from .exfat import EXFAT_SIGNATURE, ExfatEntry, ExfatError, ExfatReader

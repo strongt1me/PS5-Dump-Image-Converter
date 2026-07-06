@@ -7,9 +7,15 @@ configuring the global `logging` subsystem so callers can opt-in if needed.
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
+
+# Eigene Level-Konstanten statt stdlib-logging-Import, um Namenskollisionen
+# (mkpfs/logging.py vs. stdlib logging) robust zu vermeiden.
+DEBUG = 10
+INFO = 20
+WARNING = 30
+ERROR = 40
 
 
 def supports_utf8() -> bool:
@@ -42,12 +48,12 @@ def icon(name: str | None) -> str:
     return utf8.get(name_key, "") if supports_utf8() else ascii_map.get(name_key, "")
 
 
-def log(message: str, level: int = logging.INFO, icon_name: str | None = None) -> None:
+def log(message: str, level: int = INFO, icon_name: str | None = None) -> None:
     """Print a message to stdout/stderr using the provided logging level.
 
     Args:
         message: The textual message to emit.
-        level: One of logging.INFO, logging.WARNING, logging.ERROR, logging.DEBUG.
+        level: One of INFO, WARNING, ERROR, DEBUG.
         icon_name: Optional semantic icon name to prefix the message.
     """
     prefix: str = (icon(icon_name) + " ") if icon_name else ""
@@ -69,15 +75,15 @@ def log(message: str, level: int = logging.INFO, icon_name: str | None = None) -
     reset_code: str = ""
     if use_color:
         reset_code = "\x1b[0m"
-        if level >= logging.ERROR:
+        if level >= ERROR:
             color_code = "\x1b[31m"  # red
-        elif level >= logging.WARNING:
+        elif level >= WARNING:
             color_code = "\x1b[38;5;208m"  # orange (256-color)
         else:
             color_code = ""
 
     colored_text: str = f"{color_code}{text}{reset_code}" if color_code else text
-    if level >= logging.ERROR:
+    if level >= ERROR:
         print(colored_text, file=sys.stderr)
     else:
         print(colored_text, file=sys.stdout)
@@ -85,14 +91,14 @@ def log(message: str, level: int = logging.INFO, icon_name: str | None = None) -
 
 def info(message: str, icon_name: str | None = None) -> None:
     """Convenience wrapper for informational messages."""
-    log(message, level=logging.INFO, icon_name=icon_name)
+    log(message, level=INFO, icon_name=icon_name)
 
 
 def warning(message: str, icon_name: str | None = None) -> None:
     """Convenience wrapper for warnings."""
-    log(message, level=logging.WARNING, icon_name=icon_name)
+    log(message, level=WARNING, icon_name=icon_name)
 
 
 def error(message: str, icon_name: str | None = None) -> None:
     """Convenience wrapper for errors."""
-    log(message, level=logging.ERROR, icon_name=icon_name)
+    log(message, level=ERROR, icon_name=icon_name)
