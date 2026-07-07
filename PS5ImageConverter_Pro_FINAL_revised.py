@@ -7914,6 +7914,7 @@ class PS5ConverterGUI:
         monitor_target_path: str | None = None,
         monitor_source_file: str | None = None,
         enable_file_monitor: bool = True,
+        advance_step: bool = True,
     ) -> bool:
         """Führt die mkpfs-Engine direkt im aktuellen Prozess aus.
 
@@ -7971,7 +7972,8 @@ class PS5ConverterGUI:
 
         # Fortschrittsüberwachung: Schritt-Zähler und Monitor-Pfad setzen
         if monitor_target_path:
-            self.task_current_step += 1
+            if advance_step:
+                self.task_current_step += 1
             self._monitor_target_path = monitor_target_path
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
@@ -9022,6 +9024,7 @@ class PS5ConverterGUI:
                 ],
                 monitor_target_path=final_output,
                 monitor_source_file=temp_exfat,
+                advance_step=False,
             )
             if not pack_ok or not self.is_running:
                 if os.path.isfile(temp_exfat):
@@ -9110,6 +9113,7 @@ class PS5ConverterGUI:
                         ["unpack", "--overwrite", pfs_file, tmp_meta],
                         monitor_target_path=tmp_meta,
                         monitor_source_file=pfs_file,
+                        advance_step=False,
                     )
 
             # Metadaten lesen und anzeigen
