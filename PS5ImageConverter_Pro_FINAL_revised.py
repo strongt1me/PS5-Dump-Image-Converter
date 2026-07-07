@@ -3967,31 +3967,10 @@ class PS5ConverterGUI:
                             _ck = None
 
                         if cover_img is None:
-                            parent = os.path.dirname(src)
-                            base_folder = os.path.join(
-                                parent, os.path.splitext(os.path.basename(src))[0]
-                            )
-                            candidates = [
-                                os.path.join(base_folder, "sce_sys", "icon0.png"),
-                                os.path.join(base_folder, "icon0.png"),
-                            ]
-                            # Parent-Fallback nur in Modi, bei denen Sidecar-Struktur
-                            # neben der Quelldatei erwartbar ist. So vermeiden wir,
-                            # dass zufaellige icon0.png aus Fremdordnern angezeigt werden.
-                            if mode in ("pack_file", "exfat_to_folder"):
-                                candidates.extend([
-                                    os.path.join(parent, "sce_sys", "icon0.png"),
-                                    os.path.join(parent, "icon0.png"),
-                                ])
-                            for _cp in candidates:
-                                if os.path.isfile(_cp):
-                                    try:
-                                        _img = Image.open(_cp)
-                                        _img.load()
-                                        cover_img = _img.convert("RGBA")
-                                        break
-                                    except Exception:
-                                        cover_img = None
+                            for _cand_dir in self._preview_candidate_dirs(src, mode):
+                                cover_img = self._load_cover_image(_cand_dir, deep_scan=False)
+                                if cover_img is not None:
+                                    break
                     # Nur anzeigen wenn diese Generation noch aktuell ist
                     if my_gen == self._calc_generation:
                         self.root.after(0, lambda: self._update_sidebar_preview(cover_img, ""))
@@ -4200,16 +4179,12 @@ class PS5ConverterGUI:
         # Sehr schneller param.json-Fast-Path (ohne tiefe Scans):
         # bekannte Standardpfade pruefen und nur bessere Werte uebernehmen.
         try:
-            candidate_roots: list[str] = []
-            if os.path.isdir(src):
-                candidate_roots.append(src)
-            else:
-                parent = os.path.dirname(src)
-                stem_dir = os.path.join(parent, os.path.splitext(os.path.basename(src))[0])
-                if os.path.isdir(stem_dir):
-                    candidate_roots.append(stem_dir)
-                if os.path.isdir(parent):
-                    candidate_roots.append(parent)
+            cur_mode = ""
+            try:
+                cur_mode = str(self.current_mode.get()).strip() if hasattr(self, "current_mode") else ""
+            except Exception:
+                cur_mode = ""
+            candidate_roots = self._preview_candidate_dirs(src, cur_mode)
 
             for root in candidate_roots:
                 fast_meta = self._read_game_meta(root, deep_scan=False)
@@ -4231,6 +4206,91 @@ class PS5ConverterGUI:
             if _qt and _qt not in {"–", "-"}:
                 quick_meta["region"] = self._region_from_title_id(_qt)
         return quick_meta
+
+    def _preview_dir_from_report_payload(self, payload: dict[str, Any], src_abs: str) -> str:
+        """Leitet aus einem Report-Payload einen passenden Vorschau-Ordner ab."""
+        if not isinstance(payload, dict):
+            return ""
+
+        final_output = str(payload.get("final_output", "") or "").strip()
+        source_dir = str(payload.get("source", "") or "").strip()
+        if final_output and os.path.abspath(final_output) == src_abs and source_dir and os.path.isdir(source_dir):
+            return source_dir
+
+        artifacts = payload.get("artifacts")
+        if isinstance(artifacts, dict):
+            matched = False
+            for _k, _v in artifacts.items():
+                if not isinstance(_v, str) or not _v.strip():
+                    continue
+                if os.path.abspath(_v) == src_abs:
+                    matched = True
+                    break
+            if matched:
+                for _dir_key in ("A4", "A5"):
+                    _dir_val = artifacts.get(_dir_key)
+                    if isinstance(_dir_val, str) and _dir_val.strip() and os.path.isdir(_dir_val):
+                        return _dir_val
+        return ""
+
+    def _report_sidecar_source_dir(self, src: str) -> str:
+        """Liefert den Original-Quellordner aus einem Task-Report neben der Datei."""
+        if not src or os.path.isdir(src):
+            return ""
+        parent = os.path.dirname(src)
+        stem = os.path.splitext(os.path.basename(src))[0]
+        report_candidates = [os.path.join(parent, f"{stem}.json")]
+        try:
+            for entry in os.listdir(parent):
+                if not entry.lower().endswith(".json"):
+                    continue
+                cand = os.path.join(parent, entry)
+                if cand not in report_candidates:
+                    report_candidates.append(cand)
+                if len(report_candidates) >= 16:
+                    break
+            src_abs = os.path.abspath(src)
+            for report_path in report_candidates:
+                if not os.path.isfile(report_path):
+                    continue
+                with open(report_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                source_dir = self._preview_dir_from_report_payload(payload, src_abs)
+                if source_dir:
+                    return source_dir
+        except Exception as exc:
+            logger.debug("Preview-Report-Fast-Path fehlgeschlagen: %s", exc)
+            return ""
+        return ""
+
+    def _preview_candidate_dirs(self, src: str, mode: str) -> list[str]:
+        """Sammelt vertrauenswürdige Schnellpfade für Metadaten und Cover."""
+        candidates: list[str] = []
+        if os.path.isdir(src):
+            candidates.append(src)
+        else:
+            parent = os.path.dirname(src)
+            stem_dir = os.path.join(parent, os.path.splitext(os.path.basename(src))[0])
+            report_source_dir = self._report_sidecar_source_dir(src)
+            if report_source_dir:
+                candidates.append(report_source_dir)
+            if os.path.isdir(stem_dir):
+                candidates.append(stem_dir)
+            if mode in ("pack_file", "exfat_to_folder") and os.path.isdir(os.path.join(parent, "sce_sys")):
+                candidates.append(parent)
+
+        unique: list[str] = []
+        seen: set[str] = set()
+        for candidate in candidates:
+            try:
+                norm = os.path.normcase(os.path.abspath(candidate))
+            except Exception:
+                norm = candidate
+            if norm in seen:
+                continue
+            seen.add(norm)
+            unique.append(candidate)
+        return unique
 
     @staticmethod
     def _sanitize_title_id(title_id: str) -> str:
@@ -4839,14 +4899,7 @@ class PS5ConverterGUI:
             # Metadaten/Cover nur aus "vertrauenswuerdigen" Sidecar-Pfaden laden.
             # Das verhindert falsche Infobox-Daten, wenn im Elternordner eine
             # fremde param.* oder icon0.png liegt.
-            parent = os.path.dirname(src)
-            stem_dir = os.path.join(parent, os.path.splitext(os.path.basename(src))[0])
-            trusted_dirs: list[str] = []
-            if os.path.isdir(stem_dir):
-                trusted_dirs.append(stem_dir)
-            # Parent als Sidecar nur fuer exfat-Workflows zulassen.
-            if mode in ("pack_file", "exfat_to_folder") and os.path.isdir(os.path.join(parent, "sce_sys")):
-                trusted_dirs.append(parent)
+            trusted_dirs = self._preview_candidate_dirs(src, mode)
 
             meta = dict(empty_meta)
             cover_img: Image.Image | None = None
@@ -4866,6 +4919,17 @@ class PS5ConverterGUI:
                     self._preview_cache.pop(next(iter(self._preview_cache)))
                 self._preview_cache[_cache_key] = (meta, cover_img)
             return meta, cover_img
+
+        # --- .ffpfsc-Modus (Aufgaben 2, 4, 5): erst Fast-Path, dann PFS-API ---
+        for _cand_dir in self._preview_candidate_dirs(src, mode):
+            meta = self._read_game_meta(_cand_dir, deep_scan=False)
+            cover_img = self._load_cover_image(_cand_dir, deep_scan=False)
+            if meta.get("title", "–") != "–" or cover_img is not None:
+                if _cache_key is not None:
+                    if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
+                        self._preview_cache.pop(next(iter(self._preview_cache)))
+                    self._preview_cache[_cache_key] = (meta, cover_img)
+                return meta, cover_img
 
         # --- .ffpfsc-Modus (Aufgaben 2, 4, 5): PFS-API nutzen ---
         tmp_outer = self._mkdtemp(prefix="ps5conv_meta_outer_")
