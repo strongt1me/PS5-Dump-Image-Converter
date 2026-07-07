@@ -19,6 +19,11 @@ import glob
 
 # Pfad zum Projektordner (relativ zur .spec-Datei)
 _here = os.path.dirname(os.path.abspath(SPEC))
+_mkpfs_roots = [
+    _path
+    for _path in glob.glob(os.path.join(_here, 'MkPFS-*'))
+    if os.path.isdir(_path) and os.path.isfile(os.path.join(_path, 'mkpfs', '__init__.py'))
+]
 
 # Daten-Dateien die in die EXE eingebettet werden
 _datas = [
@@ -37,13 +42,12 @@ if os.path.isfile(_ip_ini):
     _datas.append((_ip_ini, '.'))
 
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
-for _mkpfs_src in glob.glob(os.path.join(_here, 'MkPFS-*')):
-    if os.path.isdir(_mkpfs_src) and os.path.isfile(os.path.join(_mkpfs_src, 'mkpfs', '__init__.py')):
-        _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
+for _mkpfs_src in _mkpfs_roots:
+    _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
 
 a = Analysis(
     ['PS5ImageConverter_Pro_FINAL_revised.py'],
-    pathex=[_here],
+    pathex=[_here, *_mkpfs_roots],
     binaries=[],
     datas=_datas,
     hiddenimports=[
@@ -60,6 +64,8 @@ a = Analysis(
         'PIL.ImageDraw',
         'PIL.ImageFilter',
         'PIL.ImageFont',
+        'PIL.FpxImagePlugin',
+        'PIL.MicImagePlugin',
         # Multiprocessing
         'multiprocessing',
         'multiprocessing.pool',
@@ -109,6 +115,17 @@ a = Analysis(
         'cryptography.hazmat.backends',
         'cryptography.hazmat.backends.openssl',
         'zstandard',
+        # Vendorte MkPFS-Module fuer Analyse/Packaging explizit bekanntmachen
+        'mkpfs',
+        'mkpfs.ampr',
+        'mkpfs.cli',
+        'mkpfs.consts',
+        'mkpfs.exfat',
+        'mkpfs.exfat_writer',
+        'mkpfs.logging',
+        'mkpfs.pbar',
+        'mkpfs.pfs',
+        'mkpfs.utils',
         # paramiko (SFTP-Unterstuetzung im FTP-Client)
         'paramiko',
         'paramiko.transport',

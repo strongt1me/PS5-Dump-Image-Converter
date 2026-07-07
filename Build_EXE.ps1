@@ -99,7 +99,6 @@ $missingFiles = @()
 $requiredFiles = @(
     "PS5ImageConverter_Pro_FINAL_revised.py",
     "PS5ImageConverter_Pro.spec",
-    "app_icon.ico",
     "extract_icon.py"
 ) 
 foreach ($requiredFile in $requiredFiles) {
@@ -137,15 +136,32 @@ if (Test-Path "helloworld") {
     Write-Host "      WARNUNG: helloworld/ fehlt - JS Loader hat keine Schnellzugriff-Dateien" -ForegroundColor Yellow
 }
 
-# --- Schritt 4: Icon extrahieren ---
+# --- Schritt 4: Alt-Artefakte bereinigen + Icon synchronisieren ---
 Write-Host ""
-Write-Host "[4/5] Extrahiere App-Icon..." -ForegroundColor Yellow
+Write-Host "[4/5] Bereinige alte Build-Artefakte und synchronisiere App-Icon..." -ForegroundColor Yellow
+$buildDir = Join-Path $PSScriptRoot "build"
+$distExePath = Join-Path $PSScriptRoot "dist\$EXE_NAME"
+
+if (Test-Path $buildDir) {
+    Remove-Item $buildDir -Recurse -Force
+    Write-Host "      build/ entfernt." -ForegroundColor Green
+} else {
+    Write-Host "      build/ bereits sauber." -ForegroundColor DarkGray
+}
+
+if (Test-Path $distExePath) {
+    Remove-Item $distExePath -Force
+    Write-Host "      Alte EXE entfernt: dist\$EXE_NAME" -ForegroundColor Green
+} else {
+    Write-Host "      Keine alte EXE im dist/-Ordner gefunden." -ForegroundColor DarkGray
+}
+
 python extract_icon.py
 if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: Icon-Extraktion fehlgeschlagen." -ForegroundColor Red
     exit 1
 }
-Write-Host "      app_icon.ico bereit." -ForegroundColor Green
+Write-Host "      app_icon.ico synchronisiert." -ForegroundColor Green
 
 # --- Schritt 5: EXE erstellen ---
 Write-Host ""
