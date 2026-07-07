@@ -8063,7 +8063,11 @@ class PS5ConverterGUI:
 
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
-        self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
+        now = time.monotonic()
+        last_log_ts = float(getattr(self, "_keepalive_log_last_ts", 0.0) or 0.0)
+        if (now - last_log_ts) >= 30.0:
+            self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
+            self._keepalive_log_last_ts = now
         self._set_status(self._format_phase_status("Verarbeitung laeuft ..."))
 
     def _execute_mkpfs(
@@ -8133,6 +8137,7 @@ class PS5ConverterGUI:
             if advance_step:
                 self.task_current_step += 1
             self._monitor_target_path = monitor_target_path
+            self._keepalive_log_last_ts = 0.0
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
             self._copy_total_bytes = 0
