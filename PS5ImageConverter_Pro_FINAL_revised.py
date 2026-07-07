@@ -6314,6 +6314,7 @@ class PS5ConverterGUI:
         """Validiert Eingaben und startet den Konvertierungs-Thread."""
         src = self.source_path.get().strip()
         mode = self.current_mode.get()
+        self._active_mode_name = str(mode or "")
         dst_for_checks = self.dest_path.get().strip()
 
         # Quellpfad validieren
@@ -6767,8 +6768,9 @@ class PS5ConverterGUI:
                     )):
                         self._mkpfs_verify_pending = True
                         self.task_progress = max(self.task_progress, min(self._step_end(), 98.0))
+                        mode_hint = str(getattr(self, "_active_mode_name", "") or "")
                         self.root.after(0, lambda: self.status_label.config(
-                            text=self._format_phase_status("Abschlussprüfung läuft...")
+                            text=self._format_phase_status(self._completion_status_text(mode_hint, "keepalive_verify"))
                         ))
                     mu = re.match(r'Total uncompressed size:\s*(.+)', line.strip())
                     if mu:
@@ -7079,6 +7081,29 @@ class PS5ConverterGUI:
         total = max(1, int(getattr(self, "task_num_steps", 1) or 1))
         current = max(1, min(int(getattr(self, "task_current_step", 1) or 1), total))
         return f"Phase {current}/{total} – {message}"
+
+    def _completion_status_text(self, mode: str, stage: str) -> str:
+        """Gibt mode-spezifische Abschluss-Statusmeldungen zurück."""
+        if mode in ("pack_file", "ffpkg_to_ffpfsc"):
+            labels = {
+                "check_output": "Ausgabecontainer prüfen...",
+                "drain_log": "MkPFS-Prüfprotokoll verarbeiten...",
+                "calc_sizes": "Endgrößen berechnen...",
+                "verify_ok": "Strukturprüfung erfolgreich.",
+                "done": "Erfolgreich abgeschlossen.",
+                "keepalive_verify": "Abschlussprüfung läuft...",
+            }
+            return labels.get(stage, "Abschlussprüfung läuft...")
+
+        labels = {
+            "check_output": "Ausgabedatei prüfen...",
+            "drain_log": "Log verarbeiten...",
+            "calc_sizes": "Grössen berechnen...",
+            "verify_ok": "Abschlussprüfung erfolgreich.",
+            "done": "Erfolgreich abgeschlossen.",
+            "keepalive_verify": "Abschlussprüfung läuft...",
+        }
+        return labels.get(stage, "Abschlussprüfung läuft...")
 
     def _build_pip_command(self, pip_args: list[str]) -> list[str]:
         """Baut ein sicheres pip-Kommando ohne EXE-Selbststart.
@@ -8076,7 +8101,11 @@ class PS5ConverterGUI:
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
         verify_pending = bool(getattr(self, "_mkpfs_verify_pending", False))
-        message = "Abschlussprüfung läuft..." if verify_pending else "Verarbeitung laeuft ..."
+        mode_hint = str(getattr(self, "_active_mode_name", "") or "")
+        message = (
+            self._completion_status_text(mode_hint, "keepalive_verify")
+            if verify_pending else "Verarbeitung laeuft ..."
+        )
         log_line = (
             "[INFO] Abschlusspruefung laeuft ... bitte warten.\n"
             if verify_pending
@@ -8616,7 +8645,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 96.0:
                     self.task_progress = 96.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text=self._format_phase_status("Ausgabedatei prüfen...")
+                    text=self._format_phase_status(self._completion_status_text(mode, "check_output"))
                 ))
                 final_path = getattr(self, "task_final_output_path", "")
                 # dump_validator hat keine Ausgabedatei – Prüfung überspringen
@@ -8636,7 +8665,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 97.0:
                     self.task_progress = 97.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text=self._format_phase_status("Log verarbeiten...")
+                    text=self._format_phase_status(self._completion_status_text(mode, "drain_log"))
                 ))
 
                 remaining_lines: list[str] = []
@@ -8658,7 +8687,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 98.0:
                     self.task_progress = 98.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text=self._format_phase_status("Grössen berechnen...")
+                    text=self._format_phase_status(self._completion_status_text(mode, "calc_sizes"))
                 ))
                 size_text = ""  # Standardwert (z.B. dump_validator hat keine Ausgabedatei)
                 if self.task_uncompressed_str and self.task_stored_str:
@@ -8680,7 +8709,7 @@ class PS5ConverterGUI:
                 if completion_ok and self.task_progress < 99.0:
                     self.task_progress = 99.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text=self._format_phase_status("Abschlussprüfung erfolgreich.")
+                    text=self._format_phase_status(self._completion_status_text(mode, "verify_ok"))
                 ))
 
                 # Zusätzlicher Verifizierungsschritt für den Ergebnisreport.
@@ -8789,7 +8818,7 @@ class PS5ConverterGUI:
                         self.progress.grid_remove()
                     if hasattr(self, "percent_label"):
                         self.percent_label.grid_remove()
-                    self.status_label.config(text=self._format_phase_status("Erfolgreich abgeschlossen."))
+                    self.status_label.config(text=self._format_phase_status(self._completion_status_text(mode, "done")))
                     _rep = str(getattr(self, "_task_report_path", "") or "")
                     _msg = "Vorgang erfolgreich abgeschlossen!"
                     if _rep:
