@@ -3,6 +3,7 @@
 ## Highlights
 
 - Aufgabe 7 unterstuetzt jetzt auch `.ffpkg` als Quelle fuer den fakelib-Workflow.
+- Aufgabe 7 erzeugt `ampr_emu.index` jetzt bei Bedarf automatisch fuer AMPR-Emulations-Builds.
 - Vorschau, Infobox und Fortschrittsanzeige wurden in mehreren Aufgabenpfaden robuster und schneller gemacht.
 - Die Windows-EXE enthaelt jetzt saubere Versionsinformationen.
 - Der Build nutzt keinen UPX-Packer mehr, um False Positives durch Antivirus und SmartScreen eher zu reduzieren.
@@ -10,6 +11,7 @@
 ## Wichtige Aenderungen
 
 - Aufgabe 7 repackt `.ffpkg`-Quellen nach Bearbeitung bewusst als `.ffpfsc`.
+- Aufgabe 7 regeneriert `ampr_emu.index` automatisch, sobald `fakelib/libSceAmpr.sprx` als Marker erkannt wird.
 - Aufgabe 1 wurde fuer Neustart nach Abbruch, Progress-Mapping und Kompressions-Logs gehaertet.
 - Aufgabe 2 nutzt schnellere reportbasierte Vorschaupfade und eine korrigierte Schrittgeometrie.
 - Aufgabe 4 behandelt Schrittgrenzen und Progress-Clamping robuster.

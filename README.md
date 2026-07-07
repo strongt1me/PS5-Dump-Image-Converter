@@ -49,6 +49,7 @@ Best current reference artifacts:
 - Unpack `.exfat` to a game dump folder
 - Convert `.ffpkg` to `.ffpfsc`
 - Manage `fakelib` and root files in dump sources
+- Auto-generate `ampr_emu.index` for task 7 when `fakelib/libSceAmpr.sprx` is present
 - Validate dump structures and artifacts
 - Build a standalone Windows EXE with PyInstaller
 
@@ -74,6 +75,7 @@ Best current reference artifacts:
 - Tasks 1, 2, 4 and 5 can require administrator rights.
 - Task 7 with `.ffpkg` input usually also requires administrator rights because extraction uses the UFS2Tool/Dokan path.
 - For task 7, `.ffpkg` is supported as an input format, but the edited result is written as `.ffpfsc`.
+- Task 7 regenerates `ampr_emu.index` automatically when an AMPR emulation marker (`fakelib/libSceAmpr.sprx`) is detected.
 - For exFAT-related workflows, OSFMount must be installed and usable.
 - The validator is intended to detect incomplete or implausible dump structures early.
 
