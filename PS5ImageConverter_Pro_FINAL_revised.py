@@ -7116,6 +7116,29 @@ class PS5ConverterGUI:
             cnt = int(getattr(self, "_mkpfs_zero_compress_count", 0) or 0) + 1
             self._mkpfs_zero_compress_count = cnt
             return cnt == 1 or (cnt % 250 == 0)
+        comp_m = re.search(
+            r'^\[[#\-\s]*\]\s*(\d+(?:\.\d+)?)%\s+compress\b(?:.*?\bETA\s+(\d+(?:\.\d+)?)s)?',
+            ln_s,
+        )
+        if comp_m:
+            pct = float(comp_m.group(1))
+            eta_key = None
+            if comp_m.group(2) is not None:
+                eta_key = int(round(float(comp_m.group(2))))
+            last_pct = getattr(self, "_mkpfs_last_visible_compress_pct", None)
+            last_eta = getattr(self, "_mkpfs_last_visible_compress_eta", None)
+            same_repeat = int(getattr(self, "_mkpfs_same_compress_count", 0) or 0)
+            if last_pct == pct and last_eta == eta_key:
+                same_repeat += 1
+                self._mkpfs_same_compress_count = same_repeat
+                # Gleiche Prozent/ETA-Kombination nur periodisch zeigen, damit
+                # das Log nicht hunderte identische Zeilen enthält und der
+                # letzte echte Fortschritt sichtbar bleibt.
+                return same_repeat % 40 == 0
+            self._mkpfs_last_visible_compress_pct = pct
+            self._mkpfs_last_visible_compress_eta = eta_key
+            self._mkpfs_same_compress_count = 0
+            return True
         # "xyz not found" Warnungen von mkpfs unterdrücken
         if ln_s.endswith(" not found"):
             return False
@@ -8616,7 +8639,7 @@ class PS5ConverterGUI:
                     messagebox.showinfo(
                         "Erfolg", _msg
                     )
-                self.root.after(0, _finish_success)
+                self.root.after(max(PROGRESS_POLL_MS * 3, 300), _finish_success)
 
             elif not self.is_running:
                 self._set_status("Abgebrochen.")
