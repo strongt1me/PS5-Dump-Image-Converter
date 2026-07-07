@@ -7053,6 +7053,21 @@ class PS5ConverterGUI:
         step = max(1, min(int(getattr(self, "task_current_step", 1) or 1), max_step))
         return self._step_end_for(step)
 
+    def _format_phase_status(self, message: str, prefer_current_label: bool = True) -> str:
+        """Formatiert einen sichtbaren Phasenstatus passend zum aktuellen Aufgabenpfad."""
+        if prefer_current_label:
+            try:
+                current_text = str(self.status_label.cget("text") or "").strip()
+            except Exception:
+                current_text = ""
+            m = re.match(r"^Phase\s+(\d+)\s*/\s*(\d+)", current_text)
+            if m:
+                return f"Phase {int(m.group(1))}/{int(m.group(2))} – {message}"
+
+        total = max(1, int(getattr(self, "task_num_steps", 1) or 1))
+        current = max(1, min(int(getattr(self, "task_current_step", 1) or 1), total))
+        return f"Phase {current}/{total} – {message}"
+
     def _build_pip_command(self, pip_args: list[str]) -> list[str]:
         """Baut ein sicheres pip-Kommando ohne EXE-Selbststart.
 
@@ -8049,7 +8064,7 @@ class PS5ConverterGUI:
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
         self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
-        self._set_status("Phase 3/4 – Verarbeitung laeuft ...")
+        self._set_status(self._format_phase_status("Verarbeitung laeuft ..."))
 
     def _execute_mkpfs(
         self,
@@ -8576,7 +8591,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 96.0:
                     self.task_progress = 96.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text="Phase 4/4 – Ausgabedatei prüfen..."
+                    text=self._format_phase_status("Ausgabedatei prüfen...")
                 ))
                 final_path = getattr(self, "task_final_output_path", "")
                 # dump_validator hat keine Ausgabedatei – Prüfung überspringen
@@ -8596,7 +8611,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 97.0:
                     self.task_progress = 97.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text="Phase 4/4 – Log verarbeiten..."
+                    text=self._format_phase_status("Log verarbeiten...")
                 ))
 
                 remaining_lines: list[str] = []
@@ -8618,7 +8633,7 @@ class PS5ConverterGUI:
                 if self.task_progress < 98.0:
                     self.task_progress = 98.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text="Phase 4/4 – Grössen berechnen..."
+                    text=self._format_phase_status("Grössen berechnen...")
                 ))
                 size_text = ""  # Standardwert (z.B. dump_validator hat keine Ausgabedatei)
                 if self.task_uncompressed_str and self.task_stored_str:
@@ -8640,7 +8655,7 @@ class PS5ConverterGUI:
                 if completion_ok and self.task_progress < 99.0:
                     self.task_progress = 99.0
                 self.root.after(0, lambda: self.status_label.config(
-                    text="Phase 4/4 – Abschlussprüfung erfolgreich."
+                    text=self._format_phase_status("Abschlussprüfung erfolgreich.")
                 ))
 
                 # Zusätzlicher Verifizierungsschritt für den Ergebnisreport.
@@ -8749,7 +8764,7 @@ class PS5ConverterGUI:
                         self.progress.grid_remove()
                     if hasattr(self, "percent_label"):
                         self.percent_label.grid_remove()
-                    self.status_label.config(text="Phase 4/4 – Erfolgreich abgeschlossen.")
+                    self.status_label.config(text=self._format_phase_status("Erfolgreich abgeschlossen."))
                     _rep = str(getattr(self, "_task_report_path", "") or "")
                     _msg = "Vorgang erfolgreich abgeschlossen!"
                     if _rep:
