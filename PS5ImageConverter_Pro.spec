@@ -197,7 +197,7 @@ exe = EXE(
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
+    upx=False,
     upx_exclude=[
         'vcruntime140.dll',
         'ucrtbase.dll',
@@ -212,5 +212,5 @@ exe = EXE(
     entitlements_file=None,
     icon='app_icon.ico',     # EXE-Symbol und Taskleisten-Symbol
     uac_admin=True,          # Administratorrechte anfordern (fuer OSFMount, Dokan)
-    version_file=None,
+    version='file_version_info.txt',
 )

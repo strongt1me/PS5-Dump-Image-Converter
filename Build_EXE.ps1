@@ -167,6 +167,7 @@ Write-Host "      app_icon.ico synchronisiert." -ForegroundColor Green
 Write-Host ""
 Write-Host "[5/5] Erstelle EXE (dauert 2-5 Minuten)..." -ForegroundColor Yellow
 Write-Host "      (paramiko und cryptography erhoehen die Groesse etwas)" -ForegroundColor Gray
+Write-Host "      (UPX-Komprimierung ist deaktiviert, um False Positives zu reduzieren)" -ForegroundColor Gray
 Write-Host ""
 pyinstaller PS5ImageConverter_Pro.spec --clean --noconfirm
 if ($LASTEXITCODE -ne 0) {
@@ -174,7 +175,6 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: EXE-Erstellung fehlgeschlagen." -ForegroundColor Red
     Write-Host "Tipp: Fehlermeldung oben lesen. Haeufige Ursachen:" -ForegroundColor Yellow
     Write-Host "  - Fehlende Pakete: pip install paramiko bcrypt" -ForegroundColor Yellow
-    Write-Host "  - UPX nicht gefunden: Kein Problem, EXE wird trotzdem erstellt" -ForegroundColor Yellow
     exit 1
 }
 
