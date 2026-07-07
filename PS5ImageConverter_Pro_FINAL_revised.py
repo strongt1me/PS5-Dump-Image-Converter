@@ -4263,6 +4263,58 @@ class PS5ConverterGUI:
             return ""
         return ""
 
+    def _report_sidecar_unpack_branch(self, src: str) -> str:
+        """Leitet für Aufgabe 2 den erwarteten Container-Zweig aus Reports ab."""
+        if not src or os.path.isdir(src):
+            return ""
+
+        parent = os.path.dirname(src)
+        stem = os.path.splitext(os.path.basename(src))[0]
+        report_candidates = [os.path.join(parent, f"{stem}.json")]
+
+        try:
+            for entry in os.listdir(parent):
+                if not entry.lower().endswith(".json"):
+                    continue
+                cand = os.path.join(parent, entry)
+                if cand not in report_candidates:
+                    report_candidates.append(cand)
+                if len(report_candidates) >= 16:
+                    break
+
+            src_abs = os.path.abspath(src)
+            for report_path in report_candidates:
+                if not os.path.isfile(report_path):
+                    continue
+                with open(report_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                if not isinstance(payload, dict):
+                    continue
+
+                final_output = str(payload.get("final_output", "") or "").strip()
+                source = str(payload.get("source", "") or "").strip()
+                mode = str(payload.get("mode", "") or "").strip()
+                if final_output and os.path.abspath(final_output) == src_abs:
+                    if mode == "pack_folder" or (source and os.path.isdir(source)):
+                        return "pack_folder"
+                    if mode in {"pack_file", "ffpkg_to_ffpfsc"} or (source and os.path.isfile(source)):
+                        return "pack_file"
+
+                artifacts = payload.get("artifacts")
+                if isinstance(artifacts, dict):
+                    a1 = str(artifacts.get("A1", "") or "").strip()
+                    a3 = str(artifacts.get("A3", "") or "").strip()
+                    a6 = str(artifacts.get("A6", "") or "").strip()
+                    if a1 and os.path.abspath(a1) == src_abs:
+                        return "pack_folder"
+                    if (a3 and os.path.abspath(a3) == src_abs) or (a6 and os.path.abspath(a6) == src_abs):
+                        return "pack_file"
+        except Exception as exc:
+            logger.debug("Task2-Branch-Hint aus Report fehlgeschlagen: %s", exc)
+            return ""
+
+        return ""
+
     def _preview_candidate_dirs(self, src: str, mode: str) -> list[str]:
         """Sammelt vertrauenswürdige Schnellpfade für Metadaten und Cover."""
         candidates: list[str] = []
@@ -12046,12 +12098,19 @@ class PS5ConverterGUI:
 
         self.task_final_output_path  = final_output
         self.task_total_source_bytes = self._get_path_size(src)
-        # Temporäre Initial-Geometrie bis der Container-Typ bekannt ist:
-        # äußerer unpack .ffpfsc → tmp_dir bleibt ein kleiner erster Schritt.
-        # Danach wird je nach Inhalt branch-spezifisch auf 2 oder 3 Schritte
-        # umgestellt, ohne dass der Fortschritt schon vorzeitig bei ~95% steht.
-        self.task_num_steps = 2
-        self.task_step_ends = [20.0, 100.0]
+        # Initiale Schritt-Geometrie möglichst früh aus dem Task-Report ableiten.
+        # Dadurch stimmt die Fortschrittsanzeige bereits während des ersten
+        # outer-unpack-Schritts, bevor der Container-Inhalt vollständig bekannt ist.
+        branch_hint = self._report_sidecar_unpack_branch(src)
+        if branch_hint == "pack_folder":
+            self.task_num_steps = 2
+            self.task_step_ends = [33.0, 100.0]
+        elif branch_hint == "pack_file":
+            self.task_num_steps = 3
+            self.task_step_ends = [20.0, 50.0, 98.0]
+        else:
+            self.task_num_steps = 2
+            self.task_step_ends = [20.0, 100.0]
 
         # ProgressEngine: Aufgabe 2 starten (Index 1 = ffpfsc zu exFAT)
         self.progress_engine.start_task(1, "ffpfsc zu exFAT")
