@@ -37,8 +37,8 @@ Validated on the current release state with:
 
 Best current reference artifacts:
 - Admin validation report for task 7 `.ffpkg`: `_e2e_output_a7_ffpkg_admin_live_20260707_direct4/e2e_report_a7.json`
-- End-user manual: `BENUTZERHANDBUCH.md`
-- Change history: `CHANGELOG.md`
+- Build script: `Build_EXE.ps1`
+- Main application: `PS5ImageConverter_Pro_FINAL_revised.py`
 
 ## Main Features
 
@@ -135,12 +135,6 @@ The repository includes an elevated runner for targeted validation of single tas
 .\Run_Tasks_1_8_Admin.ps1 -Task A7 -Dump .\path\to\DumpFolder -Ffpkg ".\path\to\input.ffpkg" -OutputDir .\_e2e_output_a7_admin
 ```
 
-For the common task-7 `.ffpkg` scenario, a convenience launcher is available:
-
-```powershell
-.\Run_A7_FFPKG_Admin.ps1
-```
-
 ## Validation
 
 ### Quality suite
@@ -163,8 +157,6 @@ python run_tasks_1_8_e2e.py --task A7 --dump .\path\to\DumpFolder --ffpkg ".\pat
 
 ## Documentation
 
-- `BENUTZERHANDBUCH.md` for end-user operation
-- `CHANGELOG.md` for tracked changes
 - `Build_EXE.ps1` for the Windows EXE build flow
 - `Run_Tasks_1_8_Admin.ps1` for elevated single-task validation
 
@@ -173,10 +165,9 @@ python run_tasks_1_8_e2e.py --task A7 --dump .\path\to\DumpFolder --ffpkg ".\pat
 - `PS5ImageConverter_Pro_FINAL_revised.py`: main GUI application and task logic
 - `run_tasks_1_8_e2e.py`: automated task runner
 - `Run_Tasks_1_8_Admin.ps1`: elevated runner for targeted admin validation
-- `Run_A7_FFPKG_Admin.ps1`: convenience wrapper for task 7 `.ffpkg`
 - `Build_EXE.ps1`: PyInstaller build script
-- `BENUTZERHANDBUCH.md`: end-user manual
-- `CHANGELOG.md`: project changelog
+- `test_all_quality_new.py`: current quality-suite entrypoint
+- `test_build_ready.py`: build-readiness checks
 
 ## Credits
 

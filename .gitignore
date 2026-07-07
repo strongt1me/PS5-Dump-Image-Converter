@@ -1,6 +1,9 @@
 _live_task6_output/
 Diverses/
 helloworld/*.elf
+BENUTZERHANDBUCH.md
+CHANGELOG.md
+Run_A7_FFPKG_Admin.ps1
 
 # Python cache and temporary artifacts
 __pycache__/
@@ -45,4 +48,12 @@ ip.ini
 
 # Generated release-gate runtime snapshot
 .github/skills/release-test/last_release_test_status.json
+
+# Non-build/non-test workflow docs and Copilot skill metadata
+.github/skills/full-test/README.md
+.github/skills/full-test/SKILL.md
+.github/skills/release-test/SKILL.md
+.github/skills/release-test/STRUKTUR.md
+.github/skills/release-test/references/
+.github/skills/release-test/scripts/README.md
 
