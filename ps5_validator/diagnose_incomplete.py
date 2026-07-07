@@ -61,7 +61,7 @@ Empfohlene Lösungen:
 
 Weitere Infos:
 - mkpfs: https://github.com/PSBrew/MkPFS
-- PS5-exfat-builder: https://github.com/PSBrew/ps5-exfat-builder
+- PS5-exfat-builder (kerrdec97): https://github.com/PSBrew/ps5-exfat-builder
 ============================================================
 """
     

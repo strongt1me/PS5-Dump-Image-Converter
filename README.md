@@ -182,7 +182,7 @@ Additional foundations and community contributions:
 - KryoMod
 - Renan Barreto
 - Y2JB / PS5 Scene Community
-- PS5 exFAT Image Builder / ps5-exfat-builder project contributors
+- kerrdec97 for PS5 exFAT Image Builder / ps5-exfat-builder
 
 Integrated tools and technical foundations:
 - PassMark Software for OSFMount
@@ -201,7 +201,7 @@ This project stands on the work of the PS5 homebrew community and the open-sourc
 
 A special thank you goes to everyone who shares research, code, tooling and practical knowledge so others can build on it, learn from it and push the scene further.
 
-This explicitly includes the creators and contributors behind PS5 exFAT Image Builder / ps5-exfat-builder, whose published groundwork and tooling helped shape important workflow directions in this project.
+This explicitly includes kerrdec97 as the developer behind PS5 exFAT Image Builder / ps5-exfat-builder, whose published groundwork and tooling helped shape important workflow directions in this project.
 
 ## License / Notice
 
