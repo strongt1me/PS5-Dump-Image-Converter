@@ -1202,6 +1202,81 @@ class PS5ConverterGUI:
         os.makedirs(base, exist_ok=True)
         return os.path.join(base, "runtime_checkpoint.json")
 
+    @staticmethod
+    def _normalize_drive_letter(drive_letter: str | None) -> str:
+        """Normalisiert einen Laufwerksbuchstaben auf ein einzelnes A-Z-Zeichen."""
+        letter = str(drive_letter or "").strip().upper().rstrip(":\\/")
+        return letter if len(letter) == 1 and letter in string.ascii_uppercase else ""
+
+    def _osf_mount_registry_path(self) -> str:
+        """Pfad zur persistenten Liste app-eigener OSFMount-Laufwerke."""
+        cfg = self._get_config_path()
+        base = os.path.dirname(cfg)
+        os.makedirs(base, exist_ok=True)
+        return os.path.join(base, "osfmount_active_drives.json")
+
+    def _load_osf_mount_registry(self) -> dict[str, dict[str, str]]:
+        """Lädt die persistent gemerkten OSFMount-Laufwerke dieser App."""
+        try:
+            path = self._osf_mount_registry_path()
+            if not os.path.isfile(path):
+                return {}
+            with open(path, "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+            mounts = raw.get("mounts", raw) if isinstance(raw, dict) else {}
+            if not isinstance(mounts, dict):
+                return {}
+            normalized: dict[str, dict[str, str]] = {}
+            for key, entry in mounts.items():
+                letter = self._normalize_drive_letter(str(key))
+                if not letter:
+                    continue
+                record = entry if isinstance(entry, dict) else {}
+                normalized[letter] = {
+                    "drive": letter,
+                    "osf_exe": str(record.get("osf_exe", "")).strip(),
+                    "source": str(record.get("source", "")).strip(),
+                    "ts": str(record.get("ts", "")).strip(),
+                }
+            return normalized
+        except Exception as exc:
+            logger.debug("OSFMount-Register konnte nicht geladen werden: %s", exc)
+            return {}
+
+    def _save_osf_mount_registry(self, mounts: dict[str, dict[str, str]]) -> None:
+        """Speichert die persistent gemerkten OSFMount-Laufwerke dieser App."""
+        try:
+            path = self._osf_mount_registry_path()
+            payload = {"mounts": mounts}
+            with open(path, "w", encoding="utf-8") as fh:
+                json.dump(payload, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            logger.debug("OSFMount-Register konnte nicht gespeichert werden: %s", exc)
+
+    def _register_osf_mount(self, drive_letter: str, osf_exe: str, source_path: str = "") -> None:
+        """Merkt ein app-eigenes OSFMount-Laufwerk für Crash-/Restart-Cleanup vor."""
+        letter = self._normalize_drive_letter(drive_letter)
+        if not letter:
+            return
+        mounts = self._load_osf_mount_registry()
+        mounts[letter] = {
+            "drive": letter,
+            "osf_exe": str(osf_exe or "").strip(),
+            "source": str(source_path or "").strip(),
+            "ts": datetime.datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        }
+        self._save_osf_mount_registry(mounts)
+
+    def _unregister_osf_mount(self, drive_letter: str) -> None:
+        """Entfernt ein erfolgreich dismountetes OSFMount-Laufwerk aus dem Register."""
+        letter = self._normalize_drive_letter(drive_letter)
+        if not letter:
+            return
+        mounts = self._load_osf_mount_registry()
+        if letter in mounts:
+            mounts.pop(letter, None)
+            self._save_osf_mount_registry(mounts)
+
     def _checkpoint_key(self, mode: str, src: str, dst: str) -> str:
         """Stabiler Schlüssel für einen Job (modus+src+dst)."""
         sig = f"{mode}|{os.path.abspath(src)}|{os.path.abspath(dst or '')}"
@@ -3132,7 +3207,8 @@ class PS5ConverterGUI:
             t.join(timeout=8)               # Max. 8 Sekunden warten
 
         # Schritte 2-4: zentraler Helper (FSCTL_DISMOUNT_VOLUME + Retry + Force + SHChangeNotify)
-        self._safe_dismount_drive(drive, osf, log=False, retries=5)
+        if self._safe_dismount_drive(drive, osf, log=False, retries=5):
+            self._unregister_osf_mount(drive)
 
         self._active_mount_drive = None
         self._active_osf_exe = None
@@ -3179,6 +3255,25 @@ class PS5ConverterGUI:
                 sys_letter = os.environ.get('SystemDrive', 'C:').rstrip(':\\').upper()[:1]
             except Exception:
                 sys_letter = 'C'
+            legacy_candidates: dict[int, list[str]] = {}
+
+            registered_mounts = self._load_osf_mount_registry()
+            for letter, record in list(registered_mounts.items()):
+                if letter == sys_letter:
+                    self._unregister_osf_mount(letter)
+                    continue
+                idx = ord(letter) - 65
+                if idx < 0 or not (bitmask & (1 << idx)):
+                    self._unregister_osf_mount(letter)
+                    continue
+                try:
+                    logger.info("Bereinige registriertes OSFMount-Laufwerk: %s:\\", letter)
+                    cleanup_osf = record.get("osf_exe", "").strip() or osf_exe
+                    if self._safe_dismount_drive(letter, cleanup_osf, log=False, retries=3):
+                        self._unregister_osf_mount(letter)
+                except Exception as exc:
+                    logger.debug("Registriertes OSFMount-Laufwerk konnte nicht bereinigt werden: %s", exc)
+
             for i in range(3, 26):  # A, B, C überspringen
                 if not (bitmask & (1 << i)):
                     continue
@@ -3194,17 +3289,48 @@ class PS5ConverterGUI:
                     pass
                 try:
                     vol_name = ctypes.create_unicode_buffer(256)
+                    fs_name = ctypes.create_unicode_buffer(64)
+                    vol_serial = ctypes.c_uint(0)
                     ok = ctypes.windll.kernel32.GetVolumeInformationW(
                         drive_path, vol_name, 256,
-                        None, None, None, None, 0
+                        ctypes.byref(vol_serial), None, None, fs_name, 64
                     )
                     label = (vol_name.value or '').upper() if ok else ''
+                    fs_type = (fs_name.value or '').upper() if ok else ''
                     if label in _OSF_LABELS:
                         logger.info("Bereinige verwaistes OSFMount-Laufwerk: %s (Label=%s)",
                                     drive_path, label)
                         self._safe_dismount_drive(letter, osf_exe, log=False, retries=3)
+                    elif (
+                        ok
+                        and letter >= 'W'
+                        and not label
+                        and fs_type == 'EXFAT'
+                        and vol_serial.value
+                    ):
+                        has_ps5_markers = (
+                            os.path.isdir(os.path.join(drive_path, 'sce_sys'))
+                            or os.path.isfile(os.path.join(drive_path, 'eboot.bin'))
+                        )
+                        if has_ps5_markers:
+                            legacy_candidates.setdefault(vol_serial.value, []).append(letter)
                 except Exception as exc:
                     logger.debug("Verwaistes OSFMount-Laufwerk konnte nicht bereinigt werden: %s", exc)
+
+            for serial, letters in legacy_candidates.items():
+                if len(letters) < 2:
+                    continue
+                for letter in letters:
+                    try:
+                        logger.info(
+                            "Bereinige legacy OSFMount-Mehrfachmount: %s:\\ (Serial=%08X)",
+                            letter,
+                            serial,
+                        )
+                        if self._safe_dismount_drive(letter, osf_exe, log=False, retries=3):
+                            self._unregister_osf_mount(letter)
+                    except Exception as exc:
+                        logger.debug("Legacy-OSFMount-Laufwerk konnte nicht bereinigt werden: %s", exc)
         except Exception as exc:
             logger.debug("_cleanup_stale_osfmounts: %s", exc)
 
@@ -5736,6 +5862,7 @@ class PS5ConverterGUI:
             if ret != 0:
                 drive_letter = None
                 return empty_meta, None
+            self._register_osf_mount(drive_letter, osf_exe, src)
 
             _mount_point_ready = False
             for _wait_i in range(30):
@@ -5774,7 +5901,8 @@ class PS5ConverterGUI:
         finally:
             # Immer dismounten via zentralem Helper
             if drive_letter and osf_exe:
-                self._safe_dismount_drive(drive_letter, osf_exe, log=False, retries=3)
+                if self._safe_dismount_drive(drive_letter, osf_exe, log=False, retries=3):
+                    self._unregister_osf_mount(drive_letter)
 
     def _extract_meta_from_file(
         self,
@@ -11011,6 +11139,7 @@ class PS5ConverterGUI:
                         if ret == 0:
                             self._active_mount_drive = drive_letter
                             self._active_osf_exe = osf_exe
+                            self._register_osf_mount(drive_letter, osf_exe, src)
                             _TRANSIENT_WERRORS = {2, 3, 5, 21, 1005, 1006, 1392}
                             _ready = False
                             self.task_progress = max(self.task_progress, 3.0)
@@ -11090,7 +11219,8 @@ class PS5ConverterGUI:
                             )
                     finally:
                         if drive_letter and osf_exe:
-                            self._safe_dismount_drive(drive_letter, osf_exe, log=True, retries=4)
+                            if self._safe_dismount_drive(drive_letter, osf_exe, log=True, retries=4):
+                                self._unregister_osf_mount(drive_letter)
                         self._active_mount_drive = None
                         self._active_osf_exe = None
                 else:
@@ -12171,6 +12301,7 @@ class PS5ConverterGUI:
                         f"{result.stderr or result.stdout}"
                     )
                 mount_point[0] = free_letter
+                self._register_osf_mount(free_letter, osf, src)
 
                 # Warten bis Laufwerk erscheint (max. 10s)
                 for _ in range(20):
@@ -12277,15 +12408,13 @@ class PS5ConverterGUI:
                 # Immer dismounten – auch bei Fehler
                 if mount_point[0]:
                     self._append_to_log(f"\n[INFO] Dismounte {mount_point[0]}...\n")
-                    try:
-                        subprocess.run(
-                            [osf, "-d", "-m", mount_point[0]],
-                            capture_output=True,
-                            creationflags=_NO_WIN_FLAGS,
-                            startupinfo=_silent_startupinfo()
-                        )
-                    except Exception:
-                        pass
+                    _mounted_letter = self._normalize_drive_letter(mount_point[0])
+                    if _mounted_letter:
+                        try:
+                            if self._safe_dismount_drive(_mounted_letter, osf, log=False, retries=4):
+                                self._unregister_osf_mount(_mounted_letter)
+                        except Exception:
+                            pass
                     mount_point[0] = None
                 # Poller stoppen (falls noch läuft)
                 try:
@@ -13202,6 +13331,7 @@ class PS5ConverterGUI:
                                 f"{_mount_result.stderr or _mount_result.stdout}\n"
                             )
                             return False
+                        self._register_osf_mount(drive_letter, osf_exe, pfs_file)
 
                         for _ in range(20):
                             if os.path.exists(drive_letter + "\\"):
@@ -13260,10 +13390,13 @@ class PS5ConverterGUI:
                     finally:
                         # Dismount
                         if drive_letter:
-                            try:
-                                _sp.run([osf_exe, "-d", "-m", drive_letter], capture_output=True)
-                            except Exception:
-                                pass
+                            _drive_letter_norm = self._normalize_drive_letter(drive_letter)
+                            if _drive_letter_norm:
+                                try:
+                                    if self._safe_dismount_drive(_drive_letter_norm, osf_exe, log=False, retries=4):
+                                        self._unregister_osf_mount(_drive_letter_norm)
+                                except Exception:
+                                    pass
                             drive_letter = None
 
         finally:
@@ -13905,6 +14038,7 @@ class PS5ConverterGUI:
                             )
                             return _fail_keep_tmp("OSFMount-Mount fehlgeschlagen")
                         mount_ok = True
+                        self._register_osf_mount(free_letter, osf_exe, pfs_file)
 
                         # Warten bis Laufwerk erscheint (max. 10s)
                         for _ in range(20):
@@ -14059,15 +14193,13 @@ class PS5ConverterGUI:
                         # Immer dismounten
                         if mount_ok:
                             self._append_to_log(f"[INFO] Dismounte {free_letter}...\n")
-                            try:
-                                subprocess.run(
-                                    [osf_exe, "-d", "-m", free_letter],
-                                    capture_output=True,
-                                    creationflags=_NO_WIN_FLAGS,
-                                    startupinfo=_silent_startupinfo(),
-                                )
-                            except Exception:
-                                pass
+                            _free_letter_norm = self._normalize_drive_letter(free_letter)
+                            if _free_letter_norm:
+                                try:
+                                    if self._safe_dismount_drive(_free_letter_norm, osf_exe, log=False, retries=4):
+                                        self._unregister_osf_mount(_free_letter_norm)
+                                except Exception:
+                                    pass
 
             self.task_progress = max(self.task_progress, 50.0)
 
