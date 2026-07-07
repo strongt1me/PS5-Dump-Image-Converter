@@ -7041,14 +7041,16 @@ class PS5ConverterGUI:
 
     def _step_start(self) -> float:
         """Gibt den Fortschritts-Startwert des aktuellen Schritts zurück (0–100)."""
-        step = max(1, self.task_current_step)
+        max_step = max(1, int(getattr(self, "task_num_steps", 1) or 1))
+        step = max(1, min(int(getattr(self, "task_current_step", 1) or 1), max_step))
         if step == 1:
             return 0.0
         return self._step_end_for(step - 1)
 
     def _step_end(self) -> float:
         """Gibt den Fortschritts-Endwert des aktuellen Schritts zurück (0–100)."""
-        step = max(1, self.task_current_step)
+        max_step = max(1, int(getattr(self, "task_num_steps", 1) or 1))
+        step = max(1, min(int(getattr(self, "task_current_step", 1) or 1), max_step))
         return self._step_end_for(step)
 
     def _build_pip_command(self, pip_args: list[str]) -> list[str]:
@@ -11696,7 +11698,7 @@ class PS5ConverterGUI:
                             self._append_to_log(f"[WARNUNG] Verschieben: {_item}: {_mv_exc}\n")
                     # game_dir zeigt jetzt auf final_dst (bereits befüllt)
                     # Schritte 2-4 überspringen: Fortschritt direkt auf 98%
-                    self.task_current_step = 5
+                    self.task_current_step = 4
                     self.task_progress = 98.0
                     self._append_to_log(f"[OK] Game-Dump extrahiert nach: {final_dst}\n")
                     self.progress_engine.begin_validate("Validierung...")
@@ -11766,7 +11768,7 @@ class PS5ConverterGUI:
                         except OSError as _mv_exc:
                             self._append_to_log(f"[WARNUNG] Verschieben: {_item}: {_mv_exc}\n")
                     self._append_to_log(f"[OK] Game-Dump extrahiert nach: {final_dst}\n")
-                    self.task_current_step = 5
+                    self.task_current_step = 4
                     self.task_progress = 98.0
                     self.progress_engine.begin_validate("Validierung...")
                     self.progress_engine.commit_task()
@@ -11866,7 +11868,7 @@ class PS5ConverterGUI:
                                 except OSError as _mv_exc:
                                     self._append_to_log(f"[WARNUNG] Verschieben: {_item}: {_mv_exc}\n")
                             self._append_to_log(f"[OK] Game-Dump extrahiert nach: {final_dst}\n")
-                            self.task_current_step = 5
+                            self.task_current_step = 4
                             self.task_progress = 98.0
                             self.progress_engine.begin_validate("Validierung...")
                             self.progress_engine.commit_task()
