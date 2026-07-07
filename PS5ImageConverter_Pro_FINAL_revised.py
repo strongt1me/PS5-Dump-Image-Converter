@@ -12046,10 +12046,12 @@ class PS5ConverterGUI:
 
         self.task_final_output_path  = final_output
         self.task_total_source_bytes = self._get_path_size(src)
-        # Schritt 1 (unpack .ffpfsc → tmp_dir): die eigentliche Arbeit → 0–95%
-        # Schritt 2 (shutil.move):                sofort, kein Fortschritt nötig → 95–100%
+        # Temporäre Initial-Geometrie bis der Container-Typ bekannt ist:
+        # äußerer unpack .ffpfsc → tmp_dir bleibt ein kleiner erster Schritt.
+        # Danach wird je nach Inhalt branch-spezifisch auf 2 oder 3 Schritte
+        # umgestellt, ohne dass der Fortschritt schon vorzeitig bei ~95% steht.
         self.task_num_steps = 2
-        self.task_step_ends = [95.0, 100.0]
+        self.task_step_ends = [20.0, 100.0]
 
         # ProgressEngine: Aufgabe 2 starten (Index 1 = ffpfsc zu exFAT)
         self.progress_engine.start_task(1, "ffpfsc zu exFAT")
@@ -12143,7 +12145,8 @@ class PS5ConverterGUI:
                 # Schritte: unpack(0-33%), exFAT-Image erstellen(33-100%)
                 self.task_num_steps = 2
                 self.task_step_ends = [33.0, 100.0]
-                self.task_current_step = 1
+                self.task_current_step = 2
+                self.task_progress = max(self.task_progress, 33.0)
 
                 self._append_to_log(
                     "\n>>> Schritt 2 / 2: exFAT-Image erstellen (vendorter MkPFS-Writer)...\n"
@@ -12507,7 +12510,7 @@ class PS5ConverterGUI:
                 "\n>>> Schritt 3 / 3: Neues PS5-kompatibles exFAT-Image erstellen "
                 "(vendorter MkPFS-Writer)...\n"
             )
-            self.task_current_step = 2
+            self.task_current_step = 3
             self.root.after(0, lambda: self.status_label.config(
                 text="Aufgabe 2 – Neues exFAT-Image erstellen..."))
 
