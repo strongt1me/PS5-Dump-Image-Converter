@@ -1030,6 +1030,7 @@ class PS5ConverterGUI:
         self._task_report_path: str = ""
         self._pending_mkpfs_engine_done: threading.Event | None = None
         self._pending_mkpfs_target_path: str = ""
+        self._suppress_pulse_creep: bool = False
         self._startup_temp_cleanup_prompted: bool = False
 
         # Aktiver OSFMount-Eintrag (für garantierten Dismount beim Programmende)
@@ -6729,6 +6730,7 @@ class PS5ConverterGUI:
             and getattr(self, "monitor_active", False)
             and has_defined_steps
             and step_active
+            and not getattr(self, "_suppress_pulse_creep", False)
             and not has_real_progress_signal
         ):
             _cur = self.task_progress
@@ -8207,6 +8209,8 @@ class PS5ConverterGUI:
 
         file_monitor_thread: threading.Thread | None = None
         is_pack_file_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "file"
+        prev_suppress_pulse = bool(getattr(self, "_suppress_pulse_creep", False))
+        self._suppress_pulse_creep = prev_suppress_pulse or is_pack_file_cmd
         if enable_file_monitor and monitor_target_path and not is_pack_file_cmd:
             file_monitor_thread = threading.Thread(target=_file_monitor, daemon=True)
             file_monitor_thread.start()
@@ -8249,6 +8253,7 @@ class PS5ConverterGUI:
                     "[WARNUNG] MkPFS beendet den aktuellen Schritt noch im Hintergrund. "
                     "Ein Resume wartet auf die Dateifreigabe.\n"
                 )
+            self._suppress_pulse_creep = prev_suppress_pulse
             if file_monitor_thread is not None:
                 file_monitor_thread.join(timeout=0.2)
             return False
@@ -8291,6 +8296,7 @@ class PS5ConverterGUI:
                 f"\n[WARNUNG] mkpfs beendet mit Exit-Code {exit_code}\n"
             )
 
+        self._suppress_pulse_creep = prev_suppress_pulse
         return self.is_running and exit_code == 0
 
     # ------------------------------------------------------------------
