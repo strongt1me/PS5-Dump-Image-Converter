@@ -1028,6 +1028,8 @@ class PS5ConverterGUI:
         self._preflight_warnings: list[str] = []
         self._checkpoint_last_save_ts: float = 0.0
         self._task_report_path: str = ""
+        self._pending_mkpfs_engine_done: threading.Event | None = None
+        self._pending_mkpfs_target_path: str = ""
         self._startup_temp_cleanup_prompted: bool = False
 
         # Aktiver OSFMount-Eintrag (für garantierten Dismount beim Programmende)
@@ -7850,6 +7852,57 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     # mkpfs-Ausführung
     # ------------------------------------------------------------------
+    def _wait_for_pending_mkpfs_background(self, target_path: str = "", timeout_s: float = 900.0) -> None:
+        """Wartet bei Bedarf auf einen zuvor abgebrochenen MkPFS-Lauf im Hintergrund."""
+        pending = getattr(self, "_pending_mkpfs_engine_done", None)
+        if not isinstance(pending, threading.Event):
+            return
+
+        pending_target = str(getattr(self, "_pending_mkpfs_target_path", "") or "").strip()
+        target_abs = os.path.abspath(target_path) if target_path else ""
+        pending_abs = os.path.abspath(pending_target) if pending_target else ""
+        if target_abs and pending_abs and target_abs != pending_abs:
+            if pending.is_set():
+                self._pending_mkpfs_engine_done = None
+                self._pending_mkpfs_target_path = ""
+            return
+
+        start_ts = time.monotonic()
+        last_log_ts = 0.0
+        while not pending.wait(timeout=0.2):
+            now = time.monotonic()
+            if now - start_ts >= timeout_s:
+                self._append_to_log(
+                    "[WARNUNG] Vorheriger MkPFS-Lauf ist noch aktiv. Resume startet trotzdem weiter.\n"
+                )
+                return
+            if now - last_log_ts >= 5.0:
+                self._append_to_log(
+                    "[INFO] Warte auf Abschluss des vorherigen MkPFS-Laufs vor Resume...\n"
+                )
+                last_log_ts = now
+
+        self._pending_mkpfs_engine_done = None
+        self._pending_mkpfs_target_path = ""
+
+    def _cleanup_stale_mkpfs_output(self, target_path: str) -> None:
+        """Entfernt alte MkPFS-Zielartefakte vor einem Resume-Neustart."""
+        for stale_path in (target_path, target_path + ".tmp"):
+            if not stale_path:
+                continue
+            try:
+                if os.path.isfile(stale_path):
+                    os.remove(stale_path)
+                    self._append_to_log(
+                        f"[RESUME] Entferne altes Zielartefakt vor Neuversuch: {stale_path}\n"
+                    )
+            except FileNotFoundError:
+                continue
+            except OSError as exc:
+                self._append_to_log(
+                    f"[WARNUNG] Altes Zielartefakt konnte nicht entfernt werden: {stale_path} ({exc})\n"
+                )
+
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
         self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
@@ -8175,6 +8228,25 @@ class PS5ConverterGUI:
         if abort_requested:
             # Beim Abbruch NICHT lange auf Join warten, damit die GUI sofort reagiert.
             engine_thread.join(timeout=0.2)
+            if engine_thread.is_alive():
+                self._pending_mkpfs_engine_done = engine_done
+                self._pending_mkpfs_target_path = str(monitor_target_path or "")
+
+                def _clear_pending_when_done(done_evt: threading.Event) -> None:
+                    done_evt.wait()
+                    if getattr(self, "_pending_mkpfs_engine_done", None) is done_evt:
+                        self._pending_mkpfs_engine_done = None
+                        self._pending_mkpfs_target_path = ""
+
+                threading.Thread(
+                    target=_clear_pending_when_done,
+                    args=(engine_done,),
+                    daemon=True,
+                ).start()
+                self._append_to_log(
+                    "[WARNUNG] MkPFS beendet den aktuellen Schritt noch im Hintergrund. "
+                    "Ein Resume wartet auf die Dateifreigabe.\n"
+                )
             if file_monitor_thread is not None:
                 file_monitor_thread.join(timeout=0.2)
             return False
@@ -8815,9 +8887,11 @@ class PS5ConverterGUI:
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_tmp_dir = str(cp.get("tmp_dir", "")).strip() if isinstance(cp, dict) else ""
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
+        resume_step2 = False
         if cp_tmp_dir and cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             tmp_dir = cp_tmp_dir
             temp_exfat = cp_temp_exfat
+            resume_step2 = True
             self._append_to_log(
                 f"[RESUME] Verwende vorhandenes Zwischen-Image: {temp_exfat}\n"
             )
@@ -8931,6 +9005,9 @@ class PS5ConverterGUI:
                     blk=profile["block_size"],
                 )
             )
+
+            self._wait_for_pending_mkpfs_background(final_output)
+            self._cleanup_stale_mkpfs_output(final_output)
 
             pack_ok = self._execute_mkpfs(
                 [
