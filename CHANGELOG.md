@@ -97,7 +97,7 @@ Neu oder verbessert:
 Fuer normale Nutzer bedeutet das:
 Die Version v1.7.80 ist die bisher rundeste und am besten dokumentierte Version. Sie bringt nicht nur neue Funktionen, sondern vor allem viele kleine Verbesserungen, die das Tool im Alltag verlaesslicher machen.
 
-## Kurzfassung fuer Laien
+## Kurzfassung
 
 - Fruehe Versionen: Grundfunktion des Tools aufgebaut.
 - v1.7.76: Build und Tests sauberer gemacht.
