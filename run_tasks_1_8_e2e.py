@@ -3,7 +3,7 @@
 
 Hinweis:
 - Aufgaben 1-5 benoetigen Administratorrechte (OSFMount/exFAT-Pfad).
-- Aufgabe 7 (fakelib Manager) ist interaktiv und wird als MANUAL_REQUIRED markiert.
+- Aufgabe 7 (fakelib Manager) kann automatisiert ueber einen deterministischen fakelib_add-Test laufen.
 - Aufgabe 8 wird ueber den CLI-Validator geprueft (OK/FAIL Pfad).
 """
 
@@ -120,6 +120,170 @@ def _run_cli_dump_validator(path: Path, output_json: Path) -> tuple[bool, str]:
     return ok, tail[-4000:]
 
 
+def _find_fakelib_source(repo: Path) -> Path:
+    candidates = [
+        (repo / "fakelib").resolve(),
+        (repo / "Diverses" / "fakelib").resolve(),
+    ]
+    for candidate in candidates:
+        if (candidate / "libSceAmpr.sprx").is_file():
+            return candidate
+    raise FileNotFoundError("Kein fakelib-Ordner mit libSceAmpr.sprx gefunden")
+
+
+def _find_existing_exfat_artifact(repo: Path, dump_name: str) -> Path | None:
+    preferred = [
+        (repo / "_e2e_output_alltasks_recheck" / f"{dump_name}.exfat").resolve(),
+        (repo / "_e2e_output_alltasks_recheck3" / f"{dump_name}.exfat").resolve(),
+        (repo / "_e2e_output_tasks3_8_admin_recheck" / f"{dump_name}.exfat").resolve(),
+        (repo / "_e2e_output_a2_recheck" / f"{dump_name}.exfat").resolve(),
+    ]
+    for candidate in preferred:
+        if candidate.is_file():
+            return candidate
+
+    for candidate in repo.rglob("*.exfat"):
+        if candidate.is_file() and candidate.stem.lower() == dump_name.lower():
+            return candidate.resolve()
+    return None
+
+
+def _expected_a7_output_path(staged_input: Path, output_dir: Path) -> Path:
+    if staged_input.suffix.lower() == ".ffpkg":
+        return output_dir / f"{staged_input.stem}.ffpfsc"
+    return output_dir / staged_input.name
+
+
+def _extract_a7_output(app: PS5ConverterGUI, actual_out: Path, verify_dir: Path, *, log_prefix: str) -> tuple[bool, Path]:
+    if not actual_out.is_absolute():
+        actual_out = actual_out.resolve()
+    if not actual_out.is_file():
+        return False, verify_dir
+
+    if verify_dir.exists():
+        shutil.rmtree(verify_dir, ignore_errors=True)
+    verify_dir.mkdir(parents=True, exist_ok=True)
+
+    app.is_running = True
+    setattr(app, "cancel_requested", False)
+
+    suffix = actual_out.suffix.lower()
+    if suffix == ".exfat":
+        ok = bool(
+            app._extract_exfat_to_folder_mkpfs(
+                str(actual_out),
+                str(verify_dir),
+                status_prefix="A7-Verifikation",
+                log_prefix=log_prefix,
+                progress_start=96.0,
+                progress_end=99.0,
+            )
+        )
+    elif suffix == ".ffpfsc":
+        ok = bool(app._mode_unpack_to_game_folder(str(actual_out), str(verify_dir)))
+    else:
+        return False, verify_dir
+
+    game_root = _resolve_game_folder(verify_dir)
+    return bool(ok and game_root is not None), (game_root or verify_dir)
+
+
+def _run_a7_automation(
+    app: PS5ConverterGUI,
+    source_image: Path,
+    fakelib_src: Path,
+    output_dir: Path,
+    *,
+    output_subdir: str = "A7_output",
+    verify_subdir: str = "_a7_verify",
+    verify_log_prefix: str = "A7 verifiziert",
+) -> tuple[bool, Path, Path]:
+    a7_input_dir = output_dir / "_a7_input"
+    a7_output_dir = output_dir / output_subdir
+    a7_verify_dir = output_dir / verify_subdir
+    a7_input_dir.mkdir(parents=True, exist_ok=True)
+    a7_output_dir.mkdir(parents=True, exist_ok=True)
+
+    staged_input = a7_input_dir / source_image.name
+    shutil.copy2(source_image, staged_input)
+
+    ok = bool(
+        app._mode_fakelib_manager(
+            str(staged_input),
+            str(a7_output_dir),
+            automation={
+                "action": "fakelib_add",
+                "fakelib_src": str(fakelib_src),
+            },
+        )
+    )
+
+    actual_out_raw = getattr(app, "task_final_output_path", "")
+    actual_out = Path(actual_out_raw) if actual_out_raw else _expected_a7_output_path(staged_input, a7_output_dir)
+    extracted_ok, verify_root = _extract_a7_output(app, actual_out, a7_verify_dir, log_prefix=verify_log_prefix) if ok else (False, a7_verify_dir)
+
+    return bool(ok and extracted_ok), actual_out, verify_root
+
+
+def _run_a7_files_add_automation(app: PS5ConverterGUI, source_exfat: Path, output_dir: Path) -> tuple[bool, Path, Path, str]:
+    a7_input_dir = output_dir / "_a7_input_files_add"
+    a7_output_dir = output_dir / "A7_files_add_output"
+    a7_verify_dir = output_dir / "_a7_verify_files_add"
+    a7_input_dir.mkdir(parents=True, exist_ok=True)
+    a7_output_dir.mkdir(parents=True, exist_ok=True)
+
+    staged_input = a7_input_dir / source_exfat.name
+    shutil.copy2(source_exfat, staged_input)
+
+    marker_name = "A7_AUTOMATION_MARKER.txt"
+    marker_file = output_dir / marker_name
+    marker_file.write_text("A7 files_add automation marker\n", encoding="utf-8")
+
+    ok = bool(
+        app._mode_fakelib_manager(
+            str(staged_input),
+            str(a7_output_dir),
+            automation={
+                "action": "files_add",
+                "files_to_add": [str(marker_file)],
+            },
+        )
+    )
+
+    actual_out_raw = getattr(app, "task_final_output_path", "")
+    actual_out = Path(actual_out_raw) if actual_out_raw else _expected_a7_output_path(staged_input, a7_output_dir)
+    extracted_ok, verify_root = _extract_a7_output(app, actual_out, a7_verify_dir, log_prefix="A7 files_add verifiziert") if ok else (False, a7_verify_dir)
+    marker_ok = (verify_root / marker_name).is_file()
+    return bool(ok and extracted_ok and marker_ok), actual_out, verify_root, marker_name
+
+
+def _run_a7_files_remove_automation(app: PS5ConverterGUI, source_exfat: Path, output_dir: Path) -> tuple[bool, Path, Path, str]:
+    add_ok, seeded_out, seeded_verify_dir, marker_name = _run_a7_files_add_automation(app, source_exfat, output_dir)
+    if not add_ok:
+        return False, seeded_out, seeded_verify_dir, marker_name
+
+    a7_output_dir = output_dir / "A7_files_remove_output"
+    a7_verify_dir = output_dir / "_a7_verify_files_remove"
+    a7_output_dir.mkdir(parents=True, exist_ok=True)
+
+    ok = bool(
+        app._mode_fakelib_manager(
+            str(seeded_out),
+            str(a7_output_dir),
+            automation={
+                "action": "files_remove",
+                "selected_root_items": [marker_name],
+            },
+        )
+    )
+
+    actual_out_raw = getattr(app, "task_final_output_path", "")
+    actual_out = Path(actual_out_raw) if actual_out_raw else _expected_a7_output_path(seeded_out, a7_output_dir)
+    extracted_ok, verify_root = _extract_a7_output(app, actual_out, a7_verify_dir, log_prefix="A7 files_remove verifiziert") if ok else (False, a7_verify_dir)
+    marker_removed = not (verify_root / marker_name).exists()
+    return bool(ok and extracted_ok and marker_removed), actual_out, verify_root, marker_name
+
+
 def _read_validator_status(report_path: Path) -> str:
     """Liest den semantischen Status aus dem JSON-Bericht des Validators.
 
@@ -227,8 +391,20 @@ def main() -> int:
     a4_out = out_dir / dump_dir.name
     a5_out = out_dir / f"{dump_dir.name}_from_exfat"
     a6_out = out_dir / "A6_from_ffpkg.ffpfsc"
+    a7_out = out_dir / "A7_output" / f"{dump_dir.name}.exfat"
+    a7_verify_dir = out_dir / "_a7_verify"
+    a7_files_add_out = out_dir / "A7_files_add_output" / f"{dump_dir.name}.exfat"
+    a7_files_add_verify_dir = out_dir / "_a7_verify_files_add"
+    a7_files_add_marker_name = "A7_AUTOMATION_MARKER.txt"
+    a7_files_remove_out = out_dir / "A7_files_remove_output" / f"{dump_dir.name}.exfat"
+    a7_files_remove_verify_dir = out_dir / "_a7_verify_files_remove"
+    a7_files_remove_marker_name = "A7_AUTOMATION_MARKER.txt"
+    a7_ffpkg_out = out_dir / "A7_ffpkg_output" / "A7_from_ffpkg.ffpfsc"
+    a7_ffpkg_verify_dir = out_dir / "_a7_verify_ffpkg"
+    existing_a7_source = _find_existing_exfat_artifact(repo, dump_dir.name)
     if ffpkg_path and ffpkg_path.is_file():
         a6_out = out_dir / f"{ffpkg_path.stem}.ffpfsc"
+        a7_ffpkg_out = out_dir / "A7_ffpkg_output" / f"{ffpkg_path.stem}.ffpfsc"
 
     results: dict[str, str] = {}
     logs: dict[str, str] = {}
@@ -236,6 +412,7 @@ def main() -> int:
     root = tk.Tk()
     root.withdraw()
     app = PS5ConverterGUI(root)
+    fakelib_src = _find_fakelib_source(repo)
     _task_log: list[str] = []
     _orig_append = app._append_to_log
 
@@ -251,6 +428,8 @@ def main() -> int:
         setattr(app, "cancel_requested", False)
         root.update_idletasks()
         root.update()
+
+    is_admin = _is_admin()
 
     try:
         if not dump_dir.is_dir():
@@ -287,7 +466,94 @@ def main() -> int:
                     raise FileNotFoundError("FFPKG-Datei fehlt fuer A6")
                 _single_run("A6_ffpkg_to_ffpfsc", lambda: app._mode_ffpkg_to_ffpfsc(str(ffpkg_path), str(out_dir)))
             elif selected_task == "A7":
-                single_results["A7_fakelib_manager"] = "MANUAL_REQUIRED"
+                a7_source = a2_out if a2_out.exists() else existing_a7_source
+                if a7_source is None and is_admin:
+                    if not a1_out.exists():
+                        _prep()
+                        if not app._mode_pack_folder(str(dump_dir), str(out_dir)):
+                            raise RuntimeError("A7-Vorbereitung fehlgeschlagen: A1 konnte nicht erstellt werden")
+                    if not a2_out.exists():
+                        _prep()
+                        if not app._mode_unpack_to_exfat(str(a1_out), str(out_dir)):
+                            raise RuntimeError("A7-Vorbereitung fehlgeschlagen: A2 konnte nicht erstellt werden")
+                    a7_source = a2_out
+
+                if a7_source is None:
+                    single_results["A7_fakelib_manager"] = "SKIPPED_NEEDS_ADMIN_OR_EXFAT_ARTIFACT"
+                else:
+
+                    a7_state: dict[str, Path] = {}
+
+                    def _run_single_a7() -> bool:
+                        ok, actual_out, verify_dir = _run_a7_automation(app, a7_source, fakelib_src, out_dir)
+                        a7_state["actual_out"] = actual_out
+                        a7_state["verify_dir"] = verify_dir
+                        return ok
+
+                    _single_run("A7_fakelib_manager", _run_single_a7)
+                    if "actual_out" in a7_state:
+                        a7_out = a7_state["actual_out"]
+                    if "verify_dir" in a7_state:
+                        a7_verify_dir = a7_state["verify_dir"]
+
+                    a7_files_state: dict[str, Path | str] = {}
+
+                    def _run_single_a7_files_add() -> bool:
+                        ok, actual_out, verify_dir, marker_name = _run_a7_files_add_automation(app, a7_source, out_dir)
+                        a7_files_state["actual_out"] = actual_out
+                        a7_files_state["verify_dir"] = verify_dir
+                        a7_files_state["marker_name"] = marker_name
+                        return ok
+
+                    _single_run("A7_files_add", _run_single_a7_files_add)
+                    if "actual_out" in a7_files_state:
+                        a7_files_add_out = a7_files_state["actual_out"]  # type: ignore[assignment]
+                    if "verify_dir" in a7_files_state:
+                        a7_files_add_verify_dir = a7_files_state["verify_dir"]  # type: ignore[assignment]
+                    if "marker_name" in a7_files_state:
+                        a7_files_add_marker_name = str(a7_files_state["marker_name"])
+
+                    a7_remove_state: dict[str, Path | str] = {}
+
+                    def _run_single_a7_files_remove() -> bool:
+                        ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, a7_source, out_dir)
+                        a7_remove_state["actual_out"] = actual_out
+                        a7_remove_state["verify_dir"] = verify_dir
+                        a7_remove_state["marker_name"] = marker_name
+                        return ok
+
+                    _single_run("A7_files_remove", _run_single_a7_files_remove)
+                    if "actual_out" in a7_remove_state:
+                        a7_files_remove_out = a7_remove_state["actual_out"]  # type: ignore[assignment]
+                    if "verify_dir" in a7_remove_state:
+                        a7_files_remove_verify_dir = a7_remove_state["verify_dir"]  # type: ignore[assignment]
+                    if "marker_name" in a7_remove_state:
+                        a7_files_remove_marker_name = str(a7_remove_state["marker_name"])
+
+                if ffpkg_path and ffpkg_path.is_file() and is_admin:
+                    a7_ffpkg_state: dict[str, Path] = {}
+
+                    def _run_single_a7_ffpkg() -> bool:
+                        ok, actual_out, verify_dir = _run_a7_automation(
+                            app,
+                            ffpkg_path,
+                            fakelib_src,
+                            out_dir,
+                            output_subdir="A7_ffpkg_output",
+                            verify_subdir="_a7_verify_ffpkg",
+                            verify_log_prefix="A7 .ffpkg verifiziert",
+                        )
+                        a7_ffpkg_state["actual_out"] = actual_out
+                        a7_ffpkg_state["verify_dir"] = verify_dir
+                        return ok
+
+                    _single_run("A7_ffpkg_fakelib_manager", _run_single_a7_ffpkg)
+                    if "actual_out" in a7_ffpkg_state:
+                        a7_ffpkg_out = a7_ffpkg_state["actual_out"]
+                    if "verify_dir" in a7_ffpkg_state:
+                        a7_ffpkg_verify_dir = a7_ffpkg_state["verify_dir"]
+                elif ffpkg_path and ffpkg_path.is_file():
+                    single_results["A7_ffpkg_fakelib_manager"] = "SKIPPED_NEEDS_ADMIN"
             elif selected_task == "A8":
                 a8_ok_json = out_dir / "a8_ok.json"
                 a8_fail_json = out_dir / "a8_fail.json"
@@ -320,8 +586,6 @@ def main() -> int:
             report_path.write_text(json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8")
             print(json.dumps({"output_dir": str(out_dir), "report": str(report_path), "results": single_results}, indent=2, ensure_ascii=False))
             return 0
-
-        is_admin = _is_admin()
 
         if args.skip_a1:
             if a1_out.exists() and a1_out.suffix.lower() == ".ffpfsc":
@@ -387,7 +651,89 @@ def main() -> int:
         else:
             results["A6_ffpkg_to_ffpfsc"] = "SKIPPED_NO_FFPKG"
 
-        results["A7_fakelib_manager"] = "MANUAL_REQUIRED"
+        a7_source = a2_out if (ok_a2 and a2_out.exists()) else existing_a7_source
+        if a7_source is not None:
+            a7_state: dict[str, Path] = {}
+
+            def _run_full_a7() -> bool:
+                ok, actual_out, verify_dir = _run_a7_automation(app, a7_source, fakelib_src, out_dir)
+                a7_state["actual_out"] = actual_out
+                a7_state["verify_dir"] = verify_dir
+                return ok
+
+            _prep()
+            _run_task("A7_fakelib_manager", _run_full_a7, results, logs, _task_log)
+            if "actual_out" in a7_state:
+                a7_out = a7_state["actual_out"]
+            if "verify_dir" in a7_state:
+                a7_verify_dir = a7_state["verify_dir"]
+
+            a7_files_state: dict[str, Path | str] = {}
+
+            def _run_full_a7_files_add() -> bool:
+                ok, actual_out, verify_dir, marker_name = _run_a7_files_add_automation(app, a7_source, out_dir)
+                a7_files_state["actual_out"] = actual_out
+                a7_files_state["verify_dir"] = verify_dir
+                a7_files_state["marker_name"] = marker_name
+                return ok
+
+            _prep()
+            _run_task("A7_files_add", _run_full_a7_files_add, results, logs, _task_log)
+            if "actual_out" in a7_files_state:
+                a7_files_add_out = a7_files_state["actual_out"]  # type: ignore[assignment]
+            if "verify_dir" in a7_files_state:
+                a7_files_add_verify_dir = a7_files_state["verify_dir"]  # type: ignore[assignment]
+            if "marker_name" in a7_files_state:
+                a7_files_add_marker_name = str(a7_files_state["marker_name"])
+
+            a7_remove_state: dict[str, Path | str] = {}
+
+            def _run_full_a7_files_remove() -> bool:
+                ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, a7_source, out_dir)
+                a7_remove_state["actual_out"] = actual_out
+                a7_remove_state["verify_dir"] = verify_dir
+                a7_remove_state["marker_name"] = marker_name
+                return ok
+
+            _prep()
+            _run_task("A7_files_remove", _run_full_a7_files_remove, results, logs, _task_log)
+            if "actual_out" in a7_remove_state:
+                a7_files_remove_out = a7_remove_state["actual_out"]  # type: ignore[assignment]
+            if "verify_dir" in a7_remove_state:
+                a7_files_remove_verify_dir = a7_remove_state["verify_dir"]  # type: ignore[assignment]
+            if "marker_name" in a7_remove_state:
+                a7_files_remove_marker_name = str(a7_remove_state["marker_name"])
+
+        else:
+            results["A7_fakelib_manager"] = "SKIPPED_DEPENDS_ON_A2_OR_EXISTING_EXFAT"
+            results["A7_files_add"] = "SKIPPED_DEPENDS_ON_A2_OR_EXISTING_EXFAT"
+            results["A7_files_remove"] = "SKIPPED_DEPENDS_ON_A2_OR_EXISTING_EXFAT"
+
+        if ffpkg_path and ffpkg_path.is_file() and is_admin:
+            a7_ffpkg_state: dict[str, Path] = {}
+
+            def _run_full_a7_ffpkg() -> bool:
+                ok, actual_out, verify_dir = _run_a7_automation(
+                    app,
+                    ffpkg_path,
+                    fakelib_src,
+                    out_dir,
+                    output_subdir="A7_ffpkg_output",
+                    verify_subdir="_a7_verify_ffpkg",
+                    verify_log_prefix="A7 .ffpkg verifiziert",
+                )
+                a7_ffpkg_state["actual_out"] = actual_out
+                a7_ffpkg_state["verify_dir"] = verify_dir
+                return ok
+
+            _prep()
+            _run_task("A7_ffpkg_fakelib_manager", _run_full_a7_ffpkg, results, logs, _task_log)
+            if "actual_out" in a7_ffpkg_state:
+                a7_ffpkg_out = a7_ffpkg_state["actual_out"]
+            if "verify_dir" in a7_ffpkg_state:
+                a7_ffpkg_verify_dir = a7_ffpkg_state["verify_dir"]
+        elif ffpkg_path and ffpkg_path.is_file():
+            results["A7_ffpkg_fakelib_manager"] = "SKIPPED_NEEDS_ADMIN"
 
         a8_ok_json = out_dir / "a8_ok.json"
         a8_fail_json = out_dir / "a8_fail.json"
@@ -447,6 +793,16 @@ def main() -> int:
         "A5_has_param_json": (a5_out / "sce_sys" / "param.json").exists(),
         "A6_exists": a6_out.exists(),
         "A6_size_gt_0": a6_out.exists() and a6_out.stat().st_size > 0,
+        "A7_exists": a7_out.exists(),
+        "A7_size_gt_0": a7_out.exists() and a7_out.stat().st_size > 0,
+        "A7_has_fakelib_ampr": (a7_verify_dir / "fakelib" / "libSceAmpr.sprx").exists(),
+        "A7_has_ampr_index": (a7_verify_dir / "ampr_emu.index").exists(),
+        "A7_files_add_exists": a7_files_add_out.exists(),
+        "A7_files_add_size_gt_0": a7_files_add_out.exists() and a7_files_add_out.stat().st_size > 0,
+        "A7_files_add_marker": (a7_files_add_verify_dir / a7_files_add_marker_name).exists(),
+        "A7_files_remove_exists": a7_files_remove_out.exists(),
+        "A7_files_remove_size_gt_0": a7_files_remove_out.exists() and a7_files_remove_out.stat().st_size > 0,
+        "A7_files_remove_marker_absent": not (a7_files_remove_verify_dir / a7_files_remove_marker_name).exists(),
     }
 
     report = {
@@ -459,6 +815,12 @@ def main() -> int:
             "A4": str(a4_out),
             "A5": str(a5_out),
             "A6": str(a6_out),
+            "A7": str(a7_out),
+            "A7_verify": str(a7_verify_dir),
+            "A7_files_add": str(a7_files_add_out),
+            "A7_files_add_verify": str(a7_files_add_verify_dir),
+            "A7_files_remove": str(a7_files_remove_out),
+            "A7_files_remove_verify": str(a7_files_remove_verify_dir),
             "A8_OK": str(out_dir / "a8_ok.json"),
             "A8_FAIL": str(out_dir / "a8_fail.json"),
         },

@@ -40,15 +40,17 @@ Die EXE kann per Doppelklick oder ueber das Build-Ergebnis gestartet werden.
 4. `ffpfsc` -> Game Dump Ordner
 5. `exFAT` -> Game Dump Ordner
 6. `ffpkg` -> `ffpfsc`
-7. `fakelib` verwalten
+7. `fakelib` verwalten (`Dump-Ordner`, `ffpfsc`, `exFAT` oder `ffpkg` als Quelle)
 8. Dump Validator
 
 ## Wichtige Hinweise
 
 - Aufgaben 1, 2, 4 und 5 koennen Administratorrechte benoetigen.
+- Aufgabe 7 mit `ffpkg`-Quelle benoetigt in der Regel ebenfalls Administratorrechte, weil die Extraktion ueber UFS2Tool/Dokan laeuft.
 - Wenn Windows eine UAC-Abfrage zeigt, mit Ja bestaetigen.
 - Bei exFAT-Aufgaben muss OSFMount installiert und nutzbar sein.
 - Der Dump Validator prueft, ob ein Dump vollstaendig und plausibel ist.
+- Bei Aufgabe 7 mit `ffpkg`-Quelle wird das bearbeitete Ergebnis als `ffpfsc` ausgegeben, da kein `ffpkg`-Schreibpfad vorhanden ist.
 
 ## Hilfsmenu Ressourcen
 
@@ -82,6 +84,25 @@ Bereits installierte Tools werden nicht erneut installiert.
 2. Dump-Ordner waehlen
 3. Start klicken
 4. Bericht lesen
+
+### `ffpkg` in Aufgabe 7 bearbeiten
+
+1. Aufgabe 7 waehlen
+2. Eine `ffpkg`-Datei als Quelle waehlen
+3. Falls noetig UAC/Admin-Rechte bestaetigen
+4. `fakelib` oder Root-Dateien bearbeiten
+5. Das Ergebnis als `ffpfsc` im Zielordner uebernehmen
+
+### Gezielte Admin-Tests starten
+
+- Fuer einzelne Aufgaben mit Admin-Rechten kann `Run_Tasks_1_8_Admin.ps1` direkt mit `-Task` genutzt werden.
+- Beispiel Aufgabe 7 mit `ffpkg`:
+
+```powershell
+.\Run_Tasks_1_8_Admin.ps1 -Task A7 -Dump .\Diverses\_dummy_inputs\DummyDump -Ffpkg ".\PPSA16709 Asterix Obelix Heroes (01.000.000).ffpkg" -OutputDir .\_e2e_output_a7_ffpkg_admin_live_20260707
+```
+
+- Der Komfortstarter `Run_A7_FFPKG_Admin.ps1` ruft denselben Pfad mit sinnvollen Standardwerten auf.
 
 ## Speicherorte
 

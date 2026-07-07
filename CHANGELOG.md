@@ -4,6 +4,14 @@ Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokument
 
 ## [Aktueller Stand] - 2026-07-07
 
+### Aufgabe 7 / .ffpkg / Admin-Runner
+- Aufgabe 7 akzeptiert jetzt auch `.ffpkg` als Quelle in Auswahl, Validierung und Workflow.
+- `.ffpkg`-Quellen werden fuer fakelib-/Root-Aenderungen ueber den vorhandenen UFS2Tool-/Dokan-Pfad extrahiert und danach bewusst als `.ffpfsc` neu verpackt, weil kein `.ffpkg`-Schreibpfad vorhanden ist.
+- Die GUI weist fuer Aufgabe 7 sichtbar darauf hin, dass `.ffpkg`-Eingaben als `.ffpfsc` ausgegeben werden.
+- Der E2E-Runner deckt jetzt zusaetzlich `A7_ffpkg_fakelib_manager` ab und verifiziert je nach Ausgabeformat sowohl `.exfat`- als auch `.ffpfsc`-Artefakte korrekt.
+- `Run_Tasks_1_8_Admin.ps1` unterstuetzt jetzt gezielte erhoehte Einzellaeufe ueber `-Task`; fuer Aufgabe 7 mit `.ffpkg` ist zudem ein Komfortstarter vorhanden.
+- Frische Admin-Verifikation bestaetigt `A7_fakelib_manager`, `A7_files_add`, `A7_files_remove` und `A7_ffpkg_fakelib_manager` jeweils als PASS.
+
 ### Aufgabe 1 / Fortschritt / Resume
 - Frischen Neustart nach abgebrochenem `mkpfs pack file` gehaertet: die App wartet vor dem Neuversuch auf auslaufende Hintergrundarbeit und entfernt verwaiste Zielartefakte.
 - Kompressionsfortschritt bleibt im korrekten Schritt-2-Bereich statt in spaetere Phasen zu rutschen.

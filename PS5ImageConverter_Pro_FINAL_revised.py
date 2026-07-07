@@ -124,6 +124,12 @@ WINDOW_MIN_HEIGHT = 700
 WINDOW_WIDTH = 1366
 WINDOW_HEIGHT = 820
 
+
+def _center_window_coords(screen_w: int, screen_h: int, window_w: int, window_h: int) -> tuple[int, int]:
+    """Berechnet robuste Bildschirmkoordinaten fuer eine zentrierte Fensterposition."""
+
+    return max((screen_w - window_w) // 2, 0), max((screen_h - window_h) // 2, 0)
+
 # Fallbacks fuer optional eingebettete Ressourcen/Runtime-Tuning.
 # Falls spaeter im Modul echte Werte gesetzt werden, ueberschreiben diese
 # die Defaults automatisch.
@@ -384,9 +390,9 @@ class ProgressEngine:
         self._task_t0 = time.monotonic()
         self._eta_seconds = None
         self._status_text = f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {task_name}"
-        # Neuer Task muss einen alten Lauf hart ├╝berschreiben.
+        # Neuer Task muss einen alten Lauf hart ueberschreiben.
         # Sonst kann ein Resume-/Abbruch-Restwert (z. B. 93%) in den
-        # n├ñchsten Task hineinragen und ETA/Status verf├ñlschen.
+        # naechsten Task hineinragen und ETA/Status verfaelschen.
         self._raw_progress = task_start
         self._displayed = task_start
 
@@ -394,13 +400,12 @@ class ProgressEngine:
         """Beginnt die Vorbereitungs-Phase (5 %).
 
         Args:
-            description: Kurze Beschreibung f├╝r das Status-Feedback.
+            description: Kurze Beschreibung fuer das Status-Feedback.
         """
         self._phase = "prepare"
         self._status_text = (
             f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
         )
-        # Ziel: Aufgaben-Start + 5 % der Aufgaben-Breite
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
         self._advance_raw(target)
 
@@ -410,13 +415,7 @@ class ProgressEngine:
         description: str = "Verarbeite...",
         unit_label: str = "Bytes",
     ) -> None:
-        """Beginnt die Payload-Phase (90 %) mit Byte-/Datei-basiertem Fortschritt.
-
-        Args:
-            total_units:  Gesamtanzahl der zu verarbeitenden Einheiten (Bytes oder Dateien).
-            description:  Kurze Beschreibung f├╝r das Status-Feedback.
-            unit_label:   Einheiten-Bezeichnung f├╝r das Status-Feedback (z.B. "Bytes", "Dateien").
-        """
+        """Beginnt die Payload-Phase (90 %) mit Byte-/Datei-basiertem Fortschritt."""
         self._phase = "payload"
         self._payload_done = 0.0
         self._payload_total = max(1.0, total_units)
@@ -426,60 +425,41 @@ class ProgressEngine:
             f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description} "
             f"[0/{self._fmt_units(self._payload_total, unit_label)}]"
         )
-        # Ziel: Aufgaben-Start + 5 % (Ende Vorbereitung)
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
         self._advance_raw(target)
 
     def update_payload(self, done_units: float) -> None:
-        """Aktualisiert den Payload-Fortschritt (Byte-basiert).
-
-        Args:
-            done_units: Bisher verarbeitete Einheiten (absolut, nicht inkrementell).
-        """
+        """Aktualisiert den Payload-Fortschritt (Byte-basiert)."""
         if self._phase != "payload":
             return
         self._payload_done = min(done_units, self._payload_total)
-        frac = self._payload_done / self._payload_total  # 0.0 ÔÇô 1.0
-        # Mapping: 5 % ÔÇô 95 % der Aufgaben-Breite (Safety-Limit: max 95 % der Phase)
+        frac = self._payload_done / self._payload_total
         payload_start = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
-        payload_end   = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
-        # Safety: maximal 95 % der Payload-Phase w├ñhrend Verarbeitung
+        payload_end = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
         safe_end = payload_start + (payload_end - payload_start) * 0.95
         target = payload_start + frac * (safe_end - payload_start)
         self._advance_raw(target)
-        # Status-Text aktualisieren
         label = getattr(self, "_unit_label", "Einheiten")
-        desc  = getattr(self, "_payload_desc", "Verarbeite...")
+        desc = getattr(self, "_payload_desc", "Verarbeite...")
         self._status_text = (
             f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {desc} "
             f"[{self._fmt_units(self._payload_done, label)}/{self._fmt_units(self._payload_total, label)}]"
         )
 
     def begin_validate(self, description: str = "Validierung...") -> None:
-        """Beginnt die Validierungs-Phase (5 %).
-
-        Args:
-            description: Kurze Beschreibung f├╝r das Status-Feedback.
-        """
+        """Beginnt die Validierungs-Phase (5 %)."""
         self._phase = "validate"
         self._status_text = (
             f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
         )
-        # Ziel: Aufgaben-Start + 95 % der Aufgaben-Breite (Safety-Plateau)
         payload_end = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
         self._advance_raw(payload_end)
 
     def commit_task(self) -> None:
-        """Bestaetigt den Dateisystem-Commit und hebt das Safety-Plateau auf.
-
-        Darf erst aufgerufen werden nachdem der letzte Flush/Commit
-        vom Dateisystem bestaetigt wurde (z.B. nach Dismount-Erfolg).
-        Setzt den Fortschritt auf das Ende der aktuellen Aufgabe.
-        """
+        """Bestaetigt den Dateisystem-Commit und hebt das Safety-Plateau auf."""
         self._committed = True
         self._phase = "done"
         task_end = self._task_start() + self.TASK_WEIGHT
-        # Safety-Limit: maximal 95 % des Gesamtbalkens w├ñhrend Commit
         safe_global = min(task_end, self.SAFETY_LIMIT)
         self._advance_raw(safe_global)
         self._status_text = (
@@ -487,30 +467,18 @@ class ProgressEngine:
         )
 
     def finish_task(self) -> None:
-        """Schliesst die aktuelle Aufgabe ab (Alias f├╝r commit_task).
-
-        Bestaetigt den Abschluss der Aufgabe und setzt den Fortschritt
-        auf das Ende der aktuellen Aufgabe. Identisch mit commit_task().
-        """
+        """Schliesst die aktuelle Aufgabe ab (Alias fuer commit_task)."""
         self.commit_task()
 
     def finish_all(self) -> None:
-        """Setzt den Fortschritt auf 100 % (nur nach vollst├ñndiger AbschlussPr├╝fung).
-
-        Darf ausschliesslich von _finish_success() aufgerufen werden.
-        """
+        """Setzt den Fortschritt auf 100 % (nur nach vollstaendigem Abschluss)."""
         self._raw_progress = 100.0
-        self._displayed    = 100.0
+        self._displayed = 100.0
         self._phase = "done"
         self._status_text = "Abgeschlossen."
 
     def update_external_progress(self, progress_pct: float) -> None:
-        """Synchronisiert extern gemessenen Fortschritt (0-100) in die Engine.
-
-        Wird genutzt fuer Aufgabenpfade, die task_progress direkt setzen,
-        damit die ETA-Berechnung trotzdem konsistent fuer alle 8 Aufgaben
-        verfuegbar bleibt.
-        """
+        """Synchronisiert extern gemessenen Fortschritt (0-100) in die Engine."""
         self._advance_raw(progress_pct)
 
     def tick(self) -> tuple[float, str]:
@@ -1716,6 +1684,47 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Checkpoint konnte nicht entfernt werden: %s", exc)
 
+    def _checkpoint_stage_label(self, stage_key: str) -> str:
+        """Liefert eine menschenlesbare Beschreibung für bekannte Checkpoint-Stages."""
+        stage_map = {
+            "task_launch": "Start vorbereitet",
+            "running": "Lauf aktiv",
+            "engine_thread_start": "Engine gestartet",
+            "pack_folder_prepare": "Aufgabe 1: Vorbereitung (alt)",
+            "pack_folder_step1": "Aufgabe 1: Schritt 1 (alt: Ordner -> exFAT)",
+            "pack_folder_step2": "Aufgabe 1: Schritt 2 (alt: exFAT -> ffpfsc)",
+            "pack_folder_native_prepare": "Aufgabe 1: nativer MkPFS-Start vorbereitet",
+            "pack_folder_native_running": "Aufgabe 1: nativer MkPFS-One-Pass läuft",
+            "pack_file_start": "Aufgabe 3: Start",
+            "pack_file_running": "Aufgabe 3: MkPFS pack file läuft",
+            "task2_start": "Aufgabe 2: Start",
+            "task2_step1_running": "Aufgabe 2: Schritt 1 läuft (Container entpacken)",
+            "task2_step1_done": "Aufgabe 2: Schritt 1 fertig",
+            "task2_step2_done": "Aufgabe 2: Schritt 2 fertig (Game-Dump extrahiert)",
+            "completed": "Abgeschlossen",
+            "verification_failed": "Verifizierung fehlgeschlagen",
+            "mode_failed": "Modus fehlgeschlagen",
+            "aborted": "Abgebrochen",
+            "exception": "Ausnahmefehler",
+        }
+        key = str(stage_key or "").strip()
+        return stage_map.get(key, key or "-")
+
+    def _checkpoint_supports_resume(self, mode: str, checkpoint: dict[str, Any] | None) -> bool:
+        """Prüft, ob ein gespeicherter Checkpoint für den Modus real fortsetzbar ist."""
+        if not isinstance(checkpoint, dict):
+            return False
+        if mode == "unpack_to_exfat":
+            tmp_dir = str(checkpoint.get("tmp_dir", "") or "").strip()
+            stage = str(checkpoint.get("stage", "") or "").strip()
+            return bool(tmp_dir and os.path.isdir(tmp_dir) and stage in {
+                "task2_start",
+                "task2_step1_running",
+                "task2_step1_done",
+                "task2_step2_done",
+            })
+        return False
+
     def _release_test_status_file_path(self) -> str:
         """Pfad zur letzten Release-Test-Statusdatei im App-Konfigurationsordner."""
         cfg = self._get_config_path()
@@ -1843,7 +1852,7 @@ class PS5ConverterGUI:
             except Exception as exc:
                 warnings.append(f"Zielspeicher konnte nicht geprüft werden: {exc}")
 
-        if mode in ("pack_folder", "unpack_to_exfat", "exfat_to_folder"):
+        if mode in ("unpack_to_exfat", "exfat_to_folder"):
             osf = self._find_osfmount()
             if not osf:
                 warnings.append("OSFMount nicht gefunden: Fallbacks/Teilschritte können langsamer oder unmöglich sein.")
@@ -2691,6 +2700,7 @@ class PS5ConverterGUI:
                     or (os.path.isfile(src_val) and (
                         src_val.lower().endswith(".ffpfsc")
                         or src_val.lower().endswith(".exfat")
+                        or src_val.lower().endswith(".ffpkg")
                     ))
                 ):
                     src_ok = True
@@ -2715,6 +2725,10 @@ class PS5ConverterGUI:
         if mode == "ffpkg_to_ffpfsc" and hasattr(self, "status_label"):
             self.status_label.config(
                 text="Aufgabe 6: .ffpkg Datei waehlen und Start druecken."
+            )
+        elif mode == "fakelib_manager" and hasattr(self, "status_label"):
+            self.status_label.config(
+                text="Aufgabe 7: Dump-Ordner oder .ffpfsc/.exfat/.ffpkg waehlen. .ffpkg wird als .ffpfsc ausgegeben."
             )
         # Trigger Metadaten-Check
         self._on_source_path_changed()
@@ -3421,7 +3435,7 @@ class PS5ConverterGUI:
           Aufgabe 4 (unpack_to_game_folder)→ .ffpfsc Datei (von Aufgabe 1 oder 3)
           Aufgabe 5 (exfat_to_folder)      → .exfat Datei (von Aufgabe 2)
           Aufgabe 6 (ffpkg_to_ffpfsc)     → .ffpkg Datei
-          Aufgabe 7 (fakelib_manager)      → Dump-Ordner, .ffpfsc oder .exfat (von Aufgabe 1–6)
+          Aufgabe 7 (fakelib_manager)      → Dump-Ordner, .ffpfsc, .exfat oder .ffpkg (von Aufgabe 1–6)
           Aufgabe 8 (dump_validator)       → Dump-Ordner, .ffpfsc/.ffpfs, .exfat oder .ffpkg (von Aufgabe 1–7)
         """
         mode = self.current_mode.get()
@@ -3471,12 +3485,12 @@ class PS5ConverterGUI:
                     ],
                 )
         elif mode == "fakelib_manager":
-            # Aufgabe 7: Ordner, .exfat oder .ffpfsc – Benutzer wählt zuerst den Typ
+            # Aufgabe 7: Ordner, .exfat, .ffpfsc oder .ffpkg – Benutzer wählt zuerst den Typ
             choice = messagebox.askquestion(
                 "Quellentyp wählen",
                 "Soll ein Game Dump Ordner ausgewählt werden?\n\n"
                 "JA  → Game Dump Ordner\n"
-                "NEIN → .ffpfsc oder .exfat Datei",
+                "NEIN → .ffpfsc, .exfat oder .ffpkg Datei",
                 parent=self.root,
             )
             if choice == "yes":
@@ -3486,12 +3500,13 @@ class PS5ConverterGUI:
                 )
             else:
                 path = filedialog.askopenfilename(
-                    title=".FFPFSC oder .ExFat Datei auswählen",
+                    title=".FFPFSC, .ExFat oder .FFPKG Datei auswählen",
                     initialdir=initial_dir,
                     filetypes=[
-                        ("PS5 Image", "*.ffpfsc *.exfat"),
+                        ("PS5 Image", "*.ffpfsc *.exfat *.ffpkg"),
                         ("FFPFSC Image", "*.ffpfsc"),
                         ("ExFAT Image", "*.exfat"),
+                        ("FFPKG Package", "*.ffpkg"),
                         ("Alle Dateien", "*.*"),
                     ],
                 )
@@ -3651,12 +3666,12 @@ class PS5ConverterGUI:
                     f"{os.path.basename(path)}"
                 )
         elif mode == "fakelib_manager":
-            # Akzeptiert: Ordner (Game Dump), .ffpfsc oder .exfat
+            # Akzeptiert: Ordner (Game Dump), .ffpfsc, .exfat oder .ffpkg
             if os.path.isdir(path):
                 pass  # Ordner ist immer gültig
             elif os.path.isfile(path):
                 ext = path.lower()
-                if not (ext.endswith(".ffpfsc") or ext.endswith(".exfat")):
+                if not (ext.endswith(".ffpfsc") or ext.endswith(".exfat") or ext.endswith(".ffpkg")):
                     return (
                         "Aufgabe 7 (fakelib Manager) akzeptiert:\n"
                         "  \u2022 Game Dump Ordner\n"
@@ -3926,6 +3941,7 @@ class PS5ConverterGUI:
                 src_valid = (
                     src.lower().endswith(".ffpfsc")
                     or src.lower().endswith(".exfat")
+                    or src.lower().endswith(".ffpkg")
                 )
             elif mode == "dump_validator":
                 src_valid = (
@@ -7663,35 +7679,21 @@ class PS5ConverterGUI:
                 ts = str(resume_cp.get("updated", "")).strip()
                 pct = float(resume_cp.get("task_progress", 0.0) or 0.0)
                 stage_key = str(resume_cp.get("stage", "")).strip()
-                stage_map = {
-                    "task_launch": "Start vorbereitet",
-                    "running": "Lauf aktiv",
-                    "engine_thread_start": "Engine gestartet",
-                    "pack_folder_prepare": "Aufgabe 1: Vorbereitung",
-                    "pack_folder_step1": "Aufgabe 1: Schritt 1 (Ordner -> exFAT)",
-                    "pack_folder_step2": "Aufgabe 1: Schritt 2 (exFAT -> ffpfsc)",
-                    "task2_start": "Aufgabe 2: Start",
-                    "task2_step1_running": "Aufgabe 2: Schritt 1 laeuft (Container entpacken)",
-                    "task2_step1_done": "Aufgabe 2: Schritt 1 fertig",
-                    "task2_step2_done": "Aufgabe 2: Schritt 2 fertig (Game-Dump extrahiert)",
-                    "completed": "Abgeschlossen",
-                    "verification_failed": "Verifizierung fehlgeschlagen",
-                    "mode_failed": "Modus fehlgeschlagen",
-                    "aborted": "Abgebrochen",
-                    "exception": "Ausnahmefehler",
-                }
-                stage_human = stage_map.get(stage_key, stage_key or "-")
-                do_resume = messagebox.askyesno(
-                    "Wiederaufnahme gefunden",
-                    "Es wurde ein unterbrochener Lauf gefunden.\n\n"
-                    f"Status: {state}\n"
-                    f"Stage: {stage_human}\n"
-                    f"Letzter Stand: {pct:.1f}%\n"
-                    f"Zeitpunkt: {ts or '-'}\n\n"
-                    "Soll versucht werden, den Lauf wieder aufzunehmen?",
-                )
-                if do_resume:
-                    self._active_resume_checkpoint = resume_cp
+                stage_human = self._checkpoint_stage_label(stage_key)
+                if self._checkpoint_supports_resume(mode, resume_cp):
+                    do_resume = messagebox.askyesno(
+                        "Wiederaufnahme gefunden",
+                        "Es wurde ein unterbrochener Lauf gefunden.\n\n"
+                        f"Status: {state}\n"
+                        f"Stage: {stage_human}\n"
+                        f"Letzter Stand: {pct:.1f}%\n"
+                        f"Zeitpunkt: {ts or '-'}\n\n"
+                        "Soll versucht werden, den Lauf wieder aufzunehmen?",
+                    )
+                    if do_resume:
+                        self._active_resume_checkpoint = resume_cp
+                else:
+                    self._clear_runtime_checkpoint(mode=mode, src=src, dst=ck_dst)
 
         # Zielpfad validieren nur für Modi mit echter Ausgabe.
         if mode not in ("inspect", "dump_validator"):
@@ -8196,11 +8198,11 @@ class PS5ConverterGUI:
         # ------------------------------------------------------------------
         target = self.task_progress
         disp   = self.task_displayed
-        
+
         # Begrenze task_progress auf 0-99.9 (100% nur nach vollständiger AbschlussPrüfung)
         target = max(0.0, min(target, 99.9))
         self.task_progress = target
-        
+
         if target > disp:
             gap = target - disp
             if gap > 0.05:
@@ -8284,7 +8286,7 @@ class PS5ConverterGUI:
             new_size = f"{src_str} | Verbleibend: {remaining_str}"
         else:
             new_size = ""
-        
+
         # ETA nur anzeigen wenn ein echter Schritt aktiv ist (nicht in langer Phase-1-Analyse),
         # und die sichtbare ETA monoton fallend halten.
         if pe is not None:
@@ -8436,8 +8438,8 @@ class PS5ConverterGUI:
         Wird vor dem Start der Engine ausgeführt, damit typische Laufzeitabbrüche
         wie ``ModuleNotFoundError: zlib_ng`` gar nicht erst auftreten.
 
-        Returns:gerne
-        
+        Returns:
+
             True wenn alle benötigten Module verfügbar sind, sonst False.
         """
         if getattr(self, "_mkpfs_runtime_deps_ok", False):
@@ -8840,7 +8842,8 @@ class PS5ConverterGUI:
             import shutil as _shutil
             return _shutil.which('filezilla.exe') or _shutil.which('filezilla')
         except Exception:
-            return None
+                        "  • .exfat Datei\n"
+                        "  • .ffpkg Datei (Ausgabe erfolgt als .ffpfsc)\n\n"
 
     def _build_filezilla_quickconnect_url(self) -> str | None:
         """Erzeugt eine FileZilla-Quick-Connect-URL aus gespeicherten Einstellungen."""
@@ -10310,7 +10313,6 @@ class PS5ConverterGUI:
 
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
-        has_resume_exfat = bool(cp_temp_exfat and os.path.isfile(cp_temp_exfat))
 
         _last_phase1_log = [0.0]
         _phase1_start = 1.5
@@ -10348,27 +10350,21 @@ class PS5ConverterGUI:
                 )
                 _last_phase1_log[0] = now
 
-        if has_resume_exfat:
-            try:
-                self.task_total_source_bytes = os.path.getsize(cp_temp_exfat)
-            except Exception:
-                self.task_total_source_bytes = 0
+        if cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             self._append_to_log(
-                f"[RESUME] Analyse uebersprungen, vorhandenes Zwischen-Image wird genutzt: {cp_temp_exfat}\n"
+                f"[INFO] Alter Resume-Zwischenstand erkannt, wird fuer Aufgabe 1 ignoriert: {cp_temp_exfat}\n"
             )
-            _set_pct(_P1_END)
-            _set_status("Phase 1/4 – Vorbereitung (Resume) abgeschlossen.")
-        else:
-            self.task_total_source_bytes = self._get_path_size(
-                src,
-                progress_cb=_phase1_scan_ping,
-                cancel_check=lambda: not self.is_running,
-            )
-            if not self.is_running:
-                return False
-            _set_pct(3.0)
-            _set_pct(_P1_END)
-            _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
+
+        self.task_total_source_bytes = self._get_path_size(
+            src,
+            progress_cb=_phase1_scan_ping,
+            cancel_check=lambda: not self.is_running,
+        )
+        if not self.is_running:
+            return False
+        _set_pct(3.0)
+        _set_pct(_P1_END)
+        _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
 
         if not self.is_running:
             return False
@@ -10387,34 +10383,14 @@ class PS5ConverterGUI:
         p1_end: float, p2_end: float, p3_end: float,
         set_pct, set_status,
     ) -> bool:
-        """Aufgabe 1 via vendertem MkPFS exFAT-Writer.
+        """Aufgabe 1 via nativer MkPFS-0.0.9 pack-folder-Logik.
 
-        Schritt 1: Game Dump Ordner -> exFAT-Image (vendorter MkPFS-Writer)
-        Schritt 2: exFAT-Image -> .ffpfsc (mkpfs pack file)
-
-        Entspricht dem vendorten MkPFS-Workflow.
+        MkPFS packt standardmaessig Ordner direkt als exFAT-wrapped .ffpfsc in
+        einem Durchlauf. Das vermeidet das fruehere temp-.exfat-Zwischenartefakt
+        und entspricht dem Default-Verhalten der vendorten CLI.
         """
-        tmp_dir: str | None = None
-        temp_exfat = ""
-        cleanup_tmp = True
-        step1_ok = False
-
-        # Resume-Pfad: vorhandenes Zwischen-Image aus Checkpoint verwenden.
         cp = getattr(self, "_active_resume_checkpoint", None)
-        cp_tmp_dir = str(cp.get("tmp_dir", "")).strip() if isinstance(cp, dict) else ""
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
-        resume_step2 = False
-        if cp_tmp_dir and cp_temp_exfat and os.path.isfile(cp_temp_exfat):
-            tmp_dir = cp_tmp_dir
-            temp_exfat = cp_temp_exfat
-            resume_step2 = True
-            self._append_to_log(
-                f"[RESUME] Verwende vorhandenes Zwischen-Image: {temp_exfat}\n"
-            )
-            step1_ok = True
-        else:
-            tmp_dir = self._mkdtemp(prefix="ps5conv_pack_")
-            temp_exfat = os.path.join(tmp_dir, os.path.basename(os.path.normpath(src)) + ".exfat")
 
         self._save_runtime_checkpoint(
             mode="pack_folder",
@@ -10422,137 +10398,90 @@ class PS5ConverterGUI:
             dst=dst,
             state="in_progress",
             extra={
-                "stage": "pack_folder_prepare",
-                "tmp_dir": tmp_dir,
-                "temp_exfat": temp_exfat,
+                "stage": "pack_folder_native_prepare",
+                "tmp_dir": "",
+                "temp_exfat": "",
             },
         )
-        try:
-            # ----------------------------------------------------------------
-            # PHASE 2 – Schritt 1: Game Dump Ordner -> exFAT-Image
-            # Methode: vendorter MkPFS-Writer
-            # ----------------------------------------------------------------
-            set_status("Phase 2/4 – exFAT-Image erstellen (Schritt 1/2)...")
+
+        # eboot.bin Pruefung analog zum MkPFS-exFAT-Wrapping-Preflight.
+        eboot_path = os.path.join(src, "eboot.bin")
+        if not os.path.isfile(eboot_path):
             self._append_to_log(
-                ">>> Schritt 1 / 2: Game Dump Ordner -> exFAT-Image (vendorter MkPFS-Writer)...\n"
-                "[Info] Methode: vendorter MkPFS-Writer\n"
+                "[FEHLER] eboot.bin nicht im Quellordner gefunden.\n"
+                f"[FEHLER] Gesucht: {eboot_path}\n"
+                "[FEHLER] Der Game-Dump muss eboot.bin im Root-Verzeichnis enthalten.\n"
             )
-            self.task_num_steps = 2
-            self.task_step_ends = [p2_end, p3_end]
-            self.task_current_step = 0
+            return False
 
-            # eboot.bin Pruefung (MkPFS exFAT-Writer Voraussetzung)
-            eboot_path = os.path.join(src, "eboot.bin")
-            if not os.path.isfile(eboot_path):
-                self._append_to_log(
-                    "[FEHLER] eboot.bin nicht im Quellordner gefunden.\n"
-                    f"[FEHLER] Gesucht: {eboot_path}\n"
-                    "[FEHLER] Der Game-Dump muss eboot.bin im Root-Verzeichnis enthalten.\n"
-                )
-                return False
-
-            if not step1_ok:
-                self._save_runtime_checkpoint(
-                    mode="pack_folder",
-                    src=src,
-                    dst=dst,
-                    state="in_progress",
-                    extra={
-                        "stage": "pack_folder_step1",
-                        "tmp_dir": tmp_dir,
-                        "temp_exfat": temp_exfat,
-                    },
-                )
-                step1_ok = self._create_exfat_from_folder(
-                    src_dir=src,
-                    out_file=temp_exfat,
-                    pct_start=p1_end,
-                    pct_end=p2_end,
-                )
-            if not step1_ok or not self.is_running:
-                # Für Resume Temp-Daten behalten, wenn ein Zwischenstand existiert.
-                if os.path.isfile(temp_exfat):
-                    cleanup_tmp = False
-                    self._append_to_log(
-                        f"[INFO] Zwischenstand für Resume erhalten: {temp_exfat}\n"
-                    )
-                return False
-            # Bei Resume von Schritt 2 nicht den alten Checkpoint-Fortschritt
-            # weiterverwenden. Der neue Pack-Lauf startet sichtbar am echten
-            # Schritt-2-Beginn (nach fertig erstelltem exFAT-Zwischenimage).
-            self.task_progress = p2_end
-            self.task_displayed = p2_end
-            set_status("Phase 2/4 – exFAT-Image erstellt.")
-            self._save_runtime_checkpoint(
-                mode="pack_folder",
-                src=src,
-                dst=dst,
-                state="in_progress",
-                extra={
-                    "stage": "pack_folder_step2",
-                    "tmp_dir": tmp_dir,
-                    "temp_exfat": temp_exfat,
-                },
-            )
-
-            # ----------------------------------------------------------------
-            # PHASE 3 – Schritt 2: exFAT-Image -> .ffpfsc
-            # Methode: mkpfs pack file (vendorter MkPFS-Writer)
-            # Parameter: --version PS5 --inode-bits 32 --cpu-count N --compression-level L
-            # ----------------------------------------------------------------
-            set_status("Phase 3/4 – Komprimiere nach FFPFSC (Schritt 2/2)...")
+        if cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             self._append_to_log(
-                f"\n>>> Schritt 2 / 2: exFAT-Image -> .ffpfsc: {os.path.basename(final_output)}...\n"
-                "[Info] Methode: mkpfs pack file (vendorter MkPFS-Writer)\n"
-            )
-            self.task_current_step = 2
-            if hasattr(self, "_mkpfs_eta_initial"):
-                del self._mkpfs_eta_initial
-
-            profile = self._resolve_pack_profile("pack_folder_step2", self._get_path_size(temp_exfat))
-            self._append_to_log(
-                "[Info] Auto-Profil: {name} | Quelle: {size:.2f} GB | "
-                "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
-                    name=profile["profile"],
-                    size=profile["size_gb"],
-                    lvl=profile["level"],
-                    cpu=profile["cpu"],
-                    cores=profile["cores"],
-                    blk=profile["block_size"],
-                )
+                "[RESUME] Vorhandenes temp-.exfat wird ignoriert, da Aufgabe 1 jetzt den nativen MkPFS-One-Pass nutzt.\n"
             )
 
-            self._wait_for_pending_mkpfs_background(final_output)
-            self._cleanup_stale_mkpfs_output(final_output)
+        set_status("Phase 2+3/4 – Packe Game Dump direkt nach FFPFSC (MkPFS pack folder)...")
+        self._append_to_log(
+            ">>> Schritt 1 / 1: Game Dump Ordner -> .ffpfsc (native MkPFS exFAT wrapping)...\n"
+            "[Info] Methode: mkpfs pack folder (Default: exFAT-wrapped .ffpfsc, 1 Durchlauf)\n"
+        )
+        self.task_num_steps = 1
+        self.task_step_ends = [p3_end]
+        self.task_current_step = 0
+        if hasattr(self, "_mkpfs_eta_initial"):
+            del self._mkpfs_eta_initial
 
-            pack_ok = self._execute_mkpfs(
-                [
-                    "pack", "file",
-                    "--no-verify-structure",
-                    "--no-adjust-output-file-extension",
-                    "--version", "PS5",
-                    "--inode-bits", "32",
-                    "--cpu-count", str(profile["cpu"]),
-                    "--compression-level", str(profile["level"]),
-                    "--block-size", str(profile["block_size"]),
-                    temp_exfat, final_output,
-                ],
-                monitor_target_path=final_output,
-                monitor_source_file=temp_exfat,
-                advance_step=False,
+        profile = self._resolve_pack_profile("pack_folder", self.task_total_source_bytes)
+        self._append_to_log(
+            "[Info] Auto-Profil: {name} | Quelle: {size:.2f} GB | "
+            "Level: {lvl} | Worker-Cap: {cpu} (von {cores} Kernen) | Block: {blk}\n".format(
+                name=profile["profile"],
+                size=profile["size_gb"],
+                lvl=profile["level"],
+                cpu=profile["cpu"],
+                cores=profile["cores"],
+                blk=profile["block_size"],
             )
-            if not pack_ok or not self.is_running:
-                if os.path.isfile(temp_exfat):
-                    cleanup_tmp = False
-                return False
-            set_pct(p3_end)
-            set_status("Phase 3/4 – Kompression abgeschlossen.")
-            set_status("Phase 4/4 – Abschlussprüfung läuft...")
-            set_pct(96.0)
-            return True
-        finally:
-            if cleanup_tmp and tmp_dir:
-                shutil.rmtree(tmp_dir, ignore_errors=True)
+        )
+
+        self._wait_for_pending_mkpfs_background(final_output)
+        self._cleanup_stale_mkpfs_output(final_output)
+        self._save_runtime_checkpoint(
+            mode="pack_folder",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={
+                "stage": "pack_folder_native_running",
+                "tmp_dir": "",
+                "temp_exfat": "",
+            },
+        )
+
+        pack_ok = self._execute_mkpfs(
+            [
+                "pack", "folder",
+                "--no-verify-structure",
+                "--no-adjust-output-file-extension",
+                "--version", "PS5",
+                "--inode-bits", "32",
+                "--cpu-count", str(profile["cpu"]),
+                "--compression-level", str(profile["level"]),
+                "--block-size", str(profile["block_size"]),
+                src, final_output,
+            ],
+            monitor_target_path=final_output,
+            monitor_source_file=src,
+            advance_step=True,
+        )
+        if not pack_ok or not self.is_running:
+            return False
+
+        self._seed_preview_cache_from_source(src, final_output, "pack_folder")
+        set_pct(p3_end)
+        set_status("Phase 3/4 – MkPFS-Pack abgeschlossen.")
+        set_status("Phase 4/4 – Abschlussprüfung läuft...")
+        set_pct(96.0)
+        return True
 
     def _mode_inspect(self, src: str) -> bool:
         """Zeigt Metadaten einer .FFPFSC-Datei an.
@@ -10943,12 +10872,12 @@ class PS5ConverterGUI:
     # Aufgabe 7: fakelib Manager
     # ------------------------------------------------------------------
 
-    def _mode_fakelib_manager(self, src: str, dst: str = "") -> bool:
+    def _mode_fakelib_manager(self, src: str, dst: str = "", automation: dict[str, Any] | None = None) -> bool:
         """Verwaltet den fakelib-Ordner und Dateien im Stammverzeichnis einer
-        Game-Dump-Quelle (Ordner, .exfat oder .ffpfsc).
+        Game-Dump-Quelle (Ordner, .exfat, .ffpfsc oder .ffpkg).
 
         Ablauf:
-          1. Quelle bestimmen (Ordner / .exfat / .ffpfsc)
+          1. Quelle bestimmen (Ordner / .exfat / .ffpfsc / .ffpkg)
           2. fakelib-Ordner im Stammverzeichnis suchen
           3. Gesamten Verzeichnisinhalt (Stammverzeichnis) ermitteln
           4. Dialog mit zwei Bereichen:
@@ -10958,7 +10887,8 @@ class PS5ConverterGUI:
           5. Aktion ausführen
 
         Args:
-            src: Pfad zum Dump-Ordner, zur .exfat- oder .ffpfsc-Datei.
+            src: Pfad zum Dump-Ordner, zur .exfat-, .ffpfsc- oder .ffpkg-Datei.
+            automation: Optionaler nicht-interaktiver Aktionssatz fuer Tests.
 
         Returns:
             True bei Erfolg.
@@ -10983,7 +10913,7 @@ class PS5ConverterGUI:
         src_lower = src.lower()
         search_root: str | None = None
         tmp_extract: str | None = None
-        is_container = False  # True wenn Quelle .ffpfsc oder .exfat ist
+        is_container = False  # True wenn Quelle .ffpfsc, .exfat oder .ffpkg ist
 
         if os.path.isdir(src):
             # Dump-Ordner: 1 Schritt (Aktionen direkt, kein Repack)
@@ -11034,7 +10964,7 @@ class PS5ConverterGUI:
 
         elif src_lower.endswith(".exfat"):
             # .exfat: 4 Schritte
-            #   1: OSFMount mount+copy (0–25%)
+            #   1: native MkPFS-exFAT-Extraktion (0–25%)
             #   2: Dialog+Aktion       (25–40%)  – manuell gesetzt
             #   3: Image erstellen     (40–65%)
             #   4: Kopieren            (65–98%)
@@ -11043,138 +10973,160 @@ class PS5ConverterGUI:
             is_container = True
             tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_exfat_")
             self._append_to_log("[Info] Quelle: .exfat – lese Stammverzeichnis...\n")
-            self._set_status("Mounte .exfat...")
-            # .exfat ist ein exFAT-Dateisystem-Image – muss via OSFMount gemountet werden
-            osf_exe = self._find_osfmount()
-            if osf_exe is None:
-                self._append_to_log(
-                    "[Info] OSFMount nicht gefunden – wird automatisch installiert...\n"
-                )
-                if self._install_osfmount():
-                    osf_exe = self._find_osfmount()
-            drive_letter = self._get_free_drive_letter() if osf_exe else None
-            if osf_exe and drive_letter:
-                mount_point = f"{drive_letter}:"
-                _cf = _NO_WIN_FLAGS
-                _si = _silent_startupinfo()
-                try:
-                    ret = subprocess.run(
-                        [osf_exe, "-a", "-t", "file", "-m", mount_point, "-o", "ro", "-f", src],
-                        timeout=30, capture_output=True,
-                        creationflags=_cf, startupinfo=_si,
-                    ).returncode
-                    if ret == 0:
-                        # Aktiven Mount registrieren (für garantierten Dismount bei Abbruch/Programmende)
-                        self._active_mount_drive = drive_letter
-                        self._active_osf_exe = osf_exe
-                        # Warten bis das Dateisystem bereit ist (Retry-Schleife).
-                        # Windows liefert beim Zugriff auf ein frisch gemountetes exFAT-
-                        # Laufwerk verschiedene transiente Fehlercodes – alle werden
-                        # toleriert und fuehren zu einem erneuten Versuch.
-                        _TRANSIENT_WERRORS = {
-                            2,    # ERROR_FILE_NOT_FOUND  – Laufwerk noch nicht sichtbar
-                            3,    # ERROR_PATH_NOT_FOUND
-                            5,    # ERROR_ACCESS_DENIED   – Treiber noch nicht bereit
-                            21,   # ERROR_NOT_READY       – Geraet nicht bereit
-                            1005, # ERROR_UNRECOGNIZED_VOLUME
-                            1006, # ERROR_FILE_INVALID
-                            1392, # ERROR_FILE_CORRUPT
-                        }
-                        _ready = False
-                        self.task_progress = max(self.task_progress, 3.0)
-                        _max_attempts = 16  # bis zu ~24 Sekunden warten
-                        for _wait_attempt in range(_max_attempts):
-                            time.sleep(1.5 if _wait_attempt < 4 else 1.0)
-                            # Fortschritt: 3% – 15% während Warten
-                            self.task_progress = max(
-                                self.task_progress,
-                                3.0 + (_wait_attempt + 1) / _max_attempts * 12.0,
-                            )
-                            # Beide Pfadvarianten Prüfen: "X:\\" und "X:"
-                            _accessible = False
-                            for _mp_try in (mount_point + "\\", mount_point):
-                                try:
-                                    _ = os.listdir(_mp_try)
-                                    _accessible = True
-                                    break
-                                except OSError:
-                                    pass
-                            if _accessible:
-                                _ready = True
-                                break
-                            # Fehlercode des letzten Versuchs ermitteln
-                            _last_winerr = 0
-                            try:
-                                os.listdir(mount_point + "\\")
-                            except OSError as _we:
-                                _last_winerr = getattr(_we, 'winerror', 0)
-                            if _last_winerr in _TRANSIENT_WERRORS or _last_winerr == 0:
-                                self._append_to_log(
-                                    f"[Info] Warte auf Dateisystem ({_wait_attempt+1}/{_max_attempts})"
-                                    f" [WinErr {_last_winerr}]...\n"
-                                )
-                            else:
-                                # Unbekannter, nicht-transienter Fehler – trotzdem weiter warten
-                                self._append_to_log(
-                                    f"[Info] Warte auf Dateisystem ({_wait_attempt+1}/{_max_attempts})"
-                                    f" [WinErr {_last_winerr}]...\n"
-                                )
-                        if _ready:
-                            self.task_progress = max(self.task_progress, 15.0)
-                            try:
-                                # Fortschritt während Kopieren: 15% – 24%
-                                _copy_total = self._get_path_size(mount_point + "\\")
-                                _copy_done  = 0
+            self._set_status("Entpacke .exfat (MkPFS)...")
 
-                                def _copy_with_progress(src_path: str, dst_path: str) -> None:
-                                    nonlocal _copy_done
-                                    sz = os.path.getsize(src_path) if os.path.isfile(src_path) else 0
-                                    shutil.copy2(src_path, dst_path)
-                                    _copy_done += sz
-                                    if _copy_total > 0:
-                                        frac = min(_copy_done / _copy_total, 1.0)
-                                        self.task_progress = max(
-                                            self.task_progress,
-                                            15.0 + frac * 9.0,
-                                        )
-
-                                shutil.copytree(
-                                    mount_point + "\\",
-                                    tmp_extract,
-                                    dirs_exist_ok=True,
-                                    copy_function=_copy_with_progress,
-                                )
-                                search_root = tmp_extract
-                            except Exception as copy_exc:
-                                self._append_to_log(
-                                    f"[Warnung] Kopieren teilweise fehlgeschlagen: {copy_exc}\n"
-                                )
-                                search_root = tmp_extract
-                        else:
-                            self._append_to_log(
-                                "[FEHLER] Dateisystem auf gemounteten Laufwerk nicht lesbar.\n"
-                            )
-                    else:
-                        self._append_to_log(
-                            "[FEHLER] .exfat konnte nicht gemountet werden.\n"
-                            "[Info] Bitte sicherstellen, dass keine anderen Programme"
-                            " die Datei geoeffnet haben und das Programm als Administrator"
-                            " ausgefuehrt wird.\n"
-                        )
-                finally:
-                    # OSFMount sauber dismounten via zentralem Helper
-                    # (FSCTL_DISMOUNT_VOLUME + Retry + Force + SHChangeNotify)
-                    if drive_letter and osf_exe:
-                        self._safe_dismount_drive(drive_letter, osf_exe, log=True, retries=4)
-                    # Aktiven Mount-Eintrag leeren
-                    self._active_mount_drive = None
-                    self._active_osf_exe = None
+            if self._extract_exfat_to_folder_mkpfs(
+                src,
+                tmp_extract,
+                status_prefix="Aufgabe 7",
+                log_prefix="fakelib-exFAT extrahiert",
+                progress_start=3.0,
+                progress_end=24.0,
+            ):
+                search_root = tmp_extract
             else:
                 self._append_to_log(
-                    "[FEHLER] OSFMount nicht gefunden oder kein freier Laufwerksbuchstabe.\n"
-                    "[Info] Bitte OSFMount installieren:\n"
-                    "       https://www.osforensics.com/tools/mount-disk-images.html\n"
+                    "[Info] Native MkPFS exFAT-Extraktion fehlgeschlagen – Legacy-Fallback: OSFMount mount+copy\n"
                 )
+                self._set_status("Mounte .exfat...")
+                # .exfat ist ein exFAT-Dateisystem-Image – Legacy via OSFMount
+                osf_exe = self._find_osfmount()
+                if osf_exe is None:
+                    self._append_to_log(
+                        "[Info] OSFMount nicht gefunden – wird automatisch installiert...\n"
+                    )
+                    if self._install_osfmount():
+                        osf_exe = self._find_osfmount()
+                drive_letter = self._get_free_drive_letter() if osf_exe else None
+                if osf_exe and drive_letter:
+                    mount_point = f"{drive_letter}:"
+                    _cf = _NO_WIN_FLAGS
+                    _si = _silent_startupinfo()
+                    try:
+                        ret = subprocess.run(
+                            [osf_exe, "-a", "-t", "file", "-m", mount_point, "-o", "ro", "-f", src],
+                            timeout=30, capture_output=True,
+                            creationflags=_cf, startupinfo=_si,
+                        ).returncode
+                        if ret == 0:
+                            self._active_mount_drive = drive_letter
+                            self._active_osf_exe = osf_exe
+                            _TRANSIENT_WERRORS = {2, 3, 5, 21, 1005, 1006, 1392}
+                            _ready = False
+                            self.task_progress = max(self.task_progress, 3.0)
+                            _max_attempts = 16
+                            for _wait_attempt in range(_max_attempts):
+                                time.sleep(1.5 if _wait_attempt < 4 else 1.0)
+                                self.task_progress = max(
+                                    self.task_progress,
+                                    3.0 + (_wait_attempt + 1) / _max_attempts * 12.0,
+                                )
+                                _accessible = False
+                                for _mp_try in (mount_point + "\\", mount_point):
+                                    try:
+                                        _ = os.listdir(_mp_try)
+                                        _accessible = True
+                                        break
+                                    except OSError:
+                                        pass
+                                if _accessible:
+                                    _ready = True
+                                    break
+                                _last_winerr = 0
+                                try:
+                                    os.listdir(mount_point + "\\")
+                                except OSError as _we:
+                                    _last_winerr = getattr(_we, 'winerror', 0)
+                                if _last_winerr in _TRANSIENT_WERRORS or _last_winerr == 0:
+                                    self._append_to_log(
+                                        f"[Info] Warte auf Dateisystem ({_wait_attempt+1}/{_max_attempts})"
+                                        f" [WinErr {_last_winerr}]...\n"
+                                    )
+                                else:
+                                    self._append_to_log(
+                                        f"[Info] Warte auf Dateisystem ({_wait_attempt+1}/{_max_attempts})"
+                                        f" [WinErr {_last_winerr}]...\n"
+                                    )
+                            if _ready:
+                                self.task_progress = max(self.task_progress, 15.0)
+                                try:
+                                    _copy_total = self._get_path_size(mount_point + "\\")
+                                    _copy_done = 0
+
+                                    def _copy_with_progress(src_path: str, dst_path: str) -> None:
+                                        nonlocal _copy_done
+                                        sz = os.path.getsize(src_path) if os.path.isfile(src_path) else 0
+                                        shutil.copy2(src_path, dst_path)
+                                        _copy_done += sz
+                                        if _copy_total > 0:
+                                            frac = min(_copy_done / _copy_total, 1.0)
+                                            self.task_progress = max(
+                                                self.task_progress,
+                                                15.0 + frac * 9.0,
+                                            )
+
+                                    shutil.copytree(
+                                        mount_point + "\\",
+                                        tmp_extract,
+                                        dirs_exist_ok=True,
+                                        copy_function=_copy_with_progress,
+                                    )
+                                    search_root = tmp_extract
+                                except Exception as copy_exc:
+                                    self._append_to_log(
+                                        f"[Warnung] Kopieren teilweise fehlgeschlagen: {copy_exc}\n"
+                                    )
+                                    search_root = tmp_extract
+                            else:
+                                self._append_to_log(
+                                    "[FEHLER] Dateisystem auf gemounteten Laufwerk nicht lesbar.\n"
+                                )
+                        else:
+                            self._append_to_log(
+                                "[FEHLER] .exfat konnte nicht gemountet werden.\n"
+                                "[Info] Bitte sicherstellen, dass keine anderen Programme"
+                                " die Datei geoeffnet haben und das Programm als Administrator"
+                                " ausgefuehrt wird.\n"
+                            )
+                    finally:
+                        if drive_letter and osf_exe:
+                            self._safe_dismount_drive(drive_letter, osf_exe, log=True, retries=4)
+                        self._active_mount_drive = None
+                        self._active_osf_exe = None
+                else:
+                    self._append_to_log(
+                        "[FEHLER] OSFMount nicht gefunden oder kein freier Laufwerksbuchstabe.\n"
+                        "[Info] Bitte OSFMount installieren:\n"
+                        "       https://www.osforensics.com/tools/mount-disk-images.html\n"
+                    )
+
+        elif src_lower.endswith(".ffpkg"):
+            # .ffpkg: 4 Schritte
+            #   1: UFS2Tool/Dokan-Extraktion (0–35%)
+            #   2: Dialog+Aktion            (35–55%)
+            #   3: pack folder -> .ffpfsc   (55–98%)
+            #   4: Abschluss                (98–100%)
+            self.task_num_steps = 4
+            self.task_step_ends = [35.0, 55.0, 98.0, 100.0]
+            is_container = True
+            tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_ffpkg_")
+            self._append_to_log(
+                "[Info] Quelle: .ffpkg – extrahiere Game-Dump via UFS2Tool/Dokan...\n"
+                "[Info] Hinweis: Änderungen werden anschließend als .ffpfsc neu verpackt,\n"
+                "        da für .ffpkg keine Schreiblogik vorhanden ist.\n"
+            )
+            self._set_status("Entpacke .ffpkg...")
+
+            if self._extract_ffpkg_to_folder_via_ufs2tool(
+                src,
+                tmp_extract,
+                status_prefix="Aufgabe 7",
+                progress_start=3.0,
+                progress_end=34.0,
+            ):
+                search_root = tmp_extract
+            else:
+                self._append_to_log("[FEHLER] .ffpkg konnte nicht für Aufgabe 7 extrahiert werden.\n")
 
         if not search_root or not os.path.isdir(search_root):
             self._append_to_log("[FEHLER] Kein gültiger Suchpfad ermittelt.\n")
@@ -11184,7 +11136,7 @@ class PS5ConverterGUI:
 
         # ----------------------------------------------------------------
         # Schritt 2/3: fakelib im Stammverzeichnis suchen
-        # (Bei Dump-Ordner: Schritt 1; bei .ffpfsc: Schritt 3; bei .exfat: Schritt 2)
+        # (Bei Dump-Ordner: Schritt 1; bei .ffpfsc: Schritt 3; bei .exfat/.ffpkg: Schritt 2)
         # ----------------------------------------------------------------
         # Fortschritt: nach Entpacken auf den Schritt-Start des Dialog-Schritts setzen
         if os.path.isdir(src):
@@ -11199,6 +11151,9 @@ class PS5ConverterGUI:
             # .exfat: nach OSFMount-Schritt bei Schritt 2 (25%)
             self.task_current_step = max(self.task_current_step, 2)
             self.task_progress = max(self.task_progress, 25.0)
+        elif src_lower.endswith(".ffpkg"):
+            self.task_current_step = max(self.task_current_step, 2)
+            self.task_progress = max(self.task_progress, 35.0)
         self._set_status("Suche fakelib...")
         self._append_to_log("\n>>> Suche 'fakelib' im Stammverzeichnis...\n")
 
@@ -11253,6 +11208,8 @@ class PS5ConverterGUI:
             self.task_progress = max(self.task_progress, 35.0)
         elif src_lower.endswith(".exfat"):
             self.task_progress = max(self.task_progress, 30.0)
+        elif src_lower.endswith(".ffpkg"):
+            self.task_progress = max(self.task_progress, 42.0)
 
         # ----------------------------------------------------------------
         # Schritt 4: Benutzer-Dialog (im Haupt-Thread)
@@ -11544,8 +11501,31 @@ class PS5ConverterGUI:
                 relief="flat", padx=14, pady=8, cursor="hand2"
             ).pack(side="bottom", pady=(0, 14))
 
-        self.root.after(0, _show_fakelib_dialog)
-        _action_event.wait()
+        automation_spec = automation or getattr(self, "_fakelib_automation_spec", None)
+        if automation_spec:
+            action = str(automation_spec.get("action", "cancel") or "cancel").strip().lower()
+            fakelib_src = str(automation_spec.get("fakelib_src", "") or "").strip()
+            files_to_add = automation_spec.get("files_to_add", []) or []
+            dirs_to_add = automation_spec.get("dirs_to_add", []) or []
+            selected_root_rel = automation_spec.get("selected_root_items", []) or []
+
+            if action in {"fakelib_add", "fakelib_replace"} and fakelib_src:
+                _fakelib_src.append(fakelib_src)
+            if action == "files_add":
+                _files_to_add.extend(str(p) for p in files_to_add)
+            if action == "dirs_add":
+                _dirs_to_add.extend(str(p) for p in dirs_to_add)
+            if action == "files_remove":
+                rel_map = {rel: abs_path for abs_path, rel in all_root_items}
+                _selected_root_items.extend(
+                    rel_map[rel] for rel in selected_root_rel if rel in rel_map
+                )
+
+            _action_result[0] = action
+            self._append_to_log(f"[AUTO] fakelib-Automation aktiv: {action}\n")
+        else:
+            self.root.after(0, _show_fakelib_dialog)
+            _action_event.wait()
 
         action = _action_result[0]
         self._append_to_log(f"\n>>> Aktion: {action}\n")
@@ -11559,6 +11539,9 @@ class PS5ConverterGUI:
         elif src_lower.endswith(".exfat"):
             self.task_current_step = max(self.task_current_step, 2)
             self.task_progress = max(self.task_progress, 35.0)
+        elif src_lower.endswith(".ffpkg"):
+            self.task_current_step = max(self.task_current_step, 2)
+            self.task_progress = max(self.task_progress, 50.0)
 
         # ----------------------------------------------------------------
         # Schritt 5: Aktion ausführen
@@ -11806,7 +11789,7 @@ class PS5ConverterGUI:
                 self.task_progress = 98.0
 
             # ----------------------------------------------------------------
-            # Automatisches Neu-Packen bei Container-Quellen (.ffpfsc / .exfat)
+            # Automatisches Neu-Packen bei Container-Quellen (.ffpfsc / .exfat / .ffpkg)
             # ----------------------------------------------------------------
             if is_container and action != "cancel" and tmp_extract and search_root:
                 self._append_to_log("\n" + "=" * 50 + "\n")
@@ -11816,101 +11799,52 @@ class PS5ConverterGUI:
                 # Zielverzeichnis = Verzeichnis der Originaldatei
                 src_dir = os.path.dirname(os.path.abspath(src))
                 if src_lower.endswith(".ffpfsc"):
-                    # Repack .ffpfsc
+                    # Repack .ffpfsc via nativer MkPFS pack-folder-Logik.
                     _out_dir  = dst if dst and os.path.isdir(dst) else src_dir
                     final_out = os.path.join(_out_dir, os.path.basename(src))
+                    self._append_to_log(">>> Repack .ffpfsc via nativer MkPFS pack-folder-Logik...\n")
+                    self.task_current_step = max(self.task_current_step, 4)
+                    self.task_num_steps = 5
+                    self.task_step_ends = [15.0, 30.0, 50.0, 95.0, 100.0]
+                    self.task_progress = max(self.task_progress, 50.0)
 
-                    _R1_START = 50.0
-                    _R1_END   = 65.0
-                    _R2_END   = 95.0
-
-                    def _r_set_pct(v: float) -> None:
-                        if v > self.task_progress:
-                            self.task_progress = min(v, 99.9)
-
-                    def _r_set_status(t: str) -> None:
-                        self.root.after(0, lambda _t=t: self.status_label.config(text=_t))
-
-                    self.task_progress = max(self.task_progress, _R1_START)
-
-                    tmp_repack = self._mkdtemp(prefix="ps5conv_repack_")
-                    temp_pfs = os.path.join(tmp_repack, "pfs_image.dat")
-                    ok1 = False
-                    _user_cancelled = False
-                    try:
-                        self._append_to_log(">>> Schritt 1 / 2: Ordner packen (PFS-Image)...\n")
-                        self.task_current_step = max(self.task_current_step, 4)
-                        self.task_num_steps = 5
-                        self.task_step_ends = [15.0, 30.0, 50.0, _R1_END, _R2_END]
-                        ok1 = self._execute_mkpfs(
-                            [
-                                "pack", "folder",
-                                "--no-compress",
-                                "--no-adjust-output-file-extension",
-                                "--version", "PS5",
-                                "--inode-bits", "32",
-                                search_root, temp_pfs,
-                            ],
-                            monitor_target_path=temp_pfs,
-                            monitor_source_file=search_root,
+                    if os.path.exists(final_out):
+                        overwrite = True if automation_spec else self._ask_yesno_threadsafe(
+                            "Datei bereits vorhanden",
+                            f"Die Zieldatei existiert bereits:\n{final_out}\n\n"
+                            "Soll sie überschrieben werden?",
                         )
-                    except Exception:
-                        ok1 = False
-
-                    if not ok1:
-                        shutil.rmtree(tmp_repack, ignore_errors=True)
-                        self._append_to_log("[FEHLER] Neu-Packen fehlgeschlagen.\n")
-                    elif ok1 and self.is_running:
-                        self._append_to_log(
-                            ">>> Schritt 2 / 2: Zstandard-Kompression → .ffpfsc...\n"
-                        )
-                        self.task_current_step = max(self.task_current_step, 5)
-                        self.task_progress = max(self.task_progress, _R1_END)
-
-                        # Zieldatei-Konflikt prüfen
-                        if os.path.exists(final_out):
-                            overwrite = self._ask_yesno_threadsafe(
-                                "Datei bereits vorhanden",
-                                f"Die Zieldatei existiert bereits:\n{final_out}\n\n"
-                                "Soll sie überschrieben werden?",
+                        if not overwrite:
+                            self._append_to_log(
+                                "[Info] Überschreiben abgebrochen. Zieldatei bleibt unveraendert.\n"
                             )
-                            if not overwrite:
-                                self._append_to_log(
-                                    "[Info] Überschreiben abgebrochen. Zieldatei bleibt unveraendert.\n"
-                                )
-                                shutil.rmtree(tmp_repack, ignore_errors=True)
-                                _user_cancelled = True
-                            else:
-                                try:
-                                    import stat as _stat
-                                    os.chmod(final_out, _stat.S_IWRITE | _stat.S_IREAD)
-                                except Exception as exc:
-                                    logger.debug("Datei-Berechtigungen konnten nicht gesetzt werden: %s", exc)
-                                os.remove(final_out)
+                            return False
+                        try:
+                            import stat as _stat
+                            os.chmod(final_out, _stat.S_IWRITE | _stat.S_IREAD)
+                        except Exception as exc:
+                            logger.debug("Datei-Berechtigungen konnten nicht gesetzt werden: %s", exc)
+                        os.remove(final_out)
 
-                        if not _user_cancelled:
-                            if hasattr(self, "_mkpfs_eta_initial"):
-                                del self._mkpfs_eta_initial
-                            ok2 = self._execute_mkpfs(
-                                [
-                                    "pack", "file",
-                                    "--no-adjust-output-file-extension",
-                                    "--version", "PS5", "--inode-bits", "32",
-                                    temp_pfs, final_out,
-                                ],
-                                monitor_target_path=final_out,
-                                monitor_source_file=temp_pfs,
-                            )
-                            shutil.rmtree(tmp_repack, ignore_errors=True)
-                            if ok2:
-                                self._append_to_log(
-                                    f"[OK] Neue Datei erstellt: {final_out}\n"
-                                )
-                                self.task_final_output_path = final_out
-                            else:
-                                self._append_to_log("[FEHLER] Kompression fehlgeschlagen.\n")
+                    self._wait_for_pending_mkpfs_background(final_out)
+                    self._cleanup_stale_mkpfs_output(final_out)
+                    ok = self._execute_mkpfs(
+                        [
+                            "pack", "folder",
+                            "--no-verify-structure",
+                            "--no-adjust-output-file-extension",
+                            "--version", "PS5",
+                            "--inode-bits", "32",
+                            search_root, final_out,
+                        ],
+                        monitor_target_path=final_out,
+                        monitor_source_file=search_root,
+                    )
+                    if ok:
+                        self._append_to_log(f"[OK] Neue Datei erstellt: {final_out}\n")
+                        self.task_final_output_path = final_out
                     else:
-                        shutil.rmtree(tmp_repack, ignore_errors=True)
+                        self._append_to_log("[FEHLER] Neu-Packen fehlgeschlagen.\n")
 
                 elif src_lower.endswith(".exfat"):
                     # .exfat: Ordner → echtes exFAT-Image (OSFMount + format + copy)
@@ -11919,7 +11853,7 @@ class PS5ConverterGUI:
 
                     # Zieldatei-Konflikt prüfen
                     if os.path.exists(final_out):
-                        overwrite = self._ask_yesno_threadsafe(
+                        overwrite = True if automation_spec else self._ask_yesno_threadsafe(
                             "Datei bereits vorhanden",
                             f"Die Zieldatei existiert bereits:\n{final_out}\n\n"
                             "Soll sie überschrieben werden?",
@@ -11949,6 +11883,62 @@ class PS5ConverterGUI:
                         self.task_final_output_path = final_out
                     else:
                         self._append_to_log("[FEHLER] exFAT-Image konnte nicht erstellt werden.\n")
+
+                elif src_lower.endswith(".ffpkg"):
+                    # .ffpkg: Ordner → .ffpfsc (es gibt keine .ffpkg-Schreiblogik)
+                    _out_dir = dst if dst and os.path.isdir(dst) else src_dir
+                    final_out = os.path.join(
+                        _out_dir,
+                        f"{os.path.splitext(os.path.basename(src))[0]}.ffpfsc",
+                    )
+                    self._append_to_log(
+                        ">>> Repack aus .ffpkg-Quelle als .ffpfsc via nativer MkPFS pack-folder-Logik...\n"
+                    )
+                    self.task_current_step = max(self.task_current_step, 3)
+                    self.task_num_steps = 4
+                    self.task_step_ends = [35.0, 55.0, 98.0, 100.0]
+                    self.task_progress = max(self.task_progress, 55.0)
+
+                    if os.path.exists(final_out):
+                        overwrite = True if automation_spec else self._ask_yesno_threadsafe(
+                            "Datei bereits vorhanden",
+                            f"Die Zieldatei existiert bereits:\n{final_out}\n\n"
+                            "Soll sie überschrieben werden?",
+                        )
+                        if not overwrite:
+                            self._append_to_log(
+                                "[Info] Überschreiben abgebrochen. Zieldatei bleibt unveraendert.\n"
+                            )
+                            return False
+                        try:
+                            import stat as _stat
+                            os.chmod(final_out, _stat.S_IWRITE | _stat.S_IREAD)
+                        except Exception as exc:
+                            logger.debug("Datei-Berechtigungen konnten nicht gesetzt werden: %s", exc)
+                        os.remove(final_out)
+
+                    self._wait_for_pending_mkpfs_background(final_out)
+                    self._cleanup_stale_mkpfs_output(final_out)
+                    ok = self._execute_mkpfs(
+                        [
+                            "pack", "folder",
+                            "--no-verify-structure",
+                            "--no-adjust-output-file-extension",
+                            "--version", "PS5",
+                            "--inode-bits", "32",
+                            search_root, final_out,
+                        ],
+                        monitor_target_path=final_out,
+                        monitor_source_file=search_root,
+                    )
+                    if ok:
+                        self._append_to_log(
+                            f"[OK] Neue Datei erstellt: {final_out}\n"
+                            "[Info] Ausgabeformat wurde auf .ffpfsc umgestellt, da .ffpkg nicht geschrieben werden kann.\n"
+                        )
+                        self.task_final_output_path = final_out
+                    else:
+                        self._append_to_log("[FEHLER] Neu-Packen der .ffpkg-Quelle fehlgeschlagen.\n")
 
         finally:
             if tmp_extract:
@@ -12065,19 +12055,13 @@ class PS5ConverterGUI:
         self._append_to_log(f"{sep}\n")
 
     # ──────────────────────────────────────────────────────────────────────
-    # Aufgabe 5: .exfat → Game Dump Ordner (OSFMount + robocopy)
-    # Methodik: OSFMount-/robocopy-Extraktion
+    # Aufgabe 5: .exfat → Game Dump Ordner
+    # Methodik: native MkPFS-exFAT-Extraktion, Legacy-Fallback via OSFMount/robocopy
     # ──────────────────────────────────────────────────────────────────────
     def _mode_exfat_to_folder(self, src: str, dst: str) -> bool:
         """Extrahiert eine .exfat-Datei in einen Game Dump Ordner.
-        Methodik (OSFMount-/robocopy-Extraktion):
-          1. OSFMount suchen (Registry + PATH)
-          2. Freien Laufwerksbuchstaben finden (Z: abwärts)
-          3. .exfat read-only mounten (OSFMount -a -t file -o ro,rem)
-          4. Zielordner erstellen
-          5. robocopy /E /COPY:DAT /DCOPY:DAT /R:1 /W:1 /NP
-          6. Fortschritts-Poller: Zielordner-Wachstum vs. Quelldateigröße
-          7. Dismount (immer in finally)
+                Primärpfad: native MkPFS-0.0.9-exFAT-Extraktion.
+                Legacy-Fallback: OSFMount-/robocopy-Extraktion, falls der Parser scheitert.
         Args:
             src: Pfad zur .exfat-Datei.
             dst: Zielverzeichnis.
@@ -12095,11 +12079,32 @@ class PS5ConverterGUI:
         self._append_to_log(">>> Aufgabe 5 – exFAT zu Game Dump Ordner\n")
         self._append_to_log(f"    Quelle: {src}\n")
         self._append_to_log(f"    Ziel:   {dest_folder}\n")
-        self._append_to_log("    Methode: OSFMount + robocopy\n")
+        self._append_to_log("    Methode: vendorter MkPFS exFAT extract (Fallback: OSFMount + robocopy)\n")
         self._append_to_log("=" * 60 + "\n\n")
 
         # ProgressEngine: Aufgabe 5 starten (Index 4)
         self.progress_engine.start_task(4, "exFAT zu Game Dump Ordner")
+        self.progress_engine.begin_prepare("exFAT extrahieren...")
+        self.root.after(0, lambda: self.status_label.config(
+            text="Aufgabe 5 – exFAT entpacken (MkPFS)..."))
+
+        if self._extract_exfat_to_folder_mkpfs(
+            src,
+            dest_folder,
+            status_prefix="Aufgabe 5",
+            log_prefix="exFAT extrahiert",
+            progress_start=5.0,
+            progress_end=98.0,
+        ):
+            self.task_progress = 100.0
+            self.progress_engine.finish_task()
+            self._append_to_log(f"\n[OK] Game Dump Ordner erstellt: {dest_folder}\n")
+            self._set_status(f"Fertig: {os.path.basename(dest_folder)}")
+            return True
+
+        self._append_to_log(
+            "[Info] Native MkPFS exFAT-Extraktion fehlgeschlagen – Legacy-Fallback: OSFMount + robocopy\n"
+        )
         self.progress_engine.begin_prepare("OSFMount suchen...")
         self.root.after(0, lambda: self.status_label.config(
             text="Aufgabe 5 – OSFMount suchen..."))
@@ -12804,13 +12809,10 @@ class PS5ConverterGUI:
     def _mode_ffpkg_to_ffpfsc(self, src: str, dst: str) -> bool:
         """Konvertiert eine .ffpkg-Datei direkt zu einer .ffpfsc-Datei (Aufgabe 6).
 
-        Methodik: ps5-image-studio / Lazy_MkPFS pack_file
-          .ffpkg wird als einzelne Datei in einen PFS-Container eingebettet.
-          Identisch zur Behandlung von .exfat in Aufgabe 3 (pack_file).
-          Kein Mount, kein Dokan, kein UFS2Tool noetig.
-
-        Referenz: ps5-image-studio-1.0.0 main_file.py + lazy_mkpfs/pack_file.py
-          pack_file(source_file=src, output_image=dst, ...)
+                Methodik: vendorter MkPFS-0.0.9 pack file.
+                    .ffpkg wird als einzelne Datei in einen PFS-Container eingebettet.
+                    Identisch zur Behandlung von .exfat in Aufgabe 3 (pack_file).
+                    Kein Mount, kein Dokan, kein UFS2Tool noetig.
 
         Args:
             src: Pfad zur .ffpkg-Quelldatei.
@@ -12840,6 +12842,16 @@ class PS5ConverterGUI:
             description="PFS-Container erstellen",
             unit_label="Bytes",
         )
+        self._save_runtime_checkpoint(
+            mode="ffpkg_to_ffpfsc",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={
+                "stage": "ffpkg_to_ffpfsc_start",
+                "final_output": final_output,
+            },
+        )
 
         profile = self._resolve_pack_profile("ffpkg_to_ffpfsc", self.task_total_source_bytes)
 
@@ -12848,7 +12860,7 @@ class PS5ConverterGUI:
         self._append_to_log(">>> Aufgabe 6 – ffpkg zu ffpfsc\n")
         self._append_to_log(f"    Quelle: {src}\n")
         self._append_to_log(f"    Ziel:   {final_output}\n")
-        self._append_to_log("    Methode: ps5-image-studio / Lazy_MkPFS pack_file (direkt, 1 Schritt)\n")
+        self._append_to_log("    Methode: vendorter MkPFS 0.0.9 pack file (direkt, 1 Schritt)\n")
         self._append_to_log("    Die .ffpkg-Datei wird als einzelne Datei in den PFS-Container eingebettet.\n")
         self._append_to_log(
             "    Auto-Profil: {name} | Quelle: {size:.2f} GB | "
@@ -12866,6 +12878,18 @@ class PS5ConverterGUI:
         # Direkter Aufruf: .ffpkg → .ffpfsc (kein tmp_dir noetig)
         # Parameter identisch mit Aufgabe 3 (pack_file / _mode_pack_file)
         try:
+            self._wait_for_pending_mkpfs_background(final_output)
+            self._cleanup_stale_mkpfs_output(final_output)
+            self._save_runtime_checkpoint(
+                mode="ffpkg_to_ffpfsc",
+                src=src,
+                dst=dst,
+                state="in_progress",
+                extra={
+                    "stage": "ffpkg_to_ffpfsc_running",
+                    "final_output": final_output,
+                },
+            )
             pack_ok = self._execute_mkpfs(
                 [
                     "pack", "file",
@@ -13100,13 +13124,41 @@ class PS5ConverterGUI:
                     self.progress_engine.commit_task()
                     return True
                 else:
-                    # Fallback: echtes exFAT-Image → OSFMount → robocopy
+                    # Primärpfad: echtes exFAT-Image → native MkPFS-exFAT-Extraktion.
+                    # Legacy-Fallback: OSFMount → robocopy nur wenn der Parser scheitert.
                     self._append_to_log(
                         "[Info] mkpfs unpack fehlgeschlagen – A3-Innenimage ist ein exFAT-Image.\n"
-                        "[Info] Fallback: A3-exFAT via OSFMount mounten → robocopy extract\n"
+                        "[Info] Primärpfad: A3-exFAT via vendorter MkPFS exFAT extract\n"
                     )
                     self.root.after(0, lambda: self.status_label.config(
-                        text="Aufgabe 4 – A3-exFAT mounten (OSFMount)..."))
+                        text="Aufgabe 4 – A3-exFAT entpacken (MkPFS)..."))
+
+                    if self._extract_exfat_to_folder_mkpfs(
+                        pfs_file,
+                        game_dump_dir,
+                        status_prefix="Aufgabe 4",
+                        log_prefix="A3-exFAT extrahiert",
+                        progress_start=50.0,
+                        progress_end=98.0,
+                    ):
+                        self._backfill_preview_from_dir_for_source(src, game_dump_dir)
+                        for _item in os.listdir(game_dump_dir):
+                            _src_item = os.path.join(game_dump_dir, _item)
+                            _dst_item = os.path.join(final_dst, _item)
+                            try:
+                                shutil.move(_src_item, _dst_item)
+                            except OSError as _mv_exc:
+                                self._append_to_log(f"[WARNUNG] Verschieben: {_item}: {_mv_exc}\n")
+                        self._append_to_log(f"[OK] Game-Dump extrahiert nach: {final_dst}\n")
+                        self.task_current_step = 4
+                        self.task_progress = 98.0
+                        self.progress_engine.begin_validate("Validierung...")
+                        self.progress_engine.commit_task()
+                        return True
+
+                    self._append_to_log(
+                        "[Info] MkPFS exFAT-Extraktion fehlgeschlagen – Legacy-Fallback: A3-exFAT via OSFMount mounten → robocopy extract\n"
+                    )
 
                     import ctypes as _ct
                     import time as _time
@@ -13254,6 +13306,16 @@ class PS5ConverterGUI:
             description="PFS-Container erstellen",
             unit_label="Bytes",
         )
+        self._save_runtime_checkpoint(
+            mode="pack_file",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={
+                "stage": "pack_file_start",
+                "final_output": final_output,
+            },
+        )
 
         profile = self._resolve_pack_profile("pack_file", self.task_total_source_bytes)
 
@@ -13279,6 +13341,18 @@ class PS5ConverterGUI:
         # Parameter identisch mit dem vendorten MkPFS pack-file-Pfad:
         #   --version PS5 --inode-bits 32 --cpu-count N --compression-level L
         try:
+            self._wait_for_pending_mkpfs_background(final_output)
+            self._cleanup_stale_mkpfs_output(final_output)
+            self._save_runtime_checkpoint(
+                mode="pack_file",
+                src=src,
+                dst=dst,
+                state="in_progress",
+                extra={
+                    "stage": "pack_file_running",
+                    "final_output": final_output,
+                },
+            )
             pack_ok = self._execute_mkpfs(
                 [
                     "pack", "file",
@@ -13295,6 +13369,7 @@ class PS5ConverterGUI:
                 monitor_source_file=src,
             )
             if pack_ok:
+                self._seed_preview_cache_from_source(src, final_output, "pack_file")
                 self.progress_engine.begin_validate("Validierung...")
                 self.progress_engine.commit_task()
             return pack_ok
@@ -13387,6 +13462,79 @@ class PS5ConverterGUI:
         except Exception as exc:
             self._append_to_log(f"[FEHLER] exFAT-Image konnte nicht erstellt werden: {exc}\n")
             return False
+
+    def _extract_exfat_to_folder_mkpfs(
+        self,
+        src_file: str,
+        dest_folder: str,
+        *,
+        status_prefix: str,
+        log_prefix: str,
+        progress_start: float,
+        progress_end: float,
+    ) -> bool:
+        """Extrahiert ein raw-exFAT-Image nativ ueber die vendorte MkPFS-Engine."""
+
+        mkpfs_parent = self._extract_embedded_mkpfs()
+        if not mkpfs_parent:
+            self._append_to_log("[FEHLER] MkPFS-Engine nicht gefunden.\n")
+            return False
+        if mkpfs_parent not in sys.path:
+            sys.path.insert(0, mkpfs_parent)
+
+        try:
+            from mkpfs.pfs import extract_exfat_image  # pyright: ignore[reportMissingImports]
+        except Exception as exc:
+            self._append_to_log(f"[FEHLER] MkPFS-exFAT-Extraktion nicht verfuegbar: {exc}\n")
+            return False
+
+        src_path = Path(src_file).expanduser().resolve()
+        dest_path = Path(dest_folder).expanduser().resolve()
+        if not src_path.is_file():
+            self._append_to_log(f"[FEHLER] exFAT-Quelldatei nicht gefunden: {src_path}\n")
+            return False
+
+        shutil.rmtree(dest_path, ignore_errors=True)
+        dest_path.mkdir(parents=True, exist_ok=True)
+
+        self._append_to_log(
+            "[Info] Methode: vendorter MkPFS exFAT extract\n"
+            f"[Info] Quelle: {src_path}\n"
+            f"[Info] Ziel:   {dest_path}\n"
+        )
+        self.root.after(0, lambda: self.status_label.config(text=f"{status_prefix} – exFAT entpacken (MkPFS)..."))
+
+        try:
+            total_bytes = os.path.getsize(src_path)
+        except OSError:
+            total_bytes = 0
+
+        self.task_current_step = max(self.task_current_step, 1)
+        self.task_progress = max(self.task_progress, progress_start)
+        self.task_displayed = max(self.task_displayed, progress_start)
+
+        try:
+            result = extract_exfat_image(src_path, dest_path, progress=None)
+        except Exception as exc:
+            self._append_to_log(f"[FEHLER] MkPFS exFAT-Extraktion fehlgeschlagen: {exc}\n")
+            return False
+
+        for warning_text in getattr(result, "warnings", []) or []:
+            self._append_to_log(f"[WARNUNG] {warning_text}\n")
+        for error_text in getattr(result, "errors", []) or []:
+            self._append_to_log(f"[FEHLER] {error_text}\n")
+        if getattr(result, "errors", None):
+            return False
+
+        self._copy_total_bytes = max(1, int(total_bytes))
+        self._copy_done_bytes = self._copy_total_bytes
+        self.task_progress = max(self.task_progress, progress_end)
+        self.task_displayed = max(self.task_displayed, progress_end)
+        self._append_to_log(
+            f"[OK] {log_prefix}: {getattr(result, 'files_written', 0)} Dateien, "
+            f"{getattr(result, 'bytes_written', 0) / 1073741824:.2f} GB\n"
+        )
+        return True
 
     def _mode_unpack_to_exfat(self, src: str, dst: str) -> bool:
         """Entpackt eine .FFPFSC-Datei zu einer .ExFat-Datei (Aufgabe 2).
@@ -13659,213 +13807,26 @@ class PS5ConverterGUI:
                 )
             else:
                 # mkpfs konnte die Datei nicht entpacken → es ist ein exFAT-Image
-                # Fallback: OSFMount → robocopy
+                # Primärpfad: native MkPFS-exFAT-Extraktion. Legacy nur als Fallback.
                 self._append_to_log(
                     "[Info] mkpfs unpack fehlgeschlagen – Datei ist ein exFAT-Image.\n"
-                    "[Info] Fallback: OSFMount mount → robocopy extract\n"
+                    "[Info] Primärpfad: vendorter MkPFS exFAT extract\n"
                 )
                 self.root.after(0, lambda: self.status_label.config(
-                    text="Aufgabe 2 – exFAT mounten (OSFMount)..."))
+                    text="Aufgabe 2 – exFAT entpacken (MkPFS)..."))
 
-                import ctypes as _ct
-                import time as _time
-
-                osf_exe = self._find_osfmount()
-                if not osf_exe:
-                    self._append_to_log(
-                        "[FEHLER] OSFMount nicht gefunden.\n"
-                        "         Bitte OSFMount installieren:\n"
-                        "         https://www.osforensics.com/tools/mount-disk-images.html\n"
-                    )
-                    return _fail_keep_tmp("OSFMount fehlt in Schritt 2")
-
-                self._append_to_log(f"[OSFMount] Gefunden: {osf_exe}\n")
-
-                # Freien Laufwerksbuchstaben finden (Z: abwärts)
-                drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-                free_letter = None
-                for i in range(25, 3, -1):
-                    if not (drives_bitmask & (1 << i)):
-                        free_letter = chr(65 + i) + ":"
-                        break
-                if not free_letter:
-                    self._append_to_log("[FEHLER] Kein freier Laufwerksbuchstabe verfügbar.\n")
-                    return _fail_keep_tmp("Kein freier Laufwerksbuchstabe")
-
-                # game_dump_dir leeren (enthält evtl. Reste vom fehlgeschlagenen mkpfs)
-                shutil.rmtree(game_dump_dir, ignore_errors=True)
-                os.makedirs(game_dump_dir, exist_ok=True)
-
-                mount_ok = False
-                try:
-                    # Stale Mounts aufräumen
-                    self._cleanup_stale_osfmounts()
-
-                    # .exfat read-only mounten
-                    self._append_to_log(
-                        f"[INFO] Mounte {os.path.basename(pfs_file)} auf {free_letter}...\n"
-                    )
+                if self._extract_exfat_to_folder_mkpfs(
+                    pfs_file,
+                    game_dump_dir,
+                    status_prefix="Aufgabe 2",
+                    log_prefix="exFAT-Image extrahiert",
+                    progress_start=20.0,
+                    progress_end=50.0,
+                ):
                     try:
-                        result = subprocess.run(
-                            [osf_exe, "-a", "-t", "file", "-f", pfs_file,
-                             "-m", free_letter, "-o", "ro,rem"],
-                            capture_output=True, text=True,
-                            creationflags=_NO_WIN_FLAGS,
-                            startupinfo=_silent_startupinfo()
-                        )
-                    except OSError as exc:
-                        self._append_to_log(
-                            "[FEHLER] OSFMount konnte nicht gestartet werden.\n"
-                            f"         Grund: {exc}\n"
-                            "         Tipp: Bitte Programm/Terminal als Administrator starten\n"
-                            "         und prüfen, ob OSFMount korrekt installiert ist.\n"
-                        )
-                        return _fail_keep_tmp("OSFMount-Startfehler")
-                    if result.returncode != 0:
-                        self._append_to_log(
-                            f"[FEHLER] Mount fehlgeschlagen (rc={result.returncode}): "
-                            f"{result.stderr or result.stdout}\n"
-                        )
-                        return _fail_keep_tmp("OSFMount-Mount fehlgeschlagen")
-                    mount_ok = True
-
-                    # Warten bis Laufwerk erscheint (max. 10s)
-                    for _ in range(20):
-                        if os.path.exists(free_letter + "\\"):
-                            break
-                        _time.sleep(0.5)
-                    else:
-                        self._append_to_log(
-                            f"[FEHLER] Laufwerk {free_letter} erschien nicht "
-                            f"innerhalb von 10s.\n"
-                        )
-                        return _fail_keep_tmp("Gemountetes Laufwerk erschien nicht")
-
-                    self._append_to_log(f"[INFO] Laufwerk {free_letter} bereit.\n")
-
-                    # robocopy: Dateien vom gemounteten Image in game_dump_dir kopieren
-                    robo_cmd = [
-                        "robocopy.exe",
-                        free_letter + "\\",
-                        game_dump_dir,
-                        "/E", "/COPY:DAT", "/DCOPY:DAT",
-                        "/R:2", "/W:2", "/NP"
-                    ]
-                    self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n")
-                    self.root.after(0, lambda: self.status_label.config(
-                        text="Aufgabe 2 – Dateien extrahieren (robocopy)..."))
-
-                    _robo_last_pct = [-1]
-                    _robo_last_zero_ts = [0.0]
-                    _dst_probe_last_ts = [0.0]
-                    _dst_probe_last_bytes = [-1]
-                    _robo_speed_ema = [0.0]
-                    _robo_payload = [max(1, int(os.path.getsize(pfs_file)))]
-                    _dst_drive = [os.path.splitdrive(game_dump_dir)[0] or ""]
-                    _dst_used_base = [0]
-                    try:
-                        if _dst_drive[0]:
-                            _dst_used_base[0] = int(shutil.disk_usage(_dst_drive[0] + "\\").used)
+                        dump_files = os.listdir(game_dump_dir)
                     except Exception:
-                        _dst_used_base[0] = 0
-
-                    self._copy_total_bytes = int(_robo_payload[0])
-                    self._copy_done_bytes = 0
-                    self._copy_rate_bps = 0.0
-                    self._copy_rate_trend = ""
-
-                    def _log_robo_line(line: str) -> bool:
-                        _ln = line.strip()
-                        if not _ln:
-                            return self.is_running
-
-                        _m_pct = re.match(r"^(\d{1,3})%$", _ln)
-                        if _m_pct:
-                            pct = max(0, min(int(_m_pct.group(1)), 100))
-                            now = time.monotonic()
-                            if pct == 0:
-                                if now - _dst_probe_last_ts[0] >= 3.0:
-                                    try:
-                                        if _dst_drive[0]:
-                                            du = shutil.disk_usage(_dst_drive[0] + "\\")
-                                            used_b = max(0, int(du.used) - int(_dst_used_base[0]))
-                                            done_b = min(used_b, int(_robo_payload[0]))
-                                            self._copy_done_bytes = max(self._copy_done_bytes, done_b)
-                                            frac = max(0.0, min(done_b / max(_robo_payload[0], 1), 0.995))
-                                            mapped = 20.0 + (50.0 - 20.0) * frac
-                                            self.task_progress = max(self.task_progress, min(mapped, 49.5))
-
-                                            dt = max(0.001, now - (_dst_probe_last_ts[0] or now))
-                                            if _dst_probe_last_bytes[0] >= 0 and dt > 0:
-                                                inst_bps = max(0.0, (done_b - _dst_probe_last_bytes[0]) / dt)
-                                                if _robo_speed_ema[0] <= 0.0:
-                                                    _robo_speed_ema[0] = inst_bps
-                                                else:
-                                                    _robo_speed_ema[0] = _robo_speed_ema[0] * 0.70 + inst_bps * 0.30
-                                                trend = "stabil"
-                                                if inst_bps > _robo_speed_ema[0] * 1.08:
-                                                    trend = "steigend"
-                                                elif inst_bps < _robo_speed_ema[0] * 0.92:
-                                                    trend = "fallend"
-                                                self._copy_rate_bps = float(_robo_speed_ema[0])
-                                                self._copy_rate_trend = trend
-                                            _dst_probe_last_bytes[0] = done_b
-                                            _dst_probe_last_ts[0] = now
-
-                                            done_gb = done_b / (1024 ** 3)
-                                            total_gb = _robo_payload[0] / (1024 ** 3)
-                                            rem_gb = max(0.0, (int(_robo_payload[0]) - done_b) / (1024 ** 3))
-                                            rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
-                                            tr = str(getattr(self, "_copy_rate_trend", "") or "")
-                                            self.root.after(
-                                                0,
-                                                lambda d=done_gb, t=total_gb, r=rem_gb, sp=rate_mb, trd=tr: self.status_label.config(
-                                                    text=(
-                                                        f"Aufgabe 2 – Extrahiere... {d:.2f}/{t:.2f} GB | "
-                                                        f"Rest {r:.2f} GB | {sp:.1f} MB/s"
-                                                        + (f" ({trd})" if trd else "")
-                                                    )
-                                                ),
-                                            )
-                                    except Exception:
-                                        pass
-                                if now - _robo_last_zero_ts[0] >= 8.0:
-                                    self._append_to_log("[INFO] Aufgabe 2 Robocopy laeuft ... (0%-Zeilen gedrosselt)\n")
-                                    _robo_last_zero_ts[0] = now
-                                return self.is_running
-
-                            if pct != _robo_last_pct[0]:
-                                self._append_to_log(f"[INFO] Aufgabe 2 Robocopy: {pct}%\n")
-                                _robo_last_pct[0] = pct
-                            est_done = int(_robo_payload[0] * (pct / 100.0))
-                            self._copy_done_bytes = max(self._copy_done_bytes, est_done)
-                            mapped = 20.0 + (50.0 - 20.0) * (pct / 100.0)
-                            self.task_progress = max(self.task_progress, min(mapped, 49.5))
-                            return self.is_running
-
-                        self._append_to_log(_ln + "\n")
-                        return self.is_running
-
-                    rc = self._run_subprocess_logged(
-                        robo_cmd,
-                        timeout=24 * 60 * 60,
-                        encoding="mbcs",
-                        errors="replace",
-                        line_callback=_log_robo_line,
-                    )
-                    if rc == 130 and not self.is_running:
-                        return _fail_keep_tmp("Abbruch waehrend robocopy")
-
-                    # robocopy: 0-7 = Erfolg, >=8 = Fehler
-                    if rc >= 8:
-                        self._append_to_log(
-                            f"[FEHLER] robocopy fehlgeschlagen (rc={rc})\n"
-                        )
-                        return _fail_keep_tmp("robocopy fehlgeschlagen")
-
-                    if self._copy_total_bytes > 0:
-                        self._copy_done_bytes = self._copy_total_bytes
-                    self._append_to_log("[OK] Dateien erfolgreich extrahiert.\n")
+                        dump_files = []
                     self._save_runtime_checkpoint(
                         mode="unpack_to_exfat",
                         src=src,
@@ -13878,20 +13839,235 @@ class PS5ConverterGUI:
                             "final_output": final_output,
                         },
                     )
+                else:
+                    self._append_to_log(
+                        "[Info] MkPFS exFAT-Extraktion fehlgeschlagen – Legacy-Fallback: OSFMount mount → robocopy extract\n"
+                    )
 
-                finally:
-                    # Immer dismounten
-                    if mount_ok:
-                        self._append_to_log(f"[INFO] Dismounte {free_letter}...\n")
+                    import ctypes as _ct
+                    import time as _time
+
+                    osf_exe = self._find_osfmount()
+                    if not osf_exe:
+                        self._append_to_log(
+                            "[FEHLER] OSFMount nicht gefunden.\n"
+                            "         Bitte OSFMount installieren:\n"
+                            "         https://www.osforensics.com/tools/mount-disk-images.html\n"
+                        )
+                        return _fail_keep_tmp("OSFMount fehlt in Schritt 2")
+
+                    self._append_to_log(f"[OSFMount] Gefunden: {osf_exe}\n")
+
+                    # Freien Laufwerksbuchstaben finden (Z: abwärts)
+                    drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
+                    free_letter = None
+                    for i in range(25, 3, -1):
+                        if not (drives_bitmask & (1 << i)):
+                            free_letter = chr(65 + i) + ":"
+                            break
+                    if not free_letter:
+                        self._append_to_log("[FEHLER] Kein freier Laufwerksbuchstabe verfügbar.\n")
+                        return _fail_keep_tmp("Kein freier Laufwerksbuchstabe")
+
+                    # game_dump_dir leeren (enthält evtl. Reste vom fehlgeschlagenen mkpfs)
+                    shutil.rmtree(game_dump_dir, ignore_errors=True)
+                    os.makedirs(game_dump_dir, exist_ok=True)
+
+                    mount_ok = False
+                    try:
+                        # Stale Mounts aufräumen
+                        self._cleanup_stale_osfmounts()
+
+                        # .exfat read-only mounten
+                        self._append_to_log(
+                            f"[INFO] Mounte {os.path.basename(pfs_file)} auf {free_letter}...\n"
+                        )
                         try:
-                            subprocess.run(
-                                [osf_exe, "-d", "-m", free_letter],
-                                capture_output=True,
+                            result = subprocess.run(
+                                [osf_exe, "-a", "-t", "file", "-f", pfs_file,
+                                 "-m", free_letter, "-o", "ro,rem"],
+                                capture_output=True, text=True,
                                 creationflags=_NO_WIN_FLAGS,
                                 startupinfo=_silent_startupinfo()
                             )
+                        except OSError as exc:
+                            self._append_to_log(
+                                "[FEHLER] OSFMount konnte nicht gestartet werden.\n"
+                                f"         Grund: {exc}\n"
+                                "         Tipp: Bitte Programm/Terminal als Administrator starten\n"
+                                "         und prüfen, ob OSFMount korrekt installiert ist.\n"
+                            )
+                            return _fail_keep_tmp("OSFMount-Startfehler")
+                        if result.returncode != 0:
+                            self._append_to_log(
+                                f"[FEHLER] Mount fehlgeschlagen (rc={result.returncode}): "
+                                f"{result.stderr or result.stdout}\n"
+                            )
+                            return _fail_keep_tmp("OSFMount-Mount fehlgeschlagen")
+                        mount_ok = True
+
+                        # Warten bis Laufwerk erscheint (max. 10s)
+                        for _ in range(20):
+                            if os.path.exists(free_letter + "\\"):
+                                break
+                            _time.sleep(0.5)
+                        else:
+                            self._append_to_log(
+                                f"[FEHLER] Laufwerk {free_letter} erschien nicht "
+                                f"innerhalb von 10s.\n"
+                            )
+                            return _fail_keep_tmp("Gemountetes Laufwerk erschien nicht")
+
+                        self._append_to_log(f"[INFO] Laufwerk {free_letter} bereit.\n")
+
+                        # robocopy: Dateien vom gemounteten Image in game_dump_dir kopieren
+                        robo_cmd = [
+                            "robocopy.exe",
+                            free_letter + "\\",
+                            game_dump_dir,
+                            "/E", "/COPY:DAT", "/DCOPY:DAT",
+                            "/R:2", "/W:2", "/NP"
+                        ]
+                        self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n")
+                        self.root.after(0, lambda: self.status_label.config(
+                            text="Aufgabe 2 – Dateien extrahieren (robocopy)..."))
+
+                        _robo_last_pct = [-1]
+                        _robo_last_zero_ts = [0.0]
+                        _dst_probe_last_ts = [0.0]
+                        _dst_probe_last_bytes = [-1]
+                        _robo_speed_ema = [0.0]
+                        _robo_payload = [max(1, int(os.path.getsize(pfs_file)))]
+                        _dst_drive = [os.path.splitdrive(game_dump_dir)[0] or ""]
+                        _dst_used_base = [0]
+                        try:
+                            if _dst_drive[0]:
+                                _dst_used_base[0] = int(shutil.disk_usage(_dst_drive[0] + "\\").used)
                         except Exception:
-                            pass
+                            _dst_used_base[0] = 0
+
+                        self._copy_total_bytes = int(_robo_payload[0])
+                        self._copy_done_bytes = 0
+                        self._copy_rate_bps = 0.0
+                        self._copy_rate_trend = ""
+
+                        def _log_robo_line(line: str) -> bool:
+                            _ln = line.strip()
+                            if not _ln:
+                                return self.is_running
+
+                            _m_pct = re.match(r"^(\d{1,3})%$", _ln)
+                            if _m_pct:
+                                pct = max(0, min(int(_m_pct.group(1)), 100))
+                                now = time.monotonic()
+                                if pct == 0:
+                                    if now - _dst_probe_last_ts[0] >= 3.0:
+                                        try:
+                                            if _dst_drive[0]:
+                                                du = shutil.disk_usage(_dst_drive[0] + "\\")
+                                                used_b = max(0, int(du.used) - int(_dst_used_base[0]))
+                                                done_b = min(used_b, int(_robo_payload[0]))
+                                                self._copy_done_bytes = max(self._copy_done_bytes, done_b)
+                                                frac = max(0.0, min(done_b / max(_robo_payload[0], 1), 0.995))
+                                                mapped = 20.0 + (50.0 - 20.0) * frac
+                                                self.task_progress = max(self.task_progress, min(mapped, 49.5))
+
+                                                dt = max(0.001, now - (_dst_probe_last_ts[0] or now))
+                                                if _dst_probe_last_bytes[0] >= 0 and dt > 0:
+                                                    inst_bps = max(0.0, (done_b - _dst_probe_last_bytes[0]) / dt)
+                                                    if _robo_speed_ema[0] <= 0.0:
+                                                        _robo_speed_ema[0] = inst_bps
+                                                    else:
+                                                        _robo_speed_ema[0] = _robo_speed_ema[0] * 0.70 + inst_bps * 0.30
+                                                    trend = "stabil"
+                                                    if inst_bps > _robo_speed_ema[0] * 1.08:
+                                                        trend = "steigend"
+                                                    elif inst_bps < _robo_speed_ema[0] * 0.92:
+                                                        trend = "fallend"
+                                                    self._copy_rate_bps = float(_robo_speed_ema[0])
+                                                    self._copy_rate_trend = trend
+                                                _dst_probe_last_bytes[0] = done_b
+                                                _dst_probe_last_ts[0] = now
+
+                                                done_gb = done_b / (1024 ** 3)
+                                                total_gb = _robo_payload[0] / (1024 ** 3)
+                                                rem_gb = max(0.0, (int(_robo_payload[0]) - done_b) / (1024 ** 3))
+                                                rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
+                                                tr = str(getattr(self, "_copy_rate_trend", "") or "")
+                                                self.root.after(
+                                                    0,
+                                                    lambda d=done_gb, t=total_gb, r=rem_gb, sp=rate_mb, trd=tr: self.status_label.config(
+                                                        text=(
+                                                            f"Aufgabe 2 – Extrahiere... {d:.2f}/{t:.2f} GB | "
+                                                            f"Rest {r:.2f} GB | {sp:.1f} MB/s"
+                                                            + (f" ({trd})" if trd else "")
+                                                        )
+                                                    ),
+                                                )
+                                        except Exception:
+                                            pass
+                                    if now - _robo_last_zero_ts[0] >= 8.0:
+                                        self._append_to_log("[INFO] Aufgabe 2 Robocopy laeuft ... (0%-Zeilen gedrosselt)\n")
+                                        _robo_last_zero_ts[0] = now
+                                    return self.is_running
+
+                                if pct != _robo_last_pct[0]:
+                                    self._append_to_log(f"[INFO] Aufgabe 2 Robocopy: {pct}%\n")
+                                    _robo_last_pct[0] = pct
+                                est_done = int(_robo_payload[0] * (pct / 100.0))
+                                self._copy_done_bytes = max(self._copy_done_bytes, est_done)
+                                mapped = 20.0 + (50.0 - 20.0) * (pct / 100.0)
+                                self.task_progress = max(self.task_progress, min(mapped, 49.5))
+                                return self.is_running
+
+                            self._append_to_log(_ln + "\n")
+                            return self.is_running
+
+                        rc = self._run_subprocess_logged(
+                            robo_cmd,
+                            timeout=24 * 60 * 60,
+                            encoding="mbcs",
+                            errors="replace",
+                            line_callback=_log_robo_line,
+                        )
+                        if rc == 130 and not self.is_running:
+                            return _fail_keep_tmp("Abbruch waehrend robocopy")
+
+                        if rc >= 8:
+                            self._append_to_log(
+                                f"[FEHLER] robocopy fehlgeschlagen (rc={rc})\n"
+                            )
+                            return _fail_keep_tmp("robocopy fehlgeschlagen")
+
+                        if self._copy_total_bytes > 0:
+                            self._copy_done_bytes = self._copy_total_bytes
+                        self._append_to_log("[OK] Dateien erfolgreich extrahiert.\n")
+                        self._save_runtime_checkpoint(
+                            mode="unpack_to_exfat",
+                            src=src,
+                            dst=dst,
+                            state="in_progress",
+                            extra={
+                                "stage": "task2_step2_done",
+                                "tmp_dir": tmp_dir,
+                                "game_dump_dir": game_dump_dir,
+                                "final_output": final_output,
+                            },
+                        )
+
+                    finally:
+                        # Immer dismounten
+                        if mount_ok:
+                            self._append_to_log(f"[INFO] Dismounte {free_letter}...\n")
+                            try:
+                                subprocess.run(
+                                    [osf_exe, "-d", "-m", free_letter],
+                                    capture_output=True,
+                                    creationflags=_NO_WIN_FLAGS,
+                                    startupinfo=_silent_startupinfo(),
+                                )
+                            except Exception:
+                                pass
 
             self.task_progress = max(self.task_progress, 50.0)
 
@@ -16777,16 +16953,16 @@ class PS5ConverterGUI:
         """Zeigt einen kurzen Splash-Screen beim Programmstart an."""
         splash = tk.Toplevel(self.root)
         splash.overrideredirect(True)
-        splash.geometry("400x200")
+        splash_w = 400
+        splash_h = 200
+        splash.geometry(f"{splash_w}x{splash_h}")
         splash.configure(bg=self._COLORS["bg_main"])
+        splash.update_idletasks()
 
-        root_x = self.root.winfo_x()
-        root_y = self.root.winfo_y()
-        root_w = self.root.winfo_width()
-        root_h = self.root.winfo_height()
-        x = root_x + (root_w // 2) - 200
-        y = root_y + (root_h // 2) - 100
-        splash.geometry(f"+{x}+{y}")
+        screen_w = splash.winfo_screenwidth()
+        screen_h = splash.winfo_screenheight()
+        x, y = _center_window_coords(screen_w, screen_h, splash_w, splash_h)
+        splash.geometry(f"{splash_w}x{splash_h}+{x}+{y}")
 
         # Neon-Trennlinie oben im Splash
         tk.Frame(splash, bg=self._COLORS["border"], height=2).pack(fill="x")

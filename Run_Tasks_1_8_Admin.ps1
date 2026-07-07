@@ -1,7 +1,8 @@
 param(
     [string]$Dump = "DumpA",
     [string]$Ffpkg = "",
-    [string]$OutputDir = ""
+    [string]$OutputDir = "",
+    [string]$Task = ""
 )
 
 Set-StrictMode -Version Latest
@@ -11,6 +12,10 @@ function Test-IsAdmin {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
     $principal = New-Object Security.Principal.WindowsPrincipal($id)
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function ConvertTo-QuotedArgument([string]$Value) {
+    return '"' + ($Value -replace '"', '\"') + '"'
 }
 
 $scriptPath = $MyInvocation.MyCommand.Path
@@ -33,19 +38,28 @@ if (-not (Test-IsAdmin)) {
     $argList = @(
         "-NoProfile",
         "-ExecutionPolicy", "Bypass",
-        "-File", ('"' + $scriptPath + '"'),
-        "-Dump", ('"' + $Dump + '"')
+        "-File", (ConvertTo-QuotedArgument $scriptPath),
+        "-Dump", (ConvertTo-QuotedArgument $Dump)
     )
 
     if ($Ffpkg) {
-        $argList += @("-Ffpkg", ('"' + $Ffpkg + '"'))
+        $argList += @("-Ffpkg", (ConvertTo-QuotedArgument $Ffpkg))
     }
     if ($OutputDir) {
-        $argList += @("-OutputDir", ('"' + $OutputDir + '"'))
+        $argList += @("-OutputDir", (ConvertTo-QuotedArgument $OutputDir))
+    }
+    if ($Task) {
+        $argList += @("-Task", (ConvertTo-QuotedArgument $Task))
     }
 
-    Start-Process -FilePath "powershell.exe" -Verb RunAs -WorkingDirectory $repoRoot -ArgumentList ($argList -join " ") | Out-Null
-    Write-Host "UAC-Dialog gestartet. Der Admin-Runner oeffnet in einem neuen Fenster."
+    $proc = Start-Process -FilePath "powershell.exe" -Verb RunAs -WorkingDirectory $repoRoot -ArgumentList ($argList -join " ") -Wait -PassThru
+    if ($null -eq $proc) {
+        throw "Erhoehter Runner konnte nicht gestartet werden."
+    }
+    if ($proc.ExitCode -ne 0) {
+        throw "Erhoehter Runner fehlgeschlagen (ExitCode $($proc.ExitCode))."
+    }
+    Write-Host "Erhoehter Runner abgeschlossen."
     exit 0
 }
 
@@ -57,6 +71,9 @@ try {
     }
     if ($OutputDir) {
         $pyArgs += @("--output-dir", $OutputDir)
+    }
+    if ($Task) {
+        $pyArgs += @("--task", $Task)
     }
 
     & $pythonExe @pyArgs
