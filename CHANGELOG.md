@@ -2,6 +2,35 @@
 
 Alle nennenswerten Aenderungen an diesem Projekt werden in dieser Datei dokumentiert.
 
+## [Aktueller Stand] - 2026-07-07
+
+### Aufgabe 1 / Fortschritt / Resume
+- Frischen Neustart nach abgebrochenem `mkpfs pack file` gehaertet: die App wartet vor dem Neuversuch auf auslaufende Hintergrundarbeit und entfernt verwaiste Zielartefakte.
+- Kompressionsfortschritt bleibt im korrekten Schritt-2-Bereich statt in spaetere Phasen zu rutschen.
+- Pulse-Creep waehrend der MkPFS-Kompression unterdrueckt, damit echte Engine-Signale die GUI fuehren.
+- Wiederholte `compress`-Logzeilen reduziert und Phase 4/4 sichtbar gehalten.
+
+### Aufgabe 2 / Vorschau / Fortschritt
+- Vorschau und Infobox fuer `.ffpfsc` aus Aufgabe 1 und 3 nutzen jetzt zuerst benachbarte Task-/E2E-Reports als Fast-Path statt langsames Container-Parsen.
+- Schrittgeometrie fuer `.ffpfsc -> .exfat` korrigiert: frueher outer-unpack startet nicht mehr im 0-95%-Bereich.
+- Fruehe Branch-Erkennung aus Reports verbessert die Fortschrittsanzeige bereits vor Abschluss des ersten Unpack-Schritts fuer Aufgabe-1- und Aufgabe-3-Artefakte.
+
+### Aufgaben 3 bis 8 / Validierung
+- Aufgabe 3 und Aufgabe 6 bleiben direkte Ein-Schritt-Pfade mit konsistentem 0-98%-Mapping.
+- Aufgabe 4 gegen Schrittueberlaeufe gehaertet: Abschlussaeste verwenden wieder den letzten gueltigen Schritt, und die generische Schrittlogik klemmt Ausreisser defensiv auf die definierte Schrittzahl.
+- Erhoehter Gesamtlauf bestaetigt A1-A6 und A8 als PASS; A7 bleibt erwartungsgemaess `MANUAL_REQUIRED`.
+- Nicht-erhoehte Einzeltests von Aufgabe 5 koennen weiterhin an OSFMount/UAC (`WinError 740`) scheitern; das ist als Umgebungsbedingung dokumentiert, nicht als Aufgabenlogikfehler.
+
+### Referenz-Commits
+- 790d215 fix: harden task1 restart after aborted pack
+- 17824cb fix: keep task1 compress progress in step2 range
+- 325be92 fix: stop pulse creep during task1 compress
+- 568dad2 fix: reduce task1 compress log spam and show phase4
+- 02ff061 fix: speed up task2 preview from task reports
+- 94dab7d fix: correct task2 progress step ranges
+- 6c533c6 fix: hint task2 progress geometry from reports
+- 1acf6f8 fix: clamp task4 progress to valid steps
+
 ## [Aktueller Stand] - 2026-07-06
 
 ### Build
