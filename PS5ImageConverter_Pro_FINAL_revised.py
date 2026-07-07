@@ -14198,6 +14198,11 @@ class PS5ConverterGUI:
                  font=("Segoe UI", 10),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"]).pack(**pad)
 
+        tk.Label(inner, text="Tools & Libraries: OSFMount, Dokan, UFS2Tool, PyInstaller, Pillow, cryptography, zstandard, zlib-ng, paramiko",
+             font=("Segoe UI", 9),
+             bg=self._COLORS["bg_main"], fg=self._COLORS["fg_secondary"],
+             wraplength=620, justify="center").pack(padx=20, pady=(0, 6))
+
         # --- Autor-Bild (proportional, mit Neon-Rahmen, zentriert) ---
         try:
             _author_data = base64.b64decode(_CREDITS_AUTHOR_IMG_B64)
@@ -14233,13 +14238,17 @@ class PS5ConverterGUI:
             "Ein besonderer Dank gilt @Phoenixx1202 (PSBrew), dessen Engine MkPFS das "
             "Herzstück dieses Programms bildet. Ohne seine Arbeit an der PFS-Image-Verarbeitung "
             "wäre die Kernfunktionalität schlicht nicht realisierbar gewesen.\n\n"
-            "Ebenso gilt ein herzlicher Dank KryoMod und Renan Barreto, deren Vorarbeit und die "
+            "Ebenso gilt ein herzlicher Dank an KryoMod und Renan Barreto, deren Vorarbeit und die "
             "Freigabe ihres Quellcodes eine unschätzbare Grundlage geschaffen haben. Ihre Beiträge "
             "ermöglichen es anderen, darauf aufzubauen, zu lernen und eigene Ideen zu verwirklichen.\n\n"
+            "Dank gilt außerdem allen, die die heute genutzten Hilfswerkzeuge und Build-Bausteine "
+            "möglich machen: den Autorinnen und Autoren von UFS2Tool, dem Dokan-Projekt, PassMark "
+            "Software für OSFMount sowie dem PyInstaller-Projekt, das die Bereitstellung als Windows-EXE "
+            "erheblich vereinfacht.\n\n"
             "Dank gebührt auch den Entwicklerinnen und Entwicklern hinter den integrierten Werkzeugen: "
-            "PassMark Software für OSFMount, den Schöpfern von Dokan, der Y2JB / PS5 Scene Community "
-            "für den Remote JS Loader sowie allen, die an paramiko, Pillow und den weiteren "
-            "Open-Source-Bibliotheken mitgewirkt haben, auf die dieses Programm aufbaut.\n\n"
+            "der Y2JB / PS5 Scene Community für den Remote JS Loader sowie allen, die an paramiko, "
+            "Pillow, cryptography, zstandard, zlib-ng und den weiteren Open-Source-Bibliotheken "
+            "mitgewirkt haben, auf die dieses Programm aufbaut.\n\n"
             "Nicht zuletzt gilt der Dank der gesamten PS5 Homebrew Community – all jenen, die im "
             "Verborgenen forschen, testen, diskutieren und ihr Wissen teilen. Homebrew lebt von "
             "dieser Gemeinschaft: von der Neugier, der Leidenschaft für Technik und dem Willen, "
