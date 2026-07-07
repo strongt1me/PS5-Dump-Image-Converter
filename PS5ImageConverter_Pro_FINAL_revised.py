@@ -6758,6 +6758,18 @@ class PS5ConverterGUI:
                             engine_pct = None  # ETA-Quelle hat Vorrang vor eingefrorenem %
                 # Build Summary (nur letzter Schritt)
                 if self.task_current_step >= self.task_num_steps:
+                    if line.strip().startswith((
+                        "Successfully wrote ",
+                        "Build Summary",
+                        "Running post-pack structure verification...",
+                        "PFS Structure Verify Report",
+                        "Image created successfully!",
+                    )):
+                        self._mkpfs_verify_pending = True
+                        self.task_progress = max(self.task_progress, min(self._step_end(), 98.0))
+                        self.root.after(0, lambda: self.status_label.config(
+                            text=self._format_phase_status("Abschlussprüfung läuft...")
+                        ))
                     mu = re.match(r'Total uncompressed size:\s*(.+)', line.strip())
                     if mu:
                         self.task_uncompressed_str = mu.group(1).strip()
@@ -8063,12 +8075,19 @@ class PS5ConverterGUI:
 
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
+        verify_pending = bool(getattr(self, "_mkpfs_verify_pending", False))
+        message = "Abschlussprüfung läuft..." if verify_pending else "Verarbeitung laeuft ..."
+        log_line = (
+            "[INFO] Abschlusspruefung laeuft ... bitte warten.\n"
+            if verify_pending
+            else "[INFO] Verarbeitung laeuft ... bitte warten.\n"
+        )
         now = time.monotonic()
         last_log_ts = float(getattr(self, "_keepalive_log_last_ts", 0.0) or 0.0)
         if (now - last_log_ts) >= 30.0:
-            self._append_to_log("[INFO] Verarbeitung laeuft ... bitte warten.\n")
+            self._append_to_log(log_line)
             self._keepalive_log_last_ts = now
-        self._set_status(self._format_phase_status("Verarbeitung laeuft ..."))
+        self._set_status(self._format_phase_status(message))
 
     def _execute_mkpfs(
         self,
@@ -8138,6 +8157,7 @@ class PS5ConverterGUI:
                 self.task_current_step += 1
             self._monitor_target_path = monitor_target_path
             self._keepalive_log_last_ts = 0.0
+            self._mkpfs_verify_pending = False
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
             self._copy_total_bytes = 0
