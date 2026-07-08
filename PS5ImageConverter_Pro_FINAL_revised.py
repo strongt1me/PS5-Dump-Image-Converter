@@ -2177,6 +2177,36 @@ class PS5ConverterGUI:
                 "failure_excerpt": self._extract_failure_lines(),
             }
 
+            def _safe_report_root(raw_name: str) -> str:
+                cleaned = re.sub(r'[<>:"/\\|?*]+', "_", str(raw_name or "").strip())
+                cleaned = cleaned.rstrip(". ")
+                return cleaned or "ps5converter_report"
+
+            prev_report_path = str(getattr(self, "_task_report_path", "") or "").strip()
+
+            if mode == "dump_validator":
+                src_path = Path(src) if src else None
+                if src_path and src_path.exists():
+                    report_root = src_path.stem if src_path.is_file() else src_path.name
+                elif os.path.isfile(src):
+                    report_root = Path(src).stem
+                elif os.path.isdir(src):
+                    report_root = Path(src).name
+                else:
+                    report_root = "dump_validator_report"
+
+                report_parent = Path(self._get_runtime_temp_dir())
+                os.makedirs(report_parent, exist_ok=True)
+                filename = f"{_safe_report_root(report_root)}.json"
+                report_path = os.path.join(str(report_parent), filename)
+                with open(report_path, "w", encoding="utf-8") as fh:
+                    json.dump(report, fh, ensure_ascii=False, indent=2)
+                if prev_report_path and os.path.abspath(prev_report_path) != os.path.abspath(report_path):
+                    self._forget_exit_cleanup_path(prev_report_path)
+                self._task_report_path = report_path
+                self._remember_exit_cleanup_path(report_path)
+                return report_path
+
             final_output = str(getattr(self, "task_final_output_path", "") or "")
             target_path = Path(final_output) if final_output else None
             if target_path and target_path.exists():
@@ -2201,10 +2231,12 @@ class PS5ConverterGUI:
 
             os.makedirs(report_parent, exist_ok=True)
 
-            filename = f"{report_root}.json"
+            filename = f"{_safe_report_root(report_root)}.json"
             report_path = os.path.join(report_parent, filename)
             with open(report_path, "w", encoding="utf-8") as fh:
                 json.dump(report, fh, ensure_ascii=False, indent=2)
+            if prev_report_path and os.path.abspath(prev_report_path) != os.path.abspath(report_path):
+                self._forget_exit_cleanup_path(prev_report_path)
             self._task_report_path = report_path
             return report_path
         except Exception as exc:
@@ -7930,11 +7962,12 @@ class PS5ConverterGUI:
                            None = denselben Wert wie für den Balken verwenden.
         """
         def _update() -> None:
+            visual_value = value if percent_value is None else percent_value
             if hasattr(self, "progress_var"):
-                self.progress_var.set(value)
+                self.progress_var.set(visual_value)
             if hasattr(self, "percent_label"):
                 # Unter 10% feiner anzeigen, damit lange Analysephasen sichtbar voranschreiten.
-                label_value = value if percent_value is None else percent_value
+                label_value = visual_value
                 if show_percent and label_value > 0:
                     if label_value < 30.0:
                         self.percent_label.config(text=f"{label_value:.1f}%")
@@ -8630,6 +8663,25 @@ class PS5ConverterGUI:
         # Status inklusive ETA ausgeben (fuer alle Aufgabenpfade).
         pe = getattr(self, "progress_engine", None)
         if pe is not None:
+            if (
+                str(getattr(pe, "_phase", "") or "") == "payload"
+                and engine_pct is not None
+                and 0.0 <= float(engine_pct) <= 100.0
+            ):
+                payload_total = max(
+                    0,
+                    int(
+                        getattr(self, "_monitor_source_bytes", 0)
+                        or getattr(self, "task_total_source_bytes", 0)
+                        or 0
+                    ),
+                )
+                if payload_total > 0:
+                    done_units = max(
+                        0.0,
+                        min(float(payload_total) * (float(engine_pct) / 100.0), float(payload_total)),
+                    )
+                    pe.update_payload(done_units)
             # Synchronisiere task_progress → ProgressEngine
             pe.update_external_progress(self.task_progress)
             # Hol PE-Easing-Wert für Easing-Seiteneffekt + Status mit ETA
@@ -8638,12 +8690,20 @@ class PS5ConverterGUI:
             # (pe.raw_progress sollte nicht größer als task_progress sein)
             # Status-Label aktualisieren
             if pe_status:
+                has_live_status_metrics = (
+                    (
+                        engine_pct is not None
+                        and str(engine_phase or "") in {"compress", "extract", "unpack", "verify", "compare"}
+                    )
+                    or has_copy_signal
+                    or bool(getattr(self, "_monitor_done_bytes", 0))
+                )
                 try:
                     cur_status = str(self.status_label.cget("text")) if hasattr(self, "status_label") else ""
                 except Exception:
                     cur_status = ""
                 # Explizite Phase-Texte nicht durch generische ETA-Texte überlagern.
-                if not cur_status.startswith("Phase "):
+                if has_live_status_metrics or not cur_status.startswith("Phase "):
                     self.root.after(0, lambda s=pe_status: self.status_label.config(text=s))
 
         # ------------------------------------------------------------------
