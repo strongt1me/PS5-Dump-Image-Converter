@@ -13,16 +13,20 @@ import argparse
 import ctypes
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
+import threading
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Callable
 
 import tkinter as tk
 
-from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI, ProgressEngine
 
 
 def _is_admin() -> bool:
@@ -164,6 +168,7 @@ def _extract_a7_output(app: PS5ConverterGUI, actual_out: Path, verify_dir: Path,
         shutil.rmtree(verify_dir, ignore_errors=True)
     verify_dir.mkdir(parents=True, exist_ok=True)
 
+    _reset_app_progress_state(app)
     app.is_running = True
     setattr(app, "cancel_requested", False)
 
@@ -257,9 +262,14 @@ def _run_a7_files_add_automation(app: PS5ConverterGUI, source_exfat: Path, outpu
     return bool(ok and extracted_ok and marker_ok), actual_out, verify_root, marker_name
 
 
-def _run_a7_files_remove_automation(app: PS5ConverterGUI, source_exfat: Path, output_dir: Path) -> tuple[bool, Path, Path, str]:
+def _prepare_a7_files_remove_seed(app: PS5ConverterGUI, source_exfat: Path, output_dir: Path) -> tuple[bool, Path, Path, str]:
     add_ok, seeded_out, seeded_verify_dir, marker_name = _run_a7_files_add_automation(app, source_exfat, output_dir)
-    if not add_ok:
+    return add_ok, seeded_out, seeded_verify_dir, marker_name
+
+
+def _run_a7_files_remove_automation(app: PS5ConverterGUI, seeded_out: Path, output_dir: Path, marker_name: str) -> tuple[bool, Path, Path, str]:
+    seeded_verify_dir = output_dir / "_a7_verify_files_add"
+    if not seeded_out.exists():
         return False, seeded_out, seeded_verify_dir, marker_name
 
     a7_output_dir = output_dir / "A7_files_remove_output"
@@ -311,6 +321,413 @@ def _run_task(name: str, fn, result_store: dict, logs: dict, task_log: list[str]
         tail = "".join(task_log)[-3000:]
         logs[name] = (traceback.format_exc(limit=6) + ("\n\n--- task-log-tail ---\n" + tail if tail else ""))
         return False
+
+
+def _reset_app_progress_state(app: PS5ConverterGUI) -> None:
+    """Setzt die task-weiten Progress-Felder für einen direkten E2E-Methodenaufruf zurück."""
+    app.is_running = True
+    app.monitor_active = False
+    setattr(app, "cancel_requested", False)
+
+    while not app.engine_output_queue.empty():
+        try:
+            app.engine_output_queue.get_nowait()
+        except Exception:
+            break
+
+    start_ts = time.monotonic()
+    app.task_start_time = start_ts
+    app.task_total_source_bytes = 0
+    app.task_final_output_path = ""
+    app.task_progress = 0.0
+    app.task_displayed = 0.0
+    app.task_num_steps = 1
+    app.task_current_step = 0
+    app.task_step_ends = []
+    app.task_uncompressed_str = ""
+    app.task_stored_str = ""
+    app._copy_total_bytes = 0
+    app._copy_done_bytes = 0
+    app._copy_rate_bps = 0.0
+    app._copy_rate_trend = ""
+    app._last_engine_output_ts = start_ts
+    app._eta_ui_seconds = None
+    app._eta_ui_last_ts = start_ts
+    app._eta_ui_step = 0
+    app._mkpfs_eta_initial = 0.0
+    app.progress_engine = ProgressEngine()
+    try:
+        if hasattr(app, "progress_var"):
+            app.progress_var.set(0.0)
+        if hasattr(app, "percent_label"):
+            app.percent_label.config(text="0%")
+        if hasattr(app, "size_label"):
+            app.size_label.config(text="")
+        if hasattr(app, "status_label"):
+            app.status_label.config(text="Bereit.")
+    except Exception:
+        pass
+
+
+def _install_threadsafe_tk_shims(root: tk.Tk, app: PS5ConverterGUI) -> Callable[[], None]:
+    """Erlaubt Worker-Threads, UI-Callbacks über eine lokale Queue in den Hauptthread zu schedulen."""
+    main_thread = threading.main_thread()
+    pending: queue.SimpleQueue[tuple[float, Callable[..., Any], tuple[Any, ...]]] = queue.SimpleQueue()
+    original_after = root.after
+    cached_temp_dir = app._load_runtime_temp_dir()
+
+    class _ThreadSafeVar:
+        def __init__(self, value: str) -> None:
+            self._value = value
+            self._lock = threading.Lock()
+
+        def get(self) -> str:
+            with self._lock:
+                return self._value
+
+        def set(self, value: str) -> None:
+            with self._lock:
+                self._value = str(value)
+
+    def _threadsafe_after(delay_ms: int, callback=None, *args):
+        if threading.current_thread() is main_thread:
+            return original_after(delay_ms, callback, *args)
+        if callback is None:
+            return None
+        due = time.monotonic() + max(0, int(delay_ms)) / 1000.0
+        pending.put((due, callback, args))
+        return f"e2e_after_{time.monotonic_ns()}"
+
+    def _pump_pending() -> None:
+        ready: list[tuple[float, Callable[..., Any], tuple[Any, ...]]] = []
+        deferred: list[tuple[float, Callable[..., Any], tuple[Any, ...]]] = []
+        now = time.monotonic()
+
+        while True:
+            try:
+                item = pending.get_nowait()
+            except queue.Empty:
+                break
+            if item[0] <= now:
+                ready.append(item)
+            else:
+                deferred.append(item)
+
+        for item in deferred:
+            pending.put(item)
+
+        for _, callback, args in ready:
+            try:
+                callback(*args)
+            except Exception:
+                pass
+
+    root.after = _threadsafe_after  # type: ignore[assignment]
+    app._get_runtime_temp_dir = lambda: cached_temp_dir  # type: ignore[method-assign]
+    if hasattr(app, "temp_path"):
+        app.temp_path = _ThreadSafeVar(cached_temp_dir)
+    return _pump_pending
+
+
+def _capture_progress_sample(app: PS5ConverterGUI, started_at: float) -> dict[str, Any]:
+    """Erfasst einen kompakten Schnappschuss der aktuellen Task-Fortschrittswerte."""
+    try:
+        percent_label = str(app.percent_label.cget("text")) if hasattr(app, "percent_label") else ""
+    except Exception:
+        percent_label = ""
+    try:
+        size_label = str(app.size_label.cget("text")) if hasattr(app, "size_label") else ""
+    except Exception:
+        size_label = ""
+    try:
+        status_label = str(app.status_label.cget("text")) if hasattr(app, "status_label") else ""
+    except Exception:
+        status_label = ""
+    return {
+        "elapsed_s": round(max(0.0, time.monotonic() - started_at), 3),
+        "task_epoch": round(float(getattr(app, "task_start_time", 0.0) or 0.0), 6),
+        "progress": round(float(getattr(app, "task_progress", 0.0) or 0.0), 3),
+        "displayed": round(float(getattr(app, "task_displayed", 0.0) or 0.0), 3),
+        "step": int(getattr(app, "task_current_step", 0) or 0),
+        "steps": int(getattr(app, "task_num_steps", 0) or 0),
+        "percent_label": percent_label,
+        "size_label": size_label,
+        "status_label": status_label,
+    }
+
+
+def _infer_progress_phase_kind(samples: list[dict[str, Any]], phase_index: int) -> str:
+    labels = " ".join(str(s.get("status_label", "")).lower() for s in samples)
+    if "verifikation" in labels or "verifiziert" in labels or "verify" in labels:
+        return "verify"
+    return "main" if phase_index == 1 else "verify"
+
+
+def _split_progress_epochs(samples: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    if not samples:
+        return []
+
+    groups: list[list[dict[str, Any]]] = [[samples[0]]]
+    for sample in samples[1:]:
+        prev = groups[-1][-1]
+        if float(sample.get("task_epoch", 0.0) or 0.0) > float(prev.get("task_epoch", 0.0) or 0.0):
+            groups.append([sample])
+        else:
+            groups[-1].append(sample)
+    return groups
+
+
+def _summarize_progress(
+    samples: list[dict[str, Any]],
+    ok: bool,
+    *,
+    include_phases: bool = True,
+    require_final_progress: bool | None = None,
+) -> dict[str, Any]:
+    """Bewertet einen Progress-Verlauf auf Monotonie, Schrittgrenzen und Endzustand."""
+    if not samples:
+        checks = {
+            "progress_monotonic": False,
+            "displayed_monotonic": False,
+            "step_monotonic": False,
+            "step_in_range": False,
+            "displayed_not_ahead": False,
+            "saw_activity": False,
+            "final_progress_ge_95": not ok,
+            "all_pass": False,
+        }
+        return {
+            "sample_count": 0,
+            "checks": checks,
+            "violations": ["Keine Progress-Samples aufgezeichnet"],
+            "preview": [],
+            "ui_preview": [],
+            "last_non_empty_size": "",
+            "last_non_empty_percent": "",
+            "last_non_empty_status": "",
+            "saw_eta_label": False,
+            "saw_remaining_label": False,
+            "phases": [],
+        }
+
+    violations: list[str] = []
+    progress_monotonic = True
+    displayed_monotonic = True
+    step_monotonic = True
+    step_in_range = True
+    displayed_not_ahead = True
+
+    for prev, cur in zip(samples, samples[1:]):
+        epoch_changed = float(cur.get("task_epoch", 0.0) or 0.0) > float(prev.get("task_epoch", 0.0) or 0.0)
+        if epoch_changed:
+            continue
+        if cur["progress"] + 1e-6 < prev["progress"]:
+            progress_monotonic = False
+        if cur["displayed"] + 1e-6 < prev["displayed"]:
+            displayed_monotonic = False
+        if cur["step"] < prev["step"]:
+            step_monotonic = False
+
+    for sample in samples:
+        step = int(sample["step"])
+        steps = max(0, int(sample["steps"]))
+        if step < 0 or step > steps:
+            step_in_range = False
+        is_completed_ui = "abgeschlossen" in str(sample.get("status_label", "")).lower()
+        ahead_gap = float(sample["displayed"]) - float(sample["progress"])
+        if ahead_gap > 0.35 and not (is_completed_ui and float(sample["progress"]) >= 95.0 and float(sample["displayed"]) <= 100.0):
+            displayed_not_ahead = False
+
+    if not progress_monotonic:
+        violations.append("task_progress fällt rückwärts")
+    if not displayed_monotonic:
+        violations.append("task_displayed fällt rückwärts")
+    if not step_monotonic:
+        violations.append("task_current_step fällt rückwärts")
+    if not step_in_range:
+        violations.append("task_current_step liegt außerhalb von 0..task_num_steps")
+    if not displayed_not_ahead:
+        violations.append("task_displayed läuft sichtbar vor task_progress")
+
+    saw_activity = any(s["progress"] > 0.0 or s["step"] > 0 for s in samples)
+    if not saw_activity:
+        violations.append("kein sichtbarer Progress-Ausschlag")
+
+    if require_final_progress is None:
+        require_final_progress = ok
+
+    final_progress = float(samples[-1]["progress"])
+    final_progress_ge_95 = (final_progress >= 95.0) if require_final_progress else True
+    if require_final_progress and not final_progress_ge_95:
+        violations.append(f"Erfolgspfad endet nur bei {final_progress:.2f}% statt >= 95%")
+
+    checks = {
+        "progress_monotonic": progress_monotonic,
+        "displayed_monotonic": displayed_monotonic,
+        "step_monotonic": step_monotonic,
+        "step_in_range": step_in_range,
+        "displayed_not_ahead": displayed_not_ahead,
+        "saw_activity": saw_activity,
+        "final_progress_ge_95": final_progress_ge_95,
+    }
+    checks["all_pass"] = all(checks.values())
+
+    preview = samples[:6]
+    if len(samples) > 10:
+        preview = samples[:5] + samples[-5:]
+
+    ui_samples = [
+        {
+            "elapsed_s": s["elapsed_s"],
+            "progress": s["progress"],
+            "step": s["step"],
+            "percent_label": s.get("percent_label", ""),
+            "size_label": s.get("size_label", ""),
+            "status_label": s.get("status_label", ""),
+        }
+        for s in samples
+        if s.get("percent_label") or s.get("size_label") or s.get("status_label")
+    ]
+    ui_preview = ui_samples[:8]
+    if len(ui_samples) > 14:
+        ui_preview = ui_samples[:7] + ui_samples[-7:]
+
+    last_non_empty_size = next((str(s.get("size_label", "")) for s in reversed(ui_samples) if str(s.get("size_label", "")).strip()), "")
+    last_non_empty_percent = next((str(s.get("percent_label", "")) for s in reversed(ui_samples) if str(s.get("percent_label", "")).strip()), "")
+    last_non_empty_status = next((str(s.get("status_label", "")) for s in reversed(ui_samples) if str(s.get("status_label", "")).strip()), "")
+    saw_eta_label = any(
+        "ETA" in str(s.get("size_label", ""))
+        or "ETA" in str(s.get("status_label", ""))
+        for s in ui_samples
+    )
+    saw_remaining_label = any("Rest:" in str(s.get("size_label", "")) for s in ui_samples)
+
+    summary = {
+        "sample_count": len(samples),
+        "max_progress": max(float(s["progress"]) for s in samples),
+        "max_displayed": max(float(s["displayed"]) for s in samples),
+        "max_step": max(int(s["step"]) for s in samples),
+        "final": samples[-1],
+        "checks": checks,
+        "violations": violations,
+        "preview": preview,
+        "ui_preview": ui_preview,
+        "last_non_empty_size": last_non_empty_size,
+        "last_non_empty_percent": last_non_empty_percent,
+        "last_non_empty_status": last_non_empty_status,
+        "saw_eta_label": saw_eta_label,
+        "saw_remaining_label": saw_remaining_label,
+        "phases": [],
+    }
+
+    if include_phases:
+        phase_groups = _split_progress_epochs(samples)
+        phase_kind_counts: dict[str, int] = {}
+        phases: list[dict[str, Any]] = []
+        for index, phase_samples in enumerate(phase_groups, start=1):
+            phase_kind = _infer_progress_phase_kind(phase_samples, index)
+            phase_kind_counts[phase_kind] = phase_kind_counts.get(phase_kind, 0) + 1
+            phase_name = phase_kind if phase_kind_counts[phase_kind] == 1 else f"{phase_kind}_{phase_kind_counts[phase_kind]}"
+            is_last_phase = index == len(phase_groups)
+            phase_summary = _summarize_progress(
+                phase_samples,
+                ok,
+                include_phases=False,
+                require_final_progress=(ok and is_last_phase),
+            )
+            phase_summary["phase_index"] = index
+            phase_summary["phase_kind"] = phase_kind
+            phase_summary["phase_name"] = phase_name
+            phase_summary["epoch"] = float(phase_samples[0].get("task_epoch", 0.0) or 0.0)
+            phase_summary["elapsed_start_s"] = float(phase_samples[0].get("elapsed_s", 0.0) or 0.0)
+            phase_summary["elapsed_end_s"] = float(phase_samples[-1].get("elapsed_s", 0.0) or 0.0)
+            phases.append(phase_summary)
+        summary["phases"] = phases
+
+    return summary
+
+
+def _run_task_with_progress_capture(
+    name: str,
+    fn: Callable[[], bool],
+    result_store: dict[str, str],
+    logs: dict[str, str],
+    task_log: list[str],
+    progress_store: dict[str, Any],
+    root: tk.Tk,
+    app: PS5ConverterGUI,
+) -> bool:
+    """Führt einen GUI-Aufgabenpfad im Worker-Thread aus und zeichnet Progress-Zustände auf."""
+    _reset_app_progress_state(app)
+    started_at = time.monotonic()
+    samples: list[dict[str, Any]] = []
+    worker_error: list[str] = []
+    worker_result: dict[str, bool] = {"ok": False}
+
+    def _worker() -> None:
+        try:
+            worker_result["ok"] = bool(fn())
+        except Exception:
+            worker_error.append(traceback.format_exc(limit=6))
+            worker_result["ok"] = False
+        finally:
+            app.is_running = False
+
+    thread = threading.Thread(target=_worker, name=f"e2e_{name}", daemon=True)
+    thread.start()
+
+    try:
+        while thread.is_alive():
+            _pump_pending = getattr(app, "_e2e_pump_pending_callbacks", None)
+            if callable(_pump_pending):
+                _pump_pending()
+            try:
+                root.update_idletasks()
+                root.update()
+            except Exception:
+                pass
+            try:
+                app._update_progress_gui()
+            except Exception:
+                pass
+            samples.append(_capture_progress_sample(app, started_at))
+            time.sleep(0.05)
+
+        thread.join()
+        for _ in range(3):
+            _pump_pending = getattr(app, "_e2e_pump_pending_callbacks", None)
+            if callable(_pump_pending):
+                _pump_pending()
+            try:
+                root.update_idletasks()
+                root.update()
+            except Exception:
+                pass
+            try:
+                app._update_progress_gui()
+            except Exception:
+                pass
+            samples.append(_capture_progress_sample(app, started_at))
+
+        ok = bool(worker_result["ok"] and not worker_error)
+        summary = _summarize_progress(samples, ok)
+        progress_store[name] = summary
+        final_ok = bool(ok and summary["checks"]["all_pass"])
+        result_store[name] = "PASS" if final_ok else ("ERROR" if worker_error else "FAIL")
+
+        if not final_ok:
+            parts: list[str] = []
+            if worker_error:
+                parts.append(worker_error[0])
+            if summary.get("violations"):
+                parts.append("--- progress-violations ---\n" + "\n".join(summary["violations"]))
+            if task_log:
+                parts.append("--- task-log-tail ---\n" + "".join(task_log)[-4000:])
+            logs[name] = "\n\n".join(parts)
+        return final_ok
+    finally:
+        app.monitor_active = False
+        app.is_running = False
 
 
 def _normalize_task_selector(task: str | None) -> str | None:
@@ -408,10 +825,12 @@ def main() -> int:
 
     results: dict[str, str] = {}
     logs: dict[str, str] = {}
+    progress_checks: dict[str, Any] = {}
 
     root = tk.Tk()
     root.withdraw()
     app = PS5ConverterGUI(root)
+    app._e2e_pump_pending_callbacks = _install_threadsafe_tk_shims(root, app)
     fakelib_src = _find_fakelib_source(repo)
     _task_log: list[str] = []
     _orig_append = app._append_to_log
@@ -438,10 +857,20 @@ def main() -> int:
         if selected_task is not None:
             single_results: dict[str, str] = {}
             single_logs: dict[str, str] = {}
+            single_progress_checks: dict[str, Any] = {}
 
             def _single_run(label: str, fn) -> None:
                 _prep()
-                _run_task(label, fn, single_results, single_logs, _task_log)
+                _run_task_with_progress_capture(
+                    label,
+                    fn,
+                    single_results,
+                    single_logs,
+                    _task_log,
+                    single_progress_checks,
+                    root,
+                    app,
+                )
 
             if selected_task == "A1":
                 _single_run("A1_pack_folder_to_ffpfsc", lambda: app._mode_pack_folder(str(dump_dir), str(out_dir)))
@@ -514,15 +943,24 @@ def main() -> int:
                         a7_files_add_marker_name = str(a7_files_state["marker_name"])
 
                     a7_remove_state: dict[str, Path | str] = {}
+                    _prep()
+                    remove_seed_ok, remove_seed_out, remove_seed_verify_dir, remove_seed_marker = _prepare_a7_files_remove_seed(app, a7_source, out_dir)
+                    if not remove_seed_ok:
+                        single_results["A7_files_remove"] = "FAIL"
+                        single_logs["A7_files_remove"] = "Seed-Erzeugung fuer files_remove fehlgeschlagen"
+                    else:
+                        a7_files_remove_out = remove_seed_out
+                        a7_files_remove_verify_dir = remove_seed_verify_dir
+                        a7_files_remove_marker_name = remove_seed_marker
 
-                    def _run_single_a7_files_remove() -> bool:
-                        ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, a7_source, out_dir)
-                        a7_remove_state["actual_out"] = actual_out
-                        a7_remove_state["verify_dir"] = verify_dir
-                        a7_remove_state["marker_name"] = marker_name
-                        return ok
+                        def _run_single_a7_files_remove() -> bool:
+                            ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, remove_seed_out, out_dir, remove_seed_marker)
+                            a7_remove_state["actual_out"] = actual_out
+                            a7_remove_state["verify_dir"] = verify_dir
+                            a7_remove_state["marker_name"] = marker_name
+                            return ok
 
-                    _single_run("A7_files_remove", _run_single_a7_files_remove)
+                        _single_run("A7_files_remove", _run_single_a7_files_remove)
                     if "actual_out" in a7_remove_state:
                         a7_files_remove_out = a7_remove_state["actual_out"]  # type: ignore[assignment]
                     if "verify_dir" in a7_remove_state:
@@ -555,6 +993,7 @@ def main() -> int:
                 elif ffpkg_path and ffpkg_path.is_file():
                     single_results["A7_ffpkg_fakelib_manager"] = "SKIPPED_NEEDS_ADMIN"
             elif selected_task == "A8":
+                _single_run("A8_GUI_dump_validator", lambda: app._mode_dump_validator(str(dump_dir)))
                 a8_ok_json = out_dir / "a8_ok.json"
                 a8_fail_json = out_dir / "a8_fail.json"
                 ok_cli_ok, ok_tail = _run_cli_dump_validator(dump_dir, a8_ok_json)
@@ -580,6 +1019,7 @@ def main() -> int:
                 "results": single_results,
                 "output_dir": str(out_dir),
                 "logs": single_logs,
+                "progress_checks": single_progress_checks,
                 "selected_task": selected_task,
             }
             report_path = out_dir / f"e2e_report_{selected_task.lower()}.json"
@@ -599,7 +1039,16 @@ def main() -> int:
             results["A1_pack_folder_to_ffpfsc"] = "SKIPPED_NEEDS_ADMIN"
         else:
             _prep()
-            ok_a1 = _run_task("A1_pack_folder_to_ffpfsc", lambda: app._mode_pack_folder(str(dump_dir), str(out_dir)), results, logs, _task_log)
+            ok_a1 = _run_task_with_progress_capture(
+                "A1_pack_folder_to_ffpfsc",
+                lambda: app._mode_pack_folder(str(dump_dir), str(out_dir)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
 
         if not is_admin:
             ok_a2 = False
@@ -609,7 +1058,16 @@ def main() -> int:
             results["A5_exfat_to_game_folder"] = "SKIPPED_DEPENDS_ON_A2"
         elif ok_a1 and a1_out.exists():
             _prep()
-            ok_a2 = _run_task("A2_ffpfsc_to_exfat", lambda: app._mode_unpack_to_exfat(str(a1_out), str(out_dir)), results, logs, _task_log)
+            ok_a2 = _run_task_with_progress_capture(
+                "A2_ffpfsc_to_exfat",
+                lambda: app._mode_unpack_to_exfat(str(a1_out), str(out_dir)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
         else:
             ok_a2 = False
             results["A2_ffpfsc_to_exfat"] = "SKIPPED_DEPENDS_ON_A1"
@@ -618,7 +1076,16 @@ def main() -> int:
             ok_a3 = False
         elif ok_a2 and a2_out.exists():
             _prep()
-            ok_a3 = _run_task("A3_exfat_to_ffpfsc", lambda: app._mode_pack_file(str(a2_out), str(a3_out)), results, logs, _task_log)
+            ok_a3 = _run_task_with_progress_capture(
+                "A3_exfat_to_ffpfsc",
+                lambda: app._mode_pack_file(str(a2_out), str(a3_out)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
         else:
             ok_a3 = False
             results["A3_exfat_to_ffpfsc"] = "SKIPPED_DEPENDS_ON_A2"
@@ -627,7 +1094,16 @@ def main() -> int:
             pass
         elif ok_a3 and a3_out.exists():
             _prep()
-            _run_task("A4_ffpfsc_to_game_folder", lambda: app._mode_unpack_to_game_folder(str(a3_out), str(out_dir)), results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A4_ffpfsc_to_game_folder",
+                lambda: app._mode_unpack_to_game_folder(str(a3_out), str(out_dir)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
         else:
             results["A4_ffpfsc_to_game_folder"] = "SKIPPED_DEPENDS_ON_A3"
 
@@ -635,13 +1111,31 @@ def main() -> int:
             pass
         elif ok_a2 and a2_out.exists():
             _prep()
-            _run_task("A5_exfat_to_game_folder", lambda: app._mode_exfat_to_folder(str(a2_out), str(a5_out)), results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A5_exfat_to_game_folder",
+                lambda: app._mode_exfat_to_folder(str(a2_out), str(a5_out)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
         else:
             results["A5_exfat_to_game_folder"] = "SKIPPED_DEPENDS_ON_A2"
 
         if ffpkg_path and ffpkg_path.is_file():
             _prep()
-            _run_task("A6_ffpkg_to_ffpfsc", lambda: app._mode_ffpkg_to_ffpfsc(str(ffpkg_path), str(out_dir)), results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A6_ffpkg_to_ffpfsc",
+                lambda: app._mode_ffpkg_to_ffpfsc(str(ffpkg_path), str(out_dir)),
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
             _actual_a6 = getattr(app, "task_final_output_path", "")
             if _actual_a6:
                 _actual_path = Path(_actual_a6)
@@ -662,7 +1156,16 @@ def main() -> int:
                 return ok
 
             _prep()
-            _run_task("A7_fakelib_manager", _run_full_a7, results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A7_fakelib_manager",
+                _run_full_a7,
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
             if "actual_out" in a7_state:
                 a7_out = a7_state["actual_out"]
             if "verify_dir" in a7_state:
@@ -678,7 +1181,16 @@ def main() -> int:
                 return ok
 
             _prep()
-            _run_task("A7_files_add", _run_full_a7_files_add, results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A7_files_add",
+                _run_full_a7_files_add,
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
             if "actual_out" in a7_files_state:
                 a7_files_add_out = a7_files_state["actual_out"]  # type: ignore[assignment]
             if "verify_dir" in a7_files_state:
@@ -687,16 +1199,34 @@ def main() -> int:
                 a7_files_add_marker_name = str(a7_files_state["marker_name"])
 
             a7_remove_state: dict[str, Path | str] = {}
-
-            def _run_full_a7_files_remove() -> bool:
-                ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, a7_source, out_dir)
-                a7_remove_state["actual_out"] = actual_out
-                a7_remove_state["verify_dir"] = verify_dir
-                a7_remove_state["marker_name"] = marker_name
-                return ok
-
             _prep()
-            _run_task("A7_files_remove", _run_full_a7_files_remove, results, logs, _task_log)
+            remove_seed_ok, remove_seed_out, remove_seed_verify_dir, remove_seed_marker = _prepare_a7_files_remove_seed(app, a7_source, out_dir)
+            if not remove_seed_ok:
+                results["A7_files_remove"] = "FAIL"
+                logs["A7_files_remove"] = "Seed-Erzeugung fuer files_remove fehlgeschlagen"
+            else:
+                a7_files_remove_out = remove_seed_out
+                a7_files_remove_verify_dir = remove_seed_verify_dir
+                a7_files_remove_marker_name = remove_seed_marker
+
+                def _run_full_a7_files_remove() -> bool:
+                    ok, actual_out, verify_dir, marker_name = _run_a7_files_remove_automation(app, remove_seed_out, out_dir, remove_seed_marker)
+                    a7_remove_state["actual_out"] = actual_out
+                    a7_remove_state["verify_dir"] = verify_dir
+                    a7_remove_state["marker_name"] = marker_name
+                    return ok
+
+                _prep()
+                _run_task_with_progress_capture(
+                    "A7_files_remove",
+                    _run_full_a7_files_remove,
+                    results,
+                    logs,
+                    _task_log,
+                    progress_checks,
+                    root,
+                    app,
+                )
             if "actual_out" in a7_remove_state:
                 a7_files_remove_out = a7_remove_state["actual_out"]  # type: ignore[assignment]
             if "verify_dir" in a7_remove_state:
@@ -727,13 +1257,34 @@ def main() -> int:
                 return ok
 
             _prep()
-            _run_task("A7_ffpkg_fakelib_manager", _run_full_a7_ffpkg, results, logs, _task_log)
+            _run_task_with_progress_capture(
+                "A7_ffpkg_fakelib_manager",
+                _run_full_a7_ffpkg,
+                results,
+                logs,
+                _task_log,
+                progress_checks,
+                root,
+                app,
+            )
             if "actual_out" in a7_ffpkg_state:
                 a7_ffpkg_out = a7_ffpkg_state["actual_out"]
             if "verify_dir" in a7_ffpkg_state:
                 a7_ffpkg_verify_dir = a7_ffpkg_state["verify_dir"]
         elif ffpkg_path and ffpkg_path.is_file():
             results["A7_ffpkg_fakelib_manager"] = "SKIPPED_NEEDS_ADMIN"
+
+        _prep()
+        _run_task_with_progress_capture(
+            "A8_GUI_dump_validator",
+            lambda: app._mode_dump_validator(str(dump_dir)),
+            results,
+            logs,
+            _task_log,
+            progress_checks,
+            root,
+            app,
+        )
 
         a8_ok_json = out_dir / "a8_ok.json"
         a8_fail_json = out_dir / "a8_fail.json"
@@ -825,6 +1376,7 @@ def main() -> int:
             "A8_FAIL": str(out_dir / "a8_fail.json"),
         },
         "artifact_checks": artifact_checks,
+        "progress_checks": progress_checks,
         "output_dir": str(out_dir),
         "logs": logs,
     }

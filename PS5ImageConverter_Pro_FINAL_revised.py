@@ -369,6 +369,8 @@ class ProgressEngine:
         self._displayed: float = 0.0     # Angezeigter Wert (Easing)
         self._task_t0: float = time.monotonic()
         self._eta_seconds: float | None = None
+        self._external_eta_seconds: float | None = None
+        self._external_progress_active: bool = False
 
     # ------------------------------------------------------------------
     # Oeffentliche API
@@ -389,6 +391,8 @@ class ProgressEngine:
         self._committed = False
         self._task_t0 = time.monotonic()
         self._eta_seconds = None
+        self._external_eta_seconds = None
+        self._external_progress_active = False
         self._status_text = f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {task_name}"
         # Neuer Task muss einen alten Lauf hart ueberschreiben.
         # Sonst kann ein Resume-/Abbruch-Restwert (z. B. 93%) in den
@@ -479,7 +483,15 @@ class ProgressEngine:
 
     def update_external_progress(self, progress_pct: float) -> None:
         """Synchronisiert extern gemessenen Fortschritt (0-100) in die Engine."""
+        self._external_progress_active = True
         self._advance_raw(progress_pct)
+
+    def set_external_eta_seconds(self, eta_seconds: float | None) -> None:
+        """Setzt eine belastbare Live-ETA aus exakten Laufzeitmetriken."""
+        if eta_seconds is None or eta_seconds < 0.0 or eta_seconds > 24 * 3600:
+            self._external_eta_seconds = None
+        else:
+            self._external_eta_seconds = float(eta_seconds)
 
     def tick(self) -> tuple[float, str]:
         """Berechnet den naechsten Anzeige-Fortschritt via Easing.
@@ -528,7 +540,7 @@ class ProgressEngine:
 
     def _status_with_eta(self, base: str) -> str:
         """Erweitert den Statustext um ETA, wenn die Sch├ñtzung stabil ist."""
-        eta_s = self._estimate_eta_seconds()
+        eta_s = self._external_eta_seconds
         if eta_s is None:
             return base
         return f"{base} | ETA ~{self._fmt_eta(eta_s)}"
@@ -542,6 +554,9 @@ class ProgressEngine:
         - mindestens 18% Fortschritt innerhalb der aktuellen Aufgabe
         """
         if self._phase in ("idle", "done"):
+            return None
+
+        if self._external_progress_active:
             return None
 
         elapsed = time.monotonic() - self._task_t0
@@ -996,11 +1011,19 @@ class PS5ConverterGUI:
         # Byte-genaue Fortschrittsmessung (Progress Driven by Real Events)
         self._copy_total_bytes: int = 0            # Gesamt-Bytes für Kopier-Phase
         self._copy_done_bytes: int = 0             # Bereits kopierte Bytes (thread-safe via GIL)
+        self._copy_total_exact: bool = False       # True nur wenn Gesamtbytes des Schritts wirklich bekannt sind
+        self._copy_rate_bps: float = 0.0           # Kopierrate für laufende Byte-Phasen
+        self._copy_rate_trend: str = ""           # Trendtext zur Kopierrate
+        self._monitor_total_bytes: int = 0         # Gesamt-Bytes für Datei-Schreibphase
+        self._monitor_done_bytes: int = 0          # Sicher beobachtete Ziel-Bytes
+        self._monitor_total_exact: bool = False    # False wenn nur Quellgröße als Obergrenze bekannt ist
+        self._monitor_rate_bps: float = 0.0        # Schreibrate der Ziel-Datei
         self._last_source_size_bytes: int = 0      # zuletzt berechnete Quellgroesse (background)
         self._last_engine_output_ts: float = 0.0   # letzter sichtbarer Fortschrittsimpuls
         self._eta_ui_seconds: float | None = None  # ETA nur fuer Anzeige (monoton fallend)
         self._eta_ui_last_ts: float = 0.0          # Zeitstempel der letzten ETA-Anzeige
         self._eta_ui_step: int = 0                 # Schritt fuer ETA-Reset
+        self._eta_ui_step_started_ts: float = 0.0  # Startzeit des aktiven Schritts
         self._active_resume_checkpoint: dict[str, Any] | None = None
         self._preflight_warnings: list[str] = []
         self._checkpoint_last_save_ts: float = 0.0
@@ -7913,6 +7936,11 @@ class PS5ConverterGUI:
         self.task_stored_str         = ""
         self._copy_total_bytes       = 0
         self._copy_done_bytes        = 0
+        self._copy_total_exact       = False
+        self._monitor_total_bytes    = 0
+        self._monitor_done_bytes     = 0
+        self._monitor_total_exact    = False
+        self._monitor_rate_bps       = 0.0
         self._copy_rate_bps          = 0.0
         self._copy_rate_trend        = ""
         self._mkpfs_eta_initial      = 0.0   # ETA-Fortschritt für write-Phase
@@ -7920,6 +7948,7 @@ class PS5ConverterGUI:
         self._eta_ui_seconds         = None
         self._eta_ui_last_ts         = self.task_start_time
         self._eta_ui_step            = 0
+        self._eta_ui_step_started_ts = self.task_start_time
         self._task_report_path       = ""
         self._checkpoint_last_save_ts = self.task_start_time
         self._mkpfs_zero_compress_count = 0
@@ -8108,6 +8137,41 @@ class PS5ConverterGUI:
         if n < 1024 ** 3:
             return f"{n / 1024 ** 2:.1f} MB"
         return f"{n / 1024 ** 3:.2f} GB"
+
+    def _estimate_step_eta_seconds(self) -> float | None:
+        """Schätzt die Restzeit des aktiven Schritts statt der gesamten Aufgabe."""
+        step_active = int(getattr(self, "task_current_step", 0) or 0)
+        if step_active <= 0:
+            return None
+
+        step_start = float(self._step_start())
+        step_end = float(self._step_end())
+        step_span = max(0.0, step_end - step_start)
+        if step_span <= 0.0:
+            return None
+
+        progress = float(getattr(self, "task_progress", 0.0) or 0.0)
+        step_progress = max(0.0, min(progress - step_start, step_span))
+        step_frac = step_progress / step_span
+        if step_frac < 0.08:
+            return None
+
+        started_at = float(getattr(self, "_eta_ui_step_started_ts", 0.0) or 0.0)
+        if started_at <= 0.0:
+            return None
+
+        elapsed = time.monotonic() - started_at
+        if elapsed < 3.0:
+            return None
+
+        remaining = 1.0 - step_frac
+        if remaining <= 0.0:
+            return 0.0
+
+        eta_now = elapsed * (remaining / max(step_frac, 1e-6))
+        if eta_now < 0.0 or eta_now > 24 * 3600:
+            return None
+        return eta_now
 
     def _update_progress_gui(self) -> None:
         """Aktualisiert Fortschrittsbalken und %-Label live (alle 80ms).
@@ -8379,6 +8443,7 @@ class PS5ConverterGUI:
         # ------------------------------------------------------------------
         # 4. Groessen-Label & verbleibende Zeit (ETA)
         # ------------------------------------------------------------------
+        precise_eta_seconds: float | None = None
         if self.task_stored_str:
             if self.task_uncompressed_str:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
@@ -8389,48 +8454,82 @@ class PS5ConverterGUI:
             rem_b = max(0, int(self._copy_total_bytes) - done_b)
             rate_bps = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0)
             trend = str(getattr(self, "_copy_rate_trend", "") or "")
-            done_gb = done_b / (1024 ** 3)
-            total_gb = int(self._copy_total_bytes) / (1024 ** 3)
-            rem_gb = rem_b / (1024 ** 3)
-            if rate_bps > 0.0:
-                rate_mb = rate_bps / (1024 ** 2)
-                new_size = (
-                    f"Copy: {done_gb:.2f}/{total_gb:.2f} GB"
-                    f" | Rest: {rem_gb:.2f} GB"
-                    f" | {rate_mb:.1f} MB/s"
-                )
-                if trend:
-                    new_size += f" ({trend})"
+            total_exact = bool(getattr(self, "_copy_total_exact", False))
+            if total_exact:
+                done_gb = done_b / (1024 ** 3)
+                total_gb = int(self._copy_total_bytes) / (1024 ** 3)
+                rem_gb = rem_b / (1024 ** 3)
+                if rate_bps > 0.0:
+                    rate_mb = rate_bps / (1024 ** 2)
+                    precise_eta_seconds = (rem_b / rate_bps) if rem_b > 0 else 0.0
+                    new_size = (
+                        f"Copy: {done_gb:.2f}/{total_gb:.2f} GB"
+                        f" | Rest: {rem_gb:.2f} GB"
+                        f" | {rate_mb:.1f} MB/s"
+                    )
+                    if trend:
+                        new_size += f" ({trend})"
+                else:
+                    new_size = f"Copy: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
             else:
-                new_size = f"Copy: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
+                new_size = f"Copy: {self._fmt_bytes(done_b)} geschrieben"
+                if self._copy_total_bytes > 0:
+                    new_size += f" | Obergrenze ~{self._fmt_bytes(int(self._copy_total_bytes))}"
+                if rate_bps > 0.0:
+                    new_size += f" | {rate_bps / (1024 ** 2):.1f} MB/s"
+                    if trend:
+                        new_size += f" ({trend})"
+        elif self._monitor_total_bytes > 0 and self._monitor_done_bytes > 0:
+            done_b = max(0, min(int(self._monitor_done_bytes), int(self._monitor_total_bytes)))
+            rem_b = max(0, int(self._monitor_total_bytes) - done_b)
+            rate_bps = float(getattr(self, "_monitor_rate_bps", 0.0) or 0.0)
+            total_exact = bool(getattr(self, "_monitor_total_exact", False))
+            if total_exact:
+                done_gb = done_b / (1024 ** 3)
+                total_gb = int(self._monitor_total_bytes) / (1024 ** 3)
+                rem_gb = rem_b / (1024 ** 3)
+                if rate_bps > 0.0:
+                    rate_mb = rate_bps / (1024 ** 2)
+                    precise_eta_seconds = (rem_b / rate_bps) if rem_b > 0 else 0.0
+                    new_size = (
+                        f"Write: {done_gb:.2f}/{total_gb:.2f} GB"
+                        f" | Rest: {rem_gb:.2f} GB"
+                        f" | {rate_mb:.1f} MB/s"
+                    )
+                else:
+                    new_size = f"Write: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
+            else:
+                new_size = f"Write: {self._fmt_bytes(done_b)} geschrieben"
+                if self._monitor_total_bytes > 0:
+                    new_size += f" | Obergrenze ~{self._fmt_bytes(int(self._monitor_total_bytes))}"
+                if rate_bps > 0.0:
+                    new_size += f" | {rate_bps / (1024 ** 2):.1f} MB/s"
         elif self.task_total_source_bytes > 0:
-            src_str = self._fmt_bytes(self.task_total_source_bytes)
-            # Berechne verbleibende Größe basierend auf Fortschritt (0-100)
-            # Nutze task_progress (nicht task_displayed) für konsistente Berechnung
-            progress_frac = max(0.0, min(self.task_progress / 100.0, 1.0))
-            remaining_bytes = max(0, int(self.task_total_source_bytes * (1.0 - progress_frac)))
-            remaining_str = self._fmt_bytes(remaining_bytes)
-            # Zeige Größe und verbleibende Größe an
-            new_size = f"{src_str} | Verbleibend: {remaining_str}"
+            new_size = f"Quelle: {self._fmt_bytes(self.task_total_source_bytes)}"
         else:
             new_size = ""
 
         # ETA nur anzeigen wenn ein echter Schritt aktiv ist (nicht in langer Phase-1-Analyse),
         # und die sichtbare ETA monoton fallend halten.
         if pe is not None:
+            pe.set_external_eta_seconds(precise_eta_seconds)
             step_active = int(getattr(self, "task_current_step", 0) or 0)
             if step_active <= 0:
                 self._eta_ui_seconds = None
                 self._eta_ui_last_ts = time.monotonic()
                 self._eta_ui_step = 0
+                self._eta_ui_step_started_ts = 0.0
             else:
-                eta_seconds = pe._estimate_eta_seconds()
+                now = time.monotonic()
+                if self._eta_ui_step != step_active:
+                    self._eta_ui_step_started_ts = now
+                eta_seconds = precise_eta_seconds
                 if eta_seconds is not None and eta_seconds > 0:
-                    now = time.monotonic()
                     if self._eta_ui_step != step_active:
                         self._eta_ui_step = step_active
                         self._eta_ui_seconds = eta_seconds
                         self._eta_ui_last_ts = now
+                        self._eta_ui_step_started_ts = now
                     else:
                         prev = self._eta_ui_seconds
                         dt = max(0.0, now - float(getattr(self, "_eta_ui_last_ts", now)))
@@ -9569,6 +9668,15 @@ class PS5ConverterGUI:
         if not self.is_running:
             return False
 
+        is_pack_folder_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "folder"
+        is_pack_file_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "file"
+        effective_monitor_target_path = monitor_target_path
+        if is_pack_folder_cmd and monitor_target_path:
+            # MkPFS schreibt pack-folder-Ausgaben zuerst in <output>.tmp und verschiebt
+            # erst am Ende auf den finalen Zielpfad. Für sichtbare Write-Bytes muss der
+            # Monitor daher auf die temporäre Datei schauen.
+            effective_monitor_target_path = str(Path(monitor_target_path).with_name(Path(monitor_target_path).name + ".tmp"))
+
         # Vorab-Dependency-Check (z. B. zlib_ng), um Laufzeitabbrüche
         # bereits vor dem Engine-Thread zu vermeiden.
         if not self._ensure_mkpfs_runtime_dependencies():
@@ -9607,13 +9715,20 @@ class PS5ConverterGUI:
         if monitor_target_path:
             if advance_step:
                 self.task_current_step += 1
-            self._monitor_target_path = monitor_target_path
+            self._monitor_target_path = effective_monitor_target_path or monitor_target_path
             self._keepalive_log_last_ts = 0.0
             self._mkpfs_verify_pending = False
+            self._monitor_total_bytes = 0
+            self._monitor_done_bytes = 0
+            self._monitor_total_exact = False
+            self._monitor_rate_bps = 0.0
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
             self._copy_total_bytes = 0
             self._copy_done_bytes  = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
             # ETA-Initialwert für diesen Schritt zurücksetzen
             if hasattr(self, "_mkpfs_eta_initial"):
                 del self._mkpfs_eta_initial
@@ -9627,6 +9742,7 @@ class PS5ConverterGUI:
                     self._monitor_source_bytes = self.task_total_source_bytes
             else:
                 self._monitor_source_bytes = self.task_total_source_bytes
+            self._monitor_total_bytes = max(0, int(getattr(self, "_monitor_source_bytes", 0) or 0))
             # Sicherstellen dass task_progress mindestens beim Schritt-Start steht
             s = self._step_start()
             self.task_progress = max(self.task_progress, s)
@@ -9790,7 +9906,7 @@ class PS5ConverterGUI:
                Verhindert optisches Einfrieren wenn mkpfs die Datei
                vorab alloziert (Windows NTFS pre-allocation).
             """
-            mon_path  = monitor_target_path
+            mon_path  = effective_monitor_target_path
             mon_bytes = getattr(self, "_monitor_source_bytes", 0)
             if not mon_path or mon_bytes <= 0:
                 return
@@ -9812,17 +9928,34 @@ class PS5ConverterGUI:
             ESTIMATED_WRITE_SECS = max(30.0, min(_src_mb / 200.0, 600.0))
             start_time = time.monotonic()
             last_blocks: int = -1
+            prev_observed_bytes: int = 0
+            prev_observed_ts: float = start_time
 
             while not engine_done.is_set():
                 # --- Echte Bytes via st_blocks (tatsächlich geschriebene Sektoren) ---
                 real_frac: float | None = None
+                observed_bytes: int | None = None
                 try:
                     st = os.stat(mon_path)
+                    # pack-folder legt die temporäre Zieldatei sofort mit der finalen
+                    # Bildgröße an. Sobald diese bekannt ist, können Restgröße und ETA
+                    # auf Basis der exakten Zielgröße statt nur einer Obergrenze gezeigt werden.
+                    exact_target_bytes = int(getattr(st, "st_size", 0) or 0)
+                    if exact_target_bytes > 0:
+                        prev_total = int(getattr(self, "_monitor_total_bytes", 0) or 0)
+                        if exact_target_bytes != prev_total:
+                            self._monitor_total_bytes = exact_target_bytes
+                        self._monitor_total_exact = True
                     blocks = getattr(st, "st_blocks", -1)
                     if blocks > 0:
                         real_bytes = blocks * 512
                         real_frac = min(real_bytes / mon_bytes, 0.99)
+                        observed_bytes = max(0, min(int(real_bytes), int(mon_bytes)))
                         last_blocks = blocks
+                    elif 0 < int(getattr(st, "st_size", 0) or 0) < int(mon_bytes):
+                        real_bytes = int(getattr(st, "st_size", 0) or 0)
+                        real_frac = min(real_bytes / mon_bytes, 0.99)
+                        observed_bytes = max(0, min(real_bytes, int(mon_bytes)))
                     elif last_blocks < 0:
                         # Datei existiert noch nicht / kein st_blocks (Windows)
                         real_frac = None
@@ -9832,6 +9965,18 @@ class PS5ConverterGUI:
                 if real_frac is not None and real_frac > 0.001:
                     # Echte Bytes verfügbar – direkt mappen
                     mapped = write_start + real_frac * write_range
+                    if observed_bytes is not None:
+                        now_obs = time.monotonic()
+                        if observed_bytes >= prev_observed_bytes and now_obs > prev_observed_ts:
+                            delta_b = observed_bytes - prev_observed_bytes
+                            delta_t = now_obs - prev_observed_ts
+                            if delta_b > 0 and delta_t > 0:
+                                inst_rate = delta_b / delta_t
+                                prev_rate = float(getattr(self, "_monitor_rate_bps", 0.0) or 0.0)
+                                self._monitor_rate_bps = inst_rate if prev_rate <= 0.0 else (prev_rate * 0.65 + inst_rate * 0.35)
+                            prev_observed_bytes = observed_bytes
+                            prev_observed_ts = now_obs
+                        self._monitor_done_bytes = max(int(getattr(self, "_monitor_done_bytes", 0) or 0), observed_bytes)
                 else:
                     # Fallback: Zeitbasierter Creep
                     elapsed = time.monotonic() - start_time
@@ -9845,12 +9990,11 @@ class PS5ConverterGUI:
                 engine_done.wait(timeout=0.15)  # 150ms Intervall
 
         file_monitor_thread: threading.Thread | None = None
-        is_pack_file_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "file"
         is_unpack_cmd = len(args) >= 1 and args[0] == "unpack"
-        target_is_existing_dir = bool(monitor_target_path) and os.path.isdir(str(monitor_target_path))
+        target_is_existing_dir = bool(effective_monitor_target_path) and os.path.isdir(str(effective_monitor_target_path))
         prev_suppress_pulse = bool(getattr(self, "_suppress_pulse_creep", False))
         self._suppress_pulse_creep = prev_suppress_pulse or is_pack_file_cmd or is_unpack_cmd
-        if enable_file_monitor and monitor_target_path and not is_pack_file_cmd and not target_is_existing_dir:
+        if enable_file_monitor and effective_monitor_target_path and not is_pack_file_cmd and not target_is_existing_dir:
             file_monitor_thread = threading.Thread(target=_file_monitor, daemon=True)
             file_monitor_thread.start()
 
@@ -12337,15 +12481,10 @@ class PS5ConverterGUI:
                             pct = (min(99.0, cur / total_bytes[0] * 100.0)
                                    if total_bytes[0] else 0)
                             el_str = f"Laufzeit: {ProgressEngine._fmt_eta(el)}"
-                            if rate > 0 and total_bytes[0] and cur < total_bytes[0]:
-                                left = (total_bytes[0] - cur) / rate
-                                eta = f"ETA: {ProgressEngine._fmt_eta(left)}"
-                            else:
-                                eta = "Fast fertig..."
                             self.task_progress = pct
-                            self.root.after(0, lambda p=pct, e=el_str, t=eta, r=rate: (
+                            self.root.after(0, lambda p=pct, e=el_str, r=rate: (
                                 self.status_label.config(
-                                    text=f"Aufgabe 5 – Kopiere... {p:.0f}%  {e}  {t}  "
+                                    text=f"Aufgabe 5 – Kopiere... {p:.0f}%  {e}  "
                                          f"{r / 1048576:.0f} MB/s"
                                 )
                             ))
@@ -12828,14 +12967,10 @@ class PS5ConverterGUI:
                         self.task_progress = max(self.task_progress, mapped_pct)
                         self.task_displayed = max(self.task_displayed, mapped_pct)
                         elapsed_str = f"Laufzeit: {ProgressEngine._fmt_eta(elapsed)}"
-                        if rate > 0 and total_bytes[0] and cur < total_bytes[0]:
-                            eta_str = f"ETA: {ProgressEngine._fmt_eta((total_bytes[0] - cur) / rate)}"
-                        else:
-                            eta_str = "Fast fertig..."
                         self.root.after(
                             0,
-                            lambda p=raw_pct, e=elapsed_str, t=eta_str, r=rate: self.status_label.config(
-                                text=f"{status_prefix} – Kopiere... {p:.0f}%  {e}  {t}  {r / 1048576:.0f} MB/s"
+                            lambda p=raw_pct, e=elapsed_str, r=rate: self.status_label.config(
+                                text=f"{status_prefix} – Kopiere... {p:.0f}%  {e}  {r / 1048576:.0f} MB/s"
                             ),
                         )
                     except Exception:
@@ -13550,8 +13685,14 @@ class PS5ConverterGUI:
         total_bytes_box = [0]
         written_bytes = [0]
         last_log_ts = [0.0]
+        last_rate_ts = [0.0]
+        last_rate_bytes = [0]
+        rate_ema = [0.0]
         self._copy_total_bytes = 0
         self._copy_done_bytes = 0
+        self._copy_total_exact = True
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
 
         def _on_layout(total_size: int) -> None:
             total_bytes_box[0] = max(0, int(total_size))
@@ -13572,6 +13713,23 @@ class PS5ConverterGUI:
                     self.task_progress = max(self.task_progress, min(progress_pct, pct_end))
 
                     now = time.monotonic()
+                    dt_rate = now - last_rate_ts[0] if last_rate_ts[0] > 0.0 else 0.0
+                    if dt_rate >= 0.5:
+                        delta_b = max(0, written_bytes[0] - last_rate_bytes[0])
+                        inst_bps = (delta_b / dt_rate) if dt_rate > 0 else 0.0
+                        if inst_bps > 0.0:
+                            prev_ema = rate_ema[0]
+                            rate_ema[0] = inst_bps if prev_ema <= 0.0 else (prev_ema * 0.70 + inst_bps * 0.30)
+                            trend = "stabil"
+                            if prev_ema > 0.0:
+                                if inst_bps > prev_ema * 1.08:
+                                    trend = "steigend"
+                                elif inst_bps < prev_ema * 0.92:
+                                    trend = "fallend"
+                            self._copy_rate_bps = float(rate_ema[0])
+                            self._copy_rate_trend = trend
+                        last_rate_ts[0] = now
+                        last_rate_bytes[0] = written_bytes[0]
                     if now - last_log_ts[0] >= 8.0:
                         last_log_ts[0] = now
                         self.root.after(
@@ -13616,7 +13774,10 @@ class PS5ConverterGUI:
             sys.path.insert(0, mkpfs_parent)
 
         try:
-            from mkpfs.pfs import extract_exfat_image  # pyright: ignore[reportMissingImports]
+            from mkpfs import pfs as mkpfs_pfs  # pyright: ignore[reportMissingImports]
+            extract_exfat_image = getattr(mkpfs_pfs, "extract_exfat_image", None)
+            if not callable(extract_exfat_image):
+                raise AttributeError("extract_exfat_image nicht gefunden")
         except Exception as exc:
             self._append_to_log(f"[FEHLER] MkPFS-exFAT-Extraktion nicht verfuegbar: {exc}\n")
             return False
@@ -13661,6 +13822,9 @@ class PS5ConverterGUI:
 
         self._copy_total_bytes = max(1, int(total_bytes))
         self._copy_done_bytes = self._copy_total_bytes
+        self._copy_total_exact = False
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
         self.task_progress = max(self.task_progress, progress_end)
         self.task_displayed = max(self.task_displayed, progress_end)
         self._append_to_log(
@@ -14082,6 +14246,7 @@ class PS5ConverterGUI:
 
                         self._copy_total_bytes = int(_robo_payload[0])
                         self._copy_done_bytes = 0
+                        self._copy_total_exact = False
                         self._copy_rate_bps = 0.0
                         self._copy_rate_trend = ""
 
@@ -14128,15 +14293,17 @@ class PS5ConverterGUI:
                                                 rem_gb = max(0.0, (int(_robo_payload[0]) - done_b) / (1024 ** 3))
                                                 rate_mb = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0) / (1024 ** 2)
                                                 tr = str(getattr(self, "_copy_rate_trend", "") or "")
+                                                status_text = (
+                                                    f"Aufgabe 2 – Extrahiere... {self._fmt_bytes(done_b)} geschrieben"
+                                                    f" | Obergrenze ~{self._fmt_bytes(int(_robo_payload[0]))}"
+                                                )
+                                                if rate_mb > 0.0:
+                                                    status_text += f" | {rate_mb:.1f} MB/s"
+                                                    if tr:
+                                                        status_text += f" ({tr})"
                                                 self.root.after(
                                                     0,
-                                                    lambda d=done_gb, t=total_gb, r=rem_gb, sp=rate_mb, trd=tr: self.status_label.config(
-                                                        text=(
-                                                            f"Aufgabe 2 – Extrahiere... {d:.2f}/{t:.2f} GB | "
-                                                            f"Rest {r:.2f} GB | {sp:.1f} MB/s"
-                                                            + (f" ({trd})" if trd else "")
-                                                        )
-                                                    ),
+                                                    lambda txt=status_text: self.status_label.config(text=txt),
                                                 )
                                         except Exception:
                                             pass
