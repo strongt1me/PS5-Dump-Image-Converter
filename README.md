@@ -1,9 +1,9 @@
 # PS5 Dump & Image Converter
 
-![Platform](https://img.shields.io/badge/platform-Windows-0078D6)
+![Plattform](https://img.shields.io/badge/Plattform-Windows-0078D6)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
-![Status](https://img.shields.io/badge/status-release--ready-brightgreen)
-![Version](https://img.shields.io/badge/version-v1.7.80-blue)
+![Status](https://img.shields.io/badge/Status-release--bereit-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.7.80-blue)
 
 Windows-Desktop-Tool zum Konvertieren, Packen, Entpacken, Validieren und Bearbeiten von PS5-Dump-Formaten.
 

@@ -1,6 +1,6 @@
-# Release Notes v1.7.80
+# Release-Notizen v1.7.80
 
-## Highlights
+## Wichtigste Punkte
 
 - Aufgabe 7 unterstuetzt jetzt auch `.ffpkg` als Quelle fuer den fakelib-Workflow.
 - Aufgabe 7 erzeugt `ampr_emu.index` jetzt bei Bedarf automatisch fuer AMPR-Emulations-Builds.
@@ -31,7 +31,7 @@
 - Datei: `dist/PS5_Dump_Image_Converter_v1.7.80.exe`
 - Groesse: 33.08 MB
 - SHA-256: `6B31B8236E782CBA2C5ECE4BB9A1232936B00A661308EBC496925B0D41F224A8`
-- Signaturstatus: `NotSigned`
+- Signaturstatus: `Nicht signiert`
 
 ## Hinweise
 
