@@ -7,17 +7,17 @@
 
 Windows-Desktop-Tool zum Konvertieren, Packen, Entpacken, Validieren und Bearbeiten von PS5-Dump-Formaten.
 
-Das Projekt kombiniert einen GUI-Workflow mit nativen MkPFS-basierten Pfaden, gezielten Admin-Helfern und automatisierter Validierung fuer die wichtigsten Aufgabenpfade.
+Das Projekt kombiniert einen GUI-Workflow mit nativen MkPFS-basierten Pfaden, gezielten Admin-Helfern und automatisierter Validierung für die wichtigsten Aufgabenpfade.
 
 ## Inhalt
 
 - [Aktueller Status](#aktueller-status)
 - [Hauptfunktionen](#hauptfunktionen)
-- [Unterstuetzte Aufgaben](#unterstuetzte-aufgaben)
+- [Unterstützte Aufgaben](#unterstützte-aufgaben)
 - [Wichtige Hinweise](#wichtige-hinweise)
 - [Voraussetzungen](#voraussetzungen)
 - [Schnellstart](#schnellstart)
-- [Gezielte Admin-Laeufe](#gezielte-admin-laeufe)
+- [Gezielte Admin-Läufe](#gezielte-admin-läufe)
 - [Validierung](#validierung)
 - [Projektdateien](#projektdateien)
 - [Dokumentation](#dokumentation)
@@ -33,11 +33,11 @@ Validiert auf dem aktuellen Release-Stand mit:
 - Quality Suite: 8/8 PASS
 - Build Readiness: 7/7 PASS
 - Frischer EXE-Build: `dist/PS5_Dump_Image_Converter_v1.7.80.exe`
-- Gezielte Admin-Validierung fuer Aufgabe 7 mit `.ffpkg`: PASS
-- Sichtbarer Nachweis fuer Restgroesse und ETA in der Hauptphase von Aufgabe 7 `.ffpkg`: PASS
+- Gezielte Admin-Validierung für Aufgabe 7 mit `.ffpkg`: PASS
+- Sichtbarer Nachweis für Restgröße und ETA in der Hauptphase von Aufgabe 7 `.ffpkg`: PASS
 
 Beste aktuelle Referenzartefakte:
-- Admin-Validierungsbericht fuer Aufgabe 7 `.ffpkg`: `_e2e_output_a7_ffpkg_admin_live_20260708_ui_finalproof/e2e_report_a7.json`
+- Admin-Validierungsbericht für Aufgabe 7 `.ffpkg`: `_e2e_output_a7_ffpkg_admin_live_20260708_ui_finalproof/e2e_report_a7.json`
 - Build-Skript: `Build_EXE.ps1`
 - Hauptanwendung: `PS5ImageConverter_Pro_FINAL_revised.py`
 
@@ -50,17 +50,17 @@ Beste aktuelle Referenzartefakte:
 - `.exfat` in einen Spiel-Dump-Ordner entpacken
 - `.ffpkg` nach `.ffpfsc` konvertieren
 - `fakelib` und Root-Dateien in Dump-Quellen verwalten
-- `ampr_emu.index` fuer Aufgabe 7 automatisch erzeugen, wenn `fakelib/libSceAmpr.sprx` vorhanden ist
+- `ampr_emu.index` für Aufgabe 7 automatisch erzeugen, wenn `fakelib/libSceAmpr.sprx` vorhanden ist
 - Dump-Strukturen und Artefakte validieren
-- Eine eigenstaendige Windows-EXE mit PyInstaller bauen
+- Eine eigenständige Windows-EXE mit PyInstaller bauen
 
-## Fuer Wen Das Ist
+## Für Wen Das Ist
 
-- Nutzer, die eine Windows-GUI fuer gaengige PS5-Dump-Konvertierungs-Workflows wollen
-- Nutzer, die wiederholbare, admin-unterstuetzte Validierung fuer ausgewaehlte Aufgaben benoetigen
+- Nutzer, die eine Windows-GUI für gängige PS5-Dump-Konvertierungs-Workflows wollen
+- Nutzer, die wiederholbare, admin-unterstützte Validierung für ausgewählte Aufgaben benötigen
 - Homebrew-orientierte Workflows, die von MkPFS-basierten Pack- und Extraktionspfaden profitieren
 
-## Unterstuetzte Aufgaben
+## Unterstützte Aufgaben
 
 1. Game dump folder -> `.ffpfsc`
 2. `.ffpfsc` -> `.exfat`
@@ -73,21 +73,21 @@ Beste aktuelle Referenzartefakte:
 
 ## Wichtige Hinweise
 
-- Aufgaben 1, 2, 4 und 5 koennen Administratorrechte benoetigen.
-- Aufgabe 7 mit `.ffpkg` als Quelle benoetigt in der Regel ebenfalls Administratorrechte, weil die Extraktion den UFS2Tool-/Dokan-Pfad nutzt.
-- Fuer Aufgabe 7 wird `.ffpkg` als Eingabeformat unterstuetzt, das bearbeitete Ergebnis wird aber als `.ffpfsc` geschrieben.
+- Aufgaben 1, 2, 4 und 5 können Administratorrechte benötigen.
+- Aufgabe 7 mit `.ffpkg` als Quelle benötigt in der Regel ebenfalls Administratorrechte, weil die Extraktion den UFS2Tool-/Dokan-Pfad nutzt.
+- Für Aufgabe 7 wird `.ffpkg` als Eingabeformat unterstützt, das bearbeitete Ergebnis wird aber als `.ffpfsc` geschrieben.
 - Aufgabe 7 erzeugt `ampr_emu.index` automatisch neu, sobald ein AMPR-Emulationsmarker (`fakelib/libSceAmpr.sprx`) erkannt wird.
-- Fuer exFAT-bezogene Workflows muss OSFMount installiert und nutzbar sein.
-- Der Validator soll unvollstaendige oder unplausible Dump-Strukturen frueh erkennen.
+- Für exFAT-bezogene Workflows muss OSFMount installiert und nutzbar sein.
+- Der Validator soll unvollständige oder unplausible Dump-Strukturen früh erkennen.
 
 ## Voraussetzungen
 
 - Windows
-- Python 3.10 oder neuer fuer den `.py`-Workflow
-- Genug freier Speicherplatz fuer temporaere Dateien und Ausgabe-Artefakte
-- Administratorrechte fuer erhoehte Workflows
+- Python 3.10 oder neuer für den `.py`-Workflow
+- Genug freier Speicherplatz für temporäre Dateien und Ausgabe-Artefakte
+- Administratorrechte für erhöhte Workflows
 
-Die Python-Abhaengigkeiten sind in `requirements.txt` definiert.
+Die Python-Abhängigkeiten sind in `requirements.txt` definiert.
 
 ## Schnellstart
 
@@ -119,20 +119,20 @@ dist/PS5_Dump_Image_Converter_v1.7.80.exe
 python PS5ImageConverter_Pro_FINAL_revised.py
 ```
 
-Danach Aufgabe 1 waehlen, den Dump-Ordner auswaehlen, ein Ausgabeziel festlegen und den Lauf starten.
+Danach Aufgabe 1 wählen, den Dump-Ordner auswählen, ein Ausgabeziel festlegen und den Lauf starten.
 
 ### `fakelib` aus einer `.ffpkg`-Quelle bearbeiten
 
 1. Anwendung starten
-2. Aufgabe 7 waehlen
-3. Eine `.ffpkg`-Quelle auswaehlen
-4. UAC bzw. Administratorrechte bestaetigen, falls noetig
-5. `fakelib`- oder Root-Datei-Aenderungen anwenden
+2. Aufgabe 7 wählen
+3. Eine `.ffpkg`-Quelle auswählen
+4. UAC bzw. Administratorrechte bestätigen, falls nötig
+5. `fakelib`- oder Root-Datei-Änderungen anwenden
 6. Ergebnis als `.ffpfsc` speichern
 
-## Gezielte Admin-Laeufe
+## Gezielte Admin-Läufe
 
-Das Repository enthaelt einen erhoehten Runner fuer die gezielte Validierung einzelner Aufgaben:
+Das Repository enthält einen erhöhten Runner für die gezielte Validierung einzelner Aufgaben:
 
 ```powershell
 .\Run_Tasks_1_8_Admin.ps1 -Task A7 -Dump .\path\to\DumpFolder -Ffpkg ".\path\to\input.ffpkg" -OutputDir .\_e2e_output_a7_admin
@@ -160,17 +160,17 @@ python run_tasks_1_8_e2e.py --task A7 --dump .\path\to\DumpFolder --ffpkg ".\pat
 
 ## Dokumentation
 
-- `Build_EXE.ps1` fuer den Windows-EXE-Build-Ablauf
-- `Run_Tasks_1_8_Admin.ps1` fuer die erhoehte Einzelaufgaben-Validierung
+- `Build_EXE.ps1` für den Windows-EXE-Build-Ablauf
+- `Run_Tasks_1_8_Admin.ps1` für die erhöhte Einzelaufgaben-Validierung
 
 ## Projektdateien
 
 - `PS5ImageConverter_Pro_FINAL_revised.py`: Haupt-GUI-Anwendung und Aufgabenlogik
 - `run_tasks_1_8_e2e.py`: automatisierter Aufgaben-Runner
-- `Run_Tasks_1_8_Admin.ps1`: erhoehter Runner fuer gezielte Admin-Validierung
+- `Run_Tasks_1_8_Admin.ps1`: erhöhter Runner für gezielte Admin-Validierung
 - `Build_EXE.ps1`: PyInstaller-Build-Skript
-- `test_all_quality_new.py`: aktueller Einstiegspunkt fuer die Quality Suite
-- `test_build_ready.py`: Build-Readiness-Pruefungen
+- `test_all_quality_new.py`: aktueller Einstiegspunkt für die Quality Suite
+- `test_build_ready.py`: Build-Readiness-Prüfungen
 
 ## Credits
 
@@ -179,7 +179,7 @@ Spezialversion von Strongt1me.
 Core-Engine:
 - Phoenixx1202 / PSBrew for MkPFS v0.0.9
 
-Weitere Grundlagen und Community-Beitraege:
+Weitere Grundlagen und Community-Beiträge:
 - KryoMod
 - Renan Barreto
 - Y2JB / PS5 Scene Community
@@ -198,12 +198,12 @@ Integrierte Werkzeuge und technische Grundlagen:
 
 ## Dank
 
-Dieses Projekt baut auf der Arbeit der PS5-Homebrew-Community und des Open-Source-Oekosystems darum herum auf.
+Dieses Projekt baut auf der Arbeit der PS5-Homebrew-Community und des Open-Source-Ökosystems darum herum auf.
 
-Ein besonderer Dank geht an alle, die Forschung, Code, Werkzeuge und praktisches Wissen teilen, damit andere darauf aufbauen, daraus lernen und die Szene weiterbringen koennen.
+Ein besonderer Dank geht an alle, die Forschung, Code, Werkzeuge und praktisches Wissen teilen, damit andere darauf aufbauen, daraus lernen und die Szene weiterbringen können.
 
-Das schliesst ausdruecklich auch kerrdec97 als Entwickler hinter PS5 exFAT Image Builder / ps5-exfat-builder ein, dessen veroeffentlichte Grundlagen und Werkzeuge wichtige Workflow-Richtungen dieses Projekts mitgepraegt haben.
+Das schließt ausdrücklich auch kerrdec97 als Entwickler hinter PS5 exFAT Image Builder / ps5-exfat-builder ein, dessen veröffentlichte Grundlagen und Werkzeuge wichtige Workflow-Richtungen dieses Projekts mitgeprägt haben.
 
 ## Lizenz / Hinweis
 
-Vor einer Weiterverteilung sollten die Repository-Dateien und die Lizenzen der gebuendelten Werkzeuge geprueft werden. Unterschiedliche integrierte Tools und Abhaengigkeiten koennen eigene Lizenzbedingungen haben.
+Vor einer Weiterverteilung sollten die Repository-Dateien und die Lizenzen der gebündelten Werkzeuge geprüft werden. Unterschiedliche integrierte Tools und Abhängigkeiten können eigene Lizenzbedingungen haben.
