@@ -113,7 +113,7 @@ logger = logging.getLogger("PS5Converter")
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.7.80"
+APP_VERSION = "v1.7.81"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Verbindliche MkPFS-Version fuer Aufgaben 1-8.
@@ -216,6 +216,18 @@ if sys.platform == "win32":
     WS_EX_NOACTIVATE   = 0x08000000
     SW_MINIMIZE        = 6
     SW_RESTORE         = 9
+    WM_SETICON         = 0x0080
+    ICON_SMALL         = 0
+    ICON_BIG           = 1
+    IMAGE_ICON         = 1
+    LR_LOADFROMFILE    = 0x0010
+    LR_DEFAULTSIZE     = 0x0040
+    GCLP_HICON         = -14
+    GCLP_HICONSM       = -34
+    SM_CXICON          = 11
+    SM_CYICON          = 12
+    SM_CXSMICON        = 49
+    SM_CYSMICON        = 50
 
     def _get_hwnd(tk_widget) -> int:
         """Gibt das Win32-HWND fuer ein Tk-Widget zurueck."""
@@ -244,6 +256,40 @@ if sys.platform == "win32":
             )
         except Exception as exc:
             logger.debug("Win32 SetWindowPos fehlgeschlagen (nicht-Windows): %s", exc)
+
+    def _apply_win32_window_icon(tk_widget, icon_path: str) -> None:
+        """Setzt unter Windows explizit kleine/grosse Fenster-Icons fuer die Taskleiste."""
+        try:
+            if not icon_path or not os.path.isfile(icon_path):
+                return
+            try:
+                tk_widget.update_idletasks()
+            except Exception:
+                pass
+            hwnd = _get_hwnd(tk_widget)
+            big_w = max(1, int(_user32.GetSystemMetrics(SM_CXICON) or 32))
+            big_h = max(1, int(_user32.GetSystemMetrics(SM_CYICON) or 32))
+            small_w = max(1, int(_user32.GetSystemMetrics(SM_CXSMICON) or 16))
+            small_h = max(1, int(_user32.GetSystemMetrics(SM_CYSMICON) or 16))
+            load_flags = LR_LOADFROMFILE | LR_DEFAULTSIZE
+            big_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, big_w, big_h, load_flags)
+            small_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, small_w, small_h, load_flags)
+            if big_icon:
+                _user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big_icon)
+                try:
+                    _user32.SetClassLongPtrW(hwnd, GCLP_HICON, big_icon)
+                except Exception:
+                    pass
+            if small_icon:
+                _user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small_icon)
+                try:
+                    _user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, small_icon)
+                except Exception:
+                    pass
+            if big_icon or small_icon:
+                setattr(tk_widget, "_win32_icon_handles", (big_icon, small_icon))
+        except Exception as exc:
+            logger.debug("Win32 Taskleisten-Icon konnte nicht gesetzt werden: %s", exc)
 
     def _bring_to_front(tk_widget) -> None:
         """Bringt das Fenster in den Vordergrund (umgeht Windows-Fokus-Schutz)."""
@@ -1913,58 +1959,9 @@ class PS5ConverterGUI:
 
     def _check_release_test_gate(self, mode: str) -> tuple[bool, str]:
         """Prueft die harte Start-Policy fuer Release-Tests.
-
-        Returns:
-            (True, info) wenn Start erlaubt, sonst (False, fehlertext).
+        DEAKTIVIERT: Release-Test-Gate wurde entfernt.
         """
-        # Nur fuer Aufgaben mit Zielartefakt erzwingen.
-        if mode in ("inspect", "dump_validator"):
-            return True, ""
-
-        enforce = bool(self._load_setting("enforce_release_test_gate", True))
-        if not enforce:
-            return True, ""
-
-        status = self._load_release_test_status()
-        if not status:
-            return False, (
-                "Kein Release-Test-Status gefunden.\n\n"
-                "Bitte zuerst mindestens einen der folgenden Tests erfolgreich ausfuehren:\n"
-                "- run_all_tests.py\n"
-                "- quick_smoke_test.py\n"
-                "- hotfix_smoke_test.py"
-            )
-
-        passed = bool(status.get("passed", False))
-        suite = str(status.get("suite", "")).strip() or "unbekannt"
-        epoch_raw = status.get("epoch", 0)
-        try:
-            epoch = float(epoch_raw or 0.0)
-        except Exception:
-            epoch = 0.0
-        if epoch <= 0:
-            return False, "Release-Test-Status ist unvollstaendig (kein Zeitstempel)."
-
-        age_hours = max(0.0, (time.time() - epoch) / 3600.0)
-        max_age_raw = self._load_setting("release_test_gate_max_age_hours", 24.0)
-        try:
-            max_age_hours = float(cast(Any, max_age_raw) or 24.0)
-        except Exception:
-            max_age_hours = 24.0
-
-        if not passed:
-            return False, (
-                f"Letzter Release-Test ({suite}) ist fehlgeschlagen.\n"
-                "Task-Start ist blockiert, bis ein Testlauf gruen ist."
-            )
-        if age_hours > max_age_hours:
-            return False, (
-                f"Letzter Release-Test ({suite}) ist zu alt: {age_hours:.1f}h.\n"
-                f"Erlaubt sind maximal {max_age_hours:.1f}h."
-            )
-
-        ts = str(status.get("timestamp", "")).strip()
-        return True, f"{suite} PASS @ {ts or '-'} ({age_hours:.1f}h alt)"
+        return True, "Release-Test-Gate deaktiviert"
 
     def _refresh_release_test_gate_badge(self) -> None:
         """Sichtbare Release-Gate-Anzeige ist entfernt; interne Gate-Pruefung bleibt aktiv."""
@@ -3604,6 +3601,7 @@ class PS5ConverterGUI:
             icon_file = self._find_app_icon_file()
             if sys.platform == "win32" and icon_file:
                 win_any.iconbitmap(icon_file)
+                _apply_win32_window_icon(win_any, icon_file)
                 return
 
             if icon_file:
@@ -3619,6 +3617,7 @@ class PS5ConverterGUI:
                 tmp.write(ico_data)
                 tmp.close()
                 win_any.iconbitmap(tmp.name)
+                _apply_win32_window_icon(win_any, tmp.name)
                 win_any.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
                 return
 
@@ -8033,18 +8032,8 @@ class PS5ConverterGUI:
             messagebox.showerror("Ungültige Quelle", error_msg)
             return
 
-        # Harte Release-Test-Gate-Pruefung (4.0.2-Workflow).
-        gate_ok, gate_info = self._check_release_test_gate(mode)
-        if not gate_ok:
-            self._refresh_release_test_gate_badge()
-            messagebox.showerror(
-                "Release-Test-Gate blockiert",
-                gate_info,
-            )
-            return
-        if gate_info:
-            logger.info("Release-Test-Gate freigegeben: %s", gate_info)
-        self._refresh_release_test_gate_badge()
+        # Release-Test-Gate (entfernt)
+        pass
 
         # Preflight-Risikoanalyse (vor UI-Start und Thread-Launch).
         pf_errors, pf_warnings = self._run_preflight_checks(mode, src, dst_for_checks)

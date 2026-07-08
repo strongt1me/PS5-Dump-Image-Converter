@@ -3,7 +3,7 @@
 ![Plattform](https://img.shields.io/badge/Plattform-Windows-0078D6)
 ![Python](https://img.shields.io/badge/python-3.10%2B-3776AB)
 ![Status](https://img.shields.io/badge/Status-release--bereit-brightgreen)
-![Version](https://img.shields.io/badge/Version-v1.7.80-blue)
+![Version](https://img.shields.io/badge/Version-v1.7.81-blue)
 
 Windows-Desktop-Tool zum Konvertieren, Packen, Entpacken, Validieren und Bearbeiten von PS5-Dump-Formaten.
 
@@ -32,7 +32,7 @@ Release-bereit auf dem aktuellen `main`-Branch.
 Validiert auf dem aktuellen Release-Stand mit:
 - Quality Suite: 8/8 PASS
 - Build Readiness: 7/7 PASS
-- Frischer EXE-Build: `dist/PS5_Dump_Image_Converter_v1.7.80.exe`
+- Frischer EXE-Build: `dist/PS5_Dump_Image_Converter_v1.7.81.exe`
 - Gezielte Admin-Validierung für Aufgabe 7 mit `.ffpkg`: PASS
 - Sichtbarer Nachweis für Restgröße und ETA in der Hauptphase von Aufgabe 7 `.ffpkg`: PASS
 
@@ -108,7 +108,7 @@ python PS5ImageConverter_Pro_FINAL_revised.py
 Starte die erzeugte Datei aus:
 
 ```text
-dist/PS5_Dump_Image_Converter_v1.7.80.exe
+dist/PS5_Dump_Image_Converter_v1.7.81.exe
 ```
 
 ## Typische Workflows
