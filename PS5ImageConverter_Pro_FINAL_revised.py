@@ -14213,64 +14213,67 @@ class PS5ConverterGUI:
         rate_ema = [0.0]
         last_step_ts = [0.0]
         last_done_bytes = [0]
+        gui = self
 
-        class _GUIExtractProgress:
-            def status(self_inner, text: str) -> None:
-                cleaned = " ".join(str(text).split())
-                if cleaned:
-                    self.root.after(
-                        0,
-                        lambda t=f"{status_prefix} – {cleaned}": self.status_label.config(text=t),
-                    )
+        def _progress_status(text: str) -> None:
+            cleaned = " ".join(str(text).split())
+            if cleaned:
+                gui.root.after(
+                    0,
+                    lambda t=f"{status_prefix} – {cleaned}": gui.status_label.config(text=t),
+                )
 
-            def step(
-                self_inner,
-                phase: str,
-                current: int,
-                total: int,
-                *,
-                bytes_processed: int | None = None,
-            ) -> None:
-                del phase
-                total_units = max(1, int(total or 0))
-                done_units = max(0, int(bytes_processed if bytes_processed is not None else current))
-                done_units = min(done_units, total_units)
-                self._copy_total_bytes = total_units
-                self._copy_done_bytes = done_units
-                self._copy_total_exact = True
+        def _progress_step(
+            phase: str,
+            current: int,
+            total: int,
+            *,
+            bytes_processed: int | None = None,
+        ) -> None:
+            del phase
+            total_units = max(1, int(total or 0))
+            done_units = max(0, int(bytes_processed if bytes_processed is not None else current))
+            done_units = min(done_units, total_units)
+            gui._copy_total_bytes = total_units
+            gui._copy_done_bytes = done_units
+            gui._copy_total_exact = True
 
-                now = time.monotonic()
-                if last_step_ts[0] > 0.0:
-                    dt = max(0.001, now - last_step_ts[0])
-                    delta = max(0, done_units - last_done_bytes[0])
-                    inst_bps = delta / dt
-                    if inst_bps > 0.0:
-                        prev_ema = rate_ema[0]
-                        rate_ema[0] = inst_bps if prev_ema <= 0.0 else (prev_ema * 0.70 + inst_bps * 0.30)
-                        trend = "stabil"
-                        if prev_ema > 0.0:
-                            if inst_bps > prev_ema * 1.08:
-                                trend = "steigend"
-                            elif inst_bps < prev_ema * 0.92:
-                                trend = "fallend"
-                        self._copy_rate_bps = float(rate_ema[0])
-                        self._copy_rate_trend = trend
-                last_step_ts[0] = now
-                last_done_bytes[0] = done_units
+            now = time.monotonic()
+            if last_step_ts[0] > 0.0:
+                dt = max(0.001, now - last_step_ts[0])
+                delta = max(0, done_units - last_done_bytes[0])
+                inst_bps = delta / dt
+                if inst_bps > 0.0:
+                    prev_ema = rate_ema[0]
+                    rate_ema[0] = inst_bps if prev_ema <= 0.0 else (prev_ema * 0.70 + inst_bps * 0.30)
+                    trend = "stabil"
+                    if prev_ema > 0.0:
+                        if inst_bps > prev_ema * 1.08:
+                            trend = "steigend"
+                        elif inst_bps < prev_ema * 0.92:
+                            trend = "fallend"
+                    gui._copy_rate_bps = float(rate_ema[0])
+                    gui._copy_rate_trend = trend
+            last_step_ts[0] = now
+            last_done_bytes[0] = done_units
 
-                frac = max(0.0, min(done_units / max(total_units, 1), 0.995))
-                mapped = progress_start + frac * max(0.0, progress_end - progress_start)
-                self.task_progress = max(self.task_progress, min(mapped, progress_end))
+            frac = max(0.0, min(done_units / max(total_units, 1), 0.995))
+            mapped = progress_start + frac * max(0.0, progress_end - progress_start)
+            gui.task_progress = max(gui.task_progress, min(mapped, progress_end))
 
-                if pe is not None:
-                    try:
-                        pe._payload_total = max(1.0, float(total_units))
-                        pe.update_payload(float(done_units))
-                    except Exception:
-                        pass
+            if pe is not None:
+                try:
+                    pe._payload_total = max(1.0, float(total_units))
+                    pe.update_payload(float(done_units))
+                except Exception:
+                    pass
+
+        progress_bridge = cast(Any, type("_GUIExtractProgress", (), {})())
+        progress_bridge.status = _progress_status
+        progress_bridge.step = _progress_step
 
         try:
-            result = extract_exfat_image(src_path, dest_path, progress=_GUIExtractProgress())
+            result = extract_exfat_image(src_path, dest_path, progress=progress_bridge)
         except Exception as exc:
             self._append_to_log(f"[FEHLER] MkPFS exFAT-Extraktion fehlgeschlagen: {exc}\n")
             return False
