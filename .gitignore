@@ -17,8 +17,14 @@ __pycache__/
 htmlcov/
 _e2e_output*/
 _e2e*.log
+_progress_check*/
+_progress_eta*/
+_eta*/
 ampr_emu.index
 fakelib/
+
+# Local validation inputs and proprietary dump packages
+Dumps/
 
 # Type/lint caches
 .mypy_cache/
