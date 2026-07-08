@@ -34,9 +34,10 @@ Validated on the current release state with:
 - Build readiness: 7/7 PASS
 - Fresh EXE build: `dist/PS5_Dump_Image_Converter_v1.7.80.exe`
 - Targeted admin validation for task 7 with `.ffpkg`: PASS
+- Visible remaining-size and ETA proof for task 7 `.ffpkg` main phase: PASS
 
 Best current reference artifacts:
-- Admin validation report for task 7 `.ffpkg`: `_e2e_output_a7_ffpkg_admin_live_20260707_direct4/e2e_report_a7.json`
+- Admin validation report for task 7 `.ffpkg`: `_e2e_output_a7_ffpkg_admin_live_20260708_ui_finalproof/e2e_report_a7.json`
 - Build script: `Build_EXE.ps1`
 - Main application: `PS5ImageConverter_Pro_FINAL_revised.py`
 

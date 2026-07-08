@@ -88,6 +88,7 @@ Neu oder verbessert:
 - Aufgabe 3 zeigt ihren Abschluss und die Verifizierung klarer an.
 - Aufgabe 4 behandelt Schrittgrenzen und Fortschritt sauberer.
 - Fehlermeldungen und ETA-Anzeigen wurden vereinheitlicht und klarer gemacht.
+- Der Live-Nachweis fuer Aufgabe 7 mit `.ffpkg` bestaetigt jetzt sichtbar `Rest:` und `ETA` im Hauptlauf und wird im E2E-Report mitprotokolliert.
 - Die Windows-EXE bekam saubere Versionsinformationen.
 - UPX wurde im Build deaktiviert, um False Positives bei Antivirus und SmartScreen eher zu reduzieren.
 - README, Release Notes und Upload-Hinweise wurden ueberarbeitet.

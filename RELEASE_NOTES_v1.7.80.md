@@ -24,6 +24,7 @@
 - Frischer EXE-Build: erfolgreich
 - EXE-Starttest: erfolgreich
 - Targeted Admin Validation fuer Aufgabe 7 mit `.ffpkg`: PASS
+- Sichtbarer Rest-/ETA-Nachweis fuer Aufgabe 7 `.ffpkg` im Hauptlauf: PASS (`_e2e_output_a7_ffpkg_admin_live_20260708_ui_finalproof/e2e_report_a7.json`)
 
 ## Build-Artefakt
 
