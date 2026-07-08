@@ -2669,8 +2669,9 @@ class PS5ConverterGUI:
         # Action Bar (Start/Fortschritt)
         action_bar = tk.Frame(content_area, bg=self._COLORS["bg_main"])
         action_bar.grid(row=3, column=0, sticky="ew", pady=(0, 20))
-        action_bar.grid_columnconfigure(2, weight=1)
-        action_bar.grid_columnconfigure(4, weight=1, minsize=250)  # Breiter für Größen- und ETA-Info
+        action_bar.grid_columnconfigure(2, weight=1, minsize=260)
+        action_bar.grid_columnconfigure(3, weight=0, minsize=56)
+        action_bar.grid_columnconfigure(4, weight=0, minsize=430)  # Feste Breite vermeidet Balken-Flattern bei Live-Textupdates
 
         self.run_btn = ttk.Button(
             action_bar, text="STARTEN", style="Accent.TButton",
@@ -2688,11 +2689,11 @@ class PS5ConverterGUI:
         self.progress = ttk.Progressbar(action_bar, variable=self.progress_var, maximum=100)
         self.progress.grid(row=0, column=2, sticky="ew", ipady=5)
         self.progress.grid_remove()  # Im Idle-Zustand unsichtbar
-        self.percent_label = ttk.Label(action_bar, text="0%", font=("Segoe UI", 11, "bold"), foreground=self._COLORS["fg_accent"])
-        self.percent_label.grid(row=0, column=3, padx=(15, 0))
+        self.percent_label = ttk.Label(action_bar, text="0%", width=5, anchor="e", font=("Segoe UI", 11, "bold"), foreground=self._COLORS["fg_accent"])
+        self.percent_label.grid(row=0, column=3, padx=(15, 0), sticky="e")
         self.percent_label.grid_remove()  # Im Idle-Zustand unsichtbar
         # Größen- und ETA-Label (breiter für verbleibende Größe und ETA-Zeit)
-        self.size_label = ttk.Label(action_bar, text="", font=("Segoe UI", 8), foreground=self._COLORS["fg_secondary"], wraplength=400)
+        self.size_label = ttk.Label(action_bar, text="", width=52, anchor="w", font=("Segoe UI", 8), foreground=self._COLORS["fg_secondary"], wraplength=430)
         self.size_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
 
         # Console (Dark Console Style)
@@ -7947,6 +7948,7 @@ class PS5ConverterGUI:
         self._last_engine_output_ts  = time.monotonic()
         self._mkpfs_last_engine_phase = ""
         self._mkpfs_last_engine_pct = None
+        self._mkpfs_seen_engine_percent = False
         self._eta_ui_seconds         = None
         self._eta_ui_last_ts         = self.task_start_time
         self._eta_ui_step            = 0
@@ -8197,6 +8199,7 @@ class PS5ConverterGUI:
         engine_phase = ""
         engine_eta_seconds: float | None = None
         engine_rate_bps: float | None = None
+        eta_source = ""
         visible_lines: list[str] = []
         drained = 0
         max_drain_per_tick = 300
@@ -8222,6 +8225,7 @@ class PS5ConverterGUI:
                         engine_phase = str(m.group(2) or "").strip().lower()
                         self._mkpfs_last_engine_phase = engine_phase
                         self._mkpfs_last_engine_pct = engine_pct
+                        self._mkpfs_seen_engine_percent = True
                 rate_m = re.search(r'@\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]?B)/s', line)
                 if rate_m:
                     rate_value = float(rate_m.group(1))
@@ -8244,7 +8248,11 @@ class PS5ConverterGUI:
                 if eta_m:
                     eta_now = float(eta_m.group(1))
                     engine_eta_seconds = eta_now
-                if eta_now is not None and not m:
+                if (
+                    eta_now is not None
+                    and not m
+                    and not bool(getattr(self, "_mkpfs_seen_engine_percent", False))
+                ):
                     # Initiales ETA merken (groesstes bisher gesehenes ETA)
                     if not hasattr(self, '_mkpfs_eta_initial') or eta_now > self._mkpfs_eta_initial:
                         self._mkpfs_eta_initial = eta_now
@@ -8486,6 +8494,7 @@ class PS5ConverterGUI:
             rem_gb = rem_b / (1024 ** 3)
             if engine_eta_seconds is not None and engine_eta_seconds >= 0.0:
                 precise_eta_seconds = engine_eta_seconds
+                eta_source = "engine_compress"
             if engine_rate_bps is not None and engine_rate_bps > 0.0:
                 rate_mb = engine_rate_bps / (1024 ** 2)
                 new_size = (
@@ -8508,6 +8517,7 @@ class PS5ConverterGUI:
                 if rate_bps > 0.0:
                     rate_mb = rate_bps / (1024 ** 2)
                     precise_eta_seconds = (rem_b / rate_bps) if rem_b > 0 else 0.0
+                    eta_source = "copy"
                     new_size = (
                         f"Copy: {done_gb:.2f}/{total_gb:.2f} GB"
                         f" | Rest: {rem_gb:.2f} GB"
@@ -8537,6 +8547,7 @@ class PS5ConverterGUI:
                 if rate_bps > 0.0:
                     rate_mb = rate_bps / (1024 ** 2)
                     precise_eta_seconds = (rem_b / rate_bps) if rem_b > 0 else 0.0
+                    eta_source = "monitor"
                     new_size = (
                         f"Write: {done_gb:.2f}/{total_gb:.2f} GB"
                         f" | Rest: {rem_gb:.2f} GB"
@@ -8579,7 +8590,9 @@ class PS5ConverterGUI:
                     else:
                         prev = self._eta_ui_seconds
                         dt = max(0.0, now - float(getattr(self, "_eta_ui_last_ts", now)))
-                        if prev is None:
+                        if eta_source == "engine_compress":
+                            self._eta_ui_seconds = eta_seconds
+                        elif prev is None:
                             self._eta_ui_seconds = eta_seconds
                         else:
                             # Anzeige-Eta nicht ansteigen lassen; pro Sekunde sanft abzaehlen.
@@ -9770,6 +9783,7 @@ class PS5ConverterGUI:
             self._monitor_rate_bps = 0.0
             self._mkpfs_last_engine_phase = ""
             self._mkpfs_last_engine_pct = None
+            self._mkpfs_seen_engine_percent = False
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
             self._copy_total_bytes = 0
@@ -10059,7 +10073,7 @@ class PS5ConverterGUI:
         is_unpack_cmd = len(args) >= 1 and args[0] == "unpack"
         target_is_existing_dir = bool(effective_monitor_target_path) and os.path.isdir(str(effective_monitor_target_path))
         prev_suppress_pulse = bool(getattr(self, "_suppress_pulse_creep", False))
-        self._suppress_pulse_creep = prev_suppress_pulse or is_pack_file_cmd or is_unpack_cmd
+        self._suppress_pulse_creep = prev_suppress_pulse or is_pack_folder_cmd or is_pack_file_cmd or is_unpack_cmd
         if enable_file_monitor and effective_monitor_target_path and not is_pack_file_cmd and not target_is_existing_dir:
             file_monitor_thread = threading.Thread(target=_file_monitor, daemon=True)
             file_monitor_thread.start()
