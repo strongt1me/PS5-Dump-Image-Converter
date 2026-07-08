@@ -121,6 +121,9 @@ python PS5ImageConverter_Pro_FINAL_revised.py
 
 Danach Aufgabe 1 wählen, den Dump-Ordner auswählen, ein Ausgabeziel festlegen und den Lauf starten.
 
+Hinweis zur Fortschrittsanzeige in Aufgabe 1:
+Der Balken zeigt den Gesamtfortschritt des One-Pass-Laufs über Analyse, Lesen und Kompression. Die Live-Zeile mit `Kompr.`, `Rest` und `ETA` beschreibt dagegen gezielt den aktuellen Kompressionsschritt von MkPFS.
+
 ### `fakelib` aus einer `.ffpkg`-Quelle bearbeiten
 
 1. Anwendung starten
