@@ -7945,6 +7945,8 @@ class PS5ConverterGUI:
         self._copy_rate_trend        = ""
         self._mkpfs_eta_initial      = 0.0   # ETA-Fortschritt für write-Phase
         self._last_engine_output_ts  = time.monotonic()
+        self._mkpfs_last_engine_phase = ""
+        self._mkpfs_last_engine_pct = None
         self._eta_ui_seconds         = None
         self._eta_ui_last_ts         = self.task_start_time
         self._eta_ui_step            = 0
@@ -8218,6 +8220,8 @@ class PS5ConverterGUI:
                     if 0.0 <= val <= 100.0:
                         engine_pct = val
                         engine_phase = str(m.group(2) or "").strip().lower()
+                        self._mkpfs_last_engine_phase = engine_phase
+                        self._mkpfs_last_engine_pct = engine_pct
                 rate_m = re.search(r'@\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]?B)/s', line)
                 if rate_m:
                     rate_value = float(rate_m.group(1))
@@ -9764,6 +9768,8 @@ class PS5ConverterGUI:
             self._monitor_done_bytes = 0
             self._monitor_total_exact = False
             self._monitor_rate_bps = 0.0
+            self._mkpfs_last_engine_phase = ""
+            self._mkpfs_last_engine_pct = None
             # Copy-Byte-Zähler aus vorherigen Schritten (z.B. Robocopy Phase 2) zurücksetzen,
             # damit Quelle 3 den Fortschritt nicht sofort auf ~94% springen lässt.
             self._copy_total_bytes = 0
@@ -9974,6 +9980,20 @@ class PS5ConverterGUI:
             prev_observed_ts: float = start_time
 
             while not engine_done.is_set():
+                last_engine_phase = str(getattr(self, "_mkpfs_last_engine_phase", "") or "").lower()
+                last_engine_pct = getattr(self, "_mkpfs_last_engine_pct", None)
+                suppress_monitor_progress = (
+                    is_pack_folder_cmd
+                    and (
+                        last_engine_pct is None
+                        or last_engine_phase == ""
+                        or (
+                            last_engine_phase == "compress"
+                            and 0.0 <= float(last_engine_pct) < 100.0
+                        )
+                    )
+                )
+
                 # --- Echte Bytes via st_blocks (tatsächlich geschriebene Sektoren) ---
                 real_frac: float | None = None
                 observed_bytes: int | None = None
@@ -10003,6 +10023,10 @@ class PS5ConverterGUI:
                         real_frac = None
                 except OSError:
                     real_frac = None
+
+                if suppress_monitor_progress:
+                    engine_done.wait(timeout=0.15)
+                    continue
 
                 if real_frac is not None and real_frac > 0.001:
                     # Echte Bytes verfügbar – direkt mappen
