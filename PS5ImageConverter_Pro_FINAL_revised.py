@@ -8489,12 +8489,12 @@ class PS5ConverterGUI:
             if engine_rate_bps is not None and engine_rate_bps > 0.0:
                 rate_mb = engine_rate_bps / (1024 ** 2)
                 new_size = (
-                    f"Verarb.: {done_gb:.2f}/{total_gb:.2f} GB"
+                    f"Kompr.: {done_gb:.2f}/{total_gb:.2f} GB"
                     f" | Rest: {rem_gb:.2f} GB"
                     f" | {rate_mb:.1f} MB/s"
                 )
             else:
-                new_size = f"Verarb.: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
+                new_size = f"Kompr.: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
         elif self._copy_total_bytes > 0:
             done_b = max(0, min(int(self._copy_done_bytes), int(self._copy_total_bytes)))
             rem_b = max(0, int(self._copy_total_bytes) - done_b)

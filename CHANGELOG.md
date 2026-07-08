@@ -84,6 +84,7 @@ Neu oder verbessert:
 - Vorschau und Infobox wurden in mehreren Aufgabenpfaden schneller und robuster gemacht.
 - Die Fortschrittsanzeige wurde in mehreren Aufgaben deutlich verbessert.
 - Aufgabe 1 wurde bei Abbruch, Neustart und Kompressionsanzeige stabiler.
+- Aufgabe 1 kennzeichnet die Größen-/ETA-Zeile im MkPFS-`compress`-Lauf jetzt ausdrücklich als `Kompr.`, damit klar bleibt: Der Balken zeigt den Gesamtfortschritt, die Byte-/Rest-Anzeige den aktuellen Kompressionsfortschritt.
 - Aufgabe 2 erhielt bessere Fortschrittsstufen und schnellere Vorschaupfade.
 - Aufgabe 3 zeigt ihren Abschluss und die Verifizierung klarer an.
 - Aufgabe 4 behandelt Schrittgrenzen und Fortschritt sauberer.

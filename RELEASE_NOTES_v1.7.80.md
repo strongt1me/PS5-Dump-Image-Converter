@@ -13,6 +13,7 @@
 - Aufgabe 7 repackt `.ffpkg`-Quellen nach Bearbeitung bewusst als `.ffpfsc`.
 - Aufgabe 7 regeneriert `ampr_emu.index` automatisch, sobald `fakelib/libSceAmpr.sprx` als Marker erkannt wird.
 - Aufgabe 1 wurde für Neustart nach Abbruch, Progress-Mapping und Kompressions-Logs gehärtet.
+- Aufgabe 1 zeigt im laufenden MkPFS-`compress`-Schritt die Größen-/ETA-Zeile jetzt explizit als `Kompr.` an; der Fortschrittsbalken bleibt der Gesamtfortschritt über Scan, Read und Kompression.
 - Aufgabe 2 nutzt schnellere reportbasierte Vorschaupfade und eine korrigierte Schrittgeometrie.
 - Aufgabe 4 behandelt Schrittgrenzen und Progress-Clamping robuster.
 - Der Build fügt der EXE jetzt `FileVersion`, `ProductVersion`, `FileDescription`, `ProductName` und `CompanyName` hinzu.
