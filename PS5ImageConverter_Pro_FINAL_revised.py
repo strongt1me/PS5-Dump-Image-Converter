@@ -1459,6 +1459,39 @@ class PS5ConverterGUI:
         except Exception:
             return
 
+    def _snapshot_exit_cleanup_paths(self) -> set[str]:
+        """Liefert eine Momentaufnahme der aktuell vorgemerkten Temp-Ziele."""
+        try:
+            with self._exit_cleanup_lock:
+                return set(self._session_exit_cleanup_paths)
+        except Exception:
+            return set()
+
+    def _cleanup_task_temp_targets(self, baseline_paths: set[str] | None = None) -> None:
+        """Löscht nur die während des aktuellen Tasks neu erzeugten Temp-Ziele."""
+        baseline = baseline_paths if isinstance(baseline_paths, set) else set()
+        try:
+            with self._exit_cleanup_lock:
+                candidates = set(self._session_exit_cleanup_paths)
+        except Exception:
+            candidates = set()
+
+        for norm in sorted(candidates - baseline, key=len, reverse=True):
+            if not self._is_managed_temp_path(norm):
+                self._forget_exit_cleanup_path(norm)
+                continue
+            try:
+                if os.path.isdir(norm):
+                    shutil.rmtree(norm, ignore_errors=True)
+                    self._append_to_log(f"[CLEANUP] Task-Temp-Ordner gelöscht: {norm}\n")
+                elif os.path.isfile(norm):
+                    os.remove(norm)
+                    self._append_to_log(f"[CLEANUP] Task-Temp-Datei gelöscht: {norm}\n")
+            except Exception as exc:
+                logger.debug("Task-Cleanup konnte Artefakt nicht löschen (%s): %s", norm, exc)
+            finally:
+                self._forget_exit_cleanup_path(norm)
+
     def _cleanup_exit_temp_targets(
         self,
         checkpoint_mode: str = "",
@@ -7884,6 +7917,7 @@ class PS5ConverterGUI:
         value: float,
         show_percent: bool = True,
         size_text: str | None = None,
+        percent_value: float | None = None,
     ) -> None:
         """Setzt den Fortschrittsbalken und Zusatzinfos thread-sicher.
 
@@ -7892,17 +7926,20 @@ class PS5ConverterGUI:
             show_percent: Ob der Prozentwert angezeigt werden soll.
             size_text:    Text für das Größen-Label. None = Label nicht ändern.
                           Leerer String "" löscht das Label.
+            percent_value: Optionaler Anzeigewert nur für das Prozent-Label.
+                           None = denselben Wert wie für den Balken verwenden.
         """
         def _update() -> None:
             if hasattr(self, "progress_var"):
                 self.progress_var.set(value)
             if hasattr(self, "percent_label"):
                 # Unter 10% feiner anzeigen, damit lange Analysephasen sichtbar voranschreiten.
-                if show_percent and value > 0:
-                    if value < 30.0:
-                        self.percent_label.config(text=f"{value:.1f}%")
+                label_value = value if percent_value is None else percent_value
+                if show_percent and label_value > 0:
+                    if label_value < 30.0:
+                        self.percent_label.config(text=f"{label_value:.1f}%")
                     else:
-                        pct_int = int(value)
+                        pct_int = int(label_value)
                         self.percent_label.config(text=f"{pct_int}%")
                 else:
                     self.percent_label.config(text="")
@@ -8118,6 +8155,8 @@ class PS5ConverterGUI:
         self._last_engine_output_ts  = time.monotonic()
         self._mkpfs_last_engine_phase = ""
         self._mkpfs_last_engine_pct = None
+        self._mkpfs_last_engine_rate_bps = 0.0
+        self._mkpfs_last_engine_eta_seconds = None
         self._mkpfs_seen_engine_percent = False
         self._eta_ui_seconds         = None
         self._eta_ui_last_ts         = self.task_start_time
@@ -8410,6 +8449,7 @@ class PS5ConverterGUI:
                     }.get(rate_unit)
                     if rate_scale:
                         engine_rate_bps = rate_value * rate_scale
+                        self._mkpfs_last_engine_rate_bps = engine_rate_bps
                 # ETA-basierter Fortschritt für write-Phase:
                 # mkpfs gibt "ETA 9s", "ETA 8s" etc. aus – wir berechnen
                 # Fortschritt als 1 - (eta_aktuell / eta_initial)
@@ -8418,6 +8458,7 @@ class PS5ConverterGUI:
                 if eta_m:
                     eta_now = float(eta_m.group(1))
                     engine_eta_seconds = eta_now
+                    self._mkpfs_last_engine_eta_seconds = eta_now
                 if (
                     eta_now is not None
                     and not m
@@ -8461,6 +8502,24 @@ class PS5ConverterGUI:
         except queue.Empty:
             pass
 
+        # Zwischen zwei Engine-Zeilen die zuletzt bekannten Live-Metriken kurz halten,
+        # damit das obere Größenlabel nicht auf den allgemeinen Quellen-Fallback flackert.
+        if engine_pct is None:
+            last_phase = str(getattr(self, "_mkpfs_last_engine_phase", "") or "")
+            last_pct = getattr(self, "_mkpfs_last_engine_pct", None)
+            last_age = time.monotonic() - float(getattr(self, "_last_engine_output_ts", 0.0) or 0.0)
+            if last_phase and last_pct is not None and last_age <= 2.5:
+                engine_phase = last_phase
+                engine_pct = float(last_pct)
+                if engine_rate_bps is None:
+                    last_rate_bps = float(getattr(self, "_mkpfs_last_engine_rate_bps", 0.0) or 0.0)
+                    if last_rate_bps > 0.0:
+                        engine_rate_bps = last_rate_bps
+                if engine_eta_seconds is None:
+                    last_eta_seconds = getattr(self, "_mkpfs_last_engine_eta_seconds", None)
+                    if last_eta_seconds is not None:
+                        engine_eta_seconds = float(last_eta_seconds)
+
         # Log-Ausgabe bündeln: reduziert Tk-Repaint-Last massiv bei vielen Zeilen
         # (z.B. tausende "0% compress"-Zeilen) und hält die GUI responsiv.
         if visible_lines:
@@ -8486,12 +8545,14 @@ class PS5ConverterGUI:
                 mapped = s + (engine_pct / 100.0) * (near_end - s)
                 if mapped > self.task_progress:
                     self.task_progress = mapped
-            elif engine_phase in {"extract", "unpack", "verify", "compare"} and engine_pct >= 100.0:
+            elif engine_phase in {"extract", "unpack", "verify", "compare"}:
                 # Diese Phasen haben keine nachgelagerte stille Write-Phase wie
-                # `compress`. Wenn die Engine 100% meldet, darf der Schritt sichtbar
-                # am echten Schrittende ankommen statt bei 99% des Bereichs zu kleben.
-                if e > self.task_progress:
-                    self.task_progress = e
+                # `compress`. Deshalb direkt linear über den ganzen Schrittbereich
+                # mappen statt nur auf einen frühen Teilbereich.
+                mapped = s + (engine_pct / 100.0) * (e - s)
+                new_val = max(self.task_progress, min(mapped, e))
+                if new_val > self.task_progress:
+                    self.task_progress = new_val
             elif engine_pct >= 100.0:
                 # 100% komprimiert: Finalisierungsphase startet.
                 # Direkt auf 99% des Schrittbereichs vorspulen, damit die Anzeige
@@ -8645,6 +8706,7 @@ class PS5ConverterGUI:
         # 4. Groessen-Label & verbleibende Zeit (ETA)
         # ------------------------------------------------------------------
         precise_eta_seconds: float | None = None
+        display_percent_value: float | None = None
         if self.task_stored_str:
             if self.task_uncompressed_str:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
@@ -8662,6 +8724,7 @@ class PS5ConverterGUI:
             done_gb = done_b / (1024 ** 3)
             total_gb = total_b / (1024 ** 3)
             rem_gb = rem_b / (1024 ** 3)
+            display_percent_value = max(0.0, min(engine_pct, 100.0))
             if engine_eta_seconds is not None and engine_eta_seconds >= 0.0:
                 precise_eta_seconds = engine_eta_seconds
                 eta_source = "engine_compress"
@@ -8674,12 +8737,51 @@ class PS5ConverterGUI:
                 )
             else:
                 new_size = f"Kompr.: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
+        elif (
+            engine_phase in {"extract", "unpack", "verify", "compare"}
+            and engine_pct is not None
+            and 0.0 < engine_pct < 100.0
+        ):
+            total_b = max(
+                0,
+                int(
+                    getattr(self, "_monitor_source_bytes", 0)
+                    or getattr(self, "task_total_source_bytes", 0)
+                    or 0
+                ),
+            )
+            if total_b > 0:
+                total_gb = total_b / (1024 ** 3)
+                display_percent_value = max(0.0, min(engine_pct, 100.0))
+                phase_label = {
+                    "extract": "Extr.",
+                    "unpack": "Unpack",
+                    "verify": "Verify",
+                    "compare": "Compare",
+                }.get(engine_phase, "Verarb.")
+                if engine_eta_seconds is not None and engine_eta_seconds >= 0.0:
+                    precise_eta_seconds = engine_eta_seconds
+                    eta_source = f"engine_{engine_phase}"
+                if engine_rate_bps is not None and engine_rate_bps > 0.0:
+                    rate_mb = engine_rate_bps / (1024 ** 2)
+                    new_size = (
+                        f"{phase_label}: {engine_pct:.1f}% von {total_gb:.2f} GB"
+                        f" | {rate_mb:.1f} MB/s"
+                    )
+                else:
+                    new_size = f"{phase_label}: {engine_pct:.1f}% von {total_gb:.2f} GB"
+            else:
+                new_size = ""
         elif self._copy_total_bytes > 0:
             done_b = max(0, min(int(self._copy_done_bytes), int(self._copy_total_bytes)))
             rem_b = max(0, int(self._copy_total_bytes) - done_b)
             rate_bps = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0)
             trend = str(getattr(self, "_copy_rate_trend", "") or "")
             total_exact = bool(getattr(self, "_copy_total_exact", False))
+            display_percent_value = max(
+                0.0,
+                min((done_b / max(int(self._copy_total_bytes), 1)) * 100.0, 100.0),
+            )
             if total_exact:
                 done_gb = done_b / (1024 ** 3)
                 total_gb = int(self._copy_total_bytes) / (1024 ** 3)
@@ -8710,6 +8812,10 @@ class PS5ConverterGUI:
             rem_b = max(0, int(self._monitor_total_bytes) - done_b)
             rate_bps = float(getattr(self, "_monitor_rate_bps", 0.0) or 0.0)
             total_exact = bool(getattr(self, "_monitor_total_exact", False))
+            display_percent_value = max(
+                0.0,
+                min((done_b / max(int(self._monitor_total_bytes), 1)) * 100.0, 100.0),
+            )
             if total_exact:
                 done_gb = done_b / (1024 ** 3)
                 total_gb = int(self._monitor_total_bytes) / (1024 ** 3)
@@ -8742,6 +8848,7 @@ class PS5ConverterGUI:
             total_b = max(1, int(float(getattr(pe, "_payload_total", 0.0) or 0.0)))
             done_b = min(done_b, total_b)
             rem_b = max(0, total_b - done_b)
+            display_percent_value = max(0.0, min((done_b / total_b) * 100.0, 100.0))
             payload_t0 = float(getattr(pe, "_payload_t0", 0.0) or 0.0)
             elapsed = max(0.001, time.monotonic() - payload_t0) if payload_t0 > 0.0 else 0.0
             rate_bps = (done_b / elapsed) if elapsed > 0.0 and done_b > 0 else 0.0
@@ -8787,7 +8894,7 @@ class PS5ConverterGUI:
                     else:
                         prev = self._eta_ui_seconds
                         dt = max(0.0, now - float(getattr(self, "_eta_ui_last_ts", now)))
-                        if eta_source == "engine_compress":
+                        if eta_source.startswith("engine_"):
                             self._eta_ui_seconds = eta_seconds
                         elif prev is None:
                             self._eta_ui_seconds = eta_seconds
@@ -8812,6 +8919,7 @@ class PS5ConverterGUI:
             self.task_displayed,
             show_percent=(self.task_displayed > 0),
             size_text=new_size,
+            percent_value=display_percent_value,
         )
 
         # ------------------------------------------------------------------
@@ -10391,6 +10499,7 @@ class PS5ConverterGUI:
         """
         cp_dst = dst if mode not in ("inspect",) else ""
         verification_result: dict[str, Any] | None = None
+        task_temp_baseline = self._snapshot_exit_cleanup_paths()
 
         self._save_paths(src, dst)
         self._save_runtime_checkpoint(
@@ -10631,6 +10740,7 @@ class PS5ConverterGUI:
                         },
                     )
                     self._clear_runtime_checkpoint(mode=mode, src=src, dst=cp_dst)
+                    self._cleanup_task_temp_targets(task_temp_baseline)
                 else:
                     self._save_runtime_checkpoint(
                         mode=mode,
@@ -11325,7 +11435,7 @@ class PS5ConverterGUI:
                 self._append_to_log("[INFO] Modus: .ffpkg-Datei\n")
                 self._append_to_log("[INFO] Methode: MkPFS pack file -> ps5_validator ffpfs\n")
                 self.root.after(0, lambda: self.status_label.config(text="Validator – .ffpkg konvertieren..."))
-                tmp_pack_dir = tempfile.mkdtemp(prefix="ps5val_ffpkg_")
+                tmp_pack_dir = self._mkdtemp(prefix="ps5val_ffpkg_")
                 try:
                     tmp_ffpfsc = os.path.join(
                         tmp_pack_dir,
@@ -13564,7 +13674,7 @@ class PS5ConverterGUI:
         """
         folder_name  = os.path.splitext(os.path.basename(src))[0]
         final_dst    = os.path.join(dst, folder_name)
-        tmp_dir      = tempfile.mkdtemp(prefix="ps5conv_unpack_", dir=dst)
+        tmp_dir      = self._mkdtemp(prefix="ps5conv_unpack_", dir_path=dst)
         tmp_base     = tmp_dir                                  # Alias für finally-Block
         drive_letter: str | None = None                        # Für finally-Block
         osf_exe: str | None = None                             # Für finally-Block
