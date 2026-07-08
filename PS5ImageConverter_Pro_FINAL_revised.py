@@ -8193,6 +8193,8 @@ class PS5ConverterGUI:
         progress_before_sources = float(getattr(self, "task_progress", 0.0) or 0.0)
         engine_pct: float | None = None
         engine_phase = ""
+        engine_eta_seconds: float | None = None
+        engine_rate_bps: float | None = None
         visible_lines: list[str] = []
         drained = 0
         max_drain_per_tick = 300
@@ -8216,12 +8218,29 @@ class PS5ConverterGUI:
                     if 0.0 <= val <= 100.0:
                         engine_pct = val
                         engine_phase = str(m.group(2) or "").strip().lower()
+                rate_m = re.search(r'@\s*([0-9]+(?:\.[0-9]+)?)\s*([KMGTP]?B)/s', line)
+                if rate_m:
+                    rate_value = float(rate_m.group(1))
+                    rate_unit = str(rate_m.group(2) or "B").upper()
+                    rate_scale = {
+                        "B": 1,
+                        "KB": 1024,
+                        "MB": 1024 ** 2,
+                        "GB": 1024 ** 3,
+                        "TB": 1024 ** 4,
+                        "PB": 1024 ** 5,
+                    }.get(rate_unit)
+                    if rate_scale:
+                        engine_rate_bps = rate_value * rate_scale
                 # ETA-basierter Fortschritt für write-Phase:
                 # mkpfs gibt "ETA 9s", "ETA 8s" etc. aus – wir berechnen
                 # Fortschritt als 1 - (eta_aktuell / eta_initial)
+                eta_now: float | None = None
                 eta_m = re.search(r'ETA\s+(\d+(?:\.\d+)?)s', line)
-                if eta_m and not m:
+                if eta_m:
                     eta_now = float(eta_m.group(1))
+                    engine_eta_seconds = eta_now
+                if eta_now is not None and not m:
                     # Initiales ETA merken (groesstes bisher gesehenes ETA)
                     if not hasattr(self, '_mkpfs_eta_initial') or eta_now > self._mkpfs_eta_initial:
                         self._mkpfs_eta_initial = eta_now
@@ -8449,6 +8468,29 @@ class PS5ConverterGUI:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
             else:
                 new_size = self.task_stored_str
+        elif (
+            engine_phase == "compress"
+            and engine_pct is not None
+            and 0.0 < engine_pct < 100.0
+            and getattr(self, "_monitor_source_bytes", 0) > 0
+        ):
+            total_b = max(0, int(getattr(self, "_monitor_source_bytes", 0) or 0))
+            done_b = max(0, min(int(total_b * (engine_pct / 100.0)), total_b))
+            rem_b = max(0, total_b - done_b)
+            done_gb = done_b / (1024 ** 3)
+            total_gb = total_b / (1024 ** 3)
+            rem_gb = rem_b / (1024 ** 3)
+            if engine_eta_seconds is not None and engine_eta_seconds >= 0.0:
+                precise_eta_seconds = engine_eta_seconds
+            if engine_rate_bps is not None and engine_rate_bps > 0.0:
+                rate_mb = engine_rate_bps / (1024 ** 2)
+                new_size = (
+                    f"Verarb.: {done_gb:.2f}/{total_gb:.2f} GB"
+                    f" | Rest: {rem_gb:.2f} GB"
+                    f" | {rate_mb:.1f} MB/s"
+                )
+            else:
+                new_size = f"Verarb.: {done_gb:.2f}/{total_gb:.2f} GB | Rest: {rem_gb:.2f} GB"
         elif self._copy_total_bytes > 0:
             done_b = max(0, min(int(self._copy_done_bytes), int(self._copy_total_bytes)))
             rem_b = max(0, int(self._copy_total_bytes) - done_b)
