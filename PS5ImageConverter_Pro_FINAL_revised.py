@@ -2705,7 +2705,7 @@ class PS5ConverterGUI:
         action_bar.grid(row=3, column=0, sticky="ew", pady=(0, 20))
         action_bar.grid_columnconfigure(2, weight=1, minsize=260)
         action_bar.grid_columnconfigure(3, weight=0, minsize=56)
-        action_bar.grid_columnconfigure(4, weight=0, minsize=430)
+        action_bar.grid_columnconfigure(4, weight=0, minsize=520)
         # Feste Breite vermeidet Balken-Flattern bei Live-Textupdates
 
         self.run_btn = ttk.Button(
@@ -2738,11 +2738,11 @@ class PS5ConverterGUI:
         self.size_label = ttk.Label(
             action_bar,
             text="",
-            width=52,
+            width=64,
             anchor="w",
             font=("Segoe UI", 8),
             foreground=self._COLORS["fg_secondary"],
-            wraplength=430,
+            wraplength=520,
         )
         self.size_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
 
