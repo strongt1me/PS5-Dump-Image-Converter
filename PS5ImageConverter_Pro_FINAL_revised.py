@@ -35,7 +35,7 @@ import urllib.request
 import uuid          # noqa: F401
 import webbrowser
 import zlib          # noqa: F401
-from typing import Any, cast
+from typing import Any, Literal, cast
 from zipfile import ZipFile
 
 # ---------------------------------------------------------------------------
@@ -368,6 +368,7 @@ class ProgressEngine:
         self._raw_progress: float = 0.0  # Interner Rohwert (0ÔÇô100)
         self._displayed: float = 0.0     # Angezeigter Wert (Easing)
         self._task_t0: float = time.monotonic()
+        self._payload_t0: float = self._task_t0
         self._eta_seconds: float | None = None
         self._external_eta_seconds: float | None = None
         self._external_progress_active: bool = False
@@ -390,6 +391,7 @@ class ProgressEngine:
         self._payload_total = 0.0
         self._committed = False
         self._task_t0 = time.monotonic()
+        self._payload_t0 = self._task_t0
         self._eta_seconds = None
         self._external_eta_seconds = None
         self._external_progress_active = False
@@ -423,6 +425,7 @@ class ProgressEngine:
         self._phase = "payload"
         self._payload_done = 0.0
         self._payload_total = max(1.0, total_units)
+        self._payload_t0 = time.monotonic()
         self._unit_label = unit_label
         self._payload_desc = description
         self._status_text = (
@@ -6530,12 +6533,16 @@ class PS5ConverterGUI:
             ("date",     "Datum",     95,  "center"),
             ("link",     "Link",      120, "center"),
         ]:
-            self._patch_tree.heading(col, text=heading, anchor=anchor)  # type: ignore[arg-type]
-            self._patch_tree.column(  # type: ignore[arg-type]
+            _anchor = cast(
+                Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
+                anchor,
+            )
+            self._patch_tree.heading(col, text=heading, anchor=_anchor)
+            self._patch_tree.column(
                 col,
                 width=w,
                 minwidth=w,
-                anchor=anchor,
+                anchor=_anchor,
                 stretch=(col == "version"),
             )
 
@@ -8724,6 +8731,33 @@ class PS5ConverterGUI:
                     new_size += f" | Obergrenze ~{self._fmt_bytes(int(self._monitor_total_bytes))}"
                 if rate_bps > 0.0:
                     new_size += f" | {rate_bps / (1024 ** 2):.1f} MB/s"
+        elif (
+            pe is not None
+            and str(getattr(pe, "_phase", "") or "") == "payload"
+            and str(getattr(pe, "_unit_label", "") or "").lower() in {"bytes", "byte", "b"}
+            and float(getattr(pe, "_payload_total", 0.0) or 0.0) > 0.0
+            and float(getattr(pe, "_payload_done", 0.0) or 0.0) > 0.0
+        ):
+            done_b = max(0, int(float(getattr(pe, "_payload_done", 0.0) or 0.0)))
+            total_b = max(1, int(float(getattr(pe, "_payload_total", 0.0) or 0.0)))
+            done_b = min(done_b, total_b)
+            rem_b = max(0, total_b - done_b)
+            payload_t0 = float(getattr(pe, "_payload_t0", 0.0) or 0.0)
+            elapsed = max(0.001, time.monotonic() - payload_t0) if payload_t0 > 0.0 else 0.0
+            rate_bps = (done_b / elapsed) if elapsed > 0.0 and done_b > 0 else 0.0
+            if rate_bps > 0.0:
+                precise_eta_seconds = (rem_b / rate_bps) if rem_b > 0 else 0.0
+                eta_source = "payload"
+                new_size = (
+                    f"Verarb.: {self._fmt_bytes(done_b)}/{self._fmt_bytes(total_b)}"
+                    f" | Rest: {self._fmt_bytes(rem_b)}"
+                    f" | {rate_bps / (1024 ** 2):.1f} MB/s"
+                )
+            else:
+                new_size = (
+                    f"Verarb.: {self._fmt_bytes(done_b)}/{self._fmt_bytes(total_b)}"
+                    f" | Rest: {self._fmt_bytes(rem_b)}"
+                )
         elif self.task_total_source_bytes > 0:
             new_size = f"Quelle: {self._fmt_bytes(self.task_total_source_bytes)}"
         else:
@@ -12098,6 +12132,47 @@ class PS5ConverterGUI:
             else ""  # Container: Hinweis entfaellt – wird automatisch neu gepackt
         )
 
+        _copy_metric_started_ts = [0.0]
+        _copy_metric_last_ts = [0.0]
+        _copy_metric_last_done = [0]
+        _copy_metric_rate_ema = [0.0]
+
+        def _begin_action_copy_metrics(total_bytes: int) -> None:
+            total = max(0, int(total_bytes))
+            self._copy_total_bytes = total
+            self._copy_done_bytes = 0
+            self._copy_total_exact = total > 0
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
+            now = time.monotonic()
+            _copy_metric_started_ts[0] = now
+            _copy_metric_last_ts[0] = now
+            _copy_metric_last_done[0] = 0
+            _copy_metric_rate_ema[0] = 0.0
+
+        def _update_action_copy_metrics(done_bytes: int) -> None:
+            done = max(0, int(done_bytes))
+            self._copy_done_bytes = max(self._copy_done_bytes, done)
+            now = time.monotonic()
+            dt = max(0.001, now - _copy_metric_last_ts[0])
+            delta = max(0, done - _copy_metric_last_done[0])
+            inst_bps = delta / dt
+            if inst_bps > 0.0:
+                prev_ema = _copy_metric_rate_ema[0]
+                _copy_metric_rate_ema[0] = (
+                    inst_bps if prev_ema <= 0.0 else (prev_ema * 0.70 + inst_bps * 0.30)
+                )
+                trend = "stabil"
+                if prev_ema > 0.0:
+                    if inst_bps > prev_ema * 1.08:
+                        trend = "steigend"
+                    elif inst_bps < prev_ema * 0.92:
+                        trend = "fallend"
+                self._copy_rate_bps = float(_copy_metric_rate_ema[0])
+                self._copy_rate_trend = trend
+            _copy_metric_last_ts[0] = now
+            _copy_metric_last_done[0] = done
+
         try:
             if action == "cancel":
                 self._append_to_log("[Info] Vorgang abgebrochen.\n")
@@ -12140,6 +12215,7 @@ class PS5ConverterGUI:
                 _act_done  = 0
                 _pct_base  = self.task_progress
                 _pct_range = max(0.0, self._step_end() - _pct_base - 2.0)
+                _begin_action_copy_metrics(_act_total)
 
                 # Den ausgewählten Ordner rekursiv als 'fakelib' kopieren.
                 # Jeder Eintrag im Quellordner landet direkt in dest_fakelib.
@@ -12171,6 +12247,7 @@ class PS5ConverterGUI:
                             fsize = os.path.getsize(src_f) if os.path.isfile(src_f) else 0
                             shutil.copy2(src_f, dst_f)
                             _act_done += fsize
+                            _update_action_copy_metrics(_act_done)
                             self._append_to_log(f"[Datei]  {os.path.relpath(dst_f, search_root)}\n")
                             added_files += 1
                             # Byte-Fortschritt aktualisieren
@@ -12201,6 +12278,7 @@ class PS5ConverterGUI:
                 _act_done  = 0
                 _pct_base  = self.task_progress
                 _pct_range = max(0.0, self._step_end() - _pct_base - 2.0)
+                _begin_action_copy_metrics(_act_total)
                 for src_f in _files_to_add:
                     fname = os.path.basename(src_f)
                     dst_f = os.path.join(search_root, fname)
@@ -12228,6 +12306,7 @@ class PS5ConverterGUI:
                         fsize = os.path.getsize(src_f) if os.path.isfile(src_f) else 0
                         shutil.copy2(src_f, dst_f)
                         _act_done += fsize
+                        _update_action_copy_metrics(_act_done)
                         self._append_to_log(f"[Datei]  {fname}\n")
                         added_files += 1
                         # Byte-Fortschritt aktualisieren
@@ -12260,6 +12339,7 @@ class PS5ConverterGUI:
                 _act_done  = 0
                 _pct_base  = self.task_progress
                 _pct_range = max(0.0, self._step_end() - _pct_base - 2.0)
+                _begin_action_copy_metrics(_act_total)
                 os.makedirs(dest_dir, exist_ok=True)
                 for src_walk_root, src_dirs, src_files in os.walk(src_dir):
                     rel_sub = os.path.relpath(src_walk_root, src_dir)
@@ -12280,6 +12360,7 @@ class PS5ConverterGUI:
                             fsize = os.path.getsize(src_f) if os.path.isfile(src_f) else 0
                             shutil.copy2(src_f, dst_f)
                             _act_done += fsize
+                            _update_action_copy_metrics(_act_done)
                             self._append_to_log(f"[Datei]  {os.path.relpath(dst_f, search_root)}\n")
                             added_files += 1
                             # Byte-Fortschritt aktualisieren
@@ -12739,6 +12820,12 @@ class PS5ConverterGUI:
                     except Exception:
                         pass
 
+                self._copy_total_bytes = max(1, int(total_bytes[0] or 1))
+                self._copy_done_bytes = 0
+                self._copy_total_exact = False
+                self._copy_rate_bps = 0.0
+                self._copy_rate_trend = ""
+
                 # 5. Fortschritts-Poller starten
                 run["on"] = True
                 poll_start = _time.time()
@@ -12749,6 +12836,8 @@ class PS5ConverterGUI:
                             cur = self._get_path_size(dest_folder)
                             el = max(0.001, _time.time() - poll_start)
                             rate = cur / el
+                            self._copy_done_bytes = max(self._copy_done_bytes, int(cur))
+                            self._copy_rate_bps = float(rate)
                             pct = (min(99.0, cur / total_bytes[0] * 100.0)
                                    if total_bytes[0] else 0)
                             el_str = f"Laufzeit: {ProgressEngine._fmt_eta(el)}"
@@ -12809,6 +12898,8 @@ class PS5ConverterGUI:
                     f"\n[OK] Extraktion abgeschlossen: {n_files} Dateien, "
                     f"{n_bytes / 1073741824:.2f} GB\n"
                 )
+                if self._copy_total_bytes > 0:
+                    self._copy_done_bytes = self._copy_total_bytes
                 success[0] = True
 
             except Exception as exc:
@@ -13223,6 +13314,12 @@ class PS5ConverterGUI:
                     "          Robocopy wird danach bei Bedarf per PowerShell Copy-Item ergänzt.\n"
                 )
 
+            self._copy_total_bytes = max(1, int(total_bytes[0] or 1))
+            self._copy_done_bytes = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
+
             run["on"] = True
             poll_start = _time.time()
 
@@ -13232,6 +13329,10 @@ class PS5ConverterGUI:
                         cur = self._get_path_size(dest_folder)
                         elapsed = max(0.001, _time.time() - poll_start)
                         rate = cur / elapsed
+                        self._copy_total_bytes = max(self._copy_total_bytes, int(total_bytes[0] or 1))
+                        self._copy_done_bytes = max(self._copy_done_bytes, int(cur))
+                        self._copy_total_exact = False
+                        self._copy_rate_bps = float(rate)
                         raw_pct = min(99.0, cur / total_bytes[0] * 100.0) if total_bytes[0] else 0.0
                         mapped_pct = progress_start + (raw_pct / 100.0) * max(0.0, progress_end - progress_start)
                         self.task_current_step = max(self.task_current_step, 3)
@@ -13314,6 +13415,8 @@ class PS5ConverterGUI:
             self._append_to_log(
                 f"\n[OK] .ffpkg extrahiert: {n_files} Dateien, {n_bytes / 1073741824:.2f} GB\n"
             )
+            if self._copy_total_bytes > 0:
+                self._copy_done_bytes = self._copy_total_bytes
             return True
         except Exception as exc:
             self._append_to_log(f"[FEHLER] .ffpkg-Extraktion fehlgeschlagen: {exc}\n")
@@ -14082,12 +14185,92 @@ class PS5ConverterGUI:
         except OSError:
             total_bytes = 0
 
+        self._copy_total_bytes = 0
+        self._copy_done_bytes = 0
+        self._copy_total_exact = True
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+
         self.task_current_step = max(self.task_current_step, 1)
         self.task_progress = max(self.task_progress, progress_start)
         self.task_displayed = max(self.task_displayed, progress_start)
 
+        pe = getattr(self, "progress_engine", None)
+        if pe is not None and total_bytes > 0:
+            try:
+                if str(getattr(pe, "_phase", "") or "") != "payload":
+                    pe.begin_payload(
+                        float(total_bytes),
+                        description=f"{status_prefix} – exFAT extrahieren",
+                        unit_label="Bytes",
+                    )
+                else:
+                    pe._payload_total = max(1.0, float(total_bytes))
+                    pe._payload_t0 = time.monotonic()
+            except Exception:
+                pass
+
+        rate_ema = [0.0]
+        last_step_ts = [0.0]
+        last_done_bytes = [0]
+
+        class _GUIExtractProgress:
+            def status(self_inner, text: str) -> None:
+                cleaned = " ".join(str(text).split())
+                if cleaned:
+                    self.root.after(
+                        0,
+                        lambda t=f"{status_prefix} – {cleaned}": self.status_label.config(text=t),
+                    )
+
+            def step(
+                self_inner,
+                phase: str,
+                current: int,
+                total: int,
+                *,
+                bytes_processed: int | None = None,
+            ) -> None:
+                del phase
+                total_units = max(1, int(total or 0))
+                done_units = max(0, int(bytes_processed if bytes_processed is not None else current))
+                done_units = min(done_units, total_units)
+                self._copy_total_bytes = total_units
+                self._copy_done_bytes = done_units
+                self._copy_total_exact = True
+
+                now = time.monotonic()
+                if last_step_ts[0] > 0.0:
+                    dt = max(0.001, now - last_step_ts[0])
+                    delta = max(0, done_units - last_done_bytes[0])
+                    inst_bps = delta / dt
+                    if inst_bps > 0.0:
+                        prev_ema = rate_ema[0]
+                        rate_ema[0] = inst_bps if prev_ema <= 0.0 else (prev_ema * 0.70 + inst_bps * 0.30)
+                        trend = "stabil"
+                        if prev_ema > 0.0:
+                            if inst_bps > prev_ema * 1.08:
+                                trend = "steigend"
+                            elif inst_bps < prev_ema * 0.92:
+                                trend = "fallend"
+                        self._copy_rate_bps = float(rate_ema[0])
+                        self._copy_rate_trend = trend
+                last_step_ts[0] = now
+                last_done_bytes[0] = done_units
+
+                frac = max(0.0, min(done_units / max(total_units, 1), 0.995))
+                mapped = progress_start + frac * max(0.0, progress_end - progress_start)
+                self.task_progress = max(self.task_progress, min(mapped, progress_end))
+
+                if pe is not None:
+                    try:
+                        pe._payload_total = max(1.0, float(total_units))
+                        pe.update_payload(float(done_units))
+                    except Exception:
+                        pass
+
         try:
-            result = extract_exfat_image(src_path, dest_path, progress=None)
+            result = extract_exfat_image(src_path, dest_path, progress=_GUIExtractProgress())
         except Exception as exc:
             self._append_to_log(f"[FEHLER] MkPFS exFAT-Extraktion fehlgeschlagen: {exc}\n")
             return False
@@ -14098,6 +14281,19 @@ class PS5ConverterGUI:
             self._append_to_log(f"[FEHLER] {error_text}\n")
         if getattr(result, "errors", None):
             return False
+
+        if getattr(result, "bytes_written", 0):
+            self._copy_total_bytes = max(self._copy_total_bytes, int(getattr(result, "bytes_written", 0)))
+        self._copy_done_bytes = self._copy_total_bytes
+        self._copy_total_exact = False
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+        if pe is not None and self._copy_total_bytes > 0:
+            try:
+                pe._payload_total = max(1.0, float(self._copy_total_bytes))
+                pe.update_payload(float(self._copy_total_bytes))
+            except Exception:
+                pass
 
         self._copy_total_bytes = max(1, int(total_bytes))
         self._copy_done_bytes = self._copy_total_bytes
