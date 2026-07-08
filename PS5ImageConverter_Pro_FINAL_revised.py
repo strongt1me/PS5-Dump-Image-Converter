@@ -216,6 +216,18 @@ if sys.platform == "win32":
     WS_EX_NOACTIVATE   = 0x08000000
     SW_MINIMIZE        = 6
     SW_RESTORE         = 9
+    WM_SETICON         = 0x0080
+    ICON_SMALL         = 0
+    ICON_BIG           = 1
+    IMAGE_ICON         = 1
+    LR_LOADFROMFILE    = 0x0010
+    LR_DEFAULTSIZE     = 0x0040
+    GCLP_HICON         = -14
+    GCLP_HICONSM       = -34
+    SM_CXICON          = 11
+    SM_CYICON          = 12
+    SM_CXSMICON        = 49
+    SM_CYSMICON        = 50
 
     def _get_hwnd(tk_widget) -> int:
         """Gibt das Win32-HWND fuer ein Tk-Widget zurueck."""
@@ -244,6 +256,40 @@ if sys.platform == "win32":
             )
         except Exception as exc:
             logger.debug("Win32 SetWindowPos fehlgeschlagen (nicht-Windows): %s", exc)
+
+    def _apply_win32_window_icon(tk_widget, icon_path: str) -> None:
+        """Setzt unter Windows explizit kleine/grosse Fenster-Icons fuer die Taskleiste."""
+        try:
+            if not icon_path or not os.path.isfile(icon_path):
+                return
+            try:
+                tk_widget.update_idletasks()
+            except Exception:
+                pass
+            hwnd = _get_hwnd(tk_widget)
+            big_w = max(1, int(_user32.GetSystemMetrics(SM_CXICON) or 32))
+            big_h = max(1, int(_user32.GetSystemMetrics(SM_CYICON) or 32))
+            small_w = max(1, int(_user32.GetSystemMetrics(SM_CXSMICON) or 16))
+            small_h = max(1, int(_user32.GetSystemMetrics(SM_CYSMICON) or 16))
+            load_flags = LR_LOADFROMFILE | LR_DEFAULTSIZE
+            big_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, big_w, big_h, load_flags)
+            small_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, small_w, small_h, load_flags)
+            if big_icon:
+                _user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big_icon)
+                try:
+                    _user32.SetClassLongPtrW(hwnd, GCLP_HICON, big_icon)
+                except Exception:
+                    pass
+            if small_icon:
+                _user32.SendMessageW(hwnd, WM_SETICON, ICON_SMALL, small_icon)
+                try:
+                    _user32.SetClassLongPtrW(hwnd, GCLP_HICONSM, small_icon)
+                except Exception:
+                    pass
+            if big_icon or small_icon:
+                setattr(tk_widget, "_win32_icon_handles", (big_icon, small_icon))
+        except Exception as exc:
+            logger.debug("Win32 Taskleisten-Icon konnte nicht gesetzt werden: %s", exc)
 
     def _bring_to_front(tk_widget) -> None:
         """Bringt das Fenster in den Vordergrund (umgeht Windows-Fokus-Schutz)."""
@@ -3604,6 +3650,7 @@ class PS5ConverterGUI:
             icon_file = self._find_app_icon_file()
             if sys.platform == "win32" and icon_file:
                 win_any.iconbitmap(icon_file)
+                _apply_win32_window_icon(win_any, icon_file)
                 return
 
             if icon_file:
@@ -3619,6 +3666,7 @@ class PS5ConverterGUI:
                 tmp.write(ico_data)
                 tmp.close()
                 win_any.iconbitmap(tmp.name)
+                _apply_win32_window_icon(win_any, tmp.name)
                 win_any.after(5000, lambda p=tmp.name: os.unlink(p) if os.path.exists(p) else None)
                 return
 
