@@ -177,8 +177,6 @@ python run_tasks_1_8_e2e.py --task A7 --dump .\path\to\DumpFolder --ffpkg ".\pat
 
 ## Credits
 
-Spezialversion von Strongt1me.
-
 Core-Engine:
 - Phoenixx1202 / PSBrew for MkPFS v0.0.9
 
