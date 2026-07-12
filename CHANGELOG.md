@@ -10,6 +10,7 @@ Die ganz frühen Zwischenversionen bis vor den späten 1.7.x-Releases sind im ak
 In dieser langen Entwicklungsphase wurde das Projekt von einer frühen Grundversion zu einem nutzbaren Windows-Tool für PS5-Dump-Workflows ausgebaut.
 
 Wichtigste Änderungen in dieser Phase:
+
 - Start des Projekts und Aufbau der ersten Programmstruktur.
 - Erste GUI für die wichtigsten PS5-Dump-Aufgaben.
 - Grundfunktionen für Packen, Entpacken und Konvertieren wurden aufgebaut.
@@ -25,6 +26,7 @@ Aus einer frühen Basis entstand das eigentliche Desktop-Tool, auf dem die spät
 Diese Version hat vor allem den Build-Ablauf sauberer und sicherer gemacht.
 
 Neu oder verbessert:
+
 - Das Build-Skript wurde bei der Passwortbehandlung für Signierung sicherer gemacht.
 - Überflüssige oder fehlerhafte Build-Einträge wurden entfernt.
 - Kleine Fehler in den Build-Tests wurden bereinigt.
@@ -38,6 +40,7 @@ Der Build wurde stabiler und aufgeräumter, ohne die eigentlichen Hauptfunktione
 Diese Version hat den Build- und Signierweg deutlich vereinfacht.
 
 Neu oder verbessert:
+
 - Abhängigkeiten vom alten Signierablauf wurden entfernt.
 - Zwang zu bestimmten Signierpfaden wurde abgebaut.
 - Der Build-Start wurde einfacher und robuster gemacht.
@@ -51,6 +54,7 @@ Die Erstellung der EXE wurde leichter wartbar und weniger fehleranfällig.
 Diese Version war vor allem ein technischer Umbau im Hintergrund.
 
 Neu oder verbessert:
+
 - Alte UFS2Tool-Altlasten wurden entfernt.
 - Das Projekt wurde stärker auf die heute genutzten Wege reduziert.
 
@@ -62,6 +66,7 @@ Weniger Altlasten im Code und ein klarerer, modernerer Unterbau.
 Diese Version hat den Unterbau deutlich modernisiert und Aufgabe 7 erweitert.
 
 Neu oder verbessert:
+
 - Das MkPFS-Quellpaket wurde direkt eingebunden.
 - Für Aufgabe 7 wurde die automatische Erzeugung von `ampr_emu.index` eingebaut.
 - Das App-Icon für die Taskleiste wurde verbessert.
@@ -78,6 +83,7 @@ Mehr Stabilität, besseres Verhalten bei Aufgabe 7 und ein insgesamt modernerer 
 Diese Version war das große Feintuning- und Release-Update.
 
 Neu oder verbessert:
+
 - Aufgabe 7 unterstützt jetzt auch `.ffpkg` als Quelle.
 - Aufgabe 7 schreibt bearbeitete `.ffpkg`-Quellen bewusst als `.ffpfsc` zurück.
 - `ampr_emu.index` wird jetzt bei Bedarf automatisch neu erzeugt.
@@ -108,15 +114,15 @@ Die Version v1.7.80 ist die bisher rundeste und am besten dokumentierte Version.
 - v1.7.79: MkPFS und Aufgabe 7 deutlich erweitert.
 - v1.7.80: Große Komfort-, Stabilitäts- und Release-Verbesserung.
 
-110	## v1.7.81
-111	
-112	Diese Version entfernt das Release-Test-Gate für einen schnelleren Workflow.
-113	
-114	Neu oder verbessert:
-115	- **Release-Test-Gate entfernt:** Die harte Blockade, die einen erfolgreichen Testlauf innerhalb der letzten 24 Stunden voraussetzte, wurde deaktiviert.
-116	- Aufgaben können nun direkt ohne vorherige Validierung durch `run_all_tests.py` oder ähnliche Skripte gestartet werden.
-117	- Interne Gate-Prüfungen wurden auf "immer erlaubt" gesetzt, um den Workflow für erfahrene Nutzer zu beschleunigen.
-118	
-119	Für normale Nutzer bedeutet das:
-120	Keine störenden Fehlermeldungen mehr, dass ein Testlauf zu alt oder nicht vorhanden ist. Das Tool ist sofort einsatzbereit.
-121	
+110 ## v1.7.81
+111
+112 Diese Version entfernt das Release-Test-Gate für einen schnelleren Workflow.
+113
+114 Neu oder verbessert:
+115 - **Release-Test-Gate entfernt:** Die harte Blockade, die einen erfolgreichen Testlauf innerhalb der letzten 24 Stunden voraussetzte, wurde deaktiviert.
+116 - Aufgaben können nun direkt ohne vorherige Validierung durch `run_all_tests.py` oder ähnliche Skripte gestartet werden.
+117 - Interne Gate-Prüfungen wurden auf "immer erlaubt" gesetzt, um den Workflow für erfahrene Nutzer zu beschleunigen.
+118
+119 Für normale Nutzer bedeutet das:
+120 Keine störenden Fehlermeldungen mehr, dass ein Testlauf zu alt oder nicht vorhanden ist. Das Tool ist sofort einsatzbereit.
+121
