@@ -197,7 +197,7 @@ Integrierte Werkzeuge und technische Grundlagen:
 - zstandard
 - zlib-ng
 
-## Dank
+## Danksagung
 
 Dieses Projekt baut auf der Arbeit der PS5-Homebrew-Community und des Open-Source-Ökosystems darum herum auf.
 
