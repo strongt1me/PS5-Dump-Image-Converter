@@ -219,6 +219,7 @@ def _run_a7_automation(
             automation={
                 "action": "fakelib_add",
                 "fakelib_src": str(fakelib_src),
+                "is_apr": False,
             },
         )
     )
@@ -251,6 +252,7 @@ def _run_a7_files_add_automation(app: PS5ConverterGUI, source_exfat: Path, outpu
             automation={
                 "action": "files_add",
                 "files_to_add": [str(marker_file)],
+                "is_apr": False,
             },
         )
     )
@@ -283,6 +285,7 @@ def _run_a7_files_remove_automation(app: PS5ConverterGUI, seeded_out: Path, outp
             automation={
                 "action": "files_remove",
                 "selected_root_items": [marker_name],
+                "is_apr": False,
             },
         )
     )

@@ -10,8 +10,9 @@ from ps5_validator.core.validator_base import ValidationResult
 from ps5_validator.modules.dump_validator   import DumpValidator
 from ps5_validator.modules.ffpfs_validator  import FfpfsValidator
 from ps5_validator.modules.extfat_validator import ExtfatValidator
+from ps5_validator.modules.ffpkg_validator  import FfpkgValidator
 
-VALID_MODES = ("dump", "ffpfs", "extfat")
+VALID_MODES = ("dump", "ffpfs", "extfat", "ffpkg")
 
 
 def validate(
@@ -22,12 +23,13 @@ def validate(
     progress_cb: Callable[[int, int, str], None] | None = None,
     cancel_flag: Callable[[], bool] | None = None,
     verbose: bool = False,
+    ufs2tool_path: str = "",
 ) -> ValidationResult:
     """
     Zentrale Dispatcher-Funktion.
 
     :param path:        Pfad zum Ordner oder zur Datei
-    :param mode:        "dump" | "ffpfs" | "extfat"
+    :param mode:        "dump" | "ffpfs" | "extfat" | "ffpkg"
     :param threads:     Anzahl Worker-Threads (nur für dump-Modus)
     :param resume:      Hash-Cache verwenden (nur für dump-Modus)
     :param progress_cb: Fortschritts-Callback(bytes_done, bytes_total, label)
@@ -47,7 +49,9 @@ def validate(
         v = DumpValidator(threads=threads, resume=resume, **kwargs)
     elif mode == "ffpfs":
         v = FfpfsValidator(**kwargs)
-    else:  # extfat
+    elif mode == "extfat":
         v = ExtfatValidator(**kwargs)
+    else:  # ffpkg
+        v = FfpkgValidator(ufs2tool_path=ufs2tool_path, **kwargs)
 
     return v.validate(path)

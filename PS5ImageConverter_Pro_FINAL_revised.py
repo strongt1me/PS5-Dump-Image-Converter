@@ -148,7 +148,7 @@ PROGRESS_CATCH_UP = 2.0
 # Ziel: robuste Defaults je Workflow-Typ (Folder->ffpfsc, exfat->ffpfsc, ffpkg->ffpfsc)
 # mit groessenabhaengiger Worker-Drosselung gegen RAM-/I/O-Spitzen.
 PACK_PROFILE_MATRIX: dict[str, dict[str, Any]] = {
-    "pack_folder_step2": {
+    "pack_folder": {
         "profile": "folder_pipeline_balanced",
         "level": 9,
         "hard_cap": 4,
@@ -653,6 +653,71 @@ class ProgressEngine:
             return f"{value:.1f} PB"
         return f"{int(value)} {unit_label}"
 
+
+class DelayedTooltip:
+    """Zeigt ein Tooltip erst nach kurzer Hover-Zeit an."""
+
+    def __init__(self, widget: tk.Widget, text: str, *, delay_ms: int = 2200, wraplength: int = 320) -> None:
+        self.widget = widget
+        self.text = text
+        self.delay_ms = max(250, int(delay_ms))
+        self.wraplength = wraplength
+        self._after_id: str | None = None
+        self._tip_window: tk.Toplevel | None = None
+        self.widget.bind("<Enter>", self._schedule, add="+")
+        self.widget.bind("<Leave>", self._hide, add="+")
+        self.widget.bind("<ButtonPress>", self._hide, add="+")
+
+    def _schedule(self, _event: object = None) -> None:
+        self._cancel_schedule()
+        self._after_id = self.widget.after(self.delay_ms, self._show)
+
+    def _cancel_schedule(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+
+    def _show(self) -> None:
+        self._after_id = None
+        if self._tip_window is not None or not self.text.strip():
+            return
+        try:
+            x = self.widget.winfo_rootx() + 18
+            y = self.widget.winfo_rooty() + self.widget.winfo_height() + 8
+        except Exception:
+            return
+        tip = tk.Toplevel(self.widget)
+        tip.wm_overrideredirect(True)
+        tip.wm_geometry(f"+{x}+{y}")
+        tip.configure(bg="#111827")
+        label = tk.Label(
+            tip,
+            text=self.text,
+            justify="left",
+            wraplength=self.wraplength,
+            bg="#111827",
+            fg="#F9FAFB",
+            relief="solid",
+            borderwidth=1,
+            padx=10,
+            pady=7,
+            font=("Segoe UI", 9),
+        )
+        label.pack()
+        self._tip_window = tip
+
+    def _hide(self, _event: object = None) -> None:
+        self._cancel_schedule()
+        if self._tip_window is not None:
+            try:
+                self._tip_window.destroy()
+            except Exception:
+                pass
+            self._tip_window = None
+
 # ---------------------------------------------------------------------------
 # Hauptklasse: GUI
 # ---------------------------------------------------------------------------
@@ -753,15 +818,57 @@ class PS5ConverterGUI:
 
     # Verfügbare Betriebsmodi: (Anzeigename, interner Schlüssel)
     _MODE_OPTIONS: list[tuple[str, str]] = [
-        ("1. Game Dump Ordner zu ffpfsc",       "pack_folder"),
-        ("2. ffpfsc zu exFAT",                    "unpack_to_exfat"),
-        ("3. exFAT zu ffpfsc",                    "pack_file"),
-        ("4. ffpfsc zu Game Dump Ordner",         "unpack_to_game_folder"),
-        ("5. exFAT zu Game Dump Ordner",                   "exfat_to_folder"),
-        ("6. ffpkg zu ffpfsc",                              "ffpkg_to_ffpfsc"),
+        ("1. Dump-Ordner flexibel konvertieren",  "pack_folder"),
+        ("2. FFPFSC flexibel konvertieren",       "unpack_to_exfat"),
+        ("3. exFAT flexibel konvertieren",        "pack_file"),
+        ("4. FFPKG flexibel konvertieren",        "ffpkg_to_ffpfsc"),
+        ("5. Mehrere Dateien konvertieren",       "batch_convert"),
+        ("6. Universal-Export in Zielordner",     "universal_convert"),
         ("7. fakelib Manager (Suchen/Löschen/Hinzuf)", "fakelib_manager"),
         ("8. Dump Validator (Integrität prüfen)",          "dump_validator"),
     ]
+
+    _FORMAT_LABELS: dict[str, str] = {
+        "folder": "Dump-Ordner",
+        "ffpfsc": ".ffpfsc",
+        "exfat": ".exFAT",
+        "ffpkg": ".ffpkg",
+    }
+
+    _MODE_SOURCE_TYPES: dict[str, tuple[str, ...]] = {
+        "pack_folder": ("folder",),
+        "unpack_to_exfat": ("ffpfsc",),
+        "pack_file": ("exfat",),
+        "ffpkg_to_ffpfsc": ("ffpkg",),
+        "batch_convert": ("ffpfsc", "exfat", "ffpkg"),
+        "universal_convert": ("folder", "ffpfsc", "exfat", "ffpkg"),
+        "fakelib_manager": ("folder", "ffpfsc", "exfat", "ffpkg"),
+        "dump_validator": ("folder", "ffpfsc", "exfat", "ffpkg"),
+    }
+
+    _MODE_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
+        "pack_folder": ("ffpfsc", "exfat"),
+        "unpack_to_exfat": ("folder", "exfat"),
+        "pack_file": ("folder", "ffpfsc"),
+        "ffpkg_to_ffpfsc": ("folder", "ffpfsc", "exfat"),
+        "batch_convert": ("folder", "ffpfsc", "exfat"),
+        "universal_convert": ("folder", "ffpfsc", "exfat"),
+    }
+
+    _MODE_TOOLTIPS: dict[str, str] = {
+        "pack_folder": "Wandelt einen Dump-Ordner in .ffpfsc oder ein echtes .exFAT-Image um.",
+        "unpack_to_exfat": "Extrahiert eine .ffpfsc-Datei als Dump-Ordner oder erzeugt daraus ein .exFAT-Image.",
+        "pack_file": "Komprimiert eine .exFAT-Datei nach .ffpfsc oder extrahiert sie als Dump-Ordner.",
+        "ffpkg_to_ffpfsc": "Verarbeitet eine .ffpkg als Eingabe und erzeugt .ffpfsc, einen Dump-Ordner oder über einen temporären Dump ein .exFAT-Image.",
+        "batch_convert": "Konvertiert mehrere .ffpfsc-, .exFAT- oder .ffpkg-Eingaben nacheinander. .ffpkg ist kein erzeugbares Zielformat.",
+        "universal_convert": "Exportiert unterstützte Eingaben als Dump-Ordner, .ffpfsc oder .exFAT. .ffpkg wird nur als Eingabe unterstützt.",
+    }
+
+    _UNSUPPORTED_TARGET_HINTS: dict[tuple[str, str], str] = {
+        ("folder", "ffpkg"): "Dieses Projekt besitzt derzeit keine Schreiblogik für echte .ffpkg-Ausgaben aus einem Dump-Ordner.",
+        ("ffpfsc", "ffpkg"): "Dieses Projekt besitzt derzeit keine Schreiblogik für echte .ffpkg-Ausgaben aus einer .ffpfsc-Datei.",
+        ("exfat", "ffpkg"): "Dieses Projekt besitzt derzeit keine Schreiblogik für echte .ffpkg-Ausgaben aus einer .exFAT-Datei.",
+    }
 
     @staticmethod
     def _load_setting_static(key: str, default: object) -> object:
@@ -814,7 +921,10 @@ class PS5ConverterGUI:
         self.current_mode = tk.StringVar(value="pack_folder")
         self.source_path = tk.StringVar(value=last_src)
         self.dest_path = tk.StringVar(value=last_dst)
+        self.target_format = tk.StringVar(value=self._FORMAT_LABELS["ffpfsc"])
         self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
+        self._batch_sources: list[str] = []
+        self._mode_tooltip_handles: list[DelayedTooltip] = []
 
         # 4. Metadaten-Variablen initialisieren
         self._meta_labels: dict[str, tk.StringVar] = {}
@@ -823,6 +933,8 @@ class PS5ConverterGUI:
             self._meta_labels[key] = tk.StringVar(value="–")
         self._info_src_size_var = tk.StringVar(value="–")
         self._info_est_size_var = tk.StringVar(value="–")
+        self._info_format_var = tk.StringVar(value="–")
+        self._info_method_var = tk.StringVar(value="–")
         self._patch_status_var = tk.StringVar(value="Bereit")
         self.info_cover_label: tk.Label | None = None
         self._cached_cover: "Image.Image | None" = None
@@ -1082,6 +1194,7 @@ class PS5ConverterGUI:
         self._suppress_pulse_creep: bool = False
         self._startup_temp_cleanup_prompted: bool = False
         self._embedded_mkpfs_lock = threading.RLock()
+        self._ffpkg_preview_lock = threading.RLock()
         self._exit_cleanup_lock = threading.RLock()
         self._session_exit_cleanup_paths: set[str] = set()
 
@@ -1513,8 +1626,8 @@ class PS5ConverterGUI:
         except Exception:
             return set()
 
-    def _cleanup_task_temp_targets(self, baseline_paths: set[str] | None = None) -> None:
-        """Löscht nur die während des aktuellen Tasks neu erzeugten Temp-Ziele."""
+    def _cleanup_task_temp_targets(self, baseline_paths: set[str] | None = None) -> bool:
+        """Löscht nach erfolgreicher Prüfung nur die Temp-Ziele des aktuellen Tasks."""
         baseline = baseline_paths if isinstance(baseline_paths, set) else set()
         try:
             with self._exit_cleanup_lock:
@@ -1522,29 +1635,45 @@ class PS5ConverterGUI:
         except Exception:
             candidates = set()
 
+        cleanup_ok = True
+        deleted_count = 0
         for norm in sorted(candidates - baseline, key=len, reverse=True):
             if not self._is_managed_temp_path(norm):
                 self._forget_exit_cleanup_path(norm)
                 continue
             try:
                 if os.path.isdir(norm):
-                    shutil.rmtree(norm, ignore_errors=True)
+                    shutil.rmtree(norm)
                     self._append_to_log(f"[CLEANUP] Task-Temp-Ordner gelöscht: {norm}\n")
+                    deleted_count += 1
                 elif os.path.isfile(norm):
                     os.remove(norm)
                     self._append_to_log(f"[CLEANUP] Task-Temp-Datei gelöscht: {norm}\n")
+                    deleted_count += 1
+                if not os.path.exists(norm):
+                    self._forget_exit_cleanup_path(norm)
             except Exception as exc:
+                cleanup_ok = False
                 logger.debug("Task-Cleanup konnte Artefakt nicht löschen (%s): %s", norm, exc)
-            finally:
-                self._forget_exit_cleanup_path(norm)
+                self._append_to_log(
+                    f"[CLEANUP] Temporäres Artefakt bleibt für den nächsten Cleanup vorgemerkt: "
+                    f"{norm} ({exc})\n"
+                )
+
+        if cleanup_ok:
+            self._append_to_log(
+                f"[CLEANUP] Automatische Task-Bereinigung abgeschlossen: "
+                f"{deleted_count} temporäre Artefakte entfernt.\n"
+            )
+        return cleanup_ok
 
     def _cleanup_exit_temp_targets(
         self,
         checkpoint_mode: str = "",
         checkpoint_src: str = "",
         checkpoint_dst: str = "",
-    ) -> None:
-        """Löscht app-verwaltete Temp-Zielordner/-dateien beim Programmende."""
+    ) -> bool:
+        """Löscht vorgemerkte Temp-Ziele beim Beenden mit Windows-Retries."""
         candidates: set[str] = set()
         with self._exit_cleanup_lock:
             candidates.update(self._session_exit_cleanup_paths)
@@ -1566,29 +1695,54 @@ class PS5ConverterGUI:
             if raw:
                 candidates.add(os.path.abspath(raw))
 
+        cleanup_ok = True
         for norm in sorted(candidates, key=len, reverse=True):
             if not self._is_managed_temp_path(norm):
                 self._forget_exit_cleanup_path(norm)
                 continue
-            try:
-                if os.path.isdir(norm):
-                    shutil.rmtree(norm, ignore_errors=True)
-                    logger.info("[EXIT-CLEANUP] Temp-Ordner gelöscht: %s", norm)
-                elif os.path.isfile(norm):
-                    os.remove(norm)
-                    logger.info("[EXIT-CLEANUP] Temp-Datei gelöscht: %s", norm)
-            except Exception as exc:
-                logger.debug("Exit-Cleanup konnte Artefakt nicht löschen (%s): %s", norm, exc)
-            finally:
+            if not os.path.exists(norm):
                 self._forget_exit_cleanup_path(norm)
+                continue
 
-        if checkpoint_mode and checkpoint_src:
+            last_error: Exception | None = None
+            for attempt in range(4):
+                try:
+                    if os.path.isdir(norm):
+                        shutil.rmtree(norm)
+                    elif os.path.isfile(norm):
+                        os.remove(norm)
+                    if not os.path.exists(norm):
+                        logger.info("[EXIT-CLEANUP] Temp-Artefakt gelöscht: %s", norm)
+                        self._forget_exit_cleanup_path(norm)
+                        last_error = None
+                        break
+                except Exception as exc:
+                    last_error = exc
+                    logger.debug(
+                        "Exit-Cleanup Versuch %s/4 fehlgeschlagen (%s): %s",
+                        attempt + 1,
+                        norm,
+                        exc,
+                    )
+                if attempt < 3:
+                    time.sleep(0.25 * (attempt + 1))
+
+            if os.path.exists(norm):
+                cleanup_ok = False
+                logger.warning(
+                    "[EXIT-CLEANUP] Temp-Artefakt konnte beim Beenden nicht gelöscht werden: %s (%s)",
+                    norm,
+                    last_error or "Pfad existiert weiterhin",
+                )
+
+        if cleanup_ok and checkpoint_mode and checkpoint_src:
             try:
                 cp_key = self._checkpoint_key(checkpoint_mode, checkpoint_src, checkpoint_dst)
                 self._remove_runtime_checkpoint_jobs({cp_key})
             except Exception as exc:
                 logger.debug("Exit-Cleanup konnte Runtime-Checkpoint nicht entfernen: %s", exc)
         self._active_resume_checkpoint = None
+        return cleanup_ok
 
     def _remove_runtime_checkpoint_jobs(self, checkpoint_keys: set[str]) -> None:
         """Entfernt mehrere Checkpoint-Jobs, z. B. nach manuellem Altlast-Cleanup."""
@@ -2007,6 +2161,54 @@ class PS5ConverterGUI:
 
         return errors, warnings
 
+    def _get_selected_target_type(self) -> str:
+        return self._format_label_to_key(self.target_format.get().strip())
+
+    def _resolve_mode_source_type(self, mode: str, src: str) -> str:
+        if mode == "batch_convert":
+            return ""
+        if mode == "universal_convert":
+            return self._detect_source_type(src)
+        allowed = self._MODE_SOURCE_TYPES.get(mode, ())
+        if len(allowed) == 1:
+            return allowed[0]
+        return self._detect_source_type(src)
+
+    def _validate_requested_conversion(self, mode: str, src: str, target_type: str) -> str:
+        if mode not in (
+            "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+            "batch_convert", "universal_convert",
+        ):
+            return ""
+        if not target_type:
+            return "Bitte ein Zielformat auswählen."
+
+        if mode == "batch_convert":
+            sources = list(getattr(self, "_batch_sources", []) or [])
+            if not sources:
+                return "Bitte zuerst mehrere Quelldateien auswählen."
+            for candidate in sources:
+                source_type = self._detect_source_type(candidate)
+                issue = self._conversion_block_reason(source_type, target_type)
+                if issue:
+                    return f"{os.path.basename(candidate)}: {issue}"
+            return ""
+
+        source_type = self._resolve_mode_source_type(mode, src)
+        return self._conversion_block_reason(source_type, target_type)
+
+    def _conversion_block_reason(self, source_type: str, target_type: str) -> str:
+        if not source_type:
+            return "Quelltyp konnte nicht erkannt werden."
+        if source_type == target_type:
+            return "Quelle und Zielformat sind identisch. Bitte ein anderes Zielformat wählen."
+        if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
+            return "Das gewählte Zielformat ist unbekannt."
+        unsupported = self._UNSUPPORTED_TARGET_HINTS.get((source_type, target_type), "")
+        if unsupported:
+            return unsupported
+        return ""
+
     def _verify_output_artifact(self, mode: str, final_path: str) -> dict[str, Any]:
         """Verifiziert ein Ergebnisartefakt schnell und robust."""
         result: dict[str, Any] = {
@@ -2060,6 +2262,33 @@ class PS5ConverterGUI:
         if size <= 0:
             result["detail"] = "Datei ist leer (0 Bytes)."
             return result
+
+        if os.path.splitext(final_path)[1].lower() in {".ffpfs", ".ffpfsc"}:
+            try:
+                mkpfs_parent = self._extract_embedded_mkpfs()
+                if mkpfs_parent and mkpfs_parent not in sys.path:
+                    sys.path.insert(0, mkpfs_parent)
+                from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
+
+                inspection = verify_pfs_image(Path(final_path))
+                result["method"] = "mkpfs-verify"
+                result["sha256"] = str(getattr(inspection, "manifest_sha256", "") or "")
+                errors = list(getattr(inspection, "errors", []) or [])
+                warnings = list(getattr(inspection, "warnings", []) or [])
+                if errors:
+                    result["detail"] = "MkPFS-Strukturfehler: " + "; ".join(errors[:3])
+                    return result
+                result["ok"] = True
+                result["detail"] = (
+                    f"MkPFS-Struktur gültig; Dateien: "
+                    f"{len(getattr(inspection, 'file_inodes', {}) or {})}"
+                    + (f"; Warnungen: {len(warnings)}" if warnings else "")
+                )
+                return result
+            except Exception as exc:
+                result["method"] = "mkpfs-verify"
+                result["detail"] = f"MkPFS-Strukturprüfung fehlgeschlagen: {exc}"
+                return result
 
         try:
             h = hashlib.sha256()
@@ -2628,6 +2857,10 @@ class PS5ConverterGUI:
             )
             btn.pack(fill="x", pady=3)
             self.mode_buttons.append((btn, mode))
+            if mode in self._MODE_TOOLTIPS:
+                self._mode_tooltip_handles.append(
+                    DelayedTooltip(btn, self._MODE_TOOLTIPS[mode], delay_ms=2200)
+                )
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
         self._sidebar_preview_frame = tk.Frame(sidebar, bg=self._COLORS["bg_main"])
@@ -2733,6 +2966,31 @@ class PS5ConverterGUI:
         self.src_browse_btn = ttk.Button(path_card, text="Dump Ordner", command=self._browse_source)
         self.src_browse_btn.grid(row=1, column=2, padx=(10, 0), pady=(5, 15))
 
+        self.format_title = ttk.Label(
+            path_card,
+            text="ZIELFORMAT",
+            font=("Segoe UI", 9, "bold"),
+            foreground=self._COLORS["fg_secondary"],
+            background=self._COLORS["bg_card"],
+        )
+        self.format_title.grid(row=2, column=0, sticky="w")
+        self.format_combo = ttk.Combobox(
+            path_card,
+            textvariable=self.target_format,
+            state="readonly",
+            font=("Segoe UI", 10),
+            values=(),
+        )
+        self.format_combo.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(5, 15))
+        self.format_info_label = ttk.Label(
+            path_card,
+            text="Verfügbare Optionen hängen von der gewählten Aufgabe ab.",
+            font=("Segoe UI", 8),
+            foreground=self._COLORS["fg_secondary"],
+            background=self._COLORS["bg_card"],
+        )
+        self.format_info_label.grid(row=3, column=2, padx=(10, 0), pady=(5, 15), sticky="w")
+
         # Ziel
         self.dest_title = ttk.Label(
             path_card,
@@ -2741,11 +2999,11 @@ class PS5ConverterGUI:
             foreground=self._COLORS["fg_secondary"],
             background=self._COLORS["bg_card"],
         )
-        self.dest_title.grid(row=2, column=0, sticky="w")
+        self.dest_title.grid(row=4, column=0, sticky="w")
         self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=("Segoe UI", 11))
-        self.dest_entry.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.dest_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.dest_btn = ttk.Button(path_card, text="Ordner wählen", command=self._browse_dest)
-        self.dest_btn.grid(row=3, column=2, padx=(10, 0), pady=(5, 0))
+        self.dest_btn.grid(row=5, column=2, padx=(10, 0), pady=(5, 0))
 
         # Temp-Ordner für große temporäre Arbeitsdateien
         self.temp_title = ttk.Label(
@@ -2755,11 +3013,11 @@ class PS5ConverterGUI:
             foreground=self._COLORS["fg_secondary"],
             background=self._COLORS["bg_card"],
         )
-        self.temp_title.grid(row=4, column=0, sticky="w", pady=(14, 0))
+        self.temp_title.grid(row=6, column=0, sticky="w", pady=(14, 0))
         self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=("Segoe UI", 11))
-        self.temp_entry.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.temp_entry.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.temp_btn = ttk.Button(path_card, text="Temp wählen", command=self._browse_temp_dir)
-        self.temp_btn.grid(row=5, column=2, padx=(10, 0), pady=(5, 0))
+        self.temp_btn.grid(row=7, column=2, padx=(10, 0), pady=(5, 0))
 
         # Kompressions-Level: Level 7 (Standard laut PS5-FFPFSC-PRO / Bizkut Backend)
         self.zstd_level = 7
@@ -2847,6 +3105,7 @@ class PS5ConverterGUI:
             self.header_label.config(text=full_text.split(" (")[0])
         if hasattr(self, "subtitle_label"):
             self.subtitle_label.config(text=f"Konfiguration für: {full_text}")
+        self._refresh_target_format_options(mode)
 
         # Sidebar-Buttons hervorheben
         if hasattr(self, "mode_buttons"):
@@ -2865,8 +3124,11 @@ class PS5ConverterGUI:
                 or mode == "dump_validator"
                 or mode == "fakelib_manager" and os.path.isdir(src_val)
             )
-            # exfat_to_folder braucht Zielordner; ffpkg_to_ffpfsc braucht Zielordner (für .ffpfsc Ausgabe)
-            if mode in ("exfat_to_folder", "ffpkg_to_ffpfsc"):
+            # Flexible Konvertierer brauchen immer einen Zielordner.
+            if mode in (
+                "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+                "batch_convert", "universal_convert", "exfat_to_folder",
+            ):
                 hide_dest = False
 
             if hide_dest:
@@ -2890,6 +3152,10 @@ class PS5ConverterGUI:
         if hasattr(self, "src_browse_btn"):
             if mode == "pack_folder":
                 self.src_browse_btn.config(text="Dump Ordner")
+            elif mode == "batch_convert":
+                self.src_browse_btn.config(text="Dateien wählen")
+            elif mode == "universal_convert":
+                self.src_browse_btn.config(text="Quelle wählen")
             elif mode == "fakelib_manager":
                 self.src_browse_btn.config(text="Dump wählen")
             elif mode == "dump_validator":
@@ -2957,13 +3223,19 @@ class PS5ConverterGUI:
                     and src_val.lower().endswith(".ffpkg")
                 ):
                     src_ok = True
+                elif mode == "batch_convert":
+                    src_ok = bool(getattr(self, "_batch_sources", []))
+                elif mode == "universal_convert":
+                    src_ok = bool(self._detect_source_type(src_val))
                 if not src_ok:
                     self.source_path.set("")
+                    if mode == "batch_convert":
+                        self._batch_sources = []
         # Kompressions-Level ist fest auf 7 (empfohlen) – kein Dropdown
         # Aufgabe 6: ffpkg zu ffpfsc – kein Dokan noetig
-        if mode == "ffpkg_to_ffpfsc" and hasattr(self, "status_label"):
+        if mode in self._MODE_TOOLTIPS and hasattr(self, "status_label"):
             self.status_label.config(
-                text="Aufgabe 6: .ffpkg Datei waehlen und Start druecken."
+                text=self._MODE_TOOLTIPS[mode]
             )
         elif mode == "fakelib_manager" and hasattr(self, "status_label"):
             self.status_label.config(
@@ -2972,6 +3244,70 @@ class PS5ConverterGUI:
         # Trigger Metadaten-Check
         self._on_source_path_changed()
         self._refresh_release_test_gate_badge()
+
+    def _format_label_to_key(self, label: str) -> str:
+        for key, value in self._FORMAT_LABELS.items():
+            if value == label:
+                return key
+        return ""
+
+    def _detect_source_type(self, path: str) -> str:
+        if not path:
+            return ""
+        norm = str(path).strip()
+        if os.path.isdir(norm):
+            return "folder"
+        if not os.path.isfile(norm):
+            return ""
+        lower = norm.lower()
+        if lower.endswith(".ffpfsc"):
+            return "ffpfsc"
+        if lower.endswith(".exfat"):
+            return "exfat"
+        if lower.endswith(".ffpkg"):
+            return "ffpkg"
+        return ""
+
+    def _get_target_options(self, mode: str, source_path: str = "") -> tuple[str, ...]:
+        options = self._MODE_TARGET_OPTIONS.get(mode, ())
+        if mode != "universal_convert":
+            return options
+        source_type = self._detect_source_type(source_path)
+        return tuple(target for target in options if target != source_type)
+
+    def _refresh_target_format_options(self, mode: str | None = None) -> None:
+        if not hasattr(self, "format_combo"):
+            return
+        selected_mode = str(mode or self.current_mode.get() or "").strip()
+        show_target_format = selected_mode in self._MODE_TARGET_OPTIONS
+        for widget_name in ("format_title", "format_combo", "format_info_label"):
+            widget = getattr(self, widget_name, None)
+            if widget is None:
+                continue
+            if show_target_format:
+                widget.grid()
+            else:
+                widget.grid_remove()
+
+        labels = [
+            self._FORMAT_LABELS[key]
+            for key in self._get_target_options(selected_mode, self.source_path.get())
+            if key in self._FORMAT_LABELS
+        ]
+        self.format_combo["values"] = labels
+        if labels:
+            if self.target_format.get() not in labels:
+                self.format_combo.current(0)
+        else:
+            self.target_format.set("")
+
+        if hasattr(self, "format_info_label"):
+            allowed_sources = self._MODE_SOURCE_TYPES.get(selected_mode, ())
+            if allowed_sources:
+                src_text = ", ".join(self._FORMAT_LABELS.get(key, key) for key in allowed_sources)
+                self.format_info_label.config(text=f"Quelle: {src_text}")
+            else:
+                self.format_info_label.config(text="Verfügbare Optionen hängen von der gewählten Aufgabe ab.")
 
     # ------------------------------------------------------------------
     # Ereignishandler
@@ -3043,6 +3379,24 @@ class PS5ConverterGUI:
         self.root.after(0, _ask)
         event.wait()
         return result_holder[0]
+
+    def _ask_directory_threadsafe(self, title: str, initialdir: str = "") -> str:
+        """Öffnet einen Ordnerdialog sicher aus einem Hintergrund-Thread."""
+        result_holder = [""]
+        event = threading.Event()
+
+        def _ask() -> None:
+            try:
+                result_holder[0] = filedialog.askdirectory(
+                    title=title,
+                    initialdir=initialdir if os.path.isdir(initialdir) else None,
+                )
+            finally:
+                event.set()
+
+        self.root.after(0, _ask)
+        event.wait()
+        return str(result_holder[0] or "")
 
     def _safe_dismount_drive(
         self,
@@ -3359,16 +3713,17 @@ class PS5ConverterGUI:
         3. OSFMount -d (normaler Dismount) bis zu 5 Versuche.
         4. OSFMount -d -F (Force-Dismount) als letzter Ausweg.
         """
-        drive = self._active_mount_drive
-        osf   = self._active_osf_exe
-        if not drive or not osf:
-            return
-
-        # Schritt 1: Worker-Thread beenden und auf Ende warten
+        # Schritt 1: Worker-Thread immer beenden und auf Ende warten. Auch
+        # Aufgaben ohne OSFMount können noch Handles auf Temp-Dateien halten.
         t = getattr(self, '_task_thread', None)
         if t is not None and t.is_alive():
             self.is_running = False          # Signal an den Thread
             t.join(timeout=8)               # Max. 8 Sekunden warten
+
+        drive = self._active_mount_drive
+        osf   = self._active_osf_exe
+        if not drive or not osf:
+            return
 
         # Schritte 2-4: zentraler Helper (FSCTL_DISMOUNT_VOLUME + Retry + Force + SHChangeNotify)
         if self._safe_dismount_drive(drive, osf, log=False, retries=5):
@@ -3744,6 +4099,59 @@ class PS5ConverterGUI:
                 title="Game Dump Ordner auswählen",
                 initialdir=initial_dir,
             )
+        elif mode == "batch_convert":
+            paths = filedialog.askopenfilenames(
+                title="Mehrere .FFPFSC/.exFAT/.FFPKG Dateien auswählen",
+                initialdir=initial_dir,
+                filetypes=[
+                    ("PS5 Image", "*.ffpfsc *.exfat *.ffpkg"),
+                    ("FFPFSC Image", "*.ffpfsc"),
+                    ("ExFAT Image", "*.exfat"),
+                    ("FFPKG Package", "*.ffpkg"),
+                    ("Alle Dateien", "*.*"),
+                ],
+            )
+            if not paths:
+                return
+            normalized_paths = [os.path.normpath(p) for p in paths]
+            for candidate in normalized_paths:
+                error_msg = self._validate_source_path(candidate, mode)
+                if error_msg:
+                    messagebox.showerror("Ungültige Quelle", error_msg, parent=self.root)
+                    return
+            self._batch_sources = normalized_paths
+            self._remember_source_dialog_path(normalized_paths[0])
+            self.source_path.set(normalized_paths[0])
+            if hasattr(self, "status_label"):
+                self.status_label.config(
+                    text=f"{len(normalized_paths)} Datei(en) für Aufgabe 5 ausgewählt."
+                )
+            return
+        elif mode == "universal_convert":
+            choice = messagebox.askquestion(
+                "Quellentyp wählen",
+                "Soll ein Game Dump Ordner ausgewählt werden?\n\n"
+                "JA  → Game Dump Ordner\n"
+                "NEIN → .ffpfsc, .exfat oder .ffpkg Datei",
+                parent=self.root,
+            )
+            if choice == "yes":
+                path = filedialog.askdirectory(
+                    title="Quelle auswählen (Aufgabe 6)",
+                    initialdir=initial_dir,
+                )
+            else:
+                path = filedialog.askopenfilename(
+                    title=".FFPFSC, .ExFat oder .FFPKG Datei auswählen (Aufgabe 6)",
+                    initialdir=initial_dir,
+                    filetypes=[
+                        ("PS5 Image", "*.ffpfsc *.exfat *.ffpkg"),
+                        ("FFPFSC Image", "*.ffpfsc"),
+                        ("ExFAT Image", "*.exfat"),
+                        ("FFPKG Package", "*.ffpkg"),
+                        ("Alle Dateien", "*.*"),
+                    ],
+                )
         elif mode == "pack_file":
             # Aufgabe 3: nur .exfat
             path = filedialog.askopenfilename(
@@ -3818,9 +4226,9 @@ class PS5ConverterGUI:
                 ],
             )
         elif mode == "ffpkg_to_ffpfsc":
-            # Aufgabe 6: .ffpkg Datei → .ffpfsc
+            # Aufgabe 4: .ffpkg Datei
             path = filedialog.askopenfilename(
-                title=".ffpkg Datei auswählen (Aufgabe 6: ffpkg → ffpfsc)",
+                title=".ffpkg Datei auswählen",
                 initialdir=initial_dir,
                 filetypes=[
                     ("PS5 Package", "*.ffpkg"),
@@ -3849,6 +4257,7 @@ class PS5ConverterGUI:
             messagebox.showerror("Ungültige Quelle", error_msg, parent=self.root)
             return
 
+        self._batch_sources = []
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
 
@@ -3958,14 +4367,40 @@ class PS5ConverterGUI:
         elif mode == "ffpkg_to_ffpfsc":
             if not os.path.isfile(path):
                 return (
-                    "Aufgabe 6 erfordert eine .ffpkg Datei als Quelle.\n"
+                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
                     f"Der gewählte Pfad ist keine Datei:\n{path}"
                 )
             if not path.lower().endswith(".ffpkg"):
                 return (
-                    "Aufgabe 6 erfordert eine .ffpkg Datei als Quelle.\n"
+                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
                     f"Die gewählte Datei hat nicht die Endung .ffpkg:\n"
                     f"{os.path.basename(path)}"
+                )
+        elif mode == "batch_convert":
+            if not os.path.isfile(path):
+                return (
+                    "Aufgabe 5 akzeptiert mehrere Dateien als Quelle.\n"
+                    f"Der gewählte Pfad ist keine Datei:\n{path}"
+                )
+            ext = path.lower()
+            if not (ext.endswith(".ffpfsc") or ext.endswith(".exfat") or ext.endswith(".ffpkg")):
+                return (
+                    "Aufgabe 5 akzeptiert nur .ffpfsc, .exfat oder .ffpkg Dateien.\n"
+                    f"Ungültige Datei:\n{os.path.basename(path)}"
+                )
+        elif mode == "universal_convert":
+            if os.path.isdir(path):
+                return ""
+            if not os.path.isfile(path):
+                return (
+                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.exfat/.ffpkg Datei.\n"
+                    f"Die Quelle wurde nicht gefunden:\n{path}"
+                )
+            ext = path.lower()
+            if not (ext.endswith(".ffpfsc") or ext.endswith(".exfat") or ext.endswith(".ffpkg")):
+                return (
+                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.exfat/.ffpkg Datei.\n"
+                    f"Ungültige Datei:\n{os.path.basename(path)}"
                 )
         elif mode == "fakelib_manager":
             # Akzeptiert: Ordner (Game Dump), .ffpfsc, .exfat oder .ffpkg
@@ -4189,6 +4624,7 @@ class PS5ConverterGUI:
 
         src  = self.source_path.get().strip()
         mode = self.current_mode.get()
+        self._refresh_target_format_options(mode)
 
         # Bei Quellen-/Moduswechsel alte Vorschau-Caches verwerfen, damit
         # keine veralteten Metadaten/icon0-Kombinationen angezeigt werden.
@@ -4208,6 +4644,8 @@ class PS5ConverterGUI:
                         _var.set("–")
                 self._info_src_size_var.set("–")
                 self._info_est_size_var.set("–")
+                self._info_format_var.set("–")
+                self._info_method_var.set("–")
                 self._update_sidebar_preview(None, "")
         except Exception:
             pass
@@ -4229,9 +4667,10 @@ class PS5ConverterGUI:
 
         # Info-Box für alle Modi: Ordner (pack_folder)
         # und Dateien (.ffpfsc / .exfat für alle anderen Modi)
-        folder_modes = {"pack_folder", "fakelib_manager", "dump_validator"}
+        folder_modes = {"pack_folder", "fakelib_manager", "dump_validator", "universal_convert"}
         file_modes   = {"unpack_to_exfat", "pack_file", "inspect", "unpack_to_game_folder",
-                        "fakelib_manager", "dump_validator", "exfat_to_folder", "ffpkg_to_ffpfsc"}
+                "fakelib_manager", "dump_validator", "exfat_to_folder", "ffpkg_to_ffpfsc",
+                "batch_convert", "universal_convert"}
         src_valid = False
         if mode in folder_modes and src and os.path.isdir(src):
             src_valid = True
@@ -4256,6 +4695,10 @@ class PS5ConverterGUI:
                 src_valid = src.lower().endswith(".exfat")
             elif mode == "ffpkg_to_ffpfsc":
                 src_valid = src.lower().endswith(".ffpkg")
+            elif mode == "batch_convert":
+                src_valid = bool(getattr(self, "_batch_sources", []))
+            elif mode == "universal_convert":
+                src_valid = bool(self._detect_source_type(src))
             else:  # unpack_to_exfat, unpack_to_game_folder, inspect
                 src_valid = src.lower().endswith(".ffpfsc")
         if src_valid:
@@ -4272,6 +4715,8 @@ class PS5ConverterGUI:
                 "pack_file",
                 "exfat_to_folder",
                 "ffpkg_to_ffpfsc",
+                "batch_convert",
+                "universal_convert",
             }
             preview_candidate_dirs = self._preview_candidate_dirs(
                 src,
@@ -4341,7 +4786,7 @@ class PS5ConverterGUI:
                         return
                     quick_meta: dict[str, str] | None = None
                     _quick_cover = None
-                    if mode in ("pack_folder", "fakelib_manager") and os.path.isdir(src):
+                    if mode in ("pack_folder", "fakelib_manager", "universal_convert") and os.path.isdir(src):
                         # --- Ordner-Modus (pack_folder / fakelib_manager): direkt aus Ordner lesen ---
                         # Schritt 1: Fast-Path sofort anzeigen, bevor teure Größenberechnung läuft.
                         quick_meta = self._quick_meta_from_path(src, candidate_roots=preview_candidate_dirs)
@@ -4356,14 +4801,18 @@ class PS5ConverterGUI:
                         src_str = self._fmt_bytes(total)
                         # Schritt 2: Quellgröße nachreichen
                         self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
-                        # Schritt 2: Zielgröße schätzen
-                        try:
-                            ratio     = self._estimate_zstd_ratio(src, level=self.zstd_level)
-                            est_str   = self._fmt_bytes(int(total * ratio))
-                            label_text = f"{src_str} → ~{est_str}"
-                        except Exception:
-                            est_str    = ""
-                            label_text = f"{src_str} → ±10–30%"
+                        # Nur Aufgabe 1 hat hier ein festes komprimiertes Ziel.
+                        if mode == "pack_folder":
+                            try:
+                                ratio = self._estimate_zstd_ratio(src, level=self.zstd_level)
+                                est_str = self._fmt_bytes(int(total * ratio))
+                                label_text = f"{src_str} → ~{est_str}"
+                            except Exception:
+                                est_str = ""
+                                label_text = f"{src_str} → ±10–30%"
+                        else:
+                            est_str = ""
+                            label_text = src_str
                         # Nach der Schätzung nur die Zielgröße nachreichen.
                         if my_gen == self._calc_generation:
                             self.root.after(
@@ -4390,6 +4839,28 @@ class PS5ConverterGUI:
                         label_text = src_str
                         meta, cover_img = self._read_game_meta_and_cover(src)
                         est_str   = ""
+                    elif mode == "batch_convert":
+                        batch_sources = [
+                            path for path in (getattr(self, "_batch_sources", []) or [])
+                            if os.path.isfile(path)
+                        ]
+                        if not batch_sources:
+                            return
+                        total = sum(os.path.getsize(path) for path in batch_sources)
+                        self._last_source_size_bytes = int(total)
+                        src_str = f"{len(batch_sources)} Dateien · {self._fmt_bytes(total)}"
+                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        est_str = ""
+                        label_text = src_str
+                        quick_meta = self._quick_meta_from_path(
+                            src, candidate_roots=preview_candidate_dirs
+                        )
+                        meta, cover_img = self._extract_meta_from_file(
+                            src,
+                            mode,
+                            _my_gen=my_gen,
+                            _candidate_dirs=preview_candidate_dirs,
+                        )
                     elif mode in (
                         "unpack_to_exfat",
                         "pack_file",
@@ -4397,6 +4868,7 @@ class PS5ConverterGUI:
                         "unpack_to_game_folder",
                         "ffpkg_to_ffpfsc",
                         "exfat_to_folder",
+                        "universal_convert",
                     ):
                         # --- Datei-Modus: Größe berechnen, Metadaten NUR für Info-Box ---
                         total   = os.path.getsize(src)
@@ -4696,21 +5168,9 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Quick-Param-Fast-Path fehlgeschlagen: %s", exc)
 
-        # .ffpkg-Dateien haben oft keine benachbarte sce_sys-Struktur. Ein
-        # schneller Header-/String-Scan liefert trotzdem haeufig Title-ID und
-        # Version, womit die bestehende Online-Anreicherung Cover/Titel fuellen kann.
-        if src.lower().endswith(".ffpkg") and (
-            quick_meta.get("title_id", "–") in {"", "-", "–"}
-            or quick_meta.get("version", "–") in {"", "-", "–"}
-        ):
-            try:
-                ffpkg_meta = self._extract_meta_from_ffpkg_file(src)
-                for k in ("title_id", "version", "region"):
-                    val = str(ffpkg_meta.get(k, "")).strip()
-                    if val and val not in {"–", "-", "Unbekannt", "�"}:
-                        quick_meta[k] = val
-            except Exception as exc:
-                logger.debug("Quick-FFPKG-Fast-Path fehlgeschlagen: %s", exc)
+        # Bei .ffpkg keine rohen Image-Strings in der Sofortvorschau verwenden.
+        # Die endgültige Hintergrundanalyse bevorzugt den strukturierten
+        # UFS2Tool-/Dokan-Pfad und kennzeichnet den Muster-Scan als Fallback.
 
         # Region ggf. final aus (evtl. inzwischen gefuellter) Title-ID ableiten.
         if quick_meta.get("region", "–") in {"–", "-", ""}:
@@ -4722,9 +5182,8 @@ class PS5ConverterGUI:
     def _extract_meta_from_ffpkg_file(self, src: str) -> dict[str, str]:
         """Extrahiert Title-ID/Version heuristisch direkt aus einer .ffpkg-Datei.
 
-        Der Scan liest nur einen kleinen Kopf-/Endbereich und sucht nach gut
-        erkennbaren ASCII-Mustern. Das reicht fuer die Vorschau, ohne die Datei
-        vollstaendig zu analysieren.
+        Dieser schnelle Muster-Scan ist nur ein Fallback, wenn der strukturierte
+        read-only UFS2Tool-/Dokan-Pfad nicht verfügbar ist.
         """
         meta: dict[str, str] = {
             "title": "–",
@@ -4824,6 +5283,91 @@ class PS5ConverterGUI:
                 break
 
         return meta
+
+    def _extract_meta_from_ffpkg_ufs2(
+        self, src: str
+    ) -> tuple[dict[str, str], Image.Image | None]:
+        """Liest Spielmetadaten aus einem UFS2-.ffpkg über einen read-only Mount."""
+        empty_meta: dict[str, str] = {
+            "title": "–", "title_id": "–", "version": "–", "required_firmware": "–",
+            "region": "–", "category": "–", "publisher": "–",
+        }
+        if (
+            not src
+            or not os.path.isfile(src)
+            or not src.lower().endswith(".ffpkg")
+            or not _is_admin()
+            or not self._find_dokan_driver()
+        ):
+            return empty_meta, None
+
+        lock = getattr(self, "_ffpkg_preview_lock", None)
+        if lock is None:
+            lock = threading.RLock()
+            self._ffpkg_preview_lock = lock
+
+        with lock:
+            mount_proc: subprocess.Popen[str] | None = None
+            drive = ""
+            mounted = False
+            try:
+                exe = self._extract_ufs2tool()
+                import ctypes as _ct
+
+                drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
+                for idx in range(25, 3, -1):
+                    if not (drives_bitmask & (1 << idx)):
+                        drive = chr(65 + idx) + ":"
+                        break
+                if not drive:
+                    return empty_meta, None
+
+                mount_proc = subprocess.Popen(
+                    [exe, "mount_udf", "-o", "ro", src, drive],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    encoding="mbcs",
+                    errors="replace",
+                    creationflags=_NO_WIN_FLAGS,
+                    startupinfo=_silent_startupinfo(),
+                )
+                for _ in range(40):
+                    if mount_proc.poll() is not None:
+                        break
+                    if os.path.exists(drive + "\\"):
+                        mounted = True
+                        break
+                    time.sleep(0.25)
+                if not mounted:
+                    return empty_meta, None
+
+                meta, cover = self._read_game_meta_and_cover(drive + "\\")
+                return meta, cover
+            except Exception as exc:
+                logger.debug("Strukturierter UFS2-Metadaten-Read fehlgeschlagen: %s", exc)
+                return empty_meta, None
+            finally:
+                if mount_proc is not None:
+                    try:
+                        mount_proc.terminate()
+                        mount_proc.wait(timeout=10)
+                    except Exception:
+                        try:
+                            mount_proc.kill()
+                        except Exception:
+                            pass
+                try:
+                    if mounted and drive and os.path.exists(drive + "\\"):
+                        subprocess.run(
+                            ["mountvol", drive + "\\", "/D"],
+                            timeout=10,
+                            capture_output=True,
+                            creationflags=_NO_WIN_FLAGS,
+                            startupinfo=_silent_startupinfo(),
+                        )
+                except Exception:
+                    pass
 
     def _preview_dir_from_report_payload(self, payload: dict[str, Any], src_abs: str) -> str:
         """Leitet aus einem Report-Payload einen passenden Vorschau-Ordner ab."""
@@ -6020,6 +6564,7 @@ class PS5ConverterGUI:
                     for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
                 )
                 if useful:
+                    meta["_metadata_method"] = "MkPFS PFSC + exFAT-Reader (read-only)"
                     return meta, cover_img
             finally:
                 try:
@@ -6201,11 +6746,25 @@ class PS5ConverterGUI:
             if meta["title"] == "–" and src.lower().endswith(".exfat"):
                 meta, cover_img = self._extract_meta_from_exfat_image(src)
             elif src.lower().endswith(".ffpkg"):
+                ufs2_meta, ufs2_cover = self._extract_meta_from_ffpkg_ufs2(src)
+                ufs2_useful = ufs2_cover is not None or any(
+                    str(ufs2_meta.get(key, "")).strip() not in {"", "-", "–", "Unbekannt", "�"}
+                    for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
+                )
+                if ufs2_cover is not None:
+                    cover_img = ufs2_cover
                 ffpkg_meta = self._extract_meta_from_ffpkg_file(src)
                 for _k in ("title", "title_id", "version", "required_firmware", "region", "category", "publisher"):
-                    _vv = str(ffpkg_meta.get(_k, "")).strip()
+                    _vv = str(ufs2_meta.get(_k, "")).strip()
+                    if not _vv or _vv in {"–", "-", "Unbekannt", "�"}:
+                        _vv = str(ffpkg_meta.get(_k, "")).strip()
                     if _vv and _vv not in {"–", "-", "Unbekannt", "�"}:
                         meta[_k] = _vv
+                meta["_metadata_method"] = (
+                    "UFS2Tool/Dokan (read-only)"
+                    if ufs2_useful
+                    else "FFPKG-Muster-Scan (Fallback)"
+                )
             # Ergebnis cachen (auch wenn unvollständig), um wiederholte
             # Metadaten-Extraktion bei Infobox-Öffnungen zu vermeiden.
             if _cache_key is not None:
@@ -6245,6 +6804,7 @@ class PS5ConverterGUI:
         )
         if related_meta is not None or related_cover is not None:
             meta = related_meta or dict(empty_meta)
+            meta["_metadata_method"] = "Task-Report/Originalquelle (Proxy)"
             cover_img = related_cover
             if _cache_key is not None:
                 if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
@@ -6306,6 +6866,7 @@ class PS5ConverterGUI:
             ) or outer_meta_cover is not None:
                 if outer_meta_cover is None:
                     outer_meta_cover = outer_cover_img
+                outer_meta["_metadata_method"] = "MkPFS-Außencontainer (Dump-Inhalt)"
                 if _cache_key is not None:
                     if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
                         self._preview_cache.pop(next(iter(self._preview_cache)))
@@ -6323,8 +6884,25 @@ class PS5ConverterGUI:
             pfs_file = max(outer_files, key=os.path.getsize)
 
             if pfs_file.lower().endswith(".ffpkg"):
-                meta = self._extract_meta_from_ffpkg_file(pfs_file)
-                cover_img = outer_cover_img
+                meta, cover_img = self._extract_meta_from_ffpkg_ufs2(pfs_file)
+                ufs2_useful = cover_img is not None or any(
+                    str(meta.get(key, "")).strip() not in {"", "-", "–", "Unbekannt", "�"}
+                    for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
+                )
+                fallback_meta = self._extract_meta_from_ffpkg_file(pfs_file)
+                for _k, _value in fallback_meta.items():
+                    if (
+                        str(meta.get(_k, "")).strip() in {"", "-", "–", "Unbekannt", "�"}
+                        and str(_value).strip() not in {"", "-", "–", "Unbekannt", "�"}
+                    ):
+                        meta[_k] = _value
+                if cover_img is None:
+                    cover_img = outer_cover_img
+                meta["_metadata_method"] = (
+                    "MkPFS + UFS2Tool/Dokan (read-only)"
+                    if ufs2_useful
+                    else "MkPFS + FFPKG-Muster-Scan (Fallback)"
+                )
                 if _cache_key is not None:
                     if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
                         self._preview_cache.pop(next(iter(self._preview_cache)))
@@ -6352,6 +6930,7 @@ class PS5ConverterGUI:
 
             meta      = self._read_game_meta(tmp_meta)
             cover_img = self._load_cover_image(tmp_meta)
+            meta["_metadata_method"] = "MkPFS 0.0.9 (inneres PFS)"
             if cover_img is None:
                 cover_img = self._load_fallback_art_image(tmp_meta)
 
@@ -6370,6 +6949,7 @@ class PS5ConverterGUI:
                         for _k in ("title", "title_id", "version", "category", "publisher")
                     ) or exfat_cover is not None:
                         meta = exfat_meta
+                        meta["_metadata_method"] = "MkPFS + exFAT-Reader (read-only)"
                         cover_img = exfat_cover
                 except Exception as exc:
                     logger.debug("Inneres exFAT-Image konnte nicht gelesen werden: %s", exc)
@@ -6506,6 +7086,7 @@ class PS5ConverterGUI:
             ("required_firmware", "REQUIRED FW"),
             ("region",   "REGION"),
             ("category", "KATEGORIE"),
+            ("publisher", "HERSTELLER"),
         ]
         for row_idx, (key, label_text) in enumerate(meta_keys):
             tk.Label(meta_frame, text=label_text,
@@ -6541,6 +7122,25 @@ class PS5ConverterGUI:
                  font=("Segoe UI", 9, "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["progress_fill"]).grid(row=0, column=3, sticky="e", padx=(6, 0))
+        tk.Label(size_bar, text="FORMAT:",
+                 font=("Segoe UI", 8, "bold"),
+                 bg=self._COLORS["bg_card"],
+                 fg=self._COLORS["fg_secondary"]).grid(row=1, column=0, sticky="w", pady=(4, 0))
+        tk.Label(size_bar, textvariable=self._info_format_var,
+                 font=("Segoe UI", 8),
+                 bg=self._COLORS["bg_card"],
+                 fg=self._COLORS["fg_primary"]).grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(4, 0))
+        tk.Label(size_bar, text="METADATEN:",
+                 font=("Segoe UI", 8, "bold"),
+                 bg=self._COLORS["bg_card"],
+                 fg=self._COLORS["fg_secondary"]).grid(row=1, column=2, sticky="e", padx=(20, 0), pady=(4, 0))
+        tk.Label(size_bar, textvariable=self._info_method_var,
+                 font=("Segoe UI", 8),
+                 bg=self._COLORS["bg_card"],
+                 fg=self._COLORS["fg_primary"],
+                 wraplength=280, justify="right").grid(
+                     row=1, column=3, sticky="e", padx=(6, 0), pady=(4, 0)
+                 )
 
         # ── Trennlinie + Patch-Header ────────────────────────────────────────────────────────────
         tk.Frame(container, bg=self._COLORS["border"], height=1).pack(fill="x", pady=(10, 4))
@@ -6815,6 +7415,29 @@ class PS5ConverterGUI:
         # Größenangaben
         self._info_src_size_var.set(src_str)
         self._info_est_size_var.set(f"~{est_str}" if est_str else "–")
+        try:
+            current_src = self.source_path.get().strip()
+            current_mode = self.current_mode.get().strip()
+        except Exception:
+            current_src = ""
+            current_mode = ""
+        source_type = self._detect_source_type(current_src)
+        if current_src.lower().endswith(".ffpfs"):
+            source_type = "ffpfsc"
+        if current_mode == "batch_convert":
+            batch_count = len(getattr(self, "_batch_sources", []) or [])
+            self._info_format_var.set(f"Stapel ({batch_count} Dateien)")
+            self._info_method_var.set("Formatabhängig: MkPFS / UFS2Tool")
+        else:
+            self._info_format_var.set(self._FORMAT_LABELS.get(source_type, "–"))
+            method_labels = {
+                "folder": "param.json / param.sfo",
+                "ffpfsc": "MkPFS 0.0.9 (PFS/PFSC)",
+                "exfat": "MkPFS exFAT-Reader (read-only)",
+                "ffpkg": "UFS2Tool/Dokan; Muster-Fallback",
+            }
+            actual_method = str(meta.get("_metadata_method", "") or "").strip()
+            self._info_method_var.set(actual_method or method_labels.get(source_type, "–"))
 
         # Cover-Bild im Cache speichern (wird beim Öffnen der Box geladen)
         if cover is not None:
@@ -6827,7 +7450,9 @@ class PS5ConverterGUI:
         # Patch-Suche starten (nur wenn Popup offen und Title-ID sich geändert hat)
         title_id_raw = meta.get("title_id", "").strip()
         title_id = self._sanitize_title_id(title_id_raw)
-        if self._is_valid_title_id(title_id):
+        metadata_method = str(meta.get("_metadata_method", "") or "")
+        metadata_is_trusted = "Fallback" not in metadata_method
+        if metadata_is_trusted and self._is_valid_title_id(title_id):
             prev_id = getattr(self, "_cached_title_id", "")
             self._cached_title_id = title_id
             if title_id != self._persisted_title_id:
@@ -8007,6 +8632,7 @@ class PS5ConverterGUI:
         mode = self.current_mode.get()
         self._active_mode_name = str(mode or "")
         dst_for_checks = self.dest_path.get().strip()
+        target_type = self._get_selected_target_type()
 
         # Quellpfad validieren
         if not src:
@@ -8030,6 +8656,11 @@ class PS5ConverterGUI:
         error_msg = self._validate_source_path(src, mode)
         if error_msg:
             messagebox.showerror("Ungültige Quelle", error_msg)
+            return
+
+        conversion_error = self._validate_requested_conversion(mode, src, target_type)
+        if conversion_error:
+            messagebox.showerror("Zielformat nicht verfügbar", conversion_error)
             return
 
         # Release-Test-Gate (entfernt)
@@ -10618,7 +11249,12 @@ class PS5ConverterGUI:
 
         success = False
         try:
-            if mode == "pack_folder":
+            if mode in (
+                "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+                "batch_convert", "universal_convert",
+            ):
+                success = self._run_flexible_conversion(mode, src, dst)
+            elif mode == "pack_folder":
                 success = self._mode_pack_folder(src, dst)
             elif mode == "inspect":
                 success = self._mode_inspect(src)
@@ -10958,6 +11594,178 @@ class PS5ConverterGUI:
     # Einzelne Konvertierungsmodi
     # ------------------------------------------------------------------
 
+    def _run_flexible_conversion(self, mode: str, src: str, dst: str) -> bool:
+        """Dispatch für die neuen flexiblen Aufgaben 1-6."""
+        target_type = self._get_selected_target_type()
+
+        if mode == "batch_convert":
+            sources = list(getattr(self, "_batch_sources", []) or [])
+            if not sources:
+                self._append_to_log("[FEHLER] Keine Batch-Quellen ausgewählt.\n")
+                return False
+            self.task_final_output_path = dst
+            self.task_batch_results = []
+            self.task_total_source_bytes = sum(
+                os.path.getsize(item) for item in sources if os.path.isfile(item)
+            )
+            self._append_to_log(
+                f">>> Aufgabe 5 – Batch-Konvertierung nach {self._FORMAT_LABELS.get(target_type, target_type)}\n"
+            )
+            all_ok = True
+            for idx, candidate in enumerate(sources, start=1):
+                if not self.is_running:
+                    return False
+                self._append_to_log(
+                    f"\n[Batch] {idx}/{len(sources)}: {os.path.basename(candidate)}\n"
+                )
+                source_type = self._detect_source_type(candidate)
+                reason = self._conversion_block_reason(source_type, target_type)
+                if reason:
+                    self._append_to_log(f"[FEHLER] {reason}\n")
+                    self.task_batch_results.append({
+                        "source": candidate,
+                        "output": "",
+                        "ok": False,
+                        "detail": reason,
+                    })
+                    all_ok = False
+                    continue
+                converted = self._execute_conversion_by_type(
+                    source_type, target_type, candidate, dst
+                )
+                output_path = str(getattr(self, "task_final_output_path", "") or "")
+                verification = self._verify_output_artifact(mode, output_path) if converted else {
+                    "ok": False,
+                    "detail": "Konvertierung fehlgeschlagen.",
+                }
+                item_ok = converted and bool(verification.get("ok", False))
+                self.task_batch_results.append({
+                    "source": candidate,
+                    "output": output_path,
+                    "ok": item_ok,
+                    "detail": str(verification.get("detail", "")),
+                })
+                if item_ok:
+                    self._append_to_log(
+                        f"[Batch] OK: {os.path.basename(output_path)} – "
+                        f"{verification.get('detail', 'verifiziert')}\n"
+                    )
+                else:
+                    self._append_to_log(
+                        f"[FEHLER] Batch-Ausgabe ungültig: "
+                        f"{verification.get('detail', 'unbekannter Fehler')}\n"
+                    )
+                    all_ok = False
+            succeeded = sum(1 for item in self.task_batch_results if item["ok"])
+            self._append_to_log(
+                f"\n[Batch] Ergebnis: {succeeded}/{len(sources)} erfolgreich verifiziert.\n"
+            )
+            self.task_final_output_path = dst
+            return all_ok
+
+        source_type = self._resolve_mode_source_type(mode, src)
+        reason = self._conversion_block_reason(source_type, target_type)
+        if reason:
+            self._append_to_log(f"[FEHLER] {reason}\n")
+            return False
+        return self._execute_conversion_by_type(source_type, target_type, src, dst)
+
+    def _execute_conversion_by_type(self, source_type: str, target_type: str, src: str, dst: str) -> bool:
+        if source_type == "folder" and target_type == "ffpfsc":
+            return self._mode_pack_folder(src, dst)
+        if source_type == "folder" and target_type == "exfat":
+            return self._mode_folder_to_exfat(src, dst)
+        if source_type == "ffpfsc" and target_type == "exfat":
+            return self._mode_unpack_to_exfat(src, dst)
+        if source_type == "ffpfsc" and target_type == "folder":
+            return self._mode_unpack_to_game_folder(src, dst)
+        if source_type == "exfat" and target_type == "ffpfsc":
+            return self._mode_pack_file(src, dst)
+        if source_type == "exfat" and target_type == "folder":
+            return self._mode_exfat_to_folder(src, dst)
+        if source_type == "ffpkg" and target_type == "ffpfsc":
+            return self._mode_ffpkg_to_ffpfsc(src, dst)
+        if source_type == "ffpkg" and target_type == "folder":
+            return self._mode_ffpkg_to_folder(src, dst)
+        if source_type == "ffpkg" and target_type == "exfat":
+            return self._mode_ffpkg_to_exfat(src, dst)
+        self._append_to_log(
+            f"[FEHLER] Nicht unterstützte Konvertierung: {source_type} -> {target_type}\n"
+        )
+        return False
+
+    def _mode_folder_to_exfat(self, src: str, dst: str) -> bool:
+        """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image."""
+        base_name = os.path.basename(os.path.normpath(src))
+        final_output = os.path.join(dst, f"{base_name}.exfat")
+        self.task_final_output_path = final_output
+        self.task_total_source_bytes = self._get_path_size(src)
+        self.progress_engine.start_task(0, "Dump-Ordner zu exFAT")
+        self.progress_engine.begin_prepare("Quellordner analysieren...")
+        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 1 – Erstelle exFAT-Image..."))
+        self._append_to_log(
+            f">>> Aufgabe 1 – Dump-Ordner zu .exFAT: {os.path.basename(src)} -> {os.path.basename(final_output)}\n"
+        )
+        ok = self._create_exfat_from_folder(src, final_output, pct_start=5.0, pct_end=98.0)
+        if ok:
+            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.commit_task()
+        return ok
+
+    def _mode_ffpkg_to_folder(self, src: str, dst: str) -> bool:
+        """Extrahiert eine .ffpkg in einen Dump-Ordner."""
+        base_name = os.path.splitext(os.path.basename(src))[0]
+        final_output = os.path.join(dst, base_name)
+        self.task_final_output_path = final_output
+        self.task_total_source_bytes = self._get_path_size(src)
+        self.progress_engine.start_task(3, "FFPKG zu Dump-Ordner")
+        self.progress_engine.begin_prepare("FFPKG extrahieren...")
+        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Extrahiere .ffpkg..."))
+        self._append_to_log(
+            f">>> Aufgabe 4 – .ffpkg zu Dump-Ordner: {os.path.basename(src)} -> {base_name}\n"
+        )
+        ok = self._extract_ffpkg_to_folder_via_ufs2tool(
+            src,
+            final_output,
+            status_prefix="Aufgabe 4",
+            progress_start=5.0,
+            progress_end=98.0,
+        )
+        if ok:
+            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.commit_task()
+        return ok
+
+    def _mode_ffpkg_to_exfat(self, src: str, dst: str) -> bool:
+        """Konvertiert eine .ffpkg über einen temporären Dump-Ordner in .exFAT."""
+        temp_root = self._mkdtemp(prefix="ps5conv_ffpkg_exfat_")
+        temp_dump = os.path.join(temp_root, "dump")
+        base_name = os.path.splitext(os.path.basename(src))[0]
+        final_output = os.path.join(dst, f"{base_name}.exfat")
+        self.task_final_output_path = final_output
+        try:
+            self._append_to_log(
+                ">>> Aufgabe 4 – .ffpkg zu .exFAT über temporären Dump-Ordner\n"
+            )
+            if not self._mode_ffpkg_to_folder(src, temp_root):
+                return False
+            if not os.path.isdir(temp_dump):
+                candidates = [
+                    os.path.join(temp_root, item)
+                    for item in os.listdir(temp_root)
+                    if os.path.isdir(os.path.join(temp_root, item))
+                ]
+                if candidates:
+                    temp_dump = candidates[0]
+            self.task_final_output_path = final_output
+            ok = self._create_exfat_from_folder(temp_dump, final_output, pct_start=60.0, pct_end=98.0)
+            if ok:
+                self.progress_engine.begin_validate("Validierung...")
+                self.progress_engine.commit_task()
+            return ok
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
+
     def _get_expected_output_path(self, mode: str, src: str, dst: str) -> str | None:
         """Berechnet den erwarteten Ausgabepfad für den gewählten Modus.
 
@@ -10969,17 +11777,21 @@ class PS5ConverterGUI:
             der Pfad nicht bestimmbar ist (z.B. bei inspect).
         """
         try:
-            if mode == "pack_folder":
-                folder_name = os.path.basename(os.path.normpath(src))
-                return os.path.join(dst, f"{folder_name}.ffpfsc")
-            elif mode == "pack_file":
-                if dst.lower().endswith(".ffpfsc"):
-                    return dst
-                base_name = os.path.splitext(os.path.basename(src))[0]
-                return os.path.join(dst, f"{base_name}.ffpfsc")
-            elif mode == "unpack_to_exfat":
-                base_name = os.path.splitext(os.path.basename(src))[0]
-                return os.path.join(dst, f"{base_name}.exfat")
+            if mode == "batch_convert":
+                return None
+            if mode in ("pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc", "universal_convert"):
+                source_type = self._resolve_mode_source_type(mode, src)
+                target_type = self._get_selected_target_type()
+                base_name = os.path.basename(os.path.normpath(src)) if source_type == "folder" else os.path.splitext(os.path.basename(src))[0]
+                if target_type == "folder":
+                    return os.path.join(dst, base_name)
+                if target_type == "ffpfsc":
+                    return os.path.join(dst, f"{base_name}.ffpfsc")
+                if target_type == "exfat":
+                    return os.path.join(dst, f"{base_name}.exfat")
+                if target_type == "ffpkg":
+                    return os.path.join(dst, f"{base_name}.ffpkg")
+                return None
             elif mode == "unpack_to_game_folder":
                 base_name = os.path.splitext(os.path.basename(src))[0]
                 return os.path.join(dst, base_name)
@@ -11111,14 +11923,11 @@ class PS5ConverterGUI:
         p1_end: float, p2_end: float, p3_end: float,
         set_pct, set_status,
     ) -> bool:
-        """Aufgabe 1 via nativer MkPFS-0.0.9 pack-folder-Logik.
-
-        MkPFS packt standardmaessig Ordner direkt als exFAT-wrapped .ffpfsc in
-        einem Durchlauf. Das vermeidet das fruehere temp-.exfat-Zwischenartefakt
-        und entspricht dem Default-Verhalten der vendorten CLI.
-        """
+        """Erstellt ein kompatibles .ffpfsc über ein unkomprimiertes inneres PFS."""
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
+        temp_root = self._mkdtemp(prefix="ps5conv_nested_pfs_")
+        temp_pfs = os.path.join(temp_root, "pfs_image.dat")
 
         self._save_runtime_checkpoint(
             mode="pack_folder",
@@ -11126,8 +11935,8 @@ class PS5ConverterGUI:
             dst=dst,
             state="in_progress",
             extra={
-                "stage": "pack_folder_native_prepare",
-                "tmp_dir": "",
+                "stage": "pack_folder_nested_prepare",
+                "tmp_dir": temp_root,
                 "temp_exfat": "",
             },
         )
@@ -11145,16 +11954,17 @@ class PS5ConverterGUI:
         if cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             self._append_to_log(
                 "[RESUME] Vorhandenes temp-.exfat wird ignoriert, "
-                "da Aufgabe 1 jetzt den nativen MkPFS-One-Pass nutzt.\n"
+                "da Aufgabe 1 ein unkomprimiertes inneres PFS neu erstellt.\n"
             )
 
-        set_status("Phase 2+3/4 – Packe Game Dump direkt nach FFPFSC (MkPFS pack folder)...")
+        set_status("Phase 2/4 – Erstelle unkomprimiertes inneres PFS...")
         self._append_to_log(
-            ">>> Schritt 1 / 1: Game Dump Ordner -> .ffpfsc (native MkPFS exFAT wrapping)...\n"
-            "[Info] Methode: mkpfs pack folder (Default: exFAT-wrapped .ffpfsc, 1 Durchlauf)\n"
+            ">>> Schritt 1 / 2: Game Dump Ordner -> unkomprimiertes PFS...\n"
+            ">>> Schritt 2 / 2: inneres PFS -> komprimierter .ffpfsc-Aussencontainer...\n"
+            "[Info] Diese Nested-PFS-Pipeline vermeidet direkt komprimierte Game-Dateien.\n"
         )
-        self.task_num_steps = 1
-        self.task_step_ends = [p3_end]
+        self.task_num_steps = 2
+        self.task_step_ends = [p2_end, p3_end]
         self.task_current_step = 0
         if hasattr(self, "_mkpfs_eta_initial"):
             del self._mkpfs_eta_initial
@@ -11174,43 +11984,65 @@ class PS5ConverterGUI:
 
         self._wait_for_pending_mkpfs_background(final_output)
         self._cleanup_stale_mkpfs_output(final_output)
-        self._save_runtime_checkpoint(
-            mode="pack_folder",
-            src=src,
-            dst=dst,
-            state="in_progress",
-            extra={
-                "stage": "pack_folder_native_running",
-                "tmp_dir": "",
-                "temp_exfat": "",
-            },
-        )
+        try:
+            inner_ok = self._execute_mkpfs(
+                [
+                    "pack", "folder",
+                    "--no-compress",
+                    "--no-verify-structure",
+                    "--no-adjust-output-file-extension",
+                    "--version", "PS5",
+                    "--inode-bits", "32",
+                    "--block-size", str(profile["block_size"]),
+                    src, temp_pfs,
+                ],
+                monitor_target_path=temp_pfs,
+                monitor_source_file=src,
+                advance_step=True,
+            )
+            if not inner_ok or not self.is_running or not os.path.isfile(temp_pfs):
+                return False
 
-        pack_ok = self._execute_mkpfs(
-            [
-                "pack", "folder",
-                "--no-verify-structure",
-                "--no-adjust-output-file-extension",
-                "--version", "PS5",
-                "--inode-bits", "32",
-                "--cpu-count", str(profile["cpu"]),
-                "--compression-level", str(profile["level"]),
-                "--block-size", str(profile["block_size"]),
-                src, final_output,
-            ],
-            monitor_target_path=final_output,
-            monitor_source_file=src,
-            advance_step=True,
-        )
-        if not pack_ok or not self.is_running:
-            return False
+            set_status("Phase 3/4 – Komprimiere äußeren FFPFSC-Container...")
+            self._save_runtime_checkpoint(
+                mode="pack_folder",
+                src=src,
+                dst=dst,
+                state="in_progress",
+                extra={
+                    "stage": "pack_folder_outer_running",
+                    "tmp_dir": temp_root,
+                    "temp_exfat": "",
+                },
+            )
+            outer_ok = self._execute_mkpfs(
+                [
+                    "pack", "file",
+                    "--compress",
+                    "--no-verify-structure",
+                    "--no-adjust-output-file-extension",
+                    "--version", "PS5",
+                    "--inode-bits", "32",
+                    "--cpu-count", str(profile["cpu"]),
+                    "--compression-level", str(profile["level"]),
+                    "--block-size", str(profile["block_size"]),
+                    temp_pfs, final_output,
+                ],
+                monitor_target_path=final_output,
+                monitor_source_file=temp_pfs,
+                advance_step=True,
+            )
+            if not outer_ok or not self.is_running:
+                return False
 
-        self._seed_preview_cache_from_source(src, final_output, "pack_folder")
-        set_pct(p3_end)
-        set_status("Phase 3/4 – MkPFS-Pack abgeschlossen.")
-        set_status("Phase 4/4 – Abschlussprüfung läuft...")
-        set_pct(96.0)
-        return True
+            self._seed_preview_cache_from_source(src, final_output, "pack_folder")
+            set_pct(p3_end)
+            set_status("Phase 3/4 – FFPFSC-Außencontainer abgeschlossen.")
+            set_status("Phase 4/4 – Abschlussprüfung läuft...")
+            set_pct(96.0)
+            return True
+        finally:
+            shutil.rmtree(temp_root, ignore_errors=True)
 
     def _mode_inspect(self, src: str) -> bool:
         """Zeigt Metadaten einer .FFPFSC-Datei an.
@@ -11338,13 +12170,13 @@ class PS5ConverterGUI:
           - Dump-Ordner -> ps5_validator dump
           - .exfat -> ps5_validator extfat
           - .ffpfsc/.ffpfs -> ps5_validator ffpfs
-          - .ffpkg -> temporaer via MkPFS nach .ffpfsc, danach ffpfs-Validator
+          - .ffpkg -> UFS2Tool info + schreibgeschuetztes fsck_ufs
         """
 
         self._append_to_log("\n" + "=" * 60 + "\n")
         self._append_to_log(">>> Aufgabe 8 – Dump Validator\n")
         self._append_to_log(f"    Quelle: {src}\n")
-        self._append_to_log("    Methode: ps5_validator + MkPFS 0.0.9\n")
+        self._append_to_log("    Methode: ps5_validator + MkPFS 0.0.9 + UFS2Tool\n")
         self._append_to_log("=" * 60 + "\n\n")
 
         self.progress_engine.start_task(7, "Dump Validator")
@@ -11393,7 +12225,14 @@ class PS5ConverterGUI:
         def _cancel_flag() -> bool:
             return not self.is_running
 
-        def _run_validator(path: str, mode_name: str, *, threads: int = 1, resume: bool = False):
+        def _run_validator(
+            path: str,
+            mode_name: str,
+            *,
+            threads: int = 1,
+            resume: bool = False,
+            ufs2tool_path: str = "",
+        ):
             return _validate(
                 path=path,
                 mode=mode_name,
@@ -11402,6 +12241,7 @@ class PS5ConverterGUI:
                 progress_cb=_progress_cb,
                 cancel_flag=_cancel_flag,
                 verbose=False,
+                ufs2tool_path=ufs2tool_path,
             )
 
         def _log_validator_result(result, *, diagnose_path: str = "") -> None:
@@ -11482,59 +12322,29 @@ class PS5ConverterGUI:
 
             elif is_ffpkg:
                 self._append_to_log("[INFO] Modus: .ffpkg-Datei\n")
-                self._append_to_log("[INFO] Methode: MkPFS pack file -> ps5_validator ffpfs\n")
-                self.root.after(0, lambda: self.status_label.config(text="Validator – .ffpkg konvertieren..."))
-                tmp_pack_dir = self._mkdtemp(prefix="ps5val_ffpkg_")
-                try:
-                    tmp_ffpfsc = os.path.join(
-                        tmp_pack_dir,
-                        os.path.splitext(os.path.basename(src))[0] + ".ffpfsc",
-                    )
-                    _level = 9
-                    _cores = os.cpu_count() or 4
-                    _ceil = max(1, min(4, _cores - 1) if _cores > 1 else 1)
-                    _frac = 0.5 + 0.5 * (_level - 1) / 8.0
-                    _cap = max(2, int(round(_ceil * _frac))) if _ceil >= 2 else 1
-                    _cpu = max(1, min(_ceil, _cap))
-
-                    pack_ok = self._execute_mkpfs(
-                        [
-                            "pack", "file",
-                            "--no-verify-structure",
-                            "--no-adjust-output-file-extension",
-                            "--version", "PS5",
-                            "--inode-bits", "32",
-                            "--cpu-count", str(_cpu),
-                            "--compression-level", str(_level),
-                            src, tmp_ffpfsc,
-                        ],
-                        monitor_target_path=tmp_ffpfsc,
-                        monitor_source_file=src,
-                    )
-                    if not pack_ok or not os.path.isfile(tmp_ffpfsc):
-                        self._append_to_log("[FEHLER] Temporaere .ffpfsc-Konvertierung aus .ffpkg fehlgeschlagen.\n")
-                        return False
-
-                    self._append_to_log("[INFO] Temporaere Datei erstellt: %s\n" % os.path.basename(tmp_ffpfsc))
-                    self.task_total_source_bytes = os.path.getsize(tmp_ffpfsc)
-                    self.task_progress = max(self.task_progress, 35.0)
-                    self.root.after(
-                        0,
-                        lambda: self.status_label.config(
-                            text="Validator – temporaere .ffpfsc pruefen..."
-                        ),
-                    )
-                    self.progress_engine.begin_payload(
-                        self.task_total_source_bytes,
-                        description="Validierung",
-                        unit_label="Bytes",
-                    )
-                    result = _run_validator(tmp_ffpfsc, "ffpfs")
-                    ok_final = result.status in ("OK", "WARNING")
-                    msg = result.status
-                    _log_validator_result(result)
-                finally:
-                    shutil.rmtree(tmp_pack_dir, ignore_errors=True)
+                self._append_to_log(
+                    "[INFO] Methode: UFS2Tool info + fsck_ufs -fn (schreibgeschuetzt)\n"
+                )
+                self.root.after(
+                    0,
+                    lambda: self.status_label.config(
+                        text="Validator – UFS2-Struktur pruefen..."
+                    ),
+                )
+                self.task_total_source_bytes = os.path.getsize(src)
+                self.progress_engine.begin_payload(
+                    self.task_total_source_bytes,
+                    description="UFS2-Validierung",
+                    unit_label="Bytes",
+                )
+                result = _run_validator(
+                    src,
+                    "ffpkg",
+                    ufs2tool_path=self._extract_ufs2tool(),
+                )
+                ok_final = result.status in ("OK", "WARNING")
+                msg = result.status
+                _log_validator_result(result)
 
             else:
                 self._append_to_log("[FEHLER] Unbekannter Quelltyp: %s\n" % src)
@@ -11601,6 +12411,96 @@ class PS5ConverterGUI:
         except Exception as exc:
             self._append_to_log(f"[AMPR] Auto-Generierung fehlgeschlagen: {exc}\n")
             return False
+
+    @staticmethod
+    def _detect_apr_title(source_root: str) -> bool:
+        """Erkennt APR-Titel anhand der bekannten PlayGo-Chunk-Marker."""
+        sce_sys = Path(source_root) / "sce_sys"
+        return any(
+            (sce_sys / marker).is_file()
+            for marker in ("playgo-chunk.dat", "playgo_chunk.dat")
+        )
+
+    def _prepare_ampr_support(
+        self,
+        source_root: str,
+        automation: dict[str, Any] | None = None,
+    ) -> bool:
+        """Erkennt APR, richtet fakelib ein und erzeugt den AMPRIDX3-Index."""
+        root_path = Path(source_root).expanduser().resolve()
+        if not root_path.is_dir():
+            self._append_to_log("[AMPR] Game-Dump-Ordner nicht gefunden.\n")
+            return False
+
+        automation_mode = automation is not None
+        automation = automation or {}
+        detected = self._detect_apr_title(str(root_path))
+        if detected:
+            enabled = True
+            self._append_to_log("[AMPR] APR-Titel automatisch über playgo-chunk.dat erkannt.\n")
+        elif automation_mode:
+            enabled = bool(automation.get("is_apr", automation.get("apr_enabled", False)))
+            self._append_to_log(
+                f"[AMPR] Automation: APR-Unterstützung {'aktiv' if enabled else 'nicht aktiv'}.\n"
+            )
+        else:
+            enabled = self._ask_yesno_threadsafe(
+                "APR / AMPR-Titel?",
+                "Es wurde keine playgo-chunk.dat gefunden.\n\n"
+                "Ist dieses Spiel trotzdem ein APR-/AMPR-Titel?\n\n"
+                "Bei 'Ja' werden fakelib und ampr_emu.index automatisch eingerichtet.",
+            )
+
+        if not enabled:
+            self._append_to_log("[AMPR] Keine APR-Unterstützung ausgewählt.\n")
+            return True
+
+        required_files = ("libSceAmpr.sprx", "libScePlayGo.sprx")
+        fakelib_path = root_path / "fakelib"
+        if all((fakelib_path / name).is_file() for name in required_files):
+            self._append_to_log("[AMPR] Benötigte fakelib-Dateien sind bereits vorhanden.\n")
+        else:
+            configured_dir = str(
+                automation.get("ampr_emu_folder")
+                or automation.get("ampr_emu_dir")
+                or self._load_setting("ampr_emu_folder", "")
+                or self._load_setting("ampr_emu_dir", "")
+                or ""
+            ).strip()
+            emu_path = Path(configured_dir).expanduser() if configured_dir else Path()
+            if not configured_dir or not all((emu_path / name).is_file() for name in required_files):
+                if automation:
+                    self._append_to_log(
+                        "[AMPR] Automation benötigt ampr_emu_folder mit libSceAmpr.sprx "
+                        "und libScePlayGo.sprx.\n"
+                    )
+                    return False
+                configured_dir = self._ask_directory_threadsafe(
+                    "AMPR-Emu-Ordner mit libSceAmpr.sprx und libScePlayGo.sprx auswählen",
+                    configured_dir,
+                )
+                if not configured_dir:
+                    self._append_to_log("[AMPR] AMPR-Emu-Ordnerauswahl abgebrochen.\n")
+                    return False
+                emu_path = Path(configured_dir).expanduser()
+
+            missing = [name for name in required_files if not (emu_path / name).is_file()]
+            if missing:
+                self._append_to_log(
+                    "[AMPR] Im gewählten Ordner fehlen: " + ", ".join(missing) + "\n"
+                )
+                return False
+
+            fakelib_path.mkdir(parents=True, exist_ok=True)
+            for name in required_files:
+                shutil.copy2(emu_path / name, fakelib_path / name)
+                self._append_to_log(f"[AMPR] Injiziert: fakelib/{name}\n")
+            self._save_setting("ampr_emu_folder", str(emu_path.resolve()))
+
+        if not self._auto_generate_ampr_index(str(root_path)):
+            self._append_to_log("[AMPR] AMPRIDX3-Index konnte nicht erzeugt werden.\n")
+            return False
+        return True
 
     # ------------------------------------------------------------------
     # Aufgabe 7: fakelib Manager
@@ -11672,11 +12572,15 @@ class PS5ConverterGUI:
             self._set_status("Entpacke .ffpfsc...")
             outer_tmp = self._mkdtemp(prefix="ps5conv_fakelib_outer_")
             try:
-                self._execute_mkpfs(
+                outer_ok = self._execute_mkpfs(
                     ["unpack", "--overwrite", src, outer_tmp],
                     monitor_target_path=outer_tmp,
                     monitor_source_file=src,
                 )
+                if not outer_ok or not self.is_running:
+                    self._append_to_log("[FEHLER] .ffpfsc-Außencontainer konnte nicht entpackt werden.\n")
+                    return False
+
                 outer_files = [
                     os.path.join(outer_tmp, f)
                     for f in os.listdir(outer_tmp)
@@ -11684,15 +12588,52 @@ class PS5ConverterGUI:
                 ]
                 pfs_file = max(outer_files, key=os.path.getsize) if outer_files else None
                 if pfs_file:
-                    self._append_to_log("[Info] Entpacke inneres PFS-Image...\n")
-                    self._execute_mkpfs(
-                        ["unpack", "--overwrite", pfs_file, tmp_extract],
-                        monitor_target_path=tmp_extract,
-                        monitor_source_file=pfs_file,
-                    )
-                    search_root = tmp_extract
+                    if pfs_file.lower().endswith(".ffpkg"):
+                        self._append_to_log(
+                            "[Info] Inneres UFS2-.ffpkg erkannt – extrahiere via UFS2Tool/Dokan...\n"
+                        )
+                        if self._extract_ffpkg_to_folder_via_ufs2tool(
+                            pfs_file,
+                            tmp_extract,
+                            status_prefix="Aufgabe 7 / A6-ffpkg",
+                            progress_start=15.0,
+                            progress_end=29.0,
+                        ):
+                            search_root = tmp_extract
+                    else:
+                        self._append_to_log("[Info] Prüfe inneres Image als PFS...\n")
+                        inner_ok = self._execute_mkpfs(
+                            ["unpack", "--overwrite", pfs_file, tmp_extract],
+                            monitor_target_path=tmp_extract,
+                            monitor_source_file=pfs_file,
+                        )
+                        if inner_ok and os.listdir(tmp_extract):
+                            search_root = tmp_extract
+                        else:
+                            shutil.rmtree(tmp_extract, ignore_errors=True)
+                            os.makedirs(tmp_extract, exist_ok=True)
+                            self._append_to_log(
+                                "[Info] Inneres Image ist kein PFS – prüfe als exFAT...\n"
+                            )
+                            if self._extract_exfat_to_folder_mkpfs(
+                                pfs_file,
+                                tmp_extract,
+                                status_prefix="Aufgabe 7 / A3-exFAT",
+                                log_prefix="A3-exFAT extrahiert",
+                                progress_start=15.0,
+                                progress_end=29.0,
+                            ):
+                                search_root = tmp_extract
                 else:
-                    self._append_to_log("[FEHLER] Kein inneres PFS-Image gefunden.\n")
+                    outer_entries = os.listdir(outer_tmp)
+                    if outer_entries:
+                        self._append_to_log(
+                            "[Info] Direkter pack-folder-Container erkannt – übernehme Game-Dump...\n"
+                        )
+                        shutil.copytree(outer_tmp, tmp_extract, dirs_exist_ok=True)
+                        search_root = tmp_extract
+                    else:
+                        self._append_to_log("[FEHLER] Leerer .ffpfsc-Container.\n")
             finally:
                 shutil.rmtree(outer_tmp, ignore_errors=True)
 
@@ -11869,6 +12810,8 @@ class PS5ConverterGUI:
             if tmp_extract:
                 shutil.rmtree(tmp_extract, ignore_errors=True)
             return False
+
+        automation_spec = automation or getattr(self, "_fakelib_automation_spec", None)
 
         # ----------------------------------------------------------------
         # Schritt 2/3: fakelib im Stammverzeichnis suchen
@@ -12238,7 +13181,6 @@ class PS5ConverterGUI:
                 relief="flat", padx=14, pady=8, cursor="hand2"
             ).pack(side="bottom", pady=(0, 14))
 
-        automation_spec = automation or getattr(self, "_fakelib_automation_spec", None)
         if automation_spec:
             action = str(automation_spec.get("action", "cancel") or "cancel").strip().lower()
             fakelib_src = str(automation_spec.get("fakelib_src", "") or "").strip()
@@ -12564,9 +13506,13 @@ class PS5ConverterGUI:
                 self._append_to_log(_container_hint)
 
             if action != "cancel":
-                self._set_status("Aktualisiere AMPR-Index...")
-                self._append_to_log("\n>>> AMPR-Index (Auto-Generation) ...\n")
-                self._auto_generate_ampr_index(search_root)
+                self._set_status("Richte APR-/AMPR-Unterstützung ein...")
+                self._append_to_log("\n>>> APR-/AMPR-Preflight vor dem Packen ...\n")
+                if not self._prepare_ampr_support(search_root, automation_spec):
+                    self._append_to_log(
+                        "[FEHLER] APR-/AMPR-Einrichtung für Aufgabe 7 fehlgeschlagen.\n"
+                    )
+                    return False
 
             # Dump-Ordner: Fortschritt auf 98% setzen (kein Repack)
             if not is_container and action != "cancel":
@@ -12580,13 +13526,58 @@ class PS5ConverterGUI:
                 self._append_to_log(">>> Neu-Packen der Container-Datei...\n")
                 self._append_to_log("=" * 50 + "\n")
 
+                def _repack_nested_ffpfsc(source_dir: str, output_path: str) -> bool:
+                    """Packt einen geänderten Dump über ein unkomprimiertes inneres PFS."""
+                    temp_root = self._mkdtemp(prefix="ps5conv_fakelib_nested_")
+                    inner_pfs = os.path.join(temp_root, "pfs_image.dat")
+                    profile = self._resolve_pack_profile(
+                        "pack_folder", self._get_path_size(source_dir)
+                    )
+                    try:
+                        inner_ok = self._execute_mkpfs(
+                            [
+                                "pack", "folder",
+                                "--no-compress",
+                                "--no-verify-structure",
+                                "--no-adjust-output-file-extension",
+                                "--version", "PS5",
+                                "--inode-bits", "32",
+                                "--block-size", str(profile["block_size"]),
+                                source_dir, inner_pfs,
+                            ],
+                            monitor_target_path=inner_pfs,
+                            monitor_source_file=source_dir,
+                            advance_step=True,
+                        )
+                        if not inner_ok or not self.is_running or not os.path.isfile(inner_pfs):
+                            return False
+                        return self._execute_mkpfs(
+                            [
+                                "pack", "file",
+                                "--compress",
+                                "--no-verify-structure",
+                                "--no-adjust-output-file-extension",
+                                "--version", "PS5",
+                                "--inode-bits", "32",
+                                "--cpu-count", str(profile["cpu"]),
+                                "--compression-level", str(profile["level"]),
+                                "--block-size", str(profile["block_size"]),
+                                inner_pfs, output_path,
+                            ],
+                            monitor_target_path=output_path,
+                            monitor_source_file=inner_pfs,
+                            advance_step=True,
+                        )
+                    finally:
+                        shutil.rmtree(temp_root, ignore_errors=True)
+
                 # Zielverzeichnis = Verzeichnis der Originaldatei
                 src_dir = os.path.dirname(os.path.abspath(src))
                 if src_lower.endswith(".ffpfsc"):
-                    # Repack .ffpfsc via nativer MkPFS pack-folder-Logik.
+                    # Repack .ffpfsc via aktueller Nested-PFS-Logik.
                     _out_dir  = dst if dst and os.path.isdir(dst) else src_dir
                     final_out = os.path.join(_out_dir, os.path.basename(src))
-                    self._append_to_log(">>> Repack .ffpfsc via nativer MkPFS pack-folder-Logik...\n")
+                    self._append_to_log(">>> Repack .ffpfsc via Nested-PFS-Logik...\n")
                     self.task_current_step = max(self.task_current_step, 4)
                     self.task_num_steps = 5
                     self.task_step_ends = [15.0, 30.0, 50.0, 95.0, 100.0]
@@ -12612,23 +13603,13 @@ class PS5ConverterGUI:
 
                     self._wait_for_pending_mkpfs_background(final_out)
                     self._cleanup_stale_mkpfs_output(final_out)
-                    ok = self._execute_mkpfs(
-                        [
-                            "pack", "folder",
-                            "--no-verify-structure",
-                            "--no-adjust-output-file-extension",
-                            "--version", "PS5",
-                            "--inode-bits", "32",
-                            search_root, final_out,
-                        ],
-                        monitor_target_path=final_out,
-                        monitor_source_file=search_root,
-                    )
+                    ok = _repack_nested_ffpfsc(search_root, final_out)
                     if ok:
                         self._append_to_log(f"[OK] Neue Datei erstellt: {final_out}\n")
                         self.task_final_output_path = final_out
                     else:
                         self._append_to_log("[FEHLER] Neu-Packen fehlgeschlagen.\n")
+                        return False
 
                 elif src_lower.endswith(".exfat"):
                     # .exfat: Ordner → echtes exFAT-Image (OSFMount + format + copy)
@@ -12667,6 +13648,7 @@ class PS5ConverterGUI:
                         self.task_final_output_path = final_out
                     else:
                         self._append_to_log("[FEHLER] exFAT-Image konnte nicht erstellt werden.\n")
+                        return False
 
                 elif src_lower.endswith(".ffpkg"):
                     # .ffpkg: Ordner → .ffpfsc (es gibt keine .ffpkg-Schreiblogik)
@@ -12676,7 +13658,7 @@ class PS5ConverterGUI:
                         f"{os.path.splitext(os.path.basename(src))[0]}.ffpfsc",
                     )
                     self._append_to_log(
-                        ">>> Repack aus .ffpkg-Quelle als .ffpfsc via nativer MkPFS pack-folder-Logik...\n"
+                        ">>> Repack aus .ffpkg-Quelle als .ffpfsc via Nested-PFS-Logik...\n"
                     )
                     self.task_current_step = max(self.task_current_step, 3)
                     self.task_num_steps = 4
@@ -12703,18 +13685,7 @@ class PS5ConverterGUI:
 
                     self._wait_for_pending_mkpfs_background(final_out)
                     self._cleanup_stale_mkpfs_output(final_out)
-                    ok = self._execute_mkpfs(
-                        [
-                            "pack", "folder",
-                            "--no-verify-structure",
-                            "--no-adjust-output-file-extension",
-                            "--version", "PS5",
-                            "--inode-bits", "32",
-                            search_root, final_out,
-                        ],
-                        monitor_target_path=final_out,
-                        monitor_source_file=search_root,
-                    )
+                    ok = _repack_nested_ffpfsc(search_root, final_out)
                     if ok:
                         self._append_to_log(
                             f"[OK] Neue Datei erstellt: {final_out}\n"
@@ -12724,6 +13695,7 @@ class PS5ConverterGUI:
                         self.task_final_output_path = final_out
                     else:
                         self._append_to_log("[FEHLER] Neu-Packen der .ffpkg-Quelle fehlgeschlagen.\n")
+                        return False
 
         finally:
             if tmp_extract:
