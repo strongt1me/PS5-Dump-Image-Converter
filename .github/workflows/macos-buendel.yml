@@ -15,7 +15,13 @@
 #      Fenstersitzung haben.
 #
 # Beide Architekturen werden gebaut: macos-14 ist Apple Silicon (arm64),
-# macos-13 ist Intel (x86_64). Ein Bündel passt immer nur zu einer von beiden.
+# macos-15-intel ist Intel (x86_64). Ein Bündel passt immer nur zu einer von
+# beiden.
+#
+# Warum nicht macos-13: Dieser Läufer steht auf der Hardware, die GitHub
+# abbaut, und ist entsprechend knapp. Ein Job wartete dort 51 Minuten, ohne
+# überhaupt zu starten - während derselbe Bau auf Apple Silicon nach 65
+# Sekunden fertig war. macos-15-intel ist der benannte Nachfolger.
 # =============================================================================
 name: macOS-Bündel
 
@@ -54,7 +60,7 @@ jobs:
         include:
           - laeufer: macos-14
             beschriftung: Apple Silicon (arm64)
-          - laeufer: macos-13
+          - laeufer: macos-15-intel
             beschriftung: Intel (x86_64)
 
     steps:
