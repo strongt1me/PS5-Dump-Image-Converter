@@ -27878,6 +27878,72 @@ def _request_elevation() -> None:
         _root.destroy()
 
 
+
+def _fenstersymbol_sofort_setzen(fenster) -> bool:
+    """Setzt das App-Symbol unmittelbar nach dem Erzeugen des Fensters.
+
+    Warum das eine eigene Funktion ausserhalb der Oberflaechenklasse ist: Bis
+    v1.8.51 bekam das Fenster sein Symbol erst in ``PS5ConverterGUI.__init__``,
+    also nach dem Aufbau von Hintergrundbildern, Cover und Bedienelementen. In
+    der Zeit davor stand in der Taskleiste bereits ein Eintrag - mit dem
+    Standardsymbol von Tk, der blauen Feder. Sichtbar war das rund eine
+    Sekunde bei jedem Start.
+
+    ``root.attributes("-alpha", 0.0)`` half dagegen nicht: Es macht das
+    Fenster durchsichtig, den Taskleisteneintrag aber nicht weg. Das Symbol
+    muss also frueher gesetzt werden, nicht das Fenster spaeter gezeigt.
+
+    Drei Quellen der Reihe nach, damit auch ein unvollstaendiger Programmordner
+    nie auf die Feder zurueckfaellt:
+
+    1. ``app_icon.ico`` neben dem Programm bzw. im entpackten Bundle,
+    2. das im Quelltext eingebettete ``.ico`` (identisch mit der Datei),
+    3. das eingebettete 32x32-PNG ueber ``iconphoto`` - der Weg fuer Systeme
+       ohne ``iconbitmap``.
+
+    Returns:
+        True, wenn ein Symbol gesetzt werden konnte.
+    """
+    # 1. Datei
+    pfad = _bundled_resource("app_icon.ico")
+    if pfad and os.path.isfile(pfad):
+        try:
+            fenster.iconbitmap(pfad)
+            if sys.platform == "win32":
+                _apply_win32_window_icon(fenster, pfad)
+            return True
+        except Exception as exc:  # noqa: BLE001 - jede weitere Quelle ist besser als die Feder
+            logger.debug("Fruehes Symbol aus Datei fehlgeschlagen: %s", exc)
+
+    # 2. Eingebettetes .ico in eine temporaere Datei
+    if sys.platform == "win32":
+        try:
+            import tempfile as _tf
+
+            with _tf.NamedTemporaryFile(suffix=".ico", delete=False) as ziel:
+                ziel.write(base64.b64decode(_APP_ICON_ICO_B64))
+                name = ziel.name
+            fenster.iconbitmap(name)
+            _apply_win32_window_icon(fenster, name)
+            # Erst nach dem Setzen loeschen: Tk liest die Datei sofort ein.
+            fenster.after(5000, lambda p=name: os.path.exists(p) and os.unlink(p))
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Fruehes Symbol aus dem eingebetteten .ico fehlgeschlagen: %s", exc)
+
+    # 3. Eingebettetes PNG
+    try:
+        bild = ImageTk.PhotoImage(Image.open(io.BytesIO(base64.b64decode(_APP_ICON_PNG32_B64))))
+        fenster.iconphoto(True, bild)
+        # Die Referenz muss leben, sonst raeumt Python das Bild sofort weg und
+        # Tk zeigt wieder sein eigenes.
+        setattr(fenster, "_fruehes_symbol", bild)
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Fruehes Symbol aus dem eingebetteten PNG fehlgeschlagen: %s", exc)
+    return False
+
+
 def _set_windows_app_user_model_id() -> None:
     """Erzwingt eine stabile Windows-App-ID fuer ein konsistentes Taskleisten-Icon."""
     if sys.platform != "win32":
@@ -28309,6 +28375,11 @@ if __name__ == "__main__":
 
     root = TkinterDnD.Tk() if _DND_AVAILABLE else tk.Tk()
     root.title(APP_TITLE)
+
+    # Sofort, nicht erst im Aufbau der Oberflaeche: Sobald tk.Tk() da ist,
+    # steht der Taskleisteneintrag - und bis hier ein Symbol gesetzt ist,
+    # zeigt Windows die Standardfeder von Tk.
+    _fenstersymbol_sofort_setzen(root)
 
     # Fenster bis zum fertigen Aufbau unsichtbar halten. Ohne das zeigt Windows
     # zuerst die weisse Standardflaeche des frischen Fensters und danach, wie
