@@ -2,7 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.51):** Eine beschädigte `param.json` fällt jetzt vor dem Bau auf – und lässt sich reparieren, statt das Spiel neu sichern zu müssen.
+> **Kurz zum aktuellen Stand (v1.8.52):** Das helle Design ist wieder hell, das Programmsymbol steht sofort beim Start, und Tabellenüberschriften sitzen bündig über ihren Werten.
+
+---
+
+## v1.8.52 – 18.08.2026
+
+### Drei Dinge, die man sieht
+
+- **Das helle Design ist wieder hell.** Das Hintergrundbild ist dunkel gehalten und wurde bisher in jedem Design gleich stark eingemischt. Im hellen Design saßen helle Karten und Knöpfe dadurch vor fast schwarzem Grund, und Beschriftungen lagen je nach Stelle auf hellem oder dunklem Untergrund. Jetzt bleibt das Bild dort ein dezentes Wasserzeichen.
+- **Kein fremdes Symbol mehr beim Start.** Für etwa eine Sekunde stand das Standardsymbol von Tkinter in der Taskleiste, bevor das richtige erschien. Das eigene Symbol wird jetzt gesetzt, sobald das Fenster entsteht.
+- **Tabellenüberschriften sitzen über ihren Werten.** In allen Tabellen – param.json-Editor, Bibliothek, PKG-Merger, MicroMount und ShadowMount+ – waren die Überschriften zentriert, die Werte darunter linksbündig. Bei einem breit gezogenen Fenster standen sie weit auseinander.
 
 ---
 

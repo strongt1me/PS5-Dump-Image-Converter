@@ -331,7 +331,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.51"
+APP_VERSION = "v1.8.52"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -21538,10 +21538,13 @@ class PS5ConverterGUI:
 
         cols = ("base", "pieces", "meta", "status")
         tree = ttk.Treeview(body, columns=cols, show="headings", height=10)
-        tree.heading("base", text=self._t("pkg_merger.col.base"))
-        tree.heading("pieces", text=self._t("pkg_merger.col.pieces"))
-        tree.heading("meta", text=self._t("pkg_merger.col.meta"))
-        tree.heading("status", text=self._t("pkg_merger.col.status"))
+        # Die Ueberschrift bekommt denselben Anker wie ihre Spalte. Ohne das
+        # zentriert Tk sie, waehrend die Daten links stehen - bei breitem
+        # Fenster stehen Ueberschrift und Werte dann weit auseinander.
+        tree.heading("base", text=self._t("pkg_merger.col.base"), anchor="w")
+        tree.heading("pieces", text=self._t("pkg_merger.col.pieces"), anchor="center")
+        tree.heading("meta", text=self._t("pkg_merger.col.meta"), anchor="center")
+        tree.heading("status", text=self._t("pkg_merger.col.status"), anchor="w")
         tree.column("base", width=260, anchor="w")
         tree.column("pieces", width=120, anchor="center")
         tree.column("meta", width=120, anchor="center")
@@ -21740,8 +21743,8 @@ class PS5ConverterGUI:
 
         cols = ("key", "value")
         tree = ttk.Treeview(body, columns=cols, show="headings", height=14)
-        tree.heading("key", text=self._t("param_manifest.col.key"))
-        tree.heading("value", text=self._t("param_manifest.col.value"))
+        tree.heading("key", text=self._t("param_manifest.col.key"), anchor="w")
+        tree.heading("value", text=self._t("param_manifest.col.value"), anchor="w")
         tree.column("key", width=220, anchor="w")
         tree.column("value", width=420, anchor="w")
         tree.grid(row=0, column=0, sticky="nsew")
@@ -22051,6 +22054,7 @@ class PS5ConverterGUI:
                 if schluessel == sortierung["spalte"]:
                     pfeil = "  ▾" if sortierung["rueckwaerts"] else "  ▴"
                 tree.heading(schluessel, text=str(form["text"]) + pfeil,
+                             anchor=str(form["anchor"]),
                              command=lambda s=schluessel: _kopf_klick(s))
 
         def _kopf_klick(spalte: str) -> None:
@@ -22580,7 +22584,7 @@ class PS5ConverterGUI:
                 ("mem_size", "self_inspector.col_mem_size", 120, "e"),
                 ("flags", "self_inspector.col_flags", 260, "w"),
             ):
-                tree.heading(spalte, text=self._t(schluessel))
+                tree.heading(spalte, text=self._t(schluessel), anchor=anker)
                 tree.column(spalte, width=breite, anchor=anker, stretch=(spalte == "flags"))
             for index, segment in enumerate(info.segments):
                 tree.insert("", "end", values=(
@@ -22712,7 +22716,7 @@ class PS5ConverterGUI:
             ("fortschritt", "downloads.col_progress", 90, "e"),
             ("status", "downloads.col_status", 220, "w"),
         ):
-            baum.heading(spalte, text=self._t(schluessel))
+            baum.heading(spalte, text=self._t(schluessel), anchor=anker)
             baum.column(spalte, width=breite, anchor=anker, stretch=(spalte == "status"))
         vsb = ttk.Scrollbar(rahmen, orient="vertical", command=baum.yview)
         baum.configure(yscrollcommand=vsb.set)
@@ -23191,7 +23195,7 @@ class PS5ConverterGUI:
             ("sdk", "backport.col_sdk", 80, "e"),
             ("status", "backport.col_status", 340, "w"),
         ):
-            baum.heading(spalte, text=self._t(schluessel))
+            baum.heading(spalte, text=self._t(schluessel), anchor=anker)
             baum.column(spalte, width=breite, anchor=anker, stretch=(spalte == "status"))
         vsb = ttk.Scrollbar(rahmen, orient="vertical", command=baum.yview)
         baum.configure(yscrollcommand=vsb.set)
@@ -24066,8 +24070,8 @@ class PS5ConverterGUI:
         body = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
         cols = ("key", "value")
         tree = ttk.Treeview(body, columns=cols, show="headings", height=12)
-        tree.heading("key", text=self._t("common.key_column"))
-        tree.heading("value", text=self._t("common.value_column"))
+        tree.heading("key", text=self._t("common.key_column"), anchor="w")
+        tree.heading("value", text=self._t("common.value_column"), anchor="w")
         tree.column("key", width=280, anchor="w")
         tree.column("value", width=380, anchor="w")
         tree.pack(fill="both", expand=True)
