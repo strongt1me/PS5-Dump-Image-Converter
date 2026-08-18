@@ -225,6 +225,16 @@ CONTENT_CAPTION_BACKDROP_OPACITY = 0.0
 # einmischen; Dunkel/Mittel bleiben bei BG_CARD_IMAGE_OPACITY.
 BG_CARD_IMAGE_OPACITY_LIGHT = 0.18
 
+# Dieselbe Ueberlegung gilt fuer die grossen Flaechen. Bis v1.8.51 galten
+# BG_IMAGE_OPACITY und SIDEBAR_BG_IMAGE_OPACITY fuer jedes Design - im hellen
+# blieb das dunkle Bild damit zu 85 % stehen, waehrend Karten und Knoepfe hell
+# sind. Das Ergebnis war ein Fenster aus zwei Haelften: helle Bedienelemente
+# vor dunklem Grund, und Beschriftungen, die je nach Stelle auf hellem oder
+# dunklem Untergrund sassen. Im hellen Design mischt sich das Bild deshalb nur
+# noch schwach ein und bleibt das, was es sein soll - ein Wasserzeichen.
+BG_IMAGE_OPACITY_LIGHT = 0.22
+SIDEBAR_BG_IMAGE_OPACITY_LIGHT = 0.16
+
 # ---------------------------------------------------------------------------
 # Logging konfigurieren
 # ---------------------------------------------------------------------------
@@ -2035,7 +2045,10 @@ class PS5ConverterGUI:
                 self._sidebar_bg_image_cache = None
                 return
             img = Image.open(custom_path).convert("RGB")
-            blended = self._blend_bg_image_with_theme(img, SIDEBAR_BG_IMAGE_OPACITY)
+            hell = getattr(self, "_current_theme", "") == "hell"
+            sidebar_anteil = (SIDEBAR_BG_IMAGE_OPACITY_LIGHT if hell
+                              else SIDEBAR_BG_IMAGE_OPACITY)
+            blended = self._blend_bg_image_with_theme(img, sidebar_anteil)
             self._sidebar_bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
         except Exception as exc:
             logger.warning("Sidebar-Hintergrundbild konnte nicht geladen werden: %s", exc)
@@ -2048,11 +2061,22 @@ class PS5ConverterGUI:
         Ergibt einen dezenten, halbtransparent wirkenden Wasserzeichen-Effekt,
         unabhängig vom gewählten Quellbild.
 
-        Ohne Angabe gilt BG_IMAGE_OPACITY (Hauptbereich). Die Sidebar reicht
-        SIDEBAR_BG_IMAGE_OPACITY herein - dort liegen keine Karten über dem
-        Bild, weshalb derselbe Wert dort deutlich kräftiger wirkt.
+        Ohne Angabe richtet sich die Deckkraft nach dem Design: im hellen gilt
+        BG_IMAGE_OPACITY_LIGHT, sonst BG_IMAGE_OPACITY. Der Unterschied ist
+        noetig, weil die mitgelieferten Bilder dunkel sind - bei voller
+        Einmischung sassen helle Karten und Knoepfe vor dunklem Grund, und
+        Beschriftungen lagen je nach Stelle auf hellem oder dunklem Untergrund.
+
+        Wird ``deckkraft`` uebergeben, gilt dieser Wert unveraendert. So reicht
+        die Sidebar ihren eigenen Anteil herein (SIDEBAR_BG_IMAGE_OPACITY bzw.
+        SIDEBAR_BG_IMAGE_OPACITY_LIGHT): Dort liegen keine Karten ueber dem
+        Bild, weshalb derselbe Wert deutlich kraeftiger wirken wuerde.
         """
-        anteil = BG_IMAGE_OPACITY if deckkraft is None else float(deckkraft)
+        if deckkraft is None:
+            hell = getattr(self, "_current_theme", "") == "hell"
+            anteil = BG_IMAGE_OPACITY_LIGHT if hell else BG_IMAGE_OPACITY
+        else:
+            anteil = float(deckkraft)
         base_color = Image.new("RGB", img.size, self._COLORS["bg_main"])
         return Image.blend(base_color, img, anteil)
 
