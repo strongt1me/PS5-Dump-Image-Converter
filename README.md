@@ -166,6 +166,8 @@ Die Linux-Fassung ist eine einzelne, eigenständige Programmdatei ohne Installat
 
 Die macOS-Fassung ist ein Programmbündel (`PS5 Dump & Image Converter.app`). Es wird pro Architektur gebaut – ein auf Apple Silicon erzeugtes Bündel läuft nicht auf einem Intel-Mac und umgekehrt.
 
+Ohne eigenen Mac lässt sich beides auch auf fremder Hardware bauen: Der Workflow [macos-buendel.yml](.github/workflows/macos-buendel.yml) erzeugt die Abbilder für beide Architekturen und legt sie als Artefakt ab (siehe [macOS-Bündel auf fremder Hardware bauen lassen](#macos-bündel-auf-fremder-hardware-bauen-lassen)).
+
 ### Für den Python-Start
 
 Zusätzlich werden **Python 3.10 oder neuer** und `pip` benötigt. Die für Anwendung und Build benötigten Pakete werden vom vorhandenen `Build_EXE.ps1` installiert. Für einen normalen Endnutzer ist die fertig gebaute EXE der einfachere Weg.
@@ -560,6 +562,22 @@ wertlos.
 Ausgelöst wird er von Hand („Run workflow") oder von einer Änderung an den
 Dateien, die in das Bündel eingehen. Ein Lauf auf macOS zählt zehnfach gegen
 das Minutenkontingent; für eine Änderung am Changelog lohnt er nicht.
+
+Ergebnis des ersten Laufs:
+
+| | Apple Silicon | Intel |
+| --- | --- | --- |
+| Läufer | `macos-14`, macOS 14.8.7 | `macos-15-intel`, macOS 15.7.7 |
+| Bauzeit | 0:56 | 2:41 |
+| Tcl/Tk | 8.6 | 8.6 |
+| Bündel / Abbild | 158 MB / 102 MB | 155 MB / 102 MB |
+| Signatur | `valid on disk` | `valid on disk` |
+| 39 Tests | grün | grün |
+
+`macos-13` steht bewusst **nicht** in der Matrix: Dieser Läufer sitzt auf der
+Hardware, die GitHub abbaut, und ein Job wartete dort 51 Minuten, ohne
+überhaupt zu starten. `macos-15-intel` ist der benannte Nachfolger und lief
+sofort an.
 
 ### Tests unter Linux und macOS
 
