@@ -27879,7 +27879,7 @@ def _request_elevation() -> None:
 
 
 
-def _fenstersymbol_sofort_setzen(fenster) -> bool:
+def _fenstersymbol_sofort_setzen(fenster: "tk.Tk | tk.Toplevel") -> bool:
     """Setzt das App-Symbol unmittelbar nach dem Erzeugen des Fensters.
 
     Warum das eine eigene Funktion ausserhalb der Oberflaechenklasse ist: Bis
@@ -27917,9 +27917,10 @@ def _fenstersymbol_sofort_setzen(fenster) -> bool:
 
     # 2. Eingebettetes .ico in eine temporaere Datei
     if sys.platform == "win32":
-        try:
-            import tempfile as _tf
+        import tempfile as _tf
 
+        name = ""
+        try:
             with _tf.NamedTemporaryFile(suffix=".ico", delete=False) as ziel:
                 ziel.write(base64.b64decode(_APP_ICON_ICO_B64))
                 name = ziel.name
@@ -27930,6 +27931,15 @@ def _fenstersymbol_sofort_setzen(fenster) -> bool:
             return True
         except Exception as exc:  # noqa: BLE001
             logger.debug("Fruehes Symbol aus dem eingebetteten .ico fehlgeschlagen: %s", exc)
+            # Scheitert das Setzen, ist die Datei geschrieben, aber niemand
+            # raeumt sie ab - das after() oben wird ja nicht mehr erreicht.
+            # Ohne diesen Zweig bliebe bei jedem Start eine .ico im
+            # Temp-Ordner liegen.
+            if name:
+                try:
+                    os.unlink(name)
+                except OSError:
+                    pass
 
     # 3. Eingebettetes PNG
     try:
