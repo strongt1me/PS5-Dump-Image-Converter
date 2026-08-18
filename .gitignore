@@ -26,9 +26,10 @@ __pycache__/
 test_*.py
 !test_macos_fassung.py
 
-# Versionshistorie und Prüfsummen liegen gebündelt in CHANGELOG.md; die
-# Einzeldateien sind Arbeitsstände.
-RELEASE_NOTES_*.md
+# Die Release Notes kommen mit: Sie gehören zu einer veröffentlichten Fassung
+# und beschreiben, was sie ausmacht - zusammen 372 KB Text. Prüfsummenlisten
+# und Arbeitsnotizen bleiben dagegen draußen, die gehören zum Arbeitsablauf,
+# nicht zum Auslieferungsstand.
 SOURCE_FILE_MANIFEST_*.sha256
 FFPKG_VERIFICATION_*.json
 ARBEITSSTAND_*.md
