@@ -2,7 +2,19 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.52):** Das helle Design ist wieder hell, das Programmsymbol steht sofort beim Start, und Tabellenüberschriften sitzen bündig über ihren Werten.
+> **Kurz zum aktuellen Stand (v1.8.53):** Eine fehlende `param.json` wird jetzt zum größten Teil aus dem Backup selbst wiederhergestellt – mit nur einer Rückfrage.
+
+---
+
+## v1.8.53 – 18.08.2026
+
+### Die param.json entsteht jetzt aus dem Backup selbst
+
+- **Der Spielname kommt aus den Trophäen.** Im Container `sce_sys/trophy2/trophy00.ucp` steht er als lesbarer Text – bisher konnte ihn nur der Online-Nachschlag liefern.
+- **Die Inhaltsversion kommt aus `sce_sys/pfs-version.dat`.** Dort steht, welcher Spielstand im Backup liegt, zum Beispiel `01.002.000` bei einem aktualisierten Spiel. Bisher wurde immer `01.000.000` eingetragen – bei einem gepatchten Spiel falsch, ohne dass man es der Datei ansieht.
+- **Die Titel-ID wird zusätzlich in der `eboot.bin` gesucht**, falls `sce_sys/nptitle.dat` fehlt. Anders als der Ordnername lässt sie sich dort nicht versehentlich ändern.
+- **Nur noch eine Bestätigung statt drei.** Der Online-Nachschlag für die Content-ID läuft gleich mit; dass dabei die Titel-ID an prosperopatches.com geht, steht in der einen Frage.
+- **Die erzeugte Datei besteht jetzt die eigene Prüfung.** Seit v1.8.51 meldete ausgerechnet die selbst erstellte `param.json` Fehler: Zwei Pflichtfelder fehlten, und die Inhaltsversion stand im Format der Master-Version.
 
 ---
 

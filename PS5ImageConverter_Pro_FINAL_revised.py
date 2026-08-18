@@ -124,6 +124,7 @@ from ps5_validator.utils.param_manifest import (
     create_default_param,
     load_json as load_param_manifest_json,
     read_title_id_from_dump,
+    read_metadata_from_dump,
     save_manifest_json,
     save_param_json,
 )
@@ -331,7 +332,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.52"
+APP_VERSION = "v1.8.53"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -20115,7 +20116,13 @@ class PS5ConverterGUI:
         title_id, _herkunft = self._detect_title_id_for_source(quellordner)
         try:
             daten = load_param_manifest_json(pfad)
-            neu, aenderungen = param_check.repariere(daten, title_id=title_id)
+            # Dieselben lokalen Quellen wie beim Neuanlegen: Der Titel steht
+            # im Trophaeen-Container, die Inhaltsversion in pfs-version.dat.
+            lokal = read_metadata_from_dump(quellordner)
+            neu, aenderungen = param_check.repariere(
+                daten, title_id=title_id,
+                titel=lokal.get("titleName", ""),
+                inhaltsversion=lokal.get("contentVersion", ""))
 
             # Die alte Fassung danebenlegen, bevor geschrieben wird: Der
             # Eingriff geht in den Quellordner des Nutzers, nicht in eine
@@ -20152,6 +20159,23 @@ class PS5ConverterGUI:
         self._log_param_befund(nachher)
         return self._offer_create_param_json(quellordner, missing=False)
 
+
+    def _online_nachschlag_erlaubt(self) -> bool:
+        """Darf zur Title-ID online nachgeschlagen werden?
+
+        Im Fenster: ja - die Zustimmung steckt in der einen Frage, die vorher
+        kam, und deren Text nennt den Dienst beim Namen. Eine zweite Rueckfrage
+        dafuer war eine zu viel; wer die Ersatzdatei will, will auch den Titel
+        darin.
+
+        Im CLI-Modus dagegen hat niemand diese Frage gesehen - dort bleibt es
+        bei ``--param-json-online``, damit ein Skriptlauf nicht unbemerkt eine
+        Title-ID nach draussen gibt.
+        """
+        if getattr(self, "_cli_mode", False):
+            return bool(getattr(self, "_cli_param_online", False))
+        return True
+
     def _offer_create_param_json(self, source_dir: str, *, missing: bool) -> bool:
         """Bietet an, eine fehlende/ungültige sce_sys/param.json automatisch zu erstellen.
 
@@ -20170,37 +20194,51 @@ class PS5ConverterGUI:
             detail = self._t("dialog.msg.param_json_offer_undetected_id")
         question_key = "dialog.msg.param_json_offer_create_missing" if missing else "dialog.msg.param_json_offer_create_invalid"
         message = self._t(question_key) + "\n\n" + detail
+        # Der Online-Nachschlag hat keine eigene Rueckfrage mehr. Damit die
+        # Zustimmung trotzdem informiert erfolgt, nennt diese eine Frage den
+        # Dienst und das, was an ihn geht - eine Title-ID, sonst nichts.
+        # Ohne erkannte Title-ID gibt es nichts nachzuschlagen, dann
+        # entfaellt der Hinweis.
+        if title_id and self._online_nachschlag_erlaubt():
+            message += "\n" + self._t(
+                "dialog.msg.param_json_offer_online_hint", v0=title_id)
         if not self._param_frage(self._t("dialog.title.game_incomplete"), message):
             self._append_to_log(self._t('log.manual.param_json_create_declined'))
             return False
 
-        # Titel und Content-ID stehen in keiner lokalen Datei des Dumps. Wer
-        # will, kann sie zur Title-ID online nachschlagen lassen - dabei geht
-        # die Title-ID an eine fremde Seite, deshalb eine eigene Frage mit
-        # Standard "Nein". Schlaegt der Nachschlag fehl, wird die Ersatzdatei
-        # trotzdem geschrieben, nur eben ohne diese beiden Angaben.
+        # Titel und Content-ID stehen in keiner lokalen Datei des Dumps; sie
+        # lassen sich nur zur Title-ID online nachschlagen. Bis v1.8.52 stand
+        # dafuer eine zweite Rueckfrage - drei Bestaetigungen fuer einen
+        # Vorgang, den man ohnehin will. Der Nachschlag laeuft jetzt
+        # unmittelbar mit; dass dabei die Title-ID an prosperopatches.com
+        # geht, steht in der einen Frage, die vorher kam. Im CLI-Modus
+        # entscheidet weiterhin --param-json-online, denn dort hat niemand
+        # diese Frage gesehen.
         online: dict = {}
-        if title_id:
-            if self._param_frage(
-                    self._t("dialog.title.param_json_online_lookup"),
-                    self._t("dialog.msg.param_json_online_lookup", v0=title_id),
-                    online=True, default_yes=False):
-                online = self._lookup_param_meta_online(title_id)
-                if online:
-                    self._append_to_log(self._t(
-                        'log.manual.param_json_online_found',
-                        v0=online.get("title", "–"),
-                        v1=online.get("content_id", "–")))
-                else:
-                    self._append_to_log(self._t('log.manual.param_json_online_failed'))
+        if title_id and self._online_nachschlag_erlaubt():
+            online = self._lookup_param_meta_online(title_id)
+            if online:
+                self._append_to_log(self._t(
+                    'log.manual.param_json_online_found',
+                    v0=online.get("title", "–"),
+                    v1=online.get("content_id", "–")))
+            else:
+                self._append_to_log(self._t('log.manual.param_json_online_failed'))
 
         try:
             sce_sys_dir = Path(source_dir) / "sce_sys"
             sce_sys_dir.mkdir(parents=True, exist_ok=True)
+            # Was im Backup selbst steht, hat Vorrang vor dem Nachschlag:
+            # Der Titel liegt im Trophaeen-Container, die Inhaltsversion in
+            # sce_sys/pfs-version.dat. Beides ist naeher an diesem Spielstand
+            # als eine Seite, die den aktuellen Ladenzustand beschreibt - bei
+            # einem gepatchten Spiel unterscheiden sich die Versionen.
+            lokal = read_metadata_from_dump(source_dir)
             data = create_default_param(
                 title_id=title_id,
                 content_id=online.get("content_id", ""),
-                title=online.get("title", ""),
+                title=lokal.get("titleName") or online.get("title", ""),
+                content_version=lokal.get("contentVersion", ""),
             )
             save_param_json(data, str(sce_sys_dir / "param.json"))
             self._append_to_log(self._t('log.manual.param_json_created', v0=(title_id or "–")))

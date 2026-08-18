@@ -67,14 +67,170 @@ def read_title_id_from_nptitle(path: str) -> str:
     return kern if _TITLE_ID_PATTERN.fullmatch(kern) else ""
 
 
-def read_title_id_from_dump(source_dir: str) -> str:
-    """Sucht die Title-ID im ``sce_sys`` eines Dump-Ordners.
+def read_title_name_from_trophy(source_dir: str) -> str:
+    """Liest den Anzeigenamen aus ``sce_sys/trophy2/trophy00.ucp``.
 
-    Bequemlichkeitsschale um :func:`read_title_id_from_nptitle`.
+    Der Titel ist das eine Feld, das bisher nur der Online-Nachschlag liefern
+    konnte - dabei liegt er im Backup selbst. Die Trophaeendatei ist ein
+    Container mit eigenem Kopf (Magic ``b2 28 c6 0a``), traegt darin aber einen
+    unverschluesselten JSON-Block:
+
+        "npCommId":"NPWR27856_00","metadata":{"titleMetadata":{"name":"Arkanoid - Eternal Battle"}, ...
+
+    An "Arkanoid Eternal Battle" nachgemessen: Der Block steht rund 7,78 MB
+    tief in einer 7,81-MB-Datei, also fast am Ende. Gesucht wird deshalb von
+    hinten - ein Durchlauf von vorn liest fast die ganze Datei umsonst.
+
+    Die Trophaeentexte sind mehrsprachig und enthalten Zeichen aus vielen
+    Schriften; deshalb wird streng als UTF-8 mit Ersatzzeichen dekodiert und
+    nicht als latin-1 geraten.
+
+    Returns:
+        Anzeigename, sonst leerer String.
     """
-    return read_title_id_from_nptitle(
+    pfad = os.path.join(source_dir, "sce_sys", "trophy2", "trophy00.ucp")
+    if not os.path.isfile(pfad):
+        return ""
+
+    muster = re.compile(rb'"titleMetadata"\s*:\s*\{\s*"name"\s*:\s*"([^"]{1,120})"')
+    blockgroesse = 4 * 1024 * 1024
+    ueberlappung = 512
+    try:
+        groesse = os.path.getsize(pfad)
+        with open(pfad, "rb") as datei:
+            # Von hinten nach vorn, weil der Metadatenblock dort liegt.
+            gelesen = 0
+            rest = b""
+            while gelesen < groesse:
+                schritt = min(blockgroesse, groesse - gelesen)
+                datei.seek(groesse - gelesen - schritt)
+                block = datei.read(schritt)
+                gelesen += schritt
+                treffer = muster.search(block + rest)
+                if treffer:
+                    return treffer.group(1).decode("utf-8", "replace").strip()
+                rest = block[:ueberlappung]
+    except OSError as exc:
+        logger.debug("Trophaeendatei nicht lesbar (%s): %s", pfad, exc)
+    return ""
+
+
+def read_content_version_from_pfs(source_dir: str) -> str:
+    """Liest die Inhaltsversion aus ``sce_sys/pfs-version.dat``.
+
+    Die Datei ist zehn Byte reiner Text im langen Versionsformat, etwa
+    ``01.002.000`` - genau die Form, die ``contentVersion`` in der param.json
+    braucht. Ohne sie muesste beim Neuanlegen pauschal ``01.000.000``
+    eingetragen werden, was bei einem gepatchten Spiel schlicht falsch ist.
+
+    Sie fehlt in etwa jedem sechzehnten Backup (30 von 32 nachgesehen) - je
+    nach verwendetem Dumper wird der Marker nicht mitgeschrieben. Deshalb nur
+    eine Quelle unter mehreren, kein Pflichtfeld.
+
+    Returns:
+        Version im Format ``01.002.000``, sonst leerer String.
+    """
+    pfad = os.path.join(source_dir, "sce_sys", "pfs-version.dat")
+    try:
+        with open(pfad, "rb") as datei:
+            roh = datei.read(32)
+    except OSError:
+        return ""
+    text = roh.decode("ascii", "ignore").strip()
+    return text if re.fullmatch(r"\d{2}\.\d{3}\.\d{3}", text) else ""
+
+
+def read_metadata_from_dump(source_dir: str) -> "OrderedDict[str, str]":
+    """Sammelt alle param.json-Felder, die im Backup selbst stehen.
+
+    Damit laesst sich eine fehlende param.json weitgehend ohne Netzzugriff
+    wiederherstellen. Was hier fehlt, ist die Content-ID - die steht in keiner
+    Datei des Dumps und bleibt dem Online-Nachschlag vorbehalten.
+
+    Returns:
+        Dict mit den gefundenen Schluesseln ``titleId``, ``titleName`` und
+        ``contentVersion``; nicht gefundene Felder fehlen darin.
+    """
+    gefunden: "OrderedDict[str, str]" = OrderedDict()
+    title_id = read_title_id_from_dump(source_dir)
+    if title_id:
+        gefunden["titleId"] = title_id
+    name = read_title_name_from_trophy(source_dir)
+    if name:
+        gefunden["titleName"] = name
+    version = read_content_version_from_pfs(source_dir)
+    if version:
+        gefunden["contentVersion"] = version
+    return gefunden
+
+
+def read_title_id_from_eboot(source_dir: str, hoechstens: int = 64 * 1024 * 1024) -> str:
+    """Liest die Title-ID aus der ``eboot.bin`` eines Dump-Ordners.
+
+    Zweite Quelle neben ``nptitle.dat`` - und die einzige, die auch dann noch
+    traegt, wenn der Ordner umbenannt wurde und ``sce_sys`` unvollstaendig ist.
+
+    An "Arkanoid Eternal Battle" (26 MB eboot.bin) nachgemessen: Die Kennung
+    steht dort genau **einmal**, als ``PPSA06328_00`` mit demselben
+    ``_00``-Suffix wie in der ``nptitle.dat``, und stimmt mit ihr ueberein.
+
+    Was sich dort **nicht** holen laesst: der Anzeigename. Die Treffer auf den
+    Spielnamen sind Klassenbezeichner aus dem Programmcode
+    (``ArkanoidBallMoveSystem``), kein Titel. Eine Content-ID kommt gar nicht
+    vor - beides muss weiterhin online nachgeschlagen werden.
+
+    Gelesen wird blockweise mit Ueberlappung statt am Stueck: Eine eboot.bin
+    kann mehrere hundert Megabyte gross sein, und die Kennung darf nicht
+    zwischen zwei Bloecken zerrissen werden.
+
+    Args:
+        source_dir: Dump-Ordner (die eboot.bin wird darin erwartet).
+        hoechstens: Obergrenze der gelesenen Bytes.
+
+    Returns:
+        Title-ID ohne Suffix, sonst leerer String.
+    """
+    pfad = os.path.join(source_dir, "eboot.bin")
+    if not os.path.isfile(pfad):
+        return ""
+
+    blockgroesse = 4 * 1024 * 1024
+    # Ein Treffer ist neun Zeichen lang; sechzehn Byte Ueberlappung genuegen,
+    # damit keiner an einer Blockgrenze verlorengeht.
+    ueberlappung = 16
+    gelesen = 0
+    rest = b""
+    try:
+        with open(pfad, "rb") as datei:
+            while gelesen < hoechstens:
+                block = datei.read(blockgroesse)
+                if not block:
+                    break
+                gelesen += len(block)
+                treffer = _TITLE_ID_PATTERN.search((rest + block).decode("latin-1"))
+                if treffer:
+                    return treffer.group(0)
+                rest = block[-ueberlappung:]
+    except OSError as exc:
+        logger.debug("eboot.bin nicht lesbar (%s): %s", pfad, exc)
+    return ""
+
+
+def read_title_id_from_dump(source_dir: str) -> str:
+    """Sucht die Title-ID eines Dump-Ordners in zwei Quellen.
+
+    Zuerst ``sce_sys/nptitle.dat``: An 32 echten Backups nachgemessen stand die
+    Kennung dort ausnahmslos und stimmte ausnahmslos mit der param.json
+    ueberein. Fehlt die Datei - etwa in einem unvollstaendigen Dump -, wird die
+    ``eboot.bin`` durchsucht; sie traegt dieselbe Kennung und laesst sich, im
+    Gegensatz zum Ordnernamen, nicht versehentlich umbenennen.
+    """
+    aus_nptitle = read_title_id_from_nptitle(
         os.path.join(source_dir, "sce_sys", NPTITLE_FILE_NAME)
     )
+    if aus_nptitle:
+        return aus_nptitle
+    return read_title_id_from_eboot(source_dir)
 
 INTENT_TYPES: tuple[str, ...] = ("launchActivity", "joinSession")
 
@@ -168,30 +324,39 @@ def _save_json(data: dict, path: str, indent: int) -> None:
 
 
 def create_default_param(title_id: str = "", content_id: str = "",
-                         title: str = "") -> "OrderedDict[str, object]":
-    """Erstellt ein minimales, leeres param.json-Grundgerüst.
+                         title: str = "",
+                         content_version: str = "") -> "OrderedDict[str, object]":
+    """Erstellt ein vollstaendiges, gueltiges param.json-Grundgeruest.
+
+    **Warum das mehr ist als ein Minimalgeruest:** Bis v1.8.52 schrieb diese
+    Funktion vier Felder - titleId, applicationDrmType, masterVersion und
+    contentVersion. Solange niemand den Inhalt prueft, faellt das nicht auf.
+    Seit v1.8.51 prueft das Programm die Datei inhaltlich, und seither meldete
+    ausgerechnet die selbst erzeugte Datei drei Fehler:
+
+    * ``applicationCategoryType`` fehlte - ohne dieses Feld erkennt die Konsole
+      gar keinen Titel.
+    * ``localizedParameters`` fehlte, sobald kein Anzeigename bekannt war.
+    * ``contentVersion`` stand als ``"01.00"`` da. Das ist das Format von
+      ``masterVersion``; die Inhaltsversion braucht die lange Form
+      ``"01.000.000"``.
+
+    Erzeugt wird deshalb ein Dokument, das die Pruefung besteht. Die Feldwerte
+    stammen aus ``param_check.neu_anlegen``, damit es fuer "wie sieht eine
+    gueltige param.json aus" nur eine Stelle im Programm gibt.
 
     Args:
         title_id: Title-ID, z. B. ``PPSA19015``.
-        content_id: Vollständige Content-ID, falls bekannt.
-        title: Anzeigename. Wird als ``localizedParameters`` hinterlegt – genau
-            dort, wo die Konsole und dieses Programm ihn suchen; ein Feld
-            ``titleName`` auf oberster Ebene würde nirgends gelesen.
+        content_id: Vollstaendige Content-ID, falls bekannt.
+        title: Anzeigename. Wird als ``localizedParameters`` hinterlegt - genau
+            dort, wo die Konsole und dieses Programm ihn suchen.
     """
-    doc: "OrderedDict[str, object]" = OrderedDict()
-    if title_id:
-        doc["titleId"] = title_id
-    if content_id:
-        doc["contentId"] = content_id
-    doc["applicationDrmType"] = "standard"
-    doc["masterVersion"] = "01.00"
-    doc["contentVersion"] = "01.00"
-    if title:
-        lokal: "OrderedDict[str, object]" = OrderedDict()
-        lokal["defaultLanguage"] = "en-US"
-        lokal["en-US"] = OrderedDict([("titleName", title)])
-        doc["localizedParameters"] = lokal
-    return doc
+    # Bewusst hier importiert und nicht am Modulkopf: param_check holt sich von
+    # hier die DRM-Liste, ein Import oben ergaebe einen Ringschluss.
+    from ps5_validator.utils.param_check import neu_anlegen
+
+    return neu_anlegen(title_id=title_id, content_id=content_id, titel=title,
+                       inhaltsversion=content_version)
 
 
 def create_default_manifest(application_name: str = "", title_id: str = "") -> "OrderedDict[str, object]":

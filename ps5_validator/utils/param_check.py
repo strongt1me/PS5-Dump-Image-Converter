@@ -917,7 +917,8 @@ def vollstaendiger_altersblock(stufe: int = 0) -> "OrderedDict[str, int]":
 
 
 def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
-              titel: str = "") -> tuple["OrderedDict[str, Any]", list[str]]:
+              titel: str = "",
+              inhaltsversion: str = "") -> tuple["OrderedDict[str, Any]", list[str]]:
     """Zieht ein geladenes Dokument gerade, ohne vorhandene Angaben zu verwerfen.
 
     Der Unterschied zum Neuanlegen ist der Punkt der ganzen Uebung: Eine
@@ -968,8 +969,12 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
     # -- Versionen ---------------------------------------------------------
     # Zahlen statt Zeichenketten sind der haeufigste Fehler: Wer die Datei in
     # einem Editor "aufraeumt", macht aus "01.000.000" schnell 1.0.
+    # Steht die Inhaltsversion im Dump (sce_sys/pfs-version.dat), gilt sie.
+    # Sonst bliebe bei einem gepatchten Spiel die Vorgabe stehen, und die
+    # Datei behauptete einen Stand, den sie nicht hat.
+    inhalt_vorgabe = inhaltsversion or "01.000.000"
     for name, muster, vorgabe in (
-        ("contentVersion", RE_VERSION_LANG, "01.000.000"),
+        ("contentVersion", RE_VERSION_LANG, inhalt_vorgabe),
         ("originContentVersion", RE_VERSION_LANG, "01.000.000"),
         ("targetContentVersion", RE_VERSION_LANG, "01.000.000"),
         ("masterVersion", RE_VERSION_KURZ, "01.00"),
@@ -978,6 +983,14 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
             continue
         wert = neu[name]
         if isinstance(wert, str) and muster.match(wert):
+            # Format stimmt - aber wenn der Dump eine andere Inhaltsversion
+            # nennt, ist seine Angabe die richtige.
+            if (name == "contentVersion" and inhaltsversion
+                    and wert != inhaltsversion):
+                neu[name] = inhaltsversion
+                aenderungen.append(
+                    f"contentVersion von {wert!r} auf {inhaltsversion!r} "
+                    f"berichtigt (aus sce_sys/pfs-version.dat)")
             continue
         neu[name] = vorgabe
         aenderungen.append(f"{name} von {wert!r} auf '{vorgabe}' gesetzt")
@@ -1064,6 +1077,7 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
 
 
 def neu_anlegen(title_id: str = "", content_id: str = "", titel: str = "",
+                inhaltsversion: str = "",
                 vollstaendig: bool = True) -> "OrderedDict[str, Any]":
     """Erzeugt eine vollstaendige ``param.json`` von Grund auf.
 
@@ -1088,7 +1102,10 @@ def neu_anlegen(title_id: str = "", content_id: str = "", titel: str = "",
     if content_id:
         doc["contentId"] = content_id
     if vollstaendig:
-        doc["contentVersion"] = "01.000.000"
+        # Steht die Inhaltsversion im Dump (sce_sys/pfs-version.dat), gilt
+        # sie: Bei einem gepatchten Spiel ist die Vorgabe 01.000.000 schlicht
+        # falsch, und niemand merkt es der Datei an.
+        doc["contentVersion"] = inhaltsversion or "01.000.000"
     lokal: "OrderedDict[str, Any]" = OrderedDict()
     lokal["defaultLanguage"] = "en-US"
     lokal["en-US"] = OrderedDict([("titleName", titel or title_id or "Unbekannt")])
