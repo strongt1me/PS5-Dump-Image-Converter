@@ -1,0 +1,130 @@
+# =============================================================================
+# macOS-Bündel bauen und prüfen
+# =============================================================================
+# Der eigentliche Zweck: Auf dem Entwicklungsrechner gibt es keinen Mac. Alles,
+# was die macOS-Fassung betrifft, ist dort nur statisch prüfbar. Dieser Lauf
+# holt nach, was nur echte Apple-Hardware beantworten kann:
+#
+#   1. Findet PyInstaller alle Räder in der passenden Architektur?
+#   2. Läuft `codesign --deep` über das vollständige Bündel durch?
+#   3. Startet das gebaute Programm überhaupt — und ist seine Laufzeit
+#      vollständig? Das beantwortet der Aufruf mit `--cli --help`: Er lädt
+#      denselben Interpreter, dieselben Bibliotheken und dieselben
+#      eingebetteten Daten wie der Fensterbetrieb, kommt aber ohne Bildschirm
+#      aus. Ein GUI-Start scheidet aus, weil die Läufer keine angemeldete
+#      Fenstersitzung haben.
+#
+# Beide Architekturen werden gebaut: macos-14 ist Apple Silicon (arm64),
+# macos-13 ist Intel (x86_64). Ein Bündel passt immer nur zu einer von beiden.
+# =============================================================================
+name: macOS-Bündel
+
+on:
+  # Von Hand auslösbar - der Normalfall, wenn eine Fassung fertig ist.
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Nur wenn sich etwas ändert, das in das Bündel eingeht. Ein Lauf kostet
+    # auf macOS das Zehnfache an Minuten; für eine Änderung am Changelog lohnt
+    # er nicht.
+    paths:
+      - 'PS5ImageConverter_Pro_FINAL_revised.py'
+      - 'PS5ImageConverter_Pro_macos.spec'
+      - 'Build_macOS.sh'
+      - 'Install_macOS.sh'
+      - 'extract_icon_icns.py'
+      - 'test_macos_fassung.py'
+      - 'ps5_validator/**'
+      - 'MkPFS-0.0.9/**'
+      - 'requirements.txt'
+      - '.github/workflows/macos-buendel.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  buendel:
+    name: ${{ matrix.beschriftung }}
+    runs-on: ${{ matrix.laeufer }}
+    strategy:
+      # Läuft eine Architektur auf einen Fehler, soll die andere trotzdem zu
+      # Ende bauen - sonst sieht man nur die Hälfte des Bildes.
+      fail-fast: false
+      matrix:
+        include:
+          - laeufer: macos-14
+            beschriftung: Apple Silicon (arm64)
+          - laeufer: macos-13
+            beschriftung: Intel (x86_64)
+
+    steps:
+      - name: Quelltext holen
+        uses: actions/checkout@v4
+
+      - name: Python bereitstellen
+        uses: actions/setup-python@v5
+        with:
+          # 3.12, nicht die neueste: Für diese Fassung gibt es für alle
+          # benötigten Pakete fertige Räder in beiden Architekturen. Lokal
+          # läuft das Projekt auf 3.14.
+          python-version: '3.12'
+
+      - name: Umgebung nachsehen
+        # Rein zur Diagnose, deshalb ohne Abbruch. Fehlt Tcl/Tk oder ist es zu
+        # alt, sagt das Bauskript im nächsten Schritt ohnehin deutlich Bescheid
+        # - hier steht die Zahl aber schon im Protokoll, bevor der lange Bau
+        # beginnt.
+        continue-on-error: true
+        run: |
+          echo "Architektur: $(uname -m)"
+          echo "macOS:       $(sw_vers -productVersion)"
+          echo "Python:      $(python --version)"
+          python -c 'import tkinter; print("Tcl/Tk:     ", tkinter.TkVersion)'
+
+      - name: Bündel bauen
+        # Das Bauskript prüft Interpreter, Tcl/Tk-Version und Pflichtdateien
+        # selbst, legt .venv-macos an, holt die Pakete, erzeugt app_icon.icns
+        # und signiert am Ende ad hoc. --dmg packt zusätzlich ein Abbild: Das
+        # ist auch der Grund, warum hier kein .app hochgeladen wird - die
+        # Artefaktablage zippt ihren Inhalt und verliert dabei Rechte und
+        # Symlinks, womit die Signatur des Bündels wertlos wäre.
+        run: |
+          chmod +x Build_macOS.sh
+          ./Build_macOS.sh --dmg
+
+      - name: Signatur nachsehen
+        run: |
+          codesign --display --verbose=2 "dist/PS5 Dump & Image Converter.app"
+          codesign --verify --deep --strict --verbose=2 "dist/PS5 Dump & Image Converter.app"
+
+      - name: Rauchtest — startet das gebaute Programm?
+        run: |
+          "dist/PS5 Dump & Image Converter.app/Contents/MacOS/PS5_Dump_Image_Converter" --cli --help
+
+      - name: Tests der macOS-Fassung
+        run: |
+          .venv-macos/bin/python -m unittest test_macos_fassung -v
+
+      - name: Plattformschicht am laufenden System
+        # Auf jedem anderen System liefert dieser Aufruf nur die gemockte
+        # Antwort. Hier steht, was macOS wirklich sagt.
+        run: |
+          .venv-macos/bin/python -c "
+          import sys
+          sys.path.insert(0, '.')
+          from ps5_validator.utils import plattform as p
+          print('System:  ', p.systemname())
+          print('Schrift: ', p.UI_SCHRIFT, '/', p.MONO_SCHRIFT)
+          print('Konfig:  ', p.konfigurationsordner())
+          print('Hinweis: ', p.nur_windows_hinweis('UFS2Tool'))
+          "
+
+      - name: Abbild ablegen
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-abbild-${{ matrix.laeufer }}
+          path: dist/*.dmg
+          if-no-files-found: error
+          # 14 statt der üblichen 90 Tage: Das Abbild ist gut 100 MB groß und
+          # jederzeit neu baubar.
+          retention-days: 14

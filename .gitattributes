@@ -1,0 +1,26 @@
+# =============================================================================
+# Zeilenenden: Git hält sich hier vollständig heraus.
+# =============================================================================
+# Das Projekt verwendet bewusst gemischte Zeilenenden: Der Python- und
+# Dokumentationsbestand ist CRLF, die Shell-Skripte für Linux und macOS sind
+# LF. Das ist kein Versehen — ein einziges CRLF in Build_macOS.sh quittiert
+# macOS mit "bad interpreter: /usr/bin/env bash^M", und der Fehler ist auf dem
+# Windows-Rechner, auf dem die Datei entsteht, unsichtbar.
+#
+# "-text" schaltet jede Umwandlung ab: Was eingecheckt wird, kommt byteweise
+# genauso wieder heraus — unabhängig davon, wie core.autocrlf auf dem
+# jeweiligen Rechner steht. Ohne diese Zeile bekäme ein Klon mit
+# core.autocrlf=true die Skripte mit CRLF, und der macOS-Bau schlüge fehl,
+# bevor er begonnen hat.
+* -text
+
+# Prüfsummenlisten und Binärdateien ausdrücklich als binär führen, damit Git
+# sie nicht zu vergleichen versucht.
+*.sha256 binary
+*.ico     binary
+*.icns    binary
+*.png     binary
+*.pdf     binary
+*.sprx    binary
+*.prx     binary
+*.elf     binary

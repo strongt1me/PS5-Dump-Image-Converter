@@ -1,0 +1,57 @@
+# =============================================================================
+# PS5 Dump & Image Converter
+# =============================================================================
+# Das Repository enthält bewusst nur, was zum Bauen der drei Fassungen nötig
+# ist: den Quelltext, die eingebetteten Daten und die Bauvorschriften. Alles,
+# was nur zur Entwicklung gehört — Testbestand, Versionshistorie in Einzel-
+# dateien, Prüfsummenlisten, Arbeitsnotizen — bleibt lokal.
+# =============================================================================
+
+# --- Referenzmaterial (nur zum Nachschlagen, geht nirgends in das Programm ein)
+PS5 SDK usw/
+
+# --- Bauergebnisse und Umgebungen -------------------------------------------
+dist/
+build/
+.venv/
+.venv-linux/
+.venv-macos/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# --- Entwicklungsbestand ----------------------------------------------------
+# Der Testbestand bleibt lokal. Einzige Ausnahme: test_macos_fassung.py — der
+# Workflow führt es auf echter Apple-Hardware aus, es muss also mit.
+test_*.py
+!test_macos_fassung.py
+
+# Versionshistorie und Prüfsummen liegen gebündelt in CHANGELOG.md; die
+# Einzeldateien sind Arbeitsstände.
+RELEASE_NOTES_*.md
+SOURCE_FILE_MANIFEST_*.sha256
+FFPKG_VERIFICATION_*.json
+ARBEITSSTAND_*.md
+UFS2TOOL_V41_FIX_NOTES.md
+ffpkg_progress_fix.diff
+.markdownlint.json
+exe_test_*.log
+
+# Hilfsskripte zum Prüfen und Erzeugen, nicht zum Bauen.
+tools/
+# Die Skills sind Testablaufsteuerung; der Bau braucht nur workflows/.
+.github/skills/
+
+# Vorlage für den Hintergrund, kein Bestandteil der Auswahl im Programm.
+Hintergrund Bild-Main.png
+
+# --- Werkzeugkonfiguration ---------------------------------------------------
+.vscode/
+.claude/
+.idea/
+
+# --- Betriebssystem-Reste ----------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+._*
