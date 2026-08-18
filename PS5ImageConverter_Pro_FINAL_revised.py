@@ -115,6 +115,7 @@ from ps5_validator.utils.pkg_writer import (
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
+from ps5_validator.utils import param_check
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
     MANIFEST_KNOWN_KEYS,
@@ -320,7 +321,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.50"
+APP_VERSION = "v1.8.51"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -15797,20 +15798,8 @@ class PS5ConverterGUI:
             except OSError:
                 pass
 
-        param_json_path = Path(source_dir) / "sce_sys" / "param.json"
-        if not param_json_path.is_file():
-            self._append_to_log(self._t('log.manual.param_json_missing', v0=param_json_path))
-            if not self._offer_create_param_json(source_dir, missing=True):
-                self._notify_param_json_problem(missing=True)
-                return False
-        else:
-            try:
-                json.loads(param_json_path.read_text(encoding="utf-8"))
-            except Exception as exc:
-                self._append_to_log(self._t('log.manual.param_json_invalid', v0=param_json_path, v1=exc))
-                if not self._offer_create_param_json(source_dir, missing=False):
-                    self._notify_param_json_problem(missing=False)
-                    return False
+        if not self._ensure_param_json(source_dir):
+            return False
 
         try:
             file_count, source_bytes = validate_source_folder(source_dir)
@@ -16537,20 +16526,8 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0115', v0=eboot_path))
             return False
 
-        param_json_path = Path(src) / "sce_sys" / "param.json"
-        if not param_json_path.is_file():
-            self._append_to_log(self._t('log.manual.param_json_missing', v0=param_json_path))
-            if not self._offer_create_param_json(src, missing=True):
-                self._notify_param_json_problem(missing=True)
-                return False
-        else:
-            try:
-                json.loads(param_json_path.read_text(encoding="utf-8"))
-            except Exception as exc:
-                self._append_to_log(self._t('log.manual.param_json_invalid', v0=param_json_path, v1=exc))
-                if not self._offer_create_param_json(src, missing=False):
-                    self._notify_param_json_problem(missing=False)
-                    return False
+        if not self._ensure_param_json(src):
+            return False
 
         if cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             self._append_to_log(self._t('log.auto.0116'))
@@ -16904,6 +16881,11 @@ class PS5ConverterGUI:
                 ok_final = result.status in ("OK", "WARNING")
                 msg = result.status
                 _log_validator_result(result, diagnose_path=src)
+                # Der Validator prueft die param.json seit v1.8.51 inhaltlich
+                # mit. Findet er dort etwas, ist der Dump zwar vollstaendig,
+                # die Konsole lehnt ihn aber trotzdem ab. Deshalb hier gleich
+                # die Reparatur anbieten, statt den Befund nur zu melden.
+                self._validator_param_json_anbieten(src)
 
             elif is_exfat:
                 self._append_to_log(self._t('log.auto.0130'))
@@ -19956,6 +19938,196 @@ class PS5ConverterGUI:
             return {}
         return titel_online.metadaten_aus_html(doc, title_id)
 
+
+
+
+    def _param_frage(self, titel: str, text: str, *, online: bool = False,
+                     default_yes: bool = True) -> bool:
+        """Rueckfrage zur param.json - im Fenster ein Dialog, im CLI ein Schalter.
+
+        Warum nicht einfach ``_ask_yesno_threadsafe``: Im CLI-Modus ersetzt
+        ``_run_cli`` ``messagebox.askyesno`` durch eine Funktion, die stets
+        ``--yes`` zurueckgibt. Damit wuerde ``--yes`` auch den Online-Nachschlag
+        bejahen - und dabei geht die Title-ID an einen fremden Dienst. Ein
+        Schalter, der Rueckfragen zum Ueberschreiben abnickt, sollte das nicht
+        nebenbei mitentscheiden.
+
+        Deshalb haben die beiden Fragen im CLI-Modus eigene Schalter:
+        ``--param-json-reparieren`` und ``--param-json-online``. Beide sind
+        standardmaessig aus.
+
+        Args:
+            online: True fuer die Frage nach dem Online-Nachschlag.
+            default_yes: Vorbelegter Knopf im Fenster.
+        """
+        if getattr(self, "_cli_mode", False):
+            schalter = "_cli_param_online" if online else "_cli_param_repair"
+            return bool(getattr(self, schalter, False))
+        return self._ask_yesno_threadsafe(titel, text, default_yes=default_yes)
+
+    def _validator_param_json_anbieten(self, quellordner: str) -> None:
+        """Prueft die param.json im Anschluss an Aufgabe 8 und bietet Hilfe an.
+
+        Anders als beim Bau bricht hier nichts ab: Der Validator soll berichten,
+        nicht verhindern. Lehnt der Nutzer die Reparatur ab, bleibt das Ergebnis
+        des Laufs unveraendert stehen - der Befund steht dann im Protokoll und
+        er kann spaeter entscheiden.
+
+        Der Ablauf entspricht dem des Baus, damit beide Wege dasselbe tun:
+        fehlende oder unlesbare Datei -> neu anlegen anbieten, lesbare mit
+        Fehlern -> reparieren anbieten.
+        """
+        pfad = os.path.join(quellordner, "sce_sys", "param.json")
+        self._append_to_log(self._t('validator.param_json_heading'))
+
+        befund = param_check.pruefe_datei(pfad)
+
+        if befund.fehlt:
+            self._append_to_log(self._t('validator.param_json_missing'))
+            if self._offer_create_param_json(quellordner, missing=True):
+                self._append_to_log(self._t('log.manual.param_json_ok'))
+            return
+
+        if befund.unlesbar:
+            grund = befund.fehler[0] if befund.fehler else "unbekannt"
+            self._append_to_log(
+                self._t('log.manual.param_json_invalid', v0=pfad, v1=grund))
+            if self._offer_create_param_json(quellordner, missing=False):
+                self._append_to_log(self._t('log.manual.param_json_ok'))
+            return
+
+        self._log_param_befund(befund)
+        if befund.ok:
+            self._append_to_log(self._t('log.manual.param_json_ok'))
+            return
+
+        self._offer_repair_param_json(quellordner, befund)
+
+    def _ensure_param_json(self, quellordner: str) -> bool:
+        """Prueft sce_sys/param.json inhaltlich und bietet die Reparatur an.
+
+        Bis v1.8.50 stand an drei Stellen derselbe Block: Datei da? JSON
+        lesbar? Weiter. Das liess alles durch, was syntaktisch stimmt und die
+        Konsole trotzdem mit "Missing/invalid param.json" abweisen laesst -
+        eine Version als Zahl statt als Zeichenkette, eine contentId mit einer
+        anderen Title-ID als das Feld daneben, ein fehlender Sprachblock, ein
+        BOM am Dateianfang.
+
+        Jetzt laeuft an allen drei Stellen dieselbe inhaltliche Pruefung aus
+        ``ps5_validator.utils.param_check``, und je nach Befund wird
+        unterschiedlich verfahren:
+
+        * **Kein Fehler** - Lauf geht weiter. Warnungen und Hinweise landen im
+          Protokoll, halten aber nichts auf.
+        * **Datei fehlt oder ist unlesbar** - Angebot, eine neue anzulegen
+          (unveraendert der bisherige Weg).
+        * **Datei lesbar, aber fehlerhaft** - Angebot, sie zu *reparieren*.
+          Das ist der Unterschied zum bisherigen Verhalten: Vorhandene Angaben
+          bleiben stehen, berichtigt wird nur das Beanstandete. Die alte
+          Fassung wird vorher danebengelegt.
+
+        Returns:
+            True, wenn der Bau fortgesetzt werden darf.
+        """
+        pfad = os.path.join(quellordner, "sce_sys", "param.json")
+        befund = param_check.pruefe_datei(pfad)
+
+        if befund.fehlt:
+            self._append_to_log(self._t('log.manual.param_json_missing', v0=pfad))
+            if self._offer_create_param_json(quellordner, missing=True):
+                return True
+            self._notify_param_json_problem(missing=True)
+            return False
+
+        if befund.unlesbar:
+            grund = befund.fehler[0] if befund.fehler else "unbekannt"
+            self._append_to_log(
+                self._t('log.manual.param_json_invalid', v0=pfad, v1=grund))
+            if self._offer_create_param_json(quellordner, missing=False):
+                return True
+            self._notify_param_json_problem(missing=False)
+            return False
+
+        # Ab hier ist die Datei lesbar. Alles Weitere ist Inhalt.
+        self._log_param_befund(befund)
+        if befund.ok:
+            return True
+
+        if self._offer_repair_param_json(quellordner, befund):
+            return True
+        self._notify_param_json_problem(missing=False)
+        return False
+
+    def _log_param_befund(self, befund) -> None:
+        """Schreibt einen Befund ins Protokoll - Fehler und Warnungen einzeln."""
+        self._append_to_log(
+            self._t('log.manual.param_json_findings', v0=befund.zusammenfassung()))
+        if befund.ok and not befund.warnungen:
+            return
+        for zeile in befund.als_text(mit_hinweisen=False):
+            self._append_to_log(
+                self._t('log.manual.param_json_finding_line', v0=zeile))
+
+    def _offer_repair_param_json(self, quellordner: str, befund) -> bool:
+        """Bietet an, eine vorhandene, fehlerhafte param.json zu reparieren.
+
+        Warum reparieren statt ersetzen: Eine vorhandene Datei traegt fast
+        immer brauchbare Angaben - den richtigen Titel, die Altersfreigaben,
+        die Versionsstaende. Sie zu ueberschreiben wirft weg, was noch stimmt,
+        und ersetzt es durch Vorgaben. Repariert wird deshalb nur, was der
+        Pruefer beanstandet hat.
+
+        Returns:
+            True, wenn die Datei jetzt in Ordnung ist.
+        """
+        pfad = os.path.join(quellordner, "sce_sys", "param.json")
+        auflistung = "\n".join(befund.als_text(mit_hinweisen=False)[:12])
+        if not self._param_frage(
+                self._t("dialog.title.param_json_findings"),
+                self._t("dialog.msg.param_json_offer_repair", v0=auflistung)):
+            self._append_to_log(self._t('log.manual.param_json_repair_declined'))
+            return False
+
+        title_id, _herkunft = self._detect_title_id_for_source(quellordner)
+        try:
+            daten = load_param_manifest_json(pfad)
+            neu, aenderungen = param_check.repariere(daten, title_id=title_id)
+
+            # Die alte Fassung danebenlegen, bevor geschrieben wird: Der
+            # Eingriff geht in den Quellordner des Nutzers, nicht in eine
+            # Kopie. Wer das Ergebnis nicht mag, hat den Ausgangszustand noch.
+            sicherung = pfad + ".alt"
+            try:
+                if os.path.isfile(pfad) and not os.path.exists(sicherung):
+                    shutil.copy2(pfad, sicherung)
+                    self._append_to_log(
+                        self._t('log.manual.param_json_backup',
+                                v0=os.path.basename(sicherung)))
+            except OSError as exc:
+                logger.debug("Sicherung der param.json nicht moeglich: %s", exc)
+
+            save_param_json(neu, pfad)
+        except Exception as exc:
+            self._append_to_log(
+                self._t('log.manual.param_json_repair_failed', v0=exc))
+            return False
+
+        self._append_to_log(
+            self._t('log.manual.param_json_repaired', v0=len(aenderungen)))
+        for eintrag in aenderungen:
+            self._append_to_log(
+                self._t('log.manual.param_json_repair_line', v0=eintrag))
+
+        # Gegenprobe: Die Reparatur muss den Befund tatsaechlich aufloesen.
+        # Bleibt ein Fehler stehen, ist der Dump so kaputt, dass nur eine neue
+        # Datei hilft - dann greift der bisherige Weg.
+        nachher = param_check.pruefe_datei(pfad)
+        if nachher.ok:
+            self._append_to_log(self._t('log.manual.param_json_ok'))
+            return True
+        self._log_param_befund(nachher)
+        return self._offer_create_param_json(quellordner, missing=False)
+
     def _offer_create_param_json(self, source_dir: str, *, missing: bool) -> bool:
         """Bietet an, eine fehlende/ungültige sce_sys/param.json automatisch zu erstellen.
 
@@ -19974,7 +20146,7 @@ class PS5ConverterGUI:
             detail = self._t("dialog.msg.param_json_offer_undetected_id")
         question_key = "dialog.msg.param_json_offer_create_missing" if missing else "dialog.msg.param_json_offer_create_invalid"
         message = self._t(question_key) + "\n\n" + detail
-        if not self._ask_yesno_threadsafe(self._t("dialog.title.game_incomplete"), message):
+        if not self._param_frage(self._t("dialog.title.game_incomplete"), message):
             self._append_to_log(self._t('log.manual.param_json_create_declined'))
             return False
 
@@ -19985,10 +20157,10 @@ class PS5ConverterGUI:
         # trotzdem geschrieben, nur eben ohne diese beiden Angaben.
         online: dict = {}
         if title_id:
-            if self._ask_yesno_threadsafe(
+            if self._param_frage(
                     self._t("dialog.title.param_json_online_lookup"),
                     self._t("dialog.msg.param_json_online_lookup", v0=title_id),
-                    default_yes=False):
+                    online=True, default_yes=False):
                 online = self._lookup_param_meta_online(title_id)
                 if online:
                     self._append_to_log(self._t(
@@ -20045,20 +20217,8 @@ class PS5ConverterGUI:
         # Ohne eine gültige sce_sys/param.json meldet die PS5 beim Mounten
         # "Missing/invalid param.json" – lieber vor dem Bau abbrechen als ein
         # exFAT-Image erzeugen, das auf der Konsole ohnehin nicht startet.
-        param_json_path = src_path / "sce_sys" / "param.json"
-        if not param_json_path.is_file():
-            self._append_to_log(self._t('log.manual.param_json_missing', v0=param_json_path))
-            if not self._offer_create_param_json(str(src_path), missing=True):
-                self._notify_param_json_problem(missing=True)
-                return False
-        else:
-            try:
-                json.loads(param_json_path.read_text(encoding="utf-8"))
-            except Exception as exc:
-                self._append_to_log(self._t('log.manual.param_json_invalid', v0=param_json_path, v1=exc))
-                if not self._offer_create_param_json(str(src_path), missing=False):
-                    self._notify_param_json_problem(missing=False)
-                    return False
+        if not self._ensure_param_json(str(src_path)):
+            return False
 
         out_path.parent.mkdir(parents=True, exist_ok=True)
         self._append_to_log(self._t('log.auto.0266'))
@@ -27827,6 +27987,21 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     # Aufgabe 7 (AMPR EMU Manager) fragt die Aktion sonst über einen modalen
     # Dialog ab und würde ohne Fenster endlos warten. Über diese Argumente wird
     # derselbe Automations-Hook befüllt, den die Engine bereits auswertet.
+    param = parser.add_argument_group("param.json")
+    param.add_argument(
+        "--param-json-reparieren", action="store_true",
+        help="Eine beanstandete sce_sys/param.json ohne Rueckfrage reparieren "
+             "bzw. eine fehlende anlegen. Ohne diesen Schalter bricht der Lauf "
+             "bei einem Befund ab.",
+    )
+    param.add_argument(
+        "--param-json-online", action="store_true",
+        help="Beim Anlegen einer fehlenden param.json Titel und Content-ID zur "
+             "Title-ID online nachschlagen. Dabei geht die Title-ID an "
+             "prosperopatches.com; ohne diesen Schalter unterbleibt das - auch "
+             "mit --yes.",
+    )
+
     ampr = parser.add_argument_group("Aufgabe 7 (AMPR EMU Manager)")
     ampr.add_argument(
         "--ampr-action",
@@ -27911,6 +28086,10 @@ def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
     app = PS5ConverterGUI(root)
     app._cli_mode = True
     app._cli_quiet = bool(args.quiet)
+    # Die param.json-Wege fragen im CLI-Modus nicht ueber messagebox,
+    # sondern lesen diese beiden Schalter - siehe _param_frage_cli().
+    app._cli_param_repair = bool(getattr(args, "param_json_reparieren", False))
+    app._cli_param_online = bool(getattr(args, "param_json_online", False))
     app.is_running = True
 
     output = os.path.join(

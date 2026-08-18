@@ -16,6 +16,7 @@ from ps5_validator.utils.file_io import (
     get_all_files, fmt_bytes, load_cache, save_cache, get_cache_path
 )
 from ps5_validator.utils.logger import get_logger
+from ps5_validator.utils import param_check
 
 # Bekannte PS5-Dump-Struktur (Pflichtordner)
 REQUIRED_DIRS = ["sce_sys"]
@@ -129,6 +130,37 @@ class DumpValidator(BaseValidator):
                 f"Kritische Dateien fehlen ({len(missing_critical)}): {', '.join(missing_critical)}"
             )
             result.summary["critical_missing"] = missing_critical
+
+        # ── param.json inhaltlich prüfen ────────────────────────────────────
+        # Die Existenzprüfung oben sagt nur, dass die Datei da ist. Das genügt
+        # nicht: Eine syntaktisch gültige param.json mit einer Version als Zahl,
+        # einer contentId, die eine andere Title-ID nennt als das Feld daneben,
+        # oder einem BOM am Anfang lässt die Konsole beim Einhängen mit
+        # "Missing/invalid param.json" abbrechen - der Dump sieht hier aber
+        # einwandfrei aus.
+        #
+        # Gemeldet werden nur die Fehler. Warnungen wandern in die
+        # Zusammenfassung, ohne den Status zu verschlechtern: Homebrew-Dumps
+        # führen regelmäßig nur eine Handvoll Felder, und das ist in Ordnung.
+        param_pfad = root / "sce_sys" / "param.json"
+        if param_pfad.is_file():
+            befund = param_check.pruefe_datei(str(param_pfad))
+            result.summary["param_json"] = {
+                "zusammenfassung": befund.zusammenfassung(),
+                "art": befund.art,
+                "fehler": list(befund.fehler),
+                "warnungen": list(befund.warnungen),
+                "hinweise": list(befund.hinweise),
+                "reparierbar": befund.reparierbar,
+            }
+            for eintrag in befund.fehler:
+                result.add_error(f"param.json: {eintrag}")
+            if befund.fehler:
+                self._log.warning(
+                    f"param.json beanstandet ({len(befund.fehler)} Fehler): {param_pfad}"
+                )
+            else:
+                self._log.info(f"param.json geprüft: {befund.zusammenfassung()}")
 
         # ── Empfohlene Dateien prüfen ───────────────────────────────────────
         # Fehlen sie, ist das eine Warnung: Der Dump bleibt brauchbar. Sie

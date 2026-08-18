@@ -2,7 +2,19 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.50):** Das Programm gibt es jetzt auch für den Mac – als eigenes Programmbündel neben der Windows- und der Linux-Fassung.
+> **Kurz zum aktuellen Stand (v1.8.51):** Eine beschädigte `param.json` fällt jetzt vor dem Bau auf – und lässt sich reparieren, statt das Spiel neu sichern zu müssen.
+
+---
+
+## v1.8.51 – 18.08.2026
+
+### Eine beschädigte param.json wird erkannt und repariert
+
+- Bisher reichte es, dass sich die Datei überhaupt lesen ließ. Alles andere merkte man erst an der Konsole: „Missing/invalid param.json" – und niemand wusste, woran es lag.
+- Jetzt wird sie inhaltlich geprüft. Auffällig sind zum Beispiel eine Versionsnummer, die als Zahl statt als Text gespeichert ist, eine Content-ID, die zu einer anderen Titel-ID gehört, ein fehlender Sprachblock oder ein unsichtbares Zeichen am Dateianfang.
+- Wird etwas gefunden, bietet das Programm an, es zu **reparieren**. Ihre vorhandenen Angaben bleiben dabei erhalten – Titel, Altersfreigaben und Versionsstände werden nicht überschrieben. Die bisherige Fassung liegt danach als `param.json.alt` daneben.
+- Das gilt beim Erstellen jedes Formats **und im Validator (Aufgabe 8)**: Dort wird die Datei mitgeprüft und die Reparatur gleich angeboten, statt den Befund nur zu melden.
+- Für Skripte gibt es zwei neue Schalter: `--param-json-reparieren` repariert ohne Rückfrage, `--param-json-online` erlaubt das Nachschlagen von Titel und Content-ID im Netz. Beide sind aus, solange man sie nicht setzt.
 
 ---
 
