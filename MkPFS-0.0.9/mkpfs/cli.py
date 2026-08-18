@@ -1553,7 +1553,10 @@ def _run_stream_pack_file(*, args: argparse.Namespace, source_file: Path) -> int
         source_file=source_file,
         rename_inner_image=rename_inner_image,
     )
-    if rename_inner_image and internal_file_name != source_file.name:
+    # Auch ohne --rename-inner-image kann der Name abweichen: nicht-ASCII-Zeichen
+    # lassen sich in einem PFS-Verzeichniseintrag nicht speichern und werden
+    # gefaltet. Das muss sichtbar sein, sonst sucht man den Unterschied spaeter.
+    if internal_file_name != source_file.name:
         _emit_single_file_rename_warning(original_name=source_file.name, renamed_name=internal_file_name)
 
     _print_pack_parameters(
@@ -1644,8 +1647,7 @@ def cli_mkpfs_pack_file_run(args: argparse.Namespace) -> int:
         rename_inner_image=rename_inner_image,
     )
     if (
-        rename_inner_image
-        and internal_file_name != source_file.name
+        internal_file_name != source_file.name
         and _stream_fallback_reason(args=args) is not None
     ):
         _emit_single_file_rename_warning(original_name=source_file.name, renamed_name=internal_file_name)

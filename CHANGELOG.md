@@ -1,128 +1,867 @@
-# Changelog
+# Changelog – PS5 Dump & Image Converter
 
-Diese Datei fasst die wichtigsten, heute noch nachvollziehbaren Änderungen von v1.0.1 bis v1.7.80 in einfacher Sprache zusammen.
+Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-Hinweis:
-Die ganz frühen Zwischenversionen bis vor den späten 1.7.x-Releases sind im aktuellen Repository nicht mehr einzeln mit eigenen Release-Notizen erhalten. Deshalb sind die frühen Schritte sauber zusammengefasst statt künstlich in viele Mini-Versionen aufgeteilt.
+> **Kurz zum aktuellen Stand (v1.8.50):** Das Programm gibt es jetzt auch für den Mac – als eigenes Programmbündel neben der Windows- und der Linux-Fassung.
 
-## v1.0.1 bis v1.7.75
+---
 
-In dieser langen Entwicklungsphase wurde das Projekt von einer frühen Grundversion zu einem nutzbaren Windows-Tool für PS5-Dump-Workflows ausgebaut.
+## v1.8.50 – 18.08.2026
 
-Wichtigste Änderungen in dieser Phase:
+### Die Anwendung läuft jetzt auch auf dem Mac
 
-- Start des Projekts und Aufbau der ersten Programmstruktur.
-- Erste GUI für die wichtigsten PS5-Dump-Aufgaben.
-- Grundfunktionen für Packen, Entpacken und Konvertieren wurden aufgebaut.
-- Build-Skripte, Testdateien und Hilfswerkzeuge wurden schrittweise ergänzt.
-- Die Projektstruktur wurde bereinigt und Git-Ignorierregeln wurden erweitert.
-- Signier-, Build- und Testabläufe wurden vorbereitet und später mehrfach vereinfacht.
+- Neben der Windows-EXE und der Linux-Programmdatei entsteht auf einem Mac ein richtiges Programmbündel: **PS5 Dump & Image Converter.app**. Es hat ein Symbol im Dock, einen eigenen Namen in der Menüleiste und lässt sich wie jedes andere Mac-Programm starten.
+- Erstellt wird es mit `./Build_macOS.sh`, in den Programme-Ordner gelegt mit `./Install_macOS.sh` – samt Eintrag im Launchpad. Ein Passwort ist dafür nicht nötig.
+- Das Fenster wird in voller Bildschärfe gezeichnet und folgt dem dunklen Erscheinungsbild des Systems. Fehlt *Segoe UI*, wählt das Programm selbst die passendste Schrift Ihres Macs.
+- Es gelten dieselben Einschränkungen wie unter Linux: `.ffpkg` lesen und erstellen sowie die Ersatzwege über OSFMount bleiben Windows vorbehalten. Alle übrigen Aufgaben stehen vollständig zur Verfügung, und das Programm sagt jetzt ausdrücklich „macOS“, wenn ein Weg dort nicht offensteht.
+- Das Handbuch hat dafür ein neues Kapitel bekommen: **19 – Die Anwendung auf dem Mac**.
 
-Kurz gesagt:
-Aus einer frühen Basis entstand das eigentliche Desktop-Tool, auf dem die späteren 1.7.x-Versionen aufbauen.
+---
 
-## v1.7.76
+## v1.8.49 – 18.08.2026
 
-Diese Version hat vor allem den Build-Ablauf sauberer und sicherer gemacht.
+### Nur Bibliotheken kommen in den fakelib-Ordner
 
-Neu oder verbessert:
+- Bisher wurde der komplette mitgelieferte Ordner in das Spiel kopiert. Beim Satz für Firmware 7 war darin auch eine `ps5-backpork.elf` – 116 KB, der Payload des Werkzeugs, aus dem die Sätze stammen. Eine Bibliothek ist das nicht.
+- ShadowMount+ hängt den Ordner nach `common/lib`, wo Bibliotheken **nach Namen** geladen werden, wenn ein Spiel sie anfordert. Nach dieser Datei fragt kein Spiel; sie war nur Ballast im Spielverzeichnis.
+- Übernommen werden jetzt `.sprx` und `.prx`. Die leere Markierungsdatei (`FW7` und so weiter) bleibt erhalten – sie kostet nichts und verrät später, welcher Satz im Ordner liegt.
+- Im Protokoll steht, was übersprungen wurde. Nur der Satz für Firmware 7 ist betroffen; in den Sätzen für 4, 5 und 6 gibt es die Datei gar nicht.
+- Bereits erzeugte Backups bleiben unverändert. Die Datei darin richtet keinen Schaden an.
 
-- Das Build-Skript wurde bei der Passwortbehandlung für Signierung sicherer gemacht.
-- Überflüssige oder fehlerhafte Build-Einträge wurden entfernt.
-- Kleine Fehler in den Build-Tests wurden bereinigt.
-- Unnötige PS5-Testdateien wurden besser aus Git herausgehalten.
+---
 
-Für normale Nutzer bedeutet das:
-Der Build wurde stabiler und aufgeräumter, ohne die eigentlichen Hauptfunktionen der App zu ändern.
+## v1.8.48 – 17.08.2026
 
-## v1.7.77
+### Man sieht jetzt, ob ein Backup zurückportiert ist
 
-Diese Version hat den Build- und Signierweg deutlich vereinfacht.
+- Im Fenster **Spiel Info** steht eine neue Zeile **SDK (eboot.bin)**. Ist ein Backup zurückportiert, steht dort zum Beispiel `7.00 (zurückportiert – param.json nennt 9.00)`.
+- Vorher war das nicht zu sehen: Ein Backport ändert nur die Kopfdaten von `eboot.bin` und der `.prx`-Dateien, nicht die `param.json` – und genau die wurde angezeigt.
+- Auch die Meldung der Konsole hilft dabei nicht. ShadowMount+ meldet „Spiel backportiert", sobald ein Bibliotheksordner eingehängt wurde. Ein AMPR-EMU-Paket löst dieselbe Meldung aus, obwohl es nicht zurückportiert ist.
 
-Neu oder verbessert:
+### REQUIRED FW zeigte oft den falschen Wert
 
-- Abhängigkeiten vom alten Signierablauf wurden entfernt.
-- Zwang zu bestimmten Signierpfaden wurde abgebaut.
-- Der Build-Start wurde einfacher und robuster gemacht.
-- Die MIT-Lizenz-Registrierung und der allgemeine Build-Ablauf wurden besser abgestimmt.
+- Bei **13 von 32** geprüften Spielen stand dort eine falsche Firmware, zum Beispiel `01.00.10.00` statt `10.01.00.00`.
+- Betroffen war jedes Spiel mit zweistelliger Hauptversion (10, 11, 12).
 
-Für normale Nutzer bedeutet das:
-Die Erstellung der EXE wurde leichter wartbar und weniger fehleranfällig.
+### Ersatzbibliotheken: `fakelib` oder `fakelib2` wählbar
 
-## v1.7.78
+- Die Wahl steht im Fenster **BACKPORT** und im **AMPR EMU Manager**. Beide teilen dieselbe Einstellung: Wer an einer Stelle umstellt, stellt die andere mit um.
+- Das muss so sein, weil ShadowMount+ nur **einen** der beiden Ordner einhängt und `fakelib2` bevorzugt. Zwei verschiedene Ordner hätten bedeutet, dass einer wirkungslos bleibt – ohne jede Meldung.
+- Liegen nach einem Lauf beide Ordner vor, warnt das Programm und nennt den, der wirkt.
+- Voreingestellt bleibt `fakelib`; es ändert sich also nichts von allein.
 
-Diese Version war vor allem ein technischer Umbau im Hintergrund.
+### Fortschrittsanzeige beim `.ffpkg`-Bau
 
-Neu oder verbessert:
+- Der Balken stand zuletzt **49 von 87 Sekunden** unverändert bei 98 %, während im Hintergrund noch geprüft, kopiert und geprüft wurde.
+- Jetzt läuft er durch: Der längste Stillstand liegt bei 10 Sekunden, und der Balken zeigt dreimal so viele Zwischenschritte.
 
-- Alte UFS2Tool-Altlasten wurden entfernt.
-- Das Projekt wurde stärker auf die heute genutzten Wege reduziert.
+### Aussehen und Sprache
 
-Für normale Nutzer bedeutet das:
-Weniger Altlasten im Code und ein klarerer, modernerer Unterbau.
+- Neue Vorgabe-Hintergrundbilder (`bg_19_ray-burst`, `sidebar_20_glass-panels`). Eine eigene Wahl bleibt erhalten, „kein Bild" bleibt „kein Bild".
+- Beim Wechsel des Designs werden jetzt auch die Knöpfe der Titelleiste, die Aufgabenknöpfe, die beiden Knöpfe unten in der Seitenleiste und die Klappmenüs mit umgefärbt. Im hellen Design war ein Knopf vorher praktisch unlesbar.
+- Das Rechtsklick-Menü ist übersetzt – es war fest deutsch.
+- Am Feld **WORKER-THREADS** erklärt ein Hinweis, was die gewählte Zahl bewirkt.
 
-## v1.7.79
+---
 
-Diese Version hat den Unterbau deutlich modernisiert und Aufgabe 7 erweitert.
+## v1.8.47 – 17.08.2026
 
-Neu oder verbessert:
+### Die Kompressionsstufe wirkt endlich
 
-- Das MkPFS-Quellpaket wurde direkt eingebunden.
-- Für Aufgabe 7 wurde die automatische Erzeugung von `ampr_emu.index` eingebaut.
-- Das App-Icon für die Taskleiste wurde verbessert.
-- Lokale Test- und Ausgabe-Dateien wurden besser aus Git herausgehalten.
-- Aufgabe 1 wurde stabiler gemacht.
-- Admin-Tests und optionale Imports wurden verbessert.
-- Ein Benutzerhandbuch wurde ergänzt.
+- Die Auswahl **KOMPRESSION (PFS)** mit den Stufen 1, 3, 6 und 9 blieb ohne jede Wirkung. Gepackt wurde immer mit einer fest im Programm hinterlegten Stufe – 9 bei Aufgabe 1, 8 bei Aufgabe 3 und 6, 7 bei Aufgabe 4. Alle vier Stufen erzeugten dieselbe Datei.
+- Besonders irreführend war die **Größenvorhersage** neben dem Quellfeld: Sie rechnete sehr wohl mit der gewählten Stufe, nur mit dem falschen Verfahren (zstd statt zlib). Die angekündigte Zielgröße änderte sich also beim Umstellen, die fertige Datei nie – genau dieser Widerspruch fällt beim Benutzen auf.
+- Beides ist behoben. Die gewählte Stufe geht jetzt an die Engine, und die Vorhersage rechnet mit demselben Verfahren, das auch packt. An einem Testlauf gemessen: Stufe 1 ergibt 1.769.472 Bytes, Stufe 9 ergibt 1.310.720 Bytes – vorher waren es in allen vier Stellungen 1.310.720 Bytes.
+- Der Startwert stand auf einer Stufe (7), die das Auswahlfeld gar nicht anbietet; er steht jetzt auf 6 – „Ausgewogen“, wie im Feld voreingestellt.
+- Die angezeigte Zielgröße rechnet sich beim Umstellen der Stufe **sofort neu**. Bisher entstand sie nur beim Wechsel der Quelle; wer allein die Stufe änderte, sah weiterhin den alten Wert stehen – auch das ließ die Auswahl wirkungslos aussehen.
 
-Für normale Nutzer bedeutet das:
-Mehr Stabilität, besseres Verhalten bei Aufgabe 7 und ein insgesamt modernerer Programmaufbau.
+### Die Anwendung läuft jetzt auch unter Linux
 
-## v1.7.80
+- Es gibt eine **Linux-Fassung**: eine einzelne, eigenständige Programmdatei, gebaut mit `./Build_Linux.sh`. `./Install_Linux.sh` legt sie mit Symbol ins Anwendungsmenü, `--entfernen` nimmt das zurück.
+- Die Oberfläche, alle acht Aufgaben in ihren nativen Wegen, der Kommandozeilenmodus und die Werkzeugfenster arbeiten dort wie gewohnt. **Root-Rechte braucht der normale Betrieb nicht** – unter Windows fragt das Programm beim Start danach, unter Linux startet es als normaler Benutzer.
+- **Was unter Linux nicht geht:** `.ffpkg` lesen und bauen sowie die OSFMount-Ersatzwege. Diese hängen an UFS2Tool, dem Dokan-Treiber und OSFMount – reiner Windows-Software. Wählt man eine solche Aufgabe, sagt das Programm das jetzt klar, statt fehlende Administratorrechte zu melden. Die nativen MkPFS- und exFAT-Wege sind vollständig vorhanden.
+- Die Einstellungen liegen unter Linux in `~/.config/PS5ImageConverterPro/`. Handbuch, Lizenzdateien und Zielordner öffnen über die Werkzeuge der Arbeitsumgebung; „im Dateimanager zeigen“ funktioniert mit Nautilus, Dolphin, Nemo und Thunar. Auch das Herunterfahren nach erfolgreichem Abschluss funktioniert dort – bisher meldete es „nur unter Windows unterstützt“.
+- Die Oberfläche ist auf *Segoe UI* ausgelegt. Fehlt sie, sucht das Programm die beste vorhandene Schrift des Systems aus, statt auf eine beliebige Ersatzschrift zu fallen.
 
-Diese Version war das große Feintuning- und Release-Update.
+### Auch unter Windows behoben
 
-Neu oder verbessert:
+- Beim Backport wurde `libc.prx` nicht mehr erkannt, sobald der Pfad aus PS5-Metadaten oder einer FTP-Liste stammte statt aus dem Dateisystem. Der Patch wurde dann stillschweigend übersprungen. Dateinamen werden jetzt an beiden Pfadtrennzeichen erkannt.
 
-- Aufgabe 7 unterstützt jetzt auch `.ffpkg` als Quelle.
-- Aufgabe 7 schreibt bearbeitete `.ffpkg`-Quellen bewusst als `.ffpfsc` zurück.
-- `ampr_emu.index` wird jetzt bei Bedarf automatisch neu erzeugt.
-- Vorschau und Infobox wurden in mehreren Aufgabenpfaden schneller und robuster gemacht.
-- Die Fortschrittsanzeige wurde in mehreren Aufgaben deutlich verbessert.
-- Aufgabe 1 wurde bei Abbruch, Neustart und Kompressionsanzeige stabiler.
-- Aufgabe 1 kennzeichnet die Größen-/ETA-Zeile im MkPFS-`compress`-Lauf jetzt ausdrücklich als `Kompr.`, damit klar bleibt: Der Balken zeigt den Gesamtfortschritt, die Byte-/Rest-Anzeige den aktuellen Kompressionsfortschritt.
-- Aufgabe 2 erhielt bessere Fortschrittsstufen und schnellere Vorschaupfade.
-- Aufgabe 3 zeigt ihren Abschluss und die Verifizierung klarer an.
-- Aufgabe 4 behandelt Schrittgrenzen und Fortschritt sauberer.
-- Fehlermeldungen und ETA-Anzeigen wurden vereinheitlicht und klarer gemacht.
-- Der Live-Nachweis für Aufgabe 7 mit `.ffpkg` bestätigt jetzt sichtbar `Rest:` und `ETA` im Hauptlauf und wird im E2E-Report mitprotokolliert.
-- Die Windows-EXE bekam saubere Versionsinformationen.
-- UPX wurde im Build deaktiviert, um False Positives bei Antivirus und SmartScreen eher zu reduzieren.
-- README, Release Notes und Upload-Hinweise wurden überarbeitet.
-- Credits wurden bereinigt und erweitert.
-- Der Repository-Inhalt wurde aufgeräumt.
+---
 
-Für normale Nutzer bedeutet das:
-Die Version v1.7.80 ist die bisher rundeste und am besten dokumentierte Version. Sie bringt nicht nur neue Funktionen, sondern vor allem viele kleine Verbesserungen, die das Tool im Alltag verlässlicher machen.
+## v1.8.46 – 17.08.2026
 
-## Kurzfassung
+### Protokollfeld: jetzt an der richtigen Stelle behoben
 
-- Frühe Versionen: Grundfunktion des Tools aufgebaut.
-- v1.7.76: Build und Tests sauberer gemacht.
-- v1.7.77: Signier- und Build-Ablauf vereinfacht.
-- v1.7.78: Alte Technik entfernt, Unterbau bereinigt.
-- v1.7.79: MkPFS und Aufgabe 7 deutlich erweitert.
-- v1.7.80: Große Komfort-, Stabilitäts- und Release-Verbesserung.
+- Trotz v1.8.44 und v1.8.45 klebten weiterhin Meldungen und Fortschrittsbalken aneinander, zum Beispiel `>>> Schritt 2 / 2: inneres PFS -> komprimierter Aussencontainer...[####] 100% compress`.
+- Beide Vorversionen hatten das **Einlesen** der Engine-Ausgabe verbessert. Der Fehler saß aber in der **Anzeige**: Wenn ein Fortschrittsbalken fortgeschrieben wird, muss die alte Zeile weg – und dabei verlor die Zeile darüber ihren Zeilenumbruch. Das Feld endete offen, und was danach kam, landete hinten an dieser Zeile.
+- **Dabei gingen Meldungen verloren.** Eine so verklebte Zeile enthält einen Fortschrittsbalken und wurde beim nächsten Balken komplett gelöscht – mitsamt der Meldung darin. Bei einem gemessenen Lauf fehlten dadurch **72 Zeilen**, unter anderem der komplette Parameterblock mit Quell- und Zielpfad. Genau deshalb sah dieser Block im Feld immer abgeschnitten aus.
+- Beides ist behoben: Vor jedem Einschub wird eine offene Zeile geschlossen. Fortschrittsbalken schreiben sich weiter fort wie bisher, und beim Wechsel des Arbeitsschritts bleibt der abgeschlossene Balken als Beleg stehen.
 
-110 ## v1.7.81
-111
-112 Diese Version entfernt das Release-Test-Gate für einen schnelleren Workflow.
-113
-114 Neu oder verbessert:
-115 - **Release-Test-Gate entfernt:** Die harte Blockade, die einen erfolgreichen Testlauf innerhalb der letzten 24 Stunden voraussetzte, wurde deaktiviert.
-116 - Aufgaben können nun direkt ohne vorherige Validierung durch `run_all_tests.py` oder ähnliche Skripte gestartet werden.
-117 - Interne Gate-Prüfungen wurden auf "immer erlaubt" gesetzt, um den Workflow für erfahrene Nutzer zu beschleunigen.
-118
-119 Für normale Nutzer bedeutet das:
-120 Keine störenden Fehlermeldungen mehr, dass ein Testlauf zu alt oder nicht vorhanden ist. Das Tool ist sofort einsatzbereit.
-121
+---
+
+## v1.8.45 – 17.08.2026
+
+### Protokollfeld: die zweite Stelle
+
+- Nach v1.8.44 klebten bei **einigen** Aufgaben weiterhin Text und Fortschrittsbalken in einer Zeile, etwa `==========[####] 97% extract @ 96.35 MB/s`.
+- Der Grund: Es gibt zwei Wege, auf denen Ausgaben ins Protokollfeld kommen. v1.8.44 reparierte den einen; Engines, die als eigener Prozess laufen (für `.exfat` und `.ffpkg`), liefern ihre Ausgabe dagegen **am Stück** – und dort wurde der Wagenrücklauf ersatzlos entfernt, statt als Zeilenwechsel zu gelten.
+- Auch dieser Weg fasst jetzt Fortschrittszeilen zusammen. Damit ist das Feld bei allen Aufgaben ruhig.
+
+---
+
+## v1.8.44 – 17.08.2026
+
+### Protokollfeld: Text und Fortschrittsbalken klebten aneinander
+
+- Während einer Aufgabe standen im Protokollfeld Zeilen wie `Writing PFS image to E:\…\pfs_image.dat...[####------] 72% write @ 106 MB/s` – Meldung und Fortschrittsbalken in **einer** Zeile.
+- Als Folge davon **stapelten sich die Balken**: Weil eine solche Zeile nicht als Fortschrittszeile erkannt wurde, hängte das Programm die nächste an, statt die vorige zu ersetzen. Das Feld lief mit fast gleichen Zeilen voll, und beim Rollen blieb oben eine angeschnittene Zeile stehen.
+- Beides ist behoben. Jetzt steht **je Arbeitsschritt eine Zeile**, die sich fortschreibt; wechselt der Schritt (lesen → schreiben → komprimieren), bleibt die abgeschlossene Zeile als Beleg stehen.
+
+---
+
+## v1.8.43 – 17.08.2026
+
+### PS5-Verbindung an einer Stelle
+
+- In den **EINSTELLUNGEN** gibt es den neuen Abschnitt **PS5-Verbindung**: IP-Adresse, FTP-Port und KLOG-Port. Gespeichert wird beim Druck auf **Speichern**.
+- Alle Fenster, die eine Verbindung brauchen – FTP-Übertragung, **KLOG**, **ShadowMount+/MicroMount**, AMPR Picker und **JS LOADER** – schlagen diese Werte vor. Bisher hielt jedes Fenster seine eigene Adresse, und beim JS Loader stand sie sogar fest im Programm. Wer die Konsole umzieht, musste sie an vier Stellen nachtragen.
+- Ein Fenster, in dem Sie bewusst etwas anderes eintragen, behält seine eigene Angabe.
+- **Stimmt ein Port nicht, findet das Programm ihn selbst.** Antwortet der eingetragene nicht, werden die bekannten durchprobiert (FTP: 2121, 1337, 21, 2120) und der wirksame übernommen und gemerkt.
+- Ein Knopf **Verbindung testen** sagt sofort, ob die Konsole antwortet – und über welchen Port.
+
+### KLOG hilft weiter, statt stumm zu bleiben
+
+- Der Knopf **KLOG** prüft jetzt zuerst, ob auf der Konsole überhaupt etwas zuhört. Bisher öffnete sich nur ein Fenster, das keine Verbindung bekam.
+- Läuft klogsrv noch nicht, antwortet aber der Payload-Loader, wird angeboten, den mitgelieferten Payload direkt zu senden.
+- Antwortet auch der nicht, kann der Payload **per FTP auf einen an der PS5 angeschlossenen USB-Datenträger** übertragen werden. Gibt es dort einen Ordner `ps5_autoloader`, wird die Datei dorthin gelegt und in `autoload.txt` eingetragen – unter dem letzten Eintrag zuerst eine Pause, darunter der Dateiname. Gibt es den Ordner nicht, wird das Wurzelverzeichnis angeboten; das passt für den Payload Manager.
+
+### Übersichtlichere Bibliothek
+
+- Die Liste hat endlich **Rollbalken** – vorher war nicht zu sehen, dass es weitergeht.
+- **Titel und Pfade werden nicht mehr abgeschnitten**; die Spalten sind breiter und wachsen mit dem Fenster.
+- Ein Klick auf eine Spaltenüberschrift **sortiert**, ein zweiter dreht die Richtung um.
+- Abwechselnd eingefärbte Zeilen machen es leichter, eine Zeile über alle Spalten zu verfolgen.
+- In einem kleinen Fenster fehlten die Knöpfe am unteren Rand ganz – sie sind jetzt immer da.
+
+### Ruhigeres Protokollfeld, ehrlichere Fortschrittsanzeige
+
+- Der Fortschrittsbalken der Engine füllte das Protokollfeld mit hunderten fast gleichen Zeilen, und beim Rollen blieb oben eine angeschnittene Zeile stehen. Jetzt steht dort **eine** Zeile, die sich fortschreibt.
+- Die Fortschrittsanzeige **blieb mitten in Aufgabe 1 mehrere Sekunden stehen** (bei einer kleinen Quelle 8–11 s, bei großen entsprechend länger), obwohl gearbeitet wurde. Sie läuft jetzt durch.
+- Die Erklärtexte zu den Hintergrundbildern in den EINSTELLUNGEN sind deutlich kürzer.
+
+---
+
+## v1.8.42 – 16.08.2026
+
+### Knopf BENUTZERHANDBUCH
+
+- In der Titelleiste steht links neben **EN** ein neuer Knopf **BENUTZERHANDBUCH**. Ein Druck öffnet die Anleitung in Ihrem Browser.
+- Das Handbuch liegt dem Programm bei – eine Internetverbindung braucht es dafür nicht.
+
+### Fehlermeldungen, die stumm blieben
+
+- Schlug ein **BACKPORT** fehl, blieb die Statuszeile auf dem alten Stand stehen, statt den Grund zu nennen. Sie zeigt ihn jetzt wieder.
+- Dasselbe galt im Fenster **ShadowMount+/MicroMount** beim Laden und Schreiben der Konfiguration und beim Holen des Debug-Logs: Ging etwas schief, war das an der Oberfläche nicht zu sehen.
+
+### Kleinere Verbesserung
+
+- Im Fenster **EINSTELLUNGEN** lief der Hinweistext unten halb unter die Knöpfe *Speichern* und *Schließen* und war abgeschnitten. Er steht jetzt in einer eigenen Zeile darüber und bricht passend zur Fensterbreite um.
+
+---
+
+## v1.8.41 – 16.08.2026
+
+### Zehn weitere Hintergrundbilder für den Hauptbereich
+
+- Die Klappliste **Hintergrundbild** in den EINSTELLUNGEN bietet jetzt **zwanzig** Bilder statt zehn.
+- Die neuen Bilder zeigen dieselben Motive wie die hohen Bilder der Seitenleiste: Polarlicht, Lichtstrahlen, Bokeh, Sternenfeld, Höhenlinien, Wellenringe, Fluchtpunktraster, Punktraster, ein Gitternetz mit Lichtschein und warme Bänder. Damit lassen sich Hauptbereich und Seitenleiste erstmals auf dasselbe Motiv einstellen.
+- Sie sind so dunkel gehalten wie die bisherigen, damit Karten, Beschriftungen und Statuszeile davor lesbar bleiben.
+
+---
+
+## v1.8.40 – 16.08.2026
+
+### FILEZILLA startet immer Ihr FileZilla
+
+- Der Knopf **FILEZILLA** öffnete bisher ersatzweise ein eingebautes FTP-Fenster, wenn FileZilla nicht gefunden wurde. Dieses Fenster ist entfallen – der Knopf startet ausschließlich Ihre eigene Installation.
+- **FileZilla wird jetzt auch an ungewöhnlichen Orten gefunden.** Bisher half nur eine feste Liste bekannter Pfade. Gesucht wird nun in jedem Ordner, dessen Name „FileZilla“ enthält – in den Programmordnern, unter `AppData` und direkt auf jedem festen Laufwerk. Damit werden auch `C:\FileZilla`, eigene Ordnernamen wie `FileZilla3_x64` und portable Ablagen erkannt.
+- **Gesucht wird nur einmal.** Der Pfad wird nach dem Start gemerkt; beim nächsten Programmstart öffnet der Knopf FileZilla sofort. Passt der gemerkte Pfad nicht mehr, beginnt die Suche von selbst neu.
+- Dasselbe galt für **OSFMount**: Auch dort wurde bei jedem Einhängen eines Abbilds neu gesucht. Der Pfad wird jetzt ebenfalls gemerkt.
+
+### Hintergrundbilder getrennt wählbar
+
+- Die **Sidebar** hat jetzt eine eigene Klappliste mit den mitgelieferten Bildern – wie der Hauptbereich. Vorher ließ sich dort nur ein eigenes Bild von der Festplatte wählen.
+- Beide Listen zeigen nur, was in den jeweiligen Bereich passt: die breiten Bilder beim Hauptbereich, die hohen bei der Seitenleiste. Unterschieden wird am Bildformat, ein eigenes Bild landet also automatisch richtig.
+- Das **Sidebar-Bild tritt jetzt weiter zurück** (50 statt 85 % Deckkraft). Im Hauptbereich verdecken Karten den größten Teil des Bildes – in der Seitenleiste steht es frei und wirkte dadurch deutlich kräftiger. Jetzt sind beide Bereiche gleich dezent.
+- **Die Statuszeile flackerte** während einer laufenden Aufgabe. Sie bekommt – wie alle Beschriftungen auf dem Hintergrundbild – einen passenden Bildausschnitt hinterlegt; um dessen Größe zu bestimmen, wurde die Beschriftung kurz ohne diesen Ausschnitt gezeichnet. Bei jedem Fortschrittswert erneut, also mehrmals je Sekunde. Gemessen wird jetzt unsichtbar im Hintergrund.
+- Der Einstellungen-Dialog hat einen Knopf **Speichern**. Änderungen wirken weiterhin sofort; der Knopf sichert den Stand und schließt das Fenster, damit man es nicht im Zweifel verlässt, ob etwas übernommen wurde.
+
+### Danksagung vervollständigt
+
+- Im Fenster **CREDITS** und in den beiliegenden Dokumenten sind jetzt alle 24 mitgelieferten Payloads namentlich aufgeführt, mit ihren Autoren, soweit diese aus den Dateien selbst hervorgehen. Ergänzt wurden außerdem die Grundlagen der BACKPORT-Funktion, der PlayGo-Stub, die genutzte Onlinequelle und das Forum psxtools.de.
+
+---
+
+## v1.8.39 – 16.08.2026
+
+### Ruhiger Programmstart
+
+- Beim Start blitzte das Fenster kurz **weiß** auf, danach schoben sich die Bedienelemente sichtbar an ihren Platz. Das Fenster erscheint jetzt erst, wenn es fertig aufgebaut ist. Dasselbe galt für alle Werkzeugfenster – auch sie öffnen sich nun sofort dunkel.
+- In der Seitenleiste stand der **Spielname zeitweise über dem Cover** statt darunter, das Bild verschwand für einen Moment ganz und wanderte danach mehrfach. Cover und Name sitzen jetzt von Anfang an fest; nur der Name wird nachgetragen, sobald er bekannt ist.
+- Der Spielname unter dem Cover ist **etwas größer**, und der Block aus Bild und Name sitzt ein Stück tiefer in der Seitenleiste.
+- Der Startbildschirm hat **abgerundete Ecken**.
+- Das Fenster, das beim Nachinstallieren von Dokan 2 erscheint, stand in hellen Systemfarben mit kaum lesbarer Schrift. Es passt sich jetzt dem Design an.
+
+---
+
+## v1.8.38 – 16.08.2026
+
+### Hochgeladene Spiele starteten nicht mehr — behoben
+
+Wer seit dem 15.08. ein Spiel mit diesem Programm auf die Konsole geladen hat, bekam beim Start **CE-107750-0** und sonst keinen Hinweis. Die Ursache lag nicht am Spiel und nicht an der Konvertierung, sondern am Übertragungsweg.
+
+**Was passiert war:** Für mehr Tempo wurde bevorzugt der Payload **zftpd** (Port 2120) genutzt. Der legt jede hochgeladene Datei jedoch ohne Ausführungsrecht ab (Rechte `0666`). Die PS5 startet nichts, was nicht ausführbar ist – und nennt als Grund nur diesen Fehlercode. Der zuvor verwendete **ftpsrv** (Port 2121) legt Dateien mit `0777` ab; damit startet alles wie gewohnt.
+
+An der Konsole nachgemessen, dieselbe Datei im selben Ordner:
+
+| Payload | Port | Rechte danach |
+| --- | --- | --- |
+| ftpsrv 1.15-ng | 2121 | `0777` ✅ |
+| zftpd 1.5.0 | 2120 | `0666` ❌ |
+
+**Was sich ändert:**
+
+- Das Programm verwendet wieder **ftpsrv auf Port 2121**. Läuft er nicht, wird wie gewohnt angeboten, den mitgelieferten Payload zu senden.
+- zftpd wird nicht mehr angeboten und steht in der Suchreihenfolge ganz hinten – falls jemand ausschließlich zftpd laufen hat, kommt wenigstens eine Verbindung zustande.
+- **Neu: Nach jedem Upload prüft das Programm die Rechte** und warnt im Protokoll, wenn eine Datei nicht ausführbar ist. Vorher blieb dieser Fehler stumm, bis das Spiel nicht anlief.
+
+> **Wenn ein Spiel bei Ihnen nicht startet:** Laden Sie es mit dieser Version noch einmal hoch. Über zftpd übertragene Ordner bleiben unbrauchbar, solange die Rechte nicht stimmen – nachträglich lassen sie sich über zftpd auch nicht reparieren.
+
+---
+
+## v1.8.37 – 16.08.2026
+
+### Beschnittene Knöpfe in vier Fenstern
+
+Im neuen **BACKPORT**-Fenster waren die drei Knöpfe am unteren Rand leer – man sah nur graue Rechtecke – und das Feld für die Zielfirmware zeigte nichts an. Die Prüfung aller Fenster förderte dieselbe Ursache an drei weiteren Stellen zutage.
+
+**Was dahintersteckte:** Wenn eine Liste, die sich über den ganzen freien Platz ausdehnt, vor der darunterliegenden Knopfleiste angelegt wird, nimmt sie sich den Platz zuerst. Für die Knöpfe bleibt dann nur der Rest – gemessen 24 statt 51 Pixel Höhe, zu wenig für die Beschriftung. Die Reihenfolge ist jetzt umgedreht: erst die feste Knopfleiste, dann die Liste in den verbleibenden Raum.
+
+| Fenster | Was zu sehen war |
+| --- | --- |
+| **PKG-MERGER** | **Gar keine Knöpfe** – weder „Zusammenführen" noch „Schließen" |
+| **BACKPORT** | Drei Knöpfe ohne Beschriftung, Firmware-Auswahl leer |
+| **DOWNLOADS** | Fünf Knöpfe der unteren Reihe beschnitten |
+| **ShadowMount+ / MicroMount** | Knöpfe der Listenzeile beschnitten, „Auf PS5 schreiben…" seitlich gekappt |
+| **JS Loader** | „Konsole leeren" auf 8 Pixel Breite geschrumpft, praktisch unsichtbar |
+
+Der **PKG-Merger** war dabei am stärksten betroffen: Dort blieb von der Knopfleiste nichts übrig, das Fenster ließ sich also nur über das Kreuz in der Titelzeile schließen und die Zusammenführung gar nicht auslösen. Aufgefallen ist das erst beim zweiten Durchgang – im ersten öffnete sich das Fenster nicht, weil es einen Ordner mit geteilten `.pkg`-Dateien voraussetzt.
+
+**Dazu im Einzelnen:**
+
+- Die **Firmware-Auswahl im Backport-Fenster** blieb leer, weil der interne Wert nach dem Öffnen des Fensters verworfen wurde. Dass trotzdem „Firmware 7.00" in der Statuszeile stand, war Zufall – ohne Auswahl griff das Programm auf den letzten Listeneintrag zurück, und das ist zufällig ebenfalls 7.00. Jetzt zeigt das Feld seinen Wert an, und ohne Auswahl gilt ausdrücklich die Voreinstellung.
+- Im **JS Loader** stehen die Aktionsknöpfe jetzt in zwei Zeilen. Alle fünf nebeneinander brauchten mehr Breite, als das Fenster hat.
+- Bei **ShadowMount+ und MicroMount** ist das Fenster etwas breiter; die Tabelle zeigt 12 statt 16 Zeilen auf einmal und lässt sich wie bisher scrollen.
+- Im Download-Fenster heißt der Knopf jetzt kurz **Umsortieren**; was er tut, steht im Hinweis beim Darüberfahren.
+
+Ein neuer Test öffnet die betroffenen Fenster und misst jeden Knopf aus, damit diese Fehlerklasse nicht unbemerkt zurückkehrt.
+
+---
+
+## v1.8.36 – 16.08.2026
+
+### Titel und Content-ID bei defekter param.json
+
+Fehlt `sce_sys/param.json` oder ist sie beschädigt, bietet das Programm seit jeher an, eine Ersatzdatei anzulegen. Seit v1.8.33 stammt die Titel-ID dafür zuverlässig aus `sce_sys/nptitle.dat`. **Titel und Content-ID standen dagegen in keiner einzigen lokalen Datei** – auch nicht in der `eboot.bin` (33 MB vollständig durchsucht) oder in `npbind.dat`. Die Ersatzdatei blieb an diesen beiden Stellen leer.
+
+Beide lassen sich jetzt zur Titel-ID nachschlagen – auf derselben Seite, von der auch die Update-Liste im Fenster *Spiel-Info* kommt.
+
+**Sie werden vorher gefragt.** Es ist eine eigene Ja/Nein-Rückfrage, getrennt von der Frage, ob überhaupt eine Ersatzdatei entstehen soll. Sie steht auf **Nein** voreingestellt und nennt ausdrücklich, was gesendet wird: die Titel-ID, sonst nichts.
+
+**Ohne Nachschlag geht nichts verloren.** Sagen Sie Nein, gibt es kein Internet oder antwortet die Seite nicht, entsteht die Ersatzdatei genau wie bisher – nur mit der Titel-ID. Die Reparatur scheitert nie am Nachschlag.
+
+An acht Backups nachgemessen: Die **Content-ID stimmte 8 von 8 Mal exakt**, der **Titel 7 von 8 Mal**. Die eine Abweichung ist eine Umbenennung zwischen Regionen (lokal „Instant Sports Plus", online „Instant Sports Paradise") – die Content-ID stimmte auch dort.
+
+### Behobener Fehler
+
+- **Im Fenster Spiel-Info stand die Titel-ID vor dem Titel.** Die Patch-Seite stellt sie seit einiger Zeit voran, sodass dort `PPSA19015: Arcade Game Zone` erschien statt `Arcade Game Zone`. Betraf nur den Fall, dass der Titel online geholt wurde.
+
+---
+
+## v1.8.35 – 16.08.2026
+
+### BACKPORT – Spiele auf ältere Firmware herabsetzen
+
+Ein PS5-Spiel merkt sich, mit welchem Entwicklungspaket (SDK) es gebaut wurde, und startet nur auf Firmware, die mindestens so neu ist. Verlangt ein Spiel 9.00, während die Konsole auf 4.50 steht, passiert beim Start nichts. Der neue Eintrag **BACKPORT** im Menü **WEITERE TOOLS** setzt diese Angabe herab.
+
+**So läuft es ab:** Ordner wählen, Zielfirmware einstellen, auf *Backport starten* klicken. Das Programm geht jede ausführbare Datei durch – `eboot.bin`, `.prx` und `.sprx` –, entpackt sie, setzt die SDK-Angabe im Modulkopf herunter, signiert sie neu und legt zum Schluss die zur Zielfirmware passenden Ersatzbibliotheken in einen Ordner `fakelib` daneben. Zur Auswahl stehen die Firmware-Stände **4.00, 5.00, 6.00 und 7.00**; für jeden liegt ein eigener Bibliothekssatz bei.
+
+**Was dabei geschützt ist:**
+
+- **Sicherung zuerst.** Auf Wunsch (standardmäßig an) entsteht neben dem Spielordner eine vollständige Kopie mit Zeitstempel, bevor irgendetwas angefasst wird.
+- **Alles oder nichts pro Datei.** Gearbeitet wird ausschließlich im Arbeitsspeicher. Eine Datei wird erst ersetzt, wenn Entpacken, Patchen *und* Neusignieren gelungen sind – und dann in einem Zug. Bricht ein Schritt ab, bleibt das Original unverändert.
+- **Nur herabsetzen.** Dateien, die schon niedrig genug sind, bleiben unangetastet und werden als übersprungen ausgewiesen. Angehoben wird nie.
+- **Nichts wird doppelt gepatcht.** Der Ordner `fakelib` bleibt außen vor – die Bibliotheken darin passen bereits.
+
+**Vor dem Start sehen, was passieren würde:** Der Knopf **Nur prüfen** liest jede Datei und zeigt in der Liste ihr aktuelles SDK sowie das, was mit ihr geschähe – ohne etwas zu ändern. Beim Öffnen des Fensters läuft diese Prüfung automatisch.
+
+**Zusätzlich abschaltbar:** Ein Ankreuzfeld aktiviert einen zusätzlichen Zeichenkettenpatch in `libc.prx`, der bei manchen Spielen für 6.xx nötig ist. Er ist als experimentell gekennzeichnet und standardmäßig aus.
+
+> **Bestätigt am 16.08.2026:** Ein so behandeltes Spiel (Terminator 2D, von 10.00 auf 7.00 herabgesetzt) startet und läuft auf einer echten PS5 – mit den Ersatzbibliotheken erscheint dabei die Einblendung „Spiel backportiert“.
+>
+> **Bitte trotzdem beachten:** Das Ergebnis wird neu signiert, aber nicht *echt* signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, hängt vom Spiel ab; manche verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Deshalb: immer mit Sicherung arbeiten.
+
+Alles läuft ohne Fremdwerkzeug und ohne zusätzliche Laufzeitumgebung – die Verfahren zum Entpacken und Signieren sind im Programm selbst nachgebaut.
+
+---
+
+## v1.8.34 – 16.08.2026
+
+### Updates und Patches wirklich herunterladen
+
+Bisher führte der Knopf **Download** im Fenster **Spiel-Info – Updates & Patches** nur auf eine Internetseite. Von dort musste die Datei von Hand geholt, selbst einsortiert und im Blick behalten werden. Das übernimmt jetzt das Programm.
+
+- **Neuer Eintrag DOWNLOADS** im Menü **WEITERE TOOLS**. Dort stehen laufende und bereits vorhandene Downloads in einer Liste: Dateiname, Title-ID, Art, Größe, Fortschritt und Status.
+- **Getrennte Ordner, automatisch einsortiert.** Die neueste Version eines Spiels gilt als Update und landet in **PS5 Spiele Updates**, jede ältere Fassung als Patch in **Patches**. Beide Ordner entstehen unterhalb des von dir gewählten Speicherorts. Liegt eine Datei im falschen Ordner, verschiebt sie der Knopf **Als Update/Patch umsortieren**.
+- **Speicherort frei wählbar.** Beim ersten Download wird gefragt, auf welchem Datenträger die Pakete liegen sollen. Ändern lässt sich das jederzeit in den **Einstellungen** unter *Speicherort für Downloads* oder direkt im Download-Fenster.
+- **Abbrechen und fortsetzen.** Ein laufender Download lässt sich anhalten; **Erneut versuchen** setzt genau dort fort, wo er stehen geblieben ist, statt von vorn zu beginnen. Auch ein Programmabsturz kostet den Fortschritt nicht.
+- **Halbe Dateien sehen nie fertig aus.** Geladen wird in eine Datei mit der Endung `.teil`; erst wenn die Größe stimmt, bekommt sie ihren richtigen Namen.
+- **Vorhandene einlesen** durchsucht beide Ordner und zeigt, was schon da ist – nützlich nach einem Neustart oder auf einem neu angeschlossenen Datenträger.
+
+**Ein Schritt bleibt von Hand:** Die eigentliche Download-Adresse entsteht erst, wenn auf der Patch-Seite im Browser auf **DETAILS** geklickt wird, und dieser Klick ist dort absichtlich durch eine Sicherheitsabfrage geschützt. Das Programm umgeht diesen Schutz nicht. Der Ablauf ist deshalb: Auf **Download** klicken – die Seite öffnet sich, das Download-Fenster kommt nach vorn. Auf der Seite die Sicherheitsabfrage bestätigen, mit der rechten Maustaste auf **Download Piece PKG** klicken und *Link kopieren* wählen. Zurück im Download-Fenster genügt dann **Aus Zwischenablage** – alles Weitere läuft von allein. Mehrere Adressen dürfen auf einmal eingefügt werden.
+
+---
+
+## v1.8.33 – 15.08.2026
+
+Ein zweiter Durchgang mit sechs anderen Backups (22 Konvertierungen über alle acht Aufgaben) hat weitere Fehler zutage gefördert. Sie sind hier behoben.
+
+### Behobene Fehler
+
+- **Beim Entpacken einer `.ffpkg` fehlte hinterher eine Datei.** Aus einem Paket mit 196 Dateien kamen 195 heraus; verloren ging `sce_sys/about/right.sprx` – eine Datei, die in jedem geprüften Backup vorkommt. Gemeldet wurde lediglich „robocopy fehlgeschlagen (rc=9)", ohne zu sagen, was fehlt. Das Ergebnis wird jetzt Datei für Datei gegen das Abbild geprüft, Fehlendes einzeln nachgeholt, und falls doch etwas übrig bleibt, nennt die Meldung die betroffenen Dateien beim Namen.
+- **Quelldateien mit Sonderzeichen im Namen brachen den Packlauf ab.** `Matchbox™ Driving Adventures (01.000.001).exfat` endete mit einer Fehlermeldung über „non-ASCII characters", weil ein Containerverzeichnis solche Zeichen nicht speichern kann. Jetzt werden nur die betroffenen Zeichen ersetzt (`™` → `(TM)`, `–` → `-`), der übrige Name samt Versionsklammer bleibt erhalten.
+- **Die Sammelkonvertierung verweigerte den Start wegen einer einzigen Quelle.** Lag in einer gemischten Auswahl eine Datei schon im Zielformat vor, wurde der gesamte Auftrag abgelehnt. Solche Quellen werden jetzt übersprungen und im Protokoll benannt; abgelehnt wird nur noch, wenn es überhaupt nichts zu tun gibt.
+- **`.ffpfs` ließ sich nicht nachträglich komprimieren.** Der Weg `.ffpfs` → `.ffpfsc` (und umgekehrt) galt als „Quelle und Zielformat sind identisch", obwohl beide Formate sich genau darin unterscheiden.
+- **Ein gewähltes Hintergrundbild war nach jedem Neustart weg.** Wurde eines der mitgelieferten Bilder ausgewählt, merkte sich das Programm einen Pfad, den es nach dem Beenden nicht mehr gibt – die Einstellung fiel still auf das Standardbild zurück. Bestehende Einstellungen werden beim nächsten Start automatisch repariert.
+- **Geteilte `.pkg`-Dateien mit Punkt im Namen wurden übersehen.** Ein Satz wie `Spiel (01.003.000)_0.pkg` galt als „entspricht nicht dem Split-Namensschema" und tauchte im PKG-Merger gar nicht erst auf.
+- **Arbeitsordner blieben liegen.** Nach jedem Lauf über die Kommandozeile blieb ein Ordner mit rund einem halben Megabyte im Temp-Verzeichnis zurück. Er wird jetzt am Ende entfernt, und Reste älterer Läufe werden beim Start mit aufgeräumt.
+
+### Spiel-Info bleibt während einer Konvertierung nicht mehr leer
+
+- Solange eine Aufgabe lief, holte das Programm keine Metadaten zur gewählten Quelle – aus gutem Grund, denn das Lesen eines mehrere Gigabyte großen Containers würde der laufenden Arbeit Platte und Rechenzeit wegnehmen. Nur sagte es das nicht: Das Fenster **Spiel-Info – Updates & Patches** blieb leer, und schlimmer, es zeigte teils noch Titel und Cover der **vorher** gewählten Quelle. Jetzt steht dort „Wird nach Abschluss der laufenden Aufgabe geladen", die alten Werte verschwinden, und sobald die Aufgabe fertig ist, werden Metadaten, Updates und Downloads automatisch nachgeladen.
+
+### Bessere Title-ID bei defekter param.json
+
+- Fehlt `sce_sys/param.json` oder ist sie beschädigt, bietet das Programm seit jeher an, eine Ersatzdatei anzulegen. Die dafür nötige Titel-ID wurde bisher ausschließlich aus dem **Ordnernamen** geraten – trägt der das Muster nicht, blieb die Ersatzdatei ohne Titel-ID. Jetzt wird zuerst `sce_sys/nptitle.dat` gelesen, eine kleine Metadatendatei direkt neben der `param.json`. In allen 32 geprüften Backups war sie vorhanden und stimmte mit der `param.json` überein. Der Ordnername bleibt der Notnagel, falls die Datei fehlt.
+
+### Drei zusätzliche Werkzeuge
+
+Im Menü **WEITERE TOOLS** liegen jetzt auch **PKG-MERGER** und **PARAM/MANIFEST** (bisher eigene Schaltflächen in der Titelleiste) sowie drei neue Einträge:
+
+- **SELF-Inspektor** – zeigt den Aufbau einer `eboot.bin`, `.self`, `.sprx` oder `.prx`: Container-Art, eingebettetes ELF, Signaturkategorie und die Segmenttabelle. Es wird nur gelesen, nichts entschlüsselt.
+- **Dump umbenennen** – schlägt aus Title-ID, Titel und Version einen sprechenden Ordnernamen vor und benennt auf Wunsch um.
+- **Debug-PKG bauen** – erzeugt aus einem Dump-Ordner einen strukturell gültigen, **unsignierten** `.pkg`-Container für Struktur- und Werkzeugtests.
+
+### Kleinere Verbesserungen
+
+- Die Cover-Vorschau in der Sidebar sitzt jetzt mittig in ihrer Fläche – vorher klebte sie oben und war seitlich um ein Pixel versetzt.
+- Beim Sprachwechsel werden auch die Einträge im Menü **WEITERE TOOLS** übersetzt; sie blieben bisher in der Sprache des Programmstarts stehen.
+- Beim Programmstart erscheint keine Warnung der Bildbibliothek mehr.
+
+---
+
+## v1.8.32 – 15.08.2026
+
+Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19 Konvertierungen, rund 10 GB Ergebnisse, dazu Uploads auf die Konsole). Was dabei auffiel, ist hier behoben.
+
+### Behobene Fehler
+
+- **Kommandozeilenmodus brach an einem Pfeilzeichen ab.** Leitete man die Ausgabe in eine Datei um, beendete ein „→" in einer Protokollzeile die ganze Aufgabe mit „Unerwarteter Fehler" – obwohl die Arbeit bereits fertig war. Betraf vier von neunzehn Testläufen.
+- **Aufgabe 4 konnte eine `.ffpkg` nicht neu aufbauen.** Die Auswahlliste bot „.ffpkg (Neuvalidierung)" an, der Start brach aber mit „Quelle und Zielformat sind identisch" ab.
+- **Validator meldete einwandfreie Backups als beschädigt.** `sce_sys/pfs-version.dat` galt als Pflichtdatei; von 32 geprüften Backups fehlt sie bei zweien. Sie ist jetzt eine Empfehlung – fehlt sie, gibt es eine Warnung statt eines Fehlschlags. `eboot.bin` und `param.json` bleiben Pflicht.
+- **Validator hielt zwei reguläre Containerformen für kaputt.** Ein aus `.exfat` oder `.ffpkg` gebauter Container enthält absichtlich das jeweilige Abbild; das wurde als „falsch verschachtelt" gemeldet. Alle drei Bauformen werden jetzt erkannt, die tatsächlich fehlerhafte weiterhin gemeldet.
+- **Eingebettete Abbilder bekamen verstümmelte Namen.** Aus `Spiel (01.003.000).exfat` wurde im Container `PPSA19015.003.000).exfat`. Der Originalname bleibt jetzt erhalten.
+- **Wiederherstellen meldete einen Fehler, wenn es nichts zu tun gab.** Hat das Spiel die Bibliothek nie selbst mitgebracht, gibt es keine Sicherung – das ist der erwartete Zustand und kein Fehlschlag mehr.
+
+### Bibliothek zeigt Container-Titel
+
+- In einer Sammlung aus reinen Containerdateien blieb bei jedem Eintrag „–" stehen. Titel, Title-ID und Version werden jetzt aus dem Dateinamen gelesen; liegt der zugehörige Dump-Ordner daneben, gelten weiterhin dessen echte Werte.
+
+### Konfigurationseditor erhält die Datei
+
+- Beim Zurückschreiben von `config.ini` auf die PS5 wurde die Datei aus den Einträgen neu aufgebaut – Kommentare und die auskommentierte Vorlage gingen dabei verloren. Jetzt wird die vorhandene Datei bearbeitet: Kommentare bleiben, geänderte Werte werden ersetzt, entfernte Einträge auskommentiert statt gelöscht.
+
+### Schnellere Übertragung zur PS5
+
+- Der übliche FTP-Payload schaffte im Test 1,5 MB/s; 249 MB brauchten damit fast drei Minuten. Läuft der mitgelieferte **zftpd** auf der Konsole, wird er jetzt bevorzugt. Läuft er nicht, fragt das Programm einmal nach, ob es ihn an die Konsole schicken soll – bei „Nein" bleibt alles beim Alten.
+
+---
+
+## v1.8.31 – 15.08.2026
+
+### Unvollständige Dumps fallen auf
+
+- Fehlen im Quellordner Pflichtdateien wie `eboot.bin` oder `sce_sys/param.json`, erscheint **vor dem Start** ein Hinweis mit den fehlenden Namen. Die Aufgabe lässt sich trotzdem starten – gedacht ist der Hinweis für den Fall, dass ein Backup unbemerkt unvollständig kopiert wurde.
+- Aufgabe 8 hat fehlende Pflichtdateien bisher nur beim Prüfen eines **Ordners** gemeldet. Jetzt meldet sie dieselben Dateien auch beim Prüfen einer fertigen `.ffpfsc`/`.ffpfs`-Datei. Ein aus einem unvollständigen Backup gebauter Container fällt damit auch nachträglich auf.
+- Beide Stellen verwenden dieselbe Liste, damit Ordner und Container nicht zu unterschiedlichen Urteilen kommen.
+
+### Falsch verschachtelte Container werden erkannt
+
+- Ein `.ffpfsc` besteht aus zwei Ebenen: außen der Container, innen die Spieldateien. Ging beim Erzeugen etwas schief, konnte dazwischen eine weitere Ebene liegen – von außen sah die Datei normal aus, auf der Konsole war sie unbrauchbar.
+- Aufgabe 8 schaut jetzt eine Ebene tiefer und meldet solche Dateien als fehlgeschlagen, mit Angabe dessen, was dort statt der Spieldateien liegt.
+- Die Datei wird dafür **nicht** entpackt: Gelesen wird nur das Inhaltsverzeichnis der inneren Ebene – bei einer 392-MB-Datei rund 750 Kilobyte in unter einer Zehntelsekunde.
+- Neu im Protokoll: `nesting`, `inner_files`, `inner_dirs` und `critical_files`.
+
+---
+
+## v1.8.30 – 15.08.2026
+
+### Rechner nach getaner Arbeit herunterfahren
+
+- Neues Ankreuzfeld unter TEMP-ORDNER: **Rechner nach erfolgreichem Abschluss herunterfahren**. Damit lassen sich lange Konvertierungen unbeaufsichtigt laufen lassen.
+- Ist eine Aufgabe **fehlgeschlagen oder abgebrochen**, bleibt der Rechner an – die Fehlermeldung bleibt lesbar. Maßgeblich ist dabei das Ergebnis der Aufgabe selbst, nicht der angezeigte Text.
+- Vor dem Herunterfahren erscheint ein Fenster mit 60-Sekunden-Countdown. Ein Klick auf „Abbrechen – Rechner anlassen" oder die ESC-Taste hält den Rechner an.
+- Danach löst das Programm erst alle gemounteten Abbilder, entfernt die temporären Arbeitsdateien und schreibt das Protokoll auf die Festplatte. Erst dann fährt Windows herunter – ohne Rückfragen und ohne dass hängengebliebene Laufwerke oder Temp-Reste zurückbleiben.
+- Bei aktivem Ankreuzfeld entfällt die Erfolgsmeldung zum Wegklicken; sie würde auf eine Bestätigung warten, die niemand gibt. Der Erfolg steht in Statuszeile und Protokoll.
+- Die Einstellung wird gespeichert. Im Kommandozeilenmodus gibt es dafür den Schalter `--shutdown-on-success`.
+- Hinweis: Das Herunterfahren erfolgt ohne Rückfragen und beendet auch andere Programme; ungespeicherte Arbeit dort geht verloren. Im Countdown-Fenster steht das noch einmal.
+
+---
+
+## v1.8.29 – 15.08.2026
+
+### Keine Restflächen mehr auf dem Hintergrundbild
+
+- Unten rechts stand dauerhaft ein kleines helles Rechteck. Dort sitzt die Anzeige für CPU-, RAM- und Temp-Auslastung, die außerhalb einer laufenden Aufgabe nur ihren Text verlor, aber sichtbar blieb. Jetzt verschwindet sie ganz und taucht erst wieder auf, wenn eine Aufgabe läuft.
+- Die Größenangabe neben der Fortschrittsleiste hinterlegte ihren Text über die volle Spaltenbreite – das sah aus wie eine zweite, leere Fortschrittsleiste. Die Fläche ist jetzt so breit wie die Angabe selbst. Der reservierte Platz bleibt unverändert, längere Angaben haben sogar etwas mehr Raum als vorher.
+- Direkt nach dem Programmstart und nach jeder Änderung der Fenstergröße zeigten Überschrift, Statuszeile und der Spielname in der Sidebar für einen Moment wieder einen Kasten. Beide Fälle werden jetzt automatisch nachgezeichnet.
+- Ein Design-Wechsel im laufenden Betrieb ließ einzelne Beschriftungen in der Farbe des alten Designs zurück. Alle Beschriftungen wechseln jetzt gemeinsam.
+
+### Schneller FTP-Payload wird gefunden
+
+- Das mitgelieferte **zftpd** lauscht auf der Konsole auf Port 2120. Die automatische Suche kannte nur 2121, 1337 und 21 – wer zftpd über den JS Loader startete, wurde nicht gefunden. Port 2120 wird jetzt mitgeprüft.
+- Scheitert die Verbindung im AMPR Picker, nennt die Meldung jetzt die geprüften Ports und weist auf die mitgelieferten Payloads hin: zftpd (Port 2120, schnellste Übertragung) und ftpsrv-ps5 (Port 2121).
+
+### Lizenzen der mitgelieferten Payloads
+
+- Neue Datei `THIRD_PARTY_LICENSES.md` mit den Lizenzbedingungen der mitgelieferten Fremdkomponenten. Sie liegt der Windows-EXE bei und lässt sich im Fenster CREDITS direkt öffnen.
+
+---
+
+## v1.8.28 – 15.08.2026
+
+### Beschriftungen ohne Kasten
+
+- Bei eingestelltem Hintergrundbild lag hinter QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER und TEMP-ORDNER ein heller Kasten. Jetzt ist nur noch die Schrift zu sehen, das Bild läuft ungestört durch.
+- Der Hinweis unter dem Zielformat („Quelle: Dump-Ordner") hatte bisher sogar eine vollflächige Fläche – auch er steht jetzt frei auf dem Bild und passt sich beim Wechsel der Aufgabe oder der Sprache an.
+- Ebenso randlos sind Überschrift, Zeile darunter, Statuszeile unten und die Beschriftungen in der Sidebar einschließlich des Spielnamens unter dem Cover.
+- Nur die Größenangabe neben der Fortschrittsanzeige behält bewusst eine leicht abgedunkelte Fläche, damit sie über unruhigen Bildstellen lesbar bleibt.
+
+---
+
+## v1.8.27 – 15.08.2026
+
+### AMPR-Versionen sind mitgeliefert
+
+- Die AMPR-EMU- und PlayGo-Dateien gehören jetzt zum Programm. Aufgabe 7 findet sie von allein; der Versionsordner muss nicht mehr ausgewählt werden.
+- Ein selbst gewählter Ordner hat weiterhin Vorrang, falls du eigene Versionen verwenden möchtest.
+- In der Windows-EXE sind die Dateien eingebettet – auch dort ist keine Auswahl nötig.
+
+### Hintergrundbilder zur Auswahl
+
+- Im Design-Fenster lassen sich mitgelieferte Hintergrundbilder direkt aus einer Liste übernehmen.
+- Ein eigenes Bild kann weiterhin über die Dateiauswahl gesetzt werden; diese startet jetzt im mitgelieferten Ordner.
+
+### Zwei Werkzeuge entfernt
+
+- **Y2JB** und **Dump umbenennen** sind aus dem Menü "Weitere Tools" entfernt. Dort verbleiben MicroMount und der AMPR-Index-Builder.
+- Der JS Loader ist davon nicht betroffen und bleibt unverändert erhalten.
+
+### AMPR und PlayGo getrennt wählbar
+
+- Für `libSceAmpr.sprx` und `libScePlayGo.sprx` gibt es jetzt je ein eigenes Auswahlfeld. Vorher ließ sich nur eine der beiden Dateien setzen, obwohl sie unterschiedliche Versionsstände haben.
+- Vorausgewählt ist nur `libSceAmpr.sprx` – das eigentliche APR-EMU-Modul. `libScePlayGo.sprx` stammt aus einem separaten Projekt und meldet dem Spiel, dass alle PlayGo-Inhalte bereits installiert sind; er wird nur bei Titeln gebraucht, die Inhalte als fehlend behandeln, und muss deshalb bewusst dazugewählt werden.
+- Einzelne Felder lassen sich auf „nicht ändern" stellen, um nur eine der beiden Dateien zu tauschen.
+- Wiederherstellen und Entfernen erfassen weiterhin beide Dateien.
+
+### JS Loader findet eigene Payloads
+
+- Die Schnellauswahl im JS Loader suchte in der Windows-EXE nur im eingebetteten Bereich. Eigene `.elf`-Dateien, die neben das Programm gelegt wurden, blieben dadurch unsichtbar. Jetzt wird beides berücksichtigt.
+
+### Einstellungen gehen nicht mehr verloren
+
+- Beim Speichern wurde die Einstellungsdatei zuerst geleert und dann neu geschrieben. Wurde in diesem Moment gelesen – oder brach das Programm dazwischen ab –, waren Temp-Ordner, PS5-Adresse, Hintergrundbild und die übrigen Werte verloren.
+- Die Datei wird jetzt vollständig neben der alten aufgebaut und erst danach in einem Schritt ersetzt. Ist sie kurzzeitig belegt, wird der Vorgang wiederholt statt aufzugeben.
+
+### Groessenhinweis fuer das Hintergrundbild
+
+- Bei den Einstellungen steht jetzt auch fuer das Haupt-Hintergrundbild eine Groessenempfehlung (1920 x 1020 Pixel) – bisher gab es die nur beim Sidebar-Bild.
+- Der Hinweis erklaert ausserdem, dass das Bild auf die Fenstergroesse gestreckt wird und ein abweichendes Seitenverhaeltnis daher verzerrt.
+
+### Beschriftung von Aufgabe 7
+
+- Der Aufgabenknopf zeigte einen internen Schlüsselnamen statt "7. AMPR EMU Manager".
+
+---
+
+## v1.8.26 – 15.08.2026
+
+### Aufgabe 7 ist jetzt der AMPR EMU Manager
+
+- Aus dem bisherigen fakelib Manager wurde ein Werkzeug rund um den AMPR-Emulator. Die früheren Datei-Aktionen (fakelib hinzufügen/entfernen, einzelne Dateien ins Stammverzeichnis kopieren) sind entfallen.
+- Die Aufgabe arbeitet weiterhin mit Dump-Ordnern sowie `.ffpfsc`-, `.ffpfs`-, `.exFAT`- und `.ffpkg`-Quellen.
+
+### AMPR-Versionen verwalten
+
+- Aus einem frei wählbaren Ordner werden alle vorhandenen AMPR-EMU- und PlayGo-Ausgaben eingelesen, nach Version sortiert und mit Variante (`debug` / `no debug`) angezeigt.
+- Die im Spiel installierte Version wird über ihre Prüfsumme erkannt und benannt – auch dann, wenn sie nicht selbst eingespielt wurde.
+- Vor dem ersten Austausch wird die vom Spiel mitgelieferte Datei als `.orig` gesichert und lässt sich jederzeit zurückholen. Eine vorhandene Sicherung wird bei weiteren Wechseln nicht überschrieben.
+- Eigene `.sprx`/`.prx`-Dateien können statt einer Version aus dem Ordner übernommen werden.
+
+### ampr_emu.index automatisch
+
+- Nach jedem Eingriff wird die Indexdatei neu aufgebaut, damit sie zum tatsächlichen Dateibestand passt.
+- Der Index lässt sich zusätzlich direkt aus dem Spielverzeichnis einer angeschlossenen PS5 erzeugen und dorthin zurückschreiben.
+
+### AMPR Picker: direkt auf der Konsole arbeiten
+
+- Ein FTP-Browser zeigt die Spielordner der PS5, mit Schnellzugriffen auf `/data/etaHEN/games`, `/data/homebrew`, `/mnt/data`, `/user/app` und `/mnt/usb0`.
+- Vor dem Indexieren wird geprüft, ob der gewählte Ordner wirklich ein Spielverzeichnis ist.
+- AMPR- und PlayGo-Bibliothek lassen sich als Paar auf die Konsole übertragen und der Index anschließend neu bauen – ohne das Spiel-Image neu zu erstellen. Ein fehlender `fakelib`-Ordner wird dabei angelegt.
+- Der FTP-Port wird selbst ermittelt (2121, 1337, 21), er muss nicht bekannt sein.
+
+### FileZilla wird zuverlässiger gefunden
+
+- Zusätzlich zu den Standardpfaden werden jetzt die Windows-Deinstallationseinträge ausgewertet und, falls nötig, die Laufwerke durchsucht. Damit wird FileZilla auch an ungewöhnlichen Installationsorten gefunden.
+- Ein leerer Registry-Eintrag aus einer früheren Deinstallation führte dazu, dass im Arbeitsverzeichnis nach `filezilla.exe` gesucht wurde.
+
+---
+
+## v1.8.25 – 14.08.2026
+
+### Aufgabe 7 schreibt .ffpfsc und .ffpfs wieder korrekt zurück
+
+- Nach einer `fakelib`-Änderung an einer `.ffpfsc`- oder `.ffpfs`-Datei wurde eine Ebene zu viel eingepackt. Die Datei ließ sich zwar öffnen und wurde als gültig gemeldet, enthielt beim Entpacken aber nur einen einzelnen Container statt der Spieldateien – auf der Konsole unbrauchbar. Betroffen waren ausschließlich `.ffpfsc`/`.ffpfs` als Quelle; Dump-Ordner, `.exFAT` und `.ffpkg` waren nicht betroffen.
+- Eine `.ffpfs`-Datei bleibt jetzt auch bei Aufgabe 7 unkomprimiert, statt trotz Endung komprimiert geschrieben zu werden.
+
+### Fehlerhafte Ergebnisse werden nicht mehr als Erfolg gemeldet
+
+- Beim Zielformat "Dump-Ordner" prüft die Abschlusskontrolle jetzt, ob wirklich ein Spiel-Dump entstanden ist. Vorher genügte irgendeine Datei im Zielordner, sodass ein unbrauchbares Ergebnis als "erfolgreich abgeschlossen" durchging.
+- Schlägt die Abschlussprüfung fehl, zeigt das Statusfeld das auch an, statt weiter "erfolgreich" zu melden.
+
+### Aufgabe 7 über die Kommandozeile
+
+- Der `--cli`-Modus deckt jetzt wirklich alle acht Aufgaben ab. Aufgabe 7 wartete bisher ohne sichtbares Fenster endlos auf eine Eingabe im Auswahldialog.
+- Die Aktion wird über `--fakelib-action` gewählt, ergänzt um `--fakelib-src`, `--fakelib-files`, `--fakelib-dirs`, `--fakelib-items` und die APR-Optionen. Fehlt die Angabe, bricht der Aufruf sofort mit einem Hinweis ab.
+
+### Klare Meldung bei fehlenden Administratorrechten
+
+- Beim Erzeugen einer `.ffpkg` ohne erhöhte Rechte erscheint sofort ein verständlicher Hinweis. Vorher wurden erst drei UFS2-Profile nacheinander durchprobiert, die alle mit einer technischen Windows-Fehlernummer abbrachen.
+
+### Temporäre Dateien werden restlos entfernt
+
+- Ordner mit schreibgeschützten Dateien – wie sie beim Entpacken einer `.ffpkg` entstehen – blieben bisher im Temp-Verzeichnis liegen und belegten pro Durchlauf mehrere hundert Megabyte.
+
+### Englische Oberfläche
+
+- Die Zielformate "Dump-Ordner" und ".ffpfs" ließen sich bei englischer Spracheinstellung über die Kommandozeile nicht auswählen.
+- Die Abschlussmeldungen erscheinen jetzt ebenfalls auf Englisch, und der Rückgabewert der Kommandozeile meldet einen fehlgeschlagenen Lauf auch bei englischer Einstellung korrekt als Fehler.
+
+### Protokollmeldungen
+
+- Zwischenschritte tragen keine feste Aufgabennummer mehr. Da dieselben Schritte aus mehreren Aufgaben heraus laufen, stand dort teilweise eine andere Nummer als die tatsächlich gewählte Aufgabe.
+
+---
+
+## v1.8.24 – 14.08.2026
+
+### Neue Werkzeuge in "Weitere Tools"
+
+- **MicroMount**: Konfigurationseditor für das gleichnamige Drittanbieter-Mount-Tool (`/data/micromount/config.ini`), analog zu SHADOWMOUNT+, zusätzlich mit Payload-Versand per TCP an die PS5.
+- **AMPR-Index-Builder**: Baut aus einem lokalen Ordner die Indexdatei `ampr_emu.index` für den AMPR-Dateiresolver.
+
+Diese Werkzeuge sind über einen neuen Knopf "Weitere Tools" in der Titelleiste erreichbar, um die Knopfreihe nicht zu überladen.
+
+### Titelleiste aufgeräumt
+
+- Der Programmname/Version-Text links in der Titelleiste wurde entfernt, damit mehr Platz für die Werkzeug-Knöpfe bleibt.
+
+### Realistischere Speicherplatz-Warnung
+
+- Vor Aufgabe 2/4 wird jetzt die tatsächlich benötigte Zielgröße geschätzt (direkt aus dem Container gelesen, ohne ihn zu entpacken), statt einer festen 6-GB-Schwelle. Das warnt zuverlässig, bevor bei sehr großen Spielen mitten in der Verarbeitung der Speicherplatz ausgeht.
+
+---
+
+## v1.8.23 – 13.08.2026
+
+### Automatische Bereinigung alter Temp-Dateien
+
+- Die Rückfrage beim Start ("Alte Temp-Dateien gefunden") wird nicht mehr angezeigt.
+- Gefundene alte temporäre PS5Conv-Dateien und -Ordner werden stattdessen automatisch im Hintergrund gelöscht.
+
+### Sidebar-Logo-Bereich repariert
+
+- Hinter "PS5 DUMP & IMAGE CONVERTER" sowie den Symbolen darüber in der Sidebar war bei aktivem Sidebar-Hintergrundbild noch ein grauer Kasten samt dünnem Rahmen sichtbar, unabhängig vom gewählten Design.
+- Dieser Bereich zeigt das Hintergrundbild jetzt lückenlos, genau wie die übrigen Beschriftungen im Hauptfenster.
+
+---
+
+## v1.8.22 – 13.08.2026
+
+### Zusatzfenster modernisiert
+
+- Diagnose, KLog, Bibliothek, ShadowMount+, Param/Manifest-Editor, PKG-Merger, Design und Einstellungen wurden optisch überarbeitet und wirken nun deutlich weniger rustikal.
+- Design- und Einstellungen-Fenster lassen sich jetzt in der Größe anpassen und besitzen bei Bedarf einen Scrollbereich – dadurch bleiben alle Knöpfe (z. B. ganz unten im Einstellungen-Fenster) auch bei höherer Windows-Bildschirmskalierung erreichbar.
+
+### Hauptfenster überarbeitet
+
+- Start- und Abbrechen-Knopf sowie die Ordner-Auswahl-Knöpfe (Quelle, Ziel, Temp) sind jetzt größer, abgerundet und deutlich besser lesbar.
+- Mehr Abstand und größere Schrift in der Quelle-Karte und den Eingabefeldern.
+
+### Hintergrundbild verfeinert
+
+- Letzte schmale Ränder ohne Hintergrundbild in der Sidebar, im Content-Bereich und in der Quelle-Karte entfernt – das Bild reicht jetzt lückenlos bis an den Rand.
+- Die Werkzeugleiste mit den Knöpfen Diagnose, KLog, Bibliothek, ShadowMount+, Param/Manifest und PKG-Merger zeigt bewusst kein Hintergrundbild mehr, damit die Knöpfe dort klar hervortreten.
+- Neu in den Einstellungen: ein eigenes Hintergrundbild nur für die Sidebar (Aufgaben-Knöpfe links, Spielvorschau), unabhängig vom Hintergrundbild im Hauptbereich wählbar und ebenso jederzeit zurücksetzbar.
+- Ein Wechsel des Designs (Dunkel/Mittel/Hell) ohne Neustart aktualisiert jetzt auch das Hintergrundbild und die Kartenbeschriftungen korrekt mit.
+
+### Schärfere Darstellung bei Windows-Skalierung
+
+- Die App ist jetzt DPI-bewusst und wird bei Windows-Bildschirmskalierung über 100 % scharf statt unscharf/vergrößert dargestellt.
+
+---
+
+## v1.8.21 – 13.08.2026
+
+### Letzte bildlose Kästen im Hauptfenster entfernt
+
+- Überschrift samt Untertitel, die Statuszeile unten rechts und die Start/Abbrechen-Leiste (inkl. Fortschritts- und Größenanzeige) zeigten noch einen dunklen Kasten statt des Hintergrundbilds, obwohl Titelleiste, Sidebar und Content-Bereich es bereits zeigten.
+- Alle vier Bereiche zeigen das Hintergrundbild jetzt ebenfalls, Text bleibt weiterhin gut lesbar.
+
+---
+
+## v1.8.20 – 13.08.2026
+
+### Hintergrundbild jetzt überall im Fenster sichtbar
+
+- Titelleiste (oben) und Sidebar (links) waren bisher durchgehend deckende Flächen ohne jede Spur des Hintergrundbilds, obwohl der Content-Bereich rechts es schon zeigte.
+- Beide zeigen das Hintergrundbild jetzt ebenfalls, während Buttons und Text weiterhin gut lesbar auf ihrer eigenen Hintergrundfarbe stehen.
+
+---
+
+## v1.8.19 – 12.08.2026
+
+### Quelle-Karte im hellen Design korrigiert
+
+- Im hellen Design wurde das Hintergrundbild bisher genauso stark in die Quelle-Karte eingemischt wie im dunklen und mittleren Design. Da das Hintergrundbild meist dunkel ist, wirkte die eigentlich weiße Karte dadurch unnötig dunkel-gräulich.
+- Die Karte zeigt jetzt im hellen Design nur noch einen dezenten Hauch des Bildes und bleibt überwiegend hell. Dunkles und mittleres Design sind unverändert.
+
+---
+
+## v1.8.18 – 12.08.2026
+
+### Beschriftungen ohne störenden Kasten
+
+- QUELLE, ZIELFORMAT, KOMPRESSION/WORKER, ZIELORDNER und TEMP-ORDNER zeigen jetzt keinen sichtbaren, farblich unpassenden Kasten mehr, sondern den passenden Ausschnitt des Hintergrundbilds direkt hinter dem Text – gut lesbar und ohne Umrandung.
+- Das Hintergrundbild in der Quelle-Karte läuft jetzt an jeder Stelle nahtlos in einem Stück durch, ohne sichtbaren Übergang zwischen Karte und restlichem Fenster.
+
+### Wackeln beim Start behoben
+
+- **Behoben:** Die Karte im Hauptbereich konnte beim Programmstart kurz sichtbar wackeln bzw. die Größe ändern. Das ist jetzt behoben.
+
+### Kleinere Korrektur am Param-/Manifest-Editor
+
+- Das Fenster zum Bearbeiten von `param.json`/`manifest.json` ist jetzt von Anfang an groß genug, sodass alle Knöpfe am unteren Rand sofort sichtbar sind, ohne das Fenster erst manuell zu vergrößern.
+
+---
+
+## v1.8.17 – 12.08.2026
+
+### Hintergrundbild jetzt tatsächlich sichtbar
+
+- Das in v1.8.16 eingeführte Hintergrundbild (Standard oder selbst gewählt) war bisher komplett unsichtbar, weil die Oberfläche es vollständig überdeckte.
+- Jetzt ist es im Hauptbereich (rund um Quelle, Zielformat, Zielordner, Temp-Ordner) sichtbar, mit der gewohnten Deckkraft.
+
+---
+
+## v1.8.16 – 12.08.2026
+
+### Eigenes Hintergrundbild wählbar
+
+- Neuer Knopf **EINSTELLUNGEN** in der Titelleiste (neben DESIGN).
+- Dort lässt sich ein beliebiges Bild als Hintergrund fürs Hauptfenster wählen (JPG, PNG, BMP, GIF, WEBP, TIFF usw.) – es wird automatisch in das passende Format umgewandelt, egal wie es ursprünglich vorliegt.
+- Das Bild wird mit 30 % Deckkraft angezeigt, sofort und ohne Neustart, und bleibt auch nach einem Neustart des Programms erhalten.
+- Über **Zurücksetzen** lässt sich jederzeit wieder der Standard-Hintergrund herstellen.
+
+---
+
+## v1.8.15 – 12.08.2026
+
+### Fehlende param.json automatisch erstellen lassen
+
+- Fehlt beim Erstellen von `.exfat`, `.ffpkg`, `.ffpfsc` oder `.ffpfs` die Datei `sce_sys/param.json` oder ist sie beschädigt, fragt das Programm jetzt: „Soll automatisch eine param.json dafür erstellt werden?“ – mit Ja/Nein.
+- Bei **Ja** wird eine gültige param.json angelegt (die Titel-ID wird nach Möglichkeit aus dem Datei-/Ordnernamen erkannt, z. B. `PPSA04263`) und der Bau läuft normal weiter.
+- Bei **Nein** bricht der Bau wie bisher mit einer klaren Meldung ab.
+
+---
+
+## v1.8.14 – 12.08.2026
+
+### Nochmal schnellere Titel-Infos bei großen Spielen
+
+- Bei sehr großen `.ffpfsc`-Dateien (viele tausend Dateien) erschienen die Titel-Infos bisher langsamer als bei kleineren Spielen. Das ist jetzt behoben – die Anzeige ist durchgängig schnell, egal wie viele Dateien das Spiel enthält.
+
+### Schutz vor unvollständigen `.exfat`/`.ffpkg`-Dateien
+
+- Fehlt in der Quelle die Datei `sce_sys/param.json` oder ist sie beschädigt, bricht die Erstellung von `.exfat`- und `.ffpkg`-Dateien jetzt sofort mit einer klaren Meldung ab, statt eine Datei zu erzeugen, die die PS5 anschließend nicht als gültigen Titel erkennt.
+
+---
+
+## v1.8.13 – 12.08.2026
+
+### Schnellere Anzeige der Titel-Infos
+
+- Wenn du dir die Infos zu einer `.ffpfsc`-Datei anzeigen lässt (Titel, Titel-ID, Version, Region), erscheinen diese jetzt spürbar schneller.
+- Am angezeigten Inhalt ändert sich nichts – nur das Tempo.
+
+---
+
+## v1.8.12 – 11.08.2026
+
+### Komplette englische Übersetzung
+
+- Die Oberfläche ist jetzt durchgängig zweisprachig. Wenn du auf Englisch umschaltest, ist wirklich *alles* auf Englisch – auch alle Dialoge, Zusatzfenster und Meldungen. Vorher war nur ein Teil übersetzt.
+- Sieben alte Werkzeuge, die über keinen Knopf mehr erreichbar waren, wurden entfernt. Am Funktionsumfang der acht Hauptaufgaben und der übrigen Werkzeuge ändert sich dadurch nichts.
+
+---
+
+## v1.8.11 – 10.08.2026
+
+### Keine automatische Berichtsdatei mehr
+
+- Nach einer Konvertierung wird keine zusätzliche `.json`-Berichtsdatei mehr im Zielordner abgelegt.
+- Es erscheint nur noch die Meldung „Vorgang erfolgreich abgeschlossen!“.
+
+---
+
+## v1.8.10 – 10.08.2026
+
+### Wichtiger Fehler bei der Grundkonvertierung behoben
+
+- **Behoben:** Bei Aufgabe 1 (Dump-Ordner → `.ffpfsc`/`.ffpfs`) hatte die erzeugte Datei eine zusätzliche, ungewollte innere Verpackungsebene. Die Dateien haben jetzt denselben Aufbau wie bekannt funktionierende Referenzdateien. *(Eine endgültige Bestätigung auf echter Hardware steht noch aus.)*
+- **Neu:** `.exfat`-Dateien werden nach dem Erstellen zusätzlich auf Vollständigkeit geprüft – unvollständige Dateien werden nicht mehr übernommen.
+- **Verbessert:** `.ffpfs`-Dateien lassen sich jetzt in allen Aufgaben als Quelle verwenden, nicht mehr nur zum Prüfen.
+
+---
+
+## v1.8.9 – 10.08.2026
+
+### Vollständigkeitsprüfung für `.ffpkg`-Dateien
+
+- Nach dem Erstellen einer `.ffpkg`-Datei wird jetzt geprüft, ob wirklich alle Dateien aus dem Quellordner enthalten sind.
+- Das hilft besonders bei Ordnern mit sehr vielen kleinen Dateien: Eine unvollständige Datei wird automatisch verworfen statt fälschlich als fertig übernommen.
+
+---
+
+## v1.8.8 – 10.08.2026
+
+### Design-Wechsel mehrfach hintereinander möglich
+
+- Du kannst das Design jetzt auch mehrmals nacheinander wechseln und anwenden, ohne dass der automatische Neustart beim zweiten Mal fehlschlägt.
+
+---
+
+## v1.8.7 – 10.08.2026
+
+### Störende Meldung beim Neustart reduziert
+
+- Die harmlose Meldung „Failed to remove temporary directory“ nach einem Design-Wechsel tritt jetzt seltener auf.
+- Falls sie doch erscheint, kannst du sie gefahrlos mit OK bestätigen – das Programm funktioniert normal weiter.
+
+---
+
+## v1.8.6 – 09.08.2026
+
+### Automatischer Neustart robuster gemacht
+
+- Der Neustart nach einem Design-Wechsel ist jetzt zuverlässiger und stürzt nicht mehr durch zeitliche Überschneidungen ab.
+
+---
+
+## v1.8.5 – 09.08.2026
+
+### Absturz beim Programmstart behoben
+
+- **Behoben:** Die Windows-Version (`.exe`) stürzte direkt beim Start ab, sobald „Ziehen & Ablegen“ (Drag & Drop) aktiv wurde.
+- Das Ziehen von Ordnern in die Felder für Quelle/Ziel/Temp funktioniert jetzt auch in der `.exe`.
+
+---
+
+## v1.8.4 – 09.08.2026
+
+### Absturz nach Design-Wechsel vollständig behoben
+
+- Der automatische Neustart nach einem Design-Wechsel funktioniert jetzt auch in der Windows-`.exe` zuverlässig und ohne Fehlermeldungen. *(Korrigiert einen unvollständigen ersten Behebungsversuch aus v1.8.2/v1.8.3.)*
+
+---
+
+## v1.8.2 – 09.08.2026
+
+### Design wird jetzt überall korrekt angezeigt
+
+- Nach dem Anwenden eines neuen Designs startet das Programm automatisch neu, damit das gewählte Farbschema wirklich in allen Fenstern korrekt erscheint.
+- Läuft gerade eine Aufgabe, wird der Neustart bis nach deren Abschluss zurückgestellt – eine laufende Konvertierung wird nie unterbrochen.
+
+---
+
+## v1.8.1 – 09.08.2026
+
+### Überarbeitete Farbdesigns und aufgeräumte Titelleiste
+
+- Alle drei Farbdesigns (Hell, Mittel, Dunkel) haben jetzt sichtbare Kontraste – Karten, Buttons und Listen sind in jeder Variante gut lesbar.
+- **Behoben:** Beim Überfahren mancher Buttons mit der Maus war der Text vorher unsichtbar (weiß auf hell).
+- Dropdown-Listen und Tabellen passen sich jetzt ebenfalls dem gewählten Design an.
+- Die Titelleiste zeigt nur noch aktiv genutzte Werkzeuge.
+
+---
+
+## v1.8.0 – 09.08.2026
+
+### Großes Funktions-Update: Aus dem Konverter wird eine Werkzeug-Suite
+
+Diese Version ergänzt viele neue Werkzeuge rund um die acht Hauptaufgaben, ohne die bewährte Konvertierung zu verändern. Neu unter anderem:
+
+- **PKG-Merger** – geteilte Pakete wieder zusammenfügen
+- **Param-/Manifest-Editor** – Metadaten bearbeiten (`param.json`/`manifest.json`)
+- **Bibliothek** – mehrere Ordner durchsuchen, mit Cover-Anzeige
+- **Diagnosebericht** – erzeugt einen Bericht zu Version/System/Log (Zugangsdaten werden geschwärzt)
+- **Klog & ShadowMount+** – Werkzeuge für die PS5-Kommunikation
+- **Deutsch/Englisch-Umschaltung** (Grundgerüst)
+- **Neues Format `.ffpfs`** (unkomprimierte Variante)
+- **Ziehen & Ablegen** (Drag & Drop), CLI-Modus, wählbare Kompressionsstufe, einstellbare Worker-Anzahl, Tastenkürzel
+
+Außerdem behoben: mehrere Programmabstürze in Bibliothek, Diagnosebericht und PKG-Merger sowie eine Fortschrittsanzeige, die bei Aufgabe 1 nahe 95 % einzufrieren schien.
+
+---
+
+## v1.7.76 bis v1.7.90 – Zuverlässige `.ffpkg`-Erstellung
+
+Diese Versionsreihe drehte sich vor allem darum, das Erstellen von `.ffpkg`-Dateien schrittweise **fehlerfrei und zuverlässig** zu machen. Für dich als Nutzer zählt vor allem das Ergebnis:
+
+- Eine `.ffpkg`-Datei wird erst dann als fertig übernommen, wenn sie eine vollständige Prüfung bestanden hat. Fehlerhafte oder unvollständige Dateien werden automatisch verworfen statt ausgegeben.
+- Frühere Abbrüche mit Meldungen wie „BAD MAGIC NUMBER“ oder beschädigte Dateien auf dem Ziellaufwerk gehören damit der Vergangenheit an.
+- Die Fortschrittsanzeige während der `.ffpkg`-Erstellung zeigt jetzt den echten Fortschritt.
+- Auch Ordner mit sehr vielen kleinen Dateien werden korrekt und vollständig verarbeitet.
+- `.ffpkg` kann seit v1.7.84 nicht nur gelesen, sondern auch neu erzeugt werden.
+
+*Die vielen Zwischenversionen (v1.7.76–v1.7.90) waren nötig, weil jeder Schritt an echten Beispieldateien getestet und der nächste Fehler gezielt behoben wurde.*
+
+---
+
+## v1.0.1 bis v1.7.75 – Grundlagen
+
+In dieser frühen Phase entstand das eigentliche Programm: die erste Programmstruktur, die Windows-Oberfläche und die Grundfunktionen zum Packen, Entpacken und Konvertieren von PS5-Dumps. Zu diesen frühen Ständen liegen keine lückenlosen Einzelnotizen mehr vor, deshalb sind sie hier nur zusammengefasst.
+
+---
+
+*Hinweis: Sehr technische Details (Bauprozess, interne Tests, Runtime-Versionen usw.) sind in diesem Changelog absichtlich weggelassen. Sie finden sich bei Bedarf in den ausführlichen Release Notes.*

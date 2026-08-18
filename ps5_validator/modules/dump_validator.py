@@ -22,10 +22,21 @@ REQUIRED_DIRS = ["sce_sys"]
 # Optionale aber typische Ordner
 OPTIONAL_DIRS = ["sce_module", "media", "data"]
 
-# Kritische Dateien für einen PS5-Dump (müssen auf jeden Fall vorhanden sein)
+# Kritische Dateien für einen PS5-Dump (ohne diese ist er unbrauchbar).
 CRITICAL_FILES = [
     "eboot.bin",                    # PS5 Game Executable
     "sce_sys/param.json",           # Game Metadaten (Title, Icon, etc.)
+]
+
+# Erwartete, aber nicht zwingende Dateien.
+#
+# sce_sys/pfs-version.dat stand bis v1.8.31 in CRITICAL_FILES und liess jeden
+# Dump ohne diese Datei als FAILED gelten. Eine Durchsicht von 32 echten
+# Backups zeigte: eboot.bin und param.json sind ausnahmslos vorhanden,
+# pfs-version.dat dagegen in 30 von 32 - je nach verwendetem Dumper fehlt der
+# Marker. Zwei einwandfreie Backups wurden dadurch als beschaedigt gemeldet.
+# Fehlt eine Datei aus dieser Liste, gibt es deshalb nur eine Warnung.
+RECOMMENDED_FILES = [
     "sce_sys/pfs-version.dat",      # PFS-Version-Marker
 ]
 
@@ -119,21 +130,46 @@ class DumpValidator(BaseValidator):
             )
             result.summary["critical_missing"] = missing_critical
 
-        # ── Leere Dateien prüfen ─────────────────────────────────────────────
+        # ── Empfohlene Dateien prüfen ───────────────────────────────────────
+        # Fehlen sie, ist das eine Warnung: Der Dump bleibt brauchbar. Sie
+        # landen bewusst NICHT in summary["missing"], sonst waere der
+        # Gesamtstatus FAILED (siehe unten).
+        missing_recommended = [
+            rec_file for rec_file in RECOMMENDED_FILES
+            if not (root / rec_file).exists()
+        ]
+        if missing_recommended:
+            for rec_file in missing_recommended:
+                result.add_error(f"Empfohlene Datei fehlt: {rec_file}")
+            self._log.info(
+                f"Empfohlene Dateien fehlen ({len(missing_recommended)}): "
+                f"{', '.join(missing_recommended)}"
+            )
+            result.summary["recommended_missing"] = missing_recommended
+
+        # ── Leere Dateien prüfen + Dateigrößen einmalig ermitteln ────────────
+        # Größen werden hier einmalig gecacht statt mehrfach neu gestattet, damit
+        # ein zwischenzeitlich unzugreifbares File (AV-Lock, Cloud-Platzhalter,
+        # Netzwerk-Hänger) nicht mit einem unabgefangenen OSError den gesamten
+        # Lauf abbricht, sondern als ein korrekt gemeldeter Einzelfehler zählt.
         empty_files: list[str] = []
         known_empty: list[str] = []  # legitim leere Marker-Dateien (kein Fehler)
+        file_sizes: dict[Path, int] = {}
         for f in all_files:
             try:
-                if f.stat().st_size == 0:
-                    rel = str(f.relative_to(root))
-                    if _is_known_empty(rel):
-                        known_empty.append(rel)  # Marker-Datei – kein Fehler
-                    else:
-                        empty_files.append(rel)
-                        result.add_error(f"Leere Datei: {rel}")
+                size = f.stat().st_size
             except OSError as exc:
                 result.add_error(f"Zugriffsfehler: {f.relative_to(root)}: {exc}")
                 result.summary["corrupted"].append(str(f.relative_to(root)))
+                continue
+            file_sizes[f] = size
+            if size == 0:
+                rel = str(f.relative_to(root))
+                if _is_known_empty(rel):
+                    known_empty.append(rel)  # Marker-Datei – kein Fehler
+                else:
+                    empty_files.append(rel)
+                    result.add_error(f"Leere Datei: {rel}")
 
         result.summary["empty_files"] = empty_files
         if known_empty:
@@ -148,48 +184,46 @@ class DumpValidator(BaseValidator):
         cache: dict = load_cache(cache_path) if self._resume else {}
 
         # ── Multithreaded SHA-256 ────────────────────────────────────────────
-        total_bytes = sum(
-            f.stat().st_size for f in all_files
-            if f.stat().st_size > 0 and not self._is_cancelled()
-        )
+        hashable_files = [f for f in all_files if file_sizes.get(f, 0) > 0]
+        total_bytes = sum(file_sizes[f] for f in hashable_files)
         done_bytes  = 0
         hashes: dict[str, str] = {}
-        corrupted:  list[str]  = []
 
-        def _hash_one(f: Path) -> tuple[str, str | None, str | None]:
-            """(rel_path, hash_or_None, error_or_None)"""
+        def _hash_one(f: Path) -> tuple[str, str | None, str | None, str | None]:
+            """(rel_path, hash_or_None, error_or_None, mtime_or_None)"""
             rel = str(f.relative_to(root))
-            # Cache-Hit prüfen
-            if self._resume and rel in cache:
-                cached = cache[rel]
-                mtime  = str(f.stat().st_mtime)
-                if cached.get("mtime") == mtime:
-                    return rel, cached["hash"], None
             try:
+                mtime = str(f.stat().st_mtime)
+                # Cache-Hit nur bei übereinstimmender mtime UND Größe akzeptieren,
+                # sonst kann ein truncated/wiederhergestelltes File mit erhaltener
+                # mtime unbemerkt den alten Hash weiterverwenden.
+                if self._resume and rel in cache:
+                    cached = cache[rel]
+                    if cached.get("mtime") == mtime and cached.get("size") == file_sizes.get(f):
+                        return rel, cached["hash"], None, mtime
                 h = sha256_file(f)
-                return rel, h, None
+                return rel, h, None, mtime
             except OSError as exc:
-                return rel, None, str(exc)
+                return rel, None, str(exc), None
 
         with ThreadPoolExecutor(max_workers=self._threads) as pool:
-            futures = {pool.submit(_hash_one, f): f for f in all_files if f.stat().st_size > 0}
+            futures = {pool.submit(_hash_one, f): f for f in hashable_files}
             for fut in as_completed(futures):
                 if self._is_cancelled():
                     pool.shutdown(wait=False, cancel_futures=True)
                     result.add_error("Abgebrochen durch Benutzer.")
                     break
-                rel, h, err = fut.result()
+                rel, h, err, mtime = fut.result()
+                f = futures[fut]
                 if err:
                     result.add_error(f"Hash-Fehler {rel}: {err}")
-                    corrupted.append(rel)
                     result.summary["corrupted"].append(rel)
                 else:
                     hashes[rel] = h
                     # Cache aktualisieren
-                    f = futures[fut]
-                    cache[rel] = {"hash": h, "mtime": str(f.stat().st_mtime)}
+                    cache[rel] = {"hash": h, "mtime": mtime, "size": file_sizes.get(f)}
 
-                done_bytes += futures[fut].stat().st_size
+                done_bytes += file_sizes.get(f, 0)
                 self._report_progress(done_bytes, total_bytes, rel)
 
         # ── Cache speichern ──────────────────────────────────────────────────
@@ -201,7 +235,7 @@ class DumpValidator(BaseValidator):
         result.summary["total_size"] = fmt_bytes(total_bytes)
 
         # ── Gesamtstatus ─────────────────────────────────────────────────────
-        if corrupted or result.summary["missing"]:
+        if result.summary["corrupted"] or result.summary["missing"]:
             result.status = "FAILED"
         elif empty_files or result.errors:
             result.status = "WARNING"

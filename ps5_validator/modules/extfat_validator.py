@@ -75,9 +75,9 @@ class ExtfatValidator(BaseValidator):
                     # Boot-Signatur prüfen (Offset 510)
                     if boot[510:512] != EXFAT_BOOT_SIG:
                         result.add_error("Boot-Signatur ungültig (0x55AA erwartet).")
-                    # Cluster-Anzahl (Offset 0x4C, 4 Bytes LE)
-                    if len(boot) >= 0x50:
-                        cluster_count = struct.unpack_from("<I", boot, 0x4C)[0]
+                    # Cluster-Anzahl (Offset 0x5C, 4 Bytes LE)
+                    if len(boot) >= 0x60:
+                        cluster_count = struct.unpack_from("<I", boot, 0x5C)[0]
                     self._log.info(f"exFAT erkannt | Cluster: {cluster_count}")
                 else:
                     oem_str = oem.decode("ascii", errors="replace").strip()

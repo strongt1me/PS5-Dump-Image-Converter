@@ -18,6 +18,7 @@ import shutil
 import struct
 import subprocess
 import time
+import unicodedata
 import uuid
 from collections import deque
 from collections.abc import Callable, Iterator
@@ -818,6 +819,63 @@ def _extract_preferred_title_id(*, file_stem: str) -> str | None:
     return None
 
 
+#: Typografische Zeichen, die eine sinnvolle ASCII-Entsprechung haben, die die
+#: Unicode-Zerlegung (NFKD) aber nicht liefert. Alles, was auch danach noch
+#: ausserhalb von ASCII liegt, wird zu "_".
+_INNER_NAME_ASCII_SUBSTITUTES: dict[str, str] = {
+    "©": "(C)", "®": "(R)", "™": "(TM)",
+    "ß": "ss", "×": "x",
+    "‐": "-", "‑": "-", "‒": "-", "–": "-",
+    "—": "-", "―": "-", "−": "-",
+    "‘": "'", "’": "'", "‚": "'", "‛": "'",
+    "“": "'", "”": "'", "„": "'", "‟": "'",
+    "«": "'", "»": "'",
+    " ": " ", " ": " ", " ": " ", " ": " ",
+}
+
+
+def fold_inner_name_to_ascii(source_name: str) -> str:
+    """Fold a file name to ASCII while keeping as much of the original as possible.
+
+    PFS directory entries store names as ASCII (see ``Dirent.to_bytes``), so a
+    name carrying characters such as U+2122 or an en dash cannot be written at
+    all. Renaming the whole name is unnecessary for that: only the characters
+    that ASCII cannot represent need replacing.
+
+    Args:
+        source_name: Original file name, possibly containing non-ASCII characters.
+
+    Returns:
+        An ASCII-only file name; unchanged when the input was already ASCII.
+    """
+    if source_name.isascii():
+        return source_name
+
+    folded_chars: list[str] = []
+    character: str
+    for character in source_name:
+        substitute: str | None = _INNER_NAME_ASCII_SUBSTITUTES.get(character)
+        if substitute is not None:
+            folded_chars.append(substitute)
+            continue
+        decomposed: str = "".join(
+            part for part in unicodedata.normalize("NFKD", character)
+            if not unicodedata.combining(part)
+        )
+        folded_chars.append(decomposed if decomposed and decomposed.isascii() else "_")
+
+    folded: str = "".join(folded_chars)
+    # NFKD can yield path-significant characters (U+2044 becomes "/"), which must
+    # never appear in a directory entry name.
+    forbidden: str
+    for forbidden in '/\\:*?"<>|':
+        folded = folded.replace(forbidden, "_")
+    folded = folded.strip()
+    if not folded:
+        folded = _generate_safe_single_file_fallback_stem()
+    return folded
+
+
 def resolve_single_file_inner_name(*, source_name: str, rename_inner_image: bool = True) -> str:
     """Resolve the internal file name used for single-file images.
 
@@ -829,7 +887,9 @@ def resolve_single_file_inner_name(*, source_name: str, rename_inner_image: bool
         Safe internal file name for the single-file image.
     """
     if not rename_inner_image:
-        return source_name
+        # "Do not rename" must not mean "write an image that cannot be built":
+        # only the characters PFS cannot store are replaced, the rest is kept.
+        return fold_inner_name_to_ascii(source_name)
 
     source_path: Path = Path(source_name)
     suffixes: list[str] = source_path.suffixes

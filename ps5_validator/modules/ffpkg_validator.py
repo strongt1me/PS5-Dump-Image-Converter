@@ -8,6 +8,7 @@ from typing import Callable
 
 from ps5_validator.core.validator_base import BaseValidator, ValidationResult
 from ps5_validator.utils.file_io import fmt_bytes
+from ps5_validator.utils.ffpkg_support import build_readonly_validation_commands
 from ps5_validator.utils.hashing import sha256_stream
 from ps5_validator.utils.logger import get_logger
 
@@ -73,8 +74,9 @@ class FfpkgValidator(BaseValidator):
         self._log.info("Starte native UFS2-Validierung: %s", image.name)
 
         try:
-            info_rc, info_output = self._run_tool("info", str(image))
-        except OSError as exc:
+            info_cmd, fsck_cmd = build_readonly_validation_commands(tool, image)
+            info_rc, info_output = self._run_tool(*info_cmd[1:])
+        except (OSError, ValueError) as exc:
             result.set_failed(f"UFS2Tool konnte nicht gestartet werden: {exc}")
             return result
         result.summary["ufs2_info"] = info_output or "keine Ausgabe"
@@ -89,7 +91,7 @@ class FfpkgValidator(BaseValidator):
             result.set_failed("Validierung abgebrochen.")
             return result
 
-        fsck_rc, fsck_output = self._run_tool("fsck_ufs", "-fn", str(image))
+        fsck_rc, fsck_output = self._run_tool(*fsck_cmd[1:])
         result.summary["ufs2_fsck"] = fsck_output or "keine Ausgabe"
         result.summary["fsck_return_code"] = fsck_rc
         if fsck_rc != 0:

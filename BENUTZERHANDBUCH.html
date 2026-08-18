@@ -1,0 +1,1098 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.50</title>
+<style>
+:root{
+  --bg:#070b14;
+  --bg2:#0c1322;
+  --karte:#111a2c;
+  --karte2:#16223a;
+  --rand:#1f3050;
+  --rand-hell:#2c4470;
+  --text:#dce6f5;
+  --text-leise:#8ea3c4;
+  --blau:#2f8fff;
+  --blau-hell:#6fb4ff;
+  --blau-tief:#0f4c9c;
+  --gruen:#3ddc84;
+  --gelb:#ffcc4d;
+  --rot:#ff5f6d;
+  --schrift:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--schrift);
+  font-size:16px;
+  line-height:1.7;
+  -webkit-font-smoothing:antialiased;
+}
+
+/* ---------- Kopfbereich ---------- */
+.kopf{
+  position:relative;
+  overflow:hidden;
+  padding:64px 40px 56px;
+  background:
+    radial-gradient(1200px 400px at 15% -10%, rgba(47,143,255,.28), transparent 60%),
+    radial-gradient(900px 380px at 85% 0%, rgba(15,76,156,.35), transparent 65%),
+    linear-gradient(180deg,#0a1224 0%, var(--bg2) 100%);
+  background-color:var(--bg2);
+  border-bottom:1px solid var(--rand);
+}
+.kopf::after{
+  content:"";
+  position:absolute; inset:0;
+  background-image:
+    linear-gradient(rgba(47,143,255,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(47,143,255,.05) 1px, transparent 1px);
+  background-size:44px 44px;
+  mask-image:linear-gradient(180deg, rgba(0,0,0,.7), transparent 75%);
+  pointer-events:none;
+}
+.kopf-inhalt{position:relative; z-index:1; max-width:1180px; margin:0 auto}
+.tasten{display:flex; gap:14px; margin-bottom:22px}
+.taste{
+  width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center;
+  border:1.5px solid var(--rand-hell);
+  background:rgba(17,26,44,.75);
+  color:var(--blau-hell);
+  font-size:15px;
+  box-shadow:0 0 18px rgba(47,143,255,.18) inset;
+}
+.kopf h1{
+  margin:0 0 10px;
+  font-size:44px;
+  line-height:1.15;
+  font-weight:700;
+  letter-spacing:-.5px;
+}
+.kopf h1 .akzent{
+  background:linear-gradient(92deg,var(--blau-hell),var(--blau));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.kopf .unter{color:var(--text-leise); font-size:18px; margin:0 0 26px; max-width:72ch}
+.marken{display:flex; flex-wrap:wrap; gap:10px}
+.marke{
+  padding:6px 14px; border-radius:999px;
+  border:1px solid var(--rand-hell);
+  background:rgba(47,143,255,.10);
+  color:var(--blau-hell);
+  font-size:13px; font-weight:600; letter-spacing:.4px;
+}
+.marke.grau{background:rgba(140,160,190,.08); color:var(--text-leise); border-color:var(--rand)}
+
+/* ---------- Grundraster ---------- */
+.raster{
+  max-width:1180px; margin:0 auto;
+  display:grid; grid-template-columns:290px 1fr; gap:44px;
+  padding:44px 40px 90px;
+}
+
+/* ---------- Verzeichnis ---------- */
+nav.inhalt{
+  position:sticky; top:24px; align-self:start;
+  max-height:calc(100vh - 48px); overflow-y:auto;
+  border:1px solid var(--rand); border-radius:14px;
+  background:linear-gradient(180deg,var(--karte),rgba(17,26,44,.55));
+  padding:20px 18px;
+}
+nav.inhalt h2{
+  margin:0 0 14px; font-size:12px; letter-spacing:1.6px;
+  text-transform:uppercase; color:var(--blau-hell);
+}
+nav.inhalt ol{list-style:none; margin:0; padding:0; counter-reset:kap}
+nav.inhalt li{counter-increment:kap; margin:1px 0}
+nav.inhalt a{
+  display:flex; gap:10px; align-items:baseline;
+  padding:6px 10px; border-radius:8px;
+  color:var(--text-leise); text-decoration:none; font-size:14px;
+  border-left:2px solid transparent;
+}
+nav.inhalt a::before{
+  content:counter(kap); font-variant-numeric:tabular-nums;
+  color:var(--rand-hell); font-size:12px; min-width:18px;
+}
+nav.inhalt a:hover{background:rgba(47,143,255,.10); color:var(--text)}
+nav.inhalt a.aktiv{
+  background:rgba(47,143,255,.14); color:var(--blau-hell);
+  border-left-color:var(--blau);
+}
+nav.inhalt a.aktiv::before{color:var(--blau)}
+
+/* ---------- Inhalt ---------- */
+main{min-width:0}
+section.kapitel{
+  scroll-margin-top:24px;
+  margin-bottom:14px; padding:30px 32px;
+  border:1px solid var(--rand); border-radius:16px;
+  background:linear-gradient(180deg,rgba(17,26,44,.9),rgba(12,19,34,.7));
+}
+section.kapitel > h2{
+  margin:0 0 6px; font-size:27px; font-weight:700; letter-spacing:-.3px;
+  display:flex; align-items:center; gap:14px;
+}
+.nr{
+  flex:none; width:38px;height:38px;border-radius:10px;
+  display:grid;place-items:center;
+  background:linear-gradient(145deg,var(--blau),var(--blau-tief));
+  color:#fff; font-size:16px; font-weight:700;
+  box-shadow:0 4px 14px rgba(47,143,255,.28);
+}
+section.kapitel h3{
+  margin:30px 0 10px; font-size:19px; font-weight:650; color:var(--blau-hell);
+  padding-bottom:7px; border-bottom:1px solid var(--rand);
+}
+section.kapitel h4{margin:22px 0 8px; font-size:16px; font-weight:650; color:var(--text)}
+p{margin:12px 0}
+a{color:var(--blau-hell)}
+strong{color:#fff; font-weight:650}
+code{
+  font-family:var(--mono); font-size:.88em;
+  background:rgba(47,143,255,.12); color:var(--blau-hell);
+  padding:2px 6px; border-radius:5px; border:1px solid rgba(47,143,255,.18);
+}
+pre{
+  background:#060a12; border:1px solid var(--rand); border-radius:11px;
+  padding:16px 18px; overflow-x:auto; margin:16px 0;
+}
+pre code{background:none; border:none; color:var(--text); padding:0; font-size:13.5px}
+
+ul,ol{margin:12px 0; padding-left:24px}
+li{margin:6px 0}
+ol.schritte{list-style:none; counter-reset:s; padding-left:0}
+ol.schritte li{
+  counter-increment:s; position:relative;
+  padding:9px 0 9px 46px; margin:0;
+  border-bottom:1px solid rgba(31,48,80,.5);
+}
+ol.schritte li:last-child{border-bottom:none}
+ol.schritte li::before{
+  content:counter(s);
+  position:absolute; left:0; top:9px;
+  width:28px;height:28px;border-radius:50%;
+  display:grid;place-items:center;
+  background:rgba(47,143,255,.14); border:1px solid var(--rand-hell);
+  color:var(--blau-hell); font-size:13px; font-weight:700;
+}
+
+/* ---------- Tabellen ---------- */
+.tabelle{overflow-x:auto; margin:18px 0}
+table{width:100%; border-collapse:collapse; font-size:14.5px}
+th,td{padding:10px 14px; text-align:left; vertical-align:top; border-bottom:1px solid var(--rand)}
+th{
+  background:rgba(47,143,255,.10); color:var(--blau-hell);
+  font-weight:650; font-size:12.5px; letter-spacing:.7px; text-transform:uppercase;
+  border-bottom:1px solid var(--rand-hell);
+}
+tbody tr:hover{background:rgba(47,143,255,.045)}
+td code{white-space:nowrap}
+
+/* ---------- Merkkästen ---------- */
+.kasten{
+  margin:20px 0; padding:15px 18px 15px 20px;
+  border-radius:0 11px 11px 0; border-left:3px solid var(--blau);
+  background:rgba(47,143,255,.08);
+}
+.kasten .titel{
+  display:block; font-weight:700; font-size:13px; letter-spacing:.9px;
+  text-transform:uppercase; color:var(--blau-hell); margin-bottom:6px;
+}
+.kasten p:first-of-type{margin-top:0}
+.kasten p:last-child{margin-bottom:0}
+.kasten.warnung{border-left-color:var(--rot); background:rgba(255,95,109,.09)}
+.kasten.warnung .titel{color:var(--rot)}
+.kasten.tipp{border-left-color:var(--gruen); background:rgba(61,220,132,.08)}
+.kasten.tipp .titel{color:var(--gruen)}
+.kasten.achtung{border-left-color:var(--gelb); background:rgba(255,204,77,.09)}
+.kasten.achtung .titel{color:var(--gelb)}
+
+/* Statuspunkte in Tabellen */
+.punkt{display:inline-block; width:9px;height:9px;border-radius:50%; margin-right:7px}
+.p-gruen{background:var(--gruen)} .p-gelb{background:var(--gelb)} .p-rot{background:var(--rot)}
+
+/* ---------- Fuß ---------- */
+footer{
+  max-width:1180px; margin:0 auto; padding:34px 40px 60px;
+  border-top:1px solid var(--rand); color:var(--text-leise); font-size:14px;
+}
+footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
+
+/* ---------- Schmale Fenster ---------- */
+@media (max-width:960px){
+  .raster{grid-template-columns:1fr; padding:28px 20px 60px; gap:26px}
+  nav.inhalt{position:static; max-height:none}
+  .kopf{padding:44px 20px 38px}
+  .kopf h1{font-size:32px}
+  section.kapitel{padding:22px 18px}
+}
+
+/* ---------- Druck / PDF ---------- */
+/* Kein Seitenrand: Der dunkle Hintergrund soll bis an die Blattkante reichen.
+   Mit Rand blieb ringsum ein weisser Streifen stehen - Edge malt den
+   Seitenhintergrund nicht in den Randbereich, und auch ein fest
+   positioniertes Element deckt ihn nicht ab. Die Abstaende liegen deshalb
+   innen, an Kopf, Kapiteln und Fussbereich. */
+@page{
+  size:A4;
+  margin:0;
+}
+@media print{
+  html,body{background:#070b14 !important}
+  body{
+    font-size:10.5pt; line-height:1.55;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact;
+  }
+  *{-webkit-print-color-adjust:exact !important; print-color-adjust:exact !important}
+  /* Der Seitenhintergrund deckt sonst nur den Satzspiegel ab, die Raender
+     blieben weiss. Ein fest positioniertes Element wird auf jeder Seite neu
+     gezeichnet und fuellt sie ganz. */
+  body::before{
+    content:""; position:fixed; inset:0;
+    background:#070b14; z-index:-1;
+  }
+  /* Text mit Farbverlauf hinterlaesst im PDF eine feine Linie an der Kante -
+     im Druck deshalb eine einfarbige Schrift. */
+  .kopf h1 .akzent{
+    background:none; color:var(--blau-hell);
+    -webkit-text-fill-color:var(--blau-hell);
+  }
+  nav.inhalt{display:none}
+  .raster{display:block; max-width:none; padding:0; margin:0}
+  .kopf{padding:34mm 14mm 18mm; border:none; break-after:page}
+  .kopf h1{font-size:30pt}
+  .kopf .unter{font-size:12pt}
+  .druck-inhalt{display:block !important; break-after:page; padding:16mm 14mm}
+  /* Der eigene Innenabstand der Kapitel ist zugleich der Sicherheitsrand zur
+     Blattkante - siehe @page oben. */
+  section.kapitel{
+    break-inside:auto; page-break-inside:auto;
+    margin:0 10mm 5mm; padding:9mm 8mm;
+    border-radius:8px;
+  }
+  footer{padding:12mm 14mm 16mm; max-width:none}
+  section.kapitel > h2{break-after:avoid; page-break-after:avoid; font-size:16pt}
+  section.kapitel h3,section.kapitel h4{break-after:avoid; page-break-after:avoid}
+  table{break-inside:auto; font-size:9pt}
+  tr,li,.kasten,pre{break-inside:avoid; page-break-inside:avoid}
+  thead{display:table-header-group}
+  a{text-decoration:none}
+  footer{break-before:auto}
+}
+/* Nur im PDF sichtbares Verzeichnis */
+.druck-inhalt{display:none}
+.druck-inhalt h2{
+  font-size:18pt; margin:0 0 8mm; color:var(--blau-hell);
+  padding-bottom:4mm; border-bottom:1px solid var(--rand);
+}
+.druck-inhalt ol{columns:2; column-gap:12mm; list-style:none; padding:0; counter-reset:dk}
+.druck-inhalt li{counter-increment:dk; break-inside:avoid; margin:0 0 3mm; font-size:10pt}
+.druck-inhalt li::before{content:counter(dk) ".  "; color:var(--blau); font-weight:700}
+</style>
+</head>
+<body>
+
+<header class="kopf">
+  <div class="kopf-inhalt">
+    <div class="tasten" aria-hidden="true">
+      <span class="taste">&#10005;</span>
+      <span class="taste">&#9675;</span>
+      <span class="taste">&#9633;</span>
+      <span class="taste">&#9651;</span>
+    </div>
+    <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
+    <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
+    <div class="marken">
+      <span class="marke">Version v1.8.50</span>
+      <span class="marke">Stand 16. August 2026</span>
+      <span class="marke grau">Für Windows</span>
+      <span class="marke grau">Deutsch / English</span>
+    </div>
+  </div>
+</header>
+
+<!-- Verzeichnis nur im PDF -->
+<div class="druck-inhalt">
+  <h2>Inhalt</h2>
+  <ol>
+    <li>Willkommen</li>
+    <li>Die Oberfläche in 60 Sekunden</li>
+    <li>Der sichere Standardablauf</li>
+    <li>Welche Aufgabe passt zu meiner Quelle?</li>
+    <li>Aufgabe 1 – Dump-Ordner konvertieren</li>
+    <li>Aufgabe 2 – ffpfsc konvertieren</li>
+    <li>Aufgabe 3 – exFAT konvertieren</li>
+    <li>Aufgabe 4 – ffpkg konvertieren</li>
+    <li>Aufgabe 5 – Sammelkonvertierung</li>
+    <li>Aufgabe 6 – AIO Konvertierung</li>
+    <li>Aufgabe 7 – AMPR EMU Manager</li>
+    <li>Aufgabe 8 – Validator</li>
+    <li>Die Werkzeugleiste oben</li>
+    <li>Design und Hintergrundbild</li>
+    <li>Häufige Probleme einfach lösen</li>
+    <li>Begriffe kurz erklärt</li>
+    <li>Schnellübersicht zum Ausdrucken</li>
+    <li>Die Anwendung unter Linux</li>
+    <li>Die Anwendung auf dem Mac</li>
+  </ol>
+</div>
+
+<div class="raster">
+
+<nav class="inhalt" aria-label="Inhaltsverzeichnis">
+  <h2>Inhalt</h2>
+  <ol>
+    <li><a href="#k1">Willkommen</a></li>
+    <li><a href="#k2">Die Oberfläche in 60 Sekunden</a></li>
+    <li><a href="#k3">Der sichere Standardablauf</a></li>
+    <li><a href="#k4">Welche Aufgabe passt?</a></li>
+    <li><a href="#k5">Aufgabe 1 – Dump-Ordner</a></li>
+    <li><a href="#k6">Aufgabe 2 – ffpfsc</a></li>
+    <li><a href="#k7">Aufgabe 3 – exFAT</a></li>
+    <li><a href="#k8">Aufgabe 4 – ffpkg</a></li>
+    <li><a href="#k9">Aufgabe 5 – Sammelkonvertierung</a></li>
+    <li><a href="#k10">Aufgabe 6 – AIO Konvertierung</a></li>
+    <li><a href="#k11">Aufgabe 7 – AMPR EMU Manager</a></li>
+    <li><a href="#k12">Aufgabe 8 – Validator</a></li>
+    <li><a href="#k13">Die Werkzeugleiste oben</a></li>
+    <li><a href="#k14">Design und Hintergrundbild</a></li>
+    <li><a href="#k15">Häufige Probleme lösen</a></li>
+    <li><a href="#k16">Begriffe kurz erklärt</a></li>
+    <li><a href="#k17">Schnellübersicht</a></li>
+    <li><a href="#k18">Unter Linux</a></li>
+    <li><a href="#k19">Auf dem Mac</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section class="kapitel" id="k1">
+  <h2><span class="nr">1</span> Willkommen</h2>
+  <p>Dieses Handbuch richtet sich an alle, die den PS5 Dump &amp; Image Converter zum ersten Mal verwenden. Es erklärt die sichtbaren Schaltflächen, den sicheren Standardablauf, alle acht Aufgaben sowie die Zusatzwerkzeuge in der oberen Leiste – in einfacher Sprache. Sie müssen keine technischen Details über Dateisysteme oder Containeraufbau kennen.</p>
+
+  <div class="kasten">
+    <span class="titel">Das Wichtigste in einem Satz</span>
+    <p>Wählen Sie links die passende Aufgabe, bestimmen Sie Quelle, Zielformat, Zielordner und Temp-Ordner – und starten Sie erst dann die Verarbeitung.</p>
+  </div>
+
+  <h3>1.1 Was Sie vor dem Start benötigen</h3>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Voraussetzung</th><th>Einfache Empfehlung</th></tr></thead>
+    <tbody>
+      <tr><td>Windows-PC</td><td>Nutzen Sie die für Windows erstellte Programmdatei und starten Sie sie aus einem normalen Benutzerordner.</td></tr>
+      <tr><td>oder ein Linux-System</td><td>Das Programm läuft auch unter Linux. Wie Sie es dort erstellen und starten, steht in <a href="#k18">Kapitel 18</a>. Einige Abläufe bleiben Windows vorbehalten.</td></tr>
+      <tr><td>oder ein Mac</td><td>Das Programm läuft auch auf einem Mac mit macOS 11 oder neuer. Wie Sie es dort erstellen und starten, steht in <a href="#k19">Kapitel 19</a>. Es gelten dieselben Einschränkungen wie unter Linux.</td></tr>
+      <tr><td>Freier Speicherplatz</td><td>Halten Sie Platz für Quelle, Zwischendateien und Ergebnis bereit. Große Dumps benötigen entsprechend mehr.</td></tr>
+      <tr><td>Arbeitskopie</td><td>Arbeiten Sie bei wichtigen Daten immer mit einer Kopie. Bewahren Sie die unveränderte Quelle getrennt auf.</td></tr>
+      <tr><td>Lokaler Temp-Ordner</td><td>Möglichst ein schneller lokaler Datenträger, zum Beispiel <code>C:\PS5Converter_Temp</code>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Sicherheitsregel für den Anfang</span>
+    <p>Löschen oder überschreiben Sie die ursprünglichen Dateien erst, nachdem das Ergebnis erfolgreich erstellt und bei Bedarf mit <strong>Aufgabe 8 – Validator</strong> geprüft wurde.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k2">
+  <h2><span class="nr">2</span> Die Oberfläche in 60 Sekunden</h2>
+  <p>Links wählen Sie eine der acht Aufgaben. Rechts erscheinen nur die Felder, die für diese Aufgabe gebraucht werden. Der große Bereich unterhalb von STARTEN zeigt während der Arbeit Meldungen und Ergebnisse. Unter den Aufgaben zeigt die Seitenleiste das Titelbild des gewählten Spiels mit seinem Namen darunter.</p>
+
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Bereich</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>QUELLE</strong></td><td>Die Datei oder der Ordner, der verarbeitet werden soll.</td></tr>
+      <tr><td><strong>ZIELFORMAT</strong></td><td>Legt fest, ob ein Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> entstehen soll. Erscheint nur, wenn es gebraucht wird.</td></tr>
+      <tr><td><strong>KOMPRESSION / WORKER-THREADS</strong></td><td>Kompressionsstufe (1 am schnellsten bis 9 maximal) und Anzahl gleichzeitiger Arbeitsvorgänge. Für den Einstieg reicht „6 – Ausgewogen“.</td></tr>
+      <tr><td><strong>ZIELORDNER</strong></td><td>Hierhin schreibt das Programm das fertige Ergebnis. Verwenden Sie am besten einen anderen Ordner als die Quelle.</td></tr>
+      <tr><td><strong>TEMP-ORDNER</strong></td><td>Ablage für vorübergehende Arbeitsdateien.</td></tr>
+      <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld unter TEMP-ORDNER. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
+      <tr><td><strong>STARTEN</strong></td><td>Beginnt die gewählte Aufgabe, sobald alle erforderlichen Angaben vorliegen.</td></tr>
+      <tr><td><strong>ABBRECHEN</strong></td><td>Fordert einen kontrollierten Abbruch an. Warten Sie danach, bis das Programm den Abbruch bestätigt.</td></tr>
+      <tr><td><strong>Protokollbereich</strong></td><td>Zeigt verständliche Statusmeldungen, Warnungen und den Abschluss der Aufgabe.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k13">Kapitel 13</a> erklärt.</p>
+</section>
+
+<section class="kapitel" id="k3">
+  <h2><span class="nr">3</span> Der sichere Standardablauf</h2>
+  <p>Gehen Sie bei jeder Konvertierung in derselben Reihenfolge vor. So vermeiden Sie die häufigsten Auswahlfehler.</p>
+
+  <ol class="schritte">
+    <li>Klicken Sie links auf die gewünschte Aufgabe.</li>
+    <li>Wählen Sie die Quelle über den Knopf rechts neben dem Feld QUELLE.</li>
+    <li>Wählen Sie, falls angezeigt, das ZIELFORMAT sowie bei Bedarf Kompressionsstufe und Worker-Threads.</li>
+    <li>Wählen Sie einen separaten ZIELORDNER und einen beschreibbaren TEMP-ORDNER.</li>
+    <li>Prüfen Sie alle Pfade noch einmal und klicken Sie auf STARTEN.</li>
+    <li>Lassen Sie das Programm geöffnet, bis im Protokoll ein erfolgreicher Abschluss gemeldet wird.</li>
+  </ol>
+
+  <div class="kasten tipp">
+    <span class="titel">Empfohlener erster Test</span>
+    <p>Beginnen Sie mit einer Kopie kleiner Testdaten. Prüfen Sie diese zuerst mit Aufgabe 8. Führen Sie anschließend eine Konvertierung aus und sehen Sie sich das Ergebnis an, bevor Sie größere Daten verwenden.</p>
+  </div>
+
+  <h3>3.1 Fortschritt richtig lesen</h3>
+  <p>Bei einer laufenden Aufgabe zeigt der Balken den Gesamtfortschritt, daneben steht derselbe Wert als Prozentzahl. Bei größeren Konvertierungen ergänzt die Statuszeile Phasenangaben (etwa „Phase 3/4 – …“) sowie – sofern verfügbar – eine Zeile mit aktueller CPU-, RAM- und Temp-Speicher-Auslastung. Diese Anzeigen werden gemeinsam aktualisiert.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Während der Verarbeitung</span>
+    <p>Schließen Sie das Programm nicht gewaltsam und trennen Sie den Datenträger nicht. Wenn Sie ABBRECHEN verwenden, warten Sie auf die Abschlussmeldung. Ein unvollständiges Ergebnis sollten Sie nicht weiterverwenden.</p>
+  </div>
+
+  <h3>3.2 Rechner nach getaner Arbeit herunterfahren</h3>
+  <p>Große Konvertierungen laufen lange. Mit dem Ankreuzfeld <strong>Rechner nach erfolgreichem Abschluss herunterfahren</strong> (unter TEMP-ORDNER) können Sie den Rechner dabei allein lassen.</p>
+  <p>So läuft es ab, wenn die Aufgabe <strong>erfolgreich</strong> war:</p>
+  <ol class="schritte">
+    <li>Ein Fenster erscheint und zählt 60 Sekunden herunter. Solange können Sie mit <strong>Abbrechen – Rechner anlassen</strong> oder der ESC-Taste widersprechen.</li>
+    <li>Danach löst das Programm alle eingebundenen Abbilder, entfernt die temporären Arbeitsdateien und schreibt das Protokoll auf die Festplatte.</li>
+    <li>Erst dann fährt Windows herunter – ohne weitere Rückfragen.</li>
+  </ol>
+
+  <div class="kasten achtung">
+    <span class="titel">Bei einem Fehler passiert nichts</span>
+    <p>Nach einem Fehler oder nach ABBRECHEN bleibt der Rechner an, damit Sie die Meldung im Protokoll in Ruhe lesen können. Genau dafür ist die Funktion an das <em>Ergebnis</em> der Aufgabe gebunden und nicht an ihr bloßes Ende.</p>
+  </div>
+
+  <ul>
+    <li>Das Herunterfahren erfolgt ohne Rückfragen und beendet auch andere Programme. Ungespeicherte Arbeit in anderen Fenstern geht dabei verloren – speichern Sie vorher.</li>
+    <li>Bei aktivem Ankreuzfeld erscheint am Ende <strong>keine</strong> Erfolgsmeldung zum Wegklicken; sie würde auf eine Bestätigung warten, die niemand gibt. Der Erfolg steht in der Statuszeile und im Protokoll.</li>
+  </ul>
+  <p>Die Einstellung wird gespeichert und gilt auch beim nächsten Start. Im Kommandozeilenmodus übernimmt das der Schalter <code>--shutdown-on-success</code>.</p>
+</section>
+
+<section class="kapitel" id="k4">
+  <h2><span class="nr">4</span> Welche Aufgabe passt zu meiner Quelle?</h2>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Was liegt vor?</th><th>Aufgabe</th><th>Typischer Zweck</th></tr></thead>
+    <tbody>
+      <tr><td>Ein normaler Dump-Ordner</td><td><strong>1</strong></td><td>In <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> umwandeln.</td></tr>
+      <tr><td>Eine <code>.ffpfsc</code>-Datei</td><td><strong>2</strong></td><td>Als Ordner entpacken oder in ein anderes unterstütztes Format umwandeln.</td></tr>
+      <tr><td>Eine <code>.exFAT</code>-Datei</td><td><strong>3</strong></td><td>Als Ordner entpacken oder nach <code>.ffpfsc</code>/<code>.ffpfs</code>/<code>.ffpkg</code> umwandeln.</td></tr>
+      <tr><td>Eine <code>.ffpkg</code>-Datei</td><td><strong>4</strong></td><td>Als Ordner, <code>.ffpfsc</code>, <code>.exFAT</code> oder erneut als geprüfte <code>.ffpkg</code> ausgeben.</td></tr>
+      <tr><td>Mehrere Containerdateien</td><td><strong>5</strong></td><td>Mehrere Eingaben nacheinander in dasselbe Zielformat umwandeln.</td></tr>
+      <tr><td>Unterschiedliche unterstützte Eingaben</td><td><strong>6</strong></td><td>Quelle automatisch erkennen und in den Zielordner exportieren.</td></tr>
+      <tr><td>AMPR-EMU-Version einrichten oder wechseln</td><td><strong>7</strong></td><td>Version übernehmen, Original sichern, <code>ampr_emu.index</code> bauen – auch direkt auf der PS5.</td></tr>
+      <tr><td>Daten nur prüfen</td><td><strong>8</strong></td><td>Integrität kontrollieren, ohne ein Konvertierungsergebnis anzulegen.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="kapitel" id="k5">
+  <h2><span class="nr">5</span> Aufgabe 1 – Dump-Ordner konvertieren</h2>
+  <p>Nutzen Sie Aufgabe 1, wenn Ihre Daten bereits als normaler Dump-Ordner vorliegen. Als Ergebnis können Sie <code>.ffpfsc</code> (komprimiert), <code>.ffpfs</code> (unkomprimiert), ein echtes <code>.exFAT</code>-Image oder ein UFS2-basiertes <code>.ffpkg</code> wählen.</p>
+  <ol class="schritte">
+    <li>Klicken Sie auf <strong>Dump Ordner</strong> und wählen Sie den gewünschten Ordner.</li>
+    <li>Öffnen Sie die Liste ZIELFORMAT und wählen Sie das benötigte Format.</li>
+    <li>Passen Sie bei Bedarf Kompressionsstufe und Worker-Threads an.</li>
+    <li>Wählen Sie Ziel- und Temp-Ordner.</li>
+    <li>Klicken Sie auf STARTEN und warten Sie auf die Erfolgsmeldung.</li>
+  </ol>
+  <div class="kasten">
+    <span class="titel">Wenn Sie unsicher sind</span>
+    <p>Bewahren Sie den ursprünglichen Dump-Ordner auf. <code>.ffpfsc</code> und <code>.ffpfs</code> sind kompakte Zusammenfassungen; <code>.exFAT</code> und <code>.ffpkg</code> sind Image- beziehungsweise Containerformate für passende weitere Abläufe.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k6">
+  <h2><span class="nr">6</span> Aufgabe 2 – ffpfsc konvertieren</h2>
+  <p>Nutzen Sie Aufgabe 2, wenn die Quelle eine <code>.ffpfsc</code>-Datei ist. Daraus lässt sich ein Dump-Ordner, eine <code>.exFAT</code>- oder eine <code>.ffpkg</code>-Datei erzeugen.</p>
+  <ol class="schritte">
+    <li>Klicken Sie auf <strong>Datei wählen</strong> und wählen Sie genau eine <code>.ffpfsc</code>-Datei.</li>
+    <li>Wählen Sie das gewünschte Zielformat.</li>
+    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Starten Sie die Verarbeitung und prüfen Sie anschließend das Protokoll.</li>
+  </ol>
+  <div class="kasten tipp">
+    <span class="titel">Einfachster Weg zum Inhalt</span>
+    <p>Wählen Sie als Zielformat <strong>Dump-Ordner</strong>, wenn Sie die enthaltenen Dateien als normale Ordnerstruktur ansehen oder weiterbearbeiten möchten.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k7">
+  <h2><span class="nr">7</span> Aufgabe 3 – exFAT konvertieren</h2>
+  <p>Nutzen Sie Aufgabe 3, wenn Ihre Quelle eine <code>.exFAT</code>-Datei ist. Als Ziel stehen Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.ffpkg</code> zur Verfügung.</p>
+  <ol class="schritte">
+    <li>Wählen Sie die <code>.exFAT</code>-Datei als Quelle.</li>
+    <li>Entscheiden Sie sich für das gewünschte Zielformat.</li>
+    <li>Wählen Sie Ziel- und Temp-Ordner.</li>
+    <li>Klicken Sie auf STARTEN und lassen Sie die Verarbeitung vollständig abschließen.</li>
+  </ol>
+  <div class="kasten achtung">
+    <span class="titel">Bei großen Images</span>
+    <p>Planen Sie genügend Zeit und freien Speicherplatz ein. Ein fast voller Datenträger ist eine häufige Ursache für abgebrochene Vorgänge.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k8">
+  <h2><span class="nr">8</span> Aufgabe 4 – ffpkg konvertieren</h2>
+  <p>Nutzen Sie Aufgabe 4, wenn eine <code>.ffpkg</code>-Datei vorliegt. Sie können einen Dump-Ordner, <code>.ffpfsc</code>, <code>.exFAT</code> oder erneut <code>.ffpkg</code> wählen.</p>
+  <ol class="schritte">
+    <li>Wählen Sie die <code>.ffpkg</code>-Datei als Quelle.</li>
+    <li>Wählen Sie das gewünschte Ergebnisformat.</li>
+    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Starten Sie und achten Sie auf die Meldungen zur Prüfung des Images.</li>
+  </ol>
+  <div class="kasten">
+    <span class="titel">Besonderheit bei .ffpkg</span>
+    <p>Eine neu erstellte <code>.ffpkg</code> wird nach dem Schreiben automatisch geprüft. Erst wenn diese Prüfung erfolgreich abgeschlossen ist, gilt das Ergebnis als fertig.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k9">
+  <h2><span class="nr">9</span> Aufgabe 5 – Sammelkonvertierung</h2>
+  <p>Nutzen Sie Aufgabe 5, wenn mehrere unterstützte Containerdateien (<code>.ffpfsc</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) dasselbe Zielformat erhalten sollen. Das spart wiederholte Einzelschritte.</p>
+  <ol class="schritte">
+    <li>Klicken Sie auf <strong>Dateien wählen</strong> und markieren Sie alle gewünschten Dateien.</li>
+    <li>Wählen Sie ein gemeinsames Zielformat.</li>
+    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Starten Sie den Stapel und lassen Sie das Programm alle Dateien nacheinander abarbeiten.</li>
+  </ol>
+  <div class="kasten tipp">
+    <span class="titel">Vor einem großen Stapel</span>
+    <p>Testen Sie zuerst eine einzelne Datei. Prüfen Sie außerdem, ob im Zielordner genügend Platz für alle Ergebnisse vorhanden ist.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k10">
+  <h2><span class="nr">10</span> Aufgabe 6 – AIO Konvertierung</h2>
+  <p>Aufgabe 6 (Universal-Export) ist praktisch, wenn Sie eine unterstützte Quelle auswählen und direkt in ein gewünschtes Format exportieren möchten. Als Quelle sind Dump-Ordner sowie <code>.ffpfsc</code>, <code>.exFAT</code> und <code>.ffpkg</code> möglich.</p>
+  <ol class="schritte">
+    <li>Wählen Sie über <strong>Quelle wählen</strong> die Eingabe.</li>
+    <li>Wählen Sie Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> als Ziel.</li>
+    <li>Legen Sie Ziel- und Temp-Ordner fest.</li>
+    <li>Starten Sie und kontrollieren Sie die erkannte Quelle im Protokoll.</li>
+  </ol>
+  <div class="kasten">
+    <span class="titel">Wann Aufgabe 6 sinnvoll ist</span>
+    <p>Verwenden Sie den Universal-Export, wenn Sie verschiedene unterstützte Quellen mit demselben übersichtlichen Ablauf verarbeiten möchten. Wenn Sie bereits genau wissen, welche Quelldatei vorliegt, sind die Aufgaben 1 bis 4 ebenso geeignet.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k11">
+  <h2><span class="nr">11</span> Aufgabe 7 – AMPR EMU Manager</h2>
+  <p>Aufgabe 7 ist keine normale Formatkonvertierung. Sie bereitet die Quelle vor und öffnet anschließend einen Manager. Dort können Sie einen <code>fakelib</code>-Ordner sowie Dateien oder Ordner im Stammverzeichnis hinzufügen oder entfernen.</p>
+  <ol class="schritte">
+    <li>Erstellen Sie zuerst eine separate Arbeitskopie Ihrer Quelle.</li>
+    <li>Wählen Sie Quelle, Zielordner und Temp-Ordner.</li>
+    <li>Klicken Sie auf STARTEN und warten Sie auf den Manager-Dialog.</li>
+    <li>Wählen Sie dort genau eine Aktion und lesen Sie jede Bestätigungsfrage sorgfältig.</li>
+  </ol>
+  <div class="kasten warnung">
+    <span class="titel">Löschen ist endgültig</span>
+    <p>Der Manager kann ausgewählte Inhalte entfernen. Verwenden Sie diese Aufgabe deshalb niemals an Ihrer einzigen Originalkopie. Wenn Sie unsicher sind, brechen Sie den Dialog ab.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k12">
+  <h2><span class="nr">12</span> Aufgabe 8 – Validator</h2>
+  <p>Aufgabe 8 prüft einen Dump-Ordner oder eine unterstützte Containerdatei auf erkennbare Probleme. Sie erstellt kein Konvertierungsergebnis; das Resultat erscheint im Protokoll.</p>
+  <ol class="schritte">
+    <li>Wählen Sie den Ordner oder die Datei, die geprüft werden soll.</li>
+    <li>Wählen Sie einen Temp-Ordner mit genügend freiem Platz.</li>
+    <li>Klicken Sie auf STARTEN.</li>
+    <li>Lesen Sie die Abschlussmeldung und beachten Sie mögliche Warnungen.</li>
+  </ol>
+  <div class="kasten tipp">
+    <span class="titel">Guter erster Schritt</span>
+    <p>Wenn Sie eine Quelle noch nicht kennen, beginnen Sie mit Aufgabe 8. Eine erfolgreiche Prüfung ist eine gute Grundlage – ersetzt aber nicht Ihre eigene Sicherungskopie.</p>
+  </div>
+
+  <h3>12.1 Was bei .ffpfsc und .ffpfs zusätzlich geprüft wird</h3>
+  <p>Diese Container sind zweistufig aufgebaut: außen der Container, darin genau ein Abbild mit den Spieldateien. Ist beim Erzeugen etwas schiefgelaufen, kann dazwischen versehentlich eine weitere Ebene liegen – von außen sieht die Datei dann völlig normal aus, auf der Konsole ist sie aber unbrauchbar.</p>
+  <p>Aufgabe 8 schaut deshalb eine Ebene tiefer und meldet im Protokoll:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><span class="punkt p-gruen"></span><code>nesting: in Ordnung</code></td><td>Auf der innersten Ebene liegen die Spieldateien – so soll es sein.</td></tr>
+      <tr><td><span class="punkt p-rot"></span><code>nesting: falsch verschachtelt</code></td><td>Dort liegt ein weiteres Abbild statt der Dateien. Die Datei muss neu erzeugt werden.</td></tr>
+      <tr><td><code>inner_files</code> / <code>inner_dirs</code></td><td>Anzahl der Dateien und Ordner auf der innersten Ebene.</td></tr>
+      <tr><td><span class="punkt p-gelb"></span><code>nesting: flach aufgebaut</code></td><td>Die Dateien liegen direkt im Container, das innere Abbild fehlt. Erscheint zum Beispiel beim Prüfen eines Zwischenergebnisses.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Die Prüfung packt die Datei dafür <strong>nicht</strong> aus: Sie liest nur das Inhaltsverzeichnis der inneren Ebene – bei einer 392-MB-Datei rund 750 Kilobyte in unter einer Zehntelsekunde.</p>
+</section>
+
+<section class="kapitel" id="k13">
+  <h2><span class="nr">13</span> Die Werkzeugleiste oben</h2>
+  <p>Zusätzlich zu den acht Aufgaben bietet die obere Leiste weitere, unabhängige Werkzeuge. Für eine normale Konvertierung brauchen Sie keines davon – sie richten sich an fortgeschrittenere Anwendungsfälle, insbesondere an die Verbindung mit einer bereits gejailbreakten PS5.</p>
+
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Schaltfläche</th><th>Was sie tut</th></tr></thead>
+    <tbody>
+      <tr><td><strong>BIBLIOTHEK</strong></td><td>Durchsucht mehrere gespeicherte Ordner nach Dump-Ordnern und Containerdateien, zeigt Titel und Cover und erlaubt eine schnelle Übernahme als Quelle.</td></tr>
+      <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt.</td></tr>
+      <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
+      <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
+      <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
+      <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit sieben Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4) und <strong>BACKPORT</strong> (13.5).</td></tr>
+      <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
+      <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
+      <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
+      <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k14">Kapitel 14</a>.</td></tr>
+      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads.</td></tr>
+      <tr><td><strong>EN / DE</strong></td><td>Schaltet die komplette Oberfläche zwischen Deutsch und Englisch um – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen.</td></tr>
+      <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
+      <tr><td><strong>BEENDEN</strong></td><td>Schließt das Programm.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten achtung">
+    <span class="titel">Voraussetzung für alle Netzwerkwerkzeuge</span>
+    <p>KLOG, SHADOWMOUNT+, FILEZILLA, JS LOADER und MicroMount setzen voraus, dass Ihre Konsole bereits über ein eigenständiges Jailbreak- beziehungsweise Homebrew-Verfahren vorbereitet wurde. Dieses Programm löst diesen Schritt nicht selbst aus.</p>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Welcher FTP-Payload? Bitte ftpsrv</span>
+    <p>Auf der Konsole muss ein FTP-Payload laufen. Verwenden Sie <strong>ftpsrv-ps5 auf Port 2121</strong>. Der alternative Payload <strong>zftpd</strong> (Port 2120) überträgt zwar schneller, legt Dateien aber <strong>ohne Ausführungsrecht</strong> ab – hochgeladene Spiele starten dann nicht und die Konsole meldet nur <code>CE-107750-0</code>. Nachträglich lässt sich das über zftpd auch nicht reparieren. Das Programm prüft die Rechte nach jedem Upload und warnt im Protokoll.</p>
+  </div>
+
+  <h3>13.1 SELF-Inspektor</h3>
+  <p>Zeigt den inneren Aufbau einer ausführbaren PS5-Datei – typischerweise der <code>eboot.bin</code> eines Dumps, ebenso <code>.self</code>, <code>.sprx</code>, <code>.prx</code> oder <code>.elf</code>.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → SELF-INSPEKTOR. Danach die Datei auswählen.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Abschnitt</th><th>Inhalt</th></tr></thead>
+    <tbody>
+      <tr><td>Container</td><td>Art (signierte Hülle oder reines ELF), erkannte Magic, Version und Modus, Schlüsseltyp, Kopf- und Metagröße, Segmentanzahl.</td></tr>
+      <tr><td>Eingebettetes ELF</td><td>32/64-bit, Typ (z. B. <code>ET_SCE_DYNEXEC</code>), Maschine, Einsprungpunkt, Anzahl Programmheader.</td></tr>
+      <tr><td>Extended-Info</td><td>Authority-ID mit Kategorie (<em>Fake/Debug</em>, <em>Genuine</em>, <em>Privilegiertes System</em>), Programmtyp, App-Version, Firmware, Digest.</td></tr>
+      <tr><td>Segmente</td><td>Tabelle mit ID, Offset, Größe in Datei und Speicher sowie den Eigenschaften (signiert, verschlüsselt, komprimiert, geblockt, geordnet).</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Mit <strong>Bericht kopieren</strong> landet die komplette Auswertung als Text in der Zwischenablage – praktisch für Fehlerberichte.</p>
+  <p><strong>Zwei Bauformen kommen in echten Dumps vor.</strong> Die meisten <code>eboot.bin</code> sind eine signierte SELF-Hülle mit eingebettetem ELF; dafür existieren zwei gleichwertige Kennungen (<code>0x1D3D154F</code> und <code>0xEEF51454</code>), beide werden erkannt. Manche Dumper legen die Datei stattdessen als reines, unsigniertes ELF ab – dann entfallen Segmenttabelle und Extended-Info, der ELF-Kopf wird trotzdem ausgewertet.</p>
+  <div class="kasten">
+    <span class="titel">Bewusste Grenze</span>
+    <p>Es werden ausschließlich unverschlüsselte Strukturfelder gelesen. Segmentdaten werden <strong>nicht</strong> entschlüsselt und Signaturen <strong>nicht</strong> geprüft – das setzte Konsolenschlüssel voraus, die dieses Projekt nicht beschafft. Die Datei wird nur gelesen, nie verändert; von großen Dateien wird lediglich der Kopfbereich eingelesen.</p>
+  </div>
+
+  <h3>13.2 Dump umbenennen</h3>
+  <p>Schlägt für einen Dump-Ordner einen sprechenden Namen aus seinen eigenen Metadaten vor.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DUMP UMBENENNEN. Danach den Ordner auswählen.</p>
+  <p>Das Fenster zeigt die aus <code>sce_sys/param.json</code> gelesene Title-ID, den Titel und die Version, dazu eine Einschätzung: <span class="punkt p-gruen"></span>alle drei Angaben liegen vor, <span class="punkt p-gelb"></span>etwas fehlt, <span class="punkt p-rot"></span>keine gültige Title-ID gefunden. Angeboten werden drei Vorschläge:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Vorschlag</th><th>Beispiel</th></tr></thead>
+    <tbody>
+      <tr><td>Nur Title-ID</td><td><code>PPSA18089</code></td></tr>
+      <tr><td>Title-ID + Titel</td><td><code>PPSA18089 Matchbox™ Driving Adventures</code></td></tr>
+      <tr><td>Title-ID + Titel + Version</td><td><code>PPSA18089 Matchbox™ Driving Adventures (01.000.001)</code></td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Der gewählte Vorschlag landet im Eingabefeld darunter und kann dort frei geändert werden; unter Windows unzulässige Zeichen werden automatisch entfernt. <strong>Umbenennen</strong> benennt ausschließlich den Ordner um – der Inhalt bleibt unangetastet. Existiert daneben bereits ein Ordner dieses Namens, bricht das Programm ab, statt etwas zu überschreiben.</p>
+
+  <h3>13.3 Debug-PKG bauen</h3>
+  <p>Erzeugt aus einem Dump-Ordner einen strukturell gültigen <code>.pkg</code>-Container.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DEBUG-PKG BAUEN.</p>
+  <p>Anzugeben sind der Dump-Ordner (liefert die <code>param.json</code> und füllt die Content-ID vor), die Content-ID und der Ausgabepfad. Optional lässt sich ein PFS-Image angeben: dann entsteht ein FIH-Vollabbild, ohne Angabe nur der Metadatencontainer.</p>
+  <div class="kasten warnung">
+    <span class="titel">Wichtig</span>
+    <p>Das Ergebnis ist <strong>unsigniert</strong>. Es gibt keine echte RSA-Signatur und kein Fake-SELF-Spoofing. Der Container ist für Struktur- und Werkzeugtests gedacht, nicht als Ersatz für ein reguläres Paket – bitte vor jeder Verwendung selbst prüfen.</p>
+  </div>
+
+  <h3>13.4 DOWNLOADS – Updates und Patches holen</h3>
+  <p>Lädt Spiel-Updates und ältere Patches herunter, sortiert sie in getrennte Ordner und zeigt jederzeit, was läuft und was schon da ist.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DOWNLOADS. Der Knopf <strong>Download</strong> im Fenster <em>Spiel-Info – Updates &amp; Patches</em> führt ebenfalls hierher.</p>
+
+  <h4>Speicherort festlegen</h4>
+  <p>Beim ersten Download fragt das Programm, auf welchem Datenträger die Pakete abgelegt werden sollen. Darunter entstehen automatisch zwei Ordner:</p>
+<pre><code>&lt;gewählter Speicherort&gt;\
+├── PS5 Spiele Updates\    ← die jeweils neueste Version
+└── Patches\               ← ältere Fassungen</code></pre>
+  <p>Ändern lässt sich der Ort jederzeit – im Download-Fenster oben über <strong>Ändern …</strong> oder in den <strong>Einstellungen</strong> unter <em>Speicherort für Downloads</em>.</p>
+
+  <h4>Der Ablauf</h4>
+  <p>Ein Schritt lässt sich nicht automatisieren: Die eigentliche Download-Adresse entsteht erst beim Klick auf <strong>DETAILS</strong> auf der Patch-Seite, und dieser Klick ist dort durch eine Sicherheitsabfrage geschützt. Dieses Programm umgeht solche Schutzmaßnahmen nicht. Der Weg ist deshalb:</p>
+  <ol class="schritte">
+    <li>Im Fenster <strong>Spiel-Info</strong> auf <strong>Download</strong> klicken. Die Patch-Seite öffnet sich im Browser, das Download-Fenster kommt nach vorn.</li>
+    <li>Auf der Seite die Sicherheitsabfrage bestätigen und auf <strong>DETAILS</strong> klicken.</li>
+    <li>Mit der <strong>rechten Maustaste</strong> auf <strong>Download Piece PKG</strong> klicken und <em>Link kopieren</em> wählen.</li>
+    <li>Zurück im Download-Fenster auf <strong>Aus Zwischenablage</strong> klicken.</li>
+  </ol>
+  <p>Danach läuft alles von allein: Die Adresse wird geprüft, die Datei eingeordnet, der Zielordner angelegt und der Download gestartet. Mehrere Adressen dürfen auf einmal eingefügt werden – über <strong>Adresse(n) einfügen</strong> untereinander in ein Textfeld.</p>
+
+  <h4>Update oder Patch?</h4>
+  <p>Die Einordnung folgt der Markierung im Spiel-Info-Fenster: Die dort mit einem Stern als neueste gekennzeichnete Version gilt als <strong>Update</strong>, jede ältere als <strong>Patch</strong>. Lässt sich das nicht feststellen, wird als Update behandelt. Liegt eine Datei danach im falschen Ordner, verschiebt der Knopf <strong>Als Update/Patch umsortieren</strong> sie mit einem Klick.</p>
+
+  <h4>Anhalten und fortsetzen</h4>
+  <p><strong>Abbrechen</strong> hält den markierten Download an. <strong>Erneut versuchen</strong> nimmt ihn genau dort wieder auf, wo er stehen geblieben ist, statt von vorn zu beginnen – das gilt auch nach einem Programmneustart.</p>
+  <p>Geladen wird dabei in eine Datei mit der Endung <code>.teil</code>. Ihren richtigen Namen bekommt sie erst, wenn die Größe stimmt. Eine halb geladene Datei kann also nie versehentlich für fertig gehalten werden.</p>
+
+  <h4>Was schon da ist</h4>
+  <p><strong>Vorhandene einlesen</strong> durchsucht beide Ordner und listet alle bereits abgelegten Pakete mit Größe und Title-ID. Nützlich nach einem Neustart oder wenn der Datenträger neu angeschlossen wurde. <strong>Ordner öffnen</strong> zeigt den Ablageort im Explorer.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Status</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td>wartet</td><td>In der Liste, der Download startet gleich.</td></tr>
+      <tr><td>lädt …</td><td>Läuft; die Spalte <em>Fortschritt</em> zeigt den Anteil.</td></tr>
+      <tr><td>setzt fort bei …</td><td>Eine angefangene Datei wurde gefunden, es geht dort weiter.</td></tr>
+      <tr><td>fertig</td><td>Vollständig geladen und umbenannt.</td></tr>
+      <tr><td>vorhanden</td><td>Lag schon auf der Platte, nichts zu tun.</td></tr>
+      <tr><td>abgebrochen</td><td>Angehalten; <strong>Erneut versuchen</strong> setzt fort.</td></tr>
+      <tr><td>Fehler: …</td><td>Der Grund steht dahinter, zum Beispiel keine Verbindung.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>13.5 BACKPORT – Spiele auf ältere Firmware herabsetzen</h3>
+  <p>Ein PS5-Spiel merkt sich, mit welchem Entwicklungspaket (SDK) es gebaut wurde. Die Konsole vergleicht das beim Start mit ihrer eigenen Firmware und startet nichts, was zu neu ist. Verlangt ein Spiel Firmware 9.00, während Ihre Konsole auf 4.50 steht, passiert beim Antippen schlicht nichts. <strong>BACKPORT</strong> setzt diese Angabe herab.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → BACKPORT. Danach den Spielordner auswählen.</p>
+
+  <h4>Der Ablauf</h4>
+  <ol class="schritte">
+    <li><strong>Ordner wählen.</strong> Der Dump-Ordner des Spiels, also der mit <code>eboot.bin</code> und <code>sce_sys</code> darin.</li>
+    <li><strong>Zielfirmware einstellen.</strong> Zur Auswahl stehen <strong>4.00, 5.00, 6.00 und 7.00</strong> – wählen Sie den Stand Ihrer Konsole oder einen niedrigeren.</li>
+    <li><strong>Ansehen, was passieren würde.</strong> Beim Öffnen zeigt die Liste bereits jede ausführbare Datei mit ihrem aktuellen SDK und dem, was mit ihr geschähe. Der Knopf <strong>Nur prüfen</strong> wiederholt das, ohne etwas zu ändern.</li>
+    <li><strong>Backport starten.</strong> Nach einer Rückfrage arbeitet das Programm die Liste ab.</li>
+  </ol>
+
+  <h4>Die Einstellungen</h4>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Ankreuzfeld</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Sicherung anlegen</strong></td><td>Legt vor dem ersten Zugriff eine vollständige Kopie des Ordners mit Zeitstempel daneben. Standardmäßig an – bitte anlassen.</td></tr>
+      <tr><td><strong>Ersatzbibliotheken kopieren</strong></td><td>Legt die zur Zielfirmware passenden Bibliotheken in einen Ordner <code>fakelib</code> neben das Spiel. Ohne sie erwartet das Spiel Funktionen, die es auf der älteren Firmware nicht gibt. Standardmäßig an.</td></tr>
+      <tr><td><strong>libc-Patch (6.xx, experimentell)</strong></td><td>Ein zusätzlicher Eingriff in <code>libc.prx</code>, der bei manchen Spielen für 6.xx nötig ist. Standardmäßig aus; nur einschalten, wenn es ohne nicht geht.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Was in der Liste steht</h4>
+  <p>Bearbeitet werden <code>eboot.bin</code> sowie alle <code>.prx</code>- und <code>.sprx</code>-Dateien. Der Ordner <code>fakelib</code> bleibt außen vor – die Bibliotheken darin passen bereits.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Status</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td>wird herabgesetzt</td><td>Das SDK ist höher als das Ziel, die Datei kommt dran.</td></tr>
+      <tr><td>bereits niedrig genug</td><td>Nichts zu tun, die Datei bleibt unverändert.</td></tr>
+      <tr><td>keine SDK-Angabe</td><td>Die Datei trägt keinen Modulkopf, sie bleibt unverändert.</td></tr>
+      <tr><td>nicht ausführbar</td><td>Weder ELF noch SELF, wird übergangen.</td></tr>
+      <tr><td>fertig – 9.00 → 4.00</td><td>Erfolgreich herabgesetzt und neu signiert.</td></tr>
+      <tr><td>Fehler: …</td><td>Der Grund steht dahinter; die Datei bleibt unverändert.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Was dabei geschützt ist</h4>
+  <p>Gearbeitet wird ausschließlich im Arbeitsspeicher. Eine Datei wird erst ersetzt, wenn Entpacken, Herabsetzen <strong>und</strong> Neusignieren gelungen sind – und dann in einem Zug. Bricht ein Schritt ab, bleibt das Original genau so, wie es war. Angehoben wird eine SDK-Angabe nie, nur herabgesetzt.</p>
+  <div class="kasten warnung">
+    <span class="titel">Wichtig</span>
+    <p>Das Ergebnis wird neu signiert, aber nicht <em>echt</em> signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Und ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, lässt sich vorher nicht sagen: Manche Spiele verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Arbeiten Sie deshalb immer mit eingeschalteter Sicherung und behalten Sie den Sicherungsordner, bis Sie das Spiel auf der Konsole erfolgreich gestartet haben.</p>
+  </div>
+  <h3>13.6 Wie FileZilla gefunden wird</h3>
+  <p>Der Knopf <strong>FILEZILLA</strong> startet Ihre eigene FileZilla-Installation. Weil jeder sie woanders und unter unterschiedlichen Ordnernamen installiert, sucht das Programm der Reihe nach:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Schritt</th><th>Wo gesucht wird</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Der zuletzt verwendete Pfad aus den Einstellungen.</td></tr>
+      <tr><td>2</td><td>Die Windows-Registrierung (Eintrag der FileZilla-Installation).</td></tr>
+      <tr><td>3</td><td>Die üblichen Programmpfade, etwa <code>C:\Program Files\FileZilla FTP Client</code>.</td></tr>
+      <tr><td>4</td><td><strong>Jeder Ordner, dessen Name „FileZilla“ enthält</strong> – in den Programmordnern, unter <code>AppData</code> und direkt auf jedem festen Laufwerk. Damit werden auch <code>C:\FileZilla</code>, <code>FileZilla3_x64</code> oder eine portable Ablage gefunden.</td></tr>
+      <tr><td>5</td><td>Der Ordner des Programms selbst (portable Kopie daneben) und die <code>PATH</code>-Variable.</td></tr>
+      <tr><td>6</td><td>Als letzter Ausweg ein zeitlich begrenzter Durchlauf der Laufwerke.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Gesucht wird nur einmal.</strong> Sobald FileZilla gestartet wurde, merkt sich das Programm den Pfad dauerhaft. Beim nächsten Start – und bei jedem weiteren Klick – geht es sofort über Schritt 1, ohne erneute Suche. Stimmt der gemerkte Pfad eines Tages nicht mehr, weil FileZilla verschoben oder neu installiert wurde, beginnt die Suche von selbst wieder und merkt sich den neuen Ort.</p>
+  <div class="kasten">
+    <span class="titel">Wenn FileZilla nicht gefunden wird</span>
+    <p>Dann bietet das Programm an, es herunterzuladen und zu installieren. Lehnen Sie ab, können Sie die Datei <code>filezilla.exe</code> selbst auswählen – auch dieser Pfad wird gemerkt.</p>
+  </div>
+
+</section>
+
+<section class="kapitel" id="k14">
+  <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
+  <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Design</th><th>Charakter</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Dunkel</strong></td><td>Professionell, elegant, kontrastreich – Standardeinstellung.</td></tr>
+      <tr><td><strong>Mittel</strong></td><td>Ausgewogen und augenschonend in Grau und Graublau.</td></tr>
+      <tr><td><strong>Hell</strong></td><td>Modern, freundlich, hohe Kontraste.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
+  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter. Nur die Größenangabe neben der Fortschrittsanzeige behält eine leicht abgedunkelte Fläche, damit sie über unruhigen Bildstellen lesbar bleibt.</p>
+
+  <h3>14.1 Hintergrundbilder wählen</h3>
+  <p>Unter <strong>EINSTELLUNGEN</strong> gibt es zwei getrennte Bereiche, jeder mit einer eigenen Klappliste der mitgelieferten Bilder:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Bereich</th><th>Bilder</th><th>Format</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
+      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 320 × 1000 Pixel</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
+  <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
+  <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
+  <div class="kasten">
+    <span class="titel">Warum zwei getrennte Listen</span>
+    <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich würde stark verzerrt – deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k15">
+  <h2><span class="nr">15</span> Häufige Probleme einfach lösen</h2>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Problem</th><th>Was Sie tun können</th></tr></thead>
+    <tbody>
+      <tr><td>STARTEN bleibt deaktiviert</td><td>Prüfen Sie, ob Quelle, Zielordner und Temp-Ordner vollständig gewählt wurden. Bei Aufgabe 8 wird kein Zielordner benötigt.</td></tr>
+      <tr><td>Quelle wird abgelehnt</td><td>Kontrollieren Sie, ob die gewählte Aufgabe zum Dateityp passt. Nutzen Sie bei Bedarf Aufgabe 6 oder prüfen Sie die Quelle mit Aufgabe 8.</td></tr>
+      <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus dem Ordnernamen. Anschließend folgt die zweite Frage <em>Titel online nachschlagen?</em> Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
+      <tr><td>„Titel online nachschlagen?“</td><td>Titel und Content-ID stehen in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Nur die Title-ID ist lokal zu finden. Bei <strong>Ja</strong> werden Titel und Content-ID nachgeschlagen; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Bei <strong>Nein</strong>, ohne Internet oder wenn die Seite nicht antwortet, entsteht die Ersatzdatei trotzdem – nur mit der Title-ID. Die Frage ist absichtlich auf <strong>Nein</strong> voreingestellt.</td></tr>
+      <tr><td>Zu wenig Speicherplatz</td><td>Schaffen Sie Platz oder wählen Sie einen anderen Ziel- beziehungsweise Temp-Ordner. Wiederholen Sie den Vorgang erst danach.</td></tr>
+      <tr><td>Der Vorgang dauert lange</td><td>Beobachten Sie Fortschrittsbalken, Statuszeile und Protokoll. Große Dateien brauchen längere Schreib- und Prüfphasen.</td></tr>
+      <tr><td>Der Vorgang wurde abgebrochen</td><td>Warten Sie auf die Abbruchbestätigung. Löschen Sie unvollständige Ergebnisse und starten Sie mit geprüften Pfaden erneut.</td></tr>
+      <tr><td>Eine Warnung erscheint</td><td>Lesen Sie die vollständige Meldung im Protokoll. Ändern Sie nicht mehrere Dinge gleichzeitig, sondern beheben Sie zuerst die genannte Ursache.</td></tr>
+      <tr><td>Hochgeladenes Spiel startet nicht (<code>CE-107750-0</code>)</td><td>Die Datei ist nicht ausführbar – typischerweise über <strong>zftpd</strong> übertragen. Laden Sie das Spiel mit <strong>ftpsrv auf Port 2121</strong> erneut hoch. Über zftpd übertragene Ordner bleiben unbrauchbar; nachträglich reparieren lässt sich das dort nicht.</td></tr>
+      <tr><td>Spiel startet nicht (<code>CE-108255-1</code>)</td><td>Zwei bekannte Ursachen: ein unvollständiges <code>.ffpkg</code> – oder der Start aus dem internen Speicher statt vom USB-Stick. Probieren Sie das Backup vom Stick.</td></tr>
+      <tr><td>FTP-, KLog- oder JS-Loader-Werkzeug verbindet nicht</td><td>Prüfen Sie IP-Adresse und Port sowie, ob die PS5 per Jailbreak vorbereitet und im selben Netzwerk erreichbar ist. Auf der Konsole muss ein FTP-Payload laufen – über <strong>JS LOADER</strong> lässt sich einer starten.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.50), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <div class="kasten tipp">
+    <span class="titel">Bitte nicht sofort löschen</span>
+    <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k16">
+  <h2><span class="nr">16</span> Begriffe kurz erklärt</h2>
+  <p>Die folgenden Begriffe erscheinen regelmäßig in der Oberfläche. Die Erklärungen sind bewusst kurz gehalten.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Begriff</th><th>Erklärung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Dump-Ordner</strong></td><td>Ein normaler Ordner mit den Dateien und Unterordnern eines Dumps.</td></tr>
+      <tr><td><code>.exFAT</code></td><td>Eine Image-Datei im exFAT-Format.</td></tr>
+      <tr><td><code>.ffpfsc</code></td><td>Eine kompakte, komprimierte Containerdatei, in der ein Dump zusammengefasst wird.</td></tr>
+      <tr><td><code>.ffpfs</code></td><td>Wie <code>.ffpfsc</code>, aber unkomprimiert – dadurch größer, aber schneller zu erstellen.</td></tr>
+      <tr><td><code>.ffpkg</code></td><td>Eine UFS2-basierte Containerdatei. Die Erstellung wird nach dem Schreiben automatisch geprüft.</td></tr>
+      <tr><td><strong>Kompressionsstufe</strong></td><td>Bestimmt, wie stark <code>.ffpfsc</code> und <code>.ffpkg</code> komprimiert werden (1 = am schnellsten, 9 = kleinste Datei).</td></tr>
+      <tr><td><strong>Worker-Threads</strong></td><td>Anzahl gleichzeitig arbeitender Kopier- und Kompressionsvorgänge. Höhere Werte können schneller sein, brauchen aber mehr Systemressourcen.</td></tr>
+      <tr><td><strong>Quelle</strong></td><td>Der Ordner oder die Datei, die Sie bearbeiten oder prüfen möchten.</td></tr>
+      <tr><td><strong>Temp-Ordner</strong></td><td>Ein Arbeitsordner für vorübergehend benötigte Dateien. Er sollte genügend freien Platz haben.</td></tr>
+      <tr><td><strong>Zielformat</strong></td><td>Das Format, das nach einer Konvertierung entstehen soll.</td></tr>
+      <tr><td><strong>Zielordner</strong></td><td>Der Ordner, in dem das fertige Ergebnis gespeichert wird.</td></tr>
+      <tr><td><strong>FTP</strong></td><td>Protokoll zum Dateiaustausch mit einer per Netzwerk erreichbaren PS5 – genutzt von FILEZILLA, SHADOWMOUNT+ und dem Bibliotheks-Abgleich.</td></tr>
+      <tr><td><strong>KLog</strong></td><td>Kernel-Log der PS5, ein technisches Live-Protokoll der Konsole – nützlich zur Fehlersuche bei Homebrew-Anwendungen.</td></tr>
+      <tr><td><strong>SDK</strong></td><td>Das Entwicklungspaket, mit dem ein Spiel gebaut wurde. Die Konsole vergleicht diese Angabe beim Start mit ihrer Firmware – siehe <a href="#k13">BACKPORT</a>.</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="kapitel" id="k17">
+  <h2><span class="nr">17</span> Schnellübersicht zum Ausdrucken</h2>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Nr.</th><th>Aufgabe</th><th>Dafür verwenden</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Dump-Ordner konvertieren</td><td>Ordner nach <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code>.</td></tr>
+      <tr><td>2</td><td>ffpfsc konvertieren</td><td><code>.ffpfsc</code> entpacken oder umwandeln.</td></tr>
+      <tr><td>3</td><td>exFAT konvertieren</td><td><code>.exFAT</code> entpacken oder umwandeln.</td></tr>
+      <tr><td>4</td><td>ffpkg konvertieren</td><td><code>.ffpkg</code> prüfen, entpacken oder umwandeln.</td></tr>
+      <tr><td>5</td><td>Sammelkonvertierung</td><td>Mehrere Container in einem Stapel verarbeiten.</td></tr>
+      <tr><td>6</td><td>AIO Konvertierung</td><td>Unterstützte Quelle automatisch erkennen und exportieren.</td></tr>
+      <tr><td>7</td><td>AMPR EMU Manager</td><td>AMPR-/PlayGo-Version wählen, übernehmen oder zurücksetzen; Index erzeugen – auch direkt auf der PS5.</td></tr>
+      <tr><td>8</td><td>Validator</td><td>Quelle prüfen, ohne ein Konvertierungsergebnis anzulegen.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="kasten tipp">
+    <span class="titel">Merksatz für den Anfang</span>
+    <p>Kopie behalten → Aufgabe passend wählen → getrennten Zielordner verwenden → genügend Speicherplatz einplanen → Erfolgsmeldung abwarten.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k18">
+  <h2><span class="nr">18</span> Die Anwendung unter Linux</h2>
+  <p>Das Programm läuft nicht nur unter Windows, sondern auch unter Linux. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt nur die Unterschiede.</p>
+
+  <h3>18.1 Programmdatei erstellen</h3>
+  <p>Anders als unter Windows gibt es keine fertige Datei zum Herunterladen: Ein Linux-Programm ist an die Architektur und die Systembibliotheken des Rechners gebunden, auf dem es entstanden ist. Es wird deshalb auf dem eigenen System erstellt. Das dauert wenige Minuten und geschieht mit zwei Befehlen im Projektordner:</p>
+  <pre><code>chmod +x Build_Linux.sh
+./Build_Linux.sh</code></pre>
+  <p>Das Skript prüft die Voraussetzungen, holt die benötigten Pakete und legt die fertige Datei unter <code>dist/</code> ab. Fehlt Tcl/Tk – die Grundlage der Oberfläche –, nennt es den passenden Installationsbefehl für Ihr System.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Nicht mit sudo erstellen</span>
+    <p>Das Erstellen braucht keine erweiterten Rechte. Wird es dennoch als <code>root</code> gestartet, gehört der Ergebnisordner danach <code>root</code> und lässt sich beim nächsten Lauf nicht mehr aufräumen.</p>
+  </div>
+
+  <h3>18.2 Starten und ins Menü legen</h3>
+  <p>Die erstellte Datei lässt sich direkt starten. Bequemer ist ein Eintrag im Anwendungsmenü:</p>
+  <pre><code>chmod +x Install_Linux.sh
+./Install_Linux.sh</code></pre>
+  <p>Danach steht „PS5 Dump &amp; Image Converter“ mit eigenem Symbol im Menü und lässt sich im Terminal mit <code>ps5-dump-image-converter</code> aufrufen. Alles wird unterhalb von <code>~/.local</code> abgelegt – ohne <code>sudo</code> und ohne Eingriff ins System. Rückgängig machen Sie das mit <code>./Install_Linux.sh --entfernen</code>.</p>
+
+  <h3>18.3 Was unter Linux nicht zur Verfügung steht</h3>
+  <p>Zwei Wege hängen an Programmen, die es nur für Windows gibt. Wählen Sie eine solche Aufgabe, sagt das Programm das ausdrücklich im Protokoll.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
+    <tbody>
+      <tr><td><code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat</td><td>Diese Wege laufen über UFS2Tool und den Dokan-Treiber. Beide gibt es ausschließlich für Windows.</td></tr>
+      <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
+
+  <h3>18.4 Weitere Unterschiede im Alltag</h3>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Bereich</th><th>Unter Linux</th></tr></thead>
+    <tbody>
+      <tr><td>Erweiterte Rechte</td><td>Werden nicht benötigt. Unter Windows fragt das Programm beim Start danach, unter Linux startet es als normaler Benutzer.</td></tr>
+      <tr><td>Temp-Ordner</td><td>Voreingestellt ist <code>/tmp</code>. Legen Sie Ihren <strong>Zielordner</strong> nicht dorthin – der Bereich wird nach getaner Arbeit aufgeräumt.</td></tr>
+      <tr><td>Einstellungen</td><td>Liegen unter <code>~/.config/PS5ImageConverterPro/</code>.</td></tr>
+      <tr><td>Schriftbild</td><td>Die Oberfläche ist auf <em>Segoe UI</em> ausgelegt. Ist diese Schrift nicht vorhanden, wählt das Programm selbst die am besten passende Ihres Systems.</td></tr>
+      <tr><td>Handbuch und Ordner öffnen</td><td>Funktioniert wie gewohnt über die Standardprogramme Ihrer Arbeitsumgebung.</td></tr>
+      <tr><td>Rechner herunterfahren</td><td>Das Ankreuzfeld aus <a href="#k3">Kapitel 3.2</a> funktioniert auch hier.</td></tr>
+      <tr><td>FileZilla</td><td>Wird gefunden, wenn es über die Paketverwaltung installiert ist. Die automatische Installation aus dem Programm heraus gibt es nur unter Windows.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten tipp">
+    <span class="titel">Weitergeben</span>
+    <p>Eine unter Linux erstellte Programmdatei läuft nicht zwangsläufig auf einem anderen Rechner – ältere Systeme bringen ältere Systembibliotheken mit. Erstellen Sie sie im Zweifel dort neu, wo sie laufen soll.</p>
+  </div>
+</section>
+
+<section class="kapitel" id="k19">
+  <h2><span class="nr">19</span> Die Anwendung auf dem Mac</h2>
+  <p>Das Programm läuft auch auf einem Mac mit macOS 11 (Big Sur) oder neuer – auf Apple Silicon ebenso wie auf Intel-Modellen. Die Oberfläche, alle acht Aufgaben und die Zusatzwerkzeuge sehen dort genauso aus und werden genauso bedient wie in diesem Handbuch beschrieben. Dieses Kapitel nennt nur die Unterschiede.</p>
+
+  <h3>19.1 Was Sie vorher brauchen</h3>
+  <p>Ein Mac bringt zwar ein Python mit, dieses ist zum Erstellen des Programms aber unbrauchbar: Ihm fehlt die Grundlage für die Fenster. Installieren Sie deshalb vorher ein vollständiges Python – entweder den Installer von <code>python.org</code> oder über Homebrew mit <code>brew install python-tk</code>. Das Erstellungsskript prüft das und sagt Ihnen genau, was fehlt, bevor es beginnt.</p>
+
+  <h3>19.2 Das Programm erstellen</h3>
+  <p>Wie unter Linux gibt es keine fertige Datei zum Herunterladen: Das Programm ist an die Bauart Ihres Macs gebunden. Eine auf Apple Silicon erstellte Fassung läuft nicht auf einem Intel-Mac und umgekehrt. Zwei Befehle im Projektordner genügen:</p>
+  <pre><code>chmod +x Build_macOS.sh
+./Build_macOS.sh</code></pre>
+  <p>Das dauert wenige Minuten. Am Ende liegt unter <code>dist/</code> das fertige Programm <code>PS5 Dump &amp; Image Converter.app</code> – ein Programmbündel, wie Sie es von jedem Mac-Programm kennen. Ein Doppelklick startet es.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Nicht mit sudo erstellen</span>
+    <p>Das Erstellen braucht keine erweiterten Rechte. Wird es dennoch als <code>root</code> gestartet, gehört der Ergebnisordner danach <code>root</code> und lässt sich beim nächsten Lauf nicht mehr aufräumen.</p>
+  </div>
+
+  <h3>19.3 In den Programme-Ordner legen</h3>
+  <p>Damit das Programm im Launchpad und im Finder an seinem gewohnten Platz steht:</p>
+  <pre><code>chmod +x Install_macOS.sh
+./Install_macOS.sh</code></pre>
+  <p>Ist der Ordner <code>Programme</code> gesperrt, legt das Skript das Programm in Ihren persönlichen Programme-Ordner. Das braucht kein Passwort und erscheint genauso im Launchpad. Rückgängig machen Sie das mit <code>./Install_macOS.sh --entfernen</code>; Ihre Einstellungen bleiben dabei erhalten.</p>
+
+  <div class="kasten tipp">
+    <span class="titel">„Der Entwickler kann nicht überprüft werden“</span>
+    <p>Diese Meldung erscheint, wenn das Programm über Browser, Mail oder AirDrop zu Ihnen gekommen ist – macOS markiert alles, was von außen kommt. Das Installationsskript räumt die Markierung selbst ab. Von Hand geht es so:</p>
+    <pre><code>xattr -dr com.apple.quarantine "/Applications/PS5 Dump &amp; Image Converter.app"</code></pre>
+  </div>
+
+  <h3>19.4 Was auf dem Mac nicht zur Verfügung steht</h3>
+  <p>Es sind dieselben beiden Wege wie unter Linux, und aus demselben Grund. Wählen Sie eine solche Aufgabe, sagt das Programm das ausdrücklich im Protokoll.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Betroffen</th><th>Grund</th></tr></thead>
+    <tbody>
+      <tr><td><code>.ffpkg</code> lesen und erstellen – also <strong>Aufgabe 4</strong> und jedes <code>.ffpkg</code> als Zielformat</td><td>Diese Wege laufen über UFS2Tool und den Dokan-Treiber. Beide gibt es ausschließlich für Windows.</td></tr>
+      <tr><td>Die Ersatzwege über OSFMount</td><td>OSFMount gibt es nur für Windows. Diese Wege greifen ohnehin nur dann, wenn der normale Weg an einem ungewöhnlichen Abbild scheitert.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Alle übrigen Aufgaben – Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exFAT</code> in jeder Richtung, die Sammelkonvertierung, der AMPR EMU Manager und der Validator – stehen vollständig zur Verfügung.</p>
+
+  <h3>19.5 Weitere Unterschiede im Alltag</h3>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Bereich</th><th>Auf dem Mac</th></tr></thead>
+    <tbody>
+      <tr><td>Erweiterte Rechte</td><td>Werden nicht benötigt. Unter Windows fragt das Programm beim Start danach, auf dem Mac startet es als normaler Benutzer.</td></tr>
+      <tr><td>Temp-Ordner</td><td>Legen Sie Ihren <strong>Zielordner</strong> nicht in einen Temp-Bereich – dieser wird nach getaner Arbeit aufgeräumt.</td></tr>
+      <tr><td>Einstellungen</td><td>Liegen unter <code>~/Library/Application Support/PS5ImageConverterPro/</code>.</td></tr>
+      <tr><td>Schriftbild</td><td>Die Oberfläche ist auf <em>Segoe UI</em> ausgelegt. Ist diese Schrift nicht vorhanden, wählt das Programm selbst die am besten passende Ihres Systems – auf einem Mac meist <em>Helvetica Neue</em>.</td></tr>
+      <tr><td>Handbuch und Ordner öffnen</td><td>Funktioniert wie gewohnt. „Im Ordner zeigen“ öffnet den Finder und markiert die Datei darin.</td></tr>
+      <tr><td>Rechner herunterfahren</td><td>Das Ankreuzfeld aus <a href="#k3">Kapitel 3.2</a> funktioniert auch hier. Beim ersten Mal fragt macOS, ob das Programm andere Programme steuern darf – bestätigen Sie das, sonst bleibt der Rechner an.</td></tr>
+      <tr><td>FileZilla</td><td>Wird gefunden, wenn es über Homebrew installiert ist. Die automatische Installation aus dem Programm heraus gibt es nur unter Windows.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten tipp">
+    <span class="titel">Weitergeben</span>
+    <p><code>./Build_macOS.sh --dmg</code> erzeugt zusätzlich ein Abbild (<code>.dmg</code>), wie Sie es vom Herunterladen anderer Mac-Programme kennen. Denken Sie daran: Es passt nur zu Macs derselben Bauart wie Ihrer.</p>
+  </div>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <div class="zeile">
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.50</strong></span>
+    <span>Stand 18. August 2026</span>
+  </div>
+  <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
+</footer>
+
+<script>
+// Hebt im Verzeichnis das Kapitel hervor, das gerade gelesen wird.
+(function(){
+  var verweise = Array.prototype.slice.call(document.querySelectorAll('nav.inhalt a'));
+  var kapitel  = verweise.map(function(a){ return document.querySelector(a.getAttribute('href')); });
+  if (!('IntersectionObserver' in window)) return;
+  var beobachter = new IntersectionObserver(function(eintraege){
+    eintraege.forEach(function(e){
+      if (!e.isIntersecting) return;
+      var i = kapitel.indexOf(e.target);
+      if (i < 0) return;
+      verweise.forEach(function(a){ a.classList.remove('aktiv'); });
+      verweise[i].classList.add('aktiv');
+    });
+  }, { rootMargin: '-15% 0px -75% 0px' });
+  kapitel.forEach(function(k){ if (k) beobachter.observe(k); });
+})();
+</script>
+
+</body>
+</html>
