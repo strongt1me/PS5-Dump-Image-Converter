@@ -2045,10 +2045,10 @@ class PS5ConverterGUI:
                 self._sidebar_bg_image_cache = None
                 return
             img = Image.open(custom_path).convert("RGB")
-            _hell = getattr(self, "_current_theme", "") == "hell"
-            _sidebar_anteil = (SIDEBAR_BG_IMAGE_OPACITY_LIGHT if _hell
-                               else SIDEBAR_BG_IMAGE_OPACITY)
-            blended = self._blend_bg_image_with_theme(img, _sidebar_anteil)
+            hell = getattr(self, "_current_theme", "") == "hell"
+            sidebar_anteil = (SIDEBAR_BG_IMAGE_OPACITY_LIGHT if hell
+                              else SIDEBAR_BG_IMAGE_OPACITY)
+            blended = self._blend_bg_image_with_theme(img, sidebar_anteil)
             self._sidebar_bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
         except Exception as exc:
             logger.warning("Sidebar-Hintergrundbild konnte nicht geladen werden: %s", exc)
@@ -2061,9 +2061,16 @@ class PS5ConverterGUI:
         Ergibt einen dezenten, halbtransparent wirkenden Wasserzeichen-Effekt,
         unabhängig vom gewählten Quellbild.
 
-        Ohne Angabe gilt BG_IMAGE_OPACITY (Hauptbereich). Die Sidebar reicht
-        SIDEBAR_BG_IMAGE_OPACITY herein - dort liegen keine Karten über dem
-        Bild, weshalb derselbe Wert dort deutlich kräftiger wirkt.
+        Ohne Angabe richtet sich die Deckkraft nach dem Design: im hellen gilt
+        BG_IMAGE_OPACITY_LIGHT, sonst BG_IMAGE_OPACITY. Der Unterschied ist
+        noetig, weil die mitgelieferten Bilder dunkel sind - bei voller
+        Einmischung sassen helle Karten und Knoepfe vor dunklem Grund, und
+        Beschriftungen lagen je nach Stelle auf hellem oder dunklem Untergrund.
+
+        Wird ``deckkraft`` uebergeben, gilt dieser Wert unveraendert. So reicht
+        die Sidebar ihren eigenen Anteil herein (SIDEBAR_BG_IMAGE_OPACITY bzw.
+        SIDEBAR_BG_IMAGE_OPACITY_LIGHT): Dort liegen keine Karten ueber dem
+        Bild, weshalb derselbe Wert deutlich kraeftiger wirken wuerde.
         """
         if deckkraft is None:
             hell = getattr(self, "_current_theme", "") == "hell"
