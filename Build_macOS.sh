@@ -322,13 +322,44 @@ if [ "$DMG_ERZEUGEN" -eq 1 ]; then
 
     # UDZO = komprimiertes, schreibgeschuetztes Abbild - das uebliche Format
     # zum Weitergeben eines Programms.
-    if hdiutil create -volname "PS5 Dump & Image Converter" \
-        -srcfolder "$DMG_INHALT" -ov -format UDZO "$DMG" >/dev/null 2>&1; then
+    #
+    # Die Ausgabe von hdiutil ging bis v1.8.61 nach /dev/null. Als der Schritt
+    # am 19.08.2026 auf dem Intel-Laeufer scheiterte, stand im Protokoll allein
+    # "WARNUNG: Abbild nicht erzeugbar" - ohne Grund, ohne Fehlernummer, ohne
+    # Anhaltspunkt. Auffallen tat es erst drei Schritte spaeter beim Hochladen
+    # des Artefakts, und der Lauf galt trotzdem als erfolgreich.
+    #
+    # Deshalb: Ausgabe aufheben und bei Fehlschlag zeigen. Und einmal erneut
+    # versuchen - Fehlschlaege beim Anlegen eines Abbilds auf einem
+    # Bau-Laeufer sind haeufig voruebergehend (belegte Ressource, noch
+    # eingehaengtes Volume aus einem frueheren Versuch).
+    DMG_PROTOKOLL="$(mktemp)"
+    dmg_versuch() {
+        hdiutil create -volname "PS5 Dump & Image Converter" \
+            -srcfolder "$DMG_INHALT" -ov -format UDZO "$DMG" >"$DMG_PROTOKOLL" 2>&1
+    }
+
+    if dmg_versuch; then
         meldung "      Abbild: $DMG ($(du -sh "$DMG" | cut -f1))" "$gruen"
     else
-        meldung "      WARNUNG: Abbild nicht erzeugbar." "$gelb"
-        DMG=""
+        meldung "      Abbild im ersten Anlauf nicht erzeugbar - hdiutil sagt:" "$gelb"
+        sed 's/^/        /' "$DMG_PROTOKOLL"
+        meldung "      Zweiter Versuch ..." "$gelb"
+        sleep 5
+        if dmg_versuch; then
+            meldung "      Abbild: $DMG ($(du -sh "$DMG" | cut -f1))" "$gruen"
+        else
+            meldung "      FEHLER: Abbild nicht erzeugbar. hdiutil sagt:" "$rot"
+            sed 's/^/        /' "$DMG_PROTOKOLL"
+            rm -f "$DMG_PROTOKOLL"
+            rm -rf "$DMG_INHALT"
+            # Hier abbrechen statt weiterlaufen: Wer --dmg verlangt, will ein
+            # Abbild. Ein "BUILD ERFOLGREICH" ohne das angeforderte Ergebnis
+            # ist eine Falschmeldung.
+            exit 1
+        fi
     fi
+    rm -f "$DMG_PROTOKOLL"
     rm -rf "$DMG_INHALT"
 fi
 
