@@ -2,9 +2,21 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.62):** Download-Links werden aus der Zwischenablage übernommen, der Backport sagt jetzt, ob die Ersatzbibliotheken wirklich reichen, und die Startreihenfolge der Konsole lässt sich vom PC aus bearbeiten.
+> **Kurz zum aktuellen Stand (v1.8.63):** Die Beschriftungen auf der Karte sind gut lesbar, auch dort, wo das Hintergrundbild hell wird.
 
 ---
+
+## v1.8.63 – 20.08.2026
+
+### Lesbarkeit auf der Karte
+
+- **Alle Texte auf der Karte sind jetzt hell geschrieben** – QUELLE, ZIELFORMAT, die Zeilenüberschrift, der Formathinweis, ZIELORDNER, TEMP-ORDNER und das Kästchen zum Herunterfahren. Bisher waren sie gedämpft grau; auf einer einfarbigen Fläche wirkt das ruhig, auf dem Hintergrundbild verschwanden sie dort, wo das Motiv hell wird.
+- **Die Statuszeile und die Telemetriezeile darunter ebenso** – sie liegen auf demselben Bild und hatten dasselbe Problem.
+- **Die Karte lässt 10 Prozentpunkte weniger vom Hintergrundbild durch** (40 statt 50 %). Das Motiv bleibt deutlich sichtbar, liegt der Schrift aber nicht mehr im Weg.
+
+### Repariert
+
+- **Beim Wechsel des Farbschemas wären zwei Aufhellungen wieder verschwunden.** „PRÜFUNG NACH DEM PACKEN" und das Kästchen zum Herunterfahren fehlten in der Tabelle, aus der die Schriftfarben nach einem Design-Wechsel nachgezogen werden.
 
 ## v1.8.62 – 19.08.2026
 

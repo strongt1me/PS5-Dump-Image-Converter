@@ -234,7 +234,12 @@ ACTION_BAR_DECKKRAFT = 0.70
 # Deckkraft fuer das echte Hintergrundbild INNERHALB der QUELLE-/ZIELformat-Karte
 # (nicht nur eine Farbtoenung wie BG_CARD_TINT_OPACITY, sondern das tatsaechliche
 # Bild, auf die Kartengroesse skaliert, hinter den Eingabefeldern).
-BG_CARD_IMAGE_OPACITY = 0.50
+#
+# Bis v1.8.62 stand hier 0.50. Zusammen mit der Aufhellung der Texte auf
+# Wunsch um 10 Punkte gesenkt: Die Karte traegt jetzt zu 60 % ihre eigene
+# Farbe, das Bild scheint zu 40 % durch. Weniger Motiv hinter der Schrift,
+# das Bild bleibt aber deutlich sichtbar - der bestaetigte Grundzustand.
+BG_CARD_IMAGE_OPACITY = 0.40
 # Deckkraft der Flaeche hinter den Beschriftungen im Inhaltsbereich
 # (Kopfzeile, Untertitel, Status, Groessenangabe). 0.0 = voll
 # durchsichtig, 1.0 = deckend. Hebt den Text vom Hintergrundbild ab.
@@ -405,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.62"
+APP_VERSION = "v1.8.63"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1361,6 +1366,19 @@ class PS5ConverterGUI:
         (None, ""),
         ("context.quit", "on_closing"),
     )
+
+    #: Schriftfarbe aller Texte, die auf dem Hintergrundbild liegen.
+    #:
+    #: Bis v1.8.62 war das fg_secondary - ein gedaempftes Grau, das auf einer
+    #: einfarbigen Flaeche angenehm wirkt. Diese Texte liegen aber auf dem
+    #: Hintergrundbild, und wo dessen Motiv hell wird, verschwinden sie fast.
+    #: Gemeldet am 19.08.2026 mit fuenf Bildausschnitten: Karten-Ueberschriften,
+    #: Formathinweis und das Kaestchen zum Herunterfahren.
+    #:
+    #: fg_primary ist dieselbe Farbe, die "PRUEFUNG NACH DEM PACKEN" seit
+    #: v1.8.62 traegt - dort war die Lage ueber der hellsten Stelle des Bildes
+    #: schon vorher aufgefallen.
+    _KARTEN_TEXT_ROLLE = "fg_primary"
 
     #: Eintraege des Bearbeiten-Menues an Textfeldern als
     #: (i18n-Schluessel, virtuelles Tk-Ereignis). None ist der Trennstrich;
@@ -4506,7 +4524,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.source_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4529,7 +4547,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.target_format_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4557,7 +4575,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.compression_worker_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4661,13 +4679,11 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.verify_inline_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            # Heller als die uebrigen Kartenbeschriftungen, die fg_secondary
-            # tragen. Grund ist die Lage, nicht der Geschmack: Diese eine sitzt
-            # rechts neben der Klappliste und damit ueber der hellsten Stelle
-            # der ueblichen Hintergrundbilder - gemessen am 19.08.2026 an
-            # bg_20. Die anderen liegen ueber dunklen Bereichen und sind mit
-            # fg_secondary gut lesbar.
-            foreground=self._COLORS["fg_primary"],
+            # Diese Beschriftung war die erste, die aufgehellt wurde (v1.8.62):
+            # Sie sitzt rechts neben der Klappliste und damit ueber der hellsten
+            # Stelle der ueblichen Hintergrundbilder. Seit v1.8.63 gilt dieselbe
+            # Farbe fuer alle Texte auf der Karte.
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4691,7 +4707,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.format_options_hint_default"),
             font=(UI_SCHRIFT, 9),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             wraplength=560,
             justify="left",
@@ -4710,7 +4726,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.target_folder_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4735,7 +4751,7 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.temp_folder_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -4771,7 +4787,7 @@ class PS5ConverterGUI:
             command=self._on_shutdown_setting_changed,
             font=(UI_SCHRIFT, 9),
             bg=self._COLORS["bg_card"],
-            fg=self._COLORS["fg_secondary"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
             selectcolor=self._COLORS["bg_main"],
             activebackground=self._COLORS["bg_card"],
             activeforeground=self._COLORS["fg_primary"],
@@ -4887,7 +4903,7 @@ class PS5ConverterGUI:
             content_area,
             text=self._t("main.status_ready"),
             font=(UI_SCHRIFT, 9, "italic"),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
         self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 0))
         self._content_caption_labels.append(self.status_label)
@@ -4897,7 +4913,7 @@ class PS5ConverterGUI:
             content_area,
             text="",
             font=(UI_SCHRIFT, 8),
-            foreground=self._COLORS["fg_secondary"],
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
         self.telemetry_label.grid(row=6, column=0, sticky="e", pady=(2, 0))
         # Im Leerlauf ganz aus dem Raster nehmen, statt nur den Text zu leeren:
@@ -4916,15 +4932,23 @@ class PS5ConverterGUI:
         # und Untertitel fehlen hier bewusst - die holen ihre Farbe aus
         # Header.TLabel / Subtitle.TLabel und werden von _setup_styles() erreicht.
         for _label, _rolle in (
-            (self.src_title, "fg_secondary"),
-            (self.format_title, "fg_secondary"),
-            (self.perf_title, "fg_secondary"),
-            (self.format_info_label, "fg_secondary"),
-            (self.dest_title, "fg_secondary"),
-            (self.temp_title, "fg_secondary"),
+            (self.src_title, self._KARTEN_TEXT_ROLLE),
+            (self.format_title, self._KARTEN_TEXT_ROLLE),
+            (self.perf_title, self._KARTEN_TEXT_ROLLE),
+            (self.format_info_label, self._KARTEN_TEXT_ROLLE),
+            (self.dest_title, self._KARTEN_TEXT_ROLLE),
+            (self.temp_title, self._KARTEN_TEXT_ROLLE),
+            # Fehlte bis v1.8.62 in dieser Tabelle: Die Aufhellung aus v1.8.62
+            # waere beim ersten Design-Wechsel wieder verschwunden.
+            (self.verify_inline_title, self._KARTEN_TEXT_ROLLE),
+            # Das Kaestchen ist ein tk.Checkbutton, kein Label - "foreground"
+            # ist dort der Zweitname von "fg" und wirkt genauso.
+            (self.shutdown_check, self._KARTEN_TEXT_ROLLE),
             (self.size_label, "fg_primary"),
-            (self.status_label, "fg_secondary"),
-            (self.telemetry_label, "fg_secondary"),
+            # Diese beiden stehen unter der Karte, aber auf demselben Bild -
+            # und hatten deshalb dasselbe Leseproblem.
+            (self.status_label, self._KARTEN_TEXT_ROLLE),
+            (self.telemetry_label, self._KARTEN_TEXT_ROLLE),
             (self.percent_label, "fg_accent"),
         ):
             _label._caption_fg_role = _rolle
