@@ -405,7 +405,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.61"
+APP_VERSION = "v1.8.62"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -4661,7 +4661,13 @@ class PS5ConverterGUI:
             path_card,
             text=self._t("main.verify_inline_label"),
             font=(UI_SCHRIFT, 9, "bold"),
-            foreground=self._COLORS["fg_secondary"],
+            # Heller als die uebrigen Kartenbeschriftungen, die fg_secondary
+            # tragen. Grund ist die Lage, nicht der Geschmack: Diese eine sitzt
+            # rechts neben der Klappliste und damit ueber der hellsten Stelle
+            # der ueblichen Hintergrundbilder - gemessen am 19.08.2026 an
+            # bg_20. Die anderen liegen ueber dunklen Bereichen und sind mit
+            # fg_secondary gut lesbar.
+            foreground=self._COLORS["fg_primary"],
             background=self._COLORS["bg_card"],
             compound="center",
         )
@@ -24483,7 +24489,11 @@ class PS5ConverterGUI:
         """Fenster zum Bearbeiten der Startreihenfolge auf der Konsole."""
         c = self._COLORS
         win = self._build_modern_toplevel(self._t("autoloader.window_title"),
-                                          980, 640, min_width=820, min_height=520)
+                                          980, 900, min_width=820, min_height=560)
+        # Dieselbe Ueberschrift wie in jedem anderen Werkzeugfenster - ohne sie
+        # faengt das Fenster mitten im Hinweistext an und faellt aus der Reihe.
+        self._build_modern_header(win, self._t("autoloader.window_title"),
+                                  self._t("autoloader.subtitle"))
 
         tk.Label(win, text=self._t("autoloader.hint"), font=(UI_SCHRIFT, 9),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
@@ -24705,18 +24715,29 @@ class PS5ConverterGUI:
                 lambda n: (stand_var.set(self._t("autoloader.state_restored", count=n)),
                            _holen()))
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        # Zwei Reihen, nicht eine. In einer Reihe verlangen die sieben Knoepfe
+        # zusammen ueber 1600 Pixel; das Fenster waechst auf seinen Inhalt und
+        # ginge damit weit ueber seine eingestellte Breite hinaus - auf einem
+        # kleineren Schirm waeren die hinteren Knoepfe wieder abgeschnitten,
+        # genau der Fehler, den v1.8.60 beseitigt hat. Gemessen am 19.08.2026:
+        # 1651 px statt der eingestellten 980.
+        knopfbereich = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfbereich.pack(fill="x")
+        reihe_oben = tk.Frame(knopfbereich, bg=c["bg_main"])
+        reihe_oben.pack(fill="x")
+        reihe_unten = tk.Frame(knopfbereich, bg=c["bg_main"])
+        reihe_unten.pack(fill="x", pady=(8, 0))
+
+        ttk.Button(reihe_unten, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        for beschriftung, befehl, stil in (
-                ("autoloader.action_load", _holen, "Accent.TButton"),
-                ("autoloader.action_save", _schreiben, ""),
-                ("autoloader.action_upload", _hochladen, ""),
-                ("autoloader.action_delete", _loeschen, ""),
-                ("autoloader.action_snapshot", _schnappschuss, ""),
-                ("autoloader.action_restore", _zurueckspielen, "")):
-            knopf = ttk.Button(knopfreihe, text=self._t(beschriftung), command=befehl)
+        for reihe, beschriftung, befehl, stil in (
+                (reihe_oben, "autoloader.action_load", _holen, "Accent.TButton"),
+                (reihe_oben, "autoloader.action_save", _schreiben, ""),
+                (reihe_oben, "autoloader.action_upload", _hochladen, ""),
+                (reihe_unten, "autoloader.action_delete", _loeschen, ""),
+                (reihe_unten, "autoloader.action_snapshot", _schnappschuss, ""),
+                (reihe_unten, "autoloader.action_restore", _zurueckspielen, "")):
+            knopf = ttk.Button(reihe, text=self._t(beschriftung), command=befehl)
             if stil:
                 knopf.configure(style=stil)
             knopf.pack(side="left", padx=(0, 8))

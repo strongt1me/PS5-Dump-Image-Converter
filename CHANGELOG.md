@@ -2,9 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.61):** Download-Links werden aus der Zwischenablage übernommen, der Backport sagt jetzt, ob die Ersatzbibliotheken wirklich reichen, und die Startreihenfolge der Konsole lässt sich vom PC aus bearbeiten.
+> **Kurz zum aktuellen Stand (v1.8.62):** Download-Links werden aus der Zwischenablage übernommen, der Backport sagt jetzt, ob die Ersatzbibliotheken wirklich reichen, und die Startreihenfolge der Konsole lässt sich vom PC aus bearbeiten.
 
 ---
+
+## v1.8.62 – 19.08.2026
+
+### Anzeige
+
+- **„PRÜFUNG NACH DEM PACKEN" war schwer zu lesen.** Die Beschriftung sitzt rechts neben der Klappliste und damit über der hellsten Stelle der üblichen Hintergrundbilder. Sie ist jetzt hell geschrieben statt gedämpft wie die Beschriftungen daneben, die über dunklen Bereichen liegen.
+- **Das Fenster ps5_autoloader ging viel zu breit auf** – gemessen 1651 statt der eingestellten 980 Pixel, weil die sieben Knöpfe nebeneinander so viel Platz verlangen. Auf einem kleineren Bildschirm wären die hinteren wieder abgeschnitten gewesen. Jetzt zwei Knopfreihen.
+- **Dem Fenster ps5_autoloader fehlte die Überschrift**, die jedes andere Werkzeugfenster innen trägt. Es fing mitten im Hinweistext an.
 
 ## v1.8.61 – 19.08.2026
 

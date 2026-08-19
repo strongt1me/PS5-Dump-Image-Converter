@@ -658,6 +658,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'backport.option_backup': {'de': 'Sicherung anlegen', 'en': 'Create backup'},
     'titlebar.autoloader': {'de': 'ps5_autoloader', 'en': 'ps5_autoloader'},
     'autoloader.window_title': {'de': 'ps5_autoloader – Startreihenfolge der Konsole', 'en': 'ps5_autoloader – console startup sequence'},
+    'autoloader.subtitle': {'de': 'Welche Payloads die Konsole nach dem Jailbreak startet – und in welcher Reihenfolge', 'en': 'Which payloads the console starts after the jailbreak – and in which order'},
     'autoloader.hint': {'de': 'Die Konsole sucht ps5_autoloader/autoload.txt in dieser Reihenfolge: 1. USB, 2. /data, 3. Spielstandordner – nur die erste gefundene Datei zählt. Dieses Fenster arbeitet auf /data/ps5_autoloader.', 'en': 'The console looks for ps5_autoloader/autoload.txt in this order: 1. USB, 2. /data, 3. savedata – only the first one found is used. This window works on /data/ps5_autoloader.'},
     'autoloader.syntax_hint': {'de': 'Eine Datei je Zeile (.elf, .bin, .js) • !1000 wartet 1000 ms • # ist ein Kommentar • der Kernel-Exploit startet von selbst und gehört nicht hinein • ein eigener Loader muss elfldr.elf heißen und vor den ELFs stehen', 'en': 'One file per line (.elf, .bin, .js) • !1000 waits 1000 ms • # is a comment • the kernel exploit starts by itself and does not belong here • a custom loader must be named elfldr.elf and come before the ELFs'},
     'autoloader.ip_label': {'de': 'PS5-Adresse', 'en': 'PS5 address'},
