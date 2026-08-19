@@ -29,6 +29,7 @@ SELF liegen im Klartext im Container, das Entpacken ist reines Umkopieren.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import os
 import struct
@@ -862,3 +863,280 @@ def fakelib_uebersprungene(basis: str, firmware: int) -> list[str]:
     genommen = {os.path.basename(p) for p in fakelib_dateien(basis, firmware)}
     return [n for n in namen
             if os.path.isfile(os.path.join(ordner, n)) and n not in genommen]
+
+
+# --------------------------------------------------------------------------
+# Deckungspruefung: Was importiert das Spiel, was liefert die Ersatzbibliothek
+# --------------------------------------------------------------------------
+#
+# Bis v1.8.61 hiess "backportiert" nur: Die Dateien liegen im Ordner. Ob eine
+# mitgelieferte Ersatzbibliothek ueberhaupt das exportiert, was das Spiel von
+# ihr verlangt, hat nie jemand nachgesehen - auf der Konsole faellt es erst
+# beim Start auf, und dann ohne brauchbare Meldung.
+#
+# Moeglich wird die Pruefung durch den NID-Algorithmus aus dem backport-helper
+# (tools/prx_rename_nids_auto.py, im Repo unter "PS5 SDK usw/"). Er ist hier
+# nachgerechnet, nicht uebernommen: sceKernelLoadStartModule -> wzvqT4UqKX8,
+# sceKernelDlsym -> LwG8g3niqwA, sceKernelAllocateDirectMemory -> rTXw65xmLIA,
+# alle drei gegen oeffentlich bekannte Werte geprueft (19.08.2026).
+
+#: Alphabet der SCE-Kurzkennungen. Die Reihenfolge ist nicht Base64-Standard -
+#: '+' und '-' stehen am Ende statt '+' und '/'.
+NID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-"
+
+#: Fester Anhang vor dem SHA-1. Ohne ihn kommt eine voellig andere Kennung
+#: heraus - der Wert stammt aus dem backport-helper und ist oben belegt.
+NID_SALZ = bytes.fromhex("518D64A635DED8C1E6B039B1C3E55230")
+
+#: Dynamische Eintraege eines PRX. Die 0x61...-Werte sind Sonys Erweiterungen.
+DT_STRTAB = 5
+DT_SYMTAB = 6
+DT_STRSZ = 10
+DT_SCE_IMPORT_LIB = 0x61000049
+DT_SCE_EXPORT_LIB = 0x61000047
+
+
+def nid_von_name(name: str) -> str:
+    """Rechnet den 11-Zeichen-NID zu einem Funktionsnamen aus."""
+    verdaut = hashlib.sha1(str(name).encode("utf-8") + NID_SALZ).digest()
+    wert = struct.unpack("<Q", verdaut[:8])[0]
+    roh = base64.b64encode(wert.to_bytes(8, "big"), altchars=b"+-")
+    return roh.decode("ascii").rstrip("=")
+
+
+def _kennzahl(zeichen: str) -> int:
+    """Kurzkennung eines Symbols (ein Zeichen) zurueck in ihre Zahl."""
+    try:
+        return NID_ALPHABET.index(zeichen)
+    except ValueError:
+        return -1
+
+
+def symbol_zerlegen(symbol: str) -> tuple[str, int, int]:
+    """Zerlegt ``<NID>#<Bibliothek>#<Modul>`` in seine drei Teile.
+
+    Returns:
+        (NID, Bibliothekskennzahl, Modulkennzahl). Bei einem Symbol, das nicht
+        dieser Form entspricht, sind beide Zahlen -1.
+    """
+    teile = str(symbol).split("#")
+    if len(teile) != 3 or len(teile[1]) != 1 or len(teile[2]) != 1:
+        return str(symbol), -1, -1
+    return teile[0], _kennzahl(teile[1]), _kennzahl(teile[2])
+
+
+def _programmkoepfe(elf: bytes) -> list[tuple[int, int, int, int]]:
+    """Alle Programmkoepfe als (Typ, Offset, virtuelle Adresse, Groesse)."""
+    if len(elf) < 0x40:
+        return []
+    phoff, = struct.unpack_from("<Q", elf, 0x20)
+    phentsize, phnum = struct.unpack_from("<HH", elf, 0x36)
+    koepfe = []
+    for i in range(phnum):
+        p = phoff + i * phentsize
+        if p + 0x38 > len(elf):
+            break
+        typ, = struct.unpack_from("<I", elf, p)
+        offset, vaddr = struct.unpack_from("<QQ", elf, p + 0x08)
+        groesse, = struct.unpack_from("<Q", elf, p + 0x20)
+        koepfe.append((typ, offset, vaddr, groesse))
+    return koepfe
+
+
+def prx_symbole(elf: bytes) -> dict:
+    """Liest Importe und Exporte eines PRX/ELF aus seiner Dynamiktabelle.
+
+    Ein PRX traegt keine Abschnittstabelle; alles Noetige steht in PT_DYNAMIC
+    und den geladenen Segmenten. Die Symbolnamen sind keine Klartextnamen,
+    sondern ``<NID>#<Bibliothek>#<Modul>`` - welche Bibliothek gemeint ist,
+    verraten erst die Eintraege DT_SCE_IMPORT_LIB und DT_SCE_EXPORT_LIB.
+
+    Returns:
+        Dict mit ``importe`` und ``exporte`` (je Dict Bibliotheksname ->
+        Menge von NIDs) sowie ``import_bibliotheken`` /
+        ``export_bibliotheken`` (Kennzahl -> Name). Leere Dicts, wenn die
+        Datei keine Dynamiktabelle hat - statisch gebundene Homebrew etwa.
+    """
+    leer = {"importe": {}, "exporte": {},
+            "import_bibliotheken": {}, "export_bibliotheken": {}}
+    if elf[:4] != b"\x7fELF":
+        return leer
+
+    lade, dynamik = [], None
+    for typ, offset, vaddr, groesse in _programmkoepfe(elf):
+        if typ == 1:                       # PT_LOAD
+            lade.append((vaddr, offset, groesse))
+        elif typ == 2:                     # PT_DYNAMIC
+            dynamik = (offset, groesse)
+    if dynamik is None or not lade:
+        return leer
+
+    def zu_offset(adresse: int):
+        for vaddr, offset, groesse in lade:
+            if vaddr <= adresse < vaddr + groesse:
+                return offset + (adresse - vaddr)
+        return None
+
+    werte: dict[int, int] = {}
+    bibliotheken: list[tuple[int, int, bool]] = []   # (Kennzahl, Namensoffset, Import?)
+    offset, groesse = dynamik
+    for i in range(groesse // 16):
+        p = offset + i * 16
+        if p + 16 > len(elf):
+            break
+        marke, wert = struct.unpack_from("<QQ", elf, p)
+        if marke == 0:
+            break
+        if marke in (DT_SCE_IMPORT_LIB, DT_SCE_EXPORT_LIB):
+            # Unten der Namensoffset in der Zeichenkettentabelle, ab Bit 48
+            # die Kennzahl, die im Symbol als einzelnes Zeichen auftaucht.
+            bibliotheken.append((wert >> 48, wert & 0xFFFFFFFF,
+                                 marke == DT_SCE_IMPORT_LIB))
+        else:
+            werte.setdefault(marke, wert)
+
+    if DT_STRTAB not in werte or DT_SYMTAB not in werte:
+        return leer
+    strtab = zu_offset(werte[DT_STRTAB])
+    symtab = zu_offset(werte[DT_SYMTAB])
+    strsz = werte.get(DT_STRSZ, 0)
+    if strtab is None or symtab is None or not strsz:
+        return leer
+
+    def zeichenkette(relativ: int) -> str:
+        p = strtab + relativ
+        if p >= len(elf) or relativ >= strsz:
+            return ""
+        ende = elf.find(b"\0", p)
+        if ende < 0:
+            return ""
+        return elf[p:ende].decode("latin1")
+
+    import_namen = {k: zeichenkette(o) for k, o, ist_import in bibliotheken if ist_import}
+    export_namen = {k: zeichenkette(o) for k, o, ist_import in bibliotheken if not ist_import}
+
+    importe: dict[str, set] = {}
+    exporte: dict[str, set] = {}
+    i = 0
+    # 24 Bytes je Eintrag (Elf64_Sym). Die Obergrenze verhindert, dass eine
+    # beschaedigte Datei den Lauf in eine Endlosschleife zieht.
+    while symtab + (i + 1) * 24 <= len(elf) and i < 100000:
+        st_name, _info, _other, st_shndx, _wert, _groesse = struct.unpack_from(
+            "<IBBHQQ", elf, symtab + i * 24)
+        i += 1
+        if st_name == 0 or st_name >= strsz:
+            continue
+        name = zeichenkette(st_name)
+        if not name:
+            continue
+        nid, bibliothek, _modul = symbol_zerlegen(name)
+        if bibliothek < 0:
+            continue
+        # st_shndx == 0 heisst "hier nicht definiert" - also ein Import.
+        if st_shndx:
+            exporte.setdefault(export_namen.get(bibliothek, "?"), set()).add(nid)
+        else:
+            importe.setdefault(import_namen.get(bibliothek, "?"), set()).add(nid)
+
+    return {"importe": importe, "exporte": exporte,
+            "import_bibliotheken": import_namen, "export_bibliotheken": export_namen}
+
+
+def symbole_aus_datei(pfad: str) -> dict:
+    """Wie :func:`prx_symbole`, packt ein SELF vorher aus."""
+    with open(pfad, "rb") as fh:
+        roh = fh.read()
+    if dateityp(roh) == "self":
+        try:
+            roh = self_zu_elf(roh)
+        except Exception:
+            return {"importe": {}, "exporte": {},
+                    "import_bibliotheken": {}, "export_bibliotheken": {}}
+    return prx_symbole(roh)
+
+
+def bibliotheksname(dateiname: str) -> str:
+    """Bibliotheksname aus einem Dateinamen - ``libSceAgc.sprx`` -> ``libSceAgc``.
+
+    ``libSceSaveData.native.sprx`` ergibt ``libSceSaveData.native``; der Name
+    im Modul heisst dort tatsaechlich so.
+    """
+    name = os.path.basename(str(dateiname))
+    for endung in (".sprx", ".prx", ".elf", ".bin"):
+        if name.lower().endswith(endung):
+            return name[:-len(endung)]
+    return name
+
+
+def deckung_pruefen(spieldateien, fakelibs) -> dict:
+    """Haelt die Importe eines Spiels gegen die Exporte der Ersatzbibliotheken.
+
+    Args:
+        spieldateien: Pfade der ausfuehrbaren Dateien des Spiels (eboot.bin
+            und Module).
+        fakelibs: Pfade der Ersatzbibliotheken, die installiert werden.
+
+    Returns:
+        Dict mit:
+            ``geprueft``   Anzahl gelesener Spieldateien mit Dynamiktabelle
+            ``ohne_tabelle`` Dateien ohne Importtabelle (statisch gebunden)
+            ``bibliotheken`` je ersetzter Bibliothek ein Dict mit ``verlangt``,
+                ``geliefert`` und ``fehlend`` (Mengen von NIDs)
+            ``unbeteiligt`` Bibliotheken, die das Spiel importiert, fuer die
+                aber keine Ersatzbibliothek mitkommt - die kommen von der
+                Konsole und sind kein Befund
+    """
+    # Was die mitgelieferten Bibliotheken exportieren, nach Namen.
+    #
+    # Je Bibliotheksname genau deren eigene Exporte: Eine Datei kann mehrere
+    # Bibliotheken fuehren - libSceNpAuth.sprx etwa libSceNpAuth (14 Symbole),
+    # libSceNpAuthAuthorizedApp (1) und libSceNpAuthCompat (2). Wuerde man alle
+    # zusammenwerfen, gaelte ein Symbol als geliefert, das in Wahrheit unter
+    # einem anderen Namen steht - und die Pruefung schwiege genau dort, wo sie
+    # etwas sagen sollte.
+    geliefert: dict[str, set] = {}
+    for pfad in fakelibs:
+        symbole = symbole_aus_datei(pfad)
+        erkannt = False
+        for name, menge in symbole["exporte"].items():
+            if not name or name == "?":
+                continue
+            geliefert.setdefault(name, set()).update(menge)
+            erkannt = True
+        if not erkannt:
+            # Keine lesbare Exporttabelle - dann bleibt nur der Dateiname.
+            alle: set = set()
+            for menge in symbole["exporte"].values():
+                alle |= menge
+            geliefert.setdefault(bibliotheksname(pfad), set()).update(alle)
+
+    verlangt: dict[str, set] = {}
+    geprueft = 0
+    ohne_tabelle = 0
+    for pfad in spieldateien:
+        symbole = symbole_aus_datei(pfad)
+        if not symbole["importe"]:
+            ohne_tabelle += 1
+            continue
+        geprueft += 1
+        for bibliothek, nids in symbole["importe"].items():
+            verlangt.setdefault(bibliothek, set()).update(nids)
+
+    bibliotheken = {}
+    unbeteiligt = []
+    for bibliothek, nids in sorted(verlangt.items()):
+        # "?" sind Symbole, deren Bibliothekskennzahl in keiner Tabelle steht -
+        # Modulkopf-Eintraege und dergleichen. Sie als fehlende Bibliothek zu
+        # melden waere Rauschen.
+        if not bibliothek or bibliothek == "?":
+            continue
+        if bibliothek not in geliefert:
+            unbeteiligt.append(bibliothek)
+            continue
+        bibliotheken[bibliothek] = {
+            "verlangt": nids,
+            "geliefert": geliefert[bibliothek],
+            "fehlend": nids - geliefert[bibliothek],
+        }
+    return {"geprueft": geprueft, "ohne_tabelle": ohne_tabelle,
+            "bibliotheken": bibliotheken, "unbeteiligt": sorted(unbeteiligt)}

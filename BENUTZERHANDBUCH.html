@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.60</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.61</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.60</span>
+      <span class="marke">Version v1.8.61</span>
       <span class="marke">Stand 16. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -646,7 +646,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit sieben Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4) und <strong>BACKPORT</strong> (13.5).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) und <strong>ps5_autoloader</strong> (13.7).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -800,6 +800,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </table>
   </div>
 
+  <h4>Deckung prüfen</h4>
+  <p>Der Haken <strong>Deckung prüfen</strong> ist voreingestellt. Nach dem Kopieren der Ersatzbibliotheken liest das Programm, welche Funktionen das Spiel von ihnen verlangt, und hält das gegen das, was sie tatsächlich anbieten. Das Ergebnis steht im Protokoll:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td>libSceAgc: alle 42 verlangten Funktionen sind vorhanden.</td><td>Diese Bibliothek deckt ab, was das Spiel braucht.</td></tr>
+      <tr><td>libSceAgc: 42 verlangt, 3 fehlen.</td><td>Darunter stehen die fehlenden Kennungen. Das Spiel kann an dieser Stelle abstürzen.</td></tr>
+      <tr><td>Von der Konsole kommen: libkernel, …</td><td>Bibliotheken, für die keine Ersatzdatei mitkommt. Kein Befund – die liefert die Firmware selbst.</td></tr>
+      <tr><td>n ohne Importtabelle</td><td>Statisch gebundene Dateien. Sie lassen sich nicht prüfen und werden deshalb ausdrücklich genannt.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Die Prüfung ändert nichts und hält nichts an; sie ist ein Befund zum Nachlesen. Eine vollständige Deckung ist keine Garantie, dass das Spiel startet – aber eine gemeldete Lücke ist ein handfester Grund, warum es das vielleicht nicht tut.</p>
+
   <h4>Was dabei geschützt ist</h4>
   <p>Gearbeitet wird ausschließlich im Arbeitsspeicher. Eine Datei wird erst ersetzt, wenn Entpacken, Herabsetzen <strong>und</strong> Neusignieren gelungen sind – und dann in einem Zug. Bricht ein Schritt ab, bleibt das Original genau so, wie es war. Angehoben wird eine SDK-Angabe nie, nur herabgesetzt.</p>
   <div class="kasten warnung">
@@ -830,6 +845,50 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 </section>
 
 <section class="kapitel" id="k14">
+  <h3>13.7 ps5_autoloader – die Startreihenfolge der Konsole</h3>
+  <p>Nach dem Jailbreak startet die PS5 eine Reihe von Payloads – FTP-Dienst, ShadowMount+, kstuff und was sonst gebraucht wird. Welche das sind und in welcher Reihenfolge, steht in einer einfachen Textdatei namens <code>autoload.txt</code>. Dieses Fenster bearbeitet sie vom PC aus, über FTP.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → ps5_autoloader.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Zuerst das Wichtigste: die Suchreihenfolge</span>
+    <p>Die Konsole sucht <code>ps5_autoloader/autoload.txt</code> in dieser Reihenfolge: <strong>1. USB-Stick, 2. <code>/data</code>, 3. Spielstandordner</strong> – und benutzt nur die <em>erste</em> gefundene Datei. Dieses Fenster arbeitet auf <code>/data</code>. Steckt ein Stick mit eigener <code>autoload.txt</code>, gewinnt der Stick, und Ihre Änderungen hier bleiben folgenlos.</p>
+  </div>
+
+  <h4>Wie die Datei aufgebaut ist</h4>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
+    <tbody>
+      <tr><td><code>kstuff.elf</code></td><td>Startet diese Datei. Erlaubt sind <code>.elf</code>, <code>.bin</code> und <code>.js</code>.</td></tr>
+      <tr><td><code>!2000</code></td><td>Wartet 2000 Millisekunden, bevor es weitergeht.</td></tr>
+      <tr><td><code># Text</code></td><td>Kommentar, wird übergangen.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Der Kernel-Exploit startet von selbst und gehört <strong>nicht</strong> in die Liste. Wer einen eigenen ELF-Loader benutzt, muss ihn <code>elfldr.elf</code> nennen und vor die übrigen ELF-Dateien setzen.</p>
+
+  <h4>Die Knöpfe</h4>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Knopf</th><th>Was er tut</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Von der Konsole holen</strong></td><td>Liest den Ordner und die <code>autoload.txt</code>. Steht eine PS5-Adresse fest, geschieht das beim Öffnen von selbst.</td></tr>
+      <tr><td><strong>autoload.txt schreiben</strong></td><td>Schreibt den bearbeiteten Text zurück. Nennt er Dateien, die gar nicht im Ordner liegen, wird vorher gefragt – die Konsole überspringt solche Zeilen sonst wortlos.</td></tr>
+      <tr><td><strong>Datei hochladen</strong></td><td>Legt ein Payload im Ordner ab. Danach wird nachgesehen, ob es das Ausführungsrecht trägt.</td></tr>
+      <tr><td><strong>Ausgewählte löschen</strong></td><td>Entfernt markierte Dateien von der Konsole. Mit Rückfrage.</td></tr>
+      <tr><td><strong>Schnappschuss sichern</strong></td><td>Lädt den kompletten Ordner in einen Unterordner <code>ps5_autoloader</code> auf Ihrem PC.</td></tr>
+      <tr><td><strong>Schnappschuss zurückspielen</strong></td><td>Spielt einen gesicherten Stand wieder ein. Gleichnamige Dateien auf der Konsole werden überschrieben. Mit Rückfrage.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Warum der Upload über ftpsrv geht</span>
+    <p>Ein Payload startet nur, wenn die Datei auf der Konsole das Ausführungsrecht trägt. <code>ftpsrv</code> (Port 2121) legt sie so ab, andere FTP-Dienste nicht – und die Konsole sagt dazu nichts, sie übergeht die Datei einfach. Das Programm bevorzugt deshalb ftpsrv und warnt, wenn das Recht nach dem Hochladen fehlt.</p>
+  </div>
+
+  <p><strong>Ein guter erster Schritt:</strong> Bevor Sie etwas ändern, einen Schnappschuss sichern. Dann können Sie jeden Versuch zurücknehmen, ohne die Konsole neu einrichten zu müssen.</p>
+
   <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
   <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
   <div class="tabelle">
@@ -887,7 +946,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.60), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.61), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1069,7 +1128,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.60</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.61</strong></span>
     <span>Stand 18. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

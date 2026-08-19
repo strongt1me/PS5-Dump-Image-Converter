@@ -2,9 +2,29 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.60):** Die Knöpfe sind in jedem Fenster erreichbar, ohne dass man es vorher größer ziehen muss.
+> **Kurz zum aktuellen Stand (v1.8.61):** Download-Links werden aus der Zwischenablage übernommen, der Backport sagt jetzt, ob die Ersatzbibliotheken wirklich reichen, und die Startreihenfolge der Konsole lässt sich vom PC aus bearbeiten.
 
 ---
+
+## v1.8.61 – 19.08.2026
+
+### Download-Fenster
+
+- **Der Rechtsklick in einem Eingabefeld tat nichts.** Belegt war er nur auf dem Hauptfenster (Vollbild, Verkleinern, Beenden); Nebenfenster sind eigene Toplevels und erben das nicht. Ausgerechnet im Feld für Download-Adressen war er der naheliegende Weg – und der einzige, der nicht funktionierte. Jedes Textfeld im ganzen Programm hat jetzt „Ausschneiden / Kopieren / Einfügen / Alles markieren", auf dem Mac auch über Strg+Klick.
+- **Mehrere Adressen auf einmal.** Sie wurden schon vorher alle erkannt, aber jede unbrauchbare Zeile öffnete ein eigenes Hinweisfenster – bei einem aus einer Seite kopierten Block mehrere hintereinander, hinter denen die Liste verschwand. Jetzt eine Zeile im Protokoll: wie viele übernommen, wie viele schon dastanden.
+- **Zwischenablage überwachen.** Ist der Haken gesetzt, genügt im Browser der Rechtsklick auf den Download-Link und „Linkadresse kopieren" – die Adresse landet von selbst in der Liste und wird geladen. Die Überwachung läuft **auch bei geschlossenem Download-Fenster** und schon ab dem Programmstart; wird eine Adresse gefunden, öffnet sich das Fenster von selbst. Den Haken gibt es an zwei Stellen – im Download-Fenster und in den Einstellungen –, beide schalten dasselbe. Die Einstellung bleibt erhalten.
+- **Dieselbe Adresse zweimal ergibt keinen zweiten Eintrag mehr.** Bisher blockierte nur, was gerade wartete oder lief; fertige und schon vorhandene Dateien wurden erneut aufgenommen. Fehlgeschlagene und abgebrochene bleiben ausgenommen – die soll man erneut anstoßen können.
+- **Strg+Eingabe** schließt das Einfügefenster ab. Die bloße Eingabetaste kann es nicht sein: In einem mehrzeiligen Feld gehört sie zum Zeilenumbruch, und mehrere Zeilen sind hier der Normalfall.
+
+### Backport – Deckung prüfen
+
+- **Neu: „Deckung prüfen".** Bisher hieß „backportiert" nur, dass die Ersatzbibliotheken im Ordner liegen. Ob eine davon überhaupt liefert, was das Spiel von ihr verlangt, sah niemand nach – auf der Konsole fällt es erst beim Start auf, und dann ohne brauchbare Meldung. Das Programm liest jetzt die Importe des Spiels und die Exporte der Ersatzbibliotheken und schreibt ins Protokoll, welche Funktionen fehlen. Bibliotheken, die von der Konsole kommen, werden getrennt aufgeführt und nicht als Befund gemeldet.
+
+### Neu: ps5_autoloader
+
+- **Ein Fenster für die Startreihenfolge der Konsole** (WEITERE TOOLS → ps5_autoloader). Es liest und schreibt `/data/ps5_autoloader` über FTP: `autoload.txt` bearbeiten, Payloads hochladen und löschen, den ganzen Ordner als Schnappschuss sichern und zurückspielen.
+- Beim Schreiben wird gewarnt, wenn die `autoload.txt` Dateien nennt, die gar nicht im Ordner liegen – die Konsole überspringt solche Zeilen stillschweigend.
+- Nach dem Hochladen wird nachgesehen, ob die Datei das Ausführungsrecht trägt. Ohne das startet die Konsole sie nicht und sagt nichts dazu.
 
 ## v1.8.60 – 19.08.2026
 

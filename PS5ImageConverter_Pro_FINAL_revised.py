@@ -405,7 +405,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.60"
+APP_VERSION = "v1.8.61"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1362,6 +1362,17 @@ class PS5ConverterGUI:
         ("context.quit", "on_closing"),
     )
 
+    #: Eintraege des Bearbeiten-Menues an Textfeldern als
+    #: (i18n-Schluessel, virtuelles Tk-Ereignis). None ist der Trennstrich;
+    #: "alles" hat kein eigenes Tk-Ereignis und wird gesondert behandelt.
+    _TEXTMENUE_EINTRAEGE: tuple[tuple[str | None, str], ...] = (
+        ("context.cut", "<<Cut>>"),
+        ("context.copy", "<<Copy>>"),
+        ("context.paste", "<<Paste>>"),
+        (None, ""),
+        ("context.select_all", "alles"),
+    )
+
     #: Eintraege des Menues "WEITERE TOOLS" als (i18n-Schluessel, Methodenname).
     #: Eine Liste statt einzelner add_command-Aufrufe, damit die Beschriftungen
     #: beim Sprachwechsel aus derselben Quelle neu gesetzt werden koennen.
@@ -1375,6 +1386,7 @@ class PS5ConverterGUI:
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
+        ("titlebar.autoloader", "_show_autoloader"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -1527,6 +1539,11 @@ class PS5ConverterGUI:
         self._downloads: dict[str, dict] = {}
         self._downloads_win: "tk.Toplevel | None" = None
         self._downloads_tree: "ttk.Treeview | None" = None
+        # Laufende Zwischenablage-Ueberwachung des Download-Fensters.
+        # Sie haengt an self.root, weil after() ein Fenster braucht, das
+        # den Lauf ueberlebt - das Download-Fenster tut das nicht.
+        self._zwischenablage_after_id: "str | None" = None
+        self._zwischenablage_letzter: str = ""
         # is_latest der zuletzt im Info-Fenster angeklickten Patch-Zeile; steuert
         # die Einordnung als Update oder Patch.
         self._letzte_patch_ist_neueste: bool | None = None
@@ -1964,6 +1981,10 @@ class PS5ConverterGUI:
             else:
                 self.context_menu.add_command(label=self._t(_key),
                                               command=getattr(self, _befehl))
+
+        # Textfelder bekommen ihr eigenes Menue - das obige gilt dem
+        # Fenster, nicht dem Inhalt eines Eingabefelds.
+        self._textmenue_einrichten()
 
         # Prozess-Variablen
         self.is_running = False
@@ -2529,6 +2550,17 @@ class PS5ConverterGUI:
                     kontext.entryconfigure(position, label=self._t(label_key))
                 except tk.TclError as exc:
                     logger.debug("Kontextmenue %s nicht aktualisierbar: %s", label_key, exc)
+
+        # Und dasselbe fuer das Bearbeiten-Menue an den Textfeldern.
+        textmenue = getattr(self, "_textmenue", None)
+        if textmenue is not None:
+            for position, (label_key, _ereignis) in enumerate(self._TEXTMENUE_EINTRAEGE):
+                if label_key is None:
+                    continue
+                try:
+                    textmenue.entryconfigure(position, label=self._t(label_key))
+                except tk.TclError as exc:
+                    logger.debug("Textmenue %s nicht aktualisierbar: %s", label_key, exc)
 
         # Generisch registrierte Widgets (Hauptfenster + alle Nebenfenster).
         for widget, key, config_attr, kwargs in getattr(self, "_i18n_widgets", []):
@@ -5875,6 +5907,128 @@ class PS5ConverterGUI:
         gelöscht (nach dem Laden haelt Windows eine interne Kopie).
         """
         self._apply_icon_to_window(self.root)
+
+    def _textmenue_einrichten(self) -> None:
+        """Haengt ein Bearbeiten-Menue an jedes Textfeld im ganzen Programm.
+
+        Der Rechtsklick war bisher nur auf dem Hauptfenster belegt (Vollbild,
+        Verkleinern, Beenden). In einem Eingabefeld passierte gar nichts:
+        Nebenfenster sind eigene Toplevels und erben die Bindung des
+        Hauptfensters nicht. Gemeldet am 19.08.2026 fuer das Feld, in das
+        Download-Adressen eingefuegt werden - dort war der Rechtsklick der
+        naheliegende Weg und der einzige, der nicht funktionierte.
+
+        Die Bindung haengt an der Widget-Klasse, nicht am einzelnen Feld:
+        So bekommt jedes Textfeld das Menue, auch die, die es zum Zeitpunkt
+        dieses Aufrufs noch gar nicht gibt.
+        """
+        farben = self._COLORS
+        self._textmenue = tk.Menu(
+            self.root, tearoff=0,
+            bg=farben["bg_card"], fg=farben["fg_accent"],
+            activebackground=farben["fg_accent"],
+            activeforeground=farben["bg_main"],
+            font=(UI_SCHRIFT, 10))
+        for schluessel, ereignis in self._TEXTMENUE_EINTRAEGE:
+            if schluessel is None:
+                self._textmenue.add_separator()
+                continue
+            self._textmenue.add_command(
+                label=self._t(schluessel),
+                command=lambda e=ereignis: self._textmenue_ausfuehren(e))
+
+        tasten = ["<Button-3>"]
+        if sys.platform == "darwin":
+            # Auf dem Mac liefert die rechte Taste Button-2; Button-3 kommt
+            # dort nur von Maeusen mit drei Tasten. Strg+Klick ist der Weg,
+            # den Apple-Nutzer am Trackpad gewohnt sind.
+            tasten += ["<Button-2>", "<Control-Button-1>"]
+
+        for klasse in ("Entry", "TEntry", "Text", "Spinbox", "TSpinbox", "TCombobox"):
+            for taste in tasten:
+                self.root.bind_class(klasse, taste, self._textmenue_zeigen, add="+")
+            # Strg+A markiert alles. Tk belegt das in einem Entry sonst mit
+            # "an den Zeilenanfang" - was hier niemand erwartet.
+            self.root.bind_class(klasse, "<Control-a>", self._textmenue_alles, add="+")
+            self.root.bind_class(klasse, "<Control-A>", self._textmenue_alles, add="+")
+
+    def _textmenue_schreibbar(self, widget: "tk.Misc") -> bool:
+        """True, wenn in das Feld geschrieben werden darf."""
+        try:
+            if hasattr(widget, "instate"):
+                return bool(widget.instate(["!disabled", "!readonly"]))
+            return str(widget.cget("state")) == "normal"
+        except Exception:
+            # Im Zweifel anbieten: Ein Menuepunkt, der nichts tut, ist
+            # harmloser als einer, der grundlos fehlt.
+            return True
+
+    def _textmenue_auswahl(self, widget: "tk.Misc") -> bool:
+        """True, wenn im Feld gerade etwas markiert ist."""
+        try:
+            if isinstance(widget, tk.Text):
+                return bool(widget.tag_ranges("sel"))
+            return bool(widget.selection_present())
+        except Exception:
+            return False
+
+    def _textmenue_zeigen(self, event: "tk.Event") -> str:
+        """Oeffnet das Bearbeiten-Menue an der Zeigerposition."""
+        ziel = event.widget
+        self._textmenue_ziel = ziel
+        try:
+            ziel.focus_set()
+        except Exception:
+            pass
+
+        schreibbar = self._textmenue_schreibbar(ziel)
+        markiert = self._textmenue_auswahl(ziel)
+        # Positionen wie in _TEXTMENUE_EINTRAEGE: 0 Ausschneiden, 1 Kopieren,
+        # 2 Einfuegen. Ausgegraut statt versteckt, damit das Menue immer
+        # gleich aussieht und die Punkte an derselben Stelle stehen.
+        for position, erlaubt in ((0, markiert and schreibbar),
+                                  (1, markiert),
+                                  (2, schreibbar)):
+            try:
+                self._textmenue.entryconfigure(
+                    position, state="normal" if erlaubt else "disabled")
+            except tk.TclError:
+                pass
+
+        try:
+            self._textmenue.tk_popup(event.x_root, event.y_root)
+        finally:
+            self._textmenue.grab_release()
+        return "break"
+
+    def _textmenue_ausfuehren(self, ereignis: str) -> None:
+        """Fuehrt den gewaehlten Menuepunkt auf dem zuletzt geklickten Feld aus."""
+        ziel = getattr(self, "_textmenue_ziel", None)
+        if ziel is None:
+            return
+        if ereignis == "alles":
+            self._textmenue_alles()
+            return
+        try:
+            ziel.event_generate(ereignis)
+        except Exception as exc:
+            logger.debug("Textmenue %s nicht ausfuehrbar: %s", ereignis, exc)
+
+    def _textmenue_alles(self, event: "tk.Event | None" = None) -> str:
+        """Markiert den gesamten Inhalt des Feldes."""
+        ziel = event.widget if event is not None else getattr(self, "_textmenue_ziel", None)
+        if ziel is None:
+            return "break"
+        try:
+            if isinstance(ziel, tk.Text):
+                ziel.tag_add("sel", "1.0", "end-1c")
+                ziel.mark_set("insert", "1.0")
+            else:
+                ziel.select_range(0, "end")
+                ziel.icursor("end")
+        except Exception as exc:
+            logger.debug("Alles markieren nicht moeglich: %s", exc)
+        return "break"
 
     def _show_context_menu(self, event: tk.Event) -> None:
         """Zeigt das Rechtsklick-Kontextmenü an."""
@@ -23698,35 +23852,33 @@ class PS5ConverterGUI:
                 inhalt = self.root.clipboard_get()
             except Exception:
                 inhalt = ""
-            adressen = ps5_downloads.eingehende_urls(inhalt)
-            if not adressen:
-                messagebox.showinfo(self._t("downloads.nothing_found_title"),
-                                    self._t("downloads.nothing_found_message"), parent=win)
-                return
-            for adresse in adressen:
-                self._download_aufnehmen(adresse, parent=win)
+            self._downloads_uebernehmen(inhalt, parent=win)
 
         def _einfuegen() -> None:
             dlg = self._build_modern_toplevel(self._t("downloads.paste_dialog_title"),
                                               700, 300, min_width=560, min_height=260)
             tk.Label(dlg, text=self._t("downloads.paste_hint"), font=(UI_SCHRIFT, 9),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
-                     wraplength=640, justify="left").pack(fill="x", padx=16, pady=(14, 6))
+                     wraplength=640, justify="left").pack(fill="x", padx=16, pady=(14, 2))
+            tk.Label(dlg, text=self._t("downloads.paste_hint_more"), font=(UI_SCHRIFT, 9),
+                     bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                     wraplength=640, justify="left").pack(fill="x", padx=16, pady=(0, 6))
             feld = tk.Text(dlg, height=7, wrap="word", font=(MONO_SCHRIFT, 9),
                            bg=c["console_bg"], fg=c["console_fg"],
                            insertbackground=c["fg_primary"], relief="flat")
             feld.pack(fill="both", expand=True, padx=16)
             feld.focus_set()
 
-            def _uebernehmen() -> None:
-                adressen = ps5_downloads.eingehende_urls(feld.get("1.0", "end"))
+            def _uebernehmen(_ereignis=None) -> str:
+                inhalt = feld.get("1.0", "end")
                 dlg.destroy()
-                if not adressen:
-                    messagebox.showinfo(self._t("downloads.nothing_found_title"),
-                                        self._t("downloads.nothing_found_message"), parent=win)
-                    return
-                for adresse in adressen:
-                    self._download_aufnehmen(adresse, parent=win)
+                self._downloads_uebernehmen(inhalt, parent=win)
+                return "break"
+
+            # Strg+Eingabe schliesst den Dialog ab. Die blosse Eingabetaste
+            # kann es nicht sein - in einem mehrzeiligen Feld gehoert sie zum
+            # Zeilenumbruch, und mehrere Zeilen sind hier der Normalfall.
+            feld.bind("<Control-Return>", _uebernehmen)
 
             reihe = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=12)
             reihe.pack(fill="x")
@@ -23765,6 +23917,18 @@ class PS5ConverterGUI:
                    command=_einfuegen).pack(side="left", padx=(8, 0))
         ttk.Button(werkzeuge, text=self._t("downloads.scan_existing"),
                    command=_vorhandene).pack(side="left", padx=(8, 0))
+
+        # Der eigentliche Wunsch: im Browser Rechtsklick auf den Link,
+        # "Linkadresse kopieren" - und mehr nicht.
+        haken = ttk.Checkbutton(werkzeuge, text=self._t("downloads.watch_label"),
+                                variable=self._zwischenablage_var_holen(),
+                                command=self._zwischenablage_umschalten)
+        haken.pack(side="left", padx=(16, 0))
+        self._register_translatable(haken, "downloads.watch_label")
+        DelayedTooltip(haken, self._t("downloads.watch_hint"), delay_ms=800)
+        # Falls sie beim Programmstart nicht angelaufen ist (etwa weil die
+        # Einstellung erst hier gesetzt wurde), holt das den Start nach.
+        self._zwischenablage_starten()
 
         def _abbrechen() -> None:
             for iid in baum.selection():
@@ -23840,6 +24004,10 @@ class PS5ConverterGUI:
         rahmen.pack(fill="both", expand=True, padx=16, pady=(8, 8))
 
         def _beim_schliessen() -> None:
+            # Die Ueberwachung laeuft ausdruecklich weiter: Man sammelt Links
+            # im Browser, waehrend das Programm im Hintergrund steht. Die
+            # Variable haengt an self.root, nicht am Fenster, und bleibt
+            # deshalb stehen - der Haken in den Einstellungen liest dieselbe.
             self._downloads_win = None
             self._downloads_tree = None
             win.destroy()
@@ -23847,16 +24015,31 @@ class PS5ConverterGUI:
         _vorhandene(still=True)
 
     def _download_aufnehmen(self, url: str, *, parent: "tk.Misc | None" = None,
-                            ist_neueste: bool | None = None) -> None:
-        """Nimmt eine Paketadresse in die Liste auf und startet den Download."""
+                            ist_neueste: bool | None = None,
+                            sammel: bool = False) -> str:
+        """Nimmt eine Paketadresse in die Liste auf und startet den Download.
+
+        Returns:
+            "neu" (aufgenommen), "doppelt" (steht schon in der Liste),
+            "ungueltig" (keine brauchbare Adresse) oder "abgebrochen"
+            (kein Speicherort gewaehlt).
+
+        Args:
+            sammel: Bei einem Stapel aus mehreren Adressen. Fehler gehen dann
+                ins Protokoll statt in ein Hinweisfenster - sonst muesste der
+                Nutzer bei zehn eingefuegten Zeilen zehn Fenster wegklicken.
+        """
         try:
             zerlegt = ps5_downloads.parse_pkg_url(url)
         except ps5_downloads.DownloadAdresseUngueltig as exc:
-            messagebox.showwarning(
-                self._t("downloads.invalid_title"),
-                self._t("downloads.invalid_message", error=exc),
-                parent=parent or self.root)
-            return
+            if sammel:
+                logger.debug("Adresse verworfen (%s): %s", exc, url[:120])
+            else:
+                messagebox.showwarning(
+                    self._t("downloads.invalid_title"),
+                    self._t("downloads.invalid_message", error=exc),
+                    parent=parent or self.root)
+            return "ungueltig"
 
         basis = self._download_basis()
         if not basis:
@@ -23868,7 +24051,7 @@ class PS5ConverterGUI:
                             update=ps5_downloads.ORDNER_UPDATE,
                             patch=ps5_downloads.ORDNER_PATCH),
                     parent=parent or self.root)
-                return
+                return "abgebrochen"
 
         if ist_neueste is None:
             ist_neueste = getattr(self, "_letzte_patch_ist_neueste", None)
@@ -23882,12 +24065,17 @@ class PS5ConverterGUI:
         if baum is None:
             logger.warning("Download-Fenster nicht verfuegbar, %s nicht aufgenommen",
                            zerlegt["dateiname"])
-            return
+            return "abgebrochen"
         for vorhanden in self._downloads.values():
+            # Fehlgeschlagene und abgebrochene bleiben ausgenommen: Die soll
+            # man erneut anstossen koennen. Alles andere - wartend, laufend,
+            # fertig, schon vorhanden - zaehlt als doppelt.
             if vorhanden.get("dateiname") == zerlegt["dateiname"] and \
-                    vorhanden.get("status") in ("queued", "running"):
-                self._append_to_log(self._t("downloads.already_queued", name=zerlegt["dateiname"]))
-                return
+                    vorhanden.get("status") not in ("failed", "cancelled"):
+                if not sammel:
+                    self._append_to_log(
+                        self._t("downloads.already_queued", name=zerlegt["dateiname"]))
+                return "doppelt"
 
         iid = baum.insert("", "end", values=(
             zerlegt["dateiname"], zerlegt["title_id"], self._t(f"downloads.kind_{art}"),
@@ -23897,6 +24085,156 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("downloads.added", name=zerlegt["dateiname"],
                                     kind=self._t(f"downloads.kind_{art}")))
         threading.Thread(target=self._download_worker, args=(iid,), daemon=True).start()
+        return "neu"
+
+    def _downloads_uebernehmen(self, inhalt: str, *, parent: "tk.Misc | None" = None,
+                               still: bool = False) -> int:
+        """Nimmt alle Adressen aus einem Textblock auf einmal auf.
+
+        Bis v1.8.60 lief jede Adresse einzeln durch _download_aufnehmen, und
+        jede unbrauchbare oeffnete ein eigenes Hinweisfenster. Bei einem
+        eingefuegten Block aus einer Seite waren das schnell mehrere - der
+        Eindruck war, es passiere nichts, weil hinter den Fenstern niemand
+        mehr die Liste sah.
+
+        Args:
+            still: Kein abschliessendes Hinweisfenster (Zwischenablage-
+                Ueberwachung; dort waere es aufdringlich).
+
+        Returns:
+            Anzahl der tatsaechlich neu aufgenommenen Adressen.
+        """
+        adressen = ps5_downloads.eingehende_urls(inhalt)
+        if not adressen:
+            if not still:
+                messagebox.showinfo(self._t("downloads.nothing_found_title"),
+                                    self._t("downloads.nothing_found_message"),
+                                    parent=parent or self.root)
+            return 0
+
+        neu = doppelt = 0
+        for adresse in adressen:
+            ergebnis = self._download_aufnehmen(adresse, parent=parent, sammel=True)
+            if ergebnis == "neu":
+                neu += 1
+            elif ergebnis == "doppelt":
+                doppelt += 1
+            elif ergebnis == "abgebrochen":
+                # Kein Speicherort gewaehlt - die naechsten scheitern genauso.
+                break
+
+        meldung = self._t("downloads.batch_summary", neu=neu, gesamt=len(adressen))
+        if doppelt:
+            meldung += " " + self._t("downloads.batch_skipped", anzahl=doppelt)
+        self._append_to_log(meldung)
+        if not still and neu == 0:
+            messagebox.showinfo(self._t("downloads.nothing_found_title"), meldung,
+                                parent=parent or self.root)
+        return neu
+
+    def _zwischenablage_tick(self) -> None:
+        """Sieht in die Zwischenablage und nimmt neue .pkg-Adressen auf.
+
+        Gewuenscht am 19.08.2026: Rechtsklick im Browser auf den Download-Link,
+        "Linkadresse kopieren" - und das Programm soll den Rest tun.
+
+        Laeuft unabhaengig vom Download-Fenster. Die erste Fassung endete mit
+        dessen Schliessen; der Nutzer hat ausdruecklich das Gegenteil verlangt,
+        weil man Links im Browser sammelt, waehrend das Programm im Hintergrund
+        steht. Ist beim Fund kein Fenster offen, oeffnet _download_aufnehmen es
+        von selbst - der Fund bleibt also sichtbar.
+
+        Abgefragt statt benachrichtigt: Tk kennt kein Ereignis fuer eine
+        geaenderte Zwischenablage, und die Windows-API dafuer haengt an einem
+        Fensterhandle, das PyInstaller-Buendel nicht verlaesslich haben.
+        700 ms sind ein Kompromiss - schnell genug, dass es unmittelbar wirkt,
+        selten genug, dass es nicht auffaellt.
+        """
+        self._zwischenablage_after_id = None
+        if not self._zwischenablage_an():
+            return  # Abgeschaltet - erst _zwischenablage_starten weckt sie.
+
+        try:
+            try:
+                inhalt = self.root.clipboard_get()
+            except Exception:
+                # Leere Zwischenablage oder ein Format, das kein Text ist
+                # (ein kopiertes Bild etwa). Kein Fehler, nur nichts zu tun.
+                inhalt = ""
+            if inhalt and inhalt != self._zwischenablage_letzter:
+                self._zwischenablage_letzter = inhalt
+                if ps5_downloads.eingehende_urls(inhalt):
+                    self._downloads_uebernehmen(inhalt, still=True)
+        except Exception as exc:
+            logger.debug("Zwischenablage-Ueberwachung: %s", exc)
+
+        self._zwischenablage_after_id = self.root.after(700, self._zwischenablage_tick)
+
+    def _zwischenablage_var_holen(self) -> "tk.BooleanVar":
+        """Die eine Variable hinter dem Haken - gemeinsam fuer beide Stellen.
+
+        Den Haken gibt es an zwei Orten: im Download-Fenster und in den
+        Einstellungen. Zwei eigene Variablen wuerden auseinanderlaufen, sobald
+        beide Fenster offen sind. Die Variable haengt an self.root und
+        ueberlebt jedes Fenster.
+        """
+        haken = getattr(self, "_zwischenablage_var", None)
+        if haken is None:
+            haken = tk.BooleanVar(
+                value=bool(self._load_setting("downloads_watch_clipboard", False)))
+            self._zwischenablage_var = haken
+        return haken
+
+    def _zwischenablage_an(self) -> bool:
+        """Ist die Ueberwachung eingeschaltet?
+
+        Die Wahrheit steht in den Einstellungen, nicht im Haken: Den Haken gibt
+        es nur, solange das Download-Fenster offen ist, die Ueberwachung laeuft
+        aber darueber hinaus.
+        """
+        haken = getattr(self, "_zwischenablage_var", None)
+        if haken is not None:
+            try:
+                return bool(haken.get())
+            except Exception:
+                pass
+        return bool(self._load_setting("downloads_watch_clipboard", False))
+
+    def _zwischenablage_starten(self) -> None:
+        """Startet die Ueberwachung, wenn sie eingeschaltet ist und noch nicht laeuft.
+
+        Wird beim Programmstart aufgerufen und jedes Mal, wenn der Haken
+        gesetzt wird. Mehrfach aufrufbar - ein zweiter Lauf wuerde die
+        Zwischenablage doppelt so oft lesen und jeden Fund doppelt melden.
+        """
+        if self._zwischenablage_after_id is not None or not self._zwischenablage_an():
+            return
+        # Was gerade in der Zwischenablage liegt, gilt als schon gesehen:
+        # Sonst wuerde beim Start aufgenommen, was zufaellig kopiert war.
+        try:
+            self._zwischenablage_letzter = self.root.clipboard_get()
+        except Exception:
+            self._zwischenablage_letzter = ""
+        self._zwischenablage_tick()
+
+    def _zwischenablage_stoppen(self) -> None:
+        """Haelt die Ueberwachung an."""
+        if self._zwischenablage_after_id is None:
+            return
+        try:
+            self.root.after_cancel(self._zwischenablage_after_id)
+        except Exception:
+            pass
+        self._zwischenablage_after_id = None
+
+    def _zwischenablage_umschalten(self) -> None:
+        """Startet oder stoppt die Ueberwachung und merkt die Wahl."""
+        an = bool(self._zwischenablage_var.get())
+        self._save_setting("downloads_watch_clipboard", an)
+        if an:
+            self._zwischenablage_starten()
+        else:
+            self._zwischenablage_stoppen()
 
     def _download_worker(self, iid: str) -> None:
         """Laedt ein Paket, setzt bei vorhandener Teildatei fort."""
@@ -24032,6 +24370,362 @@ class PS5ConverterGUI:
         """Ordner mit den mitgelieferten Ersatzbibliotheken; leer, wenn keiner da ist."""
         return _bundled_resource("Backport_Fakelibs")
 
+    # ==================================================================
+    # ps5_autoloader - die Startreihenfolge der Konsole
+    #
+    # Die Konsole sucht ps5_autoloader/autoload.txt in dieser Reihenfolge:
+    # USB, dann /data, dann der Spielstandordner. Nur die erste gefundene
+    # Datei wird benutzt. Dieses Fenster arbeitet auf /data, weil das der
+    # einzige Ort ist, an den man ohne USB-Stick herankommt.
+    #
+    # Hochgeladen wird bevorzugt ueber ftpsrv (Port 2121): Nur dessen Dateien
+    # tragen anschliessend das Ausfuehrungsrecht. Ein anderer FTP-Dienst legt
+    # sie ohne ab, die Konsole startet sie dann nicht - und sagt dazu nichts.
+    # ==================================================================
+    #: Ordner auf der Konsole, in dem der Autoloader nachsieht.
+    _AUTOLOADER_ORDNER = "/data/ps5_autoloader"
+    #: Name der Reihenfolgedatei. Fest vorgegeben, nicht wir bestimmen ihn.
+    _AUTOLOADER_DATEI = "autoload.txt"
+    #: Was der Autoloader ueberhaupt startet.
+    _AUTOLOADER_ENDUNGEN = (".elf", ".bin", ".js")
+
+    def _autoloader_auftrag(self, win, stand_var, arbeit, fertig=None) -> None:
+        """Fuehrt eine FTP-Arbeit im Hintergrund aus und meldet ueber after().
+
+        Jeder Knopf im Fenster geht durch hier: Verbindung aufbauen, Arbeit
+        tun, Verbindung schliessen. Eine dauerhaft offene Verbindung waere
+        bequemer, aber ftpsrv auf der Konsole faellt nach Leerlauf weg - dann
+        stuende das Fenster mit einer toten Verbindung da.
+        """
+        host = self._ps5_ip()
+        if not host:
+            messagebox.showwarning(self._t("autoloader.error_title"),
+                                   self._t("autoloader.error_no_ip"), parent=win)
+            return
+        stand_var.set(self._t("autoloader.state_connecting", host=host))
+
+        def _lauf() -> None:
+            ftp = None
+            try:
+                ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                ergebnis = arbeit(ftp)
+            except Exception as exc:
+                logger.debug("autoloader: %s", exc)
+                meldung = self._t("autoloader.error_generic", error=exc)
+                self.root.after(0, lambda: stand_var.set(meldung))
+                self.root.after(0, lambda: messagebox.showwarning(
+                    self._t("autoloader.error_title"), meldung, parent=win))
+                return
+            finally:
+                if ftp is not None:
+                    try:
+                        ftp.quit()
+                    except Exception:
+                        try:
+                            ftp.close()
+                        except Exception:
+                            pass
+            if fertig is not None:
+                self.root.after(0, lambda: fertig(ergebnis))
+
+        threading.Thread(target=_lauf, daemon=True).start()
+
+    def _autoloader_ordner_sichern(self, ftp) -> None:
+        """Legt /data/ps5_autoloader an, falls er noch fehlt."""
+        try:
+            ftp.cwd(self._AUTOLOADER_ORDNER)
+            return
+        except Exception:
+            pass
+        try:
+            ftp.mkd(self._AUTOLOADER_ORDNER)
+        except Exception as exc:
+            logger.debug("autoloader-Ordner nicht anlegbar: %s", exc)
+
+    def _autoloader_lesen(self, ftp) -> dict:
+        """Holt Dateiliste und autoload.txt von der Konsole."""
+        import io as _io  # noqa: PLC0415
+        self._autoloader_ordner_sichern(ftp)
+        namen = []
+        try:
+            for eintrag in ftp.nlst(self._AUTOLOADER_ORDNER):
+                name = eintrag.rsplit("/", 1)[-1]
+                if name in (".", ".."):
+                    continue
+                namen.append(name)
+        except Exception as exc:
+            logger.debug("autoloader-Liste nicht lesbar: %s", exc)
+
+        inhalt = ""
+        if self._AUTOLOADER_DATEI in namen:
+            puffer = _io.BytesIO()
+            try:
+                ftp.retrbinary("RETR " + self._AUTOLOADER_ORDNER + "/"
+                               + self._AUTOLOADER_DATEI, puffer.write)
+                inhalt = puffer.getvalue().decode("utf-8", "replace")
+            except Exception as exc:
+                logger.debug("autoload.txt nicht lesbar: %s", exc)
+        dateien = sorted(n for n in namen
+                         if n.lower().endswith(self._AUTOLOADER_ENDUNGEN))
+        return {"dateien": dateien, "inhalt": inhalt, "alle": sorted(namen)}
+
+    def _autoloader_genannte_dateien(self, inhalt: str) -> list[str]:
+        """Dateinamen aus einer autoload.txt - ohne Kommentare und Wartezeilen."""
+        namen = []
+        for zeile in str(inhalt or "").splitlines():
+            zeile = zeile.strip()
+            if not zeile or zeile.startswith("#") or zeile.startswith("!"):
+                continue
+            namen.append(zeile)
+        return namen
+
+    def _show_autoloader(self) -> None:
+        """Fenster zum Bearbeiten der Startreihenfolge auf der Konsole."""
+        c = self._COLORS
+        win = self._build_modern_toplevel(self._t("autoloader.window_title"),
+                                          980, 640, min_width=820, min_height=520)
+
+        tk.Label(win, text=self._t("autoloader.hint"), font=(UI_SCHRIFT, 9),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=920, justify="left").pack(fill="x", padx=16, pady=(12, 2))
+        tk.Label(win, text=self._t("autoloader.syntax_hint"), font=(UI_SCHRIFT, 9),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=920, justify="left").pack(fill="x", padx=16, pady=(0, 8))
+
+        kopf = tk.Frame(win, bg=c["bg_main"], padx=16)
+        kopf.pack(fill="x")
+        tk.Label(kopf, text=self._t("autoloader.ip_label"), font=(UI_SCHRIFT, 9, "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left")
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        ip_feld = ttk.Entry(kopf, textvariable=ip_var, width=18)
+        ip_feld.pack(side="left", padx=(8, 12))
+
+        def _ip_merken(*_a) -> None:
+            wert = ip_var.get().strip()
+            if wert and wert != self._ps5_ip():
+                self._save_setting("ps5_ip", wert)
+        ip_var.trace_add("write", _ip_merken)
+
+        stand_var = tk.StringVar(value="")
+
+        mitte = tk.Frame(win, bg=c["bg_main"], padx=16)
+        mitte.pack(fill="both", expand=True, pady=(10, 0))
+
+        links = tk.Frame(mitte, bg=c["bg_main"])
+        links.pack(side="left", fill="both", expand=True)
+        tk.Label(links, text=self._t("autoloader.files_label"),
+                 font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        liste = tk.Listbox(links, selectmode="extended", font=(MONO_SCHRIFT, 9),
+                           bg=c["console_bg"], fg=c["console_fg"],
+                           selectbackground=c["fg_accent"], relief="flat",
+                           highlightthickness=0)
+        liste.pack(fill="both", expand=True, pady=(4, 0))
+
+        rechts = tk.Frame(mitte, bg=c["bg_main"])
+        rechts.pack(side="left", fill="both", expand=True, padx=(12, 0))
+        tk.Label(rechts, text=self._t("autoloader.sequence_label"),
+                 font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        feld = tk.Text(rechts, wrap="none", font=(MONO_SCHRIFT, 9),
+                       bg=c["console_bg"], fg=c["console_fg"],
+                       insertbackground=c["fg_primary"], relief="flat",
+                       highlightthickness=0)
+        feld.pack(fill="both", expand=True, pady=(4, 0))
+
+        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, 9),
+                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
+                 wraplength=920, justify="left").pack(fill="x", padx=16, pady=(8, 0))
+
+        # ---------------------------------------------------------- Knoepfe
+        def _uebernehmen(ergebnis: dict) -> None:
+            liste.delete(0, "end")
+            for name in ergebnis["dateien"]:
+                liste.insert("end", name)
+            feld.delete("1.0", "end")
+            feld.insert("1.0", ergebnis["inhalt"])
+            if not ergebnis["inhalt"]:
+                stand_var.set(self._t("autoloader.no_autoload"))
+            else:
+                stand_var.set(self._t("autoloader.state_loaded",
+                                      count=len(ergebnis["dateien"])))
+
+        def _holen() -> None:
+            self._autoloader_auftrag(win, stand_var, self._autoloader_lesen, _uebernehmen)
+
+        def _schreiben() -> None:
+            inhalt = feld.get("1.0", "end-1c")
+            vorhanden = set(liste.get(0, "end"))
+            fehlend = [n for n in self._autoloader_genannte_dateien(inhalt)
+                       if n not in vorhanden]
+            if fehlend and not messagebox.askyesno(
+                    self._t("autoloader.missing_title"),
+                    self._t("autoloader.missing_message", namen="\n".join(fehlend)),
+                    parent=win, default="no"):
+                return
+            roh = inhalt.encode("utf-8")
+
+            def _arbeit(ftp):
+                import io as _io  # noqa: PLC0415
+                self._autoloader_ordner_sichern(ftp)
+                ftp.storbinary("STOR " + self._AUTOLOADER_ORDNER + "/"
+                               + self._AUTOLOADER_DATEI, _io.BytesIO(roh))
+                return len(roh)
+
+            self._autoloader_auftrag(
+                win, stand_var, _arbeit,
+                lambda n: (stand_var.set(self._t("autoloader.state_saved", bytes=n)),
+                           _holen()))
+
+        def _hochladen() -> None:
+            pfad = filedialog.askopenfilename(
+                title=self._t("autoloader.upload_dialog"), parent=win,
+                filetypes=self._dateitypen([
+                    ("Payload", "*.elf"), ("Payload", "*.bin"),
+                    ("JavaScript", "*.js"), (self._t("filetype.all_files"), "*.*")]))
+            if not pfad:
+                return
+            name = os.path.basename(pfad)
+
+            def _arbeit(ftp):
+                self._autoloader_ordner_sichern(ftp)
+                ziel = self._AUTOLOADER_ORDNER + "/" + name
+                with open(pfad, "rb") as fh:
+                    ftp.storbinary("STOR " + ziel, fh)
+                # Ohne Ausfuehrungsrecht startet die Konsole die Datei nicht,
+                # meldet das aber nirgends - deshalb hier nachsehen.
+                ausfuehrbar = True
+                if name.lower().endswith((".elf", ".bin")):
+                    try:
+                        ausfuehrbar = bool(self._ps5_datei_modus(ftp, ziel) & 0o111)
+                    except Exception:
+                        ausfuehrbar = True
+                return (os.path.getsize(pfad), ausfuehrbar)
+
+            def _fertig(werte) -> None:
+                groesse, ausfuehrbar = werte
+                stand_var.set(self._t("autoloader.state_uploaded",
+                                      name=name, bytes=groesse))
+                if not ausfuehrbar:
+                    self._append_to_log(
+                        self._t("autoloader.not_executable", name=name) + chr(10))
+                    messagebox.showwarning(
+                        self._t("autoloader.error_title"),
+                        self._t("autoloader.not_executable", name=name), parent=win)
+                _holen()
+
+            self._autoloader_auftrag(win, stand_var, _arbeit, _fertig)
+
+        def _loeschen() -> None:
+            namen = [liste.get(i) for i in liste.curselection()]
+            if not namen:
+                return
+            if not messagebox.askyesno(
+                    self._t("autoloader.delete_title"),
+                    self._t("autoloader.delete_message", count=len(namen),
+                            namen="\n".join(namen)),
+                    parent=win, default="no"):
+                return
+
+            def _arbeit(ftp):
+                weg = 0
+                for name in namen:
+                    try:
+                        ftp.delete(self._AUTOLOADER_ORDNER + "/" + name)
+                        weg += 1
+                    except Exception as exc:
+                        logger.debug("%s nicht loeschbar: %s", name, exc)
+                return weg
+
+            self._autoloader_auftrag(
+                win, stand_var, _arbeit,
+                lambda n: (stand_var.set(self._t("autoloader.state_deleted", count=n)),
+                           _holen()))
+
+        def _schnappschuss() -> None:
+            ordner = filedialog.askdirectory(
+                title=self._t("autoloader.snapshot_dialog"), parent=win)
+            if not ordner:
+                return
+
+            def _arbeit(ftp):
+                stand = self._autoloader_lesen(ftp)
+                ziel = os.path.join(ordner, "ps5_autoloader")
+                os.makedirs(ziel, exist_ok=True)
+                anzahl = 0
+                for name in stand["alle"]:
+                    try:
+                        with open(os.path.join(ziel, name), "wb") as fh:
+                            ftp.retrbinary(
+                                "RETR " + self._AUTOLOADER_ORDNER + "/" + name, fh.write)
+                        anzahl += 1
+                    except Exception as exc:
+                        logger.debug("%s nicht sicherbar: %s", name, exc)
+                return (anzahl, ziel)
+
+            self._autoloader_auftrag(
+                win, stand_var, _arbeit,
+                lambda w: stand_var.set(self._t("autoloader.state_snapshot",
+                                                count=w[0], path=w[1])))
+
+        def _zurueckspielen() -> None:
+            ordner = filedialog.askdirectory(
+                title=self._t("autoloader.restore_dialog"), parent=win)
+            if not ordner:
+                return
+            # Sowohl der Schnappschussordner selbst als auch sein Elternordner
+            # sind erlaubt - beides waehlt man beim Suchen leicht.
+            innen = os.path.join(ordner, "ps5_autoloader")
+            quelle = innen if os.path.isdir(innen) else ordner
+            dateien = sorted(n for n in os.listdir(quelle)
+                             if os.path.isfile(os.path.join(quelle, n)))
+            if not dateien:
+                return
+            if not messagebox.askyesno(
+                    self._t("autoloader.restore_title"),
+                    self._t("autoloader.restore_message", count=len(dateien)),
+                    parent=win, default="no"):
+                return
+
+            def _arbeit(ftp):
+                self._autoloader_ordner_sichern(ftp)
+                anzahl = 0
+                for name in dateien:
+                    try:
+                        with open(os.path.join(quelle, name), "rb") as fh:
+                            ftp.storbinary(
+                                "STOR " + self._AUTOLOADER_ORDNER + "/" + name, fh)
+                        anzahl += 1
+                    except Exception as exc:
+                        logger.debug("%s nicht zurueckspielbar: %s", name, exc)
+                return anzahl
+
+            self._autoloader_auftrag(
+                win, stand_var, _arbeit,
+                lambda n: (stand_var.set(self._t("autoloader.state_restored", count=n)),
+                           _holen()))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        for beschriftung, befehl, stil in (
+                ("autoloader.action_load", _holen, "Accent.TButton"),
+                ("autoloader.action_save", _schreiben, ""),
+                ("autoloader.action_upload", _hochladen, ""),
+                ("autoloader.action_delete", _loeschen, ""),
+                ("autoloader.action_snapshot", _schnappschuss, ""),
+                ("autoloader.action_restore", _zurueckspielen, "")):
+            knopf = ttk.Button(knopfreihe, text=self._t(beschriftung), command=befehl)
+            if stil:
+                knopf.configure(style=stil)
+            knopf.pack(side="left", padx=(0, 8))
+
+        if ip_var.get():
+            # Beim Oeffnen gleich holen, wenn eine Adresse feststeht - das
+            # Fenster ist ohne Inhalt sonst nur ein leeres Formular.
+            win.after(200, _holen)
+
     def _show_backport(self) -> None:
         """Öffnet das Backport-Fenster für einen zu wählenden Dump-Ordner."""
         ordner = filedialog.askdirectory(
@@ -24134,9 +24828,11 @@ class PS5ConverterGUI:
         sicherung_var = tk.BooleanVar(value=True)
         libs_var = tk.BooleanVar(value=True)
         libc_var = tk.BooleanVar(value=False)
+        deckung_var = tk.BooleanVar(value=True)
         for var, schluessel in ((sicherung_var, "backport.option_backup"),
                                 (libs_var, "backport.option_fakelibs"),
-                                (libc_var, "backport.option_libc")):
+                                (libc_var, "backport.option_libc"),
+                                (deckung_var, "backport.option_coverage")):
             tk.Checkbutton(
                 einstellungen, text=self._t(schluessel), variable=var,
                 font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_primary"],
@@ -24262,7 +24958,7 @@ class PS5ConverterGUI:
                 target=self._backport_worker,
                 args=(ordner, firmware, sicherung_var.get(), libs_var.get(),
                       libc_var.get(), baum, zeilen, stand_var, laeuft,
-                      start_btn, analyse_btn, win),
+                      start_btn, analyse_btn, win, deckung_var.get()),
                 daemon=True).start()
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
@@ -24287,10 +24983,60 @@ class PS5ConverterGUI:
         fw_box.bind("<<ComboboxSelected>>", lambda _e: _analysieren())
         _analysieren()
 
+    def _backport_deckung_melden(self, spieldateien, fakelibs) -> None:
+        """Haelt die Importe des Spiels gegen die Exporte der Ersatzbibliotheken.
+
+        Bis v1.8.60 hiess "backportiert" nur: Die Dateien liegen im Ordner. Ob
+        eine Ersatzbibliothek ueberhaupt liefert, was das Spiel von ihr
+        verlangt, sah niemand nach - auf der Konsole faellt es erst beim Start
+        auf, und dann ohne brauchbare Meldung.
+
+        Ergebnis geht ins Protokoll, nicht in ein Fenster: Es ist ein Befund
+        zum Nachlesen, kein Grund, den Lauf anzuhalten.
+        """
+        self._append_to_log(self._t("backport.coverage_start"))
+        try:
+            bericht = ps5_backport.deckung_pruefen(spieldateien, fakelibs)
+        except Exception as exc:
+            # Eine unlesbare Datei darf den Backport nicht nachtraeglich
+            # entwerten - der ist zu diesem Zeitpunkt schon durch.
+            logger.debug("Deckungspruefung fehlgeschlagen: %s", exc)
+            self._append_to_log(self._t("backport.coverage_failed", error=exc))
+            return
+
+        self._append_to_log(self._t("backport.coverage_files",
+                                    ok=bericht["geprueft"], ohne=bericht["ohne_tabelle"]))
+        if not bericht["geprueft"]:
+            self._append_to_log(self._t("backport.coverage_unreadable"))
+            return
+
+        if not bericht["bibliotheken"]:
+            self._append_to_log(self._t("backport.coverage_none"))
+        for name, wert in sorted(bericht["bibliotheken"].items()):
+            fehlend = wert["fehlend"]
+            if fehlend:
+                self._append_to_log(self._t(
+                    "backport.coverage_line", lib=name,
+                    verlangt=len(wert["verlangt"]), fehlend=len(fehlend)))
+                # Die fehlenden Kennungen ausschreiben - ohne sie ist die
+                # Meldung nicht nachpruefbar. Zehn reichen, um zu sehen,
+                # worum es geht; der Rest waere Tapete.
+                self._append_to_log("    " + ", ".join(sorted(fehlend)[:10])
+                                    + (" \u2026" if len(fehlend) > 10 else ""))
+            else:
+                self._append_to_log(self._t(
+                    "backport.coverage_ok", lib=name, verlangt=len(wert["verlangt"])))
+        if bericht["unbeteiligt"]:
+            self._append_to_log(self._t(
+                "backport.coverage_console",
+                namen=", ".join(bericht["unbeteiligt"][:12])
+                + (" \u2026" if len(bericht["unbeteiligt"]) > 12 else "")))
+        self._append_to_log("")
+
     def _backport_worker(self, ordner: str, firmware: int, sicherung: bool,
                          libs: bool, libc: bool, baum, zeilen: dict,
                          stand_var, laeuft: dict, start_btn, analyse_btn,
-                         win) -> None:
+                         win, deckung: bool = False) -> None:
         """Führt den Backport durch. Läuft im Hintergrund, meldet über after()."""
         beginn = time.time()
         gepatcht = uebersprungen = fehler = 0
@@ -24407,6 +25153,15 @@ class PS5ConverterGUI:
                     warnung = self._fakelib_kollision(ordner)
                     if warnung:
                         self._append_to_log(warnung + chr(10))
+
+                    if deckung:
+                        # Gegen die Dateien im Zielordner, nicht gegen die
+                        # Quellen: Geprueft gehoert, was tatsaechlich neben dem
+                        # Spiel liegt.
+                        installiert = [os.path.join(ziel, os.path.basename(q))
+                                       for q in quellen]
+                        self._backport_deckung_melden(
+                            ps5_backport.kandidaten(ordner), installiert)
 
             dauer = time.time() - beginn
             zusammenfassung = self._t(
@@ -27628,6 +28383,14 @@ class PS5ConverterGUI:
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_reset_download_dir).pack(side="left", padx=(10, 0))
 
+        # Derselbe Haken wie im Download-Fenster, auf derselben Variablen.
+        # Ohne ihn waere die Ueberwachung nur erreichbar, indem man das
+        # Download-Fenster oeffnet - obwohl sie unabhaengig davon laeuft.
+        ttk.Checkbutton(body, text=self._t("settings_dialog.downloads_watch"),
+                        variable=self._zwischenablage_var_holen(),
+                        command=self._zwischenablage_umschalten).pack(
+                            anchor="w", pady=(12, 0))
+
         def _speichern_und_schliessen() -> None:
             """Uebernimmt alles im Fenster Eingestellte und schliesst es.
 
@@ -29450,6 +30213,11 @@ if __name__ == "__main__":
     # Zertifikatsprüfung/-installation nicht mehr vor dem GUI-Start blockierend ausführen.
     root.after(1500, lambda: threading.Thread(target=_ensure_self_signed_cert_installed, daemon=True).start())
     root.after(2000, lambda: threading.Thread(target=_ensure_av_exclusion, daemon=True).start())
+
+    # Die Zwischenablage-Ueberwachung laeuft unabhaengig vom Download-Fenster,
+    # also auch dann, wenn es nie geoeffnet wurde. Verzoegert, damit der
+    # Fensteraufbau nicht auf clipboard_get() wartet.
+    root.after(2500, app._zwischenablage_starten)
 
     # Gegenstueck zur Durchsichtigkeit oben: Erst das Raster fertig rechnen
     # lassen, dann das fertige Fenster in einem Zug zeigen.
