@@ -2,7 +2,16 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.56):** Nach dem Packen prüft das Programm das Ergebnis wieder – wie stark, entscheidest du selbst.
+> **Kurz zum aktuellen Stand (v1.8.57):** Vor der Formatwahl steht jetzt, wie schnell die PS5 einen PFS-Container liest.
+
+---
+
+## v1.8.57 – 19.08.2026
+
+### Ein Hinweis vor der Formatwahl
+
+- **Unter der Zielformat-Liste steht jetzt, was ein PFS-Container kostet:** Die PS5 entpackt `.ffpfsc` und `.ffpfs` mit rund 150–250 MB/s – etwa ein Drittel eines USB-Laufwerks und ein Zehntel der internen SSD. Spiele, die viel nachladen oder Texturen streamen, können dadurch ruckeln. Bei `.exfat`, `.ffpkg` und Ordner-Zielen erscheint der Hinweis nicht.
+- Er erscheint auch dann, wenn man **nur das Format** umstellt und nicht die Aufgabe – vorher hing der Text allein an der Aufgabenwahl.
 
 ---
 

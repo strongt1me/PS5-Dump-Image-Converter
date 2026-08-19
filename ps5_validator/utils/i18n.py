@@ -95,6 +95,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'format.exfat': {'de': '.exFAT', 'en': '.exFAT'},
     'format.ffpkg': {'de': '.ffpkg', 'en': '.ffpkg'},
     'format.ffpkg_revalidate_suffix': {'de': '(neu validieren)', 'en': '(re-validate)'},
+    'main.pfs_speed_hint': {'de': 'Die PS5 entpackt .ffpfsc/.ffpfs mit rund 150–250 MB/s – etwa ein Drittel eines USB-Laufwerks und ein Zehntel der internen SSD. Spiele, die viel nachladen oder Texturen streamen, können dadurch ruckeln.', 'en': 'The PS5 decompresses .ffpfsc/.ffpfs at roughly 150–250 MB/s – about a third of a USB drive and a tenth of the internal SSD. Games that stream large amounts of data or textures may stutter.'},
     'main.source_hint': {'de': 'Quelle: {formats}', 'en': 'Source: {formats}'},
     'main.browse_files_button': {'de': 'Dateien wählen', 'en': 'Choose files'},
     'main.browse_source_button': {'de': 'Quelle wählen', 'en': 'Choose source'},

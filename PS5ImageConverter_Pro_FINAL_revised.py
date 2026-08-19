@@ -334,7 +334,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.56"
+APP_VERSION = "v1.8.57"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -4357,6 +4357,10 @@ class PS5ConverterGUI:
             width=18,
         )
         self.format_combo.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(5, 2))
+        # Der Hinweis unter der Liste haengt am gewaehlten Zielformat,
+        # nicht nur an der Aufgabe (siehe _zielformat_hinweis).
+        self.format_combo.bind("<<ComboboxSelected>>",
+                               lambda _e: self._format_hinweis_setzen())
 
         # Kompressionsstufe (PFS) und Worker-Anzahl: einstellbar statt fest, analog
         # ps5-exfat-builder. Rechts neben ZIELFORMAT platziert (spart zwei Zeilen im
@@ -4898,6 +4902,47 @@ class PS5ConverterGUI:
         source_type = self._detect_source_type(source_path)
         return tuple(target for target in options if target != source_type)
 
+    def _zielformat_hinweis(self, selected_mode: str) -> str:
+        """Baut den Hinweistext unter der Zielformat-Liste.
+
+        Enthaelt weiterhin die zulaessigen Quellarten und, wenn ein
+        PFS-Container gewaehlt ist, den Hinweis auf die Entpackgeschwindigkeit.
+
+        Der Grund steht in der ShadowMountPlus-Anleitung (1.7alpha7): Die
+        Entpackung ist zwar hardwaregestuetzt, liegt aber bei rund
+        150-250 MB/s - etwa ein Drittel eines USB-Laufwerks und ein Zehntel
+        der internen SSD. Spiele, die viel nachladen, koennen dadurch
+        ruckeln. Das ist keine Eigenheit dieses Programms, sondern des
+        Formats; wer es vorher weiss, waehlt bewusst statt sich hinterher zu
+        wundern.
+        """
+        teile: list[str] = []
+        erlaubt = self._MODE_SOURCE_TYPES.get(selected_mode, ())
+        if erlaubt:
+            quellen = ", ".join(self._t(f"format.{key}") for key in erlaubt)
+            teile.append(self._t("main.source_hint", formats=quellen))
+        else:
+            teile.append(self._t("main.format_options_hint_default"))
+
+        if self._format_label_to_key(self.target_format.get().strip()) in ("ffpfsc", "ffpfs"):
+            teile.append(self._t("main.pfs_speed_hint"))
+        return "\n".join(teile)
+
+    def _format_hinweis_setzen(self, selected_mode: str | None = None) -> None:
+        """Schreibt den Hinweis unter die Zielformat-Liste."""
+        if not hasattr(self, "format_info_label"):
+            return
+        # Wie in _refresh_target_format_options: der Modus kommt aus der
+        # Variablen, es gibt keinen Sammelgetter dafuer.
+        modus = str(selected_mode or self.current_mode.get() or "").strip()
+        self.format_info_label.config(text=self._zielformat_hinweis(modus))
+        # Der Text aendert die Hoehe der Beschriftung - der eingebrannte
+        # Hintergrund muss neu geschnitten werden.
+        try:
+            self._schedule_caption_redraw(self._redraw_card_captions)
+        except Exception as exc:
+            logger.debug("Beschriftung nach Formatwechsel nicht neu gezeichnet: %s", exc)
+
     def _refresh_target_format_options(self, mode: str | None = None) -> None:
         if not hasattr(self, "format_combo"):
             return
@@ -4931,13 +4976,7 @@ class PS5ConverterGUI:
         elif show_target_format:
             self.target_format.set("")
 
-        if hasattr(self, "format_info_label"):
-            allowed_sources = self._MODE_SOURCE_TYPES.get(selected_mode, ())
-            if allowed_sources:
-                src_text = ", ".join(self._t(f"format.{key}") for key in allowed_sources)
-                self.format_info_label.config(text=self._t("main.source_hint", formats=src_text))
-            else:
-                self.format_info_label.config(text=self._t("main.format_options_hint_default"))
+        self._format_hinweis_setzen(selected_mode)
 
         # Ein-/Ausblenden und neuer Hinweistext aendern Groesse und Position der
         # Karten-Beschriftungen (siehe _schedule_caption_redraw).

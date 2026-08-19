@@ -12,6 +12,9 @@ PS5 SDK usw/
 
 # --- Bauergebnisse und Umgebungen -------------------------------------------
 dist/
+# Das Auslieferungsbuendel - 204 MB, ein Bauergebnis, kein Quelltext.
+# 'dist/' deckt es nicht ab, weil es eine Datei neben dem Ordner ist.
+dist.zip
 build/
 .venv/
 .venv-linux/
