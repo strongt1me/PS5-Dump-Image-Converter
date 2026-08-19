@@ -551,5 +551,61 @@ class SchriftskalierungTests(unittest.TestCase):
                         "Die Skalierung wirkt nicht mehr auf die Schriften.")
 
 
+class TranslokationTests(unittest.TestCase):
+    """macOS startet quarantaenebehaftete Programme aus einem Schattenordner.
+
+    Im Protokoll vom 19.08.2026 stand der mkpfs-Pfad unter
+    ".../T/AppTranslocation/7997DEE9-.../d/..." - niemand konnte die
+    Ursache benennen. Einstellungen und Protokolle gehen dort beim
+    Beenden verloren.
+    """
+
+    SCHATTEN = ("/private/var/folders/2k/T/AppTranslocation/7997DEE9/d/"
+                "PS5 Dump & Image Converter.app/Contents/Frameworks")
+    ORDENTLICH = ("/Applications/PS5 Dump & Image Converter.app/"
+                  "Contents/Frameworks")
+
+    def setUp(self):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+        self.APP = APP
+
+    def _pruefen(self, macos, pfad):
+        from unittest import mock
+
+        with mock.patch.object(self.APP, "IST_MACOS", macos):
+            with mock.patch.object(self.APP.sys, "_MEIPASS", pfad,
+                                   create=True):
+                return self.APP.PS5ConverterGUI._macos_translokation()
+
+    def test_ausserhalb_von_macos_immer_falsch(self):
+        self.assertFalse(self._pruefen(False, self.SCHATTEN))
+
+    def test_schattenordner_wird_erkannt(self):
+        self.assertTrue(self._pruefen(True, self.SCHATTEN))
+
+    def test_normaler_ort_wird_nicht_gemeldet(self):
+        self.assertFalse(self._pruefen(True, self.ORDENTLICH))
+
+    def test_installer_liegt_im_abbild(self):
+        # Bis v1.8.58 wanderte allein das Buendel ins .dmg - der
+        # Installer, der die Quarantaene abraeumt, kam nie beim Nutzer an.
+        bau = (PROJEKT / "Build_macOS.sh").read_text(encoding="utf-8")
+        self.assertIn("Erste Installation.command", bau)
+        self.assertIn("com.apple.quarantine", bau)
+        self.assertIn("ln -s /Applications", bau)
+        self.assertNotIn(chr(39) + "-srcfolder " + chr(34) + "$BUENDEL"
+                         + chr(34) + chr(39), bau,
+                         "Das Abbild enthaelt wieder nur das Buendel.")
+
+    def test_hinweis_ist_zweisprachig(self):
+        from ps5_validator.utils.i18n import STRINGS
+
+        for schluessel in ("macos.translocation_title",
+                           "macos.translocation_hint"):
+            self.assertIn(schluessel, STRINGS)
+            for sprache in ("de", "en"):
+                self.assertTrue(STRINGS[schluessel].get(sprache), schluessel)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

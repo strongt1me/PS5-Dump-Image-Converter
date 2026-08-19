@@ -2,7 +2,22 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.58):** Fehler in der Oberfläche verschwinden nicht mehr stillschweigend, und die Diagnose sagt endlich etwas über die Anzeige.
+> **Kurz zum aktuellen Stand (v1.8.59):** Auf dem Mac genügt jetzt ein Doppelklick im Abbild – danach startet das Programm ohne Warnung, und die Schrift ist lesbar.
+
+---
+
+## v1.8.59 – 19.08.2026
+
+### Erstinstallation auf dem Mac
+
+- **Im Abbild liegt jetzt „Erste Installation.command“.** Ein Doppelklick legt das Programm in den Programme-Ordner und entfernt die Markierung „aus dem Internet geladen“. Danach startet es ohne die Warnung von macOS. Nötig ist das **einmal pro heruntergeladener Fassung**, nicht bei jedem Start.
+- Dazu eine Verknüpfung auf den Programme-Ordner für alle, die lieber ziehen.
+- **Das Programm merkt jetzt, wenn macOS es aus einem Schattenordner startet.** Das passiert, solange die Markierung noch dran ist – Einstellungen und Protokolle gehen dann beim Beenden verloren. Statt merkwürdigem Verhalten gibt es einen Hinweis mit der Lösung.
+
+### Schrift auf dem Mac
+
+- **Deutlich größer.** Die bisherige Vergrößerung war zu vorsichtig geschätzt; am Diagnosebericht nachgerechnet ergibt sich dieselbe Zeichenhöhe wie unter Windows. Wer es anders möchte, ändert weiterhin `macos_font_scaling` in der Einstellungsdatei.
+- Der Diagnosebericht nennt zusätzlich, in welcher Größe die Hintergrundbilder tatsächlich gezeichnet wurden – bisher stand dort nur, welche Bilddatei geladen ist.
 
 ---
 

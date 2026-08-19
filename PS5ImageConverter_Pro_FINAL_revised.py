@@ -389,7 +389,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.58"
+APP_VERSION = "v1.8.59"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -423,13 +423,20 @@ PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 WINDOW_MIN_WIDTH = 1100
 WINDOW_MIN_HEIGHT = 700
 # Zuschlag fuer alle Punktgroessen unter macOS - siehe
-# PS5ConverterGUI._macos_schrift_skalieren. 1.35 liegt zwischen dem reinen
-# dpi-Ausgleich (96/72 = 1.333, damit sieht es aus wie unter Windows bei
-# 100 %) und dem Verhaeltnis der Systemschriften (13/9 = 1.444). Bewusst
-# eher vorsichtig: Zu grosse Schrift sprengt Bedienelemente mit fester
-# Pixelbreite, und das waere schlimmer als zu kleine. Ueber die
-# Einstellung "macos_font_scaling" ohne neuen Bau aenderbar.
-MACOS_SCHRIFT_SKALIERUNG = 1.35
+# PS5ConverterGUI._macos_schrift_skalieren.
+#
+# 1.35 war ein Schaetzwert - zwischen dpi-Ausgleich (96/72 = 1.333) und dem
+# Verhaeltnis der Systemschriften (13/9 = 1.444) - und blieb zu klein. Der
+# Diagnosebericht vom 19.08.2026 liefert die Zahlen zum Nachrechnen:
+#
+#   Windows:  9 pt x tk scaling 1.6683 = 15,0 px
+#   macOS:    9 pt x tk scaling 1.3499 = 12,1 px
+#
+# 1.65 bringt die Punktgroessen auf dieselbe Pixelhoehe wie unter Windows.
+# Gemessen, nicht geschaetzt. Ueber die Einstellung "macos_font_scaling"
+# weiterhin ohne neuen Bau aenderbar, falls andere Hardware es anders
+# braucht.
+MACOS_SCHRIFT_SKALIERUNG = 1.65
 
 WINDOW_WIDTH = 1366
 WINDOW_HEIGHT = 820
@@ -1433,6 +1440,7 @@ class PS5ConverterGUI:
         # Anlegen einer Schrift in Pixel um, spaeter gesetzt wirkt es nicht
         # mehr auf bereits erzeugte Schriften.
         self._macos_schrift_skalieren()
+        self._macos_translokation_melden()
 
         # Ohne diesen Haken landet jeder Fehler aus einem Knopf oder einer
         # Bindung auf sys.stderr - und das ist im Fensterbetrieb leer.
@@ -2265,6 +2273,54 @@ class PS5ConverterGUI:
                 v0=getattr(art, "__name__", art), v1=wert))
         except Exception:
             pass
+
+    @staticmethod
+    def _macos_translokation() -> bool:
+        """True, wenn macOS das Programm aus einem Schattenordner startet.
+
+        Gatekeeper fuehrt ein Programm, das noch die Quarantaene-Markierung
+        traegt, nicht von seinem eigentlichen Ort aus, sondern aus einer
+        zufaellig benannten, schreibgeschuetzten Kopie unter
+        ``/private/var/folders/.../AppTranslocation/``. Das Programm laeuft
+        dann zwar, aber Einstellungen und Protokolle liegen in einem Ordner,
+        den das System beim Beenden wegraeumt.
+
+        Genau das steckte im Protokoll vom 19.08.2026 - der mkpfs-Pfad zeigte
+        auf ``.../T/AppTranslocation/7997DEE9-.../d/PS5 Dump & Image
+        Converter.app/...``, ohne dass jemand die Ursache benennen konnte.
+        """
+        if not IST_MACOS:
+            return False
+        try:
+            pfade = (getattr(sys, "_MEIPASS", ""), os.path.abspath(sys.argv[0]),
+                     os.path.abspath(sys.executable))
+            return any("/AppTranslocation/" in str(p) for p in pfade)
+        except Exception:
+            return False
+
+    def _macos_translokation_melden(self) -> None:
+        """Sagt es dem Nutzer, statt ihn raten zu lassen.
+
+        Ein Hinweisfenster ist hier angemessen: Das Programm ist in diesem
+        Zustand faktisch falsch installiert, und im Konsolenfenster wuerde die
+        Meldung leicht uebersehen. Sie erscheint nur in diesem einen Fall.
+        """
+        if not self._macos_translokation():
+            return
+        logger.warning("macOS App Translocation aktiv - Programm laeuft "
+                       "schreibgeschuetzt aus %s",
+                       getattr(sys, "_MEIPASS", "?"))
+        try:
+            self._append_to_log(self._t("macos.translocation_title") + "\n")
+        except Exception:
+            pass
+        try:
+            self.root.after(1200, lambda: messagebox.showwarning(
+                self._t("macos.translocation_title"),
+                self._t("macos.translocation_hint"),
+                parent=self.root))
+        except Exception as exc:
+            logger.debug("Hinweis zur Translokation nicht zeigbar: %s", exc)
 
     def _macos_schrift_skalieren(self) -> None:
         """Vergroessert alle Punktgroessen auf macOS.
@@ -22914,9 +22970,24 @@ class PS5ConverterGUI:
             logger.debug("Schriftmasse nicht auslesbar: %s", exc)
         zeilen.append(z("Design", getattr(self, "_current_theme", "?")))
         zeilen.append(z("Sprache", getattr(self, "_current_language", "?")))
-        for name, wert in (("Hintergrundbild", getattr(self, "_bg_image_cache", None)),
-                           ("Seitenleistenbild", getattr(self, "_sidebar_bg_image_cache", None))):
+        for name, wert in (("Hintergrundbild (Vorlage)", getattr(self, "_bg_image_cache", None)),
+                           ("Seitenleistenbild (Vorlage)", getattr(self, "_sidebar_bg_image_cache", None))):
             zeilen.append(z(name, getattr(wert, "size", "keins")))
+        # Entscheidend ist nicht die Vorlage, sondern was daraus gezeichnet
+        # wurde: Stimmt die angezeigte Groesse nicht mit dem Fenster ueberein,
+        # ist die Anpassung stehengeblieben. Genau diese Zahl fehlte im ersten
+        # Bericht vom Mac (19.08.2026) - die Vorlage allein sagt darueber
+        # nichts, sie ist immer die Groesse der Bilddatei.
+        for name, attribut in (("Hintergrundbild (gezeichnet)", "bg_photo"),
+                               ("Inhaltsflaeche (gezeichnet)", "content_bg_photo"),
+                               ("Seitenleiste (gezeichnet)", "sidebar_bg_photo")):
+            foto = getattr(self, attribut, None)
+            try:
+                zeilen.append(z(name, "%dx%d" % (foto.width(), foto.height())))
+            except Exception:
+                zeilen.append(z(name, "keins"))
+        zeilen.append(z("zuletzt angepasst auf",
+                        getattr(self, "_last_bg_resize_size", None) or "nie"))
         return zeilen
 
     def _diagnose_umgebung(self) -> list[str]:
@@ -22928,6 +22999,7 @@ class PS5ConverterGUI:
             z("Programmpfad", os.path.abspath(sys.argv[0])),
             z("Arbeitsverzeichnis", os.getcwd()),
             z("Administratorrechte", _system_ist_administrator()),
+            z("macOS App Translocation", self._macos_translokation()),
         ]
         for name, modul in (("Pillow", "PIL"), ("tkinterdnd2", "tkinterdnd2"),
                             ("psutil", "psutil"), ("requests", "requests")):

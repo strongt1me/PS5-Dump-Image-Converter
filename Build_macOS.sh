@@ -286,15 +286,50 @@ if [ "$DMG_ERZEUGEN" -eq 1 ]; then
     meldung "Erzeuge zusaetzlich ein Abbild (.dmg)..." "$gelb"
     DMG="dist/PS5_Dump_Image_Converter_${VERSION}_macos_${ARCH}.dmg"
     rm -f "$DMG"
+
+    # Bis v1.8.58 wanderte allein das .app-Buendel ins Abbild. Wer es von
+    # Hand nach /Applications zog, behielt die Quarantaene-Markierung - und
+    # macOS blockierte den Start mit "nicht geoeffnet, Apple konnte nicht
+    # ueberpruefen ...". Install_macOS.sh raeumt die Markierung ab (xattr
+    # -dr com.apple.quarantine), lag aber nie im Abbild bei.
+    #
+    # Jetzt enthaelt das Abbild drei Dinge: das Buendel, den Installer als
+    # doppelklickbare .command-Datei und eine Verknuepfung auf /Applications
+    # fuer alle, die lieber ziehen.
+    DMG_INHALT="$(mktemp -d)"
+    ditto "$BUENDEL" "$DMG_INHALT/$(basename "$BUENDEL")"
+    ln -s /Applications "$DMG_INHALT/Applications"
+
+    KOMMANDO="$DMG_INHALT/Erste Installation.command"
+    {
+        echo '#!/bin/bash'
+        echo '# Legt das Programm in den Programme-Ordner und raeumt die'
+        echo '# Quarantaene-Markierung ab. Nur einmal noetig - danach startet'
+        echo '# das Programm wie jedes andere.'
+        echo 'cd "$(dirname "$0")" || exit 1'
+        echo 'BUENDEL="PS5 Dump & Image Converter.app"'
+        echo 'ZIEL="/Applications"'
+        echo '[ -w "$ZIEL" ] || ZIEL="$HOME/Applications"'
+        echo 'mkdir -p "$ZIEL"'
+        echo 'echo "Kopiere nach $ZIEL ..."'
+        echo 'rm -rf "$ZIEL/$BUENDEL"'
+        echo 'ditto "$BUENDEL" "$ZIEL/$BUENDEL" || exit 1'
+        echo 'xattr -dr com.apple.quarantine "$ZIEL/$BUENDEL" 2>/dev/null'
+        echo 'echo "Fertig. Das Programm liegt in $ZIEL und startet ohne Warnung."'
+        echo 'echo "Dieses Fenster kann geschlossen werden."'
+    } > "$KOMMANDO"
+    chmod +x "$KOMMANDO"
+
     # UDZO = komprimiertes, schreibgeschuetztes Abbild - das uebliche Format
     # zum Weitergeben eines Programms.
     if hdiutil create -volname "PS5 Dump & Image Converter" \
-        -srcfolder "$BUENDEL" -ov -format UDZO "$DMG" >/dev/null 2>&1; then
+        -srcfolder "$DMG_INHALT" -ov -format UDZO "$DMG" >/dev/null 2>&1; then
         meldung "      Abbild: $DMG ($(du -sh "$DMG" | cut -f1))" "$gruen"
     else
         meldung "      WARNUNG: Abbild nicht erzeugbar." "$gelb"
         DMG=""
     fi
+    rm -rf "$DMG_INHALT"
 fi
 
 echo
