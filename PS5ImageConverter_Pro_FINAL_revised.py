@@ -15433,23 +15433,22 @@ class PS5ConverterGUI:
                 )
                 final_output = str(getattr(self, "task_final_output_path", "") or "")
                 is_ffpkg_output = final_output.lower().endswith(".ffpkg")
-                if is_ffpkg_output:
-                    error_message = (
-                        "Die FFPKG-Erstellung oder die schreibgeschützte UFS2-Prüfung ist fehlgeschlagen.\n\n"
-                        "Die unvollständige Ausgabe wurde nicht als gültige .ffpkg übernommen. "
-                        "Bitte prüfen Sie die UFS2Tool-Meldungen im Konsolenfenster."
-                    )
+                fehler_titel = self._t("dialog.title.error")
+                # Aufgabe 8 und die Inspektion wandeln nichts um, sie lesen
+                # nur. 'Die Konvertierung ist fehlgeschlagen ... mkpfs
+                # Exit-Code' verwies dort auf einen Schritt, den es in
+                # diesen Aufgaben gar nicht gibt.
+                if mode in ("inspect", "dump_validator"):
+                    fehler_titel = self._t("dialog.title.check_found_problems")
+                    error_message = self._t("dialog.msg.check_found_problems")
+                elif is_ffpkg_output:
+                    error_message = self._t("dialog.msg.ffpkg_build_failed")
                 else:
-                    error_message = (
-                        "Die Konvertierung ist fehlgeschlagen.\n\n"
-                        "Details stehen im Konsolen-Fenster "
-                        "(z. B. mkpfs Exit-Code oder Disk-Full-Meldung)."
-                    )
+                    error_message = self._t("dialog.msg.conversion_failed")
                 if report_path:
                     error_message += f"\n\nBericht:\n{report_path}"
-                self.root.after(0, lambda message=error_message: messagebox.showerror(
-                    "Fehler", message
-                ))
+                self.root.after(0, lambda message=error_message, titel=fehler_titel:
+                                messagebox.showerror(titel, message))
 
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0084', v0=exc))
@@ -16890,6 +16889,20 @@ class PS5ConverterGUI:
             if is_dir:
                 self._append_to_log(self._t('log.auto.0128'))
                 self._append_to_log(self._t('log.auto.0129'))
+                # Die param.json wird VOR dem Durchlauf behandelt, nicht
+                # danach. Sie steht in CRITICAL_FILES: Fehlt sie, meldet der
+                # Validator FAILED - und dieses Urteil blieb bis v1.8.52
+                # stehen, auch wenn die Datei im selben Lauf eine Zeile
+                # spaeter angelegt wurde. Der Nutzer las 'param.json wurde neu
+                # erstellt, Pruefung bestanden' und bekam darueber ein rotes
+                # Fehlerfenster.
+                #
+                # Vorher pruefen kostet nichts: pruefe_datei() liest eine
+                # einzelne kleine Datei. Der teure Teil - SHA-256 ueber den
+                # ganzen Ordner - laeuft danach genau einmal, und sein
+                # Ergebnis beschreibt den Stand, den der Ordner am Ende
+                # wirklich hat.
+                self._validator_param_json_anbieten(src)
                 self.root.after(0, lambda: self.status_label.config(text="Validator – Dump-Ordner pruefen..."))
                 self.task_total_source_bytes = self._get_path_size(src)
                 self.progress_engine.begin_payload(
@@ -16906,11 +16919,6 @@ class PS5ConverterGUI:
                 ok_final = result.status in ("OK", "WARNING")
                 msg = result.status
                 _log_validator_result(result, diagnose_path=src)
-                # Der Validator prueft die param.json seit v1.8.51 inhaltlich
-                # mit. Findet er dort etwas, ist der Dump zwar vollstaendig,
-                # die Konsole lehnt ihn aber trotzdem ab. Deshalb hier gleich
-                # die Reparatur anbieten, statt den Befund nur zu melden.
-                self._validator_param_json_anbieten(src)
 
             elif is_exfat:
                 self._append_to_log(self._t('log.auto.0130'))
@@ -19991,12 +19999,16 @@ class PS5ConverterGUI:
         return self._ask_yesno_threadsafe(titel, text, default_yes=default_yes)
 
     def _validator_param_json_anbieten(self, quellordner: str) -> None:
-        """Prueft die param.json im Anschluss an Aufgabe 8 und bietet Hilfe an.
+        """Prueft die param.json zu Beginn von Aufgabe 8 und bietet Hilfe an.
+
+        Laeuft **vor** dem eigentlichen Durchlauf, nicht danach: Die param.json
+        steht in ``CRITICAL_FILES``. Wird sie erst hinterher angelegt, ist das
+        Urteil des Validators bereits gefaellt und lautet FAILED - obwohl der
+        Ordner in dem Moment, in dem die Meldung erscheint, vollstaendig ist.
 
         Anders als beim Bau bricht hier nichts ab: Der Validator soll berichten,
-        nicht verhindern. Lehnt der Nutzer die Reparatur ab, bleibt das Ergebnis
-        des Laufs unveraendert stehen - der Befund steht dann im Protokoll und
-        er kann spaeter entscheiden.
+        nicht verhindern. Lehnt der Nutzer die Reparatur ab, laeuft die Pruefung
+        trotzdem und meldet die fehlende Datei - dann zu Recht.
 
         Der Ablauf entspricht dem des Baus, damit beide Wege dasselbe tun:
         fehlende oder unlesbare Datei -> neu anlegen anbieten, lesbare mit
