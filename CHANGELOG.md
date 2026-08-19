@@ -2,9 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.63):** Die Beschriftungen auf der Karte sind gut lesbar, auch dort, wo das Hintergrundbild hell wird.
+> **Kurz zum aktuellen Stand (v1.8.64):** Die Beschriftungen auf der Karte sind gut lesbar – auch nach einem Wechsel des Farbschemas.
 
 ---
+
+## v1.8.64 – 20.08.2026
+
+### Repariert
+
+- **Das Kästchen „Rechner nach erfolgreichem Abschluss herunterfahren" wurde beim Wechsel des Farbschemas wieder grau.** Beim Start trug es die helle Schrift aus v1.8.63, nach dem ersten Wechsel von Dunkel auf Hell oder Mittel nicht mehr. Zwei Stellen im Programm setzten dieselbe Farbe, die zweite überschrieb die erste.
+
+Zwei neue Prüfungen sichern das ab: Eine schaltet durch alle drei Farbschemata und wieder zurück und misst nach jedem Schritt die Schriftfarbe aller zehn Beschriftungen; die zweite verbietet die überschreibende Zeile ausdrücklich.
 
 ## v1.8.63 – 20.08.2026
 

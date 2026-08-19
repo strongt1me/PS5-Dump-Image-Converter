@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.63"
+APP_VERSION = "v1.8.64"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -28889,11 +28889,21 @@ class PS5ConverterGUI:
         self._apply_caption_colors()
 
         # Das Ankreuzfeld in der Karte ist ein tk-Widget mit festen Farben und
-        # wird vom Style ebenfalls nicht erreicht.
+        # wird vom Style ebenfalls nicht erreicht. Seine Hintergrundfarben
+        # setzt es hier; die Schriftfarbe hat _apply_caption_colors() eine
+        # Zeile darueber schon aus der Rollentabelle geholt.
+        #
+        # Bis v1.8.63 stand hier fg_secondary fest - und ueberschrieb damit,
+        # was die Rollentabelle gerade gesetzt hatte. Beim Start war das
+        # Kaestchen hell, nach dem ersten Design-Wechsel wieder grau.
+        # Aufgefallen erst beim Nachmessen der Farbe am lebenden Widget, nicht
+        # im Quelltext: Zwei Stellen setzen dieselbe Eigenschaft, die zweite
+        # gewinnt.
         if hasattr(self, "shutdown_check"):
             try:
                 self.shutdown_check.configure(
-                    bg=c["bg_card"], fg=c["fg_secondary"], selectcolor=c["bg_main"],
+                    bg=c["bg_card"], fg=c[self._KARTEN_TEXT_ROLLE],
+                    selectcolor=c["bg_main"],
                     activebackground=c["bg_card"], activeforeground=c["fg_primary"],
                 )
             except Exception as exc:
