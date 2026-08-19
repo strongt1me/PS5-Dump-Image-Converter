@@ -128,7 +128,7 @@ from ps5_validator.utils.param_manifest import (
     save_manifest_json,
     save_param_json,
 )
-from ps5_validator.utils.i18n import DEFAULT_LANGUAGE, ZSTD_LEVEL_KEYS, translate as i18n_translate
+from ps5_validator.utils.i18n import DEFAULT_LANGUAGE, VERIFY_STUFEN, ZSTD_LEVEL_KEYS, translate as i18n_translate
 from ps5_validator.utils.ini_config import merge_flat_ini, parse_flat_ini, render_flat_ini
 from ps5_validator.utils.plattform import (
     IST_LINUX,
@@ -334,7 +334,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.55"
+APP_VERSION = "v1.8.56"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -4423,6 +4423,40 @@ class PS5ConverterGUI:
         # Browse-Button-Spalte platziert (sonst reisst die stretchy Spalte 1 einen
         # grossen Leerraum zwischen Kompression und Worker-Threads auf).
         self.worker_spin.place(in_=self.compression_combo, relx=1.0, x=10, rely=0.5, anchor="w")
+
+        # Pruefstufe: dritte Angabe in derselben Zeile, rechts neben den
+        # Worker-Threads. Bewusst eine Klappliste und nicht zwei Kaestchen -
+        # die Stufen sind geordnet (vollstaendig schliesst die schnelle
+        # Pruefung ein), zwei unabhaengige Haken liessen die sinnlose
+        # Kombination "vollstaendig ohne Struktur" zu.
+        #
+        # Bis v1.8.55 stand in jedem Packaufruf fest "--no-verify-structure":
+        # mkpfs prueft von sich aus, und das Programm schaltete es ab, ohne
+        # dass man es sehen oder aendern konnte. Die offizielle Anleitung in
+        # "PS5 SDK usw/README.md" und das Referenzprogramm lassen die Pruefung
+        # laufen; Vorgabe ist deshalb "Schnell".
+        self._verify_optionen: dict[str, str] = {
+            self._t(schluessel): kennung for schluessel, kennung in VERIFY_STUFEN
+        }
+        _gespeichert = str(self._load_setting("mkpfs_verify", "schnell") or "schnell")
+        if _gespeichert not in {k for _, k in VERIFY_STUFEN}:
+            _gespeichert = "schnell"
+        _label = next((self._t(s) for s, k in VERIFY_STUFEN if k == _gespeichert),
+                      self._t("verify.quick"))
+        self.verify_var = tk.StringVar(value=_label)
+        self.verify_combo = ttk.Combobox(
+            path_card,
+            textvariable=self.verify_var,
+            state="readonly",
+            font=(UI_SCHRIFT, 10),
+            values=list(self._verify_optionen.keys()),
+            width=12,
+        )
+        self.verify_combo.place(in_=self.worker_spin, relx=1.0, x=10, rely=0.5, anchor="w")
+        self.verify_combo.bind("<<ComboboxSelected>>", self._on_verify_stufe_changed)
+        self.mkpfs_verify = _gespeichert
+        self._verify_tooltip = DelayedTooltip(
+            self.verify_combo, self._t("verify.hint"), delay_ms=1200)
         self.worker_spin.bind("<Return>", self._on_worker_count_changed)
         self.worker_spin.bind("<FocusOut>", self._on_worker_count_changed)
         # Zeigt beim Verweilen, was die gewaehlte Zahl konkret bewirkt - das Feld
@@ -6356,6 +6390,39 @@ class PS5ConverterGUI:
             self.temp_entry.dnd_bind("<<Drop>>", self._on_temp_dropped)
         except Exception as exc:
             logger.debug("Drag & Drop konnte nicht aktiviert werden: %s", exc)
+
+    def _on_verify_stufe_changed(self, _event=None) -> None:
+        """Uebernimmt die gewaehlte mkpfs-Pruefstufe und merkt sie."""
+        kennung = self._verify_optionen.get(self.verify_var.get(), "schnell")
+        self.mkpfs_verify = kennung
+        self._save_setting("mkpfs_verify", kennung)
+
+    def _mkpfs_pruef_argumente(self) -> list[str]:
+        """Liefert die Pruefschalter fuer einen mkpfs-Packaufruf.
+
+        mkpfs kennt zwei Stufen, und sie sind geordnet - die vollstaendige
+        schliesst die schnelle ein:
+
+        * ``--verify-structure`` ist voreingestellt (schnelle Strukturpruefung
+          nach dem Packen); ``--no-verify-structure`` schaltet sie ab.
+        * ``--verify`` laeuft nur auf Wunsch und prueft vollstaendig.
+
+        Bis v1.8.55 stand in jedem Aufruf fest ``--no-verify-structure`` -
+        beide Pruefungen also aus, ohne dass es jemand sehen konnte. Die
+        offizielle Anleitung und das Referenzprogramm lassen die schnelle
+        Pruefung laufen.
+
+        Returns:
+            Die Schalterliste zum Einsetzen in argv.
+        """
+        stufe = getattr(self, "mkpfs_verify", "schnell")
+        if stufe == "aus":
+            return ["--no-verify-structure"]
+        if stufe == "voll":
+            # Die Strukturpruefung bleibt an (Vorgabe von mkpfs), dazu der
+            # vollstaendige Durchlauf.
+            return ["--verify"]
+        return []
 
     def _on_compression_level_changed(self, _event=None) -> None:
         """Übernimmt die in der GUI gewählte PFS-Kompressionsstufe (1/3/6/9) und speichert sie."""
@@ -16906,7 +16973,7 @@ class PS5ConverterGUI:
                     "pack", "folder",
                     "--raw",
                     "--no-compress",
-                    "--no-verify-structure",
+                    *self._mkpfs_pruef_argumente(),
                     "--no-adjust-output-file-extension",
                     "--version", "PS5",
                     "--inode-bits", "32",
@@ -16937,7 +17004,7 @@ class PS5ConverterGUI:
                 [
                     "pack", "file",
                     "--no-compress" if uncompressed else "--compress",
-                    "--no-verify-structure",
+                    *self._mkpfs_pruef_argumente(),
                     "--no-adjust-output-file-extension",
                     # Innennamen unveraendert lassen: mkpfs leitet den Namen sonst
                     # ueber Path.suffixes ab und macht aus "Spiel (01.003.000).exfat"
@@ -18722,7 +18789,7 @@ class PS5ConverterGUI:
                                 "pack", "folder",
                                 "--raw",
                                 "--no-compress",
-                                "--no-verify-structure",
+                                *self._mkpfs_pruef_argumente(),
                                 "--no-adjust-output-file-extension",
                                 "--version", "PS5",
                                 "--inode-bits", "32",
@@ -18739,7 +18806,7 @@ class PS5ConverterGUI:
                             [
                                 "pack", "file",
                                 "--no-compress" if uncompressed else "--compress",
-                                "--no-verify-structure",
+                                *self._mkpfs_pruef_argumente(),
                                 "--no-adjust-output-file-extension",
                                 # Innennamen unveraendert lassen: mkpfs leitet den Namen sonst
                                 # ueber Path.suffixes ab und macht aus "Spiel (01.003.000).exfat"
@@ -19760,7 +19827,12 @@ class PS5ConverterGUI:
             pack_ok = self._execute_mkpfs(
                 [
                     "pack", "file",
-                    "--no-verify-structure",
+                    # Ausdruecklich, obwohl --compress in mkpfs die Vorgabe
+                    # ist: Aufgabe 4 liefert immer .ffpfsc, und was die
+                    # Endung verspricht, soll im Aufruf stehen und nicht
+                    # von einer Vorgabe abhaengen, die sich aendern kann.
+                    "--compress",
+                    *self._mkpfs_pruef_argumente(),
                     "--no-adjust-output-file-extension",
                     # Innennamen unveraendert lassen: mkpfs leitet den Namen sonst
                     # ueber Path.suffixes ab und macht aus "Spiel (01.003.000).exfat"
@@ -20201,8 +20273,8 @@ class PS5ConverterGUI:
             pack_ok = self._execute_mkpfs(
                 [
                     "pack", "file",
-                    *(["--no-compress"] if uncompressed else []),
-                    "--no-verify-structure",
+                    "--no-compress" if uncompressed else "--compress",
+                    *self._mkpfs_pruef_argumente(),
                     "--no-adjust-output-file-extension",
                     # Innennamen unveraendert lassen: mkpfs leitet den Namen sonst
                     # ueber Path.suffixes ab und macht aus "Spiel (01.003.000).exfat"

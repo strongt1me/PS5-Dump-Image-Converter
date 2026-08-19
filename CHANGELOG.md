@@ -2,7 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.55):** Auf dem Mac stürzt nichts mehr ab, das Hintergrundbild wird nicht mehr verzerrt, und die Schrift ist lesbar groß.
+> **Kurz zum aktuellen Stand (v1.8.56):** Nach dem Packen prüft das Programm das Ergebnis wieder – wie stark, entscheidest du selbst.
+
+---
+
+## v1.8.56 – 19.08.2026
+
+### Prüfung nach dem Packen ist wählbar
+
+- **Neues Feld „PRÜFUNG“ neben den Worker-Threads** mit drei Stufen. *Schnell* ist voreingestellt: Das Packwerkzeug sieht sich das fertige Abbild noch einmal an, bevor es als fertig gilt. *Vollständig* liest es zusätzlich komplett zurück und dauert deutlich länger. *Aus* entspricht dem bisherigen Verhalten.
+- **Bisher lief gar keine dieser Prüfungen.** Das Programm hat sie an sechs Stellen abgeschaltet – nicht sichtbar, nicht abwählbar. Die offizielle Anleitung zum Packen und das Referenzprogramm lassen sie laufen.
+- Die Einstellung bleibt erhalten und übersteht einen Sprachwechsel.
 
 ---
 
