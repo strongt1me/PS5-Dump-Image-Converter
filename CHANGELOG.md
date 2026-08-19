@@ -2,9 +2,17 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.64):** Die Beschriftungen auf der Karte sind gut lesbar – auch nach einem Wechsel des Farbschemas.
+> **Kurz zum aktuellen Stand (v1.8.65):** Die Beschriftungen auf der Karte sind gut lesbar, und ein Fenster lässt sich schließen, ohne dass im Hintergrund etwas abbricht.
 
 ---
+
+## v1.8.65 – 20.08.2026
+
+### Repariert
+
+- **Wer das Bibliotheksfenster schließt, während es noch sucht, löste im Hintergrund einen Absturz aus.** Zu sehen war davon nichts – das Programm lief weiter –, aber im Fehlerbericht stand ein Absturz, der keiner war. Dasselbe galt für den Protokollempfänger des JS-Loaders.
+
+Beide melden ihr Ergebnis jetzt nur noch dann ins Fenster zurück, wenn es das Fenster überhaupt noch gibt. Fünf neue Prüfungen sichern das ab, eine davon aus einem echten Arbeitsfaden heraus – im Hauptfaden tritt der Fehler gar nicht auf.
 
 ## v1.8.64 – 20.08.2026
 

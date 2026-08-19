@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.64"
+APP_VERSION = "v1.8.65"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -6059,6 +6059,34 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Alles markieren nicht moeglich: %s", exc)
         return "break"
+
+    @staticmethod
+    def _spaeter_im_fenster(fenster, rueckruf, *args) -> bool:
+        """Plant einen Rueckruf im Fenster ein - aber nur, wenn es noch da ist.
+
+        Ein Arbeitsfaden meldet sein Ergebnis ueber ``fenster.after(0, ...)``
+        zurueck. Ist das Fenster inzwischen geschlossen, wirft Tk dort
+        ``RuntimeError: main thread is not in main loop``, und der Faden endet
+        mitten in seiner Arbeit. Sichtbar wird das nur im Fehlerbericht - das
+        Programm laeuft weiter, aber im Bericht steht ein Absturz, der keiner
+        ist.
+
+        Aufgefallen am 20.08.2026 beim Durchgang durch alle Werkzeugfenster:
+        Das Bibliotheksfenster wurde geschlossen, waehrend sein Suchlauf noch
+        lief. Genau das macht ein Nutzer, dem die Suche zu lange dauert.
+
+        Returns:
+            True, wenn der Rueckruf eingeplant wurde.
+        """
+        try:
+            if fenster is None or not fenster.winfo_exists():
+                return False
+            fenster.after(0, rueckruf, *args)
+            return True
+        except Exception as exc:
+            # Zwischen winfo_exists() und after() kann das Fenster verschwinden.
+            logger.debug("Rueckruf nicht mehr einplanbar: %s", exc)
+            return False
 
     def _show_context_menu(self, event: tk.Event) -> None:
         """Zeigt das Rechtsklick-Kontextmenü an."""
@@ -23108,7 +23136,9 @@ class PS5ConverterGUI:
                     _apply_filter()
                     status_var.set(self._t("library.status_scan_result", item_count=len(all_items), folder_count=len(folders)))
 
-                win.after(0, _finish)
+                # Nicht win.after(0, ...): Wer das Fenster waehrend des
+                # Suchlaufs schliesst, brachte den Faden sonst zum Absturz.
+                self._spaeter_im_fenster(win, _finish)
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -26451,7 +26481,11 @@ class PS5ConverterGUI:
                             body = self.rfile.read(length).decode("utf-8", errors="replace")
                             import datetime as _dt
                             line = f"[{_dt.datetime.now().strftime('%H:%M:%S')}] {body}"
-                            win.after(0, lambda l=line: _log(self._t('log.console.0044', v0=l)))
+                            # Der Empfaenger laeuft weiter, auch wenn das
+                            # Fenster zu ist - die Zeile geht dann nur noch in
+                            # die Datei, nicht mehr ins Protokollfeld.
+                            self._spaeter_im_fenster(
+                                win, lambda l=line: _log(self._t('log.console.0044', v0=l)))
                             try:
                                 with open(log_path, "a", encoding="utf-8") as lf:
                                     lf.write(line + "\n")
