@@ -471,5 +471,85 @@ class SymbolTests(unittest.TestCase):
         self.assertNotIn("subprocess", text)
 
 
+class SchriftskalierungTests(unittest.TestCase):
+    """Punktgroessen bedeuten auf Aqua etwas anderes als auf Windows.
+
+    Gemeldet am 19.08.2026 an einem Mac mini: "Die Schrift ist teilweise
+    verdammt klein und extrem schwer zu lesen."
+    """
+
+    def _gui(self, *, macos: bool, einstellung=None, scaling=1.0):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        gerufen = []
+
+        class _Tk:
+            def call(self, *args):
+                if args[:2] == ("tk", "scaling") and len(args) == 2:
+                    return scaling
+                gerufen.append(args)
+                return ""
+
+        class _Wurzel:
+            tk = _Tk()
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui.root = _Wurzel()
+        gui._load_setting = lambda name, vorgabe=None: (
+            vorgabe if einstellung is None else einstellung)
+        return APP, gui, gerufen
+
+    def test_auf_windows_passiert_nichts(self):
+        from unittest import mock
+
+        APP, gui, gerufen = self._gui(macos=False)
+        with mock.patch.object(APP, "IST_MACOS", False):
+            gui._macos_schrift_skalieren()
+        self.assertEqual(gerufen, [], "Windows und Linux bleiben unberuehrt")
+
+    def test_auf_macos_wird_hochgesetzt(self):
+        from unittest import mock
+
+        APP, gui, gerufen = self._gui(macos=True, scaling=1.0)
+        with mock.patch.object(APP, "IST_MACOS", True):
+            gui._macos_schrift_skalieren()
+        self.assertEqual(len(gerufen), 1, gerufen)
+        self.assertEqual(gerufen[0][:2], ("tk", "scaling"))
+        self.assertAlmostEqual(gerufen[0][2], APP.MACOS_SCHRIFT_SKALIERUNG, places=6)
+
+    def test_eigener_wert_aus_den_einstellungen(self):
+        from unittest import mock
+
+        APP, gui, gerufen = self._gui(macos=True, einstellung="1.6", scaling=1.0)
+        with mock.patch.object(APP, "IST_MACOS", True):
+            gui._macos_schrift_skalieren()
+        self.assertAlmostEqual(gerufen[0][2], 1.6, places=6)
+
+    def test_unsinniger_wert_wird_abgelehnt(self):
+        from unittest import mock
+
+        for wert in ("0", "12", "-3", "kaese"):
+            APP, gui, gerufen = self._gui(macos=True, einstellung=wert)
+            with mock.patch.object(APP, "IST_MACOS", True):
+                gui._macos_schrift_skalieren()
+            if wert == "kaese":
+                # Unlesbar -> Vorgabe, nicht abgeschaltet.
+                self.assertEqual(len(gerufen), 1, wert)
+            else:
+                self.assertEqual(gerufen, [], "Wert %r haette abgelehnt werden muessen" % wert)
+
+    def test_steht_vor_dem_aufbau_der_oberflaeche(self):
+        # Tk rechnet Punktgroessen beim Anlegen einer Schrift in Pixel um.
+        # Wird die Skalierung erst hinterher gesetzt, bleiben alle bereits
+        # erzeugten Schriften klein - der Aufruf muss vor _create_widgets
+        # stehen.
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        anfang = quelle.index("    def __init__(self, root: tk.Tk) -> None:")
+        block = quelle[anfang:anfang + 40000]
+        self.assertLess(block.index("self._macos_schrift_skalieren()"),
+                        block.index("self._create_widgets()"),
+                        "Die Skalierung wirkt nicht mehr auf die Schriften.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

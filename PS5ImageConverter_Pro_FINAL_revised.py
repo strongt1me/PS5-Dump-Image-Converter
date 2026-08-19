@@ -131,6 +131,8 @@ from ps5_validator.utils.param_manifest import (
 from ps5_validator.utils.i18n import DEFAULT_LANGUAGE, ZSTD_LEVEL_KEYS, translate as i18n_translate
 from ps5_validator.utils.ini_config import merge_flat_ini, parse_flat_ini, render_flat_ini
 from ps5_validator.utils.plattform import (
+    IST_LINUX,
+    IST_MACOS,
     IST_WINDOWS,
     MONO_SCHRIFT,
     UI_SCHRIFT,
@@ -332,7 +334,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.54"
+APP_VERSION = "v1.8.55"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -365,6 +367,15 @@ PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 
 WINDOW_MIN_WIDTH = 1100
 WINDOW_MIN_HEIGHT = 700
+# Zuschlag fuer alle Punktgroessen unter macOS - siehe
+# PS5ConverterGUI._macos_schrift_skalieren. 1.35 liegt zwischen dem reinen
+# dpi-Ausgleich (96/72 = 1.333, damit sieht es aus wie unter Windows bei
+# 100 %) und dem Verhaeltnis der Systemschriften (13/9 = 1.444). Bewusst
+# eher vorsichtig: Zu grosse Schrift sprengt Bedienelemente mit fester
+# Pixelbreite, und das waere schlimmer als zu kleine. Ueber die
+# Einstellung "macos_font_scaling" ohne neuen Bau aenderbar.
+MACOS_SCHRIFT_SKALIERUNG = 1.35
+
 WINDOW_WIDTH = 1366
 WINDOW_HEIGHT = 820
 
@@ -1363,6 +1374,11 @@ class PS5ConverterGUI:
         self.root.minsize(WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT)
         self.root.resizable(True, True)
 
+        # Muss vor jedem Bedienelement stehen: Tk rechnet Punktgroessen beim
+        # Anlegen einer Schrift in Pixel um, spaeter gesetzt wirkt es nicht
+        # mehr auf bereits erzeugte Schriften.
+        self._macos_schrift_skalieren()
+
         # 1. Alle Fenster-Variablen vorab initialisieren (Wichtig für _sync_docked_windows)
         self._info_popup: tk.Toplevel | None = None
         self._cred_win: tk.Toplevel | None = None
@@ -1443,6 +1459,11 @@ class PS5ConverterGUI:
         self._startup_complete = False
         self._bg_resize_after_id: str | None = None
         self._last_bg_resize_size: tuple[int, int] | None = None
+        # Monitorwechsel mit anderer Skalierung: siehe _dpi_wechsel_festhalten.
+        # None heisst "noch nicht gemessen", False in _dpi_abfrage_moeglich
+        # heisst "diese Windows-Fassung kann es nicht, nicht mehr fragen".
+        self._letzte_fenster_dpi: int | None = None
+        self._dpi_abfrage_moeglich: bool = sys.platform == "win32"
         # Entprellung fuer das Nachschneiden aller Beschriftungen, sobald das
         # Fenster nach einer Groessenaenderung zur Ruhe kommt (_on_layout_settled).
         self._caption_settle_after_id: str | None = None
@@ -2121,6 +2142,139 @@ class PS5ConverterGUI:
             base = self._COLORS.get(key)
             if base:
                 self._COLORS[key] = self._blend_hex_color(base, tint_rgb, BG_CARD_TINT_OPACITY)
+
+    @staticmethod
+    def _dateitypen(paare: list[tuple[str, str]]) -> list[tuple[str, str]]:
+        """Entschärft eine ``filetypes``-Liste für den Dateidialog auf macOS.
+
+        **Ein einzelner Dateiname in dieser Liste bringt die Anwendung dort zum
+        Absturz** - nicht mit einer Fehlermeldung, sondern hart. Belegt durch
+        den Absturzbericht vom 18.08.2026 (Mac mini, macOS 26.6.2)::
+
+            Exception Reason: *** -[__NSArrayM insertObject:atIndex:]:
+                              object cannot be nil
+            3  libtk8.6.dylib   setAllowedFileTypes + 268
+            4  libtk8.6.dylib   Tk_GetOpenFileObjCmd + 1240
+
+        Der Grund liegt in der Kette dahinter: Tk streift von jedem Muster
+        führende ``*`` und ``.`` ab und reicht den Rest als Dateiendung an
+        macOS weiter. Aus ``*.exe`` wird ``exe`` - gültig. Aus
+        ``filezilla.exe`` wird ``filezilla.exe``, und *das* ist keine
+        Dateiendung: macOS liefert dafür nichts zurück, Tk legt das Nichts in
+        ein Array, und Objective-C bricht den Prozess ab.
+
+        ``*.*`` ist dagegen harmlos: Nach dem Abstreifen bleibt nichts übrig,
+        und was leer ist, überspringt Tk.
+
+        Auf Windows und Linux bleibt die Liste unverändert - dort sind
+        Dateinamen als Muster erlaubt und nützlich.
+
+        Args:
+            paare: Liste aus (Beschriftung, Muster) wie für ``filetypes``.
+
+        Returns:
+            Auf macOS dieselbe Liste ohne die gefährlichen Muster; Einträge,
+            von denen nichts übrig bleibt, entfallen ganz.
+        """
+        if not IST_MACOS:
+            return paare
+
+        entschaerft: list[tuple[str, str]] = []
+        for beschriftung, muster in paare:
+            gute = [teil for teil in str(muster).split()
+                    if "." not in teil.lstrip("*").lstrip(".")]
+            if gute:
+                entschaerft.append((beschriftung, " ".join(gute)))
+        return entschaerft
+
+    def _macos_schrift_skalieren(self) -> None:
+        """Vergroessert alle Punktgroessen auf macOS.
+
+        Die 264 Schriftangaben im Programm sind in **Punkt** geschrieben, und
+        was ein Punkt in Pixeln bedeutet, entscheidet ``tk scaling``. Windows
+        meldet dort 96 dpi oder mehr - bei 125 % Anzeigeskalierung gemessene
+        1,668, eine 9-Punkt-Schrift wird also 15 Pixel hoch. Aqua rechnet mit
+        72 dpi, dieselbe Angabe ergibt dort 9 Pixel. Dazu kommt, dass die
+        Systemschrift von macOS 13 Punkt gross ist, die von Windows 9 - die
+        Zahlen im Quelltext sind an Windows geeicht.
+
+        Beides zusammen ist der Grund fuer "die Schrift ist teilweise verdammt
+        klein" (gemeldet am 19.08.2026 an einem Mac mini). Ein einziger
+        ``tk scaling``-Aufruf hebt alle Punktgroessen zugleich - die
+        Alternative waere, 264 Zahlen im Quelltext anzufassen.
+
+        Knoepfe wachsen mit: ttk bemisst sie nach Textgroesse plus Polsterung.
+
+        Der Wert laesst sich ohne neuen Bau ueber die Einstellungsdatei
+        aendern (``macos_font_scaling``), damit sich der passende Faktor an
+        echter Hardware finden laesst, ohne dafuer jedes Mal ein .dmg zu
+        bauen. 0 oder ein unsinniger Wert schaltet die Anpassung ab.
+        """
+        if not IST_MACOS:
+            return
+        try:
+            faktor = float(self._load_setting("macos_font_scaling",
+                                              MACOS_SCHRIFT_SKALIERUNG))
+        except Exception:
+            faktor = MACOS_SCHRIFT_SKALIERUNG
+        if not 0.5 <= faktor <= 4.0:
+            logger.info("macos_font_scaling %r ausserhalb 0.5-4.0 - unveraendert", faktor)
+            return
+        try:
+            vorher = float(self.root.tk.call("tk", "scaling"))
+            self.root.tk.call("tk", "scaling", vorher * faktor)
+            logger.info("Schriftskalierung macOS: %.3f -> %.3f (Faktor %.2f)",
+                        vorher, vorher * faktor, faktor)
+        except Exception as exc:
+            logger.debug("Schriftskalierung nicht setzbar: %s", exc)
+
+    @staticmethod
+    def _bild_fuellen(master, breite: int, hoehe: int):
+        """Skaliert ein Bild formatfuellend auf genau (breite, hoehe).
+
+        Bis v1.8.54 stand an acht Stellen ``master.resize((breite, hoehe))``.
+        Das streckt das Bild auf die Flaeche - bei abweichendem
+        Seitenverhaeltnis sichtbar verzerrt. Der Einstellungsdialog sagte das
+        sogar an: "andere Seitenverhaeltnisse verzerren". An einem grossen
+        Monitor im Vollbild faellt es sofort auf (gemeldet am 19.08.2026).
+
+        Stattdessen wird jetzt der **groessere** der beiden Faktoren genommen,
+        sodass das Bild die Flaeche sicher abdeckt, und der Ueberstand mittig
+        weggeschnitten. Das ist dasselbe Verhalten wie bei einem
+        Bildschirmhintergrund.
+
+        Entscheidend fuer den Rest des Programms: Die Rueckgabe hat **exakt**
+        die angeforderten Masse. Alle Ausschnitte, die die Beschriftungen aus
+        dem skalierten Bild schneiden (siehe ``_compute_content_bg_crop``),
+        rechnen deshalb unveraendert weiter.
+
+        Bei passendem Seitenverhaeltnis - der Normalfall, die mitgelieferten
+        Bilder sind auf das Fensterformat ausgelegt - faellt kein Zuschnitt an
+        und das Ergebnis ist Pixel fuer Pixel dasselbe wie vorher.
+
+        Args:
+            master: PIL-Bild in Originalgroesse.
+            breite: Zielbreite in Pixeln.
+            hoehe: Zielhoehe in Pixeln.
+
+        Returns:
+            PIL-Bild der Groesse (breite, hoehe).
+        """
+        if breite <= 0 or hoehe <= 0:
+            return master
+        m_breite, m_hoehe = master.size
+        if m_breite <= 0 or m_hoehe <= 0:
+            return master
+
+        faktor = max(breite / m_breite, hoehe / m_hoehe)
+        zwischen = (max(breite, round(m_breite * faktor)),
+                    max(hoehe, round(m_hoehe * faktor)))
+        skaliert = master.resize(zwischen, _LANCZOS)
+        if zwischen == (breite, hoehe):
+            return skaliert
+        links = (zwischen[0] - breite) // 2
+        oben = (zwischen[1] - hoehe) // 2
+        return skaliert.crop((links, oben, links + breite, oben + hoehe))
 
     def _t(self, key: str, **kwargs: object) -> str:
         """Übersetzt einen sichtbaren UI-Text in die aktuell gewählte Sprache (de/en).
@@ -5414,16 +5568,80 @@ class PS5ConverterGUI:
         """Zeigt das Rechtsklick-Kontextmenü an."""
         self.context_menu.post(event.x_root, event.y_root)
 
+    def _dpi_wechsel_festhalten(self) -> None:
+        """Hält fest, wenn das Fenster auf einen Monitor anderer Skalierung wandert.
+
+        Behoben wird dabei nichts - das ist Absicht. Tk 8.6 liest die DPI
+        einmal beim Start und verarbeitet ``WM_DPICHANGED`` nicht; ein
+        virtuelles Ereignis dafür gibt es nicht (nachgesehen an Tk 8.6.15).
+        Windows zeigt das Fenster nach dem Wechsel unverändert in Pixeln, es
+        wirkt auf dem anderen Monitor also zu klein oder zu groß - in sich
+        aber stimmig.
+
+        Ein Ausgleich müsste **alles zugleich** nachziehen: 274 Schrift-
+        angaben, 96 feste ``width``/``height``, 292 feste Abstände und
+        sämtliche Bilder neu aus dem PIL-Master. Nur die Schriften zu
+        vergrößern ergäbe abgeschnittene Beschriftungen in unveränderten
+        Kästen - schlechter als der jetzige Zustand.
+
+        Deshalb hier nur die Feststellung. Sie kostet 0,60 Mikrosekunden je
+        Aufruf (an 10.000 Aufrufen gemessen) und ändert am Aussehen keinen
+        Pixel. Wer den Verdacht hat, findet die Zeile in
+        ``%TEMP%\\ps5converter.log``.
+        """
+        if not self._dpi_abfrage_moeglich:
+            return
+        try:
+            # GetDpiForWindow gibt es erst ab Windows 10 1607. Fehlt sie,
+            # wird nicht bei jedem Configure erneut danach gefragt.
+            dpi = int(ctypes.windll.user32.GetDpiForWindow(self.root.winfo_id()))
+        except Exception as exc:
+            self._dpi_abfrage_moeglich = False
+            logger.debug("Fenster-DPI nicht abfragbar: %s", exc)
+            return
+        if dpi <= 0:
+            return
+
+        if self._letzte_fenster_dpi is None:
+            self._letzte_fenster_dpi = dpi
+            logger.info("Fenster-DPI beim Start: %d (%d %%)", dpi, round(dpi / 96 * 100))
+            return
+
+        if dpi != self._letzte_fenster_dpi:
+            vorher = self._letzte_fenster_dpi
+            self._letzte_fenster_dpi = dpi
+            logger.warning(
+                "Monitorwechsel mit anderer Skalierung: %d %% -> %d %% "
+                "(DPI %d -> %d). Das Fenster wird NICHT umgerechnet - "
+                "Tk 8.6 kann das nicht, und ein halber Ausgleich waere "
+                "schlechter als keiner. Aussehen und Bedienung bleiben "
+                "unveraendert, nur die physische Groesse stimmt nicht mehr.",
+                round(vorher / 96 * 100), round(dpi / 96 * 100), vorher, dpi)
+
     def _on_root_configure(self, event: tk.Event) -> None:
         """Behandelt Größenänderung und Verschiebung des Hauptfensters."""
         if event.widget != self.root:
             return
 
+        # Vor allen weiteren Abbruchbedingungen: Ein Monitorwechsel loest ein
+        # Configure aus, kann aber in jeden der Zweige unten laufen (Vollbild,
+        # kein Hintergrundbild, gleiche Groesse). Die Feststellung darf davon
+        # nicht abhaengen.
+        self._dpi_wechsel_festhalten()
+
         # Angedockte Fenster sofort synchronisieren.
         self._sync_docked_windows()
 
         # Teures Hintergrundbild-Resize nur entkoppelt und nicht in der kritischen Startphase.
-        if not self._bg_image_cache or self.is_fullscreen:
+        #
+        # Bis v1.8.54 stand hier zusaetzlich "or self.is_fullscreen" - im
+        # Vollbild wurde das Hintergrundbild also gar nicht mehr angepasst. Es
+        # behielt die Groesse des Fenstermodus, waehrend Inhaltsflaeche,
+        # Seitenleiste und Karten ihre Bilder sehr wohl nachzogen: An einem
+        # grossen Monitor passte hinterher nichts mehr zusammen. Beim Verlassen
+        # des Vollbilds kam ein Configure, und das Bild "fing sich wieder" -
+        # genau so gemeldet am 19.08.2026 an einem Mac mini.
+        if not self._bg_image_cache:
             return
 
         width = self.root.winfo_width()
@@ -5476,12 +5694,14 @@ class PS5ConverterGUI:
     def _apply_bg_resize(self, width: int, height: int) -> None:
         """Skaliert das Hintergrundbild entkoppelt vom Configure-Event."""
         self._bg_resize_after_id = None
-        if not self._bg_image_cache or self.is_fullscreen:
+        # Ohne Vollbild-Ausnahme: siehe _on_root_configure. Das Bild muss auch
+        # dort auf die tatsaechliche Flaeche gerechnet werden.
+        if not self._bg_image_cache:
             return
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._bg_image_cache.resize((width, height), _LANCZOS)
+            resized = self._bild_fuellen(self._bg_image_cache, width, height)
             self.bg_photo = ImageTk.PhotoImage(resized)
             self.bg_label.config(image=self.bg_photo)
             self._last_bg_resize_size = (width, height)
@@ -5521,7 +5741,7 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._bg_image_cache.resize((width, height), _LANCZOS)
+            resized = self._bild_fuellen(self._bg_image_cache, width, height)
             self.content_bg_photo = ImageTk.PhotoImage(resized)
             self.content_bg_label.config(image=self.content_bg_photo)
             self._last_content_bg_resize_size = (width, height)
@@ -5550,7 +5770,7 @@ class PS5ConverterGUI:
             c_height = content_area.winfo_height()
             if c_width <= 1 or c_height <= 1:
                 return None
-            full_resized = self._bg_image_cache.resize((c_width, c_height), _LANCZOS)
+            full_resized = self._bild_fuellen(self._bg_image_cache, c_width, c_height)
             wx = widget.winfo_rootx() - content_area.winfo_rootx()
             wy = widget.winfo_rooty() - content_area.winfo_rooty()
             crop_box = (
@@ -5744,7 +5964,7 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._sidebar_bg_image_cache.resize((width, height), _LANCZOS)
+            resized = self._bild_fuellen(self._sidebar_bg_image_cache, width, height)
             self.sidebar_bg_photo = ImageTk.PhotoImage(resized)
             self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
             self._last_sidebar_bg_resize_size = (width, height)
@@ -5768,7 +5988,7 @@ class PS5ConverterGUI:
             s_height = sidebar.winfo_height()
             if s_width <= 1 or s_height <= 1:
                 return None
-            full_resized = self._sidebar_bg_image_cache.resize((s_width, s_height), _LANCZOS)
+            full_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
             wx = widget.winfo_rootx() - sidebar.winfo_rootx()
             wy = widget.winfo_rooty() - sidebar.winfo_rooty()
             crop_box = (
@@ -13889,6 +14109,64 @@ class PS5ConverterGUI:
 
         return None
 
+    @staticmethod
+    def _filezilla_pfad_gueltig(pfad: str) -> bool:
+        """Prueft einen FileZilla-Pfad - auch ein .app-Buendel gilt.
+
+        ``os.path.isfile`` allein genuegt auf macOS nicht: Dort ist
+        ``FileZilla.app`` ein *Ordner*, den der Finder als ein Programm
+        darstellt. Ein gemerkter Pfad darauf fiel deshalb bei jeder Pruefung
+        durch, und die Suche begann von vorn.
+        """
+        if not pfad:
+            return False
+        if os.path.isfile(pfad):
+            return True
+        return pfad.endswith(".app") and os.path.isdir(pfad)
+
+    def _filezilla_posix_suchen(self) -> str | None:
+        """Sucht FileZilla auf macOS und Linux.
+
+        Bis v1.8.54 gab es diesen Weg nicht: Gesucht wurde ausschliesslich
+        ``filezilla.exe`` in Windows-Pfaden, in der Windows-Registrierung und
+        auf den festen Laufwerken. Auf einem Mac mit installiertem FileZilla
+        meldete das Programm deshalb "nicht gefunden" und bot an, die
+        Windows-Fassung herunterzuladen (gemeldet am 19.08.2026 an echter
+        Hardware).
+
+        Zurueckgegeben wird auf macOS bevorzugt das ``.app``-Buendel, weil
+        ``open -a`` damit umgeht; auf Linux die ausfuehrbare Datei.
+        """
+        import shutil as _shutil
+
+        kandidaten: list[str] = []
+        if IST_MACOS:
+            zuhause = os.path.expanduser("~")
+            kandidaten += [
+                "/Applications/FileZilla.app",
+                os.path.join(zuhause, "Applications", "FileZilla.app"),
+                # Homebrew Cask legt es ebenfalls nach /Applications, der
+                # Formel-Pfad ist der Rueckfall fuer eigene Installationen.
+                "/opt/homebrew/bin/filezilla",
+                "/usr/local/bin/filezilla",
+            ]
+        elif IST_LINUX:
+            kandidaten += [
+                "/usr/bin/filezilla",
+                "/usr/local/bin/filezilla",
+                "/var/lib/flatpak/exports/bin/org.filezillaproject.Filezilla",
+                os.path.join(os.path.expanduser("~"),
+                             ".local/share/flatpak/exports/bin/"
+                             "org.filezillaproject.Filezilla"),
+            ]
+
+        for pfad in kandidaten:
+            if self._filezilla_pfad_gueltig(pfad):
+                return pfad
+
+        gefunden = _shutil.which("filezilla")
+        return gefunden if gefunden else None
+
     def _find_filezilla(self) -> str | None:
         """Sucht FileZilla in bekannten Installationspfaden.
 
@@ -13906,10 +14184,16 @@ class PS5ConverterGUI:
             # wurde zwar geschrieben, aber nie wieder gelesen, und FileZilla
             # musste bei jedem Programmstart neu gesucht werden.
             custom = str(self._load_setting('filezilla_path', '') or '').strip()
-            if custom and os.path.isfile(custom):
+            if custom and self._filezilla_pfad_gueltig(custom):
                 return custom
         except Exception as exc:
             logger.debug("Gemerkter FileZilla-Pfad nicht lesbar: %s", exc)
+
+        # Alles ab hier ist Windows: Registrierung, feste Programmpfade,
+        # Laufwerksdurchlauf - alles auf der Suche nach filezilla.exe.
+        # macOS und Linux haben ihren eigenen Weg.
+        if not IST_WINDOWS:
+            return self._filezilla_posix_suchen()
 
         if sys.platform == 'win32':
             try:
@@ -14273,12 +14557,41 @@ class PS5ConverterGUI:
                     self._t("dialog.msg.filezilla_manual_select"),
                     parent=self.root,
                 )
-            selected = filedialog.askopenfilename(
-                parent=self.root,
-                title=self._t("dialog.title.choose_filezilla"),
-                filetypes=[(self._t("filetype.filezilla_exe"), "filezilla.exe"), (self._t("filetype.exe_files"), "*.exe")],
-            )
-            if selected and os.path.isfile(selected):
+            # Die Auswahl haengt an der Plattform. Bis v1.8.54 stand hier
+            # unter allen Systemen ein Dateidialog mit
+            # filetypes=[("FileZilla", "filezilla.exe"), (..., "*.exe")].
+            # Auf macOS ist "filezilla.exe" kein gueltiges Muster - Tk erwartet
+            # dort Endungen der Form "*.ext" - und der Cocoa-Dialog riss die
+            # Anwendung mit sich: vollstaendiger Absturz samt Apple-
+            # Fehlerbericht, gemeldet am 19.08.2026. Auf macOS wird deshalb der
+            # Ordnerdialog benutzt; ein .app-Buendel *ist* ein Ordner, und
+            # dieser Weg kennt gar keine Musterliste.
+            if IST_MACOS:
+                selected = filedialog.askdirectory(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                    mustexist=True,
+                )
+            elif IST_WINDOWS:
+                selected = filedialog.askopenfilename(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                    # Der Dateiname als Muster ist hier gewollt - er hebt die
+                    # gesuchte Datei aus dem Programmordner heraus. Auf diesem
+                    # Zweig laeuft ohnehin nur Windows; _dateitypen haelt die
+                    # Zusage trotzdem fest, damit die Pruefung ueber alle
+                    # Dateidialoge greift (siehe test_dateidialoge_macos_sicher).
+                    filetypes=self._dateitypen(
+                        [(self._t("filetype.filezilla_exe"), "filezilla.exe"),
+                         (self._t("filetype.exe_files"), "*.exe")]),
+                )
+            else:
+                # Linux: keine Endungen, ausfuehrbare Dateien tragen dort keine.
+                selected = filedialog.askopenfilename(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                )
+            if selected and self._filezilla_pfad_gueltig(selected):
                 exe = selected
                 try:
                     self._save_setting('filezilla_path', selected)
@@ -14289,7 +14602,14 @@ class PS5ConverterGUI:
             return False
 
         try:
-            subprocess.Popen([exe], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Ein .app-Buendel laesst sich nicht ausfuehren - es ist ein
+            # Ordner. "open -a" uebergibt es dem Fenstersystem, das den
+            # richtigen Programmteil darin startet.
+            if IST_MACOS and exe.endswith(".app"):
+                befehl = ["open", "-a", exe]
+            else:
+                befehl = [exe]
+            subprocess.Popen(befehl, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # Erst jetzt merken - gestartet ist der belastbare Nachweis, dass
             # dieser Pfad taugt. Beim naechsten Programmstart greift Schritt 1
             # von _find_filezilla darauf zu und startet ohne jede Suche.
@@ -22474,7 +22794,9 @@ class PS5ConverterGUI:
             title=self._t("self_inspector.choose_file_dialog_title"),
             initialdir=self._get_source_dialog_initial_dir() or None,
             filetypes=[
-                (self._t("self_inspector.filetype_self"), "eboot.bin *.self *.sprx *.prx *.elf *.bin"),
+                # "eboot.bin" als eigener Eintrag hat macOS zum Absturz
+                # gebracht (siehe _dateitypen). "*.bin" deckt die Datei mit ab.
+                (self._t("self_inspector.filetype_self"), "*.self *.sprx *.prx *.elf *.bin"),
                 (self._t("filetype.all_files"), "*.*"),
             ],
             parent=self.root,
@@ -26918,7 +27240,7 @@ class PS5ConverterGUI:
             self.sidebar_bg_label.lower()
             sidebar.bind("<Configure>", self._on_sidebar_configure)
 
-        sidebar_resized = self._sidebar_bg_image_cache.resize((s_width, s_height), _LANCZOS)
+        sidebar_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
         self.sidebar_bg_photo = ImageTk.PhotoImage(sidebar_resized)
         self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
         self._last_sidebar_bg_resize_size = (s_width, s_height)
@@ -26964,7 +27286,7 @@ class PS5ConverterGUI:
             self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
             self.bg_label.lower()
 
-        resized = self._bg_image_cache.resize((width, height), _LANCZOS)
+        resized = self._bild_fuellen(self._bg_image_cache, width, height)
         self.bg_photo = ImageTk.PhotoImage(resized)
         self.bg_label.config(image=self.bg_photo)
         self._last_bg_resize_size = (width, height)
@@ -26982,7 +27304,7 @@ class PS5ConverterGUI:
                 self.content_bg_label.lower()
                 content_area.bind("<Configure>", self._on_content_area_configure)
 
-            content_resized = self._bg_image_cache.resize((c_width, c_height), _LANCZOS)
+            content_resized = self._bild_fuellen(self._bg_image_cache, c_width, c_height)
             self.content_bg_photo = ImageTk.PhotoImage(content_resized)
             self.content_bg_label.config(image=self.content_bg_photo)
             self._last_content_bg_resize_size = (c_width, c_height)

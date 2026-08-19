@@ -2,7 +2,18 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.54):** Aufgabe 8 verurteilt keinen Dump mehr, den sie im selben Lauf in Ordnung gebracht hat.
+> **Kurz zum aktuellen Stand (v1.8.55):** Auf dem Mac stürzt nichts mehr ab, das Hintergrundbild wird nicht mehr verzerrt, und die Schrift ist lesbar groß.
+
+---
+
+## v1.8.55 – 19.08.2026
+
+### Vier Befunde vom Mac
+
+- **Ein Klick auf FileZilla ließ das Programm abstürzen.** Im Dateidialog stand ein Dateiname als Suchmuster. Windows kommt damit zurecht, macOS nicht – dort bricht das Betriebssystem das Programm ab, ohne eine Meldung zu zeigen. Dieselbe Ursache steckte ein zweites Mal im SELF-Inspektor; beide Stellen sind behoben, und eine Prüfung geht jetzt über alle Dateidialoge des Programms.
+- **FileZilla wurde auf dem Mac nie gefunden**, auch wenn es installiert war: Gesucht wurde nur nach der Windows-Datei. Jetzt kennt das Programm auch `FileZilla.app` und die üblichen Linux-Pfade – und startet sie richtig.
+- **Das Hintergrundbild wird nicht mehr verzerrt.** Es wurde bisher auf die Fenstergröße gestreckt; passte das Seitenverhältnis nicht, sah man es. Jetzt füllt es die Fläche formatfüllend aus und wird mittig beschnitten, wie ein Bildschirmhintergrund. Im Vollbild wurde es zuvor gar nicht angepasst.
+- **Die Schrift ist auf dem Mac deutlich größer.** Dieselbe Punktangabe ergibt dort rund ein Drittel weniger Pixel als unter Windows. Knöpfe wachsen mit. Wem es noch nicht reicht, kann den Faktor in der Einstellungsdatei ändern (`macos_font_scaling`).
 
 ---
 
@@ -544,7 +555,7 @@ Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19
 ### Groessenhinweis fuer das Hintergrundbild
 
 - Bei den Einstellungen steht jetzt auch fuer das Haupt-Hintergrundbild eine Groessenempfehlung (1920 x 1020 Pixel) – bisher gab es die nur beim Sidebar-Bild.
-- Der Hinweis erklaert ausserdem, dass das Bild auf die Fenstergroesse gestreckt wird und ein abweichendes Seitenverhaeltnis daher verzerrt.
+- Der Hinweis erklaert ausserdem, dass das Bild auf die Fenstergroesse gestreckt wird und ein abweichendes Seitenverhältnis daher verzerrt.
 
 ### Beschriftung von Aufgabe 7
 
