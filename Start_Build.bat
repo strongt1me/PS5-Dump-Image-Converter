@@ -1,12 +1,12 @@
 @echo off
 setlocal
-::: PS5 Dump & Image Converter v1.8.57 - EXE Build Starter
+::: PS5 Dump & Image Converter v1.8.58 - EXE Build Starter
 :: One-Click Release: startet den vollstaendigen Windows-Build ohne manuelle Execution Policy.
 cd /d "%~dp0"
 echo.
 echo =============================================
 echo   PS5 Dump ^& Image Converter - RELEASE
-echo   Version: v1.8.57
+echo   Version: v1.8.58
 echo =============================================
 echo.
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0Build_EXE.ps1"

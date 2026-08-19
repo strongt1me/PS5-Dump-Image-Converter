@@ -2,7 +2,22 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.57):** Vor der Formatwahl steht jetzt, wie schnell die PS5 einen PFS-Container liest.
+> **Kurz zum aktuellen Stand (v1.8.58):** Fehler in der Oberfläche verschwinden nicht mehr stillschweigend, und die Diagnose sagt endlich etwas über die Anzeige.
+
+---
+
+## v1.8.58 – 19.08.2026
+
+### Fehler verschwinden nicht mehr
+
+- **Ein Fehler in der Oberfläche war bisher unsichtbar.** Das Programm läuft ohne Konsolenfenster; Tkinter schreibt Fehler aus Knöpfen und Tastenbindungen aber genau dorthin. Es gab keinen Protokolleintrag und keine Meldung – der Knopf tat einfach nichts. Solche Fehler landen jetzt im Protokoll, mit einer kurzen Zeile im Konsolenfenster.
+- Dasselbe gilt für Fehler in den **Hintergrundvorgängen**, die während einer Umwandlung laufen.
+
+### Die Diagnose sagt jetzt etwas über die Anzeige
+
+- Der Bericht enthält sechs neue Abschnitte: **Anzeige** (Bildschirmgröße, DPI, Skalierung, Schriftarten, Design, Hintergrundbild), **Laufzeitumgebung**, gefundene **Fremdwerkzeuge**, **freier Speicherplatz** auf Quelle, Ziel und Temp, die **Fehler dieser Sitzung** und die letzten Zeilen der **Protokolldatei**.
+- Damit lässt sich ein Anzeigefehler einordnen, den man nur sieht: Ein Bildschirmfoto zeigt, *dass* etwas falsch aussieht, der Bericht sagt, *warum*.
+- Die Suche nach Fremdwerkzeugen wird dabei **nicht** neu angestoßen – der Bericht soll sofort da sein, nicht nach Minuten.
 
 ---
 

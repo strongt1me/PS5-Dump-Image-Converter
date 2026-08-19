@@ -35,6 +35,7 @@ import pathlib       # noqa: F401
 from pathlib import Path
 import pkgutil       # noqa: F401
 import platform
+from collections import deque
 import queue
 import re
 import shutil
@@ -43,6 +44,7 @@ import stat
 import string
 import struct
 import subprocess
+import traceback
 import sys
 import tempfile
 import threading
@@ -255,6 +257,59 @@ logging.basicConfig(
 logger = logging.getLogger("PS5Converter")
 
 
+# ---------------------------------------------------------------------------
+# Unbehandelte Ausnahmen
+# ---------------------------------------------------------------------------
+# Die EXE wird mit console=False gebaut, damit ist sys.stderr leer. Tkinter
+# schreibt einen Fehler aus einem Knopf-Handler genau dorthin - er verschwand
+# also spurlos: kein Protokolleintrag, keine Meldung, nichts im
+# Diagnosebericht. Der Knopf tat einfach nichts.
+#
+# Drei Haken decken die drei Wege ab, auf denen eine Ausnahme das Programm
+# verlassen kann:
+#   * Tk-Ereignisse (Knoepfe, Bindungen, after-Aufrufe) -> report_callback_exception
+#   * der Hauptfaden                                    -> sys.excepthook
+#   * die Arbeitsfaeden                                 -> threading.excepthook
+_LETZTE_FEHLER: "deque[str]" = deque(maxlen=20)
+
+
+def _fehler_festhalten(quelle: str, art, wert, spur) -> None:
+    """Schreibt eine unbehandelte Ausnahme ins Protokoll und in den Bericht.
+
+    Faengt selbst alles ab: Ein Fehler beim Melden eines Fehlers darf das
+    Programm nicht mitreissen, und im Fensterbetrieb gibt es keinen Ort, an
+    dem er sichtbar wuerde.
+    """
+    try:
+        spurtext = "".join(traceback.format_exception(art, wert, spur))
+        kopf = "%s | %s | %s: %s" % (
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            quelle, getattr(art, "__name__", art), wert)
+        _LETZTE_FEHLER.append(kopf + "\n" + spurtext.rstrip())
+        logger.error("Unbehandelte Ausnahme (%s): %s", quelle, wert,
+                     exc_info=(art, wert, spur))
+    except Exception:
+        pass
+
+
+def _haken_setzen() -> None:
+    """Haengt sys.excepthook und threading.excepthook ein."""
+    def _haupt(art, wert, spur):
+        _fehler_festhalten("Hauptfaden", art, wert, spur)
+
+    def _faden(args):
+        name = getattr(getattr(args, "thread", None), "name", "?")
+        _fehler_festhalten("Faden %s" % name,
+                           args.exc_type, args.exc_value, args.exc_traceback)
+
+    sys.excepthook = _haupt
+    try:
+        threading.excepthook = _faden      # ab Python 3.8
+    except Exception as exc:
+        logger.debug("threading.excepthook nicht setzbar: %s", exc)
+
+
+
 def _bundled_resource(*parts: str) -> str:
     """Liefert den Pfad zu einer mitgelieferten Ressource – im Skript wie in der EXE.
 
@@ -334,7 +389,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.57"
+APP_VERSION = "v1.8.58"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1379,6 +1434,10 @@ class PS5ConverterGUI:
         # mehr auf bereits erzeugte Schriften.
         self._macos_schrift_skalieren()
 
+        # Ohne diesen Haken landet jeder Fehler aus einem Knopf oder einer
+        # Bindung auf sys.stderr - und das ist im Fensterbetrieb leer.
+        self.root.report_callback_exception = self._tk_fehler_melden
+
         # 1. Alle Fenster-Variablen vorab initialisieren (Wichtig für _sync_docked_windows)
         self._info_popup: tk.Toplevel | None = None
         self._cred_win: tk.Toplevel | None = None
@@ -2186,6 +2245,26 @@ class PS5ConverterGUI:
             if gute:
                 entschaerft.append((beschriftung, " ".join(gute)))
         return entschaerft
+
+    def _tk_fehler_melden(self, art, wert, spur) -> None:
+        """Faengt Ausnahmen aus Tk-Ereignissen ab (Knoepfe, Bindungen, after).
+
+        Tkinter ruft diese Methode statt der Voreinstellung, die auf
+        ``sys.stderr`` schreibt - im mit ``console=False`` gebauten Programm
+        also ins Leere. Fehler in der Oberflaeche verschwanden dadurch
+        spurlos.
+
+        Neben dem Protokoll bekommt der Nutzer eine kurze Zeile im
+        Konsolenfenster: Er soll merken, dass etwas schiefging, ohne dass ihm
+        ein Fenster den Ablauf zerreisst.
+        """
+        _fehler_festhalten("Tk-Ereignis", art, wert, spur)
+        try:
+            self._append_to_log(self._t(
+                "log.unhandled_gui_error",
+                v0=getattr(art, "__name__", art), v1=wert))
+        except Exception:
+            pass
 
     def _macos_schrift_skalieren(self) -> None:
         """Vergroessert alle Punktgroessen auf macOS.
@@ -22788,6 +22867,146 @@ class PS5ConverterGUI:
         "pfs_force": "0",
     }
 
+    @staticmethod
+    def _diagnose_zeile(name: str, wert) -> str:
+        """Eine Zeile des Berichts - Werte bleiben sprachneutral."""
+        return "%s: %s" % (name, wert)
+
+    def _diagnose_anzeige(self) -> list[str]:
+        """Alles, was einen Darstellungsfehler erklaeren kann.
+
+        Ein Programm kann nicht sehen, dass sein eigenes Fenster falsch
+        aussieht - aber es kann den Zustand festhalten, aus dem sich das
+        ergibt. Die vier Mac-Befunde vom 19.08.2026 (zu kleine Schrift,
+        verzerrter Hintergrund) waeren damit auf einen Blick einzuordnen
+        gewesen.
+        """
+        z = self._diagnose_zeile
+        zeilen: list[str] = []
+        try:
+            zeilen.append(z("Bildschirm", "%dx%d"
+                            % (self.root.winfo_screenwidth(),
+                               self.root.winfo_screenheight())))
+            zeilen.append(z("Fenster", self.root.winfo_geometry()))
+            zeilen.append(z("Vollbild", getattr(self, "is_fullscreen", "?")))
+            zeilen.append(z("tk scaling",
+                            round(float(self.root.tk.call("tk", "scaling")), 4)))
+            zeilen.append(z("Tcl/Tk", "%s / %s"
+                            % (self.root.tk.call("info", "patchlevel"),
+                               self.root.tk.call("set", "tk_patchLevel"))))
+        except Exception as exc:
+            zeilen.append(z("Anzeige nicht auslesbar", exc))
+        try:
+            if IST_WINDOWS:
+                zeilen.append(z("Fenster-DPI",
+                                ctypes.windll.user32.GetDpiForWindow(self.root.winfo_id())))
+        except Exception as exc:
+            logger.debug("Fenster-DPI nicht auslesbar: %s", exc)
+        for name, wert in (("UI-Schrift", UI_SCHRIFT), ("Mono-Schrift", MONO_SCHRIFT)):
+            zeilen.append(z(name, wert))
+        try:
+            import tkinter.font as _tkfont
+            standard = _tkfont.nametofont("TkDefaultFont")
+            zeilen.append(z("TkDefaultFont", "%s %s, %d px hoch"
+                            % (standard.actual("family"), standard.actual("size"),
+                               standard.metrics("linespace"))))
+        except Exception as exc:
+            logger.debug("Schriftmasse nicht auslesbar: %s", exc)
+        zeilen.append(z("Design", getattr(self, "_current_theme", "?")))
+        zeilen.append(z("Sprache", getattr(self, "_current_language", "?")))
+        for name, wert in (("Hintergrundbild", getattr(self, "_bg_image_cache", None)),
+                           ("Seitenleistenbild", getattr(self, "_sidebar_bg_image_cache", None))):
+            zeilen.append(z(name, getattr(wert, "size", "keins")))
+        return zeilen
+
+    def _diagnose_umgebung(self) -> list[str]:
+        """Wie das Programm laeuft und womit - die Kompatibilitaetsseite."""
+        z = self._diagnose_zeile
+        zeilen = [
+            z("Gebaut als EXE", bool(getattr(sys, "frozen", False))),
+            z("_MEIPASS", getattr(sys, "_MEIPASS", "-")),
+            z("Programmpfad", os.path.abspath(sys.argv[0])),
+            z("Arbeitsverzeichnis", os.getcwd()),
+            z("Administratorrechte", _system_ist_administrator()),
+        ]
+        for name, modul in (("Pillow", "PIL"), ("tkinterdnd2", "tkinterdnd2"),
+                            ("psutil", "psutil"), ("requests", "requests")):
+            try:
+                m = __import__(modul)
+                zeilen.append(z(name, getattr(m, "__version__", "vorhanden")))
+            except Exception:
+                zeilen.append(z(name, "fehlt"))
+        zeilen.append(z("Drag & Drop aktiv", _DND_AVAILABLE))
+        zeilen.append(z("mkpfs-Ordner", getattr(self, "mkpfs_dir", "") or "noch nicht entpackt"))
+        return zeilen
+
+    def _diagnose_werkzeuge(self) -> list[str]:
+        """Die gemerkten Pfade der Fremdwerkzeuge.
+
+        Bewusst nur die gespeicherten Angaben und eine Existenzpruefung: Ein
+        frischer Suchlauf durchkaemmt im schlimmsten Fall alle Laufwerke, und
+        ein Diagnosebericht darf nicht minutenlang haengen.
+        """
+        z = self._diagnose_zeile
+        zeilen: list[str] = []
+        for name, schluessel in (("FileZilla", "filezilla_path"),
+                                 ("OSFMount", "osfmount_path"),
+                                 ("UFS2Tool", "ufs2tool_path")):
+            try:
+                pfad = str(self._load_setting(schluessel, "") or "").strip()
+            except Exception:
+                pfad = ""
+            if not pfad:
+                zeilen.append(z(name, "nicht gemerkt"))
+            else:
+                da = os.path.isfile(pfad) or (pfad.endswith(".app") and os.path.isdir(pfad))
+                zeilen.append(z(name, "%s (%s)" % (pfad, "vorhanden" if da else "FEHLT")))
+        return zeilen
+
+    def _diagnose_speicherplatz(self) -> list[str]:
+        """Freier Platz auf Quelle, Ziel und Temp - haeufigste Abbruchursache."""
+        z = self._diagnose_zeile
+        zeilen: list[str] = []
+        gesehen: set[str] = set()
+        for name, holen in (("Quelle", lambda: self.source_path.get()),
+                            ("Ziel", lambda: self.dest_path.get()),
+                            ("Temp", lambda: self.temp_path.get())):
+            try:
+                pfad = str(holen() or "").strip()
+            except Exception:
+                pfad = ""
+            if not pfad:
+                continue
+            wurzel = os.path.splitdrive(os.path.abspath(pfad))[0] or "/"
+            if wurzel in gesehen:
+                continue
+            gesehen.add(wurzel)
+            try:
+                _gesamt, _belegt, frei = shutil.disk_usage(pfad if os.path.exists(pfad) else wurzel)
+                zeilen.append(z("%s (%s)" % (name, wurzel),
+                                "%.1f GB frei" % (frei / 1024**3)))
+            except Exception as exc:
+                zeilen.append(z("%s (%s)" % (name, wurzel), "nicht ermittelbar: %s" % exc))
+        return zeilen
+
+    @staticmethod
+    def _diagnose_protokolldatei(zeilen_anzahl: int = 80) -> list[str]:
+        """Die letzten Zeilen aus ps5converter.log im TEMP-Ordner.
+
+        Das Konsolenfenster haelt nur 60 Zeilen des laufenden Baus. Die
+        Protokolldatei reicht weiter zurueck und enthaelt insbesondere die
+        Rueckverfolgungen der abgefangenen Ausnahmen.
+        """
+        try:
+            pfad = os.path.join(tempfile.gettempdir(), "ps5converter.log")
+            if not os.path.isfile(pfad):
+                return ["(%s gibt es nicht)" % pfad]
+            with io.open(pfad, encoding="utf-8", errors="replace") as datei:
+                alle = datei.read().splitlines()
+            return alle[-zeilen_anzahl:] or ["(leer)"]
+        except Exception as exc:
+            return ["Protokolldatei nicht lesbar: %s" % exc]
+
     def _build_diagnostic_report_text(self) -> str:
         """Baut den vollständigen Diagnose-Berichtstext zusammen."""
         lines: list[str] = []
@@ -22819,6 +23038,34 @@ class PS5ConverterGUI:
                 lines.append(self._t("diagnostics.report_no_config"))
         except Exception as exc:
             lines.append(self._t("diagnostics.report_settings_read_failed", error=exc))
+        for schluessel, bauer in (
+            ("diagnostics.report_section_display", self._diagnose_anzeige),
+            ("diagnostics.report_section_runtime", self._diagnose_umgebung),
+            ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
+            ("diagnostics.report_section_space", self._diagnose_speicherplatz),
+        ):
+            lines.append("")
+            lines.append(self._t(schluessel))
+            try:
+                lines.extend(bauer())
+            except Exception as exc:
+                # Ein Abschnitt darf den Bericht nie verhindern - er ist
+                # genau dann gefragt, wenn etwas nicht stimmt.
+                lines.append("Abschnitt fehlgeschlagen: %s" % exc)
+
+        lines.append("")
+        lines.append(self._t("diagnostics.report_section_errors"))
+        if _LETZTE_FEHLER:
+            for eintrag in _LETZTE_FEHLER:
+                lines.append(eintrag)
+                lines.append("")
+        else:
+            lines.append(self._t("diagnostics.report_no_errors"))
+
+        lines.append("")
+        lines.append(self._t("diagnostics.report_section_logfile"))
+        lines.extend(self._diagnose_protokolldatei())
+
         lines.append("")
         lines.append(self._t("diagnostics.report_section_log_tail"))
         tail = getattr(self, "_build_log_tail", None) or []
@@ -28873,6 +29120,10 @@ def _run_cli(args: argparse.Namespace) -> int:
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
+
+    # Sofort nach freeze_support: Ab hier wird jede unbehandelte
+    # Ausnahme aufgezeichnet, auch die aus dem Programmstart.
+    _haken_setzen()
 
     # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
     _mit_ok, _mit_msg = _register_mit_license_runtime()
