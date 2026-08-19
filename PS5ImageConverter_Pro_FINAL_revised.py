@@ -215,6 +215,22 @@ SIDEBAR_BG_IMAGE_OPACITY = 0.50
 # Bewusst niedrig, da hier tatsaechlich Text/Eingabefelder liegen.
 BG_CARD_TINT_OPACITY = 0.18
 
+# Deckkraft der Protokollflaeche ueber dem Hintergrundbild: 0.70 heisst,
+# 30 % des Bildes scheinen durch. Getrennt von BG_CARD_TINT_OPACITY, weil
+# die Protokollflaeche gross und dauerhaft sichtbar ist - was bei einer
+# Karte dezent wirkt, ist hier entweder zu viel oder zu wenig.
+#
+# Tk kann ein Textfeld nicht wirklich durchsichtig machen. Erreicht wird
+# der Eindruck durch Mischen der Flaechenfarbe mit dem Bild - dieselbe
+# Technik wie bei den Karten und den eingebrannten Beschriftungen.
+CONSOLE_BG_DECKKRAFT = 0.70
+
+# Dasselbe fuer die Knopfleiste unter der Karte (STARTEN/ABBRECHEN und die
+# Groessenanzeige). Sie hat das Bild bisher unveraendert durchscheinen
+# lassen - dadurch tauchte das Motiv dort ein zweites Mal auf und wirkte
+# wie gespiegelt. 0.70 heisst: 30 % des Bildes bleiben sichtbar.
+ACTION_BAR_DECKKRAFT = 0.70
+
 # Deckkraft fuer das echte Hintergrundbild INNERHALB der QUELLE-/ZIELformat-Karte
 # (nicht nur eine Farbtoenung wie BG_CARD_TINT_OPACITY, sondern das tatsaechliche
 # Bild, auf die Kartengroesse skaliert, hinter den Eingabefeldern).
@@ -389,7 +405,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.59"
+APP_VERSION = "v1.8.60"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2207,8 +2223,13 @@ class PS5ConverterGUI:
         tint_rgb = self._average_image_rgb(self._bg_image_cache)
         for key in ("bg_card", "console_bg"):
             base = self._COLORS.get(key)
-            if base:
-                self._COLORS[key] = self._blend_hex_color(base, tint_rgb, BG_CARD_TINT_OPACITY)
+            if not base:
+                continue
+            # Die Protokollflaeche bekommt ihre eigene Deckkraft:
+            # 0.80 Flaechenfarbe, 0.20 Bild.
+            anteil = (1.0 - CONSOLE_BG_DECKKRAFT if key == "console_bg"
+                      else BG_CARD_TINT_OPACITY)
+            self._COLORS[key] = self._blend_hex_color(base, tint_rgb, anteil)
 
     @staticmethod
     def _dateitypen(paare: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -4555,7 +4576,11 @@ class PS5ConverterGUI:
             from_=1,
             to=_worker_max,
             textvariable=self.worker_count_var,
-            width=6,
+            # Dieselbe Schrift wie die beiden Klapplisten daneben: Ohne
+            # font-Angabe nimmt ttk die Standardschrift (9 pt), und das
+            # Feld stand sichtbar niedriger als seine Nachbarn.
+            font=(UI_SCHRIFT, 10),
+            width=5,
             command=self._on_worker_count_changed,
         )
         # Direkt neben der Kompressionsstufe statt in der breiten, rechtsbündigen
@@ -4596,6 +4621,26 @@ class PS5ConverterGUI:
         self.mkpfs_verify = _gespeichert
         self._verify_tooltip = DelayedTooltip(
             self.verify_combo, self._t("verify.hint"), delay_ms=1200)
+
+        # Das Feld stand ohne Beschriftung da - "Schnell" allein sagt niemandem,
+        # worum es geht. Die Zeilenueberschrift nennt jetzt alle drei Felder,
+        # und rechts neben der Liste steht ausgeschrieben, was sie steuert.
+        self.verify_inline_title = ttk.Label(
+            path_card,
+            text=self._t("main.verify_inline_label"),
+            font=(UI_SCHRIFT, 9, "bold"),
+            foreground=self._COLORS["fg_secondary"],
+            background=self._COLORS["bg_card"],
+            compound="center",
+        )
+        self._register_translatable(self.verify_inline_title, "main.verify_inline_label")
+        self.verify_inline_title.place(in_=self.verify_combo, relx=1.0, x=10,
+                                       rely=0.5, anchor="w")
+        self._card_caption_labels.append(self.verify_inline_title)
+
+        # Erst jetzt stehen Klappliste und Zahlenfeld beide - vorher
+        # laesst sich die Hoehendifferenz nicht messen.
+        self._worker_spin_hoehe_angleichen()
         self.worker_spin.bind("<Return>", self._on_worker_count_changed)
         self.worker_spin.bind("<FocusOut>", self._on_worker_count_changed)
         # Zeigt beim Verweilen, was die gewaehlte Zahl konkret bewirkt - das Feld
@@ -5653,6 +5698,51 @@ class PS5ConverterGUI:
         """
         self._apply_icon_to_window(win)
 
+    def _fenster_auf_inhalt_wachsen(self, win, breite: int, hoehe: int,
+                                    veraenderbar: bool) -> None:
+        """Vergroessert ein Fenster, wenn sein Inhalt nicht hineinpasst.
+
+        Die Masse der Werkzeugfenster sind von Hand eingetragen. Waechst der
+        Inhalt - eine Zeile mehr, ein laengerer Text, eine zusaetzliche
+        Schaltflaeche -, bleibt die Zahl stehen und die unterste Knopfreihe
+        rutscht aus dem Fenster. Der Nutzer muss es dann erst groesser
+        ziehen, um an "Schliessen" zu kommen.
+
+        Am 19.08.2026 an einer Bildschirmaufnahme nachgemessen: acht von
+        zehn pruefbaren Fenstern waren zu klein, dem AMPR-Index fehlten
+        265 Pixel Hoehe, dem Diagnosebericht 137.
+
+        Statt sechzehn Zahlen einzeln nachzupflegen fragt das Fenster hier
+        seinen eigenen Inhalt, was er braucht. ``after_idle`` sorgt dafuer,
+        dass das erst laeuft, wenn der Aufrufer alles eingefuellt hat.
+
+        Der Bildschirm ist die Obergrenze: Ein Fenster, das nicht
+        hineinpasst, wird so gross wie moeglich - unerreichbare Knoepfe
+        waeren schlimmer als ein randvolles Fenster.
+        """
+        try:
+            if not win.winfo_exists():
+                return
+            win.update_idletasks()
+            noetig_b, noetig_h = win.winfo_reqwidth(), win.winfo_reqheight()
+            grenze_b = win.winfo_screenwidth() - 40
+            grenze_h = win.winfo_screenheight() - 80
+            neu_b = max(1, min(max(breite, noetig_b), grenze_b))
+            neu_h = max(1, min(max(hoehe, noetig_h), grenze_h))
+            if (neu_b, neu_h) == (breite, hoehe):
+                return
+            x = max(0, (win.winfo_screenwidth() - neu_b) // 2)
+            y = max(0, (win.winfo_screenheight() - neu_h) // 2)
+            win.geometry("%dx%d+%d+%d" % (neu_b, neu_h, x, y))
+            if veraenderbar:
+                # Die Mindestgroesse mitziehen, sonst laesst sich das Fenster
+                # wieder auf die zu kleine Ausgangsgroesse schrumpfen.
+                win.minsize(min(neu_b, grenze_b), min(neu_h, grenze_h))
+            logger.info("Fenster %r auf %dx%d vergroessert (eingestellt war %dx%d)",
+                        win.title(), neu_b, neu_h, breite, hoehe)
+        except Exception as exc:
+            logger.debug("Fenster konnte nicht angepasst werden: %s", exc)
+
     def _build_modern_toplevel(
         self,
         title: str,
@@ -5692,6 +5782,20 @@ class PS5ConverterGUI:
         win.resizable(resizable, resizable)
         if resizable:
             win.minsize(min_width or width, min_height or height)
+
+        # Erst wenn der Aufrufer das Fenster gefuellt hat, steht fest, wie viel
+        # Platz der Inhalt braucht. after_idle taugt dafuer NICHT: Mehrere
+        # Erbauer rufen selbst update_idletasks(), und das fuehrt die
+        # Rueckmeldung aus, bevor ein einziges Bedienelement drinsteht -
+        # gemessen am AMPR-Index-Fenster, das dabei bei 700x460 blieb,
+        # obwohl es 689x725 braucht.
+        #
+        # Zwei Anlaeufe mit kurzem Abstand: Der erste greift im Normalfall,
+        # der zweite faengt Inhalte ab, die erst nachtraeglich eintreffen.
+        # Die Pruefung vergroessert nur und ist damit gefahrlos wiederholbar.
+        for verzoegerung in (80, 400):
+            win.after(verzoegerung, lambda: self._fenster_auf_inhalt_wachsen(
+                win, width, height, resizable))
         self._apply_icon_to_toplevel(win)
         return win
 
@@ -6132,6 +6236,7 @@ class PS5ConverterGUI:
         try:
             crop = self._compute_content_bg_crop(self.action_bar, width, height)
             if crop is not None:
+                crop = self._blend_bg_image_for_action_bar(crop)
                 self.action_bar_bg_photo = ImageTk.PhotoImage(crop)
                 self.action_bar_bg_label.config(image=self.action_bar_bg_photo)
                 self._last_action_bar_bg_resize_size = (width, height)
@@ -6249,6 +6354,20 @@ class PS5ConverterGUI:
                 logger.debug("Sidebar-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
 
 
+    def _blend_bg_image_for_action_bar(self, img: "Image.Image") -> "Image.Image":
+        """Mischt den Bildausschnitt der Knopfleiste mit der Flaechenfarbe.
+
+        Die Leiste zeigte den Ausschnitt bisher unveraendert. Auf dem
+        Hintergrundbild wiederholt sich das Motiv dadurch sichtbar - der
+        Nutzer beschrieb es als Spiegelung (19.08.2026, Bildausschnitt mit
+        "STARTEN / ABBRECHEN" und der Groessenanzeige).
+
+        Dieselbe Behandlung wie bei der Protokollflaeche: Die Flaechenfarbe
+        traegt, das Bild scheint nur noch durch.
+        """
+        basis = Image.new("RGB", img.size, self._COLORS["bg_main"])
+        return Image.blend(basis, img, 1.0 - ACTION_BAR_DECKKRAFT)
+
     def _blend_bg_image_for_card(self, img: "Image.Image") -> "Image.Image":
         """Blendet das Rohbild mit der (ggf. bereits getönten) Kartenfarbe.
 
@@ -6288,7 +6407,13 @@ class PS5ConverterGUI:
                 if c_width > 1 and c_height > 1:
                     card_x = path_card.winfo_x() + offset[0]
                     card_y = path_card.winfo_y() + offset[1]
-                    full_resized = self._bg_image_raw.resize((c_width, c_height), _LANCZOS)
+                    # Muss dieselbe Geometrie benutzen wie die Flaeche
+                    # darunter. Bis v1.8.60 stand hier resize(), waehrend
+                    # die Inhaltsflaeche seit v1.8.55 formatfuellend
+                    # beschnitten wird - dadurch zeigte die Karte einen
+                    # anderen Bildausschnitt als ihre Umgebung, und das
+                    # Motiv wirkte an der Kartenkante gespiegelt.
+                    full_resized = self._bild_fuellen(self._bg_image_raw, c_width, c_height)
                     crop_box = (
                         max(0, min(card_x, c_width)),
                         max(0, min(card_y, c_height)),
@@ -6303,7 +6428,8 @@ class PS5ConverterGUI:
 
             # Fallback: eigenstaendige Skalierung (z. B. beim allerersten Aufbau,
             # solange content_area/path_card noch keine reale Groesse haben).
-            resized_raw = self._bg_image_raw.resize((width, height), _LANCZOS)
+            # Dieselbe Geometrie wie ueberall sonst - siehe oben.
+            resized_raw = self._bild_fuellen(self._bg_image_raw, width, height)
             return self._blend_bg_image_for_card(resized_raw)
         except Exception as exc:
             logger.debug("Karten-Hintergrundbild konnte nicht berechnet werden: %s", exc)
@@ -6564,6 +6690,37 @@ class PS5ConverterGUI:
             self.temp_entry.dnd_bind("<<Drop>>", self._on_temp_dropped)
         except Exception as exc:
             logger.debug("Drag & Drop konnte nicht aktiviert werden: %s", exc)
+
+    def _worker_spin_hoehe_angleichen(self) -> None:
+        """Gibt dem Zahlenfeld dieselbe Hoehe wie den Klapplisten daneben.
+
+        In der Bedienzeile stehen drei Felder nebeneinander: Kompression,
+        Worker-Threads, Pruefung. ttk gibt einer Combobox mehr Innenabstand
+        als einer Spinbox - gemessen 37 gegen 27 Pixel. Dieselbe Schrift
+        allein gleicht das nicht aus; das Zahlenfeld sass sichtbar tiefer und
+        wirkte wie hineingerutscht.
+
+        Die Differenz wird gemessen statt geraten: Themes und
+        Anzeigeskalierung aendern die Innenabstaende, eine feste Zahl waere
+        auf dem naechsten System wieder falsch.
+        """
+        try:
+            self.root.update_idletasks()
+            ziel = self.compression_combo.winfo_reqheight()
+            ist = self.worker_spin.winfo_reqheight()
+            fehlt = ziel - ist
+            if fehlt <= 0:
+                return
+            oben = fehlt // 2
+            unten = fehlt - oben
+            stil = ttk.Style()
+            stil.configure("Perf.TSpinbox", padding=(2, oben, 2, unten))
+            self.worker_spin.configure(style="Perf.TSpinbox")
+            self.root.update_idletasks()
+            logger.debug("Zahlenfeld um %d px erhoeht (%d -> %d)",
+                         fehlt, ist, self.worker_spin.winfo_reqheight())
+        except Exception as exc:
+            logger.debug("Hoehe des Zahlenfelds nicht angleichbar: %s", exc)
 
     def _on_verify_stufe_changed(self, _event=None) -> None:
         """Uebernimmt die gewaehlte mkpfs-Pruefstufe und merkt sie."""
@@ -27752,7 +27909,8 @@ class PS5ConverterGUI:
 
                 action_bar_crop = self._compute_content_bg_crop(action_bar, a_width, a_height)
                 if action_bar_crop is not None:
-                    self.action_bar_bg_photo = ImageTk.PhotoImage(action_bar_crop)
+                    self.action_bar_bg_photo = ImageTk.PhotoImage(
+                        self._blend_bg_image_for_action_bar(action_bar_crop))
                     self.action_bar_bg_label.config(image=self.action_bar_bg_photo)
                     self._last_action_bar_bg_resize_size = (a_width, a_height)
 

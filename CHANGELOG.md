@@ -2,7 +2,29 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.59):** Auf dem Mac genügt jetzt ein Doppelklick im Abbild – danach startet das Programm ohne Warnung, und die Schrift ist lesbar.
+> **Kurz zum aktuellen Stand (v1.8.60):** Die Knöpfe sind in jedem Fenster erreichbar, ohne dass man es vorher größer ziehen muss.
+
+---
+
+## v1.8.60 – 19.08.2026
+
+### Die Knöpfe sind wieder erreichbar
+
+- **In elf von vierzehn Werkzeugfenstern lag die unterste Knopfreihe außerhalb des Fensters.** Man musste es erst größer ziehen, um an „Schließen“ oder „Umbenennen“ zu kommen. Betroffen waren unter anderem der AMPR-Index-Builder (es fehlten 265 Pixel Höhe), die Bibliothek, der PKG-Merger, der Diagnosebericht, das KLOG-Fenster und „Dump umbenennen“.
+- **Jedes Fenster richtet sich jetzt nach seinem Inhalt.** Die Größe wird beim Öffnen angepasst, der Bildschirm ist die Grenze. Wer ein Fenster von Hand vergrößert, behält das wie bisher.
+
+### Anzeige
+
+- **Die Protokollfläche lässt 30 % des Hintergrundbildes durchscheinen.** Bisher war sie fast deckend.
+- **Die Knopfleiste unter der Karte ebenfalls.** Die Leiste mit „Starten“, „Abbrechen“ und der Größenanzeige zeigte das Hintergrundbild unverändert; neben der Karte darüber wirkte das Motiv dadurch wie gespiegelt. Auch dort trägt jetzt die Flächenfarbe, das Bild scheint zu 30 % durch.
+- Eine Meldung beim Umbenennen eines Dump-Ordners hatte ein falsches schließendes Anführungszeichen.
+- **Das Hintergrundbild sprang an der Kartenkante.** Die Karte zeichnete ihren Untergrund aus einem gestreckten Bild, während die Fläche darunter seit v1.8.55 formatfüllend beschnitten wird – dadurch tauchte das Motiv versetzt ein zweites Mal auf. Beide benutzen jetzt dieselbe Geometrie.
+- **Das dritte Feld in der Bedienzeile hat jetzt eine Beschriftung.** Bisher stand dort nur „Schnell“, ohne dass erkennbar war, worum es geht. Rechts daneben steht jetzt „PRÜFUNG NACH DEM PACKEN“, und die Zeilenüberschrift nennt alle drei Felder.
+- **Das Zahlenfeld für die Worker-Threads ist so hoch wie die Klapplisten daneben.** Es saß sichtbar tiefer und wirkte wie hineingerutscht.
+
+### Neue AMPR-EMU-Fassungen
+
+- **0.3.1, 0.3.4 und 0.3.5 liegen bei** und stehen im AMPR EMU Manager (Aufgabe 7) ganz oben zur Auswahl. Am Programm war dafür nichts zu ändern – der Versionsspeicher wird eingelesen, nicht aufgezählt.
 
 ---
 
