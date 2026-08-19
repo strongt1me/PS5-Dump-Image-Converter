@@ -332,7 +332,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.53"
+APP_VERSION = "v1.8.54"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -20211,10 +20211,18 @@ class PS5ConverterGUI:
         # Dienst und das, was an ihn geht - eine Title-ID, sonst nichts.
         # Ohne erkannte Title-ID gibt es nichts nachzuschlagen, dann
         # entfaellt der Hinweis.
-        if title_id and self._online_nachschlag_erlaubt():
+        # Fuehrt ein Ja zu einem Netzabruf, ist der vorbelegte Knopf "Nein".
+        # Bis v1.8.52 hatte der Nachschlag eine eigene Frage mit genau dieser
+        # Vorbelegung. Beim Zusammenlegen zu einer Frage ging sie verloren -
+        # ein versehentliches Enter schickte die Title-ID an
+        # prosperopatches.com. Ohne Nachschlag bleibt es bei "Ja": Dann
+        # geschieht alles ausschliesslich lokal.
+        mit_nachschlag = bool(title_id and self._online_nachschlag_erlaubt())
+        if mit_nachschlag:
             message += "\n" + self._t(
                 "dialog.msg.param_json_offer_online_hint", v0=title_id)
-        if not self._param_frage(self._t("dialog.title.game_incomplete"), message):
+        if not self._param_frage(self._t("dialog.title.game_incomplete"), message,
+                                 default_yes=not mit_nachschlag):
             self._append_to_log(self._t('log.manual.param_json_create_declined'))
             return False
 
@@ -20227,7 +20235,7 @@ class PS5ConverterGUI:
         # entscheidet weiterhin --param-json-online, denn dort hat niemand
         # diese Frage gesehen.
         online: dict = {}
-        if title_id and self._online_nachschlag_erlaubt():
+        if mit_nachschlag:
             online = self._lookup_param_meta_online(title_id)
             if online:
                 self._append_to_log(self._t(

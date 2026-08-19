@@ -2,7 +2,21 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.53):** Eine fehlende `param.json` wird jetzt zum größten Teil aus dem Backup selbst wiederhergestellt – mit nur einer Rückfrage.
+> **Kurz zum aktuellen Stand (v1.8.54):** Aufgabe 8 verurteilt keinen Dump mehr, den sie im selben Lauf in Ordnung gebracht hat.
+
+---
+
+## v1.8.54 – 19.08.2026
+
+### Zwei Fehler aus v1.8.53
+
+- **Aufgabe 8 meldete FEHLGESCHLAGEN, obwohl alles in Ordnung war.** Die `param.json` steht in der Liste der unverzichtbaren Dateien. Fehlte sie, fiel das Urteil – und erst danach wurde angeboten, sie anzulegen. Im Protokoll stand dann „param.json wurde neu erstellt, Prüfung bestanden“ und darüber ein rotes Fehlerfenster. Die Datei wird jetzt vor der Prüfung behandelt.
+- **Die Rückfrage stand auf Ja, obwohl ein Ja ins Netz greift.** Bis v1.8.52 hatte der Online-Nachschlag eine eigene Frage mit vorbelegtem Nein. Beim Zusammenlegen der beiden Fragen ging das verloren, und ein versehentliches Enter schickte die Titel-ID an prosperopatches.com. Führt ein Ja zu einem Netzabruf, steht der Knopf wieder auf Nein.
+
+### Kleinere Berichtigungen
+
+- **„Die Konvertierung ist fehlgeschlagen“** erschien auch bei Aufgabe 8 und der Inspektion – beide wandeln nichts um, sie lesen. Der Hinweis auf einen mkpfs-Exit-Code verwies dort auf einen Schritt, den es nicht gibt. Sie melden jetzt „Beanstandungen gefunden“.
+- **Diese Fehlermeldungen waren als einzige noch fest auf Deutsch verdrahtet.** Im englischen Programm stand hier deutscher Text; jetzt zweisprachig wie der Rest.
 
 ---
 
