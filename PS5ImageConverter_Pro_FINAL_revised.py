@@ -30648,14 +30648,19 @@ def _ps4ffpsc_entpacker() -> str:
     wurzel = _ps4ffpsc_wurzel()
     if not wurzel:
         return ""
-    name = "ps4_pkg_extract.exe" if IST_WINDOWS else "ps4_pkg_extract"
+    if IST_WINDOWS:
+        name = "ps4_pkg_extract.exe"
+    elif sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
+        # Die endungslose Datei ist die Fassung fuer Apple Silicon. Sie NUR
+        # dort zu nehmen ist wichtig: Unter Linux liegt sie ebenfalls im
+        # Ordner, ist aber eine Mach-O-Datei und laesst sich nicht ausfuehren
+        # ("Exec format error"). Eine Suche allein ueber den Dateinamen
+        # meldete dort faelschlich einen brauchbaren Entpacker.
+        name = "ps4_pkg_extract"
+    else:
+        return ""
     pfad = os.path.join(wurzel, "bin", name)
-    if not os.path.isfile(pfad):
-        return ""
-    # Auf dem Mac liegt nur die arm64-Fassung bei; auf Intel laeuft sie nicht.
-    if sys.platform == "darwin" and platform.machine() not in ("arm64", "aarch64"):
-        return ""
-    return pfad
+    return pfad if os.path.isfile(pfad) else ""
 
 
 def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:

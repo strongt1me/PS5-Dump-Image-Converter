@@ -110,6 +110,20 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
+        # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.8) braucht.
+        # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
+        # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
+        # Ohne diese Liste bricht der interne Modus mit "No module named
+        # 'tomllib'" ab (unter Linux nachgemessen; Windows haette denselben
+        # Fehler gehabt, nur faellt er dort erst beim Klick auf).
+        'tomllib',
+        'cryptography',
+        'cryptography.hazmat.primitives.ciphers',
+        'zlib_ng',
+        'zlib_ng.zlib_ng',
+        'unicodedata',
+        'contextvars',
+        'concurrent.futures',
         # Dynamisch importierte FFPKG-/UFS2Tool-v4.1-Ressource
         'ps5_ufs2tool_data',
         # Dynamisch importierter FFPKG-Validatorpfad

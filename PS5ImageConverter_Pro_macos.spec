@@ -167,6 +167,14 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
+        'tomllib',
+        'cryptography',
+        'cryptography.hazmat.primitives.ciphers',
+        'zlib_ng',
+        'zlib_ng.zlib_ng',
+        'unicodedata',
+        'contextvars',
+        'concurrent.futures',
         # Dynamisch importierter FFPKG-Validatorpfad
         'ps5_validator',
         'ps5_validator.core',
