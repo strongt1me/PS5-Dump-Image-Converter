@@ -2,9 +2,31 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.69):** Das Hintergrundbild sitzt vom ersten Moment an richtig, und der Diagnosebericht prüft die Darstellung des Fensters mit.
+> **Kurz zum aktuellen Stand (v1.8.70):** Werkzeugleiste und Statuszeile passen sich schmalen Fenstern an, und kein Hintergrundbild wird mehr hochgerechnet.
 
 ---
+
+## v1.8.70 – 21.08.2026
+
+### Die Werkzeugleiste passt sich an, statt Knöpfe zu quetschen
+
+Die dreizehn Knöpfe oben brauchen zusammen rund 1515 Pixel. War weniger da, hat sie das Programm nicht weggelassen, sondern zusammengedrückt – bei einem 1440 Pixel breiten Fenster war „BENUTZERHANDBUCH" noch 100 statt 189 Pixel breit, bei 1366 nur noch **26**. Lesen oder treffen konnte man ihn dann nicht mehr.
+
+Reicht der Platz nicht, wandern einzelne Knöpfe jetzt ins Sammelmenü **WEITERE TOOLS**, wo sie unter einem Trennstrich stehen. Zieht man das Fenster wieder breiter, kommen sie an ihren Platz zurück. BEENDEN, DESIGN, EINSTELLUNGEN, WEITERE TOOLS und die Sprachumschaltung bleiben immer stehen.
+
+### Die Statuszeile wird nicht mehr abgeschnitten
+
+Die Zeile unten rechts nennt, was die gewählte Aufgabe tut. Sie brauchte 860 Pixel; bei schmalem Fenster standen 627 zur Verfügung, der Rest fehlte ohne jeden Hinweis. Sie bricht jetzt um.
+
+### Kein Hintergrundbild wird mehr hochgerechnet
+
+Eines der zwanzig Querformatbilder (`ray-burst`) war mit 1424 × 752 zu klein und wurde auf einem 1920er Bildschirm um 35 % hochgerechnet – es wirkte dadurch weich. Alle zwanzig Seitenleistenbilder waren 320 × 1000 und wurden um 54 % hochgerechnet.
+
+Es liegen jetzt größere Fassungen bei: ein neues `ray-burst` in voller Größe und Seitenleistenbilder in 640 Pixeln Breite. Die übrigen neunzehn Querformatbilder sind unverändert.
+
+### Das Fenster lässt sich nicht mehr schmaler als 1230 Pixel ziehen
+
+Vorher 1200. Darunter passte die Überschrift „KOMPRESSION (PFS) / WORKER-THREADS / PRÜFUNG" nicht mehr in ihre Spalte.
 
 ## v1.8.69 – 20.08.2026
 

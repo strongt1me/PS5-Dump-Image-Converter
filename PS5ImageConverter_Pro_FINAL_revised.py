@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.69"
+APP_VERSION = "v1.8.70"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -441,7 +441,7 @@ MKPFS_REQUIRED_VERSION = "0.0.9"
 PS5_FTP_PORTS: tuple[int, ...] = (2121, 1337, 21, 2120)
 PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 
-WINDOW_MIN_WIDTH = 1200
+WINDOW_MIN_WIDTH = 1230
 WINDOW_MIN_HEIGHT = 700
 # Zuschlag fuer alle Punktgroessen unter macOS - siehe
 # PS5ConverterGUI._macos_schrift_skalieren.
@@ -1528,6 +1528,32 @@ class PS5ConverterGUI:
     #: Eintraege des Menues "WEITERE TOOLS" als (i18n-Schluessel, Methodenname).
     #: Eine Liste statt einzelner add_command-Aufrufe, damit die Beschriftungen
     #: beim Sprachwechsel aus derselben Quelle neu gesetzt werden koennen.
+    #: Knoepfe der Titelleiste, die bei zu wenig Platz ins Sammelmenue
+    #: wandern - in der Reihenfolge, in der sie weichen. Zuerst die selteneren
+    #: Werkzeuge, zuletzt die Diagnose. BEENDEN, DESIGN, EINSTELLUNGEN,
+    #: WEITERE TOOLS und der Sprachumschalter bleiben immer stehen.
+    #:
+    #: Der Grund: Die dreizehn Knoepfe brauchen zusammen rund 1515 px. Passt
+    #: das nicht, quetscht ``pack`` die zuletzt gepackten zusammen, statt sie
+    #: wegzulassen - am 20.08.2026 gemessen war "BENUTZERHANDBUCH" bei einem
+    #: 1366 px breiten Fenster noch **26 px** breit, bei 1440 noch 100 statt
+    #: 189. Lesbar oder anklickbar war das nicht mehr.
+    _FALTBARE_TITELKNOEPFE: tuple[tuple[str, str, str], ...] = (
+        ("_btn_klog_title", "titlebar.klog", "_show_klog_window_geprueft"),
+        ("_btn_jsloader_title", "titlebar.jsloader", "_show_js_loader"),
+        ("_btn_ftp_title", "titlebar.filezilla", "_launch_filezilla"),
+        ("_btn_library_title", "titlebar.library", "_show_library_window"),
+        ("_btn_shadowmount_title", "titlebar.shadowmount", "_show_shadowmount_editor"),
+        ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
+        ("_btn_credits_title", "titlebar.credits", "_show_credits"),
+        ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
+    )
+
+    #: Wie viel Luft ein Knopf zusaetzlich braucht, bevor er zurueckkommt.
+    #: Ohne diesen Abstand klappte er beim Ziehen am Fensterrand im Wechsel
+    #: ein und aus.
+    _TITELLEISTE_LUFT = 24
+
     _MORE_TOOLS_ENTRIES: tuple[tuple[str, str], ...] = (
         ("titlebar.backport", "_show_backport"),
         ("titlebar.downloads", "_show_downloads_manager"),
@@ -2035,6 +2061,10 @@ class PS5ConverterGUI:
             )
 
         def _show_more_tools_menu():
+            # Vor dem Aufklappen neu bestuecken: Welche Knoepfe eingefaltet
+            # sind, haengt an der Fensterbreite und kann sich seit dem letzten
+            # Mal geaendert haben.
+            self._sammelmenue_bestuecken()
             x = self._btn_more_tools_title.winfo_rootx()
             y = self._btn_more_tools_title.winfo_rooty() + self._btn_more_tools_title.winfo_height()
             self._more_tools_menu.post(x, y)
@@ -2114,6 +2144,13 @@ class PS5ConverterGUI:
             self._btn_manual_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
         self._btn_manual_title.bind("<Enter>", _manual_enter)
         self._btn_manual_title.bind("<Leave>", _manual_leave)
+
+        # Die Leiste steht - jetzt laesst sich ihre Reihenfolge festhalten und
+        # der Platz zum ersten Mal pruefen.
+        self._titelleiste_ordnung_merken()
+        self._main_titlebar.bind("<Configure>", self._on_titelleiste_configure)
+        self.root.after_idle(self._titelleiste_anpassen)
+        self.root.after_idle(self._inhaltstexte_umbrechen)
 
         # 8. Bindings
         # Kein Drag / kein Resize-Griff – nativer Windows-Rahmen übernimmt das.
@@ -5208,7 +5245,7 @@ class PS5ConverterGUI:
         console_frame.grid_rowconfigure(0, weight=1)
 
         self.console_view = tk.Text(console_frame, bg=self._COLORS["console_bg"], fg=self._COLORS["console_fg"],
-                       font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
+                       font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
                                    insertbackground="white", selectbackground=self._COLORS["fg_accent"],
                                    highlightthickness=0)
         self.console_view.grid(row=0, column=0, sticky="nsew")
@@ -6557,6 +6594,12 @@ class PS5ConverterGUI:
     def _on_layout_settled(self) -> None:
         """Zeichnet alle Beschriftungen neu, nachdem das Fenster zur Ruhe gekommen ist."""
         self._caption_settle_after_id = None
+        # Zuerst die Umbruchbreite, dann erst einbrennen: Der eingebrannte
+        # Bildausschnitt bekommt die Groesse, die das Label gerade hat.
+        # Umgekehrt behielte er die Breite des ungebrochenen Textes, und die
+        # bestimmt bei ``compound="center"`` den Platzbedarf - der Text waere
+        # umgebrochen, das Label trotzdem zu breit.
+        self._inhaltstexte_umbrechen()
         try:
             self._redraw_all_captions()
         except Exception as exc:
@@ -6575,6 +6618,233 @@ class PS5ConverterGUI:
     #: Ab wie vielen Pixeln Unterschied ein Hintergrundbild als
     #: stehengeblieben gilt. Ein Pixel wandert je nach Rahmenbreite.
     _HINTERGRUND_TOLERANZ = 2
+
+    #: Beschriftungen der Inhaltsflaeche, deren Text mit der gewaehlten
+    #: Aufgabe wechselt und deshalb laenger werden kann als die Flaeche.
+    #: Ohne ``wraplength`` bricht ein ttk-Label nie um - es wird beschnitten.
+    _UMBRECHENDE_INHALTSTEXTE: tuple[tuple[str, str], ...] = (
+        ("status_label", "right"),
+        ("telemetry_label", "right"),
+        ("subtitle_label", "left"),
+    )
+
+    def _inhaltstexte_umbrechen(self) -> None:
+        """Gibt den wechselnden Beschriftungen eine passende Umbruchbreite.
+
+        Gemessen am 20.08.2026: Die Statuszeile nennt, was die gewaehlte
+        Aufgabe tut ("Wandelt einen Dump-Ordner in .ffpfsc (komprimiert)
+        um ..."). Sie wollte 860 px; die Inhaltsflaeche bot bei 1200 px
+        Fensterbreite 627 - der Rest war abgeschnitten, ohne jeden Hinweis.
+
+        Die Breite haengt an der Fensterbreite und wird deshalb bei jeder
+        Groessenaenderung nachgezogen.
+        """
+        # Massgeblich ist die Breite der Pfad-Karte, nicht die der
+        # Inhaltsflaeche: Dazwischen liegen rund 80 px Polsterung, und
+        # genau so viel fehlte beim ersten Versuch (Umbruch bei 647,
+        # verfuegbar 627). Die Karte liegt in derselben Spalte wie die
+        # Beschriftungen und hat deshalb genau deren Breite.
+        karte = getattr(self, "path_card", None)
+        flaeche = getattr(self, "content_area", None)
+        breite = 0
+        try:
+            if karte is not None and int(karte.winfo_width()) > 1:
+                breite = int(karte.winfo_width()) - 10
+            elif flaeche is not None:
+                breite = int(flaeche.winfo_width()) - 90
+        except Exception:
+            return
+        if breite <= 100:
+            return
+        if breite == getattr(self, "_letzte_umbruchbreite", None):
+            return
+        self._letzte_umbruchbreite = breite
+        for name, ausrichtung in self._UMBRECHENDE_INHALTSTEXTE:
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            try:
+                widget.configure(wraplength=breite, justify=ausrichtung)
+                # Die eingebrannte Beschriftung merkt sich ihre natuerliche
+                # Groesse und misst nur bei Textwechsel neu. Eine neue
+                # Umbruchbreite aendert den Text aber nicht - ohne diese
+                # Zeile bliebe der alte, zu breite Bildausschnitt stehen
+                # und bestimmte weiter den Platzbedarf: Bei
+                # compound="center" zaehlt das Bild, nicht der Text. Am
+                # 20.08.2026 gemessen - Text laengst umgebrochen, das
+                # Label trotzdem 860 px breit.
+                widget._caption_natural_size = None
+            except Exception as exc:
+                logger.debug("Umbruch fuer %s nicht setzbar: %s", name, exc)
+
+    # ------------------------------------------------------------------
+    # Titelleiste: Knoepfe einfalten, wenn der Platz nicht reicht
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _padx_summe(wert) -> int:
+        """Die Polsterung eines gepackten Elements als eine Zahl.
+
+        ``pack_info()`` gibt sie je nach Setzweise als Zahl, als Zeichenkette
+        ("0 8") oder als Paar zurueck.
+        """
+        try:
+            if isinstance(wert, (list, tuple)):
+                return sum(int(t) for t in wert)
+            text = str(wert).strip()
+            if " " in text:
+                return sum(int(t) for t in text.split())
+            return int(text or 0)
+        except Exception:
+            return 0
+
+    def _titelleiste_ordnung_merken(self) -> None:
+        """Haelt Reihenfolge und Polsterung der Knopfleiste fest.
+
+        Beim Ein- und Ausfalten wird die ganze Leiste neu gepackt: ``pack``
+        haengt ein zurueckkehrendes Element sonst ans linke Ende statt an
+        seinen Platz, und die Reihenfolge waere nach dem ersten Mal eine
+        andere.
+        """
+        self._titelleiste_ordnung = []
+        self._titelknopf_name = {}
+        self._titelleiste_gefaltet = []
+        self._titelleiste_after_id = None
+        try:
+            for knopf in self._titlebar_right.pack_slaves():
+                self._titelleiste_ordnung.append(
+                    (knopf, knopf.pack_info().get("padx", 0)))
+        except Exception as exc:
+            logger.debug("Titelleisten-Ordnung nicht lesbar: %s", exc)
+            self._titelleiste_ordnung = []
+        for name, _schluessel, _befehl in self._FALTBARE_TITELKNOEPFE:
+            knopf = getattr(self, name, None)
+            if knopf is not None:
+                self._titelknopf_name[str(knopf)] = name
+
+    def _titelleiste_noetige_breite(self) -> int:
+        """Wie breit die derzeit sichtbaren Knoepfe zusammen sein wollen."""
+        summe = 0
+        for knopf, padx in self._titelleiste_ordnung:
+            if self._titelknopf_name.get(str(knopf)) in self._titelleiste_gefaltet:
+                continue
+            try:
+                summe += knopf.winfo_reqwidth() + self._padx_summe(padx)
+            except Exception:
+                continue
+        return summe
+
+    def _on_titelleiste_configure(self, event) -> None:
+        """Prueft den Platz, wenn sich die Leiste geaendert hat - entprellt."""
+        if event.widget is not self._main_titlebar:
+            return
+        if getattr(self, "_titelleiste_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._titelleiste_after_id)
+            except Exception as exc:
+                logger.debug("after_cancel (Titelleiste) fehlgeschlagen: %s", exc)
+            self._titelleiste_after_id = None
+        self._titelleiste_after_id = self.root.after(120, self._titelleiste_anpassen)
+
+    def _titelleiste_anpassen(self) -> None:
+        """Faltet Knoepfe ins Sammelmenue ein und wieder aus.
+
+        ``pack`` laesst ein Element nicht weg, wenn der Platz fehlt - es
+        quetscht es zusammen. Ein Knopf mit 26 statt 189 Pixeln ist aber
+        weder lesbar noch zu treffen. Deshalb werden Knoepfe hier ganz
+        weggenommen und stattdessen im Sammelmenue angeboten, in dem aus
+        demselben Grund schon MicroMount und der AMPR-Index-Builder liegen.
+        """
+        self._titelleiste_after_id = None
+        if not getattr(self, "_titelleiste_ordnung", None):
+            return
+        try:
+            verfuegbar = self._main_titlebar.winfo_width()
+        except Exception:
+            return
+        if verfuegbar <= 1:
+            return
+
+        geaendert = False
+
+        # Einfalten, solange es nicht reicht.
+        for name, _schluessel, _befehl in self._FALTBARE_TITELKNOEPFE:
+            if self._titelleiste_noetige_breite() <= verfuegbar:
+                break
+            if name in self._titelleiste_gefaltet:
+                continue
+            self._titelleiste_gefaltet.append(name)
+            geaendert = True
+
+        # Ausfalten, sobald wieder Platz ist - in umgekehrter Reihenfolge, der
+        # zuletzt eingefaltete kommt zuerst zurueck.
+        for name, _schluessel, _befehl in reversed(self._FALTBARE_TITELKNOEPFE):
+            if name not in self._titelleiste_gefaltet:
+                continue
+            knopf = getattr(self, name, None)
+            if knopf is None:
+                self._titelleiste_gefaltet.remove(name)
+                geaendert = True
+                continue
+            try:
+                braucht = knopf.winfo_reqwidth() + 16 + self._TITELLEISTE_LUFT
+            except Exception:
+                break
+            if self._titelleiste_noetige_breite() + braucht > verfuegbar:
+                break
+            self._titelleiste_gefaltet.remove(name)
+            geaendert = True
+
+        if not geaendert:
+            return
+
+        for knopf, _padx in self._titelleiste_ordnung:
+            try:
+                knopf.pack_forget()
+            except Exception:
+                continue
+        for knopf, padx in self._titelleiste_ordnung:
+            if self._titelknopf_name.get(str(knopf)) in self._titelleiste_gefaltet:
+                continue
+            try:
+                knopf.pack(side="right", padx=padx)
+            except Exception as exc:
+                logger.debug("Titelleistenknopf nicht packbar: %s", exc)
+
+    def _sammelmenue_bestuecken(self) -> None:
+        """Baut das Sammelmenue neu: Grundeintraege plus die eingefalteten.
+
+        Beim Oeffnen statt einmalig beim Aufbau - welche Knoepfe eingefaltet
+        sind, haengt an der Fensterbreite und aendert sich mit ihr. Nebenbei
+        stehen die Beschriftungen damit immer in der aktuellen Sprache.
+        """
+        try:
+            self._more_tools_menu.delete(0, "end")
+        except Exception as exc:
+            logger.debug("Sammelmenue nicht leerbar: %s", exc)
+            return
+        for schluessel, befehl in self._MORE_TOOLS_ENTRIES:
+            try:
+                self._more_tools_menu.add_command(
+                    label=self._t(schluessel), command=getattr(self, befehl))
+            except Exception:
+                continue
+        eingefaltet = [(s, b) for n, s, b in self._FALTBARE_TITELKNOEPFE
+                       if n in getattr(self, "_titelleiste_gefaltet", [])]
+        if not eingefaltet:
+            return
+        # Ein Trennstrich macht sichtbar, dass der untere Teil nur deshalb
+        # hier steht, weil das Fenster zu schmal ist.
+        try:
+            self._more_tools_menu.add_separator()
+        except Exception:
+            pass
+        for schluessel, befehl in eingefaltet:
+            try:
+                self._more_tools_menu.add_command(
+                    label=self._t(schluessel), command=getattr(self, befehl))
+            except Exception:
+                continue
 
     def _integrationszeile_hoehe_setzen(self) -> None:
         """Reserviert fuer die Integrationszeile die Hoehe ihres groessten Elements.
