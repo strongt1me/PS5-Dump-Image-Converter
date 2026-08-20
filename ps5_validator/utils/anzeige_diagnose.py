@@ -113,6 +113,10 @@ class Flaeche:
     #: ueber ihren Rand hinaus. Ohne diese Unterscheidung meldete die
     #: Pruefung am 20.08.2026 vier Fehlalarme.
     hat_text: bool = False
+    #: Ob das Element in einer Flaeche liegt, die gerade gerollt werden kann.
+    #: Dann ist ein Ueberstand ueber den Fensterrand kein Mangel - es ist
+    #: erreichbar, man muss nur rollen.
+    rollbar: bool = False
 
 
 @dataclass(frozen=True)
@@ -223,6 +227,10 @@ def pruefe_flaechen(fenster: Fensterlage,
             continue
 
         # Ueber den Fensterrand hinaus - der Teil ist schlicht nicht da.
+        # Ausser er laesst sich heranrollen; dann ist er erreichbar.
+        if f.rollbar:
+            continue
+
         rechts = f.x + f.breite - (fenster.x + fenster.breite)
         unten = f.y + f.hoehe - (fenster.y + fenster.hoehe)
         if rechts > RAND_TOLERANZ:

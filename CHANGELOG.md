@@ -2,9 +2,27 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.70):** Werkzeugleiste und Statuszeile passen sich schmalen Fenstern an, und kein Hintergrundbild wird mehr hochgerechnet.
+> **Kurz zum aktuellen Stand (v1.8.71):** Bei kurzen Fenstern lässt sich der Inhalt rollen, und der Diagnosebericht nennt die mitgelieferten Werkzeuge samt Aktualisierungen.
 
 ---
+
+## v1.8.71 – 21.08.2026
+
+### Bei kurzen Fenstern fällt nichts mehr aus dem Bild
+
+Der Inhalt rechts braucht zusammen rund 1356 Pixel Höhe. Die Protokollfläche gibt nach und fängt das normalerweise auf – alles andere ist starr. War das Fenster kürzer als etwa 880 Pixel, stand der Rest einfach unter dem Fensterrand: Bei 768 Pixeln fehlten **STARTEN und ABBRECHEN**, nicht verkleinert, sondern außerhalb und nicht anklickbar. Auf einem 1366×768-Bildschirm traf das jeden.
+
+Der Inhalt lässt sich jetzt rollen – mit Mausrad oder Bildlaufleiste. Reicht der Platz, ändert sich nichts: Die Leiste bleibt ausgeblendet und alles sitzt wie bisher.
+
+### Der Diagnosebericht nennt die mitgelieferten Werkzeuge
+
+Ein neuer Abschnitt listet Fassung und Herkunft von allem, was das Programm mitbringt – MkPFS, das PS4-Werkzeug, die AMPR-EMU-Bibliotheken, die Backport-Fakelibs, die Nutzlasten – dazu die gefundenen Fremdwerkzeuge und die Python-Bibliotheken. Das steht in jedem Bericht und braucht kein Internet.
+
+### Neuer Knopf: Aktualisierungen prüfen
+
+Im Diagnosefenster fragt ein Knopf die Quellen ab und schreibt unter den Bericht, wo es etwas Neueres gibt. Das läuft nur auf Knopfdruck – ein Fehlerbericht soll nicht an einer Internetverbindung hängen.
+
+Nicht alles hat eine abfragbare Quelle: FileZilla, OSFMount und die Szene-Bestände veröffentlichen keine Fassungsliste. Dort steht, was vorliegt, und wo es herkommt.
 
 ## v1.8.70 – 21.08.2026
 

@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.70
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.71
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -148,6 +148,7 @@ a = Analysis(
         'ps5_validator.utils.dump_rename',
         'ps5_validator.utils.i18n',
         'ps5_validator.utils.anzeige_diagnose',
+        'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',
         'ps5_validator.utils.pkg_writer',
         # dpi_upload bewusst NICHT gebuendelt: der etaHEN-"Direct Package
@@ -269,7 +270,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.70',
+    name='PS5_Dump_Image_Converter_v1.8.71',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

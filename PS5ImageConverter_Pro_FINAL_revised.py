@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.70"
+APP_VERSION = "v1.8.71"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2147,6 +2147,10 @@ class PS5ConverterGUI:
 
         # Die Leiste steht - jetzt laesst sich ihre Reihenfolge festhalten und
         # der Platz zum ersten Mal pruefen.
+        for _rad in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+            self.root.bind_all(_rad, self._on_inhalt_mausrad, add="+")
+        self.root.after_idle(self._rollflaeche_pruefen)
+
         self._titelleiste_ordnung_merken()
         self._main_titlebar.bind("<Configure>", self._on_titelleiste_configure)
         self.root.after_idle(self._titelleiste_anpassen)
@@ -4679,11 +4683,42 @@ class PS5ConverterGUI:
         # Design- und Credits-Buttons sind in der Titelleiste (DESIGN | CREDITS)
 
         # 2. Hauptinhalt (Rechts) – startet in Zeile 1 (unter Titelleiste)
-        content_area = tk.Frame(self.root, bg=self._COLORS["bg_main"], padx=40, pady=0)
-        content_area.grid(row=1, column=1, sticky="nsew")
+        #
+        # Die Spalte liegt in einer Rollflaeche. Der Grund steht in Zahlen:
+        # Ueberschrift, Untertitel, Pfad-Karte, Knopfleiste, Protokollflaeche
+        # und Statuszeile wollen zusammen 1356 px Hoehe. Die Protokollflaeche
+        # gibt nach und faengt das ueblicherweise auf - alles andere ist starr
+        # und braucht 844 px. Bei einem kuerzeren Fenster schob das Raster den
+        # Rest schlicht unter den Fensterrand: Am 20.08.2026 gemessen stand bei
+        # 768 px Fensterhoehe die Knopfleiste mit STARTEN und ABBRECHEN 26 px
+        # ausserhalb - unsichtbar und nicht anklickbar.
+        #
+        # Solange das Fenster hoch genug ist, aendert die Rollflaeche nichts:
+        # Der eingebettete Rahmen bekommt dann genau die Hoehe des Sichtfelds,
+        # die Bildlaufleiste bleibt ausgeblendet. Erst wenn es nicht mehr
+        # reicht, behaelt er seine natuerliche Hoehe und laesst sich rollen.
+        self.content_scroll = tk.Canvas(
+            self.root, bg=self._COLORS["bg_main"],
+            highlightthickness=0, bd=0, takefocus=0)
+        self.content_scroll.grid(row=1, column=1, sticky="nsew")
+        self.content_scrollbar = ttk.Scrollbar(
+            self.root, orient="vertical", command=self.content_scroll.yview)
+        self.content_scroll.configure(yscrollcommand=self.content_scrollbar.set)
+        self.root.grid_columnconfigure(2, weight=0)
+
+        content_area = tk.Frame(self.content_scroll, bg=self._COLORS["bg_main"],
+                                padx=40, pady=0)
+        self._content_fenster = self.content_scroll.create_window(
+            0, 0, anchor="nw", window=content_area)
         content_area.grid_columnconfigure(0, weight=1)
         content_area.grid_rowconfigure(4, weight=1) # Console dehnt sich
         self.content_area = content_area
+        self._inhalt_rollt = False
+        self._rollpruefung_after_id = None
+        self.content_scroll.bind("<Configure>", self._on_rollflaeche_configure)
+        # Auch der Inhalt selbst meldet sich: Eine andere Aufgabe zeigt
+        # andere Felder, und damit aendert sich die noetige Hoehe.
+        content_area.bind("<Configure>", self._on_inhalt_configure, add="+")
 
         # Hintergrundbild im Content-Bereich: der äußere Vollbild-Hintergrund
         # (weiter oben) liegt hinter dem Sidebar-/Content-Grid und ist dadurch
@@ -6627,6 +6662,167 @@ class PS5ConverterGUI:
         ("telemetry_label", "right"),
         ("subtitle_label", "left"),
     )
+
+    # ------------------------------------------------------------------
+    # Rollflaeche der Inhaltsspalte
+    # ------------------------------------------------------------------
+
+    #: Wie viel von der Protokollflaeche mindestens stehen bleiben soll, bevor
+    #: die Spalte zu rollen anfaengt. Sie ist das einzige dehnbare Element im
+    #: Stapel - ohne Untergrenze schrumpfte sie auf wenige Pixel, statt dass
+    #: die Bildlaufleiste erscheint. Am 20.08.2026 gemessen: Bei 900 px
+    #: Fensterhoehe blieben ihr noch 34 px, gut zwei Zeilen.
+    _KONSOLE_MINDESTHOEHE = 90
+
+    def _inhalt_mindesthoehe(self) -> int:
+        """Wie hoch die Inhaltsspalte mindestens sein muss.
+
+        Nicht ``winfo_reqheight()`` der Spalte: Darin steckt der Wunsch der
+        Protokollflaeche nach 512 px, und die ist ausdruecklich dehnbar
+        (``grid_rowconfigure(4, weight=1)``). Wuerde man danach gehen, rollte
+        die Spalte immer - auch auf einem Bildschirm, auf dem alles passt.
+
+        Gerechnet wird deshalb: alle starren Zeilen zusammen (gemessen 844 px)
+        plus das, was von der Protokollflaeche stehen bleiben soll.
+
+        Returns:
+            Die Mindesthoehe in Pixeln, oder 0 wenn sie sich nicht ermitteln
+            laesst.
+        """
+        flaeche = getattr(self, "content_area", None)
+        if flaeche is None:
+            return 0
+        starr, dehnbar = 0, 0
+        try:
+            for kind in flaeche.grid_slaves():
+                info = kind.grid_info()
+                roh = info.get("pady", 0)
+                try:
+                    teile = roh if isinstance(roh, (list, tuple)) else str(roh).split()
+                    rand = sum(int(x) for x in teile)
+                except Exception:
+                    rand = 0
+                hoehe = int(kind.winfo_reqheight()) + rand
+                if str(info.get("row")) == "4":
+                    dehnbar = hoehe
+                else:
+                    starr += hoehe
+        except Exception as exc:
+            logger.debug("Mindesthoehe der Inhaltsspalte nicht ermittelbar: %s", exc)
+            return 0
+        return starr + min(dehnbar, self._KONSOLE_MINDESTHOEHE)
+
+    def _on_rollflaeche_configure(self, event) -> None:
+        """Das Sichtfeld hat sich geaendert - Groesse und Leiste nachziehen."""
+        if event.widget is not self.content_scroll:
+            return
+        self._rollflaeche_pruefen()
+
+    def _on_inhalt_configure(self, event) -> None:
+        """Der Inhalt hat sich geaendert - entprellt nachrechnen.
+
+        Entprellt, weil das Setzen der Fensterhoehe selbst wieder ein
+        Configure ausloest. Ohne die Verzoegerung liefen die beiden
+        gegeneinander.
+        """
+        if event.widget is not self.content_area:
+            return
+        if getattr(self, "_rollpruefung_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._rollpruefung_after_id)
+            except Exception as exc:
+                logger.debug("after_cancel (Rollpruefung) fehlgeschlagen: %s", exc)
+            self._rollpruefung_after_id = None
+        self._rollpruefung_after_id = self.root.after(60, self._rollflaeche_pruefen)
+
+    def _rollflaeche_pruefen(self) -> None:
+        """Passt den eingebetteten Rahmen an und zeigt die Leiste nur bei Bedarf.
+
+        Zwei Zustaende:
+
+        * **Es passt.** Der Rahmen bekommt genau die Hoehe des Sichtfelds. Das
+          ist Zeile fuer Zeile dieselbe Lage wie ohne Rollflaeche - die
+          Protokollflaeche dehnt sich wie bisher in den Rest.
+        * **Es passt nicht.** Der Rahmen behaelt seine natuerliche Hoehe, die
+          Bildlaufleiste erscheint, und alles bleibt erreichbar.
+
+        Umgeschaltet wird nur, wenn sich wirklich etwas aendert: ``itemconfigure``
+        loest selbst ein Configure aus, und ein bedingungsloses Setzen liefe im
+        Kreis.
+        """
+        flaeche = getattr(self, "content_scroll", None)
+        inhalt = getattr(self, "content_area", None)
+        if flaeche is None or inhalt is None:
+            return
+        self._rollpruefung_after_id = None
+        try:
+            sicht_breite = int(flaeche.winfo_width())
+            sicht_hoehe = int(flaeche.winfo_height())
+            if sicht_breite <= 1 or sicht_hoehe <= 1:
+                return
+            noetig = self._inhalt_mindesthoehe() or int(inhalt.winfo_reqheight())
+            rollt = noetig > sicht_hoehe + 1
+            hoehe = noetig if rollt else sicht_hoehe
+
+            ist = flaeche.itemcget(self._content_fenster, "width")
+            ist_hoehe = flaeche.itemcget(self._content_fenster, "height")
+            if str(ist) != str(sicht_breite) or str(ist_hoehe) != str(hoehe):
+                flaeche.itemconfigure(self._content_fenster,
+                                      width=sicht_breite, height=hoehe)
+            flaeche.configure(scrollregion=(0, 0, sicht_breite, hoehe))
+
+            if rollt != getattr(self, "_inhalt_rollt", False):
+                self._inhalt_rollt = rollt
+                if rollt:
+                    self.content_scrollbar.grid(row=1, column=2, sticky="ns")
+                else:
+                    self.content_scrollbar.grid_remove()
+                    flaeche.yview_moveto(0.0)
+        except Exception as exc:
+            logger.debug("Rollflaeche nicht anpassbar: %s", exc)
+
+    def _on_inhalt_mausrad(self, event) -> None:
+        """Rollt die Inhaltsspalte - aber nur, wenn sie ueberhaupt rollt.
+
+        Die Protokollflaeche rollt ihren eigenen Text; ein Rad ueber ihr darf
+        nicht zusaetzlich die ganze Spalte bewegen. Dasselbe gilt fuer
+        Klapplisten und Zahlenfelder, die das Rad selbst auswerten.
+        """
+        if not getattr(self, "_inhalt_rollt", False):
+            return
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return
+        try:
+            # Nur innerhalb der Inhaltsspalte, und nicht ueber einem Element,
+            # das das Rad selbst braucht.
+            knoten = widget
+            eigen = ("Text", "Listbox", "TCombobox", "TSpinbox", "Treeview",
+                     "Canvas", "Scrollbar", "TScrollbar")
+            innerhalb = False
+            while knoten is not None:
+                if knoten is self.content_area:
+                    innerhalb = True
+                    break
+                if knoten is self.content_scroll:
+                    innerhalb = True
+                    break
+                knoten = getattr(knoten, "master", None)
+            if not innerhalb:
+                return
+            if widget is not self.content_scroll and widget.winfo_class() in eigen:
+                return
+            schritte = 0
+            if getattr(event, "num", None) == 4:
+                schritte = -1
+            elif getattr(event, "num", None) == 5:
+                schritte = 1
+            elif getattr(event, "delta", 0):
+                schritte = -1 if event.delta > 0 else 1
+            if schritte:
+                self.content_scroll.yview_scroll(schritte * 3, "units")
+        except Exception as exc:
+            logger.debug("Mausrad in der Inhaltsspalte: %s", exc)
 
     def _inhaltstexte_umbrechen(self) -> None:
         """Gibt den wechselnden Beschriftungen eine passende Umbruchbreite.
@@ -24794,6 +24990,28 @@ class PS5ConverterGUI:
             return "%s (%s)" % (pfad, beschriftung)
         return pfad
 
+    def _diagnose_ist_rollbar(self, widget) -> bool:
+        """Ob ein Element in der gerade rollbaren Inhaltsspalte liegt.
+
+        Ein Ueberstand ueber den Fensterrand ist dort kein Mangel: Der Teil
+        ist erreichbar, man muss nur rollen. Ohne diese Unterscheidung
+        meldete die Pruefung nach dem Einbau der Rollflaeche jedes Element
+        unterhalb des Sichtfelds als abgeschnitten.
+        """
+        if not getattr(self, "_inhalt_rollt", False):
+            return False
+        flaeche = getattr(self, "content_area", None)
+        if flaeche is None:
+            return False
+        knoten = widget
+        for _ in range(24):
+            if knoten is None:
+                return False
+            if knoten is flaeche:
+                return True
+            knoten = getattr(knoten, "master", None)
+        return False
+
     def _diagnose_flaechen_sammeln(self) -> list:
         """Vermisst jedes Bedienelement in Bildschirmkoordinaten.
 
@@ -24825,7 +25043,8 @@ class PS5ConverterGUI:
                     wunschbreite=widget.winfo_reqwidth(),
                     wunschhoehe=widget.winfo_reqheight(),
                     sichtbar=bool(widget.winfo_ismapped()),
-                    hat_text=bool(self._diagnose_beschriftung(widget))))
+                    hat_text=bool(self._diagnose_beschriftung(widget)),
+                    rollbar=self._diagnose_ist_rollbar(widget)))
             except Exception:
                 # Ein zwischenzeitlich zerstoertes Element darf den Bericht
                 # nicht kosten.
@@ -25105,6 +25324,218 @@ class PS5ConverterGUI:
             pass
         return zeilen
 
+    # ------------------------------------------------------------------
+    # Werkzeug-Inventar und Aktualisierungspruefung
+    #
+    # Das Inventar steht in jedem Bericht: Es sagt ohne Netz und in
+    # Sekundenbruchteilen, womit gearbeitet wurde. Die Abfrage der Quellen
+    # laeuft nur auf Knopfdruck - ein Fehlerbericht darf nicht an einer
+    # Internetverbindung haengen.
+    # ------------------------------------------------------------------
+
+    #: Die eingebetteten Werkzeuge: Anzeigename, Datei mit ``__version__``,
+    #: Herkunft. Steht dort kein Projekt, gibt es keine abfragbare Quelle -
+    #: dann nennt der Bericht nur, was hier liegt.
+    _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
+        ("MkPFS (Packmaschine)", "MkPFS-0.0.9/mkpfs/__init__.py",
+         "github", "PSBrew/MkPFS"),
+        ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/__init__.py",
+         "github", "PSBrew/MkPFS"),
+        ("PS4 FFPFSC", "PS4FFPFSC-0.2.8/ps4ffpsc/__init__.py",
+         "ohne_quelle", "GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.8/UPSTREAM.md"),
+    )
+
+    #: Python-Bibliotheken, die das Programm braucht: Anzeigename, Name beim
+    #: Importieren, Name auf PyPI. Die drei fallen auseinander - Pillow heisst
+    #: beim Import ``PIL`` und fiel ohne diese Unterscheidung durch.
+    _GEPRUEFTE_BIBLIOTHEKEN: tuple[tuple[str, str, str], ...] = (
+        ("Pillow", "PIL", "pillow"),
+        ("cryptography", "cryptography", "cryptography"),
+        ("zstandard", "zstandard", "zstandard"),
+        ("zlib-ng", "zlib_ng", "zlib-ng"),
+        ("paramiko", "paramiko", "paramiko"),
+        ("tkinterdnd2", "tkinterdnd2", "tkinterdnd2"),
+        ("psutil", "psutil", "psutil"),
+        ("requests", "requests", "requests"),
+    )
+
+    #: Fremdwerkzeuge ohne abfragbare Fassungsliste. Der Bericht nennt die
+    #: gefundene Fassung und die Bezugsquelle - mehr waere geraten.
+    _FREMDWERKZEUGE_QUELLEN: dict[str, str] = {
+        "filezilla_path": "https://filezilla-project.org/download.php",
+        "osfmount_path": "https://www.osforensics.com/tools/mount-disk-images.html",
+        "ufs2tool_path": "https://github.com/LightningMods/PS5-UFS2-Tool",
+    }
+
+    @staticmethod
+    def _datei_fassung(pfad: str) -> str:
+        """Liest die Fassungsangabe aus den Eigenschaften einer Windows-Datei.
+
+        Args:
+            pfad: Die Programmdatei.
+
+        Returns:
+            Die Fassung als Text, oder leer wenn es sie nicht gibt.
+        """
+        if not IST_WINDOWS or not pfad or not os.path.isfile(pfad):
+            return ""
+        try:
+            groesse = ctypes.windll.version.GetFileVersionInfoSizeW(pfad, None)
+            if not groesse:
+                return ""
+            puffer = ctypes.create_string_buffer(groesse)
+            if not ctypes.windll.version.GetFileVersionInfoW(pfad, 0, groesse, puffer):
+                return ""
+            zeiger = ctypes.c_void_p()
+            laenge = ctypes.c_uint()
+            if not ctypes.windll.version.VerQueryValueW(
+                    puffer, "\\", ctypes.byref(zeiger), ctypes.byref(laenge)):
+                return ""
+
+            class _Fest(ctypes.Structure):
+                _fields_ = [("dwSignature", ctypes.c_uint32),
+                            ("dwStrucVersion", ctypes.c_uint32),
+                            ("dwFileVersionMS", ctypes.c_uint32),
+                            ("dwFileVersionLS", ctypes.c_uint32)]
+
+            fest = ctypes.cast(zeiger, ctypes.POINTER(_Fest)).contents
+            return "%d.%d.%d.%d" % (fest.dwFileVersionMS >> 16,
+                                    fest.dwFileVersionMS & 0xFFFF,
+                                    fest.dwFileVersionLS >> 16,
+                                    fest.dwFileVersionLS & 0xFFFF)
+        except Exception as exc:
+            logger.debug("Dateifassung von %s nicht lesbar: %s", pfad, exc)
+            return ""
+
+    def _eingebettete_fassung(self, relpfad: str) -> str:
+        """Liest ``__version__`` aus einer mitgelieferten Datei.
+
+        Gelesen statt importiert: Ein Import zoege die ganze Abhaengigkeitskette
+        des Werkzeugs nach sich, und ein Diagnosebericht soll nichts starten.
+        """
+        for wurzel in (getattr(sys, "_MEIPASS", ""), os.path.dirname(
+                os.path.abspath(sys.argv[0])), os.getcwd()):
+            if not wurzel:
+                continue
+            pfad = os.path.join(wurzel, relpfad.replace("/", os.sep))
+            if not os.path.isfile(pfad):
+                continue
+            try:
+                with io.open(pfad, encoding="utf-8", errors="replace") as datei:
+                    for zeile in datei:
+                        if zeile.lstrip().startswith("__version__"):
+                            teil = zeile.split("=", 1)[-1].strip()
+                            return teil.strip("\"' \t\r\n")
+            except Exception as exc:
+                logger.debug("Fassung aus %s nicht lesbar: %s", pfad, exc)
+            break
+        return ""
+
+    @staticmethod
+    def _mitgeliefert_finden(relpfad: str) -> str:
+        """Sucht einen mitgelieferten Ordner an den moeglichen Stellen.
+
+        Im gebauten Programm liegt er im entpackten Bundle (``_MEIPASS``) oder
+        neben der Programmdatei, aus dem Quelltext heraus im
+        Arbeitsverzeichnis.
+
+        Returns:
+            Der erste gefundene Pfad, sonst der relative Name.
+        """
+        for wurzel in (getattr(sys, "_MEIPASS", ""),
+                       os.path.dirname(os.path.abspath(sys.argv[0])),
+                       os.getcwd()):
+            if not wurzel:
+                continue
+            pfad = os.path.join(wurzel, relpfad.replace("/", os.sep))
+            if os.path.isdir(pfad):
+                return pfad
+        return relpfad
+
+    def _bestandteile_sammeln(self) -> list:
+        """Stellt zusammen, was das Programm mitbringt und benutzt.
+
+        Returns:
+            Eine Liste von ``Bestandteil`` - eingebettete Werkzeuge,
+            Python-Bibliotheken und gefundene Fremdwerkzeuge.
+        """
+        from ps5_validator.utils import aktualisierungen as ak
+
+        teile: list = []
+        for name, datei, art, quelle in self._EINGEBETTETE_WERKZEUGE:
+            fassung = self._eingebettete_fassung(datei) or "unbekannt"
+            teile.append(ak.Bestandteil(name, fassung, art, quelle))
+
+        for anzeigename, importname, paket in self._GEPRUEFTE_BIBLIOTHEKEN:
+            try:
+                modul = __import__(importname)
+                fassung = str(getattr(modul, "__version__", "") or "vorhanden")
+            except Exception:
+                continue
+            teile.append(ak.Bestandteil(anzeigename, fassung, ak.PYPI, paket))
+
+        for name, schluessel in (("FileZilla", "filezilla_path"),
+                                 ("OSFMount", "osfmount_path"),
+                                 ("UFS2Tool", "ufs2tool_path")):
+            try:
+                pfad = str(self._load_setting(schluessel, "") or "").strip()
+            except Exception:
+                pfad = ""
+            if not pfad:
+                continue
+            fassung = self._datei_fassung(pfad) or "gefunden"
+            teile.append(ak.Bestandteil(
+                name, fassung, ak.OHNE_QUELLE,
+                self._FREMDWERKZEUGE_QUELLEN.get(schluessel, "")))
+        return teile
+
+    def _diagnose_werkzeugbestand(self) -> list[str]:
+        """Was mitgeliefert wird - ohne Netz, in jedem Bericht.
+
+        Returns:
+            Die Zeilen des Berichtsabschnitts.
+        """
+        z = self._diagnose_zeile
+        zeilen: list[str] = []
+        for teil in self._bestandteile_sammeln():
+            wo = ("  [%s]" % teil.quelle) if teil.quelle else ""
+            zeilen.append(z(teil.name, "%s%s" % (teil.fassung, wo)))
+
+        # Die Bestaende, die als Ordner mitkommen: Zahl und neueste Fassung
+        # sagen mehr als eine Liste von zwanzig Namen.
+        for name, ordner, muster in (
+                ("AMPR-EMU-Bibliotheken", os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"), None),
+                ("Backport-Fakelibs", "Backport_Fakelibs", None),
+                ("Nutzlasten (helloworld)", "helloworld", ".elf")):
+            pfad = self._mitgeliefert_finden(ordner)
+            try:
+                if not os.path.isdir(pfad):
+                    zeilen.append(z(name, "nicht mitgeliefert"))
+                    continue
+                eintraege = sorted(os.listdir(pfad))
+                if muster:
+                    eintraege = [e for e in eintraege if e.lower().endswith(muster)]
+                zeilen.append(z(name, "%d (%s)" % (
+                    len(eintraege),
+                    ", ".join(eintraege[:2]) + (" ..." if len(eintraege) > 2 else ""))))
+            except Exception as exc:
+                zeilen.append(z(name, "nicht lesbar: %s" % exc))
+        return zeilen
+
+    def _aktualisierungen_holen(self, adresse: str) -> str:
+        """Ruft eine Adresse ab und gibt den Rohtext zurueck.
+
+        Der einzige Netzzugriff der Aktualisierungspruefung. Kurzer Zeitrahmen:
+        Der Nutzer wartet vor einem offenen Fenster.
+        """
+        import urllib.request
+
+        anfrage = urllib.request.Request(
+            adresse, headers={"User-Agent": "PS5DumpImageConverter/%s" % APP_VERSION,
+                              "Accept": "application/json"})
+        with urllib.request.urlopen(anfrage, timeout=12) as antwort:
+            return antwort.read().decode("utf-8", errors="replace")
+
     def _diagnose_umgebung(self) -> list[str]:
         """Wie das Programm laeuft und womit - die Kompatibilitaetsseite."""
         z = self._diagnose_zeile
@@ -25235,6 +25666,7 @@ class PS5ConverterGUI:
             ("diagnostics.report_section_layout", self._diagnose_darstellung),
             ("diagnostics.report_section_stability", self._diagnose_laufruhe),
             ("diagnostics.report_section_runtime", self._diagnose_umgebung),
+            ("diagnostics.report_section_inventory", self._diagnose_werkzeugbestand),
             ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
             ("diagnostics.report_section_space", self._diagnose_speicherplatz),
         ):
@@ -25320,6 +25752,52 @@ class PS5ConverterGUI:
             self.root.clipboard_append(report_text)
             messagebox.showinfo(self._t("dialog.title.copied"), self._t("dialog.msg.diagnostics_copied_to_clipboard"), parent=win)
 
+        def _aktualisierungen_pruefen() -> None:
+            """Fragt die Quellen ab und haengt das Ergebnis unten an.
+
+            Im Hintergrundfaden, weil jede Abfrage bis zu zwoelf Sekunden
+            dauern darf und das Fenster derweil bedienbar bleiben soll.
+            """
+            update_btn.configure(state="disabled")
+            _anhaengen(["", self._t("diagnostics.update_section"),
+                        self._t("diagnostics.update_running")])
+
+            def _arbeiten() -> None:
+                from ps5_validator.utils import aktualisierungen as ak
+                try:
+                    befunde = ak.pruefe(self._bestandteile_sammeln(),
+                                        self._aktualisierungen_holen)
+                    zeilen = [ak.zusammenfassung(befunde), ""]
+                    zeilen.extend(str(b) for b in befunde)
+                except Exception as exc:            # noqa: BLE001 - anzeigen
+                    zeilen = ["Aktualisierungspruefung fehlgeschlagen: %s" % exc]
+                self.root.after(0, lambda: _fertig(zeilen))
+
+            def _fertig(zeilen: list) -> None:
+                _anhaengen(zeilen)
+                try:
+                    update_btn.configure(state="normal")
+                except Exception:
+                    pass
+
+            threading.Thread(target=_arbeiten, daemon=True).start()
+
+        def _anhaengen(zeilen: list) -> None:
+            """Schreibt Zeilen unten in den Bericht - Anzeige und Datei."""
+            block = "\n" + "\n".join(str(z) for z in zeilen) + "\n"
+            try:
+                text_widget.configure(state="normal")
+                text_widget.insert("end", block)
+                text_widget.see("end")
+                text_widget.configure(state="disabled")
+            except Exception as exc:
+                logger.debug("Bericht nicht ergaenzbar: %s", exc)
+            try:
+                with io.open(report_path, "a", encoding="utf-8") as datei:
+                    datei.write(block)
+            except OSError as exc:
+                logger.debug("Bericht nicht schreibbar: %s", exc)
+
         def _open_folder() -> None:
             if not _system_im_dateimanager_zeigen(report_path):
                 logger.debug("Dateimanager konnte nicht geöffnet werden: %s", report_path)
@@ -25327,6 +25805,10 @@ class PS5ConverterGUI:
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(fill="x")
         ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        update_btn = ttk.Button(
+            btn_row, text=self._t("diagnostics.update_button"),
+            command=_aktualisierungen_pruefen)
+        update_btn.pack(side="right", padx=(0, 8))
         ttk.Button(btn_row, text=self._t("diagnostics.open_folder_button"), command=_open_folder).pack(side="right", padx=(0, 8))
         ttk.Button(
             btn_row, text=self._t("diagnostics.copy_to_clipboard_button"),
