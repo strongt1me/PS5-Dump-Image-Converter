@@ -3,7 +3,7 @@
 **Datum:** 20.08.2026
 **Vorgänger:** v1.8.68
 
-Diese Ausgabe dreht sich um die Darstellung des Programmfensters: zwei Fehler an den Hintergrundbildern, richtige Maßangaben in den Einstellungen – und eine Prüfung, die solche Fehler künftig selbst findet.
+Diese Ausgabe dreht sich um die Darstellung des Programmfensters: zwei Fehler an den Hintergrundbildern, eine Zeile, die aus schmalen Fenstern herausragte, richtige Maßangaben in den Einstellungen – und eine Prüfung, die solche Fehler künftig selbst findet. Den dritten Punkt hat genau diese Prüfung gefunden, kurz nachdem sie fertig war.
 
 ---
 
