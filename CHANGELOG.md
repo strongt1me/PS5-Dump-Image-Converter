@@ -2,9 +2,30 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.67):** Jede Bauart einer .ffpfsc wird jetzt vollständig entpackt, neben QUELLE steht welche es ist - und unter WEITERE TOOLS gibt es den neuen Eintrag PS4 PKG zu ffpfsc.
+> **Kurz zum aktuellen Stand (v1.8.68):** AMPR EMU und BACKPORT lassen sich beim Erstellen ankreuzen und fließen in jedes Zielformat mit ein.
 
 ---
+
+## v1.8.68 – 20.08.2026
+
+### AMPR EMU und BACKPORT lassen sich beim Erstellen mit einbauen
+
+In der Zeile mit Kompression und Worker-Threads stehen zwei neue Kästchen – dort, wo bisher nur „PRÜFUNG NACH DEM PACKEN" stand. Was du dort ankreuzt, fließt beim Erstellen gleich mit ins Backup:
+
+- **AMPR EMU** legt die gewählte `libSceAmpr.sprx` in den fakelib-Ordner und baut danach `ampr_emu.index` neu. Die Version wählst du daneben aus – zwanzig stehen zur Verfügung, von 0.2.6 bis 0.3.5.1, jeweils mit und ohne Protokollausgabe.
+- **PlayGo** ist ein eigenes Häkchen daneben. Wie im AMPR-Manager ist es nicht vorausgewählt: `libScePlayGo.sprx` stammt aus einem anderen Projekt und wird nur gebraucht, wenn ein Titel Inhalte als fehlend behandelt.
+- **BACKPORT** setzt die SDK-Angaben aller Programmdateien auf die gewählte Firmware herab und legt die passenden Ersatzbibliotheken dazu. Angehoben wird nie – Dateien, die schon unter der Zielversion liegen, bleiben unberührt.
+
+Beide Kästchen lassen sich zusammen ankreuzen. Dann läuft erst der Backport und danach der AMPR EMU – in dieser Reihenfolge, weil beide in denselben fakelib-Ordner schreiben.
+
+**Das wirkt auf jedes Zielformat**: .ffpfsc, .ffpfs, .exFAT, .ffpkg und den Dump-Ordner. Egal, welchen Weg du gehst – am Ende entsteht jedes Backup aus einem Dump-Ordner, und genau dort wird eingebaut.
+
+**Wenn deine Quelle ein Dump-Ordner ist** (Aufgabe 1), fragt das Programm vorher, ob es eine Arbeitskopie anlegen soll. Sagst du ja, bleibt dein Original unberührt – das kostet einmal denselben Platz. Sagst du nein, wird direkt in deinem Ordner gearbeitet; ersetzte Dateien bleiben dabei als `.orig` liegen. Kommt die Quelle aus einem Container, entfällt die Frage: Dort wird ohnehin in einen Arbeitsordner ausgepackt.
+
+### Repariert
+
+- **Die Liste der AMPR-Versionen zeigte die falsche als neueste.** „0.3.5" stand vor „0.3.5.1", und damit war beim Öffnen die ältere vorausgewählt. Das betraf auch den AMPR-EMU-Manager (Aufgabe 7).
+- **PlayGo wurde nie gefunden.** Gesucht wurde nach derselben Versionsnummer wie beim AMPR-Modul – die es dort nie gibt, weil `libScePlayGo.sprx` aus einem eigenen Projekt stammt und getrennt zählt. Jetzt entscheidet die Variante: ohne Protokollausgabe bekommt „nolog", mit bekommt „log".
 
 ## v1.8.67 – 20.08.2026
 

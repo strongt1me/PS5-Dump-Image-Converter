@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.67"
+APP_VERSION = "v1.8.68"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -4829,25 +4829,112 @@ class PS5ConverterGUI:
         self._verify_tooltip = DelayedTooltip(
             self.verify_combo, self._t("verify.hint"), delay_ms=1200)
 
-        # Das Feld stand ohne Beschriftung da - "Schnell" allein sagt niemandem,
-        # worum es geht. Die Zeilenueberschrift nennt jetzt alle drei Felder,
-        # und rechts neben der Liste steht ausgeschrieben, was sie steuert.
-        self.verify_inline_title = ttk.Label(
-            path_card,
-            text=self._t("main.verify_inline_label"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            # Diese Beschriftung war die erste, die aufgehellt wurde (v1.8.62):
-            # Sie sitzt rechts neben der Klappliste und damit ueber der hellsten
-            # Stelle der ueblichen Hintergrundbilder. Seit v1.8.63 gilt dieselbe
-            # Farbe fuer alle Texte auf der Karte.
-            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
-            background=self._COLORS["bg_card"],
-            compound="center",
+        # An dieser Stelle stand bis v1.8.68 die Beschriftung
+        # "PRUEFUNG NACH DEM PACKEN". Sie ist entfallen: Die Zeilenueberschrift
+        # nennt die Pruefung ohnehin, und der Platz wird fuer die beiden
+        # Integrationen gebraucht, die beim Erstellen mit einfliessen koennen.
+        #
+        # Beide sind unabhaengig voneinander und lassen sich kombinieren - ein
+        # herabgesetztes Spiel kann zusaetzlich den AMPR EMU brauchen. Die
+        # Auswahllisten bleiben stehen, wenn ihr Kaestchen aus ist, und werden
+        # nur gesperrt: Ein Ein- und Ausblenden wuerde die place-Kette
+        # auseinanderreissen, an der die ganze Zeile haengt.
+        self.ampr_integrate_var = tk.BooleanVar(
+            value=bool(self._load_setting("integrate_ampr", False))
         )
-        self._register_translatable(self.verify_inline_title, "main.verify_inline_label")
-        self.verify_inline_title.place(in_=self.verify_combo, relx=1.0, x=10,
-                                       rely=0.5, anchor="w")
-        self._card_caption_labels.append(self.verify_inline_title)
+        self.ampr_playgo_var = tk.BooleanVar(
+            value=bool(self._load_setting("integrate_playgo", False))
+        )
+        self.backport_integrate_var = tk.BooleanVar(
+            value=bool(self._load_setting("integrate_backport", False))
+        )
+
+        self.ampr_integrate_check = tk.Checkbutton(
+            path_card,
+            text=self._t("main.integrate_ampr"),
+            variable=self.ampr_integrate_var,
+            command=self._on_integration_changed,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0,
+        )
+        self._register_translatable(self.ampr_integrate_check, "main.integrate_ampr")
+        self.ampr_integrate_check.place(in_=self.verify_combo, relx=1.0, x=14,
+                                        rely=0.5, anchor="w")
+        DelayedTooltip(self.ampr_integrate_check, self._t("main.integrate_ampr_hint"),
+                       delay_ms=900, wraplength=430)
+
+        self.ampr_version_var = tk.StringVar()
+        self.ampr_version_combo = ttk.Combobox(
+            path_card, textvariable=self.ampr_version_var, state="readonly",
+            font=(UI_SCHRIFT, pt(9)), values=(), width=14,
+        )
+        self.ampr_version_combo.place(in_=self.ampr_integrate_check, relx=1.0, x=6,
+                                      rely=0.5, anchor="w")
+        self.ampr_version_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._save_setting("integrate_ampr_version", self.ampr_version_var.get()),
+        )
+
+        self.ampr_playgo_check = tk.Checkbutton(
+            path_card,
+            text=self._t("main.integrate_playgo"),
+            variable=self.ampr_playgo_var,
+            command=self._on_integration_changed,
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0,
+        )
+        self._register_translatable(self.ampr_playgo_check, "main.integrate_playgo")
+        self.ampr_playgo_check.place(in_=self.ampr_version_combo, relx=1.0, x=8,
+                                     rely=0.5, anchor="w")
+        DelayedTooltip(self.ampr_playgo_check, self._t("ampr.lib_hint"),
+                       delay_ms=900, wraplength=430)
+
+        self.backport_integrate_check = tk.Checkbutton(
+            path_card,
+            text=self._t("main.integrate_backport"),
+            variable=self.backport_integrate_var,
+            command=self._on_integration_changed,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w", bd=0, highlightthickness=0, padx=0,
+        )
+        self._register_translatable(self.backport_integrate_check, "main.integrate_backport")
+        self.backport_integrate_check.place(in_=self.ampr_playgo_check, relx=1.0, x=16,
+                                            rely=0.5, anchor="w")
+        DelayedTooltip(self.backport_integrate_check, self._t("main.integrate_backport_hint"),
+                       delay_ms=900, wraplength=430)
+
+        self.backport_fw_var = tk.StringVar(
+            value=str(self._load_setting("integrate_backport_fw", ps5_backport.FIRMWARE_STANDARD))
+        )
+        self.backport_fw_combo = ttk.Combobox(
+            path_card, textvariable=self.backport_fw_var, state="readonly",
+            font=(UI_SCHRIFT, pt(9)),
+            values=[str(f) for f in ps5_backport.FIRMWARE_MIT_FAKELIBS], width=4,
+        )
+        self.backport_fw_combo.place(in_=self.backport_integrate_check, relx=1.0, x=6,
+                                     rely=0.5, anchor="w")
+        self.backport_fw_combo.bind(
+            "<<ComboboxSelected>>",
+            lambda _e: self._save_setting("integrate_backport_fw", self.backport_fw_var.get()),
+        )
+
+        self._ampr_versionsliste_fuellen()
+        self._on_integration_changed(speichern=False)
 
         # Erst jetzt stehen Klappliste und Zahlenfeld beide - vorher
         # laesst sich die Hoehendifferenz nicht messen.
@@ -5095,9 +5182,12 @@ class PS5ConverterGUI:
             (self.format_info_label, self._KARTEN_TEXT_ROLLE),
             (self.dest_title, self._KARTEN_TEXT_ROLLE),
             (self.temp_title, self._KARTEN_TEXT_ROLLE),
-            # Fehlte bis v1.8.62 in dieser Tabelle: Die Aufhellung aus v1.8.62
-            # waere beim ersten Design-Wechsel wieder verschwunden.
-            (self.verify_inline_title, self._KARTEN_TEXT_ROLLE),
+            # Die drei Kaestchen der Integrationszeile sitzen auf derselben
+            # Karte und brauchen dieselbe Behandlung wie die Beschriftungen -
+            # sonst faerben sie sich beim Design-Wechsel nicht mit.
+            (self.ampr_integrate_check, self._KARTEN_TEXT_ROLLE),
+            (self.ampr_playgo_check, self._KARTEN_TEXT_ROLLE),
+            (self.backport_integrate_check, self._KARTEN_TEXT_ROLLE),
             # Das Kaestchen ist ein tk.Checkbutton, kein Label - "foreground"
             # ist dort der Zweitname von "fg" und wirkt genauso.
             (self.shutdown_check, self._KARTEN_TEXT_ROLLE),
@@ -16375,6 +16465,8 @@ class PS5ConverterGUI:
         cp_dst = dst if mode not in ("inspect",) else ""
         verification_result: dict[str, Any] | None = None
         task_temp_baseline = self._snapshot_exit_cleanup_paths()
+        # Jede Aufgabe faengt mit unberuehrtem Integrationsstand an.
+        self._integration_erledigt = False
 
         self._save_paths(src, dst)
         self._save_runtime_checkpoint(
@@ -17547,9 +17639,15 @@ class PS5ConverterGUI:
 
     def _mode_folder_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 1: Dump-Ordner direkt als echtes UFS2-FFPKG schreiben."""
+        ziel_datei = self._ffpkg_output_path(src, dst)
+        # Integration vor dem Bauen; der Zielname steht schon fest, damit er
+        # sich nicht nach der Arbeitskopie richtet.
+        src = self._integration_anwenden(src, ist_quellordner=True)
+        if not src:
+            return False
         return self._build_ffpkg_from_folder(
             src,
-            self._ffpkg_output_path(src, dst),
+            ziel_datei,
             task_index=0,
             # Ohne Aufgabennummer: Diese Pfade laufen auch unter Aufgabe 5 und 6.
             # (Aufgabe 7 behält ihre Nummer – dort gibt es nur einen Aufrufer.)
@@ -17565,6 +17663,11 @@ class PS5ConverterGUI:
             dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
             if not os.path.isdir(dump_dir):
                 self._append_to_log(self._t('log.auto.0107'))
+                return False
+            # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
+            # Arbeitskopie, die Quelle des Benutzers ist eine Datei.
+            dump_dir = self._integration_anwenden(dump_dir)
+            if not dump_dir:
                 return False
             return self._build_ffpkg_from_folder(
                 dump_dir,
@@ -17615,6 +17718,11 @@ class PS5ConverterGUI:
             if not os.path.isdir(dump_dir):
                 self._append_to_log(self._t('log.auto.0108'))
                 return False
+            # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
+            # Arbeitskopie, die Quelle des Benutzers ist eine Datei.
+            dump_dir = self._integration_anwenden(dump_dir)
+            if not dump_dir:
+                return False
             return self._build_ffpkg_from_folder(
                 dump_dir,
                 self._ffpkg_output_path(src, dst),
@@ -17637,6 +17745,9 @@ class PS5ConverterGUI:
                 progress_end=50.0,
             ):
                 return False
+            dump_dir = self._integration_anwenden(dump_dir)
+            if not dump_dir:
+                return False
             return self._build_ffpkg_from_folder(
                 dump_dir,
                 self._ffpkg_output_path(src, dst),
@@ -17652,6 +17763,13 @@ class PS5ConverterGUI:
         """Erstellt aus einem Dump-Ordner direkt ein .exFAT-Image."""
         base_name = os.path.basename(os.path.normpath(src))
         final_output = os.path.join(dst, f"{base_name}.exfat")
+        # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
+        # werden soll, wird VOR dem Bauen in den Dump-Ordner geschrieben.
+        # ist_quellordner=True, weil das der Ordner des Benutzers ist - dafuer
+        # wird nach einer Arbeitskopie gefragt.
+        src = self._integration_anwenden(src, ist_quellordner=True)
+        if not src:
+            return False
         self.task_final_output_path = final_output
         self.task_total_source_bytes = self._get_path_size(src)
         self.progress_engine.start_task(0, "Dump-Ordner zu exFAT")
@@ -17706,6 +17824,9 @@ class PS5ConverterGUI:
                 if candidates:
                     temp_dump = candidates[0]
             self.task_final_output_path = final_output
+            temp_dump = self._integration_anwenden(temp_dump)
+            if not temp_dump:
+                return False
             ok = self._create_exfat_from_folder(temp_dump, final_output, pct_start=60.0, pct_end=98.0)
             if ok:
                 self.progress_engine.begin_validate("Validierung...")
@@ -17777,6 +17898,13 @@ class PS5ConverterGUI:
         folder_name  = os.path.basename(os.path.normpath(src))
         out_ext = "ffpfs" if uncompressed else "ffpfsc"
         final_output = os.path.join(dst, f"{folder_name}.{out_ext}")
+        # Die beiden Kaestchen in der Pfad-Karte greifen hier: Was integriert
+        # werden soll, wird VOR dem Bauen in den Dump-Ordner geschrieben.
+        # ist_quellordner=True, weil das der Ordner des Benutzers ist - dafuer
+        # wird nach einer Arbeitskopie gefragt.
+        src = self._integration_anwenden(src, ist_quellordner=True)
+        if not src:
+            return False
         self.task_final_output_path = final_output
         # ProgressEngine: Aufgabe 1 starten (Index 0)
         self.progress_engine.start_task(0, f"Game Dump → .{out_ext}")
@@ -18395,6 +18523,313 @@ class PS5ConverterGUI:
             for marker in ("playgo-chunk.dat", "playgo_chunk.dat")
         )
 
+    # ==================================================================
+    # Integration beim Erstellen: AMPR EMU und BACKPORT
+    #
+    # Beide Funktionen gibt es im Programm schon als eigenen Weg - Aufgabe 7
+    # fuer den AMPR EMU, das BACKPORT-Fenster fuer das Herabsetzen. Wer sie
+    # dort benutzt, arbeitet an einem fertigen Backup und baut es danach neu.
+    # Ueber die beiden Kaestchen in der Pfad-Karte fliessen sie stattdessen
+    # gleich beim Erstellen mit ein: Der Dump-Ordner, aus dem das Ziel
+    # entsteht, wird vorher behandelt.
+    #
+    # Angewendet wird immer auf einen ORDNER, nie auf ein fertiges Abbild.
+    # Das ist keine Einschraenkung, sondern der einzige verlaessliche Weg:
+    # Jedes Zielformat entsteht aus einem Ordner, und bei Container-Quellen
+    # liegt der ohnehin schon ausgepackt im Temp-Verzeichnis.
+    # ==================================================================
+
+    def _ampr_versionsliste_fuellen(self) -> None:
+        """Traegt die verfuegbaren AMPR-Versionen in die Auswahlliste ein.
+
+        Gelesen wird derselbe Versionsspeicher wie in Aufgabe 7. Fehlt er,
+        bleibt die Liste leer und das Kaestchen sperrt sich selbst - lieber
+        gar nicht anbieten als beim Erstellen daran scheitern.
+        """
+        if not hasattr(self, "ampr_version_combo"):
+            return
+        eintraege = self._ampr_scan_version_store(self._ampr_bundled_store())
+        beschriftungen: list[str] = []
+        self._ampr_versionsauswahl: dict[str, dict[str, Any]] = {}
+        for eintrag in eintraege:
+            if eintrag.get("lib") != "libSceAmpr.sprx":
+                continue
+            beschriftung = f"{eintrag['version']} {eintrag['variant']}".strip()
+            if beschriftung in self._ampr_versionsauswahl:
+                continue
+            self._ampr_versionsauswahl[beschriftung] = eintrag
+            beschriftungen.append(beschriftung)
+
+        self.ampr_version_combo.configure(values=beschriftungen)
+        gemerkt = str(self._load_setting("integrate_ampr_version", "") or "")
+        if gemerkt in self._ampr_versionsauswahl:
+            self.ampr_version_var.set(gemerkt)
+        elif beschriftungen:
+            # Die Liste kommt absteigend sortiert - die neueste steht oben.
+            self.ampr_version_var.set(beschriftungen[0])
+
+    def _on_integration_changed(self, speichern: bool = True) -> None:
+        """Haelt die Auswahllisten im Takt mit ihren Kaestchen.
+
+        Die Listen bleiben stehen und werden nur gesperrt: Sie sitzen in einer
+        place-Kette, und ein Ein-/Ausblenden wuerde alles rechts davon
+        verrutschen lassen.
+
+        Args:
+            speichern: Beim Aufbau der Oberflaeche False - dort steht der Wert
+                schon aus den Einstellungen und muss nicht zurueckgeschrieben
+                werden.
+        """
+        ampr_an = bool(self.ampr_integrate_var.get())
+        backport_an = bool(self.backport_integrate_var.get())
+        hat_versionen = bool(getattr(self, "_ampr_versionsauswahl", {}))
+
+        if not hat_versionen and ampr_an:
+            # Ohne Versionsspeicher gibt es nichts einzubauen.
+            self.ampr_integrate_var.set(False)
+            ampr_an = False
+            self._append_to_log(self._t("main.integrate_ampr_no_store"))
+
+        try:
+            self.ampr_version_combo.configure(state="readonly" if ampr_an else "disabled")
+            self.ampr_playgo_check.configure(state="normal" if ampr_an else "disabled")
+            self.backport_fw_combo.configure(state="readonly" if backport_an else "disabled")
+            if not hat_versionen:
+                self.ampr_integrate_check.configure(state="disabled")
+        except tk.TclError as exc:
+            logger.debug("Integrationsfelder nicht schaltbar: %s", exc)
+
+        if speichern:
+            self._save_setting("integrate_ampr", ampr_an)
+            self._save_setting("integrate_playgo", bool(self.ampr_playgo_var.get()))
+            self._save_setting("integrate_backport", backport_an)
+
+    def _integration_gewaehlt(self) -> bool:
+        """True, wenn mindestens eines der beiden Kaestchen gesetzt ist."""
+        return bool(getattr(self, "ampr_integrate_var", None)
+                    and self.ampr_integrate_var.get()) or bool(
+            getattr(self, "backport_integrate_var", None)
+            and self.backport_integrate_var.get())
+
+    def _integration_arbeitskopie(self, quelle: str) -> str:
+        """Legt auf Nachfrage eine Arbeitskopie des Quellordners an.
+
+        Gefragt wird nur, wenn wirklich etwas veraendert wuerde. Wer verneint,
+        arbeitet auf dem Originalordner - der Backport legt dann auf Wunsch
+        seine eigene Sicherung daneben, und ersetzte AMPR-Dateien bleiben als
+        ``.orig`` erhalten.
+
+        Args:
+            quelle: Der vom Benutzer gewaehlte Dump-Ordner.
+
+        Returns:
+            Der zu verwendende Ordner, oder "" bei Abbruch.
+        """
+        groesse = self._get_path_size(quelle)
+        antwort = self._ask_yesno_threadsafe(
+            self._t("dialog.title.integration_workcopy"),
+            self._t("dialog.msg.integration_workcopy",
+                    path=quelle, size=self._fmt_bytes(groesse)),
+        )
+        if not antwort:
+            self._append_to_log(self._t("main.integrate_in_place", path=quelle))
+            return quelle
+
+        ziel = self._mkdtemp(prefix="ps5conv_integration_")
+        kopie = os.path.join(ziel, os.path.basename(os.path.normpath(quelle)))
+        self._append_to_log(self._t("main.integrate_copying", path=kopie))
+        self._set_status(self._t("main.integrate_copying_status"))
+        try:
+            shutil.copytree(quelle, kopie)
+        except OSError as exc:
+            self._append_to_log(self._t("main.integrate_copy_failed", error=exc))
+            _rmtree_force(ziel)
+            return ""
+        # Aufgeraeumt wird die Kopie ueber _mkdtemp: Der Ordner ist dort schon
+        # zum Loeschen nach der Aufgabe angemeldet.
+        return kopie
+
+    def _integration_anwenden(self, ordner: str, *, ist_quellordner: bool = False) -> str:
+        """Wendet die gewaehlten Integrationen auf einen Dump-Ordner an.
+
+        Reihenfolge: erst der Backport, dann der AMPR EMU. Das ist wichtig -
+        der Backport tauscht Ersatzbibliotheken in denselben fakelib-Ordner,
+        in den danach die AMPR-Bibliothek kommt. Umgekehrt koennte er sie
+        wieder ueberschreiben.
+
+        Args:
+            ordner:          Der Dump-Ordner, aus dem das Ziel entsteht.
+            ist_quellordner: True, wenn das der vom Benutzer gewaehlte Ordner
+                             ist - dann wird nach einer Arbeitskopie gefragt.
+
+        Returns:
+            Der zu verwendende Ordner (ggf. die Arbeitskopie), oder "" wenn
+            der Vorgang abgebrochen werden soll.
+        """
+        if not self._integration_gewaehlt():
+            return ordner
+        # Mehrstufige Wege rufen einander auf: .ffpfsc -> .ffpfs geht ueber
+        # den Dump-Ordner, .ffpfsc -> .ffpkg ebenso. Ohne diesen Merker liefe
+        # der Einbau zweimal - beim zweiten Mal auf einem Ordner, in dem er
+        # schon steht, samt erneuter Frage nach der Arbeitskopie.
+        if getattr(self, "_integration_erledigt", False):
+            return ordner
+        if not os.path.isdir(ordner):
+            self._append_to_log(self._t("main.integrate_no_folder", path=ordner))
+            return ""
+
+        arbeitsordner = ordner
+        if ist_quellordner:
+            arbeitsordner = self._integration_arbeitskopie(ordner)
+            if not arbeitsordner:
+                return ""
+
+        if self.backport_integrate_var.get():
+            if not self._integration_backport(arbeitsordner):
+                return ""
+        if self.ampr_integrate_var.get():
+            if not self._integration_ampr(arbeitsordner):
+                return ""
+        self._integration_erledigt = True
+        return arbeitsordner
+
+    def _integration_backport(self, ordner: str) -> bool:
+        """Setzt die SDK-Angaben im Ordner auf die gewaehlte Firmware herab.
+
+        Dieselbe Kernlogik wie das BACKPORT-Fenster, nur ohne dessen Tabelle:
+        Kandidaten sammeln, jede Datei einzeln umschreiben, danach die
+        Ersatzbibliotheken dazulegen. Geschrieben wird ueber eine
+        Zwischendatei und ``os.replace`` - eine halb geschriebene Programmdatei
+        waere schlimmer als gar keine.
+        """
+        try:
+            firmware = int(self.backport_fw_var.get())
+            ziel_ps5, ziel_ps4 = ps5_backport.sdk_paar(firmware)
+        except (ValueError, ps5_backport.BackportFehler) as exc:
+            self._append_to_log(self._t("main.integrate_backport_bad_fw", error=exc))
+            return False
+
+        self._append_to_log(self._t("main.integrate_backport_start", firmware=firmware))
+        self._set_status(self._t("main.integrate_backport_status", firmware=firmware))
+
+        gepatcht = fehler = 0
+        for pfad in ps5_backport.kandidaten(ordner):
+            if not self.is_running:
+                return False
+            try:
+                with open(pfad, "rb") as fh:
+                    roh = fh.read()
+            except OSError as exc:
+                fehler += 1
+                logger.debug("Backport: %s nicht lesbar: %s", pfad, exc)
+                continue
+
+            kennung, neu, _grund = ps5_backport.datei_verarbeiten(
+                roh, ziel_ps5=ziel_ps5, ziel_ps4=ziel_ps4,
+                libc_zusatz=True, ist_libc_datei=ps5_backport.ist_libc(pfad))
+            if kennung != ps5_backport.ERG_GEPATCHT:
+                continue
+
+            zwischen = pfad + ".neu"
+            try:
+                with open(zwischen, "wb") as fh:
+                    fh.write(neu)
+                os.replace(zwischen, pfad)
+                gepatcht += 1
+            except OSError as exc:
+                fehler += 1
+                try:
+                    if os.path.isfile(zwischen):
+                        os.remove(zwischen)
+                except OSError:
+                    pass
+                logger.debug("Backport: %s nicht schreibbar: %s", pfad, exc)
+
+        # Ersatzbibliotheken: Ohne sie startet ein herabgesetztes Spiel nicht -
+        # es erwartet Bibliotheken, die es auf der aelteren Firmware nicht gibt.
+        kopiert = 0
+        basis = self._backport_fakelib_basis()
+        if basis:
+            quellen = ps5_backport.fakelib_dateien(basis, firmware)
+            ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
+            if quellen:
+                try:
+                    os.makedirs(ziel, exist_ok=True)
+                    for quelle in quellen:
+                        shutil.copy2(quelle, os.path.join(ziel, os.path.basename(quelle)))
+                        kopiert += 1
+                except OSError as exc:
+                    self._append_to_log(self._t("main.integrate_backport_libs_failed", error=exc))
+                    return False
+
+        self._append_to_log(
+            self._t("main.integrate_backport_done",
+                    patched=gepatcht, libs=kopiert, errors=fehler)
+        )
+        return fehler == 0
+
+    def _integration_ampr(self, ordner: str) -> bool:
+        """Legt die gewaehlte AMPR-Bibliothek in den fakelib-Ordner.
+
+        Danach entsteht der ``ampr_emu.index`` neu - ohne ihn findet das
+        Modul auf der Konsole seine Dateien nicht. Dieselben Bausteine wie in
+        Aufgabe 7, nur ohne deren Dialog.
+        """
+        auswahl = getattr(self, "_ampr_versionsauswahl", {}).get(self.ampr_version_var.get())
+        if not auswahl:
+            self._append_to_log(self._t("main.integrate_ampr_no_version"))
+            return False
+
+        self._append_to_log(
+            self._t("main.integrate_ampr_start", version=self.ampr_version_var.get()))
+        self._set_status(self._t("main.integrate_ampr_status"))
+
+        if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
+            return False
+
+        if self.ampr_playgo_var.get():
+            playgo = self._ampr_playgo_zur_version(auswahl)
+            if not playgo:
+                self._append_to_log(self._t("main.integrate_playgo_missing"))
+            elif not self._ampr_apply_library(ordner, playgo, "libScePlayGo.sprx"):
+                return False
+
+        # Der Index zaehlt den Inhalt des Ordners auf; er muss nach dem
+        # Austausch neu entstehen.
+        try:
+            index_pfad = Path(ordner) / self._AMPR_INDEX_NAME
+            anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), index_pfad)
+            self._append_to_log(self._t("main.integrate_ampr_index", count=anzahl))
+        except Exception as exc:
+            self._append_to_log(self._t("main.integrate_ampr_index_failed", error=exc))
+            return False
+        return True
+
+    #: Welche PlayGo-Variante zu welcher AMPR-Variante passt. libScePlayGo
+    #: stammt aus einem eigenen Projekt (pgo_stub) und zaehlt seine Versionen
+    #: getrennt - mitgeliefert ist 0.5 als "log"/"nolog". Eine Suche nach
+    #: derselben Versionsnummer wie beim AMPR-Modul findet deshalb nie etwas.
+    _PLAYGO_VARIANTEN: dict[str, str] = {"no debug": "nolog", "debug": "log"}
+
+    def _ampr_playgo_zur_version(self, ampr_eintrag: dict[str, Any]) -> str:
+        """Sucht die passende PlayGo-Datei zur gewaehlten AMPR-Variante.
+
+        Gesucht wird nach der Variante (mit oder ohne Protokollausgabe), nicht
+        nach der Versionsnummer - die beiden Projekte zaehlen unabhaengig
+        voneinander. Gibt es die Variante nicht, wird die neueste vorhandene
+        genommen; ganz ohne PlayGo zu bleiben waere schlechter, denn das
+        Kaestchen wurde ausdruecklich gesetzt.
+        """
+        kandidaten = [e for e in self._ampr_scan_version_store(self._ampr_bundled_store())
+                      if e.get("lib") == "libScePlayGo.sprx"]
+        if not kandidaten:
+            return ""
+        gewuenscht = self._PLAYGO_VARIANTEN.get(str(ampr_eintrag.get("variant", "")), "")
+        for eintrag in kandidaten:
+            if gewuenscht and eintrag.get("variant") == gewuenscht:
+                return str(eintrag.get("path", ""))
+        return str(kandidaten[0].get("path", ""))
+
     def _prepare_ampr_support(
         self,
         source_root: str,
@@ -18663,14 +19098,23 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _ampr_version_sort_key(version: str) -> tuple[int, ...]:
-        """Sortierschlüssel für Versionsnummern wie 0.2.7.6 (numerisch, nicht alphabetisch)."""
+        """Sortierschlüssel für Versionsnummern wie 0.2.7.6 (numerisch, nicht alphabetisch).
+
+        Auf feste Länge aufgefüllt: Ohne das gewinnt beim absteigenden
+        Sortieren die *kürzere* Nummer, weil Python bei gleichem Anfang das
+        kürzere Tupel als kleiner ansieht. In der Liste stand deshalb
+        „0.3.5" vor „0.3.5.1" – und als „neueste Version" wurde die ältere
+        vorausgewählt.
+        """
         parts: list[int] = []
         for chunk in version.split("."):
             try:
                 parts.append(int(chunk))
             except ValueError:
                 parts.append(-1)
-        return tuple(parts)
+        while len(parts) < 4:
+            parts.append(0)
+        return tuple(parts[:4])
 
     def _ampr_scan_version_store(self, store_dir: str) -> list[dict[str, Any]]:
         """Liest den Versionsspeicher ein.
@@ -20038,6 +20482,10 @@ class PS5ConverterGUI:
             progress_start=5.0,
             progress_end=98.0,
         ):
+            # Der Zielordner IST hier das Ergebnis - der Einbau geht direkt
+            # hinein, eine Arbeitskopie waere sinnlos.
+            if not self._integration_anwenden(dest_folder):
+                return False
             self.task_progress = 100.0
             self.progress_engine.finish_task()
             self._append_to_log(self._t('log.auto.0222', v0=dest_folder))
@@ -21434,6 +21882,11 @@ class PS5ConverterGUI:
             if not self._pruefe_dump_vollstaendig(aktueller_ordner, erwartet):
                 return False
 
+            # ── Gewaehlte Integrationen einbauen, bevor der Ordner ins Ziel geht ──
+            aktueller_ordner = self._integration_anwenden(aktueller_ordner)
+            if not aktueller_ordner:
+                return False
+
             # ── Ergebnis ins Ziel verschieben ──
             self._backfill_preview_from_dir_for_source(src, aktueller_ordner)
             self.task_current_step = 4
@@ -22472,6 +22925,10 @@ class PS5ConverterGUI:
             # nicht läuft – und das fällt sonst erst dort auf.
             if not self._pruefe_dump_vollstaendig(game_dump_dir, erwartet):
                 return _fail_keep_tmp("Inneres Abbild unvollstaendig entpackt")
+
+            game_dump_dir = self._integration_anwenden(game_dump_dir)
+            if not game_dump_dir:
+                return _fail_keep_tmp("Integration abgebrochen")
 
             self.task_progress = max(self.task_progress, exfat_start)
 
