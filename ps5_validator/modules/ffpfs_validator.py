@@ -85,6 +85,121 @@ def _ensure_mkpfs_importable() -> bool:
     return False
 
 
+def ermittle_bauform(pfad: str | Path) -> dict[str, object] | None:
+    """Ermittelt, wie ein ``.ffpfsc``/``.ffpfs`` aufgebaut ist - ohne Urteil.
+
+    Reine Feststellung, gedacht fuer die Anzeige neben dem Quellfeld: Welche
+    Ebenen stecken im Container? Gelesen werden nur Kopf, Inode-Tabelle und
+    Verzeichnisbloecke, nie Nutzdaten - unabhaengig von der Dateigroesse sind
+    das weniger als 1 MB.
+
+    Der Unterschied zu :meth:`FfpfsValidator._check_nesting`: Diese Funktion
+    stellt nur fest, *was* da ist. Ob das in Ordnung ist, entscheidet weiterhin
+    der Validator - er meldet z. B. die dreifache Verschachtelung als Fehler.
+
+    Args:
+        pfad: Pfad zur Container-Datei.
+
+    Returns:
+        ``{"bauform": ..., "inneres_abbild": ..., "aeussere_dateien": ...}``
+        mit ``bauform`` aus:
+
+        * ``"flach"``     - die Dateien liegen direkt im Container
+                            (``mkpfs pack folder --raw``)
+        * ``"pfs"``       - Container -> rohes PFS -> Dateien
+                            (der Aufbau, den dieses Programm selbst baut)
+        * ``"exfat"``     - Container -> exFAT-Abbild -> Dateien
+                            (``mkpfs pack folder`` ohne ``--raw``,
+                            ``mkpfs pack file`` auf eine ``.exfat``)
+        * ``"ufs2"``      - Container -> UFS2-Abbild (eingebettete ``.ffpkg``)
+        * ``"dreifach"``  - Container -> PFS -> Abbild -> Dateien, eine Ebene
+                            zu viel
+        * ``"unbekannt"`` - Aufbau nicht bestimmbar
+
+        ``None``, wenn die Datei kein lesbarer PFS-Container ist.
+    """
+    if not _ensure_mkpfs_importable():
+        return None
+    try:
+        from mkpfs import pfs as mkpfs_pfs
+    except ImportError:
+        return None
+
+    fpath = Path(pfad)
+    befund: dict[str, object] = {"bauform": "unbekannt", "inneres_abbild": "", "aeussere_dateien": 0}
+    handle = None
+    try:
+        aussen = mkpfs_pfs.inspect_pfs_image(fpath, verify_payloads=False)
+        # Ohne gueltige PFS-Kennung ist es kein Container - dann gibt es auch
+        # nichts anzuzeigen. parse_image_header liest die Kopfbytes ohne
+        # Ruecksicht auf die Magic, eine beliebige Datei kaeme sonst durch.
+        if aussen.header is None or aussen.header.magic != PFS_MAGIC_VALUE:
+            return None
+        befund["aeussere_dateien"] = len(aussen.file_inodes)
+        if len(aussen.file_inodes) != 1:
+            befund["bauform"] = "flach"
+            return befund
+
+        geoeffnet = mkpfs_pfs.open_inner_file_view(fpath)
+        if geoeffnet is None:
+            return befund
+        view, handle, inner_name = geoeffnet
+        befund["inneres_abbild"] = inner_name
+
+        view.seek(0)
+        kopf = view.read(16)
+        if kopf[EXFAT_SIGNATURE_OFFSET:EXFAT_SIGNATURE_OFFSET + len(EXFAT_SIGNATURE)] == EXFAT_SIGNATURE:
+            befund["bauform"] = "exfat"
+            return befund
+
+        try:
+            view.seek(UFS2_SUPERBLOCK_OFFSET + UFS2_MAGIC_OFFSET_IN_SB)
+            ufs2_magic = struct.unpack("<i", view.read(4))[0] & 0xFFFFFFFF
+        except Exception:
+            ufs2_magic = 0
+        if ufs2_magic == UFS2_MAGIC_VALUE:
+            befund["bauform"] = "ufs2"
+            return befund
+
+        view.seek(0)
+        inner_header = mkpfs_pfs.parse_image_header(view)
+        if inner_header.magic != PFS_MAGIC_VALUE:
+            return befund
+
+        inodes = mkpfs_pfs.parse_image_inodes(view, inner_header)
+        fehler: list[str] = []
+        uroot, _fpt, _dirents, _spezial = mkpfs_pfs.parse_superroot_and_indexes(
+            view, inner_header, inodes, fehler)
+        dateien, ordner, _rest = mkpfs_pfs.build_tree_from_uroot(
+            view, inner_header, inodes, uroot, fehler)
+        befund["innere_dateien"] = len(dateien)
+
+        # Genau ein Eintrag ohne Unterordner, und der ist selbst ein Abbild:
+        # dann steckt eine Ebene zu viel darin.
+        if len(dateien) == 1 and max(0, len(ordner) - 1) == 0:
+            rel_name, inode_nummer = next(iter(dateien.items()))
+            innerster = FfpfsValidator._read_innermost_head(
+                mkpfs_pfs, view, inner_header, inodes[inode_nummer])
+            ist_exfat = (innerster[EXFAT_SIGNATURE_OFFSET:EXFAT_SIGNATURE_OFFSET + len(EXFAT_SIGNATURE)]
+                         == EXFAT_SIGNATURE)
+            ist_pfs = (len(innerster) >= 16
+                       and struct.unpack_from("<q", innerster, 0x08)[0] == PFS_MAGIC_VALUE)
+            if ist_exfat or ist_pfs or rel_name.lower().endswith(NESTED_IMAGE_SUFFIXES):
+                befund["bauform"] = "dreifach"
+                return befund
+
+        befund["bauform"] = "pfs"
+        return befund
+    except Exception:
+        return befund if befund["bauform"] != "unbekannt" else None
+    finally:
+        if handle is not None:
+            try:
+                handle.close()
+            except Exception:
+                pass
+
+
 class FfpfsValidator(BaseValidator):
     """Validiert eine .ffpfs oder .ffpfsc Datei."""
 
@@ -156,6 +271,43 @@ class FfpfsValidator(BaseValidator):
             ". Der Container wurde vermutlich aus einem unvollstaendigen Dump gebaut "
             "und startet auf der Konsole nicht."
         )
+
+    def _check_exfat_inner(self, view, result: ValidationResult) -> None:
+        """Prueft die Spieldateien in einem exFAT-Abbild innerhalb des Containers.
+
+        So gebaute Container entstehen bei ``mkpfs pack folder`` ohne ``--raw``
+        (dann legt mkpfs das exFAT von sich aus dazwischen) und bei
+        ``mkpfs pack file`` auf eine ``.exfat``. Beide Wege sind regulaer -
+        nur blieb die innerste Ebene bisher ungeprueft, sodass ein aus einem
+        unvollstaendigen Dump gebauter Container als fehlerfrei durchging.
+
+        Gelesen werden nur die Verzeichnisbloecke des Abbilds, nicht die
+        Nutzdaten; bei einem 117-GB-Container sind das rund 16 Sekunden.
+        Scheitert das Auslesen, bleibt es beim Vermerk - die uebrige
+        Pruefung soll daran nicht haengen.
+
+        Args:
+            view:   Logische Sicht von mkpfs auf das innere Abbild.
+            result: Ergebnisobjekt, das ergaenzt wird.
+        """
+        try:
+            from mkpfs.exfat import ExfatReader
+
+            view.seek(0)
+            eintraege = list(ExfatReader(view).iter_files())
+        except Exception as exc:
+            result.summary["inner_files"] = f"nicht lesbar ({exc})"
+            self._log.info(f"exFAT-Innenebene nicht lesbar: {exc}")
+            return
+
+        result.summary["inner_files"] = len(eintraege)
+        result.summary["inner_bytes"] = sum(max(0, int(e.length)) for e in eintraege)
+        if not eintraege:
+            result.summary["nesting"] = "falsch aufgebaut (exFAT-Abbild ohne Dateien)"
+            result.set_failed("Das exFAT-Abbild im Container enthaelt keine Dateien.")
+            return
+
+        self._check_critical_files({e.rel_path: e for e in eintraege}, result)
 
     def _check_nesting(self, fpath: Path, result: ValidationResult) -> None:
         """Prüft die innere Verschachtelung des Containers (Tiefenprüfung).
@@ -238,6 +390,7 @@ class FfpfsValidator(BaseValidator):
                 result.summary["nesting"] = "in Ordnung (exFAT-Abbild im Container)"
                 result.summary["inner_kind"] = "exfat"
                 self._log.info(f"Container enthaelt ein exFAT-Abbild: {inner_name}")
+                self._check_exfat_inner(view, result)
                 return
 
             try:

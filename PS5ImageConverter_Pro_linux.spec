@@ -100,6 +100,14 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
 for _mkpfs_src in _mkpfs_roots:
     _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
 
+# Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
+# Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
+# und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
+# Vorlage ist bewusst nicht dabei.
+_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
+if os.path.isdir(_ps4ffpsc):
+    _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+
 # Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten.
 _ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
 if os.path.isdir(_ampr_store):

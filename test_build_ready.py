@@ -53,6 +53,19 @@ def test_pyinstaller_installed():
         print(f"  {RED}[FAIL]{RESET}  Fehler: {e}")
         return False
 
+def _app_version() -> str:
+    """Liest APP_VERSION aus der Hauptdatei.
+
+    Frueher stand die Versionsnummer hier fest im Test und musste bei jedem
+    Sprung von Hand nachgezogen werden - vergass man es, meldete der Test
+    "Output-Dateiname fehlt", obwohl an der .spec nichts falsch war.
+    """
+    import re
+    quelle = open('PS5ImageConverter_Pro_FINAL_revised.py', encoding='utf-8').read(20000)
+    treffer = re.search(r'APP_VERSION\s*=\s*"(v[\d.]+)"', quelle)
+    return treffer.group(1) if treffer else ''
+
+
 def test_spec_file():
     print_header("TEST: Spec-Datei Validierung")
     
@@ -71,7 +84,7 @@ def test_spec_file():
             ('datas=', 'Daten-Dateien'),
             ('hiddenimports=', 'Hidden Imports'),
             ('ps5_ufs2tool_data', 'UFS2Tool-v4.1-Ressource'),
-            ('PS5_Dump_Image_Converter_v1.8.66', 'Output-Dateiname'),
+            (f'PS5_Dump_Image_Converter_{_app_version()}', 'Output-Dateiname'),
         ]
         
         all_ok = True

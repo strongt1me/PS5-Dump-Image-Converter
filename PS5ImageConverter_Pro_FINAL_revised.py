@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.66"
+APP_VERSION = "v1.8.67"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1539,6 +1539,7 @@ class PS5ConverterGUI:
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.autoloader", "_show_autoloader"),
+        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -1562,7 +1563,7 @@ class PS5ConverterGUI:
 
     _MODE_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
                 "pack_folder": ("ffpfsc", "ffpfs", "exfat", "ffpkg"),
-        "unpack_to_exfat": ("folder", "exfat", "ffpkg"),
+        "unpack_to_exfat": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
         "pack_file": ("folder", "ffpfsc", "ffpfs", "ffpkg"),
         "ffpkg_to_ffpfsc": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "batch_convert": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
@@ -1572,7 +1573,7 @@ class PS5ConverterGUI:
 
     _MODE_TOOLTIPS: dict[str, str] = {
                 "pack_folder": "Wandelt einen Dump-Ordner in .ffpfsc (komprimiert), .ffpfs (unkomprimiert), ein echtes .exFAT-Image oder ein UFS2-basiertes .ffpkg um.",
-        "unpack_to_exfat": "Extrahiert eine .ffpfsc-Datei als Dump-Ordner, .exFAT-Image oder UFS2-basiertes .ffpkg.",
+        "unpack_to_exfat": "Extrahiert eine .ffpfsc/.ffpfs-Datei als Dump-Ordner, .exFAT-Image oder UFS2-basiertes .ffpkg – oder packt sie zwischen komprimiert (.ffpfsc) und unkomprimiert (.ffpfs) um.",
         "pack_file": "Konvertiert eine .exFAT-Datei nach .ffpfsc (komprimiert) oder .ffpfs (unkomprimiert), extrahiert sie als Dump-Ordner oder erstellt ein UFS2-basiertes .ffpkg.",
         "ffpkg_to_ffpfsc": "Verarbeitet eine .ffpkg als Eingabe und erzeugt .ffpfsc, einen Dump-Ordner, .exFAT oder ein neu validiertes .ffpkg.",
         "batch_convert": "Konvertiert mehrere .ffpfsc-, .exFAT- oder .ffpkg-Eingaben als Dump-Ordner, .ffpfsc, .exFAT oder UFS2-basiertes .ffpkg.",
@@ -1583,18 +1584,14 @@ class PS5ConverterGUI:
     #: Kombinationen, die eine Aufgabe zwar anbietet, fuer die es aber keinen
     #: Weg gibt. Besser ein klarer Satz vor dem Start als ein Abbruch mitten
     #: darin. Schluessel ist das genaue Quellformat (siehe _detect_source_format).
-    _UNSUPPORTED_TARGET_HINTS: dict[tuple[str, str], str] = {
-        ("ffpfs", "ffpfsc"): (
-            "Eine bereits gepackte .ffpfs lässt sich nicht nachträglich komprimieren. "
-            "Bitte den Dump-Ordner über Aufgabe 1 erneut nach .ffpfsc packen – oder "
-            "die .ffpfs zuerst als Ordner entpacken (Aufgabe 2)."
-        ),
-        ("ffpfsc", "ffpfs"): (
-            "Eine .ffpfsc lässt sich nicht nachträglich entpacken. Bitte den "
-            "Dump-Ordner über Aufgabe 1 erneut nach .ffpfs packen – oder die "
-            ".ffpfsc zuerst als Ordner entpacken (Aufgabe 2)."
-        ),
-    }
+    #:
+    #: Leer, seit .ffpfsc <-> .ffpfs geht: Beide Richtungen liefen frueher in
+    #: einen Hinweis ("laesst sich nicht nachtraeglich entpacken"), der aus der
+    #: Zeit stammte, als das Programm einen Container nicht zuverlaessig
+    #: auspacken konnte. Seit Aufgabe 2 jede Bauform vollstaendig auspackt, ist
+    #: der Weg derselbe wie nach .ffpkg: erst in den Dump-Ordner, dann neu
+    #: bauen (siehe _mode_ffpfsc_umpacken).
+    _UNSUPPORTED_TARGET_HINTS: dict[tuple[str, str], str] = {}
 
     @staticmethod
     def _load_setting_static(key: str, default: object) -> object:
@@ -4670,6 +4667,27 @@ class PS5ConverterGUI:
         self._register_translatable(self.src_title, "main.source_label")
         self.src_title.grid(row=0, column=0, sticky="w")
         self._card_caption_labels.append(self.src_title)
+
+        # Bauform-Hinweis rechts neben QUELLE: Sobald eine .ffpfsc/.ffpfs
+        # anliegt, steht hier, wie der Container aufgebaut ist. Von aussen
+        # sieht man das keiner Datei an - "mkpfs tree" und "inspect" zeigen
+        # bei jeder Bauform genau einen Eintrag mit demselben Namen.
+        self.src_kind_label = ttk.Label(
+            path_card,
+            text="",
+            font=(UI_SCHRIFT, pt(9)),
+            foreground=self._COLORS["fg_success"],
+            background=self._COLORS["bg_card"],
+            compound="center",
+        )
+        self.src_kind_label.grid(row=0, column=1, columnspan=2, sticky="w", padx=(14, 0))
+        self.src_kind_label.grid_remove()
+        self._card_caption_labels.append(self.src_kind_label)
+        # Der Hinweis selbst bleibt kurz, damit er die Spaltenbreite der Karte
+        # nicht auseinanderzieht. Was die Bauform bedeutet, steht im Tooltip.
+        self._src_kind_tooltip = DelayedTooltip(
+            self.src_kind_label, "", delay_ms=700, wraplength=420
+        )
         self.src_entry = ttk.Entry(path_card, textvariable=self.source_path, font=(UI_SCHRIFT, pt(12)))
         self.src_entry.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 15))
         self.src_browse_btn = RoundedButton(
@@ -8180,6 +8198,99 @@ class PS5ConverterGUI:
         self.root.after(1000, self._telemetry_tick)
 
 
+    #: Farbrolle und Textschluessel je erkannter Container-Bauform.
+    _BAUFORM_ANZEIGE: dict[str, tuple[str, str]] = {
+        "pruefung":  ("fg_secondary", "source.kind.checking"),
+        "exfat":     ("fg_success", "source.kind.exfat"),
+        "pfs":       ("fg_success", "source.kind.pfs"),
+        "flach":     ("fg_success", "source.kind.flach"),
+        "ufs2":      ("fg_success", "source.kind.ufs2"),
+        "dreifach":  ("fg_warning", "source.kind.dreifach"),
+        "unbekannt": ("fg_warning", "source.kind.unbekannt"),
+    }
+
+    def _aktualisiere_quell_bauform(self, quelle: str) -> None:
+        """Stellt fest, wie der gewaehlte Container gebaut ist, und zeigt es an.
+
+        Der Befund kommt aus ``ffpfs_validator.ermittle_bauform``; gelesen
+        werden nur Kopf, Inode-Tabelle und Verzeichnisbloecke. Das dauert auch
+        bei einem 117-GB-Container nur wenige Sekunden, laeuft aber trotzdem
+        im Hintergrund, damit die Oberflaeche waehrenddessen bedienbar bleibt.
+
+        Args:
+            quelle: Der aktuell gewaehlte Quellpfad.
+        """
+        if not hasattr(self, "src_kind_label"):
+            return
+        pfad = str(quelle or "").strip()
+        # Merkzettel: Trifft ein Ergebnis ein, nachdem der Benutzer laengst eine
+        # andere Datei gewaehlt hat, wird es verworfen statt angezeigt.
+        self._bauform_quelle = pfad
+        if not pfad.lower().endswith((".ffpfsc", ".ffpfs")) or not os.path.isfile(pfad):
+            self._zeige_quell_bauform(pfad, None)
+            return
+
+        self._zeige_quell_bauform(pfad, {"bauform": "pruefung"})
+
+        def _ermitteln() -> None:
+            """Ermittelt die Bauform abseits des Oberflaechen-Threads."""
+            befund: dict[str, object] | None = None
+            try:
+                if self.mkpfs_dir and self.mkpfs_dir not in sys.path:
+                    sys.path.insert(0, self.mkpfs_dir)
+                from ps5_validator.modules.ffpfs_validator import (  # noqa: PLC0415
+                    ermittle_bauform,
+                )
+
+                befund = ermittle_bauform(pfad)
+            except Exception as exc:
+                logger.debug("Bauform nicht ermittelbar (%s): %s", pfad, exc)
+            # Ueber _spaeter_im_fenster statt root.after: Wird das Fenster
+            # geschlossen, waehrend die Pruefung noch laeuft, wirft Tk sonst
+            # "main thread is not in main loop" mitten im Arbeitsfaden.
+            self._spaeter_im_fenster(
+                self.root, lambda b=befund: self._zeige_quell_bauform(pfad, b))
+
+        threading.Thread(target=_ermitteln, daemon=True, name="bauform").start()
+
+    def _zeige_quell_bauform(self, pfad: str, befund: dict[str, object] | None) -> None:
+        """Schreibt den Bauform-Hinweis neben QUELLE - oder blendet ihn aus.
+
+        Args:
+            pfad:   Quelle, zu der der Befund gehoert.
+            befund: Ergebnis von ``ermittle_bauform`` bzw. ``None``, wenn nichts
+                    anzuzeigen ist (keine Container-Datei, nicht lesbar).
+        """
+        label = getattr(self, "src_kind_label", None)
+        if label is None:
+            return
+        if pfad != str(getattr(self, "_bauform_quelle", "")):
+            return
+        if not befund:
+            label.grid_remove()
+            return
+
+        bauform = str(befund.get("bauform", "unbekannt"))
+        rolle, schluessel = self._BAUFORM_ANZEIGE.get(
+            bauform, ("fg_warning", "source.kind.unbekannt"))
+        # Farbrolle am Widget vermerken, damit ein Design-Wechsel im laufenden
+        # Betrieb die passende Farbe nachzieht (_apply_caption_colors).
+        label._caption_fg_role = rolle
+        label.config(text=self._t(schluessel), foreground=self._COLORS[rolle])
+        label.grid()
+        tooltip = getattr(self, "_src_kind_tooltip", None)
+        if tooltip is not None:
+            langtext = self._t(f"{schluessel}.detail")
+            # Ohne eigenen Langtext (etwa waehrend der Pruefung) liefert die
+            # Uebersetzung den Schluessel zurueck - dann lieber gar kein Tooltip.
+            tooltip.text = "" if langtext.startswith("source.kind.") else langtext
+        # Der Text aendert die Groesse der Beschriftung - der eingebrannte
+        # Hintergrundausschnitt muss neu geschnitten werden.
+        try:
+            self._schedule_caption_redraw(self._redraw_card_captions)
+        except Exception as exc:
+            logger.debug("Bauform-Beschriftung nicht neu gezeichnet: %s", exc)
+
     def _on_source_path_changed(self, *_args) -> None:
         """Berechnet Quellgröße, Endgrößen-Schätzung und befüllt die Info-Box.
 
@@ -8206,6 +8317,12 @@ class PS5ConverterGUI:
         if _args and (_now - _last) < 0.20 and _probe_src and (not os.path.exists(_probe_src)):
             return
         self._last_source_change_ts = _now
+
+        # Bauform-Hinweis unabhaengig vom Rest aktualisieren: Er kostet nur
+        # Kopf- und Inode-Lesezugriffe und soll auch dann stimmen, wenn die
+        # schwere Metadaten-Aufloesung unten wegen einer laufenden Aufgabe
+        # zurueckgestellt wird.
+        self._aktualisiere_quell_bauform(_probe_src)
 
         # Nur im Ruhezustand (kein laufender Prozess): eine Metadaten-Aufloesung
         # kann einen mehrere GB grossen Container lesen und wuerde der laufenden
@@ -16829,6 +16946,14 @@ class PS5ConverterGUI:
             return self._mode_unpack_to_game_folder(src, dst)
         if source_type == "ffpfsc" and target_type == "ffpkg":
             return self._mode_ffpfsc_to_ffpkg(src, dst)
+        # Umpacken zwischen komprimiert und unkomprimiert. Denselben Weg geht
+        # .ffpfsc -> .ffpkg: erst in den Dump-Ordner, dann neu bauen. Die
+        # Quelldatei direkt einzubetten waere falsch - das ergaebe eine
+        # Verschachtelungsebene mehr statt eines neuen Containers.
+        if source_type == "ffpfsc" and target_type == "ffpfs":
+            return self._mode_ffpfsc_umpacken(src, dst, uncompressed=True)
+        if source_type == "ffpfsc" and target_type == "ffpfsc":
+            return self._mode_ffpfsc_umpacken(src, dst, uncompressed=False)
         if source_type == "exfat" and target_type == "ffpfsc":
             return self._mode_pack_file(src, dst)
         if source_type == "exfat" and target_type == "ffpfs":
@@ -17447,6 +17572,36 @@ class PS5ConverterGUI:
                 task_index=1,
                 task_label="FFPFSC zu FFPKG",
             )
+        finally:
+            _rmtree_force(temp_root)
+
+    def _mode_ffpfsc_umpacken(self, src: str, dst: str, *, uncompressed: bool) -> bool:
+        """Packt einen Container in die jeweils andere Kompressionsform um.
+
+        Also ``.ffpfsc`` -> ``.ffpfs`` und umgekehrt. Der Weg ist derselbe wie
+        nach ``.ffpkg``: Die Quelle wird vollständig in einen Dump-Ordner
+        entpackt und daraus ein neuer Container gebaut. Die Quelldatei einfach
+        neu einzubetten wäre der Fehler, den dieses Programm an anderer Stelle
+        schon einmal gemacht hat - das ergäbe eine Verschachtelungsebene mehr
+        statt eines neuen Containers.
+
+        Args:
+            src:          Pfad zur .ffpfsc/.ffpfs-Quelle.
+            dst:          Zielverzeichnis.
+            uncompressed: True für .ffpfs, False für .ffpfsc.
+
+        Returns:
+            True bei Erfolg.
+        """
+        temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_repack_", dir_path=dst)
+        try:
+            if not self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=1):
+                return False
+            dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
+            if not os.path.isdir(dump_dir):
+                self._append_to_log(self._t('log.auto.0107'))
+                return False
+            return self._mode_pack_folder(dump_dir, dst, uncompressed=uncompressed)
         finally:
             _rmtree_force(temp_root)
 
@@ -18783,53 +18938,35 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t('log.auto.0155'))
                     return False
 
-                outer_files = [
-                    os.path.join(outer_tmp, f)
-                    for f in os.listdir(outer_tmp)
-                    if os.path.isfile(os.path.join(outer_tmp, f))
-                ]
-                pfs_file = max(outer_files, key=os.path.getsize) if outer_files else None
-                if pfs_file:
-                    if pfs_file.lower().endswith(".ffpkg"):
-                        self._append_to_log(self._t('log.auto.0156'))
-                        if self._extract_ffpkg_to_folder_via_ufs2tool(
-                            pfs_file,
-                            tmp_extract,
-                            status_prefix="Aufgabe 7 / A6-ffpkg",
-                            progress_start=15.0,
-                            progress_end=29.0,
-                        ):
-                            search_root = tmp_extract
-                    else:
-                        self._append_to_log(self._t('log.auto.0157'))
-                        inner_ok = self._execute_mkpfs(
-                            ["unpack", "--overwrite", pfs_file, tmp_extract],
-                            monitor_target_path=tmp_extract,
-                            monitor_source_file=pfs_file,
-                        )
-                        if inner_ok and os.listdir(tmp_extract):
-                            search_root = tmp_extract
-                        else:
-                            _rmtree_force(tmp_extract)
-                            os.makedirs(tmp_extract, exist_ok=True)
-                            self._append_to_log(self._t('log.auto.0158'))
-                            if self._extract_exfat_to_folder_mkpfs(
-                                pfs_file,
-                                tmp_extract,
-                                status_prefix="Aufgabe 7 / A3-exFAT",
-                                log_prefix="A3-exFAT extrahiert",
-                                progress_start=15.0,
-                                progress_end=29.0,
-                            ):
-                                search_root = tmp_extract
+                # Ebene für Ebene auspacken - denselben Weg gehen Aufgabe 2
+                # und Aufgabe 4. Vorher stand hier eine dritte Fassung, die nur
+                # eine Ebene tief kam: Bei einem Container mit einer Ebene mehr
+                # stand im fakelib-Dialog danach eine einzelne .exfat statt des
+                # Dump-Inhalts, und das Zurückpacken schrieb genau das wieder
+                # in den Container.
+                ebenen = self._entpacke_container_ebenen(
+                    outer_tmp,
+                    status_prefix="Aufgabe 7",
+                    pct_start=15.0,
+                    pct_end=29.0,
+                    erwartet=self._container_expectations(
+                        src, self._sniff_image_kind(src) or "pfs"
+                    ),
+                )
+                if ebenen is None:
+                    self._append_to_log(self._t('log.auto.0160'))
                 else:
-                    outer_entries = os.listdir(outer_tmp)
-                    if outer_entries:
+                    dump_ordner, erwartet = ebenen
+                    if not self._pruefe_dump_vollstaendig(dump_ordner, erwartet):
+                        self._append_to_log(self._t('log.auto.0160'))
+                    elif os.path.abspath(dump_ordner) == os.path.abspath(outer_tmp):
+                        # Die Dateien lagen direkt im Container; sie müssen aus
+                        # dem gleich gelöschten outer_tmp herausgeholt werden.
                         self._append_to_log(self._t('log.auto.0159'))
                         shutil.copytree(outer_tmp, tmp_extract, dirs_exist_ok=True)
                         search_root = tmp_extract
-                    else:
-                        self._append_to_log(self._t('log.auto.0160'))
+                    elif not self._move_tree_into(dump_ordner, tmp_extract):
+                        search_root = tmp_extract
             finally:
                 _rmtree_force(outer_tmp)
 
@@ -20661,10 +20798,561 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0243', v0=exc))
             return False
 
+    # ------------------------------------------------------------------
+    # Innere Abbilder erkennen und vollstaendig auspacken (Aufgabe 4)
+    # ------------------------------------------------------------------
+
+    #: Kennungen der drei Abbildarten, die in einem Container stecken koennen.
+    _INNER_EXFAT_SIGNATURE: bytes = b"EXFAT   "
+    _INNER_PFS_MAGIC: int = 0x1332A0B
+    _INNER_UFS2_MAGIC: int = 0x19540119
+    _INNER_UFS2_SUPERBLOCK_OFFSET: int = 65536
+    _INNER_UFS2_MAGIC_OFFSET: int = 1372
+    #: Tiefer verschachtelt baut kein regulaerer Weg; die Grenze bricht Endlosschleifen ab.
+    _MAX_CONTAINER_DEPTH: int = 4
+
+    @classmethod
+    def _sniff_image_kind(cls, path: str) -> str:
+        """Bestimmt die Art eines Abbilds anhand seiner Kennung.
+
+        Die Dateiendung taugt dafuer nicht: ``mkpfs pack folder`` legt ohne
+        ``--raw`` ein exFAT-Abbild in den Container und benennt es nach der
+        Title-ID, ``mkpfs pack file`` uebernimmt den Namen der Quelldatei.
+        Beide koennen also jede beliebige Endung tragen - oder gar keine.
+
+        Args:
+            path: Pfad der zu pruefenden Datei.
+
+        Returns:
+            ``"exfat"``, ``"pfs"``, ``"ufs2"`` oder ``""`` fuer alles andere.
+        """
+        try:
+            with open(path, "rb") as fh:
+                kopf = fh.read(512)
+                if kopf[3:11] == cls._INNER_EXFAT_SIGNATURE:
+                    return "exfat"
+                if len(kopf) >= 16 and struct.unpack_from("<q", kopf, 0x08)[0] == cls._INNER_PFS_MAGIC:
+                    return "pfs"
+                fh.seek(cls._INNER_UFS2_SUPERBLOCK_OFFSET + cls._INNER_UFS2_MAGIC_OFFSET)
+                roh = fh.read(4)
+        except OSError as exc:
+            logger.debug("Abbildart nicht bestimmbar (%s): %s", path, exc)
+            return ""
+        if len(roh) == 4 and struct.unpack("<I", roh)[0] == cls._INNER_UFS2_MAGIC:
+            return "ufs2"
+        return ""
+
+    def _container_expectations(self, path: str, kind: str) -> tuple[int, int] | None:
+        """Zaehlt Dateien und Bytes, die in einem Abbild stecken.
+
+        Gelesen werden nur Kopf, Inode-Tabelle und Verzeichnisbloecke - die
+        Nutzdaten bleiben unangetastet. Bei einem 158-GB-Abbild sind das
+        wenige Megabyte. Das Ergebnis ist der Sollwert, an dem sich das
+        Entpacken hinterher messen laesst.
+
+        Args:
+            path: Pfad des Abbilds.
+            kind: Ergebnis von :meth:`_sniff_image_kind`.
+
+        Returns:
+            ``(Dateien, Bytes)`` oder ``None``, wenn sich das Abbild nicht
+            auslesen laesst - dann entfaellt die Vollstaendigkeitspruefung.
+        """
+        try:
+            mkpfs_parent = self.mkpfs_dir or self._extract_embedded_mkpfs()
+            if mkpfs_parent and mkpfs_parent not in sys.path:
+                sys.path.insert(0, mkpfs_parent)
+
+            if kind == "exfat":
+                from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+                with open(path, "rb") as fh:
+                    eintraege = list(ExfatReader(fh).iter_files())
+                return len(eintraege), sum(max(0, int(e.length)) for e in eintraege)
+
+            if kind == "pfs":
+                from mkpfs import pfs as mkpfs_pfs  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+                with open(path, "rb") as fh:
+                    kopf = mkpfs_pfs.parse_image_header(fh)
+                    inodes = mkpfs_pfs.parse_image_inodes(fh, kopf)
+                    fehler: list[str] = []
+                    uroot, _fpt, _dirents, _spezial = mkpfs_pfs.parse_superroot_and_indexes(
+                        fh, kopf, inodes, fehler
+                    )
+                    dateien, _ordner, _rest = mkpfs_pfs.build_tree_from_uroot(
+                        fh, kopf, inodes, uroot, fehler
+                    )
+                return len(dateien), sum(int(inodes[nr].size) for nr in dateien.values())
+        except Exception as exc:
+            logger.debug("Sollwerte des Abbilds nicht ermittelbar (%s): %s", path, exc)
+        return None
+
+    def _move_tree_into(self, quelle: str, ziel: str) -> list[str]:
+        """Verschiebt den Inhalt von ``quelle`` nach ``ziel`` und fuehrt Ordner zusammen.
+
+        ``shutil.move`` legt einen Ordner IN einen gleichnamigen Zielordner,
+        statt ihn zu verschmelzen - aus ``sce_sys`` wuerde ``sce_sys/sce_sys``.
+        Deshalb wird Ebene fuer Ebene zusammengefuehrt.
+
+        Args:
+            quelle: Ordner, dessen Inhalt verschoben wird.
+            ziel:   Zielordner; wird bei Bedarf angelegt.
+
+        Returns:
+            Liste der Fehlertexte. Leer heisst: alles ist im Ziel angekommen.
+        """
+        fehler: list[str] = []
+        os.makedirs(ziel, exist_ok=True)
+        for eintrag in os.listdir(quelle):
+            quell_pfad = os.path.join(quelle, eintrag)
+            ziel_pfad = os.path.join(ziel, eintrag)
+            try:
+                if os.path.isdir(quell_pfad) and os.path.isdir(ziel_pfad):
+                    fehler.extend(self._move_tree_into(quell_pfad, ziel_pfad))
+                    try:
+                        os.rmdir(quell_pfad)
+                    except OSError:
+                        pass
+                else:
+                    shutil.move(quell_pfad, ziel_pfad)
+            except OSError as exc:
+                fehler.append(f"{eintrag}: {exc}")
+                self._append_to_log(self._t('log.auto.0246', v0=eintrag, v1=exc))
+        return fehler
+
+    def _pruefe_dump_vollstaendig(self, ziel: str, erwartet: tuple[int, int] | None) -> bool:
+        """Vergleicht den entpackten Ordner mit den Sollwerten des Containers.
+
+        Ohne diese Pruefung meldet die Aufgabe auch dann Erfolg, wenn nur ein
+        Teil der Dateien geschrieben wurde - der Ordner sieht gross genug aus,
+        auf der Konsole fehlt aber Inhalt. Sind keine Sollwerte ermittelbar,
+        bleibt es beim blossen Hinweis.
+
+        Args:
+            ziel:     Der entpackte Dump-Ordner.
+            erwartet: ``(Dateien, Bytes)`` aus :meth:`_container_expectations`.
+
+        Returns:
+            True, wenn der Ordner vollstaendig ist.
+        """
+        ist_dateien = 0
+        ist_bytes = 0
+        for ordner, _unterordner, dateien in os.walk(ziel):
+            for name in dateien:
+                ist_dateien += 1
+                try:
+                    ist_bytes += os.path.getsize(os.path.join(ordner, name))
+                except OSError:
+                    pass
+
+        # Kein Abbruchgrund: Auch ein Container ohne eboot.bin darf sich
+        # entpacken lassen. Die Abschlusspruefung der Aufgabe faellt dafuer
+        # ohnehin ein eigenes Urteil.
+        if not self._looks_like_dump_folder(ziel):
+            self._append_to_log(self._t('unpack.not_a_dump', ordner=ziel))
+
+        if erwartet is None:
+            self._append_to_log(
+                self._t('unpack.no_expectation', dateien=ist_dateien, gb=ist_bytes / 1073741824)
+            )
+            return True
+
+        soll_dateien, soll_bytes = erwartet
+        if ist_dateien >= soll_dateien and ist_bytes >= soll_bytes:
+            self._append_to_log(
+                self._t('unpack.complete', dateien=ist_dateien, gb=ist_bytes / 1073741824)
+            )
+            return True
+
+        self._append_to_log(
+            self._t(
+                'unpack.incomplete',
+                ist_dateien=ist_dateien,
+                soll_dateien=soll_dateien,
+                ist_gb=ist_bytes / 1073741824,
+                soll_gb=soll_bytes / 1073741824,
+                fehl_gb=max(0, soll_bytes - ist_bytes) / 1073741824,
+            )
+        )
+        return False
+
+    def _extract_exfat_via_osfmount(
+        self,
+        inner_path: str,
+        out_dir: str,
+        *,
+        status_prefix: str = "Entpacken",
+        progress_start: float = 0.0,
+        progress_end: float = 0.0,
+    ) -> bool:
+        """Letzter Ausweg fuer ein exFAT-Abbild: mounten und mit robocopy kopieren.
+
+        Nur unter Windows nutzbar und nur dann noetig, wenn der eigene
+        exFAT-Leser das Abbild nicht versteht - etwa weil es von einem fremden
+        Werkzeug stammt. Aufgabe 2 und Aufgabe 4 teilen sich diesen Weg; frueher
+        hatte jede ihren eigenen, und nur eine davon bekam Korrekturen.
+
+        Args:
+            inner_path:     Pfad des exFAT-Abbilds.
+            out_dir:        Zielordner fuer die Dateien.
+            status_prefix:  Text vor der Statuszeile.
+            progress_start: Fortschrittswert zu Beginn.
+            progress_end:   Fortschrittswert am Ende.
+
+        Returns:
+            True, wenn robocopy den Baum vollstaendig kopiert hat.
+        """
+        if not IST_WINDOWS:
+            return False
+
+        import ctypes as _ct
+        import subprocess as _sp
+        import time as _time
+
+        osf_exe = self._find_osfmount()
+        if not osf_exe:
+            self._append_to_log(self._t('log.auto.0224'))
+            return False
+        self._append_to_log(self._t('log.auto.0256', v0=osf_exe))
+
+        drives_bitmask = _ct.windll.kernel32.GetLogicalDrives() if hasattr(_ct, 'windll') else 0
+        drive_letter: str | None = None
+        for _i in range(25, 3, -1):
+            if not (drives_bitmask & (1 << _i)):
+                drive_letter = chr(65 + _i) + ":"
+                break
+        if not drive_letter:
+            self._append_to_log(self._t('log.auto.0226'))
+            return False
+
+        _rmtree_force(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+
+        try:
+            nutzlast = max(1, int(os.path.getsize(inner_path)))
+        except OSError:
+            nutzlast = 1
+
+        try:
+            self._cleanup_stale_osfmounts()
+            self._append_to_log(
+                self._t('log.auto.0228', v0=os.path.basename(inner_path), v1=drive_letter)
+            )
+            try:
+                _mount_result = _sp.run(
+                    [osf_exe, "-a", "-t", "file", "-f", inner_path,
+                     "-m", drive_letter, "-o", "ro,rem"],
+                    capture_output=True, text=True,
+                    creationflags=_NO_WIN_FLAGS,
+                    startupinfo=_silent_startupinfo(),
+                )
+            except OSError as exc:
+                self._append_to_log(self._t('log.auto.0294', v0=exc))
+                return False
+            if _mount_result.returncode != 0:
+                self._append_to_log(
+                    self._t('log.auto.0295', v0=_mount_result.returncode,
+                            v1=_mount_result.stderr or _mount_result.stdout)
+                )
+                return False
+            self._register_osf_mount(drive_letter, osf_exe, inner_path)
+
+            for _ in range(20):
+                if os.path.exists(drive_letter + "\\"):
+                    break
+                _time.sleep(0.5)
+            else:
+                self._append_to_log(self._t('log.auto.0296', v0=drive_letter))
+                return False
+
+            self._append_to_log(self._t('log.auto.0229', v0=drive_letter))
+            self.root.after(0, lambda: self.status_label.config(
+                text=f"{status_prefix} – Dateien extrahieren (robocopy)..."))
+
+            robo_cmd = [
+                "robocopy.exe",
+                drive_letter + "\\", out_dir,
+                "/E", "/COPY:DAT", "/DCOPY:DA",
+                "/R:2", "/W:2", "/NP", "/MT:8",
+            ]
+            self._append_to_log(self._t('log.auto.0261', v0=' '.join(robo_cmd)))
+
+            self._copy_total_bytes = nutzlast
+            self._copy_done_bytes = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
+            letzter_prozent = [-1]
+
+            def _log_robo_line(line: str) -> bool:
+                """Wertet robocopy-Prozentzeilen aus und protokolliert den Rest."""
+                _ln = line.strip()
+                if not _ln:
+                    return self.is_running
+
+                _m_pct = re.match(r"^(\d{1,3})%$", _ln)
+                if not _m_pct:
+                    self._append_to_log(_ln + "\n")
+                    return self.is_running
+
+                pct = max(0, min(int(_m_pct.group(1)), 100))
+                if pct != letzter_prozent[0]:
+                    self._append_to_log(self._t('log.auto.0298', v0=pct))
+                    letzter_prozent[0] = pct
+                self._copy_done_bytes = max(
+                    self._copy_done_bytes, int(nutzlast * (pct / 100.0))
+                )
+                if progress_end > progress_start:
+                    mapped = progress_start + (progress_end - progress_start) * (pct / 100.0)
+                    self.task_progress = max(self.task_progress, min(mapped, progress_end))
+                return self.is_running
+
+            _robo_rc = self._run_subprocess_logged(
+                robo_cmd,
+                timeout=24 * 60 * 60,
+                encoding="mbcs",
+                errors="replace",
+                line_callback=_log_robo_line,
+            )
+            if _robo_rc == 130 and not self.is_running:
+                return False
+            if _robo_rc >= 8:
+                self._append_to_log(self._t('log.auto.0262', v0=_robo_rc))
+                return False
+
+            self._copy_done_bytes = self._copy_total_bytes
+            self._append_to_log(self._t('log.auto.0300'))
+            return True
+        finally:
+            _drive_letter_norm = self._normalize_drive_letter(drive_letter)
+            if _drive_letter_norm:
+                self._append_to_log(self._t('log.auto.0301', v0=_drive_letter_norm))
+                try:
+                    if self._safe_dismount_drive(_drive_letter_norm, osf_exe, log=False, retries=4):
+                        self._unregister_osf_mount(_drive_letter_norm)
+                except Exception as exc:
+                    logger.debug("OSFMount-Dismount fehlgeschlagen: %s", exc)
+
+    def _extract_inner_image(
+        self,
+        inner_path: str,
+        out_dir: str,
+        kind: str,
+        *,
+        status_prefix: str,
+        progress_start: float,
+        progress_end: float,
+    ) -> bool:
+        """Packt genau ein inneres Abbild in einen Ordner aus.
+
+        Der Weg richtet sich nach der erkannten Art:
+
+        * ``pfs``   - ``mkpfs unpack``
+        * ``exfat`` - ``mkpfs unpack``; scheitert das, die vendorte
+          exFAT-Extraktion, zuletzt (nur Windows) OSFMount + robocopy
+        * ``ufs2``  - UFS2Tool/Dokan
+
+        Args:
+            inner_path:     Pfad des inneren Abbilds.
+            out_dir:        Zielordner; wird geleert und neu angelegt.
+            kind:           Ergebnis von :meth:`_sniff_image_kind`.
+            status_prefix:  Text vor der Statuszeile.
+            progress_start: Fortschrittswert zu Beginn.
+            progress_end:   Fortschrittswert am Ende.
+
+        Returns:
+            True, wenn der Zielordner danach Eintraege enthaelt.
+        """
+        _rmtree_force(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
+
+        if kind == "ufs2":
+            return self._extract_ffpkg_to_folder_via_ufs2tool(
+                inner_path,
+                out_dir,
+                status_prefix=status_prefix,
+                progress_start=progress_start,
+                progress_end=progress_end,
+            )
+
+        entpackt = self._execute_mkpfs(
+            ["unpack", "--overwrite", inner_path, out_dir],
+            monitor_target_path=out_dir,
+            monitor_source_file=inner_path,
+        )
+        if not self.is_running:
+            return False
+        if entpackt and self._scandir_safe(out_dir):
+            return True
+
+        if kind != "exfat":
+            return False
+
+        # Der eigene exFAT-Leser deckt die Abbilder ab, die mkpfs selbst baut.
+        # Fremde Abbilder koennen davon abweichen - dafuer bleiben die beiden
+        # Rueckfallebenen.
+        self._append_to_log(self._t('log.auto.0254'))
+        self.root.after(0, lambda: self.status_label.config(
+            text=f"{status_prefix} – exFAT entpacken (MkPFS)..."))
+        if self._extract_exfat_to_folder_mkpfs(
+            inner_path,
+            out_dir,
+            status_prefix=status_prefix,
+            log_prefix="exFAT-Image extrahiert",
+            progress_start=progress_start,
+            progress_end=progress_end,
+        ):
+            return True
+
+        self._append_to_log(self._t('log.auto.0255'))
+        return self._extract_exfat_via_osfmount(
+            inner_path,
+            out_dir,
+            status_prefix=status_prefix,
+            progress_start=progress_start,
+            progress_end=progress_end,
+        )
+
+    def _entpacke_container_ebenen(
+        self,
+        tmp_dir: str,
+        *,
+        status_prefix: str,
+        pct_start: float,
+        pct_end: float,
+        erwartet: tuple[int, int] | None = None,
+    ) -> tuple[str, tuple[int, int] | None] | None:
+        """Packt einen bereits geöffneten Container weiter aus, bis die Dateien kommen.
+
+        Erwartet wird der Ordner, in den der äußere Container schon entpackt
+        wurde. Von dort geht es Ebene für Ebene weiter, solange dort genau
+        **eine** Datei liegt und diese eine Abbild-Kennung trägt. Entschieden
+        wird an der Kennung (exFAT-Signatur, PFS-Magic, UFS2-Superblock), nicht
+        an Name oder Endung – denn wie das innere Abbild heißt, hängt nur davon
+        ab, wie es gebaut wurde:
+
+        * ``mkpfs pack folder ... --raw`` → rohes PFS → Spieldateien
+        * ``mkpfs pack folder ...``       → exFAT-Abbild → Spieldateien
+        * ``mkpfs pack file ...``         → das eingebettete Abbild
+        * beides hintereinander           → PFS → exFAT → Spieldateien
+
+        Aufgabe 2 und Aufgabe 4 benutzen denselben Weg. Vorher hatte jede ihre
+        eigene Fassung, die nur eine Ebene tief kam.
+
+        Args:
+            tmp_dir:       Ordner mit dem ausgepackten äußeren Container.
+            status_prefix: Text vor der Statuszeile.
+            pct_start:     Fortschrittswert zu Beginn.
+            pct_end:       Fortschrittswert nach der letzten Ebene.
+            erwartet:      Sollwerte des äußeren Containers; gelten, solange
+                           keine weitere Ebene ausgepackt wird.
+
+        Returns:
+            ``(Ordner mit den Spieldateien, Sollwerte)`` oder ``None`` bei einem
+            Fehler – die Ursache steht dann bereits im Protokoll.
+        """
+        aktueller_ordner = tmp_dir
+        spanne = max(1.0, (pct_end - pct_start)) / self._MAX_CONTAINER_DEPTH
+
+        for tiefe in range(1, self._MAX_CONTAINER_DEPTH + 2):
+            eintraege = self._scandir_safe(aktueller_ordner)
+            unterordner = [e for e in eintraege if e.is_dir()]
+            dateien = [e for e in eintraege if e.is_file()]
+
+            if not eintraege:
+                self._append_to_log(self._t('log.auto.0248'))
+                return None
+
+            # Sobald Ordner auftauchen oder mehr als eine Datei daliegt, ist der
+            # Dump erreicht - ein inneres Abbild liegt immer allein.
+            if unterordner or len(dateien) != 1:
+                break
+
+            inneres_abbild = dateien[0].path
+            art = self._sniff_image_kind(inneres_abbild)
+            if not art:
+                # Eine einzelne Datei ohne Abbild-Kennung ist Dump-Inhalt.
+                break
+
+            if tiefe > self._MAX_CONTAINER_DEPTH:
+                self._append_to_log(
+                    self._t('unpack.depth_exceeded', max=self._MAX_CONTAINER_DEPTH)
+                )
+                return None
+
+            try:
+                abbild_groesse = os.path.getsize(inneres_abbild)
+            except OSError:
+                abbild_groesse = 0
+            self._append_to_log(
+                self._t(
+                    'unpack.layer_detected',
+                    tiefe=tiefe,
+                    art=art,
+                    name=os.path.basename(inneres_abbild),
+                    gb=abbild_groesse / 1073741824,
+                )
+            )
+
+            erwartet = self._container_expectations(inneres_abbild, art)
+            if erwartet is not None:
+                self._append_to_log(
+                    self._t('unpack.expectation', dateien=erwartet[0], gb=erwartet[1] / 1073741824)
+                )
+
+            ebene_start = min(pct_end - spanne, pct_start + (tiefe - 1) * spanne)
+            self.task_progress = max(self.task_progress, ebene_start)
+            self.task_displayed = max(self.task_displayed, ebene_start)
+            self.root.after(0, lambda a=art: self.status_label.config(
+                text=f"{status_prefix} – Innenimage entpacken ({a})..."))
+
+            naechster_ordner = os.path.join(tmp_dir, f"_ebene_{tiefe}")
+            if not self._extract_inner_image(
+                inneres_abbild,
+                naechster_ordner,
+                art,
+                status_prefix=status_prefix,
+                progress_start=ebene_start,
+                progress_end=min(pct_end, ebene_start + spanne),
+            ):
+                if self.is_running:
+                    self._append_to_log(self._t('unpack.layer_failed', tiefe=tiefe, art=art))
+                return None
+
+            # Das ausgepackte Abbild wird nicht mehr gebraucht. Es liegt im
+            # Temp-Ordner auf derselben Platte wie das Ziel und würde sonst
+            # unnötig Platz für die nächste Ebene blockieren.
+            try:
+                os.remove(inneres_abbild)
+            except OSError as exc:
+                logger.debug("Inneres Abbild nicht loeschbar: %s", exc)
+
+            aktueller_ordner = naechster_ordner
+
+        if not self.is_running:
+            return None
+        return aktueller_ordner, erwartet
+
     def _mode_unpack_to_game_folder(
         self, src: str, dst: str, *, progress_task_index: int = 3
     ) -> bool:
         """Entpackt eine .FFPFSC-Datei vollständig in einen Game-Dump-Ordner.
+
+        Der Container wird Ebene für Ebene ausgepackt, bis die Spieldateien
+        erscheinen. Welche Ebene folgt, entscheidet die Kennung der jeweils
+        ausgepackten Datei, nicht ihr Name oder ihre Endung:
+
+        * ``mkpfs pack folder ... --raw`` → Container → rohes PFS → Dateien
+        * ``mkpfs pack folder ...``       → Container → exFAT-Abbild → Dateien
+        * ``mkpfs pack file ...``         → Container → eingebettetes Abbild
+          (exFAT, PFS oder UFS2) → Dateien
+
+        Damit landet auch ein Container, in dem eine Ebene mehr steckt, als
+        vollständiger Dump-Ordner im Ziel statt als einzelnes Abbild. Zum
+        Schluss wird gegen die Soll-Werte des innersten Abbilds geprüft:
+        Fehlen Dateien oder Bytes, meldet die Aufgabe einen Fehler statt
+        stillschweigend Erfolg.
 
         Args:
             src: Pfad zur .FFPFSC-Datei.
@@ -20677,19 +21365,17 @@ class PS5ConverterGUI:
         final_dst    = os.path.join(dst, folder_name)
         tmp_dir      = self._mkdtemp(prefix="ps5conv_unpack_", dir_path=dst)
         tmp_base     = tmp_dir                                  # Alias für finally-Block
-        drive_letter: str | None = None                        # Für finally-Block
-        osf_exe: str | None = None                             # Für finally-Block
 
         # Finale Ausgabe und Quellgröße merken
         self.task_final_output_path  = final_dst
         self.task_total_source_bytes = self._get_path_size(src)
         # 4 Phasen:
-        #   Phase 1 (unpack outer .ffpfsc → tmp):  0–20%
-        #   Phase 2 (unpack inner pfs → game_dir): 20–60%
-        #   Phase 3 (Image erstellen + mounten):   60–75%
-        #   Phase 4 (Dateien kopieren):            75–100%
+        #   Phase 1 (äußeren Container entpacken):   0–20%
+        #   Phase 2 (innere Ebenen entpacken):      20–90%
+        #   Phase 3 (Vollständigkeit prüfen):       90–95%
+        #   Phase 4 (Dateien ins Ziel verschieben): 95–100%
         self.task_num_steps = 4
-        self.task_step_ends = [20.0, 60.0, 75.0, 100.0]
+        self.task_step_ends = [20.0, 90.0, 95.0, 100.0]
 
         # ProgressEngine: Aufgabe 4 starten (Index 3)
         self.progress_engine.start_task(progress_task_index, "ffpfsc zu Game Dump Ordner")
@@ -20706,291 +21392,71 @@ class PS5ConverterGUI:
             self.task_displayed = max(self.task_displayed, 0.5)
             self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Container entpacken..."))
             self._append_to_log(self._t('log.auto.0244'))
-            step1_ok = self._execute_mkpfs(
+
+            # Sollwerte des äußeren Containers: Sie gelten für den Fall, dass
+            # die Spieldateien direkt darin liegen (pack folder --raw ohne
+            # Zwischenebene). Steigt die Schleife tiefer, werden sie ersetzt.
+            erwartet = self._container_expectations(src, self._sniff_image_kind(src) or "pfs")
+
+            if not self._execute_mkpfs(
                 ["unpack", "--overwrite", src, tmp_dir],
                 monitor_target_path=tmp_dir,
                 monitor_source_file=src,
+            ):
+                return False
+            if not self.is_running:
+                return False
+
+            # Den sichtbaren Uebergang nach Schritt 1 hart auf das Schrittende ziehen,
+            # damit der Wechsel in den inneren Unpack nicht optisch auf 20% klebt.
+            self.task_current_step = max(self.task_current_step, 1)
+            self.task_progress = max(self.task_progress, 20.0)
+            self.task_displayed = max(self.task_displayed, 20.0)
+
+            # ── Ebene für Ebene auspacken, bis die Spieldateien erscheinen ──
+            ebenen = self._entpacke_container_ebenen(
+                tmp_dir,
+                status_prefix="Aufgabe 4",
+                pct_start=20.0,
+                pct_end=90.0,
+                erwartet=erwartet,
             )
+            if ebenen is None:
+                return False
+            aktueller_ordner, erwartet = ebenen
 
-            if step1_ok and self.is_running:
-                # Den sichtbaren Uebergang nach Schritt 1 hart auf das Schrittende ziehen,
-                # damit der Wechsel in den inneren Unpack nicht optisch auf 20% klebt.
-                self.task_current_step = max(self.task_current_step, 1)
-                self.task_progress = max(self.task_progress, 20.0)
-                self.task_displayed = max(self.task_displayed, 20.0)
-                # Erkennen ob die .ffpfsc ein pack-folder (Aufgabe 1) oder
-                # pack-file (Aufgabe 3) Container ist:
-                # - pack-folder: tmp_dir enthält Unterordner (z.B. sce_sys/)
-                #   -> tmp_dir IST bereits der Game-Dump, kein zweiter unpack nötig
-                # - pack-file: tmp_dir enthält nur eine einzelne Datei (z.B. BREW12345.exfat)
-                #   -> diese Datei ist das innere PFS/exFAT-Image, muss nochmals entpackt werden
-                subdirs = [
-                    d for d in os.listdir(tmp_dir)
-                    if os.path.isdir(os.path.join(tmp_dir, d))
-                ]
-                is_folder_dump = len(subdirs) > 0
+            # ── Vollständigkeit prüfen, bevor irgendetwas ins Ziel wandert ──
+            self.task_current_step = 3
+            self.task_progress = max(self.task_progress, 90.0)
+            self.task_displayed = max(self.task_displayed, 90.0)
+            self.root.after(0, lambda: self.status_label.config(
+                text="Aufgabe 4 – Vollständigkeit prüfen..."))
+            if not self._pruefe_dump_vollstaendig(aktueller_ordner, erwartet):
+                return False
 
-                if is_folder_dump:
-                    # FALL B: pack-folder .ffpfsc (Aufgabe 1)
-                    # tmp_dir enthält bereits den vollständigen Game-Dump
-                    self._append_to_log(self._t('log.auto.0245'))
-                    self._backfill_preview_from_dir_for_source(src, tmp_dir)
-                    os.makedirs(final_dst, exist_ok=True)
-                    # Alle Dateien und Ordner aus tmp_dir nach final_dst verschieben
-                    for _item in os.listdir(tmp_dir):
-                        _src_item = os.path.join(tmp_dir, _item)
-                        _dst_item = os.path.join(final_dst, _item)
-                        try:
-                            shutil.move(_src_item, _dst_item)
-                        except OSError as _mv_exc:
-                            self._append_to_log(self._t('log.auto.0246', v0=_item, v1=_mv_exc))
-                    # game_dir zeigt jetzt auf final_dst (bereits befüllt)
-                    # Schritte 2-4 überspringen: Fortschritt direkt auf 98%
-                    self.task_current_step = 4
-                    self.task_progress = 98.0
-                    self._append_to_log(self._t('log.auto.0247', v0=final_dst))
-                    self.progress_engine.begin_validate("Validierung...")
-                    self.progress_engine.commit_task()
-                    return True
-
-                # FALL A: pack-file .ffpfsc (Aufgabe 3 Ausgabe)
-                # Die entpackte Datei ist ein PFS-Image (pfs_image.dat), KEIN exFAT.
-                # Strategie (identisch mit Aufgabe 2 Fix):
-                #   1. mkpfs unpack auf das innere PFS-Image → Game-Dump
-                #   2. Falls mkpfs fehlschlägt: Fallback OSFMount (echtes exFAT)
-                files = [
-                    os.path.join(tmp_dir, f)
-                    for f in os.listdir(tmp_dir)
-                    if os.path.isfile(os.path.join(tmp_dir, f))
-                ]
-                pfs_file = max(files, key=os.path.getsize) if files else None
-
-                if not pfs_file or not os.path.isfile(pfs_file):
-                    self._append_to_log(self._t('log.auto.0248'))
-                    return False
-
-                inner_ext = os.path.splitext(pfs_file)[1].lower()
-                if inner_ext == ".ffpkg":
-                    os.makedirs(final_dst, exist_ok=True)
-                    game_dump_dir = os.path.join(tmp_dir, "_game_dump_a4")
-                    _rmtree_force(game_dump_dir)
-                    os.makedirs(game_dump_dir, exist_ok=True)
-                    self._append_to_log(self._t('log.auto.0249', v0=os.path.basename(pfs_file), v1=os.path.getsize(pfs_file) / 1073741824))
-                    self.root.after(0, lambda: self.status_label.config(
-                        text="Aufgabe 4 – A6-ffpkg extrahieren (UFS2Tool/Dokan)..."
-                    ))
-                    self.task_current_step = 3
-                    self.task_progress = max(self.task_progress, 50.0)
-                    self.task_displayed = max(self.task_displayed, 50.0)
-                    if not self._extract_ffpkg_to_folder_via_ufs2tool(
-                        pfs_file,
-                        game_dump_dir,
-                        status_prefix="Aufgabe 4 / A6-ffpkg",
-                        progress_start=50.0,
-                        progress_end=98.0,
-                    ):
-                        return False
-
-                    self._backfill_preview_from_dir_for_source(src, game_dump_dir)
-                    self._append_to_log(self._t('log.auto.0250'))
-                    for _item in os.listdir(game_dump_dir):
-                        _src_item = os.path.join(game_dump_dir, _item)
-                        _dst_item = os.path.join(final_dst, _item)
-                        try:
-                            shutil.move(_src_item, _dst_item)
-                        except OSError as _mv_exc:
-                            self._append_to_log(self._t('log.auto.0246', v0=_item, v1=_mv_exc))
-                    self._append_to_log(self._t('log.auto.0247', v0=final_dst))
-                    self.task_current_step = 4
-                    self.task_progress = 98.0
-                    self.progress_engine.begin_validate("Validierung...")
-                    self.progress_engine.commit_task()
-                    return True
-
-                self._append_to_log(self._t('log.auto.0251', v0=os.path.basename(pfs_file), v1=os.path.getsize(pfs_file) / 1073741824))
-                self.task_current_step = 2
-                self.task_progress = max(self.task_progress, 20.0)
-                self.task_displayed = max(self.task_displayed, 20.0)
-                self.root.after(0, lambda: self.status_label.config(
-                    text="Aufgabe 4 – A3-Innenimage entpacken (mkpfs)..."))
-
-                os.makedirs(final_dst, exist_ok=True)
-                game_dump_dir = os.path.join(tmp_dir, "_game_dump_a4")
-                os.makedirs(game_dump_dir, exist_ok=True)
-
-                # Versuch 1: mkpfs unpack auf das innere PFS-Image
-                inner_unpack_ok = self._execute_mkpfs(
-                    ["unpack", "--overwrite", pfs_file, game_dump_dir],
-                    monitor_target_path=game_dump_dir,
-                    monitor_source_file=pfs_file,
+            # ── Ergebnis ins Ziel verschieben ──
+            self._backfill_preview_from_dir_for_source(src, aktueller_ordner)
+            self.task_current_step = 4
+            self.task_progress = max(self.task_progress, 95.0)
+            self.task_displayed = max(self.task_displayed, 95.0)
+            self._append_to_log(self._t('log.auto.0250'))
+            os.makedirs(final_dst, exist_ok=True)
+            fehler = self._move_tree_into(aktueller_ordner, final_dst)
+            if fehler:
+                self._append_to_log(
+                    self._t('unpack.move_failed', anzahl=len(fehler), liste="; ".join(fehler[:5]))
                 )
+                return False
 
-                if not self.is_running:
-                    return False
-
-                dump_files = []
-                if inner_unpack_ok:
-                    dump_files = os.listdir(game_dump_dir)
-
-                if inner_unpack_ok and len(dump_files) > 0:
-                    # PFS-Image erfolgreich entpackt → game_dump_dir enthält den Game-Dump
-                    self._append_to_log(self._t('log.auto.0252', v0=len(dump_files)))
-                    self._backfill_preview_from_dir_for_source(src, game_dump_dir)
-                    self.task_current_step = max(self.task_current_step, 3)
-                    self.task_progress = max(self.task_progress, 50.0)
-                    self._append_to_log(self._t('log.auto.0253'))
-                    # Dateien von game_dump_dir nach final_dst verschieben
-                    for _item in os.listdir(game_dump_dir):
-                        _src_item = os.path.join(game_dump_dir, _item)
-                        _dst_item = os.path.join(final_dst, _item)
-                        try:
-                            shutil.move(_src_item, _dst_item)
-                        except OSError as _mv_exc:
-                            self._append_to_log(self._t('log.auto.0246', v0=_item, v1=_mv_exc))
-                    self._append_to_log(self._t('log.auto.0247', v0=final_dst))
-                    self.task_current_step = 4
-                    self.task_progress = 98.0
-                    self.progress_engine.begin_validate("Validierung...")
-                    self.progress_engine.commit_task()
-                    return True
-                else:
-                    # Primärpfad: echtes exFAT-Image → native MkPFS-exFAT-Extraktion.
-                    # Legacy-Fallback: OSFMount → robocopy nur wenn der Parser scheitert.
-                    self._append_to_log(self._t('log.auto.0254'))
-                    self.root.after(0, lambda: self.status_label.config(
-                        text="Aufgabe 4 – A3-exFAT entpacken (MkPFS)..."))
-
-                    if self._extract_exfat_to_folder_mkpfs(
-                        pfs_file,
-                        game_dump_dir,
-                        status_prefix="Aufgabe 4",
-                        log_prefix="A3-exFAT extrahiert",
-                        progress_start=50.0,
-                        progress_end=98.0,
-                    ):
-                        self._backfill_preview_from_dir_for_source(src, game_dump_dir)
-                        for _item in os.listdir(game_dump_dir):
-                            _src_item = os.path.join(game_dump_dir, _item)
-                            _dst_item = os.path.join(final_dst, _item)
-                            try:
-                                shutil.move(_src_item, _dst_item)
-                            except OSError as _mv_exc:
-                                self._append_to_log(self._t('log.auto.0246', v0=_item, v1=_mv_exc))
-                        self._append_to_log(self._t('log.auto.0247', v0=final_dst))
-                        self.task_current_step = 4
-                        self.task_progress = 98.0
-                        self.progress_engine.begin_validate("Validierung...")
-                        self.progress_engine.commit_task()
-                        return True
-
-                    self._append_to_log(self._t('log.auto.0255'))
-
-                    import ctypes as _ct
-                    import time as _time
-                    import subprocess as _sp
-
-                    osf_exe = self._find_osfmount()
-                    if not osf_exe:
-                        self._append_to_log(self._t('log.auto.0224'))
-                        return False
-
-                    self._append_to_log(self._t('log.auto.0256', v0=osf_exe))
-
-                    drives_bitmask = _ct.windll.kernel32.GetLogicalDrives() if hasattr(_ct, 'windll') else 0
-                    free_letter = None
-                    for _i in range(25, 3, -1):
-                        if not (drives_bitmask & (1 << _i)):
-                            free_letter = chr(65 + _i) + ":"
-                            break
-                    if not free_letter:
-                        self._append_to_log(self._t('log.auto.0226'))
-                        return False
-
-                    drive_letter = free_letter
-                    _rmtree_force(game_dump_dir)
-                    os.makedirs(game_dump_dir, exist_ok=True)
-
-                    try:
-                        self._cleanup_stale_osfmounts()
-                        _mount_result = _sp.run(
-                            [osf_exe, "-a", "-t", "file", "-f", pfs_file,
-                             "-m", drive_letter, "-o", "ro,rem"],
-                            capture_output=True, text=True,
-                        )
-                        if _mount_result.returncode != 0:
-                            self._append_to_log(self._t('log.auto.0257', v0=_mount_result.stderr or _mount_result.stdout))
-                            return False
-                        self._register_osf_mount(drive_letter, osf_exe, pfs_file)
-
-                        for _ in range(20):
-                            if os.path.exists(drive_letter + "\\"):
-                                break
-                            _time.sleep(0.5)
-                        else:
-                            self._append_to_log(self._t('log.auto.0258'))
-                            return False
-
-                        self._append_to_log(self._t('log.auto.0259', v0=drive_letter))
-                        self.task_current_step = max(self.task_current_step, 3)
-                        self.task_progress = max(self.task_progress, 50.0)
-                        self._append_to_log(self._t('log.auto.0260'))
-
-                        _robo_cmd = [
-                            "robocopy.exe",
-                            drive_letter + "\\", game_dump_dir,
-                            "/E", "/COPY:DAT", "/DCOPY:DA",
-                            "/R:2", "/W:2", "/NP", "/MT:8",
-                        ]
-                        self._append_to_log(self._t('log.auto.0261', v0=' '.join(_robo_cmd)))
-
-                        def _log_robo_line(line: str) -> None:
-                            self._append_to_log(line + "\n")
-
-                        _robo_rc = self._run_subprocess_logged(
-                            _robo_cmd,
-                            timeout=24 * 60 * 60,
-                            encoding="utf-8",
-                            errors="replace",
-                            line_callback=_log_robo_line,
-                        )
-                        _robo_ok = _robo_rc < 8
-
-                        if _robo_ok:
-                            self._backfill_preview_from_dir_for_source(src, game_dump_dir)
-                            # Dateien von game_dump_dir nach final_dst verschieben
-                            for _item in os.listdir(game_dump_dir):
-                                _src_item = os.path.join(game_dump_dir, _item)
-                                _dst_item = os.path.join(final_dst, _item)
-                                try:
-                                    shutil.move(_src_item, _dst_item)
-                                except OSError as _mv_exc:
-                                    self._append_to_log(self._t('log.auto.0246', v0=_item, v1=_mv_exc))
-                            self._append_to_log(self._t('log.auto.0247', v0=final_dst))
-                            self.task_current_step = 4
-                            self.task_progress = 98.0
-                            self.progress_engine.begin_validate("Validierung...")
-                            self.progress_engine.commit_task()
-                            return True
-                        else:
-                            self._append_to_log(self._t('log.auto.0262', v0=_robo_rc))
-                            return False
-                    finally:
-                        # Dismount
-                        if drive_letter:
-                            _drive_letter_norm = self._normalize_drive_letter(drive_letter)
-                            if _drive_letter_norm:
-                                try:
-                                    if self._safe_dismount_drive(_drive_letter_norm, osf_exe, log=False, retries=4):
-                                        self._unregister_osf_mount(_drive_letter_norm)
-                                except Exception:
-                                    pass
-                            drive_letter = None
+            self._append_to_log(self._t('log.auto.0247', v0=final_dst))
+            self.task_progress = 98.0
+            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.commit_task()
+            return True
 
         finally:
             # Temp-Verzeichnis bereinigen
             _rmtree_force(tmp_base)
-        # Expliziter Fallback-Rueckgabewert für unbehandelte Fehler-/Abbruchpfade.
-        return False
 
     def _mode_pack_file(self, src: str, dst: str, uncompressed: bool = False) -> bool:
         """Konvertiert eine .ExFat-Datei zu einer .FFPFSC- oder unkomprimierten .FFPFS-Datei (Aufgabe 3).
@@ -21812,6 +22278,17 @@ class PS5ConverterGUI:
     def _mode_unpack_to_exfat(self, src: str, dst: str) -> bool:
         """Entpackt eine .FFPFSC-Datei zu einer .ExFat-Datei (Aufgabe 2).
 
+        Der Container wird über denselben Weg wie in Aufgabe 4 Ebene für Ebene
+        ausgepackt (:meth:`_entpacke_container_ebenen`), erst danach entsteht
+        aus den Spieldateien ein neues, PS5-taugliches exFAT-Image. Welche
+        Bauform vorliegt, entscheidet die Kennung des inneren Abbilds und nicht
+        seine Endung; ein Container mit einer Ebene mehr lief hier früher in
+        einen Abbruch wegen fehlender eboot.bin.
+
+        Vor dem Bau des neuen Images wird geprüft, ob wirklich alle Dateien
+        ausgepackt wurden – aus einem halben Dump entstünde sonst ein formal
+        gültiges .exfat, das auf der Konsole nicht läuft.
+
         Args:
             src: Pfad zur .FFPFSC-Quelldatei.
             dst: Zielverzeichnis.
@@ -21931,124 +22408,32 @@ class PS5ConverterGUI:
                 },
             )
 
-            # Erkennen ob die .ffpfsc ein pack-folder (Aufgabe 1) oder
-            # pack-file (Aufgabe 3) Container ist:
-            # - pack-folder: tmp_dir enthält Unterordner (z.B. sce_sys/)
-            #   -> tmp_dir IST bereits der Game-Dump -> exFAT aus Ordner erstellen
-            # - pack-file: tmp_dir enthält nur eine einzelne Datei (z.B. BREW12345.exfat)
-            #   -> diese Datei ist bereits das exFAT-Image -> umbenennen
-            subdirs = [
-                d for d in os.listdir(tmp_dir)
-                if os.path.isdir(os.path.join(tmp_dir, d))
-            ]
-            is_folder_dump = len(subdirs) > 0
-
-            if is_folder_dump:
-                # FALL B: pack-folder .ffpfsc (Aufgabe 1 Ausgabe)
-                # tmp_dir enthält den vollständigen Game-Dump (eboot.bin, sce_sys/, etc.).
-                #
-                # KORREKTE Methode: vendorter MkPFS-Writer
-                self._append_to_log(self._t('log.auto.0285'))
-                # Schritte: unpack(0-33%), exFAT-Image erstellen(33-100%)
-                self.task_num_steps = 2
-                self.task_step_ends = [33.0, 100.0]
-                self.task_current_step = 2
-                self.task_progress = max(self.task_progress, 33.0)
-
-                self._append_to_log(self._t('log.auto.0286'))
-                # eboot.bin Pruefung (MkPFS exFAT-Writer Voraussetzung)
-                eboot_path = os.path.join(tmp_dir, "eboot.bin")
-                if not os.path.isfile(eboot_path):
-                    self._append_to_log(self._t('log.auto.0287', v0=eboot_path))
-                    return _fail_keep_tmp("eboot.bin fehlt im Ordnerdump")
-
-                # Zieldatei vorab löschen falls vorhanden (Überschreiben)
-                if os.path.exists(final_output):
-                    try:
-                        os.remove(final_output)
-                    except OSError:
-                        pass
-
-                exfat_ok = self._create_exfat_from_folder(
-                    src_dir=tmp_dir,
-                    out_file=final_output,
-                    pct_start=33.0,
-                    pct_end=98.0,
-                )
-                if not exfat_ok or not self.is_running:
-                    return _fail_keep_tmp("exFAT-Erstellung aus Ordnerdump fehlgeschlagen")
-
-                self.task_final_output_path = final_output
-                self._seed_preview_cache_from_dir(tmp_dir, final_output)
-                self._append_to_log(self._t('log.auto.0288', v0=final_output))
-                self.progress_engine.begin_validate("Validierung...")
-                self.progress_engine.commit_task()
-                return True
-
-            # FALL A: pack-file .ffpfsc (enthält ein PFS-Image oder exFAT-Image)
-            # Die .ffpfsc enthält eine einzelne Datei (z.B. pfs_image.dat oder *.exfat).
-            # Diese Datei kann ein PFS-Image ODER ein exFAT-Image sein.
-            # Strategie:
-            #   1. Versuche mkpfs unpack auf die entpackte Datei (PFS → Game-Dump)
-            #   2. Falls das klappt: Game-Dump → neues .exfat via _create_exfat_from_folder
-            #   3. Falls mkpfs fehlschlägt: Es ist ein exFAT → OSFMount → robocopy → neues .exfat
-            files = [
-                os.path.join(tmp_dir, f)
-                for f in os.listdir(tmp_dir)
-                if os.path.isfile(os.path.join(tmp_dir, f))
-            ]
-            pfs_file = max(files, key=os.path.getsize) if files else None
-
-            if not pfs_file or not os.path.isfile(pfs_file):
-                self._append_to_log(self._t('log.auto.0248'))
-                return _fail_keep_tmp("Inneres Image nicht gefunden")
-
-            self._append_to_log(self._t('log.auto.0289', v0=os.path.basename(pfs_file), v1=os.path.getsize(pfs_file) / 1073741824))
-
-            # Schritte: unpack(0-20%), inner-unpack/extract(20-50%), neues exfat(50-98%)
-            self.task_num_steps = 3
-            self.task_step_ends = [20.0, 50.0, 98.0]
-            self.task_current_step = 1
-
-            # --- Schritt 2: Innere Datei entpacken (mkpfs unpack auf PFS-Image) ---
-            self._append_to_log(self._t('log.auto.0290'))
-            self.root.after(0, lambda: self.status_label.config(
-                text="Aufgabe 2 – Inneres Image entpacken (mkpfs)..."))
-
-            # Game-Dump Ordner im Temp-Verzeichnis
+            # ── Ebene für Ebene auspacken, bis die Spieldateien erscheinen ──
+            # Denselben Weg geht Aufgabe 4. Früher stand hier eine eigene
+            # Fassung, die nur eine Ebene tief kam: Bei einem Container mit
+            # einer Ebene mehr (mkpfs pack folder ohne --raw, danach noch
+            # einmal mkpfs pack file) landete eine einzelne .exfat-Datei im
+            # Arbeitsordner, und Schritt 3 scheiterte an der fehlenden
+            # eboot.bin – statt den Container einfach fertig auszupacken.
+            erwartet: tuple[int, int] | None = None
             if cp_stage == "task2_step2_done" and cp_game_dump_dir and os.path.isdir(cp_game_dump_dir):
                 game_dump_dir = cp_game_dump_dir
-                inner_unpack_ok = True
-                try:
-                    dump_files = os.listdir(game_dump_dir)
-                except Exception:
-                    dump_files = []
                 self._append_to_log(self._t('log.auto.0291'))
             else:
-                game_dump_dir = os.path.join(tmp_dir, "_game_dump_extracted")
-                os.makedirs(game_dump_dir, exist_ok=True)
-
-                # Versuche mkpfs unpack auf die entpackte Datei
-                inner_unpack_ok = self._execute_mkpfs(
-                    ["unpack", "--overwrite", pfs_file, game_dump_dir],
-                    monitor_target_path=game_dump_dir,
-                    monitor_source_file=pfs_file,
+                ebenen = self._entpacke_container_ebenen(
+                    tmp_dir,
+                    status_prefix="Aufgabe 2",
+                    pct_start=20.0,
+                    pct_end=50.0,
+                    # Sollwerte des äußeren Containers: Sie gelten, wenn die
+                    # Spieldateien direkt darin liegen (pack folder --raw).
+                    erwartet=self._container_expectations(
+                        src, self._sniff_image_kind(src) or "pfs"
+                    ),
                 )
-                dump_files = []
-
-            if not self.is_running:
-                return _fail_keep_tmp("Abbruch waehrend Schritt 2")
-
-            # Prüfe ob mkpfs unpack erfolgreich war (Game-Dump mit Dateien)
-            if inner_unpack_ok:
-                try:
-                    dump_files = os.listdir(game_dump_dir)
-                except Exception:
-                    dump_files = []
-
-            if inner_unpack_ok and len(dump_files) > 0:
-                # PFS-Image erfolgreich entpackt → game_dump_dir enthält den Game-Dump
-                self._append_to_log(self._t('log.auto.0252', v0=len(dump_files)))
+                if ebenen is None:
+                    return _fail_keep_tmp("Inneres Abbild nicht entpackt")
+                game_dump_dir, erwartet = ebenen
                 self._save_runtime_checkpoint(
                     mode="unpack_to_exfat",
                     src=src,
@@ -22061,253 +22446,38 @@ class PS5ConverterGUI:
                         "final_output": final_output,
                     },
                 )
+
+            if not self.is_running:
+                return _fail_keep_tmp("Abbruch waehrend Schritt 2")
+
+            # Schrittgeometrie erst jetzt festzurren: Ob eine Zwischenebene
+            # ausgepackt werden musste, steht vorher nicht fest. Der
+            # branch_hint aus dem Report bleibt der Startwert für die Anzeige
+            # während Schritt 1.
+            lag_direkt_im_container = os.path.abspath(game_dump_dir) == os.path.abspath(tmp_dir)
+            if lag_direkt_im_container:
+                self._append_to_log(self._t('log.auto.0285'))
+                self.task_num_steps = 2
+                self.task_step_ends = [33.0, 100.0]
+                self.task_current_step = 2
+                exfat_start = 33.0
             else:
-                # mkpfs konnte die Datei nicht entpacken → es ist ein exFAT-Image
-                # Primärpfad: native MkPFS-exFAT-Extraktion. Legacy nur als Fallback.
-                self._append_to_log(self._t('log.auto.0292'))
-                self.root.after(0, lambda: self.status_label.config(
-                    text="Aufgabe 2 – exFAT entpacken (MkPFS)..."))
+                self.task_num_steps = 3
+                self.task_step_ends = [20.0, 50.0, 98.0]
+                self.task_current_step = 3
+                exfat_start = 50.0
 
-                if self._extract_exfat_to_folder_mkpfs(
-                    pfs_file,
-                    game_dump_dir,
-                    status_prefix="Aufgabe 2",
-                    log_prefix="exFAT-Image extrahiert",
-                    progress_start=20.0,
-                    progress_end=50.0,
-                ):
-                    try:
-                        dump_files = os.listdir(game_dump_dir)
-                    except Exception:
-                        dump_files = []
-                    self._save_runtime_checkpoint(
-                        mode="unpack_to_exfat",
-                        src=src,
-                        dst=dst,
-                        state="in_progress",
-                        extra={
-                            "stage": "task2_step2_done",
-                            "tmp_dir": tmp_dir,
-                            "game_dump_dir": game_dump_dir,
-                            "final_output": final_output,
-                        },
-                    )
-                else:
-                    self._append_to_log(self._t('log.auto.0293'))
+            # Vollständigkeit prüfen, bevor daraus ein neues Image gebaut wird:
+            # Ein halb entpackter Dump ergibt ein .exfat, das auf der Konsole
+            # nicht läuft – und das fällt sonst erst dort auf.
+            if not self._pruefe_dump_vollstaendig(game_dump_dir, erwartet):
+                return _fail_keep_tmp("Inneres Abbild unvollstaendig entpackt")
 
-                    import ctypes as _ct
-                    import time as _time
-
-                    osf_exe = self._find_osfmount()
-                    if not osf_exe:
-                        self._append_to_log(self._t('log.auto.0224'))
-                        return _fail_keep_tmp("OSFMount fehlt in Schritt 2")
-
-                    self._append_to_log(self._t('log.auto.0256', v0=osf_exe))
-
-                    # Freien Laufwerksbuchstaben finden (Z: abwärts)
-                    drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-                    free_letter = None
-                    for i in range(25, 3, -1):
-                        if not (drives_bitmask & (1 << i)):
-                            free_letter = chr(65 + i) + ":"
-                            break
-                    if not free_letter:
-                        self._append_to_log(self._t('log.auto.0226'))
-                        return _fail_keep_tmp("Kein freier Laufwerksbuchstabe")
-
-                    # game_dump_dir leeren (enthält evtl. Reste vom fehlgeschlagenen mkpfs)
-                    _rmtree_force(game_dump_dir)
-                    os.makedirs(game_dump_dir, exist_ok=True)
-
-                    mount_ok = False
-                    try:
-                        # Stale Mounts aufräumen
-                        self._cleanup_stale_osfmounts()
-
-                        # .exfat read-only mounten
-                        self._append_to_log(self._t('log.auto.0228', v0=os.path.basename(pfs_file), v1=free_letter))
-                        try:
-                            result = subprocess.run(
-                                [osf_exe, "-a", "-t", "file", "-f", pfs_file,
-                                 "-m", free_letter, "-o", "ro,rem"],
-                                capture_output=True, text=True,
-                                creationflags=_NO_WIN_FLAGS,
-                                startupinfo=_silent_startupinfo()
-                            )
-                        except OSError as exc:
-                            self._append_to_log(self._t('log.auto.0294', v0=exc))
-                            return _fail_keep_tmp("OSFMount-Startfehler")
-                        if result.returncode != 0:
-                            self._append_to_log(self._t('log.auto.0295', v0=result.returncode, v1=result.stderr or result.stdout))
-                            return _fail_keep_tmp("OSFMount-Mount fehlgeschlagen")
-                        mount_ok = True
-                        self._register_osf_mount(free_letter, osf_exe, pfs_file)
-
-                        # Warten bis Laufwerk erscheint (max. 10s)
-                        for _ in range(20):
-                            if os.path.exists(free_letter + "\\"):
-                                break
-                            _time.sleep(0.5)
-                        else:
-                            self._append_to_log(self._t('log.auto.0296', v0=free_letter))
-                            return _fail_keep_tmp("Gemountetes Laufwerk erschien nicht")
-
-                        self._append_to_log(self._t('log.auto.0229', v0=free_letter))
-
-                        # robocopy: Dateien vom gemounteten Image in game_dump_dir kopieren
-                        robo_cmd = [
-                            "robocopy.exe",
-                            free_letter + "\\",
-                            game_dump_dir,
-                            "/E", "/COPY:DAT", "/DCOPY:DAT",
-                            "/R:2", "/W:2", "/NP"
-                        ]
-                        self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n")
-                        self.root.after(0, lambda: self.status_label.config(
-                            text="Aufgabe 2 – Dateien extrahieren (robocopy)..."))
-
-                        _robo_last_pct = [-1]
-                        _robo_last_zero_ts = [0.0]
-                        _dst_probe_last_ts = [0.0]
-                        _dst_probe_last_bytes = [-1]
-                        _robo_speed_ema = [0.0]
-                        _robo_payload = [max(1, int(os.path.getsize(pfs_file)))]
-                        _dst_drive = [os.path.splitdrive(game_dump_dir)[0] or ""]
-                        _dst_used_base = [0]
-                        try:
-                            if _dst_drive[0]:
-                                _dst_used_base[0] = int(shutil.disk_usage(_dst_drive[0] + "\\").used)
-                        except Exception:
-                            _dst_used_base[0] = 0
-
-                        self._copy_total_bytes = int(_robo_payload[0])
-                        self._copy_done_bytes = 0
-                        self._copy_total_exact = False
-                        self._copy_rate_bps = 0.0
-                        self._copy_rate_trend = ""
-
-                        def _log_robo_line(line: str) -> bool:
-                            _ln = line.strip()
-                            if not _ln:
-                                return self.is_running
-
-                            _m_pct = re.match(r"^(\d{1,3})%$", _ln)
-                            if _m_pct:
-                                pct = max(0, min(int(_m_pct.group(1)), 100))
-                                now = time.monotonic()
-                                if pct == 0:
-                                    if now - _dst_probe_last_ts[0] >= 3.0:
-                                        try:
-                                            if _dst_drive[0]:
-                                                du = shutil.disk_usage(_dst_drive[0] + "\\")
-                                                used_b = max(0, int(du.used) - int(_dst_used_base[0]))
-                                                done_b = min(used_b, int(_robo_payload[0]))
-                                                self._copy_done_bytes = max(self._copy_done_bytes, done_b)
-                                                frac = max(0.0, min(done_b / max(_robo_payload[0], 1), 0.995))
-                                                mapped = 20.0 + (50.0 - 20.0) * frac
-                                                self.task_progress = max(self.task_progress, min(mapped, 49.5))
-
-                                                dt = max(0.001, now - (_dst_probe_last_ts[0] or now))
-                                                if _dst_probe_last_bytes[0] >= 0 and dt > 0:
-                                                    inst_bps = max(0.0, (done_b - _dst_probe_last_bytes[0]) / dt)
-                                                    if _robo_speed_ema[0] <= 0.0:
-                                                        _robo_speed_ema[0] = inst_bps
-                                                    else:
-                                                        _robo_speed_ema[0] = _robo_speed_ema[0] * 0.70 + inst_bps * 0.30
-                                                    trend = "stabil"
-                                                    if inst_bps > _robo_speed_ema[0] * 1.08:
-                                                        trend = "steigend"
-                                                    elif inst_bps < _robo_speed_ema[0] * 0.92:
-                                                        trend = "fallend"
-                                                    self._copy_rate_bps = float(_robo_speed_ema[0])
-                                                    self._copy_rate_trend = trend
-                                                _dst_probe_last_bytes[0] = done_b
-                                                _dst_probe_last_ts[0] = now
-
-                                                rate_mb = float(
-                                                    getattr(self, "_copy_rate_bps", 0.0) or 0.0
-                                                ) / (1024 ** 2)
-                                                tr = str(getattr(self, "_copy_rate_trend", "") or "")
-                                                status_text = (
-                                                    f"Aufgabe 2 – Extrahiere... {self._fmt_bytes(done_b)} geschrieben"
-                                                    f" | Obergrenze ~{self._fmt_bytes(int(_robo_payload[0]))}"
-                                                )
-                                                if rate_mb > 0.0:
-                                                    status_text += f" | {rate_mb:.1f} MB/s"
-                                                    if tr:
-                                                        status_text += f" ({tr})"
-                                                self.root.after(
-                                                    0,
-                                                    lambda txt=status_text: self.status_label.config(text=txt),
-                                                )
-                                        except Exception:
-                                            pass
-                                    if now - _robo_last_zero_ts[0] >= 8.0:
-                                        self._append_to_log(self._t('log.auto.0297'))
-                                        _robo_last_zero_ts[0] = now
-                                    return self.is_running
-
-                                if pct != _robo_last_pct[0]:
-                                    self._append_to_log(self._t('log.auto.0298', v0=pct))
-                                    _robo_last_pct[0] = pct
-                                est_done = int(_robo_payload[0] * (pct / 100.0))
-                                self._copy_done_bytes = max(self._copy_done_bytes, est_done)
-                                mapped = 20.0 + (50.0 - 20.0) * (pct / 100.0)
-                                self.task_progress = max(self.task_progress, min(mapped, 49.5))
-                                return self.is_running
-
-                            self._append_to_log(_ln + "\n")
-                            return self.is_running
-
-                        rc = self._run_subprocess_logged(
-                            robo_cmd,
-                            timeout=24 * 60 * 60,
-                            encoding="mbcs",
-                            errors="replace",
-                            line_callback=_log_robo_line,
-                        )
-                        if rc == 130 and not self.is_running:
-                            return _fail_keep_tmp("Abbruch waehrend robocopy")
-
-                        if rc >= 8:
-                            self._append_to_log(self._t('log.auto.0299', v0=rc))
-                            return _fail_keep_tmp("robocopy fehlgeschlagen")
-
-                        if self._copy_total_bytes > 0:
-                            self._copy_done_bytes = self._copy_total_bytes
-                        self._append_to_log(self._t('log.auto.0300'))
-                        self._save_runtime_checkpoint(
-                            mode="unpack_to_exfat",
-                            src=src,
-                            dst=dst,
-                            state="in_progress",
-                            extra={
-                                "stage": "task2_step2_done",
-                                "tmp_dir": tmp_dir,
-                                "game_dump_dir": game_dump_dir,
-                                "final_output": final_output,
-                            },
-                        )
-
-                    finally:
-                        # Immer dismounten
-                        if mount_ok:
-                            self._append_to_log(self._t('log.auto.0301', v0=free_letter))
-                            _free_letter_norm = self._normalize_drive_letter(free_letter)
-                            if _free_letter_norm:
-                                try:
-                                    if self._safe_dismount_drive(_free_letter_norm, osf_exe, log=False, retries=4):
-                                        self._unregister_osf_mount(_free_letter_norm)
-                                except Exception:
-                                    pass
-
-            self.task_progress = max(self.task_progress, 50.0)
+            self.task_progress = max(self.task_progress, exfat_start)
 
             self._seed_preview_cache_from_dir(game_dump_dir, final_output)
             # --- Schritt 3: Neues PS5-kompatibles .exfat erstellen ---
             self._append_to_log(self._t('log.auto.0302'))
-            self.task_current_step = 3
             self.root.after(0, lambda: self.status_label.config(
                 text="Aufgabe 2 – Neues exFAT-Image erstellen..."))
 
@@ -22327,7 +22497,7 @@ class PS5ConverterGUI:
             exfat_ok = self._create_exfat_from_folder(
                 src_dir=game_dump_dir,
                 out_file=final_output,
-                pct_start=50.0,
+                pct_start=exfat_start,
                 pct_end=98.0,
             )
             if not exfat_ok or not self.is_running:
@@ -25690,6 +25860,487 @@ class PS5ConverterGUI:
     # UNSIGNIERTEN Container. Bewusst kein Ersatz für ein echtes Paket:
     # ohne RSA-Signatur und ohne Fake-SELF-Spoofing, siehe Warntext.
     # ==================================================================
+    # ==================================================================
+    # PS4 PKG -> ffpfsc  (eingebettetes PS4-FFPFSC 0.2.8, siehe dort
+    # UPSTREAM.md). Das Werkzeug bringt eine eigene Qt-Oberflaeche mit; die
+    # bleibt aussen vor. Hier laeuft nur seine Kommandozeile, angetrieben von
+    # einem Fenster im Stil dieses Programms.
+    # ==================================================================
+
+    def _ps4ffpsc_befehl(self) -> list[str]:
+        """Baut den Aufruf für die eingebettete PS4-Kommandozeile.
+
+        Als eingefrorene Anwendung ruft sich das Programm selbst mit dem
+        internen Schalter auf; aus der Quelle heraus wird die Hauptdatei an
+        denselben Schalter gehängt.
+
+        Returns:
+            Die Befehlsliste ohne die eigentlichen Unterbefehle.
+        """
+        if getattr(sys, "frozen", False):
+            return [sys.executable, "--ps4ffpsc"]
+        return [sys.executable, os.path.abspath(__file__), "--ps4ffpsc"]
+
+    def _ps4ffpsc_lauf(
+        self,
+        argumente: list[str],
+        *,
+        arbeitsordner: str,
+        zeile_callback,
+        fortschritt_callback=None,
+        prozess_ablage: dict | None = None,
+        json_modus: bool = False,
+    ) -> tuple[int, str]:
+        """Führt einen PS4-FFPFSC-Unterbefehl aus und meldet Zeilen zurück.
+
+        stderr wird in stdout geführt: Das Werkzeug schreibt seine
+        Fortschrittsmeldungen (``PS4FFPSC_PROGRESS {…}``) dorthin, sein
+        Protokoll ebenso. Getrennt zu lesen bräuchte zwei Lesefäden, ohne
+        etwas zu gewinnen - die Reihenfolge bliebe trotzdem ungewiss.
+
+        Args:
+            argumente:            Unterbefehl samt Schaltern.
+            arbeitsordner:        Ordner für Zwischenstände des Werkzeugs.
+            zeile_callback:       Bekommt jede Protokollzeile.
+            fortschritt_callback: Bekommt die entschlüsselten Fortschrittsdaten.
+            prozess_ablage:       Nimmt den laufenden Prozess auf, damit ein
+                                  Abbruch ihn beenden kann.
+            json_modus:           Haelt stderr getrennt, damit auf stdout reines
+                                  JSON steht. Fuer --json-Abfragen noetig.
+
+        Returns:
+            ``(Rückgabewert, gesammelte Ausgabe)``.
+        """
+        befehl = [*self._ps4ffpsc_befehl(), *argumente]
+        gesammelt: list[str] = []
+        prozess = subprocess.Popen(
+            befehl,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if json_modus else subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=_ps4ffpsc_umgebung(arbeitsordner),
+            creationflags=_NO_WIN_FLAGS,
+            startupinfo=_silent_startupinfo(),
+        )
+        if prozess_ablage is not None:
+            prozess_ablage["prozess"] = prozess
+        if json_modus:
+            # stdout bleibt unangetastet, damit die Antwort als Ganzes lesbar
+            # ist; das Protokoll kommt getrennt ueber stderr.
+            stdout_text, stderr_text = prozess.communicate()
+            for zeile in (stderr_text or "").splitlines():
+                text = zeile.rstrip()
+                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
+                    continue
+                if text.strip():
+                    zeile_callback(text)
+            return int(prozess.returncode or 0), stdout_text or ""
+        try:
+            for zeile in prozess.stdout or []:
+                text = zeile.rstrip("\r\n")
+                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
+                    if fortschritt_callback is not None:
+                        try:
+                            fortschritt_callback(
+                                json.loads(text[len(_PS4FFPSC_PROGRESS_PREFIX):])
+                            )
+                        except (ValueError, TypeError) as exc:
+                            logger.debug("PS4-Fortschritt nicht lesbar: %s", exc)
+                    continue
+                gesammelt.append(text)
+                if text.strip():
+                    zeile_callback(text)
+        finally:
+            prozess.wait()
+        return int(prozess.returncode or 0), "\n".join(gesammelt)
+
+    def _show_ps4_pkg_converter(self) -> None:
+        """Öffnet das Fenster „PS4 PKG → ffpfsc".
+
+        Wandelt PS4-PKG (Basis, Patch, optional DLC) oder ein bereits
+        entpacktes PS4-Spiel in ein ShadowMountPlus-Abbild um. Die Arbeit
+        macht das eingebettete PS4-FFPFSC 0.2.8; dieses Fenster wählt aus,
+        zeigt den Fortschritt und schreibt das Protokoll mit.
+        """
+        c = self._COLORS
+        if not _ps4ffpsc_wurzel():
+            messagebox.showerror(
+                self._t("ps4pkg.window_title"),
+                self._t("ps4pkg.missing_tool"),
+                parent=self.root,
+            )
+            return
+        if not _ps4ffpsc_entpacker():
+            messagebox.showerror(
+                self._t("ps4pkg.window_title"),
+                self._t("ps4pkg.no_extractor", system=_systemname()),
+                parent=self.root,
+            )
+            return
+
+        win = self._build_modern_toplevel(
+            self._t("ps4pkg.window_title"), 980, 760, min_width=860, min_height=640)
+        self._build_modern_header(
+            win, self._t("ps4pkg.window_title"), self._t("ps4pkg.subtitle"))
+
+        körper = tk.Frame(win, bg=c["bg_main"], padx=18)
+        körper.pack(fill="both", expand=True)
+
+        quelle_art = tk.StringVar(value="pkg_dir")
+        quelle_var = tk.StringVar()
+        ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
+        format_var = tk.StringVar(value="ffpfsc")
+        stufe_var = tk.IntVar(value=7)
+        worker_var = tk.IntVar(value=max(1, (os.cpu_count() or 4) // 2))
+        dlc_var = tk.BooleanVar(value=False)
+        status_var = tk.StringVar(value=self._t("ps4pkg.status_idle"))
+        laeuft = {"aktiv": False, "abbruch": False, "prozess": None}
+        gefunden: dict[str, dict] = {}
+
+        # ── Quelle ──────────────────────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.source_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
+        art_reihe = tk.Frame(körper, bg=c["bg_main"])
+        art_reihe.pack(fill="x")
+        for wert, schluessel in (
+            ("pkg_dir", "ps4pkg.source_kind_dir"),
+            ("pkg_file", "ps4pkg.source_kind_files"),
+            ("dump_dir", "ps4pkg.source_kind_dump"),
+        ):
+            tk.Radiobutton(
+                art_reihe, text=self._t(schluessel), value=wert, variable=quelle_art,
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["bg_card"], activebackground=c["bg_main"],
+                activeforeground=c["fg_primary"], highlightthickness=0, bd=0,
+            ).pack(side="left", padx=(0, 14))
+
+        pfad_reihe = tk.Frame(körper, bg=c["bg_main"])
+        pfad_reihe.pack(fill="x", pady=(6, 0))
+        tk.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
+
+        def _quelle_waehlen() -> None:
+            """Öffnet den zur gewählten Art passenden Auswahldialog."""
+            art = quelle_art.get()
+            if art == "pkg_file":
+                pfade = filedialog.askopenfilenames(
+                    title=self._t("ps4pkg.choose_files"),
+                    filetypes=[(self._t("ps4pkg.filetype_pkg"), "*.pkg")], parent=win)
+                if pfade:
+                    quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in pfade))
+                return
+            ordner = filedialog.askdirectory(
+                title=self._t("ps4pkg.choose_dir"),
+                initialdir=self._get_source_dialog_initial_dir() or None, parent=win)
+            if ordner:
+                quelle_var.set(os.path.normpath(ordner))
+
+        ttk.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
+
+        # ── Gefundene Spiele ────────────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(14, 4))
+        liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
+        liste_rahmen.pack(fill="both", expand=True)
+        spalten = ("title_id", "titel", "version", "teile")
+        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=7)
+        for spalte, breite in zip(spalten, (110, 420, 110, 190)):
+            # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
+            # Werte links, die Ueberschrift zentriert Tk sonst weiter.
+            liste.heading(spalte, text=self._t(f"ps4pkg.col_{spalte}"), anchor="w")
+            liste.column(spalte, width=breite, anchor="w")
+        liste.pack(side="left", fill="both", expand=True)
+        liste_scroll = ttk.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
+        liste_scroll.pack(side="right", fill="y")
+        liste.configure(yscrollcommand=liste_scroll.set)
+
+        # ── Ziel und Einstellungen ──────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.output_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(14, 4))
+        ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
+        ziel_reihe.pack(fill="x")
+        tk.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
+
+        def _ziel_waehlen() -> None:
+            ordner = filedialog.askdirectory(title=self._t("ps4pkg.choose_output"), parent=win)
+            if ordner:
+                ziel_var.set(os.path.normpath(ordner))
+
+        ttk.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
+
+        einstell = tk.Frame(körper, bg=c["bg_main"])
+        einstell.pack(fill="x", pady=(12, 0))
+        tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
+                     values=("ffpfsc", "exfat"), font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        tk.Label(einstell, text=self._t("ps4pkg.level_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
+                    font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        tk.Label(einstell, text=self._t("ps4pkg.workers_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
+                    width=4, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        dlc_kasten = tk.Checkbutton(
+            einstell, text=self._t("ps4pkg.dlc_label"), variable=dlc_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
+            selectcolor=c["bg_card"], activebackground=c["bg_main"],
+            activeforeground=c["fg_warning"], highlightthickness=0, bd=0,
+        )
+        dlc_kasten.pack(side="left")
+        DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
+
+        # ── Fortschritt und Protokoll ───────────────────────────────────
+        balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
+        balken.pack(fill="x", pady=(14, 4))
+        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=920, justify="left").pack(fill="x")
+
+        protokoll = tk.Text(körper, height=8, font=("Consolas", pt(9)),
+                            bg=c["console_bg"], fg=c["console_fg"], relief="flat",
+                            insertbackground=c["console_fg"], wrap="none")
+        protokoll.pack(fill="both", expand=True, pady=(10, 0))
+        protokoll_scroll = ttk.Scrollbar(körper, orient="horizontal", command=protokoll.xview)
+        protokoll_scroll.pack(fill="x")
+        protokoll.configure(xscrollcommand=protokoll_scroll.set)
+
+        def _protokoll(text: str) -> None:
+            """Hängt eine Zeile an das Protokollfeld des Fensters an."""
+            def _setzen() -> None:
+                if not protokoll.winfo_exists():
+                    return
+                protokoll.insert("end", text.rstrip("\n") + "\n")
+                protokoll.see("end")
+            self._spaeter_im_fenster(win, _setzen)
+
+        def _status(text: str) -> None:
+            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+
+        def _balken(wert: float) -> None:
+            self._spaeter_im_fenster(win, lambda: balken.configure(value=max(0.0, min(100.0, wert))))
+
+        # ── Quellenangaben in CLI-Schalter übersetzen ───────────────────
+        def _quellen_argumente() -> list[str] | None:
+            """Baut die Quellschalter; None bei ungültiger Eingabe."""
+            eingabe = quelle_var.get().strip()
+            if not eingabe:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_source"), parent=win)
+                return None
+            art = quelle_art.get()
+            if art == "pkg_file":
+                argumente: list[str] = []
+                for teil in eingabe.split(os.pathsep):
+                    pfad = teil.strip()
+                    if pfad:
+                        argumente += ["--pkg-file", pfad]
+                if not argumente:
+                    messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                           self._t("ps4pkg.no_source"), parent=win)
+                    return None
+                return argumente
+            if not os.path.isdir(eingabe):
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_source"), parent=win)
+                return None
+            return ["--dump-dir" if art == "dump_dir" else "--pkg-dir", eingabe]
+
+        def _arbeitsordner() -> str:
+            """Legt den Arbeitsordner für Zwischenstände an.
+
+            Unter Windows wird dabei auf die Pfadlänge geachtet: Der
+            mitgelieferte PKG-Entpacker bricht bei tiefen Zielen mit
+            „Failed to write extracted PKG entry" ab. Nachgemessen an einem
+            Arbeitsordner von 150 Zeichen – das Spiel selbst legt darunter
+            noch ``unpacked/<Title-ID>/…/sce_sys/…`` an und sprengt damit die
+            260-Zeichen-Grenze. In dem Fall weicht der Arbeitsordner auf einen
+            kurzen Pfad im Stammverzeichnis aus; das fertige Abbild landet
+            trotzdem im gewählten Zielordner.
+            """
+            basis = (ziel_var.get().strip()
+                     or str(getattr(self, "temp_path", None).get() if hasattr(self, "temp_path") else "").strip()
+                     or tempfile.gettempdir())
+            ordner = os.path.join(basis, "ps4ffpsc_arbeit")
+            if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
+                laufwerk = os.environ.get("SystemDrive", "C:") + os.sep
+                ausweich = os.path.join(laufwerk, "ps4ffpsc_arbeit")
+                _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
+                ordner = ausweich
+            os.makedirs(ordner, exist_ok=True)
+            return ordner
+
+        # ── Einlesen ────────────────────────────────────────────────────
+        def _einlesen() -> None:
+            """Liest die Quelle ein und füllt die Spieleliste."""
+            if laeuft["aktiv"]:
+                return
+            argumente = _quellen_argumente()
+            if argumente is None:
+                return
+            liste.delete(*liste.get_children())
+            gefunden.clear()
+            laeuft["aktiv"] = True
+            _status(self._t("ps4pkg.status_scanning"))
+            _balken(0.0)
+
+            def _arbeit() -> None:
+                arbeit = _arbeitsordner()
+                rc, ausgabe = self._ps4ffpsc_lauf(
+                    ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
+                     os.path.join(arbeit, "unpacked")],
+                    arbeitsordner=arbeit,
+                    zeile_callback=_protokoll,
+                    prozess_ablage=laeuft,
+                    json_modus=True,
+                )
+                laeuft["aktiv"] = False
+                if rc != 0:
+                    _status(self._t("ps4pkg.status_scan_failed", code=rc))
+                    return
+                try:
+                    daten = json.loads(ausgabe.strip())
+                except ValueError:
+                    _status(self._t("ps4pkg.status_scan_unreadable"))
+                    return
+                # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
+                # nicht mit einer Liste.
+                spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
+
+                def _fuellen() -> None:
+                    for spiel in spiele:
+                        if not isinstance(spiel, dict):
+                            continue
+                        title_id = str(spiel.get("title_id", "?"))
+                        gefunden[title_id] = spiel
+                        patches = spiel.get("patches") or []
+                        basis = spiel.get("base") or []
+                        neueste = patches or basis
+                        version = "-"
+                        if neueste and isinstance(neueste[-1], dict):
+                            version = str(neueste[-1].get("version")
+                                          or neueste[-1].get("app_version") or "-")
+                        teile = self._t(
+                            "ps4pkg.parts",
+                            patches=len(patches),
+                            dlc=len(spiel.get("dlc") or []),
+                        )
+                        if not spiel.get("buildable", True):
+                            teile = self._t("ps4pkg.not_buildable") + " - " + teile
+                        liste.insert("", "end", iid=title_id, values=(
+                            title_id, str(spiel.get("title", "-")), version, teile,
+                        ))
+                        for hinweis in list(spiel.get("warnings") or [])[:5]:
+                            _protokoll(f"[{title_id}] {hinweis}")
+                        for konflikt in list(spiel.get("conflicts") or [])[:5]:
+                            _protokoll(f"[{title_id}] {konflikt}")
+                    if gefunden:
+                        liste.selection_set(next(iter(gefunden)))
+                    _status(self._t("ps4pkg.status_found", count=len(gefunden)))
+
+                self._spaeter_im_fenster(win, _fuellen)
+
+            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-list").start()
+
+        # ── Erstellen ───────────────────────────────────────────────────
+        def _fortschritt(daten: dict) -> None:
+            """Übersetzt eine Fortschrittsmeldung des Werkzeugs in den Balken."""
+            bereich = str(daten.get("scope", ""))
+            aktuell = float(daten.get("current", 0) or 0)
+            gesamt = float(daten.get("total", 0) or 0)
+            if gesamt > 0:
+                _balken(aktuell / gesamt * 100.0)
+            _status(self._t("ps4pkg.status_stage", stage=bereich,
+                            current=int(aktuell), total=int(gesamt)))
+
+        def _erstellen() -> None:
+            """Baut das Abbild für das ausgewählte Spiel."""
+            if laeuft["aktiv"]:
+                return
+            auswahl = liste.selection()
+            if not auswahl:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_game"), parent=win)
+                return
+            ziel = ziel_var.get().strip()
+            if not ziel or not os.path.isdir(ziel):
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_output"), parent=win)
+                return
+            argumente = _quellen_argumente()
+            if argumente is None:
+                return
+            if dlc_var.get() and not messagebox.askyesno(
+                    self._t("ps4pkg.window_title"), self._t("ps4pkg.dlc_confirm"), parent=win):
+                return
+
+            title_id = auswahl[0]
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _balken(0.0)
+            _status(self._t("ps4pkg.status_building", title=title_id))
+
+            def _arbeit() -> None:
+                arbeit = _arbeitsordner()
+                befehl = [
+                    "build", title_id, *argumente,
+                    "--output-dir", ziel,
+                    "--work-dir", arbeit,
+                    "--unpacked-dir", os.path.join(arbeit, "unpacked"),
+                    "--output-format", format_var.get(),
+                    "--compression-level", str(int(stufe_var.get())),
+                    "--compression-workers", str(int(worker_var.get())),
+                    "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
+                    "--verbose",
+                ]
+                rc, _ausgabe = self._ps4ffpsc_lauf(
+                    befehl,
+                    arbeitsordner=arbeit,
+                    zeile_callback=_protokoll,
+                    fortschritt_callback=_fortschritt,
+                    prozess_ablage=laeuft,
+                )
+                laeuft["aktiv"] = False
+                if laeuft["abbruch"]:
+                    _status(self._t("ps4pkg.status_cancelled"))
+                    return
+                if rc == 0:
+                    _balken(100.0)
+                    _status(self._t("ps4pkg.status_done", path=ziel))
+                    self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
+                else:
+                    _status(self._t("ps4pkg.status_failed", code=rc))
+
+            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-build").start()
+
+        def _abbrechen() -> None:
+            """Beendet einen laufenden Vorgang."""
+            prozess = laeuft.get("prozess")
+            if not laeuft["aktiv"] or prozess is None:
+                return
+            laeuft["abbruch"] = True
+            _status(self._t("ps4pkg.status_cancelling"))
+            try:
+                prozess.terminate()
+            except OSError as exc:
+                logger.debug("PS4-Vorgang nicht beendbar: %s", exc)
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
+        ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
+                   command=_einlesen).pack(side="left")
+        ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
+                   command=_erstellen).pack(side="left", padx=(8, 0))
+
     def _show_debug_pkg_builder(self) -> None:
         """Öffnet den Bauer für unsignierte Debug-.pkg-Container."""
         c = self._COLORS
@@ -29948,6 +30599,137 @@ def _ensure_av_exclusion() -> None:
     except Exception as exc:
         logger.error("AV-Ausnahme fehlgeschlagen: %s", exc)
 
+#: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
+PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
+
+#: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
+#: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
+_PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
+
+#: Hoechstlaenge des Arbeitsordners fuer das PS4-Werkzeug unter Windows.
+#: Darunter legt es noch "unpacked/<Title-ID>/<Paket>/sce_sys/..." an; ab etwa
+#: 150 Zeichen scheitert der PKG-Entpacker an der 260-Zeichen-Grenze.
+_PS4FFPSC_MAX_ARBEITSPFAD = 110
+
+
+def _ps4ffpsc_wurzel() -> str:
+    """Findet den eingebetteten PS4-FFPFSC-Ordner.
+
+    Gesucht wird an denselben Stellen wie die MkPFS-Engine: im entpackten
+    PyInstaller-Bündel, neben dem Programm und im Arbeitsverzeichnis.
+
+    Returns:
+        Absoluter Pfad, oder "" wenn der Ordner fehlt.
+    """
+    laufzeit_wurzel = os.path.dirname(
+        sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+    )
+    kandidaten = [getattr(sys, "_MEIPASS", ""), laufzeit_wurzel, os.getcwd()]
+    for wurzel in kandidaten:
+        if not wurzel:
+            continue
+        pfad = os.path.join(os.path.abspath(wurzel), PS4FFPFSC_ORDNER)
+        if os.path.isfile(os.path.join(pfad, "ps4ffpsc", "cli.py")):
+            return pfad
+    return ""
+
+
+def _ps4ffpsc_entpacker() -> str:
+    """Sucht den PKG-Entpacker fuer die laufende Plattform.
+
+    Mitgeliefert werden die Windows-Fassungen (``.exe``) und die fuer Apple
+    Silicon (ohne Endung, arm64). Fuer Linux und Intel-Macs gibt es beim
+    Hersteller keine fertigen Programmdateien; dort bleibt die Umwandlung
+    ohne diesen Helfer stehen - besser vorher sagen als mitten im Lauf.
+
+    Returns:
+        Pfad des passenden Entpackers, oder "" wenn keiner vorliegt.
+    """
+    wurzel = _ps4ffpsc_wurzel()
+    if not wurzel:
+        return ""
+    name = "ps4_pkg_extract.exe" if IST_WINDOWS else "ps4_pkg_extract"
+    pfad = os.path.join(wurzel, "bin", name)
+    if not os.path.isfile(pfad):
+        return ""
+    # Auf dem Mac liegt nur die arm64-Fassung bei; auf Intel laeuft sie nicht.
+    if sys.platform == "darwin" and platform.machine() not in ("arm64", "aarch64"):
+        return ""
+    return pfad
+
+
+def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:
+    """Baut die Umgebung für einen PS4-FFPFSC-Lauf.
+
+    Das Werkzeug findet seine mitgelieferten Teile (``bin/ps4_pkg_extract.exe``,
+    ``bin/ps4-dlc-patch.exe``) über ``PS4FFPSC_RESOURCE_ROOT`` und legt seinen
+    Arbeitsstand unter ``PS4FFPSC_DATA_ROOT`` ab. Ohne beides würde es im
+    eingefrorenen Betrieb im Entpackordner von PyInstaller suchen - der bei
+    jedem Start woanders liegt und nach dem Ende verschwindet.
+
+    Args:
+        arbeitsordner: Ordner für Zwischenstände; leer lässt die Vorgabe stehen.
+
+    Returns:
+        Kopie der aktuellen Umgebung mit den ergänzten Werten.
+    """
+    umgebung = dict(os.environ)
+    wurzel = _ps4ffpsc_wurzel()
+    if wurzel:
+        umgebung["PS4FFPSC_RESOURCE_ROOT"] = wurzel
+    if arbeitsordner:
+        umgebung["PS4FFPSC_DATA_ROOT"] = arbeitsordner
+    # Fortschrittsmeldungen als JSON-Zeilen auf stderr (PS4FFPSC_PROGRESS …).
+    umgebung["PS4FFPSC_GUI_PROGRESS"] = "1"
+    umgebung["PYTHONIOENCODING"] = "utf-8"
+    umgebung["PYTHONUTF8"] = "1"
+    return umgebung
+
+
+def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
+    """Führt einen der beiden internen PS4-Modi aus.
+
+    ``--ps4ffpsc``  startet die Kommandozeile des eingebetteten Werkzeugs,
+    ``--ps4-mkpfs`` die von ihm geprüfte MkPFS-Fassung 1.0.0. Den zweiten
+    Schalter ruft das Werkzeug selbst auf (siehe ``pipeline.mkpfs_command``);
+    beide sind für Menschen nicht gedacht.
+
+    Wichtig ist die eigene MkPFS-Fassung: Das Programm arbeitet sonst mit
+    0.0.9, und beide Wege sollen bei der Fassung bleiben, gegen die sie
+    geprüft wurden.
+
+    Args:
+        modus: ``--ps4ffpsc`` oder ``--ps4-mkpfs``.
+        argv:  Die restlichen Argumente.
+
+    Returns:
+        Rückgabewert des aufgerufenen Werkzeugs.
+    """
+    wurzel = _ps4ffpsc_wurzel()
+    if not wurzel:
+        print(
+            f"[FEHLER] Der Ordner {PS4FFPFSC_ORDNER} fehlt - das PS4-Werkzeug "
+            "ist nicht mitgeliefert.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if modus == "--ps4-mkpfs":
+        pfad = os.path.join(wurzel, "mkpfs_1_0_0")
+        if pfad not in sys.path:
+            sys.path.insert(0, pfad)
+        from mkpfs.cli import cli_mkpfs_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+        return int(cli_mkpfs_main(argv) or 0)
+
+    os.environ.setdefault("PS4FFPSC_RESOURCE_ROOT", wurzel)
+    if wurzel not in sys.path:
+        sys.path.insert(0, wurzel)
+    from ps4ffpsc.cli import main as ps4ffpsc_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    return int(ps4ffpsc_main(argv) or 0)
+
+
 def _is_admin() -> bool:
     """Prüft ob das Programm mit erhöhten Rechten läuft.
 
@@ -30467,6 +31249,13 @@ if __name__ == "__main__":
     # Sofort nach freeze_support: Ab hier wird jede unbehandelte
     # Ausnahme aufgezeichnet, auch die aus dem Programmstart.
     _haken_setzen()
+
+    # Interne Modi des eingebetteten PS4-Werkzeugs. Sie muessen VOR der
+    # Rechtepruefung stehen: Diese Prozesse startet das Programm selbst, sie
+    # erben die Rechte des Aufrufers, und eine zweite UAC-Abfrage haette
+    # niemanden, der sie beantwortet - der Lauf bliebe stehen.
+    if len(sys.argv) > 1 and sys.argv[1] in ("--ps4ffpsc", "--ps4-mkpfs"):
+        sys.exit(_run_ps4_subcommand(sys.argv[1], sys.argv[2:]))
 
     # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
     _mit_ok, _mit_msg = _register_mit_license_runtime()

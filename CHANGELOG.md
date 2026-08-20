@@ -2,9 +2,41 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.66):** Auf dem Mac ist die Schrift so groß wie unter Windows, und alle Knöpfe tragen wieder ihre eigene Farbe.
+> **Kurz zum aktuellen Stand (v1.8.67):** Jede Bauart einer .ffpfsc wird jetzt vollständig entpackt, neben QUELLE steht welche es ist - und unter WEITERE TOOLS gibt es den neuen Eintrag PS4 PKG zu ffpfsc.
 
 ---
+
+## v1.8.67 – 20.08.2026
+
+### Jede Bauart einer .ffpfsc wird vollständig entpackt
+
+Eine `.ffpfsc` kann auf mehrere Arten gebaut sein, und man sieht es der Datei von außen nicht an. Bisher packte das Programm höchstens **eine** Ebene tief aus. Steckte eine Ebene mehr darin, landete eine einzelne `.exfat`-Datei im Dump-Ordner – und gemeldet wurde trotzdem Erfolg. Das Backup war unbrauchbar, ohne dass etwas darauf hindeutete.
+
+- **Aufgabe 2 und Aufgabe 4 packen jetzt Ebene für Ebene aus, bis die Spieldateien erscheinen.** Woran erkannt wird, was in der nächsten Ebene steckt: an der Kennung des Abbilds, nicht an seinem Namen oder seiner Endung. Damit sind alle vier Bauarten abgedeckt – auch die von `mkpfs pack folder` ohne `--raw`, bei der ein exFAT-Abbild zwischen Container und Spieldateien liegt.
+- **Zum Schluss wird nachgezählt.** Dateien und Bytes werden gegen die Werte gehalten, die im Abbild stehen. Fehlt etwas, bricht die Aufgabe mit dem genauen Fehlbetrag ab, statt einen halben Ordner als fertig zu melden.
+- **Gleichnamige Ordner werden beim Verschieben zusammengeführt** statt ineinandergelegt, und ein misslungenes Verschieben lässt die Aufgabe fehlschlagen. Vorher wurde es nur ins Protokoll geschrieben – und der Ordner, in dem die Dateien noch lagen, unmittelbar danach gelöscht.
+- **Der Platzbedarf halbiert sich:** Jedes ausgepackte Abbild wird gelöscht, sobald seine Ebene fertig ist.
+- **Aufgabe 7 (AMPR EMU Manager) ging denselben Weg** und zeigte bei so einem Container eine einzelne `.exfat` statt des Dump-Inhalts an. Auch sie packt jetzt vollständig aus.
+
+### Neben QUELLE steht, wie der Container gebaut ist
+
+Sobald eine `.ffpfsc` oder `.ffpfs` als Quelle anliegt, steht rechts daneben, was darin steckt – etwa "exFAT-Innenabbild (mkpfs pack folder/pack file)" oder "PFS-Innenabbild (Aufbau dieses Programms)". Ist eine Ebene zu viel darin, erscheint das in Orange; ein Tooltip erklärt, was das bedeutet und wie man es richtig baut. Geprüft wird im Hintergrund, gelesen werden dabei nur Kopf und Verzeichnisse, nie die Nutzdaten.
+
+### .ffpfsc und .ffpfs lassen sich ineinander umwandeln
+
+Beide Richtungen waren gesperrt, mit dem Hinweis "lässt sich nicht nachträglich entpacken". Das stimmte einmal, seit dem vollständigen Auspacken aber nicht mehr: Der Weg ist derselbe wie zu `.ffpkg` – erst in den Dump-Ordner, dann neu bauen. Aufgabe 2 bietet die beiden Formate jetzt an.
+
+### Neu: PS4 PKG zu ffpfsc
+
+Unter **WEITERE TOOLS** gibt es einen neuen Eintrag. Er führt PS4-PKG – Basisspiel, Patches und wahlweise DLC – oder ein bereits entpacktes PS4-Spiel zu einem ShadowMountPlus-Abbild zusammen, wahlweise als `.ffpfsc` oder als unkomprimiertes `.exfat`. Die Arbeit macht das eingebettete PS4 FFPFSC 0.2.8; die Oberfläche ist die dieses Programms, auf Deutsch und Englisch, mit Fortschritt, Protokoll und Abbruch.
+
+Drei Fehler des Werkzeugs sind dabei aufgefallen und behoben:
+
+- **Es verlangte einen Compiler und CMake**, obwohl der fertige PKG-Entpacker daneben liegt – und meldete deshalb immer "nicht bereit".
+- **Ein Absturz des Entpackers galt als "PKG nicht unterstützt".** Beim Prüfen einer PKG mit Prüfsumme bricht er ab; der Rückgabewert wurde nicht angesehen, und heraus kam ein Fehler in der Datei statt einer im Werkzeug. Jetzt wird ohne Prüfsummenlauf wiederholt und diese selbst nachgerechnet.
+- **Zu lange Arbeitspfade ließen das Entpacken scheitern** ("Failed to write extracted PKG entry"). Wird der Arbeitsordner zu tief, weicht das Programm auf einen kurzen Pfad aus und schreibt es ins Protokoll. Das fertige Abbild landet trotzdem im gewählten Zielordner.
+
+Was die Vorlage als bekannte Einschränkung nennt, bleibt bestehen: Manche Spiele scheitern auf der Konsole an der Trophäenregistrierung (`errcode=0x80551618`), und die DLC-Einbettung ist ausdrücklich experimentell – sie ist deshalb standardmäßig aus und fragt vor dem Start nach.
 
 ## v1.8.66 – 20.08.2026
 

@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.66
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.67
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -65,6 +65,14 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
     _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
+
+# Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
+# Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
+# und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
+# Vorlage ist bewusst nicht dabei.
+_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
+if os.path.isdir(_ps4ffpsc):
+    _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
 
 # Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten. Dadurch steht der
 # Versionsspeicher in Aufgabe 7 ohne manuelle Ordnerwahl bereit.
@@ -246,7 +254,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.66',
+    name='PS5_Dump_Image_Converter_v1.8.67',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
