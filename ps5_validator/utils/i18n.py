@@ -69,6 +69,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'main.welcome_subtitle': {'de': 'Wählen Sie links einen Modus aus, um zu beginnen.', 'en': 'Select a task on the left to get started.'},
     'main.config_for': {'de': 'Konfiguration für: {task}', 'en': 'Configuration for: {task}'},
     'main.status_ready': {'de': 'Bereit.', 'en': 'Ready.'},
+    'main.status_filezilla_started': {'de': 'FileZilla gestartet: {name}',
+                                      'en': 'FileZilla started: {name}'},
     'main.source_label': {'de': 'QUELLE', 'en': 'SOURCE'},
     'main.source_and_target_label': {'de': 'QUELLE & ZIEL', 'en': 'SOURCE & TARGET'},
     'main.dump_folder_button': {'de': 'Dump Ordner', 'en': 'Dump folder'},

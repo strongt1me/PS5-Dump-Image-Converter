@@ -22,6 +22,7 @@ from __future__ import annotations
 import ast
 import importlib.util
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -605,6 +606,154 @@ class TranslokationTests(unittest.TestCase):
             self.assertIn(schluessel, STRINGS)
             for sprache in ("de", "en"):
                 self.assertTrue(STRINGS[schluessel].get(sprache), schluessel)
+
+
+class AquaKnopfTests(unittest.TestCase):
+    """Auf Aqua ignoriert ein ``tk.Button`` seine Hintergrundfarbe.
+
+    Uebrig blieb die helle Systemflaeche, auf der die hellen Schriftfarben
+    dieses Programms stehen. Im Mitschnitt vom 20.08.2026 war der Fussknopf
+    "Was man sonst ev. noch braucht" (fg_primary auf Weiss) nicht mehr zu
+    entziffern, und die Titelleiste zeigte eine Reihe heller Pillen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def test_titelleistenknoepfe_gehen_ueber_die_weiche(self):
+        anfang = self.quelle.index("self._titlebar_right = tk.Frame(")
+        ende = self.quelle.index("        # 8. Bindings", anfang)
+        block = self.quelle[anfang:ende]
+        self.assertEqual(block.count(" = flach_knopf("), 13,
+                         "Nicht alle 13 Titelleistenknoepfe gehen ueber flach_knopf.")
+        self.assertNotIn(" = tk.Button(", block,
+                         "In der Titelleiste steht wieder ein Systemknopf.")
+
+    def test_fussknoepfe_gehen_ueber_die_weiche(self):
+        for name in ("self.info_toggle_btn = ", "self.resources_btn = "):
+            stelle = self.quelle.index(name)
+            self.assertTrue(
+                self.quelle[stelle:stelle + len(name) + 12].endswith("flach_knopf("),
+                f"{name.strip()} entsteht nicht ueber flach_knopf.")
+
+    def test_weiche_liefert_je_system_das_richtige(self):
+        import tkinter as tk
+
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        try:
+            wurzel = tk._default_root or tk.Tk()
+        except tk.TclError:
+            self.skipTest("keine Anzeige verfuegbar")
+        with mock.patch.object(APP, "IST_MACOS", True):
+            self.assertIsInstance(APP.flach_knopf(wurzel, text="x"), APP.FlachButton)
+        with mock.patch.object(APP, "IST_MACOS", False):
+            self.assertIsInstance(APP.flach_knopf(wurzel, text="x"), tk.Button)
+
+    def test_flachbutton_traegt_seine_farbe_und_ruft_auf(self):
+        import tkinter as tk
+
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        try:
+            wurzel = tk._default_root or tk.Tk()
+        except tk.TclError:
+            self.skipTest("keine Anzeige verfuegbar")
+        gerufen = []
+        knopf = APP.FlachButton(wurzel, text="Probe", bg="#123456", fg="#abcdef",
+                                command=lambda: gerufen.append(1))
+        # Der Punkt der ganzen Uebung: die Farbe bleibt, wie sie gesetzt wurde.
+        self.assertEqual(str(knopf.cget("bg")), "#123456")
+        self.assertEqual(str(knopf.cget("fg")), "#abcdef")
+        knopf.invoke()
+        self.assertEqual(gerufen, [1])
+        # Abgeschaltet loest er nicht aus - wie ein tk.Button auch nicht.
+        knopf.config(state=tk.DISABLED)
+        knopf.invoke()
+        self.assertEqual(gerufen, [1])
+        knopf.config(state=tk.NORMAL)
+        knopf.invoke()
+        self.assertEqual(gerufen, [1, 1])
+        # config(command=...) muss den Aufruf austauschen, nicht abstuerzen.
+        anders = []
+        knopf.config(command=lambda: anders.append(1), text="Neu")
+        knopf.invoke()
+        self.assertEqual((anders, str(knopf.cget("text"))), ([1], "Neu"))
+        knopf.destroy()
+
+    def test_pt_laesst_windows_und_linux_unberuehrt(self):
+        """Ausserhalb von macOS muss die Zahl unveraendert durchgehen."""
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        if APP.IST_MACOS:
+            self.skipTest("laeuft auf macOS")
+        self.assertEqual(APP._MACOS_SCHRIFTFAKTOR, 1.0)
+        for punkte in (7, 8, 9, 10, 12, 16, 24):
+            self.assertEqual(APP.pt(punkte), punkte)
+
+    def test_alle_schriftangaben_gehen_ueber_pt(self):
+        """Sonst faellt die naechste neue Beschriftung wieder aus dem Raster.
+
+        Die Umstellung war mechanisch (288 Stellen). Genau deshalb braucht sie
+        eine Sperre: Eine einzelne nackte Punktzahl faellt beim Lesen nicht auf,
+        auf dem Mac aber sofort - sie stuende dann bei 60 % der Groesse ihrer
+        Nachbarn.
+        """
+        nackt = re.findall(r"\((?:UI_SCHRIFT|MONO_SCHRIFT), \d", self.quelle)
+        self.assertEqual(nackt, [],
+                         f"{len(nackt)} Schriftangabe(n) ohne pt() im Quelltext.")
+        # Gegenprobe, dass das Muster ueberhaupt greift.
+        self.assertGreater(
+            len(re.findall(r"\((?:UI_SCHRIFT|MONO_SCHRIFT), pt\(", self.quelle)), 250)
+
+    def test_faktor_trifft_die_windows_pixelhoehen(self):
+        """Ziel der Umstellung: dasselbe Schriftbild wie unter Windows.
+
+        Vergleichsmass ist die Anzeigeskalierung, mit der die Fassung dort
+        laeuft (125 %, ``tk scaling`` 1,6683). Rundung darf einen Bildpunkt
+        abweichen - mehr nicht.
+        """
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        faktor = APP.MACOS_SCHRIFT_SKALIERUNG
+        for punkte in (7, 8, 9, 10, 12, 14, 16, 18, 24):
+            auf_mac = max(1, round(punkte * faktor))
+            auf_windows = round(punkte * 1.6683)
+            self.assertLessEqual(
+                abs(auf_mac - auf_windows), 1,
+                f"{punkte} pt: Mac {auf_mac} px gegen Windows {auf_windows} px")
+
+    def test_faktor_kommt_aus_der_einstellungsdatei(self):
+        """``macos_font_scaling`` muss ohne neuen Bau wirken - und zwar auf pt()."""
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        with tempfile.TemporaryDirectory() as ordner:
+            with open(os.path.join(ordner, "paths.json"), "w", encoding="utf-8") as f:
+                f.write('{"macos_font_scaling": 2.0}')
+            with mock.patch.object(APP, "IST_MACOS", True),                     mock.patch.object(APP, "_system_konfigurationsordner",
+                                      lambda *a, **k: ordner):
+                self.assertEqual(APP._macos_schriftfaktor(), 2.0)
+            # Unsinnige Werte fallen auf die Vorgabe zurueck.
+            with open(os.path.join(ordner, "paths.json"), "w", encoding="utf-8") as f:
+                f.write('{"macos_font_scaling": 99}')
+            with mock.patch.object(APP, "IST_MACOS", True),                     mock.patch.object(APP, "_system_konfigurationsordner",
+                                      lambda *a, **k: ordner):
+                self.assertEqual(APP._macos_schriftfaktor(),
+                                 APP.MACOS_SCHRIFT_SKALIERUNG)
+
+    def test_tk_scaling_bleibt_wegen_der_seitenleiste(self):
+        """Der Aufruf wirkt nicht auf Schriften - aber auf Tks cm-Vorgaben.
+
+        An denen haengt die Standardbreite eines Canvas (10c) und damit ueber
+        die Aufgabenknoepfe die Breite der Seitenleiste. Faellt der Aufruf weg,
+        schrumpft sie auf dem Mac von 487 auf 283 Pixel.
+        """
+        anfang = self.quelle.index("    def _macos_schrift_skalieren(self)")
+        ende = self.quelle.index("\n    @staticmethod", anfang)
+        block = self.quelle[anfang:ende]
+        self.assertIn('self.root.tk.call("tk", "scaling", vorher * faktor)', block)
 
 
 if __name__ == "__main__":

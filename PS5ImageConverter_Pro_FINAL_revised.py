@@ -459,6 +459,77 @@ WINDOW_MIN_HEIGHT = 700
 # braucht.
 MACOS_SCHRIFT_SKALIERUNG = 1.65
 
+def _macos_schriftfaktor() -> float:
+    """Faktor fuer alle Punktgroessen unter macOS; anderswo 1.0.
+
+    Wird beim Import gebraucht: Punktgroessen stehen auch in Vorgabewerten von
+    Funktionssignaturen (``font: tuple = (UI_SCHRIFT, pt(12), "bold")``), und
+    die wertet Python sofort aus. Die Einstellungsdatei wird deshalb hier
+    unmittelbar gelesen statt ueber ``_load_setting`` - die Oberflaeche gibt es
+    zu diesem Zeitpunkt noch nicht.
+
+    Returns:
+        Der eingestellte Faktor, sonst ``MACOS_SCHRIFT_SKALIERUNG``; ausserhalb
+        von macOS immer 1.0.
+    """
+    if not IST_MACOS:
+        return 1.0
+    try:
+        datei = os.path.join(_system_konfigurationsordner(), "paths.json")
+        if os.path.isfile(datei):
+            with open(datei, "r", encoding="utf-8") as f:
+                wert = float(json.load(f).get("macos_font_scaling",
+                                              MACOS_SCHRIFT_SKALIERUNG))
+            if 0.5 <= wert <= 4.0:
+                return wert
+    except Exception:
+        # Die Schriftwahl darf den Start nie verhindern. Logger gibt es an
+        # dieser Stelle noch nicht.
+        pass
+    return MACOS_SCHRIFT_SKALIERUNG
+
+
+_MACOS_SCHRIFTFAKTOR = _macos_schriftfaktor()
+
+
+def pt(punkte: int) -> int:
+    """Punktgroesse, wie das laufende System sie braucht.
+
+    Unter Windows und X11 gibt sie die Zahl unveraendert zurueck - dort rechnet
+    ``tk scaling`` die Punkte selbst in Pixel um (bei 125 % Anzeigeskalierung
+    mit 1,6683, eine 9-Punkt-Schrift wird also 15 Pixel hoch).
+
+    Auf Aqua greift dieser Weg nicht: Tk reicht eine **positive** Punktgroesse
+    unveraendert an NSFont weiter (``TkFontGetPoints`` gibt sie zurueck, wie sie
+    ist), und macOS rechnet einen Punkt in genau einen Bildpunkt um. Der Umweg
+    ueber die Millimeterangaben des Bildschirms, ueber den ``tk scaling`` sonst
+    wirkt, wird nie betreten. Am Bildschirmmitschnitt vom 20.08.2026 (Mac mini,
+    3440x1440) nachgemessen: Ein Aufgabenknopf traegt 12 Punkt und ist rund 13
+    Pixel hoch - genau die Punktzahl, nicht das 1,65-fache davon. Die ganze
+    Oberflaeche stand damit bei rund 60 % der Windows-Groesse.
+
+    Deshalb wird die Zahl hier angehoben, statt sich auf ``tk scaling`` zu
+    verlassen. Der Faktor 1,65 bringt dieselben Pixelhoehen wie Windows bei
+    125 % - und damit ein Schriftbild, das dort seit Langem erprobt ist.
+    Fensterbreiten, Polsterungen und Abstaende bleiben unberuehrt, genau wie
+    ``tk scaling`` sie unter Windows unberuehrt laesst.
+
+    ``_macos_schrift_skalieren`` bleibt trotzdem bestehen: Der Faktor hebt dort
+    Tks eigene cm/mm-Vorgabewerte, unter anderem die Standardbreite eines Canvas
+    (10c). Daher ist die Seitenleiste auf dem Mac 487 Pixel breit statt 283 -
+    fast genau die 493 unter Windows.
+
+    Args:
+        punkte: Punktgroesse, an Windows geeicht.
+
+    Returns:
+        Punktgroesse fuer das laufende System, mindestens 1.
+    """
+    if _MACOS_SCHRIFTFAKTOR == 1.0:
+        return punkte
+    return max(1, round(punkte * _MACOS_SCHRIFTFAKTOR))
+
+
 WINDOW_WIDTH = 1366
 WINDOW_HEIGHT = 820
 
@@ -1084,7 +1155,7 @@ class DelayedTooltip:
             borderwidth=1,
             padx=10,
             pady=7,
-            font=(UI_SCHRIFT, 9),
+            font=(UI_SCHRIFT, pt(9)),
         )
         label.pack()
         self._tip_window = tip
@@ -1097,6 +1168,69 @@ class DelayedTooltip:
             except Exception:
                 pass
             self._tip_window = None
+
+
+class FlachButton(tk.Label):
+    """Flacher Knopf, der auch unter macOS seine eigene Farbe traegt.
+
+    Aqua zeichnet ein ``tk.Button`` als Systemknopf und ignoriert dabei
+    ``bg``/``activebackground``. Uebrig bleibt die helle Systemflaeche, auf der
+    die hellen Schriftfarben dieses Programms stehen - im Mitschnitt vom
+    20.08.2026 war "Was man sonst ev. noch braucht" (hellblau auf Weiss) nicht
+    mehr zu lesen, und die Titelleistenknoepfe wirkten als helle Pillen.
+
+    Ein ``tk.Label`` malt seine Hintergrundfarbe auf allen drei Systemen selbst.
+    Es kennt ausserdem ``state``, ``disabledforeground``, ``relief``, ``padx``,
+    ``pady`` und ``cursor`` bereits von sich aus - es fehlt nur ``command``.
+    Genau das ergaenzt diese Klasse, damit die Aufrufstellen unveraendert
+    bleiben (auch ``config(state=...)`` und die Hover-Bindungen von aussen).
+
+    Nebenwirkung, die erwuenscht ist: Der Systemknopf bringt auf Aqua eine
+    breite Eigenpolsterung mit. Sie hatte die Seitenleiste ueber ihre Fussknoepfe
+    zusaetzlich in die Breite gezogen.
+    """
+
+    def __init__(self, master: tk.Widget, command=None, **kwargs) -> None:
+        # Ein Label kennt "default" nicht (Knopf-Voreinstellungsrahmen) und
+        # braucht es hier auch nicht - relief/bd setzen die Aufrufstellen.
+        kwargs.pop("default", None)
+        kwargs.setdefault("relief", "flat")
+        kwargs.setdefault("takefocus", 0)
+        super().__init__(master, **kwargs)
+        self._command = command
+        self.bind("<Button-1>", self._on_click)
+
+    def _on_click(self, _event: object = None) -> None:
+        if self._command is None:
+            return
+        try:
+            if str(self.cget("state")) == str(tk.DISABLED):
+                return
+        except tk.TclError:
+            pass
+        self._command()
+
+    def configure(self, cnf=None, **kwargs):  # noqa: A003 - bewusst tk-kompatibler Name
+        if "command" in kwargs:
+            self._command = kwargs.pop("command")
+        return super().configure(cnf, **kwargs)
+
+    config = configure
+
+    def invoke(self) -> None:
+        """Loest den Knopf aus wie ``tk.Button.invoke`` - fuer Tests."""
+        self._on_click()
+
+
+def flach_knopf(master: tk.Widget, **kwargs):
+    """Liefert einen flachen Knopf, der auf dem laufenden System richtig aussieht.
+
+    Unter Windows und X11 faerbt sich ein ``tk.Button`` wie gewuenscht; dort
+    bleibt alles beim Alten. Nur auf Aqua tritt ``FlachButton`` an seine Stelle.
+    """
+    if IST_MACOS:
+        return FlachButton(master, **kwargs)
+    return tk.Button(master, **kwargs)
 
 
 class RoundedButton(tk.Canvas):
@@ -1115,7 +1249,7 @@ class RoundedButton(tk.Canvas):
         master: tk.Widget,
         text: str = "",
         command=None,
-        font: tuple = (UI_SCHRIFT, 12, "bold"),
+        font: tuple = (UI_SCHRIFT, pt(12), "bold"),
         bg: str = "#1f2733",
         fg: str = "#ffffff",
         activebackground: str = "#3b82f6",
@@ -1624,10 +1758,10 @@ class PS5ConverterGUI:
         self._titlebar_right = tk.Frame(self._main_titlebar, bg=self._COLORS["header_bg"])
         self._titlebar_right.pack(side="right")
         # Beenden-Button (direkt links vom Vollbild-Button)
-        self._btn_quit_title = tk.Button(
+        self._btn_quit_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.quit"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["error_btn"],
             activebackground=self._COLORS["error_btn_hover"],
@@ -1649,10 +1783,10 @@ class PS5ConverterGUI:
         self._btn_quit_title.bind("<Enter>", _quit_enter)
         self._btn_quit_title.bind("<Leave>", _quit_leave)
         # Design-Button (links von BEENDEN)
-        self._btn_design_title = tk.Button(
+        self._btn_design_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.design"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1674,10 +1808,10 @@ class PS5ConverterGUI:
         self._btn_design_title.bind("<Enter>", _design_enter)
         self._btn_design_title.bind("<Leave>", _design_leave)
         # Einstellungen-Button (links von DESIGN)
-        self._btn_settings_title = tk.Button(
+        self._btn_settings_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.settings"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1699,10 +1833,10 @@ class PS5ConverterGUI:
         self._btn_settings_title.bind("<Enter>", _settings_enter)
         self._btn_settings_title.bind("<Leave>", _settings_leave)
         # Credits-Button (ganz links in der Titelleiste)
-        self._btn_credits_title = tk.Button(
+        self._btn_credits_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.credits"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["bg_card"],
@@ -1724,10 +1858,10 @@ class PS5ConverterGUI:
         self._btn_credits_title.bind("<Enter>", _cred_enter)
         self._btn_credits_title.bind("<Leave>", _cred_leave)
         # JS Loader Button (links von CREDITS)
-        self._btn_jsloader_title = tk.Button(
+        self._btn_jsloader_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.jsloader"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_warning"],
             activebackground=self._COLORS["bg_card"],
@@ -1749,10 +1883,10 @@ class PS5ConverterGUI:
         self._btn_jsloader_title.bind("<Enter>", _jsloader_enter)
         self._btn_jsloader_title.bind("<Leave>", _jsloader_leave)
         # FileZilla Button (links von JS LOADER)
-        self._btn_ftp_title = tk.Button(
+        self._btn_ftp_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.filezilla"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_success"],
             activebackground=self._COLORS["bg_card"],
@@ -1781,10 +1915,10 @@ class PS5ConverterGUI:
         # AMPR-Index-Builder bereits dort liegen.
 
         # ShadowMount+ Config-Editor Button
-        self._btn_shadowmount_title = tk.Button(
+        self._btn_shadowmount_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.shadowmount"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1806,10 +1940,10 @@ class PS5ConverterGUI:
         self._btn_shadowmount_title.bind("<Leave>", _shadowmount_leave)
 
         # Bibliothek Button (Mehrfachordner-Scan mit Cover/Suche)
-        self._btn_library_title = tk.Button(
+        self._btn_library_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.library"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1831,10 +1965,10 @@ class PS5ConverterGUI:
         self._btn_library_title.bind("<Leave>", _library_leave)
 
         # Klog Button (Kernel-Log-Streaming von der PS5, Port 3232)
-        self._btn_klog_title = tk.Button(
+        self._btn_klog_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.klog"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1856,10 +1990,10 @@ class PS5ConverterGUI:
         self._btn_klog_title.bind("<Leave>", _klog_btn_leave)
 
         # Diagnose-Bericht Button (Fehlerdiagnose zum Teilen/Anhängen)
-        self._btn_diagnostics_title = tk.Button(
+        self._btn_diagnostics_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.diagnostics"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1888,7 +2022,7 @@ class PS5ConverterGUI:
             self.root, tearoff=0,
             bg=self._COLORS["bg_card"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["fg_accent"], activeforeground=self._COLORS["bg_main"],
-            font=(UI_SCHRIFT, 10),
+            font=(UI_SCHRIFT, pt(10)),
         )
         # Eintraege liegen in derselben Reihenfolge in _MORE_TOOLS_ENTRIES, damit
         # _apply_language() sie beim Sprachwechsel neu beschriften kann (Menue-
@@ -1903,10 +2037,10 @@ class PS5ConverterGUI:
             y = self._btn_more_tools_title.winfo_rooty() + self._btn_more_tools_title.winfo_height()
             self._more_tools_menu.post(x, y)
 
-        self._btn_more_tools_title = tk.Button(
+        self._btn_more_tools_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.more_tools"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1928,10 +2062,10 @@ class PS5ConverterGUI:
         self._btn_more_tools_title.bind("<Leave>", _more_tools_leave)
 
         # Sprachumschalter Button (Grundgerüst: Deutsch/Englisch)
-        self._btn_language_title = tk.Button(
+        self._btn_language_title = flach_knopf(
             self._titlebar_right,
             text="EN" if self._current_language == "de" else "DE",
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1955,10 +2089,10 @@ class PS5ConverterGUI:
         # Benutzerhandbuch. Nach dem Sprachknopf gepackt und damit links von ihm:
         # In dieser Leiste laeuft pack(side="right"), das zuletzt gepackte Widget
         # sitzt also am weitesten links.
-        self._btn_manual_title = tk.Button(
+        self._btn_manual_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.manual"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
             activebackground=self._COLORS["bg_card"],
@@ -1990,7 +2124,7 @@ class PS5ConverterGUI:
             self.root, tearoff=0,
             bg=self._COLORS["bg_card"], fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["fg_accent"], activeforeground=self._COLORS["bg_main"],
-            font=(UI_SCHRIFT, 10))
+            font=(UI_SCHRIFT, pt(10)))
         # Reihenfolge und Positionen wie in _CONTEXT_MENU_ENTRIES, damit
         # _apply_language() die Beschriftungen beim Sprachwechsel findet.
         for _pos, (_key, _befehl) in enumerate(self._CONTEXT_MENU_ENTRIES):
@@ -2383,27 +2517,24 @@ class PS5ConverterGUI:
             logger.debug("Hinweis zur Translokation nicht zeigbar: %s", exc)
 
     def _macos_schrift_skalieren(self) -> None:
-        """Vergroessert alle Punktgroessen auf macOS.
+        """Setzt ``tk scaling`` auf macOS herauf.
 
-        Die 264 Schriftangaben im Programm sind in **Punkt** geschrieben, und
-        was ein Punkt in Pixeln bedeutet, entscheidet ``tk scaling``. Windows
-        meldet dort 96 dpi oder mehr - bei 125 % Anzeigeskalierung gemessene
-        1,668, eine 9-Punkt-Schrift wird also 15 Pixel hoch. Aqua rechnet mit
-        72 dpi, dieselbe Angabe ergibt dort 9 Pixel. Dazu kommt, dass die
-        Systemschrift von macOS 13 Punkt gross ist, die von Windows 9 - die
-        Zahlen im Quelltext sind an Windows geeicht.
+        **Die Schriften erreicht dieser Aufruf nicht** - das tut ``pt()``, siehe
+        dort. Als er 2026 eingefuehrt wurde, war genau das die Absicht; am
+        Bildschirmmitschnitt vom 20.08.2026 liess sich dann nachmessen, dass
+        Aqua Punktgroessen an ``tk scaling`` vorbei an NSFont weiterreicht.
 
-        Beides zusammen ist der Grund fuer "die Schrift ist teilweise verdammt
-        klein" (gemeldet am 19.08.2026 an einem Mac mini). Ein einziger
-        ``tk scaling``-Aufruf hebt alle Punktgroessen zugleich - die
-        Alternative waere, 264 Zahlen im Quelltext anzufassen.
-
-        Knoepfe wachsen mit: ttk bemisst sie nach Textgroesse plus Polsterung.
+        Er bleibt trotzdem stehen, weil er etwas anderes tut, das gebraucht
+        wird: Tks eigene Vorgabewerte in Zentimetern und Millimetern haengen an
+        ihm. Der wichtigste davon ist die Standardbreite eines Canvas (10c), und
+        an der haengt ueber die Aufgabenknoepfe die Breite der ganzen
+        Seitenleiste. Ohne den Faktor waere sie auf dem Mac 283 Pixel breit
+        statt 487 - unter Windows sind es 493.
 
         Der Wert laesst sich ohne neuen Bau ueber die Einstellungsdatei
-        aendern (``macos_font_scaling``), damit sich der passende Faktor an
-        echter Hardware finden laesst, ohne dafuer jedes Mal ein .dmg zu
-        bauen. 0 oder ein unsinniger Wert schaltet die Anpassung ab.
+        aendern (``macos_font_scaling``); dieselbe Einstellung liest ``pt()``
+        beim Import, damit Schrift und Seitenleiste nicht auseinanderlaufen.
+        Ein Wert ausserhalb von 0,5 bis 4,0 schaltet die Anpassung ab.
         """
         if not IST_MACOS:
             return
@@ -4050,29 +4181,29 @@ class PS5ConverterGUI:
         style.configure("TLabel",
                          background=c["bg_main"],
                          foreground=c["fg_primary"],
-                         font=(UI_SCHRIFT, 10))
+                         font=(UI_SCHRIFT, pt(10)))
 
         style.configure("Card.TLabel",
                          background=c["bg_card"],
                          foreground=c["fg_primary"],
-                         font=(UI_SCHRIFT, 10))
+                         font=(UI_SCHRIFT, pt(10)))
 
         style.configure("Header.TLabel",
-                 font=(UI_SCHRIFT, 22, "bold"),
+                 font=(UI_SCHRIFT, pt(22), "bold"),
                  foreground=c["fg_accent"],
                          background=c["bg_main"])
 
         style.configure("Subtitle.TLabel",
-                 font=(UI_SCHRIFT, 10),
+                 font=(UI_SCHRIFT, pt(10)),
                          foreground=c["fg_secondary"],
                          background=c["bg_main"])
 
         style.configure("Subheader.TLabel",
-                         font=(UI_SCHRIFT, 12, "bold"),
+                         font=(UI_SCHRIFT, pt(12), "bold"),
                          background=c["bg_card"],
                          foreground=c["fg_accent"])
         style.configure("TButton",
-                         font=(UI_SCHRIFT, 11, "bold"),
+                         font=(UI_SCHRIFT, pt(11), "bold"),
                          padding=(18, 11),
                          background=c["bg_card"],
                          foreground=c["fg_primary"],
@@ -4097,7 +4228,7 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Tkinter-Style TButton konnte nicht konfiguriert werden: %s", exc)
         style.configure("Accent.TButton",
-                         font=(UI_SCHRIFT, 12, "bold"),
+                         font=(UI_SCHRIFT, pt(12), "bold"),
                          padding=(26, 13),
                          background=c["accent_btn"],
                          foreground="white",
@@ -4124,7 +4255,7 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Tkinter-Style Error.TButton konnte nicht konfiguriert werden: %s", exc)
         style.configure("Error.TButton",
-                         font=(UI_SCHRIFT, 11, "bold"),
+                         font=(UI_SCHRIFT, pt(11), "bold"),
                          padding=(18, 11),
                          background=c["error_btn"],
                          foreground="white",
@@ -4200,7 +4331,7 @@ class PS5ConverterGUI:
             self.root.option_add("*TCombobox*Listbox.foreground", c["fg_primary"])
             self.root.option_add("*TCombobox*Listbox.selectBackground", c["fg_accent"])
             self.root.option_add("*TCombobox*Listbox.selectForeground", c["bg_main"])
-            self.root.option_add("*TCombobox*Listbox.font", (UI_SCHRIFT, 10))
+            self.root.option_add("*TCombobox*Listbox.font", (UI_SCHRIFT, pt(10)))
         except Exception as exc:
             logger.debug("Combobox-Popdown-Theme konnte nicht gesetzt werden: %s", exc)
 
@@ -4224,7 +4355,7 @@ class PS5ConverterGUI:
                          bordercolor=c["border"],
                          borderwidth=1,
                          rowheight=24,
-                         font=(UI_SCHRIFT, 10))
+                         font=(UI_SCHRIFT, pt(10)))
         style.map("Treeview",
                   background=[("selected", c["fg_accent"])],
                   foreground=[("selected", c["bg_main"])])
@@ -4232,7 +4363,7 @@ class PS5ConverterGUI:
                          background=c["header_bg"],
                          foreground=c["fg_primary"],
                          relief="flat",
-                         font=(UI_SCHRIFT, 10, "bold"))
+                         font=(UI_SCHRIFT, pt(10), "bold"))
         style.map("Treeview.Heading",
                   background=[("active", c["border"])])
         try:
@@ -4245,7 +4376,7 @@ class PS5ConverterGUI:
         style.configure("TCheckbutton",
                          background=c["bg_main"],
                          foreground=c["fg_primary"],
-                         font=(UI_SCHRIFT, 10))
+                         font=(UI_SCHRIFT, pt(10)))
         style.map("TCheckbutton",
                   background=[("active", c["bg_main"])],
                   foreground=[("active", c["fg_accent"])])
@@ -4257,7 +4388,7 @@ class PS5ConverterGUI:
                          background=c["header_bg"],
                          foreground=c["fg_secondary"],
                          padding=(14, 6),
-                         font=(UI_SCHRIFT, 9, "bold"))
+                         font=(UI_SCHRIFT, pt(9), "bold"))
         style.map("TNotebook.Tab",
                   background=[("selected", c["bg_card"])],
                   foreground=[("selected", c["fg_accent"])])
@@ -4308,7 +4439,7 @@ class PS5ConverterGUI:
         _sidebar_icons_label = tk.Label(
             sidebar,
             text="✕ ○ □ △",
-            font=(UI_SCHRIFT, 12),
+            font=(UI_SCHRIFT, pt(12)),
             fg=self._COLORS["fg_secondary"],
             bg=self._COLORS["bg_main"],
             bd=0,
@@ -4323,7 +4454,7 @@ class PS5ConverterGUI:
         _sidebar_title_label = tk.Label(
             sidebar,
             text="PS5 DUMP",
-            font=(UI_SCHRIFT, 16, "bold"),
+            font=(UI_SCHRIFT, pt(16), "bold"),
             fg=self._COLORS["fg_accent"],
             bg=self._COLORS["bg_main"],
             bd=0,
@@ -4336,7 +4467,7 @@ class PS5ConverterGUI:
         _sidebar_subtitle_label = tk.Label(
             sidebar,
             text="& IMAGE CONVERTER",
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             fg=self._COLORS["fg_primary"],
             bg=self._COLORS["bg_main"],
             bd=0,
@@ -4354,7 +4485,7 @@ class PS5ConverterGUI:
                 sidebar,
                 text=self._t(f"mode.{mode}"),
                 command=lambda m=mode: self._set_mode_from_sidebar(m),
-                font=(UI_SCHRIFT, 12, "bold"),
+                font=(UI_SCHRIFT, pt(12), "bold"),
                 bg=self._COLORS["bg_card"],
                 fg=self._COLORS["fg_primary"],
                 activebackground=self._COLORS["fg_accent"],
@@ -4380,7 +4511,7 @@ class PS5ConverterGUI:
         self._sidebar_preview_label_text = tk.Label(
             sidebar,
             text=self._t("sidebar.preview_label"),
-            font=(UI_SCHRIFT, 7, "bold"),
+            font=(UI_SCHRIFT, pt(7), "bold"),
             bg=self._COLORS["bg_main"],
             fg=self._COLORS["fg_secondary"],
         )
@@ -4403,7 +4534,7 @@ class PS5ConverterGUI:
             # Etwas groesser als die uebrigen Sidebar-Beschriftungen: Der
             # Spielname ist die Bildunterschrift zum Cover und soll lesbar
             # sein (auf Wunsch von 8 auf 9 pt, 16.08.2026).
-            font=(UI_SCHRIFT, 9),
+            font=(UI_SCHRIFT, pt(9)),
             bg=self._COLORS["bg_main"],
             fg=self._COLORS["fg_primary"],
             wraplength=300,
@@ -4428,15 +4559,23 @@ class PS5ConverterGUI:
         # Referenz fuer die Cover-Groesse: das Bild darf nur bis hierher reichen.
         self._sidebar_footer_frame = footer_frame
 
-        self.info_toggle_btn = tk.Button(
+        # flach_knopf statt tk.Button: Aqua ignoriert bei einem Systemknopf die
+        # Hintergrundfarbe. Uebrig blieb eine helle Systemflaeche, auf der die
+        # hellen Schriftfarben (fg_accent / fg_primary) standen - beide
+        # Beschriftungen waren auf dem Mac nicht mehr zu entziffern.
+        self.info_toggle_btn = flach_knopf(
             footer_frame,
             text=self._t("sidebar.game_info_button"),
             command=self._toggle_info_box,
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["bg_card"],
             fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["fg_accent"],
             activeforeground="white",
+            # Ohne eigene Angabe nimmt Tk hierfuer ein helles Grau, das auf der
+            # dunklen Kartenflaeche kaum steht. fg_secondary ist gedaempft
+            # genug, um "noch nicht verfuegbar" zu zeigen, und bleibt lesbar.
+            disabledforeground=self._COLORS["fg_secondary"],
             relief="flat", cursor="hand2", padx=10, pady=6,
             highlightthickness=0,
             state=tk.DISABLED,  # Erst aktiv wenn Quelle geladen
@@ -4444,9 +4583,9 @@ class PS5ConverterGUI:
         self._register_translatable(self.info_toggle_btn, "sidebar.game_info_button")
         self.info_toggle_btn.pack(fill="x", pady=(0, 3))
 
-        self.resources_btn = tk.Button(footer_frame, text=self._t("sidebar.resources_button"),
+        self.resources_btn = flach_knopf(footer_frame, text=self._t("sidebar.resources_button"),
                   command=self._show_resources,
-                  font=(UI_SCHRIFT, 9, "bold"),
+                  font=(UI_SCHRIFT, pt(9), "bold"),
                   bg=self._COLORS["bg_card"], fg=self._COLORS["fg_primary"],
                   activebackground=self._COLORS["fg_accent"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=10, pady=6,
@@ -4523,7 +4662,7 @@ class PS5ConverterGUI:
         self.src_title = ttk.Label(
             path_card,
             text=self._t("main.source_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
@@ -4531,11 +4670,11 @@ class PS5ConverterGUI:
         self._register_translatable(self.src_title, "main.source_label")
         self.src_title.grid(row=0, column=0, sticky="w")
         self._card_caption_labels.append(self.src_title)
-        self.src_entry = ttk.Entry(path_card, textvariable=self.source_path, font=(UI_SCHRIFT, 12))
+        self.src_entry = ttk.Entry(path_card, textvariable=self.source_path, font=(UI_SCHRIFT, pt(12)))
         self.src_entry.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(5, 15))
         self.src_browse_btn = RoundedButton(
             path_card, text=self._t("main.dump_folder_button"), command=self._browse_source,
-            font=(UI_SCHRIFT, 11, "bold"),
+            font=(UI_SCHRIFT, pt(11), "bold"),
             bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
             radius=8, height=44, width=150,
@@ -4546,7 +4685,7 @@ class PS5ConverterGUI:
         self.format_title = ttk.Label(
             path_card,
             text=self._t("main.target_format_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
@@ -4558,7 +4697,7 @@ class PS5ConverterGUI:
             path_card,
             textvariable=self.target_format,
             state="readonly",
-            font=(UI_SCHRIFT, 10),
+            font=(UI_SCHRIFT, pt(10)),
             values=(),
             width=18,
         )
@@ -4574,7 +4713,7 @@ class PS5ConverterGUI:
         self.perf_title = ttk.Label(
             path_card,
             text=self._t("main.compression_worker_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
@@ -4603,7 +4742,7 @@ class PS5ConverterGUI:
             path_card,
             textvariable=self.compression_level_var,
             state="readonly",
-            font=(UI_SCHRIFT, 10),
+            font=(UI_SCHRIFT, pt(10)),
             values=list(self._zstd_level_options.keys()),
             width=16,
         )
@@ -4629,7 +4768,7 @@ class PS5ConverterGUI:
             # Dieselbe Schrift wie die beiden Klapplisten daneben: Ohne
             # font-Angabe nimmt ttk die Standardschrift (9 pt), und das
             # Feld stand sichtbar niedriger als seine Nachbarn.
-            font=(UI_SCHRIFT, 10),
+            font=(UI_SCHRIFT, pt(10)),
             width=5,
             command=self._on_worker_count_changed,
         )
@@ -4662,7 +4801,7 @@ class PS5ConverterGUI:
             path_card,
             textvariable=self.verify_var,
             state="readonly",
-            font=(UI_SCHRIFT, 10),
+            font=(UI_SCHRIFT, pt(10)),
             values=list(self._verify_optionen.keys()),
             width=12,
         )
@@ -4678,7 +4817,7 @@ class PS5ConverterGUI:
         self.verify_inline_title = ttk.Label(
             path_card,
             text=self._t("main.verify_inline_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             # Diese Beschriftung war die erste, die aufgehellt wurde (v1.8.62):
             # Sie sitzt rechts neben der Klappliste und damit ueber der hellsten
             # Stelle der ueblichen Hintergrundbilder. Seit v1.8.63 gilt dieselbe
@@ -4706,7 +4845,7 @@ class PS5ConverterGUI:
         self.format_info_label = ttk.Label(
             path_card,
             text=self._t("main.format_options_hint_default"),
-            font=(UI_SCHRIFT, 9),
+            font=(UI_SCHRIFT, pt(9)),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             wraplength=560,
@@ -4725,7 +4864,7 @@ class PS5ConverterGUI:
         self.dest_title = ttk.Label(
             path_card,
             text=self._t("main.target_folder_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
@@ -4733,11 +4872,11 @@ class PS5ConverterGUI:
         self._register_translatable(self.dest_title, "main.target_folder_label")
         self.dest_title.grid(row=5, column=0, sticky="w")
         self._card_caption_labels.append(self.dest_title)
-        self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=(UI_SCHRIFT, 12))
+        self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=(UI_SCHRIFT, pt(12)))
         self.dest_entry.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.dest_btn = RoundedButton(
             path_card, text=self._t("main.choose_folder_button"), command=self._browse_dest,
-            font=(UI_SCHRIFT, 11, "bold"),
+            font=(UI_SCHRIFT, pt(11), "bold"),
             bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
             radius=8, height=44, width=150,
@@ -4750,7 +4889,7 @@ class PS5ConverterGUI:
         self.temp_title = ttk.Label(
             path_card,
             text=self._t("main.temp_folder_label"),
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
@@ -4758,11 +4897,11 @@ class PS5ConverterGUI:
         self._register_translatable(self.temp_title, "main.temp_folder_label")
         self.temp_title.grid(row=7, column=0, sticky="w", pady=(14, 0))
         self._card_caption_labels.append(self.temp_title)
-        self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=(UI_SCHRIFT, 12))
+        self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=(UI_SCHRIFT, pt(12)))
         self.temp_entry.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.temp_btn = RoundedButton(
             path_card, text=self._t("main.choose_temp_button"), command=self._browse_temp_dir,
-            font=(UI_SCHRIFT, 11, "bold"),
+            font=(UI_SCHRIFT, pt(11), "bold"),
             bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
             radius=8, height=44, width=150,
@@ -4785,7 +4924,7 @@ class PS5ConverterGUI:
             text=self._t("main.shutdown_after_success"),
             variable=self.shutdown_after_success,
             command=self._on_shutdown_setting_changed,
-            font=(UI_SCHRIFT, 9),
+            font=(UI_SCHRIFT, pt(9)),
             bg=self._COLORS["bg_card"],
             fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
             selectcolor=self._COLORS["bg_main"],
@@ -4822,7 +4961,7 @@ class PS5ConverterGUI:
         self.run_btn = RoundedButton(
             action_bar, text=self._t("action.start"),
             command=self._launch_task,
-            font=(UI_SCHRIFT, 13, "bold"),
+            font=(UI_SCHRIFT, pt(13), "bold"),
             bg=self._COLORS["accent_btn"], fg="white",
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
             disabledbackground=self._COLORS["bg_card"], disabledforeground=self._COLORS["fg_secondary"],
@@ -4833,7 +4972,7 @@ class PS5ConverterGUI:
         self.abort_btn = RoundedButton(
             action_bar, text=self._t("action.cancel"),
             command=self._kill_task, state=tk.DISABLED,
-            font=(UI_SCHRIFT, 13, "bold"),
+            font=(UI_SCHRIFT, pt(13), "bold"),
             bg=self._COLORS["error_btn"], fg="white",
             activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
             disabledbackground=self._COLORS["bg_card"], disabledforeground=self._COLORS["fg_secondary"],
@@ -4850,7 +4989,7 @@ class PS5ConverterGUI:
             text="0%",
             width=5,
             anchor="e",
-            font=(UI_SCHRIFT, 11, "bold"),
+            font=(UI_SCHRIFT, pt(11), "bold"),
             foreground=self._COLORS["fg_accent"],
         )
         self.percent_label.grid(row=0, column=3, padx=(15, 0), sticky="e")
@@ -4871,7 +5010,7 @@ class PS5ConverterGUI:
             action_bar,
             text="",
             anchor="w",
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS["fg_primary"],
             wraplength=520,
         )
@@ -4889,7 +5028,7 @@ class PS5ConverterGUI:
         console_frame.grid_rowconfigure(0, weight=1)
 
         self.console_view = tk.Text(console_frame, bg=self._COLORS["console_bg"], fg=self._COLORS["console_fg"],
-                       font=(MONO_SCHRIFT, 10), borderwidth=0, padx=15, pady=15, wrap="word",
+                       font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
                                    insertbackground="white", selectbackground=self._COLORS["fg_accent"],
                                    highlightthickness=0)
         self.console_view.grid(row=0, column=0, sticky="nsew")
@@ -4902,7 +5041,7 @@ class PS5ConverterGUI:
         self.status_label = ttk.Label(
             content_area,
             text=self._t("main.status_ready"),
-            font=(UI_SCHRIFT, 9, "italic"),
+            font=(UI_SCHRIFT, pt(9), "italic"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
         self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 0))
@@ -4912,7 +5051,7 @@ class PS5ConverterGUI:
         self.telemetry_label = ttk.Label(
             content_area,
             text="",
-            font=(UI_SCHRIFT, 8),
+            font=(UI_SCHRIFT, pt(8)),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
         self.telemetry_label.grid(row=6, column=0, sticky="e", pady=(2, 0))
@@ -5874,12 +6013,12 @@ class PS5ConverterGUI:
         header = tk.Frame(parent, bg=c["bg_main"])
         header.pack(fill="x", padx=20, pady=(16, 8))
         tk.Label(
-            header, text=title_text, font=(UI_SCHRIFT, 15, "bold"),
+            header, text=title_text, font=(UI_SCHRIFT, pt(15), "bold"),
             bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
         ).pack(fill="x")
         if subtitle_text:
             tk.Label(
-                header, text=subtitle_text, font=(UI_SCHRIFT, 9),
+                header, text=subtitle_text, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                 wraplength=640, justify="left",
             ).pack(fill="x", pady=(2, 0))
@@ -5958,7 +6097,7 @@ class PS5ConverterGUI:
             bg=farben["bg_card"], fg=farben["fg_accent"],
             activebackground=farben["fg_accent"],
             activeforeground=farben["bg_main"],
-            font=(UI_SCHRIFT, 10))
+            font=(UI_SCHRIFT, pt(10)))
         for schluessel, ereignis in self._TEXTMENUE_EINTRAEGE:
             if schluessel is None:
                 self._textmenue.add_separator()
@@ -6225,7 +6364,7 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._bild_fuellen(self._bg_image_cache, width, height)
+            resized = self._flaechenbild(self._bg_image_cache, width, height)
             self.bg_photo = ImageTk.PhotoImage(resized)
             self.bg_label.config(image=self.bg_photo)
             self._last_bg_resize_size = (width, height)
@@ -6265,13 +6404,96 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._bild_fuellen(self._bg_image_cache, width, height)
+            resized = self._flaechenbild(self._bg_image_cache, width, height)
             self.content_bg_photo = ImageTk.PhotoImage(resized)
             self.content_bg_label.config(image=self.content_bg_photo)
             self._last_content_bg_resize_size = (width, height)
         except Exception as exc:
             logger.debug("Content-Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
         self._redraw_content_captions()
+
+    def _flaechenbild(self, quelle: "Image.Image", breite: int, hoehe: int):
+        """Liefert `quelle` formatfuellend auf (breite, hoehe) - und merkt sich das.
+
+        Rein ein Merker vor ``_bild_fuellen``, ohne jede Aenderung am Ergebnis.
+
+        Er lohnt sich, weil dieselbe Rechnung mehrfach hintereinander anfiel:
+        ``_compute_content_bg_crop`` skalierte fuer **jede einzelne**
+        Beschriftung das komplette Hintergrundbild neu auf die Groesse der
+        Inhaltsflaeche, nur um daraus ein paar hundert Pixel auszuschneiden. Bei
+        laufender Aufgabe wechseln Status- und Telemetriezeile mehrmals je
+        Sekunde; ein LANCZOS-Durchlauf ueber ein grosses Bild kostet dabei
+        zweistellige Millisekunden.
+
+        Args:
+            quelle: Bild in Originalgroesse.
+            breite: Zielbreite in Pixeln.
+            hoehe: Zielhoehe in Pixeln.
+
+        Returns:
+            Bild der Groesse (breite, hoehe), oder ``None`` ohne Quelle.
+        """
+        if quelle is None or breite <= 0 or hoehe <= 0:
+            return None
+        # Ein PIL-Bild ist nicht hashbar und taugt selbst nicht als Schluessel.
+        # Gemerkt wird deshalb unter seiner id() - und die Quelle wandert
+        # zusaetzlich in den Wert. Das haelt sie am Leben, solange der Eintrag
+        # steht, sodass Python ihre Nummer nicht an ein neu geladenes
+        # Hintergrundbild weiterreichen kann. Die ``is``-Probe faengt den Fall
+        # trotzdem ab, falls der Merker doch einmal anders geleert wird.
+        schluessel = (id(quelle), breite, hoehe)
+        merker = getattr(self, "_flaechenbild_cache", None)
+        if merker is None:
+            merker = {}
+            self._flaechenbild_cache = merker
+        eintrag = merker.get(schluessel)
+        if eintrag is not None and eintrag[0] is quelle:
+            return eintrag[1]
+        fertig = self._bild_fuellen(quelle, breite, hoehe)
+        # Zwei Quellen (geblendet/roh) mal zwei Flaechen mal zwei Groessen
+        # waehrend einer Aenderung - mehr braucht es nicht, und der Speicher
+        # bleibt klein.
+        if len(merker) >= 8:
+            merker.clear()
+        merker[schluessel] = (quelle, fertig)
+        return fertig
+
+    def _flaechen_ausschnitt(self, quelle: "Image.Image", bezug: object,
+                             lage: tuple[int, int], width: int, height: int):
+        """Schneidet aus dem auf `bezug` gerechneten Bild den Teil bei `lage`.
+
+        Args:
+            quelle: Bild in Originalgroesse.
+            bezug: Container-Widget, auf dessen Masse gerechnet wird.
+            lage: Position des gesuchten Ausschnitts innerhalb von `bezug`.
+            width: Breite des Ausschnitts.
+            height: Hoehe des Ausschnitts.
+
+        Returns:
+            Bild der Groesse (width, height), oder ``None``.
+        """
+        if quelle is None or bezug is None or width <= 1 or height <= 1:
+            return None
+        b_breite = bezug.winfo_width()
+        b_hoehe = bezug.winfo_height()
+        if b_breite <= 1 or b_hoehe <= 1:
+            return None
+        voll = self._flaechenbild(quelle, b_breite, b_hoehe)
+        if voll is None:
+            return None
+        wx, wy = lage
+        crop_box = (
+            max(0, min(wx, b_breite)),
+            max(0, min(wy, b_hoehe)),
+            max(0, min(wx + width, b_breite)),
+            max(0, min(wy + height, b_hoehe)),
+        )
+        if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
+            return None
+        ausschnitt = voll.crop(crop_box)
+        if ausschnitt.size != (width, height):
+            ausschnitt = ausschnitt.resize((width, height), _LANCZOS)
+        return ausschnitt
 
     def _compute_content_bg_crop(
         self, widget: object, width: int, height: int
@@ -6290,24 +6512,12 @@ class PS5ConverterGUI:
         if self._bg_image_cache is None or content_area is None or width <= 1 or height <= 1:
             return None
         try:
-            c_width = content_area.winfo_width()
-            c_height = content_area.winfo_height()
-            if c_width <= 1 or c_height <= 1:
+            lage = (widget.winfo_rootx() - content_area.winfo_rootx(),
+                    widget.winfo_rooty() - content_area.winfo_rooty())
+            cropped = self._flaechen_ausschnitt(
+                self._bg_image_cache, content_area, lage, width, height)
+            if cropped is None:
                 return None
-            full_resized = self._bild_fuellen(self._bg_image_cache, c_width, c_height)
-            wx = widget.winfo_rootx() - content_area.winfo_rootx()
-            wy = widget.winfo_rooty() - content_area.winfo_rooty()
-            crop_box = (
-                max(0, min(wx, c_width)),
-                max(0, min(wy, c_height)),
-                max(0, min(wx + width, c_width)),
-                max(0, min(wy + height, c_height)),
-            )
-            if crop_box[2] <= crop_box[0] or crop_box[3] <= crop_box[1]:
-                return None
-            cropped = full_resized.crop(crop_box)
-            if cropped.size != (width, height):
-                cropped = cropped.resize((width, height), _LANCZOS)
             # Der reine Bildausschnitt laesst den Text je nach Motiv untergehen.
             # Deshalb die Themefarbe mit fester Deckkraft daruebermischen.
             opacity = getattr(widget, "_caption_backdrop_opacity", None)
@@ -6614,29 +6824,18 @@ class PS5ConverterGUI:
             content_area = getattr(self, "content_area", None)
             path_card = getattr(self, "path_card", None)
             if content_area is not None and path_card is not None:
-                c_width = content_area.winfo_width()
-                c_height = content_area.winfo_height()
-                if c_width > 1 and c_height > 1:
-                    card_x = path_card.winfo_x() + offset[0]
-                    card_y = path_card.winfo_y() + offset[1]
-                    # Muss dieselbe Geometrie benutzen wie die Flaeche
-                    # darunter. Bis v1.8.60 stand hier resize(), waehrend
-                    # die Inhaltsflaeche seit v1.8.55 formatfuellend
-                    # beschnitten wird - dadurch zeigte die Karte einen
-                    # anderen Bildausschnitt als ihre Umgebung, und das
-                    # Motiv wirkte an der Kartenkante gespiegelt.
-                    full_resized = self._bild_fuellen(self._bg_image_raw, c_width, c_height)
-                    crop_box = (
-                        max(0, min(card_x, c_width)),
-                        max(0, min(card_y, c_height)),
-                        max(0, min(card_x + width, c_width)),
-                        max(0, min(card_y + height, c_height)),
-                    )
-                    if crop_box[2] > crop_box[0] and crop_box[3] > crop_box[1]:
-                        cropped = full_resized.crop(crop_box)
-                        if cropped.size != (width, height):
-                            cropped = cropped.resize((width, height), _LANCZOS)
-                        return self._blend_bg_image_for_card(cropped)
+                # Muss dieselbe Geometrie benutzen wie die Flaeche
+                # darunter. Bis v1.8.60 stand hier resize(), waehrend
+                # die Inhaltsflaeche seit v1.8.55 formatfuellend
+                # beschnitten wird - dadurch zeigte die Karte einen
+                # anderen Bildausschnitt als ihre Umgebung, und das
+                # Motiv wirkte an der Kartenkante gespiegelt.
+                lage = (path_card.winfo_x() + offset[0],
+                        path_card.winfo_y() + offset[1])
+                cropped = self._flaechen_ausschnitt(
+                    self._bg_image_raw, content_area, lage, width, height)
+                if cropped is not None:
+                    return self._blend_bg_image_for_card(cropped)
 
             # Fallback: eigenstaendige Skalierung (z. B. beim allerersten Aufbau,
             # solange content_area/path_card noch keine reale Groesse haben).
@@ -10589,10 +10788,10 @@ class PS5ConverterGUI:
         title_bar.pack(fill="x")
         title_bar.pack_propagate(False)
         tk.Label(title_bar, text=self._t("info_popup.title_bar"),
-                 font=(UI_SCHRIFT, 9, "bold"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
         tk.Button(title_bar, text="✕", command=_on_close,
-                  font=(UI_SCHRIFT, 11, "bold"),
+                  font=(UI_SCHRIFT, pt(11), "bold"),
                   bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
                   activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=10).pack(side="right")
@@ -10623,7 +10822,7 @@ class PS5ConverterGUI:
         cover_frame.grid(row=0, column=0, sticky="nw", padx=(0, 16))
         self.info_cover_label = tk.Label(cover_frame, bg=self._COLORS["bg_card"],
                           text="○",
-                          font=(UI_SCHRIFT, 40),
+                          font=(UI_SCHRIFT, pt(40)),
                           fg=self._COLORS["fg_secondary"])
         self.info_cover_label.pack(fill="both", expand=True)
 
@@ -10644,13 +10843,13 @@ class PS5ConverterGUI:
         ]
         for row_idx, (key, label_text) in enumerate(meta_keys):
             tk.Label(meta_frame, text=label_text,
-                     font=(UI_SCHRIFT, 7, "bold"),
+                     font=(UI_SCHRIFT, pt(7), "bold"),
                      bg=self._COLORS["bg_main"],
                      fg=self._COLORS["fg_secondary"],
                      anchor="w", width=18,
                      ).grid(row=row_idx, column=0, sticky="nw", pady=(0, 5), padx=(0, 8))
             tk.Label(meta_frame, textvariable=self._meta_labels[key],
-                     font=(UI_SCHRIFT, 9),
+                     font=(UI_SCHRIFT, pt(9)),
                      bg=self._COLORS["bg_main"],
                      fg=self._COLORS["fg_primary"],
                      wraplength=340, justify="left", anchor="w",
@@ -10661,35 +10860,35 @@ class PS5ConverterGUI:
         size_bar.pack(fill="x", pady=(0, 0))
         size_bar.grid_columnconfigure(1, weight=1)
         tk.Label(size_bar, text=self._t("info_popup.source_label"),
-                 font=(UI_SCHRIFT, 8, "bold"),
+                 font=(UI_SCHRIFT, pt(8), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_secondary"]).grid(row=0, column=0, sticky="w")
         tk.Label(size_bar, textvariable=self._info_src_size_var,
-                 font=(UI_SCHRIFT, 9, "bold"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_primary"]).grid(row=0, column=1, sticky="w", padx=(6, 0))
         tk.Label(size_bar, text=self._t("info_popup.target_label"),
-                 font=(UI_SCHRIFT, 8, "bold"),
+                 font=(UI_SCHRIFT, pt(8), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_secondary"]).grid(row=0, column=2, sticky="e", padx=(20, 0))
         tk.Label(size_bar, textvariable=self._info_est_size_var,
-                 font=(UI_SCHRIFT, 9, "bold"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["progress_fill"]).grid(row=0, column=3, sticky="e", padx=(6, 0))
         tk.Label(size_bar, text=self._t("info_popup.format_label"),
-                 font=(UI_SCHRIFT, 8, "bold"),
+                 font=(UI_SCHRIFT, pt(8), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_secondary"]).grid(row=1, column=0, sticky="w", pady=(4, 0))
         tk.Label(size_bar, textvariable=self._info_format_var,
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_primary"]).grid(row=1, column=1, sticky="w", padx=(6, 0), pady=(4, 0))
         tk.Label(size_bar, text=self._t("info_popup.metadata_label"),
-                 font=(UI_SCHRIFT, 8, "bold"),
+                 font=(UI_SCHRIFT, pt(8), "bold"),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_secondary"]).grid(row=1, column=2, sticky="e", padx=(20, 0), pady=(4, 0))
         tk.Label(size_bar, textvariable=self._info_method_var,
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=self._COLORS["bg_card"],
                  fg=self._COLORS["fg_primary"],
                  wraplength=280, justify="right").grid(
@@ -10701,11 +10900,11 @@ class PS5ConverterGUI:
         patch_head = tk.Frame(container, bg=self._COLORS["bg_main"])
         patch_head.pack(fill="x", pady=(0, 4))
         tk.Label(patch_head, text=self._t("info_popup.updates_header"),
-             font=(UI_SCHRIFT, 9, "bold"),
+             font=(UI_SCHRIFT, pt(9), "bold"),
              fg=self._COLORS["fg_accent"],
              bg=self._COLORS["bg_main"]).pack(side="left", anchor="w")
         tk.Label(patch_head, textvariable=self._patch_status_var,
-             font=(UI_SCHRIFT, 8),
+             font=(UI_SCHRIFT, pt(8)),
              fg=self._COLORS["fg_secondary"],
              bg=self._COLORS["bg_main"]).pack(side="right", anchor="e")
 
@@ -10721,11 +10920,11 @@ class PS5ConverterGUI:
                          foreground=self._COLORS["fg_primary"],
                          fieldbackground=self._COLORS["bg_card"],
                          rowheight=24,
-                         font=(UI_SCHRIFT, 9))
+                         font=(UI_SCHRIFT, pt(9)))
         _style.configure("Patch.Treeview.Heading",
                          background=self._COLORS["bg_main"],
                          foreground=self._COLORS["fg_accent"],
-                         font=(UI_SCHRIFT, 8, "bold"),
+                         font=(UI_SCHRIFT, pt(8), "bold"),
                          relief="flat")
         # Heading-Hover: Hintergrund leicht heller, Textfarbe bleibt Akzentfarbe
         _style.map("Patch.Treeview.Heading",
@@ -10795,7 +10994,7 @@ class PS5ConverterGUI:
 
         # ── Schließen-Button ───────────────────────────────────────────────────────────────────────────
         tk.Button(container, text=self._t("info_popup.close_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=8,
@@ -10820,7 +11019,7 @@ class PS5ConverterGUI:
                 self.info_cover_label.config(
                     image="",
                     text="○",
-                    font=(UI_SCHRIFT, 40),
+                    font=(UI_SCHRIFT, pt(40)),
                     fg=self._COLORS["fg_secondary"],
                 )
                 self.info_cover_label.image = None  # type: ignore[attr-defined]
@@ -10867,7 +11066,7 @@ class PS5ConverterGUI:
         self.info_cover_label.config(
             image="",
             text="○",
-            font=(UI_SCHRIFT, 64),
+            font=(UI_SCHRIFT, pt(64)),
             fg=self._COLORS["fg_secondary"],
         )
         self.info_cover_label.image = None  # type: ignore[attr-defined]
@@ -11687,10 +11886,10 @@ class PS5ConverterGUI:
         _accent = self._COLORS.get("fg_accent", self._THEMES["dunkel"]["fg_accent"])
         self._patch_tree.tag_configure("normal_row",
             foreground=self._COLORS["fg_primary"],
-            font=(UI_SCHRIFT, 9))
+            font=(UI_SCHRIFT, pt(9)))
         self._patch_tree.tag_configure("latest_row",
             foreground=_accent,
-            font=(UI_SCHRIFT, 9, "bold"))
+            font=(UI_SCHRIFT, pt(9), "bold"))
         # Klick auf Link-Spalte öffnet Browser
         def _on_tree_click(event):
             region = self._patch_tree.identify_region(event.x, event.y)
@@ -12744,6 +12943,59 @@ class PS5ConverterGUI:
             # Während Shutdown/Thread-Race kein harter Fehler.
             pass
 
+    def _set_status_fluechtig(self, text: str, prozess: object = None,
+                              hoechstdauer_ms: int = 10000) -> None:
+        """Setzt eine Statusmeldung, die von selbst wieder verschwindet.
+
+        Die Statuszeile beschreibt einen Zustand ("Bereit."), kein Ereignis.
+        "FileZilla gestartet: ..." blieb dort deshalb auch dann noch stehen,
+        als FileZilla laengst wieder geschlossen war - gemeldet am 20.08.2026.
+
+        Liegt ein echtes Kindprozess-Handle vor, wird im Sekundentakt geprueft,
+        ob es noch laeuft; die Meldung verschwindet dann genau mit dem
+        Programm. macOS startet ein ``.app``-Buendel ueber ``open``, das sofort
+        zurueckkehrt und nichts ueber das gestartete Programm aussagt - dort
+        steht die Meldung stattdessen ``hoechstdauer_ms`` lang.
+
+        Zurueckgesetzt wird nur, solange die eigene Meldung noch unveraendert in
+        der Zeile steht: Eine spaetere Meldung (etwa der Start einer Aufgabe)
+        behaelt Vorrang und wird nicht ueberschrieben.
+
+        Args:
+            text: Anzuzeigende Meldung.
+            prozess: ``subprocess.Popen`` des gestarteten Programms, oder
+                ``None``, wenn es keinen belastbaren Kindprozess gibt.
+            hoechstdauer_ms: Standzeit ohne Prozess-Handle.
+        """
+        self._set_status(text)
+        ende = time.monotonic() + max(0, hoechstdauer_ms) / 1000.0
+
+        def _pruefen() -> None:
+            try:
+                if str(self.status_label.cget("text")) != text:
+                    return
+            except Exception:
+                return
+            if prozess is not None:
+                try:
+                    laeuft = prozess.poll() is None  # type: ignore[attr-defined]
+                except Exception:
+                    laeuft = False
+            else:
+                laeuft = time.monotonic() < ende
+            if laeuft:
+                try:
+                    self.root.after(1000, _pruefen)
+                except Exception as exc:
+                    logger.debug("Statusmeldung nicht weiter beobachtbar: %s", exc)
+                return
+            self._set_status(self._t("main.status_ready"))
+
+        try:
+            self.root.after(1000, _pruefen)
+        except Exception as exc:
+            logger.debug("Statusmeldung nicht entkoppelbar: %s", exc)
+
     def _extract_failure_lines(self) -> str:
         """Extrahiert die relevantesten Fehlerzeilen aus dem Log-Tail-Puffer.
 
@@ -12925,22 +13177,22 @@ class PS5ConverterGUI:
         c = self._COLORS
         tk.Label(
             win, text=self._t("shutdown.headline"),
-            font=(UI_SCHRIFT, 15, "bold"), bg=c["bg_main"], fg=c["fg_accent"],
+            font=(UI_SCHRIFT, pt(15), "bold"), bg=c["bg_main"], fg=c["fg_accent"],
         ).pack(pady=(26, 8), padx=24)
         text_lbl = tk.Label(
-            win, text="", font=(UI_SCHRIFT, 11), bg=c["bg_main"], fg=c["fg_primary"],
+            win, text="", font=(UI_SCHRIFT, pt(11)), bg=c["bg_main"], fg=c["fg_primary"],
             wraplength=540, justify="center",
         )
         text_lbl.pack(padx=24)
         tk.Label(
             win, text=self._t("shutdown.force_hint"),
-            font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"],
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
             wraplength=540, justify="center",
         ).pack(pady=(10, 0), padx=24)
 
         abbrechen = tk.Button(
             win, text=self._t("shutdown.abort_button"),
-            font=(UI_SCHRIFT, 12, "bold"),
+            font=(UI_SCHRIFT, pt(12), "bold"),
             bg=c["error_btn"], fg="white",
             activebackground=c["error_btn_hover"], activeforeground="white",
             relief="flat", cursor="hand2", padx=28, pady=10,
@@ -15215,11 +15467,12 @@ class PS5ConverterGUI:
             # Ein .app-Buendel laesst sich nicht ausfuehren - es ist ein
             # Ordner. "open -a" uebergibt es dem Fenstersystem, das den
             # richtigen Programmteil darin startet.
-            if IST_MACOS and exe.endswith(".app"):
+            ueber_open = IST_MACOS and exe.endswith(".app")
+            if ueber_open:
                 befehl = ["open", "-a", exe]
             else:
                 befehl = [exe]
-            subprocess.Popen(befehl, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            prozess = subprocess.Popen(befehl, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             # Erst jetzt merken - gestartet ist der belastbare Nachweis, dass
             # dieser Pfad taugt. Beim naechsten Programmstart greift Schritt 1
             # von _find_filezilla darauf zu und startet ohne jede Suche.
@@ -15228,7 +15481,14 @@ class PS5ConverterGUI:
             # Treffer ueber die Registrierung oder die feste Pfadliste ging
             # verloren und musste jedes Mal neu gesucht werden.
             self._remember_filezilla_path(exe)
-            self._set_status(f"FileZilla gestartet: {os.path.basename(exe)}")
+            # Fluechtig statt fest: "open -a" liefert kein brauchbares Handle
+            # auf FileZilla selbst, deshalb dort ohne Prozess (siehe
+            # _set_status_fluechtig).
+            self._set_status_fluechtig(
+                self._t("main.status_filezilla_started",
+                        name=os.path.basename(exe)),
+                prozess=None if ueber_open else prozess,
+            )
             return True
         except Exception as exc:
             messagebox.showerror(
@@ -18825,12 +19085,12 @@ class PS5ConverterGUI:
 
             tk.Label(
                 dlg, text=self._t("ampr.dialog_title"),
-                font=(UI_SCHRIFT, 14, "bold"),
+                font=(UI_SCHRIFT, pt(14), "bold"),
                 fg=c["fg_accent"], bg=c["bg_main"],
             ).pack(pady=(14, 2))
             tk.Label(
                 dlg, text=self._t("ampr.dialog_root", root=search_root),
-                font=(UI_SCHRIFT, 9), fg=c["fg_secondary"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=_fw - 60, justify="center",
             ).pack(pady=(0, 10))
 
@@ -18840,14 +19100,14 @@ class PS5ConverterGUI:
             # ---- Bereich A: aktueller Zustand ----
             sec_a = tk.LabelFrame(
                 body, text=self._t("ampr.section_status"),
-                font=(UI_SCHRIFT, 10, "bold"), fg=c["fg_accent"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
             sec_a.pack(fill="x", pady=(0, 10))
 
             store_dir_var = tk.StringVar(value=self._ampr_resolve_store())
             status_var = tk.StringVar(value=self._t("ampr.status_checking"))
             tk.Label(
-                sec_a, textvariable=status_var, font=(MONO_SCHRIFT, 9),
+                sec_a, textvariable=status_var, font=(MONO_SCHRIFT, pt(9)),
                 fg=c["fg_primary"], bg=c["bg_main"], justify="left", anchor="w",
             ).pack(fill="x", padx=10, pady=(8, 8))
 
@@ -18863,7 +19123,7 @@ class PS5ConverterGUI:
             ordner_row.pack(fill="x", padx=10, pady=(0, 8))
             tk.Label(
                 ordner_row, text=self._t("backport.fakelib_folder_label"),
-                font=(UI_SCHRIFT, 9), fg=c["fg_secondary"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
             ).pack(side="left")
             ampr_ordner_box = ttk.Combobox(
                 ordner_row, state="readonly", width=10,
@@ -18876,7 +19136,7 @@ class PS5ConverterGUI:
                 ampr_ordner_box.current(0)
             tk.Label(
                 ordner_row, text=self._t("fakelib.shared_hint"),
-                font=(UI_SCHRIFT, 8), fg=c["fg_secondary"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(8)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=420, justify="left",
             ).pack(side="left", fill="x", expand=True)
 
@@ -18900,14 +19160,14 @@ class PS5ConverterGUI:
             # ---- Bereich B: Versionsordner und Auswahl ----
             sec_b = tk.LabelFrame(
                 body, text=self._t("ampr.section_versions"),
-                font=(UI_SCHRIFT, 10, "bold"), fg=c["fg_accent"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
             sec_b.pack(fill="x", pady=(0, 10))
 
             store_row = tk.Frame(sec_b, bg=c["bg_main"])
             store_row.pack(fill="x", padx=10, pady=(8, 4))
             tk.Entry(
-                store_row, textvariable=store_dir_var, font=(UI_SCHRIFT, 9),
+                store_row, textvariable=store_dir_var, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
             ).pack(side="left", fill="x", expand=True, ipady=4)
 
@@ -18923,16 +19183,16 @@ class PS5ConverterGUI:
                 row = tk.Frame(sec_b, bg=c["bg_main"])
                 row.pack(fill="x", padx=10, pady=(4, 0))
                 tk.Label(
-                    row, text=lib_name, font=(UI_SCHRIFT, 9, "bold"),
+                    row, text=lib_name, font=(UI_SCHRIFT, pt(9), "bold"),
                     fg=c["fg_primary"], bg=c["bg_main"], width=20, anchor="w",
                 ).pack(side="left")
-                combo = ttk.Combobox(row, state="readonly", font=(UI_SCHRIFT, 9))
+                combo = ttk.Combobox(row, state="readonly", font=(UI_SCHRIFT, pt(9)))
                 combo.pack(side="left", fill="x", expand=True)
                 lib_combos[lib_name] = combo
                 lib_entries[lib_name] = {}
 
             tk.Label(
-                sec_b, text=self._t("ampr.lib_hint"), font=(UI_SCHRIFT, 8),
+                sec_b, text=self._t("ampr.lib_hint"), font=(UI_SCHRIFT, pt(8)),
                 fg=c["fg_secondary"], bg=c["bg_main"], anchor="w", justify="left",
                 wraplength=_fw - 90,
             ).pack(anchor="w", fill="x", padx=10, pady=(4, 10))
@@ -18989,14 +19249,14 @@ class PS5ConverterGUI:
 
             tk.Button(
                 store_row, text=self._t("ampr.btn_choose_store"), command=_choose_store,
-                font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, cursor="hand2",
             ).pack(side="left", padx=(8, 0))
 
             # ---- Bereich C: Aktionen ----
             sec_c = tk.LabelFrame(
                 body, text=self._t("ampr.section_actions"),
-                font=(UI_SCHRIFT, 10, "bold"), fg=c["fg_accent"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
             sec_c.pack(fill="x", pady=(0, 10))
 
@@ -19067,32 +19327,32 @@ class PS5ConverterGUI:
             ):
                 tk.Button(
                     btn_row1, text=self._t(text_key), command=cmd,
-                    font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_primary"],
+                    font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                     relief="flat", padx=12, pady=6, cursor="hand2",
                 ).pack(side="left", padx=(0, 6))
 
             # ---- Bereich D: PS5 über FTP ----
             sec_d = tk.LabelFrame(
                 body, text=self._t("ampr.section_ftp"),
-                font=(UI_SCHRIFT, 10, "bold"), fg=c["fg_accent"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
             sec_d.pack(fill="x", pady=(0, 10))
             tk.Label(
                 sec_d, text=self._t("ampr.ftp_hint"),
-                font=(UI_SCHRIFT, 9), fg=c["fg_secondary"], bg=c["bg_main"],
+                font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=_fw - 80, justify="left", anchor="w",
             ).pack(fill="x", padx=10, pady=(8, 4))
             tk.Button(
                 sec_d, text=self._t("ampr.btn_open_picker"),
                 command=lambda: self._show_ampr_ftp_picker(parent=dlg),
-                font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, pady=6, cursor="hand2",
             ).pack(anchor="w", padx=10, pady=(0, 10))
 
             tk.Button(
                 dlg, text=self._t("action.cancel_ellipsis"),
                 command=lambda: _finish("cancel"),
-                font=(UI_SCHRIFT, 10), bg=c["bg_card"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=14, pady=8, cursor="hand2",
             ).pack(side="bottom", pady=(0, 14))
 
@@ -22151,21 +22411,21 @@ class PS5ConverterGUI:
         pad: Any = {"padx": 10, "pady": 4}
 
         tk.Label(inner, text=APP_TITLE,
-                 font=(UI_SCHRIFT, 18, "bold"),
+                 font=(UI_SCHRIFT, pt(18), "bold"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_accent"]).pack(**pad)
 
         tk.Label(inner, text=self._t("credits.special_version"),
-                 font=(UI_SCHRIFT, 10),
+                 font=(UI_SCHRIFT, pt(10)),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"]).pack(**pad)
 
         tk.Label(inner, text=self._t("credits.engine_line"),
-                 font=(UI_SCHRIFT, 10),
+                 font=(UI_SCHRIFT, pt(10)),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"]).pack(**pad)
 
         tk.Label(
             inner,
             text=self._t("credits.tools_line"),
-            font=(UI_SCHRIFT, 9),
+            font=(UI_SCHRIFT, pt(9)),
             bg=self._COLORS["bg_main"],
             fg=self._COLORS["fg_secondary"],
             wraplength=620,
@@ -22196,13 +22456,13 @@ class PS5ConverterGUI:
         tk.Frame(inner, bg=self._COLORS["fg_accent"], height=1).pack(fill="x", padx=20, pady=12)
 
         tk.Label(inner, text=self._t("credits.thanks_header"),
-                 font=(UI_SCHRIFT, 13, "bold"),
+                 font=(UI_SCHRIFT, pt(13), "bold"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_accent"]).pack(**pad)
 
         community_text = self._t("credits.community_text")
 
         tk.Label(inner, text=community_text,
-                 font=(UI_SCHRIFT, 10),
+                 font=(UI_SCHRIFT, pt(10)),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_primary"],
                  wraplength=500, justify="center").pack(padx=20, pady=8)
 
@@ -22210,11 +22470,11 @@ class PS5ConverterGUI:
         tk.Frame(inner, bg=self._COLORS["border"], height=1).pack(fill="x", padx=20, pady=12)
 
         tk.Label(inner, text=self._t("credits.footer"),
-                 font=(UI_SCHRIFT, 9, "italic"),
+                 font=(UI_SCHRIFT, pt(9), "italic"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_secondary"]).pack(**pad)
 
         tk.Button(inner, text=self._t("action.close_lowercase"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=8,
@@ -22256,10 +22516,10 @@ class PS5ConverterGUI:
         title_bar.pack(fill="x")
         title_bar.pack_propagate(False)
         tk.Label(title_bar, text=self._t("resources.title_bar"),
-                 font=(UI_SCHRIFT, 10, "bold"),
+                 font=(UI_SCHRIFT, pt(10), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
         tk.Button(title_bar, text="✕", command=_on_close,
-                  font=(UI_SCHRIFT, 11, "bold"),
+                  font=(UI_SCHRIFT, pt(11), "bold"),
                   bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
                   activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=10).pack(side="right")
@@ -22298,19 +22558,19 @@ class PS5ConverterGUI:
         def _section(title):
             tk.Frame(inner, bg=self._COLORS["fg_accent"], height=1).pack(fill="x", padx=20, pady=(18, 4))
             tk.Label(inner, text=title,
-                     font=(UI_SCHRIFT, 10, "bold"),
+                     font=(UI_SCHRIFT, pt(10), "bold"),
                      bg=self._COLORS["bg_main"], fg=self._COLORS["fg_accent"]).pack(anchor="w", padx=24)
 
         def _link(display_text, url):
             lbl = tk.Label(inner, text=f"  ➤  {display_text}",
-                           font=(UI_SCHRIFT, 10),
+                           font=(UI_SCHRIFT, pt(10)),
                            bg=self._COLORS["bg_main"], fg=self._COLORS["link_fg"],
                            cursor="hand2", anchor="w", justify="left",
                            wraplength=rw - 80)
             lbl.pack(anchor="w", padx=30, pady=2)
             lbl.bind("<Button-1>", lambda e, u=url: webbrowser.open(u))
-            lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, 10, "underline")))
-            lbl.bind("<Leave>", lambda e: lbl.config(fg=self._COLORS["link_fg"], font=(UI_SCHRIFT, 10)))
+            lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, pt(10), "underline")))
+            lbl.bind("<Leave>", lambda e: lbl.config(fg=self._COLORS["link_fg"], font=(UI_SCHRIFT, pt(10))))
 
         def _file_link(display_text, *parts):
             """Wie _link, oeffnet aber eine mitgelieferte Datei statt einer URL.
@@ -22323,7 +22583,7 @@ class PS5ConverterGUI:
             if not pfad:
                 return
             lbl = tk.Label(inner, text=f"  ➤  {display_text}",
-                           font=(UI_SCHRIFT, 10),
+                           font=(UI_SCHRIFT, pt(10)),
                            bg=self._COLORS["bg_main"], fg=self._COLORS["link_fg"],
                            cursor="hand2", anchor="w", justify="left",
                            wraplength=rw - 80)
@@ -22334,8 +22594,8 @@ class PS5ConverterGUI:
                     logger.debug("Lizenzdatei konnte nicht geoeffnet werden: %s", p)
 
             lbl.bind("<Button-1>", _oeffnen)
-            lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, 10, "underline")))
-            lbl.bind("<Leave>", lambda e: lbl.config(fg=self._COLORS["link_fg"], font=(UI_SCHRIFT, 10)))
+            lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, pt(10), "underline")))
+            lbl.bind("<Leave>", lambda e: lbl.config(fg=self._COLORS["link_fg"], font=(UI_SCHRIFT, pt(10))))
 
         def _install_action(idx, title, subtitle, cmd):
             row = tk.Frame(inner, bg=self._COLORS["bg_main"])
@@ -22344,7 +22604,7 @@ class PS5ConverterGUI:
             left = tk.Label(
                 row,
                 text=f"{idx}. {title}\n{subtitle}",
-                font=(UI_SCHRIFT, 10),
+                font=(UI_SCHRIFT, pt(10)),
                 bg=self._COLORS["bg_main"],
                 fg=self._COLORS["fg_primary"],
                 justify="left",
@@ -22356,7 +22616,7 @@ class PS5ConverterGUI:
             tk.Button(
                 row,
                 text=self._t("resources.install_button"),
-                font=(UI_SCHRIFT, 9, "bold"),
+                font=(UI_SCHRIFT, pt(9), "bold"),
                 bg=self._COLORS["fg_accent"],
                 fg=self._COLORS["bg_main"],
                 activebackground=self._COLORS["accent_btn_hover"],
@@ -22370,10 +22630,10 @@ class PS5ConverterGUI:
 
         # Kopfzeile
         tk.Label(inner, text=self._t("resources.header"),
-                 font=(UI_SCHRIFT, 15, "bold"),
+                 font=(UI_SCHRIFT, pt(15), "bold"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_accent"]).pack(pady=(20, 4))
         tk.Label(inner, text=self._t("resources.subheader"),
-                 font=(UI_SCHRIFT, 9, "italic"),
+                 font=(UI_SCHRIFT, pt(9), "italic"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_secondary"]).pack(pady=(0, 10))
 
         # Abschnitt 1
@@ -22451,7 +22711,7 @@ class PS5ConverterGUI:
 
         # Schließen-Button
         tk.Button(inner, text=self._t("action.close_lowercase"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=8,
@@ -22460,7 +22720,7 @@ class PS5ConverterGUI:
         # --- Resize-Griff ---
         rg_lbl = tk.Label(win, text="◿", bg=self._COLORS["bg_main"],
                           fg=self._COLORS["fg_secondary"], cursor=_RESIZE_CURSOR,
-                          font=(UI_SCHRIFT, 12))
+                          font=(UI_SCHRIFT, pt(12)))
         rg_lbl.place(relx=1.0, rely=1.0, anchor="se")
         _rd = {"x": 0, "y": 0, "w": 0, "h": 0}
         def _rs(e):
@@ -22555,13 +22815,13 @@ class PS5ConverterGUI:
 
         log_frame = tk.Frame(win, bg=c["bg_main"], padx=16)
         tk.Label(
-            log_frame, text=self._t("pkg_merger.log_label"), font=(UI_SCHRIFT, 9, "bold"),
+            log_frame, text=self._t("pkg_merger.log_label"), font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
         ).pack(fill="x")
         log_text_frame = tk.Frame(log_frame, bg=c["bg_card"], padx=1, pady=1)
         log_text_frame.pack(fill="both", expand=True, pady=(4, 0))
         log_text = tk.Text(
-            log_text_frame, height=8, wrap="word", font=(MONO_SCHRIFT, 9), borderwidth=0,
+            log_text_frame, height=8, wrap="word", font=(MONO_SCHRIFT, pt(9)), borderwidth=0,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0, padx=8, pady=8,
         )
@@ -22701,14 +22961,14 @@ class PS5ConverterGUI:
 
         def _quick_field(row: int, col: int, label_text: str, key: str, values=None) -> tk.StringVar:
             tk.Label(
-                quick, text=label_text, font=(UI_SCHRIFT, 9, "bold"),
+                quick, text=label_text, font=(UI_SCHRIFT, pt(9), "bold"),
                 bg=c["bg_main"], fg=c["fg_secondary"],
             ).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 16, 4))
             var = tk.StringVar(value=str(data.get(key, "")))
             if values:
                 widget = ttk.Combobox(quick, textvariable=var, state="readonly", values=values, width=16)
             else:
-                widget = ttk.Entry(quick, textvariable=var, font=(UI_SCHRIFT, 10))
+                widget = ttk.Entry(quick, textvariable=var, font=(UI_SCHRIFT, pt(10)))
             widget.grid(row=row, column=col + 1, sticky="ew")
             return var
 
@@ -22756,7 +23016,7 @@ class PS5ConverterGUI:
 
         hint_var = tk.StringVar(value=self._t("param_manifest.hint_default"))
         tk.Label(
-            body, textvariable=hint_var, font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"],
+            body, textvariable=hint_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
             anchor="w", wraplength=680, justify="left",
         ).grid(row=1, column=0, sticky="ew", pady=(6, 0))
 
@@ -22777,17 +23037,17 @@ class PS5ConverterGUI:
             frm = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=12)
             frm.pack(fill="both", expand=True)
 
-            tk.Label(frm, text=self._t("param_manifest.key_label"), font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
+            tk.Label(frm, text=self._t("param_manifest.key_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             key_var = tk.StringVar(value=initial_key)
-            key_entry = ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, 10), state=("normal" if key_editable else "disabled"))
+            key_entry = ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled"))
             key_entry.pack(fill="x", pady=(2, 10))
 
             tk.Label(
                 frm,
                 text=self._t("param_manifest.value_label"),
-                font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"], fg=c["fg_secondary"],
+                font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"],
             ).pack(anchor="w")
-            value_text = tk.Text(frm, height=8, wrap="word", font=(MONO_SCHRIFT, 9))
+            value_text = tk.Text(frm, height=8, wrap="word", font=(MONO_SCHRIFT, pt(9)))
             value_text.insert("1.0", initial_value_text)
             value_text.pack(fill="both", expand=True, pady=(2, 10))
 
@@ -22963,14 +23223,14 @@ class PS5ConverterGUI:
         folders_frame = tk.Frame(win, bg=c["bg_main"], padx=16)
         folders_frame.pack(fill="x", pady=(0, 12))
         tk.Label(
-            folders_frame, text=self._t("library.scan_folders_label"), font=(UI_SCHRIFT, 9, "bold"),
+            folders_frame, text=self._t("library.scan_folders_label"), font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_main"], fg=c["fg_secondary"],
         ).pack(anchor="w")
 
         folders_row = tk.Frame(folders_frame, bg=c["bg_main"])
         folders_row.pack(fill="x", pady=(4, 0))
         folders_list = tk.Listbox(
-            folders_row, height=3, font=(UI_SCHRIFT, 9),
+            folders_row, height=3, font=(UI_SCHRIFT, pt(9)),
             bg=c["console_bg"], fg=c["fg_primary"],
             selectbackground=c["fg_accent"], selectforeground=c["bg_card"],
             relief="flat", bd=1, highlightthickness=1,
@@ -22991,7 +23251,7 @@ class PS5ConverterGUI:
 
         status_var = tk.StringVar(value=self._t("library.status_initial", count=len(scan_folders)))
         tk.Label(
-            win, textvariable=status_var, font=(UI_SCHRIFT, 9), bg=c["bg_main"],
+            win, textvariable=status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
             fg=c["fg_secondary"], anchor="w", padx=16,
         ).pack(side="bottom", fill="x")
 
@@ -23006,9 +23266,9 @@ class PS5ConverterGUI:
 
         search_row = tk.Frame(body, bg=c["bg_main"])
         search_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
-        tk.Label(search_row, text=self._t("library.search_label"), font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        tk.Label(search_row, text=self._t("library.search_label"), font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
         search_var = tk.StringVar()
-        ttk.Entry(search_row, textvariable=search_var, font=(UI_SCHRIFT, 10)).pack(side="left", fill="x", expand=True, padx=(6, 0))
+        ttk.Entry(search_row, textvariable=search_var, font=(UI_SCHRIFT, pt(10))).pack(side="left", fill="x", expand=True, padx=(6, 0))
 
         # Liste samt Rollbalken in einem eigenen Rahmen. Vorher hatte die Liste
         # gar keinen Rollbalken - bei 35 Einträgen war nicht zu sehen, dass es
@@ -23075,7 +23335,7 @@ class PS5ConverterGUI:
         cover_label.pack(anchor="w", pady=(0, 8))
         detail_text = tk.StringVar(value=self._t("library.no_entry_selected"))
         tk.Label(
-            detail, textvariable=detail_text, font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_primary"],
+            detail, textvariable=detail_text, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
             justify="left", anchor="w", wraplength=280,
         ).pack(anchor="w", fill="x")
 
@@ -23551,7 +23811,7 @@ class PS5ConverterGUI:
         text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         text_widget = tk.Text(
-            text_frame, wrap="word", font=(MONO_SCHRIFT, 9), borderwidth=0, padx=12, pady=12,
+            text_frame, wrap="word", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=12, pady=12,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0,
         )
@@ -23732,7 +23992,7 @@ class PS5ConverterGUI:
         text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         text_widget = tk.Text(
-            text_frame, wrap="none", font=(MONO_SCHRIFT, 9), borderwidth=0, padx=12, pady=12,
+            text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=12, pady=12,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0,
         )
@@ -23750,7 +24010,7 @@ class PS5ConverterGUI:
         if info.segments:
             tk.Label(
                 win, text=self._t("self_inspector.segments_heading"),
-                font=(UI_SCHRIFT, 10, "bold"), bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
+                font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
             ).pack(fill="x", padx=20, pady=(4, 2))
 
             tree_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
@@ -23867,9 +24127,9 @@ class PS5ConverterGUI:
         kopf = tk.Frame(win, bg=c["bg_main"], padx=16)
         kopf.pack(fill="x")
         ort_var = tk.StringVar(value=self._download_basis() or self._t("downloads.storage_none"))
-        tk.Label(kopf, text=self._t("downloads.storage_label"), font=(UI_SCHRIFT, 9),
+        tk.Label(kopf, text=self._t("downloads.storage_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        tk.Label(kopf, textvariable=ort_var, font=(UI_SCHRIFT, 9, "bold"),
+        tk.Label(kopf, textvariable=ort_var, font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left", padx=(6, 10))
 
         def _ort_aendern() -> None:
@@ -23879,7 +24139,7 @@ class PS5ConverterGUI:
         ttk.Button(kopf, text=self._t("downloads.storage_change"),
                    command=_ort_aendern).pack(side="left")
 
-        tk.Label(win, text=self._t("downloads.hint_captcha"), font=(UI_SCHRIFT, 8),
+        tk.Label(win, text=self._t("downloads.hint_captcha"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=900, justify="left").pack(fill="x", padx=16, pady=(6, 0))
 
@@ -23917,13 +24177,13 @@ class PS5ConverterGUI:
         def _einfuegen() -> None:
             dlg = self._build_modern_toplevel(self._t("downloads.paste_dialog_title"),
                                               700, 300, min_width=560, min_height=260)
-            tk.Label(dlg, text=self._t("downloads.paste_hint"), font=(UI_SCHRIFT, 9),
+            tk.Label(dlg, text=self._t("downloads.paste_hint"), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                      wraplength=640, justify="left").pack(fill="x", padx=16, pady=(14, 2))
-            tk.Label(dlg, text=self._t("downloads.paste_hint_more"), font=(UI_SCHRIFT, 9),
+            tk.Label(dlg, text=self._t("downloads.paste_hint_more"), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                      wraplength=640, justify="left").pack(fill="x", padx=16, pady=(0, 6))
-            feld = tk.Text(dlg, height=7, wrap="word", font=(MONO_SCHRIFT, 9),
+            feld = tk.Text(dlg, height=7, wrap="word", font=(MONO_SCHRIFT, pt(9)),
                            bg=c["console_bg"], fg=c["console_fg"],
                            insertbackground=c["fg_primary"], relief="flat")
             feld.pack(fill="both", expand=True, padx=16)
@@ -24549,16 +24809,16 @@ class PS5ConverterGUI:
         self._build_modern_header(win, self._t("autoloader.window_title"),
                                   self._t("autoloader.subtitle"))
 
-        tk.Label(win, text=self._t("autoloader.hint"), font=(UI_SCHRIFT, 9),
+        tk.Label(win, text=self._t("autoloader.hint"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(12, 2))
-        tk.Label(win, text=self._t("autoloader.syntax_hint"), font=(UI_SCHRIFT, 9),
+        tk.Label(win, text=self._t("autoloader.syntax_hint"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(0, 8))
 
         kopf = tk.Frame(win, bg=c["bg_main"], padx=16)
         kopf.pack(fill="x")
-        tk.Label(kopf, text=self._t("autoloader.ip_label"), font=(UI_SCHRIFT, 9, "bold"),
+        tk.Label(kopf, text=self._t("autoloader.ip_label"), font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_ip())
         ip_feld = ttk.Entry(kopf, textvariable=ip_var, width=18)
@@ -24578,9 +24838,9 @@ class PS5ConverterGUI:
         links = tk.Frame(mitte, bg=c["bg_main"])
         links.pack(side="left", fill="both", expand=True)
         tk.Label(links, text=self._t("autoloader.files_label"),
-                 font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"],
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x")
-        liste = tk.Listbox(links, selectmode="extended", font=(MONO_SCHRIFT, 9),
+        liste = tk.Listbox(links, selectmode="extended", font=(MONO_SCHRIFT, pt(9)),
                            bg=c["console_bg"], fg=c["console_fg"],
                            selectbackground=c["fg_accent"], relief="flat",
                            highlightthickness=0)
@@ -24589,15 +24849,15 @@ class PS5ConverterGUI:
         rechts = tk.Frame(mitte, bg=c["bg_main"])
         rechts.pack(side="left", fill="both", expand=True, padx=(12, 0))
         tk.Label(rechts, text=self._t("autoloader.sequence_label"),
-                 font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"],
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x")
-        feld = tk.Text(rechts, wrap="none", font=(MONO_SCHRIFT, 9),
+        feld = tk.Text(rechts, wrap="none", font=(MONO_SCHRIFT, pt(9)),
                        bg=c["console_bg"], fg=c["console_fg"],
                        insertbackground=c["fg_primary"], relief="flat",
                        highlightthickness=0)
         feld.pack(fill="both", expand=True, pady=(4, 0))
 
-        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, 9),
+        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(8, 0))
 
@@ -24850,16 +25110,16 @@ class PS5ConverterGUI:
             zeile = tk.Frame(kopf, bg=c["bg_main"])
             zeile.pack(fill="x")
             tk.Label(zeile, text=self._t(schluessel) + ":", width=12, anchor="w",
-                     font=(UI_SCHRIFT, 9), bg=c["bg_main"],
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                      fg=c["fg_secondary"]).pack(side="left")
-            tk.Label(zeile, text=wert, anchor="w", font=(UI_SCHRIFT, 9, "bold"),
+            tk.Label(zeile, text=wert, anchor="w", font=(UI_SCHRIFT, pt(9), "bold"),
                      bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left", fill="x", expand=True)
 
         einstellungen = tk.Frame(win, bg=c["bg_main"], padx=16)
         einstellungen.pack(fill="x", pady=(10, 0))
 
         tk.Label(einstellungen, text=self._t("backport.target_label"),
-                 font=(UI_SCHRIFT, 9), bg=c["bg_main"],
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
         # Bewusst ohne textvariable: Eine nur lokal gehaltene StringVar wird
         # eingesammelt, sobald diese Funktion zurueckkehrt - die Combobox zeigt
@@ -24881,7 +25141,7 @@ class PS5ConverterGUI:
         # bevorzugt fakelib2; die Wahl gilt deshalb auch fuer den AMPR EMU
         # Manager, damit beide nicht in verschiedene Ordner schreiben.
         tk.Label(einstellungen, text=self._t("backport.fakelib_folder_label"),
-                 font=(UI_SCHRIFT, 9), bg=c["bg_main"],
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
         ordner_box = ttk.Combobox(einstellungen, state="readonly", width=10,
                                   values=list(ps5_backport.FAKELIB_ORDNERNAMEN))
@@ -24910,12 +25170,12 @@ class PS5ConverterGUI:
                                 (deckung_var, "backport.option_coverage")):
             tk.Checkbutton(
                 einstellungen, text=self._t(schluessel), variable=var,
-                font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
                 activeforeground=c["fg_accent"], anchor="w",
             ).pack(side="left", padx=(0, 12))
 
-        tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, 8),
+        tk.Label(win, text=self._t("backport.hint_unsigned"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(6, 0))
 
@@ -24943,7 +25203,7 @@ class PS5ConverterGUI:
         rahmen.grid_rowconfigure(0, weight=1)
 
         stand_var = tk.StringVar(value=self._t("backport.state_idle"))
-        stand_label = tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, 9),
+        stand_label = tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, pt(9)),
                                bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
                                wraplength=920, justify="left")
 
@@ -25339,7 +25599,7 @@ class PS5ConverterGUI:
         körper.pack(fill="both", expand=True)
 
         tk.Label(körper, text=self._t("dump_rename.section_detected"),
-                 font=(UI_SCHRIFT, 10, "bold"), bg=c["bg_main"], fg=c["fg_accent"],
+                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"], fg=c["fg_accent"],
                  anchor="w").pack(fill="x", pady=(4, 4))
         for schluessel, wert in (
             ("dump_rename.field_title_id", title_id or "—"),
@@ -25350,16 +25610,16 @@ class PS5ConverterGUI:
             zeile = tk.Frame(körper, bg=c["bg_main"])
             zeile.pack(fill="x")
             tk.Label(zeile, text=self._t(schluessel) + ":", width=14, anchor="w",
-                     font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-            tk.Label(zeile, text=wert, anchor="w", font=(UI_SCHRIFT, 9, "bold"),
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+            tk.Label(zeile, text=wert, anchor="w", font=(UI_SCHRIFT, pt(9), "bold"),
                      bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left", fill="x", expand=True)
 
         tk.Label(körper, text=self._t("dump_rename.current_label", name=aktueller_name),
-                 font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"],
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w", wraplength=680, justify="left").pack(fill="x", pady=(10, 2))
 
         tk.Label(körper, text=self._t("dump_rename.section_presets"),
-                 font=(UI_SCHRIFT, 10, "bold"), bg=c["bg_main"], fg=c["fg_accent"],
+                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"], fg=c["fg_accent"],
                  anchor="w").pack(fill="x", pady=(8, 4))
 
         auswahl = tk.StringVar(value="")
@@ -25374,22 +25634,22 @@ class PS5ConverterGUI:
             tk.Radiobutton(
                 körper, text=f"{bezeichnung}:  {name}", value=name, variable=auswahl,
                 command=_uebernehmen, anchor="w", justify="left",
-                font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
                 activeforeground=c["fg_accent"],
             ).pack(fill="x")
         if not vorhandene:
             tk.Label(körper, text=self._t("dump_rename.no_title_id_message"),
-                     font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_warning"],
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
                      anchor="w", wraplength=680, justify="left").pack(fill="x")
         else:
             auswahl.set(vorhandene[-1][1])
             eigener.set(vorhandene[-1][1])
 
         tk.Label(körper, text=self._t("dump_rename.custom_label"),
-                 font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"],
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w").pack(fill="x", pady=(10, 2))
-        tk.Entry(körper, textvariable=eigener, font=(UI_SCHRIFT, 10),
+        tk.Entry(körper, textvariable=eigener, font=(UI_SCHRIFT, pt(10)),
                  bg=c["bg_card"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"], relief="flat").pack(fill="x", ipady=4)
 
@@ -25446,11 +25706,11 @@ class PS5ConverterGUI:
         status_var = tk.StringVar()
 
         def _zeile(label_key: str, variable: tk.StringVar, waehler) -> None:
-            tk.Label(körper, text=self._t(label_key), font=(UI_SCHRIFT, 9),
+            tk.Label(körper, text=self._t(label_key), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(8, 2))
             reihe = tk.Frame(körper, bg=c["bg_main"])
             reihe.pack(fill="x")
-            tk.Entry(reihe, textvariable=variable, font=(UI_SCHRIFT, 9),
+            tk.Entry(reihe, textvariable=variable, font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                      relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
             if waehler is not None:
@@ -25494,7 +25754,7 @@ class PS5ConverterGUI:
         _zeile("debug_pkg.image_label", image_var, _image_waehlen)
         _zeile("debug_pkg.output_label", ziel_var, _ziel_waehlen)
 
-        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, 9),
+        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=700, justify="left").pack(fill="x", pady=(12, 0))
 
@@ -25569,25 +25829,25 @@ class PS5ConverterGUI:
 
         conn_row = tk.Frame(win, bg=c["bg_main"], padx=16)
         conn_row.pack(fill="x", pady=(0, 12))
-        tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_wert_oder_zentral("klog_ip", self._ps5_ip()))
-        ttk.Entry(conn_row, textvariable=ip_var, width=16, font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 12))
-        tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        ttk.Entry(conn_row, textvariable=ip_var, width=16, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
+        tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         port_var = tk.StringVar(value=self._ps5_wert_oder_zentral("klog_port", self._ps5_klog_port()))
-        ttk.Entry(conn_row, textvariable=port_var, width=8, font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 12))
+        ttk.Entry(conn_row, textvariable=port_var, width=8, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
 
         status_var = tk.StringVar(value=self._t("status.disconnected"))
         status_lbl = tk.Label(
-            conn_row, textvariable=status_var, font=(UI_SCHRIFT, 9, "bold"),
+            conn_row, textvariable=status_var, font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_main"], fg=c["fg_secondary"],
         )
         status_lbl.pack(side="left", padx=(12, 0))
 
         toolbar = tk.Frame(win, bg=c["bg_main"], padx=16)
         toolbar.pack(fill="x")
-        tk.Label(toolbar, text=self._t("klog.filter_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        tk.Label(toolbar, text=self._t("klog.filter_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         filter_var = tk.StringVar()
-        ttk.Entry(toolbar, textvariable=filter_var, font=(UI_SCHRIFT, 10)).pack(
+        ttk.Entry(toolbar, textvariable=filter_var, font=(UI_SCHRIFT, pt(10))).pack(
             side="left", fill="x", expand=True, padx=(4, 12)
         )
         autoscroll_var = tk.BooleanVar(value=True)
@@ -25598,7 +25858,7 @@ class PS5ConverterGUI:
         text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         console = tk.Text(
-            text_frame, wrap="none", font=(MONO_SCHRIFT, 9), borderwidth=0, padx=8, pady=8,
+            text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=8, pady=8,
             bg="#05070a", fg="#39ff6a", insertbackground="#39ff6a", highlightthickness=0,
         )
         console_vsb = ttk.Scrollbar(text_frame, orient="vertical", command=console.yview)
@@ -25843,22 +26103,22 @@ class PS5ConverterGUI:
 
         conn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
         conn_row.pack(fill="x")
-        tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_wert_oder_zentral(f"{settings_prefix}_ftp_ip", self._ps5_ip()))
-        ttk.Entry(conn_row, textvariable=ip_var, width=15, font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 10))
-        tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        ttk.Entry(conn_row, textvariable=ip_var, width=15, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         port_var = tk.StringVar(value=self._ps5_wert_oder_zentral(f"{settings_prefix}_ftp_port", self._ps5_ftp_port()))
-        ttk.Entry(conn_row, textvariable=port_var, width=6, font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 10))
-        tk.Label(conn_row, text=self._t("common.user_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        ttk.Entry(conn_row, textvariable=port_var, width=6, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        tk.Label(conn_row, text=self._t("common.user_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         user_var = tk.StringVar(value=str(self._load_setting(f"{settings_prefix}_ftp_user", "anonymous")))
-        ttk.Entry(conn_row, textvariable=user_var, width=10, font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 10))
-        tk.Label(conn_row, text=self._t("common.password_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+        ttk.Entry(conn_row, textvariable=user_var, width=10, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        tk.Label(conn_row, text=self._t("common.password_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         pass_var = tk.StringVar()
-        ttk.Entry(conn_row, textvariable=pass_var, width=10, font=(UI_SCHRIFT, 10), show="*").pack(side="left", padx=(4, 0))
+        ttk.Entry(conn_row, textvariable=pass_var, width=10, font=(UI_SCHRIFT, pt(10)), show="*").pack(side="left", padx=(4, 0))
 
         status_var = tk.StringVar(value=self._t("status.not_loaded_defaults_shown"))
         tk.Label(
-            win, textvariable=status_var, font=(UI_SCHRIFT, 9), bg=c["bg_main"], fg=c["fg_secondary"],
+            win, textvariable=status_var, font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
             anchor="w", padx=16, wraplength=720, justify="left",
         ).pack(fill="x")
 
@@ -25886,12 +26146,12 @@ class PS5ConverterGUI:
             )
             frm = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=12)
             frm.pack(fill="both", expand=True)
-            tk.Label(frm, text=self._t("common.key_label"), font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
+            tk.Label(frm, text=self._t("common.key_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             key_var = tk.StringVar(value=initial_key)
-            ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, 10), state=("normal" if key_editable else "disabled")).pack(fill="x", pady=(2, 10))
-            tk.Label(frm, text=self._t("common.value_label"), font=(UI_SCHRIFT, 9, "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
+            ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled")).pack(fill="x", pady=(2, 10))
+            tk.Label(frm, text=self._t("common.value_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             value_var = tk.StringVar(value=initial_value)
-            ttk.Entry(frm, textvariable=value_var, font=(UI_SCHRIFT, 10)).pack(fill="x", pady=(2, 10))
+            ttk.Entry(frm, textvariable=value_var, font=(UI_SCHRIFT, pt(10))).pack(fill="x", pady=(2, 10))
             result: dict = {}
 
             def _confirm() -> None:
@@ -26081,20 +26341,20 @@ class PS5ConverterGUI:
             payload_row.pack(fill="x", pady=(12, 0))
             tk.Label(
                 payload_row, text=self._t("remote_ini.payload_label"),
-                bg=c["bg_card"], fg=c["fg_accent"], font=(UI_SCHRIFT, 9, "bold"),
+                bg=c["bg_card"], fg=c["fg_accent"], font=(UI_SCHRIFT, pt(9), "bold"),
             ).pack(side="left", padx=(10, 8), pady=8)
             payload_path_var = tk.StringVar()
             tk.Entry(
                 payload_row, textvariable=payload_path_var,
                 bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                relief="sunken", bd=1, font=(UI_SCHRIFT, 9),
+                relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9)),
             ).pack(side="left", fill="x", expand=True, padx=(0, 8))
             tk.Label(payload_row, text=self._t("remote_ini.payload_port_label"),
-                     bg=c["bg_card"], fg=c["fg_secondary"], font=(UI_SCHRIFT, 9)).pack(side="left")
+                     bg=c["bg_card"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
             payload_port_var = tk.StringVar(value=str(self._load_setting(f"{settings_prefix}_payload_port", payload_default_port)))
             tk.Entry(payload_row, textvariable=payload_port_var, width=7,
                      bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                     relief="sunken", bd=1, font=(UI_SCHRIFT, 9)).pack(side="left", padx=(4, 8))
+                     relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(4, 8))
 
             def _browse_payload() -> None:
                 path = filedialog.askopenfilename(
@@ -26108,7 +26368,7 @@ class PS5ConverterGUI:
                 payload_row, text=self._t("action.browse"),
                 bg=c["fg_accent"], fg=c["bg_main"],
                 activebackground=c["accent_btn_hover"], activeforeground="white",
-                relief="flat", cursor="hand2", font=(UI_SCHRIFT, 9, "bold"), padx=10, pady=2,
+                relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
                 command=_browse_payload,
             ).pack(side="left", padx=(0, 8))
 
@@ -26150,7 +26410,7 @@ class PS5ConverterGUI:
                 payload_row, text=self._t("y2jb.send_button"),
                 bg=c["accent_btn"], fg="white",
                 activebackground=c["accent_btn_hover"], activeforeground="white",
-                relief="flat", cursor="hand2", font=(UI_SCHRIFT, 9, "bold"), padx=10, pady=2,
+                relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
                 command=_send_payload,
             ).pack(side="left", padx=(0, 10))
 
@@ -26217,7 +26477,7 @@ class PS5ConverterGUI:
             wrap = tk.Frame(main, bg=c["bg_main"])
             wrap.pack(fill="x", pady=(0, 10))
             tk.Label(
-                wrap, text=title_text, font=(UI_SCHRIFT, 9, "bold"),
+                wrap, text=title_text, font=(UI_SCHRIFT, pt(9), "bold"),
                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
             ).pack(fill="x", pady=(0, 4))
             card = tk.Frame(wrap, bg=c["bg_card"])
@@ -26232,7 +26492,7 @@ class PS5ConverterGUI:
 
         tk.Label(ip_row, text=self._t("jsloader.ip_label"), width=16, anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
-                 font=(UI_SCHRIFT, 10)).pack(side="left")
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left")
         # Frueher stand hier eine fest verdrahtete Adresse. Jetzt kommt sie aus
         # den Einstellungen; nur wenn dort nichts steht, bleibt der alte Wert
         # als Beispiel stehen.
@@ -26241,28 +26501,28 @@ class PS5ConverterGUI:
                             bg=c["bg_main"], fg=c["fg_primary"],
                             insertbackground=c["fg_primary"],
                             relief="sunken", bd=1,
-                            font=(UI_SCHRIFT, 10))
+                            font=(UI_SCHRIFT, pt(10)))
         ip_entry.pack(side="left", padx=(4, 16))
 
         tk.Label(ip_row, text=self._t("jsloader.js_port_label"), anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
-                 font=(UI_SCHRIFT, 10)).pack(side="left")
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left")
         js_port_var = tk.StringVar(value="50000")
         tk.Entry(ip_row, textvariable=js_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
                  relief="sunken", bd=1,
-                 font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 16))
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 16))
 
         tk.Label(ip_row, text=self._t("jsloader.elf_port_label"), anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
-                 font=(UI_SCHRIFT, 10)).pack(side="left")
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left")
         elf_port_var = tk.StringVar(value="9021")
         tk.Entry(ip_row, textvariable=elf_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
                  relief="sunken", bd=1,
-                 font=(UI_SCHRIFT, 10)).pack(side="left", padx=(4, 0))
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 0))
 
         # ip.ini laden
         import os as _os
@@ -26295,7 +26555,7 @@ class PS5ConverterGUI:
                               bg=c["bg_main"], fg=c["fg_primary"],
                               insertbackground=c["fg_primary"],
                               relief="sunken", bd=1,
-                              font=(UI_SCHRIFT, 10))
+                              font=(UI_SCHRIFT, pt(10)))
         file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
         def _browse_file():
@@ -26311,7 +26571,7 @@ class PS5ConverterGUI:
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
-                  font=(UI_SCHRIFT, 10, "bold"), padx=10, pady=2,
+                  font=(UI_SCHRIFT, pt(10), "bold"), padx=10, pady=2,
                   command=_browse_file).pack(side="left")
 
         # Schnellauswahl: .elf-Dateien aus helloworld direkt senden
@@ -26320,7 +26580,7 @@ class PS5ConverterGUI:
 
         tk.Label(quick_elf_row, text=self._t("jsloader.quick_payloads_label"), width=28, anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
-                 font=(UI_SCHRIFT, 10)).pack(side="left")
+                 font=(UI_SCHRIFT, pt(10))).pack(side="left")
 
         # Über den Ressourcen-Resolver: findet den Ordner sowohl im gebündelten
         # Zustand als auch neben der EXE. Nur __file__ zu verwenden würde in der
@@ -26358,7 +26618,7 @@ class PS5ConverterGUI:
                   bg=c["bg_card"], fg=c["fg_primary"],
                   activebackground=c["bg_main"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2",
-                  font=(UI_SCHRIFT, 9), padx=10, pady=7,
+                  font=(UI_SCHRIFT, pt(9)), padx=10, pady=7,
                   command=lambda: (console.config(state="normal"),
                                    console.delete("1.0", "end"),
                                    console.config(state="disabled"))).pack(side="right")
@@ -26429,7 +26689,7 @@ class PS5ConverterGUI:
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
-                  font=(UI_SCHRIFT, 10, "bold"), padx=16, pady=7,
+                  font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
                   command=lambda: _send_file(js_port_var, "JS")).pack(side="left", padx=(0, 8))
 
         # ELF senden
@@ -26438,7 +26698,7 @@ class PS5ConverterGUI:
                   bg=c["elf_btn"], fg="white",
                   activebackground=c["elf_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
-                  font=(UI_SCHRIFT, 10, "bold"), padx=16, pady=7,
+                  font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
                   command=lambda: _send_file(elf_port_var, "ELF")).pack(side="left", padx=(0, 8))
 
         tk.Button(action_frame,
@@ -26446,7 +26706,7 @@ class PS5ConverterGUI:
               bg=c["accent_btn"], fg="white",
               activebackground=c["accent_btn_hover"], activeforeground="white",
               relief="flat", cursor="hand2",
-              font=(UI_SCHRIFT, 10, "bold"), padx=16, pady=7,
+              font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
               state=("normal" if _helloworld_elfs else "disabled"),
               command=_send_quick_elf).pack(side="left", padx=(0, 8))
 
@@ -26519,7 +26779,7 @@ class PS5ConverterGUI:
                                   bg=c["accent_btn"], fg="white",
                                   activebackground=c["accent_btn_hover"], activeforeground="white",
                                   relief="flat", cursor="hand2",
-                                  font=(UI_SCHRIFT, 10, "bold"), padx=16, pady=7,
+                                  font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
                                   command=_toggle_logserver)
         btn_logserver.pack(side="left", padx=(0, 8))
 
@@ -26534,7 +26794,7 @@ class PS5ConverterGUI:
         console = tk.Text(console_outer,
                           bg=c["bg_main"], fg=c["fg_primary"],
                           insertbackground=c["fg_primary"],
-                          font=(MONO_SCHRIFT, 10),
+                          font=(MONO_SCHRIFT, pt(10)),
                           relief="flat", state="disabled",
                           wrap="none")
         console.grid(row=0, column=0, sticky="nsew")
@@ -26605,11 +26865,11 @@ class PS5ConverterGUI:
         root_row = tk.Frame(main, bg=c["bg_main"])
         root_row.pack(fill="x", pady=(0, 8))
         tk.Label(root_row, text=self._t("ampr_index.root_label"), width=16, anchor="w",
-                 bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, 10)).pack(side="left")
+                 bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
         root_var = tk.StringVar()
         tk.Entry(root_row, textvariable=root_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1, font=(UI_SCHRIFT, 9)).pack(side="left", fill="x", expand=True, padx=(4, 8))
+                 relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
         output_var = tk.StringVar()
 
@@ -26623,16 +26883,16 @@ class PS5ConverterGUI:
         tk.Button(root_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
-                  relief="flat", cursor="hand2", font=(UI_SCHRIFT, 9, "bold"), padx=10, pady=2,
+                  relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
                   command=_browse_root).pack(side="left")
 
         out_row = tk.Frame(main, bg=c["bg_main"])
         out_row.pack(fill="x", pady=(0, 12))
         tk.Label(out_row, text=self._t("ampr_index.output_label"), width=16, anchor="w",
-                 bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, 10)).pack(side="left")
+                 bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
         tk.Entry(out_row, textvariable=output_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1, font=(UI_SCHRIFT, 9)).pack(side="left", fill="x", expand=True, padx=(4, 8))
+                 relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
         def _browse_output() -> None:
             path = filedialog.asksaveasfilename(
@@ -26646,7 +26906,7 @@ class PS5ConverterGUI:
         tk.Button(out_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
-                  relief="flat", cursor="hand2", font=(UI_SCHRIFT, 9, "bold"), padx=10, pady=2,
+                  relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
                   command=_browse_output).pack(side="left")
 
         status_var = tk.StringVar(value="")
@@ -26696,17 +26956,17 @@ class PS5ConverterGUI:
             main, text=self._t("ampr_index.build_button"),
             bg=c["accent_btn"], fg="white",
             activebackground=c["accent_btn_hover"], activeforeground="white",
-            relief="flat", cursor="hand2", font=(UI_SCHRIFT, 10, "bold"), padx=16, pady=7,
+            relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
             command=_do_build,
         )
         build_btn.pack(anchor="w", pady=(0, 6))
-        tk.Label(main, textvariable=status_var, font=(UI_SCHRIFT, 9),
+        tk.Label(main, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 6))
 
         console_outer = tk.Frame(main, bg=c["bg_card"], highlightbackground=c["fg_accent"], highlightthickness=1)
         console_outer.pack(fill="both", expand=True)
         console = tk.Text(console_outer, bg=c["bg_main"], fg=c["fg_primary"],
-                           insertbackground=c["fg_primary"], font=(MONO_SCHRIFT, 9),
+                           insertbackground=c["fg_primary"], font=(MONO_SCHRIFT, pt(9)),
                            relief="flat", state="disabled", wrap="word")
         console.pack(fill="both", expand=True, side="left")
         vsb = ttk.Scrollbar(console_outer, orient="vertical", command=console.yview)
@@ -26952,7 +27212,7 @@ class PS5ConverterGUI:
         ergebnis = {"wert": ""}
 
         tk.Label(dlg, text=frage, bg=c["bg_main"], fg=c["fg_primary"],
-                 font=(UI_SCHRIFT, 10), justify="left", wraplength=380,
+                 font=(UI_SCHRIFT, pt(10)), justify="left", wraplength=380,
                  anchor="w").pack(anchor="w", padx=16, pady=(16, 10))
 
         gewaehlt = tk.StringVar(value=eintraege[0])
@@ -26961,7 +27221,7 @@ class PS5ConverterGUI:
                            bg=c["bg_main"], fg=c["fg_primary"],
                            selectcolor=c["bg_card"], activebackground=c["bg_main"],
                            activeforeground=c["fg_primary"],
-                           font=(UI_SCHRIFT, 10), anchor="w").pack(anchor="w", padx=24)
+                           font=(UI_SCHRIFT, pt(10)), anchor="w").pack(anchor="w", padx=24)
 
         knopfreihe = tk.Frame(dlg, bg=c["bg_main"])
         knopfreihe.pack(fill="x", padx=16, pady=(14, 16))
@@ -27677,7 +27937,7 @@ class PS5ConverterGUI:
         state: dict[str, Any] = {"ftp": None, "path": "/"}
 
         tk.Label(
-            win, text=self._t("ampr.picker_title"), font=(UI_SCHRIFT, 13, "bold"),
+            win, text=self._t("ampr.picker_title"), font=(UI_SCHRIFT, pt(13), "bold"),
             fg=c["fg_accent"], bg=c["bg_main"],
         ).pack(pady=(12, 6))
 
@@ -27688,16 +27948,16 @@ class PS5ConverterGUI:
         for label_key, var, width in (
             ("ampr.picker_host", host_var, 18), ("ampr.picker_port", port_var, 6),
         ):
-            tk.Label(conn, text=self._t(label_key), font=(UI_SCHRIFT, 9),
+            tk.Label(conn, text=self._t(label_key), font=(UI_SCHRIFT, pt(9)),
                      fg=c["fg_secondary"], bg=c["bg_main"]).pack(side="left", padx=(0, 4))
-            tk.Entry(conn, textvariable=var, width=width, font=(UI_SCHRIFT, 9),
+            tk.Entry(conn, textvariable=var, width=width, font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_primary"], relief="flat").pack(side="left", padx=(0, 10), ipady=3)
 
         path_var = tk.StringVar(value="/")
         status_var = tk.StringVar(value=self._t("ampr.picker_not_connected"))
 
         listbox = tk.Listbox(
-            win, font=(MONO_SCHRIFT, 10), bg=c["bg_card"], fg=c["fg_primary"],
+            win, font=(MONO_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_primary"],
             selectbackground=c["fg_accent"], relief="flat", activestyle="none",
         )
 
@@ -27850,21 +28110,21 @@ class PS5ConverterGUI:
                 _log(self._t("ampr.hotswap_failed", name=name))
 
         tk.Button(conn, text=self._t("ampr.picker_connect"), command=_connect,
-                  font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_primary"],
+                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                   relief="flat", padx=12, cursor="hand2").pack(side="left")
 
         quick = tk.Frame(win, bg=c["bg_main"])
         quick.pack(fill="x", padx=14, pady=(8, 4))
-        tk.Label(quick, text=self._t("ampr.picker_quick"), font=(UI_SCHRIFT, 9),
+        tk.Label(quick, text=self._t("ampr.picker_quick"), font=(UI_SCHRIFT, pt(9)),
                  fg=c["fg_secondary"], bg=c["bg_main"]).pack(side="left", padx=(0, 6))
         for quick_path in self._AMPR_FTP_QUICK_PATHS:
             tk.Button(
                 quick, text=quick_path, command=lambda p=quick_path: _goto(p),
-                font=(UI_SCHRIFT, 8), bg=c["bg_card"], fg=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=8, cursor="hand2",
             ).pack(side="left", padx=(0, 4))
 
-        tk.Entry(win, textvariable=path_var, font=(MONO_SCHRIFT, 10), bg=c["bg_card"],
+        tk.Entry(win, textvariable=path_var, font=(MONO_SCHRIFT, pt(10)), bg=c["bg_card"],
                  fg=c["fg_primary"], relief="flat").pack(fill="x", padx=14, pady=(4, 6), ipady=4)
         listbox.pack(fill="both", expand=True, padx=14)
         listbox.bind("<Double-Button-1>", lambda _e: _open_selected())
@@ -27878,11 +28138,11 @@ class PS5ConverterGUI:
             ("ampr.picker_hotswap_set", _swap_set),
             ("ampr.picker_hotswap", _swap_single),
         ):
-            tk.Button(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, 9),
+            tk.Button(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, pt(9)),
                       bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                       padx=12, pady=6, cursor="hand2").pack(side="left", padx=(0, 6))
 
-        tk.Label(win, textvariable=status_var, font=(UI_SCHRIFT, 9),
+        tk.Label(win, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  fg=c["fg_secondary"], bg=c["bg_main"], anchor="w",
                  wraplength=w - 40, justify="left").pack(fill="x", padx=14, pady=(0, 10))
 
@@ -27932,7 +28192,7 @@ class PS5ConverterGUI:
         body.pack(fill="both", expand=True)
 
         tk.Label(body, text=self._t("theme_dialog.choose_theme_label"),
-                 font=(UI_SCHRIFT, 11, "bold"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w", pady=(0, 14))
 
         # Theme-Auswahl Variable
@@ -27962,7 +28222,7 @@ class PS5ConverterGUI:
             # Radio + Text
             rb = tk.Radiobutton(
                 row, text=label, variable=theme_var, value=key,
-                font=(UI_SCHRIFT, 10, "bold"),
+                font=(UI_SCHRIFT, pt(10), "bold"),
                 bg=c["bg_card"], fg=c["fg_primary"],
                 activebackground=c["bg_card"], activeforeground=c["fg_accent"],
                 selectcolor=c["bg_main"],
@@ -27970,7 +28230,7 @@ class PS5ConverterGUI:
             )
             rb.pack(side="left")
             tk.Label(row, text=desc,
-                     font=(UI_SCHRIFT, 8),
+                     font=(UI_SCHRIFT, pt(8)),
                      bg=c["bg_card"], fg=c["fg_secondary"]).pack(side="left", padx=(8, 0))
 
         # Hinweis: Neustart noetig, damit die Oberflaeche vollstaendig im
@@ -27979,7 +28239,7 @@ class PS5ConverterGUI:
         tk.Label(
             body,
             text=self._t("theme_dialog.restart_hint"),
-            font=(UI_SCHRIFT, 8),
+            font=(UI_SCHRIFT, pt(8)),
             bg=c["bg_card"], fg=c["fg_secondary"],
             wraplength=370, justify="left", anchor="w",
         ).pack(fill="x", pady=(10, 0))
@@ -28009,14 +28269,14 @@ class PS5ConverterGUI:
             self._restart_application()
 
         tk.Button(btn_row, text=self._t("theme_dialog.apply_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=7,
                   command=_apply).pack(side="left")
 
         tk.Button(btn_row, text=self._t("action.cancel_ellipsis"),
-                  font=(UI_SCHRIFT, 10),
+                  font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
@@ -28047,16 +28307,16 @@ class PS5ConverterGUI:
         body.pack(fill="both", expand=True)
 
         tk.Label(body, text=self._t("settings_dialog.background_section_label"),
-                 font=(UI_SCHRIFT, 11, "bold"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
         tk.Label(body, text=self._t("settings_dialog.background_hint"),
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 8))
 
         tk.Label(body, text=self._t("settings_dialog.card_tint_restart_hint"),
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(0, 12))
 
@@ -28074,7 +28334,7 @@ class PS5ConverterGUI:
 
         status_label = tk.Label(
             body, textvariable=status_var,
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_card"], fg=c["fg_accent"],
             wraplength=410, justify="left", anchor="w",
         )
@@ -28088,13 +28348,13 @@ class PS5ConverterGUI:
         if bundled_images:
             tk.Label(
                 body, text=self._t("settings_dialog.background_bundled_label"),
-                font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_secondary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
                 anchor="w",
             ).pack(anchor="w", fill="x", pady=(0, 4))
 
             bundled_by_name = {os.path.basename(p): p for p in bundled_images}
             bundled_combo = ttk.Combobox(
-                body, state="readonly", font=(UI_SCHRIFT, 9),
+                body, state="readonly", font=(UI_SCHRIFT, pt(9)),
                 values=sorted(bundled_by_name.keys()),
             )
             bundled_combo.pack(fill="x", pady=(0, 6))
@@ -28127,7 +28387,7 @@ class PS5ConverterGUI:
 
             tk.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
-                command=_apply_bundled, font=(UI_SCHRIFT, 9),
+                command=_apply_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
                 padx=12, pady=5, cursor="hand2",
             ).pack(anchor="w", pady=(0, 12))
@@ -28169,14 +28429,14 @@ class PS5ConverterGUI:
         btn_row.pack(fill="x", pady=(0, 0))
 
         tk.Button(btn_row, text=self._t("settings_dialog.choose_image_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_image).pack(side="left")
 
         tk.Button(btn_row, text=self._t("settings_dialog.reset_image_button"),
-                  font=(UI_SCHRIFT, 10),
+                  font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
@@ -28186,11 +28446,11 @@ class PS5ConverterGUI:
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         tk.Label(body, text=self._t("settings_dialog.sidebar_background_section_label"),
-                 font=(UI_SCHRIFT, 11, "bold"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
         tk.Label(body, text=self._t("settings_dialog.sidebar_background_hint"),
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 12))
 
@@ -28208,7 +28468,7 @@ class PS5ConverterGUI:
 
         sidebar_status_label = tk.Label(
             body, textvariable=sidebar_status_var,
-            font=(UI_SCHRIFT, 9, "bold"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_card"], fg=c["fg_accent"],
             wraplength=460, justify="left", anchor="w",
         )
@@ -28220,13 +28480,13 @@ class PS5ConverterGUI:
         if sidebar_bundled:
             tk.Label(
                 body, text=self._t("settings_dialog.sidebar_background_bundled_label"),
-                font=(UI_SCHRIFT, 9), bg=c["bg_card"], fg=c["fg_secondary"],
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
                 anchor="w",
             ).pack(anchor="w", fill="x", pady=(0, 4))
 
             sidebar_by_name = {os.path.basename(p): p for p in sidebar_bundled}
             sidebar_combo = ttk.Combobox(
-                body, state="readonly", font=(UI_SCHRIFT, 9),
+                body, state="readonly", font=(UI_SCHRIFT, pt(9)),
                 values=sorted(sidebar_by_name.keys()),
             )
             sidebar_combo.pack(fill="x", pady=(0, 6))
@@ -28257,7 +28517,7 @@ class PS5ConverterGUI:
 
             tk.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
-                command=_apply_sidebar_bundled, font=(UI_SCHRIFT, 9),
+                command=_apply_sidebar_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
                 padx=12, pady=5, cursor="hand2",
             ).pack(anchor="w", pady=(0, 12))
@@ -28299,14 +28559,14 @@ class PS5ConverterGUI:
         sidebar_btn_row.pack(fill="x", pady=(0, 0))
 
         tk.Button(sidebar_btn_row, text=self._t("settings_dialog.choose_image_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_sidebar_image).pack(side="left")
 
         tk.Button(sidebar_btn_row, text=self._t("settings_dialog.reset_image_button"),
-                  font=(UI_SCHRIFT, 10),
+                  font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
@@ -28316,13 +28576,13 @@ class PS5ConverterGUI:
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         tk.Label(body, text=self._t("settings_dialog.ps5_section"),
-                 font=(UI_SCHRIFT, 11, "bold"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
         # wraplength wie bei den uebrigen Hinweisen des Dialogs - ohne sie liefe
         # der Text auf eine Zeile und waere rechts abgeschnitten.
         tk.Label(body, text=self._t("settings_dialog.ps5_hint"),
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(2, 8))
 
@@ -28338,14 +28598,14 @@ class PS5ConverterGUI:
             ("settings_dialog.ps5_ftp_port_label", ps5_ftp_var, 8),
             ("settings_dialog.ps5_klog_port_label", ps5_klog_var, 8),
         )):
-            tk.Label(ps5_raster, text=self._t(schluessel), font=(UI_SCHRIFT, 9),
+            tk.Label(ps5_raster, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
                      width=14).grid(row=zeile, column=0, sticky="w", pady=2)
             ttk.Entry(ps5_raster, textvariable=var, width=breite,
-                      font=(UI_SCHRIFT, 10)).grid(row=zeile, column=1, sticky="w", pady=2)
+                      font=(UI_SCHRIFT, pt(10))).grid(row=zeile, column=1, sticky="w", pady=2)
 
         ps5_status_var = tk.StringVar(value="")
-        tk.Label(body, textvariable=ps5_status_var, font=(UI_SCHRIFT, 8),
+        tk.Label(body, textvariable=ps5_status_var, font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
                  wraplength=460, justify="left").pack(anchor="w", fill="x", pady=(6, 0))
 
@@ -28406,7 +28666,7 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True).start()
 
         tk.Button(body, text=self._t("settings_dialog.ps5_test_button"),
-                  font=(UI_SCHRIFT, 9),
+                  font=(UI_SCHRIFT, pt(9)),
                   bg=c["bg_main"], fg=c["fg_primary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=12, pady=5,
@@ -28416,13 +28676,13 @@ class PS5ConverterGUI:
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         tk.Label(body, text=self._t("settings_dialog.downloads_section_label"),
-                 font=(UI_SCHRIFT, 11, "bold"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
         tk.Label(body, text=self._t("settings_dialog.downloads_hint",
                                     update=ps5_downloads.ORDNER_UPDATE,
                                     patch=ps5_downloads.ORDNER_PATCH),
-                 font=(UI_SCHRIFT, 8),
+                 font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 12))
 
@@ -28434,7 +28694,7 @@ class PS5ConverterGUI:
                 basis if basis else self._t("settings_dialog.downloads_status_none"))
 
         tk.Label(body, textvariable=downloads_status_var,
-                 font=(UI_SCHRIFT, 9, "bold"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_card"], fg=c["fg_accent"],
                  wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(0, 14))
         _refresh_downloads_status()
@@ -28450,13 +28710,13 @@ class PS5ConverterGUI:
         downloads_btn_row = tk.Frame(body, bg=c["bg_card"])
         downloads_btn_row.pack(fill="x")
         tk.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_choose_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_download_dir).pack(side="left")
         tk.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_reset_button"),
-                  font=(UI_SCHRIFT, 10),
+                  font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
@@ -28541,13 +28801,13 @@ class PS5ConverterGUI:
         close_row = tk.Frame(body, bg=c["bg_card"])
         close_row.pack(fill="x", side="bottom", pady=(8, 0))
         tk.Button(close_row, text=self._t("action.close"),
-                  font=(UI_SCHRIFT, 10),
+                  font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=dlg.destroy).pack(side="right")
         tk.Button(close_row, text=self._t("settings_dialog.save_button"),
-                  font=(UI_SCHRIFT, 10, "bold"),
+                  font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
@@ -28556,7 +28816,7 @@ class PS5ConverterGUI:
         hint_row = tk.Frame(body, bg=c["bg_card"])
         hint_row.pack(fill="x", side="bottom", pady=(20, 0))
         save_hint = tk.Label(hint_row, text=self._t("settings_dialog.save_hint"),
-                             font=(UI_SCHRIFT, 8), bg=c["bg_card"], fg=c["fg_secondary"],
+                             font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_secondary"],
                              justify="left", anchor="w")
         save_hint.pack(fill="x")
 
@@ -28858,7 +29118,8 @@ class PS5ConverterGUI:
                 continue
             try:
                 knopf.configure(bg=c["bg_card"], fg=c[schriftfarbe],
-                                activebackground=c["fg_accent"])
+                                activebackground=c["fg_accent"],
+                                disabledforeground=c["fg_secondary"])
             except tk.TclError as exc:
                 logger.debug("Fussknopf %s nicht umfaerbbar: %s", name, exc)
         rahmen = getattr(self, "_sidebar_footer_frame", None)
@@ -29362,7 +29623,7 @@ class PS5ConverterGUI:
             tk.Label(
                 splash,
                 text="\u2715 \u25cb \u25a1 \u25b3",
-                font=(UI_SCHRIFT, 14),
+                font=(UI_SCHRIFT, pt(14)),
                 fg=self._COLORS["fg_secondary"],
                 bg=self._COLORS["bg_main"],
             ).pack(pady=(20, 0))
@@ -29370,7 +29631,7 @@ class PS5ConverterGUI:
             tk.Label(
                 splash,
                 text="PS5 DUMP & IMAGE CONVERTER",
-                font=(UI_SCHRIFT, 16, "bold"),
+                font=(UI_SCHRIFT, pt(16), "bold"),
                 fg=self._COLORS["fg_accent"],
                 bg=self._COLORS["bg_main"],
             ).pack(pady=(5, 0))
@@ -29378,7 +29639,7 @@ class PS5ConverterGUI:
             tk.Label(
                 splash,
                 text="Homebrew Edition",
-                font=(UI_SCHRIFT, 10),
+                font=(UI_SCHRIFT, pt(10)),
                 fg=self._COLORS["fg_secondary"],
                 bg=self._COLORS["bg_main"],
             ).pack()
