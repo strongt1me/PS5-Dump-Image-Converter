@@ -40,6 +40,33 @@ Zusätzlich prüft `_on_layout_settled` nach jeder Größenänderung, ob alle vi
 
 ---
 
+## Die Integrationen haben eine eigene Zeile bekommen
+
+Gefunden hat das die neue Prüfung selbst, am fertigen Linux-Programm auf einem 1366 Pixel breiten Bildschirm.
+
+Seit v1.8.68 hingen acht Bedienelemente in einer einzigen Reihe: Kompression, Worker-Threads, Prüfstufe, AMPR EMU samt Version, PlayGo, BACKPORT samt Firmware. Die Reihe ist eine feste Kette ohne Umbruch und braucht **1145 Pixel** Kartenbreite. So viel ist selten da:
+
+| Fensterbreite | Karte | ragte hinaus |
+| --- | --- | --- |
+| 1920 | 1347 | – |
+| 1600 | 1027 | 118 px (Firmware-Liste) |
+| 1440 | 867 | 278 px (ab AMPR-Version) |
+| 1366 | 793 | 352 px |
+| 1100 (damalige Mindestbreite) | 527 | 618 px, schon ab der Prüfstufe |
+
+Der überstehende Teil war weder sichtbar noch anklickbar. Betroffen war jedes Fenster unter rund 1725 Pixeln Breite – maximiert auf einem 1920er Schirm fiel es nicht auf.
+
+**AMPR EMU und BACKPORT stehen jetzt in einer eigenen Zeile** unter „KOMPRESSION (PFS) / WORKER-THREADS / PRÜFUNG", mit eigener Überschrift „BEIM ERSTELLEN EINBAUEN". Sie brauchen dort 506 Pixel und passen damit auch bei der Mindestbreite.
+
+Zwei Dinge kamen dabei heraus:
+
+- **Die Mindestbreite steigt von 1100 auf 1200 Pixel.** Die obere Zeile braucht ohne die Integrationen immer noch 625 Pixel Karte; bei 1100 waren nur 527 da, und schon die Prüfstufen-Liste fiel heraus. Das reicht bis v1.8.56 zurück.
+- **Die Karte ist 66 Pixel höher.** Unterhalb von rund 860 Pixeln Fensterhöhe steht die Knopfleiste damit unten hinaus, vorher lag diese Grenze bei rund 790. Auf einem 1366×768-Bildschirm passte der Inhalt allerdings schon vorher nicht vollständig.
+
+Der Träger der neuen Zeile ist bewusst **kein** Rahmen: Ein `tk.Frame` ist undurchsichtig und stand über dem Hintergrundbild als dunkler Balken quer durch die Karte. Die Höhe reserviert stattdessen das Raster selbst.
+
+---
+
 ## Die Maßangaben in den Einstellungen
 
 Bei der Bildauswahl standen feste Zahlen: 1920 × 1020 für den Hauptbereich, 320 × 1000 für die Seitenleiste. Die zweite war schlicht falsch – die Seitenleiste ist mit `width=320` angemeldet, wächst bei 125 % Anzeigeskalierung aber auf **493 Pixel**. Jedes mitgelieferte Seitenleistenbild wird dort um 54 % hochgerechnet.
@@ -99,7 +126,7 @@ Kein Zuwachs, keine Ansammlung.
 ## Prüfung
 
 - **1030 Tests grün** (3 übersprungen), 14/14 Quality-Tests.
-- Neu: `test_anzeige_diagnose.py` mit 45 Fällen – die Prüfregeln einzeln, dazu Quelltextprüfungen für die Reihenfolge in den vier Größenwachen. Der Fehler lag zwischen zwei Ereignissen, die 80 ms auseinanderliegen; am laufenden Fenster ist er nicht zuverlässig zu treffen, an der Reihenfolge im Quelltext dagegen eindeutig.
+- Neu: `test_anzeige_diagnose.py` mit 49 Fällen – die Prüfregeln einzeln, dazu Quelltextprüfungen für die Reihenfolge in den vier Größenwachen. Der Fehler lag zwischen zwei Ereignissen, die 80 ms auseinanderliegen; am laufenden Fenster ist er nicht zuverlässig zu treffen, an der Reihenfolge im Quelltext dagegen eindeutig.
 
 ---
 
@@ -112,18 +139,6 @@ Zwei Bildbestände bleiben zu klein für einen 1920er Bildschirm bei 125 % Anzei
 
 Hochskalieren brächte nichts; für beide gibt es keine Quelle in höherer Auflösung.
 
-### Die Zeile mit Kompression, Prüfstufe und Integration ist zu lang
+### Zu enge Beschriftungen an schmalen Fenstern
 
-Die Prüfung fand das am fertigen Linux-Programm auf einem 1366 Pixel breiten Bildschirm. Die Zeile ist eine feste Kette ohne Umbruch und braucht **1145 Pixel** Kartenbreite – vorhanden sind bei einem 1920er Bildschirm 1347, darunter weniger:
-
-| Fensterbreite | Karte | ragt hinaus |
-| --- | --- | --- |
-| 1920 | 1347 | – |
-| 1600 | 1027 | 118 px (Firmware-Liste) |
-| 1440 | 867 | 278 px (ab AMPR-Version) |
-| 1366 | 793 | 352 px |
-| 1100 (Mindestbreite) | 527 | 618 px, schon ab der Prüfstufe |
-
-Der überstehende Teil ist nicht sichtbar und nicht bedienbar. Betroffen ist, wer das Fenster kleiner als rund 1725 Pixel zieht; maximiert auf einem 1920er Schirm passt alles.
-
-Ein Umbruch braucht eine zusätzliche Rasterzeile in der Pfad-Karte – direkt unter der Zeile beginnt bei y=184 der Hinweistext zum Quellformat, senkrechter Spielraum ist also keiner da. Das ist eine eigene Änderung mit eigenem Test und steht als Nächstes an. Die Teilursache reicht bis v1.8.56 zurück: Schon die Prüfstufen-Liste allein überschreitet bei der Mindestbreite den Kartenrand.
+Unterhalb von rund 1500 Pixeln Fensterbreite passen einzelne Beschriftungen nicht mehr in ihren Knopf – „BENUTZERHANDBUCH" in der Seitenleiste fehlen bei 1366 Pixeln 163 Pixel Breite. Der Text wird dann beschnitten. Das betrifft die Seitenleiste, nicht die Pfad-Karte, und ist eine eigene Sache.

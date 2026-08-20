@@ -14,6 +14,17 @@ Beim Öffnen des Fensters wurde das Hintergrundbild bisher **gar nicht auf die F
 
 Dasselbe beim **Wechsel des Designs**: Dabei meldet die Oberfläche für einen Augenblick eine Zwischengröße, und die dafür berechnete Fassung überschrieb kurz darauf die richtige. Auch das ist behoben – nach einem Designwechsel stimmen alle vier Flächen sofort.
 
+### AMPR EMU und BACKPORT stehen jetzt in einer eigenen Zeile
+
+Seit v1.8.68 standen acht Bedienelemente in einer Reihe – Kompression, Worker-Threads, Prüfstufe und die beiden Integrationen mit ihren Auswahllisten. Die Reihe braucht 1145 Pixel Breite, und so breit ist die Pfad-Karte nur bei einem Fenster ab rund 1725 Pixeln. Darunter standen die hinteren Bedienelemente außerhalb der Karte: nicht zu sehen und nicht anzuklicken. Bei 1366 Pixeln fehlten 352 Pixel.
+
+**AMPR EMU und BACKPORT haben jetzt eine eigene Zeile** darunter, mit der Überschrift „BEIM ERSTELLEN EINBAUEN". Alles passt damit auch in schmale Fenster.
+
+Zwei Folgen davon:
+
+- Das Fenster lässt sich nicht mehr schmaler als 1200 Pixel ziehen (vorher 1100). Bei 1100 fiel schon die Prüfstufen-Liste aus der Karte heraus.
+- Die Pfad-Karte ist 66 Pixel höher. Bei einem Fenster unter rund 860 Pixeln Höhe steht die Knopfleiste unten hinaus.
+
 ### Die Einstellungen nennen die Maße, die dein Bildschirm braucht
 
 Bei der Bildauswahl stand bisher eine feste Zahl. Die stimmt aber nur für einen Bildschirm: Wie breit die Seitenleiste wirklich ist, hängt an deiner Anzeigeskalierung – bei 125 % sind es rund 500 statt der angegebenen 320 Pixel. Der Hinweis rechnet die nötige Größe jetzt für deinen Bildschirm aus.

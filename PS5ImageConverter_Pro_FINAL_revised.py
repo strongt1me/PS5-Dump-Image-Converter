@@ -441,7 +441,7 @@ MKPFS_REQUIRED_VERSION = "0.0.9"
 PS5_FTP_PORTS: tuple[int, ...] = (2121, 1337, 21, 2120)
 PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 
-WINDOW_MIN_WIDTH = 1100
+WINDOW_MIN_WIDTH = 1200
 WINDOW_MIN_HEIGHT = 700
 # Zuschlag fuer alle Punktgroessen unter macOS - siehe
 # PS5ConverterGUI._macos_schrift_skalieren.
@@ -4879,14 +4879,36 @@ class PS5ConverterGUI:
 
         # An dieser Stelle stand bis v1.8.68 die Beschriftung
         # "PRUEFUNG NACH DEM PACKEN". Sie ist entfallen: Die Zeilenueberschrift
-        # nennt die Pruefung ohnehin, und der Platz wird fuer die beiden
-        # Integrationen gebraucht, die beim Erstellen mit einfliessen koennen.
+        # nennt die Pruefung ohnehin.
+        #
+        # Die beiden Integrationen standen bis v1.8.69 rechts daneben, in
+        # derselben place-Kette. Die brauchte damit 1145 px Kartenbreite -
+        # vorhanden sind bei einem 1920er Fenster 1347, bei 1366 nur 793. Der
+        # Rest stand ausserhalb der Karte und war weder sichtbar noch
+        # bedienbar; bei der Mindestbreite fiel sogar die Pruefstufe heraus.
+        #
+        # Sie bekommen deshalb zwei eigene Rasterzeilen, wie jede andere
+        # Angabe der Karte: eine Ueberschrift und darunter die Bedienelemente.
+        # Die Kette selbst bleibt, sie haengt nur an einem anderen Anfang.
         #
         # Beide sind unabhaengig voneinander und lassen sich kombinieren - ein
         # herabgesetztes Spiel kann zusaetzlich den AMPR EMU brauchen. Die
         # Auswahllisten bleiben stehen, wenn ihr Kaestchen aus ist, und werden
         # nur gesperrt: Ein Ein- und Ausblenden wuerde die place-Kette
-        # auseinanderreissen, an der die ganze Zeile haengt.
+        # auseinanderreissen, an der die Zeile haengt.
+        self.integrate_title = ttk.Label(
+            path_card,
+            text=self._t("main.integrate_label"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            background=self._COLORS["bg_card"],
+            compound="center",
+        )
+        self._register_translatable(self.integrate_title, "main.integrate_label")
+        self.integrate_title.grid(row=4, column=0, columnspan=3, sticky="w",
+                                  pady=(12, 0))
+        self._card_caption_labels.append(self.integrate_title)
+
         self.ampr_integrate_var = tk.BooleanVar(
             value=bool(self._load_setting("integrate_ampr", False))
         )
@@ -4911,8 +4933,12 @@ class PS5ConverterGUI:
             anchor="w", bd=0, highlightthickness=0, padx=0,
         )
         self._register_translatable(self.ampr_integrate_check, "main.integrate_ampr")
-        self.ampr_integrate_check.place(in_=self.verify_combo, relx=1.0, x=14,
-                                        rely=0.5, anchor="w")
+        # Ohne "n"/"s" zentriert das Raster senkrecht in der Zeile. Das ist
+        # noetig, weil die Klapplisten daneben hoeher sind als das Kaestchen
+        # und sich an dessen Mitte ausrichten - saesse es oben, ragten sie
+        # unten heraus.
+        self.ampr_integrate_check.grid(row=5, column=0, sticky="w",
+                                       pady=(5, 2))
         DelayedTooltip(self.ampr_integrate_check, self._t("main.integrate_ampr_hint"),
                        delay_ms=900, wraplength=430)
 
@@ -4983,6 +5009,7 @@ class PS5ConverterGUI:
 
         self._ampr_versionsliste_fuellen()
         self._on_integration_changed(speichern=False)
+        self._integrationszeile_hoehe_setzen()
 
         # Erst jetzt stehen Klappliste und Zahlenfeld beide - vorher
         # laesst sich die Hoehendifferenz nicht messen.
@@ -5007,7 +5034,7 @@ class PS5ConverterGUI:
         # Volle Zeilenbreite als eigene Bildunterschrift unter dem Dropdown –
         # dadurch bleibt das Layout unabhängig von der Textlänge zwischen den
         # Aufgaben (Quelle: ...) über alle Modi hinweg harmonisch/stabil.
-        self.format_info_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(0, 15))
+        self.format_info_label.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 15))
         # Der Hinweis steht mitten zwischen den randlosen Beschriftungen und
         # bekommt deshalb dieselbe Behandlung – sonst bliebe genau hier als
         # einziges eine deckende bg_card-Fläche auf dem Hintergrundbild stehen.
@@ -5023,10 +5050,10 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.dest_title, "main.target_folder_label")
-        self.dest_title.grid(row=5, column=0, sticky="w")
+        self.dest_title.grid(row=7, column=0, sticky="w")
         self._card_caption_labels.append(self.dest_title)
         self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=(UI_SCHRIFT, pt(12)))
-        self.dest_entry.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.dest_entry.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.dest_btn = RoundedButton(
             path_card, text=self._t("main.choose_folder_button"), command=self._browse_dest,
             font=(UI_SCHRIFT, pt(11), "bold"),
@@ -5036,7 +5063,7 @@ class PS5ConverterGUI:
             parent_bg=self._COLORS["bg_card"],
         )
         self._register_translatable(self.dest_btn, "main.choose_folder_button")
-        self.dest_btn.grid(row=6, column=2, padx=(10, 0), pady=(5, 0))
+        self.dest_btn.grid(row=8, column=2, padx=(10, 0), pady=(5, 0))
 
         # Temp-Ordner für große temporäre Arbeitsdateien
         self.temp_title = ttk.Label(
@@ -5048,10 +5075,10 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.temp_title, "main.temp_folder_label")
-        self.temp_title.grid(row=7, column=0, sticky="w", pady=(14, 0))
+        self.temp_title.grid(row=9, column=0, sticky="w", pady=(14, 0))
         self._card_caption_labels.append(self.temp_title)
         self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=(UI_SCHRIFT, pt(12)))
-        self.temp_entry.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.temp_entry.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.temp_btn = RoundedButton(
             path_card, text=self._t("main.choose_temp_button"), command=self._browse_temp_dir,
             font=(UI_SCHRIFT, pt(11), "bold"),
@@ -5061,7 +5088,7 @@ class PS5ConverterGUI:
             parent_bg=self._COLORS["bg_card"],
         )
         self._register_translatable(self.temp_btn, "main.choose_temp_button")
-        self.temp_btn.grid(row=8, column=2, padx=(10, 0), pady=(5, 0))
+        self.temp_btn.grid(row=10, column=2, padx=(10, 0), pady=(5, 0))
 
         # Rechner nach erfolgreichem Abschluss herunterfahren.
         #
@@ -5088,7 +5115,7 @@ class PS5ConverterGUI:
             highlightthickness=0,
         )
         self._register_translatable(self.shutdown_check, "main.shutdown_after_success")
-        self.shutdown_check.grid(row=9, column=0, columnspan=3, sticky="w", pady=(16, 0))
+        self.shutdown_check.grid(row=11, column=0, columnspan=3, sticky="w", pady=(16, 0))
 
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
@@ -6548,6 +6575,28 @@ class PS5ConverterGUI:
     #: Ab wie vielen Pixeln Unterschied ein Hintergrundbild als
     #: stehengeblieben gilt. Ein Pixel wandert je nach Rahmenbreite.
     _HINTERGRUND_TOLERANZ = 2
+
+    def _integrationszeile_hoehe_setzen(self) -> None:
+        """Reserviert fuer die Integrationszeile die Hoehe ihres groessten Elements.
+
+        Im Raster steht nur das erste Kaestchen; alles rechts davon liegt per
+        ``place`` daran und zaehlt fuer die Zeilenhoehe nicht mit. Ohne diese
+        Angabe waere die Zeile so hoch wie das Kaestchen (25 px), und die
+        Klapplisten daneben (37 px) ragten in den Hinweistext darunter.
+
+        Bewusst ueber ``grid_rowconfigure`` und nicht ueber einen Rahmen als
+        Traeger: Ein ``tk.Frame`` ist undurchsichtig und stand ueber dem
+        Hintergrundbild der Karte als dunkler Balken quer durch die Zeile.
+        """
+        try:
+            hoehe = max(w.winfo_reqheight() for w in (
+                self.ampr_integrate_check, self.ampr_version_combo,
+                self.ampr_playgo_check, self.backport_integrate_check,
+                self.backport_fw_combo))
+            self.ampr_integrate_check.master.grid_rowconfigure(
+                5, minsize=max(1, int(hoehe)))
+        except Exception as exc:
+            logger.debug("Hoehe der Integrationszeile nicht setzbar: %s", exc)
 
     def _hintergrund_ist_aktuell(self, foto: str, breite: int, hoehe: int) -> bool:
         """Ob das gezeichnete Bild schon genau auf diese Flaeche passt.

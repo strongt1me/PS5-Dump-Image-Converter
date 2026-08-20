@@ -75,6 +75,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'main.source_and_target_label': {'de': 'QUELLE & ZIEL', 'en': 'SOURCE & TARGET'},
     'main.dump_folder_button': {'de': 'Dump Ordner', 'en': 'Dump folder'},
     'main.target_format_label': {'de': 'ZIELFORMAT', 'en': 'TARGET FORMAT'},
+    'main.integrate_label': {'de': 'BEIM ERSTELLEN EINBAUEN', 'en': 'INTEGRATE WHEN BUILDING'},
     'main.integrate_ampr': {'de': 'AMPR EMU', 'en': 'AMPR EMU'},
     'main.integrate_playgo': {'de': 'PlayGo', 'en': 'PlayGo'},
     'main.integrate_backport': {'de': 'BACKPORT', 'en': 'BACKPORT'},
