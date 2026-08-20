@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.65</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.69</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.65</span>
+      <span class="marke">Version v1.8.69</span>
       <span class="marke">Stand 16. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -641,7 +641,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <thead><tr><th>Schaltfläche</th><th>Was sie tut</th></tr></thead>
     <tbody>
       <tr><td><strong>BIBLIOTHEK</strong></td><td>Durchsucht mehrere gespeicherte Ordner nach Dump-Ordnern und Containerdateien, zeigt Titel und Cover und erlaubt eine schnelle Übernahme als Quelle.</td></tr>
-      <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt.</td></tr>
+      <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
@@ -908,19 +908,20 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Unter <strong>EINSTELLUNGEN</strong> gibt es zwei getrennte Bereiche, jeder mit einer eigenen Klappliste der mitgelieferten Bilder:</p>
   <div class="tabelle">
   <table>
-    <thead><tr><th>Bereich</th><th>Bilder</th><th>Format</th></tr></thead>
+    <thead><tr><th>Bereich</th><th>Bilder</th><th>Mitgeliefert</th></tr></thead>
     <tbody>
       <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
       <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 320 × 1000 Pixel</td></tr>
     </tbody>
   </table>
   </div>
+  <p>Wie groß ein Bild <em>sein sollte</em>, hängt an Ihrem Bildschirm und steht deshalb direkt im Einstellungsfenster unter jedem der beiden Bereiche. Der Hauptbereich braucht die Auflösung Ihres Bildschirms, die Seitenleiste deren tatsächliche Breite – bei 125 % Anzeigeskalierung sind das rund 500 statt der angemeldeten 320 Pixel. Ein kleineres Bild wird angenommen, wirkt dann aber weich gezogen; ein größeres schadet nie.</p>
   <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
   <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
   <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
   <div class="kasten">
     <span class="titel">Warum zwei getrennte Listen</span>
-    <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich würde stark verzerrt – deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
+    <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich müsste so stark beschnitten werden, dass vom Motiv kaum etwas übrig bliebe – verzerrt wird nie, aber sinnvoll ist es auch nicht. Deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
   </div>
 </section>
 
@@ -946,7 +947,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.65), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.69), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1128,7 +1129,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.65</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.69</strong></span>
     <span>Stand 18. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

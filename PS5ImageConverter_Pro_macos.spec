@@ -196,6 +196,7 @@ a = Analysis(
         'ps5_validator.utils.param_manifest',
         'ps5_validator.utils.dump_rename',
         'ps5_validator.utils.i18n',
+        'ps5_validator.utils.anzeige_diagnose',
         'ps5_validator.utils.ini_config',
         'ps5_validator.utils.pkg_writer',
         # Betriebssystem-Abstraktion (Schriften, Rechte, Dateien oeffnen)

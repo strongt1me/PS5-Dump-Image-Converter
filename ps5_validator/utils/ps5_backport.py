@@ -889,6 +889,7 @@ NID_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+-
 NID_SALZ = bytes.fromhex("518D64A635DED8C1E6B039B1C3E55230")
 
 #: Dynamische Eintraege eines PRX. Die 0x61...-Werte sind Sonys Erweiterungen.
+DT_HASH = 4
 DT_STRTAB = 5
 DT_SYMTAB = 6
 DT_STRSZ = 10
@@ -1015,12 +1016,35 @@ def prx_symbole(elf: bytes) -> dict:
     import_namen = {k: zeichenkette(o) for k, o, ist_import in bibliotheken if ist_import}
     export_namen = {k: zeichenkette(o) for k, o, ist_import in bibliotheken if not ist_import}
 
+    # Wie viele Symbole es sind, steht nicht in der Dynamiktabelle - aber in
+    # der SysV-Hashtabelle: deren zweites Wort (nchain) ist die Anzahl der
+    # Eintraege in .dynsym. Ohne diese Grenze liest man einfach bis zum
+    # Dateiende weiter.
+    #
+    # Genau das tat diese Funktion bis v1.8.65. Bei "Dirt 5" waren das 37468
+    # statt 744 Eintraege - der Rest sind fremde Bytes, deren st_name zufaellig
+    # in die Zeichenkettentabelle zeigt und dort mitten in einen Namen. Heraus
+    # kamen Bruchstuecke wie "+mr7GjTvr8" (ein Stueck von "N+mr7GjTvr8"), die
+    # als eigenstaendige Kennungen gezaehlt wurden - und damit als fehlende
+    # Funktionen, die es nie gab.
+    anzahl = None
+    if DT_HASH in werte:
+        hashoff = zu_offset(werte[DT_HASH])
+        if hashoff is not None and hashoff + 8 <= len(elf):
+            _nbucket, nchain = struct.unpack_from("<II", elf, hashoff)
+            if 0 < nchain < 1_000_000:
+                anzahl = nchain
+    if anzahl is None:
+        # Ohne Hashtabelle bleibt nur eine vorsichtige Schranke: bis zum
+        # Beginn der Zeichenkettentabelle, wenn die dahinter liegt.
+        ende = strtab if strtab > symtab else len(elf)
+        anzahl = max(0, (ende - symtab) // 24)
+
     importe: dict[str, set] = {}
     exporte: dict[str, set] = {}
     i = 0
-    # 24 Bytes je Eintrag (Elf64_Sym). Die Obergrenze verhindert, dass eine
-    # beschaedigte Datei den Lauf in eine Endlosschleife zieht.
-    while symtab + (i + 1) * 24 <= len(elf) and i < 100000:
+    # 24 Bytes je Eintrag (Elf64_Sym).
+    while i < anzahl and symtab + (i + 1) * 24 <= len(elf):
         st_name, _info, _other, st_shndx, _wert, _groesse = struct.unpack_from(
             "<IBBHQQ", elf, symtab + i * 24)
         i += 1

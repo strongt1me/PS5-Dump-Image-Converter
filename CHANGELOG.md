@@ -2,9 +2,27 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.68):** AMPR EMU und BACKPORT lassen sich beim Erstellen ankreuzen und fließen in jedes Zielformat mit ein.
+> **Kurz zum aktuellen Stand (v1.8.69):** Das Hintergrundbild sitzt vom ersten Moment an richtig, und der Diagnosebericht prüft die Darstellung des Fensters mit.
 
 ---
+
+## v1.8.69 – 20.08.2026
+
+### Das Hintergrundbild sitzt jetzt vom ersten Moment an
+
+Beim Öffnen des Fensters wurde das Hintergrundbild bisher **gar nicht auf die Fenstergröße gerechnet** – es blieb in der Größe der Bilddatei stehen, während Inhaltsfläche und Seitenleiste ihre Bilder längst angepasst hatten. Sichtbar wurde das als Bruch zwischen den Flächen, der erst verschwand, wenn man das Fenster einmal anfasste. Das Bild wird jetzt beim Start einmal nachgezogen.
+
+Dasselbe beim **Wechsel des Designs**: Dabei meldet die Oberfläche für einen Augenblick eine Zwischengröße, und die dafür berechnete Fassung überschrieb kurz darauf die richtige. Auch das ist behoben – nach einem Designwechsel stimmen alle vier Flächen sofort.
+
+### Die Einstellungen nennen die Maße, die dein Bildschirm braucht
+
+Bei der Bildauswahl stand bisher eine feste Zahl. Die stimmt aber nur für einen Bildschirm: Wie breit die Seitenleiste wirklich ist, hängt an deiner Anzeigeskalierung – bei 125 % sind es rund 500 statt der angegebenen 320 Pixel. Der Hinweis rechnet die nötige Größe jetzt für deinen Bildschirm aus.
+
+Ein zu kleines Bild wird weiterhin angenommen, es wirkt dann nur weich gezogen. Verzerrt wird nie: Überstand wird mittig beschnitten.
+
+### Der Diagnosebericht prüft die Darstellung mit
+
+Ganz oben steht jetzt eine Urteilszeile, dazu kommen zwei neue Abschnitte. Geprüft werden zusammengedrückte und abgeschnittene Bedienelemente, zu enge Beschriftungen, hochgerechnete oder stehengebliebene Hintergrundbilder, die Anzeigeskalierung samt Schriftgröße sowie Arbeitsspeicher, angesammelte Bilder und Zeitgeber und die Reaktionszeit des Fensters. Steht dort „keine Auffälligkeit", ist die Oberfläche in Ordnung – sonst nennt jede Zeile das betroffene Element und die gemessenen Zahlen.
 
 ## v1.8.68 – 20.08.2026
 

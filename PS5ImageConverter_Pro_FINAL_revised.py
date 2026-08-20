@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.68"
+APP_VERSION = "v1.8.69"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1623,6 +1623,11 @@ class PS5ConverterGUI:
         # Bindung auf sys.stderr - und das ist im Fensterbetrieb leer.
         self.root.report_callback_exception = self._tk_fehler_melden
 
+        # Der Speicherstand beim Start. Erst im Vergleich dazu sagt der
+        # spaetere Wert etwas aus: 900 MB sind waehrend eines Baus normal
+        # und im Leerlauf ein Leck.
+        self._speicher_start_mb = self._diagnose_speicher_mb()
+
         # 1. Alle Fenster-Variablen vorab initialisieren (Wichtig für _sync_docked_windows)
         self._info_popup: tk.Toplevel | None = None
         self._cred_win: tk.Toplevel | None = None
@@ -2550,6 +2555,49 @@ class PS5ConverterGUI:
                         vorher, vorher * faktor, faktor)
         except Exception as exc:
             logger.debug("Schriftskalierung nicht setzbar: %s", exc)
+
+    def _hintergrund_sollmasse(self) -> tuple[int, int, int]:
+        """Rechnet aus, wie gross ein Hintergrundbild hier mindestens sein muss.
+
+        Skaliert wird formatfuellend (siehe :meth:`_bild_fuellen`): Der
+        groessere der beiden Faktoren gewinnt, der Ueberstand faellt mittig
+        weg. Ist das Bild in einer Richtung kleiner als die Flaeche, wird es
+        hochgerechnet - und genau das sieht man als weiche, "gezogene"
+        Darstellung. Ein Bild ab diesen Massen wird nur noch beschnitten,
+        nie vergroessert.
+
+        Massgeblich ist nicht die aktuelle Fenstergroesse, sondern der
+        Bildschirm: Das Fenster laesst sich jederzeit maximieren. Die Breite
+        der Seitenleiste haengt an der Schriftgroesse und damit an der
+        Bildschirmskalierung - bei 125 % sind aus den 320 Pixeln der
+        Bauvorgabe schon rund 490 geworden. Deshalb wird sie gemessen und
+        nicht angenommen.
+
+        Returns:
+            ``(Breite, Hoehe, Seitenleistenbreite)``, aufgerundet auf volle
+            Zehner.
+        """
+        def _aufrunden(wert: int) -> int:
+            return int(max(1, -(-int(wert) // 10) * 10))
+
+        try:
+            breite = int(self.root.winfo_screenwidth())
+            hoehe = int(self.root.winfo_screenheight())
+        except Exception:
+            breite, hoehe = 1920, 1080
+
+        seitenleiste = 0
+        widget = getattr(self, "sidebar", None)
+        if widget is not None:
+            try:
+                seitenleiste = int(widget.winfo_width())
+            except Exception:
+                seitenleiste = 0
+        if seitenleiste <= 1:
+            # Noch nicht gezeichnet: die Bauvorgabe mit der Skalierung hochrechnen.
+            seitenleiste = int(320 * max(1.0, pt(10) / 10.0))
+
+        return _aufrunden(breite), _aufrunden(hoehe), _aufrunden(seitenleiste)
 
     @staticmethod
     def _bild_fuellen(master, breite: int, hoehe: int):
@@ -5752,9 +5800,33 @@ class PS5ConverterGUI:
         threading.Thread(target=self._cleanup_stale_osfmounts, daemon=True).start()
         threading.Thread(target=self._run_startup_temp_cleanup_scan, daemon=True).start()
 
+    def _hintergrund_beim_start_nachziehen(self, versuche: int = 5) -> None:
+        """Rechnet die Hintergrundbilder einmal auf die echte Flaeche.
+
+        Ohne diesen Aufruf blieb das Fensterbild in der Groesse der Bilddatei
+        stehen: ``_on_root_configure`` steigt aus, solange die Startphase
+        laeuft, und danach kommt kein Configure mehr, wenn niemand das
+        Fenster anfasst. Inhaltsflaeche und Seitenleiste zogen ihre Bilder
+        laengst nach - das Fensterbild nicht. Am 20.08.2026 gemessen:
+        gezeichnet 1424x752 auf einer Flaeche von 1920x991, und ``zuletzt
+        angepasst auf`` stand auf "nie".
+
+        Args:
+            versuche: Wie oft es erneut probiert, solange das Fenster noch
+                keine Groesse hat.
+        """
+        breite, hoehe = self.root.winfo_width(), self.root.winfo_height()
+        if breite <= 1 or hoehe <= 1:
+            if versuche > 0:
+                self.root.after(
+                    120, lambda: self._hintergrund_beim_start_nachziehen(versuche - 1))
+            return
+        self._hintergruende_nachziehen()
+
     def _finish_startup_phase(self) -> None:
         """Markiert die kritische Startphase als abgeschlossen."""
         self._startup_complete = True
+        self.root.after_idle(self._hintergrund_beim_start_nachziehen)
         # Waehrend der Startphase wachsen Fenster und Raster noch; die
         # Beschriftungen tragen dann Ausschnitte, die zur endgueltigen Lage nicht
         # mehr passen und als Kasten stehen bleiben, bis irgendwann eine
@@ -6421,7 +6493,20 @@ class PS5ConverterGUI:
             return
         if not getattr(self, "_startup_complete", False):
             return
-        if self._last_bg_resize_size == (width, height):
+        # Ein noch offener Auftrag wurde fuer eine fruehere Groesse bestellt
+        # und ist damit veraltet - er muss weg, bevor abgekuerzt wird. Stand
+        # das Abbestellen hinter der Abkuerzung, ueberschrieb er 80 ms spaeter
+        # das laengst richtige Bild mit einer Zwischengroesse. Am 20.08.2026
+        # beim Designwechsel nachgezeichnet: Die Flaeche meldet erst 1600,
+        # dann 1427; die zweite Meldung kuerzte ab, die erste gewann.
+        if self._bg_resize_after_id is not None:
+            try:
+                self.root.after_cancel(self._bg_resize_after_id)
+            except Exception as exc:
+                logger.debug("after_cancel fehlgeschlagen: %s", exc)
+            self._bg_resize_after_id = None
+
+        if self._hintergrund_ist_aktuell("bg_photo", width, height):
             return
 
         # Nach dem Ende der Groessenaenderung alle Beschriftungen nachschneiden.
@@ -6436,12 +6521,6 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("after_cancel (caption_settle) fehlgeschlagen: %s", exc)
         self._caption_settle_after_id = self.root.after(160, self._on_layout_settled)
-
-        if self._bg_resize_after_id is not None:
-            try:
-                self.root.after_cancel(self._bg_resize_after_id)
-            except Exception as exc:
-                logger.debug("after_cancel fehlgeschlagen: %s", exc)
 
         self._bg_resize_after_id = self.root.after(
             80,
@@ -6461,6 +6540,84 @@ class PS5ConverterGUI:
             self._refresh_sidebar_cover_size()
         except Exception as exc:
             logger.debug("Cover-Anpassung nach Groessenaenderung fehlgeschlagen: %s", exc)
+        # Und zuletzt: Hat eine der vier Flaechen ihre Anpassung verpasst,
+        # faellt es genau hier auf - das Fenster steht, die Groessen sind
+        # endgueltig.
+        self._hintergruende_nachziehen()
+
+    #: Ab wie vielen Pixeln Unterschied ein Hintergrundbild als
+    #: stehengeblieben gilt. Ein Pixel wandert je nach Rahmenbreite.
+    _HINTERGRUND_TOLERANZ = 2
+
+    def _hintergrund_ist_aktuell(self, foto: str, breite: int, hoehe: int) -> bool:
+        """Ob das gezeichnete Bild schon genau auf diese Flaeche passt.
+
+        Die vier Configure-Wachen verglichen bis v1.8.68 gegen einen
+        gemerkten Wert (``_last_..._resize_size``). Der kann von der
+        Wirklichkeit abdriften: Wird auf eine Zwischengroesse gerechnet und
+        kommt die Flaeche danach auf eine Groesse zurueck, die schon einmal
+        eingetragen war, steigt die Wache aus - und das Bild bleibt in der
+        Zwischengroesse stehen. Am 20.08.2026 im Belastungslauf so gemessen:
+        Inhaltsflaeche 1600x991 auf einer Flaeche von 1427x991, ausgeloest
+        durch einen Designwechsel, der die Innenflaechen umbaut, ohne dass
+        das Fenster selbst ein Configure bekommt.
+
+        Das Bild selbst kann nicht abdriften. Deshalb wird es gefragt.
+
+        Args:
+            foto: Attributname des ``PhotoImage``.
+            breite: Breite der Flaeche.
+            hoehe: Hoehe der Flaeche.
+
+        Returns:
+            ``True``, wenn nichts zu tun ist.
+        """
+        bild = getattr(self, foto, None)
+        if bild is None:
+            return False
+        try:
+            return (abs(bild.width() - breite) <= self._HINTERGRUND_TOLERANZ
+                    and abs(bild.height() - hoehe) <= self._HINTERGRUND_TOLERANZ)
+        except Exception:
+            return False
+
+    def _hintergruende_nachziehen(self) -> None:
+        """Rechnet stehengebliebene Hintergrundbilder auf ihre Flaeche nach.
+
+        Jede der vier Flaechen rechnet ihr Bild ueber ein eigenes
+        Configure-Ereignis neu und merkt sich dabei die zuletzt verwendete
+        Groesse. Bleibt eine Anpassung aus - weil das Ereignis nicht kam oder
+        auf eine Zwischengroesse gerechnet wurde -, holt sie nichts nach: Der
+        naechste Anstoss kaeme erst bei der naechsten Groessenaenderung, und
+        bis dahin steht ein Bild in falscher Groesse auf der Flaeche.
+
+        Am 20.08.2026 im Belastungslauf gemessen: Inhaltsflaeche 1600x991
+        gezeichnet auf einer Flaeche von 1427x991, Seitenleiste 320x991 auf
+        493x991 - beides blieb ueber alle folgenden Runden stehen.
+
+        Die Pruefung vergleicht nur gezeichnete Groesse gegen Flaeche und
+        rechnet bei Abweichung neu. Stimmt alles, kostet sie vier Abfragen.
+        """
+        for traeger, foto, anwenden in (
+                (self.root, "bg_photo", self._apply_bg_resize),
+                (getattr(self, "content_area", None), "content_bg_photo",
+                 self._apply_content_bg_resize),
+                (getattr(self, "sidebar", None), "sidebar_bg_photo",
+                 self._apply_sidebar_bg_resize),
+                (getattr(self, "action_bar", None), "action_bar_bg_photo",
+                 self._apply_action_bar_bg_resize)):
+            if traeger is None:
+                continue
+            try:
+                breite, hoehe = traeger.winfo_width(), traeger.winfo_height()
+                if breite <= 1 or hoehe <= 1:
+                    continue
+                if not self._hintergrund_ist_aktuell(foto, breite, hoehe):
+                    logger.debug("Hintergrund %s wird auf %dx%d nachgezogen",
+                                 foto, breite, hoehe)
+                    anwenden(breite, hoehe)
+            except Exception as exc:
+                logger.debug("Nachziehen von %s fehlgeschlagen: %s", foto, exc)
 
     def _apply_bg_resize(self, width: int, height: int) -> None:
         """Skaliert das Hintergrundbild entkoppelt vom Configure-Event."""
@@ -6490,14 +6647,21 @@ class PS5ConverterGUI:
         height = self.content_area.winfo_height()
         if width <= 1 or height <= 1:
             return
-        if self._last_content_bg_resize_size == (width, height):
-            return
-
+        # Ein noch offener Auftrag wurde fuer eine fruehere Groesse bestellt
+        # und ist damit veraltet - er muss weg, bevor abgekuerzt wird. Stand
+        # das Abbestellen hinter der Abkuerzung, ueberschrieb er 80 ms spaeter
+        # das laengst richtige Bild mit einer Zwischengroesse. Am 20.08.2026
+        # beim Designwechsel nachgezeichnet: Die Flaeche meldet erst 1600,
+        # dann 1427; die zweite Meldung kuerzte ab, die erste gewann.
         if self._content_bg_resize_after_id is not None:
             try:
                 self.root.after_cancel(self._content_bg_resize_after_id)
             except Exception as exc:
                 logger.debug("after_cancel (content_bg) fehlgeschlagen: %s", exc)
+            self._content_bg_resize_after_id = None
+
+        if self._hintergrund_ist_aktuell("content_bg_photo", width, height):
+            return
 
         self._content_bg_resize_after_id = self.root.after(
             80,
@@ -6742,14 +6906,21 @@ class PS5ConverterGUI:
         height = self.action_bar.winfo_height()
         if width <= 1 or height <= 1:
             return
-        if self._last_action_bar_bg_resize_size == (width, height):
-            return
-
+        # Ein noch offener Auftrag wurde fuer eine fruehere Groesse bestellt
+        # und ist damit veraltet - er muss weg, bevor abgekuerzt wird. Stand
+        # das Abbestellen hinter der Abkuerzung, ueberschrieb er 80 ms spaeter
+        # das laengst richtige Bild mit einer Zwischengroesse. Am 20.08.2026
+        # beim Designwechsel nachgezeichnet: Die Flaeche meldet erst 1600,
+        # dann 1427; die zweite Meldung kuerzte ab, die erste gewann.
         if self._action_bar_bg_resize_after_id is not None:
             try:
                 self.root.after_cancel(self._action_bar_bg_resize_after_id)
             except Exception as exc:
                 logger.debug("after_cancel (action_bar_bg) fehlgeschlagen: %s", exc)
+            self._action_bar_bg_resize_after_id = None
+
+        if self._hintergrund_ist_aktuell("action_bar_bg_photo", width, height):
+            return
 
         self._action_bar_bg_resize_after_id = self.root.after(
             80,
@@ -6785,14 +6956,21 @@ class PS5ConverterGUI:
         height = self.sidebar.winfo_height()
         if width <= 1 or height <= 1:
             return
-        if self._last_sidebar_bg_resize_size == (width, height):
-            return
-
+        # Ein noch offener Auftrag wurde fuer eine fruehere Groesse bestellt
+        # und ist damit veraltet - er muss weg, bevor abgekuerzt wird. Stand
+        # das Abbestellen hinter der Abkuerzung, ueberschrieb er 80 ms spaeter
+        # das laengst richtige Bild mit einer Zwischengroesse. Am 20.08.2026
+        # beim Designwechsel nachgezeichnet: Die Flaeche meldet erst 1600,
+        # dann 1427; die zweite Meldung kuerzte ab, die erste gewann.
         if self._sidebar_bg_resize_after_id is not None:
             try:
                 self.root.after_cancel(self._sidebar_bg_resize_after_id)
             except Exception as exc:
                 logger.debug("after_cancel (sidebar_bg) fehlgeschlagen: %s", exc)
+            self._sidebar_bg_resize_after_id = None
+
+        if self._hintergrund_ist_aktuell("sidebar_bg_photo", width, height):
+            return
 
         self._sidebar_bg_resize_after_id = self.root.after(
             80,
@@ -24248,6 +24426,366 @@ class PS5ConverterGUI:
                         getattr(self, "_last_bg_resize_size", None) or "nie"))
         return zeilen
 
+    # ------------------------------------------------------------------
+    # Darstellung messen und beurteilen
+    #
+    # Das Programm sieht sein eigenes Fenster nicht. Es kann aber jede Zahl
+    # auslesen, aus der sich ein Darstellungsfehler ergibt. Gemessen wird
+    # hier, geurteilt in ``ps5_validator.utils.anzeige_diagnose`` - das laesst
+    # sich ohne Fenster pruefen.
+    # ------------------------------------------------------------------
+
+    #: Wie viele Bedienelemente hoechstens vermessen werden. Der Baum hat
+    #: rund tausend Knoten; die Grenze schuetzt nur davor, dass ein Bericht
+    #: bei einer kuenftigen Erweiterung minutenlang haengt.
+    _DIAGNOSE_FLAECHEN_GRENZE = 4000
+
+    #: Wie viele gleichartige Befunde einzeln aufgefuehrt werden. Sitzt eine
+    #: Beschriftung zu eng, betrifft das oft dreissig Knoepfe auf einmal -
+    #: und dreissig gleichlautende Zeilen verdecken den einen echten Fehler
+    #: daneben.
+    _DIAGNOSE_BEFUND_GRENZE = 12
+
+    @staticmethod
+    def _diagnose_beschriftung(widget) -> str:
+        """Der Text auf einem Bedienelement, oder leer.
+
+        Entscheidet mit darueber, ob eine zu enge Flaeche ein Mangel ist: Ein
+        Label mit blossem Bild darf enger sein als sein Wunschmass, ein Knopf
+        mit Beschriftung nicht.
+        """
+        try:
+            return " ".join(str(widget.cget("text") or "").split())
+        except Exception:
+            return ""
+
+    @classmethod
+    def _diagnose_widget_name(cls, widget) -> str:
+        """Ein Name, mit dem sich das Element wiederfinden laesst.
+
+        Der Tk-Pfad allein (``.!frame2.!button7``) sagt niemandem etwas.
+        Steht eine Beschriftung darauf, ist die der bessere Hinweis.
+        """
+        try:
+            pfad = str(widget)
+        except Exception:
+            return "?"
+        beschriftung = cls._diagnose_beschriftung(widget)[:40]
+        if beschriftung:
+            return "%s (%s)" % (pfad, beschriftung)
+        return pfad
+
+    def _diagnose_flaechen_sammeln(self) -> list:
+        """Vermisst jedes Bedienelement in Bildschirmkoordinaten.
+
+        Bildschirmkoordinaten statt der des Elternelements: Nur so laesst
+        sich ausrechnen, ob etwas ueber den Fensterrand hinaussteht, ohne die
+        ganze Verschachtelung nachzubauen.
+
+        Returns:
+            Eine Liste von ``Flaeche``; leer, wenn Tk nichts hergibt.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        flaechen: list = []
+        rest = [self.root]
+        while rest and len(flaechen) < self._DIAGNOSE_FLAECHEN_GRENZE:
+            widget = rest.pop()
+            try:
+                rest.extend(widget.winfo_children())
+            except Exception:
+                continue
+            if widget is self.root:
+                continue
+            try:
+                flaechen.append(ad.Flaeche(
+                    name=self._diagnose_widget_name(widget),
+                    klasse=widget.winfo_class(),
+                    x=widget.winfo_rootx(), y=widget.winfo_rooty(),
+                    breite=widget.winfo_width(), hoehe=widget.winfo_height(),
+                    wunschbreite=widget.winfo_reqwidth(),
+                    wunschhoehe=widget.winfo_reqheight(),
+                    sichtbar=bool(widget.winfo_ismapped()),
+                    hat_text=bool(self._diagnose_beschriftung(widget))))
+            except Exception:
+                # Ein zwischenzeitlich zerstoertes Element darf den Bericht
+                # nicht kosten.
+                continue
+        return flaechen
+
+    def _diagnose_bilder_sammeln(self) -> list:
+        """Stellt je Hintergrundbild Datei-, Zeichen- und Flaechengroesse zusammen.
+
+        Returns:
+            Eine Liste von ``Bildlage``.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        def _groesse(objekt):
+            groesse = getattr(objekt, "size", None)
+            if isinstance(groesse, tuple) and len(groesse) == 2:
+                return (int(groesse[0]), int(groesse[1]))
+            try:
+                return (int(objekt.width()), int(objekt.height()))
+            except Exception:
+                return None
+
+        def _flaeche(name: str):
+            widget = getattr(self, name, None)
+            try:
+                return (int(widget.winfo_width()), int(widget.winfo_height()))
+            except Exception:
+                return None
+
+        bilder: list = []
+        for anzeigename, quelle, gezeichnet, traeger in (
+                ("Hintergrund", "_bg_image_cache", "bg_photo", "bg_label"),
+                ("Inhaltsflaeche", "_bg_image_cache", "content_bg_photo", "content_area"),
+                ("Seitenleiste", "_sidebar_bg_image_cache", "sidebar_bg_photo", "sidebar")):
+            bilder.append(ad.Bildlage(
+                name=anzeigename,
+                quelle=_groesse(getattr(self, quelle, None)),
+                gezeichnet=_groesse(getattr(self, gezeichnet, None)),
+                flaeche=_flaeche(traeger)))
+        return bilder
+
+    def _diagnose_dpi_bewusstsein(self):
+        """Was Windows ueber die DPI-Faehigkeit des Prozesses denkt.
+
+        0 bedeutet: Der Prozess zeichnet in 96 dpi, und Windows zieht das
+        fertige Fenster als Bitmap auf die echte Groesse hoch. Dann ist nicht
+        ein Bild unscharf, sondern die ganze Oberflaeche.
+
+        Returns:
+            Die Stufe, oder ``None`` ausserhalb von Windows bzw. wenn die
+            Abfrage fehlschlaegt.
+        """
+        if not IST_WINDOWS:
+            return None
+        try:
+            stufe = ctypes.c_int(0)
+            ctypes.windll.shcore.GetProcessDpiAwareness(0, ctypes.byref(stufe))
+            return int(stufe.value)
+        except Exception:
+            pass
+        try:
+            # Aeltere Windows-Fassungen kennen nur diese Abfrage.
+            return 1 if ctypes.windll.user32.IsProcessDPIAware() else 0
+        except Exception as exc:
+            logger.debug("DPI-Bewusstsein nicht auslesbar: %s", exc)
+            return None
+
+    def _diagnose_skalierung_messen(self):
+        """Sammelt DPI, ``tk scaling`` und die tatsaechliche Schrifthoehe.
+
+        Returns:
+            Eine ``Skalierungslage``.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        fenster_dpi = None
+        if IST_WINDOWS:
+            try:
+                fenster_dpi = int(ctypes.windll.user32.GetDpiForWindow(
+                    self.root.winfo_id()))
+            except Exception as exc:
+                logger.debug("Fenster-DPI nicht auslesbar: %s", exc)
+        try:
+            skalierung = float(self.root.tk.call("tk", "scaling"))
+        except Exception:
+            skalierung = 0.0
+        hoehe_px, groesse_pt = 0, 0
+        try:
+            import tkinter.font as _tkfont
+            standard = _tkfont.nametofont("TkDefaultFont")
+            hoehe_px = int(standard.metrics("linespace"))
+            groesse_pt = int(standard.actual("size"))
+        except Exception as exc:
+            logger.debug("Schriftmasse nicht auslesbar: %s", exc)
+        return ad.Skalierungslage(
+            plattform=sys.platform,
+            dpi_bewusstsein=self._diagnose_dpi_bewusstsein(),
+            fenster_dpi=fenster_dpi,
+            tk_skalierung=skalierung,
+            schrifthoehe_px=hoehe_px,
+            schriftgroesse_pt=groesse_pt)
+
+    @staticmethod
+    def _diagnose_speicher_mb() -> float:
+        """Wie viel Arbeitsspeicher der eigene Prozess gerade belegt.
+
+        Returns:
+            Megabyte, oder 0.0 wenn es sich nicht ermitteln laesst.
+        """
+        try:
+            import psutil
+            return psutil.Process().memory_info().rss / 1048576.0
+        except Exception:
+            pass
+        if IST_WINDOWS:
+            try:
+                class _Zaehler(ctypes.Structure):
+                    _fields_ = [("cb", ctypes.c_ulong),
+                                ("PageFaultCount", ctypes.c_ulong),
+                                ("PeakWorkingSetSize", ctypes.c_size_t),
+                                ("WorkingSetSize", ctypes.c_size_t),
+                                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                                ("PagefileUsage", ctypes.c_size_t),
+                                ("PeakPagefileUsage", ctypes.c_size_t)]
+
+                zaehler = _Zaehler()
+                zaehler.cb = ctypes.sizeof(_Zaehler)
+                if ctypes.windll.psapi.GetProcessMemoryInfo(
+                        ctypes.windll.kernel32.GetCurrentProcess(),
+                        ctypes.byref(zaehler), zaehler.cb):
+                    return zaehler.WorkingSetSize / 1048576.0
+            except Exception as exc:
+                logger.debug("Speicher nicht auslesbar: %s", exc)
+            return 0.0
+        try:
+            import resource
+            roh = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+            # Linux zaehlt in Kilobyte, macOS in Byte.
+            return roh / (1048576.0 if IST_MACOS else 1024.0)
+        except Exception as exc:
+            logger.debug("Speicher nicht auslesbar: %s", exc)
+        return 0.0
+
+    def _diagnose_laufruhe_messen(self):
+        """Misst Speicher, angesammelte Tk-Bilder, Zeitgeber und Reaktionszeit.
+
+        Die Reaktionszeit ist die ehrlichste Zahl: Wie lange Tk braucht, um
+        alle anstehenden Zeichenarbeiten abzuarbeiten. Ist sie hoch, ruckelt
+        das Fenster - unabhaengig davon, woran es liegt.
+
+        Returns:
+            Eine ``Laufruhelage``.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        try:
+            bilder = len(self.root.tk.call("image", "names"))
+        except Exception:
+            bilder = 0
+        try:
+            zeitgeber = len(self.root.tk.call("after", "info"))
+        except Exception:
+            zeitgeber = 0
+        try:
+            beginn = time.perf_counter()
+            self.root.update_idletasks()
+            schleife_ms = (time.perf_counter() - beginn) * 1000.0
+        except Exception:
+            schleife_ms = 0.0
+        try:
+            threads = threading.active_count()
+        except Exception:
+            threads = 0
+        laeuft = False
+        for name in ("is_running", "_task_running", "conversion_running"):
+            wert = getattr(self, name, None)
+            try:
+                laeuft = laeuft or bool(wert.get() if hasattr(wert, "get") else wert)
+            except Exception:
+                continue
+        return ad.Laufruhelage(
+            speicher_mb=self._diagnose_speicher_mb(),
+            speicher_start_mb=float(getattr(self, "_speicher_start_mb", 0.0)),
+            auftrag_laeuft=laeuft,
+            tk_bilder=bilder,
+            offene_zeitgeber=zeitgeber,
+            schleife_ms=schleife_ms,
+            threads=threads)
+
+    def _diagnose_pruefen(self, flaechen: list | None = None):
+        """Fuehrt alle Darstellungspruefungen aus.
+
+        Args:
+            flaechen: Bereits vermessene Bedienelemente; sonst wird gemessen.
+
+        Returns:
+            Das ``Pruefergebnis``.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        try:
+            fenster = ad.Fensterlage(
+                breite=self.root.winfo_width(), hoehe=self.root.winfo_height(),
+                x=self.root.winfo_rootx(), y=self.root.winfo_rooty(),
+                schirm_breite=self.root.winfo_screenwidth(),
+                schirm_hoehe=self.root.winfo_screenheight())
+        except Exception:
+            fenster = None
+        return ad.pruefe_alles(
+            fenster=fenster,
+            flaechen=self._diagnose_flaechen_sammeln() if flaechen is None else flaechen,
+            bilder=self._diagnose_bilder_sammeln(),
+            skalierung=self._diagnose_skalierung_messen(),
+            laufruhe=self._diagnose_laufruhe_messen())
+
+    def _diagnose_darstellung(self) -> list[str]:
+        """Das Urteil ueber die Darstellung - der Abschnitt, der zaehlt.
+
+        Alles davor sind Messwerte. Hier steht, was daran nicht stimmt: zu
+        enge Beschriftungen, abgeschnittene Knoepfe, hochgerechnete Bilder,
+        eine Schrift, die nicht zur Anzeigeskalierung passt.
+
+        Returns:
+            Die Zeilen des Berichtsabschnitts.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        z = self._diagnose_zeile
+        flaechen = self._diagnose_flaechen_sammeln()
+        ergebnis = self._diagnose_pruefen(flaechen)
+        zeilen = [ad.zusammenfassung(ergebnis),
+                  z("vermessene Bedienelemente", len(flaechen)),
+                  z("davon sichtbar", sum(1 for f in flaechen if f.sichtbar))]
+        if not ergebnis.befunde:
+            zeilen.append("Nichts gefunden - Fenster, Beschriftungen, Bilder "
+                          "und Skalierung passen zusammen.")
+            return zeilen
+        zeilen.append("")
+        gesehen: dict[str, int] = {}
+        for befund in ergebnis.befunde:
+            gesehen[befund.kennung] = gesehen.get(befund.kennung, 0) + 1
+            if gesehen[befund.kennung] <= self._DIAGNOSE_BEFUND_GRENZE:
+                zeilen.append(str(befund))
+        for kennung, anzahl in gesehen.items():
+            if anzahl > self._DIAGNOSE_BEFUND_GRENZE:
+                zeilen.append("... und %d weitere der Art %s"
+                              % (anzahl - self._DIAGNOSE_BEFUND_GRENZE, kennung))
+        return zeilen
+
+    def _diagnose_laufruhe(self) -> list[str]:
+        """Speicher, Zeitgeber und Reaktionszeit als reine Messwerte.
+
+        Returns:
+            Die Zeilen des Berichtsabschnitts.
+        """
+        z = self._diagnose_zeile
+        lage = self._diagnose_laufruhe_messen()
+        start = float(getattr(self, "_speicher_start_mb", 0.0))
+        zeilen = [
+            z("Arbeitsspeicher", "%.0f MB" % lage.speicher_mb),
+            z("davon seit dem Start dazu",
+              "%.0f MB" % (lage.speicher_mb - start) if start else "Startwert fehlt"),
+            z("Auftrag laeuft gerade", lage.auftrag_laeuft),
+            z("Tk-Bilder im Speicher", lage.tk_bilder),
+            z("offene after-Auftraege", lage.offene_zeitgeber),
+            z("Ereignisschleife", "%.1f ms je Durchlauf" % lage.schleife_ms),
+            z("Threads", lage.threads),
+        ]
+        try:
+            import gc
+            zeilen.append(z("nicht freigegebene Objekte", len(gc.garbage)))
+        except Exception:
+            pass
+        return zeilen
+
     def _diagnose_umgebung(self) -> list[str]:
         """Wie das Programm laeuft und womit - die Kompatibilitaetsseite."""
         z = self._diagnose_zeile
@@ -24343,6 +24881,11 @@ class PS5ConverterGUI:
         lines.append(self._t("diagnostics.report_title"))
         lines.append(self._t("diagnostics.report_created", timestamp=datetime.datetime.now().isoformat(timespec='seconds')))
         lines.append(self._t("diagnostics.report_version", version=APP_VERSION))
+        try:
+            from ps5_validator.utils import anzeige_diagnose as _ad
+            lines.append(_ad.zusammenfassung(self._diagnose_pruefen()))
+        except Exception as exc:
+            lines.append("Darstellung nicht pruefbar: %s" % exc)
         lines.append("")
         lines.append(self._t("diagnostics.report_section_system"))
         lines.append(self._t("diagnostics.report_os", os=platform.platform()))
@@ -24370,6 +24913,8 @@ class PS5ConverterGUI:
             lines.append(self._t("diagnostics.report_settings_read_failed", error=exc))
         for schluessel, bauer in (
             ("diagnostics.report_section_display", self._diagnose_anzeige),
+            ("diagnostics.report_section_layout", self._diagnose_darstellung),
+            ("diagnostics.report_section_stability", self._diagnose_laufruhe),
             ("diagnostics.report_section_runtime", self._diagnose_umgebung),
             ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
             ("diagnostics.report_section_space", self._diagnose_speicherplatz),
@@ -29418,7 +29963,9 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
-        tk.Label(body, text=self._t("settings_dialog.background_hint"),
+        _soll_breite, _soll_hoehe, _soll_leiste = self._hintergrund_sollmasse()
+        tk.Label(body, text=self._t("settings_dialog.background_hint",
+                                    breite=_soll_breite, hoehe=_soll_hoehe),
                  font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 8))
@@ -29557,7 +30104,8 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
 
-        tk.Label(body, text=self._t("settings_dialog.sidebar_background_hint"),
+        tk.Label(body, text=self._t("settings_dialog.sidebar_background_hint",
+                                    breite=_soll_leiste, hoehe=_soll_hoehe),
                  font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=460, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 12))
@@ -31705,6 +32253,71 @@ def _run_cli(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _run_anzeige_diagnose(argv: list[str]) -> int:
+    """Baut die Oberflaeche auf, prueft die Darstellung und gibt sie aus.
+
+    Ohne diesen Weg liesse sich die Pruefung nur ueber den Knopf im Programm
+    abrufen - und wer einen Darstellungsfehler untersucht, will sie im
+    Terminal haben, nebeneinander vor und nach einer Aenderung.
+
+    Das Fenster wird dabei wirklich aufgebaut. Anders geht es nicht: Fast
+    jeder gesuchte Wert (die tatsaechliche Breite eines Knopfes, die Groesse
+    des gezeichneten Hintergrundbildes) entsteht erst, wenn Tk die Elemente
+    angeordnet hat. Es bleibt durchsichtig und schliesst sich von selbst.
+
+    Args:
+        argv: Restliche Argumente. ``--voll`` gibt den kompletten
+            Diagnosebericht aus statt nur der Darstellungsabschnitte.
+
+    Returns:
+        0, wenn nichts Ernstes gefunden wurde, sonst 1.
+    """
+    voll = "--voll" in argv
+    root = tk.Tk()
+    try:
+        root.attributes("-alpha", 0.0)
+    except tk.TclError:
+        pass
+    anwendung = PS5ConverterGUI(root)
+    # Kein Netz: Ein Diagnoselauf soll nicht auf eine Titelabfrage warten.
+    anwendung._online_nachschlag_erlaubt = lambda: False
+    ergebnis: dict[str, int] = {"code": 0}
+
+    def _messen() -> None:
+        try:
+            root.update_idletasks()
+            root.update()
+            if voll:
+                print(anwendung._build_diagnostic_report_text())
+            else:
+                for ueberschrift, bauer in (
+                        ("diagnostics.report_section_display", anwendung._diagnose_anzeige),
+                        ("diagnostics.report_section_layout", anwendung._diagnose_darstellung),
+                        ("diagnostics.report_section_stability", anwendung._diagnose_laufruhe)):
+                    print("")
+                    print(anwendung._t(ueberschrift))
+                    for zeile in bauer():
+                        print(zeile)
+            ergebnis["code"] = 0 if anwendung._diagnose_pruefen().sauber else 1
+        except Exception as exc:
+            traceback.print_exc()
+            print("Diagnose fehlgeschlagen: %s" % exc, file=sys.stderr)
+            ergebnis["code"] = 2
+        finally:
+            root.quit()
+
+    # Erst nach anderthalb Sekunden: Bis dahin sind die verzoegerten
+    # Anpassungen durch (Bild-Resize 80 ms, Beschriftungen 160 ms), und genau
+    # die sollen ja mitgemessen werden.
+    root.after(1500, _messen)
+    root.mainloop()
+    try:
+        root.destroy()
+    except Exception:
+        pass
+    return ergebnis["code"]
+
+
 if __name__ == "__main__":
     multiprocessing.freeze_support()
 
@@ -31718,6 +32331,12 @@ if __name__ == "__main__":
     # niemanden, der sie beantwortet - der Lauf bliebe stehen.
     if len(sys.argv) > 1 and sys.argv[1] in ("--ps4ffpsc", "--ps4-mkpfs"):
         sys.exit(_run_ps4_subcommand(sys.argv[1], sys.argv[2:]))
+
+    # Darstellungspruefung. Steht aus demselben Grund vor der
+    # Rechtepruefung: Sie braucht keine Administratorrechte, und eine
+    # UAC-Abfrage koennte im Terminal niemand beantworten.
+    if len(sys.argv) > 1 and sys.argv[1] == "--anzeige-diagnose":
+        sys.exit(_run_anzeige_diagnose(sys.argv[2:]))
 
     # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
     _mit_ok, _mit_msg = _register_mit_license_runtime()
