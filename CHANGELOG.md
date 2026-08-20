@@ -2,9 +2,20 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.65):** Die Beschriftungen auf der Karte sind gut lesbar, und ein Fenster lässt sich schließen, ohne dass im Hintergrund etwas abbricht.
+> **Kurz zum aktuellen Stand (v1.8.66):** Auf dem Mac ist die Schrift so groß wie unter Windows, und alle Knöpfe tragen wieder ihre eigene Farbe.
 
 ---
+
+## v1.8.66 – 20.08.2026
+
+### Die Mac-Fassung sieht aus wie die Windows-Fassung
+
+- **Die Schrift ist auf dem Mac so groß wie unter Windows.** Bisher stand die gesamte Oberfläche dort bei rund 60 % der gewohnten Größe – Titelleiste, Aufgabenknöpfe, Beschriftungen auf der Karte, Eingabefelder, Protokollfläche. Neun Punkt ergeben jetzt fünfzehn Bildpunkte statt neun, zwölf Punkt zwanzig statt zwölf.
+- **Die Knöpfe tragen wieder ihre eigene Farbe.** Die Reihe oben von BENUTZERHANDBUCH bis BEENDEN erschien auf dem Mac als Reihe heller Kästen, und die beiden Knöpfe unten links in der Seitenleiste waren gar nicht mehr zu entziffern: helle Schrift auf hellem Grund. Beides ist behoben.
+
+### Repariert
+
+- **„FileZilla gestartet" blieb unten rechts stehen, bis etwas anderes die Zeile überschrieb** – auch dann noch, wenn FileZilla längst wieder geschlossen war. Die Meldung verschwindet jetzt von selbst: mit dem Programm, sobald es sich beenden lässt, sonst nach zehn Sekunden.
 
 ## v1.8.65 – 20.08.2026
 
