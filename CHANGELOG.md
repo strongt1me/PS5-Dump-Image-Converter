@@ -22,7 +22,9 @@ Ein neuer Abschnitt listet Fassung und Herkunft von allem, was das Programm mitb
 
 Im Diagnosefenster fragt ein Knopf die Quellen ab und schreibt unter den Bericht, wo es etwas Neueres gibt. Das läuft nur auf Knopfdruck – ein Fehlerbericht soll nicht an einer Internetverbindung hängen.
 
-Nicht alles hat eine abfragbare Quelle: FileZilla, OSFMount und die Szene-Bestände veröffentlichen keine Fassungsliste. Dort steht, was vorliegt, und wo es herkommt.
+Mitgeprüft wird auch **AMPR EMU** – das Projekt veröffentlicht seine Fassungen auf GitHub.
+
+Nicht alles hat eine abfragbare Quelle: FileZilla, OSFMount, die Fakelibs und die Nutzlasten veröffentlichen keine Fassungsliste. Dort steht, was vorliegt, und wo es herkommt.
 
 ## v1.8.70 – 21.08.2026
 

@@ -149,9 +149,24 @@ def beurteile(teil: Bestandteil, neueste: str = "", fehler: str = "") -> Befund:
 
 
 def _lies_github(rohtext: str) -> str:
-    """Zieht die Fassung aus der Antwort der GitHub-Releases-Schnittstelle."""
+    """Zieht die Fassung aus der Antwort der GitHub-Releases-Schnittstelle.
+
+    Marke **und** Titel werden gelesen, und die hoehere Nummer gewinnt.
+    Grund: Manche Projekte kuerzen die Marke ab. Bei ``drakmor/ampr_emu``
+    heisst die Marke ``0.3.6``, das Release selbst aber "AMPR Emu 0.3.6 /
+    0.3.6.1" - und 0.3.6.1 liegt wirklich darin. Nur die Marke zu lesen
+    liess die hier vorhandene 0.3.6.1 als "neuer als die Quelle"
+    erscheinen, was sie nicht ist.
+
+    Nur Nummern mit mindestens einem Punkt zaehlen - eine blosse
+    Jahreszahl im Titel soll nicht als Fassung durchgehen.
+    """
     daten = json.loads(rohtext)
-    return str(daten.get("tag_name") or daten.get("name") or "").strip()
+    text = "%s %s" % (daten.get("tag_name") or "", daten.get("name") or "")
+    kandidaten = re.findall(r"\d+(?:\.\d+)+", text)
+    if not kandidaten:
+        return str(daten.get("tag_name") or daten.get("name") or "").strip()
+    return max(kandidaten, key=fassung_teile)
 
 
 def _lies_pypi(rohtext: str) -> str:

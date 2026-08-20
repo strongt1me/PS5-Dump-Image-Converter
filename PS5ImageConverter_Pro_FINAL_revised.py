@@ -25452,6 +25452,29 @@ class PS5ConverterGUI:
                 return pfad
         return relpfad
 
+    def _ampr_hoechste_fassung(self) -> str:
+        """Die neueste mitgelieferte AMPR-EMU-Fassung.
+
+        Gelesen aus den Ordnernamen ("0.3.5.1 no debug"). Sortiert wird ueber
+        denselben Schluessel wie die Auswahlliste - auf feste Laenge
+        aufgefuellt, sonst gaelte 0.3.5 als neuer denn 0.3.5.1.
+
+        Returns:
+            Die hoechste gefundene Nummer, oder leer.
+        """
+        ordner = self._mitgeliefert_finden(os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"))
+        try:
+            nummern = {name.split(" ", 1)[0].strip()
+                       for name in os.listdir(ordner)
+                       if os.path.isdir(os.path.join(ordner, name))}
+        except Exception as exc:
+            logger.debug("AMPR-Fassungen nicht lesbar: %s", exc)
+            return ""
+        nummern = {n for n in nummern if n and n[0].isdigit()}
+        if not nummern:
+            return ""
+        return max(nummern, key=self._ampr_version_sort_key)
+
     def _bestandteile_sammeln(self) -> list:
         """Stellt zusammen, was das Programm mitbringt und benutzt.
 
@@ -25473,6 +25496,14 @@ class PS5ConverterGUI:
             except Exception:
                 continue
             teile.append(ak.Bestandteil(anzeigename, fassung, ak.PYPI, paket))
+
+        # AMPR EMU hat sehr wohl eine abfragbare Quelle - das Projekt liegt auf
+        # GitHub und veroeffentlicht dort seine Fassungen. Verglichen wird die
+        # hoechste mitgelieferte Nummer.
+        hoechste = self._ampr_hoechste_fassung()
+        if hoechste:
+            teile.append(ak.Bestandteil("AMPR EMU", hoechste, ak.GITHUB,
+                                        "drakmor/ampr_emu"))
 
         for name, schluessel in (("FileZilla", "filezilla_path"),
                                  ("OSFMount", "osfmount_path"),

@@ -65,7 +65,9 @@ FileZilla: 3.70.6.0 (keine abfragbare Quelle)  https://filezilla-project.org/dow
 
 **Nur auf Knopfdruck**, nie beim Erstellen des Berichts: Ein Fehlerbericht darf nicht an einer Internetverbindung hängen. Die Abfrage läuft im Hintergrund, das Fenster bleibt bedienbar. Jede Adresse wird bis zu dreimal versucht – die Verbindung bricht erfahrungsgemäß häufig beim ersten Anlauf ab.
 
-**Was ehrlich nicht geht:** FileZilla, OSFMount und die Szene-Bestände (AMPR EMU, Fakelibs, Nutzlasten) veröffentlichen keine abfragbare Fassungsliste. Dort steht, was vorliegt, und die Bezugsquelle – eine erfundene Aussage wäre schlechter als keine. Abfragbar sind GitHub-Projekte und die Python-Bibliotheken über PyPI.
+**AMPR EMU wird mitgeprüft.** Das Projekt liegt auf GitHub (`drakmor/ampr_emu`) und veröffentlicht dort seine Fassungen; verglichen wird die höchste mitgelieferte Nummer. Dabei zählen **Marke und Titel des Release gemeinsam**: Bei diesem Projekt heißt die Marke `0.3.6`, das Release selbst aber „AMPR Emu 0.3.6 / 0.3.6.1“ – und 0.3.6.1 liegt wirklich darin. Nur die Marke zu lesen hätte die hier vorhandene 0.3.6.1 als „neuer als die Quelle“ ausgewiesen, was sie nicht ist.
+
+**Was ehrlich nicht geht:** FileZilla, OSFMount, die Fakelibs und die Nutzlasten veröffentlichen keine abfragbare Fassungsliste. Dort steht, was vorliegt, und die Bezugsquelle – eine erfundene Aussage wäre schlechter als keine. Abfragbar sind GitHub-Projekte und die Python-Bibliotheken über PyPI.
 
 Ein Praxislauf über zwölf Bestandteile brauchte 5,7 Sekunden.
 
