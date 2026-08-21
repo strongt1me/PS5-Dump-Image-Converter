@@ -29,12 +29,32 @@ QUELLDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 SPEC = PROJEKT / "PS5ImageConverter_Pro.spec"
 
 
+#: Die eine Tk-Wurzel dieser Datei. Wird angelegt und behalten.
+_WURZEL = None
+
+
 def _tk_verfuegbar() -> bool:
+    """Ob eine Anzeige da ist - und legt dabei gleich die Wurzel an.
+
+    Frueher stand hier ``tk.Tk()`` gefolgt von ``destroy()``. Das ist teuer
+    erkauft: Wird die letzte Wurzel eines Prozesses zerstoert, laesst sich
+    Tcl unter Windows nur noch unzuverlaessig neu hochfahren. Ein spaeteres
+    ``tk.Tk()`` scheitert dann mit ``Can't find a usable init.tcl`` - am
+    21.08.2026 traf das einen Test dieser Datei in einem Gesamtlauf,
+    waehrend vier weitere Laeufe durchliefen.
+
+    Eine vorhandene Wurzel wird mitbenutzt; sonst entsteht genau eine, die
+    bis zum Ende des Prozesses stehen bleibt.
+    """
+    global _WURZEL
+    if _WURZEL is not None:
+        return True
     try:
-        wurzel = tk.Tk()
+        _WURZEL = tk._default_root or tk.Tk()
+        _WURZEL.withdraw()
     except Exception:
+        _WURZEL = None
         return False
-    wurzel.destroy()
     return True
 
 
@@ -165,31 +185,41 @@ class QuelltextTests(unittest.TestCase):
 class FensterTests(unittest.TestCase):
     """Am laufenden Fenster: Der Knopf existiert und steht links neben EN."""
 
-    def setUp(self):
-        self.wurzel = tk.Tk()
-        self.wurzel.withdraw()
-        # tkinter merkt sich die ERSTE Wurzel als _default_root und behaelt
-        # sie, auch wenn sie laengst zerstoert ist. ImageTk.PhotoImage ohne
-        # master baut sein Bild dann im alten Interpreter, waehrend das Label
-        # im neuen entsteht - Tk meldet 'image "pyimage269" doesn't exist'.
-        # Allein laeuft diese Datei deshalb durch, in der vollen Reihe hinter
-        # anderen Fenstertests nicht. Fuer die Dauer des Tests ist diese
-        # Wurzel die Standardwurzel.
-        self._vorherige_wurzel = getattr(tk, "_default_root", None)
-        tk._default_root = self.wurzel
-        self.app = APP.PS5ConverterGUI(self.wurzel)
-        self.wurzel.update_idletasks()
+    @classmethod
+    def setUpClass(cls):
+        """Eine Wurzel, eine Oberflaeche - beide bleiben stehen.
 
-    def tearDown(self):
-        try:
-            self.wurzel.destroy()
-        except Exception:
-            pass
-        tk._default_root = self._vorherige_wurzel
+        Bis hierher baute setUp je Test eine neue ``tk.Tk()`` und zerstoerte
+        sie in tearDown wieder. Zusammen mit dem ``destroy()`` in
+        ``_tk_verfuegbar`` war das der flatterhafte Fehler: Tcl laesst sich
+        nach dem Wegfall der letzten Wurzel nicht zuverlaessig neu starten.
+        """
+        cls.wurzel = _WURZEL
+        cls.app = APP.PS5ConverterGUI(cls.wurzel)
+        cls.wurzel.update_idletasks()
 
     def test_knopf_existiert_mit_richtiger_beschriftung(self):
+        """Der Knopf traegt die Handbuch-Beschriftung - in der Sprache,
+        in der die Oberflaeche gerade laeuft.
+
+        Frueher stand hier fest "BENUTZERHANDBUCH". Das haengt aber am
+        Zustand des Nutzers: Die Oberflaeche uebernimmt beim Bau die
+        *gemerkte* Sprache aus der Konfiguration (siehe "1c. Sprache aus
+        Konfiguration laden" im Hauptprogramm). Wer das Programm zuletzt auf
+        Englisch stehen liess, brachte den Test zu Fall - am 21.08.2026 mit
+        language=en nachgestellt, mit language=de gruen. Ein Test darf nicht
+        davon abhaengen, wie jemand sein Programm verlassen hat.
+
+        Die Sprache hier umzustellen waere der falsche Weg: ``_apply_language``
+        packt die Titelleiste neu und bringt damit
+        ``test_knopf_steht_links_vom_sprachknopf`` durcheinander.
+        """
         self.assertTrue(hasattr(self.app, "_btn_manual_title"))
-        self.assertEqual(self.app._btn_manual_title.cget("text"), "BENUTZERHANDBUCH")
+        erwartet = translate(self.app._current_language, "titlebar.manual")
+        self.assertEqual(self.app._btn_manual_title.cget("text"), erwartet)
+        self.assertIn(erwartet, ("BENUTZERHANDBUCH", "USER MANUAL"),
+                      "Unerwartete Beschriftung fuer Sprache %r"
+                      % self.app._current_language)
 
     def test_knopf_steht_links_vom_sprachknopf(self):
         """Gemessen am Fenster, ersatzweise ueber die Packreihenfolge.
