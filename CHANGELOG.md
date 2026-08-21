@@ -2,9 +2,33 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.76):** Während eine PS4-Konvertierung läuft, blendet sich viermal der Hinweis ein, dass das fertige Spiel nur vom USB-Datenträger starten darf. Und die Angabe zu den Ordnern ist richtiggestellt: `/mnt/usb0/homebrew/` funktioniert doch.
+> **Kurz zum aktuellen Stand (v1.8.77):** Der Ablageort-Hinweis steht nicht mehr dauerhaft im PS4-Fenster, sondern nur noch in der Einblendung – die dafür 25 Sekunden bleibt. Neu belegt: `/mnt/usb0/etaHEN/games` funktioniert ebenfalls.
 
 ---
+
+## v1.8.77 – 21.08.2026
+
+### Ein dritter Ort, der funktioniert
+
+`/mnt/usb0/etaHEN/games` wurde nachgemessen und tut es: Die Datei versuchsweise dorthin verschoben, binnen 20 Sekunden von ShadowMount+ eingehängt, danach zurückgelegt. Damit sind drei Orte auf dem Stick belegt:
+
+| Ort | gemessen |
+| --- | --- |
+| `/mnt/usb0/` | binnen 15 Sekunden gefunden |
+| `/mnt/usb0/homebrew/` | binnen 20 Sekunden eingehängt |
+| `/mnt/usb0/etaHEN/games` | binnen 20 Sekunden eingehängt |
+
+Ein selbst angelegter Ordner wie `/mnt/usb0/ps4ffpsc/` wird weiterhin nicht gefunden, und der interne Speicher bleibt tabu.
+
+### Das PS4-Fenster ist wieder aufgeräumt
+
+Der Ablageort-Kasten und die Hinweiszeile darunter standen dauerhaft im Fenster, obwohl man sie nur einmal lesen muss. Beides ist jetzt ausschließlich in der Einblendung, die während der Umwandlung erscheint – dort erreicht der Hinweis dich im richtigen Moment, nämlich während du auf den Balken wartest.
+
+Das Fenster braucht dadurch **769 statt 959 Pixel** Höhe. Zum Vergleich: In v1.8.74 war es einen einzigen Pixel vom Überlaufen entfernt.
+
+### Die Einblendung bleibt 25 Sekunden
+
+Weil sie jetzt den ganzen Text trägt – Überschrift, die drei Zeilen, die Belege und die Einschränkung des Werkzeugs – wären 15 Sekunden zu knapp zum Lesen. Alles andere bleibt: viermal über den Vorgang verteilt, langsam ein- und ausgeblendet, ohne dass du etwas drücken musst.
 
 ## v1.8.76 – 21.08.2026
 

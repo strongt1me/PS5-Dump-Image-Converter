@@ -62,8 +62,13 @@ class VorgabenTests(unittest.TestCase):
         self.assertTrue(all(a >= 15.0 for a in abstaende),
                         "Zu dicht beieinander: %s" % abstaende)
 
-    def test_fuenfzehn_sekunden(self):
-        self.assertEqual(self.G._PS4_HINWEIS_DAUER, 15000)
+    def test_fuenfundzwanzig_sekunden(self):
+        """25 statt 15, seit die Einblendung auch den Kasten traegt.
+
+        Seit v1.8.77 steht der ganze Ablageort-Hinweis hier statt dauerhaft
+        im Fenster - vier Absaetze lesen sich nicht in fuenfzehn Sekunden.
+        """
+        self.assertEqual(self.G._PS4_HINWEIS_DAUER, 25000)
 
     def test_es_wird_geblendet(self):
         self.assertGreaterEqual(self.G._PS4_HINWEIS_BLENDE, 300,
@@ -99,7 +104,7 @@ class VorgabenTests(unittest.TestCase):
         rumpf = self.quelltext[anfang:ende]
         for schluessel in ("ps4pkg.place_title", "ps4pkg.place_ok",
                            "ps4pkg.place_bad", "ps4pkg.place_after_crash",
-                           "ps4pkg.place_hint"):
+                           "ps4pkg.place_hint", "ps4pkg.runtime_note"):
             with self.subTest(schluessel=schluessel):
                 self.assertIn(schluessel, rumpf)
 
@@ -113,6 +118,29 @@ class VorgabenTests(unittest.TestCase):
                 schlecht = i18n.STRINGS["ps4pkg.place_bad"][sprache]
                 self.assertIn("/data/homebrew", schlecht)
                 self.assertIn("/data/etaHEN/games", schlecht)
+
+    def test_alle_drei_gemessenen_orte_stehen_da(self):
+        """Drei Orte auf dem Stick, jeder einzeln an der Konsole gemessen.
+
+        21.08.2026, Firmware 12.00, ShadowMount+ v1.7alpha6 - die Datei
+        jeweils dorthin verschoben und danach zurueckgelegt:
+
+            /mnt/usb0/              binnen 15 s indiziert
+            /mnt/usb0/homebrew/     binnen 20 s eingehaengt
+            /mnt/usb0/etaHEN/games  binnen 20 s eingehaengt
+
+        Der dritte war zuerst nicht drin, weil ich ihn fuer unbelegt hielt -
+        die gezielten Scans beim Einstecken nennen nur einen Teil der 34
+        eingebauten Pfade. Der Nutzer lag richtig, die Messung hat es
+        bestaetigt.
+        """
+        from ps5_validator.utils import i18n
+        for sprache in i18n.SUPPORTED_LANGUAGES:
+            text = i18n.STRINGS["ps4pkg.place_ok"][sprache]
+            for ort in ("/mnt/usb0/", "/mnt/usb0/homebrew/",
+                        "/mnt/usb0/etaHEN/games"):
+                with self.subTest(sprache=sprache, ort=ort):
+                    self.assertIn(ort, text)
 
     def test_am_ende_wird_aufgeraeumt(self):
         """Bricht der Nutzer ab, darf keine Einblendung stehen bleiben."""

@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.76"
+APP_VERSION = "v1.8.77"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -28529,7 +28529,10 @@ class PS5ConverterGUI:
     #: richtig. Nicht bei 0 %, weil der Nutzer da noch auf den Knopf schaut.
     _PS4_HINWEIS_MARKEN: tuple[float, ...] = (8.0, 32.0, 56.0, 80.0)
     #: Wie lange der Hinweis stehen bleibt (Millisekunden).
-    _PS4_HINWEIS_DAUER = 15000
+    #:
+    #: 25 statt 15 Sekunden, seit die Einblendung auch den Kasten aus dem
+    #: Fenster traegt: Vier Absaetze lesen sich nicht in fuenfzehn.
+    _PS4_HINWEIS_DAUER = 25000
     #: Dauer einer Blende und Schrittweite (Millisekunden).
     _PS4_HINWEIS_BLENDE = 600
     _PS4_HINWEIS_SCHRITT = 30
@@ -28596,6 +28599,15 @@ class PS5ConverterGUI:
         tk.Label(innen, text=self._t("ps4pkg.place_hint"),
                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
                  fg=c["fg_secondary"], anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(8, 0))
+        # Der Hersteller des eingebetteten Werkzeugs setzt
+        # "ps5_runtime_verified" fest auf false: Zugesichert ist nur, dass
+        # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
+        # die Konsole es startet. Stand bis v1.8.76 als eigene Zeile im
+        # Fenster - hier wird sie eher gelesen.
+        tk.Label(innen, text=self._t("ps4pkg.runtime_note"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
+                 fg=c["fg_warning"], anchor="w", justify="left",
                  wraplength=560).pack(fill="x", pady=(8, 0))
 
         karte.update_idletasks()
@@ -28802,58 +28814,11 @@ class PS5ConverterGUI:
         dlc_kasten.pack(side="left")
         DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
 
-        # Wohin das fertige Abbild gehoert. Bewusst ein umrandeter Kasten und
-        # keine weitere graue Zeile: Am 21.08.2026 an der Konsole gemessen
-        # (FW 12.00, ShadowMount+ v1.7alpha6) kostet der falsche Ablageort
-        # entweder das Auffinden oder die Konsole - und der Hinweistext dieses
-        # Fensters empfahl bis dahin ausgerechnet den Unterordner, der nicht
-        # funktioniert.
-        kasten = tk.Frame(körper, bg=c["bg_card"], bd=0,
-                          highlightthickness=2,
-                          highlightbackground=c["fg_warning"],
-                          highlightcolor=c["fg_warning"])
-        kasten.pack(fill="x", pady=(8, 0))
-        self._ps4_ablage_kasten = kasten
-
-        titel = tk.Label(
-            kasten, text=self._t("ps4pkg.place_title"),
-            font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_card"],
-            fg=c["fg_warning"], anchor="w", justify="left")
-        titel.pack(fill="x", padx=12, pady=(5, 3))
-        self._register_translatable(titel, "ps4pkg.place_title")
-        # Die Einzelheiten - gemessene Zeiten, was nach einem Absturz
-        # zu tun ist - stehen im Tooltip. Im Kasten selbst nur das,
-        # was man vor dem Bauen wissen muss.
-        DelayedTooltip(kasten, self._t("ps4pkg.place_hint"),
-                       delay_ms=600, wraplength=460)
-
-        # (Schluessel, Farbrolle) - der gute Fall zuerst, dann die beiden
-        # Faelle, die es zu vermeiden gilt.
-        for _schluessel, _rolle in (("ps4pkg.place_ok", "fg_success"),
-                                    ("ps4pkg.place_bad", "error_btn"),
-                                    ("ps4pkg.place_after_crash", "fg_primary")):
-            _zeile = tk.Label(
-                kasten, text=self._t(_schluessel), font=(UI_SCHRIFT, pt(9)),
-                bg=c["bg_card"], fg=c[_rolle], anchor="w", justify="left",
-                # 916 statt 880: Der Kasten ist 944 breit, innen bleiben
-                # nach padx=12 genau 920. Bei 880 brach der deutsche Text
-                # eine Zeile zu frueh um und machte das Fenster 12 px zu
-                # hoch fuer den Bildschirm.
-                wraplength=916)
-            _zeile.pack(fill="x", padx=12, pady=(0, 3))
-            self._register_translatable(_zeile, _schluessel)
-
-        # Der Hersteller des eingebetteten Werkzeugs setzt
-        # "ps5_runtime_verified" fest auf false - zugesichert ist nur, dass
-        # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
-        # die Konsole es startet. Das gehoert vor den Bau gesagt, nicht in
-        # eine Begleitdatei, die niemand liest.
-        hinweis = tk.Label(
-            körper, text=self._t("ps4pkg.runtime_note"),
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
-            anchor="w", justify="left", wraplength=920)
-        hinweis.pack(fill="x", pady=(8, 0))
-        self._register_translatable(hinweis, "ps4pkg.runtime_note")
+        # Der Ablageort steht nicht mehr dauerhaft im Fenster, sondern in
+        # der Einblendung waehrend der Umwandlung: Dort erreicht er den
+        # Nutzer im richtigen Moment - er wartet ohnehin auf den Balken -,
+        # und das Fenster wird um rund 190 px kuerzer. Siehe
+        # _ps4_hinweis_zeigen.
 
         # ── Fortschritt und Protokoll ───────────────────────────────────
         balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)

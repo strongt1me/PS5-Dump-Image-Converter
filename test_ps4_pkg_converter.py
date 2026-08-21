@@ -202,23 +202,33 @@ class NachpruefungTests(unittest.TestCase):
         weiter = self.quelltext.index("\n    def ", anfang + 10)
         return self.quelltext[anfang:weiter]
 
-    def test_hinweis_steht_im_fenster(self) -> None:
-        """Vor dem Bauen sichtbar, nicht nur in der Begleitdatei."""
-        self.assertIn("ps4pkg.runtime_note", self.quelltext)
+    def test_hinweis_steht_in_der_einblendung(self) -> None:
+        """Vor dem Bauen sichtbar, nicht nur in der Begleitdatei.
+
+        Bis v1.8.76 als eigene Zeile im Fenster, seither in der Einblendung -
+        dort wird sie eher gelesen.
+        """
+        self.assertIn("ps4pkg.runtime_note",
+                      self._methode("_ps4_hinweis_zeigen"))
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
                 self.assertIn("ps5_runtime_verified",
                               STRINGS["ps4pkg.runtime_note"][sprache])
 
-    def test_ablageort_steht_sichtbar_im_fenster(self) -> None:
+    def test_ablageort_steht_in_der_einblendung(self) -> None:
         """Der Ablageort entscheidet ueber Auffinden und Absturz.
 
         Am 21.08.2026 an der Konsole gemessen (FW 12.00, ShadowMount+
         v1.7alpha6): Ein .ffpfsc in /mnt/usb0/ps4ffpsc/ wurde nie indiziert,
-        direkt in /mnt/usb0/ beim naechsten Durchlauf sofort. Aus
-        /data/homebrew gestartet nimmt ein PS4-Titel die Konsole mit.
+        direkt in /mnt/usb0/ beim naechsten Durchlauf sofort, in
+        /mnt/usb0/homebrew/ ebenfalls. Aus /data/homebrew gestartet nimmt ein
+        PS4-Titel die Konsole mit.
+
+        Seit v1.8.77 steht das nicht mehr dauerhaft im Fenster, sondern in der
+        Einblendung waehrend der Umwandlung - dort erreicht es den Nutzer im
+        richtigen Moment, und das Fenster wird um rund 190 px kuerzer.
         """
-        rumpf = self._methode("_show_ps4_pkg_converter")
+        rumpf = self._methode("_ps4_hinweis_zeigen")
         for schluessel in ("ps4pkg.place_title", "ps4pkg.place_ok",
                            "ps4pkg.place_bad", "ps4pkg.place_after_crash"):
             with self.subTest(schluessel=schluessel):
@@ -249,16 +259,37 @@ class NachpruefungTests(unittest.TestCase):
                 if "/mnt/usb0/ps4ffpsc" not in text:
                     continue
                 with self.subTest(schluessel=schluessel, sprache=sprache):
+                    # Auf die Aussage pruefen, nicht auf ein Wort: "nie"
+                    # und "nicht" sagen beide, dass dort nichts gefunden
+                    # wird - und genau darum geht es.
+                    verneint = any(
+                        w in text for w in ("nie gefunden", "nicht gefunden",
+                                            "never found", "not found"))
                     self.assertTrue(
-                        ("nie gefunden" in text) or ("never found" in text),
+                        verneint,
                         "%s (%s) nennt den Unterordner, ohne zu sagen, dass "
                         "dort nichts gefunden wird." % (schluessel, sprache))
 
-    def test_der_kasten_faellt_auf(self) -> None:
-        """Eine weitere graue Zeile haette der Nutzer wieder ueberlesen."""
+    def test_die_einblendung_faellt_auf(self) -> None:
+        """Eine weitere graue Zeile haette der Nutzer wieder ueberlesen.
+
+        Deshalb ein umrandetes Fenster in der Warnfarbe, mittig ueber dem
+        Bau-Fenster - nicht eine Zeile mehr im ohnehin vollen Fenster.
+        """
+        rumpf = self._methode("_ps4_hinweis_zeigen")
+        self.assertIn('bg=c["fg_warning"]', rumpf,
+                      "Der Rahmen traegt nicht die Warnfarbe")
+        self.assertIn("fg=c[\"fg_warning\"]", rumpf,
+                      "Die Ueberschrift traegt nicht die Warnfarbe")
+
+    def test_das_fenster_traegt_den_kasten_nicht_mehr(self) -> None:
+        """Er nahm 190 px, obwohl er nur einmal gelesen werden muss."""
         rumpf = self._methode("_show_ps4_pkg_converter")
-        self.assertIn("_ps4_ablage_kasten", rumpf)
-        self.assertIn("highlightbackground=c[\"fg_warning\"]", rumpf)
+        self.assertNotIn("_ps4_ablage_kasten", rumpf)
+        for schluessel in ("ps4pkg.place_title", "ps4pkg.place_ok",
+                           "ps4pkg.runtime_note"):
+            with self.subTest(schluessel=schluessel):
+                self.assertNotIn(schluessel, rumpf)
 
     def test_werkzeug_sichert_den_betrieb_wirklich_nicht_zu(self) -> None:
         """Der Hinweis muss stimmen - also nachsehen, was das Werkzeug setzt."""
