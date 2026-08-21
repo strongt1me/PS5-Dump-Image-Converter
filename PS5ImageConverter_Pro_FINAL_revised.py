@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.72"
+APP_VERSION = "v1.8.73"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2829,6 +2829,9 @@ class PS5ConverterGUI:
         if hasattr(self, "root"):
             self.root.after_idle(self._redraw_card_captions)
             self.root.after_idle(self._redraw_sidebar_captions)
+            # Nach dem Neuzeichnen: Die Textbreiten der Karte haben sich mit
+            # der Sprache geaendert, also stimmen auch die Abstaende nicht mehr.
+            self.root.after_idle(self._kartenzeilen_ordnen)
 
     def _get_config_path(self) -> str:
         """Gibt den Pfad zur Konfigurationsdatei zurück.
@@ -4839,7 +4842,12 @@ class PS5ConverterGUI:
             values=(),
             width=18,
         )
-        self.format_combo.grid(row=3, column=0, sticky="ew", padx=(0, 10), pady=(5, 2))
+        # Derselbe Gruppenabstand wie in der Einbauzeile darunter: ZIELFORMAT
+        # ist eine eigene Gruppe, KOMPRESSION/WORKER/PRUEFUNG die zweite. Mit den
+        # vorherigen 10 px lasen sich alle vier Kaesten als eine Reihe.
+        self.format_combo.grid(row=3, column=0, sticky="ew",
+                               padx=(0, self._ZEILE_ABSTAND_GRUPPE),
+                               pady=(5, 2))
         # Der Hinweis unter der Liste haengt am gewaehlten Zielformat,
         # nicht nur an der Aufgabe (siehe _zielformat_hinweis).
         self.format_combo.bind("<<ComboboxSelected>>",
@@ -4848,17 +4856,39 @@ class PS5ConverterGUI:
         # Kompressionsstufe (PFS) und Worker-Anzahl: einstellbar statt fest, analog
         # ps5-exfat-builder. Rechts neben ZIELFORMAT platziert (spart zwei Zeilen im
         # Pfad-Bereich, dadurch mehr Platz fuer Konsole/Log darunter).
+        #
+        # Jedes der drei Bedienelemente hat seine eigene Beschriftung. Bis
+        # v1.8.72 stand darueber eine einzige, 387 px breite Zeile
+        # ("KOMPRESSION (PFS) / WORKER-THREADS / PRUEFUNG") - man sah nicht,
+        # welches Wort zu welchem Kasten gehoert.
         self.perf_title = ttk.Label(
             path_card,
-            text=self._t("main.compression_worker_label"),
+            text=self._t("main.compression_label"),
             font=(UI_SCHRIFT, pt(9), "bold"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
             background=self._COLORS["bg_card"],
             compound="center",
         )
-        self._register_translatable(self.perf_title, "main.compression_worker_label")
+        self._register_translatable(self.perf_title, "main.compression_label")
         self.perf_title.grid(row=2, column=1, columnspan=2, sticky="w")
         self._card_caption_labels.append(self.perf_title)
+
+        # Die beiden anderen stehen nicht im Raster, sondern per place ueber
+        # ihrem Bedienelement - sie wandern damit von selbst mit, wenn sich
+        # links davon eine Breite aendert (_kartenzeilen_ordnen).
+        for _name, _schluessel in (("worker_title", "main.worker_label"),
+                                   ("verify_title", "main.verify_label")):
+            _beschriftung = ttk.Label(
+                path_card,
+                text=self._t(_schluessel),
+                font=(UI_SCHRIFT, pt(9), "bold"),
+                foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
+                background=self._COLORS["bg_card"],
+                compound="center",
+            )
+            setattr(self, _name, _beschriftung)
+            self._register_translatable(_beschriftung, _schluessel)
+            self._card_caption_labels.append(_beschriftung)
 
         # Kompressionsstufen werden über eine sprachunabhängige Stufe (1/3/6/9)
         # persistiert, nicht über den sprachabhängigen Anzeigetext.
@@ -4913,7 +4943,8 @@ class PS5ConverterGUI:
         # Direkt neben der Kompressionsstufe statt in der breiten, rechtsbündigen
         # Browse-Button-Spalte platziert (sonst reisst die stretchy Spalte 1 einen
         # grossen Leerraum zwischen Kompression und Worker-Threads auf).
-        self.worker_spin.place(in_=self.compression_combo, relx=1.0, x=10, rely=0.5, anchor="w")
+        # Die Stelle in der Zeile setzt _kartenzeilen_ordnen - gemeinsam
+        # fuer alle Elemente und gegen dieselbe Linie.
 
         # Pruefstufe: dritte Angabe in derselben Zeile, rechts neben den
         # Worker-Threads. Bewusst eine Klappliste und nicht zwei Kaestchen -
@@ -4943,7 +4974,6 @@ class PS5ConverterGUI:
             values=list(self._verify_optionen.keys()),
             width=12,
         )
-        self.verify_combo.place(in_=self.worker_spin, relx=1.0, x=10, rely=0.5, anchor="w")
         self.verify_combo.bind("<<ComboboxSelected>>", self._on_verify_stufe_changed)
         self.mkpfs_verify = _gespeichert
         self._verify_tooltip = DelayedTooltip(
@@ -5019,8 +5049,6 @@ class PS5ConverterGUI:
             path_card, textvariable=self.ampr_version_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)), values=(), width=14,
         )
-        self.ampr_version_combo.place(in_=self.ampr_integrate_check, relx=1.0, x=6,
-                                      rely=0.5, anchor="w")
         self.ampr_version_combo.bind(
             "<<ComboboxSelected>>",
             lambda _e: self._save_setting("integrate_ampr_version", self.ampr_version_var.get()),
@@ -5040,8 +5068,6 @@ class PS5ConverterGUI:
             anchor="w", bd=0, highlightthickness=0, padx=0,
         )
         self._register_translatable(self.ampr_playgo_check, "main.integrate_playgo")
-        self.ampr_playgo_check.place(in_=self.ampr_version_combo, relx=1.0, x=8,
-                                     rely=0.5, anchor="w")
         DelayedTooltip(self.ampr_playgo_check, self._t("ampr.lib_hint"),
                        delay_ms=900, wraplength=430)
 
@@ -5059,8 +5085,6 @@ class PS5ConverterGUI:
             anchor="w", bd=0, highlightthickness=0, padx=0,
         )
         self._register_translatable(self.backport_integrate_check, "main.integrate_backport")
-        self.backport_integrate_check.place(in_=self.ampr_playgo_check, relx=1.0, x=16,
-                                            rely=0.5, anchor="w")
         DelayedTooltip(self.backport_integrate_check, self._t("main.integrate_backport_hint"),
                        delay_ms=900, wraplength=430)
 
@@ -5072,8 +5096,6 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9)),
             values=[str(f) for f in ps5_backport.FIRMWARE_MIT_FAKELIBS], width=4,
         )
-        self.backport_fw_combo.place(in_=self.backport_integrate_check, relx=1.0, x=6,
-                                     rely=0.5, anchor="w")
         self.backport_fw_combo.bind(
             "<<ComboboxSelected>>",
             lambda _e: self._save_setting("integrate_backport_fw", self.backport_fw_var.get()),
@@ -5082,6 +5104,16 @@ class PS5ConverterGUI:
         self._ampr_versionsliste_fuellen()
         self._on_integration_changed(speichern=False)
         self._integrationszeile_hoehe_setzen()
+        # Beide Bedienzeilen setzen. Der erste Wurf misst nicht nach - dazu
+        # muesste die Ereignisbehandlung eines halbfertigen Fensters laufen -,
+        # er stellt die Elemente aber schon in die richtige Reihenfolge. Genau
+        # wird es gleich darauf, sobald Tk alle Breiten kennt.
+        self._zeilen_ordnen_laeuft = False
+        self._zeilen_ordnen_job = None
+        self._einbauzeile_daneben = None
+        self._kartenzeilen_ordnen(nachmessen=False)
+        self._kartenzeilen_ueberwachen()
+        self.root.after_idle(self._kartenzeilen_ordnen)
 
         # Erst jetzt stehen Klappliste und Zahlenfeld beide - vorher
         # laesst sich die Hoehendifferenz nicht messen.
@@ -5106,7 +5138,11 @@ class PS5ConverterGUI:
         # Volle Zeilenbreite als eigene Bildunterschrift unter dem Dropdown –
         # dadurch bleibt das Layout unabhängig von der Textlänge zwischen den
         # Aufgaben (Quelle: ...) über alle Modi hinweg harmonisch/stabil.
-        self.format_info_label.grid(row=6, column=0, columnspan=3, sticky="w", pady=(0, 15))
+        # 14 px oben: Der Hinweis klebte mit einem einzigen Pixel Abstand an
+        # den Kaestchen darueber (gemessen 21.08.2026: Kaestchen enden bei
+        # y=249, der Hinweis begann bei y=250).
+        self.format_info_label.grid(row=6, column=0, columnspan=3, sticky="w",
+                                    pady=(14, 15))
         # Der Hinweis steht mitten zwischen den randlosen Beschriftungen und
         # bekommt deshalb dieselbe Behandlung – sonst bliebe genau hier als
         # einziges eine deckende bg_card-Fläche auf dem Hintergrundbild stehen.
@@ -5326,6 +5362,8 @@ class PS5ConverterGUI:
             (self.src_title, self._KARTEN_TEXT_ROLLE),
             (self.format_title, self._KARTEN_TEXT_ROLLE),
             (self.perf_title, self._KARTEN_TEXT_ROLLE),
+            (self.worker_title, self._KARTEN_TEXT_ROLLE),
+            (self.verify_title, self._KARTEN_TEXT_ROLLE),
             (self.format_info_label, self._KARTEN_TEXT_ROLLE),
             (self.dest_title, self._KARTEN_TEXT_ROLLE),
             (self.temp_title, self._KARTEN_TEXT_ROLLE),
@@ -7041,6 +7079,311 @@ class PS5ConverterGUI:
                     label=self._t(schluessel), command=getattr(self, befehl))
             except Exception:
                 continue
+
+    #: Abstand zwischen Bedienelementen, die zusammengehoeren - ein
+    #: Kaestchen und die Klappliste, die nur dazu gehoert.
+    _ZEILE_ABSTAND_ENG = 8
+    #: Abstand zwischen Dingen, die nichts miteinander zu tun haben.
+    #:
+    #: Mehr als 16 px gibt die Karte nicht her: Die vier Felder der oberen
+    #: Zeile sind zusammen 565 px breit, bei der Mindestfensterbreite ist die
+    #: Karte 657 px breit. Drei Abstaende zu je 16 px lassen 14 px Reserve,
+    #: bei 20 px waeren es nur noch zwei.
+    _ZEILE_ABSTAND_GRUPPE = 16
+    #: Abstand zwischen einer kleinen Beschriftung und ihrem Bedienelement.
+    _ZEILE_ABSTAND_BESCHRIFTUNG = 5
+
+    def _kartenzeile_ausrichten(self, elemente, nachmessen: bool = True) -> None:
+        """Setzt eine Reihe von Bedienelementen auf eine gemeinsame Linie.
+
+        Bis v1.8.72 hing jedes Element mit ``rely=0.5`` am *vorherigen*. Sind
+        die Nachbarn unterschiedlich hoch - Kaestchen 25 px, Klappliste 34 px -,
+        rundet Tk bei jedem Schritt um einen halben Pixel, und der Fehler
+        summiert sich ueber die Kette. In der Einbau-Zeile standen die fuenf
+        Elemente am 21.08.2026 deshalb ueber **sechs Pixel** verteilt (y=218
+        bis y=224), und die Abstaende waren 5, 8, 15 und 5 px statt gleich.
+        Sichtbar als Unordnung, ohne dass man den Grund benennen konnte.
+
+        Hier haengt alles am **ersten** Element der Zeile: Die senkrechte
+        Mitte ist damit fuer alle dieselbe, und die Abstaende sind genau die
+        angegebenen statt der Summe von Rundungsfehlern.
+
+        Args:
+            elemente: ``[(widget, abstand_davor), ...]``. Das erste Element
+                bleibt, wo das Raster es hinstellt, und gibt die Linie vor;
+                sein Abstand wird nicht verwendet.
+            nachmessen: Ob nach dem ersten Wurf die tatsaechlichen Stellen
+                gemessen und korrigiert werden. Beim Aufbau der Oberflaeche
+                aus, weil ``update_idletasks`` dort die Ereignisbehandlung
+                eines halbfertigen Fensters anwerfen wuerde.
+        """
+        kette = [(w, a) for w, a in elemente if w is not None]
+        if len(kette) < 2:
+            return
+        erstes = kette[0][0]
+
+        # Erster Wurf aus den bekannten Breiten. Der stimmt noch nicht genau:
+        # ``winfo_width()`` liefert direkt nach einem ``place`` den Wert von
+        # vorher, und ``place -in`` misst ab dem *inneren* Rand des Bezugs,
+        # ein Kaestchen mit Rahmen verschiebt also alles um ein Pixel.
+        stellen = {}
+        x = 0
+        for nummer, (widget, abstand) in enumerate(kette):
+            if nummer:
+                x += int(abstand)
+                stellen[widget] = x
+                try:
+                    widget.place(in_=erstes, relx=0.0, x=x, rely=0.5, anchor="w")
+                except Exception as exc:
+                    logger.debug("Zeilenausrichtung fuer %s: %s", widget, exc)
+                    return
+            try:
+                x += int(widget.winfo_width() or widget.winfo_reqwidth())
+            except Exception:
+                return
+
+        # Danach nachmessen und die Abweichung wegrechnen - waagerecht wie
+        # senkrecht. Zwei Durchgaenge genuegen; der zweite faengt den Fall ab,
+        # dass sich eine Breite erst durch die neue Stelle ergeben hat.
+        #
+        # Die senkrechte Mitte wird mitgeprueft, weil ``rely=0.5`` bei
+        # ungerader Hoehendifferenz rundet: Kaestchen (25 px) und Klappliste
+        # (34 px) landeten so auf Mitte 234,5 gegen 235. Bei 125 % Skalierung
+        # ist das ein Pixel und unsichtbar, bei 200 % waeren es mehrere.
+        hoehen = dict.fromkeys(stellen, 0)
+        for _durchgang in range(2 if nachmessen else 0):
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                return
+            fehler = 0
+            versatz = 0
+            try:
+                soll_mitte = erstes.winfo_rooty() + erstes.winfo_height() / 2.0
+            except Exception:
+                return
+            for nummer, (widget, abstand) in enumerate(kette):
+                if not nummer:
+                    continue
+                try:
+                    links = widget.winfo_rootx()
+                    davor = kette[nummer - 1][0]
+                    rechts = davor.winfo_rootx() + davor.winfo_width()
+                    versatz += int(abstand) - (links - rechts)
+                    if versatz:
+                        stellen[widget] += versatz
+                        widget.place_configure(x=stellen[widget])
+                        fehler += 1
+                    mitte = widget.winfo_rooty() + widget.winfo_height() / 2.0
+                    hoch = int(round(soll_mitte - mitte))
+                    if hoch:
+                        hoehen[widget] += hoch
+                        widget.place_configure(y=hoehen[widget])
+                        fehler += 1
+                except Exception as exc:
+                    logger.debug("Nachmessen von %s: %s", widget, exc)
+                    return
+            if not fehler:
+                break
+
+    def _kartenbeschriftung_setzen(self, beschriftung, widget,
+                                   rechts_von=None, x=0) -> None:
+        """Stellt eine kleine Beschriftung buendig ueber ihr Bedienelement.
+
+        Args:
+            beschriftung: Das Label.
+            widget: Das Bedienelement darunter - es gibt die Stelle vor.
+            rechts_von: Statt ueber ``widget`` rechts neben *diesem* Element
+                ansetzen. Gebraucht fuer die Einbau-Ueberschrift, wenn die
+                Zeile neben der Pruefstufe steht: Ihr Kaestchen ist niedriger
+                als die Klapplisten der oberen Zeile und sitzt deshalb tiefer.
+                Ueber dem Kaestchen ausgerichtet saesse die Ueberschrift acht
+                Pixel unter den anderen dreien - die Beschriftungszeile waere
+                nicht mehr gerade.
+            x: Waagerechter Versatz zu ``rechts_von``.
+        """
+        if beschriftung is None:
+            return
+        bezug = rechts_von if rechts_von is not None else widget
+        if bezug is None:
+            return
+        try:
+            beschriftung.place(
+                in_=bezug,
+                relx=1.0 if rechts_von is not None else 0.0, x=x, rely=0.0,
+                y=-int(beschriftung.winfo_reqheight())
+                  - self._ZEILE_ABSTAND_BESCHRIFTUNG,
+                anchor="nw")
+        except Exception as exc:
+            logger.debug("Beschriftung nicht setzbar: %s", exc)
+
+    def _kartenzeilen_ordnen(self, nachmessen: bool = True) -> None:
+        """Richtet beide Bedienzeilen der Pfad-Karte aus.
+
+        Wird beim Aufbau gerufen - dort setzt der Aufruf die Elemente
+        ueberhaupt erst in die Zeile - und danach bei jedem Sprachwechsel
+        und jeder Groessenaenderung: Die Textbreiten aendern sich mit der
+        Sprache, und damit alle Abstaende.
+        """
+        if nachmessen:
+            try:
+                self.root.update_idletasks()
+            except Exception:
+                pass
+        self._zeilen_ordnen_laeuft = True
+        try:
+            obere, einbau = self._kartenzeilen()
+            self._kartenzeile_ausrichten(obere, nachmessen=nachmessen)
+            self._kartenbeschriftung_setzen(getattr(self, "worker_title", None),
+                                            getattr(self, "worker_spin", None))
+            self._kartenbeschriftung_setzen(getattr(self, "verify_title", None),
+                                            getattr(self, "verify_combo", None))
+            # Erst jetzt steht die Pruefstufe endgueltig - vorher laesst sich
+            # nicht sagen, ob rechts davon noch Platz ist.
+            if nachmessen:
+                self._einbauzeile_setzen(self._einbauzeile_passt_daneben())
+            self._kartenzeile_ausrichten(einbau, nachmessen=nachmessen)
+            if getattr(self, "_einbauzeile_daneben", False):
+                self._kartenbeschriftung_setzen(
+                    getattr(self, "integrate_title", None), None,
+                    rechts_von=getattr(self, "verify_combo", None),
+                    x=self._ZEILE_ABSTAND_GRUPPE)
+        finally:
+            self._zeilen_ordnen_laeuft = False
+
+    def _kartenzeilen(self):
+        """Die beiden Bedienzeilen der Karte samt Soll-Abstaenden."""
+        eng, gruppe = self._ZEILE_ABSTAND_ENG, self._ZEILE_ABSTAND_GRUPPE
+        return (
+            # Zielformat, Kompression, Worker und Pruefung sind vier
+            # eigenstaendige Einstellungen - alle gleich weit auseinander.
+            # Mit dem engen Abstand stiessen die Beschriftungen "WORKER" und
+            # "PRUEFUNG" fast aneinander und lasen sich als ein Wort.
+            [(getattr(self, "compression_combo", None), 0),
+             (getattr(self, "worker_spin", None), gruppe),
+             (getattr(self, "verify_combo", None), gruppe)],
+            # AMPR EMU samt Fassung und PlayGo bilden eine Gruppe, BACKPORT
+            # samt Firmware die zweite - der groessere Abstand zeigt das.
+            [(getattr(self, "ampr_integrate_check", None), 0),
+             (getattr(self, "ampr_version_combo", None), eng),
+             (getattr(self, "ampr_playgo_check", None), eng),
+             (getattr(self, "backport_integrate_check", None), gruppe),
+             (getattr(self, "backport_fw_combo", None), eng)],
+        )
+
+    #: Luft, die rechts neben der Einbauzeile frei bleiben muss. Genau der
+    #: Abstand, den die Karte auch links haelt.
+    _KARTEN_INNENRAND = 30
+
+    def _einbauzeile_breite(self) -> int:
+        """Platzbedarf der Einbauzeile von ihrem ersten bis zum letzten Rand."""
+        breite = 0
+        for nummer, (widget, abstand) in enumerate(self._kartenzeilen()[1]):
+            if widget is None:
+                continue
+            if nummer:
+                breite += int(abstand)
+            breite += int(widget.winfo_width() or widget.winfo_reqwidth())
+        return breite
+
+    def _einbauzeile_passt_daneben(self) -> bool:
+        """Ob die Einbauzeile rechts neben die Pruefstufe passt.
+
+        Sie dort hinzusetzen spart eine ganze Zeile Hoehe und nutzt Platz, der
+        sonst leer bleibt. Reicht die Breite aber nicht, steht das Ende der
+        Kette **ausserhalb der Karte** - unsichtbar und nicht anklickbar. Genau
+        das war der Fehler, den v1.8.69 behoben hat; die Pruefung hier haelt
+        ihn fern.
+        """
+        try:
+            karte = self.path_card
+            verify = getattr(self, "verify_combo", None)
+            if verify is None or not karte.winfo_width():
+                return False
+            ende = (verify.winfo_rootx() - karte.winfo_rootx()
+                    + verify.winfo_width())
+            noetig = (ende + self._ZEILE_ABSTAND_GRUPPE
+                      + self._einbauzeile_breite())
+            return noetig <= karte.winfo_width() - self._KARTEN_INNENRAND
+        except Exception as exc:
+            logger.debug("Platz der Einbauzeile nicht messbar: %s", exc)
+            return False
+
+    def _einbauzeile_setzen(self, daneben: bool) -> None:
+        """Haengt die Einbauzeile neben die Pruefstufe oder unter sie."""
+        if getattr(self, "_einbauzeile_daneben", None) == daneben:
+            return
+        kaestchen = getattr(self, "ampr_integrate_check", None)
+        titel = getattr(self, "integrate_title", None)
+        if kaestchen is None or titel is None:
+            return
+        try:
+            if daneben:
+                kaestchen.grid_remove()
+                titel.grid_remove()
+                kaestchen.place(in_=self.verify_combo, relx=1.0,
+                                x=self._ZEILE_ABSTAND_GRUPPE, rely=0.5,
+                                anchor="w")
+                self._kartenbeschriftung_setzen(
+                    titel, None, rechts_von=self.verify_combo,
+                    x=self._ZEILE_ABSTAND_GRUPPE)
+                # Die beiden Rasterzeilen sind jetzt leer und duerfen
+                # zusammenfallen, sonst bleibt ein Loch ueber dem Hinweis.
+                kaestchen.master.grid_rowconfigure(5, minsize=0)
+            else:
+                kaestchen.place_forget()
+                titel.place_forget()
+                kaestchen.grid()
+                titel.grid()
+                self._integrationszeile_hoehe_setzen()
+            self._einbauzeile_daneben = daneben
+            logger.debug("Einbauzeile %s", "neben der Pruefstufe"
+                         if daneben else "in eigener Zeile")
+        except Exception as exc:
+            logger.debug("Einbauzeile nicht umsetzbar: %s", exc)
+
+    def _kartenzeilen_ueberwachen(self) -> None:
+        """Laesst die Zeilen nachziehen, wenn sich spaeter eine Breite aendert.
+
+        Ein einmaliges Ausrichten reicht nicht: Das Zahlenfeld bekommt in
+        ``_worker_spin_hoehe_angleichen`` den Stil ``Perf.TSpinbox`` mit
+        engerem Innenabstand und wird dadurch **nach** dem ersten Ausrichten
+        noch acht Pixel schmaler - die Luecke dahinter blieb bei 16 statt bei
+        8 px stehen (gemessen 21.08.2026). Dasselbe gilt fuer eine geaenderte
+        Anzeigeskalierung oder ein anderes Design im laufenden Betrieb.
+        """
+        beobachtet = [w for zeile in self._kartenzeilen() for w, _a in zeile]
+        # Die Karte gehoert dazu: Ihre Breite entscheidet, ob die Einbauzeile
+        # neben die Pruefstufe passt oder in ihre eigene Zeile muss.
+        beobachtet.append(getattr(self, "path_card", None))
+        for widget in beobachtet:
+            if widget is None:
+                continue
+            try:
+                widget.bind("<Configure>", self._kartenzeilen_nachziehen,
+                            add="+")
+            except Exception as exc:
+                logger.debug("Zeilenwache fuer %s: %s", widget, exc)
+
+    def _kartenzeilen_nachziehen(self, _event=None) -> None:
+        """Sammelt mehrere Groessenaenderungen zu einem Ausrichten zusammen.
+
+        Kein Aufschaukeln: Waehrend des Ausrichtens ist die Wache stumm, und
+        ein zweiter Lauf schiebt nichts mehr, wenn die Abstaende schon
+        stimmen - er loest also auch keine neuen Ereignisse aus.
+        """
+        if getattr(self, "_zeilen_ordnen_laeuft", False):
+            return
+        job = getattr(self, "_zeilen_ordnen_job", None)
+        if job is not None:
+            try:
+                self.root.after_cancel(job)
+            except Exception:
+                pass
+        try:
+            self._zeilen_ordnen_job = self.root.after(60, self._kartenzeilen_ordnen)
+        except Exception as exc:
+            logger.debug("Zeilen nicht nachziehbar: %s", exc)
 
     def _integrationszeile_hoehe_setzen(self) -> None:
         """Reserviert fuer die Integrationszeile die Hoehe ihres groessten Elements.

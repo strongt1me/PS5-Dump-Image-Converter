@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.72</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.73</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.72</span>
+      <span class="marke">Version v1.8.73</span>
       <span class="marke">Stand 16. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -415,7 +415,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <tbody>
       <tr><td><strong>QUELLE</strong></td><td>Die Datei oder der Ordner, der verarbeitet werden soll.</td></tr>
       <tr><td><strong>ZIELFORMAT</strong></td><td>Legt fest, ob ein Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> oder <code>.ffpkg</code> entstehen soll. Erscheint nur, wenn es gebraucht wird.</td></tr>
-      <tr><td><strong>KOMPRESSION / WORKER-THREADS</strong></td><td>Kompressionsstufe (1 am schnellsten bis 9 maximal) und Anzahl gleichzeitiger Arbeitsvorgänge. Für den Einstieg reicht „6 – Ausgewogen“.</td></tr>
+      <tr><td><strong>KOMPRESSION (PFS)</strong></td><td>Wie stark gepackt wird – 1 am schnellsten, 9 am kleinsten. Für den Einstieg reicht „6 – Ausgewogen“.</td></tr>
+      <tr><td><strong>WORKER</strong></td><td>Wie viele Arbeitsvorgänge gleichzeitig laufen. Ein Kern bleibt immer frei; sehr große Abbilder werden zusätzlich gedrosselt. Fahren Sie mit der Maus über das Feld, dann steht dort, was Ihre Einstellung konkret bewirkt.</td></tr>
+      <tr><td><strong>PRÜFUNG</strong></td><td>Ob das fertige Abbild nach dem Packen geprüft wird. „Schnell“ prüft die Struktur, „Vollständig“ liest zusätzlich alles zurück und dauert deutlich länger. <a href="#k12">Aufgabe 8</a> prüft auch nachträglich jederzeit.</td></tr>
       <tr><td><strong>ZIELORDNER</strong></td><td>Hierhin schreibt das Programm das fertige Ergebnis. Verwenden Sie am besten einen anderen Ordner als die Quelle.</td></tr>
       <tr><td><strong>TEMP-ORDNER</strong></td><td>Ablage für vorübergehende Arbeitsdateien.</td></tr>
       <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld unter TEMP-ORDNER. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
@@ -947,7 +949,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.72), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.73), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1129,7 +1131,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.72</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.73</strong></span>
     <span>Stand 18. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

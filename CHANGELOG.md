@@ -2,9 +2,32 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.72):** .ffpkg funktioniert jetzt auch unter macOS und Linux, und es braucht dafür kein installiertes .NET mehr.
+> **Kurz zum aktuellen Stand (v1.8.73):** Das Bedienfeld unter ZIELFORMAT ist aufgeräumt – jedes Feld hat seine eigene Beschriftung, alles steht auf einer Linie, und bei breitem Fenster rückt die Einbau-Zeile nach oben neben die Prüfstufe.
 
 ---
+
+## v1.8.73 – 21.08.2026
+
+### Das Bedienfeld unter ZIELFORMAT ist aufgeräumt
+
+Der Bereich mit Zielformat, Kompression und den Einbau-Optionen sah unordentlich aus, ohne dass man sagen konnte warum. Nachgemessen waren es vier Dinge:
+
+**Nichts stand auf einer Linie.** Die fünf Elemente der Zeile „BEIM ERSTELLEN EINBAUEN“ waren über sechs Pixel verteilt – das AMPR-Kästchen vier Pixel tiefer als seine Klappliste daneben. Jetzt sitzen sie exakt auf einer Höhe, und zwar auch dann noch, wenn du die Sprache oder das Design wechselst oder mit einer anderen Bildschirmskalierung arbeitest.
+
+**Eine Überschrift für drei Felder.** Über Kompression, Worker-Anzahl und Prüfstufe stand eine einzige lange Zeile: „KOMPRESSION (PFS) / WORKER-THREADS / PRÜFUNG“. Welches Wort zu welchem Kasten gehört, war nicht zu erkennen. Jetzt trägt jedes Feld seine eigene Beschriftung direkt über sich.
+
+**Ungleiche Abstände.** In derselben Zeile waren es 5, 8, 15 und wieder 5 Pixel. Jetzt gilt überall dieselbe Regel: **eng** heißt „gehört zusammen“ (ein Kästchen und die Klappliste, die nur dazu gehört), **weit** heißt „ist eine eigene Einstellung“.
+
+**Der Hinweistext klebte** mit einem einzigen Pixel Abstand an den Kästchen darüber. Jetzt hat er Luft.
+
+### Bei breitem Fenster rückt die Einbau-Zeile nach oben
+
+Rechts neben „PRÜFUNG“ blieb bisher viel Fläche leer, während sich AMPR EMU, PlayGo und BACKPORT eine Zeile weiter unten drängten. Ist das Fenster breit genug – ab etwa 1780 Pixeln –, stehen sie jetzt oben in derselben Zeile. Die Karte wird dadurch **66 Pixel niedriger**, und unten bleibt mehr Platz für das Protokoll.
+
+Wird das Fenster schmaler, rutscht die Zeile von allein wieder an ihren alten Platz. Das ist keine Kosmetik: Ohne diesen Rückfall stünde BACKPORT bei schmalem Fenster außerhalb der Karte – sichtbar wäre es nicht, anklickbar auch nicht.
+
+An dem, was das Programm mit deinen Dateien macht, ändert sich nichts.
+
 
 ## v1.8.72 – 21.08.2026
 
