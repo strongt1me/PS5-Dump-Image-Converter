@@ -41,7 +41,7 @@ PS4 FFPFSC: 0.2.8  [GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.8/UPSTREAM.md]
 Pillow: 12.3.0  [pillow]
 …
 FileZilla: 3.70.6.0  [https://filezilla-project.org/download.php]
-AMPR-EMU-Bibliotheken: 20 (0.2.6 debug, 0.2.6 no debug …)
+AMPR-EMU-Bibliotheken: 10 (0.3.3.1 no debug, 0.3.4 no debug …)
 Backport-Fakelibs: 4 (4, 5 …)
 Nutzlasten (helloworld): 25 (CheatRunner_v0.17.elf, OffAct_v0.34.elf …)
 ```
