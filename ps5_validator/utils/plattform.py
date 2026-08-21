@@ -403,10 +403,18 @@ def herunterfahren() -> tuple[bool, str]:
 #: Werkzeuge, die es nur als Windows-Programm gibt und fuer die es unter Linux
 #: und macOS keinen gleichwertigen Ersatz im Lieferumfang gibt. Der Wert nennt
 #: den betroffenen Programmteil fuer die Meldung an den Benutzer.
+#: Was wirklich nur unter Windows geht.
+#:
+#: ``UFS2Tool`` stand hier bis v1.8.72 mit "Lesen und Bauen von
+#: .ffpkg-Abbildern" - das war unsere Packentscheidung, keine Grenze des
+#: Werkzeugs: Es laeuft laut eigenem README unter Windows, macOS und
+#: Linux, und alle Abbild-Operationen (newfs, makefs, extract, info,
+#: fsck_ufs) arbeiten auf Dateien. Nur ``mount_udf`` braucht Dokan, und
+#: das gibt es allein unter Windows. Seit v1.8.72 liegt fuer jede
+#: Plattform ein eigenstaendiger Bau bei.
 NUR_WINDOWS_WERKZEUGE = {
     "OSFMount": "Einhaengen von Abbildern als Laufwerk (Ersatzweg)",
-    "Dokan": "Einhaengen von UFS2-Abbildern (UFS2Tool)",
-    "UFS2Tool": "Lesen und Bauen von .ffpkg-Abbildern",
+    "Dokan": "Einhaengen von UFS2-Abbildern als Laufwerk (UFS2Tool mount_udf)",
 }
 
 

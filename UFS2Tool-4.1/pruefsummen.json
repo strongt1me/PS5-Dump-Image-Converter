@@ -1,0 +1,29 @@
+{
+  "werkzeug": "UFS2Tool",
+  "fassung": "4.1.0",
+  "herkunft": "https://github.com/SvenGDK/UFS2Tool",
+  "lizenz": "BSD-2-Clause",
+  "gebaut_mit": "dotnet publish -c Release -r <ziel> --self-contained true -p:PublishTrimmed=true -p:PublishSingleFile=true -p:InvariantGlobalization=true -p:DebugType=none",
+  "plattformen": {
+    "win-x64": {
+      "datei": "UFS2Tool.exe",
+      "sha256": "6a6981e0cc0bb781ec256382aee548acd97323c6cb0ea81f693d9d702f477bcb",
+      "bytes": 12460254
+    },
+    "linux-x64": {
+      "datei": "UFS2Tool",
+      "sha256": "1ab838488a91ebdf4fb7690b1e49e1e5760948e91ba84f71d3e6d9e7beffe3a9",
+      "bytes": 13569285
+    },
+    "osx-x64": {
+      "datei": "UFS2Tool",
+      "sha256": "11edf660c12f142e10010d38193fb476c1c99b1105e2f7850a59514bfe748ccc",
+      "bytes": 13544729
+    },
+    "osx-arm64": {
+      "datei": "UFS2Tool",
+      "sha256": "f69cb0cdda34f93594aed05fc5c74d1876c00c479d5d0da33335dbd17cfade9b",
+      "bytes": 12823561
+    }
+  }
+}

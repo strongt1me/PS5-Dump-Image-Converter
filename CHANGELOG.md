@@ -2,9 +2,27 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.71):** Bei kurzen Fenstern lässt sich der Inhalt rollen, und der Diagnosebericht nennt die mitgelieferten Werkzeuge samt Aktualisierungen.
+> **Kurz zum aktuellen Stand (v1.8.72):** .ffpkg funktioniert jetzt auch unter macOS und Linux, und es braucht dafür kein installiertes .NET mehr.
 
 ---
+
+## v1.8.72 – 21.08.2026
+
+### .ffpkg läuft jetzt auch unter macOS und Linux
+
+Bisher stand im Programm, das Erzeugen und Lesen einer `.ffpkg` gehe nur unter Windows. Das stimmte so nicht: Das dafür verwendete UFS2Tool läuft auf allen drei Systemen – es lag bei uns nur der Windows-Bau bei. Jetzt liegt für jedes System einer bei.
+
+Einzig das **Einhängen einer .ffpkg als Laufwerk** bleibt Windows vorbehalten, weil es den Dokan-Treiber braucht. Unter macOS und Linux wird stattdessen direkt entpackt – das Ergebnis ist dasselbe.
+
+### Kein installiertes .NET mehr nötig
+
+Der bisher mitgelieferte Windows-Bau setzte stillschweigend voraus, dass auf deinem Rechner **.NET 8** installiert ist. Fehlte es, schlug jeder `.ffpkg`-Vorgang fehl, ohne dass irgendwo stand warum. Die neuen Bauten bringen alles mit, was sie brauchen.
+
+Das Programm wächst dadurch um rund 11 MB.
+
+### Der Diagnosebericht führt UFS2Tool als mitgeliefert
+
+Mit Fassung, Plattform und Quelle – und die Aktualisierungsprüfung fragt es damit mit ab. Aus der Liste der Werkzeuge, die du selbst installieren musst, ist es verschwunden.
 
 ## v1.8.71 – 21.08.2026
 

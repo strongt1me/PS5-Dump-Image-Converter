@@ -12,7 +12,7 @@
 # Unterschiede zur Windows-Fassung (PS5ImageConverter_Pro.spec):
 #   - kein icon=/version=/uac_admin=: Das sind reine Windows-Angaben. Das
 #     Fenstersymbol setzt die Anwendung zur Laufzeit selbst ueber iconphoto().
-#   - ohne ps5_ufs2tool_data: Dieses Modul enthaelt ausschliesslich Windows-
+#   - UFS2Tool liegt seit v1.8.72 als eigenstaendiger Bau je Plattform bei
 #     Binaerdateien (UFS2Tool.exe, Dokan). Unter Linux sind sie nicht
 #     ausfuehrbar, wuerden das Ergebnis aber um rund ein Megabyte aufblaehen.
 #   - ohne ctypes.wintypes: existiert unter Linux nicht.
@@ -107,6 +107,21 @@ for _mkpfs_src in _mkpfs_roots:
 _ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
 if os.path.isdir(_ps4ffpsc):
     _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+
+# UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
+# ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
+# installiert sein muss - der frueher eingebettete Windows-Bau war
+# framework-abhaengig und scheiterte ohne .NET stillschweigend.
+_ufs2tool = os.path.join(_here, 'UFS2Tool-4.1')
+if os.path.isdir(_ufs2tool):
+    for _beilage in ('LICENSE', 'pruefsummen.json'):
+        _quelle = os.path.join(_ufs2tool, _beilage)
+        if os.path.isfile(_quelle):
+            _datas.append((_quelle, 'UFS2Tool-4.1'))
+    for _ziel in ['linux-x64']:
+        _bau = os.path.join(_ufs2tool, _ziel)
+        if os.path.isdir(_bau):
+            _datas.append((_bau, os.path.join('UFS2Tool-4.1', _ziel)))
 
 # Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten.
 _ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
@@ -282,7 +297,6 @@ a = Analysis(
         # Dokan-Treiber, alle als Base64 hinterlegt. Unter Linux nicht
         # ausfuehrbar; die Aufrufwege dorthin steigen vorher mit einer
         # eindeutigen Meldung aus.
-        'ps5_ufs2tool_data',
     ],
     noarchive=False,
     optimize=1,

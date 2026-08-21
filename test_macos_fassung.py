@@ -101,11 +101,20 @@ class PlattformschichtTests(unittest.TestCase):
         self.assertTrue(ordner.endswith("PS5ImageConverterPro"))
 
     def test_windows_hinweis_nennt_das_system(self):
-        text = self.mac.nur_windows_hinweis("UFS2Tool")
-        self.assertIn("UFS2Tool", text)
+        """Geprueft am Dokan-Treiber - er ist wirklich Windows-gebunden.
+
+        UFS2Tool stand hier bis v1.8.71 mit, war aber nie eine Grenze des
+        Werkzeugs: Es laeuft auf allen drei Systemen, nur lag bei uns bloss
+        der Windows-Bau bei. Einzig das Einhaengen als Laufwerk braucht Dokan.
+        """
+        text = self.mac.nur_windows_hinweis("Dokan")
+        self.assertIn("Dokan", text)
         self.assertIn("macOS", text)
         # Der Hinweis soll den Zweck nennen, nicht nur den Namen des Werkzeugs.
-        self.assertIn(".ffpkg", text)
+        self.assertIn("Laufwerk", text)
+
+    def test_ufs2tool_ist_keine_windows_grenze_mehr(self):
+        self.assertNotIn("UFS2Tool", self.mac.NUR_WINDOWS_WERKZEUGE)
 
 
 class SchriftwahlTests(unittest.TestCase):
@@ -248,12 +257,16 @@ class BauvorschriftTests(unittest.TestCase):
         self.assertNotIn("icon='app_icon.ico'", self.quelle)
 
     def test_windows_nutzlast_ausgeschlossen(self):
-        # ps5_ufs2tool_data enthaelt ausschliesslich Windows-Binaerdateien.
-        self.assertIn("'ps5_ufs2tool_data',", self.quelle)
-        wert = _schluesselwort(self.baum, "Analysis", "excludes")
-        self.assertIsInstance(wert, ast.List)
-        ausgeschlossen = {e.value for e in wert.elts if isinstance(e, ast.Constant)}
-        self.assertIn("ps5_ufs2tool_data", ausgeschlossen)
+        """Seit v1.8.72 gibt es das alte Windows-Modul nicht mehr.
+
+        UFS2Tool liegt stattdessen als eigenstaendiger Bau je Plattform bei -
+        das macOS-Buendel nimmt nur die beiden Apple-Fassungen mit, nicht die
+        Windows-Datei.
+        """
+        self.assertNotIn("ps5_ufs2tool_data", self.quelle)
+        self.assertIn("osx-arm64", self.quelle)
+        self.assertIn("osx-x64", self.quelle)
+        self.assertNotIn("'win-x64'", self.quelle)
 
     def test_versteckte_importe_wie_unter_linux(self):
         """Beide Fassungen muessen dieselben Module kennen.

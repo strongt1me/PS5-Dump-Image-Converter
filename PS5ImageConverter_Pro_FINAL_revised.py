@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.71"
+APP_VERSION = "v1.8.72"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -17850,17 +17850,13 @@ class PS5ConverterGUI:
         # dass die eigentliche Ursache einmal klar benannt wird.
         # Kein Dokan-Check: newfs/makefs schreiben ein Image, sie mounten nichts.
         # Die spätere Dateizahl-Prüfung überspringt sich selbst, wenn Dokan fehlt.
-        if not IST_WINDOWS:
-            # Ohne diese Abfrage meldete der Lauf "Administratorrechte fehlen" -
-            # unter Linux ist aber nicht das Recht das Problem, sondern dass es
-            # UFS2Tool dort ueberhaupt nicht gibt.
-            self._append_to_log(
-                self._t('log.manual.ffpkg_build_windows_only', system=_systemname())
-            )
-            self._last_ffpkg_build_diagnostics = {"preflight": "nur_windows"}
-            return False
-
-        if not _is_admin():
+        # Bis v1.8.72 brach der Bau hier ausserhalb von Windows ab: UFS2Tool
+        # lag nur als Windows-Fassung bei. Das Werkzeug selbst kann mehr -
+        # newfs und makefs schreiben eine Datei und haengen nichts ein, und es
+        # liegt jetzt fuer alle vier Ziele bei. Die Rechtepruefung bleibt
+        # Windows vorbehalten: Dort verlangt das Programmmanifest die
+        # Erhoehung, anderswo gibt es diesen Begriff nicht.
+        if IST_WINDOWS and not _is_admin():
             self._append_to_log(self._t('log.manual.ffpkg_build_requires_admin'))
             self._last_ffpkg_build_diagnostics = {"preflight": "admin_missing"}
             return False
@@ -21438,64 +21434,101 @@ class PS5ConverterGUI:
         return bool(has_driver and has_runtime)
 
     def _extract_ufs2tool(self) -> str:
-        """Extrahiert die vollständige UFS2Tool-v4.1-Laufzeit in ein Temp-Verzeichnis.
+        """Stellt die mitgelieferte UFS2Tool-v4.1-Fassung dieser Plattform bereit.
 
         v4.1 liest Zylindergruppen zuverlässig vollständig ein. Das ist für die
         schreibgeschützte FFPKG-Prüfung wichtig, da ältere v4.0-Bundles bei
         Teilreads fälschlich ``BAD MAGIC NUMBER`` für gültige Cylinder Groups
         melden konnten.
+
+        **Seit v1.8.72 für alle vier Ziele, und eigenständig.** Bis dahin lag
+        nur der Windows-Bau bei, und der war framework-abhängig: Seine
+        ``runtimeconfig.json`` verlangt ``Microsoft.NETCore.App 8.0.0``. Auf
+        einem Rechner ohne installiertes .NET 8 scheiterte ``.ffpkg`` deshalb,
+        ohne dass irgendetwas den Grund nannte. Die mitgelieferten Bauten
+        bringen jetzt alles mit (``--self-contained``, getrimmt, ohne
+        Globalisierung - sonst verlangt der Start unter Linux ``libicu``).
+
+        Returns:
+            Pfad zur ausführbaren Datei.
+
+        Raises:
+            RuntimeError: Wenn für die Plattform nichts mitgeliefert ist oder
+                die Prüfsumme nicht stimmt.
         """
         if hasattr(self, "_ufs2tool_exe") and self._ufs2tool_exe and os.path.isfile(self._ufs2tool_exe):
             return self._ufs2tool_exe
 
-        try:
-            from ps5_ufs2tool_data import (
-                _DOKAN_B64,
-                _LTRDATA_EXTENSIONS_B64,
-                _LTRDATA_EXTENSIONS_NATIVE_B64,
-                _UFS2TOOL_DEPS_B64,
-                _UFS2TOOL_DLL_B64,
-                _UFS2TOOL_EXE_B64,
-                _UFS2TOOL_RUNTIME_B64,
-                _UFS2TOOL_RUNTIME_SHA256,
-            )
-        except ImportError as exc:
+        wurzel = self._mitgeliefert_finden(UFS2TOOL_ORDNER)
+        kennung = self._ufs2tool_plattform()
+        if not kennung:
             raise RuntimeError(
-                "UFS2Tool-v4.1-Daten nicht gefunden: ps5_ufs2tool_data.py fehlt oder ist unvollständig."
-            ) from exc
+                f"UFS2Tool wird für {_systemname()} ({platform.machine()}) "
+                "nicht mitgeliefert."
+            )
+        ordner = os.path.join(wurzel, kennung)
+        name = "UFS2Tool.exe" if kennung.startswith("win") else "UFS2Tool"
+        pfad = os.path.join(ordner, name)
+        if not os.path.isfile(pfad):
+            raise RuntimeError(f"UFS2Tool-v4.1 fehlt: {pfad}")
 
-        tmp_dir = self._mkdtemp(prefix="ps5conv_ufs2_")
-        runtime_files = (
-            ("UFS2Tool.exe", _UFS2TOOL_EXE_B64),
-            ("UFS2Tool.dll", _UFS2TOOL_DLL_B64),
-            ("UFS2Tool.deps.json", _UFS2TOOL_DEPS_B64),
-            ("UFS2Tool.runtimeconfig.json", _UFS2TOOL_RUNTIME_B64),
-            ("DokanNet.dll", _DOKAN_B64),
-            ("LTRData.Extensions.dll", _LTRDATA_EXTENSIONS_B64),
-            ("LTRData.Extensions.Native.dll", _LTRDATA_EXTENSIONS_NATIVE_B64),
-        )
-        try:
-            for name, b64 in runtime_files:
-                payload = base64.b64decode(b64, validate=True)
-                expected_sha256 = str(_UFS2TOOL_RUNTIME_SHA256.get(name, "")).lower()
-                actual_sha256 = hashlib.sha256(payload).hexdigest()
-                if not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
-                    raise RuntimeError(
-                        f"UFS2Tool-v4.1-Prüfsumme für {name} fehlt oder ist ungültig."
-                    )
-                if actual_sha256 != expected_sha256:
-                    raise RuntimeError(
-                        f"UFS2Tool-v4.1-Integritätsprüfung für {name} fehlgeschlagen "
-                        f"(erwartet {expected_sha256}, erhalten {actual_sha256})."
-                    )
-                with open(os.path.join(tmp_dir, name), "wb") as handle:
-                    handle.write(payload)
-        except Exception as exc:
-            _rmtree_force(tmp_dir)
-            raise RuntimeError(f"UFS2Tool-v4.1 konnte nicht vollständig bereitgestellt werden: {exc}") from exc
+        self._ufs2tool_pruefsumme(wurzel, kennung, pfad)
 
-        self._ufs2tool_exe = os.path.join(tmp_dir, "UFS2Tool.exe")
+        if not IST_WINDOWS:
+            # Aus dem Bündel kommt die Datei ohne Ausführungsrecht.
+            try:
+                os.chmod(pfad, os.stat(pfad).st_mode | 0o111)
+            except OSError as exc:
+                logger.debug("UFS2Tool nicht ausführbar zu machen: %s", exc)
+
+        self._ufs2tool_exe = pfad
         return self._ufs2tool_exe
+
+    @staticmethod
+    def _ufs2tool_plattform() -> str:
+        """Der Ordnername des mitgelieferten Baus für diese Plattform.
+
+        Returns:
+            ``win-x64``, ``linux-x64``, ``osx-arm64``, ``osx-x64`` - oder leer,
+            wenn nichts passt.
+        """
+        maschine = (platform.machine() or "").lower()
+        arm = maschine in ("arm64", "aarch64")
+        if IST_WINDOWS:
+            return "win-x64"
+        if IST_MACOS:
+            return "osx-arm64" if arm else "osx-x64"
+        if IST_LINUX and not arm:
+            return "linux-x64"
+        return ""
+
+    @staticmethod
+    def _ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
+        """Prüft die mitgelieferte Datei gegen ``pruefsummen.json``.
+
+        Fehlt die Liste, wird nicht geprüft - aber auch nicht abgebrochen: Ein
+        fehlender Prüfwert ist kein Grund, ein vorhandenes Werkzeug
+        abzulehnen. Ein *falscher* dagegen schon.
+        """
+        liste = os.path.join(wurzel, "pruefsummen.json")
+        if not os.path.isfile(liste):
+            return
+        try:
+            with io.open(liste, encoding="utf-8") as datei:
+                daten = json.load(datei)
+            erwartet = str(((daten.get("plattformen") or {}).get(kennung) or {})
+                           .get("sha256", "")).lower()
+        except Exception as exc:
+            logger.debug("UFS2Tool-Prüfsummen nicht lesbar: %s", exc)
+            return
+        if not re.fullmatch(r"[0-9a-f]{64}", erwartet):
+            return
+        gemessen = hashlib.sha256(open(pfad, "rb").read()).hexdigest()
+        if gemessen != erwartet:
+            raise RuntimeError(
+                f"UFS2Tool-v4.1-Integritätsprüfung für {kennung} fehlgeschlagen "
+                f"(erwartet {erwartet}, erhalten {gemessen})."
+            )
 
     @staticmethod
     def _fehlende_zieldateien(dest_folder: str, soll: dict[str, int]) -> list[str]:
@@ -21519,6 +21552,84 @@ class PS5ConverterGUI:
             offen.append(rel_path)
         return sorted(offen)
 
+    def _ffpkg_ueber_unterbefehl_entpacken(
+        self,
+        src: str,
+        dest_folder: str,
+        *,
+        status_prefix: str = "",
+        progress_start: float = 0.0,
+        progress_end: float = 100.0,
+    ) -> bool:
+        """Entpackt eine .ffpkg mit ``UFS2Tool extract`` - ohne Einhaengen.
+
+        Der Weg ueber ein Dokan-Laufwerk gibt es nur unter Windows. UFS2Tool
+        kann die Dateien aber auch direkt herausschreiben; unter Linux am
+        20.08.2026 gegengeprueft: 2 MB Zufallsdaten kamen Byte fuer Byte
+        identisch zurueck.
+
+        Die Argumentreihenfolge ist ``extract <abbild> <ausgabeordner>`` -
+        andersherum meldet das Werkzeug "Path component not found in inode 2".
+
+        Args:
+            src: Die .ffpkg.
+            dest_folder: Zielordner; wird angelegt.
+            status_prefix: Text vor der Statusmeldung.
+            progress_start: Fortschrittswert zu Beginn.
+            progress_end: Fortschrittswert am Ende.
+
+        Returns:
+            ``True`` bei Erfolg.
+        """
+        try:
+            exe = self._extract_ufs2tool()
+        except Exception as exc:
+            self._append_to_log(self._t('log.auto.0234', v0=exc))
+            return False
+
+        os.makedirs(dest_folder, exist_ok=True)
+        self._append_to_log(self._t('log.auto.0235', v0=exe))
+        self._set_status(f"{status_prefix}{self._t('ffpkg.extract_running')}")
+        self._set_progress(progress_start)
+
+        try:
+            lauf = subprocess.Popen(
+                [exe, "extract", src, dest_folder],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as exc:
+            self._append_to_log(self._t('log.auto.0234', v0=exc))
+            return False
+
+        letzte = ""
+        for zeile in iter(lauf.stdout.readline, ""):
+            zeile = zeile.rstrip()
+            if not zeile:
+                continue
+            letzte = zeile
+            self._append_to_log(f"[UFS2Tool] {zeile}\n")
+        lauf.wait()
+
+        if lauf.returncode != 0:
+            self._append_to_log(
+                self._t('ffpkg.extract_failed', code=lauf.returncode, detail=letzte))
+            return False
+
+        # Nachsehen, ob wirklich etwas herausgekommen ist - ein Rueckgabewert
+        # 0 auf einem leeren Ordner waere kein Erfolg.
+        dateien = sum(len(namen) for _w, _o, namen in os.walk(dest_folder))
+        if dateien <= 0:
+            self._append_to_log(self._t('ffpkg.extract_empty'))
+            return False
+
+        self._set_progress(progress_end)
+        self._append_to_log(self._t('ffpkg.extract_done', count=dateien))
+        return True
+
     def _extract_ffpkg_to_folder_via_ufs2tool(
         self,
         src: str,
@@ -21528,15 +21639,22 @@ class PS5ConverterGUI:
         progress_start: float,
         progress_end: float,
     ) -> bool:
-        """Extrahiert eine .ffpkg via UFS2Tool/Dokan in einen Dump-Ordner."""
+        """Extrahiert eine .ffpkg in einen Dump-Ordner.
+
+        Unter Windows ueber ein Dokan-Laufwerk - so lassen sich die Dateien
+        einzeln kopieren und der Fortschritt mitzaehlen. Anderswo ueber den
+        Unterbefehl ``extract``, der ohne Einhaengen auskommt.
+        """
         import ctypes as _ct
         import time as _time
 
         if not IST_WINDOWS:
-            self._append_to_log(
-                self._t('log.manual.ufs2tool_windows_only', system=_systemname())
+            return self._ffpkg_ueber_unterbefehl_entpacken(
+                src, dest_folder,
+                status_prefix=status_prefix,
+                progress_start=progress_start,
+                progress_end=progress_end,
             )
-            return False
 
         if not _is_admin():
             self._append_to_log(self._t('log.auto.0232'))
@@ -25361,10 +25479,12 @@ class PS5ConverterGUI:
 
     #: Fremdwerkzeuge ohne abfragbare Fassungsliste. Der Bericht nennt die
     #: gefundene Fassung und die Bezugsquelle - mehr waere geraten.
+    #: Fremdwerkzeuge, die der Nutzer selbst installiert. UFS2Tool stand hier
+    #: bis v1.8.71 mit - seit v1.8.72 liegt es bei und erscheint im Inventar
+    #: als mitgeliefert.
     _FREMDWERKZEUGE_QUELLEN: dict[str, str] = {
         "filezilla_path": "https://filezilla-project.org/download.php",
         "osfmount_path": "https://www.osforensics.com/tools/mount-disk-images.html",
-        "ufs2tool_path": "https://github.com/LightningMods/PS5-UFS2-Tool",
     }
 
     @staticmethod
@@ -25505,9 +25625,22 @@ class PS5ConverterGUI:
             teile.append(ak.Bestandteil("AMPR EMU", hoechste, ak.GITHUB,
                                         "drakmor/ampr_emu"))
 
+        # UFS2Tool liegt seit v1.8.72 bei, statt vom Nutzer gesucht zu werden.
+        # Die Fassung steht in pruefsummen.json neben den Bauten.
+        try:
+            liste = os.path.join(self._mitgeliefert_finden(UFS2TOOL_ORDNER),
+                                 "pruefsummen.json")
+            with io.open(liste, encoding="utf-8") as datei:
+                angaben = json.load(datei)
+            teile.append(ak.Bestandteil(
+                "UFS2Tool (%s)" % (self._ufs2tool_plattform() or "?"),
+                str(angaben.get("fassung") or "unbekannt"),
+                ak.GITHUB, "SvenGDK/UFS2Tool"))
+        except Exception as exc:
+            logger.debug("UFS2Tool-Fassung nicht lesbar: %s", exc)
+
         for name, schluessel in (("FileZilla", "filezilla_path"),
-                                 ("OSFMount", "osfmount_path"),
-                                 ("UFS2Tool", "ufs2tool_path")):
+                                 ("OSFMount", "osfmount_path")):
             try:
                 pfad = str(self._load_setting(schluessel, "") or "").strip()
             except Exception:
@@ -25598,9 +25731,11 @@ class PS5ConverterGUI:
         """
         z = self._diagnose_zeile
         zeilen: list[str] = []
+        # UFS2Tool steht seit v1.8.72 im Abschnitt der mitgelieferten
+        # Werkzeuge - hier gehoert nur her, was der Nutzer selbst
+        # installiert und das Programm suchen muss.
         for name, schluessel in (("FileZilla", "filezilla_path"),
-                                 ("OSFMount", "osfmount_path"),
-                                 ("UFS2Tool", "ufs2tool_path")):
+                                 ("OSFMount", "osfmount_path")):
             try:
                 pfad = str(self._load_setting(schluessel, "") or "").strip()
             except Exception:
@@ -27701,6 +27836,73 @@ class PS5ConverterGUI:
     # einem Fenster im Stil dieses Programms.
     # ==================================================================
 
+    #: Dateien, die in einem fertigen Abbild stehen sollten. Fehlt eine, ist
+    #: das kein Abbruchgrund - aber ein Hinweis wert.
+    #:
+    #: **Nur fuer PS5-Titel.** ``pfs-version.dat`` ist ein PS5-Marker: zehn
+    #: Byte ASCII mit der Inhaltsversion ("06.004.000"), wortgleich mit
+    #: ``contentVersion`` aus param.json - an drei echten Dumps nachgesehen.
+    #: Ein PS4-Spiel hat die Datei nicht, und sie dort zu vermissen waere ein
+    #: Fehlalarm bei jedem einzelnen Titel. Selbst bei PS5-Dumps ist sie
+    #: entbehrlich: Von 32 durchgesehenen Backups fehlte sie in zweien, die
+    #: einwandfrei liefen (siehe dump_validator.RECOMMENDED_FILES).
+    _PS4_EMPFOHLENE_DATEIEN: tuple[str, ...] = ("sce_sys/pfs-version.dat",)
+
+    #: Spuren, an denen ein PS4-Titel im fertigen Abbild zu erkennen ist.
+    #: ShadowMount+ haengt ihn in den PS5-App-Pfad ein (/system_ex/app/…);
+    #: ob die Konsole ihn von dort startet, sichert das Werkzeug nicht zu.
+    _PS4_MERKMALE: tuple[str, ...] = ("manifest_nonufsfiles_ps4.txt",
+                                      "sce_discmap.plt")
+
+    def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
+        """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
+
+        Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht
+        die Nutzdaten - bei einem 8,7-GB-Abbild sind das wenige Sekunden.
+
+        Args:
+            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
+
+        Returns:
+            ``{"dateien": int, "fehlend": [...], "ps4": bool, "fehler": str}``.
+        """
+        ergebnis = {"dateien": 0, "fehlend": [], "ps4": False, "fehler": ""}
+        griff = None
+        try:
+            from mkpfs.exfat import ExfatReader
+
+            with open(pfad, "rb") as datei:
+                kopf = datei.read(16)
+            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
+                from mkpfs import pfs as mkpfs_pfs
+
+                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
+                if not geoeffnet:
+                    ergebnis["fehler"] = "Innenebene nicht lesbar"
+                    return ergebnis
+                sicht, griff, _name = geoeffnet
+            else:
+                sicht = griff = open(pfad, "rb")
+
+            sicht.seek(0)
+            leser = ExfatReader(sicht)
+            namen = [e.rel_path.replace("\\", "/").lower()
+                     for e in leser.iter_files()]
+            ergebnis["dateien"] = len(namen)
+            vorhanden = set(namen)
+            ergebnis["fehlend"] = [d for d in self._PS4_EMPFOHLENE_DATEIEN
+                                   if d.lower() not in vorhanden]
+            ergebnis["ps4"] = any(m in vorhanden for m in self._PS4_MERKMALE)
+        except Exception as exc:                      # noqa: BLE001 - melden
+            ergebnis["fehler"] = str(exc)[:160]
+        finally:
+            try:
+                if griff is not None:
+                    griff.close()
+            except Exception:
+                pass
+        return ergebnis
+
     def _ps4ffpsc_befehl(self) -> list[str]:
         """Baut den Aufruf für die eingebettete PS4-Kommandozeile.
 
@@ -27931,6 +28133,18 @@ class PS5ConverterGUI:
         dlc_kasten.pack(side="left")
         DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
 
+        # Der Hersteller des eingebetteten Werkzeugs setzt
+        # "ps5_runtime_verified" fest auf false - zugesichert ist nur, dass
+        # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
+        # die Konsole es startet. Das gehoert vor den Bau gesagt, nicht in
+        # eine Begleitdatei, die niemand liest.
+        hinweis = tk.Label(
+            körper, text=self._t("ps4pkg.runtime_note"),
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
+            anchor="w", justify="left", wraplength=920)
+        hinweis.pack(fill="x", pady=(14, 0))
+        self._register_translatable(hinweis, "ps4pkg.runtime_note")
+
         # ── Fortschritt und Protokoll ───────────────────────────────────
         balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
         balken.pack(fill="x", pady=(14, 4))
@@ -28149,6 +28363,29 @@ class PS5ConverterGUI:
                     _balken(100.0)
                     _status(self._t("ps4pkg.status_done", path=ziel))
                     self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
+                    # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
+                    # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
+                    # oder gar nicht.
+                    _protokoll(self._t("ps4pkg.check_running"))
+                    befund = self._ps4ffpsc_abbild_pruefen(ziel)
+                    if befund["fehler"]:
+                        _protokoll(self._t("ps4pkg.check_failed",
+                                           error=befund["fehler"]))
+                    else:
+                        _protokoll(self._t("ps4pkg.check_files",
+                                           count=befund["dateien"]))
+                        if befund["ps4"]:
+                            # Bei einem PS4-Titel gehoeren die PS5-Marker gar
+                            # nicht hinein - sie dort zu vermissen waere ein
+                            # Fehlalarm bei jedem einzelnen Spiel.
+                            _protokoll(self._t("ps4pkg.check_ps4_title"))
+                        else:
+                            for fehlt in befund["fehlend"]:
+                                _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
+                                self._append_to_log(
+                                    self._t("ps4pkg.check_missing", file=fehlt) + "\n")
+                            if not befund["fehlend"]:
+                                _protokoll(self._t("ps4pkg.check_complete"))
                 else:
                     _status(self._t("ps4pkg.status_failed", code=rc))
 
@@ -32438,6 +32675,10 @@ def _ensure_av_exclusion() -> None:
 
 #: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
 PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
+
+#: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
+#: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
+UFS2TOOL_ORDNER = "UFS2Tool-4.1"
 
 #: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
 #: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).

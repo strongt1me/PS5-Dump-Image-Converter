@@ -182,6 +182,84 @@ class InspectAbsturzTests(unittest.TestCase):
         self.assertIsNone(befund.get("sha256"))
 
 
+class NachpruefungTests(unittest.TestCase):
+    """Was nach dem Bauen ueber das Abbild gesagt wird.
+
+    Anlass: Am 20.08.2026 wurde ein PS4-Titel gebaut, der sich einbinden und
+    registrieren liess, beim Start aber die Konsole mitnahm. Das eingebettete
+    Werkzeug sichert den PS5-Betrieb ausdruecklich nicht zu
+    (``ps5_runtime_verified`` steht fest auf ``False``) - nur stand das
+    bislang allein in einer Begleitdatei neben dem Abbild.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def _methode(self, name: str) -> str:
+        anfang = self.quelltext.index("    def %s(self" % name)
+        weiter = self.quelltext.index("\n    def ", anfang + 10)
+        return self.quelltext[anfang:weiter]
+
+    def test_hinweis_steht_im_fenster(self) -> None:
+        """Vor dem Bauen sichtbar, nicht nur in der Begleitdatei."""
+        self.assertIn("ps4pkg.runtime_note", self.quelltext)
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("ps5_runtime_verified",
+                              STRINGS["ps4pkg.runtime_note"][sprache])
+
+    def test_werkzeug_sichert_den_betrieb_wirklich_nicht_zu(self) -> None:
+        """Der Hinweis muss stimmen - also nachsehen, was das Werkzeug setzt."""
+        pipeline = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
+            encoding="utf-8", errors="replace")
+        self.assertIn('"ps5_runtime_verified": False', pipeline)
+        self.assertNotIn('"ps5_runtime_verified": True', pipeline)
+
+    def test_abbild_wird_nach_dem_bauen_angesehen(self) -> None:
+        self.assertIn("_ps4ffpsc_abbild_pruefen", self.quelltext)
+        rumpf = self._methode("_ps4ffpsc_abbild_pruefen")
+        self.assertIn("ExfatReader", rumpf)
+        # Nur die Verzeichnisbloecke lesen, nicht 20 GB Nutzdaten: iter_files
+        # laeuft ueber die Verzeichnisse, read_file holte den Inhalt.
+        self.assertIn("iter_files", rumpf)
+        self.assertNotIn("read_file", rumpf)
+
+    def test_ps4_titel_gilt_nicht_als_mangelhaft(self) -> None:
+        """pfs-version.dat ist ein PS5-Marker.
+
+        Zehn Byte ASCII mit der Inhaltsversion, wortgleich mit
+        ``contentVersion`` aus param.json - an drei echten Dumps nachgesehen.
+        Ein PS4-Spiel hat die Datei nicht; sie dort zu vermissen waere ein
+        Fehlalarm bei jedem einzelnen Titel.
+        """
+        self.assertIn("ps4pkg.check_ps4_title", self.quelltext)
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("pfs-version.dat",
+                              STRINGS["ps4pkg.check_ps4_title"][sprache])
+
+    def test_erkennungsmerkmale_eines_ps4_titels(self) -> None:
+        merkmale = PS5ConverterGUI._PS4_MERKMALE
+        self.assertIn("manifest_nonufsfiles_ps4.txt", merkmale)
+        self.assertIn("sce_discmap.plt", merkmale)
+        for eintrag in merkmale:
+            with self.subTest(eintrag=eintrag):
+                self.assertEqual(eintrag, eintrag.lower(),
+                                 "Vergleich laeuft in Kleinschreibung")
+
+    def test_alle_texte_sind_uebersetzt(self) -> None:
+        for schluessel in ("ps4pkg.runtime_note", "ps4pkg.check_running",
+                           "ps4pkg.check_files", "ps4pkg.check_missing",
+                           "ps4pkg.check_complete", "ps4pkg.check_ps4_title",
+                           "ps4pkg.check_failed"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[schluessel].get(sprache))
+
+
 class PlattformTests(unittest.TestCase):
     """Nur wo ein lauffaehiger Entpacker liegt, darf das Fenster oeffnen.
 

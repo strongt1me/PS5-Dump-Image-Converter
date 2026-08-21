@@ -83,7 +83,7 @@ def test_spec_file():
             ('name=', 'Exe-Name'),
             ('datas=', 'Daten-Dateien'),
             ('hiddenimports=', 'Hidden Imports'),
-            ('ps5_ufs2tool_data', 'UFS2Tool-v4.1-Ressource'),
+            ('UFS2Tool-4.1', 'UFS2Tool-v4.1-Laufzeit je Plattform'),
             (f'PS5_Dump_Image_Converter_{_app_version()}', 'Output-Dateiname'),
         ]
         

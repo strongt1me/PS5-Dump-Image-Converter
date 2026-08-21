@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.71
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.72
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -74,6 +74,21 @@ _ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
 if os.path.isdir(_ps4ffpsc):
     _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
 
+# UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
+# ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
+# installiert sein muss - der frueher eingebettete Windows-Bau war
+# framework-abhaengig und scheiterte ohne .NET stillschweigend.
+_ufs2tool = os.path.join(_here, 'UFS2Tool-4.1')
+if os.path.isdir(_ufs2tool):
+    for _beilage in ('LICENSE', 'pruefsummen.json'):
+        _quelle = os.path.join(_ufs2tool, _beilage)
+        if os.path.isfile(_quelle):
+            _datas.append((_quelle, 'UFS2Tool-4.1'))
+    for _ziel in ['win-x64']:
+        _bau = os.path.join(_ufs2tool, _ziel)
+        if os.path.isdir(_bau):
+            _datas.append((_bau, os.path.join('UFS2Tool-4.1', _ziel)))
+
 # Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten. Dadurch steht der
 # Versionsspeicher in Aufgabe 7 ohne manuelle Ordnerwahl bereit.
 _ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
@@ -125,7 +140,6 @@ a = Analysis(
         'contextvars',
         'concurrent.futures',
         # Dynamisch importierte FFPKG-/UFS2Tool-v4.1-Ressource
-        'ps5_ufs2tool_data',
         # Dynamisch importierter FFPKG-Validatorpfad
         'ps5_validator',
         'ps5_validator.core',
@@ -270,7 +284,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.71',
+    name='PS5_Dump_Image_Converter_v1.8.72',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
