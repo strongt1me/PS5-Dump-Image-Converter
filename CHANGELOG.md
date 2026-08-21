@@ -2,9 +2,31 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.74):** Das Programm baut von sich aus keine Verbindungen mehr nach draußen – Metadaten werden nur noch auf Knopfdruck nachgeschlagen. Außerdem steht jetzt im PS4-Fenster, wohin das fertige Abbild gehört.
+> **Kurz zum aktuellen Stand (v1.8.75):** Am Programm ändert sich nichts – diese Ausgabe bringt den vollständigen Testbestand mit und behebt drei Ursachen dafür, dass Tests je nach Reihenfolge unterschiedlich ausgingen.
 
 ---
+
+## v1.8.75 – 21.08.2026
+
+### Am Programm ändert sich nichts
+
+Diese Ausgabe fasst ausschließlich die Testreihe an. Wer v1.8.74 benutzt, verpasst keine Funktion und keine Fehlerbehebung – die Bauten verhalten sich identisch. Sie ist trotzdem eigenständig, weil das mitgelieferte Prüfsummen-Verzeichnis jetzt den kompletten Testbestand mitführt.
+
+### Der Testbestand liegt jetzt offen
+
+Bisher blieben die Testdateien lokal; nur sieben von 58 lagen im Repository, und das eher aus Versehen. Wer nachvollziehen wollte, womit eine Aussage in diesem Changelog belegt ist, fand die Prüfungen nicht. Jetzt sind alle 58 dabei – zusammen rund 860 KB Text.
+
+### Drei Ursachen für unzuverlässige Testläufe behoben
+
+Ein Test schlug in einem Gesamtlauf fehl und lief in vier weiteren durch. Dahinter steckten drei voneinander unabhängige Dinge, keines davon eine Eigenheit, mit der man leben muss:
+
+**Eine zerstörte Fensterwurzel.** Eine Prüfung „ist überhaupt eine Anzeige da?" legte beim Start ein Fenster an und zerstörte es sofort wieder. Danach lässt sich die Tk-Grafikschicht unter Windows nur noch unzuverlässig neu hochfahren – ein späteres Fenster scheitert dann mit einer Meldung über eine nicht lesbare `init.tcl`. Welcher Test es trifft, war Zufall.
+
+**Ein fest erwarteter deutscher Text.** Ein Test verlangte wörtlich „BENUTZERHANDBUCH". Das Programm übernimmt beim Start aber die zuletzt gemerkte Sprache – wer es auf Englisch verlassen hatte, bekam einen roten Test, der mit der geprüften Sache nichts zu tun hatte.
+
+**Ein zurückgezogenes Fenster und dein Hintergrundbild.** Drei weitere Tests übersprangen sich selbst, wenn gerade keine Beschriftung sichtbar war oder kein Hintergrundbild geladen. Beides hing an der Reihenfolge der Testdateien und an deinen Einstellungen, nicht am Prüfgegenstand.
+
+Der Gesamtlauf liefert jetzt dreimal hintereinander dasselbe Ergebnis: 1155 Prüfungen grün, drei übersprungen – und diese drei mit Absicht (zwei Integrationstests, die man eigens einschalten muss, und einer, der nur auf Dateisystemen mit Groß- und Kleinschreibung gilt).
 
 ## v1.8.74 – 21.08.2026
 
