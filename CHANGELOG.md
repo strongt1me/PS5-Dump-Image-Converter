@@ -2,9 +2,38 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.75):** Am Programm ändert sich nichts – diese Ausgabe bringt den vollständigen Testbestand mit und behebt drei Ursachen dafür, dass Tests je nach Reihenfolge unterschiedlich ausgingen.
+> **Kurz zum aktuellen Stand (v1.8.76):** Während eine PS4-Konvertierung läuft, blendet sich viermal der Hinweis ein, dass das fertige Spiel nur vom USB-Datenträger starten darf. Und die Angabe zu den Ordnern ist richtiggestellt: `/mnt/usb0/homebrew/` funktioniert doch.
 
 ---
+
+## v1.8.76 – 21.08.2026
+
+### Der wichtigste Hinweis kommt jetzt von selbst
+
+Während eine PS4-Konvertierung läuft und du auf den Balken schaust, blendet sich der Hinweis ein, worauf es beim fertigen Abbild ankommt: **Es darf nur vom externen USB-Datenträger starten, nie von der internen SSD** – sonst reißt es beim Start die Konsole mit sich.
+
+Die Einblendung erscheint **viermal** über den ganzen Vorgang verteilt, bleibt **15 Sekunden** stehen und blendet sich langsam ein und wieder aus. Du musst nichts drücken; sie geht von allein.
+
+Verteilt wird nach Fortschritt, nicht nach Uhrzeit: Ein kleines Spiel ist in zwei Minuten fertig, ein großes braucht eine Stunde – so liegt sie in beiden Fällen richtig.
+
+### Richtigstellung: /mnt/usb0/homebrew/ funktioniert doch
+
+In v1.8.74 stand im PS4-Fenster „Unterordner werden nicht durchsucht". Das war zu pauschal und hätte dich von einem Ordner abhalten können, der funktioniert.
+
+Nachgemessen an der Konsole: Ein Abbild in `/mnt/usb0/` wird binnen 15 Sekunden gefunden, eines in `/mnt/usb0/homebrew/` binnen 20 – eines in einem selbst angelegten Ordner nie. ShadowMount+ durchsucht nicht „keine Unterordner", sondern **nur die Pfade seiner eingebauten Liste**. `homebrew` steht darauf, ein eigener Ordner nicht.
+
+### Der Kasten sagt es jetzt in drei Zeilen
+
+Vorher brauchte er sieben und drückte das Fenster an den Rand des Bildschirms. Jetzt steht dort das Nötige, die Einzelheiten stehen im Tooltip:
+
+```text
+NUR VOM USB-DATENTRÄGER STARTEN
+✓  Auf den USB-Datenträger: /mnt/usb0/ oder /mnt/usb0/homebrew/
+✗  Nie auf die interne SSD – /data/homebrew und /data/etaHEN/games geben einen Kernel Panic
+!  Eigene Ordner wie /mnt/usb0/ps4ffpsc/ werden nie gefunden
+```
+
+Das Fenster braucht dadurch 959 statt 1012 Pixel Höhe – vorher war es einen Pixel vom Überlaufen entfernt.
 
 ## v1.8.75 – 21.08.2026
 

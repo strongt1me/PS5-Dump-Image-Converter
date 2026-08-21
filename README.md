@@ -2,12 +2,12 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.8.75-blue)
+![Version](https://img.shields.io/badge/Version-v1.8.76-blue)
 ![Status](https://img.shields.io/badge/Status-release--bereit-brightgreen)
 
 Der **PS5 Dump & Image Converter** ist eine Anwendung zum Konvertieren, Entpacken, Packen, Bearbeiten und Prüfen unterstützter PS5-Dump-Formate. Sie läuft unter **Windows**, **Linux** und **macOS**; einzelne Abläufe, die auf Windows-Werkzeuge angewiesen sind, bleiben Windows vorbehalten (siehe [Was außerhalb von Windows anders ist](#was-außerhalb-von-windows-anders-ist)). Die grafische Oberfläche führt durch acht klar getrennte Aufgaben und unterstützt Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-basierte `.ffpkg`-Dateien.
 
-> **Neu bei der Bedienung?** Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** (Version v1.8.75) erklärt Aufgabenwahl, Quelle und Ziel, Fortschrittsanzeige, alle Werkzeugleisten-Buttons sowie typische Fehler in einfacher Sprache – mit Inhaltsverzeichnis und allen acht Aufgaben. Es liegt zweifach bei: als **[BENUTZERHANDBUCH.html](BENUTZERHANDBUCH.html)** zum Lesen im Browser und als **[BENUTZERHANDBUCH.pdf](BENUTZERHANDBUCH.pdf)** (27 Seiten) zum Ausdrucken und Weitergeben.
+> **Neu bei der Bedienung?** Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** (Version v1.8.76) erklärt Aufgabenwahl, Quelle und Ziel, Fortschrittsanzeige, alle Werkzeugleisten-Buttons sowie typische Fehler in einfacher Sprache – mit Inhaltsverzeichnis und allen acht Aufgaben. Es liegt zweifach bei: als **[BENUTZERHANDBUCH.html](BENUTZERHANDBUCH.html)** zum Lesen im Browser und als **[BENUTZERHANDBUCH.pdf](BENUTZERHANDBUCH.pdf)** (28 Seiten) zum Ausdrucken und Weitergeben.
 
 ## Inhalt
 
@@ -25,6 +25,8 @@ Der **PS5 Dump & Image Converter** ist eine Anwendung zum Konvertieren, Entpacke
 - [Lizenz und Verantwortung](#lizenz-und-verantwortung)
 
 ## Aktuelle Version
+
+**v1.8.76** blendet während einer PS4-Konvertierung viermal den Hinweis ein, dass das fertige Spiel **nur vom externen USB-Datenträger** starten darf und nie von der internen SSD – sonst gibt es beim Start einen Kernel Panic. Die Einblendung bleibt 15 Sekunden, blendet sich langsam ein und aus und braucht keinen Klick. Außerdem eine Richtigstellung: In v1.8.74 stand „Unterordner werden nicht durchsucht" – tatsächlich funktioniert `/mnt/usb0/homebrew/`, nur selbst angelegte Ordner werden nicht gefunden. Details siehe [Release Notes v1.8.76](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.76).
 
 **v1.8.75** ändert nichts am Programm. Die Ausgabe bringt den vollständigen Testbestand mit – bisher lagen nur sieben von 58 Dateien im Repository – und behebt drei Ursachen dafür, dass Testläufe je nach Reihenfolge unterschiedlich ausgingen: eine beim Start angelegte und sofort wieder zerstörte Fensterwurzel, ein fest erwarteter deutscher Text und ein zurückgezogenes Fenster. Der Gesamtlauf liefert jetzt reproduzierbar 1155 grüne Prüfungen. Details siehe [Release Notes v1.8.75](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.75).
 
@@ -115,7 +117,7 @@ Seit **v1.8.10** gilt dieselbe Abnahmelogik auch für `.exfat`: Nach dem Bau wir
 | GUI-Synchronisation | Balken, Prozent, Datei- und Bytezähler aus derselben UFS2Tool-Quelle |
 | Abschlussbericht | Kein automatischer JSON-Bericht mehr (seit v1.8.11 entfernt) |
 | Sprache | Vollständig Deutsch/Englisch umschaltbar (seit v1.8.12) – Oberfläche, Dialoge, Protokoll |
-| Windows-EXE-Ziel | `dist\PS5_Dump_Image_Converter_v1.8.75.exe` |
+| Windows-EXE-Ziel | `dist\PS5_Dump_Image_Converter_v1.8.76.exe` |
 
 Die vollständigen Änderungen stehen im [Changelog](CHANGELOG.md).
 
@@ -150,7 +152,7 @@ Die Anwendung verbindet eine übersichtliche Windows-Oberfläche mit den benöti
 
 ## Die acht Aufgaben
 
-Die Aufgabenbezeichnungen entsprechen der aktuellen Oberfläche von v1.8.75.
+Die Aufgabenbezeichnungen entsprechen der aktuellen Oberfläche von v1.8.76.
 
 | Nr. | Aufgabe | Geeignete Quelle | Mögliche Ausgabe oder Zweck |
 | ---: | --- | --- | --- |
@@ -211,7 +213,7 @@ Zusätzlich werden **Python 3.10 oder neuer** und `pip` benötigt. Die für Anwe
 ### Fertige EXE verwenden
 
 1. Das vollständige Release in einen eigenen Ordner entpacken.
-2. `PS5_Dump_Image_Converter_v1.8.75.exe` starten.
+2. `PS5_Dump_Image_Converter_v1.8.76.exe` starten.
 3. Falls Windows nach Administratorrechten fragt, nur fortfahren, wenn die gewählte Aufgabe diese benötigt.
 4. Eine der acht Aufgaben auswählen.
 5. Quelle, Zielformat und Zielordner festlegen.
@@ -236,7 +238,7 @@ Alternativ kann das Skript direkt gestartet werden:
 Die fertige Datei wird unter folgendem Namen erzeugt:
 
 ```text
-dist\PS5_Dump_Image_Converter_v1.8.75.exe
+dist\PS5_Dump_Image_Converter_v1.8.76.exe
 ```
 
 ### Linux-Version selbst bauen
@@ -251,7 +253,7 @@ chmod +x Build_Linux.sh
 Das Skript prüft Python und Tcl/Tk, legt bei Bedarf die Umgebung `.venv-linux` an, installiert die benötigten Pakete und erzeugt:
 
 ```text
-dist/PS5_Dump_Image_Converter_v1.8.75_linux_x86_64
+dist/PS5_Dump_Image_Converter_v1.8.76_linux_x86_64
 ```
 
 **Nicht mit `sudo` bauen.** Das Programm braucht dafür keine Root-Rechte, und ein als root erzeugtes `dist/` lässt sich beim nächsten Lauf als normaler Benutzer nicht mehr aufräumen.
@@ -261,7 +263,7 @@ Fehlt Tcl/Tk, bricht das Skript mit dem passenden Installationsbefehl für die e
 ### Linux-Version starten und ins Menü legen
 
 ```bash
-./dist/PS5_Dump_Image_Converter_v1.8.75_linux_x86_64
+./dist/PS5_Dump_Image_Converter_v1.8.76_linux_x86_64
 ```
 
 Für einen Eintrag im Anwendungsmenü – samt Symbol und Terminalbefehl `ps5-dump-image-converter`:
@@ -545,7 +547,7 @@ python test_build_ready.py
 .\Build_EXE.ps1
 ```
 
-Die PyInstaller-Spezifikation erzeugt den synchronisierten v1.8.75-Zielnamen. PyInstaller bündelt die Python-Anwendung für Windows.[6]
+Die PyInstaller-Spezifikation erzeugt den synchronisierten v1.8.76-Zielnamen. PyInstaller bündelt die Python-Anwendung für Windows.[6]
 
 ### Linux-Programmdatei bauen
 
@@ -652,7 +654,7 @@ Drei Tests prüfen bewusst plattformabhängiges Verhalten und überspringen sich
 | `.github/workflows/macos-buendel.yml` | Baut und prüft das macOS-Bündel auf echter Apple-Hardware (beide Architekturen) |
 | `.gitattributes` | Schaltet jede Zeilenenden-Umwandlung ab – Python CRLF, Shell-Skripte LF, beides gewollt |
 | `CHANGELOG.md` | Vollständige, absteigend sortierte Versionshistorie |
-| `BENUTZERHANDBUCH.html` | Bedienanleitung zum Lesen im Browser (v1.8.75, mit Inhaltsverzeichnis, alle Aufgaben und Werkzeugleisten-Buttons) |
+| `BENUTZERHANDBUCH.html` | Bedienanleitung zum Lesen im Browser (v1.8.76, mit Inhaltsverzeichnis, alle Aufgaben und Werkzeugleisten-Buttons) |
 | `BENUTZERHANDBUCH.pdf` | Dieselbe Anleitung als 25-seitiges PDF zum Ausdrucken und Weitergeben |
 
 ## Credits und Danksagung

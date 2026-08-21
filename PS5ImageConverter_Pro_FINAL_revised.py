@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.75"
+APP_VERSION = "v1.8.76"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -28521,6 +28521,147 @@ class PS5ConverterGUI:
             prozess.wait()
         return int(prozess.returncode or 0), "\n".join(gesammelt)
 
+    #: Fortschrittsmarken, bei denen der Ablageort-Hinweis erscheint.
+    #:
+    #: Vier ueber den Lauf verteilte Stellen statt fester Zeitabstaende: Ein
+    #: kleines Spiel ist in zwei Minuten fertig, ein grosses braucht eine
+    #: Stunde - an den Prozenten haengt die Verteilung in beiden Faellen
+    #: richtig. Nicht bei 0 %, weil der Nutzer da noch auf den Knopf schaut.
+    _PS4_HINWEIS_MARKEN: tuple[float, ...] = (8.0, 32.0, 56.0, 80.0)
+    #: Wie lange der Hinweis stehen bleibt (Millisekunden).
+    _PS4_HINWEIS_DAUER = 15000
+    #: Dauer einer Blende und Schrittweite (Millisekunden).
+    _PS4_HINWEIS_BLENDE = 600
+    _PS4_HINWEIS_SCHRITT = 30
+    #: Deckkraft im Stand. Voll - bei 0,94 schimmerte der Text des
+    #: Fensters dahinter durch und machte den Hinweis unruhig. Das
+    #: Blenden ist der Effekt, nicht die Durchsichtigkeit.
+    _PS4_HINWEIS_DECKKRAFT = 1.0
+
+    def _ps4_hinweis_faellig(self, wert: float) -> bool:
+        """Ob bei diesem Fortschritt eine Einblendung ansteht."""
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return False
+        if zustand.get("laeuft"):
+            return False
+        offen = [m for m in self._PS4_HINWEIS_MARKEN
+                 if m not in zustand["gezeigt"] and wert >= m]
+        if not offen:
+            return False
+        # Springt der Fortschritt (kleine Spiele sind schnell durch), gilt
+        # die hoechste ueberschrittene Marke, und die kleineren verfallen -
+        # sonst kaemen vier Einblendungen unmittelbar hintereinander.
+        for m in offen:
+            zustand["gezeigt"].add(m)
+        return True
+
+    def _ps4_hinweis_zeigen(self, fenster) -> None:
+        """Blendet den Ablageort-Hinweis ueber dem Fenster ein.
+
+        Kein Knopf, kein Wegklicken: Er kommt von selbst und geht von selbst.
+        Wer gerade liest, wird nicht unterbrochen; wer nicht hinsieht, muss
+        nichts tun.
+        """
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if zustand is None or not fenster.winfo_exists():
+            return
+        c = self._COLORS
+        try:
+            # Farbe in den Erzeuger: Tk zeichnet ein frisches Toplevel
+            # sonst zuerst weiss, und ein spaeteres configure(bg=...)
+            # kommt zu spaet - bei einer Einblendung besonders sichtbar.
+            karte = tk.Toplevel(fenster, bg=c["fg_warning"])
+            karte.withdraw()
+            karte.overrideredirect(True)
+            karte.transient(fenster)
+        except Exception as exc:
+            logger.debug("Hinweisfenster nicht erstellbar: %s", exc)
+            return
+        zustand["laeuft"] = True
+        zustand["fenster"] = karte
+
+        innen = tk.Frame(karte, bg=c["bg_card"], padx=20, pady=16)
+        innen.pack(padx=2, pady=2)
+        tk.Label(innen, text=self._t("ps4pkg.place_title"),
+                 font=(UI_SCHRIFT, pt(12), "bold"), bg=c["bg_card"],
+                 fg=c["fg_warning"], anchor="w", justify="left").pack(
+                     fill="x", pady=(0, 10))
+        for schluessel, rolle in (("ps4pkg.place_ok", "fg_success"),
+                                  ("ps4pkg.place_bad", "error_btn"),
+                                  ("ps4pkg.place_after_crash", "fg_primary")):
+            tk.Label(innen, text=self._t(schluessel), font=(UI_SCHRIFT, pt(10)),
+                     bg=c["bg_card"], fg=c[rolle], anchor="w", justify="left",
+                     wraplength=560).pack(fill="x", pady=(0, 6))
+        tk.Label(innen, text=self._t("ps4pkg.place_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(8, 0))
+
+        karte.update_idletasks()
+        breite, hoehe = karte.winfo_reqwidth(), karte.winfo_reqheight()
+        x = fenster.winfo_rootx() + (fenster.winfo_width() - breite) // 2
+        y = fenster.winfo_rooty() + (fenster.winfo_height() - hoehe) // 2
+        karte.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
+
+        # Ohne -alpha (manche Linux-Sitzungen ohne Compositor) erscheint der
+        # Hinweis eben hart - besser als gar nicht.
+        blenden = True
+        try:
+            karte.attributes("-alpha", 0.0)
+        except Exception:
+            blenden = False
+        karte.deiconify()
+        try:
+            karte.lift()
+        except Exception:
+            pass
+
+        schritte = max(1, self._PS4_HINWEIS_BLENDE // self._PS4_HINWEIS_SCHRITT)
+
+        def _blende(nummer: int, auf: bool) -> None:
+            if not karte.winfo_exists():
+                return
+            anteil = nummer / schritte
+            wert = anteil if auf else 1.0 - anteil
+            try:
+                karte.attributes("-alpha", wert * self._PS4_HINWEIS_DECKKRAFT)
+            except Exception:
+                pass
+            if nummer < schritte:
+                karte.after(self._PS4_HINWEIS_SCHRITT, _blende, nummer + 1, auf)
+            elif auf:
+                karte.after(self._PS4_HINWEIS_DAUER, _blende, 0, False)
+            else:
+                _schliessen()
+
+        def _schliessen() -> None:
+            zustand["laeuft"] = False
+            zustand["fenster"] = None
+            try:
+                karte.destroy()
+            except Exception:
+                pass
+
+        if blenden:
+            _blende(0, True)
+        else:
+            karte.after(self._PS4_HINWEIS_DAUER, _schliessen)
+
+    def _ps4_hinweis_aufraeumen(self) -> None:
+        """Schliesst eine offene Einblendung - beim Ende oder beim Abbruch."""
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return
+        karte = zustand.get("fenster")
+        zustand["laeuft"] = False
+        zustand["fenster"] = None
+        if karte is not None:
+            try:
+                karte.destroy()
+            except Exception:
+                pass
+
     def _show_ps4_pkg_converter(self) -> None:
         """Öffnet das Fenster „PS4 PKG → ffpfsc".
 
@@ -28671,15 +28812,20 @@ class PS5ConverterGUI:
                           highlightthickness=2,
                           highlightbackground=c["fg_warning"],
                           highlightcolor=c["fg_warning"])
-        kasten.pack(fill="x", pady=(10, 0))
+        kasten.pack(fill="x", pady=(8, 0))
         self._ps4_ablage_kasten = kasten
 
         titel = tk.Label(
             kasten, text=self._t("ps4pkg.place_title"),
             font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_card"],
             fg=c["fg_warning"], anchor="w", justify="left")
-        titel.pack(fill="x", padx=12, pady=(7, 4))
+        titel.pack(fill="x", padx=12, pady=(5, 3))
         self._register_translatable(titel, "ps4pkg.place_title")
+        # Die Einzelheiten - gemessene Zeiten, was nach einem Absturz
+        # zu tun ist - stehen im Tooltip. Im Kasten selbst nur das,
+        # was man vor dem Bauen wissen muss.
+        DelayedTooltip(kasten, self._t("ps4pkg.place_hint"),
+                       delay_ms=600, wraplength=460)
 
         # (Schluessel, Farbrolle) - der gute Fall zuerst, dann die beiden
         # Faelle, die es zu vermeiden gilt.
@@ -28689,8 +28835,12 @@ class PS5ConverterGUI:
             _zeile = tk.Label(
                 kasten, text=self._t(_schluessel), font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_card"], fg=c[_rolle], anchor="w", justify="left",
-                wraplength=880)
-            _zeile.pack(fill="x", padx=12, pady=(0, 5))
+                # 916 statt 880: Der Kasten ist 944 breit, innen bleiben
+                # nach padx=12 genau 920. Bei 880 brach der deutsche Text
+                # eine Zeile zu frueh um und machte das Fenster 12 px zu
+                # hoch fuer den Bildschirm.
+                wraplength=916)
+            _zeile.pack(fill="x", padx=12, pady=(0, 3))
             self._register_translatable(_zeile, _schluessel)
 
         # Der Hersteller des eingebetteten Werkzeugs setzt
@@ -28702,7 +28852,7 @@ class PS5ConverterGUI:
             körper, text=self._t("ps4pkg.runtime_note"),
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
             anchor="w", justify="left", wraplength=920)
-        hinweis.pack(fill="x", pady=(10, 0))
+        hinweis.pack(fill="x", pady=(8, 0))
         self._register_translatable(hinweis, "ps4pkg.runtime_note")
 
         # ── Fortschritt und Protokoll ───────────────────────────────────
@@ -28733,7 +28883,16 @@ class PS5ConverterGUI:
             self._spaeter_im_fenster(win, lambda: status_var.set(text))
 
         def _balken(wert: float) -> None:
-            self._spaeter_im_fenster(win, lambda: balken.configure(value=max(0.0, min(100.0, wert))))
+            begrenzt = max(0.0, min(100.0, wert))
+
+            def _setzen() -> None:
+                balken.configure(value=begrenzt)
+                # Waehrend der Nutzer auf den Balken schaut, steht die eine
+                # Sache da, die ueber Laufen und Nicht-Laufen entscheidet.
+                if self._ps4_hinweis_faellig(begrenzt):
+                    self._ps4_hinweis_zeigen(win)
+
+            self._spaeter_im_fenster(win, _setzen)
 
         # ── Quellenangaben in CLI-Schalter übersetzen ───────────────────
         def _quellen_argumente() -> list[str] | None:
@@ -28892,6 +29051,10 @@ class PS5ConverterGUI:
             title_id = auswahl[0]
             laeuft["aktiv"] = True
             laeuft["abbruch"] = False
+            # Je Lauf viermal, danach nicht mehr - wer zweimal konvertiert,
+            # bekommt den Hinweis auch beim zweiten Mal.
+            self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
+                                       "fenster": None}
             _balken(0.0)
             _status(self._t("ps4pkg.status_building", title=title_id))
 
@@ -28916,6 +29079,7 @@ class PS5ConverterGUI:
                     prozess_ablage=laeuft,
                 )
                 laeuft["aktiv"] = False
+                self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
                 if laeuft["abbruch"]:
                     _status(self._t("ps4pkg.status_cancelled"))
                     return
