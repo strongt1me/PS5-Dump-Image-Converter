@@ -24,10 +24,11 @@ __pycache__/
 *.egg-info/
 
 # --- Entwicklungsbestand ----------------------------------------------------
-# Der Testbestand bleibt lokal. Einzige Ausnahme: test_macos_fassung.py — der
-# Workflow führt es auf echter Apple-Hardware aus, es muss also mit.
-test_*.py
-!test_macos_fassung.py
+# Der Testbestand kommt mit. Bis v1.8.74 blieb er lokal (Ausnahme war nur
+# test_macos_fassung.py, das der Workflow auf echter Apple-Hardware
+# ausführt). Das ging nicht auf: Sieben Dateien waren trotzdem verfolgt,
+# und wer die Tests nachvollziehen will, hatte sie nicht. 58 Dateien,
+# zusammen rund 860 KB Text.
 
 # Die Release Notes kommen mit: Sie gehören zu einer veröffentlichten Fassung
 # und beschreiben, was sie ausmacht - zusammen 372 KB Text. Prüfsummenlisten
