@@ -2,9 +2,35 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.73):** Das Bedienfeld unter ZIELFORMAT ist aufgeräumt – jedes Feld hat seine eigene Beschriftung, alles steht auf einer Linie, und bei breitem Fenster rückt die Einbau-Zeile nach oben neben die Prüfstufe.
+> **Kurz zum aktuellen Stand (v1.8.74):** Das Programm baut von sich aus keine Verbindungen mehr nach draußen – Metadaten werden nur noch auf Knopfdruck nachgeschlagen. Außerdem steht jetzt im PS4-Fenster, wohin das fertige Abbild gehört.
 
 ---
+
+## v1.8.74 – 21.08.2026
+
+### Keine Verbindungen mehr ohne dein Zutun
+
+Fehlten in einem Backup Titel, Publisher oder Kategorie, hat das Programm sie bisher **ungefragt** nachgeschlagen – bei store.playstation.com, prosperopatches.com bzw. orbispatches.com, und über einen Umweg auch bei duckduckgo.com. Dabei ging die Title-ID des Spiels nach draußen, beim Umweg sogar der ausgeschriebene Titel. Unter Windows fällt das nicht auf, weil dort nichts nachfragt; auf einem Mac mit Firewall meldet sich jede dieser Verbindungen.
+
+Das passiert jetzt nicht mehr von allein. Fehlt etwas, erscheint in der Spiel-Info ein Knopf **„Fehlende Angaben online nachschlagen“**. Erst der Klick baut eine Verbindung auf, und danach ist wieder zu. Fehlt nichts, erscheint der Knopf gar nicht.
+
+Wer es lieber automatisch hätte, findet in den Einstellungen unter **METADATEN AUS DEM NETZ** ein Kästchen dafür. Ab Werk ist es leer. Darunter stehen die gefragten Dienste beim Namen.
+
+Einmal geholte Angaben liegen weiterhin 30 Tage lokal und kosten keine zweite Verbindung. Unverändert bleiben: die Aktualisierungsprüfung, die Download-Verwaltung, die Verbindungen zu deiner PS5 und der Nachschlag bei defekter `param.json` – die laufen alle erst auf Knopfdruck, teils mit eigener Rückfrage.
+
+### Das PS4-Fenster sagt jetzt, wohin das Abbild gehört
+
+Ein umrandeter Kasten über „ABBILD ERSTELLEN“ mit dem, was an der Konsole gemessen wurde:
+
+* **Direkt nach `/mnt/usb0/`** – Unterordner werden nicht durchsucht. Ein Abbild in `/mnt/usb0/ps4ffpsc/` wird nie gefunden.
+* **Nicht nach `/data/homebrew` oder `/data/etaHEN/games`** – von dort gestartet gibt es einen Kernel Panic, die PS5 schaltet ab.
+* **Nach so einem Absturz** bleibt ein leerer Eintrag zurück; erst die Kachel auf der PS5 löschen, sonst wird das Abbild auch am richtigen Ort nicht mehr gefunden.
+
+Der bisherige Hinweistext desselben Fensters empfahl ausgerechnet den Unterordner, in dem nichts gefunden wird. Das ist korrigiert.
+
+### Bei schmalem Fenster passt die obere Zeile wieder
+
+In v1.8.73 ragte sie bei der kleinsten Fenstergröße um einen Pixel über die Karte hinaus – die Bildlaufleiste nimmt 15 Pixel, die in der Rechnung fehlten. Die Mindestbreite steht deshalb jetzt auf 1245 statt 1230 Pixeln.
 
 ## v1.8.73 – 21.08.2026
 

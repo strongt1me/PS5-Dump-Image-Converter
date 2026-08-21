@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.73"
+APP_VERSION = "v1.8.74"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -441,7 +441,20 @@ MKPFS_REQUIRED_VERSION = "0.0.9"
 PS5_FTP_PORTS: tuple[int, ...] = (2121, 1337, 21, 2120)
 PS5_FTP_DEFAULT_PORT: int = PS5_FTP_PORTS[0]
 
-WINDOW_MIN_WIDTH = 1230
+#: Schmalste Fensterbreite, bei der noch alles in die Pfad-Karte passt.
+#:
+#: 1230 waren es seit v1.8.70. Zu knapp: Bei WINDOW_MIN_HEIGHT ist die
+#: Bildlaufleiste der Inhaltsflaeche **immer** sichtbar und nimmt 15 px.
+#: Die Karte ist dann 642 statt 657 px breit, und die obere Bedienzeile
+#: braucht seit v1.8.73 (Gruppenabstand 16 statt 10) genau 643 - einen
+#: Pixel zu viel. Am 21.08.2026 an der laufenden Oberflaeche gemessen:
+#:
+#:   1230x1050  Karte 657  Leiste aus  Zeile endet 643  passt
+#:   1230x700   Karte 642  Leiste an   Zeile endet 643  ueber 1 px
+#:
+#: 1245 gibt die 15 px der Leiste zurueck; die Reserve ist damit wieder
+#: die 14 px, mit denen der Gruppenabstand ausgelegt wurde.
+WINDOW_MIN_WIDTH = 1245
 WINDOW_MIN_HEIGHT = 700
 # Zuschlag fuer alle Punktgroessen unter macOS - siehe
 # PS5ConverterGUI._macos_schrift_skalieren.
@@ -12024,6 +12037,7 @@ class PS5ConverterGUI:
             self.info_cover_label = None
             self._patch_inner = None
             self._patch_tree = None
+            self._meta_nachschlag_knopf = None
             popup.destroy()
 
         # --- Titelleiste ---
@@ -12099,7 +12113,27 @@ class PS5ConverterGUI:
                      ).grid(row=row_idx, column=1, sticky="ew", pady=(0, 5))
 
         # ── Grössen-Leiste ────────────────────────────────────────────────────────────────────────
+        # Nachschlagen - nur sichtbar, wenn etwas fehlt. Bewusst ein Knopf
+        # und kein Automatismus: Hier entsteht die einzige Verbindung nach
+        # draussen, die dieses Fenster ueberhaupt aufbaut.
+        self._meta_nachschlag_knopf = tk.Button(
+            container, text=self._t("info_popup.lookup_button"),
+            command=self._nachschlag_ausloesen,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["accent_btn"], fg="white",
+            activebackground=self._COLORS["accent_btn_hover"],
+            activeforeground="white", relief="flat", cursor="hand2",
+            pady=6)
+        DelayedTooltip(self._meta_nachschlag_knopf,
+                       self._t("info_popup.lookup_hint"),
+                       delay_ms=600, wraplength=420)
         size_bar = tk.Frame(container, bg=self._COLORS["bg_card"], padx=10, pady=6)
+        # Der Knopf wird erst spaeter eingeblendet. Ohne festen Bezug haengt
+        # ihn "pack" dann ans Ende des Containers - dort ist kein Platz mehr,
+        # und er bleibt unsichtbar, obwohl er verwaltet wird (gemessen
+        # 21.08.2026: verwalter=pack, ismapped=False). Deshalb der Anker.
+        self._meta_nachschlag_anker = size_bar
+        self._nachschlag_knopf_pruefen()
         size_bar.pack(fill="x", pady=(0, 0))
         size_bar.grid_columnconfigure(1, weight=1)
         tk.Label(size_bar, text=self._t("info_popup.source_label"),
@@ -12762,6 +12796,11 @@ class PS5ConverterGUI:
             actual_method = str(meta.get("_metadata_method", "") or "").strip()
             self._info_method_var.set(actual_method or method_labels.get(source_type, "–"))
 
+        # Was gerade angezeigt wird, merken: Der Nachschlag-Knopf setzt darauf
+        # auf, statt die Quelle noch einmal zu lesen.
+        if isinstance(meta, dict):
+            self._letzte_meta = dict(meta)
+
         # Cover-Bild im Cache speichern (wird beim Öffnen der Box geladen)
         if cover is not None:
             self._cached_cover = cover
@@ -12792,6 +12831,8 @@ class PS5ConverterGUI:
             if self._persisted_title_id:
                 self._persisted_title_id = ""
                 self._save_setting("last_title_id", "")
+
+        self._nachschlag_knopf_pruefen()
 
         # Cover-Bild im Popup aktualisieren (nur wenn Popup offen und Label existiert)
         popup_live = (
@@ -12944,6 +12985,10 @@ class PS5ConverterGUI:
                 ("https://orbispatches.com", "PS4"),
             ]
         # Ergebnis-Sammler (thread-safe via Liste)
+        if not self._metadaten_online_erlaubt():
+            # Ohne Freigabe bleibt die Patch-Liste leer, statt ungefragt bei
+            # prosperopatches.com/orbispatches.com nachzufragen.
+            return
         _all_results: list = []
         _lock = threading.Lock()
         _done_count = [0]
@@ -13211,6 +13256,136 @@ class PS5ConverterGUI:
         _os2.makedirs(cache_dir, exist_ok=True)
         return cache_dir
 
+    #: Name der Einstellung, die den automatischen Nachschlag freigibt.
+    _METADATEN_ONLINE_SETTING = "metadata_online"
+
+    def _metadaten_online_erlaubt(self) -> bool:
+        """Darf das Programm von sich aus Metadaten nachschlagen?
+
+        Vorgabe **nein**. Bis v1.8.73 fragte das Programm ohne Rueckfrage bei
+        store.playstation.com, prosperopatches.com und orbispatches.com nach,
+        sobald in einem Backup Titel, Publisher oder Kategorie fehlten. Dabei
+        geht die Title-ID nach draussen - und mit ihr die Information, welches
+        Spiel hier gerade verarbeitet wird.
+
+        Unter Windows blieb das unbemerkt, weil dort nichts nachfragt. Auf dem
+        Mac meldet die Firewall jede dieser Verbindungen, und zu Recht: Wer
+        ein Abbild umwandelt, rechnet nicht damit, dass dabei jemand mitliest.
+
+        Ein bereits abgelegter Zwischenspeicher wird weiterhin gelesen - der
+        liegt lokal und kostet keine Verbindung.
+        """
+        # Ein einzelner Klick auf "Nachschlagen" in der Infobox hebt die
+        # Sperre fuer genau diesen einen Vorgang auf. Das ist der Normalfall;
+        # die Einstellung ist fuer alle da, die es dauerhaft wollen.
+        if getattr(self, "_meta_nachschlag_einmalig", False):
+            return True
+        try:
+            return bool(self._load_setting(self._METADATEN_ONLINE_SETTING, False))
+        except Exception:
+            return False
+
+    #: Felder, deren Fehlen den Nachschlag-Knopf erscheinen laesst.
+    _NACHSCHLAG_FELDER = ("title", "publisher", "category")
+
+    def _nachschlag_lohnt_sich(self) -> bool:
+        """Ob in den angezeigten Metadaten etwas fehlt, das online steht."""
+        if not getattr(self, "_cached_title_id", ""):
+            return False
+        meta = getattr(self, "_letzte_meta", None)
+        if not isinstance(meta, dict):
+            return False
+        for feld in self._NACHSCHLAG_FELDER:
+            wert = str(meta.get(feld, "") or "").strip()
+            if wert in {"", "-", "\u2013", "Unbekannt", "\ufffd"}:
+                return True
+        return False
+
+    def _nachschlag_knopf_pruefen(self) -> None:
+        """Zeigt den Knopf nur, wenn er etwas bewirken kann."""
+        knopf = getattr(self, "_meta_nachschlag_knopf", None)
+        if knopf is None:
+            return
+        try:
+            if not knopf.winfo_exists():
+                return
+            # Wer den Abruf dauerhaft erlaubt hat, hat die Angaben schon -
+            # dann waere der Knopf nur im Weg.
+            zeigen = (self._nachschlag_lohnt_sich()
+                      and not self._load_setting(self._METADATEN_ONLINE_SETTING,
+                                                 False))
+            if zeigen and not knopf.winfo_ismapped():
+                anker = getattr(self, "_meta_nachschlag_anker", None)
+                if anker is not None and anker.winfo_exists():
+                    knopf.pack(fill="x", pady=(0, 8), before=anker)
+                else:
+                    knopf.pack(fill="x", pady=(0, 8))
+            elif not zeigen and knopf.winfo_ismapped():
+                knopf.pack_forget()
+        except Exception as exc:
+            logger.debug("Nachschlag-Knopf nicht setzbar: %s", exc)
+
+    def _nachschlag_ausloesen(self) -> None:
+        """Holt die fehlenden Angaben - einmalig, auf ausdruecklichen Klick."""
+        tid = getattr(self, "_cached_title_id", "")
+        knopf = getattr(self, "_meta_nachschlag_knopf", None)
+        if not tid or knopf is None:
+            return
+        try:
+            knopf.config(state=tk.DISABLED,
+                         text=self._t("info_popup.lookup_running"))
+        except Exception:
+            pass
+
+        def _arbeit() -> None:
+            neu, cover = None, None
+            self._meta_nachschlag_einmalig = True
+            try:
+                vorlage = dict(getattr(self, "_letzte_meta", None) or {})
+                neu, cover = self._enrich_meta_online(vorlage, tid)
+            except Exception as exc:
+                logger.debug("Nachschlag fehlgeschlagen: %s", exc)
+            # Wird die Infobox waehrend des Nachschlags geschlossen, ist die
+            # Ereignisschleife weg - "main thread is not in main loop". Ohne
+            # diese Absicherung endet der Faden mit einem Stapelauszug im
+            # Protokoll, obwohl nichts Schlimmes passiert ist.
+            try:
+                self.root.after(0,
+                                lambda: self._nachschlag_fertig(neu, cover, tid))
+            except Exception as exc:
+                logger.debug("Nachschlag-Ergebnis verworfen (Fenster zu): %s", exc)
+                self._meta_nachschlag_einmalig = False
+
+        threading.Thread(target=_arbeit, daemon=True).start()
+
+    def _nachschlag_fertig(self, neu, cover, tid: str) -> None:
+        """Traegt das Ergebnis ein und schliesst das Zeitfenster wieder.
+
+        Die Sperre faellt erst hier - ``_fetch_patches_async`` prueft sie beim
+        Eintritt, und die Patch-Liste soll im selben Zug mitkommen.
+        """
+        try:
+            if isinstance(neu, dict) and neu:
+                self._letzte_meta = dict(neu)
+                self._update_info_box(neu, cover,
+                                      self._info_src_size_var.get(),
+                                      self._info_est_size_var.get())
+                if self._info_popup is not None and self._info_popup.winfo_exists():
+                    self._prepare_patch_lookup_ui(tid)
+                    self._fetch_patches_async(tid)
+        except Exception as exc:
+            logger.debug("Nachschlag-Ergebnis nicht anzeigbar: %s", exc)
+        finally:
+            self._meta_nachschlag_einmalig = False
+        knopf = getattr(self, "_meta_nachschlag_knopf", None)
+        if knopf is not None:
+            try:
+                knopf.config(state=tk.NORMAL,
+                             text=self._t("info_popup.lookup_button"))
+            except Exception:
+                pass
+        self._nachschlag_knopf_pruefen()
+
     def _load_meta_cache(self, title_id: str) -> dict | None:
         """lädt gecachte Metadaten für eine Title-ID. Gibt None zurück wenn nicht vorhanden."""
         import os, json, time
@@ -13301,6 +13476,8 @@ class PS5ConverterGUI:
         import urllib.parse
         import urllib.request
 
+        if not self._metadaten_online_erlaubt():
+            return ""
         raw_title = str(title or "").strip()
         query = self._normalize_store_title(raw_title)
         if not query or query in {"-", "–", "UNBEKANNT", "QUELLE WÄHLEN..."}:
@@ -13399,6 +13576,8 @@ class PS5ConverterGUI:
         import urllib.parse
         import urllib.request
 
+        if not self._metadaten_online_erlaubt():
+            return ""
         query = self._normalize_store_title(title)
         if not query or query in {"-", "–", "UNBEKANNT", "QUELLE WÄHLEN..."}:
             return ""
@@ -13524,6 +13703,8 @@ class PS5ConverterGUI:
         """
         import urllib.request, json as _json2
         import threading as _thr2
+        if not self._metadaten_online_erlaubt():
+            return {}
         tid = title_id.strip().upper()
         if not tid:
             return {}
@@ -13612,6 +13793,8 @@ class PS5ConverterGUI:
         """lädt ein Cover-Bild von einer URL herunter."""
         import urllib.request as _ureq2
         import io as _io2
+        if not self._metadaten_online_erlaubt():
+            return None
         if not cover_url:
             logger.debug("Online-Cover übersprungen: keine cover_url vorhanden")
             return None
@@ -13628,6 +13811,8 @@ class PS5ConverterGUI:
         """Liest Titel/Publisher/Cover direkt von der Patch-Seite als Fallback."""
         import html as _html2
 
+        if not self._metadaten_online_erlaubt():
+            return {}
         tid = self._sanitize_title_id(title_id)
         if not self._is_valid_title_id(tid):
             return {}
@@ -28422,11 +28607,11 @@ class PS5ConverterGUI:
 
         # ── Gefundene Spiele ────────────────────────────────────────────
         tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(14, 4))
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
         liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
         liste_rahmen.pack(fill="both", expand=True)
         spalten = ("title_id", "titel", "version", "teile")
-        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=7)
+        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
         for spalte, breite in zip(spalten, (110, 420, 110, 190)):
             # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
             # Werte links, die Ueberschrift zentriert Tk sonst weiter.
@@ -28439,7 +28624,7 @@ class PS5ConverterGUI:
 
         # ── Ziel und Einstellungen ──────────────────────────────────────
         tk.Label(körper, text=self._t("ps4pkg.output_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(14, 4))
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
         ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
         ziel_reihe.pack(fill="x")
         tk.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
@@ -28454,7 +28639,7 @@ class PS5ConverterGUI:
         ttk.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
 
         einstell = tk.Frame(körper, bg=c["bg_main"])
-        einstell.pack(fill="x", pady=(12, 0))
+        einstell.pack(fill="x", pady=(8, 0))
         tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
         ttk.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
@@ -28476,6 +28661,38 @@ class PS5ConverterGUI:
         dlc_kasten.pack(side="left")
         DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
 
+        # Wohin das fertige Abbild gehoert. Bewusst ein umrandeter Kasten und
+        # keine weitere graue Zeile: Am 21.08.2026 an der Konsole gemessen
+        # (FW 12.00, ShadowMount+ v1.7alpha6) kostet der falsche Ablageort
+        # entweder das Auffinden oder die Konsole - und der Hinweistext dieses
+        # Fensters empfahl bis dahin ausgerechnet den Unterordner, der nicht
+        # funktioniert.
+        kasten = tk.Frame(körper, bg=c["bg_card"], bd=0,
+                          highlightthickness=2,
+                          highlightbackground=c["fg_warning"],
+                          highlightcolor=c["fg_warning"])
+        kasten.pack(fill="x", pady=(10, 0))
+        self._ps4_ablage_kasten = kasten
+
+        titel = tk.Label(
+            kasten, text=self._t("ps4pkg.place_title"),
+            font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_card"],
+            fg=c["fg_warning"], anchor="w", justify="left")
+        titel.pack(fill="x", padx=12, pady=(7, 4))
+        self._register_translatable(titel, "ps4pkg.place_title")
+
+        # (Schluessel, Farbrolle) - der gute Fall zuerst, dann die beiden
+        # Faelle, die es zu vermeiden gilt.
+        for _schluessel, _rolle in (("ps4pkg.place_ok", "fg_success"),
+                                    ("ps4pkg.place_bad", "error_btn"),
+                                    ("ps4pkg.place_after_crash", "fg_primary")):
+            _zeile = tk.Label(
+                kasten, text=self._t(_schluessel), font=(UI_SCHRIFT, pt(9)),
+                bg=c["bg_card"], fg=c[_rolle], anchor="w", justify="left",
+                wraplength=880)
+            _zeile.pack(fill="x", padx=12, pady=(0, 5))
+            self._register_translatable(_zeile, _schluessel)
+
         # Der Hersteller des eingebetteten Werkzeugs setzt
         # "ps5_runtime_verified" fest auf false - zugesichert ist nur, dass
         # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
@@ -28485,20 +28702,20 @@ class PS5ConverterGUI:
             körper, text=self._t("ps4pkg.runtime_note"),
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
             anchor="w", justify="left", wraplength=920)
-        hinweis.pack(fill="x", pady=(14, 0))
+        hinweis.pack(fill="x", pady=(10, 0))
         self._register_translatable(hinweis, "ps4pkg.runtime_note")
 
         # ── Fortschritt und Protokoll ───────────────────────────────────
         balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
-        balken.pack(fill="x", pady=(14, 4))
+        balken.pack(fill="x", pady=(10, 3))
         tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x")
 
-        protokoll = tk.Text(körper, height=8, font=("Consolas", pt(9)),
+        protokoll = tk.Text(körper, height=4, font=("Consolas", pt(9)),
                             bg=c["console_bg"], fg=c["console_fg"], relief="flat",
                             insertbackground=c["console_fg"], wrap="none")
-        protokoll.pack(fill="both", expand=True, pady=(10, 0))
+        protokoll.pack(fill="both", expand=True, pady=(6, 0))
         protokoll_scroll = ttk.Scrollbar(körper, orient="horizontal", command=protokoll.xview)
         protokoll_scroll.pack(fill="x")
         protokoll.configure(xscrollcommand=protokoll_scroll.set)
@@ -28746,8 +28963,13 @@ class PS5ConverterGUI:
             except OSError as exc:
                 logger.debug("PS4-Vorgang nicht beendbar: %s", exc)
 
+        # "before=körper" dreht die Packreihenfolge um, ohne den Aufbau
+        # umzustellen: Der Koerper hat fill="both", expand=True und nimmt
+        # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
+        # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
+        # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
+        knopfreihe.pack(side="bottom", fill="x", before=körper)
         ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
         ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
@@ -31642,6 +31864,42 @@ class PS5ConverterGUI:
 
         # --- Trennlinie + Verbindungsdaten der PS5 ---
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
+
+        # ── Metadaten aus dem Netz ──────────────────────────────────────
+        # Vorgabe aus. Was hier freigegeben wird, verlaesst den Rechner:
+        # die Title-ID des Spiels, das gerade verarbeitet wird.
+        tk.Label(body, text=self._t("settings_dialog.metadata_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w",
+                                                           pady=(14, 0))
+        tk.Label(body, text=self._t("settings_dialog.metadata_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+
+        metadaten_var = tk.BooleanVar(value=self._metadaten_online_erlaubt())
+
+        def _metadaten_umschalten() -> None:
+            self._save_setting(self._METADATEN_ONLINE_SETTING,
+                               bool(metadaten_var.get()))
+            logger.info("Metadaten-Nachschlag %s",
+                        "erlaubt" if metadaten_var.get() else "abgeschaltet")
+
+        metadaten_kasten = tk.Checkbutton(
+            body, text=self._t("settings_dialog.metadata_checkbox"),
+            variable=metadaten_var, command=_metadaten_umschalten,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+            activebackground=c["bg_card"], activeforeground=c["fg_primary"],
+            selectcolor=c["bg_main"], anchor="w", justify="left",
+            highlightthickness=0, bd=0, wraplength=440)
+        metadaten_kasten.pack(anchor="w", fill="x", pady=(0, 4))
+
+        tk.Label(body, text=self._t("settings_dialog.metadata_services"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(0, 10))
 
         tk.Label(body, text=self._t("settings_dialog.ps5_section"),
                  font=(UI_SCHRIFT, pt(11), "bold"),

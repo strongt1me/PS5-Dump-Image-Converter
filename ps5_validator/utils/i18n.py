@@ -460,6 +460,9 @@ STRINGS: dict[str, dict[str, str]] = {
     'info_popup.meta.region': {'de': 'REGION', 'en': 'REGION'},
     'info_popup.meta.category': {'de': 'KATEGORIE', 'en': 'CATEGORY'},
     'info_popup.meta.publisher': {'de': 'HERSTELLER', 'en': 'PUBLISHER'},
+    'info_popup.lookup_button': {'de': 'Fehlende Angaben online nachschlagen', 'en': 'Look up missing details online'},
+    'info_popup.lookup_running': {'de': 'Wird nachgeschlagen …', 'en': 'Looking up …'},
+    'info_popup.lookup_hint': {'de': 'Holt Titel, Publisher, Kategorie und Titelbild. Dabei geht die Title-ID an store.playstation.com und an prosperopatches.com (PS5-Titel) beziehungsweise orbispatches.com (PS4-Titel) – sonst nichts. Ohne Klick wird keine Verbindung aufgebaut. Das Ergebnis liegt danach 30 Tage lokal.', 'en': 'Fetches title, publisher, category and cover art. This sends the title ID to store.playstation.com and to prosperopatches.com (PS5 titles) or orbispatches.com (PS4 titles) – nothing else. Without a click no connection is made. The result is kept locally for 30 days.'},
     'info_popup.source_label': {'de': 'QUELLE:', 'en': 'SOURCE:'},
     'info_popup.target_label': {'de': 'ZIEL:', 'en': 'TARGET:'},
     'info_popup.format_label': {'de': 'FORMAT:', 'en': 'FORMAT:'},
@@ -954,6 +957,10 @@ STRINGS: dict[str, dict[str, str]] = {
     'klog.usb.payload_missing': {
         'de': 'Der mitgelieferte Payload {datei} wurde nicht gefunden.',
         'en': 'The bundled payload {datei} was not found.'},
+    'settings_dialog.metadata_section': {'de': 'METADATEN AUS DEM NETZ', 'en': 'METADATA FROM THE INTERNET'},
+    'settings_dialog.metadata_hint': {'de': 'Fehlen in einem Backup Titel, Publisher oder Kategorie, kann das Programm sie nachschlagen. Dabei geht die Title-ID des Spiels nach draußen – also die Information, welches Spiel Sie gerade verarbeiten. Ohne diesen Haken bleibt das Feld leer und es wird keine Verbindung aufgebaut.', 'en': 'If a backup is missing title, publisher or category, the program can look them up. This sends the game\'s title ID out – that is, which game you are working on. Without this box the field stays empty and no connection is made.'},
+    'settings_dialog.metadata_checkbox': {'de': 'Fehlende Metadaten online nachschlagen', 'en': 'Look up missing metadata online'},
+    'settings_dialog.metadata_services': {'de': 'Gefragt wird bei store.playstation.com sowie bei prosperopatches.com (PS5-Titel) beziehungsweise orbispatches.com (PS4-Titel). Einmal geholte Angaben liegen 30 Tage lokal und kosten keine weitere Verbindung.', 'en': 'The services asked are store.playstation.com plus prosperopatches.com (PS5 titles) or orbispatches.com (PS4 titles). Once fetched, the data is kept locally for 30 days and costs no further connection.'},
     'settings_dialog.ps5_section': {'de': 'PS5-Verbindung', 'en': 'PS5 connection'},
     'settings_dialog.ps5_hint': {
         'de': 'Adresse und Ports Ihrer PS5. Alle Fenster, die eine Verbindung brauchen '
@@ -1282,7 +1289,11 @@ STRINGS: dict[str, dict[str, str]] = {
     'ps4pkg.status_found': {'de': '{count} Spiel(e) gefunden.', 'en': '{count} game(s) found.'},
     'ps4pkg.status_building': {'de': 'Abbild für {title} wird erstellt …', 'en': 'Building the image for {title} …'},
     'ps4pkg.status_stage': {'de': '{stage}: {current} von {total}', 'en': '{stage}: {current} of {total}'},
-    'ps4pkg.runtime_note': {'de': 'Hinweis: Das eingebettete Werkzeug sichert nur zu, dass ShadowMount+ das Abbild einbinden und registrieren kann – nicht, dass die Konsole es startet (ps5_runtime_verified=false). Bei PS4‑Titeln ist das besonders zu beachten. Lege das fertige Abbild auf USB (/mnt/usb0/ps4ffpsc/), so wie es die Begleitdatei empfiehlt.', 'en': 'Note: the bundled tool only guarantees that ShadowMount+ can mount and register the image – not that the console will run it (ps5_runtime_verified=false). This matters especially for PS4 titles. Put the finished image on USB (/mnt/usb0/ps4ffpsc/), as its companion file recommends.'},
+    'ps4pkg.runtime_note': {'de': 'Hinweis: Das eingebettete Werkzeug sichert nur zu, dass ShadowMount+ das Abbild einbinden und registrieren kann – nicht, dass die Konsole es startet (ps5_runtime_verified=false). Bei PS4‑Titeln ist das besonders zu beachten.', 'en': 'Note: the bundled tool only guarantees that ShadowMount+ can mount and register the image – not that the console will run it (ps5_runtime_verified=false). This matters especially for PS4 titles.'},
+    'ps4pkg.place_title': {'de': 'WOHIN DAS FERTIGE ABBILD GEHÖRT', 'en': 'WHERE THE FINISHED IMAGE BELONGS'},
+    'ps4pkg.place_ok': {'de': '✓  Direkt nach /mnt/usb0/ – Unterordner werden nicht durchsucht. Ein Abbild in /mnt/usb0/ps4ffpsc/ wird nie gefunden.', 'en': '✓  Straight into /mnt/usb0/ – subfolders are not scanned. An image in /mnt/usb0/ps4ffpsc/ is never found.'},
+    'ps4pkg.place_bad': {'de': '✗  Nicht nach /data/homebrew oder /data/etaHEN/games: Von dort gestartet gibt es einen Kernel Panic, die PS5 schaltet ab.', 'en': '✗  Not into /data/homebrew or /data/etaHEN/games: launched from there you get a kernel panic and the PS5 shuts off.'},
+    'ps4pkg.place_after_crash': {'de': '!  Danach bleibt ein leerer Eintrag zurück – erst die Kachel auf der PS5 löschen, sonst wird das Abbild auch am richtigen Ort nicht mehr gefunden.', 'en': '!  An empty entry is left behind – delete the tile on the PS5 first, otherwise the image is not found even in the right place.'},
     'ps4pkg.check_running': {'de': 'Sehe in das fertige Abbild hinein …', 'en': 'Inspecting the finished image …'},
     'ps4pkg.check_files': {'de': 'Im Abbild liegen {count} Dateien.', 'en': 'The image holds {count} files.'},
     'ps4pkg.check_missing': {'de': 'Es fehlt die empfohlene Datei {file}.', 'en': 'The recommended file {file} is missing.'},

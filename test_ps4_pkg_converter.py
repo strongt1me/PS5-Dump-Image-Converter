@@ -210,6 +210,56 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertIn("ps5_runtime_verified",
                               STRINGS["ps4pkg.runtime_note"][sprache])
 
+    def test_ablageort_steht_sichtbar_im_fenster(self) -> None:
+        """Der Ablageort entscheidet ueber Auffinden und Absturz.
+
+        Am 21.08.2026 an der Konsole gemessen (FW 12.00, ShadowMount+
+        v1.7alpha6): Ein .ffpfsc in /mnt/usb0/ps4ffpsc/ wurde nie indiziert,
+        direkt in /mnt/usb0/ beim naechsten Durchlauf sofort. Aus
+        /data/homebrew gestartet nimmt ein PS4-Titel die Konsole mit.
+        """
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        for schluessel in ("ps4pkg.place_title", "ps4pkg.place_ok",
+                           "ps4pkg.place_bad", "ps4pkg.place_after_crash"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, rumpf)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[schluessel][sprache].strip(),
+                                    "%s fehlt auf %s" % (schluessel, sprache))
+
+    def test_der_richtige_ordner_wird_genannt(self) -> None:
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertIn("/mnt/usb0/", STRINGS["ps4pkg.place_ok"][sprache])
+                self.assertIn("/data/homebrew",
+                              STRINGS["ps4pkg.place_bad"][sprache])
+                self.assertIn("/data/etaHEN/games",
+                              STRINGS["ps4pkg.place_bad"][sprache])
+
+    def test_kein_text_empfiehlt_mehr_den_unterordner(self) -> None:
+        """Der alte Hinweis riet ausgerechnet zu /mnt/usb0/ps4ffpsc/.
+
+        Dort wird nichts gefunden. Genannt werden darf der Pfad nur noch als
+        Gegenbeispiel - also zusammen mit der Aussage, dass es so nicht geht.
+        """
+        for schluessel, eintrag in STRINGS.items():
+            if not schluessel.startswith("ps4pkg."):
+                continue
+            for sprache, text in eintrag.items():
+                if "/mnt/usb0/ps4ffpsc" not in text:
+                    continue
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertTrue(
+                        ("nie gefunden" in text) or ("never found" in text),
+                        "%s (%s) nennt den Unterordner, ohne zu sagen, dass "
+                        "dort nichts gefunden wird." % (schluessel, sprache))
+
+    def test_der_kasten_faellt_auf(self) -> None:
+        """Eine weitere graue Zeile haette der Nutzer wieder ueberlesen."""
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        self.assertIn("_ps4_ablage_kasten", rumpf)
+        self.assertIn("highlightbackground=c[\"fg_warning\"]", rumpf)
+
     def test_werkzeug_sichert_den_betrieb_wirklich_nicht_zu(self) -> None:
         """Der Hinweis muss stimmen - also nachsehen, was das Werkzeug setzt."""
         pipeline = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
