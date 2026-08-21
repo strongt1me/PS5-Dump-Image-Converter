@@ -298,6 +298,44 @@ class NachpruefungTests(unittest.TestCase):
         self.assertIn('"ps5_runtime_verified": False', pipeline)
         self.assertNotIn('"ps5_runtime_verified": True', pipeline)
 
+    def test_die_nachpruefung_bekommt_die_datei_nicht_den_ordner(self) -> None:
+        """Bis v1.8.77 wurde der Ausgabeordner uebergeben.
+
+        Die Pruefung scheiterte dadurch jedes Mal mit
+        "[Errno 13] Permission denied" auf dem Ordnerpfad - sie hat also nie
+        stattgefunden, obwohl im Protokoll stand, dass sie laeuft. Am
+        22.08.2026 an einer echten Konvertierung gesehen (Tetris Ultimate,
+        CUSA00775); nach der Korrektur meldet sie 113 Dateien.
+        """
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        self.assertNotIn("_ps4ffpsc_abbild_pruefen(ziel)", rumpf,
+                         "Der Ordner wird wieder als Abbild uebergeben.")
+        self.assertIn("_ps4ffpsc_ergebnis_finden(", rumpf,
+                      "Die erzeugte Datei wird nicht gesucht.")
+
+    def test_das_ergebnis_wird_im_ausgabeordner_gefunden(self) -> None:
+        """Bevorzugt die Title-ID und das gewaehlte Format."""
+        with TemporaryDirectory() as ordner:
+            for name in ("alt.exfat", "CUSA00775 - Tetris [v01.00].ffpfsc",
+                         "fremd.ffpfsc", "notiz.txt"):
+                with open(os.path.join(ordner, name), "w",
+                          encoding="utf-8") as datei:
+                    datei.write("x")
+            # Die Klasse als "self": Die Methode liest nur eine
+            # Klassenvariable, eine ganze Oberflaeche braucht es dafuer nicht.
+            treffer = PS5ConverterGUI._ps4ffpsc_ergebnis_finden(
+                PS5ConverterGUI, ordner, "CUSA00775", "ffpfsc")
+        self.assertTrue(treffer.endswith("CUSA00775 - Tetris [v01.00].ffpfsc"),
+                        "Gefunden wurde: %r" % treffer)
+
+    def test_ohne_abbild_wird_nicht_gepruft(self) -> None:
+        """Statt eines Fehlers eine verstaendliche Meldung."""
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        self.assertIn("ps4pkg.check_no_image", rumpf)
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertTrue(STRINGS["ps4pkg.check_no_image"][sprache].strip())
+
     def test_abbild_wird_nach_dem_bauen_angesehen(self) -> None:
         self.assertIn("_ps4ffpsc_abbild_pruefen", self.quelltext)
         rumpf = self._methode("_ps4ffpsc_abbild_pruefen")
@@ -339,6 +377,78 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertIn(schluessel, STRINGS)
                 for sprache in ("de", "en"):
                     self.assertTrue(STRINGS[schluessel].get(sprache))
+
+
+class KonsolenerkennungTests(unittest.TestCase):
+    """Beim Einlesen steht da, zu welcher Konsole der Titel gehoert.
+
+    Bis v1.8.77 sagte das Fenster erst nach dem Bau "Es ist ein PS4-Titel".
+    Wer eine PS5-PKG hierher legt, wartete also den ganzen Bau ab, um zu
+    erfahren, dass er im falschen Fenster ist - dieses baut PS4-Abbilder.
+    Die Title-ID sagt es von Anfang an.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def _plattform(self, title_id, spiel=None):
+        # Die Klasse als "self": Die Methode liest nur Klassenvariablen.
+        return PS5ConverterGUI._ps4ffpsc_plattform(PS5ConverterGUI, title_id, spiel)
+
+    def test_die_kennung_entscheidet(self) -> None:
+        """An echten Dumps abgelesen, dieselbe Zuordnung wie beim Patch-Abruf."""
+        for kennung, erwartet in (("CUSA00775", "ps4"), ("PUSA01234", "ps4"),
+                                  ("PPSA08329", "ps5"), ("PPSS40001", "ps5"),
+                                  ("cusa00775", "ps4")):
+            with self.subTest(kennung=kennung):
+                self.assertEqual(self._plattform(kennung), erwartet)
+
+    def test_fremde_kennung_wird_nicht_geraten(self) -> None:
+        """NPUB ist PS3, und Leeres ist Leeres - beides heisst hier "unklar"."""
+        for kennung in ("NPUB31397", "", "   ", None, "XXXX00001"):
+            with self.subTest(kennung=kennung):
+                self.assertEqual(self._plattform(kennung), "")
+
+    def test_das_werkzeug_darf_es_selbst_sagen(self) -> None:
+        """Meldet der Entpacker die Plattform mit, zaehlt sie als Rueckfall."""
+        self.assertEqual(self._plattform("XXXX1", {"platform": "PS5"}), "ps5")
+        self.assertEqual(self._plattform("XXXX1", {"console": "orbis"}), "ps4")
+        # Die Kennung wiegt schwerer als eine mitgelieferte Angabe.
+        self.assertEqual(self._plattform("CUSA00775", {"platform": "PS5"}), "ps4")
+
+    def test_die_spalte_steht_in_der_liste(self) -> None:
+        rumpf = self._methode_lesen("_show_ps4_pkg_converter")
+        self.assertIn('spalten = ("title_id", "plattform", "titel"', rumpf,
+                      "Die Konsolenspalte fehlt in der Liste.")
+        self.assertIn("_ps4ffpsc_plattform(title_id", rumpf,
+                      "Die Spalte wird nicht gefuellt.")
+
+    def test_ein_ps5_titel_faellt_auf(self) -> None:
+        """Nicht nur eine Spalte weiter rechts - die Zeile wird eingefaerbt."""
+        rumpf = self._methode_lesen("_show_ps4_pkg_converter")
+        self.assertIn('tag_configure("ps5"', rumpf)
+        self.assertIn("ps4pkg.is_ps5_title", rumpf)
+
+    def test_die_texte_sind_zweisprachig(self) -> None:
+        for schluessel in ("ps4pkg.col_plattform", "ps4pkg.platform_unknown",
+                           "ps4pkg.is_ps5_title", "ps4pkg.platform_unclear"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[schluessel].get(sprache, "").strip())
+
+    def test_der_hinweis_schickt_zur_richtigen_aufgabe(self) -> None:
+        """Dieses Fenster baut aus PS4-PKG; PS5 gehoert in Aufgabe 1 bis 6."""
+        text = STRINGS["ps4pkg.is_ps5_title"]["de"]
+        self.assertIn("{title_id}", text)
+        self.assertIn("PS5", text)
+
+    def _methode_lesen(self, name: str) -> str:
+        anfang = self.quelltext.index("    def %s(self" % name)
+        weiter = self.quelltext.index("\n    def ", anfang + 10)
+        return self.quelltext[anfang:weiter]
 
 
 class PlattformTests(unittest.TestCase):

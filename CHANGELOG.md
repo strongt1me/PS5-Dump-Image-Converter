@@ -2,10 +2,30 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.77):** Der Ablageort-Hinweis steht nicht mehr dauerhaft im PS4-Fenster, sondern nur noch in der Einblendung – die dafür 25 Sekunden bleibt. Neu belegt: `/mnt/usb0/etaHEN/games` funktioniert ebenfalls.
+> **Kurz zum aktuellen Stand (v1.8.78):** Das PS4-Fenster sagt beim Einlesen, ob ein Titel für PS4 oder PS5 ist. Außerdem behoben: Die Nachprüfung des fertigen Abbilds lief in Wirklichkeit nie, und die Einblendung konnte nach dem Ende des Vorgangs noch aufgehen.
 
 ---
 
+## v1.8.78 – 22.08.2026
+
+### Das PS4-Fenster sagt jetzt, für welche Konsole ein Titel ist
+
+In der Liste der gefundenen Spiele steht eine neue Spalte **Konsole**. Sie sagt „PS4“ oder „PS5“, und zwar sofort beim Einlesen – nicht erst, wenn das Abbild fertig gebaut ist.
+
+Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus **PS4**-Paketen. Legst du versehentlich ein PS5-Spiel hinein, wird die Zeile farbig hervorgehoben und im Protokoll steht, dass du dafür die Aufgaben 1 bis 6 nehmen sollst. Bisher hättest du den ganzen Bau abgewartet, um das zu erfahren.
+
+Erkannt wird an der Title-ID: `CUSA` und `PUSA` sind PS4, `PPSA`, `PPSS`, `PPUS` und `PPJP` sind PS5. Sagt die Kennung nichts – etwa bei einem PS3-Titel mit `NPUB` –, steht dort **unklar** statt einer Vermutung.
+
+### Die Nachprüfung des Abbilds hat nie stattgefunden
+
+Nach jedem Bau meldete das Protokoll, das fertige Abbild werde geprüft, und gleich danach: `Das Abbild ließ sich nicht nachprüfen: [Errno 13] Permission denied`. Der Grund war eine vertauschte Übergabe – die Prüfung bekam den Zielordner statt der erzeugten Datei. Sie ist also seit ihrer Einführung nie gelaufen, obwohl sie genau dafür da ist, dir zu sagen, was wirklich im Abbild steht.
+
+Aufgefallen ist das bei einer echten Konvertierung. Jetzt sucht das Programm die gebaute Datei im Zielordner – bevorzugt die zur Title-ID und zum gewählten Format – und prüft sie. Am Testtitel meldet sie sauber **113 Dateien**.
+
+### Die Einblendung geht nicht mehr nach dem Ende auf
+
+Der Hinweis zum Ablageort erschien in seltenen Fällen noch, wenn die Umwandlung schon fertig war – der letzte Sprung des Fortschrittsbalkens auf 100 % löste ihn nachträglich aus. Nach dem Ende kommt keine Einblendung mehr.
+
 ## v1.8.77 – 21.08.2026
 
 ### Ein dritter Ort, der funktioniert

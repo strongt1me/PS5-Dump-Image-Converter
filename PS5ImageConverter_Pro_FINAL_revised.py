@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.77"
+APP_VERSION = "v1.8.78"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -5329,7 +5329,8 @@ class PS5ConverterGUI:
         console_frame.grid_rowconfigure(0, weight=1)
 
         self.console_view = tk.Text(console_frame, bg=self._COLORS["console_bg"], fg=self._COLORS["console_fg"],
-                       font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
+                       font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
+
                                    insertbackground="white", selectbackground=self._COLORS["fg_accent"],
                                    highlightthickness=0)
         self.console_view.grid(row=0, column=0, sticky="nsew")
@@ -28382,6 +28383,84 @@ class PS5ConverterGUI:
     _PS4_MERKMALE: tuple[str, ...] = ("manifest_nonufsfiles_ps4.txt",
                                       "sce_discmap.plt")
 
+    #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
+    #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
+    _PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
+    _PS5_KENNUNGEN: tuple[str, ...] = ("PPSA", "PPSS", "PPUS", "PPJP")
+
+    def _ps4ffpsc_plattform(self, title_id: str, spiel=None) -> str:
+        """Sagt, zu welcher Konsole ein Titel gehoert.
+
+        Returns:
+            ``"ps4"``, ``"ps5"`` oder ``""`` wenn die Kennung nichts hergibt.
+        """
+        kennung = str(title_id or "").strip().upper()
+        if kennung.startswith(self._PS5_KENNUNGEN):
+            return "ps5"
+        if kennung.startswith(self._PS4_KENNUNGEN):
+            return "ps4"
+        # Das Werkzeug meldet die Plattform manchmal selbst mit.
+        if isinstance(spiel, dict):
+            roh = str(spiel.get("platform") or spiel.get("console") or "").lower()
+            if "ps5" in roh or "prospero" in roh:
+                return "ps5"
+            if "ps4" in roh or "orbis" in roh:
+                return "ps4"
+        return ""
+
+    #: Endungen, unter denen das PS4-Werkzeug sein Ergebnis ablegt.
+    _PS4_ABBILD_ENDUNGEN: tuple[str, ...] = (".ffpfsc", ".ffpfs", ".exfat",
+                                             ".ffpkg")
+
+    def _ps4ffpsc_ergebnis_finden(self, ordner: str, title_id: str = "",
+                                  format_wunsch: str = "") -> str:
+        """Sucht das eben gebaute Abbild im Ausgabeordner.
+
+        Bis v1.8.77 bekam die Nachpruefung den **Ordner** uebergeben statt
+        der Datei. Sie scheiterte dadurch jedes Mal mit
+        ``[Errno 13] Permission denied`` auf dem Ordnerpfad - sie hat also
+        nie stattgefunden, obwohl im Protokoll stand, dass sie laeuft.
+        Gesehen am 21.08.2026 an einer echten Konvertierung.
+
+        Args:
+            ordner: Der Ausgabeordner.
+            title_id: Wenn bekannt, wird ein Treffer mit dieser Kennung
+                bevorzugt - im selben Ordner koennen aeltere Abbilder liegen.
+            format_wunsch: Das gewaehlte Zielformat, ebenfalls als Vorzug.
+
+        Returns:
+            Der Pfad, oder "" wenn nichts Passendes dasteht.
+        """
+        endungen = list(self._PS4_ABBILD_ENDUNGEN)
+        wunsch = "." + str(format_wunsch or "").lstrip(".").lower()
+        if wunsch in endungen:
+            endungen.remove(wunsch)
+            endungen.insert(0, wunsch)
+        kennung = str(title_id or "").upper()
+        kandidaten = []
+        try:
+            for name in os.listdir(ordner):
+                pfad = os.path.join(ordner, name)
+                if not os.path.isfile(pfad):
+                    continue
+                klein = name.lower()
+                passende = [e for e in endungen if klein.endswith(e)]
+                if not passende:
+                    continue
+                kandidaten.append((
+                    0 if kennung and kennung in name.upper() else 1,
+                    endungen.index(passende[0]),
+                    -os.path.getmtime(pfad),
+                    pfad,
+                ))
+        except OSError as exc:
+            logger.debug("Ausgabeordner nicht lesbar: %s", exc)
+            return ""
+        if not kandidaten:
+            return ""
+        kandidaten.sort()
+        return kandidaten[0][3]
+
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
         """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
 
@@ -28546,7 +28625,7 @@ class PS5ConverterGUI:
         zustand = getattr(self, "_ps4_hinweis_stand", None)
         if not isinstance(zustand, dict):
             return False
-        if zustand.get("laeuft"):
+        if zustand.get("laeuft") or zustand.get("fertig"):
             return False
         offen = [m for m in self._PS4_HINWEIS_MARKEN
                  if m not in zustand["gezeigt"] and wert >= m]
@@ -28665,6 +28744,12 @@ class PS5ConverterGUI:
         zustand = getattr(self, "_ps4_hinweis_stand", None)
         if not isinstance(zustand, dict):
             return
+        # Ab hier keine neue Einblendung mehr: Das abschliessende
+        # _balken(100.0) kommt erst nach dem Aufraeumen und loeste sonst
+        # eine aus, wenn die Umwandlung laengst fertig war - sie stand dann
+        # 25 Sekunden ohne Anlass da (22.08.2026 an einer echten
+        # Konvertierung gesehen).
+        zustand["fertig"] = True
         karte = zustand.get("fenster")
         zustand["laeuft"] = False
         zustand["fenster"] = None
@@ -28763,13 +28848,17 @@ class PS5ConverterGUI:
                  bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
         liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
         liste_rahmen.pack(fill="both", expand=True)
-        spalten = ("title_id", "titel", "version", "teile")
+        spalten = ("title_id", "plattform", "titel", "version", "teile")
         liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
-        for spalte, breite in zip(spalten, (110, 420, 110, 190)):
+        for spalte, breite in zip(spalten, (110, 80, 350, 100, 190)):
             # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
             # Werte links, die Ueberschrift zentriert Tk sonst weiter.
             liste.heading(spalte, text=self._t(f"ps4pkg.col_{spalte}"), anchor="w")
             liste.column(spalte, width=breite, anchor="w")
+        # Ein PS5-Titel gehoert nicht in dieses Fenster - er soll auffallen,
+        # nicht nur in einer Spalte stehen.
+        liste.tag_configure("ps5", foreground=c["fg_warning"])
+        liste.tag_configure("unbekannt", foreground=c["fg_secondary"])
         liste.pack(side="left", fill="both", expand=True)
         liste_scroll = ttk.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
         liste_scroll.pack(side="right", fill="y")
@@ -28966,9 +29055,23 @@ class PS5ConverterGUI:
                         )
                         if not spiel.get("buildable", True):
                             teile = self._t("ps4pkg.not_buildable") + " - " + teile
-                        liste.insert("", "end", iid=title_id, values=(
-                            title_id, str(spiel.get("title", "-")), version, teile,
+                        # Zu welcher Konsole gehoert der Titel? Das steht
+                        # bisher erst nach dem Bau im Protokoll - wer eine
+                        # PS5-PKG hierher legt, merkte es also viel zu spaet.
+                        plattform = self._ps4ffpsc_plattform(title_id, spiel)
+                        anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
+                            plattform, self._t("ps4pkg.platform_unknown"))
+                        liste.insert("", "end", iid=title_id,
+                                     tags=(plattform or "unbekannt",), values=(
+                            title_id, anzeige, str(spiel.get("title", "-")),
+                            version, teile,
                         ))
+                        if plattform == "ps5":
+                            _protokoll(self._t("ps4pkg.is_ps5_title",
+                                               title_id=title_id))
+                        elif not plattform:
+                            _protokoll(self._t("ps4pkg.platform_unclear",
+                                               title_id=title_id))
                         for hinweis in list(spiel.get("warnings") or [])[:5]:
                             _protokoll(f"[{title_id}] {hinweis}")
                         for konflikt in list(spiel.get("conflicts") or [])[:5]:
@@ -29019,7 +29122,7 @@ class PS5ConverterGUI:
             # Je Lauf viermal, danach nicht mehr - wer zweimal konvertiert,
             # bekommt den Hinweis auch beim zweiten Mal.
             self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None}
+                                       "fenster": None, "fertig": False}
             _balken(0.0)
             _status(self._t("ps4pkg.status_building", title=title_id))
 
@@ -29056,7 +29159,15 @@ class PS5ConverterGUI:
                     # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
                     # oder gar nicht.
                     _protokoll(self._t("ps4pkg.check_running"))
-                    befund = self._ps4ffpsc_abbild_pruefen(ziel)
+                    # Die Datei suchen, nicht den Ordner uebergeben: Das war
+                    # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
+                    # "Permission denied" auf dem Ordnerpfad endete.
+                    abbild = self._ps4ffpsc_ergebnis_finden(
+                        ziel, title_id, format_var.get())
+                    if not abbild:
+                        _protokoll(self._t("ps4pkg.check_no_image"))
+                        return
+                    befund = self._ps4ffpsc_abbild_pruefen(abbild)
                     if befund["fehler"]:
                         _protokoll(self._t("ps4pkg.check_failed",
                                            error=befund["fehler"]))

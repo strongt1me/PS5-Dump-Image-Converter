@@ -49,6 +49,11 @@ class VorgabenTests(unittest.TestCase):
         with io.open(HAUPTDATEI, encoding="utf-8") as datei:
             cls.quelltext = datei.read()
 
+    def _methode(self, name: str) -> str:
+        anfang = self.quelltext.index("    def %s(self" % name)
+        weiter = self.quelltext.index("\n    def ", anfang + 10)
+        return self.quelltext[anfang:weiter]
+
     def test_viermal_je_lauf(self):
         self.assertEqual(len(self.G._PS4_HINWEIS_MARKEN), 4)
 
@@ -142,6 +147,21 @@ class VorgabenTests(unittest.TestCase):
                 with self.subTest(sprache=sprache, ort=ort):
                     self.assertIn(ort, text)
 
+    def test_nach_dem_ende_kommt_keine_mehr(self):
+        """Das abschliessende _balken(100.0) darf keine mehr ausloesen.
+
+        Am 22.08.2026 an einer echten Konvertierung gesehen: Der Aufruf
+        kommt erst *nach* dem Aufraeumen und loeste eine Einblendung aus,
+        wenn die Umwandlung laengst fertig war - sie stand dann 25 Sekunden
+        ohne Anlass da.
+        """
+        rumpf = self._methode("_ps4_hinweis_faellig")
+        self.assertIn('zustand.get("fertig")', rumpf,
+                      "Der Zustand nach dem Ende wird nicht abgefragt.")
+        aufraeumen = self._methode("_ps4_hinweis_aufraeumen")
+        self.assertIn('zustand["fertig"] = True', aufraeumen,
+                      "Das Aufraeumen schliesst den Lauf nicht ab.")
+
     def test_am_ende_wird_aufgeraeumt(self):
         """Bricht der Nutzer ab, darf keine Einblendung stehen bleiben."""
         self.assertIn("_ps4_hinweis_aufraeumen", self.quelltext)
@@ -196,6 +216,15 @@ class AblaufTests(unittest.TestCase):
         self.assertTrue(self.app._ps4_hinweis_faellig(95.0))
         self.assertEqual(len(self.app._ps4_hinweis_stand["gezeigt"]), 4)
         self.assertFalse(self.app._ps4_hinweis_faellig(100.0))
+
+    def test_nach_dem_aufraeumen_loest_hundert_prozent_nichts_aus(self):
+        """Der Fall aus dem echten Lauf, in Zahlen."""
+        self.assertTrue(self.app._ps4_hinweis_faellig(10.0))
+        self.app._ps4_hinweis_stand["laeuft"] = False
+        self.app._ps4_hinweis_aufraeumen()
+        for p in (56.0, 80.0, 100.0):
+            with self.subTest(prozent=p):
+                self.assertFalse(self.app._ps4_hinweis_faellig(p))
 
     def test_ein_zweiter_lauf_zeigt_sie_wieder(self):
         for p in range(0, 101):
