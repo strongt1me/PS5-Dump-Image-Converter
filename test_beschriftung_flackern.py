@@ -77,12 +77,52 @@ class BeschriftungMessungTests(unittest.TestCase):
     def setUpClass(cls):
         haupt = _lade_hauptprogramm()
         cls.wurzel = _wurzel_holen()
+        # Das Fenster muss abgebildet sein, sonst meldet winfo_ismapped()
+        # fuer jede Beschriftung False und die Tests uebersprangen sich
+        # selbst. Andere Testdateien ziehen die gemeinsame Wurzel zurueck
+        # (withdraw); im Gesamtlauf vom 21.08.2026 kamen dadurch 6 statt 3
+        # Uebersprungene heraus - je nach Reihenfolge. Dank -alpha 0.0 aus
+        # _wurzel_holen bleibt es dabei fuer den Nutzer unsichtbar.
+        cls._war_zurueckgezogen = cls.wurzel.state() == "withdrawn"
+        cls.wurzel.deiconify()
         cls.app = haupt.PS5ConverterGUI(cls.wurzel)
         cls.wurzel.update()
+
+    @classmethod
+    def tearDownClass(cls):
+        """Den Zustand hinterlassen, wie er vorgefunden wurde."""
+        if getattr(cls, "_war_zurueckgezogen", False):
+            try:
+                cls.wurzel.withdraw()
+            except Exception:
+                pass
 
     def _beschriftungen(self, gruppe):
         return [l for l in getattr(self.app, gruppe, [])
                 if l.winfo_exists() and l.winfo_ismapped()]
+
+    def _hintergrundbild_sicherstellen(self):
+        """Sorgt fuer ein Bild im Cache, statt sich zu ueberspringen.
+
+        ``_bg_image_cache`` haengt daran, welches Hintergrundbild der Nutzer
+        gewaehlt hat. Der Flackertest prueft aber das Zeichnen, nicht die
+        Bildauswahl - er soll also mit irgendeinem mitgelieferten Bild
+        laufen. Uebersprungen wird nur noch, wenn wirklich keines beiliegt;
+        das waere ein echter Mangel an der Auslieferung.
+        """
+        if self.app._bg_image_cache is not None:
+            return
+        from PIL import Image
+        ordner = os.path.join(os.path.dirname(HAUPTDATEI), "Hintergrundbilder")
+        if not os.path.isdir(ordner):
+            self.skipTest("Ordner Hintergrundbilder fehlt")
+        # Kein fester Dateiname: Der Bestand aendert sich mit den Ausgaben.
+        bilder = sorted(n for n in os.listdir(ordner)
+                        if n.lower().endswith((".png", ".jpg", ".jpeg")))
+        if not bilder:
+            self.skipTest("keine mitgelieferten Hintergrundbilder")
+        self.app._bg_image_cache = Image.open(
+            os.path.join(ordner, bilder[0])).convert("RGB")
 
     def _alle(self):
         treffer = []
@@ -115,8 +155,7 @@ class BeschriftungMessungTests(unittest.TestCase):
 
     def test_ausschnitt_verschwindet_bei_textwechsel_nicht(self):
         """Der eigentliche Flackertest: 40 Textwechsel, immer hinterlegt."""
-        if self.app._bg_image_cache is None:
-            self.skipTest("kein Hintergrundbild aktiv")
+        self._hintergrundbild_sicherstellen()
         ziele = self._beschriftungen("_content_caption_labels")
         if not ziele:
             self.skipTest("keine abgebildeten Beschriftungen")
