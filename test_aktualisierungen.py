@@ -233,7 +233,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn("daemon=True", fenster)
 
     def test_eingebettete_werkzeuge_sind_erfasst(self):
-        for teil in ("MkPFS-0.0.9", "PS4FFPFSC-0.2.8"):
+        for teil in ("MkPFS-0.0.9",):
             with self.subTest(teil=teil):
                 self.assertIn(teil, self.quelltext)
 

@@ -10,6 +10,7 @@ import os
 import sys
 import json
 import subprocess
+import unittest
 from pathlib import Path
 
 # UTF-8 Encoding für Windows
@@ -284,6 +285,52 @@ def main():
     else:
         print(f"\n  {RED}⚠  {total - passed} Voraussetzung(en) nicht erfüllt{RESET}\n")
         return 1
+
+
+class VersionsstandTests(unittest.TestCase):
+    """Die Versionsnummer steht an vier Stellen - sie muessen zusammenpassen.
+
+    Am 22.08.2026 aufgefallen: Die fertige EXE meldete in ihren
+    Dateieigenschaften **1.8.72.0**, waehrend das Programm v1.8.81 war.
+    file_version_info.txt war neun Ausgaben lang nicht mitgezogen worden,
+    und niemand hat es gemerkt - die Datei faellt nur auf, wenn man die
+    Eigenschaften der EXE im Explorer aufschlaegt.
+
+    Diese Datei war bis dahin ein reines Handskript ohne TestCase und
+    lieferte unter "unittest discover" null Tests. Deshalb steht die
+    Pruefung jetzt als richtige Testklasse hier.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.version = _app_version()          # z. B. "v1.8.81"
+        cls.blank = cls.version.lstrip("v")   # z. B. "1.8.81"
+
+    def test_die_hauptdatei_nennt_ueberhaupt_eine_version(self) -> None:
+        self.assertRegex(self.version, r"^v\d+\.\d+\.\d+$")
+
+    def test_die_spec_baut_den_passenden_namen(self) -> None:
+        with open("PS5ImageConverter_Pro.spec", encoding="utf-8") as datei:
+            inhalt = datei.read()
+        self.assertIn("PS5_Dump_Image_Converter_%s" % self.version, inhalt,
+                      "Der Zielname der .spec passt nicht zu APP_VERSION.")
+
+    def test_die_versionsressource_haengt_nicht_zurueck(self) -> None:
+        """Sonst zeigt Windows in den Dateieigenschaften etwas anderes an."""
+        with open("file_version_info.txt", encoding="utf-8") as datei:
+            inhalt = datei.read()
+        vierstellig = self.blank + ".0"
+        klammer = "(%s, 0)" % ", ".join(self.blank.split("."))
+        self.assertIn(klammer, inhalt, "filevers/prodvers haengen zurueck.")
+        self.assertIn("'FileVersion', '%s'" % vierstellig, inhalt)
+        self.assertIn("'ProductVersion', '%s'" % vierstellig, inhalt)
+        self.assertIn("PS5_Dump_Image_Converter_%s.exe" % self.version, inhalt)
+
+    def test_das_bauskript_kennt_dieselbe_version(self) -> None:
+        with open("Build_EXE.ps1", encoding="utf-8-sig") as datei:
+            inhalt = datei.read()
+        self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
+
 
 if __name__ == '__main__':
     sys.exit(main())

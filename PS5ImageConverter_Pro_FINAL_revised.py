@@ -118,6 +118,7 @@ from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
+from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
     MANIFEST_KNOWN_KEYS,
@@ -410,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.80"
+APP_VERSION = "v1.8.83"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1560,6 +1561,8 @@ class PS5ConverterGUI:
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
         ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
+        ("_btn_ampr_alt_title", "titlebar.ampr_alt", "_show_ampr_alte_methode"),
+        ("_btn_ampr_neu_title", "titlebar.ampr_neu", "_show_ampr_neue_methode"),
     )
 
     #: Wie viel Luft ein Knopf zusaetzlich braucht, bevor er zurueckkommt.
@@ -1578,7 +1581,6 @@ class PS5ConverterGUI:
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.autoloader", "_show_autoloader"),
-        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -1979,6 +1981,56 @@ class PS5ConverterGUI:
             self._btn_shadowmount_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
         self._btn_shadowmount_title.bind("<Enter>", _shadowmount_enter)
         self._btn_shadowmount_title.bind("<Leave>", _shadowmount_leave)
+
+        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
+        self._btn_ampr_alt_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.ampr_alt"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._show_ampr_alte_methode,
+        )
+        self._btn_ampr_alt_title.pack(side="right", padx=(0, 8))
+        def _ampr_alt_enter(e):
+            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _ampr_alt_leave(e):
+            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_ampr_alt_title.bind("<Enter>", _ampr_alt_enter)
+        self._btn_ampr_alt_title.bind("<Leave>", _ampr_alt_leave)
+
+        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
+        self._btn_ampr_neu_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.ampr_neu"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._show_ampr_neue_methode,
+        )
+        self._btn_ampr_neu_title.pack(side="right", padx=(0, 8))
+        def _ampr_neu_enter(e):
+            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _ampr_neu_leave(e):
+            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_ampr_neu_title.bind("<Enter>", _ampr_neu_enter)
+        self._btn_ampr_neu_title.bind("<Leave>", _ampr_neu_leave)
 
         # Bibliothek Button (Mehrfachordner-Scan mit Cover/Suche)
         self._btn_library_title = flach_knopf(
@@ -2766,6 +2818,8 @@ class PS5ConverterGUI:
             ("_btn_diagnostics_title", "titlebar.diagnostics"),
             ("_btn_klog_title", "titlebar.klog"),
             ("_btn_shadowmount_title", "titlebar.shadowmount"),
+            ("_btn_ampr_alt_title", "titlebar.ampr_alt"),
+            ("_btn_ampr_neu_title", "titlebar.ampr_neu"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
             ("_btn_quit_title", "titlebar.quit"),
@@ -25986,10 +26040,6 @@ class PS5ConverterGUI:
     _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
         ("MkPFS (Packmaschine)", "MkPFS-0.0.9/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
-        ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/__init__.py",
-         "github", "PSBrew/MkPFS"),
-        ("PS4 FFPFSC", "PS4FFPFSC-0.2.8/ps4ffpsc/__init__.py",
-         "ohne_quelle", "GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.8/UPSTREAM.md"),
     )
 
     #: Python-Bibliotheken, die das Programm braucht: Anzeigename, Name beim
@@ -27359,6 +27409,968 @@ class PS5ConverterGUI:
         return _bundled_resource("Backport_Fakelibs")
 
     # ==================================================================
+    # AMPR EMU nach ShadowMountPlus-Generation (provisorisch)
+    #
+    # Zwischen 1.7 alpha6 und 1.7 alpha8 wurde die Ablage umgebaut, und
+    # zwar so, dass eine vorher richtige Ablage danach stillschweigend
+    # nicht mehr wirkt: fakelib2 im Spielordner wird ab alpha8 ignoriert.
+    # Kein Fehler, keine Meldung - das Spiel startet einfach ohne seine
+    # Ersatzbibliotheken.
+    #
+    # Deshalb zwei getrennte Knoepfe statt einer Automatik, die raet -
+    # aber hinter jedem Knopf laeuft alles Weitere von selbst. Gefragt
+    # wird nur, wo wirklich zu entscheiden ist, und dann mit einer
+    # Erklaerung, die die Entscheidung abnimmt statt sie abzuwaelzen.
+    #
+    # Die Regeln selbst stehen in ps5_validator.utils.shadowmount_generation;
+    # hier ist nur der Ablauf.
+    # ==================================================================
+
+    #: Die Scan-Pfade, unter denen ShadowMount+ nach Spielen sucht. Der
+    #: backports-Ordner liegt jeweils darunter.
+    _AMPR_GEN_SCANPFADE: tuple[str, ...] = (
+        "/data/homebrew", "/data/etaHEN/games",
+        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+        "/mnt/ext0", "/mnt/ext1",
+    )
+
+    #: So lange wartet ein Arbeitsfaden auf eine Antwort, bevor er
+    #: aufgibt. Ohne diese Grenze haengt er fuer immer, wenn das Fenster
+    #: waehrend der Frage geschlossen wird.
+    _AMPR_GEN_ANTWORT_GRENZE = 600.0
+
+    def _show_ampr_alte_methode(self) -> None:
+        """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""
+        self._show_ampr_generation(sm_gen.ALT)
+
+    def _show_ampr_neue_methode(self) -> None:
+        """AMPR EMU nach der Mechanik ab ShadowMountPlus 1.7 alpha8."""
+        self._show_ampr_generation(sm_gen.NEU)
+
+    # ── Bausteine ──────────────────────────────────────────────────────
+
+    #: So lange darf ein einzelner Verbindungsversuch beim Absuchen dauern.
+    #: 0,35 s reicht im eigenen Netz bequem und haelt die Suche unter drei
+    #: Sekunden; bei 1 s waeren es ueber vier Minuten.
+    _AMPR_GEN_SUCHE_TIMEOUT = 0.35
+
+    #: So viele Adressen werden gleichzeitig probiert.
+    _AMPR_GEN_SUCHE_FAEDEN = 64
+
+    def _ampr_gen_profil_adressen(self) -> list[str]:
+        """Adressen aus den gespeicherten FTP-Profilen.
+
+        Die stehen neben der Konfigurationsdatei und stammen aus dem
+        FileZilla-Fenster. Sie koennen veraltet sein - auf dieser Anlage
+        nannte das Profil im August noch die Adresse vom Juni - deshalb
+        werden sie geprueft und nicht blind genommen.
+        """
+        try:
+            ordner = os.path.dirname(self._get_config_path())
+            pfad = os.path.join(ordner, "ftp_profiles.json")
+            with open(pfad, "r", encoding="utf-8") as datei:
+                profile = json.load(datei)
+        except (OSError, ValueError) as exc:
+            logger.debug("FTP-Profile nicht lesbar: %s", exc)
+            return []
+        adressen: list[str] = []
+        if isinstance(profile, dict):
+            for eintrag in profile.values():
+                if isinstance(eintrag, dict):
+                    host = str(eintrag.get("host", "") or "").strip()
+                    if host and host not in adressen:
+                        adressen.append(host)
+        return adressen
+
+    def _ampr_gen_ist_ps5(self, host: str, port: int,
+                          timeout: float = 3.0) -> bool:
+        """Prueft, ob dort wirklich eine PS5 antwortet.
+
+        Ein offener Port allein sagt nichts - im Heimnetz horcht auch mal
+        ein Drucker oder ein NAS auf 21. Geprueft wird deshalb, ob sich
+        ein Verzeichnis oeffnen laesst, das es nur auf der Konsole gibt.
+        """
+        import ftplib  # noqa: PLC0415
+
+        ftp = None
+        try:
+            ftp = ftplib.FTP()
+            ftp.connect(host, int(port), timeout=timeout)
+            ftp.login()
+            for pfad in ("/system_data", "/mnt/sandbox", "/user"):
+                try:
+                    ftp.cwd(pfad)
+                    return True
+                except Exception:
+                    continue
+            return False
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Kein PS5-FTP auf %s:%s (%s)", host, port, exc)
+            return False
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+
+    def _ampr_gen_eigene_netze(self) -> list[str]:
+        """Alle Netze, in denen die Konsole stehen koennte - wahrscheinlichste zuerst.
+
+        Nur die erstbeste eigene Adresse zu nehmen geht schief: Auf einem
+        Rechner mit WSL oder Hyper-V liefert ``gethostbyname_ex`` zuerst
+        den virtuellen Adapter. Am 22.08.2026 gemessen war das
+        ``172.25.128.x``, waehrend die Konsole in ``192.168.1.x`` stand -
+        die Suche lief ins Leere, obwohl ein gespeichertes FTP-Profil
+        genau auf das richtige Netz zeigte.
+
+        Gesammelt wird deshalb aus drei Quellen:
+
+        1. Die Adresse, ueber die dieser Rechner ins Netz gehen wuerde.
+           Dafuer wird ein UDP-Socket *verbunden*; gesendet wird dabei
+           nichts, das Betriebssystem verraet nur seine Wahl.
+        2. Die Netze der gespeicherten FTP-Profile - dort stand die
+           Konsole schon einmal.
+        3. Alle uebrigen eigenen Adressen.
+        """
+        netze: list[str] = []
+
+        def dazu(adresse: str) -> None:
+            teile = str(adresse).split(".")
+            if len(teile) != 4 or adresse.startswith("127."):
+                return
+            netz = ".".join(teile[:3])
+            if netz not in netze:
+                netze.append(netz)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect(("8.8.8.8", 80))
+            dazu(sock.getsockname()[0])
+        except OSError as exc:
+            logger.debug("Eigene Adresse ueber die Route: %s", exc)
+        finally:
+            sock.close()
+
+        for host in self._ampr_gen_profil_adressen():
+            dazu(host)
+
+        try:
+            _name, _alias, adressen = socket.gethostbyname_ex(socket.gethostname())
+            for adresse in adressen:
+                dazu(adresse)
+        except OSError as exc:
+            logger.debug("Eigene Adressen ueber den Rechnernamen: %s", exc)
+        return netze
+
+    def _ampr_gen_netz_absuchen(self, port: int, melde) -> list[str]:
+        """Sucht die eigenen Netze nach einer PS5 ab.
+
+        Erst wird geschaut, wo der Port ueberhaupt offen ist - das geht
+        nebenlaeufig und dauert je Netz wenige Sekunden. Nur die Treffer
+        werden danach daraufhin geprueft, ob dort auch wirklich eine
+        Konsole steht. Beim ersten Fund wird aufgehoert.
+        """
+        import concurrent.futures  # noqa: PLC0415
+
+        netze = self._ampr_gen_eigene_netze()
+        if not netze:
+            melde(self._t("amprgen.scan_no_net"))
+            return []
+        melde(self._t("amprgen.scan_nets", nets=", ".join(netze)))
+
+        for netz in netze:
+            melde(self._t("amprgen.scan_running", net=netz, port=port))
+
+            def _offen(nummer: int, netz: str = netz) -> str:
+                host = "%s.%d" % (netz, nummer)
+                try:
+                    with socket.create_connection(
+                            (host, port), timeout=self._AMPR_GEN_SUCHE_TIMEOUT):
+                        return host
+                except OSError:
+                    return ""
+
+            offene: list[str] = []
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=self._AMPR_GEN_SUCHE_FAEDEN) as pool:
+                for treffer in pool.map(_offen, range(1, 255)):
+                    if treffer:
+                        offene.append(treffer)
+            melde(self._t("amprgen.scan_open", count=len(offene)))
+
+            konsolen = [h for h in offene if self._ampr_gen_ist_ps5(h, port)]
+            if konsolen:
+                melde(self._t("amprgen.scan_found", count=len(konsolen)))
+                return konsolen
+        melde(self._t("amprgen.scan_found", count=0))
+        return []
+
+
+    def _ampr_gen_adresse_finden(self, fenster, melde) -> str:
+        """Besorgt die Adresse der PS5 - in dieser Reihenfolge.
+
+        1. Was in den Einstellungen steht. Ist sie erreichbar, fertig.
+        2. Die gespeicherten FTP-Profile.
+        3. Das eigene Netz absuchen.
+
+        Wird dabei eine Konsole gefunden, die nicht in den Einstellungen
+        steht, wird gefragt, ob sie dort hinein soll - beim naechsten Mal
+        ist die Suche dann unnoetig.
+
+        Returns:
+            Die Adresse, oder ``""`` wenn nichts gefunden wurde.
+        """
+        port = self._ps5_ftp_port()
+
+        eingestellt = self._ps5_ip()
+        if eingestellt:
+            melde(self._t("amprgen.addr_setting", host=eingestellt))
+            if self._ampr_gen_ist_ps5(eingestellt, port):
+                return eingestellt
+            melde(self._t("amprgen.addr_setting_dead"))
+
+        for host in self._ampr_gen_profil_adressen():
+            if host == eingestellt:
+                continue
+            melde(self._t("amprgen.addr_profile", host=host))
+            if self._ampr_gen_ist_ps5(host, port):
+                if self._ampr_gen_adresse_merken(fenster, melde, host):
+                    return host
+                return host
+
+        gefunden = self._ampr_gen_netz_absuchen(port, melde)
+        if not gefunden:
+            return ""
+        if len(gefunden) == 1:
+            host = gefunden[0]
+        else:
+            wahl = self._ampr_gen_frage(
+                fenster, self._t("amprgen.q_which_console"),
+                self._t("amprgen.q_which_console_why"),
+                [(h, h, self._t("amprgen.q_which_console_entry", host=h))
+                 for h in gefunden])
+            if not wahl:
+                return ""
+            host = wahl
+        self._ampr_gen_adresse_merken(fenster, melde, host)
+        return host
+
+    def _ampr_gen_adresse_merken(self, fenster, melde, host: str) -> bool:
+        """Fragt, ob die gefundene Adresse in die Einstellungen soll."""
+        if host == self._ps5_ip():
+            return True
+        wahl = self._ampr_gen_frage(
+            fenster, self._t("amprgen.q_save_addr", host=host),
+            self._t("amprgen.q_save_addr_why", host=host),
+            [("ja", self._t("amprgen.q_save_addr_yes"),
+              self._t("amprgen.q_save_addr_yes_why")),
+             ("nein", self._t("amprgen.q_save_addr_no"),
+              self._t("amprgen.q_save_addr_no_why"))])
+        if wahl == "ja":
+            self._save_setting("ps5_ip", host)
+            melde(self._t("amprgen.addr_saved", host=host))
+            return True
+        return False
+
+    def _ampr_gen_ftp(self):
+        """Oeffnet die Verbindung zur PS5; wirft bei fehlender Adresse."""
+        host = self._ps5_ip()
+        if not host:
+            raise RuntimeError(self._t("amprgen.no_ip"))
+        return self._ampr_ftp_connect(host, self._ps5_ftp_port())
+
+    def _ampr_gen_ordner_lokal(self, pfad: str) -> list[str]:
+        """Welche fakelib-Ordner liegen lokal unter diesem Pfad?"""
+        gefunden: list[str] = []
+        try:
+            for name in os.listdir(pfad):
+                if (name.lower() in (sm_gen.FAKELIB, sm_gen.FAKELIB2)
+                        and os.path.isdir(os.path.join(pfad, name))):
+                    gefunden.append(name)
+        except OSError as exc:
+            logger.debug("fakelib-Ordner nicht lesbar (%s): %s", pfad, exc)
+        return sorted(gefunden)
+
+    def _ampr_gen_ordner_ftp(self, ftp, pfad: str) -> list[str]:
+        """Dasselbe auf der Konsole."""
+        gefunden: list[str] = []
+        for name in (sm_gen.FAKELIB, sm_gen.FAKELIB2):
+            if self._ampr_ftp_is_dir(ftp, "%s/%s" % (pfad.rstrip("/"), name)):
+                gefunden.append(name)
+        return gefunden
+
+    def _ampr_gen_config_lesen(self, ftp) -> str:
+        """Holt die config.ini der Konsole als Text; leer, wenn keine da ist."""
+        puffer = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s" % sm_gen.CONFIG_PFAD, puffer.write)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("config.ini nicht lesbar: %s", exc)
+            return ""
+        return puffer.getvalue().decode("utf-8", "replace")
+
+    def _ampr_gen_log_lesen(self, ftp) -> str:
+        """Holt debug.log; leer, wenn es (noch) keins gibt."""
+        puffer = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s" % sm_gen.DEBUG_LOG, puffer.write)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("debug.log nicht lesbar: %s", exc)
+            return ""
+        return puffer.getvalue().decode("utf-8", "replace")
+
+    def _ampr_gen_titel_aus_json(self, roh: bytes) -> str:
+        """Liest die Title-ID aus einer param.json."""
+        try:
+            daten = json.loads(roh.decode("utf-8", "replace"))
+        except (ValueError, AttributeError):
+            return ""
+        for schluessel in ("titleId", "titleID", "title_id"):
+            wert = str(daten.get(schluessel, "") or "").strip()
+            if wert:
+                return wert.upper()
+        return ""
+
+    #: Wo die Konsole jeden Titel fuehrt, den sie kennt - unabhaengig
+    #: davon, ob er als Ordner oder als eingehaengtes Abbild vorliegt.
+    _AMPR_GEN_APPMETA = "/system_data/priv/appmeta"
+
+    #: Kennungspraefixe echter Spiele. NPXS* sind Systemanwendungen.
+    _AMPR_GEN_SPIELKENNUNGEN = ("CUSA", "PUSA", "PPSA", "PPSS", "PPUS", "PPJP")
+
+    def _ampr_gen_spiele_finden(self, ftp) -> list[dict[str, str]]:
+        """Sucht die Spiele, die ShadowMount+ auf der Konsole sieht.
+
+        Zwei Quellen, weil eine allein nicht reicht:
+
+        1. **appmeta** - dort fuehrt die Konsole jeden Titel, den sie
+           kennt. Das ist die wichtigere Quelle: Laeuft ein Spiel aus
+           einem eingehaengten Abbild, gibt es gar keinen Ordner mit
+           ``eboot.bin``, den man finden koennte. Genau daran fand die
+           erste Fassung dieser Suche am 22.08.2026 null Spiele, obwohl
+           elf Titel auf der Konsole standen.
+        2. **Die Scan-Pfade** - fuer entpackte Dumps, die als Ordner
+           dort liegen. Der ``backports``-Ordner wird uebersprungen; dort
+           liegen keine Spiele, sondern die Ablagen dafuer.
+
+        Returns:
+            Je Spiel ``{"pfad", "title_id", "name", "scanpath", "quelle"}``,
+            nach Title-ID sortiert und ohne Doppelte.
+        """
+        gefunden: dict[str, dict[str, str]] = {}
+
+        # Der Scan-Pfad fuer die Backport-Ablage: der erste, den es gibt.
+        # /data/homebrew wird immer durchsucht und ist der uebliche Ort.
+        standard_scan = ""
+        for kandidat in self._AMPR_GEN_SCANPFADE:
+            if self._ampr_ftp_is_dir(ftp, kandidat):
+                standard_scan = kandidat
+                break
+
+        # -- Quelle 1: appmeta -------------------------------------------
+        try:
+            for eintrag in self._ampr_ftp_browse(ftp, self._AMPR_GEN_APPMETA)["dirs"]:
+                kennung = eintrag.strip().upper()
+                if not kennung.startswith(self._AMPR_GEN_SPIELKENNUNGEN):
+                    continue
+                gefunden[kennung] = {
+                    "pfad": "%s/%s" % (self._AMPR_GEN_APPMETA, kennung),
+                    "title_id": kennung, "name": kennung,
+                    "scanpath": standard_scan, "quelle": "appmeta"}
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("appmeta nicht lesbar: %s", exc)
+
+        # -- Quelle 2: entpackte Dumps in den Scan-Pfaden -----------------
+        for scanpath in self._AMPR_GEN_SCANPFADE:
+            if not self._ampr_ftp_is_dir(ftp, scanpath):
+                continue
+            try:
+                listung = self._ampr_ftp_browse(ftp, scanpath)
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Scan-Pfad nicht lesbar (%s): %s", scanpath, exc)
+                continue
+            for name in listung["dirs"]:
+                if name.lower() in ("backports", ".", ".."):
+                    continue
+                pfad = "%s/%s" % (scanpath.rstrip("/"), name)
+                passt, _detail = self._ampr_ftp_validate_app0(ftp, pfad)
+                if not passt:
+                    continue
+                puffer = io.BytesIO()
+                title_id = ""
+                try:
+                    ftp.retrbinary("RETR %s/sce_sys/param.json" % pfad,
+                                   puffer.write)
+                    title_id = self._ampr_gen_titel_aus_json(puffer.getvalue())
+                except Exception as exc:              # noqa: BLE001
+                    logger.debug("param.json nicht lesbar (%s): %s", pfad, exc)
+                schluessel = title_id or pfad
+                # Ein echter Ordner sagt mehr als ein appmeta-Eintrag:
+                # er nennt den Scan-Pfad, unter dem er wirklich liegt.
+                gefunden[schluessel] = {
+                    "pfad": pfad, "title_id": title_id, "name": name,
+                    "scanpath": scanpath, "quelle": "Ordner"}
+        return [gefunden[k] for k in sorted(gefunden)]
+
+
+    def _ampr_gen_auswahl_bibliotheken(self, eintraege: list[dict[str, Any]],
+                                       mit_playgo: bool) -> list[dict[str, Any]]:
+        """Waehlt selbst aus, was abgelegt wird: je Bibliothek die neueste.
+
+        Der Speicher ist bereits absteigend nach Fassung sortiert, der
+        erste Treffer je Bibliothek ist also der neueste. PlayGo kommt nur
+        mit, wenn ausdruecklich gewuenscht - es stammt aus einem anderen
+        Projekt und wird nur bei bestimmten Titeln gebraucht.
+        """
+        erlaubt = set(self._AMPR_DEFAULT_APPLY_LIBS)
+        if mit_playgo:
+            erlaubt.add(self._PLAYGO_SPRX_NAME)
+        gewaehlt: list[dict[str, Any]] = []
+        gesehen: set[str] = set()
+        for eintrag in eintraege:
+            name = str(eintrag.get("lib", ""))
+            if name not in erlaubt or name in gesehen:
+                continue
+            gesehen.add(name)
+            gewaehlt.append(eintrag)
+        return gewaehlt
+
+
+    # ── Die erklaerte Frage ────────────────────────────────────────────
+
+    def _ampr_gen_dialog(self, eltern, frage: str, erklaerung: str,
+                         optionen: list[tuple[str, str, str]]) -> str:
+        """Zeigt eine Entscheidung mit Begruendung - laeuft im Oberflaechenfaden.
+
+        Nicht ``messagebox``: Dort passt keine Erklaerung hin, und "Ja/Nein"
+        sagt niemandem, was er da gerade entscheidet. Hier steht zu jeder
+        Moeglichkeit ein Satz, was sie bedeutet.
+
+        Args:
+            eltern: Fenster, ueber dem der Dialog liegt.
+            frage: Eine Zeile - worum es geht.
+            erklaerung: Ein Absatz - warum gefragt wird.
+            optionen: ``[(wert, Beschriftung, Erklaerung), ...]``. Die erste
+                ist die empfohlene und wird hervorgehoben.
+
+        Returns:
+            Der gewaehlte Wert; ``""`` wenn das Fenster geschlossen wurde.
+        """
+        c = self._COLORS
+        antwort = {"wert": ""}
+        # Farbe gleich im Erzeuger: Sonst blitzt das Fenster weiss
+        # auf, bevor configure() es dunkel macht.
+        dlg = tk.Toplevel(eltern, bg=c["bg_main"])
+        dlg.title(self._t("amprgen.decision"))
+        dlg.transient(eltern)
+        dlg.resizable(False, False)
+
+        tk.Label(dlg, text=frage, font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
+                 wraplength=620, justify="left").pack(
+                     fill="x", padx=20, pady=(18, 6))
+        tk.Label(dlg, text=erklaerung, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=620, justify="left").pack(
+                     fill="x", padx=20, pady=(0, 12))
+
+        def _waehlen(wert: str) -> None:
+            antwort["wert"] = wert
+            dlg.destroy()
+
+        for nummer, (wert, beschriftung, erlaeuterung) in enumerate(optionen):
+            karte = tk.Frame(dlg, bg=c["bg_card"], padx=12, pady=10)
+            karte.pack(fill="x", padx=20, pady=(0, 8))
+            reihe = tk.Frame(karte, bg=c["bg_card"])
+            reihe.pack(fill="x")
+            ttk.Button(reihe, text=beschriftung,
+                       style="Accent.TButton" if nummer == 0 else "TButton",
+                       command=lambda w=wert: _waehlen(w)).pack(side="left")
+            if nummer == 0:
+                tk.Label(reihe, text=self._t("amprgen.recommended"),
+                         font=(UI_SCHRIFT, pt(8), "bold"), bg=c["bg_card"],
+                         fg=c["accent"]).pack(side="left", padx=(10, 0))
+            tk.Label(karte, text=erlaeuterung, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
+                     wraplength=600, justify="left").pack(
+                         fill="x", pady=(6, 0))
+
+        fuss = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=12)
+        fuss.pack(fill="x")
+        ttk.Button(fuss, text=self._t("action.cancel"),
+                   command=lambda: _waehlen("")).pack(side="right")
+
+        dlg.update_idletasks()
+        # Mittig ueber dem Elternfenster - sonst erscheint er in der Ecke.
+        try:
+            x = eltern.winfo_rootx() + (eltern.winfo_width() - dlg.winfo_width()) // 2
+            y = eltern.winfo_rooty() + (eltern.winfo_height() - dlg.winfo_height()) // 3
+            dlg.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Dialog nicht zu platzieren: %s", exc)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: _waehlen(""))
+        dlg.grab_set()
+        eltern.wait_window(dlg)
+        return antwort["wert"]
+
+    def _ampr_gen_frage(self, fenster, frage: str, erklaerung: str,
+                        optionen: list[tuple[str, str, str]]) -> str:
+        """Stellt die Frage aus einem Arbeitsfaden heraus und wartet.
+
+        Der Dialog muss im Oberflaechenfaden entstehen, die Automatik laeuft
+        aber nebenher. Deshalb wird der Aufbau dorthin gereicht und hier
+        gewartet - mit Grenze, damit ein geschlossenes Fenster den Faden
+        nicht fuer immer haengen laesst.
+        """
+        ergebnis: dict[str, str] = {}
+        fertig = threading.Event()
+
+        def _zeigen() -> None:
+            try:
+                ergebnis["wert"] = self._ampr_gen_dialog(
+                    fenster, frage, erklaerung, optionen)
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Entscheidungsdialog: %s", exc)
+                ergebnis["wert"] = ""
+            finally:
+                fertig.set()
+
+        if not self._spaeter_im_fenster(fenster, _zeigen):
+            return ""
+        if not fertig.wait(self._AMPR_GEN_ANTWORT_GRENZE):
+            logger.debug("Keine Antwort innerhalb der Grenze - abgebrochen.")
+            return ""
+        return ergebnis.get("wert", "")
+
+    def _ampr_gen_config_pruefen(self, generation: str,
+                                 text: str) -> list[tuple[str, str, str]]:
+        """Sucht Schluessel, die **gesetzt** sind und **abweichen**.
+
+        Ein nicht gesetzter Schluessel ist keine Abweichung. ShadowMount+
+        liefert seine config.ini als reine Kommentardatei aus - auf der
+        Konsole hier waren am 22.08.2026 alle 146 Zeilen auskommentiert -
+        und nimmt dann seine eingebauten Vorgaben. Die sind genau die
+        Werte, die auch hier als Soll stehen. Wer das als "fehlt, muss
+        gesetzt werden" meldet, erzeugt vier Fehlalarme und laesst den
+        Nutzer eine Datei aendern, an der nichts falsch war.
+
+        Returns:
+            Je echter Abweichung ``(Schluessel, ist, soll)``.
+        """
+        werte = parse_flat_ini(text) if text else {}
+        abweichungen: list[tuple[str, str, str]] = []
+        for schluessel, soll in sm_gen.profil(generation)["config_schluessel"]:
+            if not soll:
+                # Leere Vorgaben (z. B. die Ausschlussliste) sind kein Soll.
+                continue
+            ist = werte.get(schluessel)
+            if ist is None:
+                continue                      # laeuft auf der Vorgabe - gut so
+            if str(ist).strip() != soll:
+                abweichungen.append((schluessel, str(ist).strip(), soll))
+        return abweichungen
+
+    def _ampr_gen_config_vorgaben(self, generation: str, text: str) -> list[str]:
+        """Welche Schluessel laufen auf der eingebauten Vorgabe?
+
+        Nur zur Ansicht im Protokoll - hier ist nichts zu tun.
+        """
+        werte = parse_flat_ini(text) if text else {}
+        return [s for s, soll in sm_gen.profil(generation)["config_schluessel"]
+                if soll and s not in werte]
+
+
+    def _ampr_gen_config_schreiben(self, ftp, text: str,
+                                   aenderungen: dict[str, str]) -> None:
+        """Schreibt die geaenderten Schluessel zurueck - Rest bleibt stehen."""
+        neu = merge_flat_ini(text or "", aenderungen)
+        ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD,
+                       io.BytesIO(neu.encode("utf-8")))
+
+
+    def _ampr_gen_ordner_fragen(self, fenster) -> str:
+        """Laesst einen lokalen Spielordner waehlen - aus einem Arbeitsfaden."""
+        ergebnis: dict[str, str] = {}
+        fertig = threading.Event()
+
+        def _zeigen() -> None:
+            try:
+                ergebnis["pfad"] = filedialog.askdirectory(
+                    parent=fenster, title=self._t("amprgen.choose_game")) or ""
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Ordnerauswahl: %s", exc)
+                ergebnis["pfad"] = ""
+            finally:
+                fertig.set()
+
+        if not self._spaeter_im_fenster(fenster, _zeigen):
+            return ""
+        if not fertig.wait(self._AMPR_GEN_ANTWORT_GRENZE):
+            return ""
+        return ergebnis.get("pfad", "")
+
+    # ── Der Automatiklauf ──────────────────────────────────────────────
+
+    def _ampr_gen_automatik(self, generation: str, fenster, melde) -> None:
+        """Erledigt alles - und fragt nur, wo wirklich zu entscheiden ist.
+
+        Laeuft in einem Arbeitsfaden. Jeder Schritt meldet, was er getan
+        hat; jede Frage bringt ihre Begruendung mit. Bricht der Nutzer ab,
+        endet der Lauf sofort und sagt das auch.
+        """
+        p = sm_gen.profil(generation)
+        andere = sm_gen.NEU if generation == sm_gen.ALT else sm_gen.ALT
+        ftp = None
+        try:
+            # ── 1. Wo wird gearbeitet? ─────────────────────────────────
+            melde(self._t("amprgen.step_console"))
+            lokal = False
+            # Die Adresse wird gesucht, nicht vorausgesetzt: Auf dieser
+            # Anlage stand sie am 22.08.2026 in keiner Einstellung, und
+            # das gespeicherte FTP-Profil nannte eine Adresse von Juni,
+            # unter der laengst nichts mehr antwortete.
+            host = self._ampr_gen_adresse_finden(fenster, melde)
+            if host:
+                try:
+                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                    melde(self._t("amprgen.console_ok", host=host))
+                except Exception as exc:              # noqa: BLE001
+                    melde(self._t("amprgen.console_failed", error=exc))
+                    host = ""
+            if not host:
+                wahl = self._ampr_gen_frage(
+                    fenster,
+                    self._t("amprgen.q_offline"),
+                    self._t("amprgen.q_offline_why"),
+                    [("lokal", self._t("amprgen.q_offline_local"),
+                      self._t("amprgen.q_offline_local_why")),
+                     ("stop", self._t("amprgen.q_offline_stop"),
+                      self._t("amprgen.q_offline_stop_why"))])
+                if wahl != "lokal":
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                lokal = True
+
+            # ── 2. Welche Fassung laeuft dort? ─────────────────────────
+            if not lokal:
+                melde(self._t("amprgen.step_version"))
+                befund = sm_gen.generation_erkennen(
+                    config_text=self._ampr_gen_config_lesen(ftp),
+                    cache_ordner_da=self._ampr_ftp_is_dir(ftp, sm_gen.CACHE_ORDNER),
+                    log_text=self._ampr_gen_log_lesen(ftp))
+                for _kennung, beleg in befund["belege"]:
+                    melde("   - " + beleg)
+                if befund["generation"] == generation:
+                    melde(self._t("amprgen.diag_match"))
+                elif befund["generation"] == andere:
+                    wahl = self._ampr_gen_frage(
+                        fenster,
+                        self._t("amprgen.q_wrong_gen"),
+                        self._t("amprgen.q_wrong_gen_why",
+                                running=sm_gen.profil(andere)["gilt_fuer"],
+                                chosen=p["gilt_fuer"]),
+                        [("stop", self._t("amprgen.q_wrong_gen_stop"),
+                          self._t("amprgen.q_wrong_gen_stop_why")),
+                         ("weiter", self._t("amprgen.q_wrong_gen_go"),
+                          self._t("amprgen.q_wrong_gen_go_why"))])
+                    if wahl != "weiter":
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                else:
+                    melde(self._t("amprgen.diag_unknown"))
+
+            # ── 3. Welches Spiel? ──────────────────────────────────────
+            melde(self._t("amprgen.step_game"))
+            title_id, scanpath, spielpfad = "", "", ""
+            if lokal:
+                spielpfad = self._ampr_gen_ordner_fragen(fenster)
+                if not spielpfad:
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                pfad_json = os.path.join(spielpfad, "sce_sys", "param.json")
+                try:
+                    with open(pfad_json, "rb") as datei:
+                        title_id = self._ampr_gen_titel_aus_json(datei.read())
+                except OSError as exc:
+                    logger.debug("param.json nicht lesbar: %s", exc)
+                melde(self._t("amprgen.game_chosen",
+                              name=os.path.basename(spielpfad),
+                              title_id=title_id or "?"))
+            else:
+                spiele = self._ampr_gen_spiele_finden(ftp)
+                melde(self._t("amprgen.games_found", count=len(spiele)))
+                if not spiele:
+                    melde(self._t("amprgen.no_games"))
+                    return
+                if len(spiele) == 1:
+                    gewaehlt = spiele[0]
+                    melde(self._t("amprgen.game_single"))
+                else:
+                    optionen = [(s["pfad"],
+                                 "%s  (%s)" % (s["name"][:44],
+                                               s["title_id"] or "?"),
+                                 self._t("amprgen.q_game_entry",
+                                         path=s["pfad"]))
+                                for s in spiele[:12]]
+                    wahl = self._ampr_gen_frage(
+                        fenster, self._t("amprgen.q_game"),
+                        self._t("amprgen.q_game_why"), optionen)
+                    if not wahl:
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                    gewaehlt = next(s for s in spiele if s["pfad"] == wahl)
+                spielpfad = gewaehlt["pfad"]
+                title_id = gewaehlt["title_id"]
+                scanpath = gewaehlt["scanpath"]
+                melde(self._t("amprgen.game_chosen",
+                              name=gewaehlt["name"], title_id=title_id or "?"))
+
+            # ── 4. Wohin? Das entscheidet die Fassung, nicht der Nutzer ─
+            melde(self._t("amprgen.step_target"))
+            if not lokal and title_id and scanpath:
+                ziel = sm_gen.ablageziel(generation, sm_gen.ORT_BACKPORT,
+                                         title_id=title_id, scanpath=scanpath)
+                ort = sm_gen.ORT_BACKPORT
+            else:
+                ziel = sm_gen.ablageziel(generation, sm_gen.ORT_SPIEL,
+                                         wurzel=spielpfad)
+                ort = sm_gen.ORT_SPIEL
+                if not lokal:
+                    melde(self._t("amprgen.no_title_id_fallback"))
+            melde(self._t("amprgen.target", path=ziel["pfad"]))
+            melde("   " + ziel["hinweis"])
+
+            # ── 5. Welche Bibliotheken? ────────────────────────────────
+            melde(self._t("amprgen.step_libs"))
+            vorrat = self._ampr_scan_version_store(self._ampr_resolve_store())
+            if not vorrat:
+                melde(self._t("amprgen.no_store"))
+                return
+            hat_playgo = any(e.get("lib") == self._PLAYGO_SPRX_NAME
+                             for e in vorrat)
+            mit_playgo = False
+            if hat_playgo:
+                wahl = self._ampr_gen_frage(
+                    fenster, self._t("amprgen.q_playgo"),
+                    self._t("amprgen.q_playgo_why"),
+                    [("nein", self._t("amprgen.q_playgo_no"),
+                      self._t("amprgen.q_playgo_no_why")),
+                     ("ja", self._t("amprgen.q_playgo_yes"),
+                      self._t("amprgen.q_playgo_yes_why"))])
+                if not wahl:
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                mit_playgo = wahl == "ja"
+            gewaehlt_libs = self._ampr_gen_auswahl_bibliotheken(vorrat, mit_playgo)
+            if not gewaehlt_libs:
+                melde(self._t("amprgen.no_libs"))
+                return
+            for eintrag in gewaehlt_libs:
+                melde(self._t("amprgen.lib_chosen", lib=eintrag.get("lib", ""),
+                              version=eintrag.get("version", "?"),
+                              variant=eintrag.get("variant", "-")))
+
+            # ── 6. Stimmt die config.ini? ──────────────────────────────
+            if not lokal:
+                melde(self._t("amprgen.step_config"))
+                text = self._ampr_gen_config_lesen(ftp)
+                abweichungen = self._ampr_gen_config_pruefen(generation, text)
+                if not abweichungen:
+                    melde(self._t("amprgen.config_ok"))
+                else:
+                    zeilen = "\n".join(
+                        "   %s: %s -> %s" % (k, ist or self._t("amprgen.diag_missing"), soll)
+                        for k, ist, soll in abweichungen)
+                    wahl = self._ampr_gen_frage(
+                        fenster, self._t("amprgen.q_config"),
+                        self._t("amprgen.q_config_why", lines=zeilen),
+                        [("ja", self._t("amprgen.q_config_yes"),
+                          self._t("amprgen.q_config_yes_why")),
+                         ("nein", self._t("amprgen.q_config_no"),
+                          self._t("amprgen.q_config_no_why"))])
+                    if not wahl:
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                    if wahl == "ja":
+                        try:
+                            self._ampr_gen_config_schreiben(
+                                ftp, text,
+                                {k: soll for k, _ist, soll in abweichungen})
+                            melde(self._t("amprgen.config_written",
+                                          count=len(abweichungen)))
+                        except Exception as exc:      # noqa: BLE001
+                            melde(self._t("amprgen.failed", error=exc))
+                    else:
+                        melde(self._t("amprgen.config_kept"))
+
+            # ── 7. Ablegen und nachsehen ───────────────────────────────
+            melde(self._t("amprgen.step_place"))
+            dateien = [str(e["path"]) for e in gewaehlt_libs]
+            if lokal:
+                for zeile in self._ampr_gen_ablegen(
+                        generation, ort, lokal=True, ziel=ziel["pfad"],
+                        dateien=dateien):
+                    melde(zeile)
+            else:
+                if not self._ampr_ftp_ensure_dir(ftp, ziel["pfad"]):
+                    melde(self._t("amprgen.mkdir_failed", path=ziel["pfad"]))
+                    return
+                for quelle in dateien:
+                    name = os.path.basename(quelle)
+                    if self._ampr_ftp_upload_file(ftp, ziel["pfad"], quelle, name):
+                        melde(self._t("amprgen.placed", name=name))
+                    else:
+                        melde(self._t("amprgen.place_failed", name=name,
+                                      error="FTP"))
+                melde(self._t("amprgen.done", path=ziel["pfad"]))
+                eltern = ziel["pfad"].rsplit("/", 1)[0]
+                da = self._ampr_gen_ordner_ftp(ftp, eltern)
+                for meldung in sm_gen.beanstandungen(generation, ort, da):
+                    melde("!! " + meldung)
+
+            melde("")
+            melde(self._t("amprgen.finished"))
+            melde(self._t("amprgen.next_steps"))
+        except Exception as exc:                      # noqa: BLE001
+            melde(self._t("amprgen.failed", error=exc))
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+
+
+    def _show_ampr_generation(self, generation: str) -> None:
+        """Das Fenster beider Methoden - es arbeitet von selbst.
+
+        Frueher war das eine Eingabemaske: Arbeitsort, Spielordner,
+        Title-ID, Scan-Pfad, Bibliotheken - alles von Hand. Wer die
+        Unterschiede zwischen den Fassungen nicht auswendig kennt, konnte
+        dort still das Falsche einstellen. Jetzt laeuft alles von selbst,
+        und gefragt wird nur, wo es wirklich etwas zu entscheiden gibt.
+        """
+        c = self._COLORS
+        p = sm_gen.profil(generation)
+        titel = self._t("amprgen.title_%s" % generation)
+        win = self._build_modern_toplevel(titel, 940, 740,
+                                          min_width=820, min_height=560)
+        self._build_modern_header(win, titel,
+                                  self._t("amprgen.subtitle_%s" % generation))
+
+        # ── Geltungsbereich - damit niemand das falsche Fenster nimmt ───
+        gilt = tk.Frame(win, bg=c["bg_card"], padx=12, pady=8)
+        gilt.pack(fill="x", padx=16, pady=(10, 6))
+        tk.Label(gilt, text=self._t("amprgen.applies", value=p["gilt_fuer"]),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        tk.Label(gilt, text=self._t("amprgen.not_for", value=p["nicht_fuer"]),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        # ── Was gleich passiert, in Klartext ───────────────────────────
+        tk.Label(win, text=self._t("amprgen.what_happens"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(6, 2))
+        tk.Label(win, text=self._t("amprgen.what_happens_text",
+                                   folder=sm_gen.ablageordner(
+                                       generation,
+                                       sm_gen.ORT_BACKPORT
+                                       if generation == sm_gen.NEU
+                                       else sm_gen.ORT_SPIEL)),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"], anchor="w", wraplength=880,
+                 justify="left").pack(fill="x", padx=16, pady=(0, 8))
+
+        # ── Protokoll ──────────────────────────────────────────────────
+        tk.Label(win, text=self._t("amprgen.log"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(4, 2))
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
+        koerper.pack(fill="both", expand=True, pady=(0, 4))
+        feld = tk.Text(koerper, height=14, wrap="word",
+                       font=("Consolas", pt(9)), bg=c["bg_card"],
+                       fg=c["fg_primary"], relief="flat", state="disabled")
+        rolle = ttk.Scrollbar(koerper, orient="vertical", command=feld.yview)
+        feld.configure(yscrollcommand=rolle.set)
+        rolle.pack(side="right", fill="y")
+        feld.pack(side="left", fill="both", expand=True)
+
+        def _protokoll(text: str) -> None:
+            if not feld.winfo_exists():
+                return
+            feld.configure(state="normal")
+            feld.insert("end", text + "\n")
+            feld.see("end")
+            feld.configure(state="disabled")
+
+        def _melde(text: str) -> None:
+            """Aus dem Arbeitsfaden ins Protokoll - immer ueber die Wurzel."""
+            self._spaeter_im_fenster(win, _protokoll, text)
+
+        laeuft = {"aktiv": False}
+        start_knopf: dict[str, Any] = {}
+
+        def _starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            laeuft["aktiv"] = True
+            knopf = start_knopf.get("widget")
+            if knopf is not None:
+                knopf.configure(state="disabled")
+            _protokoll("")
+            _protokoll("=" * 60)
+            _protokoll(self._t("amprgen.run_start"))
+
+            def _lauf() -> None:
+                try:
+                    self._ampr_gen_automatik(generation, win, _melde)
+                finally:
+                    laeuft["aktiv"] = False
+
+                    def _wieder_frei() -> None:
+                        k = start_knopf.get("widget")
+                        if k is not None and k.winfo_exists():
+                            k.configure(state="normal")
+                    self._spaeter_im_fenster(win, _wieder_frei)
+            threading.Thread(target=_lauf, daemon=True).start()
+
+        def _config() -> None:
+            """Der vorhandene Editor - vorbelegt mit den Schluesseln dieser Fassung."""
+            vorgaben = dict(self._SHADOWMOUNT_DEFAULTS)
+            vorgaben.update({k: v for k, v in p["config_schluessel"] if v})
+            self._show_remote_ini_editor(
+                self._t("remote_ini.shadowmount_title"),
+                sm_gen.CONFIG_PFAD, sm_gen.DEBUG_LOG, vorgaben, "shadowmount")
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("amprgen.btn_config"),
+                   command=_config).pack(side="left")
+        start = ttk.Button(knopfreihe, text=self._t("amprgen.btn_run"),
+                           style="Accent.TButton", command=_starten)
+        start.pack(side="left", padx=(8, 0))
+        start_knopf["widget"] = start
+
+        for falle in sm_gen.stolperfallen(generation):
+            _protokoll("* " + falle)
+
+        # Sofort loslegen: Der Knopf im Hauptfenster ist der Startbefehl,
+        # nicht das Oeffnen eines Formulars.
+        self._spaeter_im_fenster(win, _starten)
+
+    # ==================================================================
     # ps5_autoloader - die Startreihenfolge der Konsole
     #
     # Die Konsole sucht ps5_autoloader/autoload.txt in dieser Reihenfolge:
@@ -28358,1150 +29370,6 @@ class PS5ConverterGUI:
     # UNSIGNIERTEN Container. Bewusst kein Ersatz für ein echtes Paket:
     # ohne RSA-Signatur und ohne Fake-SELF-Spoofing, siehe Warntext.
     # ==================================================================
-    # ==================================================================
-    # PS4 PKG -> ffpfsc  (eingebettetes PS4-FFPFSC 0.2.8, siehe dort
-    # UPSTREAM.md). Das Werkzeug bringt eine eigene Qt-Oberflaeche mit; die
-    # bleibt aussen vor. Hier laeuft nur seine Kommandozeile, angetrieben von
-    # einem Fenster im Stil dieses Programms.
-    # ==================================================================
-
-    #: Dateien, die in einem fertigen Abbild stehen sollten. Fehlt eine, ist
-    #: das kein Abbruchgrund - aber ein Hinweis wert.
-    #:
-    #: **Nur fuer PS5-Titel.** ``pfs-version.dat`` ist ein PS5-Marker: zehn
-    #: Byte ASCII mit der Inhaltsversion ("06.004.000"), wortgleich mit
-    #: ``contentVersion`` aus param.json - an drei echten Dumps nachgesehen.
-    #: Ein PS4-Spiel hat die Datei nicht, und sie dort zu vermissen waere ein
-    #: Fehlalarm bei jedem einzelnen Titel. Selbst bei PS5-Dumps ist sie
-    #: entbehrlich: Von 32 durchgesehenen Backups fehlte sie in zweien, die
-    #: einwandfrei liefen (siehe dump_validator.RECOMMENDED_FILES).
-    _PS4_EMPFOHLENE_DATEIEN: tuple[str, ...] = ("sce_sys/pfs-version.dat",)
-
-    #: Spuren, an denen ein PS4-Titel im fertigen Abbild zu erkennen ist.
-    #: ShadowMount+ haengt ihn in den PS5-App-Pfad ein (/system_ex/app/…);
-    #: ob die Konsole ihn von dort startet, sichert das Werkzeug nicht zu.
-    _PS4_MERKMALE: tuple[str, ...] = ("manifest_nonufsfiles_ps4.txt",
-                                      "sce_discmap.plt")
-
-    #: Magic am Anfang einer PKG. Vier Bytes, kein Entpacken noetig.
-    #:
-    #: Am 22.08.2026 an 31 Paketen gemessen (20 PS4, 11 PS5): Das Magic
-    #: stimmte ausnahmslos mit der Title-ID im Paket ueberein. Der
-    #: eingebettete Entpacker kennt nur die PS4-Fassung und weist die
-    #: andere mit "Invalid PKG magic" ab - an allen elf PS5-Paketen
-    #: derselbe Wortlaut.
-    _PKG_MAGIC_PS4 = b"\x7fCNT"
-    _PKG_MAGIC_PS5 = b"\x7fFIH"
-
-    def _pkg_konsole_am_magic(self, pfad: str) -> str:
-        """Liest die Konsole aus den ersten vier Bytes einer PKG.
-
-        Returns:
-            ``"ps4"``, ``"ps5"`` oder ``""`` wenn es keine PKG ist oder die
-            Datei sich nicht lesen laesst.
-        """
-        try:
-            with open(pfad, "rb") as datei:
-                magic = datei.read(4)
-        except OSError as exc:
-            logger.debug("PKG-Kopf nicht lesbar (%s): %s", pfad, exc)
-            return ""
-        if magic == self._PKG_MAGIC_PS4:
-            return "ps4"
-        if magic == self._PKG_MAGIC_PS5:
-            return "ps5"
-        return ""
-
-    def _ps4ffpsc_quellen_sichten(self, eingabe: str, art: str) -> dict:
-        """Zaehlt in der gewaehlten Quelle die Pakete je Konsole.
-
-        Args:
-            eingabe: Der eingetippte Pfad; bei einzelnen Dateien mehrere,
-                getrennt durch ``os.pathsep``.
-            art: ``"pkg_file"``, ``"pkg_dir"`` oder ``"dump_dir"``.
-
-        Returns:
-            ``{"ps4": [...], "ps5": [...], "fremd": [...]}`` mit den
-            Dateinamen - Namen, nicht Pfade, denn sie gehen ins Protokoll.
-        """
-        befund = {"ps4": [], "ps5": [], "fremd": []}
-        pfade: list[str] = []
-        if art == "pkg_file":
-            pfade = [teil.strip() for teil in eingabe.split(os.pathsep)
-                     if teil.strip()]
-        elif os.path.isdir(eingabe):
-            try:
-                # Nur die Ebene selbst: Genau das nimmt das Werkzeug auch.
-                for name in sorted(os.listdir(eingabe)):
-                    voll = os.path.join(eingabe, name)
-                    if name.lower().endswith(".pkg") and os.path.isfile(voll):
-                        pfade.append(voll)
-            except OSError as exc:
-                logger.debug("Quellordner nicht lesbar: %s", exc)
-        for pfad in pfade:
-            konsole = self._pkg_konsole_am_magic(pfad)
-            befund[konsole or "fremd"].append(os.path.basename(pfad))
-        return befund
-
-    #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
-    #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
-    _PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
-    _PS5_KENNUNGEN: tuple[str, ...] = ("PPSA", "PPSS", "PPUS", "PPJP")
-
-    def _ps4ffpsc_plattform(self, title_id: str, spiel=None) -> str:
-        """Sagt, zu welcher Konsole ein Titel gehoert.
-
-        Returns:
-            ``"ps4"``, ``"ps5"`` oder ``""`` wenn die Kennung nichts hergibt.
-        """
-        kennung = str(title_id or "").strip().upper()
-        if kennung.startswith(self._PS5_KENNUNGEN):
-            return "ps5"
-        if kennung.startswith(self._PS4_KENNUNGEN):
-            return "ps4"
-        # Das Werkzeug meldet die Plattform manchmal selbst mit.
-        if isinstance(spiel, dict):
-            roh = str(spiel.get("platform") or spiel.get("console") or "").lower()
-            if "ps5" in roh or "prospero" in roh:
-                return "ps5"
-            if "ps4" in roh or "orbis" in roh:
-                return "ps4"
-        return ""
-
-    #: Endungen, unter denen das PS4-Werkzeug sein Ergebnis ablegt.
-    _PS4_ABBILD_ENDUNGEN: tuple[str, ...] = (".ffpfsc", ".ffpfs", ".exfat",
-                                             ".ffpkg")
-
-    def _ps4ffpsc_ergebnis_finden(self, ordner: str, title_id: str = "",
-                                  format_wunsch: str = "") -> str:
-        """Sucht das eben gebaute Abbild im Ausgabeordner.
-
-        Bis v1.8.77 bekam die Nachpruefung den **Ordner** uebergeben statt
-        der Datei. Sie scheiterte dadurch jedes Mal mit
-        ``[Errno 13] Permission denied`` auf dem Ordnerpfad - sie hat also
-        nie stattgefunden, obwohl im Protokoll stand, dass sie laeuft.
-        Gesehen am 21.08.2026 an einer echten Konvertierung.
-
-        Args:
-            ordner: Der Ausgabeordner.
-            title_id: Wenn bekannt, wird ein Treffer mit dieser Kennung
-                bevorzugt - im selben Ordner koennen aeltere Abbilder liegen.
-            format_wunsch: Das gewaehlte Zielformat, ebenfalls als Vorzug.
-
-        Returns:
-            Der Pfad, oder "" wenn nichts Passendes dasteht.
-        """
-        endungen = list(self._PS4_ABBILD_ENDUNGEN)
-        wunsch = "." + str(format_wunsch or "").lstrip(".").lower()
-        if wunsch in endungen:
-            endungen.remove(wunsch)
-            endungen.insert(0, wunsch)
-        kennung = str(title_id or "").upper()
-        kandidaten = []
-        try:
-            for name in os.listdir(ordner):
-                pfad = os.path.join(ordner, name)
-                if not os.path.isfile(pfad):
-                    continue
-                klein = name.lower()
-                passende = [e for e in endungen if klein.endswith(e)]
-                if not passende:
-                    continue
-                kandidaten.append((
-                    0 if kennung and kennung in name.upper() else 1,
-                    endungen.index(passende[0]),
-                    -os.path.getmtime(pfad),
-                    pfad,
-                ))
-        except OSError as exc:
-            logger.debug("Ausgabeordner nicht lesbar: %s", exc)
-            return ""
-        if not kandidaten:
-            return ""
-        kandidaten.sort()
-        return kandidaten[0][3]
-
-    #: Wohin die Konsole die NP-Bindung eines Titels erwartet.
-    _NPBIND_ZIEL = "/system_data/priv/appmeta/%s/npbind.dat"
-    #: Wo sie im Abbild liegt.
-    _NPBIND_IM_ABBILD = "sce_sys/npbind.dat"
-
-    def _npbind_aus_abbild(self, pfad: str) -> bytes:
-        """Holt sce_sys/npbind.dat aus einem fertigen Abbild.
-
-        Args:
-            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
-
-        Returns:
-            Der Inhalt, oder ``b""`` wenn die Datei nicht darin steht.
-        """
-        griff = None
-        try:
-            from mkpfs.exfat import ExfatReader
-
-            with open(pfad, "rb") as datei:
-                kopf = datei.read(16)
-            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
-                from mkpfs import pfs as mkpfs_pfs
-
-                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
-                if not geoeffnet:
-                    return b""
-                sicht, griff, _name = geoeffnet
-            else:
-                sicht = griff = open(pfad, "rb")
-            sicht.seek(0)
-            leser = ExfatReader(sicht)
-            for eintrag in leser.iter_files():
-                rel = eintrag.rel_path.replace("\\", "/").lower()
-                if rel == self._NPBIND_IM_ABBILD:
-                    # read_file liefert Stuecke, keine fertigen Bytes.
-                    return b"".join(leser.read_file(eintrag))
-            return b""
-        except Exception as exc:                      # noqa: BLE001 - melden
-            logger.debug("npbind.dat nicht aus dem Abbild lesbar: %s", exc)
-            return b""
-        finally:
-            try:
-                if griff is not None:
-                    griff.close()
-            except Exception:
-                pass
-
-    def _npbind_auf_konsole(self, ftp, title_id: str, inhalt: bytes) -> str:
-        """Legt die NP-Bindung neben die Metadaten des registrierten Titels.
-
-        Args:
-            ftp: Offene Verbindung (siehe ``_ampr_ftp_connect``).
-            title_id: Die Kennung, etwa ``CUSA00775``.
-            inhalt: Der Inhalt aus dem Abbild.
-
-        Returns:
-            Ein Schluessel fuer die Meldung: ``"fehlt_ordner"`` (Titel noch
-            nicht registriert), ``"schon_da"``, ``"gelegt"`` oder
-            ``"abweichung"`` (zurueckgelesen und ungleich).
-        """
-        ziel = self._NPBIND_ZIEL % title_id
-        ordner = ziel.rsplit("/", 1)[0]
-        if not self._ampr_ftp_is_dir(ftp, ordner):
-            return "fehlt_ordner"
-
-        # Nie ueberschreiben: Ist der Titel regulaer installiert, hat das
-        # System dort seine eigene Bindung abgelegt - die hat Vorrang. Der
-        # Schritt fuellt nur die Luecke, die ShadowMountPlus laesst.
-        vorhanden = io.BytesIO()
-        try:
-            ftp.retrbinary("RETR %s" % ziel, vorhanden.write)
-        except Exception:
-            vorhanden = None
-        if vorhanden is not None:
-            return ("schon_da" if vorhanden.getvalue() == inhalt
-                    else "schon_da_anders")
-
-        ftp.storbinary("STOR %s" % ziel, io.BytesIO(inhalt))
-        # Zurueckholen und vergleichen - eine halbe Datei waere schlimmer
-        # als gar keine.
-        kontrolle = io.BytesIO()
-        ftp.retrbinary("RETR %s" % ziel, kontrolle.write)
-        return "gelegt" if kontrolle.getvalue() == inhalt else "abweichung"
-
-    def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
-        """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
-
-        Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht
-        die Nutzdaten - bei einem 8,7-GB-Abbild sind das wenige Sekunden.
-
-        Args:
-            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
-
-        Returns:
-            ``{"dateien": int, "fehlend": [...], "ps4": bool, "fehler": str}``.
-        """
-        ergebnis = {"dateien": 0, "fehlend": [], "ps4": False, "fehler": ""}
-        griff = None
-        try:
-            from mkpfs.exfat import ExfatReader
-
-            with open(pfad, "rb") as datei:
-                kopf = datei.read(16)
-            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
-                from mkpfs import pfs as mkpfs_pfs
-
-                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
-                if not geoeffnet:
-                    ergebnis["fehler"] = "Innenebene nicht lesbar"
-                    return ergebnis
-                sicht, griff, _name = geoeffnet
-            else:
-                sicht = griff = open(pfad, "rb")
-
-            sicht.seek(0)
-            leser = ExfatReader(sicht)
-            namen = [e.rel_path.replace("\\", "/").lower()
-                     for e in leser.iter_files()]
-            ergebnis["dateien"] = len(namen)
-            vorhanden = set(namen)
-            ergebnis["fehlend"] = [d for d in self._PS4_EMPFOHLENE_DATEIEN
-                                   if d.lower() not in vorhanden]
-            ergebnis["ps4"] = any(m in vorhanden for m in self._PS4_MERKMALE)
-        except Exception as exc:                      # noqa: BLE001 - melden
-            ergebnis["fehler"] = str(exc)[:160]
-        finally:
-            try:
-                if griff is not None:
-                    griff.close()
-            except Exception:
-                pass
-        return ergebnis
-
-    def _ps4ffpsc_befehl(self) -> list[str]:
-        """Baut den Aufruf für die eingebettete PS4-Kommandozeile.
-
-        Als eingefrorene Anwendung ruft sich das Programm selbst mit dem
-        internen Schalter auf; aus der Quelle heraus wird die Hauptdatei an
-        denselben Schalter gehängt.
-
-        Returns:
-            Die Befehlsliste ohne die eigentlichen Unterbefehle.
-        """
-        if getattr(sys, "frozen", False):
-            return [sys.executable, "--ps4ffpsc"]
-        return [sys.executable, os.path.abspath(__file__), "--ps4ffpsc"]
-
-    def _ps4ffpsc_lauf(
-        self,
-        argumente: list[str],
-        *,
-        arbeitsordner: str,
-        zeile_callback,
-        fortschritt_callback=None,
-        prozess_ablage: dict | None = None,
-        json_modus: bool = False,
-    ) -> tuple[int, str]:
-        """Führt einen PS4-FFPFSC-Unterbefehl aus und meldet Zeilen zurück.
-
-        stderr wird in stdout geführt: Das Werkzeug schreibt seine
-        Fortschrittsmeldungen (``PS4FFPSC_PROGRESS {…}``) dorthin, sein
-        Protokoll ebenso. Getrennt zu lesen bräuchte zwei Lesefäden, ohne
-        etwas zu gewinnen - die Reihenfolge bliebe trotzdem ungewiss.
-
-        Args:
-            argumente:            Unterbefehl samt Schaltern.
-            arbeitsordner:        Ordner für Zwischenstände des Werkzeugs.
-            zeile_callback:       Bekommt jede Protokollzeile.
-            fortschritt_callback: Bekommt die entschlüsselten Fortschrittsdaten.
-            prozess_ablage:       Nimmt den laufenden Prozess auf, damit ein
-                                  Abbruch ihn beenden kann.
-            json_modus:           Haelt stderr getrennt, damit auf stdout reines
-                                  JSON steht. Fuer --json-Abfragen noetig.
-
-        Returns:
-            ``(Rückgabewert, gesammelte Ausgabe)``.
-        """
-        befehl = [*self._ps4ffpsc_befehl(), *argumente]
-        gesammelt: list[str] = []
-        prozess = subprocess.Popen(
-            befehl,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE if json_modus else subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            env=_ps4ffpsc_umgebung(arbeitsordner),
-            creationflags=_NO_WIN_FLAGS,
-            startupinfo=_silent_startupinfo(),
-        )
-        if prozess_ablage is not None:
-            prozess_ablage["prozess"] = prozess
-        if json_modus:
-            # stdout bleibt unangetastet, damit die Antwort als Ganzes lesbar
-            # ist; das Protokoll kommt getrennt ueber stderr.
-            stdout_text, stderr_text = prozess.communicate()
-            for zeile in (stderr_text or "").splitlines():
-                text = zeile.rstrip()
-                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
-                    continue
-                if text.strip():
-                    zeile_callback(text)
-            return int(prozess.returncode or 0), stdout_text or ""
-        try:
-            for zeile in prozess.stdout or []:
-                text = zeile.rstrip("\r\n")
-                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
-                    if fortschritt_callback is not None:
-                        try:
-                            fortschritt_callback(
-                                json.loads(text[len(_PS4FFPSC_PROGRESS_PREFIX):])
-                            )
-                        except (ValueError, TypeError) as exc:
-                            logger.debug("PS4-Fortschritt nicht lesbar: %s", exc)
-                    continue
-                gesammelt.append(text)
-                if text.strip():
-                    zeile_callback(text)
-        finally:
-            prozess.wait()
-        return int(prozess.returncode or 0), "\n".join(gesammelt)
-
-    #: Fortschrittsmarke, bei der die zweite Einblendung erscheint.
-    #:
-    #: Zweimal je Lauf statt viermal - der Hinweis ist derselbe, und wer ihn
-    #: zweimal gelesen hat, liest ihn beim vierten Mal nicht noch einmal.
-    #: Die Mitte des Balkens ist der zweite Zeitpunkt, die Uhr der erste
-    #: (siehe _PS4_HINWEIS_ERSTE_MS).
-    _PS4_HINWEIS_MARKEN: tuple[float, ...] = (50.0,)
-    #: Wann die erste Einblendung kommt (Millisekunden nach dem Start).
-    #:
-    #: Nach der Uhr, nicht nach dem Fortschritt: Am Anfang steht der Balken
-    #: je nach Spielgroesse unterschiedlich lange bei wenigen Prozent - eine
-    #: Marke bei 8 % kam mal nach zehn Sekunden, mal nach zwei Minuten. Eine
-    #: Minute nach dem Start ist dagegen bei jedem Spiel dieselbe Stelle:
-    #: Der Nutzer hat den Knopf gedrueckt und wartet.
-    _PS4_HINWEIS_ERSTE_MS = 60000
-    #: Abstand, in dem die Uhr es erneut versucht, wenn gerade eine
-    #: Einblendung steht (Millisekunden).
-    _PS4_HINWEIS_NACHFASSEN = 2000
-    #: Wie lange der Hinweis stehen bleibt (Millisekunden).
-    #:
-    #: 25 statt 15 Sekunden, seit die Einblendung auch den Kasten aus dem
-    #: Fenster traegt: Vier Absaetze lesen sich nicht in fuenfzehn.
-    _PS4_HINWEIS_DAUER = 25000
-    #: Dauer einer Blende und Schrittweite (Millisekunden).
-    _PS4_HINWEIS_BLENDE = 600
-    _PS4_HINWEIS_SCHRITT = 30
-    #: Deckkraft im Stand. Voll - bei 0,94 schimmerte der Text des
-    #: Fensters dahinter durch und machte den Hinweis unruhig. Das
-    #: Blenden ist der Effekt, nicht die Durchsichtigkeit.
-    _PS4_HINWEIS_DECKKRAFT = 1.0
-
-    def _ps4_hinweis_faellig(self, wert: float) -> bool:
-        """Ob bei diesem Fortschritt eine Einblendung ansteht."""
-        zustand = getattr(self, "_ps4_hinweis_stand", None)
-        if not isinstance(zustand, dict):
-            return False
-        if zustand.get("laeuft") or zustand.get("fertig"):
-            return False
-        offen = [m for m in self._PS4_HINWEIS_MARKEN
-                 if m not in zustand["gezeigt"] and wert >= m]
-        if not offen:
-            return False
-        # Springt der Fortschritt (kleine Spiele sind schnell durch), gilt
-        # die hoechste ueberschrittene Marke, und die kleineren verfallen -
-        # sonst kaemen vier Einblendungen unmittelbar hintereinander.
-        for m in offen:
-            zustand["gezeigt"].add(m)
-        return True
-
-    def _ps4_hinweis_zeit_starten(self, fenster) -> None:
-        """Legt die erste Einblendung auf die Uhr.
-
-        Args:
-            fenster: Das PS4-Fenster; ueber dessen ``after`` laeuft der
-                Wecker, damit er mit dem Fenster verschwindet.
-        """
-        zustand = getattr(self, "_ps4_hinweis_stand", None)
-        if not isinstance(zustand, dict):
-            return
-
-        def _faellig() -> None:
-            zustand["uhr"] = None
-            if zustand.get("fertig"):
-                return
-            try:
-                if not fenster.winfo_exists():
-                    return
-            except Exception:
-                return
-            if zustand.get("laeuft"):
-                # Steht schon eine, gleich nochmal nachsehen - zwei
-                # uebereinander waeren beide unlesbar.
-                zustand["uhr"] = fenster.after(
-                    self._PS4_HINWEIS_NACHFASSEN, _faellig)
-                return
-            self._ps4_hinweis_zeigen(fenster)
-
-        try:
-            zustand["uhr"] = fenster.after(self._PS4_HINWEIS_ERSTE_MS,
-                                           _faellig)
-        except Exception as exc:
-            logger.debug("Wecker fuer den Ablageort-Hinweis nicht "
-                         "gestellt: %s", exc)
-            zustand["uhr"] = None
-
-    def _ps4_hinweis_zeigen(self, fenster) -> None:
-        """Blendet den Ablageort-Hinweis ueber dem Fenster ein.
-
-        Kein Knopf, kein Wegklicken: Er kommt von selbst und geht von selbst.
-        Wer gerade liest, wird nicht unterbrochen; wer nicht hinsieht, muss
-        nichts tun.
-        """
-        zustand = getattr(self, "_ps4_hinweis_stand", None)
-        if zustand is None or not fenster.winfo_exists():
-            return
-        c = self._COLORS
-        try:
-            # Farbe in den Erzeuger: Tk zeichnet ein frisches Toplevel
-            # sonst zuerst weiss, und ein spaeteres configure(bg=...)
-            # kommt zu spaet - bei einer Einblendung besonders sichtbar.
-            karte = tk.Toplevel(fenster, bg=c["fg_warning"])
-            karte.withdraw()
-            karte.overrideredirect(True)
-            karte.transient(fenster)
-        except Exception as exc:
-            logger.debug("Hinweisfenster nicht erstellbar: %s", exc)
-            return
-        zustand["laeuft"] = True
-        zustand["fenster"] = karte
-
-        innen = tk.Frame(karte, bg=c["bg_card"], padx=20, pady=16)
-        innen.pack(padx=2, pady=2)
-        tk.Label(innen, text=self._t("ps4pkg.place_title"),
-                 font=(UI_SCHRIFT, pt(12), "bold"), bg=c["bg_card"],
-                 fg=c["fg_warning"], anchor="w", justify="left").pack(
-                     fill="x", pady=(0, 10))
-        for schluessel, rolle in (("ps4pkg.place_ok", "fg_success"),
-                                  ("ps4pkg.place_bad", "error_btn"),
-                                  ("ps4pkg.place_after_crash", "fg_primary")):
-            tk.Label(innen, text=self._t(schluessel), font=(UI_SCHRIFT, pt(10)),
-                     bg=c["bg_card"], fg=c[rolle], anchor="w", justify="left",
-                     wraplength=560).pack(fill="x", pady=(0, 6))
-        tk.Label(innen, text=self._t("ps4pkg.place_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w", justify="left",
-                 wraplength=560).pack(fill="x", pady=(8, 0))
-        # Der Hersteller des eingebetteten Werkzeugs setzt
-        # "ps5_runtime_verified" fest auf false: Zugesichert ist nur, dass
-        # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
-        # die Konsole es startet. Stand bis v1.8.76 als eigene Zeile im
-        # Fenster - hier wird sie eher gelesen.
-        tk.Label(innen, text=self._t("ps4pkg.runtime_note"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
-                 fg=c["fg_warning"], anchor="w", justify="left",
-                 wraplength=560).pack(fill="x", pady=(8, 0))
-
-        karte.update_idletasks()
-        breite, hoehe = karte.winfo_reqwidth(), karte.winfo_reqheight()
-        x = fenster.winfo_rootx() + (fenster.winfo_width() - breite) // 2
-        y = fenster.winfo_rooty() + (fenster.winfo_height() - hoehe) // 2
-        karte.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
-
-        # Ohne -alpha (manche Linux-Sitzungen ohne Compositor) erscheint der
-        # Hinweis eben hart - besser als gar nicht.
-        blenden = True
-        try:
-            karte.attributes("-alpha", 0.0)
-        except Exception:
-            blenden = False
-        karte.deiconify()
-        try:
-            karte.lift()
-        except Exception:
-            pass
-
-        schritte = max(1, self._PS4_HINWEIS_BLENDE // self._PS4_HINWEIS_SCHRITT)
-
-        def _blende(nummer: int, auf: bool) -> None:
-            if not karte.winfo_exists():
-                return
-            anteil = nummer / schritte
-            wert = anteil if auf else 1.0 - anteil
-            try:
-                karte.attributes("-alpha", wert * self._PS4_HINWEIS_DECKKRAFT)
-            except Exception:
-                pass
-            if nummer < schritte:
-                karte.after(self._PS4_HINWEIS_SCHRITT, _blende, nummer + 1, auf)
-            elif auf:
-                karte.after(self._PS4_HINWEIS_DAUER, _blende, 0, False)
-            else:
-                _schliessen()
-
-        def _schliessen() -> None:
-            zustand["laeuft"] = False
-            zustand["fenster"] = None
-            try:
-                karte.destroy()
-            except Exception:
-                pass
-
-        if blenden:
-            _blende(0, True)
-        else:
-            karte.after(self._PS4_HINWEIS_DAUER, _schliessen)
-
-    def _ps4_hinweis_aufraeumen(self) -> None:
-        """Schliesst eine offene Einblendung - beim Ende oder beim Abbruch."""
-        zustand = getattr(self, "_ps4_hinweis_stand", None)
-        if not isinstance(zustand, dict):
-            return
-        # Ab hier keine neue Einblendung mehr: Das abschliessende
-        # _balken(100.0) kommt erst nach dem Aufraeumen und loeste sonst
-        # eine aus, wenn die Umwandlung laengst fertig war - sie stand dann
-        # 25 Sekunden ohne Anlass da (22.08.2026 an einer echten
-        # Konvertierung gesehen).
-        zustand["fertig"] = True
-        # Auch den Wecker abstellen: Sonst kaeme die erste Einblendung
-        # nach dem Ende, wenn die Umwandlung in unter einer Minute durch war.
-        uhr = zustand.get("uhr")
-        zustand["uhr"] = None
-        if uhr is not None:
-            try:
-                self.root.after_cancel(uhr)
-            except Exception:
-                pass
-        karte = zustand.get("fenster")
-        zustand["laeuft"] = False
-        zustand["fenster"] = None
-        if karte is not None:
-            try:
-                karte.destroy()
-            except Exception:
-                pass
-
-    def _show_ps4_pkg_converter(self) -> None:
-        """Öffnet das Fenster „PS4 PKG → ffpfsc".
-
-        Wandelt PS4-PKG (Basis, Patch, optional DLC) oder ein bereits
-        entpacktes PS4-Spiel in ein ShadowMountPlus-Abbild um. Die Arbeit
-        macht das eingebettete PS4-FFPFSC 0.2.8; dieses Fenster wählt aus,
-        zeigt den Fortschritt und schreibt das Protokoll mit.
-        """
-        c = self._COLORS
-        if not _ps4ffpsc_wurzel():
-            messagebox.showerror(
-                self._t("ps4pkg.window_title"),
-                self._t("ps4pkg.missing_tool"),
-                parent=self.root,
-            )
-            return
-        if not _ps4ffpsc_entpacker():
-            messagebox.showerror(
-                self._t("ps4pkg.window_title"),
-                self._t("ps4pkg.no_extractor", system=_systemname()),
-                parent=self.root,
-            )
-            return
-
-        win = self._build_modern_toplevel(
-            self._t("ps4pkg.window_title"), 980, 760, min_width=860, min_height=640)
-        self._build_modern_header(
-            win, self._t("ps4pkg.window_title"), self._t("ps4pkg.subtitle"))
-
-        körper = tk.Frame(win, bg=c["bg_main"], padx=18)
-        körper.pack(fill="both", expand=True)
-
-        quelle_art = tk.StringVar(value="pkg_dir")
-        quelle_var = tk.StringVar()
-        ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
-        format_var = tk.StringVar(value="ffpfsc")
-        stufe_var = tk.IntVar(value=7)
-        worker_var = tk.IntVar(value=max(1, (os.cpu_count() or 4) // 2))
-        dlc_var = tk.BooleanVar(value=False)
-        status_var = tk.StringVar(value=self._t("ps4pkg.status_idle"))
-        laeuft = {"aktiv": False, "abbruch": False, "prozess": None}
-        gefunden: dict[str, dict] = {}
-
-        # ── Quelle ──────────────────────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.source_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        art_reihe = tk.Frame(körper, bg=c["bg_main"])
-        art_reihe.pack(fill="x")
-        for wert, schluessel in (
-            ("pkg_dir", "ps4pkg.source_kind_dir"),
-            ("pkg_file", "ps4pkg.source_kind_files"),
-            ("dump_dir", "ps4pkg.source_kind_dump"),
-        ):
-            tk.Radiobutton(
-                art_reihe, text=self._t(schluessel), value=wert, variable=quelle_art,
-                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_primary"], highlightthickness=0, bd=0,
-            ).pack(side="left", padx=(0, 14))
-
-        pfad_reihe = tk.Frame(körper, bg=c["bg_main"])
-        pfad_reihe.pack(fill="x", pady=(6, 0))
-        tk.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-
-        def _quelle_waehlen() -> None:
-            """Öffnet den zur gewählten Art passenden Auswahldialog."""
-            art = quelle_art.get()
-            if art == "pkg_file":
-                pfade = filedialog.askopenfilenames(
-                    title=self._t("ps4pkg.choose_files"),
-                    filetypes=[(self._t("ps4pkg.filetype_pkg"), "*.pkg")], parent=win)
-                if pfade:
-                    quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in pfade))
-                return
-            ordner = filedialog.askdirectory(
-                title=self._t("ps4pkg.choose_dir"),
-                initialdir=self._get_source_dialog_initial_dir() or None, parent=win)
-            if ordner:
-                quelle_var.set(os.path.normpath(ordner))
-
-        ttk.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
-
-        # ── Gefundene Spiele ────────────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
-        liste_rahmen.pack(fill="both", expand=True)
-        spalten = ("title_id", "plattform", "titel", "version", "teile")
-        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
-        for spalte, breite in zip(spalten, (110, 80, 350, 100, 190)):
-            # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
-            # Werte links, die Ueberschrift zentriert Tk sonst weiter.
-            liste.heading(spalte, text=self._t(f"ps4pkg.col_{spalte}"), anchor="w")
-            liste.column(spalte, width=breite, anchor="w")
-        # Ein PS5-Titel gehoert nicht in dieses Fenster - er soll auffallen,
-        # nicht nur in einer Spalte stehen.
-        liste.tag_configure("ps5", foreground=c["fg_warning"])
-        liste.tag_configure("unbekannt", foreground=c["fg_secondary"])
-        liste.pack(side="left", fill="both", expand=True)
-        liste_scroll = ttk.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
-        liste_scroll.pack(side="right", fill="y")
-        liste.configure(yscrollcommand=liste_scroll.set)
-
-        # ── Ziel und Einstellungen ──────────────────────────────────────
-        tk.Label(körper, text=self._t("ps4pkg.output_label"), font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
-        ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
-        ziel_reihe.pack(fill="x")
-        tk.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-
-        def _ziel_waehlen() -> None:
-            ordner = filedialog.askdirectory(title=self._t("ps4pkg.choose_output"), parent=win)
-            if ordner:
-                ziel_var.set(os.path.normpath(ordner))
-
-        ttk.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
-
-        einstell = tk.Frame(körper, bg=c["bg_main"])
-        einstell.pack(fill="x", pady=(8, 0))
-        tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
-                     values=("ffpfsc", "exfat"), font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=self._t("ps4pkg.level_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
-                    font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        tk.Label(einstell, text=self._t("ps4pkg.workers_label"), font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
-                    width=4, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        dlc_kasten = tk.Checkbutton(
-            einstell, text=self._t("ps4pkg.dlc_label"), variable=dlc_var,
-            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
-            selectcolor=c["bg_card"], activebackground=c["bg_main"],
-            activeforeground=c["fg_warning"], highlightthickness=0, bd=0,
-        )
-        dlc_kasten.pack(side="left")
-        DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
-
-        # Der Ablageort steht nicht mehr dauerhaft im Fenster, sondern in
-        # der Einblendung waehrend der Umwandlung: Dort erreicht er den
-        # Nutzer im richtigen Moment - er wartet ohnehin auf den Balken -,
-        # und das Fenster wird um rund 190 px kuerzer. Siehe
-        # _ps4_hinweis_zeigen.
-
-        # ── Fortschritt und Protokoll ───────────────────────────────────
-        balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
-        balken.pack(fill="x", pady=(10, 3))
-        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
-                 wraplength=920, justify="left").pack(fill="x")
-
-        protokoll = tk.Text(körper, height=4, font=("Consolas", pt(9)),
-                            bg=c["console_bg"], fg=c["console_fg"], relief="flat",
-                            insertbackground=c["console_fg"], wrap="none")
-        protokoll.pack(fill="both", expand=True, pady=(6, 0))
-        protokoll_scroll = ttk.Scrollbar(körper, orient="horizontal", command=protokoll.xview)
-        protokoll_scroll.pack(fill="x")
-        protokoll.configure(xscrollcommand=protokoll_scroll.set)
-
-        def _protokoll(text: str) -> None:
-            """Hängt eine Zeile an das Protokollfeld des Fensters an."""
-            def _setzen() -> None:
-                if not protokoll.winfo_exists():
-                    return
-                protokoll.insert("end", text.rstrip("\n") + "\n")
-                protokoll.see("end")
-            self._spaeter_im_fenster(win, _setzen)
-
-        def _status(text: str) -> None:
-            self._spaeter_im_fenster(win, lambda: status_var.set(text))
-
-        def _balken(wert: float) -> None:
-            begrenzt = max(0.0, min(100.0, wert))
-
-            def _setzen() -> None:
-                balken.configure(value=begrenzt)
-                # Waehrend der Nutzer auf den Balken schaut, steht die eine
-                # Sache da, die ueber Laufen und Nicht-Laufen entscheidet.
-                if self._ps4_hinweis_faellig(begrenzt):
-                    self._ps4_hinweis_zeigen(win)
-
-            self._spaeter_im_fenster(win, _setzen)
-
-        # ── Quellenangaben in CLI-Schalter übersetzen ───────────────────
-        def _quellen_argumente() -> list[str] | None:
-            """Baut die Quellschalter; None bei ungültiger Eingabe."""
-            eingabe = quelle_var.get().strip()
-            if not eingabe:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_source"), parent=win)
-                return None
-            art = quelle_art.get()
-            if art == "pkg_file":
-                argumente: list[str] = []
-                for teil in eingabe.split(os.pathsep):
-                    pfad = teil.strip()
-                    if pfad:
-                        argumente += ["--pkg-file", pfad]
-                if not argumente:
-                    messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                           self._t("ps4pkg.no_source"), parent=win)
-                    return None
-                return argumente
-            if not os.path.isdir(eingabe):
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_source"), parent=win)
-                return None
-            return ["--dump-dir" if art == "dump_dir" else "--pkg-dir", eingabe]
-
-        def _arbeitsordner() -> str:
-            """Legt den Arbeitsordner für Zwischenstände an.
-
-            Unter Windows wird dabei auf die Pfadlänge geachtet: Der
-            mitgelieferte PKG-Entpacker bricht bei tiefen Zielen mit
-            „Failed to write extracted PKG entry" ab. Nachgemessen an einem
-            Arbeitsordner von 150 Zeichen – das Spiel selbst legt darunter
-            noch ``unpacked/<Title-ID>/…/sce_sys/…`` an und sprengt damit die
-            260-Zeichen-Grenze. In dem Fall weicht der Arbeitsordner auf einen
-            kurzen Pfad im Stammverzeichnis aus; das fertige Abbild landet
-            trotzdem im gewählten Zielordner.
-            """
-            basis = (ziel_var.get().strip()
-                     or str(getattr(self, "temp_path", None).get() if hasattr(self, "temp_path") else "").strip()
-                     or tempfile.gettempdir())
-            ordner = os.path.join(basis, "ps4ffpsc_arbeit")
-            if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
-                laufwerk = os.environ.get("SystemDrive", "C:") + os.sep
-                ausweich = os.path.join(laufwerk, "ps4ffpsc_arbeit")
-                _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
-                ordner = ausweich
-            os.makedirs(ordner, exist_ok=True)
-            return ordner
-
-        # ── Einlesen ────────────────────────────────────────────────────
-        def _einlesen() -> None:
-            """Liest die Quelle ein und füllt die Spieleliste."""
-            if laeuft["aktiv"]:
-                return
-            argumente = _quellen_argumente()
-            if argumente is None:
-                return
-            liste.delete(*liste.get_children())
-            gefunden.clear()
-            laeuft["aktiv"] = True
-            _status(self._t("ps4pkg.status_scanning"))
-            _balken(0.0)
-
-            def _arbeit() -> None:
-                arbeit = _arbeitsordner()
-                rc, ausgabe = self._ps4ffpsc_lauf(
-                    ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
-                     os.path.join(arbeit, "unpacked")],
-                    arbeitsordner=arbeit,
-                    zeile_callback=_protokoll,
-                    prozess_ablage=laeuft,
-                    json_modus=True,
-                )
-                laeuft["aktiv"] = False
-                if rc != 0:
-                    _status(self._t("ps4pkg.status_scan_failed", code=rc))
-                    return
-                try:
-                    daten = json.loads(ausgabe.strip())
-                except ValueError:
-                    _status(self._t("ps4pkg.status_scan_unreadable"))
-                    return
-                # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
-                # nicht mit einer Liste.
-                spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
-                # Wer PS5-Pakete hierher legt, bekam bisher nur
-                # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
-                sicht = self._ps4ffpsc_quellen_sichten(
-                    quelle_var.get().strip(), quelle_art.get())
-                if sicht["ps5"]:
-                    _protokoll(self._t("ps4pkg.ps5_packages",
-                                       anzahl=len(sicht["ps5"])))
-                    for name in sicht["ps5"][:12]:
-                        _protokoll("    %s" % name)
-                    if len(sicht["ps5"]) > 12:
-                        _protokoll(self._t("ps4pkg.and_more",
-                                           anzahl=len(sicht["ps5"]) - 12))
-
-                def _fuellen() -> None:
-                    for spiel in spiele:
-                        if not isinstance(spiel, dict):
-                            continue
-                        title_id = str(spiel.get("title_id", "?"))
-                        gefunden[title_id] = spiel
-                        patches = spiel.get("patches") or []
-                        basis = spiel.get("base") or []
-                        neueste = patches or basis
-                        version = "-"
-                        if neueste and isinstance(neueste[-1], dict):
-                            version = str(neueste[-1].get("version")
-                                          or neueste[-1].get("app_version") or "-")
-                        teile = self._t(
-                            "ps4pkg.parts",
-                            patches=len(patches),
-                            dlc=len(spiel.get("dlc") or []),
-                        )
-                        if not spiel.get("buildable", True):
-                            teile = self._t("ps4pkg.not_buildable") + " - " + teile
-                        # Zu welcher Konsole gehoert der Titel? Das steht
-                        # bisher erst nach dem Bau im Protokoll - wer eine
-                        # PS5-PKG hierher legt, merkte es also viel zu spaet.
-                        plattform = self._ps4ffpsc_plattform(title_id, spiel)
-                        anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
-                            plattform, self._t("ps4pkg.platform_unknown"))
-                        liste.insert("", "end", iid=title_id,
-                                     tags=(plattform or "unbekannt",), values=(
-                            title_id, anzeige, str(spiel.get("title", "-")),
-                            version, teile,
-                        ))
-                        if plattform == "ps5":
-                            _protokoll(self._t("ps4pkg.is_ps5_title",
-                                               title_id=title_id))
-                        elif not plattform:
-                            _protokoll(self._t("ps4pkg.platform_unclear",
-                                               title_id=title_id))
-                        for hinweis in list(spiel.get("warnings") or [])[:5]:
-                            _protokoll(f"[{title_id}] {hinweis}")
-                        for konflikt in list(spiel.get("conflicts") or [])[:5]:
-                            _protokoll(f"[{title_id}] {konflikt}")
-                    if gefunden:
-                        liste.selection_set(next(iter(gefunden)))
-                    _status(self._t("ps4pkg.status_found", count=len(gefunden)))
-
-                self._spaeter_im_fenster(win, _fuellen)
-
-            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-list").start()
-
-        # ── Erstellen ───────────────────────────────────────────────────
-        def _fortschritt(daten: dict) -> None:
-            """Übersetzt eine Fortschrittsmeldung des Werkzeugs in den Balken."""
-            bereich = str(daten.get("scope", ""))
-            aktuell = float(daten.get("current", 0) or 0)
-            gesamt = float(daten.get("total", 0) or 0)
-            if gesamt > 0:
-                _balken(aktuell / gesamt * 100.0)
-            _status(self._t("ps4pkg.status_stage", stage=bereich,
-                            current=int(aktuell), total=int(gesamt)))
-
-        def _erstellen() -> None:
-            """Baut das Abbild für das ausgewählte Spiel."""
-            if laeuft["aktiv"]:
-                return
-            auswahl = liste.selection()
-            if not auswahl:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_game"), parent=win)
-                return
-            ziel = ziel_var.get().strip()
-            if not ziel or not os.path.isdir(ziel):
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_output"), parent=win)
-                return
-            argumente = _quellen_argumente()
-            if argumente is None:
-                return
-            if dlc_var.get() and not messagebox.askyesno(
-                    self._t("ps4pkg.window_title"), self._t("ps4pkg.dlc_confirm"), parent=win):
-                return
-
-            title_id = auswahl[0]
-            laeuft["aktiv"] = True
-            laeuft["abbruch"] = False
-            # Je Lauf zweimal, danach nicht mehr - wer zweimal konvertiert,
-            # bekommt den Hinweis auch beim zweiten Mal.
-            self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None, "fertig": False,
-                                       "uhr": None}
-            _balken(0.0)
-            # Die erste haengt an der Uhr, die zweite am Balken.
-            self._ps4_hinweis_zeit_starten(win)
-            _status(self._t("ps4pkg.status_building", title=title_id))
-
-            def _arbeit() -> None:
-                arbeit = _arbeitsordner()
-                befehl = [
-                    "build", title_id, *argumente,
-                    "--output-dir", ziel,
-                    "--work-dir", arbeit,
-                    "--unpacked-dir", os.path.join(arbeit, "unpacked"),
-                    "--output-format", format_var.get(),
-                    "--compression-level", str(int(stufe_var.get())),
-                    "--compression-workers", str(int(worker_var.get())),
-                    "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
-                    "--verbose",
-                ]
-                rc, _ausgabe = self._ps4ffpsc_lauf(
-                    befehl,
-                    arbeitsordner=arbeit,
-                    zeile_callback=_protokoll,
-                    fortschritt_callback=_fortschritt,
-                    prozess_ablage=laeuft,
-                )
-                laeuft["aktiv"] = False
-                self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
-                if laeuft["abbruch"]:
-                    _status(self._t("ps4pkg.status_cancelled"))
-                    return
-                if rc == 0:
-                    _balken(100.0)
-                    _status(self._t("ps4pkg.status_done", path=ziel))
-                    self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
-                    # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
-                    # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
-                    # oder gar nicht.
-                    _protokoll(self._t("ps4pkg.check_running"))
-                    # Die Datei suchen, nicht den Ordner uebergeben: Das war
-                    # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
-                    # "Permission denied" auf dem Ordnerpfad endete.
-                    abbild = self._ps4ffpsc_ergebnis_finden(
-                        ziel, title_id, format_var.get())
-                    if not abbild:
-                        _protokoll(self._t("ps4pkg.check_no_image"))
-                        return
-                    befund = self._ps4ffpsc_abbild_pruefen(abbild)
-                    if befund["fehler"]:
-                        _protokoll(self._t("ps4pkg.check_failed",
-                                           error=befund["fehler"]))
-                    else:
-                        _protokoll(self._t("ps4pkg.check_files",
-                                           count=befund["dateien"]))
-                        if befund["ps4"]:
-                            # Bei einem PS4-Titel gehoeren die PS5-Marker gar
-                            # nicht hinein - sie dort zu vermissen waere ein
-                            # Fehlalarm bei jedem einzelnen Spiel.
-                            _protokoll(self._t("ps4pkg.check_ps4_title"))
-                            # Direkt danach die NP-Luecke: Genau jetzt hat
-                            # der Nutzer ein fertiges PS4-Abbild vor sich
-                            # und wuerde sonst erst an der Konsole darueber
-                            # stolpern.
-                            _protokoll(self._t("ps4pkg.check_np_note"))
-                        else:
-                            for fehlt in befund["fehlend"]:
-                                _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
-                                self._append_to_log(
-                                    self._t("ps4pkg.check_missing", file=fehlt) + "\n")
-                            if not befund["fehlend"]:
-                                _protokoll(self._t("ps4pkg.check_complete"))
-                else:
-                    _status(self._t("ps4pkg.status_failed", code=rc))
-
-            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-build").start()
-
-        def _abbrechen() -> None:
-            """Beendet einen laufenden Vorgang."""
-            prozess = laeuft.get("prozess")
-            if not laeuft["aktiv"] or prozess is None:
-                return
-            laeuft["abbruch"] = True
-            _status(self._t("ps4pkg.status_cancelling"))
-            try:
-                prozess.terminate()
-            except OSError as exc:
-                logger.debug("PS4-Vorgang nicht beendbar: %s", exc)
-
-        # "before=körper" dreht die Packreihenfolge um, ohne den Aufbau
-        # umzustellen: Der Koerper hat fill="both", expand=True und nimmt
-        # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
-        # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
-        # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
-        # ── NP-Bindung nachtragen ───────────────────────────────────────
-        def _npbind_nachtragen() -> None:
-            """Legt die NP-Bindung des gewaehlten Titels auf die Konsole.
-
-            Kein Teil des Bauvorgangs: Der Zielordner
-            /system_data/priv/appmeta/<Title-ID>/ entsteht erst, wenn
-            ShadowMount+ den Titel registriert hat - beim Bauen liegt das
-            Abbild noch auf dem PC.
-            """
-            if laeuft["aktiv"]:
-                return
-            auswahl = liste.selection()
-            if not auswahl:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_game"), parent=win)
-                return
-            title_id = auswahl[0]
-            ziel = ziel_var.get().strip()
-            abbild = self._ps4ffpsc_ergebnis_finden(ziel, title_id,
-                                                    format_var.get()) if ziel else ""
-            if not abbild:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_no_image"), parent=win)
-                return
-            inhalt = self._npbind_aus_abbild(abbild)
-            if not inhalt:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_not_in_image"), parent=win)
-                return
-            host = self._ps5_ip()
-            if not host:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_no_ip"), parent=win)
-                return
-
-            _protokoll(self._t("ps4pkg.npbind_start", title_id=title_id,
-                               bytes=len(inhalt), host=host))
-            laeuft["aktiv"] = True
-
-            def _arbeit() -> None:
-                ftp = None
-                try:
-                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
-                    stand = self._npbind_auf_konsole(ftp, title_id, inhalt)
-                except Exception as exc:                  # noqa: BLE001
-                    logger.debug("npbind nachtragen: %s", exc)
-                    _protokoll(self._t("ps4pkg.npbind_failed", error=exc))
-                    laeuft["aktiv"] = False
-                    return
-                finally:
-                    if ftp is not None:
-                        try:
-                            ftp.quit()
-                        except Exception:
-                            try:
-                                ftp.close()
-                            except Exception:
-                                pass
-                laeuft["aktiv"] = False
-                _protokoll(self._t("ps4pkg.npbind_" + stand, title_id=title_id))
-
-            threading.Thread(target=_arbeit, daemon=True).start()
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x", before=körper)
-        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.npbind_button"),
-                   command=_npbind_nachtragen).pack(side="left", padx=(8, 0))
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
-                   command=_einlesen).pack(side="left")
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
-                   command=_erstellen).pack(side="left", padx=(8, 0))
-
     def _show_debug_pkg_builder(self) -> None:
         """Öffnet den Bauer für unsignierte Debug-.pkg-Container."""
         c = self._COLORS
@@ -32904,6 +32772,8 @@ class PS5ConverterGUI:
         "_btn_jsloader_title":     "fg_warning",
         "_btn_ftp_title":          "fg_success",
         "_btn_shadowmount_title":  "fg_secondary",
+        "_btn_ampr_alt_title":     "fg_secondary",
+        "_btn_ampr_neu_title":     "fg_secondary",
         "_btn_library_title":      "fg_secondary",
         "_btn_klog_title":         "fg_secondary",
         "_btn_diagnostics_title":  "fg_secondary",
@@ -33799,144 +33669,11 @@ def _ensure_av_exclusion() -> None:
     except Exception as exc:
         logger.error("AV-Ausnahme fehlgeschlagen: %s", exc)
 
-#: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
-PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
-
 #: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
 #: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
 UFS2TOOL_ORDNER = "UFS2Tool-4.1"
 
-#: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
-#: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
-_PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
 
-#: Hoechstlaenge des Arbeitsordners fuer das PS4-Werkzeug unter Windows.
-#: Darunter legt es noch "unpacked/<Title-ID>/<Paket>/sce_sys/..." an; ab etwa
-#: 150 Zeichen scheitert der PKG-Entpacker an der 260-Zeichen-Grenze.
-_PS4FFPSC_MAX_ARBEITSPFAD = 110
-
-
-def _ps4ffpsc_wurzel() -> str:
-    """Findet den eingebetteten PS4-FFPFSC-Ordner.
-
-    Gesucht wird an denselben Stellen wie die MkPFS-Engine: im entpackten
-    PyInstaller-Bündel, neben dem Programm und im Arbeitsverzeichnis.
-
-    Returns:
-        Absoluter Pfad, oder "" wenn der Ordner fehlt.
-    """
-    laufzeit_wurzel = os.path.dirname(
-        sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-    )
-    kandidaten = [getattr(sys, "_MEIPASS", ""), laufzeit_wurzel, os.getcwd()]
-    for wurzel in kandidaten:
-        if not wurzel:
-            continue
-        pfad = os.path.join(os.path.abspath(wurzel), PS4FFPFSC_ORDNER)
-        if os.path.isfile(os.path.join(pfad, "ps4ffpsc", "cli.py")):
-            return pfad
-    return ""
-
-
-def _ps4ffpsc_entpacker() -> str:
-    """Sucht den PKG-Entpacker fuer die laufende Plattform.
-
-    Mitgeliefert werden die Windows-Fassungen (``.exe``) und die fuer Apple
-    Silicon (ohne Endung, arm64). Fuer Linux und Intel-Macs gibt es beim
-    Hersteller keine fertigen Programmdateien; dort bleibt die Umwandlung
-    ohne diesen Helfer stehen - besser vorher sagen als mitten im Lauf.
-
-    Returns:
-        Pfad des passenden Entpackers, oder "" wenn keiner vorliegt.
-    """
-    wurzel = _ps4ffpsc_wurzel()
-    if not wurzel:
-        return ""
-    if IST_WINDOWS:
-        name = "ps4_pkg_extract.exe"
-    elif sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
-        # Die endungslose Datei ist die Fassung fuer Apple Silicon. Sie NUR
-        # dort zu nehmen ist wichtig: Unter Linux liegt sie ebenfalls im
-        # Ordner, ist aber eine Mach-O-Datei und laesst sich nicht ausfuehren
-        # ("Exec format error"). Eine Suche allein ueber den Dateinamen
-        # meldete dort faelschlich einen brauchbaren Entpacker.
-        name = "ps4_pkg_extract"
-    else:
-        return ""
-    pfad = os.path.join(wurzel, "bin", name)
-    return pfad if os.path.isfile(pfad) else ""
-
-
-def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:
-    """Baut die Umgebung für einen PS4-FFPFSC-Lauf.
-
-    Das Werkzeug findet seine mitgelieferten Teile (``bin/ps4_pkg_extract.exe``,
-    ``bin/ps4-dlc-patch.exe``) über ``PS4FFPSC_RESOURCE_ROOT`` und legt seinen
-    Arbeitsstand unter ``PS4FFPSC_DATA_ROOT`` ab. Ohne beides würde es im
-    eingefrorenen Betrieb im Entpackordner von PyInstaller suchen - der bei
-    jedem Start woanders liegt und nach dem Ende verschwindet.
-
-    Args:
-        arbeitsordner: Ordner für Zwischenstände; leer lässt die Vorgabe stehen.
-
-    Returns:
-        Kopie der aktuellen Umgebung mit den ergänzten Werten.
-    """
-    umgebung = dict(os.environ)
-    wurzel = _ps4ffpsc_wurzel()
-    if wurzel:
-        umgebung["PS4FFPSC_RESOURCE_ROOT"] = wurzel
-    if arbeitsordner:
-        umgebung["PS4FFPSC_DATA_ROOT"] = arbeitsordner
-    # Fortschrittsmeldungen als JSON-Zeilen auf stderr (PS4FFPSC_PROGRESS …).
-    umgebung["PS4FFPSC_GUI_PROGRESS"] = "1"
-    umgebung["PYTHONIOENCODING"] = "utf-8"
-    umgebung["PYTHONUTF8"] = "1"
-    return umgebung
-
-
-def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
-    """Führt einen der beiden internen PS4-Modi aus.
-
-    ``--ps4ffpsc``  startet die Kommandozeile des eingebetteten Werkzeugs,
-    ``--ps4-mkpfs`` die von ihm geprüfte MkPFS-Fassung 1.0.0. Den zweiten
-    Schalter ruft das Werkzeug selbst auf (siehe ``pipeline.mkpfs_command``);
-    beide sind für Menschen nicht gedacht.
-
-    Wichtig ist die eigene MkPFS-Fassung: Das Programm arbeitet sonst mit
-    0.0.9, und beide Wege sollen bei der Fassung bleiben, gegen die sie
-    geprüft wurden.
-
-    Args:
-        modus: ``--ps4ffpsc`` oder ``--ps4-mkpfs``.
-        argv:  Die restlichen Argumente.
-
-    Returns:
-        Rückgabewert des aufgerufenen Werkzeugs.
-    """
-    wurzel = _ps4ffpsc_wurzel()
-    if not wurzel:
-        print(
-            f"[FEHLER] Der Ordner {PS4FFPFSC_ORDNER} fehlt - das PS4-Werkzeug "
-            "ist nicht mitgeliefert.",
-            file=sys.stderr,
-        )
-        return 2
-
-    if modus == "--ps4-mkpfs":
-        pfad = os.path.join(wurzel, "mkpfs_1_0_0")
-        if pfad not in sys.path:
-            sys.path.insert(0, pfad)
-        from mkpfs.cli import cli_mkpfs_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
-
-        return int(cli_mkpfs_main(argv) or 0)
-
-    os.environ.setdefault("PS4FFPSC_RESOURCE_ROOT", wurzel)
-    if wurzel not in sys.path:
-        sys.path.insert(0, wurzel)
-    from ps4ffpsc.cli import main as ps4ffpsc_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
-
-    return int(ps4ffpsc_main(argv) or 0)
 
 
 def _is_admin() -> bool:
@@ -34300,7 +34037,7 @@ def _prepare_cli_streams() -> None:
 
 
 def _run_cli(args: argparse.Namespace) -> int:
-    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler)."""
+    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler, 3=Administratorrechte fehlen)."""
     _prepare_cli_streams()
     mode = args.mode
     if not mode:
@@ -34524,13 +34261,6 @@ if __name__ == "__main__":
     # Ausnahme aufgezeichnet, auch die aus dem Programmstart.
     _haken_setzen()
 
-    # Interne Modi des eingebetteten PS4-Werkzeugs. Sie muessen VOR der
-    # Rechtepruefung stehen: Diese Prozesse startet das Programm selbst, sie
-    # erben die Rechte des Aufrufers, und eine zweite UAC-Abfrage haette
-    # niemanden, der sie beantwortet - der Lauf bliebe stehen.
-    if len(sys.argv) > 1 and sys.argv[1] in ("--ps4ffpsc", "--ps4-mkpfs"):
-        sys.exit(_run_ps4_subcommand(sys.argv[1], sys.argv[2:]))
-
     # Darstellungspruefung. Steht aus demselben Grund vor der
     # Rechtepruefung: Sie braucht keine Administratorrechte, und eine
     # UAC-Abfrage koennte im Terminal niemand beantworten.
@@ -34542,6 +34272,18 @@ if __name__ == "__main__":
 
     # Administratorrechte prüfen – automatisch als Admin neu starten
     if sys.platform == "win32" and not _is_admin():
+        # Im Kommandozeilenmodus wird NICHT neu gestartet: ShellExecuteW mit
+        # "runas" erzeugt einen abgekoppelten Prozess. Dessen Ausgabe und
+        # dessen Rückgabewert erreichen den Aufrufer nie - er sah bisher nur
+        # die sofortige 0 und hielt die Aufgabe für erledigt, obwohl in
+        # dieser Sitzung nichts geschehen war. Ein Skript kann das nicht
+        # bemerken, deshalb hier ein eigener Rückgabewert.
+        if "--cli" in sys.argv[1:]:
+            _prepare_cli_streams()
+            print("[FEHLER] Der Kommandozeilenmodus braucht Administratorrechte. "
+                  "Bitte die Eingabeaufforderung oder PowerShell als Administrator "
+                  "öffnen und den Befehl dort erneut ausführen.", file=sys.stderr)
+            sys.exit(3)
         _request_elevation()
         sys.exit(0)
 

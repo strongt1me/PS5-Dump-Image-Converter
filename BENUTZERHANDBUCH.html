@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.80</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.83</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.80</span>
+      <span class="marke">Version v1.8.83</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -646,6 +646,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
+      <tr><td><strong>AMPR EMU &ndash; alte Methode</strong><br><strong>AMPR EMU &ndash; neue Methode</strong></td><td>Legt die AMPR-Bibliotheken automatisch an die Stelle, die zur jeweiligen ShadowMount+-Fassung passt &ndash; siehe <a href="#k13">Abschnitt 13.8</a>. Welcher der beiden der richtige ist, sagt Ihnen der Knopf selbst.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
       <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) und <strong>ps5_autoloader</strong> (13.7).</td></tr>
@@ -891,128 +892,79 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Ein guter erster Schritt:</strong> Bevor Sie etwas ändern, einen Schnappschuss sichern. Dann können Sie jeden Versuch zurücknehmen, ohne die Konsole neu einrichten zu müssen.</p>
 
-  <h3>13.8 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
-  <p>Dieses Fenster macht aus PS4-PKG-Dateien (Basis, Patch, wahlweise DLC)
-  oder einem bereits entpackten PS4-Spiel ein Abbild, das ShadowMount+ auf der
-  PS5 einh&auml;ngen kann. Quelle w&auml;hlen, <strong>EINLESEN</strong>,
-  gefundenes Spiel markieren, <strong>ABBILD ERSTELLEN</strong>.</p>
+  <h3>13.8 AMPR EMU &ndash; alte und neue Methode</h3>
 
-  <p>In der Liste der gefundenen Spiele sagt die Spalte <strong>Konsole</strong>,
-  wof&uuml;r ein Titel gedacht ist. Erkannt wird an der Title-ID:</p>
+  <p>Zwei Kn&ouml;pfe, die dasselbe Ziel haben und sich in einem Punkt
+  unterscheiden, der leicht zu &uuml;bersehen ist. Zwischen ShadowMountPlus
+  <strong>1.7 alpha6</strong> und <strong>1.7 alpha8</strong> wurde umgebaut,
+  wo das Werkzeug nach den Ersatzbibliotheken sucht &ndash; und eine Ablage,
+  die vorher richtig war, wirkt danach nicht mehr. Ohne Fehlermeldung: Das
+  Spiel startet einfach ohne sie.</p>
+
   <div class="tabelle">
   <table>
-    <thead><tr><th>Kennung</th><th>Konsole</th></tr></thead>
+    <thead><tr><th></th><th>alte Methode (bis alpha6)</th><th>neue Methode (ab alpha8)</th></tr></thead>
     <tbody>
-      <tr><td><code>CUSA</code>, <code>PUSA</code></td><td>PS4</td></tr>
-      <tr><td><code>PPSA</code>, <code>PPSS</code>, <code>PPUS</code>,
-        <code>PPJP</code></td><td>PS5</td></tr>
-      <tr><td>alles andere &ndash; etwa <code>NPUB</code> (PS3)</td>
-        <td><strong>unklar</strong>, es wird nichts geraten</td></tr>
+      <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
+      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td><strong>wird ignoriert</strong></td></tr>
+      <tr><td><strong>global + spieleigen</strong></td><td>zwei Schichten &uuml;bereinander</td><td>vorher in einen Cache zusammenkopiert</td></tr>
+      <tr><td><strong>Emulator-Dateien</strong></td><td>gibt es nicht</td><td>aus <code>/data/shadowmount/emus/</code></td></tr>
     </tbody>
   </table>
   </div>
-  <p>Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus
-  <strong>PS4</strong>-Paketen. Legen Sie versehentlich ein PS5-Spiel hinein,
-  wird die Zeile farbig hervorgehoben und im Protokoll steht der Hinweis auf die
-  Aufgaben 1 bis 6, die f&uuml;r PS5-Titel zust&auml;ndig sind.</p>
 
-  <div class="kasten warnung">
-    <span class="titel">Nur vom USB-Datentr&auml;ger starten</span>
-    <p>Das fertige Abbild geh&ouml;rt auf einen <strong>externen
-    USB-Datentr&auml;ger</strong> &ndash; nach <code>/mnt/usb0/</code>, nach
-    <code>/mnt/usb0/homebrew/</code> oder nach
-    <code>/mnt/usb0/etaHEN/games</code>. Alle drei wurden an der Konsole
-    nachgemessen: gefunden nach 15 beziehungsweise 20 Sekunden.</p>
-    <p><strong>Niemals in den internen Speicher</strong>, also nicht nach
-    <code>/data/homebrew</code> und nicht nach
-    <code>/data/etaHEN/games</code>. Ein PS4-Spiel, das von dort gestartet wird,
-    rei&szlig;t die Konsole mit sich: Kernel Panic, die PS5 schaltet ab. Dreimal
-    an derselben Konsole gemessen, mit derselben Datei, die vom Stick
-    einwandfrei l&auml;uft.</p>
-    <p>Ein <strong>selbst angelegter Ordner</strong> wie
-    <code>/mnt/usb0/ps4ffpsc/</code> wird von der automatischen Suche
-    <strong>nicht</strong> erfasst &ndash; ShadowMount+ durchsucht nur die
-    Pfade seiner eingebauten Liste. Sie k&ouml;nnen ihn aber benutzen, wenn
-    Sie den vollst&auml;ndigen Pfad des Abbilds in die Datei
-    <code>/data/shadowmount/manual.lst</code> eintragen. Nachgemessen: Ohne
-    diesen Eintrag verschwindet der Titel aus dem Verzeichnis, mit ihm wird
-    das Abbild eingeh&auml;ngt, registriert und startet.</p>
-    <p>Kam es doch zu einem Absturz, bleibt der Titel als <strong>leerer
-    Eintrag</strong> registriert und wird auch am richtigen Ort nicht mehr
-    gefunden. Dann zuerst die Kachel auf der PS5-Startseite l&ouml;schen, danach
-    liest ShadowMount+ beim n&auml;chsten Durchlauf neu ein.</p>
+  <p><strong>Welchen Knopf?</strong> Sie m&uuml;ssen es nicht wissen. Beide
+  pr&uuml;fen beim Start, welche Fassung auf der Konsole l&auml;uft, und sagen
+  es Ihnen. Haben Sie den falschen erwischt, kommt eine R&uuml;ckfrage mit der
+  Begr&uuml;ndung &ndash; und dem Rat, den anderen zu nehmen.</p>
+
+  <h4>Was beim Dr&uuml;cken passiert</h4>
+
+  <p>Der Knopf &ouml;ffnet kein Formular, sondern f&auml;ngt an zu arbeiten.
+  Sechs Schritte, die im Fenster mitlaufen:</p>
+
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Schritt</th><th>Was er tut</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Sucht die PS5: erst die Adresse aus den Einstellungen, dann die gespeicherten FTP-Profile, sonst das eigene Netz. Ein offener Port gen&uuml;gt nicht &ndash; es muss sich ein Verzeichnis &ouml;ffnen lassen, das es nur auf einer Konsole gibt.</td></tr>
+      <tr><td>2</td><td>Stellt fest, welche ShadowMount+-Fassung dort l&auml;uft, und nennt die Belege.</td></tr>
+      <tr><td>3</td><td>Sucht die Spiele &ndash; sowohl entpackte Ordner als auch Titel aus eingeh&auml;ngten Abbildern.</td></tr>
+      <tr><td>4</td><td>Bestimmt den Ablageort. Das entscheidet die Fassung, nicht Sie.</td></tr>
+      <tr><td>5</td><td>W&auml;hlt die neueste <code>libSceAmpr.sprx</code> aus dem mitgelieferten Speicher.</td></tr>
+      <tr><td>6</td><td>Gleicht die <code>config.ini</code> ab und legt die Bibliotheken ab &ndash; danach wird zur&uuml;ckgelesen und gepr&uuml;ft.</td></tr>
+    </tbody>
+  </table>
   </div>
 
-  <p>Damit dieser Hinweis nicht &uuml;bersehen wird, blendet er sich
-  w&auml;hrend der Umwandlung viermal von selbst ein &ndash; jeweils 25
-  Sekunden, langsam ein- und ausgeblendet. Sie m&uuml;ssen nichts dr&uuml;cken;
-  die Einblendung verschwindet von allein. Im Fenster selbst steht er seit
-  v1.8.77 nicht mehr: Man liest ihn einmal, und das Fenster wird dadurch rund
-  190 Pixel k&uuml;rzer.</p>
-
-  <p>Nach dem Bau sieht sich das Programm das fertige Abbild an und meldet im
-  Protokoll, wie viele Dateien darin stehen und ob etwas Wichtiges fehlt. Ein
-  fehlender PS5-Marker wie <code>sce_sys/pfs-version.dat</code> ist bei einem
-  PS4-Titel kein Mangel &ndash; die Datei geh&ouml;rt dort nicht hinein.</p>
-
-  <p><strong>Eine Einschr&auml;nkung, die Sie kennen sollten:</strong> Das
-  eingebettete Werkzeug sichert zu, dass ShadowMount+ das Abbild einh&auml;ngen
-  und registrieren kann &ndash; nicht, dass die Konsole es auch startet. Ob ein
-  bestimmtes Spiel l&auml;uft, zeigt erst der Versuch.</p>
-
-  <div class="kasten warnung">
-    <span class="titel">Trophäen und Online-Abfragen beim Start</span>
-    <p>Ein PS4-Spiel legt seine <strong>NP-Bindung</strong> unter
-    <code>sce_sys/npbind.dat</code> ab. ShadowMount+ sucht beim Registrieren
-    aber nur an den PS5-Stellen <code>sce_sys/trophy2/</code> und
-    <code>sce_sys/uds/</code> danach &ndash; und wertet es nicht als Fehler,
-    wenn dort nichts liegt. Der Titel l&auml;uft dadurch <strong>ohne
-    NP-Bindung</strong>.</p>
-    <p>Sichtbar wird das zweifach: Beim Start meldet die Konsole
-    <em>Trophy registration failed (0x80551618)</em>, und Spiele, die beim
-    Start eine Online-Pr&uuml;fung machen, k&ouml;nnen in einem
-    &bdquo;Bitte warten&ldquo; h&auml;ngen bleiben, statt in den
-    Offline-Betrieb zu schalten.</p>
-    <p><strong>Am Abbild liegt es nicht</strong> &ndash;
-    <code>npbind.dat</code> ist darin enthalten, sie wird nur nicht abgeholt.
-    Am 22.08.2026 nachgemessen: Legt man die Datei von Hand nach
-    <code>/system_data/priv/appmeta/&lt;Title-ID&gt;/</code>, verschwindet der
-    Trophäenfehler, und der Trophäendienst greift zu &ndash; gepr&uuml;ft an
-    einem Titel, der <strong>aus dem Abbild</strong> l&auml;uft. Der
-    Abbildweg kann die Trophäen also; es fehlt nur dieser eine Handgriff.</p>
-    <p>F&uuml;r Spiele, die beim Start in einem &bdquo;Bitte warten&ldquo;
-    h&auml;ngen bleiben, ist die Installation &uuml;ber den <strong>Package
-    Installer</strong> derzeit der zuverl&auml;ssige Weg: Dasselbe Paket so
-    installiert zeigt seinen Offline-Dialog und l&auml;uft weiter. Dass auch
-    dieses Symptom an der fehlenden NP-Bindung h&auml;ngt, ist naheliegend,
-    aber nicht gemessen.</p>
+  <div class="kasten tipp">
+    <span class="titel">Gefragt wird nur, wo es etwas zu entscheiden gibt</span>
+    <p>Und dann nicht mit &bdquo;Ja/Nein&ldquo;, sondern mit einer Erkl&auml;rung:
+    Unter jeder Antwortm&ouml;glichkeit steht ein Satz, was sie bedeutet, und
+    die empfohlene ist gekennzeichnet. Vorkommen k&ouml;nnen f&uuml;nf Fragen:
+    welche Konsole (wenn mehrere antworten), ob die gefundene Adresse
+    gespeichert werden soll, welches Spiel (wenn mehrere da sind), ob
+    <code>libScePlayGo.sprx</code> mit dazu soll, und ob abweichende
+    Schl&uuml;ssel in der <code>config.ini</code> angepasst werden sollen.</p>
+    <p>Ein Abbruch steigt an jeder Stelle sofort aus, ohne etwas zu
+    ver&auml;ndern.</p>
   </div>
 
-  <h4>Der Knopf <strong>NP-BINDUNG</strong></h4>
+  <p><strong>Zur <code>config.ini</code>:</strong> Ist ein Schl&uuml;ssel dort
+  nicht gesetzt, nimmt ShadowMount+ seine eingebaute Vorgabe &ndash; und die
+  ist in aller Regel genau die richtige. Gefragt wird deshalb nur, wenn ein
+  Schl&uuml;ssel <em>gesetzt</em> ist und <em>abweicht</em>. Die
+  mitgelieferte <code>config.ini</code> besteht &uuml;brigens vollst&auml;ndig
+  aus Kommentarzeilen; das ist kein Fehler.</p>
 
-  <p>Genau diese L&uuml;cke schlie&szlig;t der Knopf <strong>NP-BINDUNG</strong>
-  unten links im Fenster. Er holt die <code>sce_sys/npbind.dat</code> aus dem
-  fertigen Abbild und legt sie &uuml;ber FTP auf die Konsole &ndash; dorthin,
-  wo sie hingeh&ouml;rt und wo ShadowMount+ sie nicht ablegt.</p>
+  <p><strong>Ohne Konsole:</strong> Ist die PS5 nicht erreichbar, bietet der
+  Lauf an, stattdessen einen Spielordner auf diesem Rechner zu bearbeiten.
+  Den bringen Sie danach selbst auf die Konsole.</p>
 
-  <p><strong>Wann Sie ihn dr&uuml;cken:</strong> erst, wenn das Spiel auf der
-  PS5 <em>bereits erscheint</em>. Der Zielordner entsteht n&auml;mlich
-  erst mit der Registrierung. Der Ablauf ist also: Abbild erstellen, auf den
-  USB-Datentr&auml;ger legen, warten bis ShadowMount+ es eingelesen hat &ndash;
-  und <em>dann</em> zur&uuml;ck ins Fenster, Spiel in der Liste markieren,
-  <strong>NP-BINDUNG</strong> dr&uuml;cken. Ist der Titel noch nicht
-  registriert, sagt Ihnen das Protokoll genau das.</p>
+  <p class="hinweis"><em>Beide Kn&ouml;pfe sind vorl&auml;ufig.</em> Sie stehen
+  nebeneinander, solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
 
-  <p><strong>Was er nicht tut:</strong> Er &uuml;berschreibt nie eine
-  vorhandene Datei. Haben Sie das Spiel regul&auml;r &uuml;ber den Package
-  Installer installiert, hat dessen Bindung Vorrang und bleibt unangetastet.
-  Nach dem Ablegen liest das Programm die Datei zur&uuml;ck und vergleicht sie
-  &ndash; eine halbe Datei w&auml;re schlimmer als gar keine.</p>
 
-  <p><strong>Voraussetzung:</strong> Die Adresse Ihrer PS5 muss unter
-  <strong>EINSTELLUNGEN</strong> hinterlegt sein und die Konsole per FTP
-  erreichbar (dieselbe Verbindung, die auch der AMPR EMU Manager nutzt). Fehlt
-  die Adresse, weist das Fenster darauf hin.</p>
 
   <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
   <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
@@ -1094,7 +1046,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.80), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.83), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1276,7 +1228,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.80</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.83</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

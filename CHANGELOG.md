@@ -2,11 +2,163 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.80):** Der neue Knopf **NP-BINDUNG** legt die fehlende NP-Bindung auf die Konsole – damit funktionieren die Trophäen auch für Spiele, die aus einem Abbild laufen.
+> **Kurz zum aktuellen Stand (v1.8.83):** Zwei neue Knöpfe legen die AMPR-Bibliotheken automatisch an die Stelle, die zur ShadowMount+-Fassung auf deiner Konsole passt – und finden die PS5 dafür selbst im Netz.
 
 ---
 
+## v1.8.83 – 22.08.2026
+
+### Zwei neue Knöpfe: AMPR EMU, alte und neue Methode
+
+Zwischen ShadowMountPlus **1.7 alpha6** und **1.7 alpha8** hat sich geändert,
+wo das Werkzeug nach den Ersatzbibliotheken sucht. Der Haken: Eine Ablage, die
+vorher richtig war, wirkt danach **nicht mehr** – ohne Fehlermeldung. Das Spiel
+startet einfach ohne sie.
+
+| | alte Methode | neue Methode |
+| --- | --- | --- |
+| Wo gesucht wird | `app0/fakelib2`, sonst `app0/fakelib` | `backports/<ID>/fakelib2` → `backports/<ID>/fakelib` → `<Spiel>/fakelib` |
+| `fakelib2` im Spielordner | wirkt | **wird ignoriert** |
+| global + spieleigen | zwei Schichten | vorher zusammenkopiert in einen Cache |
+| Emulator-Dateien | gibt es nicht | aus `/data/shadowmount/emus/` |
+
+**Welchen Knopf du brauchst, musst du nicht wissen.** Beide prüfen beim Start,
+welche Fassung auf deiner Konsole läuft, und sagen es dir. Hast du den falschen
+erwischt, kommt eine Rückfrage mit Begründung.
+
+### Die Knöpfe erledigen alles selbst
+
+Kein Formular zum Ausfüllen – der Knopf fängt an zu arbeiten. Er sucht die PS5
+im Netz, stellt die ShadowMount+-Fassung fest, findet die Spiele (auch die aus
+eingehängten Abbildern), bestimmt den Ablageort, nimmt die neueste
+`libSceAmpr.sprx` und gleicht die `config.ini` ab. Zum Schluss wird die
+abgelegte Datei zurückgelesen und geprüft.
+
+**Die PS5 findet er selbst.** Erst die Adresse aus den Einstellungen, dann die
+gespeicherten FTP-Profile, sonst das eigene Netz – rund vier Sekunden. Ein
+offener Port genügt dabei nicht: Es muss sich ein Verzeichnis öffnen lassen,
+das es nur auf einer Konsole gibt. Wird eine gefunden, die noch nicht
+gespeichert ist, fragt er, ob er sie merken soll.
+
+### Gefragt wird nur, wo es etwas zu entscheiden gibt
+
+Und dann nicht mit „Ja/Nein". Unter jeder Antwortmöglichkeit steht ein Satz,
+was sie bedeutet, und die empfohlene ist gekennzeichnet. Fünf Fragen können
+vorkommen: welche Konsole, ob die Adresse gespeichert werden soll, welches
+Spiel, ob `libScePlayGo.sprx` mit dazu soll, und ob abweichende Schlüssel in
+der `config.ini` angepasst werden sollen. Ein Abbruch steigt überall sofort
+aus, ohne etwas zu verändern.
+
+
+## v1.8.82 – 22.08.2026
+
+### Die Funktion PS4 PKG → ffpfsc ist entfernt
+
+Das Fenster, das aus PS4-PKG-Dateien Abbilder baute, gibt es nicht mehr. Mit
+ihm verschwinden das eingebettete Werkzeug **PS4FFPFSC 0.2.8** (12 MB,
+77 Dateien), 1 141 Zeilen Programmcode, 65 Texte, der Eintrag in der
+Titelleiste und Abschnitt 13.8 des Handbuchs.
+
+**Die EXE schrumpft von 116,3 MB auf 112,1 MB** – 4,2 MB weniger. Nicht die
+vollen 12 MB: PyInstaller komprimiert die Datenordner im Bündel.
+
+### Was bleibt
+
+Alles andere. PS5-Abbilder werden weiterhin in allen bisherigen Aufgaben
+umgewandelt: Dump-Ordner, `.ffpfsc`, `.exfat`, `.ffpkg`, Sammelkonvertierung,
+AIO, AMPR EMU Manager und Validator. Die MkPFS-Packmaschine bleibt ebenfalls –
+sie hat mit dem PS4-Werkzeug nichts zu tun.
+
+Wer aus PS4-PKG-Dateien Abbilder bauen will, braucht dafür künftig ein anderes
+Werkzeug. Was bei der Arbeit daran herausgekommen ist, bleibt in den Einträgen
+zu v1.8.79 bis v1.8.81 stehen – vor allem, dass ein PS4-Titel aus einem Abbild
+keine Trophäen registriert und dass Abbilder in die Wurzel des Datenträgers
+gehören.
+
+
+## v1.8.81 – 22.08.2026
+
+### Zurückgenommen: der Knopf NP-BINDUNG
+
+Der Knopf aus v1.8.80 ist wieder ausgebaut. Er hat die Trophäen **nicht**
+repariert – das Versprechen war falsch.
+
+Es entstand aus **einem einzigen** Spielstart, der ohne Fehlermeldung
+durchlief. Der Lauf war untypisch. Später zeigte derselbe Aufbau den Fehler
+wieder, und ein Blick ins Dateisystem der Konsole entschied es endgültig:
+Unter `/user/trophy/conf/` legt jeder registrierte PS4-Titel einen Ordner an –
+für die Titel aus dem Abbild stand dort nie einer, mit Datei wie ohne.
+
+### Was wirklich dahintersteckt
+
+`0x80551618` kommt aus Sonys Prüfkette, und die verlangt ein **regulär
+installiertes Paket**. Ein eingehängtes Abbild ist keines. Am Abbild, an der
+Konvertierung und an ShadowMount+ liegt es nicht – es ist so vorgesehen.
+
+An zwei Titeln nachgemessen, mit neun Starts aus dem Abbild und zwei nach
+Installation über den Package Installer:
+
+| Lauf | Trophäen registriert |
+| --- | --- |
+| über den Package Installer installiert | **ja**, sofort beim ersten Start |
+| aus dem Abbild, ohne `npbind.dat` | nein |
+| aus dem Abbild, mit `npbind.dat` in `appmeta/` | nein |
+| aus dem Abbild, zusätzlich mit `param.sfo` | nein |
+| aus dem Abbild, `npbind.dat` in `appmeta/…/trophy2/` | nein |
+
+### PS5-Titel sind davon nicht betroffen
+
+Für jeden Titel der Konsole geprüft, ob seine Trophäen registriert sind:
+**Sechs PS5-Titel liefen aus Abbildern und hatten alle sechs registriert** –
+nur der PS4-Titel nicht. Am Abbildbetrieb liegt es also nicht. PS5-Spiele
+gehen über die neuere Trophäenkette, PS4-Spiele über Sonys alte, und nur die
+verlangt die Installation.
+
+Auch der Registrierungseintrag von Hand nachgebaut ändert nichts – er lag nach
+dem Spielstart unverändert da, das System hatte ihn nicht einmal angesehen.
+
+
+**Brauchst du die Trophäen, installiere über den Package Installer.** Für
+alles andere bleibt der Abbildweg – er spart den Speicherplatz der
+Installation.
+
+### Die EXE zeigt wieder ihre richtige Version an
+
+In den Dateieigenschaften der EXE stand **1.8.72.0** – die Nummer war seit
+v1.8.72 nicht mehr mitgezogen worden. Im Programm selbst stand immer die
+richtige; sichtbar war der Fehler nur im Explorer unter „Eigenschaften".
+
+Jetzt stehen alle vier Stellen, an denen die Version vorkommt, auf demselben
+Stand, und vier neue Tests halten sie künftig zusammen.
+
+
+### Der Kommandozeilenmodus meldet keinen stillen Erfolg mehr
+
+Beim Testen aufgefallen: Ein Aufruf mit `--cli` beendete sich unter Windows
+ohne Administratorrechte mit **Exit-Code 0** – ohne irgendetwas getan zu haben.
+Das Programm versucht dort, sich mit erhöhten Rechten neu zu starten; der neue
+Prozess ist aber abgekoppelt, und weder seine Ausgabe noch sein Exit-Code
+kommen beim Aufrufer an. Ein Skript hielt die Aufgabe für erledigt.
+
+Jetzt bricht `--cli` in diesem Fall mit **Exit-Code 3** ab und sagt, was zu tun
+ist: Eingabeaufforderung oder PowerShell als Administrator öffnen. Im
+GUI-Modus bleibt alles wie gehabt – dort ist der Neustart mit UAC-Dialog genau
+richtig.
+
+
+### Der Hinweis nach dem Bauen bleibt, sagt aber die Wahrheit
+
+Erkennt das Programm einen PS4-Titel, steht im Protokoll weiterhin ein
+Hinweis. Neu ist, was darin steht: dass Trophäen im Abbildbetrieb nicht
+registrieren, warum das so ist, und dass Nachlegen von Dateien nichts daran
+ändert. Im Handbuch ist Abschnitt 13.8 entsprechend neu geschrieben – dazu ein
+zweiter Kasten für Spiele, die im Ladebildschirm hängen bleiben, der offen
+sagt, dass die Ursache dort ungeklärt ist.
+
+
 ## v1.8.80 – 22.08.2026
+
+> **Überholt.** Der hier beschriebene Knopf ist in v1.8.81 wieder ausgebaut worden – er hat die Trophäen nicht repariert. Das Folgende bleibt als Verlauf stehen.
 
 ### Der Knopf NP-BINDUNG
 
@@ -43,6 +195,8 @@ In v1.8.77 stand, ein selbst angelegter Ordner wie `/mnt/usb0/ps4ffpsc/` werde �
 Nur ist das nicht neustartfest. Der Eintrag hält einen absoluten Pfad samt Einhängepunkt fest, und hängen mehrere USB-Geräte an der Konsole, kann sich die Nummer beim Neustart drehen – aus `usb0` wird `usb1`, und der Titel ist weg. **Deshalb weiterhin: Abbild direkt in die Wurzel des Datenträgers.** Nicht weil ein Unterordner unmöglich wäre, sondern weil die Anheftung daran zerbricht.
 
 ### Neu dokumentiert: warum Trophäen scheitern
+
+> **Überholt.** Die hier genannte Ursache stimmt nicht. Die Trophäen scheitern an Sonys Prüfkette, nicht an der NP-Bindung – siehe v1.8.81.
 
 Startet ein PS4-Spiel aus einem Abbild, meldet die Konsole jedes Mal `Trophy registration failed (0x80551618)`. Der Grund liegt nicht am Abbild: ShadowMount+ sucht die NP-Bindung nur an den PS5-Stellen `sce_sys/trophy2/` und `sce_sys/uds/`. Ein PS4-Spiel legt sie flach unter `sce_sys/npbind.dat` ab – die Datei **ist im Abbild enthalten**, sie wird nur nie abgeholt.
 

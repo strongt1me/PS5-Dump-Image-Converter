@@ -100,5 +100,63 @@ class CliProtokollTests(unittest.TestCase):
         self.assertIn("→", puffer.getvalue().decode("utf-8"))
 
 
+class RechtepruefungTests(unittest.TestCase):
+    """Ohne Administratorrechte darf der CLI-Modus keinen Erfolg melden.
+
+    Gemessen am 22.08.2026: Ein Aufruf wie
+    ``--cli --task 3 --source ... --dest ...`` beendete sich unter Windows
+    ohne erhoehte Rechte mit **Rueckgabe 0**, ohne irgendetwas getan zu
+    haben. Das Programm ruft dort ShellExecuteW mit "runas" auf; der
+    abgekoppelte Prozess kann seine Ausgabe und seinen Rueckgabewert nicht
+    an den Aufrufer zurueckgeben, und ein Skript hielt die Aufgabe fuer
+    erledigt.
+
+    Der Zweig laesst sich hier nicht ausfuehren - er haengt an
+    ``_is_admin()`` und beendet den Prozess. Geprueft wird deshalb der
+    Quelltext an genau dieser Stelle.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def _rechteblock(self) -> str:
+        anfang = self.quelltext.index("    if sys.platform == \"win32\" and not _is_admin():")
+        ende = self.quelltext.index("sys.exit(0)", anfang) + len("sys.exit(0)")
+        return self.quelltext[anfang:ende]
+
+    def test_der_cli_modus_wird_vorher_abgefangen(self) -> None:
+        block = self._rechteblock()
+        self.assertIn('if "--cli" in sys.argv[1:]:', block,
+                      "Der CLI-Modus laeuft wieder in die Neustartlogik.")
+        # Die Abfrage muss VOR dem Neustart stehen, sonst ist sie wirkungslos.
+        self.assertLess(block.index('if "--cli"'), block.index("_request_elevation()"),
+                        "Die CLI-Abfrage steht hinter dem Neustart.")
+
+    def test_der_rueckgabewert_ist_nicht_null(self) -> None:
+        block = self._rechteblock()
+        cli_teil = block[block.index('if "--cli"'):block.index("_request_elevation()")]
+        self.assertIn("sys.exit(3)", cli_teil)
+        self.assertNotIn("sys.exit(0)", cli_teil,
+                         "Der stille Erfolg ist zurueck.")
+
+    def test_die_meldung_sagt_was_zu_tun_ist(self) -> None:
+        cli_teil = self._rechteblock()
+        self.assertIn("[FEHLER]", cli_teil)
+        self.assertIn("Administrator", cli_teil)
+
+    def test_die_stroeme_stehen_vor_der_meldung(self) -> None:
+        """Sonst scheitert der Umlaut, sobald jemand umleitet.
+
+        Genau dafuer gibt es _prepare_cli_streams - die Meldung erscheint
+        aber, bevor _run_cli sie sonst aufruft.
+        """
+        cli_teil = self._rechteblock()
+        self.assertIn("_prepare_cli_streams()", cli_teil)
+        self.assertLess(cli_teil.index("_prepare_cli_streams()"),
+                        cli_teil.index("[FEHLER]"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
