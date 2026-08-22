@@ -6,7 +6,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ---
 
-## v1.8.84 – 22.08.2026
+## v1.8.84 – 23.08.2026
 
 ### Werkzeugfenster bleiben vorn
 

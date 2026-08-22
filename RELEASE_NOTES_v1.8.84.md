@@ -1,6 +1,6 @@
 # PS5 Dump & Image Converter v1.8.84
 
-**22.08.2026**
+**23.08.2026**
 
 Werkzeugfenster bleiben vor dem Hauptfenster.
 
