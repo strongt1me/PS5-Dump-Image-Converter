@@ -246,11 +246,25 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertIn("/data/etaHEN/games",
                               STRINGS["ps4pkg.place_bad"][sprache])
 
-    def test_kein_text_empfiehlt_mehr_den_unterordner(self) -> None:
-        """Der alte Hinweis riet ausgerechnet zu /mnt/usb0/ps4ffpsc/.
+    def test_der_unterordner_wird_nur_mit_manual_lst_genannt(self) -> None:
+        """Ein eigener Ordner geht - aber nur mit Eintrag in manual.lst.
 
-        Dort wird nichts gefunden. Genannt werden darf der Pfad nur noch als
-        Gegenbeispiel - also zusammen mit der Aussage, dass es so nicht geht.
+        Zwei Fassungen dieses Tests waren vorher falsch. Die erste liess den
+        Pfad als Empfehlung stehen, die zweite verlangte die Aussage "wird
+        nicht gefunden". Beide gingen an der Sache vorbei; am 22.08.2026
+        wurde es in drei Schritten an der Konsole gemessen:
+
+          1. Datei nach /mnt/usb0/ps4ffpsc/ verschoben, 190 s gewartet -
+             aus dem Verzeichnis verschwunden, die automatische Suche geht
+             dort nicht hinein.
+          2. Pfad in /data/shadowmount/manual.lst eingetragen - sofort
+             eingehaengt und als installiert vermerkt.
+          3. An der Konsole gestartet:
+             ``[GAME] started: CUSA00775 pid=121 app_id=0x00008018``.
+             Gelaufen, sauber beendet, im Kernel-Protokoll keine Panik.
+
+        Wer den Pfad also nennt, muss manual.lst dazusagen - sonst ist die
+        Aussage in die eine oder andere Richtung falsch.
         """
         for schluessel, eintrag in STRINGS.items():
             if not schluessel.startswith("ps4pkg."):
@@ -259,16 +273,11 @@ class NachpruefungTests(unittest.TestCase):
                 if "/mnt/usb0/ps4ffpsc" not in text:
                     continue
                 with self.subTest(schluessel=schluessel, sprache=sprache):
-                    # Auf die Aussage pruefen, nicht auf ein Wort: "nie"
-                    # und "nicht" sagen beide, dass dort nichts gefunden
-                    # wird - und genau darum geht es.
-                    verneint = any(
-                        w in text for w in ("nie gefunden", "nicht gefunden",
-                                            "never found", "not found"))
-                    self.assertTrue(
-                        verneint,
-                        "%s (%s) nennt den Unterordner, ohne zu sagen, dass "
-                        "dort nichts gefunden wird." % (schluessel, sprache))
+                    self.assertIn(
+                        "manual.lst", text,
+                        "%s (%s) nennt den Unterordner, ohne die Bedingung "
+                        "zu nennen, unter der er funktioniert."
+                        % (schluessel, sprache))
 
     def test_die_einblendung_faellt_auf(self) -> None:
         """Eine weitere graue Zeile haette der Nutzer wieder ueberlesen.
@@ -297,6 +306,36 @@ class NachpruefungTests(unittest.TestCase):
             encoding="utf-8", errors="replace")
         self.assertIn('"ps5_runtime_verified": False', pipeline)
         self.assertNotIn('"ps5_runtime_verified": True', pipeline)
+
+    def test_die_begleitdatei_nennt_die_bedingung(self) -> None:
+        """Die Vorlage nannte /mnt/usb0/ps4ffpsc/ - aber nicht die Bedingung.
+
+        Sie schrieb "Recommended USB path" und "manual.lst" mit demselben
+        Pfad untereinander, ohne zu sagen, dass der Eintrag in manual.lst
+        dafuer noetig ist. Ohne ihn verschwindet der Titel (am 22.08.2026
+        gemessen), mit ihm laeuft er.
+
+        Die Begleitdatei liegt neben jedem fertigen Abbild - sie darf der
+        Einblendung im Fenster nicht widersprechen.
+        """
+        pipeline = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
+            encoding="utf-8", errors="replace")
+        self.assertNotIn('"Recommended USB path: /mnt/usb0/ps4ffpsc/"',
+                         pipeline, "Empfiehlt den Ordner ohne die Bedingung.")
+        self.assertIn('"Recommended USB path: /mnt/usb0/"', pipeline)
+        for stueck in ("/mnt/usb0/homebrew/", "/mnt/usb0/etaHEN/games/",
+                       "kernel panic", "manual.lst",
+                       # Im Quelltext ueber zwei Zeilen umbrochen - deshalb
+                       # nur das Stueck suchen, das in einer Zeile steht.
+                       "picked up by the automatic scan"):
+            with self.subTest(stueck=stueck):
+                self.assertIn(stueck, pipeline)
+
+    def test_der_eingriff_steht_in_upstream_md(self) -> None:
+        """Aenderungen an der Vorlage werden dort festgehalten."""
+        text = (PS4_ORDNER / "UPSTREAM.md").read_text(encoding="utf-8")
+        self.assertIn("shadowmount.txt", text)
+        self.assertIn("ps4ffpsc/", text)
 
     def test_die_nachpruefung_bekommt_die_datei_nicht_den_ordner(self) -> None:
         """Bis v1.8.77 wurde der Ausgabeordner uebergeben.
@@ -367,6 +406,36 @@ class NachpruefungTests(unittest.TestCase):
             with self.subTest(eintrag=eintrag):
                 self.assertEqual(eintrag, eintrag.lower(),
                                  "Vergleich laeuft in Kleinschreibung")
+
+    def test_die_np_luecke_ist_dokumentiert(self) -> None:
+        """Am 22.08.2026 in einer Kette an der Konsole nachgewiesen.
+
+        ShadowMountPlus kopiert nach /system_data/priv/appmeta/<TITLE>/ nur
+        sce_sys/trophy2/npbind.dat und sce_sys/uds/npbind.dat - beides
+        PS5-Pfade. Ein PS4-Spiel legt die NP-Bindung flach unter
+        sce_sys/npbind.dat ab; sie ist im Abbild enthalten, wird aber nie
+        abgeholt. Folge: "Trophy registration failed (0x80551618)" bei
+        jedem Start, und Titel mit Online-Pruefung bleiben haengen.
+
+        Gegenprobe: Datei von Hand nach appmeta gelegt - Fehler weg,
+        SceNpTrophy greift zu. In den drei Mitschnitten davor stand er
+        jedes Mal drin. Das gehoert dokumentiert, weil es sonst wie ein
+        Fehler unseres Abbilds aussieht.
+        """
+        self.assertIn('ps4pkg.check_np_note', STRINGS)
+        for sprache in ('de', 'en'):
+            with self.subTest(sprache=sprache):
+                text = STRINGS['ps4pkg.check_np_note'][sprache]
+                self.assertIn('npbind.dat', text)
+                self.assertIn('0x80551618', text)
+        # Nach dem Bau gemeldet, wenn ein PS4-Titel erkannt wurde.
+        rumpf = self._methode('_show_ps4_pkg_converter')
+        self.assertIn('ps4pkg.check_np_note', rumpf)
+        # Und im Handbuch erklaert.
+        handbuch = (PROJEKT / 'BENUTZERHANDBUCH.html').read_text(
+            encoding='utf-8')
+        self.assertIn('npbind.dat', handbuch)
+        self.assertIn('0x80551618', handbuch)
 
     def test_alle_texte_sind_uebersetzt(self) -> None:
         for schluessel in ("ps4pkg.runtime_note", "ps4pkg.check_running",
@@ -449,6 +518,123 @@ class KonsolenerkennungTests(unittest.TestCase):
         anfang = self.quelltext.index("    def %s(self" % name)
         weiter = self.quelltext.index("\n    def ", anfang + 10)
         return self.quelltext[anfang:weiter]
+
+
+class PaketMagicTests(unittest.TestCase):
+    """Vier Bytes am Dateianfang sagen, fuer welche Konsole ein Paket ist.
+
+    Anlass: Am 22.08.2026 wurden alle 31 PKG eines Datentraegers geprueft.
+    Der eingebettete Entpacker weist jedes PS5-Paket ab, bevor er etwas
+    ausliest - an 11 von 11 gemessen, jedes Mal mit demselben Wortlaut
+    ``supported=False / unsupported_or_encrypted_pkg / Invalid PKG magic``.
+    Im Fenster stand daraufhin nur "0 Spiel(e) gefunden", ohne Grund.
+
+    Das Magic unterscheidet die beiden Formate ohne Entpacken, und an
+    denselben 31 Dateien (20 PS4, 11 PS5) stimmte es ausnahmslos mit der
+    Title-ID im Paket ueberein.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def _schreibe(self, ordner, name, kopf):
+        pfad = os.path.join(ordner, name)
+        with open(pfad, "wb") as datei:
+            datei.write(kopf + b"\x00" * 64)
+        return pfad
+
+    def test_die_beiden_magic_stehen_fest(self) -> None:
+        self.assertEqual(PS5ConverterGUI._PKG_MAGIC_PS4, b"\x7fCNT")
+        self.assertEqual(PS5ConverterGUI._PKG_MAGIC_PS5, b"\x7fFIH")
+
+    def test_das_magic_entscheidet(self) -> None:
+        with TemporaryDirectory() as ordner:
+            ps4 = self._schreibe(ordner, "ps4.pkg", b"\x7fCNT")
+            ps5 = self._schreibe(ordner, "ps5.pkg", b"\x7fFIH")
+            fremd = self._schreibe(ordner, "fremd.pkg", b"RIFF")
+            leer = os.path.join(ordner, "gibtsnicht.pkg")
+            for pfad, erwartet in ((ps4, "ps4"), (ps5, "ps5"),
+                                   (fremd, ""), (leer, "")):
+                with self.subTest(datei=os.path.basename(pfad)):
+                    self.assertEqual(
+                        PS5ConverterGUI._pkg_konsole_am_magic(
+                            PS5ConverterGUI, pfad), erwartet)
+
+    def test_ein_ordner_wird_durchgezaehlt(self) -> None:
+        """Nur die Ebene selbst - genau das nimmt das Werkzeug auch."""
+        with TemporaryDirectory() as ordner:
+            self._schreibe(ordner, "a.pkg", b"\x7fCNT")
+            self._schreibe(ordner, "b.pkg", b"\x7fFIH")
+            self._schreibe(ordner, "c.pkg", b"\x7fFIH")
+            self._schreibe(ordner, "d.pkg", b"XXXX")
+            self._schreibe(ordner, "notiz.txt", b"\x7fFIH")
+            tiefer = os.path.join(ordner, "unten")
+            os.makedirs(tiefer)
+            self._schreibe(tiefer, "e.pkg", b"\x7fFIH")
+
+            app = _Sichter()
+            befund = PS5ConverterGUI._ps4ffpsc_quellen_sichten(
+                app, ordner, "pkg_dir")
+        self.assertEqual(len(befund["ps4"]), 1)
+        self.assertEqual(sorted(befund["ps5"]), ["b.pkg", "c.pkg"],
+                         "Unterordner oder .txt mitgezaehlt?")
+        self.assertEqual(befund["fremd"], ["d.pkg"])
+
+    def test_einzelne_dateien_werden_getrennt(self) -> None:
+        with TemporaryDirectory() as ordner:
+            eins = self._schreibe(ordner, "eins.pkg", b"\x7fFIH")
+            zwei = self._schreibe(ordner, "zwei.pkg", b"\x7fCNT")
+            app = _Sichter()
+            befund = PS5ConverterGUI._ps4ffpsc_quellen_sichten(
+                app, os.pathsep.join((eins, zwei)), "pkg_file")
+        self.assertEqual(befund["ps5"], ["eins.pkg"])
+        self.assertEqual(befund["ps4"], ["zwei.pkg"])
+
+    def test_das_einlesen_sagt_es(self) -> None:
+        anfang = self.quelltext.index("    def _show_ps4_pkg_converter(self")
+        weiter = self.quelltext.index("\n    def ", anfang + 10)
+        rumpf = self.quelltext[anfang:weiter]
+        self.assertIn("_ps4ffpsc_quellen_sichten(", rumpf,
+                      "Die Quelle wird beim Einlesen nicht gesichtet.")
+        self.assertIn("ps4pkg.ps5_packages", rumpf)
+
+    def test_die_texte_sind_zweisprachig(self) -> None:
+        for schluessel in ("ps4pkg.ps5_packages", "ps4pkg.and_more"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[schluessel].get(sprache, "").strip())
+        self.assertIn("{anzahl}", STRINGS["ps4pkg.ps5_packages"]["de"])
+
+    def test_die_deutschen_texte_haben_echte_umlaute(self) -> None:
+        """Der Rest der Oberflaeche schreibt "Datentraeger" mit ae-Ligatur.
+
+        Ersatzschreibungen fallen im Fenster sofort auf, weil die Nachbarn
+        daneben richtig gesetzt sind.
+        """
+        ersatz = ("fuer ", "oeffn", "gehoert", "pruefen", "entfaellt",
+                  "waehlen", "muessen", "koennen", "laesst", "ausfuehren")
+        schlecht = []
+        for schluessel, texte in STRINGS.items():
+            if not schluessel.startswith("ps4pkg."):
+                continue
+            de = texte.get("de", "")
+            for wort in ersatz:
+                if wort in de:
+                    schlecht.append("%s: %r" % (schluessel, wort))
+        self.assertEqual(schlecht, [], "Ersatzschreibung statt Umlaut")
+
+
+class _Sichter:
+    """Traegt nur, was _ps4ffpsc_quellen_sichten von "self" braucht."""
+
+    _PKG_MAGIC_PS4 = PS5ConverterGUI._PKG_MAGIC_PS4
+    _PKG_MAGIC_PS5 = PS5ConverterGUI._PKG_MAGIC_PS5
+
+    def _pkg_konsole_am_magic(self, pfad: str) -> str:
+        return PS5ConverterGUI._pkg_konsole_am_magic(self, pfad)
 
 
 class PlattformTests(unittest.TestCase):

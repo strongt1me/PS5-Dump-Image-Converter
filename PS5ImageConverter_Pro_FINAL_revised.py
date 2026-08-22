@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.78"
+APP_VERSION = "v1.8.79"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -28383,6 +28383,66 @@ class PS5ConverterGUI:
     _PS4_MERKMALE: tuple[str, ...] = ("manifest_nonufsfiles_ps4.txt",
                                       "sce_discmap.plt")
 
+    #: Magic am Anfang einer PKG. Vier Bytes, kein Entpacken noetig.
+    #:
+    #: Am 22.08.2026 an 31 Paketen gemessen (20 PS4, 11 PS5): Das Magic
+    #: stimmte ausnahmslos mit der Title-ID im Paket ueberein. Der
+    #: eingebettete Entpacker kennt nur die PS4-Fassung und weist die
+    #: andere mit "Invalid PKG magic" ab - an allen elf PS5-Paketen
+    #: derselbe Wortlaut.
+    _PKG_MAGIC_PS4 = b"\x7fCNT"
+    _PKG_MAGIC_PS5 = b"\x7fFIH"
+
+    def _pkg_konsole_am_magic(self, pfad: str) -> str:
+        """Liest die Konsole aus den ersten vier Bytes einer PKG.
+
+        Returns:
+            ``"ps4"``, ``"ps5"`` oder ``""`` wenn es keine PKG ist oder die
+            Datei sich nicht lesen laesst.
+        """
+        try:
+            with open(pfad, "rb") as datei:
+                magic = datei.read(4)
+        except OSError as exc:
+            logger.debug("PKG-Kopf nicht lesbar (%s): %s", pfad, exc)
+            return ""
+        if magic == self._PKG_MAGIC_PS4:
+            return "ps4"
+        if magic == self._PKG_MAGIC_PS5:
+            return "ps5"
+        return ""
+
+    def _ps4ffpsc_quellen_sichten(self, eingabe: str, art: str) -> dict:
+        """Zaehlt in der gewaehlten Quelle die Pakete je Konsole.
+
+        Args:
+            eingabe: Der eingetippte Pfad; bei einzelnen Dateien mehrere,
+                getrennt durch ``os.pathsep``.
+            art: ``"pkg_file"``, ``"pkg_dir"`` oder ``"dump_dir"``.
+
+        Returns:
+            ``{"ps4": [...], "ps5": [...], "fremd": [...]}`` mit den
+            Dateinamen - Namen, nicht Pfade, denn sie gehen ins Protokoll.
+        """
+        befund = {"ps4": [], "ps5": [], "fremd": []}
+        pfade: list[str] = []
+        if art == "pkg_file":
+            pfade = [teil.strip() for teil in eingabe.split(os.pathsep)
+                     if teil.strip()]
+        elif os.path.isdir(eingabe):
+            try:
+                # Nur die Ebene selbst: Genau das nimmt das Werkzeug auch.
+                for name in sorted(os.listdir(eingabe)):
+                    voll = os.path.join(eingabe, name)
+                    if name.lower().endswith(".pkg") and os.path.isfile(voll):
+                        pfade.append(voll)
+            except OSError as exc:
+                logger.debug("Quellordner nicht lesbar: %s", exc)
+        for pfad in pfade:
+            konsole = self._pkg_konsole_am_magic(pfad)
+            befund[konsole or "fremd"].append(os.path.basename(pfad))
+        return befund
+
     #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
     #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
     _PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
@@ -28600,13 +28660,24 @@ class PS5ConverterGUI:
             prozess.wait()
         return int(prozess.returncode or 0), "\n".join(gesammelt)
 
-    #: Fortschrittsmarken, bei denen der Ablageort-Hinweis erscheint.
+    #: Fortschrittsmarke, bei der die zweite Einblendung erscheint.
     #:
-    #: Vier ueber den Lauf verteilte Stellen statt fester Zeitabstaende: Ein
-    #: kleines Spiel ist in zwei Minuten fertig, ein grosses braucht eine
-    #: Stunde - an den Prozenten haengt die Verteilung in beiden Faellen
-    #: richtig. Nicht bei 0 %, weil der Nutzer da noch auf den Knopf schaut.
-    _PS4_HINWEIS_MARKEN: tuple[float, ...] = (8.0, 32.0, 56.0, 80.0)
+    #: Zweimal je Lauf statt viermal - der Hinweis ist derselbe, und wer ihn
+    #: zweimal gelesen hat, liest ihn beim vierten Mal nicht noch einmal.
+    #: Die Mitte des Balkens ist der zweite Zeitpunkt, die Uhr der erste
+    #: (siehe _PS4_HINWEIS_ERSTE_MS).
+    _PS4_HINWEIS_MARKEN: tuple[float, ...] = (50.0,)
+    #: Wann die erste Einblendung kommt (Millisekunden nach dem Start).
+    #:
+    #: Nach der Uhr, nicht nach dem Fortschritt: Am Anfang steht der Balken
+    #: je nach Spielgroesse unterschiedlich lange bei wenigen Prozent - eine
+    #: Marke bei 8 % kam mal nach zehn Sekunden, mal nach zwei Minuten. Eine
+    #: Minute nach dem Start ist dagegen bei jedem Spiel dieselbe Stelle:
+    #: Der Nutzer hat den Knopf gedrueckt und wartet.
+    _PS4_HINWEIS_ERSTE_MS = 60000
+    #: Abstand, in dem die Uhr es erneut versucht, wenn gerade eine
+    #: Einblendung steht (Millisekunden).
+    _PS4_HINWEIS_NACHFASSEN = 2000
     #: Wie lange der Hinweis stehen bleibt (Millisekunden).
     #:
     #: 25 statt 15 Sekunden, seit die Einblendung auch den Kasten aus dem
@@ -28637,6 +28708,42 @@ class PS5ConverterGUI:
         for m in offen:
             zustand["gezeigt"].add(m)
         return True
+
+    def _ps4_hinweis_zeit_starten(self, fenster) -> None:
+        """Legt die erste Einblendung auf die Uhr.
+
+        Args:
+            fenster: Das PS4-Fenster; ueber dessen ``after`` laeuft der
+                Wecker, damit er mit dem Fenster verschwindet.
+        """
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return
+
+        def _faellig() -> None:
+            zustand["uhr"] = None
+            if zustand.get("fertig"):
+                return
+            try:
+                if not fenster.winfo_exists():
+                    return
+            except Exception:
+                return
+            if zustand.get("laeuft"):
+                # Steht schon eine, gleich nochmal nachsehen - zwei
+                # uebereinander waeren beide unlesbar.
+                zustand["uhr"] = fenster.after(
+                    self._PS4_HINWEIS_NACHFASSEN, _faellig)
+                return
+            self._ps4_hinweis_zeigen(fenster)
+
+        try:
+            zustand["uhr"] = fenster.after(self._PS4_HINWEIS_ERSTE_MS,
+                                           _faellig)
+        except Exception as exc:
+            logger.debug("Wecker fuer den Ablageort-Hinweis nicht "
+                         "gestellt: %s", exc)
+            zustand["uhr"] = None
 
     def _ps4_hinweis_zeigen(self, fenster) -> None:
         """Blendet den Ablageort-Hinweis ueber dem Fenster ein.
@@ -28750,6 +28857,15 @@ class PS5ConverterGUI:
         # 25 Sekunden ohne Anlass da (22.08.2026 an einer echten
         # Konvertierung gesehen).
         zustand["fertig"] = True
+        # Auch den Wecker abstellen: Sonst kaeme die erste Einblendung
+        # nach dem Ende, wenn die Umwandlung in unter einer Minute durch war.
+        uhr = zustand.get("uhr")
+        zustand["uhr"] = None
+        if uhr is not None:
+            try:
+                self.root.after_cancel(uhr)
+            except Exception:
+                pass
         karte = zustand.get("fenster")
         zustand["laeuft"] = False
         zustand["fenster"] = None
@@ -29034,6 +29150,18 @@ class PS5ConverterGUI:
                 # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
                 # nicht mit einer Liste.
                 spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
+                # Wer PS5-Pakete hierher legt, bekam bisher nur
+                # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
+                sicht = self._ps4ffpsc_quellen_sichten(
+                    quelle_var.get().strip(), quelle_art.get())
+                if sicht["ps5"]:
+                    _protokoll(self._t("ps4pkg.ps5_packages",
+                                       anzahl=len(sicht["ps5"])))
+                    for name in sicht["ps5"][:12]:
+                        _protokoll("    %s" % name)
+                    if len(sicht["ps5"]) > 12:
+                        _protokoll(self._t("ps4pkg.and_more",
+                                           anzahl=len(sicht["ps5"]) - 12))
 
                 def _fuellen() -> None:
                     for spiel in spiele:
@@ -29119,11 +29247,14 @@ class PS5ConverterGUI:
             title_id = auswahl[0]
             laeuft["aktiv"] = True
             laeuft["abbruch"] = False
-            # Je Lauf viermal, danach nicht mehr - wer zweimal konvertiert,
+            # Je Lauf zweimal, danach nicht mehr - wer zweimal konvertiert,
             # bekommt den Hinweis auch beim zweiten Mal.
             self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None, "fertig": False}
+                                       "fenster": None, "fertig": False,
+                                       "uhr": None}
             _balken(0.0)
+            # Die erste haengt an der Uhr, die zweite am Balken.
+            self._ps4_hinweis_zeit_starten(win)
             _status(self._t("ps4pkg.status_building", title=title_id))
 
             def _arbeit() -> None:
@@ -29179,6 +29310,11 @@ class PS5ConverterGUI:
                             # nicht hinein - sie dort zu vermissen waere ein
                             # Fehlalarm bei jedem einzelnen Spiel.
                             _protokoll(self._t("ps4pkg.check_ps4_title"))
+                            # Direkt danach die NP-Luecke: Genau jetzt hat
+                            # der Nutzer ein fertiges PS4-Abbild vor sich
+                            # und wuerde sonst erst an der Konsole darueber
+                            # stolpern.
+                            _protokoll(self._t("ps4pkg.check_np_note"))
                         else:
                             for fehlt in befund["fehlend"]:
                                 _protokoll(self._t("ps4pkg.check_missing", file=fehlt))

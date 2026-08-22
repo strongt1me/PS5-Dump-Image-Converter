@@ -1932,8 +1932,27 @@ def _publish_build_artifacts(
                     if settings.output_format == "ffpfsc"
                     else "Compression workers: not applicable"
                 ),
-                "Recommended USB path: /mnt/usb0/ps4ffpsc/" + output.name,
-                "manual.lst: /mnt/usb0/ps4ffpsc/" + output.name,
+                # Angepasst fuer die Einbettung in den PS5 Dump & Image
+                # Converter. Die Vorlage nannte /mnt/usb0/ps4ffpsc/ als
+                # empfohlenen Ort und darunter dieselbe Zeile fuer
+                # manual.lst - ohne zu sagen, dass der Eintrag dort noetig
+                # ist. Am 22.08.2026 an der Konsole gemessen: ohne Eintrag
+                # wird ein eigener Ordner von der automatischen Suche nicht
+                # erfasst; mit Eintrag wird das Abbild eingehaengt,
+                # registriert und startet (GAME started: CUSA00775 pid=121).
+                # Die drei Orte darunter brauchen keinen manual.lst-Eintrag.
+                "Recommended USB path: /mnt/usb0/" + output.name,
+                "Also found automatically (measured): /mnt/usb0/homebrew/"
+                + output.name + " | /mnt/usb0/etaHEN/games/" + output.name,
+                "A folder of your own such as /mnt/usb0/ps4ffpsc/ is NOT "
+                "picked up by the automatic scan - it works only with the "
+                "manual.lst line below (measured: mounted, registered, "
+                "launched).",
+                "Do NOT use internal storage (/data/homebrew, "
+                "/data/etaHEN/games): starting a PS4 title from there causes "
+                "a kernel panic.",
+                "manual.lst (/data/shadowmount/manual.lst): /mnt/usb0/"
+                + output.name,
                 "Expected ShadowMountPlus checks: nested exFAT mount, "
                 "root sce_sys/param.json, titleId parse, appmeta staging",
                 "static_shadowmount_compatible="

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.78</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.79</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.78</span>
+      <span class="marke">Version v1.8.79</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -930,9 +930,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     an derselben Konsole gemessen, mit derselben Datei, die vom Stick
     einwandfrei l&auml;uft.</p>
     <p>Ein <strong>selbst angelegter Ordner</strong> wie
-    <code>/mnt/usb0/ps4ffpsc/</code> n&uuml;tzt nichts: ShadowMount+ durchsucht
-    nur die Pfade seiner eingebauten Liste. Ein Abbild dort wird nie gefunden,
-    egal wie lange Sie warten.</p>
+    <code>/mnt/usb0/ps4ffpsc/</code> wird von der automatischen Suche
+    <strong>nicht</strong> erfasst &ndash; ShadowMount+ durchsucht nur die
+    Pfade seiner eingebauten Liste. Sie k&ouml;nnen ihn aber benutzen, wenn
+    Sie den vollst&auml;ndigen Pfad des Abbilds in die Datei
+    <code>/data/shadowmount/manual.lst</code> eintragen. Nachgemessen: Ohne
+    diesen Eintrag verschwindet der Titel aus dem Verzeichnis, mit ihm wird
+    das Abbild eingeh&auml;ngt, registriert und startet.</p>
     <p>Kam es doch zu einem Absturz, bleibt der Titel als <strong>leerer
     Eintrag</strong> registriert und wird auch am richtigen Ort nicht mehr
     gefunden. Dann zuerst die Kachel auf der PS5-Startseite l&ouml;schen, danach
@@ -955,6 +959,34 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   eingebettete Werkzeug sichert zu, dass ShadowMount+ das Abbild einh&auml;ngen
   und registrieren kann &ndash; nicht, dass die Konsole es auch startet. Ob ein
   bestimmtes Spiel l&auml;uft, zeigt erst der Versuch.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Trophäen und Online-Abfragen beim Start</span>
+    <p>Ein PS4-Spiel legt seine <strong>NP-Bindung</strong> unter
+    <code>sce_sys/npbind.dat</code> ab. ShadowMount+ sucht beim Registrieren
+    aber nur an den PS5-Stellen <code>sce_sys/trophy2/</code> und
+    <code>sce_sys/uds/</code> danach &ndash; und wertet es nicht als Fehler,
+    wenn dort nichts liegt. Der Titel l&auml;uft dadurch <strong>ohne
+    NP-Bindung</strong>.</p>
+    <p>Sichtbar wird das zweifach: Beim Start meldet die Konsole
+    <em>Trophy registration failed (0x80551618)</em>, und Spiele, die beim
+    Start eine Online-Pr&uuml;fung machen, k&ouml;nnen in einem
+    &bdquo;Bitte warten&ldquo; h&auml;ngen bleiben, statt in den
+    Offline-Betrieb zu schalten.</p>
+    <p><strong>Am Abbild liegt es nicht</strong> &ndash;
+    <code>npbind.dat</code> ist darin enthalten, sie wird nur nicht abgeholt.
+    Am 22.08.2026 nachgemessen: Legt man die Datei von Hand nach
+    <code>/system_data/priv/appmeta/&lt;Title-ID&gt;/</code>, verschwindet der
+    Trophäenfehler, und der Trophäendienst greift zu &ndash; gepr&uuml;ft an
+    einem Titel, der <strong>aus dem Abbild</strong> l&auml;uft. Der
+    Abbildweg kann die Trophäen also; es fehlt nur dieser eine Handgriff.</p>
+    <p>F&uuml;r Spiele, die beim Start in einem &bdquo;Bitte warten&ldquo;
+    h&auml;ngen bleiben, ist die Installation &uuml;ber den <strong>Package
+    Installer</strong> derzeit der zuverl&auml;ssige Weg: Dasselbe Paket so
+    installiert zeigt seinen Offline-Dialog und l&auml;uft weiter. Dass auch
+    dieses Symptom an der fehlenden NP-Bindung h&auml;ngt, ist naheliegend,
+    aber nicht gemessen.</p>
+  </div>
 
   <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
   <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
@@ -1036,7 +1068,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.78), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.79), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1218,7 +1250,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.78</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.79</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

@@ -45,6 +45,23 @@ Ergänzt wurde deshalb ein vorgelagerter Zweig, der
 
 Die ursprüngliche Suche bleibt als letzter Ausweg stehen.
 
+### `ps4ffpsc/pipeline.py` → Begleitdatei `*.shadowmount.txt`
+
+Die Vorlage schreibt neben jedes fertige Abbild eine Begleitdatei und
+empfahl darin `/mnt/usb0/ps4ffpsc/` als Ablageort – einen selbst angelegten
+Unterordner. Am 22.08.2026 an der Konsole nachgemessen, dieselbe Datei in
+derselben Sitzung:
+
+| Ort | Ergebnis |
+| --- | --- |
+| `/mnt/usb0/ps4ffpsc/` | 190 s gewartet, nicht gefunden. ShadowMount+ scannte `/mnt/usb0` gezielt, ging aber nicht in den Unterordner. |
+| `/mnt/usb0/` | binnen einer Sekunde eingehängt, installiert, registriert (`[REG] Installed NEW!`). |
+
+Die Begleitdatei nennt jetzt `/mnt/usb0/` und die beiden ebenfalls
+gemessenen Alternativen `/mnt/usb0/homebrew/` und `/mnt/usb0/etaHEN/games/`,
+und warnt ausdrücklich vor eigenen Unterordnern sowie vor dem internen
+Speicher.
+
 ## Plattformen
 
 Der Hersteller liefert fertige Programmdateien nur für **Windows x64** und

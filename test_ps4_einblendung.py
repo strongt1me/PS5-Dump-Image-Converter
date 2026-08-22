@@ -6,8 +6,9 @@ fuer die eine Sache, die ueber Laufen und Nicht-Laufen entscheidet: Ein
 PS4-Spiel darf nur vom externen USB-Datentraeger starten, nie von der
 internen SSD (sonst Kernel Panic, an der Konsole dreimal gemessen).
 
-Vorgabe: viermal je Lauf, je 15 Sekunden, ein- und ausgeblendet, ohne dass
-man etwas druecken muss.
+Vorgabe: zweimal je Lauf, je 25 Sekunden, ein- und ausgeblendet, ohne dass
+man etwas druecken muss. Die erste haengt an der Uhr (60 Sekunden nach dem
+Start), die zweite am Balken (50 %).
 """
 import io
 import os
@@ -54,18 +55,37 @@ class VorgabenTests(unittest.TestCase):
         weiter = self.quelltext.index("\n    def ", anfang + 10)
         return self.quelltext[anfang:weiter]
 
-    def test_viermal_je_lauf(self):
-        self.assertEqual(len(self.G._PS4_HINWEIS_MARKEN), 4)
+    def test_zweimal_je_lauf(self):
+        """Eine an der Uhr, eine am Balken - zusammen zwei."""
+        self.assertEqual(len(self.G._PS4_HINWEIS_MARKEN), 1)
+        self.assertEqual(self.G._PS4_HINWEIS_ERSTE_MS, 60000)
 
-    def test_die_marken_liegen_verteilt_und_nicht_bei_null(self):
+    def test_die_marke_liegt_in_der_mitte_und_nicht_bei_null(self):
         """Bei 0 % schaut der Nutzer noch auf den Knopf, nicht auf den Balken."""
         marken = list(self.G._PS4_HINWEIS_MARKEN)
-        self.assertEqual(marken, sorted(marken), "Marken nicht aufsteigend")
+        self.assertEqual(marken, [50.0])
         self.assertGreater(marken[0], 0.0)
         self.assertLess(marken[-1], 100.0)
-        abstaende = [b - a for a, b in zip(marken, marken[1:])]
-        self.assertTrue(all(a >= 15.0 for a in abstaende),
-                        "Zu dicht beieinander: %s" % abstaende)
+
+    def test_die_erste_haengt_an_der_uhr(self):
+        """Nicht am Fortschritt.
+
+        Am Anfang steht der Balken je nach Spielgroesse unterschiedlich
+        lange bei wenigen Prozent; eine Prozentmarke kaeme mal nach zehn
+        Sekunden, mal nach zwei Minuten. Eine Minute nach dem Start ist bei
+        jedem Spiel dieselbe Stelle.
+        """
+        rumpf = self._methode("_ps4_hinweis_zeit_starten")
+        self.assertIn("_PS4_HINWEIS_ERSTE_MS", rumpf)
+        self.assertIn("fenster.after(", rumpf)
+        # Steht schon eine, wird nachgefasst statt uebereinandergelegt.
+        self.assertIn("_PS4_HINWEIS_NACHFASSEN", rumpf)
+
+    def test_der_wecker_wird_beim_ende_abgestellt(self):
+        """Sonst kaeme die erste nach dem Ende, wenn es schnell ging."""
+        rumpf = self._methode("_ps4_hinweis_aufraeumen")
+        self.assertIn("after_cancel", rumpf)
+        self.assertIn('zustand["uhr"] = None', rumpf)
 
     def test_fuenfundzwanzig_sekunden(self):
         """25 statt 15, seit die Einblendung auch den Kasten traegt.
@@ -196,30 +216,34 @@ class AblaufTests(unittest.TestCase):
 
     def setUp(self):
         self.app._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None}
+                                       "fenster": None, "uhr": None}
 
-    def test_genau_vier_ueber_den_ganzen_lauf(self):
+    def test_genau_eine_ueber_den_balken(self):
+        """Die zweite der beiden - die erste kommt von der Uhr."""
         treffer = [p for p in range(0, 101)
                    if self.app._ps4_hinweis_faellig(float(p))]
-        self.assertEqual(len(treffer), 4,
+        self.assertEqual(treffer, [50],
                          "Ausgeloest bei: %s" % treffer)
 
     def test_waehrend_einer_laeuft_kommt_keine_zweite(self):
-        self.assertTrue(self.app._ps4_hinweis_faellig(10.0))
+        """Die von der Uhr steht - die Marke muss warten, nicht verfallen."""
         self.app._ps4_hinweis_stand["laeuft"] = True
-        for p in (40.0, 60.0, 90.0):
+        for p in (50.0, 60.0, 90.0):
             with self.subTest(prozent=p):
                 self.assertFalse(self.app._ps4_hinweis_faellig(p))
+        # Ist sie durch, kommt die Marke nach - sie war nur aufgeschoben.
+        self.app._ps4_hinweis_stand["laeuft"] = False
+        self.assertTrue(self.app._ps4_hinweis_faellig(92.0))
 
-    def test_ein_sprung_loest_nicht_vier_hintereinander_aus(self):
+    def test_ein_sprung_loest_nicht_zwei_hintereinander_aus(self):
         """Kleine Spiele sind schnell durch - der Balken springt dann."""
         self.assertTrue(self.app._ps4_hinweis_faellig(95.0))
-        self.assertEqual(len(self.app._ps4_hinweis_stand["gezeigt"]), 4)
+        self.assertEqual(self.app._ps4_hinweis_stand["gezeigt"], {50.0})
         self.assertFalse(self.app._ps4_hinweis_faellig(100.0))
 
     def test_nach_dem_aufraeumen_loest_hundert_prozent_nichts_aus(self):
         """Der Fall aus dem echten Lauf, in Zahlen."""
-        self.assertTrue(self.app._ps4_hinweis_faellig(10.0))
+        self.assertTrue(self.app._ps4_hinweis_faellig(50.0))
         self.app._ps4_hinweis_stand["laeuft"] = False
         self.app._ps4_hinweis_aufraeumen()
         for p in (56.0, 80.0, 100.0):
@@ -230,10 +254,10 @@ class AblaufTests(unittest.TestCase):
         for p in range(0, 101):
             self.app._ps4_hinweis_faellig(float(p))
         self.app._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
-                                       "fenster": None}
+                                       "fenster": None, "uhr": None}
         treffer = [p for p in range(0, 101)
                    if self.app._ps4_hinweis_faellig(float(p))]
-        self.assertEqual(len(treffer), 4)
+        self.assertEqual(treffer, [50])
 
     def test_sie_blendet_auf_und_verschwindet_von_selbst(self):
         """Ohne einen einzigen Tastendruck.
@@ -272,6 +296,59 @@ class AblaufTests(unittest.TestCase):
                                    "Wird nie ganz sichtbar")
         finally:
             self.haupt.PS5ConverterGUI._PS4_HINWEIS_DAUER = alt
+            self.app._ps4_hinweis_aufraeumen()
+            self.wurzel.withdraw()
+
+    def _pumpen(self, sekunden):
+        """Laesst die Ereignisschleife laufen, ohne sie zu blockieren."""
+        ende = time.perf_counter() + sekunden
+        while time.perf_counter() < ende:
+            self.wurzel.update()
+            time.sleep(0.005)
+
+    def test_die_uhr_loest_wirklich_aus(self):
+        """Nicht nur im Quelltext - der Wecker muss auch klingeln.
+
+        Mit 60 Sekunden waere der Test unbrauchbar langsam, also wird die
+        Frist heruntergesetzt. Geprueft wird, was daran haengt: dass ohne
+        jede Fortschrittsmeldung eine Einblendung erscheint.
+        """
+        alt = self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS
+        self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS = 200
+        self.wurzel.deiconify()
+        try:
+            self.app._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
+                                           "fenster": None, "fertig": False,
+                                           "uhr": None}
+            self.app._ps4_hinweis_zeit_starten(self.wurzel)
+            self.assertIsNotNone(self.app._ps4_hinweis_stand["uhr"],
+                                 "Der Wecker wurde nicht gestellt.")
+            self._pumpen(1.2)
+            self.assertTrue(self.app._ps4_hinweis_stand["laeuft"],
+                            "Die Uhr hat keine Einblendung ausgeloest.")
+        finally:
+            self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS = alt
+            self.app._ps4_hinweis_aufraeumen()
+            self.wurzel.withdraw()
+
+    def test_nach_dem_ende_klingelt_der_wecker_nicht_mehr(self):
+        """Eine Umwandlung unter einer Minute darf nichts nachziehen."""
+        alt = self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS
+        self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS = 200
+        self.wurzel.deiconify()
+        try:
+            self.app._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
+                                           "fenster": None, "fertig": False,
+                                           "uhr": None}
+            self.app._ps4_hinweis_zeit_starten(self.wurzel)
+            # Fertig, bevor die Minute um ist.
+            self.app._ps4_hinweis_aufraeumen()
+            self._pumpen(1.2)
+            self.assertFalse(self.app._ps4_hinweis_stand["laeuft"],
+                             "Nach dem Ende kam doch noch eine.")
+            self.assertIsNone(self.app._ps4_hinweis_stand["fenster"])
+        finally:
+            self.haupt.PS5ConverterGUI._PS4_HINWEIS_ERSTE_MS = alt
             self.app._ps4_hinweis_aufraeumen()
             self.wurzel.withdraw()
 

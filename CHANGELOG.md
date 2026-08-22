@@ -2,30 +2,76 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.78):** Das PS4-Fenster sagt beim Einlesen, ob ein Titel für PS4 oder PS5 ist. Außerdem behoben: Die Nachprüfung des fertigen Abbilds lief in Wirklichkeit nie, und die Einblendung konnte nach dem Ende des Vorgangs noch aufgehen.
+> **Kurz zum aktuellen Stand (v1.8.79):** PS5-Pakete werden im PS4-Fenster benannt statt verschwiegen, der Ablageort-Hinweis kommt zweimal statt viermal, und eine Grenze des Abbildwegs ist dokumentiert: ShadowMount+ holt die NP-Bindung nicht aus PS4-Abbildern – daher die Trophäenfehler.
 
 ---
 
-## v1.8.78 – 22.08.2026
-
-### Das PS4-Fenster sagt jetzt, für welche Konsole ein Titel ist
-
-In der Liste der gefundenen Spiele steht eine neue Spalte **Konsole**. Sie sagt „PS4“ oder „PS5“, und zwar sofort beim Einlesen – nicht erst, wenn das Abbild fertig gebaut ist.
-
-Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus **PS4**-Paketen. Legst du versehentlich ein PS5-Spiel hinein, wird die Zeile farbig hervorgehoben und im Protokoll steht, dass du dafür die Aufgaben 1 bis 6 nehmen sollst. Bisher hättest du den ganzen Bau abgewartet, um das zu erfahren.
-
-Erkannt wird an der Title-ID: `CUSA` und `PUSA` sind PS4, `PPSA`, `PPSS`, `PPUS` und `PPJP` sind PS5. Sagt die Kennung nichts – etwa bei einem PS3-Titel mit `NPUB` –, steht dort **unklar** statt einer Vermutung.
-
-### Die Nachprüfung des Abbilds hat nie stattgefunden
-
-Nach jedem Bau meldete das Protokoll, das fertige Abbild werde geprüft, und gleich danach: `Das Abbild ließ sich nicht nachprüfen: [Errno 13] Permission denied`. Der Grund war eine vertauschte Übergabe – die Prüfung bekam den Zielordner statt der erzeugten Datei. Sie ist also seit ihrer Einführung nie gelaufen, obwohl sie genau dafür da ist, dir zu sagen, was wirklich im Abbild steht.
-
-Aufgefallen ist das bei einer echten Konvertierung. Jetzt sucht das Programm die gebaute Datei im Zielordner – bevorzugt die zur Title-ID und zum gewählten Format – und prüft sie. Am Testtitel meldet sie sauber **113 Dateien**.
-
-### Die Einblendung geht nicht mehr nach dem Ende auf
-
-Der Hinweis zum Ablageort erschien in seltenen Fällen noch, wenn die Umwandlung schon fertig war – der letzte Sprung des Fortschrittsbalkens auf 100 % löste ihn nachträglich aus. Nach dem Ende kommt keine Einblendung mehr.
-
+## v1.8.79 – 22.08.2026
+
+### PS5-Pakete werden benannt statt verschwiegen
+
+Legst du einen Ordner mit PS5-Paketen ins PS4-Fenster, stand dort bisher nur **„0 Spiel(e) gefunden"** – ohne einen Grund. Jetzt sieht das Programm in die ersten vier Bytes jeder Datei und sagt dir, was los ist:
+
+> In der Quelle liegen 4 Paket(e) für die PS5. Dieses Fenster baut Abbilder aus PS4-Paketen; PS5-Pakete kann das eingebettete Werkzeug nicht öffnen. Sie bleiben unberücksichtigt: …
+
+Das kostet nichts – vier Bytes am Dateianfang, kein Entpacken. `\x7FCNT` ist ein PS4-Paket, `\x7FFIH` ein PS5-Paket. An 31 Paketen nachgemessen (20 PS4, 11 PS5): Das Kennzeichen stimmte ausnahmslos mit der Title-ID im Paket überein.
+
+### Der Ablageort-Hinweis kommt zweimal statt viermal
+
+Er erscheint jetzt **einmal eine Minute nach dem Start** und **einmal bei der Hälfte**. Die erste hängt bewusst an der Uhr und nicht am Fortschritt: Am Anfang steht der Balken je nach Spielgröße unterschiedlich lange bei wenigen Prozent – „eine Minute nach dem Start" ist dagegen bei jedem Spiel dieselbe Stelle. Dauer und Aussehen bleiben: 25 Sekunden, langsam ein- und ausgeblendet, kein Klick nötig.
+
+### Richtigstellung: Eigene Ordner auf dem Stick
+
+In v1.8.77 stand, ein selbst angelegter Ordner wie `/mnt/usb0/ps4ffpsc/` werde „nicht gefunden". Das war zu absolut. Richtig ist: Die **automatische Suche** geht dort nicht hinein – aber mit einem Eintrag in `/data/shadowmount/manual.lst` funktioniert er, das Spiel startet von dort.
+
+Nur ist das nicht neustartfest. Der Eintrag hält einen absoluten Pfad samt Einhängepunkt fest, und hängen mehrere USB-Geräte an der Konsole, kann sich die Nummer beim Neustart drehen – aus `usb0` wird `usb1`, und der Titel ist weg. **Deshalb weiterhin: Abbild direkt in die Wurzel des Datenträgers.** Nicht weil ein Unterordner unmöglich wäre, sondern weil die Anheftung daran zerbricht.
+
+### Neu dokumentiert: warum Trophäen scheitern
+
+Startet ein PS4-Spiel aus einem Abbild, meldet die Konsole jedes Mal `Trophy registration failed (0x80551618)`. Der Grund liegt nicht am Abbild: ShadowMount+ sucht die NP-Bindung nur an den PS5-Stellen `sce_sys/trophy2/` und `sce_sys/uds/`. Ein PS4-Spiel legt sie flach unter `sce_sys/npbind.dat` ab – die Datei **ist im Abbild enthalten**, sie wird nur nie abgeholt.
+
+Das Programm sagt das jetzt nach jedem Bau, und im Handbuch steht der ganze Zusammenhang. Denn ohne diese Erklärung sieht es aus wie ein Fehler der Konvertierung – und ist keiner.
+
+## v1.8.78 – 22.08.2026
+
+
+
+### Das PS4-Fenster sagt jetzt, für welche Konsole ein Titel ist
+
+
+
+In der Liste der gefundenen Spiele steht eine neue Spalte **Konsole**. Sie sagt „PS4“ oder „PS5“, und zwar sofort beim Einlesen – nicht erst, wenn das Abbild fertig gebaut ist.
+
+
+
+Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus **PS4**-Paketen. Legst du versehentlich ein PS5-Spiel hinein, wird die Zeile farbig hervorgehoben und im Protokoll steht, dass du dafür die Aufgaben 1 bis 6 nehmen sollst. Bisher hättest du den ganzen Bau abgewartet, um das zu erfahren.
+
+
+
+Erkannt wird an der Title-ID: `CUSA` und `PUSA` sind PS4, `PPSA`, `PPSS`, `PPUS` und `PPJP` sind PS5. Sagt die Kennung nichts – etwa bei einem PS3-Titel mit `NPUB` –, steht dort **unklar** statt einer Vermutung.
+
+
+
+### Die Nachprüfung des Abbilds hat nie stattgefunden
+
+
+
+Nach jedem Bau meldete das Protokoll, das fertige Abbild werde geprüft, und gleich danach: `Das Abbild ließ sich nicht nachprüfen: [Errno 13] Permission denied`. Der Grund war eine vertauschte Übergabe – die Prüfung bekam den Zielordner statt der erzeugten Datei. Sie ist also seit ihrer Einführung nie gelaufen, obwohl sie genau dafür da ist, dir zu sagen, was wirklich im Abbild steht.
+
+
+
+Aufgefallen ist das bei einer echten Konvertierung. Jetzt sucht das Programm die gebaute Datei im Zielordner – bevorzugt die zur Title-ID und zum gewählten Format – und prüft sie. Am Testtitel meldet sie sauber **113 Dateien**.
+
+
+
+### Die Einblendung geht nicht mehr nach dem Ende auf
+
+
+
+Der Hinweis zum Ablageort erschien in seltenen Fällen noch, wenn die Umwandlung schon fertig war – der letzte Sprung des Fortschrittsbalkens auf 100 % löste ihn nachträglich aus. Nach dem Ende kommt keine Einblendung mehr.
+
+
+
 ## v1.8.77 – 21.08.2026
 
 ### Ein dritter Ort, der funktioniert
