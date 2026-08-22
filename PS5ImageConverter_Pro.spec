@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.84
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.85
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -66,6 +66,14 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
 for _mkpfs_src in _mkpfs_roots:
     _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
 
+# Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
+# Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
+# und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
+# Vorlage ist bewusst nicht dabei.
+_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
+if os.path.isdir(_ps4ffpsc):
+    _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
 # installiert sein muss - der frueher eingebettete Windows-Bau war
@@ -117,13 +125,12 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
-        # Module, die erst zur Laufzeit ueber sys.path geladen werden -
-        # PyInstaller sieht ihre Importe deshalb nicht. Die Liste stammt
-        # aus der Zeit des eingebetteten PS4-Werkzeugs. Sie bleibt ganz
-        # stehen: MkPFS und das Hauptprogramm brauchen den groesseren
-        # Teil ohnehin, und ein ueberzaehliger Eintrag kostet nichts
-        # ausser ein paar Kilobyte - ein fehlender dagegen bricht den
-        # Start der fertigen EXE, und das faellt erst beim Nutzer auf.
+        # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.8) braucht.
+        # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
+        # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
+        # Ohne diese Liste bricht der interne Modus mit "No module named
+        # 'tomllib'" ab (unter Linux nachgemessen; Windows haette denselben
+        # Fehler gehabt, nur faellt er dort erst beim Klick auf).
         'tomllib',
         'cryptography',
         'cryptography.hazmat.primitives.ciphers',
@@ -277,7 +284,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.84',
+    name='PS5_Dump_Image_Converter_v1.8.85',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

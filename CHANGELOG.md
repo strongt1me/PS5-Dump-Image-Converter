@@ -2,9 +2,38 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.84):** Werkzeugfenster verschwinden nicht mehr hinter dem Hauptfenster, wenn du dieses anklickst – und behalten trotzdem ihren Eintrag in der Taskleiste.
+> **Kurz zum aktuellen Stand (v1.8.85):** **PS4 PKG → ffpfsc** ist wieder da – vollständig, wie vor dem Ausbau in v1.8.82. Ohne den Knopf NP-BINDUNG, der schon vorher raus war.
 
 ---
+
+## v1.8.85 – 23.08.2026
+
+### PS4 PKG → ffpfsc ist wieder da
+
+Die Funktion war in v1.8.82 vollständig entfernt worden. Sie ist jetzt
+vollständig zurück:
+
+| | |
+| --- | --- |
+| Eingebettetes Werkzeug | `PS4FFPFSC-0.2.8/` – 52 Dateien, 11 MB |
+| Fenster und Menüeintrag | wie vorher, unter **WEITERE TOOLS** |
+| Texte | 65 Sprachschlüssel |
+| Tests | 71 Prüfungen in zwei Dateien, dazu der Layouttest |
+| Handbuch | der Abschnitt – jetzt als **13.9**, weil 13.8 inzwischen AMPR EMU ist |
+
+### Was NICHT zurückkommt
+
+**Der Knopf NP-BINDUNG.** Der war schon eine Ausgabe vor dem Ausbau entfernt
+worden, in v1.8.81, nachdem an der Konsole gemessen war, dass er nichts
+bewirkt: Trophäen registrieren sich bei PS4-Titeln aus einem Abbild nicht,
+und daran ändert das Nachlegen von Dateien nichts. Wiederhergestellt wurde
+deshalb der Stand von **v1.8.81** – die Funktion vollständig, aber ohne dieses
+Versprechen.
+
+Aus demselben Grund trägt der Handbuchabschnitt den **korrigierten** Text: die
+belegte Ursache, den Gegenbeweis über sechs PS5-Titel und alle vier
+widerlegten Versuche – nicht die überholte Fassung von v1.8.80.
+
 
 ## v1.8.84 – 23.08.2026
 
@@ -76,6 +105,8 @@ aus, ohne etwas zu verändern.
 
 
 ## v1.8.82 – 22.08.2026
+
+> **Überholt.** In v1.8.85 ist die Funktion wieder eingebaut. Das Folgende bleibt als Verlauf stehen.
 
 ### Die Funktion PS4 PKG → ffpfsc ist entfernt
 

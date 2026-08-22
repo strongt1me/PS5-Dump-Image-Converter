@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.84</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.85</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.84</span>
+      <span class="marke">Version v1.8.85</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -649,7 +649,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>AMPR EMU &ndash; alte Methode</strong><br><strong>AMPR EMU &ndash; neue Methode</strong></td><td>Legt die AMPR-Bibliotheken automatisch an die Stelle, die zur jeweiligen ShadowMount+-Fassung passt &ndash; siehe <a href="#k13">Abschnitt 13.8</a>. Welcher der beiden der richtige ist, sagt Ihnen der Knopf selbst.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) und <strong>ps5_autoloader</strong> (13.7).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -978,6 +978,77 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   nebeneinander, solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
 
 
+  <h3>13.9 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
+  <p>Dieses Fenster macht aus PS4-PKG-Dateien (Basis, Patch, wahlweise DLC)
+  oder einem bereits entpackten PS4-Spiel ein Abbild, das ShadowMount+ auf der
+  PS5 einh&auml;ngen kann. Quelle w&auml;hlen, <strong>EINLESEN</strong>,
+  gefundenes Spiel markieren, <strong>ABBILD ERSTELLEN</strong>.</p>
+
+  <p>In der Liste der gefundenen Spiele sagt die Spalte <strong>Konsole</strong>,
+  wof&uuml;r ein Titel gedacht ist. Erkannt wird an der Title-ID:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Kennung</th><th>Konsole</th></tr></thead>
+    <tbody>
+      <tr><td><code>CUSA</code>, <code>PUSA</code></td><td>PS4</td></tr>
+      <tr><td><code>PPSA</code>, <code>PPSS</code>, <code>PPUS</code>,
+        <code>PPJP</code></td><td>PS5</td></tr>
+      <tr><td>alles andere &ndash; etwa <code>NPUB</code> (PS3)</td>
+        <td><strong>unklar</strong>, es wird nichts geraten</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus
+  <strong>PS4</strong>-Paketen. Legen Sie versehentlich ein PS5-Spiel hinein,
+  wird die Zeile farbig hervorgehoben und im Protokoll steht der Hinweis auf die
+  Aufgaben 1 bis 6, die f&uuml;r PS5-Titel zust&auml;ndig sind.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Troph&auml;en: PS4-Titel registrieren aus einem Abbild nicht</span>
+    <p>Ein PS4-Spiel, das aus einem Abbild startet, meldet
+    <em>Trophy registration failed (0x80551618)</em> und registriert seine
+    Troph&auml;en <strong>nicht</strong> &ndash; bei jedem Start aufs Neue.</p>
+    <p><strong>Das ist so vorgesehen.</strong> Der Fehlercode stammt aus Sonys
+    NPDRM-Pr&uuml;fkette, und die verlangt ein <em>regul&auml;r installiertes
+    Paket</em>. Ein eingeh&auml;ngtes Abbild ist keines. Am Abbild, an der
+    Konvertierung und an ShadowMount+ liegt es also nicht.</p>
+    <p><strong>PS5-Titel sind nicht betroffen.</strong> Am 22.08.2026 wurde
+    f&uuml;r jeden Titel der Konsole gepr&uuml;ft, ob seine Troph&auml;en
+    registriert sind: Sechs PS5-Titel liefen aus Abbildern und hatten
+    <em>alle sechs</em> registriert. Nur der PS4-Titel nicht. PS5-Spiele
+    gehen n&auml;mlich &uuml;ber eine neuere Troph&auml;enkette, PS4-Spiele
+    &uuml;ber Sonys alte &ndash; und nur die alte verlangt die Installation.</p>
+    <p>Nachlegen von Dateien hilft nicht. Ausprobiert wurden
+    <code>npbind.dat</code> und <code>param.sfo</code> in
+    <code>/system_data/priv/appmeta/&lt;Title-ID&gt;/</code>, dieselbe Datei
+    im Unterordner <code>trophy2/</code>, und schlie&szlig;lich der komplette
+    Registrierungseintrag unter <code>/user/trophy/conf/</code>, von Hand
+    nachgebaut. Der lag nach dem Spielstart <em>unver&auml;ndert</em> da: Das
+    System hatte ihn nicht einmal angesehen. Die Sperre sitzt also im
+    Programmcode der Konsole, nicht in fehlenden Dateien.</p>
+    <p><strong>Wer die Troph&auml;en braucht</strong>, installiert das Spiel
+    &uuml;ber den <strong>Package Installer</strong>. Derselbe Titel
+    registriert dann schon beim ersten Start. Nachsehen k&ouml;nnen Sie es auf
+    der Konsole: Unter <code>/user/trophy/conf/</code> steht f&uuml;r jeden
+    registrierten PS4-Titel ein Ordner.</p>
+    <p>F&uuml;r alles andere bleibt der Abbildweg der bequemere &ndash; er
+    spart den Speicherplatz der Installation. Nur eben ohne Troph&auml;en.</p>
+  </div>
+
+  <div class="kasten achtung">
+    <span class="titel">Wenn ein Spiel im Ladebildschirm h&auml;ngen bleibt</span>
+    <p>Einzelne Titel bleiben aus dem Abbild in einem
+    &bdquo;Bitte warten&ldquo; stehen, statt in den Offline-Betrieb zu
+    schalten. Dasselbe Paket &uuml;ber den <strong>Package Installer</strong>
+    installiert zeigt seinen Offline-Dialog und l&auml;uft weiter.</p>
+    <p>Nachgemessen und ausgeschlossen wurden: der Ablageort auf dem
+    Datentr&auml;ger, fehlende PlayGo-Inhalte, eine Online-Abfrage (die
+    Konsole wurde ganz vom Netz genommen &ndash; derselbe H&auml;nger) und ein
+    unvollst&auml;ndiges Abbild (Datei f&uuml;r Datei verglichen, nichts
+    fehlte). <strong>Die Ursache ist offen.</strong> Betroffen ist l&auml;ngst
+    nicht jeder Titel &ndash; der Versuch entscheidet.</p>
+  </div>
+
 
   <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
   <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
@@ -1059,7 +1130,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.84), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.85), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1241,7 +1312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.84</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.85</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

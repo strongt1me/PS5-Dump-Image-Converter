@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.84"
+APP_VERSION = "v1.8.85"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1581,6 +1581,7 @@ class PS5ConverterGUI:
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.autoloader", "_show_autoloader"),
+        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -26120,6 +26121,10 @@ class PS5ConverterGUI:
     _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
         ("MkPFS (Packmaschine)", "MkPFS-0.0.9/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
+        ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/__init__.py",
+         "github", "PSBrew/MkPFS"),
+        ("PS4 FFPFSC", "PS4FFPFSC-0.2.8/ps4ffpsc/__init__.py",
+         "ohne_quelle", "GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.8/UPSTREAM.md"),
     )
 
     #: Python-Bibliotheken, die das Programm braucht: Anzeigename, Name beim
@@ -29450,6 +29455,1002 @@ class PS5ConverterGUI:
     # UNSIGNIERTEN Container. Bewusst kein Ersatz für ein echtes Paket:
     # ohne RSA-Signatur und ohne Fake-SELF-Spoofing, siehe Warntext.
     # ==================================================================
+    # ==================================================================
+    # PS4 PKG -> ffpfsc  (eingebettetes PS4-FFPFSC 0.2.8, siehe dort
+    # UPSTREAM.md). Das Werkzeug bringt eine eigene Qt-Oberflaeche mit; die
+    # bleibt aussen vor. Hier laeuft nur seine Kommandozeile, angetrieben von
+    # einem Fenster im Stil dieses Programms.
+    # ==================================================================
+
+    #: Dateien, die in einem fertigen Abbild stehen sollten. Fehlt eine, ist
+    #: das kein Abbruchgrund - aber ein Hinweis wert.
+    #:
+    #: **Nur fuer PS5-Titel.** ``pfs-version.dat`` ist ein PS5-Marker: zehn
+    #: Byte ASCII mit der Inhaltsversion ("06.004.000"), wortgleich mit
+    #: ``contentVersion`` aus param.json - an drei echten Dumps nachgesehen.
+    #: Ein PS4-Spiel hat die Datei nicht, und sie dort zu vermissen waere ein
+    #: Fehlalarm bei jedem einzelnen Titel. Selbst bei PS5-Dumps ist sie
+    #: entbehrlich: Von 32 durchgesehenen Backups fehlte sie in zweien, die
+    #: einwandfrei liefen (siehe dump_validator.RECOMMENDED_FILES).
+    _PS4_EMPFOHLENE_DATEIEN: tuple[str, ...] = ("sce_sys/pfs-version.dat",)
+
+    #: Spuren, an denen ein PS4-Titel im fertigen Abbild zu erkennen ist.
+    #: ShadowMount+ haengt ihn in den PS5-App-Pfad ein (/system_ex/app/…);
+    #: ob die Konsole ihn von dort startet, sichert das Werkzeug nicht zu.
+    _PS4_MERKMALE: tuple[str, ...] = ("manifest_nonufsfiles_ps4.txt",
+                                      "sce_discmap.plt")
+
+    #: Magic am Anfang einer PKG. Vier Bytes, kein Entpacken noetig.
+    #:
+    #: Am 22.08.2026 an 31 Paketen gemessen (20 PS4, 11 PS5): Das Magic
+    #: stimmte ausnahmslos mit der Title-ID im Paket ueberein. Der
+    #: eingebettete Entpacker kennt nur die PS4-Fassung und weist die
+    #: andere mit "Invalid PKG magic" ab - an allen elf PS5-Paketen
+    #: derselbe Wortlaut.
+    _PKG_MAGIC_PS4 = b"\x7fCNT"
+    _PKG_MAGIC_PS5 = b"\x7fFIH"
+
+    def _pkg_konsole_am_magic(self, pfad: str) -> str:
+        """Liest die Konsole aus den ersten vier Bytes einer PKG.
+
+        Returns:
+            ``"ps4"``, ``"ps5"`` oder ``""`` wenn es keine PKG ist oder die
+            Datei sich nicht lesen laesst.
+        """
+        try:
+            with open(pfad, "rb") as datei:
+                magic = datei.read(4)
+        except OSError as exc:
+            logger.debug("PKG-Kopf nicht lesbar (%s): %s", pfad, exc)
+            return ""
+        if magic == self._PKG_MAGIC_PS4:
+            return "ps4"
+        if magic == self._PKG_MAGIC_PS5:
+            return "ps5"
+        return ""
+
+    def _ps4ffpsc_quellen_sichten(self, eingabe: str, art: str) -> dict:
+        """Zaehlt in der gewaehlten Quelle die Pakete je Konsole.
+
+        Args:
+            eingabe: Der eingetippte Pfad; bei einzelnen Dateien mehrere,
+                getrennt durch ``os.pathsep``.
+            art: ``"pkg_file"``, ``"pkg_dir"`` oder ``"dump_dir"``.
+
+        Returns:
+            ``{"ps4": [...], "ps5": [...], "fremd": [...]}`` mit den
+            Dateinamen - Namen, nicht Pfade, denn sie gehen ins Protokoll.
+        """
+        befund = {"ps4": [], "ps5": [], "fremd": []}
+        pfade: list[str] = []
+        if art == "pkg_file":
+            pfade = [teil.strip() for teil in eingabe.split(os.pathsep)
+                     if teil.strip()]
+        elif os.path.isdir(eingabe):
+            try:
+                # Nur die Ebene selbst: Genau das nimmt das Werkzeug auch.
+                for name in sorted(os.listdir(eingabe)):
+                    voll = os.path.join(eingabe, name)
+                    if name.lower().endswith(".pkg") and os.path.isfile(voll):
+                        pfade.append(voll)
+            except OSError as exc:
+                logger.debug("Quellordner nicht lesbar: %s", exc)
+        for pfad in pfade:
+            konsole = self._pkg_konsole_am_magic(pfad)
+            befund[konsole or "fremd"].append(os.path.basename(pfad))
+        return befund
+
+    #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
+    #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
+    _PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
+    _PS5_KENNUNGEN: tuple[str, ...] = ("PPSA", "PPSS", "PPUS", "PPJP")
+
+    def _ps4ffpsc_plattform(self, title_id: str, spiel=None) -> str:
+        """Sagt, zu welcher Konsole ein Titel gehoert.
+
+        Returns:
+            ``"ps4"``, ``"ps5"`` oder ``""`` wenn die Kennung nichts hergibt.
+        """
+        kennung = str(title_id or "").strip().upper()
+        if kennung.startswith(self._PS5_KENNUNGEN):
+            return "ps5"
+        if kennung.startswith(self._PS4_KENNUNGEN):
+            return "ps4"
+        # Das Werkzeug meldet die Plattform manchmal selbst mit.
+        if isinstance(spiel, dict):
+            roh = str(spiel.get("platform") or spiel.get("console") or "").lower()
+            if "ps5" in roh or "prospero" in roh:
+                return "ps5"
+            if "ps4" in roh or "orbis" in roh:
+                return "ps4"
+        return ""
+
+    #: Endungen, unter denen das PS4-Werkzeug sein Ergebnis ablegt.
+    _PS4_ABBILD_ENDUNGEN: tuple[str, ...] = (".ffpfsc", ".ffpfs", ".exfat",
+                                             ".ffpkg")
+
+    def _ps4ffpsc_ergebnis_finden(self, ordner: str, title_id: str = "",
+                                  format_wunsch: str = "") -> str:
+        """Sucht das eben gebaute Abbild im Ausgabeordner.
+
+        Bis v1.8.77 bekam die Nachpruefung den **Ordner** uebergeben statt
+        der Datei. Sie scheiterte dadurch jedes Mal mit
+        ``[Errno 13] Permission denied`` auf dem Ordnerpfad - sie hat also
+        nie stattgefunden, obwohl im Protokoll stand, dass sie laeuft.
+        Gesehen am 21.08.2026 an einer echten Konvertierung.
+
+        Args:
+            ordner: Der Ausgabeordner.
+            title_id: Wenn bekannt, wird ein Treffer mit dieser Kennung
+                bevorzugt - im selben Ordner koennen aeltere Abbilder liegen.
+            format_wunsch: Das gewaehlte Zielformat, ebenfalls als Vorzug.
+
+        Returns:
+            Der Pfad, oder "" wenn nichts Passendes dasteht.
+        """
+        endungen = list(self._PS4_ABBILD_ENDUNGEN)
+        wunsch = "." + str(format_wunsch or "").lstrip(".").lower()
+        if wunsch in endungen:
+            endungen.remove(wunsch)
+            endungen.insert(0, wunsch)
+        kennung = str(title_id or "").upper()
+        kandidaten = []
+        try:
+            for name in os.listdir(ordner):
+                pfad = os.path.join(ordner, name)
+                if not os.path.isfile(pfad):
+                    continue
+                klein = name.lower()
+                passende = [e for e in endungen if klein.endswith(e)]
+                if not passende:
+                    continue
+                kandidaten.append((
+                    0 if kennung and kennung in name.upper() else 1,
+                    endungen.index(passende[0]),
+                    -os.path.getmtime(pfad),
+                    pfad,
+                ))
+        except OSError as exc:
+            logger.debug("Ausgabeordner nicht lesbar: %s", exc)
+            return ""
+        if not kandidaten:
+            return ""
+        kandidaten.sort()
+        return kandidaten[0][3]
+
+
+    def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
+        """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
+
+        Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht
+        die Nutzdaten - bei einem 8,7-GB-Abbild sind das wenige Sekunden.
+
+        Args:
+            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
+
+        Returns:
+            ``{"dateien": int, "fehlend": [...], "ps4": bool, "fehler": str}``.
+        """
+        ergebnis = {"dateien": 0, "fehlend": [], "ps4": False, "fehler": ""}
+        griff = None
+        try:
+            from mkpfs.exfat import ExfatReader
+
+            with open(pfad, "rb") as datei:
+                kopf = datei.read(16)
+            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
+                from mkpfs import pfs as mkpfs_pfs
+
+                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
+                if not geoeffnet:
+                    ergebnis["fehler"] = "Innenebene nicht lesbar"
+                    return ergebnis
+                sicht, griff, _name = geoeffnet
+            else:
+                sicht = griff = open(pfad, "rb")
+
+            sicht.seek(0)
+            leser = ExfatReader(sicht)
+            namen = [e.rel_path.replace("\\", "/").lower()
+                     for e in leser.iter_files()]
+            ergebnis["dateien"] = len(namen)
+            vorhanden = set(namen)
+            ergebnis["fehlend"] = [d for d in self._PS4_EMPFOHLENE_DATEIEN
+                                   if d.lower() not in vorhanden]
+            ergebnis["ps4"] = any(m in vorhanden for m in self._PS4_MERKMALE)
+        except Exception as exc:                      # noqa: BLE001 - melden
+            ergebnis["fehler"] = str(exc)[:160]
+        finally:
+            try:
+                if griff is not None:
+                    griff.close()
+            except Exception:
+                pass
+        return ergebnis
+
+    def _ps4ffpsc_befehl(self) -> list[str]:
+        """Baut den Aufruf für die eingebettete PS4-Kommandozeile.
+
+        Als eingefrorene Anwendung ruft sich das Programm selbst mit dem
+        internen Schalter auf; aus der Quelle heraus wird die Hauptdatei an
+        denselben Schalter gehängt.
+
+        Returns:
+            Die Befehlsliste ohne die eigentlichen Unterbefehle.
+        """
+        if getattr(sys, "frozen", False):
+            return [sys.executable, "--ps4ffpsc"]
+        return [sys.executable, os.path.abspath(__file__), "--ps4ffpsc"]
+
+    def _ps4ffpsc_lauf(
+        self,
+        argumente: list[str],
+        *,
+        arbeitsordner: str,
+        zeile_callback,
+        fortschritt_callback=None,
+        prozess_ablage: dict | None = None,
+        json_modus: bool = False,
+    ) -> tuple[int, str]:
+        """Führt einen PS4-FFPFSC-Unterbefehl aus und meldet Zeilen zurück.
+
+        stderr wird in stdout geführt: Das Werkzeug schreibt seine
+        Fortschrittsmeldungen (``PS4FFPSC_PROGRESS {…}``) dorthin, sein
+        Protokoll ebenso. Getrennt zu lesen bräuchte zwei Lesefäden, ohne
+        etwas zu gewinnen - die Reihenfolge bliebe trotzdem ungewiss.
+
+        Args:
+            argumente:            Unterbefehl samt Schaltern.
+            arbeitsordner:        Ordner für Zwischenstände des Werkzeugs.
+            zeile_callback:       Bekommt jede Protokollzeile.
+            fortschritt_callback: Bekommt die entschlüsselten Fortschrittsdaten.
+            prozess_ablage:       Nimmt den laufenden Prozess auf, damit ein
+                                  Abbruch ihn beenden kann.
+            json_modus:           Haelt stderr getrennt, damit auf stdout reines
+                                  JSON steht. Fuer --json-Abfragen noetig.
+
+        Returns:
+            ``(Rückgabewert, gesammelte Ausgabe)``.
+        """
+        befehl = [*self._ps4ffpsc_befehl(), *argumente]
+        gesammelt: list[str] = []
+        prozess = subprocess.Popen(
+            befehl,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE if json_modus else subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            env=_ps4ffpsc_umgebung(arbeitsordner),
+            creationflags=_NO_WIN_FLAGS,
+            startupinfo=_silent_startupinfo(),
+        )
+        if prozess_ablage is not None:
+            prozess_ablage["prozess"] = prozess
+        if json_modus:
+            # stdout bleibt unangetastet, damit die Antwort als Ganzes lesbar
+            # ist; das Protokoll kommt getrennt ueber stderr.
+            stdout_text, stderr_text = prozess.communicate()
+            for zeile in (stderr_text or "").splitlines():
+                text = zeile.rstrip()
+                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
+                    continue
+                if text.strip():
+                    zeile_callback(text)
+            return int(prozess.returncode or 0), stdout_text or ""
+        try:
+            for zeile in prozess.stdout or []:
+                text = zeile.rstrip("\r\n")
+                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
+                    if fortschritt_callback is not None:
+                        try:
+                            fortschritt_callback(
+                                json.loads(text[len(_PS4FFPSC_PROGRESS_PREFIX):])
+                            )
+                        except (ValueError, TypeError) as exc:
+                            logger.debug("PS4-Fortschritt nicht lesbar: %s", exc)
+                    continue
+                gesammelt.append(text)
+                if text.strip():
+                    zeile_callback(text)
+        finally:
+            prozess.wait()
+        return int(prozess.returncode or 0), "\n".join(gesammelt)
+
+    #: Fortschrittsmarke, bei der die zweite Einblendung erscheint.
+    #:
+    #: Zweimal je Lauf statt viermal - der Hinweis ist derselbe, und wer ihn
+    #: zweimal gelesen hat, liest ihn beim vierten Mal nicht noch einmal.
+    #: Die Mitte des Balkens ist der zweite Zeitpunkt, die Uhr der erste
+    #: (siehe _PS4_HINWEIS_ERSTE_MS).
+    _PS4_HINWEIS_MARKEN: tuple[float, ...] = (50.0,)
+    #: Wann die erste Einblendung kommt (Millisekunden nach dem Start).
+    #:
+    #: Nach der Uhr, nicht nach dem Fortschritt: Am Anfang steht der Balken
+    #: je nach Spielgroesse unterschiedlich lange bei wenigen Prozent - eine
+    #: Marke bei 8 % kam mal nach zehn Sekunden, mal nach zwei Minuten. Eine
+    #: Minute nach dem Start ist dagegen bei jedem Spiel dieselbe Stelle:
+    #: Der Nutzer hat den Knopf gedrueckt und wartet.
+    _PS4_HINWEIS_ERSTE_MS = 60000
+    #: Abstand, in dem die Uhr es erneut versucht, wenn gerade eine
+    #: Einblendung steht (Millisekunden).
+    _PS4_HINWEIS_NACHFASSEN = 2000
+    #: Wie lange der Hinweis stehen bleibt (Millisekunden).
+    #:
+    #: 25 statt 15 Sekunden, seit die Einblendung auch den Kasten aus dem
+    #: Fenster traegt: Vier Absaetze lesen sich nicht in fuenfzehn.
+    _PS4_HINWEIS_DAUER = 25000
+    #: Dauer einer Blende und Schrittweite (Millisekunden).
+    _PS4_HINWEIS_BLENDE = 600
+    _PS4_HINWEIS_SCHRITT = 30
+    #: Deckkraft im Stand. Voll - bei 0,94 schimmerte der Text des
+    #: Fensters dahinter durch und machte den Hinweis unruhig. Das
+    #: Blenden ist der Effekt, nicht die Durchsichtigkeit.
+    _PS4_HINWEIS_DECKKRAFT = 1.0
+
+    def _ps4_hinweis_faellig(self, wert: float) -> bool:
+        """Ob bei diesem Fortschritt eine Einblendung ansteht."""
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return False
+        if zustand.get("laeuft") or zustand.get("fertig"):
+            return False
+        offen = [m for m in self._PS4_HINWEIS_MARKEN
+                 if m not in zustand["gezeigt"] and wert >= m]
+        if not offen:
+            return False
+        # Springt der Fortschritt (kleine Spiele sind schnell durch), gilt
+        # die hoechste ueberschrittene Marke, und die kleineren verfallen -
+        # sonst kaemen vier Einblendungen unmittelbar hintereinander.
+        for m in offen:
+            zustand["gezeigt"].add(m)
+        return True
+
+    def _ps4_hinweis_zeit_starten(self, fenster) -> None:
+        """Legt die erste Einblendung auf die Uhr.
+
+        Args:
+            fenster: Das PS4-Fenster; ueber dessen ``after`` laeuft der
+                Wecker, damit er mit dem Fenster verschwindet.
+        """
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return
+
+        def _faellig() -> None:
+            zustand["uhr"] = None
+            if zustand.get("fertig"):
+                return
+            try:
+                if not fenster.winfo_exists():
+                    return
+            except Exception:
+                return
+            if zustand.get("laeuft"):
+                # Steht schon eine, gleich nochmal nachsehen - zwei
+                # uebereinander waeren beide unlesbar.
+                zustand["uhr"] = fenster.after(
+                    self._PS4_HINWEIS_NACHFASSEN, _faellig)
+                return
+            self._ps4_hinweis_zeigen(fenster)
+
+        try:
+            zustand["uhr"] = fenster.after(self._PS4_HINWEIS_ERSTE_MS,
+                                           _faellig)
+        except Exception as exc:
+            logger.debug("Wecker fuer den Ablageort-Hinweis nicht "
+                         "gestellt: %s", exc)
+            zustand["uhr"] = None
+
+    def _ps4_hinweis_zeigen(self, fenster) -> None:
+        """Blendet den Ablageort-Hinweis ueber dem Fenster ein.
+
+        Kein Knopf, kein Wegklicken: Er kommt von selbst und geht von selbst.
+        Wer gerade liest, wird nicht unterbrochen; wer nicht hinsieht, muss
+        nichts tun.
+        """
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if zustand is None or not fenster.winfo_exists():
+            return
+        c = self._COLORS
+        try:
+            # Farbe in den Erzeuger: Tk zeichnet ein frisches Toplevel
+            # sonst zuerst weiss, und ein spaeteres configure(bg=...)
+            # kommt zu spaet - bei einer Einblendung besonders sichtbar.
+            karte = tk.Toplevel(fenster, bg=c["fg_warning"])
+            karte.withdraw()
+            karte.overrideredirect(True)
+            karte.transient(fenster)
+        except Exception as exc:
+            logger.debug("Hinweisfenster nicht erstellbar: %s", exc)
+            return
+        zustand["laeuft"] = True
+        zustand["fenster"] = karte
+
+        innen = tk.Frame(karte, bg=c["bg_card"], padx=20, pady=16)
+        innen.pack(padx=2, pady=2)
+        tk.Label(innen, text=self._t("ps4pkg.place_title"),
+                 font=(UI_SCHRIFT, pt(12), "bold"), bg=c["bg_card"],
+                 fg=c["fg_warning"], anchor="w", justify="left").pack(
+                     fill="x", pady=(0, 10))
+        for schluessel, rolle in (("ps4pkg.place_ok", "fg_success"),
+                                  ("ps4pkg.place_bad", "error_btn"),
+                                  ("ps4pkg.place_after_crash", "fg_primary")):
+            tk.Label(innen, text=self._t(schluessel), font=(UI_SCHRIFT, pt(10)),
+                     bg=c["bg_card"], fg=c[rolle], anchor="w", justify="left",
+                     wraplength=560).pack(fill="x", pady=(0, 6))
+        tk.Label(innen, text=self._t("ps4pkg.place_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(8, 0))
+        # Der Hersteller des eingebetteten Werkzeugs setzt
+        # "ps5_runtime_verified" fest auf false: Zugesichert ist nur, dass
+        # ShadowMount+ das Abbild einbinden und registrieren kann, nicht dass
+        # die Konsole es startet. Stand bis v1.8.76 als eigene Zeile im
+        # Fenster - hier wird sie eher gelesen.
+        tk.Label(innen, text=self._t("ps4pkg.runtime_note"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
+                 fg=c["fg_warning"], anchor="w", justify="left",
+                 wraplength=560).pack(fill="x", pady=(8, 0))
+
+        karte.update_idletasks()
+        breite, hoehe = karte.winfo_reqwidth(), karte.winfo_reqheight()
+        x = fenster.winfo_rootx() + (fenster.winfo_width() - breite) // 2
+        y = fenster.winfo_rooty() + (fenster.winfo_height() - hoehe) // 2
+        karte.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
+
+        # Ohne -alpha (manche Linux-Sitzungen ohne Compositor) erscheint der
+        # Hinweis eben hart - besser als gar nicht.
+        blenden = True
+        try:
+            karte.attributes("-alpha", 0.0)
+        except Exception:
+            blenden = False
+        karte.deiconify()
+        try:
+            karte.lift()
+        except Exception:
+            pass
+
+        schritte = max(1, self._PS4_HINWEIS_BLENDE // self._PS4_HINWEIS_SCHRITT)
+
+        def _blende(nummer: int, auf: bool) -> None:
+            if not karte.winfo_exists():
+                return
+            anteil = nummer / schritte
+            wert = anteil if auf else 1.0 - anteil
+            try:
+                karte.attributes("-alpha", wert * self._PS4_HINWEIS_DECKKRAFT)
+            except Exception:
+                pass
+            if nummer < schritte:
+                karte.after(self._PS4_HINWEIS_SCHRITT, _blende, nummer + 1, auf)
+            elif auf:
+                karte.after(self._PS4_HINWEIS_DAUER, _blende, 0, False)
+            else:
+                _schliessen()
+
+        def _schliessen() -> None:
+            zustand["laeuft"] = False
+            zustand["fenster"] = None
+            try:
+                karte.destroy()
+            except Exception:
+                pass
+
+        if blenden:
+            _blende(0, True)
+        else:
+            karte.after(self._PS4_HINWEIS_DAUER, _schliessen)
+
+    def _ps4_hinweis_aufraeumen(self) -> None:
+        """Schliesst eine offene Einblendung - beim Ende oder beim Abbruch."""
+        zustand = getattr(self, "_ps4_hinweis_stand", None)
+        if not isinstance(zustand, dict):
+            return
+        # Ab hier keine neue Einblendung mehr: Das abschliessende
+        # _balken(100.0) kommt erst nach dem Aufraeumen und loeste sonst
+        # eine aus, wenn die Umwandlung laengst fertig war - sie stand dann
+        # 25 Sekunden ohne Anlass da (22.08.2026 an einer echten
+        # Konvertierung gesehen).
+        zustand["fertig"] = True
+        # Auch den Wecker abstellen: Sonst kaeme die erste Einblendung
+        # nach dem Ende, wenn die Umwandlung in unter einer Minute durch war.
+        uhr = zustand.get("uhr")
+        zustand["uhr"] = None
+        if uhr is not None:
+            try:
+                self.root.after_cancel(uhr)
+            except Exception:
+                pass
+        karte = zustand.get("fenster")
+        zustand["laeuft"] = False
+        zustand["fenster"] = None
+        if karte is not None:
+            try:
+                karte.destroy()
+            except Exception:
+                pass
+
+    def _show_ps4_pkg_converter(self) -> None:
+        """Öffnet das Fenster „PS4 PKG → ffpfsc".
+
+        Wandelt PS4-PKG (Basis, Patch, optional DLC) oder ein bereits
+        entpacktes PS4-Spiel in ein ShadowMountPlus-Abbild um. Die Arbeit
+        macht das eingebettete PS4-FFPFSC 0.2.8; dieses Fenster wählt aus,
+        zeigt den Fortschritt und schreibt das Protokoll mit.
+        """
+        c = self._COLORS
+        if not _ps4ffpsc_wurzel():
+            messagebox.showerror(
+                self._t("ps4pkg.window_title"),
+                self._t("ps4pkg.missing_tool"),
+                parent=self.root,
+            )
+            return
+        if not _ps4ffpsc_entpacker():
+            messagebox.showerror(
+                self._t("ps4pkg.window_title"),
+                self._t("ps4pkg.no_extractor", system=_systemname()),
+                parent=self.root,
+            )
+            return
+
+        win = self._build_modern_toplevel(
+            self._t("ps4pkg.window_title"), 980, 760, min_width=860, min_height=640)
+        self._build_modern_header(
+            win, self._t("ps4pkg.window_title"), self._t("ps4pkg.subtitle"))
+
+        körper = tk.Frame(win, bg=c["bg_main"], padx=18)
+        körper.pack(fill="both", expand=True)
+
+        quelle_art = tk.StringVar(value="pkg_dir")
+        quelle_var = tk.StringVar()
+        ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
+        format_var = tk.StringVar(value="ffpfsc")
+        stufe_var = tk.IntVar(value=7)
+        worker_var = tk.IntVar(value=max(1, (os.cpu_count() or 4) // 2))
+        dlc_var = tk.BooleanVar(value=False)
+        status_var = tk.StringVar(value=self._t("ps4pkg.status_idle"))
+        laeuft = {"aktiv": False, "abbruch": False, "prozess": None}
+        gefunden: dict[str, dict] = {}
+
+        # ── Quelle ──────────────────────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.source_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
+        art_reihe = tk.Frame(körper, bg=c["bg_main"])
+        art_reihe.pack(fill="x")
+        for wert, schluessel in (
+            ("pkg_dir", "ps4pkg.source_kind_dir"),
+            ("pkg_file", "ps4pkg.source_kind_files"),
+            ("dump_dir", "ps4pkg.source_kind_dump"),
+        ):
+            tk.Radiobutton(
+                art_reihe, text=self._t(schluessel), value=wert, variable=quelle_art,
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["bg_card"], activebackground=c["bg_main"],
+                activeforeground=c["fg_primary"], highlightthickness=0, bd=0,
+            ).pack(side="left", padx=(0, 14))
+
+        pfad_reihe = tk.Frame(körper, bg=c["bg_main"])
+        pfad_reihe.pack(fill="x", pady=(6, 0))
+        tk.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
+
+        def _quelle_waehlen() -> None:
+            """Öffnet den zur gewählten Art passenden Auswahldialog."""
+            art = quelle_art.get()
+            if art == "pkg_file":
+                pfade = filedialog.askopenfilenames(
+                    title=self._t("ps4pkg.choose_files"),
+                    filetypes=[(self._t("ps4pkg.filetype_pkg"), "*.pkg")], parent=win)
+                if pfade:
+                    quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in pfade))
+                return
+            ordner = filedialog.askdirectory(
+                title=self._t("ps4pkg.choose_dir"),
+                initialdir=self._get_source_dialog_initial_dir() or None, parent=win)
+            if ordner:
+                quelle_var.set(os.path.normpath(ordner))
+
+        ttk.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
+
+        # ── Gefundene Spiele ────────────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
+        liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
+        liste_rahmen.pack(fill="both", expand=True)
+        spalten = ("title_id", "plattform", "titel", "version", "teile")
+        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
+        for spalte, breite in zip(spalten, (110, 80, 350, 100, 190)):
+            # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
+            # Werte links, die Ueberschrift zentriert Tk sonst weiter.
+            liste.heading(spalte, text=self._t(f"ps4pkg.col_{spalte}"), anchor="w")
+            liste.column(spalte, width=breite, anchor="w")
+        # Ein PS5-Titel gehoert nicht in dieses Fenster - er soll auffallen,
+        # nicht nur in einer Spalte stehen.
+        liste.tag_configure("ps5", foreground=c["fg_warning"])
+        liste.tag_configure("unbekannt", foreground=c["fg_secondary"])
+        liste.pack(side="left", fill="both", expand=True)
+        liste_scroll = ttk.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
+        liste_scroll.pack(side="right", fill="y")
+        liste.configure(yscrollcommand=liste_scroll.set)
+
+        # ── Ziel und Einstellungen ──────────────────────────────────────
+        tk.Label(körper, text=self._t("ps4pkg.output_label"), font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
+        ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
+        ziel_reihe.pack(fill="x")
+        tk.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
+                 relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
+
+        def _ziel_waehlen() -> None:
+            ordner = filedialog.askdirectory(title=self._t("ps4pkg.choose_output"), parent=win)
+            if ordner:
+                ziel_var.set(os.path.normpath(ordner))
+
+        ttk.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
+
+        einstell = tk.Frame(körper, bg=c["bg_main"])
+        einstell.pack(fill="x", pady=(8, 0))
+        tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
+                     values=("ffpfsc", "exfat"), font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        tk.Label(einstell, text=self._t("ps4pkg.level_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
+                    font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        tk.Label(einstell, text=self._t("ps4pkg.workers_label"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
+        ttk.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
+                    width=4, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
+        dlc_kasten = tk.Checkbutton(
+            einstell, text=self._t("ps4pkg.dlc_label"), variable=dlc_var,
+            font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
+            selectcolor=c["bg_card"], activebackground=c["bg_main"],
+            activeforeground=c["fg_warning"], highlightthickness=0, bd=0,
+        )
+        dlc_kasten.pack(side="left")
+        DelayedTooltip(dlc_kasten, self._t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
+
+        # Der Ablageort steht nicht mehr dauerhaft im Fenster, sondern in
+        # der Einblendung waehrend der Umwandlung: Dort erreicht er den
+        # Nutzer im richtigen Moment - er wartet ohnehin auf den Balken -,
+        # und das Fenster wird um rund 190 px kuerzer. Siehe
+        # _ps4_hinweis_zeigen.
+
+        # ── Fortschritt und Protokoll ───────────────────────────────────
+        balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
+        balken.pack(fill="x", pady=(10, 3))
+        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=920, justify="left").pack(fill="x")
+
+        protokoll = tk.Text(körper, height=4, font=("Consolas", pt(9)),
+                            bg=c["console_bg"], fg=c["console_fg"], relief="flat",
+                            insertbackground=c["console_fg"], wrap="none")
+        protokoll.pack(fill="both", expand=True, pady=(6, 0))
+        protokoll_scroll = ttk.Scrollbar(körper, orient="horizontal", command=protokoll.xview)
+        protokoll_scroll.pack(fill="x")
+        protokoll.configure(xscrollcommand=protokoll_scroll.set)
+
+        def _protokoll(text: str) -> None:
+            """Hängt eine Zeile an das Protokollfeld des Fensters an."""
+            def _setzen() -> None:
+                if not protokoll.winfo_exists():
+                    return
+                protokoll.insert("end", text.rstrip("\n") + "\n")
+                protokoll.see("end")
+            self._spaeter_im_fenster(win, _setzen)
+
+        def _status(text: str) -> None:
+            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+
+        def _balken(wert: float) -> None:
+            begrenzt = max(0.0, min(100.0, wert))
+
+            def _setzen() -> None:
+                balken.configure(value=begrenzt)
+                # Waehrend der Nutzer auf den Balken schaut, steht die eine
+                # Sache da, die ueber Laufen und Nicht-Laufen entscheidet.
+                if self._ps4_hinweis_faellig(begrenzt):
+                    self._ps4_hinweis_zeigen(win)
+
+            self._spaeter_im_fenster(win, _setzen)
+
+        # ── Quellenangaben in CLI-Schalter übersetzen ───────────────────
+        def _quellen_argumente() -> list[str] | None:
+            """Baut die Quellschalter; None bei ungültiger Eingabe."""
+            eingabe = quelle_var.get().strip()
+            if not eingabe:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_source"), parent=win)
+                return None
+            art = quelle_art.get()
+            if art == "pkg_file":
+                argumente: list[str] = []
+                for teil in eingabe.split(os.pathsep):
+                    pfad = teil.strip()
+                    if pfad:
+                        argumente += ["--pkg-file", pfad]
+                if not argumente:
+                    messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                           self._t("ps4pkg.no_source"), parent=win)
+                    return None
+                return argumente
+            if not os.path.isdir(eingabe):
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_source"), parent=win)
+                return None
+            return ["--dump-dir" if art == "dump_dir" else "--pkg-dir", eingabe]
+
+        def _arbeitsordner() -> str:
+            """Legt den Arbeitsordner für Zwischenstände an.
+
+            Unter Windows wird dabei auf die Pfadlänge geachtet: Der
+            mitgelieferte PKG-Entpacker bricht bei tiefen Zielen mit
+            „Failed to write extracted PKG entry" ab. Nachgemessen an einem
+            Arbeitsordner von 150 Zeichen – das Spiel selbst legt darunter
+            noch ``unpacked/<Title-ID>/…/sce_sys/…`` an und sprengt damit die
+            260-Zeichen-Grenze. In dem Fall weicht der Arbeitsordner auf einen
+            kurzen Pfad im Stammverzeichnis aus; das fertige Abbild landet
+            trotzdem im gewählten Zielordner.
+            """
+            basis = (ziel_var.get().strip()
+                     or str(getattr(self, "temp_path", None).get() if hasattr(self, "temp_path") else "").strip()
+                     or tempfile.gettempdir())
+            ordner = os.path.join(basis, "ps4ffpsc_arbeit")
+            if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
+                laufwerk = os.environ.get("SystemDrive", "C:") + os.sep
+                ausweich = os.path.join(laufwerk, "ps4ffpsc_arbeit")
+                _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
+                ordner = ausweich
+            os.makedirs(ordner, exist_ok=True)
+            return ordner
+
+        # ── Einlesen ────────────────────────────────────────────────────
+        def _einlesen() -> None:
+            """Liest die Quelle ein und füllt die Spieleliste."""
+            if laeuft["aktiv"]:
+                return
+            argumente = _quellen_argumente()
+            if argumente is None:
+                return
+            liste.delete(*liste.get_children())
+            gefunden.clear()
+            laeuft["aktiv"] = True
+            _status(self._t("ps4pkg.status_scanning"))
+            _balken(0.0)
+
+            def _arbeit() -> None:
+                arbeit = _arbeitsordner()
+                rc, ausgabe = self._ps4ffpsc_lauf(
+                    ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
+                     os.path.join(arbeit, "unpacked")],
+                    arbeitsordner=arbeit,
+                    zeile_callback=_protokoll,
+                    prozess_ablage=laeuft,
+                    json_modus=True,
+                )
+                laeuft["aktiv"] = False
+                if rc != 0:
+                    _status(self._t("ps4pkg.status_scan_failed", code=rc))
+                    return
+                try:
+                    daten = json.loads(ausgabe.strip())
+                except ValueError:
+                    _status(self._t("ps4pkg.status_scan_unreadable"))
+                    return
+                # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
+                # nicht mit einer Liste.
+                spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
+                # Wer PS5-Pakete hierher legt, bekam bisher nur
+                # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
+                sicht = self._ps4ffpsc_quellen_sichten(
+                    quelle_var.get().strip(), quelle_art.get())
+                if sicht["ps5"]:
+                    _protokoll(self._t("ps4pkg.ps5_packages",
+                                       anzahl=len(sicht["ps5"])))
+                    for name in sicht["ps5"][:12]:
+                        _protokoll("    %s" % name)
+                    if len(sicht["ps5"]) > 12:
+                        _protokoll(self._t("ps4pkg.and_more",
+                                           anzahl=len(sicht["ps5"]) - 12))
+
+                def _fuellen() -> None:
+                    for spiel in spiele:
+                        if not isinstance(spiel, dict):
+                            continue
+                        title_id = str(spiel.get("title_id", "?"))
+                        gefunden[title_id] = spiel
+                        patches = spiel.get("patches") or []
+                        basis = spiel.get("base") or []
+                        neueste = patches or basis
+                        version = "-"
+                        if neueste and isinstance(neueste[-1], dict):
+                            version = str(neueste[-1].get("version")
+                                          or neueste[-1].get("app_version") or "-")
+                        teile = self._t(
+                            "ps4pkg.parts",
+                            patches=len(patches),
+                            dlc=len(spiel.get("dlc") or []),
+                        )
+                        if not spiel.get("buildable", True):
+                            teile = self._t("ps4pkg.not_buildable") + " - " + teile
+                        # Zu welcher Konsole gehoert der Titel? Das steht
+                        # bisher erst nach dem Bau im Protokoll - wer eine
+                        # PS5-PKG hierher legt, merkte es also viel zu spaet.
+                        plattform = self._ps4ffpsc_plattform(title_id, spiel)
+                        anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
+                            plattform, self._t("ps4pkg.platform_unknown"))
+                        liste.insert("", "end", iid=title_id,
+                                     tags=(plattform or "unbekannt",), values=(
+                            title_id, anzeige, str(spiel.get("title", "-")),
+                            version, teile,
+                        ))
+                        if plattform == "ps5":
+                            _protokoll(self._t("ps4pkg.is_ps5_title",
+                                               title_id=title_id))
+                        elif not plattform:
+                            _protokoll(self._t("ps4pkg.platform_unclear",
+                                               title_id=title_id))
+                        for hinweis in list(spiel.get("warnings") or [])[:5]:
+                            _protokoll(f"[{title_id}] {hinweis}")
+                        for konflikt in list(spiel.get("conflicts") or [])[:5]:
+                            _protokoll(f"[{title_id}] {konflikt}")
+                    if gefunden:
+                        liste.selection_set(next(iter(gefunden)))
+                    _status(self._t("ps4pkg.status_found", count=len(gefunden)))
+
+                self._spaeter_im_fenster(win, _fuellen)
+
+            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-list").start()
+
+        # ── Erstellen ───────────────────────────────────────────────────
+        def _fortschritt(daten: dict) -> None:
+            """Übersetzt eine Fortschrittsmeldung des Werkzeugs in den Balken."""
+            bereich = str(daten.get("scope", ""))
+            aktuell = float(daten.get("current", 0) or 0)
+            gesamt = float(daten.get("total", 0) or 0)
+            if gesamt > 0:
+                _balken(aktuell / gesamt * 100.0)
+            _status(self._t("ps4pkg.status_stage", stage=bereich,
+                            current=int(aktuell), total=int(gesamt)))
+
+        def _erstellen() -> None:
+            """Baut das Abbild für das ausgewählte Spiel."""
+            if laeuft["aktiv"]:
+                return
+            auswahl = liste.selection()
+            if not auswahl:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_game"), parent=win)
+                return
+            ziel = ziel_var.get().strip()
+            if not ziel or not os.path.isdir(ziel):
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_output"), parent=win)
+                return
+            argumente = _quellen_argumente()
+            if argumente is None:
+                return
+            if dlc_var.get() and not messagebox.askyesno(
+                    self._t("ps4pkg.window_title"), self._t("ps4pkg.dlc_confirm"), parent=win):
+                return
+
+            title_id = auswahl[0]
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            # Je Lauf zweimal, danach nicht mehr - wer zweimal konvertiert,
+            # bekommt den Hinweis auch beim zweiten Mal.
+            self._ps4_hinweis_stand = {"gezeigt": set(), "laeuft": False,
+                                       "fenster": None, "fertig": False,
+                                       "uhr": None}
+            _balken(0.0)
+            # Die erste haengt an der Uhr, die zweite am Balken.
+            self._ps4_hinweis_zeit_starten(win)
+            _status(self._t("ps4pkg.status_building", title=title_id))
+
+            def _arbeit() -> None:
+                arbeit = _arbeitsordner()
+                befehl = [
+                    "build", title_id, *argumente,
+                    "--output-dir", ziel,
+                    "--work-dir", arbeit,
+                    "--unpacked-dir", os.path.join(arbeit, "unpacked"),
+                    "--output-format", format_var.get(),
+                    "--compression-level", str(int(stufe_var.get())),
+                    "--compression-workers", str(int(worker_var.get())),
+                    "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
+                    "--verbose",
+                ]
+                rc, _ausgabe = self._ps4ffpsc_lauf(
+                    befehl,
+                    arbeitsordner=arbeit,
+                    zeile_callback=_protokoll,
+                    fortschritt_callback=_fortschritt,
+                    prozess_ablage=laeuft,
+                )
+                laeuft["aktiv"] = False
+                self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
+                if laeuft["abbruch"]:
+                    _status(self._t("ps4pkg.status_cancelled"))
+                    return
+                if rc == 0:
+                    _balken(100.0)
+                    _status(self._t("ps4pkg.status_done", path=ziel))
+                    self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
+                    # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
+                    # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
+                    # oder gar nicht.
+                    _protokoll(self._t("ps4pkg.check_running"))
+                    # Die Datei suchen, nicht den Ordner uebergeben: Das war
+                    # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
+                    # "Permission denied" auf dem Ordnerpfad endete.
+                    abbild = self._ps4ffpsc_ergebnis_finden(
+                        ziel, title_id, format_var.get())
+                    if not abbild:
+                        _protokoll(self._t("ps4pkg.check_no_image"))
+                        return
+                    befund = self._ps4ffpsc_abbild_pruefen(abbild)
+                    if befund["fehler"]:
+                        _protokoll(self._t("ps4pkg.check_failed",
+                                           error=befund["fehler"]))
+                    else:
+                        _protokoll(self._t("ps4pkg.check_files",
+                                           count=befund["dateien"]))
+                        if befund["ps4"]:
+                            # Bei einem PS4-Titel gehoeren die PS5-Marker gar
+                            # nicht hinein - sie dort zu vermissen waere ein
+                            # Fehlalarm bei jedem einzelnen Spiel.
+                            _protokoll(self._t("ps4pkg.check_ps4_title"))
+                            # Direkt danach die Trophaeengrenze: Genau
+                            # jetzt hat der Nutzer ein fertiges PS4-Abbild
+                            # vor sich und wuerde sonst erst an der
+                            # Konsole darueber stolpern.
+                            _protokoll(self._t("ps4pkg.check_trophy_note"))
+                        else:
+                            for fehlt in befund["fehlend"]:
+                                _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
+                                self._append_to_log(
+                                    self._t("ps4pkg.check_missing", file=fehlt) + "\n")
+                            if not befund["fehlend"]:
+                                _protokoll(self._t("ps4pkg.check_complete"))
+                else:
+                    _status(self._t("ps4pkg.status_failed", code=rc))
+
+            threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-build").start()
+
+        def _abbrechen() -> None:
+            """Beendet einen laufenden Vorgang."""
+            prozess = laeuft.get("prozess")
+            if not laeuft["aktiv"] or prozess is None:
+                return
+            laeuft["abbruch"] = True
+            _status(self._t("ps4pkg.status_cancelling"))
+            try:
+                prozess.terminate()
+            except OSError as exc:
+                logger.debug("PS4-Vorgang nicht beendbar: %s", exc)
+
+        # "before=körper" dreht die Packreihenfolge um, ohne den Aufbau
+        # umzustellen: Der Koerper hat fill="both", expand=True und nimmt
+        # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
+        # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
+        # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x", before=körper)
+        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
+        ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
+                   command=_einlesen).pack(side="left")
+        ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
+                   command=_erstellen).pack(side="left", padx=(8, 0))
+
     def _show_debug_pkg_builder(self) -> None:
         """Öffnet den Bauer für unsignierte Debug-.pkg-Container."""
         c = self._COLORS
@@ -33755,6 +34756,144 @@ def _ensure_av_exclusion() -> None:
 UFS2TOOL_ORDNER = "UFS2Tool-4.1"
 
 
+#: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
+PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
+
+#: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
+#: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
+UFS2TOOL_ORDNER = "UFS2Tool-4.1"
+
+#: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
+#: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
+_PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
+
+#: Hoechstlaenge des Arbeitsordners fuer das PS4-Werkzeug unter Windows.
+#: Darunter legt es noch "unpacked/<Title-ID>/<Paket>/sce_sys/..." an; ab etwa
+#: 150 Zeichen scheitert der PKG-Entpacker an der 260-Zeichen-Grenze.
+_PS4FFPSC_MAX_ARBEITSPFAD = 110
+
+
+def _ps4ffpsc_wurzel() -> str:
+    """Findet den eingebetteten PS4-FFPFSC-Ordner.
+
+    Gesucht wird an denselben Stellen wie die MkPFS-Engine: im entpackten
+    PyInstaller-Bündel, neben dem Programm und im Arbeitsverzeichnis.
+
+    Returns:
+        Absoluter Pfad, oder "" wenn der Ordner fehlt.
+    """
+    laufzeit_wurzel = os.path.dirname(
+        sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
+    )
+    kandidaten = [getattr(sys, "_MEIPASS", ""), laufzeit_wurzel, os.getcwd()]
+    for wurzel in kandidaten:
+        if not wurzel:
+            continue
+        pfad = os.path.join(os.path.abspath(wurzel), PS4FFPFSC_ORDNER)
+        if os.path.isfile(os.path.join(pfad, "ps4ffpsc", "cli.py")):
+            return pfad
+    return ""
+
+
+def _ps4ffpsc_entpacker() -> str:
+    """Sucht den PKG-Entpacker fuer die laufende Plattform.
+
+    Mitgeliefert werden die Windows-Fassungen (``.exe``) und die fuer Apple
+    Silicon (ohne Endung, arm64). Fuer Linux und Intel-Macs gibt es beim
+    Hersteller keine fertigen Programmdateien; dort bleibt die Umwandlung
+    ohne diesen Helfer stehen - besser vorher sagen als mitten im Lauf.
+
+    Returns:
+        Pfad des passenden Entpackers, oder "" wenn keiner vorliegt.
+    """
+    wurzel = _ps4ffpsc_wurzel()
+    if not wurzel:
+        return ""
+    if IST_WINDOWS:
+        name = "ps4_pkg_extract.exe"
+    elif sys.platform == "darwin" and platform.machine() in ("arm64", "aarch64"):
+        # Die endungslose Datei ist die Fassung fuer Apple Silicon. Sie NUR
+        # dort zu nehmen ist wichtig: Unter Linux liegt sie ebenfalls im
+        # Ordner, ist aber eine Mach-O-Datei und laesst sich nicht ausfuehren
+        # ("Exec format error"). Eine Suche allein ueber den Dateinamen
+        # meldete dort faelschlich einen brauchbaren Entpacker.
+        name = "ps4_pkg_extract"
+    else:
+        return ""
+    pfad = os.path.join(wurzel, "bin", name)
+    return pfad if os.path.isfile(pfad) else ""
+
+
+def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:
+    """Baut die Umgebung für einen PS4-FFPFSC-Lauf.
+
+    Das Werkzeug findet seine mitgelieferten Teile (``bin/ps4_pkg_extract.exe``,
+    ``bin/ps4-dlc-patch.exe``) über ``PS4FFPSC_RESOURCE_ROOT`` und legt seinen
+    Arbeitsstand unter ``PS4FFPSC_DATA_ROOT`` ab. Ohne beides würde es im
+    eingefrorenen Betrieb im Entpackordner von PyInstaller suchen - der bei
+    jedem Start woanders liegt und nach dem Ende verschwindet.
+
+    Args:
+        arbeitsordner: Ordner für Zwischenstände; leer lässt die Vorgabe stehen.
+
+    Returns:
+        Kopie der aktuellen Umgebung mit den ergänzten Werten.
+    """
+    umgebung = dict(os.environ)
+    wurzel = _ps4ffpsc_wurzel()
+    if wurzel:
+        umgebung["PS4FFPSC_RESOURCE_ROOT"] = wurzel
+    if arbeitsordner:
+        umgebung["PS4FFPSC_DATA_ROOT"] = arbeitsordner
+    # Fortschrittsmeldungen als JSON-Zeilen auf stderr (PS4FFPSC_PROGRESS …).
+    umgebung["PS4FFPSC_GUI_PROGRESS"] = "1"
+    umgebung["PYTHONIOENCODING"] = "utf-8"
+    umgebung["PYTHONUTF8"] = "1"
+    return umgebung
+
+
+def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
+    """Führt einen der beiden internen PS4-Modi aus.
+
+    ``--ps4ffpsc``  startet die Kommandozeile des eingebetteten Werkzeugs,
+    ``--ps4-mkpfs`` die von ihm geprüfte MkPFS-Fassung 1.0.0. Den zweiten
+    Schalter ruft das Werkzeug selbst auf (siehe ``pipeline.mkpfs_command``);
+    beide sind für Menschen nicht gedacht.
+
+    Wichtig ist die eigene MkPFS-Fassung: Das Programm arbeitet sonst mit
+    0.0.9, und beide Wege sollen bei der Fassung bleiben, gegen die sie
+    geprüft wurden.
+
+    Args:
+        modus: ``--ps4ffpsc`` oder ``--ps4-mkpfs``.
+        argv:  Die restlichen Argumente.
+
+    Returns:
+        Rückgabewert des aufgerufenen Werkzeugs.
+    """
+    wurzel = _ps4ffpsc_wurzel()
+    if not wurzel:
+        print(
+            f"[FEHLER] Der Ordner {PS4FFPFSC_ORDNER} fehlt - das PS4-Werkzeug "
+            "ist nicht mitgeliefert.",
+            file=sys.stderr,
+        )
+        return 2
+
+    if modus == "--ps4-mkpfs":
+        pfad = os.path.join(wurzel, "mkpfs_1_0_0")
+        if pfad not in sys.path:
+            sys.path.insert(0, pfad)
+        from mkpfs.cli import cli_mkpfs_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+        return int(cli_mkpfs_main(argv) or 0)
+
+    os.environ.setdefault("PS4FFPSC_RESOURCE_ROOT", wurzel)
+    if wurzel not in sys.path:
+        sys.path.insert(0, wurzel)
+    from ps4ffpsc.cli import main as ps4ffpsc_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    return int(ps4ffpsc_main(argv) or 0)
 
 
 def _is_admin() -> bool:
@@ -34341,6 +35480,13 @@ if __name__ == "__main__":
     # Sofort nach freeze_support: Ab hier wird jede unbehandelte
     # Ausnahme aufgezeichnet, auch die aus dem Programmstart.
     _haken_setzen()
+
+    # Interne Modi des eingebetteten PS4-Werkzeugs. Sie muessen VOR der
+    # Rechtepruefung stehen: Diese Prozesse startet das Programm selbst, sie
+    # erben die Rechte des Aufrufers, und eine zweite UAC-Abfrage haette
+    # niemanden, der sie beantwortet - der Lauf bliebe stehen.
+    if len(sys.argv) > 1 and sys.argv[1] in ("--ps4ffpsc", "--ps4-mkpfs"):
+        sys.exit(_run_ps4_subcommand(sys.argv[1], sys.argv[2:]))
 
     # Darstellungspruefung. Steht aus demselben Grund vor der
     # Rechtepruefung: Sie braucht keine Administratorrechte, und eine

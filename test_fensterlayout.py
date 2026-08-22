@@ -421,6 +421,58 @@ class FenstergroesseTests(unittest.TestCase):
             os.path.dirname(HAUPTDATEI)))
 
 
+    def test_ps4_pkg_knoepfe_bleiben_erreichbar(self):
+        """Die Knopfreihe muss auch auf einem kurzen Bildschirm sichtbar sein.
+
+        Der Ablageort-Kasten aus v1.8.74 macht das Fenster hoeher als der
+        Bildschirm hier hergibt (854 noetig, 784 moeglich). Entscheidend ist
+        dann nicht, dass alles zu sehen ist, sondern dass EINLESEN, ABBILD
+        ERSTELLEN, ABBRECHEN und SCHLIESSEN erreichbar bleiben. Dafuer wird
+        die Knopfreihe mit ``before=`` vor dem dehnbaren Koerper gepackt.
+        """
+        import time
+
+        if not self.haupt._ps4ffpsc_wurzel():
+            self.skipTest("Eingebettetes PS4-Werkzeug nicht vorhanden")
+        vorher = {str(w) for w in _WURZEL.winfo_children()}
+        self.app._show_ps4_pkg_converter()
+        ende = time.perf_counter() + 3.0
+        while time.perf_counter() < ende:
+            _WURZEL.update()
+            time.sleep(0.01)
+        neu = [w for w in _WURZEL.winfo_children()
+               if str(w) not in vorher and isinstance(w, tk.Toplevel)
+               and w.winfo_exists()]
+        self.assertTrue(neu, "Es wurde kein Fenster geoeffnet")
+        fenster = neu[-1]
+        fenster.update_idletasks()
+        knoepfe = [b for b in _sammle(fenster, "Button")
+                   if b.winfo_ismapped()]
+        masse = []
+        for knopf in knoepfe:
+            unten = (knopf.winfo_rooty() - fenster.winfo_rooty()
+                     + knopf.winfo_height())
+            masse.append((str(knopf.cget("text"))[:20], knopf.winfo_height(),
+                          knopf.winfo_reqheight(), unten,
+                          fenster.winfo_height()))
+        try:
+            fenster.destroy()
+        except Exception:
+            pass
+        _WURZEL.update_idletasks()
+
+        self.assertTrue(masse, "Keine Knoepfe gefunden")
+        for text, hoehe, noetig, unten, fensterhoehe in masse:
+            with self.subTest(knopf=text):
+                self.assertGreaterEqual(
+                    hoehe, noetig - 2,
+                    "Knopf %r ist auf %d statt %d px zusammengequetscht."
+                    % (text, hoehe, noetig))
+                self.assertLessEqual(
+                    unten, fensterhoehe,
+                    "Knopf %r endet bei %d, das Fenster ist nur %d px hoch - "
+                    "er liegt ausserhalb." % (text, unten, fensterhoehe))
+
     def test_der_wachstumsschritt_haengt_am_gemeinsamen_bau(self):
         # Sechzehn Fenster entstehen ueber _build_modern_toplevel. Faellt
         # der Aufruf dort weg, sind sie alle wieder betroffen.
