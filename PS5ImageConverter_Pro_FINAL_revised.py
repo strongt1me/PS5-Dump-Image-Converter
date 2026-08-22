@@ -410,7 +410,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.79"
+APP_VERSION = "v1.8.80"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -28521,6 +28521,90 @@ class PS5ConverterGUI:
         kandidaten.sort()
         return kandidaten[0][3]
 
+    #: Wohin die Konsole die NP-Bindung eines Titels erwartet.
+    _NPBIND_ZIEL = "/system_data/priv/appmeta/%s/npbind.dat"
+    #: Wo sie im Abbild liegt.
+    _NPBIND_IM_ABBILD = "sce_sys/npbind.dat"
+
+    def _npbind_aus_abbild(self, pfad: str) -> bytes:
+        """Holt sce_sys/npbind.dat aus einem fertigen Abbild.
+
+        Args:
+            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
+
+        Returns:
+            Der Inhalt, oder ``b""`` wenn die Datei nicht darin steht.
+        """
+        griff = None
+        try:
+            from mkpfs.exfat import ExfatReader
+
+            with open(pfad, "rb") as datei:
+                kopf = datei.read(16)
+            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
+                from mkpfs import pfs as mkpfs_pfs
+
+                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
+                if not geoeffnet:
+                    return b""
+                sicht, griff, _name = geoeffnet
+            else:
+                sicht = griff = open(pfad, "rb")
+            sicht.seek(0)
+            leser = ExfatReader(sicht)
+            for eintrag in leser.iter_files():
+                rel = eintrag.rel_path.replace("\\", "/").lower()
+                if rel == self._NPBIND_IM_ABBILD:
+                    # read_file liefert Stuecke, keine fertigen Bytes.
+                    return b"".join(leser.read_file(eintrag))
+            return b""
+        except Exception as exc:                      # noqa: BLE001 - melden
+            logger.debug("npbind.dat nicht aus dem Abbild lesbar: %s", exc)
+            return b""
+        finally:
+            try:
+                if griff is not None:
+                    griff.close()
+            except Exception:
+                pass
+
+    def _npbind_auf_konsole(self, ftp, title_id: str, inhalt: bytes) -> str:
+        """Legt die NP-Bindung neben die Metadaten des registrierten Titels.
+
+        Args:
+            ftp: Offene Verbindung (siehe ``_ampr_ftp_connect``).
+            title_id: Die Kennung, etwa ``CUSA00775``.
+            inhalt: Der Inhalt aus dem Abbild.
+
+        Returns:
+            Ein Schluessel fuer die Meldung: ``"fehlt_ordner"`` (Titel noch
+            nicht registriert), ``"schon_da"``, ``"gelegt"`` oder
+            ``"abweichung"`` (zurueckgelesen und ungleich).
+        """
+        ziel = self._NPBIND_ZIEL % title_id
+        ordner = ziel.rsplit("/", 1)[0]
+        if not self._ampr_ftp_is_dir(ftp, ordner):
+            return "fehlt_ordner"
+
+        # Nie ueberschreiben: Ist der Titel regulaer installiert, hat das
+        # System dort seine eigene Bindung abgelegt - die hat Vorrang. Der
+        # Schritt fuellt nur die Luecke, die ShadowMountPlus laesst.
+        vorhanden = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s" % ziel, vorhanden.write)
+        except Exception:
+            vorhanden = None
+        if vorhanden is not None:
+            return ("schon_da" if vorhanden.getvalue() == inhalt
+                    else "schon_da_anders")
+
+        ftp.storbinary("STOR %s" % ziel, io.BytesIO(inhalt))
+        # Zurueckholen und vergleichen - eine halbe Datei waere schlimmer
+        # als gar keine.
+        kontrolle = io.BytesIO()
+        ftp.retrbinary("RETR %s" % ziel, kontrolle.write)
+        return "gelegt" if kontrolle.getvalue() == inhalt else "abweichung"
+
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
         """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
 
@@ -29344,10 +29428,75 @@ class PS5ConverterGUI:
         # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
         # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
         # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
+        # ── NP-Bindung nachtragen ───────────────────────────────────────
+        def _npbind_nachtragen() -> None:
+            """Legt die NP-Bindung des gewaehlten Titels auf die Konsole.
+
+            Kein Teil des Bauvorgangs: Der Zielordner
+            /system_data/priv/appmeta/<Title-ID>/ entsteht erst, wenn
+            ShadowMount+ den Titel registriert hat - beim Bauen liegt das
+            Abbild noch auf dem PC.
+            """
+            if laeuft["aktiv"]:
+                return
+            auswahl = liste.selection()
+            if not auswahl:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.no_game"), parent=win)
+                return
+            title_id = auswahl[0]
+            ziel = ziel_var.get().strip()
+            abbild = self._ps4ffpsc_ergebnis_finden(ziel, title_id,
+                                                    format_var.get()) if ziel else ""
+            if not abbild:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.npbind_no_image"), parent=win)
+                return
+            inhalt = self._npbind_aus_abbild(abbild)
+            if not inhalt:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.npbind_not_in_image"), parent=win)
+                return
+            host = self._ps5_ip()
+            if not host:
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.npbind_no_ip"), parent=win)
+                return
+
+            _protokoll(self._t("ps4pkg.npbind_start", title_id=title_id,
+                               bytes=len(inhalt), host=host))
+            laeuft["aktiv"] = True
+
+            def _arbeit() -> None:
+                ftp = None
+                try:
+                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                    stand = self._npbind_auf_konsole(ftp, title_id, inhalt)
+                except Exception as exc:                  # noqa: BLE001
+                    logger.debug("npbind nachtragen: %s", exc)
+                    _protokoll(self._t("ps4pkg.npbind_failed", error=exc))
+                    laeuft["aktiv"] = False
+                    return
+                finally:
+                    if ftp is not None:
+                        try:
+                            ftp.quit()
+                        except Exception:
+                            try:
+                                ftp.close()
+                            except Exception:
+                                pass
+                laeuft["aktiv"] = False
+                _protokoll(self._t("ps4pkg.npbind_" + stand, title_id=title_id))
+
+            threading.Thread(target=_arbeit, daemon=True).start()
+
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x", before=körper)
         ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
+        ttk.Button(knopfreihe, text=self._t("ps4pkg.npbind_button"),
+                   command=_npbind_nachtragen).pack(side="left", padx=(8, 0))
         ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
                    command=_einlesen).pack(side="left")
         ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",

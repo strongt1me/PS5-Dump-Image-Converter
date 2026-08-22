@@ -2,9 +2,25 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.79):** PS5-Pakete werden im PS4-Fenster benannt statt verschwiegen, der Ablageort-Hinweis kommt zweimal statt viermal, und eine Grenze des Abbildwegs ist dokumentiert: ShadowMount+ holt die NP-Bindung nicht aus PS4-Abbildern – daher die Trophäenfehler.
+> **Kurz zum aktuellen Stand (v1.8.80):** Der neue Knopf **NP-BINDUNG** legt die fehlende NP-Bindung auf die Konsole – damit funktionieren die Trophäen auch für Spiele, die aus einem Abbild laufen.
 
 ---
+
+## v1.8.80 – 22.08.2026
+
+### Der Knopf NP-BINDUNG
+
+In v1.8.79 stand nur, **warum** die Trophäen scheitern. Jetzt lässt es sich beheben.
+
+Unten links im PS4-Fenster gibt es den Knopf **NP-BINDUNG**. Er holt die `sce_sys/npbind.dat` aus dem fertigen Abbild und legt sie über FTP nach `/system_data/priv/appmeta/<Title-ID>/` – genau dorthin, wo die Konsole sie sucht und wo ShadowMount+ sie nicht ablegt.
+
+**Wann du ihn drückst:** erst, wenn das Spiel auf der PS5 schon erscheint. Der Zielordner entsteht nämlich erst mit der Registrierung. Also: Abbild erstellen, auf den Datenträger legen, warten bis es eingelesen ist – und dann zurück ins Fenster, Spiel markieren, Knopf drücken. Ist der Titel noch nicht registriert, sagt dir das Protokoll genau das.
+
+**Was er nicht tut:** Eine vorhandene Bindung wird nie überschrieben. Hast du das Spiel regulär über den Package Installer installiert, hat dessen Bindung Vorrang. Nach dem Ablegen wird die Datei zurückgelesen und verglichen.
+
+Nachgemessen: Die `npbind.dat` aus unserem Abbild ist **byteweise identisch** mit der, die der Package Installer ablegt – es wird also nichts Erfundenes hingelegt, sondern genau die Datei, die dazugehört.
+
+**Voraussetzung:** Die Adresse deiner PS5 muss in den Einstellungen stehen und die Konsole per FTP erreichbar sein – dieselbe Verbindung, die auch der AMPR EMU Manager nutzt.
 
 ## v1.8.79 – 22.08.2026
 

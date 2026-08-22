@@ -520,6 +520,141 @@ class KonsolenerkennungTests(unittest.TestCase):
         return self.quelltext[anfang:weiter]
 
 
+class NpBindungTests(unittest.TestCase):
+    """Der Schritt, der die NP-Bindung auf die Konsole legt.
+
+    Anlass: ShadowMountPlus kopiert nach /system_data/priv/appmeta/<TITLE>/
+    nur sce_sys/trophy2/npbind.dat und sce_sys/uds/npbind.dat - PS5-Pfade.
+    Ein PS4-Spiel legt die Bindung flach unter sce_sys/npbind.dat ab; sie
+    ist im Abbild enthalten, wird aber nie abgeholt, und ohne sie scheitert
+    die Trophaeen-Registrierung mit 0x80551618.
+
+    Am 22.08.2026 an der Konsole belegt: Datei von Hand nachgelegt - Fehler
+    weg, SceNpTrophy greift zu; wieder weggenommen - Fehler zurueck. Auch
+    geprueft und verworfen: die Datei stattdessen ins Abbild nach
+    sce_sys/trophy2/ zu legen. ShadowMountPlus kopiert sie dann nach
+    appmeta/<TITLE>/trophy2/, und dort liest das System bei einem PS4-Titel
+    nicht nach (mit echtem Neustart nachgewiesen).
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+
+    def _methode(self, name: str) -> str:
+        anfang = self.quelltext.index("    def %s(self" % name)
+        weiter = self.quelltext.index("\n    def ", anfang + 10)
+        return self.quelltext[anfang:weiter]
+
+    def test_das_ziel_steht_fest(self) -> None:
+        """Flach in appmeta - genau dort legt der Package Installer sie ab."""
+        self.assertEqual(PS5ConverterGUI._NPBIND_ZIEL,
+                         "/system_data/priv/appmeta/%s/npbind.dat")
+        self.assertEqual(PS5ConverterGUI._NPBIND_IM_ABBILD,
+                         "sce_sys/npbind.dat")
+        # Nicht in trophy2/ - das war Weg B und ist widerlegt.
+        self.assertNotIn("trophy2", PS5ConverterGUI._NPBIND_ZIEL)
+
+    def test_ohne_registrierten_titel_wird_nichts_abgelegt(self) -> None:
+        ftp = _FtpNachbau(ordner=set())
+        stand = PS5ConverterGUI._npbind_auf_konsole(
+            _Konsole(), ftp, "CUSA00775", b"xyz")
+        self.assertEqual(stand, "fehlt_ordner")
+        self.assertEqual(ftp.hochgeladen, {})
+
+    def test_fehlende_bindung_wird_abgelegt(self) -> None:
+        ordner = "/system_data/priv/appmeta/CUSA00775"
+        ftp = _FtpNachbau(ordner={ordner})
+        inhalt = b"\xd2\x94\xa0\x18" + b"A" * 528
+        stand = PS5ConverterGUI._npbind_auf_konsole(
+            _Konsole(), ftp, "CUSA00775", inhalt)
+        self.assertEqual(stand, "gelegt")
+        self.assertEqual(ftp.hochgeladen,
+                         {"%s/npbind.dat" % ordner: inhalt})
+
+    def test_vorhandene_bindung_bleibt_unangetastet(self) -> None:
+        """Ist der Titel regulaer installiert, hat die des Systems Vorrang."""
+        ordner = "/system_data/priv/appmeta/CUSA00775"
+        ziel = "%s/npbind.dat" % ordner
+        for vorhanden, erwartet in ((b"gleich", "schon_da"),
+                                    (b"anders!", "schon_da_anders")):
+            with self.subTest(erwartet=erwartet):
+                ftp = _FtpNachbau(ordner={ordner}, dateien={ziel: vorhanden})
+                stand = PS5ConverterGUI._npbind_auf_konsole(
+                    _Konsole(), ftp, "CUSA00775", b"gleich")
+                self.assertEqual(stand, erwartet)
+                self.assertEqual(ftp.hochgeladen, {},
+                                 "Es wurde ueberschrieben.")
+
+    def test_der_knopf_haengt_im_fenster(self) -> None:
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        self.assertIn("_npbind_nachtragen", rumpf)
+        self.assertIn("ps4pkg.npbind_button", rumpf)
+        # Die Meldung wird aus dem Rueckgabewert zusammengesetzt, der
+        # Schluessel steht deshalb nicht woertlich im Quelltext.
+        self.assertIn('"ps4pkg.npbind_" + stand', rumpf)
+        # Erst wenn der Titel registriert ist - deshalb ein eigener Knopf
+        # und kein Schritt im Bauvorgang.
+        self.assertIn("fehlt_ordner", self._methode("_npbind_auf_konsole"))
+
+    def test_alle_meldungen_sind_zweisprachig(self) -> None:
+        for schluessel in ("ps4pkg.npbind_button", "ps4pkg.npbind_start",
+                           "ps4pkg.npbind_gelegt", "ps4pkg.npbind_schon_da",
+                           "ps4pkg.npbind_schon_da_anders",
+                           "ps4pkg.npbind_fehlt_ordner",
+                           "ps4pkg.npbind_abweichung",
+                           "ps4pkg.npbind_no_image",
+                           "ps4pkg.npbind_not_in_image",
+                           "ps4pkg.npbind_no_ip", "ps4pkg.npbind_failed"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[schluessel].get(sprache, "").strip())
+
+    def test_die_beschriftung_sprengt_die_knopfleiste_nicht(self) -> None:
+        """Gemessen: Im 980er Fenster sind rund 232 px frei.
+
+        Die erste Fassung hiess "NP-BINDUNG NACHTRAGEN", war 287 px breit und
+        schob die Leiste auf 1027 px - ABBRECHEN wurde abgeschnitten.
+        """
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertLessEqual(
+                    len(STRINGS["ps4pkg.npbind_button"][sprache]), 14,
+                    "Zu lang - die Knopfleiste laeuft ueber den Fensterrand.")
+
+
+class _Konsole:
+    """Traegt nur, was _npbind_auf_konsole von "self" braucht."""
+
+    _NPBIND_ZIEL = PS5ConverterGUI._NPBIND_ZIEL
+
+    def _ampr_ftp_is_dir(self, ftp, pfad: str) -> bool:
+        return pfad in ftp.ordner
+
+
+class _FtpNachbau:
+    """Ein FTP-Ersatz, der sich merkt, was hochgeladen wurde."""
+
+    def __init__(self, ordner=None, dateien=None):
+        self.ordner = set(ordner or ())
+        self.dateien = dict(dateien or {})
+        self.hochgeladen: dict[str, bytes] = {}
+
+    def retrbinary(self, befehl: str, schreiber) -> None:
+        pfad = befehl.split(" ", 1)[1]
+        if pfad not in self.dateien:
+            raise OSError("550 No such file")
+        schreiber(self.dateien[pfad])
+
+    def storbinary(self, befehl: str, quelle) -> None:
+        pfad = befehl.split(" ", 1)[1]
+        daten = quelle.read()
+        self.dateien[pfad] = daten
+        self.hochgeladen[pfad] = daten
+
+
 class PaketMagicTests(unittest.TestCase):
     """Vier Bytes am Dateianfang sagen, fuer welche Konsole ein Paket ist.
 
