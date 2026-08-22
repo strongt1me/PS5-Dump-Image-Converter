@@ -2,9 +2,34 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.83):** Zwei neue Knöpfe legen die AMPR-Bibliotheken automatisch an die Stelle, die zur ShadowMount+-Fassung auf deiner Konsole passt – und finden die PS5 dafür selbst im Netz.
+> **Kurz zum aktuellen Stand (v1.8.84):** Werkzeugfenster verschwinden nicht mehr hinter dem Hauptfenster, wenn du dieses anklickst – und behalten trotzdem ihren Eintrag in der Taskleiste.
 
 ---
+
+## v1.8.84 – 22.08.2026
+
+### Werkzeugfenster bleiben vorn
+
+Hattest du ein Fenster aus der oberen Leiste offen und wolltest den nächsten
+Knopf drücken, war das erste danach verschwunden. Es lag hinter dem
+Hauptfenster.
+
+Schuld war nicht das Öffnen des zweiten Fensters, sondern der Klick auf das
+Hauptfenster, den du brauchst, um an den Knopf zu kommen: Der holt es nach
+vorn, und die Werkzeugfenster gehörten bisher zu niemandem – Windows hatte
+also keinen Anlass, sie oben zu halten.
+
+Jetzt gehören sie zum Hauptfenster und bleiben garantiert davor. **Ihren
+Eintrag in der Taskleiste behalten sie**, und über Alt+Tab sind sie weiterhin
+erreichbar.
+
+Mitgenommen wurden dabei drei Fenster, die an der gemeinsamen Fensterroutine
+vorbei entstehen – darunter **CREDITS**.
+
+**Eine Änderung, die du merken wirst:** Weil die Fenster jetzt zum
+Hauptfenster gehören, wandern sie mit ihm in die Taskleiste, wenn du es
+minimierst – und kommen beim Wiederherstellen zurück.
+
 
 ## v1.8.83 – 22.08.2026
 

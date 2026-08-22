@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.83"
+APP_VERSION = "v1.8.84"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -6329,6 +6329,83 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Fenster konnte nicht angepasst werden: %s", exc)
 
+    #: Fensterstil, der ein Fenster trotz Besitzer in die Taskleiste und in
+    #: den Alt-Tab-Wechsler zurueckholt (WS_EX_APPWINDOW).
+    _WS_EX_APPWINDOW = 0x00040000
+    _GWL_EXSTYLE = -20
+
+    def _taskleisteneintrag_zurueckholen(self, win: "tk.Toplevel") -> None:
+        """Gibt einem Fenster mit Besitzer seinen Taskleisten-Eintrag zurueck.
+
+        ``transient()`` ordnet ein Werkzeugfenster dem Hauptfenster zu -
+        nur so haelt Windows es davor, und genau das war das Problem: Wer
+        das Hauptfenster anklickte, um den naechsten Knopf zu druecken,
+        liess alle offenen Werkzeugfenster dahinter verschwinden.
+
+        Der Preis waere sonst, dass Windows solche Fenster weder in der
+        Taskleiste noch im Alt-Tab-Wechsler zeigt. ``WS_EX_APPWINDOW``
+        holt beides zurueck, ohne die Zuordnung aufzugeben.
+
+        Am 22.08.2026 nachgemessen: Der Stil allein genuegt. Das sonst
+        uebliche Aus- und Einblenden, damit er greift, ist hier nicht
+        noetig - es haette bei jedem Oeffnen sichtbar geflackert.
+        """
+        if not IST_WINDOWS:
+            return
+        try:
+            import ctypes  # noqa: PLC0415
+
+            hwnd = int(win.wm_frame(), 16)
+            user32 = ctypes.windll.user32
+            user32.GetWindowLongW.restype = ctypes.c_long
+            stil = user32.GetWindowLongW(hwnd, self._GWL_EXSTYLE)
+            if stil & self._WS_EX_APPWINDOW:
+                return
+            user32.SetWindowLongW(hwnd, self._GWL_EXSTYLE,
+                                  stil | self._WS_EX_APPWINDOW)
+        except Exception as exc:                      # noqa: BLE001
+            # Ohne Taskleisten-Eintrag ist das Fenster weiter bedienbar -
+            # das ist kein Grund, das Oeffnen scheitern zu lassen.
+            logger.debug("Taskleisteneintrag nicht setzbar: %s", exc)
+
+
+    def _fenster_an_hauptfenster_binden(self, win: "tk.Toplevel",
+                                        eltern: "tk.Misc | None" = None) -> None:
+        """Haelt ein Fenster vor dem Hauptfenster - ohne die Taskleiste zu verlieren.
+
+        Ohne Besitzer sind Werkzeugfenster eigenstaendig, und Windows hat
+        keinen Anlass, sie oben zu halten. Wer das Hauptfenster anklickt,
+        um den naechsten Knopf zu druecken, holt es nach vorn - und alle
+        offenen Werkzeugfenster verschwinden dahinter. Am 22.08.2026 an
+        der Z-Reihenfolge nachgemessen: drei offene Fenster, nach einem
+        Klick aufs Hauptfenster lagen zwei davon darunter.
+
+        ``transient()`` behebt das, kostet aber normalerweise den
+        Taskleisten-Eintrag und den Platz im Alt-Tab-Wechsler. Beides holt
+        ``_taskleisteneintrag_zurueckholen`` zurueck.
+
+        Args:
+            win: Das Fenster.
+            eltern: Der Besitzer; ohne Angabe das Hauptfenster.
+        """
+        try:
+            win.transient(eltern or self.root)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Fenster nicht zuordenbar: %s", exc)
+            return
+
+        # Erst wenn Windows den Rahmen angelegt hat, gibt es ein Handle,
+        # an dem sich der Stil setzen laesst - deshalb an <Map>, und nur
+        # einmal.
+        def _beim_anzeigen(_e=None) -> None:
+            try:
+                win.unbind("<Map>", marke)
+            except Exception:
+                pass
+            self._taskleisteneintrag_zurueckholen(win)
+        marke = win.bind("<Map>", _beim_anzeigen)
+
+
     def _build_modern_toplevel(
         self,
         title: str,
@@ -6362,6 +6439,7 @@ class PS5ConverterGUI:
         # weiss, bevor der dunkle Inhalt erschien.
         win = tk.Toplevel(self.root, bg=c["bg_main"])
         win.title(title)
+        self._fenster_an_hauptfenster_binden(win)
         x = (win.winfo_screenwidth() - width) // 2
         y = (win.winfo_screenheight() - height) // 2
         win.geometry(f"{width}x{height}+{x}+{y}")
@@ -20927,6 +21005,7 @@ class PS5ConverterGUI:
             """Zeigt den AMPR-EMU-Manager-Dialog im Haupt-Thread."""
             dlg = tk.Toplevel(self.root, bg=self._COLORS["bg_main"])
             dlg.title(self._t("ampr.dialog_title"))
+            self._fenster_an_hauptfenster_binden(dlg)
             _fw, _fh = 860, 700
             _fx = (dlg.winfo_screenwidth() - _fw) // 2
             _fy = (dlg.winfo_screenheight() - _fh) // 2
@@ -24393,6 +24472,7 @@ class PS5ConverterGUI:
         self._cred_win = win
         # Nativer Windows-Titelrahmen (identisch mit JS Loader)
         win.title(self._t("credits.window_title"))
+        self._fenster_an_hauptfenster_binden(win)
         win.geometry(f"{cw}x{ch}+{cx}+{cy}")
         win.minsize(480, 400)
         win.resizable(True, True)
@@ -31609,6 +31689,7 @@ class PS5ConverterGUI:
         """
         win = tk.Toplevel(parent or self.root, bg=self._COLORS["bg_main"])
         win.title(self._t("ampr.picker_title"))
+        self._fenster_an_hauptfenster_binden(win, parent or self.root)
         w, h = 880, 640
         win.geometry(f"{w}x{h}+{(win.winfo_screenwidth() - w) // 2}+{(win.winfo_screenheight() - h) // 2}")
         self._apply_icon_to_toplevel(win)

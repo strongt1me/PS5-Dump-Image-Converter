@@ -14,6 +14,7 @@ obwohl das Widget selbst weiterlebt.
 Beide Fälle lassen sich nur am laufenden Tk-Baum messen, nicht am Quelltext.
 Ohne verfügbare Anzeige werden die Tests übersprungen.
 """
+from pathlib import Path
 import io
 import os
 import sys
@@ -567,6 +568,78 @@ class RueckrufNachSchliessenTests(unittest.TestCase):
         self.assertIn("self._spaeter_im_fenster(win, _finish)", quelle,
                       "Der Suchlauf des Bibliotheksfensters ruft wieder direkt after().")
         self.assertNotIn("win.after(0, _finish)", quelle)
+class FensterbindungTests(unittest.TestCase):
+    """Werkzeugfenster duerfen nicht hinter das Hauptfenster rutschen.
+
+    Gemeldet am 22.08.2026: Oeffnet man ein Werkzeugfenster und drueckt
+    danach einen anderen Knopf, verschwindet das erste. Der Grund ist
+    nicht das Oeffnen des zweiten Fensters, sondern der Klick aufs
+    Hauptfenster, der noetig ist, um an den Knopf zu kommen: Er holt das
+    Hauptfenster nach vorn, und besitzerlose Fenster fallen dahinter.
+
+    An der Z-Reihenfolge von Windows nachgemessen - drei offene Fenster,
+    nach einem Klick lagen zwei darunter. Mit ``transient()`` bleibt
+    keines mehr zurueck.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def _methode(self, name: str) -> str:
+        # Nicht "(self" mitsuchen: Mehrere dieser Methoden haben eine
+        # mehrzeilige Signatur, "self" steht dort erst in der
+        # naechsten Zeile.
+        anfang = self.quelle.index("    def %s(" % name)
+        weiter = self.quelle.index(chr(10) + "    def ", anfang + 10)
+        return self.quelle[anfang:weiter]
+
+    def test_der_gemeinsame_erbauer_bindet(self) -> None:
+        self.assertIn("_fenster_an_hauptfenster_binden",
+                      self._methode("_build_modern_toplevel"))
+
+    def test_der_helfer_ordnet_zu(self) -> None:
+        rumpf = self._methode("_fenster_an_hauptfenster_binden")
+        self.assertIn("transient(", rumpf,
+                      "Ohne transient faellt das Fenster wieder zurueck.")
+
+    def test_der_taskleisteneintrag_wird_zurueckgeholt(self) -> None:
+        """transient kostet ihn sonst - der war hier ausdruecklich gewollt."""
+        rumpf = self._methode("_fenster_an_hauptfenster_binden")
+        self.assertIn("_taskleisteneintrag_zurueckholen", rumpf)
+        stil = self._methode("_taskleisteneintrag_zurueckholen")
+        self.assertIn("_WS_EX_APPWINDOW", stil)
+        self.assertIn("IST_WINDOWS", stil,
+                      "Der Stil gilt nur unter Windows.")
+
+    def test_der_stil_kommt_ohne_flackern_aus(self) -> None:
+        """Aus- und Einblenden waere bei jedem Oeffnen sichtbar gewesen.
+
+        Am 22.08.2026 gemessen: Der Stil allein genuegt, die Taskleiste
+        nimmt ihn ohne ShowWindow an.
+        """
+        stil = self._methode("_taskleisteneintrag_zurueckholen")
+        self.assertNotIn("ShowWindow", stil)
+
+    def test_auch_die_fenster_neben_dem_erbauer_sind_gebunden(self) -> None:
+        """Drei entstehen direkt - darunter CREDITS aus der Werkzeugleiste."""
+        for methode in ("_show_credits", "_show_ampr_ftp_picker"):
+            with self.subTest(methode=methode):
+                self.assertIn("_fenster_an_hauptfenster_binden",
+                              self._methode(methode))
+
+    def test_rahmenlose_einblendungen_bleiben_unangetastet(self) -> None:
+        """Sie haben kein eigenes Fensterverhalten - transient waere sinnlos."""
+        for methode in ("_build_info_popup", "_show_resources", "_show_splash"):
+            with self.subTest(methode=methode):
+                rumpf = self._methode(methode)
+                self.assertIn("overrideredirect", rumpf)
+                self.assertNotIn("_fenster_an_hauptfenster_binden", rumpf)
+
+
+
 
 
 if __name__ == "__main__":
