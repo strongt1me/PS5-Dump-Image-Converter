@@ -5,20 +5,26 @@
 # ist: den Quelltext, die eingebetteten Daten und die Bauvorschriften. Alles,
 # was nur zur Entwicklung gehört — Testbestand, Versionshistorie in Einzel-
 # dateien, Prüfsummenlisten, Arbeitsnotizen — bleibt lokal.
+#
+# Jede Regel, die einen bestimmten Eintrag im Wurzelverzeichnis meint, beginnt
+# mit einem Schrägstrich. Ohne ihn trifft das Muster jeden gleichnamigen
+# Eintrag in jeder Tiefe — auch tief in den Ordnern, die die .spec-Dateien in
+# die EXE legen. Ohne Schrägstrich bleiben nur die Muster, die überall gelten
+# sollen: __pycache__/, *.py[cod], *.egg-info/ und die Betriebssystem-Reste.
 # =============================================================================
 
 # --- Referenzmaterial (nur zum Nachschlagen, geht nirgends in das Programm ein)
-PS5 SDK usw/
+/PS5 SDK usw/
 
 # --- Bauergebnisse und Umgebungen -------------------------------------------
-dist/
+/dist/
 # Das Auslieferungsbuendel - 204 MB, ein Bauergebnis, kein Quelltext.
-# 'dist/' deckt es nicht ab, weil es eine Datei neben dem Ordner ist.
-dist.zip
-build/
-.venv/
-.venv-linux/
-.venv-macos/
+# '/dist/' deckt es nicht ab, weil es eine Datei neben dem Ordner ist.
+/dist.zip
+/build/
+/.venv/
+/.venv-linux/
+/.venv-macos/
 __pycache__/
 *.py[cod]
 *.egg-info/
@@ -34,26 +40,30 @@ __pycache__/
 # und beschreiben, was sie ausmacht - zusammen 372 KB Text. Prüfsummenlisten
 # und Arbeitsnotizen bleiben dagegen draußen, die gehören zum Arbeitsablauf,
 # nicht zum Auslieferungsstand.
-SOURCE_FILE_MANIFEST_*.sha256
-FFPKG_VERIFICATION_*.json
-ARBEITSSTAND_*.md
-UFS2TOOL_V41_FIX_NOTES.md
-ffpkg_progress_fix.diff
-.markdownlint.json
-exe_test_*.log
+/SOURCE_FILE_MANIFEST_*.sha256
+/FFPKG_VERIFICATION_*.json
+/ARBEITSSTAND_*.md
+/UFS2TOOL_V41_FIX_NOTES.md
+/ffpkg_progress_fix.diff
+/.markdownlint.json
+/exe_test_*.log
 
-# Hilfsskripte zum Prüfen und Erzeugen, nicht zum Bauen.
-tools/
+# Hilfsskripte zum Prüfen und Erzeugen, nicht zum Bauen: ffpkg_e2e_verify.py,
+# gui_smoke_test.py, mach_hintergrundbilder.py. Gemeint war immer nur dieser
+# eine Ordner. Bis v1.8.93 stand hier 'tools/' ohne Schrägstrich, und das traf
+# auch PlayGo & AMPR_EMU/.../pgo_stub-0.5/tools/ — die beiden Skripte dort
+# fehlten dadurch in jedem Bau aus einem frischen Klon.
+/tools/
 # Die Skills sind Testablaufsteuerung; der Bau braucht nur workflows/.
-.github/skills/
+/.github/skills/
 
 # Vorlage für den Hintergrund, kein Bestandteil der Auswahl im Programm.
-Hintergrund Bild-Main.png
+/Hintergrund Bild-Main.png
 
 # --- Werkzeugkonfiguration ---------------------------------------------------
-.vscode/
-.claude/
-.idea/
+/.vscode/
+/.claude/
+/.idea/
 
 # --- Betriebssystem-Reste ----------------------------------------------------
 Thumbs.db

@@ -332,6 +332,177 @@ class VersionsstandTests(unittest.TestCase):
         self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
 
 
+
+def _spec_datas(spec: str) -> list:
+    """Die .spec ausfuehren, mit Attrappen statt PyInstaller.
+
+    Liefert die datas-Liste, also genau die Paare (Quelle, Ziel), die
+    PyInstaller in die Programmdatei legen wuerde.
+    """
+    aufrufe: dict = {}
+
+    class Ergebnis:
+        def __getattr__(self, name):
+            return '<%s>' % name
+
+    class Attrappe:
+        def __init__(self, name):
+            self.name = name
+
+        def __call__(self, *args, **kwargs):
+            aufrufe.setdefault(self.name, []).append((args, kwargs))
+            return Ergebnis()
+
+    pfad = Path(spec).resolve()
+    namensraum = {'SPEC': str(pfad), '__file__': str(pfad)}
+    for name in ('Analysis', 'PYZ', 'EXE', 'COLLECT', 'BUNDLE'):
+        namensraum[name] = Attrappe(name)
+    quelle = pfad.read_text(encoding='utf-8')
+    exec(compile(quelle, str(pfad), 'exec'), namensraum)
+    return aufrufe['Analysis'][0][1]['datas']
+
+
+class GitignoreDeckungTests(unittest.TestCase):
+    """Kein eingebetteter Pfad darf von .gitignore verschluckt werden.
+
+    Am 23.08.2026 gemessen: Ein Bau aus einem git-Worktree ergab eine EXE
+    ohne PlayGo & AMPR_EMU/.../pgo_stub-0.5/tools/make_fself.py und
+    make_playgo_libc_internal_stub.py. Beide Dateien lagen nie im Repo, weil
+    .gitignore 'tools/' ohne fuehrenden Schraegstrich fuehrte - ein solches
+    Muster trifft jeden gleichnamigen Ordner in jeder Tiefe, nicht nur den im
+    Wurzelverzeichnis. Auf dem Datentraeger fehlten sie damit, und die .spec
+    prueft mit os.path.isdir: fehlt der Ordner, bleibt der Eintrag
+    stillschweigend weg. Der Hauptcheckout blieb heil, weil die Dateien dort
+    nie geloescht wurden - der Fehler zeigte sich also nur ausserhalb der
+    Arbeitskopie, in der er entstanden war.
+
+    Der Test misst nicht die Regel, sondern ihre Wirkung: Er fragt git
+    selbst, was es von den eingebetteten Pfaden ausschliessen wuerde.
+    """
+
+    #: Die Ordner, die die drei .spec-Dateien einbetten. Fest hinterlegt,
+    #: damit auch ein Ordner auffaellt, der auf dem Datentraeger gar nicht
+    #: mehr liegt - denn dann steht er auch in keiner datas-Liste.
+    EINGEBETTET = (
+        'helloworld',
+        'MkPFS-0.0.9',
+        'PS4FFPFSC-0.2.8',
+        'UFS2Tool-4.1',
+        'PlayGo & AMPR_EMU',
+        'Backport_Fakelibs',
+        'Hintergrundbilder',
+    )
+
+    SPECS = (
+        'PS5ImageConverter_Pro.spec',
+        'PS5ImageConverter_Pro_linux.spec',
+        'PS5ImageConverter_Pro_macos.spec',
+    )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.wurzel = Path(__file__).resolve().parent
+        try:
+            lauf = subprocess.run(
+                ['git', 'rev-parse', '--is-inside-work-tree'],
+                cwd=str(cls.wurzel), capture_output=True, text=True)
+        except OSError:
+            raise unittest.SkipTest('git ist nicht aufrufbar')
+        if lauf.returncode != 0:
+            raise unittest.SkipTest('kein git-Arbeitsbaum')
+
+    @staticmethod
+    def _ist_bytecode(pfad: str) -> bool:
+        """__pycache__/*.pyc bleibt absichtlich draussen - nachbaubar."""
+        return '__pycache__' in Path(pfad).parts or pfad.endswith(
+            ('.pyc', '.pyo'))
+
+    def _verschluckt(self, pfade) -> list:
+        """git selbst fragen, welche der Pfade .gitignore ausschliesst."""
+        eingabe = '\0'.join(pfade) + '\0'
+        lauf = subprocess.run(
+            ['git', 'check-ignore', '-v', '-z', '--stdin'],
+            cwd=str(self.wurzel), input=eingabe.encode('utf-8'),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if lauf.returncode not in (0, 1):
+            self.fail('git check-ignore: %s'
+                      % lauf.stderr.decode('utf-8', 'replace'))
+        felder = lauf.stdout.decode('utf-8', 'replace').split('\0')
+        # -z -v liefert je Treffer vier Felder: Quelle, Zeile, Muster, Pfad.
+        return [
+            '%s (%s:%s: %s)' % (felder[i + 3], felder[i], felder[i + 1],
+                                felder[i + 2])
+            for i in range(0, len(felder) - 3, 4)
+        ]
+
+    def _dateien_unter(self, ordner) -> list:
+        gefunden = []
+        for wurzel, _unterordner, dateien in os.walk(str(ordner)):
+            for name in dateien:
+                pfad = os.path.relpath(os.path.join(wurzel, name),
+                                       str(self.wurzel))
+                pfad = Path(pfad).as_posix()
+                if not self._ist_bytecode(pfad):
+                    gefunden.append(pfad)
+        return gefunden
+
+    def test_die_eingebetteten_ordner_liegen_ueberhaupt_da(self) -> None:
+        """Fehlt der Ordner, laesst die .spec ihn kommentarlos weg."""
+        for name in self.EINGEBETTET:
+            with self.subTest(ordner=name):
+                self.assertTrue(
+                    (self.wurzel / name).is_dir(),
+                    '%s fehlt auf dem Datentraeger. Die .spec prueft mit '
+                    'os.path.isdir und laesst den Eintrag dann weg - ein Bau '
+                    'aus diesem Stand ergaebe eine unvollstaendige '
+                    'Programmdatei.' % name)
+
+    def test_kein_eingebetteter_ordner_wird_verschluckt(self) -> None:
+        """Der ganze Baum der sieben Ordner, Datei fuer Datei."""
+        pfade = []
+        for name in self.EINGEBETTET:
+            ordner = self.wurzel / name
+            if ordner.is_dir():
+                pfade.extend(self._dateien_unter(ordner))
+        self.assertTrue(pfade, 'nichts zu pruefen - stimmen die Ordnernamen?')
+        verschluckt = self._verschluckt(pfade)
+        self.assertEqual(
+            [], verschluckt,
+            'Diese eingebetteten Dateien schliesst .gitignore aus; in einem '
+            'frischen Klon fehlen sie und landen nicht in der Programmdatei:'
+            '\n  %s' % '\n  '.join(verschluckt))
+
+    def test_kein_pfad_aus_datas_wird_verschluckt(self) -> None:
+        """Dieselbe Frage an das, was die .spec tatsaechlich anmeldet."""
+        for spec in self.SPECS:
+            with self.subTest(spec=spec):
+                datas = _spec_datas(spec)
+                self.assertTrue(datas, '%s: datas ist leer' % spec)
+                pfade = []
+                for quelle, _ziel in datas:
+                    absolut = Path(quelle)
+                    if absolut.is_dir():
+                        pfade.extend(self._dateien_unter(absolut))
+                        continue
+                    relativ = Path(os.path.relpath(
+                        str(absolut), str(self.wurzel))).as_posix()
+                    if not self._ist_bytecode(relativ):
+                        pfade.append(relativ)
+                verschluckt = self._verschluckt(pfade)
+                self.assertEqual(
+                    [], verschluckt,
+                    '%s bettet Pfade ein, die .gitignore ausschliesst:\n  %s'
+                    % (spec, '\n  '.join(verschluckt)))
+
+    def test_die_beiden_playgo_hilfsskripte_sind_wieder_dabei(self) -> None:
+        """Die zwei Dateien, an denen der Fehler auffiel - namentlich."""
+        basis = ('PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/pgo_stub-0.5/'
+                 'pgo_stub-0.5/tools')
+        for name in ('make_fself.py', 'make_playgo_libc_internal_stub.py'):
+            with self.subTest(datei=name):
+                pfad = '%s/%s' % (basis, name)
+                self.assertTrue((self.wurzel / pfad).is_file(), pfad)
+                self.assertEqual([], self._verschluckt([pfad]))
 if __name__ == '__main__':
     sys.exit(main())
 
