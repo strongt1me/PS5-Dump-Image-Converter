@@ -27,7 +27,12 @@ HAUPTDATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 try:
     import tkinter as tk
-    _WURZEL = tk.Tk()
+    # Vorhandene Wurzel weiterbenutzen. Ein bedingungsloses tk.Tk() legt
+    # eine ZWEITE an, sobald ein alphabetisch frueheres Testmodul schon
+    # eine hat - Bilder der einen gibt es in der anderen nicht, und der
+    # Aufbau scheitert mit "image pyimageNNN doesn't exist". Genau das
+    # passierte am 23.08.2026, als test_drehknopf.py dazukam.
+    _WURZEL = tk._default_root or tk.Tk()
     _WURZEL.withdraw()
     TK_DA = True
 except Exception:                                    # pragma: no cover

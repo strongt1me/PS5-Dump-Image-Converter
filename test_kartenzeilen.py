@@ -59,7 +59,7 @@ class QuelltextTests(unittest.TestCase):
 
         Genau diese Kette war die Ursache der Sechs-Pixel-Treppe.
         """
-        for vorgaenger in ("in_=self.worker_spin",
+        for vorgaenger in ("in_=self.worker_knob",
                            "in_=self.ampr_version_combo",
                            "in_=self.ampr_playgo_check"):
             self.assertNotIn(
@@ -168,7 +168,7 @@ class KartenzeilenTests(unittest.TestCase):
         gruppe = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_GRUPPE
         return (
             ("Pruefzeile", [("compression_combo", None),
-                            ("worker_spin", gruppe),
+                            ("worker_knob", gruppe),
                             ("verify_combo", gruppe)]),
             ("Einbauzeile", [("ampr_integrate_check", None),
                              ("ampr_version_combo", eng),
@@ -217,7 +217,7 @@ class KartenzeilenTests(unittest.TestCase):
 
     def test_jede_beschriftung_steht_ueber_ihrem_bedienelement(self):
         for beschriftung, bedienelement in (("perf_title", "compression_combo"),
-                                            ("worker_title", "worker_spin"),
+                                            ("worker_title", "worker_knob"),
                                             ("verify_title", "verify_combo")):
             with self.subTest(beschriftung=beschriftung):
                 oben = getattr(self.app, beschriftung)
