@@ -8,9 +8,10 @@
   steht dort jetzt der Name des Spiels, die Kennung bleibt in Klammern. Die
   Namen kommen von der Konsole, nicht aus dem Netz.
 * **Fehler im Lesen der `param.sfo` behoben.** Der Dateikopf trägt vier
-  Felder, gelesen wurden nur drei – ab dem ersten Eintrag war alles falsch
-  ausgerichtet. Deshalb kam nie ein Spielname an. Betrifft jede Stelle, die
-  Angaben aus einer `param.sfo` zeigt.
+  Felder; gelesen wurden alle vier, aber um eines versetzt zugeordnet. Als
+  „Anzahl der Einträge" kam dadurch eine Adresse heraus, der Leser lief über
+  das Dateiende hinaus und lieferte gar nichts. Deshalb blieb das Feld immer
+  leer. Betrifft jede Stelle, die Angaben aus einer `param.sfo` zeigt.
 * **Das Auswahlfenster ist auf JS-Loader-Größe gebracht** und hat einen
   Rollbalken; das Mausrad rollt ebenfalls. Bei vielen Spielen bleiben die
   Knöpfe unten damit erreichbar.

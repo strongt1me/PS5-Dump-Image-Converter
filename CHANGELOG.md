@@ -2,7 +2,7 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.92):** Die Worker-Zahl stellt jetzt ein **Drehknopf** ein, die **AMPR-Spieleauswahl** zeigt Spielnamen statt nur Kennungen – ein Lesefehler in der `param.sfo` stand dem im Weg –, und der **Online-Nachschlag** ist unter Windows und Linux wieder ab Werk an.
+> **Kurz zum aktuellen Stand (v1.8.92):** Die Worker-Zahl stellt jetzt ein **Drehknopf** ein, die **AMPR-Spieleauswahl** zeigt Spielnamen statt nur Kennungen – ein versetzt gelesener `param.sfo`-Kopf stand dem im Weg –, und der **Online-Nachschlag** ist unter Windows und Linux wieder ab Werk an.
 
 ---
 
@@ -35,10 +35,15 @@ Sekunde, und es geht dabei nichts ins Netz.
 ### Warum die Spielnamen vorher nie ankamen
 
 Dahinter steckte ein Fehler im Lesen der `param.sfo`. Der Dateikopf trägt
-**vier** Felder – Version, zwei Zeiger und die Anzahl der Einträge –, das
-Programm las nur drei und war damit ab dem ersten Eintrag falsch ausgerichtet.
-Herausgekommen ist nie etwas Brauchbares. Betroffen war überall dort, wo
-Angaben aus einer `param.sfo` gezeigt werden, nicht nur in dieser Auswahl.
+**vier** Felder: Version, zwei Zeiger und die Anzahl der Einträge. Das
+Programm las alle vier, ordnete sie aber **um eines versetzt** zu – die
+Version landete auf dem ersten Zeiger, und als „Anzahl der Einträge" kam die
+Adresse der Datentabelle heraus, eine viel zu große Zahl.
+
+Der Leser lief daraufhin über das Dateiende hinaus, brach ab und lieferte
+**gar nichts** zurück. Es stand also nie ein falscher Name da, sondern immer
+ein leeres Feld. Betroffen war überall dort, wo Angaben aus einer `param.sfo`
+gezeigt werden, nicht nur in dieser Auswahl.
 
 ### Das Auswahlfenster hat jetzt eine Größe und einen Rollbalken
 
