@@ -359,7 +359,13 @@ class SpecAusfuehrungTests(unittest.TestCase):
                 self.assertTrue(os.path.exists(quelle), f"{quelle} gibt es nicht")
 
     def test_pflichtdateien_im_buendel(self):
-        ziele = {os.path.basename(q) for q, _z in self._kwargs("Analysis")["datas"]}
+        # Ein Eintrag zaehlt, wenn er auf der Quellseite so heisst (Einzeldatei
+        # oder ganzer Ordner) oder auf der Zielseite dort landet. Ordner mit
+        # Python-Quellen kommen Datei fuer Datei ins Buendel, damit __pycache__
+        # draussen bleibt - dort steht der Ordnername nur noch auf der Zielseite.
+        datas = self._kwargs("Analysis")["datas"]
+        ziele = {os.path.basename(q) for q, _z in datas}
+        ziele |= {Path(z).as_posix().split("/")[0] for _q, z in datas}
         for pflicht in ("app_icon.ico", "helloworld", "MkPFS-0.0.9",
                         "Hintergrundbilder", "BENUTZERHANDBUCH.html",
                         "THIRD_PARTY_LICENSES.md", "Backport_Fakelibs",
