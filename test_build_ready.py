@@ -332,6 +332,87 @@ class VersionsstandTests(unittest.TestCase):
         self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
 
 
+class SpecDatenTests(unittest.TestCase):
+    """Was die drei .spec-Dateien in ``datas`` legen - alle drei nachgesehen.
+
+    Am 23.08.2026 an dist/PS5_Dump_Image_Converter_v1.8.93.exe gemessen: 48
+    .pyc-Dateien lagen im Archiv, darunter pipeline.cpython-314.pyc aus
+    PS4FFPFSC-0.2.8/ps4ffpsc/__pycache__/ - direkt neben pipeline.py. Bei
+    (Ordner, Ziel) nimmt PyInstaller den ganzen Baum mit, __pycache__
+    eingeschlossen. In jenem Bau war die .pyc aktuell; waere sie es nicht,
+    liefe in der EXE eine aeltere Fassung des Moduls, waehrend der Quelltext
+    daneben die neue zeigt - ein Fehler, der sich nur an der EXE zeigt und
+    aus der Quelle nie nachstellbar waere.
+    """
+
+    SPECS = (
+        'PS5ImageConverter_Pro.spec',
+        'PS5ImageConverter_Pro_linux.spec',
+        'PS5ImageConverter_Pro_macos.spec',
+    )
+
+    @staticmethod
+    def _datas(spec: str) -> list:
+        """Die .spec ausfuehren, mit Attrappen statt PyInstaller."""
+        aufrufe: dict = {}
+
+        class Ergebnis:
+            def __getattr__(self, name):
+                return '<%s>' % name
+
+        class Attrappe:
+            def __init__(self, name):
+                self.name = name
+
+            def __call__(self, *args, **kwargs):
+                aufrufe.setdefault(self.name, []).append((args, kwargs))
+                return Ergebnis()
+
+        pfad = Path(spec).resolve()
+        namensraum = {'SPEC': str(pfad), '__file__': str(pfad)}
+        for name in ('Analysis', 'PYZ', 'EXE', 'COLLECT', 'BUNDLE'):
+            namensraum[name] = Attrappe(name)
+        quelle = pfad.read_text(encoding='utf-8')
+        exec(compile(quelle, str(pfad), 'exec'), namensraum)
+        return aufrufe['Analysis'][0][1]['datas']
+
+    def test_kein_pycache_in_datas(self) -> None:
+        for spec in self.SPECS:
+            datas = self._datas(spec)
+            self.assertTrue(datas, '%s: datas ist leer' % spec)
+            for quelle, ziel in datas:
+                with self.subTest(spec=spec, quelle=quelle):
+                    pfad = Path(quelle).as_posix()
+                    self.assertNotIn('__pycache__', pfad)
+                    self.assertNotIn('__pycache__', Path(ziel).as_posix())
+                    self.assertFalse(pfad.endswith(('.pyc', '.pyo')), pfad)
+
+    def test_die_python_quellen_kommen_trotzdem_mit(self) -> None:
+        """Der Filter darf nicht die .py-Dateien mit wegwerfen."""
+        pflicht = (
+            'PS4FFPFSC-0.2.8/ps4ffpsc/pipeline.py',
+            'PS4FFPFSC-0.2.8/ps4ffpsc/inventory.py',
+            'PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/pfs.py',
+            'MkPFS-0.0.9/mkpfs/pfs.py',
+        )
+        for spec in self.SPECS:
+            quellen = {Path(q).as_posix() for q, _z in self._datas(spec)}
+            for teil in pflicht:
+                with self.subTest(spec=spec, datei=teil):
+                    self.assertTrue(any(p.endswith(teil) for p in quellen),
+                                    '%s fehlt in %s' % (teil, spec))
+
+    def test_die_ziele_behalten_ihren_unterbau(self) -> None:
+        """Datei fuer Datei einsammeln darf den Baum nicht flachklopfen."""
+        for spec in self.SPECS:
+            ziele = set()
+            for quelle, ziel in self._datas(spec):
+                if Path(quelle).as_posix().endswith('/ps4ffpsc/pipeline.py'):
+                    ziele.add(Path(ziel).as_posix())
+            self.assertIn('PS4FFPFSC-0.2.8/ps4ffpsc', ziele,
+                          '%s: pipeline.py landet im falschen Ordner' % spec)
+
+
 if __name__ == '__main__':
     sys.exit(main())
 
