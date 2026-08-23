@@ -1126,5 +1126,87 @@ class ArchitekturTests(unittest.TestCase):
 
 
 
+class ZwischengespeicherterBestandTests(unittest.TestCase):
+    """Ein zweites Backup bekam die Spiele des ersten.
+
+    Aus der Praxis gemeldet am 23.08.2026: Ein PKG-Backup einlesen - alles
+    richtig angezeigt. Ein zweites einlesen - Fehler. Danach scheiterte auch
+    das erste, das eben noch ging.
+
+    Ursache: ``list`` war der einzige Befehl ohne ``refresh=True``, und
+    ``load_or_scan`` gab jeden vorhandenen ``package_inventory.json``
+    ungeprueft zurueck. Weil die Oberflaeche fuer jede Quelle **denselben**
+    Arbeitsordner benutzt, traf das dort immer zu.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        wurzel = PROJEKT / "PS4FFPFSC-0.2.8"
+        if str(wurzel) not in sys.path:
+            sys.path.insert(0, str(wurzel))
+        from ps4ffpsc.pipeline import Settings, inventory_matches_source
+        cls.Settings = Settings
+        cls.passt = staticmethod(inventory_matches_source)
+
+    def _einstellungen(self, ordner: Path, pkgs=(), dumps=()):
+        return self.Settings(
+            root=ordner, pkg_dir=ordner / "pkg", unpacked_dir=ordner / "unpacked",
+            output_dir=ordner / "out", work_dir=ordner, temp_dir=ordner,
+            pkg_files=tuple(Path(p) for p in pkgs),
+            dump_dirs=tuple(Path(d) for d in dumps))
+
+    def test_derselbe_bestand_wird_weiterbenutzt(self) -> None:
+        """Sonst waere der Zwischenspeicher wertlos."""
+        with TemporaryDirectory() as tmp:
+            ordner = Path(tmp)
+            bestand = {"selected_pkg_files": [str(ordner / "a.pkg")],
+                       "pkg_dir": str(ordner / "pkg")}
+            self.assertTrue(self.passt(
+                bestand, self._einstellungen(ordner, [ordner / "a.pkg"])))
+
+    def test_eine_andere_quelle_loest_neuen_scan_aus(self) -> None:
+        """Der gemeldete Fehler."""
+        with TemporaryDirectory() as tmp:
+            ordner = Path(tmp)
+            bestand = {"selected_pkg_files": [str(ordner / "a.pkg")],
+                       "pkg_dir": str(ordner / "pkg")}
+            self.assertFalse(self.passt(
+                bestand, self._einstellungen(ordner, [ordner / "b.pkg"])))
+
+    def test_schreibweise_des_pfades_ist_egal(self) -> None:
+        """Sonst scannt das Werkzeug bei jedem Einlesen neu.
+
+        Windows meldet Pfade mal mit C:, mal mit c:, mal mit Schraegstrich.
+        """
+        with TemporaryDirectory() as tmp:
+            ordner = Path(tmp)
+            roh = str(ordner / "a.pkg")
+            bestand = {"selected_pkg_files": [roh.upper().replace("\\", "/")],
+                       "pkg_dir": str(ordner / "pkg")}
+            self.assertTrue(self.passt(
+                bestand, self._einstellungen(ordner, [roh])))
+
+    def test_auch_ein_anderer_dump_ordner_faellt_auf(self) -> None:
+        with TemporaryDirectory() as tmp:
+            ordner = Path(tmp)
+            bestand = {"selected_pkg_files": [],
+                       "selected_dump_dirs": [str(ordner / "spielA")]}
+            self.assertTrue(self.passt(
+                bestand, self._einstellungen(ordner, dumps=[ordner / "spielA"])))
+            self.assertFalse(self.passt(
+                bestand, self._einstellungen(ordner, dumps=[ordner / "spielB"])))
+
+    def test_list_darf_den_bestand_weiter_benutzen(self) -> None:
+        """Die Behebung gehoert in load_or_scan, nicht in die Kommandozeile.
+
+        Mit ``refresh=True`` bei ``list`` wuerde jedes Einlesen neu scannen -
+        auch das wiederholte Einlesen derselben Quelle, das Minuten kostet.
+        """
+        kommandozeile = (PROJEKT / "PS4FFPFSC-0.2.8" / "ps4ffpsc"
+                         / "cli.py").read_text(encoding="utf-8")
+        self.assertIn('if args.command == "list":\n            inventory = '
+                      'load_or_scan(settings)', kommandozeile)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

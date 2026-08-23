@@ -260,9 +260,46 @@ def inventory_path(settings: Settings) -> Path:
     return settings.unpacked_dir / "package_inventory.json"
 
 
+def _wege(werte: Any) -> list[str]:
+    """Pfade vergleichbar machen - Gross/Klein und Trennzeichen egal."""
+    if not werte:
+        return []
+    return sorted(os.path.normcase(os.path.abspath(str(w))) for w in werte)
+
+
+def inventory_matches_source(inventory: dict[str, Any], settings: Settings) -> bool:
+    """Gehoert der zwischengespeicherte Bestand zu *dieser* Quelle?
+
+    Der Bestand haelt seit jeher fest, woraus er entstanden ist
+    (``selected_pkg_files``, ``selected_dump_dirs``, ``pkg_dir``) - verglichen
+    wurde es nur nie. ``list`` gab deshalb bei jeder weiteren Quelle den
+    Bestand der **ersten** zurueck.
+
+    In der eingebetteten Oberflaeche faellt das besonders hart aus, weil dort
+    jede Quelle denselben Arbeitsordner benutzt: Wer ein zweites Backup
+    einliest, bekommt die Spiele des ersten - und danach scheitert auch das
+    erste, weil der Bestand auf Dateien zeigt, die zur neuen Quelle nicht
+    passen. Am 23.08.2026 aus der Praxis gemeldet.
+    """
+    if _wege(inventory.get("selected_pkg_files")) != _wege(settings.pkg_files):
+        return False
+    if _wege(inventory.get("selected_dump_dirs")) != _wege(settings.dump_dirs):
+        return False
+    # Der Ordner zaehlt nur, wenn nichts einzeln ausgewaehlt wurde - sonst
+    # steht dort der Arbeitsordner und sagt ueber die Quelle nichts aus.
+    if not settings.pkg_files and not settings.dump_dirs:
+        gemerkt = inventory.get("pkg_dir")
+        if gemerkt and _wege([gemerkt]) != _wege([settings.pkg_dir]):
+            return False
+    return True
+
+
 def load_or_scan(settings: Settings, refresh: bool = False) -> dict[str, Any]:
     if not refresh and inventory_path(settings).exists():
-        return read_json(inventory_path(settings))
+        vorhanden = read_json(inventory_path(settings))
+        if inventory_matches_source(vorhanden, settings):
+            return vorhanden
+        LOG.info("cached inventory belongs to a different source; rescanning")
     settings.unpacked_dir.mkdir(parents=True, exist_ok=True)
     if settings.dump_dirs:
         return scan_dump_directories(

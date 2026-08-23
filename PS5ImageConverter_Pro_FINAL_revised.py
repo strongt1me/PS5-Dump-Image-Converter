@@ -412,7 +412,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.92"
+APP_VERSION = "v1.8.93"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -643,16 +643,36 @@ STANDARD_SIDEBAR_HINTERGRUND: str = "bundled:sidebar_20_glass-panels.png"
 WORKER_WIRKSAM_MAX: int = PACK_HARD_CAP_MAX + 1
 
 # Datei-Handler fuer persistentes Logging (INFO+) in %TEMP%\ps5converter.log
+#
+# Zwei Dinge, die am 23.08.2026 an einem echten Diagnosebericht auffielen:
+#
+# 1. **Die Testreihe schrieb mit.** Jeder Lauf aus der Quelle haengte seine
+#    Zeilen an dieselbe Datei wie das laufende Programm des Nutzers - gemessen
+#    114 Zeilen aus einer einzigen Testdatei. Im Diagnosebericht stand danach
+#    Testrauschen statt der Sitzung des Nutzers; eine Meldung erschien
+#    siebzehnmal und sah nach einem Programmfehler aus, war aber nur der
+#    Rueckstand mehrerer Testlaeufe. ``sys.frozen`` unterscheidet die
+#    ausgelieferte EXE sicher von einem Lauf aus der Quelle, und ``unittest``
+#    im Modulbestand zeigt den Testlauf an. Beides zusammen, damit ein
+#    normaler Start aus der Quelle sein Protokoll behaelt.
+# 2. **Die Datei wuchs ungebremst** - 22 MB in gut zwei Wochen. Jetzt rollt
+#    sie bei 4 MB um und behaelt drei Vorgaenger.
+_IM_TESTLAUF = (not getattr(sys, "frozen", False)) and "unittest" in sys.modules
 try:
     import tempfile as _tmpmod
+    from logging.handlers import RotatingFileHandler as _RotHandler
     _log_path = os.path.join(_tmpmod.gettempdir(), "ps5converter.log")
-    _fh = logging.FileHandler(_log_path, encoding="utf-8", delay=True)
+    if _IM_TESTLAUF:
+        _log_path = os.path.join(_tmpmod.gettempdir(), "ps5converter_test.log")
+    _fh = _RotHandler(_log_path, maxBytes=4 * 1024 * 1024, backupCount=3,
+                      encoding="utf-8", delay=True)
     _fh.setLevel(logging.INFO)
     _fh.setFormatter(logging.Formatter(
         "%(asctime)s [%(levelname)-8s] %(name)s: %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
-    logger.addHandler(_fh)
+    if not _IM_TESTLAUF:
+        logger.addHandler(_fh)
     logger.setLevel(logging.INFO)  # Release: INFO+ in Datei, Debug bleibt nur auf Codepfad-Ebene
 except OSError:
     pass  # Log-Datei nicht kritisch
@@ -6882,8 +6902,21 @@ class PS5ConverterGUI:
         def _on_mousewheel(e: "tk.Event") -> None:
             canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
 
-        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _on_mousewheel))
-        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+        # Nicht ueber ``bind_all``. Das schrieb in die globale Tabelle "all",
+        # und das ``unbind_all`` beim Verlassen loeschte dort **jede**
+        # Mausrad-Bindung - auch die des Hauptfensters, die ``__init__``
+        # ueber ``_on_inhalt_mausrad`` setzt. Wer einmal ueber dieses Fenster fuhr,
+        # konnte den Hauptinhalt bis zum Neustart nicht mehr rollen. Ausserdem
+        # legte jedes Ueberfahren ein neues Tcl-Kommando an, das nie wieder
+        # freigegeben wurde (gemessen: +1 je Ueberfahrt).
+        #
+        # Die Bindetags eines Widgets sind (Widget, Klasse, Toplevel, all).
+        # Eine Bindung am **Toplevel** erreicht daher jedes Kind dieses
+        # Fensters - ohne die globale Tabelle anzufassen und ohne Enter/Leave.
+        try:
+            canvas.winfo_toplevel().bind("<MouseWheel>", _on_mousewheel, add="+")
+        except tk.TclError as exc:                    # pragma: no cover
+            logger.debug("Mausrad nicht bindbar: %s", exc)
 
         return outer, inner
 
@@ -26490,11 +26523,14 @@ class PS5ConverterGUI:
         ("cryptography", "cryptography", "cryptography"),
         ("zstandard", "zstandard", "zstandard"),
         ("zlib-ng", "zlib_ng", "zlib-ng"),
-        ("paramiko", "paramiko", "paramiko"),
         ("tkinterdnd2", "tkinterdnd2", "tkinterdnd2"),
         ("psutil", "psutil", "psutil"),
-        ("requests", "requests", "requests"),
     )
+    # ``paramiko`` und ``requests`` standen hier bis v1.8.93 mit, obwohl das
+    # Programm beide nirgends benutzt - es geht ueber ``urllib.request`` ins
+    # Netz und ueber ``ftplib`` auf die Konsole. Der Bericht meldete
+    # entsprechend "requests: fehlt" und schickte damit jeden, der ihn liest,
+    # auf die Suche nach einem Schaden, den es nicht gibt.
 
     #: Fremdwerkzeuge ohne abfragbare Fassungsliste. Der Bericht nennt die
     #: gefundene Fassung und die Bezugsquelle - mehr waere geraten.
@@ -26731,7 +26767,7 @@ class PS5ConverterGUI:
             z("macOS App Translocation", self._macos_translokation()),
         ]
         for name, modul in (("Pillow", "PIL"), ("tkinterdnd2", "tkinterdnd2"),
-                            ("psutil", "psutil"), ("requests", "requests")):
+                            ("psutil", "psutil")):
             try:
                 m = __import__(modul)
                 zeilen.append(z(name, getattr(m, "__version__", "vorhanden")))
@@ -26804,9 +26840,28 @@ class PS5ConverterGUI:
             pfad = os.path.join(tempfile.gettempdir(), "ps5converter.log")
             if not os.path.isfile(pfad):
                 return ["(%s gibt es nicht)" % pfad]
-            with io.open(pfad, encoding="utf-8", errors="replace") as datei:
-                alle = datei.read().splitlines()
-            return alle[-zeilen_anzahl:] or ["(leer)"]
+
+            # Die Groesse gehoert in den Bericht. Am 23.08.2026 lag hier eine
+            # Datei mit 22 MB und 322.195 Zeilen - nichts begrenzte sie, und
+            # der Bericht zeigte davon nur die letzten achtzig, ohne zu
+            # verraten, dass darunter zwei Wochen lagen.
+            groesse = os.path.getsize(pfad)
+            if groesse >= 1024 * 1024:
+                mass = "%.1f MB" % (groesse / (1024 * 1024))
+            else:
+                mass = "%d KB" % (groesse // 1024)
+            kopf = ["(%s, %s)" % (pfad, mass)]
+
+            # Nur das Ende lesen. Vorher ging die vollstaendige Datei in den
+            # Speicher, um achtzig Zeilen daraus zu zeigen.
+            schwanz = 256 * 1024
+            with io.open(pfad, "rb") as datei:
+                if groesse > schwanz:
+                    datei.seek(groesse - schwanz)
+                    datei.readline()          # angebrochene Zeile verwerfen
+                block = datei.read()
+            alle = block.decode("utf-8", errors="replace").splitlines()
+            return kopf + (alle[-zeilen_anzahl:] or ["(leer)"])
         except Exception as exc:
             return ["Protokolldatei nicht lesbar: %s" % exc]
 
