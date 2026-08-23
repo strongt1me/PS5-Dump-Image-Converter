@@ -2,9 +2,64 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.91):** Das Fenster **CREDITS** nennt jetzt den bestimmungsgemäßen Zweck, und die Danksagung ist vervollständigt – ein fehlender Name, sechs bisher ungenannte Payloads und ein Lückeneintrag in der Lizenzübersicht.
+> **Kurz zum aktuellen Stand (v1.8.92):** Die Worker-Zahl stellt jetzt ein **Drehknopf** ein, die **AMPR-Spieleauswahl** zeigt Spielnamen statt nur Kennungen – ein Lesefehler in der `param.sfo` stand dem im Weg –, und der **Online-Nachschlag** ist unter Windows und Linux wieder ab Werk an.
 
 ---
+
+## v1.8.92 – 23.08.2026
+
+### Ein Drehknopf statt der alten Spinbox
+
+Die Zahl der **Worker** wurde bisher über ein Zahlenfeld mit zwei winzigen
+Pfeilchen eingestellt. Die waren schwer zu treffen und sahen zwischen den
+runden Bedienteilen ringsum fremd aus. An ihrer Stelle sitzt jetzt ein
+Drehknopf: ein Ring, der sich mit gedrückter Maustaste durch den ganzen
+Bereich führen lässt.
+
+Drehknöpfe haben einen bekannten Nachteil – einen bestimmten Wert trifft man
+schlechter als mit einem Zahlenfeld. Deshalb gibt es weiterhin vier genaue
+Wege zum Ziel: **Mausrad** und **Pfeiltasten** ändern um eins, ein
+**Doppelklick** springt zur Voreinstellung zurück, und die eingestellte Zahl
+steht groß in der Mitte des Knopfes. Raten muss also niemand.
+
+### Die AMPR-Spieleauswahl zeigt, um welches Spiel es geht
+
+In der Auswahl standen die Spiele als `CUSA00775 (CUSA00775)` – die Kennung
+zweimal, der Name nirgends. Jetzt steht dort der **Spielname**, die Kennung
+bleibt in Klammern dahinter.
+
+Die Namen liest das Programm aus der `param.sfo` beziehungsweise `param.json`
+des jeweiligen Spiels von der Konsole. Für 20 Spiele dauert das etwa eine
+Sekunde, und es geht dabei nichts ins Netz.
+
+### Warum die Spielnamen vorher nie ankamen
+
+Dahinter steckte ein Fehler im Lesen der `param.sfo`. Der Dateikopf trägt
+**vier** Felder – Version, zwei Zeiger und die Anzahl der Einträge –, das
+Programm las nur drei und war damit ab dem ersten Eintrag falsch ausgerichtet.
+Herausgekommen ist nie etwas Brauchbares. Betroffen war überall dort, wo
+Angaben aus einer `param.sfo` gezeigt werden, nicht nur in dieser Auswahl.
+
+### Das Auswahlfenster hat jetzt eine Größe und einen Rollbalken
+
+Das Fenster war deutlich zu hoch geraten. Es ist jetzt etwa so groß wie das
+Fenster des **JS Loaders** und hat einen **Rollbalken**; das Mausrad rollt
+ebenfalls. Bei vielen Spielen bleiben die Knöpfe am unteren Rand damit
+erreichbar, statt aus dem Bild zu rutschen.
+
+### Online-Nachschlag: die Sperre gilt nur noch auf dem Mac
+
+Seit v1.8.74 fragte das Programm **nirgends** mehr von sich aus bei
+prosperopatches.com und orbispatches.com nach fehlenden Angaben. Abgestellt
+wurde das damals wegen des Macs, wo die Firewall jede Verbindung meldet –
+betroffen waren dann aber alle Systeme.
+
+Unter **Windows und Linux** schlägt das Programm jetzt wieder von sich aus
+nach. Auf dem **Mac** bleibt es abgeschaltet. In beiden Fällen ist das nur die
+Werkseinstellung: Wer die Einstellung einmal selbst gesetzt hat, behält sie –
+ein bewusstes Nein unter Windows gilt genauso wie ein bewusstes Ja auf dem
+Mac. Der Knopf **Fehlende Angaben online nachschlagen** wirkt unabhängig davon
+weiterhin überall.
 
 ## v1.8.91 – 23.08.2026
 

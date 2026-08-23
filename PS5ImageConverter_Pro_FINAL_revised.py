@@ -27,6 +27,7 @@ import hashlib       # noqa: F401
 import importlib
 import io
 import json
+import math
 import logging
 import lzma          # noqa: F401
 import multiprocessing
@@ -411,7 +412,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.91"
+APP_VERSION = "v1.8.92"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -791,10 +792,12 @@ def parse_sfo(data: bytes) -> dict[str, object]:
         if data[:4] != b'\x00PSF':
             return {}
 
-        header = struct.unpack('<IIII', data[4:20])
-        key_ptr: int = header[0]
-        data_ptr: int = header[1]
-        count: int = header[2]
+        # Der Kopf traegt VIER Felder: Version, key_offset, data_offset,
+        # count. Wer hier header[0..2] nimmt, liest die Version als
+        # key_offset und die Datentabellen-Adresse als Anzahl - der Leser
+        # scheitert dann an "unpack requires a buffer of 16 bytes" und
+        # liefert {}. Genau das war bis v1.8.92 der Fall.
+        _version, key_ptr, data_ptr, count = struct.unpack('<IIII', data[4:20])
 
         entries = []
         for i in range(count):
@@ -1396,6 +1399,246 @@ class RoundedButton(tk.Canvas):
 # ---------------------------------------------------------------------------
 # Hauptklasse: GUI
 # ---------------------------------------------------------------------------
+class Drehknopf(tk.Canvas):
+    """Drehknopf fuer eine ganze Zahl in einem festen Bereich.
+
+    Tritt an die Stelle einer ``ttk.Spinbox``. Die winzigen Pfeilchen einer
+    Spinbox sind schwer zu treffen und sehen zwischen den runden Bedienteilen
+    dieser Oberflaeche fremd aus; ein Drehknopf passt dorthin und laesst sich
+    mit einer Bewegung durch den ganzen Bereich fuehren.
+
+    Damit dabei keine Genauigkeit verlorengeht - der uebliche Vorwurf an
+    Drehknoepfe - steht die Zahl gross in der Mitte, und es gibt vier Wege,
+    sie zu setzen:
+
+    * **Ziehen** mit der Maus dreht den Knopf,
+    * **Mausrad** aendert um eins,
+    * **Pfeiltasten** ebenso, sobald der Knopf den Eingabefokus hat,
+    * **Doppelklick** springt zur Voreinstellung zurueck.
+
+    Der Wert lebt in der uebergebenen ``IntVar``. Wer sie von aussen setzt,
+    sieht den Knopf sofort nachziehen; der Rueckruf ``command`` meldet jede
+    Aenderung wie bei der Spinbox zuvor.
+
+    Args:
+        master:      Elternelement.
+        variable:    ``tk.IntVar`` mit dem Wert.
+        von, bis:    Kleinster und groesster erlaubter Wert.
+        command:     Wird nach jeder Aenderung gerufen.
+        durchmesser: Aussenmass in Bildpunkten.
+        vorgabe:     Wert fuer den Doppelklick; ohne Angabe ``von``.
+    """
+
+    #: Der Knopf laesst oben eine Luecke, damit Anfang und Ende des Bereichs
+    #: unterscheidbar bleiben - ein voller Kreis haette keinen Nullpunkt.
+    _BOGEN_START = 225.0
+    _BOGEN_WEITE = 270.0
+
+    def __init__(
+        self,
+        master: tk.Widget,
+        variable: "tk.IntVar",
+        von: int = 1,
+        bis: int = 8,
+        command=None,
+        durchmesser: int = 38,
+        breite: int | None = None,
+        vorgabe: int | None = None,
+        bg: str = "#0d1117",
+        ring: str = "#2a3441",
+        aktiv: str = "#3b82f6",
+        fg: str = "#ffffff",
+        font: tuple | None = None,
+        **kwargs,
+    ) -> None:
+        self._breite = int(breite) if breite else int(durchmesser)
+        super().__init__(master, width=self._breite, height=durchmesser,
+                         bg=bg, highlightthickness=0, bd=0, **kwargs)
+        self._variable = variable
+        self._von = int(von)
+        self._bis = max(int(bis), int(von))
+        self._command = command
+        self._durchmesser = int(durchmesser)
+        self._vorgabe = int(vorgabe) if vorgabe is not None else self._von
+        self._ring = ring
+        self._aktiv = aktiv
+        self._fg = fg
+        self._font = font or (UI_SCHRIFT, pt(10), "bold")
+        self._zieht = False
+
+        self.configure(cursor="hand2", takefocus=1)
+        self.bind("<Button-1>", self._beim_druecken)
+        self.bind("<B1-Motion>", self._beim_ziehen)
+        self.bind("<ButtonRelease-1>", self._beim_loslassen)
+        self.bind("<Double-Button-1>", self._auf_vorgabe)
+        # Windows und macOS melden das Rad als <MouseWheel>, X11 als Knopf 4/5.
+        self.bind("<MouseWheel>", self._beim_rad)
+        self.bind("<Button-4>", lambda e: self._verschieben(1))
+        self.bind("<Button-5>", lambda e: self._verschieben(-1))
+        for taste in ("<Up>", "<Right>"):
+            self.bind(taste, lambda e: self._verschieben(1))
+        for taste in ("<Down>", "<Left>"):
+            self.bind(taste, lambda e: self._verschieben(-1))
+        self.bind("<FocusIn>", lambda e: self._zeichnen())
+        self.bind("<FocusOut>", lambda e: self._zeichnen())
+
+        try:
+            self._spur = variable.trace_add("write", self._bei_aenderung)
+        except AttributeError:                       # sehr alte Tk-Fassungen
+            self._spur = variable.trace("w", self._bei_aenderung)
+
+        self._zeichnen()
+
+    # ── Zeichnen ────────────────────────────────────────────────────────
+    def _anteil(self) -> float:
+        """Wo der aktuelle Wert im Bereich liegt - 0.0 bis 1.0."""
+        spanne = self._bis - self._von
+        if spanne <= 0:
+            return 0.0
+        return max(0.0, min(1.0, (self._wert() - self._von) / spanne))
+
+    def _wert(self) -> int:
+        try:
+            return max(self._von, min(self._bis, int(self._variable.get())))
+        except (tk.TclError, ValueError):
+            return self._von
+
+    def _zeichnen(self) -> None:
+        self.delete("all")
+        d = self._durchmesser
+        rand = max(3, d // 10)
+        # Der Kreis sitzt mittig auf einer moeglicherweise breiteren Flaeche.
+        links = (self._breite - d) / 2.0
+        kasten = (links + rand, rand, links + d - rand, d - rand)
+
+        # Spur des ganzen Bereichs, dahinter der erreichte Teil.
+        breite = max(2, d // 9)
+        self.create_arc(*kasten, start=self._BOGEN_START,
+                        extent=-self._BOGEN_WEITE, style="arc",
+                        outline=self._ring, width=breite)
+        erreicht = self._BOGEN_WEITE * self._anteil()
+        if erreicht > 0.5:
+            self.create_arc(*kasten, start=self._BOGEN_START,
+                            extent=-erreicht, style="arc",
+                            outline=self._aktiv, width=breite)
+
+        # Zeiger: ein Punkt mittig auf dem Ringband. Eine Linie nach innen
+        # lag bei hohen Werten auf der Ziffer - der Ring hat den Platz, die
+        # Mitte nicht.
+        winkel = math.radians(self._BOGEN_START - erreicht)
+        mitte_x = links + d / 2.0
+        mitte = d / 2.0
+        bahn = mitte - rand - breite / 2.0
+        px = mitte_x + bahn * math.cos(winkel)
+        py = mitte - bahn * math.sin(winkel)
+        punkt = max(1.5, breite / 2.0 - 0.5)
+        self.create_oval(px - punkt, py - punkt, px + punkt, py + punkt,
+                         fill=self._fg, outline="")
+
+        # Die Zahl steht in der Mitte - ohne sie waere der Knopf nur zu ahnen.
+        self.create_text(mitte_x, mitte + 1, text=str(self._wert()),
+                         fill=self._fg, font=self._font)
+
+        # Der Eingabefokus muss sichtbar sein, sonst wirken die Pfeiltasten
+        # scheinbar zufaellig.
+        if self.focus_get() is self:
+            self.create_oval(links + 1, 1, links + d - 1, d - 1,
+                             outline=self._aktiv, width=1)
+
+    # ── Bedienung ───────────────────────────────────────────────────────
+    def _wert_setzen(self, neu: int) -> None:
+        neu = max(self._von, min(self._bis, int(neu)))
+        if neu == self._wert():
+            return
+        self._variable.set(neu)          # zeichnet ueber die Spur mit
+        if self._command is not None:
+            try:
+                self._command()
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Drehknopf-Rueckruf fehlgeschlagen: %s", exc)
+
+    def _verschieben(self, schritte: int) -> str:
+        self._wert_setzen(self._wert() + schritte)
+        return "break"
+
+    def _aus_zeigerstand(self, x: float, y: float) -> None:
+        """Rechnet die Mausstellung in einen Wert um."""
+        mitte = self._durchmesser / 2.0
+        mitte_x = (self._breite - self._durchmesser) / 2.0 + mitte
+        dx, dy = x - mitte_x, mitte - y
+        if abs(dx) < 2 and abs(dy) < 2:
+            return                        # zu nah an der Mitte: kein Winkel
+        grad = math.degrees(math.atan2(dy, dx)) % 360.0
+        # Auf den Bogen abbilden; die Luecke unten teilt sich auf beide Enden.
+        weg = (self._BOGEN_START - grad) % 360.0
+        if weg > self._BOGEN_WEITE:
+            weg = 0.0 if weg > (360.0 + self._BOGEN_WEITE) / 2 else self._BOGEN_WEITE
+        anteil = weg / self._BOGEN_WEITE
+        self._wert_setzen(round(self._von + anteil * (self._bis - self._von)))
+
+    def _beim_druecken(self, ereignis) -> str:
+        self.focus_set()
+        self._zieht = True
+        self._aus_zeigerstand(ereignis.x, ereignis.y)
+        return "break"
+
+    def _beim_ziehen(self, ereignis) -> str:
+        if self._zieht:
+            self._aus_zeigerstand(ereignis.x, ereignis.y)
+        return "break"
+
+    def _beim_loslassen(self, _ereignis=None) -> str:
+        self._zieht = False
+        return "break"
+
+    def _beim_rad(self, ereignis) -> str:
+        return self._verschieben(1 if ereignis.delta > 0 else -1)
+
+    def _auf_vorgabe(self, _ereignis=None) -> str:
+        self._wert_setzen(self._vorgabe)
+        return "break"
+
+    def _bei_aenderung(self, *_args) -> None:
+        try:
+            self._zeichnen()
+        except tk.TclError:
+            pass                          # Fenster bereits geschlossen
+
+    # ── Aussenseite ─────────────────────────────────────────────────────
+    def grenzen_setzen(self, von: int, bis: int) -> None:
+        """Aendert den erlaubten Bereich - etwa wenn die Kernzahl feststeht."""
+        self._von, self._bis = int(von), max(int(bis), int(von))
+        self._wert_setzen(self._wert())
+        self._zeichnen()
+
+    def durchmesser_setzen(self, durchmesser: int, breite: int | None = None) -> None:
+        """Setzt Durchmesser und - getrennt davon - die Breite der Flaeche.
+
+        Der Kreis ist rund, sein Durchmesser also zugleich die Hoehe. Die
+        Flaeche darf breiter sein, damit die Beschriftung darueber Platz hat
+        und nicht an die des Nachbarn stoesst.
+        """
+        neu = max(16, int(durchmesser))
+        neue_breite = max(neu, int(breite)) if breite else max(neu, self._breite)
+        if neu == self._durchmesser and neue_breite == self._breite:
+            return
+        self._durchmesser, self._breite = neu, neue_breite
+        self.configure(width=self._breite, height=neu)
+        self._zeichnen()
+
+    def farben_setzen(self, bg: str, ring: str, aktiv: str, fg: str) -> None:
+        """Zieht den Knopf beim Designwechsel nach."""
+        self.configure(bg=bg)
+        self._ring, self._aktiv, self._fg = ring, aktiv, fg
+        self._zeichnen()
+
+    def invoke(self) -> None:
+        """Loest den Rueckruf aus - fuer Tests."""
+        if self._command is not None:
+            self._command()
+
+
+
 
 class PS5ConverterGUI:
     """Grafische Benutzeroberfläche für den PS5 DUMP & IMAGE Converter."""
@@ -5019,17 +5262,24 @@ class PS5ConverterGUI:
             value=_saved_workers if 1 <= _saved_workers <= _worker_max
             else self._worker_voreinstellung()
         )
-        self.worker_spin = ttk.Spinbox(
+        # Drehknopf statt Spinbox: Die winzigen Pfeilchen waren schwer zu
+        # treffen und sahen zwischen den runden Bedienteilen dieser
+        # Oberflaeche fremd aus. Die Zahl steht weiter gross in der Mitte,
+        # und Mausrad wie Pfeiltasten aendern sie wie zuvor - genauer wird
+        # es dadurch nicht schwieriger.
+        self.worker_knob = Drehknopf(
             path_card,
-            from_=1,
-            to=_worker_max,
-            textvariable=self.worker_count_var,
-            # Dieselbe Schrift wie die beiden Klapplisten daneben: Ohne
-            # font-Angabe nimmt ttk die Standardschrift (9 pt), und das
-            # Feld stand sichtbar niedriger als seine Nachbarn.
-            font=(UI_SCHRIFT, pt(10)),
-            width=5,
+            variable=self.worker_count_var,
+            von=1,
+            bis=_worker_max,
             command=self._on_worker_count_changed,
+            vorgabe=self._worker_voreinstellung(),
+            durchmesser=38,
+            bg=self._COLORS["bg_card"],
+            ring=self._COLORS["border"],
+            aktiv=self._COLORS["fg_accent"],
+            fg=self._COLORS["fg_primary"],
+            font=(UI_SCHRIFT, pt(10), "bold"),
         )
         # Direkt neben der Kompressionsstufe statt in der breiten, rechtsbündigen
         # Browse-Button-Spalte platziert (sonst reisst die stretchy Spalte 1 einen
@@ -5206,16 +5456,14 @@ class PS5ConverterGUI:
         self._kartenzeilen_ueberwachen()
         self.root.after_idle(self._kartenzeilen_ordnen)
 
-        # Erst jetzt stehen Klappliste und Zahlenfeld beide - vorher
-        # laesst sich die Hoehendifferenz nicht messen.
-        self._worker_spin_hoehe_angleichen()
-        self.worker_spin.bind("<Return>", self._on_worker_count_changed)
-        self.worker_spin.bind("<FocusOut>", self._on_worker_count_changed)
+        # Erst jetzt steht die Klappliste - vorher laesst sich die Hoehe
+        # nicht messen, an die der Drehknopf angeglichen wird.
+        self._worker_knopf_hoehe_angleichen()
         # Zeigt beim Verweilen, was die gewaehlte Zahl konkret bewirkt - das Feld
         # allein verraet nicht, dass ein Kern frei bleibt und grosse Abbilder
         # zusaetzlich gedrosselt werden.
         self._worker_tooltip = DelayedTooltip(
-            self.worker_spin, self._worker_wirkung_text(), delay_ms=1200
+            self.worker_knob, self._worker_wirkung_text(), delay_ms=1200
         )
         self.format_info_label = ttk.Label(
             path_card,
@@ -7495,7 +7743,7 @@ class PS5ConverterGUI:
             obere, einbau = self._kartenzeilen()
             self._kartenzeile_ausrichten(obere, nachmessen=nachmessen)
             self._kartenbeschriftung_setzen(getattr(self, "worker_title", None),
-                                            getattr(self, "worker_spin", None))
+                                            getattr(self, "worker_knob", None))
             self._kartenbeschriftung_setzen(getattr(self, "verify_title", None),
                                             getattr(self, "verify_combo", None))
             # Erst jetzt steht die Pruefstufe endgueltig - vorher laesst sich
@@ -7520,7 +7768,7 @@ class PS5ConverterGUI:
             # Mit dem engen Abstand stiessen die Beschriftungen "WORKER" und
             # "PRUEFUNG" fast aneinander und lasen sich als ein Wort.
             [(getattr(self, "compression_combo", None), 0),
-             (getattr(self, "worker_spin", None), gruppe),
+             (getattr(self, "worker_knob", None), gruppe),
              (getattr(self, "verify_combo", None), gruppe)],
             # AMPR EMU samt Fassung und PlayGo bilden eine Gruppe, BACKPORT
             # samt Firmware die zweite - der groessere Abstand zeigt das.
@@ -7606,7 +7854,7 @@ class PS5ConverterGUI:
         """Laesst die Zeilen nachziehen, wenn sich spaeter eine Breite aendert.
 
         Ein einmaliges Ausrichten reicht nicht: Das Zahlenfeld bekommt in
-        ``_worker_spin_hoehe_angleichen`` den Stil ``Perf.TSpinbox`` mit
+        ``_worker_knopf_hoehe_angleichen`` den Drehknopf auf die gemessene
         engerem Innenabstand und wird dadurch **nach** dem ersten Ausrichten
         noch acht Pixel schmaler - die Luecke dahinter blieb bei 16 statt bei
         8 px stehen (gemessen 21.08.2026). Dasselbe gilt fuer eine geaenderte
@@ -8506,36 +8754,43 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Drag & Drop konnte nicht aktiviert werden: %s", exc)
 
-    def _worker_spin_hoehe_angleichen(self) -> None:
-        """Gibt dem Zahlenfeld dieselbe Hoehe wie den Klapplisten daneben.
+    def _worker_knopf_hoehe_angleichen(self) -> None:
+        """Gibt dem Drehknopf denselben Durchmesser wie die Klapplisten hoch sind.
 
         In der Bedienzeile stehen drei Felder nebeneinander: Kompression,
-        Worker-Threads, Pruefung. ttk gibt einer Combobox mehr Innenabstand
-        als einer Spinbox - gemessen 37 gegen 27 Pixel. Dieselbe Schrift
-        allein gleicht das nicht aus; das Zahlenfeld sass sichtbar tiefer und
-        wirkte wie hineingerutscht.
+        Worker-Threads, Pruefung. Der Knopf ist rund, sein Durchmesser also
+        zugleich seine Hoehe - steht er zu klein da, sitzt er sichtbar
+        eingesunken zwischen den beiden Klapplisten.
 
-        Die Differenz wird gemessen statt geraten: Themes und
-        Anzeigeskalierung aendern die Innenabstaende, eine feste Zahl waere
-        auf dem naechsten System wieder falsch.
+        Gemessen statt geraten: Themes und Anzeigeskalierung aendern die
+        Hoehe einer Combobox, eine feste Zahl waere auf dem naechsten System
+        wieder falsch. Vorher stand hier dieselbe Ueberlegung fuer eine
+        Spinbox, nur umstaendlicher - die brauchte einen eigenen ttk-Stil
+        mit gemessenem Innenabstand.
         """
         try:
             self.root.update_idletasks()
             ziel = self.compression_combo.winfo_reqheight()
-            ist = self.worker_spin.winfo_reqheight()
-            fehlt = ziel - ist
-            if fehlt <= 0:
+            if ziel <= 0:
                 return
-            oben = fehlt // 2
-            unten = fehlt - oben
-            stil = ttk.Style()
-            stil.configure("Perf.TSpinbox", padding=(2, oben, 2, unten))
-            self.worker_spin.configure(style="Perf.TSpinbox")
+            # Die Flaeche muss mindestens so breit sein wie ihre Beschriftung.
+            # Sonst ragt "WORKER" ueber den Knopf hinaus und stoesst an
+            # "PRUEFUNG" daneben - im ersten Anlauf las sich das als ein Wort.
+            beschriftung = getattr(self, "worker_title", None)
+            breite = 0
+            try:
+                if beschriftung is not None:
+                    breite = int(beschriftung.winfo_reqwidth())
+            except tk.TclError:
+                breite = 0
+            self.worker_knob.durchmesser_setzen(ziel, breite=breite)
             self.root.update_idletasks()
-            logger.debug("Zahlenfeld um %d px erhoeht (%d -> %d)",
-                         fehlt, ist, self.worker_spin.winfo_reqheight())
-        except Exception as exc:
-            logger.debug("Hoehe des Zahlenfelds nicht angleichbar: %s", exc)
+            logger.debug("Drehknopf %dx%d px (Klappliste %d hoch, Beschriftung %d breit)",
+                         self.worker_knob.winfo_reqwidth(),
+                         self.worker_knob.winfo_reqheight(), ziel, breite)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Drehknopf-Hoehe nicht angleichbar: %s", exc)
+
 
     def _on_verify_stufe_changed(self, _event=None) -> None:
         """Uebernimmt die gewaehlte mkpfs-Pruefstufe und merkt sie."""
@@ -13506,18 +13761,31 @@ class PS5ConverterGUI:
     #: Name der Einstellung, die den automatischen Nachschlag freigibt.
     _METADATEN_ONLINE_SETTING = "metadata_online"
 
+    #: Platzhalter fuer "in den Einstellungen nie angefasst".
+    _NICHTS_EINGESTELLT = object()
+
     def _metadaten_online_erlaubt(self) -> bool:
         """Darf das Programm von sich aus Metadaten nachschlagen?
 
-        Vorgabe **nein**. Bis v1.8.73 fragte das Programm ohne Rueckfrage bei
+        Die **Vorgabe haengt am System**: unter Windows und Linux ja, auf dem
+        Mac nein.
+
+        Bis v1.8.73 fragte das Programm ueberall ohne Rueckfrage bei
         store.playstation.com, prosperopatches.com und orbispatches.com nach,
         sobald in einem Backup Titel, Publisher oder Kategorie fehlten. Dabei
         geht die Title-ID nach draussen - und mit ihr die Information, welches
-        Spiel hier gerade verarbeitet wird.
+        Spiel hier gerade verarbeitet wird. v1.8.74 stellte das auf allen drei
+        Systemen ab.
 
-        Unter Windows blieb das unbemerkt, weil dort nichts nachfragt. Auf dem
-        Mac meldet die Firewall jede dieser Verbindungen, und zu Recht: Wer
-        ein Abbild umwandelt, rechnet nicht damit, dass dabei jemand mitliest.
+        Seit v1.8.92 gilt die Sperre nur noch auf dem Mac. Dort meldet die
+        Firewall jede dieser Verbindungen, und wer ein Abbild umwandelt,
+        rechnet nicht damit, dass dabei jemand mitliest. Unter Windows und
+        Linux ueberwiegt der Nutzen: Die Angaben stehen ohne Zutun da.
+
+        **Eine ausdrueckliche Wahl gilt weiterhin ueberall.** Wer das
+        Kaestchen in den Einstellungen setzt oder abraeumt, bekommt genau
+        das - unabhaengig vom System. Nur wer nie etwas eingestellt hat,
+        bekommt die Vorgabe seines Systems.
 
         Ein bereits abgelegter Zwischenspeicher wird weiterhin gelesen - der
         liegt lokal und kostet keine Verbindung.
@@ -13527,10 +13795,22 @@ class PS5ConverterGUI:
         # die Einstellung ist fuer alle da, die es dauerhaft wollen.
         if getattr(self, "_meta_nachschlag_einmalig", False):
             return True
+        return self._metadaten_online_vorgabe()
+
+    def _metadaten_online_vorgabe(self) -> bool:
+        """Der gespeicherte Wert - und ohne ihn die Vorgabe des Systems."""
         try:
-            return bool(self._load_setting(self._METADATEN_ONLINE_SETTING, False))
+            # Ein eigener Platzhalter, damit sich "nie eingestellt" von
+            # "ausdruecklich abgeschaltet" unterscheiden laesst. Mit False
+            # als Vorgabe waeren beide Faelle gleich, und ein bewusstes Nein
+            # auf dem Mac liesse sich nicht von der Werkseinstellung trennen.
+            gespeichert = self._load_setting(self._METADATEN_ONLINE_SETTING,
+                                             self._NICHTS_EINGESTELLT)
         except Exception:
-            return False
+            gespeichert = self._NICHTS_EINGESTELLT
+        if gespeichert is self._NICHTS_EINGESTELLT or gespeichert is None:
+            return not IST_MACOS
+        return bool(gespeichert)
 
     #: Felder, deren Fehlen den Nachschlag-Knopf erscheinen laesst.
     _NACHSCHLAG_FELDER = ("title", "publisher", "category")
@@ -13558,9 +13838,10 @@ class PS5ConverterGUI:
                 return
             # Wer den Abruf dauerhaft erlaubt hat, hat die Angaben schon -
             # dann waere der Knopf nur im Weg.
+            # Dieselbe Vorgabe wie oben: Wo ohnehin nachgeschlagen wird,
+            # waere der Knopf nur im Weg.
             zeigen = (self._nachschlag_lohnt_sich()
-                      and not self._load_setting(self._METADATEN_ONLINE_SETTING,
-                                                 False))
+                      and not self._metadaten_online_vorgabe())
             if zeigen and not knopf.winfo_ismapped():
                 anker = getattr(self, "_meta_nachschlag_anker", None)
                 if anker is not None and anker.winfo_exists():
@@ -27882,6 +28163,70 @@ class PS5ConverterGUI:
     #: Kennungspraefixe echter Spiele. NPXS* sind Systemanwendungen.
     _AMPR_GEN_SPIELKENNUNGEN = ("CUSA", "PUSA", "PPSA", "PPSS", "PPUS", "PPJP")
 
+    def _ampr_gen_name_aus_json(self, roh: bytes) -> str:
+        """Liest den Anzeigenamen aus einer param.json.
+
+        Nicht zu verwechseln mit ``_ampr_gen_titel_aus_json`` - das liefert
+        die Title-ID. Hier geht es um den Namen, den auch das Menue der
+        Konsole zeigt.
+        """
+        try:
+            daten = json.loads(roh.decode("utf-8", "replace"))
+        except (ValueError, AttributeError):
+            return ""
+        name = str(daten.get("titleName", "") or "").strip()
+        if name:
+            return name
+        # Manche Titel fuehren ihn nur unter der Sprache.
+        ortsteil = daten.get("localizedParameters") or {}
+        if isinstance(ortsteil, dict):
+            vorgabe = str(ortsteil.get("defaultLanguage", "en-US") or "en-US")
+            for sprache in (vorgabe, "en-US", "de-DE"):
+                block = ortsteil.get(sprache) or {}
+                if isinstance(block, dict):
+                    name = str(block.get("titleName", "") or "").strip()
+                    if name:
+                        return name
+        return ""
+
+    def _ampr_gen_name_aus_appmeta(self, ftp, kennung: str) -> str:
+        """Holt den Anzeigenamen eines Spiels aus seinem appmeta-Ordner.
+
+        Die Konsole fuehrt dort je Spiel eine ``param.sfo`` (PS4-Titel) oder
+        eine ``param.json`` (PS5-Titel). Beide tragen den Namen, den auch das
+        Menue der Konsole zeigt.
+
+        Bewusst lokal statt online: Am 23.08.2026 an 20 Spielen gemessen -
+        alle 20 lieferten ihren Namen, zusammen in 0,8 Sekunden. Ein
+        Nachschlag bei prosperopatches.com oder orbispatches.com braeuchte
+        eine Verbindung, dauerte laenger und schickte die Title-ID nach
+        draussen. Genau das wurde in v1.8.74 abgestellt.
+
+        Returns:
+            Der Name, oder "" wenn keine der beiden Dateien ihn hergibt.
+        """
+        basis = "%s/%s" % (self._AMPR_GEN_APPMETA, kennung)
+        for datei in ("param.sfo", "param.json"):
+            puffer = io.BytesIO()
+            try:
+                ftp.retrbinary("RETR %s/%s" % (basis, datei), puffer.write)
+            except Exception:                         # noqa: BLE001
+                continue                              # die andere Datei
+            roh = puffer.getvalue()
+            if not roh:
+                continue
+            try:
+                if datei == "param.sfo":
+                    name = str(parse_sfo(roh).get("TITLE", "") or "").strip()
+                else:
+                    name = self._ampr_gen_name_aus_json(roh)
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("%s nicht lesbar (%s): %s", datei, kennung, exc)
+                continue
+            if name:
+                return name
+        return ""
+
     def _ampr_gen_spiele_finden(self, ftp) -> list[dict[str, str]]:
         """Sucht die Spiele, die ShadowMount+ auf der Konsole sieht.
 
@@ -27919,7 +28264,9 @@ class PS5ConverterGUI:
                     continue
                 gefunden[kennung] = {
                     "pfad": "%s/%s" % (self._AMPR_GEN_APPMETA, kennung),
-                    "title_id": kennung, "name": kennung,
+                    "title_id": kennung,
+                    # Ohne Namen stuende in der Auswahl die Kennung doppelt.
+                    "name": self._ampr_gen_name_aus_appmeta(ftp, kennung) or kennung,
                     "scanpath": standard_scan, "quelle": "appmeta"}
         except Exception as exc:                      # noqa: BLE001
             logger.debug("appmeta nicht lesbar: %s", exc)
@@ -28007,7 +28354,14 @@ class PS5ConverterGUI:
         dlg = tk.Toplevel(eltern, bg=c["bg_main"])
         dlg.title(self._t("amprgen.decision"))
         dlg.transient(eltern)
-        dlg.resizable(False, False)
+        # Feste Hoehe statt Mitwachsen: Bei 20 Spielen reichte der Dialog
+        # ueber den Bildschirmrand hinaus, und die unteren Eintraege waren
+        # nicht erreichbar. Die Masse folgen dem JS-Loader-Fenster.
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        dlg.geometry("%dx%d" % (max(700, int(sw * 0.42)),
+                                max(560, int(sh * 0.68))))
+        dlg.minsize(640, 460)
 
         tk.Label(dlg, text=frage, font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
@@ -28022,8 +28376,36 @@ class PS5ConverterGUI:
             antwort["wert"] = wert
             dlg.destroy()
 
+        # Der Fuss wird VOR der Rollflaeche gepackt. Sonst drueckt die
+        # Flaeche ihn aus dem Fenster, sobald viele Spiele darin stehen -
+        # dieselbe Falle wie schon einmal bei den Werkzeugfenstern.
+        fuss = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=12)
+        fuss.pack(side="bottom", fill="x")
+        ttk.Button(fuss, text=self._t("action.cancel"),
+                   command=lambda: _waehlen("")).pack(side="right")
+
+        # Rollflaeche fuer die Auswahl - dasselbe Muster wie im
+        # CREDITS-Fenster.
+        rollflaeche = tk.Canvas(dlg, bg=c["bg_main"], highlightthickness=0)
+        leiste = ttk.Scrollbar(dlg, orient="vertical",
+                               command=rollflaeche.yview)
+        leiste.pack(side="right", fill="y")
+        rollflaeche.pack(side="left", fill="both", expand=True)
+        rollflaeche.configure(yscrollcommand=leiste.set)
+        innen = tk.Frame(rollflaeche, bg=c["bg_main"])
+        innen_id = rollflaeche.create_window((0, 0), window=innen, anchor="nw")
+        innen.bind("<Configure>", lambda e: rollflaeche.configure(
+            scrollregion=rollflaeche.bbox("all")))
+        rollflaeche.bind("<Configure>", lambda e: rollflaeche.itemconfig(
+            innen_id, width=e.width))
+        dlg.bind("<MouseWheel>", lambda e: rollflaeche.yview_scroll(
+            int(-1 * (e.delta / 120)), "units"))
+        # X11 meldet das Rad als Knopf 4 und 5.
+        dlg.bind("<Button-4>", lambda e: rollflaeche.yview_scroll(-1, "units"))
+        dlg.bind("<Button-5>", lambda e: rollflaeche.yview_scroll(1, "units"))
+
         for nummer, (wert, beschriftung, erlaeuterung) in enumerate(optionen):
-            karte = tk.Frame(dlg, bg=c["bg_card"], padx=12, pady=10)
+            karte = tk.Frame(innen, bg=c["bg_card"], padx=12, pady=10)
             karte.pack(fill="x", padx=20, pady=(0, 8))
             reihe = tk.Frame(karte, bg=c["bg_card"])
             reihe.pack(fill="x")
@@ -28038,11 +28420,6 @@ class PS5ConverterGUI:
                      bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
                      wraplength=600, justify="left").pack(
                          fill="x", pady=(6, 0))
-
-        fuss = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=12)
-        fuss.pack(fill="x")
-        ttk.Button(fuss, text=self._t("action.cancel"),
-                   command=lambda: _waehlen("")).pack(side="right")
 
         dlg.update_idletasks()
         # Mittig ueber dem Elternfenster - sonst erscheint er in der Ecke.
