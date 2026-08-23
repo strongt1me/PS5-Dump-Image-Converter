@@ -1,44 +1,37 @@
-# PS5 Dump & Image Converter v1.8.90
+## Was ist neu
 
-**23.08.2026**
+* **Der Quellpfad startet leer** und muss bewusst gewählt werden. Bisher stand
+  dort noch der Dump der letzten Sitzung – ein unbedachter Klick auf START
+  wandelte den falschen um, und das fiel erst am fertigen Ergebnis auf.
+* **Der Zielpfad zeigt weiterhin den zuletzt benutzten Ordner.** Ein falsches
+  Ziel fällt sofort auf: Es entsteht eine Datei am falschen Ort, verwechselt
+  wird nichts.
+* **Durchsuchen öffnet nach wie vor im letzten Quellordner** – es ist ein Klick
+  mehr, kein Suchen von vorn.
 
-Eine kleine, aber spürbare Änderung am Programmstart.
+## Downloads
 
-## Die Quelle startet leer, das Ziel bleibt stehen
-
-Bisher standen beim Start **beide** Pfade noch so da wie beim letzten Mal.
-Beim Ziel ist das bequem — bei der Quelle riskant: Ein Klick auf **START**
-wandelte dann den Dump der letzten Sitzung um, und das fällt erst auf, wenn
-das Ergebnis fertig ist.
-
-| Feld | Beim Start |
+| Plattform | Datei |
 | --- | --- |
-| **QUELLE** | leer — muss bewusst gewählt werden |
-| **ZIEL** | der zuletzt benutzte Ordner |
+| Windows | `PS5_Dump_Image_Converter_v1.8.90.exe` |
+| Linux | `PS5_Dump_Image_Converter_v1.8.90_linux_x86_64` |
+| macOS (Apple Silicon) | `PS5_Dump_Image_Converter_v1.8.90_macos_arm64.dmg` |
+| macOS (Intel) | `PS5_Dump_Image_Converter_v1.8.90_macos_x86_64.dmg` |
 
-Der Unterschied hat einen Grund: Ein falsches **Ziel** fällt sofort auf — es
-entsteht eine Datei am falschen Ort, verwechselt wird nichts. Eine falsche
-**Quelle** merkt man erst am fertigen Abbild, und dann ist die Arbeit schon
-getan.
+Prüfsummen aller Quelldateien: `SOURCE_FILE_MANIFEST_v1.8.90.sha256`
 
-Bequem bleibt es trotzdem: Der Knopf **Durchsuchen** öffnet weiterhin im
-zuletzt benutzten Quellordner — das merkt sich das Programm getrennt vom
-Eingabefeld. Es ist also ein Klick mehr, kein Suchen von vorn.
+## Hinweis
+
+Nur für **eigene, rechtmäßig erworbene** Inhalte. Das Umgehen technischer
+Schutzmaßnahmen und die Verbreitung urheberrechtlich geschützter Inhalte sind
+nicht Zweck dieses Projekts. Nutzung auf eigene Verantwortung; keine Verbindung
+zu Sony Interactive Entertainment. Einzelheiten im
+[Haftungsausschluss](https://github.com/strongt1me/PS5-Dump-Image-Converter#haftungsausschluss).
 
 ## Geprüft
 
-Gemessen wurde an einer frisch aufgebauten Oberfläche, nicht am Quelltext:
+1304 Tests grün. Gemessen wurde an einer frisch aufgebauten Oberfläche, nicht
+am Quelltext; gegengeprüft, dass die neuen Tests ohne die Änderung
+fehlschlagen.
 
-```
-vorher:   QUELLE = <der alte Ordner>    ZIEL = <der alte Ordner>
-jetzt:    QUELLE = (leer)               ZIEL = <der alte Ordner>
-```
-
-**1304 Tests** laufen durch — vier mehr als in v1.8.89. Die neuen halten das
-Verhalten fest; gegengeprüft wurde, dass sie ohne die Änderung fehlschlagen.
-
-Ein Hinweis zur Sorgfalt bei dieser Prüfung: Ein erster Anlauf benutzte
-*erfundene* Ordnerpfade — und bestand deshalb auch ohne die Änderung. Der
-Grund: Einen Quellpfad, den es gar nicht gibt, verwirft das Programm ohnehin,
-sobald es die gewählte Aufgabe prüft. Erst mit **wirklich vorhandenen**
-Ordnern misst die Prüfung, was sie messen soll.
+**Vollständiges Changelog:** https://github.com/strongt1me/PS5-Dump-Image-Converter/compare/v1.8.89...v1.8.90
