@@ -2,9 +2,58 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.86):** Bei **PS4 PKG → ffpfsc** sagen die Fehlermeldungen jetzt die Wahrheit – ein zu langer Zielpfad galt bisher als „Paket verschlüsselt“. Auf dem **Mac** lief die Funktion gar nicht. Und Werkzeugfenster schließen sich wieder, wenn man denselben Knopf noch einmal drückt.
+> **Kurz zum aktuellen Stand (v1.8.87):** **PS4 PKG → ffpfsc** wurde einmal von Anfang bis Ende durchgemessen – beide Ausgabeformate funktionieren. Stürzt der Entpacker ab, sagt das Programm das jetzt verständlich, statt eine nackte Zahl zu zeigen. Und auf **Intel-Macs** wird kein Helfer mehr angeboten, der dort gar nicht laufen kann.
 
 ---
+
+## v1.8.87 – 23.08.2026
+
+### PS4 PKG → ffpfsc einmal ganz durchgemessen
+
+Die Funktion wurde von Anfang bis Ende durchgespielt und gegen die
+Beschreibung des Originalwerkzeugs gehalten. Ergebnis: Sie arbeitet korrekt –
+in **beiden** Ausgabeformaten.
+
+| Format | Ergebnis |
+| --- | --- |
+| `.ffpfsc` | 80,8 MB, die Prüfung meldet 0 Warnungen und 0 Fehler |
+| `.exfat` | 437,4 MB, gültiges exFAT-Dateisystem |
+
+Das **exFAT-Format war bislang nie erprobt** – es geht. Ebenso stimmen die
+Randfälle: Ein zweiter Bau ohne `--force` nennt Datei und Abhilfe, nach einem
+Fehlschlag bleiben keine halben Dateien liegen, und der Arbeitsordner schrumpft
+nach dem Lauf von 400 auf 6 MB.
+
+### Wenn der Entpacker abstürzt, steht das jetzt da
+
+An einem bestimmten Update-Paket stürzt der mitgelieferte Entpacker ab. Bisher
+lasen Sie:
+
+```
+extractor failed (3221225477) for ...pkg:
+```
+
+Eine nackte Zahl – und hinter dem Doppelpunkt nichts, denn ein abgestürztes
+Programm hinterlässt keine Meldung. Wer das liest, sucht den Fehler bei sich
+oder in der Datei. Jetzt steht dort, was wirklich los ist: dass der Entpacker
+abgestürzt ist, woran das liegt – und **dass es nicht am Paket und nicht an
+Ihrer Einrichtung liegt**.
+
+### Intel-Macs bekommen keinen unbrauchbaren Helfer mehr
+
+Die Mac-Fassung der beiden Hilfsprogramme gibt es nur für **Apple Silicon**.
+Auf einem Intel-Mac wurde sie trotzdem angeboten und scheiterte beim Start.
+Das Programm sieht jetzt nach, für welchen Prozessor eine Datei gebaut ist:
+
+| Rechner | Ergebnis |
+| --- | --- |
+| Windows | die Windows-Fassung |
+| Mac mit Apple Silicon | die Mac-Fassung |
+| Mac mit Intel | keiner – das Fenster sagt es offen |
+| Linux | keiner – dasselbe |
+
+Besser vorher wissen als mitten im Lauf stehen bleiben.
+
 
 ## v1.8.86 – 23.08.2026
 
