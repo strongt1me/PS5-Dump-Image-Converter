@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.87"
+APP_VERSION = "v1.8.88"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2329,6 +2329,9 @@ class PS5ConverterGUI:
         self._checkpoint_last_save_ts: float = 0.0
         self._task_report_path: str = ""
         self._pending_mkpfs_engine_done: threading.Event | None = None
+        #: Griff auf das Ereignis des laufenden mkpfs-Laufs, damit der
+        #: Abbruch den Messfaden sofort stoppen kann.
+        self._engine_done_event: threading.Event | None = None
         self._pending_mkpfs_target_path: str = ""
         self._suppress_pulse_creep: bool = False
         self._startup_temp_cleanup_prompted: bool = False
@@ -17547,6 +17550,12 @@ class PS5ConverterGUI:
         # Ergebnis-Container für den Thread
         result: dict[str, object] = {"exit_code": -1}
         engine_done = threading.Event()
+        # Der Abbruchweg braucht einen Griff darauf: _kill_task und die
+        # beiden Beenden-Wege setzen es, um den Messfaden sofort zu
+        # stoppen. Ohne diese Zeile lasen sie ein Attribut, das es nicht
+        # gab - Schritt 3 ihrer Reihenfolge lief ins Leere, und der Faden
+        # pollte weiter, bis mkpfs von sich aus fertig war.
+        self._engine_done_event = engine_done
 
         def _run_engine() -> None:
             """Führt mkpfs in einem eigenen Thread aus.
@@ -17875,6 +17884,8 @@ class PS5ConverterGUI:
                 file_monitor_thread.join(timeout=0.2)
             return False
         engine_thread.join(timeout=10)
+        # Der Griff gilt nur fuer diesen Lauf.
+        self._engine_done_event = None
         if file_monitor_thread is not None:
             file_monitor_thread.join(timeout=2)
 

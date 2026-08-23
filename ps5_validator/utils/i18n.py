@@ -108,7 +108,6 @@ STRINGS: dict[str, dict[str, str]] = {
     'verify.hint': {'de': 'Prüfung durch mkpfs nach dem Packen. „Schnell“ entspricht der Voreinstellung von mkpfs und prüft die Struktur; „Vollständig“ liest das Ergebnis zusätzlich komplett zurück und dauert deutlich länger. Aufgabe 8 prüft ein fertiges Abbild jederzeit auch nachträglich.', 'en': 'Check run by mkpfs after packing. “Quick” matches the mkpfs default and checks the structure; “Full” additionally reads the result back completely and takes considerably longer. Task 8 can check a finished image at any time afterwards.'},
     'main.compression_label': {'de': 'KOMPRESSION (PFS)', 'en': 'COMPRESSION (PFS)'},
     'main.worker_label': {'de': 'WORKER', 'en': 'WORKERS'},
-    'main.verify_label': {'de': 'PRÜFUNG', 'en': 'VERIFY'},
     'main.worker_effect_hint': {'de': 'Eingestellt: {v0} von {v1} Kernen.\nBeim Packen ergibt das {v2} {v4} – ein Kern bleibt immer frei, und sehr grosse Abbilder werden zusätzlich gedrosselt (ab 90 GB auf 3, ab 160 GB auf 2).\nDer Validator arbeitet mit {v3} {v5}.\nMehr als die Kernzahl lässt sich nicht einstellen.', 'en': 'Set to {v0} of {v1} cores.\nFor packing this yields {v2} {v4} – one core always stays free, and very large images are throttled further (3 above 90 GB, 2 above 160 GB).\nThe validator uses {v3} {v5}.\nYou cannot set more than the core count.'},
     'main.worker_word_one': {'de': 'Worker', 'en': 'worker'},
     'main.worker_word_many': {'de': 'Worker', 'en': 'workers'},

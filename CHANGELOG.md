@@ -2,9 +2,38 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.87):** **PS4 PKG → ffpfsc** wurde einmal von Anfang bis Ende durchgemessen – beide Ausgabeformate funktionieren. Stürzt der Entpacker ab, sagt das Programm das jetzt verständlich, statt eine nackte Zahl zu zeigen. Und auf **Intel-Macs** wird kein Helfer mehr angeboten, der dort gar nicht laufen kann.
+> **Kurz zum aktuellen Stand (v1.8.88):** Zwei Fehler, die stillschweigend wirkten: Ein Lesefehler beim Ermitteln von Spielnamen führte zum Absturz statt zu einer Meldung, und der **Abbruch** stoppte den Fortschrittsmesser nicht – der lief danach weiter, bis das Packen von selbst endete.
 
 ---
+
+## v1.8.88 – 23.08.2026
+
+Kein neuer Funktionsumfang – diese Ausgabe behebt zwei Fehler, die auffielen,
+weil der Programmcode einmal gezielt danach durchsucht wurde. Beide hatten
+gemeinsam, dass sie **nichts meldeten**.
+
+### Abbrechen stoppt jetzt wirklich alles
+
+Beim Abbrechen eines Vorgangs sollte auch der Fortschrittsmesser stehen
+bleiben, der während des Packens die Zieldatei beobachtet. Das war so
+vorgesehen und im Programm sogar als Schritt 3 beschrieben – nur griff der
+Schritt ins Leere.
+
+Die Folge: Nach dem Abbruch lief im Hintergrund alle 150 Millisekunden eine
+Messung weiter, bis das Packen von sich aus zu Ende kam. Bei einem grossen
+Abbild konnte das Minuten dauern. Sichtbar war davon nichts, aber nötig war es
+auch nicht.
+
+### Ein Lesefehler führte zum Absturz statt zu einer Meldung
+
+Beim Ermitteln von Spielname und Title-ID liest das Programm zwei Dateien aus
+dem Dump. Ist eine davon vorhanden, lässt sich aber nicht öffnen – gesperrt,
+keine Leserechte, Fehler auf dem Datenträger –, war dafür eine saubere
+Behandlung vorgesehen: Meldung ins Protokoll, weiter geht es ohne den Namen.
+
+Diese Behandlung stürzte selbst ab. Statt der Meldung gab es einen Programm
+fehler. Jetzt geschieht, was vorgesehen war.
+
 
 ## v1.8.87 – 23.08.2026
 
