@@ -191,6 +191,27 @@ def _print_list(inventory: dict[str, Any], json_output: bool) -> None:
         print(f"unsupported_or_encrypted_pkg={len(inventory['unsupported'])}")
 
 
+def _no_title_ids_message(inventory: dict[str, Any], wanted_all: bool) -> str:
+    """Sagt, warum nichts zu tun ist.
+
+    Die alte Meldung lautete immer "provide TITLE_ID or --all". Mit ``--all``
+    bleibt die Liste aber auch dann leer, wenn das Inventar kein einziges
+    brauchbares Spiel kennt - und dann verlangte die Meldung ausgerechnet
+    das, was der Nutzer gerade angegeben hatte.
+    """
+    if not wanted_all:
+        return "provide TITLE_ID or --all"
+    unsupported = len(inventory.get("unsupported", []))
+    if unsupported:
+        return (
+            f"--all found no usable game: all {unsupported} package(s) were "
+            "rejected. Run 'list' to see the reason for each one."
+        )
+    return (
+        "--all found no game: the inventory is empty. Check the source path."
+    )
+
+
 def _settings(args: argparse.Namespace) -> Settings:
     root = application_data_root()
     ensure_application_directories(root)
@@ -247,7 +268,7 @@ def main(argv: list[str] | None = None) -> int:
                 else []
             )
             if not title_ids:
-                raise ValueError("provide TITLE_ID or --all")
+                raise ValueError(_no_title_ids_message(inventory, args.all))
             results: dict[str, Any] = {}
             failed = False
             for title_id in title_ids:
@@ -273,7 +294,7 @@ def main(argv: list[str] | None = None) -> int:
                 else []
             )
             if not title_ids:
-                raise ValueError("provide TITLE_ID or --all")
+                raise ValueError(_no_title_ids_message(inventory, args.all))
             results: dict[str, Any] = {}
             failed = False
             skipped = False

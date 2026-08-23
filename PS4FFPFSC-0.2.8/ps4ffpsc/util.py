@@ -122,6 +122,96 @@ def paths_overlap(first: Path, second: Path) -> bool:
     return path_is_within(first, second) or path_is_within(second, first)
 
 
+# Behoben fuer die Einbettung (siehe UPSTREAM.md): Der mitgelieferte
+# Entpacker traegt kein "longPathAware" in seinem Manifest. Windows legt ihm
+# deshalb MAX_PATH an, auch wenn der Systemschalter LongPathsEnabled gesetzt
+# ist. Am 23.08.2026 nachgemessen an Tetris Ultimate (tiefster spielinterner
+# Pfad 73 Zeichen): bis 183 Zeichen Zielpfad laeuft die Entpackung durch, ab
+# 186 bricht sie ab. Der Entpacker meldet das als "unsupported_or_encrypted_
+# pkg" - also als Fehler in der Datei statt im Pfad. Diese Fehldeutung schickt
+# den Nutzer auf die falsche Faehrte, deshalb wird sie hier erkannt.
+WINDOWS_MAX_PATH = 259
+
+#: Ab wie wenig verbleibenden Zeichen ein Zielpfad als gefaehrdet gilt. Der
+#: Wert deckt uebliche spielinterne Pfade ab; Tetris braucht 73, tiefere
+#: Baeume (Unity-Titel mit StreamingAssets) kommen ueber 100.
+PATH_HEADROOM_LIMIT = 100
+
+#: Fehlertexte, die die Pfadgrenze ausdruecklich nennen. Sie sind vom
+#: Programm erzeugt und daher unabhaengig von der Systemsprache - anders als
+#: der Windows-Text dahinter, der uebersetzt ausgeliefert wird.
+_LONG_PATH_MARKERS = (
+    "create_directories",
+    "filename or extension is too long",
+    "path is too long",
+)
+
+
+def ensure_executable(path: Path) -> bool:
+    """Sorgt dafuer, dass eine mitgelieferte Programmdatei startbar ist.
+
+    Aus einem PyInstaller-Buendel kommen die Helfer als reine Daten - der
+    Bauplan legt sie unter ``datas`` ab, und dabei geht das
+    Ausfuehrungsrecht verloren. Unter Windows spielt das keine Rolle, auf
+    macOS und Linux scheitert der Start sonst mit "Permission denied"
+    (Errno 13). Dasselbe Nachziehen gibt es im Hauptprogramm laengst fuer
+    UFS2Tool; fuer die PS4-Helfer fehlte es.
+
+    Returns:
+        ``True``, wenn die Datei danach ausfuehrbar ist.
+    """
+    if os.name == "nt":
+        return True
+    if os.access(path, os.X_OK):
+        return True
+    try:
+        path.chmod(path.stat().st_mode | 0o111)
+    except OSError:
+        return False
+    return os.access(path, os.X_OK)
+
+
+def windows_path_headroom(path: Path) -> int | None:
+    """Wie viele Zeichen unterhalb von ``path`` noch bis MAX_PATH frei sind.
+
+    Returns:
+        Die verbleibenden Zeichen, oder ``None`` auf Systemen ohne diese
+        Grenze (Linux und macOS erlauben 4096).
+    """
+    if os.name != "nt":
+        return None
+    return WINDOWS_MAX_PATH - len(str(path))
+
+
+def looks_like_path_length_failure(destination: Path, reason: str) -> bool:
+    """Spricht ein gescheiterter Lauf fuer einen zu langen Zielpfad?
+
+    Zwei Anzeichen, jedes fuer sich ausreichend: ein Fehlertext, der die
+    Grenze ausdruecklich nennt, oder ein Zielpfad, unter dem kaum noch Platz
+    fuer die spielinternen Pfade bleibt. Das zweite Anzeichen ist noetig,
+    weil der Entpacker genau an der Grenze ohne jeden Hinweis abbricht - er
+    meldet dort nur "Failed to open PKG extraction input or output".
+    """
+    lowered = reason.lower()
+    if any(marker in lowered for marker in _LONG_PATH_MARKERS):
+        return True
+    headroom = windows_path_headroom(destination)
+    return headroom is not None and headroom < PATH_HEADROOM_LIMIT
+
+
+def path_length_hint(destination: Path) -> str:
+    """Ein Satz, der die Pfadgrenze in Zahlen erklaert - sonst leer."""
+    headroom = windows_path_headroom(destination)
+    if headroom is None:
+        return ""
+    return (
+        f"the target path is {len(str(destination))} characters long, leaving "
+        f"{headroom} for the paths inside the game (Windows allows "
+        f"{WINDOWS_MAX_PATH} in total); pick a shorter output folder"
+    )
+
+
+
 def iter_tree_files(root: Path) -> Iterable[tuple[Path, Path]]:
     if root.is_symlink():
         raise ValueError(f"symlink tree root is forbidden: {root}")

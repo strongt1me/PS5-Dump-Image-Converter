@@ -5,12 +5,15 @@ import json
 import logging
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
 from .dump_source import DumpSourceError, discover_dump_records
 from .util import (
+    WINDOWS_MAX_PATH,
     atomic_write_json,
+    ensure_executable,
     content_id_parts,
     file_stat_identity,
     paths_overlap,
@@ -18,6 +21,7 @@ from .util import (
     utc_now,
     validate_title_id,
     version_key,
+    windows_path_headroom,
 )
 
 LOG = logging.getLogger("ps4ffpsc")
@@ -121,8 +125,18 @@ def patch_build_plan(game: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def find_extractor(root: Path, resources: Path | None = None) -> Path | None:
+    """Sucht den PKG-Entpacker fuer die laufende Plattform.
+
+    Behoben fuer die Einbettung (siehe UPSTREAM.md): Hier stand fest
+    ``("ps4_pkg_extract.exe", "ps4_pkg_extract")`` - die Windows-Datei
+    zuerst, und zwar auf jeder Plattform. Im macOS-Buendel liegen beide
+    Fassungen im selben ``bin/``, also griff der Mac zur ``.exe`` und
+    scheiterte beim Start mit "Permission denied" (Errno 13). Die
+    Schwesterfunktion :func:`dlc_embed.find_dlc_helper` macht es seit jeher
+    richtig; hier fehlte es.
+    """
     resources = resources or root
-    names = ("ps4_pkg_extract.exe", "ps4_pkg_extract")
+    name = "ps4_pkg_extract.exe" if sys.platform == "win32" else "ps4_pkg_extract"
     directories = [
         resources / "bin",
         resources / "build" / "tools" / "ps4_pkg_extract",
@@ -131,8 +145,14 @@ def find_extractor(root: Path, resources: Path | None = None) -> Path | None:
         root / "build",
         root / "tools" / "ps4_pkg_extract" / "build",
     ]
-    candidates = [directory / name for directory in directories for name in names]
-    return next((path for path in candidates if path.is_file()), None)
+    for directory in directories:
+        path = directory / name
+        # ensure_executable holt das Ausfuehrungsrecht nach, das beim
+        # Buendeln verloren geht - sonst liegt die richtige Datei da und
+        # laesst sich trotzdem nicht starten.
+        if path.is_file() and ensure_executable(path):
+            return path
+    return None
 
 
 def _sha256_of_file(path: Path) -> str:
@@ -163,6 +183,7 @@ def inspect_package(
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
         )
 
     process = _run(not compute_sha256)
@@ -183,15 +204,32 @@ def inspect_package(
         process = _run(True)
         recomputed_hash = True
 
-    lines = [line for line in process.stdout.splitlines() if line.strip()]
+    lines = [line for line in (process.stdout or "").splitlines()
+             if line.strip()]
     if not lines:
-        reason = process.stderr.strip()
+        reason = (process.stderr or "").strip()
         if not reason:
             reason = (
                 f"extractor returned no JSON (exit {process.returncode})"
                 if process.returncode
                 else "extractor returned no JSON"
             )
+        # Auch hier kann ein zu langer Pfad die Ursache sein - dann liegt es
+        # an der Ablage des Pakets, nicht an seinem Inhalt. Anders als beim
+        # Entpacken genuegt hier, dass der Pfad der Datei selbst zu lang ist:
+        # gelesen wird nur sie, unter ihr entstehen keine weiteren Pfade.
+        headroom = windows_path_headroom(path)
+        if headroom is not None and headroom < 0:
+            return {
+                "path": str(path),
+                "supported": False,
+                "error": "path_too_long",
+                "reason": (
+                    f"the package path is {len(str(path))} characters long, "
+                    f"but Windows allows {WINDOWS_MAX_PATH}; move the package "
+                    f"to a shorter path. Extractor output: {reason}"
+                ),
+            }
         return {
             "path": str(path),
             "supported": False,

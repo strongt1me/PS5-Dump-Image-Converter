@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.85"
+APP_VERSION = "v1.8.86"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1692,6 +1692,15 @@ class PS5ConverterGUI:
         _saved_language = self._load_setting_static("language", DEFAULT_LANGUAGE)
         self._current_language: str = str(_saved_language) if _saved_language in ("de", "en") else DEFAULT_LANGUAGE
 
+        # 1d. Offene Werkzeugfenster, damit derselbe Knopf sie wieder
+        # schliesst. Der Schluessel ist der Methodenname des Knopfes.
+        self._werkzeugfenster: dict[str, "tk.Toplevel"] = {}
+        #: Welcher Knopf gerade ein Fenster oeffnet - nur waehrend des
+        #: Aufrufs gesetzt, damit die Bindung weiss, wem sie gehoert.
+        self._fenster_schluessel: str = ""
+        #: Was waehrend dieses Aufrufs an Fenstern entstanden ist.
+        self._fenster_sammlung: list = []
+
         # 2. Hintergrundbild cachen
         self._bg_image_cache: Image.Image | None = None
         self._bg_image_raw: Image.Image | None = None
@@ -1841,7 +1850,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_theme_dialog,
+            command=self._werkzeugknopf("_show_theme_dialog"),
         )
         self._btn_design_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Design-Button
@@ -1866,7 +1875,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_settings_dialog,
+            command=self._werkzeugknopf("_show_settings_dialog"),
         )
         self._btn_settings_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Einstellungen-Button
@@ -1891,7 +1900,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_credits,
+            command=self._werkzeugknopf("_show_credits"),
         )
         self._btn_credits_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Credits-Button
@@ -1916,7 +1925,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_js_loader,
+            command=self._werkzeugknopf("_show_js_loader"),
         )
         self._btn_jsloader_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für JS Loader Button
@@ -1973,7 +1982,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_shadowmount_editor,
+            command=self._werkzeugknopf("_show_shadowmount_editor"),
         )
         self._btn_shadowmount_title.pack(side="right", padx=(0, 8))
         def _shadowmount_enter(e):
@@ -1998,7 +2007,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_ampr_alte_methode,
+            command=self._werkzeugknopf("_show_ampr_alte_methode"),
         )
         self._btn_ampr_alt_title.pack(side="right", padx=(0, 8))
         def _ampr_alt_enter(e):
@@ -2023,7 +2032,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_ampr_neue_methode,
+            command=self._werkzeugknopf("_show_ampr_neue_methode"),
         )
         self._btn_ampr_neu_title.pack(side="right", padx=(0, 8))
         def _ampr_neu_enter(e):
@@ -2048,7 +2057,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_library_window,
+            command=self._werkzeugknopf("_show_library_window"),
         )
         self._btn_library_title.pack(side="right", padx=(0, 8))
         def _library_enter(e):
@@ -2073,7 +2082,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_klog_window_geprueft,
+            command=self._werkzeugknopf("_show_klog_window_geprueft"),
         )
         self._btn_klog_title.pack(side="right", padx=(0, 8))
         def _klog_btn_enter(e):
@@ -2098,7 +2107,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_diagnostic_report,
+            command=self._werkzeugknopf("_show_diagnostic_report"),
         )
         self._btn_diagnostics_title.pack(side="right", padx=(0, 8))
         def _diagnostics_enter(e):
@@ -2123,7 +2132,8 @@ class PS5ConverterGUI:
         # eintraege sind keine Widgets und fallen sonst durch das Raster).
         for _label_key, _befehl_name in self._MORE_TOOLS_ENTRIES:
             self._more_tools_menu.add_command(
-                label=self._t(_label_key), command=getattr(self, _befehl_name)
+                label=self._t(_label_key),
+                command=self._werkzeugknopf(_befehl_name)
             )
 
         def _show_more_tools_menu():
@@ -2241,7 +2251,7 @@ class PS5ConverterGUI:
                 self.context_menu.add_separator()
             else:
                 self.context_menu.add_command(label=self._t(_key),
-                                              command=getattr(self, _befehl))
+                                              command=self._werkzeugknopf(_befehl))
 
         # Textfelder bekommen ihr eigenes Menue - das obige gilt dem
         # Fenster, nicht dem Inhalt eines Eingabefelds.
@@ -6370,6 +6380,96 @@ class PS5ConverterGUI:
             logger.debug("Taskleisteneintrag nicht setzbar: %s", exc)
 
 
+    @staticmethod
+    def _fenster_lebt(win) -> bool:
+        """Gibt es das Fenster noch?"""
+        try:
+            return bool(win.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _fenster_schliessen(self, win) -> None:
+        """Schliesst ein Fenster auf seinem eigenen Weg.
+
+        Einige Fenster haengen an ``WM_DELETE_WINDOW`` eine Ruecksprache
+        oder brechen einen laufenden Vorgang ab. Ein hartes ``destroy()``
+        ginge daran vorbei und koennte einen Lauf mitten im Schreiben
+        abschneiden - deshalb bekommt der eigene Handler den Vorrang.
+        """
+        try:
+            handler = win.protocol("WM_DELETE_WINDOW")
+        except tk.TclError:
+            handler = ""
+        try:
+            if handler:
+                win.tk.call(handler)
+            else:
+                win.destroy()
+        except tk.TclError as exc:
+            logger.debug("Fenster liess sich nicht schliessen: %s", exc)
+
+    def _werkzeugfenster_umschalten(self, befehl: str) -> None:
+        """Oeffnet das Fenster eines Knopfes - oder schliesst es wieder.
+
+        Der zweite Druck auf denselben Knopf schliesst, was der erste
+        geoeffnet hat. Lehnt ein Fenster das Schliessen ab, weil gerade
+        etwas laeuft, bleibt es stehen und kommt nach vorn.
+
+        Args:
+            befehl: Name der Methode, die das Fenster oeffnet.
+        """
+        offen = self._werkzeugfenster.get(befehl)
+        if offen is not None and self._fenster_lebt(offen):
+            self._fenster_schliessen(offen)
+            if self._fenster_lebt(offen):
+                offen.lift()
+                try:
+                    offen.focus_force()
+                except tk.TclError:
+                    pass
+            else:
+                self._werkzeugfenster.pop(befehl, None)
+            return
+        self._werkzeugfenster.pop(befehl, None)
+
+        self._fenster_schluessel = befehl
+        self._fenster_sammlung = []
+        try:
+            getattr(self, befehl)()
+        finally:
+            self._fenster_schluessel = ""
+            entstanden = [w for w in self._fenster_sammlung
+                          if self._fenster_lebt(w)]
+            self._fenster_sammlung = []
+        if not entstanden:
+            return
+        # Das erste noch offene Fenster ist das des Knopfes. Zwischenfragen
+        # sind zu diesem Zeitpunkt schon wieder zu und fallen damit weg.
+        win = entstanden[0]
+        self._werkzeugfenster[befehl] = win
+
+        def _vergessen(ereignis, schluessel=befehl, fenster=win) -> None:
+            # <Destroy> kommt auch fuer jedes Kindelement - nur das Fenster
+            # selbst zaehlt, sonst raeumt der erste Knopf den Eintrag weg.
+            if ereignis.widget is fenster:
+                self._werkzeugfenster.pop(schluessel, None)
+
+        try:
+            win.bind("<Destroy>", _vergessen, add="+")
+        except tk.TclError as exc:
+            logger.debug("Fenster nicht ueberwachbar: %s", exc)
+
+    def _werkzeugknopf(self, befehl: str):
+        """Der Befehl fuer einen Werkzeugknopf - als Umschalter.
+
+        Args:
+            befehl: Name der Methode, die das Fenster oeffnet.
+
+        Returns:
+            Eine Funktion ohne Argumente fuer ``command=``.
+        """
+        return lambda: self._werkzeugfenster_umschalten(befehl)
+
     def _fenster_an_hauptfenster_binden(self, win: "tk.Toplevel",
                                         eltern: "tk.Misc | None" = None) -> None:
         """Haelt ein Fenster vor dem Hauptfenster - ohne die Taskleiste zu verlieren.
@@ -6389,6 +6489,11 @@ class PS5ConverterGUI:
             win: Das Fenster.
             eltern: Der Besitzer; ohne Angabe das Hauptfenster.
         """
+        # Jedes so gebundene Fenster gehoert zu einem Knopf. Welchem,
+        # weiss nur der laufende Aufruf - deshalb hier einsammeln.
+        if self._fenster_schluessel:
+            self._fenster_sammlung.append(win)
+
         try:
             win.transient(eltern or self.root)
         except Exception as exc:                      # noqa: BLE001
@@ -7207,7 +7312,8 @@ class PS5ConverterGUI:
         for schluessel, befehl in self._MORE_TOOLS_ENTRIES:
             try:
                 self._more_tools_menu.add_command(
-                    label=self._t(schluessel), command=getattr(self, befehl))
+                    label=self._t(schluessel),
+                    command=self._werkzeugknopf(befehl))
             except Exception:
                 continue
         eingefaltet = [(s, b) for n, s, b in self._FALTBARE_TITELKNOEPFE
@@ -7223,7 +7329,8 @@ class PS5ConverterGUI:
         for schluessel, befehl in eingefaltet:
             try:
                 self._more_tools_menu.add_command(
-                    label=self._t(schluessel), command=getattr(self, befehl))
+                    label=self._t(schluessel),
+                    command=self._werkzeugknopf(befehl))
             except Exception:
                 continue
 
@@ -30205,8 +30312,7 @@ class PS5ConverterGUI:
                      or tempfile.gettempdir())
             ordner = os.path.join(basis, "ps4ffpsc_arbeit")
             if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
-                laufwerk = os.environ.get("SystemDrive", "C:") + os.sep
-                ausweich = os.path.join(laufwerk, "ps4ffpsc_arbeit")
+                ausweich = _ps4ffpsc_kurzer_arbeitsordner(basis)
                 _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
                 ordner = ausweich
             os.makedirs(ordner, exist_ok=True)
@@ -34767,10 +34873,47 @@ UFS2TOOL_ORDNER = "UFS2Tool-4.1"
 #: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
 _PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
 
-#: Hoechstlaenge des Arbeitsordners fuer das PS4-Werkzeug unter Windows.
-#: Darunter legt es noch "unpacked/<Title-ID>/<Paket>/sce_sys/..." an; ab etwa
-#: 150 Zeichen scheitert der PKG-Entpacker an der 260-Zeichen-Grenze.
-_PS4FFPSC_MAX_ARBEITSPFAD = 110
+#: Hoechstlaenge des Arbeitsordners, den die Oberflaeche noch am gewaehlten
+#: Ort belaesst. Der mitgelieferte Entpacker kennt kein "longPathAware" und
+#: endet deshalb bei 259 Zeichen. Unter dem Arbeitsordner entstehen im
+#: unguenstigen Fall rund 210 Zeichen:
+#:
+#:   unpacked\<Title-ID> - <Titel>\    bis etwa  52   (Titel bis 40 Zeichen)
+#:   packages\dlc\<Label>\<Kuerzel>              42   (DLC ist laenger als base)
+#:   .partial, solange der Lauf dauert            8
+#:   der tiefste spielinterne Pfad             ~100
+#:
+#: Am 23.08.2026 an Tetris Ultimate nachgemessen: 64 Zeichen Aufschlag und
+#: 73 spielintern. Der frueher hier stehende Wert 110 rechnete den Titel im
+#: Ordnernamen nicht mit und liess nur 10 Zeichen Luft - ein Spiel mit
+#: laengerem Namen waere gescheitert, und zwar mit der Meldung "Paket nicht
+#: unterstuetzt oder verschluesselt".
+_PS4FFPSC_MAX_ARBEITSPFAD = 45
+
+
+def _ps4ffpsc_kurzer_arbeitsordner(basis: str) -> str:
+    r"""Ein kurzer Arbeitsordner - moeglichst auf dem Laufwerk des Ziels.
+
+    Frueher ging der Ausweichpfad immer auf das Systemlaufwerk. Das ist die
+    schlechteste Wahl: Dort liegt Windows, der Platz ist am knappsten, und
+    waehrend der Umwandlung liegen Spiel und Zwischenstand gleichzeitig da -
+    bei grossen Titeln zweistellige Gigabyte. Das Laufwerk des Zielordners
+    ist genauso kurz und meint denselben Datentraeger, den der Nutzer
+    ohnehin gewaehlt hat.
+
+    Args:
+        basis: Der gewaehlte Zielordner.
+
+    Returns:
+        Ein Pfad der Form ``X:\ps4ffpsc_arbeit``; das Systemlaufwerk nur
+        dann, wenn sich aus ``basis`` kein Laufwerk lesen laesst (etwa bei
+        einem Netzpfad).
+    """
+    laufwerk = os.path.splitdrive(os.path.abspath(basis))[0]
+    if laufwerk and os.path.isdir(laufwerk + os.sep):
+        return os.path.join(laufwerk + os.sep, "ps4ffpsc_arbeit")
+    system = os.environ.get("SystemDrive", "C:")
+    return os.path.join(system + os.sep, "ps4ffpsc_arbeit")
 
 
 def _ps4ffpsc_wurzel() -> str:
@@ -34821,7 +34964,17 @@ def _ps4ffpsc_entpacker() -> str:
     else:
         return ""
     pfad = os.path.join(wurzel, "bin", name)
-    return pfad if os.path.isfile(pfad) else ""
+    if not os.path.isfile(pfad):
+        return ""
+    if not IST_WINDOWS:
+        # Aus dem Bündel kommt die Datei ohne Ausführungsrecht - dasselbe
+        # Nachziehen wie bei UFS2Tool. Ohne das meldete der Mac beim Start
+        # "Permission denied" (Errno 13), und zwar erst mitten im Lauf.
+        try:
+            os.chmod(pfad, os.stat(pfad).st_mode | 0o111)
+        except OSError as exc:
+            logger.debug("PS4-Entpacker nicht ausführbar zu machen: %s", exc)
+    return pfad
 
 
 def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:

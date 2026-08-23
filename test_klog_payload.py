@@ -150,7 +150,16 @@ class QuelltextTests(unittest.TestCase):
         cls.text = QUELLE.read_text(encoding="utf-8")
 
     def test_knopf_ruft_die_pruefung(self):
-        self.assertIn("command=self._show_klog_window_geprueft", self.text)
+        """Der Knopf muss ueber die gepruefte Fassung gehen.
+
+        Seit dem Umschalter haengt am Knopf nicht mehr die gebundene
+        Methode, sondern ``_werkzeugknopf("...")``. Die Absicht ist
+        dieselbe geblieben: nie die ungepruefte Fassung.
+        """
+        self.assertIn('self._werkzeugknopf("_show_klog_window_geprueft")',
+                      self.text)
+        self.assertNotIn('self._werkzeugknopf("_show_klog_window")', self.text)
+        self.assertNotIn("command=self._show_klog_window,", self.text)
 
     def test_pruefung_darf_das_fenster_nicht_verhindern(self):
         stelle = self.text.index("def _show_klog_window_geprueft")

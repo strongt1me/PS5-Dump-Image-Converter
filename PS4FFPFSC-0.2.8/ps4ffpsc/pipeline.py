@@ -40,7 +40,9 @@ from .util import (
     ensure_within,
     file_stat_identity,
     iter_tree_files,
+    looks_like_path_length_failure,
     path_is_within,
+    path_length_hint,
     paths_overlap,
     read_json,
     safe_remove_tree,
@@ -691,6 +693,10 @@ def unpack_game(settings: Settings, inventory: dict[str, Any], title_id: str) ->
             "--json-progress",
         ]
         LOG.info("extracting %s -> %s", package["path"], partial)
+        # Vorwarnung: Wird es unter diesem Zielpfad eng, sagen wir es,
+        # bevor die Entpackung Zeit verbraucht und dann abbricht.
+        if looks_like_path_length_failure(partial, ""):
+            LOG.warning("tight target path: %s", path_length_hint(partial))
 
         def extraction_progress(line: str) -> None:
             try:
@@ -749,10 +755,27 @@ def unpack_game(settings: Settings, inventory: dict[str, Any], title_id: str) ->
             forward_stderr=True,
         )
         if process.returncode != 0:
+            # Doppelt gesichert: Stirbt der Lesefaden doch einmal, ist
+            # das Feld None - dann soll die Meldung trotzdem kommen.
+            details = (process.stdout or "").strip() or (
+                process.stderr or ""
+            ).strip()
+            # Rueckgabewert 3 heisst beim Entpacker "Paket nicht unterstuetzt
+            # oder verschluesselt". Er gibt ihn aber auch, wenn nur der
+            # Zielpfad zu lang war - das Paket ist dann tadellos. Ohne diese
+            # Unterscheidung sucht der Nutzer den Fehler in der Datei.
+            path_too_long = (
+                process.returncode == 3
+                and looks_like_path_length_failure(partial, details)
+            )
+            if path_too_long:
+                status = "path_too_long"
+            elif process.returncode == 3:
+                status = "unsupported_or_encrypted_pkg"
+            else:
+                status = "failed"
             state["packages"][source_id] = {
-                "status": "unsupported_or_encrypted_pkg"
-                if process.returncode == 3
-                else "failed",
+                "status": status,
                 "path": package["path"],
                 "stderr": process.stderr,
                 "stdout": process.stdout,
@@ -760,9 +783,17 @@ def unpack_game(settings: Settings, inventory: dict[str, Any], title_id: str) ->
             _save_state(root, state)
             if partial.exists():
                 safe_remove_tree(partial, root)
+            if path_too_long:
+                raise RuntimeError(
+                    f"extraction failed for {package['path']}: "
+                    f"{path_length_hint(partial)}. The package itself is most "
+                    f"likely fine - the extractor reports a path problem the "
+                    f"same way it reports an unsupported package. "
+                    f"Extractor output: {details}"
+                )
             raise RuntimeError(
                 f"extractor failed ({process.returncode}) for {package['path']}: "
-                f"{process.stdout.strip() or process.stderr.strip()}"
+                f"{details}"
             )
         npbind_validation: dict[str, Any] | None = None
         extracted_npbind = partial / "sce_sys" / "npbind.dat"
@@ -1386,6 +1417,7 @@ def mkpfs_command(settings: Settings) -> list[str]:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             env=_utf8_subprocess_environment(),
         )
         if process.returncode == 0:
@@ -1425,6 +1457,7 @@ def _run_captured(
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             env=_utf8_subprocess_environment(),
         )
 
@@ -2312,6 +2345,7 @@ def doctor(settings: Settings) -> dict[str, Any]:
             capture_output=True,
             text=True,
             encoding="utf-8",
+            errors="replace",
             env=_utf8_subprocess_environment(),
         )
         checks["mkpfs"] = {

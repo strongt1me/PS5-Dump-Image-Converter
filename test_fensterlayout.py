@@ -691,6 +691,157 @@ class FensterbindungTests(unittest.TestCase):
                 self.assertNotIn("_fenster_an_hauptfenster_binden", rumpf)
 
 
+class UmschalterTests(unittest.TestCase):
+    """Derselbe Knopf schliesst das Fenster wieder.
+
+    Gewuenscht am 23.08.2026: Der erste Druck oeffnet, der zweite
+    schliesst - statt ein zweites Fenster darueberzulegen.
+
+    Geprueft wird an einem eigens angehaengten Probe-Fenster, nicht an
+    einem echten Werkzeug: Der Umschalter soll fuer jedes Fenster gelten,
+    und ein Probe-Fenster haelt den Test von den Eigenheiten einzelner
+    Werkzeuge frei.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+        for name in ("askopenfilename", "askdirectory", "asksaveasfilename"):
+            setattr(haupt.filedialog, name, lambda *a, **k: "")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+
+    def setUp(self):
+        self.app._werkzeugfenster.clear()
+        self.geoeffnet = []
+
+    def tearDown(self):
+        for fenster in self.geoeffnet:
+            try:
+                if fenster.winfo_exists():
+                    fenster.destroy()
+            except tk.TclError:
+                pass
+        self.app._werkzeugfenster.clear()
+
+    def _probe(self, name="_probe_fenster", schliessbar=True):
+        """Haengt eine Methode an, die ein schlichtes Fenster oeffnet."""
+        app = self.app
+        merker = self.geoeffnet
+
+        def oeffnen():
+            fenster = tk.Toplevel(_WURZEL)
+            merker.append(fenster)
+            app._fenster_an_hauptfenster_binden(fenster)
+            if not schliessbar:
+                # Wie ein Fenster, das waehrend eines Laufs nicht zugeht.
+                fenster.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        setattr(app, name, oeffnen)
+        return name
+
+    def test_erster_druck_oeffnet(self):
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster.get(name)
+        self.assertIsNotNone(fenster, "Es wurde kein Fenster gemerkt")
+        self.assertTrue(fenster.winfo_exists())
+
+    def test_zweiter_druck_schliesst(self):
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster[name]
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertFalse(fenster.winfo_exists(),
+                         "Der zweite Druck hat nicht geschlossen")
+        self.assertNotIn(name, self.app._werkzeugfenster)
+
+    def test_dritter_druck_oeffnet_wieder(self):
+        name = self._probe()
+        for _ in range(3):
+            self.app._werkzeugfenster_umschalten(name)
+            _WURZEL.update_idletasks()
+        self.assertTrue(self.app._werkzeugfenster[name].winfo_exists())
+
+    def test_von_hand_geschlossen_zaehlt_auch(self):
+        """Wer ueber das X schliesst, bekommt beim naechsten Druck wieder eines.
+
+        Ohne das Vergessen bliebe ein toter Eintrag stehen, und der naechste
+        Druck haette nichts zu schliessen und nichts zu oeffnen.
+        """
+        name = self._probe()
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.app._werkzeugfenster[name].destroy()
+        _WURZEL.update_idletasks()
+        self.assertNotIn(name, self.app._werkzeugfenster,
+                         "Der Eintrag haette verschwinden muessen")
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertTrue(self.app._werkzeugfenster[name].winfo_exists())
+
+    def test_ein_fenster_darf_sich_weigern(self):
+        """Laeuft gerade etwas, bleibt das Fenster stehen.
+
+        Der Umschalter geht ueber ``WM_DELETE_WINDOW``, damit die
+        Ruecksprachen und Abbruchwaechter der Fenster gelten. Ein hartes
+        ``destroy()`` koennte einen Lauf mitten im Schreiben abschneiden.
+        """
+        name = self._probe(name="_probe_stur", schliessbar=False)
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        fenster = self.app._werkzeugfenster[name]
+
+        self.app._werkzeugfenster_umschalten(name)
+        _WURZEL.update_idletasks()
+        self.assertTrue(fenster.winfo_exists(),
+                        "Das Fenster wurde gegen seinen Willen geschlossen")
+        self.assertIs(self.app._werkzeugfenster.get(name), fenster,
+                      "Es muss gemerkt bleiben, sonst gibt es ein zweites")
+
+
+class UmschalterVerdrahtungTests(unittest.TestCase):
+    """Die Knoepfe muessen ueber den Umschalter gehen, nicht daran vorbei."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
+        for methode in ("_show_credits", "_show_js_loader",
+                        "_show_shadowmount_editor", "_show_diagnostic_report",
+                        "_show_ampr_alte_methode", "_show_ampr_neue_methode",
+                        "_show_library_window", "_show_klog_window_geprueft"):
+            with self.subTest(methode=methode):
+                self.assertIn('self._werkzeugknopf("%s")' % methode,
+                              self.quelle)
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_die_menues_ebenfalls(self):
+        """Auch das Untermenue und die eingefaltete Liste."""
+        self.assertNotIn("command=getattr(self,", self.quelle)
+        self.assertIn("self._werkzeugknopf(_befehl_name)", self.quelle)
+        self.assertIn("self._werkzeugknopf(befehl)", self.quelle)
+
+    def test_fremdprogramme_bleiben_aussen_vor(self):
+        """FileZilla und das Handbuch oeffnen kein eigenes Fenster."""
+        for methode in ("_launch_filezilla", "_open_benutzerhandbuch"):
+            with self.subTest(methode=methode):
+                self.assertIn("command=self.%s," % methode, self.quelle)
+                self.assertNotIn('self._werkzeugknopf("%s")' % methode,
+                                 self.quelle)
+
+
+
 
 
 

@@ -2,9 +2,69 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.85):** **PS4 PKG → ffpfsc** ist wieder da – vollständig, wie vor dem Ausbau in v1.8.82. Ohne den Knopf NP-BINDUNG, der schon vorher raus war.
+> **Kurz zum aktuellen Stand (v1.8.86):** Bei **PS4 PKG → ffpfsc** sagen die Fehlermeldungen jetzt die Wahrheit – ein zu langer Zielpfad galt bisher als „Paket verschlüsselt“. Auf dem **Mac** lief die Funktion gar nicht. Und Werkzeugfenster schließen sich wieder, wenn man denselben Knopf noch einmal drückt.
 
 ---
+
+## v1.8.86 – 23.08.2026
+
+### Werkzeugfenster: derselbe Knopf schließt wieder
+
+Bisher öffnete jeder Druck auf einen Knopf der oberen Leiste ein Fenster –
+auch wenn es schon offen war. Jetzt schließt der zweite Druck es wieder.
+Das gilt für alle Knöpfe, die ein Fenster öffnen, ebenso für die Einträge
+unter **WEITERE TOOLS** und das Rechtsklick-Menü.
+
+Läuft in einem Fenster gerade etwas, bleibt es stehen und kommt nach vorn,
+statt den Vorgang abzuschneiden. Schließen Sie es von Hand über das X,
+öffnet der nächste Druck wieder eines.
+
+**FileZilla** und das **Benutzerhandbuch** sind ausgenommen – die starten
+ein fremdes Programm, da gibt es nichts umzuschalten.
+
+### PS4 PKG → ffpfsc: die Meldungen sagen jetzt die Wahrheit
+
+Drei Fehler, die alle in dieselbe Falle führten – man suchte die Ursache an
+der falschen Stelle:
+
+| Was Sie bisher lasen | Was wirklich los war |
+| --- | --- |
+| „Paket nicht unterstützt oder verschlüsselt“ | Der **Zielpfad war zu lang**. Das Paket war einwandfrei. |
+| „provide TITLE_ID or --all“ – obwohl `--all` angegeben war | Es gab **kein brauchbares Spiel**. |
+| gar nichts, der Fehlertext fehlte ganz | Der Text enthielt ein Zeichen wie **®**, und daran ging die Ausgabe verloren. |
+
+Der mitgelieferte Entpacker endet bei 259 Zeichen Pfadlänge. Das Programm
+warnt jetzt **vorher**, wenn es eng wird, und benennt hinterher die
+tatsächliche Ursache samt Abhilfe: einen kürzeren Zielordner wählen.
+
+### Der Arbeitsordner weicht aufs richtige Laufwerk aus
+
+Wird der Pfad zu lang, legt das Programm seinen Arbeitsordner woanders an.
+Das ging bisher **immer auf das Systemlaufwerk** – also dorthin, wo Windows
+liegt und der Platz meist am knappsten ist. Bei einem großen Spiel kann das
+die Platte füllen.
+
+Jetzt bleibt der Ausweichordner auf dem **Laufwerk Ihres Zielordners**:
+Wählen Sie ein Ziel auf `E:`, arbeitet das Programm unter
+`E:\ps4ffpsc_arbeit`. Kurze Zielpfade bleiben unverändert dort, wo Sie sie
+hingelegt haben.
+
+Außerdem greift die Schranke früher. Der alte Wert rechnete den Spieltitel
+im Ordnernamen nicht mit und ließ nur zehn Zeichen Luft – bei einem Spiel
+mit längerem Namen scheiterte die Umwandlung.
+
+### macOS: PS4 PKG → ffpfsc lief gar nicht
+
+Auf dem Mac brach die Funktion mit `Permission denied` ab. Zwei Ursachen:
+
+1. Das Programm griff zur **Windows-Datei** des Entpackers, obwohl die
+   passende Mac-Fassung danebenlag.
+2. Beim Verpacken in das `.app` verlieren die Hilfsprogramme ihr
+   Ausführungsrecht – es wird jetzt nachgezogen.
+
+Dasselbe betraf das Einbetten von DLC: Dort fiel der Helfer bisher
+**kommentarlos** aus, ohne jede Meldung.
+
 
 ## v1.8.85 – 23.08.2026
 

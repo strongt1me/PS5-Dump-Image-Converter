@@ -22,11 +22,13 @@ Geprüft wird hier dreierlei:
 """
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -696,13 +698,25 @@ class PlattformTests(unittest.TestCase):
 class LangePfadeTests(unittest.TestCase):
     """Der Arbeitsordner darf den Entpacker nicht an die Pfadgrenze treiben."""
 
-    def test_grenze_ist_gesetzt_und_konservativ(self) -> None:
+    #: Was im unguenstigen Fall unterhalb des Arbeitsordners entsteht:
+    #: der Ordnername mit dem Spieltitel (~52), der DLC-Zweig (42), das
+    #: ".partial" waehrend des Laufs (8) und der tiefste spielinterne
+    #: Pfad (~100). Am 23.08.2026 an Tetris Ultimate gemessen: 64 und 73.
+    AUFSCHLAG_UNTEN = 210
+
+    def test_grenze_laesst_dem_schlechtesten_fall_luft(self) -> None:
+        """Die Schranke muss den gemessenen Aufschlag verkraften.
+
+        Der frueher hier stehende Wert 110 rechnete den Spieltitel im
+        Ordnernamen nicht mit und liess nur 10 Zeichen Luft. Ein Titel mit
+        laengerem Namen waere gescheitert - und zwar mit der Meldung
+        "Paket nicht unterstuetzt oder verschluesselt".
+        """
         grenze = hauptprogramm._PS4FFPSC_MAX_ARBEITSPFAD
         self.assertIsInstance(grenze, int)
-        # Unter dem Arbeitsordner entstehen noch rund 100 Zeichen
-        # (unpacked/<Title-ID>/<Paket>/sce_sys/...), Windows endet bei 260.
-        self.assertLessEqual(grenze, 150)
-        self.assertGreaterEqual(grenze, 60)
+        self.assertLessEqual(grenze + self.AUFSCHLAG_UNTEN, 259)
+        # Kurze Ziele sollen am gewaehlten Ort bleiben duerfen.
+        self.assertGreaterEqual(grenze, 30)
 
     def test_hinweistext_nennt_laenge_und_ausweichpfad(self) -> None:
         from ps5_validator.utils.i18n import translate  # noqa: PLC0415
@@ -710,6 +724,210 @@ class LangePfadeTests(unittest.TestCase):
         text = translate("de", "ps4pkg.short_workdir", laenge=180, pfad=r"C:\ps4ffpsc_arbeit")
         self.assertIn("180", text)
         self.assertIn("ps4ffpsc_arbeit", text)
+
+
+class AusweichordnerTests(unittest.TestCase):
+    """Der Ausweichpfad gehoert auf das Laufwerk des Ziels.
+
+    Frueher ging er immer auf das Systemlaufwerk. Dort ist der Platz am
+    knappsten - auf diesem Rechner am 23.08.2026 nur 16 GB frei -, waehrend
+    der Nutzer sein Ziel bewusst auf ein grosses Laufwerk gelegt hat.
+    """
+
+    def test_bleibt_auf_dem_laufwerk_des_ziels(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Laufwerksbuchstaben gibt es nur unter Windows")
+        geprueft = 0
+        for buchstabe in ("C:", "D:", "E:", "F:"):
+            if not os.path.isdir(buchstabe + os.sep):
+                continue
+            tief = os.path.join(buchstabe + os.sep, "irgendwo", "sehr", "tief")
+            ziel = hauptprogramm._ps4ffpsc_kurzer_arbeitsordner(tief)
+            self.assertTrue(ziel.upper().startswith(buchstabe))
+            self.assertIn("ps4ffpsc_arbeit", ziel)
+            geprueft += 1
+        self.assertGreater(geprueft, 0, "kein Laufwerk zum Pruefen gefunden")
+
+    def test_ergebnis_ist_wirklich_kurz(self) -> None:
+        """Der Sinn der Uebung: Der Ausweichpfad muss Platz schaffen."""
+        lang = os.path.join(os.path.abspath(os.sep), "a" * 150)
+        ziel = hauptprogramm._ps4ffpsc_kurzer_arbeitsordner(lang)
+        self.assertLessEqual(len(ziel), 30)
+
+
+class PfadgrenzeTests(unittest.TestCase):
+    """Ein zu langer Zielpfad darf nicht als Paketfehler gemeldet werden.
+
+    Der mitgelieferte Entpacker traegt kein "longPathAware" in seinem
+    Manifest und bricht deshalb an MAX_PATH ab - gemessen am 23.08.2026:
+    bis 183 Zeichen laeuft er durch, ab 186 nicht mehr. Dabei meldet er
+    Rueckgabewert 3, also "nicht unterstuetzt oder verschluesselt". Wer das
+    ungeprueft uebernimmt, schickt den Nutzer zur Suche in die falsche Datei.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc import util  # noqa: PLC0415
+
+        self.util = util
+
+    def test_spielraum_nur_unter_windows(self) -> None:
+        frei = self.util.windows_path_headroom(Path("C:\kurz"))
+        if os.name == "nt":
+            self.assertEqual(frei, self.util.WINDOWS_MAX_PATH - len(str(Path("C:/kurz"))))
+        else:
+            self.assertIsNone(frei)
+
+    def test_marker_erkennt_die_grenze_auch_ohne_pfadlaenge(self) -> None:
+        """Der Fehlertext allein genuegt - unabhaengig von der Systemsprache.
+
+        Der Windows-Text dahinter kommt uebersetzt, der Name der Operation
+        nicht. Deshalb wird auf ``create_directories`` geprueft.
+        """
+        kurz = Path("C:/k")
+        self.assertTrue(self.util.looks_like_path_length_failure(
+            kurz, r'create_directories: Der Dateiname ist zu lang.: "C:/x"'))
+        self.assertFalse(self.util.looks_like_path_length_failure(
+            kurz, "Invalid PKG magic"))
+
+    def test_enger_zielpfad_zaehlt_auch_ohne_marker(self) -> None:
+        """Genau an der Grenze meldet der Entpacker gar keinen Hinweis.
+
+        Er schreibt dort nur "Failed to open PKG extraction input or
+        output". Ohne die Laengenpruefung bliebe der Fall unerkannt.
+        """
+        if os.name != "nt":
+            self.skipTest("MAX_PATH gibt es nur unter Windows")
+        eng = Path("C:/" + "x" * 240)
+        self.assertTrue(self.util.looks_like_path_length_failure(
+            eng, "Failed to open PKG extraction input or output"))
+
+    def test_hinweis_nennt_zahlen_und_ausweg(self) -> None:
+        if os.name != "nt":
+            self.skipTest("MAX_PATH gibt es nur unter Windows")
+        pfad = Path("C:/" + "x" * 200)
+        text = self.util.path_length_hint(pfad)
+        self.assertIn(str(len(str(pfad))), text)
+        self.assertIn(str(self.util.WINDOWS_MAX_PATH), text)
+        self.assertIn("shorter", text)
+
+
+class AlleOhneSpielTests(unittest.TestCase):
+    """``--all`` darf nicht nach ``--all`` verlangen.
+
+    Frueher lautete die Meldung immer "provide TITLE_ID or --all" - auch
+    dann, wenn der Nutzer ``--all`` gerade angegeben hatte und nur kein
+    brauchbares Spiel gefunden wurde.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc import cli  # noqa: PLC0415
+
+        self.melden = cli._no_title_ids_message
+
+    def test_ohne_all_bleibt_die_alte_aufforderung(self) -> None:
+        self.assertEqual(self.melden({"games": {}, "unsupported": []}, False),
+                         "provide TITLE_ID or --all")
+
+    def test_leeres_inventar_sagt_das_auch(self) -> None:
+        text = self.melden({"games": {}, "unsupported": []}, True)
+        self.assertIn("inventory is empty", text)
+        self.assertNotIn("provide TITLE_ID", text)
+
+    def test_abgelehnte_pakete_werden_gezaehlt(self) -> None:
+        text = self.melden({"games": {}, "unsupported": [1, 2, 3]}, True)
+        self.assertIn("3 package(s) were rejected", text)
+        self.assertNotIn("provide TITLE_ID", text)
+
+
+
+class HelferProPlattformTests(unittest.TestCase):
+    """Auf dem Mac wurde die Windows-Datei gewaehlt.
+
+    Gemeldet am 23.08.2026 von einem Nutzer mit Apple Silicon:
+
+        ps4ffpsc: [Errno 13] Permission denied:
+        '.../Contents/Frameworks/PS4FFPFSC-0__dot__2__dot__8/bin/
+        ps4_pkg_extract.exe'
+
+    In ``bin/`` liegen beide Fassungen nebeneinander. ``find_extractor``
+    hatte die Namen fest als ``("ps4_pkg_extract.exe", "ps4_pkg_extract")``
+    stehen - die Windows-Datei zuerst, auf jeder Plattform. Sie hat auf dem
+    Mac kein Ausfuehrungsrecht, daher Errno 13.
+    """
+
+    ERWARTET = {
+        "win32": ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"),
+        "darwin": ("ps4_pkg_extract", "ps4-dlc-patch"),
+        "linux": ("ps4_pkg_extract", "ps4-dlc-patch"),
+    }
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.dlc_embed import find_dlc_helper  # noqa: PLC0415
+        from ps4ffpsc.inventory import find_extractor  # noqa: PLC0415
+
+        self.entpacker = find_extractor
+        self.dlc_helfer = find_dlc_helper
+
+    def test_jede_plattform_bekommt_ihre_datei(self) -> None:
+        for plattform, (entpacker, helfer) in self.ERWARTET.items():
+            with self.subTest(plattform=plattform):
+                with mock.patch.object(sys, "platform", plattform):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    self.assertIsNotNone(gefunden, "kein Entpacker gefunden")
+                    self.assertEqual(gefunden.name, entpacker)
+                    self.assertEqual(self.dlc_helfer(PS4_ORDNER).name, helfer)
+
+    def test_windows_datei_nie_ausserhalb_von_windows(self) -> None:
+        """Der Kern des Fehlers: keine .exe auf Mac oder Linux."""
+        for plattform in ("darwin", "linux"):
+            with self.subTest(plattform=plattform):
+                with mock.patch.object(sys, "platform", plattform):
+                    self.assertFalse(
+                        self.entpacker(PS4_ORDNER).name.endswith(".exe"))
+                    self.assertFalse(
+                        self.dlc_helfer(PS4_ORDNER).name.endswith(".exe"))
+
+
+class AusfuehrungsrechtTests(unittest.TestCase):
+    """Aus dem Buendel kommen die Helfer ohne Ausfuehrungsrecht.
+
+    PyInstaller legt den Ordner unter ``datas`` ab, und dabei geht das
+    Recht verloren. Fuer UFS2Tool zieht das Hauptprogramm es laengst nach;
+    fuer die PS4-Helfer fehlte dasselbe.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.util import ensure_executable  # noqa: PLC0415
+
+        self.ensure_executable = ensure_executable
+
+    def test_unter_windows_ist_nichts_zu_tun(self) -> None:
+        if os.name != "nt":
+            self.skipTest("gilt nur unter Windows")
+        self.assertTrue(self.ensure_executable(PS4_ORDNER / "bin"
+                                               / "ps4_pkg_extract"))
+
+    def test_fehlende_datei_wirft_nicht(self) -> None:
+        """Auch ein Fehlschlag muss eine Antwort sein, keine Ausnahme."""
+        try:
+            self.ensure_executable(PS4_ORDNER / "bin" / "gibtsnicht")
+        except Exception as exc:  # noqa: BLE001
+            self.fail("ensure_executable warf %r" % exc)
+
+    def test_hauptprogramm_zieht_das_recht_nach(self) -> None:
+        """Die Vorpruefung der Oberflaeche muss "startbar" heissen."""
+        quelltext = inspect.getsource(hauptprogramm._ps4ffpsc_entpacker)
+        self.assertIn("chmod", quelltext)
+        self.assertIn("0o111", quelltext)
+
 
 
 if __name__ == "__main__":
