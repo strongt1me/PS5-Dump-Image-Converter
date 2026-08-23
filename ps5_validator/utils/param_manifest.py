@@ -14,9 +14,16 @@ Python-Neuentwicklung auf Basis der (nicht schutzfaehigen) Format-Fakten.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from collections import OrderedDict
+
+#: Beide Lesefunktionen fangen OSError ab und schreiben dorthin.
+#: Ohne diese Zeile stuerzte der Fehlerbehandler selbst mit einem
+#: NameError ab - aus einem abgefangenen Lesefehler wurde so ein
+#: Programmabbruch.
+logger = logging.getLogger("PS5Converter.param_manifest")
 
 APPLICATION_DRM_TYPES: tuple[str, ...] = ("standard", "free", "freemium")
 

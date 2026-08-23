@@ -27,7 +27,10 @@ Programm und sein Validator suchen ihre eigene Engine über das Muster
 
 ## Geänderte Zeilen
 
-Die Dateien sind unverändert übernommen – mit einer Ausnahme:
+Die Dateien sind bis auf die folgenden Stellen unverändert übernommen.
+Betroffen sind fünf: `pipeline.py`, `inventory.py`, `util.py`, `cli.py` und
+`dlc_embed.py`. Alles andere ist Original 0.2.8 – nachprüfbar gegen den
+Quellauszug unter `PS5 SDK usw/PS4 PKG to ffpfsc/`.
 
 ### `ps4ffpsc/pipeline.py` → `mkpfs_command()`
 
@@ -62,12 +65,72 @@ gemessenen Alternativen `/mnt/usb0/homebrew/` und `/mnt/usb0/etaHEN/games/`,
 und warnt ausdrücklich vor eigenen Unterordnern sowie vor dem internen
 Speicher.
 
+### `ps4ffpsc/inventory.py` → `inspect_package()`
+
+Der mitgelieferte Entpacker bricht beim Berechnen der Prüfsumme mit einem
+Stapelüberlauf ab (`0xC00000FD`, an mehreren PKG unterschiedlicher Größe
+nachgemessen). Der Rückgabewert wurde vorher nicht angesehen, deshalb galt
+**jede** Datei als „unsupported_or_encrypted_pkg" – also als Fehler in der
+Datei statt im Werkzeug. Jetzt wird ohne Prüfsumme wiederholt und diese in
+Python nachgerechnet.
+
+### Zu lange Zielpfade werden als solche gemeldet
+
+`ps4_pkg_extract.exe` trägt kein `longPathAware` in seinem Manifest und endet
+deshalb bei 259 Zeichen, auch wenn der Systemschalter `LongPathsEnabled`
+gesetzt ist. Am 23.08.2026 an Tetris Ultimate nachgemessen: bis 183 Zeichen
+Zielpfad läuft die Entpackung durch, ab 186 bricht sie ab.
+
+Gemeldet wurde das mit Rückgabewert 3 – demselben, den der Entpacker für
+„nicht unterstützt oder verschlüsselt" verwendet. `pipeline.py` unterscheidet
+jetzt: eigener Status `path_too_long`, dazu eine Vorwarnung, wenn unter dem
+Zielpfad weniger als 100 Zeichen frei sind. Die Erkennung steht in
+`util.py` (`looks_like_path_length_failure`, `path_length_hint`) und stützt
+sich auf zwei Anzeichen – den Textmarker `create_directories` und die
+Pfadlänge. Die Länge ist nötig, weil der Entpacker genau an der Grenze nur
+„Failed to open PKG extraction input or output" meldet.
+
+### Abstürze werden benannt
+
+Der Entpacker stürzt an einem bestimmten Retail-Patch mit `0xC0000005` ab und
+hinterlässt dabei keine Ausgabe. Die Meldung endete deshalb hinter dem
+Doppelpunkt im Nichts, davor stand nur die Dezimalzahl 3221225477.
+`util.crash_description()` übersetzt den Bereich oberhalb `0xC0000000` in
+Klartext; die Meldung sagt jetzt ausdrücklich, dass der Fehler im
+mitgelieferten Entpacker liegt und nicht am Paket oder an der Einrichtung.
+
+### Fehlertexte gingen ganz verloren
+
+Vier `subprocess.run`-Aufrufe hatten kein `errors=`. Der Entpacker schreibt
+seine Fehlertexte in der Windows-Codepage (`0xAE` = ®), nicht in UTF-8 – der
+Lesefaden starb an einem einzigen Byte, `stdout` wurde `None`, und die
+eigentliche Meldung war weg. Der `Popen`-Zweig hatte den Schalter längst.
+
+### `ps4ffpsc/cli.py` → Meldung bei `--all`
+
+„provide TITLE_ID or --all" erschien auch dann, wenn `--all` gerade angegeben
+worden war und nur kein brauchbares Spiel im Inventar stand. Jetzt getrennte
+Meldungen für ein leeres Inventar und für abgelehnte Pakete.
+
+### Plattformauswahl der nativen Helfer
+
+`inventory.find_extractor()` hatte die Namen fest als
+`("ps4_pkg_extract.exe", "ps4_pkg_extract")` – die Windows-Datei zuerst, auf
+**jeder** Plattform. Da beide Fassungen im selben `bin/` liegen, griff macOS
+zur `.exe` und meldete `[Errno 13] Permission denied`.
+`dlc_embed.find_dlc_helper()` machte es von jeher richtig; hier fehlte es.
+
+Dazu kommt: Der Bauplan legt den Ordner unter `datas` ab, wobei das
+Ausführungsrecht verlorengeht – obwohl Git `ps4_pkg_extract` als `100755`
+führt. `util.ensure_executable()` zieht es nach. Ohne das galt der
+DLC-Helfer auf macOS als „nicht vorhanden", ein stiller Ausfall ohne Meldung.
+
 ## Plattformen
 
 Der Hersteller liefert fertige Programmdateien nur für **Windows x64** und
-**macOS ARM64**. Beide Sätze liegen hier nebeneinander in `bin/`; die Suche des
-Werkzeugs findet je nach System den passenden Namen (`ps4_pkg_extract.exe`
-bzw. `ps4_pkg_extract`).
+**macOS ARM64**. Beide Sätze liegen hier nebeneinander in `bin/`. Dass die Suche je nach
+System den passenden Namen findet, war bis v1.8.86 nur die Absicht und
+nicht der Zustand - siehe: Plattformauswahl der nativen Helfer (oben).
 
 Für **Linux** und für **Intel-Macs** gibt es keine – dort meldet das Fenster
 das offen, statt mitten im Lauf stehen zu bleiben. Selbst übersetzen ließe

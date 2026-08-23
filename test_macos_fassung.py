@@ -636,11 +636,25 @@ class AquaKnopfTests(unittest.TestCase):
             encoding="utf-8")
 
     def test_titelleistenknoepfe_gehen_ueber_die_weiche(self):
+        """Jeder Knopf der Titelleiste muss ueber flach_knopf entstehen.
+
+        Hier stand bis zum 22.08.2026 die feste Zahl 13. Die bricht bei
+        jedem neuen Knopf, ohne dass etwas kaputt waere - gemeint war nie
+        die Anzahl, sondern dass **keiner** an der Weiche vorbeigeht.
+        Genau das wird jetzt geprueft, unabhaengig davon, wie viele es
+        sind.
+        """
+        import re
+
         anfang = self.quelle.index("self._titlebar_right = tk.Frame(")
         ende = self.quelle.index("        # 8. Bindings", anfang)
         block = self.quelle[anfang:ende]
-        self.assertEqual(block.count(" = flach_knopf("), 13,
-                         "Nicht alle 13 Titelleistenknoepfe gehen ueber flach_knopf.")
+
+        zuweisungen = re.findall(r"self\.(_btn_\w+)\s*=\s*(\w+)\(", block)
+        self.assertTrue(zuweisungen, "In der Titelleiste entsteht kein Knopf.")
+        falsch = [name for name, weiche in zuweisungen if weiche != "flach_knopf"]
+        self.assertEqual(falsch, [],
+                         "Diese Knoepfe gehen an flach_knopf vorbei: %s" % falsch)
         self.assertNotIn(" = tk.Button(", block,
                          "In der Titelleiste steht wieder ein Systemknopf.")
 

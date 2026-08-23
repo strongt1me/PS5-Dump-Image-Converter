@@ -118,6 +118,7 @@ from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
+from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
     MANIFEST_KNOWN_KEYS,
@@ -410,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.80"
+APP_VERSION = "v1.8.88"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1560,6 +1561,8 @@ class PS5ConverterGUI:
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
         ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
+        ("_btn_ampr_alt_title", "titlebar.ampr_alt", "_show_ampr_alte_methode"),
+        ("_btn_ampr_neu_title", "titlebar.ampr_neu", "_show_ampr_neue_methode"),
     )
 
     #: Wie viel Luft ein Knopf zusaetzlich braucht, bevor er zurueckkommt.
@@ -1688,6 +1691,15 @@ class PS5ConverterGUI:
         # 1c. Sprache aus Konfiguration laden (Grundgerüst: Deutsch/Englisch)
         _saved_language = self._load_setting_static("language", DEFAULT_LANGUAGE)
         self._current_language: str = str(_saved_language) if _saved_language in ("de", "en") else DEFAULT_LANGUAGE
+
+        # 1d. Offene Werkzeugfenster, damit derselbe Knopf sie wieder
+        # schliesst. Der Schluessel ist der Methodenname des Knopfes.
+        self._werkzeugfenster: dict[str, "tk.Toplevel"] = {}
+        #: Welcher Knopf gerade ein Fenster oeffnet - nur waehrend des
+        #: Aufrufs gesetzt, damit die Bindung weiss, wem sie gehoert.
+        self._fenster_schluessel: str = ""
+        #: Was waehrend dieses Aufrufs an Fenstern entstanden ist.
+        self._fenster_sammlung: list = []
 
         # 2. Hintergrundbild cachen
         self._bg_image_cache: Image.Image | None = None
@@ -1838,7 +1850,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_theme_dialog,
+            command=self._werkzeugknopf("_show_theme_dialog"),
         )
         self._btn_design_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Design-Button
@@ -1863,7 +1875,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_settings_dialog,
+            command=self._werkzeugknopf("_show_settings_dialog"),
         )
         self._btn_settings_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Einstellungen-Button
@@ -1888,7 +1900,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_credits,
+            command=self._werkzeugknopf("_show_credits"),
         )
         self._btn_credits_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für Credits-Button
@@ -1913,7 +1925,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_js_loader,
+            command=self._werkzeugknopf("_show_js_loader"),
         )
         self._btn_jsloader_title.pack(side="right", padx=(0, 4))
         # Hover-Effekt für JS Loader Button
@@ -1970,7 +1982,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_shadowmount_editor,
+            command=self._werkzeugknopf("_show_shadowmount_editor"),
         )
         self._btn_shadowmount_title.pack(side="right", padx=(0, 8))
         def _shadowmount_enter(e):
@@ -1979,6 +1991,56 @@ class PS5ConverterGUI:
             self._btn_shadowmount_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
         self._btn_shadowmount_title.bind("<Enter>", _shadowmount_enter)
         self._btn_shadowmount_title.bind("<Leave>", _shadowmount_leave)
+
+        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
+        self._btn_ampr_alt_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.ampr_alt"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._werkzeugknopf("_show_ampr_alte_methode"),
+        )
+        self._btn_ampr_alt_title.pack(side="right", padx=(0, 8))
+        def _ampr_alt_enter(e):
+            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _ampr_alt_leave(e):
+            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_ampr_alt_title.bind("<Enter>", _ampr_alt_enter)
+        self._btn_ampr_alt_title.bind("<Leave>", _ampr_alt_leave)
+
+        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
+        self._btn_ampr_neu_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.ampr_neu"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._werkzeugknopf("_show_ampr_neue_methode"),
+        )
+        self._btn_ampr_neu_title.pack(side="right", padx=(0, 8))
+        def _ampr_neu_enter(e):
+            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _ampr_neu_leave(e):
+            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_ampr_neu_title.bind("<Enter>", _ampr_neu_enter)
+        self._btn_ampr_neu_title.bind("<Leave>", _ampr_neu_leave)
 
         # Bibliothek Button (Mehrfachordner-Scan mit Cover/Suche)
         self._btn_library_title = flach_knopf(
@@ -1995,7 +2057,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_library_window,
+            command=self._werkzeugknopf("_show_library_window"),
         )
         self._btn_library_title.pack(side="right", padx=(0, 8))
         def _library_enter(e):
@@ -2020,7 +2082,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_klog_window_geprueft,
+            command=self._werkzeugknopf("_show_klog_window_geprueft"),
         )
         self._btn_klog_title.pack(side="right", padx=(0, 8))
         def _klog_btn_enter(e):
@@ -2045,7 +2107,7 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._show_diagnostic_report,
+            command=self._werkzeugknopf("_show_diagnostic_report"),
         )
         self._btn_diagnostics_title.pack(side="right", padx=(0, 8))
         def _diagnostics_enter(e):
@@ -2070,7 +2132,8 @@ class PS5ConverterGUI:
         # eintraege sind keine Widgets und fallen sonst durch das Raster).
         for _label_key, _befehl_name in self._MORE_TOOLS_ENTRIES:
             self._more_tools_menu.add_command(
-                label=self._t(_label_key), command=getattr(self, _befehl_name)
+                label=self._t(_label_key),
+                command=self._werkzeugknopf(_befehl_name)
             )
 
         def _show_more_tools_menu():
@@ -2188,7 +2251,7 @@ class PS5ConverterGUI:
                 self.context_menu.add_separator()
             else:
                 self.context_menu.add_command(label=self._t(_key),
-                                              command=getattr(self, _befehl))
+                                              command=self._werkzeugknopf(_befehl))
 
         # Textfelder bekommen ihr eigenes Menue - das obige gilt dem
         # Fenster, nicht dem Inhalt eines Eingabefelds.
@@ -2266,6 +2329,9 @@ class PS5ConverterGUI:
         self._checkpoint_last_save_ts: float = 0.0
         self._task_report_path: str = ""
         self._pending_mkpfs_engine_done: threading.Event | None = None
+        #: Griff auf das Ereignis des laufenden mkpfs-Laufs, damit der
+        #: Abbruch den Messfaden sofort stoppen kann.
+        self._engine_done_event: threading.Event | None = None
         self._pending_mkpfs_target_path: str = ""
         self._suppress_pulse_creep: bool = False
         self._startup_temp_cleanup_prompted: bool = False
@@ -2766,6 +2832,8 @@ class PS5ConverterGUI:
             ("_btn_diagnostics_title", "titlebar.diagnostics"),
             ("_btn_klog_title", "titlebar.klog"),
             ("_btn_shadowmount_title", "titlebar.shadowmount"),
+            ("_btn_ampr_alt_title", "titlebar.ampr_alt"),
+            ("_btn_ampr_neu_title", "titlebar.ampr_neu"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
             ("_btn_quit_title", "titlebar.quit"),
@@ -6275,6 +6343,178 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Fenster konnte nicht angepasst werden: %s", exc)
 
+    #: Fensterstil, der ein Fenster trotz Besitzer in die Taskleiste und in
+    #: den Alt-Tab-Wechsler zurueckholt (WS_EX_APPWINDOW).
+    _WS_EX_APPWINDOW = 0x00040000
+    _GWL_EXSTYLE = -20
+
+    def _taskleisteneintrag_zurueckholen(self, win: "tk.Toplevel") -> None:
+        """Gibt einem Fenster mit Besitzer seinen Taskleisten-Eintrag zurueck.
+
+        ``transient()`` ordnet ein Werkzeugfenster dem Hauptfenster zu -
+        nur so haelt Windows es davor, und genau das war das Problem: Wer
+        das Hauptfenster anklickte, um den naechsten Knopf zu druecken,
+        liess alle offenen Werkzeugfenster dahinter verschwinden.
+
+        Der Preis waere sonst, dass Windows solche Fenster weder in der
+        Taskleiste noch im Alt-Tab-Wechsler zeigt. ``WS_EX_APPWINDOW``
+        holt beides zurueck, ohne die Zuordnung aufzugeben.
+
+        Am 22.08.2026 nachgemessen: Der Stil allein genuegt. Das sonst
+        uebliche Aus- und Einblenden, damit er greift, ist hier nicht
+        noetig - es haette bei jedem Oeffnen sichtbar geflackert.
+        """
+        if not IST_WINDOWS:
+            return
+        try:
+            import ctypes  # noqa: PLC0415
+
+            hwnd = int(win.wm_frame(), 16)
+            user32 = ctypes.windll.user32
+            user32.GetWindowLongW.restype = ctypes.c_long
+            stil = user32.GetWindowLongW(hwnd, self._GWL_EXSTYLE)
+            if stil & self._WS_EX_APPWINDOW:
+                return
+            user32.SetWindowLongW(hwnd, self._GWL_EXSTYLE,
+                                  stil | self._WS_EX_APPWINDOW)
+        except Exception as exc:                      # noqa: BLE001
+            # Ohne Taskleisten-Eintrag ist das Fenster weiter bedienbar -
+            # das ist kein Grund, das Oeffnen scheitern zu lassen.
+            logger.debug("Taskleisteneintrag nicht setzbar: %s", exc)
+
+
+    @staticmethod
+    def _fenster_lebt(win) -> bool:
+        """Gibt es das Fenster noch?"""
+        try:
+            return bool(win.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _fenster_schliessen(self, win) -> None:
+        """Schliesst ein Fenster auf seinem eigenen Weg.
+
+        Einige Fenster haengen an ``WM_DELETE_WINDOW`` eine Ruecksprache
+        oder brechen einen laufenden Vorgang ab. Ein hartes ``destroy()``
+        ginge daran vorbei und koennte einen Lauf mitten im Schreiben
+        abschneiden - deshalb bekommt der eigene Handler den Vorrang.
+        """
+        try:
+            handler = win.protocol("WM_DELETE_WINDOW")
+        except tk.TclError:
+            handler = ""
+        try:
+            if handler:
+                win.tk.call(handler)
+            else:
+                win.destroy()
+        except tk.TclError as exc:
+            logger.debug("Fenster liess sich nicht schliessen: %s", exc)
+
+    def _werkzeugfenster_umschalten(self, befehl: str) -> None:
+        """Oeffnet das Fenster eines Knopfes - oder schliesst es wieder.
+
+        Der zweite Druck auf denselben Knopf schliesst, was der erste
+        geoeffnet hat. Lehnt ein Fenster das Schliessen ab, weil gerade
+        etwas laeuft, bleibt es stehen und kommt nach vorn.
+
+        Args:
+            befehl: Name der Methode, die das Fenster oeffnet.
+        """
+        offen = self._werkzeugfenster.get(befehl)
+        if offen is not None and self._fenster_lebt(offen):
+            self._fenster_schliessen(offen)
+            if self._fenster_lebt(offen):
+                offen.lift()
+                try:
+                    offen.focus_force()
+                except tk.TclError:
+                    pass
+            else:
+                self._werkzeugfenster.pop(befehl, None)
+            return
+        self._werkzeugfenster.pop(befehl, None)
+
+        self._fenster_schluessel = befehl
+        self._fenster_sammlung = []
+        try:
+            getattr(self, befehl)()
+        finally:
+            self._fenster_schluessel = ""
+            entstanden = [w for w in self._fenster_sammlung
+                          if self._fenster_lebt(w)]
+            self._fenster_sammlung = []
+        if not entstanden:
+            return
+        # Das erste noch offene Fenster ist das des Knopfes. Zwischenfragen
+        # sind zu diesem Zeitpunkt schon wieder zu und fallen damit weg.
+        win = entstanden[0]
+        self._werkzeugfenster[befehl] = win
+
+        def _vergessen(ereignis, schluessel=befehl, fenster=win) -> None:
+            # <Destroy> kommt auch fuer jedes Kindelement - nur das Fenster
+            # selbst zaehlt, sonst raeumt der erste Knopf den Eintrag weg.
+            if ereignis.widget is fenster:
+                self._werkzeugfenster.pop(schluessel, None)
+
+        try:
+            win.bind("<Destroy>", _vergessen, add="+")
+        except tk.TclError as exc:
+            logger.debug("Fenster nicht ueberwachbar: %s", exc)
+
+    def _werkzeugknopf(self, befehl: str):
+        """Der Befehl fuer einen Werkzeugknopf - als Umschalter.
+
+        Args:
+            befehl: Name der Methode, die das Fenster oeffnet.
+
+        Returns:
+            Eine Funktion ohne Argumente fuer ``command=``.
+        """
+        return lambda: self._werkzeugfenster_umschalten(befehl)
+
+    def _fenster_an_hauptfenster_binden(self, win: "tk.Toplevel",
+                                        eltern: "tk.Misc | None" = None) -> None:
+        """Haelt ein Fenster vor dem Hauptfenster - ohne die Taskleiste zu verlieren.
+
+        Ohne Besitzer sind Werkzeugfenster eigenstaendig, und Windows hat
+        keinen Anlass, sie oben zu halten. Wer das Hauptfenster anklickt,
+        um den naechsten Knopf zu druecken, holt es nach vorn - und alle
+        offenen Werkzeugfenster verschwinden dahinter. Am 22.08.2026 an
+        der Z-Reihenfolge nachgemessen: drei offene Fenster, nach einem
+        Klick aufs Hauptfenster lagen zwei davon darunter.
+
+        ``transient()`` behebt das, kostet aber normalerweise den
+        Taskleisten-Eintrag und den Platz im Alt-Tab-Wechsler. Beides holt
+        ``_taskleisteneintrag_zurueckholen`` zurueck.
+
+        Args:
+            win: Das Fenster.
+            eltern: Der Besitzer; ohne Angabe das Hauptfenster.
+        """
+        # Jedes so gebundene Fenster gehoert zu einem Knopf. Welchem,
+        # weiss nur der laufende Aufruf - deshalb hier einsammeln.
+        if self._fenster_schluessel:
+            self._fenster_sammlung.append(win)
+
+        try:
+            win.transient(eltern or self.root)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Fenster nicht zuordenbar: %s", exc)
+            return
+
+        # Erst wenn Windows den Rahmen angelegt hat, gibt es ein Handle,
+        # an dem sich der Stil setzen laesst - deshalb an <Map>, und nur
+        # einmal.
+        def _beim_anzeigen(_e=None) -> None:
+            try:
+                win.unbind("<Map>", marke)
+            except Exception:
+                pass
+            self._taskleisteneintrag_zurueckholen(win)
+        marke = win.bind("<Map>", _beim_anzeigen)
+
+
     def _build_modern_toplevel(
         self,
         title: str,
@@ -6308,6 +6548,7 @@ class PS5ConverterGUI:
         # weiss, bevor der dunkle Inhalt erschien.
         win = tk.Toplevel(self.root, bg=c["bg_main"])
         win.title(title)
+        self._fenster_an_hauptfenster_binden(win)
         x = (win.winfo_screenwidth() - width) // 2
         y = (win.winfo_screenheight() - height) // 2
         win.geometry(f"{width}x{height}+{x}+{y}")
@@ -7074,7 +7315,8 @@ class PS5ConverterGUI:
         for schluessel, befehl in self._MORE_TOOLS_ENTRIES:
             try:
                 self._more_tools_menu.add_command(
-                    label=self._t(schluessel), command=getattr(self, befehl))
+                    label=self._t(schluessel),
+                    command=self._werkzeugknopf(befehl))
             except Exception:
                 continue
         eingefaltet = [(s, b) for n, s, b in self._FALTBARE_TITELKNOEPFE
@@ -7090,7 +7332,8 @@ class PS5ConverterGUI:
         for schluessel, befehl in eingefaltet:
             try:
                 self._more_tools_menu.add_command(
-                    label=self._t(schluessel), command=getattr(self, befehl))
+                    label=self._t(schluessel),
+                    command=self._werkzeugknopf(befehl))
             except Exception:
                 continue
 
@@ -17307,6 +17550,12 @@ class PS5ConverterGUI:
         # Ergebnis-Container für den Thread
         result: dict[str, object] = {"exit_code": -1}
         engine_done = threading.Event()
+        # Der Abbruchweg braucht einen Griff darauf: _kill_task und die
+        # beiden Beenden-Wege setzen es, um den Messfaden sofort zu
+        # stoppen. Ohne diese Zeile lasen sie ein Attribut, das es nicht
+        # gab - Schritt 3 ihrer Reihenfolge lief ins Leere, und der Faden
+        # pollte weiter, bis mkpfs von sich aus fertig war.
+        self._engine_done_event = engine_done
 
         def _run_engine() -> None:
             """Führt mkpfs in einem eigenen Thread aus.
@@ -17635,6 +17884,8 @@ class PS5ConverterGUI:
                 file_monitor_thread.join(timeout=0.2)
             return False
         engine_thread.join(timeout=10)
+        # Der Griff gilt nur fuer diesen Lauf.
+        self._engine_done_event = None
         if file_monitor_thread is not None:
             file_monitor_thread.join(timeout=2)
 
@@ -20873,6 +21124,7 @@ class PS5ConverterGUI:
             """Zeigt den AMPR-EMU-Manager-Dialog im Haupt-Thread."""
             dlg = tk.Toplevel(self.root, bg=self._COLORS["bg_main"])
             dlg.title(self._t("ampr.dialog_title"))
+            self._fenster_an_hauptfenster_binden(dlg)
             _fw, _fh = 860, 700
             _fx = (dlg.winfo_screenwidth() - _fw) // 2
             _fy = (dlg.winfo_screenheight() - _fh) // 2
@@ -24339,6 +24591,7 @@ class PS5ConverterGUI:
         self._cred_win = win
         # Nativer Windows-Titelrahmen (identisch mit JS Loader)
         win.title(self._t("credits.window_title"))
+        self._fenster_an_hauptfenster_binden(win)
         win.geometry(f"{cw}x{ch}+{cx}+{cy}")
         win.minsize(480, 400)
         win.resizable(True, True)
@@ -27359,6 +27612,968 @@ class PS5ConverterGUI:
         return _bundled_resource("Backport_Fakelibs")
 
     # ==================================================================
+    # AMPR EMU nach ShadowMountPlus-Generation (provisorisch)
+    #
+    # Zwischen 1.7 alpha6 und 1.7 alpha8 wurde die Ablage umgebaut, und
+    # zwar so, dass eine vorher richtige Ablage danach stillschweigend
+    # nicht mehr wirkt: fakelib2 im Spielordner wird ab alpha8 ignoriert.
+    # Kein Fehler, keine Meldung - das Spiel startet einfach ohne seine
+    # Ersatzbibliotheken.
+    #
+    # Deshalb zwei getrennte Knoepfe statt einer Automatik, die raet -
+    # aber hinter jedem Knopf laeuft alles Weitere von selbst. Gefragt
+    # wird nur, wo wirklich zu entscheiden ist, und dann mit einer
+    # Erklaerung, die die Entscheidung abnimmt statt sie abzuwaelzen.
+    #
+    # Die Regeln selbst stehen in ps5_validator.utils.shadowmount_generation;
+    # hier ist nur der Ablauf.
+    # ==================================================================
+
+    #: Die Scan-Pfade, unter denen ShadowMount+ nach Spielen sucht. Der
+    #: backports-Ordner liegt jeweils darunter.
+    _AMPR_GEN_SCANPFADE: tuple[str, ...] = (
+        "/data/homebrew", "/data/etaHEN/games",
+        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+        "/mnt/ext0", "/mnt/ext1",
+    )
+
+    #: So lange wartet ein Arbeitsfaden auf eine Antwort, bevor er
+    #: aufgibt. Ohne diese Grenze haengt er fuer immer, wenn das Fenster
+    #: waehrend der Frage geschlossen wird.
+    _AMPR_GEN_ANTWORT_GRENZE = 600.0
+
+    def _show_ampr_alte_methode(self) -> None:
+        """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""
+        self._show_ampr_generation(sm_gen.ALT)
+
+    def _show_ampr_neue_methode(self) -> None:
+        """AMPR EMU nach der Mechanik ab ShadowMountPlus 1.7 alpha8."""
+        self._show_ampr_generation(sm_gen.NEU)
+
+    # ── Bausteine ──────────────────────────────────────────────────────
+
+    #: So lange darf ein einzelner Verbindungsversuch beim Absuchen dauern.
+    #: 0,35 s reicht im eigenen Netz bequem und haelt die Suche unter drei
+    #: Sekunden; bei 1 s waeren es ueber vier Minuten.
+    _AMPR_GEN_SUCHE_TIMEOUT = 0.35
+
+    #: So viele Adressen werden gleichzeitig probiert.
+    _AMPR_GEN_SUCHE_FAEDEN = 64
+
+    def _ampr_gen_profil_adressen(self) -> list[str]:
+        """Adressen aus den gespeicherten FTP-Profilen.
+
+        Die stehen neben der Konfigurationsdatei und stammen aus dem
+        FileZilla-Fenster. Sie koennen veraltet sein - auf dieser Anlage
+        nannte das Profil im August noch die Adresse vom Juni - deshalb
+        werden sie geprueft und nicht blind genommen.
+        """
+        try:
+            ordner = os.path.dirname(self._get_config_path())
+            pfad = os.path.join(ordner, "ftp_profiles.json")
+            with open(pfad, "r", encoding="utf-8") as datei:
+                profile = json.load(datei)
+        except (OSError, ValueError) as exc:
+            logger.debug("FTP-Profile nicht lesbar: %s", exc)
+            return []
+        adressen: list[str] = []
+        if isinstance(profile, dict):
+            for eintrag in profile.values():
+                if isinstance(eintrag, dict):
+                    host = str(eintrag.get("host", "") or "").strip()
+                    if host and host not in adressen:
+                        adressen.append(host)
+        return adressen
+
+    def _ampr_gen_ist_ps5(self, host: str, port: int,
+                          timeout: float = 3.0) -> bool:
+        """Prueft, ob dort wirklich eine PS5 antwortet.
+
+        Ein offener Port allein sagt nichts - im Heimnetz horcht auch mal
+        ein Drucker oder ein NAS auf 21. Geprueft wird deshalb, ob sich
+        ein Verzeichnis oeffnen laesst, das es nur auf der Konsole gibt.
+        """
+        import ftplib  # noqa: PLC0415
+
+        ftp = None
+        try:
+            ftp = ftplib.FTP()
+            ftp.connect(host, int(port), timeout=timeout)
+            ftp.login()
+            for pfad in ("/system_data", "/mnt/sandbox", "/user"):
+                try:
+                    ftp.cwd(pfad)
+                    return True
+                except Exception:
+                    continue
+            return False
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Kein PS5-FTP auf %s:%s (%s)", host, port, exc)
+            return False
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+
+    def _ampr_gen_eigene_netze(self) -> list[str]:
+        """Alle Netze, in denen die Konsole stehen koennte - wahrscheinlichste zuerst.
+
+        Nur die erstbeste eigene Adresse zu nehmen geht schief: Auf einem
+        Rechner mit WSL oder Hyper-V liefert ``gethostbyname_ex`` zuerst
+        den virtuellen Adapter. Am 22.08.2026 gemessen war das
+        ``172.25.128.x``, waehrend die Konsole in ``192.168.1.x`` stand -
+        die Suche lief ins Leere, obwohl ein gespeichertes FTP-Profil
+        genau auf das richtige Netz zeigte.
+
+        Gesammelt wird deshalb aus drei Quellen:
+
+        1. Die Adresse, ueber die dieser Rechner ins Netz gehen wuerde.
+           Dafuer wird ein UDP-Socket *verbunden*; gesendet wird dabei
+           nichts, das Betriebssystem verraet nur seine Wahl.
+        2. Die Netze der gespeicherten FTP-Profile - dort stand die
+           Konsole schon einmal.
+        3. Alle uebrigen eigenen Adressen.
+        """
+        netze: list[str] = []
+
+        def dazu(adresse: str) -> None:
+            teile = str(adresse).split(".")
+            if len(teile) != 4 or adresse.startswith("127."):
+                return
+            netz = ".".join(teile[:3])
+            if netz not in netze:
+                netze.append(netz)
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            sock.connect(("8.8.8.8", 80))
+            dazu(sock.getsockname()[0])
+        except OSError as exc:
+            logger.debug("Eigene Adresse ueber die Route: %s", exc)
+        finally:
+            sock.close()
+
+        for host in self._ampr_gen_profil_adressen():
+            dazu(host)
+
+        try:
+            _name, _alias, adressen = socket.gethostbyname_ex(socket.gethostname())
+            for adresse in adressen:
+                dazu(adresse)
+        except OSError as exc:
+            logger.debug("Eigene Adressen ueber den Rechnernamen: %s", exc)
+        return netze
+
+    def _ampr_gen_netz_absuchen(self, port: int, melde) -> list[str]:
+        """Sucht die eigenen Netze nach einer PS5 ab.
+
+        Erst wird geschaut, wo der Port ueberhaupt offen ist - das geht
+        nebenlaeufig und dauert je Netz wenige Sekunden. Nur die Treffer
+        werden danach daraufhin geprueft, ob dort auch wirklich eine
+        Konsole steht. Beim ersten Fund wird aufgehoert.
+        """
+        import concurrent.futures  # noqa: PLC0415
+
+        netze = self._ampr_gen_eigene_netze()
+        if not netze:
+            melde(self._t("amprgen.scan_no_net"))
+            return []
+        melde(self._t("amprgen.scan_nets", nets=", ".join(netze)))
+
+        for netz in netze:
+            melde(self._t("amprgen.scan_running", net=netz, port=port))
+
+            def _offen(nummer: int, netz: str = netz) -> str:
+                host = "%s.%d" % (netz, nummer)
+                try:
+                    with socket.create_connection(
+                            (host, port), timeout=self._AMPR_GEN_SUCHE_TIMEOUT):
+                        return host
+                except OSError:
+                    return ""
+
+            offene: list[str] = []
+            with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=self._AMPR_GEN_SUCHE_FAEDEN) as pool:
+                for treffer in pool.map(_offen, range(1, 255)):
+                    if treffer:
+                        offene.append(treffer)
+            melde(self._t("amprgen.scan_open", count=len(offene)))
+
+            konsolen = [h for h in offene if self._ampr_gen_ist_ps5(h, port)]
+            if konsolen:
+                melde(self._t("amprgen.scan_found", count=len(konsolen)))
+                return konsolen
+        melde(self._t("amprgen.scan_found", count=0))
+        return []
+
+
+    def _ampr_gen_adresse_finden(self, fenster, melde) -> str:
+        """Besorgt die Adresse der PS5 - in dieser Reihenfolge.
+
+        1. Was in den Einstellungen steht. Ist sie erreichbar, fertig.
+        2. Die gespeicherten FTP-Profile.
+        3. Das eigene Netz absuchen.
+
+        Wird dabei eine Konsole gefunden, die nicht in den Einstellungen
+        steht, wird gefragt, ob sie dort hinein soll - beim naechsten Mal
+        ist die Suche dann unnoetig.
+
+        Returns:
+            Die Adresse, oder ``""`` wenn nichts gefunden wurde.
+        """
+        port = self._ps5_ftp_port()
+
+        eingestellt = self._ps5_ip()
+        if eingestellt:
+            melde(self._t("amprgen.addr_setting", host=eingestellt))
+            if self._ampr_gen_ist_ps5(eingestellt, port):
+                return eingestellt
+            melde(self._t("amprgen.addr_setting_dead"))
+
+        for host in self._ampr_gen_profil_adressen():
+            if host == eingestellt:
+                continue
+            melde(self._t("amprgen.addr_profile", host=host))
+            if self._ampr_gen_ist_ps5(host, port):
+                if self._ampr_gen_adresse_merken(fenster, melde, host):
+                    return host
+                return host
+
+        gefunden = self._ampr_gen_netz_absuchen(port, melde)
+        if not gefunden:
+            return ""
+        if len(gefunden) == 1:
+            host = gefunden[0]
+        else:
+            wahl = self._ampr_gen_frage(
+                fenster, self._t("amprgen.q_which_console"),
+                self._t("amprgen.q_which_console_why"),
+                [(h, h, self._t("amprgen.q_which_console_entry", host=h))
+                 for h in gefunden])
+            if not wahl:
+                return ""
+            host = wahl
+        self._ampr_gen_adresse_merken(fenster, melde, host)
+        return host
+
+    def _ampr_gen_adresse_merken(self, fenster, melde, host: str) -> bool:
+        """Fragt, ob die gefundene Adresse in die Einstellungen soll."""
+        if host == self._ps5_ip():
+            return True
+        wahl = self._ampr_gen_frage(
+            fenster, self._t("amprgen.q_save_addr", host=host),
+            self._t("amprgen.q_save_addr_why", host=host),
+            [("ja", self._t("amprgen.q_save_addr_yes"),
+              self._t("amprgen.q_save_addr_yes_why")),
+             ("nein", self._t("amprgen.q_save_addr_no"),
+              self._t("amprgen.q_save_addr_no_why"))])
+        if wahl == "ja":
+            self._save_setting("ps5_ip", host)
+            melde(self._t("amprgen.addr_saved", host=host))
+            return True
+        return False
+
+    def _ampr_gen_ftp(self):
+        """Oeffnet die Verbindung zur PS5; wirft bei fehlender Adresse."""
+        host = self._ps5_ip()
+        if not host:
+            raise RuntimeError(self._t("amprgen.no_ip"))
+        return self._ampr_ftp_connect(host, self._ps5_ftp_port())
+
+    def _ampr_gen_ordner_lokal(self, pfad: str) -> list[str]:
+        """Welche fakelib-Ordner liegen lokal unter diesem Pfad?"""
+        gefunden: list[str] = []
+        try:
+            for name in os.listdir(pfad):
+                if (name.lower() in (sm_gen.FAKELIB, sm_gen.FAKELIB2)
+                        and os.path.isdir(os.path.join(pfad, name))):
+                    gefunden.append(name)
+        except OSError as exc:
+            logger.debug("fakelib-Ordner nicht lesbar (%s): %s", pfad, exc)
+        return sorted(gefunden)
+
+    def _ampr_gen_ordner_ftp(self, ftp, pfad: str) -> list[str]:
+        """Dasselbe auf der Konsole."""
+        gefunden: list[str] = []
+        for name in (sm_gen.FAKELIB, sm_gen.FAKELIB2):
+            if self._ampr_ftp_is_dir(ftp, "%s/%s" % (pfad.rstrip("/"), name)):
+                gefunden.append(name)
+        return gefunden
+
+    def _ampr_gen_config_lesen(self, ftp) -> str:
+        """Holt die config.ini der Konsole als Text; leer, wenn keine da ist."""
+        puffer = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s" % sm_gen.CONFIG_PFAD, puffer.write)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("config.ini nicht lesbar: %s", exc)
+            return ""
+        return puffer.getvalue().decode("utf-8", "replace")
+
+    def _ampr_gen_log_lesen(self, ftp) -> str:
+        """Holt debug.log; leer, wenn es (noch) keins gibt."""
+        puffer = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s" % sm_gen.DEBUG_LOG, puffer.write)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("debug.log nicht lesbar: %s", exc)
+            return ""
+        return puffer.getvalue().decode("utf-8", "replace")
+
+    def _ampr_gen_titel_aus_json(self, roh: bytes) -> str:
+        """Liest die Title-ID aus einer param.json."""
+        try:
+            daten = json.loads(roh.decode("utf-8", "replace"))
+        except (ValueError, AttributeError):
+            return ""
+        for schluessel in ("titleId", "titleID", "title_id"):
+            wert = str(daten.get(schluessel, "") or "").strip()
+            if wert:
+                return wert.upper()
+        return ""
+
+    #: Wo die Konsole jeden Titel fuehrt, den sie kennt - unabhaengig
+    #: davon, ob er als Ordner oder als eingehaengtes Abbild vorliegt.
+    _AMPR_GEN_APPMETA = "/system_data/priv/appmeta"
+
+    #: Kennungspraefixe echter Spiele. NPXS* sind Systemanwendungen.
+    _AMPR_GEN_SPIELKENNUNGEN = ("CUSA", "PUSA", "PPSA", "PPSS", "PPUS", "PPJP")
+
+    def _ampr_gen_spiele_finden(self, ftp) -> list[dict[str, str]]:
+        """Sucht die Spiele, die ShadowMount+ auf der Konsole sieht.
+
+        Zwei Quellen, weil eine allein nicht reicht:
+
+        1. **appmeta** - dort fuehrt die Konsole jeden Titel, den sie
+           kennt. Das ist die wichtigere Quelle: Laeuft ein Spiel aus
+           einem eingehaengten Abbild, gibt es gar keinen Ordner mit
+           ``eboot.bin``, den man finden koennte. Genau daran fand die
+           erste Fassung dieser Suche am 22.08.2026 null Spiele, obwohl
+           elf Titel auf der Konsole standen.
+        2. **Die Scan-Pfade** - fuer entpackte Dumps, die als Ordner
+           dort liegen. Der ``backports``-Ordner wird uebersprungen; dort
+           liegen keine Spiele, sondern die Ablagen dafuer.
+
+        Returns:
+            Je Spiel ``{"pfad", "title_id", "name", "scanpath", "quelle"}``,
+            nach Title-ID sortiert und ohne Doppelte.
+        """
+        gefunden: dict[str, dict[str, str]] = {}
+
+        # Der Scan-Pfad fuer die Backport-Ablage: der erste, den es gibt.
+        # /data/homebrew wird immer durchsucht und ist der uebliche Ort.
+        standard_scan = ""
+        for kandidat in self._AMPR_GEN_SCANPFADE:
+            if self._ampr_ftp_is_dir(ftp, kandidat):
+                standard_scan = kandidat
+                break
+
+        # -- Quelle 1: appmeta -------------------------------------------
+        try:
+            for eintrag in self._ampr_ftp_browse(ftp, self._AMPR_GEN_APPMETA)["dirs"]:
+                kennung = eintrag.strip().upper()
+                if not kennung.startswith(self._AMPR_GEN_SPIELKENNUNGEN):
+                    continue
+                gefunden[kennung] = {
+                    "pfad": "%s/%s" % (self._AMPR_GEN_APPMETA, kennung),
+                    "title_id": kennung, "name": kennung,
+                    "scanpath": standard_scan, "quelle": "appmeta"}
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("appmeta nicht lesbar: %s", exc)
+
+        # -- Quelle 2: entpackte Dumps in den Scan-Pfaden -----------------
+        for scanpath in self._AMPR_GEN_SCANPFADE:
+            if not self._ampr_ftp_is_dir(ftp, scanpath):
+                continue
+            try:
+                listung = self._ampr_ftp_browse(ftp, scanpath)
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Scan-Pfad nicht lesbar (%s): %s", scanpath, exc)
+                continue
+            for name in listung["dirs"]:
+                if name.lower() in ("backports", ".", ".."):
+                    continue
+                pfad = "%s/%s" % (scanpath.rstrip("/"), name)
+                passt, _detail = self._ampr_ftp_validate_app0(ftp, pfad)
+                if not passt:
+                    continue
+                puffer = io.BytesIO()
+                title_id = ""
+                try:
+                    ftp.retrbinary("RETR %s/sce_sys/param.json" % pfad,
+                                   puffer.write)
+                    title_id = self._ampr_gen_titel_aus_json(puffer.getvalue())
+                except Exception as exc:              # noqa: BLE001
+                    logger.debug("param.json nicht lesbar (%s): %s", pfad, exc)
+                schluessel = title_id or pfad
+                # Ein echter Ordner sagt mehr als ein appmeta-Eintrag:
+                # er nennt den Scan-Pfad, unter dem er wirklich liegt.
+                gefunden[schluessel] = {
+                    "pfad": pfad, "title_id": title_id, "name": name,
+                    "scanpath": scanpath, "quelle": "Ordner"}
+        return [gefunden[k] for k in sorted(gefunden)]
+
+
+    def _ampr_gen_auswahl_bibliotheken(self, eintraege: list[dict[str, Any]],
+                                       mit_playgo: bool) -> list[dict[str, Any]]:
+        """Waehlt selbst aus, was abgelegt wird: je Bibliothek die neueste.
+
+        Der Speicher ist bereits absteigend nach Fassung sortiert, der
+        erste Treffer je Bibliothek ist also der neueste. PlayGo kommt nur
+        mit, wenn ausdruecklich gewuenscht - es stammt aus einem anderen
+        Projekt und wird nur bei bestimmten Titeln gebraucht.
+        """
+        erlaubt = set(self._AMPR_DEFAULT_APPLY_LIBS)
+        if mit_playgo:
+            erlaubt.add(self._PLAYGO_SPRX_NAME)
+        gewaehlt: list[dict[str, Any]] = []
+        gesehen: set[str] = set()
+        for eintrag in eintraege:
+            name = str(eintrag.get("lib", ""))
+            if name not in erlaubt or name in gesehen:
+                continue
+            gesehen.add(name)
+            gewaehlt.append(eintrag)
+        return gewaehlt
+
+
+    # ── Die erklaerte Frage ────────────────────────────────────────────
+
+    def _ampr_gen_dialog(self, eltern, frage: str, erklaerung: str,
+                         optionen: list[tuple[str, str, str]]) -> str:
+        """Zeigt eine Entscheidung mit Begruendung - laeuft im Oberflaechenfaden.
+
+        Nicht ``messagebox``: Dort passt keine Erklaerung hin, und "Ja/Nein"
+        sagt niemandem, was er da gerade entscheidet. Hier steht zu jeder
+        Moeglichkeit ein Satz, was sie bedeutet.
+
+        Args:
+            eltern: Fenster, ueber dem der Dialog liegt.
+            frage: Eine Zeile - worum es geht.
+            erklaerung: Ein Absatz - warum gefragt wird.
+            optionen: ``[(wert, Beschriftung, Erklaerung), ...]``. Die erste
+                ist die empfohlene und wird hervorgehoben.
+
+        Returns:
+            Der gewaehlte Wert; ``""`` wenn das Fenster geschlossen wurde.
+        """
+        c = self._COLORS
+        antwort = {"wert": ""}
+        # Farbe gleich im Erzeuger: Sonst blitzt das Fenster weiss
+        # auf, bevor configure() es dunkel macht.
+        dlg = tk.Toplevel(eltern, bg=c["bg_main"])
+        dlg.title(self._t("amprgen.decision"))
+        dlg.transient(eltern)
+        dlg.resizable(False, False)
+
+        tk.Label(dlg, text=frage, font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
+                 wraplength=620, justify="left").pack(
+                     fill="x", padx=20, pady=(18, 6))
+        tk.Label(dlg, text=erklaerung, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=620, justify="left").pack(
+                     fill="x", padx=20, pady=(0, 12))
+
+        def _waehlen(wert: str) -> None:
+            antwort["wert"] = wert
+            dlg.destroy()
+
+        for nummer, (wert, beschriftung, erlaeuterung) in enumerate(optionen):
+            karte = tk.Frame(dlg, bg=c["bg_card"], padx=12, pady=10)
+            karte.pack(fill="x", padx=20, pady=(0, 8))
+            reihe = tk.Frame(karte, bg=c["bg_card"])
+            reihe.pack(fill="x")
+            ttk.Button(reihe, text=beschriftung,
+                       style="Accent.TButton" if nummer == 0 else "TButton",
+                       command=lambda w=wert: _waehlen(w)).pack(side="left")
+            if nummer == 0:
+                tk.Label(reihe, text=self._t("amprgen.recommended"),
+                         font=(UI_SCHRIFT, pt(8), "bold"), bg=c["bg_card"],
+                         fg=c["accent"]).pack(side="left", padx=(10, 0))
+            tk.Label(karte, text=erlaeuterung, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
+                     wraplength=600, justify="left").pack(
+                         fill="x", pady=(6, 0))
+
+        fuss = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=12)
+        fuss.pack(fill="x")
+        ttk.Button(fuss, text=self._t("action.cancel"),
+                   command=lambda: _waehlen("")).pack(side="right")
+
+        dlg.update_idletasks()
+        # Mittig ueber dem Elternfenster - sonst erscheint er in der Ecke.
+        try:
+            x = eltern.winfo_rootx() + (eltern.winfo_width() - dlg.winfo_width()) // 2
+            y = eltern.winfo_rooty() + (eltern.winfo_height() - dlg.winfo_height()) // 3
+            dlg.geometry("+%d+%d" % (max(0, x), max(0, y)))
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Dialog nicht zu platzieren: %s", exc)
+        dlg.protocol("WM_DELETE_WINDOW", lambda: _waehlen(""))
+        dlg.grab_set()
+        eltern.wait_window(dlg)
+        return antwort["wert"]
+
+    def _ampr_gen_frage(self, fenster, frage: str, erklaerung: str,
+                        optionen: list[tuple[str, str, str]]) -> str:
+        """Stellt die Frage aus einem Arbeitsfaden heraus und wartet.
+
+        Der Dialog muss im Oberflaechenfaden entstehen, die Automatik laeuft
+        aber nebenher. Deshalb wird der Aufbau dorthin gereicht und hier
+        gewartet - mit Grenze, damit ein geschlossenes Fenster den Faden
+        nicht fuer immer haengen laesst.
+        """
+        ergebnis: dict[str, str] = {}
+        fertig = threading.Event()
+
+        def _zeigen() -> None:
+            try:
+                ergebnis["wert"] = self._ampr_gen_dialog(
+                    fenster, frage, erklaerung, optionen)
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Entscheidungsdialog: %s", exc)
+                ergebnis["wert"] = ""
+            finally:
+                fertig.set()
+
+        if not self._spaeter_im_fenster(fenster, _zeigen):
+            return ""
+        if not fertig.wait(self._AMPR_GEN_ANTWORT_GRENZE):
+            logger.debug("Keine Antwort innerhalb der Grenze - abgebrochen.")
+            return ""
+        return ergebnis.get("wert", "")
+
+    def _ampr_gen_config_pruefen(self, generation: str,
+                                 text: str) -> list[tuple[str, str, str]]:
+        """Sucht Schluessel, die **gesetzt** sind und **abweichen**.
+
+        Ein nicht gesetzter Schluessel ist keine Abweichung. ShadowMount+
+        liefert seine config.ini als reine Kommentardatei aus - auf der
+        Konsole hier waren am 22.08.2026 alle 146 Zeilen auskommentiert -
+        und nimmt dann seine eingebauten Vorgaben. Die sind genau die
+        Werte, die auch hier als Soll stehen. Wer das als "fehlt, muss
+        gesetzt werden" meldet, erzeugt vier Fehlalarme und laesst den
+        Nutzer eine Datei aendern, an der nichts falsch war.
+
+        Returns:
+            Je echter Abweichung ``(Schluessel, ist, soll)``.
+        """
+        werte = parse_flat_ini(text) if text else {}
+        abweichungen: list[tuple[str, str, str]] = []
+        for schluessel, soll in sm_gen.profil(generation)["config_schluessel"]:
+            if not soll:
+                # Leere Vorgaben (z. B. die Ausschlussliste) sind kein Soll.
+                continue
+            ist = werte.get(schluessel)
+            if ist is None:
+                continue                      # laeuft auf der Vorgabe - gut so
+            if str(ist).strip() != soll:
+                abweichungen.append((schluessel, str(ist).strip(), soll))
+        return abweichungen
+
+    def _ampr_gen_config_vorgaben(self, generation: str, text: str) -> list[str]:
+        """Welche Schluessel laufen auf der eingebauten Vorgabe?
+
+        Nur zur Ansicht im Protokoll - hier ist nichts zu tun.
+        """
+        werte = parse_flat_ini(text) if text else {}
+        return [s for s, soll in sm_gen.profil(generation)["config_schluessel"]
+                if soll and s not in werte]
+
+
+    def _ampr_gen_config_schreiben(self, ftp, text: str,
+                                   aenderungen: dict[str, str]) -> None:
+        """Schreibt die geaenderten Schluessel zurueck - Rest bleibt stehen."""
+        neu = merge_flat_ini(text or "", aenderungen)
+        ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD,
+                       io.BytesIO(neu.encode("utf-8")))
+
+
+    def _ampr_gen_ordner_fragen(self, fenster) -> str:
+        """Laesst einen lokalen Spielordner waehlen - aus einem Arbeitsfaden."""
+        ergebnis: dict[str, str] = {}
+        fertig = threading.Event()
+
+        def _zeigen() -> None:
+            try:
+                ergebnis["pfad"] = filedialog.askdirectory(
+                    parent=fenster, title=self._t("amprgen.choose_game")) or ""
+            except Exception as exc:                  # noqa: BLE001
+                logger.debug("Ordnerauswahl: %s", exc)
+                ergebnis["pfad"] = ""
+            finally:
+                fertig.set()
+
+        if not self._spaeter_im_fenster(fenster, _zeigen):
+            return ""
+        if not fertig.wait(self._AMPR_GEN_ANTWORT_GRENZE):
+            return ""
+        return ergebnis.get("pfad", "")
+
+    # ── Der Automatiklauf ──────────────────────────────────────────────
+
+    def _ampr_gen_automatik(self, generation: str, fenster, melde) -> None:
+        """Erledigt alles - und fragt nur, wo wirklich zu entscheiden ist.
+
+        Laeuft in einem Arbeitsfaden. Jeder Schritt meldet, was er getan
+        hat; jede Frage bringt ihre Begruendung mit. Bricht der Nutzer ab,
+        endet der Lauf sofort und sagt das auch.
+        """
+        p = sm_gen.profil(generation)
+        andere = sm_gen.NEU if generation == sm_gen.ALT else sm_gen.ALT
+        ftp = None
+        try:
+            # ── 1. Wo wird gearbeitet? ─────────────────────────────────
+            melde(self._t("amprgen.step_console"))
+            lokal = False
+            # Die Adresse wird gesucht, nicht vorausgesetzt: Auf dieser
+            # Anlage stand sie am 22.08.2026 in keiner Einstellung, und
+            # das gespeicherte FTP-Profil nannte eine Adresse von Juni,
+            # unter der laengst nichts mehr antwortete.
+            host = self._ampr_gen_adresse_finden(fenster, melde)
+            if host:
+                try:
+                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                    melde(self._t("amprgen.console_ok", host=host))
+                except Exception as exc:              # noqa: BLE001
+                    melde(self._t("amprgen.console_failed", error=exc))
+                    host = ""
+            if not host:
+                wahl = self._ampr_gen_frage(
+                    fenster,
+                    self._t("amprgen.q_offline"),
+                    self._t("amprgen.q_offline_why"),
+                    [("lokal", self._t("amprgen.q_offline_local"),
+                      self._t("amprgen.q_offline_local_why")),
+                     ("stop", self._t("amprgen.q_offline_stop"),
+                      self._t("amprgen.q_offline_stop_why"))])
+                if wahl != "lokal":
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                lokal = True
+
+            # ── 2. Welche Fassung laeuft dort? ─────────────────────────
+            if not lokal:
+                melde(self._t("amprgen.step_version"))
+                befund = sm_gen.generation_erkennen(
+                    config_text=self._ampr_gen_config_lesen(ftp),
+                    cache_ordner_da=self._ampr_ftp_is_dir(ftp, sm_gen.CACHE_ORDNER),
+                    log_text=self._ampr_gen_log_lesen(ftp))
+                for _kennung, beleg in befund["belege"]:
+                    melde("   - " + beleg)
+                if befund["generation"] == generation:
+                    melde(self._t("amprgen.diag_match"))
+                elif befund["generation"] == andere:
+                    wahl = self._ampr_gen_frage(
+                        fenster,
+                        self._t("amprgen.q_wrong_gen"),
+                        self._t("amprgen.q_wrong_gen_why",
+                                running=sm_gen.profil(andere)["gilt_fuer"],
+                                chosen=p["gilt_fuer"]),
+                        [("stop", self._t("amprgen.q_wrong_gen_stop"),
+                          self._t("amprgen.q_wrong_gen_stop_why")),
+                         ("weiter", self._t("amprgen.q_wrong_gen_go"),
+                          self._t("amprgen.q_wrong_gen_go_why"))])
+                    if wahl != "weiter":
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                else:
+                    melde(self._t("amprgen.diag_unknown"))
+
+            # ── 3. Welches Spiel? ──────────────────────────────────────
+            melde(self._t("amprgen.step_game"))
+            title_id, scanpath, spielpfad = "", "", ""
+            if lokal:
+                spielpfad = self._ampr_gen_ordner_fragen(fenster)
+                if not spielpfad:
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                pfad_json = os.path.join(spielpfad, "sce_sys", "param.json")
+                try:
+                    with open(pfad_json, "rb") as datei:
+                        title_id = self._ampr_gen_titel_aus_json(datei.read())
+                except OSError as exc:
+                    logger.debug("param.json nicht lesbar: %s", exc)
+                melde(self._t("amprgen.game_chosen",
+                              name=os.path.basename(spielpfad),
+                              title_id=title_id or "?"))
+            else:
+                spiele = self._ampr_gen_spiele_finden(ftp)
+                melde(self._t("amprgen.games_found", count=len(spiele)))
+                if not spiele:
+                    melde(self._t("amprgen.no_games"))
+                    return
+                if len(spiele) == 1:
+                    gewaehlt = spiele[0]
+                    melde(self._t("amprgen.game_single"))
+                else:
+                    optionen = [(s["pfad"],
+                                 "%s  (%s)" % (s["name"][:44],
+                                               s["title_id"] or "?"),
+                                 self._t("amprgen.q_game_entry",
+                                         path=s["pfad"]))
+                                for s in spiele[:12]]
+                    wahl = self._ampr_gen_frage(
+                        fenster, self._t("amprgen.q_game"),
+                        self._t("amprgen.q_game_why"), optionen)
+                    if not wahl:
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                    gewaehlt = next(s for s in spiele if s["pfad"] == wahl)
+                spielpfad = gewaehlt["pfad"]
+                title_id = gewaehlt["title_id"]
+                scanpath = gewaehlt["scanpath"]
+                melde(self._t("amprgen.game_chosen",
+                              name=gewaehlt["name"], title_id=title_id or "?"))
+
+            # ── 4. Wohin? Das entscheidet die Fassung, nicht der Nutzer ─
+            melde(self._t("amprgen.step_target"))
+            if not lokal and title_id and scanpath:
+                ziel = sm_gen.ablageziel(generation, sm_gen.ORT_BACKPORT,
+                                         title_id=title_id, scanpath=scanpath)
+                ort = sm_gen.ORT_BACKPORT
+            else:
+                ziel = sm_gen.ablageziel(generation, sm_gen.ORT_SPIEL,
+                                         wurzel=spielpfad)
+                ort = sm_gen.ORT_SPIEL
+                if not lokal:
+                    melde(self._t("amprgen.no_title_id_fallback"))
+            melde(self._t("amprgen.target", path=ziel["pfad"]))
+            melde("   " + ziel["hinweis"])
+
+            # ── 5. Welche Bibliotheken? ────────────────────────────────
+            melde(self._t("amprgen.step_libs"))
+            vorrat = self._ampr_scan_version_store(self._ampr_resolve_store())
+            if not vorrat:
+                melde(self._t("amprgen.no_store"))
+                return
+            hat_playgo = any(e.get("lib") == self._PLAYGO_SPRX_NAME
+                             for e in vorrat)
+            mit_playgo = False
+            if hat_playgo:
+                wahl = self._ampr_gen_frage(
+                    fenster, self._t("amprgen.q_playgo"),
+                    self._t("amprgen.q_playgo_why"),
+                    [("nein", self._t("amprgen.q_playgo_no"),
+                      self._t("amprgen.q_playgo_no_why")),
+                     ("ja", self._t("amprgen.q_playgo_yes"),
+                      self._t("amprgen.q_playgo_yes_why"))])
+                if not wahl:
+                    melde(self._t("amprgen.cancelled"))
+                    return
+                mit_playgo = wahl == "ja"
+            gewaehlt_libs = self._ampr_gen_auswahl_bibliotheken(vorrat, mit_playgo)
+            if not gewaehlt_libs:
+                melde(self._t("amprgen.no_libs"))
+                return
+            for eintrag in gewaehlt_libs:
+                melde(self._t("amprgen.lib_chosen", lib=eintrag.get("lib", ""),
+                              version=eintrag.get("version", "?"),
+                              variant=eintrag.get("variant", "-")))
+
+            # ── 6. Stimmt die config.ini? ──────────────────────────────
+            if not lokal:
+                melde(self._t("amprgen.step_config"))
+                text = self._ampr_gen_config_lesen(ftp)
+                abweichungen = self._ampr_gen_config_pruefen(generation, text)
+                if not abweichungen:
+                    melde(self._t("amprgen.config_ok"))
+                else:
+                    zeilen = "\n".join(
+                        "   %s: %s -> %s" % (k, ist or self._t("amprgen.diag_missing"), soll)
+                        for k, ist, soll in abweichungen)
+                    wahl = self._ampr_gen_frage(
+                        fenster, self._t("amprgen.q_config"),
+                        self._t("amprgen.q_config_why", lines=zeilen),
+                        [("ja", self._t("amprgen.q_config_yes"),
+                          self._t("amprgen.q_config_yes_why")),
+                         ("nein", self._t("amprgen.q_config_no"),
+                          self._t("amprgen.q_config_no_why"))])
+                    if not wahl:
+                        melde(self._t("amprgen.cancelled"))
+                        return
+                    if wahl == "ja":
+                        try:
+                            self._ampr_gen_config_schreiben(
+                                ftp, text,
+                                {k: soll for k, _ist, soll in abweichungen})
+                            melde(self._t("amprgen.config_written",
+                                          count=len(abweichungen)))
+                        except Exception as exc:      # noqa: BLE001
+                            melde(self._t("amprgen.failed", error=exc))
+                    else:
+                        melde(self._t("amprgen.config_kept"))
+
+            # ── 7. Ablegen und nachsehen ───────────────────────────────
+            melde(self._t("amprgen.step_place"))
+            dateien = [str(e["path"]) for e in gewaehlt_libs]
+            if lokal:
+                for zeile in self._ampr_gen_ablegen(
+                        generation, ort, lokal=True, ziel=ziel["pfad"],
+                        dateien=dateien):
+                    melde(zeile)
+            else:
+                if not self._ampr_ftp_ensure_dir(ftp, ziel["pfad"]):
+                    melde(self._t("amprgen.mkdir_failed", path=ziel["pfad"]))
+                    return
+                for quelle in dateien:
+                    name = os.path.basename(quelle)
+                    if self._ampr_ftp_upload_file(ftp, ziel["pfad"], quelle, name):
+                        melde(self._t("amprgen.placed", name=name))
+                    else:
+                        melde(self._t("amprgen.place_failed", name=name,
+                                      error="FTP"))
+                melde(self._t("amprgen.done", path=ziel["pfad"]))
+                eltern = ziel["pfad"].rsplit("/", 1)[0]
+                da = self._ampr_gen_ordner_ftp(ftp, eltern)
+                for meldung in sm_gen.beanstandungen(generation, ort, da):
+                    melde("!! " + meldung)
+
+            melde("")
+            melde(self._t("amprgen.finished"))
+            melde(self._t("amprgen.next_steps"))
+        except Exception as exc:                      # noqa: BLE001
+            melde(self._t("amprgen.failed", error=exc))
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:
+                    try:
+                        ftp.close()
+                    except Exception:
+                        pass
+
+
+    def _show_ampr_generation(self, generation: str) -> None:
+        """Das Fenster beider Methoden - es arbeitet von selbst.
+
+        Frueher war das eine Eingabemaske: Arbeitsort, Spielordner,
+        Title-ID, Scan-Pfad, Bibliotheken - alles von Hand. Wer die
+        Unterschiede zwischen den Fassungen nicht auswendig kennt, konnte
+        dort still das Falsche einstellen. Jetzt laeuft alles von selbst,
+        und gefragt wird nur, wo es wirklich etwas zu entscheiden gibt.
+        """
+        c = self._COLORS
+        p = sm_gen.profil(generation)
+        titel = self._t("amprgen.title_%s" % generation)
+        win = self._build_modern_toplevel(titel, 940, 740,
+                                          min_width=820, min_height=560)
+        self._build_modern_header(win, titel,
+                                  self._t("amprgen.subtitle_%s" % generation))
+
+        # ── Geltungsbereich - damit niemand das falsche Fenster nimmt ───
+        gilt = tk.Frame(win, bg=c["bg_card"], padx=12, pady=8)
+        gilt.pack(fill="x", padx=16, pady=(10, 6))
+        tk.Label(gilt, text=self._t("amprgen.applies", value=p["gilt_fuer"]),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_card"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x")
+        tk.Label(gilt, text=self._t("amprgen.not_for", value=p["nicht_fuer"]),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
+                 fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        # ── Was gleich passiert, in Klartext ───────────────────────────
+        tk.Label(win, text=self._t("amprgen.what_happens"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(6, 2))
+        tk.Label(win, text=self._t("amprgen.what_happens_text",
+                                   folder=sm_gen.ablageordner(
+                                       generation,
+                                       sm_gen.ORT_BACKPORT
+                                       if generation == sm_gen.NEU
+                                       else sm_gen.ORT_SPIEL)),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"], anchor="w", wraplength=880,
+                 justify="left").pack(fill="x", padx=16, pady=(0, 8))
+
+        # ── Protokoll ──────────────────────────────────────────────────
+        tk.Label(win, text=self._t("amprgen.log"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(4, 2))
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
+        koerper.pack(fill="both", expand=True, pady=(0, 4))
+        feld = tk.Text(koerper, height=14, wrap="word",
+                       font=("Consolas", pt(9)), bg=c["bg_card"],
+                       fg=c["fg_primary"], relief="flat", state="disabled")
+        rolle = ttk.Scrollbar(koerper, orient="vertical", command=feld.yview)
+        feld.configure(yscrollcommand=rolle.set)
+        rolle.pack(side="right", fill="y")
+        feld.pack(side="left", fill="both", expand=True)
+
+        def _protokoll(text: str) -> None:
+            if not feld.winfo_exists():
+                return
+            feld.configure(state="normal")
+            feld.insert("end", text + "\n")
+            feld.see("end")
+            feld.configure(state="disabled")
+
+        def _melde(text: str) -> None:
+            """Aus dem Arbeitsfaden ins Protokoll - immer ueber die Wurzel."""
+            self._spaeter_im_fenster(win, _protokoll, text)
+
+        laeuft = {"aktiv": False}
+        start_knopf: dict[str, Any] = {}
+
+        def _starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            laeuft["aktiv"] = True
+            knopf = start_knopf.get("widget")
+            if knopf is not None:
+                knopf.configure(state="disabled")
+            _protokoll("")
+            _protokoll("=" * 60)
+            _protokoll(self._t("amprgen.run_start"))
+
+            def _lauf() -> None:
+                try:
+                    self._ampr_gen_automatik(generation, win, _melde)
+                finally:
+                    laeuft["aktiv"] = False
+
+                    def _wieder_frei() -> None:
+                        k = start_knopf.get("widget")
+                        if k is not None and k.winfo_exists():
+                            k.configure(state="normal")
+                    self._spaeter_im_fenster(win, _wieder_frei)
+            threading.Thread(target=_lauf, daemon=True).start()
+
+        def _config() -> None:
+            """Der vorhandene Editor - vorbelegt mit den Schluesseln dieser Fassung."""
+            vorgaben = dict(self._SHADOWMOUNT_DEFAULTS)
+            vorgaben.update({k: v for k, v in p["config_schluessel"] if v})
+            self._show_remote_ini_editor(
+                self._t("remote_ini.shadowmount_title"),
+                sm_gen.CONFIG_PFAD, sm_gen.DEBUG_LOG, vorgaben, "shadowmount")
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("amprgen.btn_config"),
+                   command=_config).pack(side="left")
+        start = ttk.Button(knopfreihe, text=self._t("amprgen.btn_run"),
+                           style="Accent.TButton", command=_starten)
+        start.pack(side="left", padx=(8, 0))
+        start_knopf["widget"] = start
+
+        for falle in sm_gen.stolperfallen(generation):
+            _protokoll("* " + falle)
+
+        # Sofort loslegen: Der Knopf im Hauptfenster ist der Startbefehl,
+        # nicht das Oeffnen eines Formulars.
+        self._spaeter_im_fenster(win, _starten)
+
+    # ==================================================================
     # ps5_autoloader - die Startreihenfolge der Konsole
     #
     # Die Konsole sucht ps5_autoloader/autoload.txt in dieser Reihenfolge:
@@ -28521,89 +29736,6 @@ class PS5ConverterGUI:
         kandidaten.sort()
         return kandidaten[0][3]
 
-    #: Wohin die Konsole die NP-Bindung eines Titels erwartet.
-    _NPBIND_ZIEL = "/system_data/priv/appmeta/%s/npbind.dat"
-    #: Wo sie im Abbild liegt.
-    _NPBIND_IM_ABBILD = "sce_sys/npbind.dat"
-
-    def _npbind_aus_abbild(self, pfad: str) -> bytes:
-        """Holt sce_sys/npbind.dat aus einem fertigen Abbild.
-
-        Args:
-            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
-
-        Returns:
-            Der Inhalt, oder ``b""`` wenn die Datei nicht darin steht.
-        """
-        griff = None
-        try:
-            from mkpfs.exfat import ExfatReader
-
-            with open(pfad, "rb") as datei:
-                kopf = datei.read(16)
-            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
-                from mkpfs import pfs as mkpfs_pfs
-
-                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
-                if not geoeffnet:
-                    return b""
-                sicht, griff, _name = geoeffnet
-            else:
-                sicht = griff = open(pfad, "rb")
-            sicht.seek(0)
-            leser = ExfatReader(sicht)
-            for eintrag in leser.iter_files():
-                rel = eintrag.rel_path.replace("\\", "/").lower()
-                if rel == self._NPBIND_IM_ABBILD:
-                    # read_file liefert Stuecke, keine fertigen Bytes.
-                    return b"".join(leser.read_file(eintrag))
-            return b""
-        except Exception as exc:                      # noqa: BLE001 - melden
-            logger.debug("npbind.dat nicht aus dem Abbild lesbar: %s", exc)
-            return b""
-        finally:
-            try:
-                if griff is not None:
-                    griff.close()
-            except Exception:
-                pass
-
-    def _npbind_auf_konsole(self, ftp, title_id: str, inhalt: bytes) -> str:
-        """Legt die NP-Bindung neben die Metadaten des registrierten Titels.
-
-        Args:
-            ftp: Offene Verbindung (siehe ``_ampr_ftp_connect``).
-            title_id: Die Kennung, etwa ``CUSA00775``.
-            inhalt: Der Inhalt aus dem Abbild.
-
-        Returns:
-            Ein Schluessel fuer die Meldung: ``"fehlt_ordner"`` (Titel noch
-            nicht registriert), ``"schon_da"``, ``"gelegt"`` oder
-            ``"abweichung"`` (zurueckgelesen und ungleich).
-        """
-        ziel = self._NPBIND_ZIEL % title_id
-        ordner = ziel.rsplit("/", 1)[0]
-        if not self._ampr_ftp_is_dir(ftp, ordner):
-            return "fehlt_ordner"
-
-        # Nie ueberschreiben: Ist der Titel regulaer installiert, hat das
-        # System dort seine eigene Bindung abgelegt - die hat Vorrang. Der
-        # Schritt fuellt nur die Luecke, die ShadowMountPlus laesst.
-        vorhanden = io.BytesIO()
-        try:
-            ftp.retrbinary("RETR %s" % ziel, vorhanden.write)
-        except Exception:
-            vorhanden = None
-        if vorhanden is not None:
-            return ("schon_da" if vorhanden.getvalue() == inhalt
-                    else "schon_da_anders")
-
-        ftp.storbinary("STOR %s" % ziel, io.BytesIO(inhalt))
-        # Zurueckholen und vergleichen - eine halbe Datei waere schlimmer
-        # als gar keine.
-        kontrolle = io.BytesIO()
-        ftp.retrbinary("RETR %s" % ziel, kontrolle.write)
-        return "gelegt" if kontrolle.getvalue() == inhalt else "abweichung"
 
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
         """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
@@ -29191,8 +30323,7 @@ class PS5ConverterGUI:
                      or tempfile.gettempdir())
             ordner = os.path.join(basis, "ps4ffpsc_arbeit")
             if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
-                laufwerk = os.environ.get("SystemDrive", "C:") + os.sep
-                ausweich = os.path.join(laufwerk, "ps4ffpsc_arbeit")
+                ausweich = _ps4ffpsc_kurzer_arbeitsordner(basis)
                 _protokoll(self._t("ps4pkg.short_workdir", laenge=len(ordner), pfad=ausweich))
                 ordner = ausweich
             os.makedirs(ordner, exist_ok=True)
@@ -29394,11 +30525,11 @@ class PS5ConverterGUI:
                             # nicht hinein - sie dort zu vermissen waere ein
                             # Fehlalarm bei jedem einzelnen Spiel.
                             _protokoll(self._t("ps4pkg.check_ps4_title"))
-                            # Direkt danach die NP-Luecke: Genau jetzt hat
-                            # der Nutzer ein fertiges PS4-Abbild vor sich
-                            # und wuerde sonst erst an der Konsole darueber
-                            # stolpern.
-                            _protokoll(self._t("ps4pkg.check_np_note"))
+                            # Direkt danach die Trophaeengrenze: Genau
+                            # jetzt hat der Nutzer ein fertiges PS4-Abbild
+                            # vor sich und wuerde sonst erst an der
+                            # Konsole darueber stolpern.
+                            _protokoll(self._t("ps4pkg.check_trophy_note"))
                         else:
                             for fehlt in befund["fehlend"]:
                                 _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
@@ -29428,75 +30559,10 @@ class PS5ConverterGUI:
         # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
         # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
         # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
-        # ── NP-Bindung nachtragen ───────────────────────────────────────
-        def _npbind_nachtragen() -> None:
-            """Legt die NP-Bindung des gewaehlten Titels auf die Konsole.
-
-            Kein Teil des Bauvorgangs: Der Zielordner
-            /system_data/priv/appmeta/<Title-ID>/ entsteht erst, wenn
-            ShadowMount+ den Titel registriert hat - beim Bauen liegt das
-            Abbild noch auf dem PC.
-            """
-            if laeuft["aktiv"]:
-                return
-            auswahl = liste.selection()
-            if not auswahl:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.no_game"), parent=win)
-                return
-            title_id = auswahl[0]
-            ziel = ziel_var.get().strip()
-            abbild = self._ps4ffpsc_ergebnis_finden(ziel, title_id,
-                                                    format_var.get()) if ziel else ""
-            if not abbild:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_no_image"), parent=win)
-                return
-            inhalt = self._npbind_aus_abbild(abbild)
-            if not inhalt:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_not_in_image"), parent=win)
-                return
-            host = self._ps5_ip()
-            if not host:
-                messagebox.showwarning(self._t("ps4pkg.window_title"),
-                                       self._t("ps4pkg.npbind_no_ip"), parent=win)
-                return
-
-            _protokoll(self._t("ps4pkg.npbind_start", title_id=title_id,
-                               bytes=len(inhalt), host=host))
-            laeuft["aktiv"] = True
-
-            def _arbeit() -> None:
-                ftp = None
-                try:
-                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
-                    stand = self._npbind_auf_konsole(ftp, title_id, inhalt)
-                except Exception as exc:                  # noqa: BLE001
-                    logger.debug("npbind nachtragen: %s", exc)
-                    _protokoll(self._t("ps4pkg.npbind_failed", error=exc))
-                    laeuft["aktiv"] = False
-                    return
-                finally:
-                    if ftp is not None:
-                        try:
-                            ftp.quit()
-                        except Exception:
-                            try:
-                                ftp.close()
-                            except Exception:
-                                pass
-                laeuft["aktiv"] = False
-                _protokoll(self._t("ps4pkg.npbind_" + stand, title_id=title_id))
-
-            threading.Thread(target=_arbeit, daemon=True).start()
-
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x", before=körper)
         ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.npbind_button"),
-                   command=_npbind_nachtragen).pack(side="left", padx=(8, 0))
         ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
                    command=_einlesen).pack(side="left")
         ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
@@ -31741,6 +32807,7 @@ class PS5ConverterGUI:
         """
         win = tk.Toplevel(parent or self.root, bg=self._COLORS["bg_main"])
         win.title(self._t("ampr.picker_title"))
+        self._fenster_an_hauptfenster_binden(win, parent or self.root)
         w, h = 880, 640
         win.geometry(f"{w}x{h}+{(win.winfo_screenwidth() - w) // 2}+{(win.winfo_screenheight() - h) // 2}")
         self._apply_icon_to_toplevel(win)
@@ -32904,6 +33971,8 @@ class PS5ConverterGUI:
         "_btn_jsloader_title":     "fg_warning",
         "_btn_ftp_title":          "fg_success",
         "_btn_shadowmount_title":  "fg_secondary",
+        "_btn_ampr_alt_title":     "fg_secondary",
+        "_btn_ampr_neu_title":     "fg_secondary",
         "_btn_library_title":      "fg_secondary",
         "_btn_klog_title":         "fg_secondary",
         "_btn_diagnostics_title":  "fg_secondary",
@@ -33799,6 +34868,11 @@ def _ensure_av_exclusion() -> None:
     except Exception as exc:
         logger.error("AV-Ausnahme fehlgeschlagen: %s", exc)
 
+#: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
+#: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
+UFS2TOOL_ORDNER = "UFS2Tool-4.1"
+
+
 #: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
 PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
 
@@ -33810,10 +34884,47 @@ UFS2TOOL_ORDNER = "UFS2Tool-4.1"
 #: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
 _PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
 
-#: Hoechstlaenge des Arbeitsordners fuer das PS4-Werkzeug unter Windows.
-#: Darunter legt es noch "unpacked/<Title-ID>/<Paket>/sce_sys/..." an; ab etwa
-#: 150 Zeichen scheitert der PKG-Entpacker an der 260-Zeichen-Grenze.
-_PS4FFPSC_MAX_ARBEITSPFAD = 110
+#: Hoechstlaenge des Arbeitsordners, den die Oberflaeche noch am gewaehlten
+#: Ort belaesst. Der mitgelieferte Entpacker kennt kein "longPathAware" und
+#: endet deshalb bei 259 Zeichen. Unter dem Arbeitsordner entstehen im
+#: unguenstigen Fall rund 210 Zeichen:
+#:
+#:   unpacked\<Title-ID> - <Titel>\    bis etwa  52   (Titel bis 40 Zeichen)
+#:   packages\dlc\<Label>\<Kuerzel>              42   (DLC ist laenger als base)
+#:   .partial, solange der Lauf dauert            8
+#:   der tiefste spielinterne Pfad             ~100
+#:
+#: Am 23.08.2026 an Tetris Ultimate nachgemessen: 64 Zeichen Aufschlag und
+#: 73 spielintern. Der frueher hier stehende Wert 110 rechnete den Titel im
+#: Ordnernamen nicht mit und liess nur 10 Zeichen Luft - ein Spiel mit
+#: laengerem Namen waere gescheitert, und zwar mit der Meldung "Paket nicht
+#: unterstuetzt oder verschluesselt".
+_PS4FFPSC_MAX_ARBEITSPFAD = 45
+
+
+def _ps4ffpsc_kurzer_arbeitsordner(basis: str) -> str:
+    r"""Ein kurzer Arbeitsordner - moeglichst auf dem Laufwerk des Ziels.
+
+    Frueher ging der Ausweichpfad immer auf das Systemlaufwerk. Das ist die
+    schlechteste Wahl: Dort liegt Windows, der Platz ist am knappsten, und
+    waehrend der Umwandlung liegen Spiel und Zwischenstand gleichzeitig da -
+    bei grossen Titeln zweistellige Gigabyte. Das Laufwerk des Zielordners
+    ist genauso kurz und meint denselben Datentraeger, den der Nutzer
+    ohnehin gewaehlt hat.
+
+    Args:
+        basis: Der gewaehlte Zielordner.
+
+    Returns:
+        Ein Pfad der Form ``X:\ps4ffpsc_arbeit``; das Systemlaufwerk nur
+        dann, wenn sich aus ``basis`` kein Laufwerk lesen laesst (etwa bei
+        einem Netzpfad).
+    """
+    laufwerk = os.path.splitdrive(os.path.abspath(basis))[0]
+    if laufwerk and os.path.isdir(laufwerk + os.sep):
+        return os.path.join(laufwerk + os.sep, "ps4ffpsc_arbeit")
+    system = os.environ.get("SystemDrive", "C:")
+    return os.path.join(system + os.sep, "ps4ffpsc_arbeit")
 
 
 def _ps4ffpsc_wurzel() -> str:
@@ -33864,7 +34975,17 @@ def _ps4ffpsc_entpacker() -> str:
     else:
         return ""
     pfad = os.path.join(wurzel, "bin", name)
-    return pfad if os.path.isfile(pfad) else ""
+    if not os.path.isfile(pfad):
+        return ""
+    if not IST_WINDOWS:
+        # Aus dem Bündel kommt die Datei ohne Ausführungsrecht - dasselbe
+        # Nachziehen wie bei UFS2Tool. Ohne das meldete der Mac beim Start
+        # "Permission denied" (Errno 13), und zwar erst mitten im Lauf.
+        try:
+            os.chmod(pfad, os.stat(pfad).st_mode | 0o111)
+        except OSError as exc:
+            logger.debug("PS4-Entpacker nicht ausführbar zu machen: %s", exc)
+    return pfad
 
 
 def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:
@@ -34300,7 +35421,7 @@ def _prepare_cli_streams() -> None:
 
 
 def _run_cli(args: argparse.Namespace) -> int:
-    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler)."""
+    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler, 3=Administratorrechte fehlen)."""
     _prepare_cli_streams()
     mode = args.mode
     if not mode:
@@ -34542,6 +35663,18 @@ if __name__ == "__main__":
 
     # Administratorrechte prüfen – automatisch als Admin neu starten
     if sys.platform == "win32" and not _is_admin():
+        # Im Kommandozeilenmodus wird NICHT neu gestartet: ShellExecuteW mit
+        # "runas" erzeugt einen abgekoppelten Prozess. Dessen Ausgabe und
+        # dessen Rückgabewert erreichen den Aufrufer nie - er sah bisher nur
+        # die sofortige 0 und hielt die Aufgabe für erledigt, obwohl in
+        # dieser Sitzung nichts geschehen war. Ein Skript kann das nicht
+        # bemerken, deshalb hier ein eigener Rückgabewert.
+        if "--cli" in sys.argv[1:]:
+            _prepare_cli_streams()
+            print("[FEHLER] Der Kommandozeilenmodus braucht Administratorrechte. "
+                  "Bitte die Eingabeaufforderung oder PowerShell als Administrator "
+                  "öffnen und den Befehl dort erneut ausführen.", file=sys.stderr)
+            sys.exit(3)
         _request_elevation()
         sys.exit(0)
 

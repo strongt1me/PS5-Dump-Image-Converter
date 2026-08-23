@@ -12,7 +12,14 @@ from typing import Any, Callable
 
 from .dlc_license import entitlement_key_fingerprint, parse_dlc_license
 from .self_format import SelfIdentity, unwrap_fake_self, wrap_fake_self
-from .util import ensure_within, iter_tree_files, safe_remove_tree, stage_file_atomic
+from .util import (
+    ensure_executable,
+    ensure_within,
+    iter_tree_files,
+    runs_on_this_cpu,
+    safe_remove_tree,
+    stage_file_atomic,
+)
 
 
 DLC_MODE_OFF = "off"
@@ -152,7 +159,11 @@ def find_dlc_helper(resource_root: Path) -> Path:
         if candidate is None:
             continue
         path = candidate.resolve(strict=False)
-        if path.is_file() and (sys.platform == "win32" or os.access(path, os.X_OK)):
+        # ensure_executable zieht das Ausfuehrungsrecht nach, das beim
+        # Buendeln verloren geht. Ohne das galt der Helfer auf macOS
+        # als "nicht vorhanden" - ein stiller Ausfall.
+        if (path.is_file() and ensure_executable(path)
+                and runs_on_this_cpu(path)):
             return path
     raise DlcEmbedError(
         "experimental DLC helper is unavailable; reinstall the complete 0.2.8 application"

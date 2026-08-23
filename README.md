@@ -2,12 +2,12 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.8.80-blue)
+![Version](https://img.shields.io/badge/Version-v1.8.88-blue)
 ![Status](https://img.shields.io/badge/Status-release--bereit-brightgreen)
 
 Der **PS5 Dump & Image Converter** ist eine Anwendung zum Konvertieren, Entpacken, Packen, Bearbeiten und Prüfen unterstützter PS5-Dump-Formate. Sie läuft unter **Windows**, **Linux** und **macOS**; einzelne Abläufe, die auf Windows-Werkzeuge angewiesen sind, bleiben Windows vorbehalten (siehe [Was außerhalb von Windows anders ist](#was-außerhalb-von-windows-anders-ist)). Die grafische Oberfläche führt durch acht klar getrennte Aufgaben und unterstützt Dump-Ordner, `.ffpfsc`, `.exfat` und echte UFS2-basierte `.ffpkg`-Dateien.
 
-> **Neu bei der Bedienung?** Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** (Version v1.8.80) erklärt Aufgabenwahl, Quelle und Ziel, Fortschrittsanzeige, alle Werkzeugleisten-Buttons sowie typische Fehler in einfacher Sprache – mit Inhaltsverzeichnis und allen acht Aufgaben. Es liegt zweifach bei: als **[BENUTZERHANDBUCH.html](BENUTZERHANDBUCH.html)** zum Lesen im Browser und als **[BENUTZERHANDBUCH.pdf](BENUTZERHANDBUCH.pdf)** (29 Seiten) zum Ausdrucken und Weitergeben.
+> **Neu bei der Bedienung?** Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** (Version v1.8.88) erklärt Aufgabenwahl, Quelle und Ziel, Fortschrittsanzeige, alle Werkzeugleisten-Buttons sowie typische Fehler in einfacher Sprache – mit Inhaltsverzeichnis und allen acht Aufgaben. Es liegt zweifach bei: als **[BENUTZERHANDBUCH.html](BENUTZERHANDBUCH.html)** zum Lesen im Browser und als **[BENUTZERHANDBUCH.pdf](BENUTZERHANDBUCH.pdf)** (30 Seiten) zum Ausdrucken und Weitergeben.
 
 ## Inhalt
 
@@ -26,9 +26,25 @@ Der **PS5 Dump & Image Converter** ist eine Anwendung zum Konvertieren, Entpacke
 
 ## Aktuelle Version
 
-**v1.8.80** schließt die Lücke, die in v1.8.79 nur beschrieben war. Der neue Knopf **NP-BINDUNG** im PS4-Fenster holt die `sce_sys/npbind.dat` aus dem fertigen Abbild und legt sie über FTP auf die Konsole – dorthin, wo ShadowMount+ sie auslässt. Damit funktioniert die Trophäen-Registrierung auch für Spiele, die aus einem Abbild laufen; an der Konsole nachgemessen. Eine vorhandene Bindung wird nie überschrieben. Details siehe [Release Notes v1.8.80](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.80).
+**v1.8.88** behebt zwei still wirkende Fehler: Das **Abbrechen** stoppte den Fortschrittsmesser nicht – der lief danach weiter, bis das Packen von selbst endete. Und ein Lesefehler beim Ermitteln von Spielnamen führte zum Absturz statt zu einer Meldung. Details siehe [Release Notes v1.8.88](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.88).
 
-**v1.8.79** sagt im PS4-Fenster, für welche Konsole ein Paket ist: Legst du PS5-Pakete hinein, stand dort bisher nur „0 Spiel(e) gefunden“ – jetzt werden sie benannt. Der Ablageort-Hinweis erscheint während der Umwandlung **zweimal statt viermal** (nach einer Minute und bei der Hälfte). Neu dokumentiert ist eine Grenze des Abbildwegs, die viel Sucherei gekostet hat: ShadowMount+ holt die NP-Bindung nicht aus PS4-Abbildern, weshalb die Trophäen-Registrierung scheitert und Spiele mit Online-Prüfung beim Start hängen können – am Abbild liegt es nicht. Details siehe [Release Notes v1.8.79](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.79).
+**v1.8.87** hat **PS4 PKG → ffpfsc** einmal ganz durchgemessen – beide Ausgabeformate arbeiten korrekt, auch das bislang nie erprobte exFAT. Stürzt der mitgelieferte Entpacker ab, sagt das Programm das jetzt verständlich statt mit einer nackten Zahl, und auf **Intel-Macs** wird kein Hilfsprogramm mehr angeboten, das dort gar nicht laufen kann. Details siehe [Release Notes v1.8.87](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.87).
+
+**v1.8.86** bringt den Werkzeugfenstern einen Umschalter: Derselbe Knopf öffnet und schließt. Bei **PS4 PKG → ffpfsc** sagen die Fehlermeldungen jetzt die Wahrheit – ein zu langer Zielpfad wurde bisher als „Paket verschlüsselt“ gemeldet –, und der Arbeitsordner weicht nicht mehr aufs volle Systemlaufwerk aus. Auf **macOS** lief die Funktion bisher gar nicht. Details siehe [Release Notes v1.8.86](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.86).
+
+**v1.8.85** holt die Funktion **PS4 PKG → ffpfsc** zurück, die in v1.8.82 entfernt worden war – vollständig, samt eingebettetem Werkzeug, Fenster, Tests und Handbuchabschnitt. Der Knopf **NP-BINDUNG** bleibt allerdings draußen: Er war in v1.8.81 eigens entfernt worden, nachdem gemessen war, dass er nichts bewirkt. Details siehe [Release Notes v1.8.85](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.85).
+
+**v1.8.84** behebt ein Ärgernis beim Arbeiten mit mehreren Fenstern: Ein geöffnetes Werkzeugfenster verschwand hinter dem Hauptfenster, sobald man dieses anklickte, um den nächsten Knopf zu drücken. Die Fenster gehören jetzt zum Hauptfenster und bleiben davor – ohne ihren Eintrag in der Taskleiste zu verlieren. Details siehe [Release Notes v1.8.84](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.84).
+
+**v1.8.83** bringt zwei neue Knöpfe: **AMPR EMU – alte Methode** und **AMPR EMU – neue Methode**. Zwischen ShadowMountPlus 1.7 alpha6 und alpha8 hat sich geändert, wo das Werkzeug nach den Ersatzbibliotheken sucht – eine Ablage, die vorher richtig war, wirkt danach lautlos nicht mehr. Jeder Knopf legt nach den Regeln seiner Fassung ab und erledigt dabei alles selbst: Er findet die PS5 im Netz, stellt fest welche Fassung dort läuft, sucht die Spiele, wählt die neueste Bibliothek und gleicht die `config.ini` ab. Gefragt werden Sie nur, wo es wirklich etwas zu entscheiden gibt – und dann mit einer Erklärung zu jeder Möglichkeit. Details siehe [Release Notes v1.8.83](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.83).
+
+**v1.8.82** entfernt die Funktion **PS4 PKG → ffpfsc** vollständig. Das Fenster, das eingebettete Werkzeug PS4FFPFSC 0.2.8 (12 MB) und alle zugehörigen Texte sind ausgebaut; die EXE schrumpft von 116,3 MB auf 112,1 MB. Das Programm wandelt weiterhin PS5-Abbilder in allen bisherigen Aufgaben um. **Überholt:** In v1.8.85 ist die Funktion wieder da. Details siehe [Release Notes v1.8.82](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.82).
+
+**v1.8.81** nimmt den Knopf **NP-BINDUNG** aus v1.8.80 wieder heraus – er hat nichts bewirkt. Trophäen registrieren sich bei **PS4**-Titeln aus einem Abbild nicht, und zwar aus einem anderen Grund als angenommen: `0x80551618` kommt aus Sonys Prüfkette, die ein regulär installiertes Paket verlangt. PS5-Titel aus Abbildern sind nicht betroffen – sechs von sechs registrieren einwandfrei. Details siehe [Release Notes v1.8.81](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.81).
+
+**v1.8.80** brachte den Knopf **NP-BINDUNG** im PS4-Fenster, der die `sce_sys/npbind.dat` aus dem Abbild auf die Konsole legte. **Überholt:** Der Knopf ist in v1.8.81 wieder ausgebaut – er hat die Trophäen nicht repariert. Details siehe [Release Notes v1.8.80](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.80).
+
+**v1.8.79** sagt im PS4-Fenster, für welche Konsole ein Paket ist: Legst du PS5-Pakete hinein, stand dort bisher nur „0 Spiel(e) gefunden“ – jetzt werden sie benannt. Der Ablageort-Hinweis erscheint während der Umwandlung **zweimal statt viermal** (nach einer Minute und bei der Hälfte). Dazu wurde eine Grenze des Abbildwegs dokumentiert – die dort genannte Ursache ist allerdings **überholt**, siehe v1.8.81. Details siehe [Release Notes v1.8.79](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.79).
 
 **v1.8.78** zeigt beim Einlesen im PS4-Fenster an, zu welcher Konsole ein Titel gehört – eine neue Spalte **Konsole** sagt „PS4“ oder „PS5“, und ein PS5-Titel wird farbig hervorgehoben. Dazu zwei Fehler aus einer echten Konvertierung: Die Nachprüfung des fertigen Abbilds hatte in Wahrheit **nie stattgefunden**, und die Einblendung konnte noch aufgehen, nachdem der Vorgang längst durch war. Details siehe [Release Notes v1.8.78](https://github.com/strongt1me/PS5-Dump-Image-Converter/releases/tag/v1.8.78).
 
@@ -125,7 +141,7 @@ Seit **v1.8.10** gilt dieselbe Abnahmelogik auch für `.exfat`: Nach dem Bau wir
 | GUI-Synchronisation | Balken, Prozent, Datei- und Bytezähler aus derselben UFS2Tool-Quelle |
 | Abschlussbericht | Kein automatischer JSON-Bericht mehr (seit v1.8.11 entfernt) |
 | Sprache | Vollständig Deutsch/Englisch umschaltbar (seit v1.8.12) – Oberfläche, Dialoge, Protokoll |
-| Windows-EXE-Ziel | `dist\PS5_Dump_Image_Converter_v1.8.80.exe` |
+| Windows-EXE-Ziel | `dist\PS5_Dump_Image_Converter_v1.8.88.exe` |
 
 Die vollständigen Änderungen stehen im [Changelog](CHANGELOG.md).
 
@@ -160,7 +176,7 @@ Die Anwendung verbindet eine übersichtliche Windows-Oberfläche mit den benöti
 
 ## Die acht Aufgaben
 
-Die Aufgabenbezeichnungen entsprechen der aktuellen Oberfläche von v1.8.80.
+Die Aufgabenbezeichnungen entsprechen der aktuellen Oberfläche von v1.8.88.
 
 | Nr. | Aufgabe | Geeignete Quelle | Mögliche Ausgabe oder Zweck |
 | ---: | --- | --- | --- |
@@ -221,7 +237,7 @@ Zusätzlich werden **Python 3.10 oder neuer** und `pip` benötigt. Die für Anwe
 ### Fertige EXE verwenden
 
 1. Das vollständige Release in einen eigenen Ordner entpacken.
-2. `PS5_Dump_Image_Converter_v1.8.80.exe` starten.
+2. `PS5_Dump_Image_Converter_v1.8.88.exe` starten.
 3. Falls Windows nach Administratorrechten fragt, nur fortfahren, wenn die gewählte Aufgabe diese benötigt.
 4. Eine der acht Aufgaben auswählen.
 5. Quelle, Zielformat und Zielordner festlegen.
@@ -246,7 +262,7 @@ Alternativ kann das Skript direkt gestartet werden:
 Die fertige Datei wird unter folgendem Namen erzeugt:
 
 ```text
-dist\PS5_Dump_Image_Converter_v1.8.80.exe
+dist\PS5_Dump_Image_Converter_v1.8.88.exe
 ```
 
 ### Linux-Version selbst bauen
@@ -261,7 +277,7 @@ chmod +x Build_Linux.sh
 Das Skript prüft Python und Tcl/Tk, legt bei Bedarf die Umgebung `.venv-linux` an, installiert die benötigten Pakete und erzeugt:
 
 ```text
-dist/PS5_Dump_Image_Converter_v1.8.80_linux_x86_64
+dist/PS5_Dump_Image_Converter_v1.8.88_linux_x86_64
 ```
 
 **Nicht mit `sudo` bauen.** Das Programm braucht dafür keine Root-Rechte, und ein als root erzeugtes `dist/` lässt sich beim nächsten Lauf als normaler Benutzer nicht mehr aufräumen.
@@ -271,7 +287,7 @@ Fehlt Tcl/Tk, bricht das Skript mit dem passenden Installationsbefehl für die e
 ### Linux-Version starten und ins Menü legen
 
 ```bash
-./dist/PS5_Dump_Image_Converter_v1.8.80_linux_x86_64
+./dist/PS5_Dump_Image_Converter_v1.8.88_linux_x86_64
 ```
 
 Für einen Eintrag im Anwendungsmenü – samt Symbol und Terminalbefehl `ps5-dump-image-converter`:
@@ -353,7 +369,9 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 --source "D:\Dumps\
 | `--quiet` | Log nicht zusätzlich auf stdout spiegeln. |
 | `--shutdown-on-success` | Rechner nach erfolgreichem Abschluss herunterfahren – erst nach Lösen der Abbilder und Aufräumen der Temp-Ziele. Bei Fehler oder Abbruch bleibt er an; der Exit-Code bleibt unverändert. |
 
-Der Prozess beendet sich mit Exit-Code `0` bei Erfolg, `1` bei einem fehlgeschlagenen oder abgebrochenen Lauf und `2` bei ungültigen Argumenten. Administratorrechte werden wie im GUI-Modus automatisch angefordert.
+Der Prozess beendet sich mit Exit-Code `0` bei Erfolg, `1` bei einem fehlgeschlagenen oder abgebrochenen Lauf, `2` bei ungültigen Argumenten und `3`, wenn Administratorrechte fehlen.
+
+> **Der CLI-Modus fordert keine Rechte an.** Im GUI-Modus startet sich das Programm bei Bedarf selbst neu und holt die Zustimmung über einen UAC-Dialog. Für einen Skriptlauf taugt das nicht: Der neu gestartete Prozess ist abgekoppelt, seine Ausgabe und sein Exit-Code erreichen den Aufrufer nie. Deshalb bricht `--cli` ohne erhöhte Rechte mit Exit-Code `3` und einer Meldung ab. Öffne die Eingabeaufforderung oder PowerShell als Administrator und starte den Befehl dort.
 
 #### Aufgabe 7 (AMPR EMU Manager) im CLI-Modus
 
@@ -555,7 +573,7 @@ python test_build_ready.py
 .\Build_EXE.ps1
 ```
 
-Die PyInstaller-Spezifikation erzeugt den synchronisierten v1.8.80-Zielnamen. PyInstaller bündelt die Python-Anwendung für Windows.[6]
+Die PyInstaller-Spezifikation erzeugt den synchronisierten v1.8.88-Zielnamen. PyInstaller bündelt die Python-Anwendung für Windows.[6]
 
 ### Linux-Programmdatei bauen
 
@@ -662,8 +680,8 @@ Drei Tests prüfen bewusst plattformabhängiges Verhalten und überspringen sich
 | `.github/workflows/macos-buendel.yml` | Baut und prüft das macOS-Bündel auf echter Apple-Hardware (beide Architekturen) |
 | `.gitattributes` | Schaltet jede Zeilenenden-Umwandlung ab – Python CRLF, Shell-Skripte LF, beides gewollt |
 | `CHANGELOG.md` | Vollständige, absteigend sortierte Versionshistorie |
-| `BENUTZERHANDBUCH.html` | Bedienanleitung zum Lesen im Browser (v1.8.80, mit Inhaltsverzeichnis, alle Aufgaben und Werkzeugleisten-Buttons) |
-| `BENUTZERHANDBUCH.pdf` | Dieselbe Anleitung als 25-seitiges PDF zum Ausdrucken und Weitergeben |
+| `BENUTZERHANDBUCH.html` | Bedienanleitung zum Lesen im Browser (v1.8.88, mit Inhaltsverzeichnis, alle Aufgaben und Werkzeugleisten-Buttons) |
+| `BENUTZERHANDBUCH.pdf` | Dieselbe Anleitung als 30-seitiges PDF zum Ausdrucken und Weitergeben |
 
 ## Credits und Danksagung
 

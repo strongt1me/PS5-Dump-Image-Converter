@@ -22,11 +22,14 @@ Geprüft wird hier dreierlei:
 """
 from __future__ import annotations
 
+import inspect
 import json
+import platform
 import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -407,35 +410,52 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertEqual(eintrag, eintrag.lower(),
                                  "Vergleich laeuft in Kleinschreibung")
 
-    def test_die_np_luecke_ist_dokumentiert(self) -> None:
-        """Am 22.08.2026 in einer Kette an der Konsole nachgewiesen.
+    def test_die_trophaeengrenze_ist_dokumentiert(self) -> None:
+        """Am 22.08.2026 an zwei Titeln gemessen, mit je mehreren Starts.
 
-        ShadowMountPlus kopiert nach /system_data/priv/appmeta/<TITLE>/ nur
-        sce_sys/trophy2/npbind.dat und sce_sys/uds/npbind.dat - beides
-        PS5-Pfade. Ein PS4-Spiel legt die NP-Bindung flach unter
-        sce_sys/npbind.dat ab; sie ist im Abbild enthalten, wird aber nie
-        abgeholt. Folge: "Trophy registration failed (0x80551618)" bei
-        jedem Start, und Titel mit Online-Pruefung bleiben haengen.
+        Ein PS4-Titel aus einem Abbild registriert seine Trophaeen nie:
+        Sonys Pruefkette (0x80551618) verlangt ein regulaer installiertes
+        Paket, und ein eingehaengtes Abbild ist keines. Der Zustand steht
+        auf der Konsole unter /user/trophy/conf/ - dort legte nur der ueber
+        den Package Installer installierte Titel einen Ordner an.
 
-        Gegenprobe: Datei von Hand nach appmeta gelegt - Fehler weg,
-        SceNpTrophy greift zu. In den drei Mitschnitten davor stand er
-        jedes Mal drin. Das gehoert dokumentiert, weil es sonst wie ein
-        Fehler unseres Abbilds aussieht.
+        v1.8.80 hatte hier das Gegenteil behauptet: Nachlegen von
+        npbind.dat behebe es. Das war aus einem einzelnen Lauf geschlossen
+        und wurde spaeter widerlegt - weder npbind.dat noch param.sfo in
+        appmeta aendern etwas. Dieser Test haelt fest, dass die Behauptung
+        weg ist und der belegte Text an ihrer Stelle steht.
         """
-        self.assertIn('ps4pkg.check_np_note', STRINGS)
-        for sprache in ('de', 'en'):
+        self.assertNotIn("ps4pkg.check_np_note", STRINGS,
+                         "Der widerlegte Hinweis ist wieder da.")
+        self.assertIn("ps4pkg.check_trophy_note", STRINGS)
+        for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
-                text = STRINGS['ps4pkg.check_np_note'][sprache]
-                self.assertIn('npbind.dat', text)
-                self.assertIn('0x80551618', text)
+                text = STRINGS["ps4pkg.check_trophy_note"][sprache]
+                self.assertIn("0x80551618", text)
+                self.assertIn("Package Installer", text)
         # Nach dem Bau gemeldet, wenn ein PS4-Titel erkannt wurde.
-        rumpf = self._methode('_show_ps4_pkg_converter')
-        self.assertIn('ps4pkg.check_np_note', rumpf)
+        rumpf = self._methode("_show_ps4_pkg_converter")
+        self.assertIn("ps4pkg.check_trophy_note", rumpf)
         # Und im Handbuch erklaert.
-        handbuch = (PROJEKT / 'BENUTZERHANDBUCH.html').read_text(
-            encoding='utf-8')
-        self.assertIn('npbind.dat', handbuch)
-        self.assertIn('0x80551618', handbuch)
+        handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(
+            encoding="utf-8")
+        self.assertIn("0x80551618", handbuch)
+        self.assertIn("/user/trophy/conf/", handbuch)
+
+    def test_der_np_knopf_ist_ausgebaut(self) -> None:
+        """Er legte die Datei richtig ab und bewirkte trotzdem nichts.
+
+        Ein Knopf, der messbar folgenlos bleibt, ist schlimmer als keiner:
+        Er verspricht eine Loesung, die es nicht gibt. Draussen bleiben
+        muessen der Knopf, seine elf Meldungen und die beiden Methoden.
+        """
+        self.assertNotIn("_npbind", self.quelltext,
+                         "Die NP-Bindungs-Maschinerie ist wieder eingebaut.")
+        uebrig = [s for s in STRINGS if "npbind" in s]
+        self.assertEqual(uebrig, [], "Es stehen noch NP-Meldungen im Text.")
+        handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(
+            encoding="utf-8")
+        self.assertNotIn("NP-BINDUNG", handbuch)
 
     def test_alle_texte_sind_uebersetzt(self) -> None:
         for schluessel in ("ps4pkg.runtime_note", "ps4pkg.check_running",
@@ -518,141 +538,6 @@ class KonsolenerkennungTests(unittest.TestCase):
         anfang = self.quelltext.index("    def %s(self" % name)
         weiter = self.quelltext.index("\n    def ", anfang + 10)
         return self.quelltext[anfang:weiter]
-
-
-class NpBindungTests(unittest.TestCase):
-    """Der Schritt, der die NP-Bindung auf die Konsole legt.
-
-    Anlass: ShadowMountPlus kopiert nach /system_data/priv/appmeta/<TITLE>/
-    nur sce_sys/trophy2/npbind.dat und sce_sys/uds/npbind.dat - PS5-Pfade.
-    Ein PS4-Spiel legt die Bindung flach unter sce_sys/npbind.dat ab; sie
-    ist im Abbild enthalten, wird aber nie abgeholt, und ohne sie scheitert
-    die Trophaeen-Registrierung mit 0x80551618.
-
-    Am 22.08.2026 an der Konsole belegt: Datei von Hand nachgelegt - Fehler
-    weg, SceNpTrophy greift zu; wieder weggenommen - Fehler zurueck. Auch
-    geprueft und verworfen: die Datei stattdessen ins Abbild nach
-    sce_sys/trophy2/ zu legen. ShadowMountPlus kopiert sie dann nach
-    appmeta/<TITLE>/trophy2/, und dort liest das System bei einem PS4-Titel
-    nicht nach (mit echtem Neustart nachgewiesen).
-    """
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.quelltext = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
-            encoding="utf-8")
-
-    def _methode(self, name: str) -> str:
-        anfang = self.quelltext.index("    def %s(self" % name)
-        weiter = self.quelltext.index("\n    def ", anfang + 10)
-        return self.quelltext[anfang:weiter]
-
-    def test_das_ziel_steht_fest(self) -> None:
-        """Flach in appmeta - genau dort legt der Package Installer sie ab."""
-        self.assertEqual(PS5ConverterGUI._NPBIND_ZIEL,
-                         "/system_data/priv/appmeta/%s/npbind.dat")
-        self.assertEqual(PS5ConverterGUI._NPBIND_IM_ABBILD,
-                         "sce_sys/npbind.dat")
-        # Nicht in trophy2/ - das war Weg B und ist widerlegt.
-        self.assertNotIn("trophy2", PS5ConverterGUI._NPBIND_ZIEL)
-
-    def test_ohne_registrierten_titel_wird_nichts_abgelegt(self) -> None:
-        ftp = _FtpNachbau(ordner=set())
-        stand = PS5ConverterGUI._npbind_auf_konsole(
-            _Konsole(), ftp, "CUSA00775", b"xyz")
-        self.assertEqual(stand, "fehlt_ordner")
-        self.assertEqual(ftp.hochgeladen, {})
-
-    def test_fehlende_bindung_wird_abgelegt(self) -> None:
-        ordner = "/system_data/priv/appmeta/CUSA00775"
-        ftp = _FtpNachbau(ordner={ordner})
-        inhalt = b"\xd2\x94\xa0\x18" + b"A" * 528
-        stand = PS5ConverterGUI._npbind_auf_konsole(
-            _Konsole(), ftp, "CUSA00775", inhalt)
-        self.assertEqual(stand, "gelegt")
-        self.assertEqual(ftp.hochgeladen,
-                         {"%s/npbind.dat" % ordner: inhalt})
-
-    def test_vorhandene_bindung_bleibt_unangetastet(self) -> None:
-        """Ist der Titel regulaer installiert, hat die des Systems Vorrang."""
-        ordner = "/system_data/priv/appmeta/CUSA00775"
-        ziel = "%s/npbind.dat" % ordner
-        for vorhanden, erwartet in ((b"gleich", "schon_da"),
-                                    (b"anders!", "schon_da_anders")):
-            with self.subTest(erwartet=erwartet):
-                ftp = _FtpNachbau(ordner={ordner}, dateien={ziel: vorhanden})
-                stand = PS5ConverterGUI._npbind_auf_konsole(
-                    _Konsole(), ftp, "CUSA00775", b"gleich")
-                self.assertEqual(stand, erwartet)
-                self.assertEqual(ftp.hochgeladen, {},
-                                 "Es wurde ueberschrieben.")
-
-    def test_der_knopf_haengt_im_fenster(self) -> None:
-        rumpf = self._methode("_show_ps4_pkg_converter")
-        self.assertIn("_npbind_nachtragen", rumpf)
-        self.assertIn("ps4pkg.npbind_button", rumpf)
-        # Die Meldung wird aus dem Rueckgabewert zusammengesetzt, der
-        # Schluessel steht deshalb nicht woertlich im Quelltext.
-        self.assertIn('"ps4pkg.npbind_" + stand', rumpf)
-        # Erst wenn der Titel registriert ist - deshalb ein eigener Knopf
-        # und kein Schritt im Bauvorgang.
-        self.assertIn("fehlt_ordner", self._methode("_npbind_auf_konsole"))
-
-    def test_alle_meldungen_sind_zweisprachig(self) -> None:
-        for schluessel in ("ps4pkg.npbind_button", "ps4pkg.npbind_start",
-                           "ps4pkg.npbind_gelegt", "ps4pkg.npbind_schon_da",
-                           "ps4pkg.npbind_schon_da_anders",
-                           "ps4pkg.npbind_fehlt_ordner",
-                           "ps4pkg.npbind_abweichung",
-                           "ps4pkg.npbind_no_image",
-                           "ps4pkg.npbind_not_in_image",
-                           "ps4pkg.npbind_no_ip", "ps4pkg.npbind_failed"):
-            with self.subTest(schluessel=schluessel):
-                self.assertIn(schluessel, STRINGS)
-                for sprache in ("de", "en"):
-                    self.assertTrue(STRINGS[schluessel].get(sprache, "").strip())
-
-    def test_die_beschriftung_sprengt_die_knopfleiste_nicht(self) -> None:
-        """Gemessen: Im 980er Fenster sind rund 232 px frei.
-
-        Die erste Fassung hiess "NP-BINDUNG NACHTRAGEN", war 287 px breit und
-        schob die Leiste auf 1027 px - ABBRECHEN wurde abgeschnitten.
-        """
-        for sprache in ("de", "en"):
-            with self.subTest(sprache=sprache):
-                self.assertLessEqual(
-                    len(STRINGS["ps4pkg.npbind_button"][sprache]), 14,
-                    "Zu lang - die Knopfleiste laeuft ueber den Fensterrand.")
-
-
-class _Konsole:
-    """Traegt nur, was _npbind_auf_konsole von "self" braucht."""
-
-    _NPBIND_ZIEL = PS5ConverterGUI._NPBIND_ZIEL
-
-    def _ampr_ftp_is_dir(self, ftp, pfad: str) -> bool:
-        return pfad in ftp.ordner
-
-
-class _FtpNachbau:
-    """Ein FTP-Ersatz, der sich merkt, was hochgeladen wurde."""
-
-    def __init__(self, ordner=None, dateien=None):
-        self.ordner = set(ordner or ())
-        self.dateien = dict(dateien or {})
-        self.hochgeladen: dict[str, bytes] = {}
-
-    def retrbinary(self, befehl: str, schreiber) -> None:
-        pfad = befehl.split(" ", 1)[1]
-        if pfad not in self.dateien:
-            raise OSError("550 No such file")
-        schreiber(self.dateien[pfad])
-
-    def storbinary(self, befehl: str, quelle) -> None:
-        pfad = befehl.split(" ", 1)[1]
-        daten = quelle.read()
-        self.dateien[pfad] = daten
-        self.hochgeladen[pfad] = daten
 
 
 class PaketMagicTests(unittest.TestCase):
@@ -814,13 +699,25 @@ class PlattformTests(unittest.TestCase):
 class LangePfadeTests(unittest.TestCase):
     """Der Arbeitsordner darf den Entpacker nicht an die Pfadgrenze treiben."""
 
-    def test_grenze_ist_gesetzt_und_konservativ(self) -> None:
+    #: Was im unguenstigen Fall unterhalb des Arbeitsordners entsteht:
+    #: der Ordnername mit dem Spieltitel (~52), der DLC-Zweig (42), das
+    #: ".partial" waehrend des Laufs (8) und der tiefste spielinterne
+    #: Pfad (~100). Am 23.08.2026 an Tetris Ultimate gemessen: 64 und 73.
+    AUFSCHLAG_UNTEN = 210
+
+    def test_grenze_laesst_dem_schlechtesten_fall_luft(self) -> None:
+        """Die Schranke muss den gemessenen Aufschlag verkraften.
+
+        Der frueher hier stehende Wert 110 rechnete den Spieltitel im
+        Ordnernamen nicht mit und liess nur 10 Zeichen Luft. Ein Titel mit
+        laengerem Namen waere gescheitert - und zwar mit der Meldung
+        "Paket nicht unterstuetzt oder verschluesselt".
+        """
         grenze = hauptprogramm._PS4FFPSC_MAX_ARBEITSPFAD
         self.assertIsInstance(grenze, int)
-        # Unter dem Arbeitsordner entstehen noch rund 100 Zeichen
-        # (unpacked/<Title-ID>/<Paket>/sce_sys/...), Windows endet bei 260.
-        self.assertLessEqual(grenze, 150)
-        self.assertGreaterEqual(grenze, 60)
+        self.assertLessEqual(grenze + self.AUFSCHLAG_UNTEN, 259)
+        # Kurze Ziele sollen am gewaehlten Ort bleiben duerfen.
+        self.assertGreaterEqual(grenze, 30)
 
     def test_hinweistext_nennt_laenge_und_ausweichpfad(self) -> None:
         from ps5_validator.utils.i18n import translate  # noqa: PLC0415
@@ -828,6 +725,405 @@ class LangePfadeTests(unittest.TestCase):
         text = translate("de", "ps4pkg.short_workdir", laenge=180, pfad=r"C:\ps4ffpsc_arbeit")
         self.assertIn("180", text)
         self.assertIn("ps4ffpsc_arbeit", text)
+
+
+class AusweichordnerTests(unittest.TestCase):
+    """Der Ausweichpfad gehoert auf das Laufwerk des Ziels.
+
+    Frueher ging er immer auf das Systemlaufwerk. Dort ist der Platz am
+    knappsten - auf diesem Rechner am 23.08.2026 nur 16 GB frei -, waehrend
+    der Nutzer sein Ziel bewusst auf ein grosses Laufwerk gelegt hat.
+    """
+
+    def test_bleibt_auf_dem_laufwerk_des_ziels(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Laufwerksbuchstaben gibt es nur unter Windows")
+        geprueft = 0
+        for buchstabe in ("C:", "D:", "E:", "F:"):
+            if not os.path.isdir(buchstabe + os.sep):
+                continue
+            tief = os.path.join(buchstabe + os.sep, "irgendwo", "sehr", "tief")
+            ziel = hauptprogramm._ps4ffpsc_kurzer_arbeitsordner(tief)
+            self.assertTrue(ziel.upper().startswith(buchstabe))
+            self.assertIn("ps4ffpsc_arbeit", ziel)
+            geprueft += 1
+        self.assertGreater(geprueft, 0, "kein Laufwerk zum Pruefen gefunden")
+
+    def test_ergebnis_ist_wirklich_kurz(self) -> None:
+        """Der Sinn der Uebung: Der Ausweichpfad muss Platz schaffen."""
+        lang = os.path.join(os.path.abspath(os.sep), "a" * 150)
+        ziel = hauptprogramm._ps4ffpsc_kurzer_arbeitsordner(lang)
+        self.assertLessEqual(len(ziel), 30)
+
+
+class PfadgrenzeTests(unittest.TestCase):
+    """Ein zu langer Zielpfad darf nicht als Paketfehler gemeldet werden.
+
+    Der mitgelieferte Entpacker traegt kein "longPathAware" in seinem
+    Manifest und bricht deshalb an MAX_PATH ab - gemessen am 23.08.2026:
+    bis 183 Zeichen laeuft er durch, ab 186 nicht mehr. Dabei meldet er
+    Rueckgabewert 3, also "nicht unterstuetzt oder verschluesselt". Wer das
+    ungeprueft uebernimmt, schickt den Nutzer zur Suche in die falsche Datei.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc import util  # noqa: PLC0415
+
+        self.util = util
+
+    def test_spielraum_nur_unter_windows(self) -> None:
+        frei = self.util.windows_path_headroom(Path("C:/kurz"))
+        if os.name == "nt":
+            self.assertEqual(frei, self.util.WINDOWS_MAX_PATH - len(str(Path("C:/kurz"))))
+        else:
+            self.assertIsNone(frei)
+
+    def test_marker_erkennt_die_grenze_auch_ohne_pfadlaenge(self) -> None:
+        """Der Fehlertext allein genuegt - unabhaengig von der Systemsprache.
+
+        Der Windows-Text dahinter kommt uebersetzt, der Name der Operation
+        nicht. Deshalb wird auf ``create_directories`` geprueft.
+        """
+        kurz = Path("C:/k")
+        self.assertTrue(self.util.looks_like_path_length_failure(
+            kurz, r'create_directories: Der Dateiname ist zu lang.: "C:/x"'))
+        self.assertFalse(self.util.looks_like_path_length_failure(
+            kurz, "Invalid PKG magic"))
+
+    def test_enger_zielpfad_zaehlt_auch_ohne_marker(self) -> None:
+        """Genau an der Grenze meldet der Entpacker gar keinen Hinweis.
+
+        Er schreibt dort nur "Failed to open PKG extraction input or
+        output". Ohne die Laengenpruefung bliebe der Fall unerkannt.
+        """
+        if os.name != "nt":
+            self.skipTest("MAX_PATH gibt es nur unter Windows")
+        eng = Path("C:/" + "x" * 240)
+        self.assertTrue(self.util.looks_like_path_length_failure(
+            eng, "Failed to open PKG extraction input or output"))
+
+    def test_hinweis_nennt_zahlen_und_ausweg(self) -> None:
+        if os.name != "nt":
+            self.skipTest("MAX_PATH gibt es nur unter Windows")
+        pfad = Path("C:/" + "x" * 200)
+        text = self.util.path_length_hint(pfad)
+        self.assertIn(str(len(str(pfad))), text)
+        self.assertIn(str(self.util.WINDOWS_MAX_PATH), text)
+        self.assertIn("shorter", text)
+
+
+class AlleOhneSpielTests(unittest.TestCase):
+    """``--all`` darf nicht nach ``--all`` verlangen.
+
+    Frueher lautete die Meldung immer "provide TITLE_ID or --all" - auch
+    dann, wenn der Nutzer ``--all`` gerade angegeben hatte und nur kein
+    brauchbares Spiel gefunden wurde.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc import cli  # noqa: PLC0415
+
+        self.melden = cli._no_title_ids_message
+
+    def test_ohne_all_bleibt_die_alte_aufforderung(self) -> None:
+        self.assertEqual(self.melden({"games": {}, "unsupported": []}, False),
+                         "provide TITLE_ID or --all")
+
+    def test_leeres_inventar_sagt_das_auch(self) -> None:
+        text = self.melden({"games": {}, "unsupported": []}, True)
+        self.assertIn("inventory is empty", text)
+        self.assertNotIn("provide TITLE_ID", text)
+
+    def test_abgelehnte_pakete_werden_gezaehlt(self) -> None:
+        text = self.melden({"games": {}, "unsupported": [1, 2, 3]}, True)
+        self.assertIn("3 package(s) were rejected", text)
+        self.assertNotIn("provide TITLE_ID", text)
+
+
+
+class HelferProPlattformTests(unittest.TestCase):
+    """Auf dem Mac wurde die Windows-Datei gewaehlt.
+
+    Gemeldet am 23.08.2026 von einem Nutzer mit Apple Silicon:
+
+        ps4ffpsc: [Errno 13] Permission denied:
+        '.../Contents/Frameworks/PS4FFPFSC-0__dot__2__dot__8/bin/
+        ps4_pkg_extract.exe'
+
+    In ``bin/`` liegen beide Fassungen nebeneinander. ``find_extractor``
+    hatte die Namen fest als ``("ps4_pkg_extract.exe", "ps4_pkg_extract")``
+    stehen - die Windows-Datei zuerst, auf jeder Plattform. Sie hat auf dem
+    Mac kein Ausfuehrungsrecht, daher Errno 13.
+    """
+
+    #: Plattform und Architektur zusammen entscheiden. Die Mac-Fassung gibt
+    #: es nur fuer Apple Silicon; fuer Intel-Macs und Linux liefert der
+    #: Hersteller keine, dort darf deshalb NICHTS herauskommen. Am
+    #: 23.08.2026 auf einem echten Intel-Laeufer belegt: Wer dort die
+    #: arm64-Datei anbietet, erntet "Bad CPU type in executable".
+    ERWARTET = {
+        ("win32", "AMD64"): ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"),
+        ("darwin", "arm64"): ("ps4_pkg_extract", "ps4-dlc-patch"),
+        ("darwin", "x86_64"): (None, None),
+        ("linux", "x86_64"): (None, None),
+    }
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.dlc_embed import find_dlc_helper  # noqa: PLC0415
+        from ps4ffpsc.inventory import find_extractor  # noqa: PLC0415
+
+        self.entpacker = find_extractor
+        self.dlc_helfer = find_dlc_helper
+
+    def test_jede_plattform_bekommt_ihre_datei(self) -> None:
+        for (plattform, cpu), (entpacker, helfer) in self.ERWARTET.items():
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    if entpacker is None:
+                        self.assertIsNone(gefunden)
+                        continue
+                    self.assertIsNotNone(gefunden, "kein Entpacker gefunden")
+                    self.assertEqual(gefunden.name, entpacker)
+                    self.assertEqual(self.dlc_helfer(PS4_ORDNER).name, helfer)
+
+    def test_windows_datei_nie_ausserhalb_von_windows(self) -> None:
+        """Der Kern des ersten Fehlers: keine .exe auf Mac oder Linux.
+
+        Wo gar nichts angeboten wird, ist die Bedingung ebenfalls erfuellt -
+        und richtig, denn dort gibt es keinen brauchbaren Bau.
+        """
+        for plattform, cpu in (("darwin", "arm64"), ("darwin", "x86_64"),
+                               ("linux", "x86_64")):
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    if gefunden is not None:
+                        self.assertFalse(gefunden.name.endswith(".exe"))
+                    try:
+                        helfer = self.dlc_helfer(PS4_ORDNER)
+                    except Exception:
+                        helfer = None
+                    if helfer is not None:
+                        self.assertFalse(helfer.name.endswith(".exe"))
+
+
+class AusfuehrungsrechtTests(unittest.TestCase):
+    """Aus dem Buendel kommen die Helfer ohne Ausfuehrungsrecht.
+
+    PyInstaller legt den Ordner unter ``datas`` ab, und dabei geht das
+    Recht verloren. Fuer UFS2Tool zieht das Hauptprogramm es laengst nach;
+    fuer die PS4-Helfer fehlte dasselbe.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.util import ensure_executable  # noqa: PLC0415
+
+        self.ensure_executable = ensure_executable
+
+    def test_unter_windows_ist_nichts_zu_tun(self) -> None:
+        if os.name != "nt":
+            self.skipTest("gilt nur unter Windows")
+        self.assertTrue(self.ensure_executable(PS4_ORDNER / "bin"
+                                               / "ps4_pkg_extract"))
+
+    def test_fehlende_datei_wirft_nicht(self) -> None:
+        """Auch ein Fehlschlag muss eine Antwort sein, keine Ausnahme."""
+        try:
+            self.ensure_executable(PS4_ORDNER / "bin" / "gibtsnicht")
+        except Exception as exc:  # noqa: BLE001
+            self.fail("ensure_executable warf %r" % exc)
+
+    def test_hauptprogramm_zieht_das_recht_nach(self) -> None:
+        """Die Vorpruefung der Oberflaeche muss "startbar" heissen."""
+        quelltext = inspect.getsource(hauptprogramm._ps4ffpsc_entpacker)
+        self.assertIn("chmod", quelltext)
+        self.assertIn("0o111", quelltext)
+
+
+class AbsturzmeldungTests(unittest.TestCase):
+    """Ein abgestuerzter Entpacker muss das auch sagen.
+
+    Am 23.08.2026 an einem echten Retail-Patch nachgestellt
+    (EP0001-CUSA00775_00-TETRISGAME000000-A0102-V0100.pkg): Der Entpacker
+    stuerzt mit 0xC0000005 ab und hinterlaesst keine Ausgabe. Die Meldung
+    lautete deshalb
+
+        extractor failed (3221225477) for ...pkg:
+
+    - eine nackte Zahl, und hinter dem Doppelpunkt nichts. Wer das liest,
+    sucht den Fehler bei sich oder in der Datei; er liegt aber im
+    mitgelieferten Entpacker.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.util import crash_description  # noqa: PLC0415
+
+        self.beschreiben = crash_description
+
+    def test_gemessene_codes_werden_benannt(self) -> None:
+        """Beide sind an echten Paketen aufgetreten."""
+        for code, wort in ((3221225477, "memory access violation"),
+                           (3221225725, "stack overflow")):
+            with self.subTest(code=code):
+                text = self.beschreiben(code)
+                self.assertIn("crashed", text)
+                self.assertIn(wort, text)
+                self.assertIn("0x%08X" % code, text,
+                              "Die Zahl gehoert als Hex dazu, nicht dezimal.")
+
+    def test_unbekannter_absturz_wird_trotzdem_erkannt(self) -> None:
+        """Die Liste kann nicht vollstaendig sein - der Bereich schon."""
+        text = self.beschreiben(0xC0000094)
+        self.assertIn("crashed", text)
+        self.assertIn("0xC0000094", text)
+
+    def test_gewoehnliche_rueckgabewerte_sind_kein_absturz(self) -> None:
+        """Sonst waere jeder normale Fehlschlag ploetzlich ein Absturz."""
+        for code in (0, 1, 2, 3, 255):
+            with self.subTest(code=code):
+                self.assertEqual(self.beschreiben(code), "")
+        self.assertEqual(self.beschreiben(None), "")
+
+    def test_der_pfad_wird_wirklich_durchlaufen(self) -> None:
+        """Nicht nur der Quelltext - der Aufruf selbst.
+
+        Hier fehlte einmal der Import von crash_description in
+        inventory.py. Uebersetzen liess sich das trotzdem, und keine
+        Pruefung fiel darauf herein: Der Zweig laeuft nur, wenn der
+        Entpacker gar nichts ausgibt. Erst pyflakes fand es. Dieser Test
+        stellt genau den Fall nach - ein Entpacker, der immer abstuerzt.
+        """
+        import tempfile  # noqa: PLC0415
+
+        from ps4ffpsc.inventory import inspect_package  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory(prefix="ps4_crash_") as ordner:
+            basis = Path(ordner)
+            paket = basis / "spiel.pkg"
+            paket.write_bytes(bytes((0x7F,)) + b"CNT" + os.urandom(2048))
+            skript = basis / "immer_ab.py"
+            skript.write_text(
+                "import sys" + chr(10) + "sys.exit(3221225477)" + chr(10),
+                encoding="utf-8")
+            starter = basis / ("start.cmd" if os.name == "nt"
+                               else "start.sh")
+            if os.name == "nt":
+                starter.write_text(
+                    '@"%s" "%s" %%*' % (sys.executable, skript) + chr(10),
+                    encoding="utf-8")
+            else:
+                starter.write_text(
+                    "#!/bin/sh" + chr(10)
+                    + 'exec "%s" "%s" "$@"' % (sys.executable, skript)
+                    + chr(10), encoding="utf-8")
+                starter.chmod(0o755)
+
+            befund = inspect_package(starter, paket, compute_sha256=False)
+
+        self.assertFalse(befund.get("supported"))
+        grund = befund.get("reason", "")
+        self.assertIn("crashed", grund,
+                      "Der Absturz muss beim Namen genannt werden: %r" % grund)
+        self.assertIn("0xC0000005", grund)
+
+    def test_die_pipeline_nennt_den_schuldigen(self) -> None:
+        """Der Nutzer soll nicht bei sich suchen."""
+        quelle = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
+            encoding="utf-8")
+        self.assertIn("extractor_crashed", quelle)
+        self.assertIn("fault in the bundled extractor", quelle)
+
+
+class ArchitekturTests(unittest.TestCase):
+    """Die Mac-Fassung gibt es nur fuer Apple Silicon.
+
+    Am 23.08.2026 auf einem echten Intel-Laeufer gemessen: Nachdem die
+    Auswahl plattformbewusst geworden war, aber noch nicht
+    architekturbewusst, bot sie dort die arm64-Datei an. Der Start endete
+    mit
+
+        OSError: [Errno 86] Bad CPU type in executable: .../ps4_pkg_extract
+
+    Also derselbe Fehler wie zuvor mit der .exe, nur eine Stufe spaeter.
+    Dasselbe gilt unter Linux, wo dieselbe Datei danebenliegt.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.dlc_embed import find_dlc_helper  # noqa: PLC0415
+        from ps4ffpsc.inventory import find_extractor  # noqa: PLC0415
+        from ps4ffpsc.util import (  # noqa: PLC0415
+            executable_architectures,
+            runs_on_this_cpu,
+        )
+
+        self.architekturen = executable_architectures
+        self.laeuft_hier = runs_on_this_cpu
+        self.entpacker = find_extractor
+        self.dlc_helfer = find_dlc_helper
+
+    def test_die_mitgelieferten_dateien_werden_erkannt(self) -> None:
+        bin_ordner = PS4_ORDNER / "bin"
+        for name in ("ps4_pkg_extract", "ps4-dlc-patch"):
+            with self.subTest(datei=name):
+                self.assertEqual(self.architekturen(bin_ordner / name),
+                                 {"arm64"})
+        for name in ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"):
+            with self.subTest(datei=name):
+                self.assertEqual(self.architekturen(bin_ordner / name), set(),
+                                 "Eine PE-Datei ist kein Mach-O.")
+
+    def test_keine_datei_ist_kein_absturz(self) -> None:
+        self.assertEqual(self.architekturen(PS4_ORDNER / "gibtsnicht"), set())
+        self.assertTrue(self.laeuft_hier(PS4_ORDNER / "gibtsnicht"),
+                        "Ohne Mach-O entscheidet der Dateiname.")
+
+    def test_auswahl_je_plattform_und_architektur(self) -> None:
+        """Vier Faelle, und nur bei zweien darf etwas herauskommen."""
+        faelle = {
+            ("win32", "AMD64"): "ps4_pkg_extract.exe",
+            ("darwin", "arm64"): "ps4_pkg_extract",
+            ("darwin", "x86_64"): None,
+            ("linux", "x86_64"): None,
+        }
+        for (plattform, cpu), erwartet in faelle.items():
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    if erwartet is None:
+                        self.assertIsNone(
+                            gefunden,
+                            "Fuer diese Architektur gibt es keinen Bau - es "
+                            "darf keiner angeboten werden.")
+                    else:
+                        self.assertIsNotNone(gefunden)
+                        self.assertEqual(gefunden.name, erwartet)
+
+    def test_der_dlc_helfer_haelt_sich_daran_auch(self) -> None:
+        for plattform, cpu in (("darwin", "x86_64"), ("linux", "x86_64")):
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    with self.assertRaises(Exception):
+                        self.dlc_helfer(PS4_ORDNER)
+
+
+
 
 
 if __name__ == "__main__":

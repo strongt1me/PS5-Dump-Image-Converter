@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import stat
@@ -120,6 +121,203 @@ def path_is_within(candidate: Path, parent: Path) -> bool:
 def paths_overlap(first: Path, second: Path) -> bool:
     """Return whether two resolved paths contain one another."""
     return path_is_within(first, second) or path_is_within(second, first)
+
+
+# Behoben fuer die Einbettung (siehe UPSTREAM.md): Der mitgelieferte
+# Entpacker traegt kein "longPathAware" in seinem Manifest. Windows legt ihm
+# deshalb MAX_PATH an, auch wenn der Systemschalter LongPathsEnabled gesetzt
+# ist. Am 23.08.2026 nachgemessen an Tetris Ultimate (tiefster spielinterner
+# Pfad 73 Zeichen): bis 183 Zeichen Zielpfad laeuft die Entpackung durch, ab
+# 186 bricht sie ab. Der Entpacker meldet das als "unsupported_or_encrypted_
+# pkg" - also als Fehler in der Datei statt im Pfad. Diese Fehldeutung schickt
+# den Nutzer auf die falsche Faehrte, deshalb wird sie hier erkannt.
+WINDOWS_MAX_PATH = 259
+
+#: Ab wie wenig verbleibenden Zeichen ein Zielpfad als gefaehrdet gilt. Der
+#: Wert deckt uebliche spielinterne Pfade ab; Tetris braucht 73, tiefere
+#: Baeume (Unity-Titel mit StreamingAssets) kommen ueber 100.
+PATH_HEADROOM_LIMIT = 100
+
+#: Fehlertexte, die die Pfadgrenze ausdruecklich nennen. Sie sind vom
+#: Programm erzeugt und daher unabhaengig von der Systemsprache - anders als
+#: der Windows-Text dahinter, der uebersetzt ausgeliefert wird.
+_LONG_PATH_MARKERS = (
+    "create_directories",
+    "filename or extension is too long",
+    "path is too long",
+)
+
+
+#: Windows meldet einen abgestuerzten Prozess als Rueckgabewert oberhalb
+#: von 0xC0000000. Diese hier kommen beim mitgelieferten Entpacker
+#: tatsaechlich vor: 0xC00000FD beim Berechnen der Pruefsumme (siehe
+#: inspect_package), 0xC0000005 beim Entpacken eines bestimmten
+#: Retail-Patches - am 23.08.2026 dreimal reproduziert.
+_WINDOWS_CRASH_CODES = {
+    0xC0000005: "memory access violation",
+    0xC000001D: "illegal instruction",
+    0xC00000FD: "stack overflow",
+    0xC0000409: "stack buffer overrun",
+    0xC0000374: "heap corruption",
+}
+
+
+#: Mach-O-Kennungen. Die beiden ersten sind Einzelbauten (64- und 32-Bit,
+#: little endian), die beiden letzten ein Universal-Buendel ("fat").
+_MACHO_EINZELN = (bytes((0xCF, 0xFA, 0xED, 0xFE)), bytes((0xCE, 0xFA, 0xED, 0xFE)))
+_MACHO_FAT = (bytes((0xCA, 0xFE, 0xBA, 0xBE)), bytes((0xBE, 0xBA, 0xFE, 0xCA)))
+
+#: CPU-Typen aus dem Mach-O-Kopf, auf die es hier ankommt.
+_CPU_TYPEN = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+
+
+def _eigene_architektur() -> str:
+    """Der Kurzname der Architektur dieses Rechners."""
+    name = platform.machine().lower()
+    if name in ("aarch64", "arm64"):
+        return "arm64"
+    if name in ("amd64", "x86_64", "x64"):
+        return "x86_64"
+    return name
+
+
+def executable_architectures(path: Path) -> set[str]:
+    """Welche Architekturen eine Mach-O-Datei bedient.
+
+    Returns:
+        Kurznamen wie ``{"arm64"}``, bei einem Universal-Bau mehrere. Leer,
+        wenn die Datei kein Mach-O ist - dann faellt die Entscheidung
+        anderswo.
+    """
+    try:
+        with path.open("rb") as strom:
+            kopf = strom.read(8)
+            if kopf[:4] in _MACHO_EINZELN:
+                typ = int.from_bytes(kopf[4:8], "little")
+                name = _CPU_TYPEN.get(typ)
+                return {name} if name else set()
+            if kopf[:4] in _MACHO_FAT:
+                anzahl = int.from_bytes(kopf[4:8], "big")
+                gefunden: set[str] = set()
+                for _ in range(min(anzahl, 16)):
+                    eintrag = strom.read(20)
+                    if len(eintrag) < 4:
+                        break
+                    name = _CPU_TYPEN.get(int.from_bytes(eintrag[:4], "big"))
+                    if name:
+                        gefunden.add(name)
+                return gefunden
+    except OSError:
+        return set()
+    return set()
+
+
+def runs_on_this_cpu(path: Path) -> bool:
+    """Passt die Programmdatei zur Architektur dieses Rechners?
+
+    Der Hersteller liefert die Mac-Fassung nur fuer Apple Silicon. Auf einem
+    Intel-Mac liegt sie zwar im Buendel, laesst sich aber nicht starten:
+    "Bad CPU type in executable" (Errno 86) - am 23.08.2026 auf einem echten
+    Intel-Laeufer gemessen, nachdem die Auswahl zuvor nur nach Plattform
+    ging und nicht nach Architektur. Dasselbe gilt unter Linux, wo dieselbe
+    Mach-O-Datei danebenliegt.
+
+    Dateien, die kein Mach-O sind, gelten als passend: Ueber sie entscheidet
+    schon der Dateiname.
+    """
+    architekturen = executable_architectures(path)
+    if not architekturen:
+        return True
+    return _eigene_architektur() in architekturen
+
+
+def crash_description(returncode: int | None) -> str:
+    """Nennt einen Windows-Absturz beim Namen.
+
+    Als Dezimalzahl sagt so ein Rueckgabewert niemandem etwas - 3221225477
+    liest sich wie ein Zufallswert. Dazu kommt, dass ein abgestuerzter
+    Entpacker keine Ausgabe hinterlaesst: Die Fehlermeldung endete deshalb
+    hinter dem Doppelpunkt einfach im Nichts.
+
+    Args:
+        returncode: Rueckgabewert des Unterprozesses.
+
+    Returns:
+        Ein Satz zum Absturz, oder "" wenn der Wert keiner ist.
+    """
+    if returncode is None:
+        return ""
+    code = returncode & 0xFFFFFFFF
+    if code < 0xC0000000:
+        return ""
+    grund = _WINDOWS_CRASH_CODES.get(code)
+    kern = f"the extractor crashed (0x{code:08X}"
+    return f"{kern}, {grund})" if grund else f"{kern})"
+
+
+def ensure_executable(path: Path) -> bool:
+    """Sorgt dafuer, dass eine mitgelieferte Programmdatei startbar ist.
+
+    Aus einem PyInstaller-Buendel kommen die Helfer als reine Daten - der
+    Bauplan legt sie unter ``datas`` ab, und dabei geht das
+    Ausfuehrungsrecht verloren. Unter Windows spielt das keine Rolle, auf
+    macOS und Linux scheitert der Start sonst mit "Permission denied"
+    (Errno 13). Dasselbe Nachziehen gibt es im Hauptprogramm laengst fuer
+    UFS2Tool; fuer die PS4-Helfer fehlte es.
+
+    Returns:
+        ``True``, wenn die Datei danach ausfuehrbar ist.
+    """
+    if os.name == "nt":
+        return True
+    if os.access(path, os.X_OK):
+        return True
+    try:
+        path.chmod(path.stat().st_mode | 0o111)
+    except OSError:
+        return False
+    return os.access(path, os.X_OK)
+
+
+def windows_path_headroom(path: Path) -> int | None:
+    """Wie viele Zeichen unterhalb von ``path`` noch bis MAX_PATH frei sind.
+
+    Returns:
+        Die verbleibenden Zeichen, oder ``None`` auf Systemen ohne diese
+        Grenze (Linux und macOS erlauben 4096).
+    """
+    if os.name != "nt":
+        return None
+    return WINDOWS_MAX_PATH - len(str(path))
+
+
+def looks_like_path_length_failure(destination: Path, reason: str) -> bool:
+    """Spricht ein gescheiterter Lauf fuer einen zu langen Zielpfad?
+
+    Zwei Anzeichen, jedes fuer sich ausreichend: ein Fehlertext, der die
+    Grenze ausdruecklich nennt, oder ein Zielpfad, unter dem kaum noch Platz
+    fuer die spielinternen Pfade bleibt. Das zweite Anzeichen ist noetig,
+    weil der Entpacker genau an der Grenze ohne jeden Hinweis abbricht - er
+    meldet dort nur "Failed to open PKG extraction input or output".
+    """
+    lowered = reason.lower()
+    if any(marker in lowered for marker in _LONG_PATH_MARKERS):
+        return True
+    headroom = windows_path_headroom(destination)
+    return headroom is not None and headroom < PATH_HEADROOM_LIMIT
+
+
+def path_length_hint(destination: Path) -> str:
+    """Ein Satz, der die Pfadgrenze in Zahlen erklaert - sonst leer."""
+    headroom = windows_path_headroom(destination)
+    if headroom is None:
+        return ""
+    return (
+        f"the target path is {len(str(destination))} characters long, leaving "
+        f"{headroom} for the paths inside the game (Windows allows "
+        f"{WINDOWS_MAX_PATH} in total); pick a shorter output folder"
+    )
+
 
 
 def iter_tree_files(root: Path) -> Iterable[tuple[Path, Path]]:
