@@ -708,9 +708,23 @@ class DiagnoseberichtTests(unittest.TestCase):
         self.assertIn("Abschnitt fehlgeschlagen", block)
 
     def test_protokolldatei_wird_gelesen(self):
+        """Kopfzeile mit Pfad und Groesse, danach hoechstens N Protokollzeilen.
+
+        Die Kopfzeile kam mit v1.8.93 dazu, weil im Bericht nicht stand, dass
+        unter den letzten achtzig Zeilen eine 22-MB-Datei lag. Sie zaehlt
+        gegen die angeforderte Zahl nicht mit.
+
+        Dieser Test war unmittelbar nach der Aenderung noch gruen - aber nur,
+        weil das Protokoll gerade frisch umgerollt war und ueberhaupt weniger
+        als fuenf Zeilen hatte. Deshalb hier ausdruecklich beides pruefen:
+        die Kopfzeile und die Zahl der Zeilen dahinter.
+        """
         zeilen = APP.PS5ConverterGUI._diagnose_protokolldatei(5)
         self.assertTrue(zeilen)
-        self.assertLessEqual(len(zeilen), 5)
+        self.assertTrue(zeilen[0].startswith("("),
+                        "erste Zeile ist die Kopfzeile: %r" % zeilen[0])
+        self.assertTrue(zeilen[0].rstrip().endswith(")"))
+        self.assertLessEqual(len(zeilen) - 1, 5)
 
     def test_abschnitte_sind_zweisprachig(self):
         from ps5_validator.utils.i18n import STRINGS

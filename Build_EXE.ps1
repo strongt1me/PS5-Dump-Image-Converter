@@ -46,6 +46,24 @@ Set-Location -Path $PSScriptRoot
 $EXE_VERSION = "v1.8.93"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
+# Ablage unter dist/ - je Plattform ein Ordner.
+#
+# Bis v1.8.92 landete alles nebeneinander in dist/: Windows, Linux,
+# macOS und die Auslieferungsbuendel, zuletzt 127 Eintraege und 23 GB.
+# Wer die Dateien einer bestimmten Fassung suchte, musste sie sich aus
+# der Liste zusammenklauben.
+#
+# Die Buendel bleiben dabei ganze Ordner. Sie sind das, was man
+# weitergibt - Programm, README, Changelog und Handbuch zusammen -, und
+# duerfen nicht nach Plattform auseinandergenommen werden.
+$ORDNER_WINDOWS = Join-Path $PSScriptRoot "dist\Windows"
+$ORDNER_LINUX   = Join-Path $PSScriptRoot "dist\Linux"
+$ORDNER_MACOS   = Join-Path $PSScriptRoot "dist\macOS"
+$ORDNER_BUENDEL = Join-Path $PSScriptRoot "dist\Buendel"
+foreach ($_o in @($ORDNER_WINDOWS, $ORDNER_LINUX, $ORDNER_MACOS, $ORDNER_BUENDEL)) {
+    if (-not (Test-Path $_o)) { New-Item -ItemType Directory -Path $_o -Force | Out-Null }
+}
+
 if ($MitOnly) {
     Write-Host "      Hinweis: -MitOnly ist veraltet und hat keine zusaetzliche Wirkung." -ForegroundColor DarkGray
 }
@@ -187,7 +205,7 @@ if (Test-Path "helloworld") {
 Write-Host ""
 Write-Host "[4/5] Bereinige alte Build-Artefakte und synchronisiere App-Icon..." -ForegroundColor Yellow
 $buildDir = Join-Path $PSScriptRoot "build"
-$distExePath = Join-Path $PSScriptRoot "dist\$EXE_NAME"
+$distExePath = Join-Path $ORDNER_WINDOWS $EXE_NAME
 
 if (Test-Path $buildDir) {
     Remove-Item $buildDir -Recurse -Force
@@ -231,13 +249,22 @@ Write-Host "=============================================" -ForegroundColor Gree
 Write-Host "  BUILD ERFOLGREICH!" -ForegroundColor Green
 Write-Host "=============================================" -ForegroundColor Green
 Write-Host ""
-$exePath = Join-Path $PSScriptRoot "dist\$EXE_NAME"
+# PyInstaller legt die EXE in dist\ ab. Dort sammelte sich mit der Zeit
+# alles nebeneinander - Windows, Linux, macOS und die Buendel, zuletzt 127
+# Eintraege. Seit v1.8.93 bekommt jede Plattform ihren Ordner; die frisch
+# gebaute Datei wandert gleich dorthin.
+$exeRoh  = Join-Path $PSScriptRoot "dist\$EXE_NAME"
+$exePath = Join-Path $ORDNER_WINDOWS $EXE_NAME
+if (Test-Path $exeRoh) {
+    if (-not (Test-Path $ORDNER_WINDOWS)) { New-Item -ItemType Directory -Path $ORDNER_WINDOWS -Force | Out-Null }
+    Move-Item $exeRoh $exePath -Force
+}
 if (Test-Path $exePath) {
     $sizeMB = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
-    Write-Host "  EXE:     dist\$EXE_NAME" -ForegroundColor White
+    Write-Host "  EXE:     dist\Windows\$EXE_NAME" -ForegroundColor White
     Write-Host "  Groesse: $sizeMB MB" -ForegroundColor White
 } else {
-    Write-Host "  EXE:     dist\$EXE_NAME" -ForegroundColor White
+    Write-Host "  EXE:     dist\Windows\$EXE_NAME" -ForegroundColor White
 }
 # --- Auslieferungsbuendel zusammenstellen ---
 #
@@ -257,7 +284,7 @@ if (Test-Path $exePath) {
 # fertige Abbild uebernommen. Zwei Architekturen, weil ein Buendel immer nur
 # zu einer passt.
 $buendelName = "PS5_Dump_Image_Converter_$EXE_VERSION"
-$buendel     = Join-Path $PSScriptRoot "dist\$buendelName"
+$buendel     = Join-Path $ORDNER_BUENDEL $buendelName
 $linuxName   = "PS5_Dump_Image_Converter_${EXE_VERSION}_linux_x86_64"
 $macosNamen  = @(
     "PS5_Dump_Image_Converter_${EXE_VERSION}_macos_arm64.dmg",
@@ -266,12 +293,14 @@ $macosNamen  = @(
 
 if (Test-Path $exePath) {
     Write-Host ""
-    Write-Host "  Buendel: dist\$buendelName" -ForegroundColor White
+    Write-Host "  Buendel: dist\Buendel\$buendelName" -ForegroundColor White
     if (Test-Path $buendel) { Remove-Item $buendel -Recurse -Force }
     New-Item -ItemType Directory -Path $buendel -Force | Out-Null
 
-    $mitnehmen = @($EXE_NAME, $linuxName) + $macosNamen |
-                 ForEach-Object { Join-Path $PSScriptRoot "dist\$_" }
+    # Jede Plattform aus ihrem eigenen Ordner holen.
+    $mitnehmen  = @(Join-Path $ORDNER_WINDOWS $EXE_NAME)
+    $mitnehmen += Join-Path $ORDNER_LINUX $linuxName
+    $mitnehmen += $macosNamen | ForEach-Object { Join-Path $ORDNER_MACOS $_ }
     $mitnehmen += @("README.md", "CHANGELOG.md", "BENUTZERHANDBUCH.pdf") |
                   ForEach-Object { Join-Path $PSScriptRoot $_ }
 
@@ -282,12 +311,12 @@ if (Test-Path $exePath) {
             $mb = [math]::Round((Get-Item $quelle).Length / 1MB, 2)
             Write-Host ("           {0,-46} {1,8} MB" -f $name, $mb) -ForegroundColor Gray
         } elseif ($name -eq $linuxName) {
-            Write-Host "           (keine Linux-Fassung in dist/ - uebersprungen)" -ForegroundColor DarkGray
+            Write-Host "           (keine Linux-Fassung in dist/Linux - uebersprungen)" -ForegroundColor DarkGray
         } elseif ($macosNamen -contains $name) {
             # Nur einmal melden: Von den beiden Architekturen kann hoechstens
             # eine dort liegen, die andere fehlt zwangslaeufig.
             if ($name -eq $macosNamen[0]) {
-                Write-Host "           (keine macOS-Fassung in dist/ - uebersprungen)" -ForegroundColor DarkGray
+                Write-Host "           (keine macOS-Fassung in dist/macOS - uebersprungen)" -ForegroundColor DarkGray
             }
         } else {
             Write-Host "           FEHLT: $name" -ForegroundColor Yellow
