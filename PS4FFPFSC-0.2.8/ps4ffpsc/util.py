@@ -147,6 +147,44 @@ _LONG_PATH_MARKERS = (
 )
 
 
+#: Windows meldet einen abgestuerzten Prozess als Rueckgabewert oberhalb
+#: von 0xC0000000. Diese hier kommen beim mitgelieferten Entpacker
+#: tatsaechlich vor: 0xC00000FD beim Berechnen der Pruefsumme (siehe
+#: inspect_package), 0xC0000005 beim Entpacken eines bestimmten
+#: Retail-Patches - am 23.08.2026 dreimal reproduziert.
+_WINDOWS_CRASH_CODES = {
+    0xC0000005: "memory access violation",
+    0xC000001D: "illegal instruction",
+    0xC00000FD: "stack overflow",
+    0xC0000409: "stack buffer overrun",
+    0xC0000374: "heap corruption",
+}
+
+
+def crash_description(returncode: int | None) -> str:
+    """Nennt einen Windows-Absturz beim Namen.
+
+    Als Dezimalzahl sagt so ein Rueckgabewert niemandem etwas - 3221225477
+    liest sich wie ein Zufallswert. Dazu kommt, dass ein abgestuerzter
+    Entpacker keine Ausgabe hinterlaesst: Die Fehlermeldung endete deshalb
+    hinter dem Doppelpunkt einfach im Nichts.
+
+    Args:
+        returncode: Rueckgabewert des Unterprozesses.
+
+    Returns:
+        Ein Satz zum Absturz, oder "" wenn der Wert keiner ist.
+    """
+    if returncode is None:
+        return ""
+    code = returncode & 0xFFFFFFFF
+    if code < 0xC0000000:
+        return ""
+    grund = _WINDOWS_CRASH_CODES.get(code)
+    kern = f"the extractor crashed (0x{code:08X}"
+    return f"{kern}, {grund})" if grund else f"{kern})"
+
+
 def ensure_executable(path: Path) -> bool:
     """Sorgt dafuer, dass eine mitgelieferte Programmdatei startbar ist.
 

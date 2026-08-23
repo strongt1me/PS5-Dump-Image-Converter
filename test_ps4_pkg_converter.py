@@ -929,6 +929,61 @@ class AusfuehrungsrechtTests(unittest.TestCase):
         self.assertIn("0o111", quelltext)
 
 
+class AbsturzmeldungTests(unittest.TestCase):
+    """Ein abgestuerzter Entpacker muss das auch sagen.
+
+    Am 23.08.2026 an einem echten Retail-Patch nachgestellt
+    (EP0001-CUSA00775_00-TETRISGAME000000-A0102-V0100.pkg): Der Entpacker
+    stuerzt mit 0xC0000005 ab und hinterlaesst keine Ausgabe. Die Meldung
+    lautete deshalb
+
+        extractor failed (3221225477) for ...pkg:
+
+    - eine nackte Zahl, und hinter dem Doppelpunkt nichts. Wer das liest,
+    sucht den Fehler bei sich oder in der Datei; er liegt aber im
+    mitgelieferten Entpacker.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.util import crash_description  # noqa: PLC0415
+
+        self.beschreiben = crash_description
+
+    def test_gemessene_codes_werden_benannt(self) -> None:
+        """Beide sind an echten Paketen aufgetreten."""
+        for code, wort in ((3221225477, "memory access violation"),
+                           (3221225725, "stack overflow")):
+            with self.subTest(code=code):
+                text = self.beschreiben(code)
+                self.assertIn("crashed", text)
+                self.assertIn(wort, text)
+                self.assertIn("0x%08X" % code, text,
+                              "Die Zahl gehoert als Hex dazu, nicht dezimal.")
+
+    def test_unbekannter_absturz_wird_trotzdem_erkannt(self) -> None:
+        """Die Liste kann nicht vollstaendig sein - der Bereich schon."""
+        text = self.beschreiben(0xC0000094)
+        self.assertIn("crashed", text)
+        self.assertIn("0xC0000094", text)
+
+    def test_gewoehnliche_rueckgabewerte_sind_kein_absturz(self) -> None:
+        """Sonst waere jeder normale Fehlschlag ploetzlich ein Absturz."""
+        for code in (0, 1, 2, 3, 255):
+            with self.subTest(code=code):
+                self.assertEqual(self.beschreiben(code), "")
+        self.assertEqual(self.beschreiben(None), "")
+
+    def test_die_pipeline_nennt_den_schuldigen(self) -> None:
+        """Der Nutzer soll nicht bei sich suchen."""
+        quelle = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
+            encoding="utf-8")
+        self.assertIn("extractor_crashed", quelle)
+        self.assertIn("fault in the bundled extractor", quelle)
+
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

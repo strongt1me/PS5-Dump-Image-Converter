@@ -125,6 +125,39 @@ jobs:
           print('Hinweis: ', p.nur_windows_hinweis('UFS2Tool'))
           "
 
+      - name: PS4-Helfer im fertigen Buendel
+        # Der Beleg fuer die Korrektur aus v1.8.86. Im Buendel liegen die
+        # Windows- und die Mac-Fassung der beiden Helfer nebeneinander, und
+        # die Suche griff bis dahin zur .exe - auf dem Mac gab das
+        # "[Errno 13] Permission denied". Dazu verlieren die Dateien beim
+        # Verpacken unter "datas" ihr Ausfuehrungsrecht. Beides laesst sich
+        # nur auf echter Apple-Hardware zeigen, und nur am gebauten .app.
+        run: |
+          set -e
+          WURZEL=$(find "dist/PS5 Dump & Image Converter.app/Contents"                    -maxdepth 2 -type d -name 'PS4FFPFSC*' | head -1)
+          echo "Werkzeugordner: $WURZEL"
+          test -n "$WURZEL"
+          .venv-macos/bin/python -c "
+          import subprocess, sys
+          from pathlib import Path
+          wurzel = Path(sys.argv[1])
+          sys.path.insert(0, str(wurzel))
+          from ps4ffpsc.inventory import find_extractor
+          from ps4ffpsc.dlc_embed import find_dlc_helper
+          entpacker = find_extractor(wurzel)
+          helfer = find_dlc_helper(wurzel)
+          print('Entpacker:  ', entpacker)
+          print('DLC-Helfer: ', helfer)
+          assert entpacker is not None, 'kein Entpacker gefunden'
+          assert not entpacker.name.endswith('.exe'), 'Windows-Datei gewaehlt'
+          assert not helfer.name.endswith('.exe'), 'Windows-DLC-Helfer gewaehlt'
+          fertig = subprocess.run([str(entpacker)], capture_output=True, text=True)
+          ausgabe = (fertig.stdout or '') + (fertig.stderr or '')
+          print('Start:', fertig.returncode, ausgabe.strip()[:120])
+          assert 'ps4_pkg_extract' in ausgabe, 'der Entpacker laeuft nicht'
+          print('OK - beide Helfer sind die richtigen und starten.')
+          " "$WURZEL"
+
       - name: Abbild ablegen
         uses: actions/upload-artifact@v4
         with:

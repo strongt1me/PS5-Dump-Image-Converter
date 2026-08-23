@@ -209,7 +209,10 @@ def inspect_package(
     if not lines:
         reason = (process.stderr or "").strip()
         if not reason:
-            reason = (
+            # Ein abgestuerzter Entpacker schreibt nichts. Ohne die
+            # Uebersetzung stuende hier nur eine nackte Zahl.
+            absturz = crash_description(process.returncode)
+            reason = absturz or (
                 f"extractor returned no JSON (exit {process.returncode})"
                 if process.returncode
                 else "extractor returned no JSON"

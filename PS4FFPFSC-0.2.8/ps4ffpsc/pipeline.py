@@ -39,6 +39,7 @@ from .util import (
     atomic_write_json,
     ensure_within,
     file_stat_identity,
+    crash_description,
     iter_tree_files,
     looks_like_path_length_failure,
     path_is_within,
@@ -768,8 +769,14 @@ def unpack_game(settings: Settings, inventory: dict[str, Any], title_id: str) ->
                 process.returncode == 3
                 and looks_like_path_length_failure(partial, details)
             )
+            # Ein Absturz ist kein Fehler des Pakets und keiner der
+            # Einrichtung - er gehoert dem mitgelieferten Entpacker. Das
+            # muss die Meldung sagen, sonst sucht der Nutzer bei sich.
+            absturz = crash_description(process.returncode)
             if path_too_long:
                 status = "path_too_long"
+            elif absturz:
+                status = "extractor_crashed"
             elif process.returncode == 3:
                 status = "unsupported_or_encrypted_pkg"
             else:
@@ -790,6 +797,13 @@ def unpack_game(settings: Settings, inventory: dict[str, Any], title_id: str) ->
                     f"likely fine - the extractor reports a path problem the "
                     f"same way it reports an unsupported package. "
                     f"Extractor output: {details}"
+                )
+            if absturz:
+                raise RuntimeError(
+                    f"{absturz} while extracting {package['path']}. This is a "
+                    f"fault in the bundled extractor, not in the package or "
+                    f"your setup; the same package may work in another "
+                    f"version. {details}".rstrip()
                 )
             raise RuntimeError(
                 f"extractor failed ({process.returncode}) for {package['path']}: "
