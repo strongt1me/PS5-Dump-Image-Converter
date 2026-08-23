@@ -2,9 +2,66 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.92):** Die Worker-Zahl stellt jetzt ein **Drehknopf** ein, die **AMPR-Spieleauswahl** zeigt Spielnamen statt nur Kennungen – ein versetzt gelesener `param.sfo`-Kopf stand dem im Weg –, und der **Online-Nachschlag** ist unter Windows und Linux wieder ab Werk an.
+> **Kurz zum aktuellen Stand (v1.8.93):** Ein zweites PKG-Backup zeigte die Spiele des ersten und blockierte danach jedes weitere Einlesen – behoben. Dazu: Das Mausrad des Hauptfensters bleibt nutzbar, die Protokolldatei waechst nicht mehr ungebremst, und der Diagnosebericht meldet keine Bibliotheken mehr als fehlend, die das Programm gar nicht benutzt.
 
 ---
+
+## v1.8.93 – 23.08.2026
+
+### PS4-PKG: Das zweite Backup zeigte die Spiele des ersten
+
+Der schwerwiegendste Fehler dieser Fassung, aus der Praxis gemeldet. Der
+Ablauf war reproduzierbar:
+
+1. Ein PKG-Backup einlesen – alles wurde richtig angezeigt.
+2. Ein zweites Backup einlesen – nur noch ein Fehler.
+3. Ab da ließ sich **gar kein** Backup mehr einlesen, auch das erste nicht,
+   das eben noch funktioniert hatte.
+
+Beim Einlesen legt das Werkzeug ein Verzeichnis der gefundenen Spiele an. Das
+wurde beim nächsten Mal wiederverwendet, **ohne zu prüfen, ob es überhaupt
+zur neuen Quelle gehört**. Da alle Quellen denselben Arbeitsordner benutzen,
+traf das immer zu: Das zweite Backup bekam die Spieleliste des ersten, mit
+Verweisen auf Dateien, die es gar nicht betraf.
+
+Das Verzeichnis hält seit jeher fest, woraus es entstanden ist – verglichen
+wurde es nur nie. Jetzt wird verglichen und bei Abweichung neu eingelesen.
+Wer dieselbe Quelle erneut einliest, wartet dabei nicht länger als bisher.
+
+Alte Arbeitsordner müssen nicht von Hand aufgeräumt werden; sie werden
+erkannt und ersetzt.
+
+### Ein Fenster nahm dem Hauptfenster das Mausrad
+
+Wer einmal mit der Maus über **Einstellungen** oder **Design-Einstellungen**
+gefahren war, konnte danach den Inhalt des Hauptfensters nicht mehr mit dem
+Mausrad rollen – bis zum Neustart des Programms.
+
+Die beiden Fenster meldeten ihr Mausrad global an und meldeten es beim
+Verlassen wieder ab. Dabei ging jede andere Mausrad-Zuordnung mit verloren,
+auch die des Hauptfensters. Sie melden es jetzt nur noch für ihr eigenes
+Fenster an.
+
+### Die Protokolldatei wuchs ungebremst
+
+Sie war auf 22 MB angewachsen, weil nichts ihre Größe begrenzte. Jetzt legt
+das Programm bei 4 MB eine neue an und behält drei ältere.
+
+Ein zweiter Grund für die Größe: Testläufe schrieben in dieselbe Datei wie
+das laufende Programm. Im Diagnosebericht standen dadurch Zeilen, die
+siebzehnmal dasselbe sagten und nach einem Fehler aussahen – tatsächlich
+waren es Rückstände aus Testläufen. Tests schreiben jetzt woanders hin.
+
+### Der Diagnosebericht meldet nur noch Echtes
+
+* **„requests: fehlt"** stand im Bericht, obwohl das Programm diese
+  Bibliothek gar nicht benutzt. Dasselbe galt für `paramiko`. Beide sind aus
+  der Prüfliste heraus – eine falsche Fehlmeldung schickt nur auf die Suche
+  nach einem Schaden, den es nicht gibt.
+* **Die Größe der Protokolldatei steht jetzt im Bericht.** Wäre sie vorher
+  schon dort gestanden, wären die 22 MB sofort aufgefallen.
+* Der Bericht liest die Protokolldatei nur noch am Ende an, statt sie
+  vollständig in den Speicher zu laden.
 
 ## v1.8.92 – 23.08.2026
 

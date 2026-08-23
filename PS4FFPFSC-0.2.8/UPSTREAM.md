@@ -125,6 +125,33 @@ Ausführungsrecht verlorengeht – obwohl Git `ps4_pkg_extract` als `100755`
 führt. `util.ensure_executable()` zieht es nach. Ohne das galt der
 DLC-Helfer auf macOS als „nicht vorhanden", ein stiller Ausfall ohne Meldung.
 
+### `ps4ffpsc/pipeline.py` → `load_or_scan()` prüft die Herkunft
+
+Der zwischengespeicherte `package_inventory.json` wurde ungeprüft
+zurückgegeben, sobald er existierte. `list` ist der einzige Befehl, der ihn
+ohne `refresh=True` anfordert – und genau ihn ruft die Oberfläche beim
+Einlesen auf.
+
+Im reinen Kommandozeilenbetrieb fällt das kaum auf, weil dort jede Quelle
+üblicherweise ihren eigenen Arbeitsordner bekommt. Die Oberfläche benutzt für
+**jede** Quelle denselben (`<Ziel>/ps4ffpsc_arbeit`). Damit ergab sich der am
+23.08.2026 aus der Praxis gemeldete Ablauf:
+
+1. Erstes PKG-Backup einlesen – alles korrekt angezeigt.
+2. Zweites Backup einlesen – es kam der Bestand des **ersten** zurück, mit
+   Verweisen auf Dateien, die zur neuen Quelle nicht passen: Fehler.
+3. Danach scheiterte auch das erste Backup, das eben noch funktioniert hatte.
+
+Der Bestand hält seine Herkunft von jeher fest – `selected_pkg_files`,
+`selected_dump_dirs` und `pkg_dir`. Verglichen wurde sie nur nie. `load_or_scan`
+tut das jetzt und scannt bei Abweichung neu; Groß-/Kleinschreibung und
+Trennzeichen bleiben dabei egal, sonst würde jedes Einlesen neu scannen.
+
+Bewusst **nicht** `list` auf `refresh=True` umgestellt: Das würde auch das
+wiederholte Einlesen derselben Quelle jedes Mal neu scannen, was bei großen
+Backups Minuten kostet. Die Prüfung gehört an die Stelle, die den Bestand
+ausgibt.
+
 ## Plattformen
 
 Der Hersteller liefert fertige Programmdateien nur für **Windows x64** und
