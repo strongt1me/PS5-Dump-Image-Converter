@@ -50,6 +50,7 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 | `kstuff_lite_v1.10_Beta.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `ps5upload_v5.2.1.elf` | PS5Upload | – | kein Beleg in der Datei |
+| `OnionHEN_v0.1.0.elf` | OnionHEN | – | kein Beleg in der Datei |
 
 Weitere Payload-Sammlungen und Werkzeuge, die im Fenster **CREDITS** verlinkt sind:
 **aldostools** (PS5-Payloads), **owendswang** (Autoloader, bdj_unpatch),

@@ -2,9 +2,45 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.90):** Beim Start ist die **Quelle jetzt leer** und muss bewusst gewählt werden – damit kein unbedachter Klick den Dump der letzten Sitzung umwandelt. Das **Ziel** zeigt weiterhin den zuletzt benutzten Ordner.
+> **Kurz zum aktuellen Stand (v1.8.91):** Das Fenster **CREDITS** nennt jetzt den bestimmungsgemäßen Zweck, und die Danksagung ist vervollständigt – ein fehlender Name, sechs bisher ungenannte Payloads und ein Lückeneintrag in der Lizenzübersicht.
 
 ---
+
+## v1.8.91 – 23.08.2026
+
+### CREDITS nennt den bestimmungsgemäßen Zweck
+
+Im Fenster **CREDITS** steht jetzt zwischen Danksagung und Fußzeile eine
+kurze Zeile: *Nur für eigene, rechtmäßig erworbene Inhalte. Nutzung auf
+eigene Verantwortung. Keine Verbindung zu Sony Interactive Entertainment.*
+
+Bewusst abgesetzt und **nicht** im Danksagungstext – der ist ein Dank an die
+Community und soll das bleiben. Die ausführliche Fassung steht in der
+[README](README.md).
+
+### Die Danksagung ist vollständig
+
+Ein Abgleich der Danksagung mit der Lizenzübersicht und allen 25
+mitgelieferten Payloads brachte drei Lücken zutage:
+
+* **SvenGDK** war nicht namentlich genannt. Der UFS2Tool-Autor stand in der
+  Lizenzübersicht und in der README, in der Danksagung aber nur als „die
+  Autorinnen und Autoren von UFS2Tool“ – während alle anderen einzeln
+  aufgeführt sind.
+* **Sechs Payloads** kamen gar nicht vor: OnionHEN, PIZZA-HEN, bfpilot,
+  Dump Installer, kstuff lite und PS5Upload. Bei ihnen lässt sich kein
+  Urheber ermitteln, weil die Dateien keine Angabe enthalten. Sie sind jetzt
+  mit Projektnamen genannt, samt Einladung an ihre Entwickler, sich zu melden.
+* **OnionHEN** fehlte als einziger der 25 Payloads in
+  [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) – nachgetragen.
+
+### Aufgeräumte Startseite
+
+Die [README](README.md) ist von 804 auf 174 Zeilen geschrumpft. Weggefallen
+ist vor allem der Versionsverlauf, der hier im Changelog steht – doppelt
+gepflegt half er niemandem. Die Bedienung erklärt das Benutzerhandbuch, das
+die README jetzt verlinkt.
+
 
 ## v1.8.90 – 23.08.2026
 
