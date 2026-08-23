@@ -2,9 +2,34 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.89):** Aufraeumen ohne sichtbare Änderung – 95 Zeilen Programmcode, die nie ausgeführt wurden, sind raus. Darunter eine Rechnung, die bei **jeder** Fortschrittsmeldung lief und deren Ergebnis niemand las. Dazu heisst "app0" im AMPR-Index-Builder jetzt "Dump" – gemeint war immer der Dump-Ordner.
+> **Kurz zum aktuellen Stand (v1.8.90):** Beim Start ist die **Quelle jetzt leer** und muss bewusst gewählt werden – damit kein unbedachter Klick den Dump der letzten Sitzung umwandelt. Das **Ziel** zeigt weiterhin den zuletzt benutzten Ordner.
 
 ---
+
+## v1.8.90 – 23.08.2026
+
+### Die Quelle startet leer, das Ziel bleibt stehen
+
+Bisher standen beim Programmstart **beide** Pfade noch so da wie beim letzten
+Mal. Das ist beim Ziel bequem – bei der Quelle aber riskant: Ein Klick auf
+START wandelte dann den Dump der letzten Sitzung um, und das fällt erst auf,
+wenn das Ergebnis fertig ist.
+
+Ab jetzt:
+
+| Feld | Beim Start |
+| --- | --- |
+| **QUELLE** | leer – muss bewusst gewählt werden |
+| **ZIEL** | der zuletzt benutzte Ordner |
+
+Die Begründung für den Unterschied: Ein falsches **Ziel** fällt sofort auf –
+es entsteht eine Datei am falschen Ort, verwechselt wird nichts. Eine falsche
+**Quelle** merkt man erst am fertigen Abbild.
+
+Bequem bleibt es trotzdem: Der Knopf **Durchsuchen** öffnet weiterhin im
+zuletzt benutzten Quellordner. Es ist also ein Klick mehr – kein Suchen von
+vorn.
+
 
 ## v1.8.89 – 23.08.2026
 

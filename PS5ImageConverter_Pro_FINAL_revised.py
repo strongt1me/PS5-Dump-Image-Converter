@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.89"
+APP_VERSION = "v1.8.90"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1713,9 +1713,20 @@ class PS5ConverterGUI:
         self._load_sidebar_bg_image_cache()
 
         # 3. Pfade und Modus initialisieren
-        last_src, last_dst = self._load_paths()
+        #
+        # Die QUELLE startet bewusst leer und muss bei jedem Start neu
+        # gewaehlt werden. Sonst steht dort der Dump der letzten Sitzung,
+        # und ein unbedachter Klick auf START wandelt den falschen um.
+        # Bequem bleibt es trotzdem: Der Durchsuchen-Dialog oeffnet weiter
+        # im zuletzt benutzten Ordner (last_source_dir, eigene Einstellung),
+        # es ist also nur ein Klick mehr statt einer Navigation von vorn.
+        #
+        # Das ZIEL bleibt stehen: Dorthin geht ueblicherweise wieder alles,
+        # und ein falsches Ziel faellt sofort auf - es entsteht nur eine
+        # Datei am falschen Ort, nichts wird verwechselt.
+        last_dst = self._load_paths()[1]
         self.current_mode = tk.StringVar(value="pack_folder")
-        self.source_path = tk.StringVar(value=last_src)
+        self.source_path = tk.StringVar(value="")
         self.dest_path = tk.StringVar(value=last_dst)
         self.target_format = tk.StringVar(value=self._FORMAT_LABELS["ffpfsc"])
         self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
