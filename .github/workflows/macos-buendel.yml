@@ -126,36 +126,51 @@ jobs:
           "
 
       - name: PS4-Helfer im fertigen Buendel
-        # Der Beleg fuer die Korrektur aus v1.8.86. Im Buendel liegen die
-        # Windows- und die Mac-Fassung der beiden Helfer nebeneinander, und
-        # die Suche griff bis dahin zur .exe - auf dem Mac gab das
-        # "[Errno 13] Permission denied". Dazu verlieren die Dateien beim
-        # Verpacken unter "datas" ihr Ausfuehrungsrecht. Beides laesst sich
-        # nur auf echter Apple-Hardware zeigen, und nur am gebauten .app.
+        # Der Beleg fuer die Korrekturen an der Helfersuche. Im Buendel
+        # liegen die Windows- und die Mac-Fassung nebeneinander, und die
+        # Mac-Fassung gibt es nur fuer Apple Silicon. Zwei Fehler wurden so
+        # gefunden: die .exe auf dem Mac ("Permission denied", Errno 13) und
+        # die arm64-Datei auf einem Intel-Mac ("Bad CPU type", Errno 86).
+        # Beides zeigt sich nur auf echter Apple-Hardware, am gebauten .app -
+        # und je nach Laeufer ist das RICHTIGE Ergebnis ein anderes.
         run: |
           set -e
-          WURZEL=$(find "dist/PS5 Dump & Image Converter.app/Contents"                    -maxdepth 2 -type d -name 'PS4FFPFSC*' | head -1)
+          WURZEL=$(find "dist/PS5 Dump & Image Converter.app/Contents" -maxdepth 2 -type d -name 'PS4FFPFSC*' | head -1)
           echo "Werkzeugordner: $WURZEL"
           test -n "$WURZEL"
           .venv-macos/bin/python -c "
-          import subprocess, sys
+          import platform, subprocess, sys
           from pathlib import Path
           wurzel = Path(sys.argv[1])
           sys.path.insert(0, str(wurzel))
           from ps4ffpsc.inventory import find_extractor
           from ps4ffpsc.dlc_embed import find_dlc_helper
+          from ps4ffpsc.util import executable_architectures
+          cpu = platform.machine()
+          print('Architektur:', cpu)
+          for datei in sorted((wurzel / 'bin').iterdir()):
+              print('   %-22s %s' % (datei.name, sorted(executable_architectures(datei)) or 'kein Mach-O'))
           entpacker = find_extractor(wurzel)
-          helfer = find_dlc_helper(wurzel)
-          print('Entpacker:  ', entpacker)
-          print('DLC-Helfer: ', helfer)
-          assert entpacker is not None, 'kein Entpacker gefunden'
-          assert not entpacker.name.endswith('.exe'), 'Windows-Datei gewaehlt'
-          assert not helfer.name.endswith('.exe'), 'Windows-DLC-Helfer gewaehlt'
-          fertig = subprocess.run([str(entpacker)], capture_output=True, text=True)
-          ausgabe = (fertig.stdout or '') + (fertig.stderr or '')
-          print('Start:', fertig.returncode, ausgabe.strip()[:120])
-          assert 'ps4_pkg_extract' in ausgabe, 'der Entpacker laeuft nicht'
-          print('OK - beide Helfer sind die richtigen und starten.')
+          try:
+              helfer = find_dlc_helper(wurzel)
+          except Exception as fehler:
+              helfer = None
+              print('DLC-Helfer: keiner (%s)' % type(fehler).__name__)
+          print('Entpacker: ', entpacker)
+          print('DLC-Helfer:', helfer)
+          if cpu in ('arm64', 'aarch64'):
+              assert entpacker is not None, 'auf Apple Silicon muss einer da sein'
+              assert not entpacker.name.endswith('.exe'), 'Windows-Datei gewaehlt'
+              assert helfer is not None and not helfer.name.endswith('.exe'), 'Windows-DLC-Helfer gewaehlt'
+              fertig = subprocess.run([str(entpacker)], capture_output=True, text=True)
+              ausgabe = (fertig.stdout or '') + (fertig.stderr or '')
+              print('Start:', fertig.returncode, ausgabe.strip()[:120])
+              assert 'ps4_pkg_extract' in ausgabe, 'der Entpacker laeuft nicht'
+              print('OK - beide Helfer sind die richtigen und starten.')
+          else:
+              assert entpacker is None, 'fuer diese Architektur gibt es keinen Bau - es darf keiner angeboten werden'
+              assert helfer is None, 'dasselbe gilt fuer den DLC-Helfer'
+              print('OK - auf dieser Architektur wird richtigerweise keiner angeboten.')
           " "$WURZEL"
 
       - name: Abbild ablegen

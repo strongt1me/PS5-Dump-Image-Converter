@@ -13,10 +13,12 @@ from .dump_source import DumpSourceError, discover_dump_records
 from .util import (
     WINDOWS_MAX_PATH,
     atomic_write_json,
-    ensure_executable,
     content_id_parts,
+    crash_description,
+    ensure_executable,
     file_stat_identity,
     paths_overlap,
+    runs_on_this_cpu,
     sanitize_component,
     utc_now,
     validate_title_id,
@@ -150,7 +152,10 @@ def find_extractor(root: Path, resources: Path | None = None) -> Path | None:
         # ensure_executable holt das Ausfuehrungsrecht nach, das beim
         # Buendeln verloren geht - sonst liegt die richtige Datei da und
         # laesst sich trotzdem nicht starten.
-        if path.is_file() and ensure_executable(path):
+        # runs_on_this_cpu haelt die arm64-Datei von Intel-Macs und
+        # von Linux fern - dort laege sie sonst startbereit da und
+        # scheiterte erst beim Aufruf mit "Bad CPU type".
+        if path.is_file() and ensure_executable(path) and runs_on_this_cpu(path):
             return path
     return None
 

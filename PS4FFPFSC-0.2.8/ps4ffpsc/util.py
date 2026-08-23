@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import shutil
 import stat
@@ -159,6 +160,75 @@ _WINDOWS_CRASH_CODES = {
     0xC0000409: "stack buffer overrun",
     0xC0000374: "heap corruption",
 }
+
+
+#: Mach-O-Kennungen. Die beiden ersten sind Einzelbauten (64- und 32-Bit,
+#: little endian), die beiden letzten ein Universal-Buendel ("fat").
+_MACHO_EINZELN = (bytes((0xCF, 0xFA, 0xED, 0xFE)), bytes((0xCE, 0xFA, 0xED, 0xFE)))
+_MACHO_FAT = (bytes((0xCA, 0xFE, 0xBA, 0xBE)), bytes((0xBE, 0xBA, 0xFE, 0xCA)))
+
+#: CPU-Typen aus dem Mach-O-Kopf, auf die es hier ankommt.
+_CPU_TYPEN = {0x01000007: "x86_64", 0x0100000C: "arm64"}
+
+
+def _eigene_architektur() -> str:
+    """Der Kurzname der Architektur dieses Rechners."""
+    name = platform.machine().lower()
+    if name in ("aarch64", "arm64"):
+        return "arm64"
+    if name in ("amd64", "x86_64", "x64"):
+        return "x86_64"
+    return name
+
+
+def executable_architectures(path: Path) -> set[str]:
+    """Welche Architekturen eine Mach-O-Datei bedient.
+
+    Returns:
+        Kurznamen wie ``{"arm64"}``, bei einem Universal-Bau mehrere. Leer,
+        wenn die Datei kein Mach-O ist - dann faellt die Entscheidung
+        anderswo.
+    """
+    try:
+        with path.open("rb") as strom:
+            kopf = strom.read(8)
+            if kopf[:4] in _MACHO_EINZELN:
+                typ = int.from_bytes(kopf[4:8], "little")
+                name = _CPU_TYPEN.get(typ)
+                return {name} if name else set()
+            if kopf[:4] in _MACHO_FAT:
+                anzahl = int.from_bytes(kopf[4:8], "big")
+                gefunden: set[str] = set()
+                for _ in range(min(anzahl, 16)):
+                    eintrag = strom.read(20)
+                    if len(eintrag) < 4:
+                        break
+                    name = _CPU_TYPEN.get(int.from_bytes(eintrag[:4], "big"))
+                    if name:
+                        gefunden.add(name)
+                return gefunden
+    except OSError:
+        return set()
+    return set()
+
+
+def runs_on_this_cpu(path: Path) -> bool:
+    """Passt die Programmdatei zur Architektur dieses Rechners?
+
+    Der Hersteller liefert die Mac-Fassung nur fuer Apple Silicon. Auf einem
+    Intel-Mac liegt sie zwar im Buendel, laesst sich aber nicht starten:
+    "Bad CPU type in executable" (Errno 86) - am 23.08.2026 auf einem echten
+    Intel-Laeufer gemessen, nachdem die Auswahl zuvor nur nach Plattform
+    ging und nicht nach Architektur. Dasselbe gilt unter Linux, wo dieselbe
+    Mach-O-Datei danebenliegt.
+
+    Dateien, die kein Mach-O sind, gelten als passend: Ueber sie entscheidet
+    schon der Dateiname.
+    """
+    architekturen = executable_architectures(path)
+    if not architekturen:
+        return True
+    return _eigene_architektur() in architekturen
 
 
 def crash_description(returncode: int | None) -> str:

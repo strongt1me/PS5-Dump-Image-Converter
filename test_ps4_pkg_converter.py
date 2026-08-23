@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import inspect
 import json
+import platform
 import os
 import subprocess
 import sys
@@ -773,7 +774,7 @@ class PfadgrenzeTests(unittest.TestCase):
         self.util = util
 
     def test_spielraum_nur_unter_windows(self) -> None:
-        frei = self.util.windows_path_headroom(Path("C:\kurz"))
+        frei = self.util.windows_path_headroom(Path("C:/kurz"))
         if os.name == "nt":
             self.assertEqual(frei, self.util.WINDOWS_MAX_PATH - len(str(Path("C:/kurz"))))
         else:
@@ -859,10 +860,16 @@ class HelferProPlattformTests(unittest.TestCase):
     Mac kein Ausfuehrungsrecht, daher Errno 13.
     """
 
+    #: Plattform und Architektur zusammen entscheiden. Die Mac-Fassung gibt
+    #: es nur fuer Apple Silicon; fuer Intel-Macs und Linux liefert der
+    #: Hersteller keine, dort darf deshalb NICHTS herauskommen. Am
+    #: 23.08.2026 auf einem echten Intel-Laeufer belegt: Wer dort die
+    #: arm64-Datei anbietet, erntet "Bad CPU type in executable".
     ERWARTET = {
-        "win32": ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"),
-        "darwin": ("ps4_pkg_extract", "ps4-dlc-patch"),
-        "linux": ("ps4_pkg_extract", "ps4-dlc-patch"),
+        ("win32", "AMD64"): ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"),
+        ("darwin", "arm64"): ("ps4_pkg_extract", "ps4-dlc-patch"),
+        ("darwin", "x86_64"): (None, None),
+        ("linux", "x86_64"): (None, None),
     }
 
     def setUp(self) -> None:
@@ -875,23 +882,38 @@ class HelferProPlattformTests(unittest.TestCase):
         self.dlc_helfer = find_dlc_helper
 
     def test_jede_plattform_bekommt_ihre_datei(self) -> None:
-        for plattform, (entpacker, helfer) in self.ERWARTET.items():
-            with self.subTest(plattform=plattform):
-                with mock.patch.object(sys, "platform", plattform):
+        for (plattform, cpu), (entpacker, helfer) in self.ERWARTET.items():
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
                     gefunden = self.entpacker(PS4_ORDNER)
+                    if entpacker is None:
+                        self.assertIsNone(gefunden)
+                        continue
                     self.assertIsNotNone(gefunden, "kein Entpacker gefunden")
                     self.assertEqual(gefunden.name, entpacker)
                     self.assertEqual(self.dlc_helfer(PS4_ORDNER).name, helfer)
 
     def test_windows_datei_nie_ausserhalb_von_windows(self) -> None:
-        """Der Kern des Fehlers: keine .exe auf Mac oder Linux."""
-        for plattform in ("darwin", "linux"):
-            with self.subTest(plattform=plattform):
-                with mock.patch.object(sys, "platform", plattform):
-                    self.assertFalse(
-                        self.entpacker(PS4_ORDNER).name.endswith(".exe"))
-                    self.assertFalse(
-                        self.dlc_helfer(PS4_ORDNER).name.endswith(".exe"))
+        """Der Kern des ersten Fehlers: keine .exe auf Mac oder Linux.
+
+        Wo gar nichts angeboten wird, ist die Bedingung ebenfalls erfuellt -
+        und richtig, denn dort gibt es keinen brauchbaren Bau.
+        """
+        for plattform, cpu in (("darwin", "arm64"), ("darwin", "x86_64"),
+                               ("linux", "x86_64")):
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    if gefunden is not None:
+                        self.assertFalse(gefunden.name.endswith(".exe"))
+                    try:
+                        helfer = self.dlc_helfer(PS4_ORDNER)
+                    except Exception:
+                        helfer = None
+                    if helfer is not None:
+                        self.assertFalse(helfer.name.endswith(".exe"))
 
 
 class AusfuehrungsrechtTests(unittest.TestCase):
@@ -975,12 +997,131 @@ class AbsturzmeldungTests(unittest.TestCase):
                 self.assertEqual(self.beschreiben(code), "")
         self.assertEqual(self.beschreiben(None), "")
 
+    def test_der_pfad_wird_wirklich_durchlaufen(self) -> None:
+        """Nicht nur der Quelltext - der Aufruf selbst.
+
+        Hier fehlte einmal der Import von crash_description in
+        inventory.py. Uebersetzen liess sich das trotzdem, und keine
+        Pruefung fiel darauf herein: Der Zweig laeuft nur, wenn der
+        Entpacker gar nichts ausgibt. Erst pyflakes fand es. Dieser Test
+        stellt genau den Fall nach - ein Entpacker, der immer abstuerzt.
+        """
+        import tempfile  # noqa: PLC0415
+
+        from ps4ffpsc.inventory import inspect_package  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory(prefix="ps4_crash_") as ordner:
+            basis = Path(ordner)
+            paket = basis / "spiel.pkg"
+            paket.write_bytes(bytes((0x7F,)) + b"CNT" + os.urandom(2048))
+            skript = basis / "immer_ab.py"
+            skript.write_text(
+                "import sys" + chr(10) + "sys.exit(3221225477)" + chr(10),
+                encoding="utf-8")
+            starter = basis / ("start.cmd" if os.name == "nt"
+                               else "start.sh")
+            if os.name == "nt":
+                starter.write_text(
+                    '@"%s" "%s" %%*' % (sys.executable, skript) + chr(10),
+                    encoding="utf-8")
+            else:
+                starter.write_text(
+                    "#!/bin/sh" + chr(10)
+                    + 'exec "%s" "%s" "$@"' % (sys.executable, skript)
+                    + chr(10), encoding="utf-8")
+                starter.chmod(0o755)
+
+            befund = inspect_package(starter, paket, compute_sha256=False)
+
+        self.assertFalse(befund.get("supported"))
+        grund = befund.get("reason", "")
+        self.assertIn("crashed", grund,
+                      "Der Absturz muss beim Namen genannt werden: %r" % grund)
+        self.assertIn("0xC0000005", grund)
+
     def test_die_pipeline_nennt_den_schuldigen(self) -> None:
         """Der Nutzer soll nicht bei sich suchen."""
         quelle = (PS4_ORDNER / "ps4ffpsc" / "pipeline.py").read_text(
             encoding="utf-8")
         self.assertIn("extractor_crashed", quelle)
         self.assertIn("fault in the bundled extractor", quelle)
+
+
+class ArchitekturTests(unittest.TestCase):
+    """Die Mac-Fassung gibt es nur fuer Apple Silicon.
+
+    Am 23.08.2026 auf einem echten Intel-Laeufer gemessen: Nachdem die
+    Auswahl plattformbewusst geworden war, aber noch nicht
+    architekturbewusst, bot sie dort die arm64-Datei an. Der Start endete
+    mit
+
+        OSError: [Errno 86] Bad CPU type in executable: .../ps4_pkg_extract
+
+    Also derselbe Fehler wie zuvor mit der .exe, nur eine Stufe spaeter.
+    Dasselbe gilt unter Linux, wo dieselbe Datei danebenliegt.
+    """
+
+    def setUp(self) -> None:
+        if str(PS4_ORDNER) not in sys.path:
+            sys.path.insert(0, str(PS4_ORDNER))
+        from ps4ffpsc.dlc_embed import find_dlc_helper  # noqa: PLC0415
+        from ps4ffpsc.inventory import find_extractor  # noqa: PLC0415
+        from ps4ffpsc.util import (  # noqa: PLC0415
+            executable_architectures,
+            runs_on_this_cpu,
+        )
+
+        self.architekturen = executable_architectures
+        self.laeuft_hier = runs_on_this_cpu
+        self.entpacker = find_extractor
+        self.dlc_helfer = find_dlc_helper
+
+    def test_die_mitgelieferten_dateien_werden_erkannt(self) -> None:
+        bin_ordner = PS4_ORDNER / "bin"
+        for name in ("ps4_pkg_extract", "ps4-dlc-patch"):
+            with self.subTest(datei=name):
+                self.assertEqual(self.architekturen(bin_ordner / name),
+                                 {"arm64"})
+        for name in ("ps4_pkg_extract.exe", "ps4-dlc-patch.exe"):
+            with self.subTest(datei=name):
+                self.assertEqual(self.architekturen(bin_ordner / name), set(),
+                                 "Eine PE-Datei ist kein Mach-O.")
+
+    def test_keine_datei_ist_kein_absturz(self) -> None:
+        self.assertEqual(self.architekturen(PS4_ORDNER / "gibtsnicht"), set())
+        self.assertTrue(self.laeuft_hier(PS4_ORDNER / "gibtsnicht"),
+                        "Ohne Mach-O entscheidet der Dateiname.")
+
+    def test_auswahl_je_plattform_und_architektur(self) -> None:
+        """Vier Faelle, und nur bei zweien darf etwas herauskommen."""
+        faelle = {
+            ("win32", "AMD64"): "ps4_pkg_extract.exe",
+            ("darwin", "arm64"): "ps4_pkg_extract",
+            ("darwin", "x86_64"): None,
+            ("linux", "x86_64"): None,
+        }
+        for (plattform, cpu), erwartet in faelle.items():
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    gefunden = self.entpacker(PS4_ORDNER)
+                    if erwartet is None:
+                        self.assertIsNone(
+                            gefunden,
+                            "Fuer diese Architektur gibt es keinen Bau - es "
+                            "darf keiner angeboten werden.")
+                    else:
+                        self.assertIsNotNone(gefunden)
+                        self.assertEqual(gefunden.name, erwartet)
+
+    def test_der_dlc_helfer_haelt_sich_daran_auch(self) -> None:
+        for plattform, cpu in (("darwin", "x86_64"), ("linux", "x86_64")):
+            with self.subTest(plattform=plattform, cpu=cpu):
+                with mock.patch.object(sys, "platform", plattform),                         mock.patch.object(platform, "machine",
+                                          lambda c=cpu: c):
+                    with self.assertRaises(Exception):
+                        self.dlc_helfer(PS4_ORDNER)
+
 
 
 
