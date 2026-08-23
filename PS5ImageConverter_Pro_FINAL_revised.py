@@ -411,7 +411,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.88"
+APP_VERSION = "v1.8.89"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1674,7 +1674,6 @@ class PS5ConverterGUI:
         self._info_popup: tk.Toplevel | None = None
         self._cred_win: tk.Toplevel | None = None
         self._res_win: tk.Toplevel | None = None
-        self._taskbar_root_ref: tk.Tk | None = None
         self._btn_maximize: tk.Button | None = None
         self.is_fullscreen = False
         self.dock_info = tk.BooleanVar(value=False)
@@ -6202,13 +6201,6 @@ class PS5ConverterGUI:
             self.root.geometry(f"{sw}x{sh}+0+0")
         self.is_fullscreen = True
         self._sync_docked_windows()
-
-    def _minimize_to_taskbar(self) -> None:
-        """Minimiert das Fenster in die Taskleiste (nativer Windows-Rahmen)."""
-        try:
-            self.root.iconify()
-        except Exception as exc:
-            logger.debug("Minimieren fehlgeschlagen: %s", exc)
 
     def _find_app_icon_file(self) -> str:
         """Findet app_icon.ico im Runtime-/Bundle-Kontext."""
@@ -14537,8 +14529,8 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("CLI-Protokollausgabe fehlgeschlagen: %s", exc)
 
-        # Log-Tail-Puffer für _extract_failure_lines
-        # behält die letzten 60 Zeilen für Fehlerdiagnose
+        # Log-Tail-Puffer für den Diagnosebericht
+        # (_build_diagnostic_report_text zeigt die letzten 60 Zeilen)
         try:
             if not hasattr(self, '_build_log_tail'):
                 self._build_log_tail = []
@@ -14667,52 +14659,6 @@ class PS5ConverterGUI:
             self.root.after(1000, _pruefen)
         except Exception as exc:
             logger.debug("Statusmeldung nicht entkoppelbar: %s", exc)
-
-    def _extract_failure_lines(self) -> str:
-        """Extrahiert die relevantesten Fehlerzeilen aus dem Log-Tail-Puffer.
-
-        Prioritaet der Fehlerextraktion:
-          1. Zeilen mit [ERROR] / [FEHLER] / Exception / Access Denied
-          2. Zeilen mit [WARN] / [WARNUNG] / Warning
-          3. Letzte 5 Zeilen beliebigen Inhalts
-
-        Returns:
-            Kurzer mehrzeiliger String mit den relevantesten Zeilen,
-            oder leerer String wenn nichts Relevantes gefunden.
-        """
-        try:
-            tail = getattr(self, '_build_log_tail', None) or []
-            if not tail:
-                return ''
-            err_lines = []
-            warn_lines = []
-            for ln in tail:
-                low = ln.lower()
-                if ('[error]' in low or '[fehler]' in low or
-                        'exception' in low or 'access denied' in low or
-                        'access is denied' in low or
-                        'cannot find' in low or 'nicht gefunden' in low or
-                        'zugriff verweigert' in low):
-                    err_lines.append(ln.strip())
-                elif ('[warn]' in low or '[warnung]' in low or 'warning' in low):
-                    warn_lines.append(ln.strip())
-            picked = []
-            if err_lines:
-                picked = err_lines[-6:]
-            elif warn_lines:
-                picked = warn_lines[-4:]
-            else:
-                picked = [l.strip() for l in tail[-5:] if l.strip()]
-            # De-Duplikation mit Reihenfolge beibehalten
-            seen = set()
-            out = []
-            for l in picked:
-                if l and l not in seen:
-                    seen.add(l)
-                    out.append(l)
-            return '\n'.join(out)
-        except Exception:
-            return ''
 
     def _set_progress(
         self,
@@ -15850,14 +15796,12 @@ class PS5ConverterGUI:
         # 4. Groessen-Label & verbleibende Zeit (ETA)
         # ------------------------------------------------------------------
         precise_eta_seconds: float | None = None
-        display_percent_value: float | None = None
         if self.task_stored_str:
             if self.task_uncompressed_str:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
             else:
                 new_size = self.task_stored_str
         elif ffpkg_pct is not None:
-            display_percent_value = max(0.0, min(ffpkg_pct, 100.0))
             total_b = max(
                 0,
                 int(
@@ -15894,7 +15838,6 @@ class PS5ConverterGUI:
             done_gb = done_b / (1024 ** 3)
             total_gb = total_b / (1024 ** 3)
             rem_gb = rem_b / (1024 ** 3)
-            display_percent_value = max(0.0, min(engine_pct, 100.0))
             if engine_eta_seconds is not None and engine_eta_seconds >= 0.0:
                 precise_eta_seconds = engine_eta_seconds
                 eta_source = "engine_compress"
@@ -15922,7 +15865,6 @@ class PS5ConverterGUI:
             )
             if total_b > 0:
                 total_gb = total_b / (1024 ** 3)
-                display_percent_value = max(0.0, min(engine_pct, 100.0))
                 phase_label = {
                     "extract": "Extr.",
                     "unpack": "Unpack",
@@ -15948,10 +15890,6 @@ class PS5ConverterGUI:
             rate_bps = float(getattr(self, "_copy_rate_bps", 0.0) or 0.0)
             trend = str(getattr(self, "_copy_rate_trend", "") or "")
             total_exact = bool(getattr(self, "_copy_total_exact", False))
-            display_percent_value = max(
-                0.0,
-                min((done_b / max(int(self._copy_total_bytes), 1)) * 100.0, 100.0),
-            )
             if total_exact:
                 done_gb = done_b / (1024 ** 3)
                 total_gb = int(self._copy_total_bytes) / (1024 ** 3)
@@ -16081,7 +16019,7 @@ class PS5ConverterGUI:
         # 5. GUI aktualisieren
         # ------------------------------------------------------------------
         # WICHTIG: percent_value wird hier bewusst NICHT übergeben.
-        # display_percent_value ist der rohe, unskalierte Fortschritt der
+        # Der rohe, unskalierte Fortschritt wäre der Wert der
         # gerade aktiven Teiloperation (z. B. "37% dieser mkpfs-Phase"),
         # während task_displayed der auf den aktuellen Schrittbereich
         # gemappte, monoton steigende Gesamtfortschritt ist. Würde man
@@ -21449,10 +21387,6 @@ class PS5ConverterGUI:
             if not is_container
             else ""  # Container: Hinweis entfaellt – wird automatisch neu gepackt
         )
-
-        _copy_metric_last_ts = [0.0]
-        _copy_metric_last_done = [0]
-        _copy_metric_rate_ema = [0.0]
 
         try:
             if action == "cancel":
@@ -27879,25 +27813,6 @@ class PS5ConverterGUI:
             return True
         return False
 
-    def _ampr_gen_ftp(self):
-        """Oeffnet die Verbindung zur PS5; wirft bei fehlender Adresse."""
-        host = self._ps5_ip()
-        if not host:
-            raise RuntimeError(self._t("amprgen.no_ip"))
-        return self._ampr_ftp_connect(host, self._ps5_ftp_port())
-
-    def _ampr_gen_ordner_lokal(self, pfad: str) -> list[str]:
-        """Welche fakelib-Ordner liegen lokal unter diesem Pfad?"""
-        gefunden: list[str] = []
-        try:
-            for name in os.listdir(pfad):
-                if (name.lower() in (sm_gen.FAKELIB, sm_gen.FAKELIB2)
-                        and os.path.isdir(os.path.join(pfad, name))):
-                    gefunden.append(name)
-        except OSError as exc:
-            logger.debug("fakelib-Ordner nicht lesbar (%s): %s", pfad, exc)
-        return sorted(gefunden)
-
     def _ampr_gen_ordner_ftp(self, ftp, pfad: str) -> list[str]:
         """Dasselbe auf der Konsole."""
         gefunden: list[str] = []
@@ -33041,14 +32956,6 @@ class PS5ConverterGUI:
     # Konfidenz-Ampel (grün/gelb/rot) umbenennen
     # ------------------------------------------------------------------
 
-    _DUMP_RENAME_ILLEGAL_CHARS_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-
-    @classmethod
-    def _sanitize_folder_name_component(cls, text: str) -> str:
-        """Entfernt unter Windows unzulässige Zeichen aus einem Ordnernamen-Teil."""
-        cleaned = cls._DUMP_RENAME_ILLEGAL_CHARS_RE.sub("", text or "").strip()
-        cleaned = re.sub(r"\s+", " ", cleaned)
-        return cleaned.rstrip(". ")
 
     def _show_theme_dialog(self) -> None:
         """Zeigt den Design-Auswahl-Dialog (Hell / Mittel / Dunkel)."""
@@ -35754,8 +35661,6 @@ if __name__ == "__main__":
         logger.debug("Fenster-Map-Event: state=%s", root.state())
     root.bind("<Map>", _on_root_map)
 
-    # Referenz für _minimize_to_taskbar (root ist jetzt tk.Tk, kein Toplevel mehr)
-    app._taskbar_root_ref = root
 
     # --- Fenster beim Start fokussieren ---
     # Kein topmost/lift noetig – nativer Windows-Rahmen bringt das Fenster

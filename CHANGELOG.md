@@ -2,9 +2,52 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.88):** Zwei Fehler, die stillschweigend wirkten: Ein Lesefehler beim Ermitteln von Spielnamen führte zum Absturz statt zu einer Meldung, und der **Abbruch** stoppte den Fortschrittsmesser nicht – der lief danach weiter, bis das Packen von selbst endete.
+> **Kurz zum aktuellen Stand (v1.8.89):** Aufraeumen ohne sichtbare Änderung – 95 Zeilen Programmcode, die nie ausgeführt wurden, sind raus. Darunter eine Rechnung, die bei **jeder** Fortschrittsmeldung lief und deren Ergebnis niemand las. Dazu heisst "app0" im AMPR-Index-Builder jetzt "Dump" – gemeint war immer der Dump-Ordner.
 
 ---
+
+## v1.8.89 – 23.08.2026
+
+### Aufgeraeumt: 95 Zeilen, die nie liefen
+
+Der Programmcode wurde gezielt nach Stellen durchsucht, die nie ausgeführt
+werden. Am Verhalten ändert sich dadurch **nichts** – was nie lief, kann auch
+nichts anders machen.
+
+Gefunden und entfernt:
+
+| Was | Umfang |
+| --- | --- |
+| Fuenf Funktionen, die niemand aufruft | 86 Zeilen |
+| Eine Rechnung, deren Ergebnis nie gelesen wird | 8 Zeilen |
+| Reste einer ausgebauten Geschwindigkeitsanzeige | 3 Zeilen |
+
+Die Rechnung ist der interessanteste Fall: Sie lief bei **jeder**
+Fortschrittsmeldung – also während einer Umwandlung fortlaufend – und ihr
+Ergebnis wurde nirgends verwendet.
+
+Nicht angetastet wurden Funktionen, die zwar niemand im Programm aufruft,
+die aber vom System gerufen werden (etwa die Behandlung von
+Netzwerkanfragen) oder die als Schnittstelle gedacht sind.
+
+### AMPR-Index-Builder: "app0" heisst jetzt "Dump"
+
+Im Fenster **AMPR-Index-Builder** stand an drei Stellen "app0" – die
+Beschriftung des Ordnerfelds, der Titel des Auswahldialogs und die
+Begruessung im Protokoll. Gemeint war immer der Dump-Ordner, und genau so
+heisst es jetzt auch.
+
+Unveraendert bleibt die Meldung "Durchsuche /app0 auf der PS5": Dort ist
+`/app0` der tatsaechliche Pfad auf der Konsole, keine Beschriftung.
+
+
+### Ein irrefuehrender Kommentar richtiggestellt
+
+Ein Kommentar benannte den falschen Verbraucher eines Zwischenspeichers.
+Beim Aufräumen führte das beinahe dazu, etwas zu entfernen, das noch
+gebraucht wird – der Speicher liefert die letzten 60 Protokollzeilen an den
+**Diagnosebericht**. Der Kommentar sagt das jetzt.
+
 
 ## v1.8.88 – 23.08.2026
 
