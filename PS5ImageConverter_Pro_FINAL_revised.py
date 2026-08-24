@@ -857,6 +857,221 @@ def parse_sfo(data: bytes) -> dict[str, object]:
 # ProgressEngine: Robuste, gewichtete Fortschrittsanzeige f├╝r 5 Aufgaben
 # ---------------------------------------------------------------------------
 
+class FortschrittsWaechter:
+    """Prueft die Fortschrittsanzeige, waehrend sie laeuft.
+
+    Am 24.08.2026 hatte der exFAT-Weg zwei Fehler, die lange niemandem
+    auffielen: Der Phasenzaehler stand fest auf Phase 2 von 4, und eine
+    Byte-Zahl im Statustext fror ein, waehrend der Balken von 2 auf 98
+    Prozent lief. Beides liess sich nur finden, indem die Anzeige waehrend
+    echter Laeufe abgelesen wurde.
+
+    Diese Klasse macht daraus eine Dauermessung, die auf jedem Rechner
+    mitlaeuft - auch dort, wo niemand eine Messreihe fahren kann. Der
+    Diagnosebericht zeigt das Ergebnis des letzten Laufs.
+
+    Der Speicherbedarf bleibt konstant: Es werden keine Verlaeufe gesammelt,
+    sondern nur laufende Kennzahlen fortgeschrieben.
+    """
+
+    #: Ab dieser Pause ohne jede sichtbare Aenderung gilt die Anzeige als
+    #: stehengeblieben. Seit der mitlaufenden Uhr in ``_stillstand_uhr``
+    #: sollte das nicht mehr vorkommen - schlaegt es doch an, fehlt die Uhr
+    #: an einer Stelle.
+    STILLSTAND_S = 20.0
+
+    #: Balken und Prozentzahl duerfen sich um Rundung unterscheiden, nicht mehr.
+    ZAHL_TOLERANZ = 1.5
+
+    #: Eine Zahl im Statustext gilt als eingefroren, wenn der Balken um so
+    #: viele Punkte weiterlief, ohne dass sie sich ruehrte. Die Zeit allein
+    #: waere das falsche Mass: Die eingefrorene Zahl stand nur 5,3 s - aber
+    #: waehrend der Balken fast den ganzen Weg zuruecklegte.
+    STARRE_PUNKTE = 25.0
+
+    #: ... und mindestens so lange. Ein einzelner verpasster Takt bei einem
+    #: schnellen Lauf ist kein Einfrieren.
+    STARRE_S = 3.0
+
+    _PHASE = re.compile(r"^Phase\s+(\d+)\s*/\s*(\d+)")
+    _BYTES = re.compile(r"([\d.,]+\s*[KMGT]?B)\s*/\s*([\d.,]+\s*[KMGT]?B)")
+
+    def __init__(self) -> None:
+        self.zuruecksetzen()
+
+    def zuruecksetzen(self) -> None:
+        self.n = 0
+        self.begonnen = 0.0
+        self.letzte_zeit = 0.0
+        self.erster = None
+        self.letzter = 0.0
+        self.groesster = 0.0
+        self.rueckspruenge = 0
+        self.schlimmster_ruecksprung = None
+        self.ueberlaeufe = 0
+        self.groesste_abweichung = 0.0
+        self.phasenfolge = []
+        self.phasen_rueckwaerts = 0
+        self.groesste_luecke = 0.0
+        self.luecke_bei = 0.0
+        self.byte_wert = None
+        # None, nicht 0.0: Ein Zeitstempel darf nicht ueber seine
+        # Wahrheit geprueft werden - 0.0 ist falsch, und genau bei
+        # t=0 begann die Messung.
+        self.byte_seit = None
+        self.byte_bei_balken = 0.0
+        self.byte_starre = 0.0
+        self.byte_starre_punkte = 0.0
+        self.abgeschlossen = False
+
+    # -- Beobachtung ---------------------------------------------------
+    def beobachte(self, balken, prozenttext, statustext, jetzt=None) -> None:
+        """Nimmt einen Messpunkt auf.
+
+        Darf nie eine Ausnahme ausloesen: Eine Messung, die den gemessenen
+        Vorgang stoert, waere schlimmer als keine.
+        """
+        try:
+            jetzt = time.monotonic() if jetzt is None else float(jetzt)
+            balken = float(balken)
+        except (TypeError, ValueError):
+            return
+
+        if self.n == 0:
+            self.begonnen = jetzt
+            self.erster = balken
+        else:
+            luecke = jetzt - self.letzte_zeit
+            if luecke > self.groesste_luecke:
+                self.groesste_luecke = luecke
+                self.luecke_bei = self.letzter
+            if balken < self.letzter - 1e-9:
+                self.rueckspruenge += 1
+                schlimm = self.schlimmster_ruecksprung
+                if schlimm is None or (self.letzter - balken) > (schlimm[0] - schlimm[1]):
+                    self.schlimmster_ruecksprung = (self.letzter, balken)
+
+        self.n += 1
+        self.letzte_zeit = jetzt
+        self.letzter = balken
+        self.groesster = max(self.groesster, balken)
+        if balken > 100.0001:
+            self.ueberlaeufe += 1
+
+        zahl = self._zahl(prozenttext)
+        if zahl is not None:
+            self.groesste_abweichung = max(self.groesste_abweichung, abs(zahl - balken))
+
+        treffer = self._PHASE.match(statustext or "")
+        if treffer:
+            paar = (int(treffer.group(1)), int(treffer.group(2)))
+            if not self.phasenfolge or self.phasenfolge[-1] != paar:
+                if (self.phasenfolge and paar[0] < self.phasenfolge[-1][0]
+                        and paar[1] == self.phasenfolge[-1][1]):
+                    self.phasen_rueckwaerts += 1
+                self.phasenfolge.append(paar)
+
+        gefunden = self._BYTES.search(statustext or "")
+        wert = gefunden.group(1) if gefunden else None
+        if wert != self.byte_wert:
+            self.byte_wert = wert
+            self.byte_seit = jetzt
+            self.byte_bei_balken = balken
+        elif wert is not None and self.byte_seit is not None:
+            self.byte_starre = max(self.byte_starre, jetzt - self.byte_seit)
+            self.byte_starre_punkte = max(self.byte_starre_punkte,
+                                          balken - self.byte_bei_balken)
+
+    def abschliessen(self, endwert=None) -> None:
+        """Schliesst die Messung ab.
+
+        ``endwert`` kommt aus dem Abschluss, NACHDEM der Balken auf 100
+        gesetzt wurde. Ohne das meldete der Waechter bei jedem erfolgreichen
+        Lauf, der Balken habe bei 99 Prozent geendet: Der Taktgeber hoert
+        auf, bevor der letzte Schritt die 100 schreibt - er kann sie also
+        nie sehen.
+        """
+        if endwert is not None:
+            try:
+                self.letzter = float(endwert)
+                self.groesster = max(self.groesster, self.letzter)
+            except (TypeError, ValueError):
+                pass
+        self.abgeschlossen = True
+
+    @staticmethod
+    def _zahl(text):
+        try:
+            roh = str(text or "").strip().rstrip("%").replace(",", ".")
+            return float(roh) if roh else None
+        except ValueError:
+            return None
+
+    # -- Auswertung ----------------------------------------------------
+    def befunde(self) -> list:
+        """Was an der Anzeige nicht stimmte. Leere Liste heisst: alles gut."""
+        aus = []
+        if self.n < 3:
+            return aus
+        if self.rueckspruenge:
+            v, n = self.schlimmster_ruecksprung or (0.0, 0.0)
+            aus.append("Balken sprang %dx zurueck, schlimmstenfalls %.1f%% -> %.1f%%"
+                       % (self.rueckspruenge, v, n))
+        if self.ueberlaeufe:
+            aus.append("Balken ueber 100%%: %dx, hoechstens %.1f%%"
+                       % (self.ueberlaeufe, self.groesster))
+        if self.abgeschlossen and self.letzter < 99.99:
+            aus.append("Balken endete bei %.1f%% statt 100%%" % self.letzter)
+        if self.groesste_abweichung > self.ZAHL_TOLERANZ:
+            aus.append("Balken und Prozentzahl liefen um bis zu %.1f Punkte auseinander"
+                       % self.groesste_abweichung)
+        if self.phasenfolge:
+            gesamt = self.phasenfolge[-1][1]
+            summen = set(p[1] for p in self.phasenfolge)
+            if len(summen) > 1:
+                aus.append("Gesamtzahl der Phasen wechselte: %s"
+                           % ", ".join(str(x) for x in sorted(summen)))
+            if self.phasen_rueckwaerts:
+                aus.append("Phasenzaehler lief %dx rueckwaerts" % self.phasen_rueckwaerts)
+            gesehen = set(p[0] for p in self.phasenfolge)
+            fehlt = [x for x in range(1, gesamt + 1) if x not in gesehen]
+            if fehlt:
+                aus.append("Phasen nie angezeigt: %s (von 1..%d)"
+                           % (", ".join(str(x) for x in fehlt), gesamt))
+            if self.abgeschlossen and self.phasenfolge[-1][0] != gesamt:
+                aus.append("endete bei Phase %d von %d"
+                           % (self.phasenfolge[-1][0], gesamt))
+        if (self.byte_starre_punkte > self.STARRE_PUNKTE
+                and self.byte_starre > self.STARRE_S):
+            aus.append("Zahl im Statustext stand fest, waehrend der Balken um "
+                       "%.0f Punkte weiterlief (%.0f s)"
+                       % (self.byte_starre_punkte, self.byte_starre))
+        if self.groesste_luecke > self.STILLSTAND_S:
+            aus.append("Anzeige stand %.0f s still (bei %.0f%%)"
+                       % (self.groesste_luecke, self.luecke_bei))
+        return aus
+
+    def bericht(self) -> list:
+        """Zeilen fuer den Diagnosebericht."""
+        if self.n < 3:
+            return ["(seit dem Start lief keine Aufgabe - nichts gemessen)"]
+        weg = " -> ".join("%d/%d" % paar for paar in self.phasenfolge[:8]) or "keine"
+        if len(self.phasenfolge) > 8:
+            weg += " ..."
+        zeilen = [
+            "Messpunkte: %d ueber %.0f s" % (self.n, self.letzte_zeit - self.begonnen),
+            "Balken: %.0f%% -> %.0f%% (hoechstens %.0f%%)"
+            % (self.erster or 0.0, self.letzter, self.groesster),
+            "Phasenweg: %s" % weg,
+            "laengste Pause ohne Aenderung: %.1f s" % self.groesste_luecke,
+        ]
+        gefunden = self.befunde()
+        zeilen.append("Befund: keine Auffaelligkeit" if not gefunden
+                      else "Befund: %d Auffaelligkeit(en)" % len(gefunden))
+        zeilen.extend("  - " + x for x in gefunden)
+        return zeilen
+
+
 class ProgressEngine:
     """Verwaltet den Gesamtfortschritt f├╝r alle 8 Aufgaben.
 
@@ -930,7 +1145,15 @@ class ProgressEngine:
         self._eta_seconds = None
         self._external_eta_seconds = None
         self._external_progress_active = False
-        self._status_text = f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {task_name}"
+        # Ohne "Aufgabe N/8".
+        #
+        # Der Index benennt die interne Teiloperation, nicht die vom Nutzer
+        # gewaehlte Aufgabe: ``start_task(3, "ffpkg zu ffpfsc")`` schrieb
+        # "Aufgabe 4/8" auch dann ins Fenster, wenn Aufgabe 2 oder 6 lief.
+        # Gemessen am 24.08.2026 bei Aufgabe 2 (.ffpfsc -> Ordner). Der Index
+        # steuert weiterhin die Gewichtung - nur die Zahl steht nicht mehr da,
+        # wo sie den Nutzer in die Irre fuehrt.
+        self._status_text = str(task_name)
         # Neuer Task muss einen alten Lauf hart ueberschreiben.
         # Sonst kann ein Resume-/Abbruch-Restwert (z. B. 93%) in den
         # naechsten Task hineinragen und ETA/Status verfaelschen.
@@ -944,9 +1167,7 @@ class ProgressEngine:
             description: Kurze Beschreibung fuer das Status-Feedback.
         """
         self._phase = "prepare"
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
-        )
+        self._status_text = str(description)
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
         self._advance_raw(target)
 
@@ -964,7 +1185,7 @@ class ProgressEngine:
         self._unit_label = unit_label
         self._payload_desc = description
         self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description} "
+            f"{description} "
             f"[0/{self._fmt_units(self._payload_total, unit_label)}]"
         )
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
@@ -984,16 +1205,14 @@ class ProgressEngine:
         label = getattr(self, "_unit_label", "Einheiten")
         desc = getattr(self, "_payload_desc", "Verarbeite...")
         self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {desc} "
+            f"{desc} "
             f"[{self._fmt_units(self._payload_done, label)}/{self._fmt_units(self._payload_total, label)}]"
         )
 
     def begin_validate(self, description: str = "Validierung...") -> None:
         """Beginnt die Validierungs-Phase (5 %)."""
         self._phase = "validate"
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
-        )
+        self._status_text = str(description)
         payload_end = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
         self._advance_raw(payload_end)
 
@@ -1004,9 +1223,7 @@ class ProgressEngine:
         task_end = self._task_start() + self.TASK_WEIGHT
         safe_global = min(task_end, self.SAFETY_LIMIT)
         self._advance_raw(safe_global)
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: Abgeschlossen."
-        )
+        self._status_text = "Abgeschlossen."
 
     def finish_task(self) -> None:
         """Schliesst die aktuelle Aufgabe ab (Alias fuer commit_task)."""
@@ -2650,6 +2867,10 @@ class PS5ConverterGUI:
 
         # ProgressEngine: Robuste, gewichtete Fortschrittsanzeige für alle 5 Aufgaben
         self.progress_engine: ProgressEngine = ProgressEngine()
+        #: Misst waehrend jeder Aufgabe mit, was die Anzeige wirklich zeigt.
+        #: Das Ergebnis steht im Diagnosebericht - so faellt eine kaputte
+        #: Anzeige auch auf Rechnern auf, an denen niemand misst.
+        self.fortschritts_waechter: FortschrittsWaechter = FortschrittsWaechter()
 
         # GUI aufbauen
         self._setup_styles()
@@ -15432,6 +15653,15 @@ class PS5ConverterGUI:
         self.task_num_steps     = 1
         self.task_current_step  = 0
         self.task_step_ends     = []
+        self._zuletzt_angezeigt = 0.0
+        self._batch_von, self._batch_bis = 0.0, 100.0
+        self._uhr_basis = None
+        self._uhr_letzter_wert = -1.0
+        self._uhr_seit = time.monotonic()
+        try:
+            self.fortschritts_waechter.zuruecksetzen()
+        except AttributeError:
+            pass
         self.task_uncompressed_str   = ""
         self.task_stored_str         = ""
         self._copy_total_bytes       = 0
@@ -15666,6 +15896,24 @@ class PS5ConverterGUI:
         return f"{n / 1024 ** 3:.2f} GB"
 
     def _update_progress_gui(self) -> None:
+        # Zuerst messen, was GERADE angezeigt wird.
+        #
+        # _set_progress reicht Balken und Prozentzahl ueber
+        # root.after(0, ...) weiter, setzt sie also nicht sofort. Wer
+        # unmittelbar nach dem Setzen abliest, bekommt die Werte des
+        # vorigen Takts und haelt den Versatz faelschlich fuer eine
+        # Abweichung - gemessen 7,3 Punkte, die es nie gab. Am Anfang des
+        # Takts stammen Balken, Prozentzahl und Statuszeile dagegen aus
+        # demselben Moment.
+        try:
+            self.fortschritts_waechter.beobachte(
+                float(self.progress_var.get()),
+                self.percent_label.cget("text"),
+                self.status_label.cget("text"),
+            )
+        except Exception:
+            pass          # eine Messung darf den gemessenen Vorgang nie stoeren
+
         """Aktualisiert Fortschrittsbalken und %-Label live (alle 80ms).
 
         Prinzip: "Progress Driven by Real Events"
@@ -16353,11 +16601,13 @@ class PS5ConverterGUI:
         # zurück (z. B. von 60 % wieder auf 0 %), obwohl der Gesamtfortschritt
         # tatsächlich weiter vorwärts läuft. Die Detailzeile (new_size) zeigt
         # den rohen Teil-Fortschritt weiterhin informativ an.
+        _anzeige = self._balken_anzeigewert()
         self._set_progress(
-            self.task_displayed,
-            show_percent=(self.task_displayed > 0),
+            _anzeige,
+            show_percent=(_anzeige > 0),
             size_text=new_size,
         )
+        self._stillstand_uhr(_anzeige)
 
         # ------------------------------------------------------------------
         # 6. Loop fortsetzen
@@ -16388,6 +16638,76 @@ class PS5ConverterGUI:
         max_step = max(1, int(getattr(self, "task_num_steps", 1) or 1))
         step = max(1, min(int(getattr(self, "task_current_step", 1) or 1), max_step))
         return self._step_end_for(step)
+
+    #: Ab so vielen Sekunden ohne jede sichtbare Aenderung bekommt die
+    #: Statuszeile eine mitlaufende Uhr. Kuerzere Pausen sind normal und
+    #: sollen die Zeile nicht unruhig machen.
+    _STILLSTAND_UHR_AB_S: float = 5.0
+
+    def _stillstand_uhr(self, anzeige: float) -> None:
+        """Zeigt bei laengerem Stillstand, dass weitergearbeitet wird.
+
+        Gemessen am 24.08.2026: In den Pruef- und Abschlussphasen steht die
+        Anzeige still, weil es dort keinen Byte-Fortschritt gibt - 20,2 s bei
+        "Abschlusspruefung laeuft..." und 95 %, 12,6 s bei "Verarbeitung
+        laeuft..." und 57,9 %. Bei einem 100-GB-Dump sind das Minuten, und es
+        sieht aus, als haenge das Programm.
+
+        Den Balken kuenstlich weiterlaufen zu lassen waere gelogen - es ist
+        kein Fortschritt bekannt. Stattdessen laeuft die Zeit mit: Der Nutzer
+        sieht, dass etwas geschieht, ohne eine erfundene Zahl.
+        """
+        try:
+            jetzt = time.monotonic()
+            text = str(self.status_label.cget("text") or "")
+        except Exception:
+            return
+
+        # Die eigene Ergaenzung wieder abtrennen, sonst waechst sie endlos.
+        basis = text.split("  (", 1)[0] if "  (" in text else text
+        bewegt = (abs(anzeige - float(getattr(self, "_uhr_letzter_wert", -1.0))) > 0.005
+                  or basis != getattr(self, "_uhr_basis", None))
+        if bewegt:
+            self._uhr_basis = basis
+            self._uhr_letzter_wert = anzeige
+            self._uhr_seit = jetzt
+            return
+
+        seit = jetzt - float(getattr(self, "_uhr_seit", jetzt))
+        if seit < self._STILLSTAND_UHR_AB_S:
+            return
+        neu = "%s  (%d:%02d)" % (basis, int(seit) // 60, int(seit) % 60)
+        if neu != text:
+            try:
+                self.status_label.config(text=neu)
+            except Exception:
+                pass
+
+    def _balken_anzeigewert(self) -> float:
+        """Der Wert, der wirklich auf dem Balken landet.
+
+        Zwei Dinge geschehen hier:
+
+        1. **Abschnitt je Datei.** In der Sammelkonvertierung faellt der
+           Fortschritt der gerade bearbeiteten Datei in ihren Teil des
+           Balkens - Datei 1 von 2 in 0-50 %, Datei 2 in 50-100 %. Vorher lief
+           er je Datei von vorn los; gemessen am 24.08.2026 ein Sprung von
+           99,75 % auf 0,00 % beim Wechsel, was wie ein Neustart aussieht.
+           Ausserhalb der Sammelkonvertierung ist von=0/bis=100 und die
+           Rechnung wirkungslos.
+
+        2. **Nie rueckwaerts.** Beim Umschalten der Abbildung entstand sonst
+           ein Ruecksprung von 0,05 Punkten. Ein rueckwaerts laufender Balken
+           ist in jeder Aufgabe falsch, deshalb gilt die Schranke immer.
+        """
+        von = float(getattr(self, "_batch_von", 0.0) or 0.0)
+        bis = float(getattr(self, "_batch_bis", 100.0) or 100.0)
+        wert = float(getattr(self, "task_displayed", 0.0) or 0.0)
+        if bis > von and (von, bis) != (0.0, 100.0):
+            wert = von + wert * (bis - von) / 100.0
+        wert = max(wert, float(getattr(self, "_zuletzt_angezeigt", 0.0) or 0.0))
+        self._zuletzt_angezeigt = wert
+        return wert
 
     def _format_phase_status(self, message: str, prefer_current_label: bool = True) -> str:
         """Formatiert einen sichtbaren Phasenstatus passend zum aktuellen Aufgabenpfad."""
@@ -18490,6 +18810,12 @@ class PS5ConverterGUI:
                         pe.finish_all()
                     self.progress_var.set(100)
                     self.percent_label.config(text="100%")
+                    # Dem Waechter den Endwert nennen: Der Taktgeber hoert
+                    # vorher auf und kann die 100 nie sehen.
+                    try:
+                        self.fortschritts_waechter.abschliessen(100.0)
+                    except AttributeError:
+                        pass
                     if hasattr(self, "size_label") and _size_text:
                         self.size_label.config(text=_size_text)
                     self.run_btn.config(state=tk.NORMAL)
@@ -18663,7 +18989,20 @@ class PS5ConverterGUI:
             all_ok = True
             for idx, candidate in enumerate(sources, start=1):
                 if not self.is_running:
+                    self._batch_von, self._batch_bis = 0.0, 100.0
                     return False
+                # Jede Datei bekommt ihren Abschnitt des Balkens: Datei 1 von 2
+                # fuellt 0-50 %, Datei 2 dann 50-100 %.
+                #
+                # Vorher lief der Balken je Datei von vorn los. Der Ruecksetzer
+                # weiter unten ist dafuer noetig (sonst blockiert der hohe
+                # Endstand der Vorgaengerdatei jeden kleineren Wert), er machte
+                # den Sprung aber sichtbar: gemessen am 24.08.2026 ein Fall von
+                # 99,75 % auf 0,00 % beim Wechsel zur zweiten Datei. Das sieht
+                # aus wie ein Neustart. Die Zuordnung geschieht erst beim
+                # Anzeigen, der innere Fortschritt bleibt unveraendert.
+                self._batch_von = (idx - 1) * 100.0 / len(sources)
+                self._batch_bis = idx * 100.0 / len(sources)
                 # Fortschritt ist strikt vorwärts gerichtet (siehe task_progress-
                 # Konvention). Ohne diesen Reset bliebe der Balken ab Datei 2
                 # auf dem Endstand von Datei 1 hängen, weil dessen Wert (nahe
@@ -18745,6 +19084,7 @@ class PS5ConverterGUI:
             if succeeded == 0 and uebersprungen == len(sources):
                 self._append_to_log(self._t('batch.nothing_to_do'))
                 all_ok = False
+            self._batch_von, self._batch_bis = 0.0, 100.0
             self.task_final_output_path = dst
             return all_ok
 
@@ -19506,10 +19846,24 @@ class PS5ConverterGUI:
         self.task_total_source_bytes = self._get_path_size(src)
         self.progress_engine.start_task(0, "Dump-Ordner zu exFAT")
         self.progress_engine.begin_prepare("Quellordner analysieren...")
-        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 1 – Erstelle exFAT-Image..."))
+        # Dieser Weg hat drei Abschnitte, nicht vier wie der .ffpfsc-Weg: Es
+        # gibt kein inneres PFS und keinen Aussencontainer. Bis v1.8.93 stand
+        # hier gar keine Phase, und im Schreibteil klebte ein fest
+        # einprogrammiertes "Phase 2/4" - der Zaehler wanderte nie, und die
+        # Erfolgsmeldung erbte ihn.
+        self.task_num_steps = 3
+        self.task_current_step = 1
+        _text_phase1 = self._format_phase_status("Quellordner analysieren...",
+                                                 prefer_current_label=False)
+        self.root.after(0, lambda t=_text_phase1: self.status_label.config(text=t))
         self._append_to_log(self._t('log.auto.0109', v0=os.path.basename(src), v1=os.path.basename(final_output)))
+        self.task_current_step = 2
         ok = self._create_exfat_from_folder(src, final_output, pct_start=5.0, pct_end=98.0)
         if ok:
+            self.task_current_step = 3
+            _text_phase3 = self._format_phase_status("Abschlusspruefung laeuft...",
+                                                     prefer_current_label=False)
+            self.root.after(0, lambda t=_text_phase3: self.status_label.config(text=t))
             self.progress_engine.begin_validate("Validierung...")
             self.progress_engine.commit_task()
         return ok
@@ -19522,12 +19876,12 @@ class PS5ConverterGUI:
         self.task_total_source_bytes = self._get_path_size(src)
         self.progress_engine.start_task(3, "FFPKG zu Dump-Ordner")
         self.progress_engine.begin_prepare("FFPKG extrahieren...")
-        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Extrahiere .ffpkg..."))
+        self.root.after(0, lambda: self.status_label.config(text="Extrahiere .ffpkg..."))
         self._append_to_log(self._t('log.auto.0110', v0=os.path.basename(src), v1=base_name))
         ok = self._extract_ffpkg_to_folder_via_ufs2tool(
             src,
             final_output,
-            status_prefix="Aufgabe 4",
+            status_prefix="FFPKG-Extraktion",
             progress_start=5.0,
             progress_end=98.0,
         )
@@ -23689,7 +24043,7 @@ class PS5ConverterGUI:
             self.task_current_step = 1
             self.task_progress = max(self.task_progress, 0.5)
             self.task_displayed = max(self.task_displayed, 0.5)
-            self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Container entpacken..."))
+            self.root.after(0, lambda: self.status_label.config(text="Container entpacken..."))
             self._append_to_log(self._t('log.auto.0244'))
 
             # Sollwerte des äußeren Containers: Sie gelten für den Fall, dass
@@ -23715,7 +24069,7 @@ class PS5ConverterGUI:
             # ── Ebene für Ebene auspacken, bis die Spieldateien erscheinen ──
             ebenen = self._entpacke_container_ebenen(
                 tmp_dir,
-                status_prefix="Aufgabe 4",
+                status_prefix="FFPKG-Extraktion",
                 pct_start=20.0,
                 pct_end=90.0,
                 erwartet=erwartet,
@@ -23729,7 +24083,7 @@ class PS5ConverterGUI:
             self.task_progress = max(self.task_progress, 90.0)
             self.task_displayed = max(self.task_displayed, 90.0)
             self.root.after(0, lambda: self.status_label.config(
-                text="Aufgabe 4 – Vollständigkeit prüfen..."))
+                text="Vollständigkeit prüfen..."))
             if not self._pruefe_dump_vollstaendig(aktueller_ordner, erwartet):
                 return False
 
@@ -24278,6 +24632,7 @@ class PS5ConverterGUI:
         last_rate_ts = [0.0]
         last_rate_bytes = [0]
         rate_ema = [0.0]
+        last_status_ts = [0.0]      # eigener Takt fuer die Statuszeile
         self._copy_total_bytes = 0
         self._copy_done_bytes = 0
         self._copy_total_exact = True
@@ -24320,8 +24675,18 @@ class PS5ConverterGUI:
                             self._copy_rate_trend = trend
                         last_rate_ts[0] = now
                         last_rate_bytes[0] = written_bytes[0]
-                    if now - last_log_ts[0] >= 8.0:
-                        last_log_ts[0] = now
+                    # Anzeige und Protokoll haben verschiedene Takte.
+                    #
+                    # Bis v1.8.93 hing beides an denselben 8 Sekunden. Der
+                    # Balken lief derweil zehnmal je Sekunde weiter, sodass
+                    # daneben dauerhaft eine veraltete Byte-Zahl stand -
+                    # gemessen "6.0 KB/252.4 MB" bei 87 % Balken. Bei Laeufen
+                    # unter 8 Sekunden bewegte sich die Zahl ueberhaupt nie.
+                    #
+                    # Das Protokoll bleibt bei 8 Sekunden: Dort schadet
+                    # Haeufigkeit, in der Anzeige fehlende Aktualitaet.
+                    if now - last_status_ts[0] >= 0.5:
+                        last_status_ts[0] = now
                         self.root.after(
                             0,
                             lambda s=self._fmt_bytes(written_bytes[0]),
@@ -24331,9 +24696,14 @@ class PS5ConverterGUI:
                                 else "?"
                             ):
                             self.status_label.config(
-                                text=f"Phase 2/4 – exFAT-Image erstellt... {s}/{t}"
+                                text=self._format_phase_status(
+                                    f"exFAT-Image erstellt... {s}/{t}",
+                                    prefer_current_label=False,
+                                )
                             ),
                         )
+                    if now - last_log_ts[0] >= 8.0:
+                        last_log_ts[0] = now
                         self._append_to_log(self._t('log.auto.0269', v0=written_bytes[0], v1=total_bytes_box[0] or 0))
 
             if not out_path.is_file():
@@ -24787,7 +25157,7 @@ class PS5ConverterGUI:
             # --- Schritt 3: Neues PS5-kompatibles .exfat erstellen ---
             self._append_to_log(self._t('log.auto.0302'))
             self.root.after(0, lambda: self.status_label.config(
-                text="Aufgabe 2 – Neues exFAT-Image erstellen..."))
+                text="Neues exFAT-Image erstellen..."))
 
             # eboot.bin Prüfung
             eboot_path = os.path.join(game_dump_dir, "eboot.bin")
@@ -26828,6 +27198,19 @@ class PS5ConverterGUI:
                 zeilen.append(z("%s (%s)" % (name, wurzel), "nicht ermittelbar: %s" % exc))
         return zeilen
 
+    def _diagnose_fortschritt(self) -> list[str]:
+        """Was die Fortschrittsanzeige waehrend der letzten Aufgabe zeigte.
+
+        Gemessen wird nicht, was der Code aufruft, sondern was im Fenster
+        steht - Balken, Prozentzahl und Statuszeile, bei jedem Takt. Genau
+        so wurden am 24.08.2026 zwei Fehler im exFAT-Weg gefunden, die
+        vorher niemandem aufgefallen waren.
+        """
+        waechter = getattr(self, "fortschritts_waechter", None)
+        if waechter is None:
+            return ["(kein Waechter vorhanden)"]
+        return waechter.bericht()
+
     @staticmethod
     def _diagnose_protokolldatei(zeilen_anzahl: int = 80) -> list[str]:
         """Die letzten Zeilen aus ps5converter.log im TEMP-Ordner.
@@ -26905,6 +27288,7 @@ class PS5ConverterGUI:
             ("diagnostics.report_section_display", self._diagnose_anzeige),
             ("diagnostics.report_section_layout", self._diagnose_darstellung),
             ("diagnostics.report_section_stability", self._diagnose_laufruhe),
+            ("diagnostics.report_section_progress", self._diagnose_fortschritt),
             ("diagnostics.report_section_runtime", self._diagnose_umgebung),
             ("diagnostics.report_section_inventory", self._diagnose_werkzeugbestand),
             ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
@@ -35728,6 +36112,22 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
             return "--ampr-host ist für --ampr-action ampr_ftp_index erforderlich."
         if not args.ampr_remote_path:
             return "--ampr-remote-path ist für --ampr-action ampr_ftp_index erforderlich."
+    # Die FTP-Schalter wertet nur ampr_ftp_index aus. Wer sie einer anderen
+    # Aktion mitgibt, erwartet einen Upload - und bekam bis v1.8.93 keinen,
+    # ohne jede Meldung. Lieber klar abweisen als still ignorieren.
+    if action != "ampr_ftp_index":
+        ungenutzt = [name for name, wert in (
+            ("--ampr-host", args.ampr_host),
+            ("--ampr-remote-path", args.ampr_remote_path),
+            ("--ampr-no-upload", args.ampr_no_upload),
+        ) if wert]
+        if ungenutzt:
+            return (
+                "%s wirkt nur mit --ampr-action ampr_ftp_index. "
+                "Die Aktion %s laedt nichts hoch."
+                % (", ".join(ungenutzt), action)
+            )
+
     for name in ("ampr_lib",):
         for value in getattr(args, name, []) or []:
             if value not in ("libSceAmpr.sprx", "libScePlayGo.sprx"):

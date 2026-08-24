@@ -247,6 +247,21 @@ if [ ! -d "$BUENDEL" ]; then
     exit 1
 fi
 
+# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 nicht mehr im Programm, sondern
+# liegt neben der ausfuehrbaren Datei - also in Contents/MacOS/, denn
+# _bundled_resource() nimmt den Ordner von sys.argv[0].
+#
+# Zwingend VOR dem Signieren: codesign erfasst das Buendel als Ganzes. Wer
+# danach etwas hineinlegt, macht die eben gesetzte Signatur ungueltig, und auf
+# Apple Silicon startet ein Buendel mit kaputter Signatur gar nicht erst.
+if [ -d "PlayGo & AMPR_EMU" ]; then
+    rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
+    cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
+    meldung "      AMPR-/PlayGo-Ordner in Contents/MacOS gelegt." "$gruen"
+else
+    meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
+fi
+
 # --- Schritt 7: Signieren und pruefen -------------------------------------
 echo
 meldung "[7/7] Signiere das Buendel und pruefe es..." "$gelb"

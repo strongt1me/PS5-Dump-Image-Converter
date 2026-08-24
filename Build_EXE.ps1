@@ -259,6 +259,26 @@ if (Test-Path $exeRoh) {
     if (-not (Test-Path $ORDNER_WINDOWS)) { New-Item -ItemType Directory -Path $ORDNER_WINDOWS -Force | Out-Null }
     Move-Item $exeRoh $exePath -Force
 }
+# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 NICHT mehr in der EXE.
+#
+# Er liegt daneben, damit sich eine neue AMPR-Fassung hineinlegen laesst,
+# ohne das Programm neu zu bauen - genau das war beim Nachruesten von 0.3.6.6
+# noetig. Eingebettete Daten landen zur Laufzeit unter sys._MEIPASS, einem
+# Ordner, den PyInstaller beim Beenden loescht; dort etwas abzulegen ist
+# zwecklos. Gefunden wird er von _bundled_resource(), das zuletzt den Ordner
+# der ausfuehrbaren Datei absucht.
+$AMPR_QUELLE = Join-Path $PSScriptRoot "PlayGo & AMPR_EMU"
+if (Test-Path $AMPR_QUELLE) {
+    $amprZiel = Join-Path $ORDNER_WINDOWS "PlayGo & AMPR_EMU"
+    if (Test-Path $amprZiel) { Remove-Item $amprZiel -Recurse -Force }
+    Copy-Item $AMPR_QUELLE $amprZiel -Recurse -Force
+    $amprMB = [math]::Round((Get-ChildItem $amprZiel -Recurse -File |
+                             Measure-Object -Property Length -Sum).Sum / 1MB, 1)
+    Write-Host ("      AMPR-/PlayGo-Ordner neben die EXE gelegt ({0} MB)" -f $amprMB) -ForegroundColor Green
+} else {
+    Write-Host "      WARNUNG: 'PlayGo & AMPR_EMU' nicht gefunden - Aufgabe 7 findet keine Versionen." -ForegroundColor Yellow
+}
+
 if (Test-Path $exePath) {
     $sizeMB = [math]::Round((Get-Item $exePath).Length / 1MB, 1)
     Write-Host "  EXE:     dist\Windows\$EXE_NAME" -ForegroundColor White
@@ -322,7 +342,17 @@ if (Test-Path $exePath) {
             Write-Host "           FEHLT: $name" -ForegroundColor Yellow
         }
     }
-    $gesamt = (Get-ChildItem $buendel -File | Measure-Object -Property Length -Sum).Sum
+    # Der AMPR-Ordner gehoert mit ins Buendel - ohne ihn findet Aufgabe 7
+    # keine Versionen, und der Nutzer bekaeme "keine passende Datei".
+    if (Test-Path $AMPR_QUELLE) {
+        Copy-Item $AMPR_QUELLE (Join-Path $buendel "PlayGo & AMPR_EMU") -Recurse -Force
+        $ordnerMB = [math]::Round((Get-ChildItem (Join-Path $buendel "PlayGo & AMPR_EMU") -Recurse -File |
+                                   Measure-Object -Property Length -Sum).Sum / 1MB, 2)
+        Write-Host ("           {0,-46} {1,8} MB" -f "PlayGo & AMPR_EMU\", $ordnerMB) -ForegroundColor Gray
+    }
+
+    # -Recurse, sonst faellt der Ordnerinhalt aus der Summe.
+    $gesamt = (Get-ChildItem $buendel -Recurse -File | Measure-Object -Property Length -Sum).Sum
     Write-Host ("           zusammen {0:N1} MB" -f ($gesamt / 1MB)) -ForegroundColor Gray
 }
 

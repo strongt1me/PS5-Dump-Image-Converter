@@ -362,9 +362,34 @@ class SpecAusfuehrungTests(unittest.TestCase):
         ziele = {os.path.basename(q) for q, _z in self._kwargs("Analysis")["datas"]}
         for pflicht in ("app_icon.ico", "helloworld", "MkPFS-0.0.9",
                         "Hintergrundbilder", "BENUTZERHANDBUCH.html",
-                        "THIRD_PARTY_LICENSES.md", "Backport_Fakelibs",
-                        "PlayGo & AMPR_EMU"):
+                        "THIRD_PARTY_LICENSES.md", "Backport_Fakelibs"):
             self.assertIn(pflicht, ziele, f"{pflicht} wird nicht eingebettet")
+
+    def test_ampr_ordner_liegt_daneben_statt_drin(self):
+        """Seit v1.8.94 wird der AMPR-/PlayGo-Ordner NICHT eingebettet.
+
+        Er soll sich austauschen lassen, ohne das Programm neu zu bauen.
+        Eingebettete Daten landen unter sys._MEIPASS, einem Ordner, den
+        PyInstaller beim Beenden loescht - dort etwas hineinzulegen waere
+        zwecklos.
+
+        Weil das Programm ihn dann neben der ausfuehrbaren Datei sucht, MUSS
+        das Bauskript ihn dorthin kopieren. Auf macOS heisst das
+        Contents/MacOS/ und zwingend **vor** dem Signieren: codesign
+        erfasst das Buendel als Ganzes, und auf Apple Silicon startet ein
+        Buendel mit nachtraeglich veraenderter Signatur nicht.
+        """
+        ziele = {os.path.basename(q) for q, _z in self._kwargs("Analysis")["datas"]}
+        self.assertNotIn("PlayGo & AMPR_EMU", ziele,
+                         "Der Ordner soll neben der Programmdatei liegen, nicht darin")
+
+        skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
+        self.assertIn("Contents/MacOS/PlayGo & AMPR_EMU", skript,
+                      "Das Bauskript legt den Ordner nicht neben die Programmdatei")
+        kopieren = skript.index("Contents/MacOS/PlayGo & AMPR_EMU")
+        signieren = skript.index("codesign --force")
+        self.assertLess(kopieren, signieren,
+                        "Der Ordner muss VOR dem Signieren im Buendel liegen")
 
     def test_symbol_zeigt_auf_eine_vorhandene_datei(self):
         for aufruf in ("EXE", "BUNDLE"):

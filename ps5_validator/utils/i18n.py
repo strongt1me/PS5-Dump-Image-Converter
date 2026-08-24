@@ -601,6 +601,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'diagnostics.report_section_tools': {'de': '-- Fremdwerkzeuge --', 'en': '-- External tools --'},
     'diagnostics.report_section_space': {'de': '-- Freier Speicherplatz --', 'en': '-- Free disk space --'},
     'diagnostics.report_section_errors': {'de': '-- Unbehandelte Fehler dieser Sitzung --', 'en': '-- Unhandled errors this session --'},
+    'diagnostics.report_section_progress': {'de': '-- Fortschrittsanzeige (letzte Aufgabe) --', 'en': '-- Progress display (last task) --'},
     'diagnostics.report_section_logfile': {'de': '-- Protokolldatei (letzte Zeilen) --', 'en': '-- Log file (last lines) --'},
     'diagnostics.report_no_errors': {'de': 'Keine unbehandelten Fehler aufgezeichnet.', 'en': 'No unhandled errors recorded.'},
     'diagnostics.report_section_log_tail': {'de': '-- Letzte Logzeilen --', 'en': '-- Last log lines --'},

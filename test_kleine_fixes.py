@@ -701,9 +701,17 @@ class DiagnoseberichtTests(unittest.TestCase):
         self.assertEqual(gerufen, [])
 
     def test_abschnitt_kann_scheitern_ohne_den_bericht_zu_kippen(self):
+        """Ein einzelner Abschnitt darf den ganzen Bericht nie verhindern.
+
+        Der Block wird bis zum Ende der Abschnittsschleife gelesen, nicht
+        ueber eine feste Zeichenzahl: Mit 900 Zeichen fiel der Test um,
+        sobald ein neunter Abschnitt dazukam (die Fortschrittsanzeige am
+        24.08.2026) - obwohl der Sicherheitsnetz-Code unveraendert war.
+        """
         quelle = QUELLDATEI.read_text(encoding="utf-8")
         anfang = quelle.index("report_section_display\", self._diagnose_anzeige)")
-        block = quelle[anfang:anfang + 900]
+        ende = quelle.index("lines.extend(bauer())", anfang)
+        block = quelle[anfang:ende + 600]
         self.assertIn("except Exception as exc:", block)
         self.assertIn("Abschnitt fehlgeschlagen", block)
 
