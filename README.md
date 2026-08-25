@@ -2,7 +2,7 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.8.97-blue)
+![Version](https://img.shields.io/badge/Version-v1.8.98-blue)
 ![Tests](https://img.shields.io/badge/Tests-1503%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
@@ -45,7 +45,7 @@ Quarantäne-Markierung.
 | 4 | FFPKG konvertieren | `.ffpkg` | Dump-Ordner, `.ffpfsc`, `.exfat` |
 | 5 | Sammelkonvertierung | mehrere Container | gemeinsames Zielformat |
 | 6 | Universal-Export | Ordner oder Container | passendes Zielformat |
-| 7 | AMPR EMU Manager | Ordner oder Container | Versionen verwalten, `ampr_emu.index` bauen, per FTP auf der PS5 arbeiten |
+| 7 | AMPR EMU Manager | Ordner oder Container | Auswahlfenster: alte oder neue ShadowMount+-Methode (automatisch, je mit Anleitung) oder Einbau ins Backup – Ablage wählbar: pro Spiel, global, Emulatoren |
 | 8 | Dump Validator | Ordner oder Container | Integritätsbericht |
 
 Angeboten werden nur Zielformate, die zur erkannten Quelle passen.

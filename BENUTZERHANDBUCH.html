@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.97</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.98</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.97</span>
+      <span class="marke">Version v1.8.98</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -590,6 +590,25 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k11">
   <h2><span class="nr">11</span> Aufgabe 7 – AMPR EMU Manager</h2>
+
+  <div class="kasten tipp">
+    <span class="titel">Seit v1.8.98: Knopf 7 &ouml;ffnet erst eine Auswahl</span>
+    <p>Fr&uuml;her stellte Knopf 7 sofort die Aufgabe im Hauptbereich um, und
+    die beiden automatischen Methoden lagen als eigene Kn&ouml;pfe oben in der
+    Titelleiste. Jetzt f&uuml;hrt Knopf 7 zu einem kleinen rahmenlosen Fenster,
+    in dem alle drei Wege nebeneinander stehen:</p>
+    <ul>
+      <li><strong>AMPR EMU &ndash; neue Methode</strong> (ab 1.7 alpha8)</li>
+      <li><strong>AMPR EMU &ndash; alte Methode</strong> (bis alpha6)</li>
+      <li><strong>AMPR EMU ins Backup einbauen</strong> &ndash; die Aufgabe im
+        Hauptbereich, die dieses Kapitel beschreibt</li>
+    </ul>
+    <p>Neben den beiden Methoden steht je ein Knopf <strong>Anleitung</strong>,
+    der die Beschreibung zu genau dieser Fassung &ouml;ffnet. Dar&uuml;ber
+    w&auml;hlen Sie die <strong>Ablage</strong> &ndash; siehe
+    <a href="#k13">Abschnitt 13.8</a>. Ein zweiter Druck auf Knopf 7
+    schlie&szlig;t das Fenster wieder, <strong>Esc</strong> ebenfalls.</p>
+  </div>
   <p>Aufgabe 7 ist keine normale Formatkonvertierung. Sie bereitet die Quelle vor und öffnet anschließend einen Manager. Dort können Sie einen <code>fakelib</code>-Ordner sowie Dateien oder Ordner im Stammverzeichnis hinzufügen oder entfernen.</p>
   <ol class="schritte">
     <li>Erstellen Sie zuerst eine separate Arbeitskopie Ihrer Quelle.</li>
@@ -646,7 +665,6 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
-      <tr><td><strong>AMPR EMU &ndash; alte Methode</strong><br><strong>AMPR EMU &ndash; neue Methode</strong></td><td>Legt die AMPR-Bibliotheken automatisch an die Stelle, die zur jeweiligen ShadowMount+-Fassung passt &ndash; siehe <a href="#k13">Abschnitt 13.8</a>. Welcher der beiden der richtige ist, sagt Ihnen der Knopf selbst.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
       <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
@@ -931,6 +949,45 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   es Ihnen. Haben Sie den falschen erwischt, kommt eine R&uuml;ckfrage mit der
   Begr&uuml;ndung &ndash; und dem Rat, den anderen zu nehmen.</p>
 
+  <p><strong>Wo Sie beide finden:</strong> hinter <strong>Knopf 7</strong> in
+  der Seitenleiste. Er &ouml;ffnet ein kleines rahmenloses Fenster mit beiden
+  Methoden, dem Einbau ins Backup und je einem Knopf
+  <strong>Anleitung</strong>.</p>
+
+  <h4>Die Ablage w&auml;hlen</h4>
+
+  <p>ShadowMount+ liest Bibliotheken aus <strong>drei</strong> Quellen. Bis
+  v1.8.98 benutzte das Programm nur die erste; jetzt stehen im Auswahlfenster
+  alle drei zur Wahl. Der gew&auml;hlte Weg ist am Haken zu erkennen und bleibt
+  &uuml;ber Programmstarts hinweg gemerkt.</p>
+
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Weg</th><th>Ordner</th><th>Wirkung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Pro Spiel</strong></td><td>Backport-Ordner des Titels, sonst <code>&lt;Spiel&gt;/fakelib</code></td><td>gilt nur f&uuml;r dieses eine Spiel</td></tr>
+      <tr><td><strong>Global</strong></td><td><code>/data/shadowmount/fakelib</code></td><td>gilt f&uuml;r <strong>jedes</strong> erfasste Spiel</td></tr>
+      <tr><td><strong>Emulatoren</strong></td><td><code>/data/shadowmount/emus</code></td><td>erst ab alpha8 &ndash; und <strong>ersetzt nur, was schon da ist</strong></td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Der Emulator-Ordner legt nichts Neues an</span>
+    <p>Eine Datei aus <code>/data/shadowmount/emus</code> wird nur
+    &uuml;bernommen, wenn es sie im <code>fakelib</code> des Spiels
+    <strong>schon gibt</strong>. Legen Sie dort allein
+    <code>libSceAmpr.sprx</code> ab und das Spiel hat diese Bibliothek nicht,
+    passiert gar nichts &ndash; ohne Meldung. Der Ordner ist zum
+    <em>Aktualisieren</em> gedacht, nicht zum Einf&uuml;hren.</p>
+  </div>
+
+  <p>Steht in Ihrer <code>config.ini</code> ein anderer Ordner
+  (<code>global_fakelib_path</code>, <code>emulators_path</code>), wird der
+  benutzt &ndash; nicht der Standard. Und ist der zugeh&ouml;rige Schalter
+  ausgeschaltet, sagt es das Protokoll: Die Dateien lie&szlig;en sich sonst
+  richtig ablegen und w&uuml;rden trotzdem nie benutzt.</p>
+
   <h4>Was beim Dr&uuml;cken passiert</h4>
 
   <p>Der Knopf &ouml;ffnet kein Formular, sondern f&auml;ngt an zu arbeiten.
@@ -943,7 +1000,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>1</td><td>Sucht die PS5: erst die Adresse aus den Einstellungen, dann die gespeicherten FTP-Profile, sonst das eigene Netz. Ein offener Port gen&uuml;gt nicht &ndash; es muss sich ein Verzeichnis &ouml;ffnen lassen, das es nur auf einer Konsole gibt.</td></tr>
       <tr><td>2</td><td>Stellt fest, welche ShadowMount+-Fassung dort l&auml;uft, und nennt die Belege.</td></tr>
       <tr><td>3</td><td>Sucht die Spiele &ndash; sowohl entpackte Ordner als auch Titel aus eingeh&auml;ngten Abbildern.</td></tr>
-      <tr><td>4</td><td>Bestimmt den Ablageort. Das entscheidet die Fassung, nicht Sie.</td></tr>
+      <tr><td>4</td><td>Bestimmt den Ablageort. Bei <em>Pro Spiel</em> entscheidet das die Fassung; haben Sie <em>Global</em> oder <em>Emulatoren</em> gew&auml;hlt, gilt Ihr Weg &ndash; und die Schritte davor entfallen, weil kein einzelnes Spiel gemeint ist.</td></tr>
       <tr><td>5</td><td>W&auml;hlt die neueste <code>libSceAmpr.sprx</code> aus dem mitgelieferten Speicher.</td></tr>
       <tr><td>6</td><td>Gleicht die <code>config.ini</code> ab und legt die Bibliotheken ab &ndash; danach wird zur&uuml;ckgelesen und gepr&uuml;ft.</td></tr>
     </tbody>
@@ -972,10 +1029,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Ohne Konsole:</strong> Ist die PS5 nicht erreichbar, bietet der
   Lauf an, stattdessen einen Spielordner auf diesem Rechner zu bearbeiten.
-  Den bringen Sie danach selbst auf die Konsole.</p>
+  Den bringen Sie danach selbst auf die Konsole. <em>Global</em> und
+  <em>Emulatoren</em> gehen diesen Weg nicht mit &ndash; das sind feste Ordner
+  auf der Konsole, ohne Verbindung nicht zu erreichen. Der Lauf sagt das und
+  bricht ab, statt irgendwo etwas abzulegen.</p>
 
-  <p class="hinweis"><em>Beide Kn&ouml;pfe sind vorl&auml;ufig.</em> Sie stehen
-  nebeneinander, solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
+  <p class="hinweis"><em>Beide Methoden bleiben nebeneinander stehen,</em>
+  solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
 
 
   <h3>13.9 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
@@ -1140,7 +1200,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.97), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.98), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1340,7 +1400,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.97</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.98</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

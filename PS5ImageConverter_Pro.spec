@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.97
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.98
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -61,6 +61,12 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
     _doc_pfad = os.path.join(_here, _doc)
     if os.path.isfile(_doc_pfad):
         _datas.append((_doc_pfad, '.'))
+
+# Die Anleitungen zu den beiden ShadowMountPlus-Fassungen. Das Auswahlfenster
+# hinter Knopf 7 oeffnet sie; ohne sie waeren die beiden Knoepfe dort leer.
+_anleitungen = os.path.join(_here, 'Anleitungen')
+if os.path.isdir(_anleitungen):
+    _datas.append((_anleitungen, 'Anleitungen'))
 
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
@@ -292,7 +298,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.97',
+    name='PS5_Dump_Image_Converter_v1.8.98',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

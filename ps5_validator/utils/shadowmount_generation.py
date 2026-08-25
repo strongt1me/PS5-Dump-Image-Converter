@@ -43,8 +43,15 @@ FAKELIB = "fakelib"
 FAKELIB2 = "fakelib2"
 
 #: Wo die Ablage stattfinden kann.
+#:
+#: ``ORT_SPIEL`` und ``ORT_BACKPORT`` betreffen ein einzelnes Spiel und
+#: arbeiten mit einem ``fakelib``-Unterordner. ``ORT_GLOBAL`` und
+#: ``ORT_EMUS`` sind feste Ordner auf der Konsole, in denen die Dateien
+#: **direkt** liegen - dort gibt es keinen Unterordner.
 ORT_SPIEL = "spiel"
 ORT_BACKPORT = "backport"
+ORT_GLOBAL = "global"
+ORT_EMUS = "emus"
 
 #: Feste Pfade auf der Konsole.
 GLOBAL_STANDARD = "/data/shadowmount/fakelib"
@@ -72,6 +79,7 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
         "spiel_fakelib2_wirkt": True,
         "backport_ordner": (FAKELIB2,),
         "backport_erlaubt": True,
+        "orte": (ORT_BACKPORT, ORT_SPIEL, ORT_GLOBAL),
         "hat_cache": False,
         "hat_emus": False,
         "stapelt_schichten": True,
@@ -101,6 +109,7 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
         "spiel_fakelib2_wirkt": False,
         "backport_ordner": (FAKELIB2, FAKELIB),
         "backport_erlaubt": True,
+        "orte": (ORT_BACKPORT, ORT_SPIEL, ORT_GLOBAL, ORT_EMUS),
         "hat_cache": True,
         "hat_emus": True,
         "stapelt_schichten": False,
@@ -182,25 +191,83 @@ def ablageordner(generation: str, ort: str) -> str:
         return p["backport_ordner"][0]
     if ort == ORT_SPIEL:
         return p["spiel_ordner"][0]
+    if ort in (ORT_GLOBAL, ORT_EMUS):
+        # Bewusst ein Fehler statt einer leeren Zeichenkette: Dort liegen
+        # die Dateien direkt im konfigurierten Ordner. Wer hier einen Namen
+        # bekaeme und ihn anhaengte, legte sie eine Ebene zu tief ab - und
+        # ShadowMountPlus sieht nur die oberste.
+        raise ValueError(
+            "%r hat keinen Unterordner - die Dateien liegen direkt im "
+            "konfigurierten Pfad (siehe ablageziel)." % (ort,))
     raise ValueError("unbekannter Ort: %r" % (ort,))
 
 
+def _ablageziel_fest(generation: str, ort: str, *,
+                     pfad: str = "") -> dict[str, Any]:
+    """Die beiden festen Ordner auf der Konsole - global und Emulatoren.
+
+    Beide sind in der ``config.ini`` verstellbar; steht dort ein anderer
+    Pfad, gilt der. Deshalb nimmt diese Funktion ihn entgegen, statt den
+    Standard zu erzwingen.
+    """
+    p = profil(generation)
+    if ort == ORT_EMUS and not p["hat_emus"]:
+        return {"pfad": "", "ordner": "", "wirkt": False, "empfohlen": False,
+                "hinweis": ("Emulator-Dateien gibt es erst ab 1.7 alpha8. "
+                            "Die aeltere Fassung liest %s gar nicht."
+                            % EMUS_STANDARD)}
+    standard = GLOBAL_STANDARD if ort == ORT_GLOBAL else EMUS_STANDARD
+    ziel = (str(pfad).strip() or standard).rstrip("/")
+
+    if ort == ORT_GLOBAL:
+        if generation == ALT:
+            hinweis = ("Wird als zweite Schicht ueber das Spiel gelegt und "
+                       "gilt fuer jedes erfasste Spiel. Bei gleichem "
+                       "Dateinamen entscheidet global_fakelib_priority - "
+                       "voreingestellt gewinnt die Datei des Spiels.")
+        else:
+            hinweis = ("Wird vollstaendig in den Cache kopiert und gilt fuer "
+                       "jedes erfasste Spiel. Bei gleichem Dateinamen "
+                       "entscheidet global_fakelib_priority - voreingestellt "
+                       "gewinnt die Datei des Spiels.")
+        return {"pfad": ziel, "ordner": "", "wirkt": True, "empfohlen": True,
+                "hinweis": hinweis}
+
+    # Emulator-Dateien. Die entscheidende Einschraenkung steht in
+    # sm_fakelib.c (copy_emulator_files_to_cache): Bevor eine Datei aus
+    # emulators_path in den Cache kommt, wird geprueft, ob es sie im
+    # Spiel-fakelib ueberhaupt gibt - sonst wird sie uebersprungen.
+    return {"pfad": ziel, "ordner": "", "wirkt": True, "empfohlen": True,
+            "hinweis": ("Ersetzt nur Dateien, die im fakelib des Spiels "
+                        "schon liegen - neue Namen werden uebersprungen. "
+                        "Fuer ein Spiel ohne libSceAmpr.sprx bringt dieser "
+                        "Weg allein nichts.")}
+
+
 def ablageziel(generation: str, ort: str, *, wurzel: str = "",
-               title_id: str = "", scanpath: str = "") -> dict[str, Any]:
+               title_id: str = "", scanpath: str = "",
+               pfad: str = "") -> dict[str, Any]:
     """Rechnet aus, wohin die Bibliotheken gehoeren.
 
     Args:
         generation: ``ALT`` oder ``NEU``.
-        ort: ``ORT_SPIEL`` (in den Spielordner) oder ``ORT_BACKPORT``.
+        ort: ``ORT_SPIEL``, ``ORT_BACKPORT``, ``ORT_GLOBAL`` oder
+            ``ORT_EMUS``.
         wurzel: Spielordner - lokaler Pfad oder Pfad auf der Konsole.
         title_id: Nur fuer ``ORT_BACKPORT`` noetig.
         scanpath: Nur fuer ``ORT_BACKPORT`` noetig, z. B. ``/data/homebrew``.
+        pfad: Nur fuer ``ORT_GLOBAL`` und ``ORT_EMUS`` - der in der
+            ``config.ini`` eingetragene Ordner. Leer heisst: der Standard.
 
     Returns:
         ``{"pfad": str, "ordner": str, "wirkt": bool, "empfohlen": bool,
         "hinweis": str}`` - ``hinweis`` ist leer, wenn nichts zu sagen ist.
+        ``ordner`` ist bei den festen Orten leer, weil es dort keinen
+        Unterordner gibt.
     """
-    p = profil(generation)
+    if ort in (ORT_GLOBAL, ORT_EMUS):
+        return _ablageziel_fest(generation, ort, pfad=pfad)
+
     ordner = ablageordner(generation, ort)
 
     if ort == ORT_BACKPORT:
@@ -275,9 +342,77 @@ def beanstandungen(generation: str, ort: str,
             meldungen.append(
                 "Beide Ordner vorhanden: %r steht in der Suchreihenfolge vor "
                 "%r und gewinnt." % (FAKELIB2, FAKELIB))
+    elif ort == ORT_GLOBAL:
+        if FAKELIB in da or FAKELIB2 in da:
+            meldungen.append(
+                "Im globalen Ordner liegt ein Unterordner %r. Dort gehoeren "
+                "die Bibliotheken direkt hinein - ein Unterordner wird "
+                "mitkopiert, aber nicht eingehaengt."
+                % (FAKELIB if FAKELIB in da else FAKELIB2,))
+    elif ort == ORT_EMUS:
+        if not p["hat_emus"]:
+            meldungen.append(
+                "Diese Fassung liest %s nicht - der Ordner bleibt wirkungslos."
+                % EMUS_STANDARD)
+        if FAKELIB in da or FAKELIB2 in da:
+            meldungen.append(
+                "Im Emulator-Ordner liegt ein Unterordner %r. Verglichen "
+                "werden nur Dateien direkt darin."
+                % (FAKELIB if FAKELIB in da else FAKELIB2,))
     else:
         raise ValueError("unbekannter Ort: %r" % (ort,))
     return meldungen
+
+
+def orte(generation: str) -> tuple[dict[str, Any], ...]:
+    """Die Ablagewege dieser Fassung - in der Reihenfolge der Anleitung.
+
+    Args:
+        generation: ``ALT`` oder ``NEU``.
+
+    Returns:
+        Je Weg ``{"kennung", "standardpfad", "nur_konsole", "pro_spiel",
+        "ersetzt_nur"}``:
+
+        * ``nur_konsole`` - der Pfad liegt auf der Konsole und laesst sich
+          nicht durch einen Ordner am Rechner ersetzen.
+        * ``pro_spiel`` - der Weg betrifft ein einzelnes Spiel.
+        * ``ersetzt_nur`` - es werden nur Dateien ersetzt, die im fakelib
+          des Spiels schon liegen (gilt allein fuer die Emulator-Dateien).
+    """
+    p = profil(generation)
+    beschreibung = {
+        ORT_BACKPORT: dict(standardpfad="<scanpath>/backports/<TITLE_ID>/",
+                           nur_konsole=False, pro_spiel=True,
+                           ersetzt_nur=False),
+        ORT_SPIEL: dict(standardpfad="<Spielordner>/",
+                        nur_konsole=False, pro_spiel=True, ersetzt_nur=False),
+        ORT_GLOBAL: dict(standardpfad=GLOBAL_STANDARD,
+                         nur_konsole=True, pro_spiel=False, ersetzt_nur=False),
+        ORT_EMUS: dict(standardpfad=EMUS_STANDARD,
+                       nur_konsole=True, pro_spiel=False, ersetzt_nur=True),
+    }
+    ergebnis = []
+    for kennung in p["orte"]:
+        eintrag = dict(beschreibung[kennung])
+        eintrag["kennung"] = kennung
+        ergebnis.append(eintrag)
+    return tuple(ergebnis)
+
+
+def config_schluessel_fuer(generation: str, ort: str) -> tuple[str, ...]:
+    """Welche config.ini-Schluessel dieser Weg braucht, um ueberhaupt zu wirken.
+
+    Ohne sie legt man Dateien richtig ab und es passiert trotzdem nichts -
+    genau die Sorte Fehler, die keine Meldung erzeugt.
+    """
+    if ort == ORT_GLOBAL:
+        return ("global_fakelib", "global_fakelib_path")
+    if ort == ORT_EMUS:
+        if not profil(generation)["hat_emus"]:
+            return ()
+        return ("update_emulators", "emulators_path")
+    return ("backport_fakelib",)
 
 
 def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None = None,

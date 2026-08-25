@@ -126,6 +126,12 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
     if os.path.isfile(_doc_pfad):
         _datas.append((_doc_pfad, '.'))
 
+# Die Anleitungen zu den beiden ShadowMountPlus-Fassungen. Das Auswahlfenster
+# hinter Knopf 7 oeffnet sie; ohne sie waeren die beiden Knoepfe dort leer.
+_anleitungen = os.path.join(_here, 'Anleitungen')
+if os.path.isdir(_anleitungen):
+    _datas.append((_anleitungen, 'Anleitungen'))
+
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
     _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))

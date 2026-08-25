@@ -653,8 +653,17 @@ class FakelibOrdnerwahlTests(unittest.TestCase):
         """
         self.assertEqual(self.quelle.count('"fakelib_variante"'), 3)
         stelle = self.quelle.index("def _fakelib_ordnername")
-        block = self.quelle[stelle:stelle + 1400]
+        # Bis zur naechsten Methode, nicht ueber eine feste Zeichenzahl: Ein
+        # laengerer Erklaertext schob den Leser sonst aus dem Fenster heraus
+        # und liess den Test scheitern, obwohl er da war.
+        ende = self.quelle.index("    def ", stelle + 10)
+        block = self.quelle[stelle:ende]
         self.assertIn('"fakelib_variante"', block, "Der Leser sitzt nicht dort")
+        # Seit v1.8.98 entscheidet die Einstellung die Ablage nicht mehr: Der
+        # Ordner kommt aus der Anleitung von ShadowMountPlus, damit Backport
+        # und AMPR EMU nicht in verschiedenen Ordnern landen - die Konsole
+        # haengt nur einen ein und ignoriert den anderen wortlos.
+        self.assertIn("sm_gen.ablageordner(sm_gen.NEU, sm_gen.ORT_SPIEL)", block)
         # Und er muss eine fehlende _load_setting ueberleben: Tests bauen die
         # Instanz ohne __init__, und eine AttributeError wurde von Aufrufern als
         # "keine Sicherung vorhanden" gedeutet.

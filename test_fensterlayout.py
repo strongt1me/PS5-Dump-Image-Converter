@@ -824,11 +824,24 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
     def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
         for methode in ("_show_credits", "_show_js_loader",
                         "_show_shadowmount_editor", "_show_diagnostic_report",
-                        "_show_ampr_alte_methode", "_show_ampr_neue_methode",
                         "_show_library_window", "_show_klog_window_geprueft"):
             with self.subTest(methode=methode):
                 self.assertIn('self._werkzeugknopf("%s")' % methode,
                               self.quelle)
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_die_ampr_methoden_ebenfalls(self):
+        """Sie haengen seit v1.8.98 nicht mehr an einem eigenen Knopf.
+
+        Ihr Aufrufer ist das Auswahlfenster hinter Knopf 7, und der reicht
+        den Methodennamen als Variable weiter - ``_werkzeugknopf`` mit
+        festem Namen gibt es fuer sie nicht mehr. Der Umschalter muss
+        trotzdem dazwischen liegen: sonst baut der zweite Druck ein zweites
+        Fenster. Geprueft wird deshalb der Aufruf mit der Variablen.
+        """
+        self.assertIn("self._werkzeugfenster_umschalten(methode)", self.quelle)
+        for methode in ("_show_ampr_alte_methode", "_show_ampr_neue_methode"):
+            with self.subTest(methode=methode):
                 self.assertNotIn("command=self.%s," % methode, self.quelle)
 
     def test_die_menues_ebenfalls(self):

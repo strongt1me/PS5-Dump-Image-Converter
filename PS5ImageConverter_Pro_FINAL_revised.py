@@ -413,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.97"
+APP_VERSION = "v1.8.98"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1278,7 +1278,11 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
         for beschriftung, relpfad, noetig in (
                 ("Hintergrundbilder", "Hintergrundbilder", False),
                 ("AMPR EMU + PlayGo",
-                 os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"), False)):
+                 os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"), False),
+                # Ohne diesen Ordner bleiben die beiden Anleitungsknoepfe im
+                # Auswahlfenster leer. In der EXE faellt das erst auf, wenn
+                # jemand drueckt - hier faellt es schon beim Doktor auf.
+                ("Anleitungen", "Anleitungen", False)):
             pfad = finden(relpfad)
             if pfad and os.path.isdir(pfad):
                 melde(DOKTOR_GUT, "%s: vorhanden" % beschriftung)
@@ -2078,6 +2082,25 @@ def flach_knopf(master: tk.Widget, **kwargs):
     return tk.Button(master, **kwargs)
 
 
+def rundes_rechteck_punkte(x1: float, y1: float, x2: float, y2: float,
+                           r: float) -> list[float]:
+    """Stuetzpunkte eines Rechtecks mit runden Ecken.
+
+    Tk kennt kein abgerundetes Rechteck. Gezeichnet wird es als Vieleck mit
+    ``smooth=True``: An jeder Ecke liegen drei Punkte dicht beieinander, und
+    die Glaettung macht daraus einen Bogen.
+
+    Der Radius wird auf die halbe Kantenlaenge begrenzt - sonst ueberschlagen
+    sich die Ecken bei einem schmalen Rechteck.
+    """
+    r = max(0.0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
+    return [
+        x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+        x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+        x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
+    ]
+
+
 class RoundedButton(tk.Canvas):
     """Canvas-basierter Button mit abgerundeten Ecken und zentriertem Text.
 
@@ -2133,12 +2156,8 @@ class RoundedButton(tk.Canvas):
         self.bind("<Leave>", self._on_leave, add="+")
 
     def _round_rect_points(self, x1: float, y1: float, x2: float, y2: float, r: float) -> list[float]:
-        r = max(0.0, min(r, (x2 - x1) / 2, (y2 - y1) / 2))
-        return [
-            x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
-            x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
-            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
-        ]
+        # Eine Stelle fuer die Rechnung: Das Auswahlfenster braucht dieselbe.
+        return rundes_rechteck_punkte(x1, y1, x2, y2, r)
 
     def _redraw(self) -> None:
         self.delete("all")
@@ -2754,8 +2773,6 @@ class PS5ConverterGUI:
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
         ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
-        ("_btn_ampr_alt_title", "titlebar.ampr_alt", "_show_ampr_alte_methode"),
-        ("_btn_ampr_neu_title", "titlebar.ampr_neu", "_show_ampr_neue_methode"),
     )
 
     #: Wie viel Luft ein Knopf zusaetzlich braucht, bevor er zurueckkommt.
@@ -3203,56 +3220,6 @@ class PS5ConverterGUI:
             self._btn_shadowmount_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
         self._btn_shadowmount_title.bind("<Enter>", _shadowmount_enter)
         self._btn_shadowmount_title.bind("<Leave>", _shadowmount_leave)
-
-        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
-        self._btn_ampr_alt_title = flach_knopf(
-            self._titlebar_right,
-            text=self._t("titlebar.ampr_alt"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["header_bg"],
-            fg=self._COLORS["fg_secondary"],
-            activebackground=self._COLORS["bg_card"],
-            activeforeground="white",
-            relief="flat",
-            cursor="hand2",
-            padx=10,
-            pady=0,
-            bd=0,
-            highlightthickness=0,
-            command=self._werkzeugknopf("_show_ampr_alte_methode"),
-        )
-        self._btn_ampr_alt_title.pack(side="right", padx=(0, 8))
-        def _ampr_alt_enter(e):
-            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
-        def _ampr_alt_leave(e):
-            self._btn_ampr_alt_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
-        self._btn_ampr_alt_title.bind("<Enter>", _ampr_alt_enter)
-        self._btn_ampr_alt_title.bind("<Leave>", _ampr_alt_leave)
-
-        # Provisorischer Knopf: AMPR EMU nach ShadowMount+-Generation.
-        self._btn_ampr_neu_title = flach_knopf(
-            self._titlebar_right,
-            text=self._t("titlebar.ampr_neu"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["header_bg"],
-            fg=self._COLORS["fg_secondary"],
-            activebackground=self._COLORS["bg_card"],
-            activeforeground="white",
-            relief="flat",
-            cursor="hand2",
-            padx=10,
-            pady=0,
-            bd=0,
-            highlightthickness=0,
-            command=self._werkzeugknopf("_show_ampr_neue_methode"),
-        )
-        self._btn_ampr_neu_title.pack(side="right", padx=(0, 8))
-        def _ampr_neu_enter(e):
-            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
-        def _ampr_neu_leave(e):
-            self._btn_ampr_neu_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
-        self._btn_ampr_neu_title.bind("<Enter>", _ampr_neu_enter)
-        self._btn_ampr_neu_title.bind("<Leave>", _ampr_neu_leave)
 
         # Bibliothek Button (Mehrfachordner-Scan mit Cover/Suche)
         self._btn_library_title = flach_knopf(
@@ -4054,8 +4021,6 @@ class PS5ConverterGUI:
             ("_btn_diagnostics_title", "titlebar.diagnostics"),
             ("_btn_klog_title", "titlebar.klog"),
             ("_btn_shadowmount_title", "titlebar.shadowmount"),
-            ("_btn_ampr_alt_title", "titlebar.ampr_alt"),
-            ("_btn_ampr_neu_title", "titlebar.ampr_neu"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
             ("_btn_quit_title", "titlebar.quit"),
@@ -5923,10 +5888,18 @@ class PS5ConverterGUI:
         # Modus-Buttons in Sidebar
         self.mode_buttons = []
         for text, mode in self._MODE_OPTIONS:
+            # Aufgabe 7 fuehrt nicht in den Hauptbereich, sondern oeffnet die
+            # Wahl zwischen den beiden AMPR-Methoden. Ueber
+            # _werkzeugfenster_umschalten, damit ein zweiter Druck sie wieder
+            # schliesst - wie bei jedem anderen Fensterknopf.
+            if mode == "ampr_manager":
+                befehl = self._werkzeugknopf("_show_ampr_auswahl")
+            else:
+                befehl = (lambda m=mode: self._set_mode_from_sidebar(m))
             btn = RoundedButton(
                 sidebar,
                 text=self._t(f"mode.{mode}"),
-                command=lambda m=mode: self._set_mode_from_sidebar(m),
+                command=befehl,
                 font=(UI_SCHRIFT, pt(12), "bold"),
                 bg=self._COLORS["bg_card"],
                 fg=self._COLORS["fg_primary"],
@@ -18513,8 +18486,11 @@ class PS5ConverterGUI:
             if exe:
                 try:
                     self._save_setting("filezilla_path", exe)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    # Ohne Eintrag sucht das Programm beim naechsten
+                    # Start wieder von vorn - laestig, aber kein Grund
+                    # abzubrechen.
+                    logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
                 return True
             return False
         except Exception as exc:
@@ -18583,8 +18559,8 @@ class PS5ConverterGUI:
                 exe = selected
                 try:
                     self._save_setting('filezilla_path', selected)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
 
         if not exe:
             return False
@@ -22195,6 +22171,11 @@ class PS5ConverterGUI:
             return False
 
         fakelib = self._fakelib_pfad(root)
+        # Vor dem Kopieren sagen, was an der bestehenden Ablage nicht wirkt -
+        # danach ist es zu spaet, und der Fehler faellt erst an der Konsole
+        # auf, wenn das Spiel ohne die Bibliotheken startet.
+        for hinweis in self._ampr_ablage_pruefen(root):
+            self._append_to_log("[SHADOWMOUNT] %s" % hinweis)
         try:
             fakelib.mkdir(parents=True, exist_ok=True)
             target = fakelib / target_name
@@ -22219,6 +22200,31 @@ class PS5ConverterGUI:
         )
         return True
 
+    def _ampr_eine_sicherung_zurueck(self, ordner, lib_name: str) -> bool:
+        """Spielt die Sicherung in genau diesem Ordner zurueck.
+
+        Der stille Teil von ``_ampr_restore_library``: Liegen Sicherungen in
+        mehreren Ordnern, wird die erste gemeldet und jede weitere hierueber
+        mit zurueckgelegt.
+        """
+        backup = ordner / (lib_name + self._AMPR_BACKUP_SUFFIX)
+        ziel = ordner / lib_name
+        if not backup.is_file():
+            return False
+        try:
+            if ziel.is_file():
+                try:
+                    os.chmod(ziel, stat.S_IWRITE | stat.S_IREAD)
+                except OSError as exc:
+                    logger.debug("Schreibschutz nicht entfernbar (%s): %s", ziel, exc)
+            shutil.copy2(backup, ziel)
+            backup.unlink()
+        except OSError as exc:
+            logger.warning("Sicherung in %s nicht zurueckgespielt: %s", ordner, exc)
+            return False
+        self._append_to_log(self._t("log.manual.ampr_restored", name=lib_name))
+        return True
+
     def _ampr_restore_library(self, root: str, lib_name: str) -> str:
         """Stellt die gesicherte Originaldatei des Spiels wieder her.
 
@@ -22232,7 +22238,20 @@ class PS5ConverterGUI:
         Originaldatei – dann ist "nichts wiederherzustellen" kein Fehler,
         sondern der erwartete Zustand.
         """
-        fakelib = self._fakelib_pfad(root)
+        # Jede gefundene Sicherung zurueckspielen, nicht nur eine.
+        #
+        # Frueher entschied die Einstellung, welcher Ordner gemeint war. Sie
+        # entscheidet die Ablage nicht mehr (siehe _fakelib_ordnername), und
+        # damit waere bei Sicherungen in beiden Ordnern nicht mehr zu sagen,
+        # welche die richtige ist. Beide zurueckzulegen loest das ohne
+        # Rueckfrage: Ein Original wieder an seinen Platz zu legen kann nichts
+        # kaputt machen - es ist die Datei, die das Spiel selbst mitbrachte.
+        gefunden = [p for p in self._fakelib_lesepfade(root)
+                    if (p / (lib_name + self._AMPR_BACKUP_SUFFIX)).is_file()]
+        if len(gefunden) > 1:
+            for weiterer in gefunden[1:]:
+                self._ampr_eine_sicherung_zurueck(weiterer, lib_name)
+        fakelib = gefunden[0] if gefunden else self._fakelib_pfad(root)
         backup = fakelib / (lib_name + self._AMPR_BACKUP_SUFFIX)
         target = fakelib / lib_name
         if not backup.is_file():
@@ -23799,7 +23818,11 @@ class PS5ConverterGUI:
             return
         if not re.fullmatch(r"[0-9a-f]{64}", erwartet):
             return
-        gemessen = hashlib.sha256(open(pfad, "rb").read()).hexdigest()
+        # Mit with: Ohne den blieb die Datei offen, bis der Sammler kam -
+        # der Testlauf meldete das als ResourceWarning, und unter Windows
+        # blockiert eine offene Datei das Aufraeumen des Temp-Ordners.
+        with open(pfad, "rb") as datei:
+            gemessen = hashlib.sha256(datei.read()).hexdigest()
         if gemessen != erwartet:
             raise RuntimeError(
                 f"UFS2Tool-v4.1-Integritätsprüfung für {kennung} fehlgeschlagen "
@@ -29042,6 +29065,49 @@ class PS5ConverterGUI:
             lines.append(self._t("diagnostics.report_no_log"))
         return "\n".join(lines) + "\n"
 
+    #: So viele Diagnoseberichte bleiben im Einstellungsordner liegen.
+    #:
+    #: Bei jedem Klick auf DIAGNOSE entsteht einer. Aufgeraeumt wurde nie -
+    #: am 25.08.2026 lagen dort **327 Stueck** mit zusammen 3,8 MB, der
+    #: aelteste vom 09.08. Dieselbe Klasse wie die Protokolldatei, die
+    #: ungebremst auf 22 MB gewachsen war.
+    #:
+    #: Zehn sind genug: Wer einen Bericht weitergeben will, tut das gleich;
+    #: wer vergleichen will, braucht die letzten paar. Was aelter ist, hat
+    #: noch nie jemand gebraucht.
+    _DIAGNOSE_BERICHTE_BEHALTEN: int = 10
+
+    def _alte_diagnoseberichte_aufraeumen(self, ordner: str) -> int:
+        """Loescht alle bis auf die juengsten Berichte. Gibt die Zahl zurueck.
+
+        Sortiert wird ueber den Dateinamen - der traegt den Zeitstempel im
+        Format JJJJMMTT_HHMMSS und ist damit von selbst in der richtigen
+        Reihenfolge. Das Aenderungsdatum waere unzuverlaessig: Ein Kopieren
+        des Ordners setzt es neu.
+
+        Faellt ein Loeschen aus, ist das kein Grund, den Bericht nicht zu
+        zeigen - er ist ja gerade dann gefragt, wenn etwas klemmt.
+        """
+        try:
+            namen = sorted(n for n in os.listdir(ordner)
+                           if n.startswith("Diagnosebericht_")
+                           and n.endswith(".txt"))
+        except OSError as exc:
+            logger.debug("Berichte nicht auflistbar: %s", exc)
+            return 0
+        ueberzaehlig = namen[:-self._DIAGNOSE_BERICHTE_BEHALTEN]
+        entfernt = 0
+        for name in ueberzaehlig:
+            try:
+                os.remove(os.path.join(ordner, name))
+                entfernt += 1
+            except OSError as exc:
+                logger.debug("Bericht %s nicht loeschbar: %s", name, exc)
+        if entfernt:
+            logger.info("%d alte Diagnoseberichte entfernt, %d behalten",
+                        entfernt, len(namen) - entfernt)
+        return entfernt
+
     def _show_diagnostic_report(self) -> None:
         """Erstellt einen Diagnosebericht und zeigt ihn in einem Fenster mit Freigabe-Aktionen an."""
         report_text = self._build_diagnostic_report_text()
@@ -29055,6 +29121,10 @@ class PS5ConverterGUI:
         except OSError as exc:
             messagebox.showerror(self._t("dialog.title.diagnostics_save_failed"), str(exc), parent=self.root)
             return
+
+        # Erst nach dem Schreiben: Der neue Bericht zaehlt mit, und ein
+        # Fehlschlag beim Aufraeumen darf ihn nicht verhindern.
+        self._alte_diagnoseberichte_aufraeumen(cfg_dir)
 
         self._render_diagnostic_report_window(report_path, report_text)
 
@@ -29964,29 +30034,119 @@ class PS5ConverterGUI:
     # Datei unangetastet; gearbeitet wird ausschließlich im Speicher.
     # ==================================================================
     def _fakelib_ordnername(self) -> str:
-        """Gewaehlter Bibliotheksordner: ``fakelib`` oder ``fakelib2``.
+        """Der Bibliotheksordner im Spielordner - fuer **alle** Schreiber gleich.
 
-        ShadowMount+ haengt nur EINEN von beiden ein und bevorzugt ``fakelib2``
-        (siehe dessen config.ini: "mount app0/fakelib2 when present, otherwise
-        app0/fakelib"). Deshalb lesen Backport **und** AMPR EMU Manager
-        denselben Wert - sonst legten sie ihre Bibliotheken in zwei Ordner, von
-        denen die Konsole einen ignoriert.
+        ShadowMount+ haengt nur EINEN Ordner ein. Legen Backport und AMPR EMU
+        ihre Dateien in verschiedene, ignoriert die Konsole einen davon - ohne
+        Meldung. Deshalb gibt es hier genau eine Antwort, und beide lesen sie.
+
+        **Welche Antwort, sagt die Anleitung** (siehe
+        ``ps5_validator/utils/shadowmount_generation``, abgeleitet aus
+        ``sm_fakelib.c``/``sm_scan.c`` von 1.7 alpha6 und alpha8):
+
+        * bis alpha6 gewinnt ``fakelib2``, ``fakelib`` ist der Rueckfall und
+          wirkt, solange kein ``fakelib2`` daneben liegt;
+        * ab alpha8 zaehlt im Spielordner ausschliesslich ``fakelib``.
+
+        Nur ``fakelib`` wirkt also in beiden Fassungen. Die frueher waehlbare
+        Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
+        auf ``fakelib2``, startete das Spiel ab alpha8 ohne die Bibliotheken.
+        Sie wird deshalb nicht mehr fuer die Ablage benutzt - wohl aber
+        gelesen, um einmal darauf hinzuweisen.
         """
+        richtig = sm_gen.ablageordner(sm_gen.NEU, sm_gen.ORT_SPIEL)
         # Ueber getattr, weil diese Funktion auch an einer halb aufgebauten
         # Instanz gerufen wird (Tests bauen sie ueber __new__ ohne __init__).
-        # Fehlt der Leser, gilt die Vorgabe - sonst schluckt ein Aufrufer die
-        # AttributeError und deutet sie als "keine Sicherung vorhanden".
         leser = getattr(self, "_load_setting", None)
         if not callable(leser):
-            return ps5_backport.FAKELIB_ORDNER
-        wert = str(leser("fakelib_variante", ps5_backport.FAKELIB_ORDNER) or "").strip().lower()
-        if wert not in ps5_backport.FAKELIB_ORDNERNAMEN:
-            return ps5_backport.FAKELIB_ORDNER
-        return wert
+            return richtig
+        wert = str(leser("fakelib_variante", richtig) or "").strip().lower()
+        if (wert in ps5_backport.FAKELIB_ORDNERNAMEN and wert != richtig
+                and not getattr(self, "_fakelib_hinweis_gezeigt", False)):
+            self._fakelib_hinweis_gezeigt = True
+            logger.info(
+                "Eingestellt war %r. Abgelegt wird nach %r: Ab ShadowMountPlus "
+                "1.7 alpha8 wird %r im Spielordner ignoriert, und beide Teile "
+                "muessen denselben Ordner benutzen.", wert, richtig, wert)
+        return richtig
 
     def _fakelib_pfad(self, wurzel) -> Path:
-        """Bibliotheksordner eines Dumps nach der aktuellen Wahl."""
-        return Path(str(wurzel)) / self._fakelib_ordnername()
+        """Bibliotheksordner eines Dumps - nach der Anleitung, nicht nach Wahl.
+
+        **Der Fehler, den das behebt.** Bis v1.8.97 nahm der AMPR EMU Manager
+        hier den frei gewaehlten Ordnernamen (``fakelib`` oder ``fakelib2``).
+        Diese Wahl stammt aus der Mechanik bis ShadowMountPlus 1.7 alpha6
+        ("fakelib2 wenn vorhanden, sonst fakelib") und gilt ab 1.7 alpha8
+        nicht mehr: **Ein ``fakelib2`` im Spielordner wird dort ignoriert** -
+        ohne Fehlermeldung. Wer mit dieser Wahl in ein Backup integrierte,
+        bekam ein Spiel, das ohne die Ersatzbibliotheken startet.
+
+        **Warum ``fakelib`` und nicht die Generation abfragen.** Die
+        Suchreihenfolge beider Fassungen (siehe
+        ``ps5_validator/utils/shadowmount_generation``, abgeleitet aus
+        ``sm_fakelib.c``/``sm_scan.c`` von alpha6 und alpha8) laesst genau
+        einen Namen zu, der in **beiden** wirkt:
+
+        * bis alpha6 wird ``fakelib2`` bevorzugt, ``fakelib`` ist der Rueckfall
+          und wird gelesen, solange kein ``fakelib2`` daneben liegt;
+        * ab alpha8 zaehlt im Spielordner ausschliesslich ``fakelib``.
+
+        Also ``fakelib``. Damit muss niemand wissen, welche Fassung auf der
+        Konsole laeuft - und genau das war die Fehlerquelle.
+
+        Der einzige Fall, in dem das nicht genuegt, ist ein bereits
+        vorhandenes ``fakelib2`` im selben Spielordner: Bis alpha6 gewinnt
+        das und verdeckt unseres. Darauf weist ``_ampr_ablage_pruefen`` hin.
+        """
+        return Path(str(wurzel)) / sm_gen.ablageordner(sm_gen.NEU,
+                                                       sm_gen.ORT_SPIEL)
+
+    def _fakelib_lesepfade(self, wurzel) -> list[Path]:
+        """Alle Ordner, in denen Bibliotheken liegen koennen - in dieser Reihenfolge.
+
+        Geschrieben wird seit v1.8.98 nur noch nach ``fakelib`` (siehe
+        ``_fakelib_pfad``). **Gelesen** werden muss aber weiterhin auch
+        ``fakelib2``: Wer frueher mit der alten Wahl gearbeitet hat, dessen
+        Sicherung ``libSceAmpr.sprx.orig`` liegt dort. Wuerde nur der neue
+        Ordner durchsucht, waere sie unerreichbar - das Original des Spiels
+        also verloren, obwohl es noch auf der Platte liegt.
+
+        Gemessen: Ohne diese Unterscheidung meldete das Wiederherstellen
+        "keine Sicherung vorhanden", obwohl eine dalag.
+        """
+        basis = Path(str(wurzel))
+        namen = [sm_gen.ablageordner(sm_gen.NEU, sm_gen.ORT_SPIEL)]
+        for weiterer in ps5_backport.FAKELIB_ORDNERNAMEN:
+            if weiterer not in namen:
+                namen.append(weiterer)
+        return [basis / name for name in namen]
+
+    def _fakelib_fundort(self, wurzel, dateiname: str):
+        """Der Ordner, in dem diese Datei wirklich liegt - sonst der zum Schreiben."""
+        for pfad in self._fakelib_lesepfade(wurzel):
+            if (pfad / dateiname).is_file():
+                return pfad
+        return self._fakelib_pfad(wurzel)
+
+    def _ampr_ablage_pruefen(self, wurzel) -> list[str]:
+        """Was an einer bestehenden Ablage im Spielordner nicht wirkt.
+
+        Geprueft wird gegen **beide** Generationen: Ein Ordner, der unter der
+        einen wirkt und unter der anderen nicht, ist genau der Fall, den
+        niemand bemerkt - das Spiel startet, nur ohne die Bibliotheken.
+        """
+        try:
+            vorhanden = ps5_backport.fakelib_vorhandene_ordner(str(wurzel))
+        except Exception as exc:
+            logger.debug("Ablage nicht pruefbar: %s", exc)
+            return []
+        gesehen: list[str] = []
+        for generation in (sm_gen.ALT, sm_gen.NEU):
+            for meldung in sm_gen.beanstandungen(generation,
+                                                 sm_gen.ORT_SPIEL, vorhanden):
+                if meldung not in gesehen:
+                    gesehen.append(meldung)
+        return gesehen
 
     def _fakelib_kollision(self, wurzel) -> str:
         """Warnt, wenn beide Ordner existieren; leer, wenn alles eindeutig ist.
@@ -30035,6 +30195,272 @@ class PS5ConverterGUI:
     #: waehrend der Frage geschlossen wird.
     _AMPR_GEN_ANTWORT_GRENZE = 600.0
 
+    #: Die Farbe, die im Auswahlfenster durchsichtig wird. Sie darf sonst
+    #: nirgends vorkommen - jeder Bildpunkt in genau diesem Ton wird zum Loch.
+    #: Ein grelles Magenta kommt in keinem der drei Designs vor.
+    _AUSWAHL_DURCHSICHTIG = "#FF00FE"
+
+    def _show_ampr_auswahl(self) -> None:
+        """Rahmenloses Fenster mit runden Ecken zur Wahl der AMPR-Methode.
+
+        Aufgabe 7 fuehrt seit v1.8.98 nicht mehr in den Hauptbereich, sondern
+        hierher. Die beiden Methoden sind eigene Fenster; welche die richtige
+        ist, haengt an der Fassung von ShadowMountPlus, und diese Frage stellt
+        sich vor allem anderen.
+
+        **Runde Ecken ohne Rahmen.** Tk kennt beides nicht von sich aus:
+        ``overrideredirect`` nimmt den Fensterrahmen weg, hinterlaesst aber ein
+        Rechteck. Die Ecken entstehen daher zeichnerisch - ein Vieleck auf
+        einer Leinwand - und der Rest der Flaeche wird ueber
+        ``-transparentcolor`` durchsichtig gestellt.
+
+        Diese Eigenschaft gibt es nur unter Windows. Fehlt sie, bleibt das
+        Fenster rechteckig und randlos; die Auswahl arbeitet unveraendert.
+        Ein Fenster, das anderswo gar nicht aufginge, waere der schlechtere
+        Tausch.
+        """
+        c = self._COLORS
+        # Farbe schon im Erzeuger: Sonst blitzt das Fenster kurz weiss auf,
+        # bevor es dunkel wird.
+        fenster = tk.Toplevel(self.root, bg=c["bg_main"])
+        fenster.withdraw()
+        try:
+            fenster.transient(self.root)
+        except tk.TclError:
+            pass
+        # Beim Fenster-Umschalter anmelden, damit ein zweiter Druck auf den
+        # Knopf wieder schliesst. Sonst oeffnete jeder Druck ein weiteres -
+        # gemessen: nach dem zweiten Druck standen zwei da.
+        #
+        # Von Hand statt ueber _fenster_an_hauptfenster_binden: Jenes holt
+        # zusaetzlich den Taskleisteneintrag zurueck, und ein kleines
+        # Auswahlfenster gehoert nicht in die Taskleiste.
+        if getattr(self, "_fenster_schluessel", ""):
+            self._fenster_sammlung.append(fenster)
+        try:
+            fenster.overrideredirect(True)
+        except tk.TclError as exc:
+            logger.debug("Rahmenlos nicht moeglich: %s", exc)
+
+        durchsichtig = False
+        try:
+            fenster.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
+            durchsichtig = True
+        except tk.TclError:
+            logger.debug("Durchsichtige Ecken hier nicht verfuegbar - "
+                         "das Fenster bleibt rechteckig.")
+        grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
+        fenster.configure(bg=grund)
+
+        breite, hoehe, rand = 520, 384, 14
+        leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
+                             highlightthickness=0, bd=0)
+        leinwand.pack(fill="both", expand=True)
+        leinwand.create_polygon(
+            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, 22),
+            smooth=True, fill=c["bg_card"], outline=c["border"])
+
+        leinwand.create_text(breite / 2, rand + 22,
+                             text=self._t("ampr_auswahl.title"),
+                             fill=c["fg_accent"],
+                             font=(UI_SCHRIFT, pt(14), "bold"))
+        leinwand.create_text(breite / 2, rand + 56,
+                             text=self._t("ampr_auswahl.hint"),
+                             fill=c["fg_secondary"], width=breite - 2 * rand - 20,
+                             font=(UI_SCHRIFT, pt(9)))
+
+        innen = breite - 2 * rand - 26        # nutzbare Breite fuer Knoepfe
+        links = rand + 13                     # linker Rand der Knopfspalte
+
+        # ── Ablageweg ───────────────────────────────────
+        # ShadowMountPlus kennt drei Stellen, an denen Bibliotheken liegen
+        # koennen: pro Spiel, im globalen Ordner und - ab 1.7 alpha8 - im
+        # Emulator-Ordner. Welche davon gemeint ist, entschied das Programm
+        # bis v1.8.98 allein; jetzt steht sie hier zur Wahl.
+        leinwand.create_text(links, 96, anchor="w",
+                             text=self._t("ampr_auswahl.ablage"),
+                             fill=c["fg_primary"],
+                             font=(UI_SCHRIFT, pt(9), "bold"))
+        erklaerung = leinwand.create_text(
+            breite / 2, 158, text="", fill=c["fg_secondary"],
+            width=innen, font=(UI_SCHRIFT, pt(8)))
+
+        wegknoepfe: dict[str, Any] = {}
+
+        def _wege_zeichnen() -> None:
+            """Hebt den gewaehlten Weg hervor - farbig UND mit Haken.
+
+            Allein ueber die Farbe waere er fuer jemanden mit
+            Farbsehschwaeche nicht zu erkennen. Der Haken traegt dieselbe
+            Aussage ohne Farbe, und die Erklaerung darunter nennt sie
+            noch einmal in Worten.
+            """
+            aktuell = self._ampr_ablage_wahl()
+            for kennung, knopf in wegknoepfe.items():
+                if not knopf.winfo_exists():
+                    continue
+                beschriftung = self._t("ampr_auswahl.ablage_%s" % kennung)
+                gewaehlt = kennung == aktuell
+                knopf.config(
+                    text=("\u2713 " + beschriftung) if gewaehlt else beschriftung,
+                    bg=c["fg_accent"] if gewaehlt else c["bg_main"],
+                    fg=c["bg_main"] if gewaehlt else c["fg_secondary"])
+            leinwand.itemconfigure(
+                erklaerung,
+                text=self._t("ampr_auswahl.ablage_%s_why" % aktuell))
+
+        def _weg_waehlen(kennung: str) -> None:
+            self._ampr_ablage_merken(kennung)
+            _wege_zeichnen()
+
+        wegbreite = (innen - 16) / 3
+        for lfd, kennung in enumerate(self.ABLAGE_WEGE):
+            knopf = RoundedButton(
+                leinwand, text="",
+                command=(lambda k=kennung: _weg_waehlen(k)),
+                font=(UI_SCHRIFT, pt(9), "bold"),
+                bg=c["bg_main"], fg=c["fg_secondary"],
+                activebackground=c["fg_accent"], activeforeground=c["bg_main"],
+                outline=c["border"], radius=8, height=28,
+                parent_bg=c["bg_card"])
+            wegknoepfe[kennung] = knopf
+            leinwand.create_window(
+                links + wegbreite / 2 + lfd * (wegbreite + 8), 126,
+                window=knopf, width=wegbreite, height=28)
+        _wege_zeichnen()
+
+        def _waehlen(methode: str) -> None:
+            # Erst schliessen, dann oeffnen: Sonst liegt das rahmenlose
+            # Fenster ueber dem neuen und laesst sich nicht mehr wegklicken.
+            try:
+                fenster.destroy()
+            except tk.TclError:
+                pass
+            # Ueber den Umschalter, nicht per getattr daran vorbei. Solange
+            # die Titelleisten-Knoepfe dastanden, hingen sie am Umschalter
+            # und haben das erledigt; seit sie weg sind, ist das hier der
+            # einzige Weg zu den beiden Fenstern. Ohne den Umschalter
+            # oeffnet der zweite Druck ein zweites Fenster -
+            # _show_ampr_generation baut jedes Mal ein neues Toplevel.
+            self._werkzeugfenster_umschalten(methode)
+
+        # Die dritte Wahl ist der bisherige Weg: Aufgabe 7 im Hauptbereich,
+        # mit Quelle und START. Sie ist kein Fenster, sondern stellt die
+        # Aufgabe um - deshalb hier derselbe Aufruf wie beim Knopf davor.
+        def _aufgabe_sieben() -> None:
+            try:
+                fenster.destroy()
+            except tk.TclError:
+                pass
+            self._set_mode_from_sidebar("ampr_manager")
+
+        # Die beiden Fassungen bekommen je einen Knopf zu ihrer Anleitung;
+        # der dritte Weg hat keine eigene, weil er nur die Aufgabe umstellt.
+        hilfsbreite = 88
+        for lfd, (schluessel, methode, generation) in enumerate((
+                ("titlebar.ampr_neu", "_show_ampr_neue_methode", sm_gen.NEU),
+                ("titlebar.ampr_alt", "_show_ampr_alte_methode", sm_gen.ALT),
+                ("ampr_auswahl.manager", _aufgabe_sieben, ""))):
+            hoch = 196 + lfd * 52
+            eigene = innen - hilfsbreite - 8 if generation else innen
+            knopf = RoundedButton(
+                leinwand,
+                text=self._t(schluessel),
+                command=(methode if callable(methode)
+                         else (lambda m=methode: _waehlen(m))),
+                font=(UI_SCHRIFT, pt(11), "bold"),
+                bg=c["bg_main"],
+                fg=c["fg_primary"],
+                activebackground=c["fg_accent"],
+                activeforeground=c["bg_main"],
+                outline=c["border"],
+                radius=10,
+                height=44,
+                parent_bg=c["bg_card"],
+            )
+            leinwand.create_window(links + eigene / 2, hoch,
+                                   window=knopf, width=eigene, height=44)
+            if not generation:
+                continue
+            hilfe = RoundedButton(
+                leinwand,
+                text=self._t("ampr_auswahl.anleitung"),
+                command=(lambda g=generation: self._show_ampr_anleitung(g)),
+                font=(UI_SCHRIFT, pt(9)),
+                bg=c["bg_main"],
+                fg=c["fg_secondary"],
+                activebackground=c["fg_accent"],
+                activeforeground=c["bg_main"],
+                outline=c["border"],
+                radius=8,
+                height=44,
+                parent_bg=c["bg_card"],
+            )
+            leinwand.create_window(links + innen - hilfsbreite / 2, hoch,
+                                   window=hilfe, width=hilfsbreite, height=44)
+
+        schliessen = RoundedButton(
+            leinwand, text=self._t("ampr_auswahl.close"),
+            command=lambda: fenster.destroy(),
+            font=(UI_SCHRIFT, pt(9)),
+            bg=c["bg_card"], fg=c["fg_secondary"],
+            activebackground=c["bg_main"], activeforeground=c["fg_primary"],
+            outline=c["bg_card"], radius=8, height=26,
+            parent_bg=c["bg_card"])
+        leinwand.create_window(breite / 2, hoehe - rand - 12,
+                               window=schliessen, width=140, height=26)
+
+        # Mittig ueber dem Hauptfenster.
+        self.root.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - breite) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - hoehe) // 3
+        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
+        fenster.deiconify()
+        fenster.lift()
+        try:
+            fenster.focus_force()
+        except tk.TclError:
+            pass
+
+        # Wegklicken: Escape oder der Schliessen-Knopf. Ein rahmenloses
+        # Fenster hat keinen Schliessknopf des Systems - ohne diese Wege
+        # bliebe es stehen.
+        #
+        # KEIN Schliessen bei <FocusOut>: Der Knopf in der Seitenleiste ist
+        # ein Umschalter. Beim zweiten Druck nimmt der Klick dem Fenster den
+        # Fokus, es haette sich geschlossen, und der Umschalter haette sofort
+        # ein neues geoeffnet - fuer den Betrachter passiert dann nichts.
+        # Gemessen am 25.08.2026: offen nach dem ersten Druck 1, nach dem
+        # zweiten wieder 1.
+        fenster.bind("<Escape>", lambda _e: fenster.destroy())
+        return fenster
+
+    #: Die Anleitungen zu den beiden Fassungen. Sie liegen im Ordner
+    #: ``Anleitungen`` neben dem Programm und werden mit eingebettet.
+    _AMPR_ANLEITUNGEN = {
+        sm_gen.ALT: "ShadowMountPlus_fakelib_alte_Methode.html",
+        sm_gen.NEU: "ShadowMountPlus_fakelib_neue_Methode.html",
+    }
+
+    def _show_ampr_anleitung(self, generation: str) -> None:
+        """Oeffnet die Anleitung zu einer Fassung im Standardprogramm.
+
+        Fehlt die Datei, sagt das eine Meldung mit ihrem Namen. Ein Knopf,
+        der stillschweigend nichts tut, laesst den Nutzer raten; mit dem
+        Namen weiss er, was abzulegen ist.
+        """
+        name = self._AMPR_ANLEITUNGEN.get(generation, "")
+        pfad = _bundled_resource("Anleitungen", name) if name else ""
+        if not pfad:
+            logger.warning("Anleitung nicht gefunden: %s", name or generation)
+            messagebox.showinfo(
+                self._t("ampr_auswahl.anleitung"),
+                self._t("ampr_auswahl.anleitung_fehlt", name=name or "?"),
+                parent=self.root)
+            return
+        if not _system_datei_oeffnen(pfad):
+            logger.warning("Anleitung nicht zu oeffnen: %s", pfad)
+
     def _show_ampr_alte_methode(self) -> None:
         """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""
         self._show_ampr_generation(sm_gen.ALT)
@@ -30052,6 +30478,109 @@ class PS5ConverterGUI:
 
     #: So viele Adressen werden gleichzeitig probiert.
     _AMPR_GEN_SUCHE_FAEDEN = 64
+
+    #: Der Weg, den die Automatik nimmt, wenn nichts anderes gewaehlt ist:
+    #: pro Spiel, also Backport oder Spielordner - wie bisher.
+    ABLAGE_AUTO = "auto"
+
+    #: Die Wege, die zur Wahl stehen. ``ABLAGE_AUTO`` ist unsere eigene
+    #: Bequemlichkeit; die anderen beiden sind die Ordner, die
+    #: ShadowMountPlus in seiner config.ini kennt.
+    ABLAGE_WEGE = (ABLAGE_AUTO, sm_gen.ORT_GLOBAL, sm_gen.ORT_EMUS)
+
+    def _ampr_ablage_wahl(self) -> str:
+        """Welcher Ablageweg gewaehlt ist - gemerkt ueber Programmstarts hinweg.
+
+        Ein unbekannter Wert faellt auf ``ABLAGE_AUTO`` zurueck. Eine
+        Einstellungsdatei aus einer neueren Fassung soll hier keinen
+        Absturz ausloesen, sondern den harmlosen Weg nehmen.
+        """
+        leser = getattr(self, "_load_setting", None)
+        if not callable(leser):
+            return self.ABLAGE_AUTO
+        wert = str(leser("ampr_ablage", self.ABLAGE_AUTO) or "").strip().lower()
+        return wert if wert in self.ABLAGE_WEGE else self.ABLAGE_AUTO
+
+    def _ampr_ablage_merken(self, wert: str) -> None:
+        """Merkt den Ablageweg. Unbekannte Werte werden nicht gespeichert."""
+        if wert not in self.ABLAGE_WEGE:
+            logger.debug("Unbekannter Ablageweg %r - nicht gemerkt", wert)
+            return
+        schreiber = getattr(self, "_save_setting", None)
+        if callable(schreiber):
+            schreiber("ampr_ablage", wert)
+
+    def _ampr_gen_config_pfad(self, config_text: str, ort: str) -> str:
+        """Der in der config.ini eingetragene Ordner - leer heisst Standard.
+
+        ShadowMountPlus liefert seine config.ini vollstaendig auskommentiert
+        aus und laeuft dann auf den eingebauten Vorgaben. Ein fehlender
+        Schluessel heisst also nicht "kaputt", sondern "Standard" - deshalb
+        gibt diese Funktion dann eine leere Zeichenkette zurueck, und
+        ``ablageziel`` setzt den Standard ein.
+        """
+        if not config_text:
+            return ""
+        werte = parse_flat_ini(config_text)
+        schluessel = ("global_fakelib_path" if ort == sm_gen.ORT_GLOBAL
+                      else "emulators_path")
+        return str(werte.get(schluessel, "") or "").strip()
+
+    def _ampr_gen_ablegen(self, generation: str, ort: str, *, lokal: bool,
+                          ziel: str, dateien: list) -> list[str]:
+        """Legt die Bibliotheken in einen Ordner am Rechner - Schritt 7, lokal.
+
+        Diese Funktion fehlte bis v1.8.98 vollstaendig, obwohl die Automatik
+        sie aufrief. Wer ohne Konsole arbeitete, lief am Ende in einen
+        AttributeError, den der Sammelfang als "fehlgeschlagen" meldete -
+        abgelegt wurde nie etwas.
+
+        Args:
+            generation: ``sm_gen.ALT`` oder ``sm_gen.NEU``.
+            ort: Wofuer die Beanstandungen geprueft werden.
+            lokal: Nur ``True`` wird hier bedient; alles andere geht ueber FTP.
+            ziel: Der Zielordner.
+            dateien: Vollstaendige Pfade der abzulegenden Dateien.
+
+        Returns:
+            Die Zeilen fuers Protokoll - eine je Datei, dann das Ergebnis.
+        """
+        if not lokal:
+            raise ValueError("_ampr_gen_ablegen ist der lokale Weg")
+        zeilen: list[str] = []
+        zielordner = Path(str(ziel))
+        try:
+            zielordner.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            zeilen.append(self._t("amprgen.mkdir_failed", path=str(zielordner)))
+            logger.warning("Zielordner nicht anlegbar (%s): %s", zielordner, exc)
+            return zeilen
+
+        for quelle in dateien:
+            name = os.path.basename(str(quelle))
+            zielweg = zielordner / name
+            try:
+                # Ein vorhandenes Original einmal sichern, sonst ist es weg.
+                # Nur einmal: Beim zweiten Lauf laege sonst die bereits
+                # ersetzte Bibliothek als "Original" da.
+                sicherung = zielordner / (name + self._AMPR_BACKUP_SUFFIX)
+                if zielweg.is_file() and not sicherung.exists():
+                    shutil.copy2(zielweg, sicherung)
+                shutil.copy2(str(quelle), zielweg)
+                zeilen.append(self._t("amprgen.placed", name=name))
+            except OSError as exc:
+                zeilen.append(self._t("amprgen.place_failed", name=name,
+                                      error=exc))
+                logger.warning("Ablegen fehlgeschlagen (%s): %s", zielweg, exc)
+
+        zeilen.append(self._t("amprgen.done", path=str(zielordner)))
+        try:
+            da = [e.name for e in zielordner.parent.iterdir() if e.is_dir()]
+        except OSError:
+            da = []
+        for meldung in sm_gen.beanstandungen(generation, ort, da):
+            zeilen.append("!! " + meldung)
+        return zeilen
 
     def _ampr_gen_profil_adressen(self) -> list[str]:
         """Adressen aus den gespeicherten FTP-Profilen.
@@ -30729,10 +31258,16 @@ class PS5ConverterGUI:
                 lokal = True
 
             # ── 2. Welche Fassung laeuft dort? ─────────────────────────
+            # Die config.ini wird hier einmal gelesen und weitergereicht.
+            # Frueher holte Schritt 6 sie ein zweites Mal ab; dazwischen kann
+            # sie sich nicht geaendert haben, und die festen Ablagewege
+            # brauchen ihre Pfade schon vor der Spielwahl.
+            config_text = ""
             if not lokal:
                 melde(self._t("amprgen.step_version"))
+                config_text = self._ampr_gen_config_lesen(ftp)
                 befund = sm_gen.generation_erkennen(
-                    config_text=self._ampr_gen_config_lesen(ftp),
+                    config_text=config_text,
                     cache_ordner_da=self._ampr_ftp_is_dir(ftp, sm_gen.CACHE_ORDNER),
                     log_text=self._ampr_gen_log_lesen(ftp))
                 for _kennung, beleg in befund["belege"]:
@@ -30756,10 +31291,26 @@ class PS5ConverterGUI:
                 else:
                     melde(self._t("amprgen.diag_unknown"))
 
-            # ── 3. Welches Spiel? ──────────────────────────────────────
-            melde(self._t("amprgen.step_game"))
+            # ── 3. Ablageweg und Spiel ──────────────────────────────────────
+            ablage = self._ampr_ablage_wahl()
+            fester_weg = ablage in (sm_gen.ORT_GLOBAL, sm_gen.ORT_EMUS)
+            festes_ziel: dict[str, Any] = {}
+            if fester_weg:
+                melde(self._t("amprgen.place_mode_%s" % ablage))
+                if lokal:
+                    melde(self._t("amprgen.place_needs_console"))
+                    return
+                festes_ziel = sm_gen.ablageziel(
+                    generation, ablage,
+                    pfad=self._ampr_gen_config_pfad(config_text, ablage))
+                if not festes_ziel["wirkt"]:
+                    melde("!! " + festes_ziel["hinweis"])
+                    return
+
+            melde(self._t("amprgen.step_game_skipped") if fester_weg
+                  else self._t("amprgen.step_game"))
             title_id, scanpath, spielpfad = "", "", ""
-            if lokal:
+            if lokal and not fester_weg:
                 spielpfad = self._ampr_gen_ordner_fragen(fenster)
                 if not spielpfad:
                     melde(self._t("amprgen.cancelled"))
@@ -30773,7 +31324,7 @@ class PS5ConverterGUI:
                 melde(self._t("amprgen.game_chosen",
                               name=os.path.basename(spielpfad),
                               title_id=title_id or "?"))
-            else:
+            elif not fester_weg:
                 spiele = self._ampr_gen_spiele_finden(ftp)
                 melde(self._t("amprgen.games_found", count=len(spiele)))
                 if not spiele:
@@ -30804,7 +31355,10 @@ class PS5ConverterGUI:
 
             # ── 4. Wohin? Das entscheidet die Fassung, nicht der Nutzer ─
             melde(self._t("amprgen.step_target"))
-            if not lokal and title_id and scanpath:
+            if fester_weg:
+                ziel = festes_ziel
+                ort = ablage
+            elif not lokal and title_id and scanpath:
                 ziel = sm_gen.ablageziel(generation, sm_gen.ORT_BACKPORT,
                                          title_id=title_id, scanpath=scanpath)
                 ort = sm_gen.ORT_BACKPORT
@@ -30850,8 +31404,21 @@ class PS5ConverterGUI:
             # ── 6. Stimmt die config.ini? ──────────────────────────────
             if not lokal:
                 melde(self._t("amprgen.step_config"))
-                text = self._ampr_gen_config_lesen(ftp)
+                text = config_text
                 abweichungen = self._ampr_gen_config_pruefen(generation, text)
+                # Ein gewaehlter Weg braucht seinen Schalter. Der steht
+                # normalerweise auf der eingebauten Vorgabe und taucht
+                # deshalb nicht unter den Abweichungen auf - abgeschaltet
+                # aber legt man die Dateien richtig ab, und es passiert
+                # trotzdem nichts.
+                if fester_weg:
+                    werte = parse_flat_ini(text) if text else {}
+                    for schluessel in sm_gen.config_schluessel_fuer(
+                            generation, ablage):
+                        ist = str(werte.get(schluessel, "") or "").strip()
+                        if ist.lower() in ("0", "false", "no", "off"):
+                            melde("!! " + self._t("amprgen.place_key_off",
+                                                  key=schluessel))
                 if not abweichungen:
                     melde(self._t("amprgen.config_ok"))
                 else:
@@ -30900,8 +31467,13 @@ class PS5ConverterGUI:
                         melde(self._t("amprgen.place_failed", name=name,
                                       error="FTP"))
                 melde(self._t("amprgen.done", path=ziel["pfad"]))
-                eltern = ziel["pfad"].rsplit("/", 1)[0]
-                da = self._ampr_gen_ordner_ftp(ftp, eltern)
+                # Bei den festen Wegen liegen die Dateien direkt im Ziel -
+                # dort ist auch nachzusehen. Bei den Wegen pro Spiel ist der
+                # fakelib-Ordner das Ziel, und die Frage lautet, welche
+                # Geschwister daneben liegen.
+                nachschau = (ziel["pfad"] if fester_weg
+                             else ziel["pfad"].rsplit("/", 1)[0])
+                da = self._ampr_gen_ordner_ftp(ftp, nachschau)
                 for meldung in sm_gen.beanstandungen(generation, ort, da):
                     melde("!! " + meldung)
 
@@ -33890,8 +34462,10 @@ class PS5ConverterGUI:
                 with open(_ip_ini, "w", encoding="utf-8") as f:
                     f.write(ip_var.get().strip() + "\n")
                     f.write(js_port_var.get().strip() + "\n")
-            except Exception:
-                pass
+            except OSError as exc:
+                logger.warning(
+                    "IP/Port des JS Loaders nicht gemerkt (%s): %s",
+                    _ip_ini, exc)
 
         # ── Datei-Auswahl ────────────────────────────────────────────
         file_frame = _build_section(self._t("jsloader.file_frame"))
@@ -36494,8 +37068,6 @@ class PS5ConverterGUI:
         "_btn_jsloader_title":     "fg_warning",
         "_btn_ftp_title":          "fg_success",
         "_btn_shadowmount_title":  "fg_secondary",
-        "_btn_ampr_alt_title":     "fg_secondary",
-        "_btn_ampr_neu_title":     "fg_secondary",
         "_btn_library_title":      "fg_secondary",
         "_btn_klog_title":         "fg_secondary",
         "_btn_diagnostics_title":  "fg_secondary",

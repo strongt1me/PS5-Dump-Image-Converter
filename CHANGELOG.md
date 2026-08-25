@@ -2,7 +2,101 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.97):** In den Einstellungen lässt sich jetzt eine Farbsehschwäche auswählen – die Oberfläche passt daraufhin die Farben an, die eine Bedeutung tragen. Das gewählte Design bleibt erhalten.
+> **Kurz zum aktuellen Stand (v1.8.98):** Knopf 7 „7. AMPR EMU Manager“ öffnet jetzt ein kleines rahmenloses Fenster: alte Methode, neue Methode oder fest ins Backup einbauen – je mit Anleitung. Neu ist auch die Wahl der Ablage: **pro Spiel, global oder in den Emulator-Ordner**, so wie ShadowMount+ sie beschreibt. Und der Einbau legt die Bibliotheken dorthin, wo ShadowMount+ sie in **beiden** Fassungen findet.
+
+---
+
+## v1.8.98 – 25.08.2026
+
+### Knopf 7 führt jetzt zu allen drei Wegen
+
+Bisher war der AMPR EMU verstreut: Knopf 7 in der Seitenleiste bot den einen
+Weg, zwei Knöpfe oben in der Titelleiste die beiden anderen. Wer nicht
+wusste, dass es die oberen gibt, hat sie nie gefunden.
+
+Jetzt öffnet **Knopf 7** ein kleines Fenster ohne Rahmen, mit runden
+Ecken, und darin stehen alle drei zur Wahl:
+
+* **AMPR EMU – neue Methode** (ab ShadowMount+ 1.7 alpha8)
+* **AMPR EMU – alte Methode** (bis alpha6)
+* **AMPR EMU ins Backup einbauen** (der bisherige Weg im Hauptbereich)
+
+Neben den beiden Methoden steht je ein Knopf **Anleitung** – er
+öffnet die Beschreibung zu genau dieser Fassung.
+
+Ein zweiter Druck auf Knopf 7 schließt das Fenster wieder. Die beiden
+Knöpfe oben in der Titelleiste sind dafür weggefallen – die
+Leiste hat dadurch wieder Platz.
+
+Das Fenster nimmt die Farben des gewählten Designs an und stört
+Hintergrundbilder mit Transparenz nicht.
+
+### Neu: Die Ablage ist wählbar – pro Spiel, global oder Emulatoren
+
+ShadowMount+ liest Bibliotheken aus drei Quellen. Bisher benutzte das
+Programm nur die erste. Im Auswahlfenster stehen jetzt alle drei:
+
+* **Pro Spiel** – wie bisher: in den Backport-Ordner des Titels, sonst
+  in den Spielordner. Gilt nur für dieses eine Spiel.
+* **Global** – nach `/data/shadowmount/fakelib`. Gilt für **jedes**
+  erfasste Spiel. Bei gleichem Dateinamen gewinnt voreingestellt die Datei
+  des Spiels; das steuert `global_fakelib_priority`.
+* **Emulatoren** – nach `/data/shadowmount/emus`. Erst ab 1.7 alpha8,
+  und mit einer Einschränkung, die leicht zu übersehen ist: Dieser
+  Ordner **ersetzt nur Dateien, die im fakelib des Spiels schon liegen**.
+  Bei einem Spiel ohne `libSceAmpr.sprx` bringt er allein nichts.
+
+Steht in Ihrer `config.ini` ein anderer Ordner, wird der benutzt – nicht
+der Standard. Und ist der zugehörige Schalter ausgeschaltet
+(`global_fakelib=0`, `update_emulators=0`), sagt das Protokoll es: Die
+Dateien ließen sich sonst richtig ablegen und würden trotzdem nie
+benutzt.
+
+Die gewählte Ablage bleibt über Programmstarts hinweg gemerkt. Der
+gewählte Weg ist am Haken zu erkennen, nicht nur an der Farbe.
+
+### Behoben: Der Einbau ins Backup landete im falschen Ordner
+
+Wer den AMPR EMU fest in ein Backup einbaut, legt zwei Bibliotheken in einen
+Ordner im Spielverzeichnis. **Welcher Ordner das sein muss, war
+einstellbar** – und die falsche Wahl führte dazu, dass die Konsole
+die Dateien schlicht übersah. Ohne Meldung: Das Spiel startete, nur ohne
+den Emulator.
+
+Der Grund steht in ShadowMount+ selbst. Bis Fassung 1.7 alpha6 wurde
+`fakelib2` bevorzugt und `fakelib` war der Rückfall; **ab alpha8 zählt
+im Spielordner nur noch `fakelib`**. Eingehängt wird immer nur *ein*
+Ordner. Nur `fakelib` wirkt also in beiden Fassungen – und genau dorthin
+legt das Programm die Bibliotheken jetzt, ohne Nachfrage.
+
+Zwei Dinge, die daran hängen:
+
+* **Backport und AMPR EMU benutzen denselben Ordner.** Vorher konnten sie
+  auseinanderlaufen – dann wirkte einer von beiden nicht.
+* **Alte Sicherungen bleiben erreichbar.** Wer früher mit `fakelib2`
+  gearbeitet hat, dessen Originaldateien liegen dort. Das Zurücksetzen
+  durchsucht deshalb weiterhin beide Ordner und legt **jedes** gefundene
+  Original wieder an seinen Platz.
+
+Ist im Spielordner eine Ablage, die nur unter einer der beiden Fassungen
+wirkt, steht das jetzt im Protokoll.
+
+### Behoben: Ohne Konsole wurde nie etwas abgelegt
+
+Wer die beiden Methoden ohne Verbindung zur PS5 benutzte, wählte einen
+Spielordner am Rechner aus, sah alle Schritte durchlaufen – und bekam am
+Ende nur „fehlgeschlagen“. Der Grund: Der letzte Schritt rief eine
+Funktion auf, die es im Programm gar nicht gab. Abgelegt wurde nichts.
+Jetzt legt er die Bibliotheken wirklich ab und sichert ein vorhandenes
+Original einmalig als `.orig`.
+
+### Kleinigkeiten
+
+* Der Ordner mit den Diagnoseberichten läuft nicht mehr voll – die
+  zehn neuesten bleiben, ältere räumt das Programm beim nächsten
+  Bericht selbst weg.
+* Drei Stellen, an denen ein fehlgeschlagenes Speichern stillschweigend
+  verschluckt wurde, melden sich jetzt im Protokoll.
 
 ---
 

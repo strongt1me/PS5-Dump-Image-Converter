@@ -147,18 +147,31 @@ class AmprWiederherstellenMitFakelib2Tests(unittest.TestCase):
         self.assertEqual(ergebnis, "restored")
         self.assertEqual(ziel.read_bytes(), b"ORIGINAL")
 
-    def test_der_andere_ordner_wird_nicht_angefasst(self) -> None:
-        """Liegt daneben ein fakelib, darf die Wahl fakelib2 es ignorieren."""
-        alt = self.wurzel / "fakelib"
-        alt.mkdir()
-        (alt / "libSceAmpr.sprx").write_bytes(b"FALSCH")
-        (alt / "libSceAmpr.sprx.orig").write_bytes(b"FALSCH-ORIG")
+    def test_beide_ordner_werden_zurueckgespielt(self) -> None:
+        """Liegen in beiden Ordnern Sicherungen, kommen beide Originale zurueck.
+
+        Frueher entschied die Einstellung, welcher Ordner gemeint war. Seit
+        v1.8.98 entscheidet sie die Ablage nicht mehr - damit waere nicht mehr
+        zu sagen, welche der beiden Sicherungen die richtige ist. Beide
+        zurueckzulegen loest das ohne Rueckfrage: Ein Original an seinen Platz
+        zu legen kann nichts kaputt machen.
+        """
+        anderer = self.wurzel / "fakelib"
+        anderer.mkdir()
+        (anderer / "libSceAmpr.sprx").write_bytes(b"AMPR-EMU-2")
+        (anderer / "libSceAmpr.sprx.orig").write_bytes(b"ORIGINAL-2")
         (self.fakelib / "libSceAmpr.sprx").write_bytes(b"AMPR-EMU")
         (self.fakelib / "libSceAmpr.sprx.orig").write_bytes(b"ORIGINAL")
         gui = _gui("fakelib2")
-        PS5ConverterGUI._ampr_restore_library(gui, str(self.wurzel), "libSceAmpr.sprx")
+        ergebnis = PS5ConverterGUI._ampr_restore_library(
+            gui, str(self.wurzel), "libSceAmpr.sprx")
+        self.assertEqual(ergebnis, "restored")
         self.assertEqual((self.fakelib / "libSceAmpr.sprx").read_bytes(), b"ORIGINAL")
-        self.assertEqual((alt / "libSceAmpr.sprx").read_bytes(), b"FALSCH")
+        self.assertEqual((anderer / "libSceAmpr.sprx").read_bytes(), b"ORIGINAL-2")
+        # Und keine Sicherung bleibt liegen - sonst sieht der naechste Lauf
+        # eine, die schon zurueckgespielt wurde.
+        self.assertFalse((self.fakelib / "libSceAmpr.sprx.orig").exists())
+        self.assertFalse((anderer / "libSceAmpr.sprx.orig").exists())
 
 
 if __name__ == "__main__":

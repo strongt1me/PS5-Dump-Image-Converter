@@ -378,5 +378,111 @@ class TooltipTests(unittest.TestCase):
         self.assertNotIn('relief="solid"', koerper)
 
 
+class DiagnoseberichteTests(unittest.TestCase):
+    """Alte Diagnoseberichte sammeln sich nicht mehr an.
+
+    Bei jedem Klick auf DIAGNOSE entsteht einer im Einstellungsordner.
+    Aufgeräumt wurde nie: Am 25.08.2026 lagen dort **327 Stück** mit zusammen
+    3,8 MB, der älteste vom 09.08. Dieselbe Klasse wie die Protokolldatei, die
+    ungebremst auf 22 MB gewachsen war.
+
+    Gelöscht wird nach dem Dateinamen, nicht nach dem Änderungsdatum: Der Name
+    trägt den Zeitstempel und ist damit von selbst richtig sortiert, während
+    ein Kopieren des Ordners alle Änderungsdaten gleichsetzt.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.haupt = _lade_hauptprogramm()
+
+    def setUp(self) -> None:
+        import tempfile
+        self.ordner = tempfile.mkdtemp(prefix="berichte_")
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.ordner, ignore_errors=True)
+
+    def _anlegen(self, anzahl, praefix="Diagnosebericht_"):
+        import os
+        namen = []
+        for i in range(anzahl):
+            name = "%s202608%02d_120000.txt" % (praefix, (i % 28) + 1)
+            name = "%s20260801_%06d.txt" % (praefix, i)
+            with open(os.path.join(self.ordner, name), "w", encoding="utf-8") as f:
+                f.write("x")
+            namen.append(name)
+        return namen
+
+    def _aufraeumen(self):
+        return self.haupt.PS5ConverterGUI._alte_diagnoseberichte_aufraeumen(
+            self.haupt.PS5ConverterGUI, self.ordner)
+
+    def _vorhanden(self):
+        import os
+        return sorted(n for n in os.listdir(self.ordner)
+                      if n.startswith("Diagnosebericht_"))
+
+    def test_ueberzaehlige_werden_entfernt(self) -> None:
+        self._anlegen(30)
+        entfernt = self._aufraeumen()
+        grenze = self.haupt.PS5ConverterGUI._DIAGNOSE_BERICHTE_BEHALTEN
+        self.assertEqual(entfernt, 30 - grenze)
+        self.assertEqual(len(self._vorhanden()), grenze)
+
+    def test_die_juengsten_bleiben(self) -> None:
+        """Nicht irgendwelche zehn - die zehn neuesten."""
+        namen = self._anlegen(20)
+        self._aufraeumen()
+        grenze = self.haupt.PS5ConverterGUI._DIAGNOSE_BERICHTE_BEHALTEN
+        self.assertEqual(self._vorhanden(), sorted(namen)[-grenze:])
+
+    def test_wenige_bleiben_unangetastet(self) -> None:
+        self._anlegen(3)
+        self.assertEqual(self._aufraeumen(), 0)
+        self.assertEqual(len(self._vorhanden()), 3)
+
+    def test_ein_leerer_ordner_wirft_nicht(self) -> None:
+        self.assertEqual(self._aufraeumen(), 0)
+
+    def test_fremde_dateien_bleiben(self) -> None:
+        """Im Einstellungsordner liegen auch paths.json und andere."""
+        import os
+        self._anlegen(20)
+        for fremd in ("paths.json", "settings.ini", "Bericht_von_Hand.txt"):
+            with open(os.path.join(self.ordner, fremd), "w", encoding="utf-8") as f:
+                f.write("x")
+        self._aufraeumen()
+        uebrig = set(os.listdir(self.ordner))
+        for fremd in ("paths.json", "settings.ini", "Bericht_von_Hand.txt"):
+            self.assertIn(fremd, uebrig)
+
+    def test_ein_fehlender_ordner_wirft_nicht(self) -> None:
+        """Der Bericht ist gerade dann gefragt, wenn etwas klemmt."""
+        import os
+        self.assertEqual(
+            self.haupt.PS5ConverterGUI._alte_diagnoseberichte_aufraeumen(
+                self.haupt.PS5ConverterGUI,
+                os.path.join(self.ordner, "gibtsnicht")), 0)
+
+    def test_das_aufraeumen_haengt_am_bericht(self) -> None:
+        """Sonst liefe es nie."""
+        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("def _show_diagnostic_report")
+        koerper = quelle[anfang:anfang + 1400]
+        self.assertIn("_alte_diagnoseberichte_aufraeumen", koerper)
+
+    def test_erst_schreiben_dann_aufraeumen(self) -> None:
+        """Der neue Bericht zählt mit, und ein Fehlschlag beim Aufräumen darf
+        das Anzeigen nicht verhindern."""
+        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("def _show_diagnostic_report")
+        koerper = quelle[anfang:anfang + 1400]
+        self.assertLess(koerper.index("f.write(report_text)"),
+                        koerper.index("_alte_diagnoseberichte_aufraeumen"))
+        self.assertLess(koerper.index("_alte_diagnoseberichte_aufraeumen"),
+                        koerper.index("_render_diagnostic_report_window"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

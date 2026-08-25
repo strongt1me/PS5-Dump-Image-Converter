@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SHADOWMOUNT+ · fakelib &amp; fakelib2 — bis 1.7 alpha6</title>
+<style>
+:root{
+  --bg-deep:#04070f;
+  --bg-blue:#0a1a35;
+  --bg-blue-2:#12305e;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.11);
+  --line-soft:rgba(255,255,255,.06);
+  --text:#eef3fb;
+  --muted:#93a4c0;
+  --accent:#3aa0ff;
+  --accent-soft:rgba(58,160,255,.14);
+  --warn:#ffb32b;
+  --warn-soft:rgba(255,179,43,.12);
+  --ok:#59e0b0;
+  --radius:18px;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"Inter","SF Pro Display","Segoe UI",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:96px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0;background:var(--bg-deep);color:var(--text);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, #1b4b8f 0%, transparent 62%),
+    radial-gradient(900px 560px at 96% 4%, #0e2a55 0%, transparent 60%),
+    linear-gradient(180deg,var(--bg-blue) 0%, var(--bg-deep) 46%, #050a14 100%);
+}
+
+/* ── Topbar ───────────────────────────────────────── */
+.topbar{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(18px);
+  background:rgba(6,12,24,.72);border-bottom:1px solid var(--line-soft);
+}
+.topbar .inner{max-width:1180px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.14em;font-size:13px}
+.brand .shapes{display:flex;gap:6px;color:var(--accent);font-size:11px;opacity:.9}
+.brand b{font-weight:800}
+.brand span.plus{color:var(--accent)}
+.nav{margin-left:auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--muted);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:999px;
+  white-space:nowrap;transition:background .18s,color .18s;
+}
+.nav a:hover{color:#fff;background:var(--surface)}
+.nav a.active{color:#fff;background:var(--accent-soft);box-shadow:inset 0 0 0 1px rgba(58,160,255,.35)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+
+/* ── Hero ─────────────────────────────────────────── */
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.hero{padding:78px 0 44px;position:relative}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  background:var(--accent-soft);padding:7px 15px;border-radius:999px;
+}
+h1{
+  font-size:clamp(38px,6.2vw,72px);line-height:1.02;margin:24px 0 0;font-weight:800;letter-spacing:-.03em;
+  background:linear-gradient(180deg,#ffffff 20%,#9dc6ff 130%);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+h1 small{display:block;font-size:clamp(15px,2vw,21px);font-weight:500;letter-spacing:0;color:var(--muted);margin-top:16px;-webkit-text-fill-color:var(--muted)}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.badge{
+  font-size:12.5px;padding:7px 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--muted);
+}
+.badge.on{color:var(--ok);border-color:rgba(89,224,176,.3);background:rgba(89,224,176,.09)}
+
+/* ── Alert ────────────────────────────────────────── */
+.alert{
+  margin:36px 0 8px;display:flex;gap:16px;align-items:flex-start;padding:20px 22px;
+  border-radius:var(--radius);border:1px solid rgba(255,179,43,.32);background:var(--warn-soft);
+}
+.alert .ic{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(255,179,43,.18);color:var(--warn);font-weight:800;font-size:15px}
+.alert p{margin:0;font-size:14.5px}
+.alert strong{color:var(--warn)}
+
+/* ── Sections ─────────────────────────────────────── */
+section{padding:56px 0 8px;scroll-margin-top:90px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-mark{
+  font-family:var(--mono);font-size:12px;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  border-radius:8px;padding:4px 9px;flex:0 0 auto;
+}
+h2{font-size:clamp(24px,3.2vw,34px);margin:0;font-weight:700;letter-spacing:-.02em}
+.lede{color:var(--muted);font-size:15.5px;margin:10px 0 26px;max-width:72ch}
+
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px;backdrop-filter:blur(8px);
+}
+.grid{display:grid;gap:18px}
+@media(min-width:820px){.grid.two{grid-template-columns:1fr 1fr}}
+
+/* Flow steps */
+ol.flow{list-style:none;counter-reset:s;margin:0;padding:0}
+ol.flow li{
+  counter-increment:s;position:relative;padding:14px 0 14px 58px;border-bottom:1px solid var(--line-soft);
+  font-size:15px;
+}
+ol.flow li:last-child{border-bottom:none}
+ol.flow li::before{
+  content:counter(s,decimal-leading-zero);position:absolute;left:0;top:13px;
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  width:34px;height:26px;display:grid;place-items:center;border-radius:7px;background:var(--accent-soft);
+}
+ol.flow li b{color:#fff;font-weight:600}
+
+/* Code / tree */
+pre{
+  font-family:var(--mono);font-size:13px;line-height:1.75;margin:0;padding:20px;border-radius:14px;
+  background:rgba(0,0,0,.36);border:1px solid var(--line-soft);overflow-x:auto;color:#cfe0f7;
+}
+pre .c{color:var(--muted)}
+pre .hi{color:var(--accent)}
+pre .k{color:var(--ok)}
+code.inline{
+  font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.08);
+  border:1px solid var(--line-soft);border-radius:6px;padding:1.5px 6px;color:#d8e6fb;white-space:nowrap;
+}
+.path-title{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+.pill-way{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:none}
+td.key{font-family:var(--mono);font-size:13px;color:#fff;white-space:nowrap}
+td.val{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap}
+.table-scroll{overflow-x:auto}
+
+/* Priority cards */
+.prio{display:grid;gap:16px}
+@media(min-width:820px){.prio{grid-template-columns:1fr 1fr}}
+.prio .p{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.prio .p.default{border-color:rgba(58,160,255,.38);background:rgba(58,160,255,.07)}
+.prio h4{margin:0 0 4px;font-family:var(--mono);font-size:13.5px;color:#fff;font-weight:600}
+.prio .tag{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.layers{display:flex;align-items:center;gap:10px;margin:16px 0 12px;flex-wrap:wrap}
+.layer{font-size:12.5px;padding:6px 12px;border-radius:8px;background:var(--surface-2);border:1px solid var(--line)}
+.layer.win{background:rgba(89,224,176,.12);border-color:rgba(89,224,176,.35);color:var(--ok);font-weight:600}
+.arrow{color:var(--muted);font-size:12px}
+.prio p{margin:0;font-size:14px;color:var(--muted)}
+
+/* Pitfalls */
+.pit{display:grid;gap:14px}
+@media(min-width:820px){.pit{grid-template-columns:1fr 1fr}}
+.pit .item{border-left:2px solid var(--warn);padding:4px 0 4px 18px}
+.pit h4{margin:0 0 6px;font-size:15px;font-weight:650}
+.pit p{margin:0;font-size:14px;color:var(--muted)}
+
+/* Log */
+.log td:first-child{font-family:var(--mono);font-size:12.5px;color:#bcd6f7;white-space:nowrap}
+.log td:last-child{color:var(--muted)}
+
+/* Version check */
+.check{display:grid;gap:14px}
+@media(min-width:900px){.check{grid-template-columns:repeat(3,1fr)}}
+.check .q{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.check .q p.qt{margin:0 0 14px;font-size:14.5px;color:#fff}
+.verdict{display:flex;gap:8px;align-items:center;font-size:13px;margin-top:8px;color:var(--muted)}
+.yn{font-family:var(--mono);font-size:11px;padding:3px 9px;border-radius:999px;flex:0 0 auto}
+.yn.y{background:rgba(255,179,43,.14);color:var(--warn);border:1px solid rgba(255,179,43,.3)}
+.yn.n{background:rgba(89,224,176,.12);color:var(--ok);border:1px solid rgba(89,224,176,.3)}
+
+footer{margin:80px 0 60px;padding-top:26px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:13px}
+footer b{color:#fff}
+.note{font-size:13.5px;color:var(--muted);margin-top:16px}
+.hr{height:1px;background:var(--line-soft);margin:22px 0}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="shapes">△ ○ ✕ □</span>
+      <span><b>SHADOWMOUNT</b><span class="plus">+</span></span>
+    </div>
+    <nav class="nav">
+      <a href="#start">Spielstart</a>
+      <a href="#struktur">Ordner</a>
+      <a href="#global">Global</a>
+      <a href="#config">Config</a>
+      <a href="#anleitung">Anleitung</a>
+      <a href="#stolper">Stolperfallen</a>
+      <a href="#log">Log</a>
+      <a href="#version">Version</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">fakelib &amp; fakelib2 · ältere Versionen</span>
+    <h1>Backports einhängen
+      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha6.</small>
+    </h1>
+    <div class="badges">
+      <span class="badge on">Gültig bis einschl. 1.7 alpha6</span>
+      <span class="badge">unionfs · zwei Schichten</span>
+      <span class="badge">kein Cache</span>
+      <span class="badge">Stand: 22. August 2026</span>
+    </div>
+
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Nicht für 1.7 alpha8 und neuer.</strong> Ab alpha8 wurde die Mechanik umgebaut: <code class="inline">fakelib2</code> wird nur noch im Backport-Ordner gesucht, und statt zweier Schichten läuft alles über einen Cache. Dafür gilt die separate Anleitung. Unsicher, welche Version läuft? <a href="#version" style="color:var(--warn)">Drei Prüfungen am Seitenende.</a></p>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <section id="start">
+    <div class="sec-head"><span class="sec-mark">01</span><h2>Was beim Spielstart passiert</h2></div>
+    <p class="lede">Der Ablauf läuft vollautomatisch ab, sobald der Watcher ein startendes Spiel erkennt.</p>
+    <div class="card">
+      <ol class="flow">
+        <li>Der Watcher meldet <b>PID</b> und <b>TITLE_ID</b>.</li>
+        <li>Gesucht wird die Sandbox <code class="inline">/mnt/sandbox/&lt;TITLE_ID&gt;_NNN</code> mit der <b>höchsten Nummer</b>.</li>
+        <li>Quelle wählen: <code class="inline">app0/fakelib2</code> hat Vorrang, sonst <code class="inline">app0/fakelib</code>. Es wird <b>immer nur einer von beiden</b> genommen.</li>
+        <li>Ziel ist der erste Ordner in der Sandbox, der <b>nicht</b> <code class="inline">app0</code> heißt und ein gültiges <code class="inline">common/lib</code> hat.</li>
+        <li>Einhängen per <b>unionfs</b> — <code class="inline">copymode=transparent</code>, <code class="inline">notime</code>, <code class="inline">fnodup</code>.</li>
+        <li>Ist eine globale fakelib aktiv, kommt sie als <b>zweite Schicht</b> dazu.</li>
+        <li>Beim Spielende werden die Schichten in <b>umgekehrter Reihenfolge</b> entfernt.</li>
+      </ol>
+      <div class="hr"></div>
+      <p class="note">In dieser Version werden die Ordner aus der <b style="color:#fff">laufenden Sandbox</b> gelesen — alles, was in <code class="inline">app0</code> landet, zählt. Das gilt für Dateien aus dem Spiel-Dump ebenso wie für Dateien aus dem <code class="inline">backports</code>-Ordner, denn der Backport wird über das Spiel gelegt und erscheint dadurch ebenfalls in <code class="inline">app0</code>.</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="struktur">
+    <div class="sec-head"><span class="sec-mark">02</span><h2>Ordnerstruktur</h2></div>
+    <p class="lede">Zwei Wege führen zum Ziel. Beide funktionieren in dieser Version gleichwertig — Weg B lässt den Spiel-Dump unangetastet.</p>
+
+    <div class="grid two">
+      <div class="card">
+        <span class="pill-way">Weg A · im Spiel-Dump oder Image</span>
+<pre>&lt;Spielordner oder Image-Inhalt&gt;/
+├─ eboot.bin
+├─ sce_sys/param.json
+├─ <span class="hi">fakelib2/</span>   <span class="c">← wird bevorzugt</span>
+│  └─ libSceXxx.sprx
+└─ <span class="k">fakelib/</span>    <span class="c">← Fallback</span>
+   └─ libSceXxx.sprx</pre>
+      </div>
+
+      <div class="card">
+        <span class="pill-way">Weg B · als Backport, ohne das Spiel anzufassen</span>
+<pre>&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/
+└─ <span class="hi">fakelib2/</span>
+   └─ libSceXxx.sprx
+
+<span class="c">Beispiel:</span>
+/data/homebrew/backports/PPSA01234/</pre>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p class="path-title">Regeln</p>
+      <p style="margin:0 0 12px;font-size:14.5px">Ordnernamen exakt <code class="inline">fakelib2</code> bzw. <code class="inline">fakelib</code>, klein geschrieben. Liegt <code class="inline">fakelib2</code> vor, wird <code class="inline">fakelib</code> vollständig ignoriert — <b style="color:var(--warn)">auch dann, wenn fakelib2 leer ist</b>. Befülle immer nur einen der beiden.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Der <code class="inline">backports</code>-Ordner wird beim normalen Scan ignoriert. Liefern mehrere Scan-Pfade denselben Titel, gewinnt der Scan-Pfad des Spiels; sonst entscheidet die Reihenfolge der <code class="inline">scanpath</code>-Einträge.</p>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section id="global">
+    <div class="sec-head"><span class="sec-mark">03</span><h2>Globale fakelib</h2></div>
+    <p class="lede">Ein Ordner für alle Spiele, standardmäßig aktiv: <code class="inline">/data/shadowmount/fakelib/</code>. Existieren global und spiel-eigen, werden zwei Schichten übereinandergelegt. Für unionfs gilt: <b style="color:#fff">zuletzt eingehängt liegt oben und gewinnt.</b></p>
+
+    <div class="prio">
+      <div class="p default">
+        <span class="tag">Standard</span>
+        <h4>global_fakelib_priority=game</h4>
+        <div class="layers">
+          <span class="layer">1 · global</span><span class="arrow">→</span>
+          <span class="layer win">2 · Spiel</span>
+        </div>
+        <p>Die fakelib des Spiels gewinnt.</p>
+      </div>
+      <div class="p">
+        <span class="tag">Alternative</span>
+        <h4>global_fakelib_priority=global</h4>
+        <div class="layers">
+          <span class="layer">1 · Spiel</span><span class="arrow">→</span>
+          <span class="layer win">2 · global</span>
+        </div>
+        <p>Die globale fakelib gewinnt.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p style="margin:0 0 12px;font-size:14.5px">Zeigen beide Pfade auf denselben Ordner, wird nur einmal eingehängt. Schlägt eine Schicht fehl, werden alle bereits gesetzten wieder entfernt — <b style="color:#fff">es entsteht nie ein halber Stapel</b>.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Einen Cache gibt es in dieser Version nicht. Ebenso wenig Emulator-Updates oder AMPR-Download — das kam erst mit alpha8.</p>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="config">
+    <div class="sec-head"><span class="sec-mark">04</span><h2>Einstellungen</h2></div>
+    <p class="lede">Alles steht in <code class="inline">/data/shadowmount/config.ini</code>. Die Datei ist optional — fehlt sie, wird sie beim Start aus <code class="inline">config.ini.example</code> angelegt.</p>
+
+    <div class="card" style="padding:8px 8px 0">
+      <div class="table-scroll">
+        <table>
+          <thead><tr><th>Schlüssel</th><th>Standard</th><th>Bedeutung</th></tr></thead>
+          <tbody>
+            <tr><td class="key">backport_fakelib</td><td class="val">1</td><td>Master-Schalter. <code class="inline">0</code> schaltet auch die globale fakelib aus.</td></tr>
+            <tr><td class="key">global_fakelib</td><td class="val">1</td><td>Globalen Ordner als zweite Schicht mitverwenden.</td></tr>
+            <tr><td class="key">global_fakelib_path</td><td class="val">/data/shadowmount/fakelib</td><td>Ort des globalen Ordners.</td></tr>
+            <tr><td class="key">global_fakelib_priority</td><td class="val">game</td><td><code class="inline">game</code> oder <code class="inline">global</code>.</td></tr>
+            <tr><td class="key">global_fakelib_exclude</td><td class="val">—</td><td>Wiederholbar, max. 128 Title-IDs. Schließt Titel von der globalen fakelib aus; die spiel-eigene bleibt aktiv.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:18px">
+      <p class="path-title">Beispiel</p>
+<pre><span class="k">backport_fakelib</span>=1
+<span class="k">global_fakelib</span>=1
+<span class="k">global_fakelib_path</span>=/data/shadowmount/fakelib
+<span class="k">global_fakelib_priority</span>=game
+<span class="k">global_fakelib_exclude</span>=PPSA01234</pre>
+      <p class="note">Als Werte gehen <code class="inline">1/0</code>, <code class="inline">true/false</code>, <code class="inline">yes/no</code>, <code class="inline">on/off</code>. Groß-/Kleinschreibung der Schlüssel ist egal.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="anleitung">
+    <div class="sec-head"><span class="sec-mark">05</span><h2>Schritt für Schritt</h2></div>
+    <p class="lede">Von null bis zur Meldung „Spiel backportiert“.</p>
+    <div class="card">
+      <ol class="flow">
+        <li><b>BackPork-Payload deaktivieren.</b> Parallelbetrieb kollidiert.</li>
+        <li><b>Spiel-Dump ablegen</b> in einem Scan-Pfad. Ordner-Dumps brauchen <code class="inline">sce_sys/param.json</code>.</li>
+        <li><b>Backport-Dateien erzeugen</b> — externes Werkzeug, nicht Teil von ShadowMount+.</li>
+        <li><b>In einen Ordner <code class="inline">fakelib2</code> legen</b> — im Spielordner selbst oder unter <code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/</code>. Beides funktioniert hier.</li>
+        <li>Optional: <b>globale Bibliotheken</b> nach <code class="inline">/data/shadowmount/fakelib/</code>.</li>
+        <li><b>Config setzen</b> — vor dem Spielstart.</li>
+        <li><b>Payload starten</b> (Port <code class="inline">9021</code> oder <code class="inline">autoload.txt</code>) und auf die Kachel warten.</li>
+        <li><b>Spiel starten.</b> Meldung: „Spiel backportiert: &lt;TITLE_ID&gt;“. Bei reinem Global-Overlay bleibt sie aus — das ist kein Fehler.</li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section id="stolper">
+    <div class="sec-head"><span class="sec-mark">06</span><h2>Stolperfallen</h2></div>
+    <p class="lede">Vier Punkte, an denen es in dieser Version regelmäßig klemmt.</p>
+    <div class="card">
+      <div class="pit">
+        <div class="item">
+          <h4>Nur ein Spiel gleichzeitig</h4>
+          <p>Es wird genau eine fakelib-Sitzung mit maximal zwei Schichten verwaltet. Beim Spielwechsel wird der alte Mount zuerst abgeräumt; scheitert das, bekommt das neue Spiel keine fakelib.</p>
+        </div>
+        <div class="item">
+          <h4>Config nicht während des Spiels ändern</h4>
+          <p>Jede Änderung an einem fakelib-Schlüssel entfernt sofort alle Overlays — auch beim laufenden Spiel.</p>
+        </div>
+        <div class="item">
+          <h4>Ohne <code class="inline">common/lib</code> passiert nichts</h4>
+          <p>Stiller Abbruch: keine Meldung, kein Log-Eintrag.</p>
+        </div>
+        <div class="item">
+          <h4>Sandbox-Auswahl</h4>
+          <p>Bei mehreren <code class="inline">&lt;TITLE_ID&gt;_NNN</code> gewinnt die höchste Nummer. Alte Sandbox-Reste stören nicht.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="log">
+    <div class="sec-head"><span class="sec-mark">07</span><h2>Log lesen</h2></div>
+    <p class="lede">Datei <code class="inline">/data/shadowmount/debug.log</code>, Filter <code class="inline">[FAKELIB]</code>.</p>
+    <div class="card" style="padding:8px 8px 0">
+      <div class="table-scroll">
+        <table class="log">
+          <thead><tr><th>Zeile</th><th>Bedeutung</th></tr></thead>
+          <tbody>
+            <tr><td>game libraries mounted for &lt;ID&gt;: …</td><td>Spiel-fakelib ist aktiv.</td></tr>
+            <tr><td>global libraries mounted for &lt;ID&gt;: …</td><td>Globale fakelib ist aktiv.</td></tr>
+            <tr><td>&lt;label&gt; mount failed for &lt;ID&gt; …</td><td>Einhängen fehlgeschlagen, der Stapel wird zurückgerollt.</td></tr>
+            <tr><td>global path unavailable for &lt;ID&gt;</td><td>Globaler Pfad fehlt oder ist nicht lesbar.</td></tr>
+            <tr><td>global path is not a directory for &lt;ID&gt;</td><td>Der Pfad zeigt auf eine Datei.</td></tr>
+            <tr><td>handoff active mount pid=X -&gt; pid=Y</td><td>Spielwechsel, alter Mount wird abgeräumt.</td></tr>
+            <tr><td>unmount deferred for …</td><td>Ziel noch belegt (<code class="inline">EBUSY</code>).</td></tr>
+            <tr><td style="color:var(--warn)">keine Zeile</td><td>Sandbox nicht auflösbar, kein fakelib-Ordner, oder <code class="inline">backport_fakelib=0</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section id="version">
+    <div class="sec-head"><span class="sec-mark">08</span><h2>Welche Version habe ich?</h2></div>
+    <p class="lede">Drei schnelle Prüfungen — jede allein genügt.</p>
+    <div class="check">
+      <div class="q">
+        <p class="qt">Steht <code class="inline">update_emulators</code> in <code class="inline">config.ini.example</code>?</p>
+        <div class="verdict"><span class="yn y">ja</span> neue Version (alpha8+)</div>
+        <div class="verdict"><span class="yn n">nein</span> alte Version — diese Anleitung</div>
+      </div>
+      <div class="q">
+        <p class="qt">Gibt es den Ordner <code class="inline">/data/shadowmount/cache/</code>?</p>
+        <div class="verdict"><span class="yn y">ja</span> neue Version</div>
+        <div class="verdict"><span class="yn n">nein</span> alte Version (oder noch kein Cache nötig)</div>
+      </div>
+      <div class="q">
+        <p class="qt">Steht im Log je <code class="inline">[FAKELIB] using cache for</code>?</p>
+        <div class="verdict"><span class="yn y">ja</span> neue Version</div>
+        <div class="verdict"><span class="yn n">nein</span> alte Version — die Zeile gibt es dort nicht</div>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p style="margin:0 0 6px"><b>Gilt für ShadowMountPlus bis einschließlich 1.7 alpha6.</b></p>
+    <p style="margin:0">Ab 1.7 alpha8 gilt die separate Anleitung: <code class="inline">fakelib2</code> wird nur noch im Backport-Ordner gesucht, und statt zweier Schichten kommt ein Cache zum Einsatz.<br>
+    Geprüft am Quellcode: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code> · Stand 22. August 2026.</p>
+  </footer>
+</main>
+
+<script>
+const links = [...document.querySelectorAll('.nav a')];
+const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+const obs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      links.forEach(l => l.classList.remove('active'));
+      map.get(e.target.id)?.classList.add('active');
+    }
+  });
+}, { rootMargin: '-88px 0px -70% 0px', threshold: 0 });
+document.querySelectorAll('section').forEach(s => obs.observe(s));
+</script>
+</body>
+</html>

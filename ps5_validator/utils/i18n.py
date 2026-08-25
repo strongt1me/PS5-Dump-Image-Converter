@@ -768,6 +768,63 @@ STRINGS: dict[str, dict[str, str]] = {
     'ps4pkg.status_cancelling': {'de': 'Vorgang wird abgebrochen …', 'en': 'Cancelling …'},
     'ps4pkg.status_cancelled': {'de': 'Vorgang abgebrochen.', 'en': 'Cancelled.'},
     'ps4pkg.log_done': {'de': '[OK] PS4-Abbild erstellt: {title} → {path}\n', 'en': '[OK] PS4 image created: {title} → {path}\n'},
+    'ampr_auswahl.title': {'de': 'AMPR EMU Manager', 'en': 'AMPR EMU Manager'},
+    'ampr_auswahl.hint': {'de': 'Welche Methode passt, hängt von der Fassung von ShadowMountPlus ab. Der Einbau ins Backup wirkt in beiden.', 'en': 'Which method fits depends on your ShadowMountPlus version. Building it into the backup works with both.'},
+    'ampr_auswahl.manager': {'de': 'AMPR EMU ins Backup einbauen (fakelib im Spielordner)', 'en': 'Build AMPR EMU into the backup (fakelib in the game folder)'},
+    'ampr_auswahl.ablage': {
+        'de': 'Ablage nach ShadowMount+:',
+        'en': 'Placement per ShadowMount+:'},
+    'ampr_auswahl.ablage_auto': {'de': 'Pro Spiel', 'en': 'Per game'},
+    'ampr_auswahl.ablage_global': {'de': 'Global', 'en': 'Global'},
+    'ampr_auswahl.ablage_emus': {'de': 'Emulatoren', 'en': 'Emulators'},
+    'ampr_auswahl.ablage_auto_why': {
+        'de': 'In den Backport-Ordner des Titels, sonst in den Spielordner. '
+              'Gilt nur für dieses eine Spiel.',
+        'en': 'Into the title’s backport folder, otherwise the game '
+              'folder. Applies to this one game only.'},
+    'ampr_auswahl.ablage_global_why': {
+        'de': 'Nach /data/shadowmount/fakelib – gilt für jedes '
+              'erfasste Spiel. Bei gleichem Dateinamen gewinnt '
+              'voreingestellt die Datei des Spiels.',
+        'en': 'Into /data/shadowmount/fakelib – applies to every tracked '
+              'game. On a name clash the game’s own file wins by '
+              'default.'},
+    'ampr_auswahl.ablage_emus_why': {
+        'de': 'Nach /data/shadowmount/emus – erst ab 1.7 alpha8, und '
+              'ersetzt nur Dateien, die im fakelib des Spiels schon liegen.',
+        'en': 'Into /data/shadowmount/emus – 1.7 alpha8 and newer only, '
+              'and it replaces only files already present in the game’s '
+              'fakelib.'},
+    'ampr_auswahl.anleitung': {'de': 'Anleitung', 'en': 'Guide'},
+    'ampr_auswahl.anleitung_fehlt': {
+        'de': 'Die Anleitung ist nicht hinterlegt. Erwartet wird die Datei '
+              '{name} im Ordner „Anleitungen“ neben dem Programm.',
+        'en': 'This guide is not bundled. Expected file {name} in the '
+              '“Anleitungen” folder next to the program.'},
+    'amprgen.place_mode_global': {
+        'de': 'Ablageweg: global – für alle erfassten Spiele.',
+        'en': 'Placement: global – for every tracked game.'},
+    'amprgen.place_mode_emus': {
+        'de': 'Ablageweg: Emulator-Ordner – ersetzt gleichnamige Dateien '
+              'im fakelib des Spiels.',
+        'en': 'Placement: emulator folder – replaces same-named files in '
+              'the game’s fakelib.'},
+    'amprgen.place_needs_console': {
+        'de': 'Dieser Weg führt in einen festen Ordner auf der Konsole. '
+              'Ohne Verbindung ist er nicht zu erreichen – abgebrochen.',
+        'en': 'This placement targets a fixed folder on the console. Without '
+              'a connection it cannot be reached – stopped.'},
+    'amprgen.step_game_skipped': {
+        'de': '• Kein Spiel nötig: Der gewählte Ablageweg gilt '
+              'für alle Spiele.',
+        'en': '• No game needed: the chosen placement applies to every '
+              'game.'},
+    'amprgen.place_key_off': {
+        'de': '{key} steht auf aus. Die Dateien werden abgelegt, aber nicht '
+              'benutzt – Schalter in der config.ini einschalten.',
+        'en': '{key} is switched off. The files will be placed but not used '
+              '– enable the switch in config.ini.'},
+    'ampr_auswahl.close': {'de': 'Schließen', 'en': 'Close'},
     'titlebar.ampr_alt': {'de': 'AMPR EMU – alte Methode', 'en': 'AMPR EMU – old method'},
     'titlebar.ampr_neu': {'de': 'AMPR EMU – neue Methode', 'en': 'AMPR EMU – new method'},
     'amprgen.title_alt': {'de': 'AMPR EMU – alte Methode', 'en': 'AMPR EMU – old method'},

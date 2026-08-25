@@ -31,19 +31,50 @@ QUELLE = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
 
 
 class KnoepfeTests(unittest.TestCase):
-    """Zwei Knoepfe im Hauptfenster, je einer pro Generation."""
+    """Zwei Wege, je einer pro Generation - seit v1.8.98 im Auswahlfenster."""
 
-    def test_beide_stehen_in_der_titelleiste(self) -> None:
+    def _auswahl(self) -> str:
+        """Der Rumpf von ``_show_ampr_auswahl``."""
+        anfang = QUELLE.index("    def _show_ampr_auswahl(self)")
+        naechste = QUELLE.index(chr(10) + "    def ", anfang + 10)
+        return QUELLE[anfang:naechste]
+
+    def test_beide_beschriftungen_gibt_es(self) -> None:
         for schluessel in ("titlebar.ampr_alt", "titlebar.ampr_neu"):
             with self.subTest(schluessel=schluessel):
                 self.assertIn(schluessel, STRINGS)
 
-    def test_beide_sind_faltbar(self) -> None:
-        """Sonst quetschen sie die Leiste, statt ins Sammelmenue zu gehen."""
+    def test_beide_stehen_im_auswahlfenster(self) -> None:
+        """Seit v1.8.98 fuehrt nur noch Knopf 7 dorthin."""
+        rumpf = self._auswahl()
+        for methode in ("_show_ampr_alte_methode", "_show_ampr_neue_methode"):
+            with self.subTest(methode=methode):
+                self.assertIn(methode, rumpf)
+
+    def test_die_titelleiste_hat_sie_nicht_mehr(self) -> None:
+        """Sie standen dort provisorisch, bis das Auswahlfenster stand.
+
+        Gegenprobe zum Test darueber: Kaeme einer der Knoepfe zurueck,
+        gaebe es zwei Wege zum selben Fenster - und der eine liesse den
+        anderen nicht mehr zu, weil beide dasselbe Toplevel bauen.
+        """
         anfang = QUELLE.index("_FALTBARE_TITELKNOEPFE")
-        block = QUELLE[anfang:anfang + 1400]
-        self.assertIn("_show_ampr_alte_methode", block)
-        self.assertIn("_show_ampr_neue_methode", block)
+        block = QUELLE[anfang:QUELLE.index(")", QUELLE.index("(", anfang + 40))]
+        self.assertNotIn("ampr", block)
+        for attribut in ("_btn_ampr_alt_title", "_btn_ampr_neu_title"):
+            with self.subTest(attribut=attribut):
+                self.assertNotIn(attribut, QUELLE)
+
+    def test_die_auswahl_geht_ueber_den_umschalter(self) -> None:
+        """Sonst oeffnet der zweite Druck ein zweites Fenster.
+
+        ``_show_ampr_generation`` baut jedes Mal ein neues Toplevel. Bis
+        v1.8.97 hingen die Titelleisten-Knoepfe am Umschalter und haben das
+        abgefangen; seit sie weg sind, muss es das Auswahlfenster tun.
+        """
+        rumpf = self._auswahl()
+        self.assertIn("self._werkzeugfenster_umschalten(methode)", rumpf)
+        self.assertNotIn("getattr(self, methode)()", rumpf)
 
     def test_jeder_knopf_fuehrt_auf_seine_generation(self) -> None:
         for methode, kennung in (("_show_ampr_alte_methode", "sm_gen.ALT"),
