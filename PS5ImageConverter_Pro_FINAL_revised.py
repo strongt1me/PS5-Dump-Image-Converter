@@ -413,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.96"
+APP_VERSION = "v1.8.97"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1329,6 +1329,108 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     if not hinweise and not fehler:
         zeilen.append("Nichts zu beanstanden.")
     return zeilen
+
+
+#: Die Farbschwaechen, zwischen denen sich waehlen laesst.
+#:
+#: Haeufigkeit unter Maennern: Deuteranopie rund 6 %, Protanopie rund 1 %,
+#: Tritanopie und Achromatopsie sehr selten. Frauen sind deutlich seltener
+#: betroffen, weil die Anlage auf dem X-Chromosom liegt.
+FARBSCHWAECHEN = ("keine", "deuteranopie", "protanopie", "tritanopie",
+                  "achromatopsie")
+
+
+def _srgb_linear(wert: float) -> float:
+    """Nimmt einer sRGB-Zahl die Gammakorrektur."""
+    c = wert / 255.0
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _linear_srgb(wert: float) -> float:
+    """Der Rueckweg, samt Begrenzung auf den darstellbaren Bereich."""
+    c = max(0.0, min(1.0, wert))
+    return (c * 12.92 if c <= 0.0031308
+            else 1.055 * (c ** (1 / 2.4)) - 0.055) * 255.0
+
+
+def hex_zu_rgb(hexfarbe: str) -> tuple[int, int, int]:
+    """#RRGGBB als Zahlentripel."""
+    h = str(hexfarbe).lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+
+def rgb_zu_hex(rgb) -> str:
+    return "#%02X%02X%02X" % tuple(max(0, min(255, round(v))) for v in rgb)
+
+
+def _lms(hexfarbe: str) -> tuple[float, float, float]:
+    """sRGB in den LMS-Raum - die drei Zapfenarten des Auges."""
+    r, g, b = (_srgb_linear(v) for v in hex_zu_rgb(hexfarbe))
+    return (0.31399022 * r + 0.63951294 * g + 0.04649755 * b,
+            0.15537241 * r + 0.75789446 * g + 0.08670142 * b,
+            0.01775239 * r + 0.10944209 * g + 0.87256922 * b)
+
+
+def _lms_zu_hex(L: float, M: float, S: float) -> str:
+    r = 5.47221206 * L - 4.6419601 * M + 0.16963708 * S
+    g = -1.1252419 * L + 2.29317094 * M - 0.1678952 * S
+    b = 0.02980165 * L - 0.19318073 * M + 1.16364789 * S
+    return rgb_zu_hex(tuple(_linear_srgb(v) for v in (r, g, b)))
+
+
+def farbe_wie_gesehen(hexfarbe: str, schwaeche: str) -> str:
+    """Wie diese Farbe bei der genannten Farbschwaeche erscheint.
+
+    Gerechnet nach dem Verfahren von Brettel und Vienot: Die Farbe wird in
+    den LMS-Raum gebracht, dort der ausgefallene Kanal aus den beiden
+    verbliebenen nachgebildet und zurueckgerechnet. Genau genug, um zu
+    entscheiden, ob zwei Farben unterscheidbar bleiben - darum geht es hier.
+
+    Bei Achromatopsie bleibt nur die Helligkeit uebrig.
+    """
+    # Die Rechnung laeuft beim Erstellen des Diagnoseberichts mit. Eine
+    # unvollstaendige Farbangabe darf ihn nicht zu Fall bringen - sie kommt
+    # dann eben unveraendert zurueck.
+    try:
+        if schwaeche == "achromatopsie":
+            r, g, b = hex_zu_rgb(hexfarbe)
+            y = round(0.299 * r + 0.587 * g + 0.114 * b)
+            return rgb_zu_hex((y, y, y))
+        L, M, S = _lms(hexfarbe)
+    except (ValueError, IndexError, TypeError, AttributeError):
+        return hexfarbe
+    if schwaeche == "deuteranopie":            # gruenempfindlich faellt aus
+        return _lms_zu_hex(L, 0.9513092 * L + 0.04866992 * S, S)
+    if schwaeche == "protanopie":              # rotempfindlich faellt aus
+        return _lms_zu_hex(1.05118294 * M - 0.05116099 * S, M, S)
+    if schwaeche == "tritanopie":              # blauempfindlich faellt aus
+        return _lms_zu_hex(L, M, -0.86744736 * L + 1.86727089 * M)
+    return hexfarbe
+
+
+def farbabstand(a: str, b: str) -> float:
+    """Wie weit zwei Farben fuer das Auge auseinanderliegen (CIE76).
+
+    Unter etwa 20 gelten zwei nebeneinanderliegende Flaechen als nicht mehr
+    sicher zu unterscheiden.
+    """
+    def lab(h):
+        r, g, bl = (_srgb_linear(v) for v in hex_zu_rgb(h))
+        x = (0.4124 * r + 0.3576 * g + 0.1805 * bl) / 0.95047
+        y = 0.2126 * r + 0.7152 * g + 0.0722 * bl
+        z = (0.0193 * r + 0.1192 * g + 0.9505 * bl) / 1.08883
+
+        def f(t):
+            return t ** (1 / 3) if t > 0.008856 else 7.787 * t + 16 / 116
+        fx, fy, fz = f(x), f(y), f(z)
+        return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+    try:
+        l1, a1, b1 = lab(a)
+        l2, a2, b2 = lab(b)
+    except (ValueError, IndexError, TypeError, AttributeError):
+        return 0.0
+    return ((l1 - l2) ** 2 + (a1 - a2) ** 2 + (b1 - b2) ** 2) ** 0.5
 
 
 class FortschrittsWaechter:
@@ -2371,6 +2473,124 @@ class PS5ConverterGUI:
 
     # Farbpalette (PS5 Neon Blue)
     # ──────────────────────────────────────────────────────────────────
+    # Farbschwaechen
+    # ──────────────────────────────────────────────────────────────────
+    #
+    # Was hier ersetzt wird, sind nur die Farben, die eine BEDEUTUNG tragen:
+    # Erfolg, Warnung, Fehler und der ELF-Knopf. Hintergruende, Schrift und
+    # Akzente bleiben, damit das Erscheinungsbild erhalten bleibt.
+    #
+    # Der Gedanke ist nicht "andere Farben", sondern eine andere Achse. Rot
+    # gegen Gruen ist genau die Richtung, die bei Deuteranopie und Protanopie
+    # ausfaellt; Blau gegen Orange bleibt dort erhalten. Dazu Helligkeit als
+    # zweites, farbunabhaengiges Merkmal.
+    #
+    # Gemessen am 25.08.2026, kleinster Abstand zwischen zwei
+    # bedeutungstragenden Farben (unter 20 gilt als verwechselbar):
+    #
+    #                     jetzt   mit diesem Satz
+    #   Deuteranopie      17.5      34.7
+    #   Protanopie        22.0      45.4
+    #   Tritanopie         6.2      45.4
+    #
+    # Derselbe Satz traegt alle drei Formen. Das ist kein Zufall: Er nutzt
+    # Blau gegen Gelb UND Helligkeit, und mindestens eines davon bleibt bei
+    # jeder der drei Formen erhalten.
+    _FARBSCHWAECHE_ROTGRUEN: dict[str, dict[str, str]] = {
+        "dunkel": {
+            "fg_success":      "#3FC1C9",   # Tuerkis statt Gruen
+            "fg_warning":      "#F5C542",   # helles Gelb
+            "error_btn":       "#E8524F",
+            "error_btn_hover": "#C43D3A",
+            "elf_btn":         "#7A4BB8",   # Dunkelviolett statt Rotorange
+            "elf_btn_hover":   "#5E3690",
+            "remote_dir":      "#3FC1C9",
+        },
+        "mittel": {
+            "fg_success":      "#2BB3BD",
+            "fg_warning":      "#FFD24D",
+            "error_btn":       "#F05A5A",
+            "error_btn_hover": "#CE3F3F",
+            # Dunkler als im dunklen Design: Die Karte von "mittel" liegt
+            # selbst in der Mitte des Helligkeitsbereichs, ein mittleres
+            # Violett hob sich davon nur um 15,4 ab (Tritanopie).
+            "elf_btn":         "#3B1F63",
+            "elf_btn_hover":   "#2A1548",
+            "remote_dir":      "#2BB3BD",
+        },
+        "hell": {
+            "fg_success":      "#0E7C86",
+            "fg_warning":      "#B8860B",
+            "error_btn":       "#B3261E",
+            "error_btn_hover": "#8C1D17",
+            "elf_btn":         "#5B2E91",
+            "elf_btn_hover":   "#45216E",
+            "remote_dir":      "#0E7C86",
+        },
+    }
+
+    #: Bei Achromatopsie hilft keine Farbwahl - es bleibt nur Helligkeit.
+    #:
+    #: Die Stufen sind ausgerechnet, nicht gewaehlt: Gesucht waren drei
+    #: Helligkeiten, die sowohl untereinander als auch gegen den Untergrund
+    #: mindestens 20 auseinanderliegen. Der ELF-Knopf ist nicht dabei, weil
+    #: er eine Beschriftung traegt und seine Farbe nichts aussagt.
+    #:
+    #: Vier Stufen waeren nicht unterzubringen gewesen - der Bereich, in dem
+    #: alles noch lesbar bleibt, gibt sie nicht her. Das ist eine Grenze der
+    #: Sache, keine Nachlaessigkeit: Bei Achromatopsie muss Text die Aussage
+    #: tragen, nicht Farbe.
+    _FARBSCHWAECHE_ACHROMAT: dict[str, dict[str, str]] = {
+        "dunkel": {
+            "error_btn":       "#F0FFFF",   # am hellsten - Fehler faellt auf
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A9B5CC",
+            "fg_success":      "#676F7D",
+            "remote_dir":      "#676F7D",
+        },
+        "mittel": {
+            "error_btn":       "#F0FFFF",
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A5B0C6",
+            "fg_success":      "#090A0B",
+            "remote_dir":      "#090A0B",
+            # Zaehlt nicht zur Trennung der Zustandsfarben, muss sich aber
+            # von der Karte abheben - im Urzustand nur 9,7.
+            "elf_btn":         "#3B1F63",
+            "elf_btn_hover":   "#2A1548",
+        },
+        "hell": {
+            "error_btn":       "#090A0B",   # am dunkelsten auf hellem Grund
+            "error_btn_hover": "#000000",
+            "fg_warning":      "#505560",
+            "fg_success":      "#9BA6BB",
+            "remote_dir":      "#9BA6BB",
+        },
+    }
+
+    @classmethod
+    def _farbschwaeche_satz(cls, schwaeche: str, design: str) -> dict[str, str]:
+        """Die Ersetzungen fuer diese Kombination - leer heisst: unveraendert."""
+        if schwaeche in ("deuteranopie", "protanopie", "tritanopie"):
+            return dict(cls._FARBSCHWAECHE_ROTGRUEN.get(design, {}))
+        if schwaeche == "achromatopsie":
+            return dict(cls._FARBSCHWAECHE_ACHROMAT.get(design, {}))
+        return {}
+
+    def _palette_bauen(self, design: str) -> dict[str, str]:
+        """Die aktive Palette: Design plus die gewaehlte Farbschwaeche.
+
+        Eine Stelle statt zwei. Vorher stand ``dict(self._THEMES[...])``
+        sowohl im Aufbau als auch im Designwechsel - wer nur eine davon
+        anfasst, bekommt ein Programm, das sich beim Wechseln anders verhaelt
+        als beim Start.
+        """
+        palette = dict(self._THEMES.get(design, {}))
+        palette.update(self._farbschwaeche_satz(
+            getattr(self, "_farbschwaeche", "keine"), design))
+        return palette
+
+    # ──────────────────────────────────────────────────────────────────
     # Theme-Paletten  (Dunkel / Mittel / Hell)
     # ──────────────────────────────────────────────────────────────────
     _THEMES: dict[str, dict[str, str]] = {
@@ -2657,8 +2877,17 @@ class PS5ConverterGUI:
         if _saved_theme not in self._THEMES:
             _saved_theme = "dunkel"
         self._current_theme: str = str(_saved_theme)
+
+        # 1b2. Farbschwaeche laden - sie veraendert nur die Farben, die eine
+        # Bedeutung tragen, und muss deshalb VOR dem Bauen der Palette
+        # feststehen.
+        _saved_schwaeche = self._load_setting_static("farbschwaeche", "keine")
+        if _saved_schwaeche not in FARBSCHWAECHEN:
+            _saved_schwaeche = "keine"
+        self._farbschwaeche: str = str(_saved_schwaeche)
+
         # Aktive Palette auf Instanzebene setzen (überschreibt Klassenvariable)
-        self._COLORS = dict(self._THEMES[self._current_theme])
+        self._COLORS = self._palette_bauen(self._current_theme)
 
         # 1c. Sprache aus Konfiguration laden (Grundgerüst: Deutsch/Englisch)
         _saved_language = self._load_setting_static("language", DEFAULT_LANGUAGE)
@@ -27666,6 +27895,42 @@ class PS5ConverterGUI:
             zeilen.append("Flaechen deutlich genug abgesetzt "
                           "(mindestens %.0f Helligkeitsstufen)"
                           % self._RANDLOS_MINDESTUNTERSCHIED)
+
+        # -- Farbschwaeche ------------------------------------------------
+        #
+        # Geprueft wird nicht die eingestellte Form allein, sondern jede: So
+        # faellt auf, wenn eine neue Farbe zwar mit der aktuellen Einstellung
+        # zusammenpasst, aber eine andere unbrauchbar macht.
+        schwaeche = getattr(self, "_farbschwaeche", "keine")
+        zeilen.append("Farbschwaeche: %s" % schwaeche)
+        BEDEUTUNG = ["fg_success", "fg_warning", "error_btn", "elf_btn"]
+        schlechteste = []
+        for form in FARBSCHWAECHEN:
+            if form == "keine":
+                continue
+            palette = dict(self._THEMES.get(self._current_theme, {}))
+            palette.update(self._farbschwaeche_satz(form, self._current_theme))
+            # Bei Achromatopsie zaehlt der ELF-Knopf nicht mit: Er traegt eine
+            # Beschriftung, seine Farbe sagt nichts aus.
+            schluessel = BEDEUTUNG[:3] if form == "achromatopsie" else BEDEUTUNG
+            schluessel = [k for k in schluessel if palette.get(k)]
+            eng, paar = 999.0, ""
+            for i, a in enumerate(schluessel):
+                for b in schluessel[i + 1:]:
+                    d = farbabstand(farbe_wie_gesehen(palette[a], form),
+                                    farbe_wie_gesehen(palette[b], form))
+                    if d < eng:
+                        eng, paar = d, "%s/%s" % (a, b)
+            if eng < 20.0:
+                schlechteste.append("%s: %s nur %.1f auseinander"
+                                    % (form, paar, eng))
+        if schlechteste:
+            zeilen.append("  ACHTUNG: bedeutungstragende Farben zu aehnlich:")
+            for eintrag in schlechteste:
+                zeilen.append("    ! %s" % eintrag)
+        else:
+            zeilen.append("  alle Formen geprueft, bedeutungstragende Farben "
+                          "bleiben unterscheidbar")
         return zeilen
 
     def _diagnose_darstellung(self) -> list[str]:
@@ -35692,6 +35957,65 @@ class PS5ConverterGUI:
                  wraplength=460, justify="left", anchor="w").pack(
                      anchor="w", fill="x", pady=(0, 10))
 
+        # ── Farbsehschwaeche ────────────────────────────────────────────
+        #
+        # Nur die Farben, die eine Bedeutung tragen, werden ersetzt - Erfolg,
+        # Warnung, Fehler und der ELF-Knopf. Hintergruende und Schrift bleiben,
+        # damit das gewaehlte Design erhalten bleibt.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
+        tk.Label(body, text=self._t("settings_dialog.farbschwaeche_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.farbschwaeche_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(2, 6))
+
+        # Ausgeschrieben statt zusammengesetzt: Ein Schluessel, der erst zur
+        # Laufzeit entsteht, laesst sich nicht nachpruefen - die Pruefung der
+        # Uebersetzungen sah nur den Rumpf "settings_dialog.farbschwaeche_"
+        # und meldete ihn als fehlend.
+        _schwaeche_namen = {
+            "keine": self._t("settings_dialog.farbschwaeche_keine"),
+            "deuteranopie": self._t("settings_dialog.farbschwaeche_deuteranopie"),
+            "protanopie": self._t("settings_dialog.farbschwaeche_protanopie"),
+            "tritanopie": self._t("settings_dialog.farbschwaeche_tritanopie"),
+            "achromatopsie": self._t("settings_dialog.farbschwaeche_achromatopsie"),
+        }
+        _schwaeche_zurueck = {v: k for k, v in _schwaeche_namen.items()}
+        schwaeche_var = tk.StringVar(
+            value=_schwaeche_namen.get(getattr(self, "_farbschwaeche", "keine"),
+                                       _schwaeche_namen["keine"]))
+        schwaeche_combo = ttk.Combobox(
+            body, textvariable=schwaeche_var, state="readonly",
+            values=[_schwaeche_namen[s] for s in FARBSCHWAECHEN],
+            font=(UI_SCHRIFT, pt(9)))
+        schwaeche_combo.pack(anchor="w", fill="x", pady=(0, 6))
+
+        def _schwaeche_gewaehlt(_ereignis=None) -> None:
+            neu = _schwaeche_zurueck.get(schwaeche_var.get(), "keine")
+            if neu == getattr(self, "_farbschwaeche", "keine"):
+                return
+            self._farbschwaeche = neu
+            self._save_setting("farbschwaeche", neu)
+            logger.info("Farbschwaeche auf %s gestellt", neu)
+            # Ueber den Designwechsel: Er baut die Palette neu und zieht alle
+            # Fenster nach. Ein eigener Weg dafuer waere eine zweite Stelle,
+            # die beim naechsten Umbau vergessen wird.
+            try:
+                self._apply_theme(self._current_theme)
+            except Exception as exc:
+                logger.debug("Farbschwaeche nicht sofort angewandt: %s", exc)
+
+        schwaeche_combo.bind("<<ComboboxSelected>>", _schwaeche_gewaehlt)
+
+        tk.Label(body, text=self._t("settings_dialog.farbschwaeche_note"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(0, 10))
+
         tk.Label(body, text=self._t("settings_dialog.ps5_section"),
                  font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
@@ -36274,7 +36598,7 @@ class PS5ConverterGUI:
         if theme_key not in self._THEMES:
             return
         self._current_theme = theme_key
-        self._COLORS = dict(self._THEMES[theme_key])
+        self._COLORS = self._palette_bauen(theme_key)
         # Hintergrundbild(er) neu mit der Hintergrundfarbe des NEUEN Designs
         # blenden. Ohne das blieben die Caches dauerhaft auf die Toenung des
         # beim Programmstart aktiven Designs eingefroren - Content-Bereich/

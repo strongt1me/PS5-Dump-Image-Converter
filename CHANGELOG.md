@@ -2,7 +2,35 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.96):** Die Oberfläche ist randlos – das Hintergrundbild läuft ohne unterbrechende Linien durch. Eingabefelder und Protokoll bleiben trotzdem klar erkennbar, und wer mit der Tastatur bedient, sieht weiterhin, wo er ist.
+> **Kurz zum aktuellen Stand (v1.8.97):** In den Einstellungen lässt sich jetzt eine Farbsehschwäche auswählen – die Oberfläche passt daraufhin die Farben an, die eine Bedeutung tragen. Das gewählte Design bleibt erhalten.
+
+---
+
+## v1.8.97 – 25.08.2026
+
+### Neu: Farbsehschwäche auswählbar
+
+Rund sechs von hundert Männern können Rot und Grün nicht zuverlässig
+unterscheiden. Für sie sahen Erfolg, Warnung und Fehler bisher ähnlich aus –
+im hellen Design waren Warnung und Fehler praktisch nicht auseinanderzuhalten.
+
+In den **Einstellungen** steht dazu jetzt eine Auswahl:
+
+* Keine
+* Deuteranopie (Grünschwäche, am häufigsten)
+* Protanopie (Rotschwäche)
+* Tritanopie (Blauschwäche)
+* Achromatopsie (kein Farbsehen)
+
+Die Auswahl wirkt **sofort**, ohne Neustart. Geändert werden nur die Farben,
+die eine Bedeutung tragen – Erfolg, Warnung, Fehler. Hintergründe, Schrift und
+das gewählte Design bleiben, wie sie sind.
+
+Der Gedanke dahinter ist nicht „andere Farben“, sondern eine andere Richtung:
+Rot gegen Grün ist genau die Achse, die bei den häufigen Formen ausfällt.
+Blau gegen Gelb bleibt erhalten – Erfolg wird deshalb türkis statt grün.
+Dazu kommt Helligkeit als zweites Merkmal, das auch dort trägt, wo gar keine
+Farbe wahrgenommen wird.
 
 ---
 

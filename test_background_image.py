@@ -367,8 +367,15 @@ class SpeichernKnopfTests(unittest.TestCase):
     def test_listenauswahl_wird_beim_speichern_uebernommen(self):
         self._schreibe({})
         dlg = self._dialog()
-        boxen = self._sammle(dlg, "Combobox")
-        self.assertEqual(len(boxen), 2)
+        # Die beiden Bildlisten heraussuchen statt sie zu zaehlen: Der
+        # Dialog hat seit v1.8.97 eine dritte Combobox (Farbsehschwaeche),
+        # und die naechste kommt bestimmt. Erkennbar sind die richtigen an
+        # ihrem Inhalt - dort stehen Bilddateien.
+        boxen = [b for b in self._sammle(dlg, "Combobox")
+                 if any(str(w).lower().endswith(".png")
+                        for w in (b.cget("values") or ()))]
+        self.assertEqual(len(boxen), 2,
+                         "erwartet: Haupt- und Sidebar-Bildliste")
         # Namen aus den Listen nehmen, nicht fest verdrahten - der
         # Bilderbestand darf sich aendern.
         haupt = boxen[0].cget("values")[-1]
