@@ -300,5 +300,95 @@ class PaketpruefungTests(unittest.TestCase):
         self.assertTrue(any("Paketstaende" in z for z in zeilen))
 
 
+class StartprobeTests(unittest.TestCase):
+    """Nur echte Programme dieser Plattform dürfen gestartet werden.
+
+    Gemessen am 25.08.2026 in WSL: Auf einem eingehängten Windows-Laufwerk
+    trägt **jede** Datei Modus 0777. Das Ausführungsrecht als Kennzeichen zu
+    nehmen ließ dort ``LICENSE`` als Programm gelten, und die Startprobe
+    meldete drei Fehler, die keine waren – in einer Prüfung, deren ganzer
+    Zweck es ist, Fehlspuren zu vermeiden.
+
+    Eine Windows-``.exe`` unter Linux zu starten ist ebenso sinnlos: Es kommt
+    „Exec format error", was nach einem Defekt aussieht, wo nur die Plattform
+    nicht passt.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.haupt = _lade_hauptprogramm()
+
+    def setUp(self) -> None:
+        self.ordner = tempfile.mkdtemp(prefix="startprobe_")
+
+    def tearDown(self) -> None:
+        import shutil
+        shutil.rmtree(self.ordner, ignore_errors=True)
+
+    def datei(self, name, inhalt: bytes) -> str:
+        pfad = os.path.join(self.ordner, name)
+        with open(pfad, "wb") as f:
+            f.write(inhalt + b"\x00" * 64)
+        os.chmod(pfad, 0o777)
+        return pfad
+
+    def test_eine_textdatei_ist_kein_programm(self) -> None:
+        """Der gemessene Fall: ``LICENSE`` galt als Programm."""
+        pfad = self.datei("LICENSE", b"MIT License\n\nCopyright")
+        self.assertFalse(self.haupt._doktor_ist_programm(pfad))
+
+    def test_das_ausfuehrungsrecht_allein_genuegt_nicht(self) -> None:
+        pfad = self.datei("pruefsummen.json", b'{"a": 1}')
+        self.assertTrue(os.access(pfad, os.X_OK) or sys.platform == "win32")
+        self.assertFalse(self.haupt._doktor_ist_programm(pfad))
+
+    @unittest.skipUnless(sys.platform == "win32", "nur unter Windows")
+    def test_windows_erkennt_eine_exe(self) -> None:
+        self.assertTrue(self.haupt._doktor_ist_programm(
+            self.datei("echt.exe", b"MZ\x90\x00")))
+
+    @unittest.skipUnless(sys.platform == "win32", "nur unter Windows")
+    def test_windows_faellt_nicht_auf_eine_elf_herein(self) -> None:
+        """Die mitgelieferten Linux- und macOS-Programme liegen daneben."""
+        self.assertFalse(self.haupt._doktor_ist_programm(
+            self.datei("UFS2Tool", b"\x7fELF\x02\x01\x01")))
+
+    @unittest.skipIf(sys.platform in ("win32", "darwin"), "nur unter Linux")
+    def test_linux_erkennt_eine_elf(self) -> None:
+        self.assertTrue(self.haupt._doktor_ist_programm(
+            self.datei("UFS2Tool", b"\x7fELF\x02\x01\x01")))
+
+    @unittest.skipIf(sys.platform in ("win32", "darwin"), "nur unter Linux")
+    def test_linux_faellt_nicht_auf_eine_exe_herein(self) -> None:
+        """Sonst kommt „Exec format error" und sieht nach einem Defekt aus."""
+        self.assertFalse(self.haupt._doktor_ist_programm(
+            self.datei("ps4_pkg_extract.exe", b"MZ\x90\x00")))
+
+    def test_eine_fehlende_datei_wirft_nicht(self) -> None:
+        self.assertFalse(self.haupt._doktor_ist_programm(
+            os.path.join(self.ordner, "gibtsnicht")))
+
+    def test_ein_ordner_wirft_nicht(self) -> None:
+        self.assertFalse(self.haupt._doktor_ist_programm(self.ordner))
+
+    def test_eine_leere_datei_wirft_nicht(self) -> None:
+        pfad = os.path.join(self.ordner, "leer")
+        open(pfad, "wb").close()
+        self.assertFalse(self.haupt._doktor_ist_programm(pfad))
+
+    def test_die_auswahl_haengt_nicht_mehr_am_ausfuehrungsrecht(self) -> None:
+        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("def _doktor_werkzeuge_starten")
+        koerper = quelle[anfang:anfang + 3000]
+        self.assertNotIn("os.X_OK", koerper)
+        self.assertIn("_doktor_ist_programm", koerper)
+
+    def test_die_startprobe_meldet_hier_nichts(self) -> None:
+        """An den echten mitgelieferten Programmen, nicht an erfundenen."""
+        befunde, _rechte = self.haupt._doktor_werkzeuge_starten()
+        kaputt = [(n, b) for n, b in befunde if b]
+        self.assertEqual(kaputt, [], "Fehlalarm: %r" % (kaputt,))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

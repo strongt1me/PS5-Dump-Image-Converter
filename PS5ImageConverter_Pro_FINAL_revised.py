@@ -1018,6 +1018,32 @@ DOKTOR_STARTFEHLER = {
 }
 
 
+def _doktor_ist_programm(pfad: str) -> bool:
+    """Traegt die Datei das Format, das dieses System ausfuehren kann?
+
+    Das Ausfuehrungsrecht allein taugt nicht als Kennzeichen. Unter WSL
+    tragen auf einem eingehaengten Windows-Laufwerk **alle** Dateien Modus
+    0777 - dort galt am 25.08.2026 auch ``LICENSE`` als Programm, und die
+    Startprobe meldete drei Fehler, die keine waren. Eine Windows-.exe unter
+    Linux zu starten ist ebenso sinnlos: Es kommt "Exec format error", und
+    das sieht nach einem Defekt aus, wo nur die Plattform nicht passt.
+
+    Entschieden wird deshalb an den ersten Bytes.
+    """
+    try:
+        with open(pfad, "rb") as datei:
+            kopf = datei.read(4)
+    except OSError:
+        return False
+    if sys.platform == "win32":
+        return kopf[:2] == b"MZ"
+    if sys.platform == "darwin":
+        # Mach-O in beiden Byte-Reihenfolgen, dazu das Fat-Binary.
+        return kopf in (b"\xcf\xfa\xed\xfe", b"\xce\xfa\xed\xfe",
+                        b"\xca\xfe\xba\xbe", b"\xbe\xba\xfe\xca")
+    return kopf == b"\x7fELF"
+
+
 def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
     """Startet jedes mitgelieferte Programm einmal kurz.
 
@@ -1044,10 +1070,7 @@ def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
         for ordner, _unter, dateien in os.walk(wurzel):
             for name in sorted(dateien):
                 pfad = os.path.join(ordner, name)
-                if sys.platform == "win32":
-                    if name.lower().endswith(".exe"):
-                        kandidaten.append(pfad)
-                elif os.access(pfad, os.X_OK) and "." not in name:
+                if _doktor_ist_programm(pfad):
                     kandidaten.append(pfad)
 
     # Mehr als eine Handvoll waere kein Doktor mehr, sondern ein Testlauf.
