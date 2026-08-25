@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.8.93-blue)
-![Tests](https://img.shields.io/badge/Tests-1304%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.8.94-blue)
+![Tests](https://img.shields.io/badge/Tests-1444%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -96,6 +96,30 @@ Rückgabewerte: `0` Erfolg · `1` Fehler oder Abbruch · `2` ungültige Argument
 > Unter Windows fordert `--cli` **keine** Rechte an – ein neu gestarteter
 > Prozess wäre abgekoppelt, seine Ausgabe erreichte den Aufrufer nie. Starten
 > Sie die Eingabeaufforderung deshalb selbst als Administrator.
+
+### Umgebungsprüfung
+
+Läuft etwas nicht, obwohl es anderswo läuft, klappert `--doktor` die häufigen
+Ursachen ab und liefert ein Ergebnis, das sich in eine Fehlermeldung kopieren
+lässt – ohne Netzzugriff und ohne Zugangsdaten:
+
+```bash
+python PS5ImageConverter_Pro_FINAL_revised.py --doktor "E:\Temp" "E:\Ziel"
+```
+
+Beide Ordnerangaben sind freiwillig. Geprüft werden unter anderem
+abgeschaltete lange Pfade, das Dateisystem der Ordner (auf FAT32 endet jede
+Datei bei 4 GB), Schreibrecht und freier Platz, widersprüchliche Paketstände,
+ob sich die mitgelieferten Programme überhaupt starten lassen, und ob die
+Einstellungsdatei lesbar ist.
+
+Rückgabewerte: `0` nichts zu beanstanden · `1` mindestens ein echter Fehler.
+Dieselben Angaben stehen im Fenster **DIAGNOSE** im Abschnitt *Doktor*.
+
+> Die **fertige EXE** verlangt grundsätzlich Administratorrechte – das steht in
+> ihrem Manifest und gilt für jeden Aufruf, auch für `--doktor`. Öffnen Sie die
+> Eingabeaufforderung deshalb selbst als Administrator. Aus dem Quelltext
+> heraus (`python …`) läuft die Prüfung ohne erhöhte Rechte.
 
 ## Selbst bauen
 

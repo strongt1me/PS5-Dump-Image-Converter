@@ -2,7 +2,71 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.93):** Ein zweites PKG-Backup zeigte die Spiele des ersten und blockierte danach jedes weitere Einlesen – behoben. Dazu: Das Mausrad des Hauptfensters bleibt nutzbar, die Protokolldatei waechst nicht mehr ungebremst, und der Diagnosebericht meldet keine Bibliotheken mehr als fehlend, die das Programm gar nicht benutzt.
+> **Kurz zum aktuellen Stand (v1.8.94):** Der Fortschrittsbalken läuft in der Sammelkonvertierung nicht mehr je Datei von vorn los und kann nicht mehr stehenbleiben. Neu ist eine Umgebungsprüfung, die die häufigen Ursachen für „läuft bei mir nicht“ in Sekunden benennt – im Fenster **DIAGNOSE** und als Befehl `--doktor`.
+
+---
+
+## v1.8.94 – 25.08.2026
+
+### Der Fortschrittsbalken bleibt nicht mehr stehen
+
+In seltenen Fällen konnte die Anzeige einfrieren: Balken, Prozentzahl und
+Statuszeile rührten sich nicht mehr, ohne dass eine Meldung erschien oder das
+Programm abstürzte. Die Aufgabe lief dabei im Hintergrund weiter, war aber
+nicht mehr zu verfolgen.
+
+Die Anzeigerechnung verträgt jetzt jeden Wert, der bei ihr ankommt. Zusätzlich
+bleibt der Balken immer innerhalb der Skala – bisher konnte ein Rechenfehler
+ihn voll oder leer zeichnen, was ebenfalls wie Stillstand aussah.
+
+### Sammelkonvertierung: eine durchgehende Anzeige statt mehrerer Anläufe
+
+Bei mehreren Dateien lief der Balken bisher für jede Datei von vorn los. Der
+Sprung zurück auf 0 % sah aus, als beginne alles von Neuem. Jede Datei bekommt
+jetzt ihren Abschnitt: Bei zwei Dateien läuft die erste von 0 auf 50 %, die
+zweite von 50 auf 100 %. Rückwärts läuft der Balken nie mehr.
+
+Steht die Anzeige einmal länger als fünf Sekunden still – etwa während eines
+großen Schreibvorgangs –, erscheint eine mitlaufende Uhr, damit erkennbar
+bleibt, dass gearbeitet wird.
+
+### Neu: Umgebungsprüfung („Doktor“)
+
+Beantwortet in Sekunden, woran es liegt, wenn etwas nicht läuft. Im Fenster
+**DIAGNOSE** im Abschnitt *Doktor*, oder als Befehl:
+
+    PS5_Dump_Image_Converter.exe --doktor "E:\Temp" "E:\Ziel"
+
+Geprüft werden unter anderem abgeschaltete lange Pfade in Windows (sie lassen
+Pakete mit tiefen Ordnern abbrechen, oft mit einer Meldung, die nach etwas
+anderem klingt), das Dateisystem der gewählten Ordner (auf FAT32 endet jede
+Datei bei 4 GB), Schreibrecht und freier Platz, ob sich die mitgelieferten
+Programme starten lassen, und ob die Einstellungsdatei lesbar ist.
+
+Die Ausgabe eignet sich zum Kopieren in eine Fehlermeldung. Sie enthält keine
+Zugangsdaten und stellt keine Verbindung ins Internet her. Die
+Eingabeaufforderung muss als Administrator geöffnet sein – das Programm
+verlangt die Rechte für jeden Aufruf.
+
+### Der Diagnosebericht sagt mehr über Geschwindigkeit und Zustand
+
+Zwei neue Abschnitte:
+
+- **Optimierung** – Durchsatz der letzten Aufgabe, verglichen mit dem besten je
+  gemessenen Lauf derselben Kompressionsstufe. Wird eine Aufgabe deutlich
+  langsamer als früher, steht das jetzt im Bericht statt unbemerkt zu bleiben.
+  Dazu die Größenaufteilung der Auslieferung und die Fassungen der
+  Rechenbibliotheken.
+- **Eigenschaften** – das Programm prüft beim Erstellen des Berichts selbst
+  nach, ob seine Anzeigerechnung und der Leser der Spieldaten sich noch
+  regelgerecht verhalten.
+
+### AMPR EMU und PlayGo liegen jetzt neben dem Programm
+
+Die Bibliotheken stecken nicht mehr in der Programmdatei, sondern im Ordner
+**PlayGo & AMPR_EMU** daneben – wie die Hintergrundbilder. Neue Versionen
+lassen sich damit einfach hineinlegen, ohne auf ein Programm-Update zu warten.
+Beim Entpacken des heruntergeladenen Bündels ist der Ordner mitzukopieren.
 
 ---
 

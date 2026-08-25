@@ -25,6 +25,7 @@ import datetime      # noqa: F401
 import errno
 import hashlib       # noqa: F401
 import importlib
+import faulthandler
 import io
 import json
 import math
@@ -412,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.93"
+APP_VERSION = "v1.8.94"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -674,6 +675,20 @@ try:
     if not _IM_TESTLAUF:
         logger.addHandler(_fh)
     logger.setLevel(logging.INFO)  # Release: INFO+ in Datei, Debug bleibt nur auf Codepfad-Ebene
+
+    # Stuerzt der Interpreter hart ab, greift kein einziger der drei
+    # Ausnahmehaken: Ein Speicherzugriffsfehler in einer C-Erweiterung
+    # (zlib-ng, zstandard, Pillow, cryptography) beendet den Prozess sofort,
+    # und der Nutzer sieht ein Fenster, das einfach verschwindet.
+    #
+    # ``faulthandler`` schreibt in diesem Fall den Stapel aller Faeden in
+    # eine eigene Datei - das Einzige, was danach noch Auskunft gibt.
+    # Bewusst NICHT in die Protokolldatei: Der Abzug entsteht ausserhalb der
+    # Python-Ebene, mitten in einer halb geschriebenen Protokollzeile.
+    if not _IM_TESTLAUF:
+        _absturz_pfad = os.path.join(_tmpmod.gettempdir(), "ps5converter_absturz.txt")
+        _absturz_datei = io.open(_absturz_pfad, "a", encoding="utf-8")
+        faulthandler.enable(file=_absturz_datei)
 except OSError:
     pass  # Log-Datei nicht kritisch
 
@@ -857,6 +872,668 @@ def parse_sfo(data: bytes) -> dict[str, object]:
 # ProgressEngine: Robuste, gewichtete Fortschrittsanzeige f├╝r 5 Aufgaben
 # ---------------------------------------------------------------------------
 
+def balkenzahl(quelle, feld: str, vorgabe: float) -> float:
+    """Liest ein Feld der Balkenrechnung als Zahl - ohne je zu werfen.
+
+    ``float()`` auf einer Zeichenkette wirft ``ValueError``. Das klingt
+    nach einem Fall, der nicht vorkommt, waere aber der teuerste von
+    allen: Die Rechnung laeuft im Tk-Takt, und eine Ausnahme darin
+    beendet die gesamte Fortschrittsschleife. Es stuerzt nichts ab, es
+    erscheint keine Meldung - der Balken steht einfach fuer immer.
+
+    Gefunden am 25.08.2026 mit Hypothesis (eigenschaftsbasiertes Testen).
+    Die Bibliothek suchte selbst nach einer Eingabe, die die Eigenschaft
+    "die Anzeige wirft nie" verletzt, und schrumpfte sie auf das
+    kleinste Gegenbeispiel: ``task_displayed = ':'``.
+
+    NaN und Unendlich fallen hier ebenso heraus. ``max(NaN, x)`` liefert
+    NaN, und ein NaN auf einem Tk-Balken bleibt stehen, ohne dass
+    irgendwo ein Fehler entsteht - dieselbe Falle, nur leiser.
+    """
+    try:
+        zahl = float(getattr(quelle, feld, vorgabe) or vorgabe)
+    except (TypeError, ValueError):
+        return vorgabe
+    if zahl != zahl or zahl in (float("inf"), float("-inf")):
+        return vorgabe
+    return zahl
+
+
+#: Die Bewertungen, mit denen der Doktor jede Zeile beginnt. Bewusst reines
+#: ASCII: Der Bericht wird in Fehlermeldungen eingefuegt, kopiert und
+#: weitergegeben, und Sonderzeichen ueberleben das oft nicht.
+DOKTOR_GUT = "[ ok ]"
+DOKTOR_HINWEIS = "[ !! ]"
+DOKTOR_FEHLER = "[FEHL]"
+DOKTOR_EGAL = "[ -- ]"
+
+
+def _doktor_dateisystem(pfad: str) -> str:
+    """Welches Dateisystem traegt diesen Pfad - oder leer, wenn unbekannt."""
+    if sys.platform != "win32" or not pfad:
+        return ""
+    laufwerk = os.path.splitdrive(os.path.abspath(pfad))[0]
+    if not laufwerk:
+        return ""
+    try:
+        import ctypes
+        art = ctypes.create_unicode_buffer(64)
+        bezeichnung = ctypes.create_unicode_buffer(256)
+        seriennummer = ctypes.c_ulong()
+        namenslaenge = ctypes.c_ulong()
+        merkmale = ctypes.c_ulong()
+        erfolg = ctypes.windll.kernel32.GetVolumeInformationW(
+            ctypes.c_wchar_p(laufwerk + "\\"),
+            bezeichnung, len(bezeichnung),
+            ctypes.byref(seriennummer), ctypes.byref(namenslaenge),
+            ctypes.byref(merkmale), art, len(art))
+        return art.value if erfolg else ""
+    except Exception:
+        return ""
+
+
+def _doktor_lange_pfade() -> object:
+    """Sind lange Pfade in Windows freigeschaltet? None heisst: nicht ermittelbar.
+
+    Der Anlass ist gemessen: Am 23.08.2026 meldete der PS4-Helfer
+    "Paket verschluesselt", obwohl das Paket in Ordnung war. Der wirkliche
+    Grund war ein Pfad jenseits von 260 Zeichen. Wer diese Einstellung
+    kennt, spart sich diese Suche.
+    """
+    if sys.platform != "win32":
+        return True
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE,
+                r"SYSTEM\CurrentControlSet\Control\FileSystem") as schluessel:
+            wert, _art = winreg.QueryValueEx(schluessel, "LongPathsEnabled")
+        return bool(wert)
+    except Exception:
+        return None
+
+
+def _doktor_abhaengigkeiten() -> tuple[bool, list[str]]:
+    """Widersprueche zwischen den installierten Paketen - wie ``pip check``.
+
+    Der Fall, den das faengt: Ein Paket wird auf eine neue Fassung gehoben
+    und zieht eine Abhaengigkeit mit, die ein anderes Paket in dieser Fassung
+    nicht vertraegt. Beide sind installiert, beide lassen sich einlesen, und
+    der Fehler zeigt sich erst an einer beliebigen spaeteren Stelle.
+
+    Rueckgabe: (pruefbar, Liste der Widersprueche). Nicht pruefbar ist es in
+    der EXE - dort gibt es keine Paketverwaltung, und das ist kein Mangel.
+    """
+    try:
+        from importlib.metadata import distributions
+        from packaging.requirements import Requirement
+    except Exception:
+        return False, []
+
+    try:
+        vorhanden = {}
+        for verteilung in distributions():
+            name = (verteilung.metadata["Name"] or "").lower().replace("_", "-")
+            if name:
+                vorhanden[name] = verteilung.version
+    except Exception:
+        return False, []
+
+    widersprueche: list[str] = []
+    try:
+        for verteilung in distributions():
+            eigener = verteilung.metadata["Name"] or "?"
+            for zeile in verteilung.requires or []:
+                try:
+                    bedarf = Requirement(zeile)
+                except Exception:
+                    continue
+                # Bedingte Abhaengigkeiten (extras, Plattform) ueberspringen:
+                # Sie gelten hier nicht und ergaeben Fehlalarme.
+                if bedarf.marker is not None:
+                    continue
+                gebraucht = bedarf.name.lower().replace("_", "-")
+                da = vorhanden.get(gebraucht)
+                if da is None:
+                    widersprueche.append("%s braucht %s - nicht installiert"
+                                         % (eigener, bedarf.name))
+                elif bedarf.specifier and not bedarf.specifier.contains(
+                        da, prereleases=True):
+                    widersprueche.append("%s braucht %s%s - installiert ist %s"
+                                         % (eigener, bedarf.name,
+                                            bedarf.specifier, da))
+    except Exception:
+        return False, []
+    return True, widersprueche
+
+
+#: Rueckgabewerte von Windows, die "das Programm konnte gar nicht starten"
+#: bedeuten - nicht "das Programm ist gelaufen und hat sich beschwert".
+#: 0xC0000135 = STATUS_DLL_NOT_FOUND, 0xC0000139 = ENTRYPOINT_NOT_FOUND,
+#: 0xC000007B = INVALID_IMAGE_FORMAT (32 gegen 64 Bit).
+DOKTOR_STARTFEHLER = {
+    0xC0000135: "eine benoetigte DLL fehlt",
+    0xC0000139: "ein Einsprungpunkt fehlt (falsche DLL-Fassung)",
+    0xC000007B: "falsches Format (32 gegen 64 Bit)",
+}
+
+
+def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
+    """Startet jedes mitgelieferte Programm einmal kurz.
+
+    Der Fall, den das faengt: eine fehlende Laufzeitbibliothek. Windows
+    meldet das nicht als "Datei fehlt" - der Prozess endet mit 0xC0000135,
+    ohne eine Zeile auszugeben. Im Programm sieht es dann so aus, als haette
+    das Werkzeug die Aufgabe verweigert, und die Suche geht in die falsche
+    Richtung. Das Gegenstueck zu ``ldd`` und Dependency Walker.
+
+    Rueckgabe: (Befunde, Namen mit Rechteverlangen). Ein Befund ist leer,
+    wenn alles in Ordnung ist.
+    """
+    ergebnis: list[tuple[str, str]] = []
+    braucht_rechte: list[str] = []
+    kandidaten: list[str] = []
+    for relpfad in ("PS4FFPFSC-0.2.8/bin", "UFS2Tool-4.1"):
+        try:
+            wurzel = PS5ConverterGUI._mitgeliefert_finden(
+                os.path.normpath(relpfad))
+        except Exception:
+            wurzel = ""
+        if not wurzel or not os.path.isdir(wurzel):
+            continue
+        for ordner, _unter, dateien in os.walk(wurzel):
+            for name in sorted(dateien):
+                pfad = os.path.join(ordner, name)
+                if sys.platform == "win32":
+                    if name.lower().endswith(".exe"):
+                        kandidaten.append(pfad)
+                elif os.access(pfad, os.X_OK) and "." not in name:
+                    kandidaten.append(pfad)
+
+    # Mehr als eine Handvoll waere kein Doktor mehr, sondern ein Testlauf.
+    for pfad in kandidaten[:6]:
+        name = os.path.basename(pfad)
+        anlauf = {"capture_output": True, "timeout": 20}
+        if sys.platform == "win32":
+            # Ohne das blitzt fuer jedes Werkzeug ein Fenster auf.
+            anlauf["creationflags"] = 0x08000000     # CREATE_NO_WINDOW
+        try:
+            lauf = subprocess.run([pfad, "--help"], **anlauf)
+            code = lauf.returncode & 0xFFFFFFFF
+        except subprocess.TimeoutExpired:
+            ergebnis.append((name, "antwortet nicht (20 s)"))
+            continue
+        except OSError as exc:
+            # 740 = ERROR_ELEVATION_REQUIRED. UFS2Tool traegt im Manifest
+            # requireAdministrator - ohne erhoehte Rechte laesst Windows es
+            # gar nicht erst an. Das ist Absicht und kein Befund; das
+            # Programm startet es an der richtigen Stelle eleviert.
+            if getattr(exc, "winerror", None) == 740:
+                ergebnis.append((name, ""))
+                braucht_rechte.append(name)
+                continue
+            ergebnis.append((name, "laesst sich nicht starten: %s"
+                             % (exc.strerror or exc)))
+            continue
+        ergebnis.append((name, DOKTOR_STARTFEHLER.get(code, "")))
+    return ergebnis, braucht_rechte
+
+
+def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
+                    gruendlich: bool = False) -> list[str]:
+    """Prueft die Umgebung und sagt, was fehlt oder falsch eingestellt ist.
+
+    Das Vorbild sind ``flutter doctor -v`` und ``npm doctor``: ein Befehl,
+    der die haeufigen "bei mir laeuft es, bei dir nicht"-Ursachen einzeln
+    abklappert und ein Ergebnis liefert, das man in eine Fehlermeldung
+    kopieren kann.
+
+    Geprueft wird nicht das Uebliche aus solchen Listen, sondern das, was
+    dieses Programm schon einmal umgeworfen hat:
+
+    * abgeschaltete lange Pfade (galt als "Paket verschluesselt", 23.08.2026),
+    * ein Zielordner auf FAT32 (dort endet jede Datei bei 4 GB),
+    * ein nicht beschreibbarer Temp-Ordner,
+    * fehlende mitgelieferte Werkzeuge,
+    * zu wenig Platz fuer das, was entstehen soll.
+
+    Es wird nichts uebertragen und nichts nachgeladen: Der Doktor bleibt
+    auf diesem Rechner.
+    """
+    zeilen: list[str] = []
+    hinweise = fehler = geprueft = 0
+
+    def melde(stufe: str, text: str) -> None:
+        # Gezaehlt wird hier, nicht am Ende ueber die Zeilenzahl: Manche
+        # Befunde haengen eine Erklaerungszeile an, und die ist keine
+        # weitere Pruefung.
+        nonlocal hinweise, fehler, geprueft
+        geprueft += 1
+        if stufe == DOKTOR_HINWEIS:
+            hinweise += 1
+        elif stufe == DOKTOR_FEHLER:
+            fehler += 1
+        zeilen.append("%s %s" % (stufe, text))
+
+    # -- Python --------------------------------------------------------
+    haupt, neben = sys.version_info[:2]
+    fassung = "%d.%d.%d" % sys.version_info[:3]
+    if (haupt, neben) < (3, 10):
+        melde(DOKTOR_FEHLER, "Python %s ist zu alt - 3.10 oder neuer noetig"
+              % fassung)
+    else:
+        melde(DOKTOR_GUT, "Python %s (%s)"
+              % (fassung, platform.architecture()[0]))
+
+    # -- Module, ohne die nichts geht ----------------------------------
+    import importlib.util as _ilu
+    fehlend = []
+    for anzeige, modul in (("Pillow", "PIL"), ("zstandard", "zstandard"),
+                           ("cryptography", "cryptography")):
+        try:
+            da = _ilu.find_spec(modul) is not None
+        except Exception:
+            da = False
+        if not da:
+            fehlend.append(anzeige)
+    if fehlend:
+        melde(DOKTOR_FEHLER, "Pflichtmodule fehlen: %s" % ", ".join(fehlend))
+    else:
+        melde(DOKTOR_GUT, "Pflichtmodule vollstaendig")
+
+    # Diese beiden sind angenehm, aber nicht noetig.
+    for anzeige, modul, wozu in (("tkinterdnd2", "tkinterdnd2",
+                                  "Dateien ins Fenster ziehen"),
+                                 ("psutil", "psutil",
+                                  "Speicher- und Prozessanzeige")):
+        try:
+            da = _ilu.find_spec(modul) is not None
+        except Exception:
+            da = False
+        melde(DOKTOR_GUT if da else DOKTOR_EGAL,
+              "%s %s (%s)" % (anzeige, "vorhanden" if da else "fehlt", wozu))
+
+    # -- Lange Pfade ---------------------------------------------------
+    lang = _doktor_lange_pfade()
+    if lang is True:
+        melde(DOKTOR_GUT, "Lange Pfade sind freigeschaltet")
+    elif lang is False:
+        melde(DOKTOR_HINWEIS,
+              "Lange Pfade sind abgeschaltet. Pakete mit tiefen Ordnern "
+              "brechen ab,")
+        zeilen.append("       oft mit einer Meldung, die nach etwas anderem "
+                      "klingt. Abhilfe:")
+        zeilen.append("       HKLM\\SYSTEM\\CurrentControlSet\\Control\\"
+                      "FileSystem -> LongPathsEnabled = 1")
+    else:
+        melde(DOKTOR_EGAL, "Lange Pfade: nicht ermittelbar")
+
+    # -- Ordner: beschreibbar, gross genug, richtiges Dateisystem ------
+    def _ordner_pruefen(beschriftung: str, pfad: str, mindest_gb: float) -> None:
+        if not pfad:
+            melde(DOKTOR_EGAL, "%s: nicht gesetzt" % beschriftung)
+            return
+        if not os.path.isdir(pfad):
+            melde(DOKTOR_FEHLER, "%s: %s gibt es nicht" % (beschriftung, pfad))
+            return
+        probe = os.path.join(pfad, ".ps5conv_doktor_probe")
+        try:
+            with open(probe, "wb") as f:
+                f.write(b"x")
+            os.remove(probe)
+        except OSError as exc:
+            melde(DOKTOR_FEHLER, "%s: %s ist nicht beschreibbar (%s)"
+                  % (beschriftung, pfad, exc.strerror or exc))
+            return
+        try:
+            frei = shutil.disk_usage(pfad).free / 1024 ** 3
+        except OSError:
+            frei = -1.0
+        dateisystem = _doktor_dateisystem(pfad)
+        zusatz = " auf %s" % dateisystem if dateisystem else ""
+        if 0.0 <= frei < mindest_gb:
+            melde(DOKTOR_HINWEIS, "%s: nur %.1f GB frei%s - fuer einen "
+                                  "vollen Dump zu wenig"
+                  % (beschriftung, frei, zusatz))
+        else:
+            melde(DOKTOR_GUT, "%s: %s, %.1f GB frei%s"
+                  % (beschriftung, pfad, max(frei, 0.0), zusatz))
+        # FAT32 kennt keine Datei ueber 4 GB. Ein PS5-Dump ist immer
+        # groesser, und der Abbruch kommt erst nach Stunden.
+        if dateisystem.upper() in ("FAT32", "FAT", "FAT16"):
+            melde(DOKTOR_FEHLER, "%s liegt auf %s - dort endet jede Datei "
+                                 "bei 4 GB." % (beschriftung, dateisystem))
+
+    _ordner_pruefen("Temp-Ordner", temp_pfad or tempfile.gettempdir(), 20.0)
+    _ordner_pruefen("Zielordner", ziel_pfad, 10.0)
+
+    # -- Widersprueche zwischen den Paketen ----------------------------
+    #
+    # Nur auf Verlangen: Das Durchgehen aller Verteilungen dauert rund eine
+    # fuenftel Sekunde. In der Diagnose faellt das nicht auf, im Fenster
+    # waere es eine sichtbare Verzoegerung fuer etwas, das sich zwischen
+    # zwei Programmstarts nie aendert.
+    if gruendlich:
+        pruefbar, widersprueche = _doktor_abhaengigkeiten()
+        if not pruefbar:
+            melde(DOKTOR_EGAL, "Paketstaende: nicht pruefbar "
+                               "(in der EXE gibt es keine Paketverwaltung)")
+        elif widersprueche:
+            melde(DOKTOR_HINWEIS, "Paketstaende widersprechen sich:")
+            for eintrag in widersprueche[:6]:
+                zeilen.append("       %s" % eintrag)
+            if len(widersprueche) > 6:
+                zeilen.append("       ... und %d weitere"
+                              % (len(widersprueche) - 6))
+        else:
+            melde(DOKTOR_GUT, "Paketstaende widerspruchsfrei")
+
+        # -- Startprobe der mitgelieferten Programme -------------------
+        starts, braucht_rechte = _doktor_werkzeuge_starten()
+        kaputt = [(n, b) for n, b in starts if b]
+        zusatz = (", davon %d nur mit Administratorrechten"
+                  % len(braucht_rechte)) if braucht_rechte else ""
+        if not starts:
+            melde(DOKTOR_EGAL, "Mitgelieferte Programme: keine gefunden")
+        elif kaputt:
+            melde(DOKTOR_FEHLER, "%d von %d mitgelieferten Programmen "
+                                 "starten nicht:" % (len(kaputt), len(starts)))
+            for name, befund in kaputt:
+                zeilen.append("       %s - %s" % (name, befund))
+        else:
+            melde(DOKTOR_GUT, "Mitgelieferte Programme starten "
+                              "(%d geprueft%s)" % (len(starts), zusatz))
+
+    # -- Mitgelieferte Werkzeuge ---------------------------------------
+    try:
+        finden = PS5ConverterGUI._mitgeliefert_finden
+    except Exception:
+        finden = None
+    if finden is None:
+        melde(DOKTOR_EGAL, "Mitgelieferte Werkzeuge: nicht pruefbar")
+    else:
+        for beschriftung, relpfad, noetig in (
+                ("Hintergrundbilder", "Hintergrundbilder", False),
+                ("AMPR EMU + PlayGo",
+                 os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"), False)):
+            pfad = finden(relpfad)
+            if pfad and os.path.isdir(pfad):
+                melde(DOKTOR_GUT, "%s: vorhanden" % beschriftung)
+            else:
+                melde(DOKTOR_FEHLER if noetig else DOKTOR_HINWEIS,
+                      "%s: fehlt neben dem Programm" % beschriftung)
+
+    # -- Einstellungsdatei ---------------------------------------------
+    #
+    # Eine halb geschriebene Einstellungsdatei laesst das Programm mit
+    # Vorgabewerten starten. Es sieht dann aus, als haette es alles
+    # vergessen - und niemand kommt auf die Datei.
+    try:
+        pfad = PS5ConverterGUI._get_config_path(None)
+    except Exception:
+        pfad = ""
+    if not pfad:
+        melde(DOKTOR_EGAL, "Einstellungsdatei: Pfad nicht ermittelbar")
+    elif not os.path.isfile(pfad):
+        melde(DOKTOR_EGAL, "Einstellungsdatei: noch keine angelegt")
+    else:
+        try:
+            with open(pfad, "r", encoding="utf-8") as f:
+                json.load(f)
+            melde(DOKTOR_GUT, "Einstellungsdatei lesbar und gueltig")
+        except (OSError, ValueError) as exc:
+            melde(DOKTOR_FEHLER, "Einstellungsdatei beschaedigt (%s): %s"
+                  % (type(exc).__name__, pfad))
+
+    # -- Rechte --------------------------------------------------------
+    if sys.platform == "win32":
+        try:
+            admin = _system_ist_administrator()
+        except Exception:
+            admin = None
+        if admin:
+            melde(DOKTOR_GUT, "Administratorrechte vorhanden")
+        else:
+            melde(DOKTOR_HINWEIS, "Ohne Administratorrechte - Aufgabe 3 "
+                                  "(Einhaengen) braucht sie")
+
+    # -- Abschluss -----------------------------------------------------
+    zeilen.append("")
+    zeilen.append("Doktor: %d geprueft, %d %s, %d %s"
+                  % (geprueft, hinweise,
+                     "Hinweis" if hinweise == 1 else "Hinweise",
+                     fehler, "Fehler" if fehler == 1 else "Fehler"))
+    if not hinweise and not fehler:
+        zeilen.append("Nichts zu beanstanden.")
+    return zeilen
+
+
+class FortschrittsWaechter:
+    """Prueft die Fortschrittsanzeige, waehrend sie laeuft.
+
+    Am 24.08.2026 hatte der exFAT-Weg zwei Fehler, die lange niemandem
+    auffielen: Der Phasenzaehler stand fest auf Phase 2 von 4, und eine
+    Byte-Zahl im Statustext fror ein, waehrend der Balken von 2 auf 98
+    Prozent lief. Beides liess sich nur finden, indem die Anzeige waehrend
+    echter Laeufe abgelesen wurde.
+
+    Diese Klasse macht daraus eine Dauermessung, die auf jedem Rechner
+    mitlaeuft - auch dort, wo niemand eine Messreihe fahren kann. Der
+    Diagnosebericht zeigt das Ergebnis des letzten Laufs.
+
+    Der Speicherbedarf bleibt konstant: Es werden keine Verlaeufe gesammelt,
+    sondern nur laufende Kennzahlen fortgeschrieben.
+    """
+
+    #: Ab dieser Pause ohne jede sichtbare Aenderung gilt die Anzeige als
+    #: stehengeblieben. Seit der mitlaufenden Uhr in ``_stillstand_uhr``
+    #: sollte das nicht mehr vorkommen - schlaegt es doch an, fehlt die Uhr
+    #: an einer Stelle.
+    STILLSTAND_S = 20.0
+
+    #: Balken und Prozentzahl duerfen sich um Rundung unterscheiden, nicht mehr.
+    ZAHL_TOLERANZ = 1.5
+
+    #: Eine Zahl im Statustext gilt als eingefroren, wenn der Balken um so
+    #: viele Punkte weiterlief, ohne dass sie sich ruehrte. Die Zeit allein
+    #: waere das falsche Mass: Die eingefrorene Zahl stand nur 5,3 s - aber
+    #: waehrend der Balken fast den ganzen Weg zuruecklegte.
+    STARRE_PUNKTE = 25.0
+
+    #: ... und mindestens so lange. Ein einzelner verpasster Takt bei einem
+    #: schnellen Lauf ist kein Einfrieren.
+    STARRE_S = 3.0
+
+    #: Erst ab dieser Laufzeit wird eine fehlende Phase gemeldet.
+    #:
+    #: Der Waechter sieht nur, was zwischen zwei Takten im Fenster
+    #: steht. Die Analysephase eines kleinen Dumps dauert rund 150 ms
+    #: und faellt dabei durch - gemessen am 24.08.2026 bei einem
+    #: 4-Sekunden-Lauf, waehrend derselbe Weg bei laengeren Laeufen alle
+    #: drei Phasen zeigte. Was kuerzer als ein Takt zu sehen ist, sieht
+    #: auch der Nutzer nicht; das als Fehler zu melden waere Laerm.
+    PHASEN_AB_S = 15.0
+
+    _PHASE = re.compile(r"^Phase\s+(\d+)\s*/\s*(\d+)")
+    _BYTES = re.compile(r"([\d.,]+\s*[KMGT]?B)\s*/\s*([\d.,]+\s*[KMGT]?B)")
+
+    def __init__(self) -> None:
+        self.zuruecksetzen()
+
+    def zuruecksetzen(self) -> None:
+        self.n = 0
+        self.begonnen = 0.0
+        self.letzte_zeit = 0.0
+        self.erster = None
+        self.letzter = 0.0
+        self.groesster = 0.0
+        self.rueckspruenge = 0
+        self.schlimmster_ruecksprung = None
+        self.ueberlaeufe = 0
+        self.groesste_abweichung = 0.0
+        self.phasenfolge = []
+        self.phasen_rueckwaerts = 0
+        self.groesste_luecke = 0.0
+        self.luecke_bei = 0.0
+        self.byte_wert = None
+        # None, nicht 0.0: Ein Zeitstempel darf nicht ueber seine
+        # Wahrheit geprueft werden - 0.0 ist falsch, und genau bei
+        # t=0 begann die Messung.
+        self.byte_seit = None
+        self.byte_bei_balken = 0.0
+        self.byte_starre = 0.0
+        self.byte_starre_punkte = 0.0
+        self.abgeschlossen = False
+
+    # -- Beobachtung ---------------------------------------------------
+    def beobachte(self, balken, prozenttext, statustext, jetzt=None) -> None:
+        """Nimmt einen Messpunkt auf.
+
+        Darf nie eine Ausnahme ausloesen: Eine Messung, die den gemessenen
+        Vorgang stoert, waere schlimmer als keine.
+        """
+        try:
+            jetzt = time.monotonic() if jetzt is None else float(jetzt)
+            balken = float(balken)
+        except (TypeError, ValueError):
+            return
+
+        if self.n == 0:
+            self.begonnen = jetzt
+            self.erster = balken
+        else:
+            luecke = jetzt - self.letzte_zeit
+            if luecke > self.groesste_luecke:
+                self.groesste_luecke = luecke
+                self.luecke_bei = self.letzter
+            if balken < self.letzter - 1e-9:
+                self.rueckspruenge += 1
+                schlimm = self.schlimmster_ruecksprung
+                if schlimm is None or (self.letzter - balken) > (schlimm[0] - schlimm[1]):
+                    self.schlimmster_ruecksprung = (self.letzter, balken)
+
+        self.n += 1
+        self.letzte_zeit = jetzt
+        self.letzter = balken
+        self.groesster = max(self.groesster, balken)
+        if balken > 100.0001:
+            self.ueberlaeufe += 1
+
+        zahl = self._zahl(prozenttext)
+        if zahl is not None:
+            self.groesste_abweichung = max(self.groesste_abweichung, abs(zahl - balken))
+
+        treffer = self._PHASE.match(statustext or "")
+        if treffer:
+            paar = (int(treffer.group(1)), int(treffer.group(2)))
+            if not self.phasenfolge or self.phasenfolge[-1] != paar:
+                if (self.phasenfolge and paar[0] < self.phasenfolge[-1][0]
+                        and paar[1] == self.phasenfolge[-1][1]):
+                    self.phasen_rueckwaerts += 1
+                self.phasenfolge.append(paar)
+
+        gefunden = self._BYTES.search(statustext or "")
+        wert = gefunden.group(1) if gefunden else None
+        if wert != self.byte_wert:
+            self.byte_wert = wert
+            self.byte_seit = jetzt
+            self.byte_bei_balken = balken
+        elif wert is not None and self.byte_seit is not None:
+            self.byte_starre = max(self.byte_starre, jetzt - self.byte_seit)
+            self.byte_starre_punkte = max(self.byte_starre_punkte,
+                                          balken - self.byte_bei_balken)
+
+    def abschliessen(self, endwert=None) -> None:
+        """Schliesst die Messung ab.
+
+        ``endwert`` kommt aus dem Abschluss, NACHDEM der Balken auf 100
+        gesetzt wurde. Ohne das meldete der Waechter bei jedem erfolgreichen
+        Lauf, der Balken habe bei 99 Prozent geendet: Der Taktgeber hoert
+        auf, bevor der letzte Schritt die 100 schreibt - er kann sie also
+        nie sehen.
+        """
+        if endwert is not None:
+            try:
+                self.letzter = float(endwert)
+                self.groesster = max(self.groesster, self.letzter)
+            except (TypeError, ValueError):
+                pass
+        self.abgeschlossen = True
+
+    @staticmethod
+    def _zahl(text):
+        try:
+            roh = str(text or "").strip().rstrip("%").replace(",", ".")
+            return float(roh) if roh else None
+        except ValueError:
+            return None
+
+    # -- Auswertung ----------------------------------------------------
+    def befunde(self) -> list:
+        """Was an der Anzeige nicht stimmte. Leere Liste heisst: alles gut."""
+        aus = []
+        if self.n < 3:
+            return aus
+        if self.rueckspruenge:
+            v, n = self.schlimmster_ruecksprung or (0.0, 0.0)
+            aus.append("Balken sprang %dx zurueck, schlimmstenfalls %.1f%% -> %.1f%%"
+                       % (self.rueckspruenge, v, n))
+        if self.ueberlaeufe:
+            aus.append("Balken ueber 100%%: %dx, hoechstens %.1f%%"
+                       % (self.ueberlaeufe, self.groesster))
+        if self.abgeschlossen and self.letzter < 99.99:
+            aus.append("Balken endete bei %.1f%% statt 100%%" % self.letzter)
+        if self.groesste_abweichung > self.ZAHL_TOLERANZ:
+            aus.append("Balken und Prozentzahl liefen um bis zu %.1f Punkte auseinander"
+                       % self.groesste_abweichung)
+        if self.phasenfolge:
+            gesamt = self.phasenfolge[-1][1]
+            summen = set(p[1] for p in self.phasenfolge)
+            if len(summen) > 1:
+                aus.append("Gesamtzahl der Phasen wechselte: %s"
+                           % ", ".join(str(x) for x in sorted(summen)))
+            if self.phasen_rueckwaerts:
+                aus.append("Phasenzaehler lief %dx rueckwaerts" % self.phasen_rueckwaerts)
+            gesehen = set(p[0] for p in self.phasenfolge)
+            fehlt = [x for x in range(1, gesamt + 1) if x not in gesehen]
+            lief = self.letzte_zeit - self.begonnen
+            if fehlt and lief >= self.PHASEN_AB_S:
+                aus.append("Phasen nie angezeigt: %s (von 1..%d)"
+                           % (", ".join(str(x) for x in fehlt), gesamt))
+            if self.abgeschlossen and self.phasenfolge[-1][0] != gesamt:
+                aus.append("endete bei Phase %d von %d"
+                           % (self.phasenfolge[-1][0], gesamt))
+        if (self.byte_starre_punkte > self.STARRE_PUNKTE
+                and self.byte_starre > self.STARRE_S):
+            aus.append("Zahl im Statustext stand fest, waehrend der Balken um "
+                       "%.0f Punkte weiterlief (%.0f s)"
+                       % (self.byte_starre_punkte, self.byte_starre))
+        if self.groesste_luecke > self.STILLSTAND_S:
+            aus.append("Anzeige stand %.0f s still (bei %.0f%%)"
+                       % (self.groesste_luecke, self.luecke_bei))
+        return aus
+
+    def bericht(self) -> list:
+        """Zeilen fuer den Diagnosebericht."""
+        if self.n < 3:
+            return ["(seit dem Start lief keine Aufgabe - nichts gemessen)"]
+        weg = " -> ".join("%d/%d" % paar for paar in self.phasenfolge[:8]) or "keine"
+        if len(self.phasenfolge) > 8:
+            weg += " ..."
+        zeilen = [
+            "Messpunkte: %d ueber %.0f s" % (self.n, self.letzte_zeit - self.begonnen),
+            "Balken: %.0f%% -> %.0f%% (hoechstens %.0f%%)"
+            % (self.erster or 0.0, self.letzter, self.groesster),
+            "Phasenweg: %s" % weg,
+            "laengste Pause ohne Aenderung: %.1f s" % self.groesste_luecke,
+        ]
+        gefunden = self.befunde()
+        zeilen.append("Befund: keine Auffaelligkeit" if not gefunden
+                      else "Befund: %d Auffaelligkeit(en)" % len(gefunden))
+        zeilen.extend("  - " + x for x in gefunden)
+        return zeilen
+
+
 class ProgressEngine:
     """Verwaltet den Gesamtfortschritt f├╝r alle 8 Aufgaben.
 
@@ -930,7 +1607,15 @@ class ProgressEngine:
         self._eta_seconds = None
         self._external_eta_seconds = None
         self._external_progress_active = False
-        self._status_text = f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {task_name}"
+        # Ohne "Aufgabe N/8".
+        #
+        # Der Index benennt die interne Teiloperation, nicht die vom Nutzer
+        # gewaehlte Aufgabe: ``start_task(3, "ffpkg zu ffpfsc")`` schrieb
+        # "Aufgabe 4/8" auch dann ins Fenster, wenn Aufgabe 2 oder 6 lief.
+        # Gemessen am 24.08.2026 bei Aufgabe 2 (.ffpfsc -> Ordner). Der Index
+        # steuert weiterhin die Gewichtung - nur die Zahl steht nicht mehr da,
+        # wo sie den Nutzer in die Irre fuehrt.
+        self._status_text = str(task_name)
         # Neuer Task muss einen alten Lauf hart ueberschreiben.
         # Sonst kann ein Resume-/Abbruch-Restwert (z. B. 93%) in den
         # naechsten Task hineinragen und ETA/Status verfaelschen.
@@ -944,9 +1629,7 @@ class ProgressEngine:
             description: Kurze Beschreibung fuer das Status-Feedback.
         """
         self._phase = "prepare"
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
-        )
+        self._status_text = str(description)
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
         self._advance_raw(target)
 
@@ -964,7 +1647,7 @@ class ProgressEngine:
         self._unit_label = unit_label
         self._payload_desc = description
         self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description} "
+            f"{description} "
             f"[0/{self._fmt_units(self._payload_total, unit_label)}]"
         )
         target = self._task_start() + self.TASK_WEIGHT * self.PHASE_PREPARE
@@ -984,16 +1667,14 @@ class ProgressEngine:
         label = getattr(self, "_unit_label", "Einheiten")
         desc = getattr(self, "_payload_desc", "Verarbeite...")
         self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {desc} "
+            f"{desc} "
             f"[{self._fmt_units(self._payload_done, label)}/{self._fmt_units(self._payload_total, label)}]"
         )
 
     def begin_validate(self, description: str = "Validierung...") -> None:
         """Beginnt die Validierungs-Phase (5 %)."""
         self._phase = "validate"
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: {description}"
-        )
+        self._status_text = str(description)
         payload_end = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
         self._advance_raw(payload_end)
 
@@ -1004,9 +1685,7 @@ class ProgressEngine:
         task_end = self._task_start() + self.TASK_WEIGHT
         safe_global = min(task_end, self.SAFETY_LIMIT)
         self._advance_raw(safe_global)
-        self._status_text = (
-            f"Aufgabe {self._task_idx + 1}/{self.NUM_TASKS}: Abgeschlossen."
-        )
+        self._status_text = "Abgeschlossen."
 
     def finish_task(self) -> None:
         """Schliesst die aktuelle Aufgabe ab (Alias fuer commit_task)."""
@@ -2650,6 +3329,10 @@ class PS5ConverterGUI:
 
         # ProgressEngine: Robuste, gewichtete Fortschrittsanzeige für alle 5 Aufgaben
         self.progress_engine: ProgressEngine = ProgressEngine()
+        #: Misst waehrend jeder Aufgabe mit, was die Anzeige wirklich zeigt.
+        #: Das Ergebnis steht im Diagnosebericht - so faellt eine kaputte
+        #: Anzeige auch auf Rechnern auf, an denen niemand misst.
+        self.fortschritts_waechter: FortschrittsWaechter = FortschrittsWaechter()
 
         # GUI aufbauen
         self._setup_styles()
@@ -9471,8 +10154,37 @@ class PS5ConverterGUI:
             logger.debug("temp_dir konnte nicht geladen werden: %s", exc)
         return os.path.normpath(tempfile.gettempdir())
 
+    #: So lange gilt eine bestandene Schreibprobe. Neu geprueft wird erst
+    #: danach - oder sofort, wenn ein anderer Ordner gewaehlt wurde.
+    _TEMP_PRUEF_GUELTIG_S: float = 30.0
+
     def _get_runtime_temp_dir(self) -> str:
-        """Ermittelt einen gültigen, beschreibbaren Temp-Ordner zur Laufzeit."""
+        """Ermittelt einen gültigen, beschreibbaren Temp-Ordner zur Laufzeit.
+
+        Das Ergebnis wird kurz zwischengespeichert. Ohne das kostete diese
+        Funktion spuerbar Zeit, denn ``_mkpfs_line_visible`` ruft sie je
+        Ausgabezeile der Packmaschine auf - gemessen am 24.08.2026 **374 Mal
+        in 41 Sekunden**, also neunmal je Sekunde. Jeder Aufruf legte eine
+        Schreibprobe an, loeschte sie wieder und schrieb die
+        Einstellungsdatei mit ``os.fsync`` auf die Platte:
+
+            nt.open     375 Aufrufe   0,77 s
+            nt.remove   375 Aufrufe   1,44 s
+            nt.fsync    374 Aufrufe   0,80 s
+            nt.replace  375 Aufrufe   0,48 s
+
+        Zusammen rund 3,5 s von 41 - gut 8 Prozent des Laufs fuer eine
+        Auskunft, die sich waehrenddessen nicht aendert. Dazu kam unnoetiger
+        Schreibverschleiss und, wenn ein Lauf hart endete, eine liegen
+        gebliebene ``.ps5conv_tmp_write_test_*``-Datei; elf davon fanden sich
+        im Testordner des Nutzers.
+
+        Geprueft wird weiterhin - nur nicht mehr im Sekundentakt: Nach
+        ``_TEMP_PRUEF_GUELTIG_S`` faellt der Zwischenstand, und ein
+        gewechselter Ordner wird sofort neu geprueft. Ein Datentraeger, der
+        mitten im Lauf schreibgeschuetzt wird, faellt damit hoechstens eine
+        halbe Minute spaeter auf.
+        """
         candidate = ""
         if hasattr(self, "temp_path"):
             candidate = str(self.temp_path.get()).strip()
@@ -9480,6 +10192,12 @@ class PS5ConverterGUI:
             candidate = str(self._load_setting("temp_dir", "")).strip()
         if not candidate:
             candidate = tempfile.gettempdir()
+
+        jetzt = time.monotonic()
+        gemerkt = getattr(self, "_temp_pruefung", None)
+        if (gemerkt is not None and gemerkt[0] == candidate
+                and (jetzt - gemerkt[2]) < self._TEMP_PRUEF_GUELTIG_S):
+            return gemerkt[1]
 
         probe = ""
         try:
@@ -9490,7 +10208,11 @@ class PS5ConverterGUI:
             norm = os.path.normpath(candidate)
             if hasattr(self, "temp_path"):
                 self.temp_path.set(norm)
-            self._save_setting("temp_dir", norm)
+            # Nur schreiben, wenn sich wirklich etwas geaendert hat. Dieselbe
+            # Zeichenkette erneut abzulegen kostet ein fsync und bringt nichts.
+            if str(self._load_setting("temp_dir", "")).strip() != norm:
+                self._save_setting("temp_dir", norm)
+            self._temp_pruefung = (candidate, norm, jetzt)
             return norm
         except Exception as exc:
             _now = time.monotonic()
@@ -9501,7 +10223,9 @@ class PS5ConverterGUI:
             fallback = os.path.normpath(tempfile.gettempdir())
             if hasattr(self, "temp_path"):
                 self.temp_path.set(fallback)
-            self._save_setting("temp_dir", fallback)
+            if str(self._load_setting("temp_dir", "")).strip() != fallback:
+                self._save_setting("temp_dir", fallback)
+            self._temp_pruefung = (candidate, fallback, jetzt)
             return fallback
         finally:
             try:
@@ -13622,8 +14346,11 @@ class PS5ConverterGUI:
                 self._display_patches(results, title_id, elapsed_sec=_elapsed(), final=final, source="Online")
         def _worker():
             threads = []
-            for base_url, platform in sites:
-                t = threading.Thread(target=_fetch_one, args=(base_url, platform), daemon=True)
+            # Nicht "platform": Das ist der Name des Moduls aus Zeile 39.
+            # Hier faellt es nicht auf, weil die Funktion es nicht braucht -
+            # wer aber spaeter platform.system() ergaenzt, sucht lange.
+            for base_url, konsole in sites:
+                t = threading.Thread(target=_fetch_one, args=(base_url, konsole), daemon=True)
                 threads.append(t)
                 t.start()
             # Warten bis alle fertig (non-blocking da daemon=True)
@@ -13683,13 +14410,14 @@ class PS5ConverterGUI:
                     self._patch_status_var.set(self._t("info_popup.status_no_updates", source=source))
             return
 
-        for platform, ver, size, fw, date, is_latest, page_url in results:
+        # Nicht "platform" - siehe Modulimport in Zeile 39.
+        for konsole, ver, size, fw, date, is_latest, page_url in results:
             ver_text = f"* {ver}" if is_latest else ver
             link_text = self._t("info_popup.download_link")
             # Jede Zeile bekommt einen normalen Tag (für Farbe der neuesten Version)
             row_tag = "latest_row" if is_latest else "normal_row"
             iid = self._patch_tree.insert("", "end",
-                values=(platform, ver_text, size, fw, str(date)[:10], link_text),
+                values=(konsole, ver_text, size, fw, str(date)[:10], link_text),
                 tags=(row_tag,),
             )
             self._patch_urls[iid] = page_url
@@ -15432,6 +16160,16 @@ class PS5ConverterGUI:
         self.task_num_steps     = 1
         self.task_current_step  = 0
         self.task_step_ends     = []
+        self._zuletzt_angezeigt = 0.0
+        self._batch_von, self._batch_bis = 0.0, 100.0
+        self._uhr_basis = None
+        self._uhr_letzter_wert = -1.0
+        self._uhr_seit = time.monotonic()
+        self._stapel_abgezogen = False
+        try:
+            self.fortschritts_waechter.zuruecksetzen()
+        except AttributeError:
+            pass
         self.task_uncompressed_str   = ""
         self.task_stored_str         = ""
         self._copy_total_bytes       = 0
@@ -15666,6 +16404,24 @@ class PS5ConverterGUI:
         return f"{n / 1024 ** 3:.2f} GB"
 
     def _update_progress_gui(self) -> None:
+        # Zuerst messen, was GERADE angezeigt wird.
+        #
+        # _set_progress reicht Balken und Prozentzahl ueber
+        # root.after(0, ...) weiter, setzt sie also nicht sofort. Wer
+        # unmittelbar nach dem Setzen abliest, bekommt die Werte des
+        # vorigen Takts und haelt den Versatz faelschlich fuer eine
+        # Abweichung - gemessen 7,3 Punkte, die es nie gab. Am Anfang des
+        # Takts stammen Balken, Prozentzahl und Statuszeile dagegen aus
+        # demselben Moment.
+        try:
+            self.fortschritts_waechter.beobachte(
+                float(self.progress_var.get()),
+                self.percent_label.cget("text"),
+                self.status_label.cget("text"),
+            )
+        except Exception:
+            pass          # eine Messung darf den gemessenen Vorgang nie stoeren
+
         """Aktualisiert Fortschrittsbalken und %-Label live (alle 80ms).
 
         Prinzip: "Progress Driven by Real Events"
@@ -15775,8 +16531,14 @@ class PS5ConverterGUI:
                         self._mkpfs_verify_pending = True
                         self.task_progress = max(self.task_progress, min(self._step_end(), 98.0))
                         mode_hint = str(getattr(self, "_active_mode_name", "") or "")
-                        self.root.after(0, lambda: self.status_label.config(
-                            text=self._format_phase_status(self._completion_status_text(mode_hint, "keepalive_verify"))
+                        # Den Modus als Vorgabewert binden. Diese Zuweisung
+                        # steht in der Schleife ueber die Ausgabezeilen; ein
+                        # Lambda, das den Namen erst beim Ausfuehren
+                        # nachschlaegt, benaeme im Statustext den Modus einer
+                        # spaeteren Zeile. Dieselbe Falle kostete beim Umbau
+                        # der exFAT-Phasen einen Anlauf.
+                        self.root.after(0, lambda _m=mode_hint: self.status_label.config(
+                            text=self._format_phase_status(self._completion_status_text(_m, "keepalive_verify"))
                         ))
                     mu = re.match(r'Total uncompressed size:\s*(.+)', line.strip())
                     if mu:
@@ -16353,11 +17115,13 @@ class PS5ConverterGUI:
         # zurück (z. B. von 60 % wieder auf 0 %), obwohl der Gesamtfortschritt
         # tatsächlich weiter vorwärts läuft. Die Detailzeile (new_size) zeigt
         # den rohen Teil-Fortschritt weiterhin informativ an.
+        _anzeige = self._balken_anzeigewert()
         self._set_progress(
-            self.task_displayed,
-            show_percent=(self.task_displayed > 0),
+            _anzeige,
+            show_percent=(_anzeige > 0),
             size_text=new_size,
         )
+        self._stillstand_uhr(_anzeige)
 
         # ------------------------------------------------------------------
         # 6. Loop fortsetzen
@@ -16388,6 +17152,117 @@ class PS5ConverterGUI:
         max_step = max(1, int(getattr(self, "task_num_steps", 1) or 1))
         step = max(1, min(int(getattr(self, "task_current_step", 1) or 1), max_step))
         return self._step_end_for(step)
+
+    #: Ab so vielen Sekunden ohne jede sichtbare Aenderung bekommt die
+    #: Statuszeile eine mitlaufende Uhr. Kuerzere Pausen sind normal und
+    #: sollen die Zeile nicht unruhig machen.
+    _STILLSTAND_UHR_AB_S: float = 5.0
+
+    #: Ab so langem Stillstand wird einmal der Stapel aller Faeden
+    #: festgehalten. Zwei Minuten sind reichlich - die laengste gemessene
+    #: Pause im gesunden Betrieb lag bei 20 s, und die ist seit der
+    #: mitlaufenden Uhr auf 5 s gesunken.
+    _STAPELABZUG_AB_S: float = 120.0
+
+    def _stapelabzug_bei_stillstand(self, seit: float) -> None:
+        """Haelt fest, woran es haengt - einmal je Aufgabe.
+
+        Ein Aufhaenger hinterlaesst sonst nichts: kein Absturz, keine
+        Ausnahme, nur ein Fenster, das steht. Am 24.08.2026 kostete genau das
+        eine Stunde Suche, bis sich herausstellte, dass drei Vorgaenge auf
+        dieselbe Datei schrieben. Der Stapel aller Faeden haette es sofort
+        gezeigt.
+
+        Nur einmal je Aufgabe: Ein Abzug je Takt waere unbrauchbar.
+        """
+        if seit < self._STAPELABZUG_AB_S or getattr(self, "_stapel_abgezogen", False):
+            return
+        self._stapel_abgezogen = True
+        try:
+            # NICHT faulthandler.dump_traceback: Das schreibt auf C-Ebene
+            # und braucht einen echten Dateideskriptor - ein StringIO hat
+            # keinen, der Aufruf scheitert still. sys._current_frames()
+            # liefert dieselbe Auskunft rein in Python.
+            namen = {f.ident: f.name for f in threading.enumerate()}
+            zeilen = []
+            for kennung, rahmen in sys._current_frames().items():
+                zeilen.append("--- Faden %s (%s) ---"
+                              % (namen.get(kennung, "?"), kennung))
+                zeilen.extend(z.rstrip() for z in traceback.format_stack(rahmen)[-8:])
+            logger.error("Anzeige steht seit %.0f s still. Stapel aller Faeden:\n%s",
+                         seit, "\n".join(zeilen))
+        except Exception as exc:                  # pragma: no cover
+            logger.debug("Stapelabzug nicht moeglich: %s", exc)
+
+    def _stillstand_uhr(self, anzeige: float) -> None:
+        """Zeigt bei laengerem Stillstand, dass weitergearbeitet wird.
+
+        Gemessen am 24.08.2026: In den Pruef- und Abschlussphasen steht die
+        Anzeige still, weil es dort keinen Byte-Fortschritt gibt - 20,2 s bei
+        "Abschlusspruefung laeuft..." und 95 %, 12,6 s bei "Verarbeitung
+        laeuft..." und 57,9 %. Bei einem 100-GB-Dump sind das Minuten, und es
+        sieht aus, als haenge das Programm.
+
+        Den Balken kuenstlich weiterlaufen zu lassen waere gelogen - es ist
+        kein Fortschritt bekannt. Stattdessen laeuft die Zeit mit: Der Nutzer
+        sieht, dass etwas geschieht, ohne eine erfundene Zahl.
+        """
+        try:
+            jetzt = time.monotonic()
+            text = str(self.status_label.cget("text") or "")
+        except Exception:
+            return
+
+        # Die eigene Ergaenzung wieder abtrennen, sonst waechst sie endlos.
+        basis = text.split("  (", 1)[0] if "  (" in text else text
+        bewegt = (abs(anzeige - float(getattr(self, "_uhr_letzter_wert", -1.0))) > 0.005
+                  or basis != getattr(self, "_uhr_basis", None))
+        if bewegt:
+            self._uhr_basis = basis
+            self._uhr_letzter_wert = anzeige
+            self._uhr_seit = jetzt
+            return
+
+        seit = jetzt - float(getattr(self, "_uhr_seit", jetzt))
+        if seit < self._STILLSTAND_UHR_AB_S:
+            return
+        self._stapelabzug_bei_stillstand(seit)
+        neu = "%s  (%d:%02d)" % (basis, int(seit) // 60, int(seit) % 60)
+        if neu != text:
+            try:
+                self.status_label.config(text=neu)
+            except Exception:
+                pass
+
+    def _balken_anzeigewert(self) -> float:
+        """Der Wert, der wirklich auf dem Balken landet.
+
+        Zwei Dinge geschehen hier:
+
+        1. **Abschnitt je Datei.** In der Sammelkonvertierung faellt der
+           Fortschritt der gerade bearbeiteten Datei in ihren Teil des
+           Balkens - Datei 1 von 2 in 0-50 %, Datei 2 in 50-100 %. Vorher lief
+           er je Datei von vorn los; gemessen am 24.08.2026 ein Sprung von
+           99,75 % auf 0,00 % beim Wechsel, was wie ein Neustart aussieht.
+           Ausserhalb der Sammelkonvertierung ist von=0/bis=100 und die
+           Rechnung wirkungslos.
+
+        2. **Nie rueckwaerts.** Beim Umschalten der Abbildung entstand sonst
+           ein Ruecksprung von 0,05 Punkten. Ein rueckwaerts laufender Balken
+           ist in jeder Aufgabe falsch, deshalb gilt die Schranke immer.
+        """
+        von = balkenzahl(self, "_batch_von", 0.0)
+        bis = balkenzahl(self, "_batch_bis", 100.0)
+        wert = balkenzahl(self, "task_displayed", 0.0)
+        if bis > von and (von, bis) != (0.0, 100.0):
+            wert = von + wert * (bis - von) / 100.0
+        # 3. **Nie ausserhalb der Skala.** Einen Wert jenseits von 100 zeigt
+        #    Tk als vollen Balken, einen unter 0 als leeren - beides sieht
+        #    nach einem stehenden Balken aus statt nach einem Rechenfehler.
+        wert = min(100.0, max(0.0, wert))
+        wert = max(wert, balkenzahl(self, "_zuletzt_angezeigt", 0.0))
+        self._zuletzt_angezeigt = wert
+        return wert
 
     def _format_phase_status(self, message: str, prefer_current_label: bool = True) -> str:
         """Formatiert einen sichtbaren Phasenstatus passend zum aktuellen Aufgabenpfad."""
@@ -18490,6 +19365,18 @@ class PS5ConverterGUI:
                         pe.finish_all()
                     self.progress_var.set(100)
                     self.percent_label.config(text="100%")
+                    # Dem Waechter den Endwert nennen: Der Taktgeber hoert
+                    # vorher auf und kann die 100 nie sehen.
+                    try:
+                        self.fortschritts_waechter.abschliessen(100.0)
+                    except AttributeError:
+                        pass
+                    # Dauer fuer den Leistungsteil der Diagnose.
+                    try:
+                        self._letzte_aufgabe_dauer_s = (
+                            time.monotonic() - float(self.task_start_time or 0.0))
+                    except (TypeError, ValueError):
+                        self._letzte_aufgabe_dauer_s = 0.0
                     if hasattr(self, "size_label") and _size_text:
                         self.size_label.config(text=_size_text)
                     self.run_btn.config(state=tk.NORMAL)
@@ -18663,7 +19550,20 @@ class PS5ConverterGUI:
             all_ok = True
             for idx, candidate in enumerate(sources, start=1):
                 if not self.is_running:
+                    self._batch_von, self._batch_bis = 0.0, 100.0
                     return False
+                # Jede Datei bekommt ihren Abschnitt des Balkens: Datei 1 von 2
+                # fuellt 0-50 %, Datei 2 dann 50-100 %.
+                #
+                # Vorher lief der Balken je Datei von vorn los. Der Ruecksetzer
+                # weiter unten ist dafuer noetig (sonst blockiert der hohe
+                # Endstand der Vorgaengerdatei jeden kleineren Wert), er machte
+                # den Sprung aber sichtbar: gemessen am 24.08.2026 ein Fall von
+                # 99,75 % auf 0,00 % beim Wechsel zur zweiten Datei. Das sieht
+                # aus wie ein Neustart. Die Zuordnung geschieht erst beim
+                # Anzeigen, der innere Fortschritt bleibt unveraendert.
+                self._batch_von = (idx - 1) * 100.0 / len(sources)
+                self._batch_bis = idx * 100.0 / len(sources)
                 # Fortschritt ist strikt vorwärts gerichtet (siehe task_progress-
                 # Konvention). Ohne diesen Reset bliebe der Balken ab Datei 2
                 # auf dem Endstand von Datei 1 hängen, weil dessen Wert (nahe
@@ -18745,6 +19645,7 @@ class PS5ConverterGUI:
             if succeeded == 0 and uebersprungen == len(sources):
                 self._append_to_log(self._t('batch.nothing_to_do'))
                 all_ok = False
+            self._batch_von, self._batch_bis = 0.0, 100.0
             self.task_final_output_path = dst
             return all_ok
 
@@ -19138,9 +20039,14 @@ class PS5ConverterGUI:
                 # gemessenen Dauer auf den Bereich verteilen, damit der Balken
                 # laeuft statt am Ende zu springen.
                 _s3_von, _s3_bis = self._ffpkg_schritt3_von, self._ffpkg_schritt3_bis
-                def _s3(anteil: float) -> float:
+                # Die Grenzen als Vorgabewerte binden, nicht ueber die
+                # Umgebung: Diese Zuweisung steht in einer Wiederholschleife.
+                # Eine Closure, die den Namen erst beim Aufruf nachschlaegt,
+                # rechnete beim naechsten Durchgang mit den neuen Grenzen -
+                # dieselbe Falle wie ein Lambda in root.after().
+                def _s3(anteil: float, _von: float = _s3_von, _bis: float = _s3_bis) -> float:
                     """Punktwert innerhalb von Schritt 3 (0.0 bis 1.0)."""
-                    return _s3_von + (_s3_bis - _s3_von) * max(0.0, min(1.0, anteil))
+                    return _von + (_bis - _von) * max(0.0, min(1.0, anteil))
                 self.task_progress = max(self.task_progress, _s3(0.0))
                 self.progress_engine.begin_validate("UFS2-Struktur im Temp-Staging schreibgeschützt prüfen...")
                 candidate_verification = self._validate_ffpkg_artifact(stage_path)
@@ -19506,10 +20412,24 @@ class PS5ConverterGUI:
         self.task_total_source_bytes = self._get_path_size(src)
         self.progress_engine.start_task(0, "Dump-Ordner zu exFAT")
         self.progress_engine.begin_prepare("Quellordner analysieren...")
-        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 1 – Erstelle exFAT-Image..."))
+        # Dieser Weg hat drei Abschnitte, nicht vier wie der .ffpfsc-Weg: Es
+        # gibt kein inneres PFS und keinen Aussencontainer. Bis v1.8.93 stand
+        # hier gar keine Phase, und im Schreibteil klebte ein fest
+        # einprogrammiertes "Phase 2/4" - der Zaehler wanderte nie, und die
+        # Erfolgsmeldung erbte ihn.
+        self.task_num_steps = 3
+        self.task_current_step = 1
+        _text_phase1 = self._format_phase_status("Quellordner analysieren...",
+                                                 prefer_current_label=False)
+        self.root.after(0, lambda t=_text_phase1: self.status_label.config(text=t))
         self._append_to_log(self._t('log.auto.0109', v0=os.path.basename(src), v1=os.path.basename(final_output)))
+        self.task_current_step = 2
         ok = self._create_exfat_from_folder(src, final_output, pct_start=5.0, pct_end=98.0)
         if ok:
+            self.task_current_step = 3
+            _text_phase3 = self._format_phase_status("Abschlusspruefung laeuft...",
+                                                     prefer_current_label=False)
+            self.root.after(0, lambda t=_text_phase3: self.status_label.config(text=t))
             self.progress_engine.begin_validate("Validierung...")
             self.progress_engine.commit_task()
         return ok
@@ -19522,12 +20442,12 @@ class PS5ConverterGUI:
         self.task_total_source_bytes = self._get_path_size(src)
         self.progress_engine.start_task(3, "FFPKG zu Dump-Ordner")
         self.progress_engine.begin_prepare("FFPKG extrahieren...")
-        self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Extrahiere .ffpkg..."))
+        self.root.after(0, lambda: self.status_label.config(text="Extrahiere .ffpkg..."))
         self._append_to_log(self._t('log.auto.0110', v0=os.path.basename(src), v1=base_name))
         ok = self._extract_ffpkg_to_folder_via_ufs2tool(
             src,
             final_output,
-            status_prefix="Aufgabe 4",
+            status_prefix="FFPKG-Extraktion",
             progress_start=5.0,
             progress_end=98.0,
         )
@@ -23689,7 +24609,7 @@ class PS5ConverterGUI:
             self.task_current_step = 1
             self.task_progress = max(self.task_progress, 0.5)
             self.task_displayed = max(self.task_displayed, 0.5)
-            self.root.after(0, lambda: self.status_label.config(text="Aufgabe 4 – Container entpacken..."))
+            self.root.after(0, lambda: self.status_label.config(text="Container entpacken..."))
             self._append_to_log(self._t('log.auto.0244'))
 
             # Sollwerte des äußeren Containers: Sie gelten für den Fall, dass
@@ -23715,7 +24635,7 @@ class PS5ConverterGUI:
             # ── Ebene für Ebene auspacken, bis die Spieldateien erscheinen ──
             ebenen = self._entpacke_container_ebenen(
                 tmp_dir,
-                status_prefix="Aufgabe 4",
+                status_prefix="FFPKG-Extraktion",
                 pct_start=20.0,
                 pct_end=90.0,
                 erwartet=erwartet,
@@ -23729,7 +24649,7 @@ class PS5ConverterGUI:
             self.task_progress = max(self.task_progress, 90.0)
             self.task_displayed = max(self.task_displayed, 90.0)
             self.root.after(0, lambda: self.status_label.config(
-                text="Aufgabe 4 – Vollständigkeit prüfen..."))
+                text="Vollständigkeit prüfen..."))
             if not self._pruefe_dump_vollstaendig(aktueller_ordner, erwartet):
                 return False
 
@@ -24278,6 +25198,7 @@ class PS5ConverterGUI:
         last_rate_ts = [0.0]
         last_rate_bytes = [0]
         rate_ema = [0.0]
+        last_status_ts = [0.0]      # eigener Takt fuer die Statuszeile
         self._copy_total_bytes = 0
         self._copy_done_bytes = 0
         self._copy_total_exact = True
@@ -24320,8 +25241,18 @@ class PS5ConverterGUI:
                             self._copy_rate_trend = trend
                         last_rate_ts[0] = now
                         last_rate_bytes[0] = written_bytes[0]
-                    if now - last_log_ts[0] >= 8.0:
-                        last_log_ts[0] = now
+                    # Anzeige und Protokoll haben verschiedene Takte.
+                    #
+                    # Bis v1.8.93 hing beides an denselben 8 Sekunden. Der
+                    # Balken lief derweil zehnmal je Sekunde weiter, sodass
+                    # daneben dauerhaft eine veraltete Byte-Zahl stand -
+                    # gemessen "6.0 KB/252.4 MB" bei 87 % Balken. Bei Laeufen
+                    # unter 8 Sekunden bewegte sich die Zahl ueberhaupt nie.
+                    #
+                    # Das Protokoll bleibt bei 8 Sekunden: Dort schadet
+                    # Haeufigkeit, in der Anzeige fehlende Aktualitaet.
+                    if now - last_status_ts[0] >= 0.5:
+                        last_status_ts[0] = now
                         self.root.after(
                             0,
                             lambda s=self._fmt_bytes(written_bytes[0]),
@@ -24331,9 +25262,14 @@ class PS5ConverterGUI:
                                 else "?"
                             ):
                             self.status_label.config(
-                                text=f"Phase 2/4 – exFAT-Image erstellt... {s}/{t}"
+                                text=self._format_phase_status(
+                                    f"exFAT-Image erstellt... {s}/{t}",
+                                    prefer_current_label=False,
+                                )
                             ),
                         )
+                    if now - last_log_ts[0] >= 8.0:
+                        last_log_ts[0] = now
                         self._append_to_log(self._t('log.auto.0269', v0=written_bytes[0], v1=total_bytes_box[0] or 0))
 
             if not out_path.is_file():
@@ -24787,7 +25723,7 @@ class PS5ConverterGUI:
             # --- Schritt 3: Neues PS5-kompatibles .exfat erstellen ---
             self._append_to_log(self._t('log.auto.0302'))
             self.root.after(0, lambda: self.status_label.config(
-                text="Aufgabe 2 – Neues exFAT-Image erstellen..."))
+                text="Neues exFAT-Image erstellen..."))
 
             # eboot.bin Prüfung
             eboot_path = os.path.join(game_dump_dir, "eboot.bin")
@@ -26828,6 +27764,583 @@ class PS5ConverterGUI:
                 zeilen.append(z("%s (%s)" % (name, wurzel), "nicht ermittelbar: %s" % exc))
         return zeilen
 
+    def _diagnose_eigenschaften(self) -> list[str]:
+        """Prueft Zusicherungen, die immer gelten muessen - im fertigen Programm.
+
+        Das Gegenstueck zu Hypothesis. Dort sucht eine Bibliothek selbst nach
+        einer Eingabe, die eine Eigenschaft verletzt, und schrumpft sie auf
+        das kleinste Gegenbeispiel (``test_eigenschaften.py``). Hier laeuft
+        eine feste, kurze Auswahl derselben Eigenschaften - dafuer dort, wo
+        kein Testlauf hinkommt: in der ausgelieferten EXE.
+
+        Das ersetzt die Testdatei nicht und soll es nicht. Es faengt die
+        Klasse Fehler, die erst durch das Verpacken entsteht: ein Modul, das
+        PyInstaller nicht mitgenommen hat, eine andere Fassung einer
+        Bibliothek, ein anderes Gebietsschema beim Umwandeln von Zahlen.
+
+        Der Anlass: Am 25.08.2026 fand Hypothesis, dass ein einzelner
+        Doppelpunkt in ``task_displayed`` die gesamte Fortschrittsschleife
+        beendet - lautlos, ohne Absturz und ohne Meldung. Der Balken waere
+        einfach stehengeblieben.
+        """
+        # Absichtlich unsinnige Bytes an ``parse_sfo`` erzeugen jedes Mal
+        # eine Warnung. Beim ersten Lauf standen dadurch vier Meldungen im
+        # Protokollauszug desselben Berichts - Rauschen, das der Diagnose
+        # genau das nimmt, wofuer sie da ist. Waehrend der Pruefung bleibt
+        # das Protokoll deshalb still - aber nur bis einschliesslich
+        # WARNING. Echte Fehler aus einer nebenher laufenden
+        # Konvertierung muessen weiter durchkommen.
+        logging.disable(logging.WARNING)
+        try:
+            return self._eigenschaften_pruefen()
+        finally:
+            logging.disable(logging.NOTSET)
+
+    def _eigenschaften_pruefen(self) -> list[str]:
+        """Der eigentliche Durchlauf - siehe ``_diagnose_eigenschaften``."""
+        verletzt: list[str] = []
+        geprueft = 0
+
+        class _Probe:
+            """Traegt nur die Felder, die die Balkenrechnung anfasst."""
+
+        def _neue_probe(von=0.0, bis=100.0):
+            p = _Probe()
+            p._batch_von, p._batch_bis = von, bis
+            p._zuletzt_angezeigt = von
+            p.task_displayed = 0.0
+            return p
+
+        # -- 1) Der Balken laeuft nie rueckwaerts -------------------------
+        #
+        # Der gemessene Anlass: Beim Umschalten der Abbildung sprang er um
+        # 0,05 Punkte zurueck, beim Dateiwechsel um 99,75 Punkte.
+        probe = _neue_probe()
+        vorher = -1.0
+        for wert in (0.0, 0.1, 5.0, 4.9, 50.0, 49.0, 99.75, 100.0, 0.0):
+            probe.task_displayed = wert
+            geprueft += 1
+            try:
+                jetzt = PS5ConverterGUI._balken_anzeigewert(probe)
+            except Exception as exc:
+                verletzt.append("Balken wirft bei %r: %s" % (wert, type(exc).__name__))
+                break
+            if jetzt + 1e-9 < vorher:
+                verletzt.append("Balken laeuft rueckwaerts: %.2f nach %.2f"
+                                % (jetzt, vorher))
+            vorher = jetzt
+
+        # -- 2) Unsinn darf nie werfen ------------------------------------
+        for wert in (None, ":", "", "abc", float("nan"), float("inf"),
+                     float("-inf"), -1e9, 1e9, object(), [1], {}):
+            probe = _neue_probe()
+            probe.task_displayed = wert
+            geprueft += 1
+            try:
+                jetzt = PS5ConverterGUI._balken_anzeigewert(probe)
+            except Exception as exc:
+                verletzt.append("Balken wirft bei %r: %s" % (wert, type(exc).__name__))
+                continue
+            if jetzt != jetzt:
+                verletzt.append("Balken liefert NaN bei %r" % (wert,))
+            elif not 0.0 <= jetzt <= 100.0:
+                verletzt.append("Balken ausserhalb der Skala (%.2f) bei %r"
+                                % (jetzt, wert))
+
+        # -- 3) Jede Datei bleibt in ihrem Abschnitt ----------------------
+        for nummer, gesamt in ((1, 2), (2, 2), (1, 3), (3, 3), (4, 7)):
+            von = (nummer - 1) * 100.0 / gesamt
+            bis = nummer * 100.0 / gesamt
+            probe = _neue_probe(von, bis)
+            for anteil in (0.0, 50.0, 100.0):
+                probe.task_displayed = anteil
+                geprueft += 1
+                try:
+                    jetzt = PS5ConverterGUI._balken_anzeigewert(probe)
+                except Exception as exc:
+                    verletzt.append("Balken wirft im Abschnitt %d/%d: %s"
+                                    % (nummer, gesamt, type(exc).__name__))
+                    break
+                if jetzt + 1e-9 < von or jetzt - 1e-9 > bis:
+                    verletzt.append("Datei %d/%d verlaesst ihren Abschnitt: "
+                                    "%.2f nicht in %.2f-%.2f"
+                                    % (nummer, gesamt, jetzt, von, bis))
+
+        # -- 4) Der param.sfo-Leser stuerzt an fremden Bytes nicht ab -----
+        #
+        # Er bekommt Bytes aus fremden Dateien. Genau dieser Leser war bis
+        # v1.8.92 fehlerhaft: Die Kopffelder wurden um eines versetzt
+        # gelesen, als Anzahl der Eintraege kam eine Adresse heraus.
+        for name, muster in (
+                ("leer", b""),
+                ("nur Magie", b"\x00PSF"),
+                ("Magie + Muell", b"\x00PSF" + b"\xff" * 24),
+                ("unsinnige Zeiger",
+                 b"\x00PSF" + struct.pack("<IIII", 0x0101, 0xFFFFFFFF,
+                                          0xFFFFFFFF, 0xFFFFFFFF)),
+                ("4 Milliarden Eintraege",
+                 b"\x00PSF" + struct.pack("<IIII", 0x0101, 20, 24, 4000000000)),
+                ("falsche Magie", b"NICHTPSF" * 8)):
+            geprueft += 1
+            try:
+                ergebnis = parse_sfo(muster)
+            except Exception as exc:
+                verletzt.append("parse_sfo wirft bei '%s': %s"
+                                % (name, type(exc).__name__))
+                continue
+            if not isinstance(ergebnis, dict):
+                verletzt.append("parse_sfo liefert %s statt dict bei '%s'"
+                                % (type(ergebnis).__name__, name))
+
+        # Die Gegenprobe - sonst bestuende diese Pruefung auch ein Leser,
+        # der ausnahmslos ein leeres Ergebnis zurueckgibt.
+        geprueft += 1
+        try:
+            eintraege = [("TITLE", "Ein Spiel"), ("TITLE_ID", "PPSA01234")]
+            schluessel = b""
+            daten = b""
+            tabelle = b""
+            for k, v in eintraege:
+                ko, do = len(schluessel), len(daten)
+                schluessel += k.encode() + b"\x00"
+                wert_roh = v.encode() + b"\x00"
+                daten += wert_roh
+                tabelle += struct.pack("<HHIII", ko, 0x0204, len(wert_roh),
+                                       len(wert_roh), do)
+            kopf = 20 + len(tabelle)
+            gueltig = (b"\x00PSF"
+                       + struct.pack("<IIII", 0x0101, kopf,
+                                     kopf + len(schluessel), len(eintraege))
+                       + tabelle + schluessel + daten)
+            gelesen = parse_sfo(gueltig)
+            if (gelesen.get("TITLE") != "Ein Spiel"
+                    or gelesen.get("TITLE_ID") != "PPSA01234"):
+                verletzt.append("parse_sfo liest eine gueltige SFO nicht: %r"
+                                % (gelesen,))
+        except Exception as exc:
+            verletzt.append("Gegenprobe parse_sfo: %s" % type(exc).__name__)
+
+        # -- 5) Der Waechter stoert nie, was er misst ---------------------
+        #
+        # Eine Messung, die den gemessenen Vorgang zum Absturz bringt, waere
+        # schlimmer als gar keine Messung.
+        geprueft += 1
+        try:
+            waechter = FortschrittsWaechter()
+            for zeit, balken in ((0.0, 0.0), (1.0, None), (2.0, "x"),
+                                 (3.0, float("nan")), (4.0, 50.0),
+                                 (40.0, 50.0), (41.0, 100.0)):
+                waechter.beobachte(balken, "?", "Probe", jetzt=zeit)
+            waechter.abschliessen()
+            waechter.befunde()
+            waechter.bericht()
+        except Exception as exc:
+            verletzt.append("Fortschritts-Waechter wirft: %s" % type(exc).__name__)
+
+        if verletzt:
+            zeilen = ["Eigenschaften: %d Zusicherungen geprueft, %d VERLETZT"
+                      % (geprueft, len(verletzt))]
+            zeilen.extend("    ! " + m for m in verletzt[:10])
+            if len(verletzt) > 10:
+                zeilen.append("    ... und %d weitere" % (len(verletzt) - 10))
+            return zeilen
+        return ["Eigenschaften: %d Zusicherungen geprueft, alle erfuellt"
+                % geprueft]
+
+    def _diagnose_fachpruefungen(self) -> list[str]:
+        """Was die vier Werkzeugklassen ueber diesen Lauf sagen.
+
+        Aufgebaut nach dem, was Fachleute bei Anzeige, Leistung, Stabilitaet
+        und Kompatibilitaet messen. Zwei der ueblichen Klassen greifen bei
+        diesem Programm nicht, und das steht hier ausdruecklich, damit
+        niemand danach sucht:
+
+        * **Grafik-Debugger** (RenderDoc, Nsight, PIX) zeichnen Draw Calls
+          einer 3D-Schnittstelle auf. Tkinter zeichnet ueber die
+          Fensterverwaltung des Systems - es gibt keine.
+        * **Shader-Debugger** brauchen Shader. Es gibt keine.
+
+        Die uebrigen vier sind hier als Dauermessung eingebaut, statt sie von
+        Hand mit fremden Werkzeugen nachzustellen.
+        """
+        zeilen: list[str] = []
+
+        # -- Leistung (Profiler) ------------------------------------------
+        dauer = float(getattr(self, "_letzte_aufgabe_dauer_s", 0.0) or 0.0)
+        if dauer <= 0.0:
+            # Der Abschluss setzt die Dauer - im Kommandozeilenbetrieb endet
+            # der Lauf aber, bevor er dazu kommt. Der Waechter hat die Zeiten
+            # ohnehin mitgeschrieben und ueberlebt den Abbau des Fensters.
+            waechter = getattr(self, "fortschritts_waechter", None)
+            if waechter is not None and getattr(waechter, "n", 0) >= 3:
+                dauer = float(waechter.letzte_zeit - waechter.begonnen)
+        roh = int(getattr(self, "task_total_source_bytes", 0) or 0)
+        if dauer > 0.0:
+            durchsatz = (roh / dauer / 1048576.0) if roh else 0.0
+            zeilen.append("Leistung: letzte Aufgabe %.1f s, %s, %.1f MB/s"
+                          % (dauer, self._fmt_bytes(roh), durchsatz))
+        else:
+            zeilen.append("Leistung: seit dem Start lief keine Aufgabe")
+
+        # -- Speicher (Memory-Profiler) -----------------------------------
+        #
+        # Die Zahl der Tcl-Kommandos ist der verlaesslichste Leckanzeiger
+        # dieser Oberflaeche: Jede Bindung legt dort einen Eintrag an, und
+        # eine Bindung in einer <Enter>-Behandlung laesst die Liste bei jedem
+        # Ueberfahren wachsen. Genau so ein Fall wurde am 24.08.2026 gefunden
+        # (+1 je Ueberfahrt). Ueber zwoelf Runden mit je sieben Fenstern
+        # bleibt sie seither konstant.
+        kommandos = -1
+        try:
+            if self.root.winfo_exists():
+                kommandos = len(getattr(self.root, "_tclCommands", None) or [])
+        except Exception:
+            kommandos = -1
+        if kommandos < 0:
+            # Nach dem Abbau des Fensters waere jede Zahl erfunden.
+            zeilen.append("Speicher: Tcl-Kommandos nicht mehr messbar "
+                          "(Fenster bereits abgebaut)")
+        else:
+            zeilen.append("Speicher: %d Tcl-Kommandos an der Wurzel "
+                          "(waechst nur bei einem Leck)" % kommandos)
+
+        # -- Stabilitaet (Debugger, Sanitizer, Absturzbericht) ------------
+        #
+        # Fuer Ausnahmen greifen drei Haken (Hauptfaden, Arbeitsfaeden,
+        # Tk-Ereignisse). Ein harter Absturz in einer C-Erweiterung umgeht
+        # alle drei - dafuer faulthandler. Und ein Aufhaenger hinterlaesst
+        # ueberhaupt nichts, dafuer der Stapelabzug bei Stillstand.
+        try:
+            aktiv = bool(faulthandler.is_enabled())
+        except Exception:
+            aktiv = False
+        zeilen.append("Stabilitaet: Absturzabzug %s, Stapelabzug bei "
+                      "Stillstand ab %.0f s"
+                      % ("aktiv" if aktiv else "AUS", self._STAPELABZUG_AB_S))
+        abzug = os.path.join(tempfile.gettempdir(), "ps5converter_absturz.txt")
+        try:
+            gross = os.path.getsize(abzug) if os.path.isfile(abzug) else 0
+        except OSError:
+            gross = 0
+        if gross > 0:
+            zeilen.append("  ACHTUNG: %s ist nicht leer (%s) - dort steht ein "
+                          "frueherer harter Absturz." % (abzug, self._fmt_bytes(gross)))
+        else:
+            zeilen.append("  kein harter Absturz aufgezeichnet")
+
+        # -- Kompatibilitaet (Virtualisierung, Testfarm) ------------------
+        #
+        # Auf diesem Rechner laesst sich nur eine Plattform pruefen. Die
+        # anderen beiden baut und prueft der CI-Lauf auf fremder Hardware -
+        # bei macOS auf echten Apple-Geraeten, weil Signatur und
+        # Architekturwahl sich anders nicht belegen lassen.
+        # Aufhaenger von aussen untersuchen.
+        #
+        # Steht das Fenster, ist aus dem Programm heraus nichts mehr zu
+        # holen - es kommt ja nicht mehr dazu. Ein Stichproben-Profiler
+        # haengt sich von aussen an den laufenden Prozess und zeigt, wo
+        # jeder Faden steht. Dafuer braucht man die Prozessnummer, und die
+        # steht hier, damit sie im Bericht mitkommt.
+        zeilen.append("  Prozess %d - haengt das Fenster, hilft von aussen:"
+                      % os.getpid())
+        zeilen.append("    py-spy dump --pid %d        (Stapel aller Faeden)"
+                      % os.getpid())
+        zeilen.append("    py-spy top  --pid %d        (wo die Zeit bleibt)"
+                      % os.getpid())
+
+        # Pythons Entwicklungsmodus ist das Naechste zu einem Sanitizer:
+        # Er meldet unter anderem nicht geschlossene Dateien und riskante
+        # Umwandlungen sofort, statt sie zu verschlucken.
+        try:
+            entwicklung = bool(sys.flags.dev_mode)
+        except Exception:
+            entwicklung = False
+        zeilen.append("  Entwicklungsmodus (-X dev): %s"
+                      % ("an" if entwicklung else "aus"))
+
+        zeilen.append("Kompatibilitaet: hier %s, Python %s"
+                      % (platform.system() or "?", platform.python_version()))
+        zeilen.append("  Linux und macOS (arm64 + Intel) baut und prueft der "
+                      "CI-Lauf, siehe .github/workflows/macos-buendel.yml")
+
+        # -- Eigenschaften (eigenschaftsbasiertes Testen) -----------------
+        zeilen.extend(self._diagnose_eigenschaften())
+
+        return zeilen
+
+    #: Ab so viel Prozent unter der besten je gemessenen Geschwindigkeit
+    #: gilt ein Lauf als Rueckschritt. 20 % ist der Wert, den die
+    #: Benchmark-Waechter in Bauketten voreinstellen. Darunter ueberwiegt
+    #: das Rauschen des Datentraegers: Zwischen zwei Laeufen derselben
+    #: Quelle lagen am 24.08.2026 bis zu 12 % Unterschied.
+    _RUECKSCHRITT_AB_PROZENT: float = 20.0
+
+    def _diagnose_doktor(self) -> list[str]:
+        """Die Umgebungspruefung mit den Pfaden dieser Sitzung."""
+        try:
+            temp = self.temp_path.get()
+        except Exception:
+            temp = ""
+        try:
+            ziel = self.dest_path.get()
+        except Exception:
+            ziel = ""
+        return umgebung_doktor(temp, ziel)
+
+    def _diagnose_optimierung(self) -> list[str]:
+        """Die Optimierungsseite: Geschwindigkeit, Groesse, Abhaengigkeiten.
+
+        Die Regel dahinter lautet: erst messen, dann optimieren. Deshalb
+        steht hier keine Empfehlung ohne Zahl dahinter.
+
+        Der Rueckschrittalarm ist das, was in einer Baukette ein
+        Benchmark-Waechter tut: Er merkt sich die beste je gemessene
+        Geschwindigkeit je Kompressionsstufe und schlaegt an, wenn ein Lauf
+        deutlich darunter bleibt. Ohne diesen Vergleich faellt ein
+        schleichender Verlust nicht auf - eine Aufgabe, die frueher 30 s
+        brauchte und jetzt 45 s, fuehlt sich beim Zusehen gleich an.
+
+        Am Ende steht ausdruecklich, was bei diesem Programm nicht greift.
+        Sonst wird immer wieder danach gesucht.
+        """
+        zeilen: list[str] = []
+
+        # -- Geschwindigkeit und Rueckschrittalarm ------------------------
+        dauer = float(getattr(self, "_letzte_aufgabe_dauer_s", 0.0) or 0.0)
+        quellbytes = int(getattr(self, "task_total_source_bytes", 0) or 0)
+        try:
+            stufe = str(self.compression_level_var.get() or "").strip()
+        except Exception:
+            stufe = ""
+        if dauer > 0.0 and quellbytes > 0:
+            durchsatz = quellbytes / dauer / 1048576.0
+            schluessel = "opt_durchsatz_%s" % (stufe or "unbekannt")
+            try:
+                bestwert = float(self._load_setting(schluessel, 0.0) or 0.0)
+            except (TypeError, ValueError):
+                bestwert = 0.0
+            zeilen.append("Durchsatz: %.1f MB/s (%s in %.1f s, Stufe %s)"
+                          % (durchsatz, self._fmt_bytes(quellbytes), dauer,
+                             stufe or "unbekannt"))
+            if bestwert <= 0.0:
+                zeilen.append("  erster Messwert dieser Stufe - ab jetzt der "
+                              "Vergleichswert")
+            else:
+                abfall = (bestwert - durchsatz) / bestwert * 100.0
+                zeilen.append("  bester Lauf bisher: %.1f MB/s (%+.0f %%)"
+                              % (bestwert, -abfall))
+                if abfall >= self._RUECKSCHRITT_AB_PROZENT:
+                    zeilen.append("  ACHTUNG: %.0f %% langsamer als der beste "
+                                  "Lauf - das ist mehr als Messrauschen."
+                                  % abfall)
+            if durchsatz > bestwert:
+                try:
+                    self._save_setting(schluessel, round(durchsatz, 2))
+                except Exception:
+                    pass
+        else:
+            zeilen.append("Durchsatz: seit dem Start lief keine Aufgabe")
+
+        # -- Wohin die Groesse geht ---------------------------------------
+        #
+        # Das Gegenstueck zu Bloaty: Bei einem PyInstaller-Bau verteilt sich
+        # die Auslieferung auf drei Toepfe. Seit v1.8.94 liegen zwei davon
+        # neben der EXE statt darin - die EXE wird dadurch kleiner, der
+        # Ordner insgesamt nicht.
+        def _ordnergroesse(pfad):
+            gesamt, anzahl = 0, 0
+            try:
+                for wurzel, _unter, dateien in os.walk(pfad):
+                    for name in dateien:
+                        try:
+                            gesamt += os.path.getsize(os.path.join(wurzel, name))
+                            anzahl += 1
+                        except OSError:
+                            pass
+            except OSError:
+                pass
+            return gesamt, anzahl
+
+        # ``sys.argv[0]`` waere falsch: Beim Aufruf aus einem Skript heraus
+        # stand dort das Skript (1,9 KB) statt des Programms.
+        eigen_pfad = sys.executable if getattr(sys, "frozen", False) else __file__
+        try:
+            eigen = os.path.getsize(os.path.abspath(eigen_pfad))
+        except (OSError, NameError):
+            eigen = 0
+        if eigen:
+            zeilen.append("Groesse: %s %s"
+                          % ("EXE" if getattr(sys, "frozen", False) else "Quelltext",
+                             self._fmt_bytes(eigen)))
+        for beschriftung, ordner in (
+                ("Hintergrundbilder", self._BACKGROUND_BUNDLED_DIR),
+                ("AMPR EMU + PlayGo", self._AMPR_BUNDLED_STORE_DIR)):
+            pfad = self._mitgeliefert_finden(ordner)
+            if not pfad:
+                zeilen.append("  %s: nicht gefunden" % beschriftung)
+                continue
+            gross, anzahl = _ordnergroesse(pfad)
+            zeilen.append("  %s: %s in %d Dateien"
+                          % (beschriftung, self._fmt_bytes(gross), anzahl))
+
+        # -- Abhaengigkeiten, bei denen die Fassung die Zeit aendert ------
+        #
+        # Nur diese vier. Alles Uebrige steht im Abschnitt Laufzeitumgebung
+        # und aendert an der Geschwindigkeit nichts.
+        teile = []
+        for name, modul, feld in (("zlib", "zlib", "ZLIB_RUNTIME_VERSION"),
+                                  ("zstandard", "zstandard", "__version__"),
+                                  ("Pillow", "PIL", "__version__"),
+                                  ("cryptography", "cryptography", "__version__")):
+            try:
+                m = importlib.import_module(modul)
+                teile.append("%s %s" % (name, getattr(m, feld, "vorhanden")))
+            except Exception:
+                teile.append("%s fehlt" % name)
+        zeilen.append("Rechenbibliotheken: %s" % ", ".join(teile))
+
+        # -- Womit sich nachmessen laesst ---------------------------------
+        #
+        # In der EXE fehlen diese alle, und das ist richtig so: Sie gehoeren
+        # zur Entwicklung, nicht zur Auslieferung. Die Zeile ist dann nur
+        # eine Feststellung, kein Mangel.
+        # ``import importlib`` allein bringt das Untermodul nicht mit.
+        import importlib.util as _ilu
+        werkzeuge = []
+        for name, art, ziel in (("ruff", "befehl", "ruff"),
+                                ("py-spy", "befehl", "py-spy"),
+                                ("hypothesis", "modul", "hypothesis"),
+                                ("coverage", "modul", "coverage")):
+            try:
+                if art == "befehl":
+                    # ``which`` sucht nur im PATH. Wird der Interpreter aus
+                    # einer virtuellen Umgebung heraus direkt aufgerufen,
+                    # steht deren Skriptordner dort nicht drin - ruff und
+                    # coverage galten deshalb als fehlend, obwohl sie
+                    # danebenlagen.
+                    da = bool(shutil.which(ziel))
+                    if not da:
+                        neben = os.path.dirname(sys.executable)
+                        da = any(os.path.isfile(os.path.join(neben, ziel + e))
+                                 for e in ("", ".exe", ".cmd"))
+                else:
+                    da = _ilu.find_spec(ziel) is not None
+            except Exception:
+                da = False
+            werkzeuge.append("%s %s" % (name, "da" if da else "fehlt"))
+        zeilen.append("Messwerkzeuge: %s" % ", ".join(werkzeuge))
+
+        # -- Testabdeckung ------------------------------------------------
+        #
+        # Sie hier zu messen ginge nicht: Dazu muesste die gesamte Testreihe
+        # laufen, und das dauert Minuten. Gelesen wird deshalb das Ergebnis
+        # des letzten Laufs. Steht dort ein altes Datum, ist die Zahl nicht
+        # falsch, sondern nur von damals - und das steht dann auch da.
+        abdeckung = os.path.join(os.path.dirname(os.path.abspath(
+            __file__ if not getattr(sys, "frozen", False) else sys.executable)),
+            "coverage.json")
+        if os.path.isfile(abdeckung):
+            try:
+                with open(abdeckung, "r", encoding="utf-8") as f:
+                    daten = json.load(f)
+                gesamt = daten.get("totals", {})
+                anteil = float(gesamt.get("percent_covered", 0.0))
+                fehlend = int(gesamt.get("missing_lines", 0))
+                alter_tage = (time.time() - os.path.getmtime(abdeckung)) / 86400.0
+                zeilen.append("Testabdeckung: %.1f %% (%d Zeilen ungeprueft, "
+                              "gemessen vor %.1f Tagen)"
+                              % (anteil, fehlend, alter_tage))
+            except (OSError, ValueError, KeyError) as exc:
+                zeilen.append("Testabdeckung: coverage.json unlesbar (%s)"
+                              % type(exc).__name__)
+        else:
+            zeilen.append("Testabdeckung: noch nicht gemessen "
+                          "(coverage json -o coverage.json)")
+        if not getattr(sys, "frozen", False):
+            zeilen.append("  ruff check --fix .")
+            zeilen.append("  coverage run -m unittest discover -p \"test_*.py\"")
+            zeilen.append("  python -m unittest test_eigenschaften")
+            zeilen.append("  python tools\\mutationstest.py"
+                          "        (sind die Tests etwas wert?)")
+            zeilen.append("  git bisect run powershell -NoProfile -File "
+                          "tools\\bisect_pruefung.ps1 <testdatei>")
+
+        # -- Was hier nicht greift, und warum -----------------------------
+        zeilen.append("Nicht anwendbar auf dieses Programm:")
+        zeilen.append("  PGO, LTO, BOLT, Propeller - betreffen den "
+                      "Interpreter, nicht diesen Quelltext.")
+        zeilen.append("    Die Bauten von python.org sind bereits mit PGO und "
+                      "LTO uebersetzt.")
+        zeilen.append("  ccache, Ninja, mold, lld - hier wird nichts "
+                      "uebersetzt, nur verpackt.")
+        zeilen.append("  Compiler Explorer - das Gegenstueck heisst hier "
+                      "dis.dis().")
+        zeilen.append("  jemalloc, mimalloc, tcmalloc - CPython bringt "
+                      "pymalloc mit und tauscht ihn nicht aus.")
+        zeilen.append("  EXPLAIN ANALYZE, pgBadger, N+1-Suchen - es gibt "
+                      "keine Datenbank, nur JSON-Dateien.")
+        zeilen.append("  Lighthouse, Bundle-Analyzer, Brotli - es gibt keine "
+                      "Webanwendung.")
+        zeilen.append("  k6, Locust, Jaeger, OpenTelemetry - ein Prozess auf "
+                      "einem Rechner, kein Dienst,")
+        zeilen.append("    keine verteilte Kette. Der Ersatz ist der "
+                      "Stapelabzug im Abschnitt Fachpruefungen.")
+        zeilen.append("  basisu, astcenc, meshoptimizer, RGA - es wird nichts "
+                      "gerendert.")
+        zeilen.append("  strace, ltrace, eBPF, bpftrace, DTrace - Linux- und "
+                      "BSD-Kernwerkzeuge.")
+        zeilen.append("    Unter Windows waere Process Monitor das "
+                      "Gegenstueck; er ist nicht eingebaut,")
+        zeilen.append("    sondern von Hand zu starten, wenn eine Datei "
+                      "oder ein Schluessel fehlt.")
+        zeilen.append("  Wireshark, mitmproxy, Burp - es gibt eine einzige "
+                      "Verbindung: FTP zur eigenen")
+        zeilen.append("    Konsole im Heimnetz, unverschluesselt und ohne "
+                      "Anmeldedaten. Nichts zu entschluesseln.")
+        zeilen.append("  Ghidra, IDA, x64dbg, objdump - es entsteht kein "
+                      "Maschinencode aus diesem Quelltext.")
+        zeilen.append("  Jepsen, loom, Antithesis - ein Prozess auf einem "
+                      "Rechner, keine verteilte Datenbank.")
+        zeilen.append("  TLA+, Dafny, Z3 - lohnen, wo ein Fehler richtig "
+                      "teuer ist. Dieselbe Fehlerklasse")
+        zeilen.append("    faengt hier Hypothesis, und zwar erheblich "
+                      "billiger.")
+        zeilen.append("  Pact, Schemathesis, WireMock - es gibt keine "
+                      "Schnittstelle zwischen zwei Diensten.")
+        zeilen.append("  Feature Flags, Canary, Blue/Green - ausgeliefert "
+                      "wird eine Datei, nicht ein Dienst.")
+
+        # -- Anwendbar, aber von Hand --------------------------------------
+        #
+        # Diese drei gehoeren nicht in einen Bericht, der bei jedem Oeffnen
+        # entsteht: Zwei brauchen das Netz, einer braucht Minuten.
+        zeilen.append("Anwendbar, aber nicht eingebaut (bewusst):")
+        zeilen.append("  gitleaks / trufflehog - suchen versehentlich "
+                      "eingecheckte Zugangsdaten.")
+        zeilen.append("    Im Bericht selbst werden sie bereits geschwaerzt "
+                      "(siehe Einstellungen oben).")
+        zeilen.append("  syft + grype - Stueckliste und CVE-Abgleich; "
+                      "braucht eine Datenbank aus dem Netz.")
+        zeilen.append("  Reproducible Builds - zweimal bauen und die "
+                      "Pruefsummen vergleichen.")
+        zeilen.append("    Ungemessen: PyInstaller schreibt Zeitstempel mit, "
+                      "bitgleich wird es vermutlich nicht.")
+
+        return zeilen
+
+    def _diagnose_fortschritt(self) -> list[str]:
+        """Was die Fortschrittsanzeige waehrend der letzten Aufgabe zeigte.
+
+        Gemessen wird nicht, was der Code aufruft, sondern was im Fenster
+        steht - Balken, Prozentzahl und Statuszeile, bei jedem Takt. Genau
+        so wurden am 24.08.2026 zwei Fehler im exFAT-Weg gefunden, die
+        vorher niemandem aufgefallen waren.
+        """
+        waechter = getattr(self, "fortschritts_waechter", None)
+        if waechter is None:
+            return ["(kein Waechter vorhanden)"]
+        return waechter.bericht()
+
     @staticmethod
     def _diagnose_protokolldatei(zeilen_anzahl: int = 80) -> list[str]:
         """Die letzten Zeilen aus ps5converter.log im TEMP-Ordner.
@@ -26905,6 +28418,10 @@ class PS5ConverterGUI:
             ("diagnostics.report_section_display", self._diagnose_anzeige),
             ("diagnostics.report_section_layout", self._diagnose_darstellung),
             ("diagnostics.report_section_stability", self._diagnose_laufruhe),
+            ("diagnostics.report_section_progress", self._diagnose_fortschritt),
+            ("diagnostics.report_section_checks", self._diagnose_fachpruefungen),
+            ("diagnostics.report_section_optimization", self._diagnose_optimierung),
+            ("diagnostics.report_section_doctor", self._diagnose_doktor),
             ("diagnostics.report_section_runtime", self._diagnose_umgebung),
             ("diagnostics.report_section_inventory", self._diagnose_werkzeugbestand),
             ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
@@ -35728,6 +37245,22 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
             return "--ampr-host ist für --ampr-action ampr_ftp_index erforderlich."
         if not args.ampr_remote_path:
             return "--ampr-remote-path ist für --ampr-action ampr_ftp_index erforderlich."
+    # Die FTP-Schalter wertet nur ampr_ftp_index aus. Wer sie einer anderen
+    # Aktion mitgibt, erwartet einen Upload - und bekam bis v1.8.93 keinen,
+    # ohne jede Meldung. Lieber klar abweisen als still ignorieren.
+    if action != "ampr_ftp_index":
+        ungenutzt = [name for name, wert in (
+            ("--ampr-host", args.ampr_host),
+            ("--ampr-remote-path", args.ampr_remote_path),
+            ("--ampr-no-upload", args.ampr_no_upload),
+        ) if wert]
+        if ungenutzt:
+            return (
+                "%s wirkt nur mit --ampr-action ampr_ftp_index. "
+                "Die Aktion %s laedt nichts hoch."
+                % (", ".join(ungenutzt), action)
+            )
+
     for name in ("ampr_lib",):
         for value in getattr(args, name, []) or []:
             if value not in ("libSceAmpr.sprx", "libScePlayGo.sprx"):
@@ -36018,6 +37551,21 @@ if __name__ == "__main__":
     # UAC-Abfrage koennte im Terminal niemand beantworten.
     if len(sys.argv) > 1 and sys.argv[1] == "--anzeige-diagnose":
         sys.exit(_run_anzeige_diagnose(sys.argv[2:]))
+
+    # Umgebungspruefung. Steht vor der Rechtepruefung, weil sie gerade
+    # dann gebraucht wird, wenn etwas nicht laeuft - eine UAC-Abfrage
+    # waere dabei im Weg. Der Rueckgabewert ist 1, sobald ein echter
+    # Fehler gefunden wurde, damit ein Skript darauf reagieren kann.
+    if len(sys.argv) > 1 and sys.argv[1] in ("--doktor", "--doctor"):
+        _prepare_cli_streams()
+        temp_arg = sys.argv[2] if len(sys.argv) > 2 else ""
+        ziel_arg = sys.argv[3] if len(sys.argv) > 3 else ""
+        _zeilen = umgebung_doktor(temp_arg, ziel_arg, gruendlich=True)
+        print("PS5 Dump & Image Converter %s - Umgebungspruefung" % APP_VERSION)
+        print("")
+        for _z in _zeilen:
+            print(_z)
+        sys.exit(1 if any(z.startswith(DOKTOR_FEHLER) for z in _zeilen) else 0)
 
     # MIT-Lizenz zuerst registrieren (vor UAC-Logik und vor GUI-Start).
     _mit_ok, _mit_msg = _register_mit_license_runtime()

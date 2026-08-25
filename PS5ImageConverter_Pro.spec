@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.93
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.94
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -89,11 +89,20 @@ if os.path.isdir(_ufs2tool):
         if os.path.isdir(_bau):
             _datas.append((_bau, os.path.join('UFS2Tool-4.1', _ziel)))
 
-# Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten. Dadurch steht der
-# Versionsspeicher in Aufgabe 7 ohne manuelle Ordnerwahl bereit.
-_ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
-if os.path.isdir(_ampr_store):
-    _datas.append((_ampr_store, 'PlayGo & AMPR_EMU'))
+# Die AMPR-EMU-/PlayGo-Versionen werden NICHT mehr eingebettet.
+#
+# Seit v1.8.94 liegt der Ordner 'PlayGo & AMPR_EMU' neben der
+# Programmdatei. Zwei Gruende:
+#
+# 1. Eine neue AMPR-Fassung laesst sich hineinlegen, ohne das Programm
+#    neu zu bauen. Bis dahin brauchte jede neue Version einen Bau.
+# 2. Die eingebetteten Daten landen zur Laufzeit unter sys._MEIPASS,
+#    einem Ordner, der beim Beenden geloescht wird - dort etwas
+#    abzulegen war ohnehin sinnlos.
+#
+# Gefunden wird er von _bundled_resource(), das drei Orte absucht und
+# zuletzt den Ordner der ausfuehrbaren Datei nimmt. Das Kopieren
+# uebernimmt das Bauskript.
 
 # Ersatzbibliotheken fuer den Backport einbetten (je Firmware ein Satz).
 # Ohne sie startet ein herabgesetztes Spiel nicht: Es erwartet Bibliotheken,
@@ -284,7 +293,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.93',
+    name='PS5_Dump_Image_Converter_v1.8.94',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

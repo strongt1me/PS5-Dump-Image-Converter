@@ -213,6 +213,18 @@ if [ ! -f "$ERGEBNIS" ]; then
 fi
 chmod +x "$ERGEBNIS"
 
+# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 nicht mehr im Programm, sondern
+# liegt daneben - so laesst sich eine neue AMPR-Fassung hineinlegen, ohne neu
+# zu bauen. _bundled_resource() sucht zuletzt im Ordner der ausfuehrbaren
+# Datei; ohne diesen Schritt faende Aufgabe 7 hier keine Versionen mehr.
+if [ -d "PlayGo & AMPR_EMU" ]; then
+    rm -rf "dist/PlayGo & AMPR_EMU"
+    cp -r "PlayGo & AMPR_EMU" "dist/PlayGo & AMPR_EMU"
+    meldung "      AMPR-/PlayGo-Ordner neben das Programm gelegt." "$gruen"
+else
+    meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
+fi
+
 echo
 meldung "=============================================" "$gruen"
 meldung "  BUILD ERFOLGREICH!" "$gruen"

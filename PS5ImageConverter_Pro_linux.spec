@@ -123,10 +123,13 @@ if os.path.isdir(_ufs2tool):
         if os.path.isdir(_bau):
             _datas.append((_bau, os.path.join('UFS2Tool-4.1', _ziel)))
 
-# Mitgelieferte AMPR-EMU-/PlayGo-Versionen einbetten.
-_ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
-if os.path.isdir(_ampr_store):
-    _datas.append((_ampr_store, 'PlayGo & AMPR_EMU'))
+# Die AMPR-EMU-/PlayGo-Versionen werden NICHT mehr eingebettet.
+#
+# Seit v1.8.94 liegt der Ordner 'PlayGo & AMPR_EMU' neben der
+# Programmdatei, damit sich eine neue AMPR-Fassung hineinlegen laesst,
+# ohne das Programm neu zu bauen. Gefunden wird er von
+# _bundled_resource(), das zuletzt den Ordner der ausfuehrbaren Datei
+# absucht. Das Kopieren uebernimmt das Bauskript.
 
 # Ersatzbibliotheken fuer den Backport einbetten (je Firmware ein Satz).
 _backport_libs = os.path.join(_here, 'Backport_Fakelibs')

@@ -60,3 +60,8 @@ Thumbs.db
 desktop.ini
 .DS_Store
 ._*
+
+# Messwerte der Testabdeckung - entstehen bei jedem coverage-Lauf neu.
+# Die Diagnose liest coverage.json, wenn es da ist; fehlt es, sagt sie das.
+.coverage
+coverage.json
