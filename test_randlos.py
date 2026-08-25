@@ -214,6 +214,16 @@ class WidgetbaumTests(unittest.TestCase):
         treffer = []
 
         def gehe(w):
+            # Fremde Fenster ueberspringen. Der Test heisst "im
+            # Hauptfenster", lief aber ueber die ganze Tk-Wurzel - und im
+            # vollen Durchlauf haengen dort die Dialoge aller anderen
+            # Testdateien mit drin. Am 25.08.2026 kostete das drei
+            # Falschmeldungen: die Farbvorschau-Kaestchen des
+            # Design-Dialogs (je eines fuer dunkel, mittel, hell) tragen
+            # absichtlich einen duennen Rand um das Farbfeld. Ein Rahmen
+            # dort ist gewollt; im Hauptfenster ist er es nicht.
+            if w is not self.wurzel and w.winfo_class() == "Toplevel":
+                return
             try:
                 if w.winfo_ismapped():
                     gruende = []

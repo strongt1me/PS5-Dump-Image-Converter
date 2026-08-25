@@ -65,7 +65,7 @@ from zipfile import ZipFile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageFilter, ImageStat, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageStat, ImageTk
 
 try:
     # Optionale Drag & Drop-Unterstützung (Quelle/Ziel/Temp per Dateimanager ziehen).
@@ -6101,6 +6101,9 @@ class PS5ConverterGUI:
             self.card_bg_label.place(x=-30, y=-30, relwidth=1, relheight=1, width=60, height=60)
             self.card_bg_label.lower()
             path_card.bind("<Configure>", self._on_card_configure)
+        # Runde Ecken haengen NICHT am Hintergrundbild: Auch ohne Bild soll
+        # die Karte rund sein, dann eben gegen die einfarbige Flaeche.
+        path_card.bind("<Configure>", self._karten_ecken_planen, add="+")
 
         # Quelle
         self.src_title = ttk.Label(
@@ -6640,6 +6643,7 @@ class PS5ConverterGUI:
 
         # Console (Dark Console Style)
         console_frame = ttk.Frame(content_area, style="Card.TFrame", padding=1)
+        self.console_frame = console_frame
         console_frame.grid(row=4, column=0, sticky="nsew")
         console_frame.grid_columnconfigure(0, weight=1)
         console_frame.grid_rowconfigure(0, weight=1)
@@ -9459,6 +9463,143 @@ class PS5ConverterGUI:
         base_color = Image.new("RGB", img.size, self._COLORS["bg_card"])
         return Image.blend(base_color, img, opacity)
 
+    #: Eckenradius der Karten im Hauptbereich.
+    _KARTEN_ECKE = 14
+
+    #: Wie fein die Rundung gerechnet wird, bevor sie verkleinert wird.
+    #: Ohne diese Ueberabtastung stehen die Ecken als Treppe da.
+    _ECKE_FEIN = 4
+
+    def _eckmaske(self, ecke: str, radius: int) -> "Image.Image":
+        """Viertelkreis als Maske: weiss = Karte, schwarz = Hintergrund."""
+        f = self._ECKE_FEIN
+        gross = radius * f
+        maske = Image.new("L", (gross, gross), 0)
+        zeichner = ImageDraw.Draw(maske)
+        d = 2 * gross - 1
+        kasten, von, bis = {
+            "ol": ((0, 0, d, d), 180, 270),
+            "or": ((-gross, 0, gross - 1, d), 270, 360),
+            "ul": ((0, -gross, d, gross - 1), 90, 180),
+            "ur": ((-gross, -gross, gross - 1, gross - 1), 0, 90),
+        }[ecke]
+        zeichner.pieslice(kasten, von, bis, fill=255)
+        return maske.resize((radius, radius), Image.LANCZOS)
+
+    def _kartenecken_runden(self, karte, polster: int, flaeche: str = "",
+                            radius: int = 0) -> None:
+        """Legt vier Eckbilder ueber die Ecken einer Karte.
+
+        **Warum ueberhaupt Bilder.** Tk kennt keine runden Ecken; ein Frame
+        ist immer ein Rechteck. Was hier passiert, ist deshalb ein Trick mit
+        zwei Quellen: Ausserhalb des Viertelkreises steht, was **hinter** der
+        Karte liegt - der Bildausschnitt des Inhaltsbereichs an genau dieser
+        Stelle -, innerhalb die Karte selbst. Weil beide Quellen aus
+        demselben Bild stammen, sitzt der Uebergang nahtlos; die Ecke sieht
+        weggeschnitten aus, nicht ueberklebt.
+
+        Args:
+            karte: Die Flaeche, deren Ecken rund werden sollen.
+            polster: Das ``padding`` der Karte. ``place`` rechnet innerhalb
+                eines ttk.Frame ab der **gepolsterten** Kante, nicht ab der
+                aeusseren - ohne diesen Ausgleich saessen die Bilder um
+                genau diesen Betrag zu weit innen.
+            flaeche: Farbe der Kartenflaeche. Leer heisst: den geblendeten
+                Bildausschnitt der Karte nehmen (so wie ``card_bg_label``).
+            radius: Abweichender Radius; 0 nimmt ``_KARTEN_ECKE``.
+        """
+        if karte is None or not karte.winfo_exists():
+            return
+        r = radius or self._KARTEN_ECKE
+        breite, hoehe = karte.winfo_width(), karte.winfo_height()
+        if breite <= 2 * r or hoehe <= 2 * r:
+            return
+
+        inhalt = getattr(self, "content_area", None)
+        hinten = None
+        if self._bg_image_cache is not None and inhalt is not None:
+            try:
+                lage = (karte.winfo_rootx() - inhalt.winfo_rootx(),
+                        karte.winfo_rooty() - inhalt.winfo_rooty())
+                hinten = self._flaechen_ausschnitt(
+                    self._bg_image_cache, inhalt, lage, breite, hoehe)
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Eckenhintergrund nicht berechenbar: %s", exc)
+        if hinten is None:
+            hinten = Image.new("RGB", (breite, hoehe),
+                               self._COLORS["bg_main"])
+
+        if flaeche:
+            vorn = Image.new("RGB", (breite, hoehe), flaeche)
+        else:
+            try:
+                vorn = self._blend_bg_image_for_card(hinten)
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Kartenflaeche nicht berechenbar: %s", exc)
+                vorn = Image.new("RGB", (breite, hoehe),
+                                 self._COLORS["bg_card"])
+
+        bilder = getattr(karte, "_eckbilder", None)
+        if bilder is None:
+            bilder = {}
+            karte._eckbilder = bilder
+
+        stellen = {
+            "ol": (0, 0, {"x": -polster, "y": -polster}),
+            "or": (breite - r, 0, {"relx": 1.0, "x": polster - r,
+                                   "y": -polster}),
+            "ul": (0, hoehe - r, {"x": -polster, "rely": 1.0,
+                                  "y": polster - r}),
+            "ur": (breite - r, hoehe - r, {"relx": 1.0, "x": polster - r,
+                                           "rely": 1.0, "y": polster - r}),
+        }
+        # Beide Quellen auf RGB bringen. Das Hintergrundbild wird beim Laden
+        # zwar schon mit convert("RGB") flachgelegt, aber ``composite``
+        # verlangt gleiche Modi, und ein einziger RGBA-Weg irgendwo waere
+        # sonst ein stiller Ausfall der Ecken statt einer runden Karte.
+        if hinten.mode != "RGB":
+            hinten = hinten.convert("RGB")
+        if vorn.mode != "RGB":
+            vorn = vorn.convert("RGB")
+
+        for ecke, (x, y, lageargs) in stellen.items():
+            kasten = (x, y, x + r, y + r)
+            stueck = Image.composite(vorn.crop(kasten), hinten.crop(kasten),
+                                     self._eckmaske(ecke, r))
+            foto = ImageTk.PhotoImage(stueck)
+            schild = bilder.get(ecke)
+            if schild is None or not schild.winfo_exists():
+                schild = tk.Label(karte, bd=0, highlightthickness=0)
+                bilder[ecke] = schild
+            schild.configure(image=foto)
+            schild._bild = foto          # Referenz halten, sonst weg
+            schild.place(width=r, height=r, **lageargs)
+            schild.lift()
+
+    def _karten_ecken_nachziehen(self) -> None:
+        """Rundet beide Karten des Hauptbereichs neu."""
+        try:
+            self._kartenecken_runden(getattr(self, "path_card", None), 30)
+            self._kartenecken_runden(getattr(self, "console_frame", None), 1,
+                                     flaeche=self._COLORS["console_bg"])
+        except Exception as exc:                           # noqa: BLE001
+            logger.debug("Kartenecken nicht nachziehbar: %s", exc)
+
+    def _karten_ecken_planen(self, _ereignis=None) -> None:
+        """Buendelt die Anforderungen - waehrend einer Groessenaenderung
+        kommen sonst dutzende Configure-Ereignisse und jedes rechnet vier
+        Bilder neu."""
+        if getattr(self, "_ecken_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._ecken_after_id)
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("after_cancel (Ecken) fehlgeschlagen: %s", exc)
+        self._ecken_after_id = self.root.after(90, self._ecken_jetzt)
+
+    def _ecken_jetzt(self) -> None:
+        self._ecken_after_id = None
+        self._karten_ecken_nachziehen()
+
     def _compute_card_bg_image(
         self, width: int, height: int, offset: tuple[int, int] = (0, 0)
     ) -> "Image.Image | None":
@@ -9540,6 +9681,7 @@ class PS5ConverterGUI:
             self.card_bg_photo = ImageTk.PhotoImage(card_blended)
             self.card_bg_label.config(image=self.card_bg_photo)
             self._last_card_bg_resize_size = (width, height)
+            self._karten_ecken_planen()
         except Exception as exc:
             logger.debug("Karten-Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
         self._redraw_card_captions()
@@ -37250,6 +37392,9 @@ class PS5ConverterGUI:
         self._theme_titelleiste_nachziehen()
         self._theme_rundknoepfe_nachziehen()
         self._theme_drehknopf_nachziehen()
+        # Die Ecken tragen Bildausschnitte beider Flaechen - nach einem
+        # Designwechsel stimmen die alten nicht mehr.
+        self._karten_ecken_planen()
         self._theme_sidebar_fuss_nachziehen()
         self._theme_menues_nachziehen()
 
