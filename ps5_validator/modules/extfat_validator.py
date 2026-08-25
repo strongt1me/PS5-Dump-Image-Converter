@@ -48,7 +48,7 @@ class ExtfatValidator(BaseValidator):
         try:
             file_size = fpath.stat().st_size
         except OSError as exc:
-            result.set_failed(f"Dateigrösse nicht lesbar: {exc}")
+            result.set_failed(f"Dateigröße nicht lesbar: {exc}")
             return result
 
         if file_size == 0:
@@ -62,18 +62,17 @@ class ExtfatValidator(BaseValidator):
         # ── exFAT Boot-Sektor parsen ─────────────────────────────────────────
         parse_ok     = False
         cluster_count = 0
-        volume_label  = ""
         try:
             with open(fpath, "rb") as fh:
-                boot = fh.read(512)
+                boot = fh.read(SECTOR_SIZE)
 
-            if len(boot) >= 512:
+            if len(boot) >= SECTOR_SIZE:
                 # OEM-Name prüfen (Offset 3, 8 Bytes)
                 oem = boot[3:11]
                 if oem == EXFAT_OEM_NAME:
                     parse_ok = True
                     # Boot-Signatur prüfen (Offset 510)
-                    if boot[510:512] != EXFAT_BOOT_SIG:
+                    if boot[SECTOR_SIZE - 2:SECTOR_SIZE] != EXFAT_BOOT_SIG:
                         result.add_error("Boot-Signatur ungültig (0x55AA erwartet).")
                     # Cluster-Anzahl (Offset 0x5C, 4 Bytes LE)
                     if len(boot) >= 0x60:

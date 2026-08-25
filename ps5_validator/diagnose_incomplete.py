@@ -21,7 +21,6 @@ Lösungen:
 
 def diagnose_incomplete_extraction(dump_path: str) -> str:
     """Analysiert einen unvollständig extrahierten PS5-Dump und gibt Tipps."""
-    import os
     from pathlib import Path
     
     dump_root = Path(dump_path)

@@ -14,7 +14,6 @@ PFSC-Block-Header (innerhalb des PFS-Images):
 """
 from __future__ import annotations
 
-import os
 import struct
 import sys
 from pathlib import Path

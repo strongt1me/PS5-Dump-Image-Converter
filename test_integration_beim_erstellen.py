@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import os
 import queue
-import shutil
 import sys
 import threading
 import unittest
@@ -31,7 +30,6 @@ PROJEKT = Path(__file__).resolve().parent
 if str(PROJEKT) not in sys.path:
     sys.path.insert(0, str(PROJEKT))
 
-import PS5ImageConverter_Pro_FINAL_revised as hauptprogramm
 from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils.i18n import STRINGS

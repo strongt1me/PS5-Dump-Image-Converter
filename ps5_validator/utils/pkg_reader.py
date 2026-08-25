@@ -200,7 +200,7 @@ def _read_cnt_header(data: bytes, base: int) -> PkgHeader:
 def _read_entry_table(data: bytes, base: int, header: PkgHeader) -> list[PkgEntry]:
     max_entries = (len(data) - (base + header.entry_table_offset)) // ENTRY_META_SIZE
     if header.entry_count > max_entries or header.entry_count > 0x10000:
-        raise PkgParseError("Entry-Tabelle ist unplausibel (Anzahl ausserhalb des gültigen Bereichs).")
+        raise PkgParseError("Entry-Tabelle ist unplausibel (Anzahl außerhalb des gültigen Bereichs).")
 
     entries: list[PkgEntry] = []
     table_start = base + header.entry_table_offset

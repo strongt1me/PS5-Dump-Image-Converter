@@ -72,7 +72,7 @@ NUR_NEU_LOGZEILE = "using cache for"
 GENERATIONEN: dict[str, dict[str, Any]] = {
     ALT: {
         "kennung": ALT,
-        "gilt_fuer": "ShadowMountPlus bis einschliesslich 1.7 alpha6",
+        "gilt_fuer": "ShadowMountPlus bis einschließlich 1.7 alpha6",
         "nicht_fuer": "1.7 alpha8 und neuer",
         # Im Spielordner wirken beide, fakelib2 hat Vorrang.
         "spiel_ordner": (FAKELIB2, FAKELIB),

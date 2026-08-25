@@ -14,7 +14,6 @@ import sys
 import os
 import ast
 import importlib
-import re
 import tempfile
 import threading
 import time
@@ -601,13 +600,6 @@ def test_ffpfsc_verification_and_task7_repack():
         source = Path("PS5ImageConverter_Pro_FINAL_revised.py").read_text(
             encoding="utf-8"
         )
-        # Log-Meldungstexte wurden im Zuge der i18n-Migration (v1.8.12) aus der
-        # Hauptdatei in ps5_validator/utils/i18n.py ausgelagert (self._t(...)-
-        # Aufrufe statt Literaltexten). Für Textsuchen deshalb beide Quellen
-        # kombinieren, damit dieser Check unabhängig vom generierten
-        # Schlüsselnamen bleibt.
-        i18n_source = Path("ps5_validator/utils/i18n.py").read_text(encoding="utf-8")
-        combined_source = source + "\n" + i18n_source
         helper_start = source.index("def _repack_nested_ffpfsc")
         helper_end = source.index(
             "# Zielverzeichnis = Verzeichnis der Originaldatei", helper_start
@@ -914,14 +906,14 @@ def test_code_quality():
         if len(issues) > 5:
             print(f"      ... und {len(issues) - 5} weitere")
     elif warnings:
-        print(f"  [OK] Keine harten Qualitätsprobleme gefunden")
+        print("  [OK] Keine harten Qualitätsprobleme gefunden")
         print(f"  [i] {len(warnings)} Stilwarnung(en), z. B.:")
         for warning in warnings[:5]:
             print(f"      - {warning}")
         if len(warnings) > 5:
             print(f"      ... und {len(warnings) - 5} weitere")
     else:
-        print(f"  [OK] Keine Qualitätsprobleme gefunden")
+        print("  [OK] Keine Qualitätsprobleme gefunden")
     
     return len(issues) == 0
 

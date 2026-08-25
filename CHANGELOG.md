@@ -2,7 +2,48 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.99):** Die Oberfläche schreibt endlich richtig Deutsch. Überall, wo bisher „fuer“, „ueber“ oder „geprueft“ stand, stehen jetzt echte Umlaute – im Protokoll des Hauptfensters, in allen Meldungen, in der Diagnose und im Handbuch.
+> **Kurz zum aktuellen Stand (v1.8.100):** Die Rechtschreibung ist vollständig: nach den Umlauten jetzt auch das ß. Aus „heisst“ wird „heißt“, aus „ausserhalb“ „außerhalb“ – aber „dass“, „muss“ und „Prozess“ bleiben natürlich, wie sie sind.
+
+---
+
+## v1.8.100 – 25.08.2026
+
+### Jetzt auch das ß
+
+Mit v1.8.99 kamen die Umlaute; hier folgt der zweite Teil. Aus
+„heisst“ wird „heißt“, aus „ausserhalb“
+„außerhalb“, aus „Grösse“
+„Größe“.
+
+Das betrifft weniger Stellen, als man denkt: **von 194 geprüften
+Wörtern brauchten 18 ein ß**. Nach kurzem Vokal bleibt es bei ss,
+und das ist der häufigere Fall – „dass“,
+„muss“, „Prozess“, „gemessen“,
+„Klasse“ und „Abschluss“ stehen unverändert.
+
+Eine Regel gibt es dabei nicht einmal im Ansatz: „Masse“ und
+„Maße“ sind dasselbe Wortbild mit verschiedener Bedeutung.
+Entschieden wurde deshalb wieder Wort für Wort.
+
+Umgestellt sind 26 Textstellen im Programm und 54 in den Dokumenten. Dabei
+kam heraus, dass ältere Changelog-Einträge noch die alte
+Schreibweise trugen – auch die sind jetzt nachgezogen. Nur im Eintrag
+zu v1.8.99 bleibt sie stehen: dort wird das Vorher zitiert.
+
+### Behoben: Der Drehknopf blieb beim Designwechsel dunkel
+
+Der Drehknopf für die Kernzahl holte seine Farben nur einmal, beim
+Aufbau des Fensters. Wer danach auf das **helle** oder **mittlere** Design
+umschaltete, hatte einen dunkelblauen Knopf auf heller Karte sitzen. Er
+zieht jetzt mit.
+
+### Aufgeräumt
+
+Im Quelltext lag eine 1,78 MB große, vollständig ungenutzte Kopie
+einer alten MkPFS-Fassung (0.0.8) – das Programm benutzt seit Langem
+0.0.9 aus dem mitgelieferten Ordner. Zusammen mit weiteren Resten ist die
+Programmdatei dadurch **42,9 % kleiner** geworden. Für Sie ändert
+sich dadurch nichts außer der Ladezeit.
 
 ---
 
@@ -165,7 +206,7 @@ Farbe wahrgenommen wird.
 ### Die Oberfläche ist randlos
 
 Um Karten, Eingabefelder, Listen und das Protokollfenster lagen dünne Linien.
-Sie unterbrachen das durchlaufende Hintergrundbild und liessen die Oberfläche
+Sie unterbrachen das durchlaufende Hintergrundbild und ließen die Oberfläche
 unruhig wirken. **63 solcher Stellen** sind entfernt – im Hauptfenster wie in
 allen Werkzeugfenstern.
 
@@ -463,7 +504,7 @@ vorn.
 
 ## v1.8.89 – 23.08.2026
 
-### Aufgeraeumt: 95 Zeilen, die nie liefen
+### Aufgeräumt: 95 Zeilen, die nie liefen
 
 Der Programmcode wurde gezielt nach Stellen durchsucht, die nie ausgeführt
 werden. Am Verhalten ändert sich dadurch **nichts** – was nie lief, kann auch
@@ -473,7 +514,7 @@ Gefunden und entfernt:
 
 | Was | Umfang |
 | --- | --- |
-| Fuenf Funktionen, die niemand aufruft | 86 Zeilen |
+| Fünf Funktionen, die niemand aufruft | 86 Zeilen |
 | Eine Rechnung, deren Ergebnis nie gelesen wird | 8 Zeilen |
 | Reste einer ausgebauten Geschwindigkeitsanzeige | 3 Zeilen |
 
@@ -485,18 +526,18 @@ Nicht angetastet wurden Funktionen, die zwar niemand im Programm aufruft,
 die aber vom System gerufen werden (etwa die Behandlung von
 Netzwerkanfragen) oder die als Schnittstelle gedacht sind.
 
-### AMPR-Index-Builder: "app0" heisst jetzt "Dump"
+### AMPR-Index-Builder: "app0" heißt jetzt "Dump"
 
 Im Fenster **AMPR-Index-Builder** stand an drei Stellen "app0" – die
 Beschriftung des Ordnerfelds, der Titel des Auswahldialogs und die
-Begruessung im Protokoll. Gemeint war immer der Dump-Ordner, und genau so
-heisst es jetzt auch.
+Begrüßung im Protokoll. Gemeint war immer der Dump-Ordner, und genau so
+heißt es jetzt auch.
 
-Unveraendert bleibt die Meldung "Durchsuche /app0 auf der PS5": Dort ist
-`/app0` der tatsaechliche Pfad auf der Konsole, keine Beschriftung.
+Unverändert bleibt die Meldung "Durchsuche /app0 auf der PS5": Dort ist
+`/app0` der tatsächliche Pfad auf der Konsole, keine Beschriftung.
 
 
-### Ein irrefuehrender Kommentar richtiggestellt
+### Ein irreführender Kommentar richtiggestellt
 
 Ein Kommentar benannte den falschen Verbraucher eines Zwischenspeichers.
 Beim Aufräumen führte das beinahe dazu, etwas zu entfernen, das noch
@@ -518,7 +559,7 @@ vorgesehen und im Programm sogar als Schritt 3 beschrieben – nur griff der
 Schritt ins Leere.
 
 Die Folge: Nach dem Abbruch lief im Hintergrund alle 150 Millisekunden eine
-Messung weiter, bis das Packen von sich aus zu Ende kam. Bei einem grossen
+Messung weiter, bis das Packen von sich aus zu Ende kam. Bei einem großen
 Abbild konnte das Minuten dauern. Sichtbar war davon nichts, aber nötig war es
 auch nicht.
 
@@ -1887,7 +1928,7 @@ Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19
 ### Größenhinweis für das Hintergrundbild
 
 - Bei den Einstellungen steht jetzt auch für das Haupt-Hintergrundbild eine Größenempfehlung (1920 x 1020 Pixel) – bisher gab es die nur beim Sidebar-Bild.
-- Der Hinweis erklaert ausserdem, dass das Bild auf die Fenstergroesse gestreckt wird und ein abweichendes Seitenverhältnis daher verzerrt.
+- Der Hinweis erklärt außerdem, dass das Bild auf die Fenstergröße gestreckt wird und ein abweichendes Seitenverhältnis daher verzerrt.
 
 ### Beschriftung von Aufgabe 7
 

@@ -4,8 +4,6 @@ Rekursiver Scan mit SHA-256, Multithreading und Resume-Cache.
 """
 from __future__ import annotations
 
-import os
-import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable

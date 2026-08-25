@@ -1,7 +1,6 @@
 """Regressionstests für den synchronen UFS2Tool-/FFPKG-Fortschritt."""
 from __future__ import annotations
 
-import io
 import sys
 import tempfile
 import time

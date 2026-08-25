@@ -353,7 +353,7 @@ def _ids_pruefen(befund: Befund, daten: dict, pfad: str) -> None:
             if kennung != kennung.upper():
                 befund.warnen(
                     f"contentId-Kennung '{kennung}' enthält Kleinbuchstaben - "
-                    f"üblich sind Grossbuchstaben und Ziffern"
+                    f"üblich sind Großbuchstaben und Ziffern"
                 )
 
     # Ordnername gegen titleId halten: Loader suchen die Installation dort.
@@ -369,7 +369,7 @@ def _ids_pruefen(befund: Befund, daten: dict, pfad: str) -> None:
                 )
             elif not RE_TITLE_ID.match(normalisiert):
                 befund.hinweis(
-                    f"Der übergeordnete Ordner heisst '{spielordner}', "
+                    f"Der übergeordnete Ordner heißt '{spielordner}', "
                     f"erwartet wäre '{title_id}' oder '{title_id}-app'"
                 )
 
@@ -517,7 +517,7 @@ def _altersfreigaben_pruefen(befund: Befund, daten: dict) -> None:
         if not isinstance(wert, int) or isinstance(wert, bool):
             befund.fehler_melden(f"ageLevel['{name}'] muss eine Ganzzahl sein, ist {wert!r}")
         elif not 0 <= wert <= 21:
-            befund.warnen(f"ageLevel['{name}'] = {wert} liegt ausserhalb von 0 bis 21")
+            befund.warnen(f"ageLevel['{name}'] = {wert} liegt außerhalb von 0 bis 21")
 
 
 def _absichten_pruefen(befund: Befund, daten: dict, art: str) -> None:
@@ -618,7 +618,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
     gesamt = daten.get("discTotal")
     if isinstance(nummer, int) and isinstance(gesamt, int) and not isinstance(nummer, bool):
         if nummer < 1 or nummer > gesamt:
-            befund.fehler_melden(f"discNumber {nummer} liegt ausserhalb von 1 bis {gesamt}")
+            befund.fehler_melden(f"discNumber {nummer} liegt außerhalb von 1 bis {gesamt}")
     if isinstance(gesamt, int) and not isinstance(gesamt, bool) and gesamt != len(scheiben):
         befund.warnen(
             f"discTotal = {gesamt}, die Liste disc hat aber {len(scheiben)} Einträge"
@@ -764,7 +764,7 @@ def laden(pfad: str, befund: Befund) -> dict | None:
         if 0 < exc.lineno <= len(zeilen):
             befund.fehler_melden(f"  -> {zeilen[exc.lineno - 1].strip()}")
         if re.search(r",\s*[}\]]", text):
-            befund.fehler_melden("  -> es steht mindestens ein Komma vor einer schliessenden Klammer")
+            befund.fehler_melden("  -> es steht mindestens ein Komma vor einer schließenden Klammer")
         return None
 
     if not isinstance(daten, dict):

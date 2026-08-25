@@ -15,7 +15,6 @@ Nachholen, sobald die Aufgabe beendet ist.
 """
 from __future__ import annotations
 
-import os
 import sys
 import unittest
 from pathlib import Path

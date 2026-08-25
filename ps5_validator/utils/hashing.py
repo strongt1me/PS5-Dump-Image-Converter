@@ -5,7 +5,6 @@ SHA-256 Berechnung mit Chunked-Reading und optionalem Progress-Callback.
 from __future__ import annotations
 
 import hashlib
-import os
 from pathlib import Path
 from typing import Callable
 

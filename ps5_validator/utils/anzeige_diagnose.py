@@ -246,7 +246,7 @@ def pruefe_flaechen(fenster: Fensterlage,
         if f.x - fenster.x < -RAND_TOLERANZ:
             befunde.append(Befund(
                 WARNUNG, "abgeschnitten",
-                "%s (%s) beginnt %d px links ausserhalb des Fensters"
+                "%s (%s) beginnt %d px links außerhalb des Fensters"
                 % (f.name, f.klasse, fenster.x - f.x)))
 
         # Zu eng fuer den eigenen Text. Nur dort, wo Text nicht rollen kann -

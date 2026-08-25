@@ -11,11 +11,8 @@ Tests:
 """
 
 import sys
-import os
 import ast
 import importlib
-import re
-import time
 from pathlib import Path
 
 # Farben (ASCII-safe für Windows)
@@ -254,7 +251,7 @@ def test_code_quality():
         if len(issues) > 5:
             print(f"      ... und {len(issues) - 5} weitere")
     else:
-        print(f"  [OK] Keine Qualitätsprobleme gefunden")
+        print("  [OK] Keine Qualitätsprobleme gefunden")
     
     # Gib True zurück wenn nicht zu viele Issues
     return len(issues) < 50

@@ -11,7 +11,6 @@ fest, damit keines davon unbemerkt zurueckkehrt.
 """
 from __future__ import annotations
 
-import io
 import logging
 import os
 import sys
@@ -182,7 +181,6 @@ class MausradTests(unittest.TestCase):
         fenster = tk.Toplevel(_WURZEL)
         fenster.withdraw()
         try:
-            app = getattr(self, "_app", None)
             aussen, _innen = haupt.PS5ConverterGUI._build_scrollable_body(
                 _SelbstAttrappe(), fenster)
             aussen.pack()

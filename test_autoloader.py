@@ -7,7 +7,6 @@ dann ohne Meldung - deshalb wird hier gegen einen nachgebauten FTP-Dienst
 geprueft statt gegen die echte Konsole.
 """
 import io
-import os
 import sys
 import unittest
 from pathlib import Path
