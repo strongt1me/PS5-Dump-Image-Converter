@@ -248,16 +248,28 @@ if [ ! -d "$BUENDEL" ]; then
 fi
 
 # Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 nicht mehr im Programm, sondern
-# liegt neben der ausfuehrbaren Datei - also in Contents/MacOS/, denn
-# _bundled_resource() nimmt den Ordner von sys.argv[0].
+# liegt im Buendel - und zwar in Contents/Resources, nicht in Contents/MacOS.
+#
+# Der erste Anlauf legte ihn nach Contents/MacOS, weil das Programm seine
+# Beilagen neben sys.argv[0] sucht. Das brachte am 25.08.2026 den CI-Lauf zu
+# Fall:
+#
+#     dist/PS5 Dump & Image Converter.app: a sealed resource is missing or invalid
+#     file added: .../Contents/MacOS/PlayGo & AMPR_EMU/PlayGo_v0.5
+#
+# Ein .app-Buendel versiegelt beim Signieren nur bestimmte Orte, und
+# Contents/MacOS gehoert nicht dazu - dort erwartet das System ausschliesslich
+# ausfuehrbaren Code. Contents/Resources ist der vorgesehene Platz fuer Daten;
+# _mitgeliefert_finden() sieht dort seit derselben Fassung nach.
 #
 # Zwingend VOR dem Signieren: codesign erfasst das Buendel als Ganzes. Wer
 # danach etwas hineinlegt, macht die eben gesetzte Signatur ungueltig, und auf
 # Apple Silicon startet ein Buendel mit kaputter Signatur gar nicht erst.
 if [ -d "PlayGo & AMPR_EMU" ]; then
     rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
-    cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
-    meldung "      AMPR-/PlayGo-Ordner in Contents/MacOS gelegt." "$gruen"
+    rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
+    cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
+    meldung "      AMPR-/PlayGo-Ordner in Contents/Resources gelegt." "$gruen"
 else
     meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
 fi

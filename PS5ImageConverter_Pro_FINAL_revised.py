@@ -27573,12 +27573,23 @@ class PS5ConverterGUI:
         neben der Programmdatei, aus dem Quelltext heraus im
         Arbeitsverzeichnis.
 
+        **Auf macOS kommt eine vierte Stelle dazu: ``Contents/Resources``.**
+        Ein .app-Buendel versiegelt beim Signieren nur bestimmte Orte, und
+        ``Contents/MacOS`` gehoert nicht dazu - dort erwartet das System
+        ausschliesslich ausfuehrbaren Code. Wer eine Datendatei hineinlegt,
+        bekommt beim Pruefen "a sealed resource is missing or invalid", und
+        auf Apple Silicon startet ein Buendel mit ungueltiger Signatur gar
+        nicht erst. Am 25.08.2026 hat genau das den CI-Lauf zu Fall gebracht.
+        Datenordner gehoeren deshalb nach ``Contents/Resources``.
+
         Returns:
             Der erste gefundene Pfad, sonst der relative Name.
         """
-        for wurzel in (getattr(sys, "_MEIPASS", ""),
-                       os.path.dirname(os.path.abspath(sys.argv[0])),
-                       os.getcwd()):
+        neben = os.path.dirname(os.path.abspath(sys.argv[0]))
+        wurzeln = [getattr(sys, "_MEIPASS", ""), neben, os.getcwd()]
+        if sys.platform == "darwin" and os.path.basename(neben) == "MacOS":
+            wurzeln.insert(1, os.path.join(os.path.dirname(neben), "Resources"))
+        for wurzel in wurzeln:
             if not wurzel:
                 continue
             pfad = os.path.join(wurzel, relpfad.replace("/", os.sep))

@@ -373,23 +373,61 @@ class SpecAusfuehrungTests(unittest.TestCase):
         PyInstaller beim Beenden loescht - dort etwas hineinzulegen waere
         zwecklos.
 
-        Weil das Programm ihn dann neben der ausfuehrbaren Datei sucht, MUSS
-        das Bauskript ihn dorthin kopieren. Auf macOS heisst das
-        Contents/MacOS/ und zwingend **vor** dem Signieren: codesign
-        erfasst das Buendel als Ganzes, und auf Apple Silicon startet ein
-        Buendel mit nachtraeglich veraenderter Signatur nicht.
+        Das Bauskript muss ihn deshalb ins Buendel kopieren - und zwar nach
+        **Contents/Resources**, nicht nach Contents/MacOS.
+
+        Der erste Anlauf legte ihn nach Contents/MacOS, weil das Programm
+        seine Beilagen neben ``sys.argv[0]`` sucht. Das brachte am 25.08.2026
+        den CI-Lauf auf echter Apple-Hardware zu Fall::
+
+            a sealed resource is missing or invalid
+            file added: .../Contents/MacOS/PlayGo & AMPR_EMU/PlayGo_v0.5
+
+        Ein .app-Buendel versiegelt beim Signieren nur bestimmte Orte, und
+        Contents/MacOS gehoert nicht dazu - dort erwartet das System
+        ausschliesslich ausfuehrbaren Code. Auf Apple Silicon startet ein
+        Buendel mit ungueltiger Signatur gar nicht erst.
+
+        Zweite Bedingung, unveraendert: **vor** dem Signieren. codesign
+        erfasst das Buendel als Ganzes; wer danach etwas hineinlegt, macht die
+        eben gesetzte Signatur ungueltig.
         """
         ziele = {os.path.basename(q) for q, _z in self._kwargs("Analysis")["datas"]}
         self.assertNotIn("PlayGo & AMPR_EMU", ziele,
                          "Der Ordner soll neben der Programmdatei liegen, nicht darin")
 
         skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
-        self.assertIn("Contents/MacOS/PlayGo & AMPR_EMU", skript,
-                      "Das Bauskript legt den Ordner nicht neben die Programmdatei")
-        kopieren = skript.index("Contents/MacOS/PlayGo & AMPR_EMU")
+        self.assertIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/Resources/', skript,
+                      "Das Bauskript legt den Ordner nicht nach Contents/Resources")
+        self.assertNotIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/MacOS/', skript,
+                         "Contents/MacOS wird beim Signieren nicht versiegelt")
+        kopieren = skript.index('cp -r "PlayGo & AMPR_EMU"')
         signieren = skript.index("codesign --force")
         self.assertLess(kopieren, signieren,
                         "Der Ordner muss VOR dem Signieren im Buendel liegen")
+
+    def test_das_programm_sieht_auch_in_contents_resources_nach(self):
+        """Sonst faende es den Ordner an seinem neuen Platz nicht.
+
+        Die Gegenprobe zum Bauskript: Beides muss zusammenpassen, sonst liegt
+        der Ordner zwar korrekt im Buendel, und Aufgabe 7 findet trotzdem
+        keine Versionen.
+        """
+        quelle = (Path(__file__).resolve().parent
+                  / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        anfang = quelle.index("def _mitgeliefert_finden")
+        koerper = quelle[anfang:anfang + 2600]
+        self.assertIn('"Resources"', koerper)
+        self.assertIn('sys.platform == "darwin"', koerper)
+        self.assertIn('"MacOS"', koerper)
+
+    def test_der_suchpfad_greift_nur_im_buendel(self):
+        """Ausserhalb eines .app-Buendels darf sich nichts aendern."""
+        quelle = (Path(__file__).resolve().parent
+                  / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
+        anfang = quelle.index("def _mitgeliefert_finden")
+        koerper = quelle[anfang:anfang + 2600]
+        self.assertIn('os.path.basename(neben) == "MacOS"', koerper)
 
     def test_symbol_zeigt_auf_eine_vorhandene_datei(self):
         for aufruf in ("EXE", "BUNDLE"):
