@@ -2,7 +2,37 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.95):** Das Programm ist wieder eine einzige Datei – AMPR EMU und PlayGo stecken darin, nicht mehr in einem Ordner daneben. Aus v1.8.94 bleiben die verlässliche Fortschrittsanzeige und die Umgebungsprüfung `--doktor`.
+> **Kurz zum aktuellen Stand (v1.8.96):** Die Oberfläche ist randlos – das Hintergrundbild läuft ohne unterbrechende Linien durch. Eingabefelder und Protokoll bleiben trotzdem klar erkennbar, und wer mit der Tastatur bedient, sieht weiterhin, wo er ist.
+
+---
+
+## v1.8.96 – 25.08.2026
+
+### Die Oberfläche ist randlos
+
+Um Karten, Eingabefelder, Listen und das Protokollfenster lagen dünne Linien.
+Sie unterbrachen das durchlaufende Hintergrundbild und liessen die Oberfläche
+unruhig wirken. **63 solcher Stellen** sind entfernt – im Hauptfenster wie in
+allen Werkzeugfenstern.
+
+Erhalten bleiben nur die drei **Farbfelder** im Design-Dialog: Ohne Umrandung
+wäre nicht zu sehen, wo eine Farbe aufhört.
+
+### Eingabefelder bleiben erkennbar
+
+Ein Feld ohne Rand wäre unsichtbar, wenn es dieselbe Farbe hätte wie die
+Fläche darunter – man sähe nicht mehr, wo zu klicken ist. Eingabefelder tragen
+deshalb jetzt eine eigene, leicht abgesetzte Füllung. Sie leitet sich aus dem
+gewählten Design ab und passt damit zu allen dreien.
+
+Im hellen Design hob sich auch das Protokollfenster zu wenig ab; seine Farbe
+ist etwas kräftiger geworden.
+
+### Bedienung per Tastatur bleibt möglich
+
+Bisher zeigte ein Rahmen, welcher Knopf gerade dran ist. Der Rahmen ist weg –
+stattdessen ändert sich die **Fläche** des Bedienelements. Auf dunklen Flächen
+wird sie heller, auf hellen dunkler, damit es in jedem Design zu sehen ist.
 
 ---
 

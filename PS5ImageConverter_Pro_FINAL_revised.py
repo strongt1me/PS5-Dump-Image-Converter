@@ -413,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.95"
+APP_VERSION = "v1.8.96"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1890,8 +1890,12 @@ class DelayedTooltip:
             wraplength=self.wraplength,
             bg="#111827",
             fg="#F9FAFB",
-            relief="solid",
-            borderwidth=1,
+            # Kein Rand. Die Kurzinfo schwebt ueber beliebigem Inhalt und
+            # traegt ihre eigene, sehr dunkle Flaeche - die grenzt sie
+            # ausreichend ab. Ein gezeichneter Rand waere der letzte im
+            # Programm gewesen.
+            relief="flat",
+            borderwidth=0,
             padx=10,
             pady=7,
             font=(UI_SCHRIFT, pt(9)),
@@ -2434,7 +2438,11 @@ class PS5ConverterGUI:
             "accent_btn_hover": "#005A9E",
             "error_btn":        "#C0392B",
             "error_btn_hover":  "#A93226",
-            "console_bg":       "#F8FAFC",
+            # Etwas kraeftiger als die Karte (#FFFFFF): Seit die Felder
+            # randlos sind, ist die Flaeche die einzige Abgrenzung. Bei
+            # #F8FAFC lagen nur 5,4 Helligkeitsstufen dazwischen - auf
+            # einem Bildschirm nicht mehr auszumachen. Jetzt 11,3.
+            "console_bg":       "#F1F4F9",
             "console_fg":       "#1A202C",
             "progress_bg":      "#DBEAFE",
             "progress_fill":    "#0070C0",
@@ -3470,6 +3478,12 @@ class PS5ConverterGUI:
         small = img.resize((16, 16)).convert("RGB")
         mittel = ImageStat.Stat(small).mean
         return (round(mittel[0]), round(mittel[1]), round(mittel[2]))
+
+    @staticmethod
+    def _hex_zu_rgb(hex_farbe: str) -> tuple[int, int, int]:
+        """#RRGGBB als Zahlentripel - das Gegenstueck zu _blend_hex_color."""
+        h = hex_farbe.lstrip("#")
+        return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
     @staticmethod
     def _blend_hex_color(base_hex: str, tint_rgb: tuple[int, int, int], opacity: float) -> str:
@@ -5312,16 +5326,22 @@ class PS5ConverterGUI:
         c = self._COLORS
         style.configure("TFrame", background=c["bg_main"])
         style.configure("Sidebar.TFrame", background=c["bg_main"], relief="flat")
+        # Karten tragen keinen Rand. Die feste Randfarbe unterbrach das
+        # nahtlos durchlaufende Hintergrundbild (card_bg_label) sichtbar als
+        # duenne Linie um die Karte; ohne Rand geht das Bild an jeder Kante
+        # uebergangslos in den Content-Bereich dahinter ueber.
+        #
+        # Bis dahin galt das nur fuer PathCard.TFrame - die Quelle-Karte war
+        # die einzige, an der es jemandem auffiel. Die Protokollkarte trug
+        # den Rand weiter. Am 25.08.2026 ueber den laufenden Widget-Baum
+        # gefunden: Die betroffenen Elemente haben keinen Namen, unter dem
+        # eine Textsuche sie finden koennte.
         style.configure("Card.TFrame",
                          background=c["bg_card"],
-                         relief="solid",
-                         borderwidth=1,
-                         bordercolor=c["border"])
-        # Randlose Variante der Quelle-Karte: die feste Randfarbe von
-        # Card.TFrame unterbricht das nahtlos durchlaufende Hintergrundbild
-        # (card_bg_label) sichtbar als duenne Linie um die Karte. Ohne Rand
-        # geht das Bild an jeder Kante uebergangslos in den Content-Bereich
-        # dahinter ueber.
+                         relief="flat",
+                         borderwidth=0)
+        # Bleibt als eigener Name bestehen: Es haengen Aufrufe daran, und ein
+        # zweiter Name kostet nichts.
         style.configure("PathCard.TFrame",
                          background=c["bg_card"],
                          relief="flat",
@@ -5356,14 +5376,14 @@ class PS5ConverterGUI:
                          padding=(18, 11),
                          background=c["bg_card"],
                          foreground=c["fg_primary"],
-                         borderwidth=1,
-                         relief="solid",
+                         borderwidth=0,
+                         relief="flat",
                          focuscolor=c["bg_card"],
                          focusthickness=0)
         style.map("TButton",
                   background=[("active", c["accent_btn_hover"])],
                   foreground=[("active", "#FFFFFF")],
-                  relief=[("focus", "solid")],
+                  relief=[("focus", "flat")],
                   focuscolor=[("focus", c["bg_card"])])
         # Gestrichelten Fokus-Indikator aus dem clam-Layout entfernen
         try:
@@ -5431,18 +5451,34 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Tkinter-Style Treeview konnte nicht konfiguriert werden: %s", exc)
 
+        # Ohne Rand braucht ein Eingabefeld eine eigene Flaeche, sonst ist es
+        # unsichtbar: Feld und Karte trugen beide bg_card, gemessen am
+        # 25.08.2026 exakt dieselbe Farbe (#18283D auf #18283D). Man saehe
+        # nicht mehr, wo zu klicken ist.
+        #
+        # Die Fuellung entsteht aus der Karte, verschoben in Richtung
+        # Fensterhintergrund. Das ergibt in allen drei Designs eine
+        # eingelassen wirkende Flaeche - dunkel dort, wo es dunkel ist, und
+        # ein leichtes Grau im hellen Design -, ohne dass eine Farbe fest
+        # eingetragen werden muesste.
+        _feld_bg = self._blend_hex_color(
+            c["bg_card"], self._hex_zu_rgb(c["bg_main"]), 0.45)
         style.configure("TEntry",
-                         fieldbackground=c["bg_card"],
+                         fieldbackground=_feld_bg,
                          foreground=c["fg_primary"],
                          insertcolor=c["fg_accent"],
                          padding=9,
                          focuscolor=c["bg_card"],
                          focusthickness=0,
                          highlightthickness=0)
+        # Kein Rand - auch nicht im Fokus. Dass ein Eingabefeld den Fokus
+        # hat, zeigt die Schreibmarke; ein Rahmen ringsum ist dafuer nicht
+        # noetig und unterbricht das Hintergrundbild.
+        style.configure("TEntry", borderwidth=0, relief="flat")
         style.map("TEntry",
                   focuscolor=[("focus", c["bg_card"])],
                   bordercolor=[("focus", c["fg_accent"]), ("!focus", c["border"])],
-                  relief=[("focus", "solid"), ("!focus", "solid")])
+                  relief=[("focus", "flat"), ("!focus", "flat")])
         try:
             # ttk-Stub ist hier zu strikt; Tk akzeptiert diese Layout-Spezifikation.
             style.layout("TEntry", [
@@ -5484,6 +5520,34 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Combobox-Popdown-Theme konnte nicht gesetzt werden: %s", exc)
 
+        # Tk liefert Text, Entry und Listbox mit relief="sunken" und
+        # borderwidth=1 aus - jedes einzelne Feld zeichnet also von sich aus
+        # einen vertieften Rahmen, ohne dass das irgendwo im Quelltext
+        # stuende. Bei 47 Erzeugungsstellen ist das nicht einzeln zu pflegen:
+        # Wer eine vergisst, bekommt genau einen Kasten zu viel, und die
+        # naechste neue Stelle bringt ihn wieder mit.
+        #
+        # Die Option-Datenbank setzt es fuer alle auf einmal - auch fuer die
+        # namenlosen, inline erzeugten. Sie wirkt nur auf Widgets, die danach
+        # entstehen, und nur dort, wo nichts ausdruecklich mitgegeben wird;
+        # eine bewusste Angabe am Widget gewinnt weiterhin.
+        #
+        # highlightthickness bleibt unangetastet: Das ist der Fokusrahmen und
+        # zeigt bei Bedienung per Tastatur, wo man gerade ist.
+        try:
+            for _klasse in ("Text", "Entry", "Listbox", "Spinbox"):
+                self.root.option_add("*%s.relief" % _klasse, "flat")
+                self.root.option_add("*%s.borderWidth" % _klasse, 0)
+            # Auch der Fokusrahmen faellt weg - aber nicht ersatzlos, siehe
+            # _fokus_ohne_rahmen_einrichten().
+            for _klasse in ("Button", "Radiobutton", "Checkbutton", "Listbox",
+                            "Text", "Entry", "Spinbox"):
+                self.root.option_add("*%s.highlightThickness" % _klasse, 0)
+        except Exception as exc:
+            logger.debug("Randlose Vorgabe nicht gesetzt: %s", exc)
+
+        self._fokus_ohne_rahmen_einrichten()
+
         style.configure("TProgressbar",
                          background=c["progress_fill"],
                          troughcolor=c["progress_bg"],
@@ -5502,7 +5566,7 @@ class PS5ConverterGUI:
                          fieldbackground=c["bg_card"],
                          foreground=c["fg_primary"],
                          bordercolor=c["border"],
-                         borderwidth=1,
+                         borderwidth=0,
                          rowheight=24,
                          font=(UI_SCHRIFT, pt(10)))
         style.map("Treeview",
@@ -26682,8 +26746,9 @@ class PS5ConverterGUI:
             folders_row, height=3, font=(UI_SCHRIFT, pt(9)),
             bg=c["console_bg"], fg=c["fg_primary"],
             selectbackground=c["fg_accent"], selectforeground=c["bg_card"],
-            relief="flat", bd=1, highlightthickness=1,
-            highlightbackground=c["border"], highlightcolor=c["fg_accent"],
+            # Kein Fokusrahmen - die Flaeche uebernimmt das, siehe
+            # _fokus_ohne_rahmen_einrichten().
+            relief="flat", bd=0, highlightthickness=0,
         )
         for folder in scan_folders:
             folders_list.insert("end", folder)
@@ -27393,6 +27458,216 @@ class PS5ConverterGUI:
             skalierung=self._diagnose_skalierung_messen(),
             laufruhe=self._diagnose_laufruhe_messen())
 
+    #: Ab so vielen Helligkeitsstufen Unterschied ist eine Flaeche von ihrem
+    #: Untergrund noch zu unterscheiden. Darunter verschwimmt es. Gemessen am
+    #: hellen Design, wo 5,4 Stufen zwischen Konsole und Karte lagen - zu
+    #: wenig, seit die Felder keinen Rand mehr tragen.
+    _RANDLOS_MINDESTUNTERSCHIED: float = 6.0
+
+    @staticmethod
+    def _helligkeit(hexfarbe: object) -> float:
+        """Wahrgenommene Helligkeit einer #RRGGBB-Farbe."""
+        h = str(hexfarbe).lstrip("#")
+        if len(h) != 6:
+            return -1.0
+        try:
+            r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        except ValueError:
+            return -1.0
+        return 0.299 * r + 0.587 * g + 0.114 * b
+
+    #: Wie stark sich die Flaeche eines Bedienelements aendert, sobald es den
+    #: Tastaturfokus hat. Kraeftig genug, um es zu sehen, schwach genug, um
+    #: nicht wie "gedrueckt" auszusehen: rund 26 bis 29 Helligkeitsstufen.
+    _FOKUS_AUFHELLUNG: float = 0.12
+
+    #: Ab dieser Helligkeit wird abgedunkelt statt aufgehellt. Sonst faellt
+    #: der Fokus im hellen Design aus: Ein weisser Knopf laesst sich nicht
+    #: weiter aufhellen - gemessen +0,0 Stufen, also unsichtbar.
+    _FOKUS_HELL_AB: float = 140.0
+
+    def _fokus_ohne_rahmen_einrichten(self) -> None:
+        """Ersetzt den Fokusrahmen durch eine Aenderung der Flaeche.
+
+        ``highlightthickness`` zeichnet einen Rahmen um das Bedienelement,
+        sobald es den Tastaturfokus hat. Er faellt mit den uebrigen Raendern
+        weg - aber ersatzlos duerfte er das nicht: Ohne jede Rueckmeldung
+        waere nicht mehr zu erkennen, welches Element gerade dran ist, und
+        das Programm ohne Maus nicht mehr sinnvoll zu bedienen.
+
+        Statt eines Rahmens hellt sich die **Flaeche** auf. Das ist keine
+        Linie, unterbricht das Hintergrundbild also nicht, und bleibt
+        trotzdem deutlich sichtbar.
+
+        Umgesetzt ueber eine Klassenbindung statt ueber jedes einzelne
+        Widget: Die meisten Knoepfe entstehen inline und haben keinen Namen,
+        unter dem man sie nachtraeglich erreichen koennte. Die Bindung gilt
+        fuer alle - auch fuer die, die erst spaeter in einem Werkzeugfenster
+        entstehen.
+
+        Wird nur **einmal** eingerichtet. ``_setup_styles()`` laeuft bei
+        jedem Designwechsel erneut; mit ``add="+"`` haetten sich die
+        Bindungen sonst gestapelt (dieselbe Falle wie beim Mausrad).
+        """
+        if getattr(self, "_fokus_bindung_steht", False):
+            return
+
+        def _hinein(ereignis):
+            w = ereignis.widget
+            try:
+                if getattr(w, "_fokus_alt_bg", None) is None:
+                    alt = w.cget("bg")
+                    w._fokus_alt_bg = alt
+                    ziel = ((0, 0, 0)
+                            if self._helligkeit(alt) > self._FOKUS_HELL_AB
+                            else (255, 255, 255))
+                    w.configure(bg=self._blend_hex_color(
+                        alt, ziel, self._FOKUS_AUFHELLUNG))
+            except Exception:
+                pass
+
+        def _hinaus(ereignis):
+            w = ereignis.widget
+            try:
+                alt = getattr(w, "_fokus_alt_bg", None)
+                if alt is not None:
+                    w.configure(bg=alt)
+                    w._fokus_alt_bg = None
+            except Exception:
+                pass
+
+        try:
+            for klasse in ("Button", "Radiobutton", "Checkbutton", "Listbox"):
+                self.root.bind_class(klasse, "<FocusIn>", _hinein, add="+")
+                self.root.bind_class(klasse, "<FocusOut>", _hinaus, add="+")
+            self._fokus_bindung_steht = True
+        except Exception as exc:
+            logger.debug("Fokusanzeige nicht eingerichtet: %s", exc)
+
+    def _diagnose_randlos(self) -> list[str]:
+        """Sichtbare Raender - und ob ohne sie noch alles erkennbar ist.
+
+        Der Nutzer legt Wert auf ein randloses Erscheinungsbild mit
+        durchgehendem Hintergrundbild. Diese Pruefung geht durch den
+        **laufenden Widget-Baum**, nicht durch den Quelltext. Der Grund ist
+        gemessen: Von 63 Stellen mit sichtbarem Rand, die am 25.08.2026
+        gefunden wurden, hatten fast alle keinen Namen (``!frame3``,
+        ``!text``, ``!treeview``). Eine Textsuche findet sie nicht, und ein
+        Rand kann ohnehin aus einem ttk-Stil statt vom Widget kommen.
+
+        Zwei Tuecken, die hier beruecksichtigt sind:
+
+        * ``Text``, ``Entry`` und ``Listbox`` bringen von Tk aus
+          ``relief="sunken"`` mit. Wer die Vorgaben mitzaehlt, bekommt eine
+          Liste, in der das Wesentliche untergeht - deshalb die Tabelle.
+        * ``highlightthickness`` ist der **Fokusrahmen** und zeigt bei
+          Bedienung per Tastatur, wo man ist. Er gilt hier ausdruecklich
+          nicht als Befund.
+
+        Die Gegenrichtung zaehlt mit: Ohne Rand traegt allein die Flaeche die
+        Abgrenzung. Sind Feld und Karte gleich hell, ist das Feld unsichtbar -
+        genau das entstand beim ersten Anlauf (#18283D auf #18283D).
+        """
+        zeilen: list[str] = []
+        try:
+            wurzel = self.root
+        except Exception:
+            return ["Randpruefung: kein Fenster"]
+
+        VORGABE = {"Label": 2, "Button": 2, "Text": 2, "Canvas": 2,
+                   "Entry": 2, "Listbox": 2, "Checkbutton": 2,
+                   "Radiobutton": 2, "Menubutton": 2, "Message": 2,
+                   "Spinbox": 2}
+        stil = ttk.Style()
+        treffer: list[str] = []
+
+        def zahl(wert):
+            try:
+                return int(str(wert))
+            except (TypeError, ValueError):
+                return 0
+
+        def gehe(w):
+            try:
+                if w.winfo_ismapped():
+                    gruende = []
+                    if isinstance(w, ttk.Widget):
+                        name = w.cget("style") or w.winfo_class()
+                        if zahl(stil.lookup(name, "borderwidth")) > 0:
+                            gruende.append("Stil %s: borderwidth" % name)
+                        rel = str(stil.lookup(name, "relief") or "")
+                        if rel and rel not in ("flat", ""):
+                            gruende.append("Stil %s: relief=%s" % (name, rel))
+                    else:
+                        klasse = w.winfo_class()
+                        if "relief" in w.keys():
+                            rel = str(w.cget("relief") or "")
+                            if rel and rel not in ("flat", ""):
+                                gruende.append("relief=%s" % rel)
+                        if "borderwidth" in w.keys():
+                            bd = zahl(w.cget("borderwidth"))
+                            if bd > 0 and bd != VORGABE.get(klasse, 0):
+                                gruende.append("borderwidth=%d" % bd)
+                    if gruende:
+                        try:
+                            beschr = str(w.cget("text") or "")[:26]
+                        except Exception:
+                            beschr = ""
+                        treffer.append("%s %dx%d %s%s"
+                                       % (w.winfo_class(), w.winfo_width(),
+                                          w.winfo_height(), ", ".join(gruende),
+                                          (" [%s]" % beschr) if beschr else ""))
+            except Exception:
+                pass
+            for k in w.winfo_children():
+                gehe(k)
+
+        try:
+            gehe(wurzel)
+        except Exception as exc:
+            return ["Randpruefung fehlgeschlagen: %s" % exc]
+
+        if treffer:
+            zeilen.append("Sichtbare Raender: %d" % len(treffer))
+            for eintrag in treffer[:8]:
+                zeilen.append("  ! %s" % eintrag)
+            if len(treffer) > 8:
+                zeilen.append("  ... und %d weitere" % (len(treffer) - 8))
+        else:
+            zeilen.append("Sichtbare Raender: keine "
+                          "(Fokusrahmen zaehlen nicht mit)")
+
+        # -- Die Gegenrichtung: sieht man die Flaechen noch? --------------
+        c = getattr(self, "_COLORS", {}) or {}
+        try:
+            feld = stil.lookup("TEntry", "fieldbackground")
+        except Exception:
+            feld = ""
+        paare = [("Eingabefeld", feld, c.get("bg_card")),
+                 ("Konsole", c.get("console_bg"), c.get("bg_card")),
+                 ("Karte", c.get("bg_card"), c.get("bg_main"))]
+        schwach = []
+        for name, vorn, hinten in paare:
+            if not vorn or not hinten:
+                continue
+            h1, h2 = self._helligkeit(vorn), self._helligkeit(hinten)
+            if h1 < 0 or h2 < 0:
+                continue
+            unterschied = abs(h1 - h2)
+            if unterschied < self._RANDLOS_MINDESTUNTERSCHIED:
+                schwach.append("%s %s auf %s - nur %.1f Stufen"
+                               % (name, vorn, hinten, unterschied))
+        if schwach:
+            zeilen.append("ACHTUNG: Flaechen zu schwach abgesetzt - ohne Rand "
+                          "nicht mehr erkennbar:")
+            for eintrag in schwach:
+                zeilen.append("  ! %s" % eintrag)
+        else:
+            zeilen.append("Flaechen deutlich genug abgesetzt "
+                          "(mindestens %.0f Helligkeitsstufen)"
+                          % self._RANDLOS_MINDESTUNTERSCHIED)
+        return zeilen
+
     def _diagnose_darstellung(self) -> list[str]:
         """Das Urteil ueber die Darstellung - der Abschnitt, der zaehlt.
 
@@ -27411,6 +27686,7 @@ class PS5ConverterGUI:
         zeilen = [ad.zusammenfassung(ergebnis),
                   z("vermessene Bedienelemente", len(flaechen)),
                   z("davon sichtbar", sum(1 for f in flaechen if f.sichtbar))]
+        zeilen.extend(self._diagnose_randlos())
         if not ergebnis.befunde:
             zeilen.append("Nichts gefunden - Fenster, Beschriftungen, Bilder "
                           "und Skalierung passen zusammen.")
@@ -33154,14 +33430,14 @@ class PS5ConverterGUI:
             tk.Entry(
                 payload_row, textvariable=payload_path_var,
                 bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9)),
+                relief="flat", bd=0, font=(UI_SCHRIFT, pt(9)),
             ).pack(side="left", fill="x", expand=True, padx=(0, 8))
             tk.Label(payload_row, text=self._t("remote_ini.payload_port_label"),
                      bg=c["bg_card"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
             payload_port_var = tk.StringVar(value=str(self._load_setting(f"{settings_prefix}_payload_port", payload_default_port)))
             tk.Entry(payload_row, textvariable=payload_port_var, width=7,
                      bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                     relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(4, 8))
+                     relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(4, 8))
 
             def _browse_payload() -> None:
                 path = filedialog.askopenfilename(
@@ -33307,7 +33583,7 @@ class PS5ConverterGUI:
         ip_entry = tk.Entry(ip_row, textvariable=ip_var, width=18,
                             bg=c["bg_main"], fg=c["fg_primary"],
                             insertbackground=c["fg_primary"],
-                            relief="sunken", bd=1,
+                            relief="flat", bd=0,
                             font=(UI_SCHRIFT, pt(10)))
         ip_entry.pack(side="left", padx=(4, 16))
 
@@ -33318,7 +33594,7 @@ class PS5ConverterGUI:
         tk.Entry(ip_row, textvariable=js_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1,
+                 relief="flat", bd=0,
                  font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 16))
 
         tk.Label(ip_row, text=self._t("jsloader.elf_port_label"), anchor="w",
@@ -33328,7 +33604,7 @@ class PS5ConverterGUI:
         tk.Entry(ip_row, textvariable=elf_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1,
+                 relief="flat", bd=0,
                  font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 0))
 
         # ip.ini laden
@@ -33361,7 +33637,7 @@ class PS5ConverterGUI:
         file_entry = tk.Entry(file_row, textvariable=file_var,
                               bg=c["bg_main"], fg=c["fg_primary"],
                               insertbackground=c["fg_primary"],
-                              relief="sunken", bd=1,
+                              relief="flat", bd=0,
                               font=(UI_SCHRIFT, pt(10)))
         file_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -33593,9 +33869,10 @@ class PS5ConverterGUI:
         # ("Konsole leeren" steht weiter oben – siehe Anmerkung dort.)
 
         # ── Konsolen-Ausgabe ─────────────────────────────────────────
-        console_outer = tk.Frame(main, bg=c["bg_card"],
-                                 highlightbackground=c["fg_accent"],
-                                 highlightthickness=1)
+        # Ohne Zierrahmen: highlightthickness an einem Frame ist kein
+        # Fokusrahmen - ein Frame bekommt keinen Tastaturfokus -, sondern nur
+        # eine Linie in Akzentfarbe.
+        console_outer = tk.Frame(main, bg=c["bg_card"])
         console_outer.pack(fill="both", expand=True)
 
         console = tk.Text(console_outer,
@@ -33676,7 +33953,7 @@ class PS5ConverterGUI:
         root_var = tk.StringVar()
         tk.Entry(root_row, textvariable=root_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
+                 relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
         output_var = tk.StringVar()
 
@@ -33699,7 +33976,7 @@ class PS5ConverterGUI:
                  bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
         tk.Entry(out_row, textvariable=output_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                 relief="sunken", bd=1, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
+                 relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
         def _browse_output() -> None:
             path = filedialog.asksaveasfilename(
@@ -33770,7 +34047,8 @@ class PS5ConverterGUI:
         tk.Label(main, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 6))
 
-        console_outer = tk.Frame(main, bg=c["bg_card"], highlightbackground=c["fg_accent"], highlightthickness=1)
+        # Kein Zierrahmen, siehe oben.
+        console_outer = tk.Frame(main, bg=c["bg_card"])
         console_outer.pack(fill="both", expand=True)
         console = tk.Text(console_outer, bg=c["bg_main"], fg=c["fg_primary"],
                            insertbackground=c["fg_primary"], font=(MONO_SCHRIFT, pt(9)),
