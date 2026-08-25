@@ -9484,7 +9484,7 @@ class PS5ConverterGUI:
             "ur": ((-gross, -gross, gross - 1, gross - 1), 0, 90),
         }[ecke]
         zeichner.pieslice(kasten, von, bis, fill=255)
-        return maske.resize((radius, radius), Image.LANCZOS)
+        return maske.resize((radius, radius), _LANCZOS)
 
     def _kartenecken_runden(self, karte, polster: int, flaeche: str = "",
                             radius: int = 0) -> None:
@@ -9529,15 +9529,26 @@ class PS5ConverterGUI:
             hinten = Image.new("RGB", (breite, hoehe),
                                self._COLORS["bg_main"])
 
-        if flaeche:
-            vorn = Image.new("RGB", (breite, hoehe), flaeche)
-        else:
+        # Die Kartenflaeche MUSS aus derselben Quelle kommen wie das
+        # Bild, das die Karte selbst traegt - sonst steht in der Ecke eine
+        # andere Kartenfarbe als daneben, und die Rundung bekommt eine
+        # sichtbare Kante.
+        #
+        # Der erste Anlauf blendete stattdessen ``hinten`` fuer die Karte.
+        # Das ist zweifach falsch: ``hinten`` stammt aus dem bereits
+        # getoenten ``_bg_image_cache`` und wuerde ein zweites Mal getoent,
+        # und ohne Hintergrundbild kam gar nicht ``bg_card`` heraus.
+        # ``_compute_card_bg_image`` ist genau die Funktion, aus der auch
+        # ``card_bg_label`` sein Bild bezieht.
+        vorn = None
+        if not flaeche:
             try:
-                vorn = self._blend_bg_image_for_card(hinten)
+                vorn = self._compute_card_bg_image(breite, hoehe)
             except Exception as exc:                       # noqa: BLE001
                 logger.debug("Kartenflaeche nicht berechenbar: %s", exc)
-                vorn = Image.new("RGB", (breite, hoehe),
-                                 self._COLORS["bg_card"])
+        if vorn is None:
+            vorn = Image.new("RGB", (breite, hoehe),
+                             flaeche or self._COLORS["bg_card"])
 
         bilder = getattr(karte, "_eckbilder", None)
         if bilder is None:

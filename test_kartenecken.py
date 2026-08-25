@@ -106,6 +106,27 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn('hinten.convert("RGB")', rumpf)
         self.assertIn('vorn.convert("RGB")', rumpf)
 
+    def test_die_kartenflaeche_kommt_aus_der_richtigen_quelle(self) -> None:
+        """Sonst steht in der Ecke eine andere Kartenfarbe als daneben.
+
+        Der erste Anlauf blendete den Hintergrund HINTER der Karte fuer die
+        Kartenflaeche. Das ist zweifach falsch: Die Quelle ist bereits
+        getoent und wuerde ein zweites Mal getoent, und ohne Hintergrundbild
+        kam gar nicht ``bg_card`` heraus. In der Durchsicht von PR #10
+        aufgefallen.
+        """
+        anfang = QUELLE.index("def _kartenecken_runden")
+        rumpf = QUELLE[anfang:QUELLE.index(chr(10) + "    def ", anfang + 10)]
+        self.assertIn("_compute_card_bg_image", rumpf)
+        self.assertNotIn("_blend_bg_image_for_card(hinten)", rumpf)
+
+    def test_die_maske_nutzt_den_modulweiten_filter(self) -> None:
+        """``_LANCZOS`` faengt aeltere und neuere Pillow-Fassungen ab."""
+        anfang = QUELLE.index("def _eckmaske")
+        rumpf = QUELLE[anfang:QUELLE.index(chr(10) + "    def ", anfang + 10)]
+        self.assertIn("_LANCZOS", rumpf)
+        self.assertNotIn("Image.LANCZOS", rumpf)
+
     def test_der_designwechsel_zieht_nach(self) -> None:
         """Die Ecken tragen Bildausschnitte - nach dem Wechsel stimmen die
         alten nicht mehr."""
