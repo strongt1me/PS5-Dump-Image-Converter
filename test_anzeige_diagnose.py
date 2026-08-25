@@ -299,7 +299,7 @@ class GesamtTests(unittest.TestCase):
 
     def test_zusammenfassung_ohne_befund(self):
         self.assertEqual(ad.zusammenfassung(ad.Pruefergebnis()),
-                         "Darstellung: keine Auffaelligkeit")
+                         "Darstellung: keine Auffälligkeit")
 
     def test_zusammenfassung_zaehlt(self):
         ergebnis = ad.pruefe_alles(

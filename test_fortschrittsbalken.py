@@ -317,11 +317,11 @@ class FortschrittsWaechterTests(unittest.TestCase):
     def test_findet_den_ruecksprung(self) -> None:
         punkte = [(0.1, 10.0, "10%", "Phase 1/1 – x"), (0.2, 60.0, "60%", "Phase 1/1 – x"),
                   (0.3, 20.0, "20%", "Phase 1/1 – x"), (0.4, 70.0, "70%", "Phase 1/1 – x")]
-        self.assertTrue(any("zurueck" in b for b in self._lauf(punkte).befunde()))
+        self.assertTrue(any("zurück" in b for b in self._lauf(punkte).befunde()))
 
     def test_findet_den_ueberlauf(self) -> None:
         punkte = [(i * 0.1, 90.0 + i * 5, "x", "Phase 1/1 – x") for i in range(5)]
-        self.assertTrue(any("ueber 100" in b for b in self._lauf(punkte).befunde()))
+        self.assertTrue(any("über 100" in b for b in self._lauf(punkte).befunde()))
 
     def test_findet_auseinanderlaufende_zahlen(self) -> None:
         punkte = [(i * 0.1, float(i * 10), "%d%%" % (i * 5), "Phase 1/1 – x")
@@ -385,12 +385,12 @@ class FortschrittsWaechterTests(unittest.TestCase):
         w.abschliessen(100.0)
         bericht = " ".join(w.bericht())
         self.assertIn("1/3 -> 2/3 -> 3/3", bericht)
-        self.assertIn("keine Auffaelligkeit", bericht)
+        self.assertIn("keine Auffälligkeit", bericht)
 
     def test_der_bericht_zaehlt_die_befunde(self) -> None:
         punkte = [(0.1, 10.0, "10%", "Phase 1/1 – x"), (0.2, 5.0, "5%", "Phase 1/1 – x"),
                   (0.3, 50.0, "50%", "Phase 1/1 – x")]
-        self.assertIn("Auffaelligkeit(en)", " ".join(self._lauf(punkte).bericht()))
+        self.assertIn("Auffälligkeit(en)", " ".join(self._lauf(punkte).bericht()))
 
 
 class WaechterImProgrammTests(unittest.TestCase):
@@ -511,7 +511,7 @@ class EigenschaftspruefungTests(unittest.TestCase):
     def test_alle_zusicherungen_gelten(self) -> None:
         zeilen = self.pruefen()
         self.assertEqual(len(zeilen), 1, "unerwartete Meldungen: %r" % (zeilen,))
-        self.assertIn("alle erfuellt", zeilen[0])
+        self.assertIn("alle erfüllt", zeilen[0])
 
     def test_es_wird_wirklich_etwas_geprueft(self) -> None:
         """Eine Prüfung mit null Zusicherungen bestünde immer."""

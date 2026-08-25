@@ -144,7 +144,7 @@ def test_keepalive_regression():
 
         checks = {
             "Keepalive loggt Hinweis": log_calls == ["[INFO] Verarbeitung laeuft ... bitte warten.\n"],
-            "Keepalive setzt Status": len(status_calls) == 1 and status_calls[0].endswith("Verarbeitung laeuft ..."),
+            "Keepalive setzt Status": len(status_calls) == 1 and status_calls[0].endswith("Verarbeitung läuft ..."),
             "Keepalive aendert keinen Output-Timestamp": gui._last_engine_output_ts == 123.0,
         }
 

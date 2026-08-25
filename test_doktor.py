@@ -292,12 +292,12 @@ class PaketpruefungTests(unittest.TestCase):
         """Ein Fünftel einer Sekunde für etwas, das sich zwischen zwei
         Programmstarts nie ändert, wäre im Fenster spürbar."""
         zeilen = self.haupt.umgebung_doktor(tempfile.gettempdir(), "")
-        self.assertFalse(any("Paketstaende" in z for z in zeilen))
+        self.assertFalse(any("Paketstände" in z for z in zeilen))
 
     def test_auf_der_kommandozeile_schon(self) -> None:
         zeilen = self.haupt.umgebung_doktor(tempfile.gettempdir(), "",
                                             gruendlich=True)
-        self.assertTrue(any("Paketstaende" in z for z in zeilen))
+        self.assertTrue(any("Paketstände" in z for z in zeilen))
 
 
 class StartprobeTests(unittest.TestCase):

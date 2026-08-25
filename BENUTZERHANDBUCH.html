@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.98</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.99</title>
 <style>
 :root{
   --bg:#070b14;
@@ -240,7 +240,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 /* Kein Seitenrand: Der dunkle Hintergrund soll bis an die Blattkante reichen.
    Mit Rand blieb ringsum ein weisser Streifen stehen - Edge malt den
    Seitenhintergrund nicht in den Randbereich, und auch ein fest
-   positioniertes Element deckt ihn nicht ab. Die Abstaende liegen deshalb
+   positioniertes Element deckt ihn nicht ab. Die Abstände liegen deshalb
    innen, an Kopf, Kapiteln und Fussbereich. */
 @page{
   size:A4;
@@ -253,14 +253,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     -webkit-print-color-adjust:exact; print-color-adjust:exact;
   }
   *{-webkit-print-color-adjust:exact !important; print-color-adjust:exact !important}
-  /* Der Seitenhintergrund deckt sonst nur den Satzspiegel ab, die Raender
+  /* Der Seitenhintergrund deckt sonst nur den Satzspiegel ab, die Ränder
      blieben weiss. Ein fest positioniertes Element wird auf jeder Seite neu
-     gezeichnet und fuellt sie ganz. */
+     gezeichnet und füllt sie ganz. */
   body::before{
     content:""; position:fixed; inset:0;
     background:#070b14; z-index:-1;
   }
-  /* Text mit Farbverlauf hinterlaesst im PDF eine feine Linie an der Kante -
+  /* Text mit Farbverlauf hinterlässt im PDF eine feine Linie an der Kante -
      im Druck deshalb eine einfarbige Schrift. */
   .kopf h1 .akzent{
     background:none; color:var(--blau-hell);
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.98</span>
+      <span class="marke">Version v1.8.99</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -1155,8 +1155,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Metadaten aus dem Netz</span>
     <p>Fehlen in einem Backup <strong>Titel</strong>, <strong>Hersteller</strong>
     oder <strong>Kategorie</strong>, kann das Programm sie nachschlagen. Ob es
-    das von allein tut, haengt seit v1.8.92 vom System ab: Unter
-    <strong>Windows und Linux</strong> schlaegt es von allein nach, auf dem
+    das von allein tut, hängt seit v1.8.92 vom System ab: Unter
+    <strong>Windows und Linux</strong> schlägt es von allein nach, auf dem
     <strong>Mac</strong> nicht. Wo es nicht von allein geschieht, erscheint im
     Fenster <em>Spiel-Info</em> ein Knopf
     <strong>Fehlende Angaben online nachschlagen</strong>; erst ein Klick darauf
@@ -1166,13 +1166,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     store.playstation.com sowie bei prosperopatches.com (PS5-Titel)
     beziehungsweise orbispatches.com (PS4-Titel). Einmal geholte Angaben liegen
     danach 30 Tage auf Ihrer Platte und kosten keine zweite Verbindung.</p>
-    <p>Umstellen laesst sich das in den <strong>Einstellungen</strong> im
+    <p>Umstellen lässt sich das in den <strong>Einstellungen</strong> im
     Abschnitt <strong>METADATEN AUS DEM NETZ</strong>. Ab Werk ist das
-    Kaestchen unter Windows und Linux gesetzt, auf dem Mac leer. Sobald Sie es
+    Kästchen unter Windows und Linux gesetzt, auf dem Mac leer. Sobald Sie es
     einmal selbst setzen oder leeren, gilt <strong>Ihre</strong> Wahl &ndash;
-    auf jedem System und ueber Programmstarts hinweg.</p>
+    auf jedem System und über Programmstarts hinweg.</p>
     <p><strong>Mit einer Firewall</strong> (etwa Little Snitch auf dem Mac):
-    Die Meldung erscheint nur noch, wenn Sie den Knopf druecken. Erlauben Sie
+    Die Meldung erscheint nur noch, wenn Sie den Knopf drücken. Erlauben Sie
     die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
     still.</p>
   </div>
@@ -1200,7 +1200,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.98), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.99), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1400,7 +1400,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.98</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.99</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

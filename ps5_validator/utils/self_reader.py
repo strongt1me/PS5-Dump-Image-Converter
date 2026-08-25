@@ -245,7 +245,7 @@ def read_self(path: str) -> SelfInfo:
             )
 
         if len(data) < HEADER_SIZE:
-            raise SelfParseError(f"Datei ist zu kurz fuer einen SELF-Kopf: {path}")
+            raise SelfParseError(f"Datei ist zu kurz für einen SELF-Kopf: {path}")
         magic = struct.unpack_from("<I", data, 0)[0]
         if magic not in SELF_MAGICS:
             raise SelfParseError(f"Keine erkennbare SELF-Datei (unbekannte Magic): {path}")

@@ -118,7 +118,7 @@ def read_title_name_from_trophy(source_dir: str) -> str:
                     return treffer.group(1).decode("utf-8", "replace").strip()
                 rest = block[:ueberlappung]
     except OSError as exc:
-        logger.debug("Trophaeendatei nicht lesbar (%s): %s", pfad, exc)
+        logger.debug("Trophäendatei nicht lesbar (%s): %s", pfad, exc)
     return ""
 
 

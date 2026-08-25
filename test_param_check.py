@@ -245,7 +245,7 @@ class DateiTests(unittest.TestCase):
         # traegt also kein Title-ID-Muster - das ist ein Hinweis, kein Fehler.
         self._schreiben(json.dumps(_gueltiges_dokument()).encode("utf-8"))
         befund = pc.pruefe_datei(self.pfad)
-        self.assertTrue(any("uebergeordnete Ordner" in h for h in befund.hinweise),
+        self.assertTrue(any("übergeordnete Ordner" in h for h in befund.hinweise),
                         befund.hinweise)
 
 

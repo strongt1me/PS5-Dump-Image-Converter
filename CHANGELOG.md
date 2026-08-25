@@ -2,7 +2,39 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.98):** Knopf 7 „7. AMPR EMU Manager“ öffnet jetzt ein kleines rahmenloses Fenster: alte Methode, neue Methode oder fest ins Backup einbauen – je mit Anleitung. Neu ist auch die Wahl der Ablage: **pro Spiel, global oder in den Emulator-Ordner**, so wie ShadowMount+ sie beschreibt. Und der Einbau legt die Bibliotheken dorthin, wo ShadowMount+ sie in **beiden** Fassungen findet.
+> **Kurz zum aktuellen Stand (v1.8.99):** Die Oberfläche schreibt endlich richtig Deutsch. Überall, wo bisher „fuer“, „ueber“ oder „geprueft“ stand, stehen jetzt echte Umlaute – im Protokoll des Hauptfensters, in allen Meldungen, in der Diagnose und im Handbuch.
+
+---
+
+## v1.8.99 – 25.08.2026
+
+### Echte Umlaute in der ganzen Oberfläche
+
+An vielen Stellen stand bisher die Behelfsschreibweise: „fuer“ statt
+„für“, „ueber“ statt „über“,
+„geprueft“ statt „geprüft“. Das betraf das Protokoll
+im Hauptfenster, die Meldungen der Prüfung, die Anzeigediagnose, die
+Umgebungsprüfung und die Hinweise in den Dialogen.
+
+Jetzt steht dort, was dort hingehört – in **410 Textstellen**
+umgestellt. Zwei Beispiele aus der Diagnose:
+
+* vorher: `Sichtbare Raender: keine (Fokusrahmen zaehlen nicht mit)`
+* jetzt: `Sichtbare Ränder: keine (Fokusrahmen zählen nicht mit)`
+
+Auch das Handbuch und der Changelog sind nachgezogen.
+
+**Warum das nicht einfach „suchen und ersetzen“ war:** Die Buchstaben
+„ue“ stehen auch dort, wo kein Umlaut hingehört – in
+„neue“, „Quelle“, „Steuerung“,
+„Vertrauenswürdig“. Eine schlichte Ersetzung hätte daraus
+„nü“ und „Vertraünswürdig“ gemacht.
+Umgestellt wurde deshalb über eine geprüfte Wortliste, Wort für
+Wort entschieden.
+
+**Was bewusst gleich bleibt:** Platzhalter wie `{hoehe}` sind Kennungen, keine
+Sprache – sie bleiben, sonst findet das Programm sie nicht mehr. Und die
+Kommentare im Quelltext sind Entwicklertext und wurden nicht angefasst.
 
 ---
 
@@ -1852,9 +1884,9 @@ Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19
 - Beim Speichern wurde die Einstellungsdatei zuerst geleert und dann neu geschrieben. Wurde in diesem Moment gelesen – oder brach das Programm dazwischen ab –, waren Temp-Ordner, PS5-Adresse, Hintergrundbild und die übrigen Werte verloren.
 - Die Datei wird jetzt vollständig neben der alten aufgebaut und erst danach in einem Schritt ersetzt. Ist sie kurzzeitig belegt, wird der Vorgang wiederholt statt aufzugeben.
 
-### Groessenhinweis fuer das Hintergrundbild
+### Größenhinweis für das Hintergrundbild
 
-- Bei den Einstellungen steht jetzt auch fuer das Haupt-Hintergrundbild eine Groessenempfehlung (1920 x 1020 Pixel) – bisher gab es die nur beim Sidebar-Bild.
+- Bei den Einstellungen steht jetzt auch für das Haupt-Hintergrundbild eine Größenempfehlung (1920 x 1020 Pixel) – bisher gab es die nur beim Sidebar-Bild.
 - Der Hinweis erklaert ausserdem, dass das Bild auf die Fenstergroesse gestreckt wird und ein abweichendes Seitenverhältnis daher verzerrt.
 
 ### Beschriftung von Aufgabe 7

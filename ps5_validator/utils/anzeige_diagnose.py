@@ -218,7 +218,7 @@ def pruefe_flaechen(fenster: Fensterlage,
         if (f.breite <= 1 or f.hoehe <= 1) and f.wunschbreite > 1 and f.wunschhoehe > 1:
             befunde.append(Befund(
                 FEHLER, "eingeklappt",
-                "%s (%s) ist auf %dx%d zusammengedrueckt, braucht aber %dx%d"
+                "%s (%s) ist auf %dx%d zusammengedrückt, braucht aber %dx%d"
                 % (f.name, f.klasse, f.breite, f.hoehe,
                    f.wunschbreite, f.wunschhoehe)))
             continue
@@ -236,12 +236,12 @@ def pruefe_flaechen(fenster: Fensterlage,
         if rechts > RAND_TOLERANZ:
             befunde.append(Befund(
                 WARNUNG, "abgeschnitten",
-                "%s (%s) steht %d px ueber den rechten Fensterrand hinaus"
+                "%s (%s) steht %d px über den rechten Fensterrand hinaus"
                 % (f.name, f.klasse, rechts)))
         if unten > RAND_TOLERANZ:
             befunde.append(Befund(
                 WARNUNG, "abgeschnitten",
-                "%s (%s) steht %d px ueber den unteren Fensterrand hinaus"
+                "%s (%s) steht %d px über den unteren Fensterrand hinaus"
                 % (f.name, f.klasse, unten)))
         if f.x - fenster.x < -RAND_TOLERANZ:
             befunde.append(Befund(
@@ -257,12 +257,12 @@ def pruefe_flaechen(fenster: Fensterlage,
             if fehlt_breit > RAND_TOLERANZ:
                 befunde.append(Befund(
                     WARNUNG, "text_beschnitten",
-                    "%s (%s) ist %d px zu schmal fuer seine Beschriftung"
+                    "%s (%s) ist %d px zu schmal für seine Beschriftung"
                     % (f.name, f.klasse, fehlt_breit)))
             if fehlt_hoch > RAND_TOLERANZ:
                 befunde.append(Befund(
                     WARNUNG, "text_beschnitten",
-                    "%s (%s) ist %d px zu niedrig fuer seine Beschriftung"
+                    "%s (%s) ist %d px zu niedrig für seine Beschriftung"
                     % (f.name, f.klasse, fehlt_hoch)))
     return befunde
 
@@ -290,7 +290,7 @@ def pruefe_bilder(bilder: list[Bildlage]) -> list[Befund]:
                 befunde.append(Befund(
                     WARNUNG, "bild_hochgerechnet",
                     "%s: Datei %dx%d auf %dx%d hochgerechnet (+%s) - wirkt weich; "
-                    "mindestens %dx%d waeren noetig"
+                    "mindestens %dx%d wären nötig"
                     % (b.name, b.quelle[0], b.quelle[1],
                        b.flaeche[0], b.flaeche[1], _prozent(faktor),
                        b.flaeche[0], b.flaeche[1])))
@@ -304,7 +304,7 @@ def pruefe_bilder(bilder: list[Bildlage]) -> list[Befund]:
             if ab > RAND_TOLERANZ or ah > RAND_TOLERANZ:
                 befunde.append(Befund(
                     FEHLER, "bild_nicht_nachgezogen",
-                    "%s: gezeichnet %dx%d, Flaeche ist aber %dx%d - "
+                    "%s: gezeichnet %dx%d, Fläche ist aber %dx%d - "
                     "die Anpassung ist stehengeblieben"
                     % (b.name, b.gezeichnet[0], b.gezeichnet[1],
                        b.flaeche[0], b.flaeche[1])))
@@ -337,21 +337,21 @@ def pruefe_skalierung(lage: Skalierungslage) -> list[Befund]:
             befunde.append(Befund(
                 WARNUNG, "skalierung_weicht_ab",
                 "tk scaling steht auf %.4f, das Fenster meldet aber %d dpi "
-                "(erwartet %.4f) - Schrift und Abstaende passen nicht zusammen"
+                "(erwartet %.4f) - Schrift und Abstände passen nicht zusammen"
                 % (lage.tk_skalierung, lage.fenster_dpi, erwartet)))
 
     if 0 < lage.schrifthoehe_px < SCHRIFT_MINDESTHOEHE_PX:
         befunde.append(Befund(
             WARNUNG, "schrift_zu_klein",
             "Die Standardschrift ist nur %d px hoch (%d pt) - unter %d px "
-            "wird die Oberflaeche schwer lesbar"
+            "wird die Oberfläche schwer lesbar"
             % (lage.schrifthoehe_px, lage.schriftgroesse_pt,
                SCHRIFT_MINDESTHOEHE_PX)))
     elif lage.schrifthoehe_px > SCHRIFT_HOECHSTHOEHE_PX:
         befunde.append(Befund(
             HINWEIS, "schrift_sehr_gross",
-            "Die Standardschrift ist %d px hoch - Beschriftungen koennen "
-            "ihre Knoepfe sprengen" % lage.schrifthoehe_px))
+            "Die Standardschrift ist %d px hoch - Beschriftungen können "
+            "ihre Knöpfe sprengen" % lage.schrifthoehe_px))
     return befunde
 
 
@@ -369,7 +369,7 @@ def pruefe_laufruhe(lage: Laufruhelage) -> list[Befund]:
     if lage.speicher_mb >= SPEICHER_FEHLER_MB:
         befunde.append(Befund(
             FEHLER, "speicher_hoch",
-            "Das Programm belegt %.0f MB - ab %d MB ist mit Abbruechen zu "
+            "Das Programm belegt %.0f MB - ab %d MB ist mit Abbrüchen zu "
             "rechnen" % (lage.speicher_mb, SPEICHER_FEHLER_MB)))
     elif lage.speicher_mb >= SPEICHER_WARNUNG_MB:
         befunde.append(Befund(
@@ -384,19 +384,19 @@ def pruefe_laufruhe(lage: Laufruhelage) -> list[Befund]:
         befunde.append(Befund(
             WARNUNG, "speicher_waechst",
             "Seit dem Start sind %.0f MB dazugekommen, ohne dass ein Auftrag "
-            "laeuft - das deutet auf ein Leck" % zuwachs))
+            "läuft - das deutet auf ein Leck" % zuwachs))
 
     if lage.tk_bilder > TK_BILDER_GRENZE:
         befunde.append(Befund(
             WARNUNG, "bilder_haeufen_sich",
-            "Tk haelt %d Bilder im Speicher (Grenze %d) - vermutlich wird bei "
+            "Tk hält %d Bilder im Speicher (Grenze %d) - vermutlich wird bei "
             "jedem Neuzeichnen eines angelegt und keines verworfen"
             % (lage.tk_bilder, TK_BILDER_GRENZE)))
 
     if lage.offene_zeitgeber > ZEITGEBER_GRENZE:
         befunde.append(Befund(
             WARNUNG, "zeitgeber_haeufen_sich",
-            "%d offene after-Auftraege (Grenze %d) - ein Zeitgeber bestellt "
+            "%d offene after-Aufträge (Grenze %d) - ein Zeitgeber bestellt "
             "sich neu, ohne abbestellt zu werden"
             % (lage.offene_zeitgeber, ZEITGEBER_GRENZE)))
 
@@ -404,12 +404,12 @@ def pruefe_laufruhe(lage: Laufruhelage) -> list[Befund]:
         befunde.append(Befund(
             FEHLER, "schleife_traege",
             "Ein Durchlauf der Ereignisschleife dauert %.0f ms - das Fenster "
-            "reagiert sichtbar verzoegert" % lage.schleife_ms))
+            "reagiert sichtbar verzögert" % lage.schleife_ms))
     elif lage.schleife_ms >= SCHLEIFE_WARNUNG_MS:
         befunde.append(Befund(
             WARNUNG, "schleife_traege",
             "Ein Durchlauf der Ereignisschleife dauert %.0f ms - Bewegungen "
-            "wirken nicht mehr fluessig" % lage.schleife_ms))
+            "wirken nicht mehr flüssig" % lage.schleife_ms))
     return befunde
 
 
@@ -447,7 +447,7 @@ def zusammenfassung(ergebnis: Pruefergebnis) -> str:
         Klartext, kein Schluessel - die Zeile steht so im Bericht.
     """
     if not ergebnis.befunde:
-        return "Darstellung: keine Auffaelligkeit"
+        return "Darstellung: keine Auffälligkeit"
     teile = []
     for schwere in (FEHLER, WARNUNG, HINWEIS):
         anzahl = sum(1 for b in ergebnis.befunde if b.schwere == schwere)

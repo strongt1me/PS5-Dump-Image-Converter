@@ -178,7 +178,7 @@ class ZusammenfassungTests(unittest.TestCase):
     """Die eine Zeile oben."""
 
     def test_ohne_befunde(self):
-        self.assertIn("nichts zu pruefen", ak.zusammenfassung([]))
+        self.assertIn("nichts zu prüfen", ak.zusammenfassung([]))
 
     def test_zaehlt_die_veralteten(self):
         befunde = [
@@ -188,7 +188,7 @@ class ZusammenfassungTests(unittest.TestCase):
             ak.Befund("d", "1", "", ak.UNBEKANNT),
         ]
         text = ak.zusammenfassung(befunde)
-        self.assertIn("1 Aktualisierung verfuegbar", text)
+        self.assertIn("1 Aktualisierung verfügbar", text)
         self.assertIn("1 nicht abfragbar", text)
         self.assertIn("1 ohne abfragbare Quelle", text)
 

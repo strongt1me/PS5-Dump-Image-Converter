@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.98
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.99
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -298,7 +298,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.98',
+    name='PS5_Dump_Image_Converter_v1.8.99',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

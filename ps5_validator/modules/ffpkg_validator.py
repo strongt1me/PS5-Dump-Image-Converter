@@ -63,7 +63,7 @@ class FfpkgValidator(BaseValidator):
         try:
             image_size = image.stat().st_size
         except OSError as exc:
-            result.set_failed(f"Dateigroesse nicht lesbar: {exc}")
+            result.set_failed(f"Dateigröße nicht lesbar: {exc}")
             return result
         if image_size == 0:
             result.set_corrupted("Datei ist leer (0 Bytes).")
@@ -96,7 +96,7 @@ class FfpkgValidator(BaseValidator):
         result.summary["fsck_return_code"] = fsck_rc
         if fsck_rc != 0:
             result.set_corrupted(
-                f"UFS2-Konsistenzpruefung fehlgeschlagen (fsck_ufs rc={fsck_rc}): "
+                f"UFS2-Konsistenzprüfung fehlgeschlagen (fsck_ufs rc={fsck_rc}): "
                 f"{fsck_output or 'keine Ausgabe'}"
             )
             return result
@@ -111,7 +111,7 @@ class FfpkgValidator(BaseValidator):
                     ),
                 )
         except OSError as exc:
-            result.set_corrupted(f"Datei nicht vollstaendig lesbar: {exc}")
+            result.set_corrupted(f"Datei nicht vollständig lesbar: {exc}")
             return result
 
         result.hashes[image.name] = file_hash
@@ -119,7 +119,7 @@ class FfpkgValidator(BaseValidator):
         if read_errors:
             for error in read_errors:
                 result.add_error(error)
-            result.set_corrupted(f"{len(read_errors)} Lesefehler - Datei beschaedigt.")
+            result.set_corrupted(f"{len(read_errors)} Lesefehler - Datei beschädigt.")
         else:
             result.status = "OK"
         return result

@@ -93,17 +93,17 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
         "log_marken": (
             ("game libraries mounted for", "Spiel-fakelib aktiv"),
             ("global libraries mounted for", "Globale fakelib aktiv"),
-            ("mount failed for", "Einhaengen fehlgeschlagen, Stapel zurueckgerollt"),
+            ("mount failed for", "Einhängen fehlgeschlagen, Stapel zurückgerollt"),
             ("global path unavailable for", "Globaler Pfad fehlt oder nicht lesbar"),
             ("global path is not a directory for", "Pfad zeigt auf eine Datei"),
-            ("handoff active mount", "Spielwechsel, alter Mount wird abgeraeumt"),
+            ("handoff active mount", "Spielwechsel, alter Mount wird abgeräumt"),
             ("unmount deferred for", "Ziel noch belegt (EBUSY)"),
         ),
     },
     NEU: {
         "kennung": NEU,
         "gilt_fuer": "ShadowMountPlus ab 1.7 alpha8",
-        "nicht_fuer": "1.7 alpha6 und aelter",
+        "nicht_fuer": "1.7 alpha6 und älter",
         # Im Spielordner zaehlt NUR fakelib.
         "spiel_ordner": (FAKELIB,),
         "spiel_fakelib2_wirkt": False,
@@ -125,16 +125,16 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
             ("global_fakelib_exclude", ""),
         ),
         "log_marken": (
-            ("using cache for", "Zusammengefuehrter Cache wird eingehaengt"),
+            ("using cache for", "Zusammengeführter Cache wird eingehängt"),
             ("cache updated for", "Cache neu gebaut"),
             ("cache current for", "Cache ist aktuell, kein Neubau"),
-            ("combined cache unavailable", "Globale fakelib fuer diesen Start ausgelassen"),
+            ("combined cache unavailable", "Globale fakelib für diesen Start ausgelassen"),
             ("libraries mounted for", "Mount aktiv"),
-            ("cache build failed", "Speicherplatz und Rechte pruefen"),
-            ("cache publish failed", "Speicherplatz und Rechte pruefen"),
+            ("cache build failed", "Speicherplatz und Rechte prüfen"),
+            ("cache publish failed", "Speicherplatz und Rechte prüfen"),
             ("global path unavailable", "Globaler Pfad fehlt"),
             ("global path is not a directory", "Globaler Pfad ist eine Datei"),
-            ("handoff active mount", "Spielwechsel, alter Mount wird abgeraeumt"),
+            ("handoff active mount", "Spielwechsel, alter Mount wird abgeräumt"),
             ("unmount deferred for", "Ziel noch belegt (EBUSY)"),
         ),
     },
@@ -214,19 +214,19 @@ def _ablageziel_fest(generation: str, ort: str, *,
     if ort == ORT_EMUS and not p["hat_emus"]:
         return {"pfad": "", "ordner": "", "wirkt": False, "empfohlen": False,
                 "hinweis": ("Emulator-Dateien gibt es erst ab 1.7 alpha8. "
-                            "Die aeltere Fassung liest %s gar nicht."
+                            "Die ältere Fassung liest %s gar nicht."
                             % EMUS_STANDARD)}
     standard = GLOBAL_STANDARD if ort == ORT_GLOBAL else EMUS_STANDARD
     ziel = (str(pfad).strip() or standard).rstrip("/")
 
     if ort == ORT_GLOBAL:
         if generation == ALT:
-            hinweis = ("Wird als zweite Schicht ueber das Spiel gelegt und "
-                       "gilt fuer jedes erfasste Spiel. Bei gleichem "
+            hinweis = ("Wird als zweite Schicht über das Spiel gelegt und "
+                       "gilt für jedes erfasste Spiel. Bei gleichem "
                        "Dateinamen entscheidet global_fakelib_priority - "
                        "voreingestellt gewinnt die Datei des Spiels.")
         else:
-            hinweis = ("Wird vollstaendig in den Cache kopiert und gilt fuer "
+            hinweis = ("Wird vollständig in den Cache kopiert und gilt für "
                        "jedes erfasste Spiel. Bei gleichem Dateinamen "
                        "entscheidet global_fakelib_priority - voreingestellt "
                        "gewinnt die Datei des Spiels.")
@@ -239,8 +239,8 @@ def _ablageziel_fest(generation: str, ort: str, *,
     # Spiel-fakelib ueberhaupt gibt - sonst wird sie uebersprungen.
     return {"pfad": ziel, "ordner": "", "wirkt": True, "empfohlen": True,
             "hinweis": ("Ersetzt nur Dateien, die im fakelib des Spiels "
-                        "schon liegen - neue Namen werden uebersprungen. "
-                        "Fuer ein Spiel ohne libSceAmpr.sprx bringt dieser "
+                        "schon liegen - neue Namen werden übersprungen. "
+                        "Für ein Spiel ohne libSceAmpr.sprx bringt dieser "
                         "Weg allein nichts.")}
 
 
@@ -277,9 +277,9 @@ def ablageziel(generation: str, ort: str, *, wurzel: str = "",
         hinweis = ""
         if generation == NEU:
             hinweis = ("Erster Treffer der Suchreihenfolge - das Spiel bleibt "
-                       "unberuehrt.")
+                       "unberührt.")
         else:
-            hinweis = ("Der Backport wird ueber das Spiel gelegt und erscheint "
+            hinweis = ("Der Backport wird über das Spiel gelegt und erscheint "
                        "dadurch ebenfalls in app0.")
         return {"pfad": pfad, "ordner": ordner, "wirkt": True,
                 "empfohlen": True, "hinweis": hinweis}
@@ -291,12 +291,12 @@ def ablageziel(generation: str, ort: str, *, wurzel: str = "",
     empfohlen = True
     if generation == NEU:
         empfohlen = False
-        hinweis = ("Hier zaehlt nur %r. Ein %r im Spielordner wird ab alpha8 "
+        hinweis = ("Hier zählt nur %r. Ein %r im Spielordner wird ab alpha8 "
                    "ignoriert - ohne Meldung. Empfohlen ist die Ablage als "
                    "Backport." % (FAKELIB, FAKELIB2))
     else:
         hinweis = ("%r hat Vorrang vor %r; es wird immer nur einer von beiden "
-                   "eingehaengt." % (FAKELIB2, FAKELIB))
+                   "eingehängt." % (FAKELIB2, FAKELIB))
     return {"pfad": pfad, "ordner": ordner, "wirkt": True,
             "empfohlen": empfohlen, "hinweis": hinweis}
 
@@ -332,7 +332,7 @@ def beanstandungen(generation: str, ort: str,
         if da and not (da & wirksam):
             meldungen.append(
                 "Keiner der gefundenen Ordner wirkt an dieser Stelle. "
-                "Wirksam waere: %s." % ", ".join(sorted(wirksam)))
+                "Wirksam wäre: %s." % ", ".join(sorted(wirksam)))
     elif ort == ORT_BACKPORT:
         wirksam = set(p["backport_ordner"])
         if da and not (da & wirksam):
@@ -345,9 +345,9 @@ def beanstandungen(generation: str, ort: str,
     elif ort == ORT_GLOBAL:
         if FAKELIB in da or FAKELIB2 in da:
             meldungen.append(
-                "Im globalen Ordner liegt ein Unterordner %r. Dort gehoeren "
+                "Im globalen Ordner liegt ein Unterordner %r. Dort gehören "
                 "die Bibliotheken direkt hinein - ein Unterordner wird "
-                "mitkopiert, aber nicht eingehaengt."
+                "mitkopiert, aber nicht eingehängt."
                 % (FAKELIB if FAKELIB in da else FAKELIB2,))
     elif ort == ORT_EMUS:
         if not p["hat_emus"]:
@@ -438,7 +438,7 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
     if gefunden:
         belege.append((NEU, "config.ini nennt %s" % ", ".join(gefunden)))
     elif config_text:
-        belege.append((ALT, "config.ini nennt keinen der neuen Schluessel"))
+        belege.append((ALT, "config.ini nennt keinen der neuen Schlüssel"))
 
     if cache_ordner_da is True:
         belege.append((NEU, "%s/ existiert" % CACHE_ORDNER))
@@ -446,7 +446,7 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
     # wenn er gebraucht wird. Deshalb kein Beleg fuer ALT.
 
     if log_text and NUR_NEU_LOGZEILE in log_text:
-        belege.append((NEU, "debug.log enthaelt %r" % NUR_NEU_LOGZEILE))
+        belege.append((NEU, "debug.log enthält %r" % NUR_NEU_LOGZEILE))
 
     kennungen = {k for k, _ in belege}
     if not kennungen:
@@ -490,22 +490,22 @@ def stolperfallen(generation: str) -> tuple[str, ...]:
     """Die Punkte, an denen es in der Praxis haengt."""
     gemeinsam = (
         "Nur ein Spiel gleichzeitig - beim Wechsel wird der alte Mount zuerst "
-        "abgeraeumt; scheitert das, bekommt das neue Spiel keine fakelib.",
-        "Die config.ini nicht waehrend des Spiels aendern - jede Aenderung an "
-        "einem fakelib-Schluessel entfernt sofort alle Overlays.",
+        "abgeräumt; scheitert das, bekommt das neue Spiel keine fakelib.",
+        "Die config.ini nicht während des Spiels ändern - jede Änderung an "
+        "einem fakelib-Schlüssel entfernt sofort alle Overlays.",
         "Ohne common/lib in der Sandbox passiert nichts - stiller Abbruch "
         "ohne Meldung.",
         "Das BackPork-Payload muss aus sein; Parallelbetrieb kollidiert.",
     )
     if generation == ALT:
         return gemeinsam + (
-            "Bei mehreren Sandboxen <TITLE_ID>_NNN gewinnt die hoechste "
-            "Nummer; alte Reste stoeren nicht.",
+            "Bei mehreren Sandboxen <TITLE_ID>_NNN gewinnt die höchste "
+            "Nummer; alte Reste stören nicht.",
         )
     return gemeinsam + (
         "Der Cache-Ordner darf nicht als global_fakelib_path gesetzt werden - "
         "das wird abgelehnt.",
-        "Der Kommentar ueber backport_fakelib in der mitgelieferten "
+        "Der Kommentar über backport_fakelib in der mitgelieferten "
         "config.ini.example beschreibt noch das alte app0-Verhalten und ist "
         "stehengeblieben.",
     )

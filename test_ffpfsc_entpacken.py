@@ -638,7 +638,7 @@ class VollstaendigkeitTests(unittest.TestCase):
                 gui._pruefe_dump_vollstaendig(str(ziel), (dateien, bytes_gesamt + 5_000_000_000))
             )
             self.assertTrue(
-                any("Unvollstaendig" in zeile for zeile in gui._log_lines),
+                any("Unvollständig" in zeile for zeile in gui._log_lines),
                 msg="Der Fehlbetrag muss im Protokoll stehen",
             )
 

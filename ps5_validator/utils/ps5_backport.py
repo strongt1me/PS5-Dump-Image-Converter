@@ -363,7 +363,7 @@ def self_zu_elf(daten: bytes) -> bytes:
         BackportFehler: Kein SELF oder kein eingebettetes ELF auffindbar.
     """
     if len(daten) < 0x20:
-        raise BackportFehler("Datei zu kurz fuer einen SELF-Container.")
+        raise BackportFehler("Datei zu kurz für einen SELF-Container.")
     kennung = struct.unpack_from("<I", daten, 0)[0]
     if kennung not in (MAGIC_SELF_A, MAGIC_SELF_B):
         raise BackportFehler("Keine SELF-Kennung am Dateianfang.")
@@ -392,7 +392,7 @@ def self_zu_elf(daten: bytes) -> bytes:
         """(Typ, Offset, Dateigroesse) des i-ten Programmkopfeintrags."""
         basis = pht + i * e_phentsize
         if basis + PHDR_SIZE > len(daten):
-            raise BackportFehler("Programmkopftabelle reicht ueber das Dateiende hinaus.")
+            raise BackportFehler("Programmkopftabelle reicht über das Dateiende hinaus.")
         typ = struct.unpack_from("<I", daten, basis)[0]
         offset = struct.unpack_from("<Q", daten, basis + 0x08)[0]
         filesz = struct.unpack_from("<Q", daten, basis + 0x20)[0]
@@ -413,7 +413,7 @@ def self_zu_elf(daten: bytes) -> bytes:
             letzte_groesse = filesz
     gesamt = letztes_offset + letzte_groesse
     if gesamt <= 0 or gesamt > (1 << 34):
-        raise BackportFehler(f"Unglaubwuerdige ELF-Groesse: {gesamt}")
+        raise BackportFehler(f"Unglaubwürdige ELF-Größe: {gesamt}")
 
     ausgabe = bytearray(gesamt)
 
@@ -536,10 +536,10 @@ def elf_signieren(elf: bytes, *, paid: int = PAID_STANDARD,
         BackportFehler: Kein brauchbares ELF.
     """
     if len(elf) < 64:
-        raise BackportFehler("Datei zu kurz fuer ein ELF.")
+        raise BackportFehler("Datei zu kurz für ein ELF.")
     kopf = _ElfKopf(elf)
     if kopf.phentsize == 0 or kopf.phnum == 0:
-        raise BackportFehler("ELF ohne Programmkopftabelle laesst sich nicht signieren.")
+        raise BackportFehler("ELF ohne Programmkopftabelle lässt sich nicht signieren.")
     # Abschnittskoepfe werden nicht uebernommen (wie im Original).
     kopf.shnum = 0
 
@@ -550,7 +550,7 @@ def elf_signieren(elf: bytes, *, paid: int = PAID_STANDARD,
     for i in range(kopf.phnum):
         basis = kopf.phoff + i * kopf.phentsize
         if basis + PHDR_SIZE > len(elf):
-            raise BackportFehler("Programmkopftabelle reicht ueber das Dateiende hinaus.")
+            raise BackportFehler("Programmkopftabelle reicht über das Dateiende hinaus.")
         typ, flags, offset, vaddr, paddr, filesz, memsz, align = struct.unpack_from(
             PHDR_FMT, elf, basis)
         programm_koepfe.append({
@@ -559,7 +559,7 @@ def elf_signieren(elf: bytes, *, paid: int = PAID_STANDARD,
         })
         if filesz > 0:
             if offset + filesz > len(elf):
-                raise BackportFehler(f"Segment {i} reicht ueber das Dateiende hinaus.")
+                raise BackportFehler(f"Segment {i} reicht über das Dateiende hinaus.")
             segmente.append(elf[offset:offset + filesz])
         else:
             segmente.append(b"")
@@ -584,7 +584,7 @@ def elf_signieren(elf: bytes, *, paid: int = PAID_STANDARD,
         lauf += 2
 
     if not eintraege:
-        raise BackportFehler("ELF enthaelt kein signierbares Segment.")
+        raise BackportFehler("ELF enthält kein signierbares Segment.")
 
     anzahl = len(eintraege)
     flags = 0x2 | ((2 & FLAGS_SEGMENT_SIGNED_MASK) << FLAGS_SEGMENT_SIGNED_SHIFT)
@@ -746,7 +746,7 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
 
     if not muss_gepatcht_werden(aktuell_ps5, ziel_ps5):
         return (ERG_UEBERSPRUNGEN, daten,
-                f"bereits {firmware_text(aktuell_ps5)} oder aelter")
+                f"bereits {firmware_text(aktuell_ps5)} oder älter")
 
     try:
         elf, alt_ps5, _alt_ps4 = sdk_setzen(elf, ziel_ps5, ziel_ps4)

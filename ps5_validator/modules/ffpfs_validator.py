@@ -265,10 +265,10 @@ class FfpfsValidator(BaseValidator):
             return
 
         result.summary["critical_missing"] = fehlend
-        result.summary["critical_files"] = f"unvollstaendig ({len(fehlend)} fehlen)"
+        result.summary["critical_files"] = f"unvollständig ({len(fehlend)} fehlen)"
         result.set_failed(
             "Pflichtdateien fehlen im Container: " + ", ".join(fehlend) +
-            ". Der Container wurde vermutlich aus einem unvollstaendigen Dump gebaut "
+            ". Der Container wurde vermutlich aus einem unvollständigen Dump gebaut "
             "und startet auf der Konsole nicht."
         )
 
@@ -304,7 +304,7 @@ class FfpfsValidator(BaseValidator):
         result.summary["inner_bytes"] = sum(max(0, int(e.length)) for e in eintraege)
         if not eintraege:
             result.summary["nesting"] = "falsch aufgebaut (exFAT-Abbild ohne Dateien)"
-            result.set_failed("Das exFAT-Abbild im Container enthaelt keine Dateien.")
+            result.set_failed("Das exFAT-Abbild im Container enthält keine Dateien.")
             return
 
         self._check_critical_files({e.rel_path: e for e in eintraege}, result)
@@ -333,14 +333,14 @@ class FfpfsValidator(BaseValidator):
         an den Nutzdaten.
         """
         if not _ensure_mkpfs_importable():
-            result.summary["nesting"] = "nicht geprueft (mkpfs nicht verfuegbar)"
-            self._log.info("Verschachtelungspruefung uebersprungen: mkpfs nicht importierbar")
+            result.summary["nesting"] = "nicht geprüft (mkpfs nicht verfügbar)"
+            self._log.info("Verschachtelungsprüfung übersprungen: mkpfs nicht importierbar")
             return
         try:
             from mkpfs import pfs as mkpfs_pfs
         except ImportError as exc:
-            result.summary["nesting"] = "nicht geprueft (mkpfs nicht verfuegbar)"
-            self._log.info(f"Verschachtelungspruefung uebersprungen: {exc}")
+            result.summary["nesting"] = "nicht geprüft (mkpfs nicht verfügbar)"
+            self._log.info(f"Verschachtelungsprüfung übersprungen: {exc}")
             return
 
         handle = None
@@ -356,11 +356,11 @@ class FfpfsValidator(BaseValidator):
                 # aussen genau ein Eintrag (das rohe innere Image). Liegen die
                 # Dateien direkt darin, fehlt diese Stufe.
                 result.summary["nesting"] = (
-                    f"flach aufgebaut ({aussen_dateien} Eintraege direkt im Container, "
+                    f"flach aufgebaut ({aussen_dateien} Einträge direkt im Container, "
                     f"kein inneres Image)"
                 )
                 result.add_error(
-                    f"Ungewoehnlicher Aufbau: Der Container enthaelt {aussen_dateien} Eintraege "
+                    f"Ungewöhnlicher Aufbau: Der Container enthält {aussen_dateien} Einträge "
                     f"direkt statt genau eines inneren PFS-Images. Von diesem Programm erzeugte "
                     f".ffpfsc/.ffpfs sind zweistufig aufgebaut."
                 )
@@ -371,7 +371,7 @@ class FfpfsValidator(BaseValidator):
                 # Einzeldatei, aber nicht als zusammenhaengende, unsignierte
                 # Nutzlast abgelegt (z. B. signiert oder verstreut). Kein
                 # Fehler - nur nicht auf diesem Weg pruefbar.
-                result.summary["nesting"] = "nicht pruefbar (Nutzlast nicht zusammenhaengend)"
+                result.summary["nesting"] = "nicht prüfbar (Nutzlast nicht zusammenhängend)"
                 return
             view, handle, inner_name = opened
             result.summary["inner_image"] = inner_name
@@ -389,7 +389,7 @@ class FfpfsValidator(BaseValidator):
             if kopf[EXFAT_SIGNATURE_OFFSET:EXFAT_SIGNATURE_OFFSET + len(EXFAT_SIGNATURE)] == EXFAT_SIGNATURE:
                 result.summary["nesting"] = "in Ordnung (exFAT-Abbild im Container)"
                 result.summary["inner_kind"] = "exfat"
-                self._log.info(f"Container enthaelt ein exFAT-Abbild: {inner_name}")
+                self._log.info(f"Container enthält ein exFAT-Abbild: {inner_name}")
                 self._check_exfat_inner(view, result)
                 return
 
@@ -401,7 +401,7 @@ class FfpfsValidator(BaseValidator):
             if ufs2_magic == UFS2_MAGIC_VALUE:
                 result.summary["nesting"] = "in Ordnung (UFS2-Abbild im Container)"
                 result.summary["inner_kind"] = "ffpkg"
-                self._log.info(f"Container enthaelt ein UFS2-Abbild: {inner_name}")
+                self._log.info(f"Container enthält ein UFS2-Abbild: {inner_name}")
                 return
 
             view.seek(0)
@@ -410,8 +410,8 @@ class FfpfsValidator(BaseValidator):
                 result.summary["nesting"] = "falsch aufgebaut (innen weder PFS- noch exFAT-Abbild)"
                 result.set_failed(
                     f"Innere Ebene ist weder ein PFS- noch ein exFAT-Abbild "
-                    f"(magic=0x{inner_header.magic:016X}) - der Container enthaelt nicht das, "
-                    f"was eine der beiden regulaeren Bauformen erwarten laesst."
+                    f"(magic=0x{inner_header.magic:016X}) - der Container enthält nicht das, "
+                    f"was eine der beiden regulären Bauformen erwarten lässt."
                 )
                 return
             result.summary["inner_kind"] = "pfs"
@@ -433,7 +433,7 @@ class FfpfsValidator(BaseValidator):
 
             if file_count == 0:
                 result.summary["nesting"] = "falsch aufgebaut (innere Ebene leer)"
-                result.set_failed("Innere Ebene enthaelt keine Dateien.")
+                result.set_failed("Innere Ebene enthält keine Dateien.")
                 return
 
             # Der eigentliche Fehlerfall: genau ein Eintrag, keine Ordner - und
@@ -459,7 +459,7 @@ class FfpfsValidator(BaseValidator):
 
             result.summary["nesting"] = "in Ordnung (Spieldateien auf der innersten Ebene)"
             self._log.info(
-                f"Verschachtelung geprueft: {file_count} Dateien in {dir_count} Ordnern "
+                f"Verschachtelung geprüft: {file_count} Dateien in {dir_count} Ordnern "
                 f"innerhalb von {inner_name}"
             )
 
@@ -472,8 +472,8 @@ class FfpfsValidator(BaseValidator):
         except Exception as exc:
             # Eine misslungene Tiefenpruefung darf die uebrige Validierung nicht
             # scheitern lassen - sie wird als Hinweis vermerkt.
-            result.summary["nesting"] = f"nicht pruefbar ({exc})"
-            self._log.info(f"Verschachtelungspruefung fehlgeschlagen: {exc}")
+            result.summary["nesting"] = f"nicht prüfbar ({exc})"
+            self._log.info(f"Verschachtelungsprüfung fehlgeschlagen: {exc}")
         finally:
             if handle is not None:
                 try:
@@ -490,13 +490,13 @@ class FfpfsValidator(BaseValidator):
             result.set_missing(f"Datei nicht gefunden: {path}")
             return result
         if not fpath.is_file():
-            result.set_failed(f"Keine regulaere Datei: {path}")
+            result.set_failed(f"Keine reguläre Datei: {path}")
             return result
 
         try:
             file_size = fpath.stat().st_size
         except OSError as exc:
-            result.set_failed(f"Dateigroesse nicht lesbar: {exc}")
+            result.set_failed(f"Dateigröße nicht lesbar: {exc}")
             return result
 
         if file_size == 0:
@@ -579,7 +579,7 @@ class FfpfsValidator(BaseValidator):
         if read_errors:
             for e in read_errors:
                 result.add_error(e)
-            result.set_corrupted(f"{len(read_errors)} Lesefehler - Datei beschaedigt.")
+            result.set_corrupted(f"{len(read_errors)} Lesefehler - Datei beschädigt.")
         elif not result.errors:
             # Nur OK wenn kein Header-Fehler und keine Lesefehler
             result.status = "OK"

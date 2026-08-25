@@ -68,7 +68,7 @@ class Befund:
 
     def __str__(self) -> str:
         if self.zustand == VERALTET:
-            kern = "%s -> %s verfuegbar" % (self.fassung, self.neueste)
+            kern = "%s -> %s verfügbar" % (self.fassung, self.neueste)
         elif self.zustand == AKTUELL:
             kern = "%s (aktuell)" % self.fassung
         elif self.zustand == VORAUS:
@@ -141,7 +141,7 @@ def beurteile(teil: Bestandteil, neueste: str = "", fehler: str = "") -> Befund:
         # kein __version__ mitbringt.
         return Befund(teil.name, teil.fassung, str(neueste), UNBEKANNT,
                       teil.quelle,
-                      "eigene Fassung nicht auslesbar, verfuegbar: %s" % neueste)
+                      "eigene Fassung nicht auslesbar, verfügbar: %s" % neueste)
     richtung = vergleiche(teil.fassung, neueste)
     zustand = AKTUELL if richtung == 0 else (VERALTET if richtung < 0 else VORAUS)
     return Befund(teil.name, teil.fassung, str(neueste), zustand,
@@ -237,12 +237,12 @@ def pruefe(teile: list[Bestandteil], holen, versuche: int = VERSUCHE) -> list[Be
 def zusammenfassung(befunde: list[Befund]) -> str:
     """Eine Zeile fuer den Kopf des Abschnitts."""
     if not befunde:
-        return "Aktualisierungen: nichts zu pruefen"
+        return "Aktualisierungen: nichts zu prüfen"
     veraltet = sum(1 for b in befunde if b.zustand == VERALTET)
     fehler = sum(1 for b in befunde if b.zustand == FEHLER)
     offen = sum(1 for b in befunde if b.zustand == UNBEKANNT)
     if veraltet:
-        kern = "%d Aktualisierung%s verfuegbar" % (veraltet, "" if veraltet == 1 else "en")
+        kern = "%d Aktualisierung%s verfügbar" % (veraltet, "" if veraltet == 1 else "en")
     else:
         kern = "alles auf dem Stand der abgefragten Quellen"
     teile = [kern]

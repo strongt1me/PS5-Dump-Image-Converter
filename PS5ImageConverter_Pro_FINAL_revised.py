@@ -413,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.98"
+APP_VERSION = "v1.8.99"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1012,7 +1012,7 @@ def _doktor_abhaengigkeiten() -> tuple[bool, list[str]]:
 #: 0xC0000135 = STATUS_DLL_NOT_FOUND, 0xC0000139 = ENTRYPOINT_NOT_FOUND,
 #: 0xC000007B = INVALID_IMAGE_FORMAT (32 gegen 64 Bit).
 DOKTOR_STARTFEHLER = {
-    0xC0000135: "eine benoetigte DLL fehlt",
+    0xC0000135: "eine benötigte DLL fehlt",
     0xC0000139: "ein Einsprungpunkt fehlt (falsche DLL-Fassung)",
     0xC000007B: "falsches Format (32 gegen 64 Bit)",
 }
@@ -1095,7 +1095,7 @@ def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
                 ergebnis.append((name, ""))
                 braucht_rechte.append(name)
                 continue
-            ergebnis.append((name, "laesst sich nicht starten: %s"
+            ergebnis.append((name, "lässt sich nicht starten: %s"
                              % (exc.strerror or exc)))
             continue
         ergebnis.append((name, DOKTOR_STARTFEHLER.get(code, "")))
@@ -1142,7 +1142,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     haupt, neben = sys.version_info[:2]
     fassung = "%d.%d.%d" % sys.version_info[:3]
     if (haupt, neben) < (3, 10):
-        melde(DOKTOR_FEHLER, "Python %s ist zu alt - 3.10 oder neuer noetig"
+        melde(DOKTOR_FEHLER, "Python %s ist zu alt - 3.10 oder neuer nötig"
               % fassung)
     else:
         melde(DOKTOR_GUT, "Python %s (%s)"
@@ -1162,7 +1162,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     if fehlend:
         melde(DOKTOR_FEHLER, "Pflichtmodule fehlen: %s" % ", ".join(fehlend))
     else:
-        melde(DOKTOR_GUT, "Pflichtmodule vollstaendig")
+        melde(DOKTOR_GUT, "Pflichtmodule vollständig")
 
     # Diese beiden sind angenehm, aber nicht noetig.
     for anzeige, modul, wozu in (("tkinterdnd2", "tkinterdnd2",
@@ -1215,7 +1215,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
         dateisystem = _doktor_dateisystem(pfad)
         zusatz = " auf %s" % dateisystem if dateisystem else ""
         if 0.0 <= frei < mindest_gb:
-            melde(DOKTOR_HINWEIS, "%s: nur %.1f GB frei%s - fuer einen "
+            melde(DOKTOR_HINWEIS, "%s: nur %.1f GB frei%s - für einen "
                                   "vollen Dump zu wenig"
                   % (beschriftung, frei, zusatz))
         else:
@@ -1239,17 +1239,17 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     if gruendlich:
         pruefbar, widersprueche = _doktor_abhaengigkeiten()
         if not pruefbar:
-            melde(DOKTOR_EGAL, "Paketstaende: nicht pruefbar "
+            melde(DOKTOR_EGAL, "Paketstände: nicht prüfbar "
                                "(in der EXE gibt es keine Paketverwaltung)")
         elif widersprueche:
-            melde(DOKTOR_HINWEIS, "Paketstaende widersprechen sich:")
+            melde(DOKTOR_HINWEIS, "Paketstände widersprechen sich:")
             for eintrag in widersprueche[:6]:
                 zeilen.append("       %s" % eintrag)
             if len(widersprueche) > 6:
                 zeilen.append("       ... und %d weitere"
                               % (len(widersprueche) - 6))
         else:
-            melde(DOKTOR_GUT, "Paketstaende widerspruchsfrei")
+            melde(DOKTOR_GUT, "Paketstände widerspruchsfrei")
 
         # -- Startprobe der mitgelieferten Programme -------------------
         starts, braucht_rechte = _doktor_werkzeuge_starten()
@@ -1265,7 +1265,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
                 zeilen.append("       %s - %s" % (name, befund))
         else:
             melde(DOKTOR_GUT, "Mitgelieferte Programme starten "
-                              "(%d geprueft%s)" % (len(starts), zusatz))
+                              "(%d geprüft%s)" % (len(starts), zusatz))
 
     # -- Mitgelieferte Werkzeuge ---------------------------------------
     try:
@@ -1273,7 +1273,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
     except Exception:
         finden = None
     if finden is None:
-        melde(DOKTOR_EGAL, "Mitgelieferte Werkzeuge: nicht pruefbar")
+        melde(DOKTOR_EGAL, "Mitgelieferte Werkzeuge: nicht prüfbar")
     else:
         for beschriftung, relpfad, noetig in (
                 ("Hintergrundbilder", "Hintergrundbilder", False),
@@ -1307,9 +1307,9 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
         try:
             with open(pfad, "r", encoding="utf-8") as f:
                 json.load(f)
-            melde(DOKTOR_GUT, "Einstellungsdatei lesbar und gueltig")
+            melde(DOKTOR_GUT, "Einstellungsdatei lesbar und gültig")
         except (OSError, ValueError) as exc:
-            melde(DOKTOR_FEHLER, "Einstellungsdatei beschaedigt (%s): %s"
+            melde(DOKTOR_FEHLER, "Einstellungsdatei beschädigt (%s): %s"
                   % (type(exc).__name__, pfad))
 
     # -- Rechte --------------------------------------------------------
@@ -1322,11 +1322,11 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
             melde(DOKTOR_GUT, "Administratorrechte vorhanden")
         else:
             melde(DOKTOR_HINWEIS, "Ohne Administratorrechte - Aufgabe 3 "
-                                  "(Einhaengen) braucht sie")
+                                  "(Einhängen) braucht sie")
 
     # -- Abschluss -----------------------------------------------------
     zeilen.append("")
-    zeilen.append("Doktor: %d geprueft, %d %s, %d %s"
+    zeilen.append("Doktor: %d geprüft, %d %s, %d %s"
                   % (geprueft, hinweise,
                      "Hinweis" if hinweise == 1 else "Hinweise",
                      fehler, "Fehler" if fehler == 1 else "Fehler"))
@@ -1605,10 +1605,10 @@ class FortschrittsWaechter:
             return aus
         if self.rueckspruenge:
             v, n = self.schlimmster_ruecksprung or (0.0, 0.0)
-            aus.append("Balken sprang %dx zurueck, schlimmstenfalls %.1f%% -> %.1f%%"
+            aus.append("Balken sprang %dx zurück, schlimmstenfalls %.1f%% -> %.1f%%"
                        % (self.rueckspruenge, v, n))
         if self.ueberlaeufe:
-            aus.append("Balken ueber 100%%: %dx, hoechstens %.1f%%"
+            aus.append("Balken über 100%%: %dx, höchstens %.1f%%"
                        % (self.ueberlaeufe, self.groesster))
         if self.abgeschlossen and self.letzter < 99.99:
             aus.append("Balken endete bei %.1f%% statt 100%%" % self.letzter)
@@ -1622,7 +1622,7 @@ class FortschrittsWaechter:
                 aus.append("Gesamtzahl der Phasen wechselte: %s"
                            % ", ".join(str(x) for x in sorted(summen)))
             if self.phasen_rueckwaerts:
-                aus.append("Phasenzaehler lief %dx rueckwaerts" % self.phasen_rueckwaerts)
+                aus.append("Phasenzähler lief %dx rückwärts" % self.phasen_rueckwaerts)
             gesehen = set(p[0] for p in self.phasenfolge)
             fehlt = [x for x in range(1, gesamt + 1) if x not in gesehen]
             lief = self.letzte_zeit - self.begonnen
@@ -1634,7 +1634,7 @@ class FortschrittsWaechter:
                            % (self.phasenfolge[-1][0], gesamt))
         if (self.byte_starre_punkte > self.STARRE_PUNKTE
                 and self.byte_starre > self.STARRE_S):
-            aus.append("Zahl im Statustext stand fest, waehrend der Balken um "
+            aus.append("Zahl im Statustext stand fest, während der Balken um "
                        "%.0f Punkte weiterlief (%.0f s)"
                        % (self.byte_starre_punkte, self.byte_starre))
         if self.groesste_luecke > self.STILLSTAND_S:
@@ -1650,15 +1650,15 @@ class FortschrittsWaechter:
         if len(self.phasenfolge) > 8:
             weg += " ..."
         zeilen = [
-            "Messpunkte: %d ueber %.0f s" % (self.n, self.letzte_zeit - self.begonnen),
-            "Balken: %.0f%% -> %.0f%% (hoechstens %.0f%%)"
+            "Messpunkte: %d über %.0f s" % (self.n, self.letzte_zeit - self.begonnen),
+            "Balken: %.0f%% -> %.0f%% (höchstens %.0f%%)"
             % (self.erster or 0.0, self.letzter, self.groesster),
             "Phasenweg: %s" % weg,
-            "laengste Pause ohne Aenderung: %.1f s" % self.groesste_luecke,
+            "längste Pause ohne Änderung: %.1f s" % self.groesste_luecke,
         ]
         gefunden = self.befunde()
-        zeilen.append("Befund: keine Auffaelligkeit" if not gefunden
-                      else "Befund: %d Auffaelligkeit(en)" % len(gefunden))
+        zeilen.append("Befund: keine Auffälligkeit" if not gefunden
+                      else "Befund: %d Auffälligkeit(en)" % len(gefunden))
         zeilen.extend("  - " + x for x in gefunden)
         return zeilen
 
@@ -2402,7 +2402,7 @@ class Drehknopf(tk.Canvas):
             try:
                 self._command()
             except Exception as exc:                  # noqa: BLE001
-                logger.debug("Drehknopf-Rueckruf fehlgeschlagen: %s", exc)
+                logger.debug("Drehknopf-Rückruf fehlgeschlagen: %s", exc)
 
     def _verschieben(self, schritte: int) -> str:
         self._wert_setzen(self._wert() + schritte)
@@ -3812,8 +3812,8 @@ class PS5ConverterGUI:
         """
         if not self._macos_translokation():
             return
-        logger.warning("macOS App Translocation aktiv - Programm laeuft "
-                       "schreibgeschuetzt aus %s",
+        logger.warning("macOS App Translocation aktiv - Programm läuft "
+                       "schreibgeschützt aus %s",
                        getattr(sys, "_MEIPASS", "?"))
         try:
             self._append_to_log(self._t("macos.translocation_title") + "\n")
@@ -3855,7 +3855,7 @@ class PS5ConverterGUI:
         except Exception:
             faktor = MACOS_SCHRIFT_SKALIERUNG
         if not 0.5 <= faktor <= 4.0:
-            logger.info("macos_font_scaling %r ausserhalb 0.5-4.0 - unveraendert", faktor)
+            logger.info("macos_font_scaling %r ausserhalb 0.5-4.0 - unverändert", faktor)
             return
         try:
             vorher = float(self.root.tk.call("tk", "scaling"))
@@ -4040,7 +4040,7 @@ class PS5ConverterGUI:
                 try:
                     menu.entryconfigure(position, label=self._t(label_key))
                 except tk.TclError as exc:
-                    logger.debug("Menueeintrag %s nicht aktualisierbar: %s", label_key, exc)
+                    logger.debug("Menüeintrag %s nicht aktualisierbar: %s", label_key, exc)
 
         # Dasselbe fuer das Kontextmenue (Rechtsklick). Der Trennstrich hat keine
         # Beschriftung und wird uebersprungen, zaehlt bei den Positionen aber mit.
@@ -4052,7 +4052,7 @@ class PS5ConverterGUI:
                 try:
                     kontext.entryconfigure(position, label=self._t(label_key))
                 except tk.TclError as exc:
-                    logger.debug("Kontextmenue %s nicht aktualisierbar: %s", label_key, exc)
+                    logger.debug("Kontextmenü %s nicht aktualisierbar: %s", label_key, exc)
 
         # Und dasselbe fuer das Bearbeiten-Menue an den Textfeldern.
         textmenue = getattr(self, "_textmenue", None)
@@ -4063,7 +4063,7 @@ class PS5ConverterGUI:
                 try:
                     textmenue.entryconfigure(position, label=self._t(label_key))
                 except tk.TclError as exc:
-                    logger.debug("Textmenue %s nicht aktualisierbar: %s", label_key, exc)
+                    logger.debug("Textmenü %s nicht aktualisierbar: %s", label_key, exc)
 
         # Generisch registrierte Widgets (Hauptfenster + alle Nebenfenster).
         for widget, key, config_attr, kwargs in getattr(self, "_i18n_widgets", []):
@@ -6867,7 +6867,7 @@ class PS5ConverterGUI:
             )
         elif mode == "ampr_manager" and hasattr(self, "status_label"):
             self.status_label.config(
-                text="Aufgabe 7: AMPR EMU Manager – Dump-Ordner oder .ffpfsc/.exfat/.ffpkg waehlen, oder den AMPR Picker fuer die PS5 nutzen."
+                text="Aufgabe 7: AMPR EMU Manager – Dump-Ordner oder .ffpfsc/.exfat/.ffpkg wählen, oder den AMPR Picker für die PS5 nutzen."
             )
         # Trigger Metadaten-Check
         self._on_source_path_changed()
@@ -7581,7 +7581,7 @@ class PS5ConverterGUI:
                 # Die Mindestgroesse mitziehen, sonst laesst sich das Fenster
                 # wieder auf die zu kleine Ausgangsgroesse schrumpfen.
                 win.minsize(min(neu_b, grenze_b), min(neu_h, grenze_h))
-            logger.info("Fenster %r auf %dx%d vergroessert (eingestellt war %dx%d)",
+            logger.info("Fenster %r auf %dx%d vergrößert (eingestellt war %dx%d)",
                         win.title(), neu_b, neu_h, breite, hoehe)
         except Exception as exc:
             logger.debug("Fenster konnte nicht angepasst werden: %s", exc)
@@ -7703,7 +7703,7 @@ class PS5ConverterGUI:
         try:
             win.bind("<Destroy>", _vergessen, add="+")
         except tk.TclError as exc:
-            logger.debug("Fenster nicht ueberwachbar: %s", exc)
+            logger.debug("Fenster nicht überwachbar: %s", exc)
 
     def _werkzeugknopf(self, befehl: str):
         """Der Befehl fuer einen Werkzeugknopf - als Umschalter.
@@ -8009,7 +8009,7 @@ class PS5ConverterGUI:
         try:
             ziel.event_generate(ereignis)
         except Exception as exc:
-            logger.debug("Textmenue %s nicht ausfuehrbar: %s", ereignis, exc)
+            logger.debug("Textmenü %s nicht ausführbar: %s", ereignis, exc)
 
     def _textmenue_alles(self, event: "tk.Event | None" = None) -> str:
         """Markiert den gesamten Inhalt des Feldes."""
@@ -8024,7 +8024,7 @@ class PS5ConverterGUI:
                 ziel.select_range(0, "end")
                 ziel.icursor("end")
         except Exception as exc:
-            logger.debug("Alles markieren nicht moeglich: %s", exc)
+            logger.debug("Alles markieren nicht möglich: %s", exc)
         return "break"
 
     @staticmethod
@@ -8052,7 +8052,7 @@ class PS5ConverterGUI:
             return True
         except Exception as exc:
             # Zwischen winfo_exists() und after() kann das Fenster verschwinden.
-            logger.debug("Rueckruf nicht mehr einplanbar: %s", exc)
+            logger.debug("Rückruf nicht mehr einplanbar: %s", exc)
             return False
 
     def _show_context_menu(self, event: tk.Event) -> None:
@@ -8104,9 +8104,9 @@ class PS5ConverterGUI:
             logger.warning(
                 "Monitorwechsel mit anderer Skalierung: %d %% -> %d %% "
                 "(DPI %d -> %d). Das Fenster wird NICHT umgerechnet - "
-                "Tk 8.6 kann das nicht, und ein halber Ausgleich waere "
+                "Tk 8.6 kann das nicht, und ein halber Ausgleich wäre "
                 "schlechter als keiner. Aussehen und Bedienung bleiben "
-                "unveraendert, nur die physische Groesse stimmt nicht mehr.",
+                "unverändert, nur die physische Größe stimmt nicht mehr.",
                 round(vorher / 96 * 100), round(dpi / 96 * 100), vorher, dpi)
 
     def _on_root_configure(self, event: tk.Event) -> None:
@@ -8187,13 +8187,13 @@ class PS5ConverterGUI:
         try:
             self._redraw_all_captions()
         except Exception as exc:
-            logger.debug("Nachzeichnen nach Groessenaenderung fehlgeschlagen: %s", exc)
+            logger.debug("Nachzeichnen nach Größenänderung fehlgeschlagen: %s", exc)
         # Das Cover haengt an der Sidebar-Breite und muss dieselbe Behandlung
         # bekommen, sonst bleibt es nach einer Groessenaenderung zu schmal.
         try:
             self._refresh_sidebar_cover_size()
         except Exception as exc:
-            logger.debug("Cover-Anpassung nach Groessenaenderung fehlgeschlagen: %s", exc)
+            logger.debug("Cover-Anpassung nach Größenänderung fehlgeschlagen: %s", exc)
         # Und zuletzt: Hat eine der vier Flaechen ihre Anpassung verpasst,
         # faellt es genau hier auf - das Fenster steht, die Groessen sind
         # endgueltig.
@@ -8257,7 +8257,7 @@ class PS5ConverterGUI:
                 else:
                     starr += hoehe
         except Exception as exc:
-            logger.debug("Mindesthoehe der Inhaltsspalte nicht ermittelbar: %s", exc)
+            logger.debug("Mindesthöhe der Inhaltsspalte nicht ermittelbar: %s", exc)
             return 0
         return starr + min(dehnbar, self._KONSOLE_MINDESTHOEHE)
 
@@ -8280,7 +8280,7 @@ class PS5ConverterGUI:
             try:
                 self.root.after_cancel(self._rollpruefung_after_id)
             except Exception as exc:
-                logger.debug("after_cancel (Rollpruefung) fehlgeschlagen: %s", exc)
+                logger.debug("after_cancel (Rollprüfung) fehlgeschlagen: %s", exc)
             self._rollpruefung_after_id = None
         self._rollpruefung_after_id = self.root.after(60, self._rollflaeche_pruefen)
 
@@ -8328,7 +8328,7 @@ class PS5ConverterGUI:
                     self.content_scrollbar.grid_remove()
                     flaeche.yview_moveto(0.0)
         except Exception as exc:
-            logger.debug("Rollflaeche nicht anpassbar: %s", exc)
+            logger.debug("Rollfläche nicht anpassbar: %s", exc)
 
     def _on_inhalt_mausrad(self, event) -> None:
         """Rollt die Inhaltsspalte - aber nur, wenn sie ueberhaupt rollt.
@@ -8420,7 +8420,7 @@ class PS5ConverterGUI:
                 # Label trotzdem 860 px breit.
                 widget._caption_natural_size = None
             except Exception as exc:
-                logger.debug("Umbruch fuer %s nicht setzbar: %s", name, exc)
+                logger.debug("Umbruch für %s nicht setzbar: %s", name, exc)
 
     # ------------------------------------------------------------------
     # Titelleiste: Knoepfe einfalten, wenn der Platz nicht reicht
@@ -8566,7 +8566,7 @@ class PS5ConverterGUI:
         try:
             self._more_tools_menu.delete(0, "end")
         except Exception as exc:
-            logger.debug("Sammelmenue nicht leerbar: %s", exc)
+            logger.debug("Sammelmenü nicht leerbar: %s", exc)
             return
         for schluessel, befehl in self._MORE_TOOLS_ENTRIES:
             try:
@@ -8648,7 +8648,7 @@ class PS5ConverterGUI:
                 try:
                     widget.place(in_=erstes, relx=0.0, x=x, rely=0.5, anchor="w")
                 except Exception as exc:
-                    logger.debug("Zeilenausrichtung fuer %s: %s", widget, exc)
+                    logger.debug("Zeilenausrichtung für %s: %s", widget, exc)
                     return
             try:
                 x += int(widget.winfo_width() or widget.winfo_reqwidth())
@@ -8850,7 +8850,7 @@ class PS5ConverterGUI:
                 titel.grid()
                 self._integrationszeile_hoehe_setzen()
             self._einbauzeile_daneben = daneben
-            logger.debug("Einbauzeile %s", "neben der Pruefstufe"
+            logger.debug("Einbauzeile %s", "neben der Prüfstufe"
                          if daneben else "in eigener Zeile")
         except Exception as exc:
             logger.debug("Einbauzeile nicht umsetzbar: %s", exc)
@@ -8876,7 +8876,7 @@ class PS5ConverterGUI:
                 widget.bind("<Configure>", self._kartenzeilen_nachziehen,
                             add="+")
             except Exception as exc:
-                logger.debug("Zeilenwache fuer %s: %s", widget, exc)
+                logger.debug("Zeilenwache für %s: %s", widget, exc)
 
     def _kartenzeilen_nachziehen(self, _event=None) -> None:
         """Sammelt mehrere Groessenaenderungen zu einem Ausrichten zusammen.
@@ -8918,7 +8918,7 @@ class PS5ConverterGUI:
             self.ampr_integrate_check.master.grid_rowconfigure(
                 5, minsize=max(1, int(hoehe)))
         except Exception as exc:
-            logger.debug("Hoehe der Integrationszeile nicht setzbar: %s", exc)
+            logger.debug("Höhe der Integrationszeile nicht setzbar: %s", exc)
 
     def _hintergrund_ist_aktuell(self, foto: str, breite: int, hoehe: int) -> bool:
         """Ob das gezeichnete Bild schon genau auf diese Flaeche passt.
@@ -9794,7 +9794,7 @@ class PS5ConverterGUI:
                          self.worker_knob.winfo_reqwidth(),
                          self.worker_knob.winfo_reqheight(), ziel, breite)
         except Exception as exc:                      # noqa: BLE001
-            logger.debug("Drehknopf-Hoehe nicht angleichbar: %s", exc)
+            logger.debug("Drehknopf-Höhe nicht angleichbar: %s", exc)
 
 
     def _on_verify_stufe_changed(self, _event=None) -> None:
@@ -10619,7 +10619,7 @@ class PS5ConverterGUI:
                 return
             eintraege = list(os.scandir(basis))
         except OSError as exc:
-            logger.debug("Temp-Sichtung nicht moeglich: %s", exc)
+            logger.debug("Temp-Sichtung nicht möglich: %s", exc)
             return
 
         grenze = time.time() - self._STALE_TEMP_MAX_AGE_H * 3600
@@ -14126,7 +14126,7 @@ class PS5ConverterGUI:
                 label.config(image=self._sidebar_preview_photo)
                 self._sidebar_cover_rendered_width = soll
             except Exception as exc:
-                logger.debug("Cover-Groesse nicht angepasst: %s", exc)
+                logger.debug("Cover-Größe nicht angepasst: %s", exc)
         self._center_sidebar_cover()
 
     def _pack_sidebar_title(self) -> None:
@@ -14314,7 +14314,7 @@ class PS5ConverterGUI:
                     if _stand:
                         _sdk_text = f"{_stand} ({_hinweis})" if _hinweis else _stand
             except Exception as exc:
-                logger.debug("SDK-Stand fuer die Anzeige nicht ermittelbar: %s", exc)
+                logger.debug("SDK-Stand für die Anzeige nicht ermittelbar: %s", exc)
             self._meta_labels["sdk_stand"].set(_sdk_text)
 
         # Größenangaben
@@ -14420,7 +14420,7 @@ class PS5ConverterGUI:
         try:
             self._patch_status_var.set(self._t("info_popup.status_deferred"))
         except Exception as exc:
-            logger.debug("Hinweis auf zurueckgestellte Metadaten: %s", exc)
+            logger.debug("Hinweis auf zurückgestellte Metadaten: %s", exc)
         for attr in ("_info_title_var", "_info_id_var", "_info_version_var",
                      "_info_firmware_var", "_info_region_var", "_info_category_var",
                      "_info_publisher_var"):
@@ -14469,7 +14469,7 @@ class PS5ConverterGUI:
         try:
             self._patch_status_var.set(self._t("info_popup.status_ready"))
         except Exception as exc:
-            logger.debug("Statuszeile nicht zuruecksetzbar: %s", exc)
+            logger.debug("Statuszeile nicht zurücksetzbar: %s", exc)
         # Denselben Weg wie eine frische Quellauswahl nehmen.
         self._on_source_path_changed()
 
@@ -15897,7 +15897,7 @@ class PS5ConverterGUI:
             try:
                 self.root.after(0, lambda z=zeilen_anzeige: self._log_engine_zeilen(z))
             except RuntimeError:
-                logger.debug("Log-Update nach Tk-Ende uebersprungen")
+                logger.debug("Log-Update nach Tk-Ende übersprungen")
             return
 
         def _update() -> None:
@@ -16117,7 +16117,7 @@ class PS5ConverterGUI:
                 return
             self._start_shutdown_countdown()
         except Exception as exc:
-            logger.debug("Herunterfahr-Pruefung fehlgeschlagen: %s", exc)
+            logger.debug("Herunterfahr-Prüfung fehlgeschlagen: %s", exc)
 
     def _start_shutdown_countdown(self) -> None:
         """Zeigt das Countdown-Fenster mit Abbruchmoeglichkeit.
@@ -16240,7 +16240,7 @@ class PS5ConverterGUI:
             self._force_dismount_all()
             self._cleanup_exit_temp_targets()
         except Exception as exc:
-            logger.debug("Aufraeumen vor dem Herunterfahren: %s", exc)
+            logger.debug("Aufräumen vor dem Herunterfahren: %s", exc)
 
         # Protokoll auf die Platte bringen, damit im Logfile steht, warum der
         # Rechner ausgegangen ist.
@@ -17478,10 +17478,10 @@ class PS5ConverterGUI:
                 zeilen.append("--- Faden %s (%s) ---"
                               % (namen.get(kennung, "?"), kennung))
                 zeilen.extend(z.rstrip() for z in traceback.format_stack(rahmen)[-8:])
-            logger.error("Anzeige steht seit %.0f s still. Stapel aller Faeden:\n%s",
+            logger.error("Anzeige steht seit %.0f s still. Stapel aller Fäden:\n%s",
                          seit, "\n".join(zeilen))
         except Exception as exc:                  # pragma: no cover
-            logger.debug("Stapelabzug nicht moeglich: %s", exc)
+            logger.debug("Stapelabzug nicht möglich: %s", exc)
 
     def _stillstand_uhr(self, anzeige: float) -> None:
         """Zeigt bei laengerem Stillstand, dass weitergearbeitet wird.
@@ -18853,12 +18853,12 @@ class PS5ConverterGUI:
         mode_hint = str(getattr(self, "_active_mode_name", "") or "")
         message = (
             self._completion_status_text(mode_hint, "keepalive_verify")
-            if verify_pending else "Verarbeitung laeuft ..."
+            if verify_pending else "Verarbeitung läuft ..."
         )
         log_line = (
-            "[INFO] Abschlusspruefung laeuft ... bitte warten.\n"
+            "[INFO] Abschlussprüfung läuft ... bitte warten.\n"
             if verify_pending
-            else "[INFO] Verarbeitung laeuft ... bitte warten.\n"
+            else "[INFO] Verarbeitung läuft ... bitte warten.\n"
         )
         now = time.monotonic()
         last_log_ts = float(getattr(self, "_keepalive_log_last_ts", 0.0) or 0.0)
@@ -19065,7 +19065,7 @@ class PS5ConverterGUI:
                         if not pip_cmd:
                             writer.write(
                                 "[FEHLER] Kein Python/Pip-Launcher gefunden (frozen Build).\n"
-                                "         Bitte manuell ausfuehren: py -m pip install --upgrade zlib-ng\n"
+                                "         Bitte manuell ausführen: py -m pip install --upgrade zlib-ng\n"
                             )
                             result["exit_code"] = 1
                             engine_done.set()
@@ -19811,7 +19811,7 @@ class PS5ConverterGUI:
                     self._maybe_shutdown_after_task,
                 )
             except Exception as exc:
-                logger.debug("Herunterfahr-Pruefung nicht einplanbar: %s", exc)
+                logger.debug("Herunterfahr-Prüfung nicht einplanbar: %s", exc)
             # Metadaten nachholen, die waehrend des Laufs uebersprungen wurden.
             # Etwas frueher als die Herunterfahr-Pruefung, damit das Info-Fenster
             # bei einem anschliessenden Herunterfahren nicht mitten im Laden steht.
@@ -20719,7 +20719,7 @@ class PS5ConverterGUI:
         ok = self._create_exfat_from_folder(src, final_output, pct_start=5.0, pct_end=98.0)
         if ok:
             self.task_current_step = 3
-            _text_phase3 = self._format_phase_status("Abschlusspruefung laeuft...",
+            _text_phase3 = self._format_phase_status("Abschlussprüfung läuft...",
                                                      prefer_current_label=False)
             self.root.after(0, lambda t=_text_phase3: self.status_label.config(text=t))
             self.progress_engine.begin_validate("Validierung...")
@@ -21230,7 +21230,7 @@ class PS5ConverterGUI:
             if self.mkpfs_dir and self.mkpfs_dir not in sys.path:
                 sys.path.insert(0, self.mkpfs_dir)
         except Exception as exc:
-            logger.debug("mkpfs fuer den Validator nicht verfuegbar: %s", exc)
+            logger.debug("mkpfs für den Validator nicht verfügbar: %s", exc)
 
         try:
             from ps5_validator.core.dispatcher import validate as _validate
@@ -21320,7 +21320,7 @@ class PS5ConverterGUI:
                 # Ergebnis beschreibt den Stand, den der Ordner am Ende
                 # wirklich hat.
                 self._validator_param_json_anbieten(src)
-                self.root.after(0, lambda: self.status_label.config(text="Validator – Dump-Ordner pruefen..."))
+                self.root.after(0, lambda: self.status_label.config(text="Validator – Dump-Ordner prüfen..."))
                 self.task_total_source_bytes = self._get_path_size(src)
                 self.progress_engine.begin_payload(
                     max(1, self.task_total_source_bytes),
@@ -21340,7 +21340,7 @@ class PS5ConverterGUI:
             elif is_exfat:
                 self._append_to_log(self._t('log.auto.0130'))
                 self._append_to_log(self._t('log.auto.0131'))
-                self.root.after(0, lambda: self.status_label.config(text="Validator – .exfat pruefen..."))
+                self.root.after(0, lambda: self.status_label.config(text="Validator – .exfat prüfen..."))
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
@@ -21355,7 +21355,7 @@ class PS5ConverterGUI:
             elif is_ffpfsc:
                 self._append_to_log(self._t('log.auto.0132'))
                 self._append_to_log(self._t('log.auto.0133'))
-                self.root.after(0, lambda: self.status_label.config(text="Validator – .ffpfsc pruefen..."))
+                self.root.after(0, lambda: self.status_label.config(text="Validator – .ffpfsc prüfen..."))
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
@@ -21373,7 +21373,7 @@ class PS5ConverterGUI:
                 self.root.after(
                     0,
                     lambda: self.status_label.config(
-                        text="Validator – UFS2-Struktur pruefen..."
+                        text="Validator – UFS2-Struktur prüfen..."
                     ),
                 )
                 self.task_total_source_bytes = os.path.getsize(src)
@@ -22220,7 +22220,7 @@ class PS5ConverterGUI:
             shutil.copy2(backup, ziel)
             backup.unlink()
         except OSError as exc:
-            logger.warning("Sicherung in %s nicht zurueckgespielt: %s", ordner, exc)
+            logger.warning("Sicherung in %s nicht zurückgespielt: %s", ordner, exc)
             return False
         self._append_to_log(self._t("log.manual.ampr_restored", name=lib_name))
         return True
@@ -24268,7 +24268,7 @@ class PS5ConverterGUI:
 
         # ProgressEngine: Aufgabe 4 starten (Index 3)
         self.progress_engine.start_task(3, "ffpkg zu ffpfsc")
-        self.progress_engine.begin_prepare("Quellgroesse berechnen...")
+        self.progress_engine.begin_prepare("Quellgröße berechnen...")
         self.progress_engine.begin_payload(
             self.task_total_source_bytes,
             description="PFS-Container erstellen",
@@ -24884,7 +24884,7 @@ class PS5ConverterGUI:
             try:
                 os.remove(inneres_abbild)
             except OSError as exc:
-                logger.debug("Inneres Abbild nicht loeschbar: %s", exc)
+                logger.debug("Inneres Abbild nicht löschbar: %s", exc)
 
             aktueller_ordner = naechster_ordner
 
@@ -25371,7 +25371,7 @@ class PS5ConverterGUI:
                         self._t('log.manual.param_json_backup',
                                 v0=os.path.basename(sicherung)))
             except OSError as exc:
-                logger.debug("Sicherung der param.json nicht moeglich: %s", exc)
+                logger.debug("Sicherung der param.json nicht möglich: %s", exc)
 
             save_param_json(neu, pfad)
         except Exception as exc:
@@ -26027,7 +26027,7 @@ class PS5ConverterGUI:
                 )
 
             if not self.is_running:
-                return _fail_keep_tmp("Abbruch waehrend Schritt 2")
+                return _fail_keep_tmp("Abbruch während Schritt 2")
 
             # Schrittgeometrie erst jetzt festzurren: Ob eine Zwischenebene
             # ausgepackt werden musste, steht vorher nicht fest. Der
@@ -26050,7 +26050,7 @@ class PS5ConverterGUI:
             # Ein halb entpackter Dump ergibt ein .exfat, das auf der Konsole
             # nicht läuft – und das fällt sonst erst dort auf.
             if not self._pruefe_dump_vollstaendig(game_dump_dir, erwartet):
-                return _fail_keep_tmp("Inneres Abbild unvollstaendig entpackt")
+                return _fail_keep_tmp("Inneres Abbild unvollständig entpackt")
 
             game_dump_dir = self._integration_anwenden(game_dump_dir)
             if not game_dump_dir:
@@ -26356,7 +26356,7 @@ class PS5ConverterGUI:
 
             def _oeffnen(_e=None, p=pfad):
                 if not _system_datei_oeffnen(p):
-                    logger.debug("Lizenzdatei konnte nicht geoeffnet werden: %s", p)
+                    logger.debug("Lizenzdatei konnte nicht geöffnet werden: %s", p)
 
             lbl.bind("<Button-1>", _oeffnen)
             lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, pt(10), "underline")))
@@ -27376,7 +27376,7 @@ class PS5ConverterGUI:
         # Bericht vom Mac (19.08.2026) - die Vorlage allein sagt darueber
         # nichts, sie ist immer die Groesse der Bilddatei.
         for name, attribut in (("Hintergrundbild (gezeichnet)", "bg_photo"),
-                               ("Inhaltsflaeche (gezeichnet)", "content_bg_photo"),
+                               ("Inhaltsfläche (gezeichnet)", "content_bg_photo"),
                                ("Seitenleiste (gezeichnet)", "sidebar_bg_photo")):
             foto = getattr(self, attribut, None)
             try:
@@ -27524,7 +27524,7 @@ class PS5ConverterGUI:
         bilder: list = []
         for anzeigename, quelle, gezeichnet, traeger in (
                 ("Hintergrund", "_bg_image_cache", "bg_photo", "bg_label"),
-                ("Inhaltsflaeche", "_bg_image_cache", "content_bg_photo", "content_area"),
+                ("Inhaltsfläche", "_bg_image_cache", "content_bg_photo", "content_area"),
                 ("Seitenleiste", "_sidebar_bg_image_cache", "sidebar_bg_photo", "sidebar")):
             bilder.append(ad.Bildlage(
                 name=anzeigename,
@@ -27824,7 +27824,7 @@ class PS5ConverterGUI:
         try:
             wurzel = self.root
         except Exception:
-            return ["Randpruefung: kein Fenster"]
+            return ["Randprüfung: kein Fenster"]
 
         VORGABE = {"Label": 2, "Button": 2, "Text": 2, "Canvas": 2,
                    "Entry": 2, "Listbox": 2, "Checkbutton": 2,
@@ -27877,17 +27877,17 @@ class PS5ConverterGUI:
         try:
             gehe(wurzel)
         except Exception as exc:
-            return ["Randpruefung fehlgeschlagen: %s" % exc]
+            return ["Randprüfung fehlgeschlagen: %s" % exc]
 
         if treffer:
-            zeilen.append("Sichtbare Raender: %d" % len(treffer))
+            zeilen.append("Sichtbare Ränder: %d" % len(treffer))
             for eintrag in treffer[:8]:
                 zeilen.append("  ! %s" % eintrag)
             if len(treffer) > 8:
                 zeilen.append("  ... und %d weitere" % (len(treffer) - 8))
         else:
-            zeilen.append("Sichtbare Raender: keine "
-                          "(Fokusrahmen zaehlen nicht mit)")
+            zeilen.append("Sichtbare Ränder: keine "
+                          "(Fokusrahmen zählen nicht mit)")
 
         # -- Die Gegenrichtung: sieht man die Flaechen noch? --------------
         c = getattr(self, "_COLORS", {}) or {}
@@ -27910,12 +27910,12 @@ class PS5ConverterGUI:
                 schwach.append("%s %s auf %s - nur %.1f Stufen"
                                % (name, vorn, hinten, unterschied))
         if schwach:
-            zeilen.append("ACHTUNG: Flaechen zu schwach abgesetzt - ohne Rand "
+            zeilen.append("ACHTUNG: Flächen zu schwach abgesetzt - ohne Rand "
                           "nicht mehr erkennbar:")
             for eintrag in schwach:
                 zeilen.append("  ! %s" % eintrag)
         else:
-            zeilen.append("Flaechen deutlich genug abgesetzt "
+            zeilen.append("Flächen deutlich genug abgesetzt "
                           "(mindestens %.0f Helligkeitsstufen)"
                           % self._RANDLOS_MINDESTUNTERSCHIED)
 
@@ -27925,7 +27925,7 @@ class PS5ConverterGUI:
         # faellt auf, wenn eine neue Farbe zwar mit der aktuellen Einstellung
         # zusammenpasst, aber eine andere unbrauchbar macht.
         schwaeche = getattr(self, "_farbschwaeche", "keine")
-        zeilen.append("Farbschwaeche: %s" % schwaeche)
+        zeilen.append("Farbschwäche: %s" % schwaeche)
         BEDEUTUNG = ["fg_success", "fg_warning", "error_btn", "elf_btn"]
         schlechteste = []
         for form in FARBSCHWAECHEN:
@@ -27948,11 +27948,11 @@ class PS5ConverterGUI:
                 schlechteste.append("%s: %s nur %.1f auseinander"
                                     % (form, paar, eng))
         if schlechteste:
-            zeilen.append("  ACHTUNG: bedeutungstragende Farben zu aehnlich:")
+            zeilen.append("  ACHTUNG: bedeutungstragende Farben zu ähnlich:")
             for eintrag in schlechteste:
                 zeilen.append("    ! %s" % eintrag)
         else:
-            zeilen.append("  alle Formen geprueft, bedeutungstragende Farben "
+            zeilen.append("  alle Formen geprüft, bedeutungstragende Farben "
                           "bleiben unterscheidbar")
         return zeilen
 
@@ -28004,9 +28004,9 @@ class PS5ConverterGUI:
             z("Arbeitsspeicher", "%.0f MB" % lage.speicher_mb),
             z("davon seit dem Start dazu",
               "%.0f MB" % (lage.speicher_mb - start) if start else "Startwert fehlt"),
-            z("Auftrag laeuft gerade", lage.auftrag_laeuft),
+            z("Auftrag läuft gerade", lage.auftrag_laeuft),
             z("Tk-Bilder im Speicher", lage.tk_bilder),
-            z("offene after-Auftraege", lage.offene_zeitgeber),
+            z("offene after-Aufträge", lage.offene_zeitgeber),
             z("Ereignisschleife", "%.1f ms je Durchlauf" % lage.schleife_ms),
             z("Threads", lage.threads),
         ]
@@ -28424,7 +28424,7 @@ class PS5ConverterGUI:
                 verletzt.append("Balken wirft bei %r: %s" % (wert, type(exc).__name__))
                 break
             if jetzt + 1e-9 < vorher:
-                verletzt.append("Balken laeuft rueckwaerts: %.2f nach %.2f"
+                verletzt.append("Balken läuft rückwärts: %.2f nach %.2f"
                                 % (jetzt, vorher))
             vorher = jetzt
 
@@ -28460,7 +28460,7 @@ class PS5ConverterGUI:
                                     % (nummer, gesamt, type(exc).__name__))
                     break
                 if jetzt + 1e-9 < von or jetzt - 1e-9 > bis:
-                    verletzt.append("Datei %d/%d verlaesst ihren Abschnitt: "
+                    verletzt.append("Datei %d/%d verlässt ihren Abschnitt: "
                                     "%.2f nicht in %.2f-%.2f"
                                     % (nummer, gesamt, jetzt, von, bis))
 
@@ -28472,11 +28472,11 @@ class PS5ConverterGUI:
         for name, muster in (
                 ("leer", b""),
                 ("nur Magie", b"\x00PSF"),
-                ("Magie + Muell", b"\x00PSF" + b"\xff" * 24),
+                ("Magie + Müll", b"\x00PSF" + b"\xff" * 24),
                 ("unsinnige Zeiger",
                  b"\x00PSF" + struct.pack("<IIII", 0x0101, 0xFFFFFFFF,
                                           0xFFFFFFFF, 0xFFFFFFFF)),
-                ("4 Milliarden Eintraege",
+                ("4 Milliarden Einträge",
                  b"\x00PSF" + struct.pack("<IIII", 0x0101, 20, 24, 4000000000)),
                 ("falsche Magie", b"NICHTPSF" * 8)):
             geprueft += 1
@@ -28513,7 +28513,7 @@ class PS5ConverterGUI:
             gelesen = parse_sfo(gueltig)
             if (gelesen.get("TITLE") != "Ein Spiel"
                     or gelesen.get("TITLE_ID") != "PPSA01234"):
-                verletzt.append("parse_sfo liest eine gueltige SFO nicht: %r"
+                verletzt.append("parse_sfo liest eine gültige SFO nicht: %r"
                                 % (gelesen,))
         except Exception as exc:
             verletzt.append("Gegenprobe parse_sfo: %s" % type(exc).__name__)
@@ -28533,16 +28533,16 @@ class PS5ConverterGUI:
             waechter.befunde()
             waechter.bericht()
         except Exception as exc:
-            verletzt.append("Fortschritts-Waechter wirft: %s" % type(exc).__name__)
+            verletzt.append("Fortschritts-Wächter wirft: %s" % type(exc).__name__)
 
         if verletzt:
-            zeilen = ["Eigenschaften: %d Zusicherungen geprueft, %d VERLETZT"
+            zeilen = ["Eigenschaften: %d Zusicherungen geprüft, %d VERLETZT"
                       % (geprueft, len(verletzt))]
             zeilen.extend("    ! " + m for m in verletzt[:10])
             if len(verletzt) > 10:
                 zeilen.append("    ... und %d weitere" % (len(verletzt) - 10))
             return zeilen
-        return ["Eigenschaften: %d Zusicherungen geprueft, alle erfuellt"
+        return ["Eigenschaften: %d Zusicherungen geprüft, alle erfüllt"
                 % geprueft]
 
     def _diagnose_fachpruefungen(self) -> list[str]:
@@ -28600,7 +28600,7 @@ class PS5ConverterGUI:
                           "(Fenster bereits abgebaut)")
         else:
             zeilen.append("Speicher: %d Tcl-Kommandos an der Wurzel "
-                          "(waechst nur bei einem Leck)" % kommandos)
+                          "(wächst nur bei einem Leck)" % kommandos)
 
         # -- Stabilitaet (Debugger, Sanitizer, Absturzbericht) ------------
         #
@@ -28612,7 +28612,7 @@ class PS5ConverterGUI:
             aktiv = bool(faulthandler.is_enabled())
         except Exception:
             aktiv = False
-        zeilen.append("Stabilitaet: Absturzabzug %s, Stapelabzug bei "
+        zeilen.append("Stabilität: Absturzabzug %s, Stapelabzug bei "
                       "Stillstand ab %.0f s"
                       % ("aktiv" if aktiv else "AUS", self._STAPELABZUG_AB_S))
         abzug = os.path.join(tempfile.gettempdir(), "ps5converter_absturz.txt")
@@ -28622,7 +28622,7 @@ class PS5ConverterGUI:
             gross = 0
         if gross > 0:
             zeilen.append("  ACHTUNG: %s ist nicht leer (%s) - dort steht ein "
-                          "frueherer harter Absturz." % (abzug, self._fmt_bytes(gross)))
+                          "früherer harter Absturz." % (abzug, self._fmt_bytes(gross)))
         else:
             zeilen.append("  kein harter Absturz aufgezeichnet")
 
@@ -28639,9 +28639,9 @@ class PS5ConverterGUI:
         # haengt sich von aussen an den laufenden Prozess und zeigt, wo
         # jeder Faden steht. Dafuer braucht man die Prozessnummer, und die
         # steht hier, damit sie im Bericht mitkommt.
-        zeilen.append("  Prozess %d - haengt das Fenster, hilft von aussen:"
+        zeilen.append("  Prozess %d - hängt das Fenster, hilft von aussen:"
                       % os.getpid())
-        zeilen.append("    py-spy dump --pid %d        (Stapel aller Faeden)"
+        zeilen.append("    py-spy dump --pid %d        (Stapel aller Fäden)"
                       % os.getpid())
         zeilen.append("    py-spy top  --pid %d        (wo die Zeit bleibt)"
                       % os.getpid())
@@ -28656,10 +28656,10 @@ class PS5ConverterGUI:
         zeilen.append("  Entwicklungsmodus (-X dev): %s"
                       % ("an" if entwicklung else "aus"))
 
-        zeilen.append("Kompatibilitaet: hier %s, Python %s"
+        zeilen.append("Kompatibilität: hier %s, Python %s"
                       % (platform.system() or "?", platform.python_version()))
-        zeilen.append("  Linux und macOS (arm64 + Intel) baut und prueft der "
-                      "CI-Lauf, siehe .github/workflows/macos-buendel.yml")
+        zeilen.append("  Linux und macOS (arm64 + Intel) baut und prüft der "
+                      "CI-Lauf, siehe .github/workflows/macos-bündel.yml")
 
         # -- Eigenschaften (eigenschaftsbasiertes Testen) -----------------
         zeilen.extend(self._diagnose_eigenschaften())
@@ -28768,7 +28768,7 @@ class PS5ConverterGUI:
         except (OSError, NameError):
             eigen = 0
         if eigen:
-            zeilen.append("Groesse: %s %s"
+            zeilen.append("Größe: %s %s"
                           % ("EXE" if getattr(sys, "frozen", False) else "Quelltext",
                              self._fmt_bytes(eigen)))
         # Beide Ordner stecken in der Programmdatei; die Zahlen sagen, wie
@@ -28854,7 +28854,7 @@ class PS5ConverterGUI:
                 anteil = float(gesamt.get("percent_covered", 0.0))
                 fehlend = int(gesamt.get("missing_lines", 0))
                 alter_tage = (time.time() - os.path.getmtime(abdeckung)) / 86400.0
-                zeilen.append("Testabdeckung: %.1f %% (%d Zeilen ungeprueft, "
+                zeilen.append("Testabdeckung: %.1f %% (%d Zeilen ungeprüft, "
                               "gemessen vor %.1f Tagen)"
                               % (anteil, fehlend, alter_tage))
             except (OSError, ValueError, KeyError) as exc:
@@ -28870,17 +28870,17 @@ class PS5ConverterGUI:
             zeilen.append("  python tools\\mutationstest.py"
                           "        (sind die Tests etwas wert?)")
             zeilen.append("  git bisect run powershell -NoProfile -File "
-                          "tools\\bisect_pruefung.ps1 <testdatei>")
+                          "tools\\bisect_prüfung.ps1 <testdatei>")
 
         # -- Was hier nicht greift, und warum -----------------------------
         zeilen.append("Nicht anwendbar auf dieses Programm:")
         zeilen.append("  PGO, LTO, BOLT, Propeller - betreffen den "
                       "Interpreter, nicht diesen Quelltext.")
         zeilen.append("    Die Bauten von python.org sind bereits mit PGO und "
-                      "LTO uebersetzt.")
+                      "LTO übersetzt.")
         zeilen.append("  ccache, Ninja, mold, lld - hier wird nichts "
-                      "uebersetzt, nur verpackt.")
-        zeilen.append("  Compiler Explorer - das Gegenstueck heisst hier "
+                      "übersetzt, nur verpackt.")
+        zeilen.append("  Compiler Explorer - das Gegenstück heisst hier "
                       "dis.dis().")
         zeilen.append("  jemalloc, mimalloc, tcmalloc - CPython bringt "
                       "pymalloc mit und tauscht ihn nicht aus.")
@@ -28888,29 +28888,29 @@ class PS5ConverterGUI:
                       "keine Datenbank, nur JSON-Dateien.")
         zeilen.append("  Lighthouse, Bundle-Analyzer, Brotli - es gibt keine "
                       "Webanwendung.")
-        zeilen.append("  k6, Locust, Jaeger, OpenTelemetry - ein Prozess auf "
+        zeilen.append("  k6, Locust, Jäger, OpenTelemetry - ein Prozess auf "
                       "einem Rechner, kein Dienst,")
         zeilen.append("    keine verteilte Kette. Der Ersatz ist der "
-                      "Stapelabzug im Abschnitt Fachpruefungen.")
+                      "Stapelabzug im Abschnitt Fachprüfungen.")
         zeilen.append("  basisu, astcenc, meshoptimizer, RGA - es wird nichts "
                       "gerendert.")
         zeilen.append("  strace, ltrace, eBPF, bpftrace, DTrace - Linux- und "
                       "BSD-Kernwerkzeuge.")
-        zeilen.append("    Unter Windows waere Process Monitor das "
-                      "Gegenstueck; er ist nicht eingebaut,")
+        zeilen.append("    Unter Windows wäre Process Monitor das "
+                      "Gegenstück; er ist nicht eingebaut,")
         zeilen.append("    sondern von Hand zu starten, wenn eine Datei "
-                      "oder ein Schluessel fehlt.")
+                      "oder ein Schlüssel fehlt.")
         zeilen.append("  Wireshark, mitmproxy, Burp - es gibt eine einzige "
                       "Verbindung: FTP zur eigenen")
-        zeilen.append("    Konsole im Heimnetz, unverschluesselt und ohne "
-                      "Anmeldedaten. Nichts zu entschluesseln.")
+        zeilen.append("    Konsole im Heimnetz, unverschlüsselt und ohne "
+                      "Anmeldedaten. Nichts zu entschlüsseln.")
         zeilen.append("  Ghidra, IDA, x64dbg, objdump - es entsteht kein "
                       "Maschinencode aus diesem Quelltext.")
         zeilen.append("  Jepsen, loom, Antithesis - ein Prozess auf einem "
                       "Rechner, keine verteilte Datenbank.")
         zeilen.append("  TLA+, Dafny, Z3 - lohnen, wo ein Fehler richtig "
                       "teuer ist. Dieselbe Fehlerklasse")
-        zeilen.append("    faengt hier Hypothesis, und zwar erheblich "
+        zeilen.append("    fängt hier Hypothesis, und zwar erheblich "
                       "billiger.")
         zeilen.append("  Pact, Schemathesis, WireMock - es gibt keine "
                       "Schnittstelle zwischen zwei Diensten.")
@@ -28924,12 +28924,12 @@ class PS5ConverterGUI:
         zeilen.append("Anwendbar, aber nicht eingebaut (bewusst):")
         zeilen.append("  gitleaks / trufflehog - suchen versehentlich "
                       "eingecheckte Zugangsdaten.")
-        zeilen.append("    Im Bericht selbst werden sie bereits geschwaerzt "
+        zeilen.append("    Im Bericht selbst werden sie bereits geschwärzt "
                       "(siehe Einstellungen oben).")
-        zeilen.append("  syft + grype - Stueckliste und CVE-Abgleich; "
+        zeilen.append("  syft + grype - Stückliste und CVE-Abgleich; "
                       "braucht eine Datenbank aus dem Netz.")
         zeilen.append("  Reproducible Builds - zweimal bauen und die "
-                      "Pruefsummen vergleichen.")
+                      "Prüfsummen vergleichen.")
         zeilen.append("    Ungemessen: PyInstaller schreibt Zeitstempel mit, "
                       "bitgleich wird es vermutlich nicht.")
 
@@ -28945,7 +28945,7 @@ class PS5ConverterGUI:
         """
         waechter = getattr(self, "fortschritts_waechter", None)
         if waechter is None:
-            return ["(kein Waechter vorhanden)"]
+            return ["(kein Wächter vorhanden)"]
         return waechter.bericht()
 
     @staticmethod
@@ -28995,7 +28995,7 @@ class PS5ConverterGUI:
             from ps5_validator.utils import anzeige_diagnose as _ad
             lines.append(_ad.zusammenfassung(self._diagnose_pruefen()))
         except Exception as exc:
-            lines.append("Darstellung nicht pruefbar: %s" % exc)
+            lines.append("Darstellung nicht prüfbar: %s" % exc)
         lines.append("")
         lines.append(self._t("diagnostics.report_section_system"))
         lines.append(self._t("diagnostics.report_os", os=platform.platform()))
@@ -29102,7 +29102,7 @@ class PS5ConverterGUI:
                 os.remove(os.path.join(ordner, name))
                 entfernt += 1
             except OSError as exc:
-                logger.debug("Bericht %s nicht loeschbar: %s", name, exc)
+                logger.debug("Bericht %s nicht löschbar: %s", name, exc)
         if entfernt:
             logger.info("%d alte Diagnoseberichte entfernt, %d behalten",
                         entfernt, len(namen) - entfernt)
@@ -29181,7 +29181,7 @@ class PS5ConverterGUI:
                     zeilen = [ak.zusammenfassung(befunde), ""]
                     zeilen.extend(str(b) for b in befunde)
                 except Exception as exc:            # noqa: BLE001 - anzeigen
-                    zeilen = ["Aktualisierungspruefung fehlgeschlagen: %s" % exc]
+                    zeilen = ["Aktualisierungsprüfung fehlgeschlagen: %s" % exc]
                 self.root.after(0, lambda: _fertig(zeilen))
 
             def _fertig(zeilen: list) -> None:
@@ -29202,7 +29202,7 @@ class PS5ConverterGUI:
                 text_widget.see("end")
                 text_widget.configure(state="disabled")
             except Exception as exc:
-                logger.debug("Bericht nicht ergaenzbar: %s", exc)
+                logger.debug("Bericht nicht ergänzbar: %s", exc)
             try:
                 with io.open(report_path, "a", encoding="utf-8") as datei:
                     datei.write(block)
@@ -29767,7 +29767,7 @@ class PS5ConverterGUI:
             self._show_downloads_manager()
             baum = self._downloads_tree
         if baum is None:
-            logger.warning("Download-Fenster nicht verfuegbar, %s nicht aufgenommen",
+            logger.warning("Download-Fenster nicht verfügbar, %s nicht aufgenommen",
                            zerlegt["dateiname"])
             return "abgebrochen"
         for vorhanden in self._downloads.values():
@@ -29870,7 +29870,7 @@ class PS5ConverterGUI:
                 if ps5_downloads.eingehende_urls(inhalt):
                     self._downloads_uebernehmen(inhalt, still=True)
         except Exception as exc:
-            logger.debug("Zwischenablage-Ueberwachung: %s", exc)
+            logger.debug("Zwischenablage-Überwachung: %s", exc)
 
         self._zwischenablage_after_id = self.root.after(700, self._zwischenablage_tick)
 
@@ -30067,7 +30067,7 @@ class PS5ConverterGUI:
             logger.info(
                 "Eingestellt war %r. Abgelegt wird nach %r: Ab ShadowMountPlus "
                 "1.7 alpha8 wird %r im Spielordner ignoriert, und beide Teile "
-                "muessen denselben Ordner benutzen.", wert, richtig, wert)
+                "müssen denselben Ordner benutzen.", wert, richtig, wert)
         return richtig
 
     def _fakelib_pfad(self, wurzel) -> Path:
@@ -30138,7 +30138,7 @@ class PS5ConverterGUI:
         try:
             vorhanden = ps5_backport.fakelib_vorhandene_ordner(str(wurzel))
         except Exception as exc:
-            logger.debug("Ablage nicht pruefbar: %s", exc)
+            logger.debug("Ablage nicht prüfbar: %s", exc)
             return []
         gesehen: list[str] = []
         for generation in (sm_gen.ALT, sm_gen.NEU):
@@ -30240,14 +30240,14 @@ class PS5ConverterGUI:
         try:
             fenster.overrideredirect(True)
         except tk.TclError as exc:
-            logger.debug("Rahmenlos nicht moeglich: %s", exc)
+            logger.debug("Rahmenlos nicht möglich: %s", exc)
 
         durchsichtig = False
         try:
             fenster.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
             durchsichtig = True
         except tk.TclError:
-            logger.debug("Durchsichtige Ecken hier nicht verfuegbar - "
+            logger.debug("Durchsichtige Ecken hier nicht verfügbar - "
                          "das Fenster bleibt rechteckig.")
         grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
         fenster.configure(bg=grund)
@@ -30459,7 +30459,7 @@ class PS5ConverterGUI:
                 parent=self.root)
             return
         if not _system_datei_oeffnen(pfad):
-            logger.warning("Anleitung nicht zu oeffnen: %s", pfad)
+            logger.warning("Anleitung nicht zu öffnen: %s", pfad)
 
     def _show_ampr_alte_methode(self) -> None:
         """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""
@@ -30676,7 +30676,7 @@ class PS5ConverterGUI:
             sock.connect(("8.8.8.8", 80))
             dazu(sock.getsockname()[0])
         except OSError as exc:
-            logger.debug("Eigene Adresse ueber die Route: %s", exc)
+            logger.debug("Eigene Adresse über die Route: %s", exc)
         finally:
             sock.close()
 
@@ -30688,7 +30688,7 @@ class PS5ConverterGUI:
             for adresse in adressen:
                 dazu(adresse)
         except OSError as exc:
-            logger.debug("Eigene Adressen ueber den Rechnernamen: %s", exc)
+            logger.debug("Eigene Adressen über den Rechnernamen: %s", exc)
         return netze
 
     def _ampr_gen_netz_absuchen(self, port: int, melde) -> list[str]:
@@ -31883,7 +31883,7 @@ class PS5ConverterGUI:
                         ftp.delete(self._AUTOLOADER_ORDNER + "/" + name)
                         weg += 1
                     except Exception as exc:
-                        logger.debug("%s nicht loeschbar: %s", name, exc)
+                        logger.debug("%s nicht löschbar: %s", name, exc)
                 return weg
 
             self._autoloader_auftrag(
@@ -31946,7 +31946,7 @@ class PS5ConverterGUI:
                                 "STOR " + self._AUTOLOADER_ORDNER + "/" + name, fh)
                         anzahl += 1
                     except Exception as exc:
-                        logger.debug("%s nicht zurueckspielbar: %s", name, exc)
+                        logger.debug("%s nicht zurückspielbar: %s", name, exc)
                 return anzahl
 
             self._autoloader_auftrag(
@@ -32260,7 +32260,7 @@ class PS5ConverterGUI:
         except Exception as exc:
             # Eine unlesbare Datei darf den Backport nicht nachtraeglich
             # entwerten - der ist zu diesem Zeitpunkt schon durch.
-            logger.debug("Deckungspruefung fehlgeschlagen: %s", exc)
+            logger.debug("Deckungsprüfung fehlgeschlagen: %s", exc)
             self._append_to_log(self._t("backport.coverage_failed", error=exc))
             return
 
@@ -32999,7 +32999,7 @@ class PS5ConverterGUI:
             zustand["uhr"] = fenster.after(self._PS4_HINWEIS_ERSTE_MS,
                                            _faellig)
         except Exception as exc:
-            logger.debug("Wecker fuer den Ablageort-Hinweis nicht "
+            logger.debug("Wecker für den Ablageort-Hinweis nicht "
                          "gestellt: %s", exc)
             zustand["uhr"] = None
 
@@ -35120,7 +35120,7 @@ class PS5ConverterGUI:
         except Exception as exc:
             # Die Vorabpruefung darf das Fenster niemals verhindern - sie ist
             # eine Hilfe, kein Tor.
-            logger.warning("KLOG-Vorabpruefung fehlgeschlagen: %s", exc)
+            logger.warning("KLOG-Vorabprüfung fehlgeschlagen: %s", exc)
         self._show_klog_window()
 
     def _auswahl_dialog(self, titel: str, frage: str, eintraege: list[str],
@@ -36573,14 +36573,14 @@ class PS5ConverterGUI:
                 return
             self._farbschwaeche = neu
             self._save_setting("farbschwaeche", neu)
-            logger.info("Farbschwaeche auf %s gestellt", neu)
+            logger.info("Farbschwäche auf %s gestellt", neu)
             # Ueber den Designwechsel: Er baut die Palette neu und zieht alle
             # Fenster nach. Ein eigener Weg dafuer waere eine zweite Stelle,
             # die beim naechsten Umbau vergessen wird.
             try:
                 self._apply_theme(self._current_theme)
             except Exception as exc:
-                logger.debug("Farbschwaeche nicht sofort angewandt: %s", exc)
+                logger.debug("Farbschwäche nicht sofort angewandt: %s", exc)
 
         schwaeche_combo.bind("<<ComboboxSelected>>", _schwaeche_gewaehlt)
 
@@ -37086,7 +37086,7 @@ class PS5ConverterGUI:
             try:
                 knopf.configure(fg=farbe, bg=self._COLORS["header_bg"])
             except tk.TclError as exc:
-                logger.debug("Titelleisten-Knopf %s nicht umfaerbbar: %s", name, exc)
+                logger.debug("Titelleisten-Knopf %s nicht umfärbbar: %s", name, exc)
 
     def _theme_rundknoepfe_nachziehen(self) -> None:
         """Zieht den Canvas-Hintergrund aller RoundedButton nach.
@@ -37112,7 +37112,7 @@ class PS5ConverterGUI:
                     try:
                         kind.configure(background=neu)
                     except tk.TclError as exc:
-                        logger.debug("Rundknopf nicht umfaerbbar: %s", exc)
+                        logger.debug("Rundknopf nicht umfärbbar: %s", exc)
                 lauf(kind, tiefe + 1)
 
         lauf(self.root)
@@ -37136,13 +37136,13 @@ class PS5ConverterGUI:
                                 activebackground=c["fg_accent"],
                                 disabledforeground=c["fg_secondary"])
             except tk.TclError as exc:
-                logger.debug("Fussknopf %s nicht umfaerbbar: %s", name, exc)
+                logger.debug("Fussknopf %s nicht umfärbbar: %s", name, exc)
         rahmen = getattr(self, "_sidebar_footer_frame", None)
         if rahmen is not None:
             try:
                 rahmen.configure(bg=c["bg_main"])
             except tk.TclError as exc:
-                logger.debug("Fussrahmen nicht umfaerbbar: %s", exc)
+                logger.debug("Fussrahmen nicht umfärbbar: %s", exc)
 
     def _theme_menues_nachziehen(self) -> None:
         """Faerbt die Klappmenues neu.
@@ -37163,7 +37163,7 @@ class PS5ConverterGUI:
                                 activebackground=c["fg_accent"],
                                 activeforeground=c["bg_main"])
             except tk.TclError as exc:
-                logger.debug("Menue %s nicht umfaerbbar: %s", name, exc)
+                logger.debug("Menü %s nicht umfärbbar: %s", name, exc)
 
     def _apply_theme(self, theme_key: str) -> None:
         """Wechselt das aktive Theme zur Laufzeit und aktualisiert alle Widgets."""
@@ -37217,7 +37217,7 @@ class PS5ConverterGUI:
                     activebackground=c["bg_card"], activeforeground=c["fg_primary"],
                 )
             except Exception as exc:
-                logger.debug("Ankreuzfeld konnte nicht umgefaerbt werden: %s", exc)
+                logger.debug("Ankreuzfeld konnte nicht umgefärbt werden: %s", exc)
 
         # --- Hauptfenster ---
         self.root.configure(bg=c["bg_main"])
@@ -38229,7 +38229,7 @@ def _fenstersymbol_sofort_setzen(fenster: "tk.Tk | tk.Toplevel") -> bool:
                 _apply_win32_window_icon(fenster, pfad)
             return True
         except Exception as exc:  # noqa: BLE001 - jede weitere Quelle ist besser als die Feder
-            logger.debug("Fruehes Symbol aus Datei fehlgeschlagen: %s", exc)
+            logger.debug("Frühes Symbol aus Datei fehlgeschlagen: %s", exc)
 
     # 2. Eingebettetes .ico in eine temporaere Datei
     if sys.platform == "win32":
@@ -38246,7 +38246,7 @@ def _fenstersymbol_sofort_setzen(fenster: "tk.Tk | tk.Toplevel") -> bool:
             fenster.after(5000, lambda p=name: os.path.exists(p) and os.unlink(p))
             return True
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Fruehes Symbol aus dem eingebetteten .ico fehlgeschlagen: %s", exc)
+            logger.debug("Frühes Symbol aus dem eingebetteten .ico fehlgeschlagen: %s", exc)
             # Scheitert das Setzen, ist die Datei geschrieben, aber niemand
             # raeumt sie ab - das after() oben wird ja nicht mehr erreicht.
             # Ohne diesen Zweig bliebe bei jedem Start eine .ico im
@@ -38266,7 +38266,7 @@ def _fenstersymbol_sofort_setzen(fenster: "tk.Tk | tk.Toplevel") -> bool:
         setattr(fenster, "_fruehes_symbol", bild)
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Fruehes Symbol aus dem eingebetteten PNG fehlgeschlagen: %s", exc)
+        logger.debug("Frühes Symbol aus dem eingebetteten PNG fehlgeschlagen: %s", exc)
     return False
 
 
@@ -38292,7 +38292,7 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
     if not IST_WINDOWS:
         # Kein Mangel, sondern der Normalfall: Ausserhalb von Windows gibt es
         # keine Registry. Die Lizenz liegt der Anwendung als Datei bei.
-        return (False, f"{_systemname()}: Registry-Registrierung entfaellt (MIT-Lizenz liegt bei)")
+        return (False, f"{_systemname()}: Registry-Registrierung entfällt (MIT-Lizenz liegt bei)")
 
     try:
         import winreg  # type: ignore[import]
@@ -38382,7 +38382,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     param = parser.add_argument_group("param.json")
     param.add_argument(
         "--param-json-reparieren", action="store_true",
-        help="Eine beanstandete sce_sys/param.json ohne Rueckfrage reparieren "
+        help="Eine beanstandete sce_sys/param.json ohne Rückfrage reparieren "
              "bzw. eine fehlende anlegen. Ohne diesen Schalter bricht der Lauf "
              "bei einem Befund ab.",
     )
@@ -38474,7 +38474,7 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
         if ungenutzt:
             return (
                 "%s wirkt nur mit --ampr-action ampr_ftp_index. "
-                "Die Aktion %s laedt nichts hoch."
+                "Die Aktion %s lädt nichts hoch."
                 % (", ".join(ungenutzt), action)
             )
 
@@ -38663,7 +38663,7 @@ def _run_cli(args: argparse.Namespace) -> int:
     # Zug. Aufraeumen und Befehl laufen deshalb direkt und blockierend.
     if ok and bool(getattr(args, "shutdown_on_success", False)):
         app._shutdown_pending = True
-        print("[CLI] Aufgabe erfolgreich – Laufwerke werden gelöst, Temp-Ziele entfernt, danach faehrt der Rechner herunter.")
+        print("[CLI] Aufgabe erfolgreich – Laufwerke werden gelöst, Temp-Ziele entfernt, danach fährt der Rechner herunter.")
         if not app._shutdown_cleanup_and_execute():
             print("[CLI] Herunterfahren fehlgeschlagen – der Rechner bleibt an.", file=sys.stderr)
     elif bool(getattr(args, "shutdown_on_success", False)):
@@ -38778,7 +38778,7 @@ if __name__ == "__main__":
         temp_arg = sys.argv[2] if len(sys.argv) > 2 else ""
         ziel_arg = sys.argv[3] if len(sys.argv) > 3 else ""
         _zeilen = umgebung_doktor(temp_arg, ziel_arg, gruendlich=True)
-        print("PS5 Dump & Image Converter %s - Umgebungspruefung" % APP_VERSION)
+        print("PS5 Dump & Image Converter %s - Umgebungsprüfung" % APP_VERSION)
         print("")
         for _z in _zeilen:
             print(_z)

@@ -126,7 +126,7 @@ def _fontconfig_familie(kandidaten: tuple[str, ...], ersatz: str) -> str:
                 capture_output=True, text=True, timeout=5,
             )
         except Exception as exc:  # noqa: BLE001 - Schriftwahl darf nie den Start verhindern
-            logger.debug("fc-match nicht ausfuehrbar: %s", exc)
+            logger.debug("fc-match nicht ausführbar: %s", exc)
             return ersatz
         if ergebnis.returncode != 0:
             continue
@@ -200,7 +200,7 @@ def ist_administrator() -> bool:
 
             return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
         except Exception as exc:  # noqa: BLE001
-            logger.debug("Admin-Pruefung fehlgeschlagen: %s", exc)
+            logger.debug("Admin-Prüfung fehlgeschlagen: %s", exc)
             return False
     try:
         return os.geteuid() == 0  # type: ignore[attr-defined]
@@ -230,7 +230,7 @@ def prozess_flags() -> dict[str, object]:
         info.wShowWindow = 0  # SW_HIDE
         flags["startupinfo"] = info
     except Exception as exc:  # noqa: BLE001
-        logger.debug("STARTUPINFO nicht verfuegbar: %s", exc)
+        logger.debug("STARTUPINFO nicht verfügbar: %s", exc)
     return flags
 
 
@@ -259,7 +259,7 @@ def datei_oeffnen(pfad: str) -> bool:
             )
             return True
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Oeffnen ueber das System fehlgeschlagen (%s): %s", ziel, exc)
+        logger.debug("Öffnen über das System fehlgeschlagen (%s): %s", ziel, exc)
     # Letzter Ausweg: Der Browser oeffnet HTML/PDF und faellt sonst auf den
     # Dateimanager der Arbeitsumgebung zurueck.
     try:
@@ -376,7 +376,7 @@ def herunterfahren() -> tuple[bool, str]:
             ["poweroff"],
         )
 
-    letzter_fehler = "kein Befehl verfuegbar"
+    letzter_fehler = "kein Befehl verfügbar"
     for befehl in befehle:
         if not shutil.which(befehl[0]):
             letzter_fehler = f"{befehl[0]} nicht gefunden"
@@ -413,8 +413,8 @@ def herunterfahren() -> tuple[bool, str]:
 #: das gibt es allein unter Windows. Seit v1.8.72 liegt fuer jede
 #: Plattform ein eigenstaendiger Bau bei.
 NUR_WINDOWS_WERKZEUGE = {
-    "OSFMount": "Einhaengen von Abbildern als Laufwerk (Ersatzweg)",
-    "Dokan": "Einhaengen von UFS2-Abbildern als Laufwerk (UFS2Tool mount_udf)",
+    "OSFMount": "Einhängen von Abbildern als Laufwerk (Ersatzweg)",
+    "Dokan": "Einhängen von UFS2-Abbildern als Laufwerk (UFS2Tool mount_udf)",
 }
 
 
@@ -429,5 +429,5 @@ def nur_windows_hinweis(werkzeug: str) -> str:
     zusatz = f" ({zweck})" if zweck else ""
     return (
         f"{werkzeug} gibt es nur unter Windows{zusatz}. "
-        f"Unter {systemname()} steht dieser Weg nicht zur Verfuegung."
+        f"Unter {systemname()} steht dieser Weg nicht zur Verfügung."
     )

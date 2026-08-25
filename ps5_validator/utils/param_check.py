@@ -347,13 +347,13 @@ def _ids_pruefen(befund: Befund, daten: dict, pfad: str) -> None:
             if eingebettet != title_id:
                 befund.fehler_melden(
                     f"contentId nennt die Title-ID '{eingebettet}', das Feld "
-                    f"titleId aber '{title_id}' - beide muessen gleich sein"
+                    f"titleId aber '{title_id}' - beide müssen gleich sein"
                 )
             kennung = content_id[20:]
             if kennung != kennung.upper():
                 befund.warnen(
-                    f"contentId-Kennung '{kennung}' enthaelt Kleinbuchstaben - "
-                    f"ueblich sind Grossbuchstaben und Ziffern"
+                    f"contentId-Kennung '{kennung}' enthält Kleinbuchstaben - "
+                    f"üblich sind Grossbuchstaben und Ziffern"
                 )
 
     # Ordnername gegen titleId halten: Loader suchen die Installation dort.
@@ -369,8 +369,8 @@ def _ids_pruefen(befund: Befund, daten: dict, pfad: str) -> None:
                 )
             elif not RE_TITLE_ID.match(normalisiert):
                 befund.hinweis(
-                    f"Der uebergeordnete Ordner heisst '{spielordner}', "
-                    f"erwartet waere '{title_id}' oder '{title_id}-app'"
+                    f"Der übergeordnete Ordner heisst '{spielordner}', "
+                    f"erwartet wäre '{title_id}' oder '{title_id}-app'"
                 )
 
 
@@ -387,7 +387,7 @@ def _versionen_pruefen(befund: Befund, daten: dict, art: str) -> None:
         if isinstance(wert, (int, float)) and not isinstance(wert, bool):
             befund.fehler_melden(
                 f"{name} ist eine Zahl ({wert}) und muss eine Zeichenkette "
-                f"sein (\"{form}\") - sonst geht die fuehrende Null verloren"
+                f"sein (\"{form}\") - sonst geht die führende Null verloren"
             )
             continue
         if not isinstance(wert, str):
@@ -412,7 +412,7 @@ def _versionen_pruefen(befund: Befund, daten: dict, art: str) -> None:
             befund.warnen(
                 f"targetContentVersion ({daten['targetContentVersion']}) liegt "
                 f"unter contentVersion ({daten['contentVersion']}) - typische "
-                f"Ursache fuer Update-Schleifen"
+                f"Ursache für Update-Schleifen"
             )
     elif art == "base" and herkunft and inhalt and herkunft != inhalt:
         befund.warnen(
@@ -480,7 +480,7 @@ def _sprachen_pruefen(befund: Befund, daten: dict) -> None:
             befund.warnen(f"defaultLanguage '{standard}' ist kein bekannter Sprachcode")
         if standard not in lokal:
             befund.fehler_melden(
-                f"localizedParameters hat keinen Block fuer die Standardsprache "
+                f"localizedParameters hat keinen Block für die Standardsprache "
                 f"'{standard}'"
             )
 
@@ -501,7 +501,7 @@ def _sprachen_pruefen(befund: Befund, daten: dict) -> None:
             )
 
     if bloecke == 0:
-        befund.fehler_melden("localizedParameters enthaelt keinen einzigen Sprachblock")
+        befund.fehler_melden("localizedParameters enthält keinen einzigen Sprachblock")
 
 
 def _altersfreigaben_pruefen(befund: Befund, daten: dict) -> None:
@@ -509,11 +509,11 @@ def _altersfreigaben_pruefen(befund: Befund, daten: dict) -> None:
     if not isinstance(alter, dict):
         return
     if "default" not in alter:
-        befund.fehler_melden("ageLevel enthaelt keinen Eintrag 'default'")
+        befund.fehler_melden("ageLevel enthält keinen Eintrag 'default'")
     bekannte_laender = frozenset(LAENDER)
     for name, wert in alter.items():
         if name != "default" and name not in bekannte_laender:
-            befund.warnen(f"ageLevel['{name}'] ist kein bekannter Laendercode")
+            befund.warnen(f"ageLevel['{name}'] ist kein bekannter Ländercode")
         if not isinstance(wert, int) or isinstance(wert, bool):
             befund.fehler_melden(f"ageLevel['{name}'] muss eine Ganzzahl sein, ist {wert!r}")
         elif not 0 <= wert <= 21:
@@ -525,7 +525,7 @@ def _absichten_pruefen(befund: Befund, daten: dict, art: str) -> None:
     if absicht is None:
         if art in ("base", "disc") and daten.get("applicationCategoryType") == 0:
             befund.warnen(
-                "gameIntent fehlt - Spiele fuehren dort ihre permittedIntents"
+                "gameIntent fehlt - Spiele führen dort ihre permittedIntents"
             )
         return
     if not isinstance(absicht, dict):
@@ -580,7 +580,7 @@ def _hexfelder_pruefen(befund: Befund, daten: dict, hoechste_firmware: str | Non
         if roh > grenze:
             befund.fehler_melden(
                 f"requiredSystemSoftwareVersion verlangt Firmware "
-                f"{firmware_als_text(roh)}, die Zielkonsole hat hoechstens "
+                f"{firmware_als_text(roh)}, die Zielkonsole hat höchstens "
                 f"{hoechste_firmware} - das Spiel wird ein Systemupdate fordern"
             )
 
@@ -610,7 +610,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
 
     for name in ("discNumber", "discTotal"):
         if name not in daten:
-            befund.fehler_melden(f"{name} fehlt (bei Disc-Abzuegen Pflicht)")
+            befund.fehler_melden(f"{name} fehlt (bei Disc-Abzügen Pflicht)")
         elif not isinstance(daten[name], int) or isinstance(daten[name], bool):
             befund.fehler_melden(f"{name} muss eine Ganzzahl sein")
 
@@ -621,7 +621,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
             befund.fehler_melden(f"discNumber {nummer} liegt ausserhalb von 1 bis {gesamt}")
     if isinstance(gesamt, int) and not isinstance(gesamt, bool) and gesamt != len(scheiben):
         befund.warnen(
-            f"discTotal = {gesamt}, die Liste disc hat aber {len(scheiben)} Eintraege"
+            f"discTotal = {gesamt}, die Liste disc hat aber {len(scheiben)} Einträge"
         )
 
     title_id = daten.get("titleId")
@@ -637,7 +637,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
             ("masterDataId", str), ("role", str),
         ):
             if name not in eintrag:
-                befund.fehler_melden(f"{umfeld}{name} fehlt (bei Disc-Abzuegen Pflicht)")
+                befund.fehler_melden(f"{umfeld}{name} fehlt (bei Disc-Abzügen Pflicht)")
             else:
                 _typ_pruefen(befund, eintrag, name, erwartet, umfeld)
 
@@ -669,7 +669,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
 
         dateien = eintrag.get("files")
         if isinstance(dateien, list) and not dateien:
-            befund.warnen(f"{umfeld}files ist leer - Disc-Abzuege fuehren dort die Dateien")
+            befund.warnen(f"{umfeld}files ist leer - Disc-Abzüge führen dort die Dateien")
         for lfd, datei in enumerate(dateien or []):
             umfeld2 = f"{umfeld}files[{lfd}]."
             if not isinstance(datei, dict):
@@ -685,7 +685,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
                     befund.warnen(f"{umfeld2}digests ist keine Hex-Zeichenkette")
             elif isinstance(pruefwerte, list):
                 if any(not isinstance(einzel, str) for einzel in pruefwerte):
-                    befund.fehler_melden(f"{umfeld2}digests enthaelt Nicht-Zeichenketten")
+                    befund.fehler_melden(f"{umfeld2}digests enthält Nicht-Zeichenketten")
             else:
                 befund.fehler_melden(f"{umfeld2}digests hat einen unerwarteten Typ")
 
@@ -696,7 +696,7 @@ def _disc_pruefen(befund: Befund, daten: dict) -> None:
                 befund.fehler_melden(f"{umfeld}localizedParameters.defaultLanguage fehlt")
             elif standard not in lokal:
                 befund.fehler_melden(
-                    f"{umfeld}localizedParameters hat keinen Block fuer '{standard}'"
+                    f"{umfeld}localizedParameters hat keinen Block für '{standard}'"
                 )
 
 
@@ -706,7 +706,7 @@ def _nachbarn_pruefen(befund: Befund, pfad: str) -> None:
     if not os.path.isfile(os.path.join(sce_sys, "icon0.png")):
         befund.warnen(
             "sce_sys/icon0.png fehlt - ohne Symbol taucht der Titel unter "
-            "Umstaenden nicht auf dem Startbildschirm auf"
+            "Umständen nicht auf dem Startbildschirm auf"
         )
     if not os.path.isfile(os.path.join(os.path.dirname(sce_sys), "eboot.bin")):
         befund.hinweis("eboot.bin liegt nicht neben dem Ordner sce_sys")
@@ -737,7 +737,7 @@ def laden(pfad: str, befund: Befund) -> dict | None:
 
     if roh.startswith(b"\xef\xbb\xbf"):
         befund.fehler_melden(
-            "Die Datei beginnt mit einem UTF-8-BOM - das allein genuegt fuer "
+            "Die Datei beginnt mit einem UTF-8-BOM - das allein genügt für "
             "'invalid param.json'. Sie muss ohne BOM gespeichert werden."
         )
         roh = roh[3:]
@@ -750,7 +750,7 @@ def laden(pfad: str, befund: Befund) -> dict | None:
         text = roh.decode("utf-8")
     except UnicodeDecodeError as exc:
         befund.unlesbar = True
-        befund.fehler_melden(f"kein gueltiges UTF-8: {exc}")
+        befund.fehler_melden(f"kein gültiges UTF-8: {exc}")
         return None
 
     try:
@@ -833,7 +833,7 @@ def _inhalt_pruefen(befund: Befund, daten: dict, pfad: str,
     for name, typ in WEICHE_PFLICHTFELDER.items():
         if name not in daten:
             befund.warnen(
-                f"Feld '{name}' fehlt - vollstaendige Pakete fuehren es, "
+                f"Feld '{name}' fehlt - vollständige Pakete führen es, "
                 f"Homebrew kommt ohne aus"
             )
         elif name not in _VERSIONSFELDER:
@@ -862,7 +862,7 @@ def _inhalt_pruefen(befund: Befund, daten: dict, pfad: str,
     if art == "disc":
         _disc_pruefen(befund, daten)
     elif "disc" in daten:
-        befund.hinweis("Der Schluessel disc ist vorhanden, aber leer")
+        befund.hinweis("Der Schlüssel disc ist vorhanden, aber leer")
 
 
 def titel_aus_daten(daten: dict) -> str:
@@ -1025,7 +1025,7 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
         name = block.get("titleName")
         if not isinstance(name, str) or not name.strip():
             block["titleName"] = blockname or "Unbekannt"
-            aenderungen.append(f"titleName in '{standard}' ergaenzt")
+            aenderungen.append(f"titleName in '{standard}' ergänzt")
         lokal[standard] = block
 
     # defaultLanguage gehoert nach oben - so steht es in jeder Vorlage.
@@ -1039,18 +1039,18 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
     alter = neu.get("ageLevel")
     if not isinstance(alter, dict) or not alter:
         neu["ageLevel"] = vollstaendiger_altersblock()
-        aenderungen.append("ageLevel mit allen Laendern angelegt (Stufe 0)")
+        aenderungen.append("ageLevel mit allen Ländern angelegt (Stufe 0)")
     elif "default" not in alter:
         ergaenzt = OrderedDict(alter)
         ergaenzt["default"] = 0
         neu["ageLevel"] = ergaenzt
-        aenderungen.append("ageLevel.default ergaenzt (Stufe 0)")
+        aenderungen.append("ageLevel.default ergänzt (Stufe 0)")
 
     # -- Fehlende Standardfelder ------------------------------------------
     for name, vorgabe in _VORGABEN.items():
         if name not in neu:
             neu[name] = vorgabe
-            aenderungen.append(f"{name} ergaenzt ({vorgabe!r})")
+            aenderungen.append(f"{name} ergänzt ({vorgabe!r})")
 
     # -- Typfehler in Ganzzahlfeldern -------------------------------------
     for name in ("applicationCategoryType", "contentBadgeType",
