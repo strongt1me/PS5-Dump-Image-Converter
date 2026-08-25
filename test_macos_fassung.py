@@ -365,53 +365,49 @@ class SpecAusfuehrungTests(unittest.TestCase):
                         "THIRD_PARTY_LICENSES.md", "Backport_Fakelibs"):
             self.assertIn(pflicht, ziele, f"{pflicht} wird nicht eingebettet")
 
-    def test_ampr_ordner_liegt_daneben_statt_drin(self):
-        """Seit v1.8.94 wird der AMPR-/PlayGo-Ordner NICHT eingebettet.
+    def test_ampr_ordner_wird_eingebettet(self):
+        """Der AMPR-/PlayGo-Ordner steckt im Buendel, nicht daneben.
 
-        Er soll sich austauschen lassen, ohne das Programm neu zu bauen.
-        Eingebettete Daten landen unter sys._MEIPASS, einem Ordner, den
-        PyInstaller beim Beenden loescht - dort etwas hineinzulegen waere
-        zwecklos.
+        Zwischen v1.8.94 und v1.8.95 lag er daneben, damit sich eine neue
+        AMPR-Fassung hineinlegen laesst, ohne neu zu bauen. Auf macOS war das
+        besonders unerfreulich: Ein ``.app``-Buendel versiegelt
+        ``Contents/MacOS`` nicht - dort erwartet das System ausschliesslich
+        ausfuehrbaren Code -, und der CI-Lauf brach mit ``a sealed resource is
+        missing or invalid`` ab. Auf Apple Silicon startet ein Buendel mit
+        ungueltiger Signatur gar nicht.
 
-        Das Bauskript muss ihn deshalb ins Buendel kopieren - und zwar nach
-        **Contents/Resources**, nicht nach Contents/MacOS.
-
-        Der erste Anlauf legte ihn nach Contents/MacOS, weil das Programm
-        seine Beilagen neben ``sys.argv[0]`` sucht. Das brachte am 25.08.2026
-        den CI-Lauf auf echter Apple-Hardware zu Fall::
-
-            a sealed resource is missing or invalid
-            file added: .../Contents/MacOS/PlayGo & AMPR_EMU/PlayGo_v0.5
-
-        Ein .app-Buendel versiegelt beim Signieren nur bestimmte Orte, und
-        Contents/MacOS gehoert nicht dazu - dort erwartet das System
-        ausschliesslich ausfuehrbaren Code. Auf Apple Silicon startet ein
-        Buendel mit ungueltiger Signatur gar nicht erst.
-
-        Zweite Bedingung, unveraendert: **vor** dem Signieren. codesign
-        erfasst das Buendel als Ganzes; wer danach etwas hineinlegt, macht die
-        eben gesetzte Signatur ungueltig.
+        Eingebettet stellt sich die Frage nach dem Ort nicht mehr.
         """
         ziele = {os.path.basename(q) for q, _z in self._kwargs("Analysis")["datas"]}
-        self.assertNotIn("PlayGo & AMPR_EMU", ziele,
-                         "Der Ordner soll neben der Programmdatei liegen, nicht darin")
+        self.assertIn("PlayGo & AMPR_EMU", ziele,
+                      "Der Ordner wird nicht eingebettet")
 
+    def test_das_bauskript_legt_ihn_nicht_mehr_ins_buendel(self):
+        """Sonst laegen dieselben 3 MB zweimal im .app - und der Ordner in
+        Contents/MacOS wuerde zusaetzlich die Signatur brechen."""
         skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
-        self.assertIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/Resources/', skript,
-                      "Das Bauskript legt den Ordner nicht nach Contents/Resources")
-        self.assertNotIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/MacOS/', skript,
-                         "Contents/MacOS wird beim Signieren nicht versiegelt")
-        kopieren = skript.index('cp -r "PlayGo & AMPR_EMU"')
-        signieren = skript.index("codesign --force")
-        self.assertLess(kopieren, signieren,
-                        "Der Ordner muss VOR dem Signieren im Buendel liegen")
+        self.assertNotIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL', skript)
+
+    def test_ein_alter_ordner_wird_weggeraeumt(self):
+        """Ein Rest aus einem frueheren Bau in Contents/MacOS wuerde die
+        Signatur brechen, obwohl ihn niemand mehr benutzt."""
+        skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
+        for ort in ("Contents/MacOS/PlayGo & AMPR_EMU",
+                    "Contents/Resources/PlayGo & AMPR_EMU"):
+            with self.subTest(ort=ort):
+                self.assertIn('rm -rf "$BUENDEL/%s"' % ort, skript)
+        self.assertLess(skript.index('rm -rf "$BUENDEL/Contents/MacOS'),
+                        skript.index("codesign --force"),
+                        "Aufgeraeumt werden muss vor dem Signieren")
 
     def test_das_programm_sieht_auch_in_contents_resources_nach(self):
-        """Sonst faende es den Ordner an seinem neuen Platz nicht.
+        """Bleibt als Rueckfallweg bestehen.
 
-        Die Gegenprobe zum Bauskript: Beides muss zusammenpassen, sonst liegt
-        der Ordner zwar korrekt im Buendel, und Aufgabe 7 findet trotzdem
-        keine Versionen.
+        Gebraucht wird er derzeit nicht - eingebettete Daten findet
+        ``_MEIPASS`` zuerst. Er kostet nichts und ist die richtige Antwort,
+        falls je wieder etwas neben das Programm gelegt wird: ``Contents/MacOS``
+        waere dafuer der falsche Ort, weil es beim Signieren nicht versiegelt
+        wird (CI-Lauf vom 25.08.2026).
         """
         quelle = (Path(__file__).resolve().parent
                   / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")

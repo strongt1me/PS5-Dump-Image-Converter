@@ -213,17 +213,21 @@ if [ ! -f "$ERGEBNIS" ]; then
 fi
 chmod +x "$ERGEBNIS"
 
-# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 nicht mehr im Programm, sondern
-# liegt daneben - so laesst sich eine neue AMPR-Fassung hineinlegen, ohne neu
-# zu bauen. _bundled_resource() sucht zuletzt im Ordner der ausfuehrbaren
-# Datei; ohne diesen Schritt faende Aufgabe 7 hier keine Versionen mehr.
-if [ -d "PlayGo & AMPR_EMU" ]; then
-    rm -rf "dist/PlayGo & AMPR_EMU"
-    cp -r "PlayGo & AMPR_EMU" "dist/PlayGo & AMPR_EMU"
-    meldung "      AMPR-/PlayGo-Ordner neben das Programm gelegt." "$gruen"
-else
+# Der AMPR-/PlayGo-Ordner steckt wieder IM Programm (siehe .spec).
+#
+# Zwischenzeitlich lag er daneben, damit sich eine neue AMPR-Fassung
+# hineinlegen laesst, ohne neu zu bauen. Das wiegt den Nachteil nicht auf: Wer
+# das Programm weitergibt oder verschiebt und den Ordner vergisst, hat in
+# Aufgabe 7 keine einzige Version zur Auswahl - ohne erkennbare Ursache.
+#
+# Ein eigener Ordner bleibt moeglich: Der AMPR-EMU-Manager hat dafuer eine
+# Ordnerwahl, und --ampr-store tut auf der Kommandozeile dasselbe.
+if [ ! -d "PlayGo & AMPR_EMU" ]; then
     meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
 fi
+
+# Ein danebenliegender Ordner aus einem frueheren Bau wuerde nur verwirren.
+rm -rf "dist/PlayGo & AMPR_EMU"
 
 echo
 meldung "=============================================" "$gruen"

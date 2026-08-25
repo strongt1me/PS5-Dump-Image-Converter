@@ -2,7 +2,36 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.94):** Der Fortschrittsbalken läuft in der Sammelkonvertierung nicht mehr je Datei von vorn los und kann nicht mehr stehenbleiben. Neu ist eine Umgebungsprüfung, die die häufigen Ursachen für „läuft bei mir nicht“ in Sekunden benennt – im Fenster **DIAGNOSE** und als Befehl `--doktor`.
+> **Kurz zum aktuellen Stand (v1.8.95):** Das Programm ist wieder eine einzige Datei – AMPR EMU und PlayGo stecken darin, nicht mehr in einem Ordner daneben. Aus v1.8.94 bleiben die verlässliche Fortschrittsanzeige und die Umgebungsprüfung `--doktor`.
+
+---
+
+## v1.8.95 – 25.08.2026
+
+### Das Programm ist wieder eine einzige Datei
+
+AMPR EMU und PlayGo lagen seit v1.8.94 in einem Ordner **neben** dem Programm.
+Der Gedanke dahinter: Eine neue AMPR-Fassung hätte sich hineinlegen lassen,
+ohne auf ein Update zu warten.
+
+Der Preis dafür war zu hoch. Wer das Programm weitergibt, verschiebt oder aus
+dem Download-Ordner heraus startet und den Ordner dabei vergisst, hat in
+**Aufgabe 7** keine einzige Version zur Auswahl – und zwar wortlos, mit der
+Meldung „keine passende Datei“, ohne dass die Ursache erkennbar wäre.
+
+Beides steckt jetzt wieder in der Programmdatei. Sie wächst dadurch um rund
+1 MB. Beim Entpacken des heruntergeladenen Bündels ist nichts mehr
+mitzukopieren.
+
+**Eigene AMPR-Fassungen bleiben möglich:** Der AMPR-EMU-Manager hat dafür eine
+eigene Ordnerwahl, auf der Kommandozeile leistet `--ampr-store` dasselbe.
+
+### Die Umgebungsprüfung meldete auf Linux und macOS Fehler, die keine waren
+
+`--doktor` prüft, ob sich die mitgelieferten Programme starten lassen. Auf
+Linux und macOS hielt sie dabei auch Dateien für Programme, die keine sind –
+etwa eine Lizenzdatei – und meldete dafür einen Fehler. Entschieden wird jetzt
+am Dateiformat statt am Dateirecht.
 
 ---
 

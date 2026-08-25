@@ -247,32 +247,23 @@ if [ ! -d "$BUENDEL" ]; then
     exit 1
 fi
 
-# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 nicht mehr im Programm, sondern
-# liegt im Buendel - und zwar in Contents/Resources, nicht in Contents/MacOS.
+# Der AMPR-/PlayGo-Ordner steckt wieder IM Programm (siehe .spec).
 #
-# Der erste Anlauf legte ihn nach Contents/MacOS, weil das Programm seine
-# Beilagen neben sys.argv[0] sucht. Das brachte am 25.08.2026 den CI-Lauf zu
-# Fall:
+# Zwischenzeitlich lag er daneben, damit sich eine neue AMPR-Fassung
+# hineinlegen laesst, ohne neu zu bauen. Das wiegt den Nachteil nicht auf: Wer
+# das Programm weitergibt oder verschiebt und den Ordner vergisst, hat in
+# Aufgabe 7 keine einzige Version zur Auswahl - ohne erkennbare Ursache.
 #
-#     dist/PS5 Dump & Image Converter.app: a sealed resource is missing or invalid
-#     file added: .../Contents/MacOS/PlayGo & AMPR_EMU/PlayGo_v0.5
-#
-# Ein .app-Buendel versiegelt beim Signieren nur bestimmte Orte, und
-# Contents/MacOS gehoert nicht dazu - dort erwartet das System ausschliesslich
-# ausfuehrbaren Code. Contents/Resources ist der vorgesehene Platz fuer Daten;
-# _mitgeliefert_finden() sieht dort seit derselben Fassung nach.
-#
-# Zwingend VOR dem Signieren: codesign erfasst das Buendel als Ganzes. Wer
-# danach etwas hineinlegt, macht die eben gesetzte Signatur ungueltig, und auf
-# Apple Silicon startet ein Buendel mit kaputter Signatur gar nicht erst.
-if [ -d "PlayGo & AMPR_EMU" ]; then
-    rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
-    rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
-    cp -r "PlayGo & AMPR_EMU" "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
-    meldung "      AMPR-/PlayGo-Ordner in Contents/Resources gelegt." "$gruen"
-else
+# Ein eigener Ordner bleibt moeglich: Der AMPR-EMU-Manager hat dafuer eine
+# Ordnerwahl, und --ampr-store tut auf der Kommandozeile dasselbe.
+if [ ! -d "PlayGo & AMPR_EMU" ]; then
     meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
 fi
+
+# Ein danebenliegender Ordner aus einem frueheren Bau wuerde nur verwirren -
+# und in Contents/MacOS haette er ohnehin die Signatur gebrochen.
+rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
+rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
 
 # --- Schritt 7: Signieren und pruefen -------------------------------------
 echo

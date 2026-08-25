@@ -8,7 +8,6 @@ Build-Validierungstests für PS5ImageConverter
 
 import os
 import sys
-import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -213,7 +212,7 @@ def test_dependencies_frozen():
             'zstandard': zstandard.__version__,
         }
         
-        print(f"  Installierte Versions-Snapshot:")
+        print("  Installierte Versions-Snapshot:")
         for pkg, ver in versions.items():
             print(f"    - {pkg:20} {ver}")
         
@@ -221,7 +220,7 @@ def test_dependencies_frozen():
         with open('requirements.txt', 'r') as f:
             reqs = f.read()
         
-        print(f"\n  requirements.txt Versionen:")
+        print("\n  requirements.txt Versionen:")
         for line in reqs.split('\n'):
             if line.strip() and not line.startswith('#'):
                 print(f"    - {line.strip()}")
@@ -238,7 +237,7 @@ def test_output_directory():
     dist_dir = 'dist'
     build_dir = 'build'
     
-    print(f"  Prüfe ob Output-Verzeichnisse leer sind (für sauberen Build):")
+    print("  Prüfe ob Output-Verzeichnisse leer sind (für sauberen Build):")
     
     results = []
     for dir_name in [dist_dir, build_dir]:
@@ -335,18 +334,18 @@ class VersionsstandTests(unittest.TestCase):
         self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
 
 
-class AmprOrdnerNebenDemProgrammTests(unittest.TestCase):
-    """Der AMPR-/PlayGo-Ordner wird seit v1.8.94 nicht mehr eingebettet.
+class AmprOrdnerImProgrammTests(unittest.TestCase):
+    """Der AMPR-/PlayGo-Ordner steckt in der Programmdatei.
 
-    Er liegt neben der ausführbaren Datei, damit sich eine neue AMPR-Fassung
-    hineinlegen lässt, ohne das Programm neu zu bauen - genau das fehlte beim
-    Nachrüsten von 0.3.6.6. Eingebettete Daten landen zur Laufzeit unter
-    ``sys._MEIPASS``, einem Ordner, den PyInstaller beim Beenden löscht; dort
-    etwas abzulegen wäre zwecklos.
+    Zwischen v1.8.94 und v1.8.95 lag er daneben, damit sich eine neue
+    AMPR-Fassung hineinlegen lässt, ohne neu zu bauen. Das wiegt den Nachteil
+    nicht auf: Wer das Programm weitergibt oder verschiebt und den Ordner
+    vergisst, hat in Aufgabe 7 **keine einzige Version** zur Auswahl - und
+    zwar still, mit der Meldung "keine passende Datei", ohne dass die Ursache
+    erkennbar wäre. Die Auslieferung ist wieder eine einzige Datei.
 
-    Damit hängt aber alles daran, dass **jedes** Bauskript ihn dorthin
-    kopiert. Vergisst es eines, findet Aufgabe 7 auf dieser Plattform keine
-    Versionen mehr - und zwar still, mit der Meldung "keine passende Datei".
+    Der Weg für eigene Versionen bleibt: Der AMPR-EMU-Manager hat eine
+    Ordnerwahl, und ``--ampr-store`` tut auf der Kommandozeile dasselbe.
     """
 
     ORDNER = "PlayGo & AMPR_EMU"
@@ -354,56 +353,66 @@ class AmprOrdnerNebenDemProgrammTests(unittest.TestCase):
     def _spec(self, name):
         return (PROJEKT / name).read_text(encoding="utf-8", errors="replace")
 
-    def test_kein_bauplan_bettet_ihn_noch_ein(self):
+    def _skript(self, name):
+        return (PROJEKT / name).read_text(encoding="utf-8", errors="replace")
+
+    def test_jeder_bauplan_bettet_ihn_ein(self):
+        """Vergisst es einer, fehlt er auf genau dieser Plattform."""
         for name in ("PS5ImageConverter_Pro.spec",
                      "PS5ImageConverter_Pro_linux.spec",
                      "PS5ImageConverter_Pro_macos.spec"):
             with self.subTest(bauplan=name):
-                self.assertNotIn("_ampr_store", self._spec(name),
-                                 "%s bettet den Ordner noch ein" % name)
+                inhalt = self._spec(name)
+                self.assertIn("_ampr_store", inhalt,
+                              "%s bettet den Ordner nicht ein" % name)
+                self.assertIn("_datas.append((_ampr_store, 'PlayGo & AMPR_EMU'))",
+                              inhalt,
+                              "%s legt ihn nicht in die Daten" % name)
 
-    def test_jedes_bauskript_legt_ihn_daneben(self):
-        """Ohne diesen Schritt fehlt er in der Auslieferung."""
-        for skript, marke in (
-            ("Build_EXE.ps1", "$ORDNER_WINDOWS"),
-            ("Build_Linux.sh", 'dist/PlayGo & AMPR_EMU'),
-            ("Build_macOS.sh", "Contents/MacOS/PlayGo & AMPR_EMU"),
+    def test_kein_bauskript_legt_ihn_mehr_daneben(self):
+        """Sonst lägen dieselben 3 MB zweimal in der Auslieferung."""
+        for skript, verboten in (
+            ("Build_EXE.ps1", "Copy-Item $AMPR_QUELLE"),
+            ("Build_Linux.sh", 'cp -r "PlayGo & AMPR_EMU" "dist/'),
+            ("Build_macOS.sh", 'cp -r "PlayGo & AMPR_EMU" "$BUENDEL'),
         ):
             with self.subTest(skript=skript):
-                inhalt = (PROJEKT / skript).read_text(encoding="utf-8", errors="replace")
-                self.assertIn(self.ORDNER, inhalt,
-                              "%s kopiert den Ordner nicht" % skript)
-                self.assertIn(marke, inhalt,
-                              "%s legt ihn nicht an die erwartete Stelle" % skript)
+                self.assertNotIn(verboten, self._skript(skript),
+                                 "%s kopiert den Ordner noch daneben" % skript)
 
-    def test_macos_kopiert_vor_dem_signieren(self):
-        """Sonst ist die Signatur hinüber.
+    def test_jedes_bauskript_raeumt_einen_alten_ordner_weg(self):
+        """Ein Rest aus einem früheren Bau würde nur verwirren - er sähe aus
+        wie der maßgebliche Versionsspeicher und wäre doch nie benutzt."""
+        for skript, marke in (
+            ("Build_EXE.ps1", "Remove-Item $amprAlt -Recurse -Force"),
+            ("Build_Linux.sh", 'rm -rf "dist/PlayGo & AMPR_EMU"'),
+            ("Build_macOS.sh", 'rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"'),
+        ):
+            with self.subTest(skript=skript):
+                self.assertIn(marke, self._skript(skript),
+                              "%s raeumt den alten Ordner nicht weg" % skript)
 
-        ``codesign`` erfasst das Bündel als Ganzes. Wer danach etwas
-        hineinlegt, macht die eben gesetzte Signatur ungültig - und auf Apple
-        Silicon startet ein Bündel mit kaputter Signatur gar nicht erst.
-        """
-        skript = (PROJEKT / "Build_macOS.sh").read_text(encoding="utf-8", errors="replace")
-        self.assertLess(skript.index("Contents/MacOS/PlayGo & AMPR_EMU"),
-                        skript.index("codesign --force"),
-                        "Der Ordner muss vor dem Signieren im Bündel liegen")
+    def test_das_windows_buendel_traegt_ihn_nicht_doppelt(self):
+        inhalt = self._skript("Build_EXE.ps1")
+        self.assertNotIn('Copy-Item $AMPR_QUELLE (Join-Path $buendel', inhalt)
 
-    def test_das_windows_buendel_nimmt_ihn_mit(self):
-        inhalt = (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8", errors="replace")
-        nach_exe = inhalt.index("$ORDNER_WINDOWS")
-        self.assertIn("$buendel", inhalt[nach_exe:],
-                      "Der Ordner landet zwar neben der EXE, aber nicht im Bündel")
+    def test_die_summe_zaehlt_den_ordnerinhalt_mit(self):
+        """Mit ``-File`` allein fiele ein Ordnerinhalt aus der Größenangabe."""
+        self.assertIn("Get-ChildItem $buendel -Recurse -File",
+                      self._skript("Build_EXE.ps1"))
 
-    def test_die_summe_zaehlt_den_ordner_mit(self):
-        """Mit ``-File`` allein fiele der Ordnerinhalt aus der Größenangabe."""
-        inhalt = (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8", errors="replace")
-        self.assertIn("Get-ChildItem $buendel -Recurse -File", inhalt)
+    def test_die_eigene_ordnerwahl_bleibt(self):
+        """Der Ausweg für eigene AMPR-Fassungen darf nicht wegfallen."""
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8", errors="replace")
+        self.assertIn("--ampr-store", quelle)
 
-    def test_die_aufloesung_findet_ihn_neben_dem_programm(self):
+    def test_die_aufloesung_findet_ihn_im_programm(self):
         """Der Kern - nachgestellt wie in der gebauten EXE.
 
-        ``_MEIPASS`` hat den Ordner nicht mehr, ``__file__`` zeigt dorthin,
-        und daneben liegt er. Genau dann muss die Auflösung ihn dort finden.
+        ``_MEIPASS`` trägt den Ordner, und genau dort muss die Auflösung ihn
+        nehmen. Läge daneben noch ein alter Ordner, dürfte er nicht gewinnen:
+        Sonst arbeitete das Programm mit einem Stand, den niemand mehr pflegt.
         """
         import importlib.util
         import shutil
@@ -417,12 +426,18 @@ class AmprOrdnerNebenDemProgrammTests(unittest.TestCase):
 
         mei = tempfile.mkdtemp(prefix="meipass_")
         neben = tempfile.mkdtemp(prefix="neben_exe_")
-        tief = os.path.join(neben, self.ORDNER, "AMPR_EMU", "0.3.6.4 no debug")
+        # Im Programm: die maßgebliche Fassung.
+        tief = os.path.join(mei, self.ORDNER, "AMPR_EMU", "0.3.6.4 no debug")
         os.makedirs(tief)
         with open(os.path.join(tief, "libSceAmpr.sprx"), "wb") as f:
             f.write(b"x" * 16)
+        # Daneben: ein Rest aus einem früheren Bau, der nicht gewinnen darf.
+        alt_tief = os.path.join(neben, self.ORDNER, "AMPR_EMU", "0.1.0 no debug")
+        os.makedirs(alt_tief)
+        with open(os.path.join(alt_tief, "libSceAmpr.sprx"), "wb") as f:
+            f.write(b"y" * 16)
 
-        alt = (sys.argv[0], getattr(sys, "_MEIPASS", None), modul.__file__)
+        merker = (sys.argv[0], getattr(sys, "_MEIPASS", None), modul.__file__)
         try:
             sys.argv[0] = os.path.join(neben, "PS5_Dump_Image_Converter.exe")
             sys._MEIPASS = mei
@@ -431,20 +446,20 @@ class AmprOrdnerNebenDemProgrammTests(unittest.TestCase):
             gefunden = modul._bundled_resource(self.ORDNER)
             self.assertTrue(gefunden, "Der Ordner wurde gar nicht gefunden")
             self.assertTrue(
-                os.path.normcase(gefunden).startswith(os.path.normcase(neben)),
-                "Gefunden wurde %r statt des Ordners neben dem Programm" % gefunden)
+                os.path.normcase(gefunden).startswith(os.path.normcase(mei)),
+                "Gefunden wurde %r statt des Ordners im Programm" % gefunden)
 
             klasse = modul.PS5ConverterGUI
             eintraege = klasse._ampr_scan_version_store(klasse, klasse._ampr_bundled_store())
             self.assertEqual(len(eintraege), 1, eintraege)
-            self.assertEqual(eintraege[0]["version"], "0.3.6.4")
-            self.assertEqual(eintraege[0]["variant"], "no debug")
+            self.assertEqual(eintraege[0]["version"], "0.3.6.4",
+                             "Der alte Ordner daneben hat gewonnen")
         finally:
-            sys.argv[0], modul.__file__ = alt[0], alt[2]
-            if alt[1] is None:
+            sys.argv[0], modul.__file__ = merker[0], merker[2]
+            if merker[1] is None:
                 sys.__dict__.pop("_MEIPASS", None)
             else:
-                sys._MEIPASS = alt[1]
+                sys._MEIPASS = merker[1]
             sys.modules.pop("hp_ampr", None)
             shutil.rmtree(mei, ignore_errors=True)
             shutil.rmtree(neben, ignore_errors=True)

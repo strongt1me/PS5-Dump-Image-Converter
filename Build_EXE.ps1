@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.8.94 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.8.95 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.8.94"
+$EXE_VERSION = "v1.8.95"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -259,24 +259,26 @@ if (Test-Path $exeRoh) {
     if (-not (Test-Path $ORDNER_WINDOWS)) { New-Item -ItemType Directory -Path $ORDNER_WINDOWS -Force | Out-Null }
     Move-Item $exeRoh $exePath -Force
 }
-# Der AMPR-/PlayGo-Ordner steckt seit v1.8.94 NICHT mehr in der EXE.
+# Der AMPR-/PlayGo-Ordner steckt wieder IN der EXE (siehe .spec).
 #
-# Er liegt daneben, damit sich eine neue AMPR-Fassung hineinlegen laesst,
-# ohne das Programm neu zu bauen - genau das war beim Nachruesten von 0.3.6.6
-# noetig. Eingebettete Daten landen zur Laufzeit unter sys._MEIPASS, einem
-# Ordner, den PyInstaller beim Beenden loescht; dort etwas abzulegen ist
-# zwecklos. Gefunden wird er von _bundled_resource(), das zuletzt den Ordner
-# der ausfuehrbaren Datei absucht.
+# Zwischenzeitlich lag er daneben, damit sich eine neue AMPR-Fassung
+# hineinlegen laesst, ohne neu zu bauen. Das wiegt den Nachteil nicht auf:
+# Wer die EXE weitergibt oder verschiebt und den Ordner vergisst, hat in
+# Aufgabe 7 keine einzige Version zur Auswahl - ohne erkennbare Ursache.
+# Die Auslieferung ist wieder eine einzige Datei.
+#
+# Ein eigener Ordner bleibt moeglich: Der AMPR-EMU-Manager hat dafuer eine
+# Ordnerwahl, und --ampr-store tut auf der Kommandozeile dasselbe.
 $AMPR_QUELLE = Join-Path $PSScriptRoot "PlayGo & AMPR_EMU"
-if (Test-Path $AMPR_QUELLE) {
-    $amprZiel = Join-Path $ORDNER_WINDOWS "PlayGo & AMPR_EMU"
-    if (Test-Path $amprZiel) { Remove-Item $amprZiel -Recurse -Force }
-    Copy-Item $AMPR_QUELLE $amprZiel -Recurse -Force
-    $amprMB = [math]::Round((Get-ChildItem $amprZiel -Recurse -File |
-                             Measure-Object -Property Length -Sum).Sum / 1MB, 1)
-    Write-Host ("      AMPR-/PlayGo-Ordner neben die EXE gelegt ({0} MB)" -f $amprMB) -ForegroundColor Green
-} else {
+if (-not (Test-Path $AMPR_QUELLE)) {
     Write-Host "      WARNUNG: 'PlayGo & AMPR_EMU' nicht gefunden - Aufgabe 7 findet keine Versionen." -ForegroundColor Yellow
+}
+
+# Ein danebenliegender Ordner aus einem frueheren Bau wuerde nur verwirren.
+$amprAlt = Join-Path $ORDNER_WINDOWS "PlayGo & AMPR_EMU"
+if (Test-Path $amprAlt) {
+    Remove-Item $amprAlt -Recurse -Force
+    Write-Host "      Alten AMPR-Ordner neben der EXE entfernt (steckt jetzt darin)." -ForegroundColor Gray
 }
 
 if (Test-Path $exePath) {
@@ -342,14 +344,9 @@ if (Test-Path $exePath) {
             Write-Host "           FEHLT: $name" -ForegroundColor Yellow
         }
     }
-    # Der AMPR-Ordner gehoert mit ins Buendel - ohne ihn findet Aufgabe 7
-    # keine Versionen, und der Nutzer bekaeme "keine passende Datei".
-    if (Test-Path $AMPR_QUELLE) {
-        Copy-Item $AMPR_QUELLE (Join-Path $buendel "PlayGo & AMPR_EMU") -Recurse -Force
-        $ordnerMB = [math]::Round((Get-ChildItem (Join-Path $buendel "PlayGo & AMPR_EMU") -Recurse -File |
-                                   Measure-Object -Property Length -Sum).Sum / 1MB, 2)
-        Write-Host ("           {0,-46} {1,8} MB" -f "PlayGo & AMPR_EMU\", $ordnerMB) -ForegroundColor Gray
-    }
+    # Der AMPR-Ordner gehoert NICHT mehr ins Buendel - er steckt in der
+    # Programmdatei. Ihn danebenzulegen hiesse, dieselben 3 MB zweimal
+    # auszuliefern, und der danebenliegende wuerde nie benutzt.
 
     # -Recurse, sonst faellt der Ordnerinhalt aus der Summe.
     $gesamt = (Get-ChildItem $buendel -Recurse -File | Measure-Object -Property Length -Sum).Sum

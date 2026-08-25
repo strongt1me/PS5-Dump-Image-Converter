@@ -413,7 +413,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.94"
+APP_VERSION = "v1.8.95"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1284,7 +1284,7 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
                 melde(DOKTOR_GUT, "%s: vorhanden" % beschriftung)
             else:
                 melde(DOKTOR_FEHLER if noetig else DOKTOR_HINWEIS,
-                      "%s: fehlt neben dem Programm" % beschriftung)
+                      "%s: nicht auffindbar" % beschriftung)
 
     # -- Einstellungsdatei ---------------------------------------------
     #
@@ -28177,10 +28177,11 @@ class PS5ConverterGUI:
 
         # -- Wohin die Groesse geht ---------------------------------------
         #
-        # Das Gegenstueck zu Bloaty: Bei einem PyInstaller-Bau verteilt sich
-        # die Auslieferung auf drei Toepfe. Seit v1.8.94 liegen zwei davon
-        # neben der EXE statt darin - die EXE wird dadurch kleiner, der
-        # Ordner insgesamt nicht.
+        # Das Gegenstueck zu Bloaty: Wohin geht die Groesse? Bei diesem
+        # Bau in drei Toepfe - die Hintergrundbilder, die AMPR-/PlayGo-
+        # Versionen und alles Uebrige. In v1.8.94 lagen die ersten beiden
+        # neben der EXE; seit v1.8.95 stecken sie wieder darin, damit die
+        # Auslieferung eine einzige Datei bleibt.
         def _ordnergroesse(pfad):
             gesamt, anzahl = 0, 0
             try:
@@ -28206,6 +28207,13 @@ class PS5ConverterGUI:
             zeilen.append("Groesse: %s %s"
                           % ("EXE" if getattr(sys, "frozen", False) else "Quelltext",
                              self._fmt_bytes(eigen)))
+        # Beide Ordner stecken in der Programmdatei; die Zahlen sagen, wie
+        # viel von ihrer Groesse auf sie entfaellt. Aus dem Quelltext
+        # heraus waere "davon" falsch - dort ist noch nichts eingebettet,
+        # und 43,6 MB Bilder "von" 3,9 MB Quelltext ergaeben Unsinn.
+        eingebaut = bool(getattr(sys, "frozen", False))
+        vorsatz = "davon " if eingebaut else ""
+        nachsatz = "" if eingebaut else " (wird eingebettet)"
         for beschriftung, ordner in (
                 ("Hintergrundbilder", self._BACKGROUND_BUNDLED_DIR),
                 ("AMPR EMU + PlayGo", self._AMPR_BUNDLED_STORE_DIR)):
@@ -28214,8 +28222,9 @@ class PS5ConverterGUI:
                 zeilen.append("  %s: nicht gefunden" % beschriftung)
                 continue
             gross, anzahl = _ordnergroesse(pfad)
-            zeilen.append("  %s: %s in %d Dateien"
-                          % (beschriftung, self._fmt_bytes(gross), anzahl))
+            zeilen.append("  %s%s%s: %s in %d Dateien"
+                          % (vorsatz, beschriftung, nachsatz,
+                             self._fmt_bytes(gross), anzahl))
 
         # -- Abhaengigkeiten, bei denen die Fassung die Zeit aendert ------
         #
