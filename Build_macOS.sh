@@ -260,10 +260,20 @@ if [ ! -d "PlayGo & AMPR_EMU" ]; then
     meldung "      WARNUNG: 'PlayGo & AMPR_EMU' fehlt - Aufgabe 7 findet keine Versionen." "$gelb"
 fi
 
-# Ein danebenliegender Ordner aus einem frueheren Bau wuerde nur verwirren -
-# und in Contents/MacOS haette er ohnehin die Signatur gebrochen.
-rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"
-rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"
+# HIER NICHTS LOESCHEN. Beim ersten Anlauf standen an dieser Stelle zwei
+# Aufraeumzeilen fuer Contents/MacOS und Contents/Resources - gedacht gegen
+# Reste aus dem Bau von v1.8.94. Sie haben den CI-Lauf zerlegt:
+#
+#     WARNUNG: Signatur gesetzt, Pruefung meldet Beanstandungen
+#     dist/PS5 Dump & Image Converter.app: No such file or directory
+#
+# PyInstaller legt eingebettete Daten im .app genau nach Contents/Resources
+# und verknuepft sie von anderer Stelle. Die Aufraeumzeile loeschte also den
+# frisch eingebetteten AMPR-Ordner und liess tote Verweise zurueck. Die
+# Mac-Fassung haette gar keine AMPR-Versionen mehr gehabt.
+#
+# Reste kann es hier ohnehin nicht geben: Das Buendel entsteht bei jedem Lauf
+# neu.
 
 # --- Schritt 7: Signieren und pruefen -------------------------------------
 echo

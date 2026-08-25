@@ -386,11 +386,24 @@ class AmprOrdnerImProgrammTests(unittest.TestCase):
         for skript, marke in (
             ("Build_EXE.ps1", "Remove-Item $amprAlt -Recurse -Force"),
             ("Build_Linux.sh", 'rm -rf "dist/PlayGo & AMPR_EMU"'),
-            ("Build_macOS.sh", 'rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"'),
         ):
             with self.subTest(skript=skript):
                 self.assertIn(marke, self._skript(skript),
                               "%s raeumt den alten Ordner nicht weg" % skript)
+
+    def test_macos_raeumt_gerade_NICHT_auf(self):
+        """Die Ausnahme - und sie hat einen teuren Grund.
+
+        Unter Windows und Linux liegt ein Rest aus einem frueheren Bau
+        *neben* dem Programm und stoert nur. Im macOS-Buendel dagegen legt
+        PyInstaller die eingebetteten Daten genau nach
+        ``Contents/Resources``: Dort zu loeschen nimmt der Mac-Fassung ihre
+        AMPR-Versionen und macht die Signatur ungueltig. Im CI-Lauf vom
+        25.08.2026 genau so passiert.
+        """
+        skript = self._skript("Build_macOS.sh")
+        self.assertNotIn('rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"',
+                         skript)
 
     def test_das_windows_buendel_traegt_ihn_nicht_doppelt(self):
         inhalt = self._skript("Build_EXE.ps1")

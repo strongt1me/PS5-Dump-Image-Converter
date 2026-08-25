@@ -388,17 +388,45 @@ class SpecAusfuehrungTests(unittest.TestCase):
         skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
         self.assertNotIn('cp -r "PlayGo & AMPR_EMU" "$BUENDEL', skript)
 
-    def test_ein_alter_ordner_wird_weggeraeumt(self):
-        """Ein Rest aus einem frueheren Bau in Contents/MacOS wuerde die
-        Signatur brechen, obwohl ihn niemand mehr benutzt."""
+    def test_im_buendel_wird_nichts_geloescht(self):
+        """Der teuerste Fehler dieser Aenderung - gemessen im CI-Lauf.
+
+        Der erste Anlauf raeumte im Buendel "Reste aus dem Bau von v1.8.94"
+        weg, aus ``Contents/MacOS`` und ``Contents/Resources``. Der Lauf auf
+        echter Apple-Hardware brach ab::
+
+            WARNUNG: Signatur gesetzt, Pruefung meldet Beanstandungen
+            dist/PS5 Dump & Image Converter.app: No such file or directory
+
+        PyInstaller legt eingebettete Daten im ``.app`` genau nach
+        ``Contents/Resources`` und verknuepft sie von anderer Stelle. Die
+        Aufraeumzeile loeschte also den frisch eingebetteten AMPR-Ordner und
+        liess tote Verweise zurueck - die Mac-Fassung haette ueberhaupt keine
+        AMPR-Versionen mehr gehabt.
+
+        Reste kann es hier nicht geben: Das Buendel entsteht bei jedem Lauf
+        neu.
+        """
         skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
-        for ort in ("Contents/MacOS/PlayGo & AMPR_EMU",
-                    "Contents/Resources/PlayGo & AMPR_EMU"):
-            with self.subTest(ort=ort):
-                self.assertIn('rm -rf "$BUENDEL/%s"' % ort, skript)
-        self.assertLess(skript.index('rm -rf "$BUENDEL/Contents/MacOS'),
-                        skript.index("codesign --force"),
-                        "Aufgeraeumt werden muss vor dem Signieren")
+        self.assertNotIn('rm -rf "$BUENDEL/Contents/Resources/PlayGo & AMPR_EMU"',
+                         skript)
+        self.assertNotIn('rm -rf "$BUENDEL/Contents/MacOS/PlayGo & AMPR_EMU"',
+                         skript)
+
+    def test_im_buendel_wird_ueberhaupt_nichts_geloescht(self):
+        """Weiter gefasst: kein ``rm`` auf einen Pfad im Buendel.
+
+        Der Fall oben war eine bestimmte Zeile; die Regel dahinter ist
+        allgemeiner. Was PyInstaller ins Buendel legt, gehoert dorthin - und
+        was danach fehlt, macht die Signatur ungueltig.
+        """
+        skript = (Path(__file__).resolve().parent / "Build_macOS.sh").read_text(encoding="utf-8")
+        for nummer, zeile in enumerate(skript.split("\n"), 1):
+            nackt = zeile.strip()
+            if nackt.startswith("#") or not nackt:
+                continue
+            if nackt.startswith(("rm -rf", "rm -f", "rm ")) and "$BUENDEL" in nackt:
+                self.fail("Zeile %d loescht im Buendel: %s" % (nummer, nackt))
 
     def test_das_programm_sieht_auch_in_contents_resources_nach(self):
         """Bleibt als Rueckfallweg bestehen.
