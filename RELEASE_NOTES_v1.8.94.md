@@ -54,7 +54,7 @@ zu Sony Interactive Entertainment. Einzelheiten im
 
 ## Geprüft
 
-1444 Tests grün, davon 110 neu. Der Anzeigefehler wurde nicht abgeleitet,
+1457 Tests grün, davon 123 neu. Der Anzeigefehler wurde nicht abgeleitet,
 sondern gefunden: Eigenschaftsbasiertes Testen suchte selbst nach einer
 Eingabe, die die Anzeige zum Stehen bringt, und fand sie im ersten Anlauf.
 
