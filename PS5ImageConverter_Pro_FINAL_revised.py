@@ -65,7 +65,7 @@ from zipfile import ZipFile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageFilter, ImageStat, ImageTk
+from PIL import Image, ImageEnhance, ImageFilter, ImageStat, ImageTk
 
 try:
     # Optionale Drag & Drop-Unterstützung (Quelle/Ziel/Temp per Dateimanager ziehen).
@@ -254,6 +254,39 @@ CONTENT_CAPTION_BACKDROP_OPACITY = 0.0
 # einmischen; Dunkel/Mittel bleiben bei BG_CARD_IMAGE_OPACITY.
 BG_CARD_IMAGE_OPACITY_LIGHT = 0.18
 
+# ---------------------------------------------------------------------------
+# Was in den Einstellungen am Schieberegler haengt
+#
+# Bis v1.9.0 waren diese Werte fest verdrahtet. Die Vorgaben hier sind genau
+# die alten Zahlen - wer nichts verstellt, sieht denselben Stand wie vorher.
+#
+# "Deckkraft" meint jeweils, wie stark das Hintergrundbild durch die Flaeche
+# scheint: 0 = die Flaeche traegt allein, 100 = nur noch Bild. Helligkeit und
+# Kontrast sind Prozent auf das Ausgangsbild, 100 laesst es unveraendert.
+# ---------------------------------------------------------------------------
+REGLER_VORGABEN: dict[str, int] = {
+    "karte_deckkraft":     int(round(BG_CARD_IMAGE_OPACITY * 100)),
+    "leiste_deckkraft":    int(round((1.0 - ACTION_BAR_DECKKRAFT) * 100)),
+    "protokoll_deckkraft": int(round((1.0 - CONSOLE_BG_DECKKRAFT) * 100)),
+    "bg_helligkeit":       100,
+    "bg_kontrast":         100,
+    "sidebar_helligkeit":  100,
+    "sidebar_kontrast":    100,
+}
+
+#: Zulaessiger Bereich je Regler. Deckkraft geht bis 100, Helligkeit und
+#: Kontrast bis 200 - darunter wird das Bild dunkler bzw. flauer, darueber
+#: heller bzw. haerter.
+REGLER_GRENZEN: dict[str, tuple[int, int]] = {
+    "karte_deckkraft":     (0, 100),
+    "leiste_deckkraft":    (0, 100),
+    "protokoll_deckkraft": (0, 100),
+    "bg_helligkeit":       (20, 200),
+    "bg_kontrast":         (20, 200),
+    "sidebar_helligkeit":  (20, 200),
+    "sidebar_kontrast":    (20, 200),
+}
+
 # Dieselbe Ueberlegung gilt fuer die grossen Flaechen. Bis v1.8.51 galten
 # BG_IMAGE_OPACITY und SIDEBAR_BG_IMAGE_OPACITY fuer jedes Design - im hellen
 # blieb das dunkle Bild damit zu 85 % stehen, waehrend Karten und Knoepfe hell
@@ -413,7 +446,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.8.100"
+APP_VERSION = "v1.9.0"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1280,7 +1313,10 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
                 # Ohne diesen Ordner bleiben die beiden Anleitungsknoepfe im
                 # Auswahlfenster leer. In der EXE faellt das erst auf, wenn
                 # jemand drueckt - hier faellt es schon beim Doktor auf.
-                ("Anleitungen", "Anleitungen", False)):
+                ("Anleitungen", "Anleitungen", False),
+                # Der WebKit-Autoloader-Knopf bietet drei Wege an; ohne
+                # diesen Ordner fuehren alle drei ins Leere.
+                ("WebKit Autoloader", "PS5 WebKit Autoloader", False)):
             pfad = finden(relpfad)
             if pfad and os.path.isdir(pfad):
                 melde(DOKTOR_GUT, "%s: vorhanden" % beschriftung)
@@ -2767,7 +2803,7 @@ class PS5ConverterGUI:
         ("_btn_jsloader_title", "titlebar.jsloader", "_show_js_loader"),
         ("_btn_ftp_title", "titlebar.filezilla", "_launch_filezilla"),
         ("_btn_library_title", "titlebar.library", "_show_library_window"),
-        ("_btn_shadowmount_title", "titlebar.shadowmount", "_show_shadowmount_editor"),
+        ("_btn_webkit_title", "titlebar.webkit", "_show_webkit_autoloader"),
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
         ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
@@ -2779,6 +2815,10 @@ class PS5ConverterGUI:
     _TITELLEISTE_LUFT = 24
 
     _MORE_TOOLS_ENTRIES: tuple[tuple[str, str], ...] = (
+        # SHADOWMOUNT+ sass bis v1.8.100 als eigener Knopf in der Leiste. An
+        # seinen Platz ist der WebKit Autoloader gerueckt; der Config-Editor
+        # wird seltener gebraucht und liegt deshalb hier.
+        ("titlebar.shadowmount", "_show_shadowmount_editor"),
         ("titlebar.backport", "_show_backport"),
         ("titlebar.downloads", "_show_downloads_manager"),
         ("titlebar.pkg_merger", "_show_pkg_merger_dialog"),
@@ -3194,10 +3234,12 @@ class PS5ConverterGUI:
         # Fenstergroesse zu voll - derselbe Grund, aus dem MicroMount und der
         # AMPR-Index-Builder bereits dort liegen.
 
-        # ShadowMount+ Config-Editor Button
-        self._btn_shadowmount_title = flach_knopf(
+        # WebKit-Autoloader-Knopf. Er steht dort, wo bis v1.8.100 der
+        # ShadowMount+-Config-Editor sass; der ist ins Menue "WEITERE TOOLS"
+        # gewandert (siehe _MORE_TOOLS_ENTRIES).
+        self._btn_webkit_title = flach_knopf(
             self._titlebar_right,
-            text=self._t("titlebar.shadowmount"),
+            text=self._t("titlebar.webkit"),
             font=(UI_SCHRIFT, pt(9), "bold"),
             bg=self._COLORS["header_bg"],
             fg=self._COLORS["fg_secondary"],
@@ -3209,15 +3251,15 @@ class PS5ConverterGUI:
             pady=0,
             bd=0,
             highlightthickness=0,
-            command=self._werkzeugknopf("_show_shadowmount_editor"),
+            command=self._werkzeugknopf("_show_webkit_autoloader"),
         )
-        self._btn_shadowmount_title.pack(side="right", padx=(0, 8))
-        def _shadowmount_enter(e):
-            self._btn_shadowmount_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
-        def _shadowmount_leave(e):
-            self._btn_shadowmount_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
-        self._btn_shadowmount_title.bind("<Enter>", _shadowmount_enter)
-        self._btn_shadowmount_title.bind("<Leave>", _shadowmount_leave)
+        self._btn_webkit_title.pack(side="right", padx=(0, 8))
+        def _webkit_enter(e):
+            self._btn_webkit_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _webkit_leave(e):
+            self._btn_webkit_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_webkit_title.bind("<Enter>", _webkit_enter)
+        self._btn_webkit_title.bind("<Leave>", _webkit_leave)
 
         # Bibliothek Button (Mehrfachordner-Scan mit Cover/Suche)
         self._btn_library_title = flach_knopf(
@@ -3602,6 +3644,10 @@ class PS5ConverterGUI:
                 self._bg_image_cache = None
                 self._bg_image_raw = None
                 return
+            # Helligkeit und Kontrast noch vor allem anderen: Das Rohbild
+            # geht so auch in die Karten und die Knopfleiste, die es sich
+            # spaeter herausschneiden.
+            img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
             # Unblendiertes Rohbild fuer Bereiche mit eigener Deckkraft/Basisfarbe
             # (z. B. die Karten-Fuellung) separat aufheben.
             self._bg_image_raw = img
@@ -3626,6 +3672,8 @@ class PS5ConverterGUI:
                 self._sidebar_bg_image_cache = None
                 return
             img = Image.open(custom_path).convert("RGB")
+            img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
+                                             "sidebar_kontrast")
             hell = getattr(self, "_current_theme", "") == "hell"
             sidebar_anteil = (SIDEBAR_BG_IMAGE_OPACITY_LIGHT if hell
                               else SIDEBAR_BG_IMAGE_OPACITY)
@@ -3679,6 +3727,46 @@ class PS5ConverterGUI:
         h = hex_farbe.lstrip("#")
         return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
 
+    def _regler(self, schluessel: str) -> int:
+        """Der gespeicherte Reglerwert in Prozent, auf seinen Bereich begrenzt.
+
+        Begrenzt wird auch beim Lesen, nicht nur beim Setzen: In der
+        Einstellungsdatei kann alles stehen, und ein Wert ausserhalb des
+        Bereichs faende sonst erst als schwarzes Bild oder als Ausnahme aus
+        PIL auf.
+        """
+        vorgabe = REGLER_VORGABEN.get(schluessel, 100)
+        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+        try:
+            wert = int(round(float(self._load_setting(schluessel, vorgabe))))
+        except (TypeError, ValueError):
+            return vorgabe
+        return max(klein, min(gross, wert))
+
+    def _regler_anteil(self, schluessel: str) -> float:
+        """Derselbe Wert als Anteil zwischen 0.0 und 1.0."""
+        return self._regler(schluessel) / 100.0
+
+    def _bild_regler_anwenden(self, img: "Image.Image", helligkeit: str,
+                              kontrast: str) -> "Image.Image":
+        """Wendet Helligkeit und Kontrast eines Bildreglerpaares an.
+
+        Steht beides auf 100, wird das Bild unangetastet zurueckgegeben - so
+        kostet der unveraenderte Fall nichts.
+        """
+        h = self._regler(helligkeit) / 100.0
+        k = self._regler(kontrast) / 100.0
+        if h == 1.0 and k == 1.0:
+            return img
+        try:
+            if h != 1.0:
+                img = ImageEnhance.Brightness(img).enhance(h)
+            if k != 1.0:
+                img = ImageEnhance.Contrast(img).enhance(k)
+        except Exception as exc:
+            logger.debug("Helligkeit/Kontrast nicht anwendbar: %s", exc)
+        return img
+
     @staticmethod
     def _blend_hex_color(base_hex: str, tint_rgb: tuple[int, int, int], opacity: float) -> str:
         """Blendet eine #RRGGBB-Farbe mit einer RGB-Toenung bei gegebener Deckkraft."""
@@ -3707,10 +3795,13 @@ class PS5ConverterGUI:
             base = self._COLORS.get(key)
             if not base:
                 continue
-            # Die Protokollflaeche bekommt ihre eigene Deckkraft:
-            # 0.80 Flaechenfarbe, 0.20 Bild.
-            anteil = (1.0 - CONSOLE_BG_DECKKRAFT if key == "console_bg"
-                      else BG_CARD_TINT_OPACITY)
+            # Die Protokollflaeche bekommt ihre eigene Deckkraft - seit
+            # v1.9.0 aus den Einstellungen. Sie ist ein tk.Text und damit
+            # deckend; das Bild kann dort nicht wirklich durchscheinen.
+            # Was geht, ist die Flaechenfarbe zur Bildfarbe hin zu ziehen -
+            # je hoeher der Regler, desto naeher am Bild.
+            anteil = (self._regler_anteil("protokoll_deckkraft")
+                      if key == "console_bg" else BG_CARD_TINT_OPACITY)
             self._COLORS[key] = self._blend_hex_color(base, tint_rgb, anteil)
 
     @staticmethod
@@ -4018,7 +4109,7 @@ class PS5ConverterGUI:
             ("_btn_library_title", "titlebar.library"),
             ("_btn_diagnostics_title", "titlebar.diagnostics"),
             ("_btn_klog_title", "titlebar.klog"),
-            ("_btn_shadowmount_title", "titlebar.shadowmount"),
+            ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
             ("_btn_quit_title", "titlebar.quit"),
@@ -9443,7 +9534,7 @@ class PS5ConverterGUI:
         traegt, das Bild scheint nur noch durch.
         """
         basis = Image.new("RGB", img.size, self._COLORS["bg_main"])
-        return Image.blend(basis, img, 1.0 - ACTION_BAR_DECKKRAFT)
+        return Image.blend(basis, img, self._regler_anteil("leiste_deckkraft"))
 
     def _blend_bg_image_for_card(self, img: "Image.Image") -> "Image.Image":
         """Blendet das Rohbild mit der (ggf. bereits getönten) Kartenfarbe.
@@ -9455,9 +9546,14 @@ class PS5ConverterGUI:
         dunkles Hintergrundbild die eigentlich weiße Karte sonst gräulich
         wirken lässt (siehe Konstantendefinition).
         """
-        opacity = BG_CARD_IMAGE_OPACITY_LIGHT if self._current_theme == "hell" else BG_CARD_IMAGE_OPACITY
+        opacity = self._regler_anteil("karte_deckkraft")
+        if self._current_theme == "hell":
+            # Im hellen Design bleibt dasselbe Verhaeltnis wie bisher
+            # zwischen den beiden festen Werten - sonst wirkt die weisse
+            # Karte bei gleichem Regler graeulich.
+            opacity *= BG_CARD_IMAGE_OPACITY_LIGHT / BG_CARD_IMAGE_OPACITY
         base_color = Image.new("RGB", img.size, self._COLORS["bg_card"])
-        return Image.blend(base_color, img, opacity)
+        return Image.blend(base_color, img, max(0.0, min(1.0, opacity)))
 
     def _compute_card_bg_image(
         self, width: int, height: int, offset: tuple[int, int] = (0, 0)
@@ -21516,6 +21612,14 @@ class PS5ConverterGUI:
         Die Listen bleiben stehen und werden nur gesperrt: Sie sitzen in einer
         place-Kette, und ein Ein-/Ausblenden wuerde alles rechts davon
         verrutschen lassen.
+
+        Beide Kaestchen duerfen zusammen gesetzt sein. ShadowMount+ sieht das
+        so vor: Es haengt genau ein fakelib-Verzeichnis in die Sandbox
+        (``fakelib2``, sonst ``fakelib``), und die Emulator-Dateien aus
+        ``emulators_path`` ersetzen darin vorhandene Dateien. Der Emulator
+        konkurriert also nicht mit dem Backport, er wird hineinkopiert -
+        ersetzt aber nur, was schon da ist. Genau deshalb gehoert beides
+        zusammen in den Dump.
 
         Args:
             speichern: Beim Aufbau der Oberflaeche False - dort steht der Wert
@@ -33967,6 +34071,366 @@ class PS5ConverterGUI:
             "shadowmount",
         )
 
+    # ------------------------------------------------------------------
+    # WebKit Autoloader
+    #
+    # Drei Teile, die zusammengehoeren und deshalb hinter einem Knopf liegen:
+    #
+    #   * der Host als Windows-Programm  - taeuscht der Konsole
+    #     manuals.playstation.net vor und liefert ihr den Autoloader aus
+    #   * derselbe Host als Python-Skript - fuer alles ausser Windows
+    #   * der Installer (.elf)            - legt die Kachel auf der Konsole an
+    #
+    # Der Knopf sitzt dort, wo bis v1.8.100 SHADOWMOUNT+ stand; jener ist ins
+    # Menue "WEITERE TOOLS" gewandert.
+    # ------------------------------------------------------------------
+    #: Der Ordner, in dem die drei Dateien liegen. Er gehoert dem Benutzer:
+    #: Wer dort eine neuere Fassung ablegt, bekommt sie beim naechsten Start
+    #: und beim naechsten Bau - ohne dass hier etwas zu aendern waere.
+    _WEBKIT_ORDNER = "PS5 WebKit Autoloader"
+
+    #: Gesucht wird nach Muster, nicht nach festem Namen. Die Versionsnummer
+    #: steckt im Dateinamen (webkit-autoloader-host_v0.4.0.exe); liegen
+    #: mehrere Fassungen im Ordner, gewinnt die hoechste Nummer.
+    _WEBKIT_MUSTER: dict[str, str] = {
+        "exe": "webkit-autoloader-host_*.exe",
+        "py": "webkit-autoloader-host_*.py",
+        "elf": "webkit-autoloader-installer_*.elf",
+    }
+
+    #: FTP-Ports, auf denen der Installer abgelegt werden kann. Die Konsole
+    #: hat je nach gestartetem Payload den einen oder den anderen offen;
+    #: geprueft wird der Reihe nach, genommen wird der erste, der antwortet.
+    _WEBKIT_FTP_PORTS: tuple[int, ...] = (2121, 2021)
+
+    @staticmethod
+    def _webkit_versionsschluessel(name: str) -> tuple:
+        """Sortierschluessel aus der Versionsnummer im Dateinamen.
+
+        ``_v0.4.0`` wird zu ``(0, 4, 0, 0)``. Aufgefuellt wird auf vier
+        Stellen, weil sonst beim Vergleich das *kuerzere* Tupel gewinnt und
+        ``0.4`` vor ``0.4.1`` staende - derselbe Fehler, der schon bei der
+        AMPR-Versionsliste steckte. Ohne erkennbare Nummer bleibt es bei
+        Nullen; dann entscheidet der Name.
+        """
+        treffer = re.search(r"_v(\d+(?:\.\d+)*)", name)
+        if not treffer:
+            return (0, 0, 0, 0, name.lower())
+        teile = [int(z) for z in treffer.group(1).split(".")][:4]
+        while len(teile) < 4:
+            teile.append(0)
+        return tuple(teile) + (name.lower(),)
+
+    def _webkit_ordner(self) -> str:
+        """Der mitgelieferte Ordner (leer, wenn er fehlt)."""
+        return _bundled_resource(self._WEBKIT_ORDNER)
+
+    def _webkit_datei(self, art: str) -> str:
+        """Die neueste Datei dieser Art im Ordner (leer, wenn keine da ist).
+
+        Args:
+            art: ``"exe"``, ``"py"`` oder ``"elf"``.
+        """
+        ordner = self._webkit_ordner()
+        muster = self._WEBKIT_MUSTER.get(art, "")
+        if not ordner or not muster or not os.path.isdir(ordner):
+            return ""
+        treffer = sorted(Path(ordner).glob(muster),
+                         key=lambda p: self._webkit_versionsschluessel(p.name))
+        return str(treffer[-1]) if treffer else ""
+
+    def _webkit_host_pfad(self, art: str) -> str:
+        """Pfad zum mitgelieferten Host - im Skript wie in der EXE."""
+        return self._webkit_datei("exe" if art == "exe" else "py")
+
+    def _webkit_installer_pfad(self) -> str:
+        """Pfad zum mitgelieferten Installer-Payload."""
+        return self._webkit_datei("elf")
+
+    def _webkit_python(self) -> str:
+        """Ein Python, mit dem sich das Host-Skript starten laesst.
+
+        Aus der EXE heraus ist ``sys.executable`` das Programm selbst - damit
+        gestartet liefe die Anwendung ein zweites Mal an, statt das Skript
+        auszufuehren. Deshalb wird dort im PATH gesucht.
+        """
+        if not getattr(sys, "frozen", False):
+            return sys.executable
+        for name in ("python", "python3", "py"):
+            gefunden = shutil.which(name)
+            if gefunden and os.path.abspath(gefunden) != os.path.abspath(sys.executable):
+                return gefunden
+        return ""
+
+    def _webkit_host_starten(self, art: str, parent=None) -> None:
+        """Startet den Host in einem eigenen Fenster.
+
+        Ein eigenes Fenster ist noetig, weil der Host laufend ausgibt, worauf
+        es ankommt - allen voran die Adresse, auf die der DNS der Konsole
+        gestellt werden muss - und bis zum Abbruch stehen bleibt.
+        """
+        eltern = parent or self.root
+        pfad = self._webkit_host_pfad(art)
+        if not pfad or not os.path.isfile(pfad):
+            messagebox.showerror(
+                self._t("webkit.title"),
+                self._t("webkit.host_missing",
+                        datei=self._WEBKIT_MUSTER["exe" if art == "exe"
+                                                  else "py"]),
+                parent=eltern)
+            return
+
+        if art == "exe" and os.name != "nt":
+            messagebox.showwarning(self._t("webkit.title"),
+                                   self._t("webkit.host_windows_only"),
+                                   parent=eltern)
+            return
+
+        befehl = [pfad]
+        if art != "exe":
+            python = self._webkit_python()
+            if not python:
+                messagebox.showerror(self._t("webkit.title"),
+                                     self._t("webkit.no_python"), parent=eltern)
+                return
+            befehl = [python, pfad]
+
+        if not messagebox.askyesno(self._t("webkit.title"),
+                                   self._t("webkit.host_admin"), parent=eltern):
+            return
+
+        anlauf: dict[str, Any] = {"cwd": os.path.dirname(pfad)}
+        if os.name == "nt":
+            # CREATE_NEW_CONSOLE - ohne eigene Konsole saehe niemand die
+            # Adresse, die der Host nennt.
+            anlauf["creationflags"] = 0x00000010
+        try:
+            subprocess.Popen(befehl, **anlauf)
+        except Exception as exc:
+            messagebox.showerror(self._t("webkit.title"),
+                                 self._t("webkit.host_failed", fehler=exc),
+                                 parent=eltern)
+            return
+        self._append_to_log(self._t("webkit.host_started",
+                                    datei=os.path.basename(pfad)))
+
+    def _webkit_ftp_port(self, ip: str) -> int:
+        """Der erste FTP-Port der Konsole, auf dem jemand antwortet."""
+        for port in self._WEBKIT_FTP_PORTS:
+            if self._ps5_port_open(ip, port):
+                return port
+        return 0
+
+    def _webkit_installer_senden(self, parent=None) -> None:
+        """Bringt den Installer auf die Konsole.
+
+        Zuerst der kurze Weg ueber den Payload-Loader auf Port 9021. Lauscht
+        dort niemand, bleibt der Weg ueber FTP: Die Datei kommt ins
+        Wurzelverzeichnis eines USB-Datentraegers, und von dort schickt sie
+        der Payload Manager der Konsole.
+        """
+        eltern = parent or self.root
+        elf = self._webkit_installer_pfad()
+        if not elf or not os.path.isfile(elf):
+            messagebox.showerror(
+                self._t("webkit.title"),
+                self._t("webkit.elf_missing",
+                        datei=self._WEBKIT_MUSTER["elf"]),
+                parent=eltern)
+            return
+
+        ip = self._ps5_ip()
+        if not ip:
+            messagebox.showwarning(self._t("webkit.title"),
+                                   self._t("webkit.no_ip"), parent=eltern)
+            return
+
+        name = os.path.basename(elf)
+        groesse = self._fmt_bytes(os.path.getsize(elf))
+
+        if self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT):
+            if not messagebox.askyesno(
+                    self._t("webkit.title"),
+                    self._t("webkit.send_ask", datei=name, groesse=groesse,
+                            ip=ip, port=self._PAYLOAD_SEND_PORT),
+                    parent=eltern):
+                return
+            ok, meldung = self._send_payload_to_ps5(ip, elf)
+            if ok:
+                messagebox.showinfo(self._t("webkit.title"),
+                                    self._t("webkit.send_ok", groesse=meldung),
+                                    parent=eltern)
+            else:
+                messagebox.showerror(self._t("webkit.title"),
+                                     self._t("webkit.send_failed", fehler=meldung),
+                                     parent=eltern)
+            return
+
+        if not messagebox.askyesno(
+                self._t("webkit.title"),
+                self._t("webkit.port_closed", ip=ip,
+                        port=self._PAYLOAD_SEND_PORT),
+                parent=eltern):
+            return
+        self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
+
+    def _webkit_auf_usb_ablegen(self, ip: str, elf: str, parent=None) -> None:
+        """Legt den Installer ins Wurzelverzeichnis eines USB-Datentraegers.
+
+        Bewusst ins Wurzelverzeichnis und nicht in den Autoloader-Ordner: Von
+        dort holt ihn der Payload Manager der Konsole ab, und genau das ist
+        der Weg, wenn der Payload-Loader schweigt.
+        """
+        name = os.path.basename(elf)
+        port = self._webkit_ftp_port(ip)
+        ftp = None
+        try:
+            ftp = self._ampr_ftp_connect(ip, port) if port else self._ampr_ftp_connect(ip)
+        except Exception as exc:
+            messagebox.showerror(
+                self._t("webkit.title"),
+                self._t("webkit.usb_failed", fehler=exc), parent=parent)
+            return
+
+        try:
+            datentraeger = self._ps5_usb_datentraeger(ftp)
+            if not datentraeger:
+                messagebox.showwarning(
+                    self._t("webkit.title"),
+                    self._t("klog.usb.none_found", pfad=self._PS5_USB_WURZEL),
+                    parent=parent)
+                return
+            usb = datentraeger[0]
+            if len(datentraeger) > 1:
+                usb = self._auswahl_dialog(
+                    self._t("klog.usb.choose_title"),
+                    self._t("klog.usb.choose_prompt", datei=name),
+                    datentraeger, parent=parent) or ""
+                if not usb:
+                    return
+            with open(elf, "rb") as fh:
+                ftp.storbinary("STOR %s/%s" % (usb, name), fh)
+        except Exception as exc:
+            messagebox.showerror(
+                self._t("webkit.title"),
+                self._t("webkit.usb_failed", fehler=exc), parent=parent)
+            return
+        finally:
+            try:
+                ftp.quit()
+            except Exception:
+                pass
+
+        messagebox.showinfo(self._t("webkit.title"),
+                            self._t("webkit.usb_done", datei=name, usb=usb),
+                            parent=parent)
+
+    def _show_webkit_autoloader(self) -> None:
+        """Rahmenloses Fenster mit den drei Wegen des WebKit Autoloaders.
+
+        Gebaut wie das Auswahlfenster hinter Knopf 7: ``overrideredirect``
+        nimmt den Rahmen weg, die runden Ecken entstehen zeichnerisch, und
+        ``-transparentcolor`` macht den Rest durchsichtig. Diese Eigenschaft
+        gibt es nur unter Windows - fehlt sie, bleibt das Fenster eckig und
+        randlos, die Auswahl arbeitet unveraendert.
+        """
+        c = self._COLORS
+        fenster = tk.Toplevel(self.root, bg=c["bg_main"])
+        fenster.withdraw()
+        try:
+            fenster.transient(self.root)
+        except tk.TclError:
+            pass
+        # Beim Umschalter anmelden, damit der zweite Druck auf den Knopf
+        # wieder schliesst statt ein zweites Fenster zu oeffnen.
+        if getattr(self, "_fenster_schluessel", ""):
+            self._fenster_sammlung.append(fenster)
+        try:
+            fenster.overrideredirect(True)
+        except tk.TclError as exc:
+            logger.debug("Rahmenlos nicht möglich: %s", exc)
+
+        durchsichtig = False
+        try:
+            fenster.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
+            durchsichtig = True
+        except tk.TclError:
+            logger.debug("Durchsichtige Ecken hier nicht verfügbar - "
+                         "das Fenster bleibt rechteckig.")
+        grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
+        fenster.configure(bg=grund)
+
+        breite, hoehe, rand = 520, 336, 14
+        leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
+                             highlightthickness=0, bd=0)
+        leinwand.pack(fill="both", expand=True)
+        leinwand.create_polygon(
+            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, 22),
+            smooth=True, fill=c["bg_card"], outline=c["border"])
+
+        leinwand.create_text(breite / 2, rand + 22,
+                             text=self._t("webkit.title"),
+                             fill=c["fg_accent"],
+                             font=(UI_SCHRIFT, pt(14), "bold"))
+        innen = breite - 2 * rand - 26
+        links = rand + 13
+        leinwand.create_text(breite / 2, rand + 64,
+                             text=self._t("webkit.hint"),
+                             fill=c["fg_secondary"], width=innen,
+                             font=(UI_SCHRIFT, pt(9)))
+
+        def _mit_zu(aktion) -> None:
+            """Erst das Fenster schliessen, dann handeln.
+
+            Sonst liegt das rahmenlose Fenster ueber der Rueckfrage und
+            laesst sich nicht mehr wegklicken.
+            """
+            try:
+                fenster.destroy()
+            except tk.TclError:
+                pass
+            aktion()
+
+        for lfd, (schluessel, aktion) in enumerate((
+                ("webkit.host_exe", lambda: self._webkit_host_starten("exe")),
+                ("webkit.host_py", lambda: self._webkit_host_starten("py")),
+                ("webkit.installer", self._webkit_installer_senden))):
+            knopf = RoundedButton(
+                leinwand,
+                text=self._t(schluessel),
+                command=(lambda a=aktion: _mit_zu(a)),
+                font=(UI_SCHRIFT, pt(11), "bold"),
+                bg=c["bg_main"], fg=c["fg_primary"],
+                activebackground=c["fg_accent"], activeforeground=c["bg_main"],
+                outline=c["border"], radius=10, height=44,
+                parent_bg=c["bg_card"])
+            leinwand.create_window(links + innen / 2, 148 + lfd * 56,
+                                   window=knopf, width=innen, height=44)
+
+        schliessen = RoundedButton(
+            leinwand, text=self._t("webkit.close"),
+            command=lambda: fenster.destroy(),
+            font=(UI_SCHRIFT, pt(9)),
+            bg=c["bg_card"], fg=c["fg_secondary"],
+            activebackground=c["bg_main"], activeforeground=c["fg_primary"],
+            outline=c["bg_card"], radius=8, height=26,
+            parent_bg=c["bg_card"])
+        leinwand.create_window(breite / 2, hoehe - rand - 12,
+                               window=schliessen, width=140, height=26)
+
+        self.root.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width() - breite) // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - hoehe) // 3
+        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
+        fenster.deiconify()
+        fenster.lift()
+        try:
+            fenster.focus_force()
+        except tk.TclError:
+            pass
+        # Ein rahmenloses Fenster hat keinen Schliessknopf des Systems.
+        fenster.bind("<Escape>", lambda _e: fenster.destroy())
+
     def _show_micromount_editor(self) -> None:
         """Öffnet den Config-Editor für MicroMount (/data/micromount/config.ini).
 
@@ -36214,6 +36678,45 @@ class PS5ConverterGUI:
         body = tk.Frame(scroll_inner, bg=c["bg_card"], padx=24, pady=16)
         body.pack(fill="both", expand=True)
 
+        # Die Vorschaubilder muessen am Fenster haengen bleiben - eine
+        # PhotoImage, auf die niemand mehr zeigt, wird eingesammelt und die
+        # Flaeche bliebe leer.
+        vorschauen: dict[str, Any] = {}
+
+        def _regler_zeile(eltern, schluessel: str, beschriftung: str,
+                          einheit: str = "%"):
+            """Eine beschriftete Reglerzeile mit Zahl daneben.
+
+            Uebernommen wird erst beim Loslassen: Waehrend des Ziehens wuerde
+            jedes Zwischenbild neu gerechnet, und das ruckelt sichtbar.
+            """
+            klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+            zeile = tk.Frame(eltern, bg=c["bg_card"])
+            zeile.pack(fill="x", pady=(0, 6))
+            tk.Label(zeile, text=beschriftung, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
+                     width=22).pack(side="left")
+            zahl = tk.StringVar(value="%d %s" % (self._regler(schluessel), einheit))
+            tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
+                     bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
+                     width=6).pack(side="right")
+            regler = ttk.Scale(zeile, from_=klein, to=gross, orient="horizontal")
+            regler.set(self._regler(schluessel))
+            regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
+
+            def _bewegt(_e=None) -> None:
+                zahl.set("%d %s" % (round(regler.get()), einheit))
+
+            def _losgelassen(_e=None) -> None:
+                self._regler_uebernehmen(schluessel, round(regler.get()))
+                zahl.set("%d %s" % (self._regler(schluessel), einheit))
+                _vorschauen_auffrischen()
+
+            regler.configure(command=lambda _v: _bewegt())
+            regler.bind("<ButtonRelease-1>", _losgelassen)
+            regler.bind("<KeyRelease>", _losgelassen)
+            return regler
+
         tk.Label(body, text=self._t("settings_dialog.background_section_label"),
                  font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
@@ -36229,6 +36732,22 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(0, 12))
+
+        def _vorschauen_auffrischen() -> None:
+            """Zeichnet beide Vorschauen neu.
+
+            Noetig nach jedem Regler fuer Helligkeit oder Kontrast: Die
+            Vorschau zeigt das Bild so, wie es im Fenster ankommt, und muesste
+            sonst luegen. Die Funktionen dahinter entstehen erst weiter
+            unten - deshalb ueber die Sammlung statt ueber feste Namen.
+            """
+            for zeichnen in vorschau_zeichner:
+                try:
+                    zeichnen()
+                except Exception as exc:
+                    logger.debug("Vorschau nicht auffrischbar: %s", exc)
+
+        vorschau_zeichner: list = []
 
         status_var = tk.StringVar()
 
@@ -36294,6 +36813,26 @@ class PS5ConverterGUI:
                         self._t("dialog.msg.background_image_load_failed"),
                         parent=dlg,
                     )
+
+            # Miniaturvorschau: Ein Dateiname sagt nicht, wie das Bild
+            # aussieht. Gezeigt wird der Eintrag, der in der Liste steht -
+            # auch bevor er uebernommen wurde.
+            haupt_vorschau = tk.Label(
+                body, bg=c["bg_main"], bd=0, highlightthickness=0)
+            haupt_vorschau.pack(anchor="w", pady=(0, 8))
+
+            def _haupt_vorschau_setzen(_e=None) -> None:
+                bild = self._vorschaubild(bundled_by_name.get(bundled_combo.get(), ""))
+                vorschauen["haupt"] = bild
+                # Ohne Bild zaehlt width in Zeichen, nicht in Pixeln -
+                # die Flaeche waere sonst absurd breit.
+                haupt_vorschau.config(image=bild if bild else "",
+                          width=0 if bild else 1,
+                          height=0 if bild else 1)
+
+            bundled_combo.bind("<<ComboboxSelected>>", _haupt_vorschau_setzen, add="+")
+            vorschau_zeichner.append(_haupt_vorschau_setzen)
+            _haupt_vorschau_setzen()
 
             tk.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
@@ -36426,6 +36965,23 @@ class PS5ConverterGUI:
                         parent=dlg,
                     )
 
+            sidebar_vorschau = tk.Label(
+                body, bg=c["bg_main"], bd=0, highlightthickness=0)
+            sidebar_vorschau.pack(anchor="w", pady=(0, 8))
+
+            def _sidebar_vorschau_setzen(_e=None) -> None:
+                bild = self._vorschaubild(sidebar_by_name.get(sidebar_combo.get(), ""))
+                vorschauen["sidebar"] = bild
+                # Ohne Bild zaehlt width in Zeichen, nicht in Pixeln -
+                # die Flaeche waere sonst absurd breit.
+                sidebar_vorschau.config(image=bild if bild else "",
+                          width=0 if bild else 1,
+                          height=0 if bild else 1)
+
+            sidebar_combo.bind("<<ComboboxSelected>>", _sidebar_vorschau_setzen, add="+")
+            vorschau_zeichner.append(_sidebar_vorschau_setzen)
+            _sidebar_vorschau_setzen()
+
             tk.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
                 command=_apply_sidebar_bundled, font=(UI_SCHRIFT, pt(9)),
@@ -36482,6 +37038,58 @@ class PS5ConverterGUI:
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_reset_sidebar_image).pack(side="left", padx=(10, 0))
+
+        # --- Trennlinie + Darstellung: Durchsicht, Helligkeit, Kontrast ---
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.regler_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(4, 10))
+
+        for _schluessel, _text in (
+                ("karte_deckkraft", "settings_dialog.regler_karte"),
+                ("leiste_deckkraft", "settings_dialog.regler_leiste"),
+                ("protokoll_deckkraft", "settings_dialog.regler_protokoll")):
+            _regler_zeile(body, _schluessel, self._t(_text))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_protokoll_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(0, 12))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_bild_section"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w",
+                                                           pady=(0, 6))
+        for _schluessel, _text in (
+                ("bg_helligkeit", "settings_dialog.regler_bg_helligkeit"),
+                ("bg_kontrast", "settings_dialog.regler_bg_kontrast"),
+                ("sidebar_helligkeit", "settings_dialog.regler_sb_helligkeit"),
+                ("sidebar_kontrast", "settings_dialog.regler_sb_kontrast")):
+            _regler_zeile(body, _schluessel, self._t(_text))
+
+        def _regler_zuruecksetzen() -> None:
+            """Alle sieben auf die Vorgabe - den Stand vor v1.9.0."""
+            for schluessel, vorgabe in REGLER_VORGABEN.items():
+                self._regler_uebernehmen(schluessel, vorgabe)
+            _vorschauen_auffrischen()
+            messagebox.showinfo(self._t("settings_dialog.title_bar"),
+                                self._t("settings_dialog.regler_reset_done"),
+                                parent=dlg)
+            dlg.destroy()
+
+        tk.Button(body, text=self._t("settings_dialog.regler_reset"),
+                  font=(UI_SCHRIFT, pt(9)),
+                  bg=c["bg_main"], fg=c["fg_secondary"],
+                  activebackground=c["border"], activeforeground=c["fg_primary"],
+                  relief="flat", cursor="hand2", padx=12, pady=5,
+                  command=_regler_zuruecksetzen).pack(anchor="w", pady=(6, 0))
 
         # --- Trennlinie + Verbindungsdaten der PS5 ---
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
@@ -36885,6 +37493,96 @@ class PS5ConverterGUI:
             logger.warning("Sidebar-Hintergrundbild konnte nicht übernommen werden: %s", exc)
             return False
 
+    #: Was nach einem Reglerwechsel neu gezeichnet werden muss. Nicht alles
+    #: haengt an allem: Die Helligkeit des Seitenleistenbilds beruehrt die
+    #: Karten nicht, und die Deckkraft der Karte beruehrt das Bild nicht.
+    _REGLER_WIRKUNG: dict[str, str] = {
+        "karte_deckkraft":     "flaechen",
+        "leiste_deckkraft":    "flaechen",
+        "protokoll_deckkraft": "toenung",
+        "bg_helligkeit":       "hauptbild",
+        "bg_kontrast":         "hauptbild",
+        "sidebar_helligkeit":  "seitenleiste",
+        "sidebar_kontrast":    "seitenleiste",
+    }
+
+    def _regler_uebernehmen(self, schluessel: str, wert: int) -> None:
+        """Merkt einen Reglerwert und zeichnet nach, was davon abhaengt.
+
+        Bewusst nicht bei jeder Bewegung des Reglers gerufen, sondern erst
+        beim Loslassen: Ein Hintergrundbild neu zu rechnen kostet je nach
+        Groesse spuerbar Zeit, und waehrend des Ziehens saehe man davon nur
+        ein Ruckeln.
+        """
+        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+        wert = max(klein, min(gross, int(round(wert))))
+        self._save_setting(schluessel, wert)
+
+        wirkung = self._REGLER_WIRKUNG.get(schluessel, "")
+        try:
+            if wirkung == "hauptbild":
+                # Das Rohbild traegt die Helligkeit; Karten und Leiste
+                # schneiden sich daraus ihren Ausschnitt.
+                self._load_bg_image_cache()
+                self._apply_card_tint_live()
+                self._refresh_bg_label()
+            elif wirkung == "seitenleiste":
+                self._load_sidebar_bg_image_cache()
+                self._refresh_sidebar_bg_label()
+            elif wirkung == "toenung":
+                # Die Protokollflaeche ist deckend; nur ihre Farbe wandert.
+                self._apply_card_tint_live()
+            else:
+                self._refresh_bg_label()
+        except Exception as exc:
+            logger.debug("Regler %s nicht anwendbar: %s", schluessel, exc)
+
+    #: Kantenlaenge der Miniaturvorschau im Einstellungsfenster.
+    _VORSCHAU_BREITE = 132
+    _VORSCHAU_HOEHE = 74
+
+    def _vorschaubild(self, pfad: str, breite: int = 0, hoehe: int = 0):
+        """Kleine Vorschau eines Hintergrundbilds (None, wenn es nicht geht).
+
+        Gezeigt wird das Bild so, wie es nach Helligkeit und Kontrast
+        aussieht - sonst zeigte die Vorschau etwas anderes als das Fenster.
+        Das Seitenverhaeltnis bleibt erhalten; der Rest der Flaeche bleibt
+        leer, statt das Motiv zu verzerren.
+        """
+        if not pfad or not os.path.isfile(pfad):
+            return None
+        breite = breite or self._VORSCHAU_BREITE
+        hoehe = hoehe or self._VORSCHAU_HOEHE
+        try:
+            with Image.open(pfad) as roh:
+                img = roh.convert("RGB")
+            seitenleiste = self._ist_sidebar_bild(pfad)
+            img = self._bild_regler_anwenden(
+                img,
+                "sidebar_helligkeit" if seitenleiste else "bg_helligkeit",
+                "sidebar_kontrast" if seitenleiste else "bg_kontrast")
+            img.thumbnail((breite, hoehe), _LANCZOS)
+            return ImageTk.PhotoImage(img)
+        except Exception as exc:
+            logger.debug("Vorschau fuer %s nicht moeglich: %s", pfad, exc)
+            return None
+
+    @staticmethod
+    def _ist_sidebar_bild(pfad: str) -> bool:
+        """Ob ein Pfad zu einem Seitenleistenbild gehoert.
+
+        Die mitgelieferten Bilder tragen es im Namen (``sidebar_..``); bei
+        einem selbst gewaehlten Bild entscheidet das Format - die
+        Seitenleiste ist hoch, der Hauptbereich breit.
+        """
+        if os.path.basename(pfad).lower().startswith("sidebar"):
+            return True
+        try:
+            with Image.open(pfad) as img:
+                return img.height > img.width
+        except Exception:
+            return False
+
     def _apply_card_tint_live(self) -> None:
         """Wendet eine neu berechnete Kartentönung so weit wie möglich sofort an.
 
@@ -37058,7 +37756,7 @@ class PS5ConverterGUI:
         "_btn_credits_title":      "fg_accent",
         "_btn_jsloader_title":     "fg_warning",
         "_btn_ftp_title":          "fg_success",
-        "_btn_shadowmount_title":  "fg_secondary",
+        "_btn_webkit_title":       "fg_secondary",
         "_btn_library_title":      "fg_secondary",
         "_btn_klog_title":         "fg_secondary",
         "_btn_diagnostics_title":  "fg_secondary",
@@ -38913,6 +39611,26 @@ if __name__ == "__main__":
     # Gegenstueck zur Durchsichtigkeit oben: Erst das Raster fertig rechnen
     # lassen, dann das fertige Fenster in einem Zug zeigen.
     root.update_idletasks()
+
+    # update_idletasks() allein genuegt nicht. Windows vergibt die
+    # endgueltige Fenstergroesse erst beim Abbilden, und bis dahin misst
+    # sich die Pfad-Karte zu schmal: Die Einbauzeile bekommt eine eigene
+    # Zeile, weil neben der Pruefstufe scheinbar kein Platz ist. Sobald das
+    # Fenster dann wirklich dasteht, meldet <Configure> die wahre Breite,
+    # die Zeile wandert nach oben und die Karte schrumpft um 12 px - am
+    # 26.08.2026 gemessen als einzelner Sprung 274 ms NACH dem
+    # Sichtbarwerden, mit allem darunter 8 px nach oben.
+    #
+    # update() arbeitet die Abbildungsereignisse ab, danach stimmen die
+    # Breiten. Das anschliessende Ausrichten faellt damit vor das
+    # Sichtbarwerden statt dahinter.
+    try:
+        root.update()
+        app._kartenzeilen_ordnen()
+        root.update_idletasks()
+    except tk.TclError as exc:
+        logger.debug("Vorab-Ausrichten übersprungen: %s", exc)
+
     try:
         root.attributes("-alpha", 1.0)
     except tk.TclError:

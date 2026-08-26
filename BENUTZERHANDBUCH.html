@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.8.100</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.0</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.8.100</span>
+      <span class="marke">Version v1.9.0</span>
       <span class="marke">Stand 21. August 2026</span>
       <span class="marke grau">Für Windows</span>
       <span class="marke grau">Deutsch / English</span>
@@ -664,10 +664,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>BIBLIOTHEK</strong></td><td>Durchsucht mehrere gespeicherte Ordner nach Dump-Ordnern und Containerdateien, zeigt Titel und Cover und erlaubt eine schnelle Übernahme als Quelle.</td></tr>
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
-      <tr><td><strong>SHADOWMOUNT+</strong></td><td>Konfigurationseditor für das ShadowMount+-Payload auf der PS5 (per FTP laden und schreiben).</td></tr>
+      <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.10</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit acht Werkzeugen: <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit neun Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1176,6 +1176,120 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
     still.</p>
   </div>
+  <h3>13.10 WebKit Autoloader &ndash; Kachel auf den Startbildschirm</h3>
+  <p>Der WebKit Autoloader legt auf der Konsole eine Kachel an, &uuml;ber die
+  sich der Einstieg jedes Mal mit einem Druck wiederholen l&auml;sst, statt
+  ihn von Hand im Browser aufzurufen. Dazu geh&ouml;ren zwei Teile: ein
+  <strong>Host</strong>, der auf Ihrem Rechner l&auml;uft, und ein
+  <strong>Installer</strong>, der einmal auf der Konsole ausgef&uuml;hrt
+  wird.</p>
+  <p><strong>Zu finden unter:</strong> dem Knopf <strong>WEBKIT
+  AUTOLOADER</strong> in der Titelleiste. Er &ouml;ffnet ein rahmenloses
+  Fenster mit drei Wegen; <strong>Esc</strong> schlie&szlig;t es wieder.</p>
+
+  <h4>Die drei Wege</h4>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Weg</th><th>Was er tut</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Host starten (Windows-Programm)</strong></td>
+      <td>Startet den mitgelieferten Host in einem eigenen Fenster. Er
+      t&auml;uscht der Konsole <code>manuals.playstation.net</code> vor und
+      liefert ihr den Autoloader aus.</td></tr>
+      <tr><td><strong>Host starten (Python-Skript)</strong></td>
+      <td>Derselbe Host als Skript &ndash; der Weg f&uuml;r Linux und
+      macOS.</td></tr>
+      <tr><td><strong>Installer an die PS5 senden</strong></td>
+      <td>Bringt die <code>.elf</code> auf die Konsole. Welchen Weg das
+      Programm nimmt, entscheidet es selbst &ndash; siehe unten.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Der Host braucht Administratorrechte</span>
+    <p>Er belegt DNS (UDP&nbsp;53) und HTTPS (TCP&nbsp;443). Beide Ports gibt
+    Windows nur einem erh&ouml;hten Prozess. Schl&auml;gt der Start fehl,
+    starten Sie das Programm noch einmal als Administrator. Der Host bleibt
+    in seinem Fenster stehen, bis Sie es schlie&szlig;en; stellen Sie
+    inzwischen den DNS der Konsole auf die Adresse, die er anzeigt.</p>
+  </div>
+
+  <h4>Wie der Installer auf die Konsole kommt</h4>
+  <p>Zuerst wird der kurze Weg versucht: Lauscht auf der Konsole ein
+  Payload-Loader auf <strong>Port 9021</strong>, geht die Datei direkt
+  dorthin.</p>
+  <p>Schweigt dieser Port, nimmt das Programm den anderen Weg und sagt das
+  auch. Die Datei wandert dann per <strong>FTP</strong> ins
+  <strong>Wurzelverzeichnis</strong> eines USB-Datentr&auml;gers der Konsole.
+  Als Port wird <strong>2121</strong> und danach <strong>2021</strong>
+  probiert &ndash; genommen wird der erste, der antwortet. Stecken mehrere
+  Datentr&auml;ger, fragt das Programm, welcher es sein soll.</p>
+  <p>Von dort holen Sie die Datei auf der Konsole mit dem <strong>Payload
+  Manager</strong> ab und senden beziehungsweise installieren sie.</p>
+  <div class="kasten tipp">
+    <span class="titel">Danach</span>
+    <p>Die Kachel <strong>WebKit Autoload</strong> finden Sie auf dem
+    Startbildschirm der Konsole unter <strong>Medien</strong>.</p>
+  </div>
+
+  <h4>Eine neuere Fassung einspielen</h4>
+  <p>Die drei Dateien liegen im Ordner <code>PS5 WebKit Autoloader</code>
+  neben dem Programm. Erscheint eine neue Fassung, legen Sie sie einfach
+  dort hinein &ndash; das Programm sucht nach dem Muster
+  <code>webkit-autoloader-host_v*.exe</code> beziehungsweise
+  <code>*.py</code> und <code>webkit-autoloader-installer_v*.elf</code> und
+  nimmt jeweils die <strong>h&ouml;chste Versionsnummer</strong>. Die alte
+  Datei d&uuml;rfen Sie liegen lassen oder l&ouml;schen; beim n&auml;chsten
+  Bau wandert der Ordnerinhalt unver&auml;ndert in das fertige Programm.
+  Zu &auml;ndern ist daf&uuml;r nichts.</p>
+
+  <h3>14.2 Durchsicht, Helligkeit und Kontrast</h3>
+  <p>Im Einstellungsfenster steht unter <strong>Darstellung</strong> eine
+  Reihe Schieberegler. Sie bestimmen, wie stark das Hintergrundbild durch die
+  einzelnen Fl&auml;chen scheint und wie das Bild selbst aussieht.
+  &Uuml;bernommen wird beim <em>Loslassen</em> des Reglers &ndash; w&auml;hrend
+  des Ziehens w&uuml;rde jedes Zwischenbild neu gerechnet, und das ruckelt.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Regler</th><th>Was er tut</th><th>Vorgabe</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Pfad-Karte</strong></td>
+      <td>Wie stark das Bild durch die Karte mit QUELLE, ZIELFORMAT und den
+      &uuml;brigen Feldern scheint. 0&nbsp;% l&auml;sst die Fl&auml;che allein
+      tragen, 100&nbsp;% zeigt nur noch das Bild.</td><td>40&nbsp;%</td></tr>
+      <tr><td><strong>Knopfleiste unten</strong></td>
+      <td>Dasselbe f&uuml;r die Leiste mit STARTEN und ABBRECHEN.</td>
+      <td>30&nbsp;%</td></tr>
+      <tr><td><strong>Status-Log</strong></td>
+      <td>Zieht die Farbe des Protokollfelds zur Farbe des Bildes hin.</td>
+      <td>30&nbsp;%</td></tr>
+      <tr><td><strong>Hintergrundbild: Helligkeit / Kontrast</strong></td>
+      <td>Wirkt auf das Bild im Hauptbereich &ndash; und damit auch auf die
+      Ausschnitte, die Karte und Knopfleiste daraus zeigen.</td>
+      <td>100&nbsp;%</td></tr>
+      <tr><td><strong>Seitenleiste: Helligkeit / Kontrast</strong></td>
+      <td>Dasselbe f&uuml;r das Bild der Seitenleiste, unabh&auml;ngig vom
+      Hauptbereich.</td><td>100&nbsp;%</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="kasten">
+    <span class="titel">Warum das Status-Log schwächer reagiert</span>
+    <p>Es ist ein Textfeld und damit deckend &ndash; ein Bild kann dort nicht
+    wirklich durchscheinen. Der Regler zieht stattdessen seine
+    Fl&auml;chenfarbe zur Farbe des Bildes hin. Bei einem sehr dunklen Bild ist
+    der Unterschied deshalb klein; das ist kein Fehler.</p>
+  </div>
+  <p>Der Knopf <strong>Alle Regler zur&uuml;cksetzen</strong> stellt alle
+  sieben auf die Vorgabe &ndash; also genau den Zustand, den das Programm vor
+  v1.9.0 fest eingebaut hatte.</p>
+  <p>Neben den beiden Klapplisten steht au&szlig;erdem eine
+  <strong>Miniaturvorschau</strong> des gerade gew&auml;hlten Bildes, damit
+  ein Dateiname nicht das Einzige ist, woran man sich orientieren kann. Sie
+  zeigt das Bild bereits mit Helligkeit und Kontrast, so wie es im Fenster
+  ankommt.</p>
+
 </section>
 
 <section class="kapitel" id="k15">
@@ -1200,7 +1314,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.8.100), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.0), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1400,7 +1514,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.8.100</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.0</strong></span>
     <span>Stand 21. August 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

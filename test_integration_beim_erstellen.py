@@ -48,6 +48,32 @@ class _Var:
         self._wert = wert
 
 
+class _Kaestchen:
+    """Ersatz für ein Tk-Widget, das nur ``configure`` können muss."""
+
+    def __init__(self) -> None:
+        self.zustand = ""
+
+    def configure(self, **kw) -> None:
+        self.zustand = kw.get("state", self.zustand)
+
+
+def _paar(*, ampr: bool, backport: bool) -> PS5ConverterGUI:
+    """Prüfling nur für ``_on_integration_changed`` – ohne Tk."""
+    g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+    g._log_lines = []
+    g._append_to_log = g._log_lines.append
+    g._save_setting = lambda *_a, **_k: None
+    g.ampr_integrate_var = _Var(ampr)
+    g.ampr_playgo_var = _Var(True)
+    g.backport_integrate_var = _Var(backport)
+    g._ampr_versionsauswahl = {"0.3.5 no debug": {}}
+    for name in ("ampr_version_combo", "ampr_playgo_check",
+                 "backport_fw_combo", "ampr_integrate_check"):
+        setattr(g, name, _Kaestchen())
+    return g
+
+
 def _dump_anlegen(ziel: Path) -> None:
     """Legt einen kleinen Dump an, wie ihn die Integration erwartet."""
     (ziel / "sce_sys").mkdir(parents=True, exist_ok=True)
@@ -178,6 +204,13 @@ class IntegrationsablaufTests(unittest.TestCase):
 
         Beide schreiben in denselben fakelib-Ordner. Liefe der Backport
         zuletzt, könnte er die eben eingebaute AMPR-Bibliothek überschreiben.
+
+        Die Kombination ist ausdrücklich erlaubt: ShadowMount+ hängt genau
+        ein fakelib-Verzeichnis in die Sandbox und ersetzt darin vorhandene
+        Dateien durch die aus ``emulators_path``. Es ersetzt aber nur, was
+        schon da ist – eine reine Backport-fakelib ohne ``libSceAmpr.sprx``
+        bekommt sie nicht nachträglich. Genau deshalb gehört beides zusammen
+        in den Dump.
         """
         g = _gui(ampr=True, backport=True)
         if not g._ampr_versionsauswahl:
@@ -190,6 +223,25 @@ class IntegrationsablaufTests(unittest.TestCase):
         self.assertTrue(eingebaut.is_file())
         self.assertEqual(eingebaut.stat().st_size, int(gewaehlt["size"]),
                          "Die eingebaute Datei ist nicht die gewählte Version")
+
+    def test_kein_kaestchen_schaltet_das_andere_ab(self) -> None:
+        """Beide dürfen gleichzeitig gesetzt sein.
+
+        Eine Zeit lang schlossen sie einander aus - das beruhte auf einer
+        Annahme, die die ShadowMount+-Beschreibung nicht trägt: Dort ersetzen
+        die Emulator-Dateien Dateien *in* der gewählten fakelib, sie
+        konkurrieren nicht mit ihr. Der Test hält fest, dass keines der
+        Kästchen das andere anfasst.
+        """
+        for gesetzt in (True, False):
+            for ampr, backport in ((True, True), (True, False),
+                                   (False, True), (False, False)):
+                with self.subTest(speichern=gesetzt, ampr=ampr,
+                                  backport=backport):
+                    g = _paar(ampr=ampr, backport=backport)
+                    g._on_integration_changed(speichern=gesetzt)
+                    self.assertEqual(g.ampr_integrate_var.get(), ampr)
+                    self.assertEqual(g.backport_integrate_var.get(), backport)
 
     def test_arbeitskopie_laesst_die_quelle_unberuehrt(self) -> None:
         g = _gui(ampr=True, backport=False, arbeitskopie=True)

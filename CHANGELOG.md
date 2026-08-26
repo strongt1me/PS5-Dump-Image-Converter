@@ -2,7 +2,68 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.8.100):** Die Rechtschreibung ist vollständig: nach den Umlauten jetzt auch das ß. Aus „heisst“ wird „heißt“, aus „ausserhalb“ „außerhalb“ – aber „dass“, „muss“ und „Prozess“ bleiben natürlich, wie sie sind.
+> **Kurz zum aktuellen Stand (v1.9.0):** Neu in der Titelleiste ist der Knopf **WEBKIT AUTOLOADER**, und in den Einstellungen lässt sich jetzt einstellen, wie stark das Hintergrundbild durch die Flächen scheint – dazu Helligkeit und Kontrast beider Bilder. Außerdem steht das Fenster beim Start endlich still.
+
+---
+
+## v1.9.0 – 26.08.2026
+
+### Neuer Knopf: WebKit Autoloader
+
+In der Titelleiste steht ein neuer Knopf **WEBKIT AUTOLOADER**. Er öffnet
+ein kleines Fenster mit drei Wegen:
+
+- **Host starten (Windows-Programm)** – täuscht der Konsole
+  `manuals.playstation.net` vor und liefert ihr den Autoloader aus.
+- **Host starten (Python-Skript)** – dasselbe für Linux und macOS.
+- **Installer an die PS5 senden** – bringt die `.elf` auf die Konsole.
+
+Beim Installer entscheidet das Programm selbst, welchen Weg es nimmt:
+Lauscht ein Payload-Loader auf Port 9021, geht die Datei direkt dorthin.
+Schweigt der Port, sagt das Programm das und legt die Datei stattdessen
+per FTP ins Wurzelverzeichnis eines USB-Datenträgers – Port 2121 oder
+2021, je nachdem, welcher antwortet. Von dort holt sie der Payload
+Manager der Konsole ab. Danach liegt die Kachel **WebKit Autoload** auf
+dem Startbildschirm unter **Medien**.
+
+Erscheint eine neuere Fassung der drei Dateien, genügt es, sie in den
+Ordner `PS5 WebKit Autoloader` zu legen; das Programm nimmt von selbst
+die höchste Versionsnummer.
+
+### Durchsicht, Helligkeit und Kontrast einstellbar
+
+Im Einstellungsfenster steht unter **Darstellung** eine Reihe Schieberegler:
+
+- **Pfad-Karte**, **Knopfleiste unten** und **Status-Log** – wie stark das
+  Hintergrundbild durch die jeweilige Fläche scheint.
+- **Helligkeit** und **Kontrast** für das Hintergrundbild und, davon
+  unabhängig, für das Bild der Seitenleiste.
+
+Übernommen wird beim Loslassen des Reglers. Ein Knopf stellt alle sieben
+wieder auf die Vorgabe – das ist genau der Zustand, den das Programm vorher
+fest eingebaut hatte.
+
+Das Status-Log reagiert schwächer als die beiden anderen Flächen: Es ist ein
+Textfeld und damit deckend, ein Bild kann dort nicht durchscheinen. Der Regler
+zieht stattdessen seine Farbe zur Farbe des Bildes hin.
+
+### Miniaturvorschau der Hintergrundbilder
+
+Neben beiden Klapplisten steht jetzt eine kleine Vorschau des gewählten
+Bildes – mit Helligkeit und Kontrast, also so, wie es im Fenster ankommt.
+
+### SHADOWMOUNT+ ist umgezogen
+
+Der Konfigurationseditor sitzt nicht mehr als eigener Knopf in der
+Titelleiste, sondern unter **WEITERE TOOLS**. Er kann alles wie vorher.
+
+### Das Fenster steht beim Start still
+
+Bisher sprang der Inhalt kurz nach dem Erscheinen des Fensters einmal
+nach oben: Die obere Bedienzeile rutschte 8 Pixel höher, und die Karte
+wurde flacher. Grund war die Reihenfolge – die endgültige Fensterbreite
+stand erst fest, als das Fenster schon zu sehen war. Jetzt ist die
+Anordnung fertig, bevor das Fenster erscheint.
 
 ---
 

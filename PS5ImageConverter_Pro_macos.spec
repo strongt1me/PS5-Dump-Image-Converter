@@ -132,6 +132,15 @@ _anleitungen = os.path.join(_here, 'Anleitungen')
 if os.path.isdir(_anleitungen):
     _datas.append((_anleitungen, 'Anleitungen'))
 
+# Der WebKit Autoloader: Host als Windows-Programm, derselbe als
+# Python-Skript und der Installer-Payload. Der Ordner gehoert dem
+# Benutzer - was darin liegt, wird eingebettet. Legt er eine neuere
+# Fassung hinein, kommt sie beim naechsten Bau mit; das Programm sucht
+# zur Laufzeit nach Muster und nimmt die hoechste Versionsnummer.
+_webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
+if os.path.isdir(_webkit):
+    _datas.append((_webkit, 'PS5 WebKit Autoloader'))
+
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
     _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))

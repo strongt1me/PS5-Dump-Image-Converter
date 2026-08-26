@@ -152,10 +152,15 @@ class CardTintTests(unittest.TestCase):
         # Karten und Protokollflaeche haben seit v1.8.60 getrennte
         # Deckkraft: Die Protokollflaeche ist gross und dauerhaft sichtbar,
         # was bei einer Karte dezent wirkt, ist dort zu wenig.
-        from PS5ImageConverter_Pro_FINAL_revised import CONSOLE_BG_DECKKRAFT
+        #
+        # Seit v1.9.0 haengt die Protokollflaeche am Schieberegler in den
+        # Einstellungen; die Konstante ist nur noch seine Vorgabe. Gerechnet
+        # wird deshalb mit dem Reglerwert - sonst weicht das Ergebnis um
+        # 1/255 ab, weil ``1.0 - 0.7`` nicht exakt 0.3 ist.
+        from PS5ImageConverter_Pro_FINAL_revised import REGLER_VORGABEN
 
         erwartet = {"bg_card": BG_CARD_TINT_OPACITY,
-                    "console_bg": 1.0 - CONSOLE_BG_DECKKRAFT}
+                    "console_bg": REGLER_VORGABEN["protokoll_deckkraft"] / 100}
         for key, anteil in erwartet.items():
             r, g, b = int(gui._COLORS[key][1:3], 16), int(gui._COLORS[key][3:5], 16), int(gui._COLORS[key][5:7], 16)
             self.assertEqual(r, 0)

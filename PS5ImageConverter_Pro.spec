@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.8.100
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.0
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -67,6 +67,15 @@ for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
 _anleitungen = os.path.join(_here, 'Anleitungen')
 if os.path.isdir(_anleitungen):
     _datas.append((_anleitungen, 'Anleitungen'))
+
+# Der WebKit Autoloader: Host als Windows-Programm, derselbe als
+# Python-Skript und der Installer-Payload. Der Ordner gehoert dem
+# Benutzer - was darin liegt, wird eingebettet. Legt er eine neuere
+# Fassung hinein, kommt sie beim naechsten Bau mit; das Programm sucht
+# zur Laufzeit nach Muster und nimmt die hoechste Versionsnummer.
+_webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
+if os.path.isdir(_webkit):
+    _datas.append((_webkit, 'PS5 WebKit Autoloader'))
 
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
@@ -298,7 +307,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.8.100',
+    name='PS5_Dump_Image_Converter_v1.9.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

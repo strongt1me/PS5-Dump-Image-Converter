@@ -823,11 +823,28 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
 
     def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
         for methode in ("_show_credits", "_show_js_loader",
-                        "_show_shadowmount_editor", "_show_diagnostic_report",
+                        "_show_webkit_autoloader", "_show_diagnostic_report",
                         "_show_library_window", "_show_klog_window_geprueft"):
             with self.subTest(methode=methode):
                 self.assertIn('self._werkzeugknopf("%s")' % methode,
                               self.quelle)
+                self.assertNotIn("command=self.%s," % methode, self.quelle)
+
+    def test_auch_die_klapplisten_eintraege(self):
+        """Sie nennen die Methode nicht woertlich, gehen aber denselben Weg.
+
+        Die Eintraege entstehen in einer Schleife ueber
+        ``_MORE_TOOLS_ENTRIES``; dort steht ``self._werkzeugknopf(_befehl_name)``.
+        Geprueft wird deshalb die Schleife selbst - und dass keiner der
+        Eintraege am Umschalter vorbei verdrahtet ist. SHADOWMOUNT+ liegt
+        seit v1.8.101 dort statt in der Titelleiste.
+        """
+        self.assertIn("self._werkzeugknopf(_befehl_name)", self.quelle)
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        befehle = [b for _k, b in PS5ConverterGUI._MORE_TOOLS_ENTRIES]
+        self.assertIn("_show_shadowmount_editor", befehle)
+        for methode in befehle:
+            with self.subTest(methode=methode):
                 self.assertNotIn("command=self.%s," % methode, self.quelle)
 
     def test_die_ampr_methoden_ebenfalls(self):
@@ -861,6 +878,48 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
 
 
 
+
+
+class StartRuheTests(unittest.TestCase):
+    """Das Fenster darf nicht zucken, sobald es zu sehen ist.
+
+    Gemessen am 26.08.2026: Das Fenster wurde sichtbar, und 274 ms später
+    sprang die ganze Pfad-Karte 8 px nach oben und wurde 12 px flacher.
+
+    Die Ursache steckt in der Reihenfolge. Windows vergibt die endgültige
+    Fenstergröße erst beim **Abbilden**; vorher misst sich die Karte zu
+    schmal, und ``_einbauzeile_passt_daneben`` entscheidet auf „eigene
+    Zeile". Sobald das Fenster dann wirklich dasteht, meldet ``<Configure>``
+    die wahre Breite, die Einbauzeile wandert neben die Prüfstufe und die
+    Zeile darunter fällt zusammen. ``update_idletasks()`` allein fängt das
+    nicht ab – es arbeitet die Abbildungsereignisse nicht mit ab.
+
+    Geprüft wird die Reihenfolge im Quelltext: erst ``update()`` und ein
+    Ausrichten, dann erst sichtbar machen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(HAUPTDATEI).read_text(encoding="utf-8")
+                      if isinstance(HAUPTDATEI, str)
+                      else HAUPTDATEI.read_text(encoding="utf-8"))
+
+    def test_ausrichten_kommt_vor_dem_sichtbarmachen(self) -> None:
+        sichtbar = self.quelle.find('root.attributes("-alpha", 1.0)')
+        self.assertGreater(sichtbar, 0, "Das Sichtbarmachen fehlt")
+        ordnen = self.quelle.find("app._kartenzeilen_ordnen()")
+        self.assertGreater(ordnen, 0,
+                           "Vor dem Sichtbarmachen wird nicht ausgerichtet")
+        self.assertLess(ordnen, sichtbar,
+                        "Ausgerichtet wird erst, nachdem das Fenster steht - "
+                        "genau dann sieht man den Sprung")
+
+    def test_die_abbildungsereignisse_werden_abgearbeitet(self) -> None:
+        """``update_idletasks()`` allein genügt nicht - ``update()`` muss sein."""
+        sichtbar = self.quelle.find('root.attributes("-alpha", 1.0)')
+        vorher = self.quelle[:sichtbar]
+        self.assertIn("root.update()", vorher,
+                      "Ohne update() kennt die Karte ihre wahre Breite nicht")
 
 
 if __name__ == "__main__":
