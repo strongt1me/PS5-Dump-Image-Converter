@@ -30,6 +30,11 @@ Erscheint eine neuere Fassung der drei Dateien, genügt es, sie in den
 Ordner `PS5 WebKit Autoloader` zu legen; das Programm nimmt von selbst
 die höchste Versionsnummer.
 
+### Runde Ecken
+
+Die beiden Karten im Hauptbereich – die mit QUELLE und Zielformat sowie das
+Status-Log – haben jetzt abgerundete Ecken statt rechter Winkel.
+
 ### Durchsicht, Helligkeit und Kontrast einstellbar
 
 Im Einstellungsfenster steht unter **Darstellung** eine Reihe Schieberegler:

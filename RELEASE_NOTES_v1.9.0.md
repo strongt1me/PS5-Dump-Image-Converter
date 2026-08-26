@@ -41,6 +41,15 @@ nach dem Muster `webkit-autoloader-host_v*.exe` beziehungsweise `*.py` und
 Versionsnummer**. Die alte Datei darf liegen bleiben. Beim nächsten Bau
 wandert der Ordnerinhalt unverändert ins fertige Programm.
 
+## Runde Ecken
+
+Die beiden Karten im Hauptbereich haben abgerundete Ecken. Tk kennt so etwas
+nicht – ein Rahmen ist immer ein Rechteck. Gelöst ist es über vier kleine
+Bilder auf den Ecken, jedes aus zwei Quellen zusammengesetzt: außerhalb des
+Viertelkreises der Bildausschnitt, der *hinter* der Karte liegt, innerhalb die
+Kartenfläche selbst. Weil beide aus demselben Bild stammen, sitzt der Übergang
+nahtlos – die Ecke sieht weggeschnitten aus, nicht überklebt.
+
 ## Einstellbar: wie stark das Bild durchscheint
 
 Im Einstellungsfenster gibt es unter **Darstellung** sieben Schieberegler.
