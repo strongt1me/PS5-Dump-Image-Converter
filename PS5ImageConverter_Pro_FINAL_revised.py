@@ -28073,6 +28073,39 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Fokusanzeige nicht eingerichtet: %s", exc)
 
+    @staticmethod
+    def _tk_randvorgaben() -> dict[str, int]:
+        """Die Rand-Vorgabe je Widget-Klasse, an Tk selbst abgefragt.
+
+        Tk setzt ``borderwidth`` plattformabhaengig: unter Windows bei
+        ``Label`` und ``Button`` 2, unter Linux/X11 nur 1. Wer die
+        Windows-Werte fest einbaut, meldet unter Linux jedes unveraenderte
+        Widget als Befund.
+
+        Gefragt wird deshalb Tk: Ein frisches Widget jeder Klasse wird
+        angelegt, sein ``borderwidth`` gelesen und es sofort wieder
+        weggeworfen. Die Widgets werden nie angezeigt.
+        """
+        klassen = {
+            "Label": tk.Label, "Button": tk.Button, "Text": tk.Text,
+            "Canvas": tk.Canvas, "Entry": tk.Entry, "Listbox": tk.Listbox,
+            "Checkbutton": tk.Checkbutton, "Radiobutton": tk.Radiobutton,
+            "Menubutton": tk.Menubutton, "Message": tk.Message,
+            "Spinbox": tk.Spinbox,
+        }
+        vorgaben: dict[str, int] = {}
+        for name, bauart in klassen.items():
+            try:
+                probe = bauart()
+                try:
+                    vorgaben[name] = int(str(probe.cget("borderwidth")))
+                finally:
+                    probe.destroy()
+            except Exception as exc:
+                logger.debug("Randvorgabe fuer %s nicht messbar: %s", name, exc)
+                vorgaben[name] = 0
+        return vorgaben
+
     def _diagnose_randlos(self) -> list[str]:
         """Sichtbare Raender - und ob ohne sie noch alles erkennbar ist.
 
@@ -28103,10 +28136,13 @@ class PS5ConverterGUI:
         except Exception:
             return ["Randprüfung: kein Fenster"]
 
-        VORGABE = {"Label": 2, "Button": 2, "Text": 2, "Canvas": 2,
-                   "Entry": 2, "Listbox": 2, "Checkbutton": 2,
-                   "Radiobutton": 2, "Menubutton": 2, "Message": 2,
-                   "Spinbox": 2}
+        # Die Vorgabe je Klasse wird GEMESSEN, nicht angenommen. Tk setzt
+        # sie plattformabhaengig: Unter Windows ist borderwidth bei Label
+        # und Button 2, unter Linux/X11 nur 1. Eine feste Tabelle mit den
+        # Windows-Werten meldete unter Linux jedes unveraenderte Widget als
+        # Befund - am 26.08.2026 in WSLg gemessen: sieben Phantom-Raender,
+        # darunter die fuenf Hintergrundbild-Flaechen.
+        VORGABE = self._tk_randvorgaben()
         stil = ttk.Style()
         treffer: list[str] = []
 
@@ -28129,13 +28165,18 @@ class PS5ConverterGUI:
                             gruende.append("Stil %s: relief=%s" % (name, rel))
                     else:
                         klasse = w.winfo_class()
+                        rel = ""
                         if "relief" in w.keys():
                             rel = str(w.cget("relief") or "")
                             if rel and rel not in ("flat", ""):
                                 gruende.append("relief=%s" % rel)
                         if "borderwidth" in w.keys():
                             bd = zahl(w.cget("borderwidth"))
-                            if bd > 0 and bd != VORGABE.get(klasse, 0):
+                            # Nur melden, wenn der Rand auch gezeichnet
+                            # wird: Bei relief="flat" zeichnet Tk nichts,
+                            # wie breit die Angabe auch ist.
+                            flach = rel in ("flat", "")
+                            if bd > 0 and not flach and bd != VORGABE.get(klasse, 0):
                                 gruende.append("borderwidth=%d" % bd)
                     if gruende:
                         try:
