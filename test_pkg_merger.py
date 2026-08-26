@@ -1,4 +1,5 @@
 """Tests fuer ps5_validator.utils.pkg_merger (Split-PKG-Reassemblierung)."""
+import hashlib
 import os
 import shutil
 import struct
@@ -162,6 +163,149 @@ class PunktImBasisnamenTests(unittest.TestCase):
         self._write("Matchbox™ Adventures (01.000.001)_0.pkg")
         sets = discover_split_sets(self.tmpdir)
         self.assertEqual([s.base_name for s in sets], ["Matchbox™ Adventures (01.000.001)"])
+
+
+class RundlaufTests(unittest.TestCase):
+    """Ein vollstaendiges Paket aufteilen und wieder zusammenfuegen.
+
+    Der bestehende Merge-Test arbeitet mit **einem** nummerierten Teil und
+    prueft damit die Verkettung, nicht die Reihenfolge. Genau darauf kommt
+    es bei einem echten Split-Satz aber an: Die Teile liegen als ``_0``,
+    ``_1``, ``_2`` ... im Ordner, und ``_10`` gehoert hinter ``_9`` - nicht
+    dazwischen, wie es eine Sortierung nach Namen ergaebe.
+
+    Geprueft wird ueber den Inhalt: Was hinten herauskommt, muss byteweise
+    dem entsprechen, was vorne hineinging.
+    """
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    @staticmethod
+    def _paket(nutzlast: int, mit_meta: bool = True) -> tuple:
+        """Baut ein gueltiges FIH-Paket samt Subcontainer.
+
+        Die Felder sind dieselben, die ``validate_split_set`` liest: Magic,
+        signed byte, Formatversion und die drei Offsets. ``cnt_offset`` muss
+        exakt der Summe der nummerierten Teile entsprechen - daran haengt
+        die ganze Pruefung.
+        """
+        kopf = 0x100
+        gesamt = kopf + nutzlast
+        roh = bytearray(gesamt)
+        roh[0:4] = FIH_MAGIC
+        roh[0x05] = 0x80                                  # full_retail
+        struct.pack_into("<H", roh, 0x06, 3)
+        struct.pack_into("<Q", roh, 0x10, kopf)           # pfs_offset
+        struct.pack_into("<Q", roh, 0x18, nutzlast)       # pfs_size
+        struct.pack_into("<Q", roh, 0x58, gesamt)         # cnt_offset
+        # Erkennbare Nutzdaten: So faellt eine vertauschte Reihenfolge auch
+        # dann auf, wenn die Groesse zufaellig stimmt.
+        for i in range(kopf, gesamt):
+            roh[i] = i % 251
+        meta = bytes(CNT_MAGIC) + bytes(range(64)) if mit_meta else b""
+        return bytes(roh), meta
+
+    def _zerlegen(self, daten: bytes, teile: int, basis: str) -> list:
+        """Schreibt die Daten als <basis>_0.pkg ... in den Ordner."""
+        haeppchen = len(daten) // teile
+        pfade = []
+        for nummer in range(teile):
+            anfang = nummer * haeppchen
+            ende = len(daten) if nummer == teile - 1 else anfang + haeppchen
+            pfad = os.path.join(self.tmpdir, "%s_%d.pkg" % (basis, nummer))
+            with open(pfad, "wb") as f:
+                f.write(daten[anfang:ende])
+            pfade.append(pfad)
+        return pfade
+
+    def _satz(self, basis: str):
+        return {s.base_name: s
+                for s in discover_split_sets(self.tmpdir)}[basis]
+
+    def test_drei_teile_ergeben_wieder_das_original(self) -> None:
+        roh, meta = self._paket(0x500)
+        self._zerlegen(roh, 3, "SPIEL")
+        with open(os.path.join(self.tmpdir, "SPIEL_sc.pkg"), "wb") as f:
+            f.write(meta)
+
+        satz = self._satz("SPIEL")
+        self.assertEqual(len(satz.ordered_numbered), 3)
+
+        ziel = os.path.join(self.tmpdir, "SPIEL-merged.pkg")
+        ergebnis = merge_split_set(satz.ordered_numbered, satz.meta, ziel,
+                                   compute_digest=True)
+        with open(ziel, "rb") as f:
+            zusammengefuegt = f.read()
+
+        self.assertEqual(zusammengefuegt, roh + meta,
+                         "Das Ergebnis ist nicht byteweise das Original")
+        self.assertEqual(ergebnis.sha256,
+                         hashlib.sha256(roh + meta).hexdigest(),
+                         "Die gemeldete Pruefsumme passt nicht zum Inhalt")
+        self.assertEqual(ergebnis.package_type, "full_retail")
+
+    def test_zehn_gehoert_hinter_neun(self) -> None:
+        """Die Falle: Nach Namen sortiert stuende ``_10`` vor ``_2``."""
+        roh, meta = self._paket(0x600)
+        self._zerlegen(roh, 11, "VIELE")
+        with open(os.path.join(self.tmpdir, "VIELE_sc.pkg"), "wb") as f:
+            f.write(meta)
+
+        satz = self._satz("VIELE")
+        namen = [os.path.basename(p) for p in satz.ordered_numbered]
+        self.assertEqual(namen[-1], "VIELE_10.pkg",
+                         "Die Reihenfolge geht nach Namen statt nach Zahl")
+        self.assertEqual(namen[1], "VIELE_1.pkg")
+
+        ziel = os.path.join(self.tmpdir, "VIELE-merged.pkg")
+        merge_split_set(satz.ordered_numbered, satz.meta, ziel)
+        with open(ziel, "rb") as f:
+            self.assertEqual(f.read(), roh + meta)
+
+    def test_ohne_metadatenteil_geht_es_auch(self) -> None:
+        """Nicht jedes Paket hat einen Subcontainer daneben."""
+        roh, _ = self._paket(0x300, mit_meta=False)
+        pfade = self._zerlegen(roh, 2, "OHNEMETA")
+        satz = self._satz("OHNEMETA")
+        self.assertIsNone(satz.meta)
+        ziel = os.path.join(self.tmpdir, "OHNEMETA-merged.pkg")
+        merge_split_set(pfade, None, ziel)
+        with open(ziel, "rb") as f:
+            self.assertEqual(f.read(), roh)
+
+    def test_ein_fehlendes_mittelteil_faellt_auf(self) -> None:
+        """Der wichtigste Fall: Ein Teil fehlt, und keiner merkt es.
+
+        Die Summe der Teile stimmt dann nicht mehr mit dem im Kopf
+        vermerkten Subcontainer-Offset ueberein - daran haengt es.
+        """
+        roh, _ = self._paket(0x400, mit_meta=False)
+        pfade = self._zerlegen(roh, 4, "LUECKE")
+        os.remove(pfade[2])
+
+        satz = self._satz("LUECKE")
+        pruefung = validate_split_set(satz.ordered_numbered, satz.meta)
+        self.assertFalse(pruefung.is_valid, "Die Luecke blieb unbemerkt")
+        self.assertTrue(any("Summe" in f for f in pruefung.errors),
+                        pruefung.errors)
+        with self.assertRaises(PkgMergeError):
+            merge_split_set(satz.ordered_numbered, satz.meta,
+                            os.path.join(self.tmpdir, "LUECKE-merged.pkg"))
+
+    def test_falscher_metadatenkopf_wird_abgelehnt(self) -> None:
+        roh, _ = self._paket(0x200, mit_meta=False)
+        pfade = self._zerlegen(roh, 2, "FALSCH")
+        meta_pfad = os.path.join(self.tmpdir, "FALSCH_sc.pkg")
+        with open(meta_pfad, "wb") as f:
+            f.write(b"NICHTCNT" + bytes(32))
+        pruefung = validate_split_set(pfade, meta_pfad)
+        self.assertFalse(pruefung.is_valid)
+        self.assertTrue(any("Subcontainer" in f for f in pruefung.errors),
+                        pruefung.errors)
 
 
 if __name__ == "__main__":
