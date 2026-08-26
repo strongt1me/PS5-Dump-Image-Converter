@@ -1715,6 +1715,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.manual.unknown_source_type': {'de': '[FEHLER] Unbekannter Quelltyp: {v0}\n', 'en': '[ERROR] Unknown source type: {v0}\n'},
     'log.manual.validator_exception': {'de': '[FEHLER] Validator-Ausnahme: {v0}\n', 'en': '[ERROR] Validator exception: {v0}\n'},
     'log.manual.result_passed': {'de': '[ERGEBNIS] BESTANDEN: {v0}\n', 'en': '[RESULT] PASSED: {v0}\n'},
+    'log.manual.result_skipped': {'de': '[ERGEBNIS] UNGEPRÜFT: Die Prüfung konnte nicht stattfinden - das ist **kein** Urteil über die Datei. Meist fehlen Administratorrechte; dann das Programm als Administrator starten und erneut prüfen.\n', 'en': '[RESULT] NOT CHECKED: The check could not run - this says **nothing** about the file. Usually administrator rights are missing; start the program as administrator and check again.\n'},
     'log.manual.result_failed': {'de': '[ERGEBNIS] FEHLGESCHLAGEN: {v0}\n', 'en': '[RESULT] FAILED: {v0}\n'},
     'log.manual.changes_made_directly_in_dump': {'de': '[Info] Änderungen wurden direkt im Game Dump Ordner vorgenommen.\n', 'en': '[Info] Changes were made directly in the game dump folder.\n'},
     'log.manual.added_files_count': {'de': '\n>>> Hinzugefügt: {count} Datei(en)', 'en': '\n>>> Added: {count} file(s)'},

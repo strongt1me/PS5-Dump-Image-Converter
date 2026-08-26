@@ -13,7 +13,16 @@ from typing import Any, Callable
 class ValidationResult:
     """Einheitliches JSON-kompatibles Ergebnis-Schema."""
     mode: str = ""
-    status: str = "OK"          # OK | WARNING | FAILED | CORRUPTED | MISSING
+    #: OK | WARNING | SKIPPED | FAILED | CORRUPTED | MISSING
+    #:
+    #: ``SKIPPED`` steht seit v1.9.1 fuer "konnte nicht geprueft werden" und
+    #: ist ausdruecklich **kein** Urteil ueber die Datei. Vorher meldete der
+    #: Validator in diesem Fall ``FAILED`` - also "beanstandet" -, obwohl
+    #: nichts angesehen worden war. Aufgefallen ist das zweimal in vollen
+    #: Testrunden: Ohne Administratorrechte kommt UFS2Tool nicht an ein
+    #: ``.ffpkg`` heran (WinError 740), und das Ergebnis las sich wie ein
+    #: Schaden am Abbild.
+    status: str = "OK"
     summary: dict[str, Any] = field(default_factory=lambda: {
         "files_scanned": 0,
         "corrupted": [],
@@ -50,6 +59,27 @@ class ValidationResult:
         self.status = "MISSING"
         if msg:
             self.errors.append(msg)
+
+    def set_skipped(self, msg: str | None = None) -> None:
+        """Die Pruefung konnte nicht stattfinden - kein Urteil ueber die Datei.
+
+        Bewusst getrennt von ``set_failed``: Dort ist etwas beanstandet
+        worden, hier ist nichts angesehen worden. Der Unterschied ist fuer
+        den Benutzer entscheidend, denn ``FEHLGESCHLAGEN`` an einem
+        einwandfreien Abbild fuehrt in die Irre.
+
+        Ein bereits gefaelltes Urteil wird nicht ueberschrieben: Wer schon
+        etwas gefunden hat, hat auch etwas gesehen.
+        """
+        if self.status in ("OK", "WARNING"):
+            self.status = "SKIPPED"
+        if msg:
+            self.errors.append(msg)
+
+    @property
+    def wurde_geprueft(self) -> bool:
+        """False, wenn die Pruefung gar nicht erst zustande kam."""
+        return self.status != "SKIPPED"
 
 
 class BaseValidator(ABC):

@@ -2,7 +2,31 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.0):** Neu in der Titelleiste ist der Knopf **WEBKIT AUTOLOADER**, und in den Einstellungen lässt sich jetzt einstellen, wie stark das Hintergrundbild durch die Flächen scheint – dazu Helligkeit und Kontrast beider Bilder. Außerdem steht das Fenster beim Start endlich still.
+> **Kurz zum aktuellen Stand (v1.9.1):** Der Validator sagt nicht mehr „fehlgeschlagen“, wenn er gar nicht prüfen konnte. Fehlen Administratorrechte, heißt das Ergebnis jetzt **ungeprüft** – und der Bericht sagt dazu, was zu tun ist.
+
+---
+
+## v1.9.1 – 26.08.2026
+
+### „Ungeprüft" ist nicht dasselbe wie „fehlgeschlagen"
+
+Aufgabe 8 prüft ein `.ffpkg` über ein Werkzeug, das Administratorrechte
+braucht. Fehlten die, meldete der Bericht **fehlgeschlagen** – obwohl gar
+nichts angesehen worden war. Ein einwandfreies Abbild las sich dadurch wie
+ein beschädigtes.
+
+Dafür gibt es jetzt einen dritten Status **UNGEPRÜFT**, und der Bericht sagt
+im Klartext, dass das kein Urteil über die Datei ist und wie sich die Prüfung
+nachholen lässt.
+
+Im Kommandozeilenmodus gibt Aufgabe 8 in diesem Fall **4** zurück statt einer
+1 – weder Erfolg noch Fehlschlag.
+
+### Geteilte .pkg-Dateien: Reihenfolge abgesichert
+
+Beim Zusammenführen geteilter Pakete gehört `_10` hinter `_9`, nicht zwischen
+`_1` und `_2`. Das ist jetzt festgehalten, zusammen mit dem Fall eines
+fehlenden Mittelteils.
 
 ---
 

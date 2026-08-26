@@ -446,7 +446,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.0"
+APP_VERSION = "v1.9.1"
 APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -21580,7 +21580,7 @@ class PS5ConverterGUI:
                     threads=max(1, self._get_worker_count(os.cpu_count() or 4) // 2),
                     resume=False,
                 )
-                ok_final = result.status in ("OK", "WARNING")
+                ok_final = result.status in ("OK", "WARNING", "SKIPPED")
                 msg = result.status
                 _log_validator_result(result, diagnose_path=src)
 
@@ -21595,7 +21595,7 @@ class PS5ConverterGUI:
                     unit_label="Bytes",
                 )
                 result = _run_validator(src, "extfat")
-                ok_final = result.status in ("OK", "WARNING")
+                ok_final = result.status in ("OK", "WARNING", "SKIPPED")
                 msg = result.status
                 _log_validator_result(result)
 
@@ -21610,7 +21610,7 @@ class PS5ConverterGUI:
                     unit_label="Bytes",
                 )
                 result = _run_validator(src, "ffpfs")
-                ok_final = result.status in ("OK", "WARNING")
+                ok_final = result.status in ("OK", "WARNING", "SKIPPED")
                 msg = result.status
                 _log_validator_result(result)
 
@@ -21634,7 +21634,7 @@ class PS5ConverterGUI:
                     "ffpkg",
                     ufs2tool_path=self._extract_ufs2tool(),
                 )
-                ok_final = result.status in ("OK", "WARNING")
+                ok_final = result.status in ("OK", "WARNING", "SKIPPED")
                 msg = result.status
                 _log_validator_result(result)
 
@@ -21650,7 +21650,16 @@ class PS5ConverterGUI:
         self.task_progress = max(self.task_progress, 95.0)
         self.progress_engine.begin_validate("Ergebnis auswerten...")
         self._append_to_log("\n" + "=" * 60 + "\n")
-        if ok_final:
+        # Drei Ausgaenge statt zwei. "Ungeprueft" ist weder das eine noch
+        # das andere: Es ist nichts beanstandet worden, aber auch nichts
+        # angesehen. Bis v1.9.0 landete dieser Fall bei "fehlgeschlagen"
+        # und las sich wie ein Schaden am Abbild.
+        # Fuer den --cli-Weg festhalten: Er sieht nur ein Ja/Nein und
+        # meldete "Erfolg", wo gar nichts geprueft wurde.
+        self._last_validation_status = msg
+        if msg == "SKIPPED":
+            self._append_to_log(self._t("log.manual.result_skipped"))
+        elif ok_final:
             self._append_to_log(self._t("log.manual.result_passed", v0=msg))
         else:
             self._append_to_log(self._t("log.manual.result_failed", v0=msg))
@@ -39548,6 +39557,16 @@ def _run_cli(args: argparse.Namespace) -> int:
             app._cleanup_exit_temp_targets()
         except Exception as exc:
             logger.debug("CLI-Temp-Bereinigung: %s", exc)
+
+    # Drei Ausgaenge. "Nicht geprueft" ist weder Erfolg noch Fehlschlag:
+    # Eine 0 liesse ein Skript glauben, das Abbild sei in Ordnung befunden
+    # worden, eine 1 wuerde es als beanstandet melden. Beides waere falsch.
+    if getattr(app, "_last_validation_status", "") == "SKIPPED":
+        print("[CLI] Nicht geprueft - die Pruefung konnte nicht stattfinden. "
+              "Das ist kein Urteil ueber die Datei; meist fehlen "
+              "Administratorrechte.")
+        root.destroy()
+        return 4
 
     root.destroy()
     return 0 if ok else 1
