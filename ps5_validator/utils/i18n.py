@@ -73,7 +73,6 @@ STRINGS: dict[str, dict[str, str]] = {
     'titlebar.design': {'de': 'DESIGN', 'en': 'THEME'},
     'titlebar.settings': {'de': 'EINSTELLUNGEN', 'en': 'SETTINGS'},
     'titlebar.manual': {'de': 'BENUTZERHANDBUCH', 'en': 'USER MANUAL'},
-    'titlebar.quit': {'de': 'BEENDEN', 'en': 'QUIT'},
     'context.cut': {'de': 'Ausschneiden', 'en': 'Cut'},
     'context.copy': {'de': 'Kopieren', 'en': 'Copy'},
     'context.paste': {'de': 'Einfügen', 'en': 'Paste'},

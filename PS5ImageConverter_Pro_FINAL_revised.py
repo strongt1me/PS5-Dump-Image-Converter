@@ -2790,10 +2790,10 @@ class PS5ConverterGUI:
     #: beim Sprachwechsel aus derselben Quelle neu gesetzt werden koennen.
     #: Knoepfe der Titelleiste, die bei zu wenig Platz ins Sammelmenue
     #: wandern - in der Reihenfolge, in der sie weichen. Zuerst die selteneren
-    #: Werkzeuge, zuletzt die Diagnose. BEENDEN, DESIGN, EINSTELLUNGEN,
-    #: WEITERE TOOLS und der Sprachumschalter bleiben immer stehen.
+    #: Werkzeuge, zuletzt die Diagnose. DESIGN, EINSTELLUNGEN, WEITERE
+    #: TOOLS und der Sprachumschalter bleiben immer stehen.
     #:
-    #: Der Grund: Die dreizehn Knoepfe brauchen zusammen rund 1515 px. Passt
+    #: Der Grund: Die zwoelf Knoepfe brauchen zusammen rund 1400 px. Passt
     #: das nicht, quetscht ``pack`` die zuletzt gepackten zusammen, statt sie
     #: wegzulassen - am 20.08.2026 gemessen war "BENUTZERHANDBUCH" bei einem
     #: 1366 px breiten Fenster noch **26 px** breit, bei 1440 noch 100 statt
@@ -3077,32 +3077,13 @@ class PS5ConverterGUI:
         self._main_titlebar.lift()
         self._titlebar_right = tk.Frame(self._main_titlebar, bg=self._COLORS["header_bg"])
         self._titlebar_right.pack(side="right")
-        # Beenden-Button (direkt links vom Vollbild-Button)
-        self._btn_quit_title = flach_knopf(
-            self._titlebar_right,
-            text=self._t("titlebar.quit"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["header_bg"],
-            fg=self._COLORS["error_btn"],
-            activebackground=self._COLORS["error_btn_hover"],
-            activeforeground="white",
-            relief="flat",
-            cursor="hand2",
-            padx=10,
-            pady=0,
-            bd=0,
-            highlightthickness=0,
-            command=self.on_closing,
-        )
-        self._btn_quit_title.pack(side="right", padx=(2, 8))
-        # Hover-Effekt für Beenden-Button
-        def _quit_enter(e):
-            self._btn_quit_title.config(fg="white", bg=self._COLORS["error_btn_hover"])
-        def _quit_leave(e):
-            self._btn_quit_title.config(fg=self._COLORS["error_btn"], bg=self._COLORS["header_bg"])
-        self._btn_quit_title.bind("<Enter>", _quit_enter)
-        self._btn_quit_title.bind("<Leave>", _quit_leave)
-        # Design-Button (links von BEENDEN)
+        # Der Knopf BEENDEN stand hier bis v1.9.1. Entfernt, weil er
+        # nichts konnte, was nicht schon dreimal ging: Er rief on_closing -
+        # denselben Handler wie das X der Systemtitelleiste
+        # (WM_DELETE_WINDOW), wie Strg+Q und wie der Eintrag im
+        # Kontextmenue. Auch im Vollbildmodus, wo kein System-X da ist,
+        # bleiben Rechtsklick und Strg+Q.
+        # Design-Button (ganz rechts, seit BEENDEN weg ist)
         self._btn_design_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.design"),
@@ -4112,7 +4093,6 @@ class PS5ConverterGUI:
             ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
-            ("_btn_quit_title", "titlebar.quit"),
         ):
             widget = getattr(self, attr, None)
             if widget is not None:
@@ -37966,7 +37946,6 @@ class PS5ConverterGUI:
     #: Kontraste bis herunter auf 1,63. Diese Tabelle ist die einzige Stelle, an
     #: der die Zuordnung steht.
     _TITELLEISTE_SCHRIFTFARBEN: dict[str, str] = {
-        "_btn_quit_title":         "error_btn",
         "_btn_design_title":       "fg_secondary",
         "_btn_settings_title":     "fg_secondary",
         "_btn_credits_title":      "fg_accent",
