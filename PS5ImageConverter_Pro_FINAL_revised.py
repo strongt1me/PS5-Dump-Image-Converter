@@ -17820,7 +17820,7 @@ class PS5ConverterGUI:
         # Container-Modi melden "Strukturprüfung", alle anderen "Abschlussprüfung".
         group = "container" if mode in ("pack_file", "ffpkg_to_ffpfsc") else "default"
         stages = ("check_output", "drain_log", "calc_sizes", "verify_ok",
-                  "verify_failed", "done", "keepalive_verify")
+                  "verify_failed", "done", "skipped", "keepalive_verify")
         if stage not in stages:
             stage = "keepalive_verify"
         return self._t(f"status.completion.{group}.{stage}")
@@ -19925,7 +19925,15 @@ class PS5ConverterGUI:
                         self.progress.grid_remove()
                     if hasattr(self, "percent_label"):
                         self.percent_label.grid_remove()
-                    self.status_label.config(text=self._format_phase_status(self._completion_status_text(mode, "done")))
+                    # "Erfolgreich abgeschlossen" waere hier eine falsche
+                    # Aussage: Bei einem uebersprungenen Validatorlauf ist
+                    # nichts geprueft worden. Die Zeile kommt aus dem
+                    # gemeinsamen Abschluss aller Aufgaben - deshalb hier
+                    # die Stufe wechseln statt den Abschluss umzubauen.
+                    _stufe = ("skipped"
+                              if getattr(self, "_last_validation_status", "") == "SKIPPED"
+                              else "done")
+                    self.status_label.config(text=self._format_phase_status(self._completion_status_text(mode, _stufe)))
                     # Bei aktivem Herunterfahren keine Erfolgsmeldung: Sie wuerde
                     # auf eine Bestaetigung warten, die niemand gibt - der Sinn
                     # der Funktion ist ja, den Rechner unbeaufsichtigt zu lassen.
@@ -21441,6 +21449,11 @@ class PS5ConverterGUI:
           - .ffpfsc/.ffpfs -> ps5_validator ffpfs
           - .ffpkg -> UFS2Tool info + schreibgeschuetztes fsck_ufs
         """
+
+        # Vor jedem Lauf loeschen. Der Wert steuert die Schlusszeile und den
+        # Rueckgabewert im --cli-Weg; bliebe er stehen, meldete der naechste
+        # Lauf faelschlich "ungeprueft".
+        self._last_validation_status = ""
 
         self._append_to_log("\n" + "=" * 60 + "\n")
         self._append_to_log(self._t('log.auto.0121'))
