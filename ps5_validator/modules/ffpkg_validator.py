@@ -1,6 +1,7 @@
 """Native UFS2 validation for PS5 ``.ffpkg`` filesystem images."""
 from __future__ import annotations
 
+import errno
 import os
 import subprocess
 from pathlib import Path
@@ -11,6 +12,29 @@ from ps5_validator.utils.file_io import fmt_bytes
 from ps5_validator.utils.ffpkg_support import build_readonly_validation_commands
 from ps5_validator.utils.hashing import sha256_stream
 from ps5_validator.utils.logger import get_logger
+
+
+#: Windows meldet "Der angeforderte Vorgang erfordert erhoehte Rechte" als
+#: WinError 740. Unter Linux und macOS kommt stattdessen EACCES/EPERM,
+#: wenn das Werkzeug nicht ausfuehrbar ist oder das Abbild nicht
+#: eingehaengt werden darf.
+_RECHTE_WINERROR = 740
+_RECHTE_ERRNO = (errno.EACCES, errno.EPERM)
+
+
+def _braucht_rechte(exc: BaseException) -> bool:
+    """Ob dieser Fehler nur fehlende Rechte meldet - und keinen Schaden.
+
+    Der Unterschied entscheidet ueber das Urteil: Fehlende Rechte heissen
+    "nicht geprueft", alles andere heisst "beanstandet". Bis v1.9.0 war
+    beides dasselbe, und ein einwandfreies ``.ffpkg`` galt ohne
+    Administratorrechte als fehlerhaft.
+    """
+    if getattr(exc, "winerror", None) == _RECHTE_WINERROR:
+        return True
+    if isinstance(exc, PermissionError):
+        return True
+    return getattr(exc, "errno", None) in _RECHTE_ERRNO
 
 
 class FfpkgValidator(BaseValidator):
@@ -77,6 +101,15 @@ class FfpkgValidator(BaseValidator):
             info_cmd, fsck_cmd = build_readonly_validation_commands(tool, image)
             info_rc, info_output = self._run_tool(*info_cmd[1:])
         except (OSError, ValueError) as exc:
+            if _braucht_rechte(exc):
+                # Kein Urteil ueber das Abbild: Es wurde nicht angesehen.
+                # Bis v1.9.0 stand hier FAILED, und ein einwandfreies .ffpkg
+                # galt dadurch als beanstandet.
+                result.set_skipped(
+                    "UFS2Tool braucht Administratorrechte - die Struktur "
+                    f"wurde nicht geprueft ({exc})."
+                )
+                return result
             result.set_failed(f"UFS2Tool konnte nicht gestartet werden: {exc}")
             return result
         result.summary["ufs2_info"] = info_output or "keine Ausgabe"
