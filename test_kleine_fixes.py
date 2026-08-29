@@ -45,7 +45,19 @@ class HintergrundbildPfadTests(unittest.TestCase):
     def test_mitgeliefertes_bild_wird_als_markierung_abgelegt(self) -> None:
         wert = self.GUI._encode_background_setting(self.bild)
         self.assertTrue(wert.startswith(self.GUI._BUNDLED_IMAGE_MARKER))
-        self.assertEqual(wert.split(":", 1)[1], os.path.basename(self.bild))
+        # Gespeichert wird der Weg *innerhalb* des Bildordners, nicht bloss
+        # der Dateiname: Die Bilder duerfen in Unterordnern liegen, und zwei
+        # Ordner koennen denselben Dateinamen fuehren.
+        innen = os.path.relpath(self.bild, self.bundle).replace(os.sep, "/")
+        self.assertEqual(wert.split(":", 1)[1], innen)
+        self.assertNotIn("\\", wert, "Trennzeichen nicht vereinheitlicht")
+
+    def test_markierung_traegt_keinen_absoluten_pfad(self) -> None:
+        # Der eigentliche Sinn der Markierung: In der EXE liegen die Bilder
+        # unter einem fluechtigen _MEI-Ordner, ein absoluter Pfad zeigte nach
+        # dem Neustart ins Leere.
+        wert = self.GUI._encode_background_setting(self.bild)
+        self.assertNotIn(os.path.normcase(self.bundle), os.path.normcase(wert))
 
     def test_markierung_wird_wieder_aufgeloest(self) -> None:
         wert = self.GUI._encode_background_setting(self.bild)

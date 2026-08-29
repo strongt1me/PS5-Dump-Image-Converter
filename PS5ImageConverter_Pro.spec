@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.0
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.1
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -76,6 +76,14 @@ if os.path.isdir(_anleitungen):
 _webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
 if os.path.isdir(_webkit):
     _datas.append((_webkit, 'PS5 WebKit Autoloader'))
+
+# Payload fuer die Direktinstallation einer Anwendung. Klein genug, um
+# es immer mitzunehmen; ohne das ELF kann das Werkzeug die Kachel auf
+# der Konsole nicht anmelden. appinst.c und NOTICE.md kommen mit, weil
+# das Payload von GPL-3-Quellen abstammt.
+_appinstall = os.path.join(_here, 'PS5-AppInstall')
+if os.path.isdir(_appinstall):
+    _datas.append((_appinstall, 'PS5-AppInstall'))
 
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
 for _mkpfs_src in _mkpfs_roots:
@@ -192,6 +200,8 @@ a = Analysis(
         # Installer V2" liess sich mangels laufendem Dienst nie erproben. Der
         # Quelltext samt Tests bleibt im Projekt, wandert aber nicht in die EXE.
         'ps5_validator.utils.self_reader',
+        'ps5_validator.utils.app_install',
+        'ps5_validator.utils.payload_versand',
         'ps5_validator.utils.ps5_downloads',
         'ps5_validator.utils.ps5_backport',
         # Tkinter
@@ -307,7 +317,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.0',
+    name='PS5_Dump_Image_Converter_v1.9.1',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

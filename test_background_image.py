@@ -376,8 +376,9 @@ class SpeichernKnopfTests(unittest.TestCase):
         # Dialog hat seit v1.8.97 eine dritte Combobox (Farbsehschwaeche),
         # und die naechste kommt bestimmt. Erkennbar sind die richtigen an
         # ihrem Inhalt - dort stehen Bilddateien.
+        endungen = mod.PS5ConverterGUI._BACKGROUND_EXTENSIONS
         boxen = [b for b in self._sammle(dlg, "Combobox")
-                 if any(str(w).lower().endswith(".png")
+                 if any(str(w).lower().endswith(endungen)
                         for w in (b.cget("values") or ()))]
         self.assertEqual(len(boxen), 2,
                          "erwartet: Haupt- und Sidebar-Bildliste")
@@ -389,12 +390,23 @@ class SpeichernKnopfTests(unittest.TestCase):
         boxen[1].set(seite)
         self._speichern(dlg)
         gespeichert = self._lies()
-        self.assertEqual(gespeichert.get("background_image_path"), f"bundled:{haupt}")
-        self.assertEqual(gespeichert.get("sidebar_background_image_path"),
-                         f"bundled:{seite}")
+        # Nicht auf die Schreibweise festlegen: Der gespeicherte Wert traegt
+        # den Unterordner mit ("bundled:Main/..."), der Listeneintrag zeigt
+        # nur den Dateinamen. Gemeint ist beides Mal dieselbe Datei - und
+        # genau das wird geprueft.
+        for schluessel, gewaehlt in (("background_image_path", haupt),
+                                     ("sidebar_background_image_path", seite)):
+            wert = gespeichert.get(schluessel, "")
+            self.assertTrue(wert.startswith(
+                mod.PS5ConverterGUI._BUNDLED_IMAGE_MARKER), wert)
+            pfad = mod.PS5ConverterGUI._decode_background_setting(wert)
+            self.assertTrue(pfad, "gespeicherter Wert nicht aufloesbar: %s" % wert)
+            self.assertEqual(os.path.basename(pfad), os.path.basename(gewaehlt))
 
     def test_speichern_ohne_aenderung_laesst_alles_stehen(self):
         vorhandene = mod.PS5ConverterGUI._bundled_background_images
+        # Bewusst ohne Unterordner: So sahen gespeicherte Werte frueher aus,
+        # und sie muessen weiter greifen.
         vorher = {"background_image_path":
                   "bundled:" + os.path.basename(vorhandene("haupt")[-1]),
                   "sidebar_background_image_path":
@@ -483,18 +495,24 @@ class StandardHintergrundTests(unittest.TestCase):
                 self.assertTrue(wert.startswith(marke))
 
     def test_sidebar_vorgabe_stammt_aus_der_sidebar_liste(self) -> None:
-        marke = mod.PS5ConverterGUI._BUNDLED_IMAGE_MARKER
-        name = mod.STANDARD_SIDEBAR_HINTERGRUND[len(marke):]
-        namen = [os.path.basename(x) for x
-                 in mod.PS5ConverterGUI._bundled_background_images("sidebar")]
-        self.assertIn(name, namen)
+        # Ueber den aufgeloesten Pfad vergleichen, nicht ueber den
+        # Dateinamen: Die Vorgabe darf einen Unterordner tragen
+        # ("bundled:Main/..."), die Liste liefert volle Pfade.
+        pfad = mod.PS5ConverterGUI._decode_background_setting(mod.STANDARD_SIDEBAR_HINTERGRUND)
+        self.assertTrue(pfad, "Vorgabe nicht aufloesbar: %s" % mod.STANDARD_SIDEBAR_HINTERGRUND)
+        liste = mod.PS5ConverterGUI._bundled_background_images("sidebar")
+        self.assertIn(os.path.normcase(pfad),
+                      [os.path.normcase(x) for x in liste])
 
     def test_haupt_vorgabe_stammt_aus_der_hauptliste(self) -> None:
-        marke = mod.PS5ConverterGUI._BUNDLED_IMAGE_MARKER
-        name = mod.STANDARD_HINTERGRUND[len(marke):]
-        namen = [os.path.basename(x) for x
-                 in mod.PS5ConverterGUI._bundled_background_images("haupt")]
-        self.assertIn(name, namen)
+        # Ueber den aufgeloesten Pfad vergleichen, nicht ueber den
+        # Dateinamen: Die Vorgabe darf einen Unterordner tragen
+        # ("bundled:Main/..."), die Liste liefert volle Pfade.
+        pfad = mod.PS5ConverterGUI._decode_background_setting(mod.STANDARD_HINTERGRUND)
+        self.assertTrue(pfad, "Vorgabe nicht aufloesbar: %s" % mod.STANDARD_HINTERGRUND)
+        liste = mod.PS5ConverterGUI._bundled_background_images("haupt")
+        self.assertIn(os.path.normcase(pfad),
+                      [os.path.normcase(x) for x in liste])
 
     def test_abwahl_wird_nicht_von_der_vorgabe_ueberstimmt(self) -> None:
         """Wer ausdruecklich kein Bild will, bekommt keins aufgedraengt.

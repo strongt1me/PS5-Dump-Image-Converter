@@ -235,6 +235,58 @@ class InstallerwegTests(unittest.TestCase):
         self.assertEqual(g.ftp.abgelegt, [])
         self.assertEqual(g.gesendet, [])
 
+    # ---------------------------------------------------------------- Wahl
+    #
+    # Ist 9021 zu, aber der Payload Manager erreichbar, gibt es zwei Wege.
+    # Der USB-Weg bleibt dabei ausdruecklich erhalten: Er traegt auch dann
+    # noch, wenn gar kein Dienst mehr antwortet.
+
+    def _mit_wahl(self, g: PS5ConverterGUI, wahl: str) -> None:
+        """Legt fest, was der Auswahldialog zurueckgibt, statt ihn zu oeffnen."""
+        g.gefragt: list[str] = []
+
+        def _auswahl(_titel, frage, eintraege, parent=None):
+            g.gefragt.append(frage)
+            g.angeboten = list(eintraege)
+            return wahl
+        g._auswahl_dialog = _auswahl
+
+    def test_bei_erreichbarem_payload_manager_stehen_zwei_wege(self) -> None:
+        g = _gui(offene_ports={2121, 8084})
+        self._mit_dialogen(g, True)
+        self._mit_wahl(g, "")          # nichts gewaehlt: es passiert nichts
+        g._webkit_installer_senden()
+        self.assertEqual(len(g.angeboten), 2, g.angeboten)
+        self.assertEqual(g.gesendet, [], "ohne Wahl gesendet")
+        self.assertEqual(g.ftp.abgelegt, [], "ohne Wahl abgelegt")
+
+    def test_wahl_payload_manager_schickt_die_datei(self) -> None:
+        g = _gui(offene_ports={2121, 8084})
+        self._mit_dialogen(g, True)
+        self._mit_wahl(g, STRINGS["webkit.weg_pldmgr"]["de"])
+        g._webkit_installer_senden()
+        self.assertEqual(len(g.gesendet), 1, "nicht ueber den Payload Manager")
+        self.assertEqual(g.ftp.abgelegt, [], "trotzdem den USB-Weg genommen")
+
+    def test_wahl_usb_legt_weiterhin_ab(self) -> None:
+        # Der alte Weg darf durch den neuen nicht verlorengehen.
+        g = _gui(offene_ports={2121, 8084})
+        self._mit_dialogen(g, True)
+        self._mit_wahl(g, STRINGS["webkit.weg_usb"]["de"])
+        g._webkit_installer_senden()
+        self.assertEqual(g.gesendet, [], "statt USB gesendet")
+        self.assertEqual(g.ftp.abgelegt, ["STOR /mnt/usb0/%s" % self.elf])
+
+    def test_ohne_payload_manager_bleibt_der_alte_dialog(self) -> None:
+        # Eine Auswahl mit einem einzigen Eintrag waere eine Zumutung.
+        g = _gui(offene_ports={2121})
+        self._mit_dialogen(g, True)
+        self._mit_wahl(g, "sollte nicht gefragt werden")
+        g._webkit_installer_senden()
+        self.assertEqual(getattr(g, "gefragt", []), [],
+                         "hat trotz fehlendem Payload Manager gewaehlt")
+        self.assertEqual(g.ftp.abgelegt, ["STOR /mnt/usb0/%s" % self.elf])
+
     def test_der_hinweis_nennt_beide_dinge(self) -> None:
         """Der Text muss den Payload Manager und die Kachel nennen.
 

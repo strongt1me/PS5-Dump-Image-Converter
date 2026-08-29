@@ -2,7 +2,112 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.0):** Neu in der Titelleiste ist der Knopf **WEBKIT AUTOLOADER**, und in den Einstellungen lässt sich jetzt einstellen, wie stark das Hintergrundbild durch die Flächen scheint – dazu Helligkeit und Kontrast beider Bilder. Außerdem steht das Fenster beim Start endlich still.
+> **Kurz zum aktuellen Stand (v1.9.1):** Der Validator sagt nicht mehr „fehlgeschlagen“, wenn er gar nicht prüfen konnte. Fehlen Administratorrechte, heißt das Ergebnis jetzt **ungeprüft** – und der Bericht sagt dazu, was zu tun ist.
+
+---
+
+## Noch nicht veröffentlicht
+
+### Neues Werkzeug: App direkt installieren
+
+Unter **WEITERE TOOLS** steht ein neuer Eintrag **App direkt installieren**.
+Er bringt eine selbst gebaute Anwendung auf die Konsole und meldet sie dort
+an, sodass sie als **Kachel im Menü** erscheint – und startet.
+
+Kein Umweg über eine `.pkg`. Am 29.08.2026 auf einer echten Konsole
+gemessen: Ein selbst gebautes Paket installiert sich zwar, startet aber
+nicht (`CE-100096-6`), weil die Konsole keine Schlüssel ableiten kann. Das
+Werkzeug legt die Dateien deshalb im Klartext ab und lässt sie über eine
+Systemschnittstelle registrieren – dabei entsteht gar kein verschlüsseltes
+Abbild.
+
+Es gibt zwei Bauformen. Beide sind auf einer echten Konsole gebaut und
+gedrückt worden:
+
+- **Kachel für eine Weboberfläche** – bringt kein Programm mit, sondern
+  öffnet eine Adresse. So sind die meisten Homebrew-Kacheln gebaut. Die
+  Kachel erschien und öffnete die hinterlegte Seite; geschrieben wurde
+  dabei nur nach `/user/app`.
+- **Anwendung mit eigenem Programm** – mit eigenem `eboot.bin`. Der
+  Prozess lief an und beendete sich sauber (`onAppExit` statt
+  `AppCrash`).
+
+Bei der zweiten hängt alles an einem Feld: Das Modul muss mit der
+**Autorität `0x31…`** signiert sein. Mit der Vorgabe des Payload-SDK
+(`0x38…`) startet die Kachel, stürzt aber sofort ab (`CE-108262-9`) – die
+Konsole entschlüsselt die SELF-Blöcke nicht. Der Knopf **Prüfen** erkennt
+das und nennt den richtigen Signierbefehl, bevor irgendetwas geschrieben
+wird.
+
+### Payloads gehen jetzt auch ohne offenen Port 9021
+
+Bisher schickte das Programm jedes Payload stur an Port 9021. Wo dort
+niemand lauscht – bei manchen WebKit-Einstiegen der Normalfall – schlug
+alles fehl, was ein Payload braucht: ftpsrv nachladen, KLOG starten,
+MicroMount, der Autoloader.
+
+Ist der Port zu, lädt das Programm jetzt **elfldr über den Payload
+Manager** (Port 8084) nach. Danach ist 9021 offen und bleibt es – auch für
+alles, was danach kommt. `elfldr` liegt bei.
+
+### Hintergrundbilder dürfen in Unterordnern liegen
+
+Die mitgelieferten Bilder lagen bisher alle nebeneinander in
+`Hintergrundbilder`. Wer sie nach Verwendung sortierte – etwa in `Main` und
+`Siedbar` –, sah **keines** mehr in den Listen: Das Programm schaute nur auf
+die oberste Ebene.
+
+Jetzt werden Unterordner mitgelesen. Einsortiert wird weiterhin nach dem
+Format und nicht nach dem Ordnernamen, ein hohes Bild landet also auch dann
+bei der Seitenleiste, wenn es woanders liegt.
+
+Zwei Kleinigkeiten hängen daran: Der Dateiname genügt als Listeneintrag,
+solange er eindeutig ist – führen zwei Ordner denselben Namen, steht der
+Ordner davor, statt dass ein Bild stillschweigend verschwindet. Und eine
+früher getroffene Wahl bleibt erhalten, auch wenn die Sammlung später
+umsortiert wird.
+
+### Payload-Versand: der USB-Weg bleibt, bekommt aber Gesellschaft
+
+Ist Port 9021 zu, führte der WebKit-Autoloader bisher direkt auf den
+USB-Umweg. Jetzt steht eine Auswahl: über den Payload Manager senden – das
+Programm lädt dafür zuerst elfldr nach – oder wie bisher per FTP auf einen
+Datenträger. Der USB-Weg bleibt ausdrücklich erhalten; er trägt auch dann
+noch, wenn gar kein Dienst mehr antwortet. Antwortet auch der Payload
+Manager nicht, kommt unverändert die alte Rückfrage.
+
+### Kleinigkeiten
+
+- Der SELF-Inspektor nannte die Autoritätskategorie `0x38` bisher
+  „Unbekannt". Sie heißt jetzt **Fake (Payload-SDK)**.
+- Das WebKit-Autoloader-Fenster dankt **itsPLK** für seine Arbeit –
+  mit seinem Profilbild darüber.
+- Die Werkzeugtabelle im Handbuch sprach von „neun Werkzeugen" im Menü
+  **WEITERE TOOLS**. Es waren schon vorher mehr; jetzt stehen alle dort.
+
+---
+
+## v1.9.1 – 26.08.2026
+
+### „Ungeprüft" ist nicht dasselbe wie „fehlgeschlagen"
+
+Aufgabe 8 prüft ein `.ffpkg` über ein Werkzeug, das Administratorrechte
+braucht. Fehlten die, meldete der Bericht **fehlgeschlagen** – obwohl gar
+nichts angesehen worden war. Ein einwandfreies Abbild las sich dadurch wie
+ein beschädigtes.
+
+Dafür gibt es jetzt einen dritten Status **UNGEPRÜFT**, und der Bericht sagt
+im Klartext, dass das kein Urteil über die Datei ist und wie sich die Prüfung
+nachholen lässt.
+
+Im Kommandozeilenmodus gibt Aufgabe 8 in diesem Fall **4** zurück statt einer
+1 – weder Erfolg noch Fehlschlag.
+
+### Geteilte .pkg-Dateien: Reihenfolge abgesichert
+
+Beim Zusammenführen geteilter Pakete gehört `_10` hinter `_9`, nicht zwischen
+`_1` und `_2`. Das ist jetzt festgehalten, zusammen mit dem Fall eines
+fehlenden Mittelteils.
 
 ---
 
