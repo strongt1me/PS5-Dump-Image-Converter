@@ -214,6 +214,32 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn('_last_validation_status', self.quelle)
         self.assertIn("return 4", self.quelle)
 
+    def test_die_schlusszeile_sagt_nicht_erfolg(self) -> None:
+        """Sie kommt aus dem gemeinsamen Abschluss aller Aufgaben.
+
+        Bis v1.9.1 stand dort auch bei einem übersprungenen Lauf
+        „Erfolgreich abgeschlossen" – der Ergebnisblock darüber sagte etwas
+        anderes als die Statuszeile darunter. Statt den Abschluss umzubauen,
+        wechselt jetzt nur die Stufe.
+        """
+        self.assertIn('_completion_status_text(mode, _stufe)', self.quelle)
+        self.assertIn('"skipped"', self.quelle)
+        for schluessel in ("status.completion.default.skipped",
+                           "status.completion.container.skipped"):
+            with self.subTest(schluessel):
+                self.assertTrue(STRINGS[schluessel].get("de"))
+                self.assertTrue(STRINGS[schluessel].get("en"))
+                self.assertNotIn("rfolg", STRINGS[schluessel]["de"],
+                                 "Die Zeile behauptet weiter einen Erfolg")
+
+    def test_der_status_wird_vor_jedem_lauf_geloescht(self) -> None:
+        """Sonst erbte der nächste Lauf das „ungeprüft" des vorigen."""
+        self.assertIn('self._last_validation_status = ""', self.quelle)
+
+    def test_skipped_ist_eine_zulaessige_stufe(self) -> None:
+        self.assertIn('"verify_failed", "done", "skipped", "keepalive_verify"',
+                      self.quelle)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

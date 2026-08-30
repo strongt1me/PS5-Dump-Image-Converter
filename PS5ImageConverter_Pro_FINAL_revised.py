@@ -2798,10 +2798,10 @@ class PS5ConverterGUI:
     #: beim Sprachwechsel aus derselben Quelle neu gesetzt werden koennen.
     #: Knoepfe der Titelleiste, die bei zu wenig Platz ins Sammelmenue
     #: wandern - in der Reihenfolge, in der sie weichen. Zuerst die selteneren
-    #: Werkzeuge, zuletzt die Diagnose. BEENDEN, DESIGN, EINSTELLUNGEN,
-    #: WEITERE TOOLS und der Sprachumschalter bleiben immer stehen.
+    #: Werkzeuge, zuletzt die Diagnose. DESIGN, EINSTELLUNGEN, WEITERE
+    #: TOOLS und der Sprachumschalter bleiben immer stehen.
     #:
-    #: Der Grund: Die dreizehn Knoepfe brauchen zusammen rund 1515 px. Passt
+    #: Der Grund: Die zwoelf Knoepfe brauchen zusammen rund 1400 px. Passt
     #: das nicht, quetscht ``pack`` die zuletzt gepackten zusammen, statt sie
     #: wegzulassen - am 20.08.2026 gemessen war "BENUTZERHANDBUCH" bei einem
     #: 1366 px breiten Fenster noch **26 px** breit, bei 1440 noch 100 statt
@@ -3086,32 +3086,13 @@ class PS5ConverterGUI:
         self._main_titlebar.lift()
         self._titlebar_right = tk.Frame(self._main_titlebar, bg=self._COLORS["header_bg"])
         self._titlebar_right.pack(side="right")
-        # Beenden-Button (direkt links vom Vollbild-Button)
-        self._btn_quit_title = flach_knopf(
-            self._titlebar_right,
-            text=self._t("titlebar.quit"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["header_bg"],
-            fg=self._COLORS["error_btn"],
-            activebackground=self._COLORS["error_btn_hover"],
-            activeforeground="white",
-            relief="flat",
-            cursor="hand2",
-            padx=10,
-            pady=0,
-            bd=0,
-            highlightthickness=0,
-            command=self.on_closing,
-        )
-        self._btn_quit_title.pack(side="right", padx=(2, 8))
-        # Hover-Effekt für Beenden-Button
-        def _quit_enter(e):
-            self._btn_quit_title.config(fg="white", bg=self._COLORS["error_btn_hover"])
-        def _quit_leave(e):
-            self._btn_quit_title.config(fg=self._COLORS["error_btn"], bg=self._COLORS["header_bg"])
-        self._btn_quit_title.bind("<Enter>", _quit_enter)
-        self._btn_quit_title.bind("<Leave>", _quit_leave)
-        # Design-Button (links von BEENDEN)
+        # Der Knopf BEENDEN stand hier bis v1.9.1. Entfernt, weil er
+        # nichts konnte, was nicht schon dreimal ging: Er rief on_closing -
+        # denselben Handler wie das X der Systemtitelleiste
+        # (WM_DELETE_WINDOW), wie Strg+Q und wie der Eintrag im
+        # Kontextmenue. Auch im Vollbildmodus, wo kein System-X da ist,
+        # bleiben Rechtsklick und Strg+Q.
+        # Design-Button (ganz rechts, seit BEENDEN weg ist)
         self._btn_design_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.design"),
@@ -4121,7 +4102,6 @@ class PS5ConverterGUI:
             ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
-            ("_btn_quit_title", "titlebar.quit"),
         ):
             widget = getattr(self, attr, None)
             if widget is not None:
@@ -17829,7 +17809,7 @@ class PS5ConverterGUI:
         # Container-Modi melden "Strukturprüfung", alle anderen "Abschlussprüfung".
         group = "container" if mode in ("pack_file", "ffpkg_to_ffpfsc") else "default"
         stages = ("check_output", "drain_log", "calc_sizes", "verify_ok",
-                  "verify_failed", "done", "keepalive_verify")
+                  "verify_failed", "done", "skipped", "keepalive_verify")
         if stage not in stages:
             stage = "keepalive_verify"
         return self._t(f"status.completion.{group}.{stage}")
@@ -19934,7 +19914,15 @@ class PS5ConverterGUI:
                         self.progress.grid_remove()
                     if hasattr(self, "percent_label"):
                         self.percent_label.grid_remove()
-                    self.status_label.config(text=self._format_phase_status(self._completion_status_text(mode, "done")))
+                    # "Erfolgreich abgeschlossen" waere hier eine falsche
+                    # Aussage: Bei einem uebersprungenen Validatorlauf ist
+                    # nichts geprueft worden. Die Zeile kommt aus dem
+                    # gemeinsamen Abschluss aller Aufgaben - deshalb hier
+                    # die Stufe wechseln statt den Abschluss umzubauen.
+                    _stufe = ("skipped"
+                              if getattr(self, "_last_validation_status", "") == "SKIPPED"
+                              else "done")
+                    self.status_label.config(text=self._format_phase_status(self._completion_status_text(mode, _stufe)))
                     # Bei aktivem Herunterfahren keine Erfolgsmeldung: Sie wuerde
                     # auf eine Bestaetigung warten, die niemand gibt - der Sinn
                     # der Funktion ist ja, den Rechner unbeaufsichtigt zu lassen.
@@ -21450,6 +21438,11 @@ class PS5ConverterGUI:
           - .ffpfsc/.ffpfs -> ps5_validator ffpfs
           - .ffpkg -> UFS2Tool info + schreibgeschuetztes fsck_ufs
         """
+
+        # Vor jedem Lauf loeschen. Der Wert steuert die Schlusszeile und den
+        # Rueckgabewert im --cli-Weg; bliebe er stehen, meldete der naechste
+        # Lauf faelschlich "ungeprueft".
+        self._last_validation_status = ""
 
         self._append_to_log("\n" + "=" * 60 + "\n")
         self._append_to_log(self._t('log.auto.0121'))
@@ -28131,6 +28124,39 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Fokusanzeige nicht eingerichtet: %s", exc)
 
+    @staticmethod
+    def _tk_randvorgaben() -> dict[str, int]:
+        """Die Rand-Vorgabe je Widget-Klasse, an Tk selbst abgefragt.
+
+        Tk setzt ``borderwidth`` plattformabhaengig: unter Windows bei
+        ``Label`` und ``Button`` 2, unter Linux/X11 nur 1. Wer die
+        Windows-Werte fest einbaut, meldet unter Linux jedes unveraenderte
+        Widget als Befund.
+
+        Gefragt wird deshalb Tk: Ein frisches Widget jeder Klasse wird
+        angelegt, sein ``borderwidth`` gelesen und es sofort wieder
+        weggeworfen. Die Widgets werden nie angezeigt.
+        """
+        klassen = {
+            "Label": tk.Label, "Button": tk.Button, "Text": tk.Text,
+            "Canvas": tk.Canvas, "Entry": tk.Entry, "Listbox": tk.Listbox,
+            "Checkbutton": tk.Checkbutton, "Radiobutton": tk.Radiobutton,
+            "Menubutton": tk.Menubutton, "Message": tk.Message,
+            "Spinbox": tk.Spinbox,
+        }
+        vorgaben: dict[str, int] = {}
+        for name, bauart in klassen.items():
+            try:
+                probe = bauart()
+                try:
+                    vorgaben[name] = int(str(probe.cget("borderwidth")))
+                finally:
+                    probe.destroy()
+            except Exception as exc:
+                logger.debug("Randvorgabe fuer %s nicht messbar: %s", name, exc)
+                vorgaben[name] = 0
+        return vorgaben
+
     def _diagnose_randlos(self) -> list[str]:
         """Sichtbare Raender - und ob ohne sie noch alles erkennbar ist.
 
@@ -28161,10 +28187,13 @@ class PS5ConverterGUI:
         except Exception:
             return ["Randprüfung: kein Fenster"]
 
-        VORGABE = {"Label": 2, "Button": 2, "Text": 2, "Canvas": 2,
-                   "Entry": 2, "Listbox": 2, "Checkbutton": 2,
-                   "Radiobutton": 2, "Menubutton": 2, "Message": 2,
-                   "Spinbox": 2}
+        # Die Vorgabe je Klasse wird GEMESSEN, nicht angenommen. Tk setzt
+        # sie plattformabhaengig: Unter Windows ist borderwidth bei Label
+        # und Button 2, unter Linux/X11 nur 1. Eine feste Tabelle mit den
+        # Windows-Werten meldete unter Linux jedes unveraenderte Widget als
+        # Befund - am 26.08.2026 in WSLg gemessen: sieben Phantom-Raender,
+        # darunter die fuenf Hintergrundbild-Flaechen.
+        VORGABE = self._tk_randvorgaben()
         stil = ttk.Style()
         treffer: list[str] = []
 
@@ -28187,13 +28216,18 @@ class PS5ConverterGUI:
                             gruende.append("Stil %s: relief=%s" % (name, rel))
                     else:
                         klasse = w.winfo_class()
+                        rel = ""
                         if "relief" in w.keys():
                             rel = str(w.cget("relief") or "")
                             if rel and rel not in ("flat", ""):
                                 gruende.append("relief=%s" % rel)
                         if "borderwidth" in w.keys():
                             bd = zahl(w.cget("borderwidth"))
-                            if bd > 0 and bd != VORGABE.get(klasse, 0):
+                            # Nur melden, wenn der Rand auch gezeichnet
+                            # wird: Bei relief="flat" zeichnet Tk nichts,
+                            # wie breit die Angabe auch ist.
+                            flach = rel in ("flat", "")
+                            if bd > 0 and not flach and bd != VORGABE.get(klasse, 0):
                                 gruende.append("borderwidth=%d" % bd)
                     if gruende:
                         try:
@@ -38453,7 +38487,6 @@ class PS5ConverterGUI:
     #: Kontraste bis herunter auf 1,63. Diese Tabelle ist die einzige Stelle, an
     #: der die Zuordnung steht.
     _TITELLEISTE_SCHRIFTFARBEN: dict[str, str] = {
-        "_btn_quit_title":         "error_btn",
         "_btn_design_title":       "fg_secondary",
         "_btn_settings_title":     "fg_secondary",
         "_btn_credits_title":      "fg_accent",

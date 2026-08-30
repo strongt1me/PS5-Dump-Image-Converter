@@ -207,10 +207,12 @@ class WidgetbaumTests(unittest.TestCase):
             except (TypeError, ValueError):
                 return 0
 
-        # Tks eigene Vorgaben sind kein Befund.
-        VORGABE = {"Label": 2, "Button": 2, "Text": 2, "Canvas": 2, "Entry": 2,
-                   "Listbox": 2, "Checkbutton": 2, "Radiobutton": 2,
-                   "Menubutton": 2, "Message": 2, "Spinbox": 2}
+        # Tks eigene Vorgaben sind kein Befund - und sie haengen an der
+        # Plattform: Unter Windows ist borderwidth bei Label und Button 2,
+        # unter Linux/X11 nur 1. Eine feste Tabelle mit den Windows-Werten
+        # meldete unter Linux jedes unveraenderte Widget (am 26.08.2026 in
+        # WSLg gemessen: sieben Stueck). Deshalb bei Tk nachfragen.
+        VORGABE = self.app._tk_randvorgaben()
         treffer = []
 
         def gehe(w):
@@ -236,13 +238,17 @@ class WidgetbaumTests(unittest.TestCase):
                             gruende.append("Stil %s relief=%s" % (name, rel))
                     else:
                         klasse = w.winfo_class()
+                        rel = ""
                         if "relief" in w.keys():
                             rel = str(w.cget("relief") or "")
                             if rel and rel not in ("flat", ""):
                                 gruende.append("relief=%s" % rel)
                         if "borderwidth" in w.keys():
                             bd = zahl(w.cget("borderwidth"))
-                            if bd > 0 and bd != VORGABE.get(klasse, 0):
+                            # relief="flat" zeichnet nichts, wie breit die
+                            # Angabe auch ist.
+                            flach = rel in ("flat", "")
+                            if bd > 0 and not flach and bd != VORGABE.get(klasse, 0):
                                 gruende.append("borderwidth=%d" % bd)
                     if gruende:
                         treffer.append("%s %s" % (w.winfo_class(), ", ".join(gruende)))
@@ -259,6 +265,48 @@ class WidgetbaumTests(unittest.TestCase):
         Protokollfeld. Alle namenlos."""
         treffer = self._raender()
         self.assertEqual(treffer, [], "noch %d Raender: %r" % (len(treffer), treffer[:6]))
+
+    def test_die_randvorgaben_kommen_von_tk(self) -> None:
+        """Gemessen statt angenommen - Tk setzt sie je Plattform anders.
+
+        Unter Windows ist ``borderwidth`` bei ``Label`` und ``Button`` 2,
+        unter Linux/X11 nur 1. Eine fest eingebaute Tabelle mit den
+        Windows-Werten meldete unter Linux jedes unveraenderte Widget als
+        Befund - am 26.08.2026 in WSLg gemessen: sieben Phantom-Raender,
+        darunter alle fuenf Flaechen des Hintergrundbilds.
+        """
+        import tkinter as tk
+        vorgaben = self.app._tk_randvorgaben()
+        self.assertIn("Label", vorgaben)
+        self.assertIn("Button", vorgaben)
+        # Der Wert muss dem entsprechen, was Tk hier wirklich vergibt.
+        for name, bauart in (("Label", tk.Label), ("Button", tk.Button),
+                             ("Entry", tk.Entry)):
+            with self.subTest(klasse=name):
+                probe = bauart(self.wurzel)
+                try:
+                    echt = int(str(probe.cget("borderwidth")))
+                finally:
+                    probe.destroy()
+                self.assertEqual(vorgaben[name], echt)
+
+    def test_flacher_rand_ist_kein_befund(self) -> None:
+        """``relief="flat"`` zeichnet nichts - wie breit die Angabe auch ist.
+
+        Ohne diese Regel gilt jedes Widget mit gesetztem ``borderwidth`` als
+        Befund, obwohl am Bildschirm nichts zu sehen ist.
+        """
+        import tkinter as tk
+        flach = tk.Frame(self.wurzel, relief="flat", borderwidth=6,
+                         width=40, height=40)
+        flach.place(x=5, y=5)
+        self.wurzel.update_idletasks()
+        try:
+            self.assertEqual(self._raender(), [],
+                             "Ein flacher Rahmen wurde als Rand gemeldet")
+        finally:
+            flach.destroy()
+            self.wurzel.update_idletasks()
 
     def test_die_pruefung_wuerde_einen_rand_auch_finden(self) -> None:
         """Gegenprobe - sonst bestünde der Test auch bei kaputter Suche."""
