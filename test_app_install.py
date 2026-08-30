@@ -113,11 +113,22 @@ class _FtpNachbau:
         self.befehle.append(befehl)
         return "200 ok"
 
+    #: Ordner, bei denen mkd scheitert und cwd ebenfalls - also ein
+    #: echter Fehler und nicht "gibt es schon".
+    unerreichbar: set = set()
+
     def mkd(self, pfad):
-        if pfad in self.vorhanden:
-            raise OSError("550 gibt es schon")
+        if pfad in self.vorhanden or pfad in self.unerreichbar:
+            raise OSError("550 geht nicht")
         self.vorhanden.add(pfad)
         self.angelegt.append(pfad)
+
+    def cwd(self, pfad):
+        if pfad in self.unerreichbar:
+            raise OSError("550 kein Zugriff")
+        if pfad not in self.vorhanden:
+            raise OSError("550 nicht da")
+        return "250 ok"
 
     def storbinary(self, befehl, strom):
         ziel = befehl.split(" ", 1)[1]
@@ -484,6 +495,38 @@ class UebertragungTests(unittest.TestCase):
         self.assertNotIn("/user/app/BREW00001/sce_sys/icon0.png",
                          self.ftp.geschrieben)
         self.assertIn("/system_ex/app/BREW00001/eboot.bin", self.ftp.geschrieben)
+
+
+    def test_echter_ordnerfehler_bricht_ab(self):
+        # Bis zur Durchsicht galt jede Ausnahme von mkd als "gibt es
+        # schon". Fehlende Schreibrechte trotz MTRW sahen damit aus wie
+        # ein vorhandener Ordner - und der Lauf schrieb weiter in eine
+        # halb angelegte Installation.
+        self.ftp.unerreichbar = {app_install.USER_APP + "/FAKE02932/sce_sys"}
+        try:
+            with self.assertRaises(app_install.AppInstallFehler):
+                self._uebertragen()
+        finally:
+            self.ftp.unerreichbar = set()
+        self.assertEqual(self.ftp.geschrieben, {},
+                         "trotz unbrauchbarem Ordner geschrieben")
+
+    def test_vorhandener_ordner_bleibt_folgenlos(self):
+        # Die Gegenprobe: Was wirklich schon da ist, darf nicht stoeren.
+        self.ftp = _FtpNachbau(
+            vorhandene_ordner=app_install.zielordner("FAKE02932"))
+        self._uebertragen()
+        self.assertEqual(self.ftp.angelegt, [])
+        self.assertIn("/system_ex/app/FAKE02932/eboot.bin", self.ftp.geschrieben)
+
+    def test_der_elfldr_pfad_wird_durchgereicht(self):
+        # Ohne ihn weckt payload_senden elfldr nicht, faellt auf den
+        # Payload Manager zurueck - und der liefert keine Ausgabe, womit
+        # antwort_beurteilen() zwangslaeufig fehlschlaegt.
+        with io.open(HAUPTDATEI, "rb") as fh:
+            quelle = fh.read().decode("utf-8")
+        self.assertIn("elfldr_pfad=self._elfldr_payload_path()", quelle)
+        self.assertNotIn("app_install.payload_senden(host, payload)", quelle)
 
 
 class PayloadTests(unittest.TestCase):

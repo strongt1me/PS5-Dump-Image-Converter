@@ -17,7 +17,8 @@ nachzubilden.
 
 Der Weg hier umgeht das Paketformat vollstaendig. Die Dateien werden im
 Klartext ins Dateisystem gelegt und ueber die Systemschnittstelle
-sceAppInstUtilAppInstallTitleDir registriert. Ein verschluesseltes
+sceAppInstUtilAppInstallAll registriert - warum nicht die
+genauere Funktion, steht weiter unten. Ein verschluesseltes
 Abbild entsteht dabei nie, also gibt es auch nichts aufzuschliessen -
 dasselbe Prinzip, aus dem auch ShadowMount+ funktioniert.
 

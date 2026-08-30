@@ -32412,7 +32412,17 @@ class PS5ConverterGUI:
             try:
                 ftp.mkd(ordner)
                 melden("angelegt: " + ordner)
-            except Exception:
+            except Exception as exc:
+                # Nicht jede Ausnahme heisst "gibt es schon". Fehlende
+                # Schreibrechte trotz MTRW und ein Verbindungsabbruch
+                # kommen hier genauso an, und wer die verschluckt,
+                # schreibt danach in eine halb angelegte Installation.
+                try:
+                    ftp.cwd(ordner)
+                except Exception:
+                    raise app_install.AppInstallFehler(
+                        self._t("appinstall.error_mkdir", ordner=ordner,
+                                error=exc)) from exc
                 melden("vorhanden: " + ordner)
 
         def _hoch(quelle: str, ziel: str) -> None:
@@ -32443,7 +32453,12 @@ class PS5ConverterGUI:
         _hoch_roh((kennung + "\n").encode("ascii"), app_install.KENNUNGSDATEI)
 
         melden("Payload an %s:%d" % (host, app_install.ELFLDR_PORT))
-        antwort = app_install.payload_senden(host, payload)
+        # elfldr-Pfad durchreichen: Ist Port 9021 zu, wird elfldr sonst
+        # nicht geweckt, der Versand faellt auf den Payload Manager
+        # zurueck - und der liefert keine Ausgabe, womit
+        # antwort_beurteilen() zwangslaeufig fehlschlaegt.
+        antwort = app_install.payload_senden(
+            host, payload, elfldr_pfad=self._elfldr_payload_path())
         for zeile in antwort.splitlines():
             melden("  " + zeile)
         geklappt, text = app_install.antwort_beurteilen(antwort)
@@ -36566,7 +36581,13 @@ class PS5ConverterGUI:
         elif weg == payload_versand.WEG_PLDMGR:
             self._append_to_log(
                 self._t("payload.via_pldmgr", name=name, ziel=bemerkung) + "\n")
-            return True, self._t("payload.sent_pldmgr", bytes=len(daten))
+            # Der ausfuehrliche Hinweis gehoert ins Protokoll. Die
+            # Rueckgabe ist eine Groessenangabe - Aufrufer setzen sie in
+            # Saetze ein ("Der Installer wurde geschickt ({groesse})"),
+            # ein ganzer Satz ergibt dort Unsinn.
+            self._append_to_log(
+                self._t("payload.sent_pldmgr", bytes=len(daten))
+                + "\n")
         return True, f"{len(daten)} Bytes"
 
     def _ensure_ftpsrv(self, host: str) -> int:

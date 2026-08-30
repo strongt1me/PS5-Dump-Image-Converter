@@ -52,7 +52,7 @@ AUTHORITY_CATEGORY_FAKE = 0x31
 AUTHORITY_CATEGORY_GENUINE = 0x45
 AUTHORITY_CATEGORY_PRIVILEGED = 0x48
 #: Kategorie der Fake-Autoritaet, die make_fself.py aus dem PS5-Payload-SDK
-#: vergibt (AuthID 0x3800000000000022). Bis v1.9.1 lief sie als Unbekannt
+#: vergibt (AuthID 0x3800000000000022). Bis v1.9.0 lief sie als Unbekannt
 #: durch, obwohl gerade selbst gebaute Anwendungen sie tragen.
 AUTHORITY_CATEGORY_SDK_FAKE = 0x38
 
