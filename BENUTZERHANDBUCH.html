@@ -681,7 +681,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.10</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit neun Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit dreizehn Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>BACKPORT</strong> (13.5), <strong>DOWNLOADS</strong> (13.4), <strong>PKG-MERGER</strong>, <strong>PARAM/MANIFEST</strong>, <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.11), <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1151,8 +1151,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Bereich</th><th>Bilder</th><th>Mitgeliefert</th></tr></thead>
     <tbody>
-      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
-      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 640 × 1440 bzw. 640 × 1020 Pixel</td></tr>
+      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 3840 × 2160 Pixel (12 Stück)</td></tr>
+      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 520 × 2160 Pixel (12 Stück)</td></tr>
     </tbody>
   </table>
   </div>
@@ -1160,6 +1160,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
   <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
   <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
+  <div class="kasten hinweis">
+    <span class="titel">Eigene Bilder dazulegen</span>
+    <p>Der Ordner <code>Hintergrundbilder</code> darf <strong>Unterordner</strong>
+    enthalten &ndash; mitgeliefert sind <code>Main</code> und
+    <code>Siedbar</code>. Alles darin erscheint in den Listen, einsortiert
+    weiterhin nach dem Format und nicht nach dem Ordnernamen. Ein hohes Bild
+    landet also auch dann bei der Seitenleiste, wenn es im Ordner der
+    Hauptbilder liegt.</p>
+    <p>Der Dateiname gen&uuml;gt als Eintrag, solange er eindeutig ist; f&uuml;hren
+    zwei Ordner denselben Namen, steht der Ordner davor. Eine fr&uuml;her
+    getroffene Wahl bleibt erhalten, auch wenn Sie die Sammlung sp&auml;ter
+    umsortieren &ndash; das Programm sucht den Dateinamen dann in allen
+    Unterordnern.</p>
+  </div>
+
   <div class="kasten">
     <span class="titel">Warum zwei getrennte Listen</span>
     <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich müsste so stark beschnitten werden, dass vom Motiv kaum etwas übrig bliebe – verzerrt wird nie, aber sinnvoll ist es auch nicht. Deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
@@ -1302,6 +1317,147 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   ein Dateiname nicht das Einzige ist, woran man sich orientieren kann. Sie
   zeigt das Bild bereits mit Helligkeit und Kontrast, so wie es im Fenster
   ankommt.</p>
+
+
+  <h3>13.11 App direkt installieren &ndash; eine Kachel ohne Paketdatei</h3>
+
+  <p>Legt eine Anwendung auf die Konsole und meldet sie dort an, sodass sie
+  als <strong>Kachel im Men&uuml;</strong> erscheint. Zu finden unter
+  <strong>WEITERE TOOLS &rarr; App direkt installieren</strong>.</p>
+
+  <p>Das Werkzeug kennt <strong>zwei Bauformen</strong>. Welche die richtige
+  ist, entscheidet nicht der Geschmack, sondern was auf der Konsole
+  l&auml;uft &ndash; und dazu gibt es Messungen.</p>
+
+  <div class="tabelle">
+  <table>
+    <thead><tr><th></th><th>Kachel f&uuml;r eine Weboberfl&auml;che</th>
+      <th>Anwendung mit eigenem Programm</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Bringt mit</strong></td>
+          <td><code>param.json</code>, <code>icon0.png</code></td>
+          <td>zus&auml;tzlich ein <code>eboot.bin</code></td></tr>
+      <tr><td><strong>Schreibt nach</strong></td>
+          <td>nur <code>/user/app/&lt;ID&gt;</code></td>
+          <td>auch <code>/system_ex/app/&lt;ID&gt;</code></td></tr>
+      <tr><td><strong>Kategorie</strong></td><td>65536</td>
+          <td>0, danach 33554432</td></tr>
+      <tr><td><strong>Start</strong></td>
+          <td>&ouml;ffnet eine Adresse</td><td>eigenes Programm</td></tr>
+      <tr><td><strong>Erprobt</strong></td>
+          <td><strong>ja</strong></td>
+          <td><strong>ja</strong> &ndash; mit Autorit&auml;t <code>0x31</code>, siehe unten</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h4>Kachel f&uuml;r eine Weboberfl&auml;che</h4>
+
+  <p>Diese Kachel bringt <em>kein</em> Programm mit. Sie &ouml;ffnet eine
+  Adresse &ndash; &uuml;blicherweise eine Oberfl&auml;che, die ein Payload
+  auf der Konsole selbst bereitstellt, etwa
+  <code>http://127.0.0.1:8084/</code> f&uuml;r den Payload Manager.</p>
+
+  <p>Ben&ouml;tigt werden vier Angaben: eine <strong>Title-ID</strong> der
+  Form <code>ABCD12345</code>, ein <strong>Name</strong> f&uuml;r die
+  Beschriftung, die <strong>Adresse</strong> und wahlweise ein
+  <strong>Symbolbild</strong> als PNG. Mehr nicht &ndash; das Werkzeug baut
+  die <code>param.json</code> daraus selbst.</p>
+
+  <div class="kasten tipp">
+    <span class="titel">Warum gerade diese Bauform</span>
+    <p>Am 29.08.2026 liefen auf der gepr&uuml;ften Konsole sechs
+    Homebrew-Kacheln. <strong>Keine einzige</strong> davon brachte ein
+    eigenes Programm mit &ndash; alle waren reine Metadaten mit einer
+    <code>deeplinkUri</code>. Diese Bauform ist der Nachbau dessen, was
+    dort tats&auml;chlich funktioniert.</p>
+    <p>Am 30.08.2026 mit diesem Werkzeug selbst gebaut und gepr&uuml;ft:
+    Die Kachel erschien im Men&uuml;, liess sich dr&uuml;cken und
+    &ouml;ffnete die hinterlegte Oberfl&auml;che. Geschrieben wurde dabei
+    ausschliesslich nach <code>/user/app/&lt;ID&gt;</code> &ndash;
+    <code>/system_ex</code> blieb unber&uuml;hrt.</p>
+  </div>
+
+  <h4>Anwendung mit eigenem Programm</h4>
+
+  <p>Der Weg des PS5-Payload-SDK (Beispiel <code>samples/install_app</code>):
+  ein fake-signiertes <code>eboot.bin</code> nach
+  <code>/system_ex/app/&lt;ID&gt;/</code>, <code>param.json</code> und
+  <code>icon0.png</code> nach <code>/user/app/&lt;ID&gt;/sce_sys/</code>,
+  danach das Registrieren, und erst <em>zuletzt</em>
+  <code>param.json.system</code> mit der Systemkategorie.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Es h&auml;ngt an einem einzigen Feld</span>
+    <p>Das Modul muss mit der <strong>Autorit&auml;t
+    <code>0x31&hellip;</code></strong> signiert sein. Die Vorgabe des
+    Payload-SDK ist <code>0x38&hellip;</code>, und damit startet die
+    Anwendung <strong>nicht</strong>.</p>
+    <pre>make_fself.py --ptype fake \
+    --paid 0x3100000000000002 \
+    --app-version 0x0 --fw-version 0x0 \
+    eboot.elf FAKE02932/eboot.bin</pre>
+    <p>Der Knopf <strong>Pr&uuml;fen</strong> erkennt eine
+    <code>0x38</code>-Autorit&auml;t und nennt diesen Befehl, bevor
+    irgendetwas auf die Konsole geschrieben wird.</p>
+  </div>
+
+  <p>Woher der Wert stammt: <code>libSceAmpr.sprx</code> &ndash; das
+  APR-EMU-Modul, das jede Konsole mit ShadowMount+ l&auml;dt &ndash; ist
+  ebenfalls fake-signiert und tr&auml;gt genau
+  <code>0x3100000000000002</code>, dazu <code>app-version</code> und
+  <code>fw-version</code> auf <code>0</code>. Ein Modul, das die Konsole
+  nachweislich l&auml;dt, ist die verl&auml;sslichere Vorlage als die
+  Vorgabewerte eines Beispiels.</p>
+
+  <div class="kasten hinweis">
+    <span class="titel">Wie sich der falsche Wert bemerkbar macht</span>
+    <p>Mit <code>0x38</code> erscheint die Kachel, l&auml;sst sich
+    dr&uuml;cken &ndash; und st&uuml;rzt mit <code>CE-108262-9</code> ab.
+    Der Kernel-Log zeigt, dass die Konsole schon sehr weit gekommen war:</p>
+    <pre>EXEC /app0/eboot.bin [system], vm#0, dmem#0 abi=ps4 category=daemon
+[AppMgr Trace]: New Process, pid=0x79, created.
+
+[KERNEL] WARNING: Decrypt error in SELF block.  Retrying...(1)
+[KERNEL] 661:A: failed to load block
+[SceLncService] AppCrash: pid={0x00000079} appId={0x00002018}</pre>
+    <p>Mit <code>0x31</code> steht an derselben Stelle:</p>
+    <pre>[Syscore App] new pid=0x7b
+[AppMgr Trace]: New Process, pid=0x7b, created.
+[Syscore App] EVFILT_PROC NOTE_EXIT received : pid=0x7b
+[SceLncService] onAppExit() appId={0x00004018}</pre>
+    <p>Also <code>onAppExit</code> statt <code>AppCrash</code>: Die
+    Anwendung ist gelaufen und hat sich selbst beendet.</p>
+  </div>
+
+  <div class="kasten hinweis">
+    <span class="titel">Was die Anwendung <em>nicht</em> darf</span>
+    <p>Im Log steht dabei <code>This doesn't have system ucred
+    /app0/eboot.bin</code>. Der Prozess hat keine Systemrechte;
+    privilegierte Systemaufrufe schlagen fehl. Das Beispiel des SDK
+    schreibt genau so ins Kernel-Log &ndash; deshalb erscheint sein
+    <code>Hello, world!</code> dort nicht, obwohl das Programm einwandfrei
+    l&auml;uft. F&uuml;r eigene Anwendungen ist das nur dann eine Grenze,
+    wenn sie solche Aufrufe brauchen.</p>
+  </div>
+
+  <h4>Voraussetzungen auf der Konsole</h4>
+
+  <p><strong>ftpsrv</strong> auf Port <code>2121</code> und ein Weg, ein
+  Payload zu starten. &Uuml;blich ist <strong>elfldr</strong> auf Port
+  <code>9021</code>; ist der zu, l&auml;dt das Programm ihn selbst&auml;ndig
+  &uuml;ber den <strong>Payload Manager</strong> (Port <code>8084</code>)
+  nach. Danach bleibt <code>9021</code> offen &ndash; auch f&uuml;r alles,
+  was danach kommt.</p>
+
+  <div class="kasten hinweis">
+    <span class="titel">Wenn die Konsole schweigt</span>
+    <p>Das mitgelieferte Payload schreibt seinen Verlauf nach
+    <code>/data/appinst.log</code>. Diese Datei ist die einzige
+    R&uuml;ckmeldung, wenn das Payload nicht &uuml;ber elfldr lief &ndash;
+    der Payload Manager reicht die Ausgabe nicht zur&uuml;ck. Sie
+    l&auml;sst sich per FTP lesen.</p>
+  </div>
 
 </section>
 

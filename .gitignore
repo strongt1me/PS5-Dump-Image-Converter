@@ -41,6 +41,10 @@ UFS2TOOL_V41_FIX_NOTES.md
 ffpkg_progress_fix.diff
 .markdownlint.json
 exe_test_*.log
+# Ablagerungen fremder Werkzeuge, die im Projektordner laufen -
+# etwa eines PKG-Entpackers. Gehoeren nicht zur Quelle.
+debug_log.txt
+estrazione_pkg.log
 
 # Hilfsskripte zum Prüfen und Erzeugen, nicht zum Bauen.
 tools/
