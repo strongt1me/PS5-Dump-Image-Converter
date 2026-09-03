@@ -44,6 +44,13 @@ ausdrücklich, statt eine leere Liste zu zeigen.
   Konsole selbst es längst findet. Jetzt werden alle Orte durchsucht, die
   ShadowMount+ kennt.
 
+- **Entpackte Ordner waren nicht mehr zugänglich.** Nach dem Entpacken zeigte
+  der Explorer statt der erwarteten Größe nur ein paar hundert Megabyte, und
+  die Ordner ließen sich nicht öffnen – obwohl alles vollständig entpackt war.
+  Das Programm legte seinen Arbeitsordner so an, dass die Berechtigungen des
+  Zielordners nicht mitgalten; beim Verschieben blieb das so. Wer den Dump
+  danach ansehen wollte, kam nicht mehr hinein.
+
 ---
 
 ## v1.9.2 – 03.09.2026

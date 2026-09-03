@@ -83,6 +83,28 @@ durch das Raster: Wer sein Spiel in `/mnt/usb0/homebrew` liegen hatte, fand es
 Jetzt werden alle 32 Orte durchsucht, die ShadowMount+ kennt — `usb0` bis
 `usb7`, jeweils auch `homebrew` und `etaHEN/games`.
 
+**Entpackte Ordner waren nicht mehr zugänglich.**
+
+Nach dem Entpacken zeigte der Explorer statt der erwarteten Größe nur ein paar
+hundert Megabyte, und die Ordner ließen sich nicht öffnen – obwohl das
+Protokoll stimmte und alles vollständig entpackt war.
+
+Ursache war der Arbeitsordner. Er wurde über `tempfile.mkdtemp` angelegt, und
+das setzt unter Windows eine eigene Rechteliste **ohne Vererbung** – die
+Berechtigungen des Zielordners galten darin nicht mehr. Da die Einträge
+weitervererbt werden, bekam jeder entpackte Unterordner dieselbe Liste. Beim
+Verschieben an den Zielort blieb sie erhalten: Windows vererbt nur beim
+Kopieren neu, nicht beim Verschieben innerhalb eines Laufwerks.
+
+Weil das Programm mit Administratorrechten läuft, gehörten die Ordner danach
+der Gruppe *Administratoren* – und das angemeldete Benutzerkonto stand in
+keiner Zeile mehr. Der Explorer konnte die Unterordner nicht lesen und daher
+auch die Größe nicht summieren.
+
+Der Arbeitsordner entsteht jetzt ohne eigene Rechteliste und erbt die des
+Zielordners. Bereits entpackte Ordner aus älteren Fassungen bleiben davon
+unberührt; dort hilft ein einmaliges Zurücksetzen der Berechtigungen.
+
 **Eine ungültige Escapefolge im Quelltext.** Der Hinweis auf
 `%APPDATA%\PS5ImageConverterPro` stand in einem Text, in dem `\P` keine
 gültige Folge ist. Heute eine Warnung beim Bauen, in künftigen
@@ -109,7 +131,7 @@ zu Sony Interactive Entertainment. Einzelheiten im
 
 ## Geprüft
 
-Volle Testreihe grün — 1925 Prüfungen in 90 Dateien —, Anzeigediagnose ohne
+Volle Testreihe grün — 1932 Prüfungen in 91 Dateien —, Anzeigediagnose ohne
 Auffälligkeit, Umgebungsprüfung 15/0.
 
 **Vollständiges Changelog:** https://github.com/strongt1me/PS5-Dump-Image-Converter/compare/v1.9.2...v1.9.3

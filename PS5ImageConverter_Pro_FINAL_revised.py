@@ -53,7 +53,7 @@ import threading
 import time
 import urllib.parse
 import urllib.request
-import uuid          # noqa: F401
+import uuid
 import webbrowser
 import zlib
 from typing import Any, Iterator, Literal, cast
@@ -10760,6 +10760,72 @@ class PS5ConverterGUI:
         if entfernt:
             self._append_to_log(self._t('temp.stale_swept', count=entfernt))
 
+    #: So oft wird ein neuer Zufallsname versucht, bevor aufgegeben wird.
+    _TEMP_NAME_VERSUCHE = 24
+
+    @staticmethod
+    def _temp_ordner_anlegen(prefix: str, ordner: str) -> str:
+        """Legt einen eindeutig benannten Ordner an - **ohne** Rechtemodus.
+
+        Ersatz fuer ``tempfile.mkdtemp``. Der Unterschied ist genau ein
+        Zahlenwert, und er hat Anwendern den Zugriff auf ihre eigenen Dumps
+        gekostet.
+
+        ``mkdtemp`` legt den Ordner mit Modus ``0o700`` an. Python uebersetzt
+        das unter Windows in eine **ausdrueckliche** Rechteliste und schaltet
+        die Vererbung ab. Gemessen am 04.09.2026:
+
+        =========================== ==========
+        Anlage                      Vererbung
+        =========================== ==========
+        ``os.mkdir(pfad)``          an
+        ``os.mkdir(pfad, 0o700)``   aus
+        ``tempfile.mkdtemp()``      aus
+        =========================== ==========
+
+        Uebrig bleiben ``SYSTEM``, ``Administratoren`` und
+        ``EIGENTUEMERRECHTE`` - jeweils mit ``(OI)(CI)``, also erben alle
+        Dateien und Unterordner darin dieselbe Liste.
+
+        **Warum das erst beim Anwender auffiel:** Nicht eleviert ist der
+        Besitzer der Anwender selbst, ``EIGENTUEMERRECHTE`` meint also ihn,
+        und alles wirkt normal. Das Programm laeuft aber **eleviert**; dann
+        gehoert ein neu angelegter Ordner der Gruppe *Administratoren*, und
+        der angemeldete Anwender steht in keiner der drei Zeilen mehr.
+
+        **Und warum es nicht beim Verschieben geheilt wurde:** Windows
+        vererbt nur beim **Kopieren** neu. Ein ``rename`` auf demselben
+        Laufwerk nimmt die Rechte mit - und ``_mkdtemp`` legt den
+        Staging-Ordner mit ``dir_path=dst`` gerade **im Zielordner** an, es
+        ist also immer dasselbe Laufwerk.
+
+        Ergebnis beim Anwender: Der entpackte Dump lag vollstaendig da, das
+        Protokoll stimmte, aber der Explorer kam nicht hinein und zeigte
+        statt 30 GB nur ein paar hundert Megabyte - er konnte die
+        Unterordner nicht lesen.
+
+        Args:
+            prefix: Namensanfang, wie bei ``tempfile.mkdtemp``.
+            ordner: Der Ordner, in dem angelegt wird.
+
+        Returns:
+            Der angelegte Pfad.
+
+        Raises:
+            OSError: Kein freier Name gefunden oder das Anlegen scheiterte.
+        """
+        for _ in range(PS5ConverterGUI._TEMP_NAME_VERSUCHE):
+            pfad = os.path.join(ordner, prefix + uuid.uuid4().hex[:8])
+            try:
+                # Ohne Modus: Der Ordner erbt die Rechte des Zielordners,
+                # und alles darin ebenso.
+                os.mkdir(pfad)
+                return pfad
+            except FileExistsError:
+                continue
+        raise OSError("Kein freier Temp-Name in %s nach %d Versuchen"
+                      % (ordner, PS5ConverterGUI._TEMP_NAME_VERSUCHE))
+
     def _mkdtemp(self, prefix: str, dir_path: str | None = None) -> str:
         """Erzeugt ein Temp-Verzeichnis mit automatischem Fallback bei I/O-Engpässen."""
         self._sweep_stale_temp_dirs()
@@ -10774,7 +10840,7 @@ class PS5ConverterGUI:
                 errors.append(f"{cand}: {why}")
                 continue
             try:
-                created_dir = tempfile.mkdtemp(prefix=prefix, dir=cand)
+                created_dir = self._temp_ordner_anlegen(prefix, cand)
                 chosen_dir = os.path.normpath(cand)
                 break
             except OSError as exc:
