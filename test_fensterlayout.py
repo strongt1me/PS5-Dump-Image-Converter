@@ -22,6 +22,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import pruefflaeche
+
 HAUPTDATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "PS5ImageConverter_Pro_FINAL_revised.py")
 
@@ -382,6 +384,14 @@ class FenstergroesseTests(unittest.TestCase):
 
     def _pruefen(self, name, aufruf):
         ist, noetig = self._messen(aufruf)
+        # Was ueber die Grenze aus _fenster_auf_inhalt_wachsen
+        # hinausgeht, kann das Programm auf diesem Bildschirm gar nicht
+        # darstellen - dann misst diese Pruefung die Grenze und nicht
+        # das Fenster. Dieselbe Toleranz von 2 px wie unten: So wird
+        # nie etwas uebersprungen, das durchgekommen waere. Warum das
+        # ueberhaupt noetig ist, steht in pruefflaeche.py.
+        pruefflaeche.passt_sonst_ueberspringen(
+            _WURZEL, noetig[0] - 2, noetig[1] - 2, name)
         self.assertGreaterEqual(
             ist[1], noetig[1] - 2,
             "%s ist %d px zu niedrig - die unterste Knopfreihe liegt "

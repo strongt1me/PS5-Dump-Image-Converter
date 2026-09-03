@@ -393,6 +393,14 @@ class UmpackenZwischenKompressionTests(unittest.TestCase):
         cls.quelle = basis / "dump"
         cls.quelle.mkdir()
         cls.soll_dateien, cls.soll_bytes = _dump_anlegen(cls.quelle)
+        # Vier Megabyte, die sich gut zusammendruecken lassen. Der kleine
+        # Dump aus _dump_anlegen reicht fuer den Groessenvergleich unten
+        # nicht mehr: Seit die Vorgabe "exFAT im Container" ist, liegt die
+        # Mindestgroesse eines Abbilds bei 640 KiB (64-KiB-Cluster plus
+        # exFAT-Aufbau), und darunter sind komprimiert und unkomprimiert
+        # gleich gross. Am 03.09.2026 genau daran aufgefallen.
+        (cls.quelle / "Media" / "gross.dat").write_bytes(b"PS5" * (4 * 1024 * 1024 // 3))
+        cls.soll_dateien, cls.soll_bytes = _ordner_inhalt(cls.quelle)
         cls.komprimiert = basis / "spiel.ffpfsc"
         _mkpfs("pack", "folder", str(cls.quelle), str(cls.komprimiert),
                "--no-compress", "--no-adjust-output-file-extension", "--version", "PS5")
@@ -439,8 +447,16 @@ class UmpackenZwischenKompressionTests(unittest.TestCase):
                 self.assertLess(zurueck.stat().st_size, roh.stat().st_size)
                 self._inhalt_pruefen(zurueck)
 
-    def test_ergebnis_ist_zweistufig_und_nicht_neu_eingebettet(self) -> None:
-        """Der haeufigste Fehlbau waere hier eine Ebene mehr."""
+    def test_ergebnis_hat_keine_ebene_zu_viel(self) -> None:
+        """Der haeufigste Fehlbau waere hier eine Ebene mehr.
+
+        Geprueft wird genau das - nicht eine bestimmte Bauform. Seit dem
+        03.09.2026 ist waehlbar, ob zwischen Huelle und Spieldateien ein
+        exFAT-Abbild oder ein rohes PFS liegt; beide sind gueltig und
+        werden vollstaendig entpackt. Untauglich ist allein "dreifach":
+        Container -> PFS -> Abbild -> Dateien. Auf der Konsole findet sich
+        dort kein param.json.
+        """
         from ps5_validator.modules.ffpfs_validator import ermittle_bauform  # noqa: PLC0415
 
         with TemporaryDirectory(prefix="ffpfsc_bauform_pruef_") as ziel:
@@ -448,7 +464,9 @@ class UmpackenZwischenKompressionTests(unittest.TestCase):
             befund = ermittle_bauform(ergebnis)
             self.assertIsNotNone(befund)
             assert befund is not None
-            self.assertEqual(befund["bauform"], "pfs")
+            self.assertIn(befund["bauform"], ("exfat", "pfs"),
+                          "Weder exFAT noch PFS im Container - der Aufbau "
+                          "stimmt nicht: %r" % (befund,))
 
 
 @unittest.skipIf(MKPFS_DIR is None, "MkPFS-Quellordner nicht gefunden")

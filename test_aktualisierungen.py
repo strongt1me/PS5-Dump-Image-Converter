@@ -76,7 +76,11 @@ class BeurteilungTests(unittest.TestCase):
         self.assertIn("0.1.0", str(befund))
 
     def test_eigene_fassung_neuer(self):
-        """Kommt vor: Im PS4-Werkzeug steckt MkPFS 1.0.0, veroeffentlicht ist 0.0.9."""
+        """Kam vor: Im PS4-Werkzeug steckte MkPFS 1.0.0, veroeffentlicht war 0.0.9.
+
+        Seit dem 01.09.2026 traegt auch die eigene Engine 1.0.0; die Zahlen
+        hier sind darum nur noch ein nachgestellter Fall fuer den Vergleich.
+        """
         teil = ak.Bestandteil("MkPFS", "1.0.0", ak.GITHUB, "PSBrew/MkPFS")
         self.assertEqual(ak.VORAUS, ak.beurteile(teil, "0.0.9").zustand)
 
@@ -211,16 +215,47 @@ class QuelltextTests(unittest.TestCase):
         return self.quelltext[anfang:weiter]
 
     def test_inventar_steht_im_bericht(self):
-        """Es ist offline und schnell - deshalb immer dabei."""
-        self.assertIn("diagnostics.report_section_inventory", self.quelltext)
-        self.assertIn("self._diagnose_werkzeugbestand", self.quelltext)
+        """Es ist offline und schnell - deshalb immer dabei.
+
+        Ausgefuehrt: Der Bericht wird gebaut, und der Bauer des
+        Inventars muss dabei wirklich gerufen werden.
+        """
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        gerufen = []
+        bericht = Diagnosebericht()
+        echt = bericht._bauer_holen
+
+        def _merken(name):
+            gerufen.append(name)
+            return echt(name)
+
+        bericht._bauer_holen = _merken
+        text = bericht.bericht_text()
+        self.assertIn("diagnostics.report_section_inventory", text)
+        self.assertIn("_diagnose_werkzeugbestand", gerufen,
+                      "Der Bauer des Inventars wurde nicht gerufen.")
 
     def test_netzabfrage_laeuft_nicht_im_bericht_mit(self):
-        """Ein Fehlerbericht darf nicht an einer Verbindung haengen."""
-        bericht = self._methode("_build_diagnostic_report_text")
-        self.assertNotIn("_aktualisierungen_holen", bericht)
-        self.assertNotIn("aktualisierungen", bericht.lower().replace(
-            "diagnostics.", ""))
+        """Ein Fehlerbericht darf nicht an einer Verbindung haengen.
+
+        Ausgefuehrt statt gelesen: Der Bericht wird gebaut, waehrend
+        jeder Weg ins Netz platzt. Eine Textsuche haette den Umzug
+        nach diagnose_befund nicht ueberlebt - und haette auch nie
+        gemerkt, wenn die Abfrage unter einem anderen Namen
+        hereinkaeme.
+        """
+        from unittest import mock
+
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        def _platzt(*a, **k):
+            raise AssertionError("Der Bericht ging ins Netz.")
+
+        with mock.patch("urllib.request.urlopen", _platzt), \
+                mock.patch("socket.create_connection", _platzt):
+            text = Diagnosebericht().bericht_text()
+        self.assertTrue(text.strip(), "Der Bericht blieb leer.")
 
     def test_knopf_ist_vorhanden(self):
         self.assertIn("diagnostics.update_button", self.quelltext)
@@ -233,7 +268,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn("daemon=True", fenster)
 
     def test_eingebettete_werkzeuge_sind_erfasst(self):
-        for teil in ("MkPFS-0.0.9", "PS4FFPFSC-0.2.8"):
+        for teil in ("MkPFS-1.0.0", "PS4FFPFSC-0.2.8"):
             with self.subTest(teil=teil):
                 self.assertIn(teil, self.quelltext)
 

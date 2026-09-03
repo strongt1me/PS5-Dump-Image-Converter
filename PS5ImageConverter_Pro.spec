@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.1
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.2
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -25,6 +25,24 @@ _mkpfs_roots = [
     for _path in glob.glob(os.path.join(_here, 'MkPFS-*'))
     if os.path.isdir(_path) and os.path.isfile(os.path.join(_path, 'mkpfs', '__init__.py'))
 ]
+
+# Quellordner Datei fuer Datei einsammeln, ohne __pycache__.
+# Bei (Ordner, Ziel) nimmt PyInstaller den ganzen Baum mit - also auch eine
+# dort liegengebliebene .pyc. Im Buendel laege sie neben ihrer .py, und eine
+# veraltete .pyc koennte eine aeltere Fassung des Moduls einschleusen,
+# waehrend der Quelltext daneben die neue zeigt: ein Fehler, der sich nur an
+# der EXE zeigt und aus der Quelle nie nachstellbar waere.
+def _dateien_ohne_pycache(_quelle, _ziel):
+    _eintraege = []
+    for _wurzel, _ordner, _dateien in os.walk(_quelle):
+        _ordner[:] = [_o for _o in _ordner if _o != '__pycache__']
+        _rel = os.path.relpath(_wurzel, _quelle)
+        _unterziel = _ziel if _rel == os.curdir else os.path.join(_ziel, _rel)
+        for _datei in _dateien:
+            if _datei.endswith(('.pyc', '.pyo')):
+                continue
+            _eintraege.append((os.path.join(_wurzel, _datei), _unterziel))
+    return _eintraege
 
 # Daten-Dateien die in die EXE eingebettet werden
 _datas = [
@@ -77,9 +95,9 @@ _webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
 if os.path.isdir(_webkit):
     _datas.append((_webkit, 'PS5 WebKit Autoloader'))
 
-# MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-0.0.9/)
+# MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-1.0.0/)
 for _mkpfs_src in _mkpfs_roots:
-    _datas.append((_mkpfs_src, os.path.basename(_mkpfs_src)))
+    _datas.extend(_dateien_ohne_pycache(_mkpfs_src, os.path.basename(_mkpfs_src)))
 
 # Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
@@ -87,7 +105,7 @@ for _mkpfs_src in _mkpfs_roots:
 # Vorlage ist bewusst nicht dabei.
 _ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
 if os.path.isdir(_ps4ffpsc):
-    _datas.append((_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+    _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
@@ -266,10 +284,13 @@ a = Analysis(
         # Vendorte MkPFS-Module fuer Analyse/Packaging explizit bekanntmachen
         'mkpfs',
         'mkpfs.ampr',
+        'mkpfs.batch',
         'mkpfs.cli',
+        'mkpfs.compression',
         'mkpfs.consts',
         'mkpfs.exfat',
         'mkpfs.exfat_writer',
+        'mkpfs.gather',
         'mkpfs.logging',
         'mkpfs.pbar',
         'mkpfs.pfs',
@@ -307,7 +328,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.1',
+    name='PS5_Dump_Image_Converter_v1.9.2',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

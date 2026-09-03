@@ -41,7 +41,7 @@ on:
       - 'extract_icon_icns.py'
       - 'test_macos_fassung.py'
       - 'ps5_validator/**'
-      - 'MkPFS-0.0.9/**'
+      - 'MkPFS-1.0.0/**'
       - 'requirements.txt'
       - '.github/workflows/macos-buendel.yml'
 

@@ -150,11 +150,20 @@ class AmStueckAngeliefertTests(unittest.TestCase):
         self.assertIn('text.replace("\\r\\n", "\\n").replace("\\r", "\\n")', block)
 
     def test_kommandozeile_und_fehlerpuffer_kommen_zuerst(self):
-        """Die Weiche darf CLI-Ausgabe und _build_log_tail nicht ueberspringen."""
+        """Die Weiche darf CLI-Ausgabe und den Puffer nicht ueberspringen.
+
+        Das Fuellen des Puffers heisst jetzt _protokollschwanz_merken -
+        beide Protokollwege benutzen es. Frueher stand hier der
+        Puffername unmittelbar, und diese Pruefung brach beim
+        Herausziehen der Methode. Genau die Bauart, die schon
+        test_aktualisierungen einmal blind gemacht hat: Eine Textsuche
+        ueberlebt einen Umzug nicht von selbst.
+        """
         stelle = self.text.index("def _append_to_log")
         block = self.text[stelle:stelle + 6000]
         self.assertLess(block.index("_cli_mode"), block.index("zeilen_anzeige"))
-        self.assertLess(block.index("_build_log_tail"), block.index("zeilen_anzeige"))
+        self.assertLess(block.index("_protokollschwanz_merken"),
+                        block.index("zeilen_anzeige"))
 
 
 class ZusammenfassenTests(unittest.TestCase):

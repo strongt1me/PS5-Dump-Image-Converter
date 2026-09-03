@@ -348,7 +348,7 @@ class KompressionsschalterTests(unittest.TestCase):
     """Jeder ``pack file``-Aufruf sagt ausdruecklich, ob komprimiert wird.
 
     In mkpfs hat ``--compress`` die Vorgabe ``default=True``
-    (MkPFS-0.0.9/mkpfs/cli.py). Eine Aufrufstelle ohne Angabe erzeugt also
+    (MkPFS-1.0.0/mkpfs/cli.py). Eine Aufrufstelle ohne Angabe erzeugt also
     dasselbe wie eine mit ``--compress`` - aber nur so lange, wie diese
     Vorgabe steht. Bis v1.8.55 drueckten die vier Stellen dieselbe Sache auf
     drei verschiedene Arten aus, eine davon gar nicht.
@@ -376,20 +376,36 @@ class KompressionsschalterTests(unittest.TestCase):
         self.assertNotIn('*(["--no-compress"]', text)
 
     def test_die_innere_stufe_bleibt_unkomprimiert(self):
-        # pack folder erzeugt das innere PFS; komprimiert wird erst der
-        # aeussere Container. Faellt das um, entsteht doppelt komprimierter
-        # Inhalt.
+        """Ein rohes inneres PFS darf nicht komprimiert werden.
+
+        Sonst laege komprimierter Inhalt in einem komprimierten Container.
+
+        Seit dem 03.09.2026 gibt es zwei Bauformen, und die Regel gilt nur
+        fuer die zweistufige: Dort baut ``pack folder --raw`` das innere
+        PFS, und erst der aeussere ``pack file`` komprimiert. Der einstufige
+        Weg ruft ``pack folder`` **ohne** ``--raw`` auf - dort gibt es keine
+        innere Stufe, und die Kompression gehoert dazu. Bis dahin verlangte
+        diese Pruefung beides von jedem pack-folder-Aufruf.
+        """
         text = self.QUELLE.read_text(encoding="utf-8")
         zeilen = text.splitlines()
         stellen = [i for i, z in enumerate(zeilen) if '"pack", "folder",' in z]
         self.assertGreaterEqual(len(stellen), 2)
+        mit_raw = 0
         for i in stellen:
             block = "\n".join(zeilen[i:i + 10])
+            if '"--raw",' not in block:
+                # Der einstufige Weg: Die Engine wickelt das exFAT selbst.
+                self.assertIn("--compress", block,
+                              "Der einstufige Weg in Zeile %d sagt nicht, ob "
+                              "komprimiert wird." % (i + 1))
+                continue
+            mit_raw += 1
             self.assertIn('"--no-compress",', block,
                           "Die innere Stufe in Zeile %d komprimiert." % (i + 1))
-            self.assertIn('"--raw",', block,
-                          "Ohne --raw entsteht ein dreifach verschachteltes "
-                          "Abbild (Zeile %d)." % (i + 1))
+        self.assertGreaterEqual(
+            mit_raw, 2,
+            "Kein zweistufiger Packweg mehr - dann prueft diese Pruefung nichts.")
 
 
 class PruefstufeTests(unittest.TestCase):

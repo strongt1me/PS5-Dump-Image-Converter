@@ -20,7 +20,7 @@ from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
 from ps5_validator.utils.param_manifest import create_default_param
 
 ROOT = Path(__file__).resolve().parent
-MKPFS_DIR = ROOT / "MkPFS-0.0.9"
+MKPFS_DIR = ROOT / "MkPFS-1.0.0"
 
 
 class _StubLabel:

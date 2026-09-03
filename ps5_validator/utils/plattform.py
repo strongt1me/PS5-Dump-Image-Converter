@@ -323,9 +323,21 @@ def konfigurationsordner(anwendung: str = "PS5ImageConverterPro") -> str:
     gespeicherten Pfade und Designeinstellungen weiterhin finden. Linux folgt
     der XDG-Spezifikation, macOS der Application-Support-Konvention.
 
+    **Umlenkbar.** Steht ``PS5CONV_KONFIGORDNER`` in der Umgebung, gilt
+    dieser Ordner. Das ist fuer Pruefstaende gedacht: Sie druecken echte
+    Knoepfe, und echte Knoepfe speichern echt. Ohne die Umlenkung
+    schreibt jeder Lauf in den Bestand des Anwenders - betroffen waeren
+    unter anderem ``metadata_online`` (damit verlaesst die Title-ID den
+    Rechner) und ``shutdown_after_success`` (damit faehrt der Rechner
+    nach der naechsten Konvertierung herunter).
+
     Returns:
         Absoluter Ordnerpfad. Der Ordner wird nicht angelegt.
     """
+    umgelenkt = os.environ.get("PS5CONV_KONFIGORDNER", "").strip()
+    if umgelenkt:
+        return umgelenkt
+
     if IST_WINDOWS:
         basis = os.environ.get("APPDATA", "")
     elif IST_MACOS:

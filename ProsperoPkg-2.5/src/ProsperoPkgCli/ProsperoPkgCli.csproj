@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Kommandozeilen-Huelle um LibProsperoPkg 2.5.
+
+    Der Pfad zur Bibliothek steht als Eigenschaft, damit der Bau nicht an
+    einem festen Ordner haengt. Wo die Quellen liegen und wie neu gebaut
+    wird, steht in ../../UPSTREAM.md.
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>14.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>prosperopkg</AssemblyName>
+    <RootNamespace>ProsperoPkgCli</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(LibProsperoPkgProject)' == ''">
+    <LibProsperoPkgProject>$(USERPROFILE)\Documents\GitHub PS5 Dump &amp; Image Converter\PS5 SDK usw\LibProsperoPKG-2.5\LibProsperoPKG-2.5\src\LibProsperoPkg\LibProsperoPkg.csproj</LibProsperoPkgProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(LibProsperoPkgProject)" />
+  </ItemGroup>
+
+</Project>

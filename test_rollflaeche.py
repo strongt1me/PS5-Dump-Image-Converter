@@ -47,7 +47,7 @@ def _lade_hauptprogramm():
     if "hauptprogramm" in sys.modules:
         return sys.modules["hauptprogramm"]
     for zusatz in (os.path.dirname(HAUPTDATEI),
-                   os.path.join(os.path.dirname(HAUPTDATEI), "MkPFS-0.0.9")):
+                   os.path.join(os.path.dirname(HAUPTDATEI), "MkPFS-1.0.0")):
         if zusatz not in sys.path:
             sys.path.insert(0, zusatz)
     spec = importlib.util.spec_from_file_location("hauptprogramm", HAUPTDATEI)

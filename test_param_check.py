@@ -481,8 +481,15 @@ class AnbindungTests(unittest.TestCase):
         self.assertNotIn('json.loads(param_json_path.read_text(encoding="utf-8"))',
                          self.text)
 
-    def test_alle_drei_bauwege_nutzen_die_pruefung(self):
-        self.assertEqual(self.text.count("_ensure_param_json("), 4)  # 3 Aufrufe + Definition
+    def test_alle_bauwege_nutzen_die_pruefung(self):
+        """Jeder Weg, der aus einem Ordner baut, prueft vorher die param.json.
+
+        Vier Aufrufe seit dem 03.09.2026: Der einstufige Packweg
+        (``_mode_pack_folder_exfat``) kam dazu, als die Bauform waehlbar
+        wurde. Ohne param.json ist der Dump auf der Konsole unbrauchbar, und
+        das faellt sonst erst dort auf.
+        """
+        self.assertEqual(self.text.count("_ensure_param_json("), 5)  # 4 Aufrufe + Definition
 
     def test_validator_bietet_die_reparatur_an(self):
         self.assertIn("_validator_param_json_anbieten", self.text)

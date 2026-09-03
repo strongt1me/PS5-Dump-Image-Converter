@@ -2,7 +2,59 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.1):** Der Validator sagt nicht mehr „fehlgeschlagen“, wenn er gar nicht prüfen konnte. Fehlen Administratorrechte, heißt das Ergebnis jetzt **ungeprüft** – und der Bericht sagt dazu, was zu tun ist.
+> **Kurz zum aktuellen Stand (v1.9.2):** Container lassen sich jetzt in zwei Bauformen erzeugen – die schnellere ist voreingestellt. Die Infobox sagt außerdem, ob in einer Quelle schon ein AMPR EMU steckt, und „PKG bauen“ läuft auf allen unterstützten Systemen.
+
+---
+
+## v1.9.2 – 03.09.2026
+
+### Bauform wählbar – und die schnellere ist voreingestellt
+
+Unter QUELLE steht jetzt die Zeile **BAUFORM (Container)**. Zur Wahl stehen
+**exFAT im Container** und **PFS im Container**. Voreingestellt ist die erste:
+Sie entsteht in einem einzigen Durchgang statt in zweien – bei einer 200-MB-
+Quelle 1,3 Sekunden statt 6,3.
+
+Wer unkomprimiert baut, bekommt weiterhin den zweistufigen Weg; die
+Engine nimmt dort den Schalter für „nicht komprimieren“ sonst nicht an. Das
+Protokoll sagt es, wenn es umschaltet.
+
+### Die Infobox sagt, ob schon ein AMPR EMU drinsteckt
+
+Neue Zeile **AMPR EMU** in den Spielangaben. Sie beantwortet eine Frage, die
+vorher nur ein Blick in den Dump beantworten konnte. Wo sich die Quelle nicht
+öffnen lässt – etwa bei einem UFS2-basierten `.ffpkg` – steht dort
+**nicht ermittelbar** statt einer Vermutung.
+
+### „PKG bauen“ jetzt auf allen Systemen
+
+Das Werkzeug erzeugt aus einem Dump-Ordner ein `.pkg` und lag bisher nur für
+Windows bei. Es liegt jetzt auch für Linux und für beide Mac-Prozessoren
+bei; das Programm wählt den passenden Bau selbst aus.
+
+### Behobene Fehler
+
+- **Aufgabe 7 vertauschte die Bauform.** Ein als exFAT-im-Container gebautes
+  Abbild kam nach dem Bearbeiten als PFS-im-Container zurück. Es behält jetzt
+  die Form, aus der es stammt.
+- **Pack- und Prüfstufe fielen still auf die Vorgabe zurück.** Wer
+  „Vollständig“ gewählt hatte, bekam unter Umständen die schnelle Prüfung –
+  dauerhaft gespeichert, ohne dass die Oberfläche etwas anderes zeigte.
+- **Die Prüfstufen-Liste blieb beim Sprachwechsel stehen.** Sie wird jetzt
+  mitübersetzt, wie die Packstufe daneben.
+- **Der Diagnosebericht zeigte die Engine-Ausgabe nicht.** Genau die Zeilen
+  von mkpfs und UFS2Tool fehlten – also der Hauptteil eines Laufs, und
+  ausgerechnet dann, wenn ein Lauf an der Engine scheitert.
+- **Die eingestellte Schriftgröße wirkte auf dem Mac nicht.** Sie wurde
+  gelesen, aber nie angewandt.
+- **Die Vorschau packte einzeln liegende Abbilder aus,** statt sie zu lesen:
+  bei 200 MB 4,97 Sekunden statt 0,12.
+
+### Neue Engine
+
+Die PFS-Verarbeitung läuft jetzt über **MkPFS 1.0.0**. Sie meldet unter
+anderem keine falschen Warnungen mehr für Container der neuen Vorgabe-Bauform,
+deren Spieldateien eine Ebene tiefer liegen.
 
 ---
 

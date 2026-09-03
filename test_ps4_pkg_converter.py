@@ -97,7 +97,11 @@ class InterneModiTests(unittest.TestCase):
         )
 
     def test_mkpfs_modus_startet_die_geprüfte_fassung(self) -> None:
-        """--ps4-mkpfs muss 1.0.0 liefern, nicht die 0.0.9 des Programms."""
+        """--ps4-mkpfs muss die eigene Kopie des PS4-Werkzeugs starten.
+
+        Seit das Programm selbst auf 1.0.0 steht, nennen beide dieselbe
+        Fassung. Der Schalter muss trotzdem die Kopie des Werkzeugs nehmen.
+        """
         ergebnis = self._aufruf("--ps4-mkpfs", "-V")
         self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr[-400:])
         self.assertIn("1.0.0", ergebnis.stdout + ergebnis.stderr)
@@ -379,8 +383,16 @@ class NachpruefungTests(unittest.TestCase):
                 self.assertTrue(STRINGS["ps4pkg.check_no_image"][sprache].strip())
 
     def test_abbild_wird_nach_dem_bauen_angesehen(self) -> None:
+        """Die Pruefung steht seit dem 30.08.2026 in ps4_werkzeug.
+
+        Im Monolithen blieb die Weiterleitung; der Rumpf, um den es hier
+        geht, liegt im Modul.
+        """
         self.assertIn("_ps4ffpsc_abbild_pruefen", self.quelltext)
-        rumpf = self._methode("_ps4ffpsc_abbild_pruefen")
+        rumpf = (PROJEKT / "ps5_validator" / "utils"
+                 / "ps4_werkzeug.py").read_text(encoding="utf-8")
+        anfang = rumpf.index("def abbild_pruefen(")
+        rumpf = rumpf[anfang:rumpf.index("\ndef ", anfang + 10)]
         self.assertIn("ExfatReader", rumpf)
         # Nur die Verzeichnisbloecke lesen, nicht 20 GB Nutzdaten: iter_files
         # laeuft ueber die Verzeichnisse, read_file holte den Inhalt.

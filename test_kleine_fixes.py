@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import ast
 import os
 import sys
 import tempfile
@@ -384,6 +385,82 @@ class SidebarCoverTests(unittest.TestCase):
         self.assertNotIn('pack(fill="x"', block)
 
 
+def _tk_wurzel_abraeumen(fenster) -> None:
+    """Raeumt eine Tk-Wurzel restlos ab - im Faden, der sie angelegt hat.
+
+    ``destroy()`` allein genuegt nicht. Es schliesst die Fenster und setzt
+    ``tkinter._default_root`` zurueck, gibt aber den Tcl-Interpreter nicht
+    frei: Der haengt am Python-Objekt und stirbt erst, wenn die Muellabfuhr
+    es einsammelt. Wann das geschieht, entscheidet sie selbst.
+
+    Genau daran ist der Gesamtdurchlauf am 31.08.2026 gestorben. Ein
+    spaeteres Modul baut ein WPF-Fenster in einem eigenen STA-Faden; das
+    belegt genug Speicher, um dort eine Sammlung auszuloesen. Sie fand die
+    laengst zerstoerte Wurzel von hier und rief ``Tcl_DeleteInterp`` im
+    falschen Faden auf - Tcl bricht das mit
+    ``Tcl_AsyncDelete: async handler deleted by the wrong thread`` ab, und
+    zwar den ganzen Prozess, ohne Ergebniszeile.
+
+    Der Fehler traf, wer alphabetisch als Erster nach diesem Modul ein
+    WPF-Fenster baut. Bis zum 31.08.2026 war das ``test_wpf_spielinfo``;
+    nachgewiesen ist es fuer beide.
+    """
+    import gc
+
+    try:
+        fenster.destroy()
+    finally:
+        # Erst hier ist der Faden noch der richtige. Zwei Durchgaenge, weil
+        # der erste den Verweisring aufbricht und der zweite das Objekt
+        # einsammelt.
+        gc.collect()
+        gc.collect()
+
+
+class TkAufraeumenTests(unittest.TestCase):
+    """Die Wache dagegen, dass die Falle zurueckkommt.
+
+    Wer hier eine Tk-Wurzel anlegt und nur ``destroy()`` ruft, laesst den
+    Tcl-Interpreter fuer die Muellabfuhr liegen - und die raeumt ihn
+    irgendwann im falschen Faden ab. Der Gesamtdurchlauf stirbt dann ohne
+    Ergebniszeile, und der Absturz erscheint in einem ganz anderen Modul.
+    """
+
+    def test_jede_wurzel_geht_ueber_den_aufraeumweg(self) -> None:
+        baum = ast.parse(Path(__file__).read_text(encoding="utf-8",
+                                                  errors="replace"))
+        for f in ast.walk(baum):
+            if not isinstance(f, ast.FunctionDef):
+                continue
+            # Ueber die Aufrufe, nicht ueber den Text: Eine Pruefung
+            # sucht die Zeile "root = ... tk.Tk()" im Monolithen und
+            # traegt sie als Zeichenkette. Eine Textsuche haelte das
+            # faelschlich fuer eine Wurzel.
+            legt_an = any(
+                isinstance(k, ast.Call)
+                and isinstance(k.func, ast.Attribute)
+                and k.func.attr == "Tk"
+                and isinstance(k.func.value, ast.Name)
+                and k.func.value.id == "tk"
+                for k in ast.walk(f))
+            if not legt_an:
+                continue
+            with self.subTest(pruefung=f.name):
+                self.assertIn("_tk_wurzel_abraeumen(", ast.unparse(f),
+                              "%s legt eine Tk-Wurzel an und raeumt sie "
+                              "nur mit destroy() ab." % f.name)
+
+    def test_der_weg_sammelt_wirklich_ein(self) -> None:
+        """Ohne die Sammlung bliebe der Interpreter am Leben."""
+        rumpf = ast.unparse(next(
+            k for k in ast.walk(ast.parse(
+                Path(__file__).read_text(encoding="utf-8", errors="replace")))
+            if isinstance(k, ast.FunctionDef)
+            and k.name == "_tk_wurzel_abraeumen"))
+        self.assertIn("gc.collect()", rumpf)
+        self.assertIn("fenster.destroy()", rumpf)
+
+
 class FruehesFenstersymbolTests(unittest.TestCase):
     """Beim Start darf nie die Tk-Standardfeder in der Taskleiste stehen.
 
@@ -449,7 +526,7 @@ class FruehesFenstersymbolTests(unittest.TestCase):
         try:
             self.assertTrue(APP._fenstersymbol_sofort_setzen(fenster))
         finally:
-            fenster.destroy()
+            _tk_wurzel_abraeumen(fenster)
 
     def test_kein_temp_rest_wenn_das_setzen_scheitert(self):
         """Der Fehlerzweig muss die eben geschriebene .ico wieder abraeumen.
@@ -477,7 +554,7 @@ class FruehesFenstersymbolTests(unittest.TestCase):
             self.assertEqual(set(glob.glob(muster)) - vorher, set(),
                              "Der Fehlerzweig hat eine .ico im Temp-Ordner liegen lassen")
         finally:
-            fenster.destroy()
+            _tk_wurzel_abraeumen(fenster)
 
     def test_parameter_ist_typisiert(self):
         # Die Datei nutzt durchgaengig Typangaben; der Helfer soll das auch.
@@ -708,12 +785,34 @@ class DiagnoseberichtTests(unittest.TestCase):
         sobald ein neunter Abschnitt dazukam (die Fortschrittsanzeige am
         24.08.2026) - obwohl der Sicherheitsnetz-Code unveraendert war.
         """
-        quelle = QUELLDATEI.read_text(encoding="utf-8")
-        anfang = quelle.index("report_section_display\", self._diagnose_anzeige)")
-        ende = quelle.index("lines.extend(bauer())", anfang)
-        block = quelle[anfang:ende + 600]
-        self.assertIn("except Exception as exc:", block)
-        self.assertIn("Abschnitt fehlgeschlagen", block)
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        # Ausgefuehrt statt gelesen: Ein Bauer wirft, und der Bericht
+        # muss trotzdem vollstaendig sein. Die frueheren Textsuchen
+        # ueberlebten den Umzug nach diagnose_befund nicht - und sie
+        # bewachten ausgerechnet die Zusicherung, um die es hier geht.
+        bericht = Diagnosebericht()
+        echt = bericht._bauer_holen
+
+        def _einer_wirft(name):
+            if name == "_diagnose_doktor":
+                def _platzt():
+                    raise RuntimeError("Absicht")
+                return _platzt
+            return echt(name)
+
+        bericht._bauer_holen = _einer_wirft
+        text = bericht.bericht_text()
+
+        self.assertIn("Abschnitt fehlgeschlagen", text,
+                      "Der Fehlschlag wurde nicht vermerkt.")
+        self.assertIn("Absicht", text)
+        # Und der Rest steht trotzdem da - alle elf Ueberschriften.
+        for schluessel, _name in Diagnosebericht.ABSCHNITTE:
+            with self.subTest(abschnitt=schluessel):
+                self.assertIn(schluessel, text)
+        self.assertIn("diagnostics.report_section_log_tail", text,
+                      "Der Bericht brach nach dem Fehlschlag ab.")
 
     def test_protokolldatei_wird_gelesen(self):
         """Kopfzeile mit Pfad und Groesse, danach hoechstens N Protokollzeilen.

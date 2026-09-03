@@ -152,9 +152,12 @@ class DoktorTests(unittest.TestCase):
 
     # ── Der Anschluss ───────────────────────────────────────────────────
     def test_der_abschnitt_haengt_im_bericht(self) -> None:
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        self.assertIn("diagnostics.report_section_doctor", quelle)
-        self.assertIn("def _diagnose_doktor", quelle)
+        """Ausgefuehrt: Der Bericht wird gebaut und muss ihn fuehren."""
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        self.assertIn("diagnostics.report_section_doctor",
+                      Diagnosebericht().bericht_text())
+        self.assertTrue(hasattr(Diagnosebericht, "_diagnose_doktor"))
 
     def test_die_uebersetzung_gibt_es_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS

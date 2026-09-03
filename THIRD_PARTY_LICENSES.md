@@ -102,14 +102,68 @@ SOFTWARE.
 
 | Bestandteil | Herkunft | Verwendung im Programm |
 | --- | --- | --- |
-| **MkPFS 0.0.9** | Phoenixx1202 / PSBrew | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
-| **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` |
+| **MkPFS 1.0.0** | Phoenixx1202 / PSBrew | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
+| **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | PS5-Homebrew-Community | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert |
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
 | **Hintergrundbilder** | für dieses Programm erstellt | Haupt- und Sidebar-Hintergründe |
 
 ---
+
+---
+
+## Die .NET-Laufzeit von Microsoft in `UFS2Tool`
+
+UFS2Tool selbst steht unter BSD-2-Clause. Es ist hier aber **eigenständig**
+gebaut – `dotnet publish --self-contained true -p:PublishSingleFile=true`,
+siehe `UFS2Tool-4.1/pruefsummen.json` – und trägt Microsofts **.NET-8-**
+**Laufzeit damit in der Programmdatei**. Am 03.09.2026 an den Binärdateien
+nachgemessen:
+
+| Bau | Größe | `System.Private.CoreLib` | `coreclr` |
+| --- | --- | --- | --- |
+| `win-x64` | 12,5 MB | 43× | 15× |
+| `linux-x64` | 13,6 MB | 28× | 16× |
+| `osx-x64` | 13,5 MB | 28× | 77× |
+| `osx-arm64` | 12,8 MB | 28× | 77× |
+
+Eingebettet ist die Fassung **8.0.30**.
+
+**Nicht überall MIT.** Der Quellcode von .NET steht unter der MIT-Lizenz, die
+**Windows-Binärdateien** aber unter einem eigenen Vertrag. Microsoft sagt das
+selbst in `dotnet/core/license-information.md`: „On Linux and macOS: MIT
+license" – „On Windows: .NET Library License". Für die drei Nicht-Windows-
+Bauten oben gilt also MIT, für `win-x64` die **.NET Library License**. Wer
+sich auf die MIT-Angabe der NuGet-Pakete stützt, liegt für Windows falsch;
+dieser Widerspruch ist bei Microsoft als `dotnet/runtime` Issue #108905
+gemeldet und war beim Nachsehen am 03.09.2026 offen.
+
+Die Weitergabe ist **ausdrücklich erlaubt** (.NET Library License §3.a,
+„Distributable Code"), solange das eigene Programm dem etwas Eigenes
+hinzufügt – was hier der Fall ist. Die Laufzeit wird unverändert
+weitergegeben.
+
+**Keine weiteren Sonderbedingungen.** Issue #108905 nennt vier Dateien mit
+eigenen Verträgen – `D3DCompiler_47_cor3.dll` (Windows SDK License) und
+`vcruntime140_cor3.dll` (Visual C++ Runtime License) unter ihnen. Am
+03.09.2026 im Windows-Bau nachgesehen: **keine davon ist enthalten.** Das
+Bündel gibt Namen unverschleiert preis – `System.Private.CoreLib` steht 43×
+darin –, die Abwesenheit ist also ein Befund und kein Messfehler. UFS2Tool
+ist ein Konsolenprogramm ohne Oberfläche; die betroffenen Dateien gehören
+zur Desktop-Beilage, die hier nicht mitkommt.
+
+**Nicht betroffen:** `ProsperoPkg-2.5` ist bewusst framework-abhängig gebaut
+(`--self-contained false`) und enthält keine Laufzeit – nachgemessen: 1,3 MB
+je Plattform, keine einzige `coreclr`-Marke. Es verlangt ein installiertes
+.NET 10 und sagt das beim Fehlen auch. Ebenso wenig betroffen sind `MkPFS`
+und `PS4FFPFSC`; beide bringen ihre eigenen Lizenztexte mit.
+
+Quellen, am 03.09.2026 geprüft:
+[license-information.md](https://github.com/dotnet/core/blob/main/license-information.md) ·
+[license-information-windows.md](https://github.com/dotnet/core/blob/main/license-information-windows.md) ·
+[Issue #108905](https://github.com/dotnet/runtime/issues/108905) ·
+[.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
 
 ## Verfahren, die nachgebaut wurden
 

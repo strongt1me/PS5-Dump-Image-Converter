@@ -117,6 +117,15 @@ from ps5_validator.utils.pkg_writer import (
     build_debug_pkg,
 )
 from ps5_validator.utils import ps5_downloads
+from ps5_validator.utils import prosperopkg
+from ps5_validator.ui import bedienzustand
+from ps5_validator.utils import einstellungen
+from ps5_validator import programmname
+from ps5_validator.utils import abbild_metadaten
+from ps5_validator.utils import abbild_pruefen
+from ps5_validator.utils import diagnose_befund
+from ps5_validator.utils import ps4_werkzeug
+from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
@@ -133,7 +142,8 @@ from ps5_validator.utils.param_manifest import (
     save_manifest_json,
     save_param_json,
 )
-from ps5_validator.utils.i18n import DEFAULT_LANGUAGE, VERIFY_STUFEN, ZSTD_LEVEL_KEYS, translate as i18n_translate
+from ps5_validator.utils.i18n import (BAUFORM_KEYS, DEFAULT_LANGUAGE, VERIFY_STUFEN,
+                                      ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import merge_flat_ini, parse_flat_ini, render_flat_ini
 from ps5_validator.utils.plattform import (
     IST_LINUX,
@@ -446,16 +456,16 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.1"
-APP_TITLE = f"PS5 DUMP & IMAGE CONVERTER {APP_VERSION}"
+APP_VERSION = "v1.9.2"
+APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
 # Datei-/Ordnernamen (FFPKG-Metascan, param.json-Wiederherstellung).
-_TITLE_ID_PATTERN = r"PPSA\d{5}|PPUS\d{5}|PPJP\d{5}|CUSA\d{5}|PUSA\d{5}|PCJS\d{5}|PCAS\d{5}|ECAS\d{5}"
-_TITLE_ID_RE = re.compile(rf"(?<![A-Z0-9])({_TITLE_ID_PATTERN})(?![A-Z0-9])")
+_TITLE_ID_PATTERN = abbild_metadaten._TITLE_ID_PATTERN
+_TITLE_ID_RE = abbild_metadaten._TITLE_ID_RE
 
 # Verbindliche MkPFS-Version fuer Aufgaben 1-8.
-MKPFS_REQUIRED_VERSION = "0.0.9"
+MKPFS_REQUIRED_VERSION = werkzeuge_bereitstellen.MKPFS_ERFORDERLICHE_FASSUNG
 
 # Uebliche FTP-Ports einer vorbereiteten PS5. Die Reihenfolge ist zugleich die
 # Reihenfolge der automatischen Suche:
@@ -524,13 +534,13 @@ def _macos_schriftfaktor() -> float:
     if not IST_MACOS:
         return 1.0
     try:
-        datei = os.path.join(_system_konfigurationsordner(), "paths.json")
-        if os.path.isfile(datei):
-            with open(datei, "r", encoding="utf-8") as f:
-                wert = float(json.load(f).get("macos_font_scaling",
-                                              MACOS_SCHRIFT_SKALIERUNG))
-            if 0.5 <= wert <= 4.0:
-                return wert
+        # Ueber einstellungen.lesen statt ueber einen selbstgebauten
+        # Pfad: Sonst wird am alten Ort gesucht, wenn der Ausweichweg
+        # in den Temp-Ordner greift.
+        wert = float(einstellungen.lesen("macos_font_scaling",
+                                         MACOS_SCHRIFT_SKALIERUNG))
+        if 0.5 <= wert <= 4.0:
+            return wert
     except Exception:
         # Die Schriftwahl darf den Start nie verhindern. Logger gibt es an
         # dieser Stelle noch nicht.
@@ -641,10 +651,12 @@ ZSTD_STUFEN: frozenset[int] = frozenset(level for _key, level in ZSTD_LEVEL_KEYS
 
 # Vorgabestufe, wenn nichts Gueltiges gewaehlt ist.
 #
-# 9 wie bei allen Referenzen: mkpfs selbst hat `--compression-level` auf 9
-# voreingestellt (MkPFS-0.0.9/mkpfs/cli.py), der ps5-exfat-builder 4.0.2 nennt
-# die Stufe in seiner Klappliste "9 - Stable / safest (default)", und der
-# zlib-Encoder von LibProsperoPKG 2.5 schreibt ebenfalls mit Maximalstufe.
+# 9 wie bei den Referenzen: der ps5-exfat-builder 4.0.2 nennt die Stufe in
+# seiner Klappliste "9 - Stable / safest (default)", und der zlib-Encoder von
+# LibProsperoPKG 2.5 schreibt ebenfalls mit Maximalstufe. MkPFS selbst hatte
+# in 0.0.9 ebenfalls 9 voreingestellt und stellt seit 1.0.0 nur noch 7 vor
+# (MkPFS-1.0.0/mkpfs/cli.py:797) - das beruehrt uns nicht: alle vier
+# Packaufrufe dieses Programms geben `--compression-level` ausdruecklich mit.
 #
 # Die Stufe ist reine Groessen- und Zeitfrage, keine Kompatibilitaetsfrage:
 # ShadowMount haengt jede Stufe gleich ein, weil zlib stufenunabhaengig
@@ -652,6 +664,60 @@ ZSTD_STUFEN: frozenset[int] = frozenset(level for _key, level in ZSTD_LEVEL_KEYS
 # 31 MB (5 %), zwischen 3 und 9 sogar nur 4,5 MB - PS5-Spieldaten sind
 # weitgehend inkompressibel.
 ZSTD_VORGABE: int = 9
+
+# Das Rechenwerk, mit dem MkPFS die PFSC-Bloecke packt.
+#
+# MkPFS 1.0.0 hat `--compression-backend` auf "auto" voreingestellt und
+# bevorzugt damit isal, sobald es auf dem Rechner liegt. isal rechnet mit
+# einer eigenen Stufenskala - die Stufen 1-9 werden auf 0-3 abgebildet -,
+# und die Abbilder fallen damit anders aus als bisher. Diese Fassung legt
+# sich deshalb ausdruecklich auf zlib-ng fest: dasselbe Rechenwerk wie unter
+# MkPFS 0.0.9, unabhaengig davon, was installiert ist. Siehe
+# MkPFS-1.0.0/UPSTREAM.md.
+MKPFS_BACKEND: str = "zlib-ng"
+
+# Die Bauform eines Containers: was zwischen Huelle und Spieldateien liegt.
+#
+# "exfat"  Der Ordner wird in ein exFAT-Abbild gewickelt und das in einem Zug
+#          in den Container komprimiert - ein einziger "pack folder"-Aufruf.
+#          Die Anleitung der Engine nennt das "the most stable format for
+#          compressed game backups", und es ist der schnellere Weg: Am
+#          03.09.2026 an 200 MB gemessen 1,3 s gegen 6,3 s, weil die Daten
+#          nur einmal geschrieben werden statt zweimal.
+# "pfs"    Erst ein rohes inneres PFS ("pack folder --raw --no-compress"),
+#          dann der aeussere Container darum ("pack file"). So hat dieses
+#          Programm bis zum 03.09.2026 immer gebaut.
+#
+# Beide sind gueltig; der Validator kennt sie als "exfat" und "pfs" und
+# entpackt beide vollstaendig. Die Kompression nimmt sich nichts - die
+# Statistik des Entwicklers nennt 47 % gegen 46 % an einem 6,5-GB-Titel.
+BAUFORM_EXFAT: str = "exfat"
+BAUFORM_PFS: str = "pfs"
+BAUFORM_VORGABE: str = BAUFORM_EXFAT
+
+
+def mkpfs_argumente_mit_backend(args: list[str],
+                                backend: str = MKPFS_BACKEND) -> list[str]:
+    """Ergaenzt einen Packaufruf um das Rechenwerk, das er benutzen soll.
+
+    Betroffen sind nur ``pack folder`` und ``pack file`` - nur sie kennen den
+    Schalter. Wer ihn schon mitbringt, behaelt seinen Wert.
+
+    Der Schalter kommt **hinter den Unterbefehl**, nicht ans Ende: dort stehen
+    Quelle und Ziel.
+
+    Args:
+        args:    Die Argumente fuer mkpfs, ohne Programmname.
+        backend: Das Rechenwerk, siehe ``MKPFS_BACKEND``.
+
+    Returns:
+        Die Argumente - unveraendert, wenn nichts zu tun war.
+    """
+    if len(args) < 2 or args[0] != "pack" or args[1] not in ("folder", "file"):
+        return args
+    if "--compression-backend" in args:
+        return args
+    return [*args[:2], "--compression-backend", backend, *args[2:]]
 
 # Vorgabe fuer die beiden Hintergrundbilder, solange nichts gewaehlt ist.
 #
@@ -2524,6 +2590,13 @@ class Drehknopf(tk.Canvas):
 class PS5ConverterGUI:
     """Grafische Benutzeroberfläche für den PS5 DUMP & IMAGE Converter."""
 
+    #: Die Bauform, solange keine gewaehlt wurde. Als Klassenwert und nicht
+    #: erst im Erzeuger: Der halbe Pruefbestand baut die Klasse mit
+    #: ``__new__`` ohne ``__init__`` auf, und die Packwege lesen die Form.
+    #: Ohne diesen Wert waere jeder solche Aufbau ein AttributeError.
+    bauform: str = BAUFORM_VORGABE
+
+
     # Farbpalette (PS5 Neon Blue)
     # ──────────────────────────────────────────────────────────────────
     # Farbschwaechen
@@ -2827,6 +2900,7 @@ class PS5ConverterGUI:
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
+        ("titlebar.pkg_bauen", "_show_pkg_bauen"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
@@ -2991,10 +3065,11 @@ class PS5ConverterGUI:
         self._mode_tooltip_handles: list[DelayedTooltip] = []
 
         # 4. Metadaten-Variablen initialisieren
+        # Die Schluessel und ihre Reihenfolge stehen an einer Stelle, in
+        # bedienzustand.METADATENFELDER - sonst laufen Anzeige und Leser
+        # auseinander, sobald jemand nur eine der beiden Listen ergaenzt.
         self._meta_labels: dict[str, tk.StringVar] = {}
-        for key in ["title", "title_id", "version", "required_firmware", "sdk_stand",
-                    "region", "publisher", "category",
-                    "release_date", "genre", "platform"]:
+        for key in bedienzustand.METADATENFELDER:
             self._meta_labels[key] = tk.StringVar(value="–")
         self._info_src_size_var = tk.StringVar(value="–")
         self._info_est_size_var = tk.StringVar(value="–")
@@ -3565,6 +3640,8 @@ class PS5ConverterGUI:
         # mkpfs-Engine nicht mehr synchron im Hauptthread extrahieren.
         # Sie wird beim Start im Hintergrund vorgewärmt und bei Bedarf lazy geladen.
         self.mkpfs_dir: str = ""
+        #: Welche Bauform neue Container bekommen - siehe BAUFORM_VORGABE.
+        self.bauform: str = BAUFORM_VORGABE
 
         # Zstandard-Kompressions-Level (Default 7 = Standard laut PS5-FFPFSC-PRO / Bizkut Backend).
         # Ab v1.7.91 in der GUI unter vier Stufen (1/3/6/9, wie ps5-exfat-builder) auswählbar;
@@ -4151,6 +4228,21 @@ class PS5ConverterGUI:
 
         # Kompressionsstufen-Dropdown: Werte und aktuelle Auswahl neu übersetzen,
         # ohne die gewählte Stufe (1/3/6/9) zu verändern.
+        # Dasselbe fuer die Bauform: Die Tabelle bildet Anzeigetext auf Wert
+        # ab, und die Anzeigetexte wechseln mit der Sprache. Bliebe sie
+        # stehen, fiele die naechste Auswahl auf die Vorgabe zurueck.
+        if hasattr(self, "bauform_combo"):
+            _gewaehlte_bauform = self.bauform
+            self._bauform_options = {
+                self._t(schluessel): wert for schluessel, wert in BAUFORM_KEYS
+            }
+            self.bauform_combo["values"] = list(self._bauform_options.keys())
+            self.bauform_var.set(next(
+                (text for text, wert in self._bauform_options.items()
+                 if wert == _gewaehlte_bauform),
+                self._t("bauform.exfat")))
+            self._bauform_hinweis_setzen()
+
         if hasattr(self, "compression_combo"):
             _selected_level = self.zstd_level
             self._zstd_level_options = {self._t(key): level for key, level in ZSTD_LEVEL_KEYS}
@@ -4160,6 +4252,27 @@ class PS5ConverterGUI:
                 self._t("compression.balanced"),
             )
             self.compression_level_var.set(_new_label)
+
+        # Dasselbe fuer die Pruefstufe. Ihre Tabelle wurde bisher NUR beim
+        # Bauen gefuellt und beim Sprachwechsel nie - eine Asymmetrie zur
+        # Packstufe darueber. Solange die Klappliste in der alten Sprache
+        # stehenblieb, passte beides noch zusammen; sobald aber ein neuer,
+        # uebersetzter Text hereinkam, fand ihn die alte Tabelle nicht und
+        # _on_verify_stufe_changed fiel auf "schnell" zurueck - und
+        # speicherte das. Wer eine vollstaendige Pruefung wollte, bekam eine
+        # schnelle, ohne dass die Oberflaeche etwas anderes zeigte.
+        if hasattr(self, "verify_combo"):
+            _stufe_jetzt = getattr(self, "mkpfs_verify", "schnell")
+            self._verify_optionen = {
+                self._t(schluessel): kennung
+                for schluessel, kennung in VERIFY_STUFEN
+            }
+            self.verify_combo["values"] = list(self._verify_optionen.keys())
+            _verify_label = next(
+                (bez for bez, kennung in self._verify_optionen.items()
+                 if kennung == _stufe_jetzt),
+                self._t("verify.quick"))
+            self.verify_var.set(_verify_label)
 
         # Beschriftungen mit eingebranntem Bildausschnitt neu zeichnen, da sich
         # ihre Textbreite (und damit Größe/Position) je nach Sprache ändert.
@@ -5228,139 +5341,21 @@ class PS5ConverterGUI:
             logger.debug("Zielformat nicht lesbar: %s", exc)
             return False
 
-    def _verify_output_artifact(self, mode: str, final_path: str) -> dict[str, Any]:
-        """Verifiziert ein Ergebnisartefakt schnell und robust."""
-        result: dict[str, Any] = {
-            "ok": False,
-            "mode": mode,
-            "path": final_path or "",
-            "type": "none",
-            "size_bytes": 0,
-            "sha256": "",
-            "method": "",
-            "detail": "",
-        }
+    def _pruefstand(self) -> "abbild_pruefen.Pruefstand":
+        """Baut den Pruefstand mit den Nahtstellen dieser Instanz."""
+        return abbild_pruefen.Pruefstand(
+            text=self._t,
+            erwartet_dump_ordner=self._expects_dump_folder,
+            sieht_aus_wie_dump=self._looks_like_dump_folder,
+            ordner_inhalt=self._sammel_ordner_inhalt,
+            ordner_lesen=self._scandir_safe,
+            mkpfs_ordner_holen=self._extract_embedded_mkpfs,
+            ufs2tool_pfad=self._extract_ufs2tool,
+            dokan_vorhanden=self._find_dokan_driver)
 
-        if not final_path:
-            result["ok"] = True
-            result["detail"] = "Kein finales Artefakt für diesen Modus."
-            return result
-
-        if not os.path.exists(final_path):
-            result["detail"] = "Ausgabepfad existiert nicht."
-            return result
-
-        if os.path.isdir(final_path):
-            count = 0
-            total = 0
-            for dirpath, _dirnames, filenames in os.walk(final_path):
-                for fn in filenames:
-                    p = os.path.join(dirpath, fn)
-                    try:
-                        total += os.path.getsize(p)
-                        count += 1
-                    except OSError:
-                        pass
-            ok = count > 0 and total > 0
-            detail = f"Dateien: {count}, Bytes: {total}"
-            method = "walk-count"
-
-            # Zielformat "Dump-Ordner": eine reine Datei-/Byte-Zählung genügt nicht.
-            # Eine falsch verschachtelte Quelle liefert einen Ordner mit einem
-            # einzigen Container darin – gross, lesbar und trotzdem unbrauchbar.
-            # Deshalb zusätzlich nachweisen, dass ein Dump herausgekommen ist.
-            if ok and self._expects_dump_folder(mode):
-                method = "walk-count+dump-check"
-                if not self._looks_like_dump_folder(final_path):
-                    sub_ok = any(
-                        self._looks_like_dump_folder(entry.path)
-                        for entry in self._scandir_safe(final_path)
-                        if entry.is_dir()
-                    )
-                    if not sub_ok:
-                        ok = False
-                        detail = f"{detail} – {self._t('verify.no_dump_folder')}"
-
-            result.update({
-                "type": "directory",
-                "size_bytes": int(total),
-                "method": method,
-                "ok": ok,
-                "detail": detail,
-            })
-            return result
-
-        try:
-            size = os.path.getsize(final_path)
-        except OSError as exc:
-            result["detail"] = f"Dateigröße nicht lesbar: {exc}"
-            return result
-
-        result["type"] = "file"
-        result["size_bytes"] = int(size)
-        if size <= 0:
-            result["detail"] = "Datei ist leer (0 Bytes)."
-            return result
-
-        if os.path.splitext(final_path)[1].lower() == ".ffpkg":
-            return self._validate_ffpkg_artifact(final_path, base_result=result)
-
-        if os.path.splitext(final_path)[1].lower() in {".ffpfs", ".ffpfsc"}:
-            try:
-                mkpfs_parent = self._extract_embedded_mkpfs()
-                if mkpfs_parent and mkpfs_parent not in sys.path:
-                    sys.path.insert(0, mkpfs_parent)
-                from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
-
-                inspection = verify_pfs_image(Path(final_path))
-                result["method"] = "mkpfs-verify"
-                result["sha256"] = str(getattr(inspection, "manifest_sha256", "") or "")
-                errors = list(getattr(inspection, "errors", []) or [])
-                warnings = list(getattr(inspection, "warnings", []) or [])
-                if errors:
-                    result["detail"] = "MkPFS-Strukturfehler: " + "; ".join(errors[:3])
-                    return result
-                result["ok"] = True
-                result["detail"] = (
-                    f"MkPFS-Struktur gültig; Dateien: "
-                    f"{len(getattr(inspection, 'file_inodes', {}) or {})}"
-                    + (f"; Warnungen: {len(warnings)}" if warnings else "")
-                )
-                return result
-            except Exception as exc:
-                result["method"] = "mkpfs-verify"
-                result["detail"] = f"MkPFS-Strukturprüfung fehlgeschlagen: {exc}"
-                return result
-
-        try:
-            h = hashlib.sha256()
-            with open(final_path, "rb") as fh:
-                if size <= 2 * 1024 ** 3:
-                    while True:
-                        chunk = fh.read(4 * 1024 * 1024)
-                        if not chunk:
-                            break
-                        h.update(chunk)
-                    result["method"] = "sha256-full"
-                else:
-                    sample = 8 * 1024 * 1024
-                    head = fh.read(sample)
-                    h.update(head)
-                    mid_off = max(0, (size // 2) - (sample // 2))
-                    fh.seek(mid_off)
-                    h.update(fh.read(sample))
-                    tail_off = max(0, size - sample)
-                    fh.seek(tail_off)
-                    h.update(fh.read(sample))
-                    h.update(str(size).encode("ascii", errors="ignore"))
-                    result["method"] = "sha256-sampled"
-            result["sha256"] = h.hexdigest()
-            result["ok"] = True
-            result["detail"] = "Verifizierung erfolgreich."
-            return result
-        except Exception as exc:
-            result["detail"] = f"Hash-Verifizierung fehlgeschlagen: {exc}"
-            return result
+    def _verify_output_artifact(self, mode: str, final_path: str):
+        """Prueft das Ergebnis eines Laufs. Siehe abbild_pruefen."""
+        return self._pruefstand()._verify_output_artifact(mode, final_path)
 
     def _calc_pack_workers(
         self,
@@ -5442,140 +5437,15 @@ class PS5ConverterGUI:
         return ""
 
     def _extract_embedded_mkpfs(self) -> str:
-        """Extrahiert die eingebettete mkpfs-Engine in ein temporäres Verzeichnis.
+        """Stellt die eingebettete mkpfs-Engine bereit.
 
-        Sucht nach dem Extrahieren rekursiv nach dem ``mkpfs``-Python-Paket
-        (Verzeichnis, das eine ``__init__.py`` enthält) und gibt dessen
-        **übergeordnetes** Verzeichnis zurück, damit ``import mkpfs`` funktioniert.
-
-        Windows 10/11: Berücksichtigt Berechtigungsprobleme in ``%TEMP%`` und
-        fällt auf ein lokales Verzeichnis zurück.
-
-        Returns:
-            Pfad, der als ``sys.path``-Eintrag für ``import mkpfs`` geeignet ist.
+        Siehe werkzeuge_bereitstellen.mkpfs_bereitstellen. Der Temp-Ordner
+        wird fertig hereingereicht - seine Herkunft haengt an einer
+        Tk-Variable und bleibt deshalb hier.
         """
-        def _find_mkpfs_parent(base: str) -> str:
-            """Sucht rekursiv nach dem Verzeichnis, das das mkpfs-Paket enthält.
-
-            Args:
-                base: Wurzelverzeichnis der Suche.
-
-            Returns:
-                Übergeordnetes Verzeichnis des mkpfs-Pakets, oder ``base`` als
-                Fallback wenn nichts gefunden wurde.
-            """
-            for dirpath, _, filenames in os.walk(base):
-                if os.path.basename(dirpath) == "mkpfs" and "__init__.py" in filenames:
-                    return os.path.dirname(dirpath)
-            return base
-
-        def _do_extract(extract_dir: str, zip_path: str) -> str:
-            """Extrahiert das ZIP und gibt den sys.path-Eintrag zurück."""
-            os.makedirs(extract_dir, exist_ok=True)
-            with ZipFile(zip_path) as z:
-                z.extractall(extract_dir)
-            return _find_mkpfs_parent(extract_dir)
-
-        def _find_required_source_parent() -> str | None:
-            """Findet einen bereits bereitgestellten MkPFS-Quellordner (v0.0.9)."""
-            runtime_root = os.path.dirname(
-                sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-            )
-            search_roots = [runtime_root, os.getcwd()]
-            meipass = getattr(sys, "_MEIPASS", "")
-            if meipass:
-                search_roots.insert(0, str(meipass))
-
-            seen_roots: set[str] = set()
-            for root in search_roots:
-                norm_root = os.path.abspath(root)
-                if norm_root in seen_roots:
-                    continue
-                seen_roots.add(norm_root)
-
-                # Variante A: entpackter Ordner "MkPFS-0.0.9/mkpfs"
-                cand_a = os.path.join(norm_root, f"MkPFS-{MKPFS_REQUIRED_VERSION}")
-                if os.path.isfile(os.path.join(cand_a, "mkpfs", "__init__.py")):
-                    return cand_a
-
-                # Variante B: direktes Paket "mkpfs" im Root
-                if os.path.isfile(os.path.join(norm_root, "mkpfs", "__init__.py")):
-                    return norm_root
-
-            return None
-
-        def _find_required_zip() -> str | None:
-            """Findet die verbindliche MkPFS-ZIP im Runtime-/Arbeitsverzeichnis."""
-            runtime_root = os.path.dirname(
-                sys.executable if getattr(sys, "frozen", False) else os.path.abspath(__file__)
-            )
-            search_roots = [runtime_root, os.getcwd()]
-            meipass = getattr(sys, "_MEIPASS", "")
-            if meipass:
-                search_roots.insert(0, str(meipass))
-            required_name = f"MkPFS-{MKPFS_REQUIRED_VERSION}.zip"
-
-            seen_roots: set[str] = set()
-            for root in search_roots:
-                norm_root = os.path.abspath(root)
-                if norm_root in seen_roots:
-                    continue
-                seen_roots.add(norm_root)
-                candidate = os.path.join(norm_root, required_name)
-                if os.path.isfile(candidate):
-                    return candidate
-            return None
-
-        # 1) Bevorzugt: bereitgestellter Quellordner (bereits entpackt)
-        _source_parent = _find_required_source_parent()
-        if _source_parent:
-            _parent_for_import = _find_mkpfs_parent(_source_parent)
-            if os.path.isdir(os.path.join(_parent_for_import, "mkpfs")):
-                self._append_to_log(self._t('log.auto.0009', v0=MKPFS_REQUIRED_VERSION, v1=_source_parent))
-                return _parent_for_import
-
-        # 2) ZIP-Variante (inkl. PyInstaller _MEIPASS)
-        _selected_zip_path = _find_required_zip()
-        _version_tag = MKPFS_REQUIRED_VERSION.replace(".", "_")
-
-        if not _selected_zip_path:
-            self._append_to_log(self._t('log.auto.0010', v0=MKPFS_REQUIRED_VERSION))
-            return ""
-
-        # Primäres Zielverzeichnis in %TEMP%
-        extract_dir = os.path.join(self._get_runtime_temp_dir(), f"ps5converter_engine_v{_version_tag}")
-
-        # Bereits extrahiert und mkpfs-Paket vorhanden?
-        cached = _find_mkpfs_parent(extract_dir)
-        if os.path.isdir(os.path.join(cached, "mkpfs")):
-            self._append_to_log(self._t('log.auto.0011', v0=MKPFS_REQUIRED_VERSION, v1=cached))
-            return cached
-
-        # Neu extrahieren
-        try:
-            result = _do_extract(extract_dir, _selected_zip_path)
-            self._append_to_log(self._t('log.auto.0012', v0=MKPFS_REQUIRED_VERSION, v1=_selected_zip_path))
-            self._append_to_log(self._t('log.auto.0013', v0=result))
-            return result
-        except PermissionError as exc:
-            self._append_to_log(self._t('log.auto.0014', v0=exc))
-        except Exception as exc:
-            self._append_to_log(self._t('log.auto.0015', v0=exc))
-
-        # Fallback: Verzeichnis neben der EXE / dem Skript
-        local_dir = os.path.join(
-            os.path.dirname(sys.executable
-                            if getattr(sys, "frozen", False)
-                            else os.path.abspath(__file__)),
-            f"engine_temp_v{_version_tag}",
-        )
-        try:
-            result = _do_extract(local_dir, _selected_zip_path)
-            self._append_to_log(self._t('log.auto.0016', v0=result))
-            return result
-        except Exception as exc:
-            self._append_to_log(self._t('log.auto.0017', v0=exc))
-            return local_dir
+        return werkzeuge_bereitstellen.mkpfs_bereitstellen(
+            self._get_runtime_temp_dir(), MKPFS_REQUIRED_VERSION,
+            melden=self._append_to_log, text=self._t)
 
     # ------------------------------------------------------------------
     # GUI-Aufbau
@@ -6552,6 +6422,58 @@ class PS5ConverterGUI:
         self._card_caption_labels.append(self.format_info_label)
 
         # Ziel
+        # ── BAUFORM ──────────────────────────────────────────────────────
+        # Was zwischen Huelle und Spieldateien liegt. Eigene Zeile unter der
+        # Formatauswahl: Die Wahl faellt einmal und gilt dann, waehrend
+        # Kompressions- und Pruefstufe zum Auftrag gehoeren. Gespeichert wird
+        # der sprachunabhaengige Wert ("exfat"/"pfs"), nicht der Anzeigetext -
+        # sonst faellt die Auswahl nach einem Sprachwechsel auf die Vorgabe
+        # zurueck.
+        self._bauform_options: dict[str, str] = {
+            self._t(schluessel): wert for schluessel, wert in BAUFORM_KEYS
+        }
+        _gespeicherte_bauform = str(
+            self._load_setting("bauform", BAUFORM_VORGABE) or "").strip().lower()
+        if _gespeicherte_bauform not in {wert for _s, wert in BAUFORM_KEYS}:
+            _gespeicherte_bauform = BAUFORM_VORGABE
+        self.bauform_var = tk.StringVar(value=next(
+            (self._t(s) for s, w in BAUFORM_KEYS if w == _gespeicherte_bauform),
+            self._t("bauform.exfat")))
+        self.bauform = _gespeicherte_bauform
+
+        self.bauform_title = ttk.Label(
+            path_card,
+            text=self._t("bauform.label"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            background=self._COLORS["bg_card"],
+            compound="center",
+        )
+        self._register_translatable(self.bauform_title, "bauform.label")
+        # Beschriftung und Liste in EINER Zeile, die Erklaerung im Tooltip
+        # statt in einer eigenen Zeile darunter: Drei Zeilen mehr in der
+        # Pfad-Karte werfen die Rollflaechen-Pruefung um, die 991 Pixel
+        # Fensterhoehe einstellt und verlangt, dass dabei nichts rollt.
+        self.bauform_title.grid(row=7, column=0, sticky="w", pady=(12, 2))
+        self._card_caption_labels.append(self.bauform_title)
+
+        self.bauform_combo = ttk.Combobox(
+            path_card,
+            textvariable=self.bauform_var,
+            state="readonly",
+            font=(UI_SCHRIFT, pt(10)),
+            values=list(self._bauform_options.keys()),
+            width=34,
+        )
+        self.bauform_combo.grid(row=7, column=1, columnspan=2, sticky="w",
+                                pady=(12, 2))
+        self.bauform_combo.bind("<<ComboboxSelected>>", self._on_bauform_changed)
+        # Die Erklaerung haengt am Auswahlfeld, nicht in einer eigenen Zeile:
+        # drei Zeilen mehr in der Karte werfen die Rollflaechen-Pruefung um.
+        self.bauform_tooltip = DelayedTooltip(
+            self.bauform_combo, self._bauform_erklaerung(),
+            delay_ms=900, wraplength=430)
+
         self.dest_title = ttk.Label(
             path_card,
             text=self._t("main.target_folder_label"),
@@ -6561,10 +6483,10 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.dest_title, "main.target_folder_label")
-        self.dest_title.grid(row=7, column=0, sticky="w")
+        self.dest_title.grid(row=8, column=0, sticky="w")
         self._card_caption_labels.append(self.dest_title)
         self.dest_entry = ttk.Entry(path_card, textvariable=self.dest_path, font=(UI_SCHRIFT, pt(12)))
-        self.dest_entry.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.dest_entry.grid(row=9, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.dest_btn = RoundedButton(
             path_card, text=self._t("main.choose_folder_button"), command=self._browse_dest,
             font=(UI_SCHRIFT, pt(11), "bold"),
@@ -6574,7 +6496,7 @@ class PS5ConverterGUI:
             parent_bg=self._COLORS["bg_card"],
         )
         self._register_translatable(self.dest_btn, "main.choose_folder_button")
-        self.dest_btn.grid(row=8, column=2, padx=(10, 0), pady=(5, 0))
+        self.dest_btn.grid(row=9, column=2, padx=(10, 0), pady=(5, 0))
 
         # Temp-Ordner für große temporäre Arbeitsdateien
         self.temp_title = ttk.Label(
@@ -6586,10 +6508,10 @@ class PS5ConverterGUI:
             compound="center",
         )
         self._register_translatable(self.temp_title, "main.temp_folder_label")
-        self.temp_title.grid(row=9, column=0, sticky="w", pady=(14, 0))
+        self.temp_title.grid(row=10, column=0, sticky="w", pady=(14, 0))
         self._card_caption_labels.append(self.temp_title)
         self.temp_entry = ttk.Entry(path_card, textvariable=self.temp_path, font=(UI_SCHRIFT, pt(12)))
-        self.temp_entry.grid(row=10, column=0, columnspan=2, sticky="ew", pady=(5, 0))
+        self.temp_entry.grid(row=11, column=0, columnspan=2, sticky="ew", pady=(5, 0))
         self.temp_btn = RoundedButton(
             path_card, text=self._t("main.choose_temp_button"), command=self._browse_temp_dir,
             font=(UI_SCHRIFT, pt(11), "bold"),
@@ -6599,7 +6521,7 @@ class PS5ConverterGUI:
             parent_bg=self._COLORS["bg_card"],
         )
         self._register_translatable(self.temp_btn, "main.choose_temp_button")
-        self.temp_btn.grid(row=10, column=2, padx=(10, 0), pady=(5, 0))
+        self.temp_btn.grid(row=11, column=2, padx=(10, 0), pady=(5, 0))
 
         # Rechner nach erfolgreichem Abschluss herunterfahren.
         #
@@ -6626,7 +6548,7 @@ class PS5ConverterGUI:
             highlightthickness=0,
         )
         self._register_translatable(self.shutdown_check, "main.shutdown_after_success")
-        self.shutdown_check.grid(row=11, column=0, columnspan=3, sticky="w", pady=(16, 0))
+        self.shutdown_check.grid(row=12, column=0, columnspan=3, sticky="w", pady=(16, 0))
 
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
@@ -8629,6 +8551,35 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("Titelleistenknopf nicht packbar: %s", exc)
 
+    @classmethod
+    def _sammel_ordner_inhalt(cls, ordner: str) -> list:
+        """Die verwertbaren Quellen unmittelbar in ``ordner``.
+
+        Eine Ebene tief und nicht tiefer: Ein Ordner voller Dumps hat sie
+        nebeneinander liegen. Wer rekursiv suchte, faende in jedem Dump
+        auch noch dessen Unterordner und geriete bei verschachtelten
+        Ablagen ins Rutschen.
+
+        Args:
+            ordner: Der Ordner, in den geschaut wird.
+
+        Returns:
+            Dump-Ordner und Abbilddateien darin, nach Namen sortiert.
+        """
+        gefunden = []
+        for eintrag in sorted(cls._scandir_safe(ordner),
+                              key=lambda e: e.name.lower()):
+            try:
+                if eintrag.is_dir():
+                    if cls._looks_like_dump_folder(eintrag.path):
+                        gefunden.append(eintrag.path)
+                elif eintrag.name.lower().endswith(cls._SAMMEL_ENDUNGEN):
+                    gefunden.append(eintrag.path)
+            except OSError as exc:
+                logger.debug("Eintrag nicht lesbar (%s): %s",
+                             eintrag.name, exc)
+        return gefunden
+
     def _sammelmenue_bestuecken(self) -> None:
         """Baut das Sammelmenue neu: Grundeintraege plus die eingefalteten.
 
@@ -10026,7 +9977,14 @@ class PS5ConverterGUI:
 
     def _on_verify_stufe_changed(self, _event=None) -> None:
         """Uebernimmt die gewaehlte mkpfs-Pruefstufe und merkt sie."""
-        kennung = self._verify_optionen.get(self.verify_var.get(), "schnell")
+        bezeichnung = self.verify_var.get()
+        if bezeichnung not in self._verify_optionen:
+            logger.warning(
+                "Pruefstufe %r steht nicht in der Auswahl - die bisherige "
+                "Stufe %s bleibt.", bezeichnung,
+                getattr(self, "mkpfs_verify", "?"))
+            return
+        kennung = self._verify_optionen[bezeichnung]
         self.mkpfs_verify = kennung
         self._save_setting("mkpfs_verify", kennung)
 
@@ -10060,7 +10018,12 @@ class PS5ConverterGUI:
     def _on_compression_level_changed(self, _event=None) -> None:
         """Übernimmt die in der GUI gewählte PFS-Kompressionsstufe (1/3/6/9) und speichert sie."""
         label = self.compression_level_var.get()
-        level = self._zstd_level_options.get(label, ZSTD_VORGABE)
+        if label not in self._zstd_level_options:
+            logger.warning(
+                "Packstufe %r steht nicht in der Auswahl - die bisherige "
+                "Stufe %s bleibt.", label, getattr(self, "zstd_level", "?"))
+            return
+        level = self._zstd_level_options[label]
         self.zstd_level = level
         self._save_setting("zstd_level", level)
         self._schaetzung_neu_berechnen()
@@ -10478,179 +10441,16 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _validate_source_path(path: str, mode: str) -> str:
-        """Prüft ob der Quellpfad den Regeln für den gewählten Modus entspricht.
+        """Prueft eine Quelle. Siehe abbild_pruefen.
 
-        Returns:
-            Leerer String wenn gültig, sonst Fehlermeldung.
+        Bleibt @staticmethod - test_sammel_ordner ruft sie an der Klasse.
+        Ihre beiden Helfer sind dort ebenfalls statisch, deshalb laesst sich
+        der Pruefstand auch ohne Instanz bauen.
         """
-        if mode == "pack_folder":
-            if not os.path.isdir(path):
-                return (
-                    "Aufgabe 1 erfordert einen Game Dump Ordner als Quelle.\n"
-                    f"Der gewählte Pfad ist kein Ordner:\n{path}"
-                )
-        elif mode == "unpack_to_exfat":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 2 akzeptiert eine .ffpfsc Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Aufgabe 2 akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "pack_file":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 3 erfordert eine .exfat Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".exfat"):
-                return (
-                    "Aufgabe 3 erfordert eine .exfat Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .exfat:\n"
-                    f"{os.path.basename(path)}"
-                )
-        # Die folgenden Modi sind interne Konvertierungspfade ohne eigenen
-        # Eintrag in _MODE_OPTIONS – sie werden aus mehreren Aufgaben heraus
-        # aufgerufen. Deshalb nennen die Meldungen den erwarteten Quelltyp
-        # statt einer festen Aufgabennummer.
-        elif mode == "unpack_to_game_folder":
-            if not os.path.isfile(path):
-                return (
-                    "Dieser Schritt akzeptiert eine .ffpfsc Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Dieser Schritt akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "inspect":
-            if not os.path.isfile(path):
-                return (
-                    "Die Metadaten-Anzeige erfordert eine .ffpfsc Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Die Metadaten-Anzeige erfordert eine .ffpfsc/.ffpfs Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "dump_validator":
-            # Akzeptiert: Ordner (Game Dump), .ffpfsc/.ffpfs, .exfat oder .ffpkg
-            if os.path.isdir(path):
-                pass
-            elif os.path.isfile(path):
-                ext = path.lower()
-                if not (
-                    ext.endswith(".ffpfsc")
-                    or ext.endswith(".ffpfs")
-                    or ext.endswith(".exfat")
-                    or ext.endswith(".ffpkg")
-                ):
-                    return (
-                        "Aufgabe 8 (Dump Validator) akzeptiert:\n"
-                        "  \u2022 Game Dump Ordner\n"
-                        "  \u2022 .ffpfsc/.ffpfs Datei\n"
-                        "  \u2022 .exfat Datei\n"
-                        "  \u2022 .ffpkg Datei\n\n"
-                        f"Die gew\u00e4hlte Datei hat keine g\u00fcltige Endung:\n"
-                        f"{os.path.basename(path)}"
-                    )
-            else:
-                return (
-                    "Aufgabe 8 (Dump Validator): Quelle nicht gefunden.\n"
-                    f"{path}"
-                )
-        elif mode == "exfat_to_folder":
-            if not os.path.isfile(path):
-                return (
-                    "Dieser Schritt erfordert eine .exfat Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".exfat"):
-                return (
-                    "Dieser Schritt erfordert eine .exfat Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .exfat:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "ffpkg_to_ffpfsc":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".ffpkg"):
-                return (
-                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpkg:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "batch_convert":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 5 akzeptiert mehrere Dateien als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            ext = path.lower()
-            if not (
-                ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-            ):
-                return (
-                    "Aufgabe 5 akzeptiert nur .ffpfsc, .ffpfs, .exfat oder .ffpkg Dateien.\n"
-                    f"Ungültige Datei:\n{os.path.basename(path)}"
-                )
-        elif mode == "universal_convert":
-            if os.path.isdir(path):
-                return ""
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.ffpfs/.exfat/.ffpkg Datei.\n"
-                    f"Die Quelle wurde nicht gefunden:\n{path}"
-                )
-            ext = path.lower()
-            if not (
-                ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-            ):
-                return (
-                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.ffpfs/.exfat/.ffpkg Datei.\n"
-                    f"Ungültige Datei:\n{os.path.basename(path)}"
-                )
-        elif mode == "ampr_manager":
-            # Akzeptiert: Ordner (Game Dump), .ffpfsc/.ffpfs, .exfat oder .ffpkg
-            if os.path.isdir(path):
-                pass  # Ordner ist immer gültig
-            elif os.path.isfile(path):
-                ext = path.lower()
-                if not (
-                    ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                    or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-                ):
-                    return (
-                        "Aufgabe 7 (fakelib Manager) akzeptiert:\n"
-                        "  \u2022 Game Dump Ordner\n"
-                        "  \u2022 .ffpfsc/.ffpfs Datei\n"
-                        "  \u2022 .exfat Datei\n\n"
-                        f"Die gew\u00e4hlte Datei hat keine g\u00fcltige Endung:\n"
-                        f"{os.path.basename(path)}"
-                    )
-            else:
-                return (
-                    "Aufgabe 7 (fakelib Manager): Quelle nicht gefunden.\n"
-                    f"{path}"
-                )
-        return ""
+        return abbild_pruefen.Pruefstand(
+            sieht_aus_wie_dump=PS5ConverterGUI._looks_like_dump_folder,
+            ordner_inhalt=PS5ConverterGUI._sammel_ordner_inhalt,
+        )._validate_source_path(path, mode)
 
     def _browse_dest(self) -> None:
         """Öffnet einen Verzeichnis-Dialog für den Zielpfad."""
@@ -11122,6 +10922,73 @@ class PS5ConverterGUI:
         "dreifach":  ("fg_warning", "source.kind.dreifach"),
         "unbekannt": ("fg_warning", "source.kind.unbekannt"),
     }
+
+    def _bauform_der_quelle(self, pfad: str) -> str:
+        """Ermittelt, wie ein vorhandener Container gebaut ist.
+
+        Gebraucht von Aufgabe 7: Ein bearbeiteter Dump soll in denselben
+        Aufbau zurueck, aus dem er kam. Bis zum 03.09.2026 entstand dort
+        immer PFS-in-PFS - wer ein exFAT-in-PFS bearbeitete, bekam
+        stillschweigend die andere Form zurueck.
+
+        Args:
+            pfad: Der Container, aus dem der Dump stammt.
+
+        Returns:
+            ``BAUFORM_EXFAT`` oder ``BAUFORM_PFS``. Laesst sich die Form
+            nicht bestimmen - etwa weil die Datei schon weg ist -, gilt die
+            Einstellung des Programms; das ist besser als zu raten.
+        """
+        try:
+            from ps5_validator.modules.ffpfs_validator import (  # noqa: PLC0415
+                ermittle_bauform,
+            )
+
+            gefunden = str(ermittle_bauform(pfad).get("bauform", "")).strip().lower()
+        except Exception as exc:
+            logger.debug("Bauform von %s nicht ermittelbar: %s", pfad, exc)
+            return self.bauform
+        if gefunden == "exfat":
+            return BAUFORM_EXFAT
+        if gefunden == "pfs":
+            return BAUFORM_PFS
+        # "flach", "ufs2", "dreifach" und Unbekanntes: Keine der beiden
+        # Formen trifft zu - dann gilt die Einstellung.
+        return self.bauform
+
+    def _bauform_erklaerung(self) -> str:
+        """Der Text, der an der Bauform-Liste haengt.
+
+        Er nennt **beide** Formen, nicht nur die gewaehlte: Wer sich
+        entscheiden will, braucht den Vergleich. Der Satz zur gewaehlten
+        steht voran.
+        """
+        andere = BAUFORM_PFS if self.bauform == BAUFORM_EXFAT else BAUFORM_EXFAT
+        absaetze = [
+            self._t("bauform.tooltip"),
+            "%s: %s" % (self._t("bauform." + self.bauform),
+                        self._t("bauform.%s.hint" % self.bauform)),
+            "%s: %s" % (self._t("bauform." + andere),
+                        self._t("bauform.%s.hint" % andere)),
+        ]
+        return "\n\n".join(absaetze)
+
+    def _bauform_hinweis_setzen(self) -> None:
+        """Zieht die Erklaerung an der Bauform-Liste nach."""
+        tooltip = getattr(self, "bauform_tooltip", None)
+        if tooltip is not None:
+            tooltip.text = self._bauform_erklaerung()
+
+    def _on_bauform_changed(self, _event=None) -> None:
+        """Uebernimmt die gewaehlte Bauform und zieht den Hinweis nach.
+
+        Gespeichert wird der sprachunabhaengige Wert, damit ein
+        Sprachwechsel die Einstellung nicht verliert.
+        """
+        self.bauform = self._bauform_options.get(
+            self.bauform_var.get().strip(), BAUFORM_VORGABE)
+        self._save_setting("bauform", self.bauform)
+        self._bauform_hinweis_setzen()
 
     def _aktualisiere_quell_bauform(self, quelle: str) -> None:
         """Stellt fest, wie der gewaehlte Container gebaut ist, und zeigt es an.
@@ -11714,30 +11581,30 @@ class PS5ConverterGUI:
             self.root.after(0, lambda: self._set_size_label_idle(""))
             self.root.after(0, lambda: self._update_sidebar_preview(None, ""))
 
+    def _metadatenleser(self) -> "abbild_metadaten.Metadatenleser":
+        """Baut den Leser mit den Nahtstellen dieser Instanz.
+
+        Bei jedem Aufruf neu: mkpfs_dir wird zur Laufzeit gesetzt, und ein
+        einmal gebauter Leser truege den Stand von damals. Der Aufbau
+        kostet nichts - er setzt neun Verweise.
+        """
+        return abbild_metadaten.Metadatenleser(
+            mkpfs_ordner=getattr(self, "mkpfs_dir", "") or "",
+            melden=self._append_to_log,
+            text=self._t,
+            sfo_lesen=parse_sfo,
+            voll_sfo_lesen=self._meta_aus_sfo,
+            pfs_leser_oeffnen=self._open_virtual_pfs_reader,
+            dokan_vorhanden=self._find_dokan_driver,
+            ufs2tool_pfad=self._extract_ufs2tool,
+            # Ueber getattr: Tests bauen die Klasse mit __new__, dann gibt
+            # es die Sperre nicht.
+            vorschau_sperre=getattr(self, "_ffpkg_preview_lock", None))
+
     @staticmethod
     def _region_from_title_id(title_id: str) -> str:
-        """Leitet die Region aus dem Titel-ID-Präfix ab.
-
-        PS5-Titel-IDs folgen dem Schema PPSA/PPUS/PPJP + Nummer.
-        """
-        tid = (title_id or "").upper().strip()
-        # Muss jedes von _is_valid_title_id akzeptierte Präfix abdecken, sonst
-        # zeigt die Infobox für eine gültige Title-ID fälschlich "–" als Region.
-        mapping = {
-            "PPSA": "Europa",
-            "PPSS": "Europa",
-            "ECAS": "Europa",
-            "PPUS": "USA",
-            "CUSA": "USA",
-            "PUSA": "USA",
-            "PPJP": "Japan",
-            "PCJS": "Japan",
-            "PCAS": "Asien",
-        }
-        for prefix, region in mapping.items():
-            if tid.startswith(prefix):
-                return region
-        return "–"
+        """Region aus der Title-ID. Siehe abbild_metadaten."""
+        return abbild_metadaten.Metadatenleser._region_from_title_id(title_id)
 
     def _quick_meta_from_path(
         self,
@@ -11822,190 +11689,12 @@ class PS5ConverterGUI:
         return quick_meta
 
     def _extract_meta_from_ffpkg_file(self, src: str) -> dict[str, str]:
-        """Extrahiert Title-ID/Version heuristisch direkt aus einer .ffpkg-Datei.
+        """Metadaten aus einem .ffpkg per Mustersuche. Siehe abbild_metadaten."""
+        return self._metadatenleser()._extract_meta_from_ffpkg_file(src)
 
-        Dieser schnelle Muster-Scan ist nur ein Fallback, wenn der strukturierte
-        read-only UFS2Tool-/Dokan-Pfad nicht verfügbar ist.
-        """
-        meta: dict[str, str] = {
-            "title": "–",
-            "title_id": "–",
-            "version": "–",
-            "required_firmware": "–",
-            "region": "–",
-            "category": "–",
-            "publisher": "–",
-        }
-        if not src or not os.path.isfile(src) or not src.lower().endswith(".ffpkg"):
-            return meta
-
-        title_id_re = _TITLE_ID_RE
-        content_id_re = re.compile(
-            rf"[A-Z]{{2}}\d{{4}}-({_TITLE_ID_PATTERN})_00-[A-Z0-9]{{8,32}}"
-        )
-        version_re = re.compile(r"(?<!\d)(\d{2}\.\d{3}\.\d{3})(?!\d)")
-        labeled_version_re = re.compile(
-            r"(?:APP_VER|VERSION|CONTENT_VER|MASTER_VERSION|"
-            r"appVer|contentVersion|masterVersion)"
-            r"\s*[=:]\s*['\"]?(\d{2}\.\d{3}\.\d{3})"
-        )
-        scan_chunks: list[bytes] = []
-
-        def _iter_sample_offsets(file_size: int) -> list[int]:
-            window = 256 * 1024
-            offsets: list[int] = [0]
-            max_front = min(file_size, 64 * 1024 * 1024)
-            step = 2 * 1024 * 1024
-            pos = step
-            while pos < max_front:
-                offsets.append(pos)
-                pos += step
-            if file_size > window:
-                offsets.append(max(0, file_size - window))
-
-            unique: list[int] = []
-            seen: set[int] = set()
-            for off in offsets:
-                off = max(0, min(off, max(0, file_size - window)))
-                if off in seen:
-                    continue
-                seen.add(off)
-                unique.append(off)
-            return unique
-
-        def _scan_text(text: str) -> None:
-            if not text:
-                return
-            if meta["title_id"] == "–":
-                match = title_id_re.search(text)
-                if match is None:
-                    content_match = content_id_re.search(text)
-                    if content_match is not None:
-                        meta["title_id"] = content_match.group(1).upper()
-                else:
-                    meta["title_id"] = match.group(1).upper()
-                if meta["title_id"] != "–":
-                    meta["region"] = self._region_from_title_id(meta["title_id"])
-            if meta["version"] == "–":
-                match = labeled_version_re.search(text)
-                if match is None:
-                    match = version_re.search(text)
-                if match is not None:
-                    meta["version"] = match.group(1)
-
-        try:
-            file_size = os.path.getsize(src)
-            with open(src, "rb") as fh:
-                for offset in _iter_sample_offsets(file_size):
-                    fh.seek(offset)
-                    chunk = fh.read(256 * 1024)
-                    if chunk:
-                        scan_chunks.append(chunk)
-        except Exception as exc:
-            logger.debug("FFPKG-Metascan fehlgeschlagen: %s", exc)
-            return meta
-
-        for chunk in scan_chunks:
-            text_ascii = chunk.decode("latin-1", "ignore")
-            _scan_text(text_ascii)
-            if meta["title_id"] == "–" or meta["version"] == "–":
-                text_no_nul = chunk.replace(b"\x00", b"").decode("latin-1", "ignore")
-                _scan_text(text_no_nul)
-            if meta["title_id"] == "–" or meta["version"] == "–":
-                try:
-                    text_utf16 = chunk.decode("utf-16-le", "ignore")
-                except Exception:
-                    text_utf16 = ""
-                _scan_text(text_utf16)
-            if meta["title_id"] != "–" and meta["version"] != "–":
-                break
-
-        return meta
-
-    def _extract_meta_from_ffpkg_ufs2(
-        self, src: str
-    ) -> tuple[dict[str, str], Image.Image | None]:
-        """Liest Spielmetadaten aus einem UFS2-.ffpkg über einen read-only Mount."""
-        empty_meta: dict[str, str] = {
-            "title": "–", "title_id": "–", "version": "–", "required_firmware": "–",
-            "region": "–", "category": "–", "publisher": "–",
-        }
-        if (
-            not src
-            or not os.path.isfile(src)
-            or not src.lower().endswith(".ffpkg")
-            or not _is_admin()
-            or not self._find_dokan_driver()
-        ):
-            return empty_meta, None
-
-        lock = getattr(self, "_ffpkg_preview_lock", None)
-        if lock is None:
-            lock = threading.RLock()
-            self._ffpkg_preview_lock = lock
-
-        with lock:
-            mount_proc: subprocess.Popen[str] | None = None
-            drive = ""
-            mounted = False
-            try:
-                exe = self._extract_ufs2tool()
-                import ctypes as _ct
-
-                drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-                for idx in range(25, 3, -1):
-                    if not (drives_bitmask & (1 << idx)):
-                        drive = chr(65 + idx) + ":"
-                        break
-                if not drive:
-                    return empty_meta, None
-
-                mount_proc = subprocess.Popen(
-                    [exe, "mount_udf", "-o", "ro", src, drive],
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    encoding="mbcs",
-                    errors="replace",
-                    creationflags=_NO_WIN_FLAGS,
-                    startupinfo=_silent_startupinfo(),
-                )
-                for _ in range(40):
-                    if mount_proc.poll() is not None:
-                        break
-                    if os.path.exists(drive + "\\"):
-                        mounted = True
-                        break
-                    time.sleep(0.25)
-                if not mounted:
-                    return empty_meta, None
-
-                meta, cover = self._read_game_meta_and_cover(drive + "\\")
-                return meta, cover
-            except Exception as exc:
-                logger.debug("Strukturierter UFS2-Metadaten-Read fehlgeschlagen: %s", exc)
-                return empty_meta, None
-            finally:
-                if mount_proc is not None:
-                    try:
-                        mount_proc.terminate()
-                        mount_proc.wait(timeout=10)
-                    except Exception:
-                        try:
-                            mount_proc.kill()
-                        except Exception:
-                            pass
-                try:
-                    if mounted and drive and os.path.exists(drive + "\\"):
-                        subprocess.run(
-                            ["mountvol", drive + "\\", "/D"],
-                            timeout=10,
-                            capture_output=True,
-                            creationflags=_NO_WIN_FLAGS,
-                            startupinfo=_silent_startupinfo(),
-                        )
-                except Exception:
-                    pass
+    def _extract_meta_from_ffpkg_ufs2(self, src: str):
+        """Metadaten aus einem .ffpkg ueber UFS2Tool. Siehe abbild_metadaten."""
+        return self._metadatenleser()._extract_meta_from_ffpkg_ufs2(src)
 
     def _preview_dir_from_report_payload(self, payload: dict[str, Any], src_abs: str) -> str:
         """Leitet aus einem Report-Payload einen passenden Vorschau-Ordner ab."""
@@ -12441,87 +12130,15 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _normalize_required_firmware(value: object) -> str:
-        """Normalisiert rohe Firmware-Angaben aus param.json oder param.sfo."""
-        if value is None or isinstance(value, (dict, list, tuple, set)):
-            return "–"
-
-        if isinstance(value, int):
-            if value < 0:
-                return "–"
-            hex_head = f"{value:08X}"[-8:]
-            if hex_head.startswith("00") and len(hex_head) == 8 and any(ch != "0" for ch in hex_head[2:4]):
-                hex_head = hex_head[1:] + "0"
-            return ".".join(hex_head[i:i + 2] for i in range(0, 8, 2))
-
-        raw = str(value).strip()
-        if not raw or raw in {"–", "-", "Unbekannt", "�"}:
-            return "–"
-
-        version_match = re.search(r"\b\d{1,2}\.\d{2}\.\d{2}\.\d{2}\b", raw)
-        if version_match:
-            return version_match.group(0)
-
-        version_match = re.search(r"\b\d{1,2}\.\d{2}\.\d{2}\b", raw)
-        if version_match:
-            return version_match.group(0)
-
-        version_match = re.search(r"\b\d{1,2}\.\d{2}\b", raw)
-        if version_match:
-            return version_match.group(0)
-
-        # Das Praefix "0x" zuerst weg. Vorher entfernte die Zeichenklasse nur das
-        # "x" - die fuehrende 0 blieb stehen und verschob alles um eine Stelle:
-        # Aus 0x1001000000000000 (also 10.01) wurde "01.00.10.00". Die frueher
-        # hier stehende Rotation bei fuehrenden Nullen war der Ausgleich dafuer
-        # und ging nur bei einstelliger Hauptversion auf (0x0900 -> 09.00),
-        # nicht bei zweistelliger.
-        #
-        # Die Ziffern sind BCD: Die Hex-ZEICHEN sind die gedruckten Ziffern,
-        # keine Hexzahl - 0x1270... heisst 12.70, nicht 4720.
-        ohne_praefix = re.sub(r"^0[xX]", "", raw)
-        hex_chars = re.sub(r"[^0-9A-Fa-f]", "", ohne_praefix)
-        if len(hex_chars) >= 8:
-            hex_head = hex_chars[:8].upper()
-            return ".".join(hex_head[i:i + 2] for i in range(0, 8, 2))
-
-        return raw
+        """Firmware-Angabe vereinheitlichen. Siehe abbild_metadaten."""
+        return abbild_metadaten.Metadatenleser._normalize_required_firmware(
+            value)
 
     @classmethod
     def _extract_required_firmware_value(cls, payload: object) -> str:
-        """Sucht rekursiv nach einer Firmware-Angabe in JSON-ähnlichen Daten."""
-        target_keys = {
-            "requiredfirmware",
-            "required_firmware",
-            "requiredsystemsoftwareversion",
-            "requiredsystemversion",
-            "systemsoftwareversion",
-            "systemversion",
-            "system_ver",
-            "ps5_system_ver",
-            "minimumfirmware",
-            "minimumfirmwareversion",
-            "targetsystemsoftwareversion",
-        }
-        queue: list[object] = [payload]
-        visited = 0
-        while queue and visited < 120:
-            visited += 1
-            current = queue.pop(0)
-            if isinstance(current, dict):
-                for key, value in current.items():
-                    key_norm = str(key).strip().lower().replace(" ", "").replace("-", "").replace(".", "")
-                    if key_norm in target_keys:
-                        fw = cls._normalize_required_firmware(value)
-                        if fw != "–":
-                            return fw
-                for value in current.values():
-                    if isinstance(value, (dict, list, tuple)):
-                        queue.append(value)
-            elif isinstance(current, (list, tuple)):
-                for value in current:
-                    if isinstance(value, (dict, list, tuple)):
-                        queue.append(value)
-        return "–"
+        """Firmware aus einer Nutzlast holen. Siehe abbild_metadaten."""
+        return abbild_metadaten.Metadatenleser._extract_required_firmware_value(
+            payload)
 
     def _sdk_stand_lesen(self, ordner: str) -> tuple[str, str]:
         """Liest den echten SDK-Stand aus ``eboot.bin`` und vergleicht ihn.
@@ -12583,673 +12200,234 @@ class PS5ConverterGUI:
             return echt, self._t("info_popup.sdk_backported", v0=laut_param)
         return echt, ""
 
-    def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict:
-        """Liest Spielmetadaten aus param.json oder param.sfo.
+    def _ampr_emu_stand(self, quelle: str) -> str:
+        """Sagt, ob in der Quelle bereits ein AMPR EMU steckt.
 
-        Sucht zuerst nach param.json, dann als Fallback nach param.sfo.
-        Gibt ein normalisiertes Dict mit den Schlüsseln
-        title, title_id, version, required_firmware, region, category, publisher zurück.
+        Zwei Wege, je nach Quelle:
+
+        * **Dump-Ordner** - direkt im Dateisystem nachsehen. Dafuer braucht es
+          keine Engine, und es geht auch dort, wo ein Abbild nicht lesbar ist.
+        * **Abbild** - ueber ``mkpfs.game_metadata.read_game_metadata()``. Die
+          Funktion liest allerdings nur exFAT-basierte Dateien; ein ``.ffpfsc``
+          mit innerem PFS meldet "missing exFAT file system signature". Dann
+          bleibt es bei "nicht ermittelbar", statt etwas zu behaupten.
 
         Args:
-            src: Pfad zum Quellordner.
-            deep_scan: Wenn True, werden auch Unterordner-Fallbacks genutzt.
-        """
-        meta: dict[str, str] = {
-            "title":     "–",
-            "title_id":  "–",
-            "version":   "–",
-            "required_firmware": "–",
-            "region":    "–",
-            "category":  "–",
-            "publisher": "–",
-        }
+            quelle: Pfad auf einen Dump-Ordner oder ein Abbild.
 
-        # --- Schnellpfad: bekannte Standard-Positionen direkt prüfen ---
-        json_path: str | None = None
-        _json_candidates = [
-            os.path.join(src, "param.json"),
-            os.path.join(src, "sce_sys", "param.json"),
-        ]
-        # Eine Ebene tiefer: src/GAMEID/sce_sys/param.json
-        if deep_scan:
-            try:
-                for _entry in os.listdir(src):
-                    _json_candidates.append(os.path.join(src, _entry, "sce_sys", "param.json"))
-                    _json_candidates.append(os.path.join(src, _entry, "param.json"))
-                    if len(_json_candidates) > 22:
-                        break
-            except OSError:
-                pass
-        for _cand in _json_candidates:
-            if os.path.isfile(_cand):
-                json_path = _cand
-                break
-        # --- Fallback: nur sce_sys-Unterordner bis Tiefe 2 prüfen (kein vollständiger Scan) ---
-        if deep_scan and not json_path:
-            try:
-                for _lvl1 in os.listdir(src):
-                    _lvl1_path = os.path.join(src, _lvl1)
-                    if not os.path.isdir(_lvl1_path):
-                        continue
-                    # Direkt: src/sce_sys/param.json oder src/GAMEID/sce_sys/param.json
-                    for _sub in ("", "sce_sys"):
-                        _p = (
-                            os.path.join(_lvl1_path, _sub, "param.json")
-                            if _sub
-                            else os.path.join(_lvl1_path, "param.json")
-                        )
-                        if os.path.isfile(_p):
-                            json_path = _p
-                            break
-                    if json_path:
-                        break
-                    # Tiefe 2: src/GAMEID/SUBDIR/sce_sys/param.json
-                    try:
-                        for _lvl2 in os.listdir(_lvl1_path):
-                            _p2 = os.path.join(_lvl1_path, _lvl2, "sce_sys", "param.json")
-                            if os.path.isfile(_p2):
-                                json_path = _p2
-                                break
-                    except OSError:
-                        pass
-                    if json_path:
-                        break
-            except OSError:
-                pass
-
-        if json_path:
-            try:
-                with open(json_path, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-
-                # -------------------------------------------------------
-                # Hilfsfunktionen
-                # -------------------------------------------------------
-                def _scalar(v: object) -> str:
-                    """Gibt v als String zurück, nur wenn es ein Skalar ist."""
-                    if v is None or isinstance(v, (dict, list)):
-                        return ""
-                    return str(v).strip()
-
-                def _pick_scalar(d: dict, *keys: str) -> str:
-                    """Gibt den ersten Skalar-Wert für einen der Schlüssel zurück."""
-                    for k in keys:
-                        s = _scalar(d.get(k))
-                        if s:
-                            return s
-                    return "–"
-
-                # -------------------------------------------------------
-                # localizedParameters auflösen
-                # Struktur A: {"titleName": "...", "publisher": "..."}
-                # Struktur B: {"en-US": {"titleName": "...", "publisher": "..."}}
-                # -------------------------------------------------------
-                lp = data.get("localizedParameters")
-                lp_flat: dict = {}   # normalisiertes Dict mit titleName, publisher, ...
-
-                if isinstance(lp, dict):
-                    if "titleName" in lp:
-                        # Struktur A: schon flach
-                        lp_flat = lp
-                    else:
-                        # Struktur B: Sprach-Schlüssel wie "en-US", "de-DE"
-                        # Bevorzuge Englisch, sonst ersten Eintrag
-                        preferred = ("en-US", "en-GB", "en")
-                        for lang in preferred:
-                            if lang in lp and isinstance(lp[lang], dict):
-                                lp_flat = lp[lang]
-                                break
-                        if not lp_flat:
-                            for v in lp.values():
-                                if isinstance(v, dict):
-                                    lp_flat = v
-                                    break
-
-                # -------------------------------------------------------
-                # Titel
-                # -------------------------------------------------------
-                title = (
-                    _scalar(lp_flat.get("titleName"))
-                    or _pick_scalar(data, "titleName", "title", "name")
-                    or "–"
-                )
-                meta["title"] = title
-
-                # -------------------------------------------------------
-                # Titel-ID
-                # -------------------------------------------------------
-                meta["title_id"] = _pick_scalar(data, "titleId", "title_id", "contentId")
-
-                # -------------------------------------------------------
-                # Version
-                # -------------------------------------------------------
-                meta["version"] = _pick_scalar(
-                    data, "contentVersion", "masterVersion", "appVer", "version"
-                )
-                meta["required_firmware"] = self._extract_required_firmware_value(data)
-
-                # -------------------------------------------------------
-                # Region (Top-Level bevorzugt, Fallback: aus Titel-ID ableiten)
-                # -------------------------------------------------------
-                region = _pick_scalar(
-                    data, "region", "defaultLanguage", "defaultLanguageCode"
-                )
-                if region == "–":
-                    # Aus Titel-ID ableiten: PPSA/ECAS=EU, PPUS/CUSA=US, PPJP/PCJS=JP
-                    tid = meta.get("title_id", "") or _pick_scalar(data, "titleId", "title_id", "contentId")
-                    region = self._region_from_title_id(tid)
-                meta["region"] = region
-
-                # -------------------------------------------------------
-                # Kategorie
-                # -------------------------------------------------------
-                cat_raw = data.get(
-                    "applicationCategoryType",
-                    data.get("contentType", data.get("category"))
-                )
-                cat_map = {0: "Spiel", 1: "DLC", 2: "Patch", 3: "App", 65536: "Spiel"}
-                if isinstance(cat_raw, int):
-                    meta["category"] = cat_map.get(cat_raw, str(cat_raw))
-                elif cat_raw is not None:
-                    meta["category"] = _scalar(cat_raw) or "–"
-
-                # -------------------------------------------------------
-                # Hersteller (Top-Level bevorzugt, dann localizedParameters)
-                # -------------------------------------------------------
-                pub = _pick_scalar(data, "publisher", "vendorName", "publisherName",
-                                   "publisherLocalized", "developerName")
-                if pub == "–":
-                    pub = (
-                        _scalar(lp_flat.get("publisher"))
-                        or _scalar(lp_flat.get("vendorName"))
-                        or _scalar(lp_flat.get("developerName"))
-                        or "–"
-                    )
-                meta["publisher"] = pub
-
-                return meta
-            except Exception:
-                pass  # Fallback auf SFO
-
-        # --- Fallback: param.sfo – nur sce_sys-Unterordner prüfen (kein vollständiger Scan) ---
-        sfo_path: str | None = None
-        _sfo_candidates = [
-            os.path.join(src, "param.sfo"),
-            os.path.join(src, "sce_sys", "param.sfo"),
-        ]
-        if deep_scan:
-            try:
-                for _entry in os.listdir(src):
-                    _sfo_candidates.append(os.path.join(src, _entry, "sce_sys", "param.sfo"))
-                    _sfo_candidates.append(os.path.join(src, _entry, "param.sfo"))
-                    if len(_sfo_candidates) > 22:
-                        break
-            except OSError:
-                pass
-        for _sc in _sfo_candidates:
-            if os.path.isfile(_sc):
-                sfo_path = _sc
-                break
-        # Letzter Fallback: Tiefe-2-Scan nur in sce_sys-Unterordnern
-        if deep_scan and not sfo_path:
-            try:
-                for _lvl1 in os.listdir(src):
-                    _lvl1_path = os.path.join(src, _lvl1)
-                    if not os.path.isdir(_lvl1_path):
-                        continue
-                    _p = os.path.join(_lvl1_path, "sce_sys", "param.sfo")
-                    if os.path.isfile(_p):
-                        sfo_path = _p
-                        break
-                    try:
-                        for _lvl2 in os.listdir(_lvl1_path):
-                            _p2 = os.path.join(_lvl1_path, _lvl2, "sce_sys", "param.sfo")
-                            if os.path.isfile(_p2):
-                                sfo_path = _p2
-                                break
-                    except OSError:
-                        pass
-                    if sfo_path:
-                        break
-            except OSError:
-                pass
-
-        if sfo_path:
-            try:
-                with open(sfo_path, "rb") as fh:
-                    sfo_data = fh.read()
-                sfo = parse_sfo(sfo_data)
-                if sfo:
-                    def _sfov(key: str) -> str:
-                        v = sfo.get(key, "–")
-                        return str(v) if v else "–"
-                    meta["title"]     = _sfov("TITLE")
-                    meta["title_id"]  = _sfov("TITLE_ID")
-                    meta["version"]   = _sfov("VERSION")
-                    fw_sfo = "–"
-                    for _fw_key in ("SYSTEM_VER", "SYSTEM_VERSION", "PS5_SYSTEM_VER", "TARGET_SYSTEM_VER"):
-                        if _fw_key in sfo:
-                            fw_sfo = self._normalize_required_firmware(sfo.get(_fw_key))
-                            if fw_sfo != "–":
-                                break
-                    meta["required_firmware"] = fw_sfo
-                    # Region: aus SFO oder aus Titel-ID ableiten
-                    sfo_region = _sfov("REGION")
-                    if sfo_region == "–":
-                        sfo_region = self._region_from_title_id(meta["title_id"])
-                    meta["region"]    = sfo_region
-                    meta["category"]  = _sfov("CATEGORY")
-                    # Hersteller: PUBTOOLINFO enthält oft nur Build-Info, daher mehrere Felder prüfen
-                    pub_sfo = (_sfov("PUBTOOLINFO") if _sfov("PUBTOOLINFO") != "–" else "–")
-                    if pub_sfo == "–" or pub_sfo.startswith("NP"):
-                        pub_sfo = _sfov("PUBLISHER") if sfo.get("PUBLISHER") else "–"
-                    meta["publisher"] = pub_sfo
-            except Exception as exc:
-                logger.debug("Cover-Bild aus SFO konnte nicht geladen werden: %s", exc)
-
-        # Letzter Fallback: Region aus Titel-ID ableiten wenn noch leer
-        if meta.get("region", "–") == "–" and meta.get("title_id", "–") != "–":
-            meta["region"] = self._region_from_title_id(meta["title_id"])
-
-        return meta
-
-    def _load_cover_image(self, src: str, deep_scan: bool = True) -> Image.Image | None:
-        """Lädt icon0.png aus dem Quellordner – schnell via direkter Pfad-Prüfung.
-        Prüft zuerst bekannte Standardpfade (sce_sys/icon0.png), dann erst os.walk.
-        Args:
-            src: Pfad zum Quellordner oder sce_sys-Verzeichnis.
         Returns:
-            PIL Image oder None wenn nicht gefunden.
+            Anzeigetext fuer die Infobox, oder "-" wenn nichts vorliegt.
         """
-        # --- Schnellpfad: bekannte Standard-Positionen direkt prüfen ---
-        _candidates = [
-            os.path.join(src, "icon0.png"),
-            os.path.join(src, "sce_sys", "icon0.png"),
-        ]
-        # Auch eine Ebene tiefer: src/GAMEID/sce_sys/icon0.png
-        if deep_scan:
-            try:
-                for entry in os.listdir(src):
-                    sub = os.path.join(src, entry, "sce_sys", "icon0.png")
-                    _candidates.append(sub)
-                    sub2 = os.path.join(src, entry, "icon0.png")
-                    _candidates.append(sub2)
-                    # Maximal 20 Einträge für den Schnellpfad
-                    if len(_candidates) > 22:
-                        break
-            except OSError:
-                pass
-        for candidate in _candidates:
-            if os.path.isfile(candidate):
-                try:
-                    img = Image.open(candidate)
-                    img.load()  # Sofort in RAM laden (verhindert späteres I/O)
-                    return img.convert("RGBA")
-                except Exception:
-                    return None
-        # --- Fallback: nur sce_sys-Unterordner bis Tiefe 2 prüfen (kein vollständiger Scan) ---
-        if deep_scan:
-            try:
-                for _lvl1 in os.listdir(src):
-                    _lvl1_path = os.path.join(src, _lvl1)
-                    if not os.path.isdir(_lvl1_path):
-                        continue
-                    # src/GAMEID/sce_sys/icon0.png und src/GAMEID/icon0.png
-                    for _sub_path in (
-                        os.path.join(_lvl1_path, "sce_sys", "icon0.png"),
-                        os.path.join(_lvl1_path, "icon0.png"),
-                    ):
-                        if os.path.isfile(_sub_path):
-                            try:
-                                img = Image.open(_sub_path)
-                                img.load()
-                                return img.convert("RGBA")
-                            except Exception:
-                                return None
-                    # Tiefe 2: src/GAMEID/SUBDIR/sce_sys/icon0.png
-                    try:
-                        for _lvl2 in os.listdir(_lvl1_path):
-                            _p2 = os.path.join(_lvl1_path, _lvl2, "sce_sys", "icon0.png")
-                            if os.path.isfile(_p2):
-                                try:
-                                    img = Image.open(_p2)
-                                    img.load()
-                                    return img.convert("RGBA")
-                                except Exception:
-                                    return None
-                    except OSError:
-                        pass
-            except OSError:
-                pass
+        quelle = str(quelle or "").strip()
+        if not quelle or not os.path.exists(quelle):
+            return "\u2013"
 
-        # Letzter Fallback: gezielte rekursive Suche. Das ist wichtig für
-        # entpackte Container, deren Struktur tiefer verschachtelt ist als die
-        # üblichen 1-2 Ebenen aus den Schnellpfaden.
-        if deep_scan:
+        # Ordner: der Marker liegt in fakelib/. Welcher Ordner gilt, entscheidet
+        # _fakelib_pfad - ab ShadowMount+ 1.7alpha8 zaehlt nur noch "fakelib".
+        if os.path.isdir(quelle):
             try:
-                _seen_dirs = 0
-                for _root, _dirs, _files in os.walk(src):
-                    _seen_dirs += 1
-                    if _seen_dirs > 300:
-                        break
-                    _root_low = _root.replace("\\", "/").lower()
-                    for _fn in _files:
-                        if _fn.lower() != "icon0.png":
-                            continue
-                        # Bevorzugt Treffer innerhalb von sce_sys.
-                        if "sce_sys" not in _root_low and _seen_dirs < 300:
-                            continue
-                        _candidate = os.path.join(_root, _fn)
-                        try:
-                            img = Image.open(_candidate)
-                            img.load()
-                            return img.convert("RGBA")
-                        except Exception:
-                            continue
-            except OSError:
-                pass
-        return None
+                marker = self._fakelib_pfad(Path(quelle)) / self._AMPR_SPRX_NAME
+                vorhanden = marker.is_file()
+            except Exception as exc:
+                logger.debug("AMPR-Marker im Ordner nicht pruefbar: %s", exc)
+                return self._t("info_popup.ampr_unlesbar")
+            return self._t("info_popup.ampr_eingebaut" if vorhanden
+                           else "info_popup.ampr_nicht_eingebaut")
 
-    def _read_game_meta_and_cover(self, src: str) -> tuple[dict, Image.Image | None]:
-        """Liest Metadaten und Cover konsistent aus derselben Spielequelle.
+        # Abbild: die Engine fragen. Den Pfad wie ueberall sonst ueber
+        # mkpfs_dir, und nur wenn der leer ist, einmal ermitteln lassen -
+        # _extract_embedded_mkpfs() protokolliert und braucht dafuer einen
+        # aufgebauten Zustand, den eine reine Abfrage nicht voraussetzen darf.
+        mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
+        if not mkpfs_dir:
+            try:
+                mkpfs_dir = self._extract_embedded_mkpfs() or ""
+            except Exception as exc:
+                logger.debug("MkPFS-Ordner nicht ermittelbar: %s", exc)
+                mkpfs_dir = ""
+        try:
+            if mkpfs_dir and mkpfs_dir not in sys.path:
+                sys.path.insert(0, mkpfs_dir)
+            from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415
 
-        Verhindert Mismatch-Situationen, in denen Titel und icon0 aus
-        unterschiedlichen Unterordnern stammen.
+            daten = read_game_metadata(quelle)
+        except Exception as exc:
+            logger.debug("AMPR-Stand aus dem Abbild nicht lesbar: %s", exc)
+            return self._t("info_popup.ampr_unlesbar")
+
+        # Ein Fehlertext heisst: nicht hineingesehen, nicht "kein AMPR".
+        # read_game_metadata() kommt nur in exFAT-basierte Dateien hinein; bei
+        # PFS-in-PFS meldet es "missing exFAT file system signature". Dafuer
+        # gibt es den zweiten Weg unten - sonst stuende bei jedem selbst
+        # gebauten .ffpfsc "nicht ermittelbar".
+        # Ein leeres Ergebnis ohne Fehlertext ist ebenfalls kein Nein: Bei
+        # UFS2-basierten .ffpkg liest die Funktion gar nichts - kein Titel,
+        # keine Content-ID - und meldet trotzdem has_apr_emu=False. Das als
+        # "nicht eingebaut" anzuzeigen waere eine Aussage ueber etwas, in das
+        # niemand hineingesehen hat.
+        _gelesen = bool(str(getattr(daten, "game_title", "") or "").strip()
+                        or str(getattr(daten, "content_id", "") or "").strip(" -"))
+        if not getattr(daten, "error", "") and _gelesen:
+            return self._t("info_popup.ampr_eingebaut" if getattr(daten, "has_apr_emu", False)
+                           else "info_popup.ampr_nicht_eingebaut")
+        logger.debug("AMPR-Stand nicht aus den Metadaten (%s): %s", quelle,
+                     getattr(daten, "error", "") or "leeres Ergebnis")
+
+        gefunden = self._ampr_marker_im_container(quelle)
+        if gefunden is None:
+            return self._t("info_popup.ampr_unlesbar")
+        return self._t("info_popup.ampr_eingebaut" if gefunden
+                       else "info_popup.ampr_nicht_eingebaut")
+
+    def _ampr_marker_im_container(self, pfad: str) -> bool | None:
+        """Sucht die AMPR-Bibliothek in der inneren Ebene eines Containers.
+
+        Gedacht fuer den Fall, den ``read_game_metadata()`` nicht abdeckt:
+        ein ``.ffpfsc``/``.ffpfs``, das ein weiteres PFS umschliesst statt
+        eines exFAT. Gelesen werden nur Kopf, Inode-Tabelle und
+        Verzeichnisbloecke - dieselbe leichte Sicht, die auch die
+        Metadatenanzeige benutzt, keine Nutzdaten.
+
+        Args:
+            pfad: Pfad auf den Container.
+
+        Returns:
+            True/False, wenn die innere Ebene gelesen werden konnte,
+            sonst None - dann ist die Frage offen, nicht mit Nein
+            beantwortet.
         """
-        if not os.path.isdir(src):
-            return self._read_game_meta(src), self._load_cover_image(src)
-
-        hint_tid = ""
+        # Den Engine-Pfad auch hier setzen: Die Methode wird sonst still
+        # unbrauchbar, wenn sie einmal ohne vorherigen Metadatenlauf drankommt.
+        _mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
+        if _mkpfs_dir and _mkpfs_dir not in sys.path:
+            sys.path.insert(0, _mkpfs_dir)
         try:
-            hint_src = os.path.basename(os.path.normpath(src)).upper()
-            m_hint = re.search(
-                r"(PPSA\d{5}|PPUS\d{5}|PPJP\d{5}|CUSA\d{5}|PUSA\d{5}|PCJS\d{5}|PCAS\d{5}|ECAS\d{5})",
-                hint_src,
-            )
-            if m_hint:
-                hint_tid = m_hint.group(1)
-        except Exception:
-            hint_tid = ""
+            from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # type: ignore[import-not-found]
+            from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # type: ignore[import-not-found]
 
-        candidates = [src]
-        try:
-            subdirs = [
-                os.path.join(src, entry)
-                for entry in sorted(os.listdir(src), key=lambda v: v.lower())
-                if os.path.isdir(os.path.join(src, entry))
-            ]
-            if hint_tid:
-                subdirs.sort(
-                    key=lambda p: (hint_tid not in os.path.basename(p).upper(), os.path.basename(p).lower())
-                )
-            candidates.extend(subdirs[:30])
-        except OSError:
-            pass
-
-        # 1) Exakter Treffer: Title-ID passt zum Quellpfad-Hinweis.
-        if hint_tid:
-            for _cand in candidates:
-                meta = self._read_game_meta(_cand, deep_scan=False)
-                _tid = str(meta.get("title_id", "")).upper().strip()
-                if _tid == hint_tid:
-                    cover = self._load_cover_image(_cand, deep_scan=False)
-                    return meta, cover
-
-        # 2) Stabile Wahl: erst Metadaten-Kandidat bestimmen, Cover nur einmal laden.
-        best_meta = None
-        best_cand = None
-        for _cand in candidates:
-            meta = self._read_game_meta(_cand, deep_scan=False)
-            _title = str(meta.get("title", "–")).strip()
-            _tid = str(meta.get("title_id", "–")).strip()
-            _has_title = _title not in {"", "-", "–", "Unbekannt", "�"}
-            _has_tid = _tid not in {"", "-", "–", "Unbekannt", "�"}
-            if _has_title or _has_tid:
-                best_meta = meta
-                best_cand = _cand
-                # Volltreffer: sowohl Titel als auch Title-ID vorhanden.
-                if _has_title and _has_tid:
-                    break
-
-        if best_cand is not None and best_meta is not None:
-            cover = self._load_cover_image(best_cand, deep_scan=False)
-            return best_meta, cover
-
-        # 3) Letzter Schnellpfad: nur Cover falls keine Metadaten gefunden wurden.
-        for _cand in candidates:
-            cover = self._load_cover_image(_cand, deep_scan=False)
-            if cover is not None:
-                return self._read_game_meta(_cand, deep_scan=False), cover
-
-        return self._read_game_meta(src), self._load_cover_image(src)
-
-    def _load_fallback_art_image(self, src: str) -> Image.Image | None:
-        """Sucht ein alternatives Bild, wenn icon0.png fehlt.
-
-        Bevorzugt Dateien in sce_sys und Dateinamen mit typischen Cover-Begriffen.
-        """
-        preferred_names = (
-            "icon0", "cover", "image", "pic", "background", "bg", "startup"
-        )
-        valid_exts = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
-        candidates: list[tuple[int, str]] = []
-        try:
-            seen = 0
-            for root, _dirs, files in os.walk(src):
-                seen += 1
-                if seen > 400:
-                    break
-                root_low = root.replace("\\", "/").lower()
-                for fn in files:
-                    ext = os.path.splitext(fn)[1].lower()
-                    if ext not in valid_exts:
-                        continue
-                    name_low = os.path.splitext(fn)[0].lower()
-                    score = 0
-                    if "sce_sys" in root_low:
-                        score += 100
-                    if any(tag in name_low for tag in preferred_names):
-                        score += 50
-                    if fn.lower() == "icon0.png":
-                        score += 1000
-                    candidates.append((score, os.path.join(root, fn)))
-        except OSError:
+            sicht = open_inner_file_view(Path(pfad))
+        except Exception as exc:
+            logger.debug("Innere Sicht auf %s nicht zu oeffnen: %s", pfad, exc)
+            return None
+        if sicht is None:
             return None
 
-        candidates.sort(key=lambda item: item[0], reverse=True)
-        for score, path in candidates[:25]:
+        virtual_fh, backing_fh, _name = sicht
+        try:
+            eintraege: list = []
             try:
-                img = Image.open(path)
-                img.load()
-                logger.debug("Fallback-Art gefunden: %s | score=%s | size=%sx%s",
-                             path, score, img.width, img.height)
-                return img.convert("RGBA")
-            except Exception as exc:
-                logger.debug("Fallback-Art konnte nicht geladen werden: %s | %s", path, exc)
-                continue
-        return None
+                eintraege = list(ExfatReader(virtual_fh).iter_files())
+            except Exception:
+                # Kein exFAT - dann der PFS-in-PFS-Adapter.
+                try:
+                    virtual_fh.seek(0)
+                    leser = self._open_virtual_pfs_reader(virtual_fh)
+                    eintraege = list(leser.iter_files()) if leser is not None else []
+                except Exception as exc:
+                    logger.debug("Innere Ebene von %s nicht lesbar: %s", pfad, exc)
+                    return None
+            if not eintraege:
+                return None
+            marke = self._AMPR_SPRX_NAME.lower()
+            for eintrag in eintraege:
+                rel = str(getattr(eintrag, "rel_path", "") or
+                          getattr(eintrag, "path", "") or "").replace("\\\\", "/").lower()
+                # Nur die aktive Bibliothek zaehlt, nicht die Sicherung .orig.
+                if rel.endswith("/" + marke) or rel == marke:
+                    if "fakelib" in rel:
+                        return True
+            return False
+        finally:
+            for zu in (virtual_fh, backing_fh):
+                try:
+                    zu.close()
+                except Exception:
+                    pass
+
+    def _read_game_meta(self, src: str, deep_scan: bool = True) -> dict:
+        """Liest die Spielmetadaten. Siehe abbild_metadaten."""
+        return self._metadatenleser()._read_game_meta(src, deep_scan)
+
+    def _load_cover_image(self, src: str, deep_scan: bool = True):
+        """Laedt das Titelbild. Siehe abbild_metadaten."""
+        return self._metadatenleser()._load_cover_image(src, deep_scan)
+
+    def _read_game_meta_and_cover(self, src: str):
+        """Metadaten und Titelbild in einem Zug. Siehe abbild_metadaten."""
+        return self._metadatenleser()._read_game_meta_and_cover(src)
+
+    def _load_fallback_art_image(self, src: str):
+        """Ersatzbild, wenn kein Titelbild da ist. Siehe abbild_metadaten."""
+        return self._metadatenleser()._load_fallback_art_image(src)
 
     def _meta_from_param_json_payload(self, payload: object) -> dict[str, str]:
-        """Normalisiert Metadaten direkt aus einem geladenen param.json-Payload."""
-        meta: dict[str, str] = {
-            "title": "–",
-            "title_id": "–",
-            "version": "–",
-            "required_firmware": "–",
-            "region": "–",
-            "category": "–",
-            "publisher": "–",
+        """Metadaten aus einer param.json. Siehe abbild_metadaten."""
+        return self._metadatenleser()._meta_from_param_json_payload(payload)
+
+    def _meta_aus_sfo(self, sfo: dict) -> dict:
+        """Setzt die Werte einer param.sfo in die ueblichen Felder um.
+
+        Stand bis zum 29.08.2026 eingebettet in _read_game_meta. Seit die
+        Metadaten auch aus einem .pkg kommen koennen, brauchen zwei Wege
+        dieselbe Umsetzung - und zwei Fassungen davon laufen frueher oder
+        spaeter auseinander.
+
+        Args:
+            sfo: Das Ergebnis von :func:`parse_sfo`.
+
+        Returns:
+            Die Felder title, title_id, version, required_firmware,
+            region, category und publisher.
+        """
+        strich = "–"
+
+        def wert(schluessel: str) -> str:
+            roh = sfo.get(schluessel, strich)
+            return str(roh) if roh else strich
+
+        meta = {
+            "title": wert("TITLE"),
+            "title_id": wert("TITLE_ID"),
+            "version": wert("VERSION"),
         }
-        if not isinstance(payload, dict):
-            return meta
 
-        def _scalar(value: object) -> str:
-            if value is None or isinstance(value, (dict, list)):
-                return ""
-            return str(value).strip()
-
-        def _pick_scalar(data: dict, *keys: str) -> str:
-            for key in keys:
-                picked = _scalar(data.get(key))
-                if picked:
-                    return picked
-            return "–"
-
-        lp = payload.get("localizedParameters")
-        lp_flat: dict = {}
-        if isinstance(lp, dict):
-            if "titleName" in lp:
-                lp_flat = lp
-            else:
-                for lang in ("en-US", "en-GB", "en"):
-                    if lang in lp and isinstance(lp[lang], dict):
-                        lp_flat = lp[lang]
-                        break
-                if not lp_flat:
-                    for value in lp.values():
-                        if isinstance(value, dict):
-                            lp_flat = value
-                            break
-
-        meta["title"] = (
-            _scalar(lp_flat.get("titleName"))
-            or _pick_scalar(payload, "titleName", "title", "name")
-            or "–"
-        )
-        meta["title_id"] = _pick_scalar(payload, "titleId", "title_id", "contentId")
-        meta["version"] = _pick_scalar(payload, "contentVersion", "masterVersion", "appVer", "version")
-        meta["required_firmware"] = self._extract_required_firmware_value(payload)
-
-        region = _pick_scalar(payload, "region", "defaultLanguage", "defaultLanguageCode")
-        if region == "–":
-            region = self._region_from_title_id(meta.get("title_id", ""))
-        meta["region"] = region
-
-        cat_raw = payload.get(
-            "applicationCategoryType",
-            payload.get("contentType", payload.get("category")),
-        )
-        cat_map = {0: "Spiel", 1: "DLC", 2: "Patch", 3: "App", 65536: "Spiel"}
-        if isinstance(cat_raw, int):
-            meta["category"] = cat_map.get(cat_raw, str(cat_raw))
-        elif cat_raw is not None:
-            meta["category"] = _scalar(cat_raw) or "–"
-
-        publisher = _pick_scalar(
-            payload,
-            "publisher",
-            "vendorName",
-            "publisherName",
-            "publisherLocalized",
-            "developerName",
-        )
-        if publisher == "–":
-            publisher = (
-                _scalar(lp_flat.get("publisher"))
-                or _scalar(lp_flat.get("vendorName"))
-                or _scalar(lp_flat.get("developerName"))
-                or "–"
-            )
-        meta["publisher"] = publisher
-        return meta
-
-    def _meta_from_param_sfo_bytes(self, sfo_data: bytes) -> dict[str, str]:
-        """Normalisiert Metadaten direkt aus rohen param.sfo-Bytes."""
-        meta: dict[str, str] = {
-            "title": "–",
-            "title_id": "–",
-            "version": "–",
-            "required_firmware": "–",
-            "region": "–",
-            "category": "–",
-            "publisher": "–",
-        }
-        sfo = parse_sfo(sfo_data)
-        if not sfo:
-            return meta
-
-        def _sfov(key: str) -> str:
-            value = sfo.get(key, "–")
-            return str(value) if value else "–"
-
-        meta["title"] = _sfov("TITLE")
-        meta["title_id"] = _sfov("TITLE_ID")
-        meta["version"] = _sfov("VERSION")
-
-        firmware = "–"
-        for fw_key in ("SYSTEM_VER", "SYSTEM_VERSION", "PS5_SYSTEM_VER", "TARGET_SYSTEM_VER"):
-            if fw_key in sfo:
-                firmware = self._normalize_required_firmware(sfo.get(fw_key))
-                if firmware != "–":
+        firmware = strich
+        for schluessel in ("SYSTEM_VER", "SYSTEM_VERSION", "PS5_SYSTEM_VER",
+                           "TARGET_SYSTEM_VER"):
+            if schluessel in sfo:
+                firmware = self._normalize_required_firmware(sfo.get(schluessel))
+                if firmware != strich:
                     break
         meta["required_firmware"] = firmware
 
-        sfo_region = _sfov("REGION")
-        if sfo_region == "–":
-            sfo_region = self._region_from_title_id(meta["title_id"])
-        meta["region"] = sfo_region
-        meta["category"] = _sfov("CATEGORY")
+        # Region: aus der SFO oder aus der Titel-ID abgeleitet.
+        region = wert("REGION")
+        if region == strich:
+            region = self._region_from_title_id(meta["title_id"])
+        meta["region"] = region
+        meta["category"] = wert("CATEGORY")
 
-        publisher = _sfov("PUBTOOLINFO") if _sfov("PUBTOOLINFO") != "–" else "–"
-        if publisher == "–" or publisher.startswith("NP"):
-            publisher = _sfov("PUBLISHER") if sfo.get("PUBLISHER") else "–"
-        meta["publisher"] = publisher
+        # PUBTOOLINFO traegt oft nur Bauangaben, deshalb mehrere Felder.
+        #
+        # Die Pruefung auf "NP" allein genuegt nicht: Am 29.08.2026 stand
+        # bei einem PS4-Paket "c_date=20141024,c_time=080903,sdk_ver=..."
+        # als Hersteller in der Infobox. Das sind Angaben des Bauwerkzeugs,
+        # kein Name.
+        hersteller = wert("PUBTOOLINFO")
+        bauangabe = any(m in hersteller.lower()
+                        for m in ("c_date=", "c_time=", "sdk_ver=", "st_size="))
+        if hersteller == strich or hersteller.startswith("NP") or bauangabe:
+            hersteller = wert("PUBLISHER") if sfo.get("PUBLISHER") else strich
+        meta["publisher"] = hersteller
         return meta
 
-    def _extract_meta_from_exfat_reader(self, reader: Any) -> tuple[dict[str, str], Image.Image | None]:
-        """Liest sce_sys-Metadaten aus einem beliebigen exFAT-Reader."""
-        empty_meta: dict[str, str] = {
-            "title": "–", "title_id": "–", "version": "–", "required_firmware": "–",
-            "region": "–", "category": "–", "publisher": "–",
-        }
-        param_json_blob: bytes | None = None
-        param_sfo_blob: bytes | None = None
-        icon_blob: bytes | None = None
+    def _meta_from_param_sfo_bytes(self, sfo_data: bytes) -> dict[str, str]:
+        """Metadaten aus einer param.sfo. Siehe abbild_metadaten."""
+        return self._metadatenleser()._meta_from_param_sfo_bytes(sfo_data)
 
-        for entry in reader.iter_files():
-            rel = str(getattr(entry, "rel_path", "") or "").replace("\\", "/").lower()
-            if "sce_sys/" not in rel:
-                continue
-            if rel.endswith("/param.json") and param_json_blob is None:
-                param_json_blob = b"".join(reader.read_file(entry))
-            elif rel.endswith("/param.sfo") and param_sfo_blob is None:
-                param_sfo_blob = b"".join(reader.read_file(entry))
-            elif rel.endswith("/icon0.png") and icon_blob is None:
-                icon_blob = b"".join(reader.read_file(entry))
-            # Bei großen Titeln (viele tausend Dateien) den Baum nicht bis zum
-            # Ende durchlaufen, wenn bereits alle drei Zieldateien gefunden
-            # wurden – iter_files() liest sonst weiter Verzeichniscluster ein,
-            # obwohl nichts Nützliches mehr folgen kann.
-            if param_json_blob is not None and param_sfo_blob is not None and icon_blob is not None:
-                break
-
-        meta = dict(empty_meta)
-        if param_json_blob:
-            try:
-                meta = self._meta_from_param_json_payload(json.loads(param_json_blob.decode("utf-8")))
-            except Exception as exc:
-                logger.debug("Virtuelles exFAT-param.json konnte nicht gelesen werden: %s", exc)
-        if param_sfo_blob:
-            try:
-                sfo_meta = self._meta_from_param_sfo_bytes(param_sfo_blob)
-                for key, value in sfo_meta.items():
-                    if (
-                        str(meta.get(key, "")).strip() in {"", "-", "–", "Unbekannt", "�"}
-                        and str(value).strip() not in {"", "-", "–", "Unbekannt", "�"}
-                    ):
-                        meta[key] = value
-            except Exception as exc:
-                logger.debug("Virtuelles exFAT-param.sfo konnte nicht gelesen werden: %s", exc)
-
-        cover_img: Image.Image | None = None
-        if icon_blob:
-            try:
-                cover_img = Image.open(io.BytesIO(icon_blob)).convert("RGBA")
-                cover_img.load()
-            except Exception as exc:
-                logger.debug("Virtuelles exFAT-icon0 konnte nicht geladen werden: %s", exc)
-
-        return meta, cover_img
+    def _extract_meta_from_exfat_reader(self, reader):
+        """Metadaten aus einem exFAT-Leser. Siehe abbild_metadaten."""
+        return self._metadatenleser()._extract_meta_from_exfat_reader(reader)
 
     def _open_virtual_pfs_reader(self, fh: Any) -> Any | None:
         """Baut einen iter_files()/read_file()-Adapter über ein virtuelles PFS-Image (PFS-in-PFS).
@@ -13299,65 +12477,9 @@ class PS5ConverterGUI:
 
         return _VirtualPfsReader()
 
-    def _extract_meta_from_ffpfsc_virtual(self, src: str) -> tuple[dict[str, str], Image.Image | None]:
-        """Versucht .ffpfsc virtuell zu lesen (exFAT oder verschachteltes PFS-in-PFS), ohne äußeren Unpack."""
-        empty_meta: dict[str, str] = {
-            "title": "–", "title_id": "–", "version": "–", "required_firmware": "–",
-            "region": "–", "category": "–", "publisher": "–",
-        }
-
-        def _is_useful(meta: dict[str, str], cover_img: Image.Image | None) -> bool:
-            return cover_img is not None or any(
-                str(meta.get(key, "")).strip() not in {"", "-", "–", "Unbekannt", "�"}
-                for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
-            )
-
-        try:
-            if self.mkpfs_dir and self.mkpfs_dir not in sys.path:
-                sys.path.insert(0, self.mkpfs_dir)
-            from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # type: ignore[import-not-found]
-            from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # type: ignore[import-not-found]
-
-            inner_view_info = open_inner_file_view(Path(src))
-            if inner_view_info is None:
-                return empty_meta, None
-
-            virtual_fh, backing_fh, _inner_name = inner_view_info
-            try:
-                try:
-                    reader = ExfatReader(virtual_fh)
-                    meta, cover_img = self._extract_meta_from_exfat_reader(reader)
-                    if _is_useful(meta, cover_img):
-                        meta["_metadata_method"] = "MkPFS PFSC + exFAT-Reader (read-only)"
-                        return meta, cover_img
-                except Exception as exc:
-                    logger.debug("Virtueller exFAT-Read in .ffpfsc fehlgeschlagen, versuche PFS-in-PFS: %s", exc)
-
-                try:
-                    virtual_fh.seek(0)
-                    pfs_reader = self._open_virtual_pfs_reader(virtual_fh)
-                    if pfs_reader is not None:
-                        meta, cover_img = self._extract_meta_from_exfat_reader(pfs_reader)
-                        if _is_useful(meta, cover_img):
-                            meta["_metadata_method"] = "MkPFS PFSC + PFS-in-PFS-Reader (read-only)"
-                            return meta, cover_img
-                except Exception as exc:
-                    logger.debug("Virtueller PFS-in-PFS-Read in .ffpfsc fehlgeschlagen: %s", exc)
-            finally:
-                try:
-                    # _LogicalFileView (das virtual_fh von open_inner_file_view) besitzt kein
-                    # eigenes OS-Handle und implementiert daher kein close() – ein unbedingter
-                    # Aufruf würde eine AttributeError im finally-Block auslösen und damit ein
-                    # bereits anstehendes "return meta, cover_img" verschlucken (der schnelle
-                    # Pfad würde dadurch IMMER auf den teuren Unpack-Fallback zurückfallen).
-                    close_fn = getattr(virtual_fh, "close", None)
-                    if callable(close_fn):
-                        close_fn()
-                finally:
-                    backing_fh.close()
-        except Exception as exc:
-            logger.debug("Virtueller .ffpfsc-Read fehlgeschlagen, nutze Unpack-Fallback: %s", exc)
-        return empty_meta, None
+    def _extract_meta_from_ffpfsc_virtual(self, src: str):
+        """Metadaten aus einem .ffpfsc. Siehe abbild_metadaten."""
+        return self._metadatenleser()._extract_meta_from_ffpfsc_virtual(src)
 
     def _extract_meta_from_exfat_image(
         self, src: str
@@ -13568,18 +12690,27 @@ class PS5ConverterGUI:
                     self._preview_cache[_cache_key] = (meta, cover_img)
                 return meta, cover_img
 
-            if src.lower().endswith((".ffpfsc", ".ffpfs")):
-                meta, cover_img = self._extract_meta_from_ffpfsc_virtual(src)
-                useful = cover_img is not None or any(
-                    str(meta.get(key, "")).strip() not in {"", "-", "–", "Unbekannt", "�"}
-                    for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
-                )
-                if useful:
-                    if _cache_key is not None:
-                        if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
-                            self._preview_cache.pop(next(iter(self._preview_cache)))
-                        self._preview_cache[_cache_key] = (meta, cover_img)
-                    return meta, cover_img
+        # --- dann der virtuelle Leser: er liest Kopf und Verzeichnisse des
+        #     Abbilds und laesst die Nutzdaten liegen.
+        #
+        # Er stand bis zum 03.09.2026 **in** der Schleife darueber und war
+        # damit an einen danebenliegenden Ordner gebunden - also an genau den
+        # Fall, in dem man ihn nicht braucht. Lag die .ffpfsc allein, ging die
+        # Vorschau ueber "mkpfs unpack" und schrieb die ganze innere Datei in
+        # den Temp-Ordner. Gemessen an einem Abbild von 200 MB: 4,97 s statt
+        # 0,12 s bei gleichem Ergebnis. Der Aufwand waechst mit dem Abbild.
+        if src.lower().endswith((".ffpfsc", ".ffpfs")):
+            meta, cover_img = self._extract_meta_from_ffpfsc_virtual(src)
+            useful = cover_img is not None or any(
+                str(meta.get(key, "")).strip() not in {"", "-", "–", "Unbekannt", "�"}
+                for key in ("title", "title_id", "version", "required_firmware", "category", "publisher")
+            )
+            if useful:
+                if _cache_key is not None:
+                    if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
+                        self._preview_cache.pop(next(iter(self._preview_cache)))
+                    self._preview_cache[_cache_key] = (meta, cover_img)
+                return meta, cover_img
 
         related_meta, related_cover = self._quick_preview_from_report_source(
             src,
@@ -13714,7 +12845,7 @@ class PS5ConverterGUI:
 
             meta      = self._read_game_meta(tmp_meta)
             cover_img = self._load_cover_image(tmp_meta)
-            meta["_metadata_method"] = "MkPFS 0.0.9 (inneres PFS)"
+            meta["_metadata_method"] = "MkPFS 1.0.0 (inneres PFS)"
             if cover_img is None:
                 cover_img = self._load_fallback_art_image(tmp_meta)
 
@@ -13866,12 +12997,14 @@ class PS5ConverterGUI:
         meta_keys = [
             ("title",    self._t("info_popup.meta.title")),
             ("title_id", self._t("info_popup.meta.title_id")),
+            ("content_id", self._t("info_popup.meta.content_id")),
             ("version",  self._t("info_popup.meta.version")),
             ("required_firmware", self._t("info_popup.meta.required_fw")),
             ("sdk_stand", self._t("info_popup.meta.sdk")),
             ("region",   self._t("info_popup.meta.region")),
             ("category", self._t("info_popup.meta.category")),
             ("publisher", self._t("info_popup.meta.publisher")),
+            ("ampr_emu", self._t("info_popup.meta.ampr_emu")),
         ]
         for row_idx, (key, label_text) in enumerate(meta_keys):
             tk.Label(meta_frame, text=label_text,
@@ -14544,6 +13677,19 @@ class PS5ConverterGUI:
                 logger.debug("SDK-Stand für die Anzeige nicht ermittelbar: %s", exc)
             self._meta_labels["sdk_stand"].set(_sdk_text)
 
+        # Ob ein AMPR EMU schon eingebaut ist, steht in keiner param.json - es
+        # zeigt sich nur an der Bibliothek selbst. Bei Ordnern im Dateisystem,
+        # bei Abbildern ueber die Engine.
+        if "ampr_emu" in self._meta_labels:
+            _ampr_text = "\u2013"
+            try:
+                _quelle = self.source_path.get().strip()
+                if _quelle:
+                    _ampr_text = self._ampr_emu_stand(_quelle)
+            except Exception as exc:
+                logger.debug("AMPR-Stand für die Anzeige nicht ermittelbar: %s", exc)
+            self._meta_labels["ampr_emu"].set(_ampr_text)
+
         # Größenangaben
         self._info_src_size_var.set(src_str)
         self._info_est_size_var.set(f"~{est_str}" if est_str else "–")
@@ -14564,7 +13710,7 @@ class PS5ConverterGUI:
             self._info_format_var.set(self._t(f"format.{source_type}") if source_type in self._FORMAT_LABELS else "–")
             method_labels = {
                 "folder": "param.json / param.sfo",
-                "ffpfsc": "MkPFS 0.0.9 (PFS/PFSC)",
+                "ffpfsc": "MkPFS 1.0.0 (PFS/PFSC)",
                 "exfat": "MkPFS exFAT-Reader (read-only)",
                 "ffpkg": self._t("info_popup.method_ffpkg"),
             }
@@ -15979,6 +15125,37 @@ class PS5ConverterGUI:
         anfang = f"{zeile - 1}.0" if (spalte == 0 and zeile > 1) else f"{zeile}.0"
         ansicht.delete(anfang, tk.END)
 
+    #: Wie viele Protokollzeilen der Diagnosebericht zeigt.
+    _LOG_SCHWANZ_ZEILEN = 60
+
+    def _protokollschwanz_merken(self, zeilen) -> None:
+        """Merkt die letzten Protokollzeilen fuer den Diagnosebericht.
+
+        **Beide** Protokollwege muessen hier hereinkommen. Vorher fuellte
+        nur ``_append_to_log`` diesen Puffer, und zwar unmittelbar im
+        Rumpf; ``_log_engine_zeilen`` schrieb direkt ins Feld und fasste
+        ihn nicht an. Die gebuendelte Ausgabe von mkpfs und UFS2Tool -
+        der Hauptteil eines Laufs - fehlte damit im Diagnosebericht.
+        Ausgerechnet dann, wenn er gefragt ist: Ein Lauf, der an der
+        Engine scheitert, zeigte im Abschnitt nur die Rahmenzeilen.
+
+        Args:
+            zeilen: Die Zeilen, ohne Steuerzeichen. Leere werden
+                uebergangen.
+        """
+        try:
+            if not hasattr(self, "_build_log_tail"):
+                self._build_log_tail = []
+            for _ln in zeilen:
+                if _ln.strip():
+                    self._build_log_tail.append(_ln)
+            if len(self._build_log_tail) > self._LOG_SCHWANZ_ZEILEN:
+                self._build_log_tail = self._build_log_tail[
+                    -self._LOG_SCHWANZ_ZEILEN:]
+        except Exception:
+            # Ein voller Puffer darf das Protokoll nie anhalten.
+            pass
+
     def _log_engine_zeilen(self, zeilen: list[str]) -> None:
         """Haengt Engine-Ausgaben an, ohne dass sich Fortschrittsbalken stapeln.
 
@@ -16034,6 +15211,9 @@ class PS5ConverterGUI:
         ansicht.insert(tk.END, "\n".join(gefiltert) + "\n")
         self._log_letzte_war_balken = bool(self._FORTSCHRITT_ZEILE.match(gefiltert[-1]))
         self._log_letzte_phase = self._balkenphase(gefiltert[-1])
+        # Auch dieser Weg fuellt den Puffer fuer den Diagnosebericht -
+        # siehe _protokollschwanz_merken.
+        self._protokollschwanz_merken(gefiltert)
 
         # Nur ganze Zeilen entfernen - ein Schnitt mitten in einer Zeile waere
         # genau das Bruchstueck, das hier vermieden werden soll.
@@ -16098,18 +15278,9 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("CLI-Protokollausgabe fehlgeschlagen: %s", exc)
 
-        # Log-Tail-Puffer für den Diagnosebericht
-        # (_build_diagnostic_report_text zeigt die letzten 60 Zeilen)
-        try:
-            if not hasattr(self, '_build_log_tail'):
-                self._build_log_tail = []
-            for _ln in clean.splitlines():
-                if _ln.strip():
-                    self._build_log_tail.append(_ln)
-            if len(self._build_log_tail) > 60:
-                self._build_log_tail = self._build_log_tail[-60:]
-        except Exception:
-            pass
+        # Log-Tail-Puffer fuer den Diagnosebericht, siehe
+        # _protokollschwanz_merken - derselbe Weg wie fuer die Engine.
+        self._protokollschwanz_merken(clean.splitlines())
 
         # Ein einzelnes \r heisst "ueberschreibe die laufende Zeile" - fuer die
         # Anzeige ist das ein Zeilenwechsel. _clean_log_text entfernt es
@@ -17839,116 +17010,22 @@ class PS5ConverterGUI:
         return []
 
     def _ensure_mkpfs_runtime_dependencies(self) -> bool:
-        """Prüft kritische MkPFS-Laufzeitmodule und installiert fehlende Pakete.
+        """Stellt die Laufzeitpakete der Engine bereit.
 
-        Wird vor dem Start der Engine ausgeführt, damit typische Laufzeitabbrüche
-        wie ``ModuleNotFoundError: zlib_ng`` gar nicht erst auftreten.
-
-        Returns:
-
-            True wenn alle benötigten Module verfügbar sind, sonst False.
+        Siehe werkzeuge_bereitstellen.laufzeitpakete_sicherstellen. Die
+        Sitzungsflagge bleibt hier: Sie gehoert zu dieser Instanz, nicht
+        zum Werkzeug - und test_verwaiste_attribute liest nur diese Datei.
         """
         if getattr(self, "_mkpfs_runtime_deps_ok", False):
             return True
-
-        # Lokaler Fallback-Pfad für Runtime-Module (wichtig für Umgebungen,
-        # in denen pip zwar installiert, die Pakete danach aber nicht im
-        # aktuellen Import-Pfad landen).
-        runtime_site_dir = os.path.join(
+        fertig = werkzeuge_bereitstellen.laufzeitpakete_sicherstellen(
             os.path.dirname(self._get_config_path()),
-            "runtime_site_packages",
-        )
-        try:
-            os.makedirs(runtime_site_dir, exist_ok=True)
-            if runtime_site_dir not in sys.path:
-                sys.path.insert(0, runtime_site_dir)
-        except Exception:
-            pass
-
-        # Harte Pflichtmodule (zlib_ng ist optional, MkPFS hat Fallback auf stdlib zlib).
-        required = {
-            "zstandard": "zstandard",
-            "cryptography": "cryptography",
-        }
-
-        missing: list[tuple[str, str]] = []
-        for module_name, package_name in required.items():
-            try:
-                __import__(module_name)
-            except Exception:
-                missing.append((module_name, package_name))
-
-        if not missing:
+            pip_kommando=self._build_pip_command,
+            prozess_starten=self._run_subprocess_logged,
+            melden=self._append_to_log, text=self._t)
+        if fertig:
             self._mkpfs_runtime_deps_ok = True
-            return True
-
-        self._append_to_log(
-            self._t("log.manual.missing_mkpfs_deps", v0=", ".join(m for m, _ in missing))
-        )
-
-        for module_name, package_name in missing:
-            self._append_to_log(self._t('log.auto.0041', v0=module_name, v1=package_name))
-            pip_cmd = self._build_pip_command(
-                [
-                    "install",
-                    "--upgrade",
-                    "--disable-pip-version-check",
-                    package_name,
-                ]
-            )
-            if not pip_cmd:
-                self._append_to_log(self._t('log.auto.0042', v0=package_name))
-                return False
-            rc = self._run_subprocess_logged(
-                pip_cmd,
-                timeout=15 * 60,
-            )
-            if rc != 0:
-                self._append_to_log(self._t('log.auto.0043', v0=package_name))
-                return False
-            try:
-                importlib.invalidate_caches()
-                __import__(module_name)
-            except Exception as exc:
-                self._append_to_log(self._t('log.auto.0044', v0=module_name, v1=exc, v2=runtime_site_dir))
-                pip_cmd_fallback = self._build_pip_command(
-                    [
-                        "install",
-                        "--upgrade",
-                        "--disable-pip-version-check",
-                        "--target",
-                        runtime_site_dir,
-                        package_name,
-                    ]
-                )
-                if not pip_cmd_fallback:
-                    self._append_to_log(self._t('log.auto.0045'))
-                    return False
-                rc_fallback = self._run_subprocess_logged(
-                    pip_cmd_fallback,
-                    timeout=15 * 60,
-                )
-                if rc_fallback != 0:
-                    self._append_to_log(self._t('log.auto.0046', v0=package_name))
-                    return False
-                try:
-                    importlib.invalidate_caches()
-                    if runtime_site_dir not in sys.path:
-                        sys.path.insert(0, runtime_site_dir)
-                    __import__(module_name)
-                except Exception as exc2:
-                    self._append_to_log(self._t('log.auto.0047', v0=module_name, v1=exc2))
-                    return False
-
-        self._mkpfs_runtime_deps_ok = True
-        try:
-            # Performance-Optimierung: wenn vorhanden, nutze zlib_ng-Binding.
-            # Importform muss zu MkPFS passen (from zlib_ng import zlib_ng as zlib).
-            from zlib_ng import zlib_ng as _zlib_ng_impl  # pyright: ignore[reportMissingImports]  # noqa: F401
-        except Exception as exc:
-            self._append_to_log(self._t('log.auto.0048', v0=exc))
-        self._append_to_log(self._t('log.auto.0049'))
-        return True
+        return fertig
 
     # ------------------------------------------------------------------
     # Hilfsmethoden: Betriebssystem / externe Prozesse
@@ -19124,6 +18201,7 @@ class PS5ConverterGUI:
 
         is_pack_folder_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "folder"
         is_pack_file_cmd = len(args) >= 2 and args[0] == "pack" and args[1] == "file"
+        args = mkpfs_argumente_mit_backend(args)
         effective_monitor_target_path = monitor_target_path
         if is_pack_folder_cmd and monitor_target_path:
             # MkPFS schreibt pack-folder-Ausgaben zuerst in <output>.tmp und verschiebt
@@ -19278,7 +18356,7 @@ class PS5ConverterGUI:
             except SystemExit as exc:
                 exit_code = exc.code if isinstance(exc.code, int) else 0
             except ModuleNotFoundError as exc:
-                # MkPFS 0.0.9 nutzt zlib_ng. Wenn das Modul fehlt,
+                # MkPFS 1.0.0 nutzt zlib_ng. Wenn das Modul fehlt,
                 # versuchen wir eine einmalige automatische Nachinstallation.
                 if str(getattr(exc, "name", "")) == "zlib_ng":
                     writer.write(
@@ -20240,57 +19318,12 @@ class PS5ConverterGUI:
         source_name = os.path.basename(os.path.normpath(src)) if os.path.isdir(src) else os.path.splitext(os.path.basename(src))[0]
         return str(normalize_output_path(os.path.join(dst, f"{source_name}.ffpkg")))
 
-    def _validate_ffpkg_artifact(
-        self, image_path: str, *, base_result: dict[str, Any] | None = None
-    ) -> dict[str, Any]:
-        """Validiert ein FFPKG mit UFS2Tool `info` und read-only `fsck_ufs -fn`."""
-        result = base_result if base_result is not None else {
-            "ok": False,
-            "path": image_path,
-            "type": "file",
-            "size_bytes": 0,
-            "sha256": "",
-            "method": "ufs2tool-info-fsck",
-            "detail": "",
-        }
-        result["method"] = "ufs2tool-info-fsck"
-        try:
-            image_size = os.path.getsize(image_path)
-            result["size_bytes"] = int(image_size)
-            if image_size <= 0:
-                result["detail"] = "FFPKG-Datei ist leer (0 Bytes)."
-                return result
-            ufs2tool = self._extract_ufs2tool()
-            project_dir = os.path.dirname(os.path.abspath(__file__))
-            if project_dir not in sys.path:
-                sys.path.insert(0, project_dir)
-            from ps5_validator.core.dispatcher import validate as validate_ffpkg
-
-            validation = validate_ffpkg(
-                path=image_path,
-                mode="ffpkg",
-                threads=1,
-                resume=False,
-                verbose=False,
-                ufs2tool_path=ufs2tool,
-            )
-            summary = dict(getattr(validation, "summary", {}) or {})
-            errors = list(getattr(validation, "errors", []) or [])
-            result["validation_status"] = str(getattr(validation, "status", "FAILED"))
-            result["sha256"] = str(
-                (getattr(validation, "hashes", {}) or {}).get(os.path.basename(image_path), "")
-            )
-            if result["validation_status"] not in ("OK", "WARNING"):
-                detail = "; ".join(errors[:3]) or "UFS2-Integritätsprüfung fehlgeschlagen."
-                result["detail"] = detail
-                return result
-            fsck_rc = summary.get("fsck_return_code", 0)
-            result["ok"] = True
-            result["detail"] = f"UFS2-Struktur validiert; fsck rc={fsck_rc}."
-            return result
-        except Exception as exc:
-            result["detail"] = f"UFS2-Validierung fehlgeschlagen: {exc}"
-            return result
+    def _validate_ffpkg_artifact(self, image_path: str, *,
+                                 base_result=None, expected_file_count=None):
+        """Prueft ein fertiges .ffpkg. Siehe abbild_pruefen."""
+        return self._pruefstand()._validate_ffpkg_artifact(
+            image_path, base_result=base_result,
+            expected_file_count=expected_file_count)
 
     def _build_ffpkg_from_folder(
         self,
@@ -20687,120 +19720,11 @@ class PS5ConverterGUI:
             if staging_dir:
                 _rmtree_force(staging_dir)
 
-    def _verify_ffpkg_file_count_via_mount(
-        self, candidate_path: str, expected_file_count: int
-    ) -> dict[str, Any]:
-        """Mountet einen FFPKG-Kandidaten schreibgeschützt und zählt die enthaltenen Dateien.
-
-        info/fsck_ufs prüfen nur, ob die UFS2-Struktur intern konsistent ist – nicht,
-        ob newfs -D bei einer festen Inode-Dichte tatsächlich alle Quelldateien
-        eingebettet hat. Bei sehr dateireichen Titeln (z. B. Sammlungen mit vielen
-        Kleindateien) kann das Ergebnis strukturell gültig, inhaltlich aber
-        unvollständig sein. Diese Prüfung mountet das Image über denselben
-        UFS2Tool/Dokan-Mechanismus wie Aufgabe 4 (Extraktion) und vergleicht die
-        tatsächliche Dateizahl mit der zuvor am Quellordner ermittelten. Ist Dokan2
-        nicht verfügbar, wird die Prüfung übersprungen, statt den Build zu blockieren.
-        """
-        result: dict[str, Any] = {
-            "checked": False,
-            "ok": True,
-            "actual_file_count": -1,
-            "detail": "",
-        }
-        if not _is_admin() or not self._find_dokan_driver():
-            result["detail"] = "übersprungen (keine Admin-Rechte oder kein Dokan2-Treiber verfügbar)"
-            return result
-
-        import ctypes as _ct
-        import time as _time
-
-        try:
-            exe = self._extract_ufs2tool()
-        except Exception as exc:
-            result["detail"] = f"übersprungen (UFS2Tool nicht verfügbar: {exc})"
-            return result
-
-        drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
-        drive = None
-        for idx in range(25, 3, -1):
-            if not (drives_bitmask & (1 << idx)):
-                drive = chr(65 + idx) + ":"
-                break
-        if not drive:
-            result["detail"] = "übersprungen (kein freier Laufwerksbuchstabe verfügbar)"
-            return result
-
-        mount_proc: subprocess.Popen[str] | None = None
-        mounted = False
-        try:
-            mount_proc = subprocess.Popen(
-                [exe, "mount_udf", "-o", "ro", candidate_path, drive],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="mbcs",
-                errors="replace",
-                creationflags=_NO_WIN_FLAGS,
-                startupinfo=_silent_startupinfo(),
-            )
-            for _ in range(30):
-                if mount_proc.poll() is not None:
-                    break
-                if os.path.exists(drive + "\\"):
-                    mounted = True
-                    break
-                _time.sleep(0.5)
-
-            if not mounted:
-                tail = ""
-                try:
-                    if mount_proc.poll() is not None and mount_proc.stdout is not None:
-                        tail = (mount_proc.stdout.read() or "").strip()
-                except Exception:
-                    tail = ""
-                result["detail"] = (
-                    f"übersprungen (Mount für Dateizählung fehlgeschlagen: {tail or 'Zeitüberschreitung'})"
-                )
-                return result
-
-            actual_count = 0
-            for _root_dir, _dirs, files in os.walk(drive + "\\"):
-                actual_count += len(files)
-
-            result["checked"] = True
-            result["actual_file_count"] = actual_count
-            if expected_file_count > 0 and actual_count < expected_file_count:
-                result["ok"] = False
-                result["detail"] = (
-                    f"nur {actual_count} von {expected_file_count} Quelldateien im UFS2-Image gefunden"
-                )
-            else:
-                result["detail"] = f"{actual_count} Dateien im UFS2-Image bestätigt"
-            return result
-        except Exception as exc:
-            result["detail"] = f"übersprungen (Dateizählung fehlgeschlagen: {exc})"
-            return result
-        finally:
-            if mount_proc is not None:
-                try:
-                    mount_proc.terminate()
-                    mount_proc.wait(timeout=10)
-                except Exception:
-                    try:
-                        mount_proc.kill()
-                    except Exception:
-                        pass
-            try:
-                if mounted and drive and os.path.exists(drive + "\\"):
-                    subprocess.run(
-                        ["mountvol", drive + "\\", "/D"],
-                        timeout=10,
-                        capture_output=True,
-                        creationflags=_NO_WIN_FLAGS,
-                        startupinfo=_silent_startupinfo(),
-                    )
-            except Exception:
-                pass
+    def _verify_ffpkg_file_count_via_mount(self, candidate_path: str,
+                                           expected_file_count: int):
+        """Zaehlt die Dateien im .ffpkg nach. Siehe abbild_pruefen."""
+        return self._pruefstand()._verify_ffpkg_file_count_via_mount(
+            candidate_path, expected_file_count)
 
     def _mode_folder_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 1: Dump-Ordner direkt als echtes UFS2-FFPKG schreiben."""
@@ -21172,13 +20096,153 @@ class PS5ConverterGUI:
             uncompressed=uncompressed,
         )
 
+    def _mode_pack_folder_exfat(
+        self, src: str, dst: str, final_output: str,
+        p2_end: float, p3_end: float,
+        set_pct, set_status,
+        uncompressed: bool = False,
+    ) -> bool:
+        """Baut den Container in einem Zug: Ordner -> exFAT -> Container.
+
+        Das ist der Weg, den die Anleitung der Engine nennt: ``pack folder``
+        ohne ``--raw`` wickelt den Ordner in ein exFAT-Abbild und komprimiert
+        es im selben Durchgang in den Container - **ohne** die Zwischendatei
+        auf der Platte, die der zweistufige Weg braucht.
+
+        Gemessen am 03.09.2026 an 200 MB: 1,3 s gegen 6,3 s, gleiche
+        Ergebnisgröße. Der Unterschied ist das doppelte Schreiben; bei einem
+        Spiel von 60 GB spart dieser Weg 60 GB Schreiblast.
+
+        Der zweistufige Weg steht daneben in ``_mode_pack_folder_mkpfs`` und
+        bleibt über die Einstellung erreichbar.
+
+        Args:
+            src:           Der Dump-Ordner.
+            dst:           Der Zielordner (für den Wiederaufnahmepunkt).
+            final_output:  Die fertige Datei.
+            p2_end, p3_end: Die Prozentmarken; hier gibt es nur einen Schritt.
+            set_pct:       Setzt den Fortschritt.
+            set_status:    Setzt die Statuszeile.
+            uncompressed:  ``.ffpfs`` statt ``.ffpfsc``.
+
+        Returns:
+            True, wenn die Datei entstanden ist.
+        """
+        # Dieselben beiden Vorabprüfungen wie im zweistufigen Weg: Ohne
+        # eboot.bin und param.json ist der Dump auf der Konsole unbrauchbar,
+        # und das fiele sonst erst dort auf.
+        eboot_path = os.path.join(src, "eboot.bin")
+        if not os.path.isfile(eboot_path):
+            self._append_to_log(self._t('log.auto.0115', v0=eboot_path))
+            return False
+        if not self._ensure_param_json(src):
+            return False
+
+        self._save_runtime_checkpoint(
+            mode="pack_folder",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={"stage": "pack_folder_exfat_running", "tmp_dir": "", "temp_exfat": ""},
+        )
+
+        _outer_desc = "unkomprimierter" if uncompressed else "komprimierter"
+        self._append_to_log(self._t('log.auto.0117', v0=_outer_desc))
+        set_status(self._t("status.pack_folder_exfat"))
+
+        # Ein Schritt statt zwei - die Anzeige darf keine Phase erwarten, die
+        # es hier nicht gibt.
+        self.task_num_steps = 1
+        self.task_step_ends = [p3_end]
+        self.task_current_step = 0
+        if hasattr(self, "_mkpfs_eta_initial"):
+            del self._mkpfs_eta_initial
+
+        profile = self._resolve_pack_profile("pack_folder", self.task_total_source_bytes)
+        self._append_to_log(
+            self._t(
+                "log.manual.auto_profile_info",
+                name=profile["profile"],
+                size=profile["size_gb"],
+                lvl=profile["level"],
+                cpu=profile["cpu"],
+                cores=profile["cores"],
+                blk=profile["block_size"],
+            )
+        )
+
+        self._wait_for_pending_mkpfs_background(final_output)
+        self._cleanup_stale_mkpfs_output(final_output)
+        pack_out = self._decide_pack_output_staging(final_output)
+        ok = self._execute_mkpfs(
+            [
+                "pack", "folder",
+                "--no-compress" if uncompressed else "--compress",
+                *self._mkpfs_pruef_argumente(),
+                "--no-adjust-output-file-extension",
+                "--version", "PS5",
+                "--inode-bits", "32",
+                "--cpu-count", str(profile["cpu"]),
+                "--compression-level", str(profile["level"]),
+                "--block-size", str(profile["block_size"]),
+                src, pack_out,
+            ],
+            monitor_target_path=pack_out,
+            monitor_source_file=src,
+            advance_step=True,
+        )
+        if not ok or not self.is_running:
+            return False
+
+        actual_output = self._finalize_staged_pack_output(pack_out, final_output)
+        self.task_final_output_path = actual_output
+        self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
+        set_pct(p3_end)
+        set_status(self._t("status.pack_folder_exfat_done"))
+        set_status("Phase 4/4 – Abschlussprüfung läuft...")
+        set_pct(96.0)
+        return True
+
     def _mode_pack_folder_mkpfs(
         self, src: str, dst: str, final_output: str,
         p1_end: float, p2_end: float, p3_end: float,
         set_pct, set_status,
         uncompressed: bool = False,
+        bauform: str | None = None,
     ) -> bool:
-        """Erstellt ein kompatibles .ffpfsc (oder unkomprimiertes .ffpfs) über ein inneres PFS."""
+        """Erstellt ein kompatibles .ffpfsc (oder unkomprimiertes .ffpfs).
+
+        Args:
+            src:           Der Dump-Ordner.
+            dst:           Der Zielordner (für den Wiederaufnahmepunkt).
+            final_output:  Die fertige Datei.
+            p1_end, p2_end, p3_end: Die Prozentmarken der Phasen.
+            set_pct:       Setzt den Fortschritt.
+            set_status:    Setzt die Statuszeile.
+            uncompressed:  ``.ffpfs`` statt ``.ffpfsc`` - der äußere Container
+                bleibt dann unkomprimiert.
+            bauform:       ``BAUFORM_EXFAT`` oder ``BAUFORM_PFS``. Ohne Angabe
+                gilt die Einstellung des Programms.
+
+        Returns:
+            True, wenn die Datei entstanden ist.
+        """
+        # Der einstufige Weg kann nur komprimiert. MkPFS 1.0.0 nimmt bei
+        # "pack folder" ohne --raw den Schalter --no-compress nicht an: Am
+        # 03.09.2026 an 4,5 MB gemessen, davon 4 MB sehr redundant - mit
+        # --compress wie mit --no-compress kamen dieselben 655.360 Bytes
+        # heraus, waehrend "pack folder --raw --no-compress" 5.636.096 und
+        # "pack file --no-compress" 6.029.312 Bytes liefern. Wer also ein
+        # unkomprimiertes .ffpfs bestellt, bekaeme hier stillschweigend ein
+        # komprimiertes. Dafuer gibt es den zweistufigen Weg, der den
+        # Schalter beachtet.
+        if (bauform or self.bauform) == BAUFORM_EXFAT and not uncompressed:
+            return self._mode_pack_folder_exfat(
+                src, dst, final_output, p2_end, p3_end,
+                set_pct, set_status, uncompressed=uncompressed)
+        if (bauform or self.bauform) == BAUFORM_EXFAT and uncompressed:
+            self._append_to_log(self._t("log.bauform.unkomprimiert_braucht_pfs"))
+
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""
         temp_root = self._mkdtemp(prefix="ps5conv_nested_pfs_")
@@ -23393,21 +22457,60 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('log.auto.0202'))
                 self._append_to_log("=" * 50 + "\n")
 
-                def _repack_nested_ffpfsc(source_dir: str, output_path: str) -> bool:
-                    """Packt einen geänderten Dump über ein unkomprimiertes inneres PFS.
+                def _repack_nested_ffpfsc(source_dir: str, output_path: str,
+                                          bauform: str = BAUFORM_PFS) -> bool:
+                    """Packt einen geänderten Dump in den Aufbau zurück, aus dem er kam.
 
-                    Identisch zu _mode_pack_folder_mkpfs (Aufgabe 1): Das innere PFS
-                    muss mit --raw gebaut werden, sonst legt mkpfs von sich aus noch
-                    ein Image dazwischen und das Ergebnis ist dreifach verschachtelt.
                     Der äußere Container folgt der Endung der Quelle: .ffpfs bleibt
                     unkomprimiert, .ffpfsc wird komprimiert.
+
+                    Zur Bauform: Bis zum 03.09.2026 entstand hier **immer**
+                    PFS-in-PFS, auch wenn die Quelle exFAT-in-PFS war - das
+                    Bearbeiten änderte den Aufbau also stillschweigend. Jetzt gibt
+                    der Aufrufer die Form der Quelle mit.
+
+                    * ``BAUFORM_EXFAT``: ein einziger ``pack folder``-Aufruf; die
+                      Engine wickelt das exFAT selbst und komprimiert es im selben
+                      Durchgang.
+                    * ``BAUFORM_PFS``: erst ein rohes inneres PFS, dann der
+                      Container darum. Das ``--raw`` ist dabei Pflicht - ohne es
+                      legt mkpfs von sich aus noch ein Image dazwischen, und das
+                      Ergebnis ist dreifach verschachtelt.
+
+                    Args:
+                        source_dir:  Der bearbeitete Dump-Ordner.
+                        output_path: Die Zieldatei.
+                        bauform:     Die Form, in der zurückgepackt wird.
+
+                    Returns:
+                        True, wenn die Datei entstanden ist.
                     """
-                    temp_root = self._mkdtemp(prefix="ps5conv_fakelib_nested_")
-                    inner_pfs = os.path.join(temp_root, "pfs_image.dat")
                     profile = self._resolve_pack_profile(
                         "pack_folder", self._get_path_size(source_dir)
                     )
                     uncompressed = str(output_path).lower().endswith(".ffpfs")
+
+                    if bauform == BAUFORM_EXFAT:
+                        return self._execute_mkpfs(
+                            [
+                                "pack", "folder",
+                                "--no-compress" if uncompressed else "--compress",
+                                *self._mkpfs_pruef_argumente(),
+                                "--no-adjust-output-file-extension",
+                                "--version", "PS5",
+                                "--inode-bits", "32",
+                                "--cpu-count", str(profile["cpu"]),
+                                "--compression-level", str(profile["level"]),
+                                "--block-size", str(profile["block_size"]),
+                                source_dir, output_path,
+                            ],
+                            monitor_target_path=output_path,
+                            monitor_source_file=source_dir,
+                            advance_step=True,
+                        )
+
+                    temp_root = self._mkdtemp(prefix="ps5conv_fakelib_nested_")
+                    inner_pfs = os.path.join(temp_root, "pfs_image.dat")
                     try:
                         inner_ok = self._execute_mkpfs(
                             [
@@ -23481,7 +22584,8 @@ class PS5ConverterGUI:
 
                     self._wait_for_pending_mkpfs_background(final_out)
                     self._cleanup_stale_mkpfs_output(final_out)
-                    ok = _repack_nested_ffpfsc(search_root, final_out)
+                    ok = _repack_nested_ffpfsc(
+                        search_root, final_out, self._bauform_der_quelle(src))
                     if ok:
                         self._append_to_log(self._t('log.auto.0205', v0=final_out))
                         self.task_final_output_path = final_out
@@ -23569,89 +22673,9 @@ class PS5ConverterGUI:
         return True
 
     def _extract_meta_files_from_pfs(self, pfs_path: str, out_dir: str) -> bool:
-        """Liest param.json und param.sfo direkt aus einem PFS-Image via mkpfs-API.
-
-        Entpackt **nur** die Metadaten-Dateien, nicht das gesamte Image.
-        Gibt True zurück wenn mindestens eine Datei erfolgreich extrahiert wurde.
-
-        Args:
-            pfs_path: Pfad zum inneren PFS-Image (.dat).
-            out_dir:  Zielverzeichnis für die extrahierten Metadaten-Dateien.
-        """
-        try:
-            # mkpfs-Pfad sicherstellen
-            if self.mkpfs_dir and self.mkpfs_dir not in sys.path:
-                sys.path.insert(0, self.mkpfs_dir)
-
-            from mkpfs.pfs import (  # noqa: PLC0415  # type: ignore[import-not-found]
-                inspect_pfs_image,
-                read_image_inode_payload,
-                decode_inode_payload,
-            )
-            from pathlib import Path  # noqa: PLC0415
-
-            targets = (
-                "sce_sys/param.json",
-                "sce_sys/param.sfo",
-                "sce_sys/icon0.png",
-            )
-
-            # inspect_pfs_image liest Header, Inodes und baut den Dateibaum korrekt auf
-            inspection = inspect_pfs_image(Path(pfs_path))
-            file_inodes = inspection.file_inodes or {}
-            inodes      = inspection.inodes or []
-
-            if not file_inodes or not inodes:
-                return False
-
-            # Robust gegen unterschiedliche Separator und Groß/Kleinschreibung
-            # im PFS-Dateibaum (häufige Ursache dafür, dass icon0.png nicht gefunden wird).
-            norm_map: dict[str, int] = {}
-            for _k, _idx in file_inodes.items():
-                _nk = str(_k).replace("\\", "/").lower()
-                norm_map[_nk] = _idx
-
-            extracted_any = False
-            with open(pfs_path, "rb") as fh:
-                # Header nochmals parsen (fh muss offen sein für read_image_inode_payload)
-                from mkpfs.pfs import parse_image_header  # noqa: PLC0415  # type: ignore[import-not-found]
-                header = parse_image_header(fh)
-
-                for rel_path in targets:
-                    key_norm = rel_path.replace("\\", "/").lower()
-                    inode_idx = norm_map.get(key_norm)
-
-                    # Fallback: falls Pfad ein Präfix enthält (z.B. GAMEID/sce_sys/icon0.png)
-                    if inode_idx is None:
-                        suffix = "/" + os.path.basename(rel_path).lower()
-                        for _nk, _idx in norm_map.items():
-                            if _nk.endswith(suffix) and "sce_sys" in _nk:
-                                inode_idx = _idx
-                                break
-
-                    if inode_idx is None:
-                        continue
-
-                    inode = inodes[inode_idx]
-                    payload = read_image_inode_payload(fh, header, inode)
-                    if inode.is_compressed:
-                        try:
-                            payload = decode_inode_payload(payload=payload, inode=inode)
-                        except Exception as exc:
-                            logger.debug("inode-Payload konnte nicht dekodiert werden: %s", exc)
-                            continue
-                    # Datei in out_dir schreiben
-                    out_path = os.path.join(out_dir, "sce_sys", os.path.basename(rel_path))
-                    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-                    with open(out_path, "wb") as wf:
-                        wf.write(payload)
-                    extracted_any = True
-
-            return extracted_any
-
-        except Exception as exc:
-            self._append_to_log(self._t('log.auto.0212', v0=exc))
-            return False
+        """Metadatendateien aus einem PFS holen. Siehe abbild_metadaten."""
+        return self._metadatenleser()._extract_meta_files_from_pfs(
+            pfs_path, out_dir)
 
     def _print_meta_table(self, src: str) -> None:
         """Gibt eine formatierte Metadaten-Tabelle in das Konsolenfenster aus.
@@ -23681,7 +22705,7 @@ class PS5ConverterGUI:
         self, src: str, dst: str, *, progress_task_index: int = 2
     ) -> bool:
         """Extrahiert eine .exfat-Datei in einen Game Dump Ordner.
-                Primärpfad: native MkPFS-0.0.9-exFAT-Extraktion.
+                Primärpfad: native MkPFS-1.0.0-exFAT-Extraktion.
                 Legacy-Fallback: OSFMount-/robocopy-Extraktion, falls der Parser scheitert.
         Args:
             src: Pfad zur .exfat-Datei.
@@ -23986,54 +23010,16 @@ class PS5ConverterGUI:
         return bool(has_driver and has_runtime)
 
     def _extract_ufs2tool(self) -> str:
-        """Stellt die mitgelieferte UFS2Tool-v4.1-Fassung dieser Plattform bereit.
+        """Stellt UFS2Tool v4.1 bereit.
 
-        v4.1 liest Zylindergruppen zuverlässig vollständig ein. Das ist für die
-        schreibgeschützte FFPKG-Prüfung wichtig, da ältere v4.0-Bundles bei
-        Teilreads fälschlich ``BAD MAGIC NUMBER`` für gültige Cylinder Groups
-        melden konnten.
-
-        **Seit v1.8.72 für alle vier Ziele, und eigenständig.** Bis dahin lag
-        nur der Windows-Bau bei, und der war framework-abhängig: Seine
-        ``runtimeconfig.json`` verlangt ``Microsoft.NETCore.App 8.0.0``. Auf
-        einem Rechner ohne installiertes .NET 8 scheiterte ``.ffpkg`` deshalb,
-        ohne dass irgendetwas den Grund nannte. Die mitgelieferten Bauten
-        bringen jetzt alles mit (``--self-contained``, getrimmt, ohne
-        Globalisierung - sonst verlangt der Start unter Linux ``libicu``).
-
-        Returns:
-            Pfad zur ausführbaren Datei.
-
-        Raises:
-            RuntimeError: Wenn für die Plattform nichts mitgeliefert ist oder
-                die Prüfsumme nicht stimmt.
+        Siehe werkzeuge_bereitstellen.ufs2tool_bereitstellen. Der
+        Zwischenspeicher bleibt hier: Er haengt an dieser Instanz, nicht am
+        Werkzeug. _mitgeliefert_finden wird hereingereicht, weil es die
+        macOS-Regel zu Contents/Resources kennt.
         """
-        if hasattr(self, "_ufs2tool_exe") and self._ufs2tool_exe and os.path.isfile(self._ufs2tool_exe):
-            return self._ufs2tool_exe
-
-        wurzel = self._mitgeliefert_finden(UFS2TOOL_ORDNER)
-        kennung = self._ufs2tool_plattform()
-        if not kennung:
-            raise RuntimeError(
-                f"UFS2Tool wird für {_systemname()} ({platform.machine()}) "
-                "nicht mitgeliefert."
-            )
-        ordner = os.path.join(wurzel, kennung)
-        name = "UFS2Tool.exe" if kennung.startswith("win") else "UFS2Tool"
-        pfad = os.path.join(ordner, name)
-        if not os.path.isfile(pfad):
-            raise RuntimeError(f"UFS2Tool-v4.1 fehlt: {pfad}")
-
-        self._ufs2tool_pruefsumme(wurzel, kennung, pfad)
-
-        if not IST_WINDOWS:
-            # Aus dem Bündel kommt die Datei ohne Ausführungsrecht.
-            try:
-                os.chmod(pfad, os.stat(pfad).st_mode | 0o111)
-            except OSError as exc:
-                logger.debug("UFS2Tool nicht ausführbar zu machen: %s", exc)
-
-        self._ufs2tool_exe = pfad
+        gemerkt = getattr(self, "_ufs2tool_exe", "") or ""
+        self._ufs2tool_exe = werkzeuge_bereitstellen.ufs2tool_bereitstellen(
+            self._mitgeliefert_finden, gemerkt)
         return self._ufs2tool_exe
 
     @staticmethod
@@ -24498,7 +23484,7 @@ class PS5ConverterGUI:
     def _mode_ffpkg_to_ffpfsc(self, src: str, dst: str) -> bool:
         """Konvertiert eine .ffpkg-Datei direkt zu einer .ffpfsc-Datei (Aufgabe 4).
 
-                Methodik: vendorter MkPFS-0.0.9 pack file.
+                Methodik: vendorter MkPFS-1.0.0 pack file.
                     .ffpkg wird als einzelne Datei in einen PFS-Container eingebettet.
                     Identisch zur Behandlung von .exfat in Aufgabe 3 (pack_file).
                     Kein Mount, kein Dokan, kein UFS2Tool noetig.
@@ -25899,49 +24885,11 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0273', v0=exc))
             return False
 
-    def _verify_exfat_file_count(
-        self, exfat_path: str, expected_file_count: int
-    ) -> dict[str, Any]:
-        """Zählt die tatsächlich enthaltenen Dateien in einem gebauten exFAT-Image.
-
-        Nutzt den vendorten, reinen Python-exFAT-Reader (kein Mount, keine
-        Adminrechte oder Dokan2 nötig) um den Verzeichnisbaum zu lesen und die
-        Dateien zu zählen, ohne sie zu extrahieren. Ein rein struktureller
-        Lesbarkeitscheck erkennt nicht, ob tatsächlich alle Quelldateien im
-        Image gelandet sind.
-        """
-        result: dict[str, Any] = {
-            "checked": False,
-            "ok": True,
-            "actual_file_count": -1,
-            "detail": "",
-        }
-        try:
-            mkpfs_parent = self._extract_embedded_mkpfs()
-            if not mkpfs_parent:
-                result["detail"] = "übersprungen (MkPFS-Engine nicht verfügbar)"
-                return result
-            if mkpfs_parent not in sys.path:
-                sys.path.insert(0, mkpfs_parent)
-            from mkpfs.exfat import ExfatReader  # pyright: ignore[reportMissingImports]
-
-            with open(exfat_path, "rb") as fh:
-                reader = ExfatReader(fh)
-                actual_count = sum(1 for _ in reader.iter_files())
-
-            result["checked"] = True
-            result["actual_file_count"] = actual_count
-            if expected_file_count > 0 and actual_count < expected_file_count:
-                result["ok"] = False
-                result["detail"] = (
-                    f"nur {actual_count} von {expected_file_count} Quelldateien im exFAT-Image gefunden"
-                )
-            else:
-                result["detail"] = f"{actual_count} Dateien im exFAT-Image bestätigt"
-            return result
-        except Exception as exc:
-            result["detail"] = f"übersprungen (Dateizählung fehlgeschlagen: {exc})"
-            return result
+    def _verify_exfat_file_count(self, exfat_path: str,
+                                 expected_file_count: int):
+        """Zaehlt die Dateien im exFAT nach. Siehe abbild_pruefen."""
+        return self._pruefstand()._verify_exfat_file_count(
+            exfat_path, expected_file_count)
 
     def _extract_exfat_to_folder_mkpfs(
         self,
@@ -27577,10 +26525,73 @@ class PS5ConverterGUI:
         "pfs_force": "0",
     }
 
+    def _diagnosebericht(self) -> "diagnose_befund.Diagnosebericht":
+        """Baut den Systemteil des Berichts mit den Werten dieser Instanz.
+
+        Die drei Pfade und die Packstufe gehen als Werteobjekte hinein -
+        das Modul ruft nur .get() und kennt Tk nicht.
+        """
+        return diagnose_befund.Diagnosebericht(
+            programm_ordner=os.path.dirname(os.path.abspath(sys.argv[0])),
+            hauptdatei=__file__,
+            quelle=getattr(self, "source_path", None),
+            ziel=getattr(self, "dest_path", None),
+            temp=getattr(self, "temp_path", None),
+            kompression=getattr(self, "compression_level_var", None),
+            # Durchgaengig ueber getattr: test_fortschrittsbalken baut
+            # einen Traeger, der nur die eine Pruefung kennt - und haelt
+            # damit fest, dass der Bericht von der Oberflaeche nichts
+            # braucht. Ein direkter Zugriff braeche diese Zusicherung.
+            einstellung_lesen=getattr(self, "_load_setting", None),
+            einstellung_schreiben=getattr(self, "_save_setting", None),
+            mitgeliefert_finden=getattr(self, "_mitgeliefert_finden", None),
+            eingebettete_werkzeuge=getattr(
+                self, "_EINGEBETTETE_WERKZEUGE", ()),
+            gepruefte_bibliotheken=getattr(
+                self, "_GEPRUEFTE_BIBLIOTHEKEN", ()),
+            fremdwerkzeuge_quellen=getattr(
+                self, "_FREMDWERKZEUGE_QUELLEN", None),
+            eingebettete_fassung=getattr(self, "_eingebettete_fassung", None),
+            ampr_hoechste_fassung=getattr(
+                self, "_ampr_hoechste_fassung", None),
+            ufs2tool_plattform=getattr(self, "_ufs2tool_plattform", None),
+            datei_fassung=getattr(self, "_datei_fassung", None),
+            eigenschaften_pruefen=getattr(self, "_eigenschaften_pruefen", None),
+            bytes_formatieren=getattr(self, "_fmt_bytes", None),
+            macos_translokation=getattr(self, "_macos_translokation", None),
+            ampr_ordner=getattr(self, "_AMPR_BUNDLED_STORE_DIR",
+                                "PlayGo & AMPR_EMU"),
+            hintergrund_ordner=getattr(self, "_BACKGROUND_BUNDLED_DIR",
+                                       "Hintergrundbilder"),
+            rueckschritt_ab_prozent=getattr(self, "_RUECKSCHRITT_AB_PROZENT",
+                                            5.0),
+            drag_and_drop=_DND_AVAILABLE,
+            doktor=umgebung_doktor,
+            mkpfs_ordner=getattr(self, "mkpfs_dir", "") or "",
+            letzte_dauer_s=getattr(self, "_letzte_aufgabe_dauer_s", 0.0) or 0.0,
+            quellbytes=getattr(self, "task_total_source_bytes", 0) or 0,
+            fortschritts_waechter=getattr(self, "fortschritts_waechter", None),
+            text=getattr(self, "_t", None),
+            aufgabe=getattr(self, "current_mode", None),
+            anzeige_pruefen=getattr(self, "_diagnose_pruefen", None),
+            konfigpfad=getattr(self, "_get_config_path", None),
+            schwaerzen_hinweise=getattr(
+                self, "_DIAGNOSTIC_REDACT_KEY_HINTS", ()),
+            # Alle elf Abschnittsbauer ueber einen Rueckruf. Auch die
+            # acht, die das Modul selbst hat: Sonst koennte ein Traeger
+            # sie nicht ersetzen, und die Kette waere gekappt.
+            bauer_holen=lambda name: getattr(self, name, None),
+            # Als Rueckruf: _build_log_tail wird beim Kuerzen neu
+            # zugewiesen, eine Referenz zeigte danach ins Leere.
+            protokollschwanz=lambda: list(
+                getattr(self, "_build_log_tail", None) or []),
+            fassung=APP_VERSION,
+            letzte_fehler=_LETZTE_FEHLER)
+
     @staticmethod
     def _diagnose_zeile(name: str, wert) -> str:
-        """Eine Zeile des Berichts - Werte bleiben sprachneutral."""
-        return "%s: %s" % (name, wert)
+        """Eine Zeile des Berichts. Siehe diagnose_befund."""
+        return diagnose_befund.Diagnosebericht._diagnose_zeile(name, wert)
 
     def _diagnose_anzeige(self) -> list[str]:
         """Alles, was einen Darstellungsfehler erklaeren kann.
@@ -27791,30 +26802,8 @@ class PS5ConverterGUI:
         return bilder
 
     def _diagnose_dpi_bewusstsein(self):
-        """Was Windows ueber die DPI-Faehigkeit des Prozesses denkt.
-
-        0 bedeutet: Der Prozess zeichnet in 96 dpi, und Windows zieht das
-        fertige Fenster als Bitmap auf die echte Groesse hoch. Dann ist nicht
-        ein Bild unscharf, sondern die ganze Oberflaeche.
-
-        Returns:
-            Die Stufe, oder ``None`` ausserhalb von Windows bzw. wenn die
-            Abfrage fehlschlaegt.
-        """
-        if not IST_WINDOWS:
-            return None
-        try:
-            stufe = ctypes.c_int(0)
-            ctypes.windll.shcore.GetProcessDpiAwareness(0, ctypes.byref(stufe))
-            return int(stufe.value)
-        except Exception:
-            pass
-        try:
-            # Aeltere Windows-Fassungen kennen nur diese Abfrage.
-            return 1 if ctypes.windll.user32.IsProcessDPIAware() else 0
-        except Exception as exc:
-            logger.debug("DPI-Bewusstsein nicht auslesbar: %s", exc)
-            return None
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_dpi_bewusstsein."""
+        return self._diagnosebericht()._diagnose_dpi_bewusstsein()
 
     def _diagnose_skalierung_messen(self):
         """Sammelt DPI, ``tk scaling`` und die tatsaechliche Schrifthoehe.
@@ -27853,47 +26842,8 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _diagnose_speicher_mb() -> float:
-        """Wie viel Arbeitsspeicher der eigene Prozess gerade belegt.
-
-        Returns:
-            Megabyte, oder 0.0 wenn es sich nicht ermitteln laesst.
-        """
-        try:
-            import psutil
-            return psutil.Process().memory_info().rss / 1048576.0
-        except Exception:
-            pass
-        if IST_WINDOWS:
-            try:
-                class _Zaehler(ctypes.Structure):
-                    _fields_ = [("cb", ctypes.c_ulong),
-                                ("PageFaultCount", ctypes.c_ulong),
-                                ("PeakWorkingSetSize", ctypes.c_size_t),
-                                ("WorkingSetSize", ctypes.c_size_t),
-                                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
-                                ("QuotaPagedPoolUsage", ctypes.c_size_t),
-                                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
-                                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
-                                ("PagefileUsage", ctypes.c_size_t),
-                                ("PeakPagefileUsage", ctypes.c_size_t)]
-
-                zaehler = _Zaehler()
-                zaehler.cb = ctypes.sizeof(_Zaehler)
-                if ctypes.windll.psapi.GetProcessMemoryInfo(
-                        ctypes.windll.kernel32.GetCurrentProcess(),
-                        ctypes.byref(zaehler), zaehler.cb):
-                    return zaehler.WorkingSetSize / 1048576.0
-            except Exception as exc:
-                logger.debug("Speicher nicht auslesbar: %s", exc)
-            return 0.0
-        try:
-            import resource
-            roh = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-            # Linux zaehlt in Kilobyte, macOS in Byte.
-            return roh / (1048576.0 if IST_MACOS else 1024.0)
-        except Exception as exc:
-            logger.debug("Speicher nicht auslesbar: %s", exc)
-        return 0.0
+        """Arbeitsspeicher in MB. Siehe diagnose_befund."""
+        return diagnose_befund.Diagnosebericht._diagnose_speicher_mb()
 
     def _diagnose_laufruhe_messen(self):
         """Misst Speicher, angesammelte Tk-Bilder, Zeitgeber und Reaktionszeit.
@@ -28328,7 +27278,7 @@ class PS5ConverterGUI:
     #: Herkunft. Steht dort kein Projekt, gibt es keine abfragbare Quelle -
     #: dann nennt der Bericht nur, was hier liegt.
     _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
-        ("MkPFS (Packmaschine)", "MkPFS-0.0.9/mkpfs/__init__.py",
+        ("MkPFS (Packmaschine)", "MkPFS-1.0.0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
         ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
@@ -28483,95 +27433,12 @@ class PS5ConverterGUI:
         return max(nummern, key=self._ampr_version_sort_key)
 
     def _bestandteile_sammeln(self) -> list:
-        """Stellt zusammen, was das Programm mitbringt und benutzt.
+        """Siehe diagnose_befund.Diagnosebericht._bestandteile_sammeln."""
+        return self._diagnosebericht()._bestandteile_sammeln()
 
-        Returns:
-            Eine Liste von ``Bestandteil`` - eingebettete Werkzeuge,
-            Python-Bibliotheken und gefundene Fremdwerkzeuge.
-        """
-        from ps5_validator.utils import aktualisierungen as ak
-
-        teile: list = []
-        for name, datei, art, quelle in self._EINGEBETTETE_WERKZEUGE:
-            fassung = self._eingebettete_fassung(datei) or "unbekannt"
-            teile.append(ak.Bestandteil(name, fassung, art, quelle))
-
-        for anzeigename, importname, paket in self._GEPRUEFTE_BIBLIOTHEKEN:
-            try:
-                modul = __import__(importname)
-                fassung = str(getattr(modul, "__version__", "") or "vorhanden")
-            except Exception:
-                continue
-            teile.append(ak.Bestandteil(anzeigename, fassung, ak.PYPI, paket))
-
-        # AMPR EMU hat sehr wohl eine abfragbare Quelle - das Projekt liegt auf
-        # GitHub und veroeffentlicht dort seine Fassungen. Verglichen wird die
-        # hoechste mitgelieferte Nummer.
-        hoechste = self._ampr_hoechste_fassung()
-        if hoechste:
-            teile.append(ak.Bestandteil("AMPR EMU", hoechste, ak.GITHUB,
-                                        "drakmor/ampr_emu"))
-
-        # UFS2Tool liegt seit v1.8.72 bei, statt vom Nutzer gesucht zu werden.
-        # Die Fassung steht in pruefsummen.json neben den Bauten.
-        try:
-            liste = os.path.join(self._mitgeliefert_finden(UFS2TOOL_ORDNER),
-                                 "pruefsummen.json")
-            with io.open(liste, encoding="utf-8") as datei:
-                angaben = json.load(datei)
-            teile.append(ak.Bestandteil(
-                "UFS2Tool (%s)" % (self._ufs2tool_plattform() or "?"),
-                str(angaben.get("fassung") or "unbekannt"),
-                ak.GITHUB, "SvenGDK/UFS2Tool"))
-        except Exception as exc:
-            logger.debug("UFS2Tool-Fassung nicht lesbar: %s", exc)
-
-        for name, schluessel in (("FileZilla", "filezilla_path"),
-                                 ("OSFMount", "osfmount_path")):
-            try:
-                pfad = str(self._load_setting(schluessel, "") or "").strip()
-            except Exception:
-                pfad = ""
-            if not pfad:
-                continue
-            fassung = self._datei_fassung(pfad) or "gefunden"
-            teile.append(ak.Bestandteil(
-                name, fassung, ak.OHNE_QUELLE,
-                self._FREMDWERKZEUGE_QUELLEN.get(schluessel, "")))
-        return teile
-
-    def _diagnose_werkzeugbestand(self) -> list[str]:
-        """Was mitgeliefert wird - ohne Netz, in jedem Bericht.
-
-        Returns:
-            Die Zeilen des Berichtsabschnitts.
-        """
-        z = self._diagnose_zeile
-        zeilen: list[str] = []
-        for teil in self._bestandteile_sammeln():
-            wo = ("  [%s]" % teil.quelle) if teil.quelle else ""
-            zeilen.append(z(teil.name, "%s%s" % (teil.fassung, wo)))
-
-        # Die Bestaende, die als Ordner mitkommen: Zahl und neueste Fassung
-        # sagen mehr als eine Liste von zwanzig Namen.
-        for name, ordner, muster in (
-                ("AMPR-EMU-Bibliotheken", os.path.join("PlayGo & AMPR_EMU", "AMPR_EMU"), None),
-                ("Backport-Fakelibs", "Backport_Fakelibs", None),
-                ("Nutzlasten (helloworld)", "helloworld", ".elf")):
-            pfad = self._mitgeliefert_finden(ordner)
-            try:
-                if not os.path.isdir(pfad):
-                    zeilen.append(z(name, "nicht mitgeliefert"))
-                    continue
-                eintraege = sorted(os.listdir(pfad))
-                if muster:
-                    eintraege = [e for e in eintraege if e.lower().endswith(muster)]
-                zeilen.append(z(name, "%d (%s)" % (
-                    len(eintraege),
-                    ", ".join(eintraege[:2]) + (" ..." if len(eintraege) > 2 else ""))))
-            except Exception as exc:
-                zeilen.append(z(name, "nicht lesbar: %s" % exc))
-        return zeilen
+    def _diagnose_werkzeugbestand(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_werkzeugbestand."""
+        return self._diagnosebericht()._diagnose_werkzeugbestand()
 
     def _aktualisierungen_holen(self, adresse: str) -> str:
         """Ruft eine Adresse ab und gibt den Rohtext zurueck.
@@ -28587,110 +27454,21 @@ class PS5ConverterGUI:
         with urllib.request.urlopen(anfrage, timeout=12) as antwort:
             return antwort.read().decode("utf-8", errors="replace")
 
-    def _diagnose_umgebung(self) -> list[str]:
-        """Wie das Programm laeuft und womit - die Kompatibilitaetsseite."""
-        z = self._diagnose_zeile
-        zeilen = [
-            z("Gebaut als EXE", bool(getattr(sys, "frozen", False))),
-            z("_MEIPASS", getattr(sys, "_MEIPASS", "-")),
-            z("Programmpfad", os.path.abspath(sys.argv[0])),
-            z("Arbeitsverzeichnis", os.getcwd()),
-            z("Administratorrechte", _system_ist_administrator()),
-            z("macOS App Translocation", self._macos_translokation()),
-        ]
-        for name, modul in (("Pillow", "PIL"), ("tkinterdnd2", "tkinterdnd2"),
-                            ("psutil", "psutil")):
-            try:
-                m = __import__(modul)
-                zeilen.append(z(name, getattr(m, "__version__", "vorhanden")))
-            except Exception:
-                zeilen.append(z(name, "fehlt"))
-        zeilen.append(z("Drag & Drop aktiv", _DND_AVAILABLE))
-        zeilen.append(z("mkpfs-Ordner", getattr(self, "mkpfs_dir", "") or "noch nicht entpackt"))
-        return zeilen
+    def _diagnose_umgebung(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_umgebung."""
+        return self._diagnosebericht()._diagnose_umgebung()
 
-    def _diagnose_werkzeuge(self) -> list[str]:
-        """Die gemerkten Pfade der Fremdwerkzeuge.
+    def _diagnose_werkzeuge(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_werkzeuge."""
+        return self._diagnosebericht()._diagnose_werkzeuge()
 
-        Bewusst nur die gespeicherten Angaben und eine Existenzpruefung: Ein
-        frischer Suchlauf durchkaemmt im schlimmsten Fall alle Laufwerke, und
-        ein Diagnosebericht darf nicht minutenlang haengen.
-        """
-        z = self._diagnose_zeile
-        zeilen: list[str] = []
-        # UFS2Tool steht seit v1.8.72 im Abschnitt der mitgelieferten
-        # Werkzeuge - hier gehoert nur her, was der Nutzer selbst
-        # installiert und das Programm suchen muss.
-        for name, schluessel in (("FileZilla", "filezilla_path"),
-                                 ("OSFMount", "osfmount_path")):
-            try:
-                pfad = str(self._load_setting(schluessel, "") or "").strip()
-            except Exception:
-                pfad = ""
-            if not pfad:
-                zeilen.append(z(name, "nicht gemerkt"))
-            else:
-                da = os.path.isfile(pfad) or (pfad.endswith(".app") and os.path.isdir(pfad))
-                zeilen.append(z(name, "%s (%s)" % (pfad, "vorhanden" if da else "FEHLT")))
-        return zeilen
+    def _diagnose_speicherplatz(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_speicherplatz."""
+        return self._diagnosebericht()._diagnose_speicherplatz()
 
-    def _diagnose_speicherplatz(self) -> list[str]:
-        """Freier Platz auf Quelle, Ziel und Temp - haeufigste Abbruchursache."""
-        z = self._diagnose_zeile
-        zeilen: list[str] = []
-        gesehen: set[str] = set()
-        for name, holen in (("Quelle", lambda: self.source_path.get()),
-                            ("Ziel", lambda: self.dest_path.get()),
-                            ("Temp", lambda: self.temp_path.get())):
-            try:
-                pfad = str(holen() or "").strip()
-            except Exception:
-                pfad = ""
-            if not pfad:
-                continue
-            wurzel = os.path.splitdrive(os.path.abspath(pfad))[0] or "/"
-            if wurzel in gesehen:
-                continue
-            gesehen.add(wurzel)
-            try:
-                _gesamt, _belegt, frei = shutil.disk_usage(pfad if os.path.exists(pfad) else wurzel)
-                zeilen.append(z("%s (%s)" % (name, wurzel),
-                                "%.1f GB frei" % (frei / 1024**3)))
-            except Exception as exc:
-                zeilen.append(z("%s (%s)" % (name, wurzel), "nicht ermittelbar: %s" % exc))
-        return zeilen
-
-    def _diagnose_eigenschaften(self) -> list[str]:
-        """Prueft Zusicherungen, die immer gelten muessen - im fertigen Programm.
-
-        Das Gegenstueck zu Hypothesis. Dort sucht eine Bibliothek selbst nach
-        einer Eingabe, die eine Eigenschaft verletzt, und schrumpft sie auf
-        das kleinste Gegenbeispiel (``test_eigenschaften.py``). Hier laeuft
-        eine feste, kurze Auswahl derselben Eigenschaften - dafuer dort, wo
-        kein Testlauf hinkommt: in der ausgelieferten EXE.
-
-        Das ersetzt die Testdatei nicht und soll es nicht. Es faengt die
-        Klasse Fehler, die erst durch das Verpacken entsteht: ein Modul, das
-        PyInstaller nicht mitgenommen hat, eine andere Fassung einer
-        Bibliothek, ein anderes Gebietsschema beim Umwandeln von Zahlen.
-
-        Der Anlass: Am 25.08.2026 fand Hypothesis, dass ein einzelner
-        Doppelpunkt in ``task_displayed`` die gesamte Fortschrittsschleife
-        beendet - lautlos, ohne Absturz und ohne Meldung. Der Balken waere
-        einfach stehengeblieben.
-        """
-        # Absichtlich unsinnige Bytes an ``parse_sfo`` erzeugen jedes Mal
-        # eine Warnung. Beim ersten Lauf standen dadurch vier Meldungen im
-        # Protokollauszug desselben Berichts - Rauschen, das der Diagnose
-        # genau das nimmt, wofuer sie da ist. Waehrend der Pruefung bleibt
-        # das Protokoll deshalb still - aber nur bis einschliesslich
-        # WARNING. Echte Fehler aus einer nebenher laufenden
-        # Konvertierung muessen weiter durchkommen.
-        logging.disable(logging.WARNING)
-        try:
-            return self._eigenschaften_pruefen()
-        finally:
-            logging.disable(logging.NOTSET)
+    def _diagnose_eigenschaften(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_eigenschaften."""
+        return self._diagnosebericht()._diagnose_eigenschaften()
 
     def _eigenschaften_pruefen(self) -> list[str]:
         """Der eigentliche Durchlauf - siehe ``_diagnose_eigenschaften``."""
@@ -28971,397 +27749,27 @@ class PS5ConverterGUI:
     #: Quelle lagen am 24.08.2026 bis zu 12 % Unterschied.
     _RUECKSCHRITT_AB_PROZENT: float = 20.0
 
-    def _diagnose_doktor(self) -> list[str]:
-        """Die Umgebungspruefung mit den Pfaden dieser Sitzung."""
-        try:
-            temp = self.temp_path.get()
-        except Exception:
-            temp = ""
-        try:
-            ziel = self.dest_path.get()
-        except Exception:
-            ziel = ""
-        return umgebung_doktor(temp, ziel)
+    def _diagnose_doktor(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_doktor."""
+        return self._diagnosebericht()._diagnose_doktor()
 
-    def _diagnose_optimierung(self) -> list[str]:
-        """Die Optimierungsseite: Geschwindigkeit, Groesse, Abhaengigkeiten.
+    def _diagnose_optimierung(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_optimierung."""
+        return self._diagnosebericht()._diagnose_optimierung()
 
-        Die Regel dahinter lautet: erst messen, dann optimieren. Deshalb
-        steht hier keine Empfehlung ohne Zahl dahinter.
-
-        Der Rueckschrittalarm ist das, was in einer Baukette ein
-        Benchmark-Waechter tut: Er merkt sich die beste je gemessene
-        Geschwindigkeit je Kompressionsstufe und schlaegt an, wenn ein Lauf
-        deutlich darunter bleibt. Ohne diesen Vergleich faellt ein
-        schleichender Verlust nicht auf - eine Aufgabe, die frueher 30 s
-        brauchte und jetzt 45 s, fuehlt sich beim Zusehen gleich an.
-
-        Am Ende steht ausdruecklich, was bei diesem Programm nicht greift.
-        Sonst wird immer wieder danach gesucht.
-        """
-        zeilen: list[str] = []
-
-        # -- Geschwindigkeit und Rueckschrittalarm ------------------------
-        dauer = float(getattr(self, "_letzte_aufgabe_dauer_s", 0.0) or 0.0)
-        quellbytes = int(getattr(self, "task_total_source_bytes", 0) or 0)
-        try:
-            stufe = str(self.compression_level_var.get() or "").strip()
-        except Exception:
-            stufe = ""
-        if dauer > 0.0 and quellbytes > 0:
-            durchsatz = quellbytes / dauer / 1048576.0
-            schluessel = "opt_durchsatz_%s" % (stufe or "unbekannt")
-            try:
-                bestwert = float(self._load_setting(schluessel, 0.0) or 0.0)
-            except (TypeError, ValueError):
-                bestwert = 0.0
-            zeilen.append("Durchsatz: %.1f MB/s (%s in %.1f s, Stufe %s)"
-                          % (durchsatz, self._fmt_bytes(quellbytes), dauer,
-                             stufe or "unbekannt"))
-            if bestwert <= 0.0:
-                zeilen.append("  erster Messwert dieser Stufe - ab jetzt der "
-                              "Vergleichswert")
-            else:
-                abfall = (bestwert - durchsatz) / bestwert * 100.0
-                zeilen.append("  bester Lauf bisher: %.1f MB/s (%+.0f %%)"
-                              % (bestwert, -abfall))
-                if abfall >= self._RUECKSCHRITT_AB_PROZENT:
-                    zeilen.append("  ACHTUNG: %.0f %% langsamer als der beste "
-                                  "Lauf - das ist mehr als Messrauschen."
-                                  % abfall)
-            if durchsatz > bestwert:
-                try:
-                    self._save_setting(schluessel, round(durchsatz, 2))
-                except Exception:
-                    pass
-        else:
-            zeilen.append("Durchsatz: seit dem Start lief keine Aufgabe")
-
-        # -- Wohin die Groesse geht ---------------------------------------
-        #
-        # Das Gegenstueck zu Bloaty: Wohin geht die Groesse? Bei diesem
-        # Bau in drei Toepfe - die Hintergrundbilder, die AMPR-/PlayGo-
-        # Versionen und alles Uebrige. In v1.8.94 lagen die ersten beiden
-        # neben der EXE; seit v1.8.95 stecken sie wieder darin, damit die
-        # Auslieferung eine einzige Datei bleibt.
-        def _ordnergroesse(pfad):
-            gesamt, anzahl = 0, 0
-            try:
-                for wurzel, _unter, dateien in os.walk(pfad):
-                    for name in dateien:
-                        try:
-                            gesamt += os.path.getsize(os.path.join(wurzel, name))
-                            anzahl += 1
-                        except OSError:
-                            pass
-            except OSError:
-                pass
-            return gesamt, anzahl
-
-        # ``sys.argv[0]`` waere falsch: Beim Aufruf aus einem Skript heraus
-        # stand dort das Skript (1,9 KB) statt des Programms.
-        eigen_pfad = sys.executable if getattr(sys, "frozen", False) else __file__
-        try:
-            eigen = os.path.getsize(os.path.abspath(eigen_pfad))
-        except (OSError, NameError):
-            eigen = 0
-        if eigen:
-            zeilen.append("Größe: %s %s"
-                          % ("EXE" if getattr(sys, "frozen", False) else "Quelltext",
-                             self._fmt_bytes(eigen)))
-        # Beide Ordner stecken in der Programmdatei; die Zahlen sagen, wie
-        # viel von ihrer Groesse auf sie entfaellt. Aus dem Quelltext
-        # heraus waere "davon" falsch - dort ist noch nichts eingebettet,
-        # und 43,6 MB Bilder "von" 3,9 MB Quelltext ergaeben Unsinn.
-        eingebaut = bool(getattr(sys, "frozen", False))
-        vorsatz = "davon " if eingebaut else ""
-        nachsatz = "" if eingebaut else " (wird eingebettet)"
-        for beschriftung, ordner in (
-                ("Hintergrundbilder", self._BACKGROUND_BUNDLED_DIR),
-                ("AMPR EMU + PlayGo", self._AMPR_BUNDLED_STORE_DIR)):
-            pfad = self._mitgeliefert_finden(ordner)
-            if not pfad:
-                zeilen.append("  %s: nicht gefunden" % beschriftung)
-                continue
-            gross, anzahl = _ordnergroesse(pfad)
-            zeilen.append("  %s%s%s: %s in %d Dateien"
-                          % (vorsatz, beschriftung, nachsatz,
-                             self._fmt_bytes(gross), anzahl))
-
-        # -- Abhaengigkeiten, bei denen die Fassung die Zeit aendert ------
-        #
-        # Nur diese vier. Alles Uebrige steht im Abschnitt Laufzeitumgebung
-        # und aendert an der Geschwindigkeit nichts.
-        teile = []
-        for name, modul, feld in (("zlib", "zlib", "ZLIB_RUNTIME_VERSION"),
-                                  ("zstandard", "zstandard", "__version__"),
-                                  ("Pillow", "PIL", "__version__"),
-                                  ("cryptography", "cryptography", "__version__")):
-            try:
-                m = importlib.import_module(modul)
-                teile.append("%s %s" % (name, getattr(m, feld, "vorhanden")))
-            except Exception:
-                teile.append("%s fehlt" % name)
-        zeilen.append("Rechenbibliotheken: %s" % ", ".join(teile))
-
-        # -- Womit sich nachmessen laesst ---------------------------------
-        #
-        # In der EXE fehlen diese alle, und das ist richtig so: Sie gehoeren
-        # zur Entwicklung, nicht zur Auslieferung. Die Zeile ist dann nur
-        # eine Feststellung, kein Mangel.
-        # ``import importlib`` allein bringt das Untermodul nicht mit.
-        import importlib.util as _ilu
-        werkzeuge = []
-        for name, art, ziel in (("ruff", "befehl", "ruff"),
-                                ("py-spy", "befehl", "py-spy"),
-                                ("hypothesis", "modul", "hypothesis"),
-                                ("coverage", "modul", "coverage")):
-            try:
-                if art == "befehl":
-                    # ``which`` sucht nur im PATH. Wird der Interpreter aus
-                    # einer virtuellen Umgebung heraus direkt aufgerufen,
-                    # steht deren Skriptordner dort nicht drin - ruff und
-                    # coverage galten deshalb als fehlend, obwohl sie
-                    # danebenlagen.
-                    da = bool(shutil.which(ziel))
-                    if not da:
-                        neben = os.path.dirname(sys.executable)
-                        da = any(os.path.isfile(os.path.join(neben, ziel + e))
-                                 for e in ("", ".exe", ".cmd"))
-                else:
-                    da = _ilu.find_spec(ziel) is not None
-            except Exception:
-                da = False
-            werkzeuge.append("%s %s" % (name, "da" if da else "fehlt"))
-        zeilen.append("Messwerkzeuge: %s" % ", ".join(werkzeuge))
-
-        # -- Testabdeckung ------------------------------------------------
-        #
-        # Sie hier zu messen ginge nicht: Dazu muesste die gesamte Testreihe
-        # laufen, und das dauert Minuten. Gelesen wird deshalb das Ergebnis
-        # des letzten Laufs. Steht dort ein altes Datum, ist die Zahl nicht
-        # falsch, sondern nur von damals - und das steht dann auch da.
-        abdeckung = os.path.join(os.path.dirname(os.path.abspath(
-            __file__ if not getattr(sys, "frozen", False) else sys.executable)),
-            "coverage.json")
-        if os.path.isfile(abdeckung):
-            try:
-                with open(abdeckung, "r", encoding="utf-8") as f:
-                    daten = json.load(f)
-                gesamt = daten.get("totals", {})
-                anteil = float(gesamt.get("percent_covered", 0.0))
-                fehlend = int(gesamt.get("missing_lines", 0))
-                alter_tage = (time.time() - os.path.getmtime(abdeckung)) / 86400.0
-                zeilen.append("Testabdeckung: %.1f %% (%d Zeilen ungeprüft, "
-                              "gemessen vor %.1f Tagen)"
-                              % (anteil, fehlend, alter_tage))
-            except (OSError, ValueError, KeyError) as exc:
-                zeilen.append("Testabdeckung: coverage.json unlesbar (%s)"
-                              % type(exc).__name__)
-        else:
-            zeilen.append("Testabdeckung: noch nicht gemessen "
-                          "(coverage json -o coverage.json)")
-        if not getattr(sys, "frozen", False):
-            zeilen.append("  ruff check --fix .")
-            zeilen.append("  coverage run -m unittest discover -p \"test_*.py\"")
-            zeilen.append("  python -m unittest test_eigenschaften")
-            zeilen.append("  python tools\\mutationstest.py"
-                          "        (sind die Tests etwas wert?)")
-            zeilen.append("  git bisect run powershell -NoProfile -File "
-                          "tools\\bisect_prüfung.ps1 <testdatei>")
-
-        # -- Was hier nicht greift, und warum -----------------------------
-        zeilen.append("Nicht anwendbar auf dieses Programm:")
-        zeilen.append("  PGO, LTO, BOLT, Propeller - betreffen den "
-                      "Interpreter, nicht diesen Quelltext.")
-        zeilen.append("    Die Bauten von python.org sind bereits mit PGO und "
-                      "LTO übersetzt.")
-        zeilen.append("  ccache, Ninja, mold, lld - hier wird nichts "
-                      "übersetzt, nur verpackt.")
-        zeilen.append("  Compiler Explorer - das Gegenstück heißt hier "
-                      "dis.dis().")
-        zeilen.append("  jemalloc, mimalloc, tcmalloc - CPython bringt "
-                      "pymalloc mit und tauscht ihn nicht aus.")
-        zeilen.append("  EXPLAIN ANALYZE, pgBadger, N+1-Suchen - es gibt "
-                      "keine Datenbank, nur JSON-Dateien.")
-        zeilen.append("  Lighthouse, Bundle-Analyzer, Brotli - es gibt keine "
-                      "Webanwendung.")
-        zeilen.append("  k6, Locust, Jäger, OpenTelemetry - ein Prozess auf "
-                      "einem Rechner, kein Dienst,")
-        zeilen.append("    keine verteilte Kette. Der Ersatz ist der "
-                      "Stapelabzug im Abschnitt Fachprüfungen.")
-        zeilen.append("  basisu, astcenc, meshoptimizer, RGA - es wird nichts "
-                      "gerendert.")
-        zeilen.append("  strace, ltrace, eBPF, bpftrace, DTrace - Linux- und "
-                      "BSD-Kernwerkzeuge.")
-        zeilen.append("    Unter Windows wäre Process Monitor das "
-                      "Gegenstück; er ist nicht eingebaut,")
-        zeilen.append("    sondern von Hand zu starten, wenn eine Datei "
-                      "oder ein Schlüssel fehlt.")
-        zeilen.append("  Wireshark, mitmproxy, Burp - es gibt eine einzige "
-                      "Verbindung: FTP zur eigenen")
-        zeilen.append("    Konsole im Heimnetz, unverschlüsselt und ohne "
-                      "Anmeldedaten. Nichts zu entschlüsseln.")
-        zeilen.append("  Ghidra, IDA, x64dbg, objdump - es entsteht kein "
-                      "Maschinencode aus diesem Quelltext.")
-        zeilen.append("  Jepsen, loom, Antithesis - ein Prozess auf einem "
-                      "Rechner, keine verteilte Datenbank.")
-        zeilen.append("  TLA+, Dafny, Z3 - lohnen, wo ein Fehler richtig "
-                      "teuer ist. Dieselbe Fehlerklasse")
-        zeilen.append("    fängt hier Hypothesis, und zwar erheblich "
-                      "billiger.")
-        zeilen.append("  Pact, Schemathesis, WireMock - es gibt keine "
-                      "Schnittstelle zwischen zwei Diensten.")
-        zeilen.append("  Feature Flags, Canary, Blue/Green - ausgeliefert "
-                      "wird eine Datei, nicht ein Dienst.")
-
-        # -- Anwendbar, aber von Hand --------------------------------------
-        #
-        # Diese drei gehoeren nicht in einen Bericht, der bei jedem Oeffnen
-        # entsteht: Zwei brauchen das Netz, einer braucht Minuten.
-        zeilen.append("Anwendbar, aber nicht eingebaut (bewusst):")
-        zeilen.append("  gitleaks / trufflehog - suchen versehentlich "
-                      "eingecheckte Zugangsdaten.")
-        zeilen.append("    Im Bericht selbst werden sie bereits geschwärzt "
-                      "(siehe Einstellungen oben).")
-        zeilen.append("  syft + grype - Stückliste und CVE-Abgleich; "
-                      "braucht eine Datenbank aus dem Netz.")
-        zeilen.append("  Reproducible Builds - zweimal bauen und die "
-                      "Prüfsummen vergleichen.")
-        zeilen.append("    Ungemessen: PyInstaller schreibt Zeitstempel mit, "
-                      "bitgleich wird es vermutlich nicht.")
-
-        return zeilen
-
-    def _diagnose_fortschritt(self) -> list[str]:
-        """Was die Fortschrittsanzeige waehrend der letzten Aufgabe zeigte.
-
-        Gemessen wird nicht, was der Code aufruft, sondern was im Fenster
-        steht - Balken, Prozentzahl und Statuszeile, bei jedem Takt. Genau
-        so wurden am 24.08.2026 zwei Fehler im exFAT-Weg gefunden, die
-        vorher niemandem aufgefallen waren.
-        """
-        waechter = getattr(self, "fortschritts_waechter", None)
-        if waechter is None:
-            return ["(kein Wächter vorhanden)"]
-        return waechter.bericht()
+    def _diagnose_fortschritt(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_fortschritt."""
+        return self._diagnosebericht()._diagnose_fortschritt()
 
     @staticmethod
     def _diagnose_protokolldatei(zeilen_anzahl: int = 80) -> list[str]:
-        """Die letzten Zeilen aus ps5converter.log im TEMP-Ordner.
-
-        Das Konsolenfenster haelt nur 60 Zeilen des laufenden Baus. Die
-        Protokolldatei reicht weiter zurueck und enthaelt insbesondere die
-        Rueckverfolgungen der abgefangenen Ausnahmen.
-        """
-        try:
-            pfad = os.path.join(tempfile.gettempdir(), "ps5converter.log")
-            if not os.path.isfile(pfad):
-                return ["(%s gibt es nicht)" % pfad]
-
-            # Die Groesse gehoert in den Bericht. Am 23.08.2026 lag hier eine
-            # Datei mit 22 MB und 322.195 Zeilen - nichts begrenzte sie, und
-            # der Bericht zeigte davon nur die letzten achtzig, ohne zu
-            # verraten, dass darunter zwei Wochen lagen.
-            groesse = os.path.getsize(pfad)
-            if groesse >= 1024 * 1024:
-                mass = "%.1f MB" % (groesse / (1024 * 1024))
-            else:
-                mass = "%d KB" % (groesse // 1024)
-            kopf = ["(%s, %s)" % (pfad, mass)]
-
-            # Nur das Ende lesen. Vorher ging die vollstaendige Datei in den
-            # Speicher, um achtzig Zeilen daraus zu zeigen.
-            schwanz = 256 * 1024
-            with io.open(pfad, "rb") as datei:
-                if groesse > schwanz:
-                    datei.seek(groesse - schwanz)
-                    datei.readline()          # angebrochene Zeile verwerfen
-                block = datei.read()
-            alle = block.decode("utf-8", errors="replace").splitlines()
-            return kopf + (alle[-zeilen_anzahl:] or ["(leer)"])
-        except Exception as exc:
-            return ["Protokolldatei nicht lesbar: %s" % exc]
+        """Die letzten Protokollzeilen. Siehe diagnose_befund."""
+        return diagnose_befund.Diagnosebericht._diagnose_protokolldatei(
+            zeilen_anzahl)
 
     def _build_diagnostic_report_text(self) -> str:
-        """Baut den vollständigen Diagnose-Berichtstext zusammen."""
-        lines: list[str] = []
-        lines.append(self._t("diagnostics.report_title"))
-        lines.append(self._t("diagnostics.report_created", timestamp=datetime.datetime.now().isoformat(timespec='seconds')))
-        lines.append(self._t("diagnostics.report_version", version=APP_VERSION))
-        try:
-            from ps5_validator.utils import anzeige_diagnose as _ad
-            lines.append(_ad.zusammenfassung(self._diagnose_pruefen()))
-        except Exception as exc:
-            lines.append("Darstellung nicht prüfbar: %s" % exc)
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_system"))
-        lines.append(self._t("diagnostics.report_os", os=platform.platform()))
-        lines.append(self._t("diagnostics.report_python", version=platform.python_version(), arch=platform.architecture()[0]))
-        lines.append(self._t("diagnostics.report_cpu", cpu=platform.processor() or self._t("diagnostics.report_unknown")))
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_current_task"))
-        lines.append(self._t("diagnostics.report_task", task=self.current_mode.get() if hasattr(self, 'current_mode') else '–'))
-        lines.append(self._t("diagnostics.report_source", source=self.source_path.get() if hasattr(self, 'source_path') else '–'))
-        lines.append(self._t("diagnostics.report_target", target=self.dest_path.get() if hasattr(self, 'dest_path') else '–'))
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_settings"))
-        try:
-            cfg_path = self._get_config_path()
-            if os.path.isfile(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    cfg = json.load(f)
-                for key, value in cfg.items():
-                    if any(hint in key.lower() for hint in self._DIAGNOSTIC_REDACT_KEY_HINTS):
-                        value = self._t("diagnostics.report_redacted")
-                    lines.append(f"{key}: {value}")
-            else:
-                lines.append(self._t("diagnostics.report_no_config"))
-        except Exception as exc:
-            lines.append(self._t("diagnostics.report_settings_read_failed", error=exc))
-        for schluessel, bauer in (
-            ("diagnostics.report_section_display", self._diagnose_anzeige),
-            ("diagnostics.report_section_layout", self._diagnose_darstellung),
-            ("diagnostics.report_section_stability", self._diagnose_laufruhe),
-            ("diagnostics.report_section_progress", self._diagnose_fortschritt),
-            ("diagnostics.report_section_checks", self._diagnose_fachpruefungen),
-            ("diagnostics.report_section_optimization", self._diagnose_optimierung),
-            ("diagnostics.report_section_doctor", self._diagnose_doktor),
-            ("diagnostics.report_section_runtime", self._diagnose_umgebung),
-            ("diagnostics.report_section_inventory", self._diagnose_werkzeugbestand),
-            ("diagnostics.report_section_tools", self._diagnose_werkzeuge),
-            ("diagnostics.report_section_space", self._diagnose_speicherplatz),
-        ):
-            lines.append("")
-            lines.append(self._t(schluessel))
-            try:
-                lines.extend(bauer())
-            except Exception as exc:
-                # Ein Abschnitt darf den Bericht nie verhindern - er ist
-                # genau dann gefragt, wenn etwas nicht stimmt.
-                lines.append("Abschnitt fehlgeschlagen: %s" % exc)
-
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_errors"))
-        if _LETZTE_FEHLER:
-            for eintrag in _LETZTE_FEHLER:
-                lines.append(eintrag)
-                lines.append("")
-        else:
-            lines.append(self._t("diagnostics.report_no_errors"))
-
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_logfile"))
-        lines.extend(self._diagnose_protokolldatei())
-
-        lines.append("")
-        lines.append(self._t("diagnostics.report_section_log_tail"))
-        tail = getattr(self, "_build_log_tail", None) or []
-        if tail:
-            lines.extend(tail)
-        else:
-            lines.append(self._t("diagnostics.report_no_log"))
-        return "\n".join(lines) + "\n"
+        """Siehe diagnose_befund.Diagnosebericht.bericht_text."""
+        return self._diagnosebericht().bericht_text()
 
     #: So viele Diagnoseberichte bleiben im Einstellungsordner liegen.
     #:
@@ -29372,39 +27780,19 @@ class PS5ConverterGUI:
     #:
     #: Zehn sind genug: Wer einen Bericht weitergeben will, tut das gleich;
     #: wer vergleichen will, braucht die letzten paar. Was aelter ist, hat
-    #: noch nie jemand gebraucht.
-    _DIAGNOSE_BERICHTE_BEHALTEN: int = 10
+    #: noch nie jemand gebraucht. Der Wert steht im Modul, damit beide
+    #: Seiten nicht auseinanderlaufen koennen.
+    _DIAGNOSE_BERICHTE_BEHALTEN: int = diagnose_befund.BERICHTE_BEHALTEN
 
     def _alte_diagnoseberichte_aufraeumen(self, ordner: str) -> int:
-        """Loescht alle bis auf die juengsten Berichte. Gibt die Zahl zurueck.
+        """Loescht alle bis auf die juengsten Berichte.
 
-        Sortiert wird ueber den Dateinamen - der traegt den Zeitstempel im
-        Format JJJJMMTT_HHMMSS und ist damit von selbst in der richtigen
-        Reihenfolge. Das Aenderungsdatum waere unzuverlaessig: Ein Kopieren
-        des Ordners setzt es neu.
-
-        Faellt ein Loeschen aus, ist das kein Grund, den Bericht nicht zu
-        zeigen - er ist ja gerade dann gefragt, wenn etwas klemmt.
+        Siehe diagnose_befund.alte_berichte_aufraeumen. Bleibt eine
+        Methode dieser Klasse und liest nur das Klassenattribut:
+        test_randlos ruft sie ueber die Klasse mit der Klasse als self.
         """
-        try:
-            namen = sorted(n for n in os.listdir(ordner)
-                           if n.startswith("Diagnosebericht_")
-                           and n.endswith(".txt"))
-        except OSError as exc:
-            logger.debug("Berichte nicht auflistbar: %s", exc)
-            return 0
-        ueberzaehlig = namen[:-self._DIAGNOSE_BERICHTE_BEHALTEN]
-        entfernt = 0
-        for name in ueberzaehlig:
-            try:
-                os.remove(os.path.join(ordner, name))
-                entfernt += 1
-            except OSError as exc:
-                logger.debug("Bericht %s nicht löschbar: %s", name, exc)
-        if entfernt:
-            logger.info("%d alte Diagnoseberichte entfernt, %d behalten",
-                        entfernt, len(namen) - entfernt)
-        return entfernt
+        return diagnose_befund.alte_berichte_aufraeumen(
+            ordner, self._DIAGNOSE_BERICHTE_BEHALTEN)
 
     def _show_diagnostic_report(self) -> None:
         """Erstellt einen Diagnosebericht und zeigt ihn in einem Fenster mit Freigabe-Aktionen an."""
@@ -32961,35 +31349,9 @@ class PS5ConverterGUI:
         return ""
 
     def _ps4ffpsc_quellen_sichten(self, eingabe: str, art: str) -> dict:
-        """Zaehlt in der gewaehlten Quelle die Pakete je Konsole.
-
-        Args:
-            eingabe: Der eingetippte Pfad; bei einzelnen Dateien mehrere,
-                getrennt durch ``os.pathsep``.
-            art: ``"pkg_file"``, ``"pkg_dir"`` oder ``"dump_dir"``.
-
-        Returns:
-            ``{"ps4": [...], "ps5": [...], "fremd": [...]}`` mit den
-            Dateinamen - Namen, nicht Pfade, denn sie gehen ins Protokoll.
-        """
-        befund = {"ps4": [], "ps5": [], "fremd": []}
-        pfade: list[str] = []
-        if art == "pkg_file":
-            pfade = [teil.strip() for teil in eingabe.split(os.pathsep)
-                     if teil.strip()]
-        elif os.path.isdir(eingabe):
-            try:
-                # Nur die Ebene selbst: Genau das nimmt das Werkzeug auch.
-                for name in sorted(os.listdir(eingabe)):
-                    voll = os.path.join(eingabe, name)
-                    if name.lower().endswith(".pkg") and os.path.isfile(voll):
-                        pfade.append(voll)
-            except OSError as exc:
-                logger.debug("Quellordner nicht lesbar: %s", exc)
-        for pfad in pfade:
-            konsole = self._pkg_konsole_am_magic(pfad)
-            befund[konsole or "fremd"].append(os.path.basename(pfad))
-        return befund
+        """Zaehlt die Pakete je Konsole. Siehe ps4_werkzeug.quellen_sichten."""
+        return ps4_werkzeug.quellen_sichten(
+            eingabe, art, self._pkg_konsole_am_magic)
 
     #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
     #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
@@ -32997,24 +31359,8 @@ class PS5ConverterGUI:
     _PS5_KENNUNGEN: tuple[str, ...] = ("PPSA", "PPSS", "PPUS", "PPJP")
 
     def _ps4ffpsc_plattform(self, title_id: str, spiel=None) -> str:
-        """Sagt, zu welcher Konsole ein Titel gehoert.
-
-        Returns:
-            ``"ps4"``, ``"ps5"`` oder ``""`` wenn die Kennung nichts hergibt.
-        """
-        kennung = str(title_id or "").strip().upper()
-        if kennung.startswith(self._PS5_KENNUNGEN):
-            return "ps5"
-        if kennung.startswith(self._PS4_KENNUNGEN):
-            return "ps4"
-        # Das Werkzeug meldet die Plattform manchmal selbst mit.
-        if isinstance(spiel, dict):
-            roh = str(spiel.get("platform") or spiel.get("console") or "").lower()
-            if "ps5" in roh or "prospero" in roh:
-                return "ps5"
-            if "ps4" in roh or "orbis" in roh:
-                return "ps4"
-        return ""
+        """Zu welcher Konsole ein Titel gehoert. Siehe ps4_werkzeug.plattform."""
+        return ps4_werkzeug.plattform(title_id, spiel)
 
     #: Endungen, unter denen das PS4-Werkzeug sein Ergebnis ablegt.
     _PS4_ABBILD_ENDUNGEN: tuple[str, ...] = (".ffpfsc", ".ffpfs", ".exfat",
@@ -33022,116 +31368,21 @@ class PS5ConverterGUI:
 
     def _ps4ffpsc_ergebnis_finden(self, ordner: str, title_id: str = "",
                                   format_wunsch: str = "") -> str:
-        """Sucht das eben gebaute Abbild im Ausgabeordner.
-
-        Bis v1.8.77 bekam die Nachpruefung den **Ordner** uebergeben statt
-        der Datei. Sie scheiterte dadurch jedes Mal mit
-        ``[Errno 13] Permission denied`` auf dem Ordnerpfad - sie hat also
-        nie stattgefunden, obwohl im Protokoll stand, dass sie laeuft.
-        Gesehen am 21.08.2026 an einer echten Konvertierung.
-
-        Args:
-            ordner: Der Ausgabeordner.
-            title_id: Wenn bekannt, wird ein Treffer mit dieser Kennung
-                bevorzugt - im selben Ordner koennen aeltere Abbilder liegen.
-            format_wunsch: Das gewaehlte Zielformat, ebenfalls als Vorzug.
-
-        Returns:
-            Der Pfad, oder "" wenn nichts Passendes dasteht.
-        """
-        endungen = list(self._PS4_ABBILD_ENDUNGEN)
-        wunsch = "." + str(format_wunsch or "").lstrip(".").lower()
-        if wunsch in endungen:
-            endungen.remove(wunsch)
-            endungen.insert(0, wunsch)
-        kennung = str(title_id or "").upper()
-        kandidaten = []
-        try:
-            for name in os.listdir(ordner):
-                pfad = os.path.join(ordner, name)
-                if not os.path.isfile(pfad):
-                    continue
-                klein = name.lower()
-                passende = [e for e in endungen if klein.endswith(e)]
-                if not passende:
-                    continue
-                kandidaten.append((
-                    0 if kennung and kennung in name.upper() else 1,
-                    endungen.index(passende[0]),
-                    -os.path.getmtime(pfad),
-                    pfad,
-                ))
-        except OSError as exc:
-            logger.debug("Ausgabeordner nicht lesbar: %s", exc)
-            return ""
-        if not kandidaten:
-            return ""
-        kandidaten.sort()
-        return kandidaten[0][3]
+        """Findet das Ergebnis. Siehe ps4_werkzeug.ergebnis_finden."""
+        return ps4_werkzeug.ergebnis_finden(ordner, title_id, format_wunsch)
 
 
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
-        """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
-
-        Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht
-        die Nutzdaten - bei einem 8,7-GB-Abbild sind das wenige Sekunden.
-
-        Args:
-            pfad: Das erzeugte ``.ffpfsc`` oder ``.exfat``.
-
-        Returns:
-            ``{"dateien": int, "fehlend": [...], "ps4": bool, "fehler": str}``.
-        """
-        ergebnis = {"dateien": 0, "fehlend": [], "ps4": False, "fehler": ""}
-        griff = None
-        try:
-            from mkpfs.exfat import ExfatReader
-
-            with open(pfad, "rb") as datei:
-                kopf = datei.read(16)
-            if len(kopf) >= 12 and struct.unpack_from("<I", kopf, 0x08)[0] == 0x1332A0B:
-                from mkpfs import pfs as mkpfs_pfs
-
-                geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
-                if not geoeffnet:
-                    ergebnis["fehler"] = "Innenebene nicht lesbar"
-                    return ergebnis
-                sicht, griff, _name = geoeffnet
-            else:
-                sicht = griff = open(pfad, "rb")
-
-            sicht.seek(0)
-            leser = ExfatReader(sicht)
-            namen = [e.rel_path.replace("\\", "/").lower()
-                     for e in leser.iter_files()]
-            ergebnis["dateien"] = len(namen)
-            vorhanden = set(namen)
-            ergebnis["fehlend"] = [d for d in self._PS4_EMPFOHLENE_DATEIEN
-                                   if d.lower() not in vorhanden]
-            ergebnis["ps4"] = any(m in vorhanden for m in self._PS4_MERKMALE)
-        except Exception as exc:                      # noqa: BLE001 - melden
-            ergebnis["fehler"] = str(exc)[:160]
-        finally:
-            try:
-                if griff is not None:
-                    griff.close()
-            except Exception:
-                pass
-        return ergebnis
+        """Prueft das entstandene Abbild. Siehe ps4_werkzeug.abbild_pruefen."""
+        return ps4_werkzeug.abbild_pruefen(pfad)
 
     def _ps4ffpsc_befehl(self) -> list[str]:
-        """Baut den Aufruf für die eingebettete PS4-Kommandozeile.
+        """Baut den Selbstaufruf. Siehe ps4_werkzeug.befehl.
 
-        Als eingefrorene Anwendung ruft sich das Programm selbst mit dem
-        internen Schalter auf; aus der Quelle heraus wird die Hauptdatei an
-        denselben Schalter gehängt.
-
-        Returns:
-            Die Befehlsliste ohne die eigentlichen Unterbefehle.
+        Die Hauptdatei wird ausdruecklich gereicht: Im Modul zeigt
+        __file__ auf das Modul, nicht auf dieses Programm.
         """
-        if getattr(sys, "frozen", False):
-            return [sys.executable, "--ps4ffpsc"]
-        return [sys.executable, os.path.abspath(__file__), "--ps4ffpsc"]
+        return ps4_werkzeug.befehl(__file__)
 
     def _ps4ffpsc_lauf(
         self,
@@ -33143,71 +31394,13 @@ class PS5ConverterGUI:
         prozess_ablage: dict | None = None,
         json_modus: bool = False,
     ) -> tuple[int, str]:
-        """Führt einen PS4-FFPFSC-Unterbefehl aus und meldet Zeilen zurück.
-
-        stderr wird in stdout geführt: Das Werkzeug schreibt seine
-        Fortschrittsmeldungen (``PS4FFPSC_PROGRESS {…}``) dorthin, sein
-        Protokoll ebenso. Getrennt zu lesen bräuchte zwei Lesefäden, ohne
-        etwas zu gewinnen - die Reihenfolge bliebe trotzdem ungewiss.
-
-        Args:
-            argumente:            Unterbefehl samt Schaltern.
-            arbeitsordner:        Ordner für Zwischenstände des Werkzeugs.
-            zeile_callback:       Bekommt jede Protokollzeile.
-            fortschritt_callback: Bekommt die entschlüsselten Fortschrittsdaten.
-            prozess_ablage:       Nimmt den laufenden Prozess auf, damit ein
-                                  Abbruch ihn beenden kann.
-            json_modus:           Haelt stderr getrennt, damit auf stdout reines
-                                  JSON steht. Fuer --json-Abfragen noetig.
-
-        Returns:
-            ``(Rückgabewert, gesammelte Ausgabe)``.
-        """
-        befehl = [*self._ps4ffpsc_befehl(), *argumente]
-        gesammelt: list[str] = []
-        prozess = subprocess.Popen(
-            befehl,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE if json_modus else subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-            env=_ps4ffpsc_umgebung(arbeitsordner),
-            creationflags=_NO_WIN_FLAGS,
-            startupinfo=_silent_startupinfo(),
-        )
-        if prozess_ablage is not None:
-            prozess_ablage["prozess"] = prozess
-        if json_modus:
-            # stdout bleibt unangetastet, damit die Antwort als Ganzes lesbar
-            # ist; das Protokoll kommt getrennt ueber stderr.
-            stdout_text, stderr_text = prozess.communicate()
-            for zeile in (stderr_text or "").splitlines():
-                text = zeile.rstrip()
-                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
-                    continue
-                if text.strip():
-                    zeile_callback(text)
-            return int(prozess.returncode or 0), stdout_text or ""
-        try:
-            for zeile in prozess.stdout or []:
-                text = zeile.rstrip("\r\n")
-                if text.startswith(_PS4FFPSC_PROGRESS_PREFIX):
-                    if fortschritt_callback is not None:
-                        try:
-                            fortschritt_callback(
-                                json.loads(text[len(_PS4FFPSC_PROGRESS_PREFIX):])
-                            )
-                        except (ValueError, TypeError) as exc:
-                            logger.debug("PS4-Fortschritt nicht lesbar: %s", exc)
-                    continue
-                gesammelt.append(text)
-                if text.strip():
-                    zeile_callback(text)
-        finally:
-            prozess.wait()
-        return int(prozess.returncode or 0), "\n".join(gesammelt)
+        """Fuehrt einen PS4-FFPFSC-Unterbefehl aus. Siehe ps4_werkzeug.lauf."""
+        return ps4_werkzeug.lauf(
+            argumente, arbeitsordner=arbeitsordner,
+            zeile_callback=zeile_callback,
+            fortschritt_callback=fortschritt_callback,
+            prozess_ablage=prozess_ablage, json_modus=json_modus,
+            hauptdatei=__file__, umgebung_bauen=_ps4ffpsc_umgebung)
 
     #: Fortschrittsmarke, bei der die zweite Einblendung erscheint.
     #:
@@ -34257,6 +32450,213 @@ class PS5ConverterGUI:
     # Beide Tools verwenden dasselbe key=value-Format und denselben
     # Lade-/Schreib-Ablauf (siehe ps5_validator.utils.ini_config).
     # ==================================================================
+    def _show_pkg_bauen(self) -> None:
+        """Baut aus einem Dump-Ordner ein installierbares Debug-Paket.
+
+        Die Arbeit macht ``prosperopkg`` als eigener Prozess - so wie
+        mkpfs und UFS2Tool. Dieses Fenster waehlt aus, zeigt den
+        Fortschritt und schreibt das Protokoll mit.
+        """
+        from ps5_validator.utils import prosperopkg
+
+        c = self._COLORS
+        werkzeug = prosperopkg.werkzeug_finden()
+        if not werkzeug:
+            messagebox.showerror(
+                self._t("pkgbau.window_title"),
+                self._t("pkgbau.missing_tool",
+                        ordner=prosperopkg.WERKZEUGORDNER),
+                parent=self.root)
+            return
+
+        win = self._build_modern_toplevel(
+            self._t("pkgbau.window_title"), 900, 640,
+            min_width=740, min_height=520)
+        self._build_modern_header(
+            win, self._t("pkgbau.window_title"), self._t("pkgbau.subtitle"))
+
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        # Die Art entscheidet ueber alles Weitere - deshalb ganz oben,
+        # mit der Erklaerung daneben statt nur im Handbuch.
+        art_var = tk.StringVar(value="homebrew")
+        artreihe = tk.Frame(koerper, bg=c["bg_main"])
+        artreihe.pack(fill="x", pady=(4, 2))
+        for wert, schluessel in (("homebrew", "pkgbau.kind_homebrew"),
+                                 ("spiel", "pkgbau.kind_game")):
+            tk.Radiobutton(
+                artreihe, text=self._t(schluessel), value=wert,
+                variable=art_var, bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["bg_card"], activebackground=c["bg_main"],
+                activeforeground=c["fg_accent"], font=(UI_SCHRIFT, pt(9)),
+                command=lambda: _art_erklaeren(),
+            ).pack(side="left", padx=(0, 14))
+
+        erklaerung = tk.Label(
+            koerper, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+            fg=c["fg_warning"], anchor="w", justify="left", wraplength=820)
+        erklaerung.pack(fill="x", pady=(2, 8))
+
+        def _art_erklaeren() -> None:
+            schluessel = ("pkgbau.explain_homebrew"
+                          if art_var.get() == "homebrew"
+                          else "pkgbau.explain_game")
+            farbe = (c["fg_secondary"] if art_var.get() == "homebrew"
+                     else c["fg_warning"])
+            erklaerung.configure(text=self._t(schluessel), fg=farbe)
+
+        _art_erklaeren()
+
+        quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
+        schnell_var = tk.BooleanVar(value=True)
+        lizenzfrei_var = tk.BooleanVar(value=True)
+        status_var = tk.StringVar(value=self._t("pkgbau.status_idle"))
+        laeuft = {"aktiv": False}
+
+        def _zeile(text: str, var, waehlen) -> None:
+            reihe = tk.Frame(koerper, bg=c["bg_main"])
+            reihe.pack(fill="x", pady=2)
+            tk.Label(reihe, text=text, width=12, anchor="w",
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left")
+            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                     insertbackground=c["fg_primary"]).pack(
+                side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+            ttk.Button(reihe, text="...", width=4,
+                       command=waehlen).pack(side="left")
+
+        def _quelle_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("pkgbau.choose_source"),
+                initialdir=self._get_source_dialog_initial_dir() or None,
+                parent=win)
+            if gewaehlt:
+                quelle_var.set(os.path.normpath(gewaehlt))
+                _pruefen()
+
+        def _ziel_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("pkgbau.choose_output"), parent=win)
+            if gewaehlt:
+                ziel_var.set(os.path.normpath(gewaehlt))
+
+        _zeile(self._t("pkgbau.source"), quelle_var, _quelle_waehlen)
+        _zeile(self._t("pkgbau.output"), ziel_var, _ziel_waehlen)
+
+        schalter = tk.Frame(koerper, bg=c["bg_main"])
+        schalter.pack(fill="x", pady=(8, 4))
+        for text, var in ((self._t("pkgbau.fast"), schnell_var),
+                          (self._t("pkgbau.license_free"), lizenzfrei_var)):
+            tk.Checkbutton(
+                schalter, text=text, variable=var, bg=c["bg_main"],
+                fg=c["fg_primary"], selectcolor=c["bg_card"],
+                activebackground=c["bg_main"], activeforeground=c["fg_accent"],
+                font=(UI_SCHRIFT, pt(9)),
+            ).pack(side="left", padx=(0, 14))
+
+        protokoll = tk.Text(koerper, height=16, font=("Consolas", pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="none")
+        protokoll.pack(fill="both", expand=True, pady=(6, 4))
+
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"],
+                 anchor="w").pack(fill="x")
+
+        def _protokoll(text: str) -> None:
+            def _setzen() -> None:
+                if not protokoll.winfo_exists():
+                    return
+                protokoll.insert("end", str(text).rstrip("\n") + "\n")
+                protokoll.see("end")
+            self._spaeter_im_fenster(win, _setzen)
+
+        def _status(text: str) -> None:
+            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+
+        def _pruefen() -> None:
+            """Sagt vor dem Bauen, ob das Backup ueberhaupt starten koennte."""
+            quelle = quelle_var.get().strip()
+            if not os.path.isdir(quelle) or laeuft["aktiv"]:
+                return
+            laeuft["aktiv"] = True
+            _status(self._t("pkgbau.status_checking"))
+
+            def _arbeit() -> None:
+                try:
+                    erg = prosperopkg.pruefen(quelle, melden=_protokoll)
+                except prosperopkg.ProsperoFehler as exc:
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("pkgbau.status_check_failed"))
+                    return
+                finally:
+                    laeuft["aktiv"] = False
+                if erg["bereit"]:
+                    _status(self._t("pkgbau.status_ready"))
+                else:
+                    _status(self._t("pkgbau.status_not_ready",
+                                    anzahl=len(erg["blocker"])))
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="prosperopkg-inspect").start()
+
+        def _bauen() -> None:
+            quelle = quelle_var.get().strip()
+            ziel = ziel_var.get().strip()
+            if laeuft["aktiv"]:
+                return
+            if not os.path.isdir(quelle):
+                messagebox.showwarning(self._t("pkgbau.window_title"),
+                                       self._t("pkgbau.need_source"),
+                                       parent=win)
+                return
+            if not ziel:
+                messagebox.showwarning(self._t("pkgbau.window_title"),
+                                       self._t("pkgbau.need_output"),
+                                       parent=win)
+                return
+
+            laeuft["aktiv"] = True
+            _status(self._t("pkgbau.status_building"))
+
+            def _arbeit() -> None:
+                try:
+                    if art_var.get() == "homebrew":
+                        pfad = prosperopkg.homebrew_bauen(
+                            quelle, ziel, melden=_protokoll,
+                            schnell=bool(schnell_var.get()))
+                    else:
+                        pfad = prosperopkg.bauen(
+                            quelle, ziel, melden=_protokoll,
+                            lizenzfrei=bool(lizenzfrei_var.get()),
+                            schnell=bool(schnell_var.get()))
+                except prosperopkg.ProsperoFehler as exc:
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("pkgbau.status_failed"))
+                    return
+                finally:
+                    laeuft["aktiv"] = False
+                groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
+                _status(self._t("pkgbau.status_done",
+                                groesse=self._fmt_bytes(groesse)))
+                _protokoll("")
+                _protokoll(self._t("pkgbau.result", pfad=pfad))
+                self._append_to_log("[INFO] PKG gebaut: %s\n" % pfad)
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="prosperopkg-build").start()
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("pkgbau.build_button"),
+                   style="Accent.TButton", command=_bauen).pack(side="left")
+        ttk.Button(knopfreihe, text=self._t("pkgbau.check_button"),
+                   command=_pruefen).pack(side="left", padx=(8, 0))
+
     def _show_shadowmount_editor(self) -> None:
         """Öffnet den Config-Editor für ShadowMountPlus (/data/shadowmount/config.ini)."""
         self._show_remote_ini_editor(
@@ -38876,19 +37276,15 @@ def _ensure_av_exclusion() -> None:
 
 #: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
 #: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
-UFS2TOOL_ORDNER = "UFS2Tool-4.1"
+UFS2TOOL_ORDNER = werkzeuge_bereitstellen.UFS2TOOL_ORDNER
 
 
 #: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
 PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
 
-#: Der mitgelieferte UFS2Tool-Ordner mit einem eigenstaendigen Bau je
-#: Plattform (win-x64, linux-x64, osx-x64, osx-arm64).
-UFS2TOOL_ORDNER = "UFS2Tool-4.1"
-
 #: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
 #: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
-_PS4FFPSC_PROGRESS_PREFIX = "PS4FFPSC_PROGRESS "
+_PS4FFPSC_PROGRESS_PREFIX = ps4_werkzeug.PROGRESS_PREFIX
 
 #: Hoechstlaenge des Arbeitsordners, den die Oberflaeche noch am gewaehlten
 #: Ort belaesst. Der mitgelieferte Entpacker kennt kein "longPathAware" und
@@ -39030,9 +37426,9 @@ def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     Schalter ruft das Werkzeug selbst auf (siehe ``pipeline.mkpfs_command``);
     beide sind für Menschen nicht gedacht.
 
-    Wichtig ist die eigene MkPFS-Fassung: Das Programm arbeitet sonst mit
-    0.0.9, und beide Wege sollen bei der Fassung bleiben, gegen die sie
-    geprüft wurden.
+    Beide Wege nutzen inzwischen MkPFS 1.0.0, bleiben aber getrennt: Das
+    PS4-Werkzeug ruft seine eigene, von ihm geprüfte Kopie auf, damit eine
+    künftige Anhebung der Programmfassung es nicht mitzieht.
 
     Args:
         modus: ``--ps4ffpsc`` oder ``--ps4-mkpfs``.

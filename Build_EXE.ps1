@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.1 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.2 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.1"
+$EXE_VERSION = "v1.9.2"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -169,14 +169,14 @@ foreach ($requiredFile in $requiredFiles) {
     }
 }
 
-# MkPFS 0.0.9 muss als entpackter Quellordner vorliegen
-$mkpfsSrcOk = Test-Path "MkPFS-0.0.9\mkpfs\__init__.py"
+# MkPFS 1.0.0 muss als entpackter Quellordner vorliegen
+$mkpfsSrcOk = Test-Path "MkPFS-1.0.0\mkpfs\__init__.py"
 if (-not $mkpfsSrcOk) {
-    Write-Host "      FEHLER: MkPFS 0.0.9 fehlt (erwartet: MkPFS-0.0.9\\mkpfs\\__init__.py)" -ForegroundColor Red
-    $missingFiles += "MkPFS 0.0.9"
+    Write-Host "      FEHLER: MkPFS 1.0.0 fehlt (erwartet: MkPFS-1.0.0\\mkpfs\\__init__.py)" -ForegroundColor Red
+    $missingFiles += "MkPFS 1.0.0"
 } else {
     if ($mkpfsSrcOk) {
-        Write-Host "      OK: MkPFS-0.0.9\\mkpfs\\__init__.py" -ForegroundColor Green
+        Write-Host "      OK: MkPFS-1.0.0\\mkpfs\\__init__.py" -ForegroundColor Green
     }
 }
 

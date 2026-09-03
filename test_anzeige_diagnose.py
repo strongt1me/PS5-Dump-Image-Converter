@@ -379,11 +379,20 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn("_hintergruende_nachziehen", self._wache("_on_layout_settled"))
 
     def test_diagnosebericht_enthaelt_die_neuen_abschnitte(self):
-        rumpf = self.quelltext[self.quelltext.index("def _build_diagnostic_report_text"):]
+        """Ausgefuehrt, nicht im Quelltext gesucht.
+
+        Seit dem 22. Schnitt steht der Bericht in
+        diagnose_befund.Diagnosebericht. Eine Textsuche im Monolithen
+        faende die Schluessel nicht mehr - obwohl die Abschnitte da
+        sind. Hier wird der Bericht wirklich gebaut.
+        """
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        text = Diagnosebericht().bericht_text()
         for schluessel in ("diagnostics.report_section_layout",
                            "diagnostics.report_section_stability"):
             with self.subTest(schluessel=schluessel):
-                self.assertIn(schluessel, rumpf[:4000])
+                self.assertIn(schluessel, text)
 
     def test_integrationen_haben_eine_eigene_rasterzeile(self):
         """Sonst braucht die Zeile 1145 px und ragt aus schmalen Fenstern.
@@ -400,13 +409,21 @@ class QuelltextTests(unittest.TestCase):
                          self.quelltext)
 
     def test_die_zeilen_darunter_sind_mitgerueckt(self):
-        """Zwei neue Rasterzeilen - was darunter lag, muss zwei tiefer stehen."""
+        """Neue Rasterzeilen - was darunter lag, muss mitruecken.
+
+        Seit dem 03.09.2026 steht die Bauform-Wahl auf Zeile 7; alles
+        darunter ist um eine Zeile tiefer gerutscht. Zwei Elemente in
+        derselben Zelle waeren kein Fehler, den Tk meldet - sie laegen
+        einfach uebereinander.
+        """
         for widget, zeile in (("integrate_title", 4),
                               ("ampr_integrate_check", 5),
-                              ("format_info_label", 6), ("dest_title", 7),
-                              ("dest_entry", 8), ("dest_btn", 8),
-                              ("temp_title", 9), ("temp_entry", 10),
-                              ("temp_btn", 10), ("shutdown_check", 11)):
+                              ("format_info_label", 6),
+                              ("bauform_title", 7), ("bauform_combo", 7),
+                              ("dest_title", 8),
+                              ("dest_entry", 9), ("dest_btn", 9),
+                              ("temp_title", 10), ("temp_entry", 11),
+                              ("temp_btn", 11), ("shutdown_check", 12)):
             with self.subTest(widget=widget):
                 self.assertIn("self.%s.grid(row=%d," % (widget, zeile),
                               self.quelltext)

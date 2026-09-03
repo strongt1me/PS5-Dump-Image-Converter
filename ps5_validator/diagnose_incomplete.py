@@ -22,20 +22,20 @@ Lösungen:
 def diagnose_incomplete_extraction(dump_path: str) -> str:
     """Analysiert einen unvollständig extrahierten PS5-Dump und gibt Tipps."""
     from pathlib import Path
-    
+
     dump_root = Path(dump_path)
-    
+
     critical = [
         "eboot.bin",
         "sce_sys/param.json",
         "sce_sys/pfs-version.dat",
     ]
-    
+
     missing = []
     for f in critical:
         if not (dump_root / f).exists():
             missing.append(f)
-    
+
     msg = f"""
 ============================================================
 [DIAGNOSE] Unvollständiger PS5-Dump erkannt
@@ -63,7 +63,7 @@ Weitere Infos:
 - PS5-exfat-builder (kerrdec97): https://github.com/PSBrew/ps5-exfat-builder
 ============================================================
 """
-    
+
     return msg
 
 if __name__ == '__main__':

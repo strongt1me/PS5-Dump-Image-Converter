@@ -59,29 +59,56 @@ NESTED_IMAGE_SUFFIXES = (".exfat", ".pfs", ".ffpfs", ".ffpfsc", ".ffpkg", ".img"
 
 
 def _ensure_mkpfs_importable() -> bool:
-    """Legt den mitgelieferten MkPFS-Quellordner bei Bedarf auf den Importpfad.
+    """Legt den mitgelieferten MkPFS-Quellordner auf den Importpfad.
 
     Im Programm hängt mkpfs meist schon im Pfad (die Oberfläche entpackt die
     eingebettete Engine beim Start). Beim eigenständigen Aufruf des Validators
     – etwa aus Tests oder der Kommandozeile – steht der Quellordner dagegen nur
-    im Projektstamm, z. B. ``MkPFS-0.0.9/``.
+    im Projektstamm, z. B. ``MkPFS-1.0.0/``.
+
+    **Der mitgelieferte Ordner hat Vorrang, und zwar ausdrücklich.** Bis zum
+    30.08.2026 stand hier zuerst ein blankes ``import mkpfs`` und die Suche
+    nach dem Quellordner erst als Rückfall. Auf einer Anlage mit ``pip install
+    mkpfs`` gewann damit die Fassung aus ``site-packages`` – gemessen am
+    30.08.2026: beide meldeten Version ``0.0.9``, aber nur die mitgelieferte
+    kannte ``fold_inner_name_to_ascii``. Acht Tests fielen deshalb wochenlang,
+    und die Ursache wurde als „hypothesis fehlt" fehlgedeutet. Seit dem
+    01.09.2026 liegt hier 1.0.0; die installierte Fassung ist damit an der
+    Nummer erkennbar – verlassen kann man sich darauf aber nicht, der Vorrang
+    gilt weiter.
+
+    Schlimmer als die roten Tests war die stille Wirkung: Das Programm selbst
+    lud dann die fremde Engine – dieselbe, gegen die es seine eigenen
+    Anpassungen mitliefert.
     """
+    projekt_stamm = Path(__file__).resolve().parents[2]
+    for kandidat in sorted(projekt_stamm.glob("MkPFS-*"), reverse=True):
+        if not (kandidat / "mkpfs" / "__init__.py").is_file():
+            continue
+        if str(kandidat) not in sys.path:
+            sys.path.insert(0, str(kandidat))
+        # Hat schon jemand eine fremde Fassung geladen, hält sys.modules sie
+        # fest und ein neuer sys.path-Eintrag käme zu spät. Dann muss der
+        # Eintrag weichen - aber nur, wenn er wirklich woandershin zeigt.
+        geladen = sys.modules.get("mkpfs")
+        herkunft = getattr(geladen, "__file__", "") or ""
+        if geladen is not None and not str(herkunft).startswith(str(kandidat)):
+            for name in [n for n in sys.modules
+                         if n == "mkpfs" or n.startswith("mkpfs.")]:
+                del sys.modules[name]
+        try:
+            import mkpfs  # noqa: F401
+            return True
+        except ImportError:
+            continue
+
+    # Kein mitgelieferter Ordner - dann ist eine installierte Fassung besser
+    # als gar keine.
     try:
         import mkpfs  # noqa: F401
         return True
     except ImportError:
-        pass
-    projekt_stamm = Path(__file__).resolve().parents[2]
-    for kandidat in sorted(projekt_stamm.glob("MkPFS-*"), reverse=True):
-        if (kandidat / "mkpfs" / "__init__.py").is_file():
-            if str(kandidat) not in sys.path:
-                sys.path.insert(0, str(kandidat))
-            try:
-                import mkpfs  # noqa: F401
-                return True
-            except ImportError:
-                continue
-    return False
+        return False
 
 
 def ermittle_bauform(pfad: str | Path) -> dict[str, object] | None:

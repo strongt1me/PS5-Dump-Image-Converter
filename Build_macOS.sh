@@ -179,10 +179,10 @@ do
     fi
 done
 
-if [ -f "MkPFS-0.0.9/mkpfs/__init__.py" ]; then
-    meldung "      OK: MkPFS-0.0.9/mkpfs/__init__.py" "$gruen"
+if [ -f "MkPFS-1.0.0/mkpfs/__init__.py" ]; then
+    meldung "      OK: MkPFS-1.0.0/mkpfs/__init__.py" "$gruen"
 else
-    meldung "      FEHLER: MkPFS 0.0.9 fehlt (erwartet: MkPFS-0.0.9/mkpfs/__init__.py)" "$rot"
+    meldung "      FEHLER: MkPFS 1.0.0 fehlt (erwartet: MkPFS-1.0.0/mkpfs/__init__.py)" "$rot"
     fehlend=$((fehlend + 1))
 fi
 

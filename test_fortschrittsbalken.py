@@ -397,9 +397,12 @@ class WaechterImProgrammTests(unittest.TestCase):
     """Der Wächter muss auch wirklich angeschlossen sein."""
 
     def test_der_bericht_hat_einen_abschnitt(self) -> None:
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        self.assertIn("diagnostics.report_section_progress", quelle)
-        self.assertIn("def _diagnose_fortschritt", quelle)
+        """Ausgefuehrt: Der Bericht wird gebaut und muss ihn fuehren."""
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        self.assertIn("diagnostics.report_section_progress",
+                      Diagnosebericht().bericht_text())
+        self.assertTrue(hasattr(Diagnosebericht, "_diagnose_fortschritt"))
 
     def test_gemessen_wird_am_anfang_des_takts(self) -> None:
         """Nicht danach.
@@ -505,6 +508,10 @@ class EigenschaftspruefungTests(unittest.TestCase):
         class Traeger:
             _diagnose_eigenschaften = haupt.PS5ConverterGUI._diagnose_eigenschaften
             _eigenschaften_pruefen = haupt.PS5ConverterGUI._eigenschaften_pruefen
+            # Seit dem 30.08.2026 baut die Weiterleitung einen
+            # Diagnosebericht. Er kommt ohne Oberflaeche aus - genau das
+            # haelt dieser Traeger weiterhin fest.
+            _diagnosebericht = haupt.PS5ConverterGUI._diagnosebericht
 
         return Traeger()._diagnose_eigenschaften()
 
@@ -542,7 +549,10 @@ class EigenschaftspruefungTests(unittest.TestCase):
 
     def test_das_protokoll_bleibt_still(self) -> None:
         """Die unsinnigen Bytes erzeugten vier Warnungen im eigenen Bericht."""
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        # Der Rumpf steht seit dem 30.08.2026 im Modul; im Monolithen
+        # blieb die Weiterleitung.
+        quelle = (HAUPTDATEI.parent / "ps5_validator" / "utils"
+                  / "diagnose_befund.py").read_text(encoding="utf-8")
         anfang = quelle.index("def _diagnose_eigenschaften")
         kopf = quelle[anfang:anfang + 2500]
         self.assertIn("logging.disable(logging.WARNING)", kopf)
@@ -551,7 +561,10 @@ class EigenschaftspruefungTests(unittest.TestCase):
     def test_echte_fehler_kommen_weiter_durch(self) -> None:
         """Nicht ``logging.ERROR``: Eine nebenher laufende Konvertierung
         soll ihre Fehler weiterhin melden können."""
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        # Der Rumpf steht seit dem 30.08.2026 im Modul; im Monolithen
+        # blieb die Weiterleitung.
+        quelle = (HAUPTDATEI.parent / "ps5_validator" / "utils"
+                  / "diagnose_befund.py").read_text(encoding="utf-8")
         anfang = quelle.index("def _diagnose_eigenschaften")
         kopf = quelle[anfang:anfang + 2500]
         self.assertNotIn("logging.disable(logging.ERROR)", kopf)
@@ -581,6 +594,7 @@ class OptimierungsabschnittTests(unittest.TestCase):
                 haupt.PS5ConverterGUI._mitgeliefert_finden)
             _fmt_bytes = staticmethod(haupt.PS5ConverterGUI._fmt_bytes)
             _diagnose_optimierung = haupt.PS5ConverterGUI._diagnose_optimierung
+            _diagnosebericht = haupt.PS5ConverterGUI._diagnosebericht
             _letzte_aufgabe_dauer_s = dauer
             task_total_source_bytes = bytes_
             compression_level_var = Stufe()
@@ -640,8 +654,11 @@ class OptimierungsabschnittTests(unittest.TestCase):
             self.assertIn(name, text)
 
     def test_der_abschnitt_haengt_im_bericht(self) -> None:
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        self.assertIn("diagnostics.report_section_optimization", quelle)
+        """Ausgefuehrt: Der Bericht wird gebaut und muss ihn fuehren."""
+        from ps5_validator.utils.diagnose_befund import Diagnosebericht
+
+        self.assertIn("diagnostics.report_section_optimization",
+                      Diagnosebericht().bericht_text())
 
     def test_die_uebersetzung_gibt_es_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
