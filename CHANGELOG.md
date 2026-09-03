@@ -2,7 +2,24 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.3):** Das Fenster startet wieder in der Größe, in der Sie es verlassen haben. Das Handbuch erklärt jetzt zu jeder Aufgabe, wofür sie gut ist – und PS5-Pakete lassen sich erstmals lesen.
+> **Kurz zum aktuellen Stand (v1.9.4):** Wer zwei Bildschirme nutzt, findet sein Fenster wieder dort, wo er es verlassen hat. Ansonsten wie v1.9.3: gemerkte Fenstergröße, erklärte Aufgaben und lesbare PS5-Pakete.
+
+---
+
+## v1.9.4 – 04.09.2026
+
+### Das Fenster blieb bei zwei Bildschirmen nicht, wo es war
+
+Die in v1.9.3 eingeführte gemerkte Fenstergröße hatte einen Haken: Wer zwei
+Monitore nutzt und das Fenster auf dem zweiten stehen hatte, fand es beim
+nächsten Start auf dem ersten wieder – jedes Mal.
+
+Das Programm maß die Sichtbarkeit nur am ersten Bildschirm und hielt alles
+dahinter für „außerhalb“. Jetzt zählt die gesamte Fläche über alle
+Bildschirme – auch wenn der zweite links steht.
+
+Die Sicherung dahinter bleibt: Wird ein Bildschirm abgezogen, rückt das
+Fenster weiterhin auf den ersten zurück, statt im Nichts zu starten.
 
 ---
 

@@ -456,7 +456,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.3"
+APP_VERSION = "v1.9.4"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -6987,6 +6987,53 @@ class PS5ConverterGUI:
     _GEOMETRIE_SCHLUESSEL = "window_geometry"
     _MAXIMIERT_SCHLUESSEL = "window_maximized"
 
+    def _arbeitsflaeche(self) -> tuple[int, int, int, int]:
+        """Die gesamte Arbeitsflaeche ueber **alle** Bildschirme.
+
+        ``winfo_screenwidth()`` meldet nur den **ersten** Bildschirm. Wer die
+        Sichtbarkeit eines Fensters daran misst, haelt jedes Fenster auf dem
+        zweiten Monitor fuer "ausserhalb" - und schiebt es bei jedem Start
+        zurueck auf den ersten. Genau das tat die Wiederherstellung in
+        v1.9.3.
+
+        Returns:
+            ``(x, y, breite, hoehe)`` des Rechtecks, das alle Bildschirme
+            umschliesst. Der Ursprung kann **negativ** sein: Steht der zweite
+            Monitor links vom ersten, beginnt die Flaeche bei einem negativen
+            x.
+        """
+        if IST_WINDOWS:
+            # Der einzige verlaessliche Weg unter Windows. Tk kennt das
+            # Konzept "virtuelle Wurzel" von X11 her und fuellt es hier
+            # nicht immer.
+            try:
+                import ctypes  # noqa: PLC0415
+
+                messen = ctypes.windll.user32.GetSystemMetrics
+                # SM_XVIRTUALSCREEN / SM_YVIRTUALSCREEN / SM_CX... / SM_CY...
+                x, y = messen(76), messen(77)
+                breite, hoehe = messen(78), messen(79)
+                if breite > 0 and hoehe > 0:
+                    return int(x), int(y), int(breite), int(hoehe)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Virtuelle Bildschirmflaeche nicht messbar: %s", exc)
+
+        # X11 kennt die virtuelle Wurzel; sie deckt dort mehrere Schirme ab.
+        try:
+            breite = int(self.root.winfo_vrootwidth())
+            hoehe = int(self.root.winfo_vrootheight())
+            if breite > 0 and hoehe > 0:
+                return (int(self.root.winfo_vrootx()),
+                        int(self.root.winfo_vrooty()), breite, hoehe)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Virtuelle Wurzel nicht lesbar: %s", exc)
+
+        # Letzter Rueckfall: der erste Bildschirm. Besser als nichts, und
+        # auf einem Einzelschirm ohnehin dasselbe.
+        return (0, 0,
+                int(self.root.winfo_screenwidth()),
+                int(self.root.winfo_screenheight()))
+
     def _fenstergeometrie_wiederherstellen(self) -> None:
         """Setzt die zuletzt benutzte Fenstergroesse, sofern sie noch passt.
 
@@ -7026,19 +7073,26 @@ class PS5ConverterGUI:
             self._maximieren_versuchen()
             return
 
-        schirm_b = self.root.winfo_screenwidth()
-        schirm_h = self.root.winfo_screenheight()
-        breite = max(WINDOW_MIN_WIDTH, min(breite, schirm_b))
-        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, schirm_h))
+        flaeche_x, flaeche_y, flaeche_b, flaeche_h = self._arbeitsflaeche()
+        breite = max(WINDOW_MIN_WIDTH, min(breite, flaeche_b))
+        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, flaeche_h))
 
-        # Sichtbar heisst: die Titelleiste ist noch zu fassen. Ein wenig
-        # Ueberstand nach links und rechts ist in Ordnung, oben nicht.
+        # Sichtbar heisst: die Titelleiste ist noch zu fassen - und zwar
+        # auf **irgendeinem** Bildschirm. Bis v1.9.3 stand hier
+        # winfo_screenwidth(), also nur der erste; ein Fenster auf dem
+        # zweiten Monitor galt damit als ausserhalb und wanderte bei jedem
+        # Start zurueck. Ein wenig Ueberstand nach links und rechts ist in
+        # Ordnung, oben nicht.
         sichtbar = (x is not None and y is not None
-                    and -(breite // 2) < x < schirm_b - 40
-                    and 0 <= y < schirm_h - 40)
+                    and flaeche_x - (breite // 2) < x < flaeche_x + flaeche_b - 40
+                    and flaeche_y <= y < flaeche_y + flaeche_h - 40)
         if not sichtbar:
-            x = max(0, (schirm_b - breite) // 2)
-            y = max(0, (schirm_h - hoehe) // 2)
+            # Zurueckgeholt wird auf den **ersten** Bildschirm - dort sucht
+            # der Anwender ein verschwundenes Fenster zuerst.
+            erster_b = int(self.root.winfo_screenwidth())
+            erster_h = int(self.root.winfo_screenheight())
+            x = max(0, (erster_b - breite) // 2)
+            y = max(0, (erster_h - hoehe) // 2)
 
         self.root.geometry('%dx%d+%d+%d' % (breite, hoehe, x, y))
         if maximiert:
@@ -31577,14 +31631,6 @@ class PS5ConverterGUI:
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
         """Prueft das entstandene Abbild. Siehe ps4_werkzeug.abbild_pruefen."""
         return ps4_werkzeug.abbild_pruefen(pfad)
-
-    def _ps4ffpsc_befehl(self) -> list[str]:
-        """Baut den Selbstaufruf. Siehe ps4_werkzeug.befehl.
-
-        Die Hauptdatei wird ausdruecklich gereicht: Im Modul zeigt
-        __file__ auf das Modul, nicht auf dieses Programm.
-        """
-        return ps4_werkzeug.befehl(__file__)
 
     def _ps4ffpsc_lauf(
         self,

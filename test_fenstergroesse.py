@@ -35,10 +35,14 @@ G = APP.PS5ConverterGUI
 class _Wurzel:
     """So viel Fenster, wie die Rechnung anfasst."""
 
-    def __init__(self, schirm=(3440, 1440), zustand="normal", geometrie="1366x820+10+20"):
+    def __init__(self, schirm=(3440, 1440), zustand="normal",
+                 geometrie="1366x820+10+20", flaeche=None):
         self._schirm = schirm
         self._zustand = zustand
         self._geometrie = geometrie
+        #: Die gesamte Flaeche ueber alle Bildschirme. Ohne Angabe ist sie
+        #: der erste Schirm - der Einzelbildschirm-Fall.
+        self._flaeche = flaeche or (0, 0, schirm[0], schirm[1])
         self.gesetzt: list[str] = []
         self.maximiert = False
 
@@ -73,6 +77,15 @@ class _Traeger:
     _fenstergeometrie_wiederherstellen = G._fenstergeometrie_wiederherstellen
     _maximieren_versuchen = G._maximieren_versuchen
     _fenstergeometrie_merken = G._fenstergeometrie_merken
+
+    def _arbeitsflaeche(self):
+        """Statt der echten Messung der vorgegebene Wert.
+
+        Die Messung selbst haengt an Windows und an der Zahl der
+        angeschlossenen Bildschirme - hier geht es um die **Rechnung**
+        darueber.
+        """
+        return self.root._flaeche
 
     def __init__(self, bestand=None, **kwargs):
         self._bestand = dict(bestand or {})
@@ -267,6 +280,74 @@ class AnbindungTests(unittest.TestCase):
         aufbau = ast.unparse(self._methode("__init__"))
         self.assertNotIn("'zoomed'", aufbau)
         self.assertNotIn('"zoomed"', aufbau)
+
+
+class ZweiBildschirmeTests(unittest.TestCase):
+    """Der Fehler, den v1.9.3 ausgeliefert hat.
+
+    ``winfo_screenwidth()`` meldet nur den **ersten** Bildschirm. Die
+    Sichtbarkeitspruefung mass daran - und hielt damit jedes Fenster auf dem
+    zweiten Monitor fuer "ausserhalb". Ergebnis: Wer zwei Schirme hat, fand
+    sein Fenster bei jedem Start auf dem falschen.
+
+    Bitter daran: Es war die Sicherung gegen den **abgezogenen** zweiten
+    Bildschirm, die den haeufigeren Fall zerbrach.
+
+    Und warum die 16 Pruefungen davor nichts merkten: Sie rechneten mit
+    **einem** Bildschirm - derselben Annahme wie der Code. Ein Test, der die
+    Annahme des Codes teilt, prueft sie nicht.
+    """
+
+    #: Zwei Schirme zu je 1920 nebeneinander: Flaeche 3840 breit ab x=0.
+    NEBENEINANDER = (0, 0, 3840, 1080)
+    #: Der zweite steht **links**: Die Flaeche beginnt bei x=-1920.
+    ZWEITER_LINKS = (-1920, 0, 3840, 1080)
+
+    def test_ein_fenster_auf_dem_zweiten_schirm_bleibt_dort(self) -> None:
+        t = _Traeger({G._GEOMETRIE_SCHLUESSEL: "1600x900+2100+100"},
+                     schirm=(1920, 1080), flaeche=self.NEBENEINANDER)
+        t._fenstergeometrie_wiederherstellen()
+        _, _, x, _ = _masse(t.root.gesetzt[-1])
+        self.assertEqual(2100, x,
+                         "Das Fenster wurde vom zweiten Bildschirm geholt.")
+
+    def test_auch_wenn_der_zweite_links_steht(self) -> None:
+        """Dann ist x negativ - und trotzdem voellig in Ordnung."""
+        t = _Traeger({G._GEOMETRIE_SCHLUESSEL: "1600x900+-1800+100"},
+                     schirm=(1920, 1080), flaeche=self.ZWEITER_LINKS)
+        t._fenstergeometrie_wiederherstellen()
+        _, _, x, _ = _masse(t.root.gesetzt[-1])
+        self.assertEqual(-1800, x, "Der linke Bildschirm wurde verworfen.")
+
+    def test_abgezogener_zweiter_schirm_holt_es_zurueck(self) -> None:
+        """Die Sicherung muss weiterhin greifen.
+
+        Derselbe gemerkte Ort, aber die Flaeche ist nur noch ein Schirm -
+        das Fenster stuende im Nichts.
+        """
+        t = _Traeger({G._GEOMETRIE_SCHLUESSEL: "1600x900+2100+100"},
+                     schirm=(1920, 1080), flaeche=(0, 0, 1920, 1080))
+        t._fenstergeometrie_wiederherstellen()
+        b, _, x, _ = _masse(t.root.gesetzt[-1])
+        self.assertEqual((1920 - b) // 2, x,
+                         "Nicht auf den ersten Bildschirm zurueckgeholt.")
+
+    def test_zurueckgeholt_wird_auf_den_ersten_schirm(self) -> None:
+        """Nicht in die Mitte der Gesamtflaeche - dort waere es wieder weg."""
+        t = _Traeger({G._GEOMETRIE_SCHLUESSEL: "1600x900+9000+100"},
+                     schirm=(1920, 1080), flaeche=self.NEBENEINANDER)
+        t._fenstergeometrie_wiederherstellen()
+        b, _, x, _ = _masse(t.root.gesetzt[-1])
+        self.assertLess(x + b, 1920 + 40,
+                        "Landete nicht auf dem ersten Bildschirm.")
+
+    def test_ein_breites_fenster_ueber_beide_schirme_bleibt_breit(self) -> None:
+        """Wer sein Fenster ueber beide zieht, will das so."""
+        t = _Traeger({G._GEOMETRIE_SCHLUESSEL: "3600x1000+100+40"},
+                     schirm=(1920, 1080), flaeche=self.NEBENEINANDER)
+        t._fenstergeometrie_wiederherstellen()
+        b, _, _, _ = _masse(t.root.gesetzt[-1])
+        self.assertEqual(3600, b, "Die Breite wurde auf einen Schirm gestutzt.")
 
 
 if __name__ == "__main__":
