@@ -58,7 +58,7 @@ _sperre = threading.RLock()
 
 
 def pfad() -> str:
-    """Gibt den Pfad zur Einstellungsdatei zurueck.
+    r"""Gibt den Pfad zur Einstellungsdatei zurueck.
 
     Der Ordner kommt aus der Plattformschicht: unter Windows weiterhin
     ``%APPDATA%\PS5ImageConverterPro`` - vorhandene Installationen

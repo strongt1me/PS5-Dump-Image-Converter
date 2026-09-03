@@ -99,6 +99,18 @@ if os.path.isdir(_webkit):
 for _mkpfs_src in _mkpfs_roots:
     _datas.extend(_dateien_ohne_pycache(_mkpfs_src, os.path.basename(_mkpfs_src)))
 
+# ProsperoPkg 2.5 - das Werkzeug hinter "PKG bauen". Alle vier Bauten kommen
+# mit: Das Programm waehlt zur Laufzeit nach Betriebssystem und Prozessor
+# (prosperopkg.plattformordner()), und wer eine Datei weitergibt, soll sie
+# nicht getrennt danebenlegen muessen. Zusammen rund 6 MB.
+#
+# Bis v1.9.2 stand ProsperoPkg in keiner .spec. Die fertige Datei fand das
+# Werkzeug deshalb nur, wenn der Quellordner danebenlag - im Auslieferungs-
+# buendel lief "PKG bauen" ins Leere.
+_prosperopkg = os.path.join(_here, 'ProsperoPkg-2.5')
+if os.path.isdir(_prosperopkg):
+    _datas.extend(_dateien_ohne_pycache(_prosperopkg, 'ProsperoPkg-2.5'))
+
 # Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
 # und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
