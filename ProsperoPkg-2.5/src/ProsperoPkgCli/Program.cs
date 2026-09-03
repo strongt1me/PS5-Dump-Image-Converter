@@ -4,7 +4,13 @@
 // und UFS2Tool. Das haelt die Grenze sauber: LibProsperoPkg steht unter
 // GPL-3, das aufrufende Programm nicht.
 //
-// Zwei Befehle:
+// Drei Befehle:
+//
+//   read --source <Datei>
+//       Liest den aeusseren Container einer PS5-PKG: Kopf,
+//       Content-ID und Eintragstabelle. Die eingebettete PFS bleibt
+//       verschluesselt - dafuer braucht es Schluessel, die hier
+//       niemand hat.
 //
 //   inspect --source <Ordner>
 //       Sagt, ob ein Backup als Debug-Paket starten wuerde. Liest nur.
@@ -22,6 +28,7 @@ using System.Globalization;
 using System.Text.Json;
 using LibProsperoPkg;
 using LibProsperoPkg.Content;
+using LibProsperoPkg.PKG;
 
 namespace ProsperoPkgCli;
 
@@ -44,6 +51,7 @@ internal static class Program
         {
             return args[0].ToLowerInvariant() switch
             {
+                "read" => Read(Parse(args)),
                 "inspect" => Inspect(Parse(args)),
                 "build" => Build(Parse(args)),
                 "homebrew" => Homebrew(Parse(args)),
@@ -69,6 +77,7 @@ internal static class Program
     {
         Console.WriteLine("ProsperoPkgCli - Huelle um LibProsperoPkg 2.5");
         Console.WriteLine();
+        Console.WriteLine("  read    --source <Datei>   (PS5-PKG lesen)");
         Console.WriteLine("  inspect --source <Ordner>");
         Console.WriteLine("  build   --source <Ordner> --out <Ordner>");
         Console.WriteLine("  homebrew --source <Ordner> --out <Ordner> [--module <Datei>]");
@@ -119,6 +128,108 @@ internal static class Program
         }
 
         return wert;
+    }
+
+    /// <summary>Liest den aeusseren Container einer PS5-PKG-Datei.</summary>
+    /// <remarks>
+    /// Das eigene Entpackwerk des Programms kommt an PS5-Pakete nicht heran -
+    /// gemessen an 31 Dateien. LibProsperoPkg kann es, und die Bibliothek
+    /// liegt ohnehin bei; bis v1.9.2 bot die Huelle nur <c>build</c> an.
+    ///
+    /// Gelesen wird ausschliesslich der aeussere Container: Kopf, Content-ID
+    /// und die Eintragstabelle. Der Inhalt der eingebetteten PFS bleibt
+    /// verschluesselt - dafuer braucht es Schluessel, die hier niemand hat.
+    /// Die Ausgabe sagt das ausdruecklich, statt einen leeren Inhalt als
+    /// "nichts drin" erscheinen zu lassen.
+    /// </remarks>
+    private static int Read(Dictionary<string, string> w)
+    {
+        string quelle = Pflicht(w, "source");
+        if (!File.Exists(quelle))
+        {
+            Console.Error.WriteLine($"[FEHLER] Keine Datei: {quelle}");
+            return ExitFailed;
+        }
+
+        ProsperoPkgType? art = ProsperoPkgReader.DetectType(quelle);
+        if (art is null)
+        {
+            // Kein Ratespiel: Wer hier landet, hat keine PS5-PKG vor sich.
+            Console.WriteLine($"Datei                : {quelle}");
+            Console.WriteLine($"Groesse              : {new FileInfo(quelle).Length}");
+            Console.WriteLine("Typ                  : (keine PS5-PKG)");
+            Console.WriteLine("RESULT: NOT_A_PS5_PKG");
+            return ExitFailed;
+        }
+
+        ProsperoPkg pkg = ProsperoPkgReader.Read(quelle);
+        var info = new FileInfo(quelle);
+
+        Console.WriteLine($"Datei                : {quelle}");
+        Console.WriteLine($"Groesse              : {info.Length}");
+        Console.WriteLine($"Typ                  : {pkg.Type}");
+
+        if (pkg.Header is not null)
+        {
+            ProsperoPkgHeader h = pkg.Header;
+            Console.WriteLine($"Magic                : {BitConverter.ToString(h.Magic)}");
+            Console.WriteLine($"ContentId            : {h.ContentId}");
+            Console.WriteLine($"Flags                : 0x{h.Flags:X8}");
+            Console.WriteLine($"DrmType              : {h.DrmType}");
+            Console.WriteLine($"ContentType          : {h.ContentType}");
+            Console.WriteLine($"ContentFlags         : 0x{h.ContentFlags:X8}");
+            // Bit 31 ist das Patch-Kennzeichen der Konsole. Ausgeschrieben,
+            // weil sonst niemand die Zahl im Kopf zerlegt.
+            Console.WriteLine($"IstPatch             : {(h.ContentFlags & 0x80000000u) != 0}");
+            Console.WriteLine($"EntryCount           : {h.EntryCount}");
+            Console.WriteLine($"ScEntryCount         : {h.ScEntryCount}");
+            Console.WriteLine($"EntryTableOffset     : {h.EntryTableOffset}");
+            Console.WriteLine($"BodyOffset           : {h.BodyOffset}");
+            Console.WriteLine($"BodySize             : {h.BodySize}");
+        }
+
+        if (pkg.Fih is not null)
+        {
+            ProsperoFihHeader f = pkg.Fih;
+            Console.WriteLine($"FihSignedByte        : 0x{f.SignedByte:X2}");
+            Console.WriteLine($"FihIsOfficial        : {f.IsOfficial}");
+            Console.WriteLine($"FihFormatVersion     : {f.FormatVersion}");
+            Console.WriteLine($"FihVersionSupported  : {f.IsSupportedFormatVersion}");
+            Console.WriteLine($"FihPfsImageOffset    : {f.PfsImageOffset}");
+            Console.WriteLine($"FihPfsImageSize      : {f.PfsImageSize}");
+            Console.WriteLine($"FihEmbeddedCntOffset : {f.EmbeddedCntOffset}");
+
+            // Vollstaendigkeit: Bei einem geteilten Satz endet die Datei vor
+            // dem, was der Kopf ankuendigt. Das ist der haeufigste Fall, in
+            // dem eine PKG "kaputt" aussieht und bloss unvollstaendig ist.
+            long erwartet = (long)(f.PfsImageOffset + f.PfsImageSize);
+            if (erwartet > 0)
+            {
+                Console.WriteLine($"ErwarteteGroesse     : {erwartet}");
+                if (info.Length < erwartet)
+                {
+                    Console.WriteLine($"UNVOLLSTAENDIG: {erwartet - info.Length} Bytes fehlen");
+                }
+            }
+        }
+
+        Console.WriteLine($"Entries              : {pkg.Entries.Count}");
+        foreach (ProsperoPkgEntry e in pkg.Entries)
+        {
+            string name = string.IsNullOrEmpty(e.Name) ? "-" : e.Name;
+            Console.WriteLine(string.Format(
+                CultureInfo.InvariantCulture,
+                "ENTRY\t{0}\t0x{1:X4}\t{2}\t{3}\t{4}\t{5}",
+                name, e.RawId, e.DataOffset, e.DataSize,
+                e.Encrypted ? "encrypted" : "plain", e.KeyIndex));
+        }
+
+        // Der Hinweis gehoert dazu: Ein Anwender, der hier eine Dateiliste
+        // erwartet, soll wissen, dass die Nutzlast verschluesselt bleibt.
+        Console.WriteLine("HINWEIS: Nur der aeussere Container wird gelesen; "
+                          + "die eingebettete PFS bleibt verschluesselt.");
+        Console.WriteLine($"RESULT: {pkg.Type}");
+        return ExitOk;
     }
 
     private static int Inspect(Dictionary<string, string> w)

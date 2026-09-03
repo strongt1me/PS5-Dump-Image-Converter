@@ -499,6 +499,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k5">
   <h2><span class="nr">5</span> Aufgabe 1 – Dump-Ordner konvertieren</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Aus einem Dump-Ordner wird <strong>eine einzige Datei</strong>. Das brauchen Sie, wenn ein Spiel auf einen USB-Stick soll: Die Konsole liest dort kein loses Verzeichnis, sondern einen Container, den ShadowMount+ einhängt.</p><p>Der Ordner selbst bleibt unangetastet – es entsteht eine Kopie im gewählten Format. Wollen Sie umgekehrt aus einer vorhandenen Datei wieder einen Ordner machen, nehmen Sie Aufgabe 2, 3 oder 4.</p>
+  </div>
   <p>Nutzen Sie Aufgabe 1, wenn Ihre Daten bereits als normaler Dump-Ordner vorliegen. Als Ergebnis können Sie <code>.ffpfsc</code> (komprimiert), <code>.ffpfs</code> (unkomprimiert), ein echtes <code>.exFAT</code>-Image oder ein UFS2-basiertes <code>.ffpkg</code> wählen.</p>
   <ol class="schritte">
     <li>Klicken Sie auf <strong>Dump Ordner</strong> und wählen Sie den gewünschten Ordner.</li>
@@ -515,6 +519,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k6">
   <h2><span class="nr">6</span> Aufgabe 2 – ffpfsc konvertieren</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Der Rückweg zu Aufgabe 1 und zugleich der Umbau zwischen den Formaten. Aus einer <code>.ffpfsc</code> wird wieder ein Dump-Ordner – zum Hineinsehen, zum Ändern einzelner Dateien oder als Zwischenschritt.</p><p>Auch der Wechsel in ein anderes Containerformat läuft hierüber. Das Programm packt dabei nicht einfach um, sondern entpackt und baut neu – sonst entstünde eine Verschachtelung mehr statt eines neuen Containers.</p>
+  </div>
   <p>Nutzen Sie Aufgabe 2, wenn die Quelle eine <code>.ffpfsc</code>-Datei ist. Daraus lässt sich ein Dump-Ordner, eine <code>.exFAT</code>- oder eine <code>.ffpkg</code>-Datei erzeugen.</p>
   <ol class="schritte">
     <li>Klicken Sie auf <strong>Datei wählen</strong> und wählen Sie genau eine <code>.ffpfsc</code>-Datei.</li>
@@ -530,6 +538,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k7">
   <h2><span class="nr">7</span> Aufgabe 3 – exFAT konvertieren</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Dasselbe für eine <code>.exFAT</code>-Datei. Sie ist ein echtes Dateisystem-Abbild: Windows kann sie mit OSFMount als Laufwerk einhängen, und Sie sehen den Spielordner wie auf einer Festplatte.</p><p>Gebraucht wird das vor allem zum Nachsehen und für Werkzeuge, die einen Laufwerksbuchstaben erwarten. Zum Weitergeben ist eine <code>.ffpfsc</code> meist die bessere Wahl – sie ist komprimiert.</p>
+  </div>
   <p>Nutzen Sie Aufgabe 3, wenn Ihre Quelle eine <code>.exFAT</code>-Datei ist. Als Ziel stehen Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.ffpkg</code> zur Verfügung.</p>
   <ol class="schritte">
     <li>Wählen Sie die <code>.exFAT</code>-Datei als Quelle.</li>
@@ -545,6 +557,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k8">
   <h2><span class="nr">8</span> Aufgabe 4 – ffpkg konvertieren</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Der Rückweg für <code>.ffpkg</code>. Dieses Format trägt ein UFS2-Dateisystem und stammt aus einer anderen Werkzeugfamilie; hier wird es ausgepackt oder in eines der übrigen Formate überführt.</p><p>Ein <code>.ffpkg</code> erneut als <code>.ffpkg</code> zu bauen klingt sinnlos, ist es aber nicht: Der Weg führt über ein vollständiges Auspacken und Neubauen und räumt dabei ein beschädigtes Layout auf.</p>
+  </div>
   <p>Nutzen Sie Aufgabe 4, wenn eine <code>.ffpkg</code>-Datei vorliegt. Sie können einen Dump-Ordner, <code>.ffpfsc</code>, <code>.exFAT</code> oder erneut <code>.ffpkg</code> wählen.</p>
   <ol class="schritte">
     <li>Wählen Sie die <code>.ffpkg</code>-Datei als Quelle.</li>
@@ -560,6 +576,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k9">
   <h2><span class="nr">9</span> Aufgabe 5 – Sammelkonvertierung</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Wenn <strong>mehrere</strong> Dateien dasselbe Ziel bekommen sollen. Statt fünfmal dieselben Klicks wählen Sie alle Quellen auf einmal, geben ein Zielformat an und lassen laufen.</p><p>Jede Datei wird einzeln verarbeitet und einzeln geprüft; fällt eine durch, laufen die übrigen trotzdem zu Ende. Der Fortschrittsbalken zeigt den Gesamtstand, das Protokoll den Stand je Datei.</p>
+  </div>
   <p>Nutzen Sie Aufgabe 5, wenn mehrere unterstützte Containerdateien (<code>.ffpfsc</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) dasselbe Zielformat erhalten sollen. Das spart wiederholte Einzelschritte.</p>
   <ol class="schritte">
     <li>Klicken Sie auf <strong>Dateien wählen</strong> und markieren Sie alle gewünschten Dateien.</li>
@@ -575,6 +595,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k10">
   <h2><span class="nr">10</span> Aufgabe 6 – AIO Konvertierung</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Die Aufgabe für alle Fälle – und der Unterschied zu 1 bis 4 ist genau einer: <strong>Sie müssen nicht wissen, was Sie vor sich haben.</strong> Aufgabe 1 erwartet einen Ordner, Aufgabe 2 eine <code>.ffpfsc</code>, Aufgabe 3 eine <code>.exFAT</code>. Aufgabe 6 nimmt alles davon und erkennt die Quelle selbst.</p><p>Am Ergebnis ändert das nichts: Dahinter liegen dieselben Wege wie in den Einzelaufgaben. Wer regelmäßig dieselbe Umwandlung macht, ist mit der passenden Einzelaufgabe etwas schneller am Ziel, weil das Zielformat dort schon vorgewählt ist.</p>
+  </div>
   <p>Aufgabe 6 (Universal-Export) ist praktisch, wenn Sie eine unterstützte Quelle auswählen und direkt in ein gewünschtes Format exportieren möchten. Als Quelle sind Dump-Ordner sowie <code>.ffpfsc</code>, <code>.exFAT</code> und <code>.ffpkg</code> möglich.</p>
   <ol class="schritte">
     <li>Wählen Sie über <strong>Quelle wählen</strong> die Eingabe.</li>
@@ -590,6 +614,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k11">
   <h2><span class="nr">11</span> Aufgabe 7 – AMPR EMU Manager</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p><strong>Was ist ein AMPR EMU?</strong> Die PS5 fragt beim Start eines Spiels ihren APR-Dateiresolver, wo die Spieldateien liegen. Läuft das Spiel aus einem eingehängten Abbild statt von der internen Platte, bekommt er darauf keine brauchbare Antwort – und das Spiel startet nicht. Der AMPR EMU ist eine Ersatzbibliothek, die diese Frage stellvertretend beantwortet.</p><p>Aufgabe 7 legt diese Bibliothek in den Spielordner, sichert die mitgelieferte Fassung als <code>.orig</code> und baut den Index neu, über den ShadowMount+ die Dateien findet. Sie brauchen das für jedes Spiel, das von einem Abbild laufen soll – und nur dafür.</p>
+  </div>
 
   <div class="kasten tipp">
     <span class="titel">Seit v1.8.98: Knopf 7 &ouml;ffnet erst eine Auswahl</span>
@@ -624,6 +652,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <section class="kapitel" id="k12">
   <h2><span class="nr">12</span> Aufgabe 8 – Validator</h2>
+  <div class="kasten">
+    <span class="titel">Wof&uuml;r ist das gut?</span>
+    <p>Die Aufgabe, die <strong>nichts verändert</strong>. Sie sieht in einen Ordner oder eine Containerdatei hinein und meldet, was nicht stimmt: fehlende Pflichtdateien, ein beschädigtes Dateisystem, eine falsche Verschachtelung.</p><p>Sinnvoll vor dem Weitergeben und nach jedem abgebrochenen Lauf. Wichtig zu wissen: <strong>ungeprüft ist kein Urteil.</strong> Konnte eine Prüfung nicht stattfinden – etwa weil Administratorrechte fehlen –, sagt der Bericht das ausdrücklich, statt die Datei als fehlerhaft zu melden.</p>
+  </div>
   <p>Aufgabe 8 prüft einen Dump-Ordner oder eine unterstützte Containerdatei auf erkennbare Probleme. Sie erstellt kein Konvertierungsergebnis; das Resultat erscheint im Protokoll.</p>
   <ol class="schritte">
     <li>Wählen Sie den Ordner oder die Datei, die geprüft werden soll.</li>

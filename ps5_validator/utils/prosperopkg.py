@@ -165,6 +165,101 @@ def _ergebniszeile(zeilen: Iterable[str]) -> str:
     return ""
 
 
+#: Was ``read`` als letzte Zeile meldet, wenn die Datei keine PS5-PKG ist.
+KEINE_PKG = "NOT_A_PS5_PKG"
+
+
+def paket_lesen(datei: str,
+                melden: Callable[[str], None] | None = None) -> dict:
+    """Liest den aeusseren Container einer PS5-PKG-Datei.
+
+    Das eigene Entpackwerk des Programms kommt an PS5-Pakete nicht heran -
+    an 31 Dateien gemessen. LibProsperoPkg kann es, und die Bibliothek liegt
+    ohnehin bei; bis v1.9.2 bot die Huelle davon nur ``build`` an.
+
+    **Gelesen wird nur der aeussere Container.** Kopf, Content-ID und die
+    Eintragstabelle - die eingebettete PFS bleibt verschluesselt, dafuer
+    braeuchte es Schluessel, die hier niemand hat. Wer eine Dateiliste des
+    Spiels erwartet, bekommt sie also nicht; die Eintraege sind die des
+    Pakets (``param.sfo``, ``playgo-chunk.dat``, Bilder), nicht die des
+    Spielinhalts.
+
+    Args:
+        datei: Die ``.pkg``-Datei.
+        melden: Bekommt jede Ausgabezeile, sobald sie anfaellt.
+
+    Returns:
+        ``{"ist_pkg": bool, "typ": str, "kopf": {...}, "eintraege": [...],
+        "unvollstaendig": int, "zeilen": [str]}``
+
+        ``typ`` ist ``Meta`` (nur Metadaten, ``\\x7FCNT``), ``FullDebug``
+        oder ``FullRetail`` (finalisiertes Abbild, ``\\x7FFIH``).
+        ``unvollstaendig`` nennt die fehlenden Bytes eines geteilten Satzes,
+        sonst 0.
+
+    Raises:
+        ProsperoFehler: Das Werkzeug fehlt oder bricht unerwartet ab.
+    """
+    code, zeilen = _laufen_lassen(["read", "--source", datei], melden,
+                                  zeitgrenze=300.0)
+    ergebnis = _ergebniszeile(zeilen)
+
+    # Rueckgabewert 3 hat zwei Bedeutungen: "keine PS5-PKG" ist eine
+    # Feststellung, kein Fehler - das Programm soll sie anzeigen duerfen,
+    # ohne eine Ausnahme zu fangen. Alles andere bleibt ein Fehler.
+    if ergebnis == KEINE_PKG:
+        return {"ist_pkg": False, "typ": "", "kopf": {}, "eintraege": [],
+                "unvollstaendig": 0, "zeilen": zeilen}
+    if code != 0:
+        raise ProsperoFehler(
+            "prosperopkg read endete mit %d: %s"
+            % (code, " | ".join(zeilen[-3:])))
+
+    kopf: dict = {}
+    eintraege: list = []
+    fehlend = 0
+    for zeile in zeilen:
+        if zeile.startswith("ENTRY\t"):
+            teile = zeile.split("\t")
+            if len(teile) >= 7:
+                eintraege.append({
+                    "name": teile[1] if teile[1] != "-" else "",
+                    "id": teile[2],
+                    "offset": _zahl(teile[3]),
+                    "groesse": _zahl(teile[4]),
+                    "verschluesselt": teile[5] == "encrypted",
+                    "schluesselindex": _zahl(teile[6]),
+                })
+        elif zeile.startswith("UNVOLLSTAENDIG:"):
+            fehlend = _zahl(zeile.split(":", 1)[1].split()[0])
+        elif ":" in zeile and not zeile.startswith(("RESULT:", "HINWEIS:")):
+            name, _, wert = zeile.partition(":")
+            name = name.strip()
+            if name:
+                kopf[name] = wert.strip()
+
+    return {
+        "ist_pkg": True,
+        "typ": ergebnis,
+        "kopf": kopf,
+        "eintraege": eintraege,
+        "unvollstaendig": fehlend,
+        "zeilen": zeilen,
+    }
+
+
+def _zahl(text: str) -> int:
+    """Eine Zahl aus einer Ausgabezeile, oder 0.
+
+    Bewusst nachsichtig: Eine unlesbare Zahl darf die uebrigen Angaben nicht
+    mitnehmen - der Kopf ist auch ohne sie brauchbar.
+    """
+    try:
+        return int(str(text).strip())
+    except (TypeError, ValueError):
+        return 0
+
+
 def pruefen(quelle: str,
             melden: Callable[[str], None] | None = None) -> dict:
     """Sagt, ob ein Backup als Debug-Paket starten wuerde.

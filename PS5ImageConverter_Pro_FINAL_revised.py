@@ -3131,14 +3131,10 @@ class PS5ConverterGUI:
         self.root.configure(bg=self._COLORS["bg_main"])
         self.root.title(APP_TITLE)
 
-        # 6. Stabile Fenster-Initialisierung – maximiert starten, sofern der
-        # aktive Fenstermanager diesen Windows-Zustand unterstützt. Unter Xvfb
-        # bleiben wir bei der zuvor gesetzten, sinnvollen Standardgeometrie.
-        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT}")
-        try:
-            self.root.state("zoomed")
-        except tk.TclError:
-            logger.debug("Fenstermanager unterstützt den Zustand 'zoomed' nicht.")
+        # 6. Fenster auf die zuletzt benutzte Groesse bringen. Ohne gemerkten
+        # Stand bleibt es beim bisherigen Verhalten: maximiert starten, sofern
+        # der Fenstermanager es kann.
+        self._fenstergeometrie_wiederherstellen()
 
         # App-Icon setzen
         self._apply_window_icon()
@@ -6987,6 +6983,99 @@ class PS5ConverterGUI:
     # Ereignishandler
     # ------------------------------------------------------------------
 
+    #: Unter diesen Namen liegen Groesse und Zustand in der Einstellungsdatei.
+    _GEOMETRIE_SCHLUESSEL = "window_geometry"
+    _MAXIMIERT_SCHLUESSEL = "window_maximized"
+
+    def _fenstergeometrie_wiederherstellen(self) -> None:
+        """Setzt die zuletzt benutzte Fenstergroesse, sofern sie noch passt.
+
+        Bis v1.9.2 startete das Fenster **immer** maximiert. Auf einem grossen
+        Bildschirm hiess das: bei jedem Start von Hand an der Ecke kleiner
+        ziehen. Gemerkt werden jetzt Groesse und Ort - und ob das Fenster
+        maximiert war, als eigener Wert statt als riesige Geometrie. Sonst
+        stuende ein auf 3440 Pixel maximiertes Fenster spaeter unveraendert
+        auf einem Bildschirm mit 1920.
+
+        **Drei Sicherungen**, damit ein gemerkter Stand nie zur Falle wird:
+
+        * Zu kleine Werte werden auf ``WINDOW_MIN_*`` angehoben - das Fenster
+          laesst sich sonst gar nicht sinnvoll darstellen.
+        * Zu grosse werden auf den Bildschirm begrenzt.
+        * Liegt der Ort ausserhalb des Bildschirms, wird mittig gesetzt. Ohne
+          das waere das Fenster nach dem Abziehen eines zweiten Bildschirms
+          unsichtbar, und der Anwender haette kein Mittel, es zurueckzuholen.
+
+        Ohne gemerkten Stand bleibt es beim bisherigen Verhalten.
+        """
+        gemerkt = str(self._load_setting(self._GEOMETRIE_SCHLUESSEL, '') or '').strip()
+        maximiert = bool(self._load_setting(self._MAXIMIERT_SCHLUESSEL, False))
+
+        breite = hoehe = x = y = None
+        if gemerkt:
+            treffer = re.match(r'^(\d+)x(\d+)(?:\+(-?\d+)\+(-?\d+))?$', gemerkt)
+            if treffer:
+                breite, hoehe = int(treffer.group(1)), int(treffer.group(2))
+                if treffer.group(3) is not None:
+                    x, y = int(treffer.group(3)), int(treffer.group(4))
+            else:
+                logger.debug('Gemerkte Fenstergroesse unbrauchbar: %r', gemerkt)
+
+        if breite is None or hoehe is None:
+            self.root.geometry('%dx%d' % (WINDOW_WIDTH, WINDOW_HEIGHT))
+            self._maximieren_versuchen()
+            return
+
+        schirm_b = self.root.winfo_screenwidth()
+        schirm_h = self.root.winfo_screenheight()
+        breite = max(WINDOW_MIN_WIDTH, min(breite, schirm_b))
+        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, schirm_h))
+
+        # Sichtbar heisst: die Titelleiste ist noch zu fassen. Ein wenig
+        # Ueberstand nach links und rechts ist in Ordnung, oben nicht.
+        sichtbar = (x is not None and y is not None
+                    and -(breite // 2) < x < schirm_b - 40
+                    and 0 <= y < schirm_h - 40)
+        if not sichtbar:
+            x = max(0, (schirm_b - breite) // 2)
+            y = max(0, (schirm_h - hoehe) // 2)
+
+        self.root.geometry('%dx%d+%d+%d' % (breite, hoehe, x, y))
+        if maximiert:
+            self._maximieren_versuchen()
+
+    def _maximieren_versuchen(self) -> None:
+        """Maximiert das Fenster, wo der Fenstermanager es hergibt.
+
+        Unter Xvfb und auf manchen Fenstermanagern gibt es den Zustand
+        ``zoomed`` nicht; dann bleibt die zuvor gesetzte Geometrie stehen.
+        """
+        try:
+            self.root.state('zoomed')
+        except tk.TclError:
+            logger.debug("Fenstermanager unterstuetzt den Zustand 'zoomed' nicht.")
+
+    def _fenstergeometrie_merken(self) -> None:
+        """Schreibt Groesse, Ort und Maximierung in die Einstellungsdatei.
+
+        Laeuft beim Schliessen. Ein maximiertes Fenster meldet als Geometrie
+        die volle Bildschirmgroesse - die waere als Startwert falsch. Deshalb
+        wird der Zustand getrennt gemerkt, und die Geometrie nur uebernommen,
+        wenn das Fenster **nicht** maximiert ist; sonst bleibt der zuletzt
+        gemerkte Wert stehen. Wer also maximiert arbeitet und wieder
+        verkleinert, findet seine alte Groesse wieder.
+        """
+        try:
+            zustand = str(self.root.state() or 'normal')
+            maximiert = zustand == 'zoomed'
+            self._save_setting(self._MAXIMIERT_SCHLUESSEL, maximiert)
+            if not maximiert:
+                self._save_setting(self._GEOMETRIE_SCHLUESSEL,
+                                   self.root.winfo_geometry())
+        except Exception as exc:  # noqa: BLE001
+            # Das Schliessen darf daran nie haengenbleiben.
+            logger.debug('Fenstergroesse nicht merkbar: %s', exc)
+
     def on_closing(self) -> None:
         """Behandelt das Schließen des Fensters sicher."""
         shutdown_mode = ""
@@ -7022,6 +7111,12 @@ class PS5ConverterGUI:
                     engine_done.set()
                 except Exception:
                     pass
+
+        # Groesse und Ort merken - hier, nicht spaeter: Der Abbau laeuft in
+        # einem eigenen Thread, und ein zerstoertes Fenster beantwortet keine
+        # Frage nach seiner Geometrie mehr. Die Rueckfrage oben ist zu diesem
+        # Zeitpunkt beantwortet; wer abgebrochen hat, ist laengst heraus.
+        self._fenstergeometrie_merken()
 
         # Dismount + destroy in Hintergrund-Thread damit GUI nicht einfriert
         def _shutdown():
@@ -28863,9 +28958,50 @@ class PS5ConverterGUI:
 
     #: Die Scan-Pfade, unter denen ShadowMount+ nach Spielen sucht. Der
     #: backports-Ordner liegt jeweils darunter.
+    #:
+    #: Nachgezogen auf ShadowMount+ 1.7alpha13 (Stand 03.09.2026). Bis
+    #: dahin stand hier die Liste aus alpha6: usb0 bis usb3 und keine
+    #: Unterordner. Beides ist ueberholt - alpha13 sucht bis usb7 und
+    #: zusaetzlich unter <Einhaengepunkt>/homebrew sowie
+    #: <Einhaengepunkt>/etaHEN/games.
+    #:
+    #: Die Unterordner sind der wichtigere Teil: Die Suche unten geht die
+    #: **Unterverzeichnisse** eines Scanpfads durch und behaelt nur, was
+    #: mit einer Spielkennung beginnt. Ein Ordner namens 'homebrew' faellt
+    #: durch dieses Raster - die Spiele darin waren damit unsichtbar,
+    #: obwohl ShadowMount+ sie laengst findet.
+    #:
+    #: /mnt/shadowmnt und /mnt/shadowmnt/pfsc stehen bewusst nicht hier:
+    #: Das sind die Einhaengepunkte von ShadowMount+ selbst, kein Ort, an
+    #: den jemand ein Spiel legt.
     _AMPR_GEN_SCANPFADE: tuple[str, ...] = (
         "/data/homebrew", "/data/etaHEN/games",
-        "/mnt/usb0", "/mnt/usb1", "/mnt/usb2", "/mnt/usb3",
+        "/mnt/ext0/homebrew", "/mnt/ext0/etaHEN/games",
+        "/mnt/ext1/homebrew", "/mnt/ext1/etaHEN/games",
+        "/mnt/usb0/homebrew",
+        "/mnt/usb1/homebrew",
+        "/mnt/usb2/homebrew",
+        "/mnt/usb3/homebrew",
+        "/mnt/usb4/homebrew",
+        "/mnt/usb5/homebrew",
+        "/mnt/usb6/homebrew",
+        "/mnt/usb7/homebrew",
+        "/mnt/usb0/etaHEN/games",
+        "/mnt/usb1/etaHEN/games",
+        "/mnt/usb2/etaHEN/games",
+        "/mnt/usb3/etaHEN/games",
+        "/mnt/usb4/etaHEN/games",
+        "/mnt/usb5/etaHEN/games",
+        "/mnt/usb6/etaHEN/games",
+        "/mnt/usb7/etaHEN/games",
+        "/mnt/usb0",
+        "/mnt/usb1",
+        "/mnt/usb2",
+        "/mnt/usb3",
+        "/mnt/usb4",
+        "/mnt/usb5",
+        "/mnt/usb6",
+        "/mnt/usb7",
         "/mnt/ext0", "/mnt/ext1",
     )
 

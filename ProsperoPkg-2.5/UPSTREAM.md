@@ -223,3 +223,44 @@ Alle vier Wege sind durchgespielt: Betriebssystem und Prozessor
 vorgegeben, den gewählten Ordner geprüft und die Kopfbytes der Datei
 gelesen. Das Dateiformat wird gemessen, nicht am Namen abgelesen – genau
 hier entstand beim PS4-Helfer schon einmal ein unbrauchbarer Bau.
+
+## Der Befehl `read` (03.09.2026)
+
+Die Hülle bot bis v1.9.2 nur `inspect`, `build` und `homebrew` an. Die
+Bibliothek kann aber mehr: `ProsperoPkgReader` liest den **äußeren
+Container** einer PS5-PKG – Kopf, Content-ID und Eintragstabelle, sowohl
+aus einem Metadaten-Container (`CNT`) als auch aus einem finalisierten
+Abbild (`FIH`).
+
+Das schließt eine echte Lücke: Der eigene Entpacker des Programms kommt an
+PS5-Pakete nicht heran – an 31 Dateien gemessen. Die Bibliothek lag längst
+bei, nur ohne Weg hinein.
+
+```
+prosperopkg read --source <Datei>
+```
+
+Die Ausgabe folgt dem Muster der übrigen Befehle: `Feld : Wert` je Zeile,
+Einträge als `ENTRY<TAB>Name<TAB>Id<TAB>Offset<TAB>Größe<TAB>plain|encrypted<TAB>Schlüsselindex`,
+Schlusszeile `RESULT: <Typ>`.
+
+**Drei Ausgänge**, an echten Dateien nachgemessen:
+
+| Fall | RESULT | Rückgabewert |
+| --- | --- | --- |
+| Metadaten-Container | `Meta` | 0 |
+| finalisiertes Abbild | `FullDebug` / `FullRetail` | 0 |
+| keine PS5-PKG | `NOT_A_PS5_PKG` | 3 |
+
+Der dritte ist eine **Feststellung, kein Fehler** – die Python-Seite
+(`prosperopkg.paket_lesen`) gibt ihn als `ist_pkg: False` zurück, statt eine
+Ausnahme zu werfen. Nur ein echter Abbruch wirft.
+
+**Was `read` nicht tut:** Die eingebettete PFS bleibt verschlüsselt; dafür
+bräuchte es Schlüssel, die hier niemand hat. Die gelesenen Einträge sind die
+des Pakets (`param.sfo`, `playgo-chunk.dat`, Bilder), nicht die Dateien des
+Spiels. Die Ausgabe sagt das in einer eigenen `HINWEIS:`-Zeile, damit ein
+leerer Inhalt nicht als „nichts drin" missverstanden wird.
+
+Bewacht von `test_prosperopkg_lesen.py` (12 Prüfungen, davon zwei an einer
+echten PS5-PKG).
