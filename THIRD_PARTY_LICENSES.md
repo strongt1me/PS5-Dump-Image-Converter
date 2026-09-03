@@ -102,11 +102,14 @@ SOFTWARE.
 
 | Bestandteil | Herkunft | Verwendung im Programm |
 | --- | --- | --- |
-| **MkPFS 1.0.0** | Phoenixx1202 / PSBrew | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
+| **MkPFS 1.0.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
+| **LibProsperoPkg 2.5** | SvenGDK | Das Werkzeug hinter „PKG bauen“; liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0) |
+| **PS4 FFPFSC 0.2.8** | siehe `PS4FFPFSC-0.2.8/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.8/LICENSES/` liegen |
 | **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | PS5-Homebrew-Community | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert |
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
+| **PS5 WebKit Autoloader 0.4.0** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)) | Legt eine Kachel auf den Startbildschirm der Konsole; liegt als Host, Skript und Installer bei |
 | **Hintergrundbilder** | für dieses Programm erstellt | Haupt- und Sidebar-Hintergründe |
 
 ---

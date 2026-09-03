@@ -2,7 +2,47 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.2):** Container lassen sich jetzt in zwei Bauformen erzeugen – die schnellere ist voreingestellt. Die Infobox sagt außerdem, ob in einer Quelle schon ein AMPR EMU steckt, und „PKG bauen“ läuft auf allen unterstützten Systemen.
+> **Kurz zum aktuellen Stand (v1.9.3):** Das Fenster startet wieder in der Größe, in der Sie es verlassen haben. Das Handbuch erklärt jetzt zu jeder Aufgabe, wofür sie gut ist – und PS5-Pakete lassen sich erstmals lesen.
+
+---
+
+## v1.9.3 – 03.09.2026
+
+### Das Fenster merkt sich seine Größe
+
+Bisher startete das Programm **immer** maximiert. Auf einem großen Bildschirm
+hieß das: bei jedem Start von Hand an der Ecke kleiner ziehen. Jetzt kommt es
+in der Größe und an dem Ort zurück, wo Sie es verlassen haben – und maximiert,
+wenn es maximiert war.
+
+Beim ersten Start bleibt alles wie bisher. Passt ein gemerkter Wert nicht mehr
+– etwa weil ein zweiter Bildschirm abgezogen wurde –, rückt das Fenster in die
+Mitte, statt außerhalb zu starten.
+
+### Das Handbuch erklärt, wofür jede Aufgabe gut ist
+
+Vor jeder der acht Aufgaben steht ein Kasten **„Wofür ist das gut?“**. Bisher
+stand dort, wie man sie bedient, aber nicht, wozu man sie braucht.
+
+Aufgabe 6 sagt jetzt, worin sie sich von den Einzelaufgaben unterscheidet, und
+Aufgabe 7 erklärt zuerst, was ein AMPR EMU überhaupt ist.
+
+### PS5-Pakete lassen sich lesen
+
+Eine `.pkg`-Datei der PS5 zeigt auf Wunsch ihren Inhalt: Art des Pakets,
+Content-ID und die Liste der Einträge. Endet die Datei früher als angekündigt –
+der übliche Fall bei einem geteilten Satz –, wird gesagt, wie viel fehlt.
+
+Der eigentliche Spielinhalt bleibt verschlüsselt; das Programm sagt das
+ausdrücklich, statt eine leere Liste zu zeigen.
+
+### Behobene Fehler
+
+- **Spiele in Unterordnern des USB-Sticks wurden übersehen.** Die Suche auf der
+  Konsole kannte nur `usb0` bis `usb3` und keine Unterordner. Wer sein Spiel in
+  `/mnt/usb0/homebrew` liegen hatte, fand es dort nicht wieder – obwohl die
+  Konsole selbst es längst findet. Jetzt werden alle Orte durchsucht, die
+  ShadowMount+ kennt.
 
 ---
 
