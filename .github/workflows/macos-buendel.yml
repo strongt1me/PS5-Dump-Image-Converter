@@ -30,20 +30,54 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    # Nur wenn sich etwas ändert, das in das Bündel eingeht. Ein Lauf kostet
-    # auf macOS das Zehnfache an Minuten; für eine Änderung am Changelog lohnt
-    # er nicht.
+    # Nur wenn sich etwas ändert, das in das Bündel eingeht.
+    #
+    # Diese Liste stand bis zum 04.09.2026 kürzer hier, mit der Begründung,
+    # ein Lauf lohne sich "für eine Änderung am Changelog" nicht. Die
+    # Begründung war falsch: CHANGELOG.md wird eingebettet, ebenso das
+    # Benutzerhandbuch, die Anleitungen und sämtliche Werkzeugordner. An dem
+    # Tag wurde eine Berichtigung am Handbuch gepusht, der Lauf blieb aus,
+    # und das ausgelieferte Bündel hätte die alte Fassung behalten - der
+    # Knopf BENUTZERHANDBUCH im Programm öffnet genau diese eingebettete
+    # Datei. Nur weil es beim Nachsehen auffiel, wurde von Hand ausgelöst.
+    #
+    # Maßstab ist deshalb nicht mehr "wie wichtig ist die Änderung", sondern
+    # schlicht: **Geht die Datei ins Bündel?** Was `_datas` in der .spec
+    # einsammelt, gehört hierher. `test_macos_ausloeser.py` hält beides
+    # gegeneinander und meldet, was fehlt.
     paths:
+      # Programm, Bauplan und Prüfung der macOS-Fassung
       - 'PS5ImageConverter_Pro_FINAL_revised.py'
       - 'PS5ImageConverter_Pro_macos.spec'
       - 'Build_macOS.sh'
       - 'Install_macOS.sh'
       - 'extract_icon_icns.py'
       - 'test_macos_fassung.py'
+      - 'test_macos_ausloeser.py'
       - 'ps5_validator/**'
-      - 'MkPFS-1.0.0/**'
       - 'requirements.txt'
       - '.github/workflows/macos-buendel.yml'
+      # Dokumente, die das Programm selbst öffnet
+      - 'BENUTZERHANDBUCH.html'
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'THIRD_PARTY_LICENSES.md'
+      - 'Anleitungen/**'
+      # Bilder, Symbole und Beigaben
+      - 'app_icon.ico'
+      - 'app_icon.icns'
+      - 'splash_image.png'
+      - 'ip.ini'
+      - 'Hintergrundbilder/**'
+      # Mitgelieferte Werkzeuge und Daten
+      - 'MkPFS-*/**'
+      - 'ProsperoPkg-2.5/**'
+      - 'PS4FFPFSC-0.2.8/**'
+      - 'UFS2Tool-4.1/**'
+      - 'helloworld/**'
+      - 'Backport_Fakelibs/**'
+      - 'PS5 WebKit Autoloader/**'
+      - 'PlayGo & AMPR_EMU/**'
 
 permissions:
   contents: read
