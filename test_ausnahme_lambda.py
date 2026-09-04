@@ -116,24 +116,67 @@ class AusnahmeEinfangTests(unittest.TestCase):
 class BehobeneStellenTests(unittest.TestCase):
     """Die vier bekannten Fehlerpfade bilden die Meldung jetzt vorher."""
 
+    #: Backport fehlgeschlagen sowie Laden, Schreiben und Debug-Log-Holen der
+    #: Remote-INI - die vier Stellen, an denen der Fehler auftrat.
+    SCHLUESSEL = ("backport.state_error",
+                  "remote_ini.status_load_failed",
+                  "remote_ini.status_write_failed",
+                  "remote_ini.status_fetch_failed")
+
     @classmethod
     def setUpClass(cls):
         cls.text = HAUPTQUELLE.read_text(encoding="utf-8")
 
     def test_alle_vier_melden_ueber_eine_vorher_gebildete_meldung(self):
-        for schluessel in ("backport.state_error",
-                           "remote_ini.status_load_failed",
-                           "remote_ini.status_write_failed",
-                           "remote_ini.status_fetch_failed"):
+        for schluessel in self.SCHLUESSEL:
             with self.subTest(schluessel=schluessel):
                 stelle = self.text.index(schluessel)
                 zeile = self.text.rfind("\n", 0, stelle) + 1
                 self.assertIn("meldung = ", self.text[zeile:stelle + len(schluessel) + 80],
                               f"{schluessel} sollte ueber eine vorher gebildete Meldung laufen")
 
-    def test_die_meldung_wird_auch_gesetzt(self):
-        self.assertIn("lambda: stand_var.set(meldung)", self.text)
-        self.assertEqual(self.text.count("lambda: status_var.set(meldung)"), 3)
+    def test_die_meldung_wird_auch_zugestellt(self):
+        """Gebildet allein genuegt nicht - sie muss in den Fensterfaden.
+
+        Geprueft wird die **Eigenschaft**, nicht die Schreibweise: Im selben
+        ``except``-Block muss ein ``after(...)`` stehen, das die vorher
+        gebildete ``meldung`` weiterreicht. Ob das ein
+        ``lambda: status_var.set(meldung)`` tut oder eine Funktion, die sie
+        als Argument bekommt, ist gleichgueltig.
+
+        Die Vorfassung zaehlte ``lambda: status_var.set(meldung)`` und
+        verlangte genau drei Stueck. Am 04.09.2026 wurde der Ladeweg auf
+        ``_load_failed(meldung, fragen, fehlertext)`` umgebaut - dieselbe
+        Eigenschaft, andere Form -, und der Test fiel, obwohl nichts kaputt
+        war. Solche Zaehlungen sind in diesem Projekt schon mehrfach zum
+        Stolperstein geworden.
+        """
+        baum = ast.parse(self.text)
+        gefunden = {}
+        for handler in ast.walk(baum):
+            if not isinstance(handler, ast.ExceptHandler):
+                continue
+            for schluessel in self.SCHLUESSEL:
+                if not any(isinstance(k, ast.Constant) and k.value == schluessel
+                           for k in ast.walk(handler)):
+                    continue
+                # Ein after(...) im selben Block, das "meldung" mitnimmt.
+                gefunden[schluessel] = any(
+                    isinstance(k, ast.Call)
+                    and getattr(k.func, "attr", "") == "after"
+                    and _liest(ast.Module(body=[ast.Expr(a) for a in k.args],
+                                          type_ignores=[]), "meldung")
+                    for k in ast.walk(handler))
+
+        for schluessel in self.SCHLUESSEL:
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, gefunden,
+                              "Der Fehlerpfad ist verschwunden - die Pruefung "
+                              "greift nicht mehr.")
+                self.assertTrue(
+                    gefunden[schluessel],
+                    "Die Meldung wird gebildet, aber nirgends ueber after() "
+                    "zugestellt - die Statuszeile bleibt stehen.")
 
 
 if __name__ == "__main__":

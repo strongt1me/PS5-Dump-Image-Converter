@@ -247,10 +247,14 @@ def lauf(
     Returns:
         ``(Rückgabewert, gesammelte Ausgabe)``.
     """
-    befehl = [*befehl(hauptdatei), *argumente]
+    # Eigener Name fuer das Ergebnis: hiesse die Liste wieder "befehl",
+    # waere der Name in dieser Funktion lokal, und der Aufruf rechts
+    # daneben traefe nicht mehr die Modulfunktion darueber, sondern die
+    # eigene, noch unbelegte Variable - UnboundLocalError, 04.09.2026.
+    befehlsliste = [*befehl(hauptdatei), *argumente]
     gesammelt: list[str] = []
     prozess = subprocess.Popen(
-        befehl,
+        befehlsliste,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE if json_modus else subprocess.STDOUT,
         text=True,

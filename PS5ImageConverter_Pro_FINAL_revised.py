@@ -30706,11 +30706,17 @@ class PS5ConverterGUI:
 
         def _config() -> None:
             """Der vorhandene Editor - vorbelegt mit den Schluesseln dieser Fassung."""
+            # Die Sollwerte dieser Fassung gehen zusaetzlich als Vorrangwerte
+            # mit: Der Editor verlangt jetzt ein Laden vor dem Schreiben, und
+            # ein Laden holte sonst genau die alten Konsolenwerte zurueck, die
+            # dieser Knopf setzen soll.
+            fassungswerte = {k: v for k, v in p["config_schluessel"] if v}
             vorgaben = dict(self._SHADOWMOUNT_DEFAULTS)
-            vorgaben.update({k: v for k, v in p["config_schluessel"] if v})
+            vorgaben.update(fassungswerte)
             self._show_remote_ini_editor(
                 self._t("remote_ini.shadowmount_title"),
-                sm_gen.CONFIG_PFAD, sm_gen.DEBUG_LOG, vorgaben, "shadowmount")
+                sm_gen.CONFIG_PFAD, sm_gen.DEBUG_LOG, vorgaben, "shadowmount",
+                vorrang_werte=fassungswerte)
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x")
@@ -32298,86 +32304,102 @@ class PS5ConverterGUI:
             _balken(0.0)
 
             def _arbeit() -> None:
-                arbeit = _arbeitsordner()
-                rc, ausgabe = self._ps4ffpsc_lauf(
-                    ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
-                     os.path.join(arbeit, "unpacked")],
-                    arbeitsordner=arbeit,
-                    zeile_callback=_protokoll,
-                    prozess_ablage=laeuft,
-                    json_modus=True,
-                )
-                laeuft["aktiv"] = False
-                if rc != 0:
-                    _status(self._t("ps4pkg.status_scan_failed", code=rc))
-                    return
                 try:
-                    daten = json.loads(ausgabe.strip())
-                except ValueError:
-                    _status(self._t("ps4pkg.status_scan_unreadable"))
-                    return
-                # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
-                # nicht mit einer Liste.
-                spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
-                # Wer PS5-Pakete hierher legt, bekam bisher nur
-                # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
-                sicht = self._ps4ffpsc_quellen_sichten(
-                    quelle_var.get().strip(), quelle_art.get())
-                if sicht["ps5"]:
-                    _protokoll(self._t("ps4pkg.ps5_packages",
-                                       anzahl=len(sicht["ps5"])))
-                    for name in sicht["ps5"][:12]:
-                        _protokoll("    %s" % name)
-                    if len(sicht["ps5"]) > 12:
-                        _protokoll(self._t("ps4pkg.and_more",
-                                           anzahl=len(sicht["ps5"]) - 12))
+                    arbeit = _arbeitsordner()
+                    rc, ausgabe = self._ps4ffpsc_lauf(
+                        ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
+                         os.path.join(arbeit, "unpacked")],
+                        arbeitsordner=arbeit,
+                        zeile_callback=_protokoll,
+                        prozess_ablage=laeuft,
+                        json_modus=True,
+                    )
+                    laeuft["aktiv"] = False
+                    if rc != 0:
+                        _status(self._t("ps4pkg.status_scan_failed", code=rc))
+                        return
+                    try:
+                        daten = json.loads(ausgabe.strip())
+                    except ValueError:
+                        _status(self._t("ps4pkg.status_scan_unreadable"))
+                        return
+                    # Das Werkzeug antwortet mit einem Verzeichnis Title-ID -> Spiel,
+                    # nicht mit einer Liste.
+                    spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
+                    # Wer PS5-Pakete hierher legt, bekam bisher nur
+                    # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
+                    sicht = self._ps4ffpsc_quellen_sichten(
+                        quelle_var.get().strip(), quelle_art.get())
+                    if sicht["ps5"]:
+                        _protokoll(self._t("ps4pkg.ps5_packages",
+                                           anzahl=len(sicht["ps5"])))
+                        for name in sicht["ps5"][:12]:
+                            _protokoll("    %s" % name)
+                        if len(sicht["ps5"]) > 12:
+                            _protokoll(self._t("ps4pkg.and_more",
+                                               anzahl=len(sicht["ps5"]) - 12))
 
-                def _fuellen() -> None:
-                    for spiel in spiele:
-                        if not isinstance(spiel, dict):
-                            continue
-                        title_id = str(spiel.get("title_id", "?"))
-                        gefunden[title_id] = spiel
-                        patches = spiel.get("patches") or []
-                        basis = spiel.get("base") or []
-                        neueste = patches or basis
-                        version = "-"
-                        if neueste and isinstance(neueste[-1], dict):
-                            version = str(neueste[-1].get("version")
-                                          or neueste[-1].get("app_version") or "-")
-                        teile = self._t(
-                            "ps4pkg.parts",
-                            patches=len(patches),
-                            dlc=len(spiel.get("dlc") or []),
-                        )
-                        if not spiel.get("buildable", True):
-                            teile = self._t("ps4pkg.not_buildable") + " - " + teile
-                        # Zu welcher Konsole gehoert der Titel? Das steht
-                        # bisher erst nach dem Bau im Protokoll - wer eine
-                        # PS5-PKG hierher legt, merkte es also viel zu spaet.
-                        plattform = self._ps4ffpsc_plattform(title_id, spiel)
-                        anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
-                            plattform, self._t("ps4pkg.platform_unknown"))
-                        liste.insert("", "end", iid=title_id,
-                                     tags=(plattform or "unbekannt",), values=(
-                            title_id, anzeige, str(spiel.get("title", "-")),
-                            version, teile,
-                        ))
-                        if plattform == "ps5":
-                            _protokoll(self._t("ps4pkg.is_ps5_title",
-                                               title_id=title_id))
-                        elif not plattform:
-                            _protokoll(self._t("ps4pkg.platform_unclear",
-                                               title_id=title_id))
-                        for hinweis in list(spiel.get("warnings") or [])[:5]:
-                            _protokoll(f"[{title_id}] {hinweis}")
-                        for konflikt in list(spiel.get("conflicts") or [])[:5]:
-                            _protokoll(f"[{title_id}] {konflikt}")
-                    if gefunden:
-                        liste.selection_set(next(iter(gefunden)))
-                    _status(self._t("ps4pkg.status_found", count=len(gefunden)))
+                    def _fuellen() -> None:
+                        for spiel in spiele:
+                            if not isinstance(spiel, dict):
+                                continue
+                            title_id = str(spiel.get("title_id", "?"))
+                            gefunden[title_id] = spiel
+                            patches = spiel.get("patches") or []
+                            basis = spiel.get("base") or []
+                            neueste = patches or basis
+                            version = "-"
+                            if neueste and isinstance(neueste[-1], dict):
+                                version = str(neueste[-1].get("version")
+                                              or neueste[-1].get("app_version") or "-")
+                            teile = self._t(
+                                "ps4pkg.parts",
+                                patches=len(patches),
+                                dlc=len(spiel.get("dlc") or []),
+                            )
+                            if not spiel.get("buildable", True):
+                                teile = self._t("ps4pkg.not_buildable") + " - " + teile
+                            # Zu welcher Konsole gehoert der Titel? Das steht
+                            # bisher erst nach dem Bau im Protokoll - wer eine
+                            # PS5-PKG hierher legt, merkte es also viel zu spaet.
+                            plattform = self._ps4ffpsc_plattform(title_id, spiel)
+                            anzeige = {"ps4": "PS4", "ps5": "PS5"}.get(
+                                plattform, self._t("ps4pkg.platform_unknown"))
+                            liste.insert("", "end", iid=title_id,
+                                         tags=(plattform or "unbekannt",), values=(
+                                title_id, anzeige, str(spiel.get("title", "-")),
+                                version, teile,
+                            ))
+                            if plattform == "ps5":
+                                _protokoll(self._t("ps4pkg.is_ps5_title",
+                                                   title_id=title_id))
+                            elif not plattform:
+                                _protokoll(self._t("ps4pkg.platform_unclear",
+                                                   title_id=title_id))
+                            for hinweis in list(spiel.get("warnings") or [])[:5]:
+                                _protokoll(f"[{title_id}] {hinweis}")
+                            for konflikt in list(spiel.get("conflicts") or [])[:5]:
+                                _protokoll(f"[{title_id}] {konflikt}")
+                        if gefunden:
+                            liste.selection_set(next(iter(gefunden)))
+                        _status(self._t("ps4pkg.status_found", count=len(gefunden)))
 
-                self._spaeter_im_fenster(win, _fuellen)
+                    self._spaeter_im_fenster(win, _fuellen)
+                except Exception as exc:  # noqa: BLE001
+                    # Ohne dieses Netz bliebe laeuft["aktiv"] auf True
+                    # stehen: Beide Knoepfe lehnen danach stillschweigend
+                    # jeden weiteren Druck ab, das Fenster ist tot und nur
+                    # noch zu schliessen. Am 04.09.2026 genau so passiert,
+                    # als lauf() mit einem UnboundLocalError ausfiel.
+                    logger.exception("PS4-Einlesen fehlgeschlagen")
+                    meldung = self._t("ps4pkg.status_scan_crashed", error=exc)
+                    _protokoll(meldung)
+                    _status(meldung)
+                finally:
+                    # Doppelt gesetzt schadet nicht: Im Normalfall steht
+                    # das Kennzeichen schon auf False, und der Abbruch-
+                    # knopf verhaelt sich unveraendert.
+                    laeuft["aktiv"] = False
 
             threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-list").start()
 
@@ -32427,72 +32449,89 @@ class PS5ConverterGUI:
             _status(self._t("ps4pkg.status_building", title=title_id))
 
             def _arbeit() -> None:
-                arbeit = _arbeitsordner()
-                befehl = [
-                    "build", title_id, *argumente,
-                    "--output-dir", ziel,
-                    "--work-dir", arbeit,
-                    "--unpacked-dir", os.path.join(arbeit, "unpacked"),
-                    "--output-format", format_var.get(),
-                    "--compression-level", str(int(stufe_var.get())),
-                    "--compression-workers", str(int(worker_var.get())),
-                    "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
-                    "--verbose",
-                ]
-                rc, _ausgabe = self._ps4ffpsc_lauf(
-                    befehl,
-                    arbeitsordner=arbeit,
-                    zeile_callback=_protokoll,
-                    fortschritt_callback=_fortschritt,
-                    prozess_ablage=laeuft,
-                )
-                laeuft["aktiv"] = False
-                self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
-                if laeuft["abbruch"]:
-                    _status(self._t("ps4pkg.status_cancelled"))
-                    return
-                if rc == 0:
-                    _balken(100.0)
-                    _status(self._t("ps4pkg.status_done", path=ziel))
-                    self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
-                    # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
-                    # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
-                    # oder gar nicht.
-                    _protokoll(self._t("ps4pkg.check_running"))
-                    # Die Datei suchen, nicht den Ordner uebergeben: Das war
-                    # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
-                    # "Permission denied" auf dem Ordnerpfad endete.
-                    abbild = self._ps4ffpsc_ergebnis_finden(
-                        ziel, title_id, format_var.get())
-                    if not abbild:
-                        _protokoll(self._t("ps4pkg.check_no_image"))
+                try:
+                    arbeit = _arbeitsordner()
+                    befehl = [
+                        "build", title_id, *argumente,
+                        "--output-dir", ziel,
+                        "--work-dir", arbeit,
+                        "--unpacked-dir", os.path.join(arbeit, "unpacked"),
+                        "--output-format", format_var.get(),
+                        "--compression-level", str(int(stufe_var.get())),
+                        "--compression-workers", str(int(worker_var.get())),
+                        "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
+                        "--verbose",
+                    ]
+                    rc, _ausgabe = self._ps4ffpsc_lauf(
+                        befehl,
+                        arbeitsordner=arbeit,
+                        zeile_callback=_protokoll,
+                        fortschritt_callback=_fortschritt,
+                        prozess_ablage=laeuft,
+                    )
+                    laeuft["aktiv"] = False
+                    self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
+                    if laeuft["abbruch"]:
+                        _status(self._t("ps4pkg.status_cancelled"))
                         return
-                    befund = self._ps4ffpsc_abbild_pruefen(abbild)
-                    if befund["fehler"]:
-                        _protokoll(self._t("ps4pkg.check_failed",
-                                           error=befund["fehler"]))
-                    else:
-                        _protokoll(self._t("ps4pkg.check_files",
-                                           count=befund["dateien"]))
-                        if befund["ps4"]:
-                            # Bei einem PS4-Titel gehoeren die PS5-Marker gar
-                            # nicht hinein - sie dort zu vermissen waere ein
-                            # Fehlalarm bei jedem einzelnen Spiel.
-                            _protokoll(self._t("ps4pkg.check_ps4_title"))
-                            # Direkt danach die Trophaeengrenze: Genau
-                            # jetzt hat der Nutzer ein fertiges PS4-Abbild
-                            # vor sich und wuerde sonst erst an der
-                            # Konsole darueber stolpern.
-                            _protokoll(self._t("ps4pkg.check_trophy_note"))
+                    if rc == 0:
+                        _balken(100.0)
+                        _status(self._t("ps4pkg.status_done", path=ziel))
+                        self._append_to_log(self._t("ps4pkg.log_done", title=title_id, path=ziel))
+                        # Gleich nachsehen, was wirklich im Abbild steht. Wer erst
+                        # Aufgabe 8 bemuehen muss, erfaehrt es Stunden spaeter -
+                        # oder gar nicht.
+                        _protokoll(self._t("ps4pkg.check_running"))
+                        # Die Datei suchen, nicht den Ordner uebergeben: Das war
+                        # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
+                        # "Permission denied" auf dem Ordnerpfad endete.
+                        abbild = self._ps4ffpsc_ergebnis_finden(
+                            ziel, title_id, format_var.get())
+                        if not abbild:
+                            _protokoll(self._t("ps4pkg.check_no_image"))
+                            return
+                        befund = self._ps4ffpsc_abbild_pruefen(abbild)
+                        if befund["fehler"]:
+                            _protokoll(self._t("ps4pkg.check_failed",
+                                               error=befund["fehler"]))
                         else:
-                            for fehlt in befund["fehlend"]:
-                                _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
-                                self._append_to_log(
-                                    self._t("ps4pkg.check_missing", file=fehlt) + "\n")
-                            if not befund["fehlend"]:
-                                _protokoll(self._t("ps4pkg.check_complete"))
-                else:
-                    _status(self._t("ps4pkg.status_failed", code=rc))
+                            _protokoll(self._t("ps4pkg.check_files",
+                                               count=befund["dateien"]))
+                            if befund["ps4"]:
+                                # Bei einem PS4-Titel gehoeren die PS5-Marker gar
+                                # nicht hinein - sie dort zu vermissen waere ein
+                                # Fehlalarm bei jedem einzelnen Spiel.
+                                _protokoll(self._t("ps4pkg.check_ps4_title"))
+                                # Direkt danach die Trophaeengrenze: Genau
+                                # jetzt hat der Nutzer ein fertiges PS4-Abbild
+                                # vor sich und wuerde sonst erst an der
+                                # Konsole darueber stolpern.
+                                _protokoll(self._t("ps4pkg.check_trophy_note"))
+                            else:
+                                for fehlt in befund["fehlend"]:
+                                    _protokoll(self._t("ps4pkg.check_missing", file=fehlt))
+                                    self._append_to_log(
+                                        self._t("ps4pkg.check_missing", file=fehlt) + "\n")
+                                if not befund["fehlend"]:
+                                    _protokoll(self._t("ps4pkg.check_complete"))
+                    else:
+                        _status(self._t("ps4pkg.status_failed", code=rc))
+                except Exception as exc:  # noqa: BLE001
+                    # Ohne dieses Netz bliebe laeuft["aktiv"] auf True
+                    # stehen: Beide Knoepfe lehnen danach stillschweigend
+                    # jeden weiteren Druck ab, das Fenster ist tot und nur
+                    # noch zu schliessen. Am 04.09.2026 genau so passiert,
+                    # als lauf() mit einem UnboundLocalError ausfiel.
+                    logger.exception("PS4-Erstellen fehlgeschlagen")
+                    meldung = self._t("ps4pkg.status_build_crashed", error=exc)
+                    _protokoll(meldung)
+                    _status(meldung)
+                finally:
+                    # Doppelt gesetzt schadet nicht: Im Normalfall steht
+                    # das Kennzeichen schon auf False, und der Abbruch-
+                    # knopf verhaelt sich unveraendert.
+                    laeuft["aktiv"] = False
+                    self._spaeter_im_fenster(win, self._ps4_hinweis_aufraeumen)
 
             threading.Thread(target=_arbeit, daemon=True, name="ps4ffpsc-build").start()
 
@@ -33478,8 +33517,15 @@ class PS5ConverterGUI:
         defaults: dict[str, str],
         settings_prefix: str,
         payload_default_port: str | None = None,
+        vorrang_werte: dict[str, str] | None = None,
     ) -> None:
-        """Baut den generischen Editor für eine flache PS5-Payload-config.ini auf."""
+        """Baut den generischen Editor für eine flache PS5-Payload-config.ini auf.
+
+        ``vorrang_werte`` sind Werte, die der Aufrufer bewusst vorgibt - der
+        AMPR-EMU-Manager stellt so die Sollwerte einer Fassung ein. Sie werden
+        nach jedem Laden wieder obenauf gesetzt; sonst holte ein Laden genau
+        die alten Konsolenwerte zurueck, die der Knopf ersetzen soll.
+        """
         c = self._COLORS
         # Höher als frühere 600px: bei 16 sichtbaren Tabellenzeilen plus beiden
         # Knopfreihen reichte 600px nicht zuverlässig aus (besonders bei
@@ -33497,8 +33543,17 @@ class PS5ConverterGUI:
         self._build_modern_header(win, title, self._t("remote_ini.remote_path_label", path=remote_config_path))
 
         data: dict[str, str] = dict(defaults)
-        # Rohtext der zuletzt geladenen Datei; leer, solange nichts geladen wurde.
-        original_text: dict[str, str] = {"text": ""}
+        if vorrang_werte:
+            data.update(vorrang_werte)
+        # Rohtext der zuletzt von der Konsole gelesenen Datei.
+        #
+        # None heisst "noch nie gelesen". Dann zeigt die Tabelle nur die
+        # eingebauten Vorgaben, und aus denen darf keine config.ini gebaut
+        # werden: Sie kennen weder die Kommentare der Vorlage noch die dort
+        # gesetzten Schluessel - merge_flat_ini kommentiert jeden Schluessel
+        # aus, den sie nicht kennt. "" heisst dagegen "gelesen, und dort lag
+        # nichts"; erst dann darf eine neue Datei angelegt werden.
+        geladen: dict[str, str | None] = {"text": None}
 
         conn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
         conn_row.pack(fill="x")
@@ -33628,60 +33683,195 @@ class PS5ConverterGUI:
             status_var.set(self._t("remote_ini.status_loading"))
 
             def worker() -> None:
+                import ftplib  # noqa: PLC0415
+
+                puffer = io.BytesIO()
+                lesefehler: Exception | None = None
                 try:
                     ftp = _ftp_connect_blocking()
                     try:
-                        buf = io.BytesIO()
-                        ftp.retrbinary("RETR " + remote_config_path, buf.write)
+                        try:
+                            ftp.retrbinary("RETR " + remote_config_path, puffer.write)
+                        except Exception as beim_lesen:
+                            # Nur ein Fehler DIESES Befehls kommt spaeter als
+                            # "dort liegt vielleicht nichts" in Frage - ein
+                            # Verbindungs- oder Anmeldefehler nicht.
+                            lesefehler = beim_lesen
+                            raise
                     finally:
                         try:
                             ftp.quit()
                         except Exception:
                             pass
-                    text = buf.getvalue().decode("utf-8", errors="replace")
-                    loaded = parse_flat_ini(text)
-                    # Originaltext aufheben: Beim Zurueckschreiben wird er
-                    # bearbeitet statt neu erzeugt, damit Kommentare und
-                    # auskommentierte Vorlagen erhalten bleiben (siehe
-                    # merge_flat_ini).
-                    original_text["text"] = text
-                    win.after(0, _apply_loaded, loaded)
                 except Exception as exc:
                     # Meldung vor dem Einplanen bilden - siehe _run_backport:
                     # exc existiert nach dem except-Block nicht mehr.
                     meldung = self._t("remote_ini.status_load_failed", error=exc)
-                    win.after(0, lambda: status_var.set(meldung))
+                    # Ob dort ueberhaupt keine Datei liegt, wird NICHT geraten:
+                    # ftplib wirft error_perm bei jeder 5xx-Antwort, auch auf
+                    # das TYPE I und das PASV vor dem RETR und auf die Quittung
+                    # nach dem Datenstrom. Gefragt wird darum nur, wenn der
+                    # RETR selbst dauerhaft abgelehnt wurde UND kein einziges
+                    # Byte ankam - und ein schon gelesener Stand bleibt in
+                    # jedem Fall stehen.
+                    # Der 550-Praefix ist dabei kein Beweis, dass dort nichts
+                    # liegt - er engt die Frage nur weiter ein. Ohne ihn fuehrt
+                    # ein "502 PASV command not implemented" zur Rueckfrage,
+                    # und ein Ja darauf setzt "" fuer eine Datei, die es sehr
+                    # wohl gibt (gemessen: die 146-Zeilen-Vorlage der Konsole
+                    # wurde durch vier gerenderte Zeilen ersetzt).
+                    fragen = (lesefehler is exc
+                              and isinstance(exc, ftplib.error_perm)
+                              and str(exc).startswith("550")
+                              and puffer.tell() == 0
+                              and geladen["text"] is None)
+                    fehlertext = str(exc)
+                    win.after(0, lambda: _load_failed(meldung, fragen, fehlertext))
+                    return
+                text = puffer.getvalue().decode("utf-8", errors="replace")
+                loaded = parse_flat_ini(text)
+                win.after(0, _apply_loaded, text, loaded)
 
             threading.Thread(target=worker, daemon=True).start()
 
-        def _apply_loaded(loaded: dict[str, str]) -> None:
+        def _load_failed(meldung: str, fragen: bool, fehler: str) -> None:
+            """Im Fensterfaden: melden - und hoechstens fragen, nie annehmen."""
+            status_var.set(meldung)
+            # "fragen" wurde im Arbeitsfaden bestimmt. Bis hierher kann ein
+            # zweiter, geglueckter Ladeversuch fertig geworden sein - ein
+            # Doppelklick auf "Von PS5 laden" genuegt. Dann darf die Rueckfrage
+            # den frisch gelesenen Stand nicht mehr durch "" ersetzen.
+            if not fragen or geladen["text"] is not None:
+                return
+            if messagebox.askyesno(
+                self._t("remote_ini.title_write_to_ps5"),
+                self._t("remote_ini.msg_maybe_no_file",
+                        path=remote_config_path, error=fehler),
+                parent=win, default="no",
+            ):
+                geladen["text"] = ""
+                status_var.set(self._t("remote_ini.status_treat_as_new"))
+
+        def _apply_loaded(text: str, loaded: dict[str, str]) -> None:
+            # Rohtext aufheben: Beim Zurueckschreiben wird er bearbeitet statt
+            # neu erzeugt, damit Kommentare und auskommentierte Vorlagen
+            # erhalten bleiben (siehe merge_flat_ini).
+            geladen["text"] = text
             data.update(loaded)
+            if vorrang_werte:
+                # Die Sollwerte des Aufrufers wieder obenauf - sonst holte das
+                # Laden genau die Konsolenwerte zurueck, die dieser Knopf
+                # setzen soll.
+                data.update(vorrang_werte)
             _refresh_tree()
-            status_var.set(self._t("remote_ini.status_entries_loaded", count=len(loaded)))
+            if vorrang_werte:
+                status_var.set(self._t("remote_ini.status_entries_loaded_forced",
+                                       count=len(loaded), forced=len(vorrang_werte)))
+            else:
+                status_var.set(self._t("remote_ini.status_entries_loaded", count=len(loaded)))
 
         def _push_to_ps5() -> None:
             kopfzeile = f"{title} – geschrieben von PS5 Dump & Image Converter"
-            if original_text["text"]:
+            roh = geladen["text"]
+            if roh is None:
+                # Ohne einen von der Konsole gelesenen Stand steht hier nur das
+                # Woerterbuch der eingebauten Vorgaben. Daraus eine config.ini
+                # zu bauen ersetzte die gepflegte Datei der Konsole - genau der
+                # Datenverlust, den merge_flat_ini beschreibt.
+                messagebox.showwarning(
+                    self._t("remote_ini.title_write_to_ps5"),
+                    self._t("remote_ini.msg_load_first"), parent=win)
+                return
+            daten = dict(data)
+            if roh:
                 # Vorhandene Datei bearbeiten statt ersetzen: Die Vorlagen auf
                 # der Konsole bestehen fast nur aus erklaerenden Kommentaren.
-                ini_text = merge_flat_ini(original_text["text"], data, header_comment=kopfzeile)
+                ini_text = merge_flat_ini(roh, daten, header_comment=kopfzeile)
+                frage = "remote_ini.msg_confirm_write"
             else:
-                ini_text = render_flat_ini(data, header_comment=kopfzeile)
+                # Dort lag nichts, was zu erhalten waere - die Datei entsteht neu.
+                ini_text = render_flat_ini(daten, header_comment=kopfzeile)
+                frage = "remote_ini.msg_confirm_create"
+            # Was der Schritt an der Konsole veraendert, gehoert vor den Klick:
+            # merge_flat_ini schaltet Schluessel scharf, die bisher nur als
+            # Kommentar dastanden, und kommentiert aus, was die Tabelle nicht
+            # (mehr) fuehrt.
+            vorher = parse_flat_ini(roh)
+            neu_aktiv = [k for k, v in daten.items() if str(v) != "" and k not in vorher]
+            abgeschaltet = [k for k in vorher if str(daten.get(k, "")) == ""]
             if not messagebox.askyesno(
                 self._t("remote_ini.title_write_to_ps5"),
                 self._t(
-                    "remote_ini.msg_confirm_write",
+                    frage,
                     size=len(ini_text.encode('utf-8')), path=remote_config_path,
+                    added=len(neu_aktiv), disabled=len(abgeschaltet),
                 ),
                 parent=win,
             ):
                 return
             status_var.set(self._t("remote_ini.status_writing"))
 
+            def _write_ok() -> None:
+                # Was jetzt auf der Konsole liegt, ist genau dieser Text - sonst
+                # verlangte jedes weitere Schreiben ein neues Laden.
+                geladen["text"] = ini_text
+                status_var.set(self._t("remote_ini.status_write_ok"))
+
+            def _ziel_abweichend() -> None:
+                # Der gelesene Stand gehoert nicht zu dem, was dort liegt: Er
+                # ist der falsche Ausgangspunkt und wird verworfen, nicht
+                # benutzt.
+                geladen["text"] = None
+                status_var.set(self._t("remote_ini.status_target_changed"))
+                messagebox.showwarning(
+                    self._t("remote_ini.title_write_to_ps5"),
+                    self._t("remote_ini.msg_target_changed", path=remote_config_path),
+                    parent=win)
+
             def worker() -> None:
+                import ftplib  # noqa: PLC0415
+
                 try:
                     ftp = _ftp_connect_blocking()
                     try:
+                        # In DERSELBEN Sitzung nachsehen, was dort wirklich
+                        # liegt - so haelt es auch _ampr_gen_config_schreiben.
+                        # Adresse und Port stehen in diesem Fenster und werden
+                        # erst hier gelesen: Der geladene Stand kann also von
+                        # einer anderen Konsole stammen oder ueberholt sein.
+                        puffer = io.BytesIO()
+                        try:
+                            ftp.retrbinary("RETR " + remote_config_path, puffer.write)
+                            jetzt = puffer.getvalue().decode("utf-8", errors="replace")
+                        except Exception as beim_lesen:
+                            # "Die Datei gibt es dort nicht" heisst 550, ohne
+                            # ein einziges empfangenes Byte. Jede andere
+                            # 5xx-Antwort (502 PASV, 500 TYPE, die Quittung
+                            # nach dem Datenstrom) sagt ueber die Datei nichts.
+                            ist_550 = (isinstance(beim_lesen, ftplib.error_perm)
+                                       and str(beim_lesen).startswith("550")
+                                       and not puffer.tell())
+                            if roh and ist_550:
+                                # Ein Stand wurde geladen, dort liegt aber
+                                # nichts mehr: anderes Ziel oder inzwischen
+                                # geloescht. Kein Schreibfehler, sondern genau
+                                # der Fall, fuer den es _ziel_abweichend gibt -
+                                # sonst laese der Anwender hier eine rohe
+                                # 550-Zeile statt der dafuer gebauten Meldung.
+                                win.after(0, _ziel_abweichend)
+                                return
+                            # Beim Anlegen ist ein Nein zu erwarten - aber nur
+                            # ein dauerhaftes, ohne empfangene Bytes und mit
+                            # 550. Ohne diese letzte Einschraenkung faellt die
+                            # Schranke bei genau derselben Ursache aus wie die
+                            # Rueckfrage beim Laden, und beide zusammen
+                            # ersetzen die gepflegte Datei.
+                            if roh or not ist_550:
+                                raise
+                            jetzt = ""
+                        if jetzt != roh:
+                            win.after(0, _ziel_abweichend)
+                            return
                         remote_dir = remote_config_path.rsplit("/", 1)[0]
                         try:
                             ftp.mkd(remote_dir)
@@ -33694,7 +33884,7 @@ class PS5ConverterGUI:
                             ftp.quit()
                         except Exception:
                             pass
-                    win.after(0, lambda: status_var.set(self._t("remote_ini.status_write_ok")))
+                    win.after(0, _write_ok)
                 except Exception as exc:
                     meldung = self._t("remote_ini.status_write_failed", error=exc)
                     win.after(0, lambda: status_var.set(meldung))

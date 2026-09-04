@@ -125,6 +125,178 @@ class InterneModiTests(unittest.TestCase):
         self.assertTrue(daten["ok"], daten)
 
 
+class AufrufwegTests(unittest.TestCase):
+    """Startet der PS4-Weg ueberhaupt?
+
+    Am 04.09.2026 tat der Konverter gar nichts mehr: ``ps4_werkzeug.lauf()``
+    schrieb ``befehl = [*befehl(hauptdatei), *argumente]``. Die Zuweisung
+    macht ``befehl`` in der ganzen Funktion lokal; der Aufruf daneben traf
+    damit nicht mehr die Modulfunktion darueber, sondern die eigene, noch
+    unbelegte Variable. Jeder Lauf endete im ``UnboundLocalError``, und
+    zwar vor dem Prozessstart - also noch vor jeder Ausgabe, an der man
+    etwas haette sehen koennen.
+
+    Gemerkt hat es niemand, weil ``lauf()`` in keiner Pruefung lief: Die
+    einzige Beruehrung des Moduls war eine Quelltextsuche, und die sieht
+    so etwas nie. Hier wird deshalb wirklich gestartet - gegen ein
+    winziges gestelltes Hauptprogramm statt gegen das echte, damit die
+    Pruefung ohne PKG, ohne Entpacker und in Sekundenbruchteilen laeuft.
+    """
+
+    #: Verhaelt sich wie das Hauptprogramm unter ``--ps4ffpsc``: Es meldet
+    #: seine Argumente, schreibt eine Fortschrittszeile im Format des
+    #: Werkzeugs und geht mit einem eigenen Rueckgabewert.
+    GESTELLTES_HAUPTPROGRAMM = (
+        "import sys\n"
+        "print('ARGV ' + ' '.join(sys.argv[1:]))\n"
+        "print('PS4FFPSC_PROGRESS {\"percent\": 42}')\n"
+        "print('fertig')\n"
+        "sys.exit(3)\n"
+    )
+
+    def test_lauf_startet_den_prozess_und_meldet_zurueck(self) -> None:
+        # Das Modul so nehmen, wie das Programm es haelt.
+        werkzeug = hauptprogramm.ps4_werkzeug
+        with TemporaryDirectory() as tmp:
+            haupt = Path(tmp) / "gestelltes_hauptprogramm.py"
+            haupt.write_text(self.GESTELLTES_HAUPTPROGRAMM, encoding="utf-8")
+            zeilen: list[str] = []
+            fortschritt: list[dict] = []
+            gefragte_ordner: list[str] = []
+
+            def umgebung(ordner: str) -> dict:
+                gefragte_ordner.append(ordner)
+                return dict(os.environ)
+
+            rc, gesammelt = werkzeug.lauf(
+                ["doctor"], arbeitsordner=tmp,
+                zeile_callback=zeilen.append,
+                fortschritt_callback=fortschritt.append,
+                hauptdatei=str(haupt), umgebung_bauen=umgebung)
+        # Der Schalter steht vor dem Unterbefehl: Der Aufruf kommt also
+        # wirklich aus befehl() und nicht aus einer zweiten Bauart daneben.
+        self.assertEqual(["ARGV --ps4ffpsc doctor", "fertig"], zeilen)
+        self.assertEqual(3, rc, "Rueckgabewert geht verloren")
+        self.assertEqual([{"percent": 42}], fortschritt)
+        self.assertEqual([tmp], gefragte_ordner)
+        # Fortschrittszeilen sind Steuerung, keine Protokollausgabe.
+        self.assertNotIn(werkzeug.PROGRESS_PREFIX, gesammelt)
+
+
+class VerklemmungTests(unittest.TestCase):
+    """Eine Ausnahme im Arbeitsfaden darf das Fenster nicht totlegen.
+
+    Am 04.09.2026 fiel ``lauf()`` mit einem ``UnboundLocalError`` aus. Die
+    Ursache ist behoben (siehe :class:`AufrufwegTests`), die Folge war aber
+    eine eigene: Beide ``_arbeit()``-Rümpfe setzten ``laeuft["aktiv"]`` erst
+    **nach** dem Aufruf zurück, ohne ``finally``. Flog dazwischen etwas,
+    blieb das Kennzeichen für immer auf ``True`` - und beide Wächter (in
+    ``_einlesen`` und ``_erstellen``) lehnen danach jeden weiteren Druck
+    stillschweigend ab. Das Fenster ist dann tot, nur „Schließen" geht noch.
+
+    Das galt für **jede** Ausnahme, nicht nur die eine behobene. Geprüft
+    wird deshalb die Absicherung selbst, am Syntaxbaum: Beide Rümpfe müssen
+    in einem ``try`` liegen, dessen ``finally`` das Kennzeichen freigibt.
+    """
+
+    QUELLE = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import ast
+
+        cls.ast = ast
+        cls.baum = ast.parse(cls.QUELLE.read_text(encoding="utf-8", errors="replace"))
+
+    def _arbeitsrümpfe(self):
+        """Die ``_arbeit()``-Funktionen aus dem PS4-Fenster, sonst keine.
+
+        Über die Fenstermethode statt über ``ast.walk`` auf der ganzen
+        Datei: ``_arbeit`` ist ein verbreiteter Name, und die Prüfung soll
+        nicht an einem fremden Fenster hängenbleiben.
+        """
+        ast = self.ast
+        klasse = next(k for k in self.baum.body
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        fenster = next(k for k in klasse.body
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_show_ps4_pkg_converter")
+        return [f for f in ast.walk(fenster)
+                if isinstance(f, ast.FunctionDef) and f.name == "_arbeit"]
+
+    @staticmethod
+    def _gibt_frei(block, ast) -> bool:
+        """Steht in diesem Block ``laeuft["aktiv"] = False``?"""
+        for k in ast.walk(ast.Module(body=list(block), type_ignores=[])):
+            if not isinstance(k, ast.Assign):
+                continue
+            for ziel in k.targets:
+                if (isinstance(ziel, ast.Subscript)
+                        and getattr(ziel.value, "id", "") == "laeuft"
+                        and getattr(ziel.slice, "value", None) == "aktiv"
+                        and k.value.value is False):
+                    return True
+        return False
+
+    def test_es_gibt_ueberhaupt_zwei_arbeitsfaeden(self) -> None:
+        """Ohne das liefe die Prüfung unten leer und meldete Erfolg."""
+        self.assertEqual(
+            2, len(self._arbeitsrümpfe()),
+            "Erwartet werden die zwei Arbeitsfaeden (Einlesen, Erstellen) - "
+            "die Auswertung greift nicht mehr.")
+
+    def test_jeder_arbeitsfaden_gibt_im_finally_frei(self) -> None:
+        ast = self.ast
+        for funktion in self._arbeitsrümpfe():
+            with self.subTest(zeile=funktion.lineno):
+                self.assertEqual(
+                    1, len(funktion.body),
+                    "Der Rumpf in Zeile %d liegt nicht als Ganzes im try."
+                    % funktion.lineno)
+                versuch = funktion.body[0]
+                self.assertIsInstance(
+                    versuch, ast.Try,
+                    "Der Rumpf in Zeile %d steht ungeschuetzt." % funktion.lineno)
+                self.assertTrue(
+                    self._gibt_frei(versuch.finalbody, ast),
+                    'In Zeile %d gibt kein finally laeuft["aktiv"] frei - eine '
+                    "Ausnahme legt das Fenster dauerhaft lahm."
+                    % funktion.lineno)
+
+    def test_die_pruefung_wuerde_einen_verstoss_melden(self) -> None:
+        """Gegenprobe: der alte Aufbau muss durchfallen."""
+        ast = self.ast
+        alt = ast.parse(
+            "def _arbeit():\n"
+            "    rc = tuwas()\n"
+            '    laeuft["aktiv"] = False\n').body[0]
+        self.assertNotIsInstance(alt.body[0], ast.Try)
+        neu = ast.parse(
+            "def _arbeit():\n"
+            "    try:\n"
+            "        rc = tuwas()\n"
+            "    finally:\n"
+            '        laeuft["aktiv"] = False\n').body[0]
+        self.assertTrue(self._gibt_frei(neu.body[0].finalbody, ast))
+        # Ein finally, das etwas anderes tut, zaehlt nicht.
+        leer = ast.parse(
+            "def _arbeit():\n"
+            "    try:\n"
+            "        rc = tuwas()\n"
+            "    finally:\n"
+            "        aufraeumen()\n").body[0]
+        self.assertFalse(self._gibt_frei(leer.body[0].finalbody, ast))
+
+    def test_die_meldungen_gibt_es_in_beiden_sprachen(self) -> None:
+        """Sonst stünde im Fenster der Schlüsselname."""
+        for name in ("ps4pkg.status_scan_crashed", "ps4pkg.status_build_crashed"):
+            with self.subTest(schluessel=name):
+                self.assertIn(name, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[name].get(sprache, "").strip())
+                    self.assertIn("{error}", STRINGS[name][sprache])
+
+
 class InspectAbsturzTests(unittest.TestCase):
     """Der zweite behobene Fehler: ein Absturz galt als „PKG nicht unterstützt".
 
