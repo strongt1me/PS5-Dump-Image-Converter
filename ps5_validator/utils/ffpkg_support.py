@@ -122,12 +122,38 @@ def default_build_profile() -> FfpkgBuildProfile:
 
 
 def primary_newfs_profile() -> FfpkgNewfsProfile:
-    """Liefert das 64-KiB-``newfs -D``-Profil des primären Referenzablaufs."""
+    """Liefert das 64-KiB-``newfs -D``-Profil des primären Referenzablaufs.
+
+    **Sektorgröße 4096, nicht 512.** ShadowMount+ hängt UFS-Abbilder über sein
+    Standard-Backend LVD mit 4096-Byte-Sektoren ein (``lvd_ufs_sector_size=4096``);
+    seine Anleitung nennt für .ffpkg ausdrücklich
+    ``newfs -O 2 -b 65536 -f 65536 -m 0 -S 4096``.
+
+    Bis v1.9.5 stand hier 512. Am 04.09.2026 an echter Hardware gemessen:
+    Ein damit gebautes .ffpkg **hängt sauber ein** - Superblock gelesen,
+    ``fsck_ufs`` fehlerfrei, Dateizahl bestätigt, Dateisystemwerte plausibel -
+    und der Titel stürzt **eine Sekunde nach dem Start** ab. Im Protokoll der
+    Konsole::
+
+        [IMG][LVD] attach try: ver=0 sec=4096 sec2=4096
+        [IMG][LVD] Mounted (ufs) /dev/lvd1 -> ...
+        [GAME] started: PPSA19015 pid=137
+        [MDBG] PPSA19015 crashed before kstuff auto-pause
+
+    Dasselbe Spiel mit derselben Integration als exFAT-in-.ffpfsc lief 59
+    Sekunden. Der Unterschied war allein das Dateisystem.
+
+    **Ein gelungenes Einhängen beweist nichts.** Es zeigt nur, dass der
+    Superblock gelesen wurde - nicht, dass Dateidaten an der richtigen Stelle
+    ankommen. Genau dieses Fehlerbild beschreibt auch der MkPFS-Entwickler für
+    den rohen PFS-Weg: "the image is created and verification passes, but the
+    console reads the files incorrectly".
+    """
     return FfpkgNewfsProfile(
         identifier="newfs-64k-reference",
         block_size=65536,
         fragment_size=65536,
-        sector_size=512,
+        sector_size=4096,
         min_free_percent=0,
         inode_density=262144,
     ).normalized()

@@ -1,14 +1,19 @@
 """Regressionstests für das wählbare Hintergrundbild (Einstellungen-Dialog).
 
 Deckt ab:
-  1. Das Blenden mit der Design-Hintergrundfarbe nutzt genau BG_IMAGE_OPACITY.
-  2. _apply_custom_background_image liest ein beliebiges Pillow-Format,
+  1. _apply_custom_background_image liest ein beliebiges Pillow-Format,
      wandelt es intern nach RGB um, speichert den Pfad dauerhaft und
      aktualisiert den Cache; ungültige Dateien liefern False statt zu crashen.
-  3. _load_bg_image_cache bevorzugt einen gespeicherten eigenen Pfad vor dem
+  2. _load_bg_image_cache bevorzugt einen gespeicherten eigenen Pfad vor dem
      eingebetteten Standardbild und ignoriert einen nicht mehr vorhandenen Pfad.
-  4. Die dezente Kartentönung (bg_card/console_bg) für Bereiche, die das
-     Hintergrundbild selbst nie zeigen (Quelle-Karte, Protokollfenster).
+  3. Die Aufteilung in Haupt- und Seitenleistenbilder, der Speichern-Knopf
+     und das formatfüllende Skalieren.
+
+Was hier **nicht** mehr steht: Die fünf Effektschichten auf dem Bild
+(Helligkeit, Kontrast, Einmischung der Designfarbe, Deckkraft unter Karten
+und Knopfleiste, Kartentönung) sind auf Wunsch des Nutzers ausgebaut. Das
+Bild wird gezeigt, nicht nachgebildet. Dass sie nicht zurückkommen, sichert
+``KeineBildeffekteTests`` weiter unten.
 """
 from __future__ import annotations
 
@@ -20,7 +25,7 @@ from tempfile import TemporaryDirectory
 from PIL import Image
 
 import PS5ImageConverter_Pro_FINAL_revised as mod
-from PS5ImageConverter_Pro_FINAL_revised import BG_CARD_TINT_OPACITY, BG_IMAGE_OPACITY, PS5ConverterGUI
+from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
 
 
 def _make_gui() -> PS5ConverterGUI:
@@ -33,24 +38,6 @@ def _make_gui() -> PS5ConverterGUI:
     gui._refresh_bg_label = lambda: None  # Tkinter-Rendering ist nicht Gegenstand dieses Tests.
     gui._bg_image_cache = None
     return gui
-
-
-class BlendBgImageTests(unittest.TestCase):
-    def test_blend_uses_configured_opacity(self) -> None:
-        gui = _make_gui()
-        gui._COLORS = {"bg_main": "#000000"}
-        source = Image.new("RGB", (4, 4), "#FFFFFF")
-
-        blended = gui._blend_bg_image_with_theme(source)
-
-        # Weiß (255) geblendet mit Schwarz (0) bei BG_IMAGE_OPACITY ergibt
-        # ungefaehr 255 * BG_IMAGE_OPACITY pro Kanal (PIL.Image.blend-Formel).
-        # PILs interne C-Rundung weicht von Pythons round() gelegentlich um
-        # genau 1 ab (z. B. bei .75-Bruchteilen) -- Toleranz statt Exaktheit.
-        expected = 255 * BG_IMAGE_OPACITY
-        pixel = blended.getpixel((0, 0))
-        for channel in pixel:
-            self.assertLessEqual(abs(channel - expected), 1, f"Kanal {channel} weicht zu stark von {expected} ab")
 
 
 class ApplyCustomBackgroundImageTests(unittest.TestCase):
@@ -118,68 +105,6 @@ class LoadBgImageCacheTests(unittest.TestCase):
         # solange dieses vorhanden ist, darf der Cache nicht None sein.
         if mod._BG_IMAGE:
             self.assertIsNotNone(gui._bg_image_cache)
-
-
-class CardTintTests(unittest.TestCase):
-    def test_average_image_rgb_on_solid_color(self) -> None:
-        img = Image.new("RGB", (10, 10), (10, 20, 30))
-        self.assertEqual(PS5ConverterGUI._average_image_rgb(img), (10, 20, 30))
-
-    def test_blend_hex_color_matches_manual_math(self) -> None:
-        result = PS5ConverterGUI._blend_hex_color("#101010", (200, 100, 50), 0.5)
-        # 0x10 = 16; (16*0.5 + 200*0.5, 16*0.5 + 100*0.5, 16*0.5 + 50*0.5) = (108, 58, 33)
-        self.assertEqual(result, "#6C3A21")
-
-    def test_apply_card_tint_noop_without_bg_image(self) -> None:
-        gui = _make_gui()
-        gui._COLORS = {"bg_main": "#101418", "bg_card": "#1A1E24", "console_bg": "#0D1013"}
-        gui._bg_image_cache = None
-
-        gui._apply_card_tint_from_bg_image()
-
-        self.assertEqual(gui._COLORS["bg_card"], "#1A1E24")
-        self.assertEqual(gui._COLORS["console_bg"], "#0D1013")
-
-    def test_apply_card_tint_shifts_colors_toward_image_average(self) -> None:
-        gui = _make_gui()
-        gui._COLORS = {"bg_main": "#101418", "bg_card": "#000000", "console_bg": "#000000"}
-        gui._bg_image_cache = Image.new("RGB", (10, 10), (0, 255, 0))  # kraeftiges Gruen
-
-        gui._apply_card_tint_from_bg_image()
-
-        # Von reinem Schwarz aus muss die Toenung sichtbar Richtung Gruen wandern,
-        # aber wegen BG_CARD_TINT_OPACITY (dezent) nicht bis zum vollen Gruenwert.
-        # Karten und Protokollflaeche haben seit v1.8.60 getrennte
-        # Deckkraft: Die Protokollflaeche ist gross und dauerhaft sichtbar,
-        # was bei einer Karte dezent wirkt, ist dort zu wenig.
-        #
-        # Seit v1.9.0 haengt die Protokollflaeche am Schieberegler in den
-        # Einstellungen; die Konstante ist nur noch seine Vorgabe. Gerechnet
-        # wird deshalb mit dem Reglerwert - sonst weicht das Ergebnis um
-        # 1/255 ab, weil ``1.0 - 0.7`` nicht exakt 0.3 ist.
-        from PS5ImageConverter_Pro_FINAL_revised import REGLER_VORGABEN
-
-        erwartet = {"bg_card": BG_CARD_TINT_OPACITY,
-                    "console_bg": REGLER_VORGABEN["protokoll_deckkraft"] / 100}
-        for key, anteil in erwartet.items():
-            r, g, b = int(gui._COLORS[key][1:3], 16), int(gui._COLORS[key][3:5], 16), int(gui._COLORS[key][5:7], 16)
-            self.assertEqual(r, 0)
-            self.assertEqual(g, round(255 * anteil), key)
-            self.assertEqual(b, 0)
-            self.assertLess(g, 255 // 2,
-                            "Toenung soll dezent bleiben, nicht das Bild ueberdecken")
-
-    def test_apply_card_tint_live_handles_missing_console_view(self) -> None:
-        gui = _make_gui()
-        gui._COLORS = {"bg_main": "#101418", "bg_card": "#000000", "console_bg": "#000000"}
-        gui._bg_image_cache = Image.new("RGB", (10, 10), (0, 255, 0))
-        style_calls: list[bool] = []
-        gui._setup_styles = lambda: style_calls.append(True)
-
-        gui._apply_card_tint_live()  # darf ohne console_view/echtes Tk nicht crashen
-
-        self.assertEqual(len(style_calls), 1)
-        self.assertNotEqual(gui._COLORS["bg_card"], "#000000")
 
 
 class GetrennteBilderlistenTests(unittest.TestCase):
@@ -265,50 +190,6 @@ class GetrennteBilderlistenTests(unittest.TestCase):
             with Image.open(pfad) as bild:
                 breite, hoehe = bild.size
             self.assertGreater(hoehe, breite, f"{os.path.basename(pfad)} ist quer")
-
-
-class SidebarDeckkraftTests(unittest.TestCase):
-    """Das Sidebar-Bild tritt weiter zurück als das Bild im Hauptbereich.
-
-    Grund: Im Hauptbereich decken Karten (QUELLE, ZIELFORMAT, Protokoll) den
-    größten Teil des Bildes ab. Die Seitenleiste hat keine solchen Flächen –
-    dasselbe Mischverhältnis wirkt dort deutlich kräftiger.
-    """
-
-    def test_sidebar_ist_durchsichtiger(self):
-        self.assertLess(mod.SIDEBAR_BG_IMAGE_OPACITY, BG_IMAGE_OPACITY)
-        self.assertAlmostEqual(mod.SIDEBAR_BG_IMAGE_OPACITY, 0.50, places=2)
-
-    # Image.blend schneidet den Nachkommateil ab, statt zu runden - deshalb
-    # wird auf ein Pixel genau verglichen, nicht exakt.
-    def test_blende_nimmt_eigene_deckkraft(self):
-        gui = _make_gui()
-        bild = Image.new("RGB", (4, 4), (255, 255, 255))
-        gui._COLORS = dict(gui._COLORS, bg_main="#000000")
-        voll = gui._blend_bg_image_with_theme(bild, 1.0).getpixel((0, 0))
-        halb = gui._blend_bg_image_with_theme(bild, 0.5).getpixel((0, 0))
-        self.assertEqual(voll, (255, 255, 255))
-        self.assertAlmostEqual(halb[0], 255 * 0.5, delta=1)
-
-    def test_ohne_angabe_gilt_der_hauptwert(self):
-        gui = _make_gui()
-        bild = Image.new("RGB", (4, 4), (255, 255, 255))
-        gui._COLORS = dict(gui._COLORS, bg_main="#000000")
-        gemessen = gui._blend_bg_image_with_theme(bild).getpixel((0, 0))[0]
-        self.assertAlmostEqual(gemessen, 255 * BG_IMAGE_OPACITY, delta=1)
-
-    def test_sidebar_cache_nutzt_den_eigenen_wert(self):
-        # Geprueft wird die Absicht, nicht die Schreibweise: Die Sidebar muss
-        # einen eigenen Wert uebergeben. Seit v1.8.52 waehlt sie zwischen dem
-        # dunklen und dem hellen Wert, reicht ihn aber weiterhin als zweites
-        # Argument herein - ohne das gaelte der Hauptwert, und die Sidebar
-        # waere deutlich zu kraeftig.
-        quelle = Path(mod.__file__).read_text(encoding="utf-8")
-        stelle = quelle.index("def _load_sidebar_bg_image_cache")
-        block = quelle[stelle:stelle + 1200]
-        self.assertIn("SIDEBAR_BG_IMAGE_OPACITY", block)
-        self.assertIn("SIDEBAR_BG_IMAGE_OPACITY_LIGHT", block)
-        self.assertRegex(block, r"_blend_bg_image_with_theme\(img,\s*\w+\)")
 
 
 class SpeichernKnopfTests(unittest.TestCase):
@@ -510,64 +391,6 @@ class StandardHintergrundTests(unittest.TestCase):
         self.assertIn('self._save_setting("background_image_path", "")', quelle)
 
 
-class HellesDesignTests(unittest.TestCase):
-    """Im hellen Design darf das dunkle Hintergrundbild nicht dominieren.
-
-    Bis v1.8.51 galt BG_IMAGE_OPACITY fuer jedes Design. Im hellen blieb das
-    (typischerweise dunkle) Bild damit zu 85 % stehen, waehrend Karten und
-    Knoepfe hell sind - das Fenster zerfiel sichtbar in zwei Haelften, und
-    Beschriftungen sassen je nach Stelle auf hellem oder dunklem Grund.
-    """
-
-    class _Attrappe:
-        """Nur die Teile, die _blend_bg_image_with_theme wirklich anfasst."""
-
-        _blend_bg_image_with_theme = mod.PS5ConverterGUI._blend_bg_image_with_theme
-
-        def __init__(self, theme, bg_main):
-            self._current_theme = theme
-            self._COLORS = {"bg_main": bg_main}
-
-    @staticmethod
-    def _helligkeit(farbe):
-        r, g, b = farbe
-        return (r * 299 + g * 587 + b * 114) // 1000
-
-    def _gemischt(self, theme, bg_main):
-        from PIL import Image
-
-        dunkles_bild = Image.new("RGB", (8, 8), (12, 14, 20))
-        attrappe = self._Attrappe(theme, bg_main)
-        return attrappe._blend_bg_image_with_theme(dunkles_bild).getpixel((0, 0))
-
-    def test_heller_grund_bleibt_hell(self):
-        # Der Kartengrund im hellen Design ist #FFFFFF. Liegt der Bildgrund
-        # darunter bei Helligkeit 44, sieht das Fenster aus wie zwei Programme.
-        farbe = self._gemischt("hell", "#E4EAF3")
-        self.assertGreater(self._helligkeit(farbe), 150,
-                           f"Hintergrund im hellen Design zu dunkel: {farbe}")
-
-    def test_dunkles_design_unveraendert(self):
-        farbe = self._gemischt("dunkel", "#05070A")
-        self.assertLess(self._helligkeit(farbe), 40,
-                        f"Hintergrund im dunklen Design zu hell: {farbe}")
-
-    def test_eigene_deckkraft_hat_vorrang(self):
-        # Die Sidebar reicht ihren eigenen Wert herein - der darf nicht vom
-        # Design ueberschrieben werden.
-        from PIL import Image
-
-        bild = Image.new("RGB", (8, 8), (255, 255, 255))
-        attrappe = self._Attrappe("hell", "#000000")
-        farbe = attrappe._blend_bg_image_with_theme(bild, 1.0).getpixel((0, 0))
-        self.assertEqual(farbe, (255, 255, 255))
-
-    def test_konstanten_vorhanden(self):
-        self.assertLess(mod.BG_IMAGE_OPACITY_LIGHT, mod.BG_IMAGE_OPACITY)
-        self.assertLess(mod.SIDEBAR_BG_IMAGE_OPACITY_LIGHT,
-                        mod.SIDEBAR_BG_IMAGE_OPACITY)
-
-
 import io as _io_pruefung
 
 
@@ -653,47 +476,6 @@ class FormatfuellendTests(unittest.TestCase):
                          "Das Hintergrundbild wird im Vollbild wieder uebersprungen.")
 
 
-class KnopfleisteDeckkraftTests(unittest.TestCase):
-    """Die Knopfleiste zeigt das Hintergrundbild nur gedaempft.
-
-    Gemeldet am 19.08.2026 mit einem Bildausschnitt der Leiste, in der
-    "STARTEN", "ABBRECHEN" und die Groessenanzeige stehen: Das Motiv war
-    dort unveraendert zu sehen und wirkte neben der Karte darueber wie
-    gespiegelt. Wie bei der Protokollflaeche traegt jetzt die Flaechenfarbe.
-    """
-
-    def test_konstante_steht_auf_siebzig_prozent(self):
-        self.assertAlmostEqual(mod.ACTION_BAR_DECKKRAFT, 0.70, places=4)
-
-    def test_flaechenfarbe_traegt(self):
-        gui = _make_gui()
-        gui._COLORS = {"bg_main": "#000000"}
-        quelle = Image.new("RGB", (4, 4), "#FFFFFF")
-
-        ergebnis = gui._blend_bg_image_for_action_bar(quelle)
-
-        # Schwarze Flaeche, weisses Bild: Uebrig bleiben die 30 %, die das
-        # Bild noch beitragen darf.
-        erwartet = 255 * (1.0 - mod.ACTION_BAR_DECKKRAFT)
-        for kanal in ergebnis.getpixel((0, 0)):
-            self.assertLessEqual(abs(kanal - erwartet), 1,
-                                 "Kanal %d weicht zu stark von %.1f ab" % (kanal, erwartet))
-
-    def test_jede_zeichenstelle_mischt(self):
-        # Es gibt zwei Stellen, die das Bild der Leiste setzen. Die erste
-        # Fassung dieses Fixes traf nur eine davon -- beim Vergroessern des
-        # Fensters waere das Motiv zurueckgekommen.
-        zeilen = _io_pruefung.open(mod.__file__, encoding="utf-8").read().splitlines()
-        stellen = [i for i, z in enumerate(zeilen)
-                   if "action_bar_bg_photo = ImageTk.PhotoImage(" in z]
-        self.assertGreaterEqual(len(stellen), 2,
-                                "Weniger Zeichenstellen als erwartet -- Test pruefen.")
-        for i in stellen:
-            umfeld = " ".join(zeilen[max(0, i - 3):i + 3])
-            self.assertIn("_blend_bg_image_for_action_bar", umfeld,
-                          "Zeile %d setzt das Bild ungemischt." % (i + 1))
-
-
 class FlaechenbildMerkerTests(unittest.TestCase):
     """Der Merker vor ``_bild_fuellen`` darf am Ergebnis nichts aendern.
 
@@ -748,3 +530,79 @@ class FlaechenbildMerkerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class FarbrechnungTests(unittest.TestCase):
+    """``_blend_hex_color`` bleibt - es ist reine Farbrechnung ohne Bild.
+
+    Zwei Stellen brauchen es weiterhin: die Fuellung der Eingabefelder
+    (Karte in Richtung Fensterhintergrund verschoben) und die
+    Fokus-Hervorhebung. Beide haben mit dem Hintergrundbild nichts zu tun -
+    beim Ausbau der Bildeffekte waere der Helfer sonst mitgegangen.
+    """
+
+    def test_blend_hex_color_matches_manual_math(self) -> None:
+        result = PS5ConverterGUI._blend_hex_color("#101010", (200, 100, 50), 0.5)
+        # 0x10 = 16; (16*0.5 + 200*0.5, 16*0.5 + 100*0.5, 16*0.5 + 50*0.5) = (108, 58, 33)
+        self.assertEqual(result, "#6C3A21")
+
+
+class KeineBildeffekteTests(unittest.TestCase):
+    """Die ausgebauten Effekte duerfen nicht zurueckkehren.
+
+    Fuenf Schichten lagen auf dem Hintergrundbild: Helligkeit und Kontrast
+    ueber PIL, eine Einmischung der Designfarbe, je eine eigene Deckkraft
+    unter Karten und Knopfleiste, und eine Toenung der Kartenfarben zur
+    Durchschnittsfarbe des Bildes. Zusammen sorgten sie dafuer, dass nie das
+    gewaehlte Bild zu sehen war, sondern dessen Nachbildung - und drei
+    Regler wirkten auf dieselbe Stelle.
+
+    Geprueft wird die **Abwesenheit**, und zwar an drei Merkmalen: den
+    Methoden, den Konstanten und dem Aufruf, der die Einmischung machte.
+    """
+
+    ENTFERNTE_METHODEN = (
+        "_blend_bg_image_with_theme",
+        "_blend_bg_image_for_card",
+        "_blend_bg_image_for_action_bar",
+        "_bild_regler_anwenden",
+        "_apply_card_tint_from_bg_image",
+        "_average_image_rgb",
+        "_regler",
+        "_regler_anteil",
+        "_regler_uebernehmen",
+    )
+
+    ENTFERNTE_KONSTANTEN = (
+        "BG_IMAGE_OPACITY", "BG_IMAGE_OPACITY_LIGHT",
+        "SIDEBAR_BG_IMAGE_OPACITY", "SIDEBAR_BG_IMAGE_OPACITY_LIGHT",
+        "BG_CARD_TINT_OPACITY", "BG_CARD_IMAGE_OPACITY",
+        "BG_CARD_IMAGE_OPACITY_LIGHT", "ACTION_BAR_DECKKRAFT",
+        "CONSOLE_BG_DECKKRAFT", "CONTENT_CAPTION_BACKDROP_OPACITY",
+        "REGLER_VORGABEN", "REGLER_GRENZEN",
+    )
+
+    def test_keine_der_methoden_ist_zurueck(self) -> None:
+        zurueck = [m for m in self.ENTFERNTE_METHODEN
+                   if hasattr(PS5ConverterGUI, m)]
+        self.assertEqual([], zurueck, "Wieder da: %s" % zurueck)
+
+    def test_keine_der_konstanten_ist_zurueck(self) -> None:
+        zurueck = [k for k in self.ENTFERNTE_KONSTANTEN if hasattr(mod, k)]
+        self.assertEqual([], zurueck, "Wieder da: %s" % zurueck)
+
+    def test_das_bild_wird_nicht_mehr_eingemischt(self) -> None:
+        """``Image.blend`` war das Werkzeug aller fuenf Schichten."""
+        quelle = Path(mod.__file__).read_text(encoding="utf-8", errors="replace")
+        self.assertNotIn("Image.blend(", quelle,
+                         "Es wird wieder ein Bild eingemischt.")
+
+    def test_pil_effektmodule_sind_nicht_mehr_eingebunden(self) -> None:
+        """Ohne Helligkeit und Kontrast braucht es ImageEnhance nicht mehr."""
+        quelle = Path(mod.__file__).read_text(encoding="utf-8", errors="replace")
+        self.assertNotIn("ImageEnhance", quelle)
+        self.assertNotIn("ImageStat", quelle)
+
+    def test_die_pruefung_wuerde_eine_rueckkehr_melden(self) -> None:
+        """Gegenprobe - sonst pruefte sie nur, dass Erfundenes fehlt."""
+        self.assertTrue(hasattr(PS5ConverterGUI, "_blend_hex_color"),
+                        "Der Farbhelfer fehlt - dann misst der Test oben nichts.")

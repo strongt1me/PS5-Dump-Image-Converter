@@ -65,7 +65,7 @@ from zipfile import ZipFile
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageStat, ImageTk
+from PIL import Image, ImageDraw, ImageFilter, ImageTk
 
 try:
     # Optionale Drag & Drop-Unterstützung (Quelle/Ziel/Temp per Dateimanager ziehen).
@@ -107,6 +107,7 @@ from ps5_validator.utils.self_reader import (
     SelfParseError,
     read_self,
 )
+from ps5_validator.utils import ampr_updates
 from ps5_validator.utils.dump_rename import (
     build_presets as dump_rename_presets,
     compute_confidence as dump_rename_confidence,
@@ -204,108 +205,24 @@ _LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS", getattr(Image
 #   Linux/macOS: "sizing" (universell verfuegbar)
 _RESIZE_CURSOR = "size_nw_se" if sys.platform == "win32" else "sizing"
 
-# Deckkraft, mit der das Hintergrundbild (Standard oder vom Nutzer gewaehlt)
-# ueber die Design-Hintergrundfarbe geblendet wird (0.0 = unsichtbar, 1.0 = voll deckend).
-# Bewusst deutlich sichtbar gewaehlt: Text/Bedienelemente sitzen auf eigenen,
-# separat deckenden Karten-Hintergruenden (bg_card), nicht direkt auf dem
-# geblendeten Bild - hoehere Werte gehen hier nicht zu Lasten der Lesbarkeit.
-# Bei niedrigeren Werten (z.B. 0.30) ist ein dunkles Bild vor dem dunklen
-# Standard-Theme (~RGB 5/7/10) praktisch nicht mehr vom Auge unterscheidbar.
-BG_IMAGE_OPACITY = 0.85
-
-# Deckkraft des Sidebar-Hintergrundbilds. Bewusst niedriger als BG_IMAGE_OPACITY:
-# Im Hauptbereich liegen Karten (QUELLE, ZIELFORMAT, Protokoll) ueber dem Bild und
-# decken den groessten Teil ab - dort bleibt von 0.85 wenig uebrig. Die Sidebar
-# hat keine solchen Flaechen, das Bild steht dort ueber die volle Hoehe frei und
-# wirkt bei gleichem Wert deutlich kraeftiger als im Hauptbereich. Mit 0.50
-# treten beide Bereiche gleich zurueck.
-SIDEBAR_BG_IMAGE_OPACITY = 0.50
-
-# Deckkraft fuer die dezente Kartentoenung (QUELLE/ZIELFORMAT-Karte, Protokoll-
-# fenster usw.): Diese Bereiche haben eine eigene, deckende Hintergrundfarbe und
-# zeigen daher nie das Hintergrundbild selbst - nur eine leichte, zu dessen
-# Durchschnittsfarbe passende Toenung, damit sie farblich nicht isoliert wirken.
-# Bewusst niedrig, da hier tatsaechlich Text/Eingabefelder liegen.
-BG_CARD_TINT_OPACITY = 0.18
-
-# Deckkraft der Protokollflaeche ueber dem Hintergrundbild: 0.70 heisst,
-# 30 % des Bildes scheinen durch. Getrennt von BG_CARD_TINT_OPACITY, weil
-# die Protokollflaeche gross und dauerhaft sichtbar ist - was bei einer
-# Karte dezent wirkt, ist hier entweder zu viel oder zu wenig.
-#
-# Tk kann ein Textfeld nicht wirklich durchsichtig machen. Erreicht wird
-# der Eindruck durch Mischen der Flaechenfarbe mit dem Bild - dieselbe
-# Technik wie bei den Karten und den eingebrannten Beschriftungen.
-CONSOLE_BG_DECKKRAFT = 0.70
-
-# Dasselbe fuer die Knopfleiste unter der Karte (STARTEN/ABBRECHEN und die
-# Groessenanzeige). Sie hat das Bild bisher unveraendert durchscheinen
-# lassen - dadurch tauchte das Motiv dort ein zweites Mal auf und wirkte
-# wie gespiegelt. 0.70 heisst: 30 % des Bildes bleiben sichtbar.
-ACTION_BAR_DECKKRAFT = 0.70
-
-# Deckkraft fuer das echte Hintergrundbild INNERHALB der QUELLE-/ZIELformat-Karte
-# (nicht nur eine Farbtoenung wie BG_CARD_TINT_OPACITY, sondern das tatsaechliche
-# Bild, auf die Kartengroesse skaliert, hinter den Eingabefeldern).
-#
-# Bis v1.8.62 stand hier 0.50. Zusammen mit der Aufhellung der Texte auf
-# Wunsch um 10 Punkte gesenkt: Die Karte traegt jetzt zu 60 % ihre eigene
-# Farbe, das Bild scheint zu 40 % durch. Weniger Motiv hinter der Schrift,
-# das Bild bleibt aber deutlich sichtbar - der bestaetigte Grundzustand.
-BG_CARD_IMAGE_OPACITY = 0.40
-# Deckkraft der Flaeche hinter den Beschriftungen im Inhaltsbereich
-# (Kopfzeile, Untertitel, Status, Groessenangabe). 0.0 = voll
-# durchsichtig, 1.0 = deckend. Hebt den Text vom Hintergrundbild ab.
-CONTENT_CAPTION_BACKDROP_OPACITY = 0.0
-
-# Im hellen Design ("hell") ist das (typischerweise dunkle) Hintergrundbild bei
-# derselben Deckkraft zu dominant: Die eigentlich weisse Karte wirkt dann
-# graeulich-schmutzig statt hell. Deshalb im hellen Design deutlich schwaecher
-# einmischen; Dunkel/Mittel bleiben bei BG_CARD_IMAGE_OPACITY.
-BG_CARD_IMAGE_OPACITY_LIGHT = 0.18
-
 # ---------------------------------------------------------------------------
-# Was in den Einstellungen am Schieberegler haengt
+# Hintergrundbild: keine Effekte mehr
 #
-# Bis v1.9.0 waren diese Werte fest verdrahtet. Die Vorgaben hier sind genau
-# die alten Zahlen - wer nichts verstellt, sieht denselben Stand wie vorher.
+# Bis v1.9.5 standen hier zehn Deckkraft-Konstanten und zwei Reglertabellen.
+# Sie steuerten fuenf Schichten, die alle auf dasselbe hinausliefen: Das
+# gewaehlte Bild wurde nicht gezeigt, sondern nachgebildet - mit der
+# Designfarbe verblendet, in Helligkeit und Kontrast verschoben, unter
+# Karten und Knopfleiste noch einmal anders eingemischt, und die Karten
+# selbst zur Durchschnittsfarbe des Bildes hin getoent.
 #
-# "Deckkraft" meint jeweils, wie stark das Hintergrundbild durch die Flaeche
-# scheint: 0 = die Flaeche traegt allein, 100 = nur noch Bild. Helligkeit und
-# Kontrast sind Prozent auf das Ausgangsbild, 100 laesst es unveraendert.
+# Tk kann keine Flaeche wirklich durchsichtig machen; der Eindruck entstand
+# durch Mischen von Farbe und Bild. Genau diese Nachbildung liess sich nicht
+# vorhersagbar einstellen - drei Regler wirkten auf dieselbe Stelle.
+#
+# Ausgebaut auf Wunsch des Nutzers, um von einem klaren Nullpunkt aus neu
+# zu konfigurieren: Das Hintergrundbild wird jetzt unveraendert angezeigt,
+# und keine Flaeche taeuscht Transparenz vor.
 # ---------------------------------------------------------------------------
-REGLER_VORGABEN: dict[str, int] = {
-    "karte_deckkraft":     int(round(BG_CARD_IMAGE_OPACITY * 100)),
-    "leiste_deckkraft":    int(round((1.0 - ACTION_BAR_DECKKRAFT) * 100)),
-    "protokoll_deckkraft": int(round((1.0 - CONSOLE_BG_DECKKRAFT) * 100)),
-    "bg_helligkeit":       100,
-    "bg_kontrast":         100,
-    "sidebar_helligkeit":  100,
-    "sidebar_kontrast":    100,
-}
-
-#: Zulaessiger Bereich je Regler. Deckkraft geht bis 100, Helligkeit und
-#: Kontrast bis 200 - darunter wird das Bild dunkler bzw. flauer, darueber
-#: heller bzw. haerter.
-REGLER_GRENZEN: dict[str, tuple[int, int]] = {
-    "karte_deckkraft":     (0, 100),
-    "leiste_deckkraft":    (0, 100),
-    "protokoll_deckkraft": (0, 100),
-    "bg_helligkeit":       (20, 200),
-    "bg_kontrast":         (20, 200),
-    "sidebar_helligkeit":  (20, 200),
-    "sidebar_kontrast":    (20, 200),
-}
-
-# Dieselbe Ueberlegung gilt fuer die grossen Flaechen. Bis v1.8.51 galten
-# BG_IMAGE_OPACITY und SIDEBAR_BG_IMAGE_OPACITY fuer jedes Design - im hellen
-# blieb das dunkle Bild damit zu 85 % stehen, waehrend Karten und Knoepfe hell
-# sind. Das Ergebnis war ein Fenster aus zwei Haelften: helle Bedienelemente
-# vor dunklem Grund, und Beschriftungen, die je nach Stelle auf hellem oder
-# dunklem Untergrund sassen. Im hellen Design mischt sich das Bild deshalb nur
-# noch schwach ein und bleibt das, was es sein soll - ein Wasserzeichen.
-BG_IMAGE_OPACITY_LIGHT = 0.22
-SIDEBAR_BG_IMAGE_OPACITY_LIGHT = 0.16
 
 # ---------------------------------------------------------------------------
 # Logging konfigurieren
@@ -679,18 +596,59 @@ MKPFS_BACKEND: str = "zlib-ng"
 # Die Bauform eines Containers: was zwischen Huelle und Spieldateien liegt.
 #
 # "exfat"  Der Ordner wird in ein exFAT-Abbild gewickelt und das in einem Zug
-#          in den Container komprimiert - ein einziger "pack folder"-Aufruf.
-#          Die Anleitung der Engine nennt das "the most stable format for
-#          compressed game backups", und es ist der schnellere Weg: Am
-#          03.09.2026 an 200 MB gemessen 1,3 s gegen 6,3 s, weil die Daten
-#          nur einmal geschrieben werden statt zweimal.
+#          in den Container komprimiert - ein einziger "pack folder"-Aufruf,
+#          ohne dass dabei eine .exfat-Datei auf der Platte entsteht.
+#          Der Entwickler der Engine nennt exFAT->.ffpfsc "the most stable
+#          format for compressed game backups", und es ist der schnellere
+#          Weg: Am 03.09.2026 an 200 MB gemessen 1,3 s gegen 6,3 s, weil die
+#          Daten nur einmal geschrieben werden statt zweimal.
 # "pfs"    Erst ein rohes inneres PFS ("pack folder --raw --no-compress"),
 #          dann der aeussere Container darum ("pack file"). So hat dieses
 #          Programm bis zum 03.09.2026 immer gebaut.
 #
-# Beide sind gueltig; der Validator kennt sie als "exfat" und "pfs" und
-# entpackt beide vollstaendig. Die Kompression nimmt sich nichts - die
-# Statistik des Entwicklers nennt 47 % gegen 46 % an einem 6,5-GB-Titel.
+# Der Hinweis des Engine-Entwicklers zu --raw, und was davon hier gilt:
+#
+#   "pack folder --raw ... When file compression is enabled, the image is
+#    created and verification passes, but the console reads the files
+#    incorrectly due to technical limitations, so this advanced option
+#    provides no practical benefit for game backups."
+#
+# Die Bedingung ist die Dateikompression AUF dem rohen Durchgang. Beide
+# --raw-Aufrufe dieses Programms setzen ausdruecklich --no-compress und
+# komprimieren erst den aeusseren Container; die genannte Falle tritt hier
+# also nicht ein, und beide Bauformen sind an echter Hardware bestaetigt
+# (siehe ARBEITSSTAND, Aufgabe 1 in v1.8.10 und der Rueckbau in v1.8.25).
+# Bei den meisten Titeln bringt der Umweg nichts: Die Kompression nimmt
+# sich nichts - die Statistik des Entwicklers nennt 47 % gegen 46 % an
+# einem 6,5-GB-Titel -, und der Weg ist deutlich langsamer (hier an 618 MB
+# gemessen: 77 s gegen 17 s).
+#
+# EINEN Fall gibt es aber, fuer den derselbe Entwickler genau diese zwei
+# Durchgaenge empfiehlt - Ordner mit sehr vielen kleinen Dateien:
+#
+#   "With the default --block-size 65536, very small files can cause
+#    significant block-alignment waste ... For small-file-heavy folders,
+#    prefer the two-pass strategy (raw-folder -> .dat -> .ffpfsc) or try a
+#    smaller block size such as --block-size 16384 or --block-size 32768."
+#
+# Am 04.09.2026 an drei echten Titeln nachgemessen (Verschnitt = Summe der
+# Reste bis zum naechsten vollen 64-KB-Block):
+#
+#   Arcade Game Zone    191 Dateien,   35 unter 64 KB ->  6,5 MB = 1,1 %
+#   Crazy Chicken        72 Dateien,   22 unter 64 KB ->  2,9 MB = 1,2 %
+#   Arkanoid           1166 Dateien, 1071 unter 64 KB -> 58,8 MB = 5,5 %
+#
+# Der Schnitt taeuscht dabei: Arkanoid hat im Mittel 0,92 MB je Datei, aber
+# 92 % seiner Dateien liegen unter der Blockgroesse. Entscheidend ist die
+# Verteilung, nicht der Mittelwert.
+#
+# Deshalb bleibt exFAT die Vorgabe, und PFS ist die fortgeschrittene Wahl
+# fuer genau diesen Fall.
+#
+# Die andere Abhilfe - eine kleinere Blockgroesse - ist hier bewusst NICHT
+# eingebaut: 64 KB ist die Abbildungseinheit der Konsole, und ob ein
+# kleinerer Wert dort ohne Nachteil bleibt, ist an echter Hardware nicht
+# gemessen. MkPFS 1.0.0 koennte es (--block-size auto-fit, 4096..65536).
 BAUFORM_EXFAT: str = "exfat"
 BAUFORM_PFS: str = "pfs"
 BAUFORM_VORGABE: str = BAUFORM_EXFAT
@@ -3035,7 +2993,6 @@ class PS5ConverterGUI:
         self._bg_image_cache: Image.Image | None = None
         self._bg_image_raw: Image.Image | None = None
         self._load_bg_image_cache()
-        self._apply_card_tint_from_bg_image()
 
         # 2b. Eigenes, unabhaengiges Hintergrundbild fuer die Sidebar (Aufgaben-
         # Knopfleiste, Spielvorschau). Kein eingebettetes Standardbild - ohne
@@ -3533,6 +3490,9 @@ class PS5ConverterGUI:
         self.monitor_active = False
         self.current_process = None
         self._task_thread: threading.Thread | None = None  # Referenz auf Worker-Thread
+        # Laufende PKG-Merges. Sie haengen nicht an is_running, muessen beim
+        # Beenden aber genauso eine Rueckfrage ausloesen (siehe on_closing).
+        self._pkg_merge_laeuft = 0
         # CLI-Automatisierung (siehe _run_cli): unterdrückt Dialoge, spiegelt Log auf stdout
         self._cli_mode = False
         self._cli_quiet = False
@@ -3698,16 +3658,13 @@ class PS5ConverterGUI:
                 self._bg_image_cache = None
                 self._bg_image_raw = None
                 return
-            # Helligkeit und Kontrast noch vor allem anderen: Das Rohbild
-            # geht so auch in die Karten und die Knopfleiste, die es sich
-            # spaeter herausschneiden.
-            img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
-            # Unblendiertes Rohbild fuer Bereiche mit eigener Deckkraft/Basisfarbe
-            # (z. B. die Karten-Fuellung) separat aufheben.
+            # Das Bild geht unveraendert weiter. Bis v1.9.5 lagen hier
+            # Helligkeit, Kontrast und eine Einmischung der Designfarbe;
+            # alle drei sind ausgebaut, damit der Hintergrund so aussieht wie
+            # die gewaehlte Datei und nicht wie ihr Nachbild.
             self._bg_image_raw = img
-            blended = self._blend_bg_image_with_theme(img)
             # Leichte Nachschaerfung fuer klarere Konturen nach dem Skalieren.
-            self._bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
+            self._bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
         except Exception as exc:
             logger.warning("Hintergrundbild konnte nicht geladen werden: %s", exc)
             self._bg_image_cache = None
@@ -3726,100 +3683,18 @@ class PS5ConverterGUI:
                 self._sidebar_bg_image_cache = None
                 return
             img = Image.open(custom_path).convert("RGB")
-            img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
-                                             "sidebar_kontrast")
-            hell = getattr(self, "_current_theme", "") == "hell"
-            sidebar_anteil = (SIDEBAR_BG_IMAGE_OPACITY_LIGHT if hell
-                              else SIDEBAR_BG_IMAGE_OPACITY)
-            blended = self._blend_bg_image_with_theme(img, sidebar_anteil)
-            self._sidebar_bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
+            # Wie beim Hauptbild: unveraendert. Helligkeit, Kontrast und die
+            # Einmischung der Designfarbe sind seit v1.9.6 ausgebaut.
+            self._sidebar_bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
         except Exception as exc:
             logger.warning("Sidebar-Hintergrundbild konnte nicht geladen werden: %s", exc)
             self._sidebar_bg_image_cache = None
-
-    def _blend_bg_image_with_theme(self, img: "Image.Image",
-                                   deckkraft: float | None = None) -> "Image.Image":
-        """Blendet ein Hintergrundbild mit der aktuellen Design-Hintergrundfarbe.
-
-        Ergibt einen dezenten, halbtransparent wirkenden Wasserzeichen-Effekt,
-        unabhängig vom gewählten Quellbild.
-
-        Ohne Angabe richtet sich die Deckkraft nach dem Design: im hellen gilt
-        BG_IMAGE_OPACITY_LIGHT, sonst BG_IMAGE_OPACITY. Der Unterschied ist
-        noetig, weil die mitgelieferten Bilder dunkel sind - bei voller
-        Einmischung sassen helle Karten und Knoepfe vor dunklem Grund, und
-        Beschriftungen lagen je nach Stelle auf hellem oder dunklem Untergrund.
-
-        Wird ``deckkraft`` uebergeben, gilt dieser Wert unveraendert. So reicht
-        die Sidebar ihren eigenen Anteil herein (SIDEBAR_BG_IMAGE_OPACITY bzw.
-        SIDEBAR_BG_IMAGE_OPACITY_LIGHT): Dort liegen keine Karten ueber dem
-        Bild, weshalb derselbe Wert deutlich kraeftiger wirken wuerde.
-        """
-        if deckkraft is None:
-            hell = getattr(self, "_current_theme", "") == "hell"
-            anteil = BG_IMAGE_OPACITY_LIGHT if hell else BG_IMAGE_OPACITY
-        else:
-            anteil = float(deckkraft)
-        base_color = Image.new("RGB", img.size, self._COLORS["bg_main"])
-        return Image.blend(base_color, img, anteil)
-
-    @staticmethod
-    def _average_image_rgb(img: "Image.Image") -> tuple[int, int, int]:
-        """Berechnet die grobe Durchschnittsfarbe eines Bildes (schnell, kleine Vorschau).
-
-        Nutzt ``ImageStat`` statt ``Image.getdata()``: letzteres ist seit
-        Pillow 12 als veraltet markiert (Entfernung mit Pillow 14) und warf bei
-        jedem Programmstart eine DeprecationWarning.
-        """
-        small = img.resize((16, 16)).convert("RGB")
-        mittel = ImageStat.Stat(small).mean
-        return (round(mittel[0]), round(mittel[1]), round(mittel[2]))
 
     @staticmethod
     def _hex_zu_rgb(hex_farbe: str) -> tuple[int, int, int]:
         """#RRGGBB als Zahlentripel - das Gegenstueck zu _blend_hex_color."""
         h = hex_farbe.lstrip("#")
         return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-
-    def _regler(self, schluessel: str) -> int:
-        """Der gespeicherte Reglerwert in Prozent, auf seinen Bereich begrenzt.
-
-        Begrenzt wird auch beim Lesen, nicht nur beim Setzen: In der
-        Einstellungsdatei kann alles stehen, und ein Wert ausserhalb des
-        Bereichs faende sonst erst als schwarzes Bild oder als Ausnahme aus
-        PIL auf.
-        """
-        vorgabe = REGLER_VORGABEN.get(schluessel, 100)
-        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
-        try:
-            wert = int(round(float(self._load_setting(schluessel, vorgabe))))
-        except (TypeError, ValueError):
-            return vorgabe
-        return max(klein, min(gross, wert))
-
-    def _regler_anteil(self, schluessel: str) -> float:
-        """Derselbe Wert als Anteil zwischen 0.0 und 1.0."""
-        return self._regler(schluessel) / 100.0
-
-    def _bild_regler_anwenden(self, img: "Image.Image", helligkeit: str,
-                              kontrast: str) -> "Image.Image":
-        """Wendet Helligkeit und Kontrast eines Bildreglerpaares an.
-
-        Steht beides auf 100, wird das Bild unangetastet zurueckgegeben - so
-        kostet der unveraenderte Fall nichts.
-        """
-        h = self._regler(helligkeit) / 100.0
-        k = self._regler(kontrast) / 100.0
-        if h == 1.0 and k == 1.0:
-            return img
-        try:
-            if h != 1.0:
-                img = ImageEnhance.Brightness(img).enhance(h)
-            if k != 1.0:
-                img = ImageEnhance.Contrast(img).enhance(k)
-        except Exception as exc:
-            logger.debug("Helligkeit/Kontrast nicht anwendbar: %s", exc)
-        return img
 
     @staticmethod
     def _blend_hex_color(base_hex: str, tint_rgb: tuple[int, int, int], opacity: float) -> str:
@@ -3830,33 +3705,6 @@ class PS5ConverterGUI:
         g = round(bgc * (1 - opacity) + tint_rgb[1] * opacity)
         b = round(bb * (1 - opacity) + tint_rgb[2] * opacity)
         return f"#{r:02X}{g:02X}{b:02X}"
-
-    def _apply_card_tint_from_bg_image(self) -> None:
-        """Toent Karten-/Konsolen-Hintergrundfarben dezent zur Farbe des Hintergrundbilds.
-
-        Karten (z. B. die QUELLE-/ZIELFORMAT-Box) und das Protokollfenster haben
-        eine eigene, deckende Hintergrundfarbe und zeigen daher nie das
-        Hintergrundbild selbst. Diese Methode ersetzt ``bg_card``/``console_bg``
-        in der aktiven Palette durch eine leicht zur Bild-Durchschnittsfarbe hin
-        getönte Variante (Deckkraft BG_CARD_TINT_OPACITY), damit diese Flächen
-        farblich nicht isoliert wirken. Ohne aktives Hintergrundbild passiert
-        nichts (Palette bleibt unverändert).
-        """
-        if self._bg_image_cache is None:
-            return
-        tint_rgb = self._average_image_rgb(self._bg_image_cache)
-        for key in ("bg_card", "console_bg"):
-            base = self._COLORS.get(key)
-            if not base:
-                continue
-            # Die Protokollflaeche bekommt ihre eigene Deckkraft - seit
-            # v1.9.0 aus den Einstellungen. Sie ist ein tk.Text und damit
-            # deckend; das Bild kann dort nicht wirklich durchscheinen.
-            # Was geht, ist die Flaechenfarbe zur Bildfarbe hin zu ziehen -
-            # je hoeher der Regler, desto naeher am Bild.
-            anteil = (self._regler_anteil("protokoll_deckkraft")
-                      if key == "console_bg" else BG_CARD_TINT_OPACITY)
-            self._COLORS[key] = self._blend_hex_color(base, tint_rgb, anteil)
 
     @staticmethod
     def _dateitypen(paare: list[tuple[str, str]]) -> list[tuple[str, str]]:
@@ -6028,9 +5876,8 @@ class PS5ConverterGUI:
         # ersetzt wird (siehe _redraw_card_captions).
         self._card_caption_labels: list[ttk.Label] = []
 
-        # Echtes Hintergrundbild INNERHALB der Karte (nicht nur die dezente
-        # Toenung von bg_card): auf die Kartengroesse skaliert, mit
-        # BG_CARD_IMAGE_OPACITY hinter den Eingabefeldern.
+        # Echtes Hintergrundbild INNERHALB der Karte: auf die Kartengroesse
+        # skaliert und unveraendert hinter den Eingabefeldern.
         if self._bg_image_cache is not None:
             self.card_bg_label = tk.Label(path_card, bg=self._COLORS["bg_card"])
             # x/y/width/height gleichen path_card's eigenes padding=30 aus, siehe
@@ -6623,10 +6470,6 @@ class PS5ConverterGUI:
             foreground=self._COLORS["fg_primary"],
             wraplength=520,
         )
-        # Diese Angabe steht oft ueber unruhigen Bildbereichen; eine
-        # halbdeckende Flaeche haelt sie lesbar. Die uebrigen
-        # Beschriftungen bleiben ohne Flaeche.
-        self.size_label._caption_backdrop_opacity = 0.80
         self.size_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
         self._content_caption_labels.append(self.size_label)
 
@@ -7202,7 +7045,14 @@ class PS5ConverterGUI:
             shutdown_src = ""
             shutdown_dst = ""
 
-        if self.is_running:
+        # Der PKG-Merger schreibt in einem eigenen Faden eine bis zu 100 GB
+        # grosse Datei nach <name>-merged.pkg.tmp. is_running deckt nur die
+        # Umwandlung ab; ohne den zweiten Zaehler faellt das Beenden hier ohne
+        # Rueckfrage durch, root.destroy() kommt, der Faden stirbt im
+        # Schreiben - und das Bruchstueck bleibt im Zielordner des Nutzers
+        # liegen. Dort raeumt niemand auf: _is_managed_temp_path laesst nur
+        # Pfade unter dem Laufzeit-Temp oder mit ps5conv_-Namen durch.
+        if self.is_running or self._pkg_merge_laeuft > 0:
             answer = messagebox.askyesno(
                 self._t("dialog.title.quit"),
                 self._t("dialog.msg.confirm_quit_while_running"),
@@ -9398,19 +9248,9 @@ class PS5ConverterGUI:
                 self._bg_image_cache, content_area, lage, width, height)
             if cropped is None:
                 return None
-            # Der reine Bildausschnitt laesst den Text je nach Motiv untergehen.
-            # Deshalb die Themefarbe mit fester Deckkraft daruebermischen.
-            opacity = getattr(widget, "_caption_backdrop_opacity", None)
-            if opacity is None:
-                opacity = CONTENT_CAPTION_BACKDROP_OPACITY
-            opacity = max(0.0, min(1.0, float(opacity)))
-            if opacity > 0.0:
-                tint = Image.new(
-                    "RGB",
-                    cropped.size,
-                    tuple(int(self._COLORS["bg_card"].lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)),
-                )
-                cropped = Image.blend(cropped.convert("RGB"), tint, opacity)
+            # Der Ausschnitt geht unveraendert zurueck. Bis v1.9.5 lag hier
+            # eine Einmischung der Themefarbe; sie ist mit allen uebrigen
+            # Bildeffekten ausgebaut.
             return cropped
         except Exception as exc:
             logger.debug("Content-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
@@ -9545,7 +9385,6 @@ class PS5ConverterGUI:
         try:
             crop = self._compute_content_bg_crop(self.action_bar, width, height)
             if crop is not None:
-                crop = self._blend_bg_image_for_action_bar(crop)
                 self.action_bar_bg_photo = ImageTk.PhotoImage(crop)
                 self.action_bar_bg_label.config(image=self.action_bar_bg_photo)
                 self._last_action_bar_bg_resize_size = (width, height)
@@ -9668,40 +9507,6 @@ class PS5ConverterGUI:
                 label.config(image=photo, compound="center")
             except Exception as exc:
                 logger.debug("Sidebar-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
-
-
-    def _blend_bg_image_for_action_bar(self, img: "Image.Image") -> "Image.Image":
-        """Mischt den Bildausschnitt der Knopfleiste mit der Flaechenfarbe.
-
-        Die Leiste zeigte den Ausschnitt bisher unveraendert. Auf dem
-        Hintergrundbild wiederholt sich das Motiv dadurch sichtbar - der
-        Nutzer beschrieb es als Spiegelung (19.08.2026, Bildausschnitt mit
-        "STARTEN / ABBRECHEN" und der Groessenanzeige).
-
-        Dieselbe Behandlung wie bei der Protokollflaeche: Die Flaechenfarbe
-        traegt, das Bild scheint nur noch durch.
-        """
-        basis = Image.new("RGB", img.size, self._COLORS["bg_main"])
-        return Image.blend(basis, img, self._regler_anteil("leiste_deckkraft"))
-
-    def _blend_bg_image_for_card(self, img: "Image.Image") -> "Image.Image":
-        """Blendet das Rohbild mit der (ggf. bereits getönten) Kartenfarbe.
-
-        Nutzt BG_CARD_IMAGE_OPACITY statt BG_IMAGE_OPACITY, da dieses Bild
-        innerhalb einer Karte mit Eingabefeldern liegt und daher üblicherweise
-        dezenter ausfallen soll als der offene Hintergrund. Im hellen Design
-        wird BG_CARD_IMAGE_OPACITY_LIGHT verwendet, da ein typischerweise
-        dunkles Hintergrundbild die eigentlich weiße Karte sonst gräulich
-        wirken lässt (siehe Konstantendefinition).
-        """
-        opacity = self._regler_anteil("karte_deckkraft")
-        if self._current_theme == "hell":
-            # Im hellen Design bleibt dasselbe Verhaeltnis wie bisher
-            # zwischen den beiden festen Werten - sonst wirkt die weisse
-            # Karte bei gleichem Regler graeulich.
-            opacity *= BG_CARD_IMAGE_OPACITY_LIGHT / BG_CARD_IMAGE_OPACITY
-        base_color = Image.new("RGB", img.size, self._COLORS["bg_card"])
-        return Image.blend(base_color, img, max(0.0, min(1.0, opacity)))
 
     #: Eckenradius der Karten im Hauptbereich.
     _KARTEN_ECKE = 14
@@ -9882,13 +9687,13 @@ class PS5ConverterGUI:
                 cropped = self._flaechen_ausschnitt(
                     self._bg_image_raw, content_area, lage, width, height)
                 if cropped is not None:
-                    return self._blend_bg_image_for_card(cropped)
+                    return cropped
 
             # Fallback: eigenstaendige Skalierung (z. B. beim allerersten Aufbau,
             # solange content_area/path_card noch keine reale Groesse haben).
             # Dieselbe Geometrie wie ueberall sonst - siehe oben.
             resized_raw = self._bild_fuellen(self._bg_image_raw, width, height)
-            return self._blend_bg_image_for_card(resized_raw)
+            return resized_raw
         except Exception as exc:
             logger.debug("Karten-Hintergrundbild konnte nicht berechnet werden: %s", exc)
             return None
@@ -19597,12 +19402,28 @@ class PS5ConverterGUI:
         source_name = os.path.basename(os.path.normpath(src)) if os.path.isdir(src) else os.path.splitext(os.path.basename(src))[0]
         return str(normalize_output_path(os.path.join(dst, f"{source_name}.ffpkg")))
 
-    def _validate_ffpkg_artifact(self, image_path: str, *,
-                                 base_result=None, expected_file_count=None):
-        """Prueft ein fertiges .ffpkg. Siehe abbild_pruefen."""
+    def _validate_ffpkg_artifact(self, image_path: str, *, base_result=None):
+        """Prueft ein fertiges .ffpkg. Siehe abbild_pruefen.
+
+        **Kein ``expected_file_count`` mehr.** Bis v1.9.5 nahm diese
+        Weiterleitung den Parameter entgegen und reichte ihn **immer** weiter,
+        auch als ``None`` - ``Pruefstand._validate_ffpkg_artifact`` kennt ihn
+        aber nicht. Ergebnis war ein ``TypeError`` bei **jedem** .ffpkg-Bau:
+
+            Pruefstand._validate_ffpkg_artifact() got an unexpected keyword
+            argument 'expected_file_count'
+
+        Entstanden beim Herausziehen der Pruefungen nach ``abbild_pruefen``
+        (v1.9.2): Dort wanderte die Dateizaehlung in eigene Methoden
+        (``_verify_ffpkg_file_count_via_mount``), der Parameter blieb hier
+        aber stehen. Keiner der beiden Aufrufer hat ihn je mitgegeben - der
+        Fehler hing allein an der Weiterleitung.
+
+        Die Zaehlung selbst ist nicht verlorengegangen; sie laeuft weiterhin
+        ueber ``_verify_ffpkg_file_count_via_mount``.
+        """
         return self._pruefstand()._validate_ffpkg_artifact(
-            image_path, base_result=base_result,
-            expected_file_count=expected_file_count)
+            image_path, base_result=base_result)
 
     def _build_ffpkg_from_folder(
         self,
@@ -19758,7 +19579,8 @@ class PS5ConverterGUI:
         build_attempts: list[tuple[str, str, list[str]]] = [
             (
                 primary_profile.identifier,
-                "Referenzprofil: newfs -D mit 64-KiB-Block/Fragment, 512-Byte-Sektoren und Inode-Reserve",
+                "Referenzprofil: newfs -D mit 64-KiB-Block/Fragment, "
+                  f"{primary_profile.sector_size}-Byte-Sektoren und Inode-Reserve",
                 build_newfs_directory_command(
                     ufs2tool, source_dir, stage_path, profile=primary_profile
                 ),
@@ -21660,8 +21482,149 @@ class PS5ConverterGUI:
             parts.append(0)
         return tuple(parts[:4])
 
+    #: So lange darf eine einzelne Abfrage dauern.
+    _AMPR_UPDATE_FRIST = 30
+
+    def _ampr_lade_adresse(self, adresse: str) -> bytes:
+        """Holt eine Adresse. **Die einzige Stelle, die hier ins Netz geht.**
+
+        Bewusst eine eigene, winzige Methode: Der Rest der Aktualisierung
+        rechnet nur und laesst sich ohne Verbindung pruefen (siehe
+        ``ampr_updates``). Wer wissen will, was das Programm sendet, muss nur
+        hierher sehen.
+        """
+        anfrage = urllib.request.Request(
+            adresse,
+            headers={"User-Agent": "PS5DumpImageConverter",
+                     "Accept": "application/octet-stream"})
+        with urllib.request.urlopen(anfrage, timeout=self._AMPR_UPDATE_FRIST) as antwort:
+            return antwort.read()
+
+    def _ampr_nach_updates_sehen(self, danach=None) -> None:
+        """Sieht auf Knopfdruck nach neueren AMPR-EMU-Fassungen.
+
+        **Nur auf Knopfdruck.** Das Programm fragt nirgends von selbst nach;
+        seit v1.8.74 gilt das im ganzen Bestand, nachdem an sechs Stellen
+        ungefragt Anfragen hinausgingen.
+
+        Der Ablauf steckt in einem eigenen Strang: Die Abfrage kann bis zu
+        einer halben Minute dauern, und im Hauptstrang stuende das Fenster
+        so lange still.
+
+        Args:
+            danach: Wird im Hauptstrang gerufen, wenn etwas geholt wurde -
+                damit die Auswahllisten die neuen Fassungen zeigen.
+        """
+        if getattr(self, "_ampr_update_laeuft", False):
+            return
+        self._ampr_update_laeuft = True
+
+        def _arbeiten() -> None:
+            try:
+                self._ampr_updates_arbeiten(danach)
+            finally:
+                self._ampr_update_laeuft = False
+
+        threading.Thread(target=_arbeiten, daemon=True,
+                         name="ampr_updates").start()
+
+    def _ampr_updates_arbeiten(self, danach=None) -> None:
+        """Der eigentliche Ablauf - laeuft im Nebenstrang."""
+        try:
+            adresse = ampr_updates.ADRESSE % ampr_updates.PROJEKT
+            self._melde_im_hauptstrang(
+                self._t("ampr.update_suche", quelle=ampr_updates.PROJEKT))
+            rohtext = self._ampr_lade_adresse(adresse).decode("utf-8", "replace")
+        except Exception as exc:  # noqa: BLE001
+            self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=exc))
+            return
+
+        angebote = ampr_updates.angebote_lesen(rohtext)
+        if not angebote:
+            self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
+            return
+
+        vorhanden = [e["version"] for e in
+                     self._ampr_scan_version_store(self._ampr_resolve_store())]
+        neu = [a for a in ampr_updates.neuere(angebote, vorhanden)
+               if not ampr_updates.schon_da(self._ampr_updates_ordner(), a)]
+        if not neu:
+            self._melde_im_hauptstrang(
+                self._t("ampr.update_aktuell",
+                        neueste=angebote[0].fassung))
+            return
+
+        namen = ", ".join(sorted({a.fassung for a in neu}))
+        self._melde_im_hauptstrang(
+            self._t("ampr.update_gefunden", fassungen=namen, anzahl=len(neu)))
+
+        abgelegt, fehler = ampr_updates.holen(
+            self._ampr_updates_ordner(), neu, self._ampr_lade_adresse)
+        for zeile in fehler:
+            self._melde_im_hauptstrang(self._t("ampr.update_fehler", fehler=zeile))
+        if abgelegt:
+            self._melde_im_hauptstrang(
+                self._t("ampr.update_geholt", anzahl=len(abgelegt),
+                        ordner=self._ampr_updates_ordner()))
+            if danach is not None:
+                try:
+                    self.root.after(0, danach)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Auffrischen nach Aktualisierung nicht moeglich: %s", exc)
+
+    def _melde_im_hauptstrang(self, text: str) -> None:
+        """Schreibt eine Zeile ins Protokoll, egal aus welchem Strang gerufen."""
+        try:
+            self.root.after(0, lambda: self._append_to_log(text))
+        except Exception:
+            logger.info("%s", text)
+
+    def _ampr_updates_ordner(self) -> str:
+        """Der Ordner "AMPR EMU updates" **neben dem Programm**.
+
+        Nicht im Auspackordner der EXE: ``sys._MEIPASS`` wird beim Beenden
+        geloescht, eine dorthin geholte Fassung waere beim naechsten Start
+        weg. Geschrieben wird deshalb neben die ausfuehrbare Datei.
+
+        Der Ordner wird hier **nicht** angelegt - erst wenn wirklich etwas
+        geholt wird. Ein leerer Ordner neben dem Programm waere nur
+        Verwirrung.
+        """
+        wurzel = os.path.dirname(
+            sys.executable if getattr(sys, "frozen", False)
+            else os.path.abspath(__file__))
+        return os.path.join(wurzel, ampr_updates.ORDNERNAME)
+
     def _ampr_scan_version_store(self, store_dir: str) -> list[dict[str, Any]]:
-        """Liest den Versionsspeicher ein.
+        """Liest den Versionsspeicher ein - **samt geholter Fassungen**.
+
+        Der Ordner "AMPR EMU updates" wird immer mitgelesen, egal welcher
+        Speicher uebergeben wurde. Damit sehen alle Stellen, die Versionen
+        anbieten, auch das Nachgeladene, ohne dass jede einzeln davon
+        wissen muss.
+
+        Doppelte gewinnt der uebergebene Speicher: Wer eine Fassung
+        ausdruecklich hinlegt, meint sie auch.
+        """
+        eigene = self._ampr_scan_einen_speicher(store_dir)
+        geholt = self._ampr_scan_einen_speicher(self._ampr_updates_ordner())
+        if not geholt:
+            return eigene
+        bekannt = {(e["lib"], e["version"], e["variant"]) for e in eigene}
+        zusammen = eigene + [e for e in geholt
+                             if (e["lib"], e["version"], e["variant"]) not in bekannt]
+        zusammen.sort(
+            key=lambda e: (
+                e["lib"],
+                tuple(-p for p in self._ampr_version_sort_key(e["version"])),
+                self._AMPR_VARIANT_ORDER.get(e["variant"], 9),
+                e["variant"],
+            )
+        )
+        return zusammen
+
+    def _ampr_scan_einen_speicher(self, store_dir: str) -> list[dict[str, Any]]:
+        """Liest genau einen Versionsspeicher ein.
 
         Returns:
             Liste von Einträgen mit Bibliothek, Version, Variante, Pfad, Größe
@@ -22365,6 +22328,30 @@ class PS5ConverterGUI:
                 fg=c["fg_secondary"], bg=c["bg_main"], anchor="w", justify="left",
                 wraplength=_fw - 90,
             ).pack(anchor="w", fill="x", padx=10, pady=(4, 10))
+
+            # Nach neueren Fassungen sehen. Der mitgelieferte Bestand friert
+            # beim Bauen ein, waehrend drakmor/ampr_emu weiter
+            # veroeffentlicht - am 04.09.2026 lagen hier hoechstens 0.3.6.2,
+            # auf GitHub standen schon 0.3.6.4 und 0.3.6.6.
+            _update_reihe = tk.Frame(sec_b, bg=c["bg_main"])
+            _update_reihe.pack(anchor="w", fill="x", padx=10, pady=(0, 4))
+            tk.Button(
+                _update_reihe, text=self._t("ampr.update_knopf"),
+                font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+                activebackground=c["border"], activeforeground=c["fg_primary"],
+                relief="flat", cursor="hand2", padx=12, pady=4,
+                # _refresh_versions steht weiter unten. Das ist Absicht:
+                # Der Knopf gehoert der Anordnung nach hierher, und das
+                # lambda loest den Namen erst beim Druecken auf - da ist
+                # die Funktion laengst da. Kein Vorwaertsbezug, der faellt.
+                command=lambda: self._ampr_nach_updates_sehen(_refresh_versions),
+            ).pack(side="left")
+            tk.Label(
+                sec_b, text=self._t("ampr.update_hinweis"),
+                font=(UI_SCHRIFT, pt(8)),
+                fg=c["fg_secondary"], bg=c["bg_main"], anchor="w",
+                justify="left", wraplength=_fw - 90,
+            ).pack(anchor="w", fill="x", padx=10, pady=(2, 10))
 
             def _refresh_versions() -> None:
                 found = self._ampr_scan_version_store(store_dir_var.get().strip())
@@ -26085,12 +26072,33 @@ class PS5ConverterGUI:
         log_text.configure(state="disabled")
 
         def _append_log(line: str) -> None:
+            # Nur im Tk-Faden aufrufen. Beim Beenden des Programms zerstoert
+            # root auch die Werkzeugfenster; ein schon eingeplanter Rueckruf
+            # faende das Textfeld dann nicht mehr vor.
+            if not log_text.winfo_exists():
+                return
             log_text.configure(state="normal")
             log_text.insert("end", line + "\n")
             log_text.see("end")
             log_text.configure(state="disabled")
 
+        laeuft = {"aktiv": False}
+        # Knopf und Statuszeile entstehen erst mit der Knopfreihe weiter unten.
+        bedienung: dict[str, Any] = {}
+
+        def _status(text: str) -> None:
+            """Kurze Lagemeldung neben den Knoepfen - nur im Tk-Faden."""
+            feld = bedienung.get("status")
+            if feld is not None and feld.winfo_exists():
+                feld.configure(text=text)
+
+        def _melde(line: str) -> None:
+            """Aus dem Arbeitsfaden ins Protokoll - immer ueber das Fenster."""
+            self._spaeter_im_fenster(win, _append_log, line)
+
         def _merge_selected() -> None:
+            if laeuft["aktiv"]:
+                return
             selected = tree.selection()
             if not selected:
                 messagebox.showinfo(self._t("dialog.title.no_selection"), self._t("dialog.msg.select_at_least_one_splitset"), parent=win)
@@ -26102,37 +26110,124 @@ class PS5ConverterGUI:
             if not output_dir:
                 return
 
+            # Auswahl und Zuordnung noch hier festhalten: tree.selection() ist
+            # ein Tk-Aufruf und hat im Arbeitsfaden nichts verloren.
             by_name = {s.base_name: s for s in split_sets}
-            for base_name in selected:
-                split_set = by_name.get(base_name)
-                if split_set is None or not split_set.has_root:
-                    _append_log(self._t("pkg_merger.log_skip", name=base_name))
-                    continue
-                output_path = os.path.join(output_dir, split_set.base_name + "-merged.pkg")
+            auftrag = list(selected)
+
+            # Das Kennzeichen erst hier setzen, nicht schon ganz oben: Die
+            # beiden Abbruchwege darueber (nichts ausgewaehlt, Ordnerdialog
+            # abgebrochen) muessten es sonst jedes Mal wieder zuruecknehmen.
+            # Der PS4-Paketbau setzt es aus demselben Grund erst hinter seinen
+            # Rueckfragen.
+            laeuft["aktiv"] = True
+            # Damit das Beenden des Programms danach fragt - siehe on_closing.
+            self._pkg_merge_laeuft += 1
+            knopf = bedienung.get("knopf")
+            if knopf is not None:
+                knopf.configure(state="disabled")
+            # Zwischen zwei Teildateien liegen bei 4-GB-Stuecken Minuten. Ohne
+            # diese Zeile sieht das Fenster in der Zwischenzeit aus wie eines,
+            # in dem nichts passiert.
+            _status(self._t("pkg_merger.status_running"))
+
+            def _lauf() -> None:
                 try:
-                    result = merge_split_set(
-                        split_set.ordered_numbered, split_set.meta, output_path,
-                        compute_digest=True, log=_append_log,
-                    )
-                except (PkgMergeError, OSError) as exc:
-                    _append_log(self._t("pkg_merger.log_error", name=base_name, error=exc))
-                    continue
-                _append_log(
-                    self._t(
-                        "pkg_merger.log_ok",
-                        name=base_name,
-                        path=result.output_path,
-                        size=format_ffpkg_bytes(result.total_size),
-                        sha=result.sha256,
-                    )
+                    for base_name in auftrag:
+                        try:
+                            split_set = by_name.get(base_name)
+                            if split_set is None or not split_set.has_root:
+                                _melde(self._t("pkg_merger.log_skip", name=base_name))
+                                continue
+                            output_path = os.path.join(output_dir, split_set.base_name + "-merged.pkg")
+                            result = merge_split_set(
+                                split_set.ordered_numbered, split_set.meta, output_path,
+                                compute_digest=True, log=_melde,
+                            )
+                            _melde(
+                                self._t(
+                                    "pkg_merger.log_ok",
+                                    name=base_name,
+                                    path=result.output_path,
+                                    size=format_ffpkg_bytes(result.total_size),
+                                    sha=result.sha256,
+                                )
+                            )
+                        except Exception as exc:  # noqa: BLE001
+                            # Im Arbeitsfaden gibt es kein
+                            # report_callback_exception mehr: Was hier nicht
+                            # gefangen wird, verschwindet spurlos. Deshalb
+                            # breit fangen - merge_split_set wirft neben
+                            # PkgMergeError und OSError auch ValueError.
+                            logger.exception("PKG-Merge fehlgeschlagen: %s", base_name)
+                            _melde(self._t("pkg_merger.log_error", name=base_name, error=exc))
+                finally:
+                    # Erst herunterzaehlen, dann freigeben: Ein neuer Lauf kann
+                    # nur starten, wenn das Kennzeichen schon False ist.
+                    self._pkg_merge_laeuft -= 1
+                    laeuft["aktiv"] = False
+
+                    def _wieder_frei() -> None:
+                        k = bedienung.get("knopf")
+                        if k is not None and k.winfo_exists():
+                            k.configure(state="normal")
+                        _status(self._t("pkg_merger.status_done"))
+                    self._spaeter_im_fenster(win, _wieder_frei)
+
+            # merge_split_set kopiert byteweise und rechnet dabei SHA-256 mit.
+            # Ein 50-100-GB-Satz haelt den Tk-Faden damit minutenlang fest:
+            # kein Neuzeichnen, keine Zwischenmeldung, kein bedienbarer Knopf.
+            threading.Thread(target=_lauf, daemon=True, name="pkg-merger").start()
+
+        def _beim_schliessen() -> None:
+            """Schliesst das Fenster - aber nicht mitten im Schreiben.
+
+            Der Eintrag in der Titelleiste ist ein Umschalter: Der zweite
+            Druck geht ueber _fenster_schliessen und damit ueber genau
+            diesen Weg. Fehlt er, faellt _fenster_schliessen auf destroy()
+            zurueck und raeumt das Fenster mitten im Lauf weg. Dann bleibt
+            eine halbfertige .tmp im Zielordner liegen - dort greift kein
+            Aufraeumhaken, _is_managed_temp_path laesst nur Pfade unter dem
+            Laufzeit-Temp oder mit ps5conv_-Namen durch. Ausserdem waere das
+            Ergebnis mit Pfad, Groesse und SHA-256 verschwunden, und der
+            naechste Druck oeffnete ein frisches Fenster, das denselben
+            Zielpfad ein zweites Mal beschreiben koennte.
+
+            Sich zu weigern ist der vorgesehene Weg, kein Notbehelf:
+            _werkzeugfenster_umschalten holt ein Fenster, das nicht zugeht,
+            statt dessen nach vorn (abgesichert in test_fensterlayout.py,
+            test_ein_fenster_darf_sich_weigern).
+            """
+            if laeuft["aktiv"]:
+                messagebox.showinfo(
+                    self._t("pkg_merger.busy_title"),
+                    self._t("pkg_merger.busy_close"), parent=win,
                 )
+                return
+            win.destroy()
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        ttk.Button(
+        ttk.Button(btn_row, text=self._t("action.close"), command=_beim_schliessen).pack(side="right")
+        merge_btn = ttk.Button(
             btn_row, text=self._t("pkg_merger.merge_selected_button"),
             style="Accent.TButton", command=_merge_selected,
-        ).pack(side="left")
+        )
+        merge_btn.pack(side="left")
+        # Knopf und Statuszeile entstehen erst hier, gebraucht werden sie
+        # schon weiter oben - deshalb nachgereicht statt vorwaerts gegriffen.
+        bedienung["knopf"] = merge_btn
+        # Die Statuszeile kommt zuletzt in die Reihe: Was an Platz fehlt, geht
+        # dann von ihr ab und nicht von den beiden Knoepfen. Beim Oeffnen ist
+        # sie leer und kostet gar nichts.
+        status_lbl = tk.Label(
+            btn_row, text="", font=(UI_SCHRIFT, pt(9)),
+            bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+        )
+        status_lbl.pack(side="left", padx=(12, 0))
+        bedienung["status"] = status_lbl
+
+        # Das X der Titelleiste nimmt denselben Weg wie der Knopf.
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
         # Feste Zeilen zuerst an den unteren Rand, der dehnbare Körper zuletzt.
         # Umgekehrt gepackt blieb von der Knopfreihe nichts übrig – weder
@@ -28515,6 +28610,27 @@ class PS5ConverterGUI:
         rahmen.grid_columnconfigure(0, weight=1)
         rahmen.grid_rowconfigure(0, weight=1)
         self._downloads_tree = baum
+
+        # Die Schluessel von _downloads sind Zeilenkennungen des Baums, und der
+        # Baum der vorigen Fenstersitzung ist mit ihr zerstoert worden. Was noch
+        # laeuft, bekommt seine Zeile hier zurueck - unter derselben Kennung,
+        # damit die Meldungen des Arbeiters weiter ankommen und Tk die Kennung
+        # nicht ein zweites Mal vergibt. Alles andere muss weg: sonst haelt die
+        # Dublettenpruefung in _vorhandene() jede Datei fuer schon gelistet und
+        # die Liste bleibt beim zweiten Oeffnen leer. Fertiges geht dabei nicht
+        # verloren, _vorhandene() liest es gleich wieder von der Platte.
+        weiterlaufend = {kennung: eintrag
+                        for kennung, eintrag in self._downloads.items()
+                        if eintrag.get("status") in ("queued", "running")}
+        self._downloads = weiterlaufend
+        for kennung, eintrag in weiterlaufend.items():
+            baum.insert("", "end", iid=kennung, values=(
+                eintrag["dateiname"], eintrag["title_id"],
+                self._t(f"downloads.kind_{eintrag['art']}"),
+                "–", "–",
+                self._t("downloads.state_running"
+                        if eintrag.get("status") == "running"
+                        else "downloads.state_queued")))
 
         def _aus_zwischenablage() -> None:
             try:
@@ -34017,6 +34133,12 @@ class PS5ConverterGUI:
                 log_path = _os.path.join(
                     _os.path.dirname(_os.path.abspath(__file__)), "ps5_payload_log.txt")
 
+                # In der Klasse unten ist self der HTTP-Handler und verdeckt den
+                # aeusseren self. Der kennt weder _t noch _spaeter_im_fenster, der
+                # Aufruf flog vor Dateischreiben und Antwort raus - der Server lief,
+                # aber keine Zeile der PS5 kam je an.
+                gui = self
+
                 class _LogHandler(_hs.BaseHTTPRequestHandler):
                     def log_message(self, format, *args):
                         pass
@@ -34029,8 +34151,8 @@ class PS5ConverterGUI:
                             # Der Empfaenger laeuft weiter, auch wenn das
                             # Fenster zu ist - die Zeile geht dann nur noch in
                             # die Datei, nicht mehr ins Protokollfeld.
-                            self._spaeter_im_fenster(
-                                win, lambda l=line: _log(self._t('log.console.0044', v0=l)))
+                            gui._spaeter_im_fenster(
+                                win, lambda l=line: _log(gui._t('log.console.0044', v0=l)))
                             try:
                                 with open(log_path, "a", encoding="utf-8") as lf:
                                     lf.write(line + "\n")
@@ -35590,41 +35712,6 @@ class PS5ConverterGUI:
         # PhotoImage, auf die niemand mehr zeigt, wird eingesammelt und die
         # Flaeche bliebe leer.
         vorschauen: dict[str, Any] = {}
-
-        def _regler_zeile(eltern, schluessel: str, beschriftung: str,
-                          einheit: str = "%"):
-            """Eine beschriftete Reglerzeile mit Zahl daneben.
-
-            Uebernommen wird erst beim Loslassen: Waehrend des Ziehens wuerde
-            jedes Zwischenbild neu gerechnet, und das ruckelt sichtbar.
-            """
-            klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
-            zeile = tk.Frame(eltern, bg=c["bg_card"])
-            zeile.pack(fill="x", pady=(0, 6))
-            tk.Label(zeile, text=beschriftung, font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
-                     width=22).pack(side="left")
-            zahl = tk.StringVar(value="%d %s" % (self._regler(schluessel), einheit))
-            tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
-                     bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
-                     width=6).pack(side="right")
-            regler = ttk.Scale(zeile, from_=klein, to=gross, orient="horizontal")
-            regler.set(self._regler(schluessel))
-            regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
-
-            def _bewegt(_e=None) -> None:
-                zahl.set("%d %s" % (round(regler.get()), einheit))
-
-            def _losgelassen(_e=None) -> None:
-                self._regler_uebernehmen(schluessel, round(regler.get()))
-                zahl.set("%d %s" % (self._regler(schluessel), einheit))
-                _vorschauen_auffrischen()
-
-            regler.configure(command=lambda _v: _bewegt())
-            regler.bind("<ButtonRelease-1>", _losgelassen)
-            regler.bind("<KeyRelease>", _losgelassen)
-            return regler
-
         tk.Label(body, text=self._t("settings_dialog.background_section_label"),
                  font=(UI_SCHRIFT, pt(11), "bold"),
                  bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
@@ -35635,11 +35722,6 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 8))
-
-        tk.Label(body, text=self._t("settings_dialog.card_tint_restart_hint"),
-                 font=(UI_SCHRIFT, pt(8)),
-                 bg=c["bg_card"], fg=c["fg_secondary"],
-                 wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(0, 12))
 
         def _vorschauen_auffrischen() -> None:
             """Zeichnet beide Vorschauen neu.
@@ -35950,54 +36032,6 @@ class PS5ConverterGUI:
         # --- Trennlinie + Darstellung: Durchsicht, Helligkeit, Kontrast ---
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
-        tk.Label(body, text=self._t("settings_dialog.regler_section"),
-                 font=(UI_SCHRIFT, pt(11), "bold"),
-                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
-        tk.Label(body, text=self._t("settings_dialog.regler_hint"),
-                 font=(UI_SCHRIFT, pt(8)),
-                 bg=c["bg_card"], fg=c["fg_secondary"],
-                 wraplength=460, justify="left", anchor="w").pack(
-                     anchor="w", fill="x", pady=(4, 10))
-
-        for _schluessel, _text in (
-                ("karte_deckkraft", "settings_dialog.regler_karte"),
-                ("leiste_deckkraft", "settings_dialog.regler_leiste"),
-                ("protokoll_deckkraft", "settings_dialog.regler_protokoll")):
-            _regler_zeile(body, _schluessel, self._t(_text))
-
-        tk.Label(body, text=self._t("settings_dialog.regler_protokoll_hint"),
-                 font=(UI_SCHRIFT, pt(8)),
-                 bg=c["bg_card"], fg=c["fg_secondary"],
-                 wraplength=460, justify="left", anchor="w").pack(
-                     anchor="w", fill="x", pady=(0, 12))
-
-        tk.Label(body, text=self._t("settings_dialog.regler_bild_section"),
-                 font=(UI_SCHRIFT, pt(9), "bold"),
-                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w",
-                                                           pady=(0, 6))
-        for _schluessel, _text in (
-                ("bg_helligkeit", "settings_dialog.regler_bg_helligkeit"),
-                ("bg_kontrast", "settings_dialog.regler_bg_kontrast"),
-                ("sidebar_helligkeit", "settings_dialog.regler_sb_helligkeit"),
-                ("sidebar_kontrast", "settings_dialog.regler_sb_kontrast")):
-            _regler_zeile(body, _schluessel, self._t(_text))
-
-        def _regler_zuruecksetzen() -> None:
-            """Alle sieben auf die Vorgabe - den Stand vor v1.9.0."""
-            for schluessel, vorgabe in REGLER_VORGABEN.items():
-                self._regler_uebernehmen(schluessel, vorgabe)
-            _vorschauen_auffrischen()
-            messagebox.showinfo(self._t("settings_dialog.title_bar"),
-                                self._t("settings_dialog.regler_reset_done"),
-                                parent=dlg)
-            dlg.destroy()
-
-        tk.Button(body, text=self._t("settings_dialog.regler_reset"),
-                  font=(UI_SCHRIFT, pt(9)),
-                  bg=c["bg_main"], fg=c["fg_secondary"],
-                  activebackground=c["border"], activeforeground=c["fg_primary"],
-                  relief="flat", cursor="hand2", padx=12, pady=5,
-                  command=_regler_zuruecksetzen).pack(anchor="w", pady=(6, 0))
 
         # --- Trennlinie + Verbindungsdaten der PS5 ---
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
@@ -36368,8 +36402,7 @@ class PS5ConverterGUI:
 
         try:
             self._bg_image_raw = img
-            blended = self._blend_bg_image_with_theme(img)
-            self._bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
+            self._bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
             self._save_setting("background_image_path", self._encode_background_setting(path))
             self._apply_card_tint_live()
             self._refresh_bg_label()
@@ -36392,58 +36425,13 @@ class PS5ConverterGUI:
             return False
 
         try:
-            blended = self._blend_bg_image_with_theme(img)
-            self._sidebar_bg_image_cache = blended.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
+            self._sidebar_bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
             self._save_setting("sidebar_background_image_path", self._encode_background_setting(path))
             self._refresh_sidebar_bg_label()
             return True
         except Exception as exc:
             logger.warning("Sidebar-Hintergrundbild konnte nicht übernommen werden: %s", exc)
             return False
-
-    #: Was nach einem Reglerwechsel neu gezeichnet werden muss. Nicht alles
-    #: haengt an allem: Die Helligkeit des Seitenleistenbilds beruehrt die
-    #: Karten nicht, und die Deckkraft der Karte beruehrt das Bild nicht.
-    _REGLER_WIRKUNG: dict[str, str] = {
-        "karte_deckkraft":     "flaechen",
-        "leiste_deckkraft":    "flaechen",
-        "protokoll_deckkraft": "toenung",
-        "bg_helligkeit":       "hauptbild",
-        "bg_kontrast":         "hauptbild",
-        "sidebar_helligkeit":  "seitenleiste",
-        "sidebar_kontrast":    "seitenleiste",
-    }
-
-    def _regler_uebernehmen(self, schluessel: str, wert: int) -> None:
-        """Merkt einen Reglerwert und zeichnet nach, was davon abhaengt.
-
-        Bewusst nicht bei jeder Bewegung des Reglers gerufen, sondern erst
-        beim Loslassen: Ein Hintergrundbild neu zu rechnen kostet je nach
-        Groesse spuerbar Zeit, und waehrend des Ziehens saehe man davon nur
-        ein Ruckeln.
-        """
-        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
-        wert = max(klein, min(gross, int(round(wert))))
-        self._save_setting(schluessel, wert)
-
-        wirkung = self._REGLER_WIRKUNG.get(schluessel, "")
-        try:
-            if wirkung == "hauptbild":
-                # Das Rohbild traegt die Helligkeit; Karten und Leiste
-                # schneiden sich daraus ihren Ausschnitt.
-                self._load_bg_image_cache()
-                self._apply_card_tint_live()
-                self._refresh_bg_label()
-            elif wirkung == "seitenleiste":
-                self._load_sidebar_bg_image_cache()
-                self._refresh_sidebar_bg_label()
-            elif wirkung == "toenung":
-                # Die Protokollflaeche ist deckend; nur ihre Farbe wandert.
-                self._apply_card_tint_live()
-            else:
-                self._refresh_bg_label()
-        except Exception as exc:
-            logger.debug("Regler %s nicht anwendbar: %s", schluessel, exc)
 
     #: Kantenlaenge der Miniaturvorschau im Einstellungsfenster.
     _VORSCHAU_BREITE = 132
@@ -36452,8 +36440,8 @@ class PS5ConverterGUI:
     def _vorschaubild(self, pfad: str, breite: int = 0, hoehe: int = 0):
         """Kleine Vorschau eines Hintergrundbilds (None, wenn es nicht geht).
 
-        Gezeigt wird das Bild so, wie es nach Helligkeit und Kontrast
-        aussieht - sonst zeigte die Vorschau etwas anderes als das Fenster.
+        Gezeigt wird das Bild unveraendert - genau so kommt es auch ins
+        Fenster, seit die Bildeffekte ausgebaut sind.
         Das Seitenverhaeltnis bleibt erhalten; der Rest der Flaeche bleibt
         leer, statt das Motiv zu verzerren.
         """
@@ -36464,11 +36452,6 @@ class PS5ConverterGUI:
         try:
             with Image.open(pfad) as roh:
                 img = roh.convert("RGB")
-            seitenleiste = self._ist_sidebar_bild(pfad)
-            img = self._bild_regler_anwenden(
-                img,
-                "sidebar_helligkeit" if seitenleiste else "bg_helligkeit",
-                "sidebar_kontrast" if seitenleiste else "bg_kontrast")
             img.thumbnail((breite, hoehe), _LANCZOS)
             return ImageTk.PhotoImage(img)
         except Exception as exc:
@@ -36501,7 +36484,6 @@ class PS5ConverterGUI:
         übernehmen die neue Tönung – wie bei einem Design-Wechsel – erst nach
         einem Neustart vollständig.
         """
-        self._apply_card_tint_from_bg_image()
         try:
             self._setup_styles()
         except Exception as exc:
@@ -36623,8 +36605,7 @@ class PS5ConverterGUI:
 
                 action_bar_crop = self._compute_content_bg_crop(action_bar, a_width, a_height)
                 if action_bar_crop is not None:
-                    self.action_bar_bg_photo = ImageTk.PhotoImage(
-                        self._blend_bg_image_for_action_bar(action_bar_crop))
+                    self.action_bar_bg_photo = ImageTk.PhotoImage(action_bar_crop)
                     self.action_bar_bg_label.config(image=self.action_bar_bg_photo)
                     self._last_action_bar_bg_resize_size = (a_width, a_height)
 
@@ -36798,7 +36779,6 @@ class PS5ConverterGUI:
         # das alte Design-Bild.
         self._load_bg_image_cache()
         self._load_sidebar_bg_image_cache()
-        self._apply_card_tint_from_bg_image()
         c = self._COLORS
 
         # Persistenz: Theme in Config speichern

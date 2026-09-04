@@ -39,6 +39,15 @@ class FfpkgBuildSupportTests(unittest.TestCase):
             FfpkgNewfsProfile("invalid", 65536, 4096).normalized()
 
     def test_primary_newfs_command_matches_64k_reference_profile(self) -> None:
+        """``-S 4096``, nicht 512.
+
+        ShadowMount+ haengt UFS-Abbilder ueber sein Standard-Backend LVD mit
+        4096-Byte-Sektoren ein und empfiehlt genau diesen Befehl. Bis v1.9.5
+        baute dieses Projekt mit 512; ein so gebautes .ffpkg hing an echter
+        Hardware sauber ein - fsck fehlerfrei, Dateizahl bestaetigt - und der
+        Titel stuerzte eine Sekunde nach dem Start ab (04.09.2026 gemessen).
+        Dasselbe Spiel als exFAT-in-.ffpfsc lief.
+        """
         profile = primary_newfs_profile()
         self.assertEqual(profile.identifier, "newfs-64k-reference")
         command = build_newfs_directory_command(
@@ -59,7 +68,7 @@ class FfpkgBuildSupportTests(unittest.TestCase):
                 "-f",
                 "65536",
                 "-S",
-                "512",
+                "4096",
                 "-m",
                 "0",
                 "-i",

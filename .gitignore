@@ -65,3 +65,6 @@ desktop.ini
 # Die Diagnose liest coverage.json, wenn es da ist; fehlt es, sagt sie das.
 .coverage
 coverage.json
+
+# Zur Laufzeit geholte AMPR-EMU-Fassungen - Anwenderdaten, kein Quelltext.
+"AMPR EMU updates"/

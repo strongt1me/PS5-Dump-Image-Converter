@@ -28,7 +28,9 @@ import pathlib
 import sys
 import tempfile
 import importlib.util
+import ast
 import unittest
+from pathlib import Path
 
 PROJEKT = pathlib.Path(__file__).resolve().parent
 if str(PROJEKT) not in sys.path:
@@ -251,3 +253,68 @@ class BeideOberflaechenTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+class RohModusTests(unittest.TestCase):
+    """``--raw`` darf nie ohne ``--no-compress`` aufgerufen werden.
+
+    Hinweis des Engine-Entwicklers (04.09.2026)::
+
+        "pack folder --raw packs the folder directly into a PFS image
+         without the exFAT wrapper. When file compression is enabled, the
+         image is created and verification passes, but the console reads
+         the files incorrectly due to technical limitations."
+
+    Das Tueckische daran ist nicht der Fehler, sondern dass **die Pruefung
+    durchlaeuft**: Weder die Engine noch der Validator melden etwas, und
+    auffallen wuerde es erst auf der Konsole.
+
+    Dieses Programm umgeht die Bedingung, indem es das innere PFS immer
+    unkomprimiert baut und erst den aeusseren Container komprimiert. Genau
+    das sichert diese Pruefung ab - und zwar an **jeder** Fundstelle im
+    Quelltext, nicht nur an dem einen Weg, den Aufgabe1Tests abfaehrt. Beim
+    Schreiben gab es zwei ``--raw``-Aufrufe; der zweite (der verschachtelte
+    Weg) war von keiner Pruefung gedeckt.
+    """
+
+    QUELLE = Path(__file__).resolve().parent / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.baum = ast.parse(cls.QUELLE.read_text(encoding="utf-8", errors="replace"))
+
+    def _argumentlisten_mit_raw(self):
+        """Jede Listen-Literal, in der '--raw' steht, samt ihrer Zeile."""
+        raus = []
+        for knoten in ast.walk(self.baum):
+            if not isinstance(knoten, (ast.List, ast.Tuple)):
+                continue
+            werte = [k.value for k in knoten.elts
+                     if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+            if "--raw" in werte:
+                raus.append((knoten.lineno, werte))
+        return raus
+
+    def test_es_gibt_ueberhaupt_raw_aufrufe(self) -> None:
+        """Ohne das saehe die Pruefung unten leer aus und meldete Erfolg."""
+        listen = self._argumentlisten_mit_raw()
+        self.assertGreaterEqual(
+            len(listen), 2,
+            "Nur %d Argumentliste(n) mit --raw gefunden - die Auswertung "
+            "greift nicht mehr." % len(listen))
+
+    def test_jeder_raw_aufruf_schaltet_die_kompression_ab(self) -> None:
+        ohne = [zeile for zeile, werte in self._argumentlisten_mit_raw()
+                if "--no-compress" not in werte]
+        self.assertEqual(
+            [], ohne,
+            "In Zeile(n) %s steht --raw ohne --no-compress. Damit liest die "
+            "Konsole die Dateien falsch, obwohl die Pruefung durchlaeuft." % ohne)
+
+    def test_die_pruefung_wuerde_einen_verstoss_melden(self) -> None:
+        """Gegenprobe an einer erfundenen Liste."""
+        erfunden = ast.parse('x = ["pack", "folder", "--raw", "--version"]')
+        werte = [k.value for k in ast.walk(erfunden)
+                 if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+        self.assertIn("--raw", werte)
+        self.assertNotIn("--no-compress", werte,
+                         "Die Gegenprobe traegt selbst den Schalter - sie misst nichts.")

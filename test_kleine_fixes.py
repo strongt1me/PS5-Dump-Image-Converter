@@ -87,35 +87,15 @@ class HintergrundbildPfadTests(unittest.TestCase):
         self.assertEqual(self.GUI._decode_background_setting(wert), "")
 
 
-class DurchschnittsfarbeTests(unittest.TestCase):
-    """Die Farbberechnung ohne die veraltete Pillow-Schnittstelle."""
+class VeralteteBildschnittstelleTests(unittest.TestCase):
+    """``Image.getdata()`` ist seit Pillow 12 veraltet und faellt mit 14 weg.
 
-    def test_ergebnis_stimmt(self) -> None:
-        from PIL import Image
-        bild = Image.new("RGB", (40, 40), (10, 20, 30))
-        self.assertEqual(APP.PS5ConverterGUI._average_image_rgb(bild), (10, 20, 30))
-
-    def test_gemischtes_bild_liegt_zwischen_den_farben(self) -> None:
-        """Die Funktion verkleinert vorher auf 16x16 - das Ergebnis ist bewusst
-        eine Naeherung, muss aber zwischen den beiden Ausgangsfarben liegen."""
-        from PIL import Image
-        bild = Image.new("RGB", (64, 64), (0, 0, 0))
-        for x in range(32, 64):
-            for y in range(64):
-                bild.putpixel((x, y), (100, 200, 40))
-        r, g, b = APP.PS5ConverterGUI._average_image_rgb(bild)
-        self.assertTrue(0 < r < 100, r)
-        self.assertTrue(0 < g < 200, g)
-        self.assertTrue(0 < b < 40, b)
-
-    def test_keine_deprecation_warnung_mehr(self) -> None:
-        from PIL import Image
-        bild = Image.new("RGB", (32, 32), (7, 7, 7))
-        with warnings.catch_warnings(record=True) as gesammelt:
-            warnings.simplefilter("always")
-            APP.PS5ConverterGUI._average_image_rgb(bild)
-        veraltet = [w for w in gesammelt if issubclass(w.category, DeprecationWarning)]
-        self.assertEqual(veraltet, [], f"unerwartet: {[str(w.message) for w in veraltet]}")
+    Der Rest dieser Klasse pruefte die Durchschnittsfarbe eines Bildes; sie
+    wurde nur fuer die Kartentoenung gebraucht und ist mit allen anderen
+    Bildeffekten ausgebaut. Diese eine Sicherung bleibt: Sie haengt nicht an
+    den Effekten, sondern an der Pillow-Fassung, und ein Rueckfall auf
+    ``getdata()`` faellt sonst erst als Warnung beim Programmstart auf.
+    """
 
     def test_getdata_wird_nicht_mehr_aufgerufen(self) -> None:
         """Nur der Aufruf ist verboten - im Kommentar darf der Name stehen."""
@@ -127,7 +107,6 @@ class DurchschnittsfarbeTests(unittest.TestCase):
             and "``" not in zeile
         ]
         self.assertEqual(aufrufe, [], f"noch vorhanden: {aufrufe}")
-        self.assertIn("ImageStat.Stat(", quelltext)
 
 
 class TempRestTests(unittest.TestCase):

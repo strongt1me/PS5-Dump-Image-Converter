@@ -510,7 +510,14 @@ class AmprOrdnerImProgrammTests(unittest.TestCase):
                 "Gefunden wurde %r statt des Ordners im Programm" % gefunden)
 
             klasse = modul.PS5ConverterGUI
-            eintraege = klasse._ampr_scan_version_store(klasse, klasse._ampr_bundled_store())
+            # Eine echte, uneingerichtete Instanz statt der Klasse als
+            # ``self``. Der Kniff ``klasse.methode(klasse, ...)`` trug,
+            # solange die Methode nur Klassenangaben las. Seit sie den
+            # Ordner "AMPR EMU updates" mitliest, ruft sie eine zweite
+            # Methode auf ``self`` - und dann verschiebt der Kniff die
+            # Argumente um eins.
+            gui = klasse.__new__(klasse)
+            eintraege = gui._ampr_scan_version_store(klasse._ampr_bundled_store())
             self.assertEqual(len(eintraege), 1, eintraege)
             self.assertEqual(eintraege[0]["version"], "0.3.6.4",
                              "Der alte Ordner daneben hat gewonnen")
