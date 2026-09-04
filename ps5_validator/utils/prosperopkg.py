@@ -22,6 +22,7 @@ import os
 import platform
 import subprocess
 import sys
+import threading
 from typing import Callable, Iterable
 
 #: Der Ordner des Werkzeugs, relativ zum Programm.
@@ -109,12 +110,17 @@ def werkzeug_finden() -> str:
 
 def _laufen_lassen(argumente: list[str],
                    melden: Callable[[str], None] | None = None,
-                   zeitgrenze: float = 7200.0) -> tuple[int, list[str]]:
+                   zeitgrenze: float = 7200.0,
+                   prozess_ablage: dict | None = None) -> tuple[int, list[str]]:
     """Startet das Werkzeug und reicht jede Zeile weiter, sobald sie kommt.
 
     Args:
         argumente: Was hinter dem Programmnamen steht.
         melden: Bekommt jede Ausgabezeile. ``None`` schweigt.
+        prozess_ablage: Nimmt den laufenden Prozess unter ``"prozess"`` auf,
+            damit ein Abbruch ihn beenden kann. Ohne das laeuft er weiter,
+            wenn der Aufrufer sein Fenster schliesst - und schreibt weiter in
+            den Zielordner. Dasselbe Muster benutzt ``ps4_werkzeug.lauf``.
         zeitgrenze: Nach so vielen Sekunden wird abgebrochen. Zwei Stunden
             sind reichlich: Das Packen rechnet die Kraken-Kompression in
             reinem C#, und die ist bei einem grossen Titel langsam.
@@ -141,19 +147,42 @@ def _laufen_lassen(argumente: list[str],
         anlauf["creationflags"] = 0x08000000     # CREATE_NO_WINDOW
 
     zeilen: list[str] = []
+    # Die Zeitgrenze braucht einen eigenen Wecker. Sie hing bis zum 05.09.2026
+    # allein an ``lauf.wait(timeout=...)`` - und dorthin kommt der Ablauf erst,
+    # wenn die Schleife darueber fertig ist. ``for zeile in lauf.stdout``
+    # blockiert aber ohne jede Frist: Solange das Werkzeug haengt, ohne seine
+    # Ausgabe zu schliessen, wartete der Aufrufer unbegrenzt, und der
+    # ``TimeoutExpired``-Zweig war praktisch unerreichbar. Der Fall ist nicht
+    # gedacht - die Dokumentation von bauen() nennt einen Lauf ueber 134
+    # Minuten ohne Ergebnis.
+    abgelaufen = threading.Event()
     with subprocess.Popen([programm] + argumente, **anlauf) as lauf:
+        if prozess_ablage is not None:
+            prozess_ablage["prozess"] = lauf
+
+        def _zeit_ist_um() -> None:
+            abgelaufen.set()
+            try:
+                lauf.kill()
+            except OSError:
+                pass
+
+        wecker = threading.Timer(zeitgrenze, _zeit_ist_um)
+        wecker.daemon = True
+        wecker.start()
         try:
             for zeile in lauf.stdout or ():
                 sauber = zeile.rstrip("\r\n")
                 zeilen.append(sauber)
                 if melden is not None:
                     melden(sauber)
-            lauf.wait(timeout=zeitgrenze)
-        except subprocess.TimeoutExpired:
-            lauf.kill()
+            lauf.wait()
+        finally:
+            wecker.cancel()
+        if abgelaufen.is_set():
             raise ProsperoFehler(
                 "prosperopkg hat die Zeitgrenze von %.0f s ueberschritten."
-                % zeitgrenze) from None
+                % zeitgrenze)
     return (lauf.returncode, zeilen)
 
 
@@ -305,7 +334,8 @@ def bauen(quelle: str, zielordner: str,
           lizenzfrei: bool = True,
           fake_signieren: bool = False,
           schnell: bool = True,
-          zeitgrenze: float = 7200.0) -> str:
+          zeitgrenze: float = 7200.0,
+          prozess_ablage: dict | None = None) -> str:
     """Baut ein installierbares Debug-Paket aus einem Backup-Ordner.
 
     Fehlende Angaben (Content-ID, Title-ID, Titel, Version) holt sich das
@@ -342,7 +372,8 @@ def bauen(quelle: str, zielordner: str,
     if schnell:
         argumente.append("--schnell")
 
-    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze)
+    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
+                                  prozess_ablage=prozess_ablage)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg build endete mit %d: %s"
@@ -357,7 +388,8 @@ def homebrew_bauen(quelle: str, zielordner: str,
                    melden: Callable[[str], None] | None = None,
                    modulname: str = "",
                    schnell: bool = True,
-                   zeitgrenze: float = 3600.0) -> str:
+                   zeitgrenze: float = 3600.0,
+                   prozess_ablage: dict | None = None) -> str:
     """Packt kompiliertes Homebrew in ein installierbares Debug-Paket.
 
     Der Unterschied zu :func:`bauen` ist nicht bloss der Einstiegspunkt:
@@ -398,7 +430,8 @@ def homebrew_bauen(quelle: str, zielordner: str,
     if schnell:
         argumente.append("--schnell")
 
-    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze)
+    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
+                                  prozess_ablage=prozess_ablage)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg homebrew endete mit %d: %s"

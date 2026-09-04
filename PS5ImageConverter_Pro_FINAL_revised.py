@@ -32648,6 +32648,46 @@ class PS5ConverterGUI:
         ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
                    command=_erstellen).pack(side="left", padx=(8, 0))
 
+    #: Kennzeichen eines rohen PFS-Abbilds: little-endian int64 bei Offset
+    #: 0x08. Derselbe Wert, den ffpfs_validator als PFS_MAGIC_VALUE fuehrt -
+    #: bewusst dieselbe Quelle, damit beide nicht auseinanderlaufen.
+    _PFS_MAGIC = 0x1332A0B
+
+    def _debug_pkg_bild_pruefen(self, pfad: str) -> str:
+        """Prueft ein angegebenes PFS-Abbild grob. Leerer Text heisst: in Ordnung.
+
+        Nur die Faelle, die sicher falsch sind - fehlend, keine gewoehnliche
+        Datei, leer. Ob der Inhalt wirklich ein PFS ist, beantwortet
+        :meth:`_sieht_nach_pfs_aus`; dort wird gefragt statt abgelehnt.
+        """
+        if not os.path.exists(pfad):
+            return self._t("debug_pkg.image_missing", path=pfad)
+        if not os.path.isfile(pfad):
+            return self._t("debug_pkg.image_not_a_file", path=pfad)
+        try:
+            if os.path.getsize(pfad) == 0:
+                return self._t("debug_pkg.image_empty", path=pfad)
+        except OSError as exc:
+            return self._t("debug_pkg.image_unreadable", path=pfad, error=exc)
+        return ""
+
+    @classmethod
+    def _sieht_nach_pfs_aus(cls, pfad: str) -> bool:
+        """Traegt die Datei das PFS-Kennzeichen an der erwarteten Stelle?
+
+        Bewusst nur ein Blick auf die Magic - eine vollstaendige Pruefung
+        gehoert in den Validator, nicht in einen Dateidialog. Bei Zweifeln
+        wird der Anwender gefragt, nicht abgewiesen.
+        """
+        try:
+            with open(pfad, "rb") as datei:
+                kopf = datei.read(16)
+        except OSError:
+            return False
+        if len(kopf) < 16:
+            return False
+        return struct.unpack_from("<q", kopf, 0x08)[0] == cls._PFS_MAGIC
+
     def _show_debug_pkg_builder(self) -> None:
         """Öffnet den Bauer für unsignierte Debug-.pkg-Container."""
         c = self._COLORS
@@ -32737,36 +32777,81 @@ class PS5ConverterGUI:
                                      self._t("debug_pkg.no_param_message", error=exc), parent=win)
                 return
 
-            status_var.set(self._t("debug_pkg.building"))
-            win.update_idletasks()
             bild = image_var.get().strip() or None
-            try:
-                ergebnis = build_debug_pkg(
-                    ziel_var.get().strip(), cid_var.get().strip(), param, pfs_image_path=bild)
-            except (PkgWriteError, OSError, ValueError) as exc:
-                status_var.set("")
-                messagebox.showerror(self._t("debug_pkg.failed_title"), str(exc), parent=win)
-                return
+            if bild is not None:
+                # Bis zum 05.09.2026 ging der Pfad ungeprueft weiter: Eine
+                # 0-Byte-Datei ergab ein Paket vom Typ "full_debug", eine PNG
+                # ebenso - beide Male mit der Meldung "Debug-.pkg erstellt".
+                # Der Fehlgriff fiel erst an der Konsole auf.
+                fehler = self._debug_pkg_bild_pruefen(bild)
+                if fehler:
+                    messagebox.showerror(self._t("debug_pkg.failed_title"),
+                                         fehler, parent=win)
+                    return
+                if not self._sieht_nach_pfs_aus(bild):
+                    # Kein hartes Nein: Ein bewusster Sonderfall soll moeglich
+                    # bleiben, der versehentliche Fehlgriff aber auffallen.
+                    if not messagebox.askyesno(
+                            self._t("debug_pkg.image_odd_title"),
+                            self._t("debug_pkg.image_odd_message", path=bild),
+                            parent=win, default="no"):
+                        return
 
-            zusammenfassung = self._t(
-                "debug_pkg.result",
-                path=ergebnis.get("path", ziel_var.get()),
-                type=ergebnis.get("type", "-"),
-                size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0)),
-                entries=ergebnis.get("entry_count", "-"),
-                content_id=ergebnis.get("content_id", "-"),
-            )
-            status_var.set(zusammenfassung)
-            self._append_to_log(f"[INFO] Debug-.pkg: {ergebnis}\n")
-            messagebox.showinfo(
-                self._t("dialog.title.debug_pkg_created"),
-                self._t("dialog.msg.debug_pkg_created") + "\n\n" + zusammenfassung, parent=win)
+            status_var.set(self._t("debug_pkg.building"))
+            bau_knopf.configure(state="disabled")
+
+            def _fertig(ergebnis) -> None:
+                bau_knopf.configure(state="normal")
+                zusammenfassung = self._t(
+                    "debug_pkg.result",
+                    path=ergebnis.get("path", ziel_var.get()),
+                    type=ergebnis.get("type", "-"),
+                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0)),
+                    entries=ergebnis.get("entry_count", "-"),
+                    content_id=ergebnis.get("content_id", "-"),
+                )
+                status_var.set(zusammenfassung)
+                # Frueher ging hier das rohe Python-dict ins Protokoll.
+                self._append_to_log(self._t(
+                    "debug_pkg.log_done",
+                    path=ergebnis.get("path", ziel_var.get()),
+                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0))) + chr(10))
+                messagebox.showinfo(
+                    self._t("dialog.title.debug_pkg_created"),
+                    self._t("dialog.msg.debug_pkg_created") + "\n\n" + zusammenfassung,
+                    parent=win)
+
+            def _misslungen(meldung: str) -> None:
+                bau_knopf.configure(state="normal")
+                status_var.set("")
+                messagebox.showerror(self._t("debug_pkg.failed_title"),
+                                     meldung, parent=win)
+
+            def _arbeit() -> None:
+                # In einem eigenen Faden: Bei angegebenem PFS-Image kopiert
+                # build_debug_pkg die ganze Datei in die .pkg. Bei zig Gigabyte
+                # stand die Oberflaeche sonst minutenlang still, Windows meldete
+                # "Keine Rueckmeldung" - und wer das Programm daraufhin abschoss,
+                # tat es mitten im Schreiben.
+                try:
+                    ergebnis = build_debug_pkg(
+                        ziel_var.get().strip(), cid_var.get().strip(), param,
+                        pfs_image_path=bild)
+                except (PkgWriteError, OSError, ValueError) as exc:
+                    meldung = str(exc)
+                    self._spaeter_im_fenster(win, _misslungen, meldung)
+                    return
+                self._spaeter_im_fenster(win, _fertig, ergebnis)
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="debug-pkg-builder").start()
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("debug_pkg.build_button"),
-                   style="Accent.TButton", command=_bauen).pack(side="left")
+        bau_knopf = ttk.Button(knopfreihe, text=self._t("debug_pkg.build_button"),
+                               style="Accent.TButton", command=_bauen)
+        bau_knopf.pack(side="left")
 
     # ==================================================================
     # Klog – Live-Streaming des PS5-Kernel-Logs über einen einfachen
@@ -33066,7 +33151,13 @@ class PS5ConverterGUI:
         schnell_var = tk.BooleanVar(value=True)
         lizenzfrei_var = tk.BooleanVar(value=True)
         status_var = tk.StringVar(value=self._t("pkgbau.status_idle"))
-        laeuft = {"aktiv": False}
+        # "prozess" nimmt den laufenden prosperopkg auf, damit das Schliessen
+        # ihn wirklich beenden kann. Ohne das rief der Knopf nur win.destroy:
+        # Der Kindprozess lief mit seiner Zeitgrenze von bis zu zwei Stunden
+        # weiter und schrieb weiter in den Zielordner, waehrend Protokoll und
+        # Statuszeile ins Leere liefen - der Anwender glaubte abgebrochen zu
+        # haben und erfuhr von einem Fehlschlag nie etwas.
+        laeuft: dict = {"aktiv": False, "prozess": None}
 
         def _zeile(text: str, var, waehlen) -> None:
             reihe = tk.Frame(koerper, bg=c["bg_main"])
@@ -33180,12 +33271,14 @@ class PS5ConverterGUI:
                     if art_var.get() == "homebrew":
                         pfad = prosperopkg.homebrew_bauen(
                             quelle, ziel, melden=_protokoll,
-                            schnell=bool(schnell_var.get()))
+                            schnell=bool(schnell_var.get()),
+                            prozess_ablage=laeuft)
                     else:
                         pfad = prosperopkg.bauen(
                             quelle, ziel, melden=_protokoll,
                             lizenzfrei=bool(lizenzfrei_var.get()),
-                            schnell=bool(schnell_var.get()))
+                            schnell=bool(schnell_var.get()),
+                            prozess_ablage=laeuft)
                 except prosperopkg.ProsperoFehler as exc:
                     _protokoll("[FEHLER] %s" % exc)
                     _status(self._t("pkgbau.status_failed"))
@@ -33202,10 +33295,41 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True,
                              name="prosperopkg-build").start()
 
+        def _beim_schliessen() -> None:
+            """Schliesst das Fenster - und beendet einen laufenden Bau.
+
+            Vorher rief der Knopf nur ``win.destroy``. Der prosperopkg-Prozess
+            lief danach unbemerkt weiter (Zeitgrenze bis zu zwei Stunden) und
+            schrieb weiter in den Zielordner; Protokoll und Statuszeile liefen
+            dabei ins Leere, weil sie ueber ``_spaeter_im_fenster`` abgesichert
+            sind. Der Anwender glaubte abgebrochen zu haben und erfuhr von
+            einem Fehlschlag nie etwas.
+            """
+            if laeuft["aktiv"]:
+                if not messagebox.askyesno(
+                        self._t("pkgbau.window_title"),
+                        self._t("pkgbau.abort_confirm"),
+                        parent=win, default="no"):
+                    return
+                prozess = laeuft.get("prozess")
+                if prozess is not None:
+                    try:
+                        prozess.terminate()
+                    except OSError as exc:
+                        logger.debug("PKG-Bau nicht beendbar: %s", exc)
+                # Das Kennzeichen hier zuruecksetzen: Der Arbeitsfaden tut es
+                # zwar selbst, aber erst wenn der Prozess wirklich weg ist -
+                # und bis dahin ist das Fenster schon fort.
+                laeuft["aktiv"] = False
+                self._append_to_log(self._t("pkgbau.log_aborted") + chr(10))
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
+                   command=_beim_schliessen).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("pkgbau.build_button"),
                    style="Accent.TButton", command=_bauen).pack(side="left")
         ttk.Button(knopfreihe, text=self._t("pkgbau.check_button"),

@@ -15,6 +15,10 @@ from __future__ import annotations
 
 import io
 import os
+import shutil
+import sys
+import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -42,7 +46,8 @@ BLOCKIERT_AUSGABE = [
 
 def _lauf(zeilen, code=0):
     """Ersetzt _laufen_lassen durch eine feste Ausgabe."""
-    def gefangen(argumente, melden=None, zeitgrenze=None):
+    def gefangen(argumente, melden=None, zeitgrenze=None,
+                 prozess_ablage=None):
         if melden is not None:
             for z in zeilen:
                 melden(z)
@@ -142,7 +147,8 @@ class BauenTest(unittest.TestCase):
         """Ein echter rif laesst sich am Rechner nicht erzeugen."""
         gemerkt = {}
 
-        def gefangen(argumente, melden=None, zeitgrenze=None):
+        def gefangen(argumente, melden=None, zeitgrenze=None,
+                     prozess_ablage=None):
             gemerkt["argumente"] = argumente
             return (0, ["RESULT: " + self.pkg])
 
@@ -154,7 +160,8 @@ class BauenTest(unittest.TestCase):
     def test_fake_signieren_laesst_sich_zuschalten(self) -> None:
         gemerkt = {}
 
-        def gefangen(argumente, melden=None, zeitgrenze=None):
+        def gefangen(argumente, melden=None, zeitgrenze=None,
+                     prozess_ablage=None):
             gemerkt["argumente"] = argumente
             return (0, ["RESULT: " + self.pkg])
 
@@ -249,6 +256,106 @@ class AuslieferungTests(unittest.TestCase):
         block = text[anfang:text.index("```", anfang)]
         self.assertIn("-p:DebugType=none", block,
                       "Der Neubaubefehl legt wieder .pdb an.")
+
+
+class ZeitgrenzeTests(unittest.TestCase):
+    """Die zugesagte Zeitgrenze muss auch greifen, wenn das Werkzeug haengt.
+
+    Bis zum 05.09.2026 hing sie allein an ``lauf.wait(timeout=...)`` - und
+    dorthin kommt der Ablauf erst, wenn die Leseschleife darueber fertig ist.
+    ``for zeile in lauf.stdout`` blockiert aber ohne jede Frist: Bleibt das
+    Werkzeug stehen, ohne seine Ausgabe zu schliessen, wartete der Aufrufer
+    unbegrenzt. Der ``TimeoutExpired``-Zweig war damit unerreichbar.
+
+    Nachgemessen an einem Prozess, der eine Zeile schreibt und dann fuenf
+    Minuten schlaeft: alter Stand ohne Abbruch bis mindestens 25 s, neuer
+    bricht nach 3,1 s ab.
+
+    Gefahren wird mit dem Python-Interpreter als "Werkzeug" - so braucht die
+    Pruefung weder prosperopkg noch .NET und ist in Sekunden durch.
+    """
+
+    HAENGER = ("import sys, time\n"
+               "print('los', flush=True)\n"
+               "time.sleep(300)\n")
+
+    def setUp(self) -> None:
+        self.ordner = tempfile.mkdtemp(prefix="prospero_zeit_")
+        self.addCleanup(shutil.rmtree, self.ordner, ignore_errors=True)
+        self.skript = os.path.join(self.ordner, "haenger.py")
+        with open(self.skript, "w", encoding="utf-8") as datei:
+            datei.write(self.HAENGER)
+        self._echtes_werkzeug = pp.werkzeug_finden
+        pp.werkzeug_finden = lambda: sys.executable
+        self.addCleanup(
+            setattr, pp, "werkzeug_finden", self._echtes_werkzeug)
+
+    def test_haengendes_werkzeug_wird_abgebrochen(self) -> None:
+        start = time.perf_counter()
+        with self.assertRaises(pp.ProsperoFehler) as gefangen:
+            pp._laufen_lassen([self.skript], zeitgrenze=3.0)
+        gebraucht = time.perf_counter() - start
+        self.assertIn("Zeitgrenze", str(gefangen.exception))
+        self.assertLess(
+            gebraucht, 30.0,
+            "Erst nach %.0f s abgebrochen - die Zeitgrenze greift nicht "
+            "waehrend des Lesens." % gebraucht)
+
+    def test_ein_kurzer_lauf_wird_nicht_abgebrochen(self) -> None:
+        """Gegenrichtung: Der Wecker darf nicht zu frueh zuschlagen."""
+        kurz = os.path.join(self.ordner, "kurz.py")
+        with open(kurz, "w", encoding="utf-8") as datei:
+            datei.write("print('fertig')\n")
+        rc, zeilen = pp._laufen_lassen([kurz], zeitgrenze=30.0)
+        self.assertEqual(0, rc)
+        self.assertIn("fertig", zeilen)
+
+
+class ProzessAblageTests(unittest.TestCase):
+    """Der laufende Prozess muss von aussen erreichbar sein.
+
+    Sonst laesst sich ein Bau nicht abbrechen: Der Schliessen-Knopf des
+    Fensters rief nur ``win.destroy``, der prosperopkg-Prozess lief mit seiner
+    Zeitgrenze von bis zu zwei Stunden weiter und schrieb weiter in den
+    Zielordner. Protokoll und Statuszeile liefen dabei ins Leere - der
+    Anwender glaubte abgebrochen zu haben.
+    """
+
+    def setUp(self) -> None:
+        self.ordner = tempfile.mkdtemp(prefix="prospero_ablage_")
+        self.addCleanup(shutil.rmtree, self.ordner, ignore_errors=True)
+        self.skript = os.path.join(self.ordner, "lang.py")
+        with open(self.skript, "w", encoding="utf-8") as datei:
+            datei.write("import time\nprint('laeuft', flush=True)\ntime.sleep(60)\n")
+        self._echtes_werkzeug = pp.werkzeug_finden
+        pp.werkzeug_finden = lambda: sys.executable
+        self.addCleanup(setattr, pp, "werkzeug_finden", self._echtes_werkzeug)
+
+    def test_der_prozess_landet_in_der_ablage_und_laesst_sich_beenden(self) -> None:
+        import threading
+
+        ablage: dict = {}
+
+        def _lauf() -> None:
+            try:
+                pp._laufen_lassen([self.skript], zeitgrenze=120.0,
+                                  prozess_ablage=ablage)
+            except pp.ProsperoFehler:
+                pass
+
+        faden = threading.Thread(target=_lauf, daemon=True)
+        faden.start()
+        frist = time.perf_counter() + 10.0
+        while time.perf_counter() < frist and "prozess" not in ablage:
+            time.sleep(0.05)
+        self.assertIn("prozess", ablage,
+                      "Der Prozess ist von aussen nicht erreichbar - ein "
+                      "Abbruch waere unmoeglich.")
+
+        ablage["prozess"].terminate()
+        faden.join(15)
+        self.assertFalse(faden.is_alive(),
+                         "Der Lauf ging nach terminate() weiter.")
 
 
 if __name__ == "__main__":
