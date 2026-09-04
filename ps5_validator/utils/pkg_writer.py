@@ -250,6 +250,17 @@ def build_debug_pkg(
         drm_type=drm_type,
     )
 
+    # Die Eintragszahl aus dem gebauten Container lesen statt sie daneben
+    # noch einmal auszurechnen: So kann sie nicht von dem abweichen, was
+    # wirklich in der Datei steht. Sie sitzt im CNT-Kopf bei 0x10 - dieselbe
+    # Stelle, die build_cnt_container beschreibt.
+    #
+    # Bis zum 05.09.2026 fehlte sie in der Rueckgabe ganz, obwohl der
+    # Docstring sie zusagte. Das Fenster fragte sie ab und zeigte deshalb bei
+    # JEDEM Paket "Eintraege: -" - der Anwender hielt das fuer ein leeres
+    # Paket oder einen Fehler.
+    entry_count = struct.unpack_from(">I", cnt_bytes, 0x10)[0]
+
     if pfs_image_path is None:
         with open(output_path, "wb") as f:
             f.write(cnt_bytes)
@@ -257,6 +268,7 @@ def build_debug_pkg(
             "path": output_path,
             "type": "meta",
             "size": len(cnt_bytes),
+            "entry_count": entry_count,
             "content_id": content_id,
         }
 
@@ -277,6 +289,7 @@ def build_debug_pkg(
         "path": output_path,
         "type": "full_debug",
         "size": embedded_cnt_offset + len(cnt_bytes),
+        "entry_count": entry_count,
         "pfs_image_size": pfs_image_size,
         "embedded_cnt_offset": embedded_cnt_offset,
         "content_id": content_id,

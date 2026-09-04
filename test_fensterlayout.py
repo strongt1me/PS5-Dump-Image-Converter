@@ -154,12 +154,16 @@ class FensterLayoutTests(unittest.TestCase):
             self._schliesse(fenster)
 
     def test_backport_auswahlfelder_zeigen_einen_wert(self):
-        """Beide Klapplisten im Backport-Fenster: Firmware und Bibliotheksordner.
+        """Die Klappliste im Backport-Fenster: die Firmware.
 
-        Der Bibliotheksordner (fakelib/fakelib2) kam dazu, weil ShadowMount+ nur
-        einen von beiden einhaengt und fakelib2 bevorzugt. Geprueft wird, dass
-        keine der Listen leer bleibt - das war der Fehler, den eine nur lokal
-        gehaltene StringVar ausloeste.
+        Geprueft wird, dass sie nicht leer bleibt - das war der Fehler, den
+        eine nur lokal gehaltene StringVar ausloeste.
+
+        Bis zum 05.09.2026 stand hier eine zweite Liste fuer den
+        Bibliotheksordner. Sie ist raus: Waehlen liess sich darin seit v1.8.98
+        nichts mehr, was gewirkt haette, denn ab ShadowMountPlus 1.7 alpha8
+        zaehlt im Spielordner ausschliesslich ``fakelib``. Der Ordner wird
+        stattdessen angezeigt - siehe unten.
         """
         fenster = self._oeffne(
             lambda: self.app._render_backport_window(os.path.dirname(HAUPTDATEI)))
@@ -167,20 +171,39 @@ class FensterLayoutTests(unittest.TestCase):
             self.assertEqual(_leere_comboboxen(fenster), [],
                              "Eine Auswahl ist leer")
             boxen = _sammle(fenster, "Combobox")
-            self.assertEqual(len(boxen), 2, "Erwartet: Firmware und Bibliotheksordner")
-            for box in boxen:
-                self.assertGreaterEqual(box.current(), 0, "Kein Eintrag ausgewählt")
-                self.assertTrue(str(box.get()).strip(), "Auswahl ohne Text")
+            self.assertEqual(len(boxen), 1, "Erwartet: nur noch die Firmware")
+            box = boxen[0]
+            self.assertGreaterEqual(box.current(), 0, "Kein Eintrag ausgewählt")
+            self.assertTrue(str(box.get()).strip(), "Auswahl ohne Text")
 
             from ps5_validator.utils import ps5_backport as bp
-            werte = [str(b.get()) for b in boxen]
             # Voreinstellung ist die Firmware mit Ersatzbibliotheken.
-            self.assertTrue(any(f"{bp.FIRMWARE_STANDARD}.00" in w for w in werte),
-                            f"Firmware-Vorgabe fehlt: {werte}")
-            # Und einer der beiden bekannten Ordnernamen.
-            self.assertTrue(any(w.strip().lower() in bp.FAKELIB_ORDNERNAMEN
-                                for w in werte),
-                            f"Bibliotheksordner fehlt: {werte}")
+            self.assertIn(f"{bp.FIRMWARE_STANDARD}.00", str(box.get()))
+        finally:
+            self._schliesse(fenster)
+
+    def test_backport_nennt_den_bibliotheksordner_als_text(self):
+        """Angezeigt statt waehlbar - aber angezeigt werden muss er.
+
+        Sonst muesste der Anwender raten, wohin die Ersatzbibliotheken gehen.
+        Die frueher hier stehende Auswahl versprach eine Wahl, die es nicht
+        gab: Das Protokoll bestaetigte "Ersatzbibliotheken gehen nach
+        fakelib2", abgelegt wurde nach fakelib.
+        """
+        from ps5_validator.utils import ps5_backport as bp
+
+        fenster = self._oeffne(
+            lambda: self.app._render_backport_window(os.path.dirname(HAUPTDATEI)))
+        try:
+            texte = [str(w.cget("text")).strip().lower()
+                     for w in _sammle(fenster, "Label")]
+            self.assertIn(self.app._fakelib_ordnername().lower(), texte,
+                          "Der Ablageordner steht nirgends im Fenster.")
+            # Und er darf nicht mehr auswaehlbar sein.
+            for box in _sammle(fenster, "Combobox"):
+                self.assertNotIn(str(box.get()).strip().lower(),
+                                 bp.FAKELIB_ORDNERNAMEN,
+                                 "Der Ordner haengt wieder in einer Auswahl.")
         finally:
             self._schliesse(fenster)
 

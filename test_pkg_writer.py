@@ -108,5 +108,51 @@ class PkgWriterFullDebugTests(unittest.TestCase):
         self.assertEqual(parsed_param, param)
 
 
+class EintragszahlTests(unittest.TestCase):
+    """``entry_count`` muss in der Rueckgabe stehen - und stimmen.
+
+    Der Docstring von :func:`build_debug_pkg` sagt sie seit jeher zu, geliefert
+    wurde sie bis zum 05.09.2026 nicht. Das Fenster "Debug PKG Builder" fragt
+    sie ab und zeigte deshalb bei **jedem** Paket "Eintraege: -"; der Anwender
+    hielt das fuer ein leeres Paket oder einen Fehler.
+
+    Geprueft wird gegen das, was wirklich in der Datei steht - gelesen vom
+    ``pkg_reader``, nicht vom Schreiber selbst.
+    """
+
+    def setUp(self) -> None:
+        self.tmpdir = tempfile.mkdtemp(prefix="pkgwriter_anzahl_")
+        self.addCleanup(self._aufraeumen)
+
+    def _aufraeumen(self) -> None:
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_meta_paket_meldet_seine_eintraege(self) -> None:
+        ziel = os.path.join(self.tmpdir, "meta.pkg")
+        ergebnis = pkg_writer.build_debug_pkg(
+            ziel, "UP9000-CUSA00000_00-TESTTESTTEST0000",
+            {"titleId": "CUSA00000"})
+        self.assertIn("entry_count", ergebnis,
+                      "Der Schluessel fehlt - das Fenster zeigt dann '-'.")
+        info = pkg_reader.read_pkg(ziel)
+        self.assertEqual(
+            len(info.entries), ergebnis["entry_count"],
+            "Die gemeldete Zahl passt nicht zu dem, was in der Datei steht.")
+        self.assertGreater(ergebnis["entry_count"], 0)
+
+    def test_mehr_eintraege_ergeben_eine_hoehere_zahl(self) -> None:
+        """Sonst koennte eine feste Zahl den Test bestehen."""
+        ziel_a = os.path.join(self.tmpdir, "a.pkg")
+        ziel_b = os.path.join(self.tmpdir, "b.pkg")
+        kennung = "UP9000-CUSA00000_00-TESTTESTTEST0000"
+        param = {"titleId": "CUSA00000"}
+        a = pkg_writer.build_debug_pkg(ziel_a, kennung, param)
+        b = pkg_writer.build_debug_pkg(
+            ziel_b, kennung, param,
+            extra_entries=[(0x1000, "zusatz.bin", b"xyz")])
+        self.assertEqual(a["entry_count"] + 1, b["entry_count"])
+
+
 if __name__ == "__main__":
     unittest.main()

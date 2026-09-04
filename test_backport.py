@@ -639,19 +639,53 @@ class FakelibOrdnerwahlTests(unittest.TestCase):
 
     # -- Programmebene -----------------------------------------------------
 
-    def test_die_wahl_steht_in_beiden_fenstern(self) -> None:
-        """Einmal im BACKPORT-Fenster, einmal im AMPR EMU Manager."""
-        self.assertEqual(self.quelle.count('values=list(ps5_backport.FAKELIB_ORDNERNAMEN)'), 2)
-        self.assertEqual(self.quelle.count('self._save_setting("fakelib_variante", wahl)'), 2)
+    def test_der_ordner_ist_nirgends_mehr_waehlbar(self) -> None:
+        """Die Klapplisten sind raus - sie versprachen etwas Folgenloses.
 
-    def test_beide_fenster_nutzen_denselben_schluessel(self) -> None:
-        """Genau ein Leser - sonst koennten die Fenster auseinanderlaufen.
+        Bis zum 05.09.2026 stand in beiden Fenstern eine Liste
+        ``fakelib``/``fakelib2``. Waehlen liess sich darin seit v1.8.98 nichts
+        mehr, was gewirkt haette: Die Ablage entscheidet
+        ``_fakelib_ordnername`` nach der Anleitung. Die Liste nahm die Wahl
+        trotzdem an und das Protokoll bestaetigte sie ("Ersatzbibliotheken
+        gehen nach fakelib2") - abgelegt wurde nach ``fakelib``. Wer danach in
+        ``fakelib2`` nachsah, fand nichts.
 
-        Geprueft wird die Absicht, nicht die Schreibweise: Der Schluessel darf im
-        ganzen Programm nur dreimal vorkommen - einmal lesend in
-        ``_fakelib_ordnername`` und zweimal schreibend (die zwei Klapplisten).
+        Die Wahl wirksam zu machen waere der falsche Weg gewesen: Ab
+        ShadowMountPlus 1.7 alpha8 wird ein ``fakelib2`` im Spielordner
+        wortlos ignoriert, das Spiel startete dann ohne die Bibliotheken.
         """
-        self.assertEqual(self.quelle.count('"fakelib_variante"'), 3)
+        self.assertNotIn('values=list(ps5_backport.FAKELIB_ORDNERNAMEN)', self.quelle,
+                         "Es gibt wieder eine Auswahlliste fuer den Ordner.")
+        self.assertNotIn('self._save_setting("fakelib_variante", wahl)', self.quelle,
+                         "Die Wahl wird wieder gespeichert.")
+        # Angezeigt wird der Ordner weiterhin - in beiden Fenstern, damit
+        # niemand raten muss, wohin die Dateien gehen.
+        self.assertEqual(2, self.quelle.count('text=self._fakelib_ordnername()'),
+                         "Der tatsaechliche Ordner steht nicht in beiden Fenstern.")
+
+    def test_der_schluessel_wird_nur_noch_gelesen(self) -> None:
+        """Genau ein Leser, kein Schreiber mehr.
+
+        Gelesen wird ``fakelib_variante`` weiterhin - wer die Einstellung aus
+        einer aelteren Fassung stehen hat, bekommt einmal den Hinweis, dass
+        anderswo abgelegt wird. Geschrieben wird sie nirgends mehr.
+        """
+        self.assertNotIn('_save_setting("fakelib_variante"', self.quelle,
+                         "Die Einstellung wird wieder geschrieben.")
+        # Nicht die Vorkommen zaehlen - eine Zahl hier veraltet beim ersten
+        # Erklaersatz, der den Namen erwaehnt. Geprueft wird, wo der Leser
+        # sitzt: in _fakelib_ordnername, und nur dort.
+        stelle = self.quelle.index("def _fakelib_ordnername")
+        ende = self.quelle.index("    def ", stelle + 10)
+        block = self.quelle[stelle:ende]
+        self.assertIn('leser("fakelib_variante"', block,
+                      "Der Leser sitzt nicht in _fakelib_ordnername.")
+        self.assertNotIn('"fakelib_variante"', self.quelle[:stelle],
+                         "Ausserhalb von _fakelib_ordnername wird der "
+                         "Schluessel wieder angefasst.")
+        self.assertNotIn('"fakelib_variante"', self.quelle[ende:],
+                         "Ausserhalb von _fakelib_ordnername wird der "
+                         "Schluessel wieder angefasst.")
         stelle = self.quelle.index("def _fakelib_ordnername")
         # Bis zur naechsten Methode, nicht ueber eine feste Zeichenzahl: Ein
         # laengerer Erklaertext schob den Leser sonst aus dem Fenster heraus
@@ -684,17 +718,25 @@ class FakelibOrdnerwahlTests(unittest.TestCase):
 
     def test_texte_sind_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
-        for schluessel in ("backport.fakelib_folder_label", "fakelib.folder_chosen",
-                           "fakelib.collision_warning", "fakelib.shared_hint"):
+        for schluessel in ("backport.fakelib_folder_label", "fakelib.folder_fixed",
+                           "fakelib.collision_warning"):
             with self.subTest(schluessel=schluessel):
                 for sprache in ("de", "en"):
                     self.assertTrue(STRINGS[schluessel].get(sprache, "").strip())
 
-    def test_umstellen_im_ampr_fenster_liest_den_zustand_neu(self) -> None:
-        """Sonst nennt der Zustandstext weiter den alten Ordner."""
-        stelle = self.quelle.index("def _ampr_ordner_gewaehlt")
-        block = self.quelle[stelle:stelle + 900]
-        self.assertIn("_refresh_versions()", block)
+    def test_die_texte_der_alten_wahl_sind_weg(self) -> None:
+        """Sie behaupteten etwas, das nicht mehr stimmt.
+
+        ``fakelib.folder_chosen`` meldete "Ersatzbibliotheken gehen nach
+        {v0}", ``fakelib.shared_hint`` sprach von "einen der beiden Ordner".
+        Beide gehoerten zur entfernten Klappliste; stehenbleibende Texte sind
+        die Sorte Leiche, die spaeter jemand versehentlich wiederbelebt.
+        """
+        from ps5_validator.utils.i18n import STRINGS
+        for schluessel in ("fakelib.folder_chosen", "fakelib.shared_hint"):
+            with self.subTest(schluessel=schluessel):
+                self.assertNotIn(schluessel, STRINGS)
+                self.assertNotIn(schluessel, self.quelle)
 
 
 class BibliothekssatzFilterTests(unittest.TestCase):

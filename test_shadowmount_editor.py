@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import time
 import unittest
 
@@ -47,7 +48,7 @@ import ftplib
 
 try:
     import tkinter as tk
-    from tkinter import messagebox
+    from tkinter import filedialog, messagebox
 
     # Vorhandene Wurzel weiterbenutzen und niemals zerstoeren - siehe die
     # Regeln in test_fensterlayout.py und test_handbuch_knopf.py.
@@ -246,6 +247,64 @@ class EditorSchreibwegTests(unittest.TestCase):
                          "Es wurde geschrieben, obwohl der Stand nicht passt.")
         self.assertTrue(self.warnungen,
                         "Der Anwender erfuhr nicht, dass nichts geschrieben wurde.")
+
+
+@unittest.skipUnless(TK_DA, "Ohne Anzeige laesst sich kein Fenster oeffnen")
+class DebugLogAbholenTests(EditorSchreibwegTests):
+    """Ein misslungener Abruf darf die gewaehlte Datei nicht leeren.
+
+    ShadowMount+ legt die ``debug.log`` nur bei ``debug=1`` an. Fehlt sie auf
+    der Konsole, ging der Abruf trotzdem ueber ``open(pfad, "wb")`` - das legt
+    die Zieldatei an bzw. leert sie, noch bevor das ``RETR`` laeuft. Der
+    Anwender fand danach eine 0-Byte-Datei; hatte er im Dialog eine vorhandene
+    aeltere Protokolldatei zum Ueberschreiben ausgewaehlt, war deren Inhalt
+    weg, obwohl nichts angekommen war.
+    """
+
+    ALT = b"aeltere Protokolldatei, die es zu erhalten gilt\n"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.ziel = os.path.join(
+            tempfile.mkdtemp(prefix="ps5_debuglog_"), "debug.log")
+        with open(self.ziel, "wb") as datei:
+            datei.write(self.ALT)
+        self._echter_dialog = filedialog.asksaveasfilename
+        filedialog.asksaveasfilename = lambda *a, **k: self.ziel
+
+    def tearDown(self) -> None:
+        filedialog.asksaveasfilename = self._echter_dialog
+        super().tearDown()
+
+    # Die geerbten Wege pruefen den Schreibweg, hier geht es um den Abruf.
+    def test_ohne_laden_wird_nichts_geschrieben(self) -> None:
+        self.skipTest("in dieser Klasse geht es um das Abholen")
+
+    def test_nach_dem_laden_bleibt_alles_erhalten(self) -> None:
+        self.skipTest("in dieser Klasse geht es um das Abholen")
+
+    def test_liegt_am_ziel_nichts_wird_nicht_geschrieben(self) -> None:
+        self.skipTest("in dieser Klasse geht es um das Abholen")
+
+    def test_misslungener_abruf_laesst_die_datei_unberuehrt(self) -> None:
+        self.lage["fehlt"] = True          # auf der Konsole liegt keine
+        self._ablauf(lambda: self._druecken("DEBUG"))
+        with open(self.ziel, "rb") as datei:
+            self.assertEqual(
+                self.ALT, datei.read(),
+                "Die vorhandene Protokolldatei wurde geleert, obwohl der "
+                "Abruf fehlschlug.")
+        self.assertFalse(
+            os.path.exists(self.ziel + ".teil"),
+            "Die Zwischendatei blieb liegen und sieht wie ein Ergebnis aus.")
+
+    def test_geglueckter_abruf_schreibt_die_datei(self) -> None:
+        """Die Gegenrichtung - sonst hiesse 'nichts kaputt' auch 'nichts tut'."""
+        self.lage["datei"] = b"frisches Protokoll von der Konsole\n"
+        self._ablauf(lambda: self._druecken("DEBUG"))
+        with open(self.ziel, "rb") as datei:
+            self.assertEqual(b"frisches Protokoll von der Konsole\n",
+                             datei.read())
 
 
 @unittest.skipUnless(TK_DA, "Ohne Anzeige laesst sich kein Fenster oeffnen")

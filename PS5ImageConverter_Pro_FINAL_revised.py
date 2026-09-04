@@ -22352,51 +22352,31 @@ class PS5ConverterGUI:
                 fg=c["fg_primary"], bg=c["bg_main"], justify="left", anchor="w",
             ).pack(fill="x", padx=10, pady=(8, 8))
 
-            # ---- Bibliotheksordner: fakelib oder fakelib2 ----
+            # ---- Bibliotheksordner ----
             #
-            # Dieselbe Wahl wie im BACKPORT-Fenster und derselbe gespeicherte
-            # Wert. Wer hier umstellt, stellt den Backport mit um - das muss so
-            # sein, weil ShadowMount+ nur EINEN der beiden Ordner einhaengt und
-            # fakelib2 bevorzugt ("mount app0/fakelib2 when present, otherwise
-            # app0/fakelib"). Zwei verschiedene Ordner hiessen: einer wirkt
-            # nicht, ohne jede Meldung.
+            # Fest, nicht waehlbar - hier stand bis zum 05.09.2026 eine
+            # Klappliste wie im BACKPORT-Fenster. Ihre Wahl war seit
+            # v1.8.98 folgenlos: Abgelegt wird nach _fakelib_ordnername,
+            # und das ist nach der Anleitung von ShadowMountPlus immer
+            # 'fakelib', weil ab 1.7 alpha8 ein 'fakelib2' im Spielordner
+            # wortlos ignoriert wird. Die Liste nahm die Umstellung
+            # trotzdem an und das Protokoll bestaetigte sie.
             ordner_row = tk.Frame(sec_a, bg=c["bg_main"])
             ordner_row.pack(fill="x", padx=10, pady=(0, 8))
             tk.Label(
                 ordner_row, text=self._t("backport.fakelib_folder_label"),
                 font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
             ).pack(side="left")
-            ampr_ordner_box = ttk.Combobox(
-                ordner_row, state="readonly", width=10,
-                values=list(ps5_backport.FAKELIB_ORDNERNAMEN))
-            ampr_ordner_box.pack(side="left", padx=(8, 10))
-            try:
-                ampr_ordner_box.current(
-                    list(ps5_backport.FAKELIB_ORDNERNAMEN).index(self._fakelib_ordnername()))
-            except ValueError:
-                ampr_ordner_box.current(0)
             tk.Label(
-                ordner_row, text=self._t("fakelib.shared_hint"),
+                ordner_row, text=self._fakelib_ordnername(),
+                font=(UI_SCHRIFT, pt(9), "bold"), fg=c["fg_primary"],
+                bg=c["bg_main"],
+            ).pack(side="left", padx=(8, 10))
+            tk.Label(
+                ordner_row, text=self._t("fakelib.folder_fixed"),
                 font=(UI_SCHRIFT, pt(8)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=420, justify="left",
             ).pack(side="left", fill="x", expand=True)
-
-            def _ampr_ordner_gewaehlt(_e=None) -> None:
-                wahl = str(ampr_ordner_box.get() or "").strip().lower()
-                if wahl not in ps5_backport.FAKELIB_ORDNERNAMEN:
-                    return
-                self._save_setting("fakelib_variante", wahl)
-                self._append_to_log(self._t("fakelib.folder_chosen", v0=wahl) + chr(10))
-                warnung = self._fakelib_kollision(search_root)
-                if warnung:
-                    self._append_to_log(warnung + chr(10))
-                # Der Zustand liest den Bibliotheksordner aus - nach dem
-                # Umstellen also neu einlesen, sonst zeigt er den alten Ordner.
-                try:
-                    _refresh_versions()
-                except Exception as exc:
-                    logger.debug('AMPR-Zustand nicht aktualisierbar: %s', exc)
-            ampr_ordner_box.bind("<<ComboboxSelected>>", _ampr_ordner_gewaehlt)
 
             # ---- Bereich B: Versionsordner und Auswahl ----
             sec_b = tk.LabelFrame(
@@ -31292,28 +31272,26 @@ class PS5ConverterGUI:
         except ValueError:
             fw_box.current(0)
 
-        # Wahl des Bibliotheksordners. ShadowMount+ haengt nur EINEN ein und
-        # bevorzugt fakelib2; die Wahl gilt deshalb auch fuer den AMPR EMU
-        # Manager, damit beide nicht in verschiedene Ordner schreiben.
+        # Der Bibliotheksordner steht fest - hier stand bis zum 05.09.2026 eine
+        # Klappliste. Waehlen liess sich darin seit v1.8.98 nichts mehr, was
+        # eine Wirkung gehabt haette: Die Ablage entscheidet
+        # _fakelib_ordnername nach der Anleitung von ShadowMountPlus, weil ab
+        # 1.7 alpha8 ein "fakelib2" im Spielordner wortlos ignoriert wird. Die
+        # Liste nahm die Wahl trotzdem an und das Protokoll bestaetigte sie
+        # ("Ersatzbibliotheken gehen nach fakelib2") - abgelegt wurde nach
+        # fakelib. Wer danach in fakelib2 nachsah, fand nichts und hielt den
+        # Lauf fuer fehlgeschlagen. Die Wahl wirksam zu machen waere der
+        # falsche Weg gewesen: Dann startete das Spiel ohne die Bibliotheken.
         tk.Label(einstellungen, text=self._t("backport.fakelib_folder_label"),
                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
-        ordner_box = ttk.Combobox(einstellungen, state="readonly", width=10,
-                                  values=list(ps5_backport.FAKELIB_ORDNERNAMEN))
-        ordner_box.pack(side="left", padx=(8, 16))
-        try:
-            ordner_box.current(list(ps5_backport.FAKELIB_ORDNERNAMEN).index(
-                self._fakelib_ordnername()))
-        except ValueError:
-            ordner_box.current(0)
-
-        def _ordner_gewaehlt(_e=None) -> None:
-            wahl = str(ordner_box.get() or "").strip().lower()
-            if wahl in ps5_backport.FAKELIB_ORDNERNAMEN:
-                self._save_setting("fakelib_variante", wahl)
-                self._append_to_log(
-                    self._t("fakelib.folder_chosen", v0=wahl) + chr(10))
-        ordner_box.bind("<<ComboboxSelected>>", _ordner_gewaehlt)
+        tk.Label(einstellungen, text=self._fakelib_ordnername(),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"]).pack(side="left", padx=(8, 8))
+        tk.Label(einstellungen, text=self._t("fakelib.folder_fixed"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"], wraplength=420,
+                 justify="left").pack(side="left", padx=(0, 16))
 
         sicherung_var = tk.BooleanVar(value=True)
         libs_var = tk.BooleanVar(value=True)
@@ -34019,18 +33997,37 @@ class PS5ConverterGUI:
                 return
 
             def worker() -> None:
+                # Daneben schreiben und erst am Ende umbenennen - dasselbe
+                # Muster wie in merge_split_set. Vorher ging der Strom direkt
+                # in die gewaehlte Datei: Das legt sie an bzw. LEERT sie, bevor
+                # das RETR ueberhaupt laeuft. ShadowMount+ schreibt die
+                # debug.log nur bei debug=1; fehlt sie auf der Konsole, blieb
+                # hier eine 0-Byte-Datei stehen - und wer im Dialog eine
+                # vorhandene aeltere Protokolldatei zum Ueberschreiben
+                # ausgewaehlt hatte, war deren Inhalt los, obwohl nichts
+                # angekommen war.
+                zwischen = path + ".teil"
                 try:
                     ftp = _ftp_connect_blocking()
                     try:
-                        with open(path, "wb") as f:
+                        with open(zwischen, "wb") as f:
                             ftp.retrbinary("RETR " + remote_debug_log_path, f.write)
                     finally:
                         try:
                             ftp.quit()
                         except Exception:
                             pass
+                    os.replace(zwischen, path)
                     win.after(0, lambda: status_var.set(self._t("remote_ini.status_debug_log_saved", path=path)))
                 except Exception as exc:
+                    # Die halbe Datei nicht liegen lassen - sie traegt den
+                    # Namen der echten mit angehaengtem .teil und saehe im
+                    # Ordner wie ein Ergebnis aus.
+                    try:
+                        if os.path.exists(zwischen):
+                            os.remove(zwischen)
+                    except OSError as aufraeum:
+                        logger.debug("Zwischendatei nicht loeschbar: %s", aufraeum)
                     meldung = self._t("remote_ini.status_fetch_failed", error=exc)
                     win.after(0, lambda: status_var.set(meldung))
 
