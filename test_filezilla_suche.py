@@ -19,6 +19,7 @@ import os
 import shutil
 import sys
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -165,6 +166,38 @@ class LaufwerkeTests(unittest.TestCase):
             self.assertRegex(eintrag, r"^[A-Z]:\\$")
 
 
+class _WurzelAttrappe:
+    """Tk-Wurzel ohne Tk: after(0, ...) laeuft sofort, alles Spaetere wartet.
+
+    _launch_filezilla gibt sein Ergebnis seit dem Umbau ueber
+    ``root.after(0, ...)`` in den Hauptstrang zurueck, und
+    ``_spaeter_im_fenster`` fragt vorher ``winfo_exists()``. Ohne beides
+    braeche die Kette im Test ab, ohne dass eine Zusicherung es merkte.
+    """
+
+    def __init__(self):
+        self.wartend = []
+        #: Je Zustellung (ms, Strangname des Aufrufers). Ohne diese Spur
+        #: waere die zentrale Zusicherung des Umbaus ungeprueft: after(0, …)
+        #: ruft hier sofort im aufrufenden Strang auf, deshalb sieht ein
+        #: fehlender Rueckweg genauso aus wie ein vorhandener. Nachgemessen -
+        #: mit direktem Aufruf statt _spaeter_im_fenster blieben alle 45
+        #: Pruefungen gruen, obwohl damit saemtliche Dialoge im Arbeitsfaden
+        #: aufgingen.
+        self.zustellungen = []
+
+    def winfo_exists(self):
+        return True
+
+    def after(self, ms, rueckruf, *args):
+        self.zustellungen.append((ms, threading.current_thread().name))
+        if ms == 0:
+            rueckruf(*args)
+        else:
+            self.wartend.append((rueckruf, args))
+        return "id"
+
+
 class MerkenTests(unittest.TestCase):
     """Ein einmal gestarteter Pfad muss den Programmstart ueberdauern.
 
@@ -192,7 +225,10 @@ class MerkenTests(unittest.TestCase):
         self.gui._get_config_path = lambda: self.konfig
         self.gui._feste_laufwerke = staticmethod(lambda: [])
         self.gui._set_status = lambda *a, **k: None
-        self.gui.root = None
+        # Eine Wurzel-Attrappe statt None: _launch_filezilla meldet sein
+        # Ergebnis seit dem Umbau ueber root.after(0, ...) zurueck. Bliebe
+        # hier None stehen, kaeme die Kette nie bis zum Start.
+        self.gui.root = _WurzelAttrappe()
 
     def _gespeichert(self):
         if not os.path.isfile(self.konfig):
@@ -204,21 +240,236 @@ class MerkenTests(unittest.TestCase):
         with io.open(self.konfig, "w", encoding="utf-8") as datei:
             json.dump({"filezilla_path": pfad}, datei)
 
-    def test_gestarteter_pfad_wird_gemerkt(self):
+    def _popen_abfangen(self):
+        """Faengt subprocess.Popen ab und meldet, was gestartet wurde."""
         gestartet = []
 
         class _Popen:
             def __init__(self, befehl, *a, **k):
                 gestartet.append(befehl[0])
 
-        self.gui._find_filezilla = lambda: self.exe
         alt = self.haupt.subprocess.Popen
         self.haupt.subprocess.Popen = _Popen
         self.addCleanup(setattr, self.haupt.subprocess, "Popen", alt)
+        return gestartet
 
+    def test_gestarteter_pfad_wird_gemerkt(self):
+        """Der ganze Weg am Stueck: Knopfdruck, Arbeitsfaden, after, Popen.
+
+        Seit die Suche in einem Daemon-Thread laeuft, ist das die einzige
+        Pruefung, die die Kette durchgehend abgeht. Sie darf nicht durch einen
+        Direktaufruf des herausgeloesten Stuecks ersetzt werden - dann bliebe
+        sie gruen, auch wenn die Kette in der Mitte durchtrennt waere.
+        """
+        gestartet = self._popen_abfangen()
+        self.gui._find_filezilla = lambda: self.exe
+
+        # Der Rueckgabewert heisst seit dem Umbau nur "angestossen" - ob
+        # FileZilla laeuft, sagt allein die Popen-Zusicherung unten.
         self.assertTrue(self.G._launch_filezilla(self.gui))
+        self.gui._filezilla_thread.join(10)
+        self.assertFalse(self.gui._filezilla_thread.is_alive(),
+                         "Der Arbeitsfaden haengt")
         self.assertEqual(gestartet, [self.exe])
         self.assertEqual(self._gespeichert(), self.exe)
+
+        # Und der Kern des Umbaus: Der Rueckweg lief ueber after(0, ...),
+        # und zwar aus dem Arbeitsfaden heraus. Ohne diese Zusicherung
+        # bliebe die Pruefung auch dann gruen, wenn _filezilla_weiter direkt
+        # im Faden gerufen wuerde - dann gingen saemtliche Dialoge dort auf,
+        # also genau der Fehler, den der Umbau beseitigen soll. Gemessen:
+        # mit Direktaufruf meldeten alle 45 Pruefungen "OK".
+        aus_faden = [strang for ms, strang in self.gui.root.zustellungen
+                     if ms == 0 and strang != threading.main_thread().name]
+        self.assertTrue(
+            aus_faden,
+            "Kein after(0, ...) aus einem Arbeitsfaden - der Rueckweg in den "
+            "Hauptstrang fehlt. Zugestellt wurde: %r"
+            % (self.gui.root.zustellungen,))
+
+    def test_zweiter_knopfdruck_sucht_nicht_noch_einmal(self):
+        """Solange der Faden lebt, bleibt der Knopf wirkungslos.
+
+        Im Bestand war ein zweiter Druck unmoeglich, weil das Fenster
+        waehrend der Suche gar nicht auf Klicks reagierte. Jetzt reagiert es -
+        und ohne Sperre ginge der zweite Druck dieselben Laufwerke noch
+        einmal durch.
+        """
+        import threading
+
+        losfahren = threading.Event()
+        laeufe = []
+
+        def _langsam():
+            laeufe.append(1)
+            losfahren.wait(10)
+            return None
+
+        self.gui._find_filezilla = _langsam
+        self.gui._filezilla_weiter = lambda *a, **k: True
+        self.assertTrue(self.G._launch_filezilla(self.gui))
+        self.assertFalse(self.G._launch_filezilla(self.gui))
+        losfahren.set()
+        self.gui._filezilla_thread.join(10)
+        self.assertEqual(laeufe, [1])
+
+    def test_ohne_treffer_kommt_frage_warnung_und_auswahl(self):
+        """Nichts gefunden, Installation abgelehnt: Warnung, Auswahl, Start."""
+        gestartet = self._popen_abfangen()
+        gefragt = []
+        with mock.patch.object(self.haupt.messagebox, "askyesno",
+                               lambda *a, **k: gefragt.append("frage")), \
+             mock.patch.object(self.haupt.messagebox, "showwarning",
+                               lambda *a, **k: gefragt.append("warnung")), \
+             mock.patch.object(self.haupt.filedialog, "askopenfilename",
+                               lambda *a, **k: self.exe), \
+             mock.patch.object(self.haupt.filedialog, "askdirectory",
+                               lambda *a, **k: self.exe):
+            self.assertTrue(self.G._filezilla_weiter(self.gui, None))
+        self.assertEqual(gefragt, ["frage", "warnung"])
+        self.assertEqual(gestartet, [self.exe])
+        self.assertEqual(self._gespeichert(), self.exe)
+
+    def test_installationsmeldung_bleibt_im_hauptstrang(self):
+        """Ausserhalb von Windows meldet sich _install_filezilla selbst - mit Tk.
+
+        Diese Meldung darf nicht aus dem Arbeitsfaden kommen: Tk gehoert dem
+        Hauptstrang, und genau diese Fehlerklasse hat auf Aqua schon einen
+        vollstaendigen Absturz samt Apple-Fehlerbericht ausgeloest.
+        """
+        import threading
+
+        straenge = []
+
+        def _installieren():
+            straenge.append(threading.current_thread().name)
+            return False
+
+        self.gui._install_filezilla = _installieren
+        with mock.patch.object(self.haupt, "IST_WINDOWS", False), \
+             mock.patch.object(self.haupt, "IST_MACOS", False), \
+             mock.patch.object(self.haupt.messagebox, "askyesno",
+                               lambda *a, **k: True), \
+             mock.patch.object(self.haupt.messagebox, "showwarning",
+                               lambda *a, **k: None), \
+             mock.patch.object(self.haupt.filedialog, "askopenfilename",
+                               lambda *a, **k: ""):
+            self.assertFalse(self.G._filezilla_weiter(self.gui, None))
+        self.assertEqual(straenge, [threading.current_thread().name])
+
+    def test_der_installationsweg_laeuft_auch_im_faden(self):
+        """Der ganze Windows-Weg: suchen, fragen, installieren, wieder suchen.
+
+        Das ist der Weg mit den zehn Minuten - Download ohne Zeitgrenze, dann
+        der Installerlauf -, also genau der, dessentwegen der Umbau noetig war.
+        Er war als einziger unbewacht: Die Suchhaelfte deckt
+        test_gestarteter_pfad_wird_gemerkt ab, die Installationshaelfte nichts.
+        Gemessen blieben alle 45 Pruefungen gruen, wenn man (a) den zweiten
+        Faden mit ``nach_installation=False`` startete - was eine
+        Endlosschleife aus Rueckfragen ergibt -, (b) den ganzen Windows-Zweig
+        durch ein blankes ``self._install_filezilla()`` im Hauptstrang
+        ersetzte - womit der behobene Mangel zurueck waere - oder (c) nach der
+        Installation nicht mehr suchte.
+
+        Alle drei fallen hier auf: der Strang, in dem installiert wird; die
+        Zahl der Rueckfragen; und dass am Ende wirklich gestartet wird.
+        """
+        gestartet = self._popen_abfangen()
+        installiert_in = []
+        gefragt = []
+        # Erst nach der "Installation" ist etwas da - sonst faende der zweite
+        # Durchgang dasselbe Nichts wie der erste.
+        vorhanden = {"exe": None}
+
+        def _installieren():
+            installiert_in.append(threading.current_thread().name)
+            vorhanden["exe"] = self.exe
+            return True
+
+        def _fragen(*a, **k):
+            gefragt.append(1)
+            return True
+
+        self.gui._find_filezilla = lambda: vorhanden["exe"]
+        self.gui._install_filezilla = _installieren
+
+        with mock.patch.object(self.haupt, "IST_WINDOWS", True),              mock.patch.object(self.haupt.messagebox, "askyesno", _fragen),              mock.patch.object(self.haupt.messagebox, "showwarning",
+                               lambda *a, **k: None),              mock.patch.object(self.haupt.filedialog, "askopenfilename",
+                               lambda *a, **k: ""):
+            self.assertTrue(self.G._launch_filezilla(self.gui))
+            # Zwei Faeden nacheinander: erst die Suche, dann - aus deren
+            # Rueckweg heraus - die Installation samt zweiter Suche.
+            faeden = []
+            for _ in range(2):
+                faden = self.gui._filezilla_thread
+                faden.join(15)
+                self.assertFalse(faden.is_alive(), "Ein Arbeitsfaden haengt")
+                faeden.append(faden)
+
+        self.assertEqual(
+            1, len(gefragt),
+            "Die Installationsfrage kam %d-mal. Mehr als einmal heisst, dass "
+            "der zweite Durchgang sich nicht als 'nach der Installation' zu "
+            "erkennen gibt - im Betrieb eine Endlosschleife." % len(gefragt))
+        self.assertTrue(installiert_in, "Es wurde gar nicht installiert.")
+        # Der eigentliche Beweis, dass die Installation nicht im Hauptstrang
+        # laeuft: Fuer sie wird ein ZWEITER Faden aufgemacht. Ueber den
+        # Strangnamen allein ginge das hier nicht - die Wurzel-Attrappe ruft
+        # after(0, ...) sofort im aufrufenden Strang auf, weshalb
+        # _filezilla_weiter im Test ohnehin im ersten Arbeitsfaden laeuft.
+        # Ein blankes self._install_filezilla() an dieser Stelle - der
+        # behobene Mangel - kaeme damit ungestraft durch.
+        self.assertIsNot(
+            faeden[0], faeden[1],
+            "Fuer die Installation wurde kein eigener Faden aufgemacht - sie "
+            "laeuft damit dort, wo auch die Oberflaeche bedient wird.")
+        self.assertEqual(
+            [self.exe], gestartet,
+            "Nach der Installation wurde nicht gesucht oder nicht gestartet.")
+        self.assertEqual(self.exe, self._gespeichert())
+
+    def test_nach_erfolgloser_installation_wird_nicht_erneut_gefragt(self):
+        """Sonst dreht sich der Weg im Kreis: fragen, installieren, fragen …
+
+        Der zweite Durchgang muss sich als "nach der Installation" zu erkennen
+        geben. Tut er das nicht, landet er wieder im Frageblock - und weil die
+        Antwort dieselbe bleibt, beginnt alles von vorn. Auffallen kann das
+        nur, wenn die Installation nichts findet: Wird sie fuendig, startet
+        der zweite Durchgang gleich das Programm und die Schleife bliebe
+        verborgen. Genau deshalb steht dieser Fall neben dem geglueckten.
+        """
+        gefragt = []
+        installiert = []
+
+        def _fragen(*a, **k):
+            gefragt.append(1)
+            # Nicht endlos mitspielen: Ist die Schranke kaputt, soll die
+            # Pruefung mit einer klaren Zahl scheitern statt haengenzubleiben.
+            return len(gefragt) <= 3
+
+        def _installieren():
+            installiert.append(1)
+            return True                     # "installiert", aber nichts da
+
+        self.gui._find_filezilla = lambda: None
+        self.gui._install_filezilla = _installieren
+
+        with mock.patch.object(self.haupt, "IST_WINDOWS", True),              mock.patch.object(self.haupt.messagebox, "askyesno", _fragen),              mock.patch.object(self.haupt.messagebox, "showwarning",
+                               lambda *a, **k: None),              mock.patch.object(self.haupt.filedialog, "askopenfilename",
+                               lambda *a, **k: ""):
+            self.assertTrue(self.G._launch_filezilla(self.gui))
+            for _ in range(4):
+                faden = self.gui._filezilla_thread
+                faden.join(15)
+                self.assertFalse(faden.is_alive(), "Ein Arbeitsfaden haengt")
+
+        self.assertEqual(
+            1, len(gefragt),
+            "Die Installationsfrage kam %d-mal statt einmal - der zweite "
+            "Durchgang laeuft wieder in den Frageblock." % len(gefragt))
+        self.assertEqual(
+            1, len(installiert),
+            "Es wurde %d-mal installiert." % len(installiert))
 
     def test_gemerkter_pfad_wird_zuerst_genutzt(self):
         """Schritt 1 der Suche - ohne ihn waere dieser Pfad unauffindbar."""

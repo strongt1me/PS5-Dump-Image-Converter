@@ -17889,9 +17889,95 @@ class PS5ConverterGUI:
             return False
 
     def _launch_filezilla(self) -> bool:
-        """Startet FileZilla und bietet bei Bedarf eine Pfadauswahl an."""
-        exe = self._find_filezilla()
-        if not exe:
+        """Stoesst den Start von FileZilla an - gesucht wird nebenher.
+
+        Bis hierher lief alles im Tk-Hauptstrang. Auf Windows endet
+        _find_filezilla im schlechtesten Fall bei _find_filezilla_by_scan,
+        das die Laufwerke mit einem Zeitbudget von 25 s durchgeht; sagt der
+        Anwender danach zur Installation Ja, kommen ein Download und ein
+        Installerlauf mit zehn Minuten Zeitgrenze dazu. Solange zeichnete das
+        Fenster nicht mehr, und Windows blendete "Keine Rueckmeldung" ein.
+
+        Deshalb wandert die langsame Arbeit in einen Daemon-Thread; Tk wird
+        ausschliesslich im Hauptstrang angefasst (_filezilla_weiter).
+
+        Returns:
+            True, wenn der Vorgang angestossen wurde. Ob FileZilla wirklich
+            laeuft, entscheidet sich erst spaeter in _filezilla_starten.
+        """
+        faden = getattr(self, "_filezilla_thread", None)
+        if faden is not None and faden.is_alive():
+            # Ein zweiter Knopfdruck wuerde dieselben Laufwerke noch einmal
+            # durchgehen. Der Faden selbst ist die Sperre - ein eigenes
+            # Kennzeichen bliebe stehen, wenn start() fehlschlaegt, und der
+            # Knopf waere bis zum Programmende tot.
+            return False
+        # Ohne diese Zeile taete sich nach dem Klick sichtbar nichts: Erst die
+        # feste Pfadliste, dann alle Laufwerke, dann die Deinstallations-
+        # Registrierung - und erst _find_filezilla_by_scan meldet sich von
+        # selbst. Der blockierende Bestand war zwar schlechter, zeigte durch
+        # das eingefrorene Fenster aber wenigstens, dass etwas laeuft.
+        # Fluechtig, damit die Meldung keine laufende Aufgabenzeile ueberdeckt.
+        self._set_status_fluechtig(self._t("filezilla.status_suche"))
+        return self._filezilla_im_hintergrund(self._find_filezilla, False)
+
+    def _filezilla_im_hintergrund(self, arbeit, nach_installation: bool) -> bool:
+        """Erledigt eine langsame FileZilla-Arbeit ausserhalb des Hauptstrangs.
+
+        Der Faden fasst kein Tk an: _find_filezilla und _install_filezilla
+        melden sich nur ueber _set_status und _append_to_log, und beide gehen
+        selbst ueber root.after. Zurueck geht es ueber _spaeter_im_fenster -
+        dieselbe Stelle, ueber die auch alle anderen Arbeitsfaeden ihr
+        Ergebnis abliefern; sie prueft vorher, ob das Fenster noch da ist.
+        """
+        def _arbeiter() -> None:
+            try:
+                exe = arbeit()
+            except Exception as exc:
+                logger.warning("FileZilla-Suche fehlgeschlagen: %s", exc)
+                exe = None
+            self._spaeter_im_fenster(self.root, self._filezilla_weiter,
+                                     exe, nach_installation)
+
+        faden = threading.Thread(target=_arbeiter, daemon=True)
+        # Erst starten, dann merken. Andersherum haelt das Attribut kurz einen
+        # noch nicht gestarteten Faden, und der meldet is_alive() == False -
+        # in diesem Fenster kaeme ein zweiter Knopfdruck durch und startete
+        # eine zweite Suche. Das try/except haelt zugleich die Zusage der
+        # umgekehrten Reihenfolge: Scheitert start(), bleibt kein lebender
+        # Faden als Sperre stehen, und der Knopf ist beim naechsten Mal frei.
+        try:
+            faden.start()
+        except RuntimeError as exc:
+            logger.warning("FileZilla-Faden liess sich nicht starten: %s", exc)
+            return False
+        self._filezilla_thread = faden
+        return True
+
+    def _filezilla_installieren_und_suchen(self) -> str | None:
+        """Installiert FileZilla und sucht es danach - beides ohne Tk.
+
+        Nur fuer Windows gedacht: Dort zeigt _install_filezilla keine
+        Dialoge, sondern schreibt ins Protokoll. Auf den anderen Systemen
+        zeigt dieselbe Methode selbst eine Meldung - deshalb entscheidet
+        _filezilla_weiter die Plattformfrage im Hauptstrang, bevor hier
+        etwas abtaucht.
+        """
+        return self._find_filezilla() if self._install_filezilla() else None
+
+    def _filezilla_weiter(self, exe: str | None,
+                          nach_installation: bool = False) -> bool:
+        """Fuehrt den Start fort, wenn die Suche durch ist - im Hauptstrang.
+
+        Saemtliche Dialoge stehen hier, weil Tk allein dem Hauptstrang
+        gehoert. Der Ablauf ist Fall fuer Fall derselbe wie vor der
+        Aufteilung, samt der Eigenheit, dass die Pfadauswahl auch nach einer
+        geglueckten Installation noch erscheint: Im Bestand stand der
+        Dialogblock unbedingt im aeusseren "if not exe".
+        """
+        if not nach_installation:
+            if exe:
+                return self._filezilla_starten(exe)
             auto_install = messagebox.askyesno(
                 self._t("dialog.title.filezilla_not_found"),
                 self._t("dialog.msg.filezilla_auto_install_confirm"),
@@ -17899,60 +17985,78 @@ class PS5ConverterGUI:
             )
 
             if auto_install:
-                self._set_status("FileZilla wird installiert...")
+                self._set_status(self._t("filezilla.status_installation"))
+                if IST_WINDOWS:
+                    self._filezilla_im_hintergrund(
+                        self._filezilla_installieren_und_suchen, True)
+                    return False
+                # Ausserhalb von Windows laedt _install_filezilla nichts
+                # herunter, sondern zeigt nur eine Meldung - und die ist Tk.
+                # Aus einem Nebenstrang gaebe das "main thread is not in main
+                # loop", auf Aqua schlimmstenfalls einen Absturz. Hier kostet
+                # der Aufruf nichts: Er kehrt nach der Meldung sofort zurueck.
+                #
+                # Das Ergebnis wird ausgewertet wie im Bestand. Heute liefert
+                # die Methode auf Nicht-Windows immer False, der Zweig laeuft
+                # also nie - bekommt Linux oder macOS eines Tages einen echten
+                # Weg (Paketverwaltung, Homebrew), unterbliebe die Suche danach
+                # sonst stumm.
                 if self._install_filezilla():
                     exe = self._find_filezilla()
 
-            if not exe:
-                messagebox.showwarning(
-                    self._t("dialog.title.filezilla_not_found"),
-                    self._t("dialog.msg.filezilla_manual_select"),
-                    parent=self.root,
-                )
-            # Die Auswahl haengt an der Plattform. Bis v1.8.54 stand hier
-            # unter allen Systemen ein Dateidialog mit
-            # filetypes=[("FileZilla", "filezilla.exe"), (..., "*.exe")].
-            # Auf macOS ist "filezilla.exe" kein gueltiges Muster - Tk erwartet
-            # dort Endungen der Form "*.ext" - und der Cocoa-Dialog riss die
-            # Anwendung mit sich: vollstaendiger Absturz samt Apple-
-            # Fehlerbericht, gemeldet am 19.08.2026. Auf macOS wird deshalb der
-            # Ordnerdialog benutzt; ein .app-Buendel *ist* ein Ordner, und
-            # dieser Weg kennt gar keine Musterliste.
-            if IST_MACOS:
-                selected = filedialog.askdirectory(
-                    parent=self.root,
-                    title=self._t("dialog.title.choose_filezilla"),
-                    mustexist=True,
-                )
-            elif IST_WINDOWS:
-                selected = filedialog.askopenfilename(
-                    parent=self.root,
-                    title=self._t("dialog.title.choose_filezilla"),
-                    # Der Dateiname als Muster ist hier gewollt - er hebt die
-                    # gesuchte Datei aus dem Programmordner heraus. Auf diesem
-                    # Zweig laeuft ohnehin nur Windows; _dateitypen haelt die
-                    # Zusage trotzdem fest, damit die Pruefung ueber alle
-                    # Dateidialoge greift (siehe test_dateidialoge_macos_sicher).
-                    filetypes=self._dateitypen(
-                        [(self._t("filetype.filezilla_exe"), "filezilla.exe"),
-                         (self._t("filetype.exe_files"), "*.exe")]),
-                )
-            else:
-                # Linux: keine Endungen, ausfuehrbare Dateien tragen dort keine.
-                selected = filedialog.askopenfilename(
-                    parent=self.root,
-                    title=self._t("dialog.title.choose_filezilla"),
-                )
-            if selected and self._filezilla_pfad_gueltig(selected):
-                exe = selected
-                try:
-                    self._save_setting('filezilla_path', selected)
-                except Exception as exc:
-                    logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
+        if not exe:
+            messagebox.showwarning(
+                self._t("dialog.title.filezilla_not_found"),
+                self._t("dialog.msg.filezilla_manual_select"),
+                parent=self.root,
+            )
+        # Die Auswahl haengt an der Plattform. Bis v1.8.54 stand hier
+        # unter allen Systemen ein Dateidialog mit
+        # filetypes=[("FileZilla", "filezilla.exe"), (..., "*.exe")].
+        # Auf macOS ist "filezilla.exe" kein gueltiges Muster - Tk erwartet
+        # dort Endungen der Form "*.ext" - und der Cocoa-Dialog riss die
+        # Anwendung mit sich: vollstaendiger Absturz samt Apple-
+        # Fehlerbericht, gemeldet am 19.08.2026. Auf macOS wird deshalb der
+        # Ordnerdialog benutzt; ein .app-Buendel *ist* ein Ordner, und
+        # dieser Weg kennt gar keine Musterliste.
+        if IST_MACOS:
+            selected = filedialog.askdirectory(
+                parent=self.root,
+                title=self._t("dialog.title.choose_filezilla"),
+                mustexist=True,
+            )
+        elif IST_WINDOWS:
+            selected = filedialog.askopenfilename(
+                parent=self.root,
+                title=self._t("dialog.title.choose_filezilla"),
+                # Der Dateiname als Muster ist hier gewollt - er hebt die
+                # gesuchte Datei aus dem Programmordner heraus. Auf diesem
+                # Zweig laeuft ohnehin nur Windows; _dateitypen haelt die
+                # Zusage trotzdem fest, damit die Pruefung ueber alle
+                # Dateidialoge greift (siehe test_dateidialoge_macos_sicher).
+                filetypes=self._dateitypen(
+                    [(self._t("filetype.filezilla_exe"), "filezilla.exe"),
+                     (self._t("filetype.exe_files"), "*.exe")]),
+            )
+        else:
+            # Linux: keine Endungen, ausfuehrbare Dateien tragen dort keine.
+            selected = filedialog.askopenfilename(
+                parent=self.root,
+                title=self._t("dialog.title.choose_filezilla"),
+            )
+        if selected and self._filezilla_pfad_gueltig(selected):
+            exe = selected
+            try:
+                self._save_setting('filezilla_path', selected)
+            except Exception as exc:
+                logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
 
         if not exe:
             return False
+        return self._filezilla_starten(exe)
 
+    def _filezilla_starten(self, exe: str) -> bool:
+        """Startet die gefundene Kopie und merkt sich ihren Pfad."""
         try:
             # Ein .app-Buendel laesst sich nicht ausfuehren - es ist ein
             # Ordner. "open -a" uebergibt es dem Fenstersystem, das den

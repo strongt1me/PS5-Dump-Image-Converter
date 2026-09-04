@@ -290,6 +290,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'dialog.title.filezilla_not_found': {'de': 'FileZilla nicht gefunden', 'en': 'FileZilla not found'},
     'dialog.msg.filezilla_auto_install_confirm': {'de': 'FileZilla wurde nicht gefunden.\n\nSoll FileZilla jetzt automatisch heruntergeladen und installiert werden?', 'en': 'FileZilla was not found.\n\nShould FileZilla be downloaded and installed automatically now?'},
     'dialog.msg.filezilla_manual_select': {'de': "FileZilla konnte nicht automatisch gefunden werden.\n\nBitte wähle die Datei 'filezilla.exe' manuell aus,\noder lege eine Portable-Version in den App-Ordner\n(z.B. FileZillaPortable\\App\\FileZilla\\filezilla.exe).", 'en': "FileZilla could not be found automatically.\n\nPlease manually choose the file 'filezilla.exe',\nor place a portable version in the app folder\n(e.g. FileZillaPortable\\App\\FileZilla\\filezilla.exe)."},
+    'filezilla.status_suche': {'de': 'FileZilla wird gesucht…', 'en': 'Looking for FileZilla…'},
+    'filezilla.status_installation': {'de': 'FileZilla wird installiert…', 'en': 'Installing FileZilla…'},
     'dialog.title.choose_filezilla': {'de': 'FileZilla auswählen', 'en': 'Choose FileZilla'},
     'filetype.filezilla_exe': {'de': 'FileZilla', 'en': 'FileZilla'},
     'filetype.exe_files': {'de': 'EXE-Dateien', 'en': 'EXE files'},
