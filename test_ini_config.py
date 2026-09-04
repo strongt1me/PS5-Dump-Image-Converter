@@ -1,7 +1,12 @@
 """Tests fuer ps5_validator.utils.ini_config (flaches key=value-INI-Format)."""
 import unittest
 
-from ps5_validator.utils.ini_config import merge_flat_ini, parse_flat_ini, render_flat_ini
+from ps5_validator.utils.ini_config import (
+    mehrfach_schluessel,
+    merge_flat_ini,
+    parse_flat_ini,
+    render_flat_ini,
+)
 
 
 class IniConfigTests(unittest.TestCase):
@@ -100,6 +105,71 @@ class MergeFlatIniTests(unittest.TestCase):
         self.assertGreaterEqual(len(ergebnis.splitlines()), 41)
         self.assertIn("# Zeile 40", ergebnis)
         self.assertIn("neuer_schluessel=1", ergebnis)
+
+
+class WiederholbareSchluesselTests(unittest.TestCase):
+    """Ein Schluessel darf auf mehreren Zeilen stehen - und muss es bleiben.
+
+    Die Anleitung von ShadowMount+ fuehrt sieben solche Schluessel, darunter
+    ``scanpath``: "can be repeated on multiple lines". Ein Woerterbuch kann das
+    nicht abbilden - :func:`parse_flat_ini` behaelt nur den letzten Wert.
+
+    Bis zum 05.09.2026 schrieb :func:`merge_flat_ini` diesen einen Wert
+    daraufhin in **jede** Zeile des Schluessels. Aus drei Suchpfaden wurde
+    dreimal derselbe; die uebrigen waren nicht nur geloescht, sondern durch
+    Dubletten ersetzt. Das wiegt schwer, weil dieselbe Anleitung sagt: "If at
+    least one scanpath=... is present, only those custom paths are used" - an
+    den verlorenen Orten sucht die Konsole also nie wieder.
+    """
+
+    VORLAGE = "\n".join([
+        "# ShadowMount+",
+        "scanpath=/mnt/usb0",
+        "scanpath=/mnt/usb1",
+        "scanpath=/data/spiele",
+        "image_ro=Spiel.ffpkg",
+        "image_ro=Anderes.ffpkg",
+        "api_port=9021",
+    ])
+
+    def test_mehrfache_werden_erkannt(self) -> None:
+        self.assertEqual({"scanpath", "image_ro"},
+                         mehrfach_schluessel(self.VORLAGE))
+
+    def test_einfache_gelten_nicht_als_mehrfach(self) -> None:
+        """Sonst waere gleich die halbe Datei unveraenderlich."""
+        self.assertNotIn("api_port", mehrfach_schluessel(self.VORLAGE))
+
+    def test_auskommentierte_zaehlen_nicht(self) -> None:
+        """Die Vorlage der Konsole fuehrt Beispiele als Kommentar - dreimal
+        ``## scanpath=...`` macht den Schluessel nicht wiederholt."""
+        text = "scanpath=/mnt/usb0\n# scanpath=/data/homebrew\n; scanpath=/x"
+        self.assertEqual(set(), mehrfach_schluessel(text))
+
+    def test_alle_zeilen_ueberleben_das_zurueckschreiben(self) -> None:
+        daten = parse_flat_ini(self.VORLAGE)
+        daten["api_port"] = "9099"          # eine echte Aenderung daneben
+        ergebnis = merge_flat_ini(self.VORLAGE, daten)
+        self.assertEqual(
+            ["scanpath=/mnt/usb0", "scanpath=/mnt/usb1", "scanpath=/data/spiele"],
+            [z for z in ergebnis.splitlines() if z.startswith("scanpath=")],
+            "Die Suchpfade wurden veraendert - an den verlorenen Orten sucht "
+            "die Konsole nie wieder.")
+        self.assertEqual(
+            ["image_ro=Spiel.ffpkg", "image_ro=Anderes.ffpkg"],
+            [z for z in ergebnis.splitlines() if z.startswith("image_ro=")])
+        # Was einfach dasteht, muss weiterhin aenderbar sein.
+        self.assertIn("api_port=9099", ergebnis)
+
+    def test_auch_ein_geaenderter_wert_richtet_keinen_schaden_an(self) -> None:
+        """Der Editor zeigt nur einen Wert - was der Anwender damit tut, darf
+        die uebrigen Zeilen nicht treffen."""
+        daten = parse_flat_ini(self.VORLAGE)
+        daten["scanpath"] = "/etwas/ganz/anderes"
+        ergebnis = merge_flat_ini(self.VORLAGE, daten)
+        self.assertNotIn("/etwas/ganz/anderes", ergebnis)
+        self.assertEqual(
+            3, len([z for z in ergebnis.splitlines() if z.startswith("scanpath=")]))
 
 
 if __name__ == "__main__":

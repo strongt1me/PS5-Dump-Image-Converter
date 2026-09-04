@@ -28,6 +28,34 @@ def parse_flat_ini(text: str) -> dict[str, str]:
     return result
 
 
+def mehrfach_schluessel(text: str) -> set[str]:
+    """Schlüssel, die in ``text`` auf mehr als einer Zeile stehen.
+
+    Das flache Format kennt wiederholbare Schlüssel; die Anleitung von
+    ShadowMount+ führt sieben davon (``scanpath``, ``image_ro``, ``image_rw``,
+    ``image_sector``, ``global_fakelib_exclude``, ``kstuff_no_pause``,
+    ``kstuff_delay``). Ein Wörterbuch kann sie nicht abbilden - für
+    :func:`parse_flat_ini` gewinnt der letzte, die übrigen fallen weg.
+
+    Aufgezählt wird hier nicht nach Namen, sondern nach dem, was wirklich
+    dasteht: Eine feste Liste ginge an der nächsten Payload-Fassung vorbei,
+    und MicroMount benutzt denselben Editor mit eigenen Schlüsseln.
+    """
+    gesehen: set[str] = set()
+    mehrfach: set[str] = set()
+    for rohzeile in text.splitlines():
+        zeile = rohzeile.strip()
+        if not zeile or zeile.startswith(("#", ";")) or "=" not in zeile:
+            continue
+        schluessel = zeile.split("=", 1)[0].strip()
+        if not schluessel:
+            continue
+        if schluessel in gesehen:
+            mehrfach.add(schluessel)
+        gesehen.add(schluessel)
+    return mehrfach
+
+
 def merge_flat_ini(original: str, data: dict[str, str], header_comment: str = "") -> str:
     """Schreibt Werte in einen bestehenden INI-Text, ohne dessen Aufbau zu verlieren.
 
@@ -55,6 +83,8 @@ def merge_flat_ini(original: str, data: dict[str, str], header_comment: str = ""
     """
     behandelt: set[str] = set()
     ausgabe: list[str] = []
+    # Wiederholbare Schlüssel bleiben unangetastet - siehe unten.
+    wiederholt = mehrfach_schluessel(original)
 
     for zeile in original.splitlines():
         inhalt = zeile.strip()
@@ -63,6 +93,18 @@ def merge_flat_ini(original: str, data: dict[str, str], header_comment: str = ""
             continue
         schluessel = inhalt.split("=", 1)[0].strip()
         alter_wert = inhalt.split("=", 1)[1].strip()
+        if schluessel in wiederholt:
+            # Steht der Schlüssel mehrfach da, kann das Wörterbuch ihn nicht
+            # abbilden: parse_flat_ini behält nur den letzten Wert. Würde er
+            # hier gesetzt, bekäme JEDE seiner Zeilen denselben - aus drei
+            # Suchpfaden würde dreimal derselbe. Bei "scanpath" heißt das,
+            # dass an den übrigen Orten nie wieder gesucht wird; die Anleitung
+            # sagt: "If at least one scanpath=... is present, only those custom
+            # paths are used." Solche Zeilen bleiben deshalb wörtlich stehen -
+            # was der Editor nicht darstellen kann, darf er nicht anfassen.
+            behandelt.add(schluessel)
+            ausgabe.append(zeile)
+            continue
         if schluessel in data:
             behandelt.add(schluessel)
             neuer_wert = data[schluessel]

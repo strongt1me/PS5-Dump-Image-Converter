@@ -26,20 +26,23 @@ HAUPTDATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 try:
     import tkinter as tk
-    # Die vorhandene Wurzel nehmen, wenn ein anderes Testmodul schon eine
-    # angelegt hat. ``ImageTk.PhotoImage`` ohne ``master`` bindet an
-    # ``tk._default_root``; auf einer zweiten Wurzel meldet Tk beim Aufbau
-    # dann "image pyimageNNN doesn't exist". Und offen halten, nicht
-    # zerstoeren: Ein zweites tk.Tk() nach einem zerstoerten meldet
-    # "tk wasn't installed properly".
-    _WURZEL = getattr(tk, "_default_root", None)
-    if _WURZEL is None:
-        _WURZEL = tk.Tk()
-        _WURZEL.withdraw()
+
+    # ERST das Hauptprogramm laden, DANN die Wurzel: Sein Import setzt unter
+    # Windows die DPI-Kenntnis des Prozesses (SetProcessDpiAwareness ganz oben
+    # in der Datei). Eine vorher angelegte Tk-Wurzel sieht noch 96 dpi und
+    # bekommt "tk scaling" 1.335 statt der 1.668, mit denen das Programm
+    # wirklich laeuft - an der Diagnose des laufenden Programms nachgemessen
+    # (05.09.2026: tk scaling 1.6683, TkDefaultFont 20 px hoch).
+    #
+    # Die Reihenfolge entschied bisher darueber, ob diese Datei besteht: allein
+    # gestartet mass sie gegen eine Skalierung, die es im Betrieb nicht gibt;
+    # hinter einer anderen Testdatei - die das Hauptprogramm schon geladen
+    # hatte - gegen die richtige. Der Fehlschlag im Gesamtlauf war also der
+    # ehrlichere von beiden.
     TK_DA = True
 except Exception:                                    # pragma: no cover
     TK_DA = False
-    _WURZEL = None
+_WURZEL = None
 
 
 def _lade_hauptprogramm():
@@ -55,6 +58,35 @@ def _lade_hauptprogramm():
     sys.modules["hauptprogramm"] = modul
     spec.loader.exec_module(modul)
     return modul
+
+
+def _wurzel_holen():
+    """Die Tk-Wurzel - aber erst, nachdem das Hauptprogramm geladen ist.
+
+    Die Reihenfolge ist der Punkt: Der Import setzt unter Windows die
+    DPI-Kenntnis des Prozesses. Eine vorher angelegte Wurzel sieht 96 dpi und
+    bekommt ``tk scaling`` 1.335 statt der 1.668, mit denen das Programm
+    wirklich laeuft (an der Diagnose des laufenden Programms nachgemessen,
+    05.09.2026). Die Spalte braucht dann 821 px statt 999 - und die Pruefung
+    unten urteilte ueber ein Fenster, das es so nicht gibt.
+
+    Genau daran entschied sich bisher, ob diese Datei besteht: allein
+    gestartet legte sie die Wurzel zuerst an und lief gruen; hinter einer
+    anderen Testdatei, die das Hauptprogramm schon geladen hatte, fiel sie.
+    Der Fehlschlag im Gesamtlauf war der ehrlichere von beiden.
+    """
+    global _WURZEL
+    _lade_hauptprogramm()
+    if _WURZEL is None:
+        # Eine vorhandene Wurzel weiterbenutzen: ``ImageTk.PhotoImage`` ohne
+        # ``master`` bindet an ``tk._default_root``, auf einer zweiten Wurzel
+        # meldet Tk "image pyimageNNN doesn't exist". Und nie zerstoeren - ein
+        # zweites tk.Tk() danach meldet "tk wasn't installed properly".
+        _WURZEL = getattr(tk, "_default_root", None)
+        if _WURZEL is None:
+            _WURZEL = tk.Tk()
+            _WURZEL.withdraw()
+    return _WURZEL
 
 
 class AufbauTests(unittest.TestCase):
@@ -118,8 +150,22 @@ class HoehenTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         modul = _lade_hauptprogramm()
-        cls.root = _WURZEL
-        cls.root.deiconify()
+        # Ein eigenes Fenster, nicht die geteilte Wurzel. Die Rollfrage
+        # entscheidet sich an ``flaeche.winfo_height()`` - also daran, wieviel
+        # Platz die Inhaltsspalte bekommt. Hat ein alphabetisch frueheres
+        # Testmodul schon eine Oberflaeche an die Wurzel gepackt, teilen sich
+        # beide dort den Platz, die eigene Spalte wird kuerzer und rollt schon
+        # bei Hoehen, bei denen sie es nicht sollte. Genau daran fiel
+        # test_ohne_rollen_sitzt_alles_wie_vorher im Gesamtlauf ueber Wochen,
+        # waehrend die Datei allein gruen durchlief - ein Fehlschlag, der
+        # keiner war und einen echten verdeckt haette.
+        #
+        # Ein Toplevel derselben Wurzel, keine zweite Tk-Wurzel: Die Bilder
+        # haengen an ``tk._default_root`` (das Hauptprogramm ruft
+        # ``ImageTk.PhotoImage`` an vielen Stellen ohne ``master``), und eine
+        # zweite Wurzel liesse den Aufbau mit "image pyimageNNN doesn't exist"
+        # scheitern.
+        cls.root = tk.Toplevel(_wurzel_holen())
         try:
             cls.root.attributes("-alpha", 0.0)
         except tk.TclError:
@@ -130,8 +176,9 @@ class HoehenTests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # Das eigene Fenster darf weg - die Wurzel bleibt, wie sie war.
         try:
-            cls.root.withdraw()
+            cls.root.destroy()
         except Exception:
             pass
 
@@ -203,9 +250,27 @@ class HoehenTests(unittest.TestCase):
                              "Knopfleiste liegt unter dem Sichtfeld")
 
     def test_ohne_rollen_sitzt_alles_wie_vorher(self):
-        """Bei genug Platz darf die Rollflaeche nichts veraendern."""
-        self._einstellen(991)
-        self.assertFalse(self.app._inhalt_rollt)
+        """Bei genug Platz darf die Rollflaeche nichts veraendern.
+
+        "Genug Platz" wird gemessen, nicht gesetzt. Hier stand bis zum
+        05.09.2026 die feste Zahl 991 - abgelesen an einer Skalierung von
+        1.335, die im Betrieb gar nicht vorkommt. Mit den echten 1.668 braucht
+        die Spalte 999 px und rollt bei 991 zu Recht; die Zusicherung
+        behauptete also etwas Falsches ueber das laufende Programm.
+
+        Der gemessene Weg haelt auch, wenn jemand die Schriftgroesse aendert
+        oder das Fenster auf einen Bildschirm mit anderer DPI wandert.
+        """
+        noetig = self.app._inhalt_mindesthoehe()
+        self.assertTrue(noetig, "Die Mindesthoehe liess sich nicht ermitteln")
+        # Etwas Luft drauf, damit nicht die Rundung ueber das Ergebnis
+        # entscheidet - und nicht ueber die Bildschirmhoehe hinaus, sonst
+        # bekommt das Fenster gar nicht, was es anfordert.
+        hoehe = min(noetig + 40, self.root.winfo_screenheight())
+        self._einstellen(hoehe)
+        self.assertFalse(
+            self.app._inhalt_rollt,
+            "Bei %d px (noetig sind %d) wird gerollt." % (hoehe, noetig))
         self.assertEqual(self.app.content_area.winfo_height(),
                          self.app.content_scroll.winfo_height())
 

@@ -145,7 +145,12 @@ from ps5_validator.utils.param_manifest import (
 )
 from ps5_validator.utils.i18n import (BAUFORM_KEYS, DEFAULT_LANGUAGE, VERIFY_STUFEN,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
-from ps5_validator.utils.ini_config import merge_flat_ini, parse_flat_ini, render_flat_ini
+from ps5_validator.utils.ini_config import (
+    mehrfach_schluessel,
+    merge_flat_ini,
+    parse_flat_ini,
+    render_flat_ini,
+)
 from ps5_validator.utils.plattform import (
     IST_LINUX,
     IST_MACOS,
@@ -33693,8 +33698,17 @@ class PS5ConverterGUI:
 
         def _refresh_tree() -> None:
             tree.delete(*tree.get_children())
+            # Wiederholbare Schluessel laesst merge_flat_ini beim
+            # Schreiben unangetastet - ein Woerterbuch kann sie nicht
+            # abbilden. Ohne diesen Hinweis aendert der Anwender einen
+            # davon und wundert sich, dass auf der Konsole nichts
+            # anders ist; ein stiller Fehlschlag also.
+            wiederholt = mehrfach_schluessel(geladen.get("text") or "")
             for key, value in data.items():
-                tree.insert("", "end", iid=key, values=(key, value))
+                anzeige = value
+                if key in wiederholt:
+                    anzeige = self._t("remote_ini.wert_mehrfach", wert=value)
+                tree.insert("", "end", iid=key, values=(key, anzeige))
 
         _refresh_tree()
 
