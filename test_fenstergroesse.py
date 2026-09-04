@@ -77,6 +77,11 @@ class _Traeger:
     _fenstergeometrie_wiederherstellen = G._fenstergeometrie_wiederherstellen
     _maximieren_versuchen = G._maximieren_versuchen
     _fenstergeometrie_merken = G._fenstergeometrie_merken
+    _fensterzustand_verfolgen = G._fensterzustand_verfolgen
+    #: Aus der echten Klasse uebernommen, nicht hier erfunden - sonst
+    #: pruefte die Reihe gegen eigene Vorgaben statt gegen die des Programms.
+    _letzter_fensterzustand = G._letzter_fensterzustand
+    _letzte_fenstergeometrie = G._letzte_fenstergeometrie
 
     def _arbeitsflaeche(self):
         """Statt der echten Messung der vorgegebene Wert.
@@ -227,6 +232,105 @@ class MerkenTests(unittest.TestCase):
         self.assertEqual({}, t.geschrieben)
 
 
+class _Ereignis:
+    """So viel Ereignis, wie die Verfolgung anfasst."""
+
+    def __init__(self, widget):
+        self.widget = widget
+
+
+class MinimiertTests(unittest.TestCase):
+    """Der Fehler, den v1.9.3 und v1.9.4 ausgeliefert haben.
+
+    ``_fenstergeometrie_merken`` fragte ``state() == 'zoomed'``. Ein
+    minimiertes Fenster meldet aber ``'iconic'`` - auch wenn es aus dem
+    Maximum heraus minimiert wurde. Die Abfrage griff daneben, und dann
+    landete genau das in der Datei, was sie ausschliessen soll: die volle
+    Bildschirmgroesse als gewoehnliche Geometrie, dazu ``maximiert=False``.
+
+    Am 04.09.2026 gemessen. Ueber die Taskleiste geschlossen passiert es
+    **nicht** - Windows stellt vorher wieder her. Erreichbar ist es, wenn
+    das ``WM_CLOSE`` beim minimierten Fenster ankommt: Herunterfahren oder
+    Abmelden.
+
+    Warum die 21 Pruefungen davor nichts merkten: Keine kannte den Zustand
+    ``'iconic'``. Sie pruefte ``normal`` gegen ``zoomed`` - dieselben zwei
+    Faelle, die auch der Code kannte.
+    """
+
+    def test_aus_dem_maximum_minimiert_bleibt_maximiert(self) -> None:
+        """Der eigentliche Fehler: die Bildschirmgroesse darf nicht in die Datei."""
+        t = _Traeger(zustand="zoomed", geometrie="3440x1440+-8+-8")
+        t._fensterzustand_verfolgen()          # der Stand vor dem Minimieren
+        t.root._zustand = "iconic"             # der Anwender minimiert
+        t._fenstergeometrie_merken()           # und faehrt den Rechner herunter
+        self.assertTrue(t.geschrieben[G._MAXIMIERT_SCHLUESSEL])
+        self.assertNotIn(
+            G._GEOMETRIE_SCHLUESSEL, t.geschrieben,
+            "Die Vollbildgroesse wurde als gewoehnliche Geometrie gemerkt.")
+
+    def test_aus_normaler_groesse_minimiert_merkt_die_groesse(self) -> None:
+        """Der gutartige Fall darf nicht mit verlorengehen."""
+        t = _Traeger(zustand="normal", geometrie="1040x680+300+180")
+        t._fensterzustand_verfolgen()
+        t.root._zustand = "iconic"
+        t._fenstergeometrie_merken()
+        self.assertEqual("1040x680+300+180",
+                         t.geschrieben[G._GEOMETRIE_SCHLUESSEL])
+        self.assertFalse(t.geschrieben[G._MAXIMIERT_SCHLUESSEL])
+
+    def test_maximiert_verkleinert_minimiert(self) -> None:
+        """Der Weg des Anwenders: gross, dann klein gezogen, dann weggeklickt."""
+        t = _Traeger(zustand="zoomed", geometrie="3440x1440+-8+-8")
+        t._fensterzustand_verfolgen()
+        t.root._zustand, t.root._geometrie = "normal", "1200x700+120+80"
+        t._fensterzustand_verfolgen()          # das Verkleinern loest ein Configure aus
+        t.root._zustand = "iconic"
+        t._fenstergeometrie_merken()
+        self.assertEqual("1200x700+120+80",
+                         t.geschrieben[G._GEOMETRIE_SCHLUESSEL])
+        self.assertFalse(t.geschrieben[G._MAXIMIERT_SCHLUESSEL])
+
+    def test_ohne_je_ein_configure_wird_nichts_erfunden(self) -> None:
+        """Minimiert geschlossen, bevor je ein Configure kam.
+
+        Dann gibt es keinen verlaesslichen Wert - und lieber gar keine
+        Geometrie als eine falsche. Der zuletzt gespeicherte Stand bleibt
+        damit stehen.
+        """
+        t = _Traeger(zustand="iconic", geometrie="3440x1440+-8+-8")
+        t._fenstergeometrie_merken()
+        self.assertNotIn(G._GEOMETRIE_SCHLUESSEL, t.geschrieben)
+        self.assertFalse(t.geschrieben[G._MAXIMIERT_SCHLUESSEL])
+
+    def test_die_verfolgung_ueberspringt_den_minimierten_zustand(self) -> None:
+        """Sonst schriebe sie genau den Wert fest, der vermieden werden soll."""
+        t = _Traeger(zustand="zoomed", geometrie="3440x1440+-8+-8")
+        t._fensterzustand_verfolgen()
+        t.root._zustand, t.root._geometrie = "iconic", "3440x1440+-8+-8"
+        t._fensterzustand_verfolgen()
+        self.assertEqual("zoomed", t._letzter_fensterzustand)
+
+    def test_die_verfolgung_geht_fremde_widgets_nichts_an(self) -> None:
+        """Am Hauptfenster haengen Kindflaechen, die ebenfalls Configure melden."""
+        t = _Traeger(zustand="zoomed", geometrie="3440x1440+-8+-8")
+        t._fensterzustand_verfolgen()
+        t.root._zustand, t.root._geometrie = "normal", "800x600+0+0"
+        t._fensterzustand_verfolgen(_Ereignis(object()))
+        self.assertEqual("zoomed", t._letzter_fensterzustand,
+                         "Ein fremdes Configure hat den Stand ueberschrieben.")
+
+    def test_ein_fehler_haelt_die_verfolgung_nicht_auf(self) -> None:
+        class Bockig(_Wurzel):
+            def state(self, wert=None):
+                raise RuntimeError("kein Fenster mehr")
+
+        t = _Traeger()
+        t.root = Bockig()
+        t._fensterzustand_verfolgen()          # darf nicht werfen
+        self.assertEqual("normal", t._letzter_fensterzustand)
+
+
 class AnbindungTests(unittest.TestCase):
     """Ausgefuehrt statt gelesen waere hier ein ganzes Fenster noetig.
 
@@ -280,6 +384,40 @@ class AnbindungTests(unittest.TestCase):
         aufbau = ast.unparse(self._methode("__init__"))
         self.assertNotIn("'zoomed'", aufbau)
         self.assertNotIn('"zoomed"', aufbau)
+
+    def test_configure_fuehrt_den_fensterzustand_nach(self) -> None:
+        self.assertTrue(
+            self._ruft(self._methode("_on_root_configure"),
+                       "_fensterzustand_verfolgen"),
+            "Der letzte nicht minimierte Zustand wird nirgends nachgefuehrt.")
+
+    def test_die_nachfuehrung_steht_vor_dem_fruehen_ausstieg(self) -> None:
+        """Sonst laeuft sie bei Anwendern ohne Hintergrundbild nie.
+
+        ``_on_root_configure`` steigt aus, sobald ``_bg_image_cache`` leer
+        ist. Alles, was immer laufen muss, gehoert davor - genau wie
+        ``_dpi_wechsel_festhalten`` mit derselben Begruendung.
+        """
+        import ast
+
+        methode = self._methode("_on_root_configure")
+        nachfuehrung = ausstieg = None
+        for stelle, knoten in enumerate(methode.body):
+            if nachfuehrung is None and any(
+                    getattr(k.func, "attr", "") == "_fensterzustand_verfolgen"
+                    for k in ast.walk(knoten) if isinstance(k, ast.Call)):
+                nachfuehrung = stelle
+            if ausstieg is None and isinstance(knoten, ast.If) \
+                    and "_bg_image_cache" in ast.unparse(knoten.test) \
+                    and any(isinstance(k, ast.Return) for k in knoten.body):
+                ausstieg = stelle
+
+        self.assertIsNotNone(nachfuehrung, "Nachfuehrung nicht gefunden.")
+        self.assertIsNotNone(ausstieg, "Der fruehe Ausstieg ist weg - Test pruefen.")
+        self.assertLess(
+            nachfuehrung, ausstieg,
+            "Die Nachfuehrung steht hinter dem Ausstieg und laeuft damit "
+            "nur, wenn ein Hintergrundbild gesetzt ist.")
 
 
 class ZweiBildschirmeTests(unittest.TestCase):

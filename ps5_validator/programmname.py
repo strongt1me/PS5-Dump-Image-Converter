@@ -41,11 +41,11 @@ def titel(fassung: str = "") -> str:
     """Der Fenstertitel: Name und Fassungsnummer.
 
     Args:
-        fassung: Die Fassungsnummer, etwa ``"v1.9.4"``. Leer laesst sie
+        fassung: Die Fassungsnummer, etwa ``"v1.9.5"``. Leer laesst sie
             weg.
 
     Returns:
-        Zum Beispiel ``"PS5 Dump & Image Converter v1.9.4"``.
+        Zum Beispiel ``"PS5 Dump & Image Converter v1.9.5"``.
     """
     nummer = str(fassung or "").strip()
     return "%s %s" % (NAME, nummer) if nummer else NAME

@@ -2,7 +2,31 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.4):** Wer zwei Bildschirme nutzt, findet sein Fenster wieder dort, wo er es verlassen hat. Ansonsten wie v1.9.3: gemerkte Fenstergröße, erklärte Aufgaben und lesbare PS5-Pakete.
+> **Kurz zum aktuellen Stand (v1.9.5):** Die gemerkte Fenstergröße hält jetzt auch, wenn Sie das Programm minimiert lassen und den Rechner herunterfahren. Ansonsten wie v1.9.4: zwei Bildschirme, erklärte Aufgaben und lesbare PS5-Pakete.
+
+---
+
+## v1.9.5 – 04.09.2026
+
+### Minimiert heruntergefahren, und das Fenster war beim nächsten Start verstellt
+
+Wer das Programm maximiert nutzte, es dann in die Taskleiste legte und den
+Rechner herunterfuhr, fand es beim nächsten Start **nicht** maximiert vor –
+sondern als fast bildschirmfüllendes Fenster mit sonderbarem Versatz.
+
+Der Grund: Ein minimiertes Fenster meldet dem Programm nicht „maximiert“,
+sondern „minimiert“. Beim Merken zählte nur die Frage, ob es maximiert sei –
+und die war dann verneint. Gespeichert wurde daraufhin die volle
+Bildschirmgröße als gewöhnliche Fenstergröße, also genau der Wert, den das
+Programm dabei eigentlich vermeiden will.
+
+Jetzt merkt sich das Programm laufend den letzten Zustand, in dem das Fenster
+**nicht** minimiert war, und greift beim Schließen darauf zurück.
+
+Über die Taskleiste geschlossen trat das nie auf – dort stellt Windows das
+Fenster vorher wieder her. Betroffen war der Weg über **Herunterfahren oder
+Abmelden** bei minimiertem Programm; wer die Einstellung „Rechner nach
+erfolgreichem Abschluss herunterfahren“ nutzt, konnte darauf stoßen.
 
 ---
 

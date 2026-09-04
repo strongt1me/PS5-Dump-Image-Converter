@@ -456,7 +456,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.4"
+APP_VERSION = "v1.9.5"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -6987,6 +6987,15 @@ class PS5ConverterGUI:
     _GEOMETRIE_SCHLUESSEL = "window_geometry"
     _MAXIMIERT_SCHLUESSEL = "window_maximized"
 
+    #: Der zuletzt gesehene Zustand, in dem das Fenster **nicht** minimiert
+    #: war - samt zugehoeriger Geometrie. Beide werden bei jedem
+    #: ``<Configure>`` nachgefuehrt (siehe ``_fensterzustand_verfolgen``) und
+    #: beim Schliessen herangezogen, falls das Fenster gerade minimiert ist.
+    #: Als **Klassen**-Vorgaben, damit sie auch dann schon dastehen, wenn
+    #: geschlossen wird, bevor je ein Configure kam.
+    _letzter_fensterzustand = 'normal'
+    _letzte_fenstergeometrie = ''
+
     def _arbeitsflaeche(self) -> tuple[int, int, int, int]:
         """Die gesamte Arbeitsflaeche ueber **alle** Bildschirme.
 
@@ -7109,6 +7118,32 @@ class PS5ConverterGUI:
         except tk.TclError:
             logger.debug("Fenstermanager unterstuetzt den Zustand 'zoomed' nicht.")
 
+    def _fensterzustand_verfolgen(self, event: tk.Event | None = None) -> None:
+        """Fuehrt den letzten **nicht** minimierten Fensterzustand nach.
+
+        Laeuft bei jedem ``<Configure>`` des Hauptfensters. Gemessen am
+        04.09.2026: Minimieren loest **kein** Configure aus, Aendern und
+        Maximieren dagegen schon. Damit stehen hier nach einem Minimieren
+        genau die Werte von davor - und das ist es, was
+        ``_fenstergeometrie_merken`` dann braucht.
+        """
+        try:
+            # ``!=`` wie in _on_root_configure, nicht ``is not``: Tk reicht
+            # ``event.widget`` gelegentlich als Namen durch statt als
+            # Fensterobjekt, und dann trennt Identitaet, was Gleichheit
+            # zusammenhaelt.
+            if event is not None and event.widget != self.root:
+                return
+            zustand = str(self.root.state() or 'normal')
+            if zustand == 'iconic':
+                # Sollte nach der Messung nicht vorkommen; falls doch, waere
+                # es genau der Wert, den wir nicht haben wollen.
+                return
+            self._letzter_fensterzustand = zustand
+            self._letzte_fenstergeometrie = str(self.root.winfo_geometry())
+        except Exception as exc:  # noqa: BLE001
+            logger.debug('Fensterzustand nicht verfolgbar: %s', exc)
+
     def _fenstergeometrie_merken(self) -> None:
         """Schreibt Groesse, Ort und Maximierung in die Einstellungsdatei.
 
@@ -7118,14 +7153,37 @@ class PS5ConverterGUI:
         wenn das Fenster **nicht** maximiert ist; sonst bleibt der zuletzt
         gemerkte Wert stehen. Wer also maximiert arbeitet und wieder
         verkleinert, findet seine alte Groesse wieder.
+
+        **Der minimierte Fall.** Ein minimiertes Fenster meldet ``'iconic'``,
+        nicht ``'zoomed'`` - auch wenn es aus dem Maximum heraus minimiert
+        wurde. Die Abfrage oben griff daneben, und dann landete genau das in
+        der Datei, was dieser Text ausschliessen soll: die volle
+        Bildschirmgroesse als gewoehnliche Geometrie, dazu
+        ``maximiert=False``. Beim naechsten Start kam das Fenster
+        unmaximiert und mit sonderbarem Versatz hoch.
+
+        Ueber die Taskleiste geschlossen passiert das **nicht** - Windows
+        stellt vorher wieder her, und dann stimmt der Zustand. Erreichbar ist
+        es, wenn das ``WM_CLOSE`` ankommt, waehrend das Fenster minimiert
+        ist: beim Herunterfahren oder Abmelden. Bei einem Programm mit der
+        Option "Rechner nach erfolgreichem Abschluss herunterfahren" ist das
+        kein abwegiger Fall. Am 04.09.2026 an v1.9.4 gemessen; der Fehler
+        stammt aus v1.9.3.
+
+        Behoben ueber die von ``_fensterzustand_verfolgen`` mitgefuehrten
+        Werte: Ist das Fenster jetzt minimiert, zaehlt der letzte Zustand
+        davor.
         """
         try:
             zustand = str(self.root.state() or 'normal')
+            geometrie = str(self.root.winfo_geometry())
+            if zustand == 'iconic':
+                zustand = str(self._letzter_fensterzustand or 'normal')
+                geometrie = str(self._letzte_fenstergeometrie or '')
             maximiert = zustand == 'zoomed'
             self._save_setting(self._MAXIMIERT_SCHLUESSEL, maximiert)
-            if not maximiert:
-                self._save_setting(self._GEOMETRIE_SCHLUESSEL,
-                                   self.root.winfo_geometry())
+            if not maximiert and geometrie:
+                self._save_setting(self._GEOMETRIE_SCHLUESSEL, geometrie)
         except Exception as exc:  # noqa: BLE001
             # Das Schliessen darf daran nie haengenbleiben.
             logger.debug('Fenstergroesse nicht merkbar: %s', exc)
@@ -8263,6 +8321,12 @@ class PS5ConverterGUI:
         # kein Hintergrundbild, gleiche Groesse). Die Feststellung darf davon
         # nicht abhaengen.
         self._dpi_wechsel_festhalten()
+
+        # Aus demselben Grund hier oben: Der letzte nicht minimierte Zustand
+        # muss auch dann mitlaufen, wenn kein Hintergrundbild gesetzt ist -
+        # sonst waere die Nachfuehrung genau bei den Anwendern still, die
+        # ohne Bild arbeiten. Siehe _fenstergeometrie_merken.
+        self._fensterzustand_verfolgen(event)
 
         # Angedockte Fenster sofort synchronisieren.
         self._sync_docked_windows()
