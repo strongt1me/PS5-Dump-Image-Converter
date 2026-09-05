@@ -30089,7 +30089,11 @@ class PS5ConverterGUI:
         """
         try:
             vorhanden = ps5_backport.fakelib_vorhandene_ordner(str(wurzel))
-        except Exception as exc:
+        except OSError as exc:
+            # Nur Betriebsfälle abfangen: ein Ordner, der nicht mehr da ist
+            # oder sich nicht lesen lässt. Ein Programmierfehler darf hier
+            # nicht als sauberer Befund durchgehen – „keine Beanstandung"
+            # ist genau die Auskunft, die dann falsch wäre.
             logger.debug("Ablage nicht prüfbar: %s", exc)
             return []
         gesehen: list[str] = []
@@ -31207,8 +31211,23 @@ class PS5ConverterGUI:
 
     def _ampr_gen_config_schreiben(self, ftp, text: str,
                                    aenderungen: dict[str, str]) -> None:
-        """Schreibt die geaenderten Schluessel zurueck - Rest bleibt stehen."""
-        neu = merge_flat_ini(text or "", aenderungen)
+        """Schreibt die geänderten Schlüssel zurück – Rest bleibt stehen.
+
+        Der Bestand muss mitgegeben werden, sonst bleibt eben nichts stehen:
+        ``merge_flat_ini`` kommentiert jede aktive Zeile aus, deren Schlüssel
+        nicht im Wörterbuch steht. Das ist für den Editor richtig – dort steht
+        die ganze Datei drin –, hier kamen bis zum 05.09.2026 nur die
+        Abweichungen an. Eine config.ini mit sechs aktiven Einstellungen kam
+        mit sechs auskommentierten zurück: Scanpfade, Ports und Einhängepunkt
+        der Konsole waren weg.
+
+        Über ``parse_flat_ini_multi``, nicht ``parse_flat_ini``: Ein Schlüssel,
+        der mehrfach dasteht (``scanpath``), käme sonst als einzelner Wert
+        zurück. ``merge_flat_ini`` ordnet eine Liste den Zeilen der Reihe nach
+        zu und trifft damit jede.
+        """
+        bestand = parse_flat_ini_multi(text or "")
+        neu = merge_flat_ini(text or "", {**bestand, **aenderungen})
         ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD,
                        io.BytesIO(neu.encode("utf-8")))
 
