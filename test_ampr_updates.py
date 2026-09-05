@@ -100,15 +100,81 @@ class FassungsvergleichTests(unittest.TestCase):
 
     def test_nur_echt_neueres_wird_angeboten(self) -> None:
         angebote = au.angebote_lesen(ANTWORT)
-        neu = au.neuere(angebote, ["0.3.6.2", "0.3.5.1", "0.3.4"])
-        fassungen = {a.fassung for a in neu}
-        self.assertEqual({"0.3.6.4", "0.3.6.6"}, fassungen)
+        neu = au.neuere(angebote, [("0.3.6.2", "no debug"),
+                                   ("0.3.5.1", "no debug"),
+                                   ("0.3.4", "no debug"),
+                                   ("0.3.6.2", "debug")])
+        self.assertEqual({("0.3.6.4", "no debug"), ("0.3.6.6", "no debug"),
+                          ("0.3.6.4", "debug"), ("0.3.6.6", "debug")},
+                         {(a.fassung, a.variante) for a in neu})
 
     def test_gegen_die_hoechste_verglichen_nicht_gegen_jede(self) -> None:
         """Eine Fassung zwischen zwei vorhandenen ist nichts Neues."""
         angebote = au.angebote_lesen(ANTWORT)
-        neu = au.neuere(angebote, ["0.3.6.6"])
+        neu = au.neuere(angebote, [("0.3.6.6", "no debug"),
+                                   ("0.3.6.6", "debug")])
         self.assertEqual([], neu)
+
+    def test_je_variante_gerechnet(self) -> None:
+        """Der Kern: no debug aktuell, debug hinterher - beides zaehlt eigen.
+
+        Gemessen an der Beilage, die debug nur bis 0.3.6.2 fuehrt: Ohne
+        diese Trennung bekam niemand die fehlenden debug-Fassungen
+        angeboten, weil eine hoehere no-debug-Nummer den Vergleich gewann.
+        """
+        angebote = au.angebote_lesen(ANTWORT)
+        neu = au.neuere(angebote, [("0.3.6.6", "no debug"),
+                                   ("0.3.6.2", "debug")])
+        self.assertEqual({("0.3.6.4", "debug"), ("0.3.6.6", "debug")},
+                         {(a.fassung, a.variante) for a in neu})
+
+    def test_eine_unbekannte_variante_misst_gegen_den_ganzen_bestand(self) -> None:
+        """Wer nur no debug hat, bekommt die debug-Reihe nicht rueckwirkend.
+
+        Fuer eine Variante, die im Bestand gar nicht vorkommt, gilt die
+        hoechste Nummer ueberhaupt - sonst schoebe das Programm dem
+        Anwender eine ganze Reihe nach, fuer die er sich nie entschieden
+        hat.
+        """
+        angebote = au.angebote_lesen(ANTWORT)
+        neu = au.neuere(angebote, [("0.3.6.6", "no debug")])
+        self.assertEqual([], neu, [(a.fassung, a.variante) for a in neu])
+
+    def test_neuer_als_der_ganze_bestand_kommt_auch_unbekannt_durch(self) -> None:
+        """Die andere Haelfte derselben Regel - und ihre Grenze.
+
+        Steht der Bestand tiefer, kommt die unbekannte Variante sehr wohl
+        durch. Ohne diesen Fall stuende oben nur, dass etwas verschwindet,
+        und der Test taugte als Beleg fuer eine Regel, die er halb misst.
+        """
+        angebote = au.angebote_lesen(ANTWORT)
+        neu = au.neuere(angebote, [("0.3.6", "no debug")])
+        self.assertEqual({("0.3.6.4", "no debug"), ("0.3.6.6", "no debug"),
+                          ("0.3.6.4", "debug"), ("0.3.6.6", "debug")},
+                         {(a.fassung, a.variante) for a in neu})
+
+    def test_die_schreibweise_des_anhangs_spielt_keine_rolle(self) -> None:
+        """-DEBUG galt als no debug, und ein Angebot verschwand still.
+
+        angebote_lesen entdoppelt ueber (Fassung, Variante): Traegt eine
+        Veroeffentlichung beide Schreibweisen, fielen zwei verschiedene
+        Anhaenge auf dasselbe Paar zusammen.
+        """
+        for name in ("libSceAmpr.sprx-0.1-x-debug", "libSceAmpr.sprx-0.1-x-DEBUG",
+                     "libSceAmpr.sprx-0.1-x-Debug"):
+            self.assertEqual(au.DEBUG, au.variante_aus_anhang(name), name)
+        self.assertEqual(au.OHNE_DEBUG,
+                         au.variante_aus_anhang("libSceAmpr.sprx-0.1-x"))
+
+    def test_blosse_nummern_werden_abgewiesen(self) -> None:
+        """Die alte Signatur darf nicht still das Falsche vergleichen.
+
+        Ein durchgereichter String wuerde zeichenweise entpackt - aus
+        "0.3.6.6" wuerde die Fassung "0" mit der Variante ".". Das faellt
+        niemandem auf, deshalb ein Fehler statt eines Ergebnisses.
+        """
+        with self.assertRaises(TypeError):
+            au.neuere(au.angebote_lesen(ANTWORT), ["0.3.6.6"])
 
     def test_leerer_bestand_macht_alles_neu(self) -> None:
         angebote = au.angebote_lesen(ANTWORT)
@@ -170,7 +236,9 @@ class HolenTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="ampr_hol_")
         self.wurzel = self._tmp.name
-        self.angebote = au.neuere(au.angebote_lesen(ANTWORT), ["0.3.6.2"])
+        self.angebote = au.neuere(au.angebote_lesen(ANTWORT),
+                                  [("0.3.6.2", "no debug"),
+                                   ("0.3.6.2", "debug")])
 
     def tearDown(self) -> None:
         self._tmp.cleanup()

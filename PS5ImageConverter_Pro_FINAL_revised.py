@@ -6282,7 +6282,13 @@ class PS5ConverterGUI:
             lambda _e: self._save_setting("integrate_backport_fw", self.backport_fw_var.get()),
         )
 
-        self._ampr_versionsliste_fuellen()
+        # Erst nur die programmnahen Ordner – deren Größe ist bekannt. Der
+        # selbst gesetzte kommt gleich darauf nach, wenn das Fenster steht:
+        # Er darf beliebig groß sein, und gemessen kostete er bis zu einer
+        # halben Sekunde. Die Liste ist in der Zwischenzeit nicht leer,
+        # sondern trägt die mitgelieferten Fassungen.
+        self._ampr_versionsliste_fuellen(nur_programmnah=True)
+        self._ampr_versionsliste_nachladen()
         self._on_integration_changed(speichern=False)
         self._integrationszeile_hoehe_setzen()
         # Beide Bedienzeilen setzen. Der erste Wurf misst nicht nach - dazu
@@ -21427,16 +21433,53 @@ class PS5ConverterGUI:
     # liegt der ohnehin schon ausgepackt im Temp-Verzeichnis.
     # ==================================================================
 
-    def _ampr_versionsliste_fuellen(self) -> None:
-        """Traegt die verfuegbaren AMPR-Versionen in die Auswahlliste ein.
+    def _ampr_versionsliste_nachladen(self) -> None:
+        """Holt den selbst gesetzten Ordner nach, sobald das Fenster steht.
 
-        Gelesen wird derselbe Versionsspeicher wie in Aufgabe 7. Fehlt er,
-        bleibt die Liste leer und das Kaestchen sperrt sich selbst - lieber
-        gar nicht anbieten als beim Erstellen daran scheitern.
+        Über ``after_idle``, nicht über einen Faden: Das Füllen der Liste
+        rührt Tk-Elemente an, und die gehören in den Hauptstrang. Der
+        Aufbau ist zu diesem Zeitpunkt fertig – wartet der Ordner, wartet
+        niemand mehr auf ihn.
+        """
+        def _nachladen() -> None:
+            try:
+                self._ampr_versionsliste_fuellen()
+                self._on_integration_changed(speichern=False)
+            except Exception as exc:            # noqa: BLE001
+                logger.debug("AMPR-Liste nicht nachladbar: %s", exc)
+
+        try:
+            self.root.after_idle(_nachladen)
+        except Exception as exc:                # noqa: BLE001
+            # Ohne laufende Ereignisschleife (Tests, --cli) sofort - dann
+            # gibt es auch kein Fenster, das darauf warten müsste.
+            logger.debug("Nachladen sofort statt im Leerlauf: %s", exc)
+            _nachladen()
+
+    def _ampr_versionsliste_fuellen(self, nur_programmnah: bool = False) -> None:
+        """Trägt die verfügbaren AMPR-Versionen in die Auswahlliste ein.
+
+        Gelesen wird derselbe Vorrat wie in Aufgabe 7. Der Satz stand hier
+        schon, stimmte aber nicht: Bis v1.9.5 las diese Liste fest den
+        mitgelieferten Ordner, Aufgabe 7 dagegen den selbst gesetzten. Wer
+        einen eigenen Ordner gewählt hatte, sah hier seine Fassungen nicht
+        und dort die mitgelieferten nicht – zwei Listen, zwei Bestände.
+
+        Fehlt der Vorrat ganz, bleibt die Liste leer und das Kästchen sperrt
+        sich selbst – lieber gar nicht anbieten als beim Erstellen daran
+        scheitern.
+
+        Args:
+            nur_programmnah: Beim Fensteraufbau gesetzt. Der eigene Ordner
+                des Anwenders kann beliebig groß und langsam sein – ein
+                Netzlaufwerk, ein halbes Dateisystem –, und darauf darf das
+                Fenster nicht warten. Der Aufruf wird gleich darauf ohne die
+                Einschränkung wiederholt; bis dahin steht die mitgelieferte
+                Liste da, nicht eine leere.
         """
         if not hasattr(self, "ampr_version_combo"):
             return
-        eintraege = self._ampr_scan_version_store(self._ampr_bundled_store())
+        eintraege = self._ampr_alle_fassungen(nur_programmnah=nur_programmnah)
         beschriftungen: list[str] = []
         self._ampr_versionsauswahl: dict[str, dict[str, Any]] = {}
         for eintrag in eintraege:
@@ -21722,8 +21765,8 @@ class PS5ConverterGUI:
         genommen; ganz ohne PlayGo zu bleiben waere schlechter, denn das
         Kaestchen wurde ausdruecklich gesetzt.
         """
-        kandidaten = [e for e in self._ampr_scan_version_store(self._ampr_bundled_store())
-                      if e.get("lib") == "libScePlayGo.sprx"]
+        kandidaten = [e for e in self._ampr_alle_fassungen()
+                      if e.get("lib") == self._PLAYGO_SPRX_NAME]
         if not kandidaten:
             return ""
         gewuenscht = self._PLAYGO_VARIANTEN.get(str(ampr_eintrag.get("variant", "")), "")
@@ -21839,6 +21882,22 @@ class PS5ConverterGUI:
     }
 
     _AMPR_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
+
+    # Woher eine Fassung stammt. Die Reihenfolge ist der Rang: Steht
+    # dieselbe Fassung in mehreren Ordnern, gewinnt die weiter oben.
+    # Ausdrücklich gewählt schlägt gespeichert, gespeichert schlägt
+    # geholt, geholt schlägt mitgeliefert – wer selbst etwas hinlegt,
+    # meint es auch.
+    _AMPR_QUELLE_GEWAEHLT = "gewaehlt"
+    _AMPR_QUELLE_EIGEN = "eigen"
+    _AMPR_QUELLE_GEHOLT = "geholt"
+    _AMPR_QUELLE_BEILAGE = "beilage"
+    _AMPR_QUELLEN_RANG: dict[str, int] = {
+        _AMPR_QUELLE_GEWAEHLT: 0,
+        _AMPR_QUELLE_EIGEN: 1,
+        _AMPR_QUELLE_GEHOLT: 2,
+        _AMPR_QUELLE_BEILAGE: 3,
+    }
 
     # Mitgelieferter Versionsspeicher – wird beim EXE-Bau eingebettet.
     _AMPR_BUNDLED_STORE_DIR = "PlayGo & AMPR_EMU"
@@ -22080,8 +22139,19 @@ class PS5ConverterGUI:
             self._melde_im_hauptstrang(self._t("ampr.update_nichts_gefunden"))
             return
 
-        vorhanden = [e["version"] for e in
-                     self._ampr_scan_version_store(self._ampr_resolve_store())]
+        # NUR die AMPR-Fassungen. ampr_updates ist ausschliesslich fuer
+        # libSceAmpr.sprx gebaut - DATEINAME, PROJEKT und der Filter in
+        # angebote_lesen sagen das alle drei. Der Bestand ging bis zum
+        # 05.09.2026 ungefiltert hinein, und neuere() vergleicht gegen die
+        # HOECHSTE Nummer darin. Die mitgelieferte PlayGo-Fassung heisst 0.5,
+        # die hoechste AMPR-Fassung 0.3.6.6 - also galt nie wieder etwas als
+        # neu. Gemessen: ein Angebot 0.4.0 kam nicht durch. Der Knopf meldete
+        # jedem Anwender "schon aktuell", ohne Ausnahme und ohne eigenen
+        # Ordner. Die beiden Projekte zaehlen unabhaengig voneinander; ihre
+        # Nummern gehoeren nie in denselben Vergleich.
+        vorhanden = [(e["version"], self._ampr_variantenklasse(e["variant"]))
+                     for e in self._ampr_alle_fassungen()
+                     if e.get("lib") == self._AMPR_SPRX_NAME]
         neu = [a for a in ampr_updates.neuere(angebote, vorhanden)
                if not ampr_updates.schon_da(self._ampr_updates_ordner(), a)]
         if not neu:
@@ -22213,6 +22283,150 @@ class PS5ConverterGUI:
             else os.path.abspath(__file__))
         return os.path.join(wurzel, ampr_updates.ORDNERNAME)
 
+    def _ampr_speicherwurzeln(self, explicit: str = "",
+                              nur_programmnah: bool = False) -> list[tuple[str, str]]:
+        """Alle Orte, an denen AMPR-Fassungen liegen können – mit ihrer Herkunft.
+
+        In der Rangfolge von :attr:`_AMPR_QUELLEN_RANG`: ausdrücklich gewählt,
+        gespeichert, geholt, mitgeliefert. Doppelte Ordner fallen heraus –
+        setzt jemand den mitgelieferten Ordner ausdrücklich, soll er nicht
+        zweimal gelesen werden.
+
+        Der Unterschied zu :meth:`_ampr_resolve_store`: Dort geht es um den
+        **einen** Ordner, in den geschrieben wird und den ein Dateidialog
+        anzeigt. Hier geht es darum, was es überhaupt gibt.
+
+        Args:
+            explicit: Ein ausdrücklich genannter Ordner, der Vorrang hat.
+            nur_programmnah: Lässt die vom Anwender gesetzten Ordner weg und
+                liest nur die beiden, die neben dem Programm liegen. Deren
+                Größe ist bekannt, die eines selbst gewählten nicht – wer
+                sein halbes Laufwerk als Versionsspeicher setzt, soll damit
+                nicht den Fensteraufbau anhalten. Gemessen: 200 Fassungen
+                kosten 492 ms, 3000 fremde Dateien im Baum 105 ms.
+
+        Returns:
+            Paare aus (Ordner, Herkunft); nur vorhandene Ordner.
+        """
+        roh: list[tuple[str, str]] = []
+        if not nur_programmnah:
+            roh += [
+                (str(explicit or "").strip(), self._AMPR_QUELLE_GEWAEHLT),
+                (str(self._load_setting("ampr_store_dir", "") or "").strip(),
+                 self._AMPR_QUELLE_EIGEN),
+            ]
+        roh += [
+            (self._ampr_updates_ordner(), self._AMPR_QUELLE_GEHOLT),
+            (self._ampr_bundled_store(), self._AMPR_QUELLE_BEILAGE),
+        ]
+        wurzeln: list[tuple[str, str]] = []
+        gesehen: set[str] = set()
+        for ordner, quelle in roh:
+            if not ordner or not os.path.isdir(ordner):
+                continue
+            # Über den aufgelösten Pfad entdoppeln, nicht über die
+            # Schreibweise: derselbe Ordner kommt als gespeicherte
+            # Einstellung mit Rückstrichen und als Beilage über
+            # _bundled_resource daher.
+            try:
+                marke = str(Path(ordner).expanduser().resolve()).lower()
+            except OSError:
+                marke = os.path.normcase(os.path.abspath(ordner))
+            if marke in gesehen:
+                continue
+            gesehen.add(marke)
+            wurzeln.append((ordner, quelle))
+        return wurzeln
+
+    def _ampr_alle_fassungen(self, explicit: str = "",
+                             nur_programmnah: bool = False) -> list[dict[str, Any]]:
+        """Der ganze Vorrat – aus **allen** Wurzeln, nicht nur aus einer.
+
+        Bis v1.9.5 sah jede Stelle nur einen Ausschnitt, und zwar einen
+        anderen: Die Klappliste beim Erstellen las fest den mitgelieferten
+        Ordner, der AMPR-Manager und der Automatiklauf lasen über
+        ``_ampr_resolve_store`` nur den selbst gesetzten. Wer einmal einen
+        eigenen Ordner gewählt hatte, sah ab da zwei verschiedene Vorräte im
+        selben Programm – gemessen 13 Fassungen an der einen Stelle, 2 an der
+        anderen, von 15 vorhandenen.
+
+        **Entdoppelt wird über (lib, version, variant)**, nicht über den
+        Inhalt. Das ist keine Sparsamkeit, sondern Bedingung: Die getroffene
+        Auswahl wird an anderer Stelle über genau dieses Tripel wieder
+        aufgelöst (siehe die Suche nach ``matches`` im Anwenden-Zweig). Bleiben
+        zwei Einträge mit gleicher Fassung und Variante stehen, nimmt sie den
+        erstbesten – der Anwender wählte die eine Datei und bekäme die andere.
+
+        Bei gleichem Tripel gewinnt die Wurzel mit dem kleineren Rang. Damit
+        hängt das Ergebnis nicht an der Lesereihenfolge.
+
+        Args:
+            explicit: Ein ausdrücklich genannter Ordner, der Vorrang hat.
+            nur_programmnah: Siehe :meth:`_ampr_speicherwurzeln` – für den
+                Fensteraufbau, der auf keinen fremden Ordner warten soll.
+        """
+        zusammen: list[dict[str, Any]] = []
+        bekannt: dict[tuple[str, str, str], int] = {}
+        for ordner, quelle in self._ampr_speicherwurzeln(explicit, nur_programmnah):
+            rang = self._AMPR_QUELLEN_RANG.get(quelle, 9)
+            for eintrag in self._ampr_scan_einen_speicher(ordner):
+                eintrag["quelle"] = quelle
+                eintrag["wurzel"] = ordner
+                schluessel = (eintrag["lib"], eintrag["version"],
+                              eintrag["variant"])
+                schon = bekannt.get(schluessel)
+                if schon is None:
+                    bekannt[schluessel] = len(zusammen)
+                    zusammen.append(eintrag)
+                elif rang < self._AMPR_QUELLEN_RANG.get(
+                        zusammen[schon]["quelle"], 9):
+                    zusammen[schon] = eintrag
+        zusammen.sort(key=self._ampr_sortierschluessel)
+        return zusammen
+
+    @classmethod
+    def _ampr_variantenklasse(cls, variante: str) -> str:
+        """Übersetzt eine Ordnernamen-Variante in die Sprache von ampr_updates.
+
+        Der Scanner liest die Variante aus dem Ordnernamen ab – das kann
+        ``no debug``, ``nodebug``, ``nolog``, ``release``, ``debug`` oder
+        ``log`` heißen; :attr:`_AMPR_VARIANT_ORDER` führt sie als **zwei**
+        Klassen. ``ampr_updates`` kennt dagegen nur die beiden kanonischen
+        Namen, unter denen es auch ablegt.
+
+        Ohne diese Übersetzung rechnete der Aktualisierungsvergleich an dem
+        vorbei, was der Anwender hat: Wer seine Ordner ``nolog``/``log``
+        nennt, hatte für ``ampr_updates`` gar keine bekannte Variante, und
+        beide Klassen fielen auf die höchste Nummer über den ganzen Bestand
+        zurück. Gemessen am 05.09.2026 mit einem Bestand
+        ``0.3.6.6 nolog`` + ``0.3.6.2 log``: die fehlenden Fassungen
+        0.3.6.4 und 0.3.6.6 debug wurden nicht angeboten.
+
+        Eine Variante, die auch _AMPR_VARIANT_ORDER nicht kennt (etwa
+        ``standard`` aus einem flachen Ordner ohne Variantenangabe), bleibt
+        stehen, wie sie ist. Sie einer der beiden Klassen zuzuschlagen wäre
+        geraten – so gilt für sie die Regel für unbekannte Varianten.
+        """
+        marke = str(variante or "").strip().lower()
+        rang = cls._AMPR_VARIANT_ORDER.get(marke)
+        if rang is None:
+            return marke
+        return ampr_updates.DEBUG if rang else ampr_updates.OHNE_DEBUG
+
+    def _ampr_sortierschluessel(self, eintrag: dict[str, Any]) -> tuple:
+        """Neueste zuerst, je Bibliothek – dieselbe Ordnung wie bisher.
+
+        Ausgelagert, weil jetzt zwei Leser danach sortieren und eine
+        auseinanderlaufende Ordnung hier besonders teuer wäre: Mehrere
+        Stellen nehmen den ersten Eintrag als "die neueste".
+        """
+        return (
+            eintrag["lib"],
+            tuple(-p for p in self._ampr_version_sort_key(eintrag["version"])),
+            self._AMPR_VARIANT_ORDER.get(eintrag["variant"], 9),
+            eintrag["variant"],
+        )
+
     def _ampr_scan_version_store(self, store_dir: str) -> list[dict[str, Any]]:
         """Liest den Versionsspeicher ein - **samt geholter Fassungen**.
 
@@ -22231,14 +22445,7 @@ class PS5ConverterGUI:
         bekannt = {(e["lib"], e["version"], e["variant"]) for e in eigene}
         zusammen = eigene + [e for e in geholt
                              if (e["lib"], e["version"], e["variant"]) not in bekannt]
-        zusammen.sort(
-            key=lambda e: (
-                e["lib"],
-                tuple(-p for p in self._ampr_version_sort_key(e["version"])),
-                self._AMPR_VARIANT_ORDER.get(e["variant"], 9),
-                e["variant"],
-            )
-        )
+        zusammen.sort(key=self._ampr_sortierschluessel)
         return zusammen
 
     def _ampr_scan_einen_speicher(self, store_dir: str) -> list[dict[str, Any]]:
@@ -22277,14 +22484,7 @@ class PS5ConverterGUI:
                     "sha256": self._ampr_file_sha256(str(path)),
                 })
 
-        entries.sort(
-            key=lambda e: (
-                e["lib"],
-                tuple(-p for p in self._ampr_version_sort_key(e["version"])),
-                self._AMPR_VARIANT_ORDER.get(e["variant"], 9),
-                e["variant"],
-            )
-        )
+        entries.sort(key=self._ampr_sortierschluessel)
         return entries
 
     @staticmethod
@@ -22952,7 +23152,7 @@ class PS5ConverterGUI:
             ).pack(anchor="w", fill="x", padx=10, pady=(2, 10))
 
             def _refresh_versions() -> None:
-                found = self._ampr_scan_version_store(store_dir_var.get().strip())
+                found = self._ampr_alle_fassungen(store_dir_var.get().strip())
                 for lib_name, combo in lib_combos.items():
                     mapping = lib_entries[lib_name]
                     mapping.clear()
@@ -23160,8 +23360,14 @@ class PS5ConverterGUI:
 
             spec = automation_spec or {}
             store_dir = self._ampr_resolve_store(str(spec.get("ampr_store", "") or ""))
-            store_entries = self._ampr_scan_version_store(store_dir) if store_dir else []
-            if store_dir and not store_entries:
+            # Gelesen wird der ganze Vorrat, gewarnt wird über den gewählten
+            # Ordner. Beides gehört getrennt: Die Meldung nennt einen Pfad und
+            # soll sagen "dort liegt nichts" – sie darf nicht verstummen, nur
+            # weil eine andere Wurzel etwas beisteuert. Ohne die Trennung wäre
+            # sie nach dem Zusammenführen nie wieder gefallen.
+            store_entries = self._ampr_alle_fassungen(
+                str(spec.get("ampr_store", "") or ""))
+            if store_dir and not self._ampr_scan_einen_speicher(store_dir):
                 self._append_to_log(self._t("ampr.store_empty", path=store_dir))
 
             requested_libs = [str(x) for x in (spec.get("ampr_libs") or []) if x]
@@ -31411,7 +31617,7 @@ class PS5ConverterGUI:
 
             # ── 5. Welche Bibliotheken? ────────────────────────────────
             melde(self._t("amprgen.step_libs"))
-            vorrat = self._ampr_scan_version_store(self._ampr_resolve_store())
+            vorrat = self._ampr_alle_fassungen()
             if not vorrat:
                 melde(self._t("amprgen.no_store"))
                 return
@@ -40286,7 +40492,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
         choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index", "ampr_ftp_index"),
         help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich).",
     )
-    ampr.add_argument("--ampr-store", type=str, default="", help="Ordner mit den AMPR-/PlayGo-Versionen. Ohne Angabe wird der mitgelieferte Ordner verwendet.")
+    ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")
     ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste).")
     ampr.add_argument("--ampr-variant", type=str, default="", help="Variante, z.B. 'no debug' oder 'debug' (Standard: erste passende).")
     ampr.add_argument("--ampr-lib", nargs="*", default=[], help="Zu behandelnde Bibliotheken (Standard: libSceAmpr.sprx und libScePlayGo.sprx).")

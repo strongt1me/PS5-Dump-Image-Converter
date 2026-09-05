@@ -91,8 +91,17 @@ def fassung_teile(text: str) -> tuple[int, ...]:
 
 
 def variante_aus_anhang(name: str) -> str:
-    """Debug-Fassung oder nicht - abgelesen am Namen des Anhangs."""
-    return DEBUG if str(name or "").rstrip().endswith("-debug") else OHNE_DEBUG
+    """Debug-Fassung oder nicht - abgelesen am Namen des Anhangs.
+
+    Ohne Ruecksicht auf Gross- und Kleinschreibung: Der Name kommt aus
+    einer fremden Veroeffentlichung, und ein ``-DEBUG`` galt hier bis zum
+    05.09.2026 als ``no debug``. Zwei Anhaenge derselben Fassung, die sich
+    nur in der Schreibweise unterschieden, wurden dann in
+    :func:`angebote_lesen` als dasselbe Angebot entdoppelt - einer von
+    beiden verschwand stillschweigend.
+    """
+    return (DEBUG if str(name or "").rstrip().lower().endswith("-debug")
+            else OHNE_DEBUG)
 
 
 def fassung_aus_anhang(name: str) -> str:
@@ -164,21 +173,69 @@ def angebote_lesen(rohtext: str) -> list[Angebot]:
     return raus
 
 
-def neuere(angebote: list[Angebot], vorhanden: list[str]) -> list[Angebot]:
-    """Was von den Angeboten neuer ist als alles, was schon dasteht.
+def neuere(angebote: list[Angebot],
+           vorhanden: list[tuple[str, str]]) -> list[Angebot]:
+    """Was von den Angeboten neuer ist als das, was schon dasteht.
 
-    ``vorhanden`` sind die Fassungsnummern im Bestand - egal aus welchem
-    Speicher, mitgeliefert oder geholt. Verglichen wird gegen die **hoechste**
-    davon: Eine Fassung, die zwischen zwei vorhandenen liegt, ist nichts
-    Neues mehr.
+    ``vorhanden`` sind Paare aus (Fassung, Variante) im Bestand - egal aus
+    welchem Speicher, mitgeliefert, geholt oder selbst hingelegt.
+
+    **Je Variante gerechnet.** Bis v1.9.5 stand hier eine einzige hoechste
+    Nummer ueber alle Varianten. Damit bekam niemand ``0.3.6.6 debug``
+    angeboten, solange ``0.3.6.6 no debug`` dalag - obwohl das zwei
+    verschiedene Dateien sind und ``schon_da`` sie auch als zwei behandelt.
+    Gemessen am 05.09.2026 an der Beilage, die ``debug`` nur bis 0.3.6.2
+    fuehrt: Die fehlenden debug-Fassungen wurden nie angeboten.
+
+    **Eine Variante, die im Bestand gar nicht vorkommt**, wird gegen die
+    hoechste Nummer ueber den ganzen Bestand gemessen. Wer nur
+    ``no debug`` hat, bekommt also nicht rueckwirkend jede jemals
+    veroeffentlichte ``debug``-Fassung angeboten - wohl aber jede, die
+    neuer ist als alles bei ihm. Das ist Absicht: Er hat sich fuer eine
+    Variante entschieden, und die andere soll ihm nicht nachgeschoben
+    werden; was ohnehin neuer ist als sein ganzer Bestand, ist dagegen
+    ein ehrliches Angebot.
+
+    Der Aufrufer muss die Varianten vorher auf die beiden hier bekannten
+    Namen abbilden (:data:`DEBUG`, :data:`OHNE_DEBUG`). Der Scanner der
+    Oberflaeche liest sie aus Ordnernamen ab und kennt mehr Schreibweisen
+    (``nolog``, ``release``, ``log``); ohne die Abbildung faende hier
+    jede davon als "unbekannt" statt als ihre Klasse.
 
     Gibt es gar nichts im Bestand, gilt alles als neu.
+
+    Raises:
+        TypeError: ``vorhanden`` enthaelt blosse Fassungsnummern. Frueher
+            war das die Signatur; ein durchgereichter String wuerde hier
+            zeichenweise entpackt und still das Falsche vergleichen.
     """
-    hoechste = max((fassung_teile(v) for v in vorhanden if fassung_teile(v)),
-                   default=())
-    if not hoechste:
+    je_variante: dict[str, tuple[int, ...]] = {}
+    ueberhaupt: tuple[int, ...] = ()
+    for eintrag in vorhanden:
+        if isinstance(eintrag, str):
+            raise TypeError(
+                "neuere() erwartet Paare (Fassung, Variante), nicht %r" % eintrag)
+        fassung, variante = eintrag
+        teile = fassung_teile(fassung)
+        if not teile:
+            continue
+        marke = str(variante or "").strip().lower()
+        if teile > je_variante.get(marke, ()):
+            je_variante[marke] = teile
+        if teile > ueberhaupt:
+            ueberhaupt = teile
+
+    if not ueberhaupt:
         return list(angebote)
-    return [a for a in angebote if fassung_teile(a.fassung) > hoechste]
+
+    raus = []
+    for a in angebote:
+        teile = fassung_teile(a.fassung)
+        marke = str(a.variante or "").strip().lower()
+        latte = je_variante.get(marke, ueberhaupt)
+        if teile > latte:
+            raus.append(a)
+    return raus
 
 
 def zielordner(wurzel: str, fassung: str, variante: str) -> str:
