@@ -67,7 +67,6 @@ on:
       - 'app_icon.ico'
       - 'app_icon.icns'
       - 'splash_image.png'
-      - 'ip.ini'
       - 'Hintergrundbilder/**'
       # Mitgelieferte Werkzeuge und Daten
       - 'MkPFS-*/**'

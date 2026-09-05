@@ -60,11 +60,6 @@ _helloworld = os.path.join(_here, 'helloworld')
 if os.path.isdir(_helloworld):
     _datas.append((_helloworld, 'helloworld'))
 
-# ip.ini einbetten falls vorhanden
-_ip_ini = os.path.join(_here, 'ip.ini')
-if os.path.isfile(_ip_ini):
-    _datas.append((_ip_ini, '.'))
-
 # Lizenzen der mitgelieferten Fremdkomponenten einbetten. Die EXE enthaelt die
 # Payloads aus helloworld/ - darunter zftpd unter MIT-Lizenz, die verlangt, dass
 # der Lizenztext jeder Kopie beiliegt. Im Fenster CREDITS ist die Datei aufrufbar.

@@ -68,3 +68,11 @@ coverage.json
 
 # Zur Laufzeit geholte AMPR-EMU-Fassungen - Anwenderdaten, kein Quelltext.
 "AMPR EMU updates"/
+
+# Die alte Merkdatei des JS-Loaders. Bis v1.9.5 schrieb er sie neben das
+# Programm, und die drei .spec-Dateien betteten eine vorgefundene ip.ini in
+# den Bau ein - damit waere die Adresse der eigenen Konsole an jeden
+# Anwender gegangen. Beide Mechanismen sind draussen; der Eintrag steht hier,
+# damit eine aus einer alten Fassung uebrig gebliebene Datei nicht doch noch
+# eingecheckt wird.
+ip.ini

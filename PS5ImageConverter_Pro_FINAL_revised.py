@@ -15205,6 +15205,143 @@ class PS5ConverterGUI:
         eigen = str(self._load_setting(schluessel, "") or "").strip()
         return eigen if eigen else str(zentral)
 
+    # ── JS Loader: Adresse, Ports und Protokoll ─────────────────────────────
+    # Bis v1.9.5 hielt dieses Fenster Adresse und JS-Port in einer eigenen
+    # ``ip.ini`` neben dem Programm. Das hatte drei Folgen:
+    #
+    # * Im Einzeldatei-Bau zeigt ``__file__`` in den Temporärordner der
+    #   Sitzung. Was der Anwender eintrug, war beim nächsten Start weg.
+    # * Die Datei überschrieb die zentrale Einstellung ``ps5_ip``
+    #   bedingungslos, schrieb aber nie dorthin zurück – zwei Quellen für
+    #   denselben Wert, ohne dass es jemand sah.
+    # * Die drei Bauskripte betteten eine vorgefundene ``ip.ini`` ein. Wer aus
+    #   dem Quelltext heraus einmal gesendet hatte, legte damit eine Datei mit
+    #   der Adresse **seiner** Konsole an, die der nächste Bau an jeden
+    #   Anwender ausgeliefert hätte. Die Blöcke sind seit v1.9.6 draußen.
+
+    def _jsloader_ini_pfad(self) -> str:
+        """Die ``ip.ini`` **neben dem Programm** – nie die aus dem Bündel.
+
+        Bewusst nicht über :func:`_bundled_resource`: Dessen Suchreihenfolge
+        beginnt bei ``sys._MEIPASS``, dem Ordner, in den PyInstaller die
+        eingebetteten Daten entpackt. Für eine Datei des Anwenders ist das
+        genau verkehrt herum – läge eine ``ip.ini`` im Bündel, gewönne die
+        Adresse des Baurechners gegen die des Anwenders, und weil die
+        Übernahme danach als erledigt vermerkt wird, dauerhaft.
+
+        Derselbe Ausdruck wie in :meth:`_ampr_updates_ordner`.
+        """
+        wurzel = os.path.dirname(
+            sys.executable if getattr(sys, "frozen", False)
+            else os.path.abspath(__file__))
+        return os.path.join(wurzel, "ip.ini")
+
+    def _jsloader_ini_uebernehmen(self) -> str:
+        """Holt eine alte ``ip.ini`` **einmalig** in die Einstellungen.
+
+        Die Datei wird gelesen, nicht gelöscht: Wer sie von Hand pflegt – der
+        ursprüngliche y2jb-Loader arbeitet genau so –, behält seinen Bestand.
+
+        Returns:
+            Der Pfad der übernommenen Datei, oder "" wenn nichts zu tun war.
+        """
+        if self._load_setting("jsloader_ini_uebernommen", False):
+            return ""
+        pfad = self._jsloader_ini_pfad()
+        # Den Merker auch dann setzen, wenn nichts da ist: Sonst kostet jedes
+        # Öffnen des Fensters einen Dateizugriff.
+        if not os.path.isfile(pfad):
+            self._save_setting("jsloader_ini_uebernommen", True)
+            return ""
+        try:
+            with io.open(pfad, encoding="utf-8") as fh:
+                zeilen = fh.read().strip().splitlines()
+        except (OSError, UnicodeDecodeError) as exc:
+            # Kein stilles "pass": Wer seine gepflegte Datei nicht
+            # wiederfindet, soll den Grund im Protokoll lesen können.
+            logger.warning("ip.ini nicht lesbar (%s): %s", pfad, exc)
+            return ""
+
+        # Eine im Einstellungsdialog gesetzte Adresse darf die alte Datei
+        # nicht kippen – sie ist die neuere Angabe.
+        if zeilen and not self._ps5_ip():
+            adresse = zeilen[0].strip()
+            if self._ist_plausible_ps5_adresse(adresse):
+                self._save_setting("ps5_ip", adresse)
+        if len(zeilen) > 1:
+            try:
+                port = int(zeilen[1].strip())
+            except (TypeError, ValueError):
+                port = 0
+            if 1 <= port <= 65535:
+                self._save_setting("jsloader_js_port", str(port))
+        self._save_setting("jsloader_ini_uebernommen", True)
+        return pfad
+
+    def _jsloader_verbindung_merken(self, ip: str, js_port: str,
+                                    elf_port: str) -> None:
+        """Merkt Adresse und Ports des JS-Loaders zentral.
+
+        Nach dem Vorbild von ``_ip_merken`` im Autoloader: Gespeichert wird
+        nur, was sich vom Bestand unterscheidet und plausibel aussieht.
+
+        **Die Adresse landet in ``ps5_ip``, das vier weitere Fenster lesen** –
+        KLOG, FTP, der AMPR-Manager und der Einstellungsdialog. Seit dem
+        05.09.2026 hängt daran zusätzlich die Absenderfreigabe des
+        Log-Servers (:func:`_logserver_absender_erlaubt`). Wer hier eine
+        Testadresse einträgt und sendet, stellt damit alle mit um; das ist
+        der Preis dafür, dass es nur noch **eine** Quelle für die Adresse
+        gibt.
+        """
+        wert = (ip or "").strip()
+        if wert and wert != self._ps5_ip() and self._ist_plausible_ps5_adresse(wert):
+            self._save_setting("ps5_ip", wert)
+        for roh, schluessel in ((js_port, "jsloader_js_port"),
+                                (elf_port, "jsloader_elf_port")):
+            try:
+                port = int(str(roh).strip())
+            except (TypeError, ValueError):
+                continue
+            if 1 <= port <= 65535 and str(port) != str(
+                    self._load_setting(schluessel, "")):
+                self._save_setting(schluessel, str(port))
+
+    @staticmethod
+    def _jsloader_protokollpfad() -> str:
+        """Wohin die Ausgaben der Konsole geschrieben werden.
+
+        In den Temp-Ordner, wo dieses Programm seine Protokolle hält
+        (``ps5converter.log``, ``ps5converter_absturz.txt``, siehe die
+        Anmerkung dort) – nicht in den Konfigurationsordner, der die
+        Einstellungen hält, und nicht neben die ausführbare Datei: Unter
+        ``Programme\\`` wäre das Müll im Installationsordner, und im
+        Einzeldatei-Bau ein Ordner, den das Beenden löscht.
+        """
+        name = "ps5_payload_log_test.txt" if _IM_TESTLAUF else "ps5_payload_log.txt"
+        return os.path.join(tempfile.gettempdir(), name)
+
+    #: Ab dieser Größe wird das Payload-Protokoll einmal umgerollt. Es wuchs
+    #: bisher um eine Zeile je empfangener Meldung, ohne jede Grenze – dieselbe
+    #: Falle, an der ``ps5converter.log`` schon einmal 22 MB in zwei Wochen
+    #: erreichte.
+    _JS_PROTOKOLL_GRENZE = 4 * 1024 * 1024
+
+    @classmethod
+    def _jsloader_protokoll_umrollen(cls, pfad: str) -> None:
+        """Rollt das Payload-Protokoll um, wenn es zu groß geworden ist."""
+        try:
+            if os.path.getsize(pfad) < cls._JS_PROTOKOLL_GRENZE:
+                return
+        except OSError:
+            return
+        alt = pfad + ".1"
+        try:
+            if os.path.exists(alt):
+                os.remove(alt)
+            os.replace(pfad, alt)
+        except OSError as exc:
+            logger.warning("Payload-Protokoll nicht umrollbar (%s): %s", pfad, exc)
+
     # Bekannte Ports je Werkzeug. Steht in den Einstellungen ein Port, der nicht
     # antwortet, probiert _ps5_port_finden diese der Reihe nach durch - der
     # eingestellte immer zuerst. So kostet eine falsche Eingabe keinen
@@ -34890,7 +35027,8 @@ class PS5ConverterGUI:
         tk.Label(ip_row, text=self._t("jsloader.js_port_label"), anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
                  font=(UI_SCHRIFT, pt(10))).pack(side="left")
-        js_port_var = tk.StringVar(value="50000")
+        js_port_var = tk.StringVar(
+            value=self._ps5_wert_oder_zentral("jsloader_js_port", 50000))
         tk.Entry(ip_row, textvariable=js_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
@@ -34900,35 +35038,38 @@ class PS5ConverterGUI:
         tk.Label(ip_row, text=self._t("jsloader.elf_port_label"), anchor="w",
                  bg=c["bg_card"], fg=c["fg_primary"],
                  font=(UI_SCHRIFT, pt(10))).pack(side="left")
-        elf_port_var = tk.StringVar(value="9021")
+        elf_port_var = tk.StringVar(
+            value=self._ps5_wert_oder_zentral("jsloader_elf_port",
+                                             self._PAYLOAD_SEND_PORT))
         tk.Entry(ip_row, textvariable=elf_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
                  relief="flat", bd=0,
                  font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 0))
 
-        # ip.ini laden
+        # Wird weiter unten noch an acht Stellen gebraucht - der Name hat auf
+        # Modulebene keine Entsprechung (dort steht "import os").
         import os as _os
-        _ip_ini = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ip.ini")
-        if _os.path.isfile(_ip_ini):
-            try:
-                lines = open(_ip_ini, encoding="utf-8").read().strip().splitlines()
-                if lines:
-                    ip_var.set(lines[0].strip())
-                if len(lines) > 1:
-                    js_port_var.set(lines[1].strip())
-            except Exception:
-                pass
 
-        def _save_ip_ini():
-            try:
-                with open(_ip_ini, "w", encoding="utf-8") as f:
-                    f.write(ip_var.get().strip() + "\n")
-                    f.write(js_port_var.get().strip() + "\n")
-            except OSError as exc:
-                logger.warning(
-                    "IP/Port des JS Loaders nicht gemerkt (%s): %s",
-                    _ip_ini, exc)
+        # Eine alte ip.ini wird einmalig eingesammelt, danach gilt allein die
+        # zentrale Einstellung. Die Felder oben stehen bereits auf deren Wert;
+        # hat die Übernahme etwas gefunden, werden sie hier nachgezogen.
+        _uebernommen = self._jsloader_ini_uebernehmen()
+        if _uebernommen:
+            ip_var.set(self._ps5_ip("192.168.1.94") or ip_var.get())
+            js_port_var.set(self._ps5_wert_oder_zentral("jsloader_js_port", 50000))
+
+        def _save_ip_ini(*_e):
+            """Merkt die Verbindungsangaben - jetzt zentral, nicht in einer Datei."""
+            self._jsloader_verbindung_merken(
+                ip_var.get(), js_port_var.get(), elf_port_var.get())
+
+        # Beim Verlassen des Feldes und beim Bestaetigen mit Eingabe - nicht
+        # bei jedem Zeichen. Ueber trace_add wanderten im Autoloader elf
+        # Tippzwischenstaende ("1", "19", "192", ...) in die zentrale
+        # Einstellung; siehe die Anmerkung bei _ip_merken.
+        ip_entry.bind("<FocusOut>", _save_ip_ini)
+        ip_entry.bind("<Return>", _save_ip_ini)
 
         # ── Datei-Auswahl ────────────────────────────────────────────
         file_frame = _build_section(self._t("jsloader.file_frame"))
@@ -35154,8 +35295,10 @@ class PS5ConverterGUI:
                 import http.server as _hs
                 import threading as _thr2
 
-                log_path = _os.path.join(
-                    _os.path.dirname(_os.path.abspath(__file__)), "ps5_payload_log.txt")
+                # Frueher neben __file__ - im Einzeldatei-Bau also in den
+                # Temporaerordner der Sitzung, der beim Beenden verschwindet.
+                log_path = self._jsloader_protokollpfad()
+                self._jsloader_protokoll_umrollen(log_path)
 
                 # In der Klasse unten ist self der HTTP-Handler und verdeckt den
                 # aeusseren self. Der kennt weder _t noch _spaeter_im_fenster, der
@@ -35217,10 +35360,21 @@ class PS5ConverterGUI:
                             gui._spaeter_im_fenster(
                                 win, lambda l=line: _log(gui._t('log.console.0044', v0=l)))
                             try:
-                                with open(log_path, "a", encoding="utf-8") as lf:
+                                with io.open(log_path, "a", encoding="utf-8") as lf:
                                     lf.write(line + "\n")
-                            except Exception:
-                                pass
+                            except OSError as exc:
+                                # Nur die erste Zeile melden: Bei voller
+                                # Platte kaeme sonst je empfangener Meldung
+                                # eine weitere.
+                                if not _logserver_state.get("schreibfehler"):
+                                    _logserver_state["schreibfehler"] = True
+                                    logger.warning(
+                                        "Payload-Protokoll nicht schreibbar (%s): %s",
+                                        log_path, exc)
+                                    gui._spaeter_im_fenster(
+                                        win, lambda p=log_path, e=exc: _log(
+                                            gui._t('jsloader.protokoll_fehler',
+                                                   v0=p, v1=e)))
                             self.send_response(200)
                             self.end_headers()
                             self.wfile.write(b"OK")
@@ -35246,6 +35400,10 @@ class PS5ConverterGUI:
                                                       port=self._JS_LOGSERVER_PORT),
                                          bg=c["error_btn"], activebackground=c["error_btn_hover"])
                     _log(self._t('log.console.0045', v0=self._JS_LOGSERVER_PORT))
+                    # Der Pfad gehoert hierhin: Das Protokoll liegt seit
+                    # v1.9.6 im Temp-Ordner und nicht mehr neben dem
+                    # Programm - ohne diese Zeile findet es niemand.
+                    _log(self._t('jsloader.protokoll_pfad', v0=log_path))
                     _thr2.Thread(target=server.serve_forever, daemon=True).start()
                 except Exception as exc:
                     _log(self._t('log.console.0046', v0=exc))
@@ -35295,6 +35453,10 @@ class PS5ConverterGUI:
             _log(self._t('log.console.0050'))
         _log(self._t('log.console.0051'))
         _log(self._t('log.console.0052', v0=self._JS_LOGSERVER_PORT))
+        # Die Uebernahme lief oben, noch bevor es _log gab. Wer eine ip.ini
+        # gepflegt hat, soll erfahren, dass sie ab jetzt nicht mehr gilt.
+        if _uebernommen:
+            _log(self._t('jsloader.ini_uebernommen', v0=_uebernommen))
         _log("")
 
         def _on_destroy(e=None):
