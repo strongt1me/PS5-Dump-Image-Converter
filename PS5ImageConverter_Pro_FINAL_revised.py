@@ -27,6 +27,7 @@ import hashlib       # noqa: F401
 import importlib
 import faulthandler
 import io
+import ipaddress
 import json
 import math
 import logging
@@ -336,6 +337,42 @@ def _bundled_resource(*parts: str) -> str:
         if os.path.exists(candidate):
             return candidate
     return ""
+
+
+def _logserver_absender_erlaubt(gegenstelle: str, ps5_ip: str = "") -> bool:
+    """Darf diese Gegenstelle Zeilen in das Konsolenprotokoll schreiben?
+
+    Der Log-Server des JS-Loaders lauscht auf allen Netzwerkkarten und nahm
+    bis zum 05.09.2026 jedes ``POST /log`` an – der Inhalt ging ungefiltert
+    ins Konsolenfeld und in die Protokolldatei.
+
+    Die Bindung bleibt bewusst auf ``0.0.0.0``: Auf ``127.0.0.1`` erreicht die
+    Konsole den Rechner nicht mehr, und „die richtige LAN-Adresse" lässt sich
+    nicht raten – neben der echten Karte stehen hier WSL-, Hyper-V- und
+    VPN-Adapter. Stattdessen wird geprüft, wer klopft.
+
+    Die eingestellte Adresse steht an erster Stelle, damit ein Mesh-VPN nicht
+    durchs Raster fällt: Der CGNAT-Bereich 100.64.0.0/10, den etwa Tailscale
+    benutzt, gilt ``ipaddress`` **nicht** als privat.
+
+    Args:
+        gegenstelle: Die Adresse, von der die Anfrage kommt.
+        ps5_ip:      Die zentral eingestellte Adresse der Konsole, falls
+                     gesetzt.
+
+    Returns:
+        True, wenn die Zeile angenommen werden darf.
+    """
+    gegenstelle = (gegenstelle or "").strip()
+    if not gegenstelle:
+        return False
+    if ps5_ip and gegenstelle == ps5_ip.strip():
+        return True
+    try:
+        adresse = ipaddress.ip_address(gegenstelle)
+    except ValueError:
+        return False
+    return bool(adresse.is_private or adresse.is_loopback or adresse.is_link_local)
 
 
 def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
@@ -34778,12 +34815,35 @@ class PS5ConverterGUI:
         )
         self._js_loader_win = win
 
+        def _logserver_anhalten() -> None:
+            """Hält den Empfänger an UND gibt den Port wieder frei.
+
+            ``shutdown()`` beendet nur ``serve_forever``; der lauschende
+            Socket bleibt offen. Ohne ``server_close()`` blieb der Port nach
+            dem Schließen des Fensters belegt, und ein zweiter Start im selben
+            Programmlauf scheiterte mit "Address already in use" - sichtbar
+            nur als Fehlerzeile im Konsolenfeld.
+
+            Der Zustand wird zuerst geleert und danach auf der lokalen
+            Variablen gearbeitet: Tk schickt <Destroy> mehrfach, und der
+            Aufruf muss das aushalten.
+            """
+            server = _logserver_state.get("server")
+            _logserver_state["running"] = False
+            _logserver_state["server"] = None
+            if server is None:
+                return
+            try:
+                server.shutdown()
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Log-Server nicht anhaltbar: %s", exc)
+            try:
+                server.server_close()
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Log-Server-Port nicht freigebbar: %s", exc)
+
         def _on_close():
-            if _logserver_state.get("running") and _logserver_state.get("server"):
-                try:
-                    _logserver_state["server"].shutdown()
-                except Exception:
-                    pass
+            _logserver_anhalten()
             self._js_loader_win = None
             win.destroy()
 
@@ -35019,23 +35079,54 @@ class PS5ConverterGUI:
             file_var.set(path)
             _send_path(path, elf_port_var, "ELF")
 
+        def _portziffern(variable) -> str:
+            """Die Portnummer fuer die Knopfbeschriftung - oder ein Fragezeichen.
+
+            Die Knopfleiste ist zweizeilig, weil sie einzeilig nicht passte
+            (siehe die Anmerkung weiter oben). Eine unsinnige Eingabe darf sie
+            deshalb nicht in die Breite treiben.
+            """
+            roh = variable.get().strip()
+            return roh if roh.isdigit() and len(roh) <= 5 else "?"
+
         # JS senden
-        tk.Button(action_frame,
-                  text=self._t("jsloader.send_js_button"),
+        btn_js = tk.Button(action_frame,
+                  text=self._t("jsloader.send_js_button", port=_portziffern(js_port_var)),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
                   font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
-                  command=lambda: _send_file(js_port_var, "JS")).pack(side="left", padx=(0, 8))
+                  command=lambda: _send_file(js_port_var, "JS"))
+        btn_js.pack(side="left", padx=(0, 8))
 
         # ELF senden
-        tk.Button(action_frame,
-                  text=self._t("jsloader.send_elf_button"),
+        btn_elf = tk.Button(action_frame,
+                  text=self._t("jsloader.send_elf_button", port=_portziffern(elf_port_var)),
                   bg=c["elf_btn"], fg="white",
                   activebackground=c["elf_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
                   font=(UI_SCHRIFT, pt(10), "bold"), padx=16, pady=7,
-                  command=lambda: _send_file(elf_port_var, "ELF")).pack(side="left", padx=(0, 8))
+                  command=lambda: _send_file(elf_port_var, "ELF"))
+        btn_elf.pack(side="left", padx=(0, 8))
+
+        # Die Portnummer stand frueher fest im Text ("JS senden  (Port 50000)").
+        # Die Felder daneben sind aber einstellbar: Wer 50010 eintrug, bekam
+        # einen Knopf, der weiterhin 50000 versprach und an 50010 sendete.
+        # Deshalb wird die Beschriftung mitgefuehrt.
+        def _knopftext_nachziehen(knopf, variable, schluessel) -> None:
+            def _nachziehen(*_e) -> None:
+                # Die StringVar ueberlebt das Fenster - nach dem Schliessen
+                # laeuft der trace ins Leere und Tk wirft TclError.
+                try:
+                    if not knopf.winfo_exists():
+                        return
+                    knopf.config(text=self._t(schluessel, port=_portziffern(variable)))
+                except tk.TclError:
+                    pass
+            variable.trace_add("write", _nachziehen)
+
+        _knopftext_nachziehen(btn_js, js_port_var, "jsloader.send_js_button")
+        _knopftext_nachziehen(btn_elf, elf_port_var, "jsloader.send_elf_button")
 
         tk.Button(action_frame,
               text=self._t("jsloader.send_quick_payload_button"),
@@ -35051,15 +35142,12 @@ class PS5ConverterGUI:
 
         def _toggle_logserver():
             if _logserver_state["running"]:
-                _logserver_state["running"] = False
-                if _logserver_state["server"]:
-                    try:
-                        _logserver_state["server"].shutdown()
-                    except Exception:
-                        pass
-                    _logserver_state["server"] = None
+                # Derselbe Stopper wie beim Schliessen des Fensters - er gibt
+                # den Port frei, nicht nur den Bedienfaden.
+                _logserver_anhalten()
                 btn_logserver.config(
-                    text=self._t("jsloader.start_logserver_button"),
+                    text=self._t("jsloader.start_logserver_button",
+                                             port=self._JS_LOGSERVER_PORT),
                     bg=c["accent_btn"], activebackground=c["accent_btn_hover"])
                 _log(self._t('log.console.0043'))
             else:
@@ -35078,10 +35166,49 @@ class PS5ConverterGUI:
                 class _LogHandler(_hs.BaseHTTPRequestHandler):
                     def log_message(self, format, *args):
                         pass
+
+                    def _absender_ok(self) -> bool:
+                        """Wer nicht aus dem Heimnetz kommt, bekommt 403.
+
+                        Ohne diese Wache schrieb jeder, der den Rechner
+                        erreicht, in das Konsolenfeld und in die
+                        Protokolldatei. Wird die eigene Konsole hier
+                        abgewiesen, muss das sichtbar sein - sonst sucht der
+                        Anwender den Grund stundenlang woanders.
+                        """
+                        gegenstelle = ""
+                        try:
+                            gegenstelle = self.client_address[0]
+                        except (AttributeError, IndexError, TypeError):
+                            pass
+                        if _logserver_absender_erlaubt(gegenstelle, gui._ps5_ip("")):
+                            return True
+                        gui._spaeter_im_fenster(
+                            win, lambda a=gegenstelle: _log(
+                                gui._t('jsloader.logserver_abgewiesen', v0=a)))
+                        try:
+                            self.send_response(403)
+                            self.end_headers()
+                        except OSError:
+                            pass
+                        return False
+
                     def do_POST(self):
+                        if not self._absender_ok():
+                            return
                         if self.path == "/log":
-                            length = int(self.headers.get("Content-Length", 0))
+                            # Laenge deckeln: Ohne Grenze liest read() so
+                            # viel, wie der Absender ankuendigt.
+                            try:
+                                length = int(self.headers.get("Content-Length", 0) or 0)
+                            except (TypeError, ValueError):
+                                length = 0
+                            length = max(0, min(length, 64 * 1024))
                             body = self.rfile.read(length).decode("utf-8", errors="replace")
+                            # Umbrueche ersetzen: Sonst kann ein Absender
+                            # eigene Zeilen mit gefaelschtem Zeitstempel in
+                            # das Protokoll schreiben.
+                            body = body.replace("\r", " ").replace("\n", " ")
                             import datetime as _dt
                             line = f"[{_dt.datetime.now().strftime('%H:%M:%S')}] {body}"
                             # Der Empfaenger laeuft weiter, auch wenn das
@@ -35102,23 +35229,30 @@ class PS5ConverterGUI:
                             self.end_headers()
                             self.wfile.write(b"PS5 Log Server Running")
                     def do_GET(self):
+                        if not self._absender_ok():
+                            return
                         self.send_response(200)
                         self.end_headers()
                         self.wfile.write(b"PS5 Log Server Running")
 
                 try:
-                    server = _hs.HTTPServer(("0.0.0.0", 9099), _LogHandler)
+                    # ThreadingHTTPServer statt HTTPServer: Sonst blockiert eine
+                    # einzige haengende Verbindung jede weitere Zeile.
+                    server = _hs.ThreadingHTTPServer(
+                        ("0.0.0.0", self._JS_LOGSERVER_PORT), _LogHandler)
                     _logserver_state["server"] = server
                     _logserver_state["running"] = True
-                    btn_logserver.config(text=self._t("jsloader.stop_logserver_button"),
+                    btn_logserver.config(text=self._t("jsloader.stop_logserver_button",
+                                                      port=self._JS_LOGSERVER_PORT),
                                          bg=c["error_btn"], activebackground=c["error_btn_hover"])
-                    _log(self._t('log.console.0045'))
+                    _log(self._t('log.console.0045', v0=self._JS_LOGSERVER_PORT))
                     _thr2.Thread(target=server.serve_forever, daemon=True).start()
                 except Exception as exc:
                     _log(self._t('log.console.0046', v0=exc))
 
         btn_logserver = tk.Button(action_frame2,
-                                  text=self._t("jsloader.start_logserver_button"),
+                                  text=self._t("jsloader.start_logserver_button",
+                                             port=self._JS_LOGSERVER_PORT),
                                   bg=c["accent_btn"], fg="white",
                                   activebackground=c["accent_btn_hover"], activeforeground="white",
                                   relief="flat", cursor="hand2",
@@ -35160,16 +35294,21 @@ class PS5ConverterGUI:
         else:
             _log(self._t('log.console.0050'))
         _log(self._t('log.console.0051'))
-        _log(self._t('log.console.0052'))
+        _log(self._t('log.console.0052', v0=self._JS_LOGSERVER_PORT))
         _log("")
 
         def _on_destroy(e=None):
-            if _logserver_state.get("running") and _logserver_state.get("server"):
-                try:
-                    _logserver_state["server"].shutdown()
-                except Exception:
-                    pass
-        win.bind("<Destroy>", _on_destroy)
+            # <Destroy> kommt auch fuer jedes Kindelement: Der Pfad des
+            # Toplevels steht in den Bindetags jedes Kindes. Wer hier nicht
+            # nachsieht, haelt den Log-Server an, sobald irgendwo im Fenster
+            # ein Widget verschwindet - etwa beim Neuaufbau einer Liste.
+            if e is not None and str(getattr(e, "widget", "")) != str(win):
+                return
+            _logserver_anhalten()
+
+        # add="+": Die Bindung soll sich neben andere setzen, nicht an ihre
+        # Stelle.
+        win.bind("<Destroy>", _on_destroy, add="+")
 
     def _show_ampr_index_builder(self) -> None:
         """Öffnet den AMPR-Index-Builder.
@@ -35503,6 +35642,11 @@ class PS5ConverterGUI:
     _PS5_BENOETIGTER_MODUS = 0o777
     #: Port, auf dem der Payload-Loader der Konsole lauscht (JS Loader/MicroMount).
     _PAYLOAD_SEND_PORT = 9021
+    #: Port, auf dem der Log-Server des JS-Loaders die Ausgaben der Konsole
+    #: entgegennimmt. Die Nummer stand an drei Stellen getrennt: im Aufruf von
+    #: HTTPServer und zweimal ausgeschrieben in den Texten. Wer sie an einer
+    #: Stelle aendert, verschiebt sonst nur die Haelfte.
+    _JS_LOGSERVER_PORT = 9099
 
     def _ftpsrv_payload_path(self) -> str:
         """Pfad zum mitgelieferten ftpsrv-Payload (leer, wenn nicht vorhanden)."""
