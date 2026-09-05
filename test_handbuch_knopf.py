@@ -113,7 +113,11 @@ class OeffnenTests(unittest.TestCase):
         ``ps5_validator.utils.plattform``.
         """
         app = self._app_ohne_fenster()
-        with mock.patch.object(APP, "_system_datei_oeffnen", return_value=True) as oeffnen:
+        # Ueber _system_oeffnen_versuchen: Der Knopf geht seit dem 06.09.2026
+        # ueber _oeffnen_oder_melden, damit ein Misserfolg ueberhaupt
+        # bemerkt und gemeldet wird.
+        with mock.patch.object(APP, "_system_oeffnen_versuchen",
+                               return_value=(True, "")) as oeffnen:
             APP.PS5ConverterGUI._open_benutzerhandbuch(app)
         oeffnen.assert_called_once()
         self.assertTrue(str(oeffnen.call_args[0][0]).endswith("BENUTZERHANDBUCH.html"))

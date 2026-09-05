@@ -172,9 +172,11 @@ from ps5_validator.utils.plattform import (
     IST_WINDOWS,
     MONO_SCHRIFT,
     UI_SCHRIFT,
+    OEFFNEN_MELDUNGEN as _system_oeffnen_meldungen,
     datei_oeffnen as _system_datei_oeffnen,
     herunterfahren as _system_herunterfahren,
     im_dateimanager_zeigen as _system_im_dateimanager_zeigen,
+    oeffnen_versuchen as _system_oeffnen_versuchen,
     ist_administrator as _system_ist_administrator,
     konfigurationsordner as _system_konfigurationsordner,
     systemname as _systemname,
@@ -4044,14 +4046,11 @@ class PS5ConverterGUI:
                 parent=self.root,
             )
             return
-        if not _system_datei_oeffnen(pfad):
-            # Frueher nur ins Protokoll: Der Anwender drueckte den Knopf,
-            # und nichts geschah - ohne jeden Hinweis, wo das Handbuch liegt.
-            logger.warning("Handbuch konnte nicht geöffnet werden: %s", pfad)
-            messagebox.showwarning(
-                self._t("dialog.title.error"),
-                self._t("dialog.msg.datei_nicht_oeffenbar", pfad=pfad),
-                parent=self.root)
+        # Frueher nur ins Protokoll: Der Anwender drueckte den Knopf, und
+        # nichts geschah - ohne jeden Hinweis, wo das Handbuch liegt. Bis
+        # zum 06.09.2026 traf das "if not" dann nie zu; jetzt nennt die
+        # Meldung auch den Grund.
+        self._oeffnen_oder_melden(pfad)
 
     def _toggle_language(self) -> None:
         """Wechselt zwischen Deutsch und Englisch und übersetzt die erfassten Widgets live neu."""
@@ -26693,12 +26692,7 @@ class PS5ConverterGUI:
             lbl.pack(anchor="w", padx=30, pady=2)
 
             def _oeffnen(_e=None, p=pfad):
-                if not _system_datei_oeffnen(p):
-                    logger.warning("Lizenzdatei konnte nicht geöffnet werden: %s", p)
-                    messagebox.showwarning(
-                        self._t("dialog.title.error"),
-                        self._t("dialog.msg.datei_nicht_oeffenbar", pfad=p),
-                        parent=win)
+                self._oeffnen_oder_melden(p, parent=win)
 
             lbl.bind("<Button-1>", _oeffnen)
             lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, pt(10), "underline")))
@@ -27773,8 +27767,12 @@ class PS5ConverterGUI:
             item = item_by_iid.get(sel[0])
             if item is None:
                 return
+            # Bis zum 06.09.2026 nur ins Protokoll, und auch das nur mit
+            # logger.debug - der Knopf schwieg zweifach.
             if not _system_im_dateimanager_zeigen(item["path"]):
-                logger.debug("Dateimanager konnte nicht geöffnet werden: %s", item["path"])
+                self._oeffnen_oder_melden(
+                    os.path.dirname(item["path"]) or item["path"],
+                    parent=win, vorlage="library.show_failed")
 
         ttk.Button(folders_btns, text=self._t("library.add_folder_button"), command=_add_folder).pack(side="left")
         ttk.Button(folders_btns, text=self._t("library.remove_button"), command=_remove_folder).pack(side="left", padx=(6, 0))
@@ -29247,8 +29245,12 @@ class PS5ConverterGUI:
                 logger.debug("Bericht nicht schreibbar: %s", exc)
 
         def _open_folder() -> None:
+            # Wie in der Bibliothek: Schlägt das Markieren fehl, wenigstens
+            # den Ordner öffnen – und wenn auch das nicht geht, es sagen.
             if not _system_im_dateimanager_zeigen(report_path):
-                logger.debug("Dateimanager konnte nicht geöffnet werden: %s", report_path)
+                self._oeffnen_oder_melden(
+                    os.path.dirname(report_path) or report_path,
+                    parent=win, vorlage="library.show_failed")
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(fill="x")
@@ -29842,11 +29844,9 @@ class PS5ConverterGUI:
                     self._t("downloads.storage_missing_title"),
                     self._t("downloads.folder_gone", pfad=ziel), parent=win)
                 return
-            if not _system_datei_oeffnen(ziel):
-                logger.warning("Dateimanager nicht startbar: %s", ziel)
-                messagebox.showwarning(
-                    self._t("downloads.storage_missing_title"),
-                    self._t("downloads.folder_open_failed", pfad=ziel), parent=win)
+            self._oeffnen_oder_melden(
+                ziel, titel=self._t("downloads.storage_missing_title"),
+                parent=win)
 
         def _art_wechseln() -> None:
             # Ohne Speicherort liefert zielpfad() einen RELATIVEN Pfad
@@ -30332,6 +30332,51 @@ class PS5ConverterGUI:
                 namen.append(weiterer)
         return [basis / name for name in namen]
 
+    def _oeffnen_texte(self) -> dict[str, str]:
+        """Die Textvorlagen für ``plattform.oeffnen_versuchen``.
+
+        Dieselbe Begründung wie bei :meth:`_smgen_texte`: Das Modul darf
+        ``i18n`` nicht importieren, seine Gründe gehen aber in Dialoge.
+        """
+        return {kennung: self._t("oeffnen." + kennung)
+                for kennung in _system_oeffnen_meldungen}
+
+    def _oeffnen_oder_melden(self, pfad: str, titel: str = "", parent=None,
+                             vorlage: str = "") -> bool:
+        """Öffnet einen Pfad und sagt dem Anwender, wenn es nicht ging.
+
+        Bis zum 06.09.2026 stand an sechs Stellen ein ``if not
+        _system_datei_oeffnen(...)``, das nie zutraf – siehe
+        ``plattform.oeffnen_versuchen``. Vier davon hatten eine Meldung,
+        die deshalb nie erschien; zwei schrieben nur ins Protokoll.
+
+        Args:
+            pfad: Was geöffnet werden soll.
+            titel: Titel des Hinweisfensters; leer nimmt den Fehlertitel.
+            parent: Fenster, über dem der Hinweis erscheint.
+            vorlage: i18n-Schlüssel für den Text; er bekommt ``pfad`` und
+                ``grund``. Leer nimmt die allgemeine Fassung.
+
+        Returns:
+            True, wenn geöffnet wurde.
+        """
+        ok, grund = _system_oeffnen_versuchen(pfad, self._oeffnen_texte())
+        if ok:
+            return True
+        logger.warning("Nicht zu öffnen (%s): %s", pfad, grund)
+        try:
+            # Das Hauptfenster erst hier holen, und über getattr: Ohne
+            # laufende Oberfläche (Tests, --cli) gibt es keins, und der
+            # Öffnungsversuch selbst darf daran nicht scheitern.
+            messagebox.showwarning(
+                titel or self._t("dialog.title.error"),
+                self._t(vorlage or "dialog.msg.nicht_oeffenbar_grund",
+                        pfad=pfad, grund=grund),
+                parent=parent or getattr(self, "root", None))
+        except Exception as exc:            # noqa: BLE001
+            logger.debug("Hinweis nicht anzeigbar: %s", exc)
+        return False
+
     def _smgen_texte(self) -> dict[str, str]:
         """Die Textvorlagen für ``shadowmount_generation.beanstandungen``.
 
@@ -30740,12 +30785,7 @@ class PS5ConverterGUI:
                 self._t("ampr_auswahl.anleitung_fehlt", name=name or "?"),
                 parent=self.root)
             return
-        if not _system_datei_oeffnen(pfad):
-            logger.warning("Anleitung nicht zu öffnen: %s", pfad)
-            messagebox.showwarning(
-                self._t("dialog.title.error"),
-                self._t("dialog.msg.datei_nicht_oeffenbar", pfad=pfad),
-                parent=self.root)
+        self._oeffnen_oder_melden(pfad)
 
     def _show_ampr_alte_methode(self) -> None:
         """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""

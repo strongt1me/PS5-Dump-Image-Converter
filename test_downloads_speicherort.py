@@ -124,14 +124,22 @@ class OrdnerOeffnenTests(_Quelltext):
     """Der Knopf sagt, warum er nichts tut."""
 
     def test_jeder_ausgang_meldet_sich(self):
+        """Drei stumme Wege gab es: kein Ort, Ordner weg, Dateimanager
+        startet nicht. Jeder braucht eine Meldung.
+
+        Gezaehlt werden auch Aufrufe von ``_oeffnen_oder_melden``: Der
+        dritte Weg geht seit dem 06.09.2026 darueber, weil der blosse
+        Rueckgabewert von ``datei_oeffnen`` nie Misserfolg meldete. Dass
+        der Helfer wirklich meldet, sichert ``test_systemoeffner``.
+        """
         m = self._innere("_show_downloads_manager", "_ordner_oeffnen")
         meldungen = [k for k in ast.walk(m) if isinstance(k, ast.Call)
                      and getattr(k.func, "attr", "") in
-                     ("showwarning", "showerror", "showinfo")]
-        self.assertGreaterEqual(
-            len(meldungen), 3,
-            "Drei stumme Wege gab es: kein Ort, Ordner weg, Dateimanager "
-            "startet nicht. Jeder braucht eine Meldung.")
+                     ("showwarning", "showerror", "showinfo",
+                      "_oeffnen_oder_melden")]
+        self.assertGreaterEqual(len(meldungen), 3, [
+            getattr(k.func, "attr", "") for k in ast.walk(m)
+            if isinstance(k, ast.Call)])
 
     def test_ein_fehlender_ort_wird_erst_angeboten(self):
         """Meckern hilft niemandem - erst den Ordner anbieten."""

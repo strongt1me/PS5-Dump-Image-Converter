@@ -185,10 +185,39 @@ class SystembefehleTests(unittest.TestCase):
         cls.mac = _plattform_als("darwin")
 
     def test_datei_oeffnen_nutzt_open(self):
+        # Ueber subprocess.run statt Popen: Nur so ist der Rueckgabewert des
+        # Starters lesbar - Popen lieferte ihn nie, und damit galt jeder
+        # Versuch als geglueckt (siehe oeffnen_versuchen).
+        ziel = str(PROJEKT / "README.md")
+        fertig = mock.Mock(returncode=0, stdout="", stderr="")
         with mock.patch.object(self.mac.shutil, "which", return_value="/usr/bin/open"), \
-             mock.patch.object(self.mac.subprocess, "Popen") as popen:
-            self.assertTrue(self.mac.datei_oeffnen("/tmp/handbuch.html"))
-        self.assertEqual(popen.call_args[0][0], ["open", "/tmp/handbuch.html"])
+             mock.patch.object(self.mac.subprocess, "run", return_value=fertig) as lauf:
+            self.assertTrue(self.mac.datei_oeffnen(ziel))
+        self.assertEqual(lauf.call_args[0][0], ["open", ziel])
+
+    def test_datei_oeffnen_meldet_einen_fehlenden_pfad(self):
+        """Der Kern: Frueher galt auch ein Pfad ins Leere als geoeffnet."""
+        ok, grund = self.mac.oeffnen_versuchen("/tmp/gibt-es-nicht-xyz.html")
+        self.assertFalse(ok)
+        self.assertTrue(grund)
+
+    def test_datei_oeffnen_meldet_den_fehler_des_starters(self):
+        ziel = str(PROJEKT / "README.md")
+        fertig = mock.Mock(returncode=3, stdout="", stderr="kein Programm dafuer")
+        with mock.patch.object(self.mac.shutil, "which", return_value="/usr/bin/open"), \
+             mock.patch.object(self.mac.subprocess, "run", return_value=fertig), \
+             mock.patch.object(self.mac, "webbrowser", create=True):
+            ok, grund = self.mac.oeffnen_versuchen(ziel)
+        self.assertFalse(ok)
+        self.assertIn("3", grund)
+
+    def test_der_grund_laesst_sich_uebersetzen(self):
+        """Das Modul darf i18n nicht kennen - also nimmt es Vorlagen entgegen."""
+        ok, grund = self.mac.oeffnen_versuchen(
+            "/tmp/gibt-es-nicht-xyz.html",
+            {"nicht_da": "It is not there any more."})
+        self.assertFalse(ok)
+        self.assertEqual("It is not there any more.", grund)
 
     def test_im_dateimanager_zeigen_markiert_die_datei(self):
         with mock.patch.object(self.mac.subprocess, "Popen") as popen:

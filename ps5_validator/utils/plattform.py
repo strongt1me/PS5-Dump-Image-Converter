@@ -237,38 +237,114 @@ def prozess_flags() -> dict[str, object]:
 # ---------------------------------------------------------------------------
 # Dateien und Ordner im System oeffnen
 # ---------------------------------------------------------------------------
-def datei_oeffnen(pfad: str) -> bool:
-    """Oeffnet eine Datei oder einen Ordner im Standardprogramm des Systems.
+#: Gruende, die :func:`oeffnen_versuchen` nennt. Fest deutsch waeren sie ein
+#: Sprachleck: Dieses Modul darf ``i18n`` nicht importieren - es soll ohne
+#: die Oberflaeche benutzbar bleiben -, und die Saetze gehen in Dialoge.
+#: Wer uebersetzte will, reicht sie als ``texte`` herein; dasselbe Muster
+#: wie in ``pkg_merger.MELDUNGEN`` und ``shadowmount_generation.MELDUNGEN``.
+OEFFNEN_MELDUNGEN: dict[str, str] = {
+    "kein_pfad": "Es wurde kein Pfad angegeben.",
+    "nicht_da": "Die Datei oder der Ordner ist nicht (mehr) da.",
+    "kein_programm": "Es gibt kein Programm, das dafür zuständig ist.",
+    "starter_fehler": "{starter} meldete Fehler {code}{hinweis}",
+}
+
+
+def oeffnen_versuchen(pfad: str,
+                      texte: "dict[str, str] | None" = None) -> tuple[bool, str]:
+    """Oeffnet eine Datei oder einen Ordner - und nennt den Grund bei Misserfolg.
+
+    **Warum es diese Fassung gibt.** :func:`datei_oeffnen` liefert einen
+    blossen ``bool``, und der bedeutet nicht "geoeffnet", sondern nur
+    "Versuch abgesetzt": Unter Windows kommt nach ``os.startfile`` immer
+    ``True``; wirft es (weil die Datei fehlt), faengt der Browser-Ausweg
+    den Fall ab und meldet ebenfalls Erfolg. Unter POSIX wurde der
+    Rueckgabewert von ``xdg-open`` nie gelesen und seine Fehlerausgabe nach
+    ``DEVNULL`` geschickt. ``False`` entstand damit fast nur bei leerem
+    Pfad.
+
+    Am 06.09.2026 gemessen: Fuer einen Pfad, den es gar nicht gibt, melden
+    beide Funktionen ``True``. Die sechs ``if not ...`` im Hauptprogramm
+    traten deshalb nie zu - vier davon haetten eine Fehlermeldung gezeigt,
+    zwei schrieben nur ins Protokoll. Der Anwender drueckte einen Knopf,
+    bei dem nichts geschah.
+
+    Args:
+        pfad: Datei, Ordner oder Adresse mit Schema.
+        texte: Vorlagen je Kennung aus :data:`OEFFNEN_MELDUNGEN`; fehlt
+            eine, gilt die eingebaute.
 
     Returns:
-        True, wenn ein Oeffnungsversuch abgesetzt werden konnte.
+        ``(Erfolg, Grund)``. Bei Erfolg ist der Grund leer. Der Grund ist
+        fuer den Anwender gedacht und nennt, was schiefging - nicht den
+        Pfad, den kennt der Aufrufer selbst.
     """
+    vorlagen = dict(OEFFNEN_MELDUNGEN)
+    if texte:
+        vorlagen.update({k: v for k, v in texte.items() if v})
+
+    def _satz(kennung: str, **werte) -> str:
+        try:
+            return vorlagen[kennung].format(**werte)
+        except (KeyError, IndexError, ValueError):
+            # Eine unbrauchbare Vorlage darf den Grund nicht verschlucken.
+            try:
+                return OEFFNEN_MELDUNGEN[kennung].format(**werte)
+            except Exception:      # noqa: BLE001
+                return kennung
+
     ziel = str(pfad or "")
     if not ziel:
-        return False
+        return (False, _satz("kein_pfad"))
+    # Eine Adresse mit Schema geht an den Browser und muss hier nicht
+    # liegen. Alles andere ist ein Pfad - und der haeufigste Grund, warum
+    # nichts geschieht, ist schlicht, dass es ihn nicht gibt.
+    if "://" not in ziel and not os.path.exists(ziel):
+        return (False, _satz("nicht_da"))
     try:
         if IST_WINDOWS:
             os.startfile(ziel)  # type: ignore[attr-defined]
-            return True
+            return (True, "")
         starter = "open" if IST_MACOS else "xdg-open"
         if shutil.which(starter):
-            subprocess.Popen(
-                [starter, ziel],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            return True
+            # Nicht mehr nach DEVNULL: Die Fehlerausgabe des Starters ist
+            # das Einzige, was ueberhaupt sagt, woran es lag.
+            lauf = subprocess.run(
+                [starter, ziel], capture_output=True, text=True,
+                encoding="utf-8", errors="replace", timeout=20)
+            if lauf.returncode == 0:
+                return (True, "")
+            zeilen = (lauf.stderr or lauf.stdout or "").strip().splitlines()
+            return (False, _satz("starter_fehler", starter=starter,
+                                 code=lauf.returncode,
+                                 hinweis=(": " + zeilen[0][:160]) if zeilen else ""))
     except Exception as exc:  # noqa: BLE001
         logger.debug("Öffnen über das System fehlgeschlagen (%s): %s", ziel, exc)
+        grund = str(exc)[:160]
+    else:
+        grund = _satz("kein_programm")
     # Letzter Ausweg: Der Browser oeffnet HTML/PDF und faellt sonst auf den
     # Dateimanager der Arbeitsumgebung zurueck.
     try:
         import webbrowser
 
-        return bool(webbrowser.open(ziel))
+        if webbrowser.open(ziel):
+            return (True, "")
     except Exception as exc:  # noqa: BLE001
         logger.debug("Browser-Fallback fehlgeschlagen (%s): %s", ziel, exc)
-        return False
+    return (False, grund)
+
+
+def datei_oeffnen(pfad: str) -> bool:
+    """Oeffnet eine Datei oder einen Ordner im Standardprogramm des Systems.
+
+    Huelle um :func:`oeffnen_versuchen` fuer Aufrufer, denen der Grund
+    gleichgueltig ist. Wer eine Meldung zeigen will, nimmt die andere.
+
+    Returns:
+        True, wenn geoeffnet werden konnte.
+    """
+    return oeffnen_versuchen(pfad)[0]
 
 
 def im_dateimanager_zeigen(pfad: str) -> bool:
@@ -279,11 +355,19 @@ def im_dateimanager_zeigen(pfad: str) -> bool:
     Dolphin, Nemo und Thunar; scheitert er, wird ersatzweise der uebergeordnete
     Ordner geoeffnet - ohne Markierung, aber am richtigen Ort.
 
+    **Was hier fehlte.** Bis zum 06.09.2026 hiess der Rueckgabewert nur
+    "Anzeigeversuch abgesetzt": Der Explorer-Aufruf ging ohne jede Pruefung
+    hinaus und meldete Erfolg, auch fuer einen Pfad, den es gar nicht gibt.
+    Beide Aufrufer im Hauptprogramm ("Im Ordner zeigen" in der Bibliothek
+    und beim Diagnosebericht) haben ein ``if not ...``, das deshalb nie
+    zutrat - und sie schreiben im Misserfolgsfall ohnehin nur ins
+    Protokoll. Ein Knopf, bei dem nichts geschah.
+
     Returns:
-        True, wenn ein Anzeigeversuch abgesetzt werden konnte.
+        True, wenn der Pfad da ist und angezeigt werden konnte.
     """
     ziel = os.path.abspath(str(pfad or ""))
-    if not ziel:
+    if not ziel or not os.path.exists(ziel):
         return False
     try:
         if IST_WINDOWS:
