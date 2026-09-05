@@ -6,6 +6,7 @@ falsch geschriebene autoload.txt faellt erst beim naechsten Neustart auf, und
 dann ohne Meldung - deshalb wird hier gegen einen nachgebauten FTP-Dienst
 geprueft statt gegen die echte Konsole.
 """
+import ast
 import io
 import sys
 import unittest
@@ -167,7 +168,29 @@ class QuelltextTests(unittest.TestCase):
                       self.quelle)
 
     def test_ausfuehrungsrecht_wird_nachgesehen(self):
-        self.assertIn("self._ps5_datei_modus(ftp, ziel) & 0o111", self.quelle)
+        # Frueher stand hier die Bitmaske direkt: "_ps5_datei_modus(...) & 0o111".
+        # Der Helfer liefert 0, wenn weder MLST noch LIST die Rechte hergeben -
+        # dann warnte das Fenster nach JEDEM Upload. Seither geht es ueber
+        # _warnen_wenn_nicht_ausfuehrbar, das "nicht gesetzt" von "nicht
+        # feststellbar" unterscheidet. Dass der Helfer das wirklich tut, misst
+        # test_werkzeugfeinheiten.py; hier steht nur, dass er benutzt wird.
+        baum = ast.parse(self.quelle)
+        fenster = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_show_autoloader")
+        aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(fenster)
+                   if isinstance(k, ast.Call)]
+        self.assertIn("_warnen_wenn_nicht_ausfuehrbar", aufrufe,
+                      "Nach dem Upload wird gar nicht mehr nachgesehen.")
+        self.assertNotIn("_ps5_datei_modus", aufrufe,
+                         "Die Bitmaske wird wieder direkt abgefragt - dann gilt "
+                         "'Rechte nicht auslesbar' faelschlich als 'nicht "
+                         "ausfuehrbar'.")
+
+    def test_nur_startbare_dateien_werden_geprueft(self):
+        # autoload.txt ist eine Textdatei. Bei ihr fehlt das Ausfuehrungsrecht
+        # zu Recht - eine Warnung waere hier immer falsch.
+        self.assertIn('name.lower().endswith((".elf", ".bin"))', self.quelle)
 
     def test_arbeit_laeuft_nicht_im_oberflaechen_thread(self):
         # Eine FTP-Verbindung zu einer abwesenden Konsole braucht Sekunden.

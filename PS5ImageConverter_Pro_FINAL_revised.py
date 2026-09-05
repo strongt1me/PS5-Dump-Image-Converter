@@ -15461,8 +15461,13 @@ class PS5ConverterGUI:
         """
         try:
             self.root.after(0, lambda: self.status_label.config(text=text))
-        except RuntimeError:
-            # Während Shutdown/Thread-Race kein harter Fehler.
+        except (RuntimeError, AttributeError):
+            # Während Shutdown/Thread-Race kein harter Fehler - und auch
+            # nicht, wenn die Oberflaeche gar nicht steht. Eine Statuszeile
+            # ist Beiwerk; sie darf den Vorgang nie reissen, den sie begleitet.
+            # AttributeError kam am 05.09.2026 dazu: root ist dann None
+            # (halb aufgebaute Instanz), und ein neuer Aufruf im WebKit-Weg
+            # haette den ganzen Versand verhindert.
             pass
 
     def _set_status_fluechtig(self, text: str, prozess: object = None,
@@ -31242,12 +31247,22 @@ class PS5ConverterGUI:
                     ftp.storbinary("STOR " + ziel, fh)
                 # Ohne Ausfuehrungsrecht startet die Konsole die Datei nicht,
                 # meldet das aber nirgends - deshalb hier nachsehen.
+                #
+                # Ueber den vorhandenen Helfer, nicht ueber die Bitmaske
+                # direkt: _ps5_datei_modus faengt seine Fehler selbst ab und
+                # liefert 0, wenn weder MLST noch LIST die Rechte hergeben.
+                # "0 & 0o111" ist falsch - an einem FTP-Dienst, der die Rechte
+                # nicht ausliefert, kam deshalb nach JEDEM Upload die Warnung
+                # "ohne Ausfuehrungsrecht abgelegt", obwohl nichts fehlte. Wer
+                # sich das abgewoehnt, uebersieht den echten Fall.
+                # _warnen_wenn_nicht_ausfuehrbar unterscheidet "nicht gesetzt"
+                # von "nicht feststellbar" und warnt nur im ersten Fall.
+                #
+                # Das try/except stand hier ohnehin vergeblich: Der Helfer
+                # wirft nicht.
                 ausfuehrbar = True
                 if name.lower().endswith((".elf", ".bin")):
-                    try:
-                        ausfuehrbar = bool(self._ps5_datei_modus(ftp, ziel) & 0o111)
-                    except Exception:
-                        ausfuehrbar = True
+                    ausfuehrbar = self._warnen_wenn_nicht_ausfuehrbar(ftp, ziel)
                 return (os.path.getsize(pfad), ausfuehrbar)
 
             def _fertig(werte) -> None:
@@ -31255,8 +31270,10 @@ class PS5ConverterGUI:
                 stand_var.set(self._t("autoloader.state_uploaded",
                                       name=name, bytes=groesse))
                 if not ausfuehrbar:
-                    self._append_to_log(
-                        self._t("autoloader.not_executable", name=name) + chr(10))
+                    # Nur das Fenster: Den Protokolleintrag schreibt
+                    # _warnen_wenn_nicht_ausfuehrbar bereits selbst, und zwar
+                    # mit den gemessenen Rechten im Klartext ("0644") - das
+                    # sagt mehr als der Satz hier.
                     messagebox.showwarning(
                         self._t("autoloader.error_title"),
                         self._t("autoloader.not_executable", name=name), parent=win)
@@ -33779,14 +33796,13 @@ class PS5ConverterGUI:
         name = os.path.basename(elf)
         groesse = self._fmt_bytes(os.path.getsize(elf))
 
-        if self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT):
-            if not messagebox.askyesno(
-                    self._t("webkit.title"),
-                    self._t("webkit.send_ask", datei=name, groesse=groesse,
-                            ip=ip, port=self._PAYLOAD_SEND_PORT),
-                    parent=eltern):
-                return
-            ok, meldung = self._send_payload_to_ps5(ip, elf)
+        # Ab hier laeuft alles Langsame im Faden und alles Sichtbare im
+        # Hauptstrang. Bis zum 05.09.2026 stand beides zusammen hier: die
+        # Portsondierung (1,5 s), der Verbindungsaufbau und der 2,1-MB-Upload.
+        # Waehrenddessen fror das Fenster ein, zeichnete sich nicht mehr neu
+        # und liess sich nicht abbrechen; ist die Konsole aus oder falsch
+        # adressiert, stand das Programm bis zum Zeitablauf.
+        def _gesendet(ok: bool, meldung: str) -> None:
             if ok:
                 messagebox.showinfo(self._t("webkit.title"),
                                     self._t("webkit.send_ok", groesse=meldung),
@@ -33795,15 +33811,49 @@ class PS5ConverterGUI:
                 messagebox.showerror(self._t("webkit.title"),
                                      self._t("webkit.send_failed", fehler=meldung),
                                      parent=eltern)
-            return
 
-        if not messagebox.askyesno(
-                self._t("webkit.title"),
-                self._t("webkit.port_closed", ip=ip,
-                        port=self._PAYLOAD_SEND_PORT),
-                parent=eltern):
-            return
-        self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
+        def _senden() -> None:
+            try:
+                ok, meldung = self._send_payload_to_ps5(ip, elf)
+            except Exception as exc:            # noqa: BLE001
+                logger.warning("WebKit-Installer nicht gesendet: %s", exc)
+                ok, meldung = False, str(exc)
+            self._spaeter_im_fenster(eltern, _gesendet, ok, meldung)
+
+        def _weiter(loader_offen: bool) -> None:
+            if loader_offen:
+                if not messagebox.askyesno(
+                        self._t("webkit.title"),
+                        self._t("webkit.send_ask", datei=name, groesse=groesse,
+                                ip=ip, port=self._PAYLOAD_SEND_PORT),
+                        parent=eltern):
+                    return
+                self._set_status_fluechtig(self._t("webkit.status_senden"))
+                threading.Thread(target=_senden, daemon=True,
+                                 name="webkit-senden").start()
+                return
+
+            if not messagebox.askyesno(
+                    self._t("webkit.title"),
+                    self._t("webkit.port_closed", ip=ip,
+                            port=self._PAYLOAD_SEND_PORT),
+                    parent=eltern):
+                return
+            # Der USB-Weg blockiert weiterhin - aber erst nach einer
+            # ausdruecklichen Zustimmung, und er zeigt eigene Dialoge.
+            self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
+
+        def _sondieren() -> None:
+            try:
+                offen = self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT)
+            except Exception as exc:            # noqa: BLE001
+                logger.debug("WebKit-Sondierung fehlgeschlagen: %s", exc)
+                offen = False
+            self._spaeter_im_fenster(eltern, _weiter, offen)
+
+        self._set_status_fluechtig(self._t("webkit.status_sondieren"))
+        threading.Thread(target=_sondieren, daemon=True,
+                         name="webkit-sondieren").start()
 
     def _webkit_auf_usb_ablegen(self, ip: str, elf: str, parent=None) -> None:
         """Legt den Installer ins Wurzelverzeichnis eines USB-Datentraegers.

@@ -75,7 +75,28 @@ def _gui(*, offene_ports: set[int], usb: list[str] | None = None) -> PS5Converte
     g._ampr_ftp_connect = _connect
     g._send_payload_to_ps5 = lambda ip, pfad, port=0: (
         g.gesendet.append((ip, pfad)) or (True, "4711 Bytes"))
+
+    # Seit dem 05.09.2026 laeuft der Sendeweg ueber Arbeitsfaeden:
+    # Sondierung und Upload blockierten sonst den Hauptstrang. Die
+    # Rueckmeldung geht dabei ueber _spaeter_im_fenster - hier direkt
+    # ausgefuehrt, damit die Pruefungen synchron bleiben. Auf den Faden
+    # selbst wartet _fertig_abwarten() unten.
+    g._spaeter_im_fenster = lambda _fenster, rueckruf, *a: rueckruf(*a)
+    g._set_status_fluechtig = lambda *a, **k: None
     return g
+
+
+def _fertig_abwarten(frist: float = 10.0) -> None:
+    """Wartet, bis die WebKit-Arbeitsfaeden durch sind."""
+    import threading, time
+
+    ende = time.monotonic() + frist
+    while time.monotonic() < ende:
+        offen = [f for f in threading.enumerate()
+                 if (f.name or "").startswith("webkit-") and f.is_alive()]
+        if not offen:
+            return
+        time.sleep(0.01)
 
 
 class AblageTests(unittest.TestCase):
@@ -209,6 +230,7 @@ class InstallerwegTests(unittest.TestCase):
         g = _gui(offene_ports={9021, 2121})
         self._mit_dialogen(g, True)
         g._webkit_installer_senden()
+        _fertig_abwarten()
         self.assertEqual(len(g.gesendet), 1, "nicht ueber Port 9021 geschickt")
         self.assertEqual(g.ftp.abgelegt, [], "trotz Loader den FTP-Weg genommen")
 
@@ -216,6 +238,7 @@ class InstallerwegTests(unittest.TestCase):
         g = _gui(offene_ports={2121})
         self._mit_dialogen(g, True)
         g._webkit_installer_senden()
+        _fertig_abwarten()
         self.assertEqual(g.gesendet, [], "trotz stummem Loader gesendet")
         self.assertEqual(g.ftp.abgelegt, ["STOR /mnt/usb0/%s" % self.elf],
                          "der Installer liegt nicht im Wurzelverzeichnis")
@@ -225,6 +248,7 @@ class InstallerwegTests(unittest.TestCase):
         g = _gui(offene_ports={2021})
         self._mit_dialogen(g, True)
         g._webkit_installer_senden()
+        _fertig_abwarten()
         self.assertEqual(g.ftp_port, [2021])
         self.assertEqual(g.ftp.abgelegt, ["STOR /mnt/usb0/%s" % self.elf])
 
@@ -232,6 +256,7 @@ class InstallerwegTests(unittest.TestCase):
         g = _gui(offene_ports={2121})
         self._mit_dialogen(g, False)
         g._webkit_installer_senden()
+        _fertig_abwarten()
         self.assertEqual(g.ftp.abgelegt, [])
         self.assertEqual(g.gesendet, [])
 
@@ -253,6 +278,7 @@ class InstallerwegTests(unittest.TestCase):
         g._load_setting = lambda _s, vorgabe="": vorgabe
         self._mit_dialogen(g, True)
         g._webkit_installer_senden()
+        _fertig_abwarten()
         self.assertEqual(g.gesendet, [])
         self.assertEqual(g.ftp.abgelegt, [])
 

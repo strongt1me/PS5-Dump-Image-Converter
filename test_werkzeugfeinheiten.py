@@ -479,3 +479,103 @@ class DiagnoseZwischenablageTests(_Quelltext):
             liest,
             "Es wird wieder der Parameter kopiert statt des Fensterinhalts - "
             "der Nachtrag aus 'Aktualisierungen pruefen' fehlt dann.")
+
+
+class AusfuehrungsrechtTests(_Quelltext):
+    """Nicht feststellbar ist nicht dasselbe wie nicht gesetzt.
+
+    Nach dem Upload stand ``bool(self._ps5_datei_modus(ftp, ziel) & 0o111)``.
+    ``_ps5_datei_modus`` faengt seine Fehler selbst ab und liefert **0**, wenn
+    weder MLST noch LIST die Rechte hergeben - und ``0 & 0o111`` ist falsch.
+    An einem FTP-Dienst, der die Rechte nicht ausliefert, kam deshalb nach
+    JEDEM Upload die Warnung "ohne Ausfuehrungsrecht abgelegt", obwohl nichts
+    fehlte. Wer sich das abgewoehnt, uebersieht den echten Fall.
+
+    Der vorhandene Helfer ``_warnen_wenn_nicht_ausfuehrbar`` macht es richtig:
+    "nicht feststellbar - nicht warnen".
+    """
+
+    def test_der_helfer_wird_benutzt(self) -> None:
+        fenster = self._methode("_show_autoloader")
+        direkt = [k.lineno for k in ast.walk(fenster)
+                  if isinstance(k, ast.Call)
+                  and getattr(k.func, "attr", "") == "_ps5_datei_modus"]
+        self.assertEqual(
+            [], direkt,
+            "Zeile(n) %s fragen die Bitmaske wieder direkt ab - 0 gilt dann "
+            "als 'nicht ausfuehrbar'." % direkt)
+        ueber_helfer = [k for k in ast.walk(fenster)
+                        if isinstance(k, ast.Call)
+                        and getattr(k.func, "attr", "") == "_warnen_wenn_nicht_ausfuehrbar"]
+        self.assertTrue(ueber_helfer, "Es wird gar nicht mehr geprueft.")
+
+    def test_der_helfer_unterscheidet_die_beiden_faelle(self) -> None:
+        """Die Eigenschaft selbst - gemessen, nicht am Quelltext gelesen."""
+        gui = hauptprogramm.PS5ConverterGUI.__new__(hauptprogramm.PS5ConverterGUI)
+        gui._log_lines = []
+        gui._append_to_log = gui._log_lines.append
+        gui._t = lambda schluessel, **k: schluessel
+
+        gui._ps5_datei_modus = lambda _ftp, _pfad: 0          # nicht feststellbar
+        self.assertTrue(gui._warnen_wenn_nicht_ausfuehrbar(None, "/x.elf"),
+                        "Unbekannte Rechte duerfen keine Warnung ausloesen.")
+        gui._ps5_datei_modus = lambda _ftp, _pfad: 0o755      # ausfuehrbar
+        self.assertTrue(gui._warnen_wenn_nicht_ausfuehrbar(None, "/x.elf"))
+        gui._ps5_datei_modus = lambda _ftp, _pfad: 0o644      # wirklich nicht
+        self.assertFalse(gui._warnen_wenn_nicht_ausfuehrbar(None, "/x.elf"))
+
+
+class WebkitSendewegTests(_Quelltext):
+    """Sondierung und Upload gehoeren nicht in den Hauptstrang.
+
+    Portsondierung (1,5 s), Verbindungsaufbau und ein 2,1-MB-Upload liefen
+    dort. Waehrenddessen fror das Fenster ein und liess sich nicht abbrechen;
+    ist die Konsole aus oder falsch adressiert, stand das Programm bis zum
+    Zeitablauf.
+    """
+
+    def test_der_sendeweg_laeuft_in_faeden(self) -> None:
+        senden = self._methode("_webkit_installer_senden")
+        faeden = [k for k in ast.walk(senden)
+                  if isinstance(k, ast.Call)
+                  and getattr(k.func, "attr", "") == "Thread"]
+        self.assertGreaterEqual(
+            len(faeden), 2,
+            "Sondierung und Upload brauchen beide einen eigenen Faden.")
+
+    def test_die_dialoge_bleiben_im_hauptstrang(self) -> None:
+        """Tk gehoert dem Hauptstrang - ein Dialog im Faden wirft."""
+        senden = self._methode("_webkit_installer_senden")
+        for name in ("_sondieren", "_senden"):
+            arbeit = [f for f in ast.walk(senden)
+                      if isinstance(f, ast.FunctionDef) and f.name == name]
+            self.assertEqual(1, len(arbeit), "%s fehlt" % name)
+            dialoge = [k.lineno for k in ast.walk(arbeit[0])
+                       if isinstance(k, ast.Call)
+                       and getattr(getattr(k.func, "value", None), "id", "") == "messagebox"]
+            with self.subTest(faden=name):
+                self.assertEqual(dialoge, [],
+                                 "Zeile(n) %s zeigen einen Dialog aus dem "
+                                 "Arbeitsfaden." % dialoge)
+
+    def test_das_ergebnis_kommt_ueber_spaeter_im_fenster(self) -> None:
+        senden = self._methode("_webkit_installer_senden")
+        zurueck = [k for k in ast.walk(senden)
+                   if isinstance(k, ast.Call)
+                   and getattr(k.func, "attr", "") == "_spaeter_im_fenster"]
+        self.assertGreaterEqual(len(zurueck), 2,
+                                "Beide Faeden brauchen den abgesicherten Rueckweg.")
+
+
+class StatuszeileReisstNichtsTests(unittest.TestCase):
+    """Eine Statusmeldung darf den Vorgang nie reissen, den sie begleitet."""
+
+    def test_ohne_oberflaeche_wird_still_geschwiegen(self) -> None:
+        """root ist None bei halb aufgebauten Instanzen - und in Pruefungen.
+
+        Der neue Aufruf im WebKit-Weg haette sonst den ganzen Versand
+        verhindert (AttributeError, 05.09.2026).
+        """
+        gui = hauptprogramm.PS5ConverterGUI.__new__(hauptprogramm.PS5ConverterGUI)
+        gui.root = None
+        gui._set_status("irgendwas")      # darf nicht werfen

@@ -37,6 +37,35 @@ try:
 except ImportError:                                   # pragma: no cover
     HYPOTHESIS_DA = False
 
+    # skipUnless an der Klasse genuegt nicht: @settings und @given stehen an
+    # den Methoden und werden schon beim Aufbau der Klasse ausgewertet, also
+    # lange bevor irgendetwas uebersprungen wird. Ohne diese Platzhalter warf
+    # der blosse Import "NameError: name 'settings' is not defined", die ganze
+    # Datei fiel aus dem Lauf - acht Pruefungen weniger, gemeldet als ein
+    # Fehler im Testaufbau statt als das, was es ist: eine fehlende
+    # Bibliothek. Die Platzhalter geben die Testmethode unveraendert zurueck;
+    # ausgefuehrt wird sie dann ohnehin nicht.
+    def settings(*_a, **_k):                          # noqa: D103
+        return lambda funktion: funktion
+
+    def given(*_a, **_k):                             # noqa: D103
+        return lambda funktion: funktion
+
+    def assume(*_a, **_k) -> None:                    # noqa: D103
+        return None
+
+    class HealthCheck:                                # noqa: D101
+        too_slow = None
+        function_scoped_fixture = None
+
+    class _KeineStrategien:
+        """Fängt jedes ``st.…`` ab - aufgerufen wird davon nichts."""
+
+        def __getattr__(self, _name):
+            return lambda *a, **k: None
+
+    st = _KeineStrategien()
+
 HAUPTDATEI = Path(__file__).resolve().parent / "PS5ImageConverter_Pro_FINAL_revised.py"
 
 

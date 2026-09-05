@@ -64,6 +64,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'titlebar.shadowmount': {'de': 'SHADOWMOUNT+', 'en': 'SHADOWMOUNT+'},
     'titlebar.webkit': {'de': 'WEBKIT AUTOLOADER', 'en': 'WEBKIT AUTOLOADER'},
     'webkit.title': {'de': 'WebKit Autoloader', 'en': 'WebKit Autoloader'},
+    'webkit.status_sondieren': {'de': 'Konsole wird gesucht…', 'en': 'Looking for the console…'},
+    'webkit.status_senden': {'de': 'Installer wird gesendet…', 'en': 'Sending the installer…'},
     'webkit.hint': {'de': 'Der Host täuscht der Konsole manuals.playstation.net vor und liefert ihr den Autoloader aus. Der Installer legt dafür die Kachel auf der Konsole an.', 'en': 'The host spoofs manuals.playstation.net for the console and serves it the autoloader. The installer creates the tile on the console.'},
     'webkit.host_exe': {'de': 'Host starten (Windows-Programm)', 'en': 'Start host (Windows program)'},
     'webkit.host_py': {'de': 'Host starten (Python-Skript)', 'en': 'Start host (Python script)'},
