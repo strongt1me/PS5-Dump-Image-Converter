@@ -13,6 +13,7 @@ waere die Pruefung entweder zu lasch oder zu streng.
 """
 from __future__ import annotations
 
+import ast
 import json
 import os
 import sys
@@ -481,15 +482,43 @@ class AnbindungTests(unittest.TestCase):
         self.assertNotIn('json.loads(param_json_path.read_text(encoding="utf-8"))',
                          self.text)
 
+    #: Die Methoden, die ein Abbild aus einem Dump-Ordner bauen. Jede von
+    #: ihnen muss vorher die param.json pruefen - ohne sie ist der Dump auf
+    #: der Konsole unbrauchbar, und das faellt sonst erst dort auf.
+    #:
+    #: Kommt ein Bauweg dazu, gehoert er in diese Liste. Der Test daneben
+    #: sorgt dafuer, dass das auffaellt.
+    BAUWEGE = (
+        "_mode_pack_folder_mkpfs",      # .ffpfsc, zweistufig
+        "_mode_pack_folder_exfat",      # .ffpfsc, einstufig ueber exFAT
+        "_mode_pack_folder_flach",      # .ffpfs, flach (seit 05.09.2026)
+        "_build_ffpkg_from_folder",     # .ffpkg
+        "_create_exfat_from_folder",    # .exfat
+    )
+
     def test_alle_bauwege_nutzen_die_pruefung(self):
         """Jeder Weg, der aus einem Ordner baut, prueft vorher die param.json.
 
-        Vier Aufrufe seit dem 03.09.2026: Der einstufige Packweg
-        (``_mode_pack_folder_exfat``) kam dazu, als die Bauform waehlbar
-        wurde. Ohne param.json ist der Dump auf der Konsole unbrauchbar, und
-        das faellt sonst erst dort auf.
+        Frueher stand hier eine Zaehlung ("genau fuenf Vorkommen im
+        Quelltext"). Die ging am 05.09.2026 kaputt, als ein sechster Bauweg
+        dazukam - und sie haette denselben Fehlschlag gebracht, wenn jemand
+        einen Aufruf an die falsche Stelle geschrieben haette. Geprueft wird
+        deshalb die Eigenschaft: In jeder dieser Methoden steht ein Aufruf.
         """
-        self.assertEqual(self.text.count("_ensure_param_json("), 5)  # 4 Aufrufe + Definition
+        baum = ast.parse(self.text)
+        methoden = {k.name: k for k in ast.walk(baum)
+                    if isinstance(k, ast.FunctionDef)}
+        for name in self.BAUWEGE:
+            with self.subTest(bauweg=name):
+                self.assertIn(name, methoden,
+                              "Bauweg %s gibt es nicht mehr - Liste nachziehen." % name)
+                aufrufe = [k for k in ast.walk(methoden[name])
+                           if isinstance(k, ast.Call)
+                           and getattr(k.func, "attr", "") == "_ensure_param_json"]
+                self.assertTrue(
+                    aufrufe,
+                    "%s baut aus einem Ordner, prueft aber die param.json nicht. "
+                    "Ohne sie laeuft das Ergebnis auf der Konsole nicht." % name)
 
     def test_validator_bietet_die_reparatur_an(self):
         self.assertIn("_validator_param_json_anbieten", self.text)
