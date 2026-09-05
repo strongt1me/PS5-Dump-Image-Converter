@@ -41,6 +41,8 @@ pruefumgebung.umlenken("werkzeugfeinheiten")
 
 from ps5_validator.utils.i18n import STRINGS
 
+import PS5ImageConverter_Pro_FINAL_revised as hauptprogramm
+
 HAUPTDATEI = os.path.join(PROJEKT, "PS5ImageConverter_Pro_FINAL_revised.py")
 
 
@@ -379,3 +381,101 @@ class BibliothekQuelleTests(_Quelltext):
             raeumt,
             "_use_as_source laesst _batch_sources stehen - Aufgabe 5 "
             "konvertiert danach die alten Dateien weiter.")
+
+
+class AutoloaderSchreibenTests(_Quelltext):
+    """Ein leeres Feld darf die Liste auf der Konsole nicht loeschen.
+
+    Gefragt wurde bisher nur, wenn die autoload.txt Dateien nennt, die nicht
+    im Ordner liegen. Bei leerem Feld entfiel die Rueckfrage, und es gingen
+    0 Bytes ueber die vorhandene Datei. Leer ist das Feld nicht nur, wenn der
+    Anwender alles geloescht hat: Das Fenster holt beim Oeffnen selbsttaetig,
+    und schlaegt das fehl - Konsole aus, falscher Port -, bleibt es leer.
+    """
+
+    def test_leeres_feld_fragt_nach(self) -> None:
+        fenster = self._methode("_show_autoloader")
+        schreiben = [f for f in ast.walk(fenster)
+                     if isinstance(f, ast.FunctionDef) and f.name == "_schreiben"]
+        self.assertEqual(1, len(schreiben), "_schreiben wurde umbenannt.")
+        gefragt = [k for k in ast.walk(schreiben[0])
+                   if isinstance(k, ast.Constant)
+                   and k.value == "autoloader.empty_message"]
+        self.assertTrue(
+            gefragt,
+            "Bei leerem Feld wird nicht nachgefragt - ein Klick loescht dann "
+            "die Liste auf der Konsole.")
+
+    def test_die_rueckfrage_gibt_es_zweisprachig(self) -> None:
+        for name in ("autoloader.empty_title", "autoloader.empty_message"):
+            with self.subTest(schluessel=name):
+                self.assertIn(name, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[name].get(sprache, "").strip())
+
+
+class AdresseMerkenTests(_Quelltext):
+    """Die zentrale Adresse darf nicht bei jedem Tastendruck wandern.
+
+    ``_ip_merken`` hing an ``ip_var.trace_add("write", ...)``: Waehrend
+    "192.168.1.94" entstand, gingen elf Zwischenstaende in die zentrale
+    Einstellung ``ps5_ip``, die alle anderen Fenster lesen. Wer mittendrin
+    abbrach, hinterliess dort einen Torso.
+    """
+
+    def test_nicht_mehr_an_jedem_zeichen(self) -> None:
+        fenster = self._methode("_show_autoloader")
+        spuren = [k.lineno for k in ast.walk(fenster)
+                  if isinstance(k, ast.Call)
+                  and getattr(k.func, "attr", "") == "trace_add"
+                  and any(isinstance(a, ast.Name) and a.id == "_ip_merken"
+                          for a in k.args)]
+        self.assertEqual(
+            [], spuren,
+            "Zeile(n) %s haengen das Merken wieder an jeden Tastendruck." % spuren)
+
+    def test_gemerkt_wird_beim_verlassen(self) -> None:
+        fenster = self._methode("_show_autoloader")
+        gebunden = [k for k in ast.walk(fenster)
+                    if isinstance(k, ast.Call)
+                    and getattr(k.func, "attr", "") == "bind"
+                    and any(isinstance(a, ast.Name) and a.id == "_ip_merken"
+                            for a in k.args)]
+        self.assertTrue(gebunden,
+                        "Die Adresse wird gar nicht mehr gemerkt.")
+
+    def test_zwischenstaende_werden_abgewiesen(self) -> None:
+        """Die Pruefung selbst - an zehn Faellen gemessen."""
+        pruefe = hauptprogramm.PS5ConverterGUI._ist_plausible_ps5_adresse
+        for wert in ("192.168.1.94", "10.0.0.1", "ps5.local", "konsole"):
+            with self.subTest(gut=wert):
+                self.assertTrue(pruefe(wert))
+        for wert in ("192.168.1.", "19", "192.168.1.94.", "", "256.1.1.1", "1.2.3"):
+            with self.subTest(schlecht=wert):
+                self.assertFalse(pruefe(wert))
+
+
+class DiagnoseZwischenablageTests(_Quelltext):
+    """Kopiert werden muss, was im Fenster steht.
+
+    ``_copy_to_clipboard`` legte den Parameter ``report_text`` in die
+    Zwischenablage. Was "Aktualisierungen pruefen" unten anhaengt, landet aber
+    nur im Textfeld und in der Datei - wer den Abschnitt sah, kopierte und
+    weitergab, verschickte einen Bericht ohne genau den Teil, dessentwegen er
+    kopiert hatte.
+    """
+
+    def test_kopiert_wird_aus_dem_textfeld(self) -> None:
+        fenster = self._methode("_render_diagnostic_report_window")
+        kopieren = [f for f in ast.walk(fenster)
+                    if isinstance(f, ast.FunctionDef)
+                    and f.name == "_copy_to_clipboard"]
+        self.assertEqual(1, len(kopieren), "_copy_to_clipboard wurde umbenannt.")
+        liest = [k for k in ast.walk(kopieren[0])
+                 if isinstance(k, ast.Call)
+                 and getattr(k.func, "attr", "") == "get"
+                 and getattr(getattr(k.func, "value", None), "id", "") == "text_widget"]
+        self.assertTrue(
+            liest,
+            "Es wird wieder der Parameter kopiert statt des Fensterinhalts - "
+            "der Nachtrag aus 'Aktualisierungen pruefen' fehlt dann.")

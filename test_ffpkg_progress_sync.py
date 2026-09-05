@@ -70,7 +70,7 @@ class FfpkgProgressSyncTests(unittest.TestCase):
                 "import sys, time\n"
                 "sys.stdout.write('Adding files to image...   7% (7/100 files, 7.00 MiB/100.00 MiB)\\r')\n"
                 "sys.stdout.flush()\n"
-                "time.sleep(0.8)\n"
+                "time.sleep(2.0)\n"
                 "sys.stdout.write('Adding files to image... 100% (100/100 files, 100.00 MiB/100.00 MiB)\\r')\n"
                 "sys.stdout.flush()\n",
                 encoding="utf-8",
@@ -92,8 +92,19 @@ class FfpkgProgressSyncTests(unittest.TestCase):
         self.assertEqual(len(callback_records), 2)
         self.assertIn("7%", callback_records[0][0])
         self.assertIn("100%", callback_records[1][0])
-        self.assertLess(callback_records[0][1] - started, 0.65)
-        self.assertGreater(callback_records[1][1] - callback_records[0][1], 0.55)
+        # Die Grenzen mit Abstand zur Schlafdauer des Helfers (2,0 s).
+        #
+        # Geprueft wird die Eigenschaft "die erste Meldung kommt an, waehrend
+        # der Prozess noch laeuft" - also dass eine mit \r abgeschlossene Zeile
+        # sofort weitergereicht und nicht bis zum Prozessende gepuffert wird.
+        #
+        # Bis zum 05.09.2026 stand hier 0,65 s bei 0,8 s Schlafdauer. Das ist
+        # im Gesamtlauf zu eng: Unter Last brauchte allein der Prozessstart
+        # 0,685 s, und die Pruefung fiel, obwohl nichts kaputt war - einzeln
+        # lief sie dreimal gruen. Mit 2,0 s Schlaf und 1,5 s Grenze liegt eine
+        # halbe Sekunde Luft nach beiden Seiten.
+        self.assertLess(callback_records[0][1] - started, 1.5)
+        self.assertGreater(callback_records[1][1] - callback_records[0][1], 1.5)
 
 
 class FfpkgSchrittdreiTests(unittest.TestCase):

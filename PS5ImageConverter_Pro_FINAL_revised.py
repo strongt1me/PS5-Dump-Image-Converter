@@ -15121,6 +15121,28 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     _PS5_KLOG_DEFAULT_PORT = 3232
 
+    @staticmethod
+    def _ist_plausible_ps5_adresse(wert: str) -> bool:
+        """Sieht das nach einer fertig eingetippten Adresse aus?
+
+        Bewusst keine strenge Pruefung - ein Rechnername im Heimnetz ist
+        genauso gueltig wie eine IPv4. Abgewiesen wird nur, was offensichtlich
+        ein Zwischenstand beim Tippen ist: ``192.168.1.`` oder ``19``. Das
+        genuegt fuer den Zweck, denn die Adresse wird ohnehin beim naechsten
+        Verbindungsversuch auf die Probe gestellt.
+        """
+        text = (wert or "").strip()
+        if not text:
+            return False
+        # Sieht es nach einer IPv4 aus, muss sie vollstaendig sein.
+        if all(z in "0123456789." for z in text):
+            teile = text.split(".")
+            if len(teile) != 4 or not all(teile):
+                return False
+            return all(t.isdigit() and 0 <= int(t) <= 255 for t in teile)
+        # Sonst ein Name - der darf alles sein, nur nicht mit einem Punkt enden.
+        return not text.endswith(".")
+
     def _ps5_ip(self, default: str = "") -> str:
         """Zentral hinterlegte Adresse der PS5 (leer, wenn nichts gesetzt ist)."""
         return str(self._load_setting("ps5_ip", default) or default).strip()
@@ -28416,8 +28438,18 @@ class PS5ConverterGUI:
         text_frame.grid_rowconfigure(0, weight=1)
 
         def _copy_to_clipboard() -> None:
+            # Aus dem Textfeld, nicht aus report_text: Was "Aktualisierungen
+            # pruefen" unten anhaengt, steht im Fenster und in der Datei - der
+            # Parameter report_text bleibt aber der Stand von vorher. Wer den
+            # Abschnitt sah, kopierte und weitergab, verschickte einen Bericht
+            # ohne genau den Teil, dessentwegen er kopiert hatte.
+            try:
+                inhalt = text_widget.get("1.0", "end-1c")
+            except Exception as exc:
+                logger.debug("Bericht nicht auslesbar: %s", exc)
+                inhalt = report_text
             self.root.clipboard_clear()
-            self.root.clipboard_append(report_text)
+            self.root.clipboard_append(inhalt or report_text)
             messagebox.showinfo(self._t("dialog.title.copied"), self._t("dialog.msg.diagnostics_copied_to_clipboard"), parent=win)
 
         def _aktualisierungen_pruefen() -> None:
@@ -31086,10 +31118,29 @@ class PS5ConverterGUI:
         ip_feld.pack(side="left", padx=(8, 12))
 
         def _ip_merken(*_a) -> None:
+            """Merkt die Adresse - erst wenn sie fertig getippt ist.
+
+            Vorher hing das an ``ip_var.trace_add("write", ...)``, also an
+            jedem Tastendruck: Waehrend "192.168.1.94" entstand, wanderten elf
+            Zwischenstaende ("1", "19", "192", "192.", ...) in die **zentrale**
+            Einstellung ``ps5_ip``, die alle anderen Fenster lesen. Wer
+            mittendrin abbrach oder das Fenster schloss, hinterliess dort
+            einen Torso.
+
+            Ueberall sonst wird diese Einstellung erst nach einer Pruefung
+            oder Rueckfrage gesetzt - siehe ``_ampr_gen_adresse_merken``.
+            """
             wert = ip_var.get().strip()
-            if wert and wert != self._ps5_ip():
-                self._save_setting("ps5_ip", wert)
-        ip_var.trace_add("write", _ip_merken)
+            if not wert or wert == self._ps5_ip():
+                return
+            if not self._ist_plausible_ps5_adresse(wert):
+                return
+            self._save_setting("ps5_ip", wert)
+
+        # Beim Verlassen des Feldes und beim Bestaetigen mit Eingabe - nicht
+        # bei jedem Zeichen.
+        ip_feld.bind("<FocusOut>", _ip_merken)
+        ip_feld.bind("<Return>", _ip_merken)
 
         stand_var = tk.StringVar(value="")
 
@@ -31140,6 +31191,18 @@ class PS5ConverterGUI:
 
         def _schreiben() -> None:
             inhalt = feld.get("1.0", "end-1c")
+            # Ein leeres Feld ueberschreibt sonst die vorhandene autoload.txt
+            # mit 0 Bytes - und leer ist es nicht nur, wenn der Anwender alles
+            # geloescht hat: Das Fenster holt beim Oeffnen selbsttaetig, und
+            # schlaegt das fehl (Konsole aus, falscher Port), bleibt das Feld
+            # leer. Ein Klick auf "schreiben" loeschte dann die Liste auf der
+            # Konsole, ohne dass je etwas angezeigt worden waere. Gefragt wurde
+            # bisher nur, wenn Dateien FEHLEN - nicht, wenn gar nichts dasteht.
+            if not inhalt.strip() and not messagebox.askyesno(
+                    self._t("autoloader.empty_title"),
+                    self._t("autoloader.empty_message"),
+                    parent=win, default="no"):
+                return
             vorhanden = set(liste.get(0, "end"))
             fehlend = [n for n in self._autoloader_genannte_dateien(inhalt)
                        if n not in vorhanden]
