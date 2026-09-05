@@ -154,9 +154,14 @@ from ps5_validator.utils.param_manifest import (
 from ps5_validator.utils.i18n import (BAUFORM_KEYS, DEFAULT_LANGUAGE, VERIFY_STUFEN,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import (
+    MEHRFACH_TRENNER,
+    WIEDERHOLBARE_SCHLUESSEL,
+    fuer_anzeige,
+    fuer_datei,
     mehrfach_schluessel,
     merge_flat_ini,
     parse_flat_ini,
+    parse_flat_ini_multi,
     render_flat_ini,
 )
 from ps5_validator.utils.plattform import (
@@ -22101,6 +22106,79 @@ class PS5ConverterGUI:
         except Exception:
             logger.info("%s", text)
 
+    #: Wohin Sicherungen der ``config.ini`` von der Konsole gehen. Wie der
+    #: Update-Ordner zur Laufzeit gefüllt und deshalb **nicht** in der EXE.
+    _SMP_BACKUP_DIR = "SMP Config.ini Backup"
+
+    @classmethod
+    def _smp_sicherungsorte(cls) -> list[str]:
+        """Neben dem Programm, sonst im Einstellungsordner.
+
+        Zwei Orte, weil der erste unter ``Programme\\`` schreibgeschützt sein
+        kann. Der Einstellungsordner ist immer beschreibbar und folgt
+        ``PS5CONV_KONFIGORDNER`` – damit ist die Stelle auch prüfbar, ohne in
+        den Bestand des Anwenders zu schreiben.
+        """
+        orte: list[str] = []
+        if getattr(sys, "frozen", False):
+            neben = os.path.dirname(os.path.abspath(sys.executable))
+        else:
+            neben = os.path.dirname(os.path.abspath(__file__))
+        if neben:
+            orte.append(os.path.join(neben, cls._SMP_BACKUP_DIR))
+        try:
+            orte.append(os.path.join(_system_konfigurationsordner(),
+                                     cls._SMP_BACKUP_DIR))
+        except Exception as fehler:  # noqa: BLE001
+            logger.debug("Einstellungsordner nicht bestimmbar: %s", fehler)
+        return orte
+
+    @classmethod
+    def _smp_sicherungsordner(cls) -> str:
+        """Wo Sicherungen liegen. Legt nichts an.
+
+        Für die Rückfrage gedacht: Sie soll den Ort nennen, bevor der Anwender
+        zustimmt. Ein Ordner, der erst beim Zustimmen entsteht, wäre dort noch
+        nicht zu sehen.
+        """
+        for ort in cls._smp_sicherungsorte():
+            if os.path.isdir(ort):
+                return ort
+        orte = cls._smp_sicherungsorte()
+        return orte[0] if orte else ""
+
+    def _smp_sicherung_ablegen(self, ferner_pfad: str, text: str) -> tuple[str, str]:
+        """Legt eine Sicherung des gelesenen ``config.ini``-Textes ab.
+
+        Args:
+            ferner_pfad: Der Pfad auf der Konsole – er bestimmt den Dateinamen.
+            text: Der eben gelesene Inhalt. Es wird **nicht** erneut geladen;
+                gesichert wird genau das, was der Editor vor sich hat.
+
+        Returns:
+            ``(Pfad, Fehlerschlüssel)`` – bei Erfolg ist der Schlüssel leer.
+
+        Der Zeitstempel im Namen kommt aus der Uhr, nicht aus einem Zähler:
+        Zwei Sicherungen am selben Tag sollen sich nicht überschreiben, und wer
+        eine zurückspielen will, sucht nach dem Zeitpunkt.
+        """
+        if not text:
+            return ("", "smpbak.error_empty")
+        for ort in self._smp_sicherungsorte():
+            try:
+                os.makedirs(ort, exist_ok=True)
+                grundname = os.path.basename(ferner_pfad.rstrip("/")) or "config.ini"
+                stempel = time.strftime("%Y-%m-%d_%H-%M-%S")
+                ziel = os.path.join(ort, "%s_%s.bak" % (grundname, stempel))
+                with io.open(ziel, "w", encoding="utf-8", newline="") as datei:
+                    datei.write(text)
+                logger.info("config.ini gesichert: %s", ziel)
+                return (ziel, "")
+            except OSError as fehler:
+                logger.debug("Sicherung nicht ablegbar (%s): %s", ort, fehler)
+                continue
+        return ("", "smpbak.error_write")
+
     def _ampr_updates_ordner(self) -> str:
         """Der Ordner "AMPR EMU updates" **neben dem Programm**.
 
@@ -34598,6 +34676,8 @@ class PS5ConverterGUI:
         # aus, den sie nicht kennt. "" heisst dagegen "gelesen, und dort lag
         # nichts"; erst dann darf eine neue Datei angelegt werden.
         geladen: dict[str, str | None] = {"text": None}
+        #: Einmal je Fenster gefragt - siehe _sicherung_anbieten.
+        gefragt: dict[str, bool] = {"sicherung": False}
 
         conn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
         conn_row.pack(fill="x")
@@ -34633,15 +34713,23 @@ class PS5ConverterGUI:
 
         def _refresh_tree() -> None:
             tree.delete(*tree.get_children())
-            # Wiederholbare Schluessel laesst merge_flat_ini beim
-            # Schreiben unangetastet - ein Woerterbuch kann sie nicht
-            # abbilden. Ohne diesen Hinweis aendert der Anwender einen
-            # davon und wundert sich, dass auf der Konsole nichts
-            # anders ist; ein stiller Fehlschlag also.
+            # Zwei verschiedene Faelle mehrfacher Schluessel:
+            #
+            # * Die sieben benannten (WIEDERHOLBARE_SCHLUESSEL) stehen als eine
+            #   Zeile mit " | " in der Tabelle und sind bearbeitbar - beim
+            #   Schreiben verteilt fuer_datei sie wieder auf Zeilen. Der
+            #   Hinweis nennt nur den Trenner.
+            # * Jeder ANDERE Schluessel, der mehrfach dasteht, bleibt
+            #   unangetastet: Die Tabelle kann ihn nicht abbilden, und
+            #   merge_flat_ini laesst solche Zeilen woertlich stehen. Das
+            #   betrifft MicroMount, das denselben Editor mit eigenen
+            #   Schluesseln benutzt, und jede kuenftige Payload-Fassung.
             wiederholt = mehrfach_schluessel(geladen.get("text") or "")
             for key, value in data.items():
                 anzeige = value
-                if key in wiederholt:
+                if key in WIEDERHOLBARE_SCHLUESSEL and MEHRFACH_TRENNER.strip() in str(value):
+                    anzeige = self._t("remote_ini.wert_liste", wert=value)
+                elif key in wiederholt and key not in WIEDERHOLBARE_SCHLUESSEL:
                     anzeige = self._t("remote_ini.wert_mehrfach", wert=value)
                 tree.insert("", "end", iid=key, values=(key, anzeige))
 
@@ -34782,7 +34870,11 @@ class PS5ConverterGUI:
                     win.after(0, lambda: _load_failed(meldung, fragen, fehlertext))
                     return
                 text = puffer.getvalue().decode("utf-8", errors="replace")
-                loaded = parse_flat_ini(text)
+                # Ueber parse_flat_ini_multi, nicht parse_flat_ini: Der
+                # einfache Leser behaelt bei wiederholbaren Schluesseln
+                # nur den letzten Wert, und aus drei Suchpfaden wuerde
+                # einer - ohne dass die Zeilenzahl es verriete.
+                loaded = fuer_anzeige(parse_flat_ini_multi(text))
                 win.after(0, _apply_loaded, text, loaded)
 
             threading.Thread(target=worker, daemon=True).start()
@@ -34805,11 +34897,40 @@ class PS5ConverterGUI:
                 geladen["text"] = ""
                 status_var.set(self._t("remote_ini.status_treat_as_new"))
 
+        def _sicherung_anbieten(text: str) -> None:
+            """Fragt einmal je Fenster, ob der Bestand gesichert werden soll.
+
+            Gefragt wird erst **nach** dem Laden: Dann steht die Verbindung
+            nachweislich, und es gibt wirklich etwas zu sichern. Eine Frage
+            beim bloßen Öffnen des Fensters hätte nichts in der Hand.
+
+            Einmal je Fenster, nicht je Ladevorgang - wer zweimal auf "Von PS5
+            laden" drückt, soll nicht zweimal gefragt werden.
+            """
+            if gefragt["sicherung"]:
+                return
+            gefragt["sicherung"] = True
+            if not messagebox.askyesno(
+                    self._t("smpbak.title"),
+                    self._t("smpbak.ask", v0=self._smp_sicherungsordner()),
+                    parent=win):
+                return
+            pfad, fehler = self._smp_sicherung_ablegen(remote_config_path, text)
+            if fehler:
+                status_var.set(self._t(fehler).strip())
+                self._append_to_log(self._t(fehler))
+            else:
+                status_var.set(self._t("smpbak.done", v0=pfad).strip())
+                self._append_to_log(self._t("smpbak.done", v0=pfad))
+
         def _apply_loaded(text: str, loaded: dict[str, str]) -> None:
             # Rohtext aufheben: Beim Zurueckschreiben wird er bearbeitet statt
             # neu erzeugt, damit Kommentare und auskommentierte Vorlagen
             # erhalten bleiben (siehe merge_flat_ini).
             geladen["text"] = text
+            # Sichern, solange der Bestand frisch von der Konsole da ist -
+            # und bevor der Anwender etwas daran aendert.
+            _sicherung_anbieten(text)
             data.update(loaded)
             if vorrang_werte:
                 # Die Sollwerte des Aufrufers wieder obenauf - sonst holte das
@@ -34836,7 +34957,10 @@ class PS5ConverterGUI:
                     self._t("remote_ini.title_write_to_ps5"),
                     self._t("remote_ini.msg_load_first"), parent=win)
                 return
-            daten = dict(data)
+            # Wiederholbare Schluessel liegen in der Tabelle als EINE
+            # Zeile mit Trenner; hier werden sie wieder zu Listen, damit
+            # merge_flat_ini je Wert eine Zeile schreibt.
+            daten = fuer_datei(dict(data))
             if roh:
                 # Vorhandene Datei bearbeiten statt ersetzen: Die Vorlagen auf
                 # der Konsole bestehen fast nur aus erklaerenden Kommentaren.
