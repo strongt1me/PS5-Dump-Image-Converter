@@ -22118,13 +22118,22 @@ class PS5ConverterGUI:
         kann. Der Einstellungsordner ist immer beschreibbar und folgt
         ``PS5CONV_KONFIGORDNER`` – damit ist die Stelle auch prüfbar, ohne in
         den Bestand des Anwenders zu schreiben.
+
+        **Im Testlauf entfällt der erste Ort.** Aus der Quelle gestartet ist
+        "neben dem Programm" der Projektordner, und ein Test, der die
+        Rückfrage beantwortet, legte dort echte Sicherungen ab –
+        ``test_shadowmount_editor`` setzt ``messagebox.askyesno`` auf ``True``
+        und traf damit auch diese Frage. Acht ``.bak``-Dateien lagen nach den
+        ersten Läufen im Projektordner. Dasselbe Muster wie bei
+        ``ps5converter.log``, das im Testlauf ebenfalls einen anderen Namen
+        bekommt.
         """
         orte: list[str] = []
         if getattr(sys, "frozen", False):
             neben = os.path.dirname(os.path.abspath(sys.executable))
         else:
             neben = os.path.dirname(os.path.abspath(__file__))
-        if neben:
+        if neben and not _IM_TESTLAUF:
             orte.append(os.path.join(neben, cls._SMP_BACKUP_DIR))
         try:
             orte.append(os.path.join(_system_konfigurationsordner(),
@@ -30074,14 +30083,35 @@ class PS5ConverterGUI:
     def _fakelib_kollision(self, wurzel) -> str:
         """Warnt, wenn beide Ordner existieren; leer, wenn alles eindeutig ist.
 
-        Liegen Bibliotheken in beiden, haengt die Konsole nur ``fakelib2`` ein -
-        der Inhalt von ``fakelib`` wirkt dann nicht, ohne jede Meldung.
+        **Welcher der beiden gewinnt, hängt von der Fassung ab** – und bis
+        v1.9.5 stand hier fest die alte:
+
+        =============  =========================================
+        Fassung        Im **Spielordner** wirkt
+        =============  =========================================
+        bis alpha6     ``fakelib2``; ``fakelib`` bleibt ungenutzt
+        ab alpha8      **nur** ``fakelib``; ``fakelib2`` wird
+                       wortlos ignoriert
+        =============  =========================================
+
+        Der Backport legt in den Spielordner ab, nicht in einen
+        Backport-Ordner. Die feste Aussage "ShadowMount+ hängt nur fakelib2
+        ein" war für jede Fassung ab alpha8 also genau verkehrt herum – und
+        wer ihr folgte, entfernte den Ordner, der wirkt.
+
+        Die Regeln stehen in ``shadowmount_generation``; hier wird nur
+        gefragt. :meth:`_ampr_ablage_pruefen` fragt beide Generationen ab und
+        nennt die Fassung dazu – dieselbe Auskunft, die der AMPR-EMU-Manager
+        gibt.
         """
         da = ps5_backport.fakelib_vorhandene_ordner(str(wurzel))
         if len(da) < 2:
             return ""
+        meldungen = self._ampr_ablage_pruefen(wurzel)
+        if not meldungen:
+            return ""
         return self._t("fakelib.collision_warning",
-                       v0=ps5_backport.FAKELIB2_ORDNER, v1=ps5_backport.FAKELIB_ORDNER)
+                       v0="\n  - ".join(meldungen))
 
     def _backport_fakelib_basis(self) -> str:
         """Ordner mit den mitgelieferten Ersatzbibliotheken; leer, wenn keiner da ist."""
@@ -32047,6 +32077,21 @@ class PS5ConverterGUI:
                 self._t("dialog.title.no_source_folder"),
                 self._t("dialog.msg.choose_valid_source_folder"), parent=self.root)
             return
+        # Bis v1.9.5 wurde nur "ist ein Ordner" geprüft. Was danach kommt, ist
+        # aber nicht harmlos: ps5_backport.kandidaten läuft rekursiv über den
+        # ganzen Baum, und die Sicherung kopiert ihn vollständig. Wer sich im
+        # Dialog vertut und einen Elternordner erwischt, löst damit einiges
+        # aus - ohne dass vorher jemand nachgefragt hätte.
+        #
+        # Über den vorhandenen Helfer, nicht über eine eigene Abfrage: Er
+        # lässt auch einen Dump ohne param.json durch, solange eine eboot.bin
+        # dasteht - und genau die ist es, um die es dem Backport geht.
+        if not self._looks_like_dump_folder(ordner):
+            if not messagebox.askyesno(
+                    self._t("backport.kein_dump_title"),
+                    self._t("backport.kein_dump_message", path=ordner),
+                    parent=self.root, default="no"):
+                return
         self._remember_source_dialog_path(ordner)
         self._render_backport_window(ordner)
 
@@ -32192,13 +32237,50 @@ class PS5ConverterGUI:
             return ps5_backport.FIRMWARE_STANDARD
 
         def _analysieren() -> None:
-            """Liest jede Datei und zeigt ihr aktuelles SDK - ohne etwas zu ändern."""
+            """Liest jede Datei und zeigt ihr aktuelles SDK - ohne etwas zu ändern.
+
+            Der Lesevorgang läuft im Arbeitsfaden. Bis v1.9.5 stand er im
+            Oberflächenfaden, und zwar mit ``fh.read()`` je Datei: Bei einem
+            PS5-Dump sind das die eboot.bin und jede .prx/.sprx des ganzen
+            Baums, zusammen leicht mehrere hundert MB. Das Fenster stand
+            derweil und zeigte "Bereit." – beim Öffnen und noch einmal bei
+            jedem Wechsel der Ziel-Firmware.
+            """
+            if laeuft["aktiv"]:
+                return
+            laeuft["aktiv"] = True
+            analyse_btn.configure(state="disabled")
+            start_btn.configure(state="disabled")
             baum.delete(*baum.get_children())
             zeilen.clear()
+            stand_var.set(self._t("backport.state_analysing"))
+            threading.Thread(target=_analyse_lauf, daemon=True,
+                             name="backport-analyse").start()
+
+        def _analyse_fertig(gesammelt: list, offen: int, leer: bool) -> None:
+            """Im Fensterfaden: die Zeilen einsetzen und wieder freigeben."""
+            laeuft["aktiv"] = False
+            try:
+                analyse_btn.configure(state="normal")
+                start_btn.configure(state="normal")
+            except tk.TclError:
+                return                      # Fenster schon zu
+            if leer:
+                stand_var.set(self._t("backport.state_nothing_found"))
+                return
+            for pfad, werte in gesammelt:
+                zeilen[pfad] = baum.insert("", "end", values=werte)
+            stand_var.set(self._t("backport.state_analysed",
+                                  total=len(gesammelt), pending=offen,
+                                  fw=f"{_ziel_firmware()}.00"))
+
+        def _analyse_lauf() -> None:
+            """Im Arbeitsfaden: lesen und einordnen, nichts an Tk anfassen."""
+            gesammelt: list = []
             ziel_ps5, _ziel_ps4 = ps5_backport.sdk_paar(_ziel_firmware())
             dateien = ps5_backport.kandidaten(ordner)
             if not dateien:
-                stand_var.set(self._t("backport.state_nothing_found"))
+                self._spaeter_im_fenster(win, _analyse_fertig, [], 0, True)
                 return
             offen = 0
             for pfad in dateien:
@@ -32207,8 +32289,7 @@ class PS5ConverterGUI:
                     with open(pfad, "rb") as fh:
                         anfang = fh.read(1 << 16)
                 except OSError as exc:
-                    iid = baum.insert("", "end", values=(rel, "—", "—", str(exc)[:60]))
-                    zeilen[pfad] = iid
+                    gesammelt.append((pfad, (rel, "—", "—", str(exc)[:60])))
                     continue
                 typ = ps5_backport.dateityp(anfang)
                 sdk_text = "—"
@@ -32231,12 +32312,9 @@ class PS5ConverterGUI:
                         status = self._t("backport.row_no_sdk")
                     except (ps5_backport.BackportFehler, OSError) as exc:
                         status = self._t("backport.row_unreadable", error=str(exc)[:50])
-                iid = baum.insert("", "end", values=(
-                    rel, self._t(f"backport.type_{typ}"), sdk_text, status))
-                zeilen[pfad] = iid
-            stand_var.set(self._t("backport.state_analysed",
-                                  total=len(dateien), pending=offen,
-                                  fw=f"{_ziel_firmware()}.00"))
+                gesammelt.append((pfad, (
+                    rel, self._t(f"backport.type_{typ}"), sdk_text, status)))
+            self._spaeter_im_fenster(win, _analyse_fertig, gesammelt, offen, False)
 
         def _starten() -> None:
             if laeuft["aktiv"]:
@@ -32255,12 +32333,21 @@ class PS5ConverterGUI:
                             fw=f"{firmware}.00"),
                     parent=win, default="no"):
                 return
+            # Der Platz für die Sicherung wird HIER geprüft, nicht im
+            # Arbeitsfaden: Die Rückfrage ist ein Dialog, und der gehört in
+            # den Hauptstrang.
+            sichern = sicherung_var.get()
+            if sichern:
+                antwort = self._backport_platz_pruefen(ordner, win)
+                if antwort is None:
+                    return                      # abgebrochen
+                sichern = antwort               # False = ohne Sicherung weiter
             laeuft["aktiv"] = True
             start_btn.configure(state="disabled")
             analyse_btn.configure(state="disabled")
             threading.Thread(
                 target=self._backport_worker,
-                args=(ordner, firmware, sicherung_var.get(), libs_var.get(),
+                args=(ordner, firmware, sichern, libs_var.get(),
                       libc_var.get(), baum, zeilen, stand_var, laeuft,
                       start_btn, analyse_btn, win, deckung_var.get()),
                 daemon=True).start()
@@ -32337,6 +32424,52 @@ class PS5ConverterGUI:
                 + (" \u2026" if len(bericht["unbeteiligt"]) > 12 else "")))
         self._append_to_log("")
 
+    def _backport_platz_pruefen(self, ordner: str, win) -> "bool | None":
+        """Reicht der Platz für die Sicherung des Dump-Ordners?
+
+        Die Sicherung ist eine vollständige Kopie **neben** dem Dump – bei
+        einem PS5-Spiel also 40 bis 100 GB ein zweites Mal. Bis v1.9.5 lief
+        ``shutil.copytree`` ungeprüft los; ging der Platz mittendrin aus,
+        blieb ein halb gefüllter Ordner liegen, den niemand sucht, und der
+        Lauf brach ab.
+
+        Gefragt wird im Hauptstrang, nicht im Arbeitsfaden: Ein Dialog von
+        dort aus wäre der Fehler, den dieses Programm an mehreren Stellen
+        schon gemacht hat.
+
+        Args:
+            ordner: Der Dump-Ordner, der gesichert werden soll.
+            win:    Elternfenster für die Rückfrage.
+
+        Returns:
+            ``True``  – sichern, der Platz reicht;
+            ``False`` – ohne Sicherung fortfahren (der Anwender hat zugestimmt);
+            ``None``  – abbrechen.
+        """
+        ziel = os.path.dirname(os.path.abspath(ordner)) or "."
+        try:
+            noetig = self._get_path_size(ordner)
+            frei = shutil.disk_usage(ziel).free
+        except OSError as exc:
+            # Nicht messbar heißt nicht "zu wenig": Ein Netzlaufwerk oder ein
+            # eingehängtes Abbild kann die Auskunft verweigern. Dann bleibt es
+            # beim bisherigen Verhalten - der Lauf versucht es.
+            logger.debug("Platz für die Sicherung nicht prüfbar (%s): %s", ziel, exc)
+            return True
+        # Etwas Luft: Dateisysteme brauchen Verwaltungsblöcke, und ein
+        # randvoller Datenträger macht auch dem laufenden System Ärger.
+        if frei >= noetig * 1.05:
+            return True
+        self._append_to_log(self._t(
+            "backport.log_space_short", frei=self._fmt_bytes(frei),
+            noetig=self._fmt_bytes(noetig), pfad=ziel) + chr(10))
+        weiter = messagebox.askyesno(
+            self._t("backport.space_title"),
+            self._t("backport.space_message", frei=self._fmt_bytes(frei),
+                    noetig=self._fmt_bytes(noetig), pfad=ziel),
+            parent=win, default="no")
+        return False if weiter else None
+
     def _backport_worker(self, ordner: str, firmware: int, sicherung: bool,
                          libs: bool, libc: bool, baum, zeilen: dict,
                          stand_var, laeuft: dict, start_btn, analyse_btn,
@@ -32376,6 +32509,9 @@ class PS5ConverterGUI:
                 sicherungsordner = os.path.join(
                     os.path.dirname(ordner),
                     f"{os.path.basename(ordner)}_backup_{marke}")
+                # Ob der Platz reicht, ist vor dem Start dieses Fadens geprüft
+                # worden (_backport_platz_pruefen) - eine Rückfrage gehört in
+                # den Hauptstrang, nicht hierher.
                 stand(self._t("backport.state_backup", path=sicherungsordner))
                 self._append_to_log(self._t("backport.log_backup", path=sicherungsordner))
                 shutil.copytree(ordner, sicherungsordner)
@@ -32493,8 +32629,30 @@ class PS5ConverterGUI:
             # spaeter in der Tk-Schleife und fiele dann auf NameError - die
             # Fehlermeldung erschien nie, die Statuszeile blieb stehen.
             meldung = self._t("backport.state_error", error=str(exc)[:80])
+            # Bis v1.9.5 blieb es bei dieser einen Zeile in der Statuszeile.
+            # Der Erfolgsfall zeigt einen Dialog UND schreibt ins Protokoll -
+            # ausgerechnet der Fehlschlag tat beides nicht. Wer wegsah,
+            # bemerkte ihn nicht: Die Zeile verschwindet beim naechsten Lauf,
+            # und der halb bearbeitete Dump sieht von aussen aus wie ein
+            # fertiger.
+            self._append_to_log(meldung + chr(10))
+            # Ein angefangener Sicherungsordner gehoert benannt. Er kann
+            # Dutzende GB belegen, und niemand sucht ihn neben dem Spiel.
+            rest = sicherungsordner if sicherungsordner and os.path.isdir(
+                sicherungsordner) else ""
+            if rest:
+                self._append_to_log(
+                    self._t("backport.log_backup_rest", path=rest) + chr(10))
+
+            def _fehlermeldung() -> None:
+                messagebox.showerror(
+                    self._t("backport.error_title"),
+                    self._t("backport.error_message", error=str(meldung),
+                            rest=rest or self._t("backport.no_backup")),
+                    parent=win if win.winfo_exists() else self.root)
             try:
                 self.root.after(0, lambda: stand_var.set(meldung))
+                self.root.after(0, _fehlermeldung)
             except Exception:
                 pass
         finally:

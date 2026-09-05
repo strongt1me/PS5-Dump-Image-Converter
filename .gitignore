@@ -76,3 +76,6 @@ coverage.json
 # damit eine aus einer alten Fassung uebrig gebliebene Datei nicht doch noch
 # eingecheckt wird.
 ip.ini
+
+# Sicherungen der config.ini von der Konsole - Anwenderdaten, kein Quelltext.
+"SMP Config.ini Backup"/

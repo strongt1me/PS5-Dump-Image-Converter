@@ -709,12 +709,42 @@ class FakelibOrdnerwahlTests(unittest.TestCase):
         self.assertNotIn('"fakelib")', self.quelle.replace(
             'ps5_backport.FAKELIB_ORDNER', ""))
 
-    def test_kollisionswarnung_nennt_den_gewinner(self) -> None:
+    def test_kollisionswarnung_nennt_keinen_festen_gewinner(self) -> None:
+        """Welcher Ordner wirkt, haengt von der ShadowMount+-Fassung ab.
+
+        Bis v1.9.5 stand hier fest: "ShadowMount+ haengt nur fakelib2 ein;
+        was in fakelib liegt, wirkt nicht." Das gilt im **Spielordner** nur
+        bis alpha6 - ab alpha8 ist es dort genau umgekehrt, fakelib2 wird
+        wortlos ignoriert (siehe shadowmount_generation.GENERATIONEN:
+        spiel_fakelib2_wirkt). Der Backport legt in den Spielordner ab. Wer
+        der alten Warnung folgte, entfernte also den Ordner, der wirkt.
+
+        Der Text nennt jetzt beide Faelle - die Aufzaehlung kommt aus
+        shadowmount_generation, nicht aus dem Text selbst.
+        """
         from ps5_validator.utils.i18n import STRINGS
         for sprache in ("de", "en"):
             text = STRINGS["fakelib.collision_warning"][sprache]
             self.assertIn("{v0}", text)
-            self.assertIn("{v1}", text)
+            # Kein zweiter Platzhalter mehr: Die alte Fassung setzte damit
+            # Gewinner und Verlierer ein.
+            self.assertNotIn("{v1}", text)
+            self.assertNotIn("nur fakelib2", text)
+            self.assertNotIn("only fakelib2", text)
+
+    def test_die_kollisionswarnung_fragt_die_generationen(self) -> None:
+        """Sie darf die Regel nicht selbst kennen - das Modul kennt sie."""
+        import ast
+        baum = ast.parse(self.quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_fakelib_kollision")
+        aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(methode)
+                   if isinstance(k, ast.Call)]
+        self.assertIn("_ampr_ablage_pruefen", aufrufe,
+                      "Die Warnung baut ihre Aussage wieder selbst - dann "
+                      "laeuft sie beim naechsten Fassungswechsel wieder aus "
+                      "dem Ruder.")
 
     def test_texte_sind_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS

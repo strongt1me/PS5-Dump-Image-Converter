@@ -234,8 +234,31 @@ class SicherungTests(unittest.TestCase):
 class SicherungsortTests(unittest.TestCase):
     """Zwei Orte, weil der erste schreibgeschuetzt sein kann."""
 
-    def test_es_gibt_mehr_als_einen_ort(self):
-        orte = APP.PS5ConverterGUI._smp_sicherungsorte()
+    def test_im_testlauf_wird_nicht_neben_das_programm_geschrieben(self):
+        """Sonst legt ein Testlauf echte Sicherungen im Projektordner ab.
+
+        Genau das ist am 05.09.2026 passiert: test_shadowmount_editor setzt
+        ``messagebox.askyesno`` auf ``True`` und beantwortet damit auch die
+        Frage nach der Sicherung. Acht .bak-Dateien lagen danach neben dem
+        Quelltext. Der erste Ort ist aus der Quelle gestartet nun einmal der
+        Projektordner.
+        """
+        projekt = os.path.normcase(str(PROJEKT))
+        for ort in APP.PS5ConverterGUI._smp_sicherungsorte():
+            with self.subTest(ort=ort):
+                self.assertNotEqual(projekt,
+                                    os.path.normcase(os.path.dirname(ort)),
+                                    "Ein Testlauf wuerde hier schreiben.")
+
+    def test_ausserhalb_des_testlaufs_gibt_es_beide_orte(self):
+        """Die Gegenrichtung - sonst waere die Sperre oben zu grob.
+
+        Im echten Betrieb muss der Ort neben dem Programm bestehen bleiben:
+        Wer die EXE weitergibt, findet seine Sicherungen daneben.
+        """
+        from unittest import mock
+        with mock.patch.object(APP, "_IM_TESTLAUF", False):
+            orte = APP.PS5ConverterGUI._smp_sicherungsorte()
         self.assertGreaterEqual(len(orte), 2,
                                 "Unter Programme\\ ist der erste Ort nicht "
                                 "beschreibbar - dann braucht es den zweiten.")
