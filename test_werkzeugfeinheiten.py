@@ -308,3 +308,74 @@ class PkgMergerKennungTests(_Quelltext):
                     gesehen += 1
         self.assertTrue(gesehen, "Kein insert mit iid gefunden - die Pruefung "
                                  "greift nicht mehr.")
+
+
+class KlogZeitstempelTests(_Quelltext):
+    """Die Empfangszeit muss beim Empfang festgehalten werden.
+
+    Der Zeitstempel entstand erst beim Zeichnen (``datetime.now()`` in
+    ``_formatted``), gespeichert wurde nur die nackte Zeile. ``_reapply_filter``
+    haengt an ``filter_var.trace_add`` und zeichnet bei **jedem Tastendruck**
+    im Filterfeld alles neu - danach trugen alle laengst empfangenen Zeilen die
+    aktuelle Uhrzeit. In einem Kernel-Protokoll ist gerade der zeitliche
+    Zusammenhang das, weswegen man hineinsieht.
+    """
+
+    def test_die_zeit_wird_nicht_beim_zeichnen_gebildet(self) -> None:
+        fenster = self._methode("_show_klog_window")
+        formatiert = [f for f in ast.walk(fenster)
+                      if isinstance(f, ast.FunctionDef) and f.name == "_formatted"]
+        self.assertEqual(1, len(formatiert), "_formatted wurde umbenannt.")
+        jetzt = [k.lineno for k in ast.walk(formatiert[0])
+                 if isinstance(k, ast.Call)
+                 and getattr(k.func, "attr", "") == "now"]
+        self.assertEqual(
+            [], jetzt,
+            "Zeile(n) %s bilden die Zeit erst beim Zeichnen - beim Filtern "
+            "bekommt dann jede alte Zeile die aktuelle Uhrzeit." % jetzt)
+
+    def test_die_zeit_kommt_als_wert_herein(self) -> None:
+        fenster = self._methode("_show_klog_window")
+        formatiert = next(f for f in ast.walk(fenster)
+                          if isinstance(f, ast.FunctionDef) and f.name == "_formatted")
+        namen = [a.arg for a in formatiert.args.args]
+        self.assertIn("zeit", namen,
+                      "_formatted bekommt die Empfangszeit nicht uebergeben.")
+
+    def test_gespeichert_wird_zeile_und_zeit(self) -> None:
+        fenster = self._methode("_show_klog_window")
+        gerendert = next(f for f in ast.walk(fenster)
+                         if isinstance(f, ast.FunctionDef) and f.name == "_render_line")
+        angehaengt = [k for k in ast.walk(gerendert)
+                      if isinstance(k, ast.Call)
+                      and getattr(k.func, "attr", "") == "append"]
+        self.assertTrue(angehaengt, "Es wird nichts mehr gespeichert.")
+        for k in angehaengt:
+            with self.subTest(zeile=k.lineno):
+                self.assertTrue(
+                    k.args and isinstance(k.args[0], ast.Tuple),
+                    "Zeile %d speichert wieder nur die nackte Zeile - die "
+                    "Empfangszeit ist damit verloren." % k.lineno)
+
+
+class BibliothekQuelleTests(_Quelltext):
+    """Die Sammelauswahl muss mit zurueckgesetzt werden.
+
+    Aufgabe 5 arbeitet nicht mit ``source_path``, sondern mit
+    ``_batch_sources``. Wer dort mehrere Dateien gewaehlt hatte und danach aus
+    der Bibliothek einen Eintrag als Quelle uebernahm, sah im Quellfeld die
+    neue Datei - konvertiert wurden beim Start aber weiter die alten. Das Feld
+    log damit ueber das, was wirklich geschieht.
+    """
+
+    def test_die_uebernahme_raeumt_die_sammelauswahl(self) -> None:
+        fenster = self._methode("_render_library_window")
+        nehmen = [f for f in ast.walk(fenster)
+                  if isinstance(f, ast.FunctionDef) and f.name == "_use_as_source"]
+        self.assertEqual(1, len(nehmen), "_use_as_source wurde umbenannt.")
+        raeumt = [k for k in ast.walk(nehmen[0])
+                  if isinstance(k, ast.Attribute) and k.attr == "_batch_sources"]
+        self.assertTrue(
+            raeumt,
+            "_use_as_source laesst _batch_sources stehen - Aufgabe 5 "
+            "konvertiert danach die alten Dateien weiter.")

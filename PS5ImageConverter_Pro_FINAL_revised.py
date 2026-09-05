@@ -26999,6 +26999,13 @@ class PS5ConverterGUI:
             item = item_by_iid.get(sel[0])
             if item is None:
                 return
+            # Die Sammelauswahl mit zuruecksetzen - genau wie der regulaere
+            # Quelle-Dialog. Aufgabe 5 arbeitet nicht mit source_path, sondern
+            # mit _batch_sources: Wer vorher dort mehrere Dateien gewaehlt
+            # hatte und danach hier einen Eintrag uebernahm, sah im Quellfeld
+            # die neue Datei - konvertiert wurden beim Start aber weiter die
+            # alten. Das Feld log dann ueber das, was wirklich geschieht.
+            self._batch_sources = []
             self.source_path.set(item["path"])
             win.destroy()
 
@@ -33104,17 +33111,27 @@ class PS5ConverterGUI:
             query = filter_var.get().strip().lower()
             return not query or query in line.lower()
 
-        def _formatted(line: str) -> str:
+        def _formatted(line: str, zeit: str) -> str:
+            """Die Zeile mit ihrer Empfangszeit - die kommt herein.
+
+            Vorher stand hier ``datetime.now()``, und gespeichert wurde nur
+            die nackte Zeile. Sobald der Anwender im Filterfeld tippte,
+            zeichnete ``_reapply_filter`` alles neu - und jede laengst
+            empfangene Zeile trug danach die aktuelle Uhrzeit. In einem
+            Kernel-Protokoll ist gerade der zeitliche Zusammenhang das,
+            weswegen man hineinsieht.
+            """
             if timestamps_var.get():
-                return f"{datetime.datetime.now().strftime('%H:%M:%S')}  {line}"
+                return "%s  %s" % (zeit, line)
             return line
 
         def _render_line(line: str) -> None:
-            state["lines"].append(line)
+            zeit = datetime.datetime.now().strftime("%H:%M:%S")
+            state["lines"].append((zeit, line))
             if not _matches_filter(line):
                 return
             console.configure(state="normal")
-            console.insert("end", _formatted(line) + "\n", _classify(line))
+            console.insert("end", _formatted(line, zeit) + "\n", _classify(line))
             console.configure(state="disabled")
             if autoscroll_var.get():
                 console.see("end")
@@ -33122,9 +33139,10 @@ class PS5ConverterGUI:
         def _reapply_filter(*_a) -> None:
             console.configure(state="normal")
             console.delete("1.0", "end")
-            for line in state["lines"]:
+            for zeit, line in state["lines"]:
                 if _matches_filter(line):
-                    console.insert("end", _formatted(line) + "\n", _classify(line))
+                    console.insert("end", _formatted(line, zeit) + "\n",
+                                   _classify(line))
             console.configure(state="disabled")
             if autoscroll_var.get():
                 console.see("end")
@@ -33232,7 +33250,11 @@ class PS5ConverterGUI:
                 return
             try:
                 with open(path, "w", encoding="utf-8") as f:
-                    f.write("\n".join(state["lines"]) + "\n")
+                    # Mit der Empfangszeit, wenn sie auch im Fenster steht -
+                    # sonst traegt die gespeicherte Datei weniger als der
+                    # Schirm, und gerade dafuer speichert man sie.
+                    f.write("\n".join(_formatted(zeile, zeit)
+                                      for zeit, zeile in state["lines"]) + "\n")
             except OSError as exc:
                 messagebox.showerror(self._t("dialog.title.export_failed"), str(exc), parent=win)
 
@@ -35213,14 +35235,31 @@ class PS5ConverterGUI:
     _PS5_AUTOLOAD_PAUSE = "!2000"
 
     def _show_klog_window_geprueft(self) -> None:
-        """Der Knopf KLOG: erst pruefen, ob klogsrv laeuft, dann das Fenster."""
-        try:
-            self._klog_vorbereiten()
-        except Exception as exc:
-            # Die Vorabpruefung darf das Fenster niemals verhindern - sie ist
-            # eine Hilfe, kein Tor.
-            logger.warning("KLOG-Vorabprüfung fehlgeschlagen: %s", exc)
+        """Der Knopf KLOG: Fenster sofort, Erreichbarkeit nebenher.
+
+        Bis zum 05.09.2026 lief die Vorabpruefung vollstaendig im Hauptstrang,
+        und zwar **bevor** das Fenster aufging: zwei Portpruefungen mit je
+        1,5 s. Ist die Konsole aus oder antwortet nicht, stand das Programm
+        nach dem Klick rund drei Sekunden still, ohne dass sich etwas zeigte.
+
+        Jetzt oeffnet das Fenster sofort und die Messung laeuft daneben. Das
+        passt auch besser zu dem, was der Docstring unten schon immer sagte:
+        Die Pruefung ist eine Hilfe, kein Tor.
+        """
         self._show_klog_window()
+
+        def _arbeiten() -> None:
+            try:
+                lage = self._klog_erreichbarkeit()
+            except Exception as exc:
+                # Sie darf das Fenster niemals verhindern.
+                logger.warning("KLOG-Vorabprüfung fehlgeschlagen: %s", exc)
+                return
+            if lage is not None:
+                self._spaeter_im_fenster(self.root, self._klog_anbieten, lage)
+
+        threading.Thread(target=_arbeiten, daemon=True,
+                         name="klog-vorabpruefung").start()
 
     def _auswahl_dialog(self, titel: str, frage: str, eintraege: list[str],
                         parent=None) -> str:
@@ -35267,21 +35306,60 @@ class PS5ConverterGUI:
         """Pfad zum mitgelieferten klogsrv - im Skript wie in der EXE."""
         return _bundled_resource("helloworld", self._KLOG_PAYLOAD)
 
-    def _klog_vorbereiten(self, parent=None) -> None:
-        """Prueft vor dem Oeffnen des KLOG-Fensters, ob klogsrv erreichbar ist.
+    def _klog_erreichbarkeit(self) -> dict | None:
+        """Misst, ob klogsrv antwortet - ohne Tk, also fadentauglich.
 
-        Reihenfolge: laeuft klogsrv, ist nichts zu tun. Antwortet der
-        Payload-Loader, wird das Senden angeboten. Schweigt auch der, bleibt der
-        Weg ueber einen USB-Datentraeger.
+        Hier stecken die langsamen Teile: zwei Portpruefungen mit je 1,5 s.
+        Deshalb ist dieses Stueck vom Anbieten getrennt; die Dialoge gehoeren
+        in den Hauptstrang, die Messung nicht.
+
+        Returns:
+            ``None``, wenn es nichts anzubieten gibt - keine Adresse, oder
+            klogsrv laeuft bereits. Sonst die Lage fuer :meth:`_klog_anbieten`.
         """
-        ip = self._ps5_ip()
+        # Dieselben Werte, mit denen das Fenster arbeitet - nicht die
+        # zentralen. Wer die Adresse nur im KLOG-Fenster eingetragen hat und
+        # nie in den Einstellungen, bekam die ganze Pruefung sonst nie zu
+        # sehen: Sie stieg bei leerem zentralen Wert wortlos aus. Und wich der
+        # dort gespeicherte Port vom zentralen ab, urteilte sie ueber den
+        # falschen - bot also das Senden an, obwohl klogsrv laengst lief.
+        ip = self._ps5_wert_oder_zentral("klog_ip", self._ps5_ip())
         if not ip:
-            return
-        klog_port = self._ps5_klog_port()
+            return None
+        klog_port = self._ps5_wert_oder_zentral("klog_port", self._ps5_klog_port())
         if self._ps5_port_open(ip, klog_port):
-            return
+            return None
 
         elf = self._klog_payload_pfad()
+        return {
+            "ip": ip,
+            "klog_port": klog_port,
+            "elf": elf,
+            # Nur fragen, wenn es ueberhaupt etwas zu senden gibt.
+            "loader": bool(elf) and self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT),
+        }
+
+    def _klog_vorbereiten(self, parent=None) -> None:
+        """Misst und bietet an - der Weg fuer Aufrufer, die warten duerfen.
+
+        Der Knopf KLOG geht seit dem 05.09.2026 nicht mehr hier entlang: Er
+        oeffnet das Fenster sofort und laesst :meth:`_klog_erreichbarkeit` im
+        Arbeitsfaden laufen. Diese Zusammenfassung bleibt fuer alles, was die
+        Wartezeit nicht stoert.
+        """
+        lage = self._klog_erreichbarkeit()
+        if lage is not None:
+            self._klog_anbieten(lage, parent=parent)
+
+    def _klog_anbieten(self, lage: dict, parent=None) -> None:
+        """Bietet an, was die Messung ergeben hat - im Hauptstrang.
+
+        Reihenfolge: Antwortet der Payload-Loader, wird das Senden angeboten.
+        Schweigt auch der, bleibt der Weg ueber einen USB-Datentraeger.
+        """
+        ip = lage["ip"]
+        klog_port = lage["klog_port"]
+        elf = lage["elf"]
         if not elf:
             messagebox.showwarning(
                 self._t("klog.preflight.title"),
@@ -35290,7 +35368,10 @@ class PS5ConverterGUI:
             return
         name = os.path.basename(elf)
 
-        if self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT):
+        # Das Ergebnis der Messung, nicht noch einmal fragen: Die zweite
+        # Portpruefung stand frueher hier und kostete im Hauptstrang weitere
+        # 1,5 s, bevor sich ueberhaupt etwas zeigte.
+        if lage["loader"]:
             if not messagebox.askyesno(
                     self._t("klog.preflight.title"),
                     self._t("klog.preflight.send_over_loader", ip=ip, port=klog_port,

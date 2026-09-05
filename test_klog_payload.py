@@ -161,17 +161,92 @@ class QuelltextTests(unittest.TestCase):
         self.assertNotIn('self._werkzeugknopf("_show_klog_window")', self.text)
         self.assertNotIn("command=self._show_klog_window,", self.text)
 
+    def _methode(self, name):
+        """Die Methode aus PS5ConverterGUI - ueber den Syntaxbaum.
+
+        Frueher stand hier ein fester Zeichenausschnitt (``[stelle:stelle+700]``).
+        Der haelt nicht: Ein laengerer Erklaertext schob die gesuchte Zeile aus
+        dem Fenster heraus, und die Pruefung fiel, obwohl nichts kaputt war -
+        am 05.09.2026 genau so passiert.
+        """
+        import ast
+
+        baum = ast.parse(self.text)
+        klasse = next(k for k in baum.body
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        for k in klasse.body:
+            if isinstance(k, ast.FunctionDef) and k.name == name:
+                return k
+        self.fail("Methode %s nicht gefunden" % name)
+
     def test_pruefung_darf_das_fenster_nicht_verhindern(self):
-        stelle = self.text.index("def _show_klog_window_geprueft")
-        block = self.text[stelle:stelle + 700]
-        self.assertIn("try:", block)
-        self.assertIn("self._show_klog_window()", block)
+        """Das Fenster geht auf, egal was die Messung ergibt."""
+        import ast
+
+        knopf = self._methode("_show_klog_window_geprueft")
+        oeffnet = [k for k in ast.walk(knopf)
+                   if isinstance(k, ast.Call)
+                   and getattr(k.func, "attr", "") == "_show_klog_window"]
+        self.assertTrue(oeffnet, "Das Fenster wird gar nicht mehr geoeffnet.")
+        faengt = [k for k in ast.walk(knopf) if isinstance(k, ast.Try)]
+        self.assertTrue(faengt,
+                        "Eine Ausnahme der Messung reisst wieder alles mit.")
+
+    def test_die_messung_blockiert_den_hauptstrang_nicht(self):
+        """Zwei Portpruefungen mit je 1,5 s gehoeren nicht vor das Fenster.
+
+        Bis zum 05.09.2026 lief die ganze Vorabpruefung im Hauptstrang, und
+        zwar bevor das Fenster aufging: Ist die Konsole aus, stand das
+        Programm nach dem Klick rund drei Sekunden still.
+        """
+        import ast
+
+        knopf = self._methode("_show_klog_window_geprueft")
+        faeden = [k for k in ast.walk(knopf)
+                  if isinstance(k, ast.Call)
+                  and getattr(k.func, "attr", "") == "Thread"]
+        self.assertTrue(faeden, "Die Messung laeuft wieder im Hauptstrang.")
+        # Und die Messung selbst darf kein Tk anfassen.
+        messung = self._methode("_klog_erreichbarkeit")
+        dialoge = [k.lineno for k in ast.walk(messung)
+                   if isinstance(k, ast.Call)
+                   and getattr(getattr(k.func, "value", None), "id", "") == "messagebox"]
+        self.assertEqual([], dialoge,
+                         "Zeile(n) %s zeigen einen Dialog aus dem Arbeitsfaden."
+                         % dialoge)
+
+    def test_die_messung_nimmt_die_werte_des_fensters(self):
+        """Nicht die zentralen - sonst urteilt sie ueber etwas anderes.
+
+        Das KLOG-Fenster arbeitet mit eigenen Werten (``klog_ip``,
+        ``klog_port``) und speichert sie beim Verbinden selbst. Die Messung
+        las bis zum 05.09.2026 nur die zentralen: Wer die Adresse allein im
+        Fenster eingetragen hatte, bekam die Pruefung nie zu sehen - sie stieg
+        bei leerem zentralen Wert wortlos aus. Und wich der dort gespeicherte
+        Port ab, bot sie das Senden an, obwohl klogsrv laengst lief.
+        """
+        import ast
+
+        messung = ast.unparse(self._methode("_klog_erreichbarkeit"))
+        for schluessel in ("klog_ip", "klog_port"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(
+                    "_ps5_wert_oder_zentral(%r" % schluessel, messung,
+                    "%s wird nicht ueber den Fensterwert geholt." % schluessel)
 
     def test_reihenfolge_klog_dann_loader_dann_usb(self):
-        stelle = self.text.index("def _klog_vorbereiten")
-        block = self.text[stelle:stelle + 3000]
-        self.assertLess(block.index("_ps5_klog_port"), block.index("_PAYLOAD_SEND_PORT"))
-        self.assertLess(block.index("_PAYLOAD_SEND_PORT"), block.index("_klog_auf_usb_ablegen"))
+        """Erst klogsrv, dann der Loader, dann USB - jetzt ueber zwei Methoden."""
+        import ast
+
+        messung = ast.unparse(self._methode("_klog_erreichbarkeit"))
+        self.assertLess(messung.index("_ps5_klog_port"),
+                        messung.index("_PAYLOAD_SEND_PORT"),
+                        "klogsrv muss zuerst gefragt werden - laeuft er, gibt "
+                        "es nichts anzubieten.")
+        anbieten = ast.unparse(self._methode("_klog_anbieten"))
+        self.assertLess(anbieten.index("_PAYLOAD_SEND_PORT"),
+                        anbieten.index("_klog_auf_usb_ablegen"),
+                        "Der USB-Weg ist der letzte Ausweg, nicht der erste.")
 
 
 class UebersetzungTests(unittest.TestCase):
