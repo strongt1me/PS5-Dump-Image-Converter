@@ -182,3 +182,129 @@ class CreditsLeisteTests(_Quelltext):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class ParamEditorTests(_Quelltext):
+    """Zwei Wege, auf denen der Editor Arbeit verlor."""
+
+    def test_entfernen_leert_auch_das_schnellfeld(self) -> None:
+        """Sonst schreibt _save den alten Wert wieder zurueck.
+
+        Die Zeile verschwand aus der Tabelle, stand in der gespeicherten Datei
+        aber weiterhin drin - und zwar bei genau den Schluesseln, die man am
+        ehesten von Hand entfernt: titleId, contentId, applicationDrmType,
+        contentVersion.
+        """
+        editor = self._methode("_render_param_manifest_editor")
+        entfernen = [f for f in ast.walk(editor)
+                     if isinstance(f, ast.FunctionDef) and f.name == "_remove_row"]
+        self.assertEqual(1, len(entfernen), "_remove_row wurde umbenannt.")
+        fasst_an = [k for k in ast.walk(entfernen[0])
+                    if isinstance(k, ast.Name) and k.id == "quick_keys"]
+        self.assertTrue(
+            fasst_an,
+            "_remove_row laesst die Schnellfelder unberuehrt - _save schreibt "
+            "den alten Wert dann wieder nach data zurueck.")
+
+    def test_schliessen_fragt_bei_ungespeicherten_aenderungen(self) -> None:
+        """Vorher rief der Knopf blank win.destroy."""
+        editor = self._methode("_render_param_manifest_editor")
+        namen = {f.name for f in ast.walk(editor)
+                 if isinstance(f, ast.FunctionDef)}
+        self.assertIn("_beim_schliessen", namen,
+                      "Es gibt keinen eigenen Schliessweg mehr.")
+        self.assertIn("_etwas_geaendert", namen,
+                      "Ohne Vergleich weiss das Fenster nicht, ob es fragen muss.")
+
+        # Vorhanden zu sein genuegt nicht - der Weg muss auch benutzt werden.
+        # Beim Schreiben dieser Pruefung gemessen: Setzt man den Knopf wieder
+        # auf win.destroy und nimmt das protocol heraus, blieb die Fassung,
+        # die nur die Funktionsnamen abfragte, gruen.
+        knopf_faellt_darauf = [
+            k for k in ast.walk(editor)
+            if isinstance(k, ast.Call)
+            and getattr(k.func, "attr", "") == "Button"
+            and any(w.arg == "command"
+                    and getattr(w.value, "id", "") == "_beim_schliessen"
+                    for w in k.keywords)]
+        self.assertTrue(
+            knopf_faellt_darauf,
+            "Kein Knopf ruft _beim_schliessen - der Schliessknopf geht wieder "
+            "an der Rueckfrage vorbei.")
+
+        # Und das Fensterkreuz muss denselben Weg nehmen; der Umschalter in
+        # der Titelleiste geht ueber dieses Protokoll.
+        protokoll = [
+            k for k in ast.walk(editor)
+            if isinstance(k, ast.Call)
+            and getattr(k.func, "attr", "") == "protocol"
+            and any(isinstance(a, ast.Constant) and a.value == "WM_DELETE_WINDOW"
+                    for a in k.args)
+            and any(getattr(a, "id", "") == "_beim_schliessen" for a in k.args)]
+        self.assertTrue(protokoll,
+                        "WM_DELETE_WINDOW zeigt nicht auf _beim_schliessen - "
+                        "ueber das Kreuz geht die Arbeit kommentarlos verloren.")
+
+    def test_die_rueckfrage_gibt_es_zweisprachig(self) -> None:
+        for name in ("param_manifest.discard_title",
+                     "param_manifest.discard_message"):
+            with self.subTest(schluessel=name):
+                self.assertIn(name, STRINGS)
+                for sprache in ("de", "en"):
+                    self.assertTrue(STRINGS[name].get(sprache, "").strip())
+
+
+class PkgMergerKennungTests(_Quelltext):
+    """Ein leerer Basisname zerlegte den Fensteraufbau.
+
+    ``_try_parse_name`` liefert fuer eine Datei namens ``_0.pkg`` das Paar
+    ``("", "0")``. Ein leeres ``iid`` ist in Tk die Wurzel des Baums;
+    ``insert()`` quittiert das mit ``TclError: Item  already exists``, und der
+    Aufbau brach mitten in der Schleife ab - Kopfzeile ohne Liste, ohne
+    Knopfreihe.
+    """
+
+    def test_ein_leerer_basisname_kommt_wirklich_vor(self) -> None:
+        """Ohne das waere die Behebung unten grundlos."""
+        from ps5_validator.utils.pkg_merger import _try_parse_name
+
+        self.assertEqual(("", "0"), _try_parse_name("_0.pkg"))
+
+    def test_tk_lehnt_ein_leeres_iid_ab(self) -> None:
+        """Die Gegenprobe zur Behebung - gemessen, nicht angenommen."""
+        try:
+            import tkinter as tk
+            from tkinter import ttk
+        except Exception:                        # pragma: no cover
+            self.skipTest("Ohne Tk nicht pruefbar")
+        wurzel = tk._default_root or tk.Tk()
+        wurzel.withdraw()
+        baum = ttk.Treeview(wurzel, columns=("a",), show="headings")
+        try:
+            with self.assertRaises(tk.TclError):
+                baum.insert("", "end", iid="", values=("x",))
+        finally:
+            baum.destroy()
+
+    def test_die_kennung_kommt_nicht_mehr_aus_dem_namen(self) -> None:
+        # Die Tabelle wird in _render_pkg_merger_window gefuellt, nicht
+        # in _show_pkg_merger_dialog - jenes sucht nur die Saetze.
+        fenster = self._methode("_render_pkg_merger_window")
+        gesehen = 0
+        for aufruf in ast.walk(fenster):
+            if not (isinstance(aufruf, ast.Call)
+                    and getattr(aufruf.func, "attr", "") == "insert"):
+                continue
+            for wort in aufruf.keywords:
+                if wort.arg != "iid":
+                    continue
+                with self.subTest(zeile=aufruf.lineno):
+                    self.assertFalse(
+                        isinstance(wort.value, ast.Attribute)
+                        and wort.value.attr == "base_name",
+                        "Zeile %d nimmt wieder den Basisnamen als Kennung - "
+                        "ist er leer, bricht der Fensteraufbau ab."
+                        % aufruf.lineno)
+                    gesehen += 1
+        self.assertTrue(gesehen, "Kein insert mit iid gefunden - die Pruefung "
+                                 "greift nicht mehr.")

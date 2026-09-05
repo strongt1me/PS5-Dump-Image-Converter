@@ -26167,9 +26167,17 @@ class PS5ConverterGUI:
         tree.column("status", width=160, anchor="w")
         tree.grid(row=0, column=0, sticky="nsew")
 
-        for split_set in split_sets:
+        for nummer, split_set in enumerate(split_sets):
             status = self._t("pkg_merger.status_complete") if split_set.has_root else self._t("pkg_merger.status_incomplete")
-            tree.insert("", "end", iid=split_set.base_name, values=(
+            # Die laufende Nummer als Kennung, nicht den Basisnamen: Der
+            # kann leer sein - _try_parse_name liefert fuer eine Datei
+            # namens "_0.pkg" das Paar ("", "0"). Ein leeres iid ist in Tk
+            # aber die Wurzel des Baums, und insert() quittiert das mit
+            # "TclError: Item  already exists". Der Fensteraufbau brach
+            # dann mitten in der Schleife ab: Kopfzeile ohne Liste, ohne
+            # Knopfreihe. Nebenbei koennen so auch zwei Saetze mit
+            # gleichem Basisnamen nebeneinander stehen.
+            tree.insert("", "end", iid=str(nummer), values=(
                 split_set.base_name,
                 len(split_set.numbered),
                 self._t("common.yes") if split_set.meta else self._t("common.no"),
@@ -26239,7 +26247,7 @@ class PS5ConverterGUI:
 
             # Auswahl und Zuordnung noch hier festhalten: tree.selection() ist
             # ein Tk-Aufruf und hat im Arbeitsfaden nichts verloren.
-            by_name = {s.base_name: s for s in split_sets}
+            by_name = {str(i): s for i, s in enumerate(split_sets)}
             auftrag = list(selected)
 
             # Das Kennzeichen erst hier setzen, nicht schon ganz oben: Die
@@ -26260,9 +26268,16 @@ class PS5ConverterGUI:
 
             def _lauf() -> None:
                 try:
-                    for base_name in auftrag:
+                    for kennung in auftrag:
+                        # Der Name nur zum Melden. Er darf leer sein
+                        # ("_0.pkg"), deshalb ist die Kennung oben eine
+                        # laufende Nummer - und deshalb steht hier ein
+                        # Ersatztext statt eines leeren Anfuehrungspaars.
+                        satz = by_name.get(kennung)
+                        base_name = (getattr(satz, "base_name", "")
+                                     or self._t("pkg_merger.name_leer"))
                         try:
-                            split_set = by_name.get(base_name)
+                            split_set = satz
                             if split_set is None or not split_set.has_root:
                                 _melde(self._t("pkg_merger.log_skip", name=base_name))
                                 continue
@@ -26580,6 +26595,15 @@ class PS5ConverterGUI:
                 return
             for key in sel:
                 data.pop(key, None)
+                # Auch das Schnellfeld leeren, falls es eines gibt. Ohne das
+                # blieb der alte Wert in der StringVar stehen, und _save
+                # schreibt jede nicht leere Schnellfeld-Variable wieder nach
+                # data zurueck: Die Zeile verschwand aus der Tabelle, stand in
+                # der gespeicherten Datei aber weiterhin drin. Betroffen waren
+                # genau die Schluessel, die man am ehesten von Hand entfernt -
+                # titleId, contentId, applicationDrmType, contentVersion.
+                if key in quick_keys:
+                    quick_keys[key].set("")
             _refresh_tree()
 
         def _save() -> None:
@@ -26619,9 +26643,47 @@ class PS5ConverterGUI:
         ttk.Button(list_btn_row, text=self._t("param_manifest.edit_button"), command=_edit_row).pack(side="left", padx=(8, 0))
         ttk.Button(list_btn_row, text=self._t("param_manifest.remove_button"), command=_remove_row).pack(side="left", padx=(8, 0))
 
+        # Der Stand beim Oeffnen - zum Vergleich, wenn geschlossen wird.
+        #
+        # Ein "geaendert"-Kennzeichen waere bruechiger: Es muesste an jeder
+        # Aenderungsstelle gesetzt werden (Hinzufuegen, Bearbeiten, Entfernen,
+        # vier Schnellfelder), und eine vergessene Stelle faellt niemandem
+        # auf. Der Vergleich kann nichts uebersehen.
+        stand_beim_oeffnen = {
+            "daten": dict(data),
+            "schnell": {k: v.get() for k, v in quick_keys.items()},
+        }
+
+        def _etwas_geaendert() -> bool:
+            if dict(data) != stand_beim_oeffnen["daten"]:
+                return True
+            return ({k: v.get() for k, v in quick_keys.items()}
+                    != stand_beim_oeffnen["schnell"])
+
+        def _beim_schliessen() -> None:
+            """Fragt nach, wenn etwas bearbeitet und nicht gespeichert wurde.
+
+            Vorher rief der Knopf blank ``win.destroy``. Wer zwanzig Felder
+            bearbeitet hatte und dann auf "Schliessen" druckte - oder
+            versehentlich ein zweites Mal auf den Menueeintrag, der das
+            Fenster umschaltet -, verlor alles ohne ein Wort.
+            """
+            if _etwas_geaendert() and not messagebox.askyesno(
+                    self._t("param_manifest.discard_title"),
+                    self._t("param_manifest.discard_message"),
+                    parent=win, default="no"):
+                return
+            win.destroy()
+
+        # Auch ueber das Fensterkreuz und den Umschalter in der Titelleiste:
+        # Der zweite Druck dort geht ueber _fenster_schliessen und damit ueber
+        # dieses Protokoll.
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(btn_row, text=self._t("action.close"),
+                   command=_beim_schliessen).pack(side="right")
         ttk.Button(
             btn_row, text=self._t("param_manifest.save_as_button"),
             style="Accent.TButton", command=_save,
