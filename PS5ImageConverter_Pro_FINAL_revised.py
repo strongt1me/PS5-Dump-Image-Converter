@@ -29189,12 +29189,29 @@ class PS5ConverterGUI:
         tk.Label(kopf, textvariable=ort_var, font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left", padx=(6, 10))
 
+        def _ort_anzeigen(*_e) -> None:
+            """Frischt die Anzeige des Speicherorts auf.
+
+            Der Ort steht in den Einstellungen und laesst sich auch von dort
+            aendern oder zuruecksetzen, waehrend dieses Fenster offen ist.
+            Bis v1.9.5 wurde die Anzeige nur vom Knopf daneben nachgefuehrt -
+            danach stand hier ein Pfad, den es nicht mehr gab.
+            """
+            ort_var.set(self._download_basis() or self._t("downloads.storage_none"))
+
         def _ort_aendern() -> None:
-            neu = self._download_basis_waehlen(win)
-            if neu:
-                ort_var.set(neu)
+            if self._download_basis_waehlen(win):
+                _ort_anzeigen()
         ttk.Button(kopf, text=self._t("downloads.storage_change"),
                    command=_ort_aendern).pack(side="left")
+
+        # Der Rueckweg aus dem Einstellungsdialog: Wer dort den Ort umstellt
+        # und hierher zurueckkommt, soll den neuen sehen. <FocusIn> kommt auch
+        # fuer jedes Kindelement - der Pfad des Toplevels steht in dessen
+        # Bindetags -, deshalb die Pruefung auf das Fenster selbst.
+        win.bind("<FocusIn>",
+                 lambda e: _ort_anzeigen() if str(getattr(e, "widget", "")) == str(win) else None,
+                 add="+")
 
         tk.Label(win, text=self._t("downloads.hint_captcha"), font=(UI_SCHRIFT, pt(8)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
@@ -29232,18 +29249,41 @@ class PS5ConverterGUI:
         # Dublettenpruefung in _vorhandene() jede Datei fuer schon gelistet und
         # die Liste bleibt beim zweiten Oeffnen leer. Fertiges geht dabei nicht
         # verloren, _vorhandene() liest es gleich wieder von der Platte.
+        #
+        # Fehlgeschlagene und abgebrochene bleiben seit v1.9.6 ebenfalls
+        # stehen. Sie hingen vorher an derselben Regel und waren nach dem
+        # Schliessen unwiederbringlich: "Erneut versuchen" arbeitet ueber
+        # self._downloads, die halb geladene .teil-Datei taucht in
+        # _vorhandene() nicht auf (dort zaehlen nur .pkg), und die Adresse
+        # laesst sich nicht rekonstruieren - der Abschnitt f_<64 Hex> darin
+        # entsteht erst beim Aufloesen im Browser. Ein abgebrochener
+        # 50-GB-Download war damit verloren, sobald das Fenster einmal zu war.
+        _BEHALTEN = ("queued", "running", "failed", "cancelled")
         weiterlaufend = {kennung: eintrag
                         for kennung, eintrag in self._downloads.items()
-                        if eintrag.get("status") in ("queued", "running")}
+                        if eintrag.get("status") in _BEHALTEN}
         self._downloads = weiterlaufend
         for kennung, eintrag in weiterlaufend.items():
+            laeuft = eintrag.get("status") in ("queued", "running")
+            # Die Groesse steht seit v1.9.6 im Eintrag: Sie ist sonst eine
+            # reine Ortsvariable des Arbeiters, und die Spalte blieb nach dem
+            # Wiederoeffnen dauerhaft "–" - auch wenn der Download fertig
+            # wurde.
+            gemerkt = eintrag.get("bytes")
+            if eintrag.get("status") == "running":
+                stand = self._t("downloads.state_running")
+            elif laeuft:
+                stand = self._t("downloads.state_queued")
+            elif eintrag.get("status") == "cancelled":
+                stand = self._t("downloads.state_cancelled")
+            else:
+                stand = self._t("downloads.state_failed",
+                                error=eintrag.get("fehler")
+                                or self._t("downloads.error_unknown"))
             baum.insert("", "end", iid=kennung, values=(
                 eintrag["dateiname"], eintrag["title_id"],
                 self._t(f"downloads.kind_{eintrag['art']}"),
-                "–", "–",
-                self._t("downloads.state_running"
-                        if eintrag.get("status") == "running"
-                        else "downloads.state_queued")))
+                self._fmt_bytes(int(gemerkt)) if gemerkt else "–", "–", stand))
 
         def _aus_zwischenablage() -> None:
             try:
@@ -29297,9 +29337,26 @@ class PS5ConverterGUI:
                                 patch=ps5_downloads.ORDNER_PATCH), parent=win)
                 return
             for eintrag in ps5_downloads.vorhandene_dateien(basis):
-                if any(self._downloads.get(i, {}).get("dateiname") == eintrag["dateiname"]
-                       for i in self._downloads):
+                # Doppelte vermeiden - aber nur gegen Zeilen, die noch etwas
+                # vorhaben. Seit fehlgeschlagene Eintraege das Schliessen
+                # ueberleben, koennte sonst eine fertig auf der Platte
+                # liegende Datei von ihrem eigenen gescheiterten Versuch
+                # verdeckt werden: Der Anwender saehe "Fehler", obwohl die
+                # Datei da ist. Dann gewinnt die Platte, und die alte Zeile
+                # weicht.
+                doppelt = [i for i, vorhanden in self._downloads.items()
+                           if vorhanden.get("dateiname") == eintrag["dateiname"]]
+                offen = [i for i in doppelt
+                         if self._downloads[i].get("status") in ("queued", "running")]
+                if offen:
                     continue
+                for i in doppelt:
+                    self._downloads.pop(i, None)
+                    try:
+                        if baum.exists(i):
+                            baum.delete(i)
+                    except tk.TclError:
+                        pass
                 iid = baum.insert("", "end", values=(
                     eintrag["dateiname"], eintrag["title_id"],
                     self._t(f"downloads.kind_{eintrag['art']}"),
@@ -29347,18 +29404,57 @@ class PS5ConverterGUI:
                                  args=(iid,), daemon=True).start()
 
         def _ordner_oeffnen() -> None:
-            basis = self._download_basis()
-            ziel = basis
+            # Frueher endete die Methode stillschweigend, wenn nichts
+            # zusammenkam - der Anwender drueckte, und nichts geschah. Jeder
+            # der drei Ausgaenge sagt jetzt, woran es liegt.
+            ziel = self._download_basis()
             auswahl = baum.selection()
             if auswahl:
                 eintrag = self._downloads.get(auswahl[0], {})
                 if eintrag.get("pfad"):
-                    ziel = os.path.dirname(eintrag["pfad"])
-            if ziel and os.path.isdir(ziel):
-                if not _system_datei_oeffnen(ziel):
-                    logger.debug("Dateimanager nicht startbar: %s", ziel)
+                    kandidat = os.path.dirname(eintrag["pfad"])
+                    # Nur uebernehmen, wenn der Ordner wirklich da ist. Wurde
+                    # die Datei verschoben, oeffnet sich sonst gar nichts,
+                    # obwohl der Speicherort daneben noch stimmt.
+                    if os.path.isdir(kandidat):
+                        ziel = kandidat
+            if not ziel:
+                # Erst anbieten, einen Ort zu waehlen - denselben Weg geht
+                # die Download-Aufnahme. Meckern hilft hier niemandem.
+                ziel = self._download_basis_waehlen(win)
+                if not ziel:
+                    messagebox.showwarning(
+                        self._t("downloads.storage_missing_title"),
+                        self._t("downloads.storage_missing_message",
+                                update=ps5_downloads.ORDNER_UPDATE,
+                                patch=ps5_downloads.ORDNER_PATCH), parent=win)
+                    return
+                _ort_anzeigen()
+            if not os.path.isdir(ziel):
+                messagebox.showwarning(
+                    self._t("downloads.storage_missing_title"),
+                    self._t("downloads.folder_gone", pfad=ziel), parent=win)
+                return
+            if not _system_datei_oeffnen(ziel):
+                logger.warning("Dateimanager nicht startbar: %s", ziel)
+                messagebox.showwarning(
+                    self._t("downloads.storage_missing_title"),
+                    self._t("downloads.folder_open_failed", pfad=ziel), parent=win)
 
         def _art_wechseln() -> None:
+            # Ohne Speicherort liefert zielpfad() einen RELATIVEN Pfad
+            # ("PS5 Spiele Updates\\spiel.pkg"), und die Datei wanderte in
+            # einen neu angelegten Ordner unter dem Arbeitsverzeichnis - dort
+            # sucht sie niemand. Leer werden kann der Speicherort ueber
+            # "Zuruecksetzen" im Einstellungsdialog, auch bei offenem Fenster.
+            basis = self._download_basis()
+            if not basis:
+                messagebox.showwarning(
+                    self._t("downloads.storage_missing_title"),
+                    self._t("downloads.storage_missing_message",
+                            update=ps5_downloads.ORDNER_UPDATE,
+                            patch=ps5_downloads.ORDNER_PATCH), parent=win)
+                return
             for iid in baum.selection():
                 eintrag = self._downloads.get(iid)
                 if not eintrag or eintrag.get("status") not in ("present", "done"):
@@ -29366,7 +29462,6 @@ class PS5ConverterGUI:
                 neue_art = (ps5_downloads.ART_PATCH
                             if eintrag.get("art") == ps5_downloads.ART_UPDATE
                             else ps5_downloads.ART_UPDATE)
-                basis = self._download_basis()
                 neu = ps5_downloads.zielpfad(basis, neue_art, eintrag["dateiname"])
                 try:
                     os.makedirs(os.path.dirname(neu), exist_ok=True)
@@ -29379,7 +29474,13 @@ class PS5ConverterGUI:
                 baum.set(iid, "art", self._t(f"downloads.kind_{neue_art}"))
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        # Ueber _beim_schliessen, nicht ueber win.destroy: Sonst geht dieser
+        # Knopf am Aufraeumen vorbei, und _downloads_win/_downloads_tree
+        # zeigen danach auf zerstoerte Widgets. Nur das X der Titelleiste lief
+        # bisher den richtigen Weg. Als Lambda, weil _beim_schliessen weiter
+        # unten steht - die Closure loest den Namen erst beim Druecken auf.
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=lambda: _beim_schliessen()).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("downloads.action_open_folder"),
                    command=_ordner_oeffnen).pack(side="right", padx=(0, 8))
         ttk.Button(knopfreihe, text=self._t("downloads.action_cancel"),
@@ -29677,6 +29778,11 @@ class PS5ConverterGUI:
             with urllib.request.urlopen(anfrage, timeout=60) as antwort:
                 rest = int(antwort.headers.get("Content-Length", 0) or 0)
                 gesamt = schon + rest if antwort.status == 206 else rest
+                # Im Eintrag merken: gesamt ist sonst eine reine
+                # Ortsvariable dieses Fadens, und die Spalte blieb nach
+                # einem Schliessen und Wiederoeffnen dauerhaft leer.
+                if gesamt:
+                    eintrag["bytes"] = str(gesamt)
                 melde("groesse", self._fmt_bytes(gesamt) if gesamt else "–")
                 melde("status", self._t("downloads.state_running"))
                 modus = "ab" if (schon and antwort.status == 206) else "wb"
@@ -29702,9 +29808,11 @@ class PS5ConverterGUI:
 
             if gesamt and os.path.getsize(teil) != gesamt:
                 eintrag["status"] = "failed"
-                melde("status", self._t("downloads.state_failed", error=self._t(
+                eintrag["fehler"] = self._t(
                     "downloads.size_mismatch", ist=self._fmt_bytes(os.path.getsize(teil)),
-                    soll=self._fmt_bytes(gesamt))))
+                    soll=self._fmt_bytes(gesamt))
+                melde("status", self._t("downloads.state_failed",
+                                        error=eintrag["fehler"]))
                 return
             os.replace(teil, ziel)
             eintrag["status"] = "done"
@@ -29715,7 +29823,9 @@ class PS5ConverterGUI:
                 size=self._fmt_bytes(os.path.getsize(ziel)), seconds=time.time() - beginn))
         except Exception as exc:
             eintrag["status"] = "failed"
-            melde("status", self._t("downloads.state_failed", error=str(exc)[:70]))
+            eintrag["fehler"] = str(exc)[:70]
+            melde("status", self._t("downloads.state_failed",
+                                    error=eintrag["fehler"]))
             logger.debug("Download fehlgeschlagen (%s): %s", eintrag.get("dateiname"), exc)
 
     # ==================================================================
@@ -32434,7 +32544,8 @@ class PS5ConverterGUI:
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=lambda: _beim_schliessen()).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("dump_rename.rename_button"),
                    style="Accent.TButton", command=_umbenennen).pack(side="left")
 
@@ -33261,7 +33372,8 @@ class PS5ConverterGUI:
         # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x", before=körper)
-        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=lambda: _beim_schliessen()).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
         ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
                    command=_einlesen).pack(side="left")
@@ -33468,7 +33580,8 @@ class PS5ConverterGUI:
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=lambda: _beim_schliessen()).pack(side="right")
         bau_knopf = ttk.Button(knopfreihe, text=self._t("debug_pkg.build_button"),
                                style="Accent.TButton", command=_bauen)
         bau_knopf.pack(side="left")

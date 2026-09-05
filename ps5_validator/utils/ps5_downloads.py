@@ -106,7 +106,15 @@ def art_bestimmen(ist_neueste: bool | None) -> str:
 
 
 def zielordner(basis: str, art: str) -> str:
-    """Vollstaendiger Zielordner fuer eine Art unterhalb des Speicherorts."""
+    """Vollstaendiger Zielordner fuer eine Art unterhalb des Speicherorts.
+
+    **Ohne Speicherort ist das Ergebnis ein relativer Pfad** - bei leerer
+    ``basis`` kommt schlicht ``"PS5 Spiele Updates"`` heraus. Wer damit
+    schreibt, legt den Ordner unter dem Arbeitsverzeichnis an; die Datei ist
+    fuer den Anwender dann verschwunden. Aufrufer, die schreiben, muessen den
+    Speicherort vorher pruefen - siehe ``_download_aufnehmen``, das genau das
+    tut und sonst nach dem Ordner fragt.
+    """
     unter = ORDNER_PATCH if art == ART_PATCH else ORDNER_UPDATE
     return os.path.join(str(basis or ""), unter)
 
@@ -127,6 +135,10 @@ def bereits_vorhanden(basis: str, dateiname: str) -> str:
     Returns:
         Der gefundene Pfad oder ein leerer String.
     """
+    # Ohne Speicherort gaebe es sonst relative Pfade, und die Suche liefe
+    # durch das Arbeitsverzeichnis - siehe zielordner().
+    if not str(basis or "").strip():
+        return ""
     for art in (ART_UPDATE, ART_PATCH):
         pfad = zielpfad(basis, art, dateiname)
         if os.path.isfile(pfad):
@@ -138,8 +150,11 @@ def vorhandene_dateien(basis: str) -> list[dict[str, str]]:
     """Listet die bereits abgelegten Pakete beider Ordner.
 
     Ueberspringt Teildateien und alles, was keine auswertbare Content-ID traegt.
+    Ohne Speicherort gibt es nichts zu listen - siehe ``zielordner``.
     """
     gefunden: list[dict[str, str]] = []
+    if not str(basis or "").strip():
+        return gefunden
     for art in (ART_UPDATE, ART_PATCH):
         ordner = zielordner(basis, art)
         try:
