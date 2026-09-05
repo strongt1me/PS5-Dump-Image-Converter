@@ -3870,12 +3870,67 @@ class PS5ConverterGUI:
         except Exception:
             pass
         try:
-            self.root.after(1200, lambda: messagebox.showwarning(
-                self._t("macos.translocation_title"),
-                self._t("macos.translocation_hint"),
-                parent=self.root))
+            self.root.after(1200, self._macos_translokation_hinweis_zeigen)
         except Exception as exc:
             logger.debug("Hinweis zur Translokation nicht zeigbar: %s", exc)
+
+    #: Wie oft der Translokationshinweis auf ein sichtbares Fenster wartet,
+    #: bevor er aufgibt. 40 x 250 ms = 10 s; danach ist etwas anderes im
+    #: Argen, und ein Hinweis, der gar nicht mehr kommt, ist besser als
+    #: einer, der ewig nachfragt.
+    _MACOS_HINWEIS_VERSUCHE = 40
+
+    def _macos_translokation_hinweis_zeigen(self, versuch: int = 0) -> None:
+        """Zeigt den Translokationshinweis – aber erst am sichtbaren Fenster.
+
+        **Der Fehler, den das behebt.** Der Hinweis ist ein *modaler* Dialog
+        mit ``parent=self.root``. Eingeplant wird er 1200 ms nach dem Start;
+        das Wurzelfenster steht in dieser Zeit aber noch auf ``-alpha 0.0``
+        und wird erst am Ende des Startablaufs sichtbar geschaltet. Dazwischen
+        liegt ein ``root.update()``, das alle fälligen Aufträge abarbeitet.
+
+        Dauert der Aufbau länger als die 1200 ms – auf einem Mac beim ersten
+        Start aus einem Translokationsmount durchaus –, geht der Dialog dort
+        auf, während das Fenster unsichtbar ist. Ohne gemerkte Geometrie ist
+        das Fenster zugleich bildschirmfüllend maximiert und hat den Fokus
+        erzwungen: Ein unsichtbares Fenster liegt über allem und wartet auf
+        einen Klick, den niemand sehen kann. Für den Anwender sieht das aus
+        wie ein eingefrorener Bildschirm, und der einzige Ausweg ist die
+        Prozessliste. Genau so gemeldet am 06.09.2026.
+
+        Der Hinweis erscheint nur bei App Translocation – also genau beim
+        ersten Start einer frisch geladenen ``.app``. Deshalb traf es den
+        Anwender beim ersten Mal und danach nicht mehr.
+        """
+        try:
+            sichtbar = bool(self.root.winfo_viewable())
+            if sichtbar:
+                # Auch die Durchsichtigkeit zählt: winfo_viewable meldet ein
+                # Fenster als sichtbar, das mit alpha 0.0 im Nichts steht.
+                try:
+                    sichtbar = float(self.root.attributes("-alpha")) > 0.5
+                except (tk.TclError, TypeError, ValueError):
+                    pass        # Ohne -alpha gibt es das Problem nicht.
+        except tk.TclError:
+            return              # Fenster ist schon weg.
+
+        if not sichtbar:
+            if versuch >= self._MACOS_HINWEIS_VERSUCHE:
+                logger.warning("Translokationshinweis übersprungen - das "
+                               "Fenster wurde nicht sichtbar.")
+                return
+            try:
+                self.root.after(
+                    250,
+                    lambda: self._macos_translokation_hinweis_zeigen(versuch + 1))
+            except tk.TclError:
+                pass
+            return
+
+        messagebox.showwarning(
+            self._t("macos.translocation_title"),
+            self._t("macos.translocation_hint"),
+            parent=self.root)
 
     def _macos_schrift_skalieren(self) -> None:
         """Setzt ``tk scaling`` auf macOS herauf.

@@ -33,6 +33,15 @@ _LARGE_CLUSTER_SIZE: int = 64 * 1024
 _VOLUME_SERIAL: int = 0x4D6B5046  # "MkPF"; fixed for deterministic output
 _FIXED_TIMESTAMP: int = (2024 - 1980) << 25 | 1 << 21 | 1 << 16  # 2024-01-01 00:00:00
 
+class ExfatBuildError(RuntimeError):
+    """A source tree this writer refuses to turn into an image.
+
+    Separate from ``pfs.BuildError`` only because ``pfs`` imports this module
+    and the reverse would close the circle. Like that one it derives from
+    ``RuntimeError``, so callers that catch broadly keep working.
+    """
+
+
 _ATTR_DIRECTORY: int = 0x10
 _ATTR_ARCHIVE: int = 0x20
 _FLAG_ALLOCATION_POSSIBLE: int = 0x01
@@ -63,8 +72,27 @@ class _Node:
 
 
 def _scan_tree(root: Path) -> _Node:
-    """Build the directory tree, sorted and with OS metadata excluded."""
+    """Build the directory tree, sorted and with OS metadata excluded.
+
+    Two kinds of entry are rejected rather than skipped. ``pfs.scan_source_tree``
+    rejects both as well; this writer used to walk past them without a word,
+    and the resulting image simply lacked the file:
+
+    * **Symlinks.** ``is_dir``/``is_file`` are asked with
+      ``follow_symlinks=False``, so a link answered neither and fell through
+      the loop. A dump copied with ``rsync -a``, restored from Time Machine,
+      or read off an SMB share can carry them; on NTFS they practically never
+      occur, which is why this only ever bit macOS users.
+    * **Non-ASCII names.** ``_upcase_ascii`` below is exactly what its name
+      says, and ``_name_hash`` computes over its result. For anything outside
+      ASCII the hash disagrees with the up-case table the console's exFAT
+      driver uses, and the file is unfindable there. macOS hands out
+      decomposed names (NFD), so a name that looks plain on Windows can
+      arrive here as ASCII plus a combining mark.
+    """
     root_node = _Node(rel_path="", name="", is_dir=True)
+    verweise: list[str] = []
+    fremde_namen: list[str] = []
 
     def _walk(dir_path: Path, node: _Node) -> None:
         entries = sorted(
@@ -72,6 +100,12 @@ def _scan_tree(root: Path) -> _Node:
             key=lambda e: e.name.lower(),
         )
         for entry in entries:
+            if not entry.name.isascii():
+                fremde_namen.append(entry.path)
+                continue
+            if entry.is_symlink():
+                verweise.append(entry.path)
+                continue
             if entry.is_dir(follow_symlinks=False):
                 child = _Node(
                     rel_path=f"{node.rel_path}/{entry.name}" if node.rel_path else entry.name,
@@ -92,6 +126,20 @@ def _scan_tree(root: Path) -> _Node:
                 )
 
     _walk(root, root_node)
+    if fremde_namen:
+        beispiele = ", ".join(fremde_namen[:5])
+        raise ExfatBuildError(
+            f"Source tree contains {len(fremde_namen)} entry/entries with "
+            f"non-ASCII names, which exFAT name hashing cannot represent "
+            f"here: {beispiele}"
+        )
+    if verweise:
+        beispiele = ", ".join(verweise[:5])
+        raise ExfatBuildError(
+            f"Source tree contains {len(verweise)} symlink(s). They would be "
+            f"dropped from the image without a trace; resolve or remove them "
+            f"first: {beispiele}"
+        )
     return root_node
 
 
@@ -413,6 +461,20 @@ def iter_exfat_image(
                             break
                         written += len(chunk)
                         yield chunk
+                # A source that ends early used to pass silently: the padding
+                # below simply grew, the image kept its planned size, and the
+                # directory entry still claimed the full length. The missing
+                # bytes became zeros inside the file. For an eboot.bin that
+                # means a SELF header whose segment table points into zeros -
+                # and the loader reading it sits in the console's kernel.
+                # pfs.py raises for the same case ("Stored payload source
+                # ended before expected size"); this path stayed quiet.
+                if written != child.size:
+                    raise ExfatBuildError(
+                        f"Source file changed while reading: {child.abs_path} "
+                        f"reported {child.size} bytes at scan time but "
+                        f"delivered {written}."
+                    )
                 padding: int = child.cluster_count * cluster_size - written
                 if padding:
                     yield bytes(padding)

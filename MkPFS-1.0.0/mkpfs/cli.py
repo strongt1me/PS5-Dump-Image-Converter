@@ -1458,7 +1458,14 @@ def _run_exfat_pack(*, args: argparse.Namespace, source_path: Path) -> int:
     )
     stats.input_path = source_path
     print_summary(stats)
-    if not args.verify:
+    # This branch used to ask ``args.verify`` alone, so ``--verify-structure``
+    # - which argparse defaults to True - never took effect here. The exFAT
+    # build form is the default one, and the calling GUI's default check level
+    # passes no flag at all: every ordinary run finished without a single
+    # look at what had just been written. The raw PFS branch above has always
+    # gone through _resolve_pack_verification_mode; this one now does too.
+    verification_mode: PackVerificationMode = _resolve_pack_verification_mode(args)
+    if verification_mode == PackVerificationMode.SKIP:
         return 0
 
     info("Running post-create check...")
