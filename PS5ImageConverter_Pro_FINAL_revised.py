@@ -4037,7 +4037,13 @@ class PS5ConverterGUI:
             )
             return
         if not _system_datei_oeffnen(pfad):
+            # Frueher nur ins Protokoll: Der Anwender drueckte den Knopf,
+            # und nichts geschah - ohne jeden Hinweis, wo das Handbuch liegt.
             logger.warning("Handbuch konnte nicht geöffnet werden: %s", pfad)
+            messagebox.showwarning(
+                self._t("dialog.title.error"),
+                self._t("dialog.msg.datei_nicht_oeffenbar", pfad=pfad),
+                parent=self.root)
 
     def _toggle_language(self) -> None:
         """Wechselt zwischen Deutsch und Englisch und übersetzt die erfassten Widgets live neu."""
@@ -26329,7 +26335,11 @@ class PS5ConverterGUI:
 
             def _oeffnen(_e=None, p=pfad):
                 if not _system_datei_oeffnen(p):
-                    logger.debug("Lizenzdatei konnte nicht geöffnet werden: %s", p)
+                    logger.warning("Lizenzdatei konnte nicht geöffnet werden: %s", p)
+                    messagebox.showwarning(
+                        self._t("dialog.title.error"),
+                        self._t("dialog.msg.datei_nicht_oeffenbar", pfad=p),
+                        parent=win)
 
             lbl.bind("<Button-1>", _oeffnen)
             lbl.bind("<Enter>", lambda e: lbl.config(fg=self._COLORS["link_hover"], font=(UI_SCHRIFT, pt(10), "underline")))
@@ -27454,9 +27464,22 @@ class PS5ConverterGUI:
         "kstuff_pause_delay_direct_seconds": "15",
         "lvd_exfat_sector_size": "512",
         "lvd_ufs_sector_size": "4096",
-        "lvd_pfs_sector_size": "32768",
+        # Zwei Werte standen bis v1.9.5 anders, als die Anleitung sie nennt -
+        # und zwar genau so, wie das Fremdwerkzeug ps5-exfat-builder 4.0.2 sie
+        # führt (dessen ui/tab_shadowmount.py: 32768 und 512). Sie sind von
+        # dort übernommen worden, nicht aus der README.
+        #
+        # Am 05.09.2026 an drei vorliegenden Anleitungen nachgesehen:
+        #
+        #   Schlüssel              alpha6   alpha11              alpha12
+        #   lvd_pfs_sector_size    4096     4096                 4096
+        #   md_ufs_sector_size     4096     512 legacy/4096 opt  4096
+        #
+        # Das wiegt hier schwerer als eine bloße Anzeige: Baut der Editor die
+        # config.ini neu auf, landen diese Werte auf der Konsole.
+        "lvd_pfs_sector_size": "4096",
         "md_exfat_sector_size": "512",
-        "md_ufs_sector_size": "512",
+        "md_ufs_sector_size": "4096",
     }
 
     # MicroMount: alternatives Drittanbieter-Mount-Tool zu ShadowMount+
@@ -29145,12 +29168,37 @@ class PS5ConverterGUI:
         return str(self._load_setting("download_dir", "") or "").strip()
 
     def _download_basis_waehlen(self, parent: "tk.Misc | None" = None) -> str:
-        """Fragt den Speicherort ab und merkt ihn dauerhaft."""
-        gewaehlt = filedialog.askdirectory(
-            title=self._t("downloads.storage_dialog_title"),
-            initialdir=self._download_basis() or None,
-            parent=parent or self.root,
-        )
+        """Fragt den Speicherort ab und merkt ihn dauerhaft.
+
+        **Nur einer zur Zeit.** Der Dialog ist modal, aber Tk arbeitet
+        derweil seine ``after``-Aufträge weiter ab - darunter die
+        Zwischenablage-Überwachung alle 700 ms. Findet die eine Adresse,
+        landet sie in :meth:`_download_aufnehmen`, und das zieht bei noch
+        leerem Speicherort **denselben Dialog ein zweites Mal** auf. Der
+        Speicherort ist zu dem Zeitpunkt ja weiter leer, weil der erste
+        Dialog noch nicht zurück ist.
+
+        Zwei gestapelte "Speicherort wählen"-Fenster wären das eine; beide
+        schreiben aber auch ``download_dir``, und beide legen ihr Ordnerpaar
+        an. Der zuletzt bestätigte gewinnt, das andere Paar bleibt leer
+        zurück.
+
+        Returns:
+            Der gewählte Ordner, oder "" - auch dann, wenn bereits ein
+            Dialog offen steht.
+        """
+        if getattr(self, "_download_ordnerdialog_offen", False):
+            logger.debug("Speicherort-Dialog steht bereits offen")
+            return ""
+        self._download_ordnerdialog_offen = True
+        try:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("downloads.storage_dialog_title"),
+                initialdir=self._download_basis() or None,
+                parent=parent or self.root,
+            )
+        finally:
+            self._download_ordnerdialog_offen = False
         if not gewaehlt:
             return ""
         gewaehlt = os.path.normpath(gewaehlt)
@@ -30298,6 +30346,10 @@ class PS5ConverterGUI:
             return
         if not _system_datei_oeffnen(pfad):
             logger.warning("Anleitung nicht zu öffnen: %s", pfad)
+            messagebox.showwarning(
+                self._t("dialog.title.error"),
+                self._t("dialog.msg.datei_nicht_oeffenbar", pfad=pfad),
+                parent=self.root)
 
     def _show_ampr_alte_methode(self) -> None:
         """AMPR EMU nach der Mechanik bis ShadowMountPlus 1.7 alpha6."""

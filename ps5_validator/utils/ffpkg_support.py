@@ -31,12 +31,30 @@ _PER_FILE_METADATA_RESERVE_BYTES = 16 * 1024
 
 @dataclass(frozen=True)
 class FfpkgBuildProfile:
-    """Konservative, UFS2Tool-kompatible Parameter für ``makefs``."""
+    """Konservative, UFS2Tool-kompatible Parameter für ``makefs``.
+
+    **Sektorgröße 4096, aus demselben Grund wie bei den newfs-Profilen:**
+    ShadowMount+ hängt UFS-Abbilder mit ``lvd_ufs_sector_size=4096`` ein.
+    Auch dieser Weg liefert ein Abbild aus, das die Konsole einhängen soll,
+    also gilt hier dieselbe Vorgabe. Bis v1.9.5 stand hier 512.
+
+    **Warum das für die Abbildgröße unbedenklich ist**, obwohl dieser Weg als
+    einziger ein ``-s`` übergibt: ``Ufs2ImageCreator.NormalizeSectorSizeForLayout()``
+    multipliziert ``SizeOverride`` mit ``SectorSize / 512``, sobald die
+    Sektorgröße von 512 abweicht - aus 4096 folgte Faktor 8. Der
+    ``makefs``-Unterbefehl von UFS2Tool wertet ``-s`` aber über einen eigenen
+    Weg aus (``TryParseMakeFsSize`` in eine lokale Variable) und lässt
+    ``SizeOverride`` bei 0; die Multiplikation greift nur bei
+    ``SizeOverride > 0``. Am 05.09.2026 am Quelltext nachgelesen.
+
+    Wer diesen Weg einmal auf ``newfs`` umstellt, muss die Größe deshalb neu
+    durchrechnen - dort läuft ``-s`` über ``SizeOverride``.
+    """
 
     block_size: int = 65536
     fragment_size: int = 65536
     min_free_percent: int = 0
-    sector_size: int = 512
+    sector_size: int = 4096
     inode_density: int = 65536
 
     def normalized(self) -> "FfpkgBuildProfile":
@@ -76,7 +94,12 @@ class FfpkgNewfsProfile:
     identifier: str
     block_size: int
     fragment_size: int
-    sector_size: int = 512
+    #: 4096 wie bei jedem Weg, der ein einhängbares Abbild ausliefert –
+    #: ShadowMount+ hängt UFS mit ``lvd_ufs_sector_size=4096`` ein. Bis v1.9.5
+    #: stand hier 512, während :func:`primary_newfs_profile` daneben schon
+    #: 4096 führte: Wer die Vorgabe der Datenklasse übernahm, baute unbemerkt
+    #: anders als die Anleitung verlangt.
+    sector_size: int = 4096
     min_free_percent: int | None = None
     inode_density: int | None = None
 
@@ -128,6 +151,33 @@ def primary_newfs_profile() -> FfpkgNewfsProfile:
     Standard-Backend LVD mit 4096-Byte-Sektoren ein (``lvd_ufs_sector_size=4096``);
     seine Anleitung nennt für .ffpkg ausdrücklich
     ``newfs -O 2 -b 65536 -f 65536 -m 0 -S 4096``.
+
+    **Der Wert ist richtig, aber folgenlos, solange UFS2Tool baut.** Das ist
+    am 05.09.2026 am Quelltext des Werkzeugs nachgelesen worden, nicht
+    vermutet:
+
+    * ``Ufs2ImageCreator.NormalizeSectorSizeForLayout()`` setzt jedes ``-S``
+      ungleich 512 vor dem Schreiben auf 512 zurück - genau wie FreeBSDs
+      ``newfs``. Übrig bleibt der Wert nur als Ausrichtungsgröße für rohe
+      Geräte und als Einheit von ``-s``, das dieser Weg nicht übergibt.
+    * UFS2Tool hat dafür einen eigenen Wächter,
+      ``SectorSizeNormalizationTests.DifferentSectorSizesProduceIdenticalLayout``:
+      Er verlangt, dass ein mit 4096 und ein mit 512 gebautes Abbild
+      **byteweise gleich** sind, ausdrücklich einschließlich ``fs_fsbtodb``,
+      ``fs_old_nspf``, der Cylinder-Group-Köpfe und der Inodetabellen - also
+      genau der Felder, in denen die Geometrie steckt.
+
+    Daraus folgt zweierlei. Erstens: Die Umstellung von 512 auf 4096 hat am
+    Abbild **nichts** geändert - deshalb trat der Absturz danach unverändert
+    auf, und die Sektorgröße kommt als Ursache von CE-108-255-1 nicht in
+    Frage. Zweitens: Der Wert bleibt trotzdem stehen. Er entspricht der
+    Anleitung und wirkt, sobald jemand mit dem echten ``newfs`` oder
+    ``makefs`` baut - so macht es ShadowMount+ in seinem eigenen
+    ``mkufs2.sh``.
+
+    Selbst nachmessen ließ sich das nicht: UFS2Tool verlangt erhöhte Rechte.
+    Belegt ist die Sache über den Quelltext und den Wächter des Werkzeugs,
+    beide unter ``PS5 SDK usw/UFS2TOOL/UFS2Tool-4.1/``.
 
     Bis v1.9.5 stand hier 512. Am 04.09.2026 an echter Hardware gemessen:
     Ein damit gebautes .ffpkg **hängt sauber ein** - Superblock gelesen,
@@ -200,7 +250,7 @@ def compatibility_newfs_profile() -> FfpkgNewfsProfile:
         identifier="newfs-32k-4k-compatibility",
         block_size=32768,
         fragment_size=4096,
-        sector_size=512,
+        sector_size=4096,
         min_free_percent=None,
         inode_density=None,
     ).normalized()

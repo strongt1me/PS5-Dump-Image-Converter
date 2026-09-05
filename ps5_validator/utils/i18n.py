@@ -179,6 +179,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'main.browse_ffpkg_button': {'de': '.ffpkg wählen', 'en': 'Choose .ffpkg'},
     'main.browse_file_button': {'de': 'Datei wählen', 'en': 'Choose file'},
     'dialog.title.error': {'de': 'Fehler', 'en': 'Error'},
+    'dialog.msg.datei_nicht_oeffenbar': {'de': 'Diese Datei ließ sich nicht öffnen – Windows hat kein Programm dafür gemeldet. Sie liegt hier:\n{pfad}', 'en': 'This file could not be opened – the system reported no program for it. It is located here:\n{pfad}'},
     'dialog.title.invalid_source': {'de': 'Ungültige Quelle', 'en': 'Invalid source'},
     'dialog.title.game_incomplete': {'de': 'Spiel unvollständig', 'en': 'Game incomplete'},
     'dialog.msg.param_json_missing_friendly': {'de': 'Das Spiel ist leider nicht komplett – die Datei sce_sys/param.json fehlt.\n\nBitte erstelle vom Original-Spiel erneut ein Backup.', 'en': 'The game is unfortunately incomplete – the file sce_sys/param.json is missing.\n\nPlease create a new backup from the original game.'},
@@ -1355,10 +1356,11 @@ STRINGS: dict[str, dict[str, str]] = {
         'de': 'Keine Antwort von {ip}:{port}. Läuft der Payload auf der Konsole?',
         'en': 'No answer from {ip}:{port}. Is the payload running on the console?'},
     'settings_dialog.ps5_test_other_port': {
-        'de': 'Erreichbar über Port {port} statt {eingestellt}. Die Werkzeuge nutzen '
-              'ihn automatisch; tragen Sie ihn oben ein, damit es sofort passt.',
-        'en': 'Reachable on port {port} instead of {eingestellt}. The tools use it '
-              'automatically; enter it above so it matches right away.'},
+        'de': 'Erreichbar: {ip} antwortet über Port {port} statt {eingestellt}. Die '
+              'Werkzeuge nutzen ihn automatisch; tragen Sie ihn oben ein, damit es '
+              'sofort passt.',
+        'en': 'Reachable: {ip} responds on port {port} instead of {eingestellt}. The '
+              'tools use it automatically; enter it above so it matches right away.'},
     'settings_dialog.ps5_invalid_ip': {
         'de': 'Bitte eine gültige IP-Adresse oder einen Hostnamen eintragen.',
         'en': 'Please enter a valid IP address or host name.'},

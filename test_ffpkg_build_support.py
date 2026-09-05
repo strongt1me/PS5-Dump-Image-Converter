@@ -5,6 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
+#: Der Projektstamm - von hier aus liegt der Referenzordner mit den
+#: Fremdwerkzeugen, deren Quelltext einzelne Aussagen belegt.
+PROJEKT_WURZEL = Path(__file__).resolve().parent
+
 from ps5_validator.utils.ffpkg_support import (
     FfpkgBuildProfile,
     FfpkgNewfsProfile,
@@ -26,9 +30,20 @@ class FfpkgBuildSupportTests(unittest.TestCase):
         profile = default_build_profile()
         self.assertEqual(profile.block_size, 65536)
         self.assertEqual(profile.fragment_size, 65536)
-        self.assertEqual(profile.sector_size, 512)
+        self.assertEqual(profile.sector_size, 4096)
         self.assertEqual(profile.min_free_percent, 0)
         self.assertEqual(profile.inode_density, 65536)
+
+    def test_beide_profile_fuehren_dieselbe_sektorgroesse(self) -> None:
+        """4096 gilt fuer jeden Weg, der ein einhaengbares Abbild ausliefert.
+
+        Bis v1.9.5 stand im makefs-Profil 512 und im newfs-Profil 4096. Wer
+        die beiden Wege vergleicht, sucht den Grund fuer den Unterschied -
+        und es gibt keinen: ShadowMount+ haengt UFS mit
+        ``lvd_ufs_sector_size=4096`` ein, gleich womit gebaut wurde.
+        """
+        self.assertEqual(default_build_profile().sector_size,
+                         primary_newfs_profile().sector_size)
 
     def test_invalid_profile_is_rejected(self) -> None:
         with self.assertRaises(ValueError):
@@ -56,6 +71,12 @@ class FfpkgBuildSupportTests(unittest.TestCase):
         (Vorgabe 25 s), kstuff_delay je Titel, autopause.txt und autotune.ini.
         Die Sektorgroesse 4096 bleibt trotzdem richtig - mkufs2.sh benutzt
         genau diesen Befehl.
+
+        **Zweiter Nachtrag desselben Tages:** Das Abbild war nach der
+        Umstellung sogar byteweise dasselbe. UFS2Tool rechnet jedes ``-S``
+        ungleich 512 vor dem Schreiben zurueck; die Aenderung von 512 auf
+        4096 konnte den Absturz also gar nicht beeinflussen. Belegt in
+        ``SektorgroesseIstFolgenlosTests`` am Quelltext des Werkzeugs.
         """
         profile = primary_newfs_profile()
         self.assertEqual(profile.identifier, "newfs-64k-reference")
@@ -128,6 +149,13 @@ class FfpkgBuildSupportTests(unittest.TestCase):
                       "naechste Leser wieder.")
 
     def test_compatibility_newfs_command_matches_32k_4k_reference_profile(self) -> None:
+        """Kleinerer Block und kleineres Fragment - aber dieselbe Sektorgroesse.
+
+        Das Kompatibilitaetsprofil weicht bewusst bei Block (32 KiB) und
+        Fragment (4 KiB) ab; die Sektorgroesse gehoert nicht dazu. Sie stand
+        hier bis v1.9.5 auf 512, waehrend das Hauptprofil daneben 4096 fuehrte
+        - ohne dass ein Grund fuer den Unterschied genannt war.
+        """
         profile = compatibility_newfs_profile()
         self.assertEqual(profile.identifier, "newfs-32k-4k-compatibility")
         command = build_newfs_directory_command(
@@ -148,7 +176,7 @@ class FfpkgBuildSupportTests(unittest.TestCase):
                 "-f",
                 "4096",
                 "-S",
-                "512",
+                "4096",
                 "-D",
                 "C:/Source/Game",
                 "C:/Out/Game.ffpkg",
@@ -247,6 +275,73 @@ class FfpkgBuildSupportTests(unittest.TestCase):
         self.assertEqual(fsck, ["UFS2Tool.exe", "fsck_ufs", "-fn", "game.ffpkg"])
         self.assertNotIn("-y", fsck)
         self.assertNotIn("--repair", fsck)
+
+
+class SektorgroesseIstFolgenlosTests(unittest.TestCase):
+    """``-S 4096`` ist richtig, aber beim Bau mit UFS2Tool ohne Wirkung.
+
+    Am 04.09.2026 wurde die Sektorgroesse von 512 auf 4096 gestellt, in der
+    Annahme, das behebe den Konsolenfehler CE-108-255-1. Das war nicht belegt
+    und ist falsch: UFS2Tool rechnet jedes ``-S`` ungleich 512 vor dem
+    Schreiben zurueck. Ein mit 4096 gebautes Abbild ist byteweise dasselbe
+    wie eines mit 512 - die Aenderung kann den Fehler weder ausgeloest noch
+    behoben haben.
+
+    Geprueft wird das am mitgelieferten Quelltext des Werkzeugs, nicht an
+    einem eigenen Bau: UFS2Tool verlangt erhoehte Rechte, ein Lauf aus der
+    Pruefreihe heraus endet mit "Der angeforderte Vorgang erfordert erhoehte
+    Rechte".
+
+    **Der Wert bleibt trotzdem auf 4096.** Er entspricht der Anleitung von
+    ShadowMount+ und wirkt, sobald jemand mit dem echten ``newfs`` oder
+    ``makefs`` baut - so macht es ShadowMount+ in seinem eigenen
+    ``mkufs2.sh``.
+    """
+
+    QUELLE = (PROJEKT_WURZEL / "PS5 SDK usw" / "UFS2TOOL" / "UFS2Tool-4.1"
+              / "UFS2Tool-4.1")
+
+    def setUp(self) -> None:
+        if not self.QUELLE.is_dir():
+            self.skipTest("UFS2Tool-Quelltext liegt nicht im Referenzordner")
+
+    def test_ufs2tool_rechnet_die_sektorgroesse_zurueck(self) -> None:
+        datei = self.QUELLE / "Ufs2ImageCreator.cs"
+        if not datei.is_file():
+            self.skipTest("Ufs2ImageCreator.cs fehlt")
+        text = datei.read_text(encoding="utf-8", errors="replace")
+        self.assertIn("NormalizeSectorSizeForLayout", text,
+                      "Die Normalisierung gibt es nicht mehr - dann ist die "
+                      "Aussage im Docstring von primary_newfs_profile neu zu "
+                      "pruefen.")
+        self.assertIn("SectorSize = Ufs2Constants.DefaultSectorSize", text,
+                      "Der Ruecksetzer auf 512 ist weg - die Sektorgroesse "
+                      "koennte jetzt doch wirken.")
+
+    def test_das_werkzeug_bewacht_die_bytegleichheit_selbst(self) -> None:
+        datei = self.QUELLE / "UFS2Tool.Tests" / "SectorSizeNormalizationTests.cs"
+        if not datei.is_file():
+            self.skipTest("SectorSizeNormalizationTests.cs fehlt")
+        text = datei.read_text(encoding="utf-8", errors="replace")
+        self.assertIn("DifferentSectorSizesProduceIdenticalLayout", text)
+        # Der Waechter vergleicht ausdruecklich 4096 gegen 512.
+        self.assertIn("sectorSize: 4096", text)
+        self.assertIn("sectorSize: 512", text)
+
+    def test_der_newfs_weg_uebergibt_keine_groesse(self) -> None:
+        """Nur mit ``-s`` haette die Sektorgroesse ueberhaupt eine Wirkung.
+
+        ``NormalizeSectorSizeForLayout`` multipliziert ``SizeOverride`` mit
+        ``SectorSize / 512``. Dieser Weg uebergibt kein ``-s``, also bleibt
+        der Wert 0 und die Multiplikation folgenlos.
+        """
+        command = build_newfs_directory_command(
+            "UFS2Tool.exe", "C:/Quelle", "C:/Ziel",
+            profile=primary_newfs_profile())
+        self.assertNotIn("-s", command,
+                         "Mit einer Groesse waere die Sektorgroesse nicht "
+                         "mehr folgenlos - der Docstring muesste nachgezogen "
+                         "werden.")
 
 
 if __name__ == "__main__":
