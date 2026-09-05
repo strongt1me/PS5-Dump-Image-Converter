@@ -21461,12 +21461,18 @@ class PS5ConverterGUI:
         verrutschen lassen.
 
         Beide Kaestchen duerfen zusammen gesetzt sein. ShadowMount+ sieht das
-        so vor: Es haengt genau ein fakelib-Verzeichnis in die Sandbox
-        (``fakelib2``, sonst ``fakelib``), und die Emulator-Dateien aus
-        ``emulators_path`` ersetzen darin vorhandene Dateien. Der Emulator
-        konkurriert also nicht mit dem Backport, er wird hineinkopiert -
-        ersetzt aber nur, was schon da ist. Genau deshalb gehoert beides
-        zusammen in den Dump.
+        so vor: Es haengt genau **ein** fakelib-Verzeichnis in die Sandbox,
+        und die Emulator-Dateien aus ``emulators_path`` ersetzen darin
+        vorhandene Dateien. Der Emulator konkurriert also nicht mit dem
+        Backport, er wird hineinkopiert - ersetzt aber nur, was schon da ist.
+        Genau deshalb gehoert beides zusammen in den Dump.
+
+        **Welches Verzeichnis eingehaengt wird, steht hier bewusst nicht.**
+        Es haengt von der Fassung und vom Ort ab (``shadowmount_generation``).
+        Bis zum 05.09.2026 stand hier "``fakelib2``, sonst ``fakelib``" - das
+        gilt im Spielordner nur bis alpha6. Ab alpha10 ist ein Backport-
+        ``fakelib2`` ausserdem ausdruecklich vom Emulator-Update ausgenommen,
+        der Satz war also auch in seinem eigenen Zusammenhang schief.
 
         Args:
             speichern: Beim Aufbau der Oberflaeche False - dort steht der Wert
@@ -30060,6 +30066,17 @@ class PS5ConverterGUI:
                 namen.append(weiterer)
         return [basis / name for name in namen]
 
+    def _smgen_texte(self) -> dict[str, str]:
+        """Die Textvorlagen für ``shadowmount_generation.beanstandungen``.
+
+        Das Modul darf ``i18n`` nicht importieren – es soll ohne die
+        Oberfläche benutzbar bleiben. Ohne diese Vorlagen lieferte es feste
+        deutsche Sätze, und die standen unübersetzt im Protokoll und in der
+        Kollisionswarnung, auch wenn das Programm auf Englisch lief.
+        """
+        return {kennung: self._t("smgen." + kennung)
+                for kennung in sm_gen.MELDUNGEN}
+
     def _ampr_ablage_pruefen(self, wurzel) -> list[str]:
         """Was an einer bestehenden Ablage im Spielordner nicht wirkt.
 
@@ -30073,9 +30090,10 @@ class PS5ConverterGUI:
             logger.debug("Ablage nicht prüfbar: %s", exc)
             return []
         gesehen: list[str] = []
+        texte = self._smgen_texte()
         for generation in (sm_gen.ALT, sm_gen.NEU):
-            for meldung in sm_gen.beanstandungen(generation,
-                                                 sm_gen.ORT_SPIEL, vorhanden):
+            for meldung in sm_gen.beanstandungen(generation, sm_gen.ORT_SPIEL,
+                                                 vorhanden, texte=texte):
                 if meldung not in gesehen:
                     gesehen.append(meldung)
         return gesehen
@@ -32564,11 +32582,15 @@ class PS5ConverterGUI:
 
             # ---- 3) Ersatzbibliotheken danebenlegen ----
             #
-            # Der Ordnername kommt aus der Wahl im Fenster: "fakelib" oder
-            # "fakelib2". ShadowMount+ haengt nur einen von beiden ein und
-            # bevorzugt fakelib2 - deshalb bekommt der Nutzer eine Warnung, wenn
-            # nach dem Lauf beide existieren, denn dann wirkt der Inhalt des
-            # anderen nicht.
+            # Der Ordnername kommt aus _fakelib_ordnername, nicht mehr aus
+            # einer Klappliste im Fenster - die ist seit v1.8.98 draussen.
+            #
+            # ShadowMount+ haengt immer nur EINEN der beiden Ordner ein.
+            # Welchen, haengt von der Fassung ab: bis alpha6 gewinnt fakelib2
+            # auch im Spielordner, ab alpha8 wird es dort ignoriert und nur
+            # noch im Backport-Ordner gesucht. Deshalb warnt der Lauf, wenn
+            # nach dem Kopieren beide dastehen - und nennt beide Faelle,
+            # statt einen zu behaupten (siehe _fakelib_kollision).
             kopiert = 0
             if libs:
                 basis = self._backport_fakelib_basis()

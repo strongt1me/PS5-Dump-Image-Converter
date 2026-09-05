@@ -301,18 +301,70 @@ def ablageziel(generation: str, ort: str, *, wurzel: str = "",
             "empfohlen": empfohlen, "hinweis": hinweis}
 
 
+#: Die Beanstandungen als Vorlagen, damit die Oberfläche sie übersetzen kann.
+#:
+#: Dieses Modul darf ``i18n`` nicht importieren – es soll ohne die Oberfläche
+#: benutzbar bleiben. Bis zum 05.09.2026 gab :func:`beanstandungen` deshalb
+#: **fest deutsche Sätze** zurück, und die landeten unübersetzt im Protokoll
+#: und in der Kollisionswarnung: Auf Englisch stand dort deutscher Text.
+#:
+#: Wer eigene Formulierungen will, reicht sie als ``texte`` herein – dasselbe
+#: Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "spiel_fakelib2_wirkungslos":
+        "Im Spielordner liegt {fakelib2!r}. Ab 1.7 alpha8 wird der dort "
+        "ignoriert - umbenennen nach {fakelib!r} oder als Backport ablegen.",
+    "spiel_beide_alt":
+        "Beide Ordner vorhanden: {fakelib2!r} gewinnt, der Inhalt von "
+        "{fakelib!r} bleibt ungenutzt - auch wenn {fakelib2!r} leer ist.",
+    "spiel_keiner_wirkt":
+        "Keiner der gefundenen Ordner wirkt an dieser Stelle. "
+        "Wirksam wäre: {wirksam}.",
+    "backport_nur":
+        "Im Backport-Ordner wirkt nur: {wirksam}.",
+    "backport_beide_neu":
+        "Beide Ordner vorhanden: {fakelib2!r} steht in der Suchreihenfolge "
+        "vor {fakelib!r} und gewinnt.",
+    "global_unterordner":
+        "Im globalen Ordner liegt ein Unterordner {ordner!r}. Dort gehören "
+        "die Bibliotheken direkt hinein - ein Unterordner wird mitkopiert, "
+        "aber nicht eingehängt.",
+    "emus_nicht_gelesen":
+        "Diese Fassung liest {pfad} nicht - der Ordner bleibt wirkungslos.",
+    "emus_unterordner":
+        "Im Emulator-Ordner liegt ein Unterordner {ordner!r}. Verglichen "
+        "werden nur Dateien direkt darin.",
+}
+
+
 def beanstandungen(generation: str, ort: str,
-                   vorhandene_ordner: "list[str] | tuple[str, ...]") -> list[str]:
+                   vorhandene_ordner: "list[str] | tuple[str, ...]",
+                   texte: "dict[str, str] | None" = None) -> list[str]:
     """Prueft eine bestehende Ablage und meldet, was nicht wirkt.
 
     Args:
         generation: ``ALT`` oder ``NEU``.
         ort: Wo die Ordner liegen.
         vorhandene_ordner: Die dort gefundenen Ordnernamen.
+        texte: Vorlagen je Kennung; fehlt eine, gilt die aus
+            :data:`MELDUNGEN`. So kann die Oberfläche übersetzen, ohne dass
+            dieses Modul ``i18n`` kennt.
 
     Returns:
-        Klartext-Beanstandungen; leere Liste, wenn alles wirkt.
+        Fertige Beanstandungen; leere Liste, wenn alles wirkt.
     """
+    vorlagen = dict(MELDUNGEN)
+    if texte:
+        vorlagen.update({k: v for k, v in texte.items() if v})
+
+    def _satz(kennung: str, **werte) -> str:
+        try:
+            return vorlagen[kennung].format(**werte)
+        except (KeyError, IndexError, ValueError):
+            # Eine unbrauchbare Vorlage darf die Prüfung nicht sprengen -
+            # dann lieber der eingebaute Satz.
+            return MELDUNGEN[kennung].format(**werte)
+
     da = {str(n).strip().lower() for n in vorhandene_ordner if str(n).strip()}
     p = profil(generation)
     meldungen: list[str] = []
@@ -320,45 +372,34 @@ def beanstandungen(generation: str, ort: str,
     if ort == ORT_SPIEL:
         wirksam = set(p["spiel_ordner"])
         if FAKELIB2 in da and not p["spiel_fakelib2_wirkt"]:
-            meldungen.append(
-                "Im Spielordner liegt %r. Ab 1.7 alpha8 wird der dort "
-                "ignoriert - umbenennen nach %r oder als Backport ablegen."
-                % (FAKELIB2, FAKELIB))
+            meldungen.append(_satz("spiel_fakelib2_wirkungslos",
+                                   fakelib2=FAKELIB2, fakelib=FAKELIB))
         if generation == ALT and FAKELIB2 in da and FAKELIB in da:
-            meldungen.append(
-                "Beide Ordner vorhanden: %r gewinnt, der Inhalt von %r bleibt "
-                "ungenutzt - auch wenn %r leer ist."
-                % (FAKELIB2, FAKELIB, FAKELIB2))
+            meldungen.append(_satz("spiel_beide_alt",
+                                   fakelib2=FAKELIB2, fakelib=FAKELIB))
         if da and not (da & wirksam):
-            meldungen.append(
-                "Keiner der gefundenen Ordner wirkt an dieser Stelle. "
-                "Wirksam wäre: %s." % ", ".join(sorted(wirksam)))
+            meldungen.append(_satz("spiel_keiner_wirkt",
+                                   wirksam=", ".join(sorted(wirksam))))
     elif ort == ORT_BACKPORT:
         wirksam = set(p["backport_ordner"])
         if da and not (da & wirksam):
-            meldungen.append(
-                "Im Backport-Ordner wirkt nur: %s." % ", ".join(sorted(wirksam)))
+            meldungen.append(_satz("backport_nur",
+                                   wirksam=", ".join(sorted(wirksam))))
         if generation == NEU and FAKELIB in da and FAKELIB2 in da:
-            meldungen.append(
-                "Beide Ordner vorhanden: %r steht in der Suchreihenfolge vor "
-                "%r und gewinnt." % (FAKELIB2, FAKELIB))
+            meldungen.append(_satz("backport_beide_neu",
+                                   fakelib2=FAKELIB2, fakelib=FAKELIB))
     elif ort == ORT_GLOBAL:
         if FAKELIB in da or FAKELIB2 in da:
-            meldungen.append(
-                "Im globalen Ordner liegt ein Unterordner %r. Dort gehören "
-                "die Bibliotheken direkt hinein - ein Unterordner wird "
-                "mitkopiert, aber nicht eingehängt."
-                % (FAKELIB if FAKELIB in da else FAKELIB2,))
+            meldungen.append(_satz(
+                "global_unterordner",
+                ordner=FAKELIB if FAKELIB in da else FAKELIB2))
     elif ort == ORT_EMUS:
         if not p["hat_emus"]:
-            meldungen.append(
-                "Diese Fassung liest %s nicht - der Ordner bleibt wirkungslos."
-                % EMUS_STANDARD)
+            meldungen.append(_satz("emus_nicht_gelesen", pfad=EMUS_STANDARD))
         if FAKELIB in da or FAKELIB2 in da:
-            meldungen.append(
-                "Im Emulator-Ordner liegt ein Unterordner %r. Verglichen "
-                "werden nur Dateien direkt darin."
-                % (FAKELIB if FAKELIB in da else FAKELIB2,))
+            meldungen.append(_satz(
+                "emus_unterordner",
+                ordner=FAKELIB if FAKELIB in da else FAKELIB2))
     else:
         raise ValueError("unbekannter Ort: %r" % (ort,))
     return meldungen

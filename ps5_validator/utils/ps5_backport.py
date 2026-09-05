@@ -162,13 +162,24 @@ LIBC_NEU = b"IWIBBdTHit4#A#B"
 #: Ordner, in den die Ersatzbibliotheken im Spiel gelegt werden.
 FAKELIB_ORDNER = "fakelib"
 
-#: Alternativer Ordner, den ShadowMount+ **bevorzugt** einhaengt.
+#: Der zweite Ordnername. **Welcher von beiden wirkt, haengt von der Fassung
+#: UND vom Ort ab** - die Regeln stehen in ``shadowmount_generation``, nicht
+#: hier.
 #:
-#: Aus der config.ini von ShadowMount+ 1.7alpha6:
+#: Bis zum 05.09.2026 stand an dieser Stelle "den ShadowMount+ **bevorzugt**
+#: einhaengt", belegt mit der config.ini von 1.7alpha6:
 #:   "mount app0/fakelib2 when present, otherwise app0/fakelib, into common/lib"
 #:
-#: Es wird also immer nur EINER von beiden eingehaengt. Liegen Bibliotheken in
-#: beiden Ordnern, gewinnt fakelib2 und der Inhalt von fakelib bleibt ungenutzt.
+#: Das ist zweifach unzuverlaessig. Erstens gilt es nur bis alpha6: Ab alpha8
+#: sucht ShadowMount+ ``fakelib2`` ausschliesslich im **Backport-Ordner**; aus
+#: dem Spielordner kommt nur noch ``fakelib`` (README alpha8 Z. 190 bis
+#: alpha12 unveraendert). Zweitens ist ausgerechnet die zitierte Zeile der
+#: schlechteste Beleg: Sie steht in **allen** vorliegenden Fassungen bis
+#: alpha12 bytegleich da, waehrend die README daneben laengst etwas anderes
+#: sagt - ShadowMount+ widerspricht sich in der eigenen Dokumentation, und der
+#: config-Kommentar ist der stehengebliebene Text.
+#:
+#: Es wird weiterhin immer nur EINER von beiden eingehaengt.
 FAKELIB2_ORDNER = "fakelib2"
 
 #: Beide Namen, fuer Suchen und Pruefungen.
@@ -801,8 +812,12 @@ def fakelib_ziel(spielordner: str, ordnername: str = FAKELIB_ORDNER) -> str:
 def fakelib_vorhandene_ordner(spielordner: str) -> list[str]:
     """Nennt die vorhandenen Bibliotheksordner eines Dumps.
 
-    Gedacht fuer die Warnung, wenn beide existieren: Dann haengt die Konsole nur
-    ``fakelib2`` ein, und was in ``fakelib`` liegt, wirkt nicht.
+    Gedacht fuer die Warnung, wenn beide existieren. **Welcher der beiden dann
+    wirkt, sagt diese Funktion bewusst nicht** - es haengt von der
+    ShadowMount+-Fassung ab, und die Regeln stehen in
+    ``shadowmount_generation``. Bis zum 05.09.2026 behauptete der Docstring
+    hier "dann haengt die Konsole nur fakelib2 ein"; im Spielordner gilt ab
+    1.7 alpha8 das Gegenteil.
     """
     da = []
     for name in FAKELIB_ORDNERNAMEN:

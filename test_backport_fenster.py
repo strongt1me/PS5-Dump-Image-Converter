@@ -252,3 +252,69 @@ class QuellordnerTests(_Quelltext):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SprachfuehrungTests(unittest.TestCase):
+    """Die Beanstandungen kommen aus einem Modul ohne i18n - und trotzdem
+    zweisprachig.
+
+    ``shadowmount_generation`` darf ``i18n`` nicht importieren; es soll ohne
+    die Oberflaeche benutzbar bleiben. Bis zum 05.09.2026 lieferte es deshalb
+    feste deutsche Saetze, und die standen unuebersetzt im Protokoll und in
+    der Kollisionswarnung - auch wenn das Programm auf Englisch lief. Seither
+    reicht die Oberflaeche Textvorlagen herein, wie bei ``pkg_merger``.
+    """
+
+    def _kollision(self, sprache: str) -> str:
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda k, _s=sprache, **kw: APP.i18n_translate(_s, k, **kw)
+        with tempfile.TemporaryDirectory(prefix="fakelib_kol_") as d:
+            os.makedirs(os.path.join(d, "fakelib"))
+            os.makedirs(os.path.join(d, "fakelib2"))
+            return gui._fakelib_kollision(d)
+
+    def test_das_helfermodul_kennt_i18n_nicht(self):
+        """Die Hausregel - sonst haengt es an der Oberflaeche."""
+        from ps5_validator.utils import shadowmount_generation as smg
+        with io.open(smg.__file__, encoding="utf-8") as fh:
+            quelle = fh.read()
+        self.assertNotIn("import i18n", quelle)
+        self.assertNotIn("from ps5_validator.utils.i18n", quelle)
+
+    def test_die_englische_warnung_traegt_keinen_deutschen_satz(self):
+        englisch = self._kollision("en")
+        self.assertTrue(englisch, "Es kam gar keine Warnung.")
+        for deutsch in ("Beide Ordner vorhanden", "Im Spielordner liegt",
+                        "bleibt ungenutzt", "wird der dort ignoriert"):
+            self.assertNotIn(deutsch, englisch,
+                             "Deutscher Satz in der englischen Oberflaeche: %r"
+                             % deutsch)
+
+    def test_die_deutsche_warnung_bleibt_deutsch(self):
+        deutsch = self._kollision("de")
+        self.assertIn("Beide Ordner vorhanden", deutsch)
+
+    def test_fuer_jede_kennung_gibt_es_einen_text(self):
+        """Eine fehlende Vorlage faellt sonst erst im Betrieb auf."""
+        from ps5_validator.utils import shadowmount_generation as smg
+        from ps5_validator.utils.i18n import STRINGS
+        for kennung in smg.MELDUNGEN:
+            with self.subTest(kennung=kennung):
+                self.assertIn("smgen." + kennung, STRINGS)
+
+    def test_ohne_vorlagen_bleibt_es_beim_eingebauten_satz(self):
+        """Das Modul muss allein benutzbar bleiben."""
+        from ps5_validator.utils import shadowmount_generation as smg
+        meldungen = smg.beanstandungen(smg.NEU, smg.ORT_SPIEL,
+                                       ["fakelib", "fakelib2"])
+        self.assertTrue(meldungen)
+        self.assertIn("Spielordner", meldungen[0])
+
+    def test_eine_unbrauchbare_vorlage_sprengt_nichts(self):
+        """Ein Platzhalter, den es nicht gibt, darf die Pruefung nicht kippen."""
+        from ps5_validator.utils import shadowmount_generation as smg
+        meldungen = smg.beanstandungen(
+            smg.NEU, smg.ORT_SPIEL, ["fakelib", "fakelib2"],
+            texte={"spiel_fakelib2_wirkungslos": "kaputt {gibtsnicht}"})
+        self.assertTrue(meldungen)
+        self.assertNotIn("{gibtsnicht}", meldungen[0])
