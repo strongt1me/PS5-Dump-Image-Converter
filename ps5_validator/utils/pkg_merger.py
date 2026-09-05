@@ -38,6 +38,41 @@ from ps5_validator.utils.pkg_reader import (
 
 META_TOKEN = "sc"
 MERGED_SUFFIX = "-merged.pkg"
+
+#: Die Protokollzeilen als Vorlagen - damit der Aufrufer sie uebersetzen kann.
+#:
+#: Dieses Modul bleibt sprachfrei wie alle unter ``ps5_validator/utils``:
+#: keines davon bindet i18n ein. Bis zum 05.09.2026 standen die Saetze hier
+#: fest auf Deutsch und liefen an ``self._t()`` vorbei - im Fenster des PKG
+#: Mergers mischten sich deutsche Zeilen unter eine englische Oberflaeche.
+#: Jetzt reicht der Aufrufer eigene Vorlagen herein; ohne die bleibt es beim
+#: bisherigen Wortlaut, damit vorhandene Aufrufer unveraendert laufen.
+MELDUNGEN = {
+    "kein_muster": "[warn] '{name}' entspricht nicht dem Split-Namensschema; uebersprungen.",
+    "unbekanntes_token": "[warn] '{name}' hat ein unbekanntes Teil-Token; uebersprungen.",
+    "haengt_an": "[work] fuege '{name}' an...",
+    "fertig_einer": "[done] Zusammenfuegen abgeschlossen.",
+    "kein_wurzelteil": "[warn] kein Wurzelteil (_0) fuer '{name}'; uebersprungen.",
+    "fuehrt_zusammen": "[work] fuehre '{name}' zusammen ({teile})...",
+    "teile_mit_meta": "{anzahl} nummerierte(s) Teil(e) + Metadaten-Teil",
+    "teile_ohne_meta": "{anzahl} nummerierte(s) Teil(e), ohne Metadaten-Teil",
+    "fertig_alle": "[done] Alle Split-Sets verarbeitet.",
+}
+
+
+def _melde(log, texte, kennung: str, **werte) -> None:
+    """Schickt eine Meldung ans Protokoll - uebersetzt, wenn moeglich."""
+    if not log:
+        return
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    log(vorlage.format(**werte))
+
+
+def _teiletext(anzahl: int, mit_meta: bool, texte) -> str:
+    """Die Klammer hinter dem Satznamen: wie viele Teile, mit Metadaten?"""
+    kennung = "teile_mit_meta" if mit_meta else "teile_ohne_meta"
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    return vorlage.format(anzahl=anzahl)
 _HEAD_READ_SIZE = 0x60
 _COPY_CHUNK_SIZE = 1024 * 1024
 
@@ -115,7 +150,8 @@ def _try_parse_leading_int(token: str) -> int | None:
     return int(token[:i])
 
 
-def discover_split_sets(input_dir: str, log: LogFn | None = None) -> list[SplitSet]:
+def discover_split_sets(input_dir: str, log: LogFn | None = None,
+                        texte: dict | None = None) -> list[SplitSet]:
     """Gruppiert alle `.pkg`-Dateien in `input_dir` nach dem Split-Namensschema."""
     if not os.path.isdir(input_dir):
         raise NotADirectoryError(f"'{input_dir}' ist kein Ordner.")
@@ -132,8 +168,7 @@ def discover_split_sets(input_dir: str, log: LogFn | None = None) -> list[SplitS
 
         parsed = _try_parse_name(entry)
         if parsed is None:
-            if log:
-                log(f"[warn] '{entry}' entspricht nicht dem Split-Namensschema; übersprungen.")
+            _melde(log, texte, "kein_muster", name=entry)
             continue
         base_name, token = parsed
 
@@ -143,8 +178,7 @@ def discover_split_sets(input_dir: str, log: LogFn | None = None) -> list[SplitS
             continue
         number = _try_parse_leading_int(token)
         if number is None:
-            if log:
-                log(f"[warn] '{entry}' hat ein unbekanntes Teil-Token; übersprungen.")
+            _melde(log, texte, "unbekanntes_token", name=entry)
             continue
         split_set.numbered[number] = full
 
@@ -244,6 +278,7 @@ def merge_split_set(
     output_path: str,
     compute_digest: bool = False,
     log: LogFn | None = None,
+    texte: dict | None = None,
 ) -> MergeResult:
     """Fügt einen validierten Split-Satz per Byte-Konkatenation zu `output_path` zusammen.
 
@@ -271,8 +306,7 @@ def merge_split_set(
     try:
         with open(tmp_path, "wb") as out_f:
             for piece in ordered:
-                if log:
-                    log(f"[work] füge '{os.path.basename(piece)}' an...")
+                _melde(log, texte, "haengt_an", name=os.path.basename(piece))
                 with open(piece, "rb") as in_f:
                     while True:
                         chunk = in_f.read(_COPY_CHUNK_SIZE)
@@ -291,8 +325,7 @@ def merge_split_set(
                 pass
         raise
 
-    if log:
-        log("[done] Zusammenfügen abgeschlossen.")
+    _melde(log, texte, "fertig_einer")
 
     return MergeResult(
         output_path=output_path,
@@ -310,6 +343,7 @@ def merge_directory(
     output_dir: str | None = None,
     compute_digest: bool = False,
     log: LogFn | None = None,
+    texte: dict | None = None,
 ) -> list[MergeResult]:
     """Findet und führt alle vollständigen Split-Sets in `input_dir` zusammen.
 
@@ -319,20 +353,18 @@ def merge_directory(
     os.makedirs(output_dir, exist_ok=True)
 
     results: list[MergeResult] = []
-    for split_set in discover_split_sets(input_dir, log):
+    for split_set in discover_split_sets(input_dir, log, texte):
         if not split_set.has_root:
-            if log:
-                log(f"[warn] kein Wurzelteil (_0) für '{split_set.base_name}'; übersprungen.")
+            _melde(log, texte, "kein_wurzelteil", name=split_set.base_name)
             continue
         output_path = os.path.join(output_dir, split_set.base_name + MERGED_SUFFIX)
-        if log:
-            piece_info = f"{len(split_set.numbered)} nummerierte(s) Teil(e)"
-            piece_info += ", ohne Metadaten-Teil" if split_set.meta is None else " + Metadaten-Teil"
-            log(f"[work] führe '{split_set.base_name}' zusammen ({piece_info})...")
+        _melde(log, texte, "fuehrt_zusammen", name=split_set.base_name,
+               teile=_teiletext(len(split_set.numbered),
+                                split_set.meta is not None, texte))
         results.append(
-            merge_split_set(split_set.ordered_numbered, split_set.meta, output_path, compute_digest, log)
+            merge_split_set(split_set.ordered_numbered, split_set.meta, output_path,
+                            compute_digest, log, texte)
         )
 
-    if log:
-        log("[done] Alle Split-Sets verarbeitet.")
+    _melde(log, texte, "fertig_alle")
     return results

@@ -98,6 +98,7 @@ from ps5_validator.utils.ffpkg_support import (
     validate_source_folder,
 )
 from ps5_validator.utils.pkg_merger import (
+    MELDUNGEN as pkg_merger_meldungen,
     PkgMergeError,
     discover_split_sets,
     merge_split_set,
@@ -109,6 +110,12 @@ from ps5_validator.utils.self_reader import (
 )
 from ps5_validator.utils import ampr_updates
 from ps5_validator.utils.dump_rename import (
+    CONFIDENCE_FAILED as dump_rename_fehlgeschlagen,
+    CONFIDENCE_NEEDS_REVIEW as dump_rename_nachsehen,
+    CONFIDENCE_READY as dump_rename_bereit,
+    PRESET_PPSA_ONLY as dump_rename_nur_ppsa,
+    PRESET_PPSA_TITLE as dump_rename_ppsa_titel,
+    PRESET_PPSA_TITLE_VERSION as dump_rename_ppsa_titel_version,
     build_presets as dump_rename_presets,
     compute_confidence as dump_rename_confidence,
     sanitize_name as dump_rename_sanitize,
@@ -18010,53 +18017,65 @@ class PS5ConverterGUI:
                     exe = self._find_filezilla()
 
         if not exe:
+            # Der ganze Block steht seit dem 05.09.2026 IN diesem "if". Vorher
+            # lag er eine Ebene weiter links und lief deshalb auch dann, wenn
+            # die automatische Installation geglueckt war und der Pfad schon
+            # feststand: Der Anwender bekam grundlos "FileZilla auswaehlen"
+            # vorgesetzt, und brach er ab, startete FileZilla trotzdem.
             messagebox.showwarning(
                 self._t("dialog.title.filezilla_not_found"),
                 self._t("dialog.msg.filezilla_manual_select"),
                 parent=self.root,
             )
-        # Die Auswahl haengt an der Plattform. Bis v1.8.54 stand hier
-        # unter allen Systemen ein Dateidialog mit
-        # filetypes=[("FileZilla", "filezilla.exe"), (..., "*.exe")].
-        # Auf macOS ist "filezilla.exe" kein gueltiges Muster - Tk erwartet
-        # dort Endungen der Form "*.ext" - und der Cocoa-Dialog riss die
-        # Anwendung mit sich: vollstaendiger Absturz samt Apple-
-        # Fehlerbericht, gemeldet am 19.08.2026. Auf macOS wird deshalb der
-        # Ordnerdialog benutzt; ein .app-Buendel *ist* ein Ordner, und
-        # dieser Weg kennt gar keine Musterliste.
-        if IST_MACOS:
-            selected = filedialog.askdirectory(
-                parent=self.root,
-                title=self._t("dialog.title.choose_filezilla"),
-                mustexist=True,
-            )
-        elif IST_WINDOWS:
-            selected = filedialog.askopenfilename(
-                parent=self.root,
-                title=self._t("dialog.title.choose_filezilla"),
-                # Der Dateiname als Muster ist hier gewollt - er hebt die
-                # gesuchte Datei aus dem Programmordner heraus. Auf diesem
-                # Zweig laeuft ohnehin nur Windows; _dateitypen haelt die
-                # Zusage trotzdem fest, damit die Pruefung ueber alle
-                # Dateidialoge greift (siehe test_dateidialoge_macos_sicher).
-                filetypes=self._dateitypen(
-                    [(self._t("filetype.filezilla_exe"), "filezilla.exe"),
-                     (self._t("filetype.exe_files"), "*.exe")]),
-            )
-        else:
-            # Linux: keine Endungen, ausfuehrbare Dateien tragen dort keine.
-            selected = filedialog.askopenfilename(
-                parent=self.root,
-                title=self._t("dialog.title.choose_filezilla"),
-            )
-        if selected and self._filezilla_pfad_gueltig(selected):
-            exe = selected
-            try:
-                self._save_setting('filezilla_path', selected)
-            except Exception as exc:
-                logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
+            # Die Auswahl haengt an der Plattform. Bis v1.8.54 stand hier
+            # unter allen Systemen ein Dateidialog mit
+            # filetypes=[("FileZilla", "filezilla.exe"), (..., "*.exe")].
+            # Auf macOS ist "filezilla.exe" kein gueltiges Muster - Tk erwartet
+            # dort Endungen der Form "*.ext" - und der Cocoa-Dialog riss die
+            # Anwendung mit sich: vollstaendiger Absturz samt Apple-
+            # Fehlerbericht, gemeldet am 19.08.2026. Auf macOS wird deshalb der
+            # Ordnerdialog benutzt; ein .app-Buendel *ist* ein Ordner, und
+            # dieser Weg kennt gar keine Musterliste.
+            if IST_MACOS:
+                selected = filedialog.askdirectory(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                    mustexist=True,
+                )
+            elif IST_WINDOWS:
+                selected = filedialog.askopenfilename(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                    # Der Dateiname als Muster ist hier gewollt - er hebt die
+                    # gesuchte Datei aus dem Programmordner heraus. Auf diesem
+                    # Zweig laeuft ohnehin nur Windows; _dateitypen haelt die
+                    # Zusage trotzdem fest, damit die Pruefung ueber alle
+                    # Dateidialoge greift (siehe test_dateidialoge_macos_sicher).
+                    filetypes=self._dateitypen(
+                        [(self._t("filetype.filezilla_exe"), "filezilla.exe"),
+                         (self._t("filetype.exe_files"), "*.exe")]),
+                )
+            else:
+                # Linux: keine Endungen, ausfuehrbare Dateien tragen dort keine.
+                selected = filedialog.askopenfilename(
+                    parent=self.root,
+                    title=self._t("dialog.title.choose_filezilla"),
+                )
+            if selected and self._filezilla_pfad_gueltig(selected):
+                exe = selected
+                try:
+                    self._save_setting('filezilla_path', selected)
+                except Exception as exc:
+                    logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
 
         if not exe:
+            # Die Statuszeile zuruecknehmen. Schlaegt die Installation fehl
+            # oder bricht der Anwender die Pfadauswahl ab, stand hier sonst
+            # dauerhaft "FileZilla wird installiert..." - obwohl nichts laeuft
+            # und nichts installiert wurde. Genau dieses Stehenbleiben war am
+            # 20.08.2026 der Anlass fuer _set_status_fluechtig; nur der
+            # Erfolgsfall raeumte bisher auf.
+            self._set_status(self._t("main.status_ready"))
             return False
         return self._filezilla_starten(exe)
 
@@ -25701,10 +25720,16 @@ class PS5ConverterGUI:
 
         # --- Scrollbarer Inhalts-Frame (direkt im Fenster, kein Canvas-Overlay) ---
         scroll_canvas = tk.Canvas(win, bg=self._COLORS["bg_main"], highlightthickness=0)
-        scroll_canvas.pack(fill="both", expand=True, padx=2, pady=2)
-
         vsb = ttk.Scrollbar(win, orient="vertical", command=scroll_canvas.yview)
+        # Erst die Leiste packen, dann die Flaeche. Andersherum nimmt der
+        # Canvas mit fill="both"/expand=True den Hohlraum zuerst, und fuer die
+        # Leiste bleibt nur der Rest darunter: An einem Nachbau gemessen war
+        # sie ein 27 px hoher Stummel in der unteren Ecke statt eines vollen
+        # Balkens rechts. Wer nicht am Mausrad rollt, kam an den unteren Teil
+        # des Fensters gar nicht heran. Dieselbe Packfalle hat hier schon
+        # einmal die Knopfleiste gequetscht.
         vsb.pack(side="right", fill="y")
+        scroll_canvas.pack(side="left", fill="both", expand=True, padx=2, pady=2)
         scroll_canvas.configure(yscrollcommand=vsb.set)
 
         inner = tk.Frame(scroll_canvas, bg=self._COLORS["bg_main"])
@@ -26082,7 +26107,8 @@ class PS5ConverterGUI:
 
         log_lines: list[str] = []
         try:
-            split_sets = discover_split_sets(folder, log=log_lines.append)
+            split_sets = discover_split_sets(folder, log=log_lines.append,
+                                             texte=self._pkg_merger_texte())
         except NotADirectoryError as exc:
             messagebox.showerror(self._t("dialog.title.invalid_folder"), str(exc), parent=self.root)
             return
@@ -26096,6 +26122,18 @@ class PS5ConverterGUI:
             return
 
         self._render_pkg_merger_window(folder, split_sets, log_lines)
+
+    def _pkg_merger_texte(self) -> dict:
+        """Die Protokollvorlagen des PKG-Mergers in der eingestellten Sprache.
+
+        ``pkg_merger`` bleibt sprachfrei wie alle Helfer unter
+        ``ps5_validator/utils`` und traegt seine Saetze nur als Vorgabe. Bis
+        zum 05.09.2026 gab es diesen Weg nicht: Die Zeilen kamen fest auf
+        Deutsch aus dem Modul und liefen an ``self._t()`` vorbei - im Fenster
+        mischten sie sich unter eine englische Oberflaeche.
+        """
+        return {kennung: self._t("pkg_merger.log_" + kennung)
+                for kennung in pkg_merger_meldungen}
 
     def _render_pkg_merger_window(self, folder: str, split_sets: list, log_lines: list[str]) -> None:
         """Baut das Fenster zur Übersicht/Zusammenführung erkannter Split-Sets auf."""
@@ -26232,6 +26270,7 @@ class PS5ConverterGUI:
                             result = merge_split_set(
                                 split_set.ordered_numbered, split_set.meta, output_path,
                                 compute_digest=True, log=_melde,
+                                texte=self._pkg_merger_texte(),
                             )
                             _melde(
                                 self._t(
@@ -28425,6 +28464,23 @@ class PS5ConverterGUI:
                 namen.append(self._t(schluessel))
         return ", ".join(namen) if namen else "-"
 
+    #: Die beiden ELF-Typen, die ``self_reader`` im Klartext beschreibt.
+    #:
+    #: Er tut das auf Deutsch, weil er sprachfrei bleiben soll und irgendeine
+    #: Sprache waehlen musste. Uebersetzt wird deshalb hier - fuer die
+    #: uebrigen Werte (ET_SCE_EXEC, ET_SCE_DYNEXEC, rohe Zahlen) gibt es
+    #: nichts zu uebersetzen, die bleiben, wie sie kommen.
+    _ELF_TYP_TEXTE = {
+        0x0002: "self_inspector.elf_type_exec",
+        0x0003: "self_inspector.elf_type_dyn",
+    }
+
+    def _elf_typ_text(self, elf: object) -> str:
+        """Der ELF-Typ in der eingestellten Sprache."""
+        schluessel = self._ELF_TYP_TEXTE.get(getattr(elf, "e_type", None))
+        return self._t(schluessel) if schluessel else str(
+            getattr(elf, "type_name", "?"))
+
     def _build_self_report_text(self, info: object) -> str:
         """Baut den Textbericht zur geprüften Datei (Anzeige und Zwischenablage teilen ihn)."""
         zeilen: list[str] = [
@@ -28466,7 +28522,8 @@ class PS5ConverterGUI:
         else:
             zeilen += [
                 self._t("self_inspector.elf_class", bits="64-bit" if elf.is_64bit else "32-bit"),
-                self._t("self_inspector.elf_type", type_name=elf.type_name),
+                self._t("self_inspector.elf_type",
+                        type_name=self._elf_typ_text(elf)),
                 self._t("self_inspector.elf_machine", machine=elf.e_machine),
                 self._t("self_inspector.elf_entry", entry=elf.e_entry),
                 self._t("self_inspector.elf_phnum", count=elf.e_phnum, phoff=elf.e_phoff),
@@ -31112,20 +31169,49 @@ class PS5ConverterGUI:
                 ziel = os.path.join(ordner, "ps5_autoloader")
                 os.makedirs(ziel, exist_ok=True)
                 anzahl = 0
+                misslungen = []
                 for name in stand["alle"]:
+                    # Daneben schreiben und erst am Ende umbenennen - sonst
+                    # legt das offene "wb" die Zieldatei an, bevor das RETR
+                    # ueberhaupt laeuft. Bricht die Uebertragung ab, blieb im
+                    # Schnappschussordner eine 0-Byte- oder halbe Datei liegen;
+                    # gezaehlt wurde sie nicht, zu sehen war sie trotzdem, und
+                    # beim Zurueckspielen ginge sie mit auf die Konsole.
+                    endgueltig = os.path.join(ziel, name)
+                    zwischen = endgueltig + ".teil"
                     try:
-                        with open(os.path.join(ziel, name), "wb") as fh:
+                        with open(zwischen, "wb") as fh:
                             ftp.retrbinary(
                                 "RETR " + self._AUTOLOADER_ORDNER + "/" + name, fh.write)
+                        os.replace(zwischen, endgueltig)
                         anzahl += 1
                     except Exception as exc:
+                        # Frueher nur logger.debug: Im Auslieferungsstand
+                        # schreibt der Logger nichts, der Anwender erfuhr also
+                        # nie, dass eine Datei fehlt - die Zahl im Ergebnis war
+                        # der einzige Hinweis, und die liest niemand nach.
                         logger.debug("%s nicht sicherbar: %s", name, exc)
-                return (anzahl, ziel)
+                        misslungen.append(name)
+                        try:
+                            if os.path.exists(zwischen):
+                                os.remove(zwischen)
+                        except OSError as aufraeum:
+                            logger.debug("Zwischendatei bleibt liegen: %s", aufraeum)
+                return (anzahl, ziel, misslungen)
 
-            self._autoloader_auftrag(
-                win, stand_var, _arbeit,
-                lambda w: stand_var.set(self._t("autoloader.state_snapshot",
-                                                count=w[0], path=w[1])))
+            def _fertig(w) -> None:
+                anzahl, ziel, misslungen = w
+                stand_var.set(self._t("autoloader.state_snapshot",
+                                      count=anzahl, path=ziel))
+                # Was nicht ankam, gehoert gesagt. Vorher stand es nur im
+                # Logger, und der schreibt im Auslieferungsstand nichts.
+                if misslungen:
+                    self._append_to_log(
+                        self._t("autoloader.snapshot_incomplete",
+                                count=len(misslungen),
+                                names=", ".join(misslungen[:6])) + chr(10))
+
+            self._autoloader_auftrag(win, stand_var, _arbeit, _fertig)
 
         def _zurueckspielen() -> None:
             ordner = filedialog.askdirectory(
@@ -31680,6 +31766,27 @@ class PS5ConverterGUI:
     # sprechende Ordnernamen vor (Title-ID / + Titel / + Version) und
     # benennt auf Wunsch um. Rührt ausschließlich den Ordnernamen an.
     # ==================================================================
+    #: Die Kennungen aus ``dump_rename`` und ihr Sprachtext.
+    #:
+    #: Der Helfer bleibt sprachfrei - **keines** der 33 Module unter
+    #: ``ps5_validator/utils`` bindet i18n ein, und das soll so bleiben. Seine
+    #: Konstanten dienen zugleich als Schluessel und Vergleichswert (auch in
+    #: Pruefungen), duerfen sich also nicht aendern. Uebersetzt wird deshalb
+    #: erst hier, beim Anzeigen.
+    _DUMP_RENAME_TEXTE = {
+        dump_rename_bereit: "dump_rename.confidence_ready",
+        dump_rename_nachsehen: "dump_rename.confidence_review",
+        dump_rename_fehlgeschlagen: "dump_rename.confidence_failed",
+        dump_rename_nur_ppsa: "dump_rename.preset_ppsa_only",
+        dump_rename_ppsa_titel: "dump_rename.preset_ppsa_title",
+        dump_rename_ppsa_titel_version: "dump_rename.preset_ppsa_title_version",
+    }
+
+    def _dump_rename_uebersetzen(self, kennung: str) -> str:
+        """Sprachtext zu einer Kennung; unbekannte bleiben, wie sie sind."""
+        schluessel = self._DUMP_RENAME_TEXTE.get(kennung)
+        return self._t(schluessel) if schluessel else kennung
+
     def _show_dump_rename(self) -> None:
         """Wählt einen Dump-Ordner und schlägt Namen aus seinen Metadaten vor."""
         ordner = filedialog.askdirectory(
@@ -31738,7 +31845,8 @@ class PS5ConverterGUI:
             ("dump_rename.field_title_id", title_id or "—"),
             ("dump_rename.field_title", titel or "—"),
             ("dump_rename.field_version", version or "—"),
-            ("dump_rename.field_confidence", einschaetzung),
+            ("dump_rename.field_confidence",
+             self._dump_rename_uebersetzen(einschaetzung)),
         ):
             zeile = tk.Frame(körper, bg=c["bg_main"])
             zeile.pack(fill="x")
@@ -31765,7 +31873,9 @@ class PS5ConverterGUI:
         vorhandene = [(bezeichnung, name) for bezeichnung, name in vorschlaege.items() if name]
         for bezeichnung, name in vorhandene:
             tk.Radiobutton(
-                körper, text=f"{bezeichnung}:  {name}", value=name, variable=auswahl,
+                körper,
+                text="%s:  %s" % (self._dump_rename_uebersetzen(bezeichnung), name),
+                value=name, variable=auswahl,
                 command=_uebernehmen, anchor="w", justify="left",
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
@@ -33991,7 +34101,8 @@ class PS5ConverterGUI:
                 status_var.set(self._t("remote_ini.status_entries_loaded", count=len(loaded)))
 
         def _push_to_ps5() -> None:
-            kopfzeile = f"{title} – geschrieben von PS5 Dump & Image Converter"
+            kopfzeile = self._t("remote_ini.written_by", title=title,
+                                programm=programmname.NAME)
             roh = geladen["text"]
             if roh is None:
                 # Ohne einen von der Konsole gelesenen Stand steht hier nur das
@@ -34478,6 +34589,12 @@ class PS5ConverterGUI:
             _log(self._t('log.console.0038', v0=label, v1=_os.path.basename(path), v2=ip, v3=port))
 
             def _do_send():
+                # Zurueck ueber _spaeter_im_fenster, nicht ueber win.after:
+                # Schliesst der Anwender das Fenster, waehrend noch gesendet
+                # wird, ist "win" weg und Tk wirft im Faden "main thread is not
+                # in main loop". Der Fehlerzweig lag zudem ausserhalb des try,
+                # ein TclError dort blieb also ungefangen. _spaeter_im_fenster
+                # prueft vorher, ob das Fenster noch da ist.
                 import socket as _sock
                 try:
                     with open(path, "rb") as f:
@@ -34487,10 +34604,15 @@ class PS5ConverterGUI:
                     s.connect((ip, port))
                     s.sendall(data)
                     s.close()
-                    win.after(0, lambda: _log(self._t('log.console.0039', v0=label, v1=len(data))))
+                    menge = len(data)
+                    self._spaeter_im_fenster(
+                        win, lambda: _log(self._t('log.console.0039',
+                                                  v0=label, v1=menge)))
                 except Exception as exc:
                     _e = str(exc)
-                    win.after(0, lambda _e=_e: _log(self._t('log.console.0040', v0=label, v1=_e)))
+                    self._spaeter_im_fenster(
+                        win, lambda _e=_e: _log(self._t('log.console.0040',
+                                                        v0=label, v1=_e)))
 
             import threading as _thr
             _thr.Thread(target=_do_send, daemon=True).start()
@@ -34552,8 +34674,9 @@ class PS5ConverterGUI:
                     except Exception:
                         pass
                     _logserver_state["server"] = None
-                btn_logserver.config(text="Log-Server starten  (Port 9099)",
-                                     bg=c["accent_btn"], activebackground=c["accent_btn_hover"])
+                btn_logserver.config(
+                    text=self._t("jsloader.start_logserver_button"),
+                    bg=c["accent_btn"], activebackground=c["accent_btn_hover"])
                 _log(self._t('log.console.0043'))
             else:
                 import http.server as _hs
