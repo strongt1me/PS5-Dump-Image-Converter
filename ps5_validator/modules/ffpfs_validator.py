@@ -130,10 +130,12 @@ def ermittle_bauform(pfad: str | Path) -> dict[str, object] | None:
         ``{"bauform": ..., "inneres_abbild": ..., "aeussere_dateien": ...}``
         mit ``bauform`` aus:
 
-        * ``"flach"``     - die Dateien liegen direkt im Container
-                            (``mkpfs pack folder --raw``)
+        * ``"flach"``     - die Dateien liegen direkt in der Wurzel
+                            (``mkpfs pack folder --raw``). Fuer eine ``.ffpfs``
+                            ist das die vorgeschriebene Form, fuer eine
+                            ``.ffpfsc`` fehlt dann die Containerebene.
         * ``"pfs"``       - Container -> rohes PFS -> Dateien
-                            (der Aufbau, den dieses Programm selbst baut)
+                            (der Aufbau einer ``.ffpfsc`` aus einem Dump-Ordner)
         * ``"exfat"``     - Container -> exFAT-Abbild -> Dateien
                             (``mkpfs pack folder`` ohne ``--raw``,
                             ``mkpfs pack file`` auf eine ``.exfat``)
@@ -338,13 +340,29 @@ class FfpfsValidator(BaseValidator):
     def _check_nesting(self, fpath: Path, result: ValidationResult) -> None:
         """Prüft die innere Verschachtelung des Containers (Tiefenprüfung).
 
-        Ein korrektes ``.ffpfsc``/``.ffpfs`` besteht aus zwei Ebenen: dem
-        äußeren Container und darin genau einem rohen, unkomprimierten
-        PFS-Image, das die Spieldateien enthält. Fehlt beim Bauen des inneren
-        Images ``--raw``, legt mkpfs von sich aus noch ein exFAT-Abbild
-        dazwischen. Von außen sieht der Container identisch aus, enthält innen
-        aber ein Abbild statt der Spieldateien und ist auf der Konsole
-        unbrauchbar.
+        **Die beiden Endungen haben verschiedene Sollformen** - das ist der
+        Grund, warum die Prüfung hier gleich zu Anfang verzweigt. ShadowMount+
+        (README 1.7alpha12, Z. 229-233 und 533):
+
+        * ``.ffpfsc`` ist ein **Container**: außen genau ein Eintrag, und das
+          ist ein Abbild, dessen Inhalt die Spieldateien sind.
+        * ``.ffpfs`` ist ein **Abbild-Spiel** wie ``.ffpkg`` und ``.exfat``:
+          "sce_sys/param.json must be at image root (no extra top-level
+          folder)". Flach ist dort die *richtige* Form, und ein eingebettetes
+          Abbild ist der Fehler.
+
+        Bis 05.09.2026 wurden beide gleich behandelt. Eine tadellose, auf der
+        Konsole laufende ``.ffpfs`` bekam deshalb den Fehler "Ungewöhnlicher
+        Aufbau" - der Anwender verwarf eine gute Datei oder baute sie in genau
+        die Form um, mit der ShadowMount+ nichts anfangen kann.
+
+        Für den Container gilt weiter: Ein korrektes ``.ffpfsc`` besteht aus
+        zwei Ebenen: dem äußeren Container und darin genau einem rohen,
+        unkomprimierten PFS-Image, das die Spieldateien enthält. Fehlt beim
+        Bauen des inneren Images ``--raw``, legt mkpfs von sich aus noch ein
+        exFAT-Abbild dazwischen. Von außen sieht der Container identisch aus,
+        enthält innen aber ein Abbild statt der Spieldateien und ist auf der
+        Konsole unbrauchbar.
 
         ``mkpfs tree`` und ``inspect`` zeigen den Unterschied nicht, weil beide
         nur die äußere Ebene auflisten – dort steht in beiden Fällen genau ein
@@ -369,6 +387,13 @@ class FfpfsValidator(BaseValidator):
             self._log.info(f"Verschachtelungsprüfung übersprungen: {exc}")
             return
 
+        # Drei Faelle, nicht zwei: Neben den beiden Endungen des
+        # Programms landet hier auch eine rohe ".pfs" - das innere
+        # Abbild, das jemand versehentlich statt des Containers
+        # prueft. Fuer die bleibt es beim Hinweis von frueher.
+        endung = fpath.suffix.lower()
+        ist_container = endung == ".ffpfsc"
+        ist_abbildspiel = endung == ".ffpfs"
         handle = None
         try:
             # Aeussere Ebene zuerst: Wie viele Eintraege liegen im Container?
@@ -378,6 +403,16 @@ class FfpfsValidator(BaseValidator):
             result.summary["outer_files"] = aussen_dateien
 
             if aussen_dateien != 1:
+                if ist_abbildspiel:
+                    # Eine .ffpfs mit den Spieldateien in der Wurzel: genau so
+                    # gehoert es sich. Geprueft wird dann dasselbe wie bei
+                    # einem Dump-Ordner - ob die Pflichtdateien da sind.
+                    result.summary["nesting"] = (
+                        f"flach aufgebaut ({aussen_dateien} Einträge in der Abbildwurzel) "
+                        f"– die vorgeschriebene Form für .ffpfs"
+                    )
+                    self._check_critical_files(aussen.file_inodes, result)
+                    return
                 # Die von diesem Programm erzeugten Container sind zweistufig:
                 # aussen genau ein Eintrag (das rohe innere Image). Liegen die
                 # Dateien direkt darin, fehlt diese Stufe.
@@ -387,8 +422,37 @@ class FfpfsValidator(BaseValidator):
                 )
                 result.add_error(
                     f"Ungewöhnlicher Aufbau: Der Container enthält {aussen_dateien} Einträge "
-                    f"direkt statt genau eines inneren PFS-Images. Von diesem Programm erzeugte "
-                    f".ffpfsc/.ffpfs sind zweistufig aufgebaut."
+                    f"direkt statt genau eines inneren PFS-Images. "
+                    + ("Eine .ffpfsc ist ein Container und trägt genau ein inneres Abbild."
+                       if ist_container else
+                       "Sieht aus wie das innere Abbild eines Containers – dann ist "
+                       "nicht diese Datei zu prüfen, sondern die .ffpfsc darum herum.")
+                )
+                return
+
+            if ist_abbildspiel:
+                # Genau ein Eintrag in einer .ffpfs - das ist der Fall, den
+                # dieses Programm bis 05.09.2026 selbst gebaut hat: aussen
+                # "pfs_image.dat" (oder "Spiel.exfat"/"Spiel.ffpkg"), innen
+                # erst die Spieldateien. ShadowMount+ haengt eine .ffpfs als
+                # Abbild ein und sucht sce_sys/param.json in der Wurzel - es
+                # findet nur dieses eine Abbild und laesst das Spiel weg.
+                name_innen = ""
+                try:
+                    name_innen = next(iter(aussen.file_inodes))
+                except StopIteration:
+                    pass
+                result.summary["nesting"] = (
+                    "geschachtelt (ein eingebettetes Abbild statt der Spieldateien)"
+                )
+                result.add_error(
+                    "Ungewöhnlicher Aufbau: In der Wurzel dieser .ffpfs liegt nur "
+                    + (f"„{name_innen}“" if name_innen else "ein einzelner Eintrag")
+                    + ". Eine .ffpfs ist ein Abbild-Spiel, kein Container – "
+                    "sce_sys/param.json muss direkt in der Abbildwurzel liegen. "
+                    "ShadowMount+ meldet sonst „missing/invalid param.json“ und "
+                    "zeigt das Spiel nicht an. Neu bauen lassen oder als .ffpfsc "
+                    "verwenden."
                 )
                 return
 

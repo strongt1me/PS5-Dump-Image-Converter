@@ -19530,7 +19530,11 @@ class PS5ConverterGUI:
         if source_type == "exfat" and target_type == "ffpfsc":
             return self._mode_pack_file(src, dst)
         if source_type == "exfat" and target_type == "ffpfs":
-            return self._mode_pack_file(src, dst, uncompressed=True)
+            # Nicht ueber _mode_pack_file: Das bettet die .exfat als einzelne
+            # Datei ein, und in der Wurzel der .ffpfs laege dann "Spiel.exfat"
+            # statt sce_sys/param.json. Fuer den .ffpfsc-Container darueber ist
+            # genau das richtig, fuer ein Abbild-Spiel nicht.
+            return self._mode_abbild_zu_ffpfs(src, dst, quelle="exfat")
         if source_type == "exfat" and target_type == "folder":
             return self._mode_exfat_to_folder(src, dst)
         if source_type == "exfat" and target_type == "ffpkg":
@@ -19539,10 +19543,10 @@ class PS5ConverterGUI:
             return self._mode_ffpkg_to_ffpfsc(src, dst)
         if source_type == "ffpkg" and target_type == "ffpfs":
             # Aufgabe 6 bot diese Kombination an, die Verteilung kannte sie nicht
-            # ("Nicht unterstuetzte Konvertierung: ffpkg -> ffpfs"). Der Weg ist
-            # derselbe wie nach .ffpfsc - mkpfs bettet die Datei als Einzeldatei
-            # ein -, nur ohne Kompression.
-            return self._mode_pack_file(src, dst, uncompressed=True)
+            # ("Nicht unterstuetzte Konvertierung: ffpkg -> ffpfs"). Sie ging
+            # dann ueber _mode_pack_file und bettete die .ffpkg als einzelne
+            # Datei ein - dieselbe Falle wie bei exfat -> ffpfs darueber.
+            return self._mode_abbild_zu_ffpfs(src, dst, quelle="ffpkg")
         if source_type == "ffpkg" and target_type == "folder":
             return self._mode_ffpkg_to_folder(src, dst)
         if source_type == "ffpkg" and target_type == "exfat":
@@ -20053,6 +20057,61 @@ class PS5ConverterGUI:
         finally:
             _rmtree_force(temp_root)
 
+    def _mode_abbild_zu_ffpfs(self, src: str, dst: str, *, quelle: str) -> bool:
+        """Baut aus einer ``.exfat`` oder ``.ffpkg`` eine flache ``.ffpfs``.
+
+        Der Umweg über einen Dump-Ordner ist hier Pflicht, nicht Bequemlichkeit.
+        ``mkpfs pack file`` bettet die Quelldatei als *eine* Datei ein; in der
+        Wurzel der fertigen ``.ffpfs`` läge dann ``Spiel.exfat`` bzw.
+        ``Spiel.ffpkg``. ShadowMount+ hängt eine ``.ffpfs`` aber als
+        Abbild-Spiel ein und sucht ``sce_sys/param.json`` direkt in der Wurzel
+        (README 1.7alpha12, Z. 229-233 und 533). Es fände nur das eingebettete
+        Abbild, meldete "missing/invalid param.json" und ließe das Spiel weg.
+
+        Denselben Weg geht ``.ffpfsc`` -> ``.ffpkg`` und ``.ffpfsc`` ->
+        ``.ffpfs`` seit jeher: erst vollständig auspacken, dann neu bauen.
+
+        Args:
+            src:    Die Abbilddatei.
+            dst:    Der Zielordner.
+            quelle: ``"exfat"`` oder ``"ffpkg"`` - entscheidet nur, welcher
+                Entpacker den Dump-Ordner herstellt.
+
+        Returns:
+            True bei Erfolg.
+        """
+        temp_root = self._mkdtemp(prefix="ps5conv_%s_ffpfs_" % quelle, dir_path=dst)
+        try:
+            if quelle == "exfat":
+                entpackt = self._mode_exfat_to_folder(src, temp_root, progress_task_index=2)
+            else:
+                entpackt = self._mode_ffpkg_to_folder(src, temp_root)
+            if not entpackt:
+                return False
+            dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
+            if not os.path.isdir(dump_dir):
+                # Dieselbe Ausweichsuche wie in _mode_ffpkg_to_exfat: Der
+                # Entpacker leitet den Ordnernamen aus dem Dateinamen ab, und
+                # der kann unterwegs bereinigt worden sein.
+                andere = [os.path.join(temp_root, eintrag)
+                          for eintrag in os.listdir(temp_root)
+                          if os.path.isdir(os.path.join(temp_root, eintrag))]
+                if not andere:
+                    self._append_to_log(self._t('log.auto.0108'))
+                    return False
+                dump_dir = andere[0]
+            # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
+            # Arbeitskopie, die Quelle des Benutzers ist eine Datei. Der
+            # Aufruf muss trotzdem hier stehen: Er setzt den Merker, mit dem
+            # _mode_pack_folder gleich darauf nicht ein zweites Mal einbaut
+            # und nicht doch noch nach einer Arbeitskopie fragt.
+            dump_dir = self._integration_anwenden(dump_dir)
+            if not dump_dir:
+                return False
+            return self._mode_pack_folder(dump_dir, dst, uncompressed=True)
+        finally:
+            _rmtree_force(temp_root)
+
     def _mode_exfat_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 3: exFAT in temporären Dump extrahieren und als FFPKG neu schreiben."""
         temp_root = self._mkdtemp(prefix="ps5conv_exfat_ffpkg_", dir_path=dst)
@@ -20459,6 +20518,130 @@ class PS5ConverterGUI:
         set_pct(96.0)
         return True
 
+    def _mode_pack_folder_flach(
+        self, src: str, dst: str, final_output: str,
+        p2_end: float, p3_end: float,
+        set_pct, set_status,
+    ) -> bool:
+        """Baut eine ``.ffpfs``: die Spieldateien direkt in der Abbildwurzel.
+
+        ShadowMount+ unterscheidet zwei Dinge, die dieses Programm lange
+        gleich behandelt hat (README 1.7alpha12, Z. 229-233 und 533):
+
+        * ``.ffpfsc`` ist ein **Container**. Darin liegt genau ein Abbild,
+          und dessen Inhalt sind die Spieldateien - "nested supported image
+          files are scanned".
+        * ``.ffpfs`` ist ein **Abbild-Spiel**, genau wie ``.ffpkg`` und
+          ``.exfat``: "sce_sys/param.json must be at image root (no extra
+          top-level folder)".
+
+        Gebaut wurde bis hierher aber auch die ``.ffpfs`` zweistufig. In ihrer
+        Wurzel lag dann eine einzige Datei - ``pfs_image.dat``. ShadowMount+
+        sucht dort ``sce_sys/param.json``, findet es nicht und meldet
+        "missing/invalid param.json"; das Spiel erscheint gar nicht erst in
+        der Liste.
+
+        Am 05.09.2026 an einem Dump-Ordner mit MkPFS gemessen::
+
+            flach (dieser Weg)          zweistufig (der alte Weg)
+            /                           /
+            |-- sce_sys                 `-- pfs_image.dat
+            |   `-- param.json
+            |-- data.bin
+            `-- eboot.bin
+
+        ``--raw`` ist dabei die entscheidende Angabe: Ohne sie wickelt MkPFS
+        den Ordner erst in ein exFAT-Abbild, und wieder laege nur ein Eintrag
+        in der Wurzel. ``--no-compress`` gehoert dazu, weil die Endung genau
+        das zusagt - und weil MkPFS den Schalter nur zusammen mit ``--raw``
+        beachtet (Messung im Kommentar von :meth:`_mode_pack_folder_mkpfs`).
+
+        Args:
+            src:           Der Dump-Ordner.
+            dst:           Der Zielordner (fuer den Wiederaufnahmepunkt).
+            final_output:  Die fertige Datei.
+            p2_end, p3_end: Die Prozentmarken; hier gibt es nur einen Schritt.
+            set_pct:       Setzt den Fortschritt.
+            set_status:    Setzt die Statuszeile.
+
+        Returns:
+            True, wenn die Datei entstanden ist.
+        """
+        # Dieselben beiden Vorabpruefungen wie in den anderen Bauwegen: Ohne
+        # eboot.bin und param.json ist der Dump auf der Konsole unbrauchbar,
+        # und das fiele sonst erst dort auf.
+        eboot_path = os.path.join(src, "eboot.bin")
+        if not os.path.isfile(eboot_path):
+            self._append_to_log(self._t('log.auto.0115', v0=eboot_path))
+            return False
+        if not self._ensure_param_json(src):
+            return False
+
+        self._save_runtime_checkpoint(
+            mode="pack_folder",
+            src=src,
+            dst=dst,
+            state="in_progress",
+            extra={"stage": "pack_folder_flach_running", "tmp_dir": "", "temp_exfat": ""},
+        )
+
+        self._append_to_log(self._t("log.bauform.ffpfs_flach"))
+        set_status(self._t("status.pack_folder_flach"))
+
+        # Ein Schritt statt zwei - die Anzeige darf keine Phase erwarten, die
+        # es hier nicht gibt.
+        self.task_num_steps = 1
+        self.task_step_ends = [p3_end]
+        self.task_current_step = 0
+        if hasattr(self, "_mkpfs_eta_initial"):
+            del self._mkpfs_eta_initial
+
+        profile = self._resolve_pack_profile("pack_folder", self.task_total_source_bytes)
+        self._append_to_log(
+            self._t(
+                "log.manual.auto_profile_info",
+                name=profile["profile"],
+                size=profile["size_gb"],
+                lvl=profile["level"],
+                cpu=profile["cpu"],
+                cores=profile["cores"],
+                blk=profile["block_size"],
+            )
+        )
+
+        self._wait_for_pending_mkpfs_background(final_output)
+        self._cleanup_stale_mkpfs_output(final_output)
+        pack_out = self._decide_pack_output_staging(final_output)
+        # Keine Kompressionsstufe: --no-compress schliesst sie aus, und mkpfs
+        # nimmt --compression-level daneben nicht an.
+        ok = self._execute_mkpfs(
+            [
+                "pack", "folder",
+                "--raw",
+                "--no-compress",
+                *self._mkpfs_pruef_argumente(),
+                "--no-adjust-output-file-extension",
+                "--version", "PS5",
+                "--inode-bits", "32",
+                "--block-size", str(profile["block_size"]),
+                src, pack_out,
+            ],
+            monitor_target_path=pack_out,
+            monitor_source_file=src,
+            advance_step=True,
+        )
+        if not ok or not self.is_running:
+            return False
+
+        actual_output = self._finalize_staged_pack_output(pack_out, final_output)
+        self.task_final_output_path = actual_output
+        self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
+        set_pct(p3_end)
+        set_status(self._t("status.pack_folder_flach_done"))
+        set_status("Phase 4/4 – Abschlussprüfung läuft...")
+        set_pct(96.0)
+        return True
+
     def _mode_pack_folder_mkpfs(
         self, src: str, dst: str, final_output: str,
         p1_end: float, p2_end: float, p3_end: float,
@@ -20483,21 +20666,25 @@ class PS5ConverterGUI:
         Returns:
             True, wenn die Datei entstanden ist.
         """
-        # Der einstufige Weg kann nur komprimiert. MkPFS 1.0.0 nimmt bei
+        # Eine .ffpfs ist kein Container, sondern ein Abbild-Spiel - wie eine
+        # .ffpkg oder eine .exfat. Sie wird deshalb flach gebaut, in einem
+        # Zug, ohne innere Ebene. Siehe _mode_pack_folder_flach.
+        if uncompressed:
+            return self._mode_pack_folder_flach(
+                src, dst, final_output, p2_end, p3_end, set_pct, set_status)
+
+        # Der einstufige exFAT-Weg kann nur komprimiert. MkPFS 1.0.0 nimmt bei
         # "pack folder" ohne --raw den Schalter --no-compress nicht an: Am
         # 03.09.2026 an 4,5 MB gemessen, davon 4 MB sehr redundant - mit
         # --compress wie mit --no-compress kamen dieselben 655.360 Bytes
         # heraus, waehrend "pack folder --raw --no-compress" 5.636.096 und
-        # "pack file --no-compress" 6.029.312 Bytes liefern. Wer also ein
-        # unkomprimiertes .ffpfs bestellt, bekaeme hier stillschweigend ein
-        # komprimiertes. Dafuer gibt es den zweistufigen Weg, der den
-        # Schalter beachtet.
-        if (bauform or self.bauform) == BAUFORM_EXFAT and not uncompressed:
+        # "pack file --no-compress" 6.029.312 Bytes liefern. Fuer .ffpfs ist
+        # das seit dem flachen Zweig darueber ohne Belang; die Messung bleibt
+        # hier stehen, weil sie erklaert, warum dieser Zweig nur komprimiert.
+        if (bauform or self.bauform) == BAUFORM_EXFAT:
             return self._mode_pack_folder_exfat(
                 src, dst, final_output, p2_end, p3_end,
                 set_pct, set_status, uncompressed=uncompressed)
-        if (bauform or self.bauform) == BAUFORM_EXFAT and uncompressed:
-            self._append_to_log(self._t("log.bauform.unkomprimiert_braucht_pfs"))
 
         cp = getattr(self, "_active_resume_checkpoint", None)
         cp_temp_exfat = str(cp.get("temp_exfat", "")).strip() if isinstance(cp, dict) else ""

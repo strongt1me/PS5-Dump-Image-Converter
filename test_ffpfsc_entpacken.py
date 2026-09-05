@@ -450,18 +450,34 @@ class UmpackenZwischenKompressionTests(unittest.TestCase):
     def test_ergebnis_hat_keine_ebene_zu_viel(self) -> None:
         """Der haeufigste Fehlbau waere hier eine Ebene mehr.
 
-        Geprueft wird genau das - nicht eine bestimmte Bauform. Seit dem
-        03.09.2026 ist waehlbar, ob zwischen Huelle und Spieldateien ein
-        exFAT-Abbild oder ein rohes PFS liegt; beide sind gueltig und
-        werden vollstaendig entpackt. Untauglich ist allein "dreifach":
-        Container -> PFS -> Abbild -> Dateien. Auf der Konsole findet sich
-        dort kein param.json.
+        Geprueft wird genau das - nicht eine bestimmte Bauform. Die Sollform
+        haengt aber an der Endung, und das ist seit dem 05.09.2026 der Punkt:
+
+        * ``.ffpfsc`` ist ein **Container**. Zwischen Huelle und Spieldateien
+          liegt ein Abbild; seit dem 03.09.2026 ist waehlbar, ob exFAT oder
+          rohes PFS. Beide sind gueltig.
+        * ``.ffpfs`` ist ein **Abbild-Spiel** wie .ffpkg und .exfat. Dort ist
+          "flach" richtig - die Spieldateien liegen in der Wurzel. Bis zum
+          05.09.2026 baute das Programm auch sie zweistufig, und dieser Test
+          hat das festgeschrieben.
+
+        Untauglich in beiden Faellen ist "dreifach": eine Ebene zu viel, auf
+        der Konsole findet sich dort kein param.json.
         """
         from ps5_validator.modules.ffpfs_validator import ermittle_bauform  # noqa: PLC0415
 
         with TemporaryDirectory(prefix="ffpfsc_bauform_pruef_") as ziel:
-            ergebnis = self._umpacken(self.komprimiert, ziel, uncompressed=True)
-            befund = ermittle_bauform(ergebnis)
+            als_ffpfs = self._umpacken(self.komprimiert, ziel, uncompressed=True)
+            befund = ermittle_bauform(als_ffpfs)
+            self.assertIsNotNone(befund)
+            assert befund is not None
+            self.assertEqual("flach", befund["bauform"],
+                             "Eine .ffpfs traegt die Spieldateien in der "
+                             "Wurzel, kein eingebettetes Abbild: %r" % (befund,))
+
+        with TemporaryDirectory(prefix="ffpfsc_bauform_pruef2_") as ziel:
+            als_container = self._umpacken(self.komprimiert, ziel, uncompressed=False)
+            befund = ermittle_bauform(als_container)
             self.assertIsNotNone(befund)
             assert befund is not None
             self.assertIn(befund["bauform"], ("exfat", "pfs"),
