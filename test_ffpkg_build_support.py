@@ -47,6 +47,15 @@ class FfpkgBuildSupportTests(unittest.TestCase):
         Hardware sauber ein - fsck fehlerfrei, Dateizahl bestaetigt - und der
         Titel stuerzte eine Sekunde nach dem Start ab (04.09.2026 gemessen).
         Dasselbe Spiel als exFAT-in-.ffpfsc lief.
+
+        **Nachtrag 05.09.2026 - der Absturz lag nicht am Abbild.** Die
+        Anleitung von 1.7alpha13 erklaert das Konsolenprotokoll woertlich:
+        "When crash monitoring detects an app crash before kstuff was paused,
+        ShadowMountPlus only notifies that the app crashed." Es ist ein
+        Startzeitproblem; dafuer gibt es kstuff_pause_delay_image_seconds
+        (Vorgabe 25 s), kstuff_delay je Titel, autopause.txt und autotune.ini.
+        Die Sektorgroesse 4096 bleibt trotzdem richtig - mkufs2.sh benutzt
+        genau diesen Befehl.
         """
         profile = primary_newfs_profile()
         self.assertEqual(profile.identifier, "newfs-64k-reference")
@@ -78,6 +87,45 @@ class FfpkgBuildSupportTests(unittest.TestCase):
                 "C:/Out/Game.ffpkg",
             ],
         )
+
+    def test_die_inode_dichte_bleibt_fest_bei_262144(self) -> None:
+        """Sie an die Dateizahl anzupassen waere die naheliegende Verbesserung.
+
+        Sie ist es nicht. Am 05.09.2026 durchgerechnet und am echten
+        UFS2Tool-4.1 (linux-x64, WSL) nachgemessen:
+
+        ``Ufs2ImageCreator.cs`` Z. 694-702 klemmt die **letzte** Cylinder Group
+        nicht. Faellt sie kuerzer aus als ``dblkno`` (= 4 + ipg/256), wird
+        ``dataFragsInCg`` negativ, wandert ungeprueft in ``cs_nbfree`` und
+        ``superblock.FreeBlocks`` - und die Inodetabelle der letzten Gruppe
+        landet jenseits des deklarierten Abbildendes. Ein **kleineres** ``-i``
+        erhoeht ``ipg`` und damit ``dblkno`` (262144 -> ipg 512, dblkno 6;
+        65536 -> ipg 1792, dblkno 11) und macht genau das wahrscheinlicher.
+
+        Gemessen, zweimal dieselbe Quelle (2000 Dateien in 501 Ordnern):
+        mit ``-i 262144`` ein 160-MiB-Abbild, 5 Gruppen a 512 Inoden; mit
+        ``-i 65536`` ein 256-MiB-Abbild - 60 Prozent groesser. Bei 1000
+        Dateien a 1 KiB *sinkt* die Inode-Kapazitaet von 1536 auf 1280.
+
+        Ueber 30 Kombinationen (50 bis 6002 Dateien, 200 MB bis 8 GB) ist mit
+        262144 **keine** betroffen; das gemessene Abbild PPSA19015 (191
+        Dateien, 648 MB) hat in der letzten Gruppe 161 Fragmente bei dblkno 6.
+
+        Wer die Dichte doch anpassen will, braucht vorher eine Absicherung
+        gegen die letzte Cylinder Group - eine Rechnung aus Dateizahl und
+        *geschaetzter* Groesse genuegt nicht: Ein einziges Fragment Abweichung
+        (65536 Byte, 0,02 Prozent) kippt die Gruppenzahl.
+        """
+        self.assertEqual(262144, primary_newfs_profile().inode_density)
+        # Und die Begruendung muss am Profil stehen, nicht nur hier.
+        import inspect
+
+        from ps5_validator.utils import ffpkg_support
+
+        text = inspect.getdoc(ffpkg_support.primary_newfs_profile) or ""
+        self.assertIn("Cylinder Group", text,
+                      "Die Begruendung fehlt am Profil - dann senkt sie der "
+                      "naechste Leser wieder.")
 
     def test_compatibility_newfs_command_matches_32k_4k_reference_profile(self) -> None:
         profile = compatibility_newfs_profile()

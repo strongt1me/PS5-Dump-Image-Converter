@@ -148,6 +148,36 @@ def primary_newfs_profile() -> FfpkgNewfsProfile:
     ankommen. Genau dieses Fehlerbild beschreibt auch der MkPFS-Entwickler für
     den rohen PFS-Weg: "the image is created and verification passes, but the
     console reads the files incorrectly".
+
+    **Die Inode-Dichte bleibt fest auf 262144 - das ist Absicht.**
+
+    Die Anleitung von ShadowMountPlus 1.7alpha13 legt nahe, sie an die
+    Dateizahl anzupassen ("use 262144 for normal game dumps, 131072 for tens
+    of thousands of files"), und ``mkufs2.sh`` rechnet sie selbst aus. Das
+    gilt aber für FreeBSDs ``newfs``. **UFS2Tool verhält sich anders**, und
+    ein kleinerer Wert schadet dort:
+
+    * ``Ufs2ImageCreator.cs`` Z. 694-702 klemmt die **letzte** Cylinder Group
+      nicht. Fällt sie kürzer aus als ``dblkno`` (= 4 + ipg/256, der
+      Fragmentversatz, ab dem Nutzdaten beginnen), wird ``dataFragsInCg``
+      negativ, wandert ungeprüft in ``cs_nbfree`` und ``superblock.FreeBlocks``
+      - und die Inodetabelle der letzten Gruppe landet jenseits des
+      deklarierten Abbildendes. Ein kleineres ``-i`` erhöht ``ipg`` und damit
+      ``dblkno`` (bei 262144 ist ipg=512/dblkno=6, bei 65536 ipg=1792/dblkno=11)
+      und macht diesen Fall wahrscheinlicher.
+    * Gemessen am echten UFS2Tool-4.1 (linux-x64, WSL), zweimal dieselbe
+      Quelle aus 2000 Dateien in 501 Ordnern: mit ``-i 262144`` entsteht ein
+      160-MiB-Abbild mit 5 Cylinder Groups à 512 Inoden; mit ``-i 65536`` ein
+      256-MiB-Abbild - **60 % größer**. Bei 1000 Dateien à 1 KiB *sinkt* die
+      Inode-Kapazität sogar von 1536 auf 1280, obwohl mehr Inoden das Ziel
+      waren.
+    * Über 30 Kombinationen von 50 bis 6002 Dateien und 200 MB bis 8 GB
+      nachgerechnet: mit 262144 ist **keine** betroffen.
+
+    Wer die Dichte doch anpassen will, braucht vorher eine Absicherung gegen
+    die letzte Cylinder Group - nicht nur eine Rechnung aus Dateizahl und
+    geschätzter Größe. Die Schätzung reicht dafür nicht: Ein einziges
+    Fragment Abweichung (65536 Byte, 0,02 %) kippt die Gruppenzahl.
     """
     return FfpkgNewfsProfile(
         identifier="newfs-64k-reference",
