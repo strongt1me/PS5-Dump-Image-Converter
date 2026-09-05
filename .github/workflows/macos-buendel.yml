@@ -76,6 +76,7 @@ on:
       - 'helloworld/**'
       - 'Backport_Fakelibs/**'
       - 'PS5 WebKit Autoloader/**'
+      - 'PS5-AppInstall/**'
       - 'PlayGo & AMPR_EMU/**'
 
 permissions:

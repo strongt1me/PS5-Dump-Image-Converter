@@ -127,6 +127,8 @@ from ps5_validator.utils.pkg_writer import (
 )
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import prosperopkg
+from ps5_validator.utils import payload_versand
+from ps5_validator.utils import app_install
 from ps5_validator.ui import bedienzustand
 from ps5_validator.utils import einstellungen
 from ps5_validator import programmname
@@ -2914,6 +2916,7 @@ class PS5ConverterGUI:
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
+        ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
     )
@@ -32080,6 +32083,368 @@ class PS5ConverterGUI:
             # Fenster ist ohne Inhalt sonst nur ein leeres Formular.
             win.after(200, _holen)
 
+    # ------------------------------------------------ App direkt installieren
+    def _appinstall_bericht(self, angaben, fehler, hinweise) -> str:
+        """Setzt den Befund zu einem Text zusammen, so wie er im Fenster steht."""
+        zeilen = []
+        if angaben is not None:
+            if angaben.art == app_install.ART_DEEPLINK:
+                zeilen.append("Bauform    : Deeplink-Kachel")
+                zeilen.append("Adresse    : " + angaben.uri)
+            else:
+                zeilen.append("Bauform    : eigenes Programm")
+                zeilen.append("Ordner     : " + angaben.ordner)
+            zeilen.append("Kennung    : " + angaben.kennung)
+            zeilen.append("Name       : " + angaben.name)
+            if angaben.art != app_install.ART_DEEPLINK:
+                huelle = angaben.huelle or "unbekannt"
+                if angaben.autoritaet:
+                    huelle += ", " + angaben.autoritaet
+                zeilen.append("eboot.bin  : " + huelle)
+            zeilen.append("icon0.png  : "
+                          + (angaben.icon if angaben.icon else "fehlt"))
+            if angaben.art == app_install.ART_DEEPLINK:
+                ziele = app_install.deeplink_zielordner(angaben.kennung)
+                zeilen.append("Ziel       : " + ziele[0])
+            else:
+                ziele = app_install.zielordner(angaben.kennung)
+                zeilen.append("Ziel       : " + ziele[0])
+                zeilen.append("             " + ziele[2])
+            zeilen.append("")
+        for text in fehler:
+            zeilen.append("FEHLER   " + text)
+        for text in hinweise:
+            zeilen.append("Hinweis  " + text)
+        if angaben is not None and not fehler:
+            zeilen.append("")
+            zeilen.append("Bereit zum Installieren.")
+        return "\n".join(zeilen)
+
+    def _appinstall_uebertragen(self, ftp, angaben, host, payload, melden) -> str:
+        """Legt die Dateien ab und laesst die Konsole die Anwendung anmelden.
+
+        Die Reihenfolge stammt aus samples/install_app des Payload-SDK und ist
+        nicht beliebig: param.json.system darf erst nach dem Registrieren
+        kommen. Wird es vorher geschrieben, sucht die Konsole die Anwendung
+        schon in /system_ex, waehrend sie noch unter /user/app liegt.
+        """
+        import io as _io  # noqa: PLC0415
+
+        kennung = angaben.kennung
+        melden("MTRW - Systempartition beschreibbar schalten")
+        try:
+            ftp.sendcmd(app_install.BESCHREIBBAR)
+        except Exception as exc:
+            # Manche Fassungen von ftpsrv antworten hier mit einem Code, den
+            # ftplib als Fehler wertet, obwohl das Umhaengen geklappt hat.
+            # Erst das Anlegen der Ordner zeigt, ob es wirklich schiefging.
+            logger.debug("appinstall: MTRW: %s", exc)
+
+        deeplink = angaben.art == app_install.ART_DEEPLINK
+        ziele = (app_install.deeplink_zielordner(kennung) if deeplink
+                 else app_install.zielordner(kennung))
+        for ordner in ziele:
+            try:
+                ftp.mkd(ordner)
+                melden("angelegt: " + ordner)
+            except Exception as exc:
+                # Nicht jede Ausnahme heisst "gibt es schon". Fehlende
+                # Schreibrechte trotz MTRW und ein Verbindungsabbruch
+                # kommen hier genauso an, und wer die verschluckt,
+                # schreibt danach in eine halb angelegte Installation.
+                try:
+                    ftp.cwd(ordner)
+                except Exception:
+                    raise app_install.AppInstallFehler(
+                        self._t("appinstall.error_mkdir", ordner=ordner,
+                                error=exc)) from exc
+                melden("vorhanden: " + ordner)
+
+        def _hoch(quelle: str, ziel: str) -> None:
+            with open(quelle, "rb") as fh:
+                ftp.storbinary("STOR " + ziel, fh)
+            melden("%s -> %s" % (os.path.basename(quelle), ziel))
+
+        def _hoch_roh(daten: bytes, ziel: str) -> None:
+            ftp.storbinary("STOR " + ziel, _io.BytesIO(daten))
+            melden("%d Bytes -> %s" % (len(daten), ziel))
+
+        system_ordner = app_install.SYSTEM_EX + "/" + kennung
+        user_sce = app_install.USER_APP + "/" + kennung + "/sce_sys"
+
+        if deeplink:
+            # Die Kachel ist fertig, wie sie ist - keine Zwischenfassung mit
+            # anderer Kategorie, weil nichts nach /system_ex nachgereicht
+            # wird. So sehen die Kacheln aus, die auf der Konsole laufen.
+            _hoch_roh(app_install.als_json(angaben.param_daten),
+                      user_sce + "/param.json")
+        else:
+            _hoch(angaben.eboot, system_ordner + "/eboot.bin")
+            _hoch_roh(app_install.als_json(
+                app_install.installfassung(angaben.param_daten)),
+                user_sce + "/param.json")
+        if angaben.icon:
+            _hoch(angaben.icon, user_sce + "/icon0.png")
+        _hoch_roh((kennung + "\n").encode("ascii"), app_install.KENNUNGSDATEI)
+
+        melden("Payload an %s:%d" % (host, app_install.ELFLDR_PORT))
+        # elfldr-Pfad durchreichen: Ist Port 9021 zu, wird elfldr sonst
+        # nicht geweckt, der Versand faellt auf den Payload Manager
+        # zurueck - und der liefert keine Ausgabe, womit
+        # antwort_beurteilen() zwangslaeufig fehlschlaegt.
+        antwort = app_install.payload_senden(
+            host, payload, elfldr_pfad=self._elfldr_payload_path())
+        for zeile in antwort.splitlines():
+            melden("  " + zeile)
+        geklappt, text = app_install.antwort_beurteilen(antwort)
+        if not geklappt:
+            raise app_install.AppInstallFehler(
+                self._t("appinstall.error_payload", antwort=text))
+
+        if deeplink:
+            return text
+        if angaben.param_system:
+            _hoch(angaben.param_system, system_ordner + "/sce_sys/param.json")
+        else:
+            _hoch_roh(app_install.als_json(
+                app_install.systemfassung(angaben.param_daten)),
+                system_ordner + "/sce_sys/param.json")
+        return text
+
+    def _show_app_install(self) -> None:
+        """Fenster fuer die Direktinstallation einer Anwendung."""
+        c = self._COLORS
+        win = self._build_modern_toplevel(self._t("appinstall.window_title"),
+                                          1000, 880, min_width=840, min_height=600)
+        self._build_modern_header(win, self._t("appinstall.window_title"),
+                                  self._t("appinstall.subtitle"))
+
+        for schluessel in ("appinstall.hint_what", "appinstall.hint_why",
+                           "appinstall.hint_needs"):
+            tk.Label(win, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                     wraplength=940, justify="left").pack(fill="x", padx=16,
+                                                          pady=(8, 0))
+
+        art_var = tk.StringVar(value=app_install.ART_DEEPLINK)
+        artwahl = tk.Frame(win, bg=c["bg_main"], padx=16)
+        artwahl.pack(fill="x", pady=(14, 0))
+        for wert, schluessel in ((app_install.ART_DEEPLINK, "appinstall.art_deeplink"),
+                                 (app_install.ART_PROGRAMM, "appinstall.art_programm")):
+            ttk.Radiobutton(artwahl, text=self._t(schluessel), value=wert,
+                            variable=art_var).pack(side="left", padx=(0, 18))
+
+        # Zwei Formulare, von denen immer nur eines liegt. Beide gleichzeitig
+        # zu zeigen waere ehrlicher gegenueber dem Code, aber nicht gegenueber
+        # dem Anwender: Er fuellte Felder aus, die nichts bewirken.
+        formular = tk.Frame(win, bg=c["bg_main"])
+        formular.pack(fill="x")
+
+        deeplink_form = tk.Frame(formular, bg=c["bg_main"], padx=16)
+        programm_form = tk.Frame(formular, bg=c["bg_main"], padx=16)
+
+        kennung_var = tk.StringVar(value="")
+        name_var = tk.StringVar(value="")
+        uri_var = tk.StringVar(value="")
+        icon_var = tk.StringVar(value="")
+        ordner_var = tk.StringVar(value="")
+
+        for lfd, (schluessel, variable, breite) in enumerate((
+                ("appinstall.titleid_label", kennung_var, 14),
+                ("appinstall.name_label", name_var, 0),
+                ("appinstall.uri_label", uri_var, 0),
+                ("appinstall.icon_label", icon_var, 0))):
+            zeile = tk.Frame(deeplink_form, bg=c["bg_main"])
+            zeile.pack(fill="x", pady=(6, 0))
+            tk.Label(zeile, text=self._t(schluessel), width=16, anchor="w",
+                     font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                     fg=c["fg_primary"]).pack(side="left")
+            if breite:
+                ttk.Entry(zeile, textvariable=variable,
+                          width=breite).pack(side="left")
+            else:
+                ttk.Entry(zeile, textvariable=variable).pack(
+                    side="left", fill="x", expand=True, padx=(0, 8))
+            if variable is icon_var:
+                ttk.Button(zeile, text=self._t("appinstall.choose_icon"),
+                           command=lambda: _icon_waehlen()).pack(side="left")
+
+        tk.Label(programm_form, text=self._t("appinstall.folder_label"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"]).pack(side="left")
+        ttk.Entry(programm_form, textvariable=ordner_var).pack(
+            side="left", fill="x", expand=True, padx=(8, 8))
+        kopf = programm_form
+
+        def _form_zeigen(*_a) -> None:
+            deeplink = art_var.get() == app_install.ART_DEEPLINK
+            (programm_form if deeplink else deeplink_form).pack_forget()
+            (deeplink_form if deeplink else programm_form).pack(
+                fill="x", pady=(8, 0))
+        art_var.trace_add("write", _form_zeigen)
+        _form_zeigen()
+
+        def _icon_waehlen() -> None:
+            pfad = filedialog.askopenfilename(
+                title=self._t("appinstall.choose_icon_dialog"), parent=win,
+                filetypes=self._dateitypen([
+                    ("PNG", "*.png"), (self._t("filetype.all_files"), "*.*")]))
+            if pfad:
+                icon_var.set(pfad)
+
+        zweite = tk.Frame(win, bg=c["bg_main"], padx=16)
+        zweite.pack(fill="x", pady=(8, 0))
+        tk.Label(zweite, text=self._t("appinstall.ip_label"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"]).pack(side="left")
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        ttk.Entry(zweite, textvariable=ip_var, width=18).pack(side="left",
+                                                              padx=(8, 12))
+
+        def _ip_merken(*_a) -> None:
+            wert = ip_var.get().strip()
+            if wert and wert != self._ps5_ip():
+                self._save_setting("ps5_ip", wert)
+        ip_var.trace_add("write", _ip_merken)
+
+        stand_var = tk.StringVar(value="")
+
+        tk.Label(win, text=self._t("appinstall.report_label"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(14, 4))
+        bericht = tk.Text(win, wrap="word", font=(MONO_SCHRIFT, pt(9)),
+                          bg=c["console_bg"], fg=c["console_fg"],
+                          insertbackground=c["fg_primary"], relief="flat",
+                          highlightthickness=0)
+        bericht.pack(fill="both", expand=True, padx=16)
+
+        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
+                 wraplength=940, justify="left").pack(fill="x", padx=16,
+                                                      pady=(8, 0))
+
+        # Der zuletzt gepruefte Ordner. Ohne diesen Zwischenstand muesste der
+        # Installieren-Knopf erneut pruefen, und der Anwender saehe einen
+        # anderen Befund als den, auf den er sich gerade gestuetzt hat.
+        stand = {"angaben": None, "fehler": [None]}
+
+        def _schreiben(text: str) -> None:
+            bericht.insert("end", text + "\n")
+            bericht.see("end")
+
+        def _pruefen() -> None:
+            try:
+                if art_var.get() == app_install.ART_DEEPLINK:
+                    angaben, fehler, hinweise = app_install.deeplink_pruefen(
+                        kennung_var.get(), name_var.get(), uri_var.get(),
+                        icon_var.get().strip())
+                else:
+                    ordner = ordner_var.get().strip()
+                    if not ordner:
+                        messagebox.showwarning(
+                            self._t("appinstall.error_title"),
+                            self._t("appinstall.error_no_folder"), parent=win)
+                        return
+                    angaben, fehler, hinweise = app_install.pruefen(ordner)
+            except app_install.AppInstallFehler as exc:
+                angaben, fehler, hinweise = None, [str(exc)], []
+            stand["angaben"] = angaben
+            stand["fehler"] = fehler
+            bericht.delete("1.0", "end")
+            _schreiben(self._appinstall_bericht(angaben, fehler, hinweise))
+            if angaben is not None and not fehler:
+                stand_var.set(self._t("appinstall.ready",
+                                      kennung=angaben.kennung, name=angaben.name))
+            else:
+                stand_var.set(self._t("appinstall.blocked",
+                                      count=len(fehler)))
+
+        def _waehlen() -> None:
+            ordner = filedialog.askdirectory(
+                title=self._t("appinstall.choose_dialog"), parent=win,
+                initialdir=self._get_source_dialog_initial_dir() or None)
+            if ordner:
+                ordner_var.set(ordner)
+                _pruefen()
+
+        ttk.Button(kopf, text=self._t("appinstall.choose_folder"),
+                   command=_waehlen).pack(side="left")
+
+        def _installieren() -> None:
+            angaben = stand["angaben"]
+            if angaben is None or stand["fehler"]:
+                messagebox.showwarning(self._t("appinstall.error_title"),
+                                       self._t("appinstall.error_blocked"),
+                                       parent=win)
+                return
+            host = ip_var.get().strip()
+            if not host:
+                messagebox.showwarning(self._t("appinstall.error_title"),
+                                       self._t("appinstall.error_no_ip"),
+                                       parent=win)
+                return
+            try:
+                payload = open(app_install.payload_finden(), "rb").read()
+            except (OSError, app_install.AppInstallFehler) as exc:
+                messagebox.showwarning(
+                    self._t("appinstall.error_title"),
+                    self._t("appinstall.error_generic", error=exc), parent=win)
+                return
+            if not messagebox.askyesno(
+                    self._t("appinstall.confirm_title"),
+                    self._t("appinstall.confirm_message", name=angaben.name,
+                            kennung=angaben.kennung, host=host),
+                    parent=win, default="no"):
+                return
+
+            stand_var.set(self._t("appinstall.state_connecting", host=host))
+
+            def _melden(text: str) -> None:
+                self.root.after(0, lambda: _schreiben(text))
+
+            def _lauf() -> None:
+                ftp = None
+                try:
+                    ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                    self._appinstall_uebertragen(ftp, angaben, host, payload,
+                                                 _melden)
+                except Exception as exc:
+                    logger.debug("appinstall: %s", exc)
+                    meldung = self._t("appinstall.error_generic", error=exc)
+                    self.root.after(0, lambda: stand_var.set(meldung))
+                    self.root.after(0, lambda: _schreiben(meldung))
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        self._t("appinstall.error_title"), meldung, parent=win))
+                    return
+                finally:
+                    if ftp is not None:
+                        try:
+                            ftp.quit()
+                        except Exception:
+                            try:
+                                ftp.close()
+                            except Exception:
+                                pass
+                fertig = self._t("appinstall.state_done",
+                                 kennung=angaben.kennung)
+                self.root.after(0, lambda: stand_var.set(fertig))
+                self.root.after(0, lambda: _schreiben(fertig))
+
+            threading.Thread(target=_lauf, daemon=True).start()
+
+        knopfbereich = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfbereich.pack(fill="x")
+        ttk.Button(knopfbereich, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        knopf = ttk.Button(knopfbereich, text=self._t("appinstall.action_check"),
+                           command=_pruefen)
+        knopf.pack(side="left", padx=(0, 8))
+        knopf_install = ttk.Button(knopfbereich,
+                                   text=self._t("appinstall.action_install"),
+                                   command=_installieren, style="Accent.TButton")
+        knopf_install.pack(side="left", padx=(0, 8))
+
     def _show_backport(self) -> None:
         """Öffnet das Backport-Fenster für einen zu wählenden Dump-Ordner."""
         ordner = filedialog.askdirectory(
@@ -34604,7 +34969,7 @@ class PS5ConverterGUI:
                 ok, meldung = False, str(exc)
             self._spaeter_im_fenster(eltern, _gesendet, ok, meldung)
 
-        def _weiter(loader_offen: bool) -> None:
+        def _weiter(loader_offen: bool, pldmgr_offen: bool) -> None:
             if loader_offen:
                 if not messagebox.askyesno(
                         self._t("webkit.title"),
@@ -34617,23 +34982,63 @@ class PS5ConverterGUI:
                                  name="webkit-senden").start()
                 return
 
-            if not messagebox.askyesno(
-                    self._t("webkit.title"),
-                    self._t("webkit.port_closed", ip=ip,
-                            port=self._PAYLOAD_SEND_PORT),
-                    parent=eltern):
+            # Port 9021 ist zu. Frueher blieb hier nur der Umweg ueber USB;
+            # seit payload_versand gibt es einen zweiten Weg, der ohne
+            # Handgriff an der Konsole auskommt. Beide stehen zur Wahl - der
+            # USB-Weg bleibt, weil er auch dann noch traegt, wenn gar kein
+            # Dienst mehr antwortet.
+            wege = []
+            if pldmgr_offen:
+                wege.append(self._t("webkit.weg_pldmgr"))
+            wege.append(self._t("webkit.weg_usb"))
+
+            if len(wege) == 1:
+                if not messagebox.askyesno(
+                        self._t("webkit.title"),
+                        self._t("webkit.port_closed", ip=ip,
+                                port=self._PAYLOAD_SEND_PORT),
+                        parent=eltern):
+                    return
+                # Der USB-Weg blockiert weiterhin - aber erst nach einer
+                # ausdruecklichen Zustimmung, und er zeigt eigene Dialoge.
+                self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
                 return
-            # Der USB-Weg blockiert weiterhin - aber erst nach einer
-            # ausdruecklichen Zustimmung, und er zeigt eigene Dialoge.
-            self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
+
+            wahl = self._auswahl_dialog(
+                self._t("webkit.title"),
+                self._t("webkit.port_closed_wahl", ip=ip,
+                        port=self._PAYLOAD_SEND_PORT),
+                wege, parent=eltern)
+            if not wahl:
+                return
+            if wahl == self._t("webkit.weg_usb"):
+                self._webkit_auf_usb_ablegen(ip, elf, parent=eltern)
+                return
+
+            # Ueber den Payload Manager: Das laeuft wieder durch
+            # _send_payload_to_ps5 und gehoert damit in den Faden.
+            self._set_status_fluechtig(self._t("webkit.status_senden"))
+            threading.Thread(target=_senden, daemon=True,
+                             name="webkit-senden").start()
 
         def _sondieren() -> None:
+            # Ueber _ps5_port_open, nicht ueber payload_versand.port_offen:
+            # Das ist die eine Stelle, an der das Programm Ports prueft -
+            # und die einzige, die sich stillegen laesst. Der direkte
+            # Modulaufruf ging in den Tests an eine echte Konsole und
+            # oeffnete dort einen Dialog, der auf eine Antwort wartete.
             try:
                 offen = self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT)
             except Exception as exc:            # noqa: BLE001
                 logger.debug("WebKit-Sondierung fehlgeschlagen: %s", exc)
                 offen = False
-            self._spaeter_im_fenster(eltern, _weiter, offen)
+            pldmgr = False
+            if not offen:
+                try:
+                    pldmgr = self._ps5_port_open(ip, payload_versand.PLDMGR_PORT)
+                except Exception as exc:        # noqa: BLE001
+                    logger.debug("Payload-Manager-Sondierung fehlgeschlagen: %s", exc)
+            self._spaeter_im_fenster(eltern, _weiter, offen, pldmgr)
 
         self._set_status_fluechtig(self._t("webkit.status_sondieren"))
         threading.Thread(target=_sondieren, daemon=True,
@@ -34690,6 +35095,45 @@ class PS5ConverterGUI:
                             self._t("webkit.usb_done", datei=name, usb=usb),
                             parent=parent)
 
+    #: Bild neben der Überschrift des Autoloader-Fensters. Liegt es nicht im
+    #: Ordner, bleibt der Platz leer – das Fenster funktioniert ohne.
+    _WEBKIT_BILD = "itsplk.png"
+    _WEBKIT_BILD_KANTE = 84
+
+    def _webkit_bild_pfad(self) -> str:
+        """Pfad zum Autoloader-Bild, ohne es zu laden.
+
+        Wer nur den Ort braucht, soll nicht ``_webkit_bild_laden`` nehmen: Das
+        erzeugt ein ``ImageTk.PhotoImage`` und verlangt damit eine Tk-Wurzel.
+        """
+        return _bundled_resource(self._WEBKIT_ORDNER, self._WEBKIT_BILD)
+
+    def _webkit_bild_laden(self):
+        """Lädt das Bild für das Autoloader-Fenster, rund beschnitten.
+
+        Rückgabe: ein PhotoImage oder None. None ist der Normalfall, wenn
+        niemand ein Bild hinterlegt hat, und darf das Fenster nicht stören.
+        """
+        pfad = _bundled_resource(self._WEBKIT_ORDNER, self._WEBKIT_BILD)
+        if not pfad or not os.path.isfile(pfad):
+            return None
+        kante = self._WEBKIT_BILD_KANTE
+        try:
+            bild = Image.open(pfad).convert("RGBA")
+            # Quadratisch aus der Mitte, damit nichts verzerrt.
+            schmal = min(bild.size)
+            x = (bild.width - schmal) // 2
+            y = (bild.height - schmal) // 2
+            bild = bild.crop((x, y, x + schmal, y + schmal))
+            bild = bild.resize((kante, kante), _LANCZOS)
+            maske = Image.new("L", (kante, kante), 0)
+            ImageDraw.Draw(maske).ellipse((0, 0, kante - 1, kante - 1), fill=255)
+            bild.putalpha(maske)
+            return ImageTk.PhotoImage(bild)
+        except Exception as exc:            # noqa: BLE001
+            logger.debug("Autoloader-Bild nicht ladbar (%s): %s", pfad, exc)
+            return None
+
     def _show_webkit_autoloader(self) -> None:
         """Rahmenloses Fenster mit den drei Wegen des WebKit Autoloaders.
 
@@ -34725,7 +35169,7 @@ class PS5ConverterGUI:
         grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
         fenster.configure(bg=grund)
 
-        breite, hoehe, rand = 520, 336, 14
+        breite, hoehe, rand = 520, 392, 14
         leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
                              highlightthickness=0, bd=0)
         leinwand.pack(fill="both", expand=True)
@@ -34743,6 +35187,21 @@ class PS5ConverterGUI:
                              text=self._t("webkit.hint"),
                              fill=c["fg_secondary"], width=innen,
                              font=(UI_SCHRIFT, pt(9)))
+
+        # Bild und Dank. Beides hängt am selben Versatz: Ohne Bild rücken die
+        # Knöpfe hoch, statt eine Lücke stehen zu lassen.
+        bild = self._webkit_bild_laden()
+        versatz = 0
+        if bild is not None:
+            # Referenz am Fenster halten – sonst räumt der Sammler das Bild
+            # weg und die Fläche bleibt leer.
+            fenster._webkit_bild = bild
+            leinwand.create_image(breite / 2, rand + 104 + 42, image=bild)
+            versatz = self._WEBKIT_BILD_KANTE + 16
+        leinwand.create_text(breite / 2, rand + 104 + versatz,
+                             text=self._t("webkit.credit"),
+                             fill=c["fg_secondary"], width=innen,
+                             font=(UI_SCHRIFT, pt(9), "italic"))
 
         def _mit_zu(aktion) -> None:
             """Erst das Fenster schliessen, dann handeln.
@@ -34769,7 +35228,8 @@ class PS5ConverterGUI:
                 activebackground=c["fg_accent"], activeforeground=c["bg_main"],
                 outline=c["border"], radius=10, height=44,
                 parent_bg=c["bg_card"])
-            leinwand.create_window(links + innen / 2, 148 + lfd * 56,
+            leinwand.create_window(links + innen / 2,
+                                   rand + 134 + versatz + lfd * 56,
                                    window=knopf, width=innen, height=44)
 
         schliessen = RoundedButton(
@@ -36279,6 +36739,15 @@ class PS5ConverterGUI:
     #: Stelle aendert, verschiebt sonst nur die Haelfte.
     _JS_LOGSERVER_PORT = 9099
 
+    def _elfldr_payload_path(self) -> str:
+        """Pfad zum mitgelieferten elfldr (leer, wenn nicht vorhanden).
+
+        Wird nur gebraucht, wenn Port 9021 zu ist: Dann startet der Payload
+        Manager dieses ELF, und danach steht der Port wieder offen – auch für
+        alles, was danach kommt.
+        """
+        return _bundled_resource("helloworld", payload_versand.ELFLDR_NAME)
+
     def _ftpsrv_payload_path(self) -> str:
         """Pfad zum mitgelieferten ftpsrv-Payload (leer, wenn nicht vorhanden)."""
         return _bundled_resource("helloworld", self._FTPSRV_PAYLOAD_NAME)
@@ -36624,17 +37093,46 @@ class PS5ConverterGUI:
                 pass
 
     def _send_payload_to_ps5(self, host: str, pfad: str, port: int = 0) -> tuple[bool, str]:
-        """Schickt eine .elf an den Payload-Loader der Konsole (roher TCP-Push)."""
-        import socket as _socket  # noqa: PLC0415
+        """Schickt eine .elf an die Konsole – über elfldr oder den Payload Manager.
+
+        elfldr (Port 9021) hat Vorrang, weil nur er die Ausgabe des Payloads
+        zurückreicht. Lauscht dort niemand, übernimmt der Payload Manager
+        (Port 8084): Er nimmt das ELF über seine Weboberfläche entgegen und
+        startet es.
+
+        Warum das nötig ist: Am 29.08.2026 gemessen – über den WebKit-Einstieg
+        von itsplk bleibt 9021 zu, obwohl auf der Konsole ftpsrv, klogsrv und
+        ShadowMountPlus laufen. Ohne diesen zweiten Weg scheitert dort jedes
+        Nachladen, und die Meldung nennt nur einen abgewiesenen Port.
+        """
         ziel_port = int(port or self._PAYLOAD_SEND_PORT)
+        name = os.path.basename(pfad)
         try:
             with open(pfad, "rb") as fh:
                 daten = fh.read()
-            with _socket.create_connection((host, ziel_port), timeout=10) as verbindung:
-                verbindung.sendall(daten)
-            return True, f"{len(daten)} Bytes"
+            weg, _ausgabe, bemerkung = payload_versand.senden(
+                host, daten, name, elfldr_port=ziel_port,
+                elfldr_pfad=self._elfldr_payload_path())
         except Exception as exc:
             return False, str(exc)
+
+        if weg == payload_versand.WEG_GEWECKT:
+            # Der Port bleibt danach offen – das ist die eigentliche
+            # Nachricht, denn alle weiteren Aufrufe nehmen wieder den kurzen
+            # Weg und bekommen ihre Rückmeldung.
+            self._append_to_log(
+                self._t("payload.elfldr_geweckt", name=bemerkung,
+                        port=ziel_port) + "\n")
+        elif weg == payload_versand.WEG_PLDMGR:
+            self._append_to_log(
+                self._t("payload.via_pldmgr", name=name, ziel=bemerkung) + "\n")
+            # Der ausführliche Hinweis gehört ins Protokoll. Die Rückgabe ist
+            # eine Größenangabe – Aufrufer setzen sie in Sätze ein ("Der
+            # Installer wurde geschickt ({groesse})"), ein ganzer Satz ergäbe
+            # dort Unsinn.
+            self._append_to_log(
+                self._t("payload.sent_pldmgr", bytes=len(daten)) + "\n")
+        return True, f"{len(daten)} Bytes"
 
     def _ensure_ftpsrv(self, host: str) -> int:
         """Sorgt nach Rückfrage dafür, dass ftpsrv auf der Konsole läuft.

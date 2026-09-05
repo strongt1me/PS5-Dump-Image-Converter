@@ -154,6 +154,14 @@ _webkit = os.path.join(_here, 'PS5 WebKit Autoloader')
 if os.path.isdir(_webkit):
     _datas.append((_webkit, 'PS5 WebKit Autoloader'))
 
+# Payload fuer die Direktinstallation einer Anwendung. Klein genug, um
+# es immer mitzunehmen; ohne das ELF kann das Werkzeug die Kachel auf
+# der Konsole nicht anmelden. appinst.c und NOTICE.md kommen mit, weil
+# das Payload von GPL-3-Quellen abstammt.
+_appinstall = os.path.join(_here, 'PS5-AppInstall')
+if os.path.isdir(_appinstall):
+    _datas.append((_appinstall, 'PS5-AppInstall'))
+
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-1.0.0/)
 for _mkpfs_src in _mkpfs_roots:
     _datas.extend(_dateien_ohne_pycache(_mkpfs_src, os.path.basename(_mkpfs_src)))
