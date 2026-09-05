@@ -21775,6 +21775,50 @@ class PS5ConverterGUI:
                 return str(eintrag.get("path", ""))
         return str(kandidaten[0].get("path", ""))
 
+    def _ampr_aus_speicher_versorgen(self, ordner: str) -> bool:
+        """Legt die neueste AMPR-Fassung samt PlayGo aus dem Versionsspeicher ab.
+
+        **Der Fehler, den das behebt.** ``_prepare_ampr_support`` fragte bis
+        zum 05.09.2026 ausschließlich nach ``ampr_emu_folder`` – einer fünften
+        Einstellung neben ``ampr_store_dir``, die einen **flachen** Ordner mit
+        beiden ``.sprx`` nebeneinander verlangt. Genau den Aufbau hat der
+        Versionsspeicher nicht; dort liegt jede Fassung in
+        ``<Fassung> <Variante>/``. Gemessen mit 13 mitgelieferten Fassungen:
+        Der Lauf brach mit ``log.auto.0148`` ab, weil kein flacher Ordner
+        eingestellt war – die Bibliotheken lagen die ganze Zeit daneben.
+
+        In der Oberfläche kam stattdessen ein Ordner-Auswahldialog, direkt
+        nachdem der Anwender in Aufgabe 7 aus 13 Fassungen gewählt hatte.
+
+        Genommen wird die neueste – dieselbe Regel wie im Automatiklauf. Wer
+        eine bestimmte will, wählt sie in Aufgabe 7 oder über das Kästchen
+        beim Erstellen; dann liegt sie schon im fakelib-Ordner und diese
+        Methode wird gar nicht erst gerufen.
+
+        Returns:
+            True, wenn beide Bibliotheken abgelegt wurden. False heißt nur
+            "nicht von hier" – der Aufrufer geht dann seinen bisherigen Weg.
+        """
+        vorrat = self._ampr_alle_fassungen()
+        ampr = next((e for e in vorrat
+                     if e.get("lib") == self._AMPR_SPRX_NAME), None)
+        if not ampr:
+            return False
+        # Ohne PlayGo nicht anfangen: Der Aufrufer verlangt beide Dateien,
+        # und eine halb gefüllte Ablage wäre schlechter als keine – sie
+        # sähe für den nächsten Lauf nach "schon versorgt" aus.
+        playgo = self._ampr_playgo_zur_version(ampr)
+        if not playgo:
+            return False
+
+        self._append_to_log(self._t("ampr.aus_speicher", version=ampr["version"],
+                                    variant=ampr["variant"]))
+        if not self._ampr_apply_library(ordner, ampr["path"], self._AMPR_SPRX_NAME):
+            return False
+        if not self._ampr_apply_library(ordner, playgo, self._PLAYGO_SPRX_NAME):
+            return False
+        return True
+
     def _prepare_ampr_support(
         self,
         source_root: str,
@@ -21805,7 +21849,7 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0146'))
             return True
 
-        required_files = ("libSceAmpr.sprx", "libScePlayGo.sprx")
+        required_files = (self._AMPR_SPRX_NAME, self._PLAYGO_SPRX_NAME)
         fakelib_path = self._fakelib_pfad(root_path)
         if all((fakelib_path / name).is_file() for name in required_files):
             self._append_to_log(self._t('log.auto.0147'))
@@ -21818,31 +21862,44 @@ class PS5ConverterGUI:
                 or ""
             ).strip()
             emu_path = Path(configured_dir).expanduser() if configured_dir else Path()
-            if not configured_dir or not all((emu_path / name).is_file() for name in required_files):
-                if automation:
+            traegt = bool(configured_dir) and all(
+                (emu_path / name).is_file() for name in required_files)
+            if not traegt:
+                # Ein ausdrücklich genannter Ordner geht vor – deshalb erst
+                # hier. Trägt er nicht, kommt der Versionsspeicher an die
+                # Reihe, statt sofort zu fragen oder abzubrechen: Bis zum
+                # 06.09.2026 kannte diese Stelle ausschließlich den flachen
+                # Ordner ``ampr_emu_folder``, und ein Automationslauf brach
+                # mit ``log.auto.0148`` ab, obwohl dreizehn Fassungen
+                # danebenlagen.
+                if self._ampr_aus_speicher_versorgen(str(root_path)):
+                    configured_dir = ""
+                elif automation:
                     self._append_to_log(self._t('log.auto.0148'))
                     return False
-                configured_dir = self._ask_directory_threadsafe(
-                    "AMPR-Emu-Ordner mit libSceAmpr.sprx und libScePlayGo.sprx auswählen",
-                    configured_dir,
-                )
-                if not configured_dir:
-                    self._append_to_log(self._t('log.auto.0149'))
+                else:
+                    configured_dir = self._ask_directory_threadsafe(
+                        self._t("ampr.choose_emu_folder"),
+                        configured_dir,
+                    )
+                    if not configured_dir:
+                        self._append_to_log(self._t('log.auto.0149'))
+                        return False
+                    emu_path = Path(configured_dir).expanduser()
+
+            if configured_dir:
+                missing = [name for name in required_files
+                           if not (emu_path / name).is_file()]
+                if missing:
+                    self._append_to_log(self._t("ampr.emu_folder_incomplete",
+                                                fehlend=", ".join(missing)))
                     return False
-                emu_path = Path(configured_dir).expanduser()
 
-            missing = [name for name in required_files if not (emu_path / name).is_file()]
-            if missing:
-                self._append_to_log(
-                    "[AMPR] Im gewählten Ordner fehlen: " + ", ".join(missing) + "\n"
-                )
-                return False
-
-            fakelib_path.mkdir(parents=True, exist_ok=True)
-            for name in required_files:
-                shutil.copy2(emu_path / name, fakelib_path / name)
-                self._append_to_log(self._t('log.auto.0150', v0=name))
-            self._save_setting("ampr_emu_folder", str(emu_path.resolve()))
+                fakelib_path.mkdir(parents=True, exist_ok=True)
+                for name in required_files:
+                    shutil.copy2(emu_path / name, fakelib_path / name)
+                    self._append_to_log(self._t('log.auto.0150', v0=name))
+                self._save_setting("ampr_emu_folder", str(emu_path.resolve()))
 
         if not self._auto_generate_ampr_index(str(root_path)):
             self._append_to_log(self._t('log.auto.0151'))
