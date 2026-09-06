@@ -624,11 +624,10 @@ class EingebetteteOrdnerTests(unittest.TestCase):
         """Fragt git, welche der Pfade es ignoriert.
 
         Die Liste geht als Bytes hinein, nicht als Text: Unter Windows macht
-        Python aus jedem 
- ein 
-, git nimmt den Wagenruecklauf als Teil
-        des Pfades und antwortet dann in Anfuehrungszeichen. Der Vergleich
-        lief dadurch schon einmal vollstaendig ins Leere.
+        Python beim Schreiben aus jedem Zeilenvorschub ein Wagenruecklauf-
+        Paar, git nimmt den Wagenruecklauf als Teil des Pfades und antwortet
+        dann in Anfuehrungszeichen. Der Vergleich lief dadurch schon einmal
+        vollstaendig ins Leere - von 229 gemeldeten Treffern passte einer.
         """
         if not pfade:
             return set()

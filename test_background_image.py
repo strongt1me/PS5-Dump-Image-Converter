@@ -245,9 +245,16 @@ class SpeichernKnopfTests(unittest.TestCase):
         return dlg
 
     def _speichern(self, dlg):
+        # Die Aufschrift beim Programm erfragen statt sie hinzuschreiben:
+        # Steht die Oberflaeche auf Englisch, heisst der Knopf "Save". Am
+        # 06.09.2026 fielen diese beiden Pruefungen genau daran aus - im
+        # Sammellauf, weil eine fruehere Pruefdatei "language": "en" in den
+        # gemeinsamen Einstellungsordner geschrieben hatte. Einzeln liefen
+        # sie durch, was die Ursache lange verdeckte.
+        aufschrift = self.app._t("settings_dialog.save_button")
         knopf = [b for b in self._sammle(dlg, "Button")
-                 if "Speichern" in b.cget("text")]
-        self.assertTrue(knopf, "kein Speichern-Knopf im Dialog")
+                 if aufschrift in b.cget("text")]
+        self.assertTrue(knopf, "kein Knopf %r im Dialog" % aufschrift)
         knopf[0].invoke()
 
     def test_listenauswahl_wird_beim_speichern_uebernommen(self):
