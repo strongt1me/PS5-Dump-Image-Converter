@@ -2,7 +2,71 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.6):** Nach dem Packen wird das fertige Abbild jetzt tatsächlich geprüft – bisher lief diese Kontrolle in der Voreinstellung gar nicht. Dazu zwei neue Werkzeuge (Anwendung direkt auf der PS5 installieren, zweiter Sendeweg für Payloads), und die AMPR-Aktualisierung findet endlich wieder neue Fassungen.
+> **Kurz zum aktuellen Stand (v1.9.7):** Kein Weg löscht mehr etwas, bevor der Ersatz fertig ist – vier Stellen taten das bisher, eine davon traf die Quelldatei selbst. Dazu spricht die englische Oberfläche jetzt wirklich Englisch, und vier Fenster lassen sich wieder schließen.
+
+---
+
+## v1.9.7 – 06.09.2026
+
+### Nichts wird mehr gelöscht, bevor der Ersatz da ist
+
+Vier Wege räumten das vorhandene Ergebnis weg, bevor das neue gebaut war.
+Ging beim Bauen etwas schief – volle Platte, Abbruch, ein Fehler im
+Werkzeug –, war beides fort.
+
+Der schlimmste Fall traf die **Quelldatei**: Steht im Feld ZIEL derselbe
+Ordner, in dem die Quelle liegt, und ist das Zielformat `.ffpkg`, dann zeigte
+der erwartete Ausgabepfad auf die Quelle selbst. Ein „Ja, überschreiben"
+löschte sie, bevor ein einziger Arbeitsschritt begonnen hatte.
+
+Die Sammelkonvertierung fragte gar nicht erst und entfernte vorhandene
+Zieldateien stillschweigend. Jetzt wird gefragt – einmal für den ganzen Lauf,
+nicht bei jeder Datei einzeln.
+
+### Die Einstellungen konnten komplett verschwinden
+
+Beim Speichern der zuletzt benutzten Pfade wurde die Einstellungsdatei zuerst
+geleert und dann neu geschrieben. Brach das Schreiben ab, waren **alle**
+Einstellungen weg – Sprache, Design, gemerkte Ordner. Außerdem gingen bei
+gleichzeitigem Zugriff einzelne Änderungen verloren.
+
+### Die englische Oberfläche spricht jetzt Englisch
+
+Über 200 Texte standen fest auf Deutsch im Programm und erschienen auch dann
+auf Deutsch, wenn die Oberfläche auf Englisch stand: die gesamte Statuszeile
+während einer Umwandlung, die Warnungen vor dem Start, die Meldungen zu einer
+untauglichen Quelle, das Fenster von Aufgabe 7, die Kurzhinweise der
+Aufgabenknöpfe und der Bericht über einen unvollständigen Dump.
+
+### Auf dem Mac waren Knöpfe kaum zu lesen
+
+macOS zeichnet einen einfachen Knopf als Systemknopf und ignoriert dabei die
+gewählte Hintergrundfarbe. Die helle Schrift des Programms stand dadurch auf
+heller Systemfläche – je nach Farbe schwer bis gar nicht lesbar; im
+Y2JB-Fenster war „Konsole leeren" vollständig unsichtbar. Alle Knöpfe des
+Programms sind umgestellt. Unter Windows und Linux ändert sich dadurch
+nichts.
+
+### Vier Fenster ließen sich nicht schließen
+
+Im PS4-PKG-Wandler, im Debug-`.pkg`-Bauer und im Umbenennen-Fenster warf der
+Knopf SCHLIESSEN einen Fehler ins Protokoll, statt zuzumachen; es half nur
+das X der Fensterleiste. Dem Y2JB-Fenster fehlte der Knopf ganz. Im
+WebKit-Fenster lag er über dem Knopf darüber. Und Aufgabe 7 blieb offen
+stehen, wenn man danach eine andere Aufgabe wählte.
+
+### Kleinere Behebungen
+
+* Fehlende Laufzeitpakete ließen sich nicht nachinstallieren – der Versuch
+  brach mit einem internen Fehler ab, und die Engine startete nicht.
+* Was ein Payload nach dem Senden zurückmeldet, steht jetzt im Protokoll.
+  Bisher wurde die Antwort der Konsole verworfen.
+* Eine in den Einstellungen geänderte PS5-Adresse wirkte nach dem ersten
+  Verbinden nie wieder – die Fenster hielten den alten Wert fest.
+* Beim Zurückspielen und Löschen im Autoloader werden einzelne Fehlschläge
+  gemeldet, statt nur die Zahl der gelungenen.
+* Die Infobox beantwortet „AMPR EMU eingebaut?" für einen Ordner und für ein
+  Abbild jetzt gleich.
 
 ---
 

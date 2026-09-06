@@ -433,7 +433,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.6"
+APP_VERSION = "v1.9.7"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -13251,7 +13251,7 @@ class PS5ConverterGUI:
         tk.Label(title_bar, text=self._t("info_popup.title_bar"),
                  font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
-        tk.Button(title_bar, text="✕", command=_on_close,
+        flach_knopf(title_bar, text="✕", command=_on_close,
                   font=(UI_SCHRIFT, pt(11), "bold"),
                   bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
                   activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
@@ -13322,7 +13322,7 @@ class PS5ConverterGUI:
         # Nachschlagen - nur sichtbar, wenn etwas fehlt. Bewusst ein Knopf
         # und kein Automatismus: Hier entsteht die einzige Verbindung nach
         # draussen, die dieses Fenster ueberhaupt aufbaut.
-        self._meta_nachschlag_knopf = tk.Button(
+        self._meta_nachschlag_knopf = flach_knopf(
             container, text=self._t("info_popup.lookup_button"),
             command=self._nachschlag_ausloesen,
             font=(UI_SCHRIFT, pt(9), "bold"),
@@ -13476,7 +13476,7 @@ class PS5ConverterGUI:
         self._patch_tree.bind("<Leave>", _fix_heading_leave, add="+")
 
         # ── Schließen-Button ───────────────────────────────────────────────────────────────────────────
-        tk.Button(container, text=self._t("info_popup.close_button"),
+        flach_knopf(container, text=self._t("info_popup.close_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
@@ -16040,7 +16040,7 @@ class PS5ConverterGUI:
             wraplength=540, justify="center",
         ).pack(pady=(10, 0), padx=24)
 
-        abbrechen = tk.Button(
+        abbrechen = flach_knopf(
             win, text=self._t("shutdown.abort_button"),
             font=(UI_SCHRIFT, pt(12), "bold"),
             bg=c["error_btn"], fg="white",
@@ -23475,7 +23475,7 @@ class PS5ConverterGUI:
             # auf GitHub standen schon 0.3.6.4 und 0.3.6.6.
             _update_reihe = tk.Frame(sec_b, bg=c["bg_main"])
             _update_reihe.pack(anchor="w", fill="x", padx=10, pady=(0, 4))
-            tk.Button(
+            flach_knopf(
                 _update_reihe, text=self._t("ampr.update_knopf"),
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -23543,7 +23543,7 @@ class PS5ConverterGUI:
                         self._save_setting("ampr_store_dir", store_dir_var.get())
                     _refresh_versions()
 
-            tk.Button(
+            flach_knopf(
                 store_row, text=self._t("ampr.btn_choose_store"), command=_choose_store,
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, cursor="hand2",
@@ -23621,7 +23621,7 @@ class PS5ConverterGUI:
                 ("ampr.btn_remove", lambda: _finish("ampr_remove")),
                 ("ampr.btn_index_only", lambda: _finish("ampr_index")),
             ):
-                tk.Button(
+                flach_knopf(
                     btn_row1, text=self._t(text_key), command=cmd,
                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                     relief="flat", padx=12, pady=6, cursor="hand2",
@@ -23638,14 +23638,14 @@ class PS5ConverterGUI:
                 font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=_fw - 80, justify="left", anchor="w",
             ).pack(fill="x", padx=10, pady=(8, 4))
-            tk.Button(
+            flach_knopf(
                 sec_d, text=self._t("ampr.btn_open_picker"),
                 command=lambda: self._show_ampr_ftp_picker(parent=dlg),
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, pady=6, cursor="hand2",
             ).pack(anchor="w", padx=10, pady=(0, 10))
 
-            tk.Button(
+            flach_knopf(
                 dlg, text=self._t("action.cancel_ellipsis"),
                 command=lambda: _finish("cancel"),
                 font=(UI_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_primary"],
@@ -26918,7 +26918,7 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(9), "italic"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_secondary"]).pack(**pad)
 
-        tk.Button(inner, text=self._t("action.close_lowercase"),
+        flach_knopf(inner, text=self._t("action.close_lowercase"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
@@ -26963,7 +26963,7 @@ class PS5ConverterGUI:
         tk.Label(title_bar, text=self._t("resources.title_bar"),
                  font=(UI_SCHRIFT, pt(10), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
-        tk.Button(title_bar, text="✕", command=_on_close,
+        flach_knopf(title_bar, text="✕", command=_on_close,
                   font=(UI_SCHRIFT, pt(11), "bold"),
                   bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
                   activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
@@ -27057,7 +27057,7 @@ class PS5ConverterGUI:
             )
             left.pack(side="left", fill="x", expand=True)
 
-            tk.Button(
+            flach_knopf(
                 row,
                 text=self._t("resources.install_button"),
                 font=(UI_SCHRIFT, pt(9), "bold"),
@@ -27154,7 +27154,7 @@ class PS5ConverterGUI:
         )
 
         # Schließen-Button
-        tk.Button(inner, text=self._t("action.close_lowercase"),
+        flach_knopf(inner, text=self._t("action.close_lowercase"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
@@ -36684,7 +36684,7 @@ class PS5ConverterGUI:
                 if path:
                     payload_path_var.set(path)
 
-            tk.Button(
+            flach_knopf(
                 payload_row, text=self._t("action.browse"),
                 bg=c["fg_accent"], fg=c["bg_main"],
                 activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -36726,7 +36726,7 @@ class PS5ConverterGUI:
 
                 threading.Thread(target=worker, daemon=True).start()
 
-            tk.Button(
+            flach_knopf(
                 payload_row, text=self._t("y2jb.send_button"),
                 bg=c["accent_btn"], fg="white",
                 activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -37358,7 +37358,7 @@ class PS5ConverterGUI:
                 if not output_var.get().strip():
                     output_var.set(os.path.join(path, "ampr_emu.index"))
 
-        tk.Button(root_row, text=self._t("action.browse"),
+        flach_knopf(root_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
@@ -37381,7 +37381,7 @@ class PS5ConverterGUI:
             if path:
                 output_var.set(path)
 
-        tk.Button(out_row, text=self._t("action.browse"),
+        flach_knopf(out_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
@@ -37430,7 +37430,7 @@ class PS5ConverterGUI:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        build_btn = tk.Button(
+        build_btn = flach_knopf(
             main, text=self._t("ampr_index.build_button"),
             bg=c["accent_btn"], fg="white",
             activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -38712,7 +38712,7 @@ class PS5ConverterGUI:
             else:
                 _log(self._t("ampr.hotswap_failed", name=name))
 
-        tk.Button(conn, text=self._t("ampr.picker_connect"), command=_connect,
+        flach_knopf(conn, text=self._t("ampr.picker_connect"), command=_connect,
                   font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                   relief="flat", padx=12, cursor="hand2").pack(side="left")
 
@@ -38721,7 +38721,7 @@ class PS5ConverterGUI:
         tk.Label(quick, text=self._t("ampr.picker_quick"), font=(UI_SCHRIFT, pt(9)),
                  fg=c["fg_secondary"], bg=c["bg_main"]).pack(side="left", padx=(0, 6))
         for quick_path in self._AMPR_FTP_QUICK_PATHS:
-            tk.Button(
+            flach_knopf(
                 quick, text=quick_path, command=lambda p=quick_path: _goto(p),
                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=8, cursor="hand2",
@@ -38741,7 +38741,7 @@ class PS5ConverterGUI:
             ("ampr.picker_hotswap_set", _swap_set),
             ("ampr.picker_hotswap", _swap_single),
         ):
-            tk.Button(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, pt(9)),
+            flach_knopf(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, pt(9)),
                       bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                       padx=12, pady=6, cursor="hand2").pack(side="left", padx=(0, 6))
 
@@ -38863,14 +38863,14 @@ class PS5ConverterGUI:
             dlg.destroy()
             self._restart_application()
 
-        tk.Button(btn_row, text=self._t("theme_dialog.apply_button"),
+        flach_knopf(btn_row, text=self._t("theme_dialog.apply_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=7,
                   command=_apply).pack(side="left")
 
-        tk.Button(btn_row, text=self._t("action.cancel_ellipsis"),
+        flach_knopf(btn_row, text=self._t("action.cancel_ellipsis"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -39017,7 +39017,7 @@ class PS5ConverterGUI:
             vorschau_zeichner.append(_haupt_vorschau_setzen)
             _haupt_vorschau_setzen()
 
-            tk.Button(
+            flach_knopf(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
                 command=_apply_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
@@ -39060,14 +39060,14 @@ class PS5ConverterGUI:
         btn_row = tk.Frame(body, bg=c["bg_card"])
         btn_row.pack(fill="x", pady=(0, 0))
 
-        tk.Button(btn_row, text=self._t("settings_dialog.choose_image_button"),
+        flach_knopf(btn_row, text=self._t("settings_dialog.choose_image_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_image).pack(side="left")
 
-        tk.Button(btn_row, text=self._t("settings_dialog.reset_image_button"),
+        flach_knopf(btn_row, text=self._t("settings_dialog.reset_image_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -39165,7 +39165,7 @@ class PS5ConverterGUI:
             vorschau_zeichner.append(_sidebar_vorschau_setzen)
             _sidebar_vorschau_setzen()
 
-            tk.Button(
+            flach_knopf(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
                 command=_apply_sidebar_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
@@ -39208,14 +39208,14 @@ class PS5ConverterGUI:
         sidebar_btn_row = tk.Frame(body, bg=c["bg_card"])
         sidebar_btn_row.pack(fill="x", pady=(0, 0))
 
-        tk.Button(sidebar_btn_row, text=self._t("settings_dialog.choose_image_button"),
+        flach_knopf(sidebar_btn_row, text=self._t("settings_dialog.choose_image_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_sidebar_image).pack(side="left")
 
-        tk.Button(sidebar_btn_row, text=self._t("settings_dialog.reset_image_button"),
+        flach_knopf(sidebar_btn_row, text=self._t("settings_dialog.reset_image_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -39414,7 +39414,7 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_arbeit, daemon=True).start()
 
-        tk.Button(body, text=self._t("settings_dialog.ps5_test_button"),
+        flach_knopf(body, text=self._t("settings_dialog.ps5_test_button"),
                   font=(UI_SCHRIFT, pt(9)),
                   bg=c["bg_main"], fg=c["fg_primary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -39458,13 +39458,13 @@ class PS5ConverterGUI:
 
         downloads_btn_row = tk.Frame(body, bg=c["bg_card"])
         downloads_btn_row.pack(fill="x")
-        tk.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_choose_button"),
+        flach_knopf(downloads_btn_row, text=self._t("settings_dialog.downloads_choose_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_download_dir).pack(side="left")
-        tk.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_reset_button"),
+        flach_knopf(downloads_btn_row, text=self._t("settings_dialog.downloads_reset_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -39549,13 +39549,13 @@ class PS5ConverterGUI:
         # Hinweis darueber steht.
         close_row = tk.Frame(body, bg=c["bg_card"])
         close_row.pack(fill="x", side="bottom", pady=(8, 0))
-        tk.Button(close_row, text=self._t("action.close"),
+        flach_knopf(close_row, text=self._t("action.close"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=dlg.destroy).pack(side="right")
-        tk.Button(close_row, text=self._t("settings_dialog.save_button"),
+        flach_knopf(close_row, text=self._t("settings_dialog.save_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
