@@ -2,7 +2,66 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.5):** Die gemerkte Fenstergröße hält jetzt auch, wenn Sie das Programm minimiert lassen und den Rechner herunterfahren. Ansonsten wie v1.9.4: zwei Bildschirme, erklärte Aufgaben und lesbare PS5-Pakete.
+> **Kurz zum aktuellen Stand (v1.9.6):** Nach dem Packen wird das fertige Abbild jetzt tatsächlich geprüft – bisher lief diese Kontrolle in der Voreinstellung gar nicht. Dazu zwei neue Werkzeuge (Anwendung direkt auf der PS5 installieren, zweiter Sendeweg für Payloads), und die AMPR-Aktualisierung findet endlich wieder neue Fassungen.
+
+---
+
+## v1.9.6 – 06.09.2026
+
+### Nach dem Packen sah niemand hin
+
+In der Voreinstellung lief nach dem Erstellen eines Abbilds **keine einzige
+Kontrolle** – obwohl die Prüfstufe „Schnell“ genau das versprach. Jetzt wird
+die Struktur des fertigen Abbilds wirklich geprüft. Wer die Zeit sparen will,
+wählt „Aus“.
+
+Dazu weist das Programm drei Quellen zurück, die es bisher stillschweigend
+verarbeitet hat und die zu einem beschädigten Abbild führten: Dateien, die
+beim Lesen kürzer sind als angekündigt, Namen mit Sonderzeichen und
+Verknüpfungen (Symlinks) im Dump-Ordner.
+
+### Auf dem Mac fror der Bildschirm beim allerersten Start ein
+
+Beim ersten Start einer frisch geladenen App zeigt macOS einen Warnhinweis –
+und der erschien, während das Fenster noch unsichtbar war. Ein unsichtbares
+Fenster lag dann bildschirmfüllend über allem und wartete auf einen Klick, den
+niemand sehen konnte. Der Hinweis wartet jetzt, bis das Fenster wirklich da
+ist.
+
+### „AMPR aktualisieren“ meldete immer „schon aktuell“
+
+Der Knopf verglich die angebotenen Fassungen gegen einen Bestand, in dem auch
+PlayGo mitzählte – und dessen Nummer ist höher als jede AMPR-Fassung. Dadurch
+galt nie wieder etwas als neu. Außerdem:
+
+* Fassungen aus einem selbst gewählten Ordner und die mitgelieferten stehen
+  jetzt gemeinsam in allen Listen. Bisher zeigte die Auswahl beim Erstellen
+  nur die einen, der AMPR-Manager nur die anderen.
+* Die Debug- und die Nicht-Debug-Reihe werden getrennt gezählt. Wer eine
+  Fassung „no debug“ hatte, bekam dieselbe Nummer als „debug“ nie angeboten.
+* Fehlen die Bibliotheken im Dump, greift das Programm jetzt auf den
+  Versionsspeicher zurück, statt nach einem Ordner zu fragen oder abzubrechen.
+
+### Die config.ini der Konsole kam mit lauter Kommentarzeichen zurück
+
+Wer den AMPR-Lauf die Einstellungen der Konsole korrigieren ließ, bekam eine
+Datei zurück, in der **alle** bisherigen Einstellungen abgeschaltet waren –
+Suchpfade, Port und Einhängepunkt. Nur die geänderten Zeilen überlebten.
+
+### Sechs Knöpfe konnten gar nicht scheitern
+
+Handbuch, Lizenz, AMPR-Anleitung, Download-Ordner und zweimal „Im Ordner
+zeigen“ meldeten nie einen Fehler – auch dann nicht, wenn die Datei längst
+nicht mehr da war. Jetzt sagen sie, was schiefging.
+
+### Zwei neue Werkzeuge
+
+* **Anwendung installieren:** Legt eine Kachel direkt auf der PS5 an, ohne den
+  Umweg über eine Paketdatei. Selbst gebaute Pakete scheitern dort mit
+  CE-100096-6.
+* **Zweiter Sendeweg für Payloads:** Ist Port 9021 zu, geht die Datei über den
+  Payload Manager – danach steht der Port wieder offen. Das betrifft alle
+  Wege, die etwas an die Konsole schicken.
 
 ---
 

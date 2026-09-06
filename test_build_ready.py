@@ -9,6 +9,7 @@ Build-Validierungstests für PS5ImageConverter
 import contextlib
 import io
 import os
+import re
 import sys
 import subprocess
 import unittest
@@ -383,6 +384,22 @@ class VersionsstandTests(unittest.TestCase):
         with open("Build_EXE.ps1", encoding="utf-8-sig") as datei:
             inhalt = datei.read()
         self.assertIn('$EXE_VERSION = "%s"' % self.version, inhalt)
+
+    def test_der_bau_starter_kennt_sie_auch(self) -> None:
+        """Start_Build.bat nennt die Version zweimal, und niemand sah nach.
+
+        Beim Sprung auf v1.9.5 blieb die Datei auf v1.9.4 stehen und fiel
+        erst beim naechsten Release auf. Sie zeigt dem Anwender beim Start
+        des Baus an, welche Fassung entsteht - eine falsche Nummer dort ist
+        harmlos fuer das Ergebnis, aber irrefuehrend.
+        """
+        with open("Start_Build.bat", encoding="utf-8-sig") as datei:
+            inhalt = datei.read()
+        veraltet = re.findall(r"v\d+\.\d+\.\d+", inhalt)
+        self.assertTrue(veraltet, "Start_Build.bat nennt gar keine Version")
+        self.assertEqual({self.version}, set(veraltet),
+                         "Start_Build.bat nennt eine andere Fassung: %s"
+                         % sorted(set(veraltet)))
 
 
 class AmprOrdnerImProgrammTests(unittest.TestCase):

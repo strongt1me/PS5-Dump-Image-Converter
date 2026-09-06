@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.5</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.6</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.5</span>
+      <span class="marke">Version v1.9.6</span>
       <span class="marke">Stand 4. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -639,7 +639,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Neben den beiden Methoden steht je ein Knopf <strong>Anleitung</strong>,
     der die Beschreibung zu genau dieser Fassung &ouml;ffnet. Dar&uuml;ber
     w&auml;hlen Sie die <strong>Ablage</strong> &ndash; siehe
-    <a href="#k13">Abschnitt 13.8</a>. Ein zweiter Druck auf Knopf 7
+    <a href="#k13">Abschnitt 13.9</a>. Ein zweiter Druck auf Knopf 7
     schlie&szlig;t das Fenster wieder, <strong>Esc</strong> ebenfalls.</p>
   </div>
   <p>Aufgabe 7 ist keine normale Formatkonvertierung. Sie bereitet die Quelle vor und öffnet anschließend einen Manager. Dort können Sie einen <code>fakelib</code>-Ordner sowie Dateien oder Ordner im Stammverzeichnis hinzufügen oder entfernen.</p>
@@ -715,11 +715,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>BIBLIOTHEK</strong></td><td>Durchsucht mehrere gespeicherte Ordner nach Dump-Ordnern und Containerdateien, zeigt Titel und Cover und erlaubt eine schnelle Übernahme als Quelle.</td></tr>
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
-      <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.10</a>.</td></tr>
+      <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit neun Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>DOWNLOADS</strong> (13.4), <strong>BACKPORT</strong> (13.5) <strong>ps5_autoloader</strong> (13.7) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.9).</td></tr>
-      <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.6</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit zehn Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10).</td></tr>
+      <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
       <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k14">Kapitel 14</a>.</td></tr>
@@ -799,7 +799,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Das Ergebnis ist <strong>unsigniert</strong>. Es gibt keine echte RSA-Signatur und kein Fake-SELF-Spoofing. Der Container ist für Struktur- und Werkzeugtests gedacht, nicht als Ersatz für ein reguläres Paket – bitte vor jeder Verwendung selbst prüfen.</p>
   </div>
 
-  <h3>13.4 DOWNLOADS – Updates und Patches holen</h3>
+  <h3>13.4 App direkt installieren</h3>
+  <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS → APP DIREKT INSTALLIEREN.</p>
+  <p>Selbst gebaute Pakete weist die Konsole mit <code>CE-100096-6</code> zurück. Dieses Werkzeug umgeht das: Es überträgt die Dateien per FTP und meldet die Kachel mit einem kleinen Payload an. Zur Wahl stehen zwei Bauformen – eine Kachel, die beim Antippen eine Adresse öffnet, und der Weg mit eigenem Programm.</p>
+  <p><strong>Vorausgesetzt wird</strong>, dass auf der Konsole <code>ftpsrv</code> (Port 2121) und der Payload-Loader (Port 9021) laufen. Ist 9021 zu, nimmt das Programm von selbst den Umweg über den Payload Manager.</p>
+  <div class="kasten warnung">
+    <span class="titel">Wichtig</span>
+    <p>Die Kachel wird ohne Signaturprüfung angelegt. Sie überlebt einen Neustart der Konsole nur, solange die Jailbreak-Umgebung wieder aktiv ist – bitte vor jeder Verwendung selbst prüfen.</p>
+  </div>
+
+  <h3>13.5 DOWNLOADS – Updates und Patches holen</h3>
   <p>Lädt Spiel-Updates und ältere Patches herunter, sortiert sie in getrennte Ordner und zeigt jederzeit, was läuft und was schon da ist.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → DOWNLOADS. Der Knopf <strong>Download</strong> im Fenster <em>Spiel-Info – Updates &amp; Patches</em> führt ebenfalls hierher.</p>
 
@@ -844,7 +854,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </table>
   </div>
 
-  <h3>13.5 BACKPORT – Spiele auf ältere Firmware herabsetzen</h3>
+  <h3>13.6 BACKPORT – Spiele auf ältere Firmware herabsetzen</h3>
   <p>Ein PS5-Spiel merkt sich, mit welchem Entwicklungspaket (SDK) es gebaut wurde. Die Konsole vergleicht das beim Start mit ihrer eigenen Firmware und startet nichts, was zu neu ist. Verlangt ein Spiel Firmware 9.00, während Ihre Konsole auf 4.50 steht, passiert beim Antippen schlicht nichts. <strong>BACKPORT</strong> setzt diese Angabe herab.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → BACKPORT. Danach den Spielordner auswählen.</p>
 
@@ -905,7 +915,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <span class="titel">Wichtig</span>
     <p>Das Ergebnis wird neu signiert, aber nicht <em>echt</em> signiert – es läuft nur auf einer bereits gejailbreakten Konsole. Und ob ein bestimmtes Spiel nach dem Backport tatsächlich startet, lässt sich vorher nicht sagen: Manche Spiele verlangen Funktionen, die es auf der älteren Firmware schlicht nicht gibt. Arbeiten Sie deshalb immer mit eingeschalteter Sicherung und behalten Sie den Sicherungsordner, bis Sie das Spiel auf der Konsole erfolgreich gestartet haben.</p>
   </div>
-  <h3>13.6 Wie FileZilla gefunden wird</h3>
+  <h3>13.7 Wie FileZilla gefunden wird</h3>
   <p>Der Knopf <strong>FILEZILLA</strong> startet Ihre eigene FileZilla-Installation. Weil jeder sie woanders und unter unterschiedlichen Ordnernamen installiert, sucht das Programm der Reihe nach:</p>
   <div class="tabelle">
   <table>
@@ -929,7 +939,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 </section>
 
 <section class="kapitel" id="k14">
-  <h3>13.7 ps5_autoloader – die Startreihenfolge der Konsole</h3>
+  <h3>13.8 ps5_autoloader – die Startreihenfolge der Konsole</h3>
   <p>Nach dem Jailbreak startet die PS5 eine Reihe von Payloads – FTP-Dienst, ShadowMount+, kstuff und was sonst gebraucht wird. Welche das sind und in welcher Reihenfolge, steht in einer einfachen Textdatei namens <code>autoload.txt</code>. Dieses Fenster bearbeitet sie vom PC aus, über FTP.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → ps5_autoloader.</p>
 
@@ -973,7 +983,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <p><strong>Ein guter erster Schritt:</strong> Bevor Sie etwas ändern, einen Schnappschuss sichern. Dann können Sie jeden Versuch zurücknehmen, ohne die Konsole neu einrichten zu müssen.</p>
 
-  <h3>13.8 AMPR EMU &ndash; alte und neue Methode</h3>
+  <h3>13.9 AMPR EMU &ndash; alte und neue Methode</h3>
 
   <p>Zwei Kn&ouml;pfe, die dasselbe Ziel haben und sich in einem Punkt
   unterscheiden, der leicht zu &uuml;bersehen ist. Zwischen ShadowMountPlus
@@ -1088,7 +1098,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   solange beide ShadowMount+-Fassungen im Umlauf sind.</p>
 
 
-  <h3>13.9 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
+  <h3>13.10 PS4 PKG &rarr; ffpfsc &ndash; und wohin das Abbild geh&ouml;rt</h3>
   <p>Dieses Fenster macht aus PS4-PKG-Dateien (Basis, Patch, wahlweise DLC)
   oder einem bereits entpackten PS4-Spiel ein Abbild, das ShadowMount+ auf der
   PS5 einh&auml;ngen kann. Quelle w&auml;hlen, <strong>EINLESEN</strong>,
@@ -1226,7 +1236,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
     still.</p>
   </div>
-  <h3>13.10 WebKit Autoloader &ndash; Kachel auf den Startbildschirm</h3>
+  <h3>13.11 WebKit Autoloader &ndash; Kachel auf den Startbildschirm</h3>
   <p>Der WebKit Autoloader legt auf der Konsole eine Kachel an, &uuml;ber die
   sich der Einstieg jedes Mal mit einem Druck wiederholen l&auml;sst, statt
   ihn von Hand im Browser aufzurufen. Dazu geh&ouml;ren zwei Teile: ein
@@ -1364,7 +1374,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.5), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.6), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1564,7 +1574,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.5</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.6</strong></span>
     <span>Stand 4. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
