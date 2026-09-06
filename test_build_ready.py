@@ -549,6 +549,139 @@ class AmprOrdnerImProgrammTests(unittest.TestCase):
             shutil.rmtree(neben, ignore_errors=True)
 
 
+
+class EingebetteteOrdnerTests(unittest.TestCase):
+    """Nichts, was git ignoriert, darf in die fertige Datei wandern.
+
+    Die .spec-Dateien betten ganze Ordner ein, indem sie darueberlaufen.
+    Was dort sonst noch liegt, kommt mit - auch das, was beim Uebersetzen
+    nebenbei entsteht und deshalb in .gitignore steht. Am 06.09.2026 waren
+    das 222 Dateien mit 87,8 MB .NET-Bauausgabe unter
+    ProsperoPkg-2.5/src/ProsperoPkgCli/{bin,obj}: Die Windows-Fassung wuchs
+    dadurch von 143 auf 182 MB. Im Baum faellt so etwas nicht auf, weil git
+    es gar nicht erst zeigt - gesehen wurde es nur, weil die fertige Datei
+    beim Groessenvergleich mit der Vorversion aus dem Rahmen fiel.
+
+    Geprueft wird das Ergebnis, nicht der Wortlaut: Der Test liest aus jeder
+    .spec, welche Ordner sie einbettet und welche Unterordner sie auslaesst,
+    laeuft selbst darueber und fragt git.
+    """
+
+    SPECS = ("PS5ImageConverter_Pro.spec",
+             "PS5ImageConverter_Pro_linux.spec",
+             "PS5ImageConverter_Pro_macos.spec")
+
+    #: Zwei Werkzeuge aus dem mitgelieferten PlayGo-Quellcode. Sie liegen
+    #: unter tools/ und werden dadurch von einer allgemeinen Regel erfasst,
+    #: gehoeren aber seit jeher zur Auslieferung (zusammen 33 KB).
+    ERLAUBT = frozenset({
+        "PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/pgo_stub-0.5/pgo_stub-0.5/"
+        "tools/make_fself.py",
+        "PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/pgo_stub-0.5/pgo_stub-0.5/"
+        "tools/make_playgo_libc_internal_stub.py",
+    })
+
+    @staticmethod
+    def _eingebettete_ordner(spec_name):
+        """Liest aus der .spec: Ordnername -> ausgelassene Unterordner."""
+        import ast
+        baum = ast.parse((PROJEKT / spec_name).read_text(encoding="utf-8"))
+
+        # Erst die Zuweisungen der Form  X = os.path.join(_here, 'Name')
+        quelle = {}
+        for knoten in ast.walk(baum):
+            if (isinstance(knoten, ast.Assign) and len(knoten.targets) == 1
+                    and isinstance(knoten.targets[0], ast.Name)
+                    and isinstance(knoten.value, ast.Call)
+                    and len(knoten.value.args) == 2
+                    and isinstance(knoten.value.args[1], ast.Constant)
+                    and isinstance(knoten.value.args[1].value, str)):
+                quelle[knoten.targets[0].id] = knoten.value.args[1].value
+
+        # Dann die Aufrufe, die so einen Ordner einbetten.
+        gefunden = {}
+        for knoten in ast.walk(baum):
+            if not (isinstance(knoten, ast.Call)
+                    and isinstance(knoten.func, ast.Name)
+                    and knoten.func.id == "_dateien_ohne_pycache"):
+                continue
+            if not knoten.args or not isinstance(knoten.args[0], ast.Name):
+                continue
+            name = quelle.get(knoten.args[0].id)
+            if name is None:
+                continue
+            ohne = set()
+            for schluessel in knoten.keywords:
+                if (schluessel.arg == "_ohne"
+                        and isinstance(schluessel.value, ast.Tuple)):
+                    ohne = {e.value for e in schluessel.value.elts
+                            if isinstance(e, ast.Constant)}
+            gefunden[name] = ohne
+        return gefunden
+
+    @staticmethod
+    def _von_git_ignoriert(pfade):
+        """Fragt git, welche der Pfade es ignoriert.
+
+        Die Liste geht als Bytes hinein, nicht als Text: Unter Windows macht
+        Python aus jedem 
+ ein 
+, git nimmt den Wagenruecklauf als Teil
+        des Pfades und antwortet dann in Anfuehrungszeichen. Der Vergleich
+        lief dadurch schon einmal vollstaendig ins Leere.
+        """
+        if not pfade:
+            return set()
+        lauf = subprocess.run(
+            ["git", "check-ignore", "--stdin"],
+            input=chr(10).join(pfade).encode("utf-8"),
+            capture_output=True, timeout=300)
+        return {z.strip() for z
+                in lauf.stdout.decode("utf-8", "replace").splitlines()
+                if z.strip()}
+
+    def setUp(self):
+        if not (PROJEKT / ".git").exists():
+            self.skipTest("kein git-Arbeitsbaum")
+
+    def test_specs_betten_ordner_ein(self):
+        """Ankerpruefung: Findet die Auswertung ueberhaupt noch etwas?
+
+        Ohne diese Pruefung waere der Test unten stumm richtig, sobald sich
+        der Name des Sammelhelfers aendert - er haette dann null Ordner zu
+        pruefen und meldete Erfolg.
+        """
+        for spec_name in self.SPECS:
+            with self.subTest(spec=spec_name):
+                ordner = self._eingebettete_ordner(spec_name)
+                self.assertIn(
+                    "ProsperoPkg-2.5", ordner,
+                    "%s bettet ProsperoPkg-2.5 nicht mehr ueber "
+                    "_dateien_ohne_pycache ein - die Auswertung dieses Tests "
+                    "passt nicht mehr zur .spec." % spec_name)
+
+    def test_kein_von_git_ignorierter_inhalt(self):
+        for spec_name in self.SPECS:
+            with self.subTest(spec=spec_name):
+                dateien = []
+                for name, ohne in self._eingebettete_ordner(spec_name).items():
+                    wurzel = PROJEKT / name
+                    if not wurzel.is_dir():
+                        continue
+                    for stamm, unter, namen in os.walk(wurzel):
+                        unter[:] = [u for u in unter
+                                    if u != "__pycache__" and u not in ohne]
+                        for n in namen:
+                            pfad = Path(stamm, n).relative_to(PROJEKT)
+                            dateien.append(pfad.as_posix())
+                uebrig = sorted(self._von_git_ignoriert(dateien) - self.ERLAUBT)
+                self.assertEqual(
+                    uebrig[:10], [],
+                    "%s bettet %d von git ignorierte Datei(en) ein - "
+                    "das ist Bauschutt und blaeht die fertige Datei auf."
+                    % (spec_name, len(uebrig)))
+
+
 if __name__ == '__main__':
     sys.exit(main())
 

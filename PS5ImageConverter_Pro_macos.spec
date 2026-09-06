@@ -185,7 +185,15 @@ for _mkpfs_src in _mkpfs_roots:
 # buendel lief "PKG bauen" ins Leere.
 _prosperopkg = os.path.join(_here, 'ProsperoPkg-2.5')
 if os.path.isdir(_prosperopkg):
-    _datas.extend(_dateien_ohne_pycache(_prosperopkg, 'ProsperoPkg-2.5'))
+    # bin/ und obj/ bleiben draussen: Wer die C#-Quellen daneben einmal
+    # uebersetzt, legt unter src/ProsperoPkgCli/ 89 MB .NET-Bauausgabe ab.
+    # Der Ordner ist git-ignoriert, deshalb faellt das im Baum nicht auf -
+    # in der fertigen Datei aber schon: Die Windows-Fassung wuchs dadurch
+    # von 143 auf 182 MB, bemerkt am 06.09.2026 beim Groessenvergleich mit
+    # der Vorversion. Gebraucht werden nur die vier fertigen Bauten
+    # (linux-x64, osx-arm64, osx-x64, win-x64), zusammen 6 MB.
+    _datas.extend(_dateien_ohne_pycache(_prosperopkg, 'ProsperoPkg-2.5',
+                                        _ohne=('bin', 'obj')))
 
 # Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
