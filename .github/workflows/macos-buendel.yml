@@ -10,9 +10,14 @@
 #   3. Startet das gebaute Programm überhaupt — und ist seine Laufzeit
 #      vollständig? Das beantwortet der Aufruf mit `--cli --help`: Er lädt
 #      denselben Interpreter, dieselben Bibliotheken und dieselben
-#      eingebetteten Daten wie der Fensterbetrieb, kommt aber ohne Bildschirm
-#      aus. Ein GUI-Start scheidet aus, weil die Läufer keine angemeldete
-#      Fenstersitzung haben.
+#      eingebetteten Daten wie der Fensterbetrieb.
+#   4. Geht das Fenster auf? Hier stand lange, ein GUI-Start scheide aus,
+#      weil die Läufer keine angemeldete Fenstersitzung hätten. Am
+#      06.09.2026 nachgemessen: **Sie haben eine.** `--anzeige-diagnose`
+#      baut das Fenster auf, vermisst 97 Bedienelemente (84 sichtbar) und
+#      gibt 0 zurück. Die Behauptung war unbelegt und ist falsch.
+#   5. Baut macOS dasselbe Abbild wie Windows? Bytegleich, auf beiden
+#      Architekturen gemessen.
 #
 # Beide Architekturen werden gebaut: macos-14 ist Apple Silicon (arm64),
 # macos-15-intel ist Intel (x86_64). Ein Bündel passt immer nur zu einer von
@@ -169,10 +174,13 @@ jobs:
         # schliesst es wieder. Mit frisch geleertem Konfigordner ist das
         # der ERSTE Start - genau der Fall, in dem es klemmte.
         #
-        # continue-on-error, weil unbelegt ist, ob die Laeufer eine
-        # angemeldete Fenstersitzung haben. Der erste Lauf beantwortet das;
-        # steht es fest, kann die Zeile weg und der Schritt wird scharf.
-        continue-on-error: true
+        # Der erste Lauf am 06.09.2026 hat die offene Frage beantwortet:
+        # Die Laeufer HABEN eine Fenstersitzung. 97 Bedienelemente
+        # vermessen, 84 sichtbar, Rueckgabewert 0. Der Schritt ist deshalb
+        # scharf - faellt er, geht das Fenster nicht auf.
+        #
+        # Die Zeitschranke ist die eigentliche Pruefung auf das Einfrieren:
+        # Haengt der Aufbau an einem Dialog, laeuft sie ab.
         timeout-minutes: 3
         run: |
           set -x
