@@ -182,10 +182,6 @@ class CreditsLeisteTests(_Quelltext):
             % namen)
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class ParamEditorTests(_Quelltext):
     """Zwei Wege, auf denen der Editor Arbeit verlor."""
 
@@ -579,3 +575,7 @@ class StatuszeileReisstNichtsTests(unittest.TestCase):
         gui = hauptprogramm.PS5ConverterGUI.__new__(hauptprogramm.PS5ConverterGUI)
         gui.root = None
         gui._set_status("irgendwas")      # darf nicht werfen
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

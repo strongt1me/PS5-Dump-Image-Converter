@@ -250,10 +250,6 @@ class BeideOberflaechenTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(callable(getattr(APP.PS5ConverterGUI, name, None)))
 
-
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
 class RohModusTests(unittest.TestCase):
     """``--raw`` darf nie ohne ``--no-compress`` aufgerufen werden.
 
@@ -318,3 +314,7 @@ class RohModusTests(unittest.TestCase):
         self.assertIn("--raw", werte)
         self.assertNotIn("--no-compress", werte,
                          "Die Gegenprobe traegt selbst den Schalter - sie misst nichts.")
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

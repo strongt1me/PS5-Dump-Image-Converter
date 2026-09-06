@@ -14,6 +14,7 @@ Flag nicht setzt.
 """
 from __future__ import annotations
 
+import ast
 import os
 import subprocess
 import sys
@@ -33,24 +34,65 @@ MKPFS_DIR = next(
 
 
 class FlagImQuelltextTests(unittest.TestCase):
-    """Jeder Einzeldatei-Packlauf muss das Flag mitgeben."""
+    """Jeder Einzeldatei-Packlauf muss das Flag mitgeben.
 
-    def setUp(self) -> None:
-        self.quelltext = QUELLDATEI.read_text(encoding="utf-8")
+    **Ueber den Syntaxbaum, nicht ueber die Zeichenkette.** Bis zum
+    06.09.2026 wurde der Quelltext an ``'"pack", "file",'`` geteilt und in
+    den naechsten 800 Zeichen nachgesehen. Beides bricht:
+
+    * Ein Zeilenumbruch zwischen ``"pack",`` und ``"file",`` - eine reine
+      Formatierungsfrage - laesst die Teilung ins Leere laufen. Bei der
+      Ordner-Pruefung fehlte dann sogar der Waechter auf die Trefferzahl:
+      Nachgemessen an einer Kopie, mit dem Umbruch UND dem verbotenen Flag
+      in allen fuenf Aufrufen, meldete sie weiter ``ok``.
+    * Das 800-Zeichen-Fenster hatte bei einem der vier Aufrufe nur noch 45
+      Zeichen Luft. Eine zusaetzliche Argumentzeile davor haette einen
+      Fehlalarm ausgeloest, obwohl das Flag dasteht.
+
+    Die Argumentliste als Liste zu lesen kennt weder Umbrueche noch
+    Fenstergrenzen. Vgl. die Projektnotiz zu Quelltextsuchen in Tests.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+
+    @classmethod
+    def _argumentlisten(cls, *anfang: str) -> list[list[str]]:
+        """Alle Listen-Literale, die mit diesen Zeichenketten beginnen.
+
+        Zurueck kommen nur die festen Zeichenketten der Liste - Ausdruecke
+        wie ``str(profile["cpu"])`` oder ``*self._mkpfs_pruef_argumente()``
+        interessieren hier nicht.
+        """
+        treffer: list[list[str]] = []
+        for knoten in ast.walk(cls.baum):
+            if not isinstance(knoten, (ast.List, ast.Tuple)):
+                continue
+            fest = [e.value for e in knoten.elts
+                    if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+            if fest[:len(anfang)] == list(anfang):
+                treffer.append(fest)
+        return treffer
 
     def test_jeder_pack_file_aufruf_setzt_das_flag(self):
-        bloecke = self.quelltext.split('"pack", "file",')[1:]
-        self.assertGreaterEqual(len(bloecke), 4, "pack-file-Aufrufe nicht gefunden")
-        for nummer, block in enumerate(bloecke, start=1):
+        listen = self._argumentlisten("pack", "file")
+        self.assertGreaterEqual(len(listen), 4,
+                                "pack-file-Aufrufe nicht gefunden - passt der "
+                                "Suchweg noch zum Quelltext?")
+        for nummer, argumente in enumerate(listen, start=1):
             with self.subTest(aufruf=nummer):
-                # Das Flag muss im Argumentblock stehen, nicht irgendwo spaeter.
-                self.assertIn("--no-rename-inner-image", block[:800])
+                self.assertIn("--no-rename-inner-image", argumente)
 
     def test_pack_folder_bekommt_das_flag_nicht(self):
         """Das Flag gibt es nur beim Einzeldatei-Packen – sonst bricht mkpfs ab."""
-        for block in self.quelltext.split('"pack", "folder",')[1:]:
-            with self.subTest():
-                self.assertNotIn("--no-rename-inner-image", block[:600])
+        listen = self._argumentlisten("pack", "folder")
+        self.assertGreaterEqual(len(listen), 4,
+                                "pack-folder-Aufrufe nicht gefunden - ohne "
+                                "diesen Waechter prueft die Schleife nichts.")
+        for nummer, argumente in enumerate(listen, start=1):
+            with self.subTest(aufruf=nummer):
+                self.assertNotIn("--no-rename-inner-image", argumente)
 
 
 @unittest.skipUnless(MKPFS_DIR is not None, "mkpfs nicht verfügbar")

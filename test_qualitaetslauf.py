@@ -1043,6 +1043,43 @@ class KeineTotenPruefungenTests(unittest.TestCase):
             "In eine TestCase-Klasse nehmen - oder umbenennen, wenn es "
             "Hilfsfunktionen sind:\n  " + "\n  ".join(funde))
 
+    def test_der_startblock_steht_am_ende_der_datei(self) -> None:
+        """``if __name__ == "__main__": unittest.main()`` gehoert nach unten.
+
+        Steht er mittendrin, laeuft ``unittest.main()`` beim Einzelaufruf
+        (``python test_x.py`` - genau wofuer der Block da ist) an dieser
+        Stelle und beendet den Prozess, bevor die Klassen darunter
+        ueberhaupt definiert sind. Der Bericht sagt "OK" und nennt eine
+        kleinere Zahl - niemandem faellt auf, dass etwas fehlt.
+
+        Am 06.09.2026 in sieben Dateien gemessen, beide Aufrufarten
+        gegenuebergestellt: test_werkzeugfeinheiten 30 -> 8,
+        test_param_json_recovery 18 -> 4, test_same_format_conversion
+        14 -> 6, test_backport_fenster 19 -> 13, test_bauform 22 -> 19,
+        test_background_image 41 -> 35, test_werkzeuge_bereitstellen
+        31 -> 27. Zusammen 63 stille Ausfaelle.
+        """
+        funde: list[str] = []
+        for datei in sorted(PROJEKT.glob("test_*.py")):
+            baum = ast.parse(datei.read_text(encoding="utf-8", errors="replace"))
+            for knoten in baum.body:
+                if not isinstance(knoten, ast.If):
+                    continue
+                bedingung = ast.unparse(knoten.test)
+                if "__name__" not in bedingung or "__main__" not in bedingung:
+                    continue
+                danach = [k.name for k in baum.body
+                          if getattr(k, "lineno", 0) > knoten.end_lineno
+                          and isinstance(k, (ast.ClassDef, ast.FunctionDef))]
+                if danach:
+                    funde.append("%s:%d - danach stehen noch %s"
+                                 % (datei.name, knoten.lineno,
+                                    ", ".join(danach[:4])))
+        self.assertEqual(
+            [], funde,
+            "Beim Einzelaufruf laufen die Klassen unterhalb dieses Blocks "
+            "nicht mit:\n  " + "\n  ".join(funde))
+
     @staticmethod
     def _pruefmethoden(baum: ast.Module) -> int:
         """Zaehlt die Methoden, die unittest aus dieser Datei einsammelt.

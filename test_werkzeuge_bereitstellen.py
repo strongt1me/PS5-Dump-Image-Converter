@@ -19,6 +19,7 @@ gewechseltem Arbeitsverzeichnis.
 """
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import os
@@ -307,10 +308,6 @@ class MonolithTests(unittest.TestCase):
             self.assertNotIn(verboten, quelle, "unerwartet: " + verboten)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class LaufzeitpaketeTests(unittest.TestCase):
     """Die Pakete, die die Engine zur Laufzeit braucht.
 
@@ -337,6 +334,57 @@ class LaufzeitpaketeTests(unittest.TestCase):
         with self.assertRaises(TypeError):
             wb.laufzeitpakete_sicherstellen(tempfile.gettempdir())
 
+    def test_der_nachinstallationsweg_laeuft_ueberhaupt_durch(self) -> None:
+        """``importlib`` war im Modul nicht eingebunden.
+
+        Nach dem pip-Lauf wird geprueft, ob das Modul jetzt importierbar
+        ist - dafuer ruft die Funktion ``importlib.invalidate_caches()``.
+        Der Name war nirgends eingefuehrt, also flog ein ``NameError`` und
+        landete im ``except`` daneben: gemeldet wurde "Modul nach
+        Standard-Installation nicht importierbar", ein zweiter pip-Lauf mit
+        ``--target`` folgte, stolperte ueber denselben Namen und gab False
+        zurueck. Nachinstallieren war damit unmoeglich, und der Anwender
+        las nur "MkPFS kann nicht gestartet werden".
+
+        Gemessen wird der Weg mit einem fehlenden Modul und einem pip, das
+        Erfolg meldet: Im Protokoll darf kein NameError stehen.
+        """
+        import builtins
+        echt = builtins.__import__
+
+        def _ohne_zstandard(name, *args, **kwargs):
+            if name == "zstandard":
+                raise ImportError("nachgestellt: nicht vorhanden")
+            return echt(name, *args, **kwargs)
+
+        protokoll: list = []
+        builtins.__import__ = _ohne_zstandard
+        try:
+            with tempfile.TemporaryDirectory(prefix="laufzeit_") as ordner:
+                wb.laufzeitpakete_sicherstellen(
+                    ordner,
+                    pip_kommando=lambda argumente: ["pip"] + list(argumente),
+                    prozess_starten=lambda *a, **k: 0,
+                    melden=protokoll.append)
+        finally:
+            builtins.__import__ = echt
+
+        namensfehler = [z for z in protokoll if "importlib" in str(z)]
+        self.assertEqual([], namensfehler,
+                         "NameError im Nachinstallationsweg: %s" % namensfehler)
+        self.assertTrue(protokoll, "Der Weg wurde gar nicht betreten.")
+
+    def test_importlib_ist_eingebunden(self) -> None:
+        """Der Syntaxbaum, damit die Einfuhr nicht wieder verschwindet."""
+        quelle = (PROJEKT / "ps5_validator" / "utils"
+                  / "werkzeuge_bereitstellen.py").read_text(
+                      encoding="utf-8", errors="replace")
+        baum = ast.parse(quelle)
+        eingefuehrt = {name.name for knoten in ast.walk(baum)
+                       if isinstance(knoten, ast.Import)
+                       for name in knoten.names}
+        self.assertIn("importlib", eingefuehrt)
+
     def test_der_konfigordner_wird_benutzt(self) -> None:
         """Er ist der Ort, an den pip --target installieren wuerde."""
         quelle = (PROJEKT / "ps5_validator" / "utils"
@@ -356,3 +404,7 @@ class LaufzeitpaketeTests(unittest.TestCase):
         rumpf = quelle[anfang:quelle.index("\n    def ", anfang + 10)]
         self.assertIn("_mkpfs_runtime_deps_ok", rumpf)
         self.assertIn("laufzeitpakete_sicherstellen", rumpf)
+
+
+if __name__ == "__main__":
+    unittest.main()

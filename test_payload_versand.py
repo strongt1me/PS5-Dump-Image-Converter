@@ -375,5 +375,72 @@ class WebkitSendewegTests(unittest.TestCase):
         self.assertIn("elfldr", text)
         self.assertIn("USB", text)
 
+class PayloadAntwortTests(unittest.TestCase):
+    """Was die Konsole zurueckmeldet, muss der Anwender lesen koennen.
+
+    ``ueber_elfldr`` reicht die Ausgabe des Payloads laut seinem Docstring
+    gerade deshalb zurueck, "ohne sie liesse sich Erfolg nicht von
+    Fehlschlag unterscheiden". ``_send_payload_to_ps5`` warf sie bis zum
+    06.09.2026 in eine Wegwerf-Variable und sah nie hinein - der Anwender
+    erfuhr also nie, was die Konsole gesagt hat.
+
+    **Bewertet wird sie bewusst nicht.** Es gibt keinen allgemeinen
+    Fehlermarker: ``app_install`` darf auf "registriert" pruefen, weil es
+    sein eigenes Payload kennt; ein dauerhaft laufendes Payload wie ftpsrv
+    gibt gar nichts aus, und leer waere dort **kein** Fehlschlag.
+    """
+
+    def _gui(self, sprache: str):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda s, **w: i18n.translate(sprache, s, **w)
+        self.protokoll: list[str] = []
+        gui._append_to_log = self.protokoll.append
+        gui._elfldr_payload_path = lambda: ""
+        gui._PAYLOAD_SEND_PORT = pv.ELFLDR_PORT
+        return gui
+
+    def _senden(self, gui, ausgabe: str):
+        echt = pv.senden
+        pv.senden = lambda *a, **k: (pv.WEG_ELFLDR, ausgabe, "")
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".elf", delete=False) as fh:
+                fh.write(b"x" * 10)
+                pfad = fh.name
+            try:
+                return gui._send_payload_to_ps5("1.2.3.4", pfad)
+            finally:
+                os.unlink(pfad)
+        finally:
+            pv.senden = echt
+
+    def test_die_antwort_steht_im_protokoll(self):
+        gui = self._gui("de")
+        self._senden(gui, "ELF loaded\nsceKernelLoadStartModule failed: 0x80020016")
+        zusammen = "".join(self.protokoll)
+        self.assertIn("sceKernelLoadStartModule failed", zusammen,
+                      "Die Rueckmeldung des Payloads wird wieder verworfen.")
+
+    def test_auch_auf_englisch(self):
+        gui = self._gui("en")
+        self._senden(gui, "ELF loaded")
+        zusammen = "".join(self.protokoll)
+        self.assertIn(i18n.STRINGS["payload.ausgabe"]["en"].split("{")[0],
+                      zusammen)
+
+    def test_eine_leere_antwort_erzeugt_keine_zeile(self):
+        """ftpsrv laeuft weiter und sagt nichts - das ist kein Fehler."""
+        gui = self._gui("de")
+        ok, _text = self._senden(gui, "   \n  ")
+        self.assertTrue(ok)
+        self.assertEqual([], [z for z in self.protokoll if "PAYLOAD" in z])
+
+    def test_die_rueckgabe_bleibt_die_groessenangabe(self):
+        """Aufrufer setzen sie in Saetze ein - ein ganzer Satz waere Unsinn."""
+        gui = self._gui("de")
+        ok, text = self._senden(gui, "irgendetwas")
+        self.assertTrue(ok)
+        self.assertEqual("10 Bytes", text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

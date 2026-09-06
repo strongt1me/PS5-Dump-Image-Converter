@@ -300,5 +300,64 @@ class DreiZustaendeTests(unittest.TestCase):
                 self.assertIn(schluessel, i18n.STRINGS)
 
 
+class GleicheAntwortFuerOrdnerUndAbbildTests(unittest.TestCase):
+    """Derselbe Dump muss dieselbe Antwort bekommen - egal wie er vorliegt.
+
+    Die Infobox hat zwei Wege: Beim Dump-Ordner sieht sie ueber
+    ``_fakelib_pfad()`` nach, und das laesst ausschliesslich ``fakelib``
+    gelten. Beim Container entschied bis zum 06.09.2026 ein Teilstringtest
+    ``if "fakelib" in rel`` - und der trifft auch ``fakelib2``.
+
+    Gemessen: derselbe Ordner meldete mit ``libSceAmpr.sprx`` in ``fakelib``
+    "eingebaut", mit derselben Datei in ``fakelib2`` "nicht eingebaut" -
+    als Abbild dagegen beide Male "eingebaut".
+
+    ``fakelib`` ist auch die richtige Antwort: Ab ShadowMountPlus 1.7 alpha8
+    wird ein ``fakelib2`` im Spielordner ignoriert, und zwar ohne Meldung.
+    Dort "eingebaut" zu melden hiesse, ein Spiel als versorgt auszugeben,
+    das ohne die Bibliotheken startet.
+    """
+
+    #: Pfade aus der inneren Ebene und die erwartete Antwort.
+    FAELLE = (
+        ("fakelib/libsceampr.sprx", True),
+        ("app0/fakelib/libsceampr.sprx", True),
+        ("fakelib2/libsceampr.sprx", False),
+        ("app0/fakelib2/libsceampr.sprx", False),
+        ("meinfakelibordner/libsceampr.sprx", False),
+        ("libsceampr.sprx", False),
+    )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import ast
+        quelle = (ROOT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_ampr_marker_im_container")
+        cls.block = ast.unparse(knoten)
+
+    def test_der_ordnername_wird_als_ganzes_geprueft(self) -> None:
+        self.assertIn("rel.split('/')", self.block,
+                      "Der Teilstringtest ist zurueck - dann zaehlt "
+                      "fakelib2 wieder mit.")
+        self.assertNotIn("if 'fakelib' in rel:", self.block)
+
+    def test_die_regel_trifft_genau_die_richtigen(self) -> None:
+        """Die Entscheidung selbst, ohne Abbild und ohne Engine."""
+        for rel, erwartet in self.FAELLE:
+            with self.subTest(pfad=rel):
+                self.assertEqual(erwartet, "fakelib" in rel.split("/"))
+
+    def test_der_teilstringtest_wuerde_es_falsch_machen(self) -> None:
+        """Gegenprobe: Die alte Regel trifft vier statt zwei."""
+        alt = sum(1 for rel, _ in self.FAELLE if "fakelib" in rel)
+        neu = sum(1 for rel, _ in self.FAELLE if "fakelib" in rel.split("/"))
+        self.assertEqual(5, alt)
+        self.assertEqual(2, neu)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

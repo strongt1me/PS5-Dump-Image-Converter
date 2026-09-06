@@ -12595,7 +12595,18 @@ class PS5ConverterGUI:
                           getattr(eintrag, "path", "") or "").replace("\\\\", "/").lower()
                 # Nur die aktive Bibliothek zaehlt, nicht die Sicherung .orig.
                 if rel.endswith("/" + marke) or rel == marke:
-                    if "fakelib" in rel:
+                    # Genau "fakelib" als Ordnername, nicht als Teilstring:
+                    # Bis zum 06.09.2026 stand hier `if "fakelib" in rel`, und
+                    # das trifft auch "fakelib2". Derselbe Dump beantwortete
+                    # die Frage dadurch verschieden, je nachdem ob er als
+                    # Ordner oder als Abbild vorlag - der Ordnerweg geht ueber
+                    # _fakelib_pfad und laesst nur "fakelib" gelten.
+                    #
+                    # "fakelib" ist auch die richtige Antwort: Ab
+                    # ShadowMountPlus 1.7 alpha8 wird ein "fakelib2" im
+                    # Spielordner ignoriert, und zwar ohne Meldung. "Eingebaut"
+                    # zu melden waere dort schlicht falsch.
+                    if "fakelib" in rel.split("/"):
                         return True
             return False
         finally:
@@ -15332,6 +15343,36 @@ class PS5ConverterGUI:
         """Eigener Wert des Fensters, sonst der zentrale aus den Einstellungen."""
         eigen = str(self._load_setting(schluessel, "") or "").strip()
         return eigen if eigen else str(zentral)
+
+    def _ps5_wert_merken(self, schluessel: str, wert: str | int,
+                         zentral: str | int) -> None:
+        """Merkt den Wert eines Fensters – aber nur, wenn er abweicht.
+
+        **Warum die Bedingung.** Die Fenster füllen ihr Feld beim Öffnen aus
+        dem zentralen Wert vor (:meth:`_ps5_wert_oder_zentral`). Beim
+        Verbinden wurde bis zum 06.09.2026 der Feldinhalt bedingungslos als
+        eigener Wert gespeichert – auch dann, wenn der Anwender nichts
+        geändert hatte. Damit stand ab dem ersten Verbinden ein eigener
+        Wert da, und der schlägt den zentralen: Wer danach in den
+        Einstellungen eine andere Adresse einträgt, sieht sie in KLOG, den
+        FTP-Fenstern und im AMPR-Picker nie wieder. Gemessen: nach einem
+        einzigen Verbinden zeigte KLOG weiterhin 192.168.1.94:3232, obwohl
+        in den Einstellungen 192.168.1.50:3333 stand.
+
+        Stimmt der Wert mit dem zentralen überein, wird der eigene deshalb
+        **gelöscht** statt geschrieben – das Fenster folgt dann wieder der
+        Einstellung. Wer bewusst etwas anderes einträgt, behält es.
+
+        Args:
+            schluessel: Die eigene Einstellung des Fensters.
+            wert: Was im Feld steht (oder was sich als wirksam erwiesen hat).
+            zentral: Der zentrale Wert, mit dem verglichen wird.
+        """
+        text = str(wert or "").strip()
+        if not text or text == str(zentral).strip():
+            self._save_setting(schluessel, "")
+            return
+        self._save_setting(schluessel, text)
 
     # ── JS Loader: Adresse, Ports und Protokoll ─────────────────────────────
     # Bis v1.9.5 hielt dieses Fenster Adresse und JS-Port in einer eigenen
@@ -32632,18 +32673,33 @@ class PS5ConverterGUI:
 
             def _arbeit(ftp):
                 weg = 0
+                misslungen: list[str] = []
                 for name in namen:
                     try:
                         ftp.delete(self._AUTOLOADER_ORDNER + "/" + name)
                         weg += 1
                     except Exception as exc:
+                        # Frueher nur logger.debug: Der Logger schreibt im
+                        # Auslieferungsstand kein debug, der Anwender erfuhr
+                        # also nie, dass eine Datei stehenblieb - die Zahl im
+                        # Ergebnis war der einzige Hinweis, und die liest
+                        # niemand nach. Der Schnappschuss daneben sammelt
+                        # seine Fehlschlaege seit jeher und meldet sie.
                         logger.debug("%s nicht löschbar: %s", name, exc)
-                return weg
+                        misslungen.append(name)
+                return (weg, misslungen)
 
-            self._autoloader_auftrag(
-                win, stand_var, _arbeit,
-                lambda n: (stand_var.set(self._t("autoloader.state_deleted", count=n)),
-                           _holen()))
+            def _fertig_geloescht(werte) -> None:
+                anzahl, misslungen = werte
+                if misslungen:
+                    self._append_to_log(self._t(
+                        "autoloader.delete_incomplete",
+                        count=len(misslungen),
+                        names=", ".join(misslungen)) + "\n")
+                stand_var.set(self._t("autoloader.state_deleted", count=anzahl))
+                _holen()
+
+            self._autoloader_auftrag(win, stand_var, _arbeit, _fertig_geloescht)
 
         def _schnappschuss() -> None:
             ordner = filedialog.askdirectory(
@@ -32722,6 +32778,7 @@ class PS5ConverterGUI:
             def _arbeit(ftp):
                 self._autoloader_ordner_sichern(ftp)
                 anzahl = 0
+                misslungen: list[str] = []
                 for name in dateien:
                     try:
                         with open(os.path.join(quelle, name), "rb") as fh:
@@ -32729,13 +32786,23 @@ class PS5ConverterGUI:
                                 "STOR " + self._AUTOLOADER_ORDNER + "/" + name, fh)
                         anzahl += 1
                     except Exception as exc:
+                        # Siehe _loeschen: debug allein sieht niemand.
                         logger.debug("%s nicht zurückspielbar: %s", name, exc)
-                return anzahl
+                        misslungen.append(name)
+                return (anzahl, misslungen)
 
-            self._autoloader_auftrag(
-                win, stand_var, _arbeit,
-                lambda n: (stand_var.set(self._t("autoloader.state_restored", count=n)),
-                           _holen()))
+            def _fertig_zurueckgespielt(werte) -> None:
+                anzahl, misslungen = werte
+                if misslungen:
+                    self._append_to_log(self._t(
+                        "autoloader.restore_incomplete",
+                        count=len(misslungen),
+                        names=", ".join(misslungen)) + "\n")
+                stand_var.set(self._t("autoloader.state_restored", count=anzahl))
+                _holen()
+
+            self._autoloader_auftrag(win, stand_var, _arbeit,
+                                     _fertig_zurueckgespielt)
 
         # Zwei Reihen, nicht eine. In einer Reihe verlangen die sieben Knoepfe
         # zusammen ueber 1600 Pixel; das Fenster waechst auf seinen Inhalt und
@@ -35141,8 +35208,8 @@ class PS5ConverterGUI:
             port = self._ps5_port_finden(ip, port, "klog")
             if str(port_var.get()).strip() != str(port):
                 port_var.set(str(port))
-            self._save_setting("klog_ip", ip)
-            self._save_setting("klog_port", port)
+            self._ps5_wert_merken("klog_ip", ip, self._ps5_ip())
+            self._ps5_wert_merken("klog_port", port, self._ps5_klog_port())
             state["running"] = True
             connect_btn.config(state="disabled")
             disconnect_btn.config(state="normal")
@@ -36197,8 +36264,10 @@ class PS5ConverterGUI:
             ftp.login(user_var.get().strip() or "anonymous", pass_var.get())
             if str(port_var.get()).strip() != str(port):
                 port_var.set(str(port))
-            self._save_setting(f"{settings_prefix}_ftp_ip", ip)
-            self._save_setting(f"{settings_prefix}_ftp_port", port)
+            self._ps5_wert_merken(f"{settings_prefix}_ftp_ip", ip,
+                                  self._ps5_ip())
+            self._ps5_wert_merken(f"{settings_prefix}_ftp_port", port,
+                                  self._ps5_ftp_port())
             self._save_setting(f"{settings_prefix}_ftp_user", user_var.get().strip())
             return ftp
 
@@ -37846,18 +37915,36 @@ class PS5ConverterGUI:
         von itsplk bleibt 9021 zu, obwohl auf der Konsole ftpsrv, klogsrv und
         ShadowMountPlus laufen. Ohne diesen zweiten Weg scheitert dort jedes
         Nachladen, und die Meldung nennt nur einen abgewiesenen Port.
+
+        **Die Ausgabe des Payloads landet im Protokoll, wird aber nicht
+        bewertet.** Bis zum 06.09.2026 wurde sie kommentarlos weggeworfen –
+        obwohl ``ueber_elfldr`` sie laut seinem Docstring gerade deshalb
+        zurückreicht, „ohne sie ließe sich Erfolg nicht von Fehlschlag
+        unterscheiden". Der Anwender erfuhr also nie, was die Konsole
+        geantwortet hat.
+
+        Ein Urteil daraus abzuleiten geht hier trotzdem nicht: Es gibt
+        keinen allgemeinen Fehlermarker. ``app_install`` kann das, weil es
+        sein eigenes Payload kennt und auf „registriert" prüft; ein
+        dauerhaft laufendes Payload wie ftpsrv gibt dagegen gar nichts aus,
+        und eine leere Antwort wäre dort **kein** Fehlschlag. Deshalb: die
+        Antwort zeigen, das Urteil dem Anwender überlassen.
         """
         ziel_port = int(port or self._PAYLOAD_SEND_PORT)
         name = os.path.basename(pfad)
         try:
             with open(pfad, "rb") as fh:
                 daten = fh.read()
-            weg, _ausgabe, bemerkung = payload_versand.senden(
+            weg, ausgabe, bemerkung = payload_versand.senden(
                 host, daten, name, elfldr_port=ziel_port,
                 elfldr_pfad=self._elfldr_payload_path(),
                 texte=self._modul_texte(payload_versand.MELDUNGEN, "payloadmod."))
         except Exception as exc:
             return False, str(exc)
+
+        if str(ausgabe or "").strip():
+            self._append_to_log(self._t("payload.ausgabe", name=name,
+                                        ausgabe=str(ausgabe).strip()) + "\n")
 
         if weg == payload_versand.WEG_GEWECKT:
             # Der Port bleibt danach offen – das ist die eigentliche
@@ -38426,7 +38513,9 @@ class PS5ConverterGUI:
                 ))
                 return
             self._save_setting("ps5_ip", host)
-            self._save_setting("ampr_ftp_port", str(ftp_port := getattr(state["ftp"], "port", port) or port))
+            ftp_port = getattr(state["ftp"], "port", port) or port
+            self._ps5_wert_merken("ampr_ftp_port", ftp_port,
+                                  self._ps5_ftp_port())
             state["port"] = ftp_port
             _log(self._t("ampr.picker_connected", host=host, port=port))
             _render("/")

@@ -90,6 +90,92 @@ class VorrangTests(unittest.TestCase):
             APP.PS5ConverterGUI._ps5_wert_oder_zentral(obj, "klog_port", 3232), "3232")
 
 
+class MerkenTests(unittest.TestCase):
+    """Ein Fenster darf den zentralen Wert nicht bei sich festschreiben.
+
+    Die Fenster fuellen ihr Feld beim Oeffnen aus der zentralen Einstellung
+    vor. Beim Verbinden wurde der Feldinhalt bis zum 06.09.2026
+    bedingungslos als eigener Wert gespeichert - auch wenn der Anwender
+    nichts geaendert hatte. Ab dem ersten Verbinden stand damit ein eigener
+    Wert da, und der schlaegt den zentralen: Wer danach in den
+    Einstellungen eine andere Adresse eintrug, sah sie in KLOG, den
+    FTP-Fenstern und im AMPR-Picker nie wieder.
+    """
+
+    def _app_mit_speicher(self):
+        """Eine Instanz, die ihre Einstellungen im Speicher haelt."""
+        werte: dict = {}
+        obj = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        obj._load_setting = lambda k, s=None: werte.get(k, s)
+        obj._save_setting = lambda k, v: werte.__setitem__(k, v)
+        return obj, werte
+
+    def test_der_unveraenderte_wert_wird_nicht_festgeschrieben(self):
+        obj, werte = self._app_mit_speicher()
+        obj._ps5_wert_merken("klog_ip", "192.168.1.94", "192.168.1.94")
+        self.assertEqual("", werte.get("klog_ip"),
+                         "Der zentrale Wert wurde als eigener festgehalten - "
+                         "dann folgt das Fenster der Einstellung nie wieder.")
+
+    def test_danach_wirkt_eine_geaenderte_einstellung_wieder(self):
+        """Der eigentliche Fall, gemessen ueber beide Methoden."""
+        obj, werte = self._app_mit_speicher()
+        werte["ps5_ip"] = "192.168.1.94"
+        # Verbinden, ohne etwas zu aendern
+        obj._ps5_wert_merken("klog_ip", "192.168.1.94", werte["ps5_ip"])
+        # Jetzt zentral umstellen
+        werte["ps5_ip"] = "192.168.1.50"
+        self.assertEqual(
+            "192.168.1.50",
+            obj._ps5_wert_oder_zentral("klog_ip", werte["ps5_ip"]))
+
+    def test_ein_bewusst_anderer_wert_bleibt(self):
+        obj, werte = self._app_mit_speicher()
+        werte["ps5_ip"] = "192.168.1.94"
+        obj._ps5_wert_merken("klog_ip", "10.0.0.5", werte["ps5_ip"])
+        self.assertEqual("10.0.0.5", werte["klog_ip"])
+        self.assertEqual(
+            "10.0.0.5",
+            obj._ps5_wert_oder_zentral("klog_ip", werte["ps5_ip"]))
+
+    def test_zahlen_und_text_werden_gleich_behandelt(self):
+        """Der Port kommt mal als int, mal als str - beides derselbe Wert."""
+        obj, werte = self._app_mit_speicher()
+        obj._ps5_wert_merken("klog_port", 3232, "3232")
+        self.assertEqual("", werte.get("klog_port"))
+        obj._ps5_wert_merken("klog_port", "3232", 3232)
+        self.assertEqual("", werte.get("klog_port"))
+        obj._ps5_wert_merken("klog_port", 3333, 3232)
+        self.assertEqual("3333", werte.get("klog_port"))
+
+    def test_ein_leerer_wert_loescht_den_eigenen(self):
+        obj, werte = self._app_mit_speicher()
+        werte["klog_ip"] = "10.0.0.5"
+        obj._ps5_wert_merken("klog_ip", "   ", "192.168.1.94")
+        self.assertEqual("", werte["klog_ip"])
+
+    def test_kein_fenster_speichert_mehr_direkt(self):
+        """Ueber den Syntaxbaum: _save_setting darf hier nicht mehr stehen."""
+        import ast
+        baum = ast.parse(QUELLE.read_text(encoding="utf-8"))
+        schlecht = []
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Call):
+                continue
+            if getattr(knoten.func, "attr", "") != "_save_setting":
+                continue
+            if not knoten.args:
+                continue
+            erstes = ast.unparse(knoten.args[0])
+            if any(teil in erstes for teil in
+                   ("klog_ip", "klog_port", "_ftp_ip", "_ftp_port",
+                    "ampr_ftp_port")):
+                schlecht.append((knoten.lineno, erstes))
+        self.assertEqual([], schlecht,
+                         "Diese Stellen schreiben den eigenen Wert wieder "
+                         "bedingungslos: %s" % schlecht)
+
+
 class QuelltextTests(unittest.TestCase):
     """Was sich nur am Aufbau zeigt."""
 

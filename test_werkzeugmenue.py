@@ -271,10 +271,27 @@ class DesignwechselTests(unittest.TestCase):
             self.assertIn(f"self.{name}()", self.block, f"{name} wird nicht gerufen")
 
     def test_titelleiste_kennt_jeden_knopf(self) -> None:
+        """Jeder Titelknopf braucht seinen Eintrag in der Farbtabelle.
+
+        Diese Pruefung war bis zum 06.09.2026 tot. Sie suchte nach
+        ``= tk.Button`` - die zwoelf Titelknoepfe entstehen aber ueber
+        ``flach_knopf(...)``, seit dem Umbau auf die flache Optik. Der
+        Ausdruck traf null Stellen, ``erzeugt`` war leer, ``fehlen`` immer
+        ``[]``, und ``assertEqual`` konnte gar nicht mehr fehlschlagen.
+
+        Deshalb steht jetzt eine Zahl daneben: Ohne sie merkt niemand,
+        wenn der naechste Umbau den Ausdruck wieder ins Leere laufen laesst.
+        """
         tabelle = APP.PS5ConverterGUI._TITELLEISTE_SCHRIFTFARBEN
         import re
-        erzeugt = set(re.findall(r"self\.(_btn_[a-z0-9_]*title[a-z0-9_]*)\s*=\s*tk\.Button",
-                                 self.quelltext))
+        erzeugt = set(re.findall(
+            r"self\.(_btn_[a-z0-9_]*title[a-z0-9_]*)\s*=\s*(?:tk\.Button|flach_knopf)",
+            self.quelltext))
+        self.assertGreaterEqual(
+            len(erzeugt), 12,
+            "Nur %d Titelknoepfe gefunden - der Suchausdruck passt nicht "
+            "mehr zum Quelltext, und die Pruefung darunter sieht nichts an."
+            % len(erzeugt))
         fehlen = sorted(erzeugt - set(tabelle))
         self.assertEqual(fehlen, [], f"nicht in der Farbtabelle: {fehlen}")
 

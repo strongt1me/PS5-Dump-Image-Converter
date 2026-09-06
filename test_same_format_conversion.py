@@ -54,10 +54,6 @@ class SelbstZielTests(unittest.TestCase):
         self.assertIn("Quelltyp", self.gui._conversion_block_reason("", "ffpfsc", "pack_folder"))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class KomprimiertGegenUnkomprimiertTests(unittest.TestCase):
     """`.ffpfs` und `.ffpfsc` sind nicht dasselbe Zielformat.
 
@@ -153,3 +149,7 @@ class KomprimiertGegenUnkomprimiertTests(unittest.TestCase):
         """Aufrufer ohne Pfadangabe duerfen sich nicht anders verhalten als frueher."""
         self.assertIn("identisch",
                       self.GUI._conversion_block_reason(self.gui, "ffpfsc", "ffpfsc", "universal_convert"))
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

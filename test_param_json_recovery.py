@@ -117,10 +117,6 @@ class PackFolderMkpfsParamJsonPreflightTests(unittest.TestCase):
             self.assertEqual(data.get("titleId"), "PPSA19015")
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class NptitleTitleIdTests(unittest.TestCase):
     """Title-ID aus `sce_sys/nptitle.dat` statt aus dem Ordnernamen.
 
@@ -250,3 +246,7 @@ class TitleIdHerkunftTests(unittest.TestCase):
         self.assertIn(schluessel, STRINGS)
         self.assertTrue(STRINGS[schluessel].get("de"))
         self.assertTrue(STRINGS[schluessel].get("en"))
+
+
+if __name__ == "__main__":
+    unittest.main()

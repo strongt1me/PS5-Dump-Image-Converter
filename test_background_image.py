@@ -527,10 +527,6 @@ class FlaechenbildMerkerTests(unittest.TestCase):
         self.assertIsNone(gui._flaechenbild(self._bild(), 0, 100))
         self.assertIsNone(gui._flaechen_ausschnitt(None, None, (0, 0), 10, 10))
 
-
-if __name__ == "__main__":
-    unittest.main()
-
 class FarbrechnungTests(unittest.TestCase):
     """``_blend_hex_color`` bleibt - es ist reine Farbrechnung ohne Bild.
 
@@ -606,3 +602,7 @@ class KeineBildeffekteTests(unittest.TestCase):
         """Gegenprobe - sonst pruefte sie nur, dass Erfundenes fehlt."""
         self.assertTrue(hasattr(PS5ConverterGUI, "_blend_hex_color"),
                         "Der Farbhelfer fehlt - dann misst der Test oben nichts.")
+
+
+if __name__ == "__main__":
+    unittest.main()

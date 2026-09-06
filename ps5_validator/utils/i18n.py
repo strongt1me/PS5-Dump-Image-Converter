@@ -1133,6 +1133,11 @@ STRINGS: dict[str, dict[str, str]] = {
     'autoloader.state_uploaded': {'de': '{name} hochgeladen ({bytes} Bytes).', 'en': '{name} uploaded ({bytes} bytes).'},
     'autoloader.state_deleted': {'de': '{count} Dateien gelöscht.', 'en': '{count} files deleted.'},
     'autoloader.state_snapshot': {'de': 'Schnappschuss gesichert: {count} Dateien nach {path}', 'en': 'Snapshot saved: {count} files to {path}'},
+    # Wie snapshot_incomplete daneben - beim Löschen und Zurückspielen fehlte
+    # diese Meldung bis zum 06.09.2026, die Fehlschläge gingen still in ein
+    # logger.debug, das der Auslieferungsstand gar nicht schreibt.
+    'autoloader.delete_incomplete': {'de': '[WARN] {count} Datei(en) konnten nicht gelöscht werden: {names}', 'en': '[WARN] {count} file(s) could not be deleted: {names}'},
+    'autoloader.restore_incomplete': {'de': '[WARN] {count} Datei(en) konnten nicht zurückgespielt werden: {names}', 'en': '[WARN] {count} file(s) could not be restored: {names}'},
     'autoloader.snapshot_incomplete': {'de': '[WARN] {count} Datei(en) konnten nicht gesichert werden: {names}', 'en': '[WARN] {count} file(s) could not be saved: {names}'},
     'autoloader.state_restored': {'de': '{count} Dateien zurückgespielt.', 'en': '{count} files restored.'},
     'autoloader.no_autoload': {'de': 'Auf der Konsole liegt noch keine autoload.txt – die Reihenfolge ist leer.', 'en': 'There is no autoload.txt on the console yet – the sequence is empty.'},
@@ -2072,6 +2077,9 @@ STRINGS: dict[str, dict[str, str]] = {
     'self_reader.zu_kurz': {'de': 'Datei ist zu kurz für einen SELF-Kopf: {pfad}', 'en': 'The file is too short for a SELF header: {pfad}'},
     'self_reader.unbekannte_magic': {'de': 'Keine erkennbare SELF-Datei (unbekannte Magic): {pfad}', 'en': 'Not a recognisable SELF file (unknown magic): {pfad}'},
     'ps4werkzeug.innenebene_unlesbar': {'de': 'Innenebene nicht lesbar', 'en': 'The inner layer could not be read'},
+    # Was das Payload zurückgemeldet hat. Bis zum 06.09.2026 wurde diese
+    # Antwort verworfen - der Anwender erfuhr nie, was die Konsole sagte.
+    'payload.ausgabe': {'de': '[PAYLOAD] {name} meldet:\n{ausgabe}', 'en': '[PAYLOAD] {name} reports:\n{ausgabe}'},
     'payloadmod.nichts_erreichbar': {'de': 'Weder elfldr (Port {elfldr}) noch der Payload Manager (Port {pldmgr}) sind erreichbar.', 'en': 'Neither elfldr (port {elfldr}) nor the payload manager (port {pldmgr}) can be reached.'},
     'prosperopkg.nicht_gefunden': {'de': 'prosperopkg wurde nicht gefunden (erwartet in {ordner}/{plattform}/).', 'en': 'prosperopkg was not found (expected in {ordner}/{plattform}/).'},
     'backportmod.kein_elf_kein_self': {'de': 'kein ELF und kein SELF', 'en': 'neither an ELF nor a SELF'},

@@ -250,10 +250,6 @@ class QuellordnerTests(_Quelltext):
             self.assertTrue(APP.PS5ConverterGUI._looks_like_dump_folder(basis))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class SprachfuehrungTests(unittest.TestCase):
     """Die Beanstandungen kommen aus einem Modul ohne i18n - und trotzdem
     zweisprachig.
@@ -318,3 +314,7 @@ class SprachfuehrungTests(unittest.TestCase):
             texte={"spiel_fakelib2_wirkungslos": "kaputt {gibtsnicht}"})
         self.assertTrue(meldungen)
         self.assertNotIn("{gibtsnicht}", meldungen[0])
+
+
+if __name__ == "__main__":
+    unittest.main()

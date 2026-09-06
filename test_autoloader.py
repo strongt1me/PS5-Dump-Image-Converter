@@ -241,5 +241,61 @@ class I18nTests(unittest.TestCase):
             self.assertIn(stueck, text)
 
 
+class FehlschlaegeWerdenGemeldetTests(unittest.TestCase):
+    """Eine Datei, die nicht mitkommt, darf nicht stillschweigend fehlen.
+
+    Beim Loeschen und beim Zurueckspielen faengt die Schleife je Datei die
+    Ausnahme ab und schrieb bis zum 06.09.2026 nur ein ``logger.debug``.
+    Der ``PS5Converter``-Logger steht im Auslieferungsstand auf INFO - der
+    Anwender erfuhr also nie, dass etwas stehenblieb; die Zahl im Ergebnis
+    war der einzige Hinweis, und die liest niemand nach.
+
+    Der Schnappschuss daneben macht es seit jeher richtig: Er sammelt seine
+    Fehlschlaege in ``misslungen`` und meldet sie ueber ``_append_to_log``.
+    Genau diese Behandlung fehlte den beiden Geschwistern.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import ast
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_show_autoloader")
+        cls.block = ast.unparse(knoten)
+
+    def test_alle_drei_wege_melden_ihre_fehlschlaege(self) -> None:
+        for schluessel in ("autoloader.snapshot_incomplete",
+                           "autoloader.delete_incomplete",
+                           "autoloader.restore_incomplete"):
+            with self.subTest(meldung=schluessel):
+                self.assertIn(schluessel, self.block,
+                              "Dieser Weg verschweigt seine Fehlschlaege "
+                              "wieder.")
+
+    def test_die_meldungen_gibt_es_in_beiden_sprachen(self) -> None:
+        from ps5_validator.utils import i18n
+        for schluessel in ("autoloader.delete_incomplete",
+                           "autoloader.restore_incomplete"):
+            with self.subTest(meldung=schluessel):
+                eintrag = i18n.STRINGS[schluessel]
+                self.assertTrue(eintrag.get("de"))
+                self.assertTrue(eintrag.get("en"))
+                self.assertNotEqual(eintrag["de"], eintrag["en"])
+
+    def test_die_namen_stehen_in_der_meldung(self) -> None:
+        """Eine blosse Zahl hilft nicht - man will wissen, welche Datei."""
+        from ps5_validator.utils import i18n
+        for schluessel in ("autoloader.delete_incomplete",
+                           "autoloader.restore_incomplete"):
+            with self.subTest(meldung=schluessel):
+                for sprache in ("de", "en"):
+                    text = i18n.STRINGS[schluessel][sprache]
+                    self.assertIn("{names}", text)
+                    self.assertIn("{count}", text)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
