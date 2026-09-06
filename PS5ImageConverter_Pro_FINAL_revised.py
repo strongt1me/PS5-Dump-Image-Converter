@@ -30004,6 +30004,15 @@ class PS5ConverterGUI:
 
         basis = self._download_basis()
         if not basis:
+            if sammel:
+                # Im Stapel wird der Ordner **vorher** einmal erfragt, siehe
+                # _downloads_aus_text. Hier noch einmal zu fragen hiesse: ein
+                # Ordnerwaehler, danach die Warnung, danach die
+                # Zusammenfassung - drei Fenster aus einem Klick, und die
+                # ersten beiden fuer eine Frage, die der Anwender gerade
+                # verneint hat.
+                logger.debug("Stapel ohne Speicherort - Adresse uebersprungen")
+                return "abgebrochen"
             basis = self._download_basis_waehlen(parent)
             if not basis:
                 messagebox.showwarning(
@@ -30072,6 +30081,25 @@ class PS5ConverterGUI:
                                     self._t("downloads.nothing_found_message"),
                                     parent=parent or self.root)
             return 0
+
+        # Den Speicherort **einmal** klaeren, bevor die Schleife anlaeuft.
+        # Frueher fragte jede Adresse einzeln danach; wer verneinte, bekam
+        # den Ordnerwaehler, dann die Warnung "kein Speicherort", dann die
+        # Zusammenfassung "0 von N" - drei Fenster fuer einen Klick, und die
+        # letzten beiden sagten dasselbe.
+        if not self._download_basis():
+            if not self._download_basis_waehlen(parent):
+                if not still:
+                    messagebox.showwarning(
+                        self._t("downloads.storage_missing_title"),
+                        self._t("downloads.storage_missing_message",
+                                update=ps5_downloads.ORDNER_UPDATE,
+                                patch=ps5_downloads.ORDNER_PATCH),
+                        parent=parent or self.root)
+                self._append_to_log(
+                    self._t("downloads.batch_summary", neu=0,
+                            gesamt=len(adressen)))
+                return 0
 
         neu = doppelt = 0
         for adresse in adressen:

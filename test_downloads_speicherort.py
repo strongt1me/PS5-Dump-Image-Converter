@@ -27,6 +27,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
@@ -36,8 +37,20 @@ pruefumgebung.umlenken("downloads_speicherort")
 
 from ps5_validator.utils import ps5_downloads as dl         # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
+import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 
 HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+#: Zwei echte Paketadressen. Erfundene weist ``parse_pkg_url`` ab, und der
+#: Test praefe dann den Ungueltig-Zweig statt den Speicherort-Zweig.
+ZWEI_ADRESSEN = (
+    "http://gst.prod.dl.playstation.net/gst/prod/00/PPSA19015_00/app/pkg/5/"
+    "f_2f6a8429bc090a765d66f5d3d46b0db710967ef4b40c57005ba8e5ce4b6abff4/"
+    "UP8016-PPSA19015_00-0489895718491618.pkg\n"
+    "http://gst.prod.dl.playstation.net/gst/prod/00/PPSA19016_00/app/pkg/5/"
+    "f_3f6a8429bc090a765d66f5d3d46b0db710967ef4b40c57005ba8e5ce4b6abff4/"
+    "UP8016-PPSA19016_00-0489895718491619.pkg"
+)
 
 
 class LeererSpeicherortTests(unittest.TestCase):
@@ -147,6 +160,111 @@ class OrdnerOeffnenTests(_Quelltext):
         aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(m)
                    if isinstance(k, ast.Call)]
         self.assertIn("_download_basis_waehlen", aufrufe)
+
+
+class StapelTests(unittest.TestCase):
+    """Ein Klick auf "Einfuegen" darf nicht drei Fenster oeffnen.
+
+    Wer mehrere Adressen einfuegt und noch keinen Speicherort gesetzt hat,
+    bekam bis zum 06.09.2026 nacheinander: den Ordnerwaehler (aus der
+    ersten Adresse heraus), die Warnung "kein Speicherort" und danach die
+    Zusammenfassung "0 von N uebernommen". Die letzten beiden sagten
+    dasselbe, und gefragt wurde aus der Schleife heraus - bei zehn
+    Adressen also moeglicherweise zehnmal.
+
+    Jetzt wird der Ordner **einmal vorher** geklaert; verneint der Anwender,
+    bleibt es bei einer Meldung.
+    """
+
+    def _gui(self, hat_basis: bool, waehlt: bool):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda s, **kw: s
+        # Die Dialoge sind gepatcht, aber "parent or self.root" wird vorher
+        # ausgewertet - ohne dieses Attribut stuerzt der Aufruf ab.
+        gui.root = None
+        gui._append_to_log = lambda _t: self.protokoll.append(_t)
+        gui._download_basis = lambda: "C:/Ziel" if hat_basis else ""
+        self.gefragt: list = []
+        self.protokoll: list = []
+
+        def _waehlen(parent=None):
+            self.gefragt.append(parent)
+            return "C:/Gewaehlt" if waehlt else ""
+        gui._download_basis_waehlen = _waehlen
+        self.aufgenommen: list = []
+
+        def _aufnehmen(adresse, parent=None, sammel=False, **kw):
+            self.aufgenommen.append(adresse)
+            return "neu"
+        gui._download_aufnehmen = _aufnehmen
+        return gui
+
+    def _lauf(self, gui, still=False):
+        with mock.patch.object(APP.messagebox, "showwarning") as warnung, \
+             mock.patch.object(APP.messagebox, "showinfo") as info:
+            anzahl = gui._downloads_uebernehmen(
+                ZWEI_ADRESSEN,
+                parent=None, still=still)
+        return anzahl, warnung.call_count + info.call_count
+
+    def test_ohne_speicherort_wird_genau_einmal_gefragt(self):
+        gui = self._gui(hat_basis=False, waehlt=False)
+        self._lauf(gui)
+        self.assertEqual(1, len(self.gefragt),
+                         "Der Ordnerwaehler ging %dx auf" % len(self.gefragt))
+
+    def test_ein_verneinter_ordner_gibt_genau_eine_meldung(self):
+        gui = self._gui(hat_basis=False, waehlt=False)
+        anzahl, fenster = self._lauf(gui)
+        self.assertEqual(0, anzahl)
+        self.assertEqual(1, fenster, "%d Fenster statt einem" % fenster)
+
+    def test_dabei_wird_keine_adresse_angefasst(self):
+        gui = self._gui(hat_basis=False, waehlt=False)
+        self._lauf(gui)
+        self.assertEqual([], self.aufgenommen)
+
+    def test_die_zusammenfassung_steht_trotzdem_im_protokoll(self):
+        # Sie ist die Spur fuer den Anwender, auch wenn kein Fenster kommt.
+        gui = self._gui(hat_basis=False, waehlt=False)
+        self._lauf(gui)
+        self.assertIn("downloads.batch_summary", self.protokoll)
+
+    def test_still_heisst_wirklich_still(self):
+        # Die Zwischenablage-Ueberwachung laeuft im Hintergrund; dort waere
+        # ein Fenster aufdringlich.
+        gui = self._gui(hat_basis=False, waehlt=False)
+        _anzahl, fenster = self._lauf(gui, still=True)
+        self.assertEqual(0, fenster)
+
+    def test_mit_gewaehltem_ordner_laeuft_der_stapel_durch(self):
+        gui = self._gui(hat_basis=False, waehlt=True)
+        anzahl, _f = self._lauf(gui)
+        self.assertEqual(2, anzahl)
+        self.assertEqual(2, len(self.aufgenommen))
+
+    def test_mit_vorhandenem_ordner_wird_gar_nicht_gefragt(self):
+        gui = self._gui(hat_basis=True, waehlt=False)
+        anzahl, _f = self._lauf(gui)
+        self.assertEqual([], self.gefragt)
+        self.assertEqual(2, anzahl)
+
+    def test_die_einzelaufnahme_fragt_im_stapel_nicht_mehr(self):
+        """Die andere Haelfte: auch aus der Schleife heraus kein Dialog.
+
+        Sonst haette der Umbau nur die Reihenfolge verschoben.
+        """
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._t = lambda s, **kw: s
+        gui._download_basis = lambda: ""
+        gefragt = []
+        gui._download_basis_waehlen = lambda parent=None: gefragt.append(1) or ""
+        with mock.patch.object(APP.messagebox, "showwarning") as warnung:
+            ergebnis = gui._download_aufnehmen(
+                ZWEI_ADRESSEN.splitlines()[0], sammel=True)
+        self.assertEqual("abgebrochen", ergebnis)
+        self.assertEqual([], gefragt, "Es wurde aus der Schleife gefragt")
+        warnung.assert_not_called()
 
 
 class TooltipTests(unittest.TestCase):
