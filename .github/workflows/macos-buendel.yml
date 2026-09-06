@@ -145,6 +145,43 @@ jobs:
         run: |
           .venv-macos/bin/python -m unittest test_macos_fassung -v
 
+      - name: Baut der Mac dasselbe Abbild wie Windows?
+        # Die Messung, die am 06.09.2026 gefehlt hat. Ein Mac-Anwender
+        # meldete, dass seine .ffpfsc die Konsole mit einer Kernel-Panic
+        # abstuerzen lassen; an einem Windows-Rechner liess sich das nicht
+        # nachstellen, und "dasselbe Verzeichnis auf beiden Systemen packen
+        # und die Bytes vergleichen" war nur beim Anwender moeglich.
+        #
+        # Der Test baut aus einem festgelegten Baum ein exFAT-Abbild und
+        # haelt die Pruefsumme gegen den auf Windows gemessenen Wert.
+        # Faellt er hier, baut macOS wirklich anders - und der Fehlertext
+        # sagt, ob es auf dem Laeufer wiederholbar ist.
+        run: |
+          PS5CONV_KONFIGORDNER="$RUNNER_TEMP/ps5conv_ci" \
+            .venv-macos/bin/python -m unittest test_abbild_plattformgleich -v
+
+      - name: Geht die Oberflaeche ueberhaupt auf?
+        # Der Rauchtest oben ruft --cli --help und erreicht damit nie ein
+        # tk.Tk(). Das Einfrieren beim ersten Start, das am 06.09.2026
+        # gemeldet wurde, konnte er deshalb nicht sehen.
+        #
+        # --anzeige-diagnose baut das echte Fenster auf, vermisst es und
+        # schliesst es wieder. Mit frisch geleertem Konfigordner ist das
+        # der ERSTE Start - genau der Fall, in dem es klemmte.
+        #
+        # continue-on-error, weil unbelegt ist, ob die Laeufer eine
+        # angemeldete Fenstersitzung haben. Der erste Lauf beantwortet das;
+        # steht es fest, kann die Zeile weg und der Schritt wird scharf.
+        continue-on-error: true
+        timeout-minutes: 3
+        run: |
+          set -x
+          rm -rf "$RUNNER_TEMP/ps5conv_erststart"
+          PS5CONV_KONFIGORDNER="$RUNNER_TEMP/ps5conv_erststart" \
+            .venv-macos/bin/python PS5ImageConverter_Pro_FINAL_revised.py \
+            --anzeige-diagnose
+          echo "Rueckgabewert: $?"
+
       - name: Plattformschicht am laufenden System
         # Auf jedem anderen System liefert dieser Aufruf nur die gemockte
         # Antwort. Hier steht, was macOS wirklich sagt.
