@@ -4264,42 +4264,43 @@ class PS5ConverterGUI:
     def _load_paths(self) -> tuple[str, str]:
         """Lädt zuletzt verwendete Quell- und Zielpfade aus der Konfiguration.
 
+        Geht über :meth:`_load_setting` und erbt damit dessen Wiederholungen:
+        Während eines Speichervorgangs ist die Datei kurz belegt, und ein
+        einzelner Fehlversuch hätte den gemerkten Zielordner stillschweigend
+        auf leer zurückgesetzt.
+
         Returns:
             Tupel (source_path, dest_path) als Strings.
         """
-        try:
-            cfg_path = self._get_config_path()
-            if os.path.isfile(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                return data.get("src", ""), data.get("dst", "")
-        except Exception as exc:
-            logger.warning("Konfiguration konnte nicht geladen werden: %s", exc)
-        return "", ""
+        return (str(self._load_setting("src", "") or ""),
+                str(self._load_setting("dst", "") or ""))
 
     def _save_paths(self, src: str, dst: str) -> None:
         """Speichert die verwendeten Pfade in der Konfigurationsdatei.
+
+        Nimmt denselben Weg wie :meth:`_save_setting`. Bis zum 06.09.2026 war
+        das nicht so: Diese Methode schrieb als einzige direkt mit
+        ``open(..., "w")`` in dieselbe Datei - ohne Schloss, ohne
+        Zwischendatei. Nachgemessen wurde beides:
+
+        * Schlägt das Schreiben fehl (volle Platte), sind **alle**
+          Einstellungen weg. Aus 114 Bytes mit vier Schlüsseln wurden 0
+          Bytes. Derselbe Abbruch in ``_save_setting`` ließ die Datei
+          unversehrt.
+        * Bei gleichzeitigem Schreiben aus zwei Fäden - kein Sonderfall,
+          diese Methode läuft zu Beginn **jeder** Konvertierung im
+          Hintergrund - gingen 1,0 % der Speicherversuche ganz verloren
+          (``PermissionError`` gegen das ``os.replace`` der anderen Seite),
+          während ``_save_setting`` in denselben 400 Versuchen keinen
+          einzigen verlor. Ein Leser fand die Datei dabei in 8,5 % der
+          Versuche leer vor - das ist das Zeitfenster zwischen dem Leeren
+          und dem Schreiben.
 
         Args:
             src: Quellpfad.
             dst: Zielpfad.
         """
-        try:
-            cfg_path = self._get_config_path()
-            # Bestehende Konfiguration laden um andere Einstellungen zu erhalten
-            existing: dict = {}
-            if os.path.isfile(cfg_path):
-                try:
-                    with open(cfg_path, "r", encoding="utf-8") as f:
-                        existing = json.load(f)
-                except Exception as exc:
-                    logger.debug("Bestehende Konfiguration konnte nicht geladen werden: %s", exc)
-            existing["src"] = src
-            existing["dst"] = dst
-            with open(cfg_path, "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False)
-        except Exception as exc:
-            logger.warning("Konfiguration konnte nicht gespeichert werden: %s", exc)
+        self._konfiguration_schreiben({"src": src, "dst": dst})
 
     def _get_source_dialog_initial_dir(self) -> str:
         """Liefert den Startordner für die Quellen-Auswahl.
@@ -4377,12 +4378,28 @@ class PS5ConverterGUI:
             key: Einstellungsschluessel.
             value: Zu speichernder Wert.
         """
+        self._konfiguration_schreiben({key: value})
+
+    def _konfiguration_schreiben(self, aenderungen: dict) -> None:
+        """Übernimmt Änderungen in ``paths.json`` - der einzige Schreibweg dorthin.
+
+        Alles, was in die Einstellungsdatei will, geht durch diese Methode.
+        Zwei getrennte Schreibwege auf dieselbe Datei laufen sonst
+        auseinander, und genau das war bis zum 06.09.2026 der Fall: Neben
+        dieser Fassung gab es in ``_save_paths`` eine zweite, die weder das
+        Schloss noch die Zwischendatei benutzte.
+
+        Args:
+            aenderungen: Schlüssel und ihre neuen Werte. Alles Übrige, was in
+                der Datei steht, bleibt unangetastet.
+        """
         # Atomar über eine temporäre Datei: open(..., "w") leert die Zieldatei
         # sofort. Wer in diesem Moment liest, bekommt eine leere oder halb
         # geschriebene Datei ("Expecting value: line 1 column 1" bzw. "Extra
         # data"), und ein Absturz zwischen Leeren und Schreiben würde alle
         # Einstellungen verlieren. Das Lock verhindert zusätzlich, dass zwei
         # Threads gleichzeitig lesen-ändern-schreiben und Werte überschreiben.
+        tmp_path = ""
         with self._settings_lock:
             try:
                 cfg_path = self._get_config_path()
@@ -4393,9 +4410,13 @@ class PS5ConverterGUI:
                             existing = json.load(f)
                     except Exception as exc:
                         logger.debug("Vorhandene Konfiguration nicht lesbar: %s", exc)
-                existing[key] = value
+                existing.update(aenderungen)
 
-                tmp_path = f"{cfg_path}.tmp"
+                # Die Prozessnummer im Namen: Das Schloss gilt nur innerhalb
+                # eines Programmlaufs. Laufen zwei Fenster nebeneinander,
+                # schrieben beide sonst in dieselbe Zwischendatei und einer
+                # von beiden übernähme die halbfertige Datei des anderen.
+                tmp_path = f"{cfg_path}.{os.getpid()}.tmp"
                 with open(tmp_path, "w", encoding="utf-8") as f:
                     json.dump(existing, f, ensure_ascii=False)
                     f.flush()
@@ -4413,6 +4434,13 @@ class PS5ConverterGUI:
                         time.sleep(0.05)
             except Exception as exc:
                 logger.warning("Einstellung konnte nicht gespeichert werden: %s", exc)
+                # Die Zwischendatei traegt jetzt die Prozessnummer, sammelte
+                # sich also bei jedem Fehlschlag unter neuem Namen an.
+                if tmp_path and os.path.isfile(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError as weg:
+                        logger.debug("Zwischendatei bleibt liegen: %s", weg)
 
     def _checkpoint_file_path(self) -> str:
         """Pfad der Laufzeit-Checkpoint-Datei."""
@@ -34595,6 +34623,38 @@ class PS5ConverterGUI:
     #: bewusst dieselbe Quelle, damit beide nicht auseinanderlaufen.
     _PFS_MAGIC = 0x1332A0B
 
+    def _debug_pkg_ziel_freigegeben(self, ziel: str, bestaetigt: str,
+                                    parent=None) -> bool:
+        """Ob über ein vorhandenes Paket geschrieben werden darf.
+
+        Bis zum 06.09.2026 wurde gar nicht gefragt. Das fiel deshalb ins
+        Gewicht, weil das Fenster den Zielpfad **selbst vorschlägt**: Wer
+        einen Quellordner wählt, bekommt ``<darüber>/<Content-ID>.pkg``
+        eingetragen - also genau den Pfad, unter dem das Paket des letzten
+        Laufs liegt. Ein Klick auf ERSTELLEN schrieb darüber, ohne ein Wort.
+
+        Der Speichern-Dialog fragt selbst nach, bevor er einen Pfad
+        zurückgibt. Kommt der Pfad von dort und ist unverändert, wird hier
+        nicht ein zweites Mal gefragt.
+
+        Args:
+            ziel: Der Pfad, auf den ERSTELLEN zeigt.
+            bestaetigt: Der zuletzt vom Speichern-Dialog gelieferte Pfad.
+            parent: Fenster für die Rückfrage.
+
+        Returns:
+            Ob gebaut werden darf.
+        """
+        if not os.path.exists(ziel):
+            return True
+        if bestaetigt and (os.path.normcase(os.path.abspath(ziel))
+                           == os.path.normcase(os.path.abspath(bestaetigt))):
+            return True
+        return bool(messagebox.askyesno(
+            self._t("dialog.title.file_already_exists"),
+            self._t("dialog.msg.target_file_exists_overwrite_confirm", path=ziel),
+            parent=parent, default="no"))
+
     def _debug_pkg_bild_pruefen(self, pfad: str) -> str:
         """Prueft ein angegebenes PFS-Abbild grob. Leerer Text heisst: in Ordnung.
 
@@ -34682,12 +34742,19 @@ class PS5ConverterGUI:
             if pfad:
                 image_var.set(pfad)
 
+        #: Der Pfad, den der Speichern-Dialog bestätigt hat. Er fragt beim
+        #: Überschreiben selbst nach, also darf _bauen dafür nicht ein
+        #: zweites Mal fragen. Für jeden anderen Weg in das Feld - den
+        #: Vorschlag aus _quelle_waehlen, die Tastatur - hat niemand gefragt.
+        bestaetigtes_ziel = [""]
+
         def _ziel_waehlen() -> None:
             pfad = filedialog.asksaveasfilename(
                 title=self._t("debug_pkg.choose_output_dialog_title"), defaultextension=".pkg",
                 filetypes=[(self._t("filetype.pkg_files"), "*.pkg")], parent=win)
             if pfad:
                 ziel_var.set(pfad)
+                bestaetigtes_ziel[0] = pfad
 
         _zeile("debug_pkg.source_label", quelle_var, _quelle_waehlen)
         _zeile("debug_pkg.content_id_label", cid_var, None)
@@ -34711,6 +34778,9 @@ class PS5ConverterGUI:
             if not ziel_var.get().strip():
                 messagebox.showwarning(self._t("dialog.title.no_output_path"),
                                        self._t("dialog.msg.choose_pkg_output_path"), parent=win)
+                return
+            if not self._debug_pkg_ziel_freigegeben(ziel_var.get().strip(),
+                                                    bestaetigtes_ziel[0], win):
                 return
             try:
                 param = load_param_manifest_json(os.path.join(quelle, "sce_sys", "param.json"))

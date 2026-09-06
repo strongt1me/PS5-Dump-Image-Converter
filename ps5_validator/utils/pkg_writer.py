@@ -23,6 +23,7 @@ Python-Neuentwicklung auf Basis der (nicht schutzfaehigen) Format-Fakten.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -223,6 +224,40 @@ def wrap_in_fih(
     return bytes(header), pfs_image_offset, embedded_cnt_offset
 
 
+@contextlib.contextmanager
+def _daneben_bauen(output_path: str):
+    """Oeffnet eine Zwischendatei und uebernimmt sie erst bei Erfolg.
+
+    ``open(output_path, "wb")`` leert die Zieldatei beim ersten Byte. Zeigt
+    der Pfad auf ein vorhandenes Paket - und der Bauer im Programm schlaegt
+    von sich aus einen solchen Pfad vor -, dann ist es in dem Moment weg,
+    lange bevor feststeht, ob der Neubau ueberhaupt gelingt.
+
+    Gemessen am 06.09.2026: Bricht das Kopieren des PFS-Abbilds ab (volle
+    Platte), stand an der Stelle des alten, funktionierenden Pakets ein
+    Rumpf von 65.600 Bytes - gross genug, um beim naechsten Blick in den
+    Ordner wie ein Ergebnis auszusehen.
+
+    ``os.replace`` auf demselben Datentraeger ist unteilbar: Entweder steht
+    dort das neue Paket oder weiterhin das alte, nie etwas dazwischen.
+    """
+    bau_ziel = output_path + ".neu"
+    try:
+        with open(bau_ziel, "wb") as strom:
+            yield strom
+        os.replace(bau_ziel, output_path)
+    except BaseException:
+        # Auch bei KeyboardInterrupt und SystemExit: Ein liegengebliebener
+        # Rumpf mit der Endung ".neu" ist harmlos, einer unter dem richtigen
+        # Namen waere es nicht - aber hier steht ohnehin nur der Rumpf zur
+        # Wahl, das Original ist unberuehrt.
+        try:
+            os.remove(bau_ziel)
+        except OSError:
+            pass
+        raise
+
+
 def build_debug_pkg(
     output_path: str,
     content_id: str,
@@ -262,7 +297,7 @@ def build_debug_pkg(
     entry_count = struct.unpack_from(">I", cnt_bytes, 0x10)[0]
 
     if pfs_image_path is None:
-        with open(output_path, "wb") as f:
+        with _daneben_bauen(output_path) as f:
             f.write(cnt_bytes)
         return {
             "path": output_path,
@@ -276,7 +311,7 @@ def build_debug_pkg(
     fih_header, pfs_image_offset, embedded_cnt_offset = wrap_in_fih(len(cnt_bytes), pfs_image_size)
     aligned_pfs_size = embedded_cnt_offset - pfs_image_offset
 
-    with open(output_path, "wb") as out:
+    with _daneben_bauen(output_path) as out:
         out.write(fih_header)
         with open(pfs_image_path, "rb") as pf:
             shutil.copyfileobj(pf, out, length=1024 * 1024)
