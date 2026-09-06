@@ -150,7 +150,8 @@ def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
 
 
 def ufs2tool_bereitstellen(wurzel_finden: Callable[[str], str],
-                           gemerkt: str = "") -> str:
+                           gemerkt: str = "",
+                           text: Callable[..., str] | None = None) -> str:
     """Stellt die mitgelieferte UFS2Tool-v4.1-Fassung dieser Plattform bereit.
 
     v4.1 liest Zylindergruppen zuverlaessig vollstaendig ein. Das ist fuer
@@ -186,10 +187,14 @@ def ufs2tool_bereitstellen(wurzel_finden: Callable[[str], str],
     wurzel = wurzel_finden(UFS2TOOL_ORDNER)
     kennung = ufs2tool_kennung()
     if not kennung:
-        raise RuntimeError(
-            f"UFS2Tool wird fuer {systemname()} ({platform.machine()}) "
-            "nicht mitgeliefert."
-        )
+        # Der Satz landet in einem Fehlerdialog, nicht nur im Protokoll -
+        # deshalb geht er durch den uebergebenen Uebersetzer. Ohne einen
+        # (etwa im Pruefstand) nennt schluessel_zeigen den Schluessel, statt
+        # eine deutsche Vorgabe in eine englische Oberflaeche zu tragen.
+        uebersetzen = text or schluessel_zeigen
+        raise RuntimeError(uebersetzen("werkzeuge.ufs2tool_missing",
+                                       system=systemname(),
+                                       maschine=platform.machine()))
     ordner = os.path.join(wurzel, kennung)
     name = "UFS2Tool.exe" if kennung.startswith("win") else "UFS2Tool"
     pfad = os.path.join(ordner, name)

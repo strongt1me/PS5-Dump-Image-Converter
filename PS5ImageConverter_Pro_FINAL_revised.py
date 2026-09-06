@@ -24386,7 +24386,7 @@ class PS5ConverterGUI:
         """
         gemerkt = getattr(self, "_ufs2tool_exe", "") or ""
         self._ufs2tool_exe = werkzeuge_bereitstellen.ufs2tool_bereitstellen(
-            self._mitgeliefert_finden, gemerkt)
+            self._mitgeliefert_finden, gemerkt, text=self._t)
         return self._ufs2tool_exe
 
     @staticmethod

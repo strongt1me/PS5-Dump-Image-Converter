@@ -267,7 +267,7 @@ class Pruefstand:
 
         if not final_path:
             result["ok"] = True
-            result["detail"] = "Kein finales Artefakt für diesen Modus."
+            result["detail"] = self._t("verify.no_final_artifact")
             return result
 
         if not os.path.exists(final_path):
@@ -407,7 +407,7 @@ class Pruefstand:
             "detail": "",
         }
         if not ist_administrator() or not self._find_dokan_driver():
-            result["detail"] = "übersprungen (keine Admin-Rechte oder kein Dokan2-Treiber verfügbar)"
+            result["detail"] = self._t("verify.count_skipped_no_dokan")
             return result
 
         import ctypes as _ct

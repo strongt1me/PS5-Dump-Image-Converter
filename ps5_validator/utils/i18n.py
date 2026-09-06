@@ -2000,6 +2000,21 @@ STRINGS: dict[str, dict[str, str]] = {
     'status.unpack_inner_image': {'de': '{task} – Innenimage entpacken ({kind})…', 'en': '{task} – unpacking the inner image ({kind})…'},
     'status.unpack_container': {'de': 'Container entpacken…', 'en': 'Unpacking the container…'},
     'status.create_new_exfat': {'de': 'Neues exFAT-Image erstellen…', 'en': 'Creating a new exFAT image…'},
+    # ---- Helfermodule (dritte Welle) ----
+    # Diese Saetze standen fest deutsch in den Modulen unter ps5_validator/.
+    # Fuer jeden wurde die Kette bis zum Bildschirm nachgemessen; die beiden
+    # Zweige, die sich als unerreichbar erwiesen, sind unveraendert geblieben.
+    #
+    # Der Pruefstand bekommt seinen Uebersetzer schon (text=self._t); er
+    # wurde an diesen beiden Stellen nur nicht benutzt - zwei Zeilen weiter
+    # unten steht laengst self._t("verify.no_dump_folder").
+    'verify.no_final_artifact': {'de': 'Kein finales Artefakt für diesen Modus.', 'en': 'No final artefact for this mode.'},
+    # Kleingeschrieben und ohne Punkt: Der Satz wird in "Dateizahl-Prüfung
+    # {v0}." eingesetzt (log.auto.0101).
+    'verify.count_skipped_no_dokan': {'de': 'übersprungen (keine Admin-Rechte oder kein Dokan2-Treiber verfügbar)', 'en': 'skipped (no administrator rights or no Dokan2 driver available)'},
+    'pkg_merger.log_kein_ordner': {'de': "'{pfad}' ist kein Ordner.", 'en': "'{pfad}' is not a folder."},
+    'pkg_merger.log_kein_fih_kopf': {'de': 'Wurzelteil beginnt nicht mit dem finalisierten FIH-Header.', 'en': 'The root part does not start with the finalised FIH header.'},
+    'werkzeuge.ufs2tool_missing': {'de': 'UFS2Tool wird für {system} ({maschine}) nicht mitgeliefert.', 'en': 'UFS2Tool is not bundled for {system} ({maschine}).'},
     'dialog.title.admin_required': {'de': 'Administratorrechte erforderlich', 'en': 'Administrator rights required'},
     'dialog.msg.conversion_aborted_unexpected': {'de': 'Die Konvertierung wurde durch einen unerwarteten Fehler\nabgebrochen:\n\n{error}', 'en': 'The conversion was aborted by an unexpected error:\n\n{error}'},
     'dialog.msg.restart_failed': {'de': 'Das Programm konnte nicht automatisch neu gestartet werden:\n{error}\n\nBitte starte das Programm manuell neu, damit das Design korrekt angezeigt wird.', 'en': 'The program could not be restarted automatically:\n{error}\n\nPlease restart it manually so the theme is displayed correctly.'},

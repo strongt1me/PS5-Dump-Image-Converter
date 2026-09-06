@@ -57,6 +57,11 @@ MELDUNGEN = {
     "teile_mit_meta": "{anzahl} nummerierte(s) Teil(e) + Metadaten-Teil",
     "teile_ohne_meta": "{anzahl} nummerierte(s) Teil(e), ohne Metadaten-Teil",
     "fertig_alle": "[done] Alle Split-Sets verarbeitet.",
+    # Diese beiden landen nicht im Protokoll, sondern in einem Dialog
+    # bzw. in der Fehlerliste des Fensters - und standen deshalb bis zum
+    # 06.09.2026 fest deutsch vor einer englischen Oberflaeche.
+    "kein_ordner": "'{pfad}' ist kein Ordner.",
+    "kein_fih_kopf": "Wurzelteil beginnt nicht mit dem finalisierten FIH-Header.",
 }
 
 
@@ -66,6 +71,12 @@ def _melde(log, texte, kennung: str, **werte) -> None:
         return
     vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
     log(vorlage.format(**werte))
+
+
+def _text(texte, kennung: str, **werte) -> str:
+    """Eine Vorlage, uebersetzt wenn moeglich - fuer Texte ohne Protokoll."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    return vorlage.format(**werte)
 
 
 def _teiletext(anzahl: int, mit_meta: bool, texte) -> str:
@@ -154,7 +165,7 @@ def discover_split_sets(input_dir: str, log: LogFn | None = None,
                         texte: dict | None = None) -> list[SplitSet]:
     """Gruppiert alle `.pkg`-Dateien in `input_dir` nach dem Split-Namensschema."""
     if not os.path.isdir(input_dir):
-        raise NotADirectoryError(f"'{input_dir}' ist kein Ordner.")
+        raise NotADirectoryError(_text(texte, "kein_ordner", pfad=input_dir))
 
     sets: dict[str, SplitSet] = {}
     for entry in sorted(os.listdir(input_dir)):
@@ -193,7 +204,8 @@ def _read_head(path: str, length: int) -> bytes:
         return b""
 
 
-def validate_split_set(numbered_pieces: list[str], meta_piece: str | None) -> MergeValidation:
+def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
+                       texte: dict | None = None) -> MergeValidation:
     """Prüft einen Split-Satz gegen das finalisierte FIH-Layout, ohne etwas zu schreiben."""
     if not numbered_pieces:
         raise ValueError("Mindestens das Wurzelteil (_0) wird benötigt.")
@@ -206,7 +218,7 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None) -> Me
     pfs_offset = pfs_size = cnt_offset = 0
 
     if len(head) < _HEAD_READ_SIZE or head[:4] != FIH_MAGIC:
-        errors.append("Wurzelteil beginnt nicht mit dem finalisierten FIH-Header.")
+        errors.append(_text(texte, "kein_fih_kopf"))
     else:
         signed_byte = head[FIH_SIGNED_BYTE_OFFSET]
         if signed_byte == 0x80:
@@ -288,7 +300,7 @@ def merge_split_set(
     if not numbered_pieces:
         raise ValueError("Mindestens das Wurzelteil (_0) wird benötigt.")
 
-    validation = validate_split_set(numbered_pieces, meta_piece)
+    validation = validate_split_set(numbered_pieces, meta_piece, texte)
     if not validation.is_valid:
         raise PkgMergeError("Split-Set-Validierung fehlgeschlagen: " + "; ".join(validation.errors))
 
