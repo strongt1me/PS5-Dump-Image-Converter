@@ -142,17 +142,47 @@ def kennung_gueltig(kennung: str) -> bool:
     return kennung[:4].isalpha() and kennung[:4].isupper() and kennung[4:].isdigit()
 
 
-def param_lesen(pfad: str) -> dict:
+#: Die Sätze, die bei einer abgelehnten Kachel im Fenster stehen - als
+#: Vorgabe. Die Oberfläche reicht über ``texte`` die übersetzte Fassung
+#: herein; dieses Modul darf ``i18n`` nicht einbinden. Dasselbe Muster wie
+#: in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "param_unlesbar": "param.json nicht lesbar: {grund}",
+    "param_kein_json": "param.json ist kein gueltiges JSON: {grund}",
+    "kein_ordner": "Kein Ordner: {pfad}",
+    "eboot_fehlt": "eboot.bin fehlt im Ordner.{zusatz}",
+    "eboot_umbenennen":
+        " Gefunden: {dateien} - diese Datei muesste eboot.bin heissen.",
+    "param_sfo_statt_json":
+        "Der Ordner traegt eine PS4-param.sfo statt einer param.json. "
+        "Dieser Weg braucht die PS5-Fassung.",
+    "param_json_fehlt": "sce_sys/param.json fehlt.",
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
+
+def param_lesen(pfad: str,
+                texte: "dict[str, str] | None" = None) -> dict:
     """Liest param.json; wirft mit klarem Text, wenn das misslingt."""
     try:
         with open(pfad, "rb") as fh:
             roh = fh.read()
     except OSError as exc:
-        raise AppInstallFehler("param.json nicht lesbar: %s" % exc) from exc
+        raise AppInstallFehler(_satz(texte, "param_unlesbar",
+                                    grund=exc)) from exc
     try:
         daten = json.loads(roh.decode("utf-8-sig"))
     except (UnicodeDecodeError, ValueError) as exc:
-        raise AppInstallFehler("param.json ist kein gueltiges JSON: %s" % exc) from exc
+        raise AppInstallFehler(_satz(texte, "param_kein_json",
+                                    grund=exc)) from exc
     if not isinstance(daten, dict):
         raise AppInstallFehler("param.json enthaelt kein Objekt")
     return daten
@@ -247,7 +277,8 @@ def _eboot_beurteilen(pfad: str) -> tuple[str, str, list[str]]:
     return auskunft.magic_name, autoritaet, fehler
 
 
-def pruefen(ordner: str) -> tuple[AppAngaben | None, list[str], list[str]]:
+def pruefen(ordner: str,
+            texte: "dict[str, str] | None" = None) -> tuple[AppAngaben | None, list[str], list[str]]:
     """Sieht nach, ob aus dem Ordner eine startfaehige Kachel werden kann.
 
     Rueckgabe: (Angaben oder None, Fehler, Hinweise). Fehler verhindern die
@@ -257,7 +288,7 @@ def pruefen(ordner: str) -> tuple[AppAngaben | None, list[str], list[str]]:
     hinweise: list[str] = []
 
     if not os.path.isdir(ordner):
-        return None, ["Kein Ordner: %s" % ordner], hinweise
+        return None, [_satz(texte, "kein_ordner", pfad=ordner)], hinweise
 
     eboot = os.path.join(ordner, "eboot.bin")
     if not os.path.isfile(eboot):
@@ -266,16 +297,15 @@ def pruefen(ordner: str) -> tuple[AppAngaben | None, list[str], list[str]]:
                     if n.lower().endswith((".elf", ".bin"))]
         except OSError:
             lose = []
-        zusatz = (" Gefunden: %s - diese Datei muesste eboot.bin heissen."
-                  % ", ".join(lose)) if lose else ""
-        return None, ["eboot.bin fehlt im Ordner." + zusatz], hinweise
+        zusatz = _satz(texte, "eboot_umbenennen",
+                       dateien=", ".join(lose)) if lose else ""
+        return None, [_satz(texte, "eboot_fehlt", zusatz=zusatz)], hinweise
 
     param_pfad = os.path.join(ordner, "sce_sys", "param.json")
     if not os.path.isfile(param_pfad):
         if os.path.isfile(os.path.join(ordner, "sce_sys", "param.sfo")):
-            return None, ["Der Ordner traegt eine PS4-param.sfo statt einer "
-                          "param.json. Dieser Weg braucht die PS5-Fassung."], hinweise
-        return None, ["sce_sys/param.json fehlt."], hinweise
+            return None, [_satz(texte, "param_sfo_statt_json")], hinweise
+        return None, [_satz(texte, "param_json_fehlt")], hinweise
 
     param = param_lesen(param_pfad)
     kennung = param.get("titleId")

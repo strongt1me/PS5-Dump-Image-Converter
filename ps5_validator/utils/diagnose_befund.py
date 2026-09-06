@@ -416,9 +416,17 @@ class Diagnosebericht:
                              version=self._fassung))
         try:
             from ps5_validator.utils import anzeige_diagnose as _ad
-            lines.append(_ad.zusammenfassung(self._diagnose_pruefen()))
+            # Die Vorlagen mitgeben: Das Modul traegt seine Saetze nur als
+            # Vorgabe, und dieser Bericht steht im Fenster. Der
+            # Kommandozeilenlauf (--anzeige-diagnose) ruft dieselbe Funktion
+            # ohne Vorlagen und bleibt dadurch deutsch.
+            lines.append(_ad.zusammenfassung(
+                self._diagnose_pruefen(),
+                texte={kennung: self._t("anzeige." + kennung)
+                       for kennung in _ad.MELDUNGEN}))
         except Exception as exc:
-            lines.append("Darstellung nicht pruefbar: %s" % exc)
+            lines.append(self._t("diagnostics.report_display_check_failed",
+                                 error=exc))
         lines.append("")
         lines.append(self._t("diagnostics.report_section_system"))
         lines.append(self._t("diagnostics.report_os", os=platform.platform()))

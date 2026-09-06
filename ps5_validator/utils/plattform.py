@@ -249,6 +249,26 @@ OEFFNEN_MELDUNGEN: dict[str, str] = {
     "starter_fehler": "{starter} meldete Fehler {code}{hinweis}",
 }
 
+#: Warum das Herunterfahren nicht ging. Der Grund steht in einem
+#: Hinweisfenster, deshalb dasselbe Muster wie oben. Bis zum 06.09.2026 gab
+#: :func:`herunterfahren` diese Sätze fest auf Deutsch zurück.
+HERUNTERFAHR_MELDUNGEN: dict[str, str] = {
+    "kein_befehl": "kein Befehl verfügbar",
+    "nicht_gefunden": "{befehl} nicht gefunden",
+    "fehlgeschlagen": "{befehl}: {grund}",
+    "exit_code": "{befehl}: Exit {code}: {ausgabe}",
+}
+
+
+def _herunterfahr_satz(texte: "dict[str, str] | None", kennung: str,
+                       **werte) -> str:
+    """Eine Vorlage aus :data:`HERUNTERFAHR_MELDUNGEN`, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or HERUNTERFAHR_MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return HERUNTERFAHR_MELDUNGEN[kennung].format(**werte)
+
 
 def oeffnen_versuchen(pfad: str,
                       texte: "dict[str, str] | None" = None) -> tuple[bool, str]:
@@ -440,7 +460,7 @@ def konfigurationsordner(anwendung: str = "PS5ImageConverterPro") -> str:
 # ---------------------------------------------------------------------------
 # Herunterfahren
 # ---------------------------------------------------------------------------
-def herunterfahren() -> tuple[bool, str]:
+def herunterfahren(texte: "dict[str, str] | None" = None) -> tuple[bool, str]:
     """Faehrt den Rechner sofort herunter.
 
     Unter Linux gibt es dafuer je nach Init-System und Rechtelage mehrere Wege;
@@ -472,24 +492,25 @@ def herunterfahren() -> tuple[bool, str]:
             ["poweroff"],
         )
 
-    letzter_fehler = "kein Befehl verfügbar"
+    letzter_fehler = _herunterfahr_satz(texte, "kein_befehl")
     for befehl in befehle:
         if not shutil.which(befehl[0]):
-            letzter_fehler = f"{befehl[0]} nicht gefunden"
+            letzter_fehler = _herunterfahr_satz(texte, "nicht_gefunden",
+                                               befehl=befehl[0])
             continue
         try:
             ergebnis = subprocess.run(
                 befehl, capture_output=True, text=True, timeout=30, **prozess_flags(),  # type: ignore[arg-type]
             )
         except Exception as exc:  # noqa: BLE001
-            letzter_fehler = f"{befehl[0]}: {exc}"
+            letzter_fehler = _herunterfahr_satz(texte, "fehlgeschlagen",
+                                               befehl=befehl[0], grund=exc)
             continue
         if ergebnis.returncode == 0:
             return (True, " ".join(befehl))
-        letzter_fehler = (
-            f"{befehl[0]}: Exit {ergebnis.returncode}: "
-            f"{(ergebnis.stderr or ergebnis.stdout or '').strip()}"
-        )
+        letzter_fehler = _herunterfahr_satz(
+            texte, "exit_code", befehl=befehl[0], code=ergebnis.returncode,
+            ausgabe=(ergebnis.stderr or ergebnis.stdout or "").strip())
     return (False, letzter_fehler)
 
 

@@ -440,17 +440,48 @@ def pruefe_alles(fenster: Fensterlage | None = None,
     return Pruefergebnis(befunde)
 
 
-def zusammenfassung(ergebnis: Pruefergebnis) -> str:
+#: Die Zeile für den Kopf des Berichts - als Vorgabe. Die Oberfläche reicht
+#: über ``texte`` die übersetzte Fassung herein; dieses Modul darf ``i18n``
+#: nicht einbinden. Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "darstellung_sauber": "Darstellung: keine Auffälligkeit",
+    "darstellung_zaehlung": "Darstellung: {teile}",
+    "darstellung_anzahl": "{anzahl} x {schwere}",
+    "schwere_fehler": "FEHLER",
+    "schwere_warnung": "WARNUNG",
+    "schwere_hinweis": "HINWEIS",
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
+
+def zusammenfassung(ergebnis: Pruefergebnis,
+                    texte: "dict[str, str] | None" = None) -> str:
     """Eine Zeile fuer den Kopf des Berichts.
+
+    Args:
+        ergebnis: Was die Pruefung gefunden hat.
+        texte: Vorlagen je Kennung. Der Kommandozeilenlauf
+            (``--anzeige-diagnose``) gibt keine mit und bleibt deutsch; der
+            Diagnosebericht im Fenster reicht die uebersetzten herein.
 
     Returns:
         Klartext, kein Schluessel - die Zeile steht so im Bericht.
     """
     if not ergebnis.befunde:
-        return "Darstellung: keine Auffälligkeit"
+        return _satz(texte, "darstellung_sauber")
     teile = []
     for schwere in (FEHLER, WARNUNG, HINWEIS):
         anzahl = sum(1 for b in ergebnis.befunde if b.schwere == schwere)
         if anzahl:
-            teile.append("%d x %s" % (anzahl, schwere))
-    return "Darstellung: " + ", ".join(teile)
+            teile.append(_satz(texte, "darstellung_anzahl", anzahl=anzahl,
+                               schwere=_satz(texte,
+                                             "schwere_%s" % schwere.lower())))
+    return _satz(texte, "darstellung_zaehlung", teile=", ".join(teile))

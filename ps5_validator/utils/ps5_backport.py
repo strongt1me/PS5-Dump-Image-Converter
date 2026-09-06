@@ -729,9 +729,28 @@ ERG_UEBERSPRUNGEN = "uebersprungen"
 ERG_FEHLER = "fehler"
 
 
+#: Die Sätze, die der Anwender zu sehen bekommt - als Vorgabe. Die
+#: Oberfläche reicht über ``texte`` die übersetzte Fassung herein; dieses
+#: Modul darf ``i18n`` nicht einbinden und bleibt so ohne Fenster benutzbar.
+#: Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    'kein_elf_kein_self':
+        'kein ELF und kein SELF',
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
 def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
                       libc_zusatz: bool = False,
-                      ist_libc_datei: bool = False) -> tuple[str, bytes, str]:
+                      ist_libc_datei: bool = False,
+                      texte: "dict[str, str] | None" = None) -> tuple[str, bytes, str]:
     """Fuehrt den kompletten Ablauf auf einer Bytefolge aus.
 
     Schreibt nichts. Der Aufrufer ersetzt das Original nur bei ``ERG_GEPATCHT``.
@@ -742,7 +761,7 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
     """
     typ = dateityp(daten)
     if typ == TYP_UNBEKANNT:
-        return ERG_UEBERSPRUNGEN, daten, "kein ELF und kein SELF"
+        return ERG_UEBERSPRUNGEN, daten, _satz(texte, "kein_elf_kein_self")
 
     war_self = typ == TYP_SELF
     try:

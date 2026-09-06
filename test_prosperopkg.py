@@ -47,7 +47,7 @@ BLOCKIERT_AUSGABE = [
 def _lauf(zeilen, code=0):
     """Ersetzt _laufen_lassen durch eine feste Ausgabe."""
     def gefangen(argumente, melden=None, zeitgrenze=None,
-                 prozess_ablage=None):
+                 prozess_ablage=None, texte=None):
         if melden is not None:
             for z in zeilen:
                 melden(z)
@@ -148,7 +148,7 @@ class BauenTest(unittest.TestCase):
         gemerkt = {}
 
         def gefangen(argumente, melden=None, zeitgrenze=None,
-                     prozess_ablage=None):
+                     prozess_ablage=None, texte=None):
             gemerkt["argumente"] = argumente
             return (0, ["RESULT: " + self.pkg])
 
@@ -161,7 +161,7 @@ class BauenTest(unittest.TestCase):
         gemerkt = {}
 
         def gefangen(argumente, melden=None, zeitgrenze=None,
-                     prozess_ablage=None):
+                     prozess_ablage=None, texte=None):
             gemerkt["argumente"] = argumente
             return (0, ["RESULT: " + self.pkg])
 

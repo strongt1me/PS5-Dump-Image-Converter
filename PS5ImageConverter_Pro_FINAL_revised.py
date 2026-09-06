@@ -106,6 +106,7 @@ from ps5_validator.utils.pkg_merger import (
 )
 from ps5_validator.utils.self_reader import (
     CONTAINER_ELF,
+    MELDUNGEN as self_reader_meldungen,
     SelfParseError,
     read_self,
 )
@@ -172,6 +173,7 @@ from ps5_validator.utils.plattform import (
     IST_WINDOWS,
     MONO_SCHRIFT,
     UI_SCHRIFT,
+    HERUNTERFAHR_MELDUNGEN as _system_herunterfahr_meldungen,
     OEFFNEN_MELDUNGEN as _system_oeffnen_meldungen,
     datei_oeffnen as _system_datei_oeffnen,
     herunterfahren as _system_herunterfahren,
@@ -16075,7 +16077,9 @@ class PS5ConverterGUI:
         macOS geht ueber die Systemereignisse. Die Vorlaufzeit hat das Programm
         in allen Faellen selbst abgewartet.
         """
-        erfolg, meldung = _system_herunterfahren()
+        erfolg, meldung = _system_herunterfahren(
+            texte=self._modul_texte(_system_herunterfahr_meldungen,
+                                    "shutdown.reason_"))
         if erfolg:
             return True
         self._append_to_log(self._t("shutdown.log_failed", error=meldung) + "\n")
@@ -21868,7 +21872,8 @@ class PS5ConverterGUI:
 
             kennung, neu, _grund = ps5_backport.datei_verarbeiten(
                 roh, ziel_ps5=ziel_ps5, ziel_ps4=ziel_ps4,
-                libc_zusatz=True, ist_libc_datei=ps5_backport.ist_libc(pfad))
+                libc_zusatz=True, ist_libc_datei=ps5_backport.ist_libc(pfad),
+                texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."))
             if kennung != ps5_backport.ERG_GEPATCHT:
                 continue
 
@@ -25941,7 +25946,10 @@ class PS5ConverterGUI:
     def _log_param_befund(self, befund) -> None:
         """Schreibt einen Befund ins Protokoll - Fehler und Warnungen einzeln."""
         self._append_to_log(
-            self._t('log.manual.param_json_findings', v0=befund.zusammenfassung()))
+            self._t('log.manual.param_json_findings',
+                    v0=befund.zusammenfassung(
+                        texte=self._modul_texte(param_check.MELDUNGEN,
+                                                "paramcheck."))))
         if befund.ok and not befund.warnungen:
             return
         for zeile in befund.als_text(mit_hinweisen=False):
@@ -27126,6 +27134,46 @@ class PS5ConverterGUI:
 
         self._render_pkg_merger_window(folder, split_sets, log_lines)
 
+    def _param_manifest_hinweis(self, known_keys: dict, key: str) -> str:
+        """Die Kurzbeschreibung eines param.json-/manifest.json-Schlüssels.
+
+        Sie stand bis zum 06.09.2026 fest auf Deutsch im Modul – siebenunddreißig
+        Beschreibungen, die im Hinweisfeld des PARAM/MANIFEST-Fensters
+        erscheinen, sobald man eine Zeile anklickt.
+
+        Die Beschreibungen bleiben im Modul: Dort sind sie zugleich die Liste
+        der bekannten Schlüssel und die deutsche Rückfallebene. Übersetzt wird
+        hier, an der Anzeige.
+        """
+        if key not in known_keys:
+            return self._t("param_manifest.hint_unknown_key")
+        schluessel = "param_manifest.key_" + key
+        uebersetzt = self._t(schluessel)
+        # translate gibt einen unbekannten Schlüssel unverändert zurück. Steht
+        # er noch da, fehlt der Eintrag - dann die deutsche Beschreibung aus
+        # dem Modul, nicht der rohe Schlüsselname.
+        return known_keys[key] if uebersetzt == schluessel else uebersetzt
+
+    def _modul_texte(self, meldungen: dict, praefix: str) -> dict[str, str]:
+        """Die Textvorlagen eines Helfermoduls in der eingestellten Sprache.
+
+        Die Helfer unter ``ps5_validator/`` dürfen ``i18n`` nicht einbinden –
+        sie sollen ohne die Oberfläche benutzbar bleiben. Wo einer Text
+        liefern muss, trägt er seine Sätze in einem ``MELDUNGEN``-dict als
+        Vorgabe und nimmt über ``texte=`` die übersetzten entgegen. Diese
+        Methode baut sie: zu jeder Kennung der Schlüssel ``<präfix><kennung>``.
+
+        Am 06.09.2026 kamen elf Module dazu, die dieses Muster noch gar nicht
+        hatten. Statt elf fast gleicher Methoden gibt es diese eine.
+
+        Args:
+            meldungen: Das ``MELDUNGEN``-dict des Moduls – nur seine
+                Schlüssel werden gelesen.
+            praefix: Was in ``i18n.STRINGS`` vor der Kennung steht,
+                einschließlich Punkt oder Unterstrich.
+        """
+        return {kennung: self._t(praefix + kennung) for kennung in meldungen}
+
     def _diagnose_incomplete_texte(self) -> dict:
         """Die Bausteine des Berichts über einen unvollständigen Dump.
 
@@ -27137,8 +27185,7 @@ class PS5ConverterGUI:
         also genau das, was der Anwender im Fehlerfall zu lesen bekommt.
         """
         from ps5_validator.diagnose_incomplete import MELDUNGEN as _dm
-        return {kennung: self._t("diagnose.incomplete_" + kennung)
-                for kennung in _dm}
+        return self._modul_texte(_dm, "diagnose.incomplete_")
 
     def _pkg_merger_texte(self) -> dict:
         """Die Protokollvorlagen des PKG-Mergers in der eingestellten Sprache.
@@ -27149,8 +27196,7 @@ class PS5ConverterGUI:
         Deutsch aus dem Modul und liefen an ``self._t()`` vorbei - im Fenster
         mischten sie sich unter eine englische Oberflaeche.
         """
-        return {kennung: self._t("pkg_merger.log_" + kennung)
-                for kennung in pkg_merger_meldungen}
+        return self._modul_texte(pkg_merger_meldungen, "pkg_merger.log_")
 
     def _render_pkg_merger_window(self, folder: str, split_sets: list, log_lines: list[str]) -> None:
         """Baut das Fenster zur Übersicht/Zusammenführung erkannter Split-Sets auf."""
@@ -27529,7 +27575,7 @@ class PS5ConverterGUI:
             if not sel:
                 return
             key = sel[0]
-            hint_var.set(known_keys.get(key, self._t("param_manifest.hint_unknown_key")))
+            hint_var.set(self._param_manifest_hinweis(known_keys, key))
 
         tree.bind("<<TreeviewSelect>>", _on_select)
 
@@ -29555,7 +29601,8 @@ class PS5ConverterGUI:
             return
 
         try:
-            info = read_self(path)
+            info = read_self(path, texte=self._modul_texte(
+                self_reader_meldungen, "self_reader."))
         except (SelfParseError, OSError) as exc:
             messagebox.showerror(
                 self._t("self_inspector.parse_failed_title"),
@@ -30632,8 +30679,7 @@ class PS5ConverterGUI:
         Dieselbe Begründung wie bei :meth:`_smgen_texte`: Das Modul darf
         ``i18n`` nicht importieren, seine Gründe gehen aber in Dialoge.
         """
-        return {kennung: self._t("oeffnen." + kennung)
-                for kennung in _system_oeffnen_meldungen}
+        return self._modul_texte(_system_oeffnen_meldungen, "oeffnen.")
 
     def _oeffnen_oder_melden(self, pfad: str, titel: str = "", parent=None,
                              vorlage: str = "") -> bool:
@@ -30679,8 +30725,7 @@ class PS5ConverterGUI:
         deutsche Sätze, und die standen unübersetzt im Protokoll und in der
         Kollisionswarnung, auch wenn das Programm auf Englisch lief.
         """
-        return {kennung: self._t("smgen." + kennung)
-                for kennung in sm_gen.MELDUNGEN}
+        return self._modul_texte(sm_gen.MELDUNGEN, "smgen.")
 
     def _ampr_ablage_pruefen(self, wurzel) -> list[str]:
         """Was an einer bestehenden Ablage im Spielordner nicht wirkt.
@@ -32971,7 +33016,10 @@ class PS5ConverterGUI:
                             self._t("appinstall.error_title"),
                             self._t("appinstall.error_no_folder"), parent=win)
                         return
-                    angaben, fehler, hinweise = app_install.pruefen(ordner)
+                    angaben, fehler, hinweise = app_install.pruefen(
+                        ordner,
+                        texte=self._modul_texte(app_install.MELDUNGEN,
+                                                "appinstallmod."))
             except app_install.AppInstallFehler as exc:
                 angaben, fehler, hinweise = None, [str(exc)], []
             stand["angaben"] = angaben
@@ -33540,7 +33588,9 @@ class PS5ConverterGUI:
 
                 kennung, neu, grund = ps5_backport.datei_verarbeiten(
                     roh, ziel_ps5=ziel_ps5, ziel_ps4=ziel_ps4,
-                    libc_zusatz=libc, ist_libc_datei=ps5_backport.ist_libc(pfad))
+                    libc_zusatz=libc, ist_libc_datei=ps5_backport.ist_libc(pfad),
+                    texte=self._modul_texte(ps5_backport.MELDUNGEN,
+                                            "backportmod."))
 
                 if kennung == ps5_backport.ERG_GEPATCHT:
                     # Erst schreiben, wenn alles gelungen ist - und dann atomar.
@@ -33934,7 +33984,9 @@ class PS5ConverterGUI:
 
     def _ps4ffpsc_abbild_pruefen(self, pfad: str) -> dict:
         """Prueft das entstandene Abbild. Siehe ps4_werkzeug.abbild_pruefen."""
-        return ps4_werkzeug.abbild_pruefen(pfad)
+        return ps4_werkzeug.abbild_pruefen(
+            pfad, texte=self._modul_texte(ps4_werkzeug.MELDUNGEN,
+                                          "ps4werkzeug."))
 
     def _ps4ffpsc_lauf(
         self,
@@ -35321,7 +35373,10 @@ class PS5ConverterGUI:
 
             def _arbeit() -> None:
                 try:
-                    erg = prosperopkg.pruefen(quelle, melden=_protokoll)
+                    erg = prosperopkg.pruefen(
+                        quelle, melden=_protokoll,
+                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
+                                                "prosperopkg."))
                 except prosperopkg.ProsperoFehler as exc:
                     _protokoll("[FEHLER] %s" % exc)
                     _status(self._t("pkgbau.status_check_failed"))
@@ -35361,11 +35416,15 @@ class PS5ConverterGUI:
                     if art_var.get() == "homebrew":
                         pfad = prosperopkg.homebrew_bauen(
                             quelle, ziel, melden=_protokoll,
+                            texte=self._modul_texte(prosperopkg.MELDUNGEN,
+                                                    "prosperopkg."),
                             schnell=bool(schnell_var.get()),
                             prozess_ablage=laeuft)
                     else:
                         pfad = prosperopkg.bauen(
                             quelle, ziel, melden=_protokoll,
+                            texte=self._modul_texte(prosperopkg.MELDUNGEN,
+                                                    "prosperopkg."),
                             lizenzfrei=bool(lizenzfrei_var.get()),
                             schnell=bool(schnell_var.get()),
                             prozess_ablage=laeuft)
@@ -37779,7 +37838,8 @@ class PS5ConverterGUI:
                 daten = fh.read()
             weg, _ausgabe, bemerkung = payload_versand.senden(
                 host, daten, name, elfldr_port=ziel_port,
-                elfldr_pfad=self._elfldr_payload_path())
+                elfldr_pfad=self._elfldr_payload_path(),
+                texte=self._modul_texte(payload_versand.MELDUNGEN, "payloadmod."))
         except Exception as exc:
             return False, str(exc)
 

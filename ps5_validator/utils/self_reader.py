@@ -218,7 +218,28 @@ def _parse_elf_header(data: bytes, off: int) -> ElfHeaderInfo | None:
     )
 
 
-def read_self(path: str) -> SelfInfo:
+#: Die beiden Ablehnungsgründe, die der Anwender zu lesen bekommt - als
+#: Vorgabe. Sie werden nicht abgefangen und ersetzt: Der Aufrufer reicht den
+#: Ausnahmetext wörtlich in einen Fehlerdialog weiter. Die Oberfläche gibt
+#: über ``texte`` die übersetzte Fassung mit; dieses Modul darf ``i18n``
+#: nicht einbinden. Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "zu_kurz": "Datei ist zu kurz für einen SELF-Kopf: {pfad}",
+    "unbekannte_magic":
+        "Keine erkennbare SELF-Datei (unbekannte Magic): {pfad}",
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
+
+def read_self(path: str, texte: "dict[str, str] | None" = None) -> SelfInfo:
     """Liest die Struktur einer SELF- oder ELF-Datei (Header, Segmente, ELF-Kopf, Extended-Info).
 
     Entschluesselt keine geschuetzten Segmentdaten; liefert ausschliesslich Klartext-
@@ -250,10 +271,10 @@ def read_self(path: str) -> SelfInfo:
             )
 
         if len(data) < HEADER_SIZE:
-            raise SelfParseError(f"Datei ist zu kurz für einen SELF-Kopf: {path}")
+            raise SelfParseError(_satz(texte, "zu_kurz", pfad=path))
         magic = struct.unpack_from("<I", data, 0)[0]
         if magic not in SELF_MAGICS:
-            raise SelfParseError(f"Keine erkennbare SELF-Datei (unbekannte Magic): {path}")
+            raise SelfParseError(_satz(texte, "unbekannte_magic", pfad=path))
 
         info = _read_self_body(f, data, path, magic, file_size_on_disk)
     return info

@@ -108,10 +108,29 @@ def werkzeug_finden() -> str:
     return ""
 
 
+#: Die Sätze, die der Anwender zu sehen bekommt - als Vorgabe. Die
+#: Oberfläche reicht über ``texte`` die übersetzte Fassung herein; dieses
+#: Modul darf ``i18n`` nicht einbinden und bleibt so ohne Fenster benutzbar.
+#: Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    'nicht_gefunden':
+        'prosperopkg wurde nicht gefunden (erwartet in {ordner}/{plattform}/).',
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
 def _laufen_lassen(argumente: list[str],
                    melden: Callable[[str], None] | None = None,
                    zeitgrenze: float = 7200.0,
-                   prozess_ablage: dict | None = None) -> tuple[int, list[str]]:
+                   prozess_ablage: dict | None = None,
+                   texte: "dict[str, str] | None" = None) -> tuple[int, list[str]]:
     """Startet das Werkzeug und reicht jede Zeile weiter, sobald sie kommt.
 
     Args:
@@ -130,9 +149,9 @@ def _laufen_lassen(argumente: list[str],
     """
     programm = werkzeug_finden()
     if not programm:
-        raise ProsperoFehler(
-            "prosperopkg wurde nicht gefunden (erwartet in %s/%s/)."
-            % (WERKZEUGORDNER, plattformordner()))
+        raise ProsperoFehler(_satz(texte, "nicht_gefunden",
+                                   ordner=WERKZEUGORDNER,
+                                   plattform=plattformordner()))
 
     anlauf: dict = {
         "stdout": subprocess.PIPE,
@@ -290,7 +309,8 @@ def _zahl(text: str) -> int:
 
 
 def pruefen(quelle: str,
-            melden: Callable[[str], None] | None = None) -> dict:
+            melden: Callable[[str], None] | None = None,
+            texte: "dict[str, str] | None" = None) -> dict:
     """Sagt, ob ein Backup als Debug-Paket starten wuerde.
 
     Args:
@@ -305,7 +325,7 @@ def pruefen(quelle: str,
         ProsperoFehler: Das Werkzeug fehlt oder bricht ab.
     """
     code, zeilen = _laufen_lassen(["inspect", "--source", quelle], melden,
-                                  zeitgrenze=600.0)
+                                  zeitgrenze=600.0, texte=texte)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg inspect endete mit %d: %s"
@@ -331,6 +351,7 @@ def pruefen(quelle: str,
 
 def bauen(quelle: str, zielordner: str,
           melden: Callable[[str], None] | None = None,
+          texte: "dict[str, str] | None" = None,
           lizenzfrei: bool = True,
           fake_signieren: bool = False,
           schnell: bool = True,
@@ -373,7 +394,7 @@ def bauen(quelle: str, zielordner: str,
         argumente.append("--schnell")
 
     code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
-                                  prozess_ablage=prozess_ablage)
+                                  prozess_ablage=prozess_ablage, texte=texte)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg build endete mit %d: %s"
@@ -386,6 +407,7 @@ def bauen(quelle: str, zielordner: str,
 
 def homebrew_bauen(quelle: str, zielordner: str,
                    melden: Callable[[str], None] | None = None,
+                   texte: "dict[str, str] | None" = None,
                    modulname: str = "",
                    schnell: bool = True,
                    zeitgrenze: float = 3600.0,
@@ -431,7 +453,7 @@ def homebrew_bauen(quelle: str, zielordner: str,
         argumente.append("--schnell")
 
     code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
-                                  prozess_ablage=prozess_ablage)
+                                  prozess_ablage=prozess_ablage, texte=texte)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg homebrew endete mit %d: %s"

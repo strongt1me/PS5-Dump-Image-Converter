@@ -169,9 +169,28 @@ def elfldr_aufwecken(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
     return False
 
 
+#: Die Sätze, die der Anwender zu sehen bekommt - als Vorgabe. Die
+#: Oberfläche reicht über ``texte`` die übersetzte Fassung herein; dieses
+#: Modul darf ``i18n`` nicht einbinden und bleibt so ohne Fenster benutzbar.
+#: Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    'nichts_erreichbar':
+        'Weder elfldr (Port {elfldr}) noch der Payload Manager (Port {pldmgr}) sind erreichbar.',
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
 def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
            pldmgr_port: int = PLDMGR_PORT,
-           elfldr_pfad: str = "") -> tuple[str, str, str]:
+           elfldr_pfad: str = "",
+           texte: "dict[str, str] | None" = None) -> tuple[str, str, str]:
     """Nimmt den Weg, der offensteht - elfldr zuerst.
 
     Drei Faelle, in dieser Reihenfolge:
@@ -190,9 +209,8 @@ def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
         return WEG_ELFLDR, ueber_elfldr(host, daten, port=elfldr_port), ""
 
     if not port_offen(host, pldmgr_port):
-        raise VersandFehler(
-            "Weder elfldr (Port %d) noch der Payload Manager (Port %d) sind "
-            "erreichbar." % (elfldr_port, pldmgr_port))
+        raise VersandFehler(_satz(texte, "nichts_erreichbar",
+                                  elfldr=elfldr_port, pldmgr=pldmgr_port))
 
     if elfldr_pfad and os.path.isfile(elfldr_pfad):
         with open(elfldr_pfad, "rb") as fh:

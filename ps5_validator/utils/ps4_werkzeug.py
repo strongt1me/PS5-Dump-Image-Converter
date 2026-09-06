@@ -153,7 +153,26 @@ def ergebnis_finden(ordner: str, title_id: str = "",
     kandidaten.sort()
     return kandidaten[0][3]
 
-def abbild_pruefen(pfad: str) -> dict:
+#: Die Sätze, die der Anwender zu sehen bekommt - als Vorgabe. Die
+#: Oberfläche reicht über ``texte`` die übersetzte Fassung herein; dieses
+#: Modul darf ``i18n`` nicht einbinden und bleibt so ohne Fenster benutzbar.
+#: Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    'innenebene_unlesbar':
+        'Innenebene nicht lesbar',
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
+def abbild_pruefen(pfad: str,
+                   texte: "dict[str, str] | None" = None) -> dict:
     """Sieht in ein fertiges Abbild hinein, ohne es zu entpacken.
 
     Gelesen werden nur die Verzeichnisbloecke des inneren exFAT, nicht
@@ -177,7 +196,7 @@ def abbild_pruefen(pfad: str) -> dict:
 
             geoeffnet = mkpfs_pfs.open_inner_file_view(pathlib.Path(pfad))
             if not geoeffnet:
-                ergebnis["fehler"] = "Innenebene nicht lesbar"
+                ergebnis["fehler"] = _satz(texte, "innenebene_unlesbar")
                 return ergebnis
             sicht, griff, _name = geoeffnet
         else:

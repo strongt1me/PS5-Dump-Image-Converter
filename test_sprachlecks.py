@@ -386,6 +386,57 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
                         "Der Bericht ueber einen unvollstaendigen Dump kommt "
                         "wieder fest deutsch aus dem Modul.")
 
+    #: Aufrufe im Hauptprogramm, die ihre Vorlagen mitbringen muessen -
+    #: Name der gerufenen Funktion und wie oft sie vorkommt. Die Zahl steht
+    #: dabei, damit eine geloeschte Aufrufstelle auffaellt statt still
+    #: durchzugehen.
+    MIT_VORLAGEN = (
+        ("read_self", 1),
+        ("abbild_pruefen", 1),
+        ("senden", 1),
+        ("datei_verarbeiten", 2),
+        ("pruefen", 2),            # app_install und prosperopkg
+        ("bauen", 1),
+        ("homebrew_bauen", 1),
+        ("zusammenfassung", 1),    # param_check.Befund
+        ("herunterfahren", 1),     # ueber _system_herunterfahren
+    )
+
+    def test_die_elf_helfermodule_bekommen_ueberall_vorlagen(self):
+        """Jede Aufrufstelle der dritten Welle reicht texte= herein."""
+        baum = ast.parse(_quelltext())
+        gefunden: dict[str, list[int]] = {}
+        ohne: list[tuple[int, str]] = []
+        gesucht = {name for name, _ in self.MIT_VORLAGEN}
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Call):
+                continue
+            name = (getattr(knoten.func, "attr", None)
+                    or getattr(knoten.func, "id", None) or "")
+            if name == "_system_herunterfahren":
+                name = "herunterfahren"
+            if name not in gesucht:
+                continue
+            # Nur die Aufrufe, die wirklich zu einem Helfermodul gehen -
+            # gleichnamige eigene Methoden zaehlen nicht.
+            wert = getattr(knoten.func, "value", None)
+            am_modul = getattr(wert, "id", "") in (
+                "ps4_werkzeug", "payload_versand", "prosperopkg",
+                "ps5_backport", "app_install", "param_check", "befund")
+            frei = isinstance(knoten.func, ast.Name)
+            if not (am_modul or frei):
+                continue
+            gefunden.setdefault(name, []).append(knoten.lineno)
+            if not any(w.arg == "texte" for w in knoten.keywords):
+                ohne.append((knoten.lineno, name))
+        self.assertEqual([], ohne,
+                         "Diese Aufrufe bekommen keine Textvorlagen: %s" % ohne)
+        for name, anzahl in self.MIT_VORLAGEN:
+            with self.subTest(funktion=name):
+                self.assertEqual(anzahl, len(gefunden.get(name, [])),
+                                 "%s: %d Aufrufstellen erwartet, %s gefunden"
+                                 % (name, anzahl, gefunden.get(name, [])))
+
 
 class VorlagenHabenSchluesselTests(unittest.TestCase):
     """Jede Kennung eines Helfers braucht ihren Eintrag in STRINGS.
@@ -406,22 +457,122 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
                 or not STRINGS[praefix + k].get("en")]
         self.assertEqual([], halb, "Nur in einer Sprache: %s" % halb)
 
-    def test_shadowmount_generation(self):
-        from ps5_validator.utils import shadowmount_generation as sm_gen
-        self._pruefe(sm_gen.MELDUNGEN, "smgen.")
+    #: Jedes Helfermodul mit Vorlagenmuster und der Praefix seiner
+    #: Schluessel. Wer ein weiteres Modul umstellt, traegt es hier ein -
+    #: dann prueft der Waechter es mit.
+    MODULE = (
+        ("ps5_validator.utils.shadowmount_generation", "MELDUNGEN", "smgen."),
+        ("ps5_validator.utils.pkg_merger", "MELDUNGEN", "pkg_merger.log_"),
+        ("ps5_validator.diagnose_incomplete", "MELDUNGEN", "diagnose.incomplete_"),
+        ("ps5_validator.utils.self_reader", "MELDUNGEN", "self_reader."),
+        ("ps5_validator.utils.ps4_werkzeug", "MELDUNGEN", "ps4werkzeug."),
+        ("ps5_validator.utils.payload_versand", "MELDUNGEN", "payloadmod."),
+        ("ps5_validator.utils.prosperopkg", "MELDUNGEN", "prosperopkg."),
+        ("ps5_validator.utils.ps5_backport", "MELDUNGEN", "backportmod."),
+        ("ps5_validator.utils.param_check", "MELDUNGEN", "paramcheck."),
+        ("ps5_validator.utils.app_install", "MELDUNGEN", "appinstallmod."),
+        ("ps5_validator.utils.anzeige_diagnose", "MELDUNGEN", "anzeige."),
+        ("ps5_validator.utils.plattform", "OEFFNEN_MELDUNGEN", "oeffnen."),
+        ("ps5_validator.utils.plattform", "HERUNTERFAHR_MELDUNGEN",
+         "shutdown.reason_"),
+    )
 
-    def test_pkg_merger(self):
-        from ps5_validator.utils import pkg_merger
-        self._pruefe(pkg_merger.MELDUNGEN, "pkg_merger.log_")
+    def test_jedes_modul_hat_seine_schluessel(self):
+        import importlib
+        for modulname, dictname, praefix in self.MODULE:
+            with self.subTest(modul=modulname, dict=dictname):
+                modul = importlib.import_module(modulname)
+                self._pruefe(getattr(modul, dictname), praefix)
 
-    def test_diagnose_incomplete(self):
-        from ps5_validator.diagnose_incomplete import MELDUNGEN
-        self._pruefe(MELDUNGEN, "diagnose.incomplete_")
+    #: Je Modul eine Kennung, mit der sich messen laesst, ob die
+    #: uebergebenen Vorlagen wirklich benutzt werden - samt der
+    #: Platzhalterwerte, die sie braucht. Ein Modul, das ``texte``
+    #: entgegennimmt und dann doch seine eingebauten Saetze nimmt, faellt
+    #: sonst nicht auf: Schluessel vorhanden, beide Sprachen gefuellt, und
+    #: im Fenster steht trotzdem Deutsch. Genau so ist am 06.09.2026 eine
+    #: Gegenprobe durchgekommen.
+    PROBEN = (
+        ("ps5_validator.utils.self_reader", "_satz", "self_reader.",
+         "zu_kurz", {"pfad": "x.bin"}),
+        ("ps5_validator.utils.ps4_werkzeug", "_satz", "ps4werkzeug.",
+         "innenebene_unlesbar", {}),
+        ("ps5_validator.utils.payload_versand", "_satz", "payloadmod.",
+         "nichts_erreichbar", {"elfldr": 9021, "pldmgr": 8084}),
+        ("ps5_validator.utils.prosperopkg", "_satz", "prosperopkg.",
+         "nicht_gefunden", {"ordner": "tools", "plattform": "win"}),
+        ("ps5_validator.utils.ps5_backport", "_satz", "backportmod.",
+         "kein_elf_kein_self", {}),
+        ("ps5_validator.utils.param_check", "_satz", "paramcheck.",
+         "param_fehlt", {}),
+        ("ps5_validator.utils.app_install", "_satz", "appinstallmod.",
+         "param_json_fehlt", {}),
+        ("ps5_validator.utils.anzeige_diagnose", "_satz", "anzeige.",
+         "darstellung_sauber", {}),
+        ("ps5_validator.utils.plattform", "_herunterfahr_satz",
+         "shutdown.reason_", "kein_befehl", {}),
+        ("ps5_validator.utils.shadowmount_generation", "_satz", "smgen.",
+         "falle_common_lib", {}),
+        ("ps5_validator.utils.pkg_merger", "_text", "pkg_merger.log_",
+         "kein_fih_kopf", {}),
+    )
+
+    def test_jedes_modul_benutzt_die_vorlagen_auch(self):
+        """Gemessen, nicht am Schluesselbestand abgelesen."""
+        import importlib
+        for modulname, helfer, praefix, kennung, werte in self.PROBEN:
+            with self.subTest(modul=modulname):
+                modul = importlib.import_module(modulname)
+                satz = getattr(modul, helfer)
+                englisch = {kennung: translate("en", praefix + kennung)}
+                heraus = satz(englisch, kennung, **werte)
+                erwartet = translate("en", praefix + kennung).format(**werte)
+                self.assertEqual(erwartet, heraus,
+                                 "%s benutzt die uebergebene Vorlage nicht."
+                                 % modulname)
+                # Gegenprobe im selben Atemzug: ohne Vorlagen der deutsche Satz.
+                self.assertNotEqual(erwartet, satz(None, kennung, **werte),
+                                    "%s liefert auf Deutsch dasselbe wie auf "
+                                    "Englisch - taugt als Probe nicht."
+                                    % modulname)
+
+    def test_der_diagnosebericht_reicht_die_vorlagen_weiter(self):
+        """``diagnose_befund`` ruft ``anzeige_diagnose.zusammenfassung``.
+
+        Es hat seinen Uebersetzer selbst (``text=`` im Erzeuger) und muss
+        die Vorlagen daraus bauen. Tut es das nicht, steht die Kopfzeile des
+        Diagnoseberichts deutsch in einem englischen Fenster.
+        """
+        with io.open(os.path.join(PROJEKT, "ps5_validator", "utils",
+                                  "diagnose_befund.py"), "rb") as fh:
+            baum = ast.parse(fh.read().decode("utf-8"))
+        aufrufe = [k for k in ast.walk(baum)
+                   if isinstance(k, ast.Call)
+                   and getattr(k.func, "attr", "") == "zusammenfassung"]
+        self.assertEqual(1, len(aufrufe), "Aufrufstelle verschwunden?")
+        self.assertTrue(any(w.arg == "texte" for w in aufrufe[0].keywords),
+                        "Die Kopfzeile des Diagnoseberichts kommt wieder "
+                        "fest deutsch aus anzeige_diagnose.")
+
+    def test_die_beschreibungen_der_param_schluessel(self):
+        """Siebenunddreissig Kurzbeschreibungen im PARAM/MANIFEST-Fenster."""
+        from ps5_validator.utils.param_manifest import (
+            MANIFEST_KNOWN_KEYS, PARAM_KNOWN_KEYS)
+        fehlend = [k for d in (PARAM_KNOWN_KEYS, MANIFEST_KNOWN_KEYS)
+                   for k in d if "param_manifest.key_" + k not in STRINGS]
+        self.assertEqual([], fehlend, "Ohne Schluessel: %s" % fehlend)
 
     #: Eintraege, die in beiden Sprachen zu Recht gleich lauten. Bisher
     #: genau einer: eine Erfolgszeile aus Zeichen, Namen und Pruefsumme.
     GLEICH_ERLAUBT = {
         "pkg_merger.log_ok": "Nur Symbole, Dateiname, Groesse und SHA-256.",
+        "anzeige.darstellung_anzahl":
+            "'{anzahl} x {schwere}' - was hier zu uebersetzen waere, steckt "
+            "in den Platzhaltern (anzeige.schwere_*).",
+        "paramcheck.param_befunde":
+            "'param.json: {teile}' - ein Dateiname und ein Platzhalter.",
+        "shutdown.reason_fehlgeschlagen":
+            "'{befehl}: {grund}' - reine Formatzeile, beide Teile kommen "
+            "von aussen.",
     }
 
     def test_die_englische_fassung_ist_nicht_die_deutsche(self):
@@ -433,7 +584,10 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
         """
         praefixe = ("smgen.", "pkg_merger.log_", "diagnose.incomplete_",
                     "preflight.", "conversion.", "srccheck.", "progress.",
-                    "verify.", "werkzeuge.")
+                    "verify.", "werkzeuge.", "self_reader.", "ps4werkzeug.",
+                    "payloadmod.", "prosperopkg.", "backportmod.",
+                    "paramcheck.", "appinstallmod.", "anzeige.",
+                    "shutdown.reason_", "param_manifest.key_")
         gleich = [k for k, v in STRINGS.items()
                   if k.startswith(praefixe)
                   and v.get("de") == v.get("en")

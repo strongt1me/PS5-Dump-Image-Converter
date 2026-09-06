@@ -2052,6 +2052,92 @@ STRINGS: dict[str, dict[str, str]] = {
     'diagnose.incomplete_ursache': {'de': 'Vermutete Ursache:\n- Die .ffpfsc-Datei wurde nicht vollständig zu einem Game Dump extrahiert\n- Das ist normalerweise ein Zeichen für eine beschädigte oder unpassende .ffpfsc-Datei', 'en': 'Likely cause:\n- The .ffpfsc file was not fully extracted into a game dump\n- That usually points to a damaged or unsuitable .ffpfsc file'},
     'diagnose.incomplete_loesungen': {'de': 'Empfohlene Lösungen:\n1. SHA256-Prüfsumme der .ffpfsc-Datei vergleichen\n   - Download überprüfen oder erneut laden\n2. MkPFS-Version aktualisieren\n   - Eine neuere Fassung kennt möglicherweise neuere Dump-Formate\n3. Den Entpackvorgang erneut starten\n   - Mit ausreichend freiem Speicherplatz (>150 % der Dump-Größe)\n4. Auf einen Fehler des Datenträgers prüfen (CHKDSK/fsck)\n5. Den PS5-Dump neu erstellen', 'en': 'Suggested remedies:\n1. Compare the SHA256 checksum of the .ffpfsc file\n   - Verify the download or fetch it again\n2. Update the MkPFS version\n   - A newer build may know newer dump formats\n3. Start the extraction over\n   - With enough free space (>150 % of the dump size)\n4. Check the drive for errors (CHKDSK/fsck)\n5. Create the PS5 dump again'},
     'diagnose.incomplete_weitere_infos': {'de': 'Weitere Infos:', 'en': 'Further reading:'},
+    # ---- Elf weitere Helfermodule (dritte Welle, dritter Teil) ----
+    # Alle bekamen erst jetzt ein Vorlagenmuster. Für jede Stelle wurde die
+    # Kette bis zum Bildschirm nachverfolgt und einzeln zu widerlegen
+    # versucht; was nicht ankommt, ist unverändert geblieben.
+    #
+    # Die Kopfzeile des Darstellungsberichts. Der Kommandozeilenlauf
+    # (--anzeige-diagnose) bekommt keine Vorlagen und bleibt deutsch; der
+    # Diagnosebericht im Fenster reicht diese hier herein.
+    'anzeige.darstellung_sauber': {'de': 'Darstellung: keine Auffälligkeit', 'en': 'Display: nothing unusual'},
+    'anzeige.darstellung_zaehlung': {'de': 'Darstellung: {teile}', 'en': 'Display: {teile}'},
+    'anzeige.darstellung_anzahl': {'de': '{anzahl} x {schwere}', 'en': '{anzahl} x {schwere}'},
+    'anzeige.schwere_fehler': {'de': 'FEHLER', 'en': 'ERROR'},
+    'anzeige.schwere_warnung': {'de': 'WARNUNG', 'en': 'WARNING'},
+    'anzeige.schwere_hinweis': {'de': 'HINWEIS', 'en': 'NOTE'},
+    'diagnostics.report_display_check_failed': {'de': 'Darstellung nicht prüfbar: {error}', 'en': 'Display could not be checked: {error}'},
+    # Die beiden Ablehnungsgründe des SELF-Lesers landen wörtlich in einem
+    # Fehlerdialog - sie werden nicht abgefangen und ersetzt.
+    'self_reader.zu_kurz': {'de': 'Datei ist zu kurz für einen SELF-Kopf: {pfad}', 'en': 'The file is too short for a SELF header: {pfad}'},
+    'self_reader.unbekannte_magic': {'de': 'Keine erkennbare SELF-Datei (unbekannte Magic): {pfad}', 'en': 'Not a recognisable SELF file (unknown magic): {pfad}'},
+    'ps4werkzeug.innenebene_unlesbar': {'de': 'Innenebene nicht lesbar', 'en': 'The inner layer could not be read'},
+    'payloadmod.nichts_erreichbar': {'de': 'Weder elfldr (Port {elfldr}) noch der Payload Manager (Port {pldmgr}) sind erreichbar.', 'en': 'Neither elfldr (port {elfldr}) nor the payload manager (port {pldmgr}) can be reached.'},
+    'prosperopkg.nicht_gefunden': {'de': 'prosperopkg wurde nicht gefunden (erwartet in {ordner}/{plattform}/).', 'en': 'prosperopkg was not found (expected in {ordner}/{plattform}/).'},
+    'backportmod.kein_elf_kein_self': {'de': 'kein ELF und kein SELF', 'en': 'neither an ELF nor a SELF'},
+    # Der Einzeiler nach der param.json-Prüfung.
+    'paramcheck.param_fehlt': {'de': 'param.json fehlt', 'en': 'param.json is missing'},
+    'paramcheck.param_unlesbar': {'de': 'param.json nicht lesbar: {grund}', 'en': 'param.json could not be read: {grund}'},
+    'paramcheck.param_in_ordnung': {'de': 'param.json in Ordnung', 'en': 'param.json is fine'},
+    'paramcheck.param_befunde': {'de': 'param.json: {teile}', 'en': 'param.json: {teile}'},
+    'paramcheck.grund_unbekannt': {'de': 'unbekannt', 'en': 'unknown'},
+    'paramcheck.anzahl_fehler': {'de': '{anzahl} Fehler', 'en': '{anzahl} error(s)'},
+    'paramcheck.anzahl_warnungen': {'de': '{anzahl} Warnung(en)', 'en': '{anzahl} warning(s)'},
+    'paramcheck.anzahl_hinweise': {'de': '{anzahl} Hinweis(e)', 'en': '{anzahl} note(s)'},
+    # Warum aus einem Ordner keine startfähige Kachel wird.
+    'appinstallmod.param_unlesbar': {'de': 'param.json nicht lesbar: {grund}', 'en': 'param.json could not be read: {grund}'},
+    'appinstallmod.param_kein_json': {'de': 'param.json ist kein gültiges JSON: {grund}', 'en': 'param.json is not valid JSON: {grund}'},
+    'appinstallmod.kein_ordner': {'de': 'Kein Ordner: {pfad}', 'en': 'Not a folder: {pfad}'},
+    'appinstallmod.eboot_fehlt': {'de': 'eboot.bin fehlt im Ordner.{zusatz}', 'en': 'eboot.bin is missing from the folder.{zusatz}'},
+    'appinstallmod.eboot_umbenennen': {'de': ' Gefunden: {dateien} – diese Datei müsste eboot.bin heißen.', 'en': ' Found: {dateien} – that file would have to be called eboot.bin.'},
+    'appinstallmod.param_sfo_statt_json': {'de': 'Der Ordner trägt eine PS4-param.sfo statt einer param.json. Dieser Weg braucht die PS5-Fassung.', 'en': 'The folder carries a PS4 param.sfo instead of a param.json. This route needs the PS5 version.'},
+    'appinstallmod.param_json_fehlt': {'de': 'sce_sys/param.json fehlt.', 'en': 'sce_sys/param.json is missing.'},
+    # Warum das Herunterfahren nicht ging.
+    'shutdown.reason_kein_befehl': {'de': 'kein Befehl verfügbar', 'en': 'no command available'},
+    'shutdown.reason_nicht_gefunden': {'de': '{befehl} nicht gefunden', 'en': '{befehl} not found'},
+    'shutdown.reason_fehlgeschlagen': {'de': '{befehl}: {grund}', 'en': '{befehl}: {grund}'},
+    'shutdown.reason_exit_code': {'de': '{befehl}: Exit {code}: {ausgabe}', 'en': '{befehl}: exit {code}: {ausgabe}'},
+    # Die Kurzbeschreibungen der param.json-/manifest.json-Schluessel.
+    # Sie stehen im Hinweisfeld des PARAM/MANIFEST-Fensters, sobald man
+    # eine Zeile anklickt. Das Modul behaelt die deutschen Fassungen als
+    # Rueckfall und als Liste der bekannten Schluessel.
+    'param_manifest.key_titleId': {'de': 'Title-ID, z.B. PPSA00000', 'en': 'Title ID, e.g. PPSA00000'},
+    'param_manifest.key_contentId': {'de': 'Content-ID, 36 Zeichen, z.B. UP0000-PPSA00000_00-0000000000000000', 'en': 'Content ID, 36 characters, e.g. UP0000-PPSA00000_00-0000000000000000'},
+    'param_manifest.key_conceptId': {'de': 'Concept-ID (Produktfamilie über mehrere Content-IDs hinweg)', 'en': 'Concept ID (product family spanning several content IDs)'},
+    'param_manifest.key_masterVersion': {'de': 'Master-Version, z.B. 01.00', 'en': 'Master version, e.g. 01.00'},
+    'param_manifest.key_contentVersion': {'de': 'Content-Version, z.B. 01.00', 'en': 'Content version, e.g. 01.00'},
+    'param_manifest.key_targetContentVersion': {'de': 'Ziel-Content-Version für Updates', 'en': 'Target content version for updates'},
+    'param_manifest.key_originContentVersion': {'de': 'Ursprüngliche Content-Version', 'en': 'Original content version'},
+    'param_manifest.key_versionFileUri': {'de': 'URI der Versionsdatei für Update-Prüfung', 'en': 'URI of the version file used for update checks'},
+    'param_manifest.key_applicationDrmType': {'de': 'DRM-Typ: standard/free/freemium', 'en': 'DRM type: standard/free/freemium'},
+    'param_manifest.key_applicationCategoryType': {'de': 'Kategorie-Typ (Ganzzahl)', 'en': 'Category type (integer)'},
+    'param_manifest.key_contentBadgeType': {'de': 'Badge-Typ (Ganzzahl)', 'en': 'Badge type (integer)'},
+    'param_manifest.key_attribute': {'de': 'Attribut-Flags (Ganzzahl)', 'en': 'Attribute flags (integer)'},
+    'param_manifest.key_attribute2': {'de': 'Attribut-Flags 2 (Ganzzahl)', 'en': 'Attribute flags 2 (integer)'},
+    'param_manifest.key_attribute3': {'de': 'Attribut-Flags 3 (Ganzzahl)', 'en': 'Attribute flags 3 (integer)'},
+    'param_manifest.key_downloadDataSize': {'de': 'Erwartete Download-Größe in Bytes', 'en': 'Expected download size in bytes'},
+    'param_manifest.key_deeplinkUri': {'de': 'Deeplink-URI', 'en': 'Deeplink URI'},
+    'param_manifest.key_requiredSystemSoftwareVersion': {'de': 'Mindest-Systemsoftware-Version (hex-kodiert)', 'en': 'Minimum system software version (hex-encoded)'},
+    'param_manifest.key_sdkVersion': {'de': 'Verwendete SDK-Version (hex-kodiert)', 'en': 'SDK version used (hex-encoded)'},
+    'param_manifest.key_userDefinedParam1': {'de': 'Benutzerdefinierter Parameter 1', 'en': 'User-defined parameter 1'},
+    'param_manifest.key_userDefinedParam2': {'de': 'Benutzerdefinierter Parameter 2', 'en': 'User-defined parameter 2'},
+    'param_manifest.key_userDefinedParam3': {'de': 'Benutzerdefinierter Parameter 3', 'en': 'User-defined parameter 3'},
+    'param_manifest.key_userDefinedParam4': {'de': 'Benutzerdefinierter Parameter 4', 'en': 'User-defined parameter 4'},
+    'param_manifest.key_localizedParameters': {'de': 'Objekt: defaultLanguage + je Sprache ein titleName', 'en': 'Object: defaultLanguage plus one titleName per language'},
+    'param_manifest.key_ageLevel': {'de': "Objekt: je Land ein Alterslevel plus 'default'", 'en': "Object: one age level per country plus 'default'"},
+    'param_manifest.key_gameIntent': {'de': 'Objekt: permittedIntents-Liste (launchActivity/joinSession)', 'en': 'Object: permittedIntents list (launchActivity/joinSession)'},
+    'param_manifest.key_addcont': {'de': 'Objekt: serviceIdForSharing-Liste für Zusatzinhalte', 'en': 'Object: serviceIdForSharing list for additional content'},
+    'param_manifest.key_pubtools': {'de': 'Objekt: creationDate/submission/toolVersion', 'en': 'Object: creationDate/submission/toolVersion'},
+    'param_manifest.key_applicationName': {'de': 'Anzeigename der Anwendung', 'en': 'Display name of the application'},
+    'param_manifest.key_applicationVersion': {'de': 'Versionsstring der Anwendung', 'en': 'Version string of the application'},
+    'param_manifest.key_commitHash': {'de': 'Commit-Hash des Builds', 'en': 'Commit hash of the build'},
+    'param_manifest.key_bootAnimation': {'de': 'Pfad/ID der Boot-Animation', 'en': 'Path/ID of the boot animation'},
+    'param_manifest.key_repositoryUrl': {'de': 'Quell-Repository-URL', 'en': 'Source repository URL'},
+    'param_manifest.key_reactNativePlaystationVersion': {'de': 'Version des React-Native-PlayStation-Frameworks', 'en': 'Version of the React Native PlayStation framework'},
+    'param_manifest.key_twinTurbo': {'de': 'Flag: TwinTurbo-Unterstützung (bool)', 'en': 'Flag: TwinTurbo support (bool)'},
+    'param_manifest.key_enableHttpCache': {'de': 'Flag: HTTP-Cache aktivieren (bool)', 'en': 'Flag: enable the HTTP cache (bool)'},
+    'param_manifest.key_enableAccessibility': {'de': 'Liste aktivierter Accessibility-Funktionen', 'en': 'List of enabled accessibility features'},
+    'param_manifest.key_applicationData': {'de': 'Objekt: u.a. branchType', 'en': 'Object: branchType among others'},
     'dialog.title.admin_required': {'de': 'Administratorrechte erforderlich', 'en': 'Administrator rights required'},
     'dialog.msg.conversion_aborted_unexpected': {'de': 'Die Konvertierung wurde durch einen unerwarteten Fehler\nabgebrochen:\n\n{error}', 'en': 'The conversion was aborted by an unexpected error:\n\n{error}'},
     'dialog.msg.restart_failed': {'de': 'Das Programm konnte nicht automatisch neu gestartet werden:\n{error}\n\nBitte starte das Programm manuell neu, damit das Design korrekt angezeigt wird.', 'en': 'The program could not be restarted automatically:\n{error}\n\nPlease restart it manually so the theme is displayed correctly.'},

@@ -168,6 +168,31 @@ RE_HEX64 = re.compile(r"^0x[0-9A-Fa-f]{16}$")
 RE_DATUM = re.compile(r"^\d{4}-\d{2}-\d{2}( \d{2}:\d{2}:\d{2})?$")
 
 
+#: Der Einzeiler, der nach der param.json-Prüfung im sichtbaren
+#: Protokollfeld steht - als Vorgabe. Die Oberfläche reicht über ``texte``
+#: die übersetzte Fassung herein; dieses Modul darf ``i18n`` nicht
+#: einbinden. Dasselbe Muster wie in ``pkg_merger.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "param_fehlt": "param.json fehlt",
+    "param_unlesbar": "param.json nicht lesbar: {grund}",
+    "param_in_ordnung": "param.json in Ordnung",
+    "param_befunde": "param.json: {teile}",
+    "grund_unbekannt": "unbekannt",
+    "anzahl_fehler": "{anzahl} Fehler",
+    "anzahl_warnungen": "{anzahl} Warnung(en)",
+    "anzahl_hinweise": "{anzahl} Hinweis(e)",
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
+
+
 # ---------------------------------------------------------------------------
 # Befund
 # ---------------------------------------------------------------------------
@@ -214,22 +239,32 @@ class Befund:
         """
         return not self.fehlt and not self.unlesbar and bool(self.fehler or self.warnungen)
 
-    def zusammenfassung(self) -> str:
-        """Einzeiler fuer das Protokoll."""
+    def zusammenfassung(self, texte: "dict[str, str] | None" = None) -> str:
+        """Einzeiler fuer das Protokoll.
+
+        Args:
+            texte: Vorlagen je Kennung; fehlt eine, gilt die aus
+                :data:`MELDUNGEN`. Der Satz steht im sichtbaren
+                Protokollfeld des Hauptfensters, nicht nur in der Datei.
+        """
         if self.fehlt:
-            return "param.json fehlt"
+            return _satz(texte, "param_fehlt")
         if self.unlesbar:
-            return "param.json nicht lesbar: " + (self.fehler[0] if self.fehler else "unbekannt")
+            return _satz(texte, "param_unlesbar",
+                         grund=(self.fehler[0] if self.fehler
+                                else _satz(texte, "grund_unbekannt")))
         if self.ok and not self.warnungen:
-            return "param.json in Ordnung"
+            return _satz(texte, "param_in_ordnung")
         teile = []
         if self.fehler:
-            teile.append(f"{len(self.fehler)} Fehler")
+            teile.append(_satz(texte, "anzahl_fehler", anzahl=len(self.fehler)))
         if self.warnungen:
-            teile.append(f"{len(self.warnungen)} Warnung(en)")
+            teile.append(_satz(texte, "anzahl_warnungen",
+                               anzahl=len(self.warnungen)))
         if self.hinweise:
-            teile.append(f"{len(self.hinweise)} Hinweis(e)")
-        return "param.json: " + ", ".join(teile)
+            teile.append(_satz(texte, "anzahl_hinweise",
+                               anzahl=len(self.hinweise)))
+        return _satz(texte, "param_befunde", teile=", ".join(teile))
 
     def als_text(self, mit_hinweisen: bool = True) -> list[str]:
         """Alle Befunde als Zeilenliste, jede mit vorangestelltem Schweregrad."""
