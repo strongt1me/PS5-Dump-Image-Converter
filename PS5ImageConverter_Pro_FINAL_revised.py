@@ -19202,12 +19202,12 @@ class PS5ConverterGUI:
             _overwrite_result = [False]  # Mutable container für Rückgabewert
 
             def _ask_overwrite() -> None:
-                fname = os.path.basename(output_exists_path)
+                # Bis zum 06.09.2026 standen Titel und Text hier fest auf
+                # Deutsch, obwohl es sie übersetzt gibt.
                 answer = messagebox.askyesno(
-                    "Datei überschreiben?",
-                    f"Die Ausgabedatei existiert bereits:\n\n"
-                    f"{fname}\n\n"
-                    f"Möchten Sie die Datei überschreiben?",
+                    self._t("dialog.title.file_already_exists"),
+                    self._t("dialog.msg.target_file_exists_overwrite_confirm",
+                            path=output_exists_path),
                 )
                 _overwrite_result[0] = answer
                 _overwrite_event.set()
@@ -19221,19 +19221,34 @@ class PS5ConverterGUI:
                 self._reset_ui_after_task()
                 return
 
-            # Ausgabe löschen (Datei ODER Ordner) damit mkpfs nicht erneut fragt
-            try:
-                if os.path.isdir(output_exists_path):
-                    _rmtree_force(output_exists_path, ignore_errors=False)
-                    self._append_to_log(self._t('log.auto.0076', v0=output_exists_path))
-                else:
-                    os.remove(output_exists_path)
-                    self._append_to_log(self._t('log.auto.0077', v0=output_exists_path))
-            except OSError as exc:
-                self._append_to_log(self._t('log.auto.0078', v0=exc))
-                self._set_status("Fehler.")
-                self._reset_ui_after_task()
-                return
+            # Ausgabe löschen (Datei ODER Ordner) damit mkpfs nicht erneut fragt.
+            #
+            # **Außer, das Ziel IST die Quelle.** Steht im Feld ZIEL derselbe
+            # Ordner, in dem die Quelle liegt – der Normalfall, wenn alles in
+            # einem Spieleordner liegt –, und trägt das Ergebnis denselben
+            # Namen, dann zeigt der "erwartete Ausgabepfad" auf die
+            # Quelldatei. Gemessen am 06.09.2026 für Aufgabe 4 mit Zielformat
+            # .ffpkg: os.remove hätte die Datei entfernt, aus der gerade
+            # gelesen werden soll – noch bevor ein Arbeitsschritt begonnen
+            # hat. Die Wege bauen ohnehin über eine Zwischendatei und
+            # übernehmen erst am Schluss mit os.replace; ein leeres Ziel
+            # brauchen sie nicht.
+            if os.path.normcase(os.path.abspath(output_exists_path)) == \
+                    os.path.normcase(os.path.abspath(src)):
+                self._append_to_log(self._t("log.ziel_ist_quelle") + "\n")
+            else:
+                try:
+                    if os.path.isdir(output_exists_path):
+                        _rmtree_force(output_exists_path, ignore_errors=False)
+                        self._append_to_log(self._t('log.auto.0076', v0=output_exists_path))
+                    else:
+                        os.remove(output_exists_path)
+                        self._append_to_log(self._t('log.auto.0077', v0=output_exists_path))
+                except OSError as exc:
+                    self._append_to_log(self._t('log.auto.0078', v0=exc))
+                    self._set_status("Fehler.")
+                    self._reset_ui_after_task()
+                    return
 
         success = False
         try:
@@ -19640,6 +19655,10 @@ class PS5ConverterGUI:
             )
             self._append_to_log(self._t('log.auto.0086', v0=self._FORMAT_LABELS.get(target_type, target_type)))
             all_ok = True
+            # Die Ueberschreib-Antwort gilt fuer diesen Lauf - und nur fuer
+            # ihn. Bliebe sie stehen, entschiede der vorige Lauf ueber die
+            # Dateien des naechsten, ohne dass jemand gefragt wird.
+            self._batch_ueberschreiben = None
             for idx, candidate in enumerate(sources, start=1):
                 if not self.is_running:
                     self._batch_von, self._batch_bis = 0.0, 100.0
@@ -19705,6 +19724,25 @@ class PS5ConverterGUI:
                         "ok": False,
                         "skipped": bereits_im_zielformat,
                         "detail": reason,
+                    })
+                    continue
+                # Ueberschreiben klaeren, BEVOR gebaut wird. In den Aufgaben
+                # 1-4 und 6 macht das _launch_task; die Sammelkonvertierung
+                # kam dort nie an, weil _get_expected_output_path fuer
+                # "batch_convert" None liefert. Der erste Packschritt loescht
+                # eine vorhandene Zieldatei dann kommentarlos - gemessen am
+                # 06.09.2026 war ein fertiges 10 500-Byte-Ergebnis nach einem
+                # gescheiterten Lauf restlos weg. Ausgerechnet hier, wo zehn
+                # Dateien in einen Ordner gehen und Namensgleichheit der
+                # Normalfall des Wiederholungslaufs ist.
+                if not self._batch_ueberschreiben_klaeren(candidate, dst,
+                                                          target_type):
+                    self.task_batch_results.append({
+                        "source": candidate,
+                        "output": "",
+                        "ok": False,
+                        "skipped": True,
+                        "detail": self._t("batch.uebersprungen_vorhanden"),
                     })
                     continue
                 converted = self._execute_conversion_by_type(
@@ -20500,6 +20538,63 @@ class PS5ConverterGUI:
             return ok
         finally:
             _rmtree_force(temp_root)
+
+    def _batch_ueberschreiben_klaeren(self, quelle: str, ziel_ordner: str,
+                                      zielformat: str) -> bool:
+        """Fragt in der Sammelkonvertierung, ob eine vorhandene Datei weichen darf.
+
+        **Warum es das gibt.** In den übrigen Aufgaben erledigt das
+        ``_launch_task`` über :meth:`_get_expected_output_path`. Für
+        ``batch_convert`` liefert die Methode aber ``None`` – dort ist zum
+        Startzeitpunkt noch nicht bekannt, welche Dateien überhaupt
+        drankommen. Die Folge war, dass der ganze Überschreib-Block
+        übersprungen wurde und der erste Packschritt eine vorhandene
+        Zieldatei kommentarlos entfernte, bevor der neue Lauf begann.
+
+        **Einmal fragen reicht.** Wer zehn Dateien einfügt, soll nicht zehn
+        Fenster wegklicken: Die Antwort gilt für den ganzen Lauf und wird in
+        ``_batch_ueberschreiben`` gemerkt. Ohne Oberfläche (Automatisierung,
+        ``--cli``) wird nicht gefragt und überschrieben – dort hat der
+        Aufrufer die Entscheidung schon getroffen.
+
+        Returns:
+            True, wenn gebaut werden darf; False, wenn diese Datei
+            übersprungen werden soll.
+        """
+        name = os.path.splitext(os.path.basename(quelle))[0]
+        endung = {"folder": "", "ffpfsc": ".ffpfsc", "ffpfs": ".ffpfs",
+                  "exfat": ".exfat", "ffpkg": ".ffpkg"}.get(zielformat)
+        if endung is None:
+            return True
+        ziel = os.path.join(ziel_ordner, name + endung)
+        if not os.path.exists(ziel):
+            return True
+        # Ziel und Quelle sind dieselbe Datei - kein Grund zu fragen, die
+        # Wege bauen daneben und ersetzen erst am Schluss.
+        if os.path.normcase(os.path.abspath(ziel)) == \
+                os.path.normcase(os.path.abspath(quelle)):
+            return True
+
+        gemerkt = getattr(self, "_batch_ueberschreiben", None)
+        if gemerkt is not None:
+            if not gemerkt:
+                self._append_to_log(
+                    self._t("batch.uebersprungen_vorhanden") + "\n")
+            return bool(gemerkt)
+
+        # Ohne Fenster nicht fragen: Automatisierung und --cli haben die
+        # Entscheidung schon getroffen. Auf _ask_yesno_threadsafe zu prüfen
+        # hilft dabei nicht - die Methode gehört zur Klasse und ist immer
+        # da; gerufen stürzt sie ohne Fenster ab.
+        if getattr(self, "root", None) is None:
+            return True
+        antwort = bool(self._ask_yesno_threadsafe(
+            self._t("dialog.title.file_already_exists"),
+            self._t("batch.ueberschreiben_frage", pfad=ziel)))
+        self._batch_ueberschreiben = antwort
+        if not antwort:
+            self._append_to_log(self._t("batch.uebersprungen_vorhanden") + "\n")
+        return antwort
 
     def _get_expected_output_path(self, mode: str, src: str, dst: str) -> str | None:
         """Berechnet den erwarteten Ausgabepfad für den gewählten Modus.
@@ -23761,16 +23856,37 @@ class PS5ConverterGUI:
                             os.chmod(final_out, _stat.S_IWRITE | _stat.S_IREAD)
                         except Exception as exc:
                             logger.debug("Datei-Berechtigungen konnten nicht gesetzt werden: %s", exc)
-                        os.remove(final_out)
+                        # Hier stand bis zum 06.09.2026 ein os.remove(final_out)
+                        # – der Container war weg, bevor der neue gebaut war.
+                        # Scheiterte der Bau oder brach der Anwender ab, hatte
+                        # er nichts mehr. Gebaut wird jetzt daneben.
 
-                    self._wait_for_pending_mkpfs_background(final_out)
-                    self._cleanup_stale_mkpfs_output(final_out)
+                    # Daneben bauen, erst am Schluss übernehmen. os.replace
+                    # ist auf demselben Datenträger unteilbar: Entweder steht
+                    # die neue Datei da oder die alte – nie ein Rumpf.
+                    bau_ziel = final_out + ".neu"
+                    self._wait_for_pending_mkpfs_background(bau_ziel)
+                    self._cleanup_stale_mkpfs_output(bau_ziel)
                     ok = _repack_nested_ffpfsc(
-                        search_root, final_out, self._bauform_der_quelle(src))
+                        search_root, bau_ziel, self._bauform_der_quelle(src))
                     if ok:
+                        try:
+                            os.replace(bau_ziel, final_out)
+                        except OSError as exc:
+                            self._append_to_log(self._t('log.auto.0206'))
+                            logger.warning("Uebernahme fehlgeschlagen (%s): %s",
+                                           bau_ziel, exc)
+                            return False
                         self._append_to_log(self._t('log.auto.0205', v0=final_out))
                         self.task_final_output_path = final_out
                     else:
+                        # Der halbe Bau darf nicht liegenbleiben - beim
+                        # naechsten Lauf saehe er wie ein Ergebnis aus.
+                        try:
+                            if os.path.isfile(bau_ziel):
+                                os.remove(bau_ziel)
+                        except OSError as exc:
+                            logger.debug("Rest nicht entfernbar (%s): %s", bau_ziel, exc)
                         self._append_to_log(self._t('log.auto.0206'))
                         return False
 
@@ -23793,20 +23909,34 @@ class PS5ConverterGUI:
                             os.chmod(final_out, stat.S_IWRITE | stat.S_IREAD)
                         except Exception as exc:
                             logger.debug("Datei-Berechtigungen (fakelib) konnten nicht gesetzt werden: %s", exc)
-                        os.remove(final_out)
+                        # Auch hier stand ein os.remove(final_out) vor dem Bau
+                        # – siehe den .ffpfsc-Zweig darüber.
 
                     self._append_to_log(self._t('log.auto.0207'))
                     # Schritte 3+4 (40–98%) im 4-Schritte-Plan
                     self.task_current_step = max(self.task_current_step, 3)
                     self.task_progress = max(self.task_progress, 40.0)
+                    bau_ziel = final_out + ".neu"
                     ok = self._create_exfat_from_folder(
-                        search_root, final_out,
+                        search_root, bau_ziel,
                         pct_start=40.0, pct_end=98.0,
                     )
                     if ok:
+                        try:
+                            os.replace(bau_ziel, final_out)
+                        except OSError as exc:
+                            self._append_to_log(self._t('log.auto.0208'))
+                            logger.warning("Uebernahme fehlgeschlagen (%s): %s",
+                                           bau_ziel, exc)
+                            return False
                         self._append_to_log(self._t('log.auto.0205', v0=final_out))
                         self.task_final_output_path = final_out
                     else:
+                        try:
+                            if os.path.isfile(bau_ziel):
+                                os.remove(bau_ziel)
+                        except OSError as exc:
+                            logger.debug("Rest nicht entfernbar (%s): %s", bau_ziel, exc)
                         self._append_to_log(self._t('log.auto.0208'))
                         return False
 
