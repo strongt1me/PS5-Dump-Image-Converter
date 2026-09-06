@@ -76,125 +76,97 @@ class Pruefstand:
     # den Klassennamen rief. Hier kommen sie aus dem Erzeuger, also braucht
     # sie die Instanz. Die Weiterleitung bleibt statisch und baut sich
     # einen Pruefstand aus den beiden - sie sind dort ebenfalls statisch.
+    #: Was jede Aufgabe als Quelle erwartet - der erste Satz jeder Meldung.
+    #: Fehlt eine Aufgabe hier, gilt sie als "nimmt alles" und wird nicht
+    #: beanstandet; das ist die bisherige Bedeutung eines fehlenden Zweigs.
+    _WAS_ERWARTET = {
+        "pack_folder": "srccheck.what.pack_folder",
+        "unpack_to_exfat": "srccheck.what.unpack_to_exfat",
+        "pack_file": "srccheck.what.pack_file",
+        "ffpkg_to_ffpfsc": "srccheck.what.ffpkg_to_ffpfsc",
+        "universal_convert": "srccheck.what.universal_convert",
+        "unpack_to_game_folder": "srccheck.what.unpack_to_game_folder",
+        "inspect": "srccheck.what.inspect",
+        "exfat_to_folder": "srccheck.what.exfat_to_folder",
+    }
+
+    #: Die Endungen, die eine Aufgabe annimmt. Leer heisst: Ordner erwartet.
+    _ENDUNGEN = {
+        "unpack_to_exfat": (".ffpfsc", ".ffpfs"),
+        "pack_file": (".exfat",),
+        "ffpkg_to_ffpfsc": (".ffpkg",),
+        "unpack_to_game_folder": (".ffpfsc", ".ffpfs"),
+        "inspect": (".ffpfsc", ".ffpfs"),
+        "exfat_to_folder": (".exfat",),
+    }
+
+    #: Was Aufgabe 5, 6, 7 und 8 an Dateien durchlassen.
+    _ALLE_ABBILDER = (".ffpfsc", ".ffpfs", ".exfat", ".ffpkg")
+
     def _validate_source_path(self, path: str, mode: str) -> str:
-        """Prüft ob der Quellpfad den Regeln für den gewählten Modus entspricht.
+        """Prueft ob der Quellpfad den Regeln fuer den gewaehlten Modus entspricht.
+
+        Bis zum 06.09.2026 standen hier zweiundzwanzig fertige deutsche
+        Saetze - obwohl dieses Modul seinen Uebersetzer laengst uebergeben
+        bekommt (``text=`` im Erzeuger). Wer das Programm auf Englisch
+        stellte, bekam beim Fehlgriff auf die Quelle trotzdem Deutsch.
+
+        Die Saetze sind jetzt in sieben Satzformen und je Aufgabe einen
+        Baustein zerlegt. Das spart nicht nur Schluessel: Bisher hiess es im
+        einen Zweig ".ffpfsc Datei" und im naechsten ".ffpfsc/.ffpfs Datei"
+        fuer dieselbe Aufgabe - die Bausteine koennen nicht auseinanderlaufen.
 
         Returns:
-            Leerer String wenn gültig, sonst Fehlermeldung.
+            Leerer String wenn gueltig, sonst Fehlermeldung.
         """
+        was = self._WAS_ERWARTET.get(mode, "")
+
+        # Die Aufgaben, die genau einen Typ verlangen: Ordner oder Datei mit
+        # bestimmter Endung. Frueher stand jeder dieser Zweige einzeln da.
         if mode == "pack_folder":
             if not os.path.isdir(path):
-                return (
-                    "Aufgabe 1 erfordert einen Game Dump Ordner als Quelle.\n"
-                    f"Der gewählte Pfad ist kein Ordner:\n{path}"
-                )
-        elif mode == "unpack_to_exfat":
+                return self._t("srccheck.not_a_folder",
+                               what=self._t(was), path=path)
+            return ""
+        if mode in self._ENDUNGEN:
+            endungen = self._ENDUNGEN[mode]
             if not os.path.isfile(path):
-                return (
-                    "Aufgabe 2 akzeptiert eine .ffpfsc Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Aufgabe 2 akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "pack_file":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 3 erfordert eine .exfat Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".exfat"):
-                return (
-                    "Aufgabe 3 erfordert eine .exfat Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .exfat:\n"
-                    f"{os.path.basename(path)}"
-                )
-        # Die folgenden Modi sind interne Konvertierungspfade ohne eigenen
-        # Eintrag in _MODE_OPTIONS – sie werden aus mehreren Aufgaben heraus
-        # aufgerufen. Deshalb nennen die Meldungen den erwarteten Quelltyp
-        # statt einer festen Aufgabennummer.
-        elif mode == "unpack_to_game_folder":
-            if not os.path.isfile(path):
-                return (
-                    "Dieser Schritt akzeptiert eine .ffpfsc Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Dieser Schritt akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n"
-                    "(Ausgabe von Aufgabe 1 oder Aufgabe 3).\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "inspect":
-            if not os.path.isfile(path):
-                return (
-                    "Die Metadaten-Anzeige erfordert eine .ffpfsc Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith((".ffpfsc", ".ffpfs")):
-                return (
-                    "Die Metadaten-Anzeige erfordert eine .ffpfsc/.ffpfs Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpfsc/.ffpfs:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "dump_validator":
+                return self._t("srccheck.not_a_file",
+                               what=self._t(was), path=path)
+            if not path.lower().endswith(endungen):
+                return self._t("srccheck.wrong_extension",
+                               what=self._t(was), ext="/".join(endungen),
+                               name=os.path.basename(path))
+            return ""
+
+        if mode == "dump_validator":
             # Akzeptiert: Ordner (Game Dump), .ffpfsc/.ffpfs, .exfat oder .ffpkg
             if os.path.isdir(path):
-                pass
-            elif os.path.isfile(path):
-                ext = path.lower()
-                if not (
-                    ext.endswith(".ffpfsc")
-                    or ext.endswith(".ffpfs")
-                    or ext.endswith(".exfat")
-                    or ext.endswith(".ffpkg")
-                ):
-                    return (
-                        "Aufgabe 8 (Dump Validator) akzeptiert:\n"
-                        "  \u2022 Game Dump Ordner\n"
-                        "  \u2022 .ffpfsc/.ffpfs Datei\n"
-                        "  \u2022 .exfat Datei\n"
-                        "  \u2022 .ffpkg Datei\n\n"
-                        f"Die gew\u00e4hlte Datei hat keine g\u00fcltige Endung:\n"
-                        f"{os.path.basename(path)}"
-                    )
-            else:
-                return (
-                    "Aufgabe 8 (Dump Validator): Quelle nicht gefunden.\n"
-                    f"{path}"
-                )
-        elif mode == "exfat_to_folder":
-            if not os.path.isfile(path):
-                return (
-                    "Dieser Schritt erfordert eine .exfat Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".exfat"):
-                return (
-                    "Dieser Schritt erfordert eine .exfat Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .exfat:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "ffpkg_to_ffpfsc":
-            if not os.path.isfile(path):
-                return (
-                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
-                    f"Der gewählte Pfad ist keine Datei:\n{path}"
-                )
-            if not path.lower().endswith(".ffpkg"):
-                return (
-                    "Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.\n"
-                    f"Die gewählte Datei hat nicht die Endung .ffpkg:\n"
-                    f"{os.path.basename(path)}"
-                )
-        elif mode == "batch_convert":
+                return ""
+            if os.path.isfile(path):
+                if not path.lower().endswith(self._ALLE_ABBILDER):
+                    return self._t("srccheck.no_valid_extension",
+                                   what=self._t("srccheck.what.dump_validator"),
+                                   name=os.path.basename(path))
+                return ""
+            return self._t("srccheck.task_source_missing",
+                           what=self._t("srccheck.what.dump_validator_short"),
+                           path=path)
+
+        if mode == "ampr_manager":
+            if os.path.isdir(path):
+                return ""
+            if os.path.isfile(path):
+                if not path.lower().endswith(self._ALLE_ABBILDER):
+                    return self._t("srccheck.no_valid_extension",
+                                   what=self._t("srccheck.what.ampr_manager"),
+                                   name=os.path.basename(path))
+                return ""
+            return self._t("srccheck.task_source_missing",
+                           what=self._t("srccheck.what.ampr_manager_short"),
+                           path=path)
+
+        if mode == "batch_convert":
             # Ordner sind ausdruecklich erlaubt - entweder ein Game Dump
             # selbst oder ein Ordner voller Dumps/Abbilder. Die Weiche
             # darunter kennt den Quelltyp "folder" mit vier eigenen
@@ -205,67 +177,31 @@ class Pruefstand:
                     return ""
                 if self._sammel_ordner_inhalt(path):
                     return ""
-                return (
-                    "Aufgabe 5 akzeptiert Game Dump Ordner, Ordner voller\n"
-                    "Dumps/Abbilder oder .ffpfsc/.ffpfs/.exfat/.ffpkg Dateien.\n"
-                    f"In diesem Ordner steht nichts davon:\n{path}"
-                )
+                return self._t("srccheck.nothing_in_folder",
+                               what=self._t("srccheck.what.batch_folder"),
+                               path=path)
             if not os.path.isfile(path):
-                return (
-                    "Aufgabe 5 akzeptiert mehrere Dateien oder Ordner als Quelle.\n"
-                    f"Der gewählte Pfad wurde nicht gefunden:\n{path}"
-                )
-            ext = path.lower()
-            if not (
-                ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-            ):
-                return (
-                    "Aufgabe 5 akzeptiert nur .ffpfsc, .ffpfs, .exfat oder .ffpkg\n"
-                    "Dateien sowie Game Dump Ordner.\n"
-                    f"Ungültige Datei:\n{os.path.basename(path)}"
-                )
-        elif mode == "universal_convert":
+                return self._t("srccheck.path_not_found",
+                               what=self._t("srccheck.what.batch_convert"),
+                               path=path)
+            if not path.lower().endswith(self._ALLE_ABBILDER):
+                return self._t("srccheck.invalid_file",
+                               what=self._t("srccheck.what.batch_files"),
+                               name=os.path.basename(path))
+            return ""
+
+        if mode == "universal_convert":
             if os.path.isdir(path):
                 return ""
             if not os.path.isfile(path):
-                return (
-                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.ffpfs/.exfat/.ffpkg Datei.\n"
-                    f"Die Quelle wurde nicht gefunden:\n{path}"
-                )
-            ext = path.lower()
-            if not (
-                ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-            ):
-                return (
-                    "Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.ffpfs/.exfat/.ffpkg Datei.\n"
-                    f"Ungültige Datei:\n{os.path.basename(path)}"
-                )
-        elif mode == "ampr_manager":
-            # Akzeptiert: Ordner (Game Dump), .ffpfsc/.ffpfs, .exfat oder .ffpkg
-            if os.path.isdir(path):
-                pass  # Ordner ist immer gültig
-            elif os.path.isfile(path):
-                ext = path.lower()
-                if not (
-                    ext.endswith(".ffpfsc") or ext.endswith(".ffpfs")
-                    or ext.endswith(".exfat") or ext.endswith(".ffpkg")
-                ):
-                    return (
-                        "Aufgabe 7 (fakelib Manager) akzeptiert:\n"
-                        "  \u2022 Game Dump Ordner\n"
-                        "  \u2022 .ffpfsc/.ffpfs Datei\n"
-                        "  \u2022 .exfat Datei\n\n"
-                        f"Die gew\u00e4hlte Datei hat keine g\u00fcltige Endung:\n"
-                        f"{os.path.basename(path)}"
-                    )
-            else:
-                return (
-                    "Aufgabe 7 (fakelib Manager): Quelle nicht gefunden.\n"
-                    f"{path}"
-                )
+                return self._t("srccheck.source_not_found",
+                               what=self._t(was), path=path)
+            if not path.lower().endswith(self._ALLE_ABBILDER):
+                return self._t("srccheck.invalid_file",
+                               what=self._t(was),
+                               name=os.path.basename(path))
         return ""
+
 
     def _validate_ffpkg_artifact(
         self, image_path: str, *, base_result: dict[str, Any] | None = None

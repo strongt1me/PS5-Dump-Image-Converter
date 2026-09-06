@@ -5008,7 +5008,7 @@ class PS5ConverterGUI:
         if deleted_count > 0:
             self._append_to_log(self._t('log.auto.0008', v0=deleted_count))
             try:
-                self.root.after(0, lambda: self._set_status("Startup-Cleanup abgeschlossen."))
+                self.root.after(0, lambda: self._set_status(self._t("status.startup_cleanup_done")))
             except Exception:
                 pass
 
@@ -5086,22 +5086,22 @@ class PS5ConverterGUI:
         warnings: list[str] = []
 
         if not os.path.exists(src):
-            errors.append(f"Quelle nicht gefunden: {src}")
+            errors.append(self._t("preflight.source_missing", path=src))
 
         if len(os.path.abspath(src)) > 240:
-            warnings.append("Quellpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.")
+            warnings.append(self._t("preflight.source_path_too_long"))
         if dst and len(os.path.abspath(dst)) > 240:
-            warnings.append("Zielpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.")
+            warnings.append(self._t("preflight.dest_path_too_long"))
 
         try:
             tmp_dir = self._get_runtime_temp_dir()
             free_tmp = shutil.disk_usage(tmp_dir).free
             if free_tmp < 4 * 1024 ** 3:
-                warnings.append(
-                    f"Temp-Ordner hat wenig freien Speicher: {self._fmt_bytes(int(free_tmp))}."
-                )
+                warnings.append(self._t(
+                    "preflight.temp_low_space",
+                    size=self._fmt_bytes(int(free_tmp))))
         except Exception as exc:
-            warnings.append(f"Temp-Ordner konnte nicht geprüft werden: {exc}")
+            warnings.append(self._t("preflight.temp_check_failed", error=exc))
 
         if mode not in ("inspect", "dump_validator") and dst and os.path.isdir(dst):
             try:
@@ -5112,23 +5112,21 @@ class PS5ConverterGUI:
                     estimated = self._estimate_unpack_space_requirement(src)
                     if estimated is not None and estimated > min_required:
                         min_required = estimated
-                        detail_suffix = (
-                            f" Geschätzter Bedarf: {self._fmt_bytes(estimated)} "
-                            f"(das entpackte Innenimage kann kurzzeitig zusätzlich zu den "
-                            f"bereits verschobenen Dateien vorliegen)."
-                        )
+                        detail_suffix = self._t(
+                            "preflight.dest_estimated_need",
+                            size=self._fmt_bytes(estimated))
                 if free_dst < min_required:
-                    warnings.append(
-                        f"Zielordner hat wenig freien Speicher: {self._fmt_bytes(int(free_dst))}."
-                        f"{detail_suffix}"
-                    )
+                    warnings.append(self._t(
+                        "preflight.dest_low_space",
+                        size=self._fmt_bytes(int(free_dst)),
+                        detail=detail_suffix))
             except Exception as exc:
-                warnings.append(f"Zielspeicher konnte nicht geprüft werden: {exc}")
+                warnings.append(self._t("preflight.dest_check_failed", error=exc))
 
         if mode in ("unpack_to_exfat", "exfat_to_folder"):
             osf = self._find_osfmount()
             if not osf:
-                warnings.append("OSFMount nicht gefunden: Fallbacks/Teilschritte können langsamer oder unmöglich sein.")
+                warnings.append(self._t("preflight.osfmount_missing"))
 
         fehlend = self._missing_critical_dump_files(mode, src)
         if fehlend:
@@ -5234,12 +5232,12 @@ class PS5ConverterGUI:
         ):
             return ""
         if not target_type:
-            return "Bitte ein Zielformat auswählen."
+            return self._t("conversion.choose_target_format")
 
         if mode == "batch_convert":
             sources = list(getattr(self, "_batch_sources", []) or [])
             if not sources:
-                return "Bitte zuerst mehrere Quelldateien auswählen."
+                return self._t("conversion.choose_sources_first")
             # Eine gemischte Auswahl ist der Normalfall der Sammelkonvertierung.
             # Frueher genuegte EIN Eintrag, der bereits das Zielformat hatte, um
             # den gesamten Lauf abzulehnen - obwohl die uebrigen Quellen sauber
@@ -5284,14 +5282,14 @@ class PS5ConverterGUI:
         self, source_type: str, target_type: str, mode: str = "", source_path: str = ""
     ) -> str:
         if not source_type:
-            return "Quelltyp konnte nicht erkannt werden."
+            return self._t("conversion.source_type_unknown")
         # Fuer den Identitaetsvergleich die genaue Endung heranziehen, sofern der
         # Pfad bekannt ist (.ffpfs vs. .ffpfsc, siehe _detect_source_format).
         genau = self._detect_source_format(source_path) if source_path else source_type
         if genau == target_type and target_type not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
-            return "Quelle und Zielformat sind identisch. Bitte ein anderes Zielformat wählen."
+            return self._t("conversion.same_format")
         if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
-            return "Das gewählte Zielformat ist unbekannt."
+            return self._t("conversion.target_format_unknown")
         unsupported = self._UNSUPPORTED_TARGET_HINTS.get((genau, target_type), "")
         if unsupported:
             return unsupported
@@ -6852,7 +6850,7 @@ class PS5ConverterGUI:
             )
         elif mode == "ampr_manager" and hasattr(self, "status_label"):
             self.status_label.config(
-                text="Aufgabe 7: AMPR EMU Manager – Dump-Ordner oder .ffpfsc/.exfat/.ffpkg wählen, oder den AMPR Picker für die PS5 nutzen."
+                text=self._t("main.status_ampr_manager")
             )
         # Trigger Metadaten-Check
         self._on_source_path_changed()
@@ -10382,7 +10380,7 @@ class PS5ConverterGUI:
             self.source_path.set(paths[0])
             if hasattr(self, "status_label"):
                 self.status_label.config(
-                    text=f"{len(paths)} Datei(en) für Aufgabe 5 ausgewählt (Drag & Drop)."
+                    text=self._t("main.status_batch_selected_dnd", count=len(paths))
                 )
             return
 
@@ -10444,12 +10442,12 @@ class PS5ConverterGUI:
         if mode == "pack_folder":
             # Aufgabe 1: nur Ordner
             path = filedialog.askdirectory(
-                title="Game Dump Ordner auswählen",
+                title=self._t("filedialog.choose_dump_folder"),
                 initialdir=initial_dir,
             )
         elif mode == "batch_convert":
             paths = filedialog.askopenfilenames(
-                title="Mehrere .FFPFSC/.FFPFS/.exFAT/.FFPKG Dateien auswählen",
+                title=self._t("filedialog.choose_multiple_sources"),
                 initialdir=initial_dir,
                 filetypes=[
                     (self._t("filetype.ps5_image"), "*.ffpfsc *.ffpfs *.exfat *.ffpkg"),
@@ -10473,7 +10471,7 @@ class PS5ConverterGUI:
             self.source_path.set(normalized_paths[0])
             if hasattr(self, "status_label"):
                 self.status_label.config(
-                    text=f"{len(normalized_paths)} Datei(en) für Aufgabe 5 ausgewählt."
+                    text=self._t("main.status_batch_selected", count=len(normalized_paths))
                 )
             return
         elif mode == "universal_convert":
@@ -10608,15 +10606,18 @@ class PS5ConverterGUI:
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
 
-    @staticmethod
-    def _validate_source_path(path: str, mode: str) -> str:
+    def _validate_source_path(self, path: str, mode: str) -> str:
         """Prueft eine Quelle. Siehe abbild_pruefen.
 
-        Bleibt @staticmethod - test_sammel_ordner ruft sie an der Klasse.
-        Ihre beiden Helfer sind dort ebenfalls statisch, deshalb laesst sich
-        der Pruefstand auch ohne Instanz bauen.
+        War bis zum 06.09.2026 eine ``@staticmethod`` - mit der Begruendung,
+        ein Test rufe sie an der Klasse. Dieser Test gibt es nicht (mehr),
+        und ohne Instanz gab es auch kein ``self._t``: Der Pruefstand wurde
+        ohne ``text=`` gebaut und meldete deshalb die deutschen Vorgaben
+        des Moduls, auch wenn das Programm auf Englisch lief. Alle sechs
+        Aufrufstellen im Programm rufen ohnehin ueber ``self``.
         """
         return abbild_pruefen.Pruefstand(
+            text=self._t,
             sieht_aus_wie_dump=PS5ConverterGUI._looks_like_dump_folder,
             ordner_inhalt=PS5ConverterGUI._sammel_ordner_inhalt,
         )._validate_source_path(path, mode)
@@ -11036,10 +11037,9 @@ class PS5ConverterGUI:
                         self.root.after(
                             0,
                             lambda d=copied, t=expected_size: self.status_label.config(
-                                text=(
-                                    "Phase 4/4 – Verschiebe fertige Ausgabe ins Zielverzeichnis... "
-                                    f"{self._fmt_bytes(d)} / {self._fmt_bytes(t)}"
-                                )
+                                text=self._t("status.phase4_move_output",
+                                             done=self._fmt_bytes(d),
+                                             total=self._fmt_bytes(t))
                             ),
                         )
                     if now - last_log_ts >= 8.0:
@@ -11373,7 +11373,7 @@ class PS5ConverterGUI:
                 self._cached_title_id = ""
                 for _k, _var in self._meta_labels.items():
                     if _k == "title":
-                        _var.set("Quelle wählen...")
+                        _var.set(self._t("main.info_choose_source"))
                     else:
                         _var.set("–")
                 self._info_src_size_var.set("–")
@@ -18121,7 +18121,7 @@ class PS5ConverterGUI:
             'recovery', 'perflogs', 'msocache',
         }
         try:
-            self._set_status("FileZilla wird gesucht...")
+            self._set_status(self._t("status.filezilla_searching"))
         except Exception:
             pass
 
@@ -18533,10 +18533,10 @@ class PS5ConverterGUI:
                 allow_popup = not bool(getattr(self, "is_running", False))
                 if ok:
                     if already_installed:
-                        self._set_status(f"{display_title} ist bereits installiert und einsatzbereit.")
+                        self._set_status(self._t("status.tool_already_installed", tool=display_title))
                         # Bei "bereits installiert" nie Popup: nur Status/Log.
                     else:
-                        self._set_status(f"{display_title} wurde erfolgreich installiert und ist einsatzbereit.")
+                        self._set_status(self._t("status.tool_installed", tool=display_title))
                         if allow_popup:
                             messagebox.showinfo(
                                 self._t("dialog.title.installed_suffix", title=display_title),
@@ -19274,7 +19274,7 @@ class PS5ConverterGUI:
                         self._append_to_log(self._t('log.auto.0077', v0=output_exists_path))
                 except OSError as exc:
                     self._append_to_log(self._t('log.auto.0078', v0=exc))
-                    self._set_status("Fehler.")
+                    self._set_status(self._t("status.error"))
                     self._reset_ui_after_task()
                     return
 
@@ -19563,7 +19563,7 @@ class PS5ConverterGUI:
                     },
                 )
             else:
-                self._set_status("Fehler aufgetreten.")
+                self._set_status(self._t("status.error_occurred"))
                 self._reset_ui_after_task()
                 verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
                 report_path = self._write_task_report(
@@ -19610,11 +19610,10 @@ class PS5ConverterGUI:
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0084', v0=exc))
             logger.exception("Unerwarteter Fehler im Engine-Thread")
-            self._set_status("Fehler.")
+            self._set_status(self._t("status.error"))
             self.root.after(0, lambda e=str(exc): messagebox.showerror(
-                "Unerwarteter Fehler",
-                f"Die Konvertierung wurde durch einen unerwarteten Fehler\n"
-                f"abgebrochen:\n\n{e[:300]}",
+                self._t("dialog.title.unexpected_error"),
+                self._t("dialog.msg.conversion_aborted_unexpected", error=e[:300]),
             ))
             self._reset_ui_after_task()
             verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
@@ -20710,7 +20709,7 @@ class PS5ConverterGUI:
         # ----------------------------------------------------------------
         # PHASE 1 – Vorbereitung (0 – 5 %)
         # ----------------------------------------------------------------
-        _set_status("Phase 1/4 – Vorbereitung...")
+        _set_status(self._t("status.phase1_prepare"))
         _set_pct(0.5)
 
         if not os.path.isdir(src):
@@ -20767,7 +20766,7 @@ class PS5ConverterGUI:
             return False
         _set_pct(3.0)
         _set_pct(_P1_END)
-        _set_status("Phase 1/4 – Vorbereitung abgeschlossen.")
+        _set_status(self._t("status.phase1_prepare_done"))
 
         if not self.is_running:
             return False
@@ -20885,7 +20884,7 @@ class PS5ConverterGUI:
         self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
         set_pct(p3_end)
         set_status(self._t("status.pack_folder_exfat_done"))
-        set_status("Phase 4/4 – Abschlussprüfung läuft...")
+        set_status(self._t("status.phase4_final_check"))
         set_pct(96.0)
         return True
 
@@ -21009,7 +21008,7 @@ class PS5ConverterGUI:
         self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
         set_pct(p3_end)
         set_status(self._t("status.pack_folder_flach_done"))
-        set_status("Phase 4/4 – Abschlussprüfung läuft...")
+        set_status(self._t("status.phase4_final_check"))
         set_pct(96.0)
         return True
 
@@ -21086,7 +21085,7 @@ class PS5ConverterGUI:
         if cp_temp_exfat and os.path.isfile(cp_temp_exfat):
             self._append_to_log(self._t('log.auto.0116'))
 
-        set_status("Phase 2/4 – Erstelle unkomprimiertes inneres PFS...")
+        set_status(self._t("status.phase2_inner_pfs"))
         _outer_desc = "unkomprimierter" if uncompressed else "komprimierter"
         self._append_to_log(self._t('log.auto.0117', v0=_outer_desc))
         self.task_num_steps = 2
@@ -21130,7 +21129,7 @@ class PS5ConverterGUI:
             if not inner_ok or not self.is_running or not os.path.isfile(temp_pfs):
                 return False
 
-            set_status("Phase 3/4 – Komprimiere äußeren FFPFSC-Container...")
+            set_status(self._t("status.phase3_compress_outer"))
             self._save_runtime_checkpoint(
                 mode="pack_folder",
                 src=src,
@@ -21172,8 +21171,8 @@ class PS5ConverterGUI:
             self.task_final_output_path = actual_output
             self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
             set_pct(p3_end)
-            set_status("Phase 3/4 – Außencontainer abgeschlossen.")
-            set_status("Phase 4/4 – Abschlussprüfung läuft...")
+            set_status(self._t("status.phase3_outer_done"))
+            set_status(self._t("status.phase4_final_check"))
             set_pct(96.0)
             return True
         finally:
@@ -21438,7 +21437,7 @@ class PS5ConverterGUI:
                 # Ergebnis beschreibt den Stand, den der Ordner am Ende
                 # wirklich hat.
                 self._validator_param_json_anbieten(src)
-                self.root.after(0, lambda: self.status_label.config(text="Validator – Dump-Ordner prüfen..."))
+                self.root.after(0, lambda: self.status_label.config(text=self._t("status.validator_dump_folder")))
                 self.task_total_source_bytes = self._get_path_size(src)
                 self.progress_engine.begin_payload(
                     max(1, self.task_total_source_bytes),
@@ -21458,7 +21457,7 @@ class PS5ConverterGUI:
             elif is_exfat:
                 self._append_to_log(self._t('log.auto.0130'))
                 self._append_to_log(self._t('log.auto.0131'))
-                self.root.after(0, lambda: self.status_label.config(text="Validator – .exfat prüfen..."))
+                self.root.after(0, lambda: self.status_label.config(text=self._t("status.validator_exfat")))
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
@@ -21473,7 +21472,7 @@ class PS5ConverterGUI:
             elif is_ffpfsc:
                 self._append_to_log(self._t('log.auto.0132'))
                 self._append_to_log(self._t('log.auto.0133'))
-                self.root.after(0, lambda: self.status_label.config(text="Validator – .ffpfsc prüfen..."))
+                self.root.after(0, lambda: self.status_label.config(text=self._t("status.validator_ffpfsc")))
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
@@ -21491,7 +21490,7 @@ class PS5ConverterGUI:
                 self.root.after(
                     0,
                     lambda: self.status_label.config(
-                        text="Validator – UFS2-Struktur prüfen..."
+                        text=self._t("status.validator_ufs2")
                     ),
                 )
                 self.task_total_source_bytes = os.path.getsize(src)
@@ -21515,7 +21514,7 @@ class PS5ConverterGUI:
 
         except Exception as exc:
             self._append_to_log(self._t("log.manual.validator_exception", v0=exc))
-            self._set_status("Fehler.")
+            self._set_status(self._t("status.error"))
             return False
 
         self.task_progress = max(self.task_progress, 95.0)
@@ -22972,7 +22971,7 @@ class PS5ConverterGUI:
             is_container = True
             tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_")
             self._append_to_log(self._t('log.auto.0154'))
-            self._set_status("Entpacke .ffpfsc...")
+            self._set_status(self._t("status.unpack_ffpfsc"))
             outer_tmp = self._mkdtemp(prefix="ps5conv_fakelib_outer_")
             try:
                 outer_ok = self._execute_mkpfs(
@@ -23027,7 +23026,7 @@ class PS5ConverterGUI:
             is_container = True
             tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_exfat_")
             self._append_to_log(self._t('log.auto.0161'))
-            self._set_status("Entpacke .exfat (MkPFS)...")
+            self._set_status(self._t("status.unpack_exfat_mkpfs"))
 
             if self._extract_exfat_to_folder_mkpfs(
                 src,
@@ -23144,7 +23143,7 @@ class PS5ConverterGUI:
             is_container = True
             tmp_extract = self._mkdtemp(prefix="ps5conv_fakelib_ffpkg_")
             self._append_to_log(self._t('log.auto.0169'))
-            self._set_status("Entpacke .ffpkg...")
+            self._set_status(self._t("status.unpack_ffpkg"))
 
             if self._extract_ffpkg_to_folder_via_ufs2tool(
                 src,
@@ -23743,7 +23742,7 @@ class PS5ConverterGUI:
                 self._append_to_log(_container_hint)
 
             if action != "cancel":
-                self._set_status("Richte APR-/AMPR-Unterstützung ein...")
+                self._set_status(self._t("status.apr_support_setup"))
                 self._append_to_log(self._t('log.auto.0200'))
                 if not self._prepare_ampr_support(search_root, automation_spec):
                     self._append_to_log(self._t('log.auto.0201'))
@@ -24112,7 +24111,7 @@ class PS5ConverterGUI:
         osf = self._find_osfmount()
         if not osf:
             self._append_to_log(self._t('log.auto.0224'))
-            self._set_status("Fehler: OSFMount nicht gefunden.")
+            self._set_status(self._t("status.osfmount_missing"))
             return False
 
         self._append_to_log(self._t('log.auto.0225', v0=osf))
@@ -24126,7 +24125,7 @@ class PS5ConverterGUI:
                 break
         if not free_letter:
             self._append_to_log(self._t('log.auto.0226'))
-            self._set_status("Fehler: Kein freier Laufwerksbuchstabe.")
+            self._set_status(self._t("status.no_free_drive_letter"))
             return False
 
         self._append_to_log(self._t('log.auto.0227', v0=free_letter))
@@ -24232,7 +24231,8 @@ class PS5ConverterGUI:
                 ]
                 self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n\n")
                 self.root.after(0, lambda: self.status_label.config(
-                    text=f"Aufgabe {aufgabe_num} – robocopy läuft..."))
+                    text=self._t("status.robocopy_running",
+                                task=self._t("main.task_number", number=aufgabe_num))))
 
                 def _log_robo_line(line: str) -> None:
                     if line.strip():
@@ -24297,7 +24297,7 @@ class PS5ConverterGUI:
             self._set_status(f"Fertig: {os.path.basename(dest_folder)}")
             return True
         else:
-            self._set_status(f"Fehler: {error_msg[0][:80]}")
+            self._set_status(self._t("status.error_detail", error=error_msg[0][:80]))
             return False
 
     # ──────────────────────────────────────────────────────────────────────
@@ -24685,7 +24685,7 @@ class PS5ConverterGUI:
                 "/R:3", "/W:2", "/NP", "/MT:4",
             ]
             self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n\n")
-            self.root.after(0, lambda: self.status_label.config(text=f"{status_prefix} – robocopy läuft..."))
+            self.root.after(0, lambda: self.status_label.config(text=self._t("status.robocopy_running", task=status_prefix)))
 
             def _log_robo_line(line: str) -> None:
                 if line.strip():
@@ -25208,7 +25208,7 @@ class PS5ConverterGUI:
 
             self._append_to_log(self._t('log.auto.0229', v0=drive_letter))
             self.root.after(0, lambda: self.status_label.config(
-                text=f"{status_prefix} – Dateien extrahieren (robocopy)..."))
+                text=self._t("status.robocopy_extracting", task=status_prefix)))
 
             robo_cmd = [
                 "robocopy.exe",
@@ -25570,7 +25570,7 @@ class PS5ConverterGUI:
             self.task_progress = max(self.task_progress, 90.0)
             self.task_displayed = max(self.task_displayed, 90.0)
             self.root.after(0, lambda: self.status_label.config(
-                text="Vollständigkeit prüfen..."))
+                text=self._t("status.check_completeness")))
             if not self._pruefe_dump_vollstaendig(aktueller_ordner, erwartet):
                 return False
 
@@ -26485,7 +26485,7 @@ class PS5ConverterGUI:
         )
 
         try:
-            self.root.after(0, lambda: self.status_label.config(text="Entpacke..."))
+            self.root.after(0, lambda: self.status_label.config(text=self._t("status.unpacking")))
             self._append_to_log(self._t('log.auto.0283'))
 
             step1_ok = False
@@ -31145,7 +31145,8 @@ class PS5ConverterGUI:
             da = [e.name for e in zielordner.parent.iterdir() if e.is_dir()]
         except OSError:
             da = []
-        for meldung in sm_gen.beanstandungen(generation, ort, da):
+        for meldung in sm_gen.beanstandungen(generation, ort, da,
+                                             texte=self._smgen_texte()):
             zeilen.append("!! " + meldung)
         return zeilen
 
@@ -32056,7 +32057,8 @@ class PS5ConverterGUI:
                 nachschau = (ziel["pfad"] if fester_weg
                              else ziel["pfad"].rsplit("/", 1)[0])
                 da = self._ampr_gen_ordner_ftp(ftp, nachschau)
-                for meldung in sm_gen.beanstandungen(generation, ort, da):
+                for meldung in sm_gen.beanstandungen(generation, ort, da,
+                                                     texte=self._smgen_texte()):
                     melde("!! " + meldung)
 
             melde("")
@@ -39845,9 +39847,8 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.error("Neustart fehlgeschlagen: %s", exc)
             messagebox.showerror(
-                "Neustart fehlgeschlagen",
-                f"Das Programm konnte nicht automatisch neu gestartet werden:\n{exc}\n\n"
-                "Bitte starte das Programm manuell neu, damit das Design korrekt angezeigt wird.",
+                self._t("dialog.title.restart_failed"),
+                self._t("dialog.msg.restart_failed", error=exc),
                 parent=self.root,
             )
             return
@@ -40636,6 +40637,25 @@ def _is_admin() -> bool:
     """
     return _system_ist_administrator()
 
+def _ohne_fenster_uebersetzt(schluessel: str, **werte: object) -> str:
+    """Übersetzt, wo es noch keine Oberfläche gibt.
+
+    ``_request_elevation`` läuft, bevor ``PS5ConverterGUI`` gebaut ist – es
+    gibt also kein ``self._t``. Die zuletzt gewählte Sprache steht trotzdem
+    schon in der Einstellungsdatei; ``_load_setting_static`` liest sie ohne
+    Instanz, genau wie es der Konstruktor tut.
+
+    Bis zum 06.09.2026 stand der Hinweis über die fehlenden
+    Administratorrechte deshalb fest auf Deutsch – ausgerechnet an der
+    Stelle, an der das Programm noch gar nicht sichtbar ist und der
+    Anwender nur diesen einen Satz zu lesen bekommt.
+    """
+    sprache = PS5ConverterGUI._load_setting_static("language", DEFAULT_LANGUAGE)
+    if sprache not in ("de", "en"):
+        sprache = DEFAULT_LANGUAGE
+    return i18n_translate(str(sprache), schluessel, **werte)
+
+
 def _request_elevation() -> None:
     """Startet das Programm mit erhöhten Rechten neu (UAC-Dialog)."""
     import ctypes
@@ -40659,9 +40679,8 @@ def _request_elevation() -> None:
         _root = _tk.Tk()
         _root.withdraw()
         _mb.showerror(
-            "Administratorrechte erforderlich",
-            f"Das Programm konnte nicht mit Administratorrechten gestartet werden:\n{exc}\n\n"
-            "Bitte starten Sie das Programm manuell als Administrator.",
+            _ohne_fenster_uebersetzt("dialog.title.admin_required"),
+            _ohne_fenster_uebersetzt("dialog.msg.admin_start_failed", error=exc),
         )
         _root.destroy()
 

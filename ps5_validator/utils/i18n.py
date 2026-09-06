@@ -1839,6 +1839,103 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.manual.osfmount_windows_only': {'de': '[FEHLER] Dieser Ersatzweg hängt an OSFMount, das es nur unter Windows gibt.\n         Unter {system} steht er nicht zur Verfügung.\n', 'en': '[ERROR] This fallback relies on OSFMount, which exists only on Windows.\n         It is not available on {system}.\n'},
     'status.windows_only_tool': {'de': 'Fehler: {tool} gibt es nur unter Windows.', 'en': 'Error: {tool} exists only on Windows.'},
     'preflight.incomplete_dump': {'de': 'Der Quellordner wirkt unvollständig – diese Pflichtdateien fehlen: {files}. Das Ergebnis lässt sich zwar erzeugen, startet auf der Konsole aber voraussichtlich nicht.', 'en': 'The source folder looks incomplete – these required files are missing: {files}. The result can still be produced but will likely not start on the console.'},
+    # Die übrigen Meldungen der Vorabprüfung. Bis zum 06.09.2026 stand hier nur
+    # der Eintrag darüber, und die anderen acht Sätze derselben Methode gingen
+    # fest auf Deutsch hinaus - auch in der englischen Oberfläche.
+    'preflight.source_missing': {'de': 'Quelle nicht gefunden: {path}', 'en': 'Source not found: {path}'},
+    'preflight.source_path_too_long': {'de': 'Quellpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.', 'en': 'The source path is very long (>240 characters) and may cause tool problems.'},
+    'preflight.dest_path_too_long': {'de': 'Zielpfad ist sehr lang (>240 Zeichen) und kann Tool-Probleme verursachen.', 'en': 'The target path is very long (>240 characters) and may cause tool problems.'},
+    'preflight.temp_low_space': {'de': 'Temp-Ordner hat wenig freien Speicher: {size}.', 'en': 'The temp folder has little free space: {size}.'},
+    'preflight.temp_check_failed': {'de': 'Temp-Ordner konnte nicht geprüft werden: {error}', 'en': 'The temp folder could not be checked: {error}'},
+    'preflight.dest_low_space': {'de': 'Zielordner hat wenig freien Speicher: {size}.{detail}', 'en': 'The target folder has little free space: {size}.{detail}'},
+    'preflight.dest_estimated_need': {'de': ' Geschätzter Bedarf: {size} (das entpackte Innenimage kann kurzzeitig zusätzlich zu den bereits verschobenen Dateien vorliegen).', 'en': ' Estimated need: {size} (the unpacked inner image may briefly exist alongside the files already moved).'},
+    'preflight.dest_check_failed': {'de': 'Zielspeicher konnte nicht geprüft werden: {error}', 'en': 'The target storage could not be checked: {error}'},
+    'preflight.osfmount_missing': {'de': 'OSFMount nicht gefunden: Fallbacks/Teilschritte können langsamer oder unmöglich sein.', 'en': 'OSFMount not found: fallbacks and partial steps may be slower or impossible.'},
+    # Warum eine Umwandlung nicht geht. Landet in einem Fehlerdialog und im
+    # sichtbaren Protokollfeld - beides stand fest auf Deutsch.
+    'conversion.choose_target_format': {'de': 'Bitte ein Zielformat auswählen.', 'en': 'Please choose a target format.'},
+    'conversion.choose_sources_first': {'de': 'Bitte zuerst mehrere Quelldateien auswählen.', 'en': 'Please select several source files first.'},
+    'conversion.source_type_unknown': {'de': 'Quelltyp konnte nicht erkannt werden.', 'en': 'The source type could not be determined.'},
+    'conversion.same_format': {'de': 'Quelle und Zielformat sind identisch. Bitte ein anderes Zielformat wählen.', 'en': 'Source and target format are identical. Please choose a different target format.'},
+    'conversion.target_format_unknown': {'de': 'Das gewählte Zielformat ist unbekannt.', 'en': 'The selected target format is unknown.'},
+    # ---- Statuszeile und feste Beschriftungen ----
+    # Die Statuszeile steht während der ganzen Arbeit vor dem Anwender. Bis
+    # zum 06.09.2026 war sie zum großen Teil fest deutsch, obwohl direkt
+    # daneben übersetzte Nachbarn standen (status.pack_folder_exfat).
+    'status.startup_cleanup_done': {'de': 'Startup-Cleanup abgeschlossen.', 'en': 'Startup cleanup finished.'},
+    'status.error': {'de': 'Fehler.', 'en': 'Error.'},
+    'status.error_occurred': {'de': 'Fehler aufgetreten.', 'en': 'An error occurred.'},
+    'status.filezilla_searching': {'de': 'FileZilla wird gesucht…', 'en': 'Looking for FileZilla…'},
+    'status.tool_already_installed': {'de': '{tool} ist bereits installiert und einsatzbereit.', 'en': '{tool} is already installed and ready to use.'},
+    'status.tool_installed': {'de': '{tool} wurde erfolgreich installiert und ist einsatzbereit.', 'en': '{tool} was installed successfully and is ready to use.'},
+    'status.osfmount_missing': {'de': 'Fehler: OSFMount nicht gefunden.', 'en': 'Error: OSFMount not found.'},
+    'status.no_free_drive_letter': {'de': 'Fehler: Kein freier Laufwerksbuchstabe.', 'en': 'Error: no free drive letter.'},
+    # Die vier Phasen des PFS-Wegs. Der exFAT-Weg daneben ist seit jeher
+    # übersetzt (status.pack_folder_exfat) - diese hier waren es nicht.
+    'status.phase1_prepare': {'de': 'Phase 1/4 – Vorbereitung…', 'en': 'Phase 1/4 – preparing…'},
+    'status.phase1_prepare_done': {'de': 'Phase 1/4 – Vorbereitung abgeschlossen.', 'en': 'Phase 1/4 – preparation finished.'},
+    'status.phase2_inner_pfs': {'de': 'Phase 2/4 – Erstelle unkomprimiertes inneres PFS…', 'en': 'Phase 2/4 – building the uncompressed inner PFS…'},
+    'status.phase3_compress_outer': {'de': 'Phase 3/4 – Komprimiere äußeren FFPFSC-Container…', 'en': 'Phase 3/4 – compressing the outer FFPFSC container…'},
+    'status.phase3_outer_done': {'de': 'Phase 3/4 – Außencontainer abgeschlossen.', 'en': 'Phase 3/4 – outer container finished.'},
+    'status.phase4_final_check': {'de': 'Phase 4/4 – Abschlussprüfung läuft…', 'en': 'Phase 4/4 – final check running…'},
+    'status.phase4_move_output': {'de': 'Phase 4/4 – Verschiebe fertige Ausgabe ins Zielverzeichnis… {done} / {total}', 'en': 'Phase 4/4 – moving the finished output to the target folder… {done} / {total}'},
+    'status.unpack_ffpfsc': {'de': 'Entpacke .ffpfsc…', 'en': 'Unpacking .ffpfsc…'},
+    'status.unpack_exfat_mkpfs': {'de': 'Entpacke .exfat (MkPFS)…', 'en': 'Unpacking .exfat (MkPFS)…'},
+    'status.unpack_ffpkg': {'de': 'Entpacke .ffpkg…', 'en': 'Unpacking .ffpkg…'},
+    'status.apr_support_setup': {'de': 'Richte APR-/AMPR-Unterstützung ein…', 'en': 'Setting up APR/AMPR support…'},
+    'status.validator_dump_folder': {'de': 'Validator – Dump-Ordner prüfen…', 'en': 'Validator – checking dump folder…'},
+    'status.validator_exfat': {'de': 'Validator – .exfat prüfen…', 'en': 'Validator – checking .exfat…'},
+    'status.validator_ffpfsc': {'de': 'Validator – .ffpfsc prüfen…', 'en': 'Validator – checking .ffpfsc…'},
+    'status.validator_ufs2': {'de': 'Validator – UFS2-Struktur prüfen…', 'en': 'Validator – checking UFS2 structure…'},
+    'status.robocopy_running': {'de': '{task} – robocopy läuft…', 'en': '{task} – robocopy running…'},
+    'status.robocopy_extracting': {'de': '{task} – Dateien extrahieren (robocopy)…', 'en': '{task} – extracting files (robocopy)…'},
+    'status.check_completeness': {'de': 'Vollständigkeit prüfen…', 'en': 'Checking completeness…'},
+    'status.unpacking': {'de': 'Entpacke…', 'en': 'Unpacking…'},
+    'main.status_ampr_manager': {'de': 'Aufgabe 7: AMPR EMU Manager – Dump-Ordner oder .ffpfsc/.exfat/.ffpkg wählen, oder den AMPR Picker für die PS5 nutzen.', 'en': 'Task 7: AMPR EMU manager – choose a dump folder or an .ffpfsc/.exfat/.ffpkg file, or use the AMPR picker for the PS5.'},
+    'main.status_batch_selected': {'de': '{count} Datei(en) für Aufgabe 5 ausgewählt.', 'en': '{count} file(s) selected for task 5.'},
+    'main.status_batch_selected_dnd': {'de': '{count} Datei(en) für Aufgabe 5 ausgewählt (Drag & Drop).', 'en': '{count} file(s) selected for task 5 (drag & drop).'},
+    'main.info_choose_source': {'de': 'Quelle wählen…', 'en': 'Choose a source…'},
+    # "Aufgabe 4" heißt auf Englisch "Task 4" - der Statuszeile wurde die
+    # Nummer bisher als fester deutscher Anfang vorangestellt.
+    'main.task_number': {'de': 'Aufgabe {number}', 'en': 'Task {number}'},
+    'filedialog.choose_dump_folder': {'de': 'Game Dump Ordner auswählen', 'en': 'Choose a game dump folder'},
+    'filedialog.choose_multiple_sources': {'de': 'Mehrere .FFPFSC/.FFPFS/.exFAT/.FFPKG Dateien auswählen', 'en': 'Select several .FFPFSC/.FFPFS/.exFAT/.FFPKG files'},
+    'dialog.title.unexpected_error': {'de': 'Unerwarteter Fehler', 'en': 'Unexpected error'},
+    'dialog.title.restart_failed': {'de': 'Neustart fehlgeschlagen', 'en': 'Restart failed'},
+    # ---- Warum eine Quelle nicht taugt (abbild_pruefen._validate_source_path) ----
+    # Zweiundzwanzig fertige deutsche Sätze standen dort im Modul, obwohl es
+    # seinen Übersetzer längst übergeben bekommt. Statt zweiundzwanzig fast
+    # gleicher Schlüssel gibt es hier sieben Satzformen und je Aufgabe einen
+    # Baustein, der sagt, was erwartet wird - dieselbe Trennung wie in den
+    # Meldungen daneben.
+    'srccheck.not_a_folder': {'de': '{what}\nDer gewählte Pfad ist kein Ordner:\n{path}', 'en': '{what}\nThe selected path is not a folder:\n{path}'},
+    'srccheck.not_a_file': {'de': '{what}\nDer gewählte Pfad ist keine Datei:\n{path}', 'en': '{what}\nThe selected path is not a file:\n{path}'},
+    'srccheck.wrong_extension': {'de': '{what}\nDie gewählte Datei hat nicht die Endung {ext}:\n{name}', 'en': '{what}\nThe selected file does not end in {ext}:\n{name}'},
+    'srccheck.no_valid_extension': {'de': '{what}\n\nDie gewählte Datei hat keine gültige Endung:\n{name}', 'en': '{what}\n\nThe selected file has no valid extension:\n{name}'},
+    'srccheck.invalid_file': {'de': '{what}\nUngültige Datei:\n{name}', 'en': '{what}\nInvalid file:\n{name}'},
+    'srccheck.path_not_found': {'de': '{what}\nDer gewählte Pfad wurde nicht gefunden:\n{path}', 'en': '{what}\nThe selected path was not found:\n{path}'},
+    'srccheck.source_not_found': {'de': '{what}\nDie Quelle wurde nicht gefunden:\n{path}', 'en': '{what}\nThe source was not found:\n{path}'},
+    'srccheck.nothing_in_folder': {'de': '{what}\nIn diesem Ordner steht nichts davon:\n{path}', 'en': '{what}\nThis folder contains none of those:\n{path}'},
+    'srccheck.task_source_missing': {'de': '{what}: Quelle nicht gefunden.\n{path}', 'en': '{what}: source not found.\n{path}'},
+    'srccheck.what.pack_folder': {'de': 'Aufgabe 1 erfordert einen Game Dump Ordner als Quelle.', 'en': 'Task 1 requires a game dump folder as its source.'},
+    'srccheck.what.unpack_to_exfat': {'de': 'Aufgabe 2 akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n(Ausgabe von Aufgabe 1 oder Aufgabe 3).', 'en': 'Task 2 accepts a .ffpfsc/.ffpfs file as its source\n(the output of task 1 or task 3).'},
+    'srccheck.what.pack_file': {'de': 'Aufgabe 3 erfordert eine .exfat Datei als Quelle.', 'en': 'Task 3 requires an .exfat file as its source.'},
+    'srccheck.what.ffpkg_to_ffpfsc': {'de': 'Aufgabe 4 erfordert eine .ffpkg Datei als Quelle.', 'en': 'Task 4 requires a .ffpkg file as its source.'},
+    'srccheck.what.batch_folder': {'de': 'Aufgabe 5 akzeptiert Game Dump Ordner, Ordner voller\nDumps/Abbilder oder .ffpfsc/.ffpfs/.exfat/.ffpkg Dateien.', 'en': 'Task 5 accepts game dump folders, folders full of\ndumps/images, or .ffpfsc/.ffpfs/.exfat/.ffpkg files.'},
+    'srccheck.what.batch_convert': {'de': 'Aufgabe 5 akzeptiert mehrere Dateien oder Ordner als Quelle.', 'en': 'Task 5 accepts several files or folders as its source.'},
+    'srccheck.what.batch_files': {'de': 'Aufgabe 5 akzeptiert nur .ffpfsc, .ffpfs, .exfat oder .ffpkg\nDateien sowie Game Dump Ordner.', 'en': 'Task 5 accepts only .ffpfsc, .ffpfs, .exfat or .ffpkg\nfiles, plus game dump folders.'},
+    'srccheck.what.universal_convert': {'de': 'Aufgabe 6 akzeptiert einen Dump-Ordner oder eine .ffpfsc/.ffpfs/.exfat/.ffpkg Datei.', 'en': 'Task 6 accepts a dump folder or a .ffpfsc/.ffpfs/.exfat/.ffpkg file.'},
+    'srccheck.what.ampr_manager': {'de': 'Aufgabe 7 (AMPR EMU Manager) akzeptiert:\n  • Game Dump Ordner\n  • .ffpfsc/.ffpfs Datei\n  • .exfat Datei', 'en': 'Task 7 (AMPR EMU manager) accepts:\n  • a game dump folder\n  • a .ffpfsc/.ffpfs file\n  • an .exfat file'},
+    'srccheck.what.ampr_manager_short': {'de': 'Aufgabe 7 (AMPR EMU Manager)', 'en': 'Task 7 (AMPR EMU manager)'},
+    'srccheck.what.dump_validator': {'de': 'Aufgabe 8 (Dump Validator) akzeptiert:\n  • Game Dump Ordner\n  • .ffpfsc/.ffpfs Datei\n  • .exfat Datei\n  • .ffpkg Datei', 'en': 'Task 8 (dump validator) accepts:\n  • a game dump folder\n  • a .ffpfsc/.ffpfs file\n  • an .exfat file\n  • a .ffpkg file'},
+    'srccheck.what.dump_validator_short': {'de': 'Aufgabe 8 (Dump Validator)', 'en': 'Task 8 (dump validator)'},
+    'srccheck.what.unpack_to_game_folder': {'de': 'Dieser Schritt akzeptiert eine .ffpfsc/.ffpfs Datei als Quelle\n(Ausgabe von Aufgabe 1 oder Aufgabe 3).', 'en': 'This step accepts a .ffpfsc/.ffpfs file as its source\n(the output of task 1 or task 3).'},
+    'srccheck.what.inspect': {'de': 'Die Metadaten-Anzeige erfordert eine .ffpfsc/.ffpfs Datei als Quelle.', 'en': 'The metadata view requires a .ffpfsc/.ffpfs file as its source.'},
+    'srccheck.what.exfat_to_folder': {'de': 'Dieser Schritt erfordert eine .exfat Datei als Quelle.', 'en': 'This step requires an .exfat file as its source.'},
+    'dialog.title.admin_required': {'de': 'Administratorrechte erforderlich', 'en': 'Administrator rights required'},
+    'dialog.msg.conversion_aborted_unexpected': {'de': 'Die Konvertierung wurde durch einen unerwarteten Fehler\nabgebrochen:\n\n{error}', 'en': 'The conversion was aborted by an unexpected error:\n\n{error}'},
+    'dialog.msg.restart_failed': {'de': 'Das Programm konnte nicht automatisch neu gestartet werden:\n{error}\n\nBitte starte das Programm manuell neu, damit das Design korrekt angezeigt wird.', 'en': 'The program could not be restarted automatically:\n{error}\n\nPlease restart it manually so the theme is displayed correctly.'},
+    'dialog.msg.admin_start_failed': {'de': 'Das Programm konnte nicht mit Administratorrechten gestartet werden:\n{error}\n\nBitte starte das Programm manuell als Administrator.', 'en': 'The program could not be started with administrator rights:\n{error}\n\nPlease start it manually as an administrator.'},
     'ampr.picker_connect_hint': {'de': 'Geprüft wurden die Ports {ports}. Läuft auf der PS5 ein FTP-Payload? Über JS LOADER lässt sich einer starten – zftpd (zftpd-ps5-v1.5.0.elf, Port 2120) überträgt am schnellsten, ftpsrv-ps5 lauscht auf 2121.', 'en': 'Ports {ports} were tried. Is an FTP payload running on the PS5? JS LOADER can start one – zftpd (zftpd-ps5-v1.5.0.elf, port 2120) transfers fastest, ftpsrv-ps5 listens on 2121.'},
     'ampr.picker_list_failed': {'de': '{path} konnte nicht gelesen werden: {error}', 'en': 'Could not read {path}: {error}'},
     'ampr.picker_building': {'de': 'Index wird über FTP gebaut: {path}', 'en': 'Building index via FTP: {path}'},
