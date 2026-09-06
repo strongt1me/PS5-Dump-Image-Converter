@@ -141,14 +141,31 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
 }
 
 
-def profil(generation: str) -> dict[str, Any]:
+def profil(generation: str,
+           texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Gibt das Profil einer Generation.
+
+    Args:
+        generation: ``ALT`` oder ``NEU``.
+        texte: Vorlagen je Kennung. Mit ihnen kommen ``gilt_fuer`` und
+            ``nicht_fuer`` übersetzt zurück - die beiden Felder stehen im
+            Fenster von Aufgabe 7 als Geltungsbereich. Alles Übrige im
+            Profil sind Pfade, Schlüsselnamen und Schalter und bleibt
+            unangetastet.
 
     Raises:
         KeyError: Bei einer unbekannten Kennung - lieber laut scheitern als
             still die falsche Mechanik anwenden.
     """
-    return GENERATIONEN[generation]
+    p = GENERATIONEN[generation]
+    if not texte:
+        return p
+    # Eine Kopie: Das Modul-dict darf nicht sprachabhängig werden, sonst
+    # trägt ein Fensteraufruf seine Sprache in den nächsten.
+    uebersetzt = dict(p)
+    uebersetzt["gilt_fuer"] = _satz(texte, "gen_%s_gilt_fuer" % generation)
+    uebersetzt["nicht_fuer"] = _satz(texte, "gen_%s_nicht_fuer" % generation)
+    return uebersetzt
 
 
 def suchreihenfolge(generation: str) -> tuple[str, ...]:
@@ -203,7 +220,8 @@ def ablageordner(generation: str, ort: str) -> str:
 
 
 def _ablageziel_fest(generation: str, ort: str, *,
-                     pfad: str = "") -> dict[str, Any]:
+                     pfad: str = "",
+                     texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Die beiden festen Ordner auf der Konsole - global und Emulatoren.
 
     Beide sind in der ``config.ini`` verstellbar; steht dort ein anderer
@@ -213,40 +231,28 @@ def _ablageziel_fest(generation: str, ort: str, *,
     p = profil(generation)
     if ort == ORT_EMUS and not p["hat_emus"]:
         return {"pfad": "", "ordner": "", "wirkt": False, "empfohlen": False,
-                "hinweis": ("Emulator-Dateien gibt es erst ab 1.7 alpha8. "
-                            "Die ältere Fassung liest %s gar nicht."
-                            % EMUS_STANDARD)}
+                "hinweis": _satz(texte, "ziel_emus_zu_alt",
+                                 pfad=EMUS_STANDARD)}
     standard = GLOBAL_STANDARD if ort == ORT_GLOBAL else EMUS_STANDARD
     ziel = (str(pfad).strip() or standard).rstrip("/")
 
     if ort == ORT_GLOBAL:
-        if generation == ALT:
-            hinweis = ("Wird als zweite Schicht über das Spiel gelegt und "
-                       "gilt für jedes erfasste Spiel. Bei gleichem "
-                       "Dateinamen entscheidet global_fakelib_priority - "
-                       "voreingestellt gewinnt die Datei des Spiels.")
-        else:
-            hinweis = ("Wird vollständig in den Cache kopiert und gilt für "
-                       "jedes erfasste Spiel. Bei gleichem Dateinamen "
-                       "entscheidet global_fakelib_priority - voreingestellt "
-                       "gewinnt die Datei des Spiels.")
+        kennung = "ziel_global_alt" if generation == ALT else "ziel_global_neu"
         return {"pfad": ziel, "ordner": "", "wirkt": True, "empfohlen": True,
-                "hinweis": hinweis}
+                "hinweis": _satz(texte, kennung)}
 
     # Emulator-Dateien. Die entscheidende Einschraenkung steht in
     # sm_fakelib.c (copy_emulator_files_to_cache): Bevor eine Datei aus
     # emulators_path in den Cache kommt, wird geprueft, ob es sie im
     # Spiel-fakelib ueberhaupt gibt - sonst wird sie uebersprungen.
     return {"pfad": ziel, "ordner": "", "wirkt": True, "empfohlen": True,
-            "hinweis": ("Ersetzt nur Dateien, die im fakelib des Spiels "
-                        "schon liegen - neue Namen werden übersprungen. "
-                        "Für ein Spiel ohne libSceAmpr.sprx bringt dieser "
-                        "Weg allein nichts.")}
+            "hinweis": _satz(texte, "ziel_emus")}
 
 
 def ablageziel(generation: str, ort: str, *, wurzel: str = "",
                title_id: str = "", scanpath: str = "",
-               pfad: str = "") -> dict[str, Any]:
+               pfad: str = "",
+               texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Rechnet aus, wohin die Bibliotheken gehoeren.
 
     Args:
@@ -266,39 +272,30 @@ def ablageziel(generation: str, ort: str, *, wurzel: str = "",
         Unterordner gibt.
     """
     if ort in (ORT_GLOBAL, ORT_EMUS):
-        return _ablageziel_fest(generation, ort, pfad=pfad)
+        return _ablageziel_fest(generation, ort, pfad=pfad, texte=texte)
 
     ordner = ablageordner(generation, ort)
 
     if ort == ORT_BACKPORT:
         if not (title_id and scanpath):
+            # Ein Programmierfehler, kein Anwenderfall - dieser Satz landet
+            # nirgends im Fenster und bleibt deshalb deutsch.
             raise ValueError("Backport-Ablage braucht title_id und scanpath")
         pfad = posixpath.join(scanpath.rstrip("/"), "backports", title_id, ordner)
-        hinweis = ""
-        if generation == NEU:
-            hinweis = ("Erster Treffer der Suchreihenfolge - das Spiel bleibt "
-                       "unberührt.")
-        else:
-            hinweis = ("Der Backport wird über das Spiel gelegt und erscheint "
-                       "dadurch ebenfalls in app0.")
+        kennung = ("ziel_backport_neu" if generation == NEU
+                   else "ziel_backport_alt")
         return {"pfad": pfad, "ordner": ordner, "wirkt": True,
-                "empfohlen": True, "hinweis": hinweis}
+                "empfohlen": True, "hinweis": _satz(texte, kennung)}
 
     # Ablage im Spielordner.
     trenner = "/" if "/" in str(wurzel) or not wurzel else "\\"
     pfad = "%s%s%s" % (str(wurzel).rstrip("/\\"), trenner, ordner)
-    hinweis = ""
-    empfohlen = True
-    if generation == NEU:
-        empfohlen = False
-        hinweis = ("Hier zählt nur %r. Ein %r im Spielordner wird ab alpha8 "
-                   "ignoriert - ohne Meldung. Empfohlen ist die Ablage als "
-                   "Backport." % (FAKELIB, FAKELIB2))
-    else:
-        hinweis = ("%r hat Vorrang vor %r; es wird immer nur einer von beiden "
-                   "eingehängt." % (FAKELIB2, FAKELIB))
+    empfohlen = generation != NEU
+    kennung = "ziel_spiel_neu" if generation == NEU else "ziel_spiel_alt"
     return {"pfad": pfad, "ordner": ordner, "wirkt": True,
-            "empfohlen": empfohlen, "hinweis": hinweis}
+            "empfohlen": empfohlen,
+            "hinweis": _satz(texte, kennung, fakelib=FAKELIB,
+                             fakelib2=FAKELIB2)}
 
 
 #: Die Beanstandungen als Vorlagen, damit die Oberfläche sie übersetzen kann.
@@ -334,7 +331,89 @@ MELDUNGEN: dict[str, str] = {
     "emus_unterordner":
         "Im Emulator-Ordner liegt ein Unterordner {ordner!r}. Verglichen "
         "werden nur Dateien direkt darin.",
+    # ---- Ab hier: nachgetragen am 06.09.2026 ----
+    # Bis dahin deckte das Muster nur beanstandungen(). Alles Übrige gab
+    # feste deutsche Sätze zurück, und für jeden dieser Sätze wurde die
+    # Kette bis zum Bildschirm nachverfolgt: Sie stehen im Fenster von
+    # Aufgabe 7 (Geltungsbereich, Ablageziel, erkannte Fassung,
+    # Stolperfallen) – auch dann, wenn das Programm auf Englisch läuft.
+    #
+    # Nicht aufgenommen sind die Prosa in ``log_marken``,
+    # ``schichtreihenfolge`` und ``suchreihenfolge``: Die Oberfläche ruft
+    # sie nirgends auf, ihr Text erreicht den Bildschirm also nie.
+    "gen_alt_gilt_fuer": "ShadowMountPlus bis einschließlich 1.7 alpha6",
+    "gen_alt_nicht_fuer": "1.7 alpha8 und neuer",
+    "gen_neu_gilt_fuer": "ShadowMountPlus ab 1.7 alpha8",
+    "gen_neu_nicht_fuer": "1.7 alpha6 und älter",
+    "ziel_emus_zu_alt":
+        "Emulator-Dateien gibt es erst ab 1.7 alpha8. Die ältere Fassung "
+        "liest {pfad} gar nicht.",
+    "ziel_global_alt":
+        "Wird als zweite Schicht über das Spiel gelegt und gilt für jedes "
+        "erfasste Spiel. Bei gleichem Dateinamen entscheidet "
+        "global_fakelib_priority - voreingestellt gewinnt die Datei des "
+        "Spiels.",
+    "ziel_global_neu":
+        "Wird vollständig in den Cache kopiert und gilt für jedes erfasste "
+        "Spiel. Bei gleichem Dateinamen entscheidet global_fakelib_priority "
+        "- voreingestellt gewinnt die Datei des Spiels.",
+    "ziel_emus":
+        "Ersetzt nur Dateien, die im fakelib des Spiels schon liegen - neue "
+        "Namen werden übersprungen. Für ein Spiel ohne libSceAmpr.sprx "
+        "bringt dieser Weg allein nichts.",
+    "ziel_backport_neu":
+        "Erster Treffer der Suchreihenfolge - das Spiel bleibt unberührt.",
+    "ziel_backport_alt":
+        "Der Backport wird über das Spiel gelegt und erscheint dadurch "
+        "ebenfalls in app0.",
+    "ziel_spiel_neu":
+        "Hier zählt nur {fakelib!r}. Ein {fakelib2!r} im Spielordner wird ab "
+        "alpha8 ignoriert - ohne Meldung. Empfohlen ist die Ablage als "
+        "Backport.",
+    "ziel_spiel_alt":
+        "{fakelib2!r} hat Vorrang vor {fakelib!r}; es wird immer nur einer "
+        "von beiden eingehängt.",
+    "beleg_config_nennt": "config.ini nennt {schluessel}",
+    "beleg_config_keine_neuen": "config.ini nennt keinen der neuen Schlüssel",
+    "beleg_cache_da": "{ordner}/ existiert",
+    "beleg_log_zeile": "debug.log enthält {zeile!r}",
+    "falle_ein_spiel":
+        "Nur ein Spiel gleichzeitig - beim Wechsel wird der alte Mount "
+        "zuerst abgeräumt; scheitert das, bekommt das neue Spiel keine "
+        "fakelib.",
+    "falle_config_nicht_aendern":
+        "Die config.ini nicht während des Spiels ändern - jede Änderung an "
+        "einem fakelib-Schlüssel entfernt sofort alle Overlays.",
+    "falle_common_lib":
+        "Ohne common/lib in der Sandbox passiert nichts - stiller Abbruch "
+        "ohne Meldung.",
+    "falle_backpork":
+        "Das BackPork-Payload muss aus sein; Parallelbetrieb kollidiert.",
+    "falle_sandbox_nummer":
+        "Bei mehreren Sandboxen <TITLE_ID>_NNN gewinnt die höchste Nummer; "
+        "alte Reste stören nicht.",
+    "falle_cache_als_global":
+        "Der Cache-Ordner darf nicht als global_fakelib_path gesetzt werden "
+        "- das wird abgelehnt.",
+    "falle_kommentar_veraltet":
+        "Der Kommentar über backport_fakelib in der mitgelieferten "
+        "config.ini.example beschreibt noch das alte app0-Verhalten und ist "
+        "stehengeblieben.",
 }
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, übersetzt wenn möglich.
+
+    Fehlt die Kennung in ``texte`` oder ist ihre Vorlage unbrauchbar, gilt
+    die eingebaute aus :data:`MELDUNGEN`. Eine kaputte Übersetzung darf die
+    Auskunft nicht sprengen.
+    """
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
 
 
 def beanstandungen(generation: str, ort: str,
@@ -457,7 +536,8 @@ def config_schluessel_fuer(generation: str, ort: str) -> tuple[str, ...]:
 
 
 def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None = None,
-                        log_text: str = "") -> dict[str, Any]:
+                        log_text: str = "",
+                        texte: "dict[str, str] | None" = None) -> dict[str, Any]:
     """Bestimmt aus drei Anzeichen, welche Fassung auf der Konsole laeuft.
 
     Jedes Anzeichen allein genuegt laut beiden Anleitungen. Widersprechen
@@ -477,17 +557,20 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
 
     gefunden = [s for s in NUR_NEU_SCHLUESSEL if s in (config_text or "")]
     if gefunden:
-        belege.append((NEU, "config.ini nennt %s" % ", ".join(gefunden)))
+        belege.append((NEU, _satz(texte, "beleg_config_nennt",
+                                  schluessel=", ".join(gefunden))))
     elif config_text:
-        belege.append((ALT, "config.ini nennt keinen der neuen Schlüssel"))
+        belege.append((ALT, _satz(texte, "beleg_config_keine_neuen")))
 
     if cache_ordner_da is True:
-        belege.append((NEU, "%s/ existiert" % CACHE_ORDNER))
+        belege.append((NEU, _satz(texte, "beleg_cache_da",
+                                  ordner=CACHE_ORDNER)))
     # cache_ordner_da is False beweist nichts - der Cache entsteht erst,
     # wenn er gebraucht wird. Deshalb kein Beleg fuer ALT.
 
     if log_text and NUR_NEU_LOGZEILE in log_text:
-        belege.append((NEU, "debug.log enthält %r" % NUR_NEU_LOGZEILE))
+        belege.append((NEU, _satz(texte, "beleg_log_zeile",
+                                  zeile=NUR_NEU_LOGZEILE)))
 
     kennungen = {k for k, _ in belege}
     if not kennungen:
@@ -527,26 +610,22 @@ def cache_pfad(title_id: str) -> str:
     return posixpath.join(CACHE_ORDNER, title_id, FAKELIB)
 
 
-def stolperfallen(generation: str) -> tuple[str, ...]:
-    """Die Punkte, an denen es in der Praxis haengt."""
-    gemeinsam = (
-        "Nur ein Spiel gleichzeitig - beim Wechsel wird der alte Mount zuerst "
-        "abgeräumt; scheitert das, bekommt das neue Spiel keine fakelib.",
-        "Die config.ini nicht während des Spiels ändern - jede Änderung an "
-        "einem fakelib-Schlüssel entfernt sofort alle Overlays.",
-        "Ohne common/lib in der Sandbox passiert nichts - stiller Abbruch "
-        "ohne Meldung.",
-        "Das BackPork-Payload muss aus sein; Parallelbetrieb kollidiert.",
-    )
+def stolperfallen(generation: str,
+                  texte: "dict[str, str] | None" = None) -> tuple[str, ...]:
+    """Die Punkte, an denen es in der Praxis haengt.
+
+    Args:
+        generation: ``ALT`` oder ``NEU``.
+        texte: Vorlagen je Kennung; fehlt eine, gilt die aus
+            :data:`MELDUNGEN`. Diese Sätze stehen im Fenster von Aufgabe 7.
+    """
+    gemeinsam = tuple(_satz(texte, k) for k in (
+        "falle_ein_spiel",
+        "falle_config_nicht_aendern",
+        "falle_common_lib",
+        "falle_backpork",
+    ))
     if generation == ALT:
-        return gemeinsam + (
-            "Bei mehreren Sandboxen <TITLE_ID>_NNN gewinnt die höchste "
-            "Nummer; alte Reste stören nicht.",
-        )
-    return gemeinsam + (
-        "Der Cache-Ordner darf nicht als global_fakelib_path gesetzt werden - "
-        "das wird abgelehnt.",
-        "Der Kommentar über backport_fakelib in der mitgelieferten "
-        "config.ini.example beschreibt noch das alte app0-Verhalten und ist "
-        "stehengeblieben.",
-    )
+        return gemeinsam + (_satz(texte, "falle_sandbox_nummer"),)
+    return gemeinsam + (_satz(texte, "falle_cache_als_global"),
+                        _satz(texte, "falle_kommentar_veraltet"))

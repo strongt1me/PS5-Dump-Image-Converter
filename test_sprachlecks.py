@@ -312,6 +312,179 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
                          "Pruefstand ohne text= in Zeile %s - dann meldet er "
                          "rohe Schluessel oder deutsche Vorgaben." % ohne)
 
+    #: Funktionen aus ``shadowmount_generation``, deren Rueckgabe im Fenster
+    #: von Aufgabe 7 steht. ``ablageordner``, ``suchreihenfolge``,
+    #: ``rangfolge`` und ``cache_pfad`` stehen bewusst NICHT dabei: Sie
+    #: liefern Pfade und Schluesselnamen, keine Prosa.
+    SMGEN_MIT_PROSA = ("profil", "ablageziel", "generation_erkennen",
+                       "stolperfallen")
+
+    #: Felder von ``profil()``, die keine Prosa tragen. Wer nur eines davon
+    #: liest, braucht keine Vorlagen - und soll sie auch nicht anfordern:
+    #: ``_smgen_texte()`` baut einunddreissig Uebersetzungen auf.
+    PROFIL_OHNE_PROSA = ("config_schluessel", "spiel_ordner",
+                         "backport_ordner", "orte", "hat_cache", "hat_emus",
+                         "kennung", "spiel_fakelib2_wirkt",
+                         "backport_erlaubt", "stapelt_schichten",
+                         "log_marken")
+
+    def test_shadowmount_generation_bekommt_ueberall_texte(self):
+        baum = ast.parse(_quelltext())
+        # Welche Aufrufe direkt in ein Feld ohne Prosa greifen?
+        harmlos = set()
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Subscript):
+                continue
+            innen = knoten.value
+            if not (isinstance(innen, ast.Call)
+                    and getattr(innen.func, "attr", "") == "profil"):
+                continue
+            schluessel = knoten.slice
+            if isinstance(schluessel, ast.Constant) \
+                    and schluessel.value in self.PROFIL_OHNE_PROSA:
+                harmlos.add((innen.lineno, innen.col_offset))
+
+        ohne = []
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Call):
+                continue
+            if getattr(knoten.func, "attr", "") not in self.SMGEN_MIT_PROSA:
+                continue
+            # Nur die Aufrufe am Modul, nicht gleichnamige Methoden.
+            wert = getattr(knoten.func, "value", None)
+            if getattr(wert, "id", "") not in ("sm_gen", "shadowmount_generation"):
+                continue
+            if (knoten.lineno, knoten.col_offset) in harmlos:
+                continue
+            if not any(w.arg == "texte" for w in knoten.keywords):
+                ohne.append((knoten.lineno, knoten.func.attr))
+        self.assertEqual([], ohne,
+                         "Diese Aufrufe bekommen keine Textvorlagen: %s - "
+                         "dort faellt die deutsche Vorgabe des Moduls durch."
+                         % ohne)
+
+    def test_die_ausnahme_gilt_nur_fuer_felder_ohne_prosa(self):
+        """Gegenprobe zur Ausnahme darueber: ``gilt_fuer`` steht nicht drin.
+
+        Sonst waere die Ausnahme eine Hintertuer - ein Aufruf
+        ``profil(g)["gilt_fuer"]`` ohne Vorlagen kaeme durch, und genau der
+        ist das Leck.
+        """
+        from ps5_validator.utils import shadowmount_generation as sm_gen
+        prosa = ("gilt_fuer", "nicht_fuer")
+        for feld in prosa:
+            self.assertNotIn(feld, self.PROFIL_OHNE_PROSA)
+            self.assertIn(feld, sm_gen.GENERATIONEN[sm_gen.ALT])
+
+    def test_der_unvollstaendig_bericht_bekommt_texte(self):
+        baum = ast.parse(_quelltext())
+        aufrufe = [k for k in ast.walk(baum)
+                   if isinstance(k, ast.Call)
+                   and getattr(k.func, "id", "") == "diagnose_incomplete_extraction"]
+        self.assertEqual(1, len(aufrufe), "Aufrufstelle verschwunden?")
+        self.assertTrue(any(w.arg == "texte" for w in aufrufe[0].keywords),
+                        "Der Bericht ueber einen unvollstaendigen Dump kommt "
+                        "wieder fest deutsch aus dem Modul.")
+
+
+class VorlagenHabenSchluesselTests(unittest.TestCase):
+    """Jede Kennung eines Helfers braucht ihren Eintrag in STRINGS.
+
+    Die Oberflaeche baut ihre Vorlagen als Schleife ueber das MELDUNGEN-dict
+    des Moduls (``_smgen_texte``, ``_pkg_merger_texte``,
+    ``_diagnose_incomplete_texte``). Fehlt zu einer Kennung der Schluessel,
+    liefert ``translate`` den Schluesselnamen zurueck - und der steht dann
+    im Fenster. Das faellt sonst erst dem Anwender auf.
+    """
+
+    def _pruefe(self, meldungen: dict, praefix: str) -> None:
+        fehlend = [k for k in meldungen if praefix + k not in STRINGS]
+        self.assertEqual([], fehlend,
+                         "Ohne Schluessel (%s): %s" % (praefix, fehlend))
+        halb = [k for k in meldungen
+                if not STRINGS[praefix + k].get("de")
+                or not STRINGS[praefix + k].get("en")]
+        self.assertEqual([], halb, "Nur in einer Sprache: %s" % halb)
+
+    def test_shadowmount_generation(self):
+        from ps5_validator.utils import shadowmount_generation as sm_gen
+        self._pruefe(sm_gen.MELDUNGEN, "smgen.")
+
+    def test_pkg_merger(self):
+        from ps5_validator.utils import pkg_merger
+        self._pruefe(pkg_merger.MELDUNGEN, "pkg_merger.log_")
+
+    def test_diagnose_incomplete(self):
+        from ps5_validator.diagnose_incomplete import MELDUNGEN
+        self._pruefe(MELDUNGEN, "diagnose.incomplete_")
+
+    #: Eintraege, die in beiden Sprachen zu Recht gleich lauten. Bisher
+    #: genau einer: eine Erfolgszeile aus Zeichen, Namen und Pruefsumme.
+    GLEICH_ERLAUBT = {
+        "pkg_merger.log_ok": "Nur Symbole, Dateiname, Groesse und SHA-256.",
+    }
+
+    def test_die_englische_fassung_ist_nicht_die_deutsche(self):
+        """Ein kopierter deutscher Satz im ``en``-Feld faellt sonst nicht auf.
+
+        Der Schluessel ist dann vorhanden, beide Sprachen sind gefuellt -
+        und im englischen Fenster steht trotzdem Deutsch. Genau so hat eine
+        Gegenprobe am 06.09.2026 den Waechter ausgehebelt.
+        """
+        praefixe = ("smgen.", "pkg_merger.log_", "diagnose.incomplete_",
+                    "preflight.", "conversion.", "srccheck.", "progress.",
+                    "verify.", "werkzeuge.")
+        gleich = [k for k, v in STRINGS.items()
+                  if k.startswith(praefixe)
+                  and v.get("de") == v.get("en")
+                  and k not in self.GLEICH_ERLAUBT]
+        self.assertEqual([], gleich,
+                         "In diesen Eintraegen steht auf Englisch dasselbe "
+                         "wie auf Deutsch: %s" % gleich)
+
+    def test_die_vorlagen_kommen_wirklich_uebersetzt_an(self):
+        """Gemessen: dieselbe Auskunft auf Deutsch und auf Englisch."""
+        from ps5_validator.utils import shadowmount_generation as sm_gen
+        fassungen = {}
+        for sprache in ("de", "en"):
+            texte = {k: translate(sprache, "smgen." + k)
+                     for k in sm_gen.MELDUNGEN}
+            fassungen[sprache] = (
+                sm_gen.profil(sm_gen.NEU, texte=texte)["gilt_fuer"],
+                sm_gen.ablageziel(sm_gen.NEU, sm_gen.ORT_SPIEL,
+                                  wurzel="/data/x", texte=texte)["hinweis"],
+                sm_gen.stolperfallen(sm_gen.NEU, texte=texte)[0],
+            )
+        for deutsch, englisch in zip(fassungen["de"], fassungen["en"]):
+            self.assertTrue(deutsch and englisch)
+            self.assertNotEqual(deutsch, englisch,
+                                "Auf Englisch steht dasselbe wie auf "
+                                "Deutsch: %r" % deutsch[:60])
+
+    def test_der_unvollstaendig_bericht_kommt_uebersetzt_an(self):
+        """Auch hier gemessen, nicht nur der Schluesselbestand geprueft.
+
+        Ohne diese Pruefung faellt es nicht auf, wenn das Modul die
+        uebergebenen Vorlagen ignoriert und seine eingebauten Saetze nimmt -
+        eine Gegenprobe am 06.09.2026 ist genau so durchgekommen.
+        """
+        from ps5_validator.diagnose_incomplete import (
+            diagnose_incomplete_extraction, MELDUNGEN)
+        berichte = {}
+        for sprache in ("de", "en"):
+            texte = {k: translate(sprache, "diagnose.incomplete_" + k)
+                     for k in MELDUNGEN}
+            berichte[sprache] = diagnose_incomplete_extraction(PROJEKT,
+                                                               texte=texte)
+        self.assertIn(STRINGS["diagnose.incomplete_kopfzeile"]["en"],
+                      berichte["en"],
+                      "Der Bericht ignoriert die uebergebenen Vorlagen.")
+        self.assertNotIn(STRINGS["diagnose.incomplete_kopfzeile"]["de"],
+                         berichte["en"])
+        for satz in ("ursache", "loesungen", "weitere_infos"):
+            self.assertIn(STRINGS["diagnose.incomplete_" + satz]["en"],
+                          berichte["en"], satz)
+
 
 class NeueSchluesselTests(unittest.TestCase):
     """Was dazukommt, kommt in beiden Sprachen dazu."""

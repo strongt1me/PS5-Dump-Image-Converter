@@ -857,6 +857,33 @@ STRINGS: dict[str, dict[str, str]] = {
     'smgen.global_unterordner': {'de': 'Im globalen Ordner liegt ein Unterordner {ordner!r}. Dort gehören die Bibliotheken direkt hinein – ein Unterordner wird mitkopiert, aber nicht eingehängt.', 'en': 'The global folder contains a subfolder {ordner!r}. The libraries belong directly in it – a subfolder is copied along but not mounted.'},
     'smgen.emus_nicht_gelesen': {'de': 'Diese Fassung liest {pfad} nicht – der Ordner bleibt wirkungslos.', 'en': 'This version does not read {pfad} – the folder has no effect.'},
     'smgen.emus_unterordner': {'de': 'Im Emulator-Ordner liegt ein Unterordner {ordner!r}. Verglichen werden nur Dateien direkt darin.', 'en': 'The emulator folder contains a subfolder {ordner!r}. Only files directly inside it are compared.'},
+    # Nachgetragen am 06.09.2026: Bis dahin deckte das Muster nur
+    # beanstandungen(). Der Geltungsbereich, das Ablageziel, die erkannte
+    # Fassung und die Stolperfallen kamen fest deutsch aus dem Modul und
+    # standen so im Fenster von Aufgabe 7 - auch auf Englisch.
+    'smgen.gen_alt_gilt_fuer': {'de': 'ShadowMountPlus bis einschließlich 1.7 alpha6', 'en': 'ShadowMountPlus up to and including 1.7 alpha6'},
+    'smgen.gen_alt_nicht_fuer': {'de': '1.7 alpha8 und neuer', 'en': '1.7 alpha8 and newer'},
+    'smgen.gen_neu_gilt_fuer': {'de': 'ShadowMountPlus ab 1.7 alpha8', 'en': 'ShadowMountPlus from 1.7 alpha8 onwards'},
+    'smgen.gen_neu_nicht_fuer': {'de': '1.7 alpha6 und älter', 'en': '1.7 alpha6 and older'},
+    'smgen.ziel_emus_zu_alt': {'de': 'Emulator-Dateien gibt es erst ab 1.7 alpha8. Die ältere Fassung liest {pfad} gar nicht.', 'en': 'Emulator files exist only from 1.7 alpha8 onwards. The older version does not read {pfad} at all.'},
+    'smgen.ziel_global_alt': {'de': 'Wird als zweite Schicht über das Spiel gelegt und gilt für jedes erfasste Spiel. Bei gleichem Dateinamen entscheidet global_fakelib_priority – voreingestellt gewinnt die Datei des Spiels.', 'en': 'Placed as a second layer over the game and applies to every game covered. For identical file names global_fakelib_priority decides – by default the game\'s own file wins.'},
+    'smgen.ziel_global_neu': {'de': 'Wird vollständig in den Cache kopiert und gilt für jedes erfasste Spiel. Bei gleichem Dateinamen entscheidet global_fakelib_priority – voreingestellt gewinnt die Datei des Spiels.', 'en': 'Copied into the cache in full and applies to every game covered. For identical file names global_fakelib_priority decides – by default the game\'s own file wins.'},
+    'smgen.ziel_emus': {'de': 'Ersetzt nur Dateien, die im fakelib des Spiels schon liegen – neue Namen werden übersprungen. Für ein Spiel ohne libSceAmpr.sprx bringt dieser Weg allein nichts.', 'en': 'Replaces only files that already exist in the game\'s fakelib – new names are skipped. For a game without libSceAmpr.sprx this route alone achieves nothing.'},
+    'smgen.ziel_backport_neu': {'de': 'Erster Treffer der Suchreihenfolge – das Spiel bleibt unberührt.', 'en': 'First hit in the search order – the game stays untouched.'},
+    'smgen.ziel_backport_alt': {'de': 'Der Backport wird über das Spiel gelegt und erscheint dadurch ebenfalls in app0.', 'en': 'The backport is layered over the game and therefore also appears in app0.'},
+    'smgen.ziel_spiel_neu': {'de': 'Hier zählt nur {fakelib!r}. Ein {fakelib2!r} im Spielordner wird ab alpha8 ignoriert – ohne Meldung. Empfohlen ist die Ablage als Backport.', 'en': 'Only {fakelib!r} counts here. A {fakelib2!r} in the game folder is ignored from alpha8 onwards – silently. Placing it as a backport is recommended.'},
+    'smgen.ziel_spiel_alt': {'de': '{fakelib2!r} hat Vorrang vor {fakelib!r}; es wird immer nur einer von beiden eingehängt.', 'en': '{fakelib2!r} takes precedence over {fakelib!r}; only one of the two is ever mounted.'},
+    'smgen.beleg_config_nennt': {'de': 'config.ini nennt {schluessel}', 'en': 'config.ini names {schluessel}'},
+    'smgen.beleg_config_keine_neuen': {'de': 'config.ini nennt keinen der neuen Schlüssel', 'en': 'config.ini names none of the new keys'},
+    'smgen.beleg_cache_da': {'de': '{ordner}/ existiert', 'en': '{ordner}/ exists'},
+    'smgen.beleg_log_zeile': {'de': 'debug.log enthält {zeile!r}', 'en': 'debug.log contains {zeile!r}'},
+    'smgen.falle_ein_spiel': {'de': 'Nur ein Spiel gleichzeitig – beim Wechsel wird der alte Mount zuerst abgeräumt; scheitert das, bekommt das neue Spiel keine fakelib.', 'en': 'Only one game at a time – on a switch the old mount is cleared first; if that fails, the new game gets no fakelib.'},
+    'smgen.falle_config_nicht_aendern': {'de': 'Die config.ini nicht während des Spiels ändern – jede Änderung an einem fakelib-Schlüssel entfernt sofort alle Overlays.', 'en': 'Do not edit config.ini while a game is running – any change to a fakelib key immediately removes all overlays.'},
+    'smgen.falle_common_lib': {'de': 'Ohne common/lib in der Sandbox passiert nichts – stiller Abbruch ohne Meldung.', 'en': 'Without common/lib in the sandbox nothing happens – a silent abort with no message.'},
+    'smgen.falle_backpork': {'de': 'Das BackPork-Payload muss aus sein; Parallelbetrieb kollidiert.', 'en': 'The BackPork payload must be off; running both at once collides.'},
+    'smgen.falle_sandbox_nummer': {'de': 'Bei mehreren Sandboxen <TITLE_ID>_NNN gewinnt die höchste Nummer; alte Reste stören nicht.', 'en': 'With several <TITLE_ID>_NNN sandboxes the highest number wins; old leftovers do no harm.'},
+    'smgen.falle_cache_als_global': {'de': 'Der Cache-Ordner darf nicht als global_fakelib_path gesetzt werden – das wird abgelehnt.', 'en': 'The cache folder must not be set as global_fakelib_path – that is rejected.'},
+    'smgen.falle_kommentar_veraltet': {'de': 'Der Kommentar über backport_fakelib in der mitgelieferten config.ini.example beschreibt noch das alte app0-Verhalten und ist stehengeblieben.', 'en': 'The comment about backport_fakelib in the bundled config.ini.example still describes the old app0 behaviour and was never updated.'},
     'titlebar.backport': {'de': 'BACKPORT', 'en': 'BACKPORT'},
     'backport.choose_folder_dialog_title': {'de': 'Dump-Ordner für den Backport wählen', 'en': 'Choose dump folder to backport'},
     'backport.window_title': {'de': 'Backport – {name}', 'en': 'Backport – {name}'},
@@ -2015,6 +2042,16 @@ STRINGS: dict[str, dict[str, str]] = {
     'pkg_merger.log_kein_ordner': {'de': "'{pfad}' ist kein Ordner.", 'en': "'{pfad}' is not a folder."},
     'pkg_merger.log_kein_fih_kopf': {'de': 'Wurzelteil beginnt nicht mit dem finalisierten FIH-Header.', 'en': 'The root part does not start with the finalised FIH header.'},
     'werkzeuge.ufs2tool_missing': {'de': 'UFS2Tool wird für {system} ({maschine}) nicht mitgeliefert.', 'en': 'UFS2Tool is not bundled for {system} ({maschine}).'},
+    # Der Bericht bei einem unvollständig entpackten Dump. Bei der großen
+    # Übersetzung (v1.8.12) ausdrücklich ausgenommen; am 06.09.2026 wurde
+    # nachverfolgt, dass er sehr wohl im sichtbaren Protokollfeld landet -
+    # bei jedem gescheiterten Validatorlauf mit fehlenden Pflichtdateien.
+    'diagnose.incomplete_kopfzeile': {'de': '[DIAGNOSE] Unvollständiger PS5-Dump erkannt', 'en': '[DIAGNOSIS] Incomplete PS5 dump detected'},
+    'diagnose.incomplete_fehlende': {'de': 'Kritische Dateien fehlen: {dateien}', 'en': 'Critical files are missing: {dateien}'},
+    'diagnose.incomplete_keine': {'de': 'keine', 'en': 'none'},
+    'diagnose.incomplete_ursache': {'de': 'Vermutete Ursache:\n- Die .ffpfsc-Datei wurde nicht vollständig zu einem Game Dump extrahiert\n- Das ist normalerweise ein Zeichen für eine beschädigte oder unpassende .ffpfsc-Datei', 'en': 'Likely cause:\n- The .ffpfsc file was not fully extracted into a game dump\n- That usually points to a damaged or unsuitable .ffpfsc file'},
+    'diagnose.incomplete_loesungen': {'de': 'Empfohlene Lösungen:\n1. SHA256-Prüfsumme der .ffpfsc-Datei vergleichen\n   - Download überprüfen oder erneut laden\n2. MkPFS-Version aktualisieren\n   - Eine neuere Fassung kennt möglicherweise neuere Dump-Formate\n3. Den Entpackvorgang erneut starten\n   - Mit ausreichend freiem Speicherplatz (>150 % der Dump-Größe)\n4. Auf einen Fehler des Datenträgers prüfen (CHKDSK/fsck)\n5. Den PS5-Dump neu erstellen', 'en': 'Suggested remedies:\n1. Compare the SHA256 checksum of the .ffpfsc file\n   - Verify the download or fetch it again\n2. Update the MkPFS version\n   - A newer build may know newer dump formats\n3. Start the extraction over\n   - With enough free space (>150 % of the dump size)\n4. Check the drive for errors (CHKDSK/fsck)\n5. Create the PS5 dump again'},
+    'diagnose.incomplete_weitere_infos': {'de': 'Weitere Infos:', 'en': 'Further reading:'},
     'dialog.title.admin_required': {'de': 'Administratorrechte erforderlich', 'en': 'Administrator rights required'},
     'dialog.msg.conversion_aborted_unexpected': {'de': 'Die Konvertierung wurde durch einen unerwarteten Fehler\nabgebrochen:\n\n{error}', 'en': 'The conversion was aborted by an unexpected error:\n\n{error}'},
     'dialog.msg.restart_failed': {'de': 'Das Programm konnte nicht automatisch neu gestartet werden:\n{error}\n\nBitte starte das Programm manuell neu, damit das Design korrekt angezeigt wird.', 'en': 'The program could not be restarted automatically:\n{error}\n\nPlease restart it manually so the theme is displayed correctly.'},

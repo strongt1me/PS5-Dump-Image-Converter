@@ -21431,7 +21431,9 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("log.manual.diagnose_critical_missing", v0=", ".join(critical_missing)))
                 self._append_to_log(self._t('log.auto.0124'))
                 try:
-                    self._append_to_log(diagnose_incomplete_extraction(diagnose_path).strip() + "\n")
+                    self._append_to_log(diagnose_incomplete_extraction(
+                        diagnose_path,
+                        texte=self._diagnose_incomplete_texte()).strip() + "\n")
                 except Exception:
                     self._append_to_log(self._t('log.auto.0125'))
                     self._append_to_log(self._t('log.auto.0126'))
@@ -27124,6 +27126,20 @@ class PS5ConverterGUI:
 
         self._render_pkg_merger_window(folder, split_sets, log_lines)
 
+    def _diagnose_incomplete_texte(self) -> dict:
+        """Die Bausteine des Berichts über einen unvollständigen Dump.
+
+        Bei der großen Übersetzung (v1.8.12) blieb dieser Bericht
+        ausdrücklich außen vor – er galt als technisch und wenig wert. Am
+        06.09.2026 wurde nachverfolgt, wohin er geht: über
+        ``_append_to_log`` in das sichtbare Protokollfeld, bei jedem
+        gescheiterten Validatorlauf mit fehlenden Pflichtdateien. Er ist
+        also genau das, was der Anwender im Fehlerfall zu lesen bekommt.
+        """
+        from ps5_validator.diagnose_incomplete import MELDUNGEN as _dm
+        return {kennung: self._t("diagnose.incomplete_" + kennung)
+                for kennung in _dm}
+
     def _pkg_merger_texte(self) -> dict:
         """Die Protokollvorlagen des PKG-Mergers in der eingestellten Sprache.
 
@@ -31844,7 +31860,8 @@ class PS5ConverterGUI:
         hat; jede Frage bringt ihre Begruendung mit. Bricht der Nutzer ab,
         endet der Lauf sofort und sagt das auch.
         """
-        p = sm_gen.profil(generation)
+        smgen_texte = self._smgen_texte()
+        p = sm_gen.profil(generation, texte=smgen_texte)
         andere = sm_gen.NEU if generation == sm_gen.ALT else sm_gen.ALT
         ftp = None
         try:
@@ -31889,7 +31906,8 @@ class PS5ConverterGUI:
                 befund = sm_gen.generation_erkennen(
                     config_text=config_text,
                     cache_ordner_da=self._ampr_ftp_is_dir(ftp, sm_gen.CACHE_ORDNER),
-                    log_text=self._ampr_gen_log_lesen(ftp))
+                    log_text=self._ampr_gen_log_lesen(ftp),
+                    texte=smgen_texte)
                 for _kennung, beleg in befund["belege"]:
                     melde("   - " + beleg)
                 if befund["generation"] == generation:
@@ -31899,7 +31917,8 @@ class PS5ConverterGUI:
                         fenster,
                         self._t("amprgen.q_wrong_gen"),
                         self._t("amprgen.q_wrong_gen_why",
-                                running=sm_gen.profil(andere)["gilt_fuer"],
+                                running=sm_gen.profil(
+                                    andere, texte=smgen_texte)["gilt_fuer"],
                                 chosen=p["gilt_fuer"]),
                         [("stop", self._t("amprgen.q_wrong_gen_stop"),
                           self._t("amprgen.q_wrong_gen_stop_why")),
@@ -31922,7 +31941,8 @@ class PS5ConverterGUI:
                     return
                 festes_ziel = sm_gen.ablageziel(
                     generation, ablage,
-                    pfad=self._ampr_gen_config_pfad(config_text, ablage))
+                    pfad=self._ampr_gen_config_pfad(config_text, ablage),
+                    texte=smgen_texte)
                 if not festes_ziel["wirkt"]:
                     melde("!! " + festes_ziel["hinweis"])
                     return
@@ -31980,11 +32000,13 @@ class PS5ConverterGUI:
                 ort = ablage
             elif not lokal and title_id and scanpath:
                 ziel = sm_gen.ablageziel(generation, sm_gen.ORT_BACKPORT,
-                                         title_id=title_id, scanpath=scanpath)
+                                         title_id=title_id, scanpath=scanpath,
+                                         texte=smgen_texte)
                 ort = sm_gen.ORT_BACKPORT
             else:
                 ziel = sm_gen.ablageziel(generation, sm_gen.ORT_SPIEL,
-                                         wurzel=spielpfad)
+                                         wurzel=spielpfad,
+                                         texte=smgen_texte)
                 ort = sm_gen.ORT_SPIEL
                 if not lokal:
                     melde(self._t("amprgen.no_title_id_fallback"))
@@ -32124,7 +32146,7 @@ class PS5ConverterGUI:
         und gefragt wird nur, wo es wirklich etwas zu entscheiden gibt.
         """
         c = self._COLORS
-        p = sm_gen.profil(generation)
+        p = sm_gen.profil(generation, texte=self._smgen_texte())
         titel = self._t("amprgen.title_%s" % generation)
         win = self._build_modern_toplevel(titel, 940, 740,
                                           min_width=820, min_height=560)
@@ -32235,7 +32257,8 @@ class PS5ConverterGUI:
         start.pack(side="left", padx=(8, 0))
         start_knopf["widget"] = start
 
-        for falle in sm_gen.stolperfallen(generation):
+        for falle in sm_gen.stolperfallen(generation,
+                                          texte=self._smgen_texte()):
             _protokoll("* " + falle)
 
         # Sofort loslegen: Der Knopf im Hauptfenster ist der Startbefehl,
