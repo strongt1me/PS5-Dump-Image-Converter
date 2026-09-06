@@ -2079,6 +2079,11 @@ STRINGS: dict[str, dict[str, str]] = {
     'ps4werkzeug.innenebene_unlesbar': {'de': 'Innenebene nicht lesbar', 'en': 'The inner layer could not be read'},
     # Was das Payload zurückgemeldet hat. Bis zum 06.09.2026 wurde diese
     # Antwort verworfen - der Anwender erfuhr nie, was die Konsole sagte.
+    # Rückfragen beim Schließen. Die Knöpfe riefen bis v1.9.6 eine Funktion,
+    # die es nicht gab - jeder Druck warf einen NameError ins Protokoll, und
+    # das Fenster liess sich nur über das X der Fensterleiste schliessen.
+    'ps4pkg.abort_confirm': {'de': 'Es läuft noch ein Vorgang. Soll er abgebrochen und das Fenster geschlossen werden?', 'en': 'A task is still running. Cancel it and close the window?'},
+    'debug_pkg.close_while_building': {'de': 'Das Paket wird gerade gebaut. Der Bau lässt sich nicht abbrechen – er schreibt im Hintergrund weiter.\n\nFenster trotzdem schließen?', 'en': 'The package is still being built. The build cannot be cancelled – it keeps writing in the background.\n\nClose the window anyway?'},
     'payload.ausgabe': {'de': '[PAYLOAD] {name} meldet:\n{ausgabe}', 'en': '[PAYLOAD] {name} reports:\n{ausgabe}'},
     'payloadmod.nichts_erreichbar': {'de': 'Weder elfldr (Port {elfldr}) noch der Payload Manager (Port {pldmgr}) sind erreichbar.', 'en': 'Neither elfldr (port {elfldr}) nor the payload manager (port {pldmgr}) can be reached.'},
     'prosperopkg.nicht_gefunden': {'de': 'prosperopkg wurde nicht gefunden (erwartet in {ordner}/{plattform}/).', 'en': 'prosperopkg was not found (expected in {ordner}/{plattform}/).'},

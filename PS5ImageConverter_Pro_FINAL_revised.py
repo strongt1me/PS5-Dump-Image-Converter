@@ -6727,6 +6727,14 @@ class PS5ConverterGUI:
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
+        # Aufgabe 7 ist die einzige Aufgabe der Seitenleiste, die ein Fenster
+        # öffnet (die Wahl zwischen den beiden ShadowMount+-Fassungen). Wer
+        # danach eine andere Aufgabe anklickt, will es nicht mehr sehen – bis
+        # v1.9.6 blieb es offen stehen und musste von Hand geschlossen
+        # werden. Die übrigen Aufgabenknöpfe stellen nur den Hauptbereich um
+        # und lassen deshalb nichts zurück.
+        if mode != "ampr_manager":
+            self._werkzeugfenster_schliessen("_show_ampr_auswahl")
         self.current_mode.set(mode)
         full_text = self._t(f"mode.{mode}")
         if hasattr(self, "header_label"):
@@ -7874,6 +7882,24 @@ class PS5ConverterGUI:
                 win.destroy()
         except tk.TclError as exc:
             logger.debug("Fenster ließ sich nicht schließen: %s", exc)
+
+    def _werkzeugfenster_schliessen(self, befehl: str) -> None:
+        """Schliesst das Fenster eines Knopfes, falls es offen ist.
+
+        Anders als :meth:`_werkzeugfenster_umschalten` öffnet diese Methode
+        nichts – sie räumt nur weg. Lehnt ein Fenster das Schließen ab, weil
+        gerade etwas läuft, bleibt es stehen; das ist gewollt.
+
+        Args:
+            befehl: Name der Methode, die das Fenster öffnet.
+        """
+        offen = self._werkzeugfenster.get(befehl)
+        if offen is None:
+            return
+        if self._fenster_lebt(offen):
+            self._fenster_schliessen(offen)
+        if not self._fenster_lebt(offen):
+            self._werkzeugfenster.pop(befehl, None)
 
     def _werkzeugfenster_umschalten(self, befehl: str) -> None:
         """Oeffnet das Fenster eines Knopfes - oder schliesst es wieder.
@@ -33975,10 +34001,13 @@ class PS5ConverterGUI:
                                 self._t("dump_rename.done_message", name=neuer), parent=win)
             win.destroy()
 
+        # Hier läuft nichts im Hintergrund - das Umbenennen ist sofort fertig.
+        # Bis v1.9.6 stand hier trotzdem ein Aufruf auf ein nicht vorhandenes
+        # _beim_schliessen, und der Knopf warf bei jedem Druck einen NameError.
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=lambda: _beim_schliessen()).pack(side="right")
+                   command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("dump_rename.rename_button"),
                    style="Accent.TButton", command=_umbenennen).pack(side="left")
 
@@ -34805,10 +34834,31 @@ class PS5ConverterGUI:
         # sich sonst den ganzen Raum - die Knopfreihe bekaeme nur den Rest
         # und waere auf einem kurzen Bildschirm nicht mehr zu sehen.
         # Dieselbe Falle traf schon BACKPORT und DOWNLOADS (v1.8.37).
+        def _beim_schliessen() -> None:
+            """Schliesst das Fenster – und beendet einen laufenden Vorgang.
+
+            Bis v1.9.6 stand hier ``command=lambda: _beim_schliessen()``,
+            ohne dass es diese Funktion gab. Jeder Druck auf SCHLIESSEN warf
+            einen ``NameError`` ins Protokoll, das Fenster blieb stehen, und
+            nur das X der Fensterleiste half weiter. Derselbe Fehler steckte
+            im Debug-.pkg-Bauer und im Umbenennen-Fenster.
+            """
+            if laeuft.get("aktiv"):
+                if not messagebox.askyesno(
+                        self._t("ps4pkg.window_title"),
+                        self._t("ps4pkg.abort_confirm"),
+                        parent=win, default="no"):
+                    return
+                _abbrechen()
+            self._ps4_hinweis_aufraeumen()
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x", before=körper)
         ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=lambda: _beim_schliessen()).pack(side="right")
+                   command=_beim_schliessen).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
         ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
                    command=_einlesen).pack(side="left")
@@ -35055,10 +35105,30 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True,
                              name="debug-pkg-builder").start()
 
+        def _beim_schliessen() -> None:
+            """Schliesst das Fenster – und fragt, wenn noch gebaut wird.
+
+            Siehe ``_show_ps4_pkg_converter``: Bis v1.9.6 gab es diese
+            Funktion nicht, der Knopf warf einen ``NameError``.
+
+            Der Bau läuft in einem Daemon-Faden ohne Prozessgriff; abbrechen
+            lässt er sich nicht. Deshalb wird gefragt statt beendet – wer
+            zumacht, weiß dann, dass im Hintergrund weitergeschrieben wird.
+            """
+            if str(bau_knopf.cget("state")) == "disabled":
+                if not messagebox.askyesno(
+                        self._t("debug_pkg.window_title"),
+                        self._t("debug_pkg.close_while_building"),
+                        parent=win, default="no"):
+                    return
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=lambda: _beim_schliessen()).pack(side="right")
+                   command=_beim_schliessen).pack(side="right")
         bau_knopf = ttk.Button(knopfreihe, text=self._t("debug_pkg.build_button"),
                                style="Accent.TButton", command=_bauen)
         bau_knopf.pack(side="left")
@@ -35978,7 +36048,22 @@ class PS5ConverterGUI:
         grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
         fenster.configure(bg=grund)
 
-        breite, hoehe, rand = 520, 392, 14
+        # Die Höhe wird gerechnet, nicht gesetzt. Bis v1.9.6 stand hier fest
+        # 392 – und das reichte nicht: Mit geladenem Bild rücken die drei
+        # Knöpfe um 100 px nach unten, der letzte endet dann bei 382, während
+        # der SCHLIESSEN-Knopf schon bei 353 beginnt. Nachgerechnet: **29 px
+        # Überlappung**, und der Dank darunter wurde mitten im Wort
+        # abgeschnitten. Das war keine Eigenheit einer Plattform, sondern
+        # schlicht falsch addiert.
+        breite, rand = 520, 14
+        bild = self._webkit_bild_laden()
+        versatz = (self._WEBKIT_BILD_KANTE + 16) if bild is not None else 0
+        #: Oberkante des ersten der drei Wege-Knöpfe.
+        knopf_oben = rand + 134 + versatz
+        #: Unterkante des letzten – drei Knöpfe à 44 px im Abstand von 56.
+        knopf_unten = knopf_oben + 2 * 56 + 44 // 2
+        # Darunter Luft, der SCHLIESSEN-Knopf (26 px) und derselbe Rand wie oben.
+        hoehe = knopf_unten + 16 + 26 + rand
         leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
                              highlightthickness=0, bd=0)
         leinwand.pack(fill="both", expand=True)
@@ -35998,15 +36083,13 @@ class PS5ConverterGUI:
                              font=(UI_SCHRIFT, pt(9)))
 
         # Bild und Dank. Beides hängt am selben Versatz: Ohne Bild rücken die
-        # Knöpfe hoch, statt eine Lücke stehen zu lassen.
-        bild = self._webkit_bild_laden()
-        versatz = 0
+        # Knöpfe hoch, statt eine Lücke stehen zu lassen. ``bild`` und
+        # ``versatz`` stehen schon oben – die Höhe des Fensters hängt daran.
         if bild is not None:
             # Referenz am Fenster halten – sonst räumt der Sammler das Bild
             # weg und die Fläche bleibt leer.
             fenster._webkit_bild = bild
             leinwand.create_image(breite / 2, rand + 104 + 42, image=bild)
-            versatz = self._WEBKIT_BILD_KANTE + 16
         leinwand.create_text(breite / 2, rand + 104 + versatz,
                              text=self._t("webkit.credit"),
                              fill=c["fg_secondary"], width=innen,
@@ -36038,7 +36121,7 @@ class PS5ConverterGUI:
                 outline=c["border"], radius=10, height=44,
                 parent_bg=c["bg_card"])
             leinwand.create_window(links + innen / 2,
-                                   rand + 134 + versatz + lfd * 56,
+                                   knopf_oben + lfd * 56,
                                    window=knopf, width=innen, height=44)
 
         schliessen = RoundedButton(
@@ -36833,7 +36916,7 @@ class PS5ConverterGUI:
             if path:
                 file_var.set(path)
 
-        tk.Button(file_row, text=self._t("action.browse"),
+        flach_knopf(file_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
@@ -36879,8 +36962,18 @@ class PS5ConverterGUI:
         action_frame2 = tk.Frame(main, bg=c["bg_main"])
         action_frame2.pack(fill="x", pady=(0, 8))
 
+        # Dieses Fenster hatte als einziges keinen SCHLIESSEN-Knopf – es liess
+        # sich nur ueber das X der Fensterleiste zumachen. Der Handler dafuer
+        # (``_on_close``, haelt den Protokollserver an) gab es laengst.
+        flach_knopf(action_frame2, text=self._t("action.close"),
+                    bg=c["bg_card"], fg=c["fg_primary"],
+                    activebackground=c["bg_main"], activeforeground=c["fg_primary"],
+                    relief="flat", cursor="hand2",
+                    font=(UI_SCHRIFT, pt(9)), padx=10, pady=7,
+                    command=_on_close).pack(side="right", padx=(8, 0))
+
         # `console` entsteht weiter unten; der Befehl greift erst beim Klick zu.
-        tk.Button(action_frame2, text=self._t("action.clear_console"),
+        flach_knopf(action_frame2, text=self._t("action.clear_console"),
                   bg=c["bg_card"], fg=c["fg_primary"],
                   activebackground=c["bg_main"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2",
@@ -36971,7 +37064,7 @@ class PS5ConverterGUI:
             return roh if roh.isdigit() and len(roh) <= 5 else "?"
 
         # JS senden
-        btn_js = tk.Button(action_frame,
+        btn_js = flach_knopf(action_frame,
                   text=self._t("jsloader.send_js_button", port=_portziffern(js_port_var)),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -36981,7 +37074,7 @@ class PS5ConverterGUI:
         btn_js.pack(side="left", padx=(0, 8))
 
         # ELF senden
-        btn_elf = tk.Button(action_frame,
+        btn_elf = flach_knopf(action_frame,
                   text=self._t("jsloader.send_elf_button", port=_portziffern(elf_port_var)),
                   bg=c["elf_btn"], fg="white",
                   activebackground=c["elf_btn_hover"], activeforeground="white",
@@ -37009,7 +37102,7 @@ class PS5ConverterGUI:
         _knopftext_nachziehen(btn_js, js_port_var, "jsloader.send_js_button")
         _knopftext_nachziehen(btn_elf, elf_port_var, "jsloader.send_elf_button")
 
-        tk.Button(action_frame,
+        flach_knopf(action_frame,
               text=self._t("jsloader.send_quick_payload_button"),
               bg=c["accent_btn"], fg="white",
               activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -37148,7 +37241,7 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     _log(self._t('log.console.0046', v0=exc))
 
-        btn_logserver = tk.Button(action_frame2,
+        btn_logserver = flach_knopf(action_frame2,
                                   text=self._t("jsloader.start_logserver_button",
                                              port=self._JS_LOGSERVER_PORT),
                                   bg=c["accent_btn"], fg="white",
