@@ -935,11 +935,24 @@ class KeepaliveTests(unittest.TestCase):
         cls.zeitstempel = gui._last_engine_output_ts
 
     def test_der_hinweis_steht_im_protokoll(self) -> None:
-        self.assertEqual(["[INFO] Verarbeitung läuft ... bitte warten.\n"], self.protokoll)
+        """Gegen die Uebersetzungstabelle, nicht gegen einen festen Satz.
+
+        Bis zum 06.09.2026 stand der Wortlaut hier abgeschrieben - und der
+        Hinweis selbst stand fest deutsch im Programm. Beides zusammen sah
+        stimmig aus. Jetzt geht er durch die Uebersetzung, und diese
+        Pruefung haelt fest, dass es **dieser** Hinweis ist, ohne seinen
+        Wortlaut ein zweites Mal festzuschreiben.
+        """
+        from ps5_validator.utils.i18n import STRINGS
+        self.assertEqual([STRINGS["log.keepalive_processing"]["de"]],
+                         self.protokoll)
 
     def test_die_statuszeile_sagt_dasselbe(self) -> None:
+        from ps5_validator.utils.i18n import STRINGS
         self.assertEqual(1, len(self.status))
-        self.assertTrue(self.status[0].endswith("Verarbeitung läuft ..."))
+        self.assertTrue(
+            self.status[0].endswith(STRINGS["status.keepalive_processing"]["de"]),
+            "Statuszeile %r passt nicht zum Protokolleintrag" % self.status[0])
 
     def test_der_zeitstempel_der_engine_bleibt_unberuehrt(self) -> None:
         """Sonst sieht die Ueberwachung eine Engine, die gar nichts sagt."""

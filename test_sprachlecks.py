@@ -42,25 +42,45 @@ import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 
 G = APP.PS5ConverterGUI
 
-#: Woran ein deutscher Satz zu erkennen ist. Umlaute allein genuegen nicht -
-#: viele Meldungen kommen ohne aus ("Fehler.", "Quelle nicht gefunden").
+#: Woran ein deutscher Satz zu erkennen ist. Nur noch fuer die gemessenen
+#: Pruefungen weiter unten gebraucht - der Rundumschlag sucht nicht mehr
+#: danach, siehe :class:`KeinFesterTextInDerOberflaecheTests`.
 DEUTSCH = re.compile(
     r"[äöüÄÖÜß]|\b(?:der|die|das|und|nicht|wird|wurde|werden|kann|koennen|"
     r"bitte|Datei|Dateien|Ordner|Fehler|Abbruch|abgeschlossen|Erstelle|"
     r"Entpacke|Vorbereitung|gefunden|vorhanden|Sekunden|Speicher|laeuft|"
     r"pruefen|waehlen|Quelle|Ziel|erfordert|akzeptiert)\b")
 
+#: Enthaelt der Text ueberhaupt ein Wort? Trennzeichen ("=" * 50), Pfeile
+#: und reine Zahlenformate sind sprachfrei und brauchen keinen Schluessel.
+EIN_WORT = re.compile(r"[A-Za-zÄÖÜäöüß]{3,}")
+
 #: Methoden, deren Text der Anwender liest. ``logger.*`` steht bewusst nicht
 #: dabei - das geht in die Protokolldatei und darf deutsch bleiben.
+#: ``start_task``/``begin_prepare``/``begin_payload`` gehoeren dazu: Was sie
+#: bekommen, landet in ``ProgressEngine._status_text`` und damit in der
+#: Statuszeile.
 SICHTBARE_SCHREIBER = {
     "_set_status", "set_status", "_status", "_append_to_log", "_protokoll",
     "showinfo", "showwarning", "showerror", "askyesno", "askokcancel",
-    "askretrycancel",
+    "askretrycancel", "start_task", "begin_prepare", "begin_payload",
 }
 
 #: Stellen, die bewusst so bleiben. Jede braucht eine Begruendung - eine
 #: Ausnahmeliste ohne Begruendung waechst, bis der Test nichts mehr meldet.
 ERLAUBT: dict[str, str] = {
+    "PS5 DUMP": "Programmname auf dem Startbild - in beiden Sprachen gleich.",
+    "& IMAGE CONVERTER": "Zweite Zeile desselben Namens.",
+    "PS5 DUMP & IMAGE CONVERTER": "Programmname im Infofenster.",
+    "Homebrew Edition": "Teil des Programmnamens, kein uebersetzbarer Satz.",
+    "OSFMount": "Name eines fremden Werkzeugs.",
+    "Dokan2": "Name eines fremden Treibers.",
+    "FileZilla": "Name eines fremden Werkzeugs.",
+    "[INFO] \n\n": "Reines Protokollpraefix, der Inhalt kommt aus einer Variablen.",
+    "[INFO] \n": "Dasselbe.",
+    "[WARN] \n": "Dasselbe.",
+    "[INFO]  -> \n": "Dasselbe, mit Pfeil zwischen zwei Werten.",
+    "[UFS2Tool] \n": "Praefix mit dem Namen des fremden Werkzeugs.",
 }
 
 
@@ -84,8 +104,14 @@ def _fester_text(knoten: ast.AST) -> str | None:
     return None
 
 
-def _deutsche_stellen() -> list[tuple[int, str, str]]:
-    """Alle Stellen, an denen fester deutscher Text sichtbar wird."""
+def _feste_stellen(mit_ausnahmen: bool = True) -> list[tuple[int, str, str]]:
+    """Alle Stellen, an denen fester Text in die Oberflaeche geht.
+
+    Args:
+        mit_ausnahmen: Ob :data:`ERLAUBT` angewandt wird. ``False`` liefert
+            die ungefilterte Liste - daran prueft der Test, ob die
+            Ausnahmen ueberhaupt noch eine Stelle betreffen.
+    """
     baum = ast.parse(_quelltext())
     gefunden: list[tuple[int, str, str]] = []
     for knoten in ast.walk(baum):
@@ -96,9 +122,11 @@ def _deutsche_stellen() -> list[tuple[int, str, str]]:
 
         def _melde(wie: str, ausdruck: ast.AST) -> None:
             text = _fester_text(ausdruck)
-            if not text or not DEUTSCH.search(text):
+            if not text or not EIN_WORT.search(text):
                 return
-            if text in STRINGS or text in ERLAUBT:
+            if text in STRINGS:
+                return
+            if mit_ausnahmen and text in ERLAUBT:
                 return
             gefunden.append((knoten.lineno, wie, text))
 
@@ -111,26 +139,77 @@ def _deutsche_stellen() -> list[tuple[int, str, str]]:
             if ziel.endswith("_var") or ziel.endswith("_label"):
                 _melde(ziel + ".set", knoten.args[0])
         for schluesselwort in knoten.keywords:
-            if schluesselwort.arg in ("text", "title") and name not in ("_t", "translate"):
+            if schluesselwort.arg in ("text", "title", "description") \
+                    and name not in ("_t", "translate", "ArgumentParser"):
                 _melde("%s(%s=)" % (name, schluesselwort.arg), schluesselwort.value)
     return sorted(gefunden)
 
 
 class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
-    """Der Rundumschlag ueber den Syntaxbaum."""
+    """Der Rundumschlag ueber den Syntaxbaum.
 
-    def test_nichts_sichtbares_steht_fest_auf_deutsch(self):
-        stellen = _deutsche_stellen()
+    **Gesucht wird nicht nach deutschen Woertern.** Der erste Entwurf tat
+    das und uebersah dabei genau die Haelfte: "Extrahiere .ffpkg..." und
+    "Neustart fehlgeschlagen" enthalten weder Umlaut noch eines der
+    gesuchten Woerter, gehen aber genauso an der Uebersetzung vorbei.
+
+    Die Regel ist deshalb einfacher und strenger: **Jeder** feste Text an
+    einer sichtbaren Stelle gehoert durch ``self._t``. Ausnahmen sind
+    einzeln begruendet (:data:`ERLAUBT`) - Programmname, Namen fremder
+    Werkzeuge, Protokollpraefixe.
+    """
+
+    def test_nichts_sichtbares_steht_fest_im_quelltext(self):
+        stellen = _feste_stellen()
         bericht = "\n".join("  %s:%d  %s  %r"
                             % (os.path.basename(APP.__file__), z, wie, t[:90])
                             for z, wie, t in stellen)
         self.assertEqual(
             [], stellen,
-            "%d Stellen schreiben festen deutschen Text in die Oberflaeche. "
-            "Wer das Programm auf Englisch stellt, liest dort trotzdem "
-            "Deutsch. Jede Stelle braucht einen Schluessel in i18n.STRINGS "
-            "und einen Aufruf ueber self._t(...):\n%s"
+            "%d Stellen schreiben festen Text in die Oberflaeche. Wer das "
+            "Programm auf Englisch stellt, liest dort trotzdem, was hier "
+            "steht. Jede Stelle braucht einen Schluessel in i18n.STRINGS und "
+            "einen Aufruf ueber self._t(...) - oder, wenn sie wirklich "
+            "sprachfrei ist, einen begruendeten Eintrag in ERLAUBT:\n%s"
             % (len(stellen), bericht))
+
+    def test_die_ausnahmeliste_ist_nicht_veraltet(self):
+        """Eine Ausnahme fuer eine Stelle, die es nicht mehr gibt, deckt
+        beim naechsten Mal versehentlich etwas anderes.
+
+        Verglichen wird gegen die Texte, die der Rundumschlag wirklich
+        einsammelt - nicht gegen den Rohtext der Datei. Mehrere Ausnahmen
+        sind zusammengesetzt ("[INFO] " + Wert + Umbruch) und stehen so
+        nirgends im Quelltext.
+        """
+        gesehen = {t for _z, _w, t in _feste_stellen(mit_ausnahmen=False)}
+        verwaist = sorted(t for t in ERLAUBT if t not in gesehen)
+        self.assertEqual([], verwaist,
+                         "Diese Ausnahmen betreffen keine Stelle mehr: %s"
+                         % verwaist)
+
+    def test_die_fortschrittsanzeige_hat_keine_deutschen_vorgaben(self):
+        """``begin_prepare``/``begin_payload`` hatten deutsche Vorgabewerte.
+
+        Die Klasse hat keinen Uebersetzer; wer die Beschreibung wegliess,
+        bekam "Vorbereitung..." bzw. "Verarbeite..." in die Statuszeile -
+        auch auf Englisch. Jetzt gibt es keine Vorgabe mehr.
+        """
+        baum = ast.parse(_quelltext())
+        schlecht = []
+        for name in ("begin_prepare", "begin_payload"):
+            knoten = next(k for k in ast.walk(baum)
+                          if isinstance(k, ast.FunctionDef) and k.name == name)
+            for arg, vorgabe in zip(
+                    knoten.args.args[-len(knoten.args.defaults):] if knoten.args.defaults else [],
+                    knoten.args.defaults):
+                if arg.arg != "description":
+                    continue
+                if isinstance(vorgabe, ast.Constant):
+                    schlecht.append("%s(description=%r)" % (name, vorgabe.value))
+        self.assertEqual([], schlecht,
+                         "Vorgabewert fuer eine sichtbare Beschriftung: %s"
+                         % schlecht)
 
 
 class VorabpruefungTests(unittest.TestCase):

@@ -1867,11 +1867,17 @@ class ProgressEngine:
         self._raw_progress = task_start
         self._displayed = task_start
 
-    def begin_prepare(self, description: str = "Vorbereitung...") -> None:
+    def begin_prepare(self, description: str) -> None:
         """Beginnt die Vorbereitungs-Phase (5 %).
 
         Args:
             description: Kurze Beschreibung fuer das Status-Feedback.
+                **Bereits uebersetzt uebergeben** - diese Klasse hat keinen
+                Uebersetzer, und was hier hereinkommt, steht gleich in der
+                Statuszeile. Bis zum 06.09.2026 war "Vorbereitung..." die
+                Vorgabe; damit stand in der englischen Oberflaeche Deutsch,
+                sobald ein Aufrufer nichts mitgab. Jetzt ohne Vorgabe: Wer
+                sie vergisst, merkt es sofort statt beim Anwender.
         """
         self._phase = "prepare"
         self._status_text = str(description)
@@ -1881,10 +1887,15 @@ class ProgressEngine:
     def begin_payload(
         self,
         total_units: float,
-        description: str = "Verarbeite...",
+        description: str,
         unit_label: str = "Bytes",
     ) -> None:
-        """Beginnt die Payload-Phase (90 %) mit Byte-/Datei-basiertem Fortschritt."""
+        """Beginnt die Payload-Phase (90 %) mit Byte-/Datei-basiertem Fortschritt.
+
+        ``description`` gehoert uebersetzt uebergeben - siehe
+        :meth:`begin_prepare`. Die Vorgabe "Verarbeite..." ist aus demselben
+        Grund entfallen.
+        """
         self._phase = "payload"
         self._payload_done = 0.0
         self._payload_total = max(1.0, total_units)
@@ -11397,13 +11408,13 @@ class PS5ConverterGUI:
                 self.dest_title.grid_remove()
                 self.dest_entry.grid_remove()
                 self.dest_btn.grid_remove()
-                self.src_title.config(text="QUELLE & ZIEL")
+                self.src_title.config(text=self._t("main.source_and_target_label"))
             else:
                 # .ffpfsc/.exfat: Zielordner einblenden, Label zurücksetzen
                 self.dest_title.grid()
                 self.dest_entry.grid()
                 self.dest_btn.grid()
-                self.src_title.config(text="QUELLE")
+                self.src_title.config(text=self._t("main.source_label"))
 
         # Info-Box für alle Modi: Ordner (pack_folder)
         # und Dateien (.ffpfsc / .exfat für alle anderen Modi)
@@ -16229,7 +16240,7 @@ class PS5ConverterGUI:
         effective_tmp = self._get_runtime_temp_dir()
         self._append_to_log(self._t('log.auto.0037', v0=mode))
         self._append_to_log(self._t('log.auto.0038', v0=effective_tmp))
-        self._set_status("Verarbeite...")
+        self._set_status(self._t("status.processing"))
         self._calc_generation += 1
         self.is_running = True
         if self._active_resume_checkpoint:
@@ -16349,7 +16360,7 @@ class PS5ConverterGUI:
         def _reset_abort() -> None:
             self.run_btn.config(state=tk.NORMAL)
             self.abort_btn.config(state=tk.DISABLED)
-            self.status_label.config(text="Abgebrochen.")
+            self.status_label.config(text=self._t("status.cancelled"))
         self.root.after(0, _reset_abort)
 
     # ------------------------------------------------------------------
@@ -16993,9 +17004,10 @@ class PS5ConverterGUI:
             else:
                 data_text = ""
             if ffpkg_files_total > 0:
-                file_text = f"{ffpkg_files_done}/{ffpkg_files_total} Dateien"
+                file_text = self._t("info.files_of", done=ffpkg_files_done,
+                                    total=ffpkg_files_total)
             else:
-                file_text = "Dateien werden hinzugefügt"
+                file_text = self._t("info.files_being_added")
             new_size = f"FFPKG: {ffpkg_pct:.1f}% | {file_text}"
             if data_text:
                 new_size += f" | {data_text}"
@@ -17142,7 +17154,8 @@ class PS5ConverterGUI:
                     f" | Rest: {self._fmt_bytes(rem_b)}"
                 )
         elif self.task_total_source_bytes > 0:
-            new_size = f"Quelle: {self._fmt_bytes(self.task_total_source_bytes)}"
+            new_size = self._t("info.source_size",
+                               size=self._fmt_bytes(self.task_total_source_bytes))
         else:
             new_size = ""
 
@@ -18506,13 +18519,13 @@ class PS5ConverterGUI:
                 if bool(verify_func()):
                     ok = True
                     already_installed = True
-                    self._set_status(f"{display_title} ist bereits installiert.")
+                    self._set_status(self._t("status.tool_already_there", tool=display_title))
                     try:
                         self._append_to_log(self._t('log.auto.0062', v0=display_title))
                     except Exception:
                         pass
                 else:
-                    self._set_status(f"{display_title}: Download/Installation im Hintergrund...")
+                    self._set_status(self._t("status.tool_downloading", tool=display_title))
                     try:
                         self._append_to_log(self._t('log.auto.0063', v0=display_title))
                     except Exception:
@@ -18549,7 +18562,7 @@ class PS5ConverterGUI:
                             except Exception:
                                 pass
                 else:
-                    self._set_status(f"{display_title} Installation fehlgeschlagen.")
+                    self._set_status(self._t("status.tool_install_failed", tool=display_title))
                     detail = self._t("dialog.msg.installation_failed_detail", error=err_msg) if err_msg else ""
                     if allow_popup:
                         messagebox.showerror(
@@ -18672,12 +18685,12 @@ class PS5ConverterGUI:
         mode_hint = str(getattr(self, "_active_mode_name", "") or "")
         message = (
             self._completion_status_text(mode_hint, "keepalive_verify")
-            if verify_pending else "Verarbeitung läuft ..."
+            if verify_pending else self._t("status.keepalive_processing")
         )
         log_line = (
-            "[INFO] Abschlussprüfung läuft ... bitte warten.\n"
+            self._t("log.keepalive_verify")
             if verify_pending
-            else "[INFO] Verarbeitung läuft ... bitte warten.\n"
+            else self._t("log.keepalive_processing")
         )
         now = time.monotonic()
         last_log_ts = float(getattr(self, "_keepalive_log_last_ts", 0.0) or 0.0)
@@ -19245,7 +19258,7 @@ class PS5ConverterGUI:
 
             if not _overwrite_result[0]:
                 self._append_to_log(self._t('log.auto.0075'))
-                self._set_status("Abgebrochen.")
+                self._set_status(self._t("status.cancelled"))
                 self._reset_ui_after_task()
                 return
 
@@ -19537,7 +19550,7 @@ class PS5ConverterGUI:
                 self.root.after(max(PROGRESS_POLL_MS * 3, 300), _finish_success)
 
             elif not self.is_running:
-                self._set_status("Abgebrochen.")
+                self._set_status(self._t("status.cancelled"))
                 self._reset_ui_after_task()
                 verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
                 report_path = self._write_task_report(
@@ -20043,7 +20056,7 @@ class PS5ConverterGUI:
         self.task_step_ends = [max(1.0, progress_start), _schritt2_ende, 100.0]
         self.task_current_step = 1
         self.progress_engine.start_task(task_index, task_label)
-        self.progress_engine.begin_prepare("FFPKG-Quellordner prüfen...")
+        self.progress_engine.begin_prepare(self._t("progress.prepare.check_ffpkg_source"))
         self.task_progress = max(self.task_progress, progress_start)
         self._append_to_log(self._t('log.auto.0094', v0=task_label, v1=source_dir, v2=final_path, v3=staging_dir, v4=file_count, v5=format_ffpkg_bytes(source_bytes)))
 
@@ -20119,7 +20132,9 @@ class PS5ConverterGUI:
                 "timestamp": time.monotonic(),
             })
             self.progress_engine.begin_payload(
-                max(1, source_bytes), description="UFS2-Dateisystem im Temp-Staging erstellen", unit_label="Bytes"
+                max(1, source_bytes),
+                description=self._t("progress.payload.build_ufs2_staging"),
+                unit_label="Bytes"
             )
 
             for attempt_number, (profile_id, description, command) in enumerate(build_attempts, start=1):
@@ -20489,8 +20504,8 @@ class PS5ConverterGUI:
             return False
         self.task_final_output_path = final_output
         self.task_total_source_bytes = self._get_path_size(src)
-        self.progress_engine.start_task(0, "Dump-Ordner zu exFAT")
-        self.progress_engine.begin_prepare("Quellordner analysieren...")
+        self.progress_engine.start_task(0, self._t("progress.task.dump_to_exfat"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.analyze_source_folder"))
         # Dieser Weg hat drei Abschnitte, nicht vier wie der .ffpfsc-Weg: Es
         # gibt kein inneres PFS und keinen Aussencontainer. Bis v1.8.93 stand
         # hier gar keine Phase, und im Schreibteil klebte ein fest
@@ -20519,9 +20534,10 @@ class PS5ConverterGUI:
         final_output = os.path.join(dst, base_name)
         self.task_final_output_path = final_output
         self.task_total_source_bytes = self._get_path_size(src)
-        self.progress_engine.start_task(3, "FFPKG zu Dump-Ordner")
-        self.progress_engine.begin_prepare("FFPKG extrahieren...")
-        self.root.after(0, lambda: self.status_label.config(text="Extrahiere .ffpkg..."))
+        self.progress_engine.start_task(3, self._t("progress.task.ffpkg_to_folder"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.extract_ffpkg"))
+        self.root.after(0, lambda: self.status_label.config(
+            text=self._t("status.extract_ffpkg")))
         self._append_to_log(self._t('log.auto.0110', v0=os.path.basename(src), v1=base_name))
         ok = self._extract_ffpkg_to_folder_via_ufs2tool(
             src,
@@ -20695,8 +20711,8 @@ class PS5ConverterGUI:
             return False
         self.task_final_output_path = final_output
         # ProgressEngine: Aufgabe 1 starten (Index 0)
-        self.progress_engine.start_task(0, f"Game Dump → .{out_ext}")
-        self.progress_engine.begin_prepare("Quellordner analysieren...")
+        self.progress_engine.start_task(0, self._t("progress.task.dump_to_format", format=out_ext))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.analyze_source_folder"))
         # Phasengrenzen
         _P1_END = 5.0
         _P2_END = 60.0
@@ -20746,7 +20762,8 @@ class PS5ConverterGUI:
             self.root.after(
                 0,
                 lambda b=done_bytes: self.status_label.config(
-                    text=f"Phase 1/4 – Quellordner analysieren... {self._fmt_bytes(b)} gelesen"
+                    text=self._t("status.phase1_scan_progress",
+                                size=self._fmt_bytes(b))
                 ),
             )
             now = time.monotonic()
@@ -21200,8 +21217,8 @@ class PS5ConverterGUI:
         self.task_step_ends = [60.0, 100.0]
 
         # ProgressEngine: Aufgabe 6 starten (Index 5 = Inspect / Metadaten anzeigen)
-        self.progress_engine.start_task(5, "Metadaten lesen")  # inspect bleibt Index 5
-        self.progress_engine.begin_prepare("Container analysieren...")
+        self.progress_engine.start_task(5, self._t("progress.task.read_metadata"))  # inspect bleibt Index 5
+        self.progress_engine.begin_prepare(self._t("progress.prepare.analyze_container"))
 
         # Dateibaum anzeigen (kein Fortschrittsbalken noetig – sehr schnell)
         self._execute_mkpfs(["tree", src])
@@ -21221,7 +21238,7 @@ class PS5ConverterGUI:
             # Phase 1: .ffpfsc entpacken – Fortschritt via Zielordner-Groesse (0–60%)
             self.progress_engine.begin_payload(
                 self.task_total_source_bytes,
-                description="Container entpacken",
+                description=self._t("progress.payload.unpack_container"),
                 unit_label="Bytes",
             )
             self._execute_mkpfs(
@@ -21318,13 +21335,14 @@ class PS5ConverterGUI:
         self._append_to_log(self._t('log.auto.0123'))
         self._append_to_log("=" * 60 + "\n\n")
 
-        self.progress_engine.start_task(7, "Dump Validator")
-        self.progress_engine.begin_prepare("Initialisierung...")
+        self.progress_engine.start_task(7, self._t("progress.task.dump_validator"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.initializing"))
         self.task_num_steps = 1
         self.task_step_ends = [100.0]
         self.task_current_step = 1
         self.task_progress = max(self.task_progress, 5.0)
-        self.root.after(0, lambda: self.status_label.config(text="Validator – Initialisierung..."))
+        self.root.after(0, lambda: self.status_label.config(
+            text=self._t("status.validator_initializing")))
 
         src_lower = src.lower()
         is_exfat = src_lower.endswith(".exfat")
@@ -21370,7 +21388,8 @@ class PS5ConverterGUI:
                 self.task_progress = max(self.task_progress, 5.0 + frac * 90.0)
                 self.progress_engine.update_payload(done)
             short = label[-50:] if len(label) > 50 else label
-            self.root.after(0, lambda t=short: self.status_label.config(text="Validator – " + t))
+            self.root.after(0, lambda t=short: self.status_label.config(
+                text=self._t("status.validator_step", step=t)))
 
         def _cancel_flag() -> bool:
             return not self.is_running
@@ -21441,7 +21460,7 @@ class PS5ConverterGUI:
                 self.task_total_source_bytes = self._get_path_size(src)
                 self.progress_engine.begin_payload(
                     max(1, self.task_total_source_bytes),
-                    description="Validierung",
+                    description=self._t("progress.payload.validation"),
                     unit_label="Bytes",
                 )
                 result = _run_validator(
@@ -21461,7 +21480,7 @@ class PS5ConverterGUI:
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
-                    description="Validierung",
+                    description=self._t("progress.payload.validation"),
                     unit_label="Bytes",
                 )
                 result = _run_validator(src, "extfat")
@@ -21476,7 +21495,7 @@ class PS5ConverterGUI:
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
-                    description="Validierung",
+                    description=self._t("progress.payload.validation"),
                     unit_label="Bytes",
                 )
                 result = _run_validator(src, "ffpfs")
@@ -21496,7 +21515,7 @@ class PS5ConverterGUI:
                 self.task_total_source_bytes = os.path.getsize(src)
                 self.progress_engine.begin_payload(
                     self.task_total_source_bytes,
-                    description="UFS2-Validierung",
+                    description=self._t("progress.payload.ufs2_validation"),
                     unit_label="Bytes",
                 )
                 result = _run_validator(
@@ -22935,8 +22954,8 @@ class PS5ConverterGUI:
         self.task_total_source_bytes = 0
 
         # ProgressEngine: Aufgabe 7 starten (Index 6)
-        self.progress_engine.start_task(6, "fakelib Manager")
-        self.progress_engine.begin_prepare("Quelle analysieren...")
+        self.progress_engine.start_task(6, self._t("progress.task.ampr_manager"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.analyze_source"))
 
         self._append_to_log("=" * 50 + "\n")
         self._append_to_log(self._t('log.auto.0152'))
@@ -23039,7 +23058,7 @@ class PS5ConverterGUI:
                 search_root = tmp_extract
             else:
                 self._append_to_log(self._t('log.auto.0162'))
-                self._set_status("Mounte .exfat...")
+                self._set_status(self._t("status.mount_exfat"))
                 # .exfat ist ein exFAT-Dateisystem-Image – Legacy via OSFMount
                 osf_exe = self._find_osfmount()
                 if osf_exe is None:
@@ -23184,7 +23203,7 @@ class PS5ConverterGUI:
         elif src_lower.endswith(".ffpkg"):
             self.task_current_step = max(self.task_current_step, 2)
             self.task_progress = max(self.task_progress, 35.0)
-        self._set_status("Suche fakelib...")
+        self._set_status(self._t("status.searching_fakelib"))
         self._append_to_log(self._t('log.auto.0172'))
 
         # Nur direkte Unterordner des Stammverzeichnisses prüfen
@@ -23630,7 +23649,7 @@ class PS5ConverterGUI:
             changed = False
 
             if action == "ampr_apply":
-                self.progress_engine.begin_prepare("AMPR-Bibliothek übernehmen...")
+                self.progress_engine.begin_prepare(self._t("progress.prepare.apply_ampr_lib"))
                 keep_backup = bool(spec.get("ampr_keep_backup", True))
                 sources: list[tuple[str, str]] = []  # (Quelldatei, Zielname)
 
@@ -23686,7 +23705,7 @@ class PS5ConverterGUI:
                     changed = True
 
             elif action == "ampr_restore":
-                self.progress_engine.begin_prepare("Original wiederherstellen...")
+                self.progress_engine.begin_prepare(self._t("progress.prepare.restore_original"))
                 ergebnisse = [self._ampr_restore_library(search_root, lib_name)
                               for lib_name in target_libs]
                 if "failed" in ergebnisse:
@@ -23703,7 +23722,7 @@ class PS5ConverterGUI:
                 changed = True
 
             elif action == "ampr_remove":
-                self.progress_engine.begin_prepare("AMPR-Bibliothek entfernen...")
+                self.progress_engine.begin_prepare(self._t("progress.prepare.remove_ampr_lib"))
                 removed_any = False
                 for lib_name in target_libs:
                     if self._ampr_remove_library(search_root, lib_name):
@@ -23715,7 +23734,7 @@ class PS5ConverterGUI:
 
             elif action == "ampr_index":
                 # Reiner Index-Lauf: nichts austauschen, nur neu aufbauen.
-                self.progress_engine.begin_prepare("Index neu aufbauen...")
+                self.progress_engine.begin_prepare(self._t("progress.prepare.rebuild_index"))
                 changed = True
 
             else:
@@ -23725,7 +23744,7 @@ class PS5ConverterGUI:
             # Der Index bildet den Dateibestand ab – nach jedem Eingriff neu bauen.
             rebuild_index = bool(spec.get("ampr_rebuild_index", True))
             if changed and rebuild_index:
-                self._set_status("ampr_emu.index neu aufbauen...")
+                self._set_status(self._t("status.rebuilding_ampr_index"))
                 index_path = Path(search_root) / self._AMPR_INDEX_NAME
                 try:
                     count, dupes = self._build_ampr_index_local(Path(search_root), index_path)
@@ -24072,10 +24091,11 @@ class PS5ConverterGUI:
         self._append_to_log(self._t('log.auto.0221'))
         self._append_to_log("=" * 60 + "\n\n")
 
-        self.progress_engine.start_task(progress_task_index, "exFAT zu Game Dump Ordner")
-        self.progress_engine.begin_prepare("exFAT extrahieren...")
+        self.progress_engine.start_task(progress_task_index, self._t("progress.task.exfat_to_dump"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.extract_exfat"))
         self.root.after(0, lambda: self.status_label.config(
-            text=f"Aufgabe {aufgabe_num} – exFAT entpacken (MkPFS)..."))
+            text=self._t("status.unpack_exfat_task",
+                         task=self._t("main.task_number", number=aufgabe_num))))
 
         if self._extract_exfat_to_folder_mkpfs(
             src,
@@ -24092,13 +24112,15 @@ class PS5ConverterGUI:
             self.task_progress = 100.0
             self.progress_engine.finish_task()
             self._append_to_log(self._t('log.auto.0222', v0=dest_folder))
-            self._set_status(f"Fertig: {os.path.basename(dest_folder)}")
+            self._set_status(self._t("status.finished_with",
+                                     name=os.path.basename(dest_folder)))
             return True
 
         self._append_to_log(self._t('log.auto.0223'))
-        self.progress_engine.begin_prepare("OSFMount suchen...")
+        self.progress_engine.begin_prepare(self._t("progress.prepare.find_osfmount"))
         self.root.after(0, lambda: self.status_label.config(
-            text=f"Aufgabe {aufgabe_num} – OSFMount suchen..."))
+            text=self._t("status.searching_osfmount_task",
+                         task=self._t("main.task_number", number=aufgabe_num))))
 
         # 1. OSFMount suchen
         if not IST_WINDOWS:
@@ -24145,7 +24167,9 @@ class PS5ConverterGUI:
                 # 4. .exfat mounten (read-only)
                 self._append_to_log(self._t('log.auto.0228', v0=os.path.basename(src), v1=free_letter))
                 self.root.after(0, lambda: self.status_label.config(
-                    text=f"Aufgabe {aufgabe_num} – Mounte auf {free_letter}..."))
+                    text=self._t("status.mounting_on",
+                                 task=self._t("main.task_number", number=aufgabe_num),
+                                 drive=free_letter)))
 
                 # Stale Mounts aufräumen vor dem Mount
                 self._cleanup_stale_osfmounts()
@@ -24210,8 +24234,11 @@ class PS5ConverterGUI:
                             self.task_progress = max(self.task_progress, pct)
                             self.root.after(0, lambda p=pct, e=el_str, r=rate: (
                                 self.status_label.config(
-                                    text=f"Aufgabe {aufgabe_num} – Kopiere... {p:.0f}%  {e}  "
-                                         f"{r / 1048576:.0f} MB/s"
+                                    text=self._t(
+                                        "status.copying",
+                                        task=self._t("main.task_number", number=aufgabe_num),
+                                        percent="%.0f" % p, elapsed=e,
+                                        rate="%.0f" % (r / 1048576))
                                 )
                             ))
                         except Exception:
@@ -24294,7 +24321,8 @@ class PS5ConverterGUI:
             self.task_progress = 100.0
             self.progress_engine.finish_task()
             self._append_to_log(self._t('log.auto.0222', v0=dest_folder))
-            self._set_status(f"Fertig: {os.path.basename(dest_folder)}")
+            self._set_status(self._t("status.finished_with",
+                                     name=os.path.basename(dest_folder)))
             return True
         else:
             self._set_status(self._t("status.error_detail", error=error_msg[0][:80]))
@@ -24578,7 +24606,8 @@ class PS5ConverterGUI:
 
         try:
             os.makedirs(dest_folder, exist_ok=True)
-            self.root.after(0, lambda: self.status_label.config(text=f"{status_prefix} – .ffpkg mounten..."))
+            self.root.after(0, lambda: self.status_label.config(
+                text=self._t("status.mount_ffpkg", task=status_prefix)))
             self._append_to_log(self._t('log.auto.0228', v0=os.path.basename(src), v1=drive))
 
             mount_proc = subprocess.Popen(
@@ -24663,7 +24692,9 @@ class PS5ConverterGUI:
                         self.root.after(
                             0,
                             lambda p=raw_pct, e=elapsed_str, r=rate: self.status_label.config(
-                                text=f"{status_prefix} – Kopiere... {p:.0f}%  {e}  {r / 1048576:.0f} MB/s"
+                                text=self._t("status.copying", task=status_prefix,
+                                             percent="%.0f" % p, elapsed=e,
+                                             rate="%.0f" % (r / 1048576))
                             ),
                         )
                     except Exception:
@@ -24849,11 +24880,11 @@ class PS5ConverterGUI:
         self.task_step_ends = [98.0]
 
         # ProgressEngine: Aufgabe 4 starten (Index 3)
-        self.progress_engine.start_task(3, "ffpkg zu ffpfsc")
-        self.progress_engine.begin_prepare("Quellgröße berechnen...")
+        self.progress_engine.start_task(3, self._t("progress.task.ffpkg_to_ffpfsc"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.calc_source_size"))
         self.progress_engine.begin_payload(
             self.task_total_source_bytes,
-            description="PFS-Container erstellen",
+            description=self._t("progress.payload.build_pfs_container"),
             unit_label="Bytes",
         )
         self._save_runtime_checkpoint(
@@ -24869,7 +24900,8 @@ class PS5ConverterGUI:
 
         profile = self._resolve_pack_profile("ffpkg_to_ffpfsc", self.task_total_source_bytes)
 
-        self.root.after(0, lambda: self.status_label.config(text="Konvertiere..."))
+        self.root.after(0, lambda: self.status_label.config(
+            text=self._t("status.converting")))
         self._append_to_log("\n" + "=" * 60 + "\n")
         self._append_to_log(self._t('log.auto.0240'))
         self._append_to_log(self._t('log.auto.0122', v0=src))
@@ -25334,7 +25366,7 @@ class PS5ConverterGUI:
         # Rueckfallebenen.
         self._append_to_log(self._t('log.auto.0254'))
         self.root.after(0, lambda: self.status_label.config(
-            text=f"{status_prefix} – exFAT entpacken (MkPFS)..."))
+            text=self._t("status.unpack_exfat_task", task=status_prefix)))
         if self._extract_exfat_to_folder_mkpfs(
             inner_path,
             out_dir,
@@ -25445,7 +25477,8 @@ class PS5ConverterGUI:
             self.task_progress = max(self.task_progress, ebene_start)
             self.task_displayed = max(self.task_displayed, ebene_start)
             self.root.after(0, lambda a=art: self.status_label.config(
-                text=f"{status_prefix} – Innenimage entpacken ({a})..."))
+                text=self._t("status.unpack_inner_image",
+                         task=status_prefix, kind=a)))
 
             naechster_ordner = os.path.join(tmp_dir, f"_ebene_{tiefe}")
             if not self._extract_inner_image(
@@ -25518,11 +25551,11 @@ class PS5ConverterGUI:
         self.task_step_ends = [20.0, 90.0, 95.0, 100.0]
 
         # ProgressEngine: Aufgabe 4 starten (Index 3)
-        self.progress_engine.start_task(progress_task_index, "ffpfsc zu Game Dump Ordner")
-        self.progress_engine.begin_prepare("Quellgröße berechnen...")
+        self.progress_engine.start_task(progress_task_index, self._t("progress.task.ffpfsc_to_dump"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.calc_source_size"))
         self.progress_engine.begin_payload(
             self.task_total_source_bytes,
-            description="Container entpacken",
+            description=self._t("progress.payload.unpack_container"),
             unit_label="Bytes",
         )
 
@@ -25530,7 +25563,8 @@ class PS5ConverterGUI:
             self.task_current_step = 1
             self.task_progress = max(self.task_progress, 0.5)
             self.task_displayed = max(self.task_displayed, 0.5)
-            self.root.after(0, lambda: self.status_label.config(text="Container entpacken..."))
+            self.root.after(0, lambda: self.status_label.config(
+                text=self._t("status.unpack_container")))
             self._append_to_log(self._t('log.auto.0244'))
 
             # Sollwerte des äußeren Containers: Sie gelten für den Fall, dass
@@ -25633,11 +25667,11 @@ class PS5ConverterGUI:
         self.task_step_ends = [98.0]
 
         # ProgressEngine: Aufgabe 3 starten (Index 2)
-        self.progress_engine.start_task(2, "exFAT zu ffpfsc")
-        self.progress_engine.begin_prepare("Quellgröße berechnen...")
+        self.progress_engine.start_task(2, self._t("progress.task.exfat_to_ffpfsc"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.calc_source_size"))
         self.progress_engine.begin_payload(
             self.task_total_source_bytes,
-            description="PFS-Container erstellen",
+            description=self._t("progress.payload.build_pfs_container"),
             unit_label="Bytes",
         )
         self._save_runtime_checkpoint(
@@ -25653,7 +25687,8 @@ class PS5ConverterGUI:
 
         profile = self._resolve_pack_profile("pack_file", self.task_total_source_bytes)
 
-        self.root.after(0, lambda: self.status_label.config(text="Konvertiere..."))
+        self.root.after(0, lambda: self.status_label.config(
+            text=self._t("status.converting")))
         self._append_to_log(self._t('log.auto.0263', v0=os.path.basename(src), v1=os.path.basename(final_output)))
         self._append_to_log(
             self._t(
@@ -26184,7 +26219,7 @@ class PS5ConverterGUI:
                             ):
                             self.status_label.config(
                                 text=self._format_phase_status(
-                                    f"exFAT-Image erstellt... {s}/{t}",
+                                    self._t("status.exfat_image_created", done=s, total=t),
                                     prefer_current_label=False,
                                 )
                             ),
@@ -26268,7 +26303,8 @@ class PS5ConverterGUI:
         dest_path.mkdir(parents=True, exist_ok=True)
 
         self._append_to_log(self._t('log.auto.0276', v0=src_path, v1=dest_path))
-        self.root.after(0, lambda: self.status_label.config(text=f"{status_prefix} – exFAT entpacken (MkPFS)..."))
+        self.root.after(0, lambda: self.status_label.config(
+            text=self._t("status.unpack_exfat_task", task=status_prefix)))
 
         try:
             total_bytes = os.path.getsize(src_path)
@@ -26291,7 +26327,8 @@ class PS5ConverterGUI:
                 if str(getattr(pe, "_phase", "") or "") != "payload":
                     pe.begin_payload(
                         float(total_bytes),
-                        description=f"{status_prefix} – exFAT extrahieren",
+                        description=self._t("progress.payload.extract_exfat_named",
+                                            task=status_prefix),
                         unit_label="Bytes",
                     )
                 else:
@@ -26464,11 +26501,11 @@ class PS5ConverterGUI:
             self.task_step_ends = [20.0, 100.0]
 
         # ProgressEngine: Aufgabe 2 starten (Index 1 = ffpfsc zu exFAT)
-        self.progress_engine.start_task(1, "ffpfsc zu exFAT")
-        self.progress_engine.begin_prepare("Quellgröße berechnen...")
+        self.progress_engine.start_task(1, self._t("progress.task.ffpfsc_to_exfat"))
+        self.progress_engine.begin_prepare(self._t("progress.prepare.calc_source_size"))
         self.progress_engine.begin_payload(
             self.task_total_source_bytes,
-            description="Container entpacken",
+            description=self._t("progress.payload.unpack_container"),
             unit_label="Bytes",
         )
 
@@ -26606,7 +26643,7 @@ class PS5ConverterGUI:
             # --- Schritt 3: Neues PS5-kompatibles .exfat erstellen ---
             self._append_to_log(self._t('log.auto.0302'))
             self.root.after(0, lambda: self.status_label.config(
-                text="Neues exFAT-Image erstellen..."))
+                text=self._t("status.create_new_exfat")))
 
             # eboot.bin Prüfung
             eboot_path = os.path.join(game_dump_dir, "eboot.bin")
@@ -26961,7 +26998,7 @@ class PS5ConverterGUI:
               "https://dotnet.microsoft.com/en-us/download")
         _link(".NET Framework Download",
               "https://dotnet.microsoft.com/en-us/download/dotnet-framework")
-        _link("Visual C++ Redistributable (aktuell unterstützte Versionen)",
+        _link(self._t("resources.vcredist_link"),
               "https://learn.microsoft.com/de-de/cpp/windows/latest-supported-vc-redist?view=msvc-170")
 
         # Abschnitt 3
@@ -26990,7 +27027,7 @@ class PS5ConverterGUI:
               "https://github.com/seregonwar")
         _link("zftpd – Zero-Copy-FTP/HTTP-Daemon, Port 2120 (seregonwar, MIT)",
               "https://github.com/seregonwar/zftpd")
-        _file_link("Lizenzen der mitgelieferten Payloads (THIRD_PARTY_LICENSES.md)",
+        _file_link(self._t("resources.payload_licenses_link"),
                    "THIRD_PARTY_LICENSES.md")
         _link("PS5 Payloads v1.8 – Releases (aldostools)",
               "https://github.com/aldostools/PS5-Payloads/releases/tag/1.8")
