@@ -32,10 +32,17 @@ _mkpfs_roots = [
 # veraltete .pyc koennte eine aeltere Fassung des Moduls einschleusen,
 # waehrend der Quelltext daneben die neue zeigt: ein Fehler, der sich nur an
 # der EXE zeigt und aus der Quelle nie nachstellbar waere.
-def _dateien_ohne_pycache(_quelle, _ziel):
+def _dateien_ohne_pycache(_quelle, _ziel, _ohne=()):
+    """Sammelt einen Quellordner fuer die Einbettung.
+
+    ``_ohne`` nennt Unterordner, die draussen bleiben - fuer MkPFS ist das
+    ``tests``: Der Testbestand des Autors liegt seit dem 06.09.2026 daneben
+    (425 KB) und gehoert in den Pruefstand, nicht in die Auslieferung.
+    """
     _eintraege = []
     for _wurzel, _ordner, _dateien in os.walk(_quelle):
-        _ordner[:] = [_o for _o in _ordner if _o != '__pycache__']
+        _ordner[:] = [_o for _o in _ordner
+                      if _o != '__pycache__' and _o not in _ohne]
         _rel = os.path.relpath(_wurzel, _quelle)
         _unterziel = _ziel if _rel == os.curdir else os.path.join(_ziel, _rel)
         for _datei in _dateien:
@@ -100,7 +107,9 @@ if os.path.isdir(_appinstall):
 
 # MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-1.0.0/)
 for _mkpfs_src in _mkpfs_roots:
-    _datas.extend(_dateien_ohne_pycache(_mkpfs_src, os.path.basename(_mkpfs_src)))
+    _datas.extend(_dateien_ohne_pycache(_mkpfs_src,
+                                        os.path.basename(_mkpfs_src),
+                                        _ohne=('tests',)))
 
 # ProsperoPkg 2.5 - das Werkzeug hinter "PKG bauen". Alle vier Bauten kommen
 # mit: Das Programm waehlt zur Laufzeit nach Betriebssystem und Prozessor

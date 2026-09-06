@@ -40,6 +40,31 @@ die Engine im Programm dient, ersetzt den Lizenztext aber nicht. Bis zum
 03.09.2026 fehlte er hier als einziger unter allen eingebetteten
 Fremdkomponenten.
 
+## Der Testbestand der Vorlage liegt daneben
+
+Unter `tests/` liegen **vierzehn** der siebzehn Testdateien des Autors samt
+`fixtures/tiny.exfat.gz`. Sie laufen im Vollauf mit – die Brücke dazu ist
+`test_mkpfs_vorlage.py` im Wurzelverzeichnis.
+
+**Wozu.** Bis zum 06.09.2026 ließ sich nicht prüfen, ob eine der Änderungen
+hier etwas bricht, das der Autor absichtlich so gebaut hat. Beim nächsten
+Umstieg auf eine neuere Vorlage zeigen diese Tests sofort, was sich geändert
+hat – die Versionsnummer taugt dafür nicht, sie bleibt `1.0.0`.
+
+**Erste Messung am 06.09.2026:** 459 Prüfungen, eine ausgelassen, ein
+bekannter Fehlschlag. Alle Änderungen dieses Projekts gehen durch.
+
+Der ausgelassene ist `test_cli.TestCliBatchRun.test_batch_nonexistent_source_gives_clean_error`.
+Er vergleicht einen selbst erzeugten Temp-Pfad mit dem Pfad in einer
+Fehlermeldung; unter Windows steht in dem einen der 8.3-Kurzname
+(`JBUSER~1`), im anderen der ausgeschriebene. **Gemessen: Er fällt genauso
+mit der unveränderten Vorlage** – es ist die Umgebung, nicht unsere Fassung.
+
+**Drei Dateien fehlen** (`test_compression_backends.py`,
+`test_compression_integration.py`, `test_gather.py`): Sie verlangen `pytest`,
+und der Testbestand dieses Projekts kommt ohne aus. Die Ecke, die sie
+abdecken, bewacht hier bereits `test_mkpfs_fassung.py`.
+
 ## Was bewusst fehlt
 
 - `mkpfs/gui/` – die mitgelieferte Oberfläche (16 Dateien). Sie verlangt
