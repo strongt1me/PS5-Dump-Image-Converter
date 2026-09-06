@@ -2965,15 +2965,19 @@ class PS5ConverterGUI:
 
     }
 
-    _MODE_TOOLTIPS: dict[str, str] = {
-                "pack_folder": "Wandelt einen Dump-Ordner in .ffpfsc (komprimiert), .ffpfs (unkomprimiert), ein echtes .exFAT-Image oder ein UFS2-basiertes .ffpkg um.",
-        "unpack_to_exfat": "Extrahiert eine .ffpfsc/.ffpfs-Datei als Dump-Ordner, .exFAT-Image oder UFS2-basiertes .ffpkg – oder packt sie zwischen komprimiert (.ffpfsc) und unkomprimiert (.ffpfs) um.",
-        "pack_file": "Konvertiert eine .exFAT-Datei nach .ffpfsc (komprimiert) oder .ffpfs (unkomprimiert), extrahiert sie als Dump-Ordner oder erstellt ein UFS2-basiertes .ffpkg.",
-        "ffpkg_to_ffpfsc": "Verarbeitet eine .ffpkg als Eingabe und erzeugt .ffpfsc, einen Dump-Ordner, .exFAT oder ein neu validiertes .ffpkg.",
-        "batch_convert": "Konvertiert mehrere .ffpfsc-, .exFAT- oder .ffpkg-Eingaben als Dump-Ordner, .ffpfsc, .exFAT oder UFS2-basiertes .ffpkg.",
-        "universal_convert": "Exportiert unterstützte Eingaben als Dump-Ordner, .ffpfsc, .exFAT oder UFS2-basiertes .ffpkg.",
-
-    }
+    #: Aufgaben mit einem Kurzhinweis. Er erscheint als Tooltip am Knopf
+    #: und in der Statuszeile; der Text steht unter "mode_tooltip.<aufgabe>"
+    #: in i18n.STRINGS. Bis zum 06.09.2026 standen hier die sechs deutschen
+    #: Saetze selbst - in einem dict, und deshalb fand sie der Waechter
+    #: nicht: Er sieht nur, was direkt an eine sichtbare Stelle geht.
+    _MODE_TOOLTIPS: tuple[str, ...] = (
+        "pack_folder",
+        "unpack_to_exfat",
+        "pack_file",
+        "ffpkg_to_ffpfsc",
+        "batch_convert",
+        "universal_convert",
+    )
 
     #: Kombinationen, die eine Aufgabe zwar anbietet, fuer die es aber keinen
     #: Weg gibt. Besser ein klarer Satz vor dem Start als ein Abbruch mitten
@@ -3088,7 +3092,7 @@ class PS5ConverterGUI:
         self.current_mode = tk.StringVar(value="pack_folder")
         self.source_path = tk.StringVar(value="")
         self.dest_path = tk.StringVar(value=last_dst)
-        self.target_format = tk.StringVar(value=self._FORMAT_LABELS["ffpfsc"])
+        self.target_format = tk.StringVar(value=self._t("format.ffpfsc"))
         self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
         self._batch_sources: list[str] = []
         self._mode_tooltip_handles: list[DelayedTooltip] = []
@@ -5048,31 +5052,33 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Checkpoint konnte nicht entfernt werden: %s", exc)
 
+    #: Die Stellen, an denen ein unterbrochener Lauf stehengeblieben sein
+    #: kann. Der Name steht im Fenster "Fortsetzen?" – deshalb kein fester
+    #: Text mehr, sondern ein Schlüssel je Kennung. Bis zum 06.09.2026
+    #: standen hier zweiundzwanzig deutsche Sätze; der Waechter fand sie
+    #: nicht, weil sie in einem dict stehen und nicht direkt an einer
+    #: sichtbaren Stelle.
+    _CHECKPOINT_STAGES = (
+        "task_launch", "running", "engine_thread_start",
+        "pack_folder_prepare", "pack_folder_step1", "pack_folder_step2",
+        "pack_folder_native_prepare", "pack_folder_native_running",
+        "pack_file_start", "pack_file_running",
+        "task2_start", "task2_step1_running", "task2_step1_done",
+        "task2_step2_done", "completed", "verification_failed",
+        "mode_failed", "aborted", "exception",
+    )
+
     def _checkpoint_stage_label(self, stage_key: str) -> str:
-        """Liefert eine menschenlesbare Beschreibung für bekannte Checkpoint-Stages."""
-        stage_map = {
-            "task_launch": "Start vorbereitet",
-            "running": "Lauf aktiv",
-            "engine_thread_start": "Engine gestartet",
-            "pack_folder_prepare": "Aufgabe 1: Vorbereitung (alt)",
-            "pack_folder_step1": "Aufgabe 1: Schritt 1 (alt: Ordner -> exFAT)",
-            "pack_folder_step2": "Aufgabe 1: Schritt 2 (alt: exFAT -> ffpfsc)",
-            "pack_folder_native_prepare": "Aufgabe 1: nativer MkPFS-Start vorbereitet",
-            "pack_folder_native_running": "Aufgabe 1: nativer MkPFS-One-Pass läuft",
-            "pack_file_start": "Aufgabe 3: Start",
-            "pack_file_running": "Aufgabe 3: MkPFS pack file läuft",
-            "task2_start": "Aufgabe 2: Start",
-            "task2_step1_running": "Aufgabe 2: Schritt 1 läuft (Container entpacken)",
-            "task2_step1_done": "Aufgabe 2: Schritt 1 fertig",
-            "task2_step2_done": "Aufgabe 2: Schritt 2 fertig (Game-Dump extrahiert)",
-            "completed": "Abgeschlossen",
-            "verification_failed": "Verifizierung fehlgeschlagen",
-            "mode_failed": "Modus fehlgeschlagen",
-            "aborted": "Abgebrochen",
-            "exception": "Ausnahmefehler",
-        }
+        """Liefert eine menschenlesbare Beschreibung für bekannte Checkpoint-Stages.
+
+        Unbekannte Kennungen kommen unverändert zurück: Sie stammen dann
+        aus einer älteren Fassung, und der rohe Name sagt mehr als ein
+        Platzhalter.
+        """
         key = str(stage_key or "").strip()
-        return stage_map.get(key, key or "-")
+        if key in self._CHECKPOINT_STAGES:
+            return self._t("checkpoint.stage_" + key)
+        return key or "-"
 
     def _checkpoint_supports_resume(self, mode: str, checkpoint: dict[str, Any] | None) -> bool:
         """Prüft, ob ein gespeicherter Checkpoint für den Modus real fortsetzbar ist."""
@@ -5852,7 +5858,8 @@ class PS5ConverterGUI:
             self.mode_buttons.append((btn, mode))
             if mode in self._MODE_TOOLTIPS:
                 self._mode_tooltip_handles.append(
-                    DelayedTooltip(btn, self._MODE_TOOLTIPS[mode], delay_ms=2200)
+                    DelayedTooltip(btn, self._t("mode_tooltip." + mode),
+                                   delay_ms=2200)
                 )
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
@@ -6859,7 +6866,7 @@ class PS5ConverterGUI:
         # Aufgabe 6: ffpkg zu ffpfsc – kein Dokan noetig
         if mode in self._MODE_TOOLTIPS and hasattr(self, "status_label"):
             self.status_label.config(
-                text=self._MODE_TOOLTIPS[mode]
+                text=self._t("mode_tooltip." + mode)
             )
         elif mode == "ampr_manager" and hasattr(self, "status_label"):
             self.status_label.config(
@@ -11787,7 +11794,13 @@ class PS5ConverterGUI:
                             title_guess = str(meta.get("title", "")).strip()
                         if (not title_guess or title_guess in {"–", "-", "Unbekannt", "�"}) and quick_meta:
                             title_guess = str(quick_meta.get("title", "")).strip()
-                        if title_guess and title_guess not in {"–", "-", "Unbekannt", "Quelle wählen..."}:
+                        # Der Platzhalter der Infobox gehört nicht dazu - er
+                        # ist seit dem 06.09.2026 übersetzt, ein Vergleich
+                        # gegen den festen deutschen Wortlaut ginge auf
+                        # Englisch ins Leere.
+                        if title_guess and title_guess not in {
+                                "–", "-", "Unbekannt",
+                                self._t("main.info_choose_source")}:
                             resolved_tid = self._resolve_title_id_from_store_search(title_guess)
                             if self._is_valid_title_id(resolved_tid):
                                 meta["title_id"] = resolved_tid
@@ -19697,7 +19710,10 @@ class PS5ConverterGUI:
             self.task_total_source_bytes = sum(
                 os.path.getsize(item) for item in sources if os.path.isfile(item)
             )
-            self._append_to_log(self._t('log.auto.0086', v0=self._FORMAT_LABELS.get(target_type, target_type)))
+            self._append_to_log(self._t(
+                'log.auto.0086',
+                v0=(self._t("format." + target_type)
+                    if target_type in self._FORMAT_LABELS else target_type)))
             all_ok = True
             # Die Ueberschreib-Antwort gilt fuer diesen Lauf - und nur fuer
             # ihn. Bliebe sie stehen, entschiede der vorige Lauf ueber die

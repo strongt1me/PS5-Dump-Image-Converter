@@ -553,6 +553,91 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
                         "Die Kopfzeile des Diagnoseberichts kommt wieder "
                         "fest deutsch aus anzeige_diagnose.")
 
+    def test_kein_deutscher_satz_mehr_in_einem_dict_der_oberflaeche(self):
+        """Die Klasse, die dem Rundumschlag entgeht.
+
+        Er sieht nur, was direkt an einer sichtbaren Stelle übergeben wird.
+        Steht der Satz in einem dict und wird von dort geholt, findet er
+        ihn nicht - so blieben die Stufen eines unterbrochenen Laufs und
+        die Kurzhinweise der Aufgabenknöpfe bis zuletzt liegen.
+
+        Deshalb hier die Gegenrichtung: gar keine deutschen Sätze mehr in
+        dict-Literalen des Hauptprogramms, mit begründeten Ausnahmen.
+        """
+        baum = ast.parse(_quelltext())
+        doks = set()
+        for knoten in ast.walk(baum):
+            if isinstance(knoten, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                   ast.ClassDef, ast.Module)):
+                text = ast.get_docstring(knoten, clean=False)
+                if text:
+                    doks.add(text)
+        gefunden = []
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Dict):
+                continue
+            for wert in knoten.values:
+                if not (isinstance(wert, ast.Constant)
+                        and isinstance(wert.value, str)):
+                    continue
+                text = wert.value
+                if len(text) < 8 or text in doks or text in STRINGS:
+                    continue
+                if text in self.DICTS_ERLAUBT or not DEUTSCH.search(text):
+                    continue
+                gefunden.append((wert.lineno, text[:80]))
+        self.assertEqual([], sorted(gefunden),
+                         "Deutsche Sätze in einem dict: %s" % sorted(gefunden))
+
+    #: dict-Werte, die deutsch bleiben dürfen - mit Begründung.
+    DICTS_ERLAUBT = {
+        "eine benötigte DLL fehlt":
+            "Nur --doktor gibt das aus, und der ist bewusst deutsch.",
+        "ein Einsprungpunkt fehlt (falsche DLL-Fassung)": "Dasselbe.",
+        "falsches Format (32 gegen 64 Bit)": "Dasselbe.",
+        "Dump-Ordner":
+            "_FORMAT_LABELS ist die Schlüsselliste; angezeigt wird "
+            "self._t('format.folder').",
+        ".ffpfs (unkomprimiert)": "Dasselbe.",
+    }
+
+    def test_die_dict_ausnahmen_sind_nicht_veraltet(self):
+        quelle = _quelltext()
+        verwaist = sorted(t for t in self.DICTS_ERLAUBT if t not in quelle)
+        self.assertEqual([], verwaist,
+                         "Diese Ausnahmen betreffen keine Stelle mehr: %s"
+                         % verwaist)
+
+    def test_die_kurzhinweise_der_aufgabenknoepfe(self):
+        gui = G.__new__(G)
+        gui._t = lambda s, **w: translate("en", s, **w)
+        for modus in G._MODE_TOOLTIPS:
+            with self.subTest(aufgabe=modus):
+                schluessel = "mode_tooltip." + modus
+                self.assertIn(schluessel, STRINGS)
+                self.assertNotEqual(STRINGS[schluessel]["de"],
+                                    STRINGS[schluessel]["en"])
+
+    def test_die_stufen_eines_unterbrochenen_laufs(self):
+        """Zweiundzwanzig Sätze im Fenster "Fortsetzen?".
+
+        Sie standen in einem dict und entgingen dem Rundumschlag dadurch:
+        Er sieht nur, was direkt an einer sichtbaren Stelle uebergeben wird.
+        """
+        fehlend = [k for k in G._CHECKPOINT_STAGES
+                   if "checkpoint.stage_" + k not in STRINGS]
+        self.assertEqual([], fehlend, "Ohne Schluessel: %s" % fehlend)
+        gui = G.__new__(G)
+        gui._t = lambda s, **w: translate("en", s, **w)
+        for kennung in G._CHECKPOINT_STAGES:
+            with self.subTest(stufe=kennung):
+                heraus = gui._checkpoint_stage_label(kennung)
+                self.assertEqual(STRINGS["checkpoint.stage_" + kennung]["en"],
+                                 heraus)
+        self.assertEqual("-", gui._checkpoint_stage_label(""))
+        self.assertEqual("aus_einer_alten_fassung",
+                         gui._checkpoint_stage_label("aus_einer_alten_fassung"))
+
     def test_die_beschreibungen_der_param_schluessel(self):
         """Siebenunddreissig Kurzbeschreibungen im PARAM/MANIFEST-Fenster."""
         from ps5_validator.utils.param_manifest import (

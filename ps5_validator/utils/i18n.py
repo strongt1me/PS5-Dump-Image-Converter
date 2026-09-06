@@ -2093,6 +2093,37 @@ STRINGS: dict[str, dict[str, str]] = {
     'appinstallmod.param_sfo_statt_json': {'de': 'Der Ordner trägt eine PS4-param.sfo statt einer param.json. Dieser Weg braucht die PS5-Fassung.', 'en': 'The folder carries a PS4 param.sfo instead of a param.json. This route needs the PS5 version.'},
     'appinstallmod.param_json_fehlt': {'de': 'sce_sys/param.json fehlt.', 'en': 'sce_sys/param.json is missing.'},
     # Warum das Herunterfahren nicht ging.
+    # Wo ein unterbrochener Lauf stehengeblieben ist. Steht im Fenster
+    # "Fortsetzen?" - zweiundzwanzig Sätze, die in einem dict standen und
+    # dem Wächter dadurch entgingen.
+    # Die Kurzhinweise an den Aufgabenknöpfen. Sie erscheinen als Tooltip
+    # und in der Statuszeile - und standen als sechs deutsche Sätze in
+    # einem dict, das der Wächter nicht sieht.
+    'mode_tooltip.pack_folder': {'de': 'Wandelt einen Dump-Ordner in .ffpfsc (komprimiert), .ffpfs (unkomprimiert), ein echtes .exFAT-Image oder ein UFS2-basiertes .ffpkg um.', 'en': 'Converts a dump folder into .ffpfsc (compressed), .ffpfs (uncompressed), a real .exFAT image or a UFS2-based .ffpkg.'},
+    'mode_tooltip.unpack_to_exfat': {'de': 'Extrahiert eine .ffpfsc/.ffpfs-Datei als Dump-Ordner, .exFAT-Image oder UFS2-basiertes .ffpkg – oder packt sie zwischen komprimiert (.ffpfsc) und unkomprimiert (.ffpfs) um.', 'en': 'Extracts a .ffpfsc/.ffpfs file as a dump folder, an .exFAT image or a UFS2-based .ffpkg – or repacks it between compressed (.ffpfsc) and uncompressed (.ffpfs).'},
+    'mode_tooltip.pack_file': {'de': 'Konvertiert eine .exFAT-Datei nach .ffpfsc (komprimiert) oder .ffpfs (unkomprimiert), extrahiert sie als Dump-Ordner oder erstellt ein UFS2-basiertes .ffpkg.', 'en': 'Converts an .exFAT file into .ffpfsc (compressed) or .ffpfs (uncompressed), extracts it as a dump folder, or builds a UFS2-based .ffpkg.'},
+    'mode_tooltip.ffpkg_to_ffpfsc': {'de': 'Verarbeitet eine .ffpkg als Eingabe und erzeugt .ffpfsc, einen Dump-Ordner, .exFAT oder ein neu validiertes .ffpkg.', 'en': 'Takes a .ffpkg as input and produces .ffpfsc, a dump folder, .exFAT or a re-validated .ffpkg.'},
+    'mode_tooltip.batch_convert': {'de': 'Konvertiert mehrere .ffpfsc-, .exFAT- oder .ffpkg-Eingaben als Dump-Ordner, .ffpfsc, .exFAT oder UFS2-basiertes .ffpkg.', 'en': 'Converts several .ffpfsc, .exFAT or .ffpkg inputs into dump folders, .ffpfsc, .exFAT or UFS2-based .ffpkg.'},
+    'mode_tooltip.universal_convert': {'de': 'Exportiert unterstützte Eingaben als Dump-Ordner, .ffpfsc, .exFAT oder UFS2-basiertes .ffpkg.', 'en': 'Exports supported inputs as a dump folder, .ffpfsc, .exFAT or a UFS2-based .ffpkg.'},
+    'checkpoint.stage_task_launch': {'de': 'Start vorbereitet', 'en': 'Start prepared'},
+    'checkpoint.stage_running': {'de': 'Lauf aktiv', 'en': 'Run active'},
+    'checkpoint.stage_engine_thread_start': {'de': 'Engine gestartet', 'en': 'Engine started'},
+    'checkpoint.stage_pack_folder_prepare': {'de': 'Aufgabe 1: Vorbereitung (alt)', 'en': 'Task 1: preparation (old path)'},
+    'checkpoint.stage_pack_folder_step1': {'de': 'Aufgabe 1: Schritt 1 (alt: Ordner → exFAT)', 'en': 'Task 1: step 1 (old path: folder → exFAT)'},
+    'checkpoint.stage_pack_folder_step2': {'de': 'Aufgabe 1: Schritt 2 (alt: exFAT → ffpfsc)', 'en': 'Task 1: step 2 (old path: exFAT → ffpfsc)'},
+    'checkpoint.stage_pack_folder_native_prepare': {'de': 'Aufgabe 1: nativer MkPFS-Start vorbereitet', 'en': 'Task 1: native MkPFS start prepared'},
+    'checkpoint.stage_pack_folder_native_running': {'de': 'Aufgabe 1: nativer MkPFS-One-Pass läuft', 'en': 'Task 1: native MkPFS one-pass running'},
+    'checkpoint.stage_pack_file_start': {'de': 'Aufgabe 3: Start', 'en': 'Task 3: start'},
+    'checkpoint.stage_pack_file_running': {'de': 'Aufgabe 3: MkPFS pack file läuft', 'en': 'Task 3: MkPFS pack file running'},
+    'checkpoint.stage_task2_start': {'de': 'Aufgabe 2: Start', 'en': 'Task 2: start'},
+    'checkpoint.stage_task2_step1_running': {'de': 'Aufgabe 2: Schritt 1 läuft (Container entpacken)', 'en': 'Task 2: step 1 running (unpacking the container)'},
+    'checkpoint.stage_task2_step1_done': {'de': 'Aufgabe 2: Schritt 1 fertig', 'en': 'Task 2: step 1 finished'},
+    'checkpoint.stage_task2_step2_done': {'de': 'Aufgabe 2: Schritt 2 fertig (Game-Dump extrahiert)', 'en': 'Task 2: step 2 finished (game dump extracted)'},
+    'checkpoint.stage_completed': {'de': 'Abgeschlossen', 'en': 'Finished'},
+    'checkpoint.stage_verification_failed': {'de': 'Verifizierung fehlgeschlagen', 'en': 'Verification failed'},
+    'checkpoint.stage_mode_failed': {'de': 'Modus fehlgeschlagen', 'en': 'Mode failed'},
+    'checkpoint.stage_aborted': {'de': 'Abgebrochen', 'en': 'Cancelled'},
+    'checkpoint.stage_exception': {'de': 'Ausnahmefehler', 'en': 'Unhandled exception'},
     'shutdown.reason_kein_befehl': {'de': 'kein Befehl verfügbar', 'en': 'no command available'},
     'shutdown.reason_nicht_gefunden': {'de': '{befehl} nicht gefunden', 'en': '{befehl} not found'},
     'shutdown.reason_fehlgeschlagen': {'de': '{befehl}: {grund}', 'en': '{befehl}: {grund}'},
