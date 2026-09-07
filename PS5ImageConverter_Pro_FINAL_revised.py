@@ -13242,6 +13242,8 @@ class PS5ConverterGUI:
             self._patch_inner = None
             self._patch_tree = None
             self._meta_nachschlag_knopf = None
+            self._patch_abruf_knopf = None
+            self._patch_hinweis_rahmen = None
             popup.destroy()
 
         # --- Titelleiste ---
@@ -13391,6 +13393,33 @@ class PS5ConverterGUI:
              fg=self._COLORS["fg_secondary"],
              bg=self._COLORS["bg_main"]).pack(side="right", anchor="e")
 
+        # ── Auskunft und Knopf, solange der Abruf gesperrt ist ──────────────
+        # Ohne diesen Bereich stand der Anwender vor einer leeren Liste ohne
+        # Erklaerung und ohne Ausweg: Der vorhandene Knopf "Fehlende Angaben
+        # online nachschlagen" erscheint nur, wenn Titel, Hersteller oder
+        # Kategorie fehlen - bei vollstaendigen Metadaten gab es aus diesem
+        # Fenster heraus gar keinen Weg zur Updateliste.
+        self._patch_hinweis_rahmen = tk.Frame(container, bg=self._COLORS["bg_main"])
+        tk.Label(self._patch_hinweis_rahmen,
+                 text=self._t("info_popup.blocked_hint"),
+                 font=(UI_SCHRIFT, pt(8)), justify="left", anchor="w",
+                 wraplength=740,
+                 fg=self._COLORS["fg_secondary"],
+                 bg=self._COLORS["bg_main"]).pack(fill="x", pady=(0, 4))
+        self._patch_abruf_knopf = flach_knopf(
+            self._patch_hinweis_rahmen,
+            text=self._t("info_popup.fetch_button"),
+            command=self._patch_abruf_ausloesen,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["bg_card"], fg=self._COLORS["fg_accent"],
+            activebackground=self._COLORS["fg_accent"], activeforeground="white",
+            disabledforeground=self._COLORS["fg_secondary"],
+            relief="flat", cursor="hand2", padx=10, pady=5,
+            highlightthickness=0)
+        self._patch_abruf_knopf.pack(anchor="w")
+        self._register_translatable(self._patch_abruf_knopf,
+                                    "info_popup.fetch_button")
+
         # ── Treeview (füllt restliche Höhe) ────────────────────────────────────────────────────────
         patch_outer = tk.Frame(container, bg=self._COLORS["bg_card"])
         patch_outer.pack(fill="both", expand=True)
@@ -13510,6 +13539,13 @@ class PS5ConverterGUI:
             if self._cached_title_id:
                 self._prepare_patch_lookup_ui(self._cached_title_id)
                 self._fetch_patches_async(self._cached_title_id)
+            else:
+                # Ohne Title-ID passierte hier bisher gar nichts: Das Fenster
+                # ging auf und die Updateliste blieb wortlos leer. Jetzt steht
+                # da, woran es liegt.
+                self._patch_status_var.set(
+                    self._t("info_popup.status_no_title_id"))
+            self._patch_abruf_knopf_pruefen()
         else:
             self._info_popup.deiconify()
         # Einmalig in den Vordergrund – danach normales Fensterverhalten
@@ -14050,8 +14086,19 @@ class PS5ConverterGUI:
             if self._persisted_title_id:
                 self._persisted_title_id = ""
                 self._save_setting("last_title_id", "")
+            # Zweiter Weg in die leere Updateliste: Stammen die Angaben aus
+            # einem Mustervergleich ("Fallback"), verwerfen wir die Title-ID
+            # bewusst - sie ist zu unsicher, um damit ins Netz zu gehen. Bis
+            # v1.9.7 stand danach nur nichts da. Wer die Quelle geladen hat
+            # und trotzdem keine Liste sieht, soll den Grund lesen koennen.
+            if self._info_popup is not None and self._info_popup.winfo_exists():
+                self._patch_status_var.set(
+                    self._t("info_popup.status_pattern_only"))
+                self._patch_zeile_setzen(
+                    self._t("info_popup.pattern_placeholder"))
 
         self._nachschlag_knopf_pruefen()
+        self._patch_abruf_knopf_pruefen()
 
         # Cover-Bild im Popup aktualisieren (nur wenn Popup offen und Label existiert)
         popup_live = (
@@ -14144,19 +14191,109 @@ class PS5ConverterGUI:
         # Denselben Weg wie eine frische Quellauswahl nehmen.
         self._on_source_path_changed()
 
-    def _prepare_patch_lookup_ui(self, title_id: str) -> None:
-        """Setzt Platzhalter und Status für laufende Patch-Suche."""
-        self._patch_status_var.set(self._t("info_popup.status_loading", title_id=title_id))
-        if hasattr(self, "_patch_tree") and self._patch_tree is not None:
+    def _patch_zeile_setzen(self, text: str) -> None:
+        """Ersetzt die Updateliste durch eine einzelne Auskunftszeile."""
+        baum = getattr(self, "_patch_tree", None)
+        if baum is None:
+            return
+        try:
+            if not baum.winfo_exists():
+                return
+            for eintrag in baum.get_children():
+                baum.delete(eintrag)
+            baum.insert("", "end", values=("-", text, "-", "-", "-", "-"))
+        except Exception as exc:
+            logger.debug("Patch-Platzhalter nicht setzbar: %s", exc)
+
+    def _patch_abruf_knopf_pruefen(self) -> None:
+        """Zeigt Auskunft und Abrufknopf genau dann, wenn der Abruf gesperrt ist."""
+        rahmen = getattr(self, "_patch_hinweis_rahmen", None)
+        if rahmen is None:
+            return
+        try:
+            if not rahmen.winfo_exists():
+                return
+            zeigen = not self._metadaten_online_erlaubt()
+            if zeigen and not rahmen.winfo_ismapped():
+                rahmen.pack(fill="x", pady=(0, 6))
+            elif not zeigen and rahmen.winfo_ismapped():
+                rahmen.pack_forget()
+        except Exception as exc:
+            logger.debug("Abrufknopf nicht setzbar: %s", exc)
+
+    def _patch_abruf_gesperrt_zeigen(self) -> None:
+        """Sagt im Fenster, dass nicht gesucht wird - statt Suche vorzutäuschen."""
+        self._patch_status_var.set(self._t("info_popup.status_blocked"))
+        self._patch_zeile_setzen(self._t("info_popup.blocked_placeholder"))
+        self._patch_abruf_knopf_pruefen()
+
+    def _patch_abruf_ausloesen(self) -> None:
+        """Holt die Updateliste einmalig, auf ausdrücklichen Klick.
+
+        Derselbe Weg wie beim Metadaten-Nachschlag: ``_meta_nachschlag_einmalig``
+        hebt die Sperre für genau diesen einen Vorgang auf. Die dauerhafte
+        Einstellung bleibt unberührt - wer den Abruf abgeschaltet hat, hat ihn
+        nach diesem Klick weiterhin abgeschaltet.
+        """
+        tid = getattr(self, "_cached_title_id", "")
+        knopf = getattr(self, "_patch_abruf_knopf", None)
+        if not tid:
+            # Ohne Title-ID gibt es nichts nachzuschlagen. Das ist kein
+            # Fehler, aber es gehoert gesagt - sonst passiert auf den Klick
+            # sichtbar nichts.
+            self._patch_status_var.set(self._t("info_popup.status_no_title_id"))
+            return
+        if knopf is not None:
             try:
-                if self._patch_tree.winfo_exists():
-                    for item in self._patch_tree.get_children():
-                        self._patch_tree.delete(item)
-                    self._patch_tree.insert(
-                        "", "end", values=("-", self._t("info_popup.searching_placeholder"), "-", "-", "-", "-")
-                    )
-            except Exception as exc:
-                logger.debug("Patch-Placeholder konnte nicht gesetzt werden: %s", exc)
+                knopf.config(state=tk.DISABLED,
+                             text=self._t("info_popup.lookup_running"))
+            except Exception:
+                pass
+
+        def _arbeit() -> None:
+            self._meta_nachschlag_einmalig = True
+            try:
+                self._fetch_patches_async(tid)
+            finally:
+                # Die Sperre faellt erst zurueck, wenn die Suche angestossen
+                # ist. _fetch_patches_async prueft sie beim Eintritt.
+                self._meta_nachschlag_einmalig = False
+                try:
+                    self.root.after(0, self._patch_abruf_knopf_zuruecksetzen)
+                except Exception as exc:
+                    logger.debug("Abrufknopf nicht zurücksetzbar: %s", exc)
+
+        threading.Thread(target=_arbeit, daemon=True).start()
+
+    def _patch_abruf_knopf_zuruecksetzen(self) -> None:
+        """Macht den Abrufknopf wieder benutzbar."""
+        knopf = getattr(self, "_patch_abruf_knopf", None)
+        if knopf is None:
+            return
+        try:
+            if knopf.winfo_exists():
+                knopf.config(state=tk.NORMAL,
+                             text=self._t("info_popup.fetch_button"))
+        except Exception as exc:
+            logger.debug("Abrufknopf nicht zurücksetzbar: %s", exc)
+
+    def _prepare_patch_lookup_ui(self, title_id: str) -> None:
+        """Setzt Platzhalter und Status für die Patch-Suche.
+
+        Ist der Nachschlag im Netz gesperrt, wird hier **nicht** "Lade
+        Updates ..." angezeigt. Bis v1.9.7 stand genau das dauerhaft im
+        Fenster: ``_fetch_patches_async`` setzte erst den Ladetext und brach
+        danach wegen der Sperre stumm ab, ohne ihn wieder anzufassen. Auf dem
+        Mac ist die Sperre ab Werk gesetzt - dort behauptete das Fenster also
+        bei jedem Anwender, es suche, und suchte nie.
+        """
+        if not self._metadaten_online_erlaubt():
+            self._patch_status_var.set(self._t("info_popup.status_blocked"))
+            self._patch_zeile_setzen(self._t("info_popup.blocked_placeholder"))
+            self._patch_abruf_knopf_pruefen()
+            return
+        self._patch_status_var.set(self._t("info_popup.status_loading", title_id=title_id))
+        self._patch_zeile_setzen(self._t("info_popup.searching_placeholder"))
 
     def _fetch_patches_async(self, title_id: str) -> None:
         """Startet die Patch-Suche im Hintergrund-Thread.
@@ -14176,12 +14313,14 @@ class PS5ConverterGUI:
             logger.debug("Patch-Suche übersprungen: ungültige Title-ID '%s'", title_id)
             return
         _start_ts = _time_mod.perf_counter()
-        self.root.after(0, lambda t=tid_upper: self._patch_status_var.set(self._t("info_popup.status_loading", title_id=t)))
 
         def _elapsed() -> float:
             return max(0.0, _time_mod.perf_counter() - _start_ts)
 
         # --- In-Memory-Cache prüfen ---
+        # Der Zwischenspeicher wird VOR der Freigabe geprueft: Er liegt lokal
+        # und kostet keine Verbindung. Wer den Abruf gesperrt hat, soll
+        # trotzdem sehen, was schon einmal geholt wurde.
         _cached = self._patch_cache.get(tid_upper)
         if _cached is not None:
             _cache_ts, _cache_results = _cached
@@ -14194,6 +14333,13 @@ class PS5ConverterGUI:
                     ),
                 )
                 return
+        # Erst die Freigabe, dann der Ladetext. Die umgekehrte Reihenfolge
+        # stand bis v1.9.7 hier und war der Grund, warum das Fenster dauerhaft
+        # "Lade Updates ..." zeigte, ohne je zu suchen.
+        if not self._metadaten_online_erlaubt():
+            self.root.after(0, self._patch_abruf_gesperrt_zeigen)
+            return
+        self.root.after(0, lambda t=tid_upper: self._patch_status_var.set(self._t("info_popup.status_loading", title_id=t)))
         if tid_upper.startswith(("PPSA", "PPSS")):
             sites = [("https://prosperopatches.com", "PS5")]
         elif tid_upper.startswith(("CUSA", "PUSA")):
@@ -14204,10 +14350,6 @@ class PS5ConverterGUI:
                 ("https://orbispatches.com", "PS4"),
             ]
         # Ergebnis-Sammler (thread-safe via Liste)
-        if not self._metadaten_online_erlaubt():
-            # Ohne Freigabe bleibt die Patch-Liste leer, statt ungefragt bei
-            # prosperopatches.com/orbispatches.com nachzufragen.
-            return
         _all_results: list = []
         _lock = threading.Lock()
         _done_count = [0]
@@ -21678,6 +21820,12 @@ class PS5ConverterGUI:
             from mkpfs.ampr import ensure_ampr_index  # noqa: PLC0415  # type: ignore[import-not-found]
 
             marker = self._fakelib_pfad(root_path) / "libSceAmpr.sprx"
+            # Liegt eine gepackte Asset-Schicht daneben, wuerde ein Neubau
+            # deren Manifest unbrauchbar machen. Kein Fehlschlag: Der
+            # vorhandene Index bleibt stehen und ist der richtige.
+            if not self._ampr_index_neubau_erlaubt(root_path):
+                self._append_to_log(self._t("ampr.assets_index_kept"))
+                return True
             index_path = ensure_ampr_index(root_path, enabled=True)
             if index_path:
                 self._append_to_log(self._t('log.auto.0139', v0=index_path))
@@ -22028,6 +22176,9 @@ class PS5ConverterGUI:
         # Austausch neu entstehen.
         try:
             index_pfad = Path(ordner) / self._AMPR_INDEX_NAME
+            if not self._ampr_index_neubau_erlaubt(ordner):
+                self._append_to_log(self._t("ampr.assets_index_kept"))
+                return True
             anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), index_pfad)
             self._append_to_log(self._t("main.integrate_ampr_index", count=anzahl))
         except Exception as exc:
@@ -22186,6 +22337,14 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t('log.auto.0150', v0=name))
                 self._save_setting("ampr_emu_folder", str(emu_path.resolve()))
 
+        # ``--ampr-no-index`` wurde hier bisher nicht gelesen. Der Schalter
+        # setzt ``spec["ampr_rebuild_index"] = False``, und die andere
+        # Baustelle im selben Ablauf beachtet ihn auch - dieser Aufruf lief
+        # danach trotzdem und baute den Index doch neu. Bei einem erkannten
+        # APR-Titel war der Schalter damit wirkungslos.
+        if not automation.get("ampr_rebuild_index", True):
+            self._append_to_log(self._t("ampr.index_rebuild_skipped"))
+            return True
         if not self._auto_generate_ampr_index(str(root_path)):
             self._append_to_log(self._t('log.auto.0151'))
             return False
@@ -22216,6 +22375,24 @@ class PS5ConverterGUI:
     _AMPR_DEFAULT_APPLY_LIBS = (_AMPR_SPRX_NAME,)
     _AMPR_INDEX_NAME = "ampr_emu.index"
     _AMPR_BACKUP_SUFFIX = ".orig"
+
+    #: Dateien der gepackten Asset-Schicht des AMPR EMU (ab 0.4.2.1).
+    #:
+    #: Wer mit ``ampr_pack.py`` Baender baut, liefert neben dem
+    #: ``ampr_emu.index`` ein ``ampr_assets.index``, dessen ``.runtime`` und die
+    #: ``.pak``-Baende aus - alle mit **einer gemeinsamen Build-ID**. Die
+    #: fileIds im Pack-Manifest sind die Satznummern aus den AMPRIDX3-Saetzen,
+    #: also aus genau dem Index, den dieses Programm nach jedem Einbau des
+    #: AMPR EMU neu baut. Ein Neubau vergibt die Satznummern neu, und das
+    #: Manifest zeigt danach ins Leere; der AMPR EMU meldet dann
+    #: "fileId and path disagree". Wurden die Quelldateien zuvor mit
+    #: ``remove-packed-sources`` entfernt, kennt der neue Index sie ueberhaupt
+    #: nicht mehr - dann hilft auch kein Rueckbau.
+    _AMPR_ASSET_DATEIEN: frozenset[str] = frozenset({
+        "ampr_assets.index",
+        "ampr_assets.index.runtime",
+    })
+    _AMPR_ASSET_ENDUNG = ".pak"
 
     # Reihenfolge bestimmt die Anzeige im Manager.
     _AMPR_VARIANT_ORDER: dict[str, int] = {
@@ -23833,6 +24010,10 @@ class PS5ConverterGUI:
 
             # Der Index bildet den Dateibestand ab – nach jedem Eingriff neu bauen.
             rebuild_index = bool(spec.get("ampr_rebuild_index", True))
+            if (changed and rebuild_index
+                    and not self._ampr_index_neubau_erlaubt(search_root)):
+                self._append_to_log(self._t("ampr.assets_index_kept"))
+                rebuild_index = False
             if changed and rebuild_index:
                 self._set_status(self._t("status.rebuilding_ampr_index"))
                 index_path = Path(search_root) / self._AMPR_INDEX_NAME
@@ -34490,13 +34671,18 @@ class PS5ConverterGUI:
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                  wraplength=920, justify="left").pack(fill="x")
 
-        protokoll = tk.Text(körper, height=4, font=("Consolas", pt(9)),
+        # wrap="word" statt "none": Hier landet der Abbruchgrund des
+        # eingebetteten Werkzeugs, und der ist eine einzige lange Zeile
+        # ("...extraction failed for X: ... Extractor output: ..."). Ohne
+        # Umbruch stand davon nur der Anfang im Bild, der Rest lag hinter
+        # einem waagerechten Rollbalken - genau die Auskunft, die der
+        # Anwender braucht, wenn ein Paket nicht durchgeht. Mit Umbruch
+        # entfaellt der Rollbalken; sechs Zeilen Grundhoehe, weil eine solche
+        # Meldung umgebrochen selten in vier passt.
+        protokoll = tk.Text(körper, height=6, font=("Consolas", pt(9)),
                             bg=c["console_bg"], fg=c["console_fg"], relief="flat",
-                            insertbackground=c["console_fg"], wrap="none")
+                            insertbackground=c["console_fg"], wrap="word")
         protokoll.pack(fill="both", expand=True, pady=(6, 0))
-        protokoll_scroll = ttk.Scrollbar(körper, orient="horizontal", command=protokoll.xview)
-        protokoll_scroll.pack(fill="x")
-        protokoll.configure(xscrollcommand=protokoll_scroll.set)
 
         def _protokoll(text: str) -> None:
             """Hängt eine Zeile an das Protokollfeld des Fensters an."""
@@ -34597,7 +34783,15 @@ class PS5ConverterGUI:
                         json_modus=True,
                     )
                     laeuft["aktiv"] = False
-                    if rc != 0:
+                    # Rueckgabewert 2 ist KEIN Fehlschlag. Das Werkzeug gibt
+                    # EXIT_CONFLICT zurueck, sobald irgendein Titel einen
+                    # Konflikt hat (cli.py:260) - das vollstaendige
+                    # Verzeichnis steht zu diesem Zeitpunkt aber laengst auf
+                    # der Ausgabe, denn _print_list laeuft eine Zeile davor.
+                    # Bis v1.9.7 verwarf ein einziger Titel mit zwei Fassungen
+                    # desselben Pakets die gesamte, bereits gelieferte Liste;
+                    # der Anwender sah nur "Einlesen fehlgeschlagen (2)".
+                    if rc not in (ps4_werkzeug.RC_OK, ps4_werkzeug.RC_KONFLIKT):
                         _status(self._t("ps4pkg.status_scan_failed", code=rc))
                         return
                     try:
@@ -34620,6 +34814,44 @@ class PS5ConverterGUI:
                         if len(sicht["ps5"]) > 12:
                             _protokoll(self._t("ps4pkg.and_more",
                                                anzahl=len(sicht["ps5"]) - 12))
+
+                    # Konflikte nennen, statt sie im Rueckgabewert zu
+                    # verstecken. Ohne diese Zeile bleibt unerklaert, warum
+                    # ein Titel in der Liste steht, sich aber nicht bauen
+                    # laesst.
+                    konflikt_titel = [
+                        str(t) for t, s in (daten.items()
+                                            if isinstance(daten, dict) else [])
+                        if isinstance(s, dict) and s.get("conflicts")]
+                    if konflikt_titel:
+                        _protokoll(self._t("ps4pkg.scan_conflicts",
+                                           anzahl=len(konflikt_titel)))
+                        for kennung in konflikt_titel[:12]:
+                            _protokoll("    %s" % kennung)
+
+                    # Was das Werkzeug abgelehnt hat, steht nur in seiner
+                    # Inventardatei - die Ausgabe von "list --json" enthaelt
+                    # allein die brauchbaren Spiele. Bis v1.9.7 verschwand ein
+                    # abgelehntes Paket deshalb spurlos samt Begruendung.
+                    abgelehnt = ps4_werkzeug.abgelehnte_pakete(
+                        os.path.join(arbeit, "unpacked"))
+                    if abgelehnt is None:
+                        # Nicht lesbar ist nicht dasselbe wie "nichts
+                        # abgelehnt" - das gehoert gesagt, sonst haelt der
+                        # Anwender eine unvollstaendige Liste fuer vollstaendig.
+                        _protokoll(self._t("ps4pkg.rejected_unknown"))
+                    elif abgelehnt:
+                        _protokoll(self._t("ps4pkg.rejected_header",
+                                           anzahl=len(abgelehnt)))
+                        for eintrag in abgelehnt[:12]:
+                            _protokoll(self._t(
+                                "ps4pkg.rejected_entry",
+                                name=os.path.basename(str(eintrag.get("path", "?"))),
+                                grund=str(eintrag.get("reason")
+                                          or eintrag.get("error") or "?")))
+                        if len(abgelehnt) > 12:
+                            _protokoll(self._t("ps4pkg.and_more",
+                                               anzahl=len(abgelehnt) - 12))
 
                     def _fuellen() -> None:
                         for spiel in spiele:
@@ -34743,6 +34975,15 @@ class PS5ConverterGUI:
                         "--compression-workers", str(int(worker_var.get())),
                         "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
                         "--verbose",
+                        # Das Werkzeug haengt seinen Protokollschreiber nur an,
+                        # wenn dieser Schalter kommt (dort pipeline.py:220).
+                        # "--verbose" allein setzt nur die Stufe, nicht den
+                        # Ausgabeweg - ohne "--console-log" lief das gesamte
+                        # Laufprotokoll ins Leere, und im Fehlerfall stand bei
+                        # uns nur die Schlusszeile. Der Schalter ist in der
+                        # Hilfe des Werkzeugs ausgeblendet (argparse.SUPPRESS),
+                        # aber vorhanden und wirksam.
+                        "--console-log",
                     ]
                     rc, _ausgabe = self._ps4ffpsc_lauf(
                         befehl,
@@ -37407,6 +37648,14 @@ class PS5ConverterGUI:
             if not output:
                 messagebox.showwarning(self._t("ampr_index.window_title"), self._t("ampr_index.msg_choose_output"), parent=win)
                 return
+            # Auch hier fragen, obwohl der Anwender Quell- und Zielpfad selbst
+            # gewaehlt hat: Genau ueber dieses Fenster wuerde jemand "mal eben
+            # den Index neu bauen" - und dabei ein Pack-Manifest zerlegen.
+            # Mit parent=win, damit die Frage vor dem Fenster steht.
+            if not self._ampr_index_neubau_erlaubt(root, parent=win):
+                _log(self._t("ampr.assets_index_kept"))
+                status_var.set(self._t("ampr.assets_status_kept"))
+                return
             build_btn.config(state="disabled")
             status_var.set(self._t("ampr_index.status_scanning"))
             _log(self._t("ampr_index.log_start", root=root))
@@ -37497,6 +37746,91 @@ class PS5ConverterGUI:
                 pos = (pos + 1) & mask
             slots[pos] = (h, index + 1, duplicate_flag if duplicate else 0)
         return slots, len(duplicate_hashes)
+
+    @classmethod
+    def _ist_ampr_asset_datei(cls, name: str) -> bool:
+        """Gehört dieser Dateiname zur gepackten Asset-Schicht?"""
+        klein = os.path.basename(str(name or "").replace("\\", "/")).lower()
+        return (klein in cls._AMPR_ASSET_DATEIEN
+                or klein.endswith(cls._AMPR_ASSET_ENDUNG))
+
+    def _ampr_asset_pack_vorhanden(self, ordner) -> bool | None:
+        """Liegt in diesem Ordner eine gepackte AMPR-Asset-Schicht?
+
+        Returns:
+            ``True``  - mindestens eine Datei der Schicht gefunden.
+            ``False`` - der Ordner ist lesbar und enthaelt keine.
+            ``None``  - **konnte nicht nachgesehen werden.**
+
+        ``None`` ist ausdruecklich nicht ``False``. Wer beides gleich behandelt,
+        meldet "kein Asset-Pack vorhanden", obwohl er gar nicht nachgesehen hat -
+        und baut den Index dann guten Gewissens kaputt. Dieselbe Unterscheidung
+        macht ``_ampr_marker_im_container`` bei der AMPR-Anzeige.
+
+        Gelesen wird mit ``os.scandir``, nicht mit ``glob`` oder ``is_file``:
+        Die beiden verschlucken einen Fehler und liefern eine leere Liste
+        beziehungsweise ``False`` - aus "kann nicht lesen" wuerde damit
+        stillschweigend "ist nicht da".
+        """
+        pfad = str(ordner or "")
+        if not pfad:
+            return None
+        try:
+            with os.scandir(pfad) as eintraege:
+                for eintrag in eintraege:
+                    if self._ist_ampr_asset_datei(eintrag.name):
+                        return True
+        except OSError as exc:
+            logger.debug("Asset-Schicht nicht pruefbar (%s): %s", pfad, exc)
+            return None
+        return False
+
+    def _ampr_index_neubau_erlaubt(self, ordner, *, parent=None) -> bool:
+        """Darf der ``ampr_emu.index`` in diesem Ordner neu gebaut werden?
+
+        Ohne Asset-Schicht: immer ja, ohne den Anwender zu behelligen. Mit
+        einer - oder wenn sich das nicht feststellen liess - wird gefragt, denn
+        ein Neubau macht ein vorhandenes Pack-Manifest unbrauchbar.
+
+        Im CLI-Betrieb gibt es kein Fenster. Dort entscheidet ein **eigener**
+        Schalter (``--ampr-index-trotz-assets``), nicht ``--yes``: Ein Schalter,
+        der Rueckfragen zum Ueberschreiben abnickt, soll nicht nebenbei ein
+        Spiel unbrauchbar machen. Ohne ihn wird nicht gebaut - der vorhandene
+        Index bleibt stehen. Dasselbe Vorgehen wie bei ``_param_frage``.
+        """
+        zustand = self._ampr_asset_pack_vorhanden(ordner)
+        if zustand is False:
+            return True
+        return self._ampr_index_neubau_erlaubt_roh(
+            ordner, gefunden=bool(zustand), parent=parent)
+
+    def _ampr_index_neubau_erlaubt_roh(self, ordner, *, gefunden: bool = True,
+                                       parent=None) -> bool:
+        """Die Rückfrage selbst - ohne vorher nachzusehen.
+
+        Für Wege, die den Ordner nicht mit ``scandir`` erreichen: Beim
+        FTP-Weg liegt er auf der Konsole, und die Antwort steht in der
+        eingesammelten Dateiliste.
+
+        Args:
+            gefunden: ``True``, wenn eine Asset-Schicht belegt ist;
+                ``False`` für "konnte nicht nachgesehen werden".
+        """
+        schluessel = ("ampr.assets_found" if gefunden
+                      else "ampr.assets_unreadable")
+        if getattr(self, "_cli_mode", False):
+            erlaubt = bool(getattr(self, "_cli_ampr_assets", False))
+            self._append_to_log(self._t(
+                "ampr.assets_cli_allowed" if erlaubt else "ampr.assets_cli_skipped",
+                path=str(ordner)))
+            return erlaubt
+        frage = "%s\n\n%s" % (self._t(schluessel, path=str(ordner)),
+                              self._t("ampr.assets_question"))
+        if parent is not None:
+            return bool(messagebox.askyesno(
+                self._t("ampr.assets_title"), frage, default="no", parent=parent))
+        return bool(self._ask_yesno_threadsafe(
+            self._t("ampr.assets_title"), frage, default_yes=False))
 
     def _build_ampr_index_local(self, root: Path, output: Path) -> tuple[int, int]:
         """Baut ampr_emu.index aus einem lokalen Ordner (entspricht /app0 auf der PS5).
@@ -38495,6 +38829,17 @@ class PS5ConverterGUI:
             if not rows:
                 self._append_to_log(self._t("ampr.ftp_no_files", path=root))
                 return False, 0
+
+            # Auf der Konsole kann nicht mit scandir nachgesehen werden - aber
+            # die eben eingesammelten Zeilen nennen jede Datei unter /app0.
+            # Steht dort eine gepackte Asset-Schicht, macht das Zurueckspielen
+            # eines neu gebauten Index deren Manifest unbrauchbar. Gefragt wird
+            # vor dem Schreiben, nicht erst vor dem Hochladen: Sonst laege
+            # danach eine irrefuehrende Datei auf der Platte des Anwenders.
+            if any(self._ist_ampr_asset_datei(zeile[2]) for zeile in rows):
+                if not self._ampr_index_neubau_erlaubt_roh(root):
+                    self._append_to_log(self._t("ampr.assets_index_kept"))
+                    return False, 0
 
             out_path = Path(local_output)
             count, dupes = self._ampr_write_index(rows, out_path)
@@ -41216,6 +41561,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     ampr.add_argument("--ampr-source", type=str, default="", help="Eigene .sprx/.prx-Datei statt einer Version aus dem Speicher.")
     ampr.add_argument("--ampr-no-backup", action="store_true", help="Die vom Spiel mitgelieferte Datei nicht als .orig sichern.")
     ampr.add_argument("--ampr-no-index", action="store_true", help="ampr_emu.index nach der Änderung nicht neu bauen.")
+    ampr.add_argument(
+        "--ampr-index-trotz-assets", action="store_true",
+        help="Den ampr_emu.index auch dann neu bauen, wenn im Ordner eine "
+             "gepackte Asset-Schicht des AMPR EMU liegt (ampr_assets.index, "
+             ".pak). Ohne diesen Schalter bleibt der vorhandene Index stehen, "
+             "denn ein Neubau macht das Pack-Manifest unbrauchbar. Bewusst "
+             "nicht von --ja mitentschieden.",
+    )
     ampr.add_argument("--ampr-host", type=str, default="", help="IP-Adresse der PS5 (für --ampr-action ampr_ftp_index).")
     ampr.add_argument(
         "--ampr-port", type=int, default=0,
@@ -41307,6 +41660,10 @@ def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
     # sondern lesen diese beiden Schalter - siehe _param_frage_cli().
     app._cli_param_repair = bool(getattr(args, "param_json_reparieren", False))
     app._cli_param_online = bool(getattr(args, "param_json_online", False))
+    # Aus demselben Grund ein eigener Schalter: --ja nickt Rueckfragen zum
+    # Ueberschreiben ab und soll dabei nicht nebenbei ein Spiel mit
+    # Asset-Schicht unbrauchbar machen.
+    app._cli_ampr_assets = bool(getattr(args, "ampr_index_trotz_assets", False))
     app.is_running = True
 
     output = os.path.join(
