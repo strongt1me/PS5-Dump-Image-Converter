@@ -131,6 +131,32 @@ PROPS_SEGMENT_INDEX_MASK = 0xFFFF
 # --------------------------------------------------------------------------
 
 #: Firmware-Hauptversion -> (PS5-SDK, PS4-SDK). Werte aus PS5 BackPork Kitchen.
+#:
+#: **Warum die Tabelle bei 10 aufhoert** (nachgesehen am 07.09.2026, damit es
+#: nicht ein zweites Mal untersucht wird):
+#:
+#: Die Vorlage - ``core/VersionProfiles.vb`` aus PS5 BACKPORK KITCHEN 2.3.1,
+#: der neuesten Fassung - endet Eintrag fuer Eintrag wertgleich ebenfalls bei
+#: 10. Ihr ``Ps4SdkResolver.vb`` ist eine feste Nachschlagliste mit
+#: Rueckfallwert, keine Rechenregel. Diese Tabelle hinkt also nicht hinterher.
+#:
+#: Ableitbar ist nur ein Teil: Das PS5-Hauptbyte ist die BCD-Firmware
+#: (10 -> ``0x10``), und die PS4-Seite steigt ab Firmware 5 regelmaessig um
+#: 0.50 (FW 11 -> ``0x12590001``, 12 -> ``0x13090001``). Die **PS5-Baunummer**,
+#: also die unteren 16 Bit, folgt keiner Regel - 0x50, 0x09, 0x27, 0x31, 0x33,
+#: 0x38, 0x38, 0x41, 0x40, 0x40. Sie ist gemessen, nicht gerechnet, und laesst
+#: sich nur aus einem echten Modul dieser Firmware lesen.
+#:
+#: Kernel-Offset-Tabellen (``sdk-0.42/crt/kernel.c``, ``sdkVersionHex.ts`` aus
+#: PS5Upload) kennen zwar 13.00 bis 13.60, taugen hier aber **nicht**: Das sind
+#: Exploit-Offsets und blanke BCD-Firmwarewoerter ohne Baunummer und ohne
+#: PS4-Partnerwert.
+#:
+#: Und selbst mit den Zahlen waere wenig gewonnen: Waehlbar sind ohnehin nur
+#: die Staende aus ``FIRMWARE_MIT_FAKELIBS``, und Ersatzbibliotheken gibt es
+#: nur fuer 4 bis 7. Die lassen sich nicht ausrechnen; sie entstehen aus einem
+#: echten Firmware-Bestand. Eine Erweiterung ist also keine Code-, sondern
+#: eine Datenfrage.
 SDK_PAARE: dict[int, tuple[int, int]] = {
     1: (0x01000050, 0x07590001),
     2: (0x02000009, 0x08050001),
