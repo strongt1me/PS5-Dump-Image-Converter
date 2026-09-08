@@ -142,6 +142,7 @@ from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
+from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
     MANIFEST_KNOWN_KEYS,
@@ -154,7 +155,9 @@ from ps5_validator.utils.param_manifest import (
     save_manifest_json,
     save_param_json,
 )
-from ps5_validator.utils.i18n import (BAUFORM_KEYS, DEFAULT_LANGUAGE, VERIFY_STUFEN,
+from ps5_validator.utils.i18n import (AMPR_METHODE_ASSETPACK, AMPR_METHODE_KEYS,
+                                      AMPR_METHODE_NORMAL, BAUFORM_KEYS,
+                                      DEFAULT_LANGUAGE, VERIFY_STUFEN,
                                       ZSTD_LEVEL_KEYS, translate as i18n_translate)
 from ps5_validator.utils.ini_config import (
     MEHRFACH_TRENNER,
@@ -433,7 +436,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.7"
+APP_VERSION = "v1.9.8"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -4221,6 +4224,19 @@ class PS5ConverterGUI:
                 self._t("bauform.exfat")))
             self._bauform_hinweis_setzen()
 
+        # Die Einbaumethode des AMPR EMU folgt derselben Regel: Die Tabelle
+        # bildet Anzeigetext auf Kennung ab, und der Anzeigetext wechselt.
+        if hasattr(self, "ampr_methode_combo"):
+            _gewaehlte_methode = self._ampr_methode()
+            self._ampr_methode_options = {
+                self._t(schluessel): wert for schluessel, wert in AMPR_METHODE_KEYS
+            }
+            self.ampr_methode_combo["values"] = list(self._ampr_methode_options.keys())
+            self.ampr_methode_var.set(next(
+                (text for text, wert in self._ampr_methode_options.items()
+                 if wert == _gewaehlte_methode),
+                self._t("ampr_pack.methode_normal")))
+
         if hasattr(self, "compression_combo"):
             _selected_level = self.zstd_level
             self._zstd_level_options = {self._t(key): level for key, level in ZSTD_LEVEL_KEYS}
@@ -6335,6 +6351,29 @@ class PS5ConverterGUI:
             lambda _e: self._save_setting("integrate_ampr_version", self.ampr_version_var.get()),
         )
 
+        # Wie eingebaut wird: einzeln liegenlassen oder zusaetzlich in
+        # gepackte Baender legen. Gespeichert wird die Kennung, nicht der
+        # Anzeigetext - der wechselt mit der Sprache.
+        self._ampr_methode_options: dict[str, str] = {
+            self._t(schluessel): wert for schluessel, wert in AMPR_METHODE_KEYS
+        }
+        _gemerkte_methode = str(
+            self._load_setting("integrate_ampr_methode", AMPR_METHODE_NORMAL) or "").strip().lower()
+        if _gemerkte_methode not in {wert for _s, wert in AMPR_METHODE_KEYS}:
+            _gemerkte_methode = AMPR_METHODE_NORMAL
+        self.ampr_methode_var = tk.StringVar(value=next(
+            (self._t(s) for s, w in AMPR_METHODE_KEYS if w == _gemerkte_methode),
+            self._t("ampr_pack.methode_normal")))
+        self.ampr_methode_combo = ttk.Combobox(
+            path_card, textvariable=self.ampr_methode_var, state="readonly",
+            font=(UI_SCHRIFT, pt(9)),
+            values=list(self._ampr_methode_options.keys()), width=11,
+        )
+        self.ampr_methode_combo.bind(
+            "<<ComboboxSelected>>", lambda _e: self._on_ampr_methode_changed())
+        DelayedTooltip(self.ampr_methode_combo, self._t("ampr_pack.methode_hint"),
+                       delay_ms=900, wraplength=430)
+
         self.ampr_playgo_check = tk.Checkbutton(
             path_card,
             text=self._t("main.integrate_playgo"),
@@ -6375,7 +6414,7 @@ class PS5ConverterGUI:
         self.backport_fw_combo = ttk.Combobox(
             path_card, textvariable=self.backport_fw_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)),
-            values=[str(f) for f in ps5_backport.FIRMWARE_MIT_FAKELIBS], width=4,
+            values=[str(f) for f in self._backport_firmwares()], width=4,
         )
         self.backport_fw_combo.bind(
             "<<ComboboxSelected>>",
@@ -6919,6 +6958,28 @@ class PS5ConverterGUI:
         source_type = self._detect_source_type(source_path)
         return tuple(target for target in options if target != source_type)
 
+    #: Wie ShadowMount+ die Bildformate selbst einstuft.
+    #:
+    #: Aus dessen README (1.7alpha13, Zeilen 32-35): ``.ffpkg`` "Recommended",
+    #: ``.exfat`` "Compatibility / external-drive-only titles", ``.ffpfs``
+    #: "Experimental", ``.ffpfsc`` "Experimental container for nested images".
+    #: Zeile 28 sagt dazu rundheraus "PFS support is experimental.", Zeile 40
+    #: "UFS (.ffpkg) is the recommended image format for normal use."
+    #:
+    #: Nicht zu verwechseln mit der **inneren** Bauform eines ``.ffpfsc``:
+    #: exFAT im Container fuehrt dieselbe Anleitung unter "Recommended
+    #: layouts" (Zeile 248) - das steht in ``bauform.exfat`` und ist richtig
+    #: so. Hier geht es um das aeussere Dateiformat.
+    #:
+    #: Die Vorgabe des Programms bleibt ``.ffpfsc``. Diese Zeilen aendern
+    #: nichts daran, sie sagen dem Anwender nur, was er waehlt.
+    _SMP_EINSTUFUNG: dict[str, str] = {
+        "ffpkg": "main.smp_rang_ffpkg",
+        "exfat": "main.smp_rang_exfat",
+        "ffpfs": "main.smp_rang_pfs",
+        "ffpfsc": "main.smp_rang_pfs",
+    }
+
     def _zielformat_hinweis(self, selected_mode: str) -> str:
         """Baut den Hinweistext unter der Zielformat-Liste.
 
@@ -6941,8 +7002,19 @@ class PS5ConverterGUI:
         else:
             teile.append(self._t("main.format_options_hint_default"))
 
-        if self._format_label_to_key(self.target_format.get().strip()) in ("ffpfsc", "ffpfs"):
+        gewaehlt = self._format_label_to_key(self.target_format.get().strip())
+        if gewaehlt in ("ffpfsc", "ffpfs"):
             teile.append(self._t("main.pfs_speed_hint"))
+        # Die Einstufung des Engine-Autors nennen, nicht nur die eigene
+        # Vorgabe. Die ShadowMountPlus-Anleitung fuehrt eine Rangfolge
+        # (1.7alpha13, Zeilen 32-35 und 40): .ffpkg "Recommended", .exfat
+        # "Compatibility / external-drive-only titles", .ffpfs und .ffpfsc
+        # "Experimental". Beim Anwender kam davon bisher nichts an - er sah
+        # nur, dass .ffpfsc vorausgewaehlt ist. Die Vorgabe bleibt, was sie
+        # ist; er soll nur wissen, was er waehlt.
+        einstufung = self._SMP_EINSTUFUNG.get(gewaehlt)
+        if einstufung:
+            teile.append(self._t(einstufung))
         return "\n".join(teile)
 
     def _format_hinweis_setzen(self, selected_mode: str | None = None) -> None:
@@ -9057,10 +9129,14 @@ class PS5ConverterGUI:
             [(getattr(self, "compression_combo", None), 0),
              (getattr(self, "worker_knob", None), gruppe),
              (getattr(self, "verify_combo", None), gruppe)],
-            # AMPR EMU samt Fassung und PlayGo bilden eine Gruppe, BACKPORT
-            # samt Firmware die zweite - der groessere Abstand zeigt das.
+            # AMPR EMU samt Fassung, Methode und PlayGo bilden eine Gruppe,
+            # BACKPORT samt Firmware die zweite - der groessere Abstand zeigt
+            # das. Die Methode steht neben der Fassung, weil beide zusammen
+            # entscheiden, was am Ende im Ordner liegt: Eine test-nopack-
+            # Fassung kann die Baender der neuen Methode nicht lesen.
             [(getattr(self, "ampr_integrate_check", None), 0),
              (getattr(self, "ampr_version_combo", None), eng),
+             (getattr(self, "ampr_methode_combo", None), eng),
              (getattr(self, "ampr_playgo_check", None), eng),
              (getattr(self, "backport_integrate_check", None), gruppe),
              (getattr(self, "backport_fw_combo", None), eng)],
@@ -12535,7 +12611,7 @@ class PS5ConverterGUI:
         try:
             if mkpfs_dir and mkpfs_dir not in sys.path:
                 sys.path.insert(0, mkpfs_dir)
-            from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415
+            from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415  # type: ignore[import-not-found]
 
             daten = read_game_metadata(quelle)
         except Exception as exc:
@@ -21969,6 +22045,11 @@ class PS5ConverterGUI:
 
         try:
             self.ampr_version_combo.configure(state="readonly" if ampr_an else "disabled")
+            # Die Methodenwahl kam spaeter dazu; ein Aufrufer, der nur die
+            # Kaestchen aufgebaut hat, soll daran nicht scheitern.
+            methode = getattr(self, "ampr_methode_combo", None)
+            if methode is not None:
+                methode.configure(state="readonly" if ampr_an else "disabled")
             self.ampr_playgo_check.configure(state="normal" if ampr_an else "disabled")
             self.backport_fw_combo.configure(state="readonly" if backport_an else "disabled")
             if not hat_versionen:
@@ -21980,6 +22061,71 @@ class PS5ConverterGUI:
             self._save_setting("integrate_ampr", ampr_an)
             self._save_setting("integrate_playgo", bool(self.ampr_playgo_var.get()))
             self._save_setting("integrate_backport", backport_an)
+
+    def _ampr_methode(self) -> str:
+        """Die gewaehlte Einbaumethode als Kennung, nicht als Anzeigetext.
+
+        Faellt auf "Normal" zurueck, solange die Auswahl nicht steht - etwa
+        im Kopfteil des Fensteraufbaus oder in einem Ablauf ohne Oberflaeche.
+        Die neue Methode ungefragt zu nehmen waere die schlechtere Vorgabe:
+        Sie schreibt Baender, die ohne pack-faehige Fassung niemand liest.
+        """
+        tabelle = getattr(self, "_ampr_methode_options", None)
+        wahl = getattr(self, "ampr_methode_var", None)
+        if not tabelle or wahl is None:
+            return AMPR_METHODE_NORMAL
+        try:
+            return tabelle.get(wahl.get(), AMPR_METHODE_NORMAL)
+        except tk.TclError:
+            return AMPR_METHODE_NORMAL
+
+    def _ampr_pack_arbeiter(self) -> int:
+        """Wie viele Packvorgaenge parallel laufen duerfen.
+
+        Dieselbe Zahl, die der Drehknopf fuer das Packen des Abbilds
+        stellt - beide Laeufe belasten dieselbe CPU, und zwei getrennte
+        Regler dafuer waeren eine Einstellung zu viel. 0 heisst: Das
+        Werkzeug entscheidet selbst.
+        """
+        try:
+            return max(0, int(self.worker_count_var.get()))
+        except (AttributeError, tk.TclError, ValueError):
+            return 0
+
+    def _on_ampr_methode_changed(self) -> None:
+        """Prueft die Voraussetzungen, sobald die neue Methode gewaehlt wird.
+
+        Die Pruefung steht hier und nicht erst im Bauablauf: Fehlt das
+        Packwerkzeug oder das LZ4-Modul, faellt das sonst erst nach dem
+        Entpacken eines ganzen Spielordners auf - also nach Minuten, die
+        umsonst waren. Bei fehlenden Voraussetzungen faellt die Auswahl
+        sichtbar auf "Normal" zurueck, statt still etwas anderes zu tun,
+        als dasteht.
+        """
+        methode = self._ampr_methode()
+        if methode != AMPR_METHODE_ASSETPACK:
+            self._save_setting("integrate_ampr_methode", methode)
+            return
+
+        bereit, grund = ampr_assetpakete.einsatzbereit()
+        if not bereit:
+            self._append_to_log(self._t(grund))
+            self.ampr_methode_var.set(self._t("ampr_pack.methode_normal"))
+            self._save_setting("integrate_ampr_methode", AMPR_METHODE_NORMAL)
+            return
+
+        # Die Fassung entscheidet mit: Eine test-nopack-Bibliothek findet
+        # das Manifest zwar, kann die Baender aber nicht lesen. Das ist
+        # keine Sperre - wer die Fassung gleich noch wechselt, soll nicht
+        # aufgehalten werden -, aber es gehoert gesagt.
+        auswahl = getattr(self, "_ampr_versionsauswahl", {}).get(
+            self.ampr_version_var.get()) or {}
+        variante = str(auswahl.get("variant", ""))
+        if variante and not ampr_assetpakete.variante_kann_packen(variante):
+            self._append_to_log(
+                self._t("ampr_pack.variante_kann_nicht", variant=variante))
+
+        self._save_setting("integrate_ampr_methode", methode)
 
     def _integration_gewaehlt(self) -> bool:
         """True, wenn mindestens eines der beiden Kaestchen gesetzt ist."""
@@ -22088,6 +22234,7 @@ class PS5ConverterGUI:
 
         self._append_to_log(self._t("main.integrate_backport_start", firmware=firmware))
         self._set_status(self._t("main.integrate_backport_status", firmware=firmware))
+        self._backport_ziel_deckung_melden(ordner, firmware)
 
         gepatcht = fehler = 0
         for pfad in ps5_backport.kandidaten(ordner):
@@ -22184,6 +22331,117 @@ class PS5ConverterGUI:
         except Exception as exc:
             self._append_to_log(self._t("main.integrate_ampr_index_failed", error=exc))
             return False
+
+        if self._ampr_methode() == AMPR_METHODE_ASSETPACK:
+            return self._ampr_assetpakete_bauen(ordner, str(index_pfad), auswahl)
+        return True
+
+    def _ampr_assetpakete_bauen(self, ordner: str, index_pfad: str,
+                                auswahl: dict[str, Any]) -> bool:
+        """Die neue Methode: Spieldateien in gepackte Baender legen.
+
+        Laeuft **nach** dem Index - ``ampr_pack.py`` liest ihn, um die
+        fileIds zu vergeben. Ein spaeter neu gebauter Index macht die
+        fertigen Baender unbrauchbar; davor schuetzt an anderer Stelle
+        ``_ampr_index_neubau_erlaubt``.
+
+        Gebaut wird in einen Ordner **neben** dem Spielordner, nicht in
+        ihn: Waehrend des Laufs liegen Original und Band gleichzeitig vor,
+        und ein abgebrochener Lauf hinterlaesst dann keine halben Baender
+        zwischen den Spieldateien. Uebernommen wird erst, wenn die Pruefung
+        jedes Byte bestaetigt hat.
+
+        Die Originaldateien bleiben liegen. ``remove-packed-sources``
+        koennte sie entfernen, aber nicht hier: Ob das Spiel wirklich jede
+        Datei ueber den AMPR EMU liest, zeigt erst ein Lauf auf der Konsole
+        - manche Titel lesen ueber ``mmap`` daran vorbei.
+        """
+        bereit, grund = ampr_assetpakete.einsatzbereit()
+        if not bereit:
+            self._append_to_log(self._t(grund))
+            return False
+
+        variante = str((auswahl or {}).get("variant", ""))
+        if variante and not ampr_assetpakete.variante_kann_packen(variante):
+            self._append_to_log(
+                self._t("ampr_pack.variante_kann_nicht", variant=variante))
+            return False
+
+        ausgabe = os.path.join(
+            os.path.dirname(os.path.abspath(ordner)),
+            os.path.basename(os.path.abspath(ordner)) + "_ampr_pack")
+        self._append_to_log(self._t("ampr_pack.start"))
+        self._set_status(self._t("ampr_pack.status"))
+
+        try:
+            profil = ampr_assetpakete.profil_schreiben(
+                os.path.join(ausgabe, "ampr_pack.toml"),
+                arbeiter=self._ampr_pack_arbeiter())
+            self._append_to_log(self._t("ampr_pack.profil", path=profil))
+
+            zusammen = ampr_assetpakete.packen(
+                ordner, index_pfad, ausgabe, profil,
+                melden=self._append_to_log,
+                abbruch=lambda: not self.is_running)
+            self._append_to_log(self._t(
+                "ampr_pack.gepackt",
+                loose=len(zusammen.get("loose_paths") or [])))
+
+            # Mit --root, sonst bestaetigt die Pruefung nur, dass die
+            # Baender in sich stimmig sind - nicht, dass sie den
+            # Spielinhalt tragen.
+            self._set_status(self._t("ampr_pack.status_pruefen"))
+            ampr_assetpakete.pruefen(
+                os.path.join(ausgabe, ampr_assetpakete.MANIFEST_NAME),
+                app0=ordner, melden=self._append_to_log,
+                abbruch=lambda: not self.is_running)
+            self._append_to_log(self._t("ampr_pack.geprueft"))
+
+            # Vierte Stufe der Anleitung ("Print the manifest summary").
+            # Sie fehlte bis zum 07.09.2026 - und mit ihr die einzige
+            # Stelle, an der die **tatsaechlichen** Zahlen gegen die harten
+            # Grenzen der Laufzeit gehalten werden. Die Schaetzung aus der
+            # Profilerzeugung gilt danach nicht mehr.
+            uebersicht = ampr_assetpakete.uebersicht(
+                os.path.join(ausgabe, ampr_assetpakete.MANIFEST_NAME),
+                melden=lambda _z: None)
+            self._append_to_log(self._t(
+                "ampr_pack.uebersicht",
+                files=int(uebersicht.get("files") or 0),
+                packed=int(uebersicht.get("packed_files") or 0),
+                chunks=int(uebersicht.get("chunks") or 0),
+                packs=len(uebersicht.get("packs") or [])))
+
+            # Ein Bestand ueber einer der Grenzen ist nicht langsam, sondern
+            # unbrauchbar: Die Laufzeit laedt ihn gar nicht erst. Das gehoert
+            # hier gemeldet und nicht an der Konsole entdeckt.
+            risse = ampr_assetpakete.grenzen_ueberschritten(uebersicht)
+            if risse:
+                for name, gemessen, erlaubt in risse:
+                    self._append_to_log(self._t(
+                        "ampr_pack.grenze_gerissen",
+                        name=name, gemessen=gemessen, erlaubt=erlaubt))
+                self._append_to_log(self._t("ampr_pack.grenze_folge"))
+                return False
+
+            ampr_assetpakete.bestand_uebernehmen(
+                ausgabe, ordner, melden=self._append_to_log, text=self._t)
+        except ampr_assetpakete.PackFehler as exc:
+            # Ein paar Abbruchgruende nennt das Modul als Uebersetzungs-
+            # schluessel, weil es selbst keine Sprache kennt. Sie wuerden
+            # sonst als "ampr_pack.abgebrochen" im Protokoll stehen.
+            grund_text = str(exc)
+            if grund_text.startswith("ampr_pack."):
+                self._append_to_log(self._t(grund_text))
+            else:
+                self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
+            return False
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Assetpakete: unerwarteter Fehler")
+            self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
+            return False
+
+        self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
         return True
 
     #: Welche PlayGo-Variante zu welcher AMPR-Variante passt. libScePlayGo
@@ -22395,9 +22653,24 @@ class PS5ConverterGUI:
     _AMPR_ASSET_ENDUNG = ".pak"
 
     # Reihenfolge bestimmt die Anzeige im Manager.
+    #: Varianten und ihr Rang: 0 = ohne Protokollierung, 1 = mit.
+    #:
+    #: Ab 0.4.2.1 hat der AMPR EMU eine **zweite, davon unabhaengige**
+    #: Eigenschaft: Ob er gepackte Asset-Baender lesen kann. Der Autor liefert
+    #: drei Bauarten aus - ``test-nopack``, ``test-pack``, ``test-debug-pack``.
+    #: Der Speicher hat dafuer nur den Variantenplatz, deshalb stehen sie hier
+    #: mit; ihr Rang richtet sich weiterhin allein nach der Protokollierung,
+    #: denn danach waehlt das Programm die Vorgabe aus.
+    #:
+    #: Ohne diese Zeilen faellt eine unbekannte Variante auf Rang 9 und
+    #: ``_ampr_variantenklasse`` gibt sie unveraendert zurueck - der
+    #: Aktualisierungsvergleich ordnet sie dann keiner Klasse zu und bietet
+    #: fehlende Fassungen nicht an. Genau das ist am 05.09.2026 schon einmal
+    #: mit ``nolog``/``log`` passiert.
     _AMPR_VARIANT_ORDER: dict[str, int] = {
         "no debug": 0, "nodebug": 0, "nolog": 0, "release": 0,
         "debug": 1, "log": 1,
+        "test-nopack": 0, "test-pack": 0, "test-debug-pack": 1,
     }
 
     _AMPR_VERSION_RE = re.compile(r"(\d+(?:\.\d+)+)")
@@ -31053,6 +31326,78 @@ class PS5ConverterGUI:
         """Ordner mit den mitgelieferten Ersatzbibliotheken; leer, wenn keiner da ist."""
         return _bundled_resource("Backport_Fakelibs")
 
+    def _backport_firmwares(self) -> tuple[int, ...]:
+        """Die Firmware-Staende, die im Auswahlfeld stehen duerfen.
+
+        Gelesen wird der wirkliche Bestand, nicht die feste Liste. Wer einen
+        selbst gezogenen Satz als ``Backport_Fakelibs/8/fakelib/`` ablegt,
+        kann Firmware 8 danach auswaehlen, ohne dass am Programm etwas
+        geaendert werden muesste - mitgeliefert werden 4 bis 7, weil mehr
+        nicht weitergegeben werden darf, nicht weil mehr nicht ginge.
+
+        Faellt der Bestand ganz aus (kein Ordner im Buendel), bleibt die
+        mitgelieferte Liste stehen: Ein leeres Auswahlfeld waere schlechter
+        als eines, das die Vorgabe zeigt.
+        """
+        vorhanden = ps5_backport.firmwares_mit_bestand(self._backport_fakelib_basis())
+        return vorhanden or ps5_backport.FIRMWARE_MIT_FAKELIBS
+
+    def _backport_ziel_deckung_melden(self, ordner: str, firmware: int) -> None:
+        """Sagt vor dem Herabsetzen, welche Funktionen dort fehlen werden.
+
+        Nicht zu verwechseln mit :meth:`_backport_deckung_melden`: Die prueft
+        **nach** dem Kopieren, ob die Ersatzbibliotheken liefern, was das
+        Spiel von ihnen verlangt. Diese hier prueft **vorher**, ob die
+        Zielfirmware selbst schon alles mitbringt.
+
+        Braucht einen entpackten Firmware-Bestand als Vergleich; ohne den
+        laesst sich die Frage nicht beantworten, und die Pruefung entfaellt
+        stillschweigend. Eingestellt wird er ueber ``backport_firmware_referenz``
+        - ein Ordner mit Unterordnern je Fassung (``7.61``, ``9.40``, ...).
+
+        **Warum das ueberhaupt gemeldet wird.** Ohne diese Zeile faellt eine
+        fehlende Funktion erst auf der Konsole auf, und zwar ohne brauchbare
+        Meldung - das Spiel startet einfach nicht. Gemessen am 07.09.2026 an
+        zehn Dumps: Auf Firmware 7 fehlten je Titel bis zu 15 Funktionen,
+        auf Firmware 9 nur noch bis zu drei, fast alle aus ``libSceAgc``.
+
+        Ein Befund ist **kein Abbruchgrund**: Genau diese Luecken sollen die
+        Ersatzbibliotheken schliessen, und ob sie es tun, sagt erst
+        ``deckung_pruefen`` nach dem Kopieren.
+        """
+        basis = str(self._load_setting("backport_firmware_referenz", "") or "").strip()
+        if not basis:
+            return
+        stand = ps5_backport.firmware_ordner_fuer(basis, firmware)
+        if not stand:
+            self._append_to_log(
+                self._t("backport.deckung_kein_stand", firmware=firmware, path=basis))
+            return
+
+        try:
+            dateien = ps5_backport.kandidaten(ordner)
+            eboot = os.path.join(ordner, ps5_backport.EBOOT_NAME)
+            if os.path.isfile(eboot) and eboot not in dateien:
+                dateien.insert(0, eboot)
+            ergebnis = ps5_backport.firmware_deckung(dateien, stand)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Deckungspruefung nicht moeglich: %s", exc)
+            return
+
+        fehlend = ergebnis.get("fehlend") or {}
+        if not fehlend:
+            self._append_to_log(self._t(
+                "backport.deckung_vollstaendig",
+                stand=os.path.basename(stand), count=ergebnis.get("verlangt", 0)))
+            return
+
+        gesamt = sum(len(n) for n in fehlend.values())
+        aufzaehlung = ", ".join("%s (%d)" % (lib, len(nids))
+                                for lib, nids in sorted(fehlend.items()))
+        self._append_to_log(self._t(
+            "backport.deckung_luecken", stand=os.path.basename(stand),
+            total=gesamt, libs=aufzaehlung))
+
     # ==================================================================
     # AMPR EMU nach ShadowMountPlus-Generation (provisorisch)
     #
@@ -31726,6 +32071,8 @@ class PS5ConverterGUI:
              ("nein", self._t("amprgen.q_save_addr_no"),
               self._t("amprgen.q_save_addr_no_why"))])
         if wahl == "ja":
+            if not self._ist_plausible_ps5_adresse(host):
+                return False
             self._save_setting("ps5_ip", host)
             melde(self._t("amprgen.addr_saved", host=host))
             return True
@@ -33258,14 +33605,31 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"]).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_ip())
-        ttk.Entry(zweite, textvariable=ip_var, width=18).pack(side="left",
-                                                              padx=(8, 12))
+        ip_feld = ttk.Entry(zweite, textvariable=ip_var, width=18)
+        ip_feld.pack(side="left", padx=(8, 12))
 
         def _ip_merken(*_a) -> None:
+            """Merkt die Adresse - erst wenn sie fertig getippt ist.
+
+            Dieselbe Falle wie im Autoloader-Fenster, dort am 05.09.2026
+            behoben und hier stehen geblieben: ``trace_add("write", ...)``
+            haengt an **jedem Tastendruck**. Waehrend "192.168.1.94" entsteht,
+            wandern elf Zwischenstaende ("1", "19", "192", "192.", ...) in die
+            **zentrale** Einstellung ``ps5_ip``, die alle anderen Fenster
+            lesen. Wer mittendrin abbricht oder das Fenster schliesst, laesst
+            dort einen Torso zurueck.
+            """
             wert = ip_var.get().strip()
-            if wert and wert != self._ps5_ip():
-                self._save_setting("ps5_ip", wert)
-        ip_var.trace_add("write", _ip_merken)
+            if not wert or wert == self._ps5_ip():
+                return
+            if not self._ist_plausible_ps5_adresse(wert):
+                return
+            self._save_setting("ps5_ip", wert)
+
+        # Beim Verlassen des Feldes und beim Bestaetigen mit Eingabe - nicht
+        # bei jedem Zeichen.
+        ip_feld.bind("<FocusOut>", _ip_merken)
+        ip_feld.bind("<Return>", _ip_merken)
 
         stand_var = tk.StringVar(value="")
 
@@ -34985,10 +35349,26 @@ class PS5ConverterGUI:
                         # aber vorhanden und wirksam.
                         "--console-log",
                     ]
+                    # Die letzten Zeilen mitschneiden. Der ausfuehrliche
+                    # Abbruchgrund des Werkzeugs geht bisher nur ins
+                    # Protokollfeld dieses Fensters - beim Schliessen ist er
+                    # weg und im Diagnosebericht stand er nie. Genau danach
+                    # fragt aber jeder, dem "es geht bei manchen Spielen
+                    # nicht" gemeldet wird.
+                    letzte_zeilen: list[str] = []
+
+                    def _protokoll_und_merken(text: str) -> None:
+                        sauber = str(text).rstrip("\n")
+                        if sauber.strip():
+                            letzte_zeilen.append(sauber)
+                            if len(letzte_zeilen) > 20:
+                                del letzte_zeilen[0]
+                        _protokoll(text)
+
                     rc, _ausgabe = self._ps4ffpsc_lauf(
                         befehl,
                         arbeitsordner=arbeit,
-                        zeile_callback=_protokoll,
+                        zeile_callback=_protokoll_und_merken,
                         fortschritt_callback=_fortschritt,
                         prozess_ablage=laeuft,
                     )
@@ -35039,6 +35419,15 @@ class PS5ConverterGUI:
                                     _protokoll(self._t("ps4pkg.check_complete"))
                     else:
                         _status(self._t("ps4pkg.status_failed", code=rc))
+                        # Den Grund mitschreiben, nicht nur die Zahl. Ohne
+                        # diesen Block stand im Programmprotokoll allein
+                        # "Erstellen fehlgeschlagen (Rueckgabewert 1)" - eine
+                        # Auskunft, mit der niemand etwas anfangen kann.
+                        self._append_to_log(
+                            self._t("ps4pkg.log_failed",
+                                    title=title_id, code=rc) + "\n")
+                        for zeile in letzte_zeilen:
+                            self._append_to_log("    %s\n" % zeile)
                 except Exception as exc:  # noqa: BLE001
                     # Ohne dieses Netz bliebe laeuft["aktiv"] auf True
                     # stehen: Beide Knoepfe lehnen danach stillschweigend
@@ -35760,7 +36149,19 @@ class PS5ConverterGUI:
         def _pruefen() -> None:
             """Sagt vor dem Bauen, ob das Backup ueberhaupt starten koennte."""
             quelle = quelle_var.get().strip()
-            if not os.path.isdir(quelle) or laeuft["aktiv"]:
+            if laeuft["aktiv"]:
+                return
+            # Bis hierher stieg die Pruefung bei einem untauglichen Quellordner
+            # wortlos aus - kein Dialog, keine Statuszeile, nichts im
+            # Protokoll. Der Anwender drueckte den Knopf und nichts geschah;
+            # ob das Programm haengt oder der Ordner falsch ist, war nicht zu
+            # unterscheiden.
+            if not quelle:
+                _status(self._t("pkgbau.status_no_source"))
+                return
+            if not os.path.isdir(quelle):
+                _status(self._t("pkgbau.status_bad_source"))
+                _protokoll(self._t("pkgbau.log_bad_source", path=quelle))
                 return
             laeuft["aktiv"] = True
             _status(self._t("pkgbau.status_checking"))
@@ -41291,6 +41692,43 @@ def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     return int(ps4ffpsc_main(argv) or 0)
 
 
+def _run_ampr_pack_subcommand(argv: list[str]) -> int:
+    """Führt das eingebettete AMPR-Packwerkzeug aus.
+
+    Dasselbe Muster wie ``--ps4ffpsc``: Die fertige Programmdatei ruft sich
+    **selbst** mit diesem Schalter auf, statt ein Python im System zu suchen.
+
+    Warum das nötig ist: ``ampr_pack.py`` liegt als Datenordner bei und
+    braucht einen Interpreter. Bis zum 07.09.2026 suchte
+    ``ampr_assetpakete._python_ruf`` dafür ``python3``/``python``/``py`` im
+    System – wer keines installiert hatte, bekam „Kein Python gefunden“, und
+    wer eines hatte, brauchte darin zusätzlich ``lz4``. Die neue Methode war
+    damit für jeden unerreichbar, der nur die eine Datei heruntergeladen hat.
+    Genau dafür gibt es diesen Weg schon beim PS4-Werkzeug.
+
+    Für Menschen ist der Schalter nicht gedacht.
+
+    Args:
+        argv: Die Argumente für ``ampr_pack.py``.
+
+    Returns:
+        Rückgabewert des Werkzeugs.
+    """
+    wurzel = ampr_assetpakete.werkzeugordner_finden()
+    if not wurzel:
+        print(
+            "[FEHLER] Der Ordner %s fehlt - das AMPR-Packwerkzeug ist nicht "
+            "mitgeliefert." % ampr_assetpakete.PACKWERKZEUG_ORDNER,
+            file=sys.stderr,
+        )
+        return 2
+    if wurzel not in sys.path:
+        sys.path.insert(0, wurzel)
+    from ampr_pack import main as ampr_pack_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    return int(ampr_pack_main(argv) or 0)
+
+
 def _is_admin() -> bool:
     """Prüft ob das Programm mit erhöhten Rechten läuft.
 
@@ -41938,6 +42376,11 @@ if __name__ == "__main__":
     # niemanden, der sie beantwortet - der Lauf bliebe stehen.
     if len(sys.argv) > 1 and sys.argv[1] in ("--ps4ffpsc", "--ps4-mkpfs"):
         sys.exit(_run_ps4_subcommand(sys.argv[1], sys.argv[2:]))
+
+    # Dasselbe fuer das AMPR-Packwerkzeug: Auch dieser Prozess wird vom
+    # Programm selbst gestartet und darf keine zweite UAC-Abfrage ausloesen.
+    if len(sys.argv) > 1 and sys.argv[1] == ampr_assetpakete.SELBSTAUFRUF:
+        sys.exit(_run_ampr_pack_subcommand(sys.argv[2:]))
 
     # Darstellungspruefung. Steht aus demselben Grund vor der
     # Rechtepruefung: Sie braucht keine Administratorrechte, und eine

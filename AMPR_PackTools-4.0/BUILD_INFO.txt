@@ -1,0 +1,5 @@
+﻿Package: ampr-pack-tools-windows-x64
+Created: 2026-09-06T11:28:01Z
+Commit: f8ea37a110bb
+Python: 3.11.0
+Embedded pack tool: ampr_pack_gui.exe 4.0

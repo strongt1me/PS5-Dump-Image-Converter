@@ -571,15 +571,20 @@ class EingebetteteOrdnerTests(unittest.TestCase):
              "PS5ImageConverter_Pro_linux.spec",
              "PS5ImageConverter_Pro_macos.spec")
 
-    #: Zwei Werkzeuge aus dem mitgelieferten PlayGo-Quellcode. Sie liegen
-    #: unter tools/ und werden dadurch von einer allgemeinen Regel erfasst,
-    #: gehoeren aber seit jeher zur Auslieferung (zusammen 33 KB).
-    ERLAUBT = frozenset({
-        "PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/pgo_stub-0.5/pgo_stub-0.5/"
-        "tools/make_fself.py",
-        "PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/pgo_stub-0.5/pgo_stub-0.5/"
-        "tools/make_playgo_libc_internal_stub.py",
-    })
+    #: Keine Ausnahmen mehr.
+    #:
+    #: Hier standen bis zum 07.09.2026 zwei Werkzeuge aus dem mitgelieferten
+    #: PlayGo-Quellcode: Sie liegen unter ``tools/``, und die Regel ``tools/``
+    #: in .gitignore stand ohne fuehrenden Schraegstrich - damit traf sie jeden
+    #: gleichnamigen Ordner in jeder Tiefe. Die beiden Dateien waren dadurch
+    #: nicht in git, lagen aber in der ausgelieferten Datei. Ein frischer Klon
+    #: hatte sie nicht, die Bauten auf fremder Hardware also auch nicht.
+    #:
+    #: Statt die Ausnahme zu pflegen, wurde die Ursache behoben: Die Regeln
+    #: sind jetzt verankert, die beiden Dateien liegen in git. Eine leere
+    #: Liste ist hier das richtige Ergebnis - jeder neue Eintrag waere ein
+    #: Hinweis darauf, dass wieder etwas Ausgeliefertes an git vorbeilaeuft.
+    ERLAUBT: frozenset[str] = frozenset()
 
     @staticmethod
     def _eingebettete_ordner(spec_name):

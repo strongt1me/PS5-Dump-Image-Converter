@@ -172,6 +172,7 @@ class KartenzeilenTests(unittest.TestCase):
                             ("verify_combo", gruppe)]),
             ("Einbauzeile", [("ampr_integrate_check", None),
                              ("ampr_version_combo", eng),
+                             ("ampr_methode_combo", eng),
                              ("ampr_playgo_check", eng),
                              ("backport_integrate_check", gruppe),
                              ("backport_fw_combo", eng)]),

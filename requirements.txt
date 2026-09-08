@@ -4,3 +4,5 @@ zstandard==0.25.0
 zlib-ng
 tkinterdnd2==0.6.2
 psutil==7.2.2
+# AMPR-EMU-Assetpakete (AMPR_PackTools-4.0/ampr_pack.py packt damit die Baender)
+lz4>=4.3.2

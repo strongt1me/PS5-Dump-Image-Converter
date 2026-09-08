@@ -217,6 +217,63 @@ class RiegelTests(unittest.TestCase):
                                   "- dieser Test misst dann nichts.")
 
 
+class ZweiSchreiberTests(unittest.TestCase):
+    """Unsere Fassung und die von MkPFS muessen dieselbe Datei liefern.
+
+    Es gibt zwei Wege, einen ``ampr_emu.index`` zu schreiben:
+    ``_build_ampr_index_local`` im Hauptprogramm (auch fuer den FTP-Weg, ueber
+    ``_ampr_write_index``) und ``mkpfs.ampr.build_ampr_index`` im eingebetteten
+    Werkzeug. Beide beschreiben denselben Ordner - laufen sie auseinander,
+    haengt es vom Weg ab, welche Datei auf der Konsole landet, und der
+    Unterschied faellt erst dort auf.
+
+    Am 07.09.2026 wurde behauptet, sie erzeugten bereits unterschiedliche
+    Indexe. Nachgemessen: Sie sind byteweise gleich. Diese Pruefung haelt das
+    fest, statt sich auf die Messung von damals zu verlassen.
+    """
+
+    @staticmethod
+    def _spielordner(basis: Path) -> Path:
+        spiel = basis / "spiel"
+        (spiel / "sce_sys").mkdir(parents=True)
+        (spiel / "fakelib").mkdir()
+        for name, inhalt in (("eboot.bin", b"E" * 100),
+                             ("sce_sys/param.json", b"{}"),
+                             ("fakelib/libSceAmpr.sprx", b"A" * 50),
+                             ("daten.bin", b"D" * 1000)):
+            (spiel / name).write_bytes(inhalt)
+        return spiel
+
+    def test_beide_wege_liefern_dieselbe_datei(self):
+        import tkinter as tk
+        try:
+            wurzel = tk._default_root or tk.Tk()
+            wurzel.withdraw()
+        except Exception:                       # pragma: no cover
+            raise unittest.SkipTest("keine Anzeige verfuegbar")
+        app = GUI(wurzel)
+        if not app.mkpfs_dir:
+            app.mkpfs_dir = app._extract_embedded_mkpfs()
+        if not app.mkpfs_dir:
+            self.skipTest("MkPFS nicht auspackbar")
+        if app.mkpfs_dir not in sys.path:
+            sys.path.insert(0, app.mkpfs_dir)
+        from mkpfs.ampr import build_ampr_index  # noqa: PLC0415
+
+        with tempfile.TemporaryDirectory() as ordner:
+            basis = Path(ordner)
+            spiel = self._spielordner(basis)
+            unser, fremd = basis / "unser.index", basis / "fremd.index"
+            app._build_ampr_index_local(spiel, unser)
+            build_ampr_index(spiel, fremd)
+            self.assertEqual(
+                unser.read_bytes(), fremd.read_bytes(),
+                "Die beiden Index-Schreiber liefern verschiedene Dateien. "
+                "Dann haengt es vom gewaehlten Weg ab, welcher Index auf der "
+                "Konsole landet - und der Unterschied faellt erst dort auf.")
+            self.assertGreater(unser.stat().st_size, 0)
+
+
 class SchalterWirktTests(unittest.TestCase):
     """``--ampr-no-index`` muss auch bei einem APR-Titel greifen.
 

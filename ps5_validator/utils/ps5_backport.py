@@ -152,11 +152,28 @@ PROPS_SEGMENT_INDEX_MASK = 0xFFFF
 #: Exploit-Offsets und blanke BCD-Firmwarewoerter ohne Baunummer und ohne
 #: PS4-Partnerwert.
 #:
-#: Und selbst mit den Zahlen waere wenig gewonnen: Waehlbar sind ohnehin nur
-#: die Staende aus ``FIRMWARE_MIT_FAKELIBS``, und Ersatzbibliotheken gibt es
-#: nur fuer 4 bis 7. Die lassen sich nicht ausrechnen; sie entstehen aus einem
-#: echten Firmware-Bestand. Eine Erweiterung ist also keine Code-, sondern
-#: eine Datenfrage.
+#: **Nachtrag 07.09.2026 - 11 und 12 sind jetzt gemessen.** Aus einem Bestand
+#: entpackter Firmware (1.00 bis 12.70) wurde der Modulkopf von
+#: ``system/common/lib/libSceAgc.sprx`` gelesen, je Stand gegen fuenf weitere
+#: Module gegengeprueft (alle sechs stimmten ueberein). Ergebnis fuer die
+#: ``x.00``-Staende: 11.00 -> ``0x11000043`` / ``0x12590001``, 12.00 ->
+#: ``0x12000043`` / ``0x13090001``. Die oben vermutete PS4-Ableitung war damit
+#: richtig; nur die Baunummer liess sich wie beschrieben nicht rechnen.
+#:
+#: **Warum die Werte 1 bis 10 trotzdem stehenbleiben.** Dieselbe Messung
+#: liefert fuer sie *andere* Baunummern als die Vorlage - 4.00 misst
+#: ``0x04000042`` statt ``0x04000031``, 6.00 misst ``0x06000042`` statt
+#: ``0x06000038``, 9.00 misst ``0x09000045`` statt ``0x09000040``. Das ist
+#: kein Widerspruch: Der Modulkopf einer Systembibliothek traegt die SDK-
+#: Fassung, mit der **sie** gebaut wurde, nicht den Wert, den ein
+#: herabgesetztes Spiel tragen muss. Geprueft wird beim Start ohnehin gegen
+#: Haupt- und Nebenversion; die unteren Bits sind Beiwerk. Die Werte 1 bis 10
+#: sind in der Szene erprobt, die gemessenen sind es nicht - deshalb bleiben
+#: sie unangetastet, und 11/12 folgen ihrer Form (Nebenversion 00).
+#:
+#: Ersatzbibliotheken bleiben die eigentliche Huerde: mitgeliefert werden nur
+#: 4 bis 7 (rechtlich, nicht technisch - siehe ``firmwares_mit_bestand``).
+#: Ein Eintrag hier macht einen Stand also noch nicht waehlbar.
 SDK_PAARE: dict[int, tuple[int, int]] = {
     1: (0x01000050, 0x07590001),
     2: (0x02000009, 0x08050001),
@@ -168,6 +185,8 @@ SDK_PAARE: dict[int, tuple[int, int]] = {
     8: (0x08000041, 0x11090001),
     9: (0x09000040, 0x11590001),
     10: (0x10000040, 0x12090001),
+    11: (0x11000043, 0x12590001),
+    12: (0x12000043, 0x13090001),
 }
 
 #: Firmware-Staende, fuer die Ersatzbibliotheken mitgeliefert werden.
@@ -838,6 +857,39 @@ def fakelib_quelle(basis: str, firmware: int) -> str:
     return os.path.join(str(basis or ""), str(int(firmware)), FAKELIB_ORDNER)
 
 
+def firmwares_mit_bestand(basis: str) -> tuple[int, ...]:
+    """Welche Firmware-Staende hier wirklich einen Bibliothekssatz haben.
+
+    :data:`FIRMWARE_MIT_FAKELIBS` nennt die **mitgelieferten** Saetze - 4 bis
+    7, mehr darf nicht weitergegeben werden. Die Saetze fuer 8, 9 und 10 sind
+    damit aber nicht unmoeglich: PS5 BACKPORK KITCHEN 2.3.1 fuehrt in
+    ``FAKELIBS_SETUP.md`` die Firmware 1.x bis 10.x als unterstuetzt und
+    begruendet die Luecke ausdruecklich rechtlich ("Fakelibs cannot be
+    distributed directly due to legal restrictions"), nicht technisch. Wer
+    die Bibliotheken aus einer offiziellen Firmware zieht und als
+    ``<basis>/8/fakelib/`` ablegt, hat einen vollwertigen Satz.
+
+    Diese Funktion sieht deshalb nach, statt zu behaupten. Ohne sie stuende
+    ein selbst ergaenzter Satz im Ordner und liesse sich trotzdem nicht
+    waehlen - die Liste im Auswahlfeld war bis dahin fest verdrahtet.
+
+    Grenze nach oben ist :data:`SDK_PAARE`: Fuer einen Stand ohne SDK-Paar
+    liesse sich der Modulkopf nicht schreiben. Die PS5-Baunummer laesst sich
+    nicht ausrechnen (siehe dort), ein Satz allein genuegt also nicht.
+
+    Returns:
+        Aufsteigend sortiert. Leer, wenn ``basis`` nichts enthaelt - dann
+        faellt der Aufrufer auf :data:`FIRMWARE_MIT_FAKELIBS` zurueck.
+    """
+    if not basis or not os.path.isdir(str(basis)):
+        return ()
+    gefunden: list[int] = []
+    for stand in sorted(SDK_PAARE):
+        if fakelib_dateien(basis, stand):
+            gefunden.append(stand)
+    return tuple(gefunden)
+
+
 def fakelib_ziel(spielordner: str, ordnername: str = FAKELIB_ORDNER) -> str:
     """Pfad, in den die Ersatzbibliotheken im Spiel gelegt werden.
 
@@ -1224,3 +1276,172 @@ def deckung_pruefen(spieldateien, fakelibs) -> dict:
         }
     return {"geprueft": geprueft, "ohne_tabelle": ohne_tabelle,
             "bibliotheken": bibliotheken, "unbeteiligt": sorted(unbeteiligt)}
+
+
+# --------------------------------------------------------------------------
+# Deckung gegen einen entpackten Firmware-Bestand
+# --------------------------------------------------------------------------
+#
+# ``deckung_pruefen`` beantwortet: Liefert der mitgelieferte Ersatzsatz, was
+# das Spiel von ihm verlangt? Offen bleibt die Frage davor: Braucht es
+# ueberhaupt einen Ersatz - und wofuer genau?
+#
+# Am 07.09.2026 an zehn Dumps gemessen, gegen die entpackten Staende 7.01,
+# 8.60, 9.40 und 11.00:
+#
+#   Zielfirmware   fehlende Funktionen (ueber alle zehn)
+#   7.01           24
+#   8.60           13
+#   9.40            9
+#   11.00           0
+#
+# Fast alles davon steckt in ``libSceAgc`` - genau der Bibliothek, die in
+# jedem mitgelieferten Ersatzsatz liegt. Und es sind ueber die Spiele hinweg
+# **dieselben** Funktionen: ``libSceAgc/dbOlWdppb4o`` fehlte bei sechs von
+# acht, ``vieBRwlh1Lw`` bei vier.
+#
+# Ein Vergleich auf Ebene ganzer Bibliotheken taugt dafuer **nicht**: Er
+# meldet fuer 12.00 dieselbe Liste wie fuer 7.01, obwohl ein SDK-10-Spiel auf
+# 12.00 laeuft. Namen wie ``libScePosix`` oder ``libSceAudioOut2`` haben gar
+# keine eigene Datei; sie stecken in ``libkernel`` beziehungsweise einem
+# Nachbarmodul. Gezaehlt wird deshalb hier auf NID-Ebene.
+
+#: Unterordner eines entpackten Firmware-Baums, in denen Module liegen.
+FIRMWARE_LIB_PFADE: tuple[tuple[str, ...], ...] = (
+    ("system", "common", "lib"),
+    ("system", "priv", "lib"),
+    ("system_ex", "common_ex", "lib"),
+    ("system_ex", "priv_ex", "lib"),
+)
+
+
+def ist_firmware_bestand(ordner: str) -> bool:
+    """Sieht dieser Ordner aus wie ein entpackter Firmware-Stand?"""
+    for teile in FIRMWARE_LIB_PFADE:
+        pfad = os.path.join(str(ordner or ""), *teile)
+        if os.path.isdir(pfad):
+            try:
+                if any(n.lower().endswith((".sprx", ".prx"))
+                       for n in os.listdir(pfad)):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def firmware_exporttabelle(ordner: str) -> dict[str, set]:
+    """Alle Funktionen, die dieser Firmware-Stand anbietet.
+
+    Returns:
+        Bibliotheksname (wie im Import genannt) -> Menge von NIDs. Gelesen
+        wird der Name aus der Exporttabelle des Moduls, nicht der Dateiname:
+        Eine Datei fuehrt oft mehrere Bibliotheken.
+    """
+    tabelle: dict[str, set] = {}
+    for teile in FIRMWARE_LIB_PFADE:
+        pfad = os.path.join(str(ordner or ""), *teile)
+        if not os.path.isdir(pfad):
+            continue
+        try:
+            namen = sorted(os.listdir(pfad))
+        except OSError:
+            continue
+        for name in namen:
+            if not name.lower().endswith((".sprx", ".prx")):
+                continue
+            symbole = symbole_aus_datei(os.path.join(pfad, name))
+            for lib, nids in symbole["exporte"].items():
+                if lib and lib != "?":
+                    tabelle.setdefault(lib, set()).update(nids)
+    return tabelle
+
+
+def firmware_ordner_fuer(basis: str, hauptversion: int) -> str:
+    """Sucht unter ``basis`` den passenden entpackten Firmware-Stand.
+
+    Erwartet einen Ordner mit Unterordnern je Fassung (``7.61``, ``9.40``,
+    ...), wie ihn die uebliche Entpackung anlegt. Genommen wird der
+    **vollstaendigste** Stand der gesuchten Hauptversion: Einzelne
+    Entpackungen sind lueckenhaft - 9.60 fuehrt 273 Bibliotheken, 9.40
+    dagegen 543 -, und der duennere Stand meldete reihenweise Funktionen als
+    fehlend, die es in Wirklichkeit gibt.
+
+    Returns:
+        Voller Pfad oder leere Zeichenkette, wenn nichts passt.
+    """
+    wurzel = str(basis or "")
+    if not os.path.isdir(wurzel):
+        return ""
+    bester, beste_zahl = "", -1
+    try:
+        eintraege = sorted(os.listdir(wurzel))
+    except OSError:
+        return ""
+    for name in eintraege:
+        kopf = name.split(".", 1)[0]
+        if not kopf.isdigit() or int(kopf) != int(hauptversion):
+            continue
+        pfad = os.path.join(wurzel, name)
+        if not ist_firmware_bestand(pfad):
+            continue
+        anzahl = 0
+        for teile in FIRMWARE_LIB_PFADE:
+            unter = os.path.join(pfad, *teile)
+            if os.path.isdir(unter):
+                try:
+                    anzahl += sum(1 for n in os.listdir(unter)
+                                  if n.lower().endswith((".sprx", ".prx")))
+                except OSError:
+                    pass
+        if anzahl > beste_zahl:
+            bester, beste_zahl = pfad, anzahl
+    return bester
+
+
+def firmware_deckung(spieldateien, firmware_ordner: str) -> dict:
+    """Welche Funktionen findet das Spiel auf dieser Firmware nicht?
+
+    Args:
+        spieldateien: eboot.bin und die Module des Dumps.
+        firmware_ordner: Wurzel eines entpackten Firmware-Standes.
+
+    Returns:
+        Dict mit ``bestand`` (Anzahl Bibliotheken der Firmware),
+        ``verlangt`` (Anzahl angeforderter Funktionen), ``fehlend``
+        (Bibliotheksname -> sortierte Liste fehlender NIDs) und
+        ``ohne_datei`` (Bibliotheken, die der Bestand gar nicht kennt - meist
+        keine Luecke, sondern in einem anderen Modul eingebettet).
+    """
+    tabelle = firmware_exporttabelle(firmware_ordner)
+    if not tabelle:
+        return {"bestand": 0, "verlangt": 0, "fehlend": {}, "ohne_datei": []}
+
+    # Was der Dump selbst mitbringt, muss die Firmware nicht liefern.
+    eigene: dict[str, set] = {}
+    verlangt: dict[str, set] = {}
+    for pfad in spieldateien:
+        symbole = symbole_aus_datei(pfad)
+        for lib, nids in symbole["exporte"].items():
+            if lib and lib != "?":
+                eigene.setdefault(lib, set()).update(nids)
+        for lib, nids in symbole["importe"].items():
+            if lib and lib != "?":
+                verlangt.setdefault(lib, set()).update(nids)
+
+    fehlend: dict[str, list] = {}
+    ohne_datei: list[str] = []
+    for lib, nids in sorted(verlangt.items()):
+        vorhanden = tabelle.get(lib, set()) | eigene.get(lib, set())
+        if not vorhanden:
+            ohne_datei.append(lib)
+            continue
+        offen = nids - vorhanden
+        if offen:
+            fehlend[lib] = sorted(offen)
+
+    return {
+        "bestand": len(tabelle),
+        "verlangt": sum(len(n) for n in verlangt.values()),
+        "fehlend": fehlend,
+        "ohne_datei": ohne_datei,
+    }

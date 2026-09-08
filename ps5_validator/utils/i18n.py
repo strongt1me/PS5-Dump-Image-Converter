@@ -26,6 +26,15 @@ ZSTD_LEVEL_KEYS = (('compression.fastest', 1),
 BAUFORM_KEYS = (('bauform.exfat', 'exfat'),
  ('bauform.pfs', 'pfs'))
 
+#: Wie der AMPR EMU eingebaut wird. 'normal' ist der bisherige Weg - die
+#: Spieldateien bleiben einzeln liegen. 'assetpack' packt sie zusaetzlich
+#: in Baender (ab AMPR EMU 0.4.2.1, nur mit pack-faehiger Fassung).
+#: Gespeichert wird die Kennung, nicht der uebersetzte Text.
+AMPR_METHODE_NORMAL = 'normal'
+AMPR_METHODE_ASSETPACK = 'assetpack'
+AMPR_METHODE_KEYS = (('ampr_pack.methode_normal', AMPR_METHODE_NORMAL),
+ ('ampr_pack.methode_neu', AMPR_METHODE_ASSETPACK))
+
 from ps5_validator.programmname import NAME as PROGRAMMNAME
 
 STRINGS: dict[str, dict[str, str]] = {
@@ -177,6 +186,9 @@ STRINGS: dict[str, dict[str, str]] = {
     'ffpkg.extract_empty': {'de': '[FEHLER] UFS2Tool meldete Erfolg, im Zielordner liegt aber keine Datei.\n', 'en': '[ERROR] UFS2Tool reported success, but the target folder is empty.\n'},
     'format.ffpkg': {'de': '.ffpkg', 'en': '.ffpkg'},
     'format.ffpkg_revalidate_suffix': {'de': '(neu validieren)', 'en': '(re-validate)'},
+    'main.smp_rang_ffpkg': {'de': 'ShadowMount+ nennt .ffpkg das empfohlene Format für den Normalfall.', 'en': 'ShadowMount+ calls .ffpkg the recommended format for normal use.'},
+    'main.smp_rang_exfat': {'de': 'ShadowMount+ führt .exFAT als Ausweichformat für Titel, die ein externes Laufwerk brauchen.', 'en': 'ShadowMount+ lists .exFAT as the fallback for titles that need an external drive.'},
+    'main.smp_rang_pfs': {'de': 'ShadowMount+ führt .ffpfs/.ffpfsc als experimentell; für den Normalfall empfiehlt es .ffpkg.', 'en': 'ShadowMount+ lists .ffpfs/.ffpfsc as experimental; for normal use it recommends .ffpkg.'},
     'main.pfs_speed_hint': {'de': 'Die PS5 entpackt .ffpfsc/.ffpfs mit rund 150–250 MB/s – etwa ein Drittel eines USB-Laufwerks und ein Zehntel der internen SSD. Spiele, die viel nachladen oder Texturen streamen, können dadurch ruckeln.', 'en': 'The PS5 decompresses .ffpfsc/.ffpfs at roughly 150–250 MB/s – about a third of a USB drive and a tenth of the internal SSD. Games that stream large amounts of data or textures may stutter.'},
     'main.source_hint': {'de': 'Quelle: {formats}', 'en': 'Source: {formats}'},
     'main.browse_files_button': {'de': 'Dateien wählen', 'en': 'Choose files'},
@@ -569,6 +581,9 @@ STRINGS: dict[str, dict[str, str]] = {
     'pkgbau.need_output': {'de': 'Bitte einen Zielordner wählen.', 'en': 'Please choose an output folder.'},
     'pkgbau.status_idle': {'de': 'Bereit.', 'en': 'Ready.'},
     'pkgbau.status_checking': {'de': 'Prüfe das Backup ...', 'en': 'Checking the backup ...'},
+    'pkgbau.status_no_source': {'de': 'Kein Quellordner gewählt.', 'en': 'No source folder selected.'},
+    'pkgbau.status_bad_source': {'de': 'Der gewählte Quellordner ist keiner.', 'en': 'The selected source is not a folder.'},
+    'pkgbau.log_bad_source': {'de': '[FEHLER] Das ist kein Ordner: {path}\n', 'en': '[ERROR] Not a folder: {path}\n'},
     'pkgbau.status_ready': {'de': 'Startbereit – alle Module würden laufen.', 'en': 'Launch-ready – all modules would run.'},
     'pkgbau.status_not_ready': {'de': 'Nicht startbereit: {anzahl} Modul(e) sind signiert und verschlüsselt.', 'en': 'Not launch-ready: {anzahl} module(s) are signed and encrypted.'},
     'pkgbau.status_check_failed': {'de': 'Prüfung fehlgeschlagen.', 'en': 'Check failed.'},
@@ -973,6 +988,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'ps4pkg.status_cancelling': {'de': 'Vorgang wird abgebrochen …', 'en': 'Cancelling …'},
     'ps4pkg.status_cancelled': {'de': 'Vorgang abgebrochen.', 'en': 'Cancelled.'},
     'ps4pkg.log_done': {'de': '[OK] PS4-Abbild erstellt: {title} → {path}\n', 'en': '[OK] PS4 image created: {title} → {path}\n'},
+    'ps4pkg.log_failed': {'de': '[FEHLER] PS4-Abbild nicht erstellt: {title} (Rückgabewert {code}). Die letzten Zeilen des Werkzeugs:', 'en': '[ERROR] PS4 image not created: {title} (exit code {code}). Last lines from the tool:'},
     'ampr_auswahl.title': {'de': 'AMPR EMU Manager', 'en': 'AMPR EMU Manager'},
     'ampr_auswahl.hint': {'de': 'Welche Methode passt, hängt von der Fassung von ShadowMountPlus ab. Der Einbau ins Backup wirkt in beiden.', 'en': 'Which method fits depends on your ShadowMountPlus version. Building it into the backup works with both.'},
     'ampr_auswahl.manager': {'de': 'AMPR EMU ins Backup einbauen (fakelib im Spielordner)', 'en': 'Build AMPR EMU into the backup (fakelib in the game folder)'},
@@ -2233,6 +2249,33 @@ STRINGS: dict[str, dict[str, str]] = {
     'ampr.assets_status_kept': {'de': 'Nicht gebaut – vorhandener Index bleibt stehen', 'en': 'Not built – existing index kept'},
     'ampr.assets_cli_skipped': {'de': '[AMPR] {path}: gepackte Asset-Schicht erkannt. Der Index wird nicht neu gebaut. Mit --ampr-index-trotz-assets erzwingen Sie es.\n', 'en': '[AMPR] {path}: packed asset layer detected. The index is not rebuilt. Use --ampr-index-trotz-assets to force it.\n'},
     'ampr.assets_cli_allowed': {'de': '[AMPR] {path}: gepackte Asset-Schicht erkannt, --ampr-index-trotz-assets ist gesetzt – der Index wird neu gebaut.\n', 'en': '[AMPR] {path}: packed asset layer detected, --ampr-index-trotz-assets is set – rebuilding the index.\n'},
+
+    # -- Neue Methode: gepackte Asset-Baender (AMPR EMU ab 0.4.2.1) --------
+    'ampr_pack.methode_normal': {'de': 'Normal', 'en': 'Normal'},
+    'ampr_pack.methode_neu': {'de': 'Asset-Pack', 'en': 'Asset pack'},
+    'ampr_pack.methode_hint': {'de': 'Normal: Die Spieldateien bleiben einzeln liegen – der bisherige Weg.\n\nNeue Methode: Die Dateien wandern zusätzlich in gepackte Bänder (ampr_assets-*.pak) mit LZ4. Das spart Platz und Dateideskriptoren. Voraussetzung ist eine pack-fähige AMPR-Fassung (test-pack oder test-debug-pack); eine test-nopack-Fassung findet die Bänder nicht.\n\nSystemdateien (eboot.bin, sce_sys, Module) bleiben immer ungepackt.', 'en': 'Normal: game files stay as individual files – the previous route.\n\nNew method: files additionally go into packed volumes (ampr_assets-*.pak) using LZ4, saving space and file descriptors. Requires a pack-capable AMPR build (test-pack or test-debug-pack); a test-nopack build will not find the volumes.\n\nSystem files (eboot.bin, sce_sys, modules) always stay unpacked.'},
+    'ampr_pack.werkzeug_fehlt': {'de': '[AMPR-PACK] Der Werkzeugordner AMPR_PackTools-4.0 fehlt – die neue Methode steht nicht zur Verfügung.\n', 'en': '[AMPR-PACK] The AMPR_PackTools-4.0 folder is missing – the new method is unavailable.\n'},
+    'ampr_pack.lz4_fehlt': {'de': '[AMPR-PACK] Das Python-Modul lz4 fehlt – ohne es kann nicht gepackt werden. Beim Start aus dem Quelltext: python -m pip install lz4, und zwar in genau den Python, mit dem Sie das Programm starten. In der fertigen Programmdatei ist lz4 mitgeliefert; fehlt es dort, ist der Bau unvollständig.\n', 'en': '[AMPR-PACK] The lz4 Python module is missing – packing is impossible without it. When running from source: python -m pip install lz4, into exactly the Python you start the program with. The packaged program ships lz4; if it is missing there, the build is incomplete.\n'},
+    'ampr_pack.kein_python': {'de': '[AMPR-PACK] Kein Python gefunden, mit dem das Packwerkzeug laufen könnte.\n', 'en': '[AMPR-PACK] No Python found to run the pack tool with.\n'},
+    'ampr_pack.variante_kann_nicht': {'de': '[AMPR-PACK] Die gewählte AMPR-Fassung "{variant}" liest keine gepackten Bänder. Nötig ist test-pack oder test-debug-pack – es wird nicht gepackt.\n', 'en': '[AMPR-PACK] The selected AMPR build "{variant}" cannot read packed volumes. test-pack or test-debug-pack is required – nothing is packed.\n'},
+    'ampr_pack.start': {'de': '[AMPR-PACK] Baue gepackte Asset-Bänder ...\n', 'en': '[AMPR-PACK] Building packed asset volumes ...\n'},
+    'ampr_pack.status': {'de': 'AMPR-Assetpakete werden gebaut ...', 'en': 'Building AMPR asset packs ...'},
+    'ampr_pack.status_pruefen': {'de': 'AMPR-Assetpakete werden geprüft ...', 'en': 'Verifying AMPR asset packs ...'},
+    'ampr_pack.profil': {'de': '[AMPR-PACK] Packprofil: {path}\n', 'en': '[AMPR-PACK] Pack profile: {path}\n'},
+    'ampr_pack.gepackt': {'de': '[AMPR-PACK] Bänder gebaut. {loose} Datei(en) bleiben ungepackt.\n', 'en': '[AMPR-PACK] Volumes built. {loose} file(s) remain unpacked.\n'},
+    'ampr_pack.geprueft': {'de': '[AMPR-PACK] Prüfung bestanden – jeder Block stimmt Byte für Byte mit der Quelle überein.\n', 'en': '[AMPR-PACK] Verification passed – every block matches the source byte for byte.\n'},
+    'ampr_pack.uebersicht': {'de': '[AMPR-PACK] Bestand: {files} Datei(en), davon {packed} gepackt, {chunks} Block/Blöcke in {packs} Band/Bändern.\n', 'en': '[AMPR-PACK] Set: {files} file(s), {packed} of them packed, {chunks} chunk(s) in {packs} volume(s).\n'},
+    'ampr_pack.grenze_gerissen': {'de': '[FEHLER] Harte Grenze überschritten – {name}: {gemessen} von höchstens {erlaubt}.\n', 'en': '[ERROR] Hard limit exceeded – {name}: {gemessen} of at most {erlaubt}.\n'},
+    'ampr_pack.grenze_folge': {'de': '[AMPR-PACK] Ein Bestand über einer dieser Grenzen wird von der Konsole gar nicht erst geladen. Abhilfe: größere Blöcke wählen oder einen Teil der Daten lose lassen. Es wurde nichts in den Spielordner übernommen.\n', 'en': '[AMPR-PACK] A set above one of these limits is not loaded by the console at all. Remedy: choose larger blocks or leave part of the data loose. Nothing was copied into the game folder.\n'},
+    'ampr_pack.uebernommen': {'de': '[AMPR-PACK] {count} Datei(en) in den Spielordner übernommen (Manifest, Laufzeitdatei, Bänder).\n', 'en': '[AMPR-PACK] {count} file(s) copied into the game folder (manifest, runtime file, volumes).\n'},
+    'ampr_pack.fehlgeschlagen': {'de': '[AMPR-PACK] Fehlgeschlagen: {error}\n', 'en': '[AMPR-PACK] Failed: {error}\n'},
+    'ampr_pack.abgebrochen': {'de': '[AMPR-PACK] Abgebrochen.\n', 'en': '[AMPR-PACK] Cancelled.\n'},
+    'ampr_pack.quellen_bleiben': {'de': '[AMPR-PACK] Die Originaldateien bleiben erhalten. Erst nach einem erfolgreichen Konsolentest lohnt es, sie zu entfernen.\n', 'en': '[AMPR-PACK] The original files are kept. Removing them is worthwhile only after a successful console test.\n'},
+
+    # -- Backport: Deckung gegen einen entpackten Firmware-Bestand ---------
+    'backport.deckung_kein_stand': {'de': '[BACKPORT] Kein entpackter Firmware-Stand {firmware}.x unter {path} – die Deckungsprüfung entfällt.\n', 'en': '[BACKPORT] No unpacked firmware {firmware}.x found under {path} – coverage check skipped.\n'},
+    'backport.deckung_vollstaendig': {'de': '[BACKPORT] Deckungsprüfung gegen Firmware {stand}: Alle {count} angeforderten Funktionen sind vorhanden.\n', 'en': '[BACKPORT] Coverage check against firmware {stand}: all {count} requested functions are present.\n'},
+    'backport.deckung_luecken': {'de': '[BACKPORT] Deckungsprüfung gegen Firmware {stand}: {total} Funktion(en) fehlen – {libs}. Genau dafür sind die Ersatzbibliotheken da.\n', 'en': '[BACKPORT] Coverage check against firmware {stand}: {total} function(s) missing – {libs}. This is exactly what the replacement libraries are for.\n'},
     'ampr.index_failed': {'de': '[AMPR] Index konnte nicht aufgebaut werden: {error}\n', 'en': '[AMPR] Index could not be built: {error}\n'},
     'ampr.ftp_dir_created': {'de': '[AMPR] Verzeichnis auf der PS5 angelegt: {path}\n', 'en': '[AMPR] Directory created on the PS5: {path}\n'},
     'ampr.ftp_dir_create_failed': {'de': '[AMPR] Verzeichnis {path} konnte nicht angelegt werden: {error}\n', 'en': '[AMPR] Could not create directory {path}: {error}\n'},

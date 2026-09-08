@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.7
+# PyInstaller .spec-Datei fuer PS5 Dump & Image Converter v1.9.8
 # =========================================================
 # Verwendung:
 #   pyinstaller PS5ImageConverter_Pro.spec --clean
@@ -168,6 +168,14 @@ _ampr_store = os.path.join(_here, 'PlayGo & AMPR_EMU')
 if os.path.isdir(_ampr_store):
     _datas.append((_ampr_store, 'PlayGo & AMPR_EMU'))
 
+# Die Packwerkzeuge des AMPR EMU ("neue Methode"). Ohne sie faellt die
+# Auswahl beim Erstellen sichtbar auf "Normal" zurueck - das Programm
+# bleibt also benutzbar, aber die gepackten Baender liessen sich nicht
+# bauen. Reiner Python-Quelltext, rund 0,4 MB.
+_ampr_packtools = os.path.join(_here, 'AMPR_PackTools-4.0')
+if os.path.isdir(_ampr_packtools):
+    _datas.extend(_dateien_ohne_pycache(_ampr_packtools, 'AMPR_PackTools-4.0'))
+
 # Ersatzbibliotheken fuer den Backport einbetten (je Firmware ein Satz).
 # Ohne sie startet ein herabgesetztes Spiel nicht: Es erwartet Bibliotheken,
 # die es auf der aelteren Firmware nicht gibt.
@@ -205,6 +213,14 @@ a = Analysis(
         # 'tomllib'" ab (unter Linux nachgemessen; Windows haette denselben
         # Fehler gehabt, nur faellt er dort erst beim Klick auf).
         'tomllib',
+        # LZ4 fuer das eingebettete AMPR-Packwerkzeug
+        # (AMPR_PackTools-4.0/ampr_pack_format.py:987 importiert
+        # lz4.block erst zur Laufzeit). Der Quelltext dieses Programms
+        # importiert es nirgends unmittelbar - ohne diese Zeile findet
+        # PyInstaller es nicht, und die neue AMPR-Methode faellt beim
+        # Anwender auf 'Normal' zurueck, obwohl alles mitgeliefert ist.
+        'lz4',
+        'lz4.block',
         'cryptography',
         'cryptography.hazmat.primitives.ciphers',
         'zlib_ng',
@@ -360,7 +376,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.7',
+    name='PS5_Dump_Image_Converter_v1.9.8',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

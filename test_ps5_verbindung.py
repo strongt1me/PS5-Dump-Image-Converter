@@ -207,6 +207,124 @@ class QuelltextTests(unittest.TestCase):
         stelle = self.text.index('settings_dialog.ps5_hint')
         self.assertIn("wraplength", self.text[stelle:stelle + 400])
 
+    def _adressschreiber(self):
+        """Funktionen, die die zentrale Adresse ``ps5_ip`` speichern."""
+        import ast
+        namen = set()
+        for knoten in ast.walk(ast.parse(self.text)):
+            if not isinstance(knoten, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for k in ast.walk(knoten):
+                if (isinstance(k, ast.Call)
+                        and isinstance(k.func, ast.Attribute)
+                        and k.func.attr == "_save_setting"
+                        and k.args
+                        and isinstance(k.args[0], ast.Constant)
+                        and k.args[0].value == "ps5_ip"):
+                    namen.add(knoten.name)
+        return namen
+
+    def test_die_zentrale_adresse_wird_nicht_bei_jedem_zeichen_geschrieben(self):
+        """Kein Speicherer der zentralen Adresse haengt an ``trace_add``.
+
+        Zweimal dieselbe Falle: Ein ``ip_var.trace_add("write", _ip_merken)``
+        feuert bei **jedem Tastendruck**. Waehrend "192.168.1.94" entsteht,
+        wandern elf Zwischenstaende ("1", "19", "192", "192.", ...) in die
+        zentrale Einstellung, die alle anderen Fenster lesen; wer mittendrin
+        abbricht, laesst dort einen Torso zurueck. Im Autoloader-Fenster am
+        05.09.2026 behoben, im AppInstall-Fenster stehen geblieben und erst am
+        07.09.2026 gefunden.
+
+        Richtig ist ``<FocusOut>``/``<Return>`` plus eine Plausibilitaets-
+        pruefung.
+        """
+        import ast
+        schreiber = self._adressschreiber()
+        self.assertTrue(
+            schreiber,
+            "Keine Funktion speichert mehr ps5_ip - dann misst dieser Test "
+            "nichts. Wurde der Schluessel umbenannt?")
+        verdaechtig = []
+        for knoten in ast.walk(ast.parse(self.text)):
+            if not (isinstance(knoten, ast.Call)
+                    and isinstance(knoten.func, ast.Attribute)
+                    and knoten.func.attr == "trace_add"):
+                continue
+            for arg in knoten.args:
+                if isinstance(arg, ast.Name) and arg.id in schreiber:
+                    verdaechtig.append("%s (Zeile %d)" % (arg.id, knoten.lineno))
+        self.assertEqual(
+            verdaechtig, [],
+            "Diese Funktionen schreiben die zentrale PS5-Adresse und haengen "
+            "an trace_add - also an jedem Tastendruck.")
+
+    def test_beide_adressfelder_pruefen_die_eingabe(self):
+        """Gegenprobe: Wer speichert, hat vorher etwas belegt.
+
+        Ohne diese Pruefung koennte ein Feld auf ``<FocusOut>`` umgestellt
+        werden und trotzdem jede Zeichenfolge durchlassen.
+
+        **Zwei Belege gelten, nicht einer.** Die erste Fassung dieses Tests
+        verlangte ueberall ``_ist_plausible_ps5_adresse`` und meldete deshalb
+        drei Stellen, an denen nichts falsch war: Sie speichern die Adresse
+        erst, **nachdem** eine FTP-Verbindung dorthin zustande kam - ein
+        staerkerer Beleg als jede Musterpruefung. Die Regel lautet also
+        "geprueft **oder** verbunden".
+
+        Ausserdem wird jetzt am Knoten gemessen, nicht am Namen. Die erste
+        Fassung sammelte Funktions*namen* und beanstandete dadurch jedes
+        ``_connect`` im Programm, auch die, die keine Adresse anfassen.
+        """
+        import ast
+        ohne_beleg = []
+        for knoten in ast.walk(ast.parse(self.text)):
+            if not isinstance(knoten, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            aufrufe = self._aufrufe_im_eigenen_rumpf(knoten)
+            speichert = any(
+                isinstance(a.func, ast.Attribute)
+                and a.func.attr == "_save_setting"
+                and a.args and isinstance(a.args[0], ast.Constant)
+                and a.args[0].value == "ps5_ip"
+                for a in aufrufe)
+            if not speichert:
+                continue
+            belegt = any(
+                isinstance(a.func, ast.Attribute)
+                and (a.func.attr == "_ist_plausible_ps5_adresse"
+                     or "connect" in a.func.attr.lower())
+                for a in aufrufe)
+            if not belegt:
+                ohne_beleg.append("%s (Zeile %d)"
+                                  % (knoten.name, knoten.lineno))
+        self.assertEqual(
+            ohne_beleg, [],
+            "Diese Funktionen speichern die zentrale PS5-Adresse, ohne sie "
+            "vorher zu pruefen oder eine Verbindung dorthin aufgebaut zu "
+            "haben.")
+
+    @staticmethod
+    def _aufrufe_im_eigenen_rumpf(funktion):
+        """Aufrufe im Rumpf der Funktion - ohne die verschachtelter Funktionen.
+
+        So wird ein Speichervorgang der **innersten** Funktion zugerechnet,
+        die ihn enthaelt, und nicht zusaetzlich jeder darueberliegenden. Sonst
+        haette das umgebende Fenster den Beleg seiner inneren Funktion
+        geerbt - und ein fehlender waere unbemerkt geblieben.
+        """
+        import ast
+        treffer = []
+        rest = list(funktion.body)
+        while rest:
+            k = rest.pop()
+            if isinstance(k, (ast.FunctionDef, ast.AsyncFunctionDef,
+                              ast.Lambda)):
+                continue
+            if isinstance(k, ast.Call):
+                treffer.append(k)
+            rest.extend(ast.iter_child_nodes(k))
+        return treffer
+
 
 class UebersetzungTests(unittest.TestCase):
     def test_alle_neuen_schluessel_in_beiden_sprachen(self):
