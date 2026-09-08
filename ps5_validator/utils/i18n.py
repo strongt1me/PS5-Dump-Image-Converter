@@ -2266,6 +2266,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'ampr_pack.status_pruefen': {'de': 'AMPR-Assetpakete werden geprüft ...', 'en': 'Verifying AMPR asset packs ...'},
     'ampr_pack.profil': {'de': '[AMPR-PACK] Packprofil: {path}\n', 'en': '[AMPR-PACK] Pack profile: {path}\n'},
     'ampr_pack.gepackt': {'de': '[AMPR-PACK] Bänder gebaut. {loose} Datei(en) bleiben ungepackt.\n', 'en': '[AMPR-PACK] Volumes built. {loose} file(s) remain unpacked.\n'},
+    'ampr_pack.phase': {'de': 'Packen: {phase}', 'en': 'Packing: {phase}'},
+    'ampr_pack.status_pruefen_uhr': {'de': 'Prüfe jeden Block gegen die Quelle … ({zeit})', 'en': 'Verifying every block against the source … ({zeit})'},
     'ampr_pack.geprueft': {'de': '[AMPR-PACK] Prüfung bestanden – jeder Block stimmt Byte für Byte mit der Quelle überein.\n', 'en': '[AMPR-PACK] Verification passed – every block matches the source byte for byte.\n'},
     'ampr_pack.uebersicht': {'de': '[AMPR-PACK] Bestand: {files} Datei(en), davon {packed} gepackt, {chunks} Block/Blöcke in {packs} Band/Bändern.\n', 'en': '[AMPR-PACK] Set: {files} file(s), {packed} of them packed, {chunks} chunk(s) in {packs} volume(s).\n'},
     'ampr_pack.grenze_gerissen': {'de': '[FEHLER] Harte Grenze überschritten – {name}: {gemessen} von höchstens {erlaubt}.\n', 'en': '[ERROR] Hard limit exceeded – {name}: {gemessen} of at most {erlaubt}.\n'},

@@ -22231,6 +22231,17 @@ class PS5ConverterGUI:
     #: sieht fluessig aus und belastet die Ereignisschleife nicht.
     _KOPIE_TAKT_SEKUNDEN = 0.1
 
+    #: Wie oft die Groessenangabe daneben nachgezogen wird - deutlich
+    #: seltener als der Balken.
+    #:
+    #: Der Grund ist nicht Sparsamkeit, sondern ein sichtbarer Fehler: Ein
+    #: geaenderter Groessentext laesst ``_set_progress`` die eingebrannten
+    #: Beschriftungen neu zeichnen (``_redraw_content_captions``). Im
+    #: Balkentakt hiess das zehn Neuzeichnungen je Sekunde - die Anzeige
+    #: flackerte sichtbar. Der Balken selbst setzt nur eine Variable und
+    #: kostet nichts.
+    _KOPIE_GROESSE_TAKT_SEKUNDEN = 1.5
+
     def _kopieren_mit_fortschritt(self, quelle: str, ziel: str,
                                   gesamt: int) -> None:
         """Kopiert einen Ordner und meldet dabei, wie weit er ist.
@@ -22251,24 +22262,30 @@ class PS5ConverterGUI:
         os.makedirs(ziel, exist_ok=True)
         getan = 0
         letzte = 0.0
+        letzte_groesse = 0.0
         gesamt = max(1, int(gesamt or 0))
 
         def _melden(erzwingen: bool = False) -> None:
-            nonlocal letzte
+            nonlocal letzte, letzte_groesse
             jetzt = time.monotonic()
             if not erzwingen and jetzt - letzte < self._KOPIE_TAKT_SEKUNDEN:
                 return
             letzte = jetzt
             anteil = min(100.0, getan * 100.0 / gesamt)
+            # Die Groessenangabe laeuft im eigenen, langsameren Takt: Sie
+            # zieht ein Neuzeichnen der eingebrannten Beschriftungen nach
+            # sich, und im Balkentakt flackerte die Anzeige dadurch.
+            groesse = None
+            if erzwingen or jetzt - letzte_groesse >= self._KOPIE_GROESSE_TAKT_SEKUNDEN:
+                letzte_groesse = jetzt
+                groesse = "%s / %s" % (self._fmt_bytes(getan),
+                                       self._fmt_bytes(gesamt))
             # Das Melden darf das Kopieren nicht zum Scheitern bringen. Es ist
             # eine Nebenwirkung, keine Aufgabe: Ohne Fenster - im
             # Kommandozeilenbetrieb oder in einer Pruefung - gibt es keine
             # Ereignisschleife, in die sich der Wert schreiben liesse.
             try:
-                self._set_progress(
-                    anteil,
-                    size_text="%s / %s" % (self._fmt_bytes(getan),
-                                           self._fmt_bytes(gesamt)))
+                self._set_progress(anteil, size_text=groesse)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Kopierfortschritt nicht anzeigbar: %s", exc)
 
@@ -22457,6 +22474,72 @@ class PS5ConverterGUI:
             return self._ampr_assetpakete_bauen(ordner, str(index_pfad), auswahl)
         return True
 
+    #: Wie oft die Groessenangabe beim Packen nachgezogen wird. Derselbe
+    #: Grund wie beim Kopieren: Ein geaenderter Groessentext laesst die
+    #: eingebrannten Beschriftungen neu zeichnen.
+    _PACK_GROESSE_TAKT_SEKUNDEN = 1.5
+
+    def _ampr_pack_fortschritt(self, prozent: float, phase: str) -> None:
+        """Traegt eine Fortschrittsmeldung des Packwerkzeugs in den Balken.
+
+        Die Phase steht daneben, aber seltener als der Balken - der
+        Phasentext haengt am Groessenfeld, und dessen Aenderung zieht ein
+        Neuzeichnen der eingebrannten Beschriftungen nach sich. Im
+        Meldungstakt flackerte die Anzeige dadurch sichtbar.
+        """
+        jetzt = time.monotonic()
+        letzte = getattr(self, "_pack_letzte_phase_zeit", 0.0)
+        vorige = getattr(self, "_pack_letzte_phase", "")
+        text = None
+        if phase and (phase != vorige
+                      or jetzt - letzte >= self._PACK_GROESSE_TAKT_SEKUNDEN):
+            self._pack_letzte_phase = phase
+            self._pack_letzte_phase_zeit = jetzt
+            text = self._t("ampr_pack.phase", phase=phase)
+        try:
+            self._set_progress(prozent, size_text=text)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Packfortschritt nicht anzeigbar: %s", exc)
+
+    def _ampr_pack_uhr_starten(self, schluessel: str) -> None:
+        """Laesst waehrend einer Phase ohne Fortschritt eine Uhr mitlaufen.
+
+        ``ampr_pack.py verify`` meldet nichts: Es rechnet und gibt am Ende
+        JSON aus. Bei einem grossen Spiel ist das die laengste Phase, und
+        ohne dieses Ticken saehe das Fenster aus wie eingefroren.
+
+        Bewusst kein wandernder Balken: Der wuerde einen Fortschritt
+        vortaeuschen, den niemand kennt. Eine Uhr sagt genau so viel, wie
+        sich sagen laesst - dass es laeuft, und wie lange schon.
+        """
+        self._ampr_pack_uhr_stoppen()
+        self._pack_uhr_start = time.monotonic()
+
+        def _ticken() -> None:
+            if getattr(self, "_pack_uhr_start", None) is None:
+                return
+            vergangen = int(time.monotonic() - self._pack_uhr_start)
+            self._set_status(self._t(
+                schluessel, zeit="%d:%02d" % (vergangen // 60, vergangen % 60)))
+            self._pack_uhr_id = self.root.after(1000, _ticken)
+
+        try:
+            _ticken()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Uhr nicht startbar: %s", exc)
+
+    def _ampr_pack_uhr_stoppen(self) -> None:
+        """Haelt die Uhr an - auch wenn die Phase mit einem Fehler endet."""
+        kennung = getattr(self, "_pack_uhr_id", None)
+        self._pack_uhr_start = None
+        self._pack_uhr_id = None
+        if kennung is None:
+            return
+        try:
+            self.root.after_cancel(kennung)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Uhr nicht anhaltbar: %s", exc)
+
     def _ampr_assetpakete_bauen(self, ordner: str, index_pfad: str,
                                 auswahl: dict[str, Any]) -> bool:
         """Die neue Methode: Spieldateien in gepackte Baender legen.
@@ -22500,10 +22583,16 @@ class PS5ConverterGUI:
                 arbeiter=self._ampr_pack_arbeiter())
             self._append_to_log(self._t("ampr_pack.profil", path=profil))
 
+            # Das Werkzeug meldet seinen Fortschritt auf stderr
+            # ("[pack  42%] packing: ..."). Bis zum 08.09.2026 landeten diese
+            # Zeilen nur im Protokoll - der Balken stand waehrend des ganzen
+            # Packens still, und bei einem grossen Spiel sind das viele
+            # Minuten, in denen nichts auf Arbeit hindeutet.
             zusammen = ampr_assetpakete.packen(
                 ordner, index_pfad, ausgabe, profil,
                 melden=self._append_to_log,
-                abbruch=lambda: not self.is_running)
+                abbruch=lambda: not self.is_running,
+                fortschritt=self._ampr_pack_fortschritt)
             self._append_to_log(self._t(
                 "ampr_pack.gepackt",
                 loose=len(zusammen.get("loose_paths") or [])))
@@ -22511,11 +22600,21 @@ class PS5ConverterGUI:
             # Mit --root, sonst bestaetigt die Pruefung nur, dass die
             # Baender in sich stimmig sind - nicht, dass sie den
             # Spielinhalt tragen.
+            #
+            # "verify" meldet keinen Fortschritt: Es rechnet und gibt am Ende
+            # JSON aus. Bei einem grossen Spiel ist das die laengste Phase -
+            # deshalb laeuft hier eine Uhr mit, damit sichtbar bleibt, dass
+            # etwas geschieht. Einen erfundenen Balken gibt es nicht; was
+            # niemand messen kann, wird auch nicht angezeigt.
             self._set_status(self._t("ampr_pack.status_pruefen"))
-            ampr_assetpakete.pruefen(
-                os.path.join(ausgabe, ampr_assetpakete.MANIFEST_NAME),
-                app0=ordner, melden=self._append_to_log,
-                abbruch=lambda: not self.is_running)
+            self._ampr_pack_uhr_starten("ampr_pack.status_pruefen_uhr")
+            try:
+                ampr_assetpakete.pruefen(
+                    os.path.join(ausgabe, ampr_assetpakete.MANIFEST_NAME),
+                    app0=ordner, melden=self._append_to_log,
+                    abbruch=lambda: not self.is_running)
+            finally:
+                self._ampr_pack_uhr_stoppen()
             self._append_to_log(self._t("ampr_pack.geprueft"))
 
             # Vierte Stufe der Anleitung ("Print the manifest summary").

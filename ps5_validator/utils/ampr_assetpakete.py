@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -331,8 +332,41 @@ def _python_ruf() -> list[str]:
     return [sys.executable, werkzeug]
 
 
+#: Muster der Fortschrittszeilen von ``ampr_pack.py``.
+#:
+#: Das Werkzeug schreibt sie auf ``stderr``, zum Beispiel::
+#:
+#:     [pack  42%] packing: files 120/300, 1.2 GiB/3.4 GiB, ..., elapsed 00:00:30
+#:
+#: Die Prozentzahl steht rechtsbuendig in drei Stellen ("  0%" bis "100%").
+#: Bis zum 08.09.2026 landeten diese Zeilen nur im Protokoll - der Balken
+#: stand waehrend des ganzen Packens still, und bei einem grossen Spiel sind
+#: das viele Minuten, in denen nichts darauf hindeutet, dass etwas geschieht.
+#:
+#: ``verify`` meldet nichts dergleichen: Es rechnet und gibt am Ende JSON aus.
+#: Dafuer gibt es keinen Prozentwert, nur die Aussage "laeuft noch".
+FORTSCHRITT_MUSTER = re.compile(r"^\[pack\s+(\d{1,3})\s*%\]\s*([A-Za-z_]+)?")
+
+
+def fortschritt_lesen(zeile: str) -> tuple[float, str] | None:
+    """Liest Prozentwert und Phase aus einer Fortschrittszeile.
+
+    Returns:
+        ``(prozent, phase)`` - oder ``None``, wenn die Zeile keine ist.
+    """
+    treffer = FORTSCHRITT_MUSTER.match(str(zeile or "").strip())
+    if not treffer:
+        return None
+    try:
+        prozent = float(treffer.group(1))
+    except (TypeError, ValueError):
+        return None
+    return min(100.0, max(0.0, prozent)), (treffer.group(2) or "")
+
+
 def _lauf(argumente: list[str], melden: Melder,
-          abbruch: Callable[[], bool] | None = None) -> str:
+          abbruch: Callable[[], bool] | None = None,
+          fortschritt: Callable[[float, str], None] | None = None) -> str:
     """Startet das Werkzeug und reicht seine Ausgabe durch.
 
     ``ampr_pack.py`` schreibt den Fortschritt auf ``stderr`` und haelt
@@ -368,7 +402,18 @@ def _lauf(argumente: list[str], melden: Melder,
             if not zeile:
                 continue
             fehlerzeilen.append(zeile)
-            melden("[AMPR-PACK] %s" % zeile)
+            gelesen = fortschritt_lesen(zeile)
+            if gelesen is not None:
+                # Fortschrittszeilen gehen an den Balken, nicht ins Protokoll:
+                # Das Werkzeug schreibt viele davon, und im Protokoll waeren
+                # sie nur Rauschen zwischen den Meldungen, auf die es ankommt.
+                if fortschritt is not None:
+                    try:
+                        fortschritt(*gelesen)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Packfortschritt nicht anzeigbar: %s", exc)
+            else:
+                melden("[AMPR-PACK] %s" % zeile)
             if abbruch is not None and abbruch():
                 prozess.terminate()
                 raise PackFehler("ampr_pack.abgebrochen")
@@ -387,7 +432,9 @@ def _lauf(argumente: list[str], melden: Melder,
 
 def packen(app0: str, ampr_index: str, ausgabe_ordner: str, profil: str,
            melden: Melder = stumm,
-           abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
+           abbruch: Callable[[], bool] | None = None,
+           fortschritt: Callable[[float, str], None] | None = None
+           ) -> dict[str, Any]:
     """Baut die Baender und das Manifest.
 
     Returns:
@@ -402,7 +449,7 @@ def packen(app0: str, ampr_index: str, ausgabe_ordner: str, profil: str,
         "--ampr-index", ampr_index,
         "--output", ausgabe_ordner,
         "--config", profil,
-    ], melden, abbruch)
+    ], melden, abbruch, fortschritt)
     try:
         return json.loads(roh or "{}")
     except ValueError as exc:

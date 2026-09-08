@@ -485,5 +485,93 @@ class KlapplisteTests(unittest.TestCase):
         self.assertIn(self.app.ampr_version_var.get(), gefiltert)
 
 
+class FortschrittTests(unittest.TestCase):
+    """Der Anwender muss sehen, dass das Programm arbeitet.
+
+    Zwei Meldungen aus dem Betrieb, beide am 08.09.2026:
+
+    * Beim Anlegen der Arbeitskopie **flackerte** die Anzeige. Jedes Setzen
+      des Groessentextes laesst ``_set_progress`` die eingebrannten
+      Beschriftungen neu zeichnen; im Balkentakt waren das zehn
+      Neuzeichnungen je Sekunde.
+    * Beim Packen bewegte sich **gar nichts**. ``ampr_pack.py`` schreibt
+      seinen Fortschritt auf stderr, aber die Zeilen landeten nur im
+      Protokoll.
+    """
+
+    def test_fortschrittszeilen_werden_gelesen(self):
+        f = ap.fortschritt_lesen
+        self.assertEqual(f("[pack   0%] scanning: files 0/300"), (0.0, "scanning"))
+        self.assertEqual(
+            f("[pack  42%] packing: files 120/300, 1.2 GiB/3.4 GiB"),
+            (42.0, "packing"))
+        self.assertEqual(f("[pack 100%] finalizing: files 300/300"),
+                         (100.0, "finalizing"))
+
+    def test_gewoehnliche_zeilen_sind_kein_fortschritt(self):
+        """Gegenprobe - sonst verschwaenden echte Meldungen im Balken."""
+        for zeile in ("error: irgendetwas ging schief",
+                      "LOG  gewoehnliche Zeile",
+                      "", "   ", "[pack] ohne Zahl",
+                      "packing 42%"):
+            with self.subTest(zeile=zeile):
+                self.assertIsNone(ap.fortschritt_lesen(zeile))
+
+    def test_der_lauf_trennt_fortschritt_von_meldung(self):
+        """Fortschrittszeilen gehoeren an den Balken, nicht ins Protokoll.
+
+        Das Werkzeug schreibt viele davon; im Protokoll waeren sie nur
+        Rauschen zwischen den Meldungen, auf die es ankommt.
+        """
+        import ast
+        quelle = Path(ap.__file__).read_text(encoding="utf-8")
+        for knoten in ast.walk(ast.parse(quelle)):
+            if isinstance(knoten, ast.FunctionDef) and knoten.name == "_lauf":
+                text = ast.unparse(knoten)
+                self.assertIn("fortschritt_lesen", text)
+                self.assertIn("else:", text,
+                              "Ohne den else-Zweig gingen die "
+                              "Fortschrittszeilen zusaetzlich ins Protokoll")
+                return
+        self.fail("_lauf heisst nicht mehr so - dieser Test misst dann nichts.")
+
+    def test_die_groessenangabe_hat_einen_eigenen_takt(self):
+        """Sonst flackert die Anzeige.
+
+        Geprueft wird an beiden Stellen, die im Takt melden: dem Kopieren
+        der Arbeitskopie und dem Packen. Beide brauchen einen zweiten,
+        langsameren Takt fuer den Text - der Balken selbst kostet nichts,
+        der Text zieht ein Neuzeichnen nach sich.
+        """
+        haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        for name in ("_KOPIE_GROESSE_TAKT_SEKUNDEN",
+                     "_PACK_GROESSE_TAKT_SEKUNDEN"):
+            self.assertIn(name, haupt, "%s fehlt - die Anzeige flackert wieder"
+                          % name)
+
+    def test_die_pruefphase_laesst_eine_uhr_laufen(self):
+        """"verify" meldet nichts - ohne Uhr saehe das Fenster tot aus."""
+        haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        self.assertIn("_ampr_pack_uhr_starten", haupt)
+        self.assertIn("_ampr_pack_uhr_stoppen", haupt)
+        # Angehalten wird im finally - sonst tickt sie nach einem Fehler
+        # weiter und ueberschreibt die Fehlermeldung in der Statuszeile.
+        # Gemessen an der AUFRUFstelle, nicht an der Definition: Die steht
+        # frueher in der Datei, und ein index()-Treffer landete dort.
+        import ast
+        for knoten in ast.walk(ast.parse(haupt)):
+            if (isinstance(knoten, ast.FunctionDef)
+                    and knoten.name == "_ampr_assetpakete_bauen"):
+                text = ast.unparse(knoten)
+                self.assertIn("_ampr_pack_uhr_starten", text)
+                self.assertIn("finally", text)
+                self.assertIn("_ampr_pack_uhr_stoppen", text)
+                return
+        self.fail("_ampr_assetpakete_bauen heisst nicht mehr so - dieser "
+                  "Test misst dann nichts.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
