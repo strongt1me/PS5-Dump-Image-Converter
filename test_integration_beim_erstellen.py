@@ -310,5 +310,114 @@ class OberflaecheTests(unittest.TestCase):
                               f"{name} baut nichts ein")
 
 
+
+class ArbeitskopieFortschrittTests(unittest.TestCase):
+    """Beim Anlegen der Arbeitskopie muss der Balken laufen.
+
+    Bis zum 08.09.2026 stand hier ein blankes ``shutil.copytree`` - ein
+    einziger blockierender Aufruf, der nichts meldet. Die Statuszeile sagte
+    "Arbeitskopie anlegen...", und dann geschah minutenlang sichtbar nichts;
+    bei einem Spielordner von zig Gigabyte war nicht zu unterscheiden, ob das
+    Programm arbeitet oder haengt. Abbrechen liess sich der Lauf ebenfalls
+    nicht.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import tkinter as tk
+        try:
+            cls.wurzel = tk._default_root or tk.Tk()
+            cls.wurzel.withdraw()
+        except Exception:                       # pragma: no cover
+            raise unittest.SkipTest("keine Anzeige verfuegbar")
+        cls.app = PS5ConverterGUI(cls.wurzel)
+
+    def setUp(self):
+        self.meldungen = []
+        self.merker = self.app._set_progress
+        self.app._set_progress = lambda wert, **kw: self.meldungen.append(
+            (wert, kw.get("size_text")))
+        self.addCleanup(setattr, self.app, "_set_progress", self.merker)
+        self.app.is_running = True
+
+    @staticmethod
+    def _baum(wurzel: Path) -> Path:
+        quelle = wurzel / "quelle"
+        (quelle / "a" / "tief").mkdir(parents=True)
+        (quelle / "leer").mkdir()
+        for i in range(12):
+            (quelle / "a" / ("d%02d.bin" % i)).write_bytes(b"X" * 4096)
+        (quelle / "a" / "tief" / "t.bin").write_bytes(b"Y" * 8192)
+        return quelle
+
+    def test_kopiert_vollstaendig_und_meldet_dabei(self):
+        # Ohne Takt, sonst fasst er die Meldungen eines schnellen Laufs
+        # zusammen und der Test saehe die Zwischenstaende nicht.
+        merker = self.app._KOPIE_TAKT_SEKUNDEN
+        self.app._KOPIE_TAKT_SEKUNDEN = 0.0
+        self.addCleanup(setattr, self.app, "_KOPIE_TAKT_SEKUNDEN", merker)
+
+        with TemporaryDirectory() as basis:
+            quelle = self._baum(Path(basis))
+            ziel = os.path.join(basis, "ziel")
+            gesamt = self.app._get_path_size(str(quelle))
+            self.app._kopieren_mit_fortschritt(str(quelle), ziel, gesamt)
+
+            def dateien(w):
+                return {os.path.relpath(os.path.join(r, n), w)
+                        for r, _u, ns in os.walk(w) for n in ns}
+            self.assertEqual(dateien(str(quelle)), dateien(ziel))
+            self.assertTrue(os.path.isdir(os.path.join(ziel, "leer")),
+                            "Ein leerer Unterordner ist verlorengegangen")
+
+        werte = [w for w, _ in self.meldungen]
+        self.assertGreater(len(werte), 3,
+                           "Es kamen kaum Meldungen - der Balken stuende still")
+        self.assertEqual(werte[0], 0.0)
+        self.assertEqual(werte[-1], 100.0)
+        self.assertEqual(werte, sorted(werte), "Der Fortschritt lief zurueck")
+        self.assertIsNotNone(self.meldungen[-1][1],
+                             "Die Groessenangabe fehlt")
+
+    def test_abbruch_wirkt_sofort(self):
+        with TemporaryDirectory() as basis:
+            quelle = self._baum(Path(basis))
+            ziel = os.path.join(basis, "ziel")
+            self.app.is_running = False
+            with self.assertRaises(Exception) as fehler:
+                self.app._kopieren_mit_fortschritt(
+                    str(quelle), ziel, self.app._get_path_size(str(quelle)))
+            self.assertEqual(type(fehler.exception).__name__,
+                             "_KopieAbgebrochen")
+
+    def test_abbruch_ist_kein_schreibfehler(self):
+        """Der Aufrufer muss beides unterscheiden koennen.
+
+        Eine Entscheidung des Anwenders und eine volle Platte verlangen
+        verschiedene Meldungen - deshalb ist der Abbruch kein ``OSError``.
+        """
+        import PS5ImageConverter_Pro_FINAL_revised as modul
+        self.assertFalse(issubclass(modul._KopieAbgebrochen, OSError))
+
+    def test_kein_blankes_copytree_mehr(self):
+        """Gegenprobe zur Bauart.
+
+        Ohne sie koennte jemand den Aufruf "vereinfachen" und dieselbe
+        stumme Wartezeit wieder einbauen.
+        """
+        import ast
+        quelle = (Path(__file__).resolve().parent
+                  / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+                      encoding="utf-8")
+        for knoten in ast.walk(ast.parse(quelle)):
+            if (isinstance(knoten, ast.FunctionDef)
+                    and knoten.name == "_integration_arbeitskopie"):
+                text = ast.unparse(knoten)
+                self.assertNotIn("copytree", text)
+                self.assertIn("_kopieren_mit_fortschritt", text)
+                return
+        self.fail("_integration_arbeitskopie heisst nicht mehr so - dieser "
+                  "Test misst dann nichts.")
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

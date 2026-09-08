@@ -389,6 +389,17 @@ def _logserver_absender_erlaubt(gegenstelle: str, ps5_ip: str = "") -> bool:
     return bool(adresse.is_private or adresse.is_loopback or adresse.is_link_local)
 
 
+class _KopieAbgebrochen(Exception):
+    """Der Anwender hat waehrend des Kopierens abgebrochen.
+
+    Eigene Klasse statt eines Rueckgabewerts: Das Kopieren steckt tief in
+    zwei Schleifen, und ein Abbruch soll dort sofort heraus. Von ``Exception``
+    abgeleitet und nicht von ``OSError``, damit der Aufrufer ihn von einem
+    echten Schreibfehler unterscheiden kann - der eine ist eine Entscheidung,
+    der andere ein Problem.
+    """
+
+
 def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
     """Löscht einen Baum auch dann, wenn Dateien schreibgeschützt sind.
 
@@ -22163,7 +22174,11 @@ class PS5ConverterGUI:
         self._append_to_log(self._t("main.integrate_copying", path=kopie))
         self._set_status(self._t("main.integrate_copying_status"))
         try:
-            shutil.copytree(quelle, kopie)
+            self._kopieren_mit_fortschritt(quelle, kopie, groesse)
+        except _KopieAbgebrochen:
+            self._append_to_log(self._t("main.integrate_copy_cancelled"))
+            _rmtree_force(ziel)
+            return ""
         except OSError as exc:
             self._append_to_log(self._t("main.integrate_copy_failed", error=exc))
             _rmtree_force(ziel)
@@ -22171,6 +22186,75 @@ class PS5ConverterGUI:
         # Aufgeraeumt wird die Kopie ueber _mkdtemp: Der Ordner ist dort schon
         # zum Loeschen nach der Aufgabe angemeldet.
         return kopie
+
+    #: Wie oft der Balken beim Kopieren nachgezogen wird.
+    #:
+    #: Nicht je Datei: Ein Spielordner hat leicht zehntausende, und jeder
+    #: Aufruf geht ueber ``root.after`` in den Tk-Faden. Zehnmal je Sekunde
+    #: sieht fluessig aus und belastet die Ereignisschleife nicht.
+    _KOPIE_TAKT_SEKUNDEN = 0.1
+
+    def _kopieren_mit_fortschritt(self, quelle: str, ziel: str,
+                                  gesamt: int) -> None:
+        """Kopiert einen Ordner und meldet dabei, wie weit er ist.
+
+        ``shutil.copytree`` kopiert am Stueck und meldet nichts. Bei einem
+        Spielordner von zig Gigabyte stand der Balken deshalb minutenlang
+        still, waehrend die Statuszeile "Arbeitskopie anlegen..." behauptete,
+        es gehe voran - und abbrechen liess sich der Lauf auch nicht.
+
+        Gemessen wird gegen ``gesamt``, die Groesse, die der Rueckfrage
+        ohnehin schon zugrunde liegt. Ein zweiter Durchlauf ueber den Baum
+        waere dafuer verschwendet.
+
+        Raises:
+            _KopieAbgebrochen: Wenn der Anwender waehrenddessen abbricht.
+            OSError: Wie ``shutil.copy2`` - der Aufrufer meldet es.
+        """
+        os.makedirs(ziel, exist_ok=True)
+        getan = 0
+        letzte = 0.0
+        gesamt = max(1, int(gesamt or 0))
+
+        def _melden(erzwingen: bool = False) -> None:
+            nonlocal letzte
+            jetzt = time.monotonic()
+            if not erzwingen and jetzt - letzte < self._KOPIE_TAKT_SEKUNDEN:
+                return
+            letzte = jetzt
+            anteil = min(100.0, getan * 100.0 / gesamt)
+            # Das Melden darf das Kopieren nicht zum Scheitern bringen. Es ist
+            # eine Nebenwirkung, keine Aufgabe: Ohne Fenster - im
+            # Kommandozeilenbetrieb oder in einer Pruefung - gibt es keine
+            # Ereignisschleife, in die sich der Wert schreiben liesse.
+            try:
+                self._set_progress(
+                    anteil,
+                    size_text="%s / %s" % (self._fmt_bytes(getan),
+                                           self._fmt_bytes(gesamt)))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Kopierfortschritt nicht anzeigbar: %s", exc)
+
+        _melden(erzwingen=True)
+        for stamm, unterordner, dateien in os.walk(quelle):
+            rel = os.path.relpath(stamm, quelle)
+            zielstamm = ziel if rel == os.curdir else os.path.join(ziel, rel)
+            os.makedirs(zielstamm, exist_ok=True)
+            # Leere Unterordner gehen sonst verloren - os.walk nennt sie zwar,
+            # aber ohne Dateien kaeme die Schleife darunter nie dazu.
+            for name in unterordner:
+                os.makedirs(os.path.join(zielstamm, name), exist_ok=True)
+            for name in dateien:
+                if not self.is_running:
+                    raise _KopieAbgebrochen()
+                von = os.path.join(stamm, name)
+                shutil.copy2(von, os.path.join(zielstamm, name))
+                try:
+                    getan += os.path.getsize(von)
+                except OSError:
+                    pass
+                _melden()
+        _melden(erzwingen=True)
 
     def _integration_anwenden(self, ordner: str, *, ist_quellordner: bool = False) -> str:
         """Wendet die gewaehlten Integrationen auf einen Dump-Ordner an.

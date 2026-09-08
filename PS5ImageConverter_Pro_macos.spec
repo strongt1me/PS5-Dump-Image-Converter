@@ -270,6 +270,31 @@ a = Analysis(
         # Anwender auf 'Normal' zurueck, obwohl alles mitgeliefert ist.
         'lz4',
         'lz4.block',
+        # Weitere Module, die ampr_pack.py und ampr_pack_format.py
+        # brauchen. Sie liegen als Datenordner bei - PyInstaller liest
+        # ihre Importe nicht.
+        #
+        # 'ctypes.util' hat es am 08.09.2026 beim Anwender zerlegt:
+        # ctypes selbst ist eingebettet (samt _endian, _layout,
+        # wintypes), das Untermodul util aber nicht - das zieht nur
+        # herein, wer es ausdruecklich einbindet. Die neue Methode
+        # brach damit sofort ab, sobald sie loslief.
+        #
+        # So wurde die Liste bestimmt: die Importe der beiden Dateien
+        # einsammeln und gegen build/*/Analysis-00.toc halten. Von 23
+        # gebrauchten Modulen fehlten genau diese vier. Bewacht von
+        # test_ampr_assetpakete.EigenstaendigkeitTests.
+        # Diese vier fehlten gemessen in der fertigen Datei.
+        'array',
+        'binascii',
+        'ctypes.util',
+        'math',
+        # Diese beiden lagen nur zufaellig drin - ein anderes Modul
+        # zog sie mit. Auf einen solchen Umweg sollte sich nichts
+        # verlassen: Genau so war ctypes eingebettet und ctypes.util
+        # trotzdem nicht da.
+        'dataclasses',
+        'fnmatch',
         'cryptography',
         'cryptography.hazmat.primitives.ciphers',
         'zlib_ng',

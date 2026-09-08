@@ -226,6 +226,65 @@ class EigenstaendigkeitTests(unittest.TestCase):
                 self.assertIn("'lz4'", text,
                               "lz4 fehlt in den hiddenimports von " + name)
 
+    @staticmethod
+    def _importe(pfad):
+        """Alle Module, die eine Datei einbindet."""
+        import ast
+        namen = set()
+        baum = ast.parse(Path(pfad).read_text(encoding="utf-8"))
+        for k in ast.walk(baum):
+            if isinstance(k, ast.Import):
+                for a in k.names:
+                    namen.add(a.name)
+            elif isinstance(k, ast.ImportFrom) and k.module and k.level == 0:
+                namen.add(k.module)
+        return namen
+
+    def test_jedes_modul_des_packwerkzeugs_ist_erreichbar(self):
+        """Was das Werkzeug einbindet, muss in der fertigen Datei liegen.
+
+        ``ampr_pack.py`` und ``ampr_pack_format.py`` liegen als **Datenordner**
+        bei. PyInstaller liest ihre Importe nicht - was sie brauchen, muss
+        entweder das Hauptprogramm selbst einbinden oder in ``hiddenimports``
+        stehen.
+
+        Am 08.09.2026 fehlte so ``ctypes.util``. ``ctypes`` selbst ist
+        eingebettet, samt ``_endian``, ``_layout`` und ``wintypes`` - das
+        Untermodul ``util`` zieht aber nur herein, wer es ausdruecklich nennt.
+        Die neue Methode brach beim Anwender ab, sobald sie loslief:
+        ``ModuleNotFoundError: No module named 'ctypes.util'``. Auf dem
+        Entwicklungsrechner faellt so etwas nie auf - dort laeuft alles gegen
+        ein vollstaendiges Python.
+
+        Die Regel ist bewusst streng: Ein ueberfluessiger Eintrag in
+        ``hiddenimports`` kostet nichts, ein fehlender kostet den Anwender
+        seinen Lauf.
+        """
+        ordner = ap.werkzeugordner_finden()
+        if not ordner:
+            self.skipTest("Werkzeugordner nicht mitgeliefert")
+        gebraucht = set()
+        for datei in ("ampr_pack.py", "ampr_pack_format.py"):
+            gebraucht |= self._importe(os.path.join(ordner, datei))
+        gebraucht -= {"__future__", "ampr_pack_format", "ampr_pack"}
+
+        haupt_datei = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+        vom_hauptprogramm = self._importe(haupt_datei)
+
+        fehlend = {}
+        for name in self.SPECS:
+            spec = (PROJEKT / name).read_text(encoding="utf-8")
+            offen = sorted(
+                m for m in gebraucht
+                if ("'%s'" % m) not in spec and m not in vom_hauptprogramm)
+            if offen:
+                fehlend[name] = offen
+        self.assertEqual(
+            fehlend, {},
+            "Diese Module bindet das Packwerkzeug ein, sie stehen aber weder "
+            "in den hiddenimports der .spec noch bindet sie das Hauptprogramm "
+            "selbst ein - in der fertigen Datei fehlen sie dann.")
+
     def test_das_werkzeug_liegt_neben_seinem_formatmodul(self):
         """``ampr_pack`` importiert ``ampr_pack_format`` als Geschwister."""
         ordner = ap.werkzeugordner_finden()

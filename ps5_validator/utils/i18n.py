@@ -152,6 +152,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'main.integrate_copying': {'de': '[Info] Arbeitskopie wird angelegt: {path}\n', 'en': '[Info] Creating a working copy: {path}\n'},
     'main.integrate_copying_status': {'de': 'Arbeitskopie anlegen...', 'en': 'Creating working copy...'},
     'main.integrate_copy_failed': {'de': '[FEHLER] Arbeitskopie fehlgeschlagen: {error}\n', 'en': '[ERROR] Working copy failed: {error}\n'},
+    'main.integrate_copy_cancelled': {'de': '[Info] Arbeitskopie abgebrochen – die halbfertige Kopie wurde entfernt.\n', 'en': '[Info] Working copy cancelled – the half-finished copy was removed.\n'},
     'dialog.title.integration_workcopy': {'de': 'Arbeitskopie anlegen?', 'en': 'Create a working copy?'},
     'dialog.msg.integration_workcopy': {'de': 'AMPR EMU und/oder BACKPORT verändern Dateien im Dump-Ordner.\n\nQuelle: {path}\nGröße: {size}\n\nJa: Es wird eine Arbeitskopie angelegt, der Quellordner bleibt unberührt (braucht einmal denselben Platz).\nNein: Es wird direkt im Quellordner gearbeitet.', 'en': 'AMPR EMU and/or BACKPORT modify files inside the dump folder.\n\nSource: {path}\nSize: {size}\n\nYes: a working copy is created and the source folder stays untouched (needs the same amount of space once).\nNo: work happens directly in the source folder.'},
     'main.verify_inline_label': {'de': 'PRÜFUNG NACH DEM PACKEN', 'en': 'VERIFY AFTER PACKING'},
