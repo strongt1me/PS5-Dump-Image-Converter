@@ -27,6 +27,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 HAUPTDATEI = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                           "PS5ImageConverter_Pro_FINAL_revised.py")
 
+#: Fensterbreite, bei der rechts sicher Platz fuer die Einbauzeile ist.
+#:
+#: Der Umschlagpunkt haengt an der Breite der Zeile und ist deshalb gewandert:
+#: Mit fuenf Bedienelementen lag er bei rund 1780 px, seit die Methodenliste
+#: (v1.9.8) dazugekommen ist bei rund 1930 px. Hier nachgemessen am
+#: 08.09.2026: Bei 1900 px ist die Karte 1312 px breit und die Zeile braucht
+#: 1285 px - drei Pixel mehr, als der Innenrand uebriglaesst. Bei 2000 px
+#: erreicht die Karte ihre Hoechstbreite von 1336 px, und es passt.
+BREIT_GENUG = 2000
+
 try:
     import tkinter as tk
     TK_DA = True
@@ -336,14 +346,16 @@ class KartenzeilenTests(unittest.TestCase):
         """Ist rechts Platz, gehoert die Einbauzeile dorthin.
 
         Das spart eine ganze Zeile Hoehe und nutzt Flaeche, die sonst leer
-        bleibt. Der Umschlagpunkt liegt bei rund 1780 px Fensterbreite.
+        bleibt. Der Umschlagpunkt liegt bei rund 1930 px Fensterbreite
+        (siehe BREIT_GENUG).
         """
-        self._fenster_auf(1900)
+        self._fenster_auf(BREIT_GENUG)
         try:
             self.assertTrue(
                 self.app._einbauzeile_daneben,
-                "Bei 1900 px Fensterbreite ist rechts genug Platz, die "
-                "Einbauzeile steht aber immer noch in ihrer eigenen Zeile.")
+                "Bei %d px Fensterbreite ist rechts genug Platz, die "
+                "Einbauzeile steht aber immer noch in ihrer eigenen Zeile."
+                % BREIT_GENUG)
             pruefstufe = self.app.verify_combo
             kaestchen = self.app.ampr_integrate_check
             abstand = kaestchen.winfo_rootx() - (pruefstufe.winfo_rootx()
@@ -377,9 +389,9 @@ class KartenzeilenTests(unittest.TestCase):
     def test_der_umbruch_geht_in_beide_richtungen(self):
         """Breiter, schmaler, wieder breiter - der Zustand muss folgen."""
         try:
-            for breite, erwartet in ((1900, True),
+            for breite, erwartet in ((BREIT_GENUG, True),
                                      (self.haupt.WINDOW_MIN_WIDTH, False),
-                                     (1900, True)):
+                                     (BREIT_GENUG, True)):
                 self._fenster_auf(breite)
                 with self.subTest(breite=breite):
                     self.assertEqual(bool(self.app._einbauzeile_daneben),
@@ -394,7 +406,7 @@ class KartenzeilenTests(unittest.TestCase):
         sitzt deshalb tiefer. Ueber dem Kaestchen ausgerichtet saesse die
         Ueberschrift acht Pixel unter den anderen.
         """
-        self._fenster_auf(1900)
+        self._fenster_auf(BREIT_GENUG)
         try:
             namen = ("format_title", "perf_title", "worker_title",
                      "verify_title", "integrate_title")

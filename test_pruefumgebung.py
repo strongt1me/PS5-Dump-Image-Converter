@@ -147,5 +147,61 @@ class UnberuehrtTests(_MitSauberterUmgebung):
                            "Die Datei traegt keinen neueren Zeitstempel.")
 
 
+class UmlenkungHaeltImGesamtlaufTests(unittest.TestCase):
+    """Wer den Ordner beim Import merkt, muss ihn vor dem Lauf erneuern.
+
+    ``umlenken()`` setzt eine **Umgebungsvariable des Prozesses**. In einem
+    Gesamtlauf importiert pytest zuerst alle Pruefstaende und laesst danach
+    laufen; von den zwei Dutzend Dateien, die beim Import umlenken, gewinnt
+    also die zuletzt importierte. Ein Pruefstand, der sich den Ordner beim
+    Import in eine Modulvariable schreibt, liest danach an einer Stelle,
+    an die das Programm gar nicht mehr schreibt.
+
+    Das ist keine Theorie: Am 08.09.2026 fielen sieben Pruefungen in
+    ``test_schreibwege.py`` mit "paths.json nicht gefunden" aus - einzeln
+    aufgerufen liefen alle durch. Ein solcher Scheinbefund ist schlimmer
+    als gar keine Pruefung, weil er einen echten Befund verdeckt.
+    """
+
+    def test_wer_den_ordner_merkt_hat_ein_setupmodule(self) -> None:
+        import ast
+
+        projekt = Path(__file__).resolve().parent
+        betroffen = []
+        for datei in sorted(projekt.glob("test_*.py")):
+            baum = ast.parse(datei.read_text(encoding="utf-8"))
+            merkt = any(
+                isinstance(k, ast.Assign)
+                and isinstance(k.value, ast.Call)
+                and isinstance(k.value.func, ast.Attribute)
+                and k.value.func.attr == "umlenken"
+                for k in baum.body
+            )
+            if merkt:
+                betroffen.append((datei.name, baum))
+
+        # Anker: Faende die Suche gar nichts mehr, waere die Pruefung
+        # klaglos gruen und trotzdem wertlos.
+        self.assertTrue(betroffen,
+                        "Kein Pruefstand merkt sich den Ordner beim Import "
+                        "- dann greift diese Wache ins Leere.")
+
+        for name, baum in betroffen:
+            with self.subTest(pruefstand=name):
+                aufbauten = [k for k in baum.body
+                             if isinstance(k, ast.FunctionDef)
+                             and k.name == "setUpModule"]
+                self.assertTrue(
+                    aufbauten,
+                    "%s merkt sich den Ordner beim Import, hat aber kein "
+                    "setUpModule(), das die Umlenkung vor dem Lauf wieder "
+                    "geltend macht." % name)
+                quelle = ast.unparse(aufbauten[0])
+                self.assertIn(
+                    "PS5CONV_KONFIGORDNER", quelle,
+                    "%s: setUpModule() setzt die Umlenkung nicht neu."
+                    % name)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

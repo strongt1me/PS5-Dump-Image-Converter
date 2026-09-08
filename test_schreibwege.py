@@ -58,6 +58,21 @@ from ps5_validator.utils import pkg_writer                  # noqa: E402
 CFG = os.path.join(ORDNER, "paths.json")
 
 
+def setUpModule():
+    """Die Umlenkung vor dem ersten Test dieser Datei wieder geltend machen.
+
+    ``umlenken()`` oben setzt ``PS5CONV_KONFIGORDNER`` beim **Import**. In
+    einem Gesamtlauf importiert pytest aber erst alle Dateien und laesst
+    danach laufen - und 24 Pruefstaende lenken beim Import um. Es gewinnt
+    der zuletzt importierte, und der schreibt woandershin als hier gelesen
+    wird. Am 08.09.2026 fielen deshalb sieben Pruefungen dieser Datei mit
+    "paths.json nicht gefunden" aus, obwohl sie einzeln aufgerufen alle
+    durchliefen - ein Scheinbefund, der einen echten hier verdecken wuerde.
+    """
+    os.environ["PS5CONV_KONFIGORDNER"] = ORDNER
+    os.makedirs(ORDNER, exist_ok=True)
+
+
 def _gui():
     return APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
 

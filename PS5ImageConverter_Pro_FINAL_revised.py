@@ -447,7 +447,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.8"
+APP_VERSION = "v1.9.9"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -6375,10 +6375,15 @@ class PS5ConverterGUI:
         self.ampr_methode_var = tk.StringVar(value=next(
             (self._t(s) for s, w in AMPR_METHODE_KEYS if w == _gemerkte_methode),
             self._t("ampr_pack.methode_normal")))
+        # width=9 und keinen Zeichenplatz mehr: Der laengste Wert ist
+        # "Asset-Pack" (76 px bei 125 % Skalierung), dazu rund 20 px fuer den
+        # Pfeil - 96 px von 101. Mit den urspruenglichen 11 Zeichen war die
+        # Einbauzeile 638 px breit und ragte bei Mindestfensterbreite ueber
+        # die Karte hinaus; die BACKPORT-Klappliste war dann abgeschnitten.
         self.ampr_methode_combo = ttk.Combobox(
             path_card, textvariable=self.ampr_methode_var, state="readonly",
             font=(UI_SCHRIFT, pt(9)),
-            values=list(self._ampr_methode_options.keys()), width=11,
+            values=list(self._ampr_methode_options.keys()), width=9,
         )
         self.ampr_methode_combo.bind(
             "<<ComboboxSelected>>", lambda _e: self._on_ampr_methode_changed())

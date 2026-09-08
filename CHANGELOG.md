@@ -2,7 +2,62 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.8):** Der AMPR EMU kann die Spieldateien jetzt auf Wunsch in gepackte Bänder legen – eine zweite Methode neben der bisherigen, wählbar beim Erstellen. Beim Backport sagt das Programm vorher, welche Funktionen auf der Zielfirmware fehlen werden, statt es der Konsole zu überlassen.
+> **Kurz zum aktuellen Stand (v1.9.9):** Die neue Asset-Pack-Methode aus v1.9.8 lief nur auf einem Rechner mit installiertem Python – in der fertigen Programmdatei brach sie sofort ab. Das ist behoben, und drumherum sind die Fortschrittsanzeige, die Fassungsliste und der Rückweg aus einem Asset-Pack dazugekommen.
+
+---
+
+## v1.9.9 – 08.09.2026
+
+### Die neue Methode lief nur mit installiertem Python
+
+Wer v1.9.8 als fertige Programmdatei benutzte und *Asset-Pack* wählte, bekam
+sofort einen Abbruch: Das Packwerkzeug suchte ein Python auf dem Rechner,
+und die Kompressionsbibliothek LZ4 lag gar nicht erst in der Programmdatei.
+
+Beides ist behoben. Das Programm ruft für den Packvorgang jetzt sich selbst
+auf, statt nach einem fremden Python zu suchen, und alles Nötige steckt
+darin. Es muss nichts nachinstalliert werden.
+
+### Die Fassungsliste zeigt nur noch, was zur Methode passt
+
+Nicht jede AMPR-Fassung kann Bänder lesen. Stand *Asset-Pack* eingestellt und
+daneben eine Fassung, die das nicht beherrscht, entstand ein Spielordner, den
+der Emulator auf der Konsole nicht öffnen konnte.
+
+Jetzt richtet sich die Liste nach der Methode: Bei *Asset-Pack* stehen nur
+pack-fähige Fassungen darin, bei *Normal* nur die übrigen.
+
+### Fortschritt: kein Flackern mehr, und beim Packen bewegt sich etwas
+
+Beim Anlegen der Arbeitskopie flackerte die Anzeige, weil die Größenangabe im
+Takt des Balkens neu gezeichnet wurde. Sie hat jetzt ihren eigenen, ruhigeren
+Takt.
+
+Beim Packen selbst stand der Balken still – die Meldungen des Packwerkzeugs
+landeten nur im Protokoll. Sie steuern jetzt den Balken. Während der
+abschließenden Prüfung, die keine Prozentzahlen liefert, läuft eine Uhr mit,
+damit sichtbar bleibt, dass etwas geschieht.
+
+### Ein Asset-Pack lässt sich wieder herausnehmen
+
+Aufgabe 7 hat einen neuen Knopf: Er entfernt Manifest, Laufzeitdatei und die
+`.pak`-Bänder wieder aus einem Spielordner. Die Spieldateien bleiben, sie
+lagen ohnehin einzeln daneben.
+
+Damit lässt sich ein Backup mit Asset-Pack in eines ohne verwandeln, ohne es
+neu erstellen zu müssen.
+
+### Die Firmware-Auswahl war bei kleinem Fenster abgeschnitten
+
+Die Einbauzeile hat mit der Methodenliste ein sechstes Bedienelement bekommen
+und passte damit nicht mehr in die Karte: Bei der kleinsten Fensterbreite
+ragte die BACKPORT-Firmware elf Pixel über den Rand hinaus und war weder zu
+sehen noch anzuklicken.
+
+Die Methodenliste ist jetzt so breit wie ihr längster Eintrag, und die Zeile
+bleibt drin. Nebenwirkung: Sie rückt erst ab rund 1930 px Fensterbreite neben
+die Prüfstufe statt wie bisher ab 1780 px – darunter steht sie in einer
+eigenen Zeile.
 
 ---
 

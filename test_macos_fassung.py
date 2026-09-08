@@ -40,6 +40,47 @@ SPEC_LINUX = PROJEKT / "PS5ImageConverter_Pro_linux.spec"
 SKRIPTE = ("Build_macOS.sh", "Install_macOS.sh")
 
 
+def _bash_mit_windowspfaden() -> str:
+    """Ein ``bash``, das einen Windows-Pfad oeffnen kann - oder "".
+
+    Unter Windows liefert ``shutil.which("bash")`` je nach PATH-Reihenfolge
+    den WSL-Starter aus ``System32`` oder den Store-Platzhalter aus
+    ``WindowsApps``. Beide leben in einer anderen Dateiwelt: ``bash -n
+    "C:\\...\\Build_macOS.sh"`` endet dort mit ``127`` und
+    "No such file or directory" - das sieht wie ein Syntaxfehler im Skript
+    aus, ist aber keiner. Am 08.09.2026 hat genau das hier zwei
+    Fehlschlaege erzeugt.
+
+    Gesucht wird deshalb ein bash aus einer Git-Installation. Findet sich
+    keiner, entfaellt die Pruefung, statt ein falsches Ergebnis zu melden.
+    """
+    kandidaten = []
+    gefunden = shutil.which("bash")
+    if gefunden:
+        kandidaten.append(gefunden)
+    kandidaten += [
+        r"C:\Program Files\Git\usr\bin\bash.exe",
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\usr\bin\bash.exe",
+    ]
+    for pfad in kandidaten:
+        if not pfad or not os.path.isfile(pfad):
+            continue
+        teile = pfad.lower()
+        if "system32" in teile or "windowsapps" in teile:
+            continue          # WSL-Starter bzw. Store-Platzhalter
+        try:
+            probe = subprocess.run([pfad, "-n", str(PROJEKT / SKRIPTE[0])],
+                                   capture_output=True, text=True, timeout=30)
+        except OSError:
+            continue
+        # 127 heisst "Datei nicht gefunden" - dann sieht dieser bash den
+        # Pfad nicht, und sein Urteil ueber das Skript waere wertlos.
+        if probe.returncode != 127:
+            return pfad
+    return ""
+
+
 def _spec_lesen(pfad: Path) -> ast.Module:
     return ast.parse(pfad.read_text(encoding="utf-8"))
 
@@ -367,12 +408,13 @@ class SkriptTests(unittest.TestCase):
                 erste = (PROJEKT / name).read_bytes().split(b"\n", 1)[0]
                 self.assertEqual(erste, b"#!/usr/bin/env bash")
 
-    @unittest.skipUnless(shutil.which("bash"), "bash nicht verfuegbar")
+    @unittest.skipUnless(_bash_mit_windowspfaden(), "bash nicht verfuegbar")
     def test_shell_syntax(self):
+        bash = _bash_mit_windowspfaden()
         for name in SKRIPTE:
             with self.subTest(skript=name):
                 ergebnis = subprocess.run(
-                    [shutil.which("bash") or "bash", "-n", str(PROJEKT / name)],
+                    [bash, "-n", str(PROJEKT / name)],
                     capture_output=True, text=True, timeout=30,
                 )
                 self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr)
