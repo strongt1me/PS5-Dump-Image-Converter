@@ -2,7 +2,37 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.11):** Eine große Durchsicht: 41 Punkte aus einer offenen Befundliste abgearbeitet, dazu sieben Fehler, die dort gar nicht standen. Der größte davon: Auf drei Konvertierungswegen wurden AMPR EMU und BACKPORT stillschweigend übergangen.
+> **Kurz zum aktuellen Stand (v1.9.12):** Der Rest der Durchsicht. Der wichtigste Punkt: Die Rückfrage vor einem Backport sagt jetzt, ob eine Sicherung angelegt wird – ohne sie ist ein Abbruch mittendrin nicht rückgängig zu machen.
+
+---
+
+## v1.9.12 – 08.09.2026
+
+Der Abschluss der Durchsicht: die letzten drei Punkte der Befundliste.
+
+### Der Backport sagt jetzt, ob es einen Weg zurück gibt
+
+Die Rückfrage vor dem Start lautete nur:
+
+> Alle ausführbaren Dateien in … werden auf Firmware 7.00 herabgesetzt und
+> neu signiert. **Die Originale werden dabei ersetzt.** Fortfahren?
+
+Ob dabei eine Sicherung angelegt wird, stand nirgends. Wer den Haken
+abgewählt hatte, bestätigte das, ohne zu wissen, dass es keinen Rückweg gibt:
+Bricht der Lauf mittendrin ab, ist der Dump zum Teil bearbeitet – einige
+Dateien herabgesetzt, andere nicht. Gesagt hat das Programm es erst
+**hinterher**, im Fehlerdialog.
+
+Jetzt nennt die Rückfrage den Stand, und zwar erst, nachdem er wirklich
+feststeht: Die Platzprüfung läuft davor, denn sie kann ein gewünschtes
+„mit Sicherung“ noch in ein „ohne“ verwandeln.
+
+### Kleineres
+
+* Die heruntergeladene `filezilla_setup.exe` (rund 12 MB) blieb nach jedem
+  Anlauf im Temp-Ordner liegen – auch bei einem Fehlschlag.
+* Der Docstring des Credits-Fensters versprach ein rahmenloses Fenster. Das
+  war es nie.
 
 ---
 

@@ -449,7 +449,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.11"
+APP_VERSION = "v1.9.12"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -34574,21 +34574,32 @@ class PS5ConverterGUI:
                         self._t("backport.no_libs_message", fw=f"{firmware}.00"),
                         parent=win, default="no"):
                     return
-            if not messagebox.askyesno(
-                    self._t("backport.confirm_title"),
-                    self._t("backport.confirm_message", path=ordner,
-                            fw=f"{firmware}.00"),
-                    parent=win, default="no"):
-                return
             # Der Platz für die Sicherung wird HIER geprüft, nicht im
             # Arbeitsfaden: Die Rückfrage ist ein Dialog, und der gehört in
             # den Hauptstrang.
+            #
+            # **Vor** der Hauptrückfrage, nicht danach: Erst wenn feststeht,
+            # ob gesichert wird, lässt sich die entscheidende Frage ehrlich
+            # stellen. Bis v1.9.11 stand in der Rückfrage nur "Die Originale
+            # werden dabei ersetzt" - ob es einen Weg zurück gibt, erfuhr der
+            # Anwender nicht. Bricht der Lauf mittendrin ab, ist der Dump zum
+            # Teil bearbeitet, und ohne Sicherung ist das nicht rückgängig zu
+            # machen. Genau das sagte das Programm erst hinterher.
             sichern = sicherung_var.get()
             if sichern:
                 antwort = self._backport_platz_pruefen(ordner, win)
                 if antwort is None:
                     return                      # abgebrochen
                 sichern = antwort               # False = ohne Sicherung weiter
+
+            hinweis = self._t("backport.confirm_backup" if sichern
+                              else "backport.confirm_no_backup")
+            if not messagebox.askyesno(
+                    self._t("backport.confirm_title"),
+                    self._t("backport.confirm_message", path=ordner,
+                            fw=f"{firmware}.00") + "\n\n" + hinweis,
+                    parent=win, default="no"):
+                return
             laeuft["aktiv"] = True
             start_btn.configure(state="disabled")
             analyse_btn.configure(state="disabled")

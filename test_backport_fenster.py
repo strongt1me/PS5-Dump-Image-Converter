@@ -316,5 +316,71 @@ class SprachfuehrungTests(unittest.TestCase):
         self.assertNotIn("{gibtsnicht}", meldungen[0])
 
 
+class RueckfrageNenntDieSicherungTests(unittest.TestCase):
+    """Die Rueckfrage muss sagen, ob es einen Weg zurueck gibt.
+
+    Sie sagte bis v1.9.11 nur "Die Originale werden dabei ersetzt.
+    Fortfahren?". Ob eine Sicherung angelegt wird, stand nirgends - und wer
+    den Haken abgewaehlt hatte, bestaetigte ohne zu wissen, dass es keinen
+    Rueckweg gibt.
+
+    Bricht der Lauf mittendrin ab, ist der Dump zum Teil bearbeitet: einige
+    Dateien herabgesetzt, andere nicht. Genau das sagte das Programm erst
+    **hinterher**, in backport.error_message.
+
+    Damit die Frage ehrlich gestellt werden kann, muss die Platzpruefung
+    vorher laufen - sie kann eine gewuenschte Sicherung noch in ein "ohne
+    Sicherung weiter" verwandeln.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import ast
+        from pathlib import Path
+        cls.quelle = (Path(__file__).resolve().parent
+                      / "PS5ImageConverter_Pro_FINAL_revised.py"
+                      ).read_text(encoding="utf-8")
+        # Ueber den Syntaxbaum, nicht ueber eine Textsuche nach
+        # "def _starten": Diesen Namen gibt es mehrfach, und die erste
+        # Fundstelle liegt im AMPR-Fenster. Genau darauf bin ich beim
+        # Schreiben dieser Pruefung hereingefallen.
+        baum = ast.parse(cls.quelle)
+        fenster = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_render_backport_window")
+        starten = next(k for k in ast.walk(fenster)
+                       if isinstance(k, ast.FunctionDef) and k.name == "_starten")
+        cls.rumpf = ast.unparse(starten)
+
+    def test_die_rueckfrage_nennt_den_sicherungsstand(self):
+        self.assertIn("backport.confirm_backup", self.rumpf)
+        self.assertIn("backport.confirm_no_backup", self.rumpf)
+
+    def test_die_platzpruefung_laeuft_vor_der_rueckfrage(self):
+        """Sonst steht beim Fragen noch nicht fest, was gilt."""
+        platz = self.rumpf.index("_backport_platz_pruefen")
+        frage = self.rumpf.index("backport.confirm_message")
+        self.assertLess(platz, frage,
+                        "Die Platzpruefung steht wieder hinter der "
+                        "Rueckfrage - dann nennt die Rueckfrage einen "
+                        "Sicherungsstand, der noch gar nicht feststeht.")
+
+    def test_beide_texte_gibt_es_in_zwei_sprachen(self):
+        from ps5_validator.utils import i18n
+        for schluessel in ("backport.confirm_backup", "backport.confirm_no_backup"):
+            with self.subTest(schluessel=schluessel):
+                eintrag = i18n.STRINGS.get(schluessel)
+                self.assertIsNotNone(eintrag)
+                for sprache in i18n.SUPPORTED_LANGUAGES:
+                    self.assertTrue(eintrag.get(sprache), sprache)
+
+    def test_die_warnung_ohne_sicherung_ist_deutlich(self):
+        """Anker: Ein lauwarmer Satz taete es hier nicht."""
+        from ps5_validator.utils import i18n
+        text = i18n.STRINGS["backport.confirm_no_backup"]["de"]
+        self.assertIn("KEINE", text)
+        self.assertIn("nicht r", text)      # "nicht rueckgaengig"
+
+
 if __name__ == "__main__":
     unittest.main()
