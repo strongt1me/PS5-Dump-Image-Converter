@@ -955,5 +955,135 @@ class StartRuheTests(unittest.TestCase):
                       "Ohne update() kennt die Karte ihre wahre Breite nicht")
 
 
+@unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
+class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
+    """Keine Knopfreihe darf bei Mindestfenstergroesse zusammengedrueckt werden.
+
+    Bisher stand je Fenster eine eigene Pruefung hier - und deshalb fiel
+    nicht auf, dass zwei weitere dieselbe Falle hatten. Am 08.09.2026
+    gemessen, jeweils auf die eigene ``minsize`` gezogen:
+
+    * Param-/Manifest-Editor: "Schliessen" und "Speichern unter" **12 px**
+      statt 42 - die Beschriftungen waren damit weg.
+    * SELF-Inspektor: beide Knoepfe **10 px** statt 42.
+
+    Ursache ist immer dieselbe: Ein dehnbarer Bereich (``expand=True``)
+    wird **vor** der Knopfreihe gepackt und nimmt sich den Platz. Ein
+    nachtraegliches ``side="bottom"`` reicht nicht - auch das ist
+    nachgemessen; erst die umgekehrte Packreihenfolge half.
+
+    Diese Pruefung geht deshalb ueber **alle** selbst gebauten Fenster,
+    nicht ueber eine gepflegte Liste.
+    """
+
+    #: Fenster, die keinen eigenen Toplevel oeffnen (fremdes Programm,
+    #: Systembrowser) oder auf Fremdsoftware warten.
+    OHNE_FENSTER = ("_launch_filezilla", "_open_benutzerhandbuch")
+
+    @classmethod
+    def setUpClass(cls):
+        import json
+        import tempfile
+        haupt = _lade_hauptprogramm()
+        cls.haupt = haupt
+
+        # Ein Ordner, mit dem die Fenster etwas anfangen koennen: Mehrere
+        # fragen zuerst danach und kehren ohne Auswahl sofort zurueck.
+        cls._ordner = tempfile.mkdtemp(prefix="knopfreihen_")
+        os.makedirs(os.path.join(cls._ordner, "sce_sys"), exist_ok=True)
+        with io.open(os.path.join(cls._ordner, "sce_sys", "param.json"),
+                     "w", encoding="utf-8") as fh:
+            json.dump({"titleId": "PPSA00000",
+                       "contentId": "IV0000-PPSA00000_00-KNOPFREIHEN000",
+                       "localizedParameters": {"defaultLanguage": "de-DE",
+                                               "de-DE": {"titleName": "Probe"}}}, fh)
+        with io.open(os.path.join(cls._ordner, "eboot.bin"), "wb") as fh:
+            fh.write(b"\x7fELF" + bytes(4092))
+        datei = os.path.join(cls._ordner, "eboot.bin")
+
+        for name in ("askdirectory", "choose_dump_folder"):
+            if hasattr(haupt.filedialog, name):
+                setattr(haupt.filedialog, name, lambda *a, **k: cls._ordner)
+        haupt.filedialog.askopenfilename = lambda *a, **k: datei
+        haupt.filedialog.askopenfilenames = lambda *a, **k: (datei,)
+        haupt.filedialog.asksaveasfilename = lambda *a, **k: os.path.join(
+            cls._ordner, "aus.bin")
+        for name in ("showinfo", "showwarning", "showerror"):
+            setattr(haupt.messagebox, name, lambda *a, **k: None)
+        # "Nein" heisst im Param-/Manifest-Editor "neues Dokument" - damit
+        # oeffnet das Fenster, ohne eine Datei anzufassen.
+        haupt.messagebox.askyesnocancel = lambda *a, **k: False
+        haupt.messagebox.askquestion = lambda *a, **k: "no"
+        for name in ("askyesno", "askokcancel", "askretrycancel"):
+            setattr(haupt.messagebox, name, lambda *a, **k: False)
+        haupt.PS5ConverterGUI._auswahl_dialog = lambda self, *a, **k: ""
+        cls.app = haupt.PS5ConverterGUI(_WURZEL)
+        _WURZEL.update_idletasks()
+
+    @classmethod
+    def tearDownClass(cls):
+        import shutil
+        shutil.rmtree(getattr(cls, "_ordner", ""), ignore_errors=True)
+
+    @staticmethod
+    def _beruhigen(sekunden=0.8):
+        import time
+        ende = time.perf_counter() + sekunden
+        while time.perf_counter() < ende:
+            _WURZEL.update()
+            time.sleep(0.01)
+
+    def _fenster_namen(self):
+        """Alle Werkzeugfenster aus den beiden Leisten des Programms."""
+        klasse = self.haupt.PS5ConverterGUI
+        namen = [befehl for _schluessel, befehl in klasse._MORE_TOOLS_ENTRIES]
+        namen += [befehl for _n, _s, befehl in klasse._FALTBARE_TITELKNOEPFE]
+        return [n for n in namen if n not in self.OHNE_FENSTER]
+
+    def test_es_gibt_ueberhaupt_fenster_zu_pruefen(self):
+        """Anker: Faende die Liste nichts, waere die Wache klaglos gruen."""
+        self.assertGreaterEqual(len(self._fenster_namen()), 15)
+
+    def test_keine_knopfreihe_wird_gequetscht(self):
+        beanstandet = []
+        for name in self._fenster_namen():
+            aufruf = getattr(self.app, name, None)
+            if aufruf is None:
+                continue
+            with self.subTest(fenster=name):
+                vorher = {str(w) for w in _WURZEL.winfo_children()}
+                try:
+                    aufruf()
+                except Exception as exc:                  # pragma: no cover
+                    self.fail("%s wirft beim Oeffnen: %s" % (name, exc))
+                self._beruhigen()
+                neu = [w for w in _WURZEL.winfo_children()
+                       if str(w) not in vorher and isinstance(w, tk.Toplevel)
+                       and w.winfo_exists()]
+                if not neu:
+                    continue
+                fenster = neu[-1]
+                try:
+                    breite, hoehe = fenster.minsize()
+                    if breite and hoehe:
+                        fenster.geometry("%dx%d" % (breite, hoehe))
+                        self._beruhigen()
+                    gequetscht = _gequetschte_knoepfe(fenster)
+                    if gequetscht:
+                        beanstandet.append("%s: %s" % (name, ", ".join(gequetscht)))
+                finally:
+                    try:
+                        fenster.destroy()
+                    except Exception:
+                        pass
+                    self.app._downloads_win = None
+                    self.app._downloads_tree = None
+                    self._beruhigen(0.2)
+        self.assertEqual([], beanstandet,
+                         "Diese Knopfreihen bekommen bei Mindestfenstergroesse "
+                         "weniger Platz, als sie brauchen:\n  "
+                         + "\n  ".join(beanstandet))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

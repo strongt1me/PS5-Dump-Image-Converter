@@ -55,7 +55,7 @@ Angeboten werden nur Zielformate, die zur erkannten Quelle passen.
 Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** erklärt die Bedienung in
 einfacher Sprache – alle acht Aufgaben, die Werkzeugleiste, typische Fehler
 und die Besonderheiten unter Linux und macOS. Es liegt auch als
-[PDF](BENUTZERHANDBUCH.pdf) (30 Seiten) bei.
+[PDF](BENUTZERHANDBUCH.pdf) (38 Seiten) bei.
 
 Was sich je Version geändert hat, steht im [Changelog](CHANGELOG.md).
 

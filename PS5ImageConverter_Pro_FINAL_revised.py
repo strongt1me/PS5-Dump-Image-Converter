@@ -100,6 +100,7 @@ from ps5_validator.utils.ffpkg_support import (
 )
 from ps5_validator.utils.pkg_merger import (
     MELDUNGEN as pkg_merger_meldungen,
+    MERGED_SUFFIX,
     PkgMergeError,
     discover_split_sets,
     merge_split_set,
@@ -5126,10 +5127,31 @@ class PS5ConverterGUI:
         """Sichtbare Release-Gate-Anzeige ist entfernt; interne Gate-Pruefung bleibt aktiv."""
         return
 
-    def _run_preflight_checks(self, mode: str, src: str, dst: str) -> tuple[list[str], list[str]]:
+    #: Wege, auf denen das Abbild als **Ganzes** in einen PFS-Container
+    #: gehuellt wird (``mkpfs pack file``). Sein Inhalt wird dabei nie
+    #: geoeffnet - AMPR EMU und BACKPORT koennen dort nichts einbauen.
+    #:
+    #: Das ist kein Fehler, sondern der Zweck dieser Wege: Eine ``.ffpfsc``
+    #: darf ein Abbild umhuellen, und ein Zwischenschritt ueber den
+    #: Dump-Ordner ergaebe eine andere Bauform. Still ignoriert werden
+    #: duerfen die Kaestchen deshalb trotzdem nicht - bis v1.9.10 geschah
+    #: genau das. Am 08.09.2026 gemessen: mit und ohne Haken kamen auf
+    #: beiden Wegen dieselben Bytes heraus, ohne eine einzige Meldung.
+    _EINHUELLENDE_WEGE: frozenset = frozenset({
+        ("exfat", "ffpfsc"),
+        ("ffpkg", "ffpfsc"),
+    })
+
+    def _run_preflight_checks(self, mode: str, src: str, dst: str,
+                              target_type: str = "") -> tuple[list[str], list[str]]:
         """Führt eine Risikoanalyse vor Start aus und liefert (errors, warnings)."""
         errors: list[str] = []
         warnings: list[str] = []
+
+        if target_type and self._integration_gewaehlt():
+            quelle = self._resolve_mode_source_type(mode, src)
+            if (quelle, target_type) in self._EINHUELLENDE_WEGE:
+                warnings.append(self._t("preflight.integration_umhuellt"))
 
         if not os.path.exists(src):
             errors.append(self._t("preflight.source_missing", path=src))
@@ -16449,7 +16471,8 @@ class PS5ConverterGUI:
         pass
 
         # Preflight-Risikoanalyse (vor UI-Start und Thread-Launch).
-        pf_errors, pf_warnings = self._run_preflight_checks(mode, src, dst_for_checks)
+        pf_errors, pf_warnings = self._run_preflight_checks(
+            mode, src, dst_for_checks, target_type=target_type)
         if pf_errors:
             messagebox.showerror(
                 self._t("dialog.title.preflight_failed"),
@@ -18474,7 +18497,16 @@ class PS5ConverterGUI:
             value = os.environ.get(env_key)
             if value and os.path.isdir(value):
                 roots.append(value)
-        for drive in ('C:\\', 'D:\\'):
+        # Alle fest eingebauten Laufwerke, nicht nur C: und D:. Wer FileZilla
+        # auf E: oder F: liegen hat, wurde von der Ausweichsuche sonst nicht
+        # gefunden - obwohl gerade sie fuer ungewoehnliche Ablagen da ist.
+        #
+        # ``_feste_laufwerke`` statt eines eigenen Durchprobierens: Es fragt
+        # Windows nach DRIVE_FIXED und laesst Netzlaufwerke von vornherein
+        # weg. Ein verbundenes, gerade nicht erreichbares Netzlaufwerk laesst
+        # ``os.path.isdir`` sekundenlang haengen - in einer Suche mit
+        # Zeitbudget waere das der ganze Ausweg.
+        for drive in (self._feste_laufwerke() or ['C:\\', 'D:\\']):
             if os.path.isdir(drive):
                 roots.append(drive)
 
@@ -20880,6 +20912,22 @@ class PS5ConverterGUI:
             progress_end=98.0,
         )
         if ok:
+            # Der Zielordner IST hier das Ergebnis - der Einbau geht direkt
+            # hinein, eine Arbeitskopie waere sinnlos. Dasselbe tut
+            # _mode_exfat_to_folder fuer die andere Abbildart.
+            #
+            # Bis v1.9.10 fehlte das: Aufgabe 4 nach Dump-Ordner liess AMPR
+            # EMU und BACKPORT stillschweigend weg. Am 08.09.2026 gemessen -
+            # mit und ohne Haken kamen dieselben 191 Dateien und 648.398.581
+            # Bytes heraus, waehrend derselbe Weg aus einer .exFAT 200
+            # Dateien lieferte.
+            #
+            # Doppelt eingebaut wird dadurch nichts: Die mehrstufigen Wege
+            # (.ffpkg -> .exFAT, .ffpkg -> .ffpfs) rufen den Einbau danach
+            # noch einmal, und _integration_anwenden merkt sich mit
+            # _integration_erledigt, dass er schon gelaufen ist.
+            if not self._integration_anwenden(final_output):
+                return False
             self.progress_engine.begin_validate("Validierung...")
             self.progress_engine.commit_task()
         return ok
@@ -27580,6 +27628,12 @@ class PS5ConverterGUI:
         def _on_mw(e):
             scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
         win.bind("<MouseWheel>", _on_mw)
+        # X11 schickt kein <MouseWheel>, sondern Knopf 4 und 5. Ohne diese
+        # beiden Bindungen liess sich das Fenster unter Linux nur ueber den
+        # Rollbalken bewegen - dieselbe Stelle ist an drei anderen Fenstern
+        # (Zeilen 3545, 32709) laengst so geloest.
+        win.bind("<Button-4>", lambda _e: scroll_canvas.yview_scroll(-1, "units"))
+        win.bind("<Button-5>", lambda _e: scroll_canvas.yview_scroll(1, "units"))
 
         # --- Inhalte als saubere Label-Widgets ---
         pad: Any = {"padx": 10, "pady": 4}
@@ -27619,9 +27673,11 @@ class PS5ConverterGUI:
             ))
             _author_bg.paste(_author_pil, (2, 2))
             _author_tk = ImageTk.PhotoImage(_author_bg)
+            # Ohne ``cursor="hand2"``: Das Bild ist ein Bild und tut nichts.
+            # Die Hand versprach einen Klick, den es nie gab - weder das
+            # Label noch das Bild hatten je eine Bindung.
             _author_lbl = tk.Label(inner, image=_author_tk,
-                                   bg=self._COLORS["bg_main"],
-                                   cursor="hand2")
+                                   bg=self._COLORS["bg_main"])
             _author_lbl.image = _author_tk  # type: ignore[attr-defined]  # Referenz halten
             _author_lbl.pack(pady=(14, 4))
         except Exception as exc:
@@ -28167,7 +28223,12 @@ class PS5ConverterGUI:
                             if split_set is None or not split_set.has_root:
                                 _melde(self._t("pkg_merger.log_skip", name=base_name))
                                 continue
-                            output_path = os.path.join(output_dir, split_set.base_name + "-merged.pkg")
+                            # Die Endung kommt aus dem Modul. Stand sie hier als Zeichenkette,
+                            # liefen Fenster und Modul beim naechsten Umbenennen
+                            # auseinander - pkg_merger.discover_split_sets filtert
+                            # bereits erzeugte Dateien ueber MERGED_SUFFIX heraus.
+                            output_path = os.path.join(
+                                output_dir, split_set.base_name + MERGED_SUFFIX)
                             result = merge_split_set(
                                 split_set.ordered_numbered, split_set.meta, output_path,
                                 compute_digest=True, log=_melde,
@@ -28362,8 +28423,12 @@ class PS5ConverterGUI:
                 "applicationName": name_var, "titleId": title_id_var, "applicationVersion": version_var,
             }
 
+        # Der Koerper wird erst am Ende gepackt - nach der Knopfreihe.
+        # Gemessen am 08.09.2026 bei Mindestfenstergroesse: Andersherum
+        # blieben von "Schliessen" und "Speichern unter" 12 px statt 42,
+        # die Beschriftungen waren damit weg. Dieselbe Reihenfolge haelt
+        # der PKG-Zusammenfuehrer seit v1.8.69 ein.
         body = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
-        body.pack(fill="both", expand=True)
         body.grid_rowconfigure(0, weight=1)
         body.grid_columnconfigure(0, weight=1)
 
@@ -28567,13 +28632,16 @@ class PS5ConverterGUI:
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        btn_row.pack(fill="x")
+        btn_row.pack(side="bottom", fill="x")
         ttk.Button(btn_row, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
         ttk.Button(
             btn_row, text=self._t("param_manifest.save_as_button"),
             style="Accent.TButton", command=_save,
         ).pack(side="left")
+
+        # Zuletzt der dehnbare Koerper, damit er nur den Rest bekommt.
+        body.pack(fill="both", expand=True)
 
     # ==================================================================
     # Bibliothek – Mehrfachordner-Scan aller unterstützten Formate mit
@@ -30566,6 +30634,15 @@ class PS5ConverterGUI:
             self._t("self_inspector.subtitle", container=info.magic_name, size=groesse),
         )
 
+        # Die Knopfreihe zuerst und an den unteren Rand - noch leer, die
+        # Knoepfe kommen unten hinein. Nur die Reihenfolge zaehlt:
+        # Wird sie nach den dehnbaren Bereichen gepackt, bekommt sie bei
+        # Mindestfenstergroesse nur den Rest. Am 08.09.2026 gemessen -
+        # 10 px statt 42, die Beschriftungen damit unsichtbar. Ein
+        # blosses side="bottom" reicht nicht, das ist nachgemessen.
+        btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        btn_row.pack(side="bottom", fill="x")
+
         text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         text_widget = tk.Text(
@@ -30623,14 +30700,16 @@ class PS5ConverterGUI:
         def _copy_report() -> None:
             self.root.clipboard_clear()
             self.root.clipboard_append(bericht)
+            # Neutraler Text: Hier liegt der Bericht des SELF-Inspektors in der
+            # Zwischenablage, nicht der Diagnosebericht. Bis v1.9.10 stand hier
+            # dessen Schluessel, und die Meldung sprach von etwas, das der
+            # Anwender gar nicht angefordert hatte.
             messagebox.showinfo(
                 self._t("dialog.title.copied"),
-                self._t("dialog.msg.diagnostics_copied_to_clipboard"),
+                self._t("dialog.msg.report_copied_to_clipboard"),
                 parent=win,
             )
 
-        btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        btn_row.pack(fill="x")
         ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
         ttk.Button(
             btn_row, text=self._t("self_inspector.copy_button"),
@@ -34745,6 +34824,14 @@ class PS5ConverterGUI:
             self._t("dump_rename.subtitle", path=ordner),
         )
 
+        # Erst die Knopfreihe an den unteren Rand, dann der dehnbare
+        # Koerper. Andersherum blieben von "Schliessen" und "Umbenennen"
+        # bei Mindestfenstergroesse 8 px statt 42 - am 08.09.2026
+        # gemessen. Bestueckt wird die Reihe weiter unten, sobald
+        # _umbenennen steht.
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+
         körper = tk.Frame(win, bg=c["bg_main"], padx=20)
         körper.pack(fill="both", expand=True)
 
@@ -34835,8 +34922,6 @@ class PS5ConverterGUI:
         # Hier läuft nichts im Hintergrund - das Umbenennen ist sofort fertig.
         # Bis v1.9.6 stand hier trotzdem ein Aufruf auf ein nicht vorhandenes
         # _beim_schliessen, und der Knopf warf bei jedem Druck einen NameError.
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("dump_rename.rename_button"),
@@ -34908,8 +34993,6 @@ class PS5ConverterGUI:
 
     #: Kennungspraefixe der beiden Konsolen. Die Title-ID sagt es
     #: eindeutig - dieselbe Unterscheidung wie in _fetch_patch_page_meta.
-    _PS4_KENNUNGEN: tuple[str, ...] = ("CUSA", "PUSA")
-    _PS5_KENNUNGEN: tuple[str, ...] = ("PPSA", "PPSS", "PPUS", "PPJP")
 
     def _ps4ffpsc_plattform(self, title_id: str, spiel=None) -> str:
         """Zu welcher Konsole ein Titel gehoert. Siehe ps4_werkzeug.plattform."""
@@ -36059,7 +36142,12 @@ class PS5ConverterGUI:
         """Öffnet den Klog-Viewer; die Verbindung wird erst nach Klick auf 'Verbinden' aufgebaut."""
         c = self._COLORS
         win = self._build_modern_toplevel(
-            self._t("klog.window_title"), 900, 640, min_width=680, min_height=460,
+            # min_width 710 statt 680: In der Verbindungszeile stehen IP-Feld,
+            # Port-Feld, die Statusanzeige und die beiden Knoepfe nebeneinander.
+            # Bei 680 px bekam "Trennen" 115 statt der benoetigten 135 px und
+            # war abgeschnitten - am 08.09.2026 gemessen. Zwanzig Pixel fehlten,
+            # dreissig sind es jetzt mehr.
+            self._t("klog.window_title"), 900, 640, min_width=710, min_height=460,
         )
 
         self._build_modern_header(win, self._t("klog.window_title"))
@@ -36347,6 +36435,22 @@ class PS5ConverterGUI:
             koerper, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
             fg=c["fg_warning"], anchor="w", justify="left", wraplength=820)
         erklaerung.pack(fill="x", pady=(2, 8))
+
+        # Der Umbruch richtet sich nach der tatsaechlichen Breite, nicht nach
+        # einer festen Zahl. 820 px standen hier fest, das Fenster ist aber
+        # nur 740 px breit zu ziehen (min_width) und der Koerper nimmt links
+        # und rechts je 20 px - der Warntext lief dann ueber den Rand hinaus,
+        # und ausgerechnet er sagt, dass ein so gebautes Paket auf der
+        # Konsole nicht startet.
+        def _umbruch_nachziehen(_ereignis=None) -> None:
+            try:
+                breite = erklaerung.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                erklaerung.configure(wraplength=breite - 8)
+
+        erklaerung.bind("<Configure>", _umbruch_nachziehen)
 
         def _art_erklaeren() -> None:
             schluessel = ("pkgbau.explain_homebrew"
@@ -37257,13 +37361,32 @@ class PS5ConverterGUI:
             _refresh_tree()
             status_var.set(self._t("status.reset_to_defaults_not_written"))
 
-        def _ftp_connect_blocking():
+        def _ftp_zugang_lesen() -> dict:
+            """Die Verbindungsangaben im **Fensterfaden** abholen.
+
+            Tk-Variablen gehoeren dem Faden, der die Oberflaeche fuehrt. Bis
+            v1.9.10 las ``_ftp_connect_blocking`` sie direkt - und lief dabei
+            im Arbeitsfaden. Das geht meistens gut und wirft irgendwann
+            "main thread is not in main loop"; der Faden endet dann mitten in
+            der Uebertragung, und im Fenster steht weiter "Verbinde ...".
+            """
+            return {
+                "ip": ip_var.get().strip(),
+                "port": port_var.get().strip(),
+                "user": user_var.get().strip(),
+                "pass": pass_var.get(),
+            }
+
+        def _ftp_connect_blocking(zugang: "dict | None" = None):
             import ftplib
-            ip = ip_var.get().strip()
+            # Ohne uebergebene Angaben laeuft der Aufruf im Fensterfaden -
+            # dann darf er die Variablen selbst lesen.
+            zugang = zugang if zugang is not None else _ftp_zugang_lesen()
+            ip = zugang["ip"]
             if not ip:
                 raise ValueError(self._t("dialog.msg.enter_ps5_ip"))
             try:
-                port = int(port_var.get().strip() or "21")
+                port = int(zugang["port"] or "21")
             except ValueError as exc:
                 raise ValueError(self._t("dialog.msg.port_not_a_number")) from exc
             # Antwortet der eingetragene Port nicht, die bekannten Alternativen
@@ -37272,18 +37395,22 @@ class PS5ConverterGUI:
             port = self._ps5_port_finden(ip, port, "ftp")
             ftp = ftplib.FTP()
             ftp.connect(ip, port, timeout=10)
-            ftp.login(user_var.get().strip() or "anonymous", pass_var.get())
-            if str(port_var.get()).strip() != str(port):
-                port_var.set(str(port))
+            ftp.login(zugang["user"] or "anonymous", zugang["pass"])
+            if str(zugang["port"]).strip() != str(port):
+                # Zurueckschreiben ebenfalls im Fensterfaden.
+                self._spaeter_im_fenster(win, lambda: port_var.set(str(port)))
             self._ps5_wert_merken(f"{settings_prefix}_ftp_ip", ip,
                                   self._ps5_ip())
             self._ps5_wert_merken(f"{settings_prefix}_ftp_port", port,
                                   self._ps5_ftp_port())
-            self._save_setting(f"{settings_prefix}_ftp_user", user_var.get().strip())
+            self._save_setting(f"{settings_prefix}_ftp_user", zugang["user"])
             return ftp
 
         def _load_from_ps5() -> None:
             status_var.set(self._t("remote_ini.status_loading"))
+            # Die Verbindungsangaben noch hier holen: Der Arbeitsfaden
+            # darunter darf keine Tk-Variablen lesen.
+            zugang = _ftp_zugang_lesen()
 
             def worker() -> None:
                 import ftplib  # noqa: PLC0415
@@ -37291,7 +37418,7 @@ class PS5ConverterGUI:
                 puffer = io.BytesIO()
                 lesefehler: Exception | None = None
                 try:
-                    ftp = _ftp_connect_blocking()
+                    ftp = _ftp_connect_blocking(zugang)
                     try:
                         try:
                             ftp.retrbinary("RETR " + remote_config_path, puffer.write)
@@ -37468,11 +37595,14 @@ class PS5ConverterGUI:
                     self._t("remote_ini.msg_target_changed", path=remote_config_path),
                     parent=win)
 
+            # Verbindungsangaben im Fensterfaden holen, siehe _ftp_zugang_lesen.
+            zugang = _ftp_zugang_lesen()
+
             def worker() -> None:
                 import ftplib  # noqa: PLC0415
 
                 try:
-                    ftp = _ftp_connect_blocking()
+                    ftp = _ftp_connect_blocking(zugang)
                     try:
                         # In DERSELBEN Sitzung nachsehen, was dort wirklich
                         # liegt - so haelt es auch _ampr_gen_config_schreiben.
@@ -37540,6 +37670,9 @@ class PS5ConverterGUI:
             if not path:
                 return
 
+            # Verbindungsangaben im Fensterfaden holen, siehe _ftp_zugang_lesen.
+            zugang = _ftp_zugang_lesen()
+
             def worker() -> None:
                 # Daneben schreiben und erst am Ende umbenennen - dasselbe
                 # Muster wie in merge_split_set. Vorher ging der Strom direkt
@@ -37552,7 +37685,7 @@ class PS5ConverterGUI:
                 # angekommen war.
                 zwischen = path + ".teil"
                 try:
-                    ftp = _ftp_connect_blocking()
+                    ftp = _ftp_connect_blocking(zugang)
                     try:
                         with open(zwischen, "wb") as f:
                             ftp.retrbinary("RETR " + remote_debug_log_path, f.write)
@@ -38559,6 +38692,14 @@ class PS5ConverterGUI:
                 try:
                     st = fpath.stat()
                 except OSError:
+                    continue
+                # Nur gewoehnliche Dateien. ``os.walk`` legt in ``filenames``
+                # alles ab, was kein Verzeichnis ist - unter Linux und macOS
+                # also auch FIFOs, Sockets und Geraetedateien. Die haben eine
+                # Groesse und wuerden anstandslos in den Index wandern, wo sie
+                # nichts zu suchen haben. Die Vorlage in mkpfs prueft an
+                # derselben Stelle mit ``if not path.is_file(): continue``.
+                if not stat.S_ISREG(st.st_mode):
                     continue
                 indexed_path = "/app0/" + fpath.relative_to(root).as_posix()
                 key = indexed_path.replace("\\", "/").lower()

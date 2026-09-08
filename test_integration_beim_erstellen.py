@@ -419,5 +419,91 @@ class ArbeitskopieFortschrittTests(unittest.TestCase):
         self.fail("_integration_arbeitskopie heisst nicht mehr so - dieser "
                   "Test misst dann nichts.")
 
+class IntegrationsLueckenTests(unittest.TestCase):
+    """Kein Konvertierungsweg darf die Kaestchen stillschweigend uebergehen.
+
+    Am 08.09.2026 an echten Sicherungen gemessen - je zweimal derselbe Lauf,
+    einmal ohne und einmal mit gesetzten Haken, verglichen wurden die
+    Protokollmarker und die Dateizahl:
+
+    | Weg                    | ohne | mit                     | greift |
+    | ---------------------- | ---- | ----------------------- | ------ |
+    | .exFAT  -> .ffpfsc     | -    | -                       | nein   |
+    | .ffpkg  -> .ffpfsc     | -    | -                       | nein   |
+    | .ffpkg  -> Dump-Ordner | 191  | 191                     | nein   |
+    | .exFAT  -> Dump-Ordner | 191  | 200, ampr+backport+index | ja    |
+    | .ffpfsc -> .ffpfs      | -    | ampr+backport+index      | ja    |
+
+    Die letzten beiden Zeilen sind die Gegenprobe: Ohne sie wuesste man
+    nicht, ob die Messung ueberhaupt etwas sieht.
+
+    Zwei verschiedene Ursachen, deshalb zwei verschiedene Behebungen:
+
+    * ``.ffpkg`` -> Dump-Ordner **kann** einbauen und tat es nur nicht. Das
+      Gegenstueck fuer die .exFAT macht es seit jeher. Nachgeholt.
+    * Die beiden ``.ffpfsc``-Wege huellen das Abbild als Ganzes ein und
+      oeffnen seinen Inhalt nie. Dort *kann* nichts eingebaut werden - der
+      Anwender muss es aber erfahren, statt ein Backup ohne AMPR EMU zu
+      bekommen und es fuer eines mit zu halten.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(__file__).resolve().parent
+                      / "PS5ImageConverter_Pro_FINAL_revised.py"
+                      ).read_text(encoding="utf-8")
+
+    def _rumpf(self, name: str) -> str:
+        import ast
+        baum = ast.parse(self.quelle)
+        for knoten in ast.walk(baum):
+            if isinstance(knoten, ast.FunctionDef) and knoten.name == name:
+                return ast.unparse(knoten)
+        self.fail("%s gibt es nicht mehr" % name)
+
+    def test_ffpkg_nach_ordner_baut_ein(self):
+        self.assertIn("_integration_anwenden", self._rumpf("_mode_ffpkg_to_folder"),
+                      "Aufgabe 4 nach Dump-Ordner laesst AMPR EMU und "
+                      "BACKPORT wieder weg.")
+
+    def test_exfat_nach_ordner_baut_weiterhin_ein(self):
+        """Anker: das Gegenstueck, an dem der Fehlende gemessen wurde."""
+        self.assertIn("_integration_anwenden", self._rumpf("_mode_exfat_to_folder"))
+
+    def test_die_einhuellenden_wege_stehen_in_der_liste(self):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+        wege = APP.PS5ConverterGUI._EINHUELLENDE_WEGE
+        self.assertIn(("exfat", "ffpfsc"), wege)
+        self.assertIn(("ffpkg", "ffpfsc"), wege)
+
+    def test_die_liste_enthaelt_nur_wirklich_einhuellende_wege(self):
+        """Wer hier etwas einträgt, unterdrueckt den Einbau nicht - er warnt
+        nur. Steht ein Weg faelschlich drin, warnt das Programm, obwohl der
+        Einbau laeuft. Geprueft wird deshalb, dass die genannten Modi das
+        Abbild wirklich als eine Datei einbetten.
+        """
+        for name in ("_mode_pack_file", "_mode_ffpkg_to_ffpfsc"):
+            with self.subTest(modus=name):
+                rumpf = self._rumpf(name)
+                self.assertIn("'pack', 'file'", rumpf.replace('"', "'"),
+                              "%s bettet nicht mehr als einzelne Datei ein" % name)
+                self.assertNotIn("_integration_anwenden", rumpf)
+
+    def test_die_vorpruefung_warnt(self):
+        rumpf = self._rumpf("_run_preflight_checks")
+        self.assertIn("_EINHUELLENDE_WEGE", rumpf)
+        self.assertIn("preflight.integration_umhuellt", rumpf)
+        self.assertIn("_integration_gewaehlt", rumpf,
+                      "Ohne diese Bedingung warnt das Programm auch den, "
+                      "der gar nichts einbauen wollte.")
+
+    def test_die_warnung_gibt_es_in_beiden_sprachen(self):
+        from ps5_validator.utils import i18n
+        eintrag = i18n.STRINGS.get("preflight.integration_umhuellt")
+        self.assertIsNotNone(eintrag)
+        for sprache in i18n.SUPPORTED_LANGUAGES:
+            self.assertTrue(eintrag.get(sprache), sprache)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
