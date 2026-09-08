@@ -18588,6 +18588,16 @@ class PS5ConverterGUI:
             except Exception:
                 pass
             return False
+        finally:
+            # Die heruntergeladene Setup-Datei wieder wegraeumen. Sie lag im
+            # Laufzeit-Temp-Ordner und blieb dort liegen - rund 12 MB je
+            # Anlauf, und der Name kommt im ganzen Quelltext nur an dieser
+            # einen Stelle vor, es hat sie also nie jemand aufgeraeumt.
+            try:
+                if os.path.isfile(installer):
+                    os.remove(installer)
+            except OSError as exc:
+                logger.debug("Setup-Datei nicht loeschbar: %s", exc)
 
     def _launch_filezilla(self) -> bool:
         """Stoesst den Start von FileZilla an - gesucht wird nebenher.
@@ -27585,7 +27595,14 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
 
     def _show_credits(self) -> None:
-        """Zeigt das Credits-Fenster: rahmenlos, 50% Bildschirm, zentriert, skalierbar."""
+        """Zeigt das Credits-Fenster: halber Bildschirm, zentriert, skalierbar.
+
+        Der Docstring sagte bis v1.9.11 "rahmenlos". Das stimmt nicht und
+        hat nie gestimmt: Das Fenster ist ein gewoehnliches ``tk.Toplevel``,
+        es setzt einen Titel und traegt die Fensterleiste des Systems.
+        ``overrideredirect`` kommt hier nirgends vor - wer sich auf den Satz
+        verliess, suchte den Schliessknopf an der falschen Stelle.
+        """
         # Sicher prüfen ob Fenster bereits offen (None-safe, kein Absturz)
         if self._cred_win is not None:
             try:

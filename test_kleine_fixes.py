@@ -1031,5 +1031,53 @@ class StilleFehlschlaegeTests(unittest.TestCase):
             "weitergereicht und nie geleert.")
 
 
+class ZweiUebersehenTests(unittest.TestCase):
+    """Zwei Punkte, die ich beim Durchgehen der Liste uebersprungen hatte.
+
+    Aufgefallen erst beim Zurueckschreiben der Ergebnisse in die Liste -
+    ein Grund mehr, das nicht zu vergessen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def test_das_filezilla_setup_wird_wieder_geloescht(self):
+        """Rund 12 MB je Anlauf blieben im Temp-Ordner liegen.
+
+        Der Dateiname kommt im ganzen Quelltext nur an einer Stelle vor -
+        es hat sie also nie jemand aufgeraeumt.
+        """
+        stelle = self.quelle.index("def _install_filezilla")
+        block = self.quelle[stelle:self.quelle.index("def _launch_filezilla")]
+        self.assertIn("os.remove(installer)", block)
+        self.assertIn("finally:", block,
+                      "Ohne finally bleibt die Datei liegen, sobald die "
+                      "Installation scheitert - also genau dann, wenn es "
+                      "haeufig passiert.")
+
+    def test_der_credits_docstring_luegt_nicht_mehr(self):
+        """Er versprach ein rahmenloses Fenster, das es nie war."""
+        import ast
+        baum = ast.parse(self.quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef) and k.name == "_show_credits")
+        text = ast.get_docstring(knoten) or ""
+        # Ohne den Docstring: Der erklaert die Sache und nennt das Wort
+        # dabei selbst - danach zu suchen fand die eigene Erklaerung.
+        anweisungen = [k for k in knoten.body
+                       if not (isinstance(k, ast.Expr)
+                               and isinstance(k.value, ast.Constant)
+                               and isinstance(k.value.value, str))]
+        rumpf = "\n".join(ast.unparse(k) for k in anweisungen)
+        self.assertNotIn("overrideredirect", rumpf,
+                         "Wenn das Fenster jetzt doch rahmenlos ist, "
+                         "gehoert der Satz zurueck in den Docstring.")
+        erste_zeile = text.splitlines()[0] if text else ""
+        self.assertNotIn("rahmenlos", erste_zeile,
+                         "Der Docstring verspricht wieder ein rahmenloses "
+                         "Fenster, obwohl es eine Titelleiste hat.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
