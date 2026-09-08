@@ -24290,6 +24290,7 @@ class PS5ConverterGUI:
                 ("ampr.btn_restore", lambda: _finish("ampr_restore")),
                 ("ampr.btn_remove", lambda: _finish("ampr_remove")),
                 ("ampr.btn_index_only", lambda: _finish("ampr_index")),
+                ("ampr.btn_pack_remove", lambda: _finish("ampr_pack_remove")),
             ):
                 flach_knopf(
                     btn_row1, text=self._t(text_key), command=cmd,
@@ -24495,6 +24496,30 @@ class PS5ConverterGUI:
             elif action == "ampr_index":
                 # Reiner Index-Lauf: nichts austauschen, nur neu aufbauen.
                 self.progress_engine.begin_prepare(self._t("progress.prepare.rebuild_index"))
+                changed = True
+
+            elif action == "ampr_pack_remove":
+                # Der Rueckweg aus der neuen Methode. Er funktioniert, weil
+                # das Programm die Originaldateien nie entfernt: Ein
+                # Asset-Pack liegt daneben, nicht anstelle von etwas.
+                self.progress_engine.begin_prepare(
+                    self._t("progress.prepare.remove_asset_pack"))
+                try:
+                    weg = ampr_assetpakete.pack_entfernen(
+                        search_root, melden=self._append_to_log, text=self._t)
+                except ampr_assetpakete.PackFehler as exc:
+                    grund = str(exc)
+                    self._append_to_log(
+                        self._t(grund) if grund.startswith("ampr_pack.")
+                        else self._t("ampr_pack.entfernen_fehlgeschlagen",
+                                     error=exc))
+                    return False
+                if not weg:
+                    return False
+                # Der ampr_emu.index bleibt gueltig - er entsteht vor dem
+                # Packen und kennt die Baender nicht. Ein Neubau waere
+                # trotzdem richtig, wenn der Anwender ihn will; hier zaehlt
+                # der Container: Er muss danach neu gepackt werden.
                 changed = True
 
             else:
@@ -42225,8 +42250,12 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     ampr = parser.add_argument_group("Aufgabe 7 (AMPR EMU Manager)")
     ampr.add_argument(
         "--ampr-action",
-        choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index", "ampr_ftp_index"),
-        help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich).",
+        choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index",
+                 "ampr_ftp_index", "ampr_pack_remove"),
+        help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich). "
+             "'ampr_pack_remove' nimmt eine gepackte Asset-Schicht wieder "
+             "heraus: Manifest, .runtime und die .pak-Bänder werden entfernt. "
+             "Die Spieldateien bleiben, sie lagen ohnehin einzeln daneben.",
     )
     ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")
     ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste).")

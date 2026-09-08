@@ -560,6 +560,74 @@ def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
     return uebernommen
 
 
+def packdateien_finden(app0: str) -> list[str] | None:
+    """Die Dateien einer gepackten Asset-Schicht in einem Spielordner.
+
+    Returns:
+        Die Namen (nicht die vollen Pfade), oder ``None``, wenn sich der
+        Ordner nicht lesen liess.
+
+    ``None`` ist nicht dieselbe Aussage wie eine leere Liste: Die eine heisst
+    "keine Schicht da", die andere "konnte nicht nachsehen". Wer beides gleich
+    behandelt, meldet "nichts zu entfernen", ohne hingesehen zu haben.
+    """
+    try:
+        with os.scandir(str(app0 or "")) as eintraege:
+            namen = [e.name for e in eintraege if e.is_file()]
+    except OSError as exc:
+        logger.debug("Spielordner nicht lesbar (%s): %s", app0, exc)
+        return None
+    treffer = []
+    for name in namen:
+        klein = name.lower()
+        if klein in (MANIFEST_NAME, LAUFZEIT_NAME, PRUEFSUMMEN_NAME):
+            treffer.append(name)
+        elif klein.startswith("ampr_assets") and klein.endswith(".pak"):
+            treffer.append(name)
+    return sorted(treffer)
+
+
+def pack_entfernen(app0: str, melden: Melder = stumm,
+                   text: Textquelle = schluessel_zeigen) -> int:
+    """Nimmt die Asset-Schicht wieder heraus - der Rueckweg.
+
+    Moeglich ist das, weil dieses Programm die Originaldateien **nie**
+    entfernt: Ein Asset-Pack wird danebengelegt, nicht anstelle von etwas.
+    Gemessen am 08.09.2026 an einem Ordner mit elf Dateien - Packen legte
+    sechs dazu, aenderte und entfernte nichts, und nach dem Loeschen dieser
+    sechs war der Ordner byteweise wieder der alte.
+
+    Der ``ampr_emu.index`` bleibt dabei unangetastet und gueltig: Er entsteht
+    **vor** dem Packen und kennt die Baender gar nicht.
+
+    Returns:
+        Anzahl der entfernten Dateien.
+
+    Raises:
+        PackFehler: Wenn der Ordner nicht lesbar ist oder eine Datei sich
+            nicht entfernen laesst. Ein halb entfernter Bestand waere
+            schlimmer als gar keiner - das Manifest naennte dann Baender,
+            die es nicht mehr gibt.
+    """
+    namen = packdateien_finden(app0)
+    if namen is None:
+        raise PackFehler("ampr_pack.ordner_unlesbar")
+    if not namen:
+        melden(text("ampr_pack.nichts_zu_entfernen"))
+        return 0
+    entfernt = 0
+    for name in namen:
+        pfad = os.path.join(str(app0), name)
+        try:
+            os.remove(pfad)
+        except OSError as exc:
+            raise PackFehler("%s nicht entfernbar: %s" % (name, exc)) from exc
+        entfernt += 1
+        melden(text("ampr_pack.entfernt_datei", name=name))
+    melden(text("ampr_pack.entfernt", count=entfernt))
+    return entfernt
+
+
 def quellen_entfernen(manifest: str, app0: str, melden: Melder = stumm,
                       abbruch: Callable[[], bool] | None = None) -> None:
     """Entfernt die Originale, die jetzt in den Baendern liegen.

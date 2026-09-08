@@ -573,5 +573,109 @@ class FortschrittTests(unittest.TestCase):
                   "Test misst dann nichts.")
 
 
+class RueckwegTests(unittest.TestCase):
+    """Ein gepacktes Backup muss sich wieder entpacken lassen.
+
+    Das geht, weil dieses Programm die Originaldateien **nie** entfernt: Ein
+    Asset-Pack liegt daneben, nicht anstelle von etwas. Gemessen am
+    08.09.2026 an einem Ordner mit elf Dateien - Packen legte sechs dazu,
+    aenderte und entfernte nichts.
+
+    Der Rueckweg ist deshalb kein Entpacken, sondern ein Loeschen: Manifest,
+    ``.runtime``, die Baender - und die Pruefsummenbeilage, falls sie
+    jemand mit hineingelegt hat.
+    """
+
+    @staticmethod
+    def _ordner(basis):
+        app0 = Path(basis, "app0")
+        (app0 / "assets").mkdir(parents=True)
+        (app0 / "assets" / "t.dat").write_bytes(b"X" * 4096)
+        (app0 / "eboot.bin").write_bytes(bytes([127]) + b"ELF" + bytes(512))
+        (app0 / "ampr_emu.index").write_bytes(b"AMPRIDX3" + bytes(64))
+        return app0
+
+    def test_findet_genau_die_packdateien(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = self._ordner(basis)
+            for name in (ap.MANIFEST_NAME, ap.LAUFZEIT_NAME,
+                         ap.PRUEFSUMMEN_NAME,
+                         "ampr_assets-assets-lane00-vol00-000.pak"):
+                (app0 / name).write_bytes(b"x")
+            gefunden = ap.packdateien_finden(str(app0))
+            self.assertEqual(len(gefunden), 4, gefunden)
+            # Gegenprobe: Was nicht dazugehoert, bleibt draussen.
+            for fremd in ("eboot.bin", "ampr_emu.index"):
+                self.assertNotIn(fremd, gefunden)
+
+    def test_ohne_pack_eine_leere_liste(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = self._ordner(basis)
+            self.assertEqual(ap.packdateien_finden(str(app0)), [])
+
+    def test_unlesbar_ist_nicht_leer(self):
+        """``None`` heisst "konnte nicht nachsehen" - nicht "nichts da".
+
+        Wer beides gleich behandelt, meldet "nichts zu entfernen", ohne
+        hingesehen zu haben.
+        """
+        self.assertIsNone(ap.packdateien_finden(""))
+        self.assertIsNone(ap.packdateien_finden(
+            os.path.join(str(PROJEKT), "gibt-es-nicht-xyz")))
+
+    def test_entfernen_stellt_den_alten_stand_her(self):
+        import hashlib, tempfile
+
+        def inventar(w):
+            r = {}
+            for stamm, _u, namen in os.walk(w):
+                for n in namen:
+                    p = os.path.join(stamm, n)
+                    r[os.path.relpath(p, w).replace(os.sep, "/")] =                         hashlib.sha256(open(p, "rb").read()).hexdigest()
+            return r
+
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = self._ordner(basis)
+            vorher = inventar(str(app0))
+            for name in (ap.MANIFEST_NAME, ap.LAUFZEIT_NAME,
+                         "ampr_assets-a-lane00-vol00-000.pak",
+                         "ampr_assets-a-lane01-vol00-001.pak"):
+                (app0 / name).write_bytes(b"x" * 32)
+
+            weg = ap.pack_entfernen(str(app0))
+            self.assertEqual(weg, 4)
+            self.assertEqual(inventar(str(app0)), vorher,
+                             "Der Ordner ist nicht wieder der von vorher")
+
+    def test_ohne_pack_wird_nichts_geloescht(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            app0 = self._ordner(basis)
+            meldungen = []
+            self.assertEqual(
+                ap.pack_entfernen(str(app0), melden=meldungen.append), 0)
+            self.assertTrue((app0 / "eboot.bin").is_file())
+            self.assertIn("ampr_pack.nichts_zu_entfernen", meldungen)
+
+    def test_unlesbarer_ordner_wirft(self):
+        """Lieber ein Fehler als ein stilles "nichts zu tun"."""
+        with self.assertRaises(ap.PackFehler):
+            ap.pack_entfernen("")
+
+    def test_der_knopf_und_die_aktion_sind_da(self):
+        haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        self.assertIn("ampr.btn_pack_remove", haupt, "Der Knopf fehlt")
+        self.assertIn('action == "ampr_pack_remove"', haupt,
+                      "Die Aktion wird nicht behandelt")
+        self.assertIn('"ampr_pack_remove"', haupt)
+        # Auch ueber die Kommandozeile erreichbar - sonst waere der Weg
+        # nur im Fenster da und in keinem Ablauf.
+        stelle = haupt.index("--ampr-action")
+        self.assertIn("ampr_pack_remove", haupt[stelle:stelle + 400])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
