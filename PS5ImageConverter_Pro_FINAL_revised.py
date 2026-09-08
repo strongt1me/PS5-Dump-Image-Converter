@@ -447,7 +447,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.9"
+APP_VERSION = "v1.9.10"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -16491,12 +16491,24 @@ class PS5ConverterGUI:
                     self._clear_runtime_checkpoint(mode=mode, src=src, dst=ck_dst)
 
         # Zielpfad validieren nur für Modi mit echter Ausgabe.
+        #
+        # Aufgabe 7 hat keine: Sie arbeitet im Quellordner. Ein Ziel *darf*
+        # man angeben - dann legt sie den Index dort ab -, verlangt wird es
+        # aber nicht; ``_mode_ampr_manager`` faellt ohne gueltiges Ziel von
+        # selbst auf den Quellordner zurueck ("_out_dir = dst if dst and
+        # os.path.isdir(dst) else src_dir"). Bis v1.9.9 stand sie trotzdem
+        # nicht in dieser Ausnahme und war ohne Zielangabe gar nicht zu
+        # starten - weder im Fenster noch ueber die Kommandozeile. Die
+        # Speicherplatz-Pruefung gleich darunter nimmt sie laengst aus.
+        #
+        # Ein *angegebenes* Ziel wird weiterhin geprueft: Ein Tippfehler soll
+        # nicht stillschweigend im Quellordner landen.
         if mode not in ("inspect", "dump_validator"):
             dst = self.dest_path.get().strip()
-            if not dst:
+            if not dst and mode != "ampr_manager":
                 messagebox.showerror(self._t("dialog.title.error"), self._t("dialog.msg.enter_target_dir"))
                 return
-            if not os.path.isdir(dst):
+            if dst and not os.path.isdir(dst):
                 messagebox.showerror(
                     self._t("dialog.title.error"),
                     self._t("dialog.msg.target_dir_not_found", path=dst),
@@ -24559,7 +24571,15 @@ class PS5ConverterGUI:
             # dieses Fensters: Der Manager kennt mehrere Wege, eine Bibliothek
             # hineinzubekommen (Tausch, eigene Datei, reiner Indexlauf), und
             # entscheidend ist, was am Ende wirklich dort liegt.
-            if changed and self._ampr_methode() == AMPR_METHODE_ASSETPACK:
+            # ``ampr_pack_remove`` ist ausgenommen, und zwar zwingend: Die
+            # Aktion setzt ``changed``, und stand die Methode auf Asset-Pack,
+            # baute dieser Block das eben entfernte Pack im selben Lauf sofort
+            # wieder auf. Am 08.09.2026 gemessen - der Ordner enthielt danach
+            # wieder alle sechs Dateien, und das Protokoll meldete
+            # "Erfolgreich abgeschlossen". Wer das Pack loswerden wollte,
+            # hatte es also weiterhin, ohne es zu merken.
+            if (changed and action != "ampr_pack_remove"
+                    and self._ampr_methode() == AMPR_METHODE_ASSETPACK):
                 installiert = self._ampr_identify_installed(
                     search_root, self._ampr_alle_fassungen())
                 eintrag = installiert.get(self._AMPR_SPRX_NAME) or {}
@@ -38357,6 +38377,15 @@ class PS5ConverterGUI:
         tk.Label(main, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(0, 6))
 
+        # Die Knopfreihe VOR dem Protokollfeld packen. Das Feld ist dehnbar
+        # (``expand=True``) und nimmt sich sonst den ganzen Raum; die Reihe
+        # bekaeme nur den Rest und waere bei knapper Fensterhoehe auf 24 statt
+        # 51 px zusammengedrueckt - der Fehler aus v1.8.69.
+        btn_row = tk.Frame(main, bg=c["bg_main"], pady=8)
+        btn_row.pack(side="bottom", fill="x")
+        ttk.Button(btn_row, text=self._t("action.close"),
+                   command=_on_close).pack(side="right")
+
         # Kein Zierrahmen, siehe oben.
         console_outer = tk.Frame(main, bg=c["bg_card"])
         console_outer.pack(fill="both", expand=True)
@@ -42220,7 +42249,7 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     group.add_argument("--task", type=int, choices=range(1, 9), help="Aufgabennummer 1-8 (siehe README).")
     group.add_argument("--mode", type=str, help="Interner Modus-Schlüssel statt Aufgabennummer (z.B. pack_folder).")
     parser.add_argument("--source", nargs="+", required=False, help="Quellpfad(e). Mehrere Pfade nur für Aufgabe 5 (Sammelkonvertierung).")
-    parser.add_argument("--dest", type=str, default="", help="Zielordner (nicht nötig für Aufgabe 8 / Inspect).")
+    parser.add_argument("--dest", type=str, default="", help="Zielordner (nicht nötig für Aufgabe 7, Aufgabe 8 und Inspect - die arbeiten im Quellordner bzw. lesen nur).")
     parser.add_argument("--format", type=str, choices=sorted(PS5ConverterGUI._FORMAT_LABELS.keys()), help="Zielformat, falls die Aufgabe mehrere anbietet.")
     parser.add_argument("--temp", type=str, default="", help="Temp-Arbeitsordner überschreiben.")
     parser.add_argument("--yes", action="store_true", help="Rückfragen (Überschreiben/Wiederaufnahme) automatisch bestätigen.")
@@ -42297,7 +42326,24 @@ def _build_ampr_automation(args: argparse.Namespace) -> dict[str, Any]:
     if args.ampr_store:
         spec["ampr_store"] = os.path.normpath(args.ampr_store)
     if args.ampr_version:
-        spec["ampr_version"] = args.ampr_version.strip()
+        # Die Klappliste im Fenster zeigt "0.4.2.1 test-pack" - Fassung und
+        # Variante in einem Stueck -, und genau so steht es auch in den
+        # Einstellungen. Wer das abliest und hier einsetzt, bekam bis v1.9.9
+        # "Keine passende Datei im Versionsordner": Die Meldung deutet auf
+        # eine fehlende Fassung, dabei stimmte nur die Schreibweise nicht.
+        #
+        # Eine Fassungsnummer enthaelt nie ein Leerzeichen, eine Variante oft
+        # ("no debug"). Getrennt wird deshalb am ersten Leerzeichen: davor die
+        # Fassung, dahinter die Variante. Getrennt wird immer, wenn ein
+        # Leerzeichen dasteht - eine zusammengesetzte Angabe passt auf keinen
+        # Versionsordner, taugt also auch neben einem --ampr-variant nichts.
+        # Ein ausdrueckliches --ampr-variant sticht die abgelesene Variante
+        # gleich darunter aus.
+        roh = args.ampr_version.strip()
+        fassung, _, variante = roh.partition(" ")
+        spec["ampr_version"] = fassung.strip()
+        if variante.strip():
+            spec["ampr_variant"] = variante.strip().lower()
     if args.ampr_variant:
         spec["ampr_variant"] = args.ampr_variant.strip().lower()
     if args.ampr_lib:

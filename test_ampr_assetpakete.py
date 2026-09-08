@@ -677,5 +677,107 @@ class RueckwegTests(unittest.TestCase):
         self.assertIn("ampr_pack_remove", haupt[stelle:stelle + 400])
 
 
+class RueckwegBleibtWegTests(unittest.TestCase):
+    """Das Herausnehmen darf im selben Lauf nicht rueckgaengig gemacht werden.
+
+    Am 08.09.2026 an einer echten Arbeitskopie gemessen: Aufgabe 7 mit
+    ``ampr_pack_remove`` entfernte die sechs Packdateien und legte sie
+    unmittelbar danach wieder an. Der Grund steckt in der Ablauffolge: Die
+    Aktion setzt ``changed``, und der Block dahinter baut bei eingestellter
+    Methode "Asset-Pack" ein Pack, wenn sich etwas geaendert hat. Beides
+    zusammen hob sich auf.
+
+    Sichtbar war davon nichts - das Protokoll meldete "Erfolgreich
+    abgeschlossen", und im Ordner lagen weiterhin Manifest, Laufzeitdatei
+    und vier Baender. Wer das Pack loswerden wollte, hatte es noch.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = (Path(__file__).resolve().parent
+                      / "PS5ImageConverter_Pro_FINAL_revised.py"
+                      ).read_text(encoding="utf-8")
+
+    def _packblock(self) -> str:
+        """Der Block in Aufgabe 7, der das Pack baut."""
+        stelle = self.quelle.index("if (changed and action != \"ampr_pack_remove\"")
+        return self.quelle[stelle:stelle + 400]
+
+    def test_die_aktion_ist_vom_packbau_ausgenommen(self):
+        # Wirft KeyError/ValueError, wenn die Bedingung wieder fehlt.
+        block = self._packblock()
+        self.assertIn("AMPR_METHODE_ASSETPACK", block,
+                      "Der gefundene Block ist nicht der Packbau.")
+
+    def test_der_packbau_haengt_weiter_an_der_methode(self):
+        """Anker: Ohne diese Bedingung packte Aufgabe 7 immer - dann waere
+        die Ausnahme oben zwar da, aber sie schuetzte das Falsche.
+        """
+        block = self._packblock()
+        self.assertIn("self._ampr_methode() == AMPR_METHODE_ASSETPACK", block)
+        self.assertIn("_ampr_assetpakete_bauen", block)
+
+    def test_die_uebrigen_aktionen_bleiben_drin(self):
+        """Nur diese eine Aktion ist ausgenommen, nicht etwa jede."""
+        block = self._packblock()
+        for aktion in ("ampr_apply", "ampr_index", "ampr_restore"):
+            with self.subTest(aktion=aktion):
+                self.assertNotIn('action != "%s"' % aktion, block,
+                                 "%s wurde mit ausgenommen - dann greift die "
+                                 "neue Methode dort nicht mehr." % aktion)
+
+
+class FassungsschreibweiseTests(unittest.TestCase):
+    """Die Klapplisten-Beschriftung muss auch als --ampr-version taugen.
+
+    Das Fenster zeigt "0.4.2.1 test-pack" - Fassung und Variante in einem
+    Stueck -, und so steht es auch in den Einstellungen. Wer das ablas und
+    in die Kommandozeile uebernahm, bekam bis v1.9.9 "Keine passende Datei
+    im Versionsordner (Version 0.4.2.1 test-pack, Variante *)". Die Meldung
+    deutete auf eine fehlende Fassung, dabei stimmte nur die Schreibweise
+    nicht. Am 08.09.2026 bin ich beim Durchtesten selbst darauf
+    hereingefallen und habe den Befund erst falsch erklaert.
+    """
+
+    @staticmethod
+    def _spec(version="", variant=""):
+        import argparse
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+        args = argparse.Namespace(
+            ampr_action="ampr_apply", ampr_store="", ampr_version=version,
+            ampr_variant=variant, ampr_lib=[], ampr_source="",
+            ampr_no_backup=False, ampr_no_index=False)
+        return APP._build_ampr_automation(args)
+
+    def test_zusammengesetzt_wird_getrennt(self):
+        s = self._spec("0.4.2.1 test-pack")
+        self.assertEqual("0.4.2.1", s.get("ampr_version"))
+        self.assertEqual("test-pack", s.get("ampr_variant"))
+
+    def test_variante_mit_leerzeichen_bleibt_ganz(self):
+        """"no debug" ist eine Variante und keine zwei."""
+        s = self._spec("0.2.7.6 no debug")
+        self.assertEqual("0.2.7.6", s.get("ampr_version"))
+        self.assertEqual("no debug", s.get("ampr_variant"))
+
+    def test_getrennte_angabe_bleibt_wie_sie_war(self):
+        s = self._spec("0.4.2.1", "test-pack")
+        self.assertEqual("0.4.2.1", s.get("ampr_version"))
+        self.assertEqual("test-pack", s.get("ampr_variant"))
+
+    def test_ausdrueckliche_variante_sticht(self):
+        s = self._spec("0.4.2.1 test-pack", "test-debug-pack")
+        self.assertEqual("0.4.2.1", s.get("ampr_version"))
+        self.assertEqual("test-debug-pack", s.get("ampr_variant"))
+
+    def test_ohne_variante_bleibt_sie_offen(self):
+        """Anker: Eine leere Variante darf nicht als "" durchgereicht werden -
+        der Sucher nimmt dann die erste passende, und genau das ist gewollt.
+        """
+        s = self._spec("0.4.2.1")
+        self.assertEqual("0.4.2.1", s.get("ampr_version"))
+        self.assertIsNone(s.get("ampr_variant"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

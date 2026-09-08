@@ -2,7 +2,52 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.9):** Die neue Asset-Pack-Methode aus v1.9.8 lief nur auf einem Rechner mit installiertem Python – in der fertigen Programmdatei brach sie sofort ab. Das ist behoben, und drumherum sind die Fortschrittsanzeige, die Fassungsliste und der Rückweg aus einem Asset-Pack dazugekommen.
+> **Kurz zum aktuellen Stand (v1.9.10):** Beim Durchtesten aller acht Aufgaben und aller Werkzeugfenster kamen vier Fehler heraus, die vorher niemand gesehen hatte – darunter zwei, die Aufgabe 7 betrafen: Sie ließ sich ohne Zielangabe gar nicht starten, und „Asset-Pack herausnehmen“ baute das Pack im selben Lauf sofort wieder auf.
+
+---
+
+## v1.9.10 – 08.09.2026
+
+Diese Fassung enthält keine neuen Funktionen, sondern das Ergebnis eines
+Durchgangs durch **alle acht Aufgaben, alle Zielformate, alle vier
+Kompressionsstufen und alle zweiundzwanzig Werkzeugfenster**. Vier Dinge
+sind dabei aufgefallen.
+
+### Aufgabe 7 verlangte ein Zielverzeichnis, das sie nie benutzt
+
+Der AMPR EMU Manager arbeitet im Spielordner selbst. Trotzdem bestand das
+Programm auf einer Zielangabe – und ohne sie ließ sich Aufgabe 7 **überhaupt
+nicht starten**, weder im Fenster noch über die Kommandozeile.
+
+Ein Ziel darf man weiterhin angeben; dann landet der Index dort. Nötig ist es
+nicht mehr. Gibt man eines an, das es nicht gibt, wird das nach wie vor
+beanstandet – ein Tippfehler soll nicht stillschweigend im Spielordner landen.
+
+### „Asset-Pack herausnehmen“ baute es sofort wieder auf
+
+Der Knopf aus v1.9.9 entfernte Manifest, Laufzeitdatei und Bänder – und legte
+sie im selben Durchlauf wieder an, sobald die Methode auf *Asset-Pack* stand.
+Also genau dann, wenn man ihn braucht.
+
+Gemeldet wurde „Erfolgreich abgeschlossen“, und im Ordner lagen weiterhin alle
+sechs Dateien. Wer das Pack loswerden wollte, hatte es noch, ohne es zu
+merken. Jetzt bleibt es weg – nachgemessen an einem echten Spielordner:
+sechs Dateien nach dem Packen, **null** nach dem Herausnehmen.
+
+### Die Fassungsangabe aus der Klappliste taugt jetzt auch für die Kommandozeile
+
+Das Fenster zeigt `0.4.2.1 test-pack` – Fassung und Variante in einem Stück –
+und speichert es auch so. Wer das ablas und als `--ampr-version` einsetzte,
+bekam „Keine passende Datei im Versionsordner“. Die Meldung deutete auf eine
+fehlende Fassung, dabei stimmte nur die Schreibweise nicht.
+
+Beide Schreibweisen gehen jetzt. Eine Variante mit Leerzeichen (`no debug`)
+bleibt dabei ganz.
+
+### Der AMPR-Index-Builder hatte keinen SCHLIESSEN-Knopf
+
+Er war das einzige der zweiundzwanzig Werkzeugfenster mit richtigen Knöpfen
+und ohne einen zum Schließen – nur das X der Fensterleiste half. Nachgeholt.
 
 ---
 

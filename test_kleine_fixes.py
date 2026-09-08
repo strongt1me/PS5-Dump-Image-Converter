@@ -827,5 +827,64 @@ class DiagnoseberichtTests(unittest.TestCase):
                 self.assertTrue(STRINGS[schluessel].get(sprache), schluessel)
 
 
+class Aufgabe7OhneZielTests(unittest.TestCase):
+    """Aufgabe 7 arbeitet im Quellordner und darf kein Ziel verlangen.
+
+    Gefunden am 08.09.2026 beim Durchgehen aller Aufgaben: Ein Aufruf ohne
+    ``--dest`` endete mit "Bitte ein Zielverzeichnis angeben" - obwohl der
+    AMPR EMU Manager gar nichts an einem Ziel abzulegen hat. In der
+    Testreihe fiel es zunaechst nicht auf, weil in den Einstellungen noch
+    ein Ziel aus einem frueheren Fall stand.
+
+    Dass es ein Versehen war und keine Absicht, zeigt die
+    Speicherplatz-Pruefung unmittelbar darunter: Sie nimmt ``ampr_manager``
+    seit jeher aus. Die Ausnahme fehlte nur eine Pruefung weiter oben.
+
+    Ein *angegebenes* Ziel muss weiterhin beanstandet werden, wenn es nicht
+    existiert - sonst landet ein Tippfehler stillschweigend im Quellordner.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def _pruefblock(self) -> str:
+        anfang = self.quelle.index("# Zielpfad validieren nur für Modi")
+        ende = self.quelle.index("# Speicherplatz-Validierung", anfang)
+        return self.quelle[anfang:ende]
+
+    def test_ohne_ziel_wird_aufgabe_7_nicht_abgewiesen(self):
+        block = self._pruefblock()
+        self.assertIn('mode != "ampr_manager"', block,
+                      "Aufgabe 7 verlangt wieder ein Zielverzeichnis, das "
+                      "sie nicht braucht.")
+
+    def test_ein_angegebenes_ziel_wird_weiter_geprueft(self):
+        block = self._pruefblock()
+        self.assertIn("if dst and not os.path.isdir(dst):", block,
+                      "Ein angegebenes, aber nicht vorhandenes Ziel muss "
+                      "weiterhin auffallen.")
+
+    def test_der_modus_kommt_ohne_ziel_aus(self):
+        """Anker: Faellt _mode_ampr_manager nicht mehr selbst zurueck,
+        waere die gelockerte Vorpruefung ein Loch statt einer Erleichterung.
+        """
+        baum = ast.parse(self.quelle)
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_mode_ampr_manager")
+        rumpf = ast.unparse(knoten)
+        self.assertIn("dst if dst and os.path.isdir(dst) else src_dir", rumpf,
+                      "Aufgabe 7 faellt ohne gueltiges Ziel nicht mehr auf "
+                      "den Quellordner zurueck.")
+
+    def test_die_hilfe_nennt_aufgabe_7(self):
+        stelle = self.quelle.index('"--dest"')
+        zeile = self.quelle[stelle:stelle + 300]
+        self.assertIn("Aufgabe 7", zeile,
+                      "Die Hilfe zu --dest verschweigt, dass Aufgabe 7 "
+                      "ohne Ziel auskommt.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

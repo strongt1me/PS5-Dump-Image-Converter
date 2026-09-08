@@ -71,10 +71,22 @@ class SchliessenFunktioniertTests(unittest.TestCase):
             "definieren - jeder Druck auf SCHLIESSEN wirft dort einen "
             "NameError: %s" % schlecht)
 
-    #: Fenster, die einen eigenen SCHLIESSEN-Knopf tragen muessen. Alle vier
-    #: waren am 06.09.2026 gemeldet oder standen daneben.
+    #: Fenster, die einen eigenen SCHLIESSEN-Knopf tragen muessen. Die ersten
+    #: vier waren am 06.09.2026 gemeldet oder standen daneben.
+    #:
+    #: Der AMPR-Index-Builder kam am 08.09.2026 dazu: Beim Durchgehen aller
+    #: zweiundzwanzig Werkzeugfenster war er das einzige mit echten Knoepfen
+    #: ("Durchsuchen", "Index bauen") und ohne einen zum Schliessen - er liess
+    #: sich nur ueber das X der Fensterleiste loswerden. Die vier davor hatten
+    #: dasselbe Problem, es war nur schon gemeldet worden.
+    #:
+    #: Nicht in der Liste steht das WebKit-Fenster, obwohl es ebenfalls keinen
+    #: Knopf-Widget hat: Es zeichnet seine Knoepfe auf eine Canvas. Wer diese
+    #: Liste erweitert, muss also erst nachsehen, ob das Fenster ueberhaupt
+    #: mit Widgets arbeitet.
     MIT_KNOPF = ("_show_ps4_pkg_converter", "_show_debug_pkg_builder",
-                 "_render_dump_rename_window", "_show_js_loader")
+                 "_render_dump_rename_window", "_show_js_loader",
+                 "_show_ampr_index_builder")
 
     def test_diese_fenster_haben_einen_schliessen_knopf(self):
         baum = _baum()
