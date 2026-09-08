@@ -2,7 +2,83 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.7):** Kein Weg löscht mehr etwas, bevor der Ersatz fertig ist – vier Stellen taten das bisher, eine davon traf die Quelldatei selbst. Dazu spricht die englische Oberfläche jetzt wirklich Englisch, und vier Fenster lassen sich wieder schließen.
+> **Kurz zum aktuellen Stand (v1.9.8):** Der AMPR EMU kann die Spieldateien jetzt auf Wunsch in gepackte Bänder legen – eine zweite Methode neben der bisherigen, wählbar beim Erstellen. Beim Backport sagt das Programm vorher, welche Funktionen auf der Zielfirmware fehlen werden, statt es der Konsole zu überlassen.
+
+---
+
+## v1.9.8 – 07.09.2026
+
+### AMPR EMU: eine zweite Methode zur Wahl
+
+Neben der Klappliste für die AMPR-Fassung steht jetzt eine zweite: **Normal**
+oder **Neue Methode (Asset-Pack)**.
+
+*Normal* ist der bisherige Weg – die Spieldateien bleiben einzeln liegen.
+
+Bei der *neuen Methode* wandern sie zusätzlich in gepackte Bänder
+(`ampr_assets-*.pak`), die der Emulator ab Fassung 0.4.2.1 blockweise liest.
+Das spart Platz und Dateideskriptoren. Alles Weitere läuft von selbst: Profil
+schreiben, packen, prüfen, Bänder in den Spielordner legen.
+
+Geprüft wird dabei **gegen die Quelle**, nicht nur gegen sich selbst. Jeder
+zurückgerechnete Block wird Byte für Byte mit der Originaldatei verglichen;
+erst danach wird etwas übernommen.
+
+Die Originaldateien bleiben liegen. Sie zu entfernen lohnt erst nach einem
+Lauf auf der Konsole – manche Spiele lesen über `mmap` am Emulator vorbei, und
+das zeigt sich nicht am PC.
+
+Zwei Dinge muss man wissen:
+
+- Die neue Methode braucht eine **pack-fähige AMPR-Fassung** (`test-pack` oder
+  `test-debug-pack`). Eine `test-nopack`-Fassung findet die Bänder nicht. Wer
+  sie trotzdem wählt, wird darauf hingewiesen.
+- Fehlt das Packwerkzeug oder das LZ4-Modul, fällt die Auswahl sichtbar auf
+  *Normal* zurück – nicht erst nach einer halben Stunde Arbeit, sondern sofort
+  bei der Wahl.
+
+Systemdateien bleiben immer ungepackt: `eboot.bin`, `sce_sys`, die Module,
+alles Ausführbare. Das ist keine Vorsichtsmaßnahme, sondern Bedingung – das
+Ladeprogramm der Konsole liest sie, bevor der AMPR EMU überhaupt geladen ist.
+
+### Backport: das Programm sagt vorher, was fehlen wird
+
+Bisher zeigte sich erst auf der Konsole, ob ein herabgesetztes Spiel startet –
+und wenn nicht, ohne brauchbare Meldung.
+
+Wer einen entpackten Firmware-Bestand hinterlegt, bekommt die Antwort jetzt
+vorher ins Protokoll: wie viele Funktionen auf der Zielfirmware fehlen und aus
+welchen Bibliotheken sie stammen. Der Bestand wird über die Einstellung
+`backport_firmware_referenz` angegeben – ein Ordner mit Unterordnern je
+Fassung (`7.61`, `9.40`, …). Ohne ihn bleibt alles wie bisher.
+
+Ein Befund ist kein Abbruchgrund: Genau diese Lücken sollen die
+Ersatzbibliotheken schließen.
+
+An zehn Spielen nachgemessen, wie groß die Lücke je Zielfirmware wirklich ist:
+
+| Zielfirmware | fehlende Funktionen |
+| --- | --- |
+| 7.01 | 24 |
+| 8.60 | 13 |
+| 9.40 | 9 |
+| 11.00 | keine |
+
+Fast alles davon steckt in `libSceAgc` – und es sind über die Spiele hinweg
+dieselben Funktionen.
+
+### Backport: die Firmware-Auswahl richtet sich nach dem Bestand
+
+Wählbar waren fest 4 bis 7. Diese Liste stand im Programm, obwohl daneben
+schon alles für höhere Stände vorbereitet war.
+
+Jetzt wird nachgesehen: Wer einen eigenen Bibliothekssatz als
+`Backport_Fakelibs/8/fakelib/` ablegt, kann Firmware 8 danach auswählen. Am
+Programm ist dafür nichts zu ändern.
+
+Mitgeliefert werden weiterhin nur 4 bis 7 – aus rechtlichen Gründen, nicht aus
+technischen. Ergänzt wurden außerdem die SDK-Kennungen für Firmware 11 und 12;
+sie stammen aus echten Firmware-Modulen, nicht aus einer Hochrechnung.
 
 ---
 
@@ -57,15 +133,15 @@ stehen, wenn man danach eine andere Aufgabe wählte.
 
 ### Kleinere Behebungen
 
-* Fehlende Laufzeitpakete ließen sich nicht nachinstallieren – der Versuch
+- Fehlende Laufzeitpakete ließen sich nicht nachinstallieren – der Versuch
   brach mit einem internen Fehler ab, und die Engine startete nicht.
-* Was ein Payload nach dem Senden zurückmeldet, steht jetzt im Protokoll.
+- Was ein Payload nach dem Senden zurückmeldet, steht jetzt im Protokoll.
   Bisher wurde die Antwort der Konsole verworfen.
-* Eine in den Einstellungen geänderte PS5-Adresse wirkte nach dem ersten
+- Eine in den Einstellungen geänderte PS5-Adresse wirkte nach dem ersten
   Verbinden nie wieder – die Fenster hielten den alten Wert fest.
-* Beim Zurückspielen und Löschen im Autoloader werden einzelne Fehlschläge
+- Beim Zurückspielen und Löschen im Autoloader werden einzelne Fehlschläge
   gemeldet, statt nur die Zahl der gelungenen.
-* Die Infobox beantwortet „AMPR EMU eingebaut?" für einen Ordner und für ein
+- Die Infobox beantwortet „AMPR EMU eingebaut?" für einen Ordner und für ein
   Abbild jetzt gleich.
 
 ---
@@ -98,12 +174,12 @@ Der Knopf verglich die angebotenen Fassungen gegen einen Bestand, in dem auch
 PlayGo mitzählte – und dessen Nummer ist höher als jede AMPR-Fassung. Dadurch
 galt nie wieder etwas als neu. Außerdem:
 
-* Fassungen aus einem selbst gewählten Ordner und die mitgelieferten stehen
+- Fassungen aus einem selbst gewählten Ordner und die mitgelieferten stehen
   jetzt gemeinsam in allen Listen. Bisher zeigte die Auswahl beim Erstellen
   nur die einen, der AMPR-Manager nur die anderen.
-* Die Debug- und die Nicht-Debug-Reihe werden getrennt gezählt. Wer eine
+- Die Debug- und die Nicht-Debug-Reihe werden getrennt gezählt. Wer eine
   Fassung „no debug“ hatte, bekam dieselbe Nummer als „debug“ nie angeboten.
-* Fehlen die Bibliotheken im Dump, greift das Programm jetzt auf den
+- Fehlen die Bibliotheken im Dump, greift das Programm jetzt auf den
   Versionsspeicher zurück, statt nach einem Ordner zu fragen oder abzubrechen.
 
 ### Die config.ini der Konsole kam mit lauter Kommentarzeichen zurück
@@ -120,10 +196,10 @@ nicht mehr da war. Jetzt sagen sie, was schiefging.
 
 ### Zwei neue Werkzeuge
 
-* **Anwendung installieren:** Legt eine Kachel direkt auf der PS5 an, ohne den
+- **Anwendung installieren:** Legt eine Kachel direkt auf der PS5 an, ohne den
   Umweg über eine Paketdatei. Selbst gebaute Pakete scheitern dort mit
   CE-100096-6.
-* **Zweiter Sendeweg für Payloads:** Ist Port 9021 zu, geht die Datei über den
+- **Zweiter Sendeweg für Payloads:** Ist Port 9021 zu, geht die Datei über den
   Payload Manager – danach steht der Port wieder offen. Das betrifft alle
   Wege, die etwas an die Konsole schicken.
 
@@ -413,8 +489,8 @@ Umgebungsprüfung und die Hinweise in den Dialogen.
 Jetzt steht dort, was dort hingehört – in **410 Textstellen**
 umgestellt. Zwei Beispiele aus der Diagnose:
 
-* vorher: `Sichtbare Raender: keine (Fokusrahmen zaehlen nicht mit)`
-* jetzt: `Sichtbare Ränder: keine (Fokusrahmen zählen nicht mit)`
+- vorher: `Sichtbare Raender: keine (Fokusrahmen zaehlen nicht mit)`
+- jetzt: `Sichtbare Ränder: keine (Fokusrahmen zählen nicht mit)`
 
 Auch das Handbuch und der Changelog sind nachgezogen.
 
@@ -443,9 +519,9 @@ wusste, dass es die oberen gibt, hat sie nie gefunden.
 Jetzt öffnet **Knopf 7** ein kleines Fenster ohne Rahmen, mit runden
 Ecken, und darin stehen alle drei zur Wahl:
 
-* **AMPR EMU – neue Methode** (ab ShadowMount+ 1.7 alpha8)
-* **AMPR EMU – alte Methode** (bis alpha6)
-* **AMPR EMU ins Backup einbauen** (der bisherige Weg im Hauptbereich)
+- **AMPR EMU – neue Methode** (ab ShadowMount+ 1.7 alpha8)
+- **AMPR EMU – alte Methode** (bis alpha6)
+- **AMPR EMU ins Backup einbauen** (der bisherige Weg im Hauptbereich)
 
 Neben den beiden Methoden steht je ein Knopf **Anleitung** – er
 öffnet die Beschreibung zu genau dieser Fassung.
@@ -462,12 +538,12 @@ Hintergrundbilder mit Transparenz nicht.
 ShadowMount+ liest Bibliotheken aus drei Quellen. Bisher benutzte das
 Programm nur die erste. Im Auswahlfenster stehen jetzt alle drei:
 
-* **Pro Spiel** – wie bisher: in den Backport-Ordner des Titels, sonst
+- **Pro Spiel** – wie bisher: in den Backport-Ordner des Titels, sonst
   in den Spielordner. Gilt nur für dieses eine Spiel.
-* **Global** – nach `/data/shadowmount/fakelib`. Gilt für **jedes**
+- **Global** – nach `/data/shadowmount/fakelib`. Gilt für **jedes**
   erfasste Spiel. Bei gleichem Dateinamen gewinnt voreingestellt die Datei
   des Spiels; das steuert `global_fakelib_priority`.
-* **Emulatoren** – nach `/data/shadowmount/emus`. Erst ab 1.7 alpha8,
+- **Emulatoren** – nach `/data/shadowmount/emus`. Erst ab 1.7 alpha8,
   und mit einer Einschränkung, die leicht zu übersehen ist: Dieser
   Ordner **ersetzt nur Dateien, die im fakelib des Spiels schon liegen**.
   Bei einem Spiel ohne `libSceAmpr.sprx` bringt er allein nichts.
@@ -497,9 +573,9 @@ legt das Programm die Bibliotheken jetzt, ohne Nachfrage.
 
 Zwei Dinge, die daran hängen:
 
-* **Backport und AMPR EMU benutzen denselben Ordner.** Vorher konnten sie
+- **Backport und AMPR EMU benutzen denselben Ordner.** Vorher konnten sie
   auseinanderlaufen – dann wirkte einer von beiden nicht.
-* **Alte Sicherungen bleiben erreichbar.** Wer früher mit `fakelib2`
+- **Alte Sicherungen bleiben erreichbar.** Wer früher mit `fakelib2`
   gearbeitet hat, dessen Originaldateien liegen dort. Das Zurücksetzen
   durchsucht deshalb weiterhin beide Ordner und legt **jedes** gefundene
   Original wieder an seinen Platz.
@@ -518,10 +594,10 @@ Original einmalig als `.orig`.
 
 ### Kleinigkeiten
 
-* Der Ordner mit den Diagnoseberichten läuft nicht mehr voll – die
+- Der Ordner mit den Diagnoseberichten läuft nicht mehr voll – die
   zehn neuesten bleiben, ältere räumt das Programm beim nächsten
   Bericht selbst weg.
-* Drei Stellen, an denen ein fehlgeschlagenes Speichern stillschweigend
+- Drei Stellen, an denen ein fehlgeschlagenes Speichern stillschweigend
   verschluckt wurde, melden sich jetzt im Protokoll.
 
 ---
@@ -536,11 +612,11 @@ im hellen Design waren Warnung und Fehler praktisch nicht auseinanderzuhalten.
 
 In den **Einstellungen** steht dazu jetzt eine Auswahl:
 
-* Keine
-* Deuteranopie (Grünschwäche, am häufigsten)
-* Protanopie (Rotschwäche)
-* Tritanopie (Blauschwäche)
-* Achromatopsie (kein Farbsehen)
+- Keine
+- Deuteranopie (Grünschwäche, am häufigsten)
+- Protanopie (Rotschwäche)
+- Tritanopie (Blauschwäche)
+- Achromatopsie (kein Farbsehen)
 
 Die Auswahl wirkt **sofort**, ohne Neustart. Geändert werden nur die Farben,
 die eine Bedeutung tragen – Erfolg, Warnung, Fehler. Hintergründe, Schrift und
@@ -725,13 +801,13 @@ waren es Rückstände aus Testläufen. Tests schreiben jetzt woanders hin.
 
 ### Der Diagnosebericht meldet nur noch Echtes
 
-* **„requests: fehlt"** stand im Bericht, obwohl das Programm diese
+- **„requests: fehlt"** stand im Bericht, obwohl das Programm diese
   Bibliothek gar nicht benutzt. Dasselbe galt für `paramiko`. Beide sind aus
   der Prüfliste heraus – eine falsche Fehlmeldung schickt nur auf die Suche
   nach einem Schaden, den es nicht gibt.
-* **Die Größe der Protokolldatei steht jetzt im Bericht.** Wäre sie vorher
+- **Die Größe der Protokolldatei steht jetzt im Bericht.** Wäre sie vorher
   schon dort gestanden, wären die 22 MB sofort aufgefallen.
-* Der Bericht liest die Protokolldatei nur noch am Ende an, statt sie
+- Der Bericht liest die Protokolldatei nur noch am Ende an, statt sie
   vollständig in den Speicher zu laden.
 
 ## v1.8.92 – 23.08.2026
@@ -811,15 +887,15 @@ Community und soll das bleiben. Die ausführliche Fassung steht in der
 Ein Abgleich der Danksagung mit der Lizenzübersicht und allen 25
 mitgelieferten Payloads brachte drei Lücken zutage:
 
-* **SvenGDK** war nicht namentlich genannt. Der UFS2Tool-Autor stand in der
+- **SvenGDK** war nicht namentlich genannt. Der UFS2Tool-Autor stand in der
   Lizenzübersicht und in der README, in der Danksagung aber nur als „die
   Autorinnen und Autoren von UFS2Tool“ – während alle anderen einzeln
   aufgeführt sind.
-* **Sechs Payloads** kamen gar nicht vor: OnionHEN, PIZZA-HEN, bfpilot,
+- **Sechs Payloads** kamen gar nicht vor: OnionHEN, PIZZA-HEN, bfpilot,
   Dump Installer, kstuff lite und PS5Upload. Bei ihnen lässt sich kein
   Urheber ermitteln, weil die Dateien keine Angabe enthalten. Sie sind jetzt
   mit Projektnamen genannt, samt Einladung an ihre Entwickler, sich zu melden.
-* **OnionHEN** fehlte als einziger der 25 Payloads in
+- **OnionHEN** fehlte als einziger der 25 Payloads in
   [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) – nachgetragen.
 
 ### Aufgeräumte Startseite
@@ -828,7 +904,6 @@ Die [README](README.md) ist von 804 auf 174 Zeilen geschrumpft. Weggefallen
 ist vor allem der Versionsverlauf, der hier im Changelog steht – doppelt
 gepflegt half er niemandem. Die Bedienung erklärt das Benutzerhandbuch, das
 die README jetzt verlinkt.
-
 
 ## v1.8.90 – 23.08.2026
 
@@ -853,7 +928,6 @@ es entsteht eine Datei am falschen Ort, verwechselt wird nichts. Eine falsche
 Bequem bleibt es trotzdem: Der Knopf **Durchsuchen** öffnet weiterhin im
 zuletzt benutzten Quellordner. Es ist also ein Klick mehr – kein Suchen von
 vorn.
-
 
 ## v1.8.89 – 23.08.2026
 
@@ -889,14 +963,12 @@ heißt es jetzt auch.
 Unverändert bleibt die Meldung "Durchsuche /app0 auf der PS5": Dort ist
 `/app0` der tatsächliche Pfad auf der Konsole, keine Beschriftung.
 
-
 ### Ein irreführender Kommentar richtiggestellt
 
 Ein Kommentar benannte den falschen Verbraucher eines Zwischenspeichers.
 Beim Aufräumen führte das beinahe dazu, etwas zu entfernen, das noch
 gebraucht wird – der Speicher liefert die letzten 60 Protokollzeilen an den
 **Diagnosebericht**. Der Kommentar sagt das jetzt.
-
 
 ## v1.8.88 – 23.08.2026
 
@@ -926,7 +998,6 @@ Behandlung vorgesehen: Meldung ins Protokoll, weiter geht es ohne den Namen.
 Diese Behandlung stürzte selbst ab. Statt der Meldung gab es einen Programm
 fehler. Jetzt geschieht, was vorgesehen war.
 
-
 ## v1.8.87 – 23.08.2026
 
 ### PS4 PKG → ffpfsc einmal ganz durchgemessen
@@ -950,9 +1021,7 @@ nach dem Lauf von 400 auf 6 MB.
 An einem bestimmten Update-Paket stürzt der mitgelieferte Entpacker ab. Bisher
 lasen Sie:
 
-```
-extractor failed (3221225477) for ...pkg:
-```
+    extractor failed (3221225477) for ...pkg:
 
 Eine nackte Zahl – und hinter dem Doppelpunkt nichts, denn ein abgestürztes
 Programm hinterlässt keine Meldung. Wer das liest, sucht den Fehler bei sich
@@ -974,7 +1043,6 @@ Das Programm sieht jetzt nach, für welchen Prozessor eine Datei gebaut ist:
 | Linux | keiner – dasselbe |
 
 Besser vorher wissen als mitten im Lauf stehen bleiben.
-
 
 ## v1.8.86 – 23.08.2026
 
@@ -1035,7 +1103,6 @@ Auf dem Mac brach die Funktion mit `Permission denied` ab. Zwei Ursachen:
 Dasselbe betraf das Einbetten von DLC: Dort fiel der Helfer bisher
 **kommentarlos** aus, ohne jede Meldung.
 
-
 ## v1.8.85 – 23.08.2026
 
 ### PS4 PKG → ffpfsc ist wieder da
@@ -1064,7 +1131,6 @@ Aus demselben Grund trägt der Handbuchabschnitt den **korrigierten** Text: die
 belegte Ursache, den Gegenbeweis über sechs PS5-Titel und alle vier
 widerlegten Versuche – nicht die überholte Fassung von v1.8.80.
 
-
 ## v1.8.84 – 23.08.2026
 
 ### Werkzeugfenster bleiben vorn
@@ -1088,7 +1154,6 @@ vorbei entstehen – darunter **CREDITS**.
 **Eine Änderung, die du merken wirst:** Weil die Fenster jetzt zum
 Hauptfenster gehören, wandern sie mit ihm in die Taskleiste, wenn du es
 minimierst – und kommen beim Wiederherstellen zurück.
-
 
 ## v1.8.83 – 22.08.2026
 
@@ -1133,7 +1198,6 @@ Spiel, ob `libScePlayGo.sprx` mit dazu soll, und ob abweichende Schlüssel in
 der `config.ini` angepasst werden sollen. Ein Abbruch steigt überall sofort
 aus, ohne etwas zu verändern.
 
-
 ## v1.8.82 – 22.08.2026
 
 > **Überholt.** In v1.8.85 ist die Funktion wieder eingebaut. Das Folgende bleibt als Verlauf stehen.
@@ -1160,7 +1224,6 @@ Werkzeug. Was bei der Arbeit daran herausgekommen ist, bleibt in den Einträgen
 zu v1.8.79 bis v1.8.81 stehen – vor allem, dass ein PS4-Titel aus einem Abbild
 keine Trophäen registriert und dass Abbilder in die Wurzel des Datenträgers
 gehören.
-
 
 ## v1.8.81 – 22.08.2026
 
@@ -1203,7 +1266,6 @@ verlangt die Installation.
 Auch der Registrierungseintrag von Hand nachgebaut ändert nichts – er lag nach
 dem Spielstart unverändert da, das System hatte ihn nicht einmal angesehen.
 
-
 **Brauchst du die Trophäen, installiere über den Package Installer.** Für
 alles andere bleibt der Abbildweg – er spart den Speicherplatz der
 Installation.
@@ -1216,7 +1278,6 @@ richtige; sichtbar war der Fehler nur im Explorer unter „Eigenschaften".
 
 Jetzt stehen alle vier Stellen, an denen die Version vorkommt, auf demselben
 Stand, und vier neue Tests halten sie künftig zusammen.
-
 
 ### Der Kommandozeilenmodus meldet keinen stillen Erfolg mehr
 
@@ -1231,7 +1292,6 @@ ist: Eingabeaufforderung oder PowerShell als Administrator öffnen. Im
 GUI-Modus bleibt alles wie gehabt – dort ist der Neustart mit UAC-Dialog genau
 richtig.
 
-
 ### Der Hinweis nach dem Bauen bleibt, sagt aber die Wahrheit
 
 Erkennt das Programm einen PS4-Titel, steht im Protokoll weiterhin ein
@@ -1240,7 +1300,6 @@ registrieren, warum das so ist, und dass Nachlegen von Dateien nichts daran
 ändert. Im Handbuch ist Abschnitt 13.8 entsprechend neu geschrieben – dazu ein
 zweiter Kasten für Spiele, die im Ladebildschirm hängen bleiben, der offen
 sagt, dass die Ursache dort ungeklärt ist.
-
 
 ## v1.8.80 – 22.08.2026
 
@@ -1290,43 +1349,23 @@ Das Programm sagt das jetzt nach jedem Bau, und im Handbuch steht der ganze Zusa
 
 ## v1.8.78 – 22.08.2026
 
-
-
 ### Das PS4-Fenster sagt jetzt, für welche Konsole ein Titel ist
-
-
 
 In der Liste der gefundenen Spiele steht eine neue Spalte **Konsole**. Sie sagt „PS4“ oder „PS5“, und zwar sofort beim Einlesen – nicht erst, wenn das Abbild fertig gebaut ist.
 
-
-
 Das ist mehr als eine Auskunft: Dieses Fenster baut Abbilder aus **PS4**-Paketen. Legst du versehentlich ein PS5-Spiel hinein, wird die Zeile farbig hervorgehoben und im Protokoll steht, dass du dafür die Aufgaben 1 bis 6 nehmen sollst. Bisher hättest du den ganzen Bau abgewartet, um das zu erfahren.
-
-
 
 Erkannt wird an der Title-ID: `CUSA` und `PUSA` sind PS4, `PPSA`, `PPSS`, `PPUS` und `PPJP` sind PS5. Sagt die Kennung nichts – etwa bei einem PS3-Titel mit `NPUB` –, steht dort **unklar** statt einer Vermutung.
 
-
-
 ### Die Nachprüfung des Abbilds hat nie stattgefunden
-
-
 
 Nach jedem Bau meldete das Protokoll, das fertige Abbild werde geprüft, und gleich danach: `Das Abbild ließ sich nicht nachprüfen: [Errno 13] Permission denied`. Der Grund war eine vertauschte Übergabe – die Prüfung bekam den Zielordner statt der erzeugten Datei. Sie ist also seit ihrer Einführung nie gelaufen, obwohl sie genau dafür da ist, dir zu sagen, was wirklich im Abbild steht.
 
-
-
 Aufgefallen ist das bei einer echten Konvertierung. Jetzt sucht das Programm die gebaute Datei im Zielordner – bevorzugt die zur Title-ID und zum gewählten Format – und prüft sie. Am Testtitel meldet sie sauber **113 Dateien**.
-
-
 
 ### Die Einblendung geht nicht mehr nach dem Ende auf
 
-
-
 Der Hinweis zum Ablageort erschien in seltenen Fällen noch, wenn die Umwandlung schon fertig war – der letzte Sprung des Fortschrittsbalkens auf 100 % löste ihn nachträglich aus. Nach dem Ende kommt keine Einblendung mehr.
-
-
 
 ## v1.8.77 – 21.08.2026
 
@@ -1372,12 +1411,10 @@ Nachgemessen an der Konsole: Ein Abbild in `/mnt/usb0/` wird binnen 15 Sekunden 
 
 Vorher brauchte er sieben und drückte das Fenster an den Rand des Bildschirms. Jetzt steht dort das Nötige, die Einzelheiten stehen im Tooltip:
 
-```text
-NUR VOM USB-DATENTRÄGER STARTEN
-✓  Auf den USB-Datenträger: /mnt/usb0/ oder /mnt/usb0/homebrew/
-✗  Nie auf die interne SSD – /data/homebrew und /data/etaHEN/games geben einen Kernel Panic
-!  Eigene Ordner wie /mnt/usb0/ps4ffpsc/ werden nie gefunden
-```
+    NUR VOM USB-DATENTRÄGER STARTEN
+    ✓  Auf den USB-Datenträger: /mnt/usb0/ oder /mnt/usb0/homebrew/
+    ✗  Nie auf die interne SSD – /data/homebrew und /data/etaHEN/games geben einen Kernel Panic
+    !  Eigene Ordner wie /mnt/usb0/ps4ffpsc/ werden nie gefunden
 
 Das Fenster braucht dadurch 959 statt 1012 Pixel Höhe – vorher war es einen Pixel vom Überlaufen entfernt.
 
@@ -1419,9 +1456,9 @@ Einmal geholte Angaben liegen weiterhin 30 Tage lokal und kosten keine zweite Ve
 
 Ein umrandeter Kasten über „ABBILD ERSTELLEN“ mit dem, was an der Konsole gemessen wurde:
 
-* **Direkt nach `/mnt/usb0/`** – Unterordner werden nicht durchsucht. Ein Abbild in `/mnt/usb0/ps4ffpsc/` wird nie gefunden.
-* **Nicht nach `/data/homebrew` oder `/data/etaHEN/games`** – von dort gestartet gibt es einen Kernel Panic, die PS5 schaltet ab.
-* **Nach so einem Absturz** bleibt ein leerer Eintrag zurück; erst die Kachel auf der PS5 löschen, sonst wird das Abbild auch am richtigen Ort nicht mehr gefunden.
+- **Direkt nach `/mnt/usb0/`** – Unterordner werden nicht durchsucht. Ein Abbild in `/mnt/usb0/ps4ffpsc/` wird nie gefunden.
+- **Nicht nach `/data/homebrew` oder `/data/etaHEN/games`** – von dort gestartet gibt es einen Kernel Panic, die PS5 schaltet ab.
+- **Nach so einem Absturz** bleibt ein leerer Eintrag zurück; erst die Kachel auf der PS5 löschen, sonst wird das Abbild auch am richtigen Ort nicht mehr gefunden.
 
 Der bisherige Hinweistext desselben Fensters empfahl ausgerechnet den Unterordner, in dem nichts gefunden wird. Das ist korrigiert.
 
@@ -1450,7 +1487,6 @@ Rechts neben „PRÜFUNG“ blieb bisher viel Fläche leer, während sich AMPR E
 Wird das Fenster schmaler, rutscht die Zeile von allein wieder an ihren alten Platz. Das ist keine Kosmetik: Ohne diesen Rückfall stünde BACKPORT bei schmalem Fenster außerhalb der Karte – sichtbar wäre es nicht, anklickbar auch nicht.
 
 An dem, was das Programm mit deinen Dateien macht, ändert sich nichts.
-
 
 ## v1.8.72 – 21.08.2026
 

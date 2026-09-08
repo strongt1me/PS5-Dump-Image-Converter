@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.7 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.8 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.7"
+$EXE_VERSION = "v1.9.8"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -148,6 +148,11 @@ Write-Host "      psutil installieren/aktualisieren (Live-Systemtelemetrie, opti
 & $PYTHON -m pip install psutil --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNUNG: psutil konnte nicht installiert werden - EXE zeigt keine CPU/RAM-Telemetrie." -ForegroundColor Yellow
+}
+Write-Host "      lz4 installieren/aktualisieren (AMPR-Assetpakete, optional)..." -ForegroundColor Gray
+& $PYTHON -m pip install lz4 --upgrade --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNUNG: lz4 konnte nicht installiert werden - die neue AMPR-EMU-Methode (Asset-Pack) faellt dann auf 'Normal' zurueck." -ForegroundColor Yellow
 }
 Write-Host "      Alle Pakete installiert." -ForegroundColor Green
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.7</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.8</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.7</span>
+      <span class="marke">Version v1.9.8</span>
       <span class="marke">Stand 4. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -652,6 +652,97 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <div class="kasten warnung">
     <span class="titel">Löschen ist endgültig</span>
     <p>Der Manager kann ausgewählte Inhalte entfernen. Verwenden Sie diese Aufgabe deshalb niemals an Ihrer einzigen Originalkopie. Wenn Sie unsicher sind, brechen Sie den Dialog ab.</p>
+  </div>
+
+  <h3>11.1 Assetpakete &ndash; die Spieldateien gepackt ablegen</h3>
+
+  <p>Neben der Klappliste f&uuml;r die AMPR-Fassung steht seit v1.9.8 eine
+  zweite mit zwei Eintr&auml;gen: <strong>Normal</strong> und
+  <strong>Neue Methode (Asset-Pack)</strong>. Sie w&auml;hlen dort, wie die
+  Spieldateien abgelegt werden &ndash; die Bibliothek selbst kommt in beiden
+  F&auml;llen gleich in den Ordner.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Beide Klapplisten m&uuml;ssen stimmen</span>
+    <table>
+      <thead><tr><th>Liste</th><th>Was zu w&auml;hlen ist</th></tr></thead>
+      <tbody>
+      <tr><td><strong>AMPR-Fassung</strong></td>
+        <td><code>0.4.2.1 test-pack</code> oder
+        <code>0.4.2.1 test-debug-pack</code></td></tr>
+      <tr><td><strong>Methode</strong></td>
+        <td><strong>Neue Methode (Asset-Pack)</strong></td></tr>
+      </tbody>
+    </table>
+    <p>Die dritte Fassung, <code>0.4.2.1 test-nopack</code>, kann es
+    <strong>nicht</strong> &ndash; und genau die steht als neueste ohne
+    Debug-Ausgabe von selbst oben in der Liste. Sie m&uuml;ssen also aktiv
+    umstellen. Nehmen Sie <code>test-pack</code> f&uuml;r den normalen
+    Gebrauch; <code>test-debug-pack</code> schreibt zus&auml;tzlich Protokoll
+    und ist nur zur Fehlersuche gedacht.</p>
+  </div>
+
+  <div class="kasten">
+    <span class="titel">Was der Unterschied ist</span>
+    <p><strong>Normal</strong> ist der bisherige Weg: Die Spieldateien bleiben
+    einzeln liegen, so wie sie im Dump stehen.</p>
+    <p>Bei der <strong>neuen Methode</strong> wandern sie zus&auml;tzlich in
+    gepackte B&auml;nder (<code>ampr_assets-*.pak</code>), die der AMPR EMU ab
+    Fassung 0.4.2.1 blockweise liest. Das spart Platz auf dem
+    Datentr&auml;ger und Dateideskriptoren auf der Konsole. Sie m&uuml;ssen
+    daf&uuml;r nichts weiter tun: Profil schreiben, packen, pr&uuml;fen und die
+    B&auml;nder in den Spielordner legen l&auml;uft in einem Zug.</p>
+  </div>
+
+  <p><strong>Gepr&uuml;ft wird gegen die Quelle, nicht nur gegen sich
+  selbst.</strong> Jeder zur&uuml;ckgerechnete Block wird Byte f&uuml;r Byte
+  mit der Originaldatei verglichen. Erst wenn das f&uuml;r jede gepackte Datei
+  stimmt, wird etwas in den Spielordner &uuml;bernommen. Eine Pr&uuml;fung ohne
+  diesen Vergleich sagte nur, dass die B&auml;nder in sich stimmig sind
+  &ndash; nicht, dass sie den Spielinhalt tragen.</p>
+
+  <p><strong>Ihre Originaldateien bleiben liegen.</strong> Das Werkzeug
+  k&ouml;nnte sie entfernen; dieses Programm tut es nicht. Ob ein Spiel
+  wirklich jede Datei &uuml;ber den AMPR EMU liest, zeigt erst ein Lauf auf der
+  Konsole &ndash; manche Titel lesen daran vorbei, und das f&auml;llt am PC
+  nicht auf.</p>
+
+  <div class="kasten">
+    <span class="titel">Zwei Voraussetzungen &ndash; das Programm sagt sie Ihnen</span>
+    <table>
+      <thead><tr><th>Was fehlen kann</th><th>Was dann geschieht</th></tr></thead>
+      <tbody>
+      <tr><td><strong>Eine pack-f&auml;hige AMPR-Fassung</strong> &ndash;
+        n&ouml;tig ist <code>test-pack</code> oder
+        <code>test-debug-pack</code></td>
+        <td>Eine <code>test-nopack</code>-Fassung findet die B&auml;nder nicht.
+        Das Programm sagt es im Protokoll, h&auml;lt Sie aber nicht auf &ndash;
+        wer die Fassung gleich noch wechselt, soll nicht gebremst werden.</td></tr>
+      <tr><td><strong>Das Packwerkzeug oder das LZ4-Modul</strong></td>
+        <td>Die Auswahl f&auml;llt <strong>sofort bei der Wahl</strong>
+        sichtbar auf <em>Normal</em> zur&uuml;ck &ndash; nicht erst nach einer
+        halben Stunde Arbeit. In der fertigen Programmdatei ist beides
+        mitgeliefert.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p><strong>Systemdateien kommen nie in ein Band.</strong>
+  <code>eboot.bin</code>, <code>sce_sys</code>, die Module und alles
+  Ausf&uuml;hrbare bleiben gew&ouml;hnliche Dateien. Das Ladeprogramm der
+  Konsole liest sie, bevor der AMPR EMU &uuml;berhaupt geladen ist &ndash;
+  l&auml;gen sie in einem Band, w&uuml;rde das Spiel nicht mehr starten.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Wenn der Lauf abbricht statt fertig zu werden</span>
+    <p>Die Laufzeit der Konsole kennt harte Grenzen: h&ouml;chstens 2.000.000
+    Dateien, 16.000.000 Bl&ouml;cke und 1.024 B&auml;nder. Ein Bestand
+    dar&uuml;ber ist nicht etwa langsam &ndash; er wird <strong>gar nicht
+    geladen</strong>.</p>
+    <p>Das Programm rechnet nach dem Packen nach und bricht ab, <em>bevor</em>
+    etwas in den Spielordner kommt. Im Protokoll steht dann, welche Grenze
+    gerissen wurde. Abhilfe: gr&ouml;&szlig;ere Bl&ouml;cke w&auml;hlen oder
+    einen Teil der Daten lose lassen.</p>
   </div>
 </section>
 
@@ -1374,7 +1465,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.7), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.8), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1574,7 +1665,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.7</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.8</strong></span>
     <span>Stand 4. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

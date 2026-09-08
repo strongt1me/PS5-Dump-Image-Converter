@@ -75,6 +75,7 @@ on:
       - 'Hintergrundbilder/**'
       # Mitgelieferte Werkzeuge und Daten
       - 'MkPFS-*/**'
+      - 'AMPR_PackTools-*/**'
       - 'ProsperoPkg-2.5/**'
       - 'PS4FFPFSC-0.2.8/**'
       - 'UFS2Tool-4.1/**'
