@@ -886,5 +886,150 @@ class Aufgabe7OhneZielTests(unittest.TestCase):
                       "ohne Ziel auskommt.")
 
 
+class UmbenennenTests(unittest.TestCase):
+    """Zwei Stellen im Dump-Rename, beide am 08.09.2026 gefunden.
+
+    * ``os.path.exists(ziel)`` lehnte eine reine Schreibweisen-Aenderung
+      ab. Windows und macOS unterscheiden Gross- und Kleinschreibung
+      nicht: "spiel" und "Spiel" sind fuer sie derselbe Pfad, und das
+      Fenster meldete "existiert bereits" - fuer genau diese Aenderung
+      wird es aber oft benutzt.
+    * Nach dem Umbenennen zeigte das Quellfeld im Hauptfenster weiter auf
+      den alten Namen. Der naechste Start scheiterte dann mit "Quelle
+      nicht gefunden", obwohl der Anwender nur umbenannt hatte.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def _rumpf(self) -> str:
+        stelle = self.quelle.index("def _render_dump_rename_window")
+        return self.quelle[stelle:stelle + 9000]
+
+    def test_reine_schreibweise_wird_zugelassen(self):
+        rumpf = self._rumpf()
+        self.assertIn("nur_schreibweise", rumpf,
+                      "Eine reine Gross-/Kleinschreibungsaenderung wird "
+                      "wieder als 'existiert bereits' abgelehnt.")
+        self.assertIn("os.path.normcase", rumpf)
+
+    def test_der_quellpfad_wird_nachgezogen(self):
+        rumpf = self._rumpf()
+        stelle = rumpf.index("os.rename(ordner, ziel)")
+        danach = rumpf[stelle:stelle + 1200]
+        self.assertIn("self.source_path.set(ziel)", danach,
+                      "Nach dem Umbenennen zeigt das Quellfeld wieder auf "
+                      "den alten, nicht mehr vorhandenen Ordner.")
+
+    def test_die_pruefung_bleibt_fuer_echte_kollisionen(self):
+        """Anker: Ohne diese Bedingung waere die Lockerung ein Loch."""
+        rumpf = self._rumpf()
+        self.assertIn("if os.path.exists(ziel) and not nur_schreibweise:", rumpf)
+
+
+class LizenzfreiNurFuerSpieleTests(unittest.TestCase):
+    """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
+
+    ``prosperopkg.homebrew_bauen`` kennt den Schalter nicht - er steht nur
+    in der Signatur von ``bauen``. Das Kaestchen blieb im Homebrew-Zweig
+    trotzdem klickbar und weckte den Eindruck, es taete etwas.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def test_das_kaestchen_wird_umgeschaltet(self):
+        stelle = self.quelle.index("def _show_pkg_bauen")
+        rumpf = self.quelle[stelle:stelle + 12000]
+        self.assertIn("def _lizenzfrei_schalten", rumpf)
+        self.assertIn('state="disabled" if art_var.get() == "homebrew"', rumpf)
+
+    def test_homebrew_bauen_nimmt_den_schalter_wirklich_nicht(self):
+        """Anker: Naehme es ihn eines Tages, waere das Ausgrauen falsch."""
+        import inspect
+        from ps5_validator.utils import prosperopkg
+        unterschrift = inspect.signature(prosperopkg.homebrew_bauen)
+        self.assertNotIn("lizenzfrei", unterschrift.parameters)
+        self.assertIn("lizenzfrei", inspect.signature(prosperopkg.bauen).parameters)
+
+
+class StilleFehlschlaegeTests(unittest.TestCase):
+    """Wo ein Fehlschlag bisher nur im Protokoll oder gar nirgends stand.
+
+    Alle am 08.09.2026 beim Durchgehen der offenen Befundliste bestaetigt.
+    Gemeinsames Muster: Der Aufruf misslingt, die Oberflaeche geht wortlos
+    in den Ruhezustand, und der Anwender haelt den Knopf fuer kaputt.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
+
+    def test_dump_rename_fasst_gleiche_vorschlaege_zusammen(self):
+        stelle = self.quelle.index("vorhandene: list[tuple[str, str]] = []")
+        block = self.quelle[stelle:stelle + 400]
+        self.assertIn("gesehen", block)
+        self.assertIn("name not in gesehen", block)
+
+    def test_filezilla_meldet_eine_misslungene_installation(self):
+        stelle = self.quelle.index("def _install_filezilla")
+        block = self.quelle[stelle:self.quelle.index("def _launch_filezilla")]
+        self.assertIn("filezilla.installation_fehlgeschlagen", block,
+                      "Eine misslungene Installation steht wieder nur im "
+                      "Protokoll.")
+
+    def test_filezilla_meldet_eine_untaugliche_auswahl(self):
+        self.assertIn("filezilla.pfad_untauglich", self.quelle,
+                      "Eine abgelehnte Dateiauswahl faellt wieder wortlos "
+                      "unter den Tisch.")
+
+    def test_die_bibliothek_meldet_unlesbare_ordner(self):
+        for schluessel in ("library.ordner_unlesbar", "library.ordner_verschwunden"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, self.quelle)
+
+    def test_der_autoloader_meldet_einen_leeren_ordner(self):
+        for schluessel in ("autoloader.restore_empty", "autoloader.restore_unreadable"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, self.quelle)
+
+    def test_der_autoloader_meldet_nur_in_ein_lebendes_fenster(self):
+        stelle = self.quelle.index("def _autoloader_auftrag")
+        block = self.quelle[stelle:stelle + 2600]
+        self.assertIn("_spaeter_im_fenster", block)
+        self.assertNotIn("self.root.after(0, lambda: stand_var.set(meldung))", block,
+                         "Der Arbeitsfaden meldet wieder ungeprueft an das "
+                         "Fenster - schliesst man es waehrenddessen, endet "
+                         "er mitten in der Arbeit.")
+
+    def test_der_webkit_usb_weg_schreibt_ins_protokoll(self):
+        """Beide Fehlerzweige melden **und** protokollieren.
+
+        Ueber den Syntaxbaum statt ueber eine Zeichenkettensuche im
+        Quelltext: Beim ersten Anlauf stand hier der Name der falschen
+        Funktion, und die Pruefung waere klaglos gruen geblieben, haette
+        ich nicht zufaellig zwei Treffer verlangt.
+        """
+        baum = ast.parse(self.quelle)
+        rumpf = next(
+            ast.unparse(k) for k in ast.walk(baum)
+            if isinstance(k, ast.FunctionDef) and k.name == "_webkit_auf_usb_ablegen")
+        self.assertEqual(2, rumpf.count("self._append_to_log"),
+                         "Die USB-Fehler des WebKit-Wegs stehen wieder nur "
+                         "im Meldungsfenster.")
+        self.assertEqual(2, rumpf.count("messagebox.showerror"),
+                         "Anker: Ohne die Meldungsfenster waere das "
+                         "Protokoll allein zu wenig.")
+
+    def test_der_cover_speicher_faengt_leer_an(self):
+        self.assertIn(
+            'self._library_cover_cache: dict[str, "ImageTk.PhotoImage"] = {}',
+            self.quelle,
+            "Der Cover-Zwischenspeicher wird wieder ueber getattr "
+            "weitergereicht und nie geleert.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

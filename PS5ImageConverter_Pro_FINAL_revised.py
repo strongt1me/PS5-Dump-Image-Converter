@@ -18577,6 +18577,16 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('log.auto.0055', v0=exc))
             except Exception:
                 pass
+            # Auch sichtbar sagen. Der Anwender hat auf "FileZilla" gedrueckt
+            # und wartete auf eine Installation; ohne Meldung ging die
+            # Statuszeile wortlos auf "Bereit" zurueck, und der Grund stand
+            # nur im Protokoll, das dabei niemand aufschlaegt.
+            try:
+                messagebox.showerror(
+                    self._t("filezilla.status_installation"),
+                    self._t("filezilla.installation_fehlgeschlagen", fehler=exc))
+            except Exception:
+                pass
             return False
 
     def _launch_filezilla(self) -> bool:
@@ -18746,6 +18756,16 @@ class PS5ConverterGUI:
                     self._save_setting('filezilla_path', selected)
                 except Exception as exc:
                     logger.warning("FileZilla-Pfad nicht gemerkt: %s", exc)
+            elif selected:
+                # Der Anwender hat etwas ausgewaehlt, und es taugt nicht.
+                # Bis v1.9.10 fiel die Auswahl kommentarlos unter den Tisch:
+                # Die Methode kehrte mit False zurueck, die Statuszeile ging
+                # auf "Bereit", und niemand erfuhr, was an der Datei falsch
+                # war.
+                messagebox.showwarning(
+                    self._t("dialog.title.choose_filezilla"),
+                    self._t("filezilla.pfad_untauglich", pfad=selected),
+                    parent=self.root)
 
         if not exe:
             # Die Statuszeile zuruecknehmen. Schlaegt die Installation fehl
@@ -28355,6 +28375,19 @@ class PS5ConverterGUI:
             except (OSError, ValueError) as exc:
                 messagebox.showerror(self._t("dialog.title.file_read_failed"), str(exc), parent=self.root)
                 return
+            # Gueltiges JSON ist noch kein Dokument dieser Art: Eine Datei
+            # mit einer Liste, einer Zahl oder einer Zeichenkette an der
+            # Wurzel laedt anstandslos und liess das Fenster erst beim
+            # Aufbau abstuerzen (``data.items()`` auf einer Liste). Der
+            # Faenger darueber sah davon nichts - JSONDecodeError kommt hier
+            # gar nicht vor.
+            if not isinstance(data, dict):
+                messagebox.showerror(
+                    self._t("dialog.title.file_read_failed"),
+                    self._t("param_manifest.not_an_object",
+                            art=type(data).__name__),
+                    parent=self.root)
+                return
             # Am Inhalt entscheiden, nicht am Namen: Wer eine Manifestdatei
             # "param.json" nennt, bekam sonst die falschen Vorgaben und beim
             # Speichern das falsche Format. Der Name zaehlt nur noch, wenn
@@ -28466,6 +28499,11 @@ class PS5ConverterGUI:
         def _on_select(_event=None) -> None:
             sel = tree.selection()
             if not sel:
+                # Den Hinweis mit zuruecknehmen. Er blieb sonst auf
+                # dem zuletzt gewaehlten Schluessel stehen und
+                # beschrieb etwas, das gar nicht mehr markiert ist -
+                # etwa nachdem der Filter die Liste geleert hat.
+                hint_var.set("")
                 return
             key = sel[0]
             hint_var.set(self._param_manifest_hinweis(known_keys, key))
@@ -28690,7 +28728,14 @@ class PS5ConverterGUI:
         results: list[dict] = []
         try:
             names = sorted(os.listdir(folder))
-        except OSError:
+        except OSError as exc:
+            # Eine leere Rueckgabe sieht aus wie "da ist nichts".
+            # Bei einer abgezogenen Platte, fehlenden Rechten oder
+            # einem getrennten Netzlaufwerk ist sie aber "konnte
+            # nicht nachsehen" - der Anwender sah nur eine kuerzere
+            # Trefferliste und keinen Grund.
+            self._append_to_log(
+                self._t("library.ordner_unlesbar", pfad=folder, fehler=exc))
             return results
 
         for name in names:
@@ -28882,7 +28927,15 @@ class PS5ConverterGUI:
 
         all_items: list[dict] = []
         item_by_iid: dict[str, dict] = {}
-        self._library_cover_cache: dict[str, "ImageTk.PhotoImage"] = getattr(self, "_library_cover_cache", {})
+        # Bei jedem Oeffnen leer anfangen. Der Zwischenspeicher haengt an der
+        # Anwendung, nicht am Fenster, und er wurde ueber ``getattr`` beim
+        # naechsten Oeffnen wieder eingesammelt - geleert aber nie. Seine
+        # Schluessel sind die Zeilennummern des Baums und gelten damit ohnehin
+        # nur fuer das eine Fenster; die alten Bilder waren nach dem
+        # Schliessen unerreichbar und blieben trotzdem im Speicher. Bei
+        # einer Bibliothek mit hundert Titeln sind das hundert PhotoImage je
+        # Oeffnung.
+        self._library_cover_cache: dict[str, "ImageTk.PhotoImage"] = {}
 
         def _sortschluessel(eintrag: dict):
             meta = eintrag["meta"]
@@ -28923,7 +28976,17 @@ class PS5ConverterGUI:
                 sichtbar += 1
 
         def _rescan() -> None:
-            folders = [f for f in folders_list.get(0, "end") if os.path.isdir(f)]
+            eingetragen = list(folders_list.get(0, "end"))
+            folders = [f for f in eingetragen if os.path.isdir(f)]
+            # Verschwundene Ordner nicht stillschweigend uebergehen.
+            # Die Statuszeile nannte danach nur die verbliebene Zahl,
+            # und wer eine externe Platte abgezogen hatte, sah eine
+            # kuerzere Trefferliste ohne jeden Hinweis.
+            fehlend = [f for f in eingetragen if f not in folders]
+            if fehlend:
+                self._append_to_log(self._t(
+                    "library.ordner_verschwunden",
+                    anzahl=len(fehlend), namen=", ".join(fehlend[:6])))
             status_var.set(self._t("library.status_scanning"))
 
             def worker() -> None:
@@ -33394,9 +33457,17 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("autoloader: %s", exc)
                 meldung = self._t("autoloader.error_generic", error=exc)
-                self.root.after(0, lambda: stand_var.set(meldung))
-                self.root.after(0, lambda: messagebox.showwarning(
-                    self._t("autoloader.error_title"), meldung, parent=win))
+                # Ueber _spaeter_im_fenster statt root.after: Wer das Fenster
+                # schliesst, waehrend die FTP-Arbeit laeuft - und das tut man
+                # genau dann, wenn sie zu lange dauert -, hatte sonst zwei
+                # Rueckrufe auf ein zerstoertes Fenster. Tk wirft dort
+                # "main thread is not in main loop", der Faden endet mitten
+                # in der Arbeit, und im Fehlerbericht steht ein Absturz, der
+                # keiner ist.
+                self._spaeter_im_fenster(win, stand_var.set, meldung)
+                self._spaeter_im_fenster(
+                    win, lambda: messagebox.showwarning(
+                        self._t("autoloader.error_title"), meldung, parent=win))
                 return
             finally:
                 if ftp is not None:
@@ -33408,7 +33479,7 @@ class PS5ConverterGUI:
                         except Exception:
                             pass
             if fertig is not None:
-                self.root.after(0, lambda: fertig(ergebnis))
+                self._spaeter_im_fenster(win, fertig, ergebnis)
 
         threading.Thread(target=_lauf, daemon=True).start()
 
@@ -33750,9 +33821,27 @@ class PS5ConverterGUI:
             # sind erlaubt - beides waehlt man beim Suchen leicht.
             innen = os.path.join(ordner, "ps5_autoloader")
             quelle = innen if os.path.isdir(innen) else ordner
-            dateien = sorted(n for n in os.listdir(quelle)
-                             if os.path.isfile(os.path.join(quelle, n)))
+            try:
+                dateien = sorted(n for n in os.listdir(quelle)
+                                 if os.path.isfile(os.path.join(quelle, n)))
+            except OSError as exc:
+                # Abgezogene Platte, fehlende Rechte, getrenntes
+                # Netzlaufwerk: Bis v1.9.10 flog das ungefangen bis in die
+                # Oberflaeche.
+                messagebox.showerror(
+                    self._t("autoloader.error_title"),
+                    self._t("autoloader.restore_unreadable",
+                            pfad=quelle, fehler=exc), parent=win)
+                return
             if not dateien:
+                # Wortlos zurueckzukehren sah aus, als sei der Knopf kaputt:
+                # Der Anwender hatte gerade einen Ordner ausgewaehlt und
+                # bekam weder Meldung noch Eintrag in der Statuszeile.
+                messagebox.showinfo(
+                    self._t("autoloader.restore_title"),
+                    self._t("autoloader.restore_empty", pfad=quelle),
+                    parent=win)
+                stand_var.set(self._t("autoloader.restore_empty_state"))
                 return
             if not messagebox.askyesno(
                     self._t("autoloader.restore_title"),
@@ -34940,7 +35029,19 @@ class PS5ConverterGUI:
             if auswahl.get():
                 eigener.set(auswahl.get())
 
-        vorhandene = [(bezeichnung, name) for bezeichnung, name in vorschlaege.items() if name]
+        # Gleiche Namen zusammenfassen. ``build_presets`` liefert drei
+        # benannte Vorschlaege, die durchaus denselben Text ergeben koennen:
+        # Ohne Versionsangabe sind "PPSA + Titel" und "PPSA + Titel +
+        # Version" identisch, ohne Titel sogar alle drei. Die Radiobuttons
+        # bekommen aber ``value=name`` - zwei mit demselben Wert teilen sich
+        # eine Auswahl, und Tk zeigt beide als markiert. Der Anwender sah
+        # denselben Vorschlag doppelt und zwei gefuellte Punkte.
+        vorhandene: list[tuple[str, str]] = []
+        gesehen: set[str] = set()
+        for bezeichnung, name in vorschlaege.items():
+            if name and name not in gesehen:
+                gesehen.add(name)
+                vorhandene.append((bezeichnung, name))
         for bezeichnung, name in vorhandene:
             tk.Radiobutton(
                 körper,
@@ -34977,7 +35078,14 @@ class PS5ConverterGUI:
                                     self._t("dump_rename.unchanged_message"), parent=win)
                 return
             ziel = os.path.join(os.path.dirname(ordner), neuer)
-            if os.path.exists(ziel):
+            # ``os.path.exists`` allein reicht nicht: Windows und macOS
+            # unterscheiden Gross- und Kleinschreibung nicht, "spiel" und
+            # "Spiel" sind fuer sie derselbe Pfad. Eine reine
+            # Schreibweisen-Aenderung wurde deshalb mit "existiert bereits"
+            # abgelehnt - und genau dafuer wird dieses Fenster oft benutzt.
+            nur_schreibweise = (os.path.normcase(os.path.abspath(ziel))
+                                == os.path.normcase(os.path.abspath(ordner)))
+            if os.path.exists(ziel) and not nur_schreibweise:
                 messagebox.showwarning(
                     self._t("dump_rename.exists_title"),
                     self._t("dump_rename.exists_message", name=neuer), parent=win)
@@ -34987,6 +35095,19 @@ class PS5ConverterGUI:
             except OSError as exc:
                 messagebox.showerror(self._t("dump_rename.failed_title"), str(exc), parent=win)
                 return
+
+            # Zeigt das Quellfeld noch auf den alten Namen, geht es mit um.
+            # Sonst steht dort ein Pfad, den es nicht mehr gibt, und der
+            # naechste Start scheitert mit "Quelle nicht gefunden" - obwohl
+            # der Anwender gerade eben nur umbenannt hat.
+            try:
+                alt_norm = os.path.normcase(os.path.abspath(ordner))
+                if os.path.normcase(os.path.abspath(
+                        self.source_path.get().strip() or "")) == alt_norm:
+                    self.source_path.set(ziel)
+            except Exception as exc:
+                logger.debug("Quellpfad nicht nachgezogen: %s", exc)
+
             self._append_to_log(f"[INFO] {aktueller_name} -> {neuer}\n")
             messagebox.showinfo(self._t("dump_rename.done_title"),
                                 self._t("dump_rename.done_message", name=neuer), parent=win)
@@ -36532,8 +36653,11 @@ class PS5ConverterGUI:
             farbe = (c["fg_secondary"] if art_var.get() == "homebrew"
                      else c["fg_warning"])
             erklaerung.configure(text=self._t(schluessel), fg=farbe)
+            _lizenzfrei_schalten()
 
-        _art_erklaeren()
+        # Der erste Aufruf steht weiter unten, nach den Kaestchen:
+        # _art_erklaeren schaltet inzwischen auch "Lizenzfrei bauen",
+        # und das Kaestchen gibt es hier oben noch nicht.
 
         quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
         schnell_var = tk.BooleanVar(value=True)
@@ -36580,14 +36704,32 @@ class PS5ConverterGUI:
 
         schalter = tk.Frame(koerper, bg=c["bg_main"])
         schalter.pack(fill="x", pady=(8, 4))
-        for text, var in ((self._t("pkgbau.fast"), schnell_var),
-                          (self._t("pkgbau.license_free"), lizenzfrei_var)):
-            tk.Checkbutton(
+        kaestchen: dict[str, tk.Checkbutton] = {}
+        for name, text, var in (("schnell", self._t("pkgbau.fast"), schnell_var),
+                                ("lizenzfrei", self._t("pkgbau.license_free"),
+                                 lizenzfrei_var)):
+            kaestchen[name] = tk.Checkbutton(
                 schalter, text=text, variable=var, bg=c["bg_main"],
                 fg=c["fg_primary"], selectcolor=c["bg_card"],
                 activebackground=c["bg_main"], activeforeground=c["fg_accent"],
                 font=(UI_SCHRIFT, pt(9)),
-            ).pack(side="left", padx=(0, 14))
+            )
+            kaestchen[name].pack(side="left", padx=(0, 14))
+
+        def _lizenzfrei_schalten() -> None:
+            """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
+
+            ``prosperopkg.homebrew_bauen`` kennt den Schalter gar nicht - er
+            steht nur in der Signatur von ``bauen``. Das Kaestchen blieb
+            trotzdem klickbar und weckte den Eindruck, es taete etwas.
+            """
+            try:
+                kaestchen["lizenzfrei"].configure(
+                    state="disabled" if art_var.get() == "homebrew" else "normal")
+            except tk.TclError:
+                pass
+
+        _art_erklaeren()
 
         protokoll = tk.Text(koerper, height=16, font=("Consolas", pt(9)),
                             bg=c["bg_card"], fg=c["fg_primary"],
@@ -37092,6 +37234,11 @@ class PS5ConverterGUI:
         try:
             ftp = self._ampr_ftp_connect(ip, port) if port else self._ampr_ftp_connect(ip)
         except Exception as exc:
+            # Auch ins Protokoll: Nach dem Wegklicken des Fensters war
+            # der Fehler sonst verloren - er stand weder im Protokoll
+            # noch im Diagnosebericht, und niemand konnte ihn melden.
+            self._append_to_log(
+                self._t("webkit.usb_failed", fehler=exc) + "\n")
             messagebox.showerror(
                 self._t("webkit.title"),
                 self._t("webkit.usb_failed", fehler=exc), parent=parent)
@@ -37116,6 +37263,11 @@ class PS5ConverterGUI:
             with open(elf, "rb") as fh:
                 ftp.storbinary("STOR %s/%s" % (usb, name), fh)
         except Exception as exc:
+            # Auch ins Protokoll: Nach dem Wegklicken des Fensters war
+            # der Fehler sonst verloren - er stand weder im Protokoll
+            # noch im Diagnosebericht, und niemand konnte ihn melden.
+            self._append_to_log(
+                self._t("webkit.usb_failed", fehler=exc) + "\n")
             messagebox.showerror(
                 self._t("webkit.title"),
                 self._t("webkit.usb_failed", fehler=exc), parent=parent)
@@ -38180,8 +38332,13 @@ class PS5ConverterGUI:
                 console.insert("end", msg + "\n")
                 console.see("end")
                 console.config(state="disabled")
-            except Exception:
-                pass
+            except Exception as exc:
+                # Eine Protokollzeile darf den Vorgang nie zu Fall bringen -
+                # deshalb gefangen. Spurlos verschlucken soll sie aber auch
+                # nichts: Ist das Fenster schon zu, ist das harmlos; ein
+                # Tippfehler im Aufruf waere es nicht, und der fiel hier
+                # bisher niemandem auf.
+                logger.debug("Protokollzeile nicht eintragbar: %s", exc)
 
         def _send_path(path: str, port_var, label: str):
             """Sendet einen konkreten Dateipfad via TCP-Socket."""
@@ -38586,8 +38743,13 @@ class PS5ConverterGUI:
                 console.insert("end", msg + "\n")
                 console.see("end")
                 console.config(state="disabled")
-            except Exception:
-                pass
+            except Exception as exc:
+                # Eine Protokollzeile darf den Vorgang nie zu Fall bringen -
+                # deshalb gefangen. Spurlos verschlucken soll sie aber auch
+                # nichts: Ist das Fenster schon zu, ist das harmlos; ein
+                # Tippfehler im Aufruf waere es nicht, und der fiel hier
+                # bisher niemandem auf.
+                logger.debug("Protokollzeile nicht eintragbar: %s", exc)
 
         def _do_build() -> None:
             root = root_var.get().strip()

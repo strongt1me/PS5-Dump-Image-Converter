@@ -75,5 +75,39 @@ class Ps4KennungTests(unittest.TestCase):
         self.assertEqual(CONFIDENCE_FAILED, compute_confidence(False, True, True))
 
 
+class DoppelteVorschlaegeTests(unittest.TestCase):
+    """Zwei Vorschlaege koennen denselben Namen ergeben.
+
+    ``build_presets`` liefert drei **benannte** Vorschlaege, nicht drei
+    verschiedene Namen. Ohne Versionsangabe sind "PPSA + Titel" und
+    "PPSA + Titel + Version" identisch, ohne Titel sogar alle drei.
+
+    Im Fenster bekommen die Radiobuttons ``value=name``. Zwei mit
+    demselben Wert teilen sich eine Auswahl - Tk zeigt beide als
+    markiert, und derselbe Vorschlag stand zweimal da. Das Fenster fasst
+    gleiche Namen deshalb zusammen; hier steht der Beleg, dass es sie
+    ueberhaupt geben kann.
+    """
+
+    def test_ohne_version_fallen_zwei_zusammen(self):
+        p = build_presets("PPSA12345", "Mein Spiel", "", True, False)
+        werte = [w for w in p.values() if w]
+        self.assertNotEqual(len(werte), len(set(werte)),
+                            "Wenn hier keine Dubletten mehr entstehen, ist "
+                            "die Zusammenfassung im Fenster unnoetig "
+                            "geworden - dann darf sie raus, aber bewusst.")
+
+    def test_ohne_titel_fallen_alle_drei_zusammen(self):
+        p = build_presets("PPSA12345", "", "", True, False)
+        werte = [w for w in p.values() if w]
+        self.assertEqual(1, len(set(werte)))
+
+    def test_mit_titel_und_version_bleiben_es_drei(self):
+        """Anker: Sonst wuerde die Zusammenfassung echte Vorschlaege schlucken."""
+        p = build_presets("PPSA12345", "Mein Spiel", "01.000.000", True, True)
+        werte = [w for w in p.values() if w]
+        self.assertEqual(3, len(set(werte)))
+
+
 if __name__ == "__main__":
     unittest.main()

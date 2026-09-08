@@ -62,6 +62,15 @@ MELDUNGEN = {
     # 06.09.2026 fest deutsch vor einer englischen Oberflaeche.
     "kein_ordner": "'{pfad}' ist kein Ordner.",
     "kein_fih_kopf": "Wurzelteil beginnt nicht mit dem finalisierten FIH-Header.",
+    # Ein unlesbares Wurzelteil ist etwas anderes als ein falscher Kopf.
+    # Bis v1.9.10 lieferte _read_head bei jedem OSError b"" zurueck, und die
+    # Pruefung meldete "beginnt nicht mit dem FIH-Header" - bei einer
+    # abgezogenen Platte oder fehlenden Rechten also die falsche Ursache.
+    "wurzelteil_unlesbar": "Wurzelteil '{pfad}' laesst sich nicht lesen: {fehler}",
+    # Diese beiden standen als f-Zeichenkette fest deutsch im Quelltext.
+    "unerwartetes_signed_byte": "Unerwartetes signed byte 0x{wert} im FIH-Header.",
+    "unerwartete_formatversion": "Unerwartete Formatversion {version}.",
+    "kein_subcontainer_kopf": "Metadaten-Teil beginnt nicht mit dem Subcontainer-Header.",
 }
 
 
@@ -196,12 +205,18 @@ def discover_split_sets(input_dir: str, log: LogFn | None = None,
     return list(sets.values())
 
 
-def _read_head(path: str, length: int) -> bytes:
+def _read_head(path: str, length: int) -> "tuple[bytes, str]":
+    """Liest den Dateikopf. Rueckgabe: (Daten, Fehlertext).
+
+    Der Fehlertext ist leer, wenn gelesen werden konnte. Vorher gab es bei
+    jedem ``OSError`` nur ``b""``, und der Aufrufer konnte "Datei nicht
+    lesbar" nicht von "falscher Kopf" unterscheiden.
+    """
     try:
         with open(path, "rb") as f:
-            return f.read(length)
-    except OSError:
-        return b""
+            return f.read(length), ""
+    except OSError as exc:
+        return b"", str(exc)
 
 
 def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
@@ -211,13 +226,16 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
         raise ValueError("Mindestens das Wurzelteil (_0) wird benötigt.")
 
     errors: list[str] = []
-    head = _read_head(numbered_pieces[0], _HEAD_READ_SIZE)
+    head, lesefehler = _read_head(numbered_pieces[0], _HEAD_READ_SIZE)
 
     package_type = "full_retail"
     format_version = 0
     pfs_offset = pfs_size = cnt_offset = 0
 
-    if len(head) < _HEAD_READ_SIZE or head[:4] != FIH_MAGIC:
+    if lesefehler:
+        errors.append(_text(texte, "wurzelteil_unlesbar",
+                            pfad=numbered_pieces[0], fehler=lesefehler))
+    elif len(head) < _HEAD_READ_SIZE or head[:4] != FIH_MAGIC:
         errors.append(_text(texte, "kein_fih_kopf"))
     else:
         signed_byte = head[FIH_SIGNED_BYTE_OFFSET]
@@ -226,11 +244,13 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
         elif signed_byte == 0x00:
             package_type = "full_debug"
         else:
-            errors.append(f"Unerwartetes signed byte 0x{signed_byte:02X} im FIH-Header.")
+            errors.append(_text(texte, "unerwartetes_signed_byte",
+                                wert="%02X" % signed_byte))
 
         format_version = struct.unpack_from("<H", head, FIH_FORMAT_VERSION_OFFSET)[0]
         if format_version != FIH_REQUIRED_FORMAT_VERSION:
-            errors.append(f"Unerwartete Formatversion {format_version}.")
+            errors.append(_text(texte, "unerwartete_formatversion",
+                                version=format_version))
 
         pfs_offset = struct.unpack_from("<Q", head, FIH_PFS_IMAGE_OFFSET_OFFSET)[0]
         pfs_size = struct.unpack_from("<Q", head, FIH_PFS_IMAGE_SIZE_OFFSET)[0]
@@ -261,9 +281,12 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
             errors.append(f"Metadaten-Teil fehlt: '{meta_piece}'.")
         else:
             meta_size = os.path.getsize(meta_piece)
-            meta_head = _read_head(meta_piece, 4)
-            if len(meta_head) < 4 or meta_head[:4] != CNT_MAGIC:
-                errors.append("Metadaten-Teil beginnt nicht mit dem Subcontainer-Header.")
+            meta_head, meta_lesefehler = _read_head(meta_piece, 4)
+            if meta_lesefehler:
+                errors.append(_text(texte, "wurzelteil_unlesbar",
+                                    pfad=meta_piece, fehler=meta_lesefehler))
+            elif len(meta_head) < 4 or meta_head[:4] != CNT_MAGIC:
+                errors.append(_text(texte, "kein_subcontainer_kopf"))
 
     return MergeValidation(
         is_valid=not errors,
