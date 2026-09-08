@@ -1,0 +1,42 @@
+# =============================================================================
+# Zeilenenden - die Gegenstelle zu .gitattributes
+# =============================================================================
+# .gitattributes schaltet mit "* -text" jede Umwandlung durch git ab: Was
+# eingecheckt wird, kommt byteweise genauso wieder heraus. Das haelt git aus
+# der Sache heraus - es sagt aber nichts darueber, womit ein Editor speichert.
+#
+# Genau daran hat es gefehlt. Am 07.09.2026 speicherte VSCode CHANGELOG.md
+# mit LF statt CRLF. Inhaltlich waren es 36 neue Zeilen, git meldete 5340:
+# Die Datei galt als vollstaendig ausgetauscht, die eigentliche Aenderung war
+# darin nicht mehr zu sehen, und git blame zeigte auf diesen einen Vorgang.
+#
+# Die Aufteilung ist dieselbe wie in .gitattributes beschrieben: Python- und
+# Dokumentationsbestand CRLF, die Skripte fuer Linux und macOS LF. Ein
+# einziges CRLF in Build_macOS.sh quittiert macOS mit
+# "bad interpreter: /usr/bin/env bash^M" - und der Fehler ist auf dem
+# Windows-Rechner, auf dem die Datei entsteht, unsichtbar.
+# =============================================================================
+
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Der gepflegte Bestand dieses Projekts.
+[*.{py,spec,md,txt,json,bat,ps1,html}]
+end_of_line = crlf
+
+# Alles, was auf einem anderen System ausgefuehrt oder gelesen wird.
+[*.{sh,yml,yaml}]
+end_of_line = lf
+
+# Ohne Endung, aber mit Shebang: die Bauskripte fuer Linux und macOS.
+[{Build_Linux,Build_macOS,Install_Linux,Install_macOS}.sh]
+end_of_line = lf
+
+# Fremdbestand wird nicht angefasst - er kommt so, wie sein Autor ihn liefert.
+[{PS5 SDK usw,AMPR_PackTools-4.0,MkPFS-1.0.0,PS4FFPFSC-0.2.8,ProsperoPkg-2.5}/**]
+end_of_line = unset
+trim_trailing_whitespace = false

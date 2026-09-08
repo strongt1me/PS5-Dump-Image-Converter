@@ -43,7 +43,19 @@ ffpkg_progress_fix.diff
 exe_test_*.log
 
 # Hilfsskripte zum Prüfen und Erzeugen, nicht zum Bauen.
-tools/
+#
+# Der fuehrende Schraegstrich ist hier nicht Geschmack, sondern noetig: Ohne
+# ihn trifft 'tools/' JEDEN gleichnamigen Ordner in jeder Tiefe - auch den im
+# mitgelieferten PlayGo-Quellcode. Zwei ausgelieferte Dateien lagen dadurch
+# nicht in git:
+#
+#     PlayGo & AMPR_EMU/.../pgo_stub-0.5/tools/make_fself.py
+#     PlayGo & AMPR_EMU/.../pgo_stub-0.5/tools/make_playgo_libc_internal_stub.py
+#
+# Auf dem Entwicklungsrechner faellt das nicht auf - die Dateien liegen ja da.
+# Ein frischer Klon hat sie aber nicht, und die Bauten auf fremder Hardware
+# entstehen aus genau so einem Klon.
+/tools/
 # Die Skills sind Testablaufsteuerung; der Bau braucht nur workflows/.
 .github/skills/
 
