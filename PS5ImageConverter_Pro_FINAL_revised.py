@@ -21999,10 +21999,31 @@ class PS5ConverterGUI:
         if not hasattr(self, "ampr_version_combo"):
             return
         eintraege = self._ampr_alle_fassungen(nur_programmnah=nur_programmnah)
+        # Die Liste ist nach Methode geteilt, nicht nur gefiltert: Jede
+        # Fassung steht in genau einer der beiden.
+        #
+        #   Normal      -> alles ausser den Packfassungen
+        #   Asset-Pack  -> nur die Packfassungen (test-pack, test-debug-pack)
+        #
+        # Vorher standen ueberall alle vierzehn, und die untaugliche
+        # test-nopack als neueste sogar an erster Stelle der Packliste - der
+        # Anwender erfuhr erst aus dem Protokoll, dass seine Wahl nicht
+        # traegt. Eine Liste, die etwas anbietet, das nicht geht, ist eine
+        # Falle; umgekehrt gehoeren die Packfassungen nicht in den normalen
+        # Weg, fuer den sie nicht gedacht sind.
+        #
+        # Folge, die man kennen sollte: Wer **nur** Packfassungen im Bestand
+        # hat, sieht unter Normal nichts. Das ist gewollt - die Meldung sagt
+        # es dann.
+        nur_packfaehig = self._ampr_methode() == AMPR_METHODE_ASSETPACK
         beschriftungen: list[str] = []
         self._ampr_versionsauswahl: dict[str, dict[str, Any]] = {}
         for eintrag in eintraege:
             if eintrag.get("lib") != "libSceAmpr.sprx":
+                continue
+            kann_packen = ampr_assetpakete.variante_kann_packen(
+                str(eintrag.get("variant", "")))
+            if kann_packen != nur_packfaehig:
                 continue
             beschriftung = f"{eintrag['version']} {eintrag['variant']}".strip()
             if beschriftung in self._ampr_versionsauswahl:
@@ -22017,6 +22038,13 @@ class PS5ConverterGUI:
         elif beschriftungen:
             # Die Liste kommt absteigend sortiert - die neueste steht oben.
             self.ampr_version_var.set(beschriftungen[0])
+        else:
+            # Das Feld leeren statt eine Fassung stehenzulassen, die in der
+            # Liste gar nicht mehr vorkommt.
+            self.ampr_version_var.set("")
+            self._append_to_log(self._t(
+                "ampr_pack.keine_packfaehige" if nur_packfaehig
+                else "ampr_pack.keine_normale"))
 
     def _on_integration_changed(self, speichern: bool = True) -> None:
         """Haelt die Auswahllisten im Takt mit ihren Kaestchen.
@@ -22115,6 +22143,9 @@ class PS5ConverterGUI:
         """
         methode = self._ampr_methode()
         if methode != AMPR_METHODE_ASSETPACK:
+            # Zurueck auf Normal: die volle Liste wieder herstellen. Ohne das
+            # bliebe sie auf den pack-faehigen Fassungen stehen.
+            self._ampr_versionsliste_fuellen()
             self._save_setting("integrate_ampr_methode", methode)
             return
 
@@ -22123,16 +22154,22 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(grund))
             self.ampr_methode_var.set(self._t("ampr_pack.methode_normal"))
             self._save_setting("integrate_ampr_methode", AMPR_METHODE_NORMAL)
+            # Die Auswahl faellt zurueck - die Liste muss mit.
+            self._ampr_versionsliste_fuellen()
             return
 
-        # Die Fassung entscheidet mit: Eine test-nopack-Bibliothek findet
-        # das Manifest zwar, kann die Baender aber nicht lesen. Das ist
-        # keine Sperre - wer die Fassung gleich noch wechselt, soll nicht
-        # aufgehalten werden -, aber es gehoert gesagt.
+        # Die Fassungsliste neu fuellen: Bei der neuen Methode stehen nur
+        # noch die pack-faehigen Fassungen darin. Vorher konnte der Anwender
+        # test-nopack waehlen - die stand als neueste sogar an erster Stelle -
+        # und erfuhr erst aus dem Protokoll, dass seine Wahl nicht traegt.
+        self._ampr_versionsliste_fuellen()
+
         auswahl = getattr(self, "_ampr_versionsauswahl", {}).get(
             self.ampr_version_var.get()) or {}
         variante = str(auswahl.get("variant", ""))
         if variante and not ampr_assetpakete.variante_kann_packen(variante):
+            # Sollte nach dem Neufuellen nicht mehr vorkommen; bleibt als
+            # Netz, falls die Liste einmal auf einem anderen Weg gesetzt wird.
             self._append_to_log(
                 self._t("ampr_pack.variante_kann_nicht", variant=variante))
 
@@ -24371,9 +24408,9 @@ class PS5ConverterGUI:
                     and not self._ampr_index_neubau_erlaubt(search_root)):
                 self._append_to_log(self._t("ampr.assets_index_kept"))
                 rebuild_index = False
+            index_path = Path(search_root) / self._AMPR_INDEX_NAME
             if changed and rebuild_index:
                 self._set_status(self._t("status.rebuilding_ampr_index"))
-                index_path = Path(search_root) / self._AMPR_INDEX_NAME
                 try:
                     count, dupes = self._build_ampr_index_local(Path(search_root), index_path)
                     self._append_to_log(self._t(
@@ -24383,6 +24420,22 @@ class PS5ConverterGUI:
                         self._append_to_log(self._t("ampr.index_duplicate_hashes", count=dupes))
                 except Exception as exc:
                     self._append_to_log(self._t("ampr.index_failed", error=exc))
+                    return False
+
+            # Die neue Methode gilt auch hier. Sie hing bis zum 08.09.2026 nur
+            # am Kaestchen "AMPR EMU" beim Erstellen - wer sie waehlte und
+            # dann Aufgabe 7 benutzte, bekam stillschweigend den alten Weg.
+            #
+            # Die Fassung wird aus dem Ordner gelesen, nicht aus der Auswahl
+            # dieses Fensters: Der Manager kennt mehrere Wege, eine Bibliothek
+            # hineinzubekommen (Tausch, eigene Datei, reiner Indexlauf), und
+            # entscheidend ist, was am Ende wirklich dort liegt.
+            if changed and self._ampr_methode() == AMPR_METHODE_ASSETPACK:
+                installiert = self._ampr_identify_installed(
+                    search_root, self._ampr_alle_fassungen())
+                eintrag = installiert.get(self._AMPR_SPRX_NAME) or {}
+                if not self._ampr_assetpakete_bauen(
+                        search_root, str(index_path), eintrag):
                     return False
 
             if not is_container:

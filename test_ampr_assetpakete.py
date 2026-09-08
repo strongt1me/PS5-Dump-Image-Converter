@@ -346,5 +346,144 @@ class VierteStufeTests(unittest.TestCase):
 
 
 
+class WoDieMethodeGreiftTests(unittest.TestCase):
+    """Die neue Methode muss auf beiden Wegen greifen, nicht nur auf einem.
+
+    Bis zum 08.09.2026 hing sie allein am Kaestchen "AMPR EMU" beim
+    Erstellen. Wer sie waehlte und dann Aufgabe 7 benutzte, bekam
+    stillschweigend den alten Weg - ohne Meldung, ohne Baender, und ohne dass
+    im Fenster etwas anderes gestanden haette.
+    """
+
+    HAUPT = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+    def _funktion(self, name):
+        import ast
+        for knoten in ast.walk(ast.parse(self.HAUPT.read_text(encoding="utf-8"))):
+            if isinstance(knoten, ast.FunctionDef) and knoten.name == name:
+                return knoten
+        return None
+
+    def test_beim_erstellen(self):
+        knoten = self._funktion("_integration_ampr")
+        self.assertIsNotNone(knoten, "_integration_ampr heisst nicht mehr so")
+        import ast
+        self.assertIn("_ampr_assetpakete_bauen", ast.unparse(knoten))
+
+    def test_in_aufgabe_sieben(self):
+        knoten = self._funktion("_mode_ampr_manager")
+        self.assertIsNotNone(knoten, "_mode_ampr_manager heisst nicht mehr so")
+        import ast
+        text = ast.unparse(knoten)
+        self.assertIn(
+            "_ampr_assetpakete_bauen", text,
+            "Aufgabe 7 baut keine Baender - wer die neue Methode gewaehlt hat, "
+            "bekommt dort stillschweigend den alten Weg.")
+        # Erst der Index, dann die Baender: ampr_pack.py liest den Index.
+        self.assertLess(text.index("_build_ampr_index_local"),
+                        text.index("_ampr_assetpakete_bauen"),
+                        "Die Baender entstehen vor dem Index - ampr_pack.py "
+                        "liest ihn aber, um die Dateien zuzuordnen.")
+
+
+class KlapplisteTests(unittest.TestCase):
+    """Bei der neuen Methode darf nur dastehen, was sie auch lesen kann.
+
+    Vorher standen alle Fassungen in der Liste, und die untaugliche
+    ``test-nopack`` als neueste sogar an erster Stelle. Der Anwender erfuhr
+    erst aus dem Protokoll, dass seine Wahl nicht traegt - eine Liste, die
+    etwas anbietet, das nicht geht, ist eine Falle.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import tkinter as tk
+        try:
+            cls.wurzel = tk._default_root or tk.Tk()
+            cls.wurzel.withdraw()
+        except Exception:                       # pragma: no cover
+            raise unittest.SkipTest("keine Anzeige verfuegbar")
+        import PS5ImageConverter_Pro_FINAL_revised as prog
+        cls.prog = prog
+        cls.app = prog.PS5ConverterGUI(cls.wurzel)
+
+    def _umschalten(self, schluessel):
+        self.app.ampr_methode_var.set(self.app._t(schluessel))
+        self.app._on_ampr_methode_changed()
+        return list(self.app.ampr_version_combo.cget("values"))
+
+    def _mit_varianten(self, schluessel):
+        """Die Liste samt der Variante je Eintrag."""
+        eintraege = self._umschalten(schluessel)
+        return {e: self.app._ampr_versionsauswahl[e]["variant"]
+                for e in eintraege}
+
+    def test_asset_pack_zeigt_nur_packfaehige(self):
+        gefiltert = self._mit_varianten("ampr_pack.methode_neu")
+        self.addCleanup(self._umschalten, "ampr_pack.methode_normal")
+        if not gefiltert:
+            self.skipTest("keine packfaehige Fassung im Bestand")
+        for eintrag, variante in gefiltert.items():
+            self.assertTrue(
+                ap.variante_kann_packen(variante),
+                "%r steht in der Packliste, kann aber keine Baender lesen"
+                % eintrag)
+
+    def test_normal_zeigt_keine_packfassungen(self):
+        """Sie sind nur fuer die neue Methode gedacht.
+
+        Umgekehrt zur Pruefung darueber: In der normalen Liste haben
+        ``test-pack`` und ``test-debug-pack`` nichts zu suchen.
+        """
+        normal = self._mit_varianten("ampr_pack.methode_normal")
+        if not normal:
+            self.skipTest("kein gewoehnlicher Bestand vorhanden")
+        for eintrag, variante in normal.items():
+            self.assertFalse(
+                ap.variante_kann_packen(variante),
+                "%r ist eine Packfassung und gehoert nicht in die normale "
+                "Liste" % eintrag)
+
+    def test_die_beiden_listen_teilen_den_bestand_auf(self):
+        """Zusammen ergeben sie alles - keine Fassung faellt heraus.
+
+        Ein reiner Filter koennte eine Fassung in **beiden** Listen zeigen
+        oder in keiner. Beides waere falsch: Der Anwender soll jede
+        mitgelieferte Fassung genau einmal finden.
+        """
+        normal = set(self._mit_varianten("ampr_pack.methode_normal"))
+        pack = set(self._mit_varianten("ampr_pack.methode_neu"))
+        self.addCleanup(self._umschalten, "ampr_pack.methode_normal")
+        self.assertEqual(normal & pack, set(),
+                         "Diese Fassungen stehen in beiden Listen")
+        alle = {
+            "%s %s" % (e["version"], e["variant"])
+            for e in self.app._ampr_alle_fassungen()
+            if e.get("lib") == "libSceAmpr.sprx"
+        }
+        if not alle:
+            self.skipTest("kein AMPR-Bestand vorhanden")
+        self.assertEqual(
+            normal | pack, alle,
+            "Zusammen ergeben die beiden Listen nicht den ganzen Bestand - "
+            "eine Fassung ist nirgends waehlbar.")
+
+    def test_zurueck_auf_normal_zeigt_wieder_alles(self):
+        alle = self._umschalten("ampr_pack.methode_normal")
+        self._umschalten("ampr_pack.methode_neu")
+        wieder = self._umschalten("ampr_pack.methode_normal")
+        self.assertEqual(alle, wieder,
+                         "Die Liste blieb nach dem Zurueckschalten beschnitten")
+
+    def test_die_wahl_faellt_auf_eine_packfaehige(self):
+        """Sonst stuende eine Fassung im Feld, die es in der Liste nicht gibt."""
+        self._umschalten("ampr_pack.methode_normal")
+        gefiltert = self._umschalten("ampr_pack.methode_neu")
+        self.addCleanup(self._umschalten, "ampr_pack.methode_normal")
+        if not gefiltert:
+            self.skipTest("keine packfaehige Fassung im Bestand")
+        self.assertIn(self.app.ampr_version_var.get(), gefiltert)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
