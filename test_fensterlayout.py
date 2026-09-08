@@ -1018,6 +1018,13 @@ class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
             setattr(haupt.messagebox, name, lambda *a, **k: False)
         haupt.PS5ConverterGUI._auswahl_dialog = lambda self, *a, **k: ""
         cls.app = haupt.PS5ConverterGUI(_WURZEL)
+        # Sprache ausdruecklich festlegen. Die Breite eines Knopfes haengt an
+        # der Laenge seiner Beschriftung, und die deutschen sind hier laenger:
+        # "Auf PS5 schreiben..." braucht 242 px, "Write to PS5..." deutlich
+        # weniger. Ohne diese Zeile prueft der Lauf, was gerade eingestellt
+        # ist - am 08.09.2026 fiel derselbe Befund deshalb im Verbund auf und
+        # beim Einzelaufruf nicht.
+        cls.app._current_language = "de"
         _WURZEL.update_idletasks()
 
     @classmethod

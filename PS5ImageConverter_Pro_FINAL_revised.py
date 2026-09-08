@@ -28760,6 +28760,27 @@ class PS5ConverterGUI:
             folders_list.insert("end", folder)
         folders_list.pack(side="left", fill="x", expand=True)
 
+        # Rollbalken: Die Liste ist drei Zeilen hoch, wer mehr als drei
+        # Suchordner eingetragen hat, kam an die uebrigen nicht heran - die
+        # Trefferliste darunter hat seit jeher einen, diese nicht. Er
+        # erscheint nur, wenn er gebraucht wird; bei drei Eintraegen oder
+        # weniger bliebe sonst ein leerer Streifen stehen.
+        folders_sb = ttk.Scrollbar(folders_row, orient="vertical",
+                                   command=folders_list.yview)
+
+        def _rollbalken_nachfuehren(*_a) -> None:
+            try:
+                noetig = folders_list.size() > int(folders_list.cget("height"))
+                if noetig and not folders_sb.winfo_ismapped():
+                    folders_sb.pack(side="left", fill="y")
+                elif not noetig and folders_sb.winfo_ismapped():
+                    folders_sb.pack_forget()
+            except tk.TclError:
+                pass
+
+        folders_list.configure(yscrollcommand=folders_sb.set)
+        _rollbalken_nachfuehren()
+
         folders_btns = tk.Frame(folders_row, bg=c["bg_main"])
         folders_btns.pack(side="left", padx=(8, 0))
 
@@ -28967,6 +28988,7 @@ class PS5ConverterGUI:
             chosen = os.path.normpath(chosen)
             if chosen not in folders_list.get(0, "end"):
                 folders_list.insert("end", chosen)
+                _rollbalken_nachfuehren()
                 self._save_setting("library_scan_folders", list(folders_list.get(0, "end")))
 
         def _remove_folder() -> None:
@@ -28974,6 +28996,7 @@ class PS5ConverterGUI:
             if not sel:
                 return
             folders_list.delete(sel[0])
+            _rollbalken_nachfuehren()
             self._save_setting("library_scan_folders", list(folders_list.get(0, "end")))
 
         def _use_as_source() -> None:
@@ -28991,7 +29014,19 @@ class PS5ConverterGUI:
             # die neue Datei - konvertiert wurden beim Start aber weiter die
             # alten. Das Feld log dann ueber das, was wirklich geschieht.
             self._batch_sources = []
+
+            # Gleich sagen, wenn der Eintrag nicht zur gewaehlten Aufgabe
+            # passt. Uebernommen wird er trotzdem - der Anwender wechselt
+            # danach vielleicht die Aufgabe -, aber er erfaehrt es hier und
+            # nicht erst beim Druck auf "Start". Bis v1.9.10 uebernahm die
+            # Bibliothek wortlos, und die Absage kam Minuten spaeter aus
+            # einem ganz anderen Fenster.
+            hinweis = self._validate_source_path(item["path"],
+                                                 self.current_mode.get())
             self.source_path.set(item["path"])
+            if hinweis:
+                messagebox.showwarning(
+                    self._t("dialog.title.invalid_source"), hinweis, parent=win)
             win.destroy()
 
         def _reveal_in_explorer() -> None:
@@ -37313,7 +37348,13 @@ class PS5ConverterGUI:
         # zeigt dafür 12 statt 16 Zeilen – sie ist scrollbar, und mit 16 Zeilen
         # verlangte das Fenster 804px Höhe bei 740px Platz, was den Knöpfen der
         # Listenzeile 41 statt 51 Pixel ließ.
-        win = self._build_modern_toplevel(title, 840, 740, min_width=720, min_height=660)
+        # min_width 820 statt 720: In der Knopfreihe stehen vier Knoepfe
+        # nebeneinander, und die deutschen Beschriftungen sind laenger als
+        # die englischen. Bei 720 px bekam "Auf PS5 schreiben..." 158 statt
+        # der benoetigten 242 px - am 08.09.2026 gemessen, und nur auf
+        # Deutsch: In der englischen Fassung passte es, weshalb es lange
+        # niemandem auffiel.
+        win = self._build_modern_toplevel(title, 840, 740, min_width=820, min_height=660)
 
         self._build_modern_header(win, title, self._t("remote_ini.remote_path_label", path=remote_config_path))
 
@@ -38565,6 +38606,23 @@ class PS5ConverterGUI:
                 _log(self._t("ampr.assets_index_kept"))
                 status_var.set(self._t("ampr.assets_status_kept"))
                 return
+
+            # Ein leerer Ordner ergibt einen gueltigen, aber sinnlosen Index:
+            # 80 Byte Kopf, zwei Hash-Slots, keine Eintraege. Geschrieben
+            # wurde er bis v1.9.10 trotzdem - und zwar ueber eine womoeglich
+            # brauchbare Datei am selben Ort. Die Statuszeile meldete dann
+            # "fertig: 0 Eintraege", was wie Erfolg aussieht.
+            #
+            # Gezaehlt wird nur, ob ueberhaupt **eine** Datei da ist; ein
+            # vollstaendiger Durchlauf waere hier verschwendet.
+            if not any(dateien for _w, _u, dateien in os.walk(root)):
+                messagebox.showwarning(
+                    self._t("ampr_index.window_title"),
+                    self._t("ampr_index.msg_root_empty", root=root),
+                    parent=win)
+                _log(self._t("ampr_index.msg_root_empty", root=root))
+                return
+
             build_btn.config(state="disabled")
             status_var.set(self._t("ampr_index.status_scanning"))
             _log(self._t("ampr_index.log_start", root=root))
@@ -39123,7 +39181,18 @@ class PS5ConverterGUI:
             ftp.cwd(self._PS5_USB_WURZEL)
             ftp.retrlines("LIST", zeilen.append)
         except Exception as exc:
+            # Sichtbar melden, nicht nur ins Entwicklerprotokoll. Eine leere
+            # Liste heisst fuer den Aufrufer "kein Datentraeger eingesteckt",
+            # und genau das stand bis v1.9.10 auch dann da, wenn die
+            # Verbindung abgerissen war oder /mnt gar nicht lesbar. Der
+            # Anwender suchte dann nach einem Stick, der laengst steckte.
             logger.debug("USB-Suche fehlgeschlagen: %s", exc)
+            # Die Meldung darf die Auskunft nicht zu Fall bringen: Diese
+            # Methode wird auch ohne fertig aufgebaute Oberflaeche geprueft.
+            try:
+                self._append_to_log(self._t("klog.usb.list_failed", fehler=exc))
+            except Exception:
+                pass
             return []
 
         gefunden: list[str] = []
@@ -39146,11 +39215,26 @@ class PS5ConverterGUI:
         return sorted(gefunden)
 
     def _ftp_datei_vorhanden(self, ftp, pfad: str) -> bool:
-        """True, wenn die Datei auf der Konsole existiert."""
+        """True, wenn die Datei auf der Konsole existiert.
+
+        **Nur eine Absage der Konsole heisst "gibt es nicht".** Bis v1.9.10
+        stand hier ``except Exception: return False`` - ein abgerissener
+        Draht, eine Zeitueberschreitung oder ein geschlossener Kanal
+        lieferten damit dieselbe Antwort wie eine ordentliche 550er-Absage.
+        Der Aufrufer schloss daraus "kein Autoloader vorhanden" und bot an,
+        den Payload in die Wurzel des Sticks zu legen - obwohl er die Frage
+        gar nicht stellen konnte.
+
+        Ein Verbindungsfehler wird deshalb durchgereicht; wer fragt, muss
+        ihn behandeln.
+        """
+        import ftplib  # noqa: PLC0415
         try:
             ftp.size(pfad)
             return True
-        except Exception:
+        except ftplib.error_perm:
+            # 550 und Verwandte: Die Konsole hat geantwortet, die Datei
+            # gibt es nicht (oder sie ist nicht lesbar).
             return False
 
     def _autoload_ergaenzen(self, inhalt: str, elf_name: str) -> tuple[str, bool]:
@@ -39315,7 +39399,12 @@ class PS5ConverterGUI:
             # dort Unsinn.
             self._append_to_log(
                 self._t("payload.sent_pldmgr", bytes=len(daten)) + "\n")
-        return True, f"{len(daten)} Bytes"
+        # ``_fmt_bytes`` statt f"{len(daten)} Bytes": Die Rueckgabe wird in
+        # uebersetzte Saetze eingesetzt ("Der Installer wurde geschickt
+        # ({groesse})"). Ein fest deutsches "Bytes" mit grossem B stand
+        # damit auch in der englischen Fassung, und eine nackte Byte-Zahl
+        # liest sich bei 26 MB ohnehin schlecht.
+        return True, self._fmt_bytes(len(daten))
 
     def _ensure_ftpsrv(self, host: str) -> int:
         """Sorgt nach Rückfrage dafür, dass ftpsrv auf der Konsole läuft.

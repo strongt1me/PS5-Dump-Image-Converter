@@ -439,7 +439,22 @@ class PayloadAntwortTests(unittest.TestCase):
         gui = self._gui("de")
         ok, text = self._senden(gui, "irgendetwas")
         self.assertTrue(ok)
-        self.assertEqual("10 Bytes", text)
+        self.assertEqual("10 B", text)
+
+    def test_die_groessenangabe_traegt_kein_deutsches_wort(self):
+        """Sie steht auch in der englischen Fassung im Satz.
+
+        Bis v1.9.10 gab die Methode ``f"{len(daten)} Bytes"`` zurueck -
+        deutsch geschrieben, mit grossem B, und genau so erschien es in
+        "The installer was sent (12345 Bytes)". Jetzt kommt die Angabe aus
+        ``_fmt_bytes``: "10 B", "26.0 MB" - Einheiten, die in beiden
+        Sprachen gleich heissen.
+        """
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                gui = self._gui(sprache)
+                _ok, text = self._senden(gui, "irgendetwas")
+                self.assertNotIn("Bytes", text)
 
 
 if __name__ == "__main__":

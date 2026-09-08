@@ -385,6 +385,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'ampr_index.choose_output_title': {'de': 'Ausgabedatei wählen', 'en': 'Choose output file'},
     'ampr_index.filetype_index': {'de': 'AMPR-Index-Datei', 'en': 'AMPR index file'},
     'ampr_index.msg_choose_root': {'de': 'Bitte zuerst einen gültigen Ordner wählen.', 'en': 'Please choose a valid folder first.'},
+    'ampr_index.msg_root_empty': {'de': 'In {root} liegt keine einzige Datei. Ein Index daraus haette keine Eintraege und wuerde eine vorhandene Datei am Zielort ueberschreiben - deshalb wurde nichts geschrieben.', 'en': 'There is not a single file in {root}. An index built from it would have no entries and would overwrite an existing file at the target - nothing was written.'},
     'ampr_index.msg_choose_output': {'de': 'Bitte einen Ausgabepfad angeben.', 'en': 'Please specify an output path.'},
     'ampr_index.build_button': {'de': 'Index bauen', 'en': 'Build index'},
     'ampr_index.status_scanning': {'de': 'Durchsuche Ordner…', 'en': 'Scanning folder…'},
@@ -1431,6 +1432,7 @@ STRINGS: dict[str, dict[str, str]] = {
         'de': 'Unter {pfad} ist kein USB-Datenträger zu sehen. Ist einer angeschlossen und '
               'von der PS5 eingebunden?',
         'en': 'No USB drive visible under {pfad}. Is one attached and mounted by the PS5?'},
+    'klog.usb.list_failed': {'de': '[WARNUNG] Die USB-Datentraeger der Konsole liessen sich nicht auflisten: {fehler}\n', 'en': '[WARNING] Could not list the console USB media: {fehler}\n'},
     'klog.usb.choose_title': {'de': 'USB-Datenträger wählen', 'en': 'Choose USB drive'},
     'klog.usb.choose_prompt': {
         'de': 'Es sind mehrere USB-Datenträger eingebunden. Auf welchen soll {datei}?',
