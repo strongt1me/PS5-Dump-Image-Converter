@@ -150,6 +150,7 @@ from ps5_validator.utils.param_manifest import (
     PARAM_KNOWN_KEYS,
     create_default_manifest,
     create_default_param,
+    dokumenttyp_erkennen,
     load_json as load_param_manifest_json,
     read_title_id_from_dump,
     read_metadata_from_dump,
@@ -28354,7 +28355,11 @@ class PS5ConverterGUI:
             except (OSError, ValueError) as exc:
                 messagebox.showerror(self._t("dialog.title.file_read_failed"), str(exc), parent=self.root)
                 return
-            doc_type = "manifest" if "manifest" in os.path.basename(path).lower() else "param"
+            # Am Inhalt entscheiden, nicht am Namen: Wer eine Manifestdatei
+            # "param.json" nennt, bekam sonst die falschen Vorgaben und beim
+            # Speichern das falsche Format. Der Name zaehlt nur noch, wenn
+            # der Inhalt nichts hergibt.
+            doc_type = dokumenttyp_erkennen(data, path)
             loaded_path = path
         else:
             is_param = messagebox.askyesno(
@@ -28585,7 +28590,33 @@ class PS5ConverterGUI:
             except OSError as exc:
                 messagebox.showerror(self._t("dialog.title.save_failed"), str(exc), parent=win)
                 return
-            messagebox.showinfo(self._t("dialog.title.saved"), self._t("dialog.msg.file_saved", path=save_path), parent=win)
+
+            # Nach dem Schreiben nachsehen, ob die Datei taugt. param_check
+            # war hier schon eingebunden, wurde aber nie gefragt - der Editor
+            # nahm jeden Unsinn an und meldete "gespeichert". Geprueft wird
+            # nur ein param.json; fuer ein manifest.json gibt es diese
+            # Pruefung nicht.
+            #
+            # Gemeldet, nicht verhindert: Die Datei steht schon auf der
+            # Platte, und ein unvollstaendiges param.json ist ein legitimer
+            # Zwischenstand. Der Anwender soll nur wissen, was ihm fehlt.
+            hinweise: list[str] = []
+            if doc_type == "param":
+                try:
+                    befund = param_check.pruefe_datei(save_path)
+                    hinweise = list(befund.fehler) + list(befund.warnungen)
+                except Exception as exc:
+                    logger.debug("param.json nach dem Speichern nicht pruefbar: %s", exc)
+
+            if hinweise:
+                messagebox.showwarning(
+                    self._t("dialog.title.saved"),
+                    self._t("param_manifest.saved_with_findings",
+                            path=save_path,
+                            findings="\n- " + "\n- ".join(hinweise[:12])),
+                    parent=win)
+            else:
+                messagebox.showinfo(self._t("dialog.title.saved"), self._t("dialog.msg.file_saved", path=save_path), parent=win)
             win.destroy()
 
         list_btn_row = tk.Frame(body, bg=c["bg_main"])
@@ -34810,7 +34841,14 @@ class PS5ConverterGUI:
             return "" if roh in ("", "–", "-") else roh
 
         title_id, titel, version = _wert("title_id"), _wert("title"), _wert("version")
-        hat_ppsa = bool(re.fullmatch(r"[A-Z]{4}\d{5}", title_id))
+        # Vier Grossbuchstaben und fuenf Ziffern treffen auch CUSA00000 und
+        # PUSA00000 - das sind PS4-Kennungen. Der Wert heisst nicht umsonst
+        # hat_ppsa: build_presets baut daraus PS5-Namen ("Ohne gueltige
+        # PPSA-Title-ID bleiben alle Presets leer"), und die Einschaetzung
+        # sprang bei einem PS4-Dump auf gruen. Gefragt ist deshalb die
+        # gepflegte Liste der PS5-Kennungen aus ps4_werkzeug, nicht die Form.
+        hat_ppsa = bool(re.fullmatch(r"[A-Z]{4}\d{5}", title_id)) and \
+            title_id.startswith(ps4_werkzeug.PS5_KENNUNGEN)
         einschaetzung = dump_rename_confidence(hat_ppsa, bool(titel), bool(version))
         vorschlaege = dump_rename_presets(title_id, titel, version, hat_ppsa, bool(version))
         aktueller_name = os.path.basename(ordner)
@@ -36808,19 +36846,70 @@ class PS5ConverterGUI:
             return
 
         anlauf: dict[str, Any] = {"cwd": os.path.dirname(pfad)}
+        protokolldatei = ""
+        offen = None
         if os.name == "nt":
             # CREATE_NEW_CONSOLE - ohne eigene Konsole saehe niemand die
             # Adresse, die der Host nennt.
             anlauf["creationflags"] = 0x00000010
+        else:
+            # Unter Linux und macOS gibt es diese Konsole nicht: Der Host
+            # lief dort unsichtbar, und die Adresse, die er beim Start nennt,
+            # sah niemand. Seine Ausgabe geht deshalb in eine Datei neben dem
+            # Skript, und der Anwender erfaehrt, wo sie liegt.
+            protokolldatei = os.path.join(os.path.dirname(pfad),
+                                          "webkit_host.log")
+            try:
+                offen = open(protokolldatei, "w", encoding="utf-8",
+                             errors="replace")
+                anlauf["stdout"] = offen
+                anlauf["stderr"] = subprocess.STDOUT
+            except OSError as exc:
+                logger.debug("WebKit-Protokoll nicht anlegbar: %s", exc)
+                protokolldatei = ""
         try:
-            subprocess.Popen(befehl, **anlauf)
+            vorgang = subprocess.Popen(befehl, **anlauf)
         except Exception as exc:
+            if offen is not None:
+                offen.close()
             messagebox.showerror(self._t("webkit.title"),
                                  self._t("webkit.host_failed", fehler=exc),
                                  parent=eltern)
             return
+
+        # ``Popen`` gelingt schon, wenn der Prozess angelegt werden konnte.
+        # Stirbt er gleich darauf - fehlendes Modul, belegter Port -, stand
+        # bis v1.9.10 trotzdem "[OK] gestartet" im Protokoll. Ein kurzer
+        # Blick danach kostet nichts und trennt die beiden Faelle.
+        try:
+            code = vorgang.wait(timeout=1.2)
+        except subprocess.TimeoutExpired:
+            code = None                      # laeuft noch - so soll es sein
+        except Exception:
+            code = None
+        if offen is not None:
+            offen.close()
+        if code is not None and code != 0:
+            grund = ""
+            if protokolldatei and os.path.isfile(protokolldatei):
+                try:
+                    with open(protokolldatei, encoding="utf-8",
+                              errors="replace") as fh:
+                        grund = fh.read().strip()[-400:]
+                except OSError:
+                    grund = ""
+            messagebox.showerror(
+                self._t("webkit.title"),
+                self._t("webkit.host_failed",
+                        fehler=grund or self._t("webkit.host_exit", code=code)),
+                parent=eltern)
+            return
+
         self._append_to_log(self._t("webkit.host_started",
                                     datei=os.path.basename(pfad)))
+        if protokolldatei:
+            self._append_to_log(self._t("webkit.host_logfile",
+                                        pfad=protokolldatei))
 
     def _webkit_ftp_port(self, ip: str) -> int:
         """Der erste FTP-Port der Konsole, auf dem jemand antwortet."""

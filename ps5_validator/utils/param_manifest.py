@@ -314,6 +314,41 @@ def load_json(path: str) -> "OrderedDict[str, object]":
         return json.load(f, object_pairs_hook=OrderedDict)
 
 
+def dokumenttyp_erkennen(daten: dict, dateiname: str = "") -> str:
+    """Ist das ein ``param.json`` oder ein ``manifest.json``?
+
+    Entschieden wird am **Inhalt**, nicht am Dateinamen. Die beiden
+    Dokumentarten teilen sich zwar einige Schlüssel, haben aber jeweils
+    eigene: ``contentId``/``applicationCategoryType``/``contentVersion``
+    stehen nur in einem ``param.json``, ``applicationData``/
+    ``bootAnimation``/``reactNativePlaystationVersion`` nur in einem
+    ``manifest.json``.
+
+    Der Dateiname zählt nur, wenn der Inhalt nichts hergibt - bei einem
+    leeren oder ganz ungewöhnlichen Dokument. Bis v1.9.10 zählte
+    **ausschließlich** er: Wer eine Manifestdatei ``param.json`` nannte
+    oder umgekehrt, bekam die falschen Vorgaben, die falschen
+    Erklärtexte und beim Speichern das falsche Format.
+
+    Args:
+        daten:     Das geladene Dokument.
+        dateiname: Der Name, unter dem es lag - nur als Rückfallebene.
+
+    Returns:
+        ``"manifest"`` oder ``"param"``.
+    """
+    vorhanden = {str(k) for k in (daten or {})}
+    nur_param = set(PARAM_KNOWN_KEYS) - set(MANIFEST_KNOWN_KEYS)
+    nur_manifest = set(MANIFEST_KNOWN_KEYS) - set(PARAM_KNOWN_KEYS)
+    treffer_param = len(vorhanden & nur_param)
+    treffer_manifest = len(vorhanden & nur_manifest)
+    if treffer_manifest > treffer_param:
+        return "manifest"
+    if treffer_param > treffer_manifest:
+        return "param"
+    return "manifest" if "manifest" in os.path.basename(dateiname).lower() else "param"
+
+
 def save_param_json(data: dict, path: str) -> None:
     """Schreibt ein param.json-Dokument: UTF-8 ohne BOM, 2-Leerzeichen-Einrückung."""
     _save_json(data, path, indent=2)

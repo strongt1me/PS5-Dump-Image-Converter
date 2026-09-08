@@ -77,5 +77,43 @@ class ParamManifestTests(unittest.TestCase):
         self.assertEqual(loaded["titleId"], "PPSA00003")
 
 
+class DokumenttypTests(unittest.TestCase):
+    """Der Dokumenttyp entscheidet sich am Inhalt, nicht am Dateinamen.
+
+    Bis v1.9.10 stand im Editor
+    ``doc_type = "manifest" if "manifest" in basename.lower() else "param"``.
+    Wer eine Manifestdatei ``param.json`` nannte - oder eine param.json in
+    einem Ordner namens ``manifest`` liegen hatte -, bekam die falschen
+    Vorgabefelder, die falschen Erklaertexte und beim Speichern das
+    falsche Format.
+    """
+
+    def test_param_wird_am_inhalt_erkannt(self):
+        from ps5_validator.utils.param_manifest import dokumenttyp_erkennen
+        daten = {"titleId": "PPSA00000", "contentId": "IV0000-PPSA00000_00-X",
+                 "applicationCategoryType": 0}
+        # Der Name luegt absichtlich.
+        self.assertEqual("param", dokumenttyp_erkennen(daten, "manifest.json"))
+
+    def test_manifest_wird_am_inhalt_erkannt(self):
+        from ps5_validator.utils.param_manifest import dokumenttyp_erkennen
+        daten = {"applicationName": "Spiel", "applicationData": {},
+                 "bootAnimation": True}
+        self.assertEqual("manifest", dokumenttyp_erkennen(daten, "param.json"))
+
+    def test_die_vorgabedokumente_erkennen_sich_selbst(self):
+        """Anker: Waeren die Schluesselmengen deckungsgleich, entschiede
+        immer der Dateiname und die Pruefung darueber waere wertlos.
+        """
+        from ps5_validator.utils.param_manifest import dokumenttyp_erkennen
+        self.assertEqual("param", dokumenttyp_erkennen(create_default_param(), ""))
+        self.assertEqual("manifest", dokumenttyp_erkennen(create_default_manifest(), ""))
+
+    def test_ohne_aussagekraft_zaehlt_der_name(self):
+        from ps5_validator.utils.param_manifest import dokumenttyp_erkennen
+        self.assertEqual("manifest", dokumenttyp_erkennen({}, "mein_manifest.json"))
+        self.assertEqual("param", dokumenttyp_erkennen({}, "irgendwas.json"))
+
+
 if __name__ == "__main__":
     unittest.main()

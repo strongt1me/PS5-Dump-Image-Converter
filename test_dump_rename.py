@@ -44,5 +44,36 @@ class DumpRenameTests(unittest.TestCase):
         self.assertEqual(presets["PPSA + Title + Version"], "PPSA01234 Spider-Man")
 
 
+class Ps4KennungTests(unittest.TestCase):
+    """Eine PS4-Kennung darf nicht als PPSA durchgehen.
+
+    Das Fenster prueft die Title-ID mit ``re.fullmatch(r"[A-Z]{4}d{5}")``.
+    Diese Form trifft auch ``CUSA00000`` und ``PUSA00000`` - PS4-Kennungen.
+    Der Wert heisst aber ``hat_ppsa``, und ``build_presets`` baut daraus
+    PS5-Namen ("Ohne gueltige PPSA-Title-ID bleiben alle Presets leer").
+    Bei einem PS4-Dump sprang die Einschaetzung deshalb auf gruen und das
+    Fenster bot drei Namen an, die es gar nicht anbieten wollte.
+
+    Geprueft wird hier die Liste, an der das Fenster jetzt haengt - der
+    Quelltextabgleich steht in test_werkzeugfeinheiten.
+    """
+
+    def test_die_liste_kennt_die_ps5_kennungen(self):
+        from ps5_validator.utils.ps4_werkzeug import PS5_KENNUNGEN
+        for kennung in ("PPSA", "PPSS", "PPUS", "PPJP"):
+            self.assertIn(kennung, PS5_KENNUNGEN)
+
+    def test_die_liste_kennt_keine_ps4_kennungen(self):
+        from ps5_validator.utils.ps4_werkzeug import PS5_KENNUNGEN
+        for kennung in ("CUSA", "PUSA"):
+            self.assertNotIn(kennung, PS5_KENNUNGEN)
+
+    def test_ohne_ppsa_bleiben_die_vorschlaege_leer(self):
+        """Anker: Genau darauf stuetzt sich die Behebung."""
+        leer = build_presets("CUSA12345", "Spiel", "01.00", False, True)
+        self.assertEqual({""}, set(leer.values()))
+        self.assertEqual(CONFIDENCE_FAILED, compute_confidence(False, True, True))
+
+
 if __name__ == "__main__":
     unittest.main()
