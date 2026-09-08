@@ -2,7 +2,87 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.10):** Beim Durchtesten aller acht Aufgaben und aller Werkzeugfenster kamen vier Fehler heraus, die vorher niemand gesehen hatte – darunter zwei, die Aufgabe 7 betrafen: Sie ließ sich ohne Zielangabe gar nicht starten, und „Asset-Pack herausnehmen“ baute das Pack im selben Lauf sofort wieder auf.
+> **Kurz zum aktuellen Stand (v1.9.11):** Eine große Durchsicht: 41 Punkte aus einer offenen Befundliste abgearbeitet, dazu sieben Fehler, die dort gar nicht standen. Der größte davon: Auf drei Konvertierungswegen wurden AMPR EMU und BACKPORT stillschweigend übergangen.
+
+---
+
+## v1.9.11 – 08.09.2026
+
+Diese Fassung bringt keine neuen Funktionen. Sie ist das Ergebnis einer
+Durchsicht von 57 offenen Punkten aus einer älteren Befundliste – elf davon
+waren längst erledigt, 41 wirklich noch da. Sieben weitere Fehler kamen dabei
+heraus, die in der Liste gar nicht standen.
+
+### AMPR EMU und BACKPORT wurden auf drei Wegen übergangen
+
+Der schwerste Fund. Gemessen wurde jeder Weg zweimal – einmal ohne und einmal
+mit gesetzten Kästchen:
+
+| Weg | ohne | mit |
+| --- | --- | --- |
+| `.ffpkg` → Dump-Ordner | 191 Dateien | 191 Dateien |
+| `.exFAT` → `.ffpfsc` | keine Spur | keine Spur |
+| `.ffpkg` → `.ffpfsc` | keine Spur | keine Spur |
+
+Zum Vergleich: Bei `.exFAT` → Dump-Ordner werden aus 191 Dateien **200**.
+
+Der erste Fall **konnte** einbauen und tat es nur nicht – das Gegenstück für
+die `.exFAT` macht es seit jeher. Nachgeholt.
+
+Die beiden anderen hüllen das Abbild als Ganzes in den Container und öffnen
+seinen Inhalt nie; dort *kann* nichts eingebaut werden. Das Programm sagt es
+jetzt vor dem Start und nennt den Umweg über den Dump-Ordner – statt ein
+Backup ohne AMPR EMU zu liefern, das man für eines mit hält.
+
+### Vier Knopfreihen waren zusammengedrückt
+
+Eine neue Prüfung zieht **alle zwanzig** Werkzeugfenster auf ihre kleinste
+Größe und misst nach. Sie fand auf Anhieb vier Reihen, von denen nur eine
+gemeldet war:
+
+| Fenster | war | ist |
+| --- | --- | --- |
+| Param-/Manifest-Editor | 12 px | 42 px |
+| SELF-Inspektor | 10 px | 42 px |
+| Dump Rename | 8 px | 42 px |
+| KLOG (Breite) | 115 px | 135 px |
+
+Dazu ein fünfter, der **nur auf Deutsch** auftrat: „Auf PS5 schreiben…“ bekam
+im ShadowMount+- und MicroMount-Editor 158 statt 242 px. Die englischen
+Beschriftungen sind kürzer – deshalb ist es nie jemandem aufgefallen.
+
+### Wenn etwas misslingt, sagt es das Programm
+
+Der häufigste Fund war immer derselbe: Ein Aufruf scheitert, die Oberfläche
+geht wortlos in den Ruhezustand, und der Knopf sieht kaputt aus.
+
+* **KLOG** deutete jeden Verbindungsabbruch als „Datei nicht vorhanden“ – und
+  bot dann an, den Payload in die Stickwurzel zu legen, obwohl er die Frage
+  gar nicht stellen konnte.
+* **Die Bibliothek** überging unlesbare und verschwundene Suchordner
+  stillschweigend; man sah nur eine kürzere Trefferliste.
+* **FileZilla** verwarf eine abgelehnte Dateiauswahl kommentarlos, und eine
+  misslungene Installation stand nur im Protokoll.
+* **Der Autoloader** kehrte bei einem leeren Ordner wortlos zurück.
+* **Der WebKit-USB-Weg** zeigte Fehler nur im Meldungsfenster – nach dem
+  Wegklicken waren sie verloren, auch für den Diagnosebericht.
+
+### Kleineres, das trotzdem störte
+
+* Der **Param-/Manifest-Editor** riet den Dokumenttyp am Dateinamen. Wer eine
+  Manifestdatei `param.json` nannte, bekam die falschen Felder und beim
+  Speichern das falsche Format. Er entscheidet jetzt am Inhalt – und prüft
+  nach dem Speichern, was er geschrieben hat.
+* **Dump Rename** hielt `CUSA00000` für eine PS5-Kennung und bot PS4-Dumps
+  Namensvorschläge an, die es gar nicht anbieten will. Es lehnte außerdem eine
+  reine Groß-/Kleinschreibungsänderung mit „existiert bereits“ ab, und nach
+  dem Umbenennen zeigte das Quellfeld weiter auf den alten Namen.
+* Der **WebKit-Host** lief unter Linux und macOS unsichtbar – die Adresse, die
+  er nennt, sah niemand. Und er meldete „gestartet“, auch wenn er sofort
+  wieder starb.
+* Der **AMPR-Index-Builder** schrieb aus einem leeren Ordner einen Index mit
+  null Einträgen – über eine womöglich brauchbare Datei am selben Ort.
+* Das **Handbuch** hat 38 Seiten, nicht 30.
 
 ---
 
