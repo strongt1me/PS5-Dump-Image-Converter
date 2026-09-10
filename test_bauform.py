@@ -57,7 +57,7 @@ def _gui(bauform: str) -> APP.PS5ConverterGUI:
     gui._ensure_param_json = lambda _s: True
     gui._mkpfs_pruef_argumente = lambda: []
     gui._wait_for_pending_mkpfs_background = lambda _p: None
-    gui._cleanup_stale_mkpfs_output = lambda _p: None
+    gui._cleanup_stale_mkpfs_output = lambda _p: True
     gui._decide_pack_output_staging = lambda p: p
     gui._finalize_staged_pack_output = lambda p, _f: p
     gui._seed_preview_cache_from_source = lambda *_a: None

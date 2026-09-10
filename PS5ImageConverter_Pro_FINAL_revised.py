@@ -449,7 +449,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.12"
+APP_VERSION = "v1.9.13"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1945,8 +1945,15 @@ class ProgressEngine:
             f"[{self._fmt_units(self._payload_done, label)}/{self._fmt_units(self._payload_total, label)}]"
         )
 
-    def begin_validate(self, description: str = "Validierung...") -> None:
-        """Beginnt die Validierungs-Phase (5 %)."""
+    def begin_validate(self, description: str) -> None:
+        """Beginnt die Validierungs-Phase (5 %).
+
+        ``description`` gehoert uebersetzt uebergeben - siehe
+        :meth:`begin_prepare`. Die Vorgabe "Validierung..." ist aus
+        demselben Grund entfallen: Sie stand bis zum 10.09.2026 in
+        dreizehn Aufrufen fest auf Deutsch, auch in der englischen
+        Oberflaeche.
+        """
         self._phase = "validate"
         self._status_text = str(description)
         payload_end = self._task_start() + self.TASK_WEIGHT * (self.PHASE_PREPARE + self.PHASE_PAYLOAD)
@@ -11090,9 +11097,29 @@ class PS5ConverterGUI:
 
         if os.path.normpath(preferred).lower() != chosen_dir.lower():
             self._append_to_log(self._t('log.auto.0031', v0=preferred, v1=chosen_dir))
-            if hasattr(self, "temp_path"):
-                self.temp_path.set(chosen_dir)
-            self._save_setting("temp_dir", chosen_dir)
+            # Die Einstellung nur nachziehen, wenn dieser Aufruf ueberhaupt
+            # den Arbeitsordner meinte.
+            #
+            # Sechs Aufrufer geben mit ``dir_path`` ausdruecklich den
+            # **Zielordner** mit - dort soll entpackt werden, weil das Ergebnis
+            # ohnehin dorthin gehoert. Ist ausgerechnet der gerade nicht
+            # nutzbar (voll, schreibgeschuetzt, Netzlaufwerk weg), griff der
+            # Ausweichweg und schrieb dessen Ergebnis als neuen Arbeitsordner
+            # in die Einstellungen. Damit war die Angabe des Anwenders
+            # ueberschrieben - durch einen Vorgang, der mit ihr nichts zu tun
+            # hatte.
+            #
+            # Die Folge trifft erst spaeter und woanders: Faellt der Ausweich
+            # auf das Systemlaufwerk, arbeitet **jede** weitere Aufgabe dort.
+            # Auf diesem Rechner sind das 40 GB frei gegen 3454 GB auf dem
+            # eingestellten Laufwerk - ein grosser Titel scheitert damit an
+            # vollem Datentraeger, und niemand weiss, warum.
+            #
+            # Gemeldet wird das Ausweichen weiterhin, in beiden Faellen.
+            if dir_path is None:
+                if hasattr(self, "temp_path"):
+                    self.temp_path.set(chosen_dir)
+                self._save_setting("temp_dir", chosen_dir)
 
         self._remember_exit_cleanup_path(created_dir)
         return created_dir
@@ -16151,7 +16178,7 @@ class PS5ConverterGUI:
 
     def _set_progress(
         self,
-        value: float,
+        value: float | None,
         show_percent: bool = True,
         size_text: str | None = None,
         percent_value: float | None = None,
@@ -16159,7 +16186,16 @@ class PS5ConverterGUI:
         """Setzt den Fortschrittsbalken und Zusatzinfos thread-sicher.
 
         Args:
-            value:        Prozentwert (0–100).
+            value:        Prozentwert (0–100). **None lässt Balken und
+                          Prozentzahl unangetastet** und setzt nur
+                          ``size_text``. Das braucht jeder Melder, der einen
+                          Teilschritt beschreibt, aber nicht den
+                          Gesamtfortschritt kennt: Ein roher Teilwert direkt
+                          auf dem Balken springt gegen den Takt aus
+                          ``_update_progress_gui`` an - am 09.09.2026 beim
+                          Anwender 567 Rücksprünge in einem Lauf, bis zu
+                          100 % → 0 %. Solche Melder setzen stattdessen
+                          ``task_progress`` über ``_teilschritt_melden``.
             show_percent: Ob der Prozentwert angezeigt werden soll.
             size_text:    Text für das Größen-Label. None = Label nicht ändern.
                           Leerer String "" löscht das Label.
@@ -16168,6 +16204,13 @@ class PS5ConverterGUI:
         """
         def _update() -> None:
             visual_value = value if percent_value is None else percent_value
+            if visual_value is None:
+                # Nur der Text - Balken und Prozentzahl bleiben, wie sie sind.
+                if size_text is not None and hasattr(self, "size_label"):
+                    if str(self.size_label.cget("text")) != size_text:
+                        self.size_label.config(text=size_text)
+                        self._schedule_caption_redraw(self._redraw_content_captions)
+                return
             if hasattr(self, "progress_var"):
                 self.progress_var.set(visual_value)
             if hasattr(self, "percent_label"):
@@ -16188,6 +16231,101 @@ class PS5ConverterGUI:
                     self._schedule_caption_redraw(self._redraw_content_captions)
 
         self.root.after(0, _update)
+
+    #: Ab wie wenig freiem Platz ein Datentraeger in der Fehlermeldung als
+    #: Ursache in Frage kommt. Grosszuegig: Ein Packlauf, der hier scheitert,
+    #: hatte den Platz vorher noch - was uebrig blieb, sagt wenig darueber,
+    #: wie eng es mittendrin war.
+    _PLATZ_VERDACHT_BYTES = 2 * 1024 ** 3
+
+    def _fehlergrund_ermitteln(self, verification: dict[str, Any] | None) -> str:
+        """Sammelt, was ueber den Fehlschlag **tatsaechlich bekannt** ist.
+
+        Die Fehlermeldung nannte bis zum 10.09.2026 zwei Beispiele - "mkpfs
+        Exit-Code oder Disk-Full-Meldung" -, ohne eines davon geprueft zu
+        haben. Der Anwender las die beiden Beispiele zusammen mit der Zeile
+        "[WARNUNG] mkpfs beendet mit Exit-Code 1" aus dem Protokoll als einen
+        Befund und suchte einen vollen Datentraeger. Es gab keinen.
+
+        Hier steht nur, was gemessen ist: der Rueckgabewert des Packwerkzeugs,
+        wenn einer vorliegt, der Befund der Ausgabepruefung, und der freie
+        Platz - aber nur dann, wenn er wirklich knapp ist.
+
+        Returns:
+            Ein mehrzeiliger Text, oder "" wenn sich nichts sagen laesst.
+        """
+        zeilen: list[str] = []
+
+        code = getattr(self, "_letzter_mkpfs_exitcode", None)
+        if isinstance(code, int) and code != 0:
+            zeilen.append(self._t("fehlergrund.mkpfs_code", code=code))
+
+        if isinstance(verification, dict):
+            detail = str(verification.get("detail", "") or "").strip()
+            if detail:
+                zeilen.append(self._t("fehlergrund.pruefung", detail=detail))
+
+        # Der Platz - gemessen, nicht geraten. Beide Orte, denn ein Packlauf
+        # braucht sie gleichzeitig.
+        for schluessel, pfad in (
+            ("fehlergrund.platz_ziel", str(self.dest_path.get()).strip()
+             if hasattr(self, "dest_path") else ""),
+            ("fehlergrund.platz_temp", self._get_runtime_temp_dir()),
+        ):
+            if not pfad or not os.path.isdir(pfad):
+                continue
+            try:
+                frei = shutil.disk_usage(pfad).free
+            except OSError:
+                continue
+            if frei < self._PLATZ_VERDACHT_BYTES:
+                zeilen.append(self._t(schluessel, path=pfad,
+                                      size=self._fmt_bytes(int(frei))))
+
+        return "\n".join("- " + z for z in zeilen)
+
+    def _teilschritt_melden(self, schluessel: str, anteil: float,
+                            spanne: float) -> None:
+        """Bildet den Rohfortschritt eines Teilschritts in den Gesamtbalken ab.
+
+        Ein Teilschritt - die Arbeitskopie, das Packen der Asset-Bänder - kennt
+        seinen eigenen Fortschritt von 0 bis 100, aber nicht, wo im Gesamtlauf
+        er steht. Wer diesen Rohwert direkt auf den Balken schreibt, kämpft
+        gegen ``_update_progress_gui``: Der Takt setzt 80 ms später wieder den
+        Gesamtwert, und der Balken zappelt zwischen beiden hin und her.
+
+        Am 09.09.2026 in den Diagnoseberichten des Anwenders gemessen -
+        26 Rücksprünge in 45 s, 284 in 1769 s, **567 in 4453 s**, schlimmstenfalls
+        von 100 % auf 0 %. In v1.9.6 war der Befund noch "keine Auffälligkeit";
+        beide Melder sind erst danach dazugekommen.
+
+        Der Weg hier ist derselbe, den jeder andere Schritt geht: ``task_progress``
+        setzen und den Takt die Anzeige machen lassen. Er glättet, hält die
+        Reihenfolge ein und läuft nie rückwärts.
+
+        Args:
+            schluessel: Benennt den Teilschritt. Bei einem Wechsel wird der
+                aktuelle Stand als neue Basis genommen - so bleibt der Melder
+                auch dort richtig, wo derselbe Schritt mitten im Lauf noch
+                einmal vorkommt (``_integration_anwenden`` ruft ihn in den
+                mehrstufigen Wegen bei über 90 %).
+            anteil: Der eigene Fortschritt des Teilschritts, 0 bis 100.
+            spanne: Wie viele Punkte des Gesamtbalkens er höchstens einnimmt.
+        """
+        merker = getattr(self, "_teilschritt_merker", None)
+        if not isinstance(merker, dict) or merker.get("schluessel") != schluessel:
+            merker = {
+                "schluessel": schluessel,
+                "basis": float(getattr(self, "task_progress", 0.0) or 0.0),
+            }
+            self._teilschritt_merker = merker
+        try:
+            roh = max(0.0, min(100.0, float(anteil)))
+        except (TypeError, ValueError):
+            return
+        ziel = float(merker["basis"]) + roh * float(spanne) / 100.0
+        if ziel > float(getattr(self, "task_progress", 0.0) or 0.0):
+            self.task_progress = min(ziel, 99.5)
 
     def _reset_ui_after_task(self) -> None:
         """Setzt die UI-Elemente nach Abschluss oder Abbruch zurück.
@@ -16612,6 +16750,10 @@ class PS5ConverterGUI:
         self.task_current_step  = 0
         self.task_step_ends     = []
         self._zuletzt_angezeigt = 0.0
+        # Die Basis der Teilschritt-Melder gehoert zum vorigen Lauf. Bliebe
+        # sie stehen, rechnete die Arbeitskopie des naechsten Laufs auf dem
+        # Endstand des vorigen weiter und der Balken stuende sofort bei 95 %.
+        self._teilschritt_merker = None
         self._batch_von, self._batch_bis = 0.0, 100.0
         self._uhr_basis = None
         self._uhr_letzter_wert = -1.0
@@ -19058,19 +19200,63 @@ class PS5ConverterGUI:
         self._pending_mkpfs_engine_done = None
         self._pending_mkpfs_target_path = ""
 
-    def _cleanup_stale_mkpfs_output(self, target_path: str) -> None:
-        """Entfernt alte MkPFS-Zielartefakte vor einem Resume-Neustart."""
+    #: Wie oft ein belegtes Zielartefakt neu versucht wird, und wie lange
+    #: dazwischen gewartet wird.
+    #:
+    #: Windows gibt eine Datei oft erst Sekundenbruchteile nach dem Schliessen
+    #: frei - ein Virenscanner liest sie noch, der Indexdienst greift zu. Ein
+    #: einzelner Versuch traf genau in dieses Fenster. Dasselbe Vorgehen wie
+    #: beim Schreiben der Einstellungsdatei, das aus demselben Grund sechsmal
+    #: probiert.
+    _STALE_VERSUCHE = 6
+    _STALE_PAUSE_S = 0.25
+
+    def _cleanup_stale_mkpfs_output(self, target_path: str) -> bool:
+        """Entfernt alte MkPFS-Zielartefakte vor einem Resume-Neustart.
+
+        Bis zum 10.09.2026 meldete diese Methode einen Fehlschlag nur als
+        Warnung und lief weiter. Was danach kam, war der Fehler, den der
+        Anwender zu sehen bekam: mkpfs stiess auf dieselbe belegte Datei und
+        brach mit einer Meldung ab, die mit der Ursache nichts zu tun hatte -
+        am 10.09.2026 in Aufgabe 3 gemessen, ``PermissionError`` aus dem
+        Aufraeumen der Packmaschine, waehrend im Protokoll zwei Zeilen
+        darueber schon "Altes Zielartefakt konnte nicht entfernt werden"
+        stand.
+
+        Jetzt wird erst mehrfach versucht und, wenn es dabei bleibt, ehrlich
+        abgebrochen. Ein Lauf, der hier nicht aufraeumen kann, scheitert
+        ohnehin - nur eben spaeter und mit einer irrefuehrenden Meldung.
+
+        Returns:
+            True, wenn nichts mehr im Weg liegt.
+        """
+        alles_frei = True
         for stale_path in (target_path, target_path + ".tmp"):
             if not stale_path:
                 continue
-            try:
-                if os.path.isfile(stale_path):
+            letzter: OSError | None = None
+            for versuch in range(self._STALE_VERSUCHE):
+                try:
+                    if not os.path.isfile(stale_path):
+                        letzter = None
+                        break
                     os.remove(stale_path)
                     self._append_to_log(self._t('log.auto.0068', v0=stale_path))
-            except FileNotFoundError:
-                continue
-            except OSError as exc:
-                self._append_to_log(self._t('log.auto.0069', v0=stale_path, v1=exc))
+                    letzter = None
+                    break
+                except FileNotFoundError:
+                    letzter = None
+                    break
+                except OSError as exc:
+                    letzter = exc
+                    if versuch < self._STALE_VERSUCHE - 1:
+                        time.sleep(self._STALE_PAUSE_S)
+            if letzter is not None:
+                self._append_to_log(
+                    self._t('log.auto.0069', v0=stale_path, v1=letzter))
+                self._append_to_log(self._t('log.stale_blockiert', path=stale_path))
+                alles_frei = False
+        return alles_frei
 
     def _emit_processing_keepalive(self) -> None:
         """Schreibt einen GUI-Keepalive ohne Worker-Output zu fingieren."""
@@ -19575,6 +19761,12 @@ class PS5ConverterGUI:
         # monitor_active bleibt True – kein Stop zwischen Schritten
 
         exit_code = result.get("exit_code", -1)
+        # Fuer die Fehlermeldung am Ende der Aufgabe aufheben. Sie nannte bis
+        # zum 10.09.2026 "z. B. mkpfs Exit-Code oder Disk-Full-Meldung" - zwei
+        # Vermutungen, von denen keine geprueft war. Der Anwender las das als
+        # Befund ("Code 1 Disc-Full") und suchte einen vollen Datentraeger,
+        # den es nicht gab.
+        self._letzter_mkpfs_exitcode = int(exit_code) if isinstance(exit_code, int) else -1
         if exit_code != 0 and self.is_running:
             self._append_to_log(self._t('log.auto.0074', v0=exit_code))
 
@@ -20008,6 +20200,12 @@ class PS5ConverterGUI:
                     error_message = self._t("dialog.msg.ffpkg_build_failed")
                 else:
                     error_message = self._t("dialog.msg.conversion_failed")
+                # Was wirklich bekannt ist, kommt darunter - statt der beiden
+                # geratenen Beispiele, die frueher im Text selbst standen.
+                gemessen = self._fehlergrund_ermitteln(verification_result)
+                if gemessen:
+                    error_message += "\n\n" + self._t(
+                        "dialog.msg.fehlergrund_kopf") + "\n" + gemessen
                 if report_path:
                     error_message += f"\n\nBericht:\n{report_path}"
                 self.root.after(0, lambda message=error_message, titel=fehler_titel:
@@ -20592,7 +20790,7 @@ class PS5ConverterGUI:
                     """Punktwert innerhalb von Schritt 3 (0.0 bis 1.0)."""
                     return _von + (_bis - _von) * max(0.0, min(1.0, anteil))
                 self.task_progress = max(self.task_progress, _s3(0.0))
-                self.progress_engine.begin_validate("UFS2-Struktur im Temp-Staging schreibgeschützt prüfen...")
+                self.progress_engine.begin_validate(self._t("progress.validate.ufs2_staging"))
                 candidate_verification = self._validate_ffpkg_artifact(stage_path)
                 self.task_progress = max(self.task_progress, _s3(0.14))
                 attempt_diagnostic["staging_validation"] = candidate_verification
@@ -20655,7 +20853,7 @@ class PS5ConverterGUI:
                     self.task_current_step = 2
                     continue
 
-                self.progress_engine.begin_validate("UFS2-Struktur nach Zielvolume-Transfer schreibgeschützt prüfen...")
+                self.progress_engine.begin_validate(self._t("progress.validate.ufs2_after_transfer"))
                 target_verification = self._validate_ffpkg_artifact(transfer_path)
                 self.task_progress = max(self.task_progress, _s3(1.0))
                 attempt_diagnostic["target_validation"] = target_verification
@@ -20920,7 +21118,7 @@ class PS5ConverterGUI:
             _text_phase3 = self._format_phase_status("Abschlussprüfung läuft...",
                                                      prefer_current_label=False)
             self.root.after(0, lambda t=_text_phase3: self.status_label.config(text=t))
-            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.begin_validate(self._t("progress.validate.default"))
             self.progress_engine.commit_task()
         return ok
 
@@ -20959,7 +21157,7 @@ class PS5ConverterGUI:
             # _integration_erledigt, dass er schon gelaufen ist.
             if not self._integration_anwenden(final_output):
                 return False
-            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.begin_validate(self._t("progress.validate.default"))
             self.progress_engine.commit_task()
         return ok
 
@@ -20988,7 +21186,7 @@ class PS5ConverterGUI:
                 return False
             ok = self._create_exfat_from_folder(temp_dump, final_output, pct_start=60.0, pct_end=98.0)
             if ok:
-                self.progress_engine.begin_validate("Validierung...")
+                self.progress_engine.begin_validate(self._t("progress.validate.default"))
                 self.progress_engine.commit_task()
             return ok
         finally:
@@ -21260,8 +21458,16 @@ class PS5ConverterGUI:
             extra={"stage": "pack_folder_exfat_running", "tmp_dir": "", "temp_exfat": ""},
         )
 
-        _outer_desc = "unkomprimierter" if uncompressed else "komprimierter"
-        self._append_to_log(self._t('log.auto.0117', v0=_outer_desc))
+        # Dieser Weg hat KEINE innere Ebene. Bis zum 10.09.2026 stand hier
+        # log.auto.0117 - derselbe Text wie im zweistufigen Weg, also
+        # "Schritt 1 / 2 ... inneres PFS ... Nested-PFS-Pipeline". An einem
+        # echten Lauf gemessen: ausgefuehrt wurde ein einziges
+        # "mkpfs pack folder --compress" direkt in die Zieldatei. Wer das
+        # Protokoll las, suchte den zweiten Schritt, den es nie gab.
+        _outer_desc = self._t("log.aussen_unkomprimiert" if uncompressed
+                              else "log.aussen_komprimiert")
+        self._append_to_log(
+            self._t('log.pack_folder_exfat_einstufig', v0=_outer_desc))
         set_status(self._t("status.pack_folder_exfat"))
 
         # Ein Schritt statt zwei - die Anzeige darf keine Phase erwarten, die
@@ -21286,7 +21492,8 @@ class PS5ConverterGUI:
         )
 
         self._wait_for_pending_mkpfs_background(final_output)
-        self._cleanup_stale_mkpfs_output(final_output)
+        if not self._cleanup_stale_mkpfs_output(final_output):
+            return False
         pack_out = self._decide_pack_output_staging(final_output)
         ok = self._execute_mkpfs(
             [
@@ -21409,7 +21616,8 @@ class PS5ConverterGUI:
         )
 
         self._wait_for_pending_mkpfs_background(final_output)
-        self._cleanup_stale_mkpfs_output(final_output)
+        if not self._cleanup_stale_mkpfs_output(final_output):
+            return False
         pack_out = self._decide_pack_output_staging(final_output)
         # Keine Kompressionsstufe: --no-compress schliesst sie aus, und mkpfs
         # nimmt --compression-level daneben nicht an.
@@ -21515,7 +21723,12 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0116'))
 
         set_status(self._t("status.phase2_inner_pfs"))
-        _outer_desc = "unkomprimierter" if uncompressed else "komprimierter"
+        # Hier stimmen die zwei Schritte wirklich - erst das innere PFS,
+        # dann der aeussere Container. Das Beiwort kommt aus der Sprachdatei:
+        # Es stand fest auf Deutsch und lief in der englischen Oberflaeche
+        # als "inner PFS -> komprimierter outer container" durch.
+        _outer_desc = self._t("log.aussen_unkomprimiert" if uncompressed
+                              else "log.aussen_komprimiert")
         self._append_to_log(self._t('log.auto.0117', v0=_outer_desc))
         self.task_num_steps = 2
         self.task_step_ends = [p2_end, p3_end]
@@ -21537,7 +21750,8 @@ class PS5ConverterGUI:
         )
 
         self._wait_for_pending_mkpfs_background(final_output)
-        self._cleanup_stale_mkpfs_output(final_output)
+        if not self._cleanup_stale_mkpfs_output(final_output):
+            return False
         try:
             inner_ok = self._execute_mkpfs(
                 [
@@ -21711,7 +21925,7 @@ class PS5ConverterGUI:
             # Balken auf 98% setzen – fast fertig.
             # Nur _finish_success darf 100% setzen (nach Größen-Berechnung etc.).
             self.task_progress = 98.0
-            self.progress_engine.begin_validate("Metadaten aufbereiten...")
+            self.progress_engine.begin_validate(self._t("progress.validate.metadata"))
             self.progress_engine.commit_task()
 
         finally:
@@ -21951,7 +22165,7 @@ class PS5ConverterGUI:
             return False
 
         self.task_progress = max(self.task_progress, 95.0)
-        self.progress_engine.begin_validate("Ergebnis auswerten...")
+        self.progress_engine.begin_validate(self._t("progress.validate.evaluate"))
         self._append_to_log("\n" + "=" * 60 + "\n")
         # Drei Ausgaenge statt zwei. "Ungeprueft" ist weder das eine noch
         # das andere: Es ist nichts beanstandet worden, aber auch nichts
@@ -22338,6 +22552,22 @@ class PS5ConverterGUI:
     #: kostet nichts.
     _KOPIE_GROESSE_TAKT_SEKUNDEN = 1.5
 
+    #: Wie viele Punkte des Gesamtbalkens die Arbeitskopie einnimmt.
+    #:
+    #: Sie ist Vorarbeit, nicht das Werk - deshalb wenig. Dass sie bei einem
+    #: grossen Titel trotzdem laenger dauert als das Packen selbst, traegt die
+    #: Statuszeile mit ihren laufenden Zahlen, nicht der Balken. Eine erfundene
+    #: Gewichtung waere schlimmer: Sie liesse den Balken schnell auf 40 %
+    #: laufen und danach eine Stunde stehen.
+    _KOPIE_BALKEN_SPANNE = 4.0
+
+    #: Dasselbe fuer das Packen der AMPR-Asset-Baender - je Phase.
+    #:
+    #: Kleiner als bei der Kopie, weil das Werkzeug mehrere Phasen durchlaeuft
+    #: (packing, writing ...) und jede ihren eigenen Abschnitt bekommt. Bei
+    #: vier Phasen sind das zusammen 8 Punkte.
+    _PACK_BALKEN_SPANNE = 2.0
+
     def _kopieren_mit_fortschritt(self, quelle: str, ziel: str,
                                   gesamt: int) -> None:
         """Kopiert einen Ordner und meldet dabei, wie weit er ist.
@@ -22381,7 +22611,22 @@ class PS5ConverterGUI:
             # Kommandozeilenbetrieb oder in einer Pruefung - gibt es keine
             # Ereignisschleife, in die sich der Wert schreiben liesse.
             try:
-                self._set_progress(anteil, size_text=groesse)
+                # Der Balken ueber den Gesamtfortschritt, nicht roh - sonst
+                # zappelt er gegen den Takt (siehe _teilschritt_melden).
+                self._teilschritt_melden("integration_arbeitskopie", anteil,
+                                         self._KOPIE_BALKEN_SPANNE)
+                # Die Zahlen gehoeren zusaetzlich in die Statuszeile. Nicht
+                # aus Schoenheit: ``_stillstand_uhr`` erkennt einen Aufhaenger
+                # daran, dass sich weder Balken noch Statustext bewegen. Eine
+                # 150-GB-Kopie laeuft ueber eine Stunde und bewegt den Balken
+                # nur um wenige Punkte - ohne die laufenden Zahlen hielt der
+                # Waechter das fuer Stillstand und schrieb einen Stapelabzug
+                # als ERROR ins Protokoll. Am 10.09.2026 schon bei 5,6 GB
+                # nachgestellt: Meldung nach genau 120 s.
+                if groesse is not None:
+                    self._set_status("%s  %s" % (
+                        self._t("main.integrate_copying_status"), groesse))
+                self._set_progress(None, size_text=groesse)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Kopierfortschritt nicht anzeigbar: %s", exc)
 
@@ -22593,7 +22838,20 @@ class PS5ConverterGUI:
             self._pack_letzte_phase_zeit = jetzt
             text = self._t("ampr_pack.phase", phase=phase)
         try:
-            self._set_progress(prozent, size_text=text)
+            # Wie bei der Arbeitskopie: der Rohwert des Werkzeugs gehoert
+            # abgebildet, nicht roh auf den Balken. Das Werkzeug faengt bei
+            # jeder Phase (pack, verify, compare) wieder bei 0 an - genau
+            # daher kamen die 100-%-auf-0-%-Spruenge in den Diagnoseberichten.
+            # Der Phasenname geht in den Schluessel, damit jede Phase ihren
+            # eigenen Abschnitt bekommt statt zurueckzusetzen.
+            self._teilschritt_melden("ampr_pack:" + str(phase or ""), prozent,
+                                     self._PACK_BALKEN_SPANNE)
+            if text is not None:
+                # Auch hier gehoert der Phasenname in die Statuszeile und
+                # nicht nur ins Groessenfeld: Die Stillstandsuhr liest die
+                # Statuszeile.
+                self._set_status(text)
+            self._set_progress(None, size_text=text)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Packfortschritt nicht anzeigbar: %s", exc)
 
@@ -24821,7 +25079,8 @@ class PS5ConverterGUI:
                     # die neue Datei da oder die alte – nie ein Rumpf.
                     bau_ziel = final_out + ".neu"
                     self._wait_for_pending_mkpfs_background(bau_ziel)
-                    self._cleanup_stale_mkpfs_output(bau_ziel)
+                    if not self._cleanup_stale_mkpfs_output(bau_ziel):
+                        return False
                     ok = _repack_nested_ffpfsc(
                         search_root, bau_ziel, self._bauform_der_quelle(src))
                     if ok:
@@ -24934,7 +25193,7 @@ class PS5ConverterGUI:
                 _rmtree_force(tmp_extract)
 
         self.task_progress = 98.0
-        self.progress_engine.begin_validate("Abschluss...")
+        self.progress_engine.begin_validate(self._t("progress.validate.finishing"))
         self.progress_engine.commit_task()
         return True
 
@@ -25834,7 +26093,8 @@ class PS5ConverterGUI:
         # Parameter identisch mit Aufgabe 3 (pack_file / _mode_pack_file)
         try:
             self._wait_for_pending_mkpfs_background(final_output)
-            self._cleanup_stale_mkpfs_output(final_output)
+            if not self._cleanup_stale_mkpfs_output(final_output):
+                return False
             self._save_runtime_checkpoint(
                 mode="ffpkg_to_ffpfsc",
                 src=src,
@@ -25872,7 +26132,7 @@ class PS5ConverterGUI:
             )
             if pack_ok:
                 self._seed_preview_cache_from_source(src, final_output, "pack_file")
-                self.progress_engine.begin_validate("Validierung...")
+                self.progress_engine.begin_validate(self._t("progress.validate.default"))
                 self.progress_engine.commit_task()
             return pack_ok
         except Exception as exc:
@@ -26538,7 +26798,7 @@ class PS5ConverterGUI:
 
             self._append_to_log(self._t('log.auto.0247', v0=final_dst))
             self.task_progress = 98.0
-            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.begin_validate(self._t("progress.validate.default"))
             self.progress_engine.commit_task()
             return True
 
@@ -26616,7 +26876,8 @@ class PS5ConverterGUI:
         #   --version PS5 --inode-bits 32 --cpu-count N --compression-level L
         try:
             self._wait_for_pending_mkpfs_background(final_output)
-            self._cleanup_stale_mkpfs_output(final_output)
+            if not self._cleanup_stale_mkpfs_output(final_output):
+                return False
             self._save_runtime_checkpoint(
                 mode="pack_file",
                 src=src,
@@ -26653,7 +26914,7 @@ class PS5ConverterGUI:
                 actual_output = self._finalize_staged_pack_output(pack_out, final_output)
                 self.task_final_output_path = actual_output
                 self._seed_preview_cache_from_source(src, actual_output, "pack_file")
-                self.progress_engine.begin_validate("Validierung...")
+                self.progress_engine.begin_validate(self._t("progress.validate.default"))
                 self.progress_engine.commit_task()
             return pack_ok
         except Exception as exc:
@@ -27582,7 +27843,7 @@ class PS5ConverterGUI:
             self.task_final_output_path = final_output
             self._seed_preview_cache_from_dir(game_dump_dir, final_output)
             self._append_to_log(self._t('log.auto.0288', v0=final_output))
-            self.progress_engine.begin_validate("Validierung...")
+            self.progress_engine.begin_validate(self._t("progress.validate.default"))
             self.progress_engine.commit_task()
             return True
 

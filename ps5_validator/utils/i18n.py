@@ -348,7 +348,18 @@ STRINGS: dict[str, dict[str, str]] = {
     'status.completion_failed': {'de': 'Fehler beim Abschluss.', 'en': 'Error on completion.'},
     'dialog.title.check_found_problems': {'de': 'Beanstandungen gefunden', 'en': 'Problems found'},
     'dialog.msg.check_found_problems': {'de': 'Die Prüfung hat Beanstandungen gefunden.\n\nWas beanstandet wurde, steht im Konsolenfenster unter [ERGEBNIS].', 'en': 'The check found problems.\n\nWhat was flagged is listed in the console window under [RESULT].'},
-    'dialog.msg.conversion_failed': {'de': 'Die Konvertierung ist fehlgeschlagen.\n\nDetails stehen im Konsolen-Fenster (z. B. mkpfs Exit-Code oder Disk-Full-Meldung).', 'en': 'The conversion failed.\n\nDetails are in the console window (e.g. mkpfs exit code or a disk-full message).'},
+    # Was beim Fehlschlag WIRKLICH gemessen wurde. Frueher stand
+    # stattdessen im Meldungstext selbst 'z. B. mkpfs Exit-Code oder
+    # Disk-Full-Meldung' - zwei Vermutungen, keine davon geprueft.
+    # Der Anwender las sie am 09.09.2026 zusammen mit der
+    # Protokollzeile 'mkpfs beendet mit Exit-Code 1' als einen Befund
+    # ('Code 1 Disc-Full') und suchte einen vollen Datentraeger.
+    'dialog.msg.fehlergrund_kopf': {'de': 'Gemessen wurde:', 'en': 'What was measured:'},
+    'fehlergrund.mkpfs_code': {'de': 'Die Packmaschine endete mit Rückgabewert {code}.', 'en': 'The packer exited with code {code}.'},
+    'fehlergrund.pruefung': {'de': 'Die Ausgabeprüfung meldet: {detail}', 'en': 'The output check reports: {detail}'},
+    'fehlergrund.platz_ziel': {'de': 'Im Zielordner {path} sind nur noch {size} frei.', 'en': 'Only {size} left on the target folder {path}.'},
+    'fehlergrund.platz_temp': {'de': 'Im Arbeitsordner {path} sind nur noch {size} frei.', 'en': 'Only {size} left on the work folder {path}.'},
+    'dialog.msg.conversion_failed': {'de': 'Die Konvertierung ist fehlgeschlagen.\n\nDie vollständige Ausgabe steht im Konsolen-Fenster.', 'en': 'The conversion failed.\n\nThe full output is in the console window.'},
     'dialog.msg.ffpkg_build_failed': {'de': 'Die FFPKG-Erstellung oder die schreibgeschützte UFS2-Prüfung ist fehlgeschlagen.\n\nDie unvollständige Ausgabe wurde nicht als gültige .ffpkg übernommen. Bitte prüfen Sie die UFS2Tool-Meldungen im Konsolenfenster.', 'en': 'Creating the FFPKG or the read-only UFS2 check failed.\n\nThe incomplete output was not accepted as a valid .ffpkg. Please check the UFS2Tool messages in the console window.'},
     'verify.no_dump_folder': {'de': 'kein Game-Dump: weder eboot.bin noch sce_sys/param.json gefunden. Die Quelle ist vermutlich falsch verschachtelt.', 'en': 'not a game dump: neither eboot.bin nor sce_sys/param.json found. The source is probably nested incorrectly.'},
     'status.completion.container.check_output': {'de': 'Ausgabecontainer prüfen...', 'en': 'Checking output container...'},
@@ -1599,6 +1610,11 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.auto.0066': {'de': '[WARNUNG] Vorheriger MkPFS-Lauf ist noch aktiv. Resume startet trotzdem weiter.\n', 'en': '[WARNING] Previous MkPFS run is still active. Resume continues anyway.\n'},
     'log.auto.0067': {'de': '[INFO] Warte auf Abschluss des vorherigen MkPFS-Laufs vor Resume...\n', 'en': '[INFO] Waiting for the previous MkPFS run to finish before resuming...\n'},
     'log.auto.0068': {'de': '[RESUME] Entferne altes Zielartefakt vor Neuversuch: {v0}\n', 'en': '[RESUME] Removing old target artifact before retry: {v0}\n'},
+    # Die Folgemeldung zu log.auto.0069. Bis zum 10.09.2026 blieb es bei
+    # der Warnung darueber, und der Lauf ging weiter - bis mkpfs auf
+    # dieselbe belegte Datei stiess und mit einer Meldung abbrach, die
+    # mit der Ursache nichts zu tun hatte.
+    'log.stale_blockiert': {'de': '[FEHLER] Die Datei {path} ist noch belegt und ließ sich auch nach mehreren Versuchen nicht entfernen. Häufige Ursachen: ein Virenscanner, der sie noch liest, ein offenes Fenster darauf, oder ein zweiter Lauf dieses Programms. Der Vorgang wird abgebrochen, weil er sonst später mit einer irreführenden Meldung scheitern würde.\n', 'en': '[ERROR] The file {path} is still in use and could not be removed even after several attempts. Common causes: an antivirus scanner still reading it, an open window on it, or a second run of this program. Aborting now, because otherwise this would fail later with a misleading message.\n'},
     'log.auto.0069': {'de': '[WARNUNG] Altes Zielartefakt konnte nicht entfernt werden: {v0} ({v1})\n', 'en': '[WARNING] Old target artifact could not be removed: {v0} ({v1})\n'},
     'log.auto.0070': {'de': '[FEHLER] MkPFS kann nicht gestartet werden: Laufzeit-Abhängigkeiten fehlen.\n', 'en': '[ERROR] MkPFS cannot be started: runtime dependencies are missing.\n'},
     'log.auto.0071': {'de': 'Ausführung: mkpfs {v0}\n', 'en': 'Executing: mkpfs {v0}\n'},
@@ -1648,6 +1664,30 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.auto.0114': {'de': '[INFO] Alter Resume-Zwischenstand erkannt, wird für Aufgabe 1 ignoriert: {v0}\n', 'en': '[INFO] Old resume checkpoint detected, ignored for task 1: {v0}\n'},
     'log.auto.0115': {'de': '[FEHLER] eboot.bin nicht im Quellordner gefunden.\n[FEHLER] Gesucht: {v0}\n[FEHLER] Der Game-Dump muss eboot.bin im Root-Verzeichnis enthalten.\n', 'en': '[ERROR] eboot.bin not found in the source folder.\n[ERROR] Searched: {v0}\n[ERROR] The game dump must contain eboot.bin in the root directory.\n'},
     'log.auto.0116': {'de': '[RESUME] Vorhandenes temp-.exfat wird ignoriert, da Aufgabe 1 ein unkomprimiertes inneres PFS neu erstellt.\n', 'en': '[RESUME] Existing temp .exfat is ignored, since task 1 recreates an uncompressed inner PFS.\n'},
+    # Der einstufige exFAT-Weg. Er hat KEINE innere Ebene - bis zum
+    # 10.09.2026 gab er trotzdem log.auto.0117 aus und behauptete zwei
+    # Schritte und ein inneres PFS. An einem echten Lauf gemessen: Das
+    # Protokoll nannte "Schritt 1 / 2 ... inneres PFS", ausgefuehrt wurde
+    # ein einziges "mkpfs pack folder --compress" direkt in die Zieldatei.
+    # Der Quelltext wusste es ("Ein Schritt statt zwei"), nur das
+    # Protokoll nicht.
+    'log.pack_folder_exfat_einstufig': {'de': '>>> Ein Durchgang: Game Dump Ordner -> {v0} Container (exFAT-Bauform)...\n[Info] Der Ordner wird in ein exFAT-Abbild gewickelt und in einem Zug gepackt; eine .exfat-Datei entsteht dabei nicht.\n', 'en': '>>> Single pass: game dump folder -> {v0} container (exFAT build)...\n[Info] The folder is wrapped in an exFAT image and packed in one go; no .exfat file is written along the way.\n'},
+    # Das Beiwort fuer den aeusseren Container. Stand bis zum 10.09.2026
+    # fest auf Deutsch im Quelltext - in der englischen Oberflaeche las
+    # sich die Zeile dann als "inner PFS -> komprimierter outer container".
+    'log.aussen_komprimiert': {'de': 'komprimierter', 'en': 'compressed'},
+    'log.aussen_unkomprimiert': {'de': 'unkomprimierter', 'en': 'uncompressed'},
+    # Die dritte Phase der Fortschrittsanzeige. Ihre Texte standen bis
+    # zum 10.09.2026 als einzige noch fest auf Deutsch im Quelltext -
+    # v1.9.7 hat begin_prepare und begin_payload umgestellt und
+    # begin_validate uebersehen. In der englischen Oberflaeche stand
+    # dadurch 'Validierung...' in der Statuszeile.
+    'progress.validate.default': {'de': 'Validierung...', 'en': 'Validating...'},
+    'progress.validate.evaluate': {'de': 'Ergebnis auswerten...', 'en': 'Evaluating result...'},
+    'progress.validate.finishing': {'de': 'Abschluss...', 'en': 'Finishing...'},
+    'progress.validate.metadata': {'de': 'Metadaten aufbereiten...', 'en': 'Preparing metadata...'},
+    'progress.validate.ufs2_after_transfer': {'de': 'UFS2-Struktur nach Zielvolume-Transfer schreibgeschützt prüfen...', 'en': 'Checking UFS2 structure after transfer to target volume (read-only)...'},
+    'progress.validate.ufs2_staging': {'de': 'UFS2-Struktur im Temp-Staging schreibgeschützt prüfen...', 'en': 'Checking UFS2 structure in temp staging (read-only)...'},
     'log.auto.0117': {'de': '>>> Schritt 1 / 2: Game Dump Ordner -> unkomprimiertes PFS...\n>>> Schritt 2 / 2: inneres PFS -> {v0} Außencontainer...\n[Info] Diese Nested-PFS-Pipeline vermeidet direkt komprimierte Game-Dateien.\n', 'en': '>>> Step 1 / 2: game dump folder -> uncompressed PFS...\n>>> Step 2 / 2: inner PFS -> {v0} outer container...\n[Info] This nested-PFS pipeline avoids directly compressed game files.\n'},
     'log.auto.0118': {'de': '\n>>> Lese Metadaten aus Container...\n', 'en': '\n>>> Reading metadata from container...\n'},
     'log.auto.0119': {'de': '[Info] Direktzugriff nicht möglich, entpacke PFS...\n', 'en': '[Info] Direct access not possible, extracting PFS...\n'},

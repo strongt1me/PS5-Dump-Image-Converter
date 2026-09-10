@@ -2245,7 +2245,7 @@ def _compress_files_in_process(
                     file_node.stored_source_path = spool_path
                     file_node.stored_source_is_temp = True
                 else:
-                    with suppress(FileNotFoundError):
+                    with suppress(OSError):
                         spool_path.unlink()
                     file_node.stored_source_path = file_node.abs_path
                     file_node.stored_source_is_temp = False
@@ -2763,7 +2763,7 @@ def _compute_file_storage_worker(
             stored_source_path = spool_path
             stored_source_is_temp = True
         else:
-            with suppress(FileNotFoundError):
+            with suppress(OSError):
                 spool_path.unlink()
             stored_source_path = abs_path
             stored_source_is_temp = False
@@ -4072,7 +4072,7 @@ def build_pfs(
         # Rename temp file to final output path
         shutil.move(str(tmp_path), str(output_path))
         for temporary_payload_path in temporary_payload_paths:
-            with suppress(FileNotFoundError):
+            with suppress(OSError):
                 temporary_payload_path.unlink()
         progress.status(f"Successfully wrote {human_readable_size(image_size)} image")
 
@@ -4084,10 +4084,14 @@ def build_pfs(
         # propagate. Re-raise the original exception after removing the temp
         # file so callers observe the original traceback.
         if tmp_path.exists():
-            with suppress(FileNotFoundError):
+            # Abweichung von der Vorlage: OSError statt FileNotFoundError.
+            # Unter Windows scheitert das Loeschen einer noch belegten Datei
+            # mit PermissionError (WinError 32) - der ersetzte sonst die
+            # Ausnahme, die hier eigentlich weitergereicht werden soll.
+            with suppress(OSError):
                 tmp_path.unlink()
         for temporary_payload_path in temporary_payload_paths:
-            with suppress(FileNotFoundError):
+            with suppress(OSError):
                 temporary_payload_path.unlink()
         raise
 
@@ -4534,7 +4538,7 @@ def build_pfs_stream_single_file(
     except Exception:
         # Remove the partial temp image on any failure, then re-raise the original error.
         if tmp_path.exists():
-            with suppress(FileNotFoundError):
+            with suppress(OSError):
                 tmp_path.unlink()
         raise
 
@@ -4841,7 +4845,7 @@ def build_pfs_stream_from_exfat(
         progress.status(f"Successfully wrote {human_readable_size(final_ndblock * block_size)} image")
     except Exception:
         if tmp_path.exists():
-            with suppress(FileNotFoundError):
+            with suppress(OSError):
                 tmp_path.unlink()
         raise
 

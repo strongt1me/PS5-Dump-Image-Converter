@@ -95,7 +95,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Vier Stellen**, jede in einem eigenen Abschnitt unten. Alle vier sind
+**Fünf Stellen**, jede in einem eigenen Abschnitt unten. Alle fünf sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden** – am 03.09.2026 haben sie den Austausch überstanden,
 weil vorher nachgesehen wurde, nicht von selbst.
@@ -114,10 +114,42 @@ laufen; keins von beidem ersetzt das andere.
 | `mkpfs/pfs.py` | `fold_inner_name_to_ascii()` | `test_mkpfs_fassung.py`, `test_inner_image_name.py` |
 | `mkpfs/exfat_writer.py` | `ExfatBuildError`, Abweisung von Symlinks und Nicht-ASCII-Namen | `test_mac_befunde.py` |
 | `mkpfs/cli.py` | `--verify-structure` wirkt auch im exFAT-Zweig | `test_mac_befunde.py` |
+| `mkpfs/pfs.py` | Aufräumen fängt `OSError` statt nur `FileNotFoundError` | `test_mkpfs_aufraeumen.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
 „Was bewusst fehlt“.
+
+### Aufräumen fängt `OSError` in `mkpfs/pfs.py`
+
+Die Vorlage räumt ihre Zwischendateien in `except`-Blöcken weg und reicht die
+ursprüngliche Ausnahme danach weiter. Ihr eigener Kommentar sagt, worum es
+geht:
+
+> Re-raise the original exception after removing the temp file so callers
+> observe the original traceback.
+
+Abgesichert war das Aufräumen mit `suppress(FileNotFoundError)`. Unter Windows
+ist aber nicht „Datei weg“ der Normalfall, sondern **„Datei noch belegt“**:
+`PermissionError: [WinError 32]`, ausgelöst von einem Virenscanner, dem
+Indexdienst oder einem Handle, das das Betriebssystem noch nicht freigegeben
+hat. Der wird von `suppress(FileNotFoundError)` nicht gefangen – er ersetzt
+die Ausnahme, die eigentlich weitergereicht werden sollte.
+
+Am 10.09.2026 in Aufgabe 3 gemessen. Der Anwender sah:
+
+    PermissionError: [WinError 32] Der Prozess kann nicht auf die Datei
+    zugreifen, da sie von einem anderen Prozess verwendet wird
+
+Die tatsächliche Ursache – ein `RuntimeError` aus `multiprocessing` – stand
+nur noch als „During handling of the above exception“ im Stapel und ging in
+der Ausgabe unter. Genau der Fall, für den der Kommentar der Vorlage steht.
+
+Betroffen sind **sieben** Stellen, `FileNotFoundError` überall durch `OSError`
+ersetzt – es ist dessen Oberklasse, der bisherige Fall bleibt also gedeckt.
+Eine misslungene Aufräumung hinterlässt jetzt höchstens eine Datei im
+Temp-Ordner; sie bestimmt nicht mehr, was der Anwender als Fehler zu sehen
+bekommt.
 
 ### `_ensure_backend_with_fallback()` in `mkpfs/compression.py`
 

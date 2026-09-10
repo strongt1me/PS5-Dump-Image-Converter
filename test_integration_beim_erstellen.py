@@ -334,10 +334,32 @@ class ArbeitskopieFortschrittTests(unittest.TestCase):
 
     def setUp(self):
         self.meldungen = []
+        self.statuszeilen = []
+        self.verlauf = []
         self.merker = self.app._set_progress
         self.app._set_progress = lambda wert, **kw: self.meldungen.append(
             (wert, kw.get("size_text")))
         self.addCleanup(setattr, self.app, "_set_progress", self.merker)
+
+        # Die Statuszeile mitschreiben: Sie traegt seit dem 10.09.2026 die
+        # laufenden Zahlen, damit _stillstand_uhr eine lange Kopie nicht
+        # fuer einen Aufhaenger haelt.
+        self.merker_status = self.app._set_status
+        self.app._set_status = lambda t: self.statuszeilen.append(str(t))
+        self.addCleanup(setattr, self.app, "_set_status", self.merker_status)
+
+        # Und den Gesamtfortschritt, auf den der Melder jetzt schreibt.
+        self.merker_teil = self.app._teilschritt_melden
+
+        def _mit_verlauf(schluessel, anteil, spanne):
+            self.merker_teil(schluessel, anteil, spanne)
+            self.verlauf.append(self.app.task_progress)
+
+        self.app._teilschritt_melden = _mit_verlauf
+        self.addCleanup(setattr, self.app, "_teilschritt_melden", self.merker_teil)
+
+        self.app.task_progress = 0.0
+        self.app._teilschritt_merker = None
         self.app.is_running = True
 
     @staticmethod
@@ -370,14 +392,36 @@ class ArbeitskopieFortschrittTests(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.join(ziel, "leer")),
                             "Ein leerer Unterordner ist verlorengegangen")
 
-        werte = [w for w, _ in self.meldungen]
-        self.assertGreater(len(werte), 3,
+        # Gemessen wird der **Gesamtfortschritt**, nicht mehr der Rohwert an
+        # ``_set_progress``. Bis zum 10.09.2026 stand hier "werte[0] == 0.0"
+        # und "werte[-1] == 100.0" - also die Zusicherung, dass die Kopie
+        # ihren eigenen 0-bis-100-Wert direkt auf den Balken schreibt. Genau
+        # das war der Fehler: Der Takt aus ``_update_progress_gui`` setzt
+        # 80 ms spaeter wieder den Gesamtwert, und der Balken sprang zwischen
+        # beiden hin und her - in den Diagnoseberichten des Anwenders bis zu
+        # 567 Mal in einem Lauf, schlimmstenfalls von 100 % auf 0 %.
+        #
+        # Diese Pruefung hat den Fehler mitgetragen, weil sie das falsche
+        # Verhalten festschrieb. Sie misst jetzt die Eigenschaft, auf die es
+        # ankommt: Der Fortschritt bewegt sich, laeuft nie rueckwaerts, und
+        # der Balken wird dabei nicht roh beschrieben.
+        self.assertGreater(len(self.meldungen), 3,
                            "Es kamen kaum Meldungen - der Balken stuende still")
-        self.assertEqual(werte[0], 0.0)
-        self.assertEqual(werte[-1], 100.0)
-        self.assertEqual(werte, sorted(werte), "Der Fortschritt lief zurueck")
+        werte = [w for w, _ in self.meldungen]
+        self.assertTrue(
+            all(w is None for w in werte),
+            "Ein roher Kopieranteil ging an den Balken: %r" % (werte,))
+        self.assertGreater(self.app.task_progress, 0.0,
+                           "Der Gesamtfortschritt hat sich nicht bewegt")
+        self.assertEqual(self.verlauf, sorted(self.verlauf),
+                         "Der Fortschritt lief zurueck: %r" % (self.verlauf,))
         self.assertIsNotNone(self.meldungen[-1][1],
                              "Die Groessenangabe fehlt")
+        self.assertTrue(
+            any("/" in z for z in self.statuszeilen),
+            "Die Statuszeile trug keine laufenden Zahlen - ohne sie haelt "
+            "_stillstand_uhr eine lange Kopie fuer einen Aufhaenger: %r"
+            % (self.statuszeilen,))
 
     def test_abbruch_wirkt_sofort(self):
         with TemporaryDirectory() as basis:

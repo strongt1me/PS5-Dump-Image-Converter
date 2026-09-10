@@ -188,16 +188,25 @@ class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
                          "Diese Ausnahmen betreffen keine Stelle mehr: %s"
                          % verwaist)
 
+    #: Die drei Phasen der Fortschrittsanzeige. **Alle drei** - am 10.09.2026
+    #: fiel auf, dass hier nur zwei standen: v1.9.7 hatte ``begin_prepare``
+    #: und ``begin_payload`` umgestellt und ``begin_validate`` uebersehen,
+    #: und diese Pruefung deckte die Luecke mit. Zwoelf Aufrufe gaben ihren
+    #: Text weiter fest auf Deutsch mit ("Validierung...", "Abschluss...",
+    #: "Metadaten aufbereiten..."), sichtbar in der englischen Oberflaeche.
+    _FORTSCHRITTSPHASEN = ("begin_prepare", "begin_payload", "begin_validate")
+
     def test_die_fortschrittsanzeige_hat_keine_deutschen_vorgaben(self):
-        """``begin_prepare``/``begin_payload`` hatten deutsche Vorgabewerte.
+        """Keine der drei Phasen hat einen Vorgabetext.
 
         Die Klasse hat keinen Uebersetzer; wer die Beschreibung wegliess,
-        bekam "Vorbereitung..." bzw. "Verarbeite..." in die Statuszeile -
-        auch auf Englisch. Jetzt gibt es keine Vorgabe mehr.
+        bekam "Vorbereitung...", "Verarbeite..." bzw. "Validierung..." in die
+        Statuszeile - auch auf Englisch. Jetzt gibt es keine Vorgabe mehr:
+        Wer sie vergisst, merkt es sofort statt beim Anwender.
         """
         baum = ast.parse(_quelltext())
         schlecht = []
-        for name in ("begin_prepare", "begin_payload"):
+        for name in self._FORTSCHRITTSPHASEN:
             knoten = next(k for k in ast.walk(baum)
                           if isinstance(k, ast.FunctionDef) and k.name == name)
             for arg, vorgabe in zip(
@@ -210,6 +219,39 @@ class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
         self.assertEqual([], schlecht,
                          "Vorgabewert fuer eine sichtbare Beschriftung: %s"
                          % schlecht)
+
+    def test_kein_aufruf_gibt_seinen_text_fest_mit(self):
+        """Die Gegenprobe zur Vorgabe - und die wichtigere von beiden.
+
+        Eine fehlende Vorgabe zwingt jeden Aufrufer, *etwas* mitzugeben. Sie
+        zwingt ihn nicht, es uebersetzt mitzugeben: Bis zum 10.09.2026 stand
+        in zwoelf ``begin_validate``-Aufrufen eine deutsche Zeichenkette,
+        obwohl die Vorgabe daneben laengst beanstandet worden waere.
+
+        Erlaubt ist deshalb alles ausser einem Literal - ein ``self._t(...)``,
+        eine Variable, ein zusammengesetzter Text.
+        """
+        baum = ast.parse(_quelltext())
+        schlecht = []
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.Call):
+                continue
+            f = knoten.func
+            if not isinstance(f, ast.Attribute):
+                continue
+            if f.attr not in self._FORTSCHRITTSPHASEN:
+                continue
+            fuer_text = list(knoten.args[1:2] if f.attr == "begin_payload"
+                             else knoten.args[:1])
+            fuer_text += [kw.value for kw in knoten.keywords
+                          if kw.arg == "description"]
+            for wert in fuer_text:
+                if isinstance(wert, ast.Constant) and isinstance(wert.value, str):
+                    schlecht.append("Zeile %d: %s(%r)"
+                                    % (knoten.lineno, f.attr, wert.value))
+        self.assertEqual([], schlecht,
+                         "Fester Text an der Fortschrittsanzeige:\n  "
+                         + "\n  ".join(schlecht))
 
 
 class VorabpruefungTests(unittest.TestCase):

@@ -2,7 +2,122 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.12):** Der Rest der Durchsicht. Der wichtigste Punkt: Die Rückfrage vor einem Backport sagt jetzt, ob eine Sicherung angelegt wird – ohne sie ist ein Abbruch mittendrin nicht rückgängig zu machen.
+> **Kurz zum aktuellen Stand (v1.9.13):** Reparaturen an den Aufgaben 1–8. Der wichtigste Punkt: Der Fortschrittsbalken sprang seit v1.9.7 zwischen 0 % und 100 % hin und her, und die Aufhänger-Erkennung schrieb daraufhin Fehlermeldungen in ein Protokoll eines völlig normalen Laufs. Beides ist behoben.
+
+---
+
+## v1.9.13 – 10.09.2026
+
+Diese Fassung bringt keine neuen Funktionen. Sie behebt, was seit v1.9.7 bei
+den Aufgaben 1–8 den Eindruck erweckt hat, das Programm sei kaputt – und
+zwei ältere Fehler, die dabei mit ans Licht kamen.
+
+### Der Fortschrittsbalken sprang zwischen 0 % und 100 %
+
+Der schwerste Fund, und er erklärt fast alles andere. Die Diagnoseberichte
+zeigen ihn schwarz auf weiß:
+
+| Version | Lauf | Befund |
+| --- | --- | --- |
+| v1.9.6 | 207 s | keine Auffälligkeit |
+| v1.9.12 | 45 s | 26 Rücksprünge, bis 2,6 % → 0,0 % |
+| v1.9.12 | 1769 s | 284 Rücksprünge, bis 100,0 % → 0,0 % |
+| v1.9.12 | 4453 s | **567 Rücksprünge**, bis 100,0 % → 0,0 % |
+
+Zwei Arbeitsschritte, die es in v1.9.6 noch nicht gab, schrieben ihren
+eigenen Prozentwert direkt auf den Balken: das Anlegen der **Arbeitskopie**
+(wenn AMPR EMU oder BACKPORT angehakt ist) und das **Packen der
+Asset-Bänder**. Achtzig Millisekunden später setzte die reguläre Anzeige
+wieder den Gesamtwert – der Balken zappelte zwischen beiden hin und her.
+
+Beides zusammen hatte eine Folge, die schlimmer aussah als der Fehler selbst:
+Weil sich weder Balken noch Statuszeile bewegten, hielt die eingebaute
+Aufhänger-Erkennung das für einen Absturz und schrieb nach zwei Minuten eine
+**Fehlermeldung ins Protokoll** – mitten in einem völlig normalen Lauf. Bei
+einem 150-GB-Titel dauert allein die Arbeitskopie rund eine Stunde. Wer da
+abbricht, bekommt kein Backup.
+
+Jetzt rechnen beide Schritte ihren Anteil in den Gesamtfortschritt um, wie
+jeder andere Schritt auch, und tragen ihre Zahlen zusätzlich in die
+Statuszeile – so ist sichtbar, dass etwas geschieht.
+
+### „mkpfs Exit-Code oder Disk-Full-Meldung" war geraten
+
+Scheiterte eine Konvertierung, stand im Fenster:
+
+> Die Konvertierung ist fehlgeschlagen.
+> Details stehen im Konsolen-Fenster (z. B. mkpfs Exit-Code oder
+> **Disk-Full-Meldung**).
+
+Beides waren Beispiele, keines davon geprüft – das Programm hatte den freien
+Platz nie nachgesehen. Zusammen mit der Protokollzeile „mkpfs beendet mit
+Exit-Code 1" liest sich das wie ein Befund, und man sucht einen vollen
+Datenträger, den es nicht gibt.
+
+Die Meldung nennt jetzt nur noch, was **tatsächlich gemessen wurde**:
+
+> Gemessen wurde:
+> - Die Packmaschine endete mit Rückgabewert 1.
+> - Die Ausgabeprüfung meldet: Ausgabepfad existiert nicht.
+
+Der freie Platz erscheint dort nur, wenn er wirklich knapp ist – dann aber
+mit Pfad und Zahl.
+
+### Die Packmaschine verdeckte den eigentlichen Fehler
+
+Geht beim Packen etwas schief, räumt die Packmaschine ihre halbfertige Datei
+weg und meldet danach den ursprünglichen Fehler. Beim Wegräumen fing sie
+allerdings nur den Fall „Datei ist schon weg" ab. Unter Windows ist aber ein
+ganz anderer Fall der Normalfall: **„Datei ist noch belegt"** – ein
+Virenscanner liest sie gerade, der Suchindex greift zu.
+
+Dann ersetzte diese Meldung den echten Fehler. Was ankam, war
+
+> Der Prozess kann nicht auf die Datei zugreifen, da sie von einem anderen
+> Prozess verwendet wird
+
+und die wirkliche Ursache stand nur noch als Fußnote im Stapel. Behoben; die
+Ursache kommt jetzt durch.
+
+### Eine belegte Zieldatei bricht den Lauf jetzt sofort ab
+
+Vor jedem Packlauf räumt das Programm eine alte Zieldatei weg. Ging das
+nicht, stand nur eine Warnung im Protokoll und der Lauf machte weiter – bis
+er ein paar Minuten später mit einer Meldung scheiterte, die mit der Ursache
+nichts zu tun hatte.
+
+Jetzt wird sechsmal versucht (Windows gibt eine Datei meist nach
+Sekundenbruchteilen wieder frei), und wenn es dabei bleibt, sagt das
+Programm klar, welche Datei im Weg liegt und was die üblichen Ursachen sind.
+
+### Der eingestellte Arbeitsordner wurde überschrieben
+
+Ein älterer Fehler, der bisher niemandem aufgefallen ist, aber genau die
+Sorte Ärger macht, die man nicht zuordnen kann.
+
+Sechs Arbeitsschritte legen ihr Zwischenverzeichnis absichtlich im
+**Zielordner** an. Ist der gerade nicht beschreibbar, weicht das Programm
+aus – und trug den Ausweichort danach als neuen **Arbeitsordner** in die
+Einstellungen ein. Damit war die eigene Angabe überschrieben, durch einen
+Vorgang, der mit ihr nichts zu tun hatte.
+
+Die Folge trifft erst später und ganz woanders: Fällt der Ausweich auf das
+Systemlaufwerk, arbeitet ab da **jede** Aufgabe dort. Auf dem Prüfrechner
+sind das 40 GB frei gegen 3454 GB auf dem eingestellten Laufwerk – ein
+großer Titel scheitert dann an vollem Datenträger, und niemand weiß, warum.
+Das Ausweichen wird weiterhin gemeldet, die Einstellung aber nur noch
+angefasst, wenn es wirklich um den Arbeitsordner ging.
+
+### Kleineres
+
+* Der Weg **Dump-Ordner → .ffpfsc** meldete „Schritt 1 / 2 … inneres PFS …
+  Nested-PFS-Pipeline", obwohl er in der Vorgabe-Bauform einen **einzigen**
+  Durchgang macht. Wer das Protokoll las, suchte einen zweiten Schritt, den
+  es nie gab.
+* Dreizehn Meldungen der Abschlussphase standen fest auf Deutsch – in der
+  englischen Oberfläche erschien dort „Validierung…", „Abschluss…",
+  „Metadaten aufbereiten…". v1.9.7 hatte die beiden anderen Phasen
+  umgestellt und diese übersehen.
 
 ---
 
