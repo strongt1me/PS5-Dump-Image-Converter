@@ -2,7 +2,39 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.15):** Ein Absturz beim Asset-Pack in der Programmdatei ist behoben. Vor dem Start prüft das Programm jetzt, ob Arbeits- und Zielordner genug Platz haben, und lässt dich bei Bedarf einen anderen wählen. Ein fertiges .ffpkg belegt nicht mehr doppelt so viel Platz, und bricht eine Aufgabe bei knappem Arbeitsspeicher ab, steht das jetzt in der Meldung.
+> **Kurz zum aktuellen Stand (v1.9.16):** Unter „Weitere Tools" gibt es einen neuen Knopf **„exFAT → PKG"**: Er wandelt ein exFAT-Abbild in ein installierbares Debug-Paket (.pkg) um – auf Wunsch mit einer selbst gewählten Ziel-Firmware. Das läuft vollständig im Programm, ohne Zusatzwerkzeug und ohne Administratorrechte.
+
+---
+
+## v1.9.16 – 13.09.2026
+
+Ein neuer Knopf unter „Weitere Tools", der ein exFAT-Abbild direkt in ein
+installierbares Paket umwandelt.
+
+### Neu: „exFAT → PKG"
+
+Bisher war der Weg von einem `.exfat`-Abbild zu einer `.pkg` zwei getrennte
+Schritte. Jetzt gibt es dafür einen eigenen Knopf unter **Weitere Tools**.
+
+Du wählst ein exFAT-Abbild, einen Zielordner für die `.pkg` und einen
+Arbeitsordner. Das Programm entpackt das Abbild, baut daraus ein
+finalisiertes Debug-Paket (FIH-Format) und prüft es zum Schluss. Fortschritt und
+Protokoll stehen die ganze Zeit im Fenster; abbrechen geht jederzeit.
+
+**Ziel-Firmware wählbar.** Vor dem Bauen kannst du eine Firmware angeben
+(z.B. `10.01`) – dann trägt das Paket diese als benötigte Systemsoftware.
+Ohne Angabe bleibt die des Abbilds. Wichtig: Das ändert nur die Angabe im
+Paket, es rüstet ein Spiel nicht auf eine ältere Firmware um. Ob ein Titel
+auf einer bestimmten Firmware läuft, hängt weiter an seinem Programm und
+seinen Bibliotheken.
+
+**Ganz im Programm.** Entpackt wird mit der eingebauten Engine – kein
+OSFMount, keine Administratorrechte. Gebaut wird mit dem schon
+mitgelieferten Paketbauer. Es muss nichts nachinstalliert werden.
+
+Getestet wurde die Kette an einem echten Abbild bis zum fertigen Paket; ob
+die Konsole ein so gebautes Paket annimmt, hängt wie immer an ihrer
+Betriebsart und Firmware.
 
 ---
 

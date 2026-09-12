@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.15"
+APP_VERSION = "v1.9.16"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2970,6 +2970,7 @@ class PS5ConverterGUI:
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
+        ("titlebar.exfat_pkg", "_show_exfat_pkg_builder"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
@@ -39024,6 +39025,379 @@ class PS5ConverterGUI:
                    style="Accent.TButton", command=_bauen).pack(side="left")
         ttk.Button(knopfreihe, text=self._t("pkgbau.check_button"),
                    command=_pruefen).pack(side="left", padx=(8, 0))
+
+    @staticmethod
+    def _sdk_bcd(major: int, minor: int) -> str:
+        """Packt Haupt- und Nebenversion als BCD in den 16-stelligen Hex-String
+        von ``param.json`` (z.B. ``10, 1`` -> ``'0x1001000000000000'``).
+
+        Dasselbe Packmass, das die Konsole in ``sdkVersion`` und
+        ``requiredSystemSoftwareVersion`` erwartet: das obere Byte die
+        Hauptversion, das naechste die Nebenversion, beide zweistellig BCD.
+        """
+        if not (0 <= major <= 99 and 0 <= minor <= 99):
+            raise ValueError("Firmware ausserhalb 0..99: %r.%r" % (major, minor))
+        b0 = (major // 10 << 4) | (major % 10)
+        b1 = (minor // 10 << 4) | (minor % 10)
+        return "0x%02x%02x000000000000" % (b0, b1)
+
+    @staticmethod
+    def _exfat_pkg_firmware_lesen(text: str) -> "tuple[int, int] | None":
+        """Liest ``9`` oder ``10.01`` als (Haupt, Neben); None bei Leerauswahl.
+
+        Wirft ``ValueError`` bei einer Eingabe, die keine Firmware ist - der
+        Aufrufer faengt das ab und weist sie ab, statt still das Original zu
+        behalten.
+        """
+        roh = " ".join(str(text or "").split())
+        if not roh or roh.startswith("("):
+            return None
+        treffer = re.match(r"^(\d{1,2})(?:\.(\d{1,2}))?$", roh)
+        if not treffer:
+            raise ValueError(roh)
+        return int(treffer.group(1)), int(treffer.group(2) or 0)
+
+    @staticmethod
+    def _exfat_pkg_spielwurzel(ordner: str) -> str:
+        """Findet den Ordner mit ``sce_sys/param.json`` - er selbst oder eine
+        Ebene darunter.
+
+        Ein exFAT-Abbild traegt den Dump manchmal direkt in der Wurzel,
+        manchmal in einem einzelnen Unterordner. Mehr als eine Ebene wird
+        bewusst nicht gesucht: Ein Abbild mit zwei Spielen ist kein Fall fuer
+        diesen Weg, und ein zu tiefer Treffer waere eher ein Irrlaeufer.
+        """
+        if os.path.isfile(os.path.join(ordner, "sce_sys", "param.json")):
+            return ordner
+        try:
+            eintraege = sorted(os.listdir(ordner))
+        except OSError:
+            return ordner
+        treffer = [
+            os.path.join(ordner, name) for name in eintraege
+            if name not in ("System Volume Information", "$RECYCLE.BIN")
+            and os.path.isfile(os.path.join(ordner, name, "sce_sys", "param.json"))
+        ]
+        return treffer[0] if len(treffer) == 1 else ordner
+
+    def _exfat_pkg_param_setzen(self, param_pfad: str, hexwert: str) -> "tuple[str, str]":
+        """Setzt ``sdkVersion`` und ``requiredSystemSoftwareVersion`` in einer
+        ``param.json`` und gibt die vorherigen Werte zurueck.
+
+        Vollstaendiger JSON-Umlauf, Schluesselreihenfolge bleibt erhalten -
+        genauso, wie das Fremdwerkzeug es tut. Geaendert werden nur diese zwei
+        Felder; der Bauer liest sie danach aus dem Ordner.
+        """
+        with open(param_pfad, "r", encoding="utf-8") as datei:
+            daten = json.load(datei)
+        alt_sdk = str(daten.get("sdkVersion", ""))
+        alt_req = str(daten.get("requiredSystemSoftwareVersion", ""))
+        daten["sdkVersion"] = hexwert
+        daten["requiredSystemSoftwareVersion"] = hexwert
+        with open(param_pfad, "w", encoding="utf-8") as datei:
+            json.dump(daten, datei, ensure_ascii=False, indent=2)
+            datei.write("\n")
+        return alt_sdk, alt_req
+
+    def _show_exfat_pkg_builder(self) -> None:
+        """Baut aus einem ``.exfat``-Abbild ein installierbares Debug-``.pkg``.
+
+        Der Weg verkettet, was das Programm schon einzeln kann: das Abbild
+        wird nativ entpackt (dieselbe MkPFS-Engine wie Aufgabe 3, ohne
+        OSFMount und ohne Adminrechte), auf Wunsch wird die Ziel-Firmware in
+        ``param.json`` gesetzt, und daraus baut ``prosperopkg`` (LibProsperoPkg
+        2.5) das Paket - wie beim Fenster "PKG bauen", nur mit einem Abbild
+        als Quelle.
+
+        Die ausfuehrbaren ``.sceversion``-Datensaetze werden bewusst nicht
+        umgeschrieben (das koennte nur LibProsperoPkg 1.2.0). Die
+        Firmware-Schranke der Konsole liest ``requiredSystemSoftwareVersion``
+        aus ``param.json`` - und die wird hier gesetzt.
+        """
+        from ps5_validator.utils import prosperopkg
+
+        c = self._COLORS
+        werkzeug = prosperopkg.werkzeug_finden()
+        if not werkzeug:
+            messagebox.showerror(
+                self._t("exfatpkg.window_title"),
+                self._t("pkgbau.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
+                parent=self.root)
+            return
+
+        win = self._build_modern_toplevel(
+            self._t("exfatpkg.window_title"), 900, 660,
+            min_width=760, min_height=560)
+        self._build_modern_header(
+            win, self._t("exfatpkg.window_title"), self._t("exfatpkg.subtitle"))
+
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
+        arbeit_var = tk.StringVar(value=self._get_runtime_temp_dir())
+        fw_var = tk.StringVar(value=self._t("exfatpkg.keep_original"))
+        schnell_var = tk.BooleanVar(value=True)
+        lizenzfrei_var = tk.BooleanVar(value=True)
+        status_var = tk.StringVar(value=self._t("exfatpkg.status_idle"))
+        laeuft: dict = {"aktiv": False, "prozess": None}
+
+        def _zeile(text: str, var, waehlen) -> None:
+            reihe = tk.Frame(koerper, bg=c["bg_main"])
+            reihe.pack(fill="x", pady=2)
+            tk.Label(reihe, text=text, width=16, anchor="w",
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left")
+            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                     insertbackground=c["fg_primary"]).pack(
+                side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+            ttk.Button(reihe, text="...", width=4, command=waehlen).pack(side="left")
+
+        def _quelle_waehlen() -> None:
+            gewaehlt = filedialog.askopenfilename(
+                title=self._t("exfatpkg.choose_source"),
+                filetypes=[(self._t("filetype.exfat_image"), "*.exfat"),
+                           (self._t("filetype.all_files"), "*.*")],
+                initialdir=self._get_source_dialog_initial_dir() or None,
+                parent=win)
+            if gewaehlt:
+                quelle_var.set(os.path.normpath(gewaehlt))
+
+        def _ziel_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("exfatpkg.choose_output"), parent=win)
+            if gewaehlt:
+                ziel_var.set(os.path.normpath(gewaehlt))
+
+        def _arbeit_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("exfatpkg.choose_work"), parent=win)
+            if gewaehlt:
+                arbeit_var.set(os.path.normpath(gewaehlt))
+
+        _zeile(self._t("exfatpkg.source"), quelle_var, _quelle_waehlen)
+        _zeile(self._t("exfatpkg.output"), ziel_var, _ziel_waehlen)
+        _zeile(self._t("exfatpkg.work"), arbeit_var, _arbeit_waehlen)
+
+        fwreihe = tk.Frame(koerper, bg=c["bg_main"])
+        fwreihe.pack(fill="x", pady=(6, 2))
+        tk.Label(fwreihe, text=self._t("exfatpkg.firmware"), width=16, anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        fw_box = ttk.Combobox(
+            fwreihe, textvariable=fw_var, width=24, font=(UI_SCHRIFT, pt(9)),
+            values=[self._t("exfatpkg.keep_original"),
+                    "9.00", "9.60", "10.00", "10.01", "11.00", "12.00"])
+        fw_box.pack(side="left")
+        tk.Label(fwreihe, text=self._t("exfatpkg.firmware_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(10, 0))
+
+        schalter = tk.Frame(koerper, bg=c["bg_main"])
+        schalter.pack(fill="x", pady=(8, 4))
+        for text, var in ((self._t("pkgbau.fast"), schnell_var),
+                          (self._t("pkgbau.license_free"), lizenzfrei_var)):
+            tk.Checkbutton(
+                schalter, text=text, variable=var, bg=c["bg_main"],
+                fg=c["fg_primary"], selectcolor=c["bg_card"],
+                activebackground=c["bg_main"], activeforeground=c["fg_accent"],
+                font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(0, 14))
+
+        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
+        balken.pack(fill="x", pady=(6, 2))
+
+        protokoll = tk.Text(koerper, height=14, font=("Consolas", pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="none")
+        protokoll.pack(fill="both", expand=True, pady=(4, 4))
+
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        def _protokoll(text: str) -> None:
+            def _setzen() -> None:
+                if not protokoll.winfo_exists():
+                    return
+                protokoll.insert("end", str(text).rstrip("\n") + "\n")
+                protokoll.see("end")
+            self._spaeter_im_fenster(win, _setzen)
+
+        def _status(text: str) -> None:
+            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+
+        def _balken(prozent: float) -> None:
+            self._spaeter_im_fenster(
+                win, lambda: balken.configure(value=max(0, min(100, prozent))))
+
+        def _umwandeln() -> None:
+            quelle = quelle_var.get().strip()
+            ziel = ziel_var.get().strip()
+            arbeit = arbeit_var.get().strip()
+            if laeuft["aktiv"]:
+                return
+            if not quelle or not os.path.isfile(quelle) or \
+                    not quelle.lower().endswith(".exfat"):
+                messagebox.showwarning(self._t("exfatpkg.window_title"),
+                                       self._t("exfatpkg.need_source"), parent=win)
+                return
+            if not ziel:
+                messagebox.showwarning(self._t("exfatpkg.window_title"),
+                                       self._t("exfatpkg.need_output"), parent=win)
+                return
+            if not arbeit:
+                messagebox.showwarning(self._t("exfatpkg.window_title"),
+                                       self._t("exfatpkg.need_work"), parent=win)
+                return
+            try:
+                firmware = self._exfat_pkg_firmware_lesen(fw_var.get())
+            except ValueError:
+                messagebox.showwarning(self._t("exfatpkg.window_title"),
+                                       self._t("exfatpkg.firmware_bad",
+                                               wert=fw_var.get()), parent=win)
+                return
+
+            # Platz grob pruefen: entpackter Dump ~ Abbildgroesse, das Paket
+            # noch einmal in der Naehe. Knapp heisst warnen, nicht verbieten -
+            # die endgueltige Groesse haengt an der Kompression.
+            try:
+                abbild = os.path.getsize(quelle)
+                frei_arbeit = shutil.disk_usage(arbeit if os.path.isdir(arbeit)
+                                                else os.path.dirname(arbeit) or ".").free
+                frei_ziel = shutil.disk_usage(ziel if os.path.isdir(ziel)
+                                              else os.path.dirname(ziel) or ".").free
+                if frei_arbeit < abbild * 1.1 or frei_ziel < abbild * 1.4:
+                    if not messagebox.askyesno(
+                            self._t("exfatpkg.window_title"),
+                            self._t("exfatpkg.space_warn"), parent=win, default="no"):
+                        return
+            except OSError:
+                pass
+
+            laeuft["aktiv"] = True
+            _balken(0)
+            _status(self._t("exfatpkg.status_extracting"))
+
+            def _arbeit() -> None:
+                dump_ordner = ""
+                try:
+                    basis = os.path.splitext(os.path.basename(quelle))[0]
+                    dump_ordner = os.path.join(arbeit, "exfatpkg_" + basis)
+                    _rmtree_force(Path(dump_ordner))
+                    os.makedirs(dump_ordner, exist_ok=True)
+
+                    mkpfs_parent = self._extract_embedded_mkpfs()
+                    if mkpfs_parent and mkpfs_parent not in sys.path:
+                        sys.path.insert(0, mkpfs_parent)
+                    from mkpfs import pfs as _pfs  # noqa: PLC0415
+                    extrahieren = getattr(_pfs, "extract_exfat_image", None)
+                    if not callable(extrahieren):
+                        raise prosperopkg.ProsperoFehler(
+                            "extract_exfat_image nicht verfuegbar")
+
+                    def _fs_status(text: str) -> None:
+                        sauber = " ".join(str(text).split())
+                        if sauber:
+                            _status(sauber)
+
+                    def _fs_step(phase, current, total, *,
+                                 bytes_processed=None) -> None:
+                        del phase
+                        gesamt = max(1, int(total or 0))
+                        fertig = int(bytes_processed if bytes_processed is not None
+                                     else current)
+                        _balken(max(0, min(fertig, gesamt)) * 100.0 / gesamt)
+
+                    bruecke = type("_ExfatFortschritt", (), {})()
+                    bruecke.status = _fs_status
+                    bruecke.step = _fs_step
+
+                    _protokoll(self._t("exfatpkg.log_extracting", name=basis))
+                    ergebnis = extrahieren(Path(quelle), Path(dump_ordner),
+                                           progress=bruecke)
+                    for fehler in getattr(ergebnis, "errors", []) or []:
+                        _protokoll("[FEHLER] %s" % fehler)
+                    if getattr(ergebnis, "errors", None):
+                        _status(self._t("exfatpkg.status_failed"))
+                        return
+                    _balken(100)
+                    _protokoll(self._t(
+                        "exfatpkg.log_extracted",
+                        dateien=getattr(ergebnis, "files_written", 0),
+                        gb=getattr(ergebnis, "bytes_written", 0) / 1073741824))
+
+                    wurzel = self._exfat_pkg_spielwurzel(dump_ordner)
+                    param = os.path.join(wurzel, "sce_sys", "param.json")
+                    if not os.path.isfile(param):
+                        _protokoll(self._t("exfatpkg.log_no_param"))
+                        _status(self._t("exfatpkg.status_failed"))
+                        return
+
+                    if firmware is not None:
+                        hexwert = self._sdk_bcd(firmware[0], firmware[1])
+                        alt_sdk, _alt = self._exfat_pkg_param_setzen(param, hexwert)
+                        _protokoll(self._t("exfatpkg.log_firmware",
+                                           alt=alt_sdk or "-", neu=hexwert))
+
+                    _balken(0)
+                    _status(self._t("exfatpkg.status_building"))
+                    pfad = prosperopkg.bauen(
+                        wurzel, ziel, melden=_protokoll,
+                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
+                                                "prosperopkg."),
+                        lizenzfrei=bool(lizenzfrei_var.get()),
+                        schnell=bool(schnell_var.get()),
+                        prozess_ablage=laeuft)
+                except prosperopkg.ProsperoFehler as exc:
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("exfatpkg.status_failed"))
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("exfatpkg.status_failed"))
+                    return
+                finally:
+                    laeuft["aktiv"] = False
+                    if dump_ordner:
+                        # Der entpackte Dump ist eine Zwischenstufe (bis zu
+                        # zweistellige GB) - das Paket liegt fertig im Ziel.
+                        _rmtree_force(Path(dump_ordner))
+                _balken(100)
+                groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
+                _status(self._t("exfatpkg.status_done",
+                                groesse=self._fmt_bytes(groesse)))
+                _protokoll("")
+                _protokoll(self._t("exfatpkg.result", pfad=pfad))
+                self._append_to_log("[INFO] exFAT -> PKG: %s\n" % pfad)
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="exfat-pkg-build").start()
+
+        def _beim_schliessen() -> None:
+            if laeuft["aktiv"]:
+                if not messagebox.askyesno(
+                        self._t("exfatpkg.window_title"),
+                        self._t("exfatpkg.abort_confirm"),
+                        parent=win, default="no"):
+                    return
+                prozess = laeuft.get("prozess")
+                if prozess is not None:
+                    try:
+                        prozess.terminate()
+                    except OSError as exc:
+                        logger.debug("exFAT-PKG nicht beendbar: %s", exc)
+                laeuft["aktiv"] = False
+                self._append_to_log(self._t("exfatpkg.log_aborted") + chr(10))
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=_beim_schliessen).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("exfatpkg.convert_button"),
+                   style="Accent.TButton", command=_umwandeln).pack(side="left")
 
     def _show_shadowmount_editor(self) -> None:
         """Öffnet den Config-Editor für ShadowMountPlus (/data/shadowmount/config.ini)."""

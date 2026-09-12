@@ -438,7 +438,7 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
         ("senden", 1),
         ("datei_verarbeiten", 2),
         ("pruefen", 2),            # app_install und prosperopkg
-        ("bauen", 1),
+        ("bauen", 2),              # "PKG bauen" und "exFAT -> PKG"
         ("homebrew_bauen", 1),
         ("zusammenfassung", 1),    # param_check.Befund
         ("herunterfahren", 1),     # ueber _system_herunterfahren
