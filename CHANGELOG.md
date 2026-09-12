@@ -2,7 +2,26 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.16):** Unter „Weitere Tools" gibt es einen neuen Knopf **„exFAT → PKG"**: Er wandelt ein exFAT-Abbild in ein installierbares Debug-Paket (.pkg) um – auf Wunsch mit einer selbst gewählten Ziel-Firmware. Das läuft vollständig im Programm, ohne Zusatzwerkzeug und ohne Administratorrechte.
+> **Kurz zum aktuellen Stand (v1.9.17):** Unter „Weitere Tools" gibt es einen neuen Knopf **„unjail senden"**: Er schickt den unjail-Daemon (SvenGDK) an die Konsole, der anfragenden Homebrew-Anwendungen Schreibzugriff außerhalb ihrer Sandbox gibt. Verifiziert bis Firmware 10.60; ab 11.00 (also auch auf einer 12.00-Konsole) läuft der Daemon derzeit nicht.
+
+---
+
+## v1.9.17 – 13.09.2026
+
+Ein neuer Knopf unter „Weitere Tools", der den unjail-Daemon an die Konsole
+schickt.
+
+### Neu: „unjail senden"
+
+unjail ist ein Konsolen-Daemon: Einmal gesendet, gibt er Homebrew-Anwendungen,
+die danach fragen, Schreibzugriff außerhalb ihres eigenen Ordners. Du schickst
+ihn einmal, bevor du solche Homebrew startest; er läuft dann bis zum Neustart
+der Konsole. Adresse eintragen, senden – Fortschritt und die Antwort der
+Konsole stehen die ganze Zeit im Fenster.
+
+**Firmware.** Verifiziert ist unjail für 1.00 bis 10.60. Ab Firmware 11.00
+bricht der Daemon beim Start ab, bevor er bereit ist – auf einer 12.00-Konsole
+funktioniert er derzeit nicht. Das Fenster weist deutlich darauf hin.
 
 ---
 

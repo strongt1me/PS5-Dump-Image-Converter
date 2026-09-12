@@ -50,7 +50,8 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 | `kstuff_lite_v1.10_Beta.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `ps5upload_v5.2.1.elf` | PS5Upload | – | kein Beleg in der Datei |
-| `OnionHEN_v0.1.0.elf` | OnionHEN | – | kein Beleg in der Datei |
+| `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
+| `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.0/`) |
 
 Weitere Payload-Sammlungen und Werkzeuge, die im Fenster **CREDITS** verlinkt sind:
 **aldostools** (PS5-Payloads), **owendswang** (Autoloader, bdj_unpatch),

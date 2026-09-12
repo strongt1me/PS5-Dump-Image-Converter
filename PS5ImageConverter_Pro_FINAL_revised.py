@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.16"
+APP_VERSION = "v1.9.17"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2974,6 +2974,7 @@ class PS5ConverterGUI:
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
+        ("titlebar.unjail", "_show_unjail_sender"),
         ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
     )
 
@@ -39398,6 +39399,114 @@ class PS5ConverterGUI:
                    command=_beim_schliessen).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("exfatpkg.convert_button"),
                    style="Accent.TButton", command=_umwandeln).pack(side="left")
+
+    #: Der mitgelieferte unjail-Payload (SvenGDK), gesendet ueber elfldr.
+    _UNJAIL_ELF = "unjail-ps5app-payload.elf"
+
+    def _show_unjail_sender(self) -> None:
+        """Schickt den unjail-Payload an die Konsole.
+
+        unjail ist ein Konsolen-Daemon (SvenGDK, GPL-3): einmal gesendet,
+        hebt er fuer anfragende Homebrew-Anwendungen die Rechte und die
+        Dateisicht aus der Sandbox. Er wird **einmal vor** dem Start solcher
+        Homebrew geschickt und laeuft dann bis zum Neustart der Konsole.
+
+        Gesendet wird ueber denselben Weg wie jeder andere Payload
+        (``_send_payload_to_ps5``: elfldr auf Port 9021, sonst Payload
+        Manager). Der Autor nennt Firmware 1.00-10.60 als verifiziert; ab
+        11.00 bricht der Daemon beim Start ab, weil ihm die rootvnode-Offsets
+        fehlen - darauf weist das Fenster hin.
+        """
+        c = self._COLORS
+        pfad = os.path.join(self._mitgeliefert_finden("helloworld"),
+                            self._UNJAIL_ELF)
+        if not os.path.isfile(pfad):
+            messagebox.showerror(self._t("unjail.window_title"),
+                                 self._t("unjail.missing_elf", name=self._UNJAIL_ELF),
+                                 parent=self.root)
+            return
+
+        win = self._build_modern_toplevel(
+            self._t("unjail.window_title"), 780, 560,
+            min_width=620, min_height=460)
+        self._build_modern_header(
+            win, self._t("unjail.window_title"), self._t("unjail.subtitle"))
+
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        tk.Label(koerper, text=self._t("unjail.hint"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 wraplength=720, justify="left").pack(fill="x", pady=(8, 2))
+        tk.Label(koerper, text=self._t("unjail.fw_warning"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
+                 anchor="w", wraplength=720, justify="left").pack(fill="x", pady=(0, 8))
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        status_var = tk.StringVar(value=self._t("unjail.status_idle"))
+        laeuft = {"aktiv": False}
+
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=2)
+        tk.Label(reihe, text=self._t("unjail.ip_label"), width=14, anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3)
+
+        protokoll = tk.Text(koerper, height=12, font=("Consolas", pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="word")
+        protokoll.pack(fill="both", expand=True, pady=(8, 4))
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        def _protokoll(text):
+            def _setzen():
+                if protokoll.winfo_exists():
+                    protokoll.insert("end", str(text).rstrip("\n") + "\n")
+                    protokoll.see("end")
+            self._spaeter_im_fenster(win, _setzen)
+
+        def _status(text):
+            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+
+        def _senden():
+            ip = ip_var.get().strip()
+            if laeuft["aktiv"]:
+                return
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(self._t("unjail.window_title"),
+                                       self._t("unjail.need_ip"), parent=win)
+                return
+            self._save_setting("ps5_ip", ip)
+            laeuft["aktiv"] = True
+            _status(self._t("unjail.status_sending"))
+            _protokoll(self._t("unjail.log_sending", host=ip, name=self._UNJAIL_ELF))
+
+            def _arbeit():
+                try:
+                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
+                finally:
+                    laeuft["aktiv"] = False
+                if ok:
+                    _status(self._t("unjail.status_done", groesse=meldung))
+                    _protokoll(self._t("unjail.result_ok", groesse=meldung))
+                else:
+                    _status(self._t("unjail.status_failed"))
+                    _protokoll(self._t("unjail.result_fail", fehler=meldung))
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="unjail-send").start()
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("unjail.send_button"),
+                   style="Accent.TButton", command=_senden).pack(side="left")
 
     def _show_shadowmount_editor(self) -> None:
         """Öffnet den Config-Editor für ShadowMountPlus (/data/shadowmount/config.ini)."""
