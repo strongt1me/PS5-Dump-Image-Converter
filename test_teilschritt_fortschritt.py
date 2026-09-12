@@ -421,5 +421,176 @@ class FehlergrundTests(unittest.TestCase):
         self.assertEqual(len(text.splitlines()), 2)
         self.assertTrue(all(z.startswith("- ") for z in text.splitlines()))
 
+    def test_knapper_speicher_wird_genannt(self):
+        """Abbrueche mit [Errno 22] fielen am 10.-12.09.2026 alle unter 50 MB."""
+        p = self._probe()
+        p._SPEICHER_VERDACHT_MB = self.haupt.PS5ConverterGUI._SPEICHER_VERDACHT_MB
+        p._speicher_tiefpunkt_mb = 12
+        self.assertIn("fehlergrund.speicher_knapp", p._fehlergrund_ermitteln(None))
+
+    def test_ausreichender_speicher_ist_kein_grund(self):
+        p = self._probe()
+        p._SPEICHER_VERDACHT_MB = self.haupt.PS5ConverterGUI._SPEICHER_VERDACHT_MB
+        p._speicher_tiefpunkt_mb = 1500
+        self.assertEqual(p._fehlergrund_ermitteln(None), "",
+                         "Reichlich Speicher wurde als Ursache gemeldet.")
+
+    def test_ohne_messung_wird_nichts_behauptet(self):
+        """Ohne psutil gibt es keinen Tiefpunkt - dann auch keinen Hinweis."""
+        p = self._probe()
+        p._speicher_tiefpunkt_mb = None
+        self.assertEqual(p._fehlergrund_ermitteln(None), "")
+
+    def test_die_beobachtung_merkt_sich_den_tiefpunkt(self):
+        """Gemessen wird am echten Faden, mit gestellten Speicherwerten."""
+        import time
+
+        haupt = self.haupt
+        if haupt.psutil is None:
+            self.skipTest("psutil fehlt")
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        p.is_running = True
+        p._SPEICHER_TAKT_S = 0.01
+        p._speicher_beobachtung_starten = (
+            haupt.PS5ConverterGUI._speicher_beobachtung_starten.__get__(p))
+        p._speicher_beobachtung_beenden = (
+            haupt.PS5ConverterGUI._speicher_beobachtung_beenden.__get__(p))
+
+        werte = [900, 40, 700]
+        aufrufe = []
+
+        class _Stand:
+            def __init__(self, mb):
+                self.available = mb * 1024 ** 2
+
+        def _gestellt():
+            aufrufe.append(1)
+            if len(aufrufe) > len(werte):
+                raise RuntimeError("Ende der gestellten Werte")
+            return _Stand(werte[len(aufrufe) - 1])
+
+        echt = haupt.psutil.virtual_memory
+        haupt.psutil.virtual_memory = _gestellt
+        try:
+            p._speicher_beobachtung_starten()
+            frist = time.time() + 5.0
+            while len(aufrufe) <= len(werte) and time.time() < frist:
+                time.sleep(0.01)
+        finally:
+            p._speicher_beobachtung_beenden()
+            haupt.psutil.virtual_memory = echt
+        self.assertEqual(40, p._speicher_tiefpunkt_mb)
+
+    def test_die_messung_haengt_wirklich_am_aufgabenlauf(self):
+        """Start im try, Ende im finally, und gestartet vor der Fehlermeldung."""
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_run_engine_thread")
+
+        def zeilen_von(knoten, attr):
+            return [n.lineno for n in ast.walk(knoten)
+                    if isinstance(n, ast.Attribute) and n.attr == attr]
+
+        treffer = []
+        for knoten in ast.walk(methode):
+            if isinstance(knoten, ast.Try) and knoten.finalbody:
+                ende = [z for st in knoten.finalbody
+                        for z in zeilen_von(st, "_speicher_beobachtung_beenden")]
+                start = [z for st in knoten.body
+                         for z in zeilen_von(st, "_speicher_beobachtung_starten")]
+                if ende and start:
+                    treffer.append((start[0], knoten))
+        self.assertTrue(treffer, "Start und Ende der Messung haengen nicht im "
+                                 "selben try/finally von _run_engine_thread.")
+        start_zeile, knoten = treffer[0]
+        meldung = zeilen_von(methode, "_fehlergrund_ermitteln")
+        self.assertTrue(meldung)
+        self.assertLess(start_zeile, min(meldung),
+                        "Die Messung startet erst nach der Fehlermeldung.")
+
+
+class QuellgroesseMeldetUndBrichtAbTests(unittest.TestCase):
+    """Das Vermessen der Quelle darf nicht stumm und nicht endlos sein.
+
+    Am 12.09.2026 an Aufgabe 8 gemessen: ``_get_path_size`` lief mit
+    ``os.walk`` **37 Minuten** über einen 51-GB-Dump mit 17.000 Dateien auf
+    einer USB-exFAT-Platte. Sieben der acht Aufrufer riefen es blank auf -
+    ohne ``progress_cb`` und ohne ``cancel_check``. Zwei Folgen:
+
+    * Die Anzeige stand still, und die eingebaute Aufhänger-Erkennung schrieb
+      nach zwei Minuten einen Stapelabzug ins Protokoll - mitten in einem
+      völlig normalen Lauf. Genau dieses Bild ließ den Anwender glauben, die
+      Aufgaben seien seit v1.9.7 kaputt.
+    * **Abbrechen ging nicht.** Wer es sich anders überlegte, saß die
+      37 Minuten ab.
+
+    Gemessen wird an einem echten Ordner, nicht an einer Nachbildung: Eine
+    gestellte ``os.walk`` hätte weder die Laufzeit noch das Stillstehen
+    gezeigt.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+
+    def _app(self):
+        import tkinter as tk
+        wurzel = tk._default_root or tk.Tk()
+        wurzel.withdraw()
+        return self.haupt.PS5ConverterGUI(wurzel)
+
+    def test_das_vermessen_meldet_sich_unterwegs(self):
+        app = self._app()
+        gemeldet = []
+        echt = app._set_progress
+        app._set_progress = lambda *a, **k: (
+            gemeldet.append(k.get("size_text", "")), echt(*a, **k))[1]
+        app.is_running = True
+        app._quellgroesse_mit_meldung(str(HAUPTDATEI.parent))
+        mit_text = [g for g in gemeldet if g]
+        self.assertTrue(mit_text,
+                        "Das Vermessen lief stumm - die Aufhaenger-Erkennung "
+                        "haelt das fuer einen Absturz.")
+
+    def test_der_abbruch_greift_mitten_im_vermessen(self):
+        import threading
+        import time
+
+        app = self._app()
+        app.is_running = True
+        ganz = app._quellgroesse_mit_meldung(str(HAUPTDATEI.parent))
+
+        app.is_running = True
+
+        def _stoppen():
+            time.sleep(0.3)
+            app.is_running = False
+
+        threading.Thread(target=_stoppen, daemon=True).start()
+        teil = app._quellgroesse_mit_meldung(str(HAUPTDATEI.parent))
+        self.assertLess(teil, ganz,
+                        "Der Abbruch wirkte nicht - der Lauf zaehlte zu Ende.")
+
+    def test_kein_aufrufer_vermisst_mehr_blank(self):
+        """Der Wächter über die Stellen selbst.
+
+        Sieben Aufrufer waren betroffen; ein achter (Aufgabe 1) hatte
+        schon immer einen eigenen, aufwendigeren Melder. Käme ein neuer
+        blanker Aufruf dazu, fiele das sonst erst dem Anwender auf.
+        """
+        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "task_total_source_bytes = self._get_path_size(src)", quelle,
+            "Hier vermisst wieder jemand ohne Meldung und ohne Abbruch.")
+        self.assertIn("def _quellgroesse_mit_meldung", quelle)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

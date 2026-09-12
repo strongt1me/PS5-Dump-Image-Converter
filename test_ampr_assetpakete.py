@@ -779,5 +779,149 @@ class FassungsschreibweiseTests(unittest.TestCase):
         self.assertIsNone(s.get("ampr_variant"))
 
 
+class PipeStauTests(unittest.TestCase):
+    """Der stdout-Puffer des Packwerkzeugs wird nebenher geleert.
+
+    ``_lauf`` startet den Unterprozess mit ``stdout=PIPE`` **und**
+    ``stderr=PIPE``. Wuerde stdout erst nach der stderr-Schleife gelesen,
+    bliebe sein Puffer waehrend des ganzen Laufs stehen - unter Windows
+    rund 64 KB. Schreibt das Werkzeug mehr, blockiert es, und der
+    Elternprozess wartet auf ein stderr-EOF, das nie kommt.
+
+    **Dieser Fall ist nicht gemessen.** Ein Lauf ueber 4000 Dateien am
+    12.09.2026 brachte 664 Byte auf stdout - das Abschluss-JSON nennt nur
+    die *nicht* gepackten Dateien, und das waren zwei. Der Waechter steht
+    trotzdem: Ein Titel mit vielen unkomprimierbaren Dateien fuellt die
+    Liste, und dann haengt der Lauf ohne jede Meldung.
+
+    Der Absturz vom selben Tag hatte eine andere Ursache - siehe
+    ``StromabsicherungTests``.
+    """
+
+    QUELLE = (Path(__file__).resolve().parent / "ps5_validator" / "utils"
+              / "ampr_assetpakete.py")
+
+    def test_stdout_wird_nebenher_geleert(self):
+        text = self.QUELLE.read_text(encoding="utf-8")
+        self.assertIn("threading.Thread", text,
+                      "Ohne eigenen Leser staut sich der stdout-Puffer.")
+        self.assertIn("_stdout_leeren", text)
+
+    def test_stdout_wird_nicht_erst_am_ende_gelesen(self):
+        """Geprueft wird der Code, nicht der Text.
+
+        Der erste Anlauf suchte die alte Zeile im ganzen Modul - und fand
+        sie im Kommentar, der sie erklaert. Ein Waechter, der auf seine
+        eigene Beschreibung anschlaegt, taugt nichts.
+        """
+        import ast
+
+        baum = ast.parse(self.QUELLE.read_text(encoding="utf-8"))
+        lauf = next(k for k in ast.walk(baum)
+                    if isinstance(k, ast.FunctionDef) and k.name == "_lauf")
+        # Jeder Aufruf von prozess.stdout.read() im Rumpf von _lauf.
+        blockierend = [
+            k for k in ast.walk(lauf)
+            if isinstance(k, ast.Call)
+            and isinstance(k.func, ast.Attribute)
+            and k.func.attr == "read"
+            and isinstance(k.func.value, ast.Attribute)
+            and k.func.value.attr == "stdout"]
+        self.assertEqual([], blockierend,
+                         "stdout mit read() am Stueck zu lesen laesst den "
+                         "Puffer volllaufen, solange die stderr-Schleife "
+                         "noch laeuft.")
+
+    def test_der_leser_wird_auch_eingesammelt(self):
+        """Ohne ``join`` koennte die Ausgabe unvollstaendig sein."""
+        text = self.QUELLE.read_text(encoding="utf-8")
+        self.assertIn("leser.join", text)
+
+
+class StromabsicherungTests(unittest.TestCase):
+    """Ohne Konsole darf ``print`` die Aufgabe nicht zum Absturz bringen.
+
+    Am 12.09.2026 vom Anwender gemeldet, mit Bildschirmfoto: Die fertige
+    Programmdatei stuerzte beim Asset-Pack ab, zwei Tracebacks
+    uebereinander, beide ``OSError: [Errno 22] Invalid argument``. Der
+    erste in ``ampr_pack.py`` Zeile 290 - einem schlichten ``print``.
+
+    Die Ursache: Die Programmdatei ist mit ``console=False`` gebaut. Ruft
+    sie sich selbst mit ``--ampr-pack`` auf und leitet niemand die Stroeme
+    um, ist ``sys.stderr`` unbrauchbar - und das Werkzeug schreibt seinen
+    ganzen Fortschritt dorthin. Weil sein Fehlerbehandler es ebenfalls mit
+    ``print`` versucht, wirft der gleich noch einmal.
+
+    Der Strom ist dabei **nicht** ``None`` - er existiert und taugt nur
+    nichts. Eine Pruefung auf ``is None`` ginge daran vorbei.
+    """
+
+    HAUPT = Path(__file__).resolve().parent / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+    class _KaputterStrom:
+        """So verhaelt sich ``sys.stderr`` in einer console=False-EXE."""
+
+        def write(self, _text):
+            raise OSError(22, "Invalid argument")
+
+        def flush(self):
+            raise OSError(22, "Invalid argument")
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        if "hauptprogramm" in sys.modules:
+            cls.haupt = sys.modules["hauptprogramm"]
+            return
+        spec = importlib.util.spec_from_file_location("hauptprogramm", cls.HAUPT)
+        modul = importlib.util.module_from_spec(spec)
+        sys.modules["hauptprogramm"] = modul
+        spec.loader.exec_module(modul)
+        cls.haupt = modul
+
+    def test_ohne_absicherung_scheitert_print(self):
+        """Der Anker: Ohne die Reparatur tritt der Fehler wirklich auf."""
+        echt = sys.stderr
+        sys.stderr = self._KaputterStrom()
+        try:
+            with self.assertRaises(OSError) as gefangen:
+                print("Fortschritt", file=sys.stderr, flush=True)
+            self.assertEqual(22, gefangen.exception.errno)
+        finally:
+            sys.stderr = echt
+
+    def test_mit_absicherung_laeuft_print_durch(self):
+        echt = sys.stderr
+        sys.stderr = self._KaputterStrom()
+        try:
+            self.haupt._stroeme_absichern()
+            print("Fortschritt", file=sys.stderr, flush=True)
+        finally:
+            sys.stderr = echt
+
+    def test_ein_brauchbarer_strom_bleibt_unangetastet(self):
+        """Sonst ginge die Ausgabe eines CLI-Laufs ins Leere."""
+        import io as _io
+
+        echt = sys.stderr
+        eigener = _io.StringIO()
+        sys.stderr = eigener
+        try:
+            self.haupt._stroeme_absichern()
+            self.assertIs(eigener, sys.stderr,
+                          "Ein funktionierender Strom darf nicht ersetzt werden.")
+        finally:
+            sys.stderr = echt
+
+    def test_die_absicherung_haengt_wirklich_im_selbstaufruf(self):
+        """Eine Reparatur, die nur der Test ruft, schuetzt niemanden."""
+        text = self.HAUPT.read_text(encoding="utf-8")
+        stelle = text.index("def _run_ampr_pack_subcommand")
+        ende = text.index("def _is_admin", stelle)
+        self.assertIn("_stroeme_absichern()", text[stelle:ende],
+                      "Der Selbstaufruf muss die Stroeme absichern, bevor "
+                      "das Werkzeug laeuft.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

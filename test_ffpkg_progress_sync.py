@@ -145,7 +145,13 @@ class FfpkgSchrittdreiTests(unittest.TestCase):
         """Zwei SHA-256-Laeufe und eine Kopie sind der Grossteil von Schritt 3."""
         self.assertIn("_file_sha256(stage_path, von=", self.block)
         self.assertIn("_file_sha256(transfer_path,", self.block)
-        self.assertIn("_kopiere_mit_fortschritt(stage_path, transfer_path", self.block)
+        # Seit v1.9.15 laeuft der Transfer ueber _ffpkg_auf_zielvolume_bringen:
+        # Auf demselben Datentraeger wird verschoben, sonst blockweise mit
+        # Anzeige kopiert. Geprueft wird die Absicht - die Kopie meldet ihre
+        # Bytes -, nicht mehr die woertliche Aufrufzeile, die beim Umbau brach.
+        self.assertIn("_ffpkg_auf_zielvolume_bringen(", self.block)
+        self.assertIn("_kopiere_mit_fortschritt(", self.block)
+        self.assertIn("_s3(0.50), _s3(0.72)", self.block)
         self.assertNotIn("shutil.copyfile(stage_path, transfer_path)", self.block)
 
     def test_marken_steigen_monoton(self) -> None:

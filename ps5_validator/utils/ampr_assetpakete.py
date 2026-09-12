@@ -35,6 +35,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import sys
 from typing import Any, Callable
 
@@ -394,6 +395,39 @@ def _lauf(argumente: list[str], melden: Melder,
         cwd=os.path.dirname(werkzeug), startupinfo=startinfo,
     )
 
+    # stdout wird nebenher geleert - als Vorsorge, nicht als Fehlerbehebung.
+    #
+    # Bis zum 12.09.2026 wurde es erst nach der stderr-Schleife gelesen
+    # ("ausgabe = prozess.stdout.read()"). Solange die Schleife laeuft,
+    # bleibt der stdout-Puffer ungeleert; unter Windows fasst er rund
+    # 64 KB. Schreibt das Werkzeug mehr, blockiert es und der Elternprozess
+    # wartet auf ein stderr-EOF, das nie kommt - ein Deadlock.
+    #
+    # **Gemessen ist dieser Fall hier nicht.** Ein Lauf ueber 4000 Dateien
+    # am 12.09.2026 brachte nur 664 Byte auf stdout: Das Abschluss-JSON
+    # nennt allein die **nicht** gepackten Dateien, und das waren zwei. Der
+    # Weg dorthin ist also weit; erreichbar bleibt er trotzdem - ein Titel
+    # mit vielen unkomprimierbaren Dateien fuellt die Liste.
+    #
+    # Der Absturz, den der Anwender am selben Tag gemeldet hat, hatte eine
+    # andere Ursache: Die Programmdatei ist mit ``console=False`` gebaut,
+    # und beim Selbstaufruf ``--ampr-pack`` war ``sys.stderr`` unbrauchbar.
+    # Siehe ``_stroeme_absichern`` im Hauptmodul.
+    sammler: list[str] = []
+
+    def _stdout_leeren() -> None:
+        if prozess.stdout is None:
+            return
+        try:
+            for stueck in prozess.stdout:
+                sammler.append(stueck)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("stdout des Packwerkzeugs nicht lesbar: %s", exc)
+
+    leser = threading.Thread(target=_stdout_leeren, daemon=True,
+                             name="ampr-pack-stdout")
+    leser.start()
+
     fehlerzeilen: list[str] = []
     try:
         assert prozess.stderr is not None
@@ -417,9 +451,10 @@ def _lauf(argumente: list[str], melden: Melder,
             if abbruch is not None and abbruch():
                 prozess.terminate()
                 raise PackFehler("ampr_pack.abgebrochen")
-        ausgabe = prozess.stdout.read() if prozess.stdout else ""
     finally:
         prozess.wait()
+        # Erst jetzt ist sicher, dass der Leser alles hat.
+        leser.join(timeout=30.0)
         for strom in (prozess.stdout, prozess.stderr):
             if strom is not None:
                 strom.close()
@@ -427,7 +462,7 @@ def _lauf(argumente: list[str], melden: Melder,
     if prozess.returncode != 0:
         letzte = fehlerzeilen[-1] if fehlerzeilen else ""
         raise PackFehler(letzte or "Rueckgabewert %d" % prozess.returncode)
-    return ausgabe
+    return "".join(sammler)
 
 
 def packen(app0: str, ampr_index: str, ausgabe_ordner: str, profil: str,

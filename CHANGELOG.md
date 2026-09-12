@@ -2,7 +2,149 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.14):** Die Bibliothek zeigt die Spiele jetzt als Titelbilder – wahlweise die auf deinem Rechner oder die auf der PS5 – und kann Abbilder in beide Richtungen übertragen. Das Werkzeug „App direkt installieren“ hat eine Anleitung bekommen, die erklärt, wofür es gut ist.
+> **Kurz zum aktuellen Stand (v1.9.15):** Ein Absturz beim Asset-Pack in der Programmdatei ist behoben. Vor dem Start prüft das Programm jetzt, ob Arbeits- und Zielordner genug Platz haben, und lässt dich bei Bedarf einen anderen wählen. Ein fertiges .ffpkg belegt nicht mehr doppelt so viel Platz, und bricht eine Aufgabe bei knappem Arbeitsspeicher ab, steht das jetzt in der Meldung.
+
+---
+
+## v1.9.15 – 12.09.2026
+
+Ein Absturz behoben, und mehrere Stellen, an denen das Programm Platz und
+Geduld gekostet hat, ohne es zu sagen.
+
+### Absturz beim Asset-Pack in der Programmdatei
+
+Wer in der fertigen Programmdatei ein Asset-Pack bauen ließ, bekam bei
+manchen Titeln ein Fenster „Unhandled exception in script" mit zwei
+Fehlermeldungen übereinander, beide `[Errno 22] Invalid argument`. Der Lauf
+war damit beendet.
+
+Die Ursache: Die Programmdatei hat kein Konsolenfenster. Für das Asset-Pack
+ruft sie sich selbst ein zweites Mal auf, und das Packwerkzeug schreibt
+seinen Fortschritt auf eine Ausgabe, die es in einem Programm ohne Konsole
+nicht gibt. Schon der erste Fortschrittseintrag brachte es zum Absturz – und
+die Fehlerbehandlung versuchte es auf demselben Weg gleich noch einmal.
+
+Jetzt wird vor dem Start geprüft, ob die Ausgabe taugt. Falls nicht, bekommt
+das Werkzeug eine Ersatzausgabe.
+
+### Abbrüche bei knappem Arbeitsspeicher sagen jetzt, woran es liegt
+
+Große Aufgaben brachen gelegentlich mit `[Errno 22] Invalid argument` ab –
+einer Meldung, die nach einem Fehler im Spiel oder im Programm klingt. In
+Messungen an 18 Läufen lag es jedes Mal an erschöpftem Arbeitsspeicher: Alle
+vier solchen Abbrüche fielen in Momente mit höchstens 20 MB freiem Speicher,
+keiner der Läufe mit mehr als 50 MB brach so ab. Windows meldet diesen
+Zustand dort nicht als Speicherfehler, sondern als „ungültiges Argument".
+
+Das Programm schreibt jetzt während jeder Aufgabe mit, wie wenig
+Arbeitsspeicher zeitweise frei war. Bricht die Aufgabe ab und war es knapp,
+steht das in der Fehlermeldung – mit dem Rat, andere Programme zu schließen
+und es erneut zu versuchen. Bei ausreichend Speicher kommt kein Hinweis.
+
+### Zu wenig Platz: jetzt mit Meldung und Ordnerwahl
+
+Bisher rechnete das Programm vor dem Start mit Quellgröße mal 1,1, zeigte
+eine Warnung – und ließ die Aufgabe trotzdem los. Wer zu wenig Platz
+hatte, sah also, dass es eng wird, konnte aber nichts dagegen tun und
+stand Stunden später vor einem abgebrochenen Lauf.
+
+Jetzt hält die Aufgabe an und fragt. Der Dialog nennt je Ordner, was
+gebraucht wird, was frei ist und was fehlt, und bietet drei Wege:
+**Arbeitsordner wählen**, **Zielordner wählen** oder **Trotzdem starten**.
+Nach jeder Neuwahl wird neu gerechnet – der andere Ordner kann genauso
+knapp sein.
+
+Gerechnet wird dabei genauer als vorher:
+
+| Zielformat | Platzbedarf | gemessen an 51,08 GB |
+| --- | --- | --- |
+| `.ffpfsc` | 0,75× | 24,22 GB |
+| `.ffpfs` / `.exfat` | 1,10× | 51,6 GB |
+| `.ffpkg` | 1,30× | 61,11 GB |
+| Dump-Ordner | 1,10× | 51,08 GB |
+
+Die Zahlen stammen aus der Prüfmatrix, nicht aus einer Schätzung; auf die
+gemessenen Werte ist ein Sicherheitsrand aufgeschlagen.
+
+Der **Arbeitsordner (Temp)** wird mitgeprüft, und zwar unterschiedlich: Mit
+AMPR EMU oder BACKPORT entsteht dort eine vollständige Arbeitskopie des
+Dumps (bei einem 51-GB-Titel also 56 GB), ohne Integration braucht nur die
+Packmaschine Zwischenraum (7,7 GB). Liegen Arbeits- und Zielordner auf
+demselben Laufwerk, wird die Summe geprüft – getrennt sähe jeder für sich
+gut aus, und zusammen reichte es trotzdem nicht.
+
+Auf der Kommandozeile gibt es keinen Dialog: Dort wird gemeldet, und
+`--yes` entscheidet wie bei jeder anderen Rückfrage.
+
+### Ein fertiges .ffpkg belegte doppelt so viel Platz
+
+Ein `.ffpkg` wird zuerst im Arbeitsordner gebaut und geprüft und danach ins
+Ziel gebracht. Dieses „ins Ziel bringen" war bisher immer eine vollständige
+Kopie: Bei einem 61-GB-Paket waren damit zeitweise **122 GB** belegt, dazu
+kam ein zusätzlicher Schreibdurchgang über die ganzen 61 GB.
+
+Liegen Arbeitsordner und Ziel auf demselben Laufwerk, wird jetzt verschoben
+statt kopiert. Das kostet weder Zeit noch zusätzlichen Platz. Auf
+verschiedenen Laufwerken wird weiterhin kopiert, und alle Prüfungen danach
+laufen unverändert.
+
+### Reste abgebrochener Läufe blieben liegen
+
+Bricht eine Aufgabe ab, behält sie ihren Zwischenstand, damit sie sich
+später fortsetzen lässt. Was älter als zwölf Stunden ist, räumt das Programm
+eigentlich selbst weg – das tat es aber nur bei wenigen Aufgaben, weil das
+Aufräumen an einer Stelle hing, die die meisten Aufgaben gar nicht
+durchlaufen. In einer Prüfreihe lagen dadurch **178 GB** aus abgebrochenen
+Läufen fast einen Tag im Arbeitsordner.
+
+Jetzt wird am Ende jeder Aufgabe aufgeräumt. Die Zwölf-Stunden-Grenze
+bleibt: Sie schützt Aufgaben, die gleichzeitig in einem zweiten
+Programmfenster laufen.
+
+### Aufgabe 7 scheiterte an einem Zielordner, den sie gar nicht braucht
+
+Mit einem Dump-Ordner als Quelle arbeitet Aufgabe 7 im Ordner selbst. Das
+Zielfeld wird dann ausgeblendet, und über der Quelle steht „QUELLE & ZIEL".
+Beim Start wurde das ausgeblendete Feld trotzdem geprüft: Stand darin noch
+ein Zielordner von einem früheren Lauf – etwa auf einem USB-Laufwerk, das
+inzwischen abgesteckt ist –, brach die Aufgabe mit „Zielverzeichnis
+existiert nicht" ab. Sehen oder leeren ließ sich das Feld in diesem Moment
+nicht. Auf der Kommandozeile war es derselbe Fall: Ohne `--dest` galt der
+gespeicherte Ordner.
+
+Jetzt wird das Feld in diesem Fall nicht mehr geprüft; der gespeicherte
+Ordner bleibt aber stehen. Mit einem `.ffpfsc`, `.exfat` oder `.ffpkg` als
+Quelle schreibt Aufgabe 7 ins Ziel – dort fällt ein nicht vorhandener
+Ordner weiterhin auf.
+
+### Die BAUFORM steht nur noch da, wo sie etwas tut
+
+Die Liste **BAUFORM (Container)** stand über allen acht Aufgaben und jedem
+Zielformat. Sie wirkt aber ausschließlich bei `.ffpfsc`:
+
+- Eine `.ffpfs` ist kein Container, sondern ein Abbild-Spiel – sie wird
+  flach gebaut, die Einstellung wird nie abgefragt.
+- `.exfat`, `.ffpkg` und der Dump-Ordner laufen über andere Wege.
+- Die Aufgaben 7 und 8 haben überhaupt kein Zielformat.
+
+Jetzt erscheint sie nur bei `.ffpfsc`.
+
+### Lange Aufgaben sahen aus, als hingen sie
+
+Bevor eine Aufgabe loslegt, misst sie die Quelle aus. Bei einem 51-GB-Dump
+mit 17.000 Dateien auf einer USB-Platte dauert das **37 Minuten** – und in
+dieser Zeit rührte sich nichts: keine Zahl, kein Text, kein Balken. Die
+eingebaute Aufhänger-Erkennung hielt das für einen Absturz und schrieb
+eine Fehlermeldung ins Protokoll eines völlig normalen Laufs. **Abbrechen
+ging in dieser Zeit nicht.**
+
+Betroffen waren sieben der acht Stellen, an denen gemessen wird; nur
+Aufgabe 1 machte es richtig. Jetzt meldet jede von ihnen mit, wie viele
+Dateien und wie viele Gigabyte schon gezählt sind, und reagiert sofort auf
+Abbrechen.
+
+Das ist dieselbe Ursache, die hinter den Balkensprüngen von v1.9.7 bis
+v1.9.12 stand: Die Aufgabe arbeitete, aber niemand sah es.
 
 ---
 

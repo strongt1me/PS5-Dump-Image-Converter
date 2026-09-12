@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.14"
+APP_VERSION = "v1.9.15"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -5168,6 +5168,327 @@ class PS5ConverterGUI:
         ("ffpkg", "ffpfsc"),
     })
 
+    #: Wie viel Platz das Ergebnis je Zielformat braucht, als Vielfaches
+    #: der Quellgroesse.
+    #:
+    #: **Gemessen, nicht geschaetzt** - an Prince of Persia: The Lost Crown
+    #: (51,08 GB Dump-Ordner), Pruefmatrix vom 10.-12.09.2026:
+    #:
+    #: =========  ===========  =======
+    #: Ziel       Ergebnis     Faktor
+    #: =========  ===========  =======
+    #: .ffpfsc    24,22 GB     0,47
+    #: .ffpfs     51,63 GB     1,02
+    #: .exfat     51,64 GB     1,02
+    #: .ffpkg     61,11 GB     1,20
+    #: Ordner     51,08 GB     1,00
+    #: =========  ===========  =======
+    #:
+    #: Aufgeschlagen ist ein Sicherheitsrand: Ein Titel mit schlecht
+    #: komprimierbaren Texturen kommt bei .ffpfsc naeher an 1,0 heran als
+    #: dieser hier. Lieber einmal zu oft gefragt als mitten im Lauf ohne
+    #: Platz dastehen - nach zwei Stunden ist der Aerger groesser.
+    _PLATZFAKTOR_ZIEL: dict[str, float] = {
+        "ffpfsc": 0.75,
+        "ffpfs": 1.10,
+        "exfat": 1.10,
+        "ffpkg": 1.30,
+        "folder": 1.10,
+        "": 1.10,
+    }
+
+    #: So viel Temp-Platz je Quellgroesse. Mit Integration entsteht dort
+    #: eine vollstaendige Arbeitskopie des Dumps (``_integration_anwenden``
+    #: laeuft vor dem Packen), ohne Integration braucht nur die Packmaschine
+    #: Zwischenraum.
+    _PLATZFAKTOR_TEMP_MIT_KOPIE = 1.10
+    _PLATZFAKTOR_TEMP_OHNE = 0.15
+
+    #: Unter diesem Wert lohnt keine Rueckfrage - so viel ist auf jedem
+    #: Datentraeger noch zu holen, und der Dialog waere nur laestig.
+    _PLATZ_BAGATELLE_BYTES = 512 * 1024 ** 2
+
+    #: Aufgaben ohne eigenes Ergebnis. Sie schreiben nichts Grosses und
+    #: brauchen die Pruefung nicht.
+    _PLATZ_OHNE_ZIEL: frozenset = frozenset({
+        "inspect", "ampr_manager", "dump_validator",
+    })
+
+    def _quellgroesse_ermitteln(self, src: str) -> int:
+        """Groesse der Quelle in Bytes, ohne den Hauptfaden zu blockieren.
+
+        Bei einer Datei ist es die Dateigroesse. Bei einem Ordner **nicht**
+        ein rekursiver Durchlauf: Bei einem 51-GB-Dump mit 17.000 Dateien
+        legt der die Oberflaeche fuer Sekunden still, und Windows meldet
+        "Keine Rueckmeldung". Genommen wird der Wert, den der
+        Hintergrundlauf beim Waehlen der Quelle ermittelt hat.
+
+        Returns:
+            Die Groesse, oder 0 wenn sie (noch) nicht bekannt ist. Der
+            Aufrufer prueft dann nicht - lieber gar keine Aussage als eine
+            geratene.
+        """
+        if not src:
+            return 0
+        try:
+            if os.path.isfile(src):
+                return os.path.getsize(src)
+        except OSError as exc:
+            logger.debug("Quellgroesse nicht lesbar: %s", exc)
+            return 0
+        if os.path.isdir(src):
+            return int(getattr(self, "_last_source_size_bytes", 0) or 0)
+        return 0
+
+    def _platzbedarf_schaetzen(self, mode: str, src: str,
+                               target_type: str) -> "tuple[int, int]":
+        """Schaetzt, wie viel Platz Temp- und Zielordner brauchen.
+
+        Args:
+            mode: Der Aufgabenschluessel.
+            src: Die Quelle.
+            target_type: Das gewaehlte Zielformat.
+
+        Returns:
+            ``(temp_bytes, ziel_bytes)``. Beides 0, wenn sich die
+            Quellgroesse nicht ermitteln liess.
+        """
+        quelle = self._quellgroesse_ermitteln(src)
+        if quelle <= 0:
+            return 0, 0
+
+        # Beim Entpacken eines Containers ist die Quelle kleiner als das,
+        # was herauskommt. Dafuer gibt es eine genauere Schaetzung, die in
+        # den Container hineinsieht.
+        genauer = self._estimate_unpack_space_requirement(src)
+        if genauer:
+            ziel = int(genauer)
+        else:
+            faktor = self._PLATZFAKTOR_ZIEL.get(target_type,
+                                                self._PLATZFAKTOR_ZIEL[""])
+            ziel = int(quelle * faktor)
+
+        mit_kopie = bool(self._integration_gewuenscht())
+        temp = int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
+                             else self._PLATZFAKTOR_TEMP_OHNE))
+        return temp, ziel
+
+    def _integration_gewuenscht(self) -> bool:
+        """Ist AMPR EMU oder BACKPORT angehakt?
+
+        Beides legt vor dem Packen eine vollstaendige Arbeitskopie des Dumps
+        im Temp-Ordner an - der Unterschied im Platzbedarf ist erheblich.
+        """
+        for name in ("ampr_integrate_var", "backport_integrate_var"):
+            var = getattr(self, name, None)
+            try:
+                if var is not None and bool(var.get()):
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        return False
+
+    def _freier_platz(self, pfad: str) -> "int | None":
+        """Freie Bytes auf dem Datentraeger von ``pfad``, oder None."""
+        if not pfad:
+            return None
+        try:
+            return int(shutil.disk_usage(pfad).free)
+        except OSError as exc:
+            logger.debug("Freier Platz fuer %s nicht ermittelbar: %s", pfad, exc)
+            return None
+
+    def _platz_klaeren(self, mode: str, src: str, target_type: str) -> bool:
+        """Prueft den Platz und laesst den Ordner neu waehlen, wenn er fehlt.
+
+        Der Anwender hat am 12.09.2026 genau das verlangt: eine Meldung,
+        **und** die Moeglichkeit, Temp- oder Zielordner daraufhin zu
+        wechseln. Bis dahin gab es nur ein ``showwarning``, nach dem die
+        Aufgabe trotzdem loslief - und Stunden spaeter ohne Platz abbrach.
+
+        Geprueft wird in einer Schleife: Nach jeder Neuwahl wird neu
+        gerechnet, denn der neue Ordner kann genauso knapp sein.
+
+        Returns:
+            ``True``, wenn gestartet werden darf - weil genug Platz da ist
+            oder der Anwender es ausdruecklich so will. ``False`` heisst
+            Abbruch.
+        """
+        if mode in self._PLATZ_OHNE_ZIEL:
+            return True
+
+        while True:
+            temp_noetig, ziel_noetig = self._platzbedarf_schaetzen(
+                mode, src, target_type)
+            if temp_noetig <= 0 and ziel_noetig <= 0:
+                return True        # Groesse unbekannt - keine Aussage moeglich.
+
+            temp_ordner = self._get_runtime_temp_dir()
+            ziel_ordner = str(self.dest_path.get()).strip()
+
+            knapp = []
+            # Liegen beide auf demselben Datentraeger, muessen sie sich den
+            # Platz teilen. Getrennt geprueft saehe jeder fuer sich gut aus,
+            # und zusammen reichte es trotzdem nicht.
+            gleicher_traeger = self._selber_datentraeger(temp_ordner, ziel_ordner)
+            if gleicher_traeger:
+                frei = self._freier_platz(temp_ordner)
+                noetig = temp_noetig + ziel_noetig
+                if frei is not None and frei + self._PLATZ_BAGATELLE_BYTES < noetig:
+                    knapp.append(("beides", temp_ordner, noetig, frei))
+            else:
+                for was, ordner, noetig in (("temp", temp_ordner, temp_noetig),
+                                            ("ziel", ziel_ordner, ziel_noetig)):
+                    if not ordner or noetig <= 0:
+                        continue
+                    frei = self._freier_platz(ordner)
+                    if frei is not None and frei + self._PLATZ_BAGATELLE_BYTES < noetig:
+                        knapp.append((was, ordner, noetig, frei))
+
+            if not knapp:
+                return True
+
+            # Auf der Kommandozeile gibt es niemanden, der einen Ordner
+            # waehlen koennte. Ein eigenes Fenster mit ``wait_window``
+            # haette den Lauf dort **stillschweigend haengen** lassen -
+            # ``_run_cli`` ersetzt nur ``messagebox.*``, nicht selbst
+            # gebaute Dialoge. Gemeldet wird trotzdem, und ``--yes``
+            # entscheidet wie bei jeder anderen Rueckfrage auch.
+            if getattr(self, "_cli_mode", False):
+                for was, ordner, noetig, frei in knapp:
+                    self._append_to_log(self._t(
+                        "platz.log_cli", ordner=ordner,
+                        noetig=self._fmt_bytes(noetig),
+                        frei=self._fmt_bytes(frei)))
+                if getattr(self, "_cli_platz_trotzdem", False):
+                    return True
+                self._append_to_log(self._t("platz.log_cli_abbruch"))
+                return False
+
+            antwort = self._platz_dialog(knapp)
+            if antwort == "abbrechen":
+                self._append_to_log(self._t("platz.log_abgebrochen"))
+                return False
+            if antwort == "trotzdem":
+                # Der Anwender hat es gesehen und will es so. Ins Protokoll
+                # gehoert es trotzdem - sonst steht spaeter im Fehlerbild
+                # eine Ursache, die niemand mehr zuordnen kann.
+                for was, ordner, noetig, frei in knapp:
+                    self._append_to_log(self._t(
+                        "platz.log_trotzdem", ordner=ordner,
+                        noetig=self._fmt_bytes(noetig),
+                        frei=self._fmt_bytes(frei)))
+                return True
+            # Sonst: Es wurde ein Ordner neu gewaehlt - noch eine Runde.
+
+    @staticmethod
+    def _selber_datentraeger(einer: str, anderer: str) -> bool:
+        """Liegen beide Pfade auf demselben Datentraeger?"""
+        if not einer or not anderer:
+            return False
+        try:
+            return (os.path.splitdrive(os.path.abspath(einer))[0].upper()
+                    == os.path.splitdrive(os.path.abspath(anderer))[0].upper())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def _platz_dialog(self, knapp) -> str:
+        """Zeigt, wo der Platz fehlt, und laesst einen Ordner neu waehlen.
+
+        Args:
+            knapp: Liste aus ``(was, ordner, noetig, frei)``.
+
+        Returns:
+            ``"abbrechen"``, ``"trotzdem"`` oder ``"neu"`` (dann wurde ein
+            Ordner gewechselt und der Aufrufer rechnet noch einmal).
+        """
+        c = self._COLORS
+        fenster = self._build_modern_toplevel(
+            self._t("platz.titel"), 760, 430,
+            min_width=680, min_height=380, parent=self.root)
+        self._build_modern_header(fenster, self._t("platz.titel"),
+                                  self._t("platz.untertitel"))
+
+        ergebnis = {"wahl": "abbrechen"}
+
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=10)
+        koerper.pack(fill="both", expand=True)
+
+        tk.Label(koerper, text=self._t("platz.erklaerung"),
+                 bg=c["bg_main"], fg=c["fg_secondary"], justify="left",
+                 wraplength=pt(660), font=(UI_SCHRIFT, pt(9)),
+                 anchor="w").pack(fill="x", pady=(0, 12))
+
+        for was, ordner, noetig, frei in knapp:
+            karte = tk.Frame(koerper, bg=c["console_bg"], padx=14, pady=10)
+            karte.pack(fill="x", pady=(0, 8))
+            tk.Label(karte, text=self._t("platz.wo_%s" % was),
+                     bg=c["console_bg"], fg=c["fg_primary"],
+                     font=(UI_SCHRIFT, pt(10), "bold"),
+                     anchor="w").pack(fill="x")
+            tk.Label(karte, text=ordner, bg=c["console_bg"],
+                     fg=c["fg_secondary"], font=("Consolas", pt(9)),
+                     anchor="w", wraplength=pt(620)).pack(fill="x")
+            tk.Label(karte, text=self._t("platz.zahlen",
+                                         noetig=self._fmt_bytes(noetig),
+                                         frei=self._fmt_bytes(frei),
+                                         fehlt=self._fmt_bytes(noetig - frei)),
+                     bg=c["console_bg"], fg=c["fg_primary"],
+                     font=(UI_SCHRIFT, pt(9)), anchor="w",
+                     justify="left").pack(fill="x", pady=(6, 0))
+
+        def _waehlen(welcher: str) -> None:
+            if welcher == "temp":
+                jetzt = self._get_runtime_temp_dir()
+                neu = filedialog.askdirectory(
+                    title=self._t("platz.temp_waehlen"),
+                    initialdir=jetzt if os.path.isdir(jetzt) else None,
+                    parent=fenster)
+                if neu:
+                    self.temp_path.set(os.path.normpath(neu))
+                    # Die Schreibprobe gilt nur fuer den alten Ordner.
+                    self._temp_pruefung = None
+                    ergebnis["wahl"] = "neu"
+                    fenster.destroy()
+            else:
+                jetzt = str(self.dest_path.get()).strip()
+                neu = filedialog.askdirectory(
+                    title=self._t("platz.ziel_waehlen"),
+                    initialdir=jetzt if os.path.isdir(jetzt) else None,
+                    parent=fenster)
+                if neu:
+                    self.dest_path.set(os.path.normpath(neu))
+                    ergebnis["wahl"] = "neu"
+                    fenster.destroy()
+
+        def _schliessen(wahl: str) -> None:
+            ergebnis["wahl"] = wahl
+            fenster.destroy()
+
+        reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
+        reihe.pack(side="bottom", fill="x")
+        ttk.Button(reihe, text=self._t("action.cancel"),
+                   command=lambda: _schliessen("abbrechen")).pack(side="right")
+        ttk.Button(reihe, text=self._t("platz.trotzdem"),
+                   command=lambda: _schliessen("trotzdem")).pack(
+                       side="right", padx=(0, 8))
+        # Angeboten wird nur, was auch knapp ist - ein Knopf fuer einen
+        # Ordner, an dem es nicht fehlt, waere eine falsche Faehrte.
+        betroffen = {w for w, *_ in knapp}
+        if betroffen & {"temp", "beides"}:
+            ttk.Button(reihe, text=self._t("platz.temp_knopf"),
+                       command=lambda: _waehlen("temp")).pack(side="left")
+        if betroffen & {"ziel", "beides"}:
+            ttk.Button(reihe, text=self._t("platz.ziel_knopf"),
+                       style="Accent.TButton",
+                       command=lambda: _waehlen("ziel")).pack(
+                           side="left", padx=(8, 0))
+
+        fenster.transient(self.root)
+        fenster.grab_set()
+        self.root.wait_window(fenster)
+        return ergebnis["wahl"]
+
     def _umhuellenden_weg_klaeren(self, mode: str, src: str,
                                   target_type: str) -> bool:
         """Fragt, wenn die Integration auf diesem Weg nicht greifen kann.
@@ -7113,6 +7434,52 @@ class PS5ConverterGUI:
         "ffpfsc": "main.smp_rang_pfs",
     }
 
+    #: Zielformate, bei denen die BAUFORM ueberhaupt etwas bewirkt.
+    #:
+    #: Nur ``.ffpfsc``. Der Weg dorthin ist der einzige, der die
+    #: Einstellung abfragt (``_mode_pack_folder_mkpfs``):
+    #:
+    #: * ``.ffpfs`` geht eine Zeile vorher in den **flachen** Zweig - eine
+    #:   ``.ffpfs`` ist kein Container, sondern ein Abbild-Spiel. Das
+    #:   Protokoll sagt es sogar ausdruecklich
+    #:   (``log.bauform.ffpfs_flach``): "Die Bauform-Einstellung greift
+    #:   hier nicht - sie betrifft nur den .ffpfsc-Container."
+    #: * ``.exfat``, ``.ffpkg`` und der Dump-Ordner laufen gar nicht ueber
+    #:   ``_mode_pack_folder``.
+    #:
+    #: Angezeigt wurde die Liste bis v1.9.14 trotzdem immer. Der Anwender
+    #: hat es am 12.09.2026 gemeldet: "Ansonsten ist es eher
+    #: irrefuehrend." Er hat recht - eine Auswahl, die nichts tut, ist
+    #: schlimmer als keine.
+    _BAUFORM_WIRKT_BEI: frozenset = frozenset({"ffpfsc"})
+
+    def _bauform_sichtbarkeit_setzen(self) -> bool:
+        """Zeigt die BAUFORM-Auswahl nur, wo sie etwas bewirkt.
+
+        Ueber ``grid_remove()``/``grid()``, nicht ueber ``destroy()``: Die
+        Zeile behaelt ihre Rasterposition, und beim Zurueckschalten steht
+        alles wieder da, wo es war.
+
+        Returns:
+            Ob die Auswahl jetzt sichtbar ist.
+        """
+        if not hasattr(self, "bauform_combo"):
+            return False
+        sichtbar = (self._get_selected_target_type()
+                    in self._BAUFORM_WIRKT_BEI)
+        for name in ("bauform_title", "bauform_combo"):
+            widget = getattr(self, name, None)
+            if widget is None:
+                continue
+            try:
+                if sichtbar:
+                    widget.grid()
+                else:
+                    widget.grid_remove()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bauform-Zeile nicht umschaltbar: %s", exc)
+        return sichtbar
+
     def _zielformat_hinweis(self, selected_mode: str) -> str:
         """Baut den Hinweistext unter der Zielformat-Liste.
 
@@ -7158,6 +7525,9 @@ class PS5ConverterGUI:
         # Variablen, es gibt keinen Sammelgetter dafuer.
         modus = str(selected_mode or self.current_mode.get() or "").strip()
         self.format_info_label.config(text=self._zielformat_hinweis(modus))
+        # Die BAUFORM haengt am selben Faden: Sie wirkt nur bei .ffpfsc und
+        # hat bei jedem anderen Ziel nichts zu suchen.
+        self._bauform_sichtbarkeit_setzen()
         # Der Text aendert die Hoehe der Beschriftung - der eingebrannte
         # Hintergrund muss neu geschnitten werden.
         try:
@@ -11089,6 +11459,25 @@ class PS5ConverterGUI:
                 logger.debug("Temp-Rest %s nicht entfernbar: %s", eintrag.name, exc)
         if entfernt:
             self._append_to_log(self._t('temp.stale_swept', count=entfernt))
+
+    def _temp_reste_nach_aufgabe_abraeumen(self) -> None:
+        """Raeumt alte ``ps5conv_*``-Reste am Ende **jeder** Aufgabe ab.
+
+        ``_sweep_stale_temp_dirs`` haengt an ``_mkdtemp`` und laeuft einmal je
+        Prozess. Nur ein Teil der Wege legt seinen Arbeitsordner aber ueber
+        ``_mkdtemp`` an: In der Pruefmatrix vom 12.09.2026 griff der Sweep
+        deshalb nur in einem von fuenf Laeufen (Aufgabe 2), und 178 GB aus
+        abgebrochenen Laeufen lagen fast einen Tag im Arbeitsordner.
+
+        Die Zwoelf-Stunden-Schwelle bleibt. Sie schuetzt Vorgaenge in parallel
+        offenen Programmfenstern, und einen frischen Zwischenstand, der fuer
+        eine Wiederaufnahme behalten wird, trifft sie nie.
+        """
+        self._stale_temp_swept = False
+        try:
+            self._sweep_stale_temp_dirs()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Temp-Reste nach der Aufgabe nicht pruefbar: %s", exc)
 
     #: So oft wird ein neuer Zufallsname versucht, bevor aufgegeben wird.
     _TEMP_NAME_VERSUCHE = 24
@@ -16369,7 +16758,66 @@ class PS5ConverterGUI:
                 zeilen.append(self._t(schluessel, path=pfad,
                                       size=self._fmt_bytes(int(frei))))
 
+        # Der Arbeitsspeicher - ebenfalls gemessen, waehrend der ganzen
+        # Aufgabe. Siehe _SPEICHER_VERDACHT_MB.
+        tief = getattr(self, "_speicher_tiefpunkt_mb", None)
+        if isinstance(tief, int) and tief < self._SPEICHER_VERDACHT_MB:
+            zeilen.append(self._t("fehlergrund.speicher_knapp",
+                                  size=self._fmt_bytes(tief * 1024 ** 2)))
+
         return "\n".join("- " + z for z in zeilen)
+
+    #: Unter diesem Tiefpunkt nennt die Fehlermeldung knappen Arbeitsspeicher.
+    #:
+    #: Gemessen in der Pruefmatrix vom 10.-12.09.2026: Alle vier Abbrueche mit
+    #: "[Errno 22] Invalid argument" fielen auf Tiefpunkte von 1, 3, 12 und
+    #: 20 MB; keiner der zwoelf Laeufe ueber 50 MB brach so ab. Windows meldet
+    #: erschoepften Speicher dort nicht als Speicherfehler, sondern als
+    #: ungueltiges Argument - und der Anwender sucht den Fehler dann im Spiel.
+    #:
+    #: Der Rand bis 100 MB ist Absicht: Gemessen wird alle zwei Sekunden, ein
+    #: kurzer Einbruch dazwischen bleibt ungesehen.
+    _SPEICHER_VERDACHT_MB = 100
+
+    #: So oft wird der freie Arbeitsspeicher waehrend einer Aufgabe gelesen.
+    _SPEICHER_TAKT_S = 2.0
+
+    def _speicher_beobachtung_starten(self) -> None:
+        """Merkt sich waehrend der Aufgabe den tiefsten freien Arbeitsspeicher.
+
+        Laeuft in einem eigenen Daemon-Faden und endet von selbst, sobald
+        :meth:`_speicher_beobachtung_beenden` gerufen wird oder die Aufgabe
+        nicht mehr laeuft. Ohne ``psutil`` wird nichts gemessen - dann bleibt
+        der Tiefpunkt ``None``, und die Fehlermeldung behauptet nichts.
+        """
+        self._speicher_tiefpunkt_mb = None
+        stopp = threading.Event()
+        self._speicher_stopp = stopp
+        if psutil is None:
+            return
+
+        def _messen() -> None:
+            while not stopp.is_set():
+                try:
+                    frei = int(psutil.virtual_memory().available // (1024 ** 2))
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Freier Arbeitsspeicher nicht lesbar: %s", exc)
+                    return
+                bisher = self._speicher_tiefpunkt_mb
+                if bisher is None or frei < bisher:
+                    self._speicher_tiefpunkt_mb = frei
+                if not getattr(self, "is_running", False):
+                    return
+                stopp.wait(self._SPEICHER_TAKT_S)
+
+        threading.Thread(target=_messen, daemon=True,
+                         name="speicher-tiefpunkt").start()
+
+    def _speicher_beobachtung_beenden(self) -> None:
+        """Haelt die Messung an. Der gemerkte Tiefpunkt bleibt stehen."""
+        stopp = getattr(self, "_speicher_stopp", None)
+        if stopp is not None:
+            stopp.set()
 
     def _teilschritt_melden(self, schluessel: str, anteil: float,
                             spanne: float) -> None:
@@ -16652,6 +17100,25 @@ class PS5ConverterGUI:
     # Aufgaben-Steuerung
     # ------------------------------------------------------------------
 
+    def _aufgabe7_liest_kein_ziel(self, mode: str, src: str) -> bool:
+        """Arbeitet Aufgabe 7 bei dieser Quelle ohne Zielordner?
+
+        Mit einem Dump-Ordner als Quelle arbeitet der AMPR EMU Manager im
+        Ordner selbst. Das Fenster blendet das Zielfeld dann aus und schreibt
+        "QUELLE & ZIEL" darueber (``_set_mode_from_sidebar``,
+        ``_on_source_path_changed``), und ``_mode_ampr_manager`` liest
+        ``dst`` nur in den Zweigen fuer .ffpfsc, .exfat und .ffpkg.
+
+        Bis v1.9.14 hat ``_launch_task`` das ausgeblendete Feld trotzdem
+        geprueft. Stand darin noch ein Ziel aus einem frueheren Lauf - etwa
+        auf einem inzwischen abgesteckten USB-Laufwerk -, brach Aufgabe 7
+        mit "Zielverzeichnis existiert nicht" ab: fuer ein Feld, das man
+        weder sieht noch leeren kann. Auf der Kommandozeile genauso, denn
+        ohne ``--dest`` gilt dort der gespeicherte Wert. Aufgefallen am
+        12.09.2026 in der Pruefmatrix - an allen sechs Laeufen der Aufgabe 7.
+        """
+        return mode == "ampr_manager" and os.path.isdir(src)
+
     def _launch_task(self) -> None:
         """Validiert Eingaben und startet den Konvertierungs-Thread."""
         src = self.source_path.get().strip()
@@ -16760,9 +17227,16 @@ class PS5ConverterGUI:
         # Speicherplatz-Pruefung gleich darunter nimmt sie laengst aus.
         #
         # Ein *angegebenes* Ziel wird weiterhin geprueft: Ein Tippfehler soll
-        # nicht stillschweigend im Quellordner landen.
+        # nicht stillschweigend im Quellordner landen. Das gilt fuer
+        # Datei-Quellen - mit einem Dump-Ordner liest Aufgabe 7 gar kein
+        # Ziel, siehe ``_aufgabe7_liest_kein_ziel``.
         if mode not in ("inspect", "dump_validator"):
             dst = self.dest_path.get().strip()
+            if self._aufgabe7_liest_kein_ziel(mode, src):
+                # Ausgeblendet und ungelesen - dann auch nicht pruefen. Das
+                # Feld selbst bleibt stehen: Der Lauf speichert es mit, und
+                # eine Datei-Quelle braucht es beim naechsten Mal wieder.
+                dst = ""
             if not dst and mode != "ampr_manager":
                 messagebox.showerror(self._t("dialog.title.error"), self._t("dialog.msg.enter_target_dir"))
                 return
@@ -16773,40 +17247,21 @@ class PS5ConverterGUI:
                 )
                 return
 
-        # Speicherplatz-Validierung (nur wenn Zielpfad bekannt)
-        # Keine rekursive Ordnergroessen-Berechnung im Hauptthread,
-        # damit die GUI bei grossen Dumps nicht auf "Keine Rueckmeldung" geht.
-        if mode not in ("inspect", "ampr_manager", "dump_validator"):
-            dst = self.dest_path.get().strip()
-            src_size = 0
-            if os.path.isfile(src):
-                try:
-                    src_size = os.path.getsize(src)
-                except OSError:
-                    src_size = 0
-            elif os.path.isdir(src):
-                src_size = int(getattr(self, "_last_source_size_bytes", 0) or 0)
-            if src_size > 0 and dst and os.path.isdir(dst):
-                try:
-                    free = shutil.disk_usage(dst).free
-                    # Mindestens 110% der Quellgrösse als freien Speicher erwarten
-                    required = int(src_size * 1.1)
-                    if free < required:
-                        messagebox.showwarning(
-                            self._t("dialog.title.disk_space"),
-                            self._t(
-                                "dialog.msg.low_disk_space",
-                                required=self._fmt_bytes(required),
-                                available=self._fmt_bytes(free),
-                            ),
-                        )
-                        logger.warning(
-                            "Speicherplatz-Warnung: benötigt %s, verfügbar %s",
-                            self._fmt_bytes(required),
-                            self._fmt_bytes(free),
-                        )
-                except OSError as exc:
-                    logger.debug("Speicherplatz-Prüfung fehlgeschlagen: %s", exc)
+        # Reicht der Platz - im Arbeits- UND im Zielordner?
+        #
+        # Bis v1.9.14 stand hier ein ``showwarning``: Es rechnete mit
+        # Quellgroesse mal 1,1, nannte die Zahlen und liess die Aufgabe
+        # danach trotzdem los. Der Anwender sah also, dass es eng wird,
+        # konnte aber nichts dagegen tun - und stand Stunden spaeter vor
+        # einem abgebrochenen Lauf.
+        #
+        # ``_platz_klaeren`` rechnet mit dem Zielformat (eine .ffpfsc
+        # braucht halb so viel wie eine .ffpkg), prueft den Temp-Ordner
+        # mit und laesst beide Ordner aus dem Dialog heraus neu waehlen.
+        # Es muss NACH der Zielpfad-Pruefung stehen: Ohne gueltiges Ziel
+        # gaebe es nichts zu rechnen.
+        if not self._platz_klaeren(mode, src, target_type):
+            return
 
         # UI in "laufend"-Zustand versetzen
         self.run_btn.config(state=tk.DISABLED)
@@ -17029,6 +17484,50 @@ class PS5ConverterGUI:
             return max(0.05, min(0.99, ratio))
         except Exception:
             return 0.88
+
+    def _quellgroesse_mit_meldung(self, src: str) -> int:
+        """Ermittelt die Quellgroesse und haelt dabei die Anzeige wach.
+
+        ``_get_path_size`` laeuft mit ``os.walk`` ueber jede Datei. Bei
+        einem 51-GB-Dump mit 17.000 Dateien auf einer USB-exFAT-Platte
+        dauert das **37 Minuten** (am 12.09.2026 an Aufgabe 8 gemessen).
+        Sieben der acht Aufrufer riefen es blank auf - ohne
+        Fortschrittsmeldung und ohne Abbruchpruefung. Die Folgen:
+
+        * Die Statuszeile stand still, und die eingebaute
+          Aufhaenger-Erkennung schrieb nach zwei Minuten einen Stapelabzug
+          ins Protokoll - mitten in einem voellig normalen Lauf. Genau
+          dieses Bild hat den Anwender v1.9.7 bis v1.9.12 glauben lassen,
+          die Aufgaben seien kaputt.
+        * **Abbrechen ging nicht.** Wer es sich anders ueberlegte, sass die
+          37 Minuten ab.
+
+        Der eine Aufrufer, der es richtig macht (Aufgabe 1), hat dafuer
+        einen eigenen, aufwendigen Melder, der den Balken bespielt. Hier
+        genuegt weniger: Die Statuszeile muss sich bewegen, und der Abbruch
+        muss greifen.
+
+        Returns:
+            Die Groesse in Bytes. Bei Abbruch, was bis dahin gezaehlt wurde.
+        """
+        stand = {"gemeldet": 0.0}
+
+        def _melden(bytes_bisher: int, dateien: int) -> None:
+            if not self.is_running:
+                return
+            jetzt = time.monotonic()
+            # Nicht oefter als jede Sekunde - die Statuszeile soll leben,
+            # nicht flackern.
+            if jetzt - stand["gemeldet"] < 1.0:
+                return
+            stand["gemeldet"] = jetzt
+            self._set_progress(None, size_text=self._t(
+                "status.quelle_wird_vermessen",
+                dateien=dateien, groesse=self._fmt_bytes(bytes_bisher)))
+
+        return self._get_path_size(
+            src, progress_cb=_melden,
+            cancel_check=lambda: not self.is_running)
 
     def _get_path_size(
         self,
@@ -19985,6 +20484,10 @@ class PS5ConverterGUI:
 
         success = False
         try:
+            # Den freien Arbeitsspeicher ueber die ganze Aufgabe mitschreiben:
+            # Bricht sie ab, nennt die Fehlermeldung knappen Speicher als
+            # vermutliche Ursache. Beendet wird die Messung im finally.
+            self._speicher_beobachtung_starten()
             if mode in (
                 "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
                 "batch_convert", "universal_convert",
@@ -20354,6 +20857,12 @@ class PS5ConverterGUI:
         finally:
             self.is_running = False
             self.monitor_active = False
+            self._speicher_beobachtung_beenden()
+            # Alte Reste frueherer Laeufe abraeumen - hier, weil jeder Weg hier
+            # vorbeikommt. Im Arbeitsfaden und VOR der Herunterfahr-Pruefung:
+            # Loeschen kann dauern, und der Rechner soll nicht mittendrin
+            # ausgehen.
+            self._temp_reste_nach_aufgabe_abraeumen()
             # Einziger gemeinsamer Ausgang aller Wege (Erfolg, Fehler, Abbruch,
             # Ausnahme): hier faellt die Entscheidung ueber das Herunterfahren.
             # Etwas spaeter als _finish_success, damit die Oberflaeche vorher
@@ -20938,8 +21447,21 @@ class PS5ConverterGUI:
                     transfer_path = f"{final_path}.transfer-{uuid.uuid4().hex}.ffpkg"
                     attempt_diagnostic["transfer_path"] = transfer_path
                     self._append_to_log(self._t('log.auto.0102'))
-                    _kopiere_mit_fortschritt(stage_path, transfer_path,
-                                             _s3(0.50), _s3(0.72))
+                    # Liegen Buehne und Ziel auf demselben Datentraeger, wird
+                    # verschoben statt kopiert. Bis v1.9.15 lief hier immer eine
+                    # vollstaendige Kopie: Ein 61-GB-Paket belegte damit 122 GB
+                    # und kostete einen zusaetzlichen Schreibdurchgang, obwohl
+                    # ein Umbenennen dieselben Bytes an denselben Ort bringt.
+                    # Die Pruefungen danach (SHA-256, UFS2 auf dem Zielvolume)
+                    # laufen unveraendert.
+                    uebertragung = self._ffpkg_auf_zielvolume_bringen(
+                        stage_path, transfer_path,
+                        lambda quelle, ziel: _kopiere_mit_fortschritt(
+                            quelle, ziel, _s3(0.50), _s3(0.72)))
+                    attempt_diagnostic["transfer_art"] = uebertragung
+                    if uebertragung == "verschoben":
+                        self.task_progress = max(self.task_progress, _s3(0.72))
+                        self._append_to_log(self._t('log.ffpkg_verschoben'))
                     # Der Datenstrom muss vor Hashvergleich und UFS2-Prüfung auf
                     # dem Zielvolume abgeschlossen sein.
                     with open(transfer_path, "rb+") as transfer_handle:
@@ -21008,6 +21530,33 @@ class PS5ConverterGUI:
             _delete_if_exists(stage_path)
             if staging_dir:
                 _rmtree_force(staging_dir)
+
+    def _ffpkg_auf_zielvolume_bringen(self, stage_path: str, transfer_path: str,
+                                      kopieren) -> str:
+        """Bringt den geprueften Kandidaten ins Zielvolume - so billig wie moeglich.
+
+        Auf demselben Datentraeger genuegt ``os.replace``: Es aendert nur den
+        Verzeichniseintrag und kostet weder Zeit noch Platz. Nur wenn Buehne und
+        Ziel auf verschiedenen Datentraegern liegen, muss wirklich kopiert werden.
+
+        ``_selber_datentraeger`` vergleicht nur Laufwerksbuchstaben. Ein in einen
+        Ordner eingehaengtes Volume sieht dort gleich aus, ist es aber nicht -
+        dann wirft ``os.replace``, und es wird doch kopiert.
+
+        Args:
+            kopieren: ``(quelle, ziel) -> None``, die blockweise Kopie mit Anzeige.
+
+        Returns:
+            ``"verschoben"`` oder ``"kopiert"``.
+        """
+        if self._selber_datentraeger(stage_path, transfer_path):
+            try:
+                os.replace(stage_path, transfer_path)
+                return "verschoben"
+            except OSError as exc:
+                logger.debug("FFPKG nicht verschiebbar, wird kopiert (%s)", exc)
+        kopieren(stage_path, transfer_path)
+        return "kopiert"
 
     def _verify_ffpkg_file_count_via_mount(self, candidate_path: str,
                                            expected_file_count: int):
@@ -21204,7 +21753,7 @@ class PS5ConverterGUI:
         if not src:
             return False
         self.task_final_output_path = final_output
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         self.progress_engine.start_task(0, self._t("progress.task.dump_to_exfat"))
         self.progress_engine.begin_prepare(self._t("progress.prepare.analyze_source_folder"))
         # Dieser Weg hat drei Abschnitte, nicht vier wie der .ffpfsc-Weg: Es
@@ -21234,7 +21783,7 @@ class PS5ConverterGUI:
         base_name = os.path.splitext(os.path.basename(src))[0]
         final_output = os.path.join(dst, base_name)
         self.task_final_output_path = final_output
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         self.progress_engine.start_task(3, self._t("progress.task.ffpkg_to_folder"))
         self.progress_engine.begin_prepare(self._t("progress.prepare.extract_ffpkg"))
         self.root.after(0, lambda: self.status_label.config(
@@ -22192,7 +22741,7 @@ class PS5ConverterGUI:
                 # wirklich hat.
                 self._validator_param_json_anbieten(src)
                 self.root.after(0, lambda: self.status_label.config(text=self._t("status.validator_dump_folder")))
-                self.task_total_source_bytes = self._get_path_size(src)
+                self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
                 self.progress_engine.begin_payload(
                     max(1, self.task_total_source_bytes),
                     description=self._t("progress.payload.validation"),
@@ -26198,7 +26747,7 @@ class PS5ConverterGUI:
             final_output = os.path.join(dst, f"{base_name}.ffpfsc")
 
         self.task_final_output_path  = final_output
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         # Direkt: .ffpkg → .ffpfsc (1 Schritt, kein Mount, kein Dokan)
         # mkpfs pack file bettet die .ffpkg als einzelne Datei in einen PFS-Container ein.
         # Identisch zur Behandlung von .exfat in Aufgabe 3.
@@ -26868,7 +27417,7 @@ class PS5ConverterGUI:
 
         # Finale Ausgabe und Quellgröße merken
         self.task_final_output_path  = final_dst
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         # 4 Phasen:
         #   Phase 1 (äußeren Container entpacken):   0–20%
         #   Phase 2 (innere Ebenen entpacken):      20–90%
@@ -26984,7 +27533,7 @@ class PS5ConverterGUI:
             final_output = os.path.join(dst, f"{base_name}.{out_ext}")
 
         self.task_final_output_path  = final_output
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         # Direkt: .exfat → .ffpfsc (1 Schritt, kein Zwischenschritt)
         # mkpfs pack file bettet die .exfat als einzelne Datei in einen PFS-Container ein.
         # Die PS5 liest diesen Container und findet darin das exFAT-Dateisystem-Image.
@@ -27816,7 +28365,7 @@ class PS5ConverterGUI:
             return False
 
         self.task_final_output_path  = final_output
-        self.task_total_source_bytes = self._get_path_size(src)
+        self.task_total_source_bytes = self._quellgroesse_mit_meldung(src)
         # Initiale Schritt-Geometrie möglichst früh aus dem Task-Report ableiten.
         # Dadurch stimmt die Fortschrittsanzeige bereits während des ersten
         # outer-unpack-Schritts, bevor der Container-Inhalt vollständig bekannt ist.
@@ -44060,6 +44609,41 @@ def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     return int(ps4ffpsc_main(argv) or 0)
 
 
+def _stroeme_absichern() -> None:
+    """Sorgt dafuer, dass ``print`` nicht am fehlenden Strom scheitert.
+
+    Die fertige Programmdatei ist mit ``console=False`` gebaut - sie hat
+    kein Konsolenfenster. Ruft sie sich selbst mit ``--ampr-pack`` auf und
+    leitet dabei niemand die Stroeme um, ist ``sys.stderr`` unbrauchbar.
+    Jedes ``print`` dorthin endet dann mit ``OSError: [Errno 22] Invalid
+    argument``.
+
+    Genau das ist beim Anwender passiert (12.09.2026, Bildschirmfoto):
+    ``ampr_pack.py`` schreibt seinen Fortschritt mit ``print`` auf
+    ``sys.stderr``, und weil sein Fehlerbehandler es ebenfalls mit ``print``
+    versucht, warf der gleich noch einmal - zwei Tracebacks uebereinander
+    im PyInstaller-Dialog "Unhandled exception in script".
+
+    Geprueft wird mit einem echten Schreibversuch, nicht mit ``is None``:
+    Der Strom existiert in diesem Fall, er taugt nur nichts.
+    """
+    for name in ("stdout", "stderr"):
+        strom = getattr(sys, name, None)
+        brauchbar = False
+        if strom is not None:
+            try:
+                strom.write("")
+                strom.flush()
+                brauchbar = True
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("%s ist unbrauchbar (%s) - wird ersetzt", name, exc)
+        if not brauchbar:
+            try:
+                setattr(sys, name, open(os.devnull, "w", encoding="utf-8"))
+            except OSError as exc:
+                logger.debug("Ersatzstrom fuer %s nicht anlegbar: %s", name, exc)
+
+
 def _run_ampr_pack_subcommand(argv: list[str]) -> int:
     """Führt das eingebettete AMPR-Packwerkzeug aus.
 
@@ -44082,6 +44666,10 @@ def _run_ampr_pack_subcommand(argv: list[str]) -> int:
     Returns:
         Rückgabewert des Werkzeugs.
     """
+    # Ohne Konsole ist sys.stderr unbrauchbar - und das Werkzeug schreibt
+    # seinen ganzen Fortschritt mit print dorthin.
+    _stroeme_absichern()
+
     wurzel = ampr_assetpakete.werkzeugordner_finden()
     if not wurzel:
         print(
@@ -44594,6 +45182,10 @@ def _run_cli(args: argparse.Namespace) -> int:
 
     # Rückfragen (Überschreiben/Wiederaufnahme/Preflight) nicht-blockierend beantworten.
     yes = bool(args.yes)
+    # Auch die Platzpruefung ist eine Rueckfrage - sie haelt sich an
+    # dieselbe Zusage. Ohne --yes bricht sie ab, statt in einen Lauf zu
+    # gehen, der auf halber Strecke ohne Platz dasteht.
+    app._cli_platz_trotzdem = yes
     messagebox.askyesno = lambda *a, **k: yes
     messagebox.askquestion = lambda *a, **k: ("yes" if yes else "no")
     messagebox.showerror = lambda title, message, **k: print(f"[FEHLER] {title}: {message}", file=sys.stderr)

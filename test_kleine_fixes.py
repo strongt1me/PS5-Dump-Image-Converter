@@ -178,6 +178,158 @@ class CliAufraeumenTests(unittest.TestCase):
         self.assertIn("_sweep_stale_temp_dirs()", quelltext[start:start + 600])
 
 
+class TempResteNachAufgabeTests(unittest.TestCase):
+    """Alte Reste werden am Ende jeder Aufgabe abgeraeumt.
+
+    ``_sweep_stale_temp_dirs`` haengt an ``_mkdtemp`` und laeuft einmal je
+    Prozess. In der Pruefmatrix vom 12.09.2026 griff er deshalb nur in einem
+    von fuenf Laeufen: Die Wege der Aufgaben 3, 6 und 8 legen ihren
+    Arbeitsordner gar nicht ueber ``_mkdtemp`` an. 178 GB aus abgebrochenen
+    Laeufen blieben fast einen Tag liegen.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="nach_aufgabe_")
+        self.basis = self._tmp.name
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _ordner(self, name: str, alter_stunden: float) -> str:
+        pfad = os.path.join(self.basis, name)
+        os.makedirs(pfad, exist_ok=True)
+        Path(os.path.join(pfad, "inhalt.bin")).write_bytes(b"x" * 16)
+        zeitpunkt = time.time() - alter_stunden * 3600
+        os.utime(pfad, (zeitpunkt, zeitpunkt))
+        return pfad
+
+    def _gui(self):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._get_runtime_temp_dir = lambda: self.basis
+        gui._append_to_log = lambda *a, **k: None
+        gui._t = lambda schluessel, **kw: schluessel
+        return gui
+
+    def test_raeumt_auch_nach_einem_frueheren_sweep_ab(self) -> None:
+        """Das Gegenstueck zu ``test_nur_einmal_je_prozess``."""
+        gui = self._gui()
+        APP.PS5ConverterGUI._sweep_stale_temp_dirs(gui)
+        spaeter = self._ordner("ps5conv_ffpkg_stage_alt", 20)
+        APP.PS5ConverterGUI._temp_reste_nach_aufgabe_abraeumen(gui)
+        self.assertFalse(os.path.exists(spaeter),
+                         "Ein Rest aus einem abgebrochenen Lauf blieb liegen.")
+
+    def test_junge_ordner_bleiben_auch_am_aufgabenende(self) -> None:
+        """Schutz fuer parallel offene Programmfenster."""
+        gui = self._gui()
+        jung = self._ordner("ps5conv_exfat_jung", 1)
+        APP.PS5ConverterGUI._temp_reste_nach_aufgabe_abraeumen(gui)
+        self.assertTrue(os.path.exists(jung))
+
+    def test_haengt_im_gemeinsamen_ausgang_vor_dem_herunterfahren(self) -> None:
+        """Am AST geprueft - Kommentare zaehlen nicht als Aufruf."""
+        baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_run_engine_thread")
+
+        def zeile_von(knoten_liste, attr):
+            for anweisung in knoten_liste:
+                for knoten in ast.walk(anweisung):
+                    if isinstance(knoten, ast.Attribute) and knoten.attr == attr:
+                        return knoten.lineno
+            return None
+
+        ausgaenge = [k for k in ast.walk(methode)
+                     if isinstance(k, ast.Try) and k.finalbody
+                     and zeile_von(k.finalbody, "_maybe_shutdown_after_task")]
+        self.assertTrue(ausgaenge, "Der gemeinsame Ausgang ist nicht mehr zu finden.")
+        finalbody = ausgaenge[-1].finalbody
+        aufraeumen = zeile_von(finalbody, "_temp_reste_nach_aufgabe_abraeumen")
+        herunterfahren = zeile_von(finalbody, "_maybe_shutdown_after_task")
+        self.assertIsNotNone(aufraeumen,
+                             "Das Aufraeumen haengt nicht im gemeinsamen Ausgang.")
+        self.assertLess(aufraeumen, herunterfahren,
+                        "Das Herunterfahren darf nicht vor dem Aufraeumen "
+                        "eingeplant werden.")
+
+
+class FfpkgVerschiebenTests(unittest.TestCase):
+    """Das fertige .ffpkg wird verschoben, wenn Buehne und Ziel auf einem Datentraeger liegen.
+
+    Bis v1.9.15 lief immer eine vollstaendige Kopie aus dem Arbeitsordner ins
+    Ziel. Ein 61-GB-Paket belegte damit 122 GB - obwohl beide beim Anwender
+    auf demselben Laufwerk liegen und ein Umbenennen genuegt haette.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="ffpkg_verschieben_")
+        self.stage = os.path.join(self._tmp.name, "stage", "candidate.ffpkg")
+        self.ziel = os.path.join(self._tmp.name, "ziel", "spiel.transfer-test.ffpkg")
+        os.makedirs(os.path.dirname(self.stage))
+        os.makedirs(os.path.dirname(self.ziel))
+        self.inhalt = os.urandom(8192)
+        Path(self.stage).write_bytes(self.inhalt)
+        self.kopiert = []
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def _kopieren(self, quelle: str, ziel: str) -> None:
+        self.kopiert.append((quelle, ziel))
+        Path(ziel).write_bytes(Path(quelle).read_bytes())
+
+    @staticmethod
+    def _gui():
+        return APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+
+    def test_gleicher_datentraeger_wird_verschoben(self) -> None:
+        art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+            self._gui(), self.stage, self.ziel, self._kopieren)
+        self.assertEqual("verschoben", art)
+        self.assertEqual([], self.kopiert, "Es wurde trotzdem kopiert.")
+        self.assertFalse(os.path.exists(self.stage),
+                         "Die Buehne liegt noch da - der Platz ist doppelt belegt.")
+        self.assertEqual(self.inhalt, Path(self.ziel).read_bytes())
+
+    def test_anderer_datentraeger_wird_kopiert(self) -> None:
+        gui = self._gui()
+        gui._selber_datentraeger = lambda a, b: False
+        art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+            gui, self.stage, self.ziel, self._kopieren)
+        self.assertEqual("kopiert", art)
+        self.assertEqual(1, len(self.kopiert))
+        self.assertEqual(self.inhalt, Path(self.ziel).read_bytes())
+
+    def test_scheitert_das_verschieben_wird_doch_kopiert(self) -> None:
+        """Gleicher Laufwerksbuchstabe, aber ein eingehaengtes Volume."""
+        from unittest import mock
+        with mock.patch.object(APP.os, "replace",
+                               side_effect=OSError(17, "anderes Laufwerk")):
+            art = APP.PS5ConverterGUI._ffpkg_auf_zielvolume_bringen(
+                self._gui(), self.stage, self.ziel, self._kopieren)
+        self.assertEqual("kopiert", art)
+        self.assertEqual(1, len(self.kopiert))
+
+    def test_der_bau_nutzt_den_weg_wirklich(self) -> None:
+        """Eine Reparatur, die nur der Test ruft, schuetzt niemanden."""
+        baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+        bau = next(k for k in ast.walk(baum)
+                   if isinstance(k, ast.FunctionDef)
+                   and k.name == "_build_ffpkg_from_folder")
+        aufrufe = [n for n in ast.walk(bau) if isinstance(n, ast.Call)]
+        self.assertTrue(
+            any(isinstance(n.func, ast.Attribute)
+                and n.func.attr == "_ffpkg_auf_zielvolume_bringen" for n in aufrufe),
+            "Der Bau bringt den Kandidaten nicht mehr ueber den Verschiebe-Weg ins Ziel.")
+        blanke_kopie = [n for n in aufrufe
+                        if isinstance(n.func, ast.Name)
+                        and n.func.id == "_kopiere_mit_fortschritt"
+                        and n.args and isinstance(n.args[0], ast.Name)
+                        and n.args[0].id == "stage_path"]
+        self.assertEqual([], blanke_kopie, "Die Buehne wird wieder direkt kopiert.")
+
+
 class SidebarCoverTests(unittest.TestCase):
     """Das Cover in der Sidebar-Vorschau.
 
@@ -839,6 +991,7 @@ class Aufgabe7OhneZielTests(unittest.TestCase):
     Dass es ein Versehen war und keine Absicht, zeigt die
     Speicherplatz-Pruefung unmittelbar darunter: Sie nimmt ``ampr_manager``
     seit jeher aus. Die Ausnahme fehlte nur eine Pruefung weiter oben.
+    Seit v1.9.15 heisst diese Pruefung ``_platz_klaeren``.
 
     Ein *angegebenes* Ziel muss weiterhin beanstandet werden, wenn es nicht
     existiert - sonst landet ein Tippfehler stillschweigend im Quellordner.
@@ -850,7 +1003,10 @@ class Aufgabe7OhneZielTests(unittest.TestCase):
 
     def _pruefblock(self) -> str:
         anfang = self.quelle.index("# Zielpfad validieren nur für Modi")
-        ende = self.quelle.index("# Speicherplatz-Validierung", anfang)
+        # Endmarke ist der Aufruf der Platzpruefung, kein Kommentar: Den
+        # Kommentar "# Speicherplatz-Validierung" gibt es seit v1.9.15
+        # nicht mehr, und beide Tests brachen daran mit ValueError ab.
+        ende = self.quelle.index("self._platz_klaeren(", anfang)
         return self.quelle[anfang:ende]
 
     def test_ohne_ziel_wird_aufgabe_7_nicht_abgewiesen(self):
