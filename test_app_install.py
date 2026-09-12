@@ -21,7 +21,8 @@ PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
 
 import PS5ImageConverter_Pro_FINAL_revised as APP
-from ps5_validator.utils import app_install, i18n, self_reader
+from ps5_validator.utils import (anleitung, app_install, i18n,
+                                 self_reader)
 
 HAUPTDATEI = str(PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py")
 
@@ -572,19 +573,60 @@ class OberflaecheTests(unittest.TestCase):
                 self.assertTrue(werte.get("de"), schluessel)
                 self.assertTrue(werte.get("en"), schluessel)
 
-    def test_erklaertext_nennt_den_gemessenen_fehlercode(self):
-        # Ohne diese Zahl sucht der Anwender den Fehler bei sich.
-        self.assertIn("CE-100096-6", i18n.STRINGS["appinstall.hint_why"]["de"])
+    def test_anleitung_nennt_die_gemessenen_fehlercodes(self):
+        """Ohne diese Zahlen sucht der Anwender den Fehler bei sich.
 
-    def test_erklaertext_nennt_beide_dienste(self):
-        text = i18n.STRINGS["appinstall.hint_needs"]["de"]
-        self.assertIn("2121", text)
-        self.assertIn("9021", text)
+        Bis zum 12.09.2026 standen sie als dritter Absatz ueber den
+        Feldern. Sie stehen jetzt in der Anleitung hinter dem Knopf - die
+        Pruefung wandert mit, sonst faellt der Hinweis beim naechsten
+        Umbau still weg.
+        """
+        for sprache in ("de", "en"):
+            seite = anleitung.als_html(anleitung.APPINSTALL, sprache)
+            self.assertIn("CE-100096-6", seite, sprache)
+            self.assertIn("CE-108262-9", seite, sprache)
+
+    def test_anleitung_nennt_beide_dienste(self):
+        for sprache in ("de", "en"):
+            seite = anleitung.als_html(anleitung.APPINSTALL, sprache)
+            self.assertIn("2121", seite, sprache)
+            self.assertIn("9021", seite, sprache)
+
+    def test_anleitung_nennt_beide_autoritaeten(self):
+        """0x38 ist die Vorgabe des SDK, 0x31 die, mit der es startet."""
+        for sprache in ("de", "en"):
+            seite = anleitung.als_html(anleitung.APPINSTALL, sprache)
+            self.assertIn("0x31", seite, sprache)
+            self.assertIn("0x38", seite, sprache)
+
+    def test_anleitung_gibt_es_in_beiden_sprachen(self):
+        deutsch = anleitung.als_html(anleitung.APPINSTALL, "de")
+        englisch = anleitung.als_html(anleitung.APPINSTALL, "en")
+        self.assertNotEqual(deutsch, englisch)
+        for seite in (deutsch, englisch):
+            # Sieben Abschnitte: was, wofuer, was brauche ich, Schritte,
+            # was passiert, was geht schief, woher bekannt.
+            self.assertEqual(7, seite.count("<section>"))
+
+    def test_eine_unbekannte_sprache_liefert_trotzdem_eine_seite(self):
+        """Eine leere Seite waere die schlechtere Antwort."""
+        seite = anleitung.als_html(anleitung.APPINSTALL, "fr")
+        self.assertIn("<section>", seite)
 
     def test_erklaertexte_stehen_im_fenster(self):
-        for schluessel in ("appinstall.hint_what", "appinstall.hint_why",
-                           "appinstall.hint_needs"):
+        for schluessel in ("appinstall.hint_what", "appinstall.hint_guide"):
             self.assertIn(schluessel, self.quelle)
+
+    def test_der_anleitungsknopf_haengt_wirklich_im_fenster(self):
+        """Ein Knopf, der nur im Test existiert, hilft niemandem.
+
+        Geprueft wird am Quelltext des Fensters, nicht an einer eigenen
+        Nachbildung: Genau so ist am 12.09.2026 ein Block im falschen
+        Fenster gelandet, weil der Anker zweimal vorkam.
+        """
+        self.assertIn("appinstall.action_guide", self.quelle)
+        self.assertIn("anleitung.APPINSTALL", self.quelle)
+        self.assertIn("def _anleitung_oeffnen", self.quelle)
 
     def test_bericht_nennt_die_zielordner(self):
         gui = _gui()

@@ -67,6 +67,13 @@ class _Aufzeichnung:
         self.balkenwerte: list[object] = []
         self.statuszeilen: list[str] = []
         self.verlauf: list[float] = []
+        # Die Zaehler, die ``_update_progress_gui`` auswertet ("Quelle 3").
+        self._copy_total_bytes = 0
+        self._copy_done_bytes = 0
+        self._copy_total_exact = False
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+        self._pack_infotext = ""
 
     # --- die geprüften Methoden, an die Attrappe gebunden -----------------
     def _teilschritt_melden(self, schluessel, anteil, spanne):
@@ -78,6 +85,10 @@ class _Aufzeichnung:
         self._haupt.PS5ConverterGUI._ampr_pack_fortschritt(self, prozent, phase)
 
     def _kopieren_mit_fortschritt(self, quelle, ziel, gesamt):
+        # Was ``_integration_arbeitskopie`` sonst davor setzt.
+        self._copy_total_bytes = max(1, int(gesamt or 0))
+        self._copy_done_bytes = 0
+        self._copy_total_exact = True
         self._haupt.PS5ConverterGUI._kopieren_mit_fortschritt(
             self, quelle, ziel, gesamt)
 
@@ -102,7 +113,12 @@ class _Aufzeichnung:
         self.statuszeilen.append(str(text))
 
     def _t(self, schluessel, **werte):
-        return schluessel
+        # Mit den Werten, sonst laesst sich nicht pruefen, ob der Platzhalter
+        # ueberhaupt gefuellt wurde.
+        if not werte:
+            return schluessel
+        return schluessel + " " + " ".join(
+            "%s=%s" % (k, v) for k, v in sorted(werte.items()))
 
     def _fmt_bytes(self, zahl):
         return "%d B" % int(zahl)
@@ -190,12 +206,16 @@ class MelderSchreibenNichtAufDenBalkenTests(unittest.TestCase):
         for prozent, phase in ((0, "packing"), (42, "packing"),
                                (100, "packing"), (0, "writing"), (100, "writing")):
             a._ampr_pack_fortschritt(float(prozent), phase)
-        self.assertTrue(a.balkenwerte, "Der Melder hat gar nichts gemeldet.")
-        self.assertTrue(
-            all(w is None for w in a.balkenwerte),
-            "Ein roher Teilwert ging an den Balken: %r" % (a.balkenwerte,))
+        self.assertEqual(
+            [], a.balkenwerte,
+            "Der Melder hat den Balken angefasst: %r" % (a.balkenwerte,))
         self.assertGreater(a.task_progress, 0.0,
                            "Der Gesamtfortschritt hat sich nicht bewegt.")
+        self.assertTrue(
+            a._pack_infotext,
+            "Das Groessenfeld bekam nichts - waehrend des Packens stuende "
+            "rechts vom Balken nichts.")
+        self.assertIn("100", a._pack_infotext)
 
     def test_ampr_pack_nennt_die_phase_in_der_statuszeile(self):
         """Ohne bewegten Statustext hält ``_stillstand_uhr`` das für Stillstand."""
@@ -225,11 +245,18 @@ class MelderSchreibenNichtAufDenBalkenTests(unittest.TestCase):
                 os.path.isfile(os.path.join(ziel, "sce_sys", "param.json")),
                 "Unterordner gingen verloren.")
 
-        self.assertTrue(a.balkenwerte, "Der Melder hat gar nichts gemeldet.")
-        self.assertTrue(
-            all(w is None for w in a.balkenwerte),
-            "Ein roher Kopieranteil ging an den Balken: %r" % (a.balkenwerte,))
-        self.assertEqual(a.verlauf, sorted(a.verlauf))
+        # Der Balken wird nicht mehr selbst gesetzt - das macht der Takt aus
+        # den Byte-Zaehlern, und der fuellt damit auch das Groessenfeld.
+        self.assertEqual(
+            [], a.balkenwerte,
+            "Der Melder hat den Balken angefasst: %r" % (a.balkenwerte,))
+        self.assertEqual(
+            gesamt, a._copy_done_bytes,
+            "Am Ende muss der Zaehler auf der vollen Groesse stehen.")
+        self.assertTrue(a._copy_total_exact,
+                        "Ohne das zeigt das Groessenfeld keine GB-Angabe.")
+        self.assertGreater(a._copy_rate_bps, 0.0,
+                           "Ohne Rate fehlen MB/s und Restzeit.")
         self.assertTrue(
             any("/" in z for z in a.statuszeilen),
             "Die Statuszeile trug keine laufenden Zahlen: %r" % (a.statuszeilen,))

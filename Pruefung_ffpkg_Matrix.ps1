@@ -28,6 +28,43 @@
 
 $ErrorActionPreference = "Continue"
 
+# --- Auswahlmodus der Konsole abschalten -------------------------------------
+# Ein versehentlicher Klick ins Fenster markiert Text und friert damit die
+# GESAMTE Ausgabe ein - der Prozess lebt weiter, verbraucht keine Rechenzeit,
+# und nichts geht voran, bis jemand Esc oder Eingabe drueckt. Am 11.09.2026
+# ist genau das zweimal passiert: einmal nach E1 (drei Stunden verloren),
+# einmal nach E2 (zehn Stunden). Beide Male war der Lauf selbst erfolgreich -
+# es stand nur die Konsole.
+#
+# Bei einem Skript, das stundenlang laeuft und dabei ein Fenster offen haelt,
+# ist das keine Randerscheinung, sondern der wahrscheinlichste Weg, einen
+# Lauf zu verlieren. Deshalb hier abgeschaltet.
+try {
+    $quellcode = @"
+using System;
+using System.Runtime.InteropServices;
+public static class Konsole {
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern IntPtr GetStdHandle(int nStdHandle);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+    [DllImport("kernel32.dll", SetLastError=true)]
+    public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+}
+"@
+    if (-not ("Konsole" -as [type])) { Add-Type -TypeDefinition $quellcode }
+    $griff = [Konsole]::GetStdHandle(-10)          # STD_INPUT_HANDLE
+    $modus = 0
+    if ([Konsole]::GetConsoleMode($griff, [ref]$modus)) {
+        $ohneQuickEdit = $modus -band (-bnot 0x0040)   # ENABLE_QUICK_EDIT_MODE
+        $ohneQuickEdit = $ohneQuickEdit -bor 0x0080    # ENABLE_EXTENDED_FLAGS
+        [void][Konsole]::SetConsoleMode($griff, $ohneQuickEdit)
+        Write-Host "  Auswahlmodus der Konsole abgeschaltet (sonst friert ein Klick den Lauf ein)." -ForegroundColor DarkGray
+    }
+} catch {
+    Write-Host "  Hinweis: Auswahlmodus liess sich nicht abschalten - bitte NICHT ins Fenster klicken." -ForegroundColor Yellow
+}
+
 $Projekt = "C:\Users\JBuserc0re\Documents\GitHub PS5 Dump & Image Converter"
 $Python  = Join-Path $Projekt ".venv\Scripts\python.exe"
 $Haupt   = Join-Path $Projekt "PS5ImageConverter_Pro_FINAL_revised.py"
@@ -102,7 +139,25 @@ function Invoke-Fall {
     param([string]$Nr, [string]$Was, [string]$Konfig, [string[]]$Argumente)
 
     $unterordner = Join-Path $Ziel $Nr
-    if (Test-Path $unterordner) { Remove-Item $unterordner -Recurse -Force }
+
+    # Schon fertig? Dann stehenlassen. Ein .ffpkg aus 51 GB kostet fast drei
+    # Stunden - das baut niemand zweimal, nur weil das Skript neu startet.
+    if (Test-Path $unterordner) {
+        $fertig = Get-ChildItem $unterordner -File -ErrorAction SilentlyContinue |
+                  Where-Object { $_.Length -gt 1MB }
+        if ($fertig) {
+            $summe = ($fertig | Measure-Object Length -Sum).Sum
+            $gbAlt = [math]::Round(($summe / 1GB), 2)
+            Write-Host ("  {0,-22} {1}" -f $Nr, $Was)
+            Write-Host ("      SCHON DA        {0,9} GB - uebersprungen" -f $gbAlt) -ForegroundColor DarkGray
+            "== $Nr  ($Was) - war schon vorhanden, uebersprungen" |
+                Out-File $Bericht -Append -Encoding utf8
+            "   Bytes     : $summe" | Out-File $Bericht -Append -Encoding utf8
+            "" | Out-File $Bericht -Append -Encoding utf8
+            return $unterordner
+        }
+        Remove-Item $unterordner -Recurse -Force
+    }
     New-Item -ItemType Directory -Force -Path $unterordner | Out-Null
 
     $fertig = @()
@@ -112,8 +167,17 @@ function Invoke-Fall {
 
     Write-Host ("  {0,-22} {1}" -f $Nr, $Was)
     $env:PS5CONV_KONFIGORDNER = $Konfig
+    # Die Ausgabe geht in eine DATEI, nicht in eine Variable.
+    #
+    # "$ausgabe = & ... 2>&1" sammelt jede Zeile als Objekt, und wegen 2>&1
+    # werden die stderr-Zeilen zu ErrorRecords. Ein Lauf ueber Stunden
+    # erzeugt Hunderttausende davon; Out-File formatiert jeden einzelnen mit
+    # voller Fehlerdarstellung. Am 11.09.2026 blieb das Skript genau daran
+    # haengen: E1 war nach 2 h 43 min fertig, danach tat sich dreieinhalb
+    # Stunden nichts mehr.
+    $laufLog = Join-Path $unterordner "_lauf.log"
     $uhr = [Diagnostics.Stopwatch]::StartNew()
-    $ausgabe = & $Python $Haupt @fertig 2>&1
+    & $Python $Haupt @fertig *> $laufLog
     $code = $LASTEXITCODE
     $uhr.Stop()
     $sek = [math]::Round($uhr.Elapsed.TotalSeconds, 1)
@@ -140,7 +204,10 @@ function Invoke-Fall {
     "   Bytes     : $bytes" | Out-File $Bericht -Append -Encoding utf8
     "   Dateien   : $anzahl" | Out-File $Bericht -Append -Encoding utf8
     "   --- letzte Zeilen ---" | Out-File $Bericht -Append -Encoding utf8
-    ($ausgabe | Select-Object -Last 18) | Out-File $Bericht -Append -Encoding utf8
+    if (Test-Path $laufLog) {
+        (Get-Content $laufLog -Tail 18 -ErrorAction SilentlyContinue) |
+            Out-File $Bericht -Append -Encoding utf8
+    }
     "" | Out-File $Bericht -Append -Encoding utf8
 
     return $unterordner
@@ -148,8 +215,11 @@ function Invoke-Fall {
 
 function Basis {
     param([int]$Aufgabe, [string]$Quelle, [string]$Format)
+    # --quiet wie im Vorbild Pruefung_mit_Adminrechten.ps1: Ohne ihn spiegelt
+    # das Programm jede Protokollzeile zusaetzlich auf stdout, und das sind
+    # bei einem Lauf ueber Stunden Hunderttausende.
     $a = @("--cli", "--task", "$Aufgabe", "--source", $Quelle,
-           "--dest", "?", "--temp", $Temp, "--yes")
+           "--dest", "?", "--temp", $Temp, "--yes", "--quiet")
     if ($Format) { $a += @("--format", $Format) }
     return $a
 }

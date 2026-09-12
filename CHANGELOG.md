@@ -2,7 +2,84 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.13):** Reparaturen an den Aufgaben 1–8. Der wichtigste Punkt: Der Fortschrittsbalken sprang seit v1.9.7 zwischen 0 % und 100 % hin und her, und die Aufhänger-Erkennung schrieb daraufhin Fehlermeldungen in ein Protokoll eines völlig normalen Laufs. Beides ist behoben.
+> **Kurz zum aktuellen Stand (v1.9.14):** Die Bibliothek zeigt die Spiele jetzt als Titelbilder – wahlweise die auf deinem Rechner oder die auf der PS5 – und kann Abbilder in beide Richtungen übertragen. Das Werkzeug „App direkt installieren“ hat eine Anleitung bekommen, die erklärt, wofür es gut ist.
+
+---
+
+## v1.9.14 – 12.09.2026
+
+Eine neue Bibliothek mit Titelbildern, eine verständliche Anleitung für das
+Werkzeug „App direkt installieren", und drei kleinere Korrekturen an der
+Oberfläche.
+
+### Die Bibliothek zeigt jetzt Cover statt nur Text
+
+Bisher war die Bibliothek eine Liste mit Dateinamen. Jetzt gibt es eine
+Kachelansicht mit dem Titelbild jedes Spiels – umschaltbar auf die alte
+Liste, wenn dir die lieber ist. Die Ansicht wird gemerkt.
+
+Die Titelbilder und Namen kommen aus derselben Quelle wie bei den Aufgaben
+1–8: aus der `param.json` und dem `icon0.png` im Abbild selbst. Ein einmal
+geöffnetes Titelbild bleibt auf der Platte liegen; beim zweiten Öffnen der
+Bibliothek ist es sofort da.
+
+**Zwei Quellen zur Auswahl:**
+
+* **Rechner** – deine Ordner, jetzt rekursiv durchsucht. Bisher ging der
+  Suchlauf nur eine Ebene tief: Wer seine Sicherungen in
+  `Downloads/PS5/Spiele/...` abgelegt hatte, sah eine leere Liste. Gefunden
+  werden alle fünf Bauformen (`.ffpfsc`, `.ffpfs`, `.exfat`, `.ffpkg` und
+  Dump-Ordner).
+* **PS5** – was auf der Konsole liegt. Gesucht wird an allen gängigen
+  Ablageorten, auch an denen anderer Verwalter: `/data/games` (Itemzflow),
+  `/data/etaHEN/games` und `/data/etaHEN/PS5`, `/data/homebrew`, dazu
+  `games`, `homebrew` und `etaHEN/games` auf allen acht USB-Anschlüssen und
+  auf der M.2-Erweiterung.
+
+An der Konsole gemessen: 16 Titel in 1,6 Sekunden, 15 davon mit Titelbild.
+Die Konsole führt zu jedem Spiel, das sie je gesehen hat, den Namen neben
+der Kennung – darüber bekommen auch Abbilder ein Bild, deren Dateiname
+keine Title-ID trägt.
+
+**Hoch- und herunterladen:** Ein Abbild vom Rechner auf die PS5 schicken
+oder von dort holen, mit Fortschrittsanzeige. Ordner sind bewusst
+ausgenommen: Ein Dump besteht aus zehntausenden Dateien, und die Konsole
+startet ihn von dort ohnehin nicht.
+
+> **Zum Abbrechen eines Downloads:** Das legt den FTP-Dienst der PS5 lahm –
+> sie nimmt danach keine Verbindung mehr an und muss neu gestartet werden.
+> Der Abbrechen-Knopf fragt deshalb vorher nach, statt es stillschweigend zu
+> tun. Beim Hochladen ist ein Abbruch harmlos, dort entfällt die Frage.
+
+### „App direkt installieren" hat jetzt eine Anleitung
+
+Über den Feldern standen drei Absätze Erklärung – vollständig und trotzdem
+unverständlich, weil sie damit anfingen, was das Werkzeug technisch tut,
+statt mit der Frage, die du hast: *Wofür brauche ich das, und was mache ich
+jetzt?*
+
+Im Fenster stehen jetzt zwei Sätze. Der Rest liegt hinter dem Knopf
+**Anleitung**: eine Seite im Browser, die durchgeht, was du brauchst, was
+du in welches Feld einträgst, was dabei auf der Konsole passiert und was
+die Fehlercodes bedeuten. Auf Deutsch und Englisch, passend zur
+eingestellten Sprache.
+
+### Der Hinweis unter der Formatwahl nahm dem Protokoll den Platz
+
+Bei `.ffpfsc` und `.ffpfs` standen dort vier Zeilen. Es sind jetzt drei,
+mit derselben Aussage – die Zahl (150–250 MB/s, ein Zehntel der internen
+SSD) und die Einstufung von ShadowMount+ stehen weiter da.
+
+Bei der Gelegenheit kam ein aelterer Fall derselben Art heraus: Der
+deutsche Satz zu `.exFAT` war ebenfalls zu lang und brach seit Langem auf
+zwei Zeilen um. Auch er ist jetzt kuerzer.
+
+### Die Bibliothek passte bei kleinem Fenster nicht mehr
+
+Durch die beiden neuen Knöpfe wurde „Als Quelle übernehmen" bei der
+kleinsten Fenstergröße auf gut die Hälfte zusammengedrückt, die Beschriftung
+war abgeschnitten. Die Mindestbreite des Fensters ist jetzt so groß, wie die
+Knopfreihe wirklich braucht.
 
 ---
 

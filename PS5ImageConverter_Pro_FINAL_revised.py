@@ -127,6 +127,8 @@ from ps5_validator.utils.pkg_writer import (
     PkgWriteError,
     build_debug_pkg,
 )
+from ps5_validator.utils import anleitung
+from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import prosperopkg
 from ps5_validator.utils import payload_versand
@@ -391,6 +393,21 @@ def _logserver_absender_erlaubt(gegenstelle: str, ps5_ip: str = "") -> bool:
     return bool(adresse.is_private or adresse.is_loopback or adresse.is_link_local)
 
 
+class _LeseHuelle:
+    """Reicht eine Lesefunktion als dateiaehnliches Objekt weiter.
+
+    ``ftplib.storbinary`` verlangt etwas mit ``read(n)``. Die Bibliothek
+    braucht dort aber einen eigenen Leser - einen, der mitzaehlt und einen
+    Abbruch bemerkt. Eine Huelle ist billiger, als die Datei zweimal zu oeffnen.
+    """
+
+    def __init__(self, leser) -> None:
+        self._leser = leser
+
+    def read(self, anzahl: int = 8192) -> bytes:
+        return self._leser(anzahl)
+
+
 class _KopieAbgebrochen(Exception):
     """Der Anwender hat waehrend des Kopierens abgebrochen.
 
@@ -449,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.13"
+APP_VERSION = "v1.9.14"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -3594,6 +3611,7 @@ class PS5ConverterGUI:
         self._pkg_merge_laeuft = 0
         # CLI-Automatisierung (siehe _run_cli): unterdrückt Dialoge, spiegelt Log auf stdout
         self._cli_mode = False
+        self._cli_umhuellt_ordner = False
         self._cli_quiet = False
         # Race-Condition-Schutz: Jeder neue _calc-Thread bekommt eine Generations-Nummer.
         # Veraltete Threads erkennen dies und verwerfen ihr Ergebnis.
@@ -5150,16 +5168,85 @@ class PS5ConverterGUI:
         ("ffpkg", "ffpfsc"),
     })
 
+    def _umhuellenden_weg_klaeren(self, mode: str, src: str,
+                                  target_type: str) -> bool:
+        """Fragt, wenn die Integration auf diesem Weg nicht greifen kann.
+
+        Auf den Wegen in :data:`_EINHUELLENDE_WEGE` wandert das Abbild als
+        **eine Datei** in den Container; sein Inhalt wird nie geoeffnet. Was in
+        der Pfad-Karte angehakt ist - AMPR EMU, BACKPORT - kann dort nicht
+        eingebaut werden.
+
+        Bis zum 12.09.2026 stand darueber nur eine Warnung, und der Lauf ging
+        weiter. Heraus kam ein Abbild **ohne** die Bestandteile, die der
+        Anwender bestellt hatte, und nichts unterschied es von einem mit. Jetzt
+        wird gefragt:
+
+        * **Ja** - statt des Containers entsteht ein Dump-Ordner. Dort greifen
+          die Kaestchen, und von dort laesst sich in jedes Format weiterwandeln.
+        * **Nein** - der Vorgang endet, ohne etwas zu schreiben.
+
+        Im Kommandozeilenbetrieb gibt es kein Fenster. Dort entscheidet ein
+        **eigener** Schalter (``--umhuellt-als-ordner``), nicht ``--yes``: Ein
+        Schalter, der Rueckfragen zum Ueberschreiben abnickt, soll nicht
+        nebenbei das Zielformat wechseln. Ohne ihn endet der Vorgang - dasselbe
+        Vorgehen wie bei ``_ampr_index_neubau_erlaubt``.
+
+        Returns:
+            True, wenn weitergemacht werden darf. Bei einem Wechsel auf den
+            Dump-Ordner ist die Formatauswahl dann bereits umgestellt.
+        """
+        if not target_type or not self._integration_gewaehlt():
+            return True
+        quelle = self._resolve_mode_source_type(mode, src)
+        if (quelle, target_type) not in self._EINHUELLENDE_WEGE:
+            return True
+
+        formatname = (self._t("format." + target_type)
+                      if target_type in self._FORMAT_LABELS else target_type)
+
+        if getattr(self, "_cli_mode", False):
+            if not getattr(self, "_cli_umhuellt_ordner", False):
+                self._append_to_log(
+                    self._t("log.umhuellt_cli", format=formatname))
+                return False
+            self._zielformat_auf_ordner(formatname)
+            return True
+
+        antwort = self._ask_yesno_threadsafe(
+            self._t("dialog.title.umhuellt_ordner"),
+            self._t("dialog.msg.umhuellt_ordner_frage", format=formatname),
+        )
+        if not antwort:
+            self._append_to_log(self._t("log.umhuellt_abgebrochen"))
+            return False
+        self._zielformat_auf_ordner(formatname)
+        return True
+
+    def _zielformat_auf_ordner(self, bisheriges_format: str) -> None:
+        """Stellt die Formatauswahl auf den Dump-Ordner um.
+
+        Ueber die Tk-Variable, nicht ueber eine Merkvariable: ``_launch_task``
+        und ``_run_flexible_conversion`` lesen das Zielformat **beide** frisch
+        aus der Oberflaeche. Wer es nur an einer Stelle merkte, baute das eine
+        und zeigte das andere an.
+        """
+        self._append_to_log(
+            self._t("log.umhuellt_ordner_gewaehlt", format=bisheriges_format))
+        try:
+            self.target_format.set(self._t("format.folder"))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Zielformat nicht umstellbar: %s", exc)
+
     def _run_preflight_checks(self, mode: str, src: str, dst: str,
                               target_type: str = "") -> tuple[list[str], list[str]]:
         """Führt eine Risikoanalyse vor Start aus und liefert (errors, warnings)."""
         errors: list[str] = []
         warnings: list[str] = []
 
-        if target_type and self._integration_gewaehlt():
-            quelle = self._resolve_mode_source_type(mode, src)
-            if (quelle, target_type) in self._EINHUELLENDE_WEGE:
-                warnings.append(self._t("preflight.integration_umhuellt"))
+        # Der einhuellende Weg steht hier nicht mehr: Aus der Warnung ist am
+        # 12.09.2026 eine Entscheidung geworden (``_umhuellenden_weg_klaeren``),
+        # und zwei Meldungen zur selben Sache waeren eine zu viel.
 
         if not os.path.exists(src):
             errors.append(self._t("preflight.source_missing", path=src))
@@ -16606,6 +16693,15 @@ class PS5ConverterGUI:
             messagebox.showerror(self._t("dialog.title.target_format_unavailable"), conversion_error)
             return
 
+        # Kann die gewaehlte Integration auf diesem Weg ueberhaupt greifen?
+        # Wenn nicht, entscheidet der Anwender: Dump-Ordner statt Container -
+        # oder Schluss. Muss VOR der Preflight-Analyse stehen, denn eine
+        # Antwort kann das Zielformat noch wechseln, und die Analyse prueft
+        # gegen das Format.
+        if not self._umhuellenden_weg_klaeren(mode, src, target_type):
+            return
+        target_type = self._get_selected_target_type()
+
         # Release-Test-Gate (entfernt)
         pass
 
@@ -16754,6 +16850,8 @@ class PS5ConverterGUI:
         # sie stehen, rechnete die Arbeitskopie des naechsten Laufs auf dem
         # Endstand des vorigen weiter und der Balken stuende sofort bei 95 %.
         self._teilschritt_merker = None
+        # Der Packtext des vorigen Laufs darf nicht in den neuen hineinragen.
+        self._pack_infotext = ""
         self._batch_von, self._batch_bis = 0.0, 100.0
         self._uhr_basis = None
         self._uhr_letzter_wert = -1.0
@@ -17476,7 +17574,16 @@ class PS5ConverterGUI:
         # 4. Groessen-Label & verbleibende Zeit (ETA)
         # ------------------------------------------------------------------
         precise_eta_seconds: float | None = None
-        if self.task_stored_str:
+        # Ein Schritt, der seinen Stand nur in Prozent kennt, setzt ihn hier
+        # ab - das Packen der AMPR-Asset-Baender ist der einzige solche.
+        # Ohne diesen Zweig blieb das Feld waehrend des Packens leer: Keine
+        # der Bedingungen darunter greift dort, und die Kette endet mit
+        # ``else: new_size = ""``. Bei einem grossen Titel sind das Stunden
+        # ohne jede Angabe.
+        pack_text = str(getattr(self, "_pack_infotext", "") or "")
+        if pack_text:
+            new_size = pack_text
+        elif self.task_stored_str:
             if self.task_uncompressed_str:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
             else:
@@ -22520,6 +22627,31 @@ class PS5ConverterGUI:
         kopie = os.path.join(ziel, os.path.basename(os.path.normpath(quelle)))
         self._append_to_log(self._t("main.integrate_copying", path=kopie))
         self._set_status(self._t("main.integrate_copying_status"))
+
+        # Die Arbeitskopie bekommt einen eigenen Abschnitt des Balkens und
+        # meldet ueber die **vorhandenen** Byte-Zaehler, statt ueber einen
+        # Sonderweg.
+        #
+        # ``_update_progress_gui`` wertet ``_copy_total_bytes`` /
+        # ``_copy_done_bytes`` bereits aus (dort "Quelle 3"): Es bildet den
+        # Stand auf den aktuellen Schrittbereich ab, laesst ihn nie
+        # rueckwaerts laufen und schreibt rechts neben dem Balken die
+        # gewohnte Zeile - "Copy: 12,34/51,08 GB | Rest: 38,74 GB |
+        # 245,3 MB/s" - samt Restzeit.
+        #
+        # Bis zum 11.09.2026 geschah beides nicht: Die Kopie meldete ueber
+        # einen eigenen Weg an den Balken, und das Groessenfeld blieb leer,
+        # weil in dieser Phase keiner der Zweige greift und die Kette mit
+        # ``else: new_size = ""`` endet. Bei einem 51-GB-Titel hiess das:
+        # zehn Minuten ohne jede Angabe, wie weit es ist.
+        self.task_num_steps = 1
+        self.task_current_step = 1
+        self.task_step_ends = [self._KOPIE_BALKEN_SPANNE]
+        self._copy_total_bytes = max(1, int(groesse or 0))
+        self._copy_done_bytes = 0
+        self._copy_total_exact = True
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
         try:
             self._kopieren_mit_fortschritt(quelle, kopie, groesse)
         except _KopieAbgebrochen:
@@ -22530,6 +22662,16 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("main.integrate_copy_failed", error=exc))
             _rmtree_force(ziel)
             return ""
+        finally:
+            # Die Zaehler gehoeren diesem Schritt. Blieben sie stehen, zeigte
+            # das Groessenfeld die Kopierzahlen noch waehrend des Packens an,
+            # und "Quelle 3" triebe den Balken mit einem Stand, der nicht mehr
+            # gilt.
+            self._copy_total_bytes = 0
+            self._copy_done_bytes = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
         # Aufgeraeumt wird die Kopie ueber _mkdtemp: Der Ordner ist dort schon
         # zum Loeschen nach der Aufgabe angemeldet.
         return kopie
@@ -22589,6 +22731,7 @@ class PS5ConverterGUI:
         getan = 0
         letzte = 0.0
         letzte_groesse = 0.0
+        begonnen = time.monotonic()      # fuer die Rate in MB/s
         gesamt = max(1, int(gesamt or 0))
 
         def _melden(erzwingen: bool = False) -> None:
@@ -22597,7 +22740,6 @@ class PS5ConverterGUI:
             if not erzwingen and jetzt - letzte < self._KOPIE_TAKT_SEKUNDEN:
                 return
             letzte = jetzt
-            anteil = min(100.0, getan * 100.0 / gesamt)
             # Die Groessenangabe laeuft im eigenen, langsameren Takt: Sie
             # zieht ein Neuzeichnen der eingebrannten Beschriftungen nach
             # sich, und im Balkentakt flackerte die Anzeige dadurch.
@@ -22611,10 +22753,15 @@ class PS5ConverterGUI:
             # Kommandozeilenbetrieb oder in einer Pruefung - gibt es keine
             # Ereignisschleife, in die sich der Wert schreiben liesse.
             try:
-                # Der Balken ueber den Gesamtfortschritt, nicht roh - sonst
-                # zappelt er gegen den Takt (siehe _teilschritt_melden).
-                self._teilschritt_melden("integration_arbeitskopie", anteil,
-                                         self._KOPIE_BALKEN_SPANNE)
+                # Ueber die Byte-Zaehler, die ``_update_progress_gui`` ohnehin
+                # auswertet: Sie treiben den Balken im Schrittbereich **und**
+                # fuellen das Groessenfeld rechts daneben mit der gewohnten
+                # Zeile ("Copy: 12,34/51,08 GB | Rest: ... | ... MB/s").
+                # Ein eigener Weg dafuer waere ein zweites Getriebe neben dem
+                # vorhandenen - und genau das hatte die Anzeige leer gelassen.
+                self._copy_done_bytes = getan
+                verstrichen = max(0.001, jetzt - begonnen)
+                self._copy_rate_bps = float(getan) / verstrichen
                 # Die Zahlen gehoeren zusaetzlich in die Statuszeile. Nicht
                 # aus Schoenheit: ``_stillstand_uhr`` erkennt einen Aufhaenger
                 # daran, dass sich weder Balken noch Statustext bewegen. Eine
@@ -22626,7 +22773,6 @@ class PS5ConverterGUI:
                 if groesse is not None:
                     self._set_status("%s  %s" % (
                         self._t("main.integrate_copying_status"), groesse))
-                self._set_progress(None, size_text=groesse)
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Kopierfortschritt nicht anzeigbar: %s", exc)
 
@@ -22846,12 +22992,19 @@ class PS5ConverterGUI:
             # eigenen Abschnitt bekommt statt zurueckzusetzen.
             self._teilschritt_melden("ampr_pack:" + str(phase or ""), prozent,
                                      self._PACK_BALKEN_SPANNE)
+            # Das Groessenfeld ueber ``_pack_infotext``, nicht ueber
+            # ``_set_progress(size_text=...)``: Der 80-ms-Takt setzt das Feld
+            # bei **jedem** Durchlauf neu und haette den Text sofort wieder
+            # geloescht. Am 11.09.2026 beim Anwender so gesehen - waehrend
+            # des Packens stand rechts nichts.
+            self._pack_infotext = self._t(
+                "ampr_pack.groessenfeld",
+                phase=str(phase or "").strip() or "?",
+                percent="%.0f" % max(0.0, min(100.0, float(prozent))))
             if text is not None:
-                # Auch hier gehoert der Phasenname in die Statuszeile und
-                # nicht nur ins Groessenfeld: Die Stillstandsuhr liest die
-                # Statuszeile.
+                # Der Phasenname gehoert zusaetzlich in die Statuszeile: Die
+                # Stillstandsuhr liest sie, nicht das Groessenfeld.
                 self._set_status(text)
-            self._set_progress(None, size_text=text)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Packfortschritt nicht anzeigbar: %s", exc)
 
@@ -23014,6 +23167,11 @@ class PS5ConverterGUI:
             logger.exception("Assetpakete: unerwarteter Fehler")
             self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
             return False
+        finally:
+            # Der Packtext gehoert dieser Phase. Bliebe er stehen, zeigte das
+            # Groessenfeld waehrend des Packens des Containers immer noch
+            # "AMPR-Pack: ... %" an - eine Zahl, die dann nichts mehr meint.
+            self._pack_infotext = ""
 
         self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
         return True
@@ -29001,63 +29159,969 @@ class PS5ConverterGUI:
         scan_folders = list(self._load_setting("library_scan_folders", []) or [])
         self._render_library_window(scan_folders)
 
-    def _library_scan_folder(self, folder: str) -> list[dict]:
-        """Durchsucht einen einzelnen Ordner (nicht rekursiv) nach Dump-Ordnern/Containern."""
-        results: list[dict] = []
-        try:
-            names = sorted(os.listdir(folder))
-        except OSError as exc:
-            # Eine leere Rueckgabe sieht aus wie "da ist nichts".
-            # Bei einer abgezogenen Platte, fehlenden Rechten oder
-            # einem getrennten Netzlaufwerk ist sie aber "konnte
-            # nicht nachsehen" - der Anwender sah nur eine kuerzere
-            # Trefferliste und keinen Grund.
-            self._append_to_log(
-                self._t("library.ordner_unlesbar", pfad=folder, fehler=exc))
-            return results
+    def _bibliothek_bildspeicher(self):
+        """Der Bildspeicher der Bibliothek - einmal je Programmlauf.
 
-        for name in names:
-            full = os.path.join(folder, name)
-            if os.path.isdir(full):
-                looks_like_dump = (
-                    os.path.isfile(os.path.join(full, "eboot.bin"))
-                    or os.path.isdir(os.path.join(full, "sce_sys"))
-                )
-                if not looks_like_dump:
-                    continue
-                meta = self._read_game_meta(full, deep_scan=False)
-                results.append({"path": full, "kind": "folder", "meta": meta, "size": None})
-                continue
+        Er liegt beim **Einstellungsordner**, nicht im Temp: Was dort liegt,
+        raeumt das Programm selbst weg (``_sweep_stale_temp_dirs``), und der
+        Sinn des Speichers ist gerade, den naechsten Start schnell zu machen.
+        """
+        vorhanden = getattr(self, "_bibliothek_bilder", None)
+        if vorhanden is not None:
+            return vorhanden
+        ordner = os.path.join(os.path.dirname(self._get_config_path()),
+                              "bibliothek_cover")
+        self._bibliothek_bilder = bibliothek_bestand.Bildspeicher(ordner)
+        return self._bibliothek_bilder
 
-            ext = os.path.splitext(name)[1].lower().lstrip(".")
-            if ext not in ("exfat", "ffpkg", "ffpfsc", "ffpfs"):
-                continue
-            # Metadaten aus dem Dateinamen ableiten und, wenn daneben ein
-            # passender Dump-Ordner oder ein Bericht liegt, mit den echten
-            # Werten aus param.json verbessern.
-            #
-            # Vorher stand hier _read_game_meta(os.path.dirname(full)): das sah
-            # im ORDNER neben dem Container nach sce_sys/param.json. In einer
-            # reinen Containersammlung gibt es die dort nie - Titel und ID
-            # blieben deshalb bei allen Containern leer ("–"). Der Dateiname
-            # traegt beides in aller Regel ("PPSA19015 Arcade Game Zone
-            # (01.003.000).exfat"), _quick_meta_from_path liest ihn aus.
-            meta = self._quick_meta_from_path(
-                full, candidate_roots=self._preview_candidate_dirs(full, "")
-            )
+    def _bibliothek_abbild_angaben(self, pfad: str):
+        """Liest Angaben **und** Titelbild aus einem Abbild - in einem Zug.
+
+        Ueber ``mkpfs.game_metadata.read_game_metadata()``, denselben Weg, den
+        die Infobox der Aufgaben 1-8 nimmt. Er ist erstaunlich guenstig: An
+        einer 24-GB-``.ffpfsc`` am 12.09.2026 gemessen **0,82 Sekunden** fuer
+        Titel, Content-ID, Fassung, Region und ein 453-KB-Titelbild - er liest
+        Kopf, Inode-Tabelle und die wenigen Bloecke, in denen das Bild liegt,
+        nicht den Inhalt.
+
+        Der Weg deckt **exFAT-basierte** Abbilder ab; das ist die Vorgabe-
+        Bauform dieses Programms. Ein PFS-in-PFS oder ein UFS2-``.ffpkg``
+        meldet dort einen Fehler oder ein leeres Ergebnis - dann gibt es eben
+        kein Bild, statt eines zu behaupten.
+
+        Returns:
+            ``(angaben, bilddaten)``. ``angaben`` ist ein dict im Format des
+            Metadatenlesers, ``bilddaten`` sind rohe PNG-Bytes oder ``None``.
+        """
+        mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
+        if not mkpfs_dir:
             try:
-                size = os.path.getsize(full)
-            except OSError:
-                size = None
-            results.append({"path": full, "kind": ext, "meta": meta, "size": size})
+                mkpfs_dir = self._extract_embedded_mkpfs() or ""
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: MkPFS-Ordner unbekannt (%s)", exc)
+                return {}, None
+        try:
+            if mkpfs_dir and mkpfs_dir not in sys.path:
+                sys.path.insert(0, mkpfs_dir)
+            from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415  # type: ignore[import-not-found]
 
-        return results
+            daten = read_game_metadata(pfad)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: %s nicht lesbar (%s)", pfad, exc)
+            return {}, None
+
+        if getattr(daten, "error", ""):
+            logger.debug("Bibliothek: %s meldet %s", pfad, daten.error)
+            return {}, None
+
+        # Die Content-ID traegt die Title-ID in der Mitte:
+        # "EP0001-PPSA10528_00-MEMORYRETAIL0000".
+        inhalts_id = str(getattr(daten, "content_id", "") or "")
+        treffer = _TITLE_ID_RE.search(inhalts_id.upper())
+        angaben = {
+            "title": str(getattr(daten, "game_title", "") or ""),
+            "title_id": treffer.group(0) if treffer else "",
+            "version": str(getattr(daten, "version", "") or ""),
+            "region": str(getattr(daten, "region", "") or ""),
+            "content_id": inhalts_id,
+        }
+        bild = getattr(daten, "icon_bytes", None)
+        if not isinstance(bild, (bytes, bytearray)) or not bild:
+            bild = None
+        return {k: v for k, v in angaben.items() if v}, bild
+
+    def _bibliothek_cover_datei(self, pfad: str) -> str:
+        """Liefert eine Titelbilddatei zu einem Eintrag - notfalls durch Oeffnen.
+
+        Bezogen wird es auf demselben Weg wie in den Aufgaben 1-8:
+        ``_read_game_meta_and_cover`` liest Angaben und Bild aus **derselben**
+        Quelle, damit nicht der Titel des einen und das Bild des anderen
+        Unterordners zusammenkommen.
+
+        Der Preis dafuer ist hoch - bei einer ``.ffpfsc`` heisst das, den
+        Container zu oeffnen. Deshalb der Bildspeicher: Beim zweiten Mal liegt
+        die Datei da, und auch ein "hat keins" wird gemerkt. Ohne das
+        durchsuchte die Bibliothek bei jedem Aufschlagen jeden Titel neu.
+
+        Returns:
+            Pfad einer PNG-Datei, oder "" wenn es kein Titelbild gibt.
+        """
+        speicher = self._bibliothek_bildspeicher()
+        fertig = speicher.lesen(pfad)
+        if fertig:
+            return fertig
+        if speicher.kennt_ohne_bild(pfad):
+            return ""
+        # Abbilder zuerst ueber die Engine: Sie liefert Angaben und Bild in
+        # einem Zug und braucht dafuer nicht den ganzen Container.
+        if not os.path.isdir(pfad):
+            try:
+                _angaben, rohbild = self._bibliothek_abbild_angaben(pfad)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: %s nicht lesbar (%s)", pfad, exc)
+                rohbild = None
+            if rohbild:
+                return speicher.schreiben(pfad, bytes(rohbild))
+
+        try:
+            _angaben, bild = self._read_game_meta_and_cover(pfad)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: %s nicht lesbar (%s)", pfad, exc)
+            speicher.schreiben(pfad, None)
+            return ""
+        if bild is None:
+            speicher.schreiben(pfad, None)
+            return ""
+        try:
+            puffer = io.BytesIO()
+            bild.convert("RGBA").save(puffer, format="PNG")
+            return speicher.schreiben(pfad, puffer.getvalue())
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: Titelbild von %s nicht ablegbar (%s)", pfad, exc)
+            speicher.schreiben(pfad, None)
+            return ""
+
+    def _library_scan_folder(self, folder: str) -> list[dict]:
+        """Durchsucht einen Ordner nach Dump-Ordnern und Containern.
+
+        **Rekursiv**, seit dem 12.09.2026. Bis dahin ging der Suchlauf genau
+        eine Ebene tief: Wer seine Sicherungen sortiert ablegt - etwa in
+        ``Downloads/PS5/Spiele/`` -, bekam eine leere Liste und keinen Grund
+        dafuer. Der Suchlauf selbst steht jetzt in
+        ``ps5_validator.utils.bibliothek``, wo er sich ohne Fenster
+        nachmessen laesst.
+        """
+        funde = bibliothek_bestand.ordner_durchsuchen(
+            folder,
+            melden=lambda ort: self._append_to_log(
+                self._t("library.ordner_unlesbar", pfad=ort,
+                        fehler=self._t("library.kein_zugriff"))),
+        )
+        ergebnis: list[dict] = []
+        for fund in funde:
+            pfad = fund["pfad"]
+            if fund["art"] == "folder":
+                angaben = self._read_game_meta(pfad, deep_scan=False)
+            else:
+                # Zuerst die Engine: Sie liest den echten Titel aus dem
+                # Abbild. Der Dateiname ist nur die Rueckfallebene - er
+                # traegt oft die Title-ID, aber selten den richtigen Namen
+                # ("Prince of Persia The Lost Crown" gegen "Prince of
+                # Persia: The Lost Crown", am 12.09.2026 gemessen).
+                angaben, _bild = self._bibliothek_abbild_angaben(pfad)
+                aus_namen = self._quick_meta_from_path(
+                    pfad, candidate_roots=self._preview_candidate_dirs(pfad, ""))
+                for schluessel, wert in aus_namen.items():
+                    if wert and not angaben.get(schluessel):
+                        angaben[schluessel] = wert
+            ergebnis.append({"path": pfad, "kind": fund["art"],
+                             "meta": angaben, "size": fund["groesse"]})
+        return ergebnis
+
+    #: Kantenlaenge einer Kachel in Punkten (vor der DPI-Umrechnung).
+    #:
+    #: Ein PS5-Titelbild ist quadratisch (icon0.png, meist 512x512). 150
+    #: Punkte zeigen bei 125 % Skalierung rund 190 Pixel - gross genug, um
+    #: ein Spiel am Bild zu erkennen, klein genug fuer sechs bis acht
+    #: nebeneinander.
+    _KACHEL_BILD_PT: int = 150
+
+    #: Wie viele Titelbilder gleichzeitig geholt werden.
+    #:
+    #: Eines nach dem anderen: Ein Titelbild aus einer .ffpfsc zu holen
+    #: heisst, den Container zu oeffnen, und mehrere gleichzeitig wuerden
+    #: nur die Platte gegeneinander arbeiten lassen. Der Faden ist ohnehin
+    #: im Hintergrund - die Kacheln stehen sofort da, die Bilder kommen nach.
+    _KACHEL_LADER: int = 1
+
+    #: Wo die Bibliothek auf der Konsole sucht.
+    #:
+    #: Bewusst **breiter** als :data:`_AMPR_GEN_SCANPFADE`: Jene Liste sagt
+    #: aus, wo ShadowMount+ sucht - eine Tatsache ueber ein fremdes
+    #: Werkzeug, die hier nicht verfaelscht werden soll. Die Bibliothek
+    #: dagegen soll zeigen, was auf der Konsole liegt, ganz gleich welcher
+    #: Manager es spaeter liest.
+    #:
+    #: Dazu kommen die Orte der anderen gaengigen Verwalter (Stand
+    #: 12.09.2026, vom Anwender an seiner Konsole zusammengetragen):
+    #:
+    #: * ``/data/games`` - der Vorgabeort von Itemzflow.
+    #: * ``/data/etaHEN/PS5`` - die zweite Ablage von etaHEN neben
+    #:   ``games``.
+    #: * ``<Einhaengepunkt>/games`` - auf USB-Datentraegern und der
+    #:   M.2-Erweiterung legt man den Ordner ueblicherweise so an.
+    #: * ``/mnt/ext0/data/games`` - auf der M.2 spiegelt sich der interne
+    #:   Aufbau mitsamt ``data``.
+    #:
+    #: Ein Ort, den es nicht gibt, kostet einen FTP-Umlauf und faellt
+    #: durch. Der ganze Suchlauf brauchte an der Konsole unter einer
+    #: Sekunde.
+    _BIBLIOTHEK_SCANPFADE: tuple[str, ...] = tuple(dict.fromkeys(
+        ("/data/games", "/data/homebrew",
+         "/data/etaHEN/games", "/data/etaHEN/PS5")
+        + tuple("/mnt/usb%d/%s" % (n, u) for n in range(8)
+                for u in ("games", "homebrew", "etaHEN/games"))
+        + tuple("/mnt/ext%d/%s" % (n, u) for n in range(2)
+                for u in ("games", "homebrew", "etaHEN/games",
+                          "data/games", "data/homebrew"))
+        + tuple("/mnt/usb%d" % n for n in range(8))
+        + ("/mnt/ext0", "/mnt/ext1")
+    ))
+
+    def _bibliothek_ps5_scannen(self, melden=None) -> tuple[list[dict], str]:
+        """Sucht die Sicherungen auf der Konsole - ueber FTP.
+
+        Durchsucht dieselben Ablageorte, die auch ShadowMount+ liest
+        (:data:`_AMPR_GEN_SCANPFADE`): ``/data/homebrew``,
+        ``/data/etaHEN/games`` und die USB- und externen Anschluesse.
+
+        Die Titelbilder kommen **nicht** aus den Spieldateien - dafuer
+        muesste jedes Abbild ueber FTP gelesen werden, und das sind bei
+        einem 50-GB-Titel Stunden. Sie kommen aus ``/user/appmeta/<ID>/``,
+        wo die Konsole sie selbst ablegt: ein paar hundert Kilobyte je Spiel.
+
+        Returns:
+            ``(eintraege, fehlertext)``. Bei einem Verbindungsfehler ist die
+            Liste leer und der Text sagt, woran es lag.
+        """
+        host = str(self.ps5_ip_var.get()).strip() if hasattr(self, "ps5_ip_var")             else str(self._load_setting("ps5_ip", "") or "")
+        if not host:
+            return [], self._t("library.ps5_keine_adresse")
+
+        try:
+            ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+        except Exception as exc:  # noqa: BLE001
+            return [], self._t("library.ps5_keine_verbindung", host=host, error=exc)
+
+        try:
+            funde = bibliothek_bestand.konsole_durchsuchen(
+                ftp, self._BIBLIOTHEK_SCANPFADE,
+                ist_ordner=self._ampr_ftp_is_dir,
+                auflisten=self._ampr_ftp_browse,
+            )
+            eintraege: list[dict] = []
+            for fund in funde:
+                angaben = {"title": fund["name"]}
+                kennung = ""
+                treffer = _TITLE_ID_RE.search(str(fund["name"]).upper())
+                if treffer:
+                    kennung = treffer.group(0)
+                    angaben["title_id"] = kennung
+                if fund["art"] == "folder":
+                    # Ein Dump-Ordner traegt seine Angaben bei sich. Das ist
+                    # genauer als der Ordnername: Von den 16 Funden an der
+                    # Konsole am 12.09.2026 trugen nur 6 eine Kennung im
+                    # Namen - "Mednafen" oder "Mafia The Old Country" sagen
+                    # der Konsole nichts. Die param.json sind wenige
+                    # Kilobyte; bei Abbildern geht das nicht, dafuer muesste
+                    # ein 51-GB-Container ueber FTP gelesen werden.
+                    name, aus_json = self._bibliothek_ps5_ordnerangaben(
+                        ftp, fund["pfad"])
+                    if aus_json:
+                        kennung = aus_json
+                        angaben["title_id"] = aus_json
+                    if name:
+                        angaben["title"] = name
+                eintraege.append({
+                    "path": fund["pfad"], "kind": fund["art"],
+                    "meta": angaben, "size": fund.get("groesse"),
+                    "ps5": True, "ablage": fund.get("ablage", ""),
+                    "title_id": kennung,
+                })
+                if melden:
+                    melden(len(eintraege))
+
+            # Was bis hierhin keine Kennung hat, sind Abbilder, deren Name
+            # keine traegt - "Double Dragon Revive.ffpfsc". Sie zu oeffnen
+            # hiesse, sie ueber FTP herunterzuladen; bei 51 GB sind das
+            # Stunden. Die Konsole fuehrt aber jeden Titel, den sie je
+            # gesehen hat, unter /system_data/priv/appmeta - dort steht der
+            # Name neben der Kennung, und darueber laesst sich zuordnen.
+            self._bibliothek_ps5_kennungen_nachtragen(ftp, eintraege)
+            return eintraege, ""
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: PS5-Suchlauf (%s)", exc)
+            return [], self._t("library.ps5_suchlauf_fehler", error=exc)
+        finally:
+            try:
+                ftp.quit()
+            except Exception:  # noqa: BLE001
+                try:
+                    ftp.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _bibliothek_ps5_ordnerangaben(self, ftp, pfad: str) -> tuple[str, str]:
+        """Liest Name und Title-ID eines Dump-Ordners auf der Konsole.
+
+        Aus ``<Ordner>/sce_sys/param.json`` - dieselbe Datei, aus der auch
+        die Aufgaben 1-8 ihre Angaben ziehen, nur ueber FTP statt aus dem
+        Dateisystem. Ausgewertet wird sie mit denselben beiden Helfern
+        (:meth:`_ampr_gen_name_aus_json`, :meth:`_ampr_gen_titel_aus_json`),
+        damit Bibliothek und Aufgaben nicht auseinanderlaufen.
+
+        Returns:
+            ``(name, title_id)``. Beides leer, wenn es keine param.json gibt
+            - ein Homebrew ohne Dump-Aufbau etwa.
+        """
+        puffer = io.BytesIO()
+        try:
+            ftp.retrbinary("RETR %s/sce_sys/param.json" % pfad.rstrip("/"),
+                           puffer.write)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: keine param.json in %s (%s)", pfad, exc)
+            return "", ""
+        roh = puffer.getvalue()
+        if not roh:
+            return "", ""
+        return (self._ampr_gen_name_aus_json(roh),
+                self._ampr_gen_titel_aus_json(roh))
+
+    def _bibliothek_ps5_kennungen_nachtragen(self, ftp, eintraege) -> int:
+        """Traegt fehlende Title-IDs ueber den Namen nach.
+
+        Aus :data:`_AMPR_GEN_APPMETA` - demselben Verzeichnis, aus dem auch
+        Aufgabe 7 die Namen der Spiele holt. Das Verzeichnis wird **einmal**
+        gelesen, nicht je Eintrag: Am 12.09.2026 an der Konsole gemessen
+        waren das 36 Ordner mit 21 Namen in 0,6 Sekunden.
+
+        Laeuft nur, wenn ueberhaupt etwas ohne Kennung dasteht.
+
+        Returns:
+            Wie viele Kennungen nachgetragen wurden.
+        """
+        offen = [e for e in eintraege if not e.get("title_id")]
+        if not offen:
+            return 0
+        try:
+            inhalt = self._ampr_ftp_browse(ftp, self._AMPR_GEN_APPMETA)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: appmeta nicht lesbar (%s)", exc)
+            return 0
+
+        verzeichnis: dict[str, str] = {}
+        for kennung in inhalt.get("dirs", []):
+            kennung = str(kennung)
+            if not kennung.upper().startswith(self._AMPR_GEN_SPIELKENNUNGEN):
+                continue        # NPXS* und Verwandtes sind Systemanwendungen.
+            puffer = io.BytesIO()
+            try:
+                ftp.retrbinary("RETR %s/%s/param.json"
+                               % (self._AMPR_GEN_APPMETA, kennung), puffer.write)
+            except Exception:  # noqa: BLE001
+                continue
+            name = self._ampr_gen_name_aus_json(puffer.getvalue())
+            if name:
+                verzeichnis[bibliothek_bestand.namen_vergleichbar(name)] = kennung
+
+        getan = 0
+        for eintrag in offen:
+            kennung = bibliothek_bestand.name_zuordnen(
+                str(eintrag["meta"].get("title") or ""), verzeichnis)
+            if not kennung:
+                continue
+            eintrag["title_id"] = kennung
+            eintrag["meta"]["title_id"] = kennung
+            getan += 1
+        if getan:
+            logger.debug("Bibliothek: %d Kennungen ueber den Namen nachgetragen",
+                         getan)
+        return getan
+
+    #: Wo die Konsole die Titelbilder ihrer Spiele fuehrt.
+    _BIBLIOTHEK_APPMETA = "/user/appmeta"
+
+    #: Die Dateinamen, unter denen dort ein Titelbild liegen kann.
+    _BIBLIOTHEK_ICONS = ("icon0.png", "ICON0.PNG", "icon0_00.png")
+
+    def _bibliothek_ps5_cover(self, ftp, kennung: str,
+                              ordner: str = "") -> bytes | None:
+        """Holt das Titelbild eines Spiels von der Konsole.
+
+        Zwei Quellen, in dieser Reihenfolge:
+
+        1. ``<Dump-Ordner>/sce_sys/icon0.png`` - das Bild liegt beim Spiel
+           selbst. Das gilt auch fuer Titel, die die Konsole gar nicht
+           kennt, weil sie nie installiert waren.
+        2. ``/user/appmeta/<Title-ID>/icon0.png`` - dort legt die Konsole es
+           fuer alles ab, was sie schon einmal gesehen hat.
+
+        Ein paar hundert Kilobyte je Bild. Das Abbild dafuer ueber FTP zu
+        lesen waere bei einem grossen Titel eine Sache von Stunden.
+        """
+        stellen: list[str] = []
+        if ordner:
+            stellen.append("%s/sce_sys" % ordner.rstrip("/"))
+        if kennung:
+            stellen.append("%s/%s" % (self._BIBLIOTHEK_APPMETA, kennung))
+        for stelle in stellen:
+            for name in self._BIBLIOTHEK_ICONS:
+                puffer = io.BytesIO()
+                try:
+                    ftp.retrbinary("RETR %s/%s" % (stelle, name), puffer.write)
+                except Exception:  # noqa: BLE001
+                    continue
+                daten = puffer.getvalue()
+                if daten:
+                    return daten
+        return None
+
+    def _bibliothek_ps5_bilder_nachladen(self, fenster, eintraege, *, generation):
+        """Holt die Titelbilder der Konsoleneintraege - in einem Rutsch.
+
+        **Eine** Verbindung fuer alle: Ein Verbindungsaufbau zur PS5 kostet
+        merklich Zeit, und der FTP-Dienst der Konsole mag keine vielen
+        gleichzeitigen Sitzungen.
+        """
+        kante = pt(self._KACHEL_BILD_PT)
+        host = str(self._load_setting("ps5_ip", "") or "")
+        speicher = self._bibliothek_bildspeicher()
+
+        def _arbeit() -> None:
+            try:
+                ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: keine Verbindung fuer Titelbilder (%s)", exc)
+                return
+            try:
+                for eintrag in list(eintraege):
+                    if generation != getattr(self, "_bibliothek_generation", 0):
+                        return
+                    feld = eintrag.get("_bildfeld")
+                    if feld is None:
+                        continue
+                    kennung = str(eintrag.get("title_id") or "")
+                    # Der Schluessel im Bildspeicher haengt sonst an einer
+                    # Datei, die es hier gar nicht gibt - deshalb die Kennung.
+                    merkname = "ps5://%s" % (
+                        eintrag["path"] if eintrag.get("kind") == "folder"
+                        else (kennung or eintrag["path"]))
+                    datei = speicher.lesen(merkname)
+                    if not datei and not speicher.kennt_ohne_bild(merkname):
+                        rohbild = self._bibliothek_ps5_cover(
+                            ftp, kennung,
+                            eintrag["path"] if eintrag.get("kind") == "folder"
+                            else "")
+                        datei = speicher.schreiben(merkname, rohbild)
+                    self._spaeter_im_fenster(
+                        fenster, self._bibliothek_bild_setzen,
+                        feld, datei, kante, generation)
+            finally:
+                try:
+                    ftp.quit()
+                except Exception:  # noqa: BLE001
+                    try:
+                        ftp.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+
+        threading.Thread(target=_arbeit, daemon=True,
+                         name="bibliothek-ps5-bilder").start()
+
+    def _bibliothek_ziele_auf_ps5(self, ftp) -> list[str]:
+        """Welche Ablageorte gibt es auf dieser Konsole wirklich?
+
+        Angeboten wird nur, was da ist. Eine feste Liste enthielte Pfade fuer
+        USB-Anschluesse, an denen nichts steckt - und ein Upload dorthin
+        scheitert erst nach der Uebertragung.
+        """
+        vorhanden: list[str] = []
+        for ort in self._BIBLIOTHEK_SCANPFADE:
+            try:
+                if self._ampr_ftp_is_dir(ftp, ort):
+                    vorhanden.append(ort)
+            except Exception:  # noqa: BLE001
+                continue
+        return vorhanden
+
+    def _bibliothek_hochladen(self, fenster, eintrag) -> None:
+        """Uebertraegt eine Sicherung vom Rechner auf die Konsole.
+
+        Nur Dateien: Einen Dump-Ordner Datei fuer Datei hochzuladen waere bei
+        zehntausenden Eintraegen eine Sache von Stunden, und die Konsole
+        startet ihn von dort ohnehin nicht - dafuer ist ein Container da.
+        """
+        pfad = str(eintrag.get("path") or "")
+        if os.path.isdir(pfad):
+            messagebox.showinfo(self._t("library.upload_titel"),
+                                self._t("library.upload_nur_dateien"),
+                                parent=fenster)
+            return
+        if not os.path.isfile(pfad):
+            messagebox.showerror(self._t("library.upload_titel"),
+                                 self._t("library.upload_weg", path=pfad),
+                                 parent=fenster)
+            return
+
+        host = str(self._load_setting("ps5_ip", "") or "")
+        if not host:
+            messagebox.showerror(self._t("library.upload_titel"),
+                                 self._t("library.ps5_keine_adresse"),
+                                 parent=fenster)
+            return
+        try:
+            ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+        except Exception as exc:  # noqa: BLE001
+            messagebox.showerror(
+                self._t("library.upload_titel"),
+                self._t("library.ps5_keine_verbindung", host=host, error=exc),
+                parent=fenster)
+            return
+
+        try:
+            ziele = self._bibliothek_ziele_auf_ps5(ftp)
+        finally:
+            try:
+                ftp.quit()
+            except Exception:  # noqa: BLE001
+                pass
+        if not ziele:
+            messagebox.showerror(self._t("library.upload_titel"),
+                                 self._t("library.upload_kein_ziel"),
+                                 parent=fenster)
+            return
+
+        ziel = self._bibliothek_ziel_waehlen(fenster, ziele)
+        if not ziel:
+            return
+
+        groesse = os.path.getsize(pfad)
+        name = os.path.basename(pfad)
+        self._bibliothek_uebertragen(
+            fenster, richtung="hoch", oertlich=pfad,
+            entfernt="%s/%s" % (ziel.rstrip("/"), name), groesse=groesse)
+
+    def _bibliothek_ziel_waehlen(self, fenster, ziele: list[str]) -> str:
+        """Laesst den Ablageort waehlen - aus denen, die es wirklich gibt.
+
+        Der zuletzt benutzte steht vorn. Ein freies Feld gibt es dazu: Wer
+        einen eigenen Ordner fuehrt, soll ihn eintragen koennen.
+        """
+        c = self._COLORS
+        fenster_wahl = self._build_modern_toplevel(
+            self._t("library.ziel_titel"), 560, 320, min_width=460,
+            min_height=280, parent=fenster)
+        self._build_modern_header(fenster_wahl, self._t("library.ziel_titel"))
+
+        ergebnis = {"pfad": ""}
+        zuletzt = str(self._load_setting("library_upload_ziel", "") or "")
+        geordnet = ([zuletzt] if zuletzt in ziele else []) +                    [z for z in ziele if z != zuletzt]
+
+        koerper = tk.Frame(fenster_wahl, bg=c["bg_main"], padx=16, pady=8)
+        tk.Label(koerper, text=self._t("library.ziel_erklaerung"),
+                 bg=c["bg_main"], fg=c["fg_secondary"],
+                 font=(UI_SCHRIFT, pt(9)), justify="left",
+                 wraplength=pt(420)).pack(anchor="w", pady=(0, 8))
+
+        wahl = tk.StringVar(value=geordnet[0] if geordnet else "")
+        for ort in geordnet:
+            tk.Radiobutton(
+                koerper, text=ort, value=ort, variable=wahl,
+                bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["console_bg"], activebackground=c["bg_main"],
+                activeforeground=c["fg_primary"], anchor="w",
+                font=(UI_SCHRIFT, pt(10))).pack(anchor="w")
+
+        tk.Label(koerper, text=self._t("library.ziel_eigener"),
+                 bg=c["bg_main"], fg=c["fg_secondary"],
+                 font=(UI_SCHRIFT, pt(9))).pack(anchor="w", pady=(10, 2))
+        eigen = tk.StringVar()
+        ttk.Entry(koerper, textvariable=eigen,
+                  font=(UI_SCHRIFT, pt(10))).pack(fill="x")
+
+        knopfreihe = tk.Frame(fenster_wahl, bg=c["bg_main"], padx=16, pady=12)
+
+        def _uebernehmen() -> None:
+            ergebnis["pfad"] = eigen.get().strip() or wahl.get()
+            if ergebnis["pfad"]:
+                self._save_setting("library_upload_ziel", ergebnis["pfad"])
+            fenster_wahl.destroy()
+
+        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+                   command=fenster_wahl.destroy).pack(side="right")
+        ttk.Button(knopfreihe, text=self._t("action.apply"),
+                   style="Accent.TButton",
+                   command=_uebernehmen).pack(side="right", padx=(0, 8))
+        # Erst die Knopfreihe, dann der dehnbare Koerper - sonst quetscht das
+        # Raster die Knoepfe zusammen (siehe test_fensterlayout).
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper.pack(fill="both", expand=True)
+
+        fenster_wahl.grab_set()
+        fenster_wahl.wait_window()
+        return ergebnis["pfad"]
+
+    def _bibliothek_herunterladen(self, fenster, eintrag) -> None:
+        """Holt eine Sicherung von der Konsole auf den Rechner."""
+        pfad = str(eintrag.get("path") or "")
+        if eintrag.get("kind") == "folder":
+            messagebox.showinfo(self._t("library.download_titel"),
+                                self._t("library.download_nur_dateien"),
+                                parent=fenster)
+            return
+        ziel_ordner = filedialog.askdirectory(
+            title=self._t("library.download_ordner_waehlen"), parent=fenster)
+        if not ziel_ordner:
+            return
+        name = pfad.rsplit("/", 1)[-1]
+        self._bibliothek_uebertragen(
+            fenster, richtung="runter",
+            oertlich=os.path.join(ziel_ordner, name),
+            entfernt=pfad, groesse=int(eintrag.get("size") or 0))
+
+    def _bibliothek_uebertragen(self, eltern, *, richtung: str, oertlich: str,
+                                entfernt: str, groesse: int) -> None:
+        """Uebertraegt eine Datei und zeigt dabei, wie weit es ist.
+
+        **Zum Abbrechen eines Downloads:** Ein abgebrochener ``RETR`` legt
+        ``ftpsrv`` auf der Konsole lahm - sie muss danach neu gestartet
+        werden, bevor wieder eine Verbindung zustande kommt. Das ist am
+        PS5-Zugang dieses Projekts gemessen und steht im Projektgedaechtnis.
+        Der Abbrechen-Knopf fragt deshalb vorher nach, statt es stillschweigend
+        zu tun; beim Hochladen entfaellt die Frage, dort ist ein Abbruch
+        harmlos.
+
+        Args:
+            richtung: "hoch" oder "runter".
+            oertlich: Der Pfad auf dem Rechner.
+            entfernt: Der Pfad auf der Konsole.
+            groesse: Erwartete Bytes, fuer den Balken. 0 = unbekannt.
+        """
+        c = self._COLORS
+        ist_download = richtung == "runter"
+        fenster = self._build_modern_toplevel(
+            self._t("library.uebertragung_titel"), 620, 260,
+            min_width=520, min_height=220, parent=eltern)
+        self._build_modern_header(fenster, self._t("library.uebertragung_titel"))
+
+        lauf = {"an": True, "getan": 0, "fehler": "", "fertig": False}
+        weg = ("%s\n\u2192 %s" % ((entfernt, oertlich) if ist_download
+                                  else (oertlich, entfernt)))
+
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=16, pady=8)
+        tk.Label(koerper, text=weg, bg=c["bg_main"], fg=c["fg_secondary"],
+                 justify="left", font=(UI_SCHRIFT, pt(9)),
+                 wraplength=pt(560)).pack(anchor="w")
+
+        balken_wert = tk.DoubleVar(value=0.0)
+        ttk.Progressbar(koerper, variable=balken_wert, maximum=100.0,
+                        mode="determinate").pack(fill="x", pady=(10, 4))
+        stand = tk.StringVar(value=self._t("library.uebertragung_start"))
+        tk.Label(koerper, textvariable=stand, bg=c["bg_main"],
+                 fg=c["fg_primary"], font=(UI_SCHRIFT, pt(9)),
+                 anchor="w").pack(fill="x")
+
+        knopfreihe = tk.Frame(fenster, bg=c["bg_main"], padx=16, pady=12)
+
+        def _abbrechen() -> None:
+            if ist_download:
+                # Die Warnung, die dem Anwender die Konsole rettet.
+                if not messagebox.askyesno(
+                        self._t("library.abbruch_titel"),
+                        self._t("library.abbruch_warnung"),
+                        default="no", parent=fenster):
+                    return
+            lauf["an"] = False
+            stand.set(self._t("library.uebertragung_abbruch_laeuft"))
+
+        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+                   command=_abbrechen).pack(side="right")
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper.pack(fill="both", expand=True)
+
+        def _anzeigen() -> None:
+            if lauf["fertig"]:
+                return
+            getan = int(lauf["getan"])
+            if groesse > 0:
+                balken_wert.set(min(100.0, getan * 100.0 / groesse))
+                stand.set(self._t("library.uebertragung_stand",
+                                  done=self._fmt_bytes(getan),
+                                  total=self._fmt_bytes(groesse)))
+            else:
+                stand.set(self._t("library.uebertragung_stand_offen",
+                                  done=self._fmt_bytes(getan)))
+            self._spaeter_nach_ms(fenster, 250, _anzeigen)
+
+        def _arbeit() -> None:
+            host = str(self._load_setting("ps5_ip", "") or "")
+            ftp = None
+            try:
+                ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                if ist_download:
+                    with io.open(oertlich, "wb") as ziel:
+                        def _stueck(daten):
+                            if not lauf["an"]:
+                                raise _KopieAbgebrochen()
+                            ziel.write(daten)
+                            lauf["getan"] += len(daten)
+                        ftp.retrbinary("RETR %s" % entfernt, _stueck,
+                                       blocksize=1024 * 256)
+                else:
+                    with io.open(oertlich, "rb") as quelle:
+                        def _lesen(anzahl=1024 * 256):
+                            if not lauf["an"]:
+                                raise _KopieAbgebrochen()
+                            block = quelle.read(anzahl)
+                            lauf["getan"] += len(block)
+                            return block
+                        ftp.storbinary("STOR %s" % entfernt, _LeseHuelle(_lesen),
+                                       blocksize=1024 * 256)
+            except _KopieAbgebrochen:
+                lauf["fehler"] = self._t("library.uebertragung_abgebrochen")
+            except Exception as exc:  # noqa: BLE001
+                lauf["fehler"] = str(exc)
+            finally:
+                if ftp is not None:
+                    try:
+                        ftp.quit()
+                    except Exception:  # noqa: BLE001
+                        try:
+                            ftp.close()
+                        except Exception:  # noqa: BLE001
+                            pass
+                self._spaeter_im_fenster(fenster, _abschluss)
+
+        def _abschluss() -> None:
+            lauf["fertig"] = True
+            try:
+                fenster.destroy()
+            except Exception:  # noqa: BLE001
+                pass
+            if lauf["fehler"]:
+                # Ein abgebrochener Download hinterlaesst eine halbe Datei -
+                # die sieht im Zielordner aus wie eine fertige Sicherung.
+                if ist_download and not lauf["an"]:
+                    try:
+                        os.remove(oertlich)
+                    except OSError:
+                        pass
+                messagebox.showwarning(
+                    self._t("library.uebertragung_titel"),
+                    self._t("library.uebertragung_fehler", error=lauf["fehler"]),
+                    parent=eltern)
+                return
+            messagebox.showinfo(
+                self._t("library.uebertragung_titel"),
+                self._t("library.uebertragung_fertig",
+                        size=self._fmt_bytes(int(lauf["getan"]))),
+                parent=eltern)
+
+        _anzeigen()
+        threading.Thread(target=_arbeit, daemon=True,
+                         name="bibliothek-transfer").start()
+
+    @staticmethod
+    def _spaeter_nach_ms(fenster, ms: int, rueckruf) -> bool:
+        """Wie :meth:`_spaeter_im_fenster`, nur mit Wartezeit."""
+        try:
+            if fenster is None or not fenster.winfo_exists():
+                return False
+            fenster.after(ms, rueckruf)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Rueckruf nicht einplanbar: %s", exc)
+            return False
+
+    def _bibliothek_kachelflaeche(self, eltern):
+        """Legt die rollbare Flaeche fuer die Kacheln an.
+
+        Tk kann kein Raster, das mitwaechst - der Canvas darunter ist der
+        uebliche Weg. Er bekommt seine Bindungen hier, damit das Fenster
+        selbst sie nicht auch noch tragen muss.
+
+        Returns:
+            ``(rahmen, canvas, innen)`` - ``rahmen`` wird ins Raster gesetzt,
+            ``innen`` nimmt die Kacheln auf.
+        """
+        c = self._COLORS
+        rahmen = tk.Frame(eltern, bg=c["bg_main"])
+        rahmen.grid_rowconfigure(0, weight=1)
+        rahmen.grid_columnconfigure(0, weight=1)
+
+        flaeche = tk.Canvas(rahmen, bg=c["console_bg"], highlightthickness=0,
+                            bd=0, takefocus=0)
+        balken = ttk.Scrollbar(rahmen, orient="vertical", command=flaeche.yview)
+        flaeche.configure(yscrollcommand=balken.set)
+        flaeche.grid(row=0, column=0, sticky="nsew")
+        balken.grid(row=0, column=1, sticky="ns")
+
+        innen = tk.Frame(flaeche, bg=c["console_bg"])
+        fenster_id = flaeche.create_window((0, 0), window=innen, anchor="nw")
+
+        def _inhalt_geaendert(_e=None):
+            flaeche.configure(scrollregion=flaeche.bbox("all"))
+
+        def _breite_folgen(e):
+            # Der innere Rahmen muss so breit sein wie die Flaeche, sonst
+            # rechnet das Raster darin mit Breite 1 und stellt alles
+            # untereinander.
+            flaeche.itemconfigure(fenster_id, width=e.width)
+
+        innen.bind("<Configure>", _inhalt_geaendert)
+        flaeche.bind("<Configure>", _breite_folgen)
+
+        # Mausrad: Windows/macOS schicken <MouseWheel>, X11 die Knoepfe 4/5.
+        # Dieselbe Stelle ist an vier anderen Fenstern schon so geloest.
+        def _rad(e):
+            flaeche.yview_scroll(int(-1 * (e.delta / 120)) or -1, "units")
+
+        for ziel in (flaeche, innen):
+            ziel.bind("<MouseWheel>", _rad)
+            ziel.bind("<Button-4>", lambda _e: flaeche.yview_scroll(-3, "units"))
+            ziel.bind("<Button-5>", lambda _e: flaeche.yview_scroll(3, "units"))
+
+        return rahmen, flaeche, innen
+
+    def _bibliothek_kacheln_setzen(self, innen, eintraege, *, gewaehlt,
+                                   bei_auswahl, bei_start):
+        """Zeichnet die Kacheln neu und stoesst das Nachladen der Bilder an.
+
+        Die Kacheln stehen **sofort** da - mit Titel und einem Platzhalter.
+        Die Titelbilder kommen danach, eines nach dem anderen, aus dem
+        Hintergrund. Umgekehrt saehe der Anwender minutenlang nichts: Ein
+        Titelbild aus einem Container zu holen heisst, ihn zu oeffnen.
+
+        Args:
+            innen: Der Rahmen aus :meth:`_bibliothek_kachelflaeche`.
+            eintraege: Die anzuzeigenden Funde.
+            gewaehlt: Pfad des hervorgehobenen Eintrags, oder "".
+            bei_auswahl: ``(eintrag) -> None``, einfacher Klick.
+            bei_start: ``(eintrag) -> None``, Doppelklick.
+        """
+        c = self._COLORS
+        for kind in innen.winfo_children():
+            kind.destroy()
+        # Die Bildverweise des vorigen Durchgangs freigeben - sonst waechst
+        # der Speicher mit jedem Suchlauf. Tk-Bilder verschwinden, sobald
+        # niemand mehr auf sie zeigt, deshalb liegen sie ueberhaupt hier.
+        self._kachel_bilder = {}
+
+        kante = pt(self._KACHEL_BILD_PT)
+        spalten = max(1, (innen.winfo_width() or 900) // (kante + pt(18)))
+
+        for nummer, eintrag in enumerate(eintraege):
+            zeile, spalte = divmod(nummer, spalten)
+            ist_gewaehlt = eintrag["path"] == gewaehlt
+            kachel = tk.Frame(
+                innen, bg=c["bg_card"] if ist_gewaehlt else c["console_bg"],
+                highlightthickness=2,
+                highlightbackground=(c["fg_accent"] if ist_gewaehlt
+                                     else c["console_bg"]),
+                padx=6, pady=6)
+            kachel.grid(row=zeile, column=spalte, padx=4, pady=4, sticky="n")
+
+            bild = tk.Label(kachel, bg=c["bg_card"], width=kante, height=kante,
+                            text=self._t("library.kachel_laedt"),
+                            fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
+                            compound="center")
+            bild.pack()
+
+            angaben = eintrag.get("meta") or {}
+            titel = str(angaben.get("title") or eintrag.get("name") or "?")
+            tk.Label(kachel, text=self._kuerzen_auf_breite(titel, 22),
+                     bg=kachel["bg"], fg=c["fg_primary"],
+                     font=(UI_SCHRIFT, pt(9), "bold"),
+                     wraplength=kante).pack(pady=(4, 0))
+            unten = " · ".join(x for x in (
+                str(angaben.get("title_id") or ""),
+                self._t("format.%s" % eintrag["kind"])
+                if eintrag.get("kind") in self._FORMAT_LABELS else "",
+            ) if x)
+            tk.Label(kachel, text=unten, bg=kachel["bg"],
+                     fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8))).pack()
+
+            for teil in (kachel, bild):
+                teil.bind("<Button-1>", lambda _e, x=eintrag: bei_auswahl(x))
+                teil.bind("<Double-Button-1>", lambda _e, x=eintrag: bei_start(x))
+                teil.configure(cursor="hand2")
+            eintrag["_bildfeld"] = bild
+
+        for s in range(spalten):
+            innen.grid_columnconfigure(s, weight=1)
+
+    def _bibliothek_bilder_nachladen(self, fenster, eintraege, *, generation):
+        """Holt die Titelbilder und haengt sie an die Kacheln - im Hintergrund.
+
+        Die Kacheln stehen schon; hier kommen nur die Bilder nach. Das ist
+        der teure Teil: Bei einer ``.ffpfsc`` muss der Container geoeffnet
+        werden, und das dauert je Titel Sekunden. Beim zweiten Mal liegt das
+        Bild im Bildspeicher und ist sofort da.
+
+        Args:
+            fenster: Das Bibliotheksfenster - zum Zurueckmelden.
+            eintraege: Die Kacheln, die ein Bild brauchen.
+            generation: Laufende Nummer des Suchlaufs. Startet der Anwender
+                waehrenddessen einen neuen, gehoeren die Bilder dieses Laufs
+                nicht mehr auf den Schirm - sonst erscheint das Titelbild
+                eines Spiels, das gar nicht mehr in der Liste steht.
+        """
+        kante = pt(self._KACHEL_BILD_PT)
+
+        def _arbeit() -> None:
+            for eintrag in list(eintraege):
+                if generation != getattr(self, "_bibliothek_generation", 0):
+                    return
+                pfad = eintrag.get("path") or ""
+                feld = eintrag.get("_bildfeld")
+                if not pfad or feld is None:
+                    continue
+                try:
+                    datei = self._bibliothek_cover_datei(pfad)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Bibliothek: Titelbild %s (%s)", pfad, exc)
+                    datei = ""
+                self._spaeter_im_fenster(
+                    fenster, self._bibliothek_bild_setzen,
+                    feld, datei, kante, generation)
+
+        threading.Thread(target=_arbeit, daemon=True,
+                         name="bibliothek-bilder").start()
+
+    def _bibliothek_bild_setzen(self, feld, datei: str, kante: int,
+                                generation: int) -> None:
+        """Setzt ein geladenes Titelbild auf seine Kachel. Laeuft im Fensterfaden."""
+        if generation != getattr(self, "_bibliothek_generation", 0):
+            return
+        try:
+            if not feld.winfo_exists():
+                return
+        except Exception:  # noqa: BLE001
+            return
+        if not datei:
+            feld.configure(text=self._t("library.kachel_ohne_bild"), image="")
+            return
+        try:
+            bild = Image.open(datei)
+            bild.thumbnail((kante, kante))
+            foto = ImageTk.PhotoImage(bild)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: %s nicht darstellbar (%s)", datei, exc)
+            feld.configure(text=self._t("library.kachel_ohne_bild"), image="")
+            return
+        # Der Verweis muss bleiben, sonst raeumt Python das Bild weg und die
+        # Kachel ist leer - der klassische Tk-Fallstrick.
+        if not hasattr(self, "_kachel_bilder"):
+            self._kachel_bilder = {}
+        self._kachel_bilder[str(feld)] = foto
+        feld.configure(image=foto, text="")
+
+    def _kuerzen_auf_breite(self, text: str, zeichen: int) -> str:
+        """Schneidet lange Titel ab, damit die Kacheln gleich breit bleiben."""
+        text = str(text or "")
+        return text if len(text) <= zeichen else text[:zeichen - 1] + "\u2026"
 
     def _render_library_window(self, scan_folders: list[str]) -> None:
         """Baut das Bibliotheksfenster auf (Ordnerverwaltung, Suche, Trefferliste, Detailpanel)."""
         c = self._COLORS
+        # Mindestbreite 1040, nicht 900: Die Knopfreihe unten traegt seit
+        # dem 12.09.2026 zwei Knoepfe mehr (Hoch- und Herunterladen) und
+        # braucht gemessene 1020 px. Bei 900 quetschte sie "Als Quelle
+        # uebernehmen" von 273 auf 153 px zusammen - der Text stand dann
+        # abgeschnitten da.
         win = self._build_modern_toplevel(
-            self._t("library.window_title"), 1180, 700, min_width=900, min_height=560,
+            self._t("library.window_title"), 1180, 700,
+            min_width=1040, min_height=560,
         )
 
         self._build_modern_header(win, self._t("library.window_title"))
@@ -29128,6 +30192,12 @@ class PS5ConverterGUI:
         body.grid_columnconfigure(0, weight=1)
         body.grid_columnconfigure(1, weight=0, minsize=300)
 
+        # Was gerade gezeigt wird, und welcher Eintrag gewaehlt ist. Die
+        # Kacheln kennen keine Treeview-Auswahl, deshalb ein eigener Merker.
+        ansicht = {"art": str(self._load_setting("library_ansicht", "kacheln")
+                              or "kacheln"),
+                   "gewaehlt": "", "generation": 0}
+
         search_row = tk.Frame(body, bg=c["bg_main"])
         search_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
         tk.Label(search_row, text=self._t("library.search_label"), font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
@@ -29141,6 +30211,12 @@ class PS5ConverterGUI:
         liste_rahmen.grid(row=1, column=0, sticky="nsew")
         liste_rahmen.grid_rowconfigure(0, weight=1)
         liste_rahmen.grid_columnconfigure(0, weight=1)
+
+        # Die Kachelansicht liegt an derselben Stelle im Raster. Umgeschaltet
+        # wird mit grid()/grid_remove(): Das merkt sich die Rasterangaben, ein
+        # spaeteres grid() setzt die Flaeche also genau dorthin zurueck.
+        kachel_rahmen, kachel_flaeche, kachel_innen =             self._bibliothek_kachelflaeche(body)
+        kachel_rahmen.grid(row=1, column=0, sticky="nsew")
 
         cols = ("title", "title_id", "version", "format", "path")
         tree = ttk.Treeview(liste_rahmen, columns=cols, show="headings", height=18)
@@ -29228,6 +30304,48 @@ class PS5ConverterGUI:
                 return str(eintrag["path"]).lower()
             return str(meta.get("title", "")).lower()
 
+        def _kachel_gewaehlt(eintrag) -> None:
+            """Ein Klick auf eine Kachel - dieselbe Wirkung wie in der Liste."""
+            ansicht["gewaehlt"] = eintrag["path"]
+            _details_zeigen(eintrag)
+            # Auch in der Liste markieren, damit ein Umschalten nichts verliert.
+            for iid, vorhanden in item_by_iid.items():
+                if vorhanden["path"] == eintrag["path"]:
+                    try:
+                        tree.selection_set(iid)
+                        tree.see(iid)
+                    except Exception:  # noqa: BLE001
+                        pass
+                    break
+            self._bibliothek_kacheln_setzen(
+                kachel_innen, [it for it in all_items
+                               if it["path"] in {e["path"] for e in _sichtbare()}],
+                gewaehlt=ansicht["gewaehlt"],
+                bei_auswahl=_kachel_gewaehlt,
+                bei_start=lambda it: (_kachel_gewaehlt(it), _use_as_source()))
+
+        def _sichtbare() -> list:
+            query = search_var.get().strip().lower()
+            return [it for it in all_items
+                    if not query or query in " ".join([
+                        str(it["meta"].get("title", "")),
+                        str(it["meta"].get("title_id", "")),
+                        it["path"]]).lower()]
+
+        def _ansicht_umschalten() -> None:
+            """Kacheln oder Liste - die Wahl wird gemerkt."""
+            if ansicht["art"] == "kacheln":
+                ansicht["art"] = "liste"
+                kachel_rahmen.grid_remove()
+                liste_rahmen.grid()
+                umschalt_knopf.configure(text=self._t("library.ansicht_kacheln"))
+            else:
+                ansicht["art"] = "kacheln"
+                liste_rahmen.grid_remove()
+                kachel_rahmen.grid()
+                umschalt_knopf.configure(text=self._t("library.ansicht_liste"))
+            self._save_setting("library_ansicht", ansicht["art"])
+
         def _apply_filter() -> None:
             tree.delete(*tree.get_children())
             item_by_iid.clear()
@@ -29253,7 +30371,26 @@ class PS5ConverterGUI:
                 item_by_iid[iid] = item
                 sichtbar += 1
 
+            # Dieselbe gefilterte, sortierte Auswahl auch als Kacheln.
+            sichtbare = [it for _i, it in paare
+                         if not query or query in " ".join([
+                             str(it["meta"].get("title", "")),
+                             str(it["meta"].get("title_id", "")),
+                             it["path"]]).lower()]
+            ansicht["generation"] += 1
+            self._bibliothek_generation = ansicht["generation"]
+            self._bibliothek_kacheln_setzen(
+                kachel_innen, sichtbare,
+                gewaehlt=ansicht["gewaehlt"],
+                bei_auswahl=_kachel_gewaehlt,
+                bei_start=lambda it: (_kachel_gewaehlt(it), _use_as_source()))
+            self._bibliothek_bilder_nachladen(
+                win, sichtbare, generation=ansicht["generation"])
+
         def _rescan() -> None:
+            if quelle_var.get() == "ps5":
+                _rescan_ps5()
+                return
             eingetragen = list(folders_list.get(0, "end"))
             folders = [f for f in eingetragen if os.path.isdir(f)]
             # Verschwundene Ordner nicht stillschweigend uebergehen.
@@ -29284,6 +30421,66 @@ class PS5ConverterGUI:
 
             threading.Thread(target=worker, daemon=True).start()
 
+        def _rescan_ps5() -> None:
+            """Sucht auf der Konsole. Laeuft im Hintergrund - FTP braucht Zeit."""
+            status_var.set(self._t("library.status_scanning"))
+
+            def arbeit() -> None:
+                gefunden, fehler = self._bibliothek_ps5_scannen()
+
+                def _fertig() -> None:
+                    all_items.clear()
+                    all_items.extend(gefunden)
+                    _apply_filter()
+                    if fehler:
+                        status_var.set(fehler)
+                    else:
+                        status_var.set(self._t("library.ps5_status",
+                                               count=len(gefunden)))
+                        # Die Titelbilder der Konsole ueber EINE Verbindung.
+                        self._bibliothek_ps5_bilder_nachladen(
+                            win, _sichtbare(), generation=ansicht["generation"])
+
+                self._spaeter_im_fenster(win, _fertig)
+
+            threading.Thread(target=arbeit, daemon=True,
+                             name="bibliothek-ps5").start()
+
+        def _gewaehlter_eintrag():
+            """Der markierte Eintrag - gleich aus welcher Ansicht."""
+            if ansicht["gewaehlt"]:
+                for eintrag in all_items:
+                    if eintrag["path"] == ansicht["gewaehlt"]:
+                        return eintrag
+            sel = tree.selection()
+            return item_by_iid.get(sel[0]) if sel else None
+
+        def _senden() -> None:
+            eintrag = _gewaehlter_eintrag()
+            if eintrag is None:
+                messagebox.showinfo(self._t("dialog.title.no_selection"),
+                                    self._t("dialog.msg.select_entry"), parent=win)
+                return
+            if eintrag.get("ps5"):
+                messagebox.showinfo(self._t("library.upload_titel"),
+                                    self._t("library.upload_nur_dateien"),
+                                    parent=win)
+                return
+            self._bibliothek_hochladen(win, eintrag)
+
+        def _holen() -> None:
+            eintrag = _gewaehlter_eintrag()
+            if eintrag is None:
+                messagebox.showinfo(self._t("dialog.title.no_selection"),
+                                    self._t("dialog.msg.select_entry"), parent=win)
+                return
+            if not eintrag.get("ps5"):
+                messagebox.showinfo(self._t("library.download_titel"),
+                                    self._t("library.download_nur_dateien"),
+                                    parent=win)
+                return
+            self._bibliothek_herunterladen(win, eintrag)
+
         def _on_select(_event=None) -> None:
             sel = tree.selection()
             if not sel:
@@ -29291,6 +30488,16 @@ class PS5ConverterGUI:
             item = item_by_iid.get(sel[0])
             if item is None:
                 return
+            ansicht["gewaehlt"] = item["path"]
+            _details_zeigen(item)
+
+        def _details_zeigen(item) -> None:
+            """Fuellt die Detailspalte - aus der Liste wie aus einer Kachel.
+
+            Stand bis zum 12.09.2026 fest in ``_on_select`` und haing damit an
+            der Auswahl der Treeview. Die Kacheln haben keine, brauchen aber
+            dieselbe Anzeige.
+            """
             meta = item["meta"]
             size_text = format_ffpkg_bytes(item["size"]) if item["size"] is not None else self._t("library.size_unknown_folder")
             detail_text.set(
@@ -29305,15 +30512,25 @@ class PS5ConverterGUI:
                     path=item["path"],
                 )
             )
-            cover_dir = item["path"] if item["kind"] == "folder" else os.path.dirname(item["path"])
-            cover_img = self._load_cover_image(cover_dir, deep_scan=False)
-            if cover_img is not None:
+            # Das Titelbild kommt aus dem Bildspeicher - und der holt es,
+            # wenn noetig, auf demselben Weg wie die Aufgaben 1-8
+            # (``_read_game_meta_and_cover`` auf der Quelle selbst).
+            #
+            # Vorher stand hier ``_load_cover_image`` auf dem Ordner **neben**
+            # dem Container. In einer reinen Containersammlung gibt es dort
+            # nie eines, und die Detailspalte blieb leer.
+            datei = ""
+            try:
+                datei = self._bibliothek_cover_datei(item["path"])
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Titelbild %s (%s)", item["path"], exc)
+            if datei:
                 try:
-                    thumb = cover_img.copy()
-                    thumb.thumbnail((220, 220))
-                    photo = ImageTk.PhotoImage(thumb)
-                    self._library_cover_cache[sel[0]] = photo
-                    cover_label.configure(image=photo)
+                    bild = Image.open(datei)
+                    bild.thumbnail((pt(170), pt(170)))
+                    foto = ImageTk.PhotoImage(bild)
+                    self._library_cover_cache[item["path"]] = foto
+                    cover_label.configure(image=foto)
                 except Exception:
                     cover_label.configure(image="")
             else:
@@ -29384,18 +30601,72 @@ class PS5ConverterGUI:
                     os.path.dirname(item["path"]) or item["path"],
                     parent=win, vorlage="library.show_failed")
 
+        umschalt_knopf = ttk.Button(
+            search_row,
+            text=self._t("library.ansicht_liste" if ansicht["art"] == "kacheln"
+                         else "library.ansicht_kacheln"),
+            command=_ansicht_umschalten)
+        umschalt_knopf.pack(side="left", padx=(8, 0))
+
+        # Woher die Titel kommen: vom Rechner oder von der Konsole. Die Wahl
+        # wird gemerkt - wer seine Spiele meist auf der PS5 sucht, soll sie
+        # nicht bei jedem Oeffnen neu treffen muessen.
+        quelle_var = tk.StringVar(
+            value=str(self._load_setting("library_quelle", "pc") or "pc"))
+
+        def _quelle_gewechselt() -> None:
+            self._save_setting("library_quelle", quelle_var.get())
+            # Die Ordnerverwaltung gilt nur fuer den Rechner.
+            if quelle_var.get() == "ps5":
+                folders_frame.pack_forget()
+            else:
+                # ``before=body`` stellt die urspruengliche Reihenfolge her:
+                # Die Ordnerverwaltung sitzt zwischen Kopfzeile und Inhalt.
+                # Ein blosses pack() haenge sie ans Ende, also unter die
+                # Trefferliste.
+                folders_frame.pack(fill="x", pady=(0, 12), before=body)
+            _rescan()
+
+        for wert, schluessel in (("pc", "library.quelle_pc"),
+                                 ("ps5", "library.quelle_ps5")):
+            tk.Radiobutton(
+                search_row, text=self._t(schluessel), value=wert,
+                variable=quelle_var, command=_quelle_gewechselt,
+                bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["console_bg"], activebackground=c["bg_main"],
+                activeforeground=c["fg_primary"],
+                font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(8, 0))
+
+        # Die gemerkte Ansicht herstellen. Beide Flaechen liegen im Raster;
+        # eine davon wird gleich wieder herausgenommen.
+        if ansicht["art"] == "kacheln":
+            liste_rahmen.grid_remove()
+        else:
+            kachel_rahmen.grid_remove()
+
         ttk.Button(folders_btns, text=self._t("library.add_folder_button"), command=_add_folder).pack(side="left")
         ttk.Button(folders_btns, text=self._t("library.remove_button"), command=_remove_folder).pack(side="left", padx=(6, 0))
         ttk.Button(folders_btns, text=self._t("library.rescan_button"), command=_rescan).pack(side="left", padx=(6, 0))
 
         ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
         ttk.Button(btn_row, text=self._t("library.reveal_in_explorer_button"), command=_reveal_in_explorer).pack(side="right", padx=(0, 8))
+        ttk.Button(btn_row, text=self._t("library.download_knopf"),
+                   command=_holen).pack(side="left", padx=(8, 0))
+        ttk.Button(btn_row, text=self._t("library.upload_knopf"),
+                   command=_senden).pack(side="left", padx=(8, 0))
         ttk.Button(
             btn_row, text=self._t("library.use_as_source_button"),
             style="Accent.TButton", command=_use_as_source,
         ).pack(side="left")
 
-        if scan_folders:
+        # Der Startzustand muss zur gemerkten Quelle passen. Bis hierher ist
+        # das Fenster fuer den Rechner aufgebaut; steht die Wahl auf der
+        # Konsole, gehoert die Ordnerverwaltung weg und gesucht wird dort -
+        # auch dann, wenn ueberhaupt kein Ordner eingetragen ist.
+        if quelle_var.get() == "ps5":
+            folders_frame.pack_forget()
+            _rescan()
+        elif scan_folders:
             _rescan()
 
 
@@ -34316,6 +35587,29 @@ class PS5ConverterGUI:
                 system_ordner + "/sce_sys/param.json")
         return text
 
+    def _anleitung_oeffnen(self, welche, name: str, *, parent=None) -> bool:
+        """Baut eine Anleitung und zeigt sie im Standardbrowser.
+
+        Die Seite entsteht in der gerade eingestellten Sprache und landet
+        im Temp-Ordner. Sie wird bei jedem Druck neu geschrieben - so
+        stimmt sie auch nach einem Sprachwechsel, und eine alte Fassung
+        bleibt nirgends liegen.
+
+        Ein Fehlschlag wird gemeldet, nicht verschluckt: Ein Knopf, der
+        nichts tut und nichts sagt, ist der schlimmere Fall. Das war hier
+        schon zweimal die Ursache eines vermeintlich kaputten Knopfes.
+        """
+        try:
+            pfad = anleitung.schreiben(welche, self._current_language, name)
+        except OSError as exc:
+            logger.warning("Anleitung nicht schreibbar: %s", exc)
+            messagebox.showwarning(
+                self._t("dialog.title.error"),
+                self._t("appinstall.error_guide", error=exc),
+                parent=parent or self.root)
+            return False
+        return self._oeffnen_oder_melden(pfad, parent=parent or self.root)
+
     def _show_app_install(self) -> None:
         """Fenster fuer die Direktinstallation einer Anwendung."""
         c = self._COLORS
@@ -34324,8 +35618,13 @@ class PS5ConverterGUI:
         self._build_modern_header(win, self._t("appinstall.window_title"),
                                   self._t("appinstall.subtitle"))
 
-        for schluessel in ("appinstall.hint_what", "appinstall.hint_why",
-                           "appinstall.hint_needs"):
+        # Frueher standen hier drei Absaetze: was das Werkzeug technisch
+        # tut, welche Fehlercodes gemessen wurden, und die Voraussetzungen.
+        # Vollstaendig - und trotzdem unverstaendlich, weil sie mit dem
+        # Innenleben anfingen statt mit der Frage des Anwenders. Das Ganze
+        # steht jetzt hinter dem Knopf ANLEITUNG, in der Reihenfolge, in
+        # der man es braucht.
+        for schluessel in ("appinstall.hint_what", "appinstall.hint_guide"):
             tk.Label(win, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                      wraplength=940, justify="left").pack(fill="x", padx=16,
@@ -34562,6 +35861,10 @@ class PS5ConverterGUI:
         knopfbereich.pack(fill="x")
         ttk.Button(knopfbereich, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
+        ttk.Button(knopfbereich, text=self._t("appinstall.action_guide"),
+                   command=lambda: self._anleitung_oeffnen(
+                       anleitung.APPINSTALL, "anleitung_appinstall",
+                       parent=win)).pack(side="right", padx=(0, 8))
         knopf = ttk.Button(knopfbereich, text=self._t("appinstall.action_check"),
                            command=_pruefen)
         knopf.pack(side="left", padx=(0, 8))
@@ -43025,6 +44328,16 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     parser.add_argument("--yes", action="store_true", help="Rückfragen (Überschreiben/Wiederaufnahme) automatisch bestätigen.")
     parser.add_argument("--quiet", action="store_true", help="Log nicht zusätzlich auf stdout spiegeln.")
     parser.add_argument(
+        "--umhuellt-als-ordner", action="store_true",
+        help="Auf den Wegen .exFAT/.ffpkg nach .ffpfsc lassen sich AMPR EMU "
+             "und BACKPORT nicht einbauen - der Container umhüllt das Abbild "
+             "als Ganzes. Mit diesem Schalter entsteht stattdessen ein "
+             "Dump-Ordner, in dem die gewählten Bestandteile eingebaut "
+             "werden. Ohne ihn endet der Vorgang dort, statt ein Abbild ohne "
+             "sie zu liefern. Bewusst nicht an --yes gekoppelt: Ein Schalter "
+             "für Überschreib-Rückfragen soll nicht nebenbei das Zielformat "
+             "wechseln.")
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -43188,6 +44501,7 @@ def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
     # Ueberschreiben ab und soll dabei nicht nebenbei ein Spiel mit
     # Asset-Schicht unbrauchbar machen.
     app._cli_ampr_assets = bool(getattr(args, "ampr_index_trotz_assets", False))
+    app._cli_umhuellt_ordner = bool(getattr(args, "umhuellt_als_ordner", False))
     app.is_running = True
 
     output = os.path.join(

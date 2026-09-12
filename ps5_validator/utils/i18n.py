@@ -190,9 +190,9 @@ STRINGS: dict[str, dict[str, str]] = {
     'format.ffpkg': {'de': '.ffpkg', 'en': '.ffpkg'},
     'format.ffpkg_revalidate_suffix': {'de': '(neu validieren)', 'en': '(re-validate)'},
     'main.smp_rang_ffpkg': {'de': 'ShadowMount+ nennt .ffpkg das empfohlene Format für den Normalfall.', 'en': 'ShadowMount+ calls .ffpkg the recommended format for normal use.'},
-    'main.smp_rang_exfat': {'de': 'ShadowMount+ führt .exFAT als Ausweichformat für Titel, die ein externes Laufwerk brauchen.', 'en': 'ShadowMount+ lists .exFAT as the fallback for titles that need an external drive.'},
-    'main.smp_rang_pfs': {'de': 'ShadowMount+ führt .ffpfs/.ffpfsc als experimentell; für den Normalfall empfiehlt es .ffpkg.', 'en': 'ShadowMount+ lists .ffpfs/.ffpfsc as experimental; for normal use it recommends .ffpkg.'},
-    'main.pfs_speed_hint': {'de': 'Die PS5 entpackt .ffpfsc/.ffpfs mit rund 150–250 MB/s – etwa ein Drittel eines USB-Laufwerks und ein Zehntel der internen SSD. Spiele, die viel nachladen oder Texturen streamen, können dadurch ruckeln.', 'en': 'The PS5 decompresses .ffpfsc/.ffpfs at roughly 150–250 MB/s – about a third of a USB drive and a tenth of the internal SSD. Games that stream large amounts of data or textures may stutter.'},
+    'main.smp_rang_exfat': {'de': 'ShadowMount+ führt .exFAT als Ausweichformat für externe Laufwerke.', 'en': 'ShadowMount+ lists .exFAT as the fallback for titles that need an external drive.'},
+    'main.smp_rang_pfs': {'de': 'ShadowMount+ stuft das Format als experimentell ein und empfiehlt .ffpkg.', 'en': 'ShadowMount+ rates this format experimental and recommends .ffpkg.'},
+    'main.pfs_speed_hint': {'de': 'Entpackt mit 150–250 MB/s – ein Zehntel der internen SSD. Spiele können ruckeln.', 'en': 'Decompresses at 150–250 MB/s – a tenth of the internal SSD; games may stutter.'},
     'main.source_hint': {'de': 'Quelle: {formats}', 'en': 'Source: {formats}'},
     'main.browse_files_button': {'de': 'Dateien wählen', 'en': 'Choose files'},
     'main.browse_source_button': {'de': 'Quelle wählen', 'en': 'Choose source'},
@@ -1274,9 +1274,10 @@ STRINGS: dict[str, dict[str, str]] = {
     'titlebar.appinstall': {'de': 'App direkt installieren', 'en': 'Install app directly'},
     'appinstall.window_title': {'de': 'App direkt installieren – Kachel ohne Paketdatei', 'en': 'Install app directly – a tile without a package file'},
     'appinstall.subtitle': {'de': 'Legt eine Anwendung im Klartext auf die Konsole und meldet sie dort an', 'en': 'Places an application on the console in the clear and registers it there'},
-    'appinstall.hint_what': {'de': 'Dieses Werkzeug baut kein Paket. Es legt die Dateien der Anwendung direkt in das Dateisystem der Konsole und lässt sie dort über eine Systemschnittstelle anmelden (sceAppInstUtilAppInstallAll). Erst dieser Aufruf macht aus einem Ordner eine Kachel im Menü.', 'en': 'This tool does not build a package. It places the application files directly into the console file system and has them registered there through a system interface (sceAppInstUtilAppInstallAll). Only that call turns a folder into a tile in the menu.'},
-    'appinstall.hint_why': {'de': 'Beide Bauformen sind am 29.08.2026 auf einer echten Konsole gemessen. Ein selbst gebautes .pkg installiert sich, startet aber nicht (CE-100096-6) – die Konsole kann keine Schlüssel ableiten. Beide Bauformen hier starten: die Deeplink-Kachel ohne eigenes Programm, und die Anwendung mit eigenem eboot.bin. Letztere allerdings nur, wenn das Modul mit der Autorität 0x31 signiert ist – mit der Vorgabe des Payload-SDK (0x38) stürzt sie beim Start ab (CE-108262-9). Der Knopf Prüfen sagt das vorher.', 'en': 'Both shapes were measured on a real console on 29 Aug 2026. A self-built .pkg installs but does not start (CE-100096-6) – the console cannot derive keys. Both shapes here do start: the deeplink tile without a program of its own, and the application with its own eboot.bin. The latter only if the module is signed with authority 0x31 – with the payload SDK default (0x38) it crashes on launch (CE-108262-9). The Check button says so beforehand.'},
-    'appinstall.hint_needs': {'de': 'Voraussetzungen: Auf der Konsole müssen ftpsrv (Port 2121) und elfldr (Port 9021) laufen. Der gewählte Ordner braucht eboot.bin (ein SELF mit Fake-Autorität, kein rohes ELF), sce_sys/param.json mit einer titleId und möglichst icon0.png.', 'en': 'Prerequisites: ftpsrv (port 2121) and elfldr (port 9021) must be running on the console. The chosen folder needs eboot.bin (a SELF with a fake authority, not a raw ELF), sce_sys/param.json with a titleId and preferably icon0.png.'},
+    'appinstall.hint_what': {'de': 'Dieses Werkzeug legt eine Anwendung direkt auf die Konsole und meldet sie dort an. Danach steht sie als Kachel im Menü – ohne dass dafür eine .pkg-Datei gebaut werden muss (die würde sich installieren, aber nicht starten).', 'en': 'This tool places an application directly on the console and registers it there. It then sits in the menu as a tile – with no .pkg file to build (one would install, but not start).'},
+    'appinstall.hint_guide': {'de': 'Sie wissen nicht, wo Sie anfangen sollen? Der Knopf Anleitung unten öffnet eine Seite, die Schritt für Schritt durchgeht, was Sie brauchen und was Sie eintragen müssen.', 'en': 'Not sure where to start? The Guide button below opens a page that goes through what you need and what to fill in, step by step.'},
+    'appinstall.action_guide': {'de': 'Anleitung', 'en': 'Guide'},
+    'appinstall.error_guide': {'de': 'Die Anleitung ließ sich nicht öffnen: {error}', 'en': 'The guide could not be opened: {error}'},
     'appinstall.art_deeplink': {'de': 'Kachel für eine Weboberfläche (erprobt)', 'en': 'Tile for a web interface (proven)'},
     'appinstall.art_programm': {'de': 'Anwendung mit eigenem Programm (Autorität 0x31 nötig)', 'en': 'Application with its own program (see warning)'},
     'appinstall.titleid_label': {'de': 'Title-ID', 'en': 'Title ID'},
@@ -1688,6 +1689,57 @@ STRINGS: dict[str, dict[str, str]] = {
     'progress.validate.metadata': {'de': 'Metadaten aufbereiten...', 'en': 'Preparing metadata...'},
     'progress.validate.ufs2_after_transfer': {'de': 'UFS2-Struktur nach Zielvolume-Transfer schreibgeschützt prüfen...', 'en': 'Checking UFS2 structure after transfer to target volume (read-only)...'},
     'progress.validate.ufs2_staging': {'de': 'UFS2-Struktur im Temp-Staging schreibgeschützt prüfen...', 'en': 'Checking UFS2 structure in temp staging (read-only)...'},
+    # Die Zeile rechts neben dem Balken waehrend des Packens der
+    # Asset-Baender. Sie fehlte bis zum 11.09.2026 ganz: Der 80-ms-Takt
+    # setzt das Feld bei jedem Durchlauf neu, und fuer diese Phase gab es
+    # keinen Zweig - die Kette endete mit einem leeren Text.
+    'ampr_pack.groessenfeld': {'de': 'AMPR-Pack: {phase} {percent} %', 'en': 'AMPR pack: {phase} {percent} %'},
+    # Die Rueckfrage auf den einhuellenden Wegen. Bis zum 12.09.2026 war
+    # das nur eine Warnung: Der Lauf ging weiter und lieferte ein Abbild
+    # OHNE die angehakte Integration - man hielt es fuer eines mit.
+    'dialog.title.umhuellt_ordner': {'de': 'AMPR EMU / BACKPORT einbauen?', 'en': 'Build in AMPR EMU / BACKPORT?'},
+    'dialog.msg.umhuellt_ordner_frage': {'de': 'Auf diesem Weg lassen sich AMPR EMU und BACKPORT nicht einbauen: Das Abbild wird als Ganzes in den {format}-Container gehüllt, sein Inhalt dabei nie geöffnet.\n\nSoll stattdessen ein Dump-Ordner erstellt werden? Dort werden die gewählten Bestandteile eingebaut, und von dort lässt sich anschließend in jedes Format weiterwandeln.\n\nJa  - Dump-Ordner mit AMPR EMU / BACKPORT erstellen\nNein - Vorgang beenden', 'en': 'AMPR EMU and BACKPORT cannot be built in on this path: the image is wrapped as a whole into the {format} container, and its contents are never opened.\n\nCreate a dump folder instead? The selected parts are built in there, and from there you can convert on to any format.\n\nYes - create a dump folder with AMPR EMU / BACKPORT\nNo  - end the task'},
+    'log.umhuellt_ordner_gewaehlt': {'de': '[INFO] Statt {format} wird ein Dump-Ordner erstellt – nur dort lassen sich AMPR EMU und BACKPORT einbauen.\n', 'en': '[INFO] Building a dump folder instead of {format} - only there can AMPR EMU and BACKPORT be built in.\n'},
+    'log.umhuellt_abgebrochen': {'de': '[INFO] Vorgang beendet: Auf diesem Weg wären AMPR EMU und BACKPORT nicht eingebaut worden.\n', 'en': '[INFO] Task ended: AMPR EMU and BACKPORT would not have been built in on this path.\n'},
+    'log.umhuellt_cli': {'de': '[FEHLER] Auf diesem Weg lassen sich AMPR EMU und BACKPORT nicht einbauen ({format}-Container umhüllt das Abbild als Ganzes). Mit --umhuellt-als-ordner wird stattdessen ein Dump-Ordner erstellt; ohne den Schalter endet der Vorgang hier.\n', 'en': '[ERROR] AMPR EMU and BACKPORT cannot be built in on this path (the {format} container wraps the image as a whole). Use --umhuellt-als-ordner to build a dump folder instead; without it the task ends here.\n'},
+    # Der Grund, wenn eine Stelle beim Suchlauf nicht zu lesen war. Eine
+    # leere Trefferliste heisst sonst 'da ist nichts' statt 'durfte nicht
+    # nachsehen' - bei einer abgezogenen Platte ein Unterschied.
+    'library.kein_zugriff': {'de': 'kein Zugriff', 'en': 'no access'},
+    # Die Kachelansicht der Bibliothek.
+    'library.kachel_laedt': {'de': 'lädt …', 'en': 'loading …'},
+    'library.kachel_ohne_bild': {'de': 'kein Titelbild', 'en': 'no cover art'},
+    'library.ansicht_kacheln': {'de': 'Kacheln', 'en': 'Tiles'},
+    'library.ansicht_liste': {'de': 'Liste', 'en': 'List'},
+    'library.quelle_pc': {'de': 'Rechner', 'en': 'This PC'},
+    'library.quelle_ps5': {'de': 'PS5', 'en': 'PS5'},
+    # Die Bibliothek: PS5-Quelle und Uebertragung.
+    'library.ps5_keine_adresse': {'de': 'Es ist keine PS5-Adresse eingetragen. Sie steht in den Einstellungen.', 'en': 'No PS5 address configured. You can set it in the settings.'},
+    'library.ps5_keine_verbindung': {'de': 'Keine Verbindung zu {host}: {error}', 'en': 'No connection to {host}: {error}'},
+    'library.ps5_suchlauf_fehler': {'de': 'Der Suchlauf auf der Konsole ist gescheitert: {error}', 'en': 'The search on the console failed: {error}'},
+    'library.ps5_status': {'de': '{count} Titel auf der PS5 gefunden.', 'en': '{count} titles found on the PS5.'},
+    'library.upload_titel': {'de': 'Auf die PS5 senden', 'en': 'Send to PS5'},
+    'library.upload_knopf': {'de': 'Auf PS5 senden', 'en': 'Send to PS5'},
+    'library.download_knopf': {'de': 'Herunterladen', 'en': 'Download'},
+    'library.upload_nur_dateien': {'de': 'Es lassen sich nur fertige Abbilder senden – ein Dump-Ordner besteht aus zehntausenden Dateien, und die Konsole startet ihn von dort ohnehin nicht. Wandeln Sie ihn zuerst in ein Abbild um.', 'en': 'Only finished images can be sent - a dump folder holds tens of thousands of files, and the console will not start it from there anyway. Convert it to an image first.'},
+    'library.upload_weg': {'de': 'Die Datei ist nicht mehr da: {path}', 'en': 'The file is gone: {path}'},
+    'library.upload_kein_ziel': {'de': 'Auf der Konsole gibt es keinen der bekannten Ablageorte. Ist ShadowMount+ eingerichtet und ein USB-Datenträger angeschlossen?', 'en': 'None of the known storage locations exist on the console. Is ShadowMount+ set up and a USB drive connected?'},
+    'library.ziel_titel': {'de': 'Wohin auf der PS5?', 'en': 'Where on the PS5?'},
+    'library.ziel_erklaerung': {'de': 'Angeboten wird, was auf dieser Konsole wirklich vorhanden ist. Ein USB-Anschluss ohne Datenträger steht nicht in der Liste.', 'en': 'Only locations that actually exist on this console are listed. A USB port without a drive does not appear.'},
+    'library.ziel_eigener': {'de': 'Oder ein eigener Pfad:', 'en': 'Or a path of your own:'},
+    'library.download_titel': {'de': 'Von der PS5 holen', 'en': 'Fetch from PS5'},
+    'library.download_nur_dateien': {'de': 'Es lassen sich nur Abbilder holen. Ein Spielordner auf der Konsole besteht aus zehntausenden Dateien – das dauert über FTP Stunden.', 'en': 'Only images can be fetched. A game folder on the console holds tens of thousands of files - that would take hours over FTP.'},
+    'library.download_ordner_waehlen': {'de': 'Wohin soll das Abbild?', 'en': 'Where should the image go?'},
+    'library.uebertragung_titel': {'de': 'Übertragung', 'en': 'Transfer'},
+    'library.uebertragung_start': {'de': 'Verbindung wird aufgebaut ...', 'en': 'Connecting ...'},
+    'library.uebertragung_stand': {'de': '{done} von {total}', 'en': '{done} of {total}'},
+    'library.uebertragung_stand_offen': {'de': '{done} übertragen', 'en': '{done} transferred'},
+    'library.uebertragung_abbruch_laeuft': {'de': 'Wird abgebrochen ...', 'en': 'Cancelling ...'},
+    'library.uebertragung_abgebrochen': {'de': 'Vom Anwender abgebrochen.', 'en': 'Cancelled by the user.'},
+    'library.uebertragung_fehler': {'de': 'Die Übertragung ist nicht zu Ende gekommen:\n\n{error}', 'en': 'The transfer did not finish:\n\n{error}'},
+    'library.uebertragung_fertig': {'de': 'Fertig – {size} übertragen.', 'en': 'Done - {size} transferred.'},
+    'library.abbruch_titel': {'de': 'Herunterladen abbrechen?', 'en': 'Cancel download?'},
+    'library.abbruch_warnung': {'de': 'ACHTUNG: Ein abgebrochener Download legt den FTP-Dienst der PS5 lahm. Die Konsole nimmt danach keine Verbindung mehr an und muss neu gestartet werden.\n\nDas ist an dieser Konsole gemessen, nicht vermutet.\n\nTrotzdem abbrechen?', 'en': 'WARNING: Cancelling a download locks up the PS5\'s FTP service. The console will refuse further connections and has to be restarted.\n\nThis was measured on this console, not guessed.\n\nCancel anyway?'},
     'log.auto.0117': {'de': '>>> Schritt 1 / 2: Game Dump Ordner -> unkomprimiertes PFS...\n>>> Schritt 2 / 2: inneres PFS -> {v0} Außencontainer...\n[Info] Diese Nested-PFS-Pipeline vermeidet direkt komprimierte Game-Dateien.\n', 'en': '>>> Step 1 / 2: game dump folder -> uncompressed PFS...\n>>> Step 2 / 2: inner PFS -> {v0} outer container...\n[Info] This nested-PFS pipeline avoids directly compressed game files.\n'},
     'log.auto.0118': {'de': '\n>>> Lese Metadaten aus Container...\n', 'en': '\n>>> Reading metadata from container...\n'},
     'log.auto.0119': {'de': '[Info] Direktzugriff nicht möglich, entpacke PFS...\n', 'en': '[Info] Direct access not possible, extracting PFS...\n'},
@@ -1955,7 +2007,6 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.manual.ufs2tool_windows_only': {'de': '[HINWEIS] Das Einhängen einer .ffpkg als Laufwerk braucht den Dokan-Treiber, den es nur unter Windows gibt.\n         Unter {system} wird stattdessen direkt entpackt.\n', 'en': '[ERROR] Reading a .ffpkg goes through UFS2Tool and the Dokan driver - both exist only on Windows.\n         This path is not available on {system}.\n'},
     'log.manual.osfmount_windows_only': {'de': '[FEHLER] Dieser Ersatzweg hängt an OSFMount, das es nur unter Windows gibt.\n         Unter {system} steht er nicht zur Verfügung.\n', 'en': '[ERROR] This fallback relies on OSFMount, which exists only on Windows.\n         It is not available on {system}.\n'},
     'status.windows_only_tool': {'de': 'Fehler: {tool} gibt es nur unter Windows.', 'en': 'Error: {tool} exists only on Windows.'},
-    'preflight.integration_umhuellt': {'de': 'AMPR EMU und BACKPORT lassen sich auf diesem Weg nicht einbauen. Das Abbild wird als Ganzes in den .ffpfsc-Container gehüllt, sein Inhalt wird dabei nicht geöffnet. Wer die Integration braucht, wandelt zuerst in einen Dump-Ordner und von dort weiter.', 'en': 'AMPR EMU and BACKPORT cannot be applied on this path. The image is wrapped whole into the .ffpfsc container and its contents are never opened. If you need the integration, convert to a dump folder first and continue from there.'},
     'preflight.incomplete_dump': {'de': 'Der Quellordner wirkt unvollständig – diese Pflichtdateien fehlen: {files}. Das Ergebnis lässt sich zwar erzeugen, startet auf der Konsole aber voraussichtlich nicht.', 'en': 'The source folder looks incomplete – these required files are missing: {files}. The result can still be produced but will likely not start on the console.'},
     # Die übrigen Meldungen der Vorabprüfung. Bis zum 06.09.2026 stand hier nur
     # der Eintrag darüber, und die anderen acht Sätze derselben Methode gingen

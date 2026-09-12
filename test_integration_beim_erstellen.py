@@ -18,6 +18,7 @@ Zwei Fehler, die dabei ans Licht kamen und mitgeprüft werden:
 """
 from __future__ import annotations
 
+import io
 import os
 import queue
 import sys
@@ -360,6 +361,11 @@ class ArbeitskopieFortschrittTests(unittest.TestCase):
 
         self.app.task_progress = 0.0
         self.app._teilschritt_merker = None
+        # Was ``_integration_arbeitskopie`` vor der Kopie setzt.
+        self.app._copy_total_bytes = 0
+        self.app._copy_done_bytes = 0
+        self.app._copy_total_exact = True
+        self.app._copy_rate_bps = 0.0
         self.app.is_running = True
 
     @staticmethod
@@ -392,31 +398,32 @@ class ArbeitskopieFortschrittTests(unittest.TestCase):
             self.assertTrue(os.path.isdir(os.path.join(ziel, "leer")),
                             "Ein leerer Unterordner ist verlorengegangen")
 
-        # Gemessen wird der **Gesamtfortschritt**, nicht mehr der Rohwert an
-        # ``_set_progress``. Bis zum 10.09.2026 stand hier "werte[0] == 0.0"
-        # und "werte[-1] == 100.0" - also die Zusicherung, dass die Kopie
-        # ihren eigenen 0-bis-100-Wert direkt auf den Balken schreibt. Genau
-        # das war der Fehler: Der Takt aus ``_update_progress_gui`` setzt
-        # 80 ms spaeter wieder den Gesamtwert, und der Balken sprang zwischen
-        # beiden hin und her - in den Diagnoseberichten des Anwenders bis zu
-        # 567 Mal in einem Lauf, schlimmstenfalls von 100 % auf 0 %.
+        # Gemessen werden die **Byte-Zaehler**, nicht die Aufrufe an
+        # ``_set_progress``.
         #
-        # Diese Pruefung hat den Fehler mitgetragen, weil sie das falsche
-        # Verhalten festschrieb. Sie misst jetzt die Eigenschaft, auf die es
-        # ankommt: Der Fortschritt bewegt sich, laeuft nie rueckwaerts, und
-        # der Balken wird dabei nicht roh beschrieben.
-        self.assertGreater(len(self.meldungen), 3,
-                           "Es kamen kaum Meldungen - der Balken stuende still")
-        werte = [w for w, _ in self.meldungen]
-        self.assertTrue(
-            all(w is None for w in werte),
-            "Ein roher Kopieranteil ging an den Balken: %r" % (werte,))
-        self.assertGreater(self.app.task_progress, 0.0,
-                           "Der Gesamtfortschritt hat sich nicht bewegt")
-        self.assertEqual(self.verlauf, sorted(self.verlauf),
-                         "Der Fortschritt lief zurueck: %r" % (self.verlauf,))
-        self.assertIsNotNone(self.meldungen[-1][1],
-                             "Die Groessenangabe fehlt")
+        # Bis zum 10.09.2026 stand hier "werte[0] == 0.0" und
+        # "werte[-1] == 100.0" - also die Zusicherung, dass die Kopie ihren
+        # eigenen 0-bis-100-Wert direkt auf den Balken schreibt. Genau das war
+        # der Fehler: Der Takt aus ``_update_progress_gui`` setzt 80 ms
+        # spaeter wieder den Gesamtwert, und der Balken sprang zwischen beiden
+        # hin und her - beim Anwender bis zu 567 Mal in einem Lauf.
+        #
+        # Der erste Anlauf der Behebung meldete ueber einen eigenen Weg. Auch
+        # das war zu kurz gesprungen: Das Groessenfeld rechts blieb leer, weil
+        # der Takt es bei jedem Durchlauf neu setzt und fuer diese Phase kein
+        # Zweig greift. Seit dem 11.09.2026 fuellt die Kopie die Zaehler, die
+        # der Takt ohnehin auswertet - damit laeuft der Balken **und** rechts
+        # steht "Copy: x/y GB | Rest: ... | ... MB/s".
+        self.assertEqual(
+            [], self.meldungen,
+            "Der Melder hat den Balken angefasst: %r" % (self.meldungen,))
+        self.assertEqual(
+            gesamt, self.app._copy_done_bytes,
+            "Am Ende muss der Zaehler auf der vollen Groesse stehen.")
+        self.assertTrue(self.app._copy_total_exact,
+                        "Ohne das zeigt das Groessenfeld keine GB-Angabe.")
+        self.assertGreater(self.app._copy_rate_bps, 0.0,
+                           "Ohne Rate fehlen MB/s und Restzeit.")
         self.assertTrue(
             any("/" in z for z in self.statuszeilen),
             "Die Statuszeile trug keine laufenden Zahlen - ohne sie haelt "
@@ -533,20 +540,146 @@ class IntegrationsLueckenTests(unittest.TestCase):
                               "%s bettet nicht mehr als einzelne Datei ein" % name)
                 self.assertNotIn("_integration_anwenden", rumpf)
 
-    def test_die_vorpruefung_warnt(self):
-        rumpf = self._rumpf("_run_preflight_checks")
-        self.assertIn("_EINHUELLENDE_WEGE", rumpf)
-        self.assertIn("preflight.integration_umhuellt", rumpf)
-        self.assertIn("_integration_gewaehlt", rumpf,
-                      "Ohne diese Bedingung warnt das Programm auch den, "
-                      "der gar nichts einbauen wollte.")
+    def test_die_vorpruefung_fragt(self):
+        """Seit dem 12.09.2026 ist aus der Warnung eine Rueckfrage geworden.
 
-    def test_die_warnung_gibt_es_in_beiden_sprachen(self):
+        Vorher warnte das Programm nur und machte weiter - heraus kam ein
+        Abbild ohne die angehakten Bestandteile. Jetzt entscheidet der
+        Anwender: Dump-Ordner statt Container, oder Schluss.
+        """
+        rumpf = self._rumpf("_umhuellenden_weg_klaeren")
+        self.assertIn("_EINHUELLENDE_WEGE", rumpf)
+        self.assertIn("_integration_gewaehlt", rumpf,
+                      "Ohne diese Bedingung fragt das Programm auch den, "
+                      "der gar nichts einbauen wollte.")
+        self.assertIn("dialog.msg.umhuellt_ordner_frage", rumpf)
+
+    def test_die_rueckfrage_haengt_wirklich_im_ablauf(self):
+        """Die Verdrahtung, nicht nur die Methode.
+
+        Eine Pruefung, die ``_umhuellenden_weg_klaeren`` direkt aufruft, bleibt
+        auch dann gruen, wenn niemand die Methode mehr benutzt. Genau so ist
+        am 12.09.2026 eine Gegenprobe durchgerutscht: Der Aufruf war aus
+        ``_launch_task`` entfernt, und neun Pruefungen meldeten weiter alles
+        in Ordnung.
+        """
+        rumpf = self._rumpf("_launch_task")
+        self.assertIn("_umhuellenden_weg_klaeren", rumpf,
+                      "Die Rueckfrage wird nirgends mehr gestellt.")
+        self.assertIn("return", rumpf)
+
+    def test_die_texte_gibt_es_in_beiden_sprachen(self):
         from ps5_validator.utils import i18n
-        eintrag = i18n.STRINGS.get("preflight.integration_umhuellt")
-        self.assertIsNotNone(eintrag)
-        for sprache in i18n.SUPPORTED_LANGUAGES:
-            self.assertTrue(eintrag.get(sprache), sprache)
+        for schluessel in ("dialog.title.umhuellt_ordner",
+                           "dialog.msg.umhuellt_ordner_frage",
+                           "log.umhuellt_ordner_gewaehlt",
+                           "log.umhuellt_abgebrochen",
+                           "log.umhuellt_cli"):
+            eintrag = i18n.STRINGS.get(schluessel)
+            self.assertIsNotNone(eintrag, schluessel)
+            for sprache in i18n.SUPPORTED_LANGUAGES:
+                self.assertTrue(eintrag.get(sprache), "%s/%s" % (schluessel, sprache))
+
+
+class UmhuellenderWegTests(unittest.TestCase):
+    """Wenn die Integration auf einem Weg nicht greifen kann, wird gefragt.
+
+    Auf den Wegen ``.exFAT -> .ffpfsc`` und ``.ffpkg -> .ffpfsc`` wandert das
+    Abbild als **eine Datei** in den Container; sein Inhalt wird nie geöffnet.
+    Was in der Pfad-Karte angehakt ist, kann dort nicht eingebaut werden.
+
+    Bis zum 12.09.2026 stand darüber nur eine Warnung, und der Lauf ging
+    weiter. Heraus kam ein Abbild **ohne** AMPR EMU und BACKPORT, und nichts
+    unterschied es von einem mit. Jetzt entscheidet der Anwender: Dump-Ordner
+    statt Container – oder Schluss.
+    """
+
+    def _gui(self, *, ampr=True, backport=False, antwort=True, cli=False,
+             cli_schalter=False, zielformat="ffpfsc"):
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        g._log_lines = []
+        g._append_to_log = g._log_lines.append
+        g._t = lambda s, **w: (s + " " + " ".join(
+            "%s=%s" % (k, v) for k, v in sorted(w.items()))).strip()
+        g.ampr_integrate_var = _Var(ampr)
+        g.backport_integrate_var = _Var(backport)
+        g.target_format = _Var("format.%s" % zielformat)
+        g._gefragt = []
+
+        def _frage(titel, text, **kw):
+            g._gefragt.append((titel, text))
+            return antwort
+
+        g._ask_yesno_threadsafe = _frage
+        g._cli_mode = cli
+        g._cli_umhuellt_ordner = cli_schalter
+        return g
+
+    def test_ja_stellt_auf_dump_ordner_um(self):
+        g = self._gui(antwort=True)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertTrue(g._gefragt, "Es wurde gar nicht gefragt.")
+        self.assertEqual("format.folder", g.target_format.get(),
+                         "Das Zielformat wurde nicht auf den Dump-Ordner gestellt.")
+
+    def test_nein_beendet_die_aufgabe(self):
+        g = self._gui(antwort=False)
+        self.assertFalse(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertEqual("format.ffpfsc", g.target_format.get(),
+                         "Bei Nein darf nichts umgestellt werden.")
+        self.assertTrue(any("umhuellt_abgebrochen" in z for z in g._log_lines),
+                        "Der Abbruch steht nicht im Protokoll.")
+
+    def test_ohne_haekchen_wird_nicht_gefragt(self):
+        """Wer nichts einbauen will, soll auch nichts entscheiden muessen."""
+        g = self._gui(ampr=False, backport=False)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertEqual([], g._gefragt)
+        self.assertEqual("format.ffpfsc", g.target_format.get())
+
+    def test_unbetroffener_weg_wird_nicht_gefragt(self):
+        """Aus einem Dump-Ordner heraus greift die Integration ja."""
+        g = self._gui(zielformat="ffpfsc")
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_folder", "ordner", "ffpfsc"))
+        self.assertEqual([], g._gefragt)
+
+    def test_backport_allein_reicht_fuer_die_frage(self):
+        g = self._gui(ampr=False, backport=True, antwort=False)
+        self.assertFalse(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertTrue(g._gefragt)
+
+    def test_cli_ohne_schalter_endet(self):
+        """Ohne Fenster entscheidet ein eigener Schalter - nicht --yes."""
+        g = self._gui(cli=True, cli_schalter=False)
+        self.assertFalse(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertEqual([], g._gefragt, "Im CLI darf kein Fenster aufgehen.")
+        self.assertTrue(any("umhuellt_cli" in z for z in g._log_lines),
+                        "Der Grund steht nicht im Protokoll.")
+
+    def test_cli_mit_schalter_baut_den_ordner(self):
+        g = self._gui(cli=True, cli_schalter=True)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertEqual("format.folder", g.target_format.get())
+
+    def test_beide_bekannten_wege_sind_erfasst(self):
+        """Die Liste selbst - sonst faellt ein Weg still heraus."""
+        self.assertIn(("exfat", "ffpfsc"), PS5ConverterGUI._EINHUELLENDE_WEGE)
+        self.assertIn(("ffpkg", "ffpfsc"), PS5ConverterGUI._EINHUELLENDE_WEGE)
+
+    def test_preflight_warnt_nicht_mehr_doppelt(self):
+        """Aus der Warnung ist eine Entscheidung geworden - nicht beides."""
+        import ast
+        with io.open(PS5ConverterGUI.__module__ and
+                     str(PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"),
+                     encoding="utf-8", errors="replace") as fh:
+            baum = ast.parse(fh.read())
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_run_preflight_checks")
+        text = ast.unparse(knoten)
+        self.assertNotIn("preflight.integration_umhuellt", text,
+                         "Der Fall steht noch in der Vorabpruefung - der "
+                         "Anwender saehe Warnung UND Rueckfrage.")
 
 
 if __name__ == "__main__":

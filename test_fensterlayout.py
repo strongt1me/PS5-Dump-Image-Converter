@@ -1092,5 +1092,105 @@ class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
                          + "\n  ".join(beanstandet))
 
 
+class HinweiszeilenHoeheTests(unittest.TestCase):
+    """Der Hinweis unter der Zielformat-Liste darf nicht wachsen.
+
+    Am 12.09.2026 hat der Anwender es so gemeldet: „Dieser Text verbraucht
+    viel zu viel Hoehe ... Jetzt nimmt er dem Status log zuviel Platz weg."
+    Der Hinweis stand bei einem PFS-Container ueber **vier** gerenderte
+    Zeilen (80 px), weil zwei der drei Teiltexte laenger waren als die
+    ``wraplength`` von 560 px und deshalb umbrachen.
+
+    Gemessen wird in Pixeln, nicht in Zeichen: Ein Umlaut ist schmaler als
+    ein "W", und eine Zeichenzahl haette den Umbruch nicht vorhergesagt.
+    Die Pruefung geht ueber **beide** Sprachen - der englische Text ist
+    regelmaessig laenger.
+    """
+
+    #: Die Teiltexte, aus denen der Hinweis zusammengesetzt wird.
+    TEILE = ("main.format_options_hint_default", "main.pfs_speed_hint",
+             "main.smp_rang_pfs", "main.smp_rang_ffpkg", "main.smp_rang_exfat")
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+    #: Die Anzeigeskalierung, gegen die gemessen wird - Windows bei 125 %,
+    #: die Einstellung des Rechners, an dem entwickelt wird.
+    #:
+    #: Fest, nicht die gerade eingestellte: Unter Windows rechnet nicht
+    #: ``pt()`` die Punkte in Pixel um, sondern ``tk scaling``. Beim
+    #: Einzellauf dieser Datei steht das auf 1,0 - dort passt jeder Text.
+    #: Im Gesamtlauf hat ein frueheres Modul die echte Skalierung gesetzt,
+    #: und dieselbe Pruefung faellt um. Genau so ist am 12.09.2026 ein
+    #: echter Befund zweimal durchgerutscht: ``main.smp_rang_exfat`` misst
+    #: auf Deutsch 618 px und bricht damit seit Langem um.
+    SKALIERUNG = 1.6683
+
+    def _breiten_und_grenze(self):
+        """Misst jeden Teiltext bei fester Anzeigeskalierung.
+
+        Die Schrift kommt vom **echten** Etikett - nachgebaut aus
+        ``UI_SCHRIFT`` und ``pt(9)`` traefe sie eine andere Konfiguration
+        als die im Fenster. Die Skalierung wird dafuer festgenagelt und
+        danach zurueckgestellt, damit die Messung reproduzierbar ist und
+        die uebrigen Tests nichts davon merken.
+        """
+        from tkinter import font as tkfont
+        from ps5_validator.utils.i18n import STRINGS
+
+        etikett = self.app.format_info_label
+        vorher = float(_WURZEL.tk.call("tk", "scaling"))
+        _WURZEL.tk.call("tk", "scaling", self.SKALIERUNG)
+        try:
+            schrift = tkfont.Font(root=_WURZEL, font=etikett.cget("font"))
+            breiten = {}
+            for schluessel in self.TEILE:
+                for sprache in ("de", "en"):
+                    # Der Quellhinweis traegt einen Platzhalter - mit dem
+                    # laengsten Wert fuellen, den er annehmen kann.
+                    text = STRINGS[schluessel][sprache].replace(
+                        "{formats}",
+                        ".ffpfsc, .ffpfs, .exFAT, .ffpkg, Dump-Ordner")
+                    breiten["%s/%s" % (schluessel, sprache)] = (
+                        schrift.measure(text), text)
+        finally:
+            _WURZEL.tk.call("tk", "scaling", vorher)
+        return breiten, int(etikett.cget("wraplength"))
+
+    def test_kein_teiltext_bricht_um(self):
+        breiten, grenze = self._breiten_und_grenze()
+        zu_lang = ["%s: %d px von %d (%s)" % (name, breite, grenze, text)
+                   for name, (breite, text) in sorted(breiten.items())
+                   if breite > grenze]
+        self.assertEqual([], zu_lang,
+                         "Diese Hinweise brechen bei 125 % Anzeigeskalierung "
+                         "um und kosten je eine zusaetzliche Zeile:\n  "
+                         + "\n  ".join(zu_lang))
+
+    def test_der_hinweis_bleibt_unter_drei_zeilen(self):
+        """Bei einem PFS-Container ist er am laengsten: Quelle, Tempo, Rang."""
+        app = self.app
+        hoehen = {}
+        for sprache in ("de", "en"):
+            app._current_language = sprache
+            for fmt in (".ffpfsc", ".ffpkg", ".exfat"):
+                app.current_mode.set("1")
+                app.target_format.set(fmt)
+                app._format_hinweis_setzen("1")
+                _WURZEL.update_idletasks()
+                text = app.format_info_label.cget("text")
+                hoehen["%s %s" % (sprache, fmt)] = (
+                    app.format_info_label.winfo_reqheight(),
+                    text.count("\n") + 1)
+        zu_hoch = ["%s: %d px fuer %d Zeilen" % (k, px, zeilen)
+                   for k, (px, zeilen) in hoehen.items()
+                   if px > zeilen * 22]
+        self.assertEqual([], zu_hoch,
+                         "Diese Hinweise brauchen mehr Platz als sie Zeilen "
+                         "haben - da bricht etwas um:\n  "
+                         + "\n  ".join(zu_hoch))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
