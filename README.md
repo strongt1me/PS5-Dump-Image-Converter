@@ -89,6 +89,15 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--yes` | Rückfragen automatisch bestätigen |
 | `--quiet` | Protokoll nicht auf stdout spiegeln |
 | `--shutdown-on-success` | nach Erfolg herunterfahren |
+| `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
+| `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
+| `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |
+| `--param-json-reparieren` | fehlerhafte `param.json` ohne Rückfrage reparieren |
+| `--param-json-online` | Titel und Content-ID dafür im Netz nachschlagen |
+
+Die letzten fünf entscheiden Rückfragen, die `--yes` bewusst **nicht**
+beantwortet: Ein Schalter für Überschreib-Rückfragen soll nicht nebenbei den
+Weg wechseln, ein Asset-Pack unbrauchbar machen oder Daten ins Netz schicken.
 
 Rückgabewerte: `0` Erfolg · `1` Fehler oder Abbruch · `2` ungültige Argumente ·
 `3` fehlende Administratorrechte.

@@ -431,7 +431,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k13">Kapitel 13</a> erklärt.</p>
   <div class="kasten">
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
-    <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur und das PKG-Bauen erledigen <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht) und <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
+    <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur und das PKG-Bauen erledigen <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht) und <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Der <strong>PS5-FPKG-Builder</strong> von Phoenixx1202 diente als Orientierung für die PKG-Erstellung aus jedem Abbildformat. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
     <p>Die Lizenzen aller mitgelieferten Fremdkomponenten stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
   </div>
 </section>
@@ -809,7 +809,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit zehn Werkzeugen: <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8) und <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>Abbild &rarr; PKG</strong> (baut aus jedem Abbildformat &ndash; <code>.exfat</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> &ndash; ein installierbares Debug-Paket, mit Fortschrittsanzeige und Abbrechen) und <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1269,14 +1269,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 
   <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
-  <p>Über den Knopf <strong>DESIGN</strong> stehen drei Farbschemata zur Auswahl:</p>
+  <p>Über den Knopf <strong>DESIGN</strong> stehen vier Farbschemata zur Auswahl:</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Design</th><th>Charakter</th></tr></thead>
     <tbody>
-      <tr><td><strong>Dunkel</strong></td><td>Professionell, elegant, kontrastreich – Standardeinstellung.</td></tr>
-      <tr><td><strong>Mittel</strong></td><td>Ausgewogen und augenschonend in Grau und Graublau.</td></tr>
-      <tr><td><strong>Hell</strong></td><td>Modern, freundlich, hohe Kontraste.</td></tr>
+      <tr><td><strong>Futuristisch</strong> (Neon-Cyan)</td><td>Leuchtendes Neon-Cyan auf Teal-Schwarz.</td></tr>
+      <tr><td><strong>Dunkel</strong> (PS3 Piano Black)</td><td>Fast schwarz, glänzend, blauer Akzent – Standardeinstellung.</td></tr>
+      <tr><td><strong>Hell</strong> (PS3 Keramikweiß)</td><td>Warmes, cremiges Weiß mit dunkler Schrift.</td></tr>
+      <tr><td><strong>Metallisch</strong> (PS3 Slim)</td><td>Gebürstetes Anthrazit-Metall mit Silber und Stahlblau.</td></tr>
     </tbody>
   </table>
   </div>

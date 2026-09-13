@@ -574,11 +574,136 @@ class IntegrationsLueckenTests(unittest.TestCase):
                            "dialog.msg.umhuellt_ordner_frage",
                            "log.umhuellt_ordner_gewaehlt",
                            "log.umhuellt_abgebrochen",
-                           "log.umhuellt_cli"):
+                           "log.umhuellt_cli",
+                           "log.umhuellt_neu_packen_gewaehlt"):
             eintrag = i18n.STRINGS.get(schluessel)
             self.assertIsNotNone(eintrag, schluessel)
             for sprache in i18n.SUPPORTED_LANGUAGES:
                 self.assertTrue(eintrag.get(sprache), "%s/%s" % (schluessel, sprache))
+
+
+class NeuPackenWeicheTests(unittest.TestCase):
+    """Ja in der Rueckfrage fuehrt wirklich ueber den Dump-Ordner zur .ffpfsc.
+
+    Am 13.09.2026 gewuenscht: Wird .exFAT (oder .ffpkg) nach .ffpfsc mit
+    AMPR EMU gewaehlt und muss dafuer erst ein Dump-Ordner entstehen, soll er
+    danach selbst zu .ffpfsc gepackt werden - ohne dass der Anwender
+    Aufgabe 1 hinterherschickt.
+    """
+
+    @staticmethod
+    def _weiche(neu_packen):
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        g._umhuellt_neu_packen = neu_packen
+        g._append_to_log = lambda *_a, **_k: None
+        g.aufrufe = []
+
+        def _merken(name):
+            def _aufruf(src, dst, **kw):
+                g.aufrufe.append((name, src, dst, kw))
+                return True
+            return _aufruf
+
+        g._mode_pack_file = _merken("einhuellen_exfat")
+        g._mode_ffpkg_to_ffpfsc = _merken("einhuellen_ffpkg")
+        g._mode_abbild_zu_ffpfs = _merken("ueber_dump_ordner")
+        return g
+
+    def test_ja_fuehrt_exfat_ueber_den_dump_ordner(self):
+        g = self._weiche(True)
+        self.assertTrue(g._execute_conversion_by_type("exfat", "ffpfsc", "x.exfat", "Z"))
+        self.assertEqual(
+            [("ueber_dump_ordner", "x.exfat", "Z",
+              {"quelle": "exfat", "uncompressed": False})], g.aufrufe)
+
+    def test_ja_fuehrt_ffpkg_ueber_den_dump_ordner(self):
+        g = self._weiche(True)
+        self.assertTrue(g._execute_conversion_by_type("ffpkg", "ffpfsc", "x.ffpkg", "Z"))
+        self.assertEqual(
+            [("ueber_dump_ordner", "x.ffpkg", "Z",
+              {"quelle": "ffpkg", "uncompressed": False})], g.aufrufe)
+
+    def test_ohne_ja_bleibt_es_beim_schnellen_einhuellen(self):
+        g = self._weiche(False)
+        g._execute_conversion_by_type("exfat", "ffpfsc", "x.exfat", "Z")
+        g._execute_conversion_by_type("ffpkg", "ffpfsc", "x.ffpkg", "Z")
+        self.assertEqual(["einhuellen_exfat", "einhuellen_ffpkg"],
+                         [aufruf[0] for aufruf in g.aufrufe])
+
+    def test_ffpfs_bleibt_unveraendert(self):
+        """Anker: Der unkomprimierte Weg ging schon immer ueber den Ordner."""
+        g = self._weiche(False)
+        g._execute_conversion_by_type("exfat", "ffpfs", "x.exfat", "Z")
+        self.assertEqual([("ueber_dump_ordner", "x.exfat", "Z", {"quelle": "exfat"})],
+                         g.aufrufe)
+
+    def test_die_kette_packt_komprimiert_und_raeumt_den_ordner_weg(self):
+        with TemporaryDirectory() as ziel:
+            g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+            g._append_to_log = lambda *_a, **_k: None
+            g._t = lambda s, **_w: s
+            temp = {}
+
+            def _mkdtemp(prefix, dir_path):
+                pfad = os.path.join(dir_path, prefix + "probe")
+                os.makedirs(pfad)
+                temp["pfad"] = pfad
+                return pfad
+
+            def _entpacken(src, temp_root, progress_task_index=None):
+                os.makedirs(os.path.join(temp_root, "Spiel", "sce_sys"))
+                return True
+
+            gepackt = []
+            g._mkdtemp = _mkdtemp
+            g._mode_exfat_to_folder = _entpacken
+            g._integration_anwenden = lambda ordner, **_k: ordner
+            g._mode_pack_folder = lambda ordner, dst, uncompressed=False: (
+                gepackt.append((os.path.basename(ordner), dst, uncompressed)) or True)
+
+            self.assertTrue(g._mode_abbild_zu_ffpfs(
+                os.path.join(ziel, "Spiel.exfat"), ziel, quelle="exfat",
+                uncompressed=False))
+            self.assertEqual([("Spiel", ziel, False)], gepackt,
+                             "Nicht komprimiert gepackt - dann entstuende .ffpfs.")
+            self.assertIn("ffpfsc", os.path.basename(temp["pfad"]))
+            self.assertFalse(os.path.exists(temp["pfad"]),
+                             "Der voruebergehende Dump-Ordner blieb liegen.")
+
+    def test_die_befehlszeile_gibt_die_schalter_weiter(self):
+        """Bis zum 13.09.2026 kamen vier Schalter nur im FTP-Index-Weg an.
+
+        ``_run_cli`` - der Weg fuer jede Aufgabe - setzte die Merker nie, und
+        ``--umhuellt-als-ordner``, ``--param-json-reparieren``,
+        ``--param-json-online`` und ``--ampr-index-trotz-assets`` blieben dort
+        wirkungslos. Die Pruefung auf verwaiste Attribute sah das nicht, weil
+        sie jede Zuweisung irgendwo in der Datei gelten laesst. Beide Wege
+        rufen jetzt dieselbe Stelle.
+        """
+        import argparse
+        import ast
+
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        args = argparse.Namespace(
+            param_json_reparieren=True, param_json_online=True,
+            ampr_index_trotz_assets=True, umhuellt_als_ordner=True,
+            umhuellt_neu_packen=True)
+        traeger = type("Traeger", (), {})()
+        APP._cli_schalter_uebernehmen(traeger, args)
+        for name in ("_cli_param_repair", "_cli_param_online", "_cli_ampr_assets",
+                     "_cli_umhuellt_ordner", "_cli_umhuellt_neu_packen"):
+            self.assertIs(True, getattr(traeger, name, None), name)
+
+        baum = ast.parse((PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py")
+                         .read_text(encoding="utf-8"))
+        rufer = {k.name for k in ast.walk(baum)
+                 if isinstance(k, ast.FunctionDef)
+                 and any(isinstance(a, ast.Call)
+                         and getattr(a.func, "id", "") == "_cli_schalter_uebernehmen"
+                         for a in ast.walk(k))}
+        self.assertIn("_run_cli", rufer, "Der Aufgabenweg gibt die Schalter nicht weiter.")
+        self.assertIn("_run_cli_ampr_ftp_index", rufer)
 
 
 class UmhuellenderWegTests(unittest.TestCase):
@@ -590,12 +715,13 @@ class UmhuellenderWegTests(unittest.TestCase):
 
     Bis zum 12.09.2026 stand darüber nur eine Warnung, und der Lauf ging
     weiter. Heraus kam ein Abbild **ohne** AMPR EMU und BACKPORT, und nichts
-    unterschied es von einem mit. Jetzt entscheidet der Anwender: Dump-Ordner
-    statt Container – oder Schluss.
+    unterschied es von einem mit. Seitdem entscheidet der Anwender - bis zum
+    13.09.2026 hiess Ja "Dump-Ordner statt Container", seither "entpacken,
+    einbauen und wieder zu .ffpfsc packen"; Nein heisst Schluss.
     """
 
     def _gui(self, *, ampr=True, backport=False, antwort=True, cli=False,
-             cli_schalter=False, zielformat="ffpfsc"):
+             cli_schalter=False, cli_neu_packen=False, zielformat="ffpfsc"):
         g = PS5ConverterGUI.__new__(PS5ConverterGUI)
         g._log_lines = []
         g._append_to_log = g._log_lines.append
@@ -613,22 +739,60 @@ class UmhuellenderWegTests(unittest.TestCase):
         g._ask_yesno_threadsafe = _frage
         g._cli_mode = cli
         g._cli_umhuellt_ordner = cli_schalter
+        g._cli_umhuellt_neu_packen = cli_neu_packen
         return g
 
-    def test_ja_stellt_auf_dump_ordner_um(self):
+    def test_ja_packt_danach_selbst_neu(self):
+        """Seit dem 13.09.2026 fuehrt Ja bis zur .ffpfsc, nicht nur zum Ordner.
+
+        Der Anwender wollte Aufgabe 1 nicht mehr selbst hinterherschicken
+        muessen. Das Zielformat bleibt deshalb stehen; die Weiche in
+        ``_execute_conversion_by_type`` liest den Merker.
+        """
         g = self._gui(antwort=True)
         self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
         self.assertTrue(g._gefragt, "Es wurde gar nicht gefragt.")
-        self.assertEqual("format.folder", g.target_format.get(),
-                         "Das Zielformat wurde nicht auf den Dump-Ordner gestellt.")
+        self.assertTrue(g._umhuellt_neu_packen, "Der Merker fuer die Kette fehlt.")
+        self.assertEqual("format.ffpfsc", g.target_format.get(),
+                         "Das Zielformat darf nicht mehr auf den Dump-Ordner springen.")
+        self.assertTrue(any("umhuellt_neu_packen_gewaehlt" in z for z in g._log_lines),
+                        "Der Weg steht nicht im Protokoll.")
+
+    def test_ja_gilt_auch_fuer_ffpkg(self):
+        g = self._gui(antwort=True)
+        self.assertTrue(g._umhuellenden_weg_klaeren("ffpkg_to_ffpfsc", "x.ffpkg", "ffpfsc"))
+        self.assertTrue(g._umhuellt_neu_packen)
 
     def test_nein_beendet_die_aufgabe(self):
         g = self._gui(antwort=False)
         self.assertFalse(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
         self.assertEqual("format.ffpfsc", g.target_format.get(),
                          "Bei Nein darf nichts umgestellt werden.")
+        self.assertFalse(g._umhuellt_neu_packen)
         self.assertTrue(any("umhuellt_abgebrochen" in z for z in g._log_lines),
                         "Der Abbruch steht nicht im Protokoll.")
+
+    def test_ein_frueheres_ja_wirkt_nicht_nach(self):
+        """Ein Ja gilt fuer einen Lauf - nicht fuer den naechsten ohne Haken."""
+        g = self._gui(antwort=True)
+        g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc")
+        g.ampr_integrate_var = _Var(False)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertFalse(g._umhuellt_neu_packen,
+                         "Der Merker vom vorigen Lauf wirkt weiter.")
+
+    def test_cli_neu_packen_schalter_geht_den_weg_von_ja(self):
+        g = self._gui(cli=True, cli_neu_packen=True)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertEqual([], g._gefragt, "Im CLI darf kein Fenster aufgehen.")
+        self.assertTrue(g._umhuellt_neu_packen)
+        self.assertEqual("format.ffpfsc", g.target_format.get())
+
+    def test_cli_neu_packen_hat_vorrang_vor_ordner(self):
+        g = self._gui(cli=True, cli_schalter=True, cli_neu_packen=True)
+        self.assertTrue(g._umhuellenden_weg_klaeren("pack_file", "x.exfat", "ffpfsc"))
+        self.assertTrue(g._umhuellt_neu_packen)
+        self.assertEqual("format.ffpfsc", g.target_format.get())
 
     def test_ohne_haekchen_wird_nicht_gefragt(self):
         """Wer nichts einbauen will, soll auch nichts entscheiden muessen."""
@@ -680,6 +844,151 @@ class UmhuellenderWegTests(unittest.TestCase):
         self.assertNotIn("preflight.integration_umhuellt", text,
                          "Der Fall steht noch in der Vorabpruefung - der "
                          "Anwender saehe Warnung UND Rueckfrage.")
+
+
+class RueckfrageAusDemHauptfadenTests(unittest.TestCase):
+    """Die Rueckfrage darf den Hauptfaden nicht auf sich selbst warten lassen.
+
+    Am 13.09.2026 beim Anwender: STARTEN in Aufgabe 3, exFAT -> .ffpfsc mit
+    AMPR EMU (Asset-Pack). Das Fenster fror ein ("Keine Rueckmeldung"), die
+    Rueckfrage "Dump-Ordner statt Container?" erschien nie. ``_launch_task``
+    laeuft im Hauptfaden; ``_ask_yesno_threadsafe`` stellte den Dialog per
+    ``after(0)`` in dessen Warteschlange und wartete dann auf ihn - also auf
+    einen Faden, der selbst wartete.
+
+    ``UmhuellenderWegTests`` ersetzt die Hilfsfunktion durch eine Attrappe;
+    genau deshalb blieb der Haenger dort unsichtbar. Hier laeuft die echte
+    Hilfsfunktion, ersetzt ist nur der Dialog. Die Warteschlange der Wurzel
+    wirft, statt still zu warten: Ein Rueckfall endet als Fehlschlag, nicht
+    als haengender Testlauf.
+    """
+
+    class _TaktVerboten:
+        """Wurzel, deren Warteschlange aus dem Hauptfaden nie benutzt werden darf."""
+
+        def after(self, *_a, **_k):
+            raise AssertionError(
+                "after() aus dem Hauptfaden - der Dialog wartete in der "
+                "Warteschlange des Fadens, der auf ihn wartet (Deadlock).")
+
+        after_idle = after
+
+    class _Takt:
+        """Wurzel, deren Warteschlange der Test selbst im Hauptfaden abarbeitet."""
+
+        def __init__(self) -> None:
+            self.schlange: queue.Queue = queue.Queue()
+
+        def after(self, _ms, rueckruf, *args):
+            self.schlange.put((rueckruf, args))
+
+    def setUp(self) -> None:
+        import faulthandler
+        from unittest import mock
+
+        import PS5ImageConverter_Pro_FINAL_revised as hauptmodul
+
+        self.haupt = hauptmodul
+        self.ersetzen = mock.patch.object
+        # Letzte Sicherung, falls ein Rueckfall doch still wartet: Nach 60 s
+        # endet der Prozess mit Stapelabzug, statt ewig zu haengen.
+        faulthandler.dump_traceback_later(60, exit=True, file=sys.__stderr__)
+        self.addCleanup(faulthandler.cancel_dump_traceback_later)
+
+    @staticmethod
+    def _gui(wurzel) -> PS5ConverterGUI:
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        g.root = wurzel
+        return g
+
+    def test_ja_nein_frage_aus_dem_hauptfaden_kehrt_zurueck(self) -> None:
+        self.assertIs(threading.current_thread(), threading.main_thread())
+        gefragt = []
+
+        def _dialog(titel, text, **kw):
+            gefragt.append((titel, text, kw.get("default")))
+            return True
+
+        g = self._gui(self._TaktVerboten())
+        with self.ersetzen(self.haupt.messagebox, "askyesno", _dialog):
+            self.assertTrue(g._ask_yesno_threadsafe("Titel", "Frage"))
+            self.assertTrue(g._ask_yesno_threadsafe("Titel", "Frage", default_yes=False))
+        self.assertEqual([("Titel", "Frage", "yes"), ("Titel", "Frage", "no")], gefragt,
+                         "Die Vorbelegung des Knopfs ging verloren.")
+
+    def test_ordnerwahl_aus_dem_hauptfaden_kehrt_zurueck(self) -> None:
+        g = self._gui(self._TaktVerboten())
+        with self.ersetzen(self.haupt.filedialog, "askdirectory",
+                           lambda **_k: "D:/Spiele"):
+            self.assertEqual("D:/Spiele", g._ask_directory_threadsafe("Ordner"))
+        with self.ersetzen(self.haupt.filedialog, "askdirectory", lambda **_k: ""):
+            self.assertEqual("", g._ask_directory_threadsafe("Ordner"),
+                             "Abbrechen im Dialog muss eine leere Zeichenkette ergeben.")
+
+    def test_aus_dem_arbeitsfaden_fragt_der_hauptfaden(self) -> None:
+        """Der Weg ueber die Warteschlange bleibt - fuer Arbeitsfaeden."""
+        takt = self._Takt()
+        g = self._gui(takt)
+        ergebnis, im_hauptfaden = [], []
+
+        def _dialog(*_a, **_k):
+            im_hauptfaden.append(threading.current_thread() is threading.main_thread())
+            return True
+
+        with self.ersetzen(self.haupt.messagebox, "askyesno", _dialog):
+            faden = threading.Thread(
+                target=lambda: ergebnis.append(g._ask_yesno_threadsafe("T", "F")),
+                daemon=True)
+            faden.start()
+            rueckruf, args = takt.schlange.get(timeout=10)
+            rueckruf(*args)
+            faden.join(timeout=10)
+        self.assertFalse(faden.is_alive(), "Der Arbeitsfaden wartet noch.")
+        self.assertEqual([True], ergebnis)
+        self.assertEqual([True], im_hauptfaden, "Der Dialog lief nicht im Hauptfaden.")
+
+    def test_ein_werfender_dialog_laesst_den_arbeitsfaden_nicht_haengen(self) -> None:
+        takt = self._Takt()
+        g = self._gui(takt)
+        ergebnis = []
+
+        def _dialog(*_a, **_k):
+            raise RuntimeError("Dialog kaputt")
+
+        with self.ersetzen(self.haupt.messagebox, "askyesno", _dialog):
+            faden = threading.Thread(
+                target=lambda: ergebnis.append(g._ask_yesno_threadsafe("T", "F")),
+                daemon=True)
+            faden.start()
+            rueckruf, args = takt.schlange.get(timeout=10)
+            with self.assertRaises(RuntimeError):
+                rueckruf(*args)
+            faden.join(timeout=10)
+        self.assertFalse(faden.is_alive(),
+                         "Nach einem Fehler im Dialog wartet der Arbeitsfaden fuer immer.")
+        self.assertEqual([False], ergebnis)
+
+    def test_die_rueckfrage_beim_starten_erscheint(self) -> None:
+        """Der Weg des Anwenders - mit der echten Hilfsfunktion."""
+        g = self._gui(self._TaktVerboten())
+        g._log_lines = []
+        g._append_to_log = g._log_lines.append
+        g._t = lambda s, **_w: s
+        g.ampr_integrate_var = _Var(True)
+        g.backport_integrate_var = _Var(False)
+        g.target_format = _Var("format.ffpfsc")
+        g._cli_mode = False
+        gefragt = []
+
+        def _dialog(titel, _text, **_k):
+            gefragt.append(titel)
+            return False
+
+        with self.ersetzen(self.haupt.messagebox, "askyesno", _dialog):
+            self.assertFalse(g._umhuellenden_weg_klaeren("pack_file", "Spiel.exfat", "ffpfsc"))
+        self.assertEqual(["dialog.title.umhuellt_ordner"], gefragt,
+                         "Die Rueckfrage ist nicht erschienen.")
+        self.assertIn("log.umhuellt_abgebrochen", g._log_lines)
 
 
 if __name__ == "__main__":

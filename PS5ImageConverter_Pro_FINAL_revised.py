@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.18"
+APP_VERSION = "v1.9.19"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -2692,6 +2692,17 @@ class PS5ConverterGUI:
     # Blau gegen Gelb UND Helligkeit, und mindestens eines davon bleibt bei
     # jeder der drei Formen erhalten.
     _FARBSCHWAECHE_ROTGRUEN: dict[str, dict[str, str]] = {
+        "futuristisch": {
+            # Dunkel-Muster: Blau-Gelb-Achse plus Helligkeit, traegt alle drei
+            # Rot-Gruen-Formen. Die Karte (~44) ist dunkel genug.
+            "fg_success":      "#3FC1C9",
+            "fg_warning":      "#F5C542",
+            "error_btn":       "#E8524F",
+            "error_btn_hover": "#C43D3A",
+            "elf_btn":         "#7A4BB8",
+            "elf_btn_hover":   "#5E3690",
+            "remote_dir":      "#3FC1C9",
+        },
         "dunkel": {
             "fg_success":      "#3FC1C9",   # Tuerkis statt Gruen
             "fg_warning":      "#F5C542",   # helles Gelb
@@ -2701,18 +2712,6 @@ class PS5ConverterGUI:
             "elf_btn_hover":   "#5E3690",
             "remote_dir":      "#3FC1C9",
         },
-        "mittel": {
-            "fg_success":      "#2BB3BD",
-            "fg_warning":      "#FFD24D",
-            "error_btn":       "#F05A5A",
-            "error_btn_hover": "#CE3F3F",
-            # Dunkler als im dunklen Design: Die Karte von "mittel" liegt
-            # selbst in der Mitte des Helligkeitsbereichs, ein mittleres
-            # Violett hob sich davon nur um 15,4 ab (Tritanopie).
-            "elf_btn":         "#3B1F63",
-            "elf_btn_hover":   "#2A1548",
-            "remote_dir":      "#2BB3BD",
-        },
         "hell": {
             "fg_success":      "#0E7C86",
             "fg_warning":      "#B8860B",
@@ -2721,6 +2720,18 @@ class PS5ConverterGUI:
             "elf_btn":         "#5B2E91",
             "elf_btn_hover":   "#45216E",
             "remote_dir":      "#0E7C86",
+        },
+        "metallisch": {
+            # Dunkel-Muster; die Metall-Karte (~64) ist mittelhell, deshalb
+            # ist das Violett HELLER als im dunklen Design (sonst liegt es
+            # unter Tritanopie zu nah an der Karte).
+            "fg_success":      "#3FC1C9",
+            "fg_warning":      "#F5C542",
+            "error_btn":       "#E8524F",
+            "error_btn_hover": "#C43D3A",
+            "elf_btn":         "#A886DE",
+            "elf_btn_hover":   "#8A66C0",
+            "remote_dir":      "#3FC1C9",
         },
     }
 
@@ -2736,6 +2747,15 @@ class PS5ConverterGUI:
     #: Sache, keine Nachlaessigkeit: Bei Achromatopsie muss Text die Aussage
     #: tragen, nicht Farbe.
     _FARBSCHWAECHE_ACHROMAT: dict[str, dict[str, str]] = {
+        "futuristisch": {
+            # Drei Helligkeitsstufen gegen die Karte (~44) und untereinander
+            # >= 20: Fehler am hellsten, dann Warnung, dann Erfolg.
+            "error_btn":       "#F0FFFF",
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A9B5CC",
+            "fg_success":      "#676F7D",
+            "remote_dir":      "#676F7D",
+        },
         "dunkel": {
             "error_btn":       "#F0FFFF",   # am hellsten - Fehler faellt auf
             "error_btn_hover": "#C8D6D6",
@@ -2743,23 +2763,22 @@ class PS5ConverterGUI:
             "fg_success":      "#676F7D",
             "remote_dir":      "#676F7D",
         },
-        "mittel": {
-            "error_btn":       "#F0FFFF",
-            "error_btn_hover": "#C8D6D6",
-            "fg_warning":      "#A5B0C6",
-            "fg_success":      "#090A0B",
-            "remote_dir":      "#090A0B",
-            # Zaehlt nicht zur Trennung der Zustandsfarben, muss sich aber
-            # von der Karte abheben - im Urzustand nur 9,7.
-            "elf_btn":         "#3B1F63",
-            "elf_btn_hover":   "#2A1548",
-        },
         "hell": {
             "error_btn":       "#090A0B",   # am dunkelsten auf hellem Grund
             "error_btn_hover": "#000000",
             "fg_warning":      "#505560",
             "fg_success":      "#9BA6BB",
             "remote_dir":      "#9BA6BB",
+        },
+        "metallisch": {
+            # Metall-Karte (~64) ist mittelhell: Fehler am hellsten, Warnung
+            # klar darunter (nicht zu nah am Fehler), Erfolg dunkel unter der
+            # Karte - alle >= 20 getrennt (perzeptuell), auch untereinander.
+            "error_btn":       "#F0FFFF",
+            "error_btn_hover": "#C8D6D6",
+            "fg_warning":      "#A9B5CC",
+            "fg_success":      "#0C0D0F",
+            "remote_dir":      "#0C0D0F",
         },
     }
 
@@ -2789,90 +2808,113 @@ class PS5ConverterGUI:
     # Theme-Paletten  (Dunkel / Mittel / Hell)
     # ──────────────────────────────────────────────────────────────────
     _THEMES: dict[str, dict[str, str]] = {
+        "futuristisch": {
+            # Neon-Cyan auf Teal-Schwarz - futuristisch, leuchtende Akzente
+            "bg_main":          "#071A22",
+            "bg_card":          "#103642",
+            "fg_primary":       "#DBFAFF",
+            "fg_accent":        "#2BE7E7",
+            "accent_btn":       "#0C9CB2",
+            "accent_btn_hover": "#12BFD6",
+            "error_btn":        "#FF5C74",
+            "error_btn_hover":  "#E23E58",
+            "console_bg":       "#020D14",
+            "console_fg":       "#CFF6FB",
+            "progress_bg":      "#0A2831",
+            "progress_fill":    "#2BE7E7",
+            "accent":           "#2BE7E7",
+            "border":           "#1F5462",
+            "header_bg":        "#04121A",
+            "fg_secondary":     "#78B4C2",
+            "fg_warning":       "#F5C542",
+            "fg_success":       "#35E0C0",
+            "link_fg":          "#37D7E6",
+            "link_hover":       "#82EBF4",
+            "log_cmd":          "#2BE7E7",
+            "remote_dir":       "#35E0C0",
+            "elf_btn":          "#B368F2",
+            "elf_btn_hover":    "#9040D4",
+        },
         "dunkel": {
-            # Dunkles PS5-inspiriertes Blau-Grau
-            "bg_main":          "#0A1320",
-            "bg_card":          "#1C2E48",
-            "fg_primary":       "#E7EEF9",
-            "fg_accent":        "#7CB9FF",
-            "accent_btn":       "#2B5FD9",
-            "accent_btn_hover": "#3C73F0",
+            # PS3 Piano Black - fast schwarz, glaenzend, XMB-Blau als Akzent
+            "bg_main":          "#0B0B0E",
+            "bg_card":          "#1D1D23",
+            "fg_primary":       "#F1F2F6",
+            "fg_accent":        "#7FB2FF",
+            "accent_btn":       "#2E6BE6",
+            "accent_btn_hover": "#3F7DF5",
             "error_btn":        "#D65B57",
             "error_btn_hover":  "#B94541",
-            "console_bg":       "#09111B",
-            "console_fg":       "#DCE7F7",
-            "progress_bg":      "#10233C",
-            "progress_fill":    "#5BB6FF",
-            "accent":           "#7CB9FF",
-            "border":           "#425775",
-            "header_bg":        "#07101A",
-            "fg_secondary":     "#9BA8BA",
-            "fg_warning":       "#EBA04E",
+            "console_bg":       "#121216",
+            "console_fg":       "#E6E8EE",
+            "progress_bg":      "#17171C",
+            "progress_fill":    "#5B9BFF",
+            "accent":           "#7FB2FF",
+            "border":           "#34353D",
+            "header_bg":        "#050507",
+            "fg_secondary":     "#9A9CA6",
+            "fg_warning":       "#E0A64E",
             "fg_success":       "#4CC38A",
-            "link_fg":          "#5DADE2",
-            "link_hover":       "#85C1E9",
-            "log_cmd":          "#5BB6FF",
+            "link_fg":          "#6FAAE8",
+            "link_hover":       "#93C3F2",
+            "log_cmd":          "#5B9BFF",
             "remote_dir":       "#4CC38A",
-            "elf_btn":          "#D35400",
-            "elf_btn_hover":    "#A04000",
-        },
-        "mittel": {
-            # Ausgewogen, augenschonend – professionelles Mittelgrau-Blau
-            "bg_main":          "#3D4A62",
-            "bg_card":          "#516489",
-            "fg_primary":       "#EDF2FA",
-            "fg_accent":        "#7DD3FC",
-            "accent_btn":       "#3B82F6",
-            "accent_btn_hover": "#2563EB",
-            "error_btn":        "#EF4444",
-            "error_btn_hover":  "#DC2626",
-            "console_bg":       "#323D52",
-            "console_fg":       "#E8EEF8",
-            "progress_bg":      "#3A4A65",
-            "progress_fill":    "#60C8F5",
-            "accent":           "#7DD3FC",
-            "border":           "#5E7099",
-            "header_bg":        "#2E3A50",
-            "fg_secondary":     "#A8BFDB",
-            "fg_warning":       "#F59E0B",
-            "fg_success":       "#34D399",
-            "link_fg":          "#7DD3FC",
-            "link_hover":       "#BAE6FD",
-            "log_cmd":          "#60C8F5",
-            "remote_dir":       "#34D399",
-            "elf_btn":          "#EA580C",
-            "elf_btn_hover":    "#C2410C",
+            "elf_btn":          "#C0642A",
+            "elf_btn_hover":    "#9A4E1E",
         },
         "hell": {
-            # Modern, freundlich, hohe Kontraste
-            "bg_main":          "#E4EAF3",
-            "bg_card":          "#FFFFFF",
-            "fg_primary":       "#1A202C",
-            "fg_accent":        "#0070C0",
-            "accent_btn":       "#0070C0",
-            "accent_btn_hover": "#005A9E",
+            # PS3 Keramikweiss - warmes, cremiges Weiss, dunkle Schrift
+            "bg_main":          "#ECEAE3",
+            "bg_card":          "#FCFBF7",
+            "fg_primary":       "#1E2024",
+            "fg_accent":        "#0F6FB8",
+            "accent_btn":       "#0F6FB8",
+            "accent_btn_hover": "#0B5A97",
             "error_btn":        "#C0392B",
             "error_btn_hover":  "#A93226",
-            # Etwas kraeftiger als die Karte (#FFFFFF): Seit die Felder
-            # randlos sind, ist die Flaeche die einzige Abgrenzung. Bei
-            # #F8FAFC lagen nur 5,4 Helligkeitsstufen dazwischen - auf
-            # einem Bildschirm nicht mehr auszumachen. Jetzt 11,3.
-            "console_bg":       "#F1F4F9",
-            "console_fg":       "#1A202C",
-            "progress_bg":      "#DBEAFE",
-            "progress_fill":    "#0070C0",
-            "accent":           "#0070C0",
-            "border":           "#AEBBCE",
-            "header_bg":        "#D7E0EE",
-            "fg_secondary":     "#718096",
+            "console_bg":       "#F4F2EC",
+            "console_fg":       "#1E2024",
+            "progress_bg":      "#E2DFD6",
+            "progress_fill":    "#0F6FB8",
+            "accent":           "#0F6FB8",
+            "border":           "#C6C2B7",
+            "header_bg":        "#DEDBD1",
+            "fg_secondary":     "#6B6E74",
             "fg_warning":       "#B45309",
             "fg_success":       "#1A7F37",
-            "link_fg":          "#0070C0",
-            "link_hover":       "#005A9E",
-            "log_cmd":          "#0070C0",
+            "link_fg":          "#0F6FB8",
+            "link_hover":       "#0B5A97",
+            "log_cmd":          "#0F6FB8",
             "remote_dir":       "#1A7F37",
-            "elf_btn":          "#D35400",
-            "elf_btn_hover":    "#A04000",
+            "elf_btn":          "#B5551E",
+            "elf_btn_hover":    "#8F4216",
+        },
+        "metallisch": {
+            # PS3 Slim - gebuerstetes Anthrazit-Metall, Silber/Stahlblau
+            "bg_main":          "#2C2F35",
+            "bg_card":          "#3C4149",
+            "fg_primary":       "#EEF0F3",
+            "fg_accent":        "#9FB6CC",
+            "accent_btn":       "#566A82",
+            "accent_btn_hover": "#6B82A0",
+            "error_btn":        "#D66A62",
+            "error_btn_hover":  "#B5504A",
+            "console_bg":       "#25282E",
+            "console_fg":       "#E5E8EC",
+            "progress_bg":      "#30343B",
+            "progress_fill":    "#AAC1D9",
+            "accent":           "#9FB6CC",
+            "border":           "#4D535C",
+            "header_bg":        "#202329",
+            "fg_secondary":     "#A8ADB5",
+            "fg_warning":       "#E0A64E",
+            "fg_success":       "#4CC9A0",
+            "link_fg":          "#8FB0D4",
+            "link_hover":       "#B3CCE8",
+            "log_cmd":          "#AAC1D9",
+            "remote_dir":       "#4CC9A0",
+            "elf_btn":          "#B98A3E",
+            "elf_btn_hover":    "#966C2A",
         },
     }
 
@@ -2971,6 +3013,7 @@ class PS5ConverterGUI:
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
         ("titlebar.exfat_pkg", "_show_exfat_pkg_builder"),
+        ("titlebar.pkg_reader", "_show_pkg_reader"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
@@ -3614,6 +3657,10 @@ class PS5ConverterGUI:
         # CLI-Automatisierung (siehe _run_cli): unterdrückt Dialoge, spiegelt Log auf stdout
         self._cli_mode = False
         self._cli_umhuellt_ordner = False
+        self._cli_umhuellt_neu_packen = False
+        # Ja in der Umhuell-Rueckfrage: Abbild entpacken, einbauen und wieder
+        # zum gewaehlten Container packen (siehe _umhuellenden_weg_klaeren).
+        self._umhuellt_neu_packen = False
         self._cli_quiet = False
         # Race-Condition-Schutz: Jeder neue _calc-Thread bekommt eine Generations-Nummer.
         # Veraltete Threads erkennen dies und verwerfen ihr Ergebnis.
@@ -5270,6 +5317,11 @@ class PS5ConverterGUI:
                                                 self._PLATZFAKTOR_ZIEL[""])
             ziel = int(quelle * faktor)
 
+        # Entpacken, einbauen, neu packen (Ja in der Umhuell-Rueckfrage): Der
+        # voruebergehende Dump-Ordner liegt im Zielordner neben der
+        # entstehenden Datei - beides zugleich, bis gepackt ist.
+        if getattr(self, "_umhuellt_neu_packen", False):
+            ziel += int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
         mit_kopie = bool(self._integration_gewuenscht())
         temp = int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
                              else self._PLATZFAKTOR_TEMP_OHNE))
@@ -5505,20 +5557,31 @@ class PS5ConverterGUI:
         Anwender bestellt hatte, und nichts unterschied es von einem mit. Jetzt
         wird gefragt:
 
-        * **Ja** - statt des Containers entsteht ein Dump-Ordner. Dort greifen
-          die Kaestchen, und von dort laesst sich in jedes Format weiterwandeln.
+        * **Ja** - das Abbild wird in einen voruebergehenden Dump-Ordner
+          entpackt, dort greifen die Kaestchen, und danach wird er wieder zum
+          gewaehlten Container gepackt; der Dump-Ordner wird am Ende entfernt
+          (``_mode_abbild_zu_ffpfs`` mit ``uncompressed=False``). Bis zum
+          13.09.2026 entstand hier nur der Dump-Ordner, und der Anwender
+          musste ihn mit Aufgabe 1 selbst packen - auf seinen Wunsch laeuft
+          das jetzt in einem Zug.
         * **Nein** - der Vorgang endet, ohne etwas zu schreiben.
 
-        Im Kommandozeilenbetrieb gibt es kein Fenster. Dort entscheidet ein
-        **eigener** Schalter (``--umhuellt-als-ordner``), nicht ``--yes``: Ein
+        Im Kommandozeilenbetrieb gibt es kein Fenster. Dort entscheiden
+        **eigene** Schalter, nicht ``--yes``: ``--umhuellt-neu-packen`` geht
+        den Weg von Ja; ``--umhuellt-als-ordner`` baut wie bisher nur den
+        Dump-Ordner - Skripte, die ihn nutzen, behalten ihr Ergebnis. Ein
         Schalter, der Rueckfragen zum Ueberschreiben abnickt, soll nicht
-        nebenbei das Zielformat wechseln. Ohne ihn endet der Vorgang - dasselbe
+        nebenbei den Weg wechseln. Ohne beide endet der Vorgang - dasselbe
         Vorgehen wie bei ``_ampr_index_neubau_erlaubt``.
 
         Returns:
-            True, wenn weitergemacht werden darf. Bei einem Wechsel auf den
-            Dump-Ordner ist die Formatauswahl dann bereits umgestellt.
+            True, wenn weitergemacht werden darf. Beim Neu-Packen steht dann
+            ``_umhuellt_neu_packen``; beim Wechsel auf den Dump-Ordner ist
+            die Formatauswahl bereits umgestellt.
         """
+        # Jeder Start entscheidet neu - ein Ja vom letzten Lauf darf nicht in
+        # einen Lauf ohne Haken oder auf einem anderen Weg hineinwirken.
+        self._umhuellt_neu_packen = False
         if not target_type or not self._integration_gewaehlt():
             return True
         quelle = self._resolve_mode_source_type(mode, src)
@@ -5529,6 +5592,9 @@ class PS5ConverterGUI:
                       if target_type in self._FORMAT_LABELS else target_type)
 
         if getattr(self, "_cli_mode", False):
+            if getattr(self, "_cli_umhuellt_neu_packen", False):
+                self._neu_packen_waehlen(formatname)
+                return True
             if not getattr(self, "_cli_umhuellt_ordner", False):
                 self._append_to_log(
                     self._t("log.umhuellt_cli", format=formatname))
@@ -5543,8 +5609,19 @@ class PS5ConverterGUI:
         if not antwort:
             self._append_to_log(self._t("log.umhuellt_abgebrochen"))
             return False
-        self._zielformat_auf_ordner(formatname)
+        self._neu_packen_waehlen(formatname)
         return True
+
+    def _neu_packen_waehlen(self, formatname: str) -> None:
+        """Merkt sich: entpacken, einbauen, wieder zum Container packen.
+
+        Das Zielformat bleibt stehen. Die Weiche in
+        ``_execute_conversion_by_type`` liest den Merker im Arbeitsfaden - als
+        einfachen Wert, nicht als Tk-Variable.
+        """
+        self._umhuellt_neu_packen = True
+        self._append_to_log(
+            self._t("log.umhuellt_neu_packen_gewaehlt", format=formatname))
 
     def _zielformat_auf_ordner(self, bisheriges_format: str) -> None:
         """Stellt die Formatauswahl auf den Dump-Ordner um.
@@ -7063,10 +7140,17 @@ class PS5ConverterGUI:
         # Action Bar (Start/Fortschritt)
         action_bar = tk.Frame(content_area, bg=self._COLORS["bg_main"])
         action_bar.grid(row=3, column=0, sticky="ew", pady=(0, 20))
-        action_bar.grid_columnconfigure(2, weight=1, minsize=260)
+        # Der Balken (Spalte 2) ist die einzige dehnbare Spalte und gibt den
+        # Platz her, den das Groessenfeld rechts davon braucht. Seine
+        # Untergrenze sank am 13.09.2026 von 260 auf 200 px: Die Textspalte
+        # ist seitdem bei 125 % breiter, und der Gesamtbedarf der Leiste soll
+        # dabei nicht wachsen - sonst verloere ein schmaleres Fenster Platz.
+        action_bar.grid_columnconfigure(2, weight=1, minsize=200)
         action_bar.grid_columnconfigure(3, weight=0, minsize=56)
+        # Feste Breite vermeidet Balken-Flattern bei Live-Textupdates. Die 520
+        # sind nur der Startwert; die echte Breite misst weiter unten
+        # _fortschrittstext_breite an der Schrift des size_label.
         action_bar.grid_columnconfigure(4, weight=0, minsize=520)
-        # Feste Breite vermeidet Balken-Flattern bei Live-Textupdates
         self.action_bar = action_bar
 
         # Hintergrundbild auch in der Action-Bar sichtbar machen (Start/Abbrechen-
@@ -7117,15 +7201,16 @@ class PS5ConverterGUI:
         # Größen- und ETA-Label (Platz für verbleibende Größe und ETA-Zeit).
         #
         # KEINE feste Zeichenbreite: Der Platz wird bereits von der Spalte selbst
-        # reserviert (grid_columnconfigure(4, weight=0, minsize=520) weiter oben) -
+        # reserviert (grid_columnconfigure(4, ...) weiter oben) -
         # das Label darf deshalb genau so breit sein wie sein Text. Eine feste
         # Breite von 64 Zeichen (~440 px) hat die halbdeckende Flaeche (siehe
         # unten) ueber die volle Labelbreite gezogen, auch wenn nur "618.4 MB"
         # darin stand; auf dem Hintergrundbild sah das aus wie ein zweiter,
         # leerer Fortschrittsbalken. Weil die Spalte fest bleibt, wandert nichts,
         # wenn der Text laenger oder kuerzer wird; wraplength haelt ihn zudem
-        # innerhalb der reservierten 520 px - Platz geht dadurch keiner verloren,
-        # im Gegenteil (vorher 440 px nutzbar, jetzt 520).
+        # innerhalb der reservierten Spalte - Platz geht dadurch keiner
+        # verloren. Bis zum 13.09.2026 waren das feste 520 px; bei 125 %
+        # Anzeigeskalierung reichte das nicht, siehe _fortschrittstext_breite.
         self.size_label = ttk.Label(
             action_bar,
             text="",
@@ -7134,7 +7219,18 @@ class PS5ConverterGUI:
             foreground=self._COLORS["fg_primary"],
             wraplength=520,
         )
-        self.size_label.grid(row=0, column=4, padx=(15, 0), sticky="w")
+        # Umbruch und Spalte aus der echten Schrift gemessen: Der Text bricht
+        # erst jenseits der reservierten Breite um, und der Balken daneben
+        # behaelt seine Laenge, egal wie lang die Zeile gerade ist. Die Spalte
+        # umfasst dabei auch den Abstand links vom Etikett - ohne ihn wuchs sie
+        # bei den laengsten Zeilen doch noch um diese 15 px, und der Balken
+        # zuckte mit (am 13.09.2026 gemessen: 310 -> 299 px).
+        _textbreite = self._fortschrittstext_breite()
+        _abstand_links = 15
+        self.size_label.configure(wraplength=_textbreite)
+        action_bar.grid_columnconfigure(
+            4, weight=0, minsize=_textbreite + _abstand_links)
+        self.size_label.grid(row=0, column=4, padx=(_abstand_links, 0), sticky="w")
         self._content_caption_labels.append(self.size_label)
 
         # Console (Dark Console Style)
@@ -7856,24 +7952,49 @@ class PS5ConverterGUI:
         Kann aus Hintergrund-Threads aufgerufen werden.
         Blockiert den aufrufenden Thread bis der Nutzer geantwortet hat.
 
+        **Aus dem Hauptfaden wird direkt gefragt.** Der Weg ueber
+        ``after(0)`` + ``event.wait()`` ist dort ein Deadlock: Der Dialog
+        steht in der Warteschlange des Hauptfadens - und genau der wartet auf
+        die Antwort. Am 13.09.2026 beim Anwender: STARTEN mit AMPR EMU auf dem
+        einhuellenden Weg exFAT -> .ffpfsc (``_launch_task`` ->
+        ``_umhuellenden_weg_klaeren``) fror das Fenster ein ("Keine
+        Rueckmeldung"), die Rueckfrage erschien nie.
+
         Args:
             default_yes: Vorbelegter Knopf. Auf ``False`` setzen, wenn ein
                 versehentliches Enter nichts auslösen soll – etwa, wenn dabei
                 Daten an einen fremden Dienst gehen.
         """
-        import threading as _threading
-        result_holder = [False]
-        event = _threading.Event()
-        def _ask():
-            result_holder[0] = messagebox.askyesno(
+        if threading.current_thread() is threading.main_thread():
+            return messagebox.askyesno(
                 title, message, default="yes" if default_yes else "no")
-            event.set()
+        result_holder = [False]
+        event = threading.Event()
+
+        def _ask():
+            try:
+                result_holder[0] = messagebox.askyesno(
+                    title, message, default="yes" if default_yes else "no")
+            finally:
+                # Auch wenn der Dialog wirft: Der wartende Faden darf nicht
+                # fuer immer haengen bleiben.
+                event.set()
         self.root.after(0, _ask)
         event.wait()
         return result_holder[0]
 
     def _ask_directory_threadsafe(self, title: str, initialdir: str = "") -> str:
-        """Öffnet einen Ordnerdialog sicher aus einem Hintergrund-Thread."""
+        """Öffnet einen Ordnerdialog sicher aus einem Hintergrund-Thread.
+
+        Aus dem Hauptfaden wird direkt gefragt - derselbe Deadlock wie bei
+        ``_ask_yesno_threadsafe`` (Dialog in der Warteschlange des Fadens,
+        der auf ihn wartet).
+        """
+        if threading.current_thread() is threading.main_thread():
+            return str(filedialog.askdirectory(
+                title=title,
+                initialdir=initialdir if os.path.isdir(initialdir) else None,
+            ) or "")
         result_holder = [""]
         event = threading.Event()
 
@@ -11299,8 +11420,17 @@ class PS5ConverterGUI:
         halbe Minute spaeter auf.
         """
         candidate = ""
-        if hasattr(self, "temp_path"):
-            candidate = str(self.temp_path.get()).strip()
+        # self.temp_path ist eine Tk-Variable und darf nur im Hauptfaden
+        # gelesen werden - aus einem Arbeitsfaden (z.B. Abbild->PKG) wirft Tk
+        # sonst "main thread is not in main loop". Dort faellt der Wert auf die
+        # gespeicherte Einstellung zurueck, die beim letzten Hauptfaden-Lauf
+        # aus genau dieser Variable geschrieben wurde.
+        if hasattr(self, "temp_path") and \
+                threading.current_thread() is threading.main_thread():
+            try:
+                candidate = str(self.temp_path.get()).strip()
+            except RuntimeError:
+                candidate = ""
         if not candidate:
             candidate = str(self._load_setting("temp_dir", "")).strip()
         if not candidate:
@@ -11319,7 +11449,8 @@ class PS5ConverterGUI:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 fh.write("ok")
             norm = os.path.normpath(candidate)
-            if hasattr(self, "temp_path"):
+            if hasattr(self, "temp_path") and \
+                    threading.current_thread() is threading.main_thread():
                 self.temp_path.set(norm)
             # Nur schreiben, wenn sich wirklich etwas geaendert hat. Dieselbe
             # Zeichenkette erneut abzulegen kostet ein fsync und bringt nichts.
@@ -16014,6 +16145,43 @@ class PS5ConverterGUI:
         """Öffnet eine URL im Standard-Browser."""
         webbrowser.open(url)
 
+    #: Die breiteste gewoehnliche Zeile im Groessenfeld neben dem Balken - so,
+    #: wie _update_progress_gui sie baut, mit dreistelligen Werten ueberall
+    #: (Ziffern sind in der Oberflaechenschrift gleich breit). Am 13.09.2026
+    #: bei 125 % gemessen: Copy 568 px, Verarb. 533, FFPKG 532, Kompr. 509,
+    #: Write 496, Extr. 385. Die seltene Zeile "... geschrieben | Obergrenze
+    #: ~..." (657 px, nur bei ungenauer Gesamtgroesse) darf weiter umbrechen -
+    #: fuer sie Platz zu halten, kostete den Balken in jedem Lauf 90 px.
+    _FORTSCHRITTSTEXT_MUSTER: tuple[str, ...] = (
+        "Copy: 888.88/888.88 GB | Rest: 888.88 GB | 888.8 MB/s (steigend) | ETA: 888:88",
+    )
+    #: Nie schmaler als die frueheren festen 520 px.
+    _FORTSCHRITTSTEXT_MINDESTBREITE = 520
+
+    def _fortschrittstext_breite(self) -> int:
+        """Breite des Groessenfelds neben dem Balken, gemessen an der echten Schrift.
+
+        Bis zum 13.09.2026 war die Spalte fest 520 px breit. Die Schrift waechst
+        mit der Anzeigeskalierung, eine Pixelgrenze nicht: Bei 125 % misst
+        "Copy: 1.95/150.74 GB | Rest: 148.78 GB | 34.1 MB/s (steigend) |
+        ETA: 29:20" 532 px, und "29:20" stand beim Anwender in einer zweiten
+        Zeile. Gemessen wird deshalb mit der Schrift des Etiketts selbst; den
+        Platz gibt der Balken her, die einzige dehnbare Spalte.
+
+        Die Breite wird einmal beim Aufbau festgelegt und folgt nicht dem
+        wechselnden Text - sonst flatterte der Balken bei jeder Aktualisierung.
+        """
+        try:
+            import tkinter.font as tkfont  # noqa: PLC0415
+            schrift = tkfont.Font(root=self.root, font=self.size_label.cget("font"))
+            breite = max(schrift.measure(muster)
+                         for muster in self._FORTSCHRITTSTEXT_MUSTER)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Fortschrittstext nicht messbar: %s", exc)
+            return self._FORTSCHRITTSTEXT_MINDESTBREITE
+        # Vier Pixel Reserve gegen Rundung beim Umbruch.
+        return max(self._FORTSCHRITTSTEXT_MINDESTBREITE, int(breite) + 4)
+
     def _set_size_label_idle(self, text: str) -> None:
         """Setzt das size_label nur wenn kein Prozess läuft."""
         if not self.is_running and hasattr(self, "size_label"):
@@ -17163,10 +17331,11 @@ class PS5ConverterGUI:
             return
 
         # Kann die gewaehlte Integration auf diesem Weg ueberhaupt greifen?
-        # Wenn nicht, entscheidet der Anwender: Dump-Ordner statt Container -
-        # oder Schluss. Muss VOR der Preflight-Analyse stehen, denn eine
-        # Antwort kann das Zielformat noch wechseln, und die Analyse prueft
-        # gegen das Format.
+        # Wenn nicht, entscheidet der Anwender: entpacken, einbauen und wieder
+        # packen - oder Schluss. Muss VOR der Preflight- und der Platzpruefung
+        # stehen: Die Antwort aendert den Platzbedarf (voruebergehender
+        # Dump-Ordner im Ziel), und auf der Kommandozeile kann sie noch das
+        # Zielformat wechseln.
         if not self._umhuellenden_weg_klaeren(mode, src, target_type):
             return
         target_type = self._get_selected_target_type()
@@ -21066,6 +21235,12 @@ class PS5ConverterGUI:
         if source_type == "ffpfsc" and target_type == "ffpfsc":
             return self._mode_ffpfsc_umpacken(src, dst, uncompressed=False)
         if source_type == "exfat" and target_type == "ffpfsc":
+            # Mit Ja in der Umhuell-Rueckfrage: entpacken, AMPR EMU / BACKPORT
+            # einbauen, als .ffpfsc neu packen. Sonst wandert das Abbild als
+            # eine Datei in den Container - der schnelle Weg, ohne Einbau.
+            if getattr(self, "_umhuellt_neu_packen", False):
+                return self._mode_abbild_zu_ffpfs(
+                    src, dst, quelle="exfat", uncompressed=False)
             return self._mode_pack_file(src, dst)
         if source_type == "exfat" and target_type == "ffpfs":
             # Nicht ueber _mode_pack_file: Das bettet die .exfat als einzelne
@@ -21078,6 +21253,11 @@ class PS5ConverterGUI:
         if source_type == "exfat" and target_type == "ffpkg":
             return self._mode_exfat_to_ffpkg(src, dst)
         if source_type == "ffpkg" and target_type == "ffpfsc":
+            # Wie bei der .exfat darueber: Ja in der Rueckfrage fuehrt ueber
+            # den Dump-Ordner, sonst wird die .ffpkg eingehuellt.
+            if getattr(self, "_umhuellt_neu_packen", False):
+                return self._mode_abbild_zu_ffpfs(
+                    src, dst, quelle="ffpkg", uncompressed=False)
             return self._mode_ffpkg_to_ffpfsc(src, dst)
         if source_type == "ffpkg" and target_type == "ffpfs":
             # Aufgabe 6 bot diese Kombination an, die Verteilung kannte sie nicht
@@ -21637,8 +21817,9 @@ class PS5ConverterGUI:
         finally:
             _rmtree_force(temp_root)
 
-    def _mode_abbild_zu_ffpfs(self, src: str, dst: str, *, quelle: str) -> bool:
-        """Baut aus einer ``.exfat`` oder ``.ffpkg`` eine flache ``.ffpfs``.
+    def _mode_abbild_zu_ffpfs(self, src: str, dst: str, *, quelle: str,
+                              uncompressed: bool = True) -> bool:
+        """Baut ein Abbild ueber den Dump-Ordner neu: ``.ffpfs``, mit Einbau auch ``.ffpfsc``.
 
         Der Umweg über einen Dump-Ordner ist hier Pflicht, nicht Bequemlichkeit.
         ``mkpfs pack file`` bettet die Quelldatei als *eine* Datei ein; in der
@@ -21651,16 +21832,26 @@ class PS5ConverterGUI:
         Denselben Weg geht ``.ffpfsc`` -> ``.ffpkg`` und ``.ffpfsc`` ->
         ``.ffpfs`` seit jeher: erst vollständig auspacken, dann neu bauen.
 
+        Seit dem 13.09.2026 geht auch ``.ffpfsc`` diesen Weg - aber nur, wenn
+        AMPR EMU oder BACKPORT eingebaut werden sollen und der Anwender der
+        Umhuell-Rueckfrage zugestimmt hat (``_umhuellt_neu_packen``). Ohne
+        Einbau bleibt es beim schnellen Einhuellen der Abbilddatei. Die
+        BAUFORM der ``.ffpfsc`` entscheidet ``_mode_pack_folder`` wie bei
+        Aufgabe 1.
+
         Args:
             src:    Die Abbilddatei.
             dst:    Der Zielordner.
             quelle: ``"exfat"`` oder ``"ffpkg"`` - entscheidet nur, welcher
                 Entpacker den Dump-Ordner herstellt.
+            uncompressed: ``True`` fuer ``.ffpfs``, ``False`` fuer ``.ffpfsc``.
 
         Returns:
             True bei Erfolg.
         """
-        temp_root = self._mkdtemp(prefix="ps5conv_%s_ffpfs_" % quelle, dir_path=dst)
+        ziel_endung = "ffpfs" if uncompressed else "ffpfsc"
+        temp_root = self._mkdtemp(prefix="ps5conv_%s_%s_" % (quelle, ziel_endung),
+                                  dir_path=dst)
         try:
             if quelle == "exfat":
                 entpackt = self._mode_exfat_to_folder(src, temp_root, progress_task_index=2)
@@ -21688,7 +21879,7 @@ class PS5ConverterGUI:
             dump_dir = self._integration_anwenden(dump_dir)
             if not dump_dir:
                 return False
-            return self._mode_pack_folder(dump_dir, dst, uncompressed=True)
+            return self._mode_pack_folder(dump_dir, dst, uncompressed=uncompressed)
         finally:
             _rmtree_force(temp_root)
 
@@ -32416,6 +32607,107 @@ class PS5ConverterGUI:
         except Exception as exc:
             verletzt.append("Fortschritts-Wächter wirft: %s" % type(exc).__name__)
 
+        # -- 6) i18n-Hygiene ----------------------------------------------
+        #
+        # Vier Fehlerklassen, die erst spaet auffallen und alle Texte auf
+        # einmal geprueft werden:
+        #  * Steuerzeichen im Text zeigen ein Kaestchen (das \x7f vor "FIH",
+        #    v1.9.19; Tofu-Glyphe).
+        #  * fehlendes de oder en laesst eine Sprache leer.
+        #  * unterschiedliche {Platzhalter} in de und en werfen bei .format()
+        #    einen KeyError in genau einer Sprache.
+        #  * ein gerades " neben typografischen Anfuehrungszeichen ist der alte
+        #    Anfuehrungszeichen-Fehler (schloss frueher ein „ falsch).
+        try:
+            from ps5_validator.utils import i18n as _i18n  # noqa: PLC0415
+            _steuer = re.compile(r"[\x00-\x08\x0b-\x1f\x7f]")
+            _platz = re.compile(r"\{[^{}]*\}")
+            _b_steuer, _b_leer, _b_platz, _b_quote = [], [], [], []
+            for _key, _paar in _i18n.STRINGS.items():
+                _de = _paar.get("de", "")
+                _en = _paar.get("en", "")
+                if not _de or not _en:
+                    _b_leer.append(_key)
+                    continue
+                for _lang, _wert in (("de", _de), ("en", _en)):
+                    _m = _steuer.search(_wert)
+                    if _m:
+                        _b_steuer.append("%s[%s]U+%04X"
+                                         % (_key, _lang, ord(_m.group())))
+                if set(_platz.findall(_de)) != set(_platz.findall(_en)):
+                    _b_platz.append(_key)
+                if ("„" in _de or "“" in _de) and '"' in _de:
+                    _b_quote.append(_key)
+            for _name, _liste in (
+                    ("Steuerzeichen (zeigt ein Kästchen)", _b_steuer),
+                    ("de/en unvollständig", _b_leer),
+                    ("Platzhalter de/en verschieden", _b_platz),
+                    ("gemischte Anführungszeichen", _b_quote)):
+                geprueft += 1
+                if _liste:
+                    verletzt.append("i18n – %s: %d (%s)"
+                                    % (_name, len(_liste), ", ".join(_liste[:5])))
+        except Exception as exc:
+            verletzt.append("i18n-Hygiene wirft: %s" % type(exc).__name__)
+
+        # -- 7) Rueckfragen aus dem Hauptfaden kehren zurueck -------------
+        #
+        # Der gemessene Anlass (13.09.2026): STARTEN in Aufgabe 3 mit AMPR
+        # EMU auf dem einhuellenden Weg exFAT -> .ffpfsc fror das Fenster
+        # ein ("Keine Rueckmeldung"). ``_launch_task`` laeuft im Hauptfaden,
+        # die Rueckfrage stellte ihren Dialog per after(0) in genau dessen
+        # Warteschlange und wartete dann auf ihn. Geprueft wird die echte
+        # Hilfsfunktion; ersetzt ist nur der Dialog - und auch der nur fuer
+        # Aufrufe aus dem Hauptfaden, damit die echte Frage eines anderen
+        # Fadens in diesem Augenblick nicht verschluckt wird. Aus einem
+        # Arbeitsfaden heraus ist die Eigenschaft nicht pruefbar; dann
+        # entfaellt die Gruppe, statt einen Scheinbefund zu melden.
+        if threading.current_thread() is threading.main_thread():
+            class _TaktVerboten:
+                """Wurzel, deren Warteschlange hier nie benutzt werden darf."""
+
+                def after(self, *_a, **_k):
+                    raise RuntimeError("after() aus dem Hauptfaden")
+
+                after_idle = after
+
+            _probe_gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
+            _probe_gui.root = _TaktVerboten()
+            _echt_frage = messagebox.askyesno
+            _echt_ordner = filedialog.askdirectory
+
+            def _frage(*a, **k):
+                if threading.current_thread() is not threading.main_thread():
+                    return _echt_frage(*a, **k)
+                return True
+
+            def _ordner(*a, **k):
+                if threading.current_thread() is not threading.main_thread():
+                    return _echt_ordner(*a, **k)
+                return "probe"
+
+            messagebox.askyesno, filedialog.askdirectory = _frage, _ordner
+            try:
+                for _name, _aufruf, _erwartet in (
+                        ("_ask_yesno_threadsafe",
+                         lambda: _probe_gui._ask_yesno_threadsafe("t", "m"), True),
+                        ("_ask_directory_threadsafe",
+                         lambda: _probe_gui._ask_directory_threadsafe("t"), "probe")):
+                    geprueft += 1
+                    try:
+                        _ergebnis = _aufruf()
+                    except Exception as exc:
+                        verletzt.append(
+                            "%s aus dem Hauptfaden wartet auf sich selbst (%s)"
+                            % (_name, type(exc).__name__))
+                        continue
+                    if _ergebnis != _erwartet:
+                        verletzt.append("%s aus dem Hauptfaden liefert %r"
+                                        % (_name, _ergebnis))
+            finally:
+                messagebox.askyesno = _echt_frage
+                filedialog.askdirectory = _echt_ordner
+
         if verletzt:
             zeilen = ["Eigenschaften: %d Zusicherungen geprüft, %d VERLETZT"
                       % (geprueft, len(verletzt))]
@@ -32978,6 +33270,280 @@ class PS5ConverterGUI:
             btn_row, text=self._t("self_inspector.copy_button"),
             style="Accent.TButton", command=_copy_report,
         ).pack(side="left")
+
+    # ------------------------------------------------------------------
+    # PKG lesen - den aeusseren Container einer .pkg anzeigen.
+    #
+    # Gegenstueck zu "Abbild -> PKG": dort wird gebaut, hier gelesen. Die
+    # eingebettete PFS bleibt verschluesselt; gezeigt wird der Kopf
+    # (Content-ID, Typ, Magic, Flags) und die Eintragstabelle des Pakets.
+    # Der schwere Teil steckt in prosperopkg.paket_lesen; hier ist nur die
+    # Darstellung - nach demselben Muster wie der SELF-Inspektor.
+    # ------------------------------------------------------------------
+    @staticmethod
+    def _pkg_magic_ascii(magic: str) -> str:
+        """Wandelt eine Bytefolge wie ``7F-43-4E-54`` in lesbares ASCII (``.CNT``).
+
+        Nicht druckbare Bytes (etwa das fuehrende ``0x7F``) werden zum Punkt.
+        Bei einer unlesbaren Angabe kommt ein leerer String zurueck.
+        """
+        teile: list[str] = []
+        for stueck in str(magic or "").split("-"):
+            stueck = stueck.strip()
+            if not stueck:
+                continue
+            try:
+                wert = int(stueck, 16)
+            except ValueError:
+                return ""
+            teile.append(chr(wert) if 32 <= wert < 127 else ".")
+        return "".join(teile)
+
+    #: Der erste Buchstabe der Content-ID nennt die Region. Wert ist ein
+    #: i18n-Schluessel, keine feste Sprache.
+    _PKG_REGION_SCHLUESSEL = {
+        "E": "pkgreader.region_europe",
+        "U": "pkgreader.region_america",
+        "J": "pkgreader.region_japan",
+        "H": "pkgreader.region_asia",
+        "K": "pkgreader.region_korea",
+    }
+
+    @classmethod
+    def _pkg_content_id_teile(cls, content_id: str) -> "tuple[str, str, str]":
+        """Zerlegt eine Content-ID in (Title-ID, Regionscode, Regions-Schluessel).
+
+        Aufbau: ``EP4908-CUSA19269_00-00000000LABEL``. Der mittlere Block
+        traegt die Title-ID (vor dem ``_``), der erste beginnt mit dem
+        Regionsbuchstaben. Der zurueckgegebene Regions-Schluessel ist ein
+        i18n-Schluessel, kein fertiger Text.
+        """
+        cid = str(content_id or "").strip()
+        teile = cid.split("-")
+        title_id = ""
+        if len(teile) >= 2:
+            title_id = teile[1].split("_", 1)[0].strip()
+        region_code = teile[0][:2] if teile and teile[0] else ""
+        region_key = cls._PKG_REGION_SCHLUESSEL.get(
+            region_code[:1].upper(), "pkgreader.region_unknown")
+        return title_id, region_code, region_key
+
+    def _show_pkg_reader(self) -> None:
+        """Waehlt eine ``.pkg`` und zeigt ihren aeusseren Container an."""
+        from ps5_validator.utils import prosperopkg  # noqa: PLC0415
+
+        if not prosperopkg.werkzeug_finden():
+            messagebox.showerror(
+                self._t("pkgreader.read_failed_title"),
+                self._t("pkgbau.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
+                parent=self.root)
+            return
+
+        path = filedialog.askopenfilename(
+            title=self._t("pkgreader.choose_file_dialog_title"),
+            initialdir=self._get_source_dialog_initial_dir() or None,
+            filetypes=[(self._t("filetype.ps5_package"), "*.pkg"),
+                       (self._t("filetype.all_files"), "*.*")],
+            parent=self.root)
+        if not path:
+            return
+
+        try:
+            self.root.config(cursor="watch")
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        try:
+            res = prosperopkg.paket_lesen(path)
+        except prosperopkg.ProsperoFehler as exc:
+            messagebox.showerror(
+                self._t("pkgreader.read_failed_title"),
+                self._t("pkgreader.read_failed_message", error=exc),
+                parent=self.root)
+            return
+        finally:
+            try:
+                self.root.config(cursor="")
+            except tk.TclError:
+                pass
+
+        if not res.get("ist_pkg"):
+            messagebox.showwarning(
+                self._t("pkgreader.not_a_pkg_title"),
+                self._t("pkgreader.not_a_pkg_message",
+                        name=os.path.basename(path)),
+                parent=self.root)
+            return
+
+        self._remember_source_dialog_path(path)
+        self._render_pkg_reader_window(res, path)
+
+    def _build_pkg_report_text(self, res: dict, path: str) -> str:
+        """Baut den Textbericht zum gelesenen Paket (Anzeige und Zwischenablage teilen ihn)."""
+        kopf = res.get("kopf", {}) or {}
+
+        def _int(name: str) -> "int | None":
+            try:
+                return int(str(kopf.get(name, "")).strip())
+            except (TypeError, ValueError):
+                return None
+
+        typ = res.get("typ", "") or "-"
+        typ_key = {
+            "Meta": "pkgreader.type_meta",
+            "FullDebug": "pkgreader.type_fulldebug",
+            "FullRetail": "pkgreader.type_fullretail",
+        }.get(typ, "pkgreader.type_unknown")
+
+        magic = kopf.get("Magic", "-")
+        magic_ascii = self._pkg_magic_ascii(magic) or "-"
+        content_id = kopf.get("ContentId", "-")
+        title_id, region_code, region_key = self._pkg_content_id_teile(content_id)
+
+        groesse = _int("Groesse")
+        body_size = _int("BodySize")
+        ist_patch = str(kopf.get("IstPatch", "")).strip().lower() == "true"
+
+        zeilen = [
+            self._t("pkgreader.report_title"),
+            "",
+            self._t("pkgreader.report_file", name=os.path.basename(path)),
+            self._t("pkgreader.report_path", path=path),
+            self._t("pkgreader.report_size",
+                    size=self._fmt_bytes(groesse) if groesse is not None else "-",
+                    bytes=groesse if groesse is not None else "-"),
+            "",
+            self._t("pkgreader.section_container"),
+            self._t("pkgreader.row_type", typ=typ, meaning=self._t(typ_key)),
+            self._t("pkgreader.row_magic", magic=magic, ascii=magic_ascii),
+            self._t("pkgreader.row_drmtype", wert=kopf.get("DrmType", "-")),
+            self._t("pkgreader.row_contenttype", wert=kopf.get("ContentType", "-")),
+            self._t("pkgreader.row_flags", wert=kopf.get("Flags", "-")),
+            self._t("pkgreader.row_contentflags", wert=kopf.get("ContentFlags", "-")),
+            self._t("pkgreader.row_patch",
+                    wert=self._t("pkgreader.value_yes" if ist_patch
+                                 else "pkgreader.value_no")),
+            "",
+            self._t("pkgreader.section_content"),
+            self._t("pkgreader.row_contentid", wert=content_id),
+            self._t("pkgreader.row_titleid", wert=title_id or "-"),
+            self._t("pkgreader.row_region", code=region_code or "-",
+                    name=self._t(region_key)),
+            "",
+            self._t("pkgreader.section_entries"),
+            self._t("pkgreader.row_entrycount",
+                    count=kopf.get("EntryCount", len(res.get("eintraege", []))),
+                    sc=kopf.get("ScEntryCount", "-")),
+            self._t("pkgreader.row_tableoffset", wert=kopf.get("EntryTableOffset", "-")),
+            self._t("pkgreader.row_body",
+                    offset=kopf.get("BodyOffset", "-"),
+                    size=self._fmt_bytes(body_size) if body_size is not None else "-"),
+        ]
+        if res.get("unvollstaendig"):
+            zeilen += ["", self._t("pkgreader.incomplete_warn",
+                                   bytes=res["unvollstaendig"])]
+        zeilen += ["", self._t("pkgreader.note_encrypted")]
+        return "\n".join(zeilen)
+
+    def _render_pkg_reader_window(self, res: dict, path: str) -> None:
+        """Zeigt Kopf und Eintragstabelle des gelesenen Pakets an."""
+        c = self._COLORS
+        dateiname = os.path.basename(path)
+        try:
+            groesse = self._fmt_bytes(os.path.getsize(path))
+        except OSError:
+            groesse = "-"
+        bericht = self._build_pkg_report_text(res, path)
+        typ = res.get("typ", "") or "-"
+
+        win = self._build_modern_toplevel(
+            self._t("pkgreader.window_title", filename=dateiname),
+            880, 640, min_width=720, min_height=520)
+        self._build_modern_header(
+            win,
+            self._t("pkgreader.window_title", filename=dateiname),
+            self._t("pkgreader.subtitle", typ=typ, size=groesse))
+
+        # Knopfreihe zuerst und an den unteren Rand - sonst quetscht die
+        # Mindestfenstergroesse sie auf wenige Pixel (siehe SELF-Inspektor).
+        btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        btn_row.pack(side="bottom", fill="x")
+
+        text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        text_widget = tk.Text(
+            text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0,
+            padx=12, pady=12, bg=c["console_bg"], fg=c["console_fg"],
+            insertbackground=c["fg_primary"], selectbackground=c["fg_accent"],
+            highlightthickness=0)
+        text_vsb = ttk.Scrollbar(text_frame, orient="vertical",
+                                 command=text_widget.yview)
+        text_hsb = ttk.Scrollbar(text_frame, orient="horizontal",
+                                 command=text_widget.xview)
+        text_widget.configure(yscrollcommand=text_vsb.set,
+                              xscrollcommand=text_hsb.set)
+        text_widget.insert("1.0", bericht)
+        text_widget.configure(state="disabled")
+        text_widget.grid(row=0, column=0, sticky="nsew")
+        text_vsb.grid(row=0, column=1, sticky="ns")
+        text_hsb.grid(row=1, column=0, sticky="ew")
+        text_frame.grid_columnconfigure(0, weight=1)
+        text_frame.grid_rowconfigure(0, weight=1)
+
+        eintraege = res.get("eintraege", []) or []
+        if eintraege:
+            tk.Label(
+                win, text=self._t("pkgreader.entries_heading"),
+                font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"],
+                fg=c["fg_accent"], anchor="w").pack(fill="x", padx=20, pady=(4, 2))
+
+            tree_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+            tree_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+            spalten = ("name", "id", "offset", "size", "enc", "key")
+            tree = ttk.Treeview(tree_frame, columns=spalten, show="headings",
+                                height=8)
+            for spalte, schluessel, breite, anker, dehnen in (
+                ("name", "pkgreader.col_name", 240, "w", True),
+                ("id", "pkgreader.col_id", 80, "w", False),
+                ("offset", "pkgreader.col_offset", 120, "e", False),
+                ("size", "pkgreader.col_size", 120, "e", False),
+                ("enc", "pkgreader.col_encrypted", 110, "w", False),
+                ("key", "pkgreader.col_keyindex", 90, "e", False),
+            ):
+                tree.heading(spalte, text=self._t(schluessel), anchor=anker)
+                tree.column(spalte, width=breite, anchor=anker, stretch=dehnen)
+            for eintrag in eintraege:
+                verschluesselt = self._t(
+                    "pkgreader.value_yes" if eintrag.get("verschluesselt")
+                    else "pkgreader.value_no")
+                tree.insert("", "end", values=(
+                    eintrag.get("name") or "-",
+                    eintrag.get("id", "-"),
+                    eintrag.get("offset", 0),
+                    self._fmt_bytes(eintrag.get("groesse", 0)),
+                    verschluesselt,
+                    eintrag.get("schluesselindex", 0),
+                ))
+            tv_vsb = ttk.Scrollbar(tree_frame, orient="vertical",
+                                   command=tree.yview)
+            tree.configure(yscrollcommand=tv_vsb.set)
+            tree.grid(row=0, column=0, sticky="nsew")
+            tv_vsb.grid(row=0, column=1, sticky="ns")
+            tree_frame.grid_columnconfigure(0, weight=1)
+            tree_frame.grid_rowconfigure(0, weight=1)
+
+        def _copy_report() -> None:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(bericht)
+            messagebox.showinfo(
+                self._t("dialog.title.copied"),
+                self._t("dialog.msg.report_copied_to_clipboard"),
+                parent=win)
+
+        ttk.Button(btn_row, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        ttk.Button(btn_row, text=self._t("pkgreader.copy_button"),
+                   style="Accent.TButton", command=_copy_report).pack(side="left")
 
     # ==================================================================
     # Downloads – Updates und Patches von Sonys Auslieferungsnetz holen.
@@ -39115,6 +39681,117 @@ class PS5ConverterGUI:
         ]
         return treffer[0] if len(treffer) == 1 else ordner
 
+    class _AbbildAbbruch(Exception):
+        """Signal aus dem Fortschritts-Rueckruf: der Anwender hat abgebrochen.
+
+        extract_exfat_image faengt in seiner Schleife nur Datei-Fehler ab
+        (OSError/ValueError/ExfatError); diese Ausnahme gehoert bewusst nicht
+        dazu und laeuft deshalb nach oben durch, statt geschluckt zu werden.
+        """
+
+    _ABBILD_PKG_ENDUNGEN = (".exfat", ".ffpfsc", ".ffpfs", ".ffpkg")
+
+    def _abbild_zu_dumpordner(self, quelle, dump_ordner, *, protokoll, status,
+                              balken, abbruch=None):
+        """Entpackt ein beliebiges Abbild in einen Dump-Ordner (fuer Abbild->PKG).
+
+        Format-Weiche ueber die Kennung (nicht die Endung):
+
+        * ``exfat`` - native MkPFS-exFAT-Extraktion (kein Mount, kein Admin),
+          wie schon beim frueheren exFAT->PKG-Weg.
+        * ``pfs``/``ufs2`` - die erprobten Extraktoren ``_extract_inner_image``
+          (ufs2 = gepatchtes UFS2Tool, auch > 2 GB) plus
+          ``_entpacke_container_ebenen`` fuer die Verschachtelung
+          (.ffpfsc -> inneres exFAT -> Spieldateien). Diese laufen ueber das
+          Task-Flag ``is_running`` und melden in das Hauptprotokoll; das
+          Fensterprotokoll bekommt die Eckdaten.
+
+        Returns:
+            Den Ordner mit ``sce_sys/param.json`` (Spielwurzel), oder ``None``.
+        """
+        _rmtree_force(Path(dump_ordner))
+        os.makedirs(dump_ordner, exist_ok=True)
+
+        art = self._sniff_image_kind(quelle)
+        if not art:
+            low = str(quelle).lower()
+            if low.endswith(".exfat"):
+                art = "exfat"
+            elif low.endswith((".ffpfsc", ".ffpfs")):
+                art = "pfs"
+            elif low.endswith(".ffpkg"):
+                art = "ufs2"
+        if not art:
+            protokoll(self._t("abbildpkg.log_kind_unknown",
+                              name=os.path.basename(str(quelle))))
+            return None
+        protokoll(self._t("abbildpkg.log_kind", art=art,
+                          name=os.path.basename(str(quelle))))
+
+        spielordner = dump_ordner
+        if art == "exfat":
+            mkpfs_parent = self._extract_embedded_mkpfs()
+            if mkpfs_parent and mkpfs_parent not in sys.path:
+                sys.path.insert(0, mkpfs_parent)
+            from mkpfs import pfs as _pfs  # noqa: PLC0415
+            extrahieren = getattr(_pfs, "extract_exfat_image", None)
+            if not callable(extrahieren):
+                protokoll("[FEHLER] extract_exfat_image nicht verfuegbar")
+                return None
+
+            def _fs_status(text):
+                sauber = " ".join(str(text).split())
+                if sauber:
+                    status(sauber)
+
+            def _fs_step(phase, current, total, *, bytes_processed=None):
+                del phase
+                if abbruch is not None and abbruch():
+                    raise self._AbbildAbbruch()
+                gesamt = max(1, int(total or 0))
+                fertig = int(bytes_processed if bytes_processed is not None
+                             else current)
+                balken(max(0, min(fertig, gesamt)) * 100.0 / gesamt)
+
+            bruecke = type("_AbbildFortschritt", (), {})()
+            bruecke.status = _fs_status
+            bruecke.step = _fs_step
+            ergebnis = extrahieren(Path(quelle), Path(dump_ordner), progress=bruecke)
+            for fehler in getattr(ergebnis, "errors", []) or []:
+                protokoll("[FEHLER] %s" % fehler)
+            if getattr(ergebnis, "errors", None):
+                return None
+            balken(100)
+            protokoll(self._t(
+                "abbildpkg.log_extracted",
+                dateien=getattr(ergebnis, "files_written", 0),
+                gb=getattr(ergebnis, "bytes_written", 0) / 1073741824))
+        else:
+            # pfs/ufs2: erprobte Extraktion + Ebenen-Drilldown. Die Methoden
+            # haengen am Task-Flag; hier wird es fuer die Dauer gesetzt.
+            status(self._t("abbildpkg.status_extracting"))
+            vorher = self.is_running
+            self.is_running = True
+            try:
+                if not self._extract_inner_image(
+                        quelle, dump_ordner, art,
+                        status_prefix="Abbild->PKG",
+                        progress_start=0.0, progress_end=90.0):
+                    protokoll(self._t("abbildpkg.log_extract_failed"))
+                    return None
+                res = self._entpacke_container_ebenen(
+                    dump_ordner, status_prefix="Abbild->PKG",
+                    pct_start=90.0, pct_end=99.0)
+                if res is None:
+                    protokoll(self._t("abbildpkg.log_extract_failed"))
+                    return None
+                spielordner = res[0]
+            finally:
+                self.is_running = vorher
+            balken(100)
+
+        return self._exfat_pkg_spielwurzel(spielordner)
+
     def _exfat_pkg_param_setzen(self, param_pfad: str, hexwert: str) -> "tuple[str, str]":
         """Setzt ``sdkVersion`` und ``requiredSystemSoftwareVersion`` in einer
         ``param.json`` und gibt die vorherigen Werte zurueck.
@@ -39135,14 +39812,16 @@ class PS5ConverterGUI:
         return alt_sdk, alt_req
 
     def _show_exfat_pkg_builder(self) -> None:
-        """Baut aus einem ``.exfat``-Abbild ein installierbares Debug-``.pkg``.
+        """Baut aus einem beliebigen PS5-Abbild ein installierbares Debug-``.pkg``.
 
-        Der Weg verkettet, was das Programm schon einzeln kann: das Abbild
-        wird nativ entpackt (dieselbe MkPFS-Engine wie Aufgabe 3, ohne
-        OSFMount und ohne Adminrechte), auf Wunsch wird die Ziel-Firmware in
-        ``param.json`` gesetzt, und daraus baut ``prosperopkg`` (LibProsperoPkg
-        2.5) das Paket - wie beim Fenster "PKG bauen", nur mit einem Abbild
-        als Quelle.
+        Quelle ist ``.exfat``, ``.ffpfsc``, ``.ffpfs`` oder ``.ffpkg`` - die
+        Format-Weiche ``_abbild_zu_dumpordner`` entpackt jedes davon in einen
+        Dump-Ordner (exFAT/PFS nativ per MkPFS ohne OSFMount und ohne
+        Adminrechte; ``.ffpkg`` ueber denselben Weg wie Aufgabe 4, der bei
+        Dateien ueber 2 GB mount-frei liest). Auf Wunsch wird die Ziel-Firmware
+        in ``param.json`` gesetzt, und daraus baut ``prosperopkg``
+        (LibProsperoPkg 2.5) das Paket - wie beim Fenster "PKG bauen", nur mit
+        einem Abbild als Quelle.
 
         Die ausfuehrbaren ``.sceversion``-Datensaetze werden bewusst nicht
         umgeschrieben (das koennte nur LibProsperoPkg 1.2.0). Die
@@ -39166,6 +39845,12 @@ class PS5ConverterGUI:
         self._build_modern_header(
             win, self._t("exfatpkg.window_title"), self._t("exfatpkg.subtitle"))
 
+        # Knopfreihe zuerst an den unteren Rand - sonst quetscht die
+        # Mindestfenstergroesse sie zusammen (Muster wie beim SELF-Inspektor);
+        # die Knoepfe kommen unten hinein, sobald die Rueckrufe definiert sind.
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+
         koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
         koerper.pack(fill="both", expand=True)
 
@@ -39175,7 +39860,7 @@ class PS5ConverterGUI:
         schnell_var = tk.BooleanVar(value=True)
         lizenzfrei_var = tk.BooleanVar(value=True)
         status_var = tk.StringVar(value=self._t("exfatpkg.status_idle"))
-        laeuft: dict = {"aktiv": False, "prozess": None}
+        laeuft: dict = {"aktiv": False, "prozess": None, "abbruch": False}
 
         def _zeile(text: str, var, waehlen) -> None:
             reihe = tk.Frame(koerper, bg=c["bg_main"])
@@ -39192,7 +39877,12 @@ class PS5ConverterGUI:
         def _quelle_waehlen() -> None:
             gewaehlt = filedialog.askopenfilename(
                 title=self._t("exfatpkg.choose_source"),
-                filetypes=[(self._t("filetype.exfat_image"), "*.exfat"),
+                filetypes=[(self._t("filetype.ps5_image"),
+                            "*.exfat *.ffpfsc *.ffpfs *.ffpkg"),
+                           (self._t("filetype.exfat_image"), "*.exfat"),
+                           (self._t("filetype.ffpfsc_image"), "*.ffpfsc"),
+                           (self._t("filetype.ffpfs_image"), "*.ffpfs"),
+                           (self._t("filetype.ffpkg_package"), "*.ffpkg"),
                            (self._t("filetype.all_files"), "*.*")],
                 initialdir=self._get_source_dialog_initial_dir() or None,
                 parent=win)
@@ -39250,20 +39940,116 @@ class PS5ConverterGUI:
         tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
 
+        # Der Fensterbalken wird ueber einen Takt im Hauptfaden gefuettert,
+        # nicht per after(0) aus dem Arbeitsfaden - letzteres ist auf Tk bei
+        # schnellen Aktualisierungen unzuverlaessig, weshalb der Balken bei
+        # grossen Titeln bis zuletzt leer blieb. Der Arbeitsfaden schreibt nur
+        # in ``stand`` (einfache Zuweisung, faden-sicher), der Takt liest daraus:
+        #   quelle "self": Prozent aus stand["pct"] (exFAT-Extraktion, die wir
+        #     selbst treiben);
+        #   quelle "app":  Prozent aus self.progress_var (PFS/UFS2 laufen ueber
+        #     die erprobten Aufgabe-4-Wege, die diesen Wert fuehren);
+        #   phase "build": unbestimmter Balken (Marquee), der Paketbau meldet
+        #     keinen sauberen Prozentwert.
+        stand = {"quelle": "self", "phase": "idle", "pct": 0.0, "status": ""}
+        # Auch das Protokoll laeuft ueber den Takt: der Arbeitsfaden haengt
+        # Zeilen nur an eine Liste (faden-sicher), der Hauptfaden traegt sie
+        # ins Textfeld. after(0) aus dem Faden ging sonst verloren - das
+        # Protokoll blieb bis zuletzt leer.
+        protokoll_puffer: list = []
+        protokoll_cursor = [0]
+
         def _protokoll(text: str) -> None:
-            def _setzen() -> None:
-                if not protokoll.winfo_exists():
-                    return
-                protokoll.insert("end", str(text).rstrip("\n") + "\n")
+            protokoll_puffer.append(str(text).rstrip("\n"))
+
+        def _log_leeren() -> None:
+            if not protokoll.winfo_exists():
+                return
+            neu = False
+            while protokoll_cursor[0] < len(protokoll_puffer):
+                protokoll.insert("end",
+                                 protokoll_puffer[protokoll_cursor[0]] + "\n")
+                protokoll_cursor[0] += 1
+                neu = True
+            if neu:
                 protokoll.see("end")
-            self._spaeter_im_fenster(win, _setzen)
 
         def _status(text: str) -> None:
-            self._spaeter_im_fenster(win, lambda: status_var.set(text))
+            stand["status"] = text
 
         def _balken(prozent: float) -> None:
-            self._spaeter_im_fenster(
-                win, lambda: balken.configure(value=max(0, min(100, prozent))))
+            try:
+                stand["pct"] = max(0.0, min(100.0, float(prozent)))
+            except (TypeError, ValueError):
+                pass
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            phase = stand["phase"]
+            try:
+                if phase == "build":
+                    if str(balken.cget("mode")) != "indeterminate":
+                        balken.configure(mode="indeterminate")
+                        balken.start(14)
+                else:
+                    if str(balken.cget("mode")) != "determinate":
+                        balken.stop()
+                        balken.configure(mode="determinate")
+                    if phase == "extract":
+                        if stand["quelle"] == "app":
+                            try:
+                                wert = float(self.progress_var.get() or 0.0)
+                            except (tk.TclError, ValueError):
+                                wert = stand["pct"]
+                        else:
+                            wert = stand["pct"]
+                        balken.configure(value=max(0.0, min(100.0, wert)))
+                    elif phase == "done":
+                        balken.configure(value=100.0)
+                    else:  # idle / aborted / failed
+                        balken.configure(value=0.0)
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                _log_leeren()
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                # Abschluss-Tick (Hauptfaden, zuverlaessig): Knoepfe
+                # zuruecksetzen und den Marquee anhalten. Der Faden plant das
+                # per after(0) auch, aber aus dem Arbeitsfaden geht es leicht
+                # verloren - hier ist es sicher.
+                _knoepfe_setzen(False)
+                if phase != "build":
+                    try:
+                        balken.stop()
+                    except tk.TclError:
+                        pass
+
+        def _knoepfe_setzen(laufend: bool) -> None:
+            try:
+                umwandeln_btn.configure(state="disabled" if laufend else "normal")
+                abbrechen_btn.configure(state="normal" if laufend else "disabled")
+            except (tk.TclError, NameError):
+                pass
+
+        def _abbrechen() -> None:
+            if not laeuft["aktiv"] or laeuft["abbruch"]:
+                return
+            laeuft["abbruch"] = True
+            # PFS/UFS2 hoeren auf das kooperative is_running-Flag; die exFAT-
+            # Extraktion bricht ueber den Fortschritts-Rueckruf ab; ein
+            # laufender Paketbau-Prozess wird beendet.
+            self.is_running = False
+            prozess = laeuft.get("prozess")
+            if prozess is not None:
+                try:
+                    prozess.terminate()
+                except OSError as exc:
+                    logger.debug("Abbild-PKG-Prozess nicht beendbar: %s", exc)
+            stand["status"] = self._t("exfatpkg.status_aborting")
 
         def _umwandeln() -> None:
             quelle = quelle_var.get().strip()
@@ -39272,7 +40058,7 @@ class PS5ConverterGUI:
             if laeuft["aktiv"]:
                 return
             if not quelle or not os.path.isfile(quelle) or \
-                    not quelle.lower().endswith(".exfat"):
+                    not quelle.lower().endswith(self._ABBILD_PKG_ENDUNGEN):
                 messagebox.showwarning(self._t("exfatpkg.window_title"),
                                        self._t("exfatpkg.need_source"), parent=win)
                 return
@@ -39310,62 +40096,58 @@ class PS5ConverterGUI:
                 pass
 
             laeuft["aktiv"] = True
-            _balken(0)
-            _status(self._t("exfatpkg.status_extracting"))
+            laeuft["abbruch"] = False
+            # Woher der Fortschritt kommt: exFAT treiben wir selbst (stand),
+            # PFS/UFS2 laufen ueber die Aufgabe-4-Wege (self.progress_var).
+            stand["quelle"] = "self" if quelle.lower().endswith(".exfat") else "app"
+            stand["phase"] = "extract"
+            stand["pct"] = 0.0
+            stand["status"] = self._t("exfatpkg.status_extracting")
+            try:
+                self.progress_var.set(0)
+            except tk.TclError:
+                pass
+            # Den Temp-Ordner jetzt im Hauptfaden aufloesen und in die
+            # Einstellung schreiben - der Arbeitsfaden liest ihn danach
+            # faden-sicher von dort (self.temp_path ist eine Tk-Variable).
+            self._get_runtime_temp_dir()
+            # Die beiden Kaestchen sind Tk-Variablen und werden JETZT im
+            # Hauptfaden gelesen. Ihr Wert im Arbeitsfaden abzufragen warf
+            # "main thread is not in main loop" - die Ausnahme fiel beim
+            # Auswerten der bauen()-Argumente an, noch bevor der Bau begann,
+            # und hinterliess nur "Fehlgeschlagen" bei leerem Protokoll.
+            lizenzfrei = bool(lizenzfrei_var.get())
+            schnell = bool(schnell_var.get())
+            _knoepfe_setzen(True)
+            _takt()
 
             def _arbeit() -> None:
                 dump_ordner = ""
+                pfad = ""
                 try:
                     basis = os.path.splitext(os.path.basename(quelle))[0]
-                    dump_ordner = os.path.join(arbeit, "exfatpkg_" + basis)
-                    _rmtree_force(Path(dump_ordner))
-                    os.makedirs(dump_ordner, exist_ok=True)
-
-                    mkpfs_parent = self._extract_embedded_mkpfs()
-                    if mkpfs_parent and mkpfs_parent not in sys.path:
-                        sys.path.insert(0, mkpfs_parent)
-                    from mkpfs import pfs as _pfs  # noqa: PLC0415
-                    extrahieren = getattr(_pfs, "extract_exfat_image", None)
-                    if not callable(extrahieren):
-                        raise prosperopkg.ProsperoFehler(
-                            "extract_exfat_image nicht verfuegbar")
-
-                    def _fs_status(text: str) -> None:
-                        sauber = " ".join(str(text).split())
-                        if sauber:
-                            _status(sauber)
-
-                    def _fs_step(phase, current, total, *,
-                                 bytes_processed=None) -> None:
-                        del phase
-                        gesamt = max(1, int(total or 0))
-                        fertig = int(bytes_processed if bytes_processed is not None
-                                     else current)
-                        _balken(max(0, min(fertig, gesamt)) * 100.0 / gesamt)
-
-                    bruecke = type("_ExfatFortschritt", (), {})()
-                    bruecke.status = _fs_status
-                    bruecke.step = _fs_step
+                    dump_ordner = os.path.join(arbeit, "abbildpkg_" + basis)
 
                     _protokoll(self._t("exfatpkg.log_extracting", name=basis))
-                    ergebnis = extrahieren(Path(quelle), Path(dump_ordner),
-                                           progress=bruecke)
-                    for fehler in getattr(ergebnis, "errors", []) or []:
-                        _protokoll("[FEHLER] %s" % fehler)
-                    if getattr(ergebnis, "errors", None):
-                        _status(self._t("exfatpkg.status_failed"))
+                    wurzel = self._abbild_zu_dumpordner(
+                        quelle, dump_ordner, protokoll=_protokoll,
+                        status=_status, balken=_balken,
+                        abbruch=lambda: laeuft["abbruch"])
+                    if wurzel is None:
+                        if laeuft["abbruch"]:
+                            _protokoll(self._t("exfatpkg.log_aborted"))
+                            stand["phase"] = "aborted"
+                            stand["status"] = self._t("exfatpkg.status_aborted")
+                        else:
+                            stand["phase"] = "failed"
+                            stand["status"] = self._t("exfatpkg.status_failed")
                         return
-                    _balken(100)
-                    _protokoll(self._t(
-                        "exfatpkg.log_extracted",
-                        dateien=getattr(ergebnis, "files_written", 0),
-                        gb=getattr(ergebnis, "bytes_written", 0) / 1073741824))
 
-                    wurzel = self._exfat_pkg_spielwurzel(dump_ordner)
                     param = os.path.join(wurzel, "sce_sys", "param.json")
                     if not os.path.isfile(param):
                         _protokoll(self._t("exfatpkg.log_no_param"))
-                        _status(self._t("exfatpkg.status_failed"))
+                        stand["phase"] = "failed"
+                        stand["status"] = self._t("exfatpkg.status_failed")
                         return
 
                     if firmware is not None:
@@ -39374,39 +40156,56 @@ class PS5ConverterGUI:
                         _protokoll(self._t("exfatpkg.log_firmware",
                                            alt=alt_sdk or "-", neu=hexwert))
 
-                    _balken(0)
-                    _status(self._t("exfatpkg.status_building"))
+                    stand["phase"] = "build"
+                    stand["status"] = self._t("exfatpkg.status_building")
                     pfad = prosperopkg.bauen(
                         wurzel, ziel, melden=_protokoll,
                         texte=self._modul_texte(prosperopkg.MELDUNGEN,
                                                 "prosperopkg."),
-                        lizenzfrei=bool(lizenzfrei_var.get()),
-                        schnell=bool(schnell_var.get()),
+                        lizenzfrei=lizenzfrei,
+                        schnell=schnell,
                         prozess_ablage=laeuft)
+                except self._AbbildAbbruch:
+                    _protokoll(self._t("exfatpkg.log_aborted"))
+                    stand["phase"] = "aborted"
+                    stand["status"] = self._t("exfatpkg.status_aborted")
+                    return
                 except prosperopkg.ProsperoFehler as exc:
-                    _protokoll("[FEHLER] %s" % exc)
-                    _status(self._t("exfatpkg.status_failed"))
+                    if laeuft["abbruch"]:
+                        _protokoll(self._t("exfatpkg.log_aborted"))
+                        stand["phase"] = "aborted"
+                        stand["status"] = self._t("exfatpkg.status_aborted")
+                    else:
+                        _protokoll("[FEHLER] %s" % exc)
+                        stand["phase"] = "failed"
+                        stand["status"] = self._t("exfatpkg.status_failed")
                     return
                 except Exception as exc:  # noqa: BLE001
                     _protokoll("[FEHLER] %s" % exc)
-                    _status(self._t("exfatpkg.status_failed"))
+                    stand["phase"] = "failed"
+                    stand["status"] = self._t("exfatpkg.status_failed")
                     return
                 finally:
                     laeuft["aktiv"] = False
+                    self._spaeter_im_fenster(win, lambda: _knoepfe_setzen(False))
+                    self._spaeter_im_fenster(win, _takt)
                     if dump_ordner:
                         # Der entpackte Dump ist eine Zwischenstufe (bis zu
                         # zweistellige GB) - das Paket liegt fertig im Ziel.
                         _rmtree_force(Path(dump_ordner))
-                _balken(100)
+                stand["phase"] = "done"
                 groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
-                _status(self._t("exfatpkg.status_done",
-                                groesse=self._fmt_bytes(groesse)))
+                stand["status"] = self._t("exfatpkg.status_done",
+                                          groesse=self._fmt_bytes(groesse))
                 _protokoll("")
                 _protokoll(self._t("exfatpkg.result", pfad=pfad))
-                self._append_to_log("[INFO] exFAT -> PKG: %s\n" % pfad)
+                self._append_to_log("[INFO] Abbild -> PKG: %s\n" % pfad)
+                # Nach dem Puffern den Takt planen, damit er die Schlusszeilen
+                # noch ins Textfeld traegt.
+                self._spaeter_im_fenster(win, _takt)
 
             threading.Thread(target=_arbeit, daemon=True,
-                             name="exfat-pkg-build").start()
+                             name="abbild-pkg-build").start()
 
         def _beim_schliessen() -> None:
             if laeuft["aktiv"]:
@@ -39415,24 +40214,24 @@ class PS5ConverterGUI:
                         self._t("exfatpkg.abort_confirm"),
                         parent=win, default="no"):
                     return
-                prozess = laeuft.get("prozess")
-                if prozess is not None:
-                    try:
-                        prozess.terminate()
-                    except OSError as exc:
-                        logger.debug("exFAT-PKG nicht beendbar: %s", exc)
-                laeuft["aktiv"] = False
+                _abbrechen()
                 self._append_to_log(self._t("exfatpkg.log_aborted") + chr(10))
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
+        # Die Knopfreihe wurde oben schon unten verankert; hier kommen nur die
+        # Knoepfe hinein. Abbrechen ist im Leerlauf ausgegraut.
         ttk.Button(knopfreihe, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("exfatpkg.convert_button"),
-                   style="Accent.TButton", command=_umwandeln).pack(side="left")
+        umwandeln_btn = ttk.Button(
+            knopfreihe, text=self._t("exfatpkg.convert_button"),
+            style="Accent.TButton", command=_umwandeln)
+        umwandeln_btn.pack(side="left")
+        abbrechen_btn = ttk.Button(
+            knopfreihe, text=self._t("exfatpkg.abort_button"),
+            command=_abbrechen, state="disabled")
+        abbrechen_btn.pack(side="left", padx=(8, 0))
 
     #: Der mitgelieferte unjail-Payload (SvenGDK), gesendet ueber elfldr.
     _UNJAIL_ELF = "unjail-ps5app-payload.elf"
@@ -39465,6 +40264,13 @@ class PS5ConverterGUI:
             min_width=620, min_height=460)
         self._build_modern_header(
             win, self._t("unjail.window_title"), self._t("unjail.subtitle"))
+
+        # Knopfreihe zuerst an den unteren Rand - sonst quetscht die
+        # Mindestfenstergroesse sie auf wenige Pixel (der lange Firmware-
+        # Hinweis darueber macht das sichtbar). Muster wie beim SELF-Inspektor;
+        # die Knoepfe kommen unten hinein, sobald _senden definiert ist.
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
 
         koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
         koerper.pack(fill="both", expand=True)
@@ -39535,8 +40341,6 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True,
                              name="unjail-send").start()
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
         ttk.Button(knopfreihe, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
         ttk.Button(knopfreihe, text=self._t("unjail.send_button"),
@@ -42947,13 +43751,17 @@ class PS5ConverterGUI:
 
 
     def _show_theme_dialog(self) -> None:
-        """Zeigt den Design-Auswahl-Dialog (Hell / Mittel / Dunkel)."""
+        """Zeigt den Design-Auswahl-Dialog (die vier Themes)."""
         c = self._COLORS
         # Resizable + Scrollbar statt resizable=False, siehe ausfuehrlicher
         # Kommentar in _show_settings_dialog (DPI-Awareness kann Inhalte bei
         # starrer Fenstergroesse abschneiden).
+        #
+        # Breit genug, dass Name UND Beschreibung jeder Zeile in EINE Zeile
+        # passen (die Namen tragen seit v1.9.19 den PS3-Zusatz), hoch genug,
+        # dass alle vier Themes plus Hinweis ohne Scrollbalken hineinpassen.
         dlg = self._build_modern_toplevel(
-            self._t("theme_dialog.title_bar"), 440, 400, min_width=380, min_height=320,
+            self._t("theme_dialog.title_bar"), 640, 480, min_width=560, min_height=430,
         )
         dlg.lift()
         dlg.focus_force()
@@ -42975,12 +43783,14 @@ class PS5ConverterGUI:
 
         # Theme-Optionen mit Vorschau-Farben
         _theme_info = [
+            ("futuristisch", self._t("theme_dialog.theme_futuristisch_label"), self._t("theme_dialog.theme_futuristisch_desc"),
+             "#071A22", "#2BE7E7"),
             ("dunkel",  self._t("theme_dialog.theme_dunkel_label"),  self._t("theme_dialog.theme_dunkel_desc"),
-             "#05070A", "#00AAFF"),
-            ("mittel",  self._t("theme_dialog.theme_mittel_label"),  self._t("theme_dialog.theme_mittel_desc"),
-             "#1E2430", "#4FC3F7"),
+             "#0B0B0E", "#7FB2FF"),
             ("hell",    self._t("theme_dialog.theme_hell_label"),    self._t("theme_dialog.theme_hell_desc"),
-             "#F0F4F8", "#0070C0"),
+             "#ECEAE3", "#0F6FB8"),
+            ("metallisch", self._t("theme_dialog.theme_metallisch_label"), self._t("theme_dialog.theme_metallisch_desc"),
+             "#2C2F35", "#9FB6CC"),
         ]
 
         for key, label, desc, bg_prev, acc_prev in _theme_info:
@@ -43016,7 +43826,7 @@ class PS5ConverterGUI:
             text=self._t("theme_dialog.restart_hint"),
             font=(UI_SCHRIFT, pt(8)),
             bg=c["bg_card"], fg=c["fg_secondary"],
-            wraplength=370, justify="left", anchor="w",
+            wraplength=560, justify="left", anchor="w",
         ).pack(fill="x", pady=(10, 0))
 
         # Buttons
@@ -45443,6 +46253,14 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "für Überschreib-Rückfragen soll nicht nebenbei das Zielformat "
              "wechseln.")
     parser.add_argument(
+        "--umhuellt-neu-packen", action="store_true",
+        help="Wie Ja in der Rückfrage des Fensters: Auf den Wegen .exFAT/.ffpkg "
+             "nach .ffpfsc wird das Abbild in einen vorübergehenden Dump-Ordner "
+             "im Zielordner entpackt, AMPR EMU und BACKPORT werden eingebaut, "
+             "und danach wird wieder .ffpfsc gepackt; der Dump-Ordner wird am "
+             "Ende entfernt. Braucht dort vorübergehend zusätzlich Platz. Hat "
+             "Vorrang vor --umhuellt-als-ordner.")
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -45589,6 +46407,32 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
     return ""
 
 
+def _cli_schalter_uebernehmen(app: "PS5ConverterGUI", args: argparse.Namespace) -> None:
+    """Gibt die Entscheidungs-Schalter der Kommandozeile an die Oberflaeche weiter.
+
+    Einige Wege fragen im CLI-Modus nicht ueber ``messagebox``, sondern lesen
+    einen eigenen Merker - bewusst nicht ``--yes``, das nur Rueckfragen zum
+    Ueberschreiben abnickt. Bis zum 13.09.2026 setzte diese Merker allein
+    ``_run_cli_ampr_ftp_index``; im eigentlichen Aufgabenweg ``_run_cli``
+    fehlte die Weitergabe, und ``--param-json-reparieren``,
+    ``--param-json-online``, ``--ampr-index-trotz-assets`` sowie
+    ``--umhuellt-als-ordner`` blieben dort wirkungslos. Seitdem rufen beide
+    Wege diese eine Stelle.
+    """
+    # Die param.json-Wege fragen im CLI-Modus nicht ueber messagebox,
+    # sondern lesen diese beiden Schalter - siehe _param_frage_cli().
+    app._cli_param_repair = bool(getattr(args, "param_json_reparieren", False))
+    app._cli_param_online = bool(getattr(args, "param_json_online", False))
+    # Aus demselben Grund ein eigener Schalter: --ja nickt Rueckfragen zum
+    # Ueberschreiben ab und soll dabei nicht nebenbei ein Spiel mit
+    # Asset-Schicht unbrauchbar machen.
+    app._cli_ampr_assets = bool(getattr(args, "ampr_index_trotz_assets", False))
+    # Die einhuellenden Wege (.exFAT/.ffpkg -> .ffpfsc mit Einbau), siehe
+    # PS5ConverterGUI._umhuellenden_weg_klaeren.
+    app._cli_umhuellt_ordner = bool(getattr(args, "umhuellt_als_ordner", False))
+    app._cli_umhuellt_neu_packen = bool(getattr(args, "umhuellt_neu_packen", False))
+
+
 def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
     """Baut ampr_emu.index über FTP direkt auf der PS5 – ohne lokales Image."""
     _prepare_cli_streams()
@@ -45598,15 +46442,7 @@ def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
     app = PS5ConverterGUI(root)
     app._cli_mode = True
     app._cli_quiet = bool(args.quiet)
-    # Die param.json-Wege fragen im CLI-Modus nicht ueber messagebox,
-    # sondern lesen diese beiden Schalter - siehe _param_frage_cli().
-    app._cli_param_repair = bool(getattr(args, "param_json_reparieren", False))
-    app._cli_param_online = bool(getattr(args, "param_json_online", False))
-    # Aus demselben Grund ein eigener Schalter: --ja nickt Rueckfragen zum
-    # Ueberschreiben ab und soll dabei nicht nebenbei ein Spiel mit
-    # Asset-Schicht unbrauchbar machen.
-    app._cli_ampr_assets = bool(getattr(args, "ampr_index_trotz_assets", False))
-    app._cli_umhuellt_ordner = bool(getattr(args, "umhuellt_als_ordner", False))
+    _cli_schalter_uebernehmen(app, args)
     app.is_running = True
 
     output = os.path.join(
@@ -45688,6 +46524,7 @@ def _run_cli(args: argparse.Namespace) -> int:
     app = PS5ConverterGUI(root)
     app._cli_mode = True
     app._cli_quiet = bool(args.quiet)
+    _cli_schalter_uebernehmen(app, args)
     # Im CLI-Modus entscheidet allein der Schalter, nicht die gespeicherte Wahl
     # aus der Oberflaeche. Das Ankreuzfeld wird mitgesetzt, damit
     # _shutdown_after_success_enabled() dieselbe Antwort gibt.
@@ -45834,6 +46671,11 @@ def _run_anzeige_diagnose(argv: list[str]) -> int:
     Returns:
         0, wenn nichts Ernstes gefunden wurde, sonst 1.
     """
+    # UTF-8 erzwingen: Der Bericht enthaelt Zeichen ausserhalb von cp1252
+    # (z. B. "→" in Fensternamen wie "Abbild → PKG"). Ohne das brach die
+    # Ausgabe unter Windows mit einem UnicodeEncodeError ab. Derselbe Grund
+    # wie im --doktor- und --cli-Pfad.
+    _prepare_cli_streams()
     voll = "--voll" in argv
     root = tk.Tk()
     try:

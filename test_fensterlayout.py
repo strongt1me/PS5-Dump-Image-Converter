@@ -1092,6 +1092,81 @@ class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
                          + "\n  ".join(beanstandet))
 
 
+@unittest.skipUnless(TK_DA, "keine Anzeige verfuegbar")
+class FortschrittszeileTests(unittest.TestCase):
+    """Das Groessenfeld neben dem Fortschrittsbalken bleibt einzeilig.
+
+    Am 13.09.2026 mit Bild gemeldet: "Copy: 1.95/150.74 GB | Rest: 148.78 GB |
+    34.1 MB/s (steigend) | ETA: 29:20" brach um, "29:20" stand in einer zweiten
+    Zeile. Die Spalte war fest 520 px breit; die Zeile misst bei 125 %
+    Anzeigeskalierung 532 px, mit dreistelligen Werten 568. Die Schrift waechst
+    mit der Skalierung, eine Pixelgrenze nicht.
+
+    Gemessen wird wie in ``HinweiszeilenHoeheTests`` bei fester Skalierung und
+    mit der Schrift des echten Etiketts - dort steht, warum beides noetig ist.
+    """
+
+    #: Windows bei 125 % - derselbe Wert wie in HinweiszeilenHoeheTests.
+    SKALIERUNG = 1.6683
+
+    #: Gewoehnliche Zeilen, wie ``_update_progress_gui`` sie baut. Die erste
+    #: ist die gemeldete.
+    ZEILEN = (
+        "Copy: 1.95/150.74 GB | Rest: 148.78 GB | 34.1 MB/s (steigend) | ETA: 29:20",
+        "Copy: 150.74/150.74 GB | Rest: 150.74 GB | 234.5 MB/s (steigend) | ETA: 129:59",
+        "Write: 888.88/888.88 GB | Rest: 888.88 GB | 888.8 MB/s | ETA: 888:88",
+        "Kompr.: 888.88/888.88 GB | Rest: 888.88 GB | 888.8 MB/s | ETA: 888:88",
+        "Extr.: 88.8% von 888.88 GB | 888.8 MB/s | ETA: 888:88",
+    )
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+
+    def test_gewoehnliche_zeilen_passen_bei_125_prozent(self):
+        from tkinter import font as tkfont
+
+        vorher = float(_WURZEL.tk.call("tk", "scaling"))
+        _WURZEL.tk.call("tk", "scaling", self.SKALIERUNG)
+        try:
+            breite = self.app._fortschrittstext_breite()
+            schrift = tkfont.Font(root=_WURZEL,
+                                  font=self.app.size_label.cget("font"))
+            messung = [(schrift.measure(zeile), zeile) for zeile in self.ZEILEN]
+        finally:
+            _WURZEL.tk.call("tk", "scaling", vorher)
+        # Anker: Bei 100 % misst die gemeldete Zeile rund 425 px, bei 125 %
+        # 532. Liegt sie darunter, greift die feste Skalierung nicht, und die
+        # Pruefung bestuende immer.
+        self.assertGreater(messung[0][0], 480, "Skalierung 125 % nicht wirksam")
+        zu_lang = ["%d px > %d: %s" % (px, breite, zeile)
+                   for px, zeile in messung if px > breite]
+        self.assertEqual([], zu_lang,
+                         "Diese Zeilen brechen neben dem Balken bei 125 % um:\n  "
+                         + "\n  ".join(zu_lang))
+
+    def test_spalte_fasst_umbruchbreite_und_abstand(self):
+        """Die Spalte fasst die volle Umbruchbreite plus den Abstand links.
+
+        Das Raster zaehlt ``padx`` zur Spalte. Reserviert sie nur die
+        Umbruchbreite, waechst sie bei den laengsten Zeilen doch noch, und der
+        Balken daneben zuckt - am 13.09.2026 gemessen: 310 -> 299 px.
+        """
+        leiste = self.app.action_bar
+        etikett = self.app.size_label
+        umbruch = int(float(str(etikett.cget("wraplength"))))
+        polster = etikett.grid_info().get("padx", 0)
+        if isinstance(polster, (tuple, list)):
+            links = int(str(polster[0]))
+        else:
+            links = int(str(polster).split()[0])
+        spalte = int(leiste.grid_columnconfigure(4)["minsize"])
+        self.assertGreater(links, 0, "Abstand links nicht lesbar")
+        self.assertGreaterEqual(spalte, umbruch + links)
+        self.assertGreaterEqual(umbruch, self.app._FORTSCHRITTSTEXT_MINDESTBREITE)
+
+
 class HinweiszeilenHoeheTests(unittest.TestCase):
     """Der Hinweis unter der Zielformat-Liste darf nicht wachsen.
 

@@ -123,6 +123,23 @@ class PlatzbedarfTests(unittest.TestCase):
                            "Eine Arbeitskopie ist so groß wie der Dump - das "
                            "muss sich im Temp-Bedarf zeigen.")
 
+    def test_neu_packen_rechnet_den_dump_ordner_im_ziel_mit(self):
+        """Entpacken, einbauen, neu packen (13.09.2026): Dump-Ordner und
+        .ffpfsc liegen zugleich im Zielordner, bis gepackt ist."""
+        _t, einhuellen = self.app._platzbedarf_schaetzen(
+            "pack_file", self.quelle, "ffpfsc")
+        self.app._umhuellt_neu_packen = True
+        try:
+            _t2, neu_packen = self.app._platzbedarf_schaetzen(
+                "pack_file", self.quelle, "ffpfsc")
+        finally:
+            self.app._umhuellt_neu_packen = False
+        gemessen = (self.GEMESSEN_GB["folder"] + self.GEMESSEN_GB["ffpfsc"]) * GB
+        self.assertGreater(neu_packen, einhuellen)
+        self.assertGreaterEqual(neu_packen, gemessen,
+                                "Dump-Ordner und .ffpfsc zusammen passen nicht "
+                                "in die Schaetzung.")
+
     def test_ohne_bekannte_quellgroesse_wird_nicht_geraten(self):
         """Lieber keine Aussage als eine erfundene."""
         self.app._last_source_size_bytes = 0

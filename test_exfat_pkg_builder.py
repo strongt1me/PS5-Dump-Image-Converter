@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Der Knopf „exFAT → PKG" unter WEITERE TOOLS.
+"""Der Knopf „Abbild → PKG" (früher „exFAT → PKG") unter WEITERE TOOLS.
 
-Der Weg verkettet zwei Dinge, die das Programm schon einzeln kann: ein
-.exfat-Abbild nativ entpacken (wie Aufgabe 3) und aus dem Dump-Ordner ein
-Debug-Paket bauen (wie „PKG bauen"). Neu ist nur die Ziel-Firmware, die vor
-dem Bauen in ``param.json`` gesetzt wird.
+Der Weg verkettet zwei Dinge, die das Programm schon einzeln kann: ein Abbild
+nativ entpacken (seit v1.9.19 jedes Format: .exfat/.ffpfsc/.ffpfs/.ffpkg) und
+aus dem Dump-Ordner ein Debug-Paket bauen (wie „PKG bauen"). Neu ist nur die
+Ziel-Firmware, die vor dem Bauen in ``param.json`` gesetzt wird.
 
 Geprüft wird das Nachvollziehbare ohne echten Lauf: das BCD-Packmass der
 Firmware, das Umschreiben der ``param.json`` (Felder gesetzt, Reihenfolge und
@@ -206,7 +206,9 @@ class FensterRauchtest(unittest.TestCase):
             try:
                 self.assertTrue(neu, "Kein Fenster geöffnet.")
                 texte = self._sammle_text(neu[0])
-                self.assertTrue(any("exFAT" in t for t in texte))
+                # Seit v1.9.19 heisst das Fenster "Abbild -> PKG" (nimmt alle
+                # vier Abbildformate), nicht mehr nur "exFAT -> PKG".
+                self.assertTrue(any("Abbild" in t for t in texte))
             finally:
                 for w in neu:
                     w.destroy()

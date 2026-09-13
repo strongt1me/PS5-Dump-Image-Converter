@@ -2,7 +2,87 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.18):** Aufgabe 4 packt eine `.ffpkg` jetzt auch dann korrekt in einen Dump-Ordner oder eine `.exFAT` aus, wenn darin eine Datei **größer als 2 GB** liegt (viele große Spiele haben das) – vorher brach das mit einem kryptischen Fehler ab. Dazu eine Kleinigkeit im Kommandozeilen-Fenster.
+> **Kurz zum aktuellen Stand (v1.9.19):** Der Knopf „exFAT → PKG" heißt jetzt **„Abbild → PKG"** und baut aus **jedem** Abbildformat ein installierbares Paket – `.exfat`, `.ffpfsc`, `.ffpfs` und `.ffpkg`. Dazu ein neues Werkzeug **„PKG lesen"**, das dir die Eckdaten einer fertigen `.pkg` zeigt, sowie eine **Fortschrittsanzeige und ein Abbrechen-Knopf** im Umwandeln-Fenster. Außerdem **vier neue Designs** – und das Programm **friert beim Starten nicht mehr ein**, wenn AMPR EMU oder BACKPORT angehakt ist.
+
+---
+
+## v1.9.19 – 13.09.2026
+
+Aus jedem Abbild ein Paket, ein neues Lese-Werkzeug für Pakete, eine bessere
+Fortschrittsanzeige beim Umwandeln, vier neue Designs – und ein wichtiger Fix
+gegen das Einfrieren beim Starten.
+
+### „exFAT → PKG" wird „Abbild → PKG" – jetzt für alle Abbilder
+
+Der Knopf unter „Weitere Tools", der bisher nur ein `.exfat`-Abbild in ein
+installierbares Debug-Paket verwandelte, nimmt jetzt **jedes Abbildformat**:
+`.exfat`, `.ffpfsc`, `.ffpfs` und `.ffpkg`. Du wählst einfach dein Abbild, der
+Rest läuft wie gehabt. An echten Abbildern in allen vier Formaten geprüft –
+jedes ergab dasselbe, gültige Paket.
+
+### Neu: „PKG lesen"
+
+Ein neues Werkzeug unter „Weitere Tools" zeigt dir die Eckdaten einer fertigen
+`.pkg`: Typ (Metadaten oder vollständiges Debug-/Retail-Abbild), Content-ID mit
+Title-ID und Region, Größe und die Eintragstabelle des Pakets. Das eigentliche
+Spiel im Paket ist verschlüsselt und lässt sich nicht auflisten – der äußere
+Rahmen dafür vollständig.
+
+### Fortschritt und Abbrechen beim Umwandeln
+
+Das Fenster „Abbild → PKG" zeigt jetzt beim Auspacken einen laufenden
+Fortschrittsbalken und während des (teils langen) Paketbaus eine sichtbare
+Aktivitätsanzeige. Neu ist außerdem ein **Abbrechen-Knopf**, mit dem du einen
+laufenden Vorgang jederzeit sauber stoppen kannst. Das Protokoll füllt sich
+dabei zuverlässig mit, und am Ende steht klar „Fertig" oder „Abgebrochen".
+
+### Vier neue Designs
+
+Unter **DESIGN** stehen jetzt vier eigenständige Farbschemata zur Wahl:
+**Futuristisch** (leuchtendes Neon-Cyan auf Teal-Schwarz), **Dunkel** (PS3
+Piano Black – fast schwarz, glänzend, blauer Akzent), **Hell** (PS3
+Keramikweiß – warmes, cremiges Weiß mit dunkler Schrift) und **Metallisch**
+(PS3 Slim – gebürstetes Anthrazit mit Silber und Stahlblau). Das bisherige
+„Mittel" entfällt; wer es gewählt hatte, startet mit „Dunkel". Alle vier
+bleiben auch mit den Einstellungen für Farbschwäche gut lesbar, und das
+Auswahlfenster ist größer geworden, damit Namen und Beschreibungen ohne
+Scrollen hineinpassen.
+
+### Behoben: Das Programm fror beim Starten ein
+
+Wer ein exFAT-Abbild (Aufgabe 3) oder eine `.ffpkg` (Aufgabe 4) zu `.ffpfsc`
+umwandeln wollte – ebenso in Aufgabe 6 – und dabei **AMPR EMU** oder
+**BACKPORT** angehakt hatte, sah nach „STARTEN" nur noch
+„Keine Rückmeldung": Das Programm hing, bevor überhaupt etwas geschah.
+Jetzt erscheint wie vorgesehen die Rückfrage – und **Ja** erledigt alles in
+einem Zug: Das Abbild wird entpackt, AMPR EMU (samt Asset-Pack) bzw. BACKPORT
+werden eingebaut, und danach wird automatisch wieder `.ffpfsc` gepackt. Den
+vorübergehenden Dump-Ordner räumt das Programm am Ende selbst weg – Aufgabe 1
+musst du nicht mehr extra starten. Das dauert länger als das bloße Einhüllen
+und braucht im Zielordner vorübergehend zusätzlich Platz. **Nein** beendet den
+Vorgang, ohne etwas zu schreiben. Auf der Kommandozeile heißt der Schalter
+dafür `--umhuellt-neu-packen`.
+
+Dieselbe Ursache konnte auch FTP-Wege einfrieren lassen, die zuerst anbieten,
+ftpsrv an die Konsole zu schicken – etwa beim Ablegen des WebKit-Installers
+auf USB. Auch das ist behoben.
+
+### Kleinigkeiten
+
+Im Fenster „unjail senden" wurde die Knopfleiste bei sehr kleinem Fenster
+zusammengedrückt – die Knöpfe sind jetzt immer voll sichtbar.
+
+In den Untertiteln von „Abbild → PKG" und „PKG bauen" stand vor „FIH"
+ein leeres Kästchen – dort steht jetzt schlicht „(FIH)".
+
+Die Zeile rechts neben dem Fortschrittsbalken („Copy: … | Rest: … | … MB/s |
+ETA: …") brach bei einer Anzeigeskalierung von 125 % um – die Restzeit stand in
+einer zweiten Zeile. Jetzt passt sie in eine Zeile: Der Balken ist dafür etwas
+kürzer und behält seine Länge, statt je nach Text leicht zu zucken.
+
+Auf der Kommandozeile kamen `--umhuellt-als-ordner`, `--param-json-reparieren`,
+`--param-json-online` und `--ampr-index-trotz-assets` bei gewöhnlichen Aufgaben
+nie an und blieben wirkungslos. Jetzt greifen sie wie beschrieben.
 
 ---
 
