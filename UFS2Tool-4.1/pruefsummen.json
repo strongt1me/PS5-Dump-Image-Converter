@@ -4,25 +4,26 @@
   "herkunft": "https://github.com/SvenGDK/UFS2Tool",
   "lizenz": "BSD-2-Clause",
   "gebaut_mit": "dotnet publish -c Release -r <ziel> --self-contained true -p:PublishTrimmed=true -p:PublishSingleFile=true -p:InvariantGlobalization=true -p:DebugType=none",
+  "patch": "ps5conv 2026-09-13: Ufs2Image.ReadFileToStream + ExtractFile streamend statt byte[] - entpackt Dateien > 2 GB (int32-Grenze behoben). Quelle: UFS2Tool-4.1/patch/",
   "plattformen": {
     "win-x64": {
       "datei": "UFS2Tool.exe",
-      "sha256": "6a6981e0cc0bb781ec256382aee548acd97323c6cb0ea81f693d9d702f477bcb",
+      "sha256": "753b78f78259e722fa91a701715fdb5e7141010e7d25a53240a9a72a3555ea9f",
       "bytes": 12460254
     },
     "linux-x64": {
       "datei": "UFS2Tool",
-      "sha256": "1ab838488a91ebdf4fb7690b1e49e1e5760948e91ba84f71d3e6d9e7beffe3a9",
-      "bytes": 13569285
+      "sha256": "03a6322a299fdb87ce6cc4fd2d2112b141dd0b1b57aa5b35a081394ecfd4acfb",
+      "bytes": 13570309
     },
     "osx-x64": {
       "datei": "UFS2Tool",
-      "sha256": "11edf660c12f142e10010d38193fb476c1c99b1105e2f7850a59514bfe748ccc",
-      "bytes": 13544729
+      "sha256": "09a1c7d465f4e388c502f10596ef7aee9822c6bac1e1d3c84303f1385e35dfd9",
+      "bytes": 13545753
     },
     "osx-arm64": {
       "datei": "UFS2Tool",
-      "sha256": "f69cb0cdda34f93594aed05fc5c74d1876c00c479d5d0da33335dbd17cfade9b",
+      "sha256": "1a2e079d8629513cc071eddc7e1c820b05a87811decb5e5e0def3c0f9894b6a7",
       "bytes": 12823561
     }
   }

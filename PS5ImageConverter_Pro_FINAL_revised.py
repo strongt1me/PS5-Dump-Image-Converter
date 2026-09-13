@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.17"
+APP_VERSION = "v1.9.18"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -26526,7 +26526,7 @@ class PS5ConverterGUI:
                             total_bytes[0] += file_size
                             rel_path = os.path.relpath(file_path, drive + "\\")
                             quell_dateien[rel_path] = file_size
-                            if file_size >= 4 * 1024 ** 3:
+                            if file_size >= 2 * 1024 ** 3:
                                 oversize.append((rel_path, file_size))
                         except Exception:
                             pass
@@ -26539,7 +26539,41 @@ class PS5ConverterGUI:
             ))
 
             if oversize:
-                self._append_to_log(self._t('log.auto.0236', v0=len(oversize)))
+                # Dateien > 2 GB liest das eingehaengte Dokan-Laufwerk nicht
+                # (int32/2-GB-Grenze im UFS2Tool-Mount-Read). Mount loesen und
+                # mount-frei mit `UFS2Tool extract` entpacken - das schreibt die
+                # Datei streamend heraus und beherrscht > 2 GB (gepatchtes
+                # UFS2Tool 4.1, siehe UFS2Tool-4.1/pruefsummen.json).
+                self._append_to_log(self._t('ffpkg.grossdatei_mountfrei'))
+                run["on"] = False
+                if mount_proc is not None:
+                    try:
+                        mount_proc.terminate()
+                        mount_proc.wait(timeout=10)
+                    except Exception:
+                        try:
+                            mount_proc.kill()
+                        except Exception:
+                            pass
+                    mount_proc = None
+                try:
+                    if mounted and os.path.exists(drive + "\\"):
+                        subprocess.run(
+                            ["mountvol", drive + "\\", "/D"],
+                            timeout=10,
+                            capture_output=True,
+                            creationflags=_NO_WIN_FLAGS,
+                            startupinfo=_silent_startupinfo(),
+                        )
+                except Exception:
+                    pass
+                mounted = False
+                return self._ffpkg_ueber_unterbefehl_entpacken(
+                    src, dest_folder,
+                    status_prefix=status_prefix,
+                    progress_start=progress_start,
+                    progress_end=progress_end,
+                )
 
             self._copy_total_bytes = max(1, int(total_bytes[0] or 1))
             self._copy_done_bytes = 0
@@ -45685,9 +45719,14 @@ def _run_cli(args: argparse.Namespace) -> int:
         root.destroy()
         return 2
 
-    app.current_mode.set(mode)
     app.source_path.set(sources[0])
     app._batch_sources = sources if len(sources) > 1 else []
+    # Die Konfig-Anzeige an die echte Aufgabe angleichen (Kopf, Untertitel,
+    # Formatoptionen, BAUFORM-Sichtbarkeit) - wie ein Klick in der Seitenleiste.
+    # Bis 13.09.2026 setzte der CLI-Modus nur current_mode; das Fortschritts-
+    # fenster zeigte deshalb den Standard-Aufbau (Aufgabe 1, BAUFORM sichtbar),
+    # egal welche Aufgabe/welches Format wirklich lief.
+    app._set_mode_from_sidebar(mode)
     if mode == "ampr_manager":
         # Ohne diesen Spec öffnet _mode_ampr_manager den Auswahldialog und
         # wartet ohne sichtbares Fenster endlos auf eine Eingabe.
@@ -45703,6 +45742,9 @@ def _run_cli(args: argparse.Namespace) -> int:
         label = app._t(f"format.{args.format}")
         if label and label != f"format.{args.format}":
             app.target_format.set(label)
+            # _set_mode_from_sidebar hat die Formatvorgabe gesetzt - hier ueber-
+            # schreiben wir sie, also BAUFORM/Hinweis fuer das echte Ziel nachziehen.
+            app._format_hinweis_setzen(mode)
         else:
             print(f"[FEHLER] Unbekanntes Zielformat: {args.format}", file=sys.stderr)
             root.destroy()

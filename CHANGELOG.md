@@ -2,7 +2,29 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.17):** Unter „Weitere Tools" gibt es einen neuen Knopf **„unjail senden"**: Er schickt den unjail-Daemon (SvenGDK) an die Konsole, der anfragenden Homebrew-Anwendungen Schreibzugriff außerhalb ihrer Sandbox gibt. Verifiziert bis Firmware 10.60; ab 11.00 (also auch auf einer 12.00-Konsole) läuft der Daemon derzeit nicht.
+> **Kurz zum aktuellen Stand (v1.9.18):** Aufgabe 4 packt eine `.ffpkg` jetzt auch dann korrekt in einen Dump-Ordner oder eine `.exFAT` aus, wenn darin eine Datei **größer als 2 GB** liegt (viele große Spiele haben das) – vorher brach das mit einem kryptischen Fehler ab. Dazu eine Kleinigkeit im Kommandozeilen-Fenster.
+
+---
+
+## v1.9.18 – 13.09.2026
+
+Große Spieldateien beim Auspacken von `.ffpkg` – und eine Kleinigkeit im
+Kommandozeilen-Fenster.
+
+### `.ffpkg` mit Dateien über 2 GB
+
+Aufgabe 4 konnte eine `.ffpkg` bisher nicht in einen Dump-Ordner oder eine
+`.exFAT` auspacken, wenn darin eine **einzelne Datei größer als 2 GB** lag –
+und viele große Spiele haben genau das. Der Vorgang brach mit einem kryptischen
+Fehler ab. Jetzt werden solche Pakete vollständig und korrekt ausgepackt (an
+einem echten Spiel mit einer 6,8-GB-Datei byte-genau geprüft). Der Weg von
+`.ffpkg` nach `.ffpfsc` war nie betroffen.
+
+### Kommandozeile
+
+Das Fortschritts-Fenster des `--cli`-Modus zeigte in der Konfig-Anzeige immer
+die Standard-Aufgabe – samt „BAUFORM"-Auswahl –, egal welche Aufgabe wirklich
+lief. Jetzt passt die Anzeige zur tatsächlichen Aufgabe und zum Zielformat.
 
 ---
 

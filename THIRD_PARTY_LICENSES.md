@@ -106,7 +106,7 @@ SOFTWARE.
 | **MkPFS 1.0.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
 | **LibProsperoPkg 2.5** | SvenGDK | Das Werkzeug hinter „PKG bauen“; liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0) |
 | **PS4 FFPFSC 0.2.8** | siehe `PS4FFPFSC-0.2.8/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.8/LICENSES/` liegen |
-| **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
+| **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – **hier für Dateien >2 GB gepatcht** (`UFS2Tool-4.1/patch/`); trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | PS5-Homebrew-Community | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert |
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
@@ -119,8 +119,11 @@ SOFTWARE.
 
 ## Die .NET-Laufzeit von Microsoft in `UFS2Tool`
 
-UFS2Tool selbst steht unter BSD-2-Clause. Es ist hier aber **eigenständig**
-gebaut – `dotnet publish --self-contained true -p:PublishSingleFile=true`,
+UFS2Tool selbst steht unter BSD-2-Clause. Die hier gebündelte Fassung ist
+zusätzlich **gepatcht** – streamendes Entpacken für Dateien über 2 GB
+(`Ufs2Image.ReadFileToStream`, behebt die int32-Grenze beim `.ffpkg`-Auspacken);
+geänderte Quelle und Beschreibung liegen in `UFS2Tool-4.1/patch/`. Es ist hier
+aber **eigenständig** gebaut – `dotnet publish --self-contained true -p:PublishSingleFile=true`,
 siehe `UFS2Tool-4.1/pruefsummen.json` – und trägt Microsofts **.NET-8-**
 **Laufzeit damit in der Programmdatei**. Am 03.09.2026 an den Binärdateien
 nachgemessen:
