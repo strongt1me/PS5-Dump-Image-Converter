@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.8</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.24</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.8</span>
-      <span class="marke">Stand 4. September 2026</span>
+      <span class="marke">Version v1.9.24</span>
+      <span class="marke">Stand 15. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -420,6 +420,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>PRÜFUNG</strong></td><td>Ob das fertige Abbild nach dem Packen geprüft wird. „Schnell“ prüft die Struktur, „Vollständig“ liest zusätzlich alles zurück und dauert deutlich länger. <a href="#k12">Aufgabe 8</a> prüft auch nachträglich jederzeit.</td></tr>
       <tr><td><strong>ZIELORDNER</strong></td><td>Hierhin schreibt das Programm das fertige Ergebnis. Verwenden Sie am besten einen anderen Ordner als die Quelle.</td></tr>
       <tr><td><strong>TEMP-ORDNER</strong></td><td>Ablage für vorübergehende Arbeitsdateien.</td></tr>
+      <tr><td><strong>Dump-Ordner im Arbeitsordner</strong></td><td>Ankreuzfeld in der Pfad-Karte. Beim Umpacken (etwa <code>.ffpfsc</code> &rarr; <code>.ffpkg</code>) entpackt das Programm die Quelle zuerst in einen vor&uuml;bergehenden Dump-Ordner. Ab Werk liegt der beim <em>Ziel</em>; ist das Feld gesetzt, wandert er in den Arbeitsordner &ndash; auf dem Ziel-Laufwerk entsteht dann nur das fertige Ergebnis. Der Arbeitsordner muss daf&uuml;r den vollst&auml;ndigen Dump fassen. Reine Entpack-Aufgaben sind nicht betroffen: Dort <em>ist</em> der Dump-Ordner das Ergebnis.</td></tr>
       <tr><td><strong>Rechner herunterfahren</strong></td><td>Ankreuzfeld unter TEMP-ORDNER. Ist es gesetzt, fährt der Rechner nach einem <em>erfolgreichen</em> Lauf von allein herunter – siehe <a href="#k3">Abschnitt 3.2</a>.</td></tr>
       <tr><td><strong>STARTEN</strong></td><td>Beginnt die gewählte Aufgabe, sobald alle erforderlichen Angaben vorliegen.</td></tr>
       <tr><td><strong>ABBRECHEN</strong></td><td>Fordert einen kontrollierten Abbruch an. Warten Sie danach, bis das Programm den Abbruch bestätigt.</td></tr>
@@ -481,6 +482,36 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <li>Bei aktivem Ankreuzfeld erscheint am Ende <strong>keine</strong> Erfolgsmeldung zum Wegklicken; sie würde auf eine Bestätigung warten, die niemand gibt. Der Erfolg steht in der Statuszeile und im Protokoll.</li>
   </ul>
   <p>Die Einstellung wird gespeichert und gilt auch beim nächsten Start. Im Kommandozeilenmodus übernimmt das der Schalter <code>--shutdown-on-success</code>.</p>
+
+  <h3>3.3 Wenn der Platz nicht reicht</h3>
+  <p>Vor dem Start rechnet das Programm aus, wie viel Platz die Aufgabe
+  braucht &ndash; getrennt f&uuml;r Zielordner und Arbeitsordner. Reicht es
+  nicht, l&auml;uft die Aufgabe <strong>nicht</strong> einfach los. Es
+  erscheint ein Fenster, das f&uuml;r jeden Ordner nennt, was gebraucht wird,
+  was frei ist und was fehlt.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Ihre Wahl</th><th>Was dann passiert</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Arbeitsordner w&auml;hlen</strong></td><td>Sie suchen einen anderen Arbeitsordner aus; danach wird neu gerechnet.</td></tr>
+      <tr><td><strong>Zielordner w&auml;hlen</strong></td><td>Dasselbe f&uuml;r das Ziel &ndash; auch der andere Ordner kann zu knapp sein.</td></tr>
+      <tr><td><strong>Trotzdem starten</strong></td><td>Die Aufgabe l&auml;uft auf Ihr Risiko los.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Wie viel gebraucht wird, h&auml;ngt am Zielformat: eine
+  <code>.ffpfsc</code> braucht etwa das 0,75-fache der Quellgr&ouml;&szlig;e,
+  <code>.ffpfs</code> und <code>.exFAT</code> das 1,1-fache, eine
+  <code>.ffpkg</code> das 1,3-fache. Liegen Arbeits- und Zielordner auf
+  <em>demselben</em> Laufwerk, wird die Summe gepr&uuml;ft &ndash; getrennt
+  betrachtet s&auml;he jeder f&uuml;r sich gut aus, und zusammen reichte es
+  trotzdem nicht.</p>
+  <p>Ist <strong>AMPR EMU</strong> oder <strong>BACKPORT</strong> angehakt,
+  entsteht im Arbeitsordner zus&auml;tzlich eine vollst&auml;ndige Arbeitskopie
+  des Spiels; der Bedarf dort ist dann so gro&szlig; wie das Spiel selbst.</p>
+  <p>Auf der Kommandozeile gibt es kein Fenster: Dort wird der Befund
+  gemeldet, und <code>--yes</code> entscheidet wie bei jeder anderen
+  R&uuml;ckfrage.</p>
 </section>
 
 <section class="kapitel" id="k4">
@@ -809,7 +840,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>Abbild &rarr; PKG</strong> (baut aus jedem Abbildformat &ndash; <code>.exfat</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> &ndash; ein installierbares Debug-Paket, mit Fortschrittsanzeige und Abbrechen) und <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>Abbild &rarr; PKG</strong> (baut aus jedem Abbildformat &ndash; <code>.exfat</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> &ndash; ein installierbares Debug-Paket, mit Fortschrittsanzeige und Abbrechen) und <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1027,9 +1058,6 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Dann bietet das Programm an, es herunterzuladen und zu installieren. Lehnen Sie ab, können Sie die Datei <code>filezilla.exe</code> selbst auswählen – auch dieser Pfad wird gemerkt.</p>
   </div>
 
-</section>
-
-<section class="kapitel" id="k14">
   <h3>13.8 ps5_autoloader – die Startreihenfolge der Konsole</h3>
   <p>Nach dem Jailbreak startet die PS5 eine Reihe von Payloads – FTP-Dienst, ShadowMount+, kstuff und was sonst gebraucht wird. Welche das sind und in welcher Reihenfolge, steht in einer einfachen Textdatei namens <code>autoload.txt</code>. Dieses Fenster bearbeitet sie vom PC aus, über FTP.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → ps5_autoloader.</p>
@@ -1268,66 +1296,6 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
 
-  <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
-  <p>Über den Knopf <strong>DESIGN</strong> stehen vier Farbschemata zur Auswahl:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Design</th><th>Charakter</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Futuristisch</strong> (Neon-Cyan)</td><td>Leuchtendes Neon-Cyan auf Teal-Schwarz.</td></tr>
-      <tr><td><strong>Dunkel</strong> (PS3 Piano Black)</td><td>Fast schwarz, glänzend, blauer Akzent – Standardeinstellung.</td></tr>
-      <tr><td><strong>Hell</strong> (PS3 Keramikweiß)</td><td>Warmes, cremiges Weiß mit dunkler Schrift.</td></tr>
-      <tr><td><strong>Metallisch</strong> (PS3 Slim)</td><td>Gebürstetes Anthrazit-Metall mit Silber und Stahlblau.</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
-  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter. Nur die Größenangabe neben der Fortschrittsanzeige behält eine leicht abgedunkelte Fläche, damit sie über unruhigen Bildstellen lesbar bleibt.</p>
-
-  <h3>14.1 Hintergrundbilder wählen</h3>
-  <p>Unter <strong>EINSTELLUNGEN</strong> gibt es zwei getrennte Bereiche, jeder mit einer eigenen Klappliste der mitgelieferten Bilder:</p>
-  <div class="tabelle">
-  <table>
-    <thead><tr><th>Bereich</th><th>Bilder</th><th>Mitgeliefert</th></tr></thead>
-    <tbody>
-      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
-      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 640 × 1440 bzw. 640 × 1020 Pixel</td></tr>
-    </tbody>
-  </table>
-  </div>
-  <p>Wie groß ein Bild <em>sein sollte</em>, hängt an Ihrem Bildschirm und steht deshalb direkt im Einstellungsfenster unter jedem der beiden Bereiche. Der Hauptbereich braucht die Auflösung Ihres Bildschirms, die Seitenleiste deren tatsächliche Breite – bei 125 % Anzeigeskalierung sind das rund 500 statt der angemeldeten 320 Pixel. Ein kleineres Bild wird angenommen, wirkt dann aber weich gezogen; ein größeres schadet nie.</p>
-  <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
-  <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
-  <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
-  <div class="kasten">
-    <span class="titel">Warum zwei getrennte Listen</span>
-    <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich müsste so stark beschnitten werden, dass vom Motiv kaum etwas übrig bliebe – verzerrt wird nie, aber sinnvoll ist es auch nicht. Deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
-  </div>
-  <div class="kasten">
-    <span class="titel">Metadaten aus dem Netz</span>
-    <p>Fehlen in einem Backup <strong>Titel</strong>, <strong>Hersteller</strong>
-    oder <strong>Kategorie</strong>, kann das Programm sie nachschlagen. Ob es
-    das von allein tut, hängt seit v1.8.92 vom System ab: Unter
-    <strong>Windows und Linux</strong> schlägt es von allein nach, auf dem
-    <strong>Mac</strong> nicht. Wo es nicht von allein geschieht, erscheint im
-    Fenster <em>Spiel-Info</em> ein Knopf
-    <strong>Fehlende Angaben online nachschlagen</strong>; erst ein Klick darauf
-    baut eine Verbindung auf. Fehlt nichts, erscheint der Knopf gar nicht.</p>
-    <p>Dabei geht die <strong>Title-ID</strong> des Spiels nach draußen &ndash;
-    also die Information, welches Spiel Sie gerade bearbeiten. Gefragt wird bei
-    store.playstation.com sowie bei prosperopatches.com (PS5-Titel)
-    beziehungsweise orbispatches.com (PS4-Titel). Einmal geholte Angaben liegen
-    danach 30 Tage auf Ihrer Platte und kosten keine zweite Verbindung.</p>
-    <p>Umstellen lässt sich das in den <strong>Einstellungen</strong> im
-    Abschnitt <strong>METADATEN AUS DEM NETZ</strong>. Ab Werk ist das
-    Kästchen unter Windows und Linux gesetzt, auf dem Mac leer. Sobald Sie es
-    einmal selbst setzen oder leeren, gilt <strong>Ihre</strong> Wahl &ndash;
-    auf jedem System und über Programmstarts hinweg.</p>
-    <p><strong>Mit einer Firewall</strong> (etwa Little Snitch auf dem Mac):
-    Die Meldung erscheint nur noch, wenn Sie den Knopf drücken. Erlauben Sie
-    die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
-    still.</p>
-  </div>
   <h3>13.11 WebKit Autoloader &ndash; Kachel auf den Startbildschirm</h3>
   <p>Der WebKit Autoloader legt auf der Konsole eine Kachel an, &uuml;ber die
   sich der Einstieg jedes Mal mit einem Druck wiederholen l&auml;sst, statt
@@ -1396,6 +1364,106 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Bau wandert der Ordnerinhalt unver&auml;ndert in das fertige Programm.
   Zu &auml;ndern ist daf&uuml;r nichts.</p>
 
+  <h3>13.12 unjail senden &ndash; Homebrew aus der Sandbox heben</h3>
+  <p>Homebrew-Anwendungen laufen auf der Konsole in einem eigenen Ordner und
+  d&uuml;rfen nur dort schreiben. Manche brauchen mehr &ndash; sie fragen dann
+  nach erweitertem Zugriff. <strong>unjail</strong> ist ein kleiner
+  Konsolen-Daemon, der genau diese Anfragen beantwortet. Er wird einmal
+  gesendet und l&auml;uft danach bis zum n&auml;chsten Neustart der
+  Konsole.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; unjail senden.
+  Adresse der Konsole eintragen, auf <strong>An PS5 senden</strong> klicken
+  &ndash; Fortschritt und die Antwort der Konsole stehen w&auml;hrenddessen im
+  Fenster.</p>
+  <p>Sinnvoll ist das <em>vor</em> dem Start einer Homebrew, die erweiterten
+  Schreibzugriff braucht. F&uuml;r gew&ouml;hnliche Konvertierungen mit diesem
+  Programm wird unjail nicht ben&ouml;tigt.</p>
+  <div class="kasten achtung">
+    <span class="titel">Nur bis Firmware 10.60</span>
+    <p>Verifiziert ist unjail f&uuml;r Firmware <strong>1.00 bis
+    10.60</strong>. Ab <strong>11.00</strong> bricht der Daemon beim Start ab,
+    bevor er bereit ist &ndash; auf einer Konsole mit 11.00 oder neuer
+    funktioniert er derzeit nicht. Das Fenster weist vor dem Senden darauf
+    hin.</p>
+  </div>
+
+</section>
+
+<section class="kapitel" id="k14">
+  <h2><span class="nr">14</span> Design und Hintergrundbild</h2>
+  <p>Über den Knopf <strong>DESIGN</strong> stehen vier Farbschemata zur Auswahl:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Design</th><th>Charakter</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Futuristisch</strong> (Neon-Cyan)</td><td>Leuchtendes Neon-Cyan auf Teal-Schwarz.</td></tr>
+      <tr><td><strong>Dunkel</strong> (PS3 Piano Black)</td><td>Fast schwarz, glänzend, blauer Akzent – Standardeinstellung.</td></tr>
+      <tr><td><strong>Hell</strong> (PS3 Keramikweiß)</td><td>Warmes, cremiges Weiß mit dunkler Schrift.</td></tr>
+      <tr><td><strong>Metallisch</strong> (PS3 Slim)</td><td>Gebürstetes Anthrazit-Metall mit Silber und Stahlblau.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
+  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter. Nur die Größenangabe neben der Fortschrittsanzeige behält eine leicht abgedunkelte Fläche, damit sie über unruhigen Bildstellen lesbar bleibt.</p>
+
+  <div class="kasten">
+    <span class="titel">Gro&szlig;e Bildschirme und hohe Anzeigeskalierung</span>
+    <p>Die Oberfl&auml;che richtet sich nach der Anzeigeskalierung, die in
+    Windows eingestellt ist. Schrift und Bedienelemente wachsen dabei
+    gemeinsam: Bis <strong>125&nbsp;%</strong> sehen Sie genau das gewohnte
+    Bild, dar&uuml;ber werden Kn&ouml;pfe, Ecken und Fenster entsprechend
+    gr&ouml;&szlig;er. Auf einem 4K-Schirm mit 200&nbsp;% wird aus einem 44
+    Pixel hohen Knopf einer mit 70 Pixeln.</p>
+    <p>Sollte doch einmal eine Beschriftung an ihren Rand sto&szlig;en, meldet
+    der Knopf <strong>DIAGNOSE</strong> das im Abschnitt
+    &bdquo;Darstellung gepr&uuml;ft&ldquo; &ndash; mit Namen des Elements und
+    der fehlenden Pixelzahl.</p>
+  </div>
+
+  <h3>14.1 Hintergrundbilder wählen</h3>
+  <p>Unter <strong>EINSTELLUNGEN</strong> gibt es zwei getrennte Bereiche, jeder mit einer eigenen Klappliste der mitgelieferten Bilder:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Bereich</th><th>Bilder</th><th>Mitgeliefert</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
+      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 640 × 1440 bzw. 640 × 1020 Pixel</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Wie groß ein Bild <em>sein sollte</em>, hängt an Ihrem Bildschirm und steht deshalb direkt im Einstellungsfenster unter jedem der beiden Bereiche. Der Hauptbereich braucht die Auflösung Ihres Bildschirms, die Seitenleiste deren tatsächliche Breite – bei 125 % Anzeigeskalierung sind das rund 500 statt der angemeldeten 320 Pixel. Ein kleineres Bild wird angenommen, wirkt dann aber weich gezogen; ein größeres schadet nie.</p>
+  <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
+  <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
+  <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
+  <div class="kasten">
+    <span class="titel">Warum zwei getrennte Listen</span>
+    <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich müsste so stark beschnitten werden, dass vom Motiv kaum etwas übrig bliebe – verzerrt wird nie, aber sinnvoll ist es auch nicht. Deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
+  </div>
+  <div class="kasten">
+    <span class="titel">Metadaten aus dem Netz</span>
+    <p>Fehlen in einem Backup <strong>Titel</strong>, <strong>Hersteller</strong>
+    oder <strong>Kategorie</strong>, kann das Programm sie nachschlagen. Ob es
+    das von allein tut, hängt seit v1.8.92 vom System ab: Unter
+    <strong>Windows und Linux</strong> schlägt es von allein nach, auf dem
+    <strong>Mac</strong> nicht. Wo es nicht von allein geschieht, erscheint im
+    Fenster <em>Spiel-Info</em> ein Knopf
+    <strong>Fehlende Angaben online nachschlagen</strong>; erst ein Klick darauf
+    baut eine Verbindung auf. Fehlt nichts, erscheint der Knopf gar nicht.</p>
+    <p>Dabei geht die <strong>Title-ID</strong> des Spiels nach draußen &ndash;
+    also die Information, welches Spiel Sie gerade bearbeiten. Gefragt wird bei
+    store.playstation.com sowie bei prosperopatches.com (PS5-Titel)
+    beziehungsweise orbispatches.com (PS4-Titel). Einmal geholte Angaben liegen
+    danach 30 Tage auf Ihrer Platte und kosten keine zweite Verbindung.</p>
+    <p>Umstellen lässt sich das in den <strong>Einstellungen</strong> im
+    Abschnitt <strong>METADATEN AUS DEM NETZ</strong>. Ab Werk ist das
+    Kästchen unter Windows und Linux gesetzt, auf dem Mac leer. Sobald Sie es
+    einmal selbst setzen oder leeren, gilt <strong>Ihre</strong> Wahl &ndash;
+    auf jedem System und über Programmstarts hinweg.</p>
+    <p><strong>Mit einer Firewall</strong> (etwa Little Snitch auf dem Mac):
+    Die Meldung erscheint nur noch, wenn Sie den Knopf drücken. Erlauben Sie
+    die Verbindung dort einmal dauerhaft statt nur einmalig, bleibt es danach
+    still.</p>
+  </div>
   <h3>14.2 Durchsicht, Helligkeit und Kontrast</h3>
   <p>Im Einstellungsfenster steht unter <strong>Darstellung</strong> eine
   Reihe Schieberegler. Sie bestimmen, wie stark das Hintergrundbild durch die
@@ -1466,7 +1534,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.8), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.24), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1666,8 +1734,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.8</strong></span>
-    <span>Stand 4. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.24</strong></span>
+    <span>Stand 15. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

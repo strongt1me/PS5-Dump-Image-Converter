@@ -2,7 +2,28 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.23):** Wichtige Behebung: In v1.9.22 konnte das Packen mit „Unable to select compression backend“ abbrechen, sodass gar keine Datei entstand – das ist behoben. Ausserdem zeigen mehrere lange Arbeitsschritte jetzt ihren Fortschritt, statt wie eingefroren zu wirken.
+> **Kurz zum aktuellen Stand (v1.9.24):** Die Knöpfe wachsen jetzt mit der eingestellten Anzeigeskalierung. Auf grossen, hochauflösenden Bildschirmen wirkten sie zuletzt zu klein, während die Schrift darin mitwuchs – die Verhältnisse stimmen wieder.
+
+---
+
+## v1.9.24 – 15.09.2026
+
+Die Bedienelemente richten sich nach der Anzeigeskalierung.
+
+### Knöpfe passen sich hohen Auflösungen an
+
+Auf einem hochauflösenden Bildschirm wirkten die Knöpfe zu klein, und ihre
+Beschriftung stieß an den Rand. Dahinter stand ein Ungleichgewicht: Die
+Schrift wuchs mit der eingestellten Anzeigeskalierung mit, die Knopfmaße
+standen dagegen fest. Jetzt wachsen Höhe, Breite und Eckenrundung mit –
+und mit ihnen die Fenster, die sich nach ihrem Inhalt richten.
+
+- Bis 125 % Skalierung ändert sich **nichts**; das gewohnte Bild bleibt genau
+  wie es war.
+- Darüber wächst es mit: Bei 200 % wird aus einem 44 Pixel hohen Knopf
+  einer mit 70 Pixeln.
+- Das AMPR-EMU-Auswahlfenster und das Autoloader-Fenster ziehen mit, beim
+  Autoloader auch das Bild.
 
 ---
 
