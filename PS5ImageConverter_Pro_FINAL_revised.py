@@ -2353,6 +2353,54 @@ def rundes_rechteck_punkte(x1: float, y1: float, x2: float, y2: float,
     ]
 
 
+#: Die Anzeigeskalierung, auf die die fest eingetragenen Pixelmasse dieser
+#: Oberflaeche geschrieben sind: 120 dpi (125 %). Am 15.09.2026 an diesem
+#: Bestand gemessen - ``tk scaling`` 1.6683, TkDefaultFont 20 px hoch.
+KNOPF_BASIS_SKALIERUNG = 1.6683
+
+#: Obergrenze fuer den Knopf-Faktor. Ein exotisches ``tk scaling`` - oder die
+#: macOS-Schriftanhebung, die ``tk scaling`` nachtraeglich multipliziert - soll
+#: die Knoepfe nicht ins Unermessliche treiben.
+KNOPF_FAKTOR_MAX = 2.5
+
+
+def knopfmass(pixel: int, widget: "tk.Misc | None" = None) -> int:
+    """Rechnet ein fest eingetragenes Knopfmass auf die Anzeigeskalierung um.
+
+    Das Gegenstueck zu :func:`pt`, nur fuer **Geometrie**. ``pt`` muss unter
+    Windows nichts tun, weil ``tk scaling`` Punkte selbst in Pixel umrechnet:
+    Eine 9-Punkt-Schrift ist bei 125 % rund 20 px hoch und bei 200 % rund
+    32 px. Pixelmasse machen das **nicht** mit - ein Knopf mit ``height=44``
+    blieb auf jedem Schirm 44 px hoch, waehrend seine Beschriftung mitwuchs.
+    Auf einem hochaufloesenden Schirm wirkten die Knoepfe dadurch zu klein,
+    und die Beschriftung sprengte sie.
+
+    Gemeldet hat es ein Anwender am 15.09.2026 ("auf hoher Aufloesung werden
+    die Knoepfe viel kleiner, die Proportionen stimmen nicht mehr"); die
+    Darstellungspruefung hatte es zuvor beziffert.
+
+    **Nie kleiner als das eingetragene Mass** (Faktor mindestens 1.0): Die
+    Werte sind auf :data:`KNOPF_BASIS_SKALIERUNG` geschrieben, dort passen
+    sie. Ein Schrumpfen auf 100-%-Schirmen waere eine Verschlechterung - und
+    saemtliche Pixelzusicherungen des Pruefbestands fielen um.
+
+    Args:
+        pixel:  Das eingetragene Mass.
+        widget: Ein Bedienelement, ueber das ``tk scaling`` erfragt wird.
+            Ohne Angabe die Standardwurzel.
+
+    Returns:
+        Das umgerechnete Mass; bei jeder Stoerung das unveraenderte.
+    """
+    try:
+        wurzel = widget if widget is not None else tk._default_root
+        skalierung = float(wurzel.tk.call("tk", "scaling"))
+    except Exception:  # noqa: BLE001
+        return int(pixel)
+    faktor = min(max(skalierung / KNOPF_BASIS_SKALIERUNG, 1.0), KNOPF_FAKTOR_MAX)
+    return int(round(pixel * faktor))
+
+
 class RoundedButton(tk.Canvas):
     """Canvas-basierter Button mit abgerundeten Ecken und zentriertem Text.
 
@@ -2387,6 +2435,19 @@ class RoundedButton(tk.Canvas):
         # Code (z.B. self.run_btn.config(state=tk.DISABLED) beim Start/Ende
         # einer Aufgabe) unveraendert weiterfunktioniert.
         initial_state = kwargs.pop("state", tk.NORMAL)
+        # Die Masse mit der Anzeigeskalierung mitziehen - sonst bleibt der
+        # Kasten fest, waehrend die Schrift waechst (siehe ``knopfmass``).
+        # Genau **eine** Stelle fuer elf Aufrufer; ``width`` kommt ueber
+        # kwargs herein und muss deshalb hier heraus.
+        #
+        # Nebenwirkung, die hier erwuenscht ist: Ein groesserer Canvas meldet
+        # auch ein groesseres ``winfo_reqheight``. Damit zieht
+        # ``_fenster_auf_inhalt_wachsen`` das Fenster von selbst nach - der
+        # Knopf entzog sich dieser Nachfuehrung bisher doppelt.
+        height = knopfmass(height, master)
+        if "width" in kwargs:
+            kwargs["width"] = knopfmass(kwargs["width"], master)
+        radius = knopfmass(radius, master)
         super().__init__(master, height=height, bg=parent_bg, highlightthickness=0, bd=0, **kwargs)
         self._command = command
         self._font = font
@@ -35271,41 +35332,55 @@ class PS5ConverterGUI:
         grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
         fenster.configure(bg=grund)
 
+        # Alle Masse dieses Fensters ziehen mit der Anzeigeskalierung mit.
+        # Es ist der einzige Ort, an dem die Knoepfe ihre Groesse ueber
+        # ``create_window`` von **aussen** bekommen - die innere Skalierung
+        # von ``RoundedButton`` kommt hier also nicht zum Tragen, und ein
+        # doppelter Faktor kann nicht entstehen (die aeussere Angabe
+        # gewinnt). Die Leinwand hat eine feste Groesse und waechst nicht
+        # von selbst mit, deshalb muss sie hier mitgerechnet werden.
+        def _m(px: float) -> int:
+            """Ein Mass dieses Fensters auf die Anzeigeskalierung umrechnen."""
+            return knopfmass(int(round(px)), fenster)
+
         # Hoehe: 332 statt 384, seit der dritte Knopf weg ist. Die 52 sind
         # genau eine Knopfzeile des Rasters (hoch = 196 + lfd * 52); der
         # Abstand zwischen dem letzten Knopf und dem Schliessen-Knopf bleibt
         # damit bei 23 px wie zuvor.
-        breite, hoehe, rand = 520, 332, 14
+        breite, hoehe, rand = _m(520), _m(332), _m(14)
         leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
                              highlightthickness=0, bd=0)
         leinwand.pack(fill="both", expand=True)
+        # Die 2 px Rahmenabstand bleiben ungerechnet: Eine Haarlinie soll
+        # auch auf einem hochaufloesenden Schirm eine Haarlinie bleiben.
         leinwand.create_polygon(
-            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, 22),
+            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, _m(22)),
             smooth=True, fill=c["bg_card"], outline=c["border"])
 
-        leinwand.create_text(breite / 2, rand + 22,
+        leinwand.create_text(breite / 2, rand + _m(22),
                              text=self._t("ampr_auswahl.title"),
                              fill=c["fg_accent"],
                              font=(UI_SCHRIFT, pt(14), "bold"))
-        leinwand.create_text(breite / 2, rand + 56,
+        leinwand.create_text(breite / 2, rand + _m(56),
                              text=self._t("ampr_auswahl.hint"),
-                             fill=c["fg_secondary"], width=breite - 2 * rand - 20,
+                             fill=c["fg_secondary"],
+                             width=breite - 2 * rand - _m(20),
                              font=(UI_SCHRIFT, pt(9)))
 
-        innen = breite - 2 * rand - 26        # nutzbare Breite fuer Knoepfe
-        links = rand + 13                     # linker Rand der Knopfspalte
+        innen = breite - 2 * rand - _m(26)    # nutzbare Breite fuer Knoepfe
+        links = rand + _m(13)                 # linker Rand der Knopfspalte
 
         # ── Ablageweg ───────────────────────────────────
         # ShadowMountPlus kennt drei Stellen, an denen Bibliotheken liegen
         # koennen: pro Spiel, im globalen Ordner und - ab 1.7 alpha8 - im
         # Emulator-Ordner. Welche davon gemeint ist, entschied das Programm
         # bis v1.8.98 allein; jetzt steht sie hier zur Wahl.
-        leinwand.create_text(links, 96, anchor="w",
+        leinwand.create_text(links, _m(96), anchor="w",
                              text=self._t("ampr_auswahl.ablage"),
                              fill=c["fg_primary"],
                              font=(UI_SCHRIFT, pt(9), "bold"))
         erklaerung = leinwand.create_text(
-            breite / 2, 158, text="", fill=c["fg_secondary"],
+            breite / 2, _m(158), text="", fill=c["fg_secondary"],
             width=innen, font=(UI_SCHRIFT, pt(8)))
 
         wegknoepfe: dict[str, Any] = {}
@@ -35336,7 +35411,7 @@ class PS5ConverterGUI:
             self._ampr_ablage_merken(kennung)
             _wege_zeichnen()
 
-        wegbreite = (innen - 16) / 3
+        wegbreite = (innen - _m(16)) / 3
         for lfd, kennung in enumerate(self.ABLAGE_WEGE):
             knopf = RoundedButton(
                 leinwand, text="",
@@ -35348,8 +35423,8 @@ class PS5ConverterGUI:
                 parent_bg=c["bg_card"])
             wegknoepfe[kennung] = knopf
             leinwand.create_window(
-                links + wegbreite / 2 + lfd * (wegbreite + 8), 126,
-                window=knopf, width=wegbreite, height=28)
+                links + wegbreite / 2 + lfd * (wegbreite + _m(8)), _m(126),
+                window=knopf, width=wegbreite, height=_m(28))
         _wege_zeichnen()
 
         def _waehlen(methode: str) -> None:
@@ -35368,12 +35443,12 @@ class PS5ConverterGUI:
             self._werkzeugfenster_umschalten(methode)
 
         # Die beiden Fassungen bekommen je einen Knopf zu ihrer Anleitung.
-        hilfsbreite = 88
+        hilfsbreite = _m(88)
         for lfd, (schluessel, methode, generation) in enumerate((
                 ("titlebar.ampr_neu", "_show_ampr_neue_methode", sm_gen.NEU),
                 ("titlebar.ampr_alt", "_show_ampr_alte_methode", sm_gen.ALT))):
-            hoch = 196 + lfd * 52
-            eigene = innen - hilfsbreite - 8 if generation else innen
+            hoch = _m(196) + lfd * _m(52)
+            eigene = innen - hilfsbreite - _m(8) if generation else innen
             knopf = RoundedButton(
                 leinwand,
                 text=self._t(schluessel),
@@ -35390,7 +35465,7 @@ class PS5ConverterGUI:
                 parent_bg=c["bg_card"],
             )
             leinwand.create_window(links + eigene / 2, hoch,
-                                   window=knopf, width=eigene, height=44)
+                                   window=knopf, width=eigene, height=_m(44))
             if not generation:
                 continue
             hilfe = RoundedButton(
@@ -35408,7 +35483,7 @@ class PS5ConverterGUI:
                 parent_bg=c["bg_card"],
             )
             leinwand.create_window(links + innen - hilfsbreite / 2, hoch,
-                                   window=hilfe, width=hilfsbreite, height=44)
+                                   window=hilfe, width=hilfsbreite, height=_m(44))
 
         schliessen = RoundedButton(
             leinwand, text=self._t("ampr_auswahl.close"),
@@ -35418,8 +35493,8 @@ class PS5ConverterGUI:
             activebackground=c["bg_main"], activeforeground=c["fg_primary"],
             outline=c["bg_card"], radius=8, height=26,
             parent_bg=c["bg_card"])
-        leinwand.create_window(breite / 2, hoehe - rand - 12,
-                               window=schliessen, width=140, height=26)
+        leinwand.create_window(breite / 2, hoehe - rand - _m(12),
+                               window=schliessen, width=_m(140), height=_m(26))
 
         # Mittig ueber dem Hauptfenster.
         self.root.update_idletasks()
@@ -41358,7 +41433,11 @@ class PS5ConverterGUI:
         pfad = _bundled_resource(self._WEBKIT_ORDNER, self._WEBKIT_BILD)
         if not pfad or not os.path.isfile(pfad):
             return None
-        kante = self._WEBKIT_BILD_KANTE
+        # Mit der Anzeigeskalierung mitziehen: Der Platz, den das Fenster
+        # dafuer freihaelt, wird aus derselben Zahl gerechnet (``versatz`` in
+        # ``_show_webkit_autoloader``). Bliebe das Bild fest, entstuende dort
+        # auf einem hochaufloesenden Schirm eine Luecke.
+        kante = knopfmass(self._WEBKIT_BILD_KANTE)
         try:
             bild = Image.open(pfad).convert("RGBA")
             # Quadratisch aus der Mitte, damit nichts verzerrt.
@@ -41417,29 +41496,46 @@ class PS5ConverterGUI:
         # Überlappung**, und der Dank darunter wurde mitten im Wort
         # abgeschnitten. Das war keine Eigenheit einer Plattform, sondern
         # schlicht falsch addiert.
-        breite, rand = 520, 14
+        # Alle Masse ziehen mit der Anzeigeskalierung mit - wie im
+        # Auswahlfenster hinter Knopf 7. Die Knoepfe bekommen ihre Groesse
+        # hier per ``create_window`` von aussen; die innere Skalierung von
+        # ``RoundedButton`` kommt also nicht zum Tragen, ein doppelter Faktor
+        # kann nicht entstehen.
+        #
+        # **Jeder** Summand der Hoehe wird umgerechnet. Einen zu uebersehen
+        # waere genau der Fehler, den der Kommentar oben beschreibt.
+        def _m(px: float) -> int:
+            """Ein Mass dieses Fensters auf die Anzeigeskalierung umrechnen."""
+            return knopfmass(int(round(px)), fenster)
+
+        breite, rand = _m(520), _m(14)
         bild = self._webkit_bild_laden()
-        versatz = (self._WEBKIT_BILD_KANTE + 16) if bild is not None else 0
+        # Dieselbe Rechnung wie in ``_webkit_bild_laden`` - gleiche Eingabe,
+        # gleiches Ergebnis. Bild und reservierter Platz bleiben zusammen.
+        bildkante = knopfmass(self._WEBKIT_BILD_KANTE, fenster)
+        versatz = (bildkante + _m(16)) if bild is not None else 0
         #: Oberkante des ersten der drei Wege-Knöpfe.
-        knopf_oben = rand + 134 + versatz
+        knopf_oben = rand + _m(134) + versatz
         #: Unterkante des letzten – drei Knöpfe à 44 px im Abstand von 56.
-        knopf_unten = knopf_oben + 2 * 56 + 44 // 2
+        knopf_unten = knopf_oben + 2 * _m(56) + _m(44) // 2
         # Darunter Luft, der SCHLIESSEN-Knopf (26 px) und derselbe Rand wie oben.
-        hoehe = knopf_unten + 16 + 26 + rand
+        hoehe = knopf_unten + _m(16) + _m(26) + rand
         leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
                              highlightthickness=0, bd=0)
         leinwand.pack(fill="both", expand=True)
+        # Die 2 px Rahmenabstand bleiben ungerechnet: Eine Haarlinie soll
+        # auch auf einem hochaufloesenden Schirm eine Haarlinie bleiben.
         leinwand.create_polygon(
-            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, 22),
+            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, _m(22)),
             smooth=True, fill=c["bg_card"], outline=c["border"])
 
-        leinwand.create_text(breite / 2, rand + 22,
+        leinwand.create_text(breite / 2, rand + _m(22),
                              text=self._t("webkit.title"),
                              fill=c["fg_accent"],
                              font=(UI_SCHRIFT, pt(14), "bold"))
-        innen = breite - 2 * rand - 26
-        links = rand + 13
-        leinwand.create_text(breite / 2, rand + 64,
+        innen = breite - 2 * rand - _m(26)
+        links = rand + _m(13)
+        leinwand.create_text(breite / 2, rand + _m(64),
                              text=self._t("webkit.hint"),
                              fill=c["fg_secondary"], width=innen,
                              font=(UI_SCHRIFT, pt(9)))
@@ -41451,8 +41547,11 @@ class PS5ConverterGUI:
             # Referenz am Fenster halten – sonst räumt der Sammler das Bild
             # weg und die Fläche bleibt leer.
             fenster._webkit_bild = bild
-            leinwand.create_image(breite / 2, rand + 104 + 42, image=bild)
-        leinwand.create_text(breite / 2, rand + 104 + versatz,
+            # Die halbe Bildkante, nicht die feste 42: Sonst saesse das Bild
+            # schief, sobald es mit der Anzeigeskalierung waechst.
+            leinwand.create_image(breite / 2, rand + _m(104) + bildkante // 2,
+                                  image=bild)
+        leinwand.create_text(breite / 2, rand + _m(104) + versatz,
                              text=self._t("webkit.credit"),
                              fill=c["fg_secondary"], width=innen,
                              font=(UI_SCHRIFT, pt(9), "italic"))
@@ -41483,8 +41582,8 @@ class PS5ConverterGUI:
                 outline=c["border"], radius=10, height=44,
                 parent_bg=c["bg_card"])
             leinwand.create_window(links + innen / 2,
-                                   knopf_oben + lfd * 56,
-                                   window=knopf, width=innen, height=44)
+                                   knopf_oben + lfd * _m(56),
+                                   window=knopf, width=innen, height=_m(44))
 
         schliessen = RoundedButton(
             leinwand, text=self._t("webkit.close"),
@@ -41494,8 +41593,8 @@ class PS5ConverterGUI:
             activebackground=c["bg_main"], activeforeground=c["fg_primary"],
             outline=c["bg_card"], radius=8, height=26,
             parent_bg=c["bg_card"])
-        leinwand.create_window(breite / 2, hoehe - rand - 12,
-                               window=schliessen, width=140, height=26)
+        leinwand.create_window(breite / 2, hoehe - rand - _m(12),
+                               window=schliessen, width=_m(140), height=_m(26))
 
         self.root.update_idletasks()
         x = self.root.winfo_rootx() + (self.root.winfo_width() - breite) // 2
