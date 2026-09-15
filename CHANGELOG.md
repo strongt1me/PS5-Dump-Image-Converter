@@ -2,7 +2,21 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.20):** In „ffpfsc konvertieren“ gibt es jetzt den Weg **ffpfsc → ffpfsc** – er erscheint nur, wenn du **AMPR EMU Asset-Pack** gewählt hast, und baut das Asset-Pack in eine neue `.ffpfsc` ein. Dazu mehrere Stabilitäts-Fixes: das Programm **friert beim Starten nicht mehr ein**, wenn der Platz knapp wird; eine Einstellungsdatei mit BOM wird nicht mehr verworfen; und bei der Abschlussprüfung sowie beim Entpacken einer `.ffpkg` siehst du jetzt einen **Fortschritt** (das Entpacken lässt sich abbrechen).
+> **Kurz zum aktuellen Stand (v1.9.21):** Die eingebaute Bibliothek hinter „Abbild → PKG“ und dem Debug-PKG-Bau wurde aktualisiert. Sie schreibt die innere Struktur der erzeugten Debug-Pakete jetzt an mehreren Stellen so, wie es die Konsole erwartet – das kann die Chance erhöhen, dass ein gebautes Paket auf der Konsole angenommen wird. An der Bedienung ändert sich nichts.
+
+---
+
+## v1.9.21 – 15.09.2026
+
+Das eingebaute Paket-Werkzeug wurde aktualisiert.
+
+### PKG-Erzeugung: neuere Bibliothek
+
+Die eingebettete Bibliothek hinter „Abbild → PKG“ und dem Debug-PKG-Bau wurde
+auf eine neuere Fassung aktualisiert. Sie schreibt die innere Struktur der erzeugten
+Debug-Pakete an mehreren Stellen so, wie es die Konsole erwartet (u. a. die Ausrichtung
+des inneren Dateisystem-Kopfes). Das kann die Chance erhöhen, dass ein gebautes Paket
+auf der Konsole angenommen wird. An der Bedienung des Programms ändert sich nichts.
 
 ---
 

@@ -401,7 +401,7 @@
         </member>
         <member name="P:LibProsperoPkg.Content.FselfOptions.AuthorityId">
             <summary>
-            Overrides the authority id. When null, the id is derived from the ELF type and the ex-info byte.
+            Overrides the authority id. When null, the fake-authority id is written.
             </summary>
         </member>
         <member name="P:LibProsperoPkg.Content.FselfOptions.NormalizeHeader">
@@ -420,7 +420,7 @@
             <remarks>
             Layout (little-endian scalars):
             <list type="bullet">
-            <item>Container header, 0x20 bytes: magic <c>0x1D3D154F</c>, version/mode/endian/attr bytes, program type,
+            <item>Container header, 0x20 bytes: magic <c>0xEEF51454</c>, version/mode/endian/attr bytes, program type,
             header size, metadata size, file size, segment count, flags.</item>
             <item>Segment table at 0x20, one 0x20-byte entry per segment: flags, file offset, file size, memory
             size. Content segments come in pairs (a zero-filled digest segment then the data segment).</item>
@@ -433,6 +433,12 @@
         </member>
         <member name="F:LibProsperoPkg.Content.ProsperoFself.Magic">
             <summary>Container header magic at file offset 0x00.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.Content.ProsperoFself.FakeAuthorityId">
+            <summary>
+            Program authority id (PAID) a fake-self carries. One value covers an executable and a library
+            alike; it does not vary with the module type.
+            </summary>
         </member>
         <member name="M:LibProsperoPkg.Content.ProsperoFself.IsSelf(System.ReadOnlySpan{System.Byte})">
             <summary>Returns whether the buffer begins with a SELF container header.</summary>
@@ -2216,6 +2222,15 @@
             from its low bit (chunk0 <c>0x01</c>, chunk1 <c>0x10</c>): set = sub/delta, clear = raw.
             </summary>
         </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenDecoder.DecodeSubChunk(System.Byte[],System.Int32,System.Int32,System.Byte[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32)">
+            <summary>
+            Decodes one sub-chunk into <paramref name="outBuf"/> at <paramref name="dstStart"/>. A sub-chunk
+            whose compressed length equals its uncompressed length is a verbatim copy; otherwise it is a
+            newLZ sub-chunk when <paramref name="lzEnable"/> is set and a single entropy array when it is not.
+            <paramref name="restart"/> selects a fresh output window (own seed, no back-references) instead of
+            continuing the block's window.
+            </summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenDecoder.DecodeBareEntropyBlock(System.Byte[],System.Int32,System.Int32,System.Byte[],System.Int32,System.Int32)">
             <summary>
             Decodes one bare-entropy array: <paramref name="srcLen"/> bytes at <paramref name="srcStart"/>
@@ -2243,11 +2258,63 @@
             would not be smaller than the raw form (caller should then store the array raw, type 0).
             </summary>
         </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.MaxArrayPayload">
+            <summary>Largest payload the five-byte compressed array header can describe.</summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.CostInputs">
+            <summary>
+            The inputs the array-selection cost model needs about a Huffman candidate: the total code-length
+            bits over the array, the number of symbols with a nonzero count, the number of contiguous runs of
+            such symbols in the code-length table, and the size of the code-length transmission header.
+            </summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepared">
+            <summary>
+            A code assignment for one array: everything needed to score the entropy form, and everything
+            needed to emit it afterwards. Building this is much cheaper than packing the streams, so a caller
+            that may reject the form should prepare it, score it, and only then finish it.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepared.SingleSymbol">
+            <summary>True when every byte is the same symbol, which has its own eight-byte form.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepared.Symbol">
+            <summary>The only symbol present, when <see cref="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepared.SingleSymbol"/> is set.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.BuildSingleSymbolArray(System.Byte,System.Int32)">
+            <summary>
+            The eight-byte array a run of one repeated symbol takes: a five-byte header declaring a
+            three-byte payload, and a payload that is nothing but the code-length transmission for a
+            one-symbol alphabet. No symbol stream follows it.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.SingleSymbolPayload">
+            <summary>Payload bytes the one-symbol form carries.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.SingleSymbolArrayLength">
+            <summary>Total bytes the one-symbol form occupies.</summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.TryEncode(System.ReadOnlySpan{System.Byte})">
             <summary>
             Attempts to Huffman-encode <paramref name="data"/> as a single entropy array. Returns the
-            on-disk array bytes (header + payload) or <c>null</c> if not beneficial / not representable.
+            on-disk array bytes (header + payload) or <c>null</c> if not representable.
             </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.TryEncode(System.ReadOnlySpan{System.Byte},LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.CostInputs@)">
+            <summary>
+            As <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.TryEncode(System.ReadOnlySpan{System.Byte})"/>, and also reports the cost-model inputs the
+            caller needs to decide between this form and the uncompressed one.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepare(System.ReadOnlySpan{System.Byte},LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.CostInputs@)">
+            <summary>
+            Builds the code assignment and the code-length header for <paramref name="data"/> and reports the
+            cost-model inputs, without packing the symbol streams. Returns null when the array is not
+            representable in this form.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Finish(System.ReadOnlySpan{System.Byte},LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder.Prepared)">
+            <summary>Packs the symbol streams and returns the finished array, or null when it cannot be framed.</summary>
         </member>
         <member name="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenOptimalCost">
             <summary>
@@ -2388,11 +2455,42 @@
             The caller adds <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenOptimalCost.CostOffset(System.Int32,LibProsperoPkg.PFS.Compression.Oodle.KrakenOptimalCost.CodeCosts)"/> for the new distance separately.
             </summary>
         </member>
-        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock">
+        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenSuffixTrieMatcher">
+            <summary>
+            Compacted suffix trie over one block, filling a four-pair match table for every position.
+            One instance covers one block; matches never reach outside it.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenSuffixTrieMatcher.PairsPerPosition">
+            <summary>Pairs reported per position.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenSuffixTrieMatcher.IntsPerPosition">
+            <summary>Ints per position in the match table: one length and one offset per pair.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenSuffixTrieMatcher.#ctor(System.Byte[])">
+            <summary>Creates a matcher over <paramref name="data"/>, which must be one whole block.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.KrakenSuffixTrieMatcher.Run(System.Int32[])">
+            <summary>
+            Fills <paramref name="matches"/> for every position of the block. The array must hold
+            <c>data.Length * IntsPerPosition</c> ints.
+            </summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenSubChunkForm">
             <summary>
             The result of compressing one PFS block: the section-7 payload plus the metadata the boundary
             table needs (whether the block was split into two chunks, and the first chunk's compressed size).
             </summary>
+            <summary>The form a block's sub-chunk takes on disk.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenSubChunkForm.Lz">
+            <summary>A coded LZ sub-chunk.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenSubChunkForm.BareEntropy">
+            <summary>A single entropy array covering the whole sub-chunk, with no LZ table.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.KrakenSubChunkForm.Verbatim">
+            <summary>The sub-chunk's uncompressed bytes, copied.</summary>
         </member>
         <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.Payload">
             <summary>The bytes that land in section 7 for this block (one or two concatenated chunks).</summary>
@@ -2402,6 +2500,18 @@
         </member>
         <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.FirstChunkCompSize">
             <summary>The compressed size of the first chunk (the value stored, minus one, in the size hint).</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.Chunk0LitMode">
+            <summary>The literal model the first sub-chunk used: 0 = sub/delta, 1 = raw.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.Chunk1LitMode">
+            <summary>The literal model the second sub-chunk used, or 1 when the block has one sub-chunk.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.Chunk0Form">
+            <summary>The form the first sub-chunk took.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.EncodedBlock.Chunk1Form">
+            <summary>The form the second sub-chunk took; meaningless when the block has one sub-chunk.</summary>
         </member>
         <member name="T:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder">
             <summary>
@@ -2431,24 +2541,61 @@
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeBlock(System.ReadOnlySpan{System.Byte})">
             <summary>
-            Compresses <paramref name="data"/> (one PFS block) into a section-7 payload of one or two
-            newLZ chunks, or returns null if the data is too small or does not compress below its original
-            size.
+            Compresses <paramref name="data"/> (one PFS block) into a section-7 payload, or returns null
+            when the block must be stored whole.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeBlock(System.ReadOnlySpan{System.Byte},System.Boolean)">
             <summary>
-            Compresses <paramref name="data"/> (one PFS block) into a section-7 payload of one or two
-            newLZ chunks, or returns null if the data is too small or does not compress below its original
-            size. When <paramref name="useHuffmanArrays"/> is true
-            the literal/command/length arrays are Huffman-coded (entropy chunk type 2) via
-            <see cref="T:LibProsperoPkg.PFS.Compression.Oodle.KrakenHuffmanArrayEncoder"/> when that is smaller than the raw form, shrinking actual
-            blocks toward their target sizes. The packed-offset array is always left raw because the offset
-            reader inspects its first byte (the 0x80 bit selects two-table mode), which an entropy header
-            would corrupt.
+            Compresses <paramref name="data"/> (one PFS block) into a section-7 payload, or returns null when
+            the block must be stored whole. The block is split into sub-chunks of at most
+            <see cref="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ChunkMax"/> uncompressed bytes, and each sub-chunk independently takes the cheapest of
+            three forms: an LZ sub-chunk, a single entropy array over the whole sub-chunk, or a verbatim copy.
+            When <paramref name="useHuffmanArrays"/> is set the streams inside an LZ sub-chunk are entropy
+            coded wherever that wins the array score.
             </summary>
         </member>
-        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Boolean)">
+        <member name="T:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodedSubChunk">
+            <summary>One encoded sub-chunk: its container payload, the form it took and its literal model.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.CopyDecodeTime(System.Int32)">
+            <summary>Decode-time weight of a verbatim copy, in the units the array score model uses.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.WholeChunkDeadline(System.Int32)">
+            <summary>
+            The deadline the whole-sub-chunk entropy array has to meet. It is not applied to the arrays
+            inside an LZ sub-chunk.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeSubChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Boolean)">
+            <summary>
+            Encodes one sub-chunk in whichever of the three forms scores best. The order is fixed. When the
+            whole block is one repeated byte, every sub-chunk long enough to beat the eight-byte array takes
+            it and the rest are copied. Otherwise a sub-chunk below <see cref="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.TinyChunk"/> bytes is copied
+            without any comparison, a sub-chunk that is itself one repeated byte becomes the eight-byte array
+            without any comparison, and everything else is scored across the LZ form, the whole-sub-chunk
+            entropy array and the verbatim copy. Ties move away from the LZ form and toward the copy.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ConstantRunArrayLength">
+            <summary>Bytes the constant-run form occupies; a sub-chunk this short is copied instead.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ConstantRunArray(System.Byte,System.Int32)">
+            <summary>The eight-byte form a constant run takes, as a whole sub-chunk.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.TryWholeChunkArray(System.ReadOnlySpan{System.Byte},System.Single,System.Single@)">
+            <summary>
+            Encodes the whole sub-chunk as a single entropy array, or returns null when it does not beat
+            <paramref name="budget"/>, misses the decode deadline, or does not come out below the raw size.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.MatchTable">
+            <summary>
+            The per-position match table for the block currently being encoded: four length/offset pairs per
+            position, shared by the greedy pre-passes and the forward DP.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32@,System.Single@,System.Boolean)">
             <summary>
             Encodes the output range [<paramref name="chunkStart"/>, <paramref name="chunkEnd"/>) of
             <paramref name="data"/> as one newLZ chunk. The shared <paramref name="head"/>/<paramref name="prev"/>
@@ -2457,23 +2604,73 @@
             chunk decoded at a non-zero output offset).
             </summary>
         </member>
-        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EmitChunkFromCommands(System.ReadOnlySpan{System.Byte},System.Collections.Generic.List{LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Command},System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32)">
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EmitChunkFromCommands(System.ReadOnlySpan{System.Byte},System.Collections.Generic.List{LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Command},System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32@)">
             <summary>
             Builds the newLZ stream arrays from an already-computed parse and assembles the chunk bytes
-            (entropy-coding the lit/cmd/length arrays when beneficial). Factored out of <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Boolean)"/>
+            (entropy-coding the lit/cmd/length arrays when beneficial). Factored out of <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32@,System.Single@,System.Boolean)"/>
             so a diagnostic can measure the actual entropy-coded emit size of an externally supplied parse
             (its size vs the DP's) — the metric the level-7 producer actually minimises in its final
             greedy-vs-DP selection (actual-emit-size pick). Returns null when the parse needs a store-raw
             fallback (a literal run over MaxLitRun or a match starting inside the no-match zone).
             </summary>
         </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EmitChunkFromCommands(System.ReadOnlySpan{System.Byte},System.Collections.Generic.List{LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Command},System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32,System.Int32@,System.Single@)">
+            <summary>
+            As the other overload, and also reports the chunk's score: the arrays contribute the score the
+            array writer assigned them and every other byte contributes itself.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ChooseLitMode(System.Collections.Generic.List{System.Byte},System.Collections.Generic.List{System.Byte},System.Boolean)">
+            <summary>
+            Chooses the chunk's literal model: 0 = sub/delta, 1 = raw. The sub candidate is offered first and
+            becomes the budget the raw candidate must beat, so three rules apply in order: fewer than 32
+            literals always take raw; a sub array that does not encode smaller than the literal count is
+            discarded and raw is taken; otherwise raw wins only when it is strictly smaller, so an exact tie
+            keeps sub. The sizes are the exact byte lengths the array emitter would write.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ArrayLambda">
+            <summary>
+            Space-speed weight in the array method decision. It multiplies the estimated decode time of an
+            entropy-coded array, so a larger value biases the decision toward the uncompressed form.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ArrayCompressedBias">
+            <summary>Fixed cost added to an entropy-coded array's score.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.RawArrayHeader">
+            <summary>Header bytes an uncompressed array carries.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.MinEntropyArray">
+            <summary>An array this short or shorter is written uncompressed without building a histogram.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ArrayDecodeTime(System.Int32,System.Int32,System.Int32,System.Single)">
+            <summary>
+            Estimated decode time of a three-stream entropy array of <paramref name="length"/> bytes over an
+            alphabet of <paramref name="nonZeroSymbols"/> symbols in <paramref name="alphabetRuns"/> contiguous
+            runs, whose codes average <paramref name="averageBits"/> bits.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.PutArray(System.Collections.Generic.List{System.Byte},System.Boolean,System.Single@,System.Byte[]@,System.Int32@)">
+            <summary>
+            The array writer's decision, scored the way the format producer scores it. The incoming
+            <paramref name="budget"/> is the score this array has to beat; the uncompressed form scores
+            <c>length + 3</c> and caps the budget. The entropy form is accepted only when its estimated score
+            is strictly below that capped budget, so an exact tie keeps the incumbent. On acceptance the
+            budget is lowered to the entropy form's real score; when the entropy form loses and the incoming
+            budget was already no worse than the uncompressed form, the writer declines to write anything.
+            </summary>
+            <returns>The bytes to write, the length written, and whether anything was written at all.</returns>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodedArraySize(System.Collections.Generic.List{System.Byte},System.Boolean)">
+            <summary>The byte length the emitter writes for <paramref name="array"/> with an open budget.</summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.WriteArray(System.Collections.Generic.List{System.Byte},System.Collections.Generic.List{System.Byte},System.Boolean)">
             <summary>
-            Writes <paramref name="array"/> as an entropy (Huffman) array when <paramref name="useHuffman"/>
-            is set and the Huffman form wins the space-speed J cost against the raw
-            form (see <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.HuffmanBeatsRawJ(System.Int32,System.Int32)"/>); otherwise writes it raw. The literal/command/length
-            streams are read by the decoder via plain <c>DecodeBytes</c>, so a type-2 entropy array is
-            transparently accepted in their place.
+            Writes <paramref name="array"/> in whichever form <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.PutArray(System.Collections.Generic.List{System.Byte},System.Boolean,System.Single@,System.Byte[]@,System.Int32@)"/> selects: an entropy
+            (Huffman) array when it wins the space-speed score against the uncompressed form, otherwise the
+            uncompressed form. The literal, command, offset and length streams are all read back through the
+            same array reader, so either form is accepted in any of them.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Parse(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Int32,System.Int32)">
@@ -2504,13 +2701,13 @@
             It searches repeat offsets first, then scans the four-pair Pareto new-match frontier through <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.IsAllowedNormalMatch(System.Int32,System.Int32)"/> and <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.IsNormalMatchBetter(System.Int32,System.Int32,System.Int32,System.Int32)"/>, and finally chooses between repeat and new matches with <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.TakeNewOverRep(System.Int32,System.Int32,System.Int32)"/>.
             </summary>
         </member>
-        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.FindParetoPairs(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32[],System.Int32[],System.Int32,System.Span{System.Int32},System.Span{System.Int32})">
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.FindParetoPairs(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32,System.Span{System.Int32},System.Span{System.Int32})">
             <summary>
-            Reproduces the suffix-trie match output: the per-position Pareto frontier (closest
-            offset per achievable length), capped to the 4 longest pairs, length-descending. Walks the full-history
-            4-byte hash chain most-recent-first (distance ascending) and records (len,dist) only when len exceeds
-            the running best. This is the same walk <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.FindCandidates(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32[],System.Int32[],System.Int32,LibProsperoPkg.PFS.Compression.Oodle.KrakenOptimalCost.CodeCosts,System.Span{System.Int32},System.Span{System.Int32},System.Span{System.Int32},LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Ctmf)"/> uses for the DP, minus the
-            synthetic off-8 append the greedy selector must not see.
+            Returns the new-match candidates at <paramref name="pos"/> from the block match table, in the
+            table's own order (length descending, offset descending). Lengths that overrun the chunk's
+            match-end limit are capped; candidates that collapse onto the same capped tail end are dropped so
+            only the longest-uncapped distance survives, and sub-minimum distances are left for the caller to
+            round up.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.RepExtendMml2(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32,System.Int32)">
@@ -2557,9 +2754,18 @@
             fall before the start of the buffer.
             </summary>
         </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.MatchLengthMinimum4(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32,System.Int32)">
+            <summary>Match length quantized to a four-byte minimum: shorter runs report nothing.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.MatchLengthMinimum3(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32,System.Int32)">
+            <summary>
+            Match length quantized to a three-byte minimum: four or more bytes report the full run, exactly
+            three report three, anything shorter reports nothing.
+            </summary>
+        </member>
         <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.UseOptimalParse">
             <summary>
-            When true, <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Boolean)"/> uses <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ParseOptimal(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Boolean,System.Boolean)"/> instead of the greedy <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Parse(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Int32,System.Int32)"/> path.
+            When true, <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.EncodeChunk(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32@,System.Single@,System.Boolean)"/> uses <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.ParseOptimal(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Int32,System.Boolean,System.Boolean)"/> instead of the greedy <see cref="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.Parse(System.ReadOnlySpan{System.Byte},System.Int32[],System.Int32[],System.Int32,System.Int32,System.Int32,System.Int32)"/> path.
             Default false keeps the production encode path on the greedy parser unless a caller explicitly enables the optimal parse.
             </summary>
         </member>
@@ -2685,8 +2891,8 @@
         </member>
         <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.UseLongMatchSkip">
             <summary>
-            When true, a parse position whose longest relaxed match reaches the optimal-skip length advances directly to that match frontier.
-            Default true skips intermediate parse positions inside the long match; disabling it scans every position.
+            A parse position whose longest relaxed match reaches the optimal-skip length advances directly to
+            that match frontier, skipping the intermediate positions the long match swallows.
             </summary>
         </member>
         <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.UseReanchorTie">
@@ -2780,6 +2986,27 @@
             Total cost (bits×32) of a command list under <paramref name="cc"/>, accumulated exactly as the
             forward DP accumulates an arrival (literal run + LRL escape + rep/new match) plus the trailing
             literal run to <paramref name="chunkEnd"/>. Used to pick the cheapest parse across passes.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.CarriedPassinfo">
+            <summary>
+            The histogram set the previous chunk of the same block ended with, and the literal model it
+            emitted. A chunk after the first seeds its cost model by blending these into its own greedy
+            tally instead of decaying that tally alone. Reset for every block; never carried between blocks,
+            and never set when the greedy parse beat the optimal one.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.CarriedLitMode">
+            <summary>The literal model the previous chunk of the block emitted, or -1 when nothing is carried.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.PendingCarryPassinfo">
+            <summary>Set by the optimal parse when its output won, so the emit path knows to carry its state.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.BlendSeedPassinfo(System.Int32[],System.Int32[],System.Boolean)">
+            <summary>
+            Blends the carried histogram set into this chunk's greedy tally. Literal histograms blend only
+            when the literal model is unchanged, otherwise they decay on their own. When the offset-table
+            count changed the chunk's own offset tallies are replaced by the carried ones and decayed.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.Oodle.OodleKrakenEncoder.DecaySeedPassinfo(System.Int32[])">
@@ -2908,8 +3135,21 @@
         </member>
         <member name="P:LibProsperoPkg.PFS.Compression.PfsBlock.FirstChunkCompressedSize">
             <summary>
-            For a two-chunk compressed block, the compressed size in bytes of the first chunk (recovered
-            from the boundary size hint); zero otherwise. The second chunk occupies the remaining bytes.
+            The compressed size in bytes of the block's first sub-chunk, recovered from the boundary size
+            hint. The second sub-chunk, when present, occupies the remaining bytes. The hint carries this
+            value for every block, including single-sub-chunk and stored blocks.
+            </summary>
+        </member>
+        <member name="P:LibProsperoPkg.PFS.Compression.PfsBlock.Chunk0UncompressedSize">
+            <summary>
+            The uncompressed size in bytes of the block's first sub-chunk: the whole block for a block of
+            at most 128 KiB, otherwise exactly 128 KiB.
+            </summary>
+        </member>
+        <member name="P:LibProsperoPkg.PFS.Compression.PfsBlock.Chunk1UncompressedSize">
+            <summary>
+            The uncompressed size in bytes of the block's second sub-chunk, or zero when the block has one
+            sub-chunk.
             </summary>
         </member>
         <member name="P:LibProsperoPkg.PFS.Compression.PfsBlock.LiteralMode">
@@ -3036,6 +3276,36 @@
         <member name="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.DefaultBlockSize">
             <summary>The default logical block size for PS5 v3 containers (256 KiB).</summary>
         </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.FormNibble(LibProsperoPkg.PFS.Compression.Oodle.KrakenSubChunkForm,System.Int32,System.Boolean)">
+            <summary>
+            The flag nibble a sub-chunk contributes. Sub-chunk 0 always restarts the output window, so its
+            nibble carries bit 2; an LZ sub-chunk 1 continues the same window and does not. A verbatim or
+            entropy-array sub-chunk ignores the window origin, so it restarts in either position.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.SubChunkSize">
+            <summary>The uncompressed size of one Kraken sub-chunk; a larger block is split into two.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.MinCompressibleBlock">
+            <summary>Blocks of at most this many bytes are never compressed.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.KeepCompressed(System.Int32,System.Int32)">
+            <summary>
+            The compress-vs-store decision. The size compared is the codec stream's own size, which carries
+            framing the container payload does not: five bytes per block plus three bytes per sub-chunk.
+            A block is kept compressed only when that size is at most <c>uncompressedSize * 15 / 16</c>.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteBlockSignature(System.Span{System.Byte},System.ReadOnlySpan{System.Byte})">
+            <summary>
+            Writes the block's 16-byte id=5 signature: two running-sum pairs over the block's uncompressed
+            bytes. The first pair covers the leading <see cref="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.SignatureWindow"/> bytes with the window
+            zero-extended to its full length, packed as <c>sum | (weighted &lt;&lt; 25)</c> in wrapping 64-bit
+            arithmetic (the windowed sum never exceeds 25 bits, so the fields do not overlap). The second pair
+            covers the whole block and packs the weighted sum in the high 32 bits and the plain sum in the low
+            32 bits. Both are independent of the block index, offsets, flags and compression outcome.
+            </summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteStored(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32)">
             <summary>
             Builds a stored (uncompressed) PFSv3 compression container for <paramref name="payload"/> and
@@ -3056,23 +3326,81 @@
             <paramref name="destination"/>.
             </summary>
         </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteStored(System.IO.Stream,System.IO.Stream,System.Int64,System.Int32,System.Int32)">
+            <summary>
+            Streams a stored PFSv3 container for <paramref name="sourceLength"/> bytes read from
+            <paramref name="source"/> into <paramref name="destination"/>, which must be seekable and
+            writable. Memory use is independent of the input length.
+            </summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteCompressed(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32,System.Boolean)">
             <summary>
             Builds a Kraken-compressed PFSv3 container for <paramref name="payload"/>. Each logical block is
-            compressed with the Kraken encoder; blocks that do not compress below their stored
-            size are written stored (isBlockCompressed = 0). The resulting container round-trips exactly through
-            the decoder.
+            compressed; blocks that do not compress far enough are written stored. The result round-trips
+            exactly through the decoder.
             </summary>
             <param name="payload">The uncompressed data to wrap.</param>
-            <param name="level">The Kraken level recorded in the header (default 7, matching "nwonly").</param>
+            <param name="level">The Kraken level recorded in the header (default 7).</param>
             <param name="blockSize">The logical block size (default 256 KiB). Must be positive.</param>
-            <param name="useHuffmanArrays">When true (the default), the literal/command/length streams within
-            each chunk are Huffman-coded (entropy chunk type 2) where that is smaller than the raw form,
-            producing markedly smaller blocks. Pass false for raw entropy arrays (larger, useful for
-            debugging/determinism). Both forms round-trip exactly through the decoder.</param>
+            <param name="useHuffmanArrays">When true (the default) the streams inside a coded sub-chunk are
+            entropy coded wherever that wins the array score.</param>
             <returns>The serialized PFSv3 container.</returns>
             <exception cref="T:System.ArgumentOutOfRangeException"><paramref name="blockSize"/> is not positive.</exception>
+            <exception cref="T:System.NotSupportedException">The container would exceed the largest array this runtime
+            can allocate. Use the <see cref="T:System.IO.Stream"/> overload.</exception>
             <exception cref="T:System.PlatformNotSupportedException">SHA3-256 is unavailable on this host.</exception>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteCompressed(System.IO.Stream,System.IO.Stream,System.Int64,System.Int32,System.Int32,System.Boolean,System.Int32)">
+            <summary>
+            Streams a Kraken-compressed PFSv3 container for <paramref name="sourceLength"/> bytes read from
+            <paramref name="source"/> into <paramref name="destination"/>. The output is byte for byte what
+            the array overload produces, and memory use depends on the block size and the degree of
+            parallelism rather than on the input length, so an input of any size the format allows can be
+            packaged.
+            </summary>
+            <param name="destination">Seekable, writable. The container is written at its current position.</param>
+            <param name="source">Readable; read exactly once, front to back. Need not be seekable.</param>
+            <param name="sourceLength">The logical length to read from <paramref name="source"/>.</param>
+            <param name="level">The Kraken level recorded in the header (default 7).</param>
+            <param name="blockSize">The logical block size (default 256 KiB). Must be positive.</param>
+            <param name="useHuffmanArrays">As the array overload.</param>
+            <param name="maxDegreeOfParallelism">Blocks encoded at once; -1 uses the processor count.
+            The output does not depend on this value.</param>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.Write(System.IO.Stream,System.IO.Stream,System.Int64,System.Int32,System.Int32,System.Boolean,System.Boolean,System.Int32)">
+            <summary>
+            The one writer. Everything the layout needs is known from the logical length, so the metadata is
+            reserved first, the blocks stream past in index order, and only the sentinel, the id=7 size, the
+            total size and the file digest are written afterwards.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.WriteDirectoryEntry(System.Span{System.Byte},System.Int32,System.UInt16,System.Int64,System.Int64)">
+            <summary>
+            Writes one section-directory entry. The offset and the size are each 48 bits: a low 32-bit word
+            followed by a 16-bit high word, so a container may exceed 4 GiB.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.MaxContainerExtent">
+            <summary>Largest value the 44-bit offset fields of the boundary table can hold.</summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.Layout">
+            <summary>The fixed part of the layout: every section size and offset follows from the block count.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.Layout.#ctor(System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64,System.Int64)">
+            <summary>The fixed part of the layout: every section size and offset follows from the block count.</summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.ContainerBlock">
+            <summary>
+            One block as it lands in the container: the bytes for section id=7, the boundary flags and the
+            size hint. The digest and the signature are written straight into the caller's tables.
+            </summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFileWriter.EncodeContainerBlock(System.ReadOnlySpan{System.Byte},System.Boolean,System.Boolean,System.Span{System.Byte},System.Span{System.Byte})">
+            <summary>
+            The whole per-block decision, in one place so the in-memory and streaming writers cannot drift:
+            encode the block, decide whether the coded form is kept, derive the flags and the size hint, and
+            fill in the block's digest and signature.
+            </summary>
         </member>
         <member name="T:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImageResult">
             <summary>The outcome of a <see cref="T:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage"/> pack operation.</summary>
@@ -3113,6 +3441,24 @@
         </member>
         <member name="F:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage.DefaultLevel">
             <summary>The default Kraken level recorded in the header (7, matching "nwonly").</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage.PackTo(System.IO.Stream,System.IO.Stream,System.Int64,System.Int32,System.Int32)">
+            <summary>
+            Streams a prepared inner image into a PS5 Kraken PFSv3 container. The output is byte for byte
+            what <see cref="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage.Pack(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32)"/> produces, and neither the image nor the
+            container is held in memory.
+            </summary>
+            <param name="destination">Seekable, writable. The container is written at its current position.</param>
+            <param name="source">Readable; read once, front to back.</param>
+            <param name="sourceLength">The logical length to read from <paramref name="source"/>.</param>
+            <param name="level">The Kraken level recorded in the header. Default 7.</param>
+            <param name="blockSize">The logical block size. Default 256 KiB. Must be positive.</param>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage.ReadBlockStatistics(System.String)">
+            <summary>
+            Reads a container's block tables and counts how many blocks were kept compressed, without
+            reading the block payloads.
+            </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsImage.Pack(System.ReadOnlySpan{System.Byte},System.Int32,System.Int32)">
             <summary>
@@ -3537,6 +3883,47 @@
             Flag for PFSC encoded files
             </summary>
         </member>
+        <member name="T:LibProsperoPkg.PFS.ProsperoInnerFilePolicy">
+            <summary>How the inner image treats one file.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFilePolicy.Compress">
+            <summary>Submitted to the codec; each block then decides for itself whether to stay compressed.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFilePolicy.StoreVerbatim">
+            <summary>Stored verbatim: every block of the file is a stored block.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFilePolicy.RequiresModuleConversion">
+            <summary>The file is an executable image that must become a signed module before it can be packaged.</summary>
+        </member>
+        <member name="T:LibProsperoPkg.PFS.ProsperoInnerFileClassifier">
+            <summary>
+            Classifies a file for the inner image. An application or additional-content volume stores only
+            already-signed modules verbatim; an unsigned executable image has to be converted first, except for
+            the one shape that is not an executable at all and is compressed like any other file.
+            </summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.SignedModuleMagic">
+            <summary>A signed module container.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.ExecutableImageMagic">
+            <summary>A raw executable image.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.ImageTypeOffset">
+            <summary>Offset of the executable image's type field.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.ImageMachineOffset">
+            <summary>Offset of the executable image's machine field.</summary>
+        </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.HeaderLength">
+            <summary>Bytes of the file header the classifier reads at most.</summary>
+        </member>
+        <member name="M:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.Classify(System.ReadOnlySpan{System.Byte})">
+            <summary>
+            Classifies a file from its leading bytes. Passing fewer than <see cref="F:LibProsperoPkg.PFS.ProsperoInnerFileClassifier.HeaderLength"/> bytes is
+            allowed; a file too short to identify is compressed.
+            </summary>
+            <param name="header">The file's leading bytes.</param>
+        </member>
         <member name="T:LibProsperoPkg.PFS.ProsperoOuterFile">
             <summary>
             Describes one file that lives at the <em>outer</em> level of a PS5 nwonly finalized image.
@@ -3870,7 +4257,9 @@
         </member>
         <member name="M:LibProsperoPkg.PFS.ProsperoPfsBuilder.inoNumberToOffset(System.UInt32,System.Int32)">
             <summary>
-            Given an inode number and an index into the db[] array, returns the absolute offset of that array value
+            Given an inode number and an index into the db[] array, returns the absolute offset of that array value.
+            Inodes are packed per block with padding at the tail of each block, so the block boundary is applied
+            rather than treating the table as one contiguous run.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.ProsperoPfsBuilder.CalculateDataBlockLayout">
@@ -4690,6 +5079,12 @@
         <member name="P:LibProsperoPkg.PFS.ProsperoPs5InnerFile.Data">
             <summary>The uncompressed file bytes.</summary>
         </member>
+        <member name="P:LibProsperoPkg.PFS.ProsperoPs5InnerFile.Policy">
+            <summary>
+            How the image should treat this file. Leave null to classify it from its own header with
+            <see cref="T:LibProsperoPkg.PFS.ProsperoInnerFileClassifier"/>.
+            </summary>
+        </member>
         <member name="T:LibProsperoPkg.PFS.ProsperoPs5InnerImageResult">
             <summary>The assembled inner image plus the intermediate model (for verification/diagnostics).</summary>
         </member>
@@ -4865,8 +5260,8 @@
         </member>
         <member name="M:LibProsperoPkg.PFS.ProsperoPs5InnerImageBuilder.CompressPayload(System.Byte[],System.Boolean)">
             <summary>
-            Kraken-compresses a payload into its concatenated on-disk bytes (256 KiB blocks). Returns the raw bytes
-            when compression does not save at least 6.25%, or when <paramref name="storeRaw"/>.
+            Compresses a payload into its concatenated on-disk bytes (256 KiB blocks), or returns the caller's
+            own array unchanged when <paramref name="storeRaw"/> is set.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PFS.ProsperoPs5InnerImageBuilder.CompressPayload(System.Byte[],System.Boolean,LibProsperoPkg.PFS.Compression.ProsperoCompressedPfsFile@)">
@@ -5131,8 +5526,8 @@
         <member name="M:LibProsperoPkg.PKG.ProsperoDdsEncoder.EncodeRgbaToDds(System.Byte[],System.Int32,System.Int32)">
             <summary>
             Encodes a tightly-packed top-down RGBA8 buffer (<paramref name="width"/>x<paramref name="height"/>,
-            4 bytes/pixel) into a BC7 DX10 DDS file. Dimensions are rounded up to a multiple of four for
-            block alignment (edge pixels are repeated), matching how DDS surfaces store partial blocks.
+            4 bytes/pixel) into a BC7 DX10 DDS file. The header carries the true image dimensions; the block
+            surface is rounded up to a multiple of four (edge pixels are repeated) for the partial-block payload.
             </summary>
         </member>
         <member name="T:LibProsperoPkg.PKG.ProsperoExtractionKeyKind">
@@ -5253,7 +5648,7 @@
             <param name="nwonlyInnerContentInodes">Inner content-inode count (directories and files below uroot).</param>
             <param name="nwonlyAppFileCount">Application-payload file count for the FIH file-count field.</param>
         </member>
-        <member name="M:LibProsperoPkg.PKG.ProsperoFihBuilder.BuildFihHeaderBlock(LibProsperoPkg.PKG.ProsperoFihVariant,System.UInt64,System.UInt64,System.Byte[],System.Collections.Generic.List{System.String},System.Byte[],System.Int64,System.Int64,System.UInt32,System.Int32,System.Int32)">
+        <member name="M:LibProsperoPkg.PKG.ProsperoFihBuilder.BuildFihHeaderBlock(LibProsperoPkg.PKG.ProsperoFihVariant,System.UInt64,System.UInt64,System.Byte[],System.Collections.Generic.List{System.String},System.Byte[],System.Int64,System.Int64,System.UInt32,System.Int32,System.Int32,System.Int64)">
             <summary>
             Builds the 0x10000-byte finalized-image (FIH) header block. This is a SHARED, cycle-free helper used
             by both the standalone FIH writer (<see cref="M:LibProsperoPkg.PKG.ProsperoFihBuilder.BuildFromCnt(System.String,System.String,LibProsperoPkg.PKG.ProsperoFihVariant,System.Action{System.String},System.Byte[],System.Func{System.Byte[],System.Byte[]},System.Byte[],System.Int64,System.Int64,System.UInt32,System.Int32,System.Int32)"/>) and the PS5 CNT builder so the
@@ -5483,8 +5878,9 @@
         </member>
         <member name="P:LibProsperoPkg.PKG.NapsLayoutCounts.NumU2cEntries">
             <summary>
-            Number of 10-byte <c>CblockInfoOffsetByUblockIdxCompressed</c> (u2c) entries: one per group of
-            8 uncompressed blocks (each entry carries a uint24 base plus 7 per-ublock deltas).
+            Number of 10-byte <c>CblockInfoOffsetByUblockIdxCompressed</c> (u2c) entries: <c>(m_numUBlocks + 8) &gt;&gt; 3</c>.
+            Each entry covers a group of 8 uncompressed blocks (a uint24 base plus 7 per-ublock deltas); the
+            <c>+8</c> (rather than <c>+7</c>) adds a trailing group whenever the block count is a multiple of 8.
             </summary>
         </member>
         <member name="P:LibProsperoPkg.PKG.NapsLayoutCounts.NumFileOffsetEntries">
@@ -6389,6 +6785,9 @@
         <member name="P:LibProsperoPkg.PKG.ProsperoFihNwonlyFields.AppFileCount">
             <summary>FIH 0xF0: app-payload (non-sce_sys) regular file count.</summary>
         </member>
+        <member name="P:LibProsperoPkg.PKG.ProsperoFihNwonlyFields.Ndblock">
+            <summary>Inner PFS total block count (Ndblock) for the logical mount size at FIH 0xA0.</summary>
+        </member>
         <member name="T:LibProsperoPkg.PKG.ProsperoVolumeType">
             <summary>The PS5 volume kind, which selects the content-type code stamped into the header.</summary>
         </member>
@@ -6465,8 +6864,9 @@
         <member name="M:LibProsperoPkg.PKG.ProsperoPkgBuilder.ContentVersionHigh(System.String)">
             <summary>
             FIH 0x9C value: the high 32 bits of the param/content_ver u64 stored in the FIH header.
-            <paramref name="contentVersion"/> is the param.json "MM.mmm.ppp" string (e.g. "01.000.000"); the major
-            field is BCD-encoded into the top byte, giving 0x01000000 for content version 01.00.
+            <paramref name="contentVersion"/> is the param.json "MM.mmm.ppp" string (e.g. "01.001.000"). All three
+            fields are BCD-encoded and packed 2-3-3 hex digits: major in the top byte, minor in bits 12-23 and
+            patch in bits 0-11, so "01.001.000" gives 0x01001000 and "01.000.000" gives 0x01000000.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.PKG.ProsperoPkgBuilder.FormatSystemVersion(System.String)">
@@ -8240,15 +8640,22 @@
             Creates a non-owning read-only window into a stream
             </summary>
         </member>
+        <member name="T:LibProsperoPkg.Util.XtsBlockTransform">
+            <summary>
+            AES-XTS-128 sector transform. The AES engines and their block transforms are created once and
+            reused across every sector, so the per-sector path allocates nothing. A single instance is not
+            thread-safe; give each thread its own instance.
+            </summary>
+        </member>
         <member name="M:LibProsperoPkg.Util.XtsBlockTransform.#ctor(System.Byte[],System.Byte[])">
             <summary>
-            Creates an AES-XTS-128 transformer
+            Creates an AES-XTS-128 transformer.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.Util.XtsBlockTransform.CreateEcbAes(System.Byte[])">
             <summary>
             Creates a single-block AES-128-ECB engine (no padding) used as the primitive for
-            the manual XTS transform. Uses the modern <see cref="M:System.Security.Cryptography.Aes.Create"/> factory.
+            the manual XTS transform.
             </summary>
         </member>
         <member name="M:LibProsperoPkg.Util.XtsBlockTransform.CryptSector(System.Byte[],System.UInt64,System.Boolean)">

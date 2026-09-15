@@ -1,9 +1,25 @@
 # ProsperoPkg 2.5 — Herkunft und Neubau
 
+> **Aktualisierung 15.09.2026 — Bibliothek jetzt LibProsperoPkg 2.6.0.**
+> Alle vier Bauten (`win-x64`, `linux-x64`, `osx-x64`, `osx-arm64`) wurden gegen
+> **LibProsperoPkg 2.6.0** (SvenGDK `main`, Tag-Stand `748eabf`) neu gebaut. Die
+> Quelle liegt im SDK-Ordner unter `LibProsperoPKG-2.6.0/`. Die Hülle
+> (`src/ProsperoPkgCli/`) blieb **unverändert** — sie kompiliert ohne Anpassung
+> gegen die 2.6.0-API, und die `--schnell`-Felder (`ProductionOptimalSingleChunk`,
+> `ProductionWindowedOptimal`) sind weiterhin per Reflexion erreichbar. Grund für
+> den Umstieg: 2.6.0 bringt konsolenrelevante Korrekturen (U-Block-Ausrichtung des
+> inneren Superblocks, byte-umgekehrte `imagedigs`-Digests, neue u2c-Formel), die
+> für CE-100096-6 zählen könnten. **Der Ordnername bleibt `ProsperoPkg-2.5`** (er
+> ist in `.spec`, `prosperopkg.py` und Tests verdrahtet; ein Umbenennen wäre
+> unnötiger Aufwand) — die Zahl im Namen meint nicht mehr die Bibliotheksversion.
+> Gebaut mit `-p:DebugType=none` (keine `.pdb`), `-p:LibProsperoPkgProject=<2.6.0-Pfad>`.
+> Verifiziert: `prosperopkg read` liest ein echtes PS5-Paket; test_prosperopkg,
+> test_prosperopkg_lesen, test_exfat_pkg_builder, test_build_ready grün.
+
 ## Was hier liegt
 
 `win-x64/prosperopkg.exe` ist eine schmale Kommandozeilen-Hülle um
-**LibProsperoPkg 2.5**, eine Bibliothek, die PS5-Pakete baut und liest.
+**LibProsperoPkg 2.6.0** (bis 14.09.2026: 2.5), eine Bibliothek, die PS5-Pakete baut und liest.
 
 Das Programm ruft sie als **eigenen Prozess** auf — genauso wie `mkpfs`
 und `UFS2Tool`. Das ist keine Bequemlichkeit, sondern Absicht:

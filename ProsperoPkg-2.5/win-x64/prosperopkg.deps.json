@@ -1,25 +1,24 @@
 {
   "runtimeTarget": {
-    "name": ".NETCoreApp,Version=v10.0/win-x64",
+    "name": ".NETCoreApp,Version=v10.0",
     "signature": ""
   },
   "compilationOptions": {},
   "targets": {
-    ".NETCoreApp,Version=v10.0": {},
-    ".NETCoreApp,Version=v10.0/win-x64": {
+    ".NETCoreApp,Version=v10.0": {
       "prosperopkg/1.0.0": {
         "dependencies": {
-          "LibProsperoPkg": "2.5.0"
+          "LibProsperoPkg": "2.6.0"
         },
         "runtime": {
           "prosperopkg.dll": {}
         }
       },
-      "LibProsperoPkg/2.5.0": {
+      "LibProsperoPkg/2.6.0": {
         "runtime": {
           "LibProsperoPkg.dll": {
-            "assemblyVersion": "2.5.0.0",
-            "fileVersion": "2.5.0.0"
+            "assemblyVersion": "2.6.0.0",
+            "fileVersion": "2.6.0.0"
           }
         }
       }
@@ -31,7 +30,7 @@
       "serviceable": false,
       "sha512": ""
     },
-    "LibProsperoPkg/2.5.0": {
+    "LibProsperoPkg/2.6.0": {
       "type": "project",
       "serviceable": false,
       "sha512": ""
