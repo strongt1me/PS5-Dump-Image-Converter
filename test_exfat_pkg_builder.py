@@ -110,6 +110,63 @@ class ParamUndWurzelTests(unittest.TestCase):
             json.dump(PARAM_VORLAGE, f, ensure_ascii=False, indent=2)
         return tmp.name, wurzel
 
+    def _dump_mit_playgo_feldern(self):
+        """Wie ``_dump``, aber mit ``versionFileUri`` und ``attribute3``.
+
+        Die Vorlage hat beide nicht - genau deshalb taugt sie als Gegenprobe
+        fuer den Fall "Feld fehlt".
+        """
+        tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
+        self.addCleanup(tmp.cleanup)
+        sce = os.path.join(tmp.name, "sce_sys")
+        os.makedirs(sce)
+        daten = dict(PARAM_VORLAGE)
+        daten["versionFileUri"] = "http://example.invalid/version.xml"
+        daten["attribute3"] = 4096
+        pfad = os.path.join(sce, "param.json")
+        with open(pfad, "w", encoding="utf-8") as f:
+            json.dump(daten, f, ensure_ascii=False, indent=2)
+        return pfad, list(daten.keys())
+
+    def test_playgo_felder_werden_zurueckgesetzt(self):
+        pfad, reihenfolge = self._dump_mit_playgo_feldern()
+        geaendert = self.app._exfat_pkg_playgo_felder(pfad)
+        self.assertEqual(["versionFileUri", "attribute3"], geaendert)
+        with open(pfad, encoding="utf-8") as f:
+            neu = json.load(f)
+        self.assertEqual("", neu["versionFileUri"])
+        self.assertEqual(0, neu["attribute3"])
+        # Alles andere unberührt, Reihenfolge erhalten.
+        self.assertEqual(reihenfolge, list(neu.keys()))
+        self.assertEqual(PARAM_VORLAGE["contentId"], neu["contentId"])
+        self.assertEqual(PARAM_VORLAGE["localizedParameters"],
+                         neu["localizedParameters"])
+
+    def test_playgo_zweiter_lauf_meldet_leer(self):
+        """Ein zweiter Aufruf hat nichts mehr zu tun - und schreibt nicht."""
+        pfad, _reihenfolge = self._dump_mit_playgo_feldern()
+        self.app._exfat_pkg_playgo_felder(pfad)
+        vorher = os.stat(pfad).st_size
+        self.assertEqual([], self.app._exfat_pkg_playgo_felder(pfad))
+        self.assertEqual(vorher, os.stat(pfad).st_size)
+
+    def test_playgo_ohne_die_felder_aendert_nichts(self):
+        """Die Gegenprobe: Fehlende Schlüssel werden NICHT angelegt.
+
+        Ein neu angelegter Schlüssel änderte die Schlüsselmenge der Datei -
+        dieselbe Zusicherung, die ``test_param_setzen_aendert_nur_zwei_felder``
+        für die Firmware-Funktion festhält.
+        """
+        _basis, wurzel = self._dump(unterordner=False)
+        param = os.path.join(wurzel, "sce_sys", "param.json")
+        vorher = open(param, encoding="utf-8").read()
+        self.assertEqual([], self.app._exfat_pkg_playgo_felder(param))
+        self.assertEqual(vorher, open(param, encoding="utf-8").read())
+        with open(param, encoding="utf-8") as f:
+            neu = json.load(f)
+        self.assertNotIn("versionFileUri", neu)
+        self.assertNotIn("attribute3", neu)
+
     def test_param_setzen_aendert_nur_zwei_felder(self):
         _basis, wurzel = self._dump(unterordner=False)
         param = os.path.join(wurzel, "sce_sys", "param.json")

@@ -40478,6 +40478,55 @@ class PS5ConverterGUI:
             datei.write("\n")
         return alt_sdk, alt_req
 
+    def _exfat_pkg_playgo_felder(self, param_pfad: str) -> "list[str]":
+        """Leert ``versionFileUri`` und setzt ``attribute3`` auf 0.
+
+        Hintergrund: Ein FPKG ist **ein einziges Abbild**, PlayGo ist dagegen
+        auf Chunk-Installation gebaut. Die PlayGo-Deskriptoren selbst sind
+        dabei unkritisch - LibProsperoPkg 2.6.0 erzeugt sie in
+        ``ProsperoPkgBuilder`` ohnehin neu aus der Geometrie des gebauten
+        Abbilds und uebernimmt **keine** Quellkopie (nachgesehen 15.09.2026).
+        Diese zwei Felder bleiben aber unberuehrt, und ein fremdes Werkzeug
+        meldet, dass ihr Zuruecksetzen den "Application error" beim Spielstart
+        beseitige.
+
+        **Unbelegt.** Zu einem PlayGo-Bit in ``attribute3`` gibt es keine
+        oeffentliche Dokumentation; genullt wird deshalb das ganze Feld, und
+        damit fallen auch dokumentierte Flags (Video-Out-Info, Share Library
+        Capture API, HFR, High Framerate Mode, Auto Scaling) weg. Genau
+        darum haengt das an einem Kaestchen, das ab Werk **aus** ist.
+
+        Angefasst wird nur die ``param.json`` im entpackten Dump-Ordner des
+        Arbeitsordners - eine Wegwerf-Kopie. Das Quellabbild bleibt unberuehrt,
+        deshalb braucht es hier kein Wiederherstellen.
+
+        Args:
+            param_pfad: Die ``sce_sys/param.json`` im Arbeitsordner.
+
+        Returns:
+            Die Namen der tatsaechlich geaenderten Felder. Leer, wenn keines
+            vorhanden war oder beide schon den Zielwert trugen - der Aufrufer
+            meldet dann nichts.
+        """
+        with open(param_pfad, "r", encoding="utf-8") as datei:
+            daten = json.load(datei)
+        geaendert: list[str] = []
+        # Nur vorhandene Schluessel anfassen: Ein neu angelegter Schluessel
+        # aenderte die Schluesselmenge der Datei, und die Reihenfolge ist hier
+        # Teil des Formats.
+        if "versionFileUri" in daten and daten["versionFileUri"] != "":
+            daten["versionFileUri"] = ""
+            geaendert.append("versionFileUri")
+        if "attribute3" in daten and daten["attribute3"] != 0:
+            daten["attribute3"] = 0
+            geaendert.append("attribute3")
+        if not geaendert:
+            return []
+        with open(param_pfad, "w", encoding="utf-8") as datei:
+            json.dump(daten, datei, ensure_ascii=False, indent=2)
+            datei.write("\n")
+        return geaendert
+
     def _show_exfat_pkg_builder(self) -> None:
         """Baut aus einem beliebigen PS5-Abbild ein installierbares Debug-``.pkg``.
 
@@ -40526,6 +40575,9 @@ class PS5ConverterGUI:
         fw_var = tk.StringVar(value=self._t("exfatpkg.keep_original"))
         schnell_var = tk.BooleanVar(value=True)
         lizenzfrei_var = tk.BooleanVar(value=True)
+        # Ab Werk AUS: Das Nullen von attribute3 loescht auch dokumentierte
+        # Flags, und die Wirkung ist unbelegt - siehe _exfat_pkg_playgo_felder.
+        playgo_var = tk.BooleanVar(value=False)
         status_var = tk.StringVar(value=self._t("exfatpkg.status_idle"))
         laeuft: dict = {"aktiv": False, "prozess": None, "abbruch": False}
 
@@ -40589,12 +40641,39 @@ class PS5ConverterGUI:
         schalter = tk.Frame(koerper, bg=c["bg_main"])
         schalter.pack(fill="x", pady=(8, 4))
         for text, var in ((self._t("pkgbau.fast"), schnell_var),
-                          (self._t("pkgbau.license_free"), lizenzfrei_var)):
+                          (self._t("pkgbau.license_free"), lizenzfrei_var),
+                          (self._t("exfatpkg.playgo_fix"), playgo_var)):
             tk.Checkbutton(
                 schalter, text=text, variable=var, bg=c["bg_main"],
                 fg=c["fg_primary"], selectcolor=c["bg_card"],
                 activebackground=c["bg_main"], activeforeground=c["fg_accent"],
                 font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(0, 14))
+
+        # Der Hinweis steht in einer eigenen Zeile unter den Kaestchen, nicht
+        # daneben: Die Schalterreihe traegt jetzt drei Eintraege, und ein
+        # vierter langer Text darin haette sie bei Mindestbreite gequetscht.
+        playgo_hinweis = tk.Label(koerper, text=self._t("exfatpkg.playgo_hint"),
+                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                 fg=c["fg_secondary"], anchor="w", justify="left",
+                 wraplength=700)
+        playgo_hinweis.pack(fill="x", pady=(0, 4))
+
+        def _playgo_umbruch(_ereignis=None) -> None:
+            """Der Umbruch folgt der echten Breite, nicht einer festen Zahl.
+
+            Im Fenster "PKG bauen" stand hier einmal eine feste 820, waehrend
+            das Fenster auf 740 px zu ziehen ist - der Text lief ueber den Rand
+            hinaus. Dieses Fenster laesst sich auf 760 px ziehen, abzueglich
+            2 x 20 px Koerperrand.
+            """
+            try:
+                breite = playgo_hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                playgo_hinweis.configure(wraplength=breite - 8)
+
+        playgo_hinweis.bind("<Configure>", _playgo_umbruch)
 
         balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
         balken.pack(fill="x", pady=(6, 2))
@@ -40785,6 +40864,7 @@ class PS5ConverterGUI:
             # und hinterliess nur "Fehlgeschlagen" bei leerem Protokoll.
             lizenzfrei = bool(lizenzfrei_var.get())
             schnell = bool(schnell_var.get())
+            playgo_fix = bool(playgo_var.get())
             _knoepfe_setzen(True)
             _takt()
 
@@ -40822,6 +40902,14 @@ class PS5ConverterGUI:
                         alt_sdk, _alt = self._exfat_pkg_param_setzen(param, hexwert)
                         _protokoll(self._t("exfatpkg.log_firmware",
                                            alt=alt_sdk or "-", neu=hexwert))
+
+                    if playgo_fix:
+                        felder = self._exfat_pkg_playgo_felder(param)
+                        if felder:
+                            _protokoll(self._t("exfatpkg.log_playgo",
+                                               felder=", ".join(felder)))
+                        else:
+                            _protokoll(self._t("exfatpkg.log_playgo_nichts"))
 
                     stand["phase"] = "build"
                     stand["status"] = self._t("exfatpkg.status_building")
