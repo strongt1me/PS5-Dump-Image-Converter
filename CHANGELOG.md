@@ -2,7 +2,35 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.21):** Die eingebaute Bibliothek hinter „Abbild → PKG“ und dem Debug-PKG-Bau wurde aktualisiert. Sie schreibt die innere Struktur der erzeugten Debug-Pakete jetzt an mehreren Stellen so, wie es die Konsole erwartet – das kann die Chance erhöhen, dass ein gebautes Paket auf der Konsole angenommen wird. An der Bedienung ändert sich nichts.
+> **Kurz zum aktuellen Stand (v1.9.22):** Neue Einstellung: Der voruebergehende Dump-Ordner der Umpack-Wege lässt sich in den Arbeitsordner legen statt zum Ziel – dann liegt am Ziel-Laufwerk nur das fertige Ergebnis. Ausserdem behoben: Der Asset-Pack-Bau brach bei Sonderzeichen im Titel (z. B. „Yotei“) ab.
+
+---
+
+## v1.9.22 – 15.09.2026
+
+Eine neue Einstellung für den Speicherort des vorübergehenden Dump-Ordners.
+
+### Dump-Ordner in den Arbeitsordner statt zum Ziel
+
+In der Pfad-Karte gibt es ein neues Häkchen: „Dump-Ordner im Arbeitsordner
+statt beim Ziel anlegen“. Die Umpack-Wege (z. B. ffpfsc → ffpkg, ffpkg neu
+packen, Abbild → ffpfsc mit Einbau) entpacken die Quelle vor dem Neubau in
+einen vorübergehenden Dump-Ordner. Bisher lag der beim Ziel; mit dem Häkchen
+wandert er in den Arbeitsordner, sodass am Ziel-Laufwerk nur das fertige
+Ergebnis entsteht und dort nichts zwischengespeichert wird.
+
+Voreinstellung ist **aus** – das bisherige Verhalten. Reine Entpack-Aufgaben
+sind nicht betroffen: Dort ist der Dump-Ordner das Ergebnis und bleibt am Ziel.
+Hinweis: Bei eingeschaltetem Häkchen muss der Arbeitsordner den vollständigen
+Dump fassen.
+
+### Behoben
+
+- **Asset-Pack-Bau mit Sonderzeichen im Titel**: Enthielt der Spielname ein
+  Zeichen ausserhalb der westlichen Windows-Zeichentabelle – etwa das
+  „ō“ in „Ghost of Yōtei“ –, brach der Einbau des Asset-Packs ganz am Ende
+  mit einem Kodierungsfehler ab. Das ist behoben; Titel mit solchen Zeichen
+  lassen sich jetzt mit Asset-Pack bauen.
 
 ---
 

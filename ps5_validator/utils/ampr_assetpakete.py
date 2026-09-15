@@ -389,10 +389,21 @@ def _lauf(argumente: list[str], melden: Melder,
         startinfo = subprocess.STARTUPINFO()
         startinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
 
+    # Das Kind (ampr_pack.py bzw. der EXE-Selbstaufruf) schreibt seinen
+    # Fortschritt mit dem aktuellen Dateipfad auf stderr. Ohne erzwungenes
+    # UTF-8 stuenden seine Stroeme unter Windows auf der ANSI-Codepage
+    # (cp1252), und ein Pfad mit Sonderzeichen (z. B. "Yotei" mit o-Makron,
+    # U+014D) braechte den Lauf mit UnicodeEncodeError ab. PYTHONUTF8 stellt
+    # zusaetzlich open() im Kind auf UTF-8. Deckt auch den Nicht-EXE-Fall ab,
+    # in dem _stroeme_absichern gar nicht laeuft.
+    umgebung = dict(os.environ)
+    umgebung["PYTHONUTF8"] = "1"
+    umgebung["PYTHONIOENCODING"] = "utf-8"
     prozess = subprocess.Popen(
         befehl, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, encoding="utf-8", errors="replace",
         cwd=os.path.dirname(werkzeug), startupinfo=startinfo,
+        env=umgebung,
     )
 
     # stdout wird nebenher geleert - als Vorsorge, nicht als Fehlerbehebung.

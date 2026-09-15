@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.21"
+APP_VERSION = "v1.9.22"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -5348,13 +5348,19 @@ class PS5ConverterGUI:
             ziel = int(quelle * faktor)
 
         # Entpacken, einbauen, neu packen (Ja in der Umhuell-Rueckfrage): Der
-        # voruebergehende Dump-Ordner liegt im Zielordner neben der
-        # entstehenden Datei - beides zugleich, bis gepackt ist.
-        if getattr(self, "_umhuellt_neu_packen", False):
-            ziel += int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
+        # voruebergehende Dump-Ordner braucht ungefaehr so viel wie die Quelle.
+        # Er liegt normalerweise im Zielordner neben der entstehenden Datei -
+        # beides zugleich, bis gepackt ist. Ist der Dump-Ordner aber in den
+        # Arbeitsordner umgelenkt, faellt dieser Bedarf dort an statt am Ziel.
         mit_kopie = bool(self._integration_gewuenscht())
         temp = int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
                              else self._PLATZFAKTOR_TEMP_OHNE))
+        if getattr(self, "_umhuellt_neu_packen", False):
+            dump = int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
+            if self._dump_im_arbeitsordner():
+                temp += dump
+            else:
+                ziel += dump
         return temp, ziel
 
     def _integration_gewuenscht(self) -> bool:
@@ -5371,6 +5377,40 @@ class PS5ConverterGUI:
             except Exception:  # noqa: BLE001
                 continue
         return False
+
+    def _dump_im_arbeitsordner(self) -> bool:
+        """Soll der voruebergehende Dump-Ordner in den Arbeitsordner statt ins Ziel?
+
+        Liest die **gespeicherte** Einstellung, nicht die Tk-Variable: Diese
+        Frage wird auch aus dem Arbeitsfaden gestellt (``_mkdtemp`` beim
+        Umpacken), und eine Tk-Variable dort zu lesen bringt Tcl zum Absturz
+        (siehe die Faden-Regel). Der CLI-Schalter hat Vorrang, wenn gesetzt.
+
+        Vorgabe ist ``False`` - das bisherige Verhalten: Der Dump-Ordner liegt
+        neben dem Ergebnis im Zielordner (schnelles Umbenennen auf demselben
+        Laufwerk, geerbte Rechte).
+        """
+        cli = getattr(self, "_dump_im_arbeitsordner_cli", None)
+        if cli is not None:
+            return bool(cli)
+        try:
+            return bool(self._load_setting("dump_in_arbeitsordner", False))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Dump-Ordner-Einstellung nicht lesbar: %s", exc)
+            return False
+
+    def _dump_ordner_basis(self, dst: str) -> "str | None":
+        """Wo der voruebergehende Dump-Ordner eines Umpack-Weges entstehen soll.
+
+        Gibt ``None`` zurueck, wenn der Dump-Ordner in den Arbeitsordner soll
+        (``_mkdtemp`` nimmt dann ``_get_runtime_temp_dir()``); sonst ``dst``,
+        also den Zielordner wie bisher.
+
+        Gilt nur fuer die Wege, deren Dump-Ordner ein Zwischenstand ist und
+        deren Ergebnis eine gepackte Datei ist. Reine Entpack-Aufgaben liefern
+        den Dump-Ordner selbst ab - deren Ziel bleibt unberuehrt.
+        """
+        return None if self._dump_im_arbeitsordner() else dst
 
     def _freier_platz(self, pfad: str) -> "int | None":
         """Freie Bytes auf dem Datentraeger von ``pfad``, oder None."""
@@ -7179,6 +7219,33 @@ class PS5ConverterGUI:
         )
         self._register_translatable(self.shutdown_check, "main.shutdown_after_success")
         self.shutdown_check.grid(row=12, column=0, columnspan=3, sticky="w", pady=(16, 0))
+
+        # Dump-Ordner-Speicherort. Normalerweise legen die Umpack-Wege den
+        # voruebergehenden Dump-Ordner beim Ziel an (schnelles Umbenennen auf
+        # demselben Laufwerk, geerbte Rechte). Wer das Ziel-Laufwerk frei
+        # halten will, lenkt ihn hiermit in den Arbeitsordner um - dann liegt
+        # am Ziel nur das Ergebnis. Wie das Feld darueber in der Karte, damit
+        # der Checkbutton keine eigene Flaeche auf dem Hintergrundbild zeigt.
+        self.dump_in_arbeitsordner = tk.BooleanVar(
+            value=bool(self._load_setting("dump_in_arbeitsordner", False))
+        )
+        self.dump_ordner_check = tk.Checkbutton(
+            path_card,
+            text=self._t("main.dump_in_workdir"),
+            variable=self.dump_in_arbeitsordner,
+            command=self._on_dump_ordner_setting_changed,
+            font=(UI_SCHRIFT, pt(9)),
+            bg=self._COLORS["bg_card"],
+            fg=self._COLORS[self._KARTEN_TEXT_ROLLE],
+            selectcolor=self._COLORS["bg_main"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground=self._COLORS["fg_primary"],
+            anchor="w",
+            bd=0,
+            highlightthickness=0,
+        )
+        self._register_translatable(self.dump_ordner_check, "main.dump_in_workdir")
+        self.dump_ordner_check.grid(row=13, column=0, columnspan=3, sticky="w", pady=(8, 0))
 
         self._register_drag_drop()
         self._register_keyboard_shortcuts()
@@ -17123,6 +17190,18 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Herunterfahr-Einstellung nicht speicherbar: %s", exc)
 
+    def _on_dump_ordner_setting_changed(self) -> None:
+        """Merkt die Wahl des Dump-Ordner-Speicherorts dauerhaft."""
+        try:
+            aktiv = bool(self.dump_in_arbeitsordner.get())
+            self._save_setting("dump_in_arbeitsordner", aktiv)
+            self._append_to_log(
+                self._t("dumpordner.log_arbeitsordner" if aktiv
+                        else "dumpordner.log_ziel") + "\n"
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Dump-Ordner-Einstellung nicht speicherbar: %s", exc)
+
     def _shutdown_after_success_enabled(self) -> bool:
         """Ist die Funktion aktiv? Oberflaeche (Ankreuzfeld) oder CLI-Schalter."""
         var = getattr(self, "shutdown_after_success", None)
@@ -21834,7 +21913,8 @@ class PS5ConverterGUI:
 
     def _mode_ffpfsc_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 2: FFPFSC in temporären Dump entpacken und als FFPKG neu schreiben."""
-        temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_ffpkg_", dir_path=dst)
+        temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_ffpkg_",
+                                  dir_path=self._dump_ordner_basis(dst))
         try:
             if not self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=1):
                 return False
@@ -21874,7 +21954,8 @@ class PS5ConverterGUI:
         Returns:
             True bei Erfolg.
         """
-        temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_repack_", dir_path=dst)
+        temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_repack_",
+                                  dir_path=self._dump_ordner_basis(dst))
         try:
             if not self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=1):
                 return False
@@ -21920,7 +22001,7 @@ class PS5ConverterGUI:
         """
         ziel_endung = "ffpfs" if uncompressed else "ffpfsc"
         temp_root = self._mkdtemp(prefix="ps5conv_%s_%s_" % (quelle, ziel_endung),
-                                  dir_path=dst)
+                                  dir_path=self._dump_ordner_basis(dst))
         try:
             if quelle == "exfat":
                 entpackt = self._mode_exfat_to_folder(src, temp_root, progress_task_index=2)
@@ -21958,7 +22039,8 @@ class PS5ConverterGUI:
 
     def _mode_exfat_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 3: exFAT in temporären Dump extrahieren und als FFPKG neu schreiben."""
-        temp_root = self._mkdtemp(prefix="ps5conv_exfat_ffpkg_", dir_path=dst)
+        temp_root = self._mkdtemp(prefix="ps5conv_exfat_ffpkg_",
+                                  dir_path=self._dump_ordner_basis(dst))
         try:
             if not self._mode_exfat_to_folder(src, temp_root, progress_task_index=2):
                 return False
@@ -21982,7 +22064,8 @@ class PS5ConverterGUI:
 
     def _mode_ffpkg_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 4/6: FFPKG read-only extrahieren, erneut packen und validieren."""
-        temp_root = self._mkdtemp(prefix="ps5conv_ffpkg_repack_", dir_path=dst)
+        temp_root = self._mkdtemp(prefix="ps5conv_ffpkg_repack_",
+                                  dir_path=self._dump_ordner_basis(dst))
         try:
             dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
             if not self._extract_ffpkg_to_folder_via_ufs2tool(
@@ -46138,6 +46221,20 @@ def _stroeme_absichern() -> None:
     """
     for name in ("stdout", "stderr"):
         strom = getattr(sys, name, None)
+        # Zuerst auf UTF-8 stellen, solange noch nichts geschrieben ist - nach
+        # dem ersten Schreiben lehnt reconfigure() die Kodierungsaenderung ab.
+        # Unter Windows steht ein Pipe-Strom sonst auf der ANSI-Codepage
+        # (cp1252), und ampr_pack.py schreibt Fortschrittszeilen mit dem
+        # aktuellen Dateipfad (z. B. ".../Ghost_of_Yotei..." mit o-Makron,
+        # U+014D). Auf cp1252 wirft dieser print dann UnicodeEncodeError
+        # ('charmap' codec can't encode), und der Asset-Pack-Bau bricht am Ende
+        # ab - genau so beim Anwender am 15.09.2026 (Ghost of Yotei).
+        if strom is not None:
+            try:
+                strom.reconfigure(encoding="utf-8", errors="replace")
+            except (AttributeError, ValueError, OSError) as exc:
+                logger.debug("%s nicht auf UTF-8 umstellbar: %s", name, exc)
+        strom = getattr(sys, name, None)
         brauchbar = False
         if strom is not None:
             try:
@@ -46450,6 +46547,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
             "oder Abbruch bleibt er an. Der Exit-Code bleibt unverändert."
         ),
     )
+    parser.add_argument(
+        "--dump-im-arbeitsordner", dest="dump_im_arbeitsordner",
+        action="store_true", default=None,
+        help="Den vorübergehenden Dump-Ordner der Umpack-Wege im Arbeitsordner "
+             "statt beim Ziel anlegen - dann liegt am Ziel nur das Ergebnis. "
+             "Ohne diesen Schalter gilt die im Fenster gespeicherte Einstellung. "
+             "Der Arbeitsordner muss den vollständigen Dump fassen.")
 
     # Aufgabe 7 (AMPR EMU Manager) fragt die Aktion sonst über einen modalen
     # Dialog ab und würde ohne Fenster endlos warten. Über diese Argumente wird
@@ -46715,6 +46819,18 @@ def _run_cli(args: argparse.Namespace) -> int:
         app.shutdown_after_success.set(app._shutdown_after_success_cli)
     except Exception as exc:
         logger.debug("Herunterfahr-Schalter im CLI-Modus: %s", exc)
+
+    # Dump-Ordner-Speicherort: nur ueberschreiben, wenn der Schalter wirklich
+    # gesetzt wurde (default None). Ohne ihn gilt die im Fenster gespeicherte
+    # Einstellung - anders als beim Herunterfahren, weil dies eine Vorliebe
+    # ist, die der Anwender einmal setzt und die auch im CLI gelten soll.
+    _dump_cli = getattr(args, "dump_im_arbeitsordner", None)
+    if _dump_cli is not None:
+        app._dump_im_arbeitsordner_cli = bool(_dump_cli)
+        try:
+            app.dump_in_arbeitsordner.set(bool(_dump_cli))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Dump-Ordner-Schalter im CLI-Modus: %s", exc)
 
     # Rückfragen (Überschreiben/Wiederaufnahme/Preflight) nicht-blockierend beantworten.
     yes = bool(args.yes)
