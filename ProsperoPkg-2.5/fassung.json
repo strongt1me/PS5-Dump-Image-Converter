@@ -1,0 +1,7 @@
+{
+  "fassung": "2.6.0",
+  "quelle": "SvenGDK/LibProsperoPKG",
+  "stand": "748eabf",
+  "gebaut": "2026-09-15",
+  "hinweis": "Der Ordnername sagt 2.5 - das ist die alte Zahl, die in .spec, prosperopkg.py und Tests verdrahtet ist. Massgeblich ist die Fassung hier."
+}

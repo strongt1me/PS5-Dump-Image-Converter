@@ -367,6 +367,34 @@ class Diagnosebericht:
         except Exception as exc:
             logger.debug("UFS2Tool-Fassung nicht lesbar: %s", exc)
 
+        # ProsperoPkg baut und liest die PS5-Pakete. Es passt nicht in
+        # _EINGEBETTETE_WERKZEUGE: Dort wird ``__version__`` aus einer
+        # Python-Datei gelesen, ProsperoPkg ist aber ein .NET-Bau. Die Fassung
+        # steht deshalb in ``fassung.json`` neben den vier Plattformbauten -
+        # dasselbe Muster wie bei UFS2Tool eine Handbreit weiter oben.
+        #
+        # Warum das ueberhaupt in den Bericht gehoert: Der Ordner heisst
+        # weiterhin "ProsperoPkg-2.5", enthaelt seit v1.9.21 aber
+        # LibProsperoPkg 2.6.0. Die Zahl im Namen ist als Versionsangabe also
+        # irrefuehrend - und genau sie entscheidet, ob ein gebautes Paket die
+        # Konsolenkorrekturen der 2.6.0 traegt (U-Block-Ausrichtung,
+        # imagedigs-Digests, u2c-Formel). An der fertigen Programmdatei liess
+        # sich das bisher ueberhaupt nicht ablesen.
+        try:
+            from ps5_validator.utils import prosperopkg as pp
+
+            angaben_pfad = os.path.join(
+                self._mitgeliefert_finden(pp.WERKZEUGORDNER), "fassung.json")
+            with io.open(angaben_pfad, encoding="utf-8") as datei:
+                angaben = json.load(datei)
+            teile.append(ak.Bestandteil(
+                "LibProsperoPkg (PKG-Bau)",
+                str(angaben.get("fassung") or "unbekannt"),
+                ak.GITHUB,
+                str(angaben.get("quelle") or "SvenGDK/LibProsperoPKG")))
+        except Exception as exc:
+            logger.debug("ProsperoPkg-Fassung nicht lesbar: %s", exc)
+
         for name, schluessel in (("FileZilla", "filezilla_path"),
                                  ("OSFMount", "osfmount_path")):
             try:

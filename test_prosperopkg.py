@@ -358,5 +358,62 @@ class ProzessAblageTests(unittest.TestCase):
                          "Der Lauf ging nach terminate() weiter.")
 
 
+class FassungsangabeTests(unittest.TestCase):
+    """Welche LibProsperoPkg eingebaut ist, muss ablesbar sein.
+
+    Der Ordner heisst weiterhin ``ProsperoPkg-2.5``, enthaelt seit v1.9.21
+    aber **LibProsperoPkg 2.6.0** - die Zahl im Namen ist als Versionsangabe
+    also irrefuehrend. Gerade sie entscheidet aber, ob ein gebautes Paket die
+    Konsolenkorrekturen der 2.6.0 traegt. An der fertigen Programmdatei war
+    das bis zum 16.09.2026 ueberhaupt nicht abzulesen: Im Diagnosebericht
+    standen MkPFS, UFS2Tool, AMPR EMU und ein Dutzend Bibliotheken - nur
+    ausgerechnet die, die das PKG baut, fehlte.
+    """
+
+    WURZEL = os.path.dirname(os.path.abspath(__file__))
+
+    def _angaben(self) -> dict:
+        import json
+
+        pfad = os.path.join(self.WURZEL, pp.WERKZEUGORDNER, "fassung.json")
+        self.assertTrue(os.path.isfile(pfad),
+                        "fassung.json fehlt neben den Plattformbauten: %s" % pfad)
+        with io.open(pfad, encoding="utf-8") as datei:
+            return json.load(datei)
+
+    def test_die_fassungsdatei_nennt_die_bibliothek(self):
+        angaben = self._angaben()
+        fassung = str(angaben.get("fassung") or "").strip()
+        self.assertTrue(fassung, "fassung.json nennt keine Fassung.")
+        self.assertNotEqual("2.5", fassung,
+                            "Die Datei gibt die Ordnerzahl wieder statt der "
+                            "wirklich eingebauten Bibliotheksfassung.")
+        self.assertTrue(str(angaben.get("quelle") or "").strip(),
+                        "Ohne Quelle laesst sich die Fassung nicht einordnen.")
+
+    def test_der_ordnername_weicht_bewusst_ab(self):
+        """Gegenprobe: Die Abweichung ist Absicht, kein Versehen.
+
+        Wer den Ordner umbenennt, muss .spec, prosperopkg.py und die Tests
+        mitziehen. Dieser Test haelt fest, dass die Zahl im Namen **nicht**
+        die Bibliotheksversion meint - damit sie niemand "korrigiert".
+        """
+        self.assertEqual("ProsperoPkg-2.5", pp.WERKZEUGORDNER)
+        self.assertNotIn(str(self._angaben().get("fassung")),
+                         pp.WERKZEUGORDNER)
+
+    def test_die_diagnose_liest_die_fassungsdatei(self):
+        """Ohne den Leseblock stuende die Angabe nirgends im Bericht."""
+        pfad = os.path.join(self.WURZEL, "ps5_validator", "utils",
+                            "diagnose_befund.py")
+        with io.open(pfad, encoding="utf-8") as datei:
+            quelle = datei.read()
+        self.assertIn("fassung.json", quelle,
+                      "Der Diagnosebericht liest die Fassungsdatei nicht mehr.")
+        self.assertIn("LibProsperoPkg (PKG-Bau)", quelle,
+                      "Der Eintrag im Werkzeuginventar heisst anders - dann "
+                      "misst dieser Test nichts.")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

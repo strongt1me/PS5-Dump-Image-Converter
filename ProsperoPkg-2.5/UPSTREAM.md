@@ -31,7 +31,7 @@ Prozessgrenze bleibt die Trennung sauber.
 
 | | |
 |---|---|
-| Bibliothek | LibProsperoPkg 2.5 |
+| Bibliothek | LibProsperoPkg 2.6.0 (bis 14.09.2026: 2.5) — maschinenlesbar in `fassung.json` |
 | Lizenz | GNU GPL, Version 3 (siehe `LICENSE`, `NOTICE`) |
 | Quelle | `LibProsperoPKG-2.5/` im SDK-Ordner des Anwenders |
 | Zielplattform | `net10.0` — dieselbe, die das Programm für WPF lädt |
