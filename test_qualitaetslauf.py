@@ -1142,5 +1142,210 @@ class Abgeleitet(_Basis):
         self.assertEqual(2, self._pruefmethoden(baum))
 
 
+class KeinUnerreichbarerCodeTests(unittest.TestCase):
+    """Anweisungen hinter ``return``/``raise``/``continue``/``break``.
+
+    Der gemessene Anlass (15.09.2026): In
+    ``werkzeuge_bereitstellen.laufzeitpakete_sicherstellen`` stand die
+    zlib_ng-Probe hinter einem ``return True`` und lief nie mit -
+    ausgerechnet die Pruefung, die den Packfehler von v1.9.22 haette melden
+    koennen (kein Packlauf kam mehr zustande, siehe den Rueckfall-Waechter
+    in ``test_zlib_ng_rueckfall.py``). Gefunden wurde sie von Hand; kein
+    Waechter sah sie. Der Bauplan laesst kein ruff und kein flake8 laufen,
+    es gibt also sonst nichts, was toten Code bemerkt.
+
+    Geprueft wird nur der eigene Bestand - die Fremdbestandteile bringen
+    ihren eigenen Stil mit und werden unveraendert uebernommen; deshalb
+    derselbe Dateisatz wie bei ``StilTests``, nicht eine zweite Liste.
+    """
+
+    #: Diese Anweisungen beenden ihren Block. Bewusst **ohne**
+    #: ``sys.exit(...)``: Das ist ein Aufruf, kein Sprung - er laesst sich
+    #: abfangen, und eine Zeile dahinter kann sehr wohl laufen.
+    ENDET = (ast.Return, ast.Raise, ast.Continue, ast.Break)
+
+    #: Die Felder, in denen Anweisungslisten stehen. ``ast.walk`` besucht
+    #: auch ``ExceptHandler`` und ``match_case``; deren Rumpf heisst
+    #: ebenfalls ``body`` und ist damit mit abgedeckt.
+    LISTEN = ("body", "orelse", "finalbody")
+
+    @classmethod
+    def _unerreichbar(cls, baum: ast.AST) -> list[int]:
+        """Zeilennummern von Anweisungen, die nie an die Reihe kommen."""
+        funde: list[int] = []
+        for knoten in ast.walk(baum):
+            for feld in cls.LISTEN:
+                block = getattr(knoten, feld, None)
+                if not isinstance(block, list):
+                    continue
+                for i, anweisung in enumerate(block[:-1]):
+                    if isinstance(anweisung, cls.ENDET):
+                        funde.append(block[i + 1].lineno)
+                        break
+        return sorted(funde)
+
+    def test_kein_toter_code_im_eigenen_bestand(self) -> None:
+        funde: list[str] = []
+        for rel in StilTests.eigene_dateien():
+            pfad = PROJEKT / rel
+            try:
+                quelle = pfad.read_text(encoding="utf-8", errors="replace")
+                baum = ast.parse(quelle)
+            except (OSError, SyntaxError):
+                continue
+            for zeile in self._unerreichbar(baum):
+                funde.append("%s:%d" % (rel, zeile))
+        self.assertEqual(
+            [], funde,
+            "Diese Anweisungen stehen hinter return/raise/continue/break "
+            "und laufen nie mit:\n  " + "\n  ".join(funde))
+
+    def test_die_pruefung_findet_einen_gestellten_fall(self) -> None:
+        """Gegenprobe - sonst bewiese die Pruefung darueber nur ihr Schweigen."""
+        baum = ast.parse("def f():\n    return True\n    print('nie')\n")
+        self.assertEqual([3], self._unerreichbar(baum))
+
+    def test_eine_verschachtelte_rueckgabe_ist_kein_befund(self) -> None:
+        """``if ...: return`` beendet nur seinen eigenen Zweig."""
+        baum = ast.parse("def f(x):\n    if x:\n        return 1\n    return 2\n")
+        self.assertEqual([], self._unerreichbar(baum))
+
+
+class SpracheImPruefstandTests(unittest.TestCase):
+    """Wer eine **echte** Oberflaeche baut, muss die Sprache festnageln.
+
+    Der gemessene Anlass (15.09.2026): Drei Pruefungen in
+    ``test_shadowmount_editor`` waren im Volllauf **immer** rot und einzeln
+    **immer** gruen - lange als "flatterhaft" abgetan. Das Fenster war
+    englisch (``LOAD FROM PS5``), und ``_druecken("LADEN")`` sucht die
+    deutsche Aufschrift. Die Fehlermeldung fuehrt dabei in die Irre: Das
+    ``self.fail`` fliegt in einer Tk-Rueckmeldung, der Ausnahmehaken des
+    Programms schluckt es ins Protokoll, und der Test faellt erst an der
+    **Folge**zusicherung um.
+
+    Der Weg dorthin: ``pruefumgebung.umlenken`` setzt
+    ``PS5CONV_KONFIGORDNER`` **prozessweit** und laeuft beim **Import**.
+    pytest importiert erst alle Module und fuehrt dann aus - es gewinnt also
+    der Ordner des zuletzt importierten Pruefmoduls, unabhaengig davon,
+    welche Datei gerade laeuft. Jede spaeter gebaute Oberflaeche liest ihre
+    Sprache aus dessen ``paths.json``.
+
+    Betroffen ist nur die **echte** Bauform ``PS5ConverterGUI(root)``: Sie
+    laeuft durch ``__init__`` und liest die Einstellung (Abschnitt "1c.").
+    Die ``__new__``-Attrappen der meisten Pruefungen tun das nicht.
+
+    Geprueft wird die **Struktur**, nicht der Text. Eine Suche nach
+    deutschen Zeichenketten in Pruefdateien waere eine Heuristik mit vielen
+    Fehlalarmen - Docstrings, Zusicherungstexte und ``STRINGS[...]["de"]``
+    sind voellig legitim.
+    """
+
+    #: Dateien, die diese Pruefung schon vorfand und die Sprache nicht
+    #: festnageln. Sie sind **nicht** kaputt: Die Sprache beisst nur dort,
+    #: wo eine Pruefung eine sichtbare Aufschrift liest - die meisten hier
+    #: messen Pixel, Geometrie oder Verdrahtung. Der Eintrag verschwindet,
+    #: sobald jemand die Datei ohnehin anfasst. **Nichts Neues kommt
+    #: hinzu** - dafuer ist der Waechter da.
+    ALTBESTAND = frozenset({
+        "test_ampr_assetpakete.py", "test_background_image.py",
+        "test_beschriftung_flackern.py", "test_cli_ansicht_sync.py",
+        "test_dump_ordner_speicherort.py", "test_exfat_pkg_builder.py",
+        "test_ffpfsc_asset_umhuellen.py", "test_integration_beim_erstellen.py",
+        "test_kartenecken.py", "test_metadaten_online.py",
+        "test_metadaten_vorgabe.py", "test_platzpruefung.py",
+        "test_ps4_einblendung.py", "test_randlos.py", "test_rollflaeche.py",
+        "test_sidebar_vorschau.py", "test_startpfade.py",
+        "test_teilschritt_fortschritt.py", "test_unjail_sender.py",
+    })
+
+    @staticmethod
+    def _baut_echte_oberflaeche(baum: ast.AST) -> list[int]:
+        """Zeilen mit ``PS5ConverterGUI(...)`` samt Argumenten."""
+        treffer: list[int] = []
+        for k in ast.walk(baum):
+            if not isinstance(k, ast.Call):
+                continue
+            ziel = k.func
+            if isinstance(ziel, ast.Name):
+                name = ziel.id
+            elif isinstance(ziel, ast.Attribute):
+                name = ziel.attr
+            else:
+                continue
+            # ``PS5ConverterGUI.__new__(...)`` heisst hier "__new__" und
+            # faellt damit schon durch diese Abfrage.
+            if name == "PS5ConverterGUI" and (k.args or k.keywords):
+                treffer.append(k.lineno)
+        return sorted(treffer)
+
+    @staticmethod
+    def _nagelt_sprache_fest(baum: ast.AST) -> bool:
+        """Wird irgendwo ``..._current_language = ...`` zugewiesen?"""
+        for k in ast.walk(baum):
+            if isinstance(k, ast.Assign):
+                ziele: list = list(k.targets)
+            elif isinstance(k, ast.AnnAssign):
+                ziele = [k.target]
+            else:
+                continue
+            for z in ziele:
+                if isinstance(z, ast.Attribute) and z.attr == "_current_language":
+                    return True
+        return False
+
+    @classmethod
+    def _ohne_festlegung(cls) -> dict[str, list[int]]:
+        """Alle Pruefdateien mit echter Oberflaeche, aber ohne Festlegung."""
+        funde: dict[str, list[int]] = {}
+        for datei in sorted(PROJEKT.glob("test_*.py")):
+            try:
+                baum = ast.parse(datei.read_text(encoding="utf-8", errors="replace"))
+            except SyntaxError:
+                continue
+            zeilen = cls._baut_echte_oberflaeche(baum)
+            if zeilen and not cls._nagelt_sprache_fest(baum):
+                funde[datei.name] = zeilen
+        return funde
+
+    def test_neue_pruefdateien_nageln_die_sprache_fest(self) -> None:
+        neu = {n: z for n, z in self._ohne_festlegung().items()
+               if n not in self.ALTBESTAND}
+        self.assertEqual(
+            {}, neu,
+            "Diese Pruefdateien bauen eine echte Oberflaeche, legen die "
+            "Sprache aber nicht fest - im Volllauf lesen sie dann die "
+            "Sprache des zuletzt importierten Pruefmoduls:\n  "
+            + "\n  ".join("%s (Zeile %s)" % (n, ", ".join(map(str, z)))
+                          for n, z in sorted(neu.items()))
+            + "\nAbhilfe: in setUpClass ``app._current_language = \"de\"`` "
+              "setzen - oder die Aufschrift ueber ``app._t(...)`` erfragen.")
+
+    def test_die_ausnahmeliste_ist_nicht_veraltet(self) -> None:
+        """Ein Eintrag fuer eine laengst behobene Datei deckt spaeter
+        versehentlich einen echten Verstoss mit."""
+        offen = set(self._ohne_festlegung())
+        veraltet = sorted(self.ALTBESTAND - offen)
+        self.assertEqual(
+            [], veraltet,
+            "Diese Dateien stehen in ALTBESTAND, nageln die Sprache aber "
+            "inzwischen fest (oder gibt es nicht mehr) - Eintrag entfernen:\n  "
+            + "\n  ".join(veraltet))
+
+    def test_die_pruefung_erkennt_die_echte_bauform(self) -> None:
+        """Gegenprobe - sonst bewiese die Pruefung darueber nur ihr Schweigen."""
+        echt = ast.parse("app = PS5ConverterGUI(wurzel)\n")
+        self.assertEqual([1], self._baut_echte_oberflaeche(echt))
+        self.assertFalse(self._nagelt_sprache_fest(echt))
+
+        attrappe = ast.parse("app = PS5ConverterGUI.__new__(PS5ConverterGUI)\n")
+        self.assertEqual([], self._baut_echte_oberflaeche(attrappe),
+                         "Die __new__-Attrappe liest keine Einstellungen "
+                         "und darf nicht gemeldet werden.")
+
+        festgenagelt = ast.parse(
+            "app = PS5ConverterGUI(wurzel)\napp._current_language = 'de'\n")
+        self.assertTrue(self._nagelt_sprache_fest(festgenagelt))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
