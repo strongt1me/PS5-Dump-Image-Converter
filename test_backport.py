@@ -456,7 +456,14 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertIn("os.replace(zwischen, pfad)", self.quelle)
 
     def test_sicherung_vor_der_arbeit(self):
-        self.assertIn("shutil.copytree(ordner, sicherungsordner)", self.quelle)
+        # Der Aufruf traegt seit dem 15.09.2026 ein ``copy_function`` und steht
+        # deshalb ueber zwei Zeilen. Geprueft wird weiterhin dasselbe - dass
+        # ueberhaupt gesichert wird -, dazu jetzt die Sichtbarkeit: Eine Kopie
+        # von 40 bis 100 GB ohne jede Rueckmeldung ist von einem Aufhaenger
+        # nicht zu unterscheiden, und genau das hat ein Anwender gemeldet.
+        self.assertIn("shutil.copytree(ordner, sicherungsordner,", self.quelle)
+        self.assertIn("copy_function=_sichern_und_melden", self.quelle)
+        self.assertIn("backport.state_backup_progress", self.quelle)
 
     def test_ruecksicherung_wird_abgefragt(self):
         self.assertIn("backport.confirm_message", self.quelle)

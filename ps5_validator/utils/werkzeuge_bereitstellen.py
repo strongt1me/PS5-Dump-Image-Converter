@@ -335,6 +335,32 @@ def mkpfs_bereitstellen(temp_ordner: str,
 
 
 # -- Die Laufzeitpakete der Engine --------------------------------------
+def _zlib_ng_melden(melden: Melder, text: Textquelle) -> bool:
+    """Meldet, ob das schnelle ``zlib_ng``-Rechenwerk hier wirklich laedt.
+
+    Der Unterschied zu einer Vorhandensein-Pruefung ist der Punkt: Ein
+    Paket kann vollstaendig dastehen und sein **kompiliertes** Untermodul
+    trotzdem zu einer anderen Python-Fassung gehoeren. Deshalb wird
+    geladen, nicht nachgesehen.
+
+    Dieser Block stand bis zum 15.09.2026 am Ende von
+    ``laufzeitpakete_sicherstellen`` - **hinter** einem ``return True`` und
+    damit unerreichbar. Ausgerechnet die Pruefung, die den Fehlschlag haette
+    melden koennen, lief nie mit.
+
+    Returns:
+        Immer True - ``zlib_ng`` ist optional, MkPFS packt sonst mit dem
+        Standard-``zlib`` weiter (nur langsamer, bei gleichen Bytes).
+    """
+    try:
+        # Importform muss zu MkPFS passen (from zlib_ng import zlib_ng as zlib).
+        from zlib_ng import zlib_ng as _zlib_ng_impl  # pyright: ignore[reportMissingImports]  # noqa: F401
+    except Exception as exc:  # noqa: BLE001
+        melden(text('log.auto.0048', v0=exc))
+    melden(text('log.auto.0049'))
+    return True
+
+
 def laufzeitpakete_sicherstellen(
         konfigordner: str, *,
         pip_kommando: Callable[..., Any],
@@ -355,14 +381,26 @@ def laufzeitpakete_sicherstellen(
     # Lokaler Fallback-Pfad für Runtime-Module (wichtig für Umgebungen,
     # in denen pip zwar installiert, die Pakete danach aber nicht im
     # aktuellen Import-Pfad landen).
+    # Der Ordnername traegt die Python-Kennung (z. B.
+    # "runtime_site_packages_cpython-314"). Ohne sie blieb ein Ordner aus
+    # einer frueheren Python-Fassung liegen und verdeckte die mitgelieferten
+    # Module: Am 15.09.2026 lag dort ein zlib_ng fuer 3.11, waehrend die
+    # Programmdatei auf 3.14 lief. ``find_spec`` fand das Paket, der Import
+    # seines kompilierten Untermoduls scheiterte, und MkPFS brach mit
+    # Rueckgabewert 2 ab ("Unable to select compression backend").
+    kennung = getattr(sys.implementation, "cache_tag", None) or "py"
     runtime_site_dir = os.path.join(
         konfigordner,
-        "runtime_site_packages",
+        "runtime_site_packages_%s" % kennung,
     )
     try:
         os.makedirs(runtime_site_dir, exist_ok=True)
+        # **Angehaengt, nicht vorangestellt.** Dieser Ordner ist ein
+        # Rueckfall-Lager fuer nachinstallierte Pakete; was die
+        # Programmdatei selbst mitbringt, muss Vorrang behalten. Bis zum
+        # 15.09.2026 stand er auf Platz 0 und verdeckte genau das.
         if runtime_site_dir not in sys.path:
-            sys.path.insert(0, runtime_site_dir)
+            sys.path.append(runtime_site_dir)
     except Exception:
         pass
 
@@ -380,8 +418,7 @@ def laufzeitpakete_sicherstellen(
             missing.append((module_name, package_name))
 
     if not missing:
-        return True
-        return True
+        return _zlib_ng_melden(melden, text)
 
     melden(
         text("log.manual.missing_mkpfs_deps", v0=", ".join(m for m, _ in missing))
@@ -435,18 +472,10 @@ def laufzeitpakete_sicherstellen(
             try:
                 importlib.invalidate_caches()
                 if runtime_site_dir not in sys.path:
-                    sys.path.insert(0, runtime_site_dir)
+                    sys.path.append(runtime_site_dir)
                 __import__(module_name)
             except Exception as exc2:
                 melden(text('log.auto.0047', v0=module_name, v1=exc2))
                 return False
 
-    return True
-    try:
-        # Performance-Optimierung: wenn vorhanden, nutze zlib_ng-Binding.
-        # Importform muss zu MkPFS passen (from zlib_ng import zlib_ng as zlib).
-        from zlib_ng import zlib_ng as _zlib_ng_impl  # pyright: ignore[reportMissingImports]  # noqa: F401
-    except Exception as exc:
-        melden(text('log.auto.0048', v0=exc))
-    melden(text('log.auto.0049'))
-    return True
+    return _zlib_ng_melden(melden, text)

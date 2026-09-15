@@ -114,6 +114,35 @@ class FlaechenTests(unittest.TestCase):
                                                   wunschbreite=400)]),
             [])
 
+    def test_canvas_knopf_zu_klein_meldet_sich(self):
+        """Die Knoepfe dieses Programms sind Canvas-Knoepfe (RoundedButton).
+
+        Bis zum 15.09.2026 fielen sie doppelt aus der Pruefung: "Canvas"
+        stand nicht in den Textklassen, und ein Canvas hat keine
+        ``text``-Option, also blieb ``hat_text`` falsch. Ausgerechnet bei
+        ihnen faellt es auf - die Schrift waechst mit der Anzeigeskalierung,
+        die fest eingetragene Knopfhoehe nicht.
+        """
+        befunde = ad.pruefe_flaechen(
+            FENSTER, [_flaeche(klasse="Canvas", breite=150, hoehe=44,
+                               wunschbreite=150, wunschhoehe=58)])
+        self.assertEqual(_kennungen(befunde), ["text_beschnitten"])
+        self.assertIn("14 px", befunde[0].text)
+
+    def test_zeichenflaeche_ohne_text_bleibt_still(self):
+        """Gegenprobe - sonst melden die Hintergrundbilder Fehlalarme.
+
+        Sie liegen absichtlich ueber ihren Rand hinaus und tragen keinen
+        Text; ``hat_text`` muss sie weiterhin heraushalten.
+        """
+        self.assertEqual(
+            ad.pruefe_flaechen(FENSTER, [_flaeche(klasse="Canvas",
+                                                  hat_text=False,
+                                                  breite=150, hoehe=44,
+                                                  wunschbreite=150,
+                                                  wunschhoehe=58)]),
+            [])
+
     def test_unsichtbares_zaehlt_nicht(self):
         self.assertEqual(
             ad.pruefe_flaechen(FENSTER, [_flaeche(sichtbar=False, breite=1,

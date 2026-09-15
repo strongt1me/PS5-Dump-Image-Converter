@@ -96,6 +96,19 @@ class EditorSchreibwegTests(unittest.TestCase):
         cls.app._ps5_port_finden = lambda ip, port, art: port
         # Sonst schreibt der Lauf Verbindungsdaten in die Einstellungen.
         cls.app._save_setting = lambda *a, **k: None
+        # Die Knoepfe werden ueber ihre **Beschriftung** gedrueckt. Steht in
+        # der Einstellungsdatei "en", baut das Fenster englische Knoepfe, und
+        # "LADEN"/"SCHREIBEN" finden nichts mehr - ``_druecken`` scheitert
+        # dann mitten in einer Tk-Rueckmeldung, der Ausnahmehaken des
+        # Programms schluckt es ins Protokoll, und der Test faellt erst an
+        # der Folgezusicherung um ("Der Anwender erfuhr nicht ...").
+        #
+        # Genau das geschah im Verbund: ``pruefumgebung.umlenken`` setzt
+        # ``PS5CONV_KONFIGORDNER`` prozessweit und laeuft beim *Import*; es
+        # gewinnt der Ordner des zuletzt geladenen Pruefmoduls. Einzeln lief
+        # das Trio deshalb immer gruen, im Volllauf immer rot. Dieselbe
+        # Zeile steht aus demselben Grund in test_fensterlayout.py.
+        cls.app._current_language = "de"
 
     def setUp(self) -> None:
         self.lage = {"datei": GEPFLEGT, "stor": [], "fehlt": False}

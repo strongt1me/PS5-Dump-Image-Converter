@@ -75,6 +75,14 @@ _TEXTKLASSEN = frozenset({
     "Label", "TLabel", "Button", "TButton",
     "Checkbutton", "TCheckbutton", "Radiobutton", "TRadiobutton",
     "Menubutton", "TMenubutton",
+    # "Canvas" nur, weil die Knoepfe dieses Programms so gebaut sind
+    # (``RoundedButton``, wegen der runden Ecken). Reine Zeichenflaechen -
+    # die Hintergrundbilder, die Leinwand des Auswahlfensters - tragen
+    # keinen Text und fallen ueber ``hat_text`` weiterhin heraus; genau
+    # dafuer gibt es dieses Kennzeichen seit den vier Fehlalarmen vom
+    # 20.08.2026. Ohne diese Zeile blieb die Bauart, aus der fast jeder
+    # Knopf besteht, von der Pruefung unbemerkt.
+    "Canvas",
 })
 
 

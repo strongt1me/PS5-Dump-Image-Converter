@@ -94,7 +94,10 @@ def _gui(*, ampr: bool, backport: bool, arbeitskopie: bool = False) -> PS5Conver
     g._load_setting = lambda _k, vorgabe: vorgabe
     g._save_setting = lambda *_a, **_k: None
     g._fmt_bytes = lambda n: f"{n} B"
-    g._get_path_size = lambda p: 0
+    # Mit **_k, weil das Vermessen der Quelle ``progress_cb``/``cancel_check``
+    # mitgibt (siehe _quellgroesse_mit_meldung). Ein einarmiger Stub liess den
+    # Weg ueber die Arbeitskopie an einem TypeError scheitern.
+    g._get_path_size = lambda p, **_k: 0
     g.is_running = True
     g._ask_yesno_threadsafe = lambda *_a, **_k: arbeitskopie
     g.engine_output_queue = queue.Queue()

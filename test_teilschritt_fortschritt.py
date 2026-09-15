@@ -590,6 +590,13 @@ class QuellgroesseMeldetUndBrichtAbTests(unittest.TestCase):
             "task_total_source_bytes = self._get_path_size(src)", quelle,
             "Hier vermisst wieder jemand ohne Meldung und ohne Abbruch.")
         self.assertIn("def _quellgroesse_mit_meldung", quelle)
+        # Die Arbeitskopie war die letzte stumme Stelle (15.09.2026 gemeldet):
+        # Sie vermass den Dump **vor** der Rueckfrage und vor der ersten
+        # Protokollzeile - fuer den Anwender sah das nach einem Haenger aus.
+        self.assertNotIn(
+            "groesse = self._get_path_size(quelle)", quelle,
+            "Die Arbeitskopie vermisst wieder blank - ohne Anzeige und ohne "
+            "Abbruch sieht das fuer den Anwender nach einem Haenger aus.")
 
 
 if __name__ == "__main__":

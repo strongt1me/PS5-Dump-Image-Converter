@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.22"
+APP_VERSION = "v1.9.23"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -768,7 +768,41 @@ def mkpfs_argumente_mit_backend(args: list[str],
         return args
     if "--compression-backend" in args:
         return args
+    if not _backend_ladbar(backend):
+        backend = "zlib"
     return [*args[:2], "--compression-backend", backend, *args[2:]]
+
+
+def _backend_ladbar(backend: str) -> bool:
+    """Laesst sich dieses Rechenwerk hier wirklich laden?
+
+    ``find_spec`` genuegt dafuer nicht: Ein Paket kann vollstaendig dastehen
+    und sein **kompiliertes** Untermodul trotzdem zu einer anderen
+    Python-Fassung gehoeren. Genau das ist am 15.09.2026 bei einem Anwender
+    passiert - in ``%APPDATA%\\...\\runtime_site_packages`` lag ein zlib_ng
+    fuer Python 3.11, die Programmdatei laeuft aber auf 3.14. Der Ordner
+    steht in ``sys.path`` vor dem Inhalt der Programmdatei und verdeckt die
+    mitgelieferte Fassung.
+
+    Die Folge war kein Rueckfall, sondern ein Abbruch: MkPFS nimmt den
+    Schalter ``--compression-backend`` woertlich, ``set_backend`` wirft, und
+    ``cli_mkpfs_main`` gibt Rueckgabewert 2 zurueck ("Unable to select
+    compression backend"). Unser Patch ``_ensure_backend_with_fallback``
+    greift nur in ``compress_block``/``decompress_block``, nicht auf diesem
+    Weg - die Festlegung hebelte also den eigenen Rueckfall aus.
+
+    Deshalb wird hier vorher geladen. Faellt das aus, packt der Lauf mit dem
+    Standard-``zlib``: langsamer, aber byte-gleich (siehe UPSTREAM.md).
+    """
+    if backend != "zlib-ng":
+        return True
+    try:
+        from zlib_ng import zlib_ng  # noqa: F401,PLC0415  # pyright: ignore[reportMissingImports]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Rechenwerk zlib-ng nicht ladbar (%s) - es wird mit "
+                       "dem Standard-zlib gepackt.", exc)
+        return False
+    return True
 
 # Vorgabe fuer die beiden Hintergrundbilder, solange nichts gewaehlt ist.
 #
@@ -1311,6 +1345,36 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
         melde(DOKTOR_FEHLER, "Pflichtmodule fehlen: %s" % ", ".join(fehlend))
     else:
         melde(DOKTOR_GUT, "Pflichtmodule vollständig")
+
+    # -- Das Rechenwerk, mit dem gepackt wird --------------------------
+    #
+    # "Vorhanden" genuegt hier nicht, und das ist keine Feinheit: Am
+    # 15.09.2026 stand im Bericht eines Anwenders "Pflichtmodule
+    # vollstaendig" und "0 Fehler", waehrend kein einziger Packlauf
+    # zustande kam. In seinem runtime_site_packages lag ein zlib_ng fuer
+    # Python 3.11, die Programmdatei laeuft aber auf 3.14. ``find_spec``
+    # findet das Paket - der Import des kompilierten Untermoduls scheitert,
+    # und MkPFS bricht mit Rueckgabewert 2 ab.
+    #
+    # Deshalb wird hier wirklich geladen, nicht nur nachgesehen. Ein
+    # Hinweis, kein Fehler: Ohne zlib-ng packt der Lauf mit dem Standard-
+    # zlib weiter, nur langsamer.
+    try:
+        from zlib_ng import zlib_ng as _zlib_ng_probe  # noqa: F401,PLC0415  # pyright: ignore[reportMissingImports]
+        melde(DOKTOR_GUT, "Packwerk zlib-ng lädt")
+    except Exception as exc:  # noqa: BLE001
+        melde(DOKTOR_HINWEIS,
+              "Packwerk zlib-ng lädt nicht (%s) - gepackt wird mit dem "
+              "langsameren Standard-zlib" % exc)
+        try:
+            _spec = _ilu.find_spec("zlib_ng")
+            _ort = str(getattr(_spec, "origin", "") or "")
+        except Exception:  # noqa: BLE001
+            _ort = ""
+        if _ort:
+            zeilen.append("       gefunden in: %s" % _ort)
+            zeilen.append("       Gehört dieser Ordner zu einer anderen "
+                          "Python-Fassung, verdeckt er die mitgelieferte.")
 
     # Diese beiden sind angenehm, aber nicht noetig.
     for anzeige, modul, wozu in (("tkinterdnd2", "tkinterdnd2",
@@ -2342,6 +2406,56 @@ class RoundedButton(tk.Canvas):
         self.bind("<Button-1>", self._on_click)
         self.bind("<Enter>", self._on_enter, add="+")
         self.bind("<Leave>", self._on_leave, add="+")
+
+    #: Luft neben der Beschriftung. Bewusst knapp: Gemeldet werden soll,
+    #: dass ein Text **nicht mehr hineinpasst** - nicht, dass es eng wird.
+    #:
+    #: Der erste Anlauf stand auf 18/10 plus Radius. Am 15.09.2026 bei 120 dpi
+    #: (125 %) nachgemessen: Damit meldete die Pruefung alle acht
+    #: Aufgabenknoepfe und vier weitere, obwohl kein einziger Text
+    #: abgeschnitten war - "Ordner waehlen" misst 126 px in einem 150-px-Knopf.
+    #: Eine Pruefung, die auf jedem normalen Schirm anschlaegt, sagt nichts;
+    #: genau diese Fehlalarmklasse hat das Modul schon einmal getroffen.
+    #:
+    #: Mit 4/2 bleibt sie dort still und schlaegt erst an, wenn der Text
+    #: wirklich ueber den Rand geht - bei 200 % waere derselbe Text rund
+    #: 200 px breit und passte nicht mehr.
+    _TEXT_LUFT_X = 4
+    _TEXT_LUFT_Y = 2
+
+    def diagnose_beschriftung(self) -> str:
+        """Die Beschriftung - ein Canvas hat keine ``text``-Option."""
+        return " ".join(str(self._text or "").split())
+
+    def diagnose_wunschmass(self) -> tuple[int, int]:
+        """Wie gross dieser Knopf fuer seine Beschriftung sein muesste.
+
+        ``winfo_reqwidth`` taugt hier nicht: Diese Klasse ist ein
+        ``tk.Canvas``, und der meldet die **eingestellte** Groesse zurueck,
+        nicht den Platzbedarf des Textes. Die Darstellungspruefung sah
+        Knoepfe dieser Bauart deshalb nie - und ausgerechnet bei ihnen faellt
+        es auf: Die Schrift waechst mit der Anzeigeskalierung (``pt()`` ueber
+        ``tk scaling``), die an den Aufrufstellen fest eingetragene Hoehe
+        nicht. Auf 2880x1800 ist eine 9-pt-Schrift 32 px hoch und sitzt
+        weiterhin in einem 44 px hohen Knopf.
+
+        Returns:
+            ``(breite, hoehe)`` in Pixeln; ``(0, 0)``, wenn sich der Text
+            nicht vermessen laesst - dann urteilt die Pruefung nicht.
+        """
+        if not self._text:
+            return (0, 0)
+        try:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            schrift = _tkfont.Font(root=self, font=self._font)
+            breite = int(schrift.measure(self._text))
+            hoehe = int(schrift.metrics("linespace"))
+        except Exception:  # noqa: BLE001
+            return (0, 0)
+        # Der Radius zaehlt nicht mit: Er rundet die Ecken, der einzeilige
+        # Text steht auf halber Hoehe in der Mitte und stoesst dort nicht an.
+        return (breite + 2 * self._TEXT_LUFT_X,
+                hoehe + 2 * self._TEXT_LUFT_Y)
 
     def _round_rect_points(self, x1: float, y1: float, x2: float, y2: float, r: float) -> list[float]:
         # Eine Stelle fuer die Rechnung: Das Auswahlfenster braucht dieselbe.
@@ -20819,7 +20933,13 @@ class PS5ConverterGUI:
                     )
                 else:
                     src_size   = self.task_total_source_bytes
-                    final_size = self._get_path_size(self.task_final_output_path)
+                    # Liefert die Aufgabe einen **Ordner** ab (die Wege nach
+                    # Dump-Ordner), ist das ein voller Durchlauf ueber zig
+                    # Gigabyte - bei 98 % und bisher ohne ein Wort. Die
+                    # meldende Fassung haelt die Anzeige wach und laesst sich
+                    # abbrechen; bei einer einzelnen Datei kostet sie nichts.
+                    final_size = self._quellgroesse_mit_meldung(
+                        self.task_final_output_path)
                     if src_size > 0 and final_size > 0:
                         size_text = (
                             f"{self._fmt_bytes(src_size)} → "
@@ -23547,7 +23667,24 @@ class PS5ConverterGUI:
         Returns:
             Der zu verwendende Ordner, oder "" bei Abbruch.
         """
-        groesse = self._get_path_size(quelle)
+        # Die Groesse zuerst aus dem Hintergrundlauf nehmen, der sie beim
+        # Waehlen der Quelle schon ermittelt hat. Bis zum 15.09.2026 stand
+        # hier ein blankes ``_get_path_size``: ein zweiter ``os.walk`` ueber
+        # den ganzen Dump, ohne Meldung und ohne Abbruchpruefung - und das
+        # **vor** der Rueckfrage und vor der ersten Protokollzeile. Fuer den
+        # Anwender passierte nach dem Start minutenlang sichtbar nichts; ein
+        # Nutzer hat es als "man weiss nie, ob das Programm haengt" gemeldet.
+        # Dieselbe Fehlerklasse wie bei den sieben Aufrufern vom 12.09.2026,
+        # siehe ``_quellgroesse_mit_meldung``.
+        groesse = self._quellgroesse_ermitteln(quelle)
+        if groesse <= 0:
+            # Noch nicht bekannt - dann messen, aber mit laufender Anzeige
+            # und wirksamem Abbruch statt stumm.
+            self._set_status(self._t("main.integrate_measuring_status"))
+            groesse = self._quellgroesse_mit_meldung(quelle)
+            if not self.is_running:
+                self._append_to_log(self._t("main.integrate_measure_cancelled"))
+                return ""
         antwort = self._ask_yesno_threadsafe(
             self._t("dialog.title.integration_workcopy"),
             self._t("dialog.msg.integration_workcopy",
@@ -25233,7 +25370,38 @@ class PS5ConverterGUI:
                         # Die Dateien lagen direkt im Container; sie müssen aus
                         # dem gleich gelöschten outer_tmp herausgeholt werden.
                         self._append_to_log(self._t('log.auto.0159'))
-                        shutil.copytree(outer_tmp, tmp_extract, dirs_exist_ok=True)
+                        # Auch hier kopiert ``copytree`` am Stueck und meldet
+                        # nichts. Die Schwesterstelle beim Herauskopieren einer
+                        # eingehaengten Quelle zaehlt laengst mit; ihr
+                        # ``_copy_with_progress`` liegt aber in einem anderen
+                        # Zweig und ist hier nicht erreichbar.
+                        #
+                        # Bewusst **ohne** Prozentzahl: Fuer einen ehrlichen
+                        # Balken braeuchte es eine Gesamtgroesse, und die gaebe
+                        # es nur ueber einen zweiten vollen Durchlauf. Laufende
+                        # Dateizahl und Bytes zeigen genauso, dass es vorangeht.
+                        _cont = {"bytes": 0, "dateien": 0, "ts": 0.0}
+
+                        def _kopiere_und_melde(von: str, nach: str) -> None:
+                            try:
+                                gross = os.path.getsize(von)
+                            except OSError:
+                                gross = 0
+                            shutil.copy2(von, nach)
+                            _cont["bytes"] += gross
+                            _cont["dateien"] += 1
+                            jetzt = time.monotonic()
+                            if jetzt - _cont["ts"] < 1.0:
+                                return
+                            _cont["ts"] = jetzt
+                            self._set_status(self._t(
+                                "status.kopiert_fortschritt",
+                                dateien=_cont["dateien"],
+                                groesse=self._fmt_bytes(_cont["bytes"])))
+
+                        shutil.copytree(outer_tmp, tmp_extract,
+                                        dirs_exist_ok=True,
+                                        copy_function=_kopiere_und_melde)
                         search_root = tmp_extract
                     elif not self._move_tree_into(dump_ordner, tmp_extract):
                         search_root = tmp_extract
@@ -26066,9 +26234,15 @@ class PS5ConverterGUI:
                     Returns:
                         True, wenn die Datei entstanden ist.
                     """
-                    profile = self._resolve_pack_profile(
-                        "pack_folder", self._get_path_size(source_dir)
-                    )
+                    # Die Quellgroesse steht hier meist schon fest. Bis zum
+                    # 15.09.2026 lief an dieser Stelle - als einziger von
+                    # sechs Aufrufern - ein blanker os.walk ueber den ganzen
+                    # Dump: ohne Anzeige, ohne Abbruch, direkt vor dem Packen.
+                    # Die uebrigen fuenf uebergeben laengst den bekannten Wert.
+                    _groesse = int(getattr(self, "task_total_source_bytes", 0) or 0)
+                    if _groesse <= 0:
+                        _groesse = self._quellgroesse_mit_meldung(source_dir)
+                    profile = self._resolve_pack_profile("pack_folder", _groesse)
                     uncompressed = str(output_path).lower().endswith(".ffpfs")
 
                     if bauform == BAUFORM_EXFAT:
@@ -31944,6 +32118,15 @@ class PS5ConverterGUI:
         Label mit blossem Bild darf enger sein als sein Wunschmass, ein Knopf
         mit Beschriftung nicht.
         """
+        # Canvas-Knoepfe (RoundedButton) tragen ihren Text in einem
+        # Zeichenobjekt, nicht in einer ``text``-Option - ``cget`` wirft dort
+        # und lieferte damit ``hat_text=False``. Sie melden ihn selbst.
+        eigen = getattr(widget, "diagnose_beschriftung", None)
+        if callable(eigen):
+            try:
+                return eigen()
+            except Exception:  # noqa: BLE001
+                return ""
         try:
             return " ".join(str(widget.cget("text") or "").split())
         except Exception:
@@ -32010,13 +32193,29 @@ class PS5ConverterGUI:
             if widget is self.root:
                 continue
             try:
+                # Ein Canvas meldet als Wunschmass seine **eingestellte**
+                # Groesse, nicht den Platzbedarf seines Textes. RoundedButton
+                # rechnet ihn deshalb selbst aus; ohne das blieb die Bauart,
+                # aus der fast jeder Knopf dieses Programms besteht,
+                # ungeprueft - und gerade sie leidet unter hoher
+                # Anzeigeskalierung.
+                wunsch_b = widget.winfo_reqwidth()
+                wunsch_h = widget.winfo_reqheight()
+                eigen = getattr(widget, "diagnose_wunschmass", None)
+                if callable(eigen):
+                    try:
+                        _b, _h = eigen()
+                        if _b > 0 and _h > 0:
+                            wunsch_b, wunsch_h = int(_b), int(_h)
+                    except Exception:  # noqa: BLE001
+                        pass
                 flaechen.append(ad.Flaeche(
                     name=self._diagnose_widget_name(widget),
                     klasse=widget.winfo_class(),
                     x=widget.winfo_rootx(), y=widget.winfo_rooty(),
                     breite=widget.winfo_width(), hoehe=widget.winfo_height(),
-                    wunschbreite=widget.winfo_reqwidth(),
-                    wunschhoehe=widget.winfo_reqheight(),
+                    wunschbreite=wunsch_b,
+                    wunschhoehe=wunsch_h,
                     sichtbar=bool(widget.winfo_ismapped()),
                     hat_text=bool(self._diagnose_beschriftung(widget)),
                     rollbar=self._diagnose_ist_rollbar(widget)))
@@ -32972,6 +33171,92 @@ class PS5ConverterGUI:
             finally:
                 messagebox.askyesno = _echt_frage
                 filedialog.askdirectory = _echt_ordner
+
+        # -- 8) Die acht Aufgaben sind vollstaendig verdrahtet ------------
+        #
+        # Die Fehlerklasse, die das faengt: Eine Aufgabe verliert still ihre
+        # Quell- oder Zielarten und bietet im Fenster nichts mehr an. Genau
+        # das ist Aufgabe 7 passiert (ausgeblendetes Ziel, in v1.9.15
+        # behoben) - und es faellt nicht auf, weil jede Tabelle fuer sich
+        # gueltig bleibt. Hier laeuft die Pruefung dort, wo der Anwender
+        # steht: in der ausgelieferten Programmdatei.
+        #
+        # Bewusst ohne Fenster: ``self`` ist hier keine vollstaendige
+        # Oberflaeche (siehe Gruppe 7), und ``_get_target_options`` laese
+        # Tk-Variablen.
+        try:
+            _modi = [_s for _anzeige, _s in PS5ConverterGUI._MODE_OPTIONS]
+            _quellen = PS5ConverterGUI._MODE_SOURCE_TYPES
+            _ziele = PS5ConverterGUI._MODE_TARGET_OPTIONS
+            _formate = set(PS5ConverterGUI._FORMAT_LABELS)
+            # Diese beiden wandeln nichts um - sie haben zu Recht kein Ziel.
+            _ohne_ziel = {"ampr_manager", "dump_validator"}
+
+            geprueft += 1
+            if len(_modi) != 8:
+                verletzt.append("Aufgabenliste hat %d statt 8 Einträge"
+                                % len(_modi))
+
+            for _modus in _modi:
+                geprueft += 1
+                _q = _quellen.get(_modus)
+                if not _q:
+                    verletzt.append("Aufgabe '%s' kennt keine Quellart" % _modus)
+                elif not set(_q) <= _formate:
+                    verletzt.append(
+                        "Aufgabe '%s' nennt unbekannte Quellart: %s"
+                        % (_modus, ", ".join(sorted(set(_q) - _formate))))
+
+                geprueft += 1
+                _z = _ziele.get(_modus)
+                if _modus in _ohne_ziel:
+                    if _z:
+                        verletzt.append("Aufgabe '%s' wandelt nicht um, bietet "
+                                        "aber Zielformate an" % _modus)
+                elif not _z:
+                    verletzt.append("Aufgabe '%s' bietet kein Zielformat an "
+                                    "- im Fenster bleibt die Auswahl leer"
+                                    % _modus)
+                elif not set(_z) <= _formate:
+                    verletzt.append(
+                        "Aufgabe '%s' nennt unbekanntes Zielformat: %s"
+                        % (_modus, ", ".join(sorted(set(_z) - _formate))))
+
+            geprueft += 1
+            _verwaist = sorted(set(_ziele) - set(_modi))
+            if _verwaist:
+                verletzt.append("Zielliste kennt Aufgaben, die es nicht "
+                                "gibt: %s" % ", ".join(_verwaist))
+        except Exception as exc:  # noqa: BLE001
+            verletzt.append("Aufgaben-Verdrahtung wirft: %s"
+                            % type(exc).__name__)
+
+        # -- 9) Das Packwerk laedt wirklich, nicht nur "vorhanden" --------
+        #
+        # Gemessener Anlass (15.09.2026): In %APPDATA% lag ein zlib_ng fuer
+        # Python 3.11, waehrend die Programmdatei auf 3.14 lief. Der Doktor
+        # meldete "Pflichtmodule vollstaendig, 0 Fehler" - und trotzdem kam
+        # kein einziger Packlauf zustande, weil MkPFS mit Rueckgabewert 2
+        # abbrach ("Unable to select compression backend").
+        #
+        # Fehlt zlib_ng ganz, ist das **kein** Verstoss: Dann packt der Lauf
+        # mit dem Standard-zlib weiter, nur langsamer. Ein Verstoss ist der
+        # andere Fall - das Paket liegt da und laedt trotzdem nicht. Dann
+        # verdeckt ein Ordner im Suchpfad die mitgelieferte Fassung.
+        geprueft += 1
+        try:
+            from zlib_ng import zlib_ng as _zng_probe  # noqa: F401,PLC0415  # pyright: ignore[reportMissingImports]
+        except Exception as exc:  # noqa: BLE001
+            try:
+                import importlib.util as _ilu_probe  # noqa: PLC0415
+                _liegt_da = _ilu_probe.find_spec("zlib_ng") is not None
+            except Exception:  # noqa: BLE001
+                _liegt_da = False
+            if _liegt_da:
+                verletzt.append(
+                    "zlib_ng liegt vor, lädt aber nicht (%s) - ein Ordner im "
+                    "Suchpfad verdeckt die mitgelieferte Fassung"
+                    % type(exc).__name__)
 
         if verletzt:
             zeilen = ["Eigenschaften: %d Zusicherungen geprüft, %d VERLETZT"
@@ -34986,7 +35271,11 @@ class PS5ConverterGUI:
         grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
         fenster.configure(bg=grund)
 
-        breite, hoehe, rand = 520, 384, 14
+        # Hoehe: 332 statt 384, seit der dritte Knopf weg ist. Die 52 sind
+        # genau eine Knopfzeile des Rasters (hoch = 196 + lfd * 52); der
+        # Abstand zwischen dem letzten Knopf und dem Schliessen-Knopf bleibt
+        # damit bei 23 px wie zuvor.
+        breite, hoehe, rand = 520, 332, 14
         leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
                              highlightthickness=0, bd=0)
         leinwand.pack(fill="both", expand=True)
@@ -35078,23 +35367,11 @@ class PS5ConverterGUI:
             # _show_ampr_generation baut jedes Mal ein neues Toplevel.
             self._werkzeugfenster_umschalten(methode)
 
-        # Die dritte Wahl ist der bisherige Weg: Aufgabe 7 im Hauptbereich,
-        # mit Quelle und START. Sie ist kein Fenster, sondern stellt die
-        # Aufgabe um - deshalb hier derselbe Aufruf wie beim Knopf davor.
-        def _aufgabe_sieben() -> None:
-            try:
-                fenster.destroy()
-            except tk.TclError:
-                pass
-            self._set_mode_from_sidebar("ampr_manager")
-
-        # Die beiden Fassungen bekommen je einen Knopf zu ihrer Anleitung;
-        # der dritte Weg hat keine eigene, weil er nur die Aufgabe umstellt.
+        # Die beiden Fassungen bekommen je einen Knopf zu ihrer Anleitung.
         hilfsbreite = 88
         for lfd, (schluessel, methode, generation) in enumerate((
                 ("titlebar.ampr_neu", "_show_ampr_neue_methode", sm_gen.NEU),
-                ("titlebar.ampr_alt", "_show_ampr_alte_methode", sm_gen.ALT),
-                ("ampr_auswahl.manager", _aufgabe_sieben, ""))):
+                ("titlebar.ampr_alt", "_show_ampr_alte_methode", sm_gen.ALT))):
             hoch = 196 + lfd * 52
             eigene = innen - hilfsbreite - 8 if generation else innen
             knopf = RoundedButton(
@@ -37685,8 +37962,32 @@ class PS5ConverterGUI:
             ``None``  – abbrechen.
         """
         ziel = os.path.dirname(os.path.abspath(ordner)) or "."
+
+        # Das Vermessen laeuft hier im **Hauptstrang** ueber einen Dump von 40
+        # bis 100 GB. Blank aufgerufen stand das Fenster dabei still und sagte
+        # nichts - vom Anwender nicht von einem Aufhaenger zu unterscheiden.
+        #
+        # Ein ``cancel_check`` bekommt der Aufruf bewusst **nicht**: Er haengt
+        # anderswo an ``is_running``, und das ist in diesem Fenster gar nicht
+        # gesetzt. Die Messung braeche sofort ab, ``noetig`` waere 0 - und die
+        # Platzpruefung darunter wuerde jede noch so knappe Platte durchwinken.
+        _messstand = {"ts": 0.0}
+
+        def _messfortschritt(bytes_bisher: int, dateien: int) -> None:
+            jetzt = time.monotonic()
+            if jetzt - _messstand["ts"] < 1.0:
+                return
+            _messstand["ts"] = jetzt
+            self._append_to_log(self._t(
+                "status.quelle_wird_vermessen", dateien=dateien,
+                groesse=self._fmt_bytes(bytes_bisher)) + chr(10))
+            try:
+                win.update_idletasks()
+            except Exception:  # noqa: BLE001
+                pass
+
         try:
-            noetig = self._get_path_size(ordner)
+            noetig = self._get_path_size(ordner, progress_cb=_messfortschritt)
             frei = shutil.disk_usage(ziel).free
         except OSError as exc:
             # Nicht messbar heißt nicht "zu wenig": Ein Netzlaufwerk oder ein
@@ -37752,7 +38053,33 @@ class PS5ConverterGUI:
                 # den Hauptstrang, nicht hierher.
                 stand(self._t("backport.state_backup", path=sicherungsordner))
                 self._append_to_log(self._t("backport.log_backup", path=sicherungsordner))
-                shutil.copytree(ordner, sicherungsordner)
+                # Die Sicherung ist eine vollstaendige Kopie des Dumps - bei
+                # einem PS5-Spiel 40 bis 100 GB. ``shutil.copytree`` kopiert am
+                # Stueck und meldet nichts; die Statuszeile stand hier
+                # minutenlang auf "Sicherung wird angelegt", ohne dass sich
+                # etwas ruehrte. Gezaehlt wird ueber ``copy_function`` -
+                # dasselbe Muster wie beim Herauskopieren einer eingehaengten
+                # Quelle -, gemeldet hoechstens jede Sekunde.
+                _sicher = {"bytes": 0, "dateien": 0, "ts": 0.0}
+
+                def _sichern_und_melden(von: str, nach: str) -> None:
+                    try:
+                        gross = os.path.getsize(von)
+                    except OSError:
+                        gross = 0
+                    shutil.copy2(von, nach)
+                    _sicher["bytes"] += gross
+                    _sicher["dateien"] += 1
+                    jetzt = time.monotonic()
+                    if jetzt - _sicher["ts"] < 1.0:
+                        return
+                    _sicher["ts"] = jetzt
+                    stand(self._t("backport.state_backup_progress",
+                                  dateien=_sicher["dateien"],
+                                  groesse=self._fmt_bytes(_sicher["bytes"])))
+
+                shutil.copytree(ordner, sicherungsordner,
+                                copy_function=_sichern_und_melden)
 
             # ---- 2) Dateien einzeln verarbeiten ----
             dateien = ps5_backport.kandidaten(ordner)

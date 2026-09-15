@@ -547,6 +547,47 @@ class EigenschaftspruefungTests(unittest.TestCase):
             self.haupt.parse_sfo = original
         self.assertIn("VERLETZT", zeilen[0])
 
+    def test_eine_aufgabe_ohne_zielformat_faellt_auf(self) -> None:
+        """Genau das hatte Aufgabe 7 einmal - die Auswahl blieb leer.
+
+        Die Tabelle bleibt dabei fuer sich gueltig; auffallen kann es nur,
+        wenn jemand die acht Aufgaben gegen ihre Ziele haelt.
+        """
+        G = self.haupt.PS5ConverterGUI
+        original = G._MODE_TARGET_OPTIONS
+        try:
+            gekuerzt = dict(original)
+            gekuerzt.pop("pack_folder", None)
+            G._MODE_TARGET_OPTIONS = gekuerzt
+            zeilen = self.pruefen()
+        finally:
+            G._MODE_TARGET_OPTIONS = original
+        self.assertIn("VERLETZT", zeilen[0])
+
+    def test_ein_unbekanntes_zielformat_faellt_auf(self) -> None:
+        """Ein Tippfehler im Formatnamen laesst die Auswahl ins Leere zeigen."""
+        G = self.haupt.PS5ConverterGUI
+        original = G._MODE_TARGET_OPTIONS
+        try:
+            verbogen = dict(original)
+            verbogen["pack_folder"] = ("ffpfsc", "gibtsnicht")
+            G._MODE_TARGET_OPTIONS = verbogen
+            zeilen = self.pruefen()
+        finally:
+            G._MODE_TARGET_OPTIONS = original
+        self.assertIn("VERLETZT", zeilen[0])
+
+    def test_eine_verschwundene_aufgabe_faellt_auf(self) -> None:
+        """Es muessen acht sein - sonst fehlt eine im Fenster."""
+        G = self.haupt.PS5ConverterGUI
+        original = G._MODE_OPTIONS
+        try:
+            G._MODE_OPTIONS = list(original)[:7]
+            zeilen = self.pruefen()
+        finally:
+            G._MODE_OPTIONS = original
+        self.assertIn("VERLETZT", zeilen[0])
+
     def test_das_protokoll_bleibt_still(self) -> None:
         """Die unsinnigen Bytes erzeugten vier Warnungen im eigenen Bericht."""
         # Der Rumpf steht seit dem 30.08.2026 im Modul; im Monolithen

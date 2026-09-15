@@ -2,7 +2,60 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.22):** Neue Einstellung: Der voruebergehende Dump-Ordner der Umpack-Wege lässt sich in den Arbeitsordner legen statt zum Ziel – dann liegt am Ziel-Laufwerk nur das fertige Ergebnis. Ausserdem behoben: Der Asset-Pack-Bau brach bei Sonderzeichen im Titel (z. B. „Yotei“) ab.
+> **Kurz zum aktuellen Stand (v1.9.23):** Wichtige Behebung: In v1.9.22 konnte das Packen mit „Unable to select compression backend“ abbrechen, sodass gar keine Datei entstand – das ist behoben. Ausserdem zeigen mehrere lange Arbeitsschritte jetzt ihren Fortschritt, statt wie eingefroren zu wirken.
+
+---
+
+## v1.9.23 – 15.09.2026
+
+Eine wichtige Behebung am Packen, mehr sichtbarer Fortschritt und eine
+gründlichere Selbstprüfung.
+
+### Behoben: Es liess sich nichts mehr packen
+
+Unter Umständen brach jeder Packlauf sofort ab, mit einer Meldung über ein
+nicht verfügbares Rechenwerk („Unable to select compression backend“), und
+es entstand keine Ausgabedatei. Ursache war ein älterer Ordner mit
+nachinstallierten Zusatzpaketen im Benutzerprofil: Er stammte aus einer
+früheren Python-Fassung, wurde aber bevorzugt geladen und verdeckte damit
+die mitgelieferten Bestandteile.
+
+Drei Dinge sind jetzt anders: Der Ordner trägt die Python-Fassung im Namen,
+sodass ein alter nie wieder dazwischenkommt; er wird nur noch **nach** den
+mitgelieferten Bestandteilen durchsucht; und lässt sich das schnelle
+Rechenwerk nicht laden, wird still auf das eingebaute Standardverfahren
+ausgewichen, statt den Lauf abzubrechen (etwas langsamer, gleiches Ergebnis).
+
+### Sichtbarer Fortschritt statt scheinbarem Stillstand
+
+Mehrere Arbeitsschritte haben lange gerechnet, ohne etwas anzuzeigen – das
+war von einem Hänger nicht zu unterscheiden. Sie melden sich jetzt:
+
+- **Arbeitskopie:** Das Vermessen der Quelle vor der Rückfrage läuft nicht
+  mehr stumm und lässt sich abbrechen. Meist entfällt es ganz, weil die
+  Grösse schon bekannt ist.
+- **BACKPORT-Sicherung:** Die vollständige Kopie des Dump-Ordners (bei einem
+  PS5-Spiel 40 bis 100 GB) zeigt jetzt laufend Dateizahl und Datenmenge.
+- **BACKPORT-Platzprüfung:** Das Ausmessen des Ordners meldet sich unterwegs,
+  statt das Fenster minutenlang stillstehen zu lassen.
+- **Container-Kopie** beim Bearbeiten und die **Abschlussprüfung** bei 98 %
+  zeigen ebenfalls, dass es vorangeht.
+
+### Diagnose prüft mehr
+
+- Sie stellt fest, ob das Rechenwerk zum Packen sich **wirklich laden**
+  lässt – vorher meldete sie „Mod-Ule vollständig“, während kein Packlauf
+  zustande kam.
+- Sie prüft, dass alle acht Aufgaben ihre Quell- und Zielformate kennen.
+- Sie erkennt jetzt auch Knöpfe, die für ihre Beschriftung zu klein sind,
+  und nennt sie samt fehlender Pixelzahl. Das betrifft vor allem hohe
+  Bildschirmauflösungen, wo die Schrift mitwächst.
+
+### Kleinigkeiten
+
+Im AMPR-EMU-Auswahlfenster ist der dritte Knopf entfallen; das Fenster wurde
+entsprechend angepasst. Die beiden Methoden und alle Funktionen bleiben
+unverändert erreichbar.
 
 ---
 
