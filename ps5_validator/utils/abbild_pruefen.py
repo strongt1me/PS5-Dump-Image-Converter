@@ -27,10 +27,12 @@ zur Pruefung.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Callable
 
@@ -52,6 +54,8 @@ class Pruefstand:
         mkpfs_ordner_holen: Stellt die MkPFS-Engine bereit.
         ufs2tool_pfad: Liefert den Pfad zu UFS2Tool.
         dokan_vorhanden: Ob der Dokan-Treiber da ist.
+        status_melden: Schreibt in die Statuszeile - hier der Fortschritt der
+            Abschlusspruefung.
     """
 
     def __init__(self, *,
@@ -62,7 +66,8 @@ class Pruefstand:
                  ordner_lesen: Callable[..., Any] | None = None,
                  mkpfs_ordner_holen: Callable[[], str] | None = None,
                  ufs2tool_pfad: Callable[[], str] | None = None,
-                 dokan_vorhanden: Callable[[], Any] | None = None) -> None:
+                 dokan_vorhanden: Callable[[], Any] | None = None,
+                 status_melden: Callable[[str], Any] | None = None) -> None:
         self._t = text or schluessel_zeigen
         self._expects_dump_folder = erwartet_dump_ordner or (lambda *a: False)
         self._looks_like_dump_folder = sieht_aus_wie_dump or (lambda *a: False)
@@ -71,6 +76,7 @@ class Pruefstand:
         self._extract_embedded_mkpfs = mkpfs_ordner_holen or (lambda: "")
         self._extract_ufs2tool = ufs2tool_pfad or (lambda: "")
         self._find_dokan_driver = dokan_vorhanden or (lambda: None)
+        self._status_melden = status_melden or (lambda _text: None)
 
     # Im Monolithen war das eine @staticmethod, die ihre zwei Helfer ueber
     # den Klassennamen rief. Hier kommen sie aus dem Erzeuger, also braucht
@@ -252,6 +258,55 @@ class Pruefstand:
             result["detail"] = f"UFS2-Validierung fehlgeschlagen: {exc}"
             return result
 
+    #: Hoechstens so oft (Sekunden) geht ein Pruefstand in die Statuszeile.
+    _FORTSCHRITT_TAKT_S = 1.0
+
+    def _fortschritt_argument(self, pruefung: Callable[..., Any]) -> dict[str, Any]:
+        """``{"progress": ...}`` fuer die MkPFS-Pruefung - wenn sie es annimmt.
+
+        Die Abschlusspruefung eines .ffpfsc dekodiert jeden Block. Bei einem
+        51-GB-Titel dauert das eine Viertelstunde und mehr, und bis v1.9.19
+        geschah es ohne jede Meldung: Die Statuszeile stand still, und die
+        Aufhaenger-Erkennung schrieb am 12.09.2026 (Pruefmatrix J1) mitten in
+        einem normalen Lauf einen Fehler samt Stapelabzug ins Protokoll. Jetzt
+        steht der Prozentwert in der Statuszeile.
+
+        ``progress`` kennt erst die eingebettete Fassung (siehe
+        ``MkPFS-1.0.0/UPSTREAM.md``). Eine andere, etwa aus ``site-packages``,
+        bekaeme sonst einen unbekannten Parameter - und die Pruefung schluege
+        fehl, statt nur still zu laufen.
+
+        Returns:
+            ``{"progress": Progress}`` oder ``{}``.
+        """
+        try:
+            if "progress" not in inspect.signature(pruefung).parameters:
+                return {}
+            from mkpfs.pbar import Progress  # type: ignore[import-not-found]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Fortschritt der Abschlusspruefung nicht verfuegbar: %s", exc)
+            return {}
+        zuletzt = [0.0, -1]
+
+        def _hoeren(aktion, *werte):
+            if aktion != "step" or len(werte) < 3:
+                return
+            gesamt = max(1, int(werte[2] or 1))
+            prozent = min(100, int(werte[1] or 0) * 100 // gesamt)
+            jetzt = time.monotonic()
+            if prozent == zuletzt[1]:
+                return
+            if prozent < 100 and jetzt - zuletzt[0] < self._FORTSCHRITT_TAKT_S:
+                return
+            zuletzt[0], zuletzt[1] = jetzt, prozent
+            try:
+                self._status_melden(self._t("status.abschlusspruefung_fortschritt",
+                                            prozent=prozent))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Statuszeile nicht beschreibbar: %s", exc)
+
+        return {"progress": Progress(enabled=False, listener=_hoeren)}
+
     def _verify_output_artifact(self, mode: str, final_path: str) -> dict[str, Any]:
         """Verifiziert ein Ergebnisartefakt schnell und robust."""
         result: dict[str, Any] = {
@@ -336,7 +391,8 @@ class Pruefstand:
                     sys.path.insert(0, mkpfs_parent)
                 from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
 
-                inspection = verify_pfs_image(Path(final_path))
+                inspection = verify_pfs_image(
+                    Path(final_path), **self._fortschritt_argument(verify_pfs_image))
                 result["method"] = "mkpfs-verify"
                 result["sha256"] = str(getattr(inspection, "manifest_sha256", "") or "")
                 errors = list(getattr(inspection, "errors", []) or [])

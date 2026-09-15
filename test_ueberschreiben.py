@@ -209,9 +209,56 @@ class SammelUeberschreibenTests(unittest.TestCase):
         self.assertGreater(i_frage, 0, "Es wird gar nicht gefragt")
         self.assertLess(i_frage, i_bau, "Gefragt wird erst nach dem Bauen")
 
+    def test_ein_ergebnis_dieses_laufs_bleibt_stehen(self):
+        """Pruefmatrix J1, 12.09.2026: Spiel.exfat und Spiel.ffpkg zeigen auf
+        dieselbe Spiel.ffpfsc - die zweite entfernte das Ergebnis der ersten."""
+        gui = self._gui(antwort=True)
+        gui._batch_erzeugte_ziele = {
+            os.path.normcase(os.path.abspath(str(self.vorhanden)))}
+        self.assertFalse(gui._batch_ueberschreiben_klaeren(
+            str(self.quelle), str(self.ordner), "ffpfsc"))
+        self.assertEqual([], self.gefragt,
+                         "Gefragt wird nicht - ein Ja zerstoerte das eigene Ergebnis.")
+        self.assertIn("batch.namensgleich_uebersprungen", self.protokoll[0])
+        self.assertEqual(b"altes Ergebnis", self.vorhanden.read_bytes())
+
+    def test_ein_ergebnis_dieses_laufs_bleibt_auch_ohne_fenster_stehen(self):
+        """Gerade dort: Mit --yes oder ohne Oberflaeche wird nie gefragt."""
+        gui = _gui()
+        gui._t = lambda s, **kw: s
+        gui._append_to_log = lambda _t: None
+        gui._batch_ueberschreiben = None
+        gui._batch_erzeugte_ziele = {
+            os.path.normcase(os.path.abspath(str(self.vorhanden)))}
+        self.assertFalse(gui._batch_ueberschreiben_klaeren(
+            str(self.quelle), str(self.ordner), "ffpfsc"))
+
+    def test_ein_frueherer_lauf_wird_weiter_gefragt(self):
+        """Die Gegenprobe: Liegt die Datei schon vor dem Lauf da, gilt die Frage."""
+        gui = self._gui(antwort=True)
+        gui._batch_erzeugte_ziele = set()
+        self.assertTrue(gui._batch_ueberschreiben_klaeren(
+            str(self.quelle), str(self.ordner), "ffpfsc"))
+        self.assertEqual(1, len(self.gefragt))
+
+    def test_die_schleife_merkt_sich_was_sie_schreibt(self):
+        with io.open(APP.__file__, "rb") as fh:
+            baum = ast.parse(fh.read().decode("utf-8"))
+        knoten = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_run_flexible_conversion")
+        text = ast.unparse(knoten)
+        self.assertIn("self._batch_erzeugte_ziele = set()", text,
+                      "Ohne Ruecksetzer gaelten Ergebnisse des vorigen Laufs "
+                      "als eigene.")
+        i_merken = text.find("self._batch_erzeugte_ziele.add(")
+        i_bau = text.find("_execute_conversion_by_type")
+        self.assertGreater(i_merken, i_bau, "Gemerkt wird nicht nach dem Bauen.")
+
     def test_die_texte_gibt_es_in_beiden_sprachen(self):
         for schluessel in ("batch.ueberschreiben_frage",
-                           "batch.uebersprungen_vorhanden"):
+                           "batch.uebersprungen_vorhanden",
+                           "batch.namensgleich_uebersprungen"):
             eintrag = i18n.STRINGS[schluessel]
             self.assertTrue(eintrag.get("de"), schluessel)
             self.assertTrue(eintrag.get("en"), schluessel)

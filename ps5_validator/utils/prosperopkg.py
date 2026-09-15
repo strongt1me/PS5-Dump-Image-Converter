@@ -226,11 +226,18 @@ def paket_lesen(datei: str,
     ohnehin bei; bis v1.9.2 bot die Huelle davon nur ``build`` an.
 
     **Gelesen wird nur der aeussere Container.** Kopf, Content-ID und die
-    Eintragstabelle - die eingebettete PFS bleibt verschluesselt, dafuer
-    braeuchte es Schluessel, die hier niemand hat. Wer eine Dateiliste des
-    Spiels erwartet, bekommt sie also nicht; die Eintraege sind die des
-    Pakets (``param.sfo``, ``playgo-chunk.dat``, Bilder), nicht die des
-    Spielinhalts.
+    Eintragstabelle. Die eingebettete PFS ist verschluesselt; die Eintraege
+    sind die des Pakets (``param.json``, ``playgo-chunk.dat``, Bilder), nicht
+    die des Spielinhalts.
+
+    **Korrektur vom 14.09.2026.** Hier stand, zum Entschluesseln braeuchte es
+    Schluessel, "die hier niemand hat". Fuer Debug-Pakete stimmt das nicht:
+    Sie sind mit dem Passcode verschluesselt, bei selbst gebauten Paketen 32
+    Nullen. Die eingebettete LibProsperoPkg 2.5 scheitert trotzdem - am
+    eigenen 221-MB-Paket bricht ``ProsperoPackageExtractor.ListFiles`` mit
+    dem Passcode ab ("Stream length must be non-negative and less than
+    2^31 - 1 - origin"). Eine Dateiliste gaebe es erst mit einer neueren
+    Fassung der Bibliothek.
 
     Args:
         datei: Die ``.pkg``-Datei.

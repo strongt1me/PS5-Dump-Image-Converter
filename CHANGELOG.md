@@ -2,7 +2,40 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.19):** Der Knopf „exFAT → PKG" heißt jetzt **„Abbild → PKG"** und baut aus **jedem** Abbildformat ein installierbares Paket – `.exfat`, `.ffpfsc`, `.ffpfs` und `.ffpkg`. Dazu ein neues Werkzeug **„PKG lesen"**, das dir die Eckdaten einer fertigen `.pkg` zeigt, sowie eine **Fortschrittsanzeige und ein Abbrechen-Knopf** im Umwandeln-Fenster. Außerdem **vier neue Designs** – und das Programm **friert beim Starten nicht mehr ein**, wenn AMPR EMU oder BACKPORT angehakt ist.
+> **Kurz zum aktuellen Stand (v1.9.20):** In „ffpfsc konvertieren“ gibt es jetzt den Weg **ffpfsc → ffpfsc** – er erscheint nur, wenn du **AMPR EMU Asset-Pack** gewählt hast, und baut das Asset-Pack in eine neue `.ffpfsc` ein. Dazu mehrere Stabilitäts-Fixes: das Programm **friert beim Starten nicht mehr ein**, wenn der Platz knapp wird; eine Einstellungsdatei mit BOM wird nicht mehr verworfen; und bei der Abschlussprüfung sowie beim Entpacken einer `.ffpkg` siehst du jetzt einen **Fortschritt** (das Entpacken lässt sich abbrechen).
+
+---
+
+## v1.9.20 – 15.09.2026
+
+Ein neuer Weg für Asset-Packs in „ffpfsc konvertieren“ und mehrere Fixes gegen
+Einfrieren, verlorene Einstellungen und stille Wartezeiten.
+
+### „ffpfsc → ffpfsc“ mit Asset-Pack (Aufgabe 2)
+
+In „ffpfsc konvertieren“ kannst du eine `.ffpfsc` jetzt wieder zu einer `.ffpfsc`
+machen – aber nur, wenn **AMPR EMU Asset-Pack** ausgewählt ist. Ohne Asset-Pack
+bleibt diese Auswahl ausgeblendet (ein bloßes Umpacken brächte nichts). Ist das
+Asset-Pack gewählt, wird beim Start die `.ffpfsc` entpackt, das Asset-Pack in den
+Dump-Ordner eingebaut und daraus eine neue `.ffpfsc` **inklusive Asset-Pack** gepackt –
+ohne Zwischenfrage.
+
+### Behoben
+
+- Das Programm **friert beim Starten nicht mehr ein** und bricht nicht mehr ab, wenn die
+  Platzabfrage erscheint (z. B. bei `.ffpkg → .ffpfsc` mit AMPR EMU).
+- Eine mit einem BOM gespeicherte Einstellungsdatei wird wieder korrekt gelesen und **nicht
+  mehr überschrieben**; eine beschädigte Datei wird gesichert statt still ersetzt, und
+  der Doktor weist darauf hin.
+- Bei der **Abschlussprüfung** und beim **Entpacken einer `.ffpkg`** siehst du jetzt einen
+  Fortschritt statt minutenlangem Stillstand; das Entpacken lässt sich abbrechen.
+- In der **Sammelkonvertierung** überschreiben sich zwei gleichnamige Quellen (z. B.
+  `Spiel.exfat` und `Spiel.ffpkg`) nicht mehr gegenseitig; die zweite wird mit Hinweis
+  übersprungen.
+- Auf **exFAT-Laufwerken** wird beim Prüfen nach dem Packen nicht mehr die ganze Quelle
+  daneben kopiert.
+- Der Hinweis im Werkzeug **„PKG lesen“** zu verschlüsselten Inhalten wurde für
+  Debug-Pakete richtiggestellt.
 
 ---
 

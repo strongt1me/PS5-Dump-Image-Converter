@@ -466,7 +466,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.19"
+APP_VERSION = "v1.9.20"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
@@ -1456,12 +1456,31 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
         melde(DOKTOR_EGAL, "Einstellungsdatei: noch keine angelegt")
     else:
         try:
-            with open(pfad, "r", encoding="utf-8") as f:
+            # utf-8-sig: Eine Datei mit BOM (Windows PowerShell 5.1 schreibt sie
+            # so) ist gueltig - das Programm selbst liest sie genauso.
+            with open(pfad, "r", encoding="utf-8-sig") as f:
                 json.load(f)
             melde(DOKTOR_GUT, "Einstellungsdatei lesbar und gültig")
         except (OSError, ValueError) as exc:
             melde(DOKTOR_FEHLER, "Einstellungsdatei beschädigt (%s): %s"
                   % (type(exc).__name__, pfad))
+
+    # Seit dem 14.09.2026 sichert das Programm eine unlesbare Einstellungsdatei,
+    # statt sie still durch eine einzelne Einstellung zu ersetzen (siehe
+    # einstellungen.vorhandenes_lesen). Liegt eine solche Sicherung da, hat der
+    # Anwender Einstellungen verloren, ohne es zu sehen - hier steht es.
+    if pfad:
+        ordner_cfg, name_cfg = os.path.split(pfad)
+        try:
+            sicherungen = sorted(eintrag for eintrag in os.listdir(ordner_cfg or ".")
+                                 if eintrag.startswith(name_cfg + ".unlesbar-"))
+        except OSError:
+            sicherungen = []
+        if sicherungen:
+            melde(DOKTOR_HINWEIS,
+                  "Einstellungsdatei war unlesbar und wurde gesichert "
+                  "(%d Sicherung(en), zuletzt %s)"
+                  % (len(sicherungen), os.path.join(ordner_cfg, sicherungen[-1])))
 
     # -- Rechte --------------------------------------------------------
     if sys.platform == "win32":
@@ -3082,7 +3101,7 @@ class PS5ConverterGUI:
         try:
             cfg_path = os.path.join(_system_konfigurationsordner(), "paths.json")
             if os.path.isfile(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
+                with open(cfg_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
                 return data.get(key, default)
         except Exception as exc:
@@ -4474,7 +4493,11 @@ class PS5ConverterGUI:
             try:
                 if not os.path.isfile(cfg_path):
                     return default
-                with open(cfg_path, "r", encoding="utf-8") as f:
+                # utf-8-sig: Mit "utf-8" scheiterte eine Datei mit BOM, und
+                # jede Einstellung fiel still auf die Vorgabe zurueck - so
+                # liefen am 11.09.2026 drei Pruefmatrix-Faelle ohne die
+                # verlangte Integration.
+                with open(cfg_path, "r", encoding="utf-8-sig") as f:
                     data = json.load(f)
                 return data.get(key, default)
             except (PermissionError, json.JSONDecodeError) as exc:
@@ -4525,11 +4548,14 @@ class PS5ConverterGUI:
                 cfg_path = self._get_config_path()
                 existing: dict = {}
                 if os.path.isfile(cfg_path):
-                    try:
-                        with open(cfg_path, "r", encoding="utf-8") as f:
-                            existing = json.load(f)
-                    except Exception as exc:
-                        logger.debug("Vorhandene Konfiguration nicht lesbar: %s", exc)
+                    # Bis v1.9.19 stand hier "except Exception: existing = {}".
+                    # Jeder Lesefehler - am 11.09.2026 eine BOM - machte aus
+                    # dem Aendern EINES Schluessels das Ersetzen der ganzen
+                    # Datei. Die Regel steht in einstellungen.vorhandenes_lesen.
+                    gelesen = einstellungen.vorhandenes_lesen(cfg_path)
+                    if gelesen is None:
+                        return
+                    existing = gelesen
                 existing.update(aenderungen)
 
                 # Die Prozessnummer im Namen: Das Schloss gilt nur innerhalb
@@ -5215,6 +5241,10 @@ class PS5ConverterGUI:
     _EINHUELLENDE_WEGE: frozenset = frozenset({
         ("exfat", "ffpfsc"),
         ("ffpkg", "ffpfsc"),
+        # ffpfsc -> ffpfsc gibt es (Aufgabe 2) nur mit AMPR-EMU-Asset-Pack:
+        # entpacken, Asset-Pack einbauen, wieder als .ffpfsc packen. Ein
+        # blosses Einhuellen waere hier Unsinn (Container im Container).
+        ("ffpfsc", "ffpfsc"),
     })
 
     #: Wie viel Platz das Ergebnis je Zielformat braucht, als Vielfaches
@@ -5591,6 +5621,14 @@ class PS5ConverterGUI:
         formatname = (self._t("format." + target_type)
                       if target_type in self._FORMAT_LABELS else target_type)
 
+        # ffpfsc -> ffpfsc: Einhuellen waere hier sinnlos (Container im
+        # Container). Diese Kombination bietet Aufgabe 2 nur mit Asset-Pack an,
+        # und dann ist der Neu-Packen-Weg der einzig richtige. Deshalb ohne
+        # Ja/Nein-Rueckfrage direkt: entpacken, einbauen, neu packen.
+        if quelle == "ffpfsc" and target_type == "ffpfsc":
+            self._neu_packen_waehlen(formatname)
+            return True
+
         if getattr(self, "_cli_mode", False):
             if getattr(self, "_cli_umhuellt_neu_packen", False):
                 self._neu_packen_waehlen(formatname)
@@ -5901,7 +5939,8 @@ class PS5ConverterGUI:
             ordner_lesen=self._scandir_safe,
             mkpfs_ordner_holen=self._extract_embedded_mkpfs,
             ufs2tool_pfad=self._extract_ufs2tool,
-            dokan_vorhanden=self._find_dokan_driver)
+            dokan_vorhanden=self._find_dokan_driver,
+            status_melden=self._set_status)
 
     def _verify_output_artifact(self, mode: str, final_path: str):
         """Prueft das Ergebnis eines Laufs. Siehe abbild_pruefen."""
@@ -6902,8 +6941,15 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9)),
             values=list(self._ampr_methode_options.keys()), width=9,
         )
+        # Nach dem Methodenwechsel die Zielformat-Liste neu bewerten: ffpfsc ->
+        # ffpfsc (Aufgabe 2) erscheint nur bei Methode Asset-Pack. Der Refresh
+        # laeuft NACH _on_ampr_methode_changed, das die Wahl ggf. auf Normal
+        # zurueckfallen laesst - so spiegelt die Liste immer den Endzustand.
         self.ampr_methode_combo.bind(
-            "<<ComboboxSelected>>", lambda _e: self._on_ampr_methode_changed())
+            "<<ComboboxSelected>>",
+            lambda _e: (self._on_ampr_methode_changed(),
+                        self._refresh_target_format_options()
+                        if hasattr(self, "format_combo") else None))
         DelayedTooltip(self.ampr_methode_combo, self._t("ampr_pack.methode_hint"),
                        delay_ms=900, wraplength=430)
 
@@ -7505,6 +7551,13 @@ class PS5ConverterGUI:
 
     def _get_target_options(self, mode: str, source_path: str = "") -> tuple[str, ...]:
         options = self._MODE_TARGET_OPTIONS.get(mode, ())
+        # ffpfsc -> ffpfsc (Aufgabe 2) ist nur mit AMPR-EMU-Asset-Pack sinnvoll:
+        # Quelle und Ziel sind derselbe Containertyp, ein Umpacken ohne Einbau
+        # braechte nichts. Ohne gewaehltes Asset-Pack bleibt die Option deshalb
+        # aus der Liste - sie taucht erst auf, wenn Asset-Pack angehakt ist,
+        # und das Umschalten frischt die Liste ueber _refresh_target_format_options.
+        if mode == "unpack_to_exfat" and not self._assetpack_gewaehlt():
+            options = tuple(t for t in options if t != "ffpfsc")
         if mode != "universal_convert":
             return options
         source_type = self._detect_source_type(source_path)
@@ -8712,6 +8765,7 @@ class PS5ConverterGUI:
         min_width: int | None = None,
         min_height: int | None = None,
         resizable: bool = True,
+        parent: "tk.Misc | None" = None,
     ) -> "tk.Toplevel":
         """Erstellt ein Popup-Fenster mit dem einheitlichen, modernen Grundaufbau.
 
@@ -8727,6 +8781,8 @@ class PS5ConverterGUI:
         Mindestgroesse verwendet, damit Knopfreihen/Inhalte beim Verkleinern
         nie aus dem sichtbaren Bereich gedraengt werden (siehe Bugreports zu
         Param/Manifest und ShadowMount+ vor dieser Vereinheitlichung).
+
+        ``parent``: vor welchem Fenster es steht; ohne Angabe das Hauptfenster.
         """
         c = self._COLORS
         # Hintergrundfarbe schon im Erzeuger setzen, nicht erst danach per
@@ -8736,7 +8792,7 @@ class PS5ConverterGUI:
         # weiss, bevor der dunkle Inhalt erschien.
         win = tk.Toplevel(self.root, bg=c["bg_main"])
         win.title(title)
-        self._fenster_an_hauptfenster_binden(win)
+        self._fenster_an_hauptfenster_binden(win, parent)
         x = (win.winfo_screenwidth() - width) // 2
         y = (win.winfo_screenheight() - height) // 2
         win.geometry(f"{width}x{height}+{x}+{y}")
@@ -21080,6 +21136,9 @@ class PS5ConverterGUI:
             # ihn. Bliebe sie stehen, entschiede der vorige Lauf ueber die
             # Dateien des naechsten, ohne dass jemand gefragt wird.
             self._batch_ueberschreiben = None
+            # Was dieser Lauf schon geschrieben hat - siehe
+            # _batch_ueberschreiben_klaeren.
+            self._batch_erzeugte_ziele = set()
             for idx, candidate in enumerate(sources, start=1):
                 if not self.is_running:
                     self._batch_von, self._batch_bis = 0.0, 100.0
@@ -21170,6 +21229,9 @@ class PS5ConverterGUI:
                     source_type, target_type, candidate, dst
                 )
                 output_path = str(getattr(self, "task_final_output_path", "") or "")
+                if converted and output_path:
+                    self._batch_erzeugte_ziele.add(
+                        os.path.normcase(os.path.abspath(output_path)))
                 verification = self._verify_output_artifact(mode, output_path) if converted else {
                     "ok": False,
                     "detail": "Konvertierung fehlgeschlagen.",
@@ -21233,6 +21295,13 @@ class PS5ConverterGUI:
         if source_type == "ffpfsc" and target_type == "ffpfs":
             return self._mode_ffpfsc_umpacken(src, dst, uncompressed=True)
         if source_type == "ffpfsc" and target_type == "ffpfsc":
+            # Mit Asset-Pack (bzw. Integration): entpacken, einbauen, neu packen -
+            # wie .exFAT/.ffpkg -> .ffpfsc. Der Merker _umhuellt_neu_packen steht
+            # aus _umhuellenden_weg_klaeren (das fuer diesen Weg ohne Rueckfrage
+            # neu packt). Ohne Einbau bleibt es beim reinen Umpacken.
+            if getattr(self, "_umhuellt_neu_packen", False):
+                return self._mode_abbild_zu_ffpfs(
+                    src, dst, quelle="ffpfsc", uncompressed=False)
             return self._mode_ffpfsc_umpacken(src, dst, uncompressed=False)
         if source_type == "exfat" and target_type == "ffpfsc":
             # Mit Ja in der Umhuell-Rueckfrage: entpacken, AMPR EMU / BACKPORT
@@ -21842,8 +21911,8 @@ class PS5ConverterGUI:
         Args:
             src:    Die Abbilddatei.
             dst:    Der Zielordner.
-            quelle: ``"exfat"`` oder ``"ffpkg"`` - entscheidet nur, welcher
-                Entpacker den Dump-Ordner herstellt.
+            quelle: ``"exfat"``, ``"ffpkg"`` oder ``"ffpfsc"`` - entscheidet nur,
+                welcher Entpacker den Dump-Ordner herstellt.
             uncompressed: ``True`` fuer ``.ffpfs``, ``False`` fuer ``.ffpfsc``.
 
         Returns:
@@ -21855,6 +21924,10 @@ class PS5ConverterGUI:
         try:
             if quelle == "exfat":
                 entpackt = self._mode_exfat_to_folder(src, temp_root, progress_task_index=2)
+            elif quelle == "ffpfsc":
+                # .ffpfsc/.ffpfs vollstaendig in den Dump-Ordner entpacken -
+                # derselbe Entpacker wie beim reinen Umpacken (_mode_ffpfsc_umpacken).
+                entpackt = self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=2)
             else:
                 entpackt = self._mode_ffpkg_to_folder(src, temp_root)
             if not entpackt:
@@ -22069,6 +22142,20 @@ class PS5ConverterGUI:
         if endung is None:
             return True
         ziel = os.path.join(ziel_ordner, name + endung)
+        # Ein Ergebnis DIESES Laufs ist kein frueherer Lauf. Liegen etwa
+        # Spiel.exfat und Spiel.ffpkg zusammen in der Auswahl, zeigen beide
+        # auf dieselbe Spiel.ffpfsc - und bis v1.9.19 entfernte die zweite das
+        # fertige Ergebnis der ersten kommentarlos (Pruefmatrix J1, 12.09.2026:
+        # das 24,22-GB-Ergebnis aus der .exfat war weg, an seiner Stelle lag
+        # das der .ffpkg). Die Rueckfrage darunter hilft dort nicht: Ohne
+        # Fenster wird gar nicht gefragt, und im Fenster galt ein Ja fuer den
+        # ganzen Lauf.
+        erzeugt = getattr(self, "_batch_erzeugte_ziele", None) or set()
+        if os.path.normcase(os.path.abspath(ziel)) in erzeugt:
+            self._append_to_log(self._t("batch.namensgleich_uebersprungen",
+                                        name=os.path.basename(quelle),
+                                        pfad=ziel))
+            return False
         if not os.path.exists(ziel):
             return True
         # Ziel und Quelle sind dieselbe Datei - kein Grund zu fragen, die
@@ -23260,6 +23347,12 @@ class PS5ConverterGUI:
             self._save_setting("integrate_playgo", bool(self.ampr_playgo_var.get()))
             self._save_setting("integrate_backport", backport_an)
 
+        # Die ffpfsc -> ffpfsc-Option von Aufgabe 2 haengt am Asset-Pack. Wird
+        # der AMPR-Haken umgelegt, muss die Zielformat-Liste neu bewertet werden,
+        # damit die Option sofort erscheint bzw. verschwindet.
+        if hasattr(self, "format_combo"):
+            self._refresh_target_format_options()
+
     def _ampr_methode(self) -> str:
         """Die gewaehlte Einbaumethode als Kennung, nicht als Anzeigetext.
 
@@ -23276,6 +23369,22 @@ class PS5ConverterGUI:
             return tabelle.get(wahl.get(), AMPR_METHODE_NORMAL)
         except tk.TclError:
             return AMPR_METHODE_NORMAL
+
+    def _assetpack_gewaehlt(self) -> bool:
+        """True, wenn AMPR EMU angehakt UND die Methode Asset-Pack ist.
+
+        Nur dann entsteht beim Bauen wirklich ein Asset-Pack; die
+        Methodenwahl allein (ohne den AMPR-Haken) baut nichts ein. An dieser
+        Auswahl haengt die Sichtbarkeit von ffpfsc -> ffpfsc in Aufgabe 2.
+        Wird bewusst defensiv gelesen: Steht die Oberflaeche noch nicht (z. B.
+        im Kopfteil des Aufbaus), gilt Asset-Pack als nicht gewaehlt.
+        """
+        var = getattr(self, "ampr_integrate_var", None)
+        try:
+            an = bool(var is not None and var.get())
+        except tk.TclError:
+            an = False
+        return an and self._ampr_methode() == AMPR_METHODE_ASSETPACK
 
     def _ampr_pack_arbeiter(self) -> int:
         """Wie viele Packvorgaenge parallel laufen duerfen.
@@ -26529,6 +26638,64 @@ class PS5ConverterGUI:
             offen.append(rel_path)
         return sorted(offen)
 
+    #: Takt (Sekunden), in dem das Entpacken per UFS2Tool nachgemessen wird.
+    _ENTPACK_TAKT_S: float = 5.0
+
+    def _entpacken_beobachten(self, lauf, dest_folder: str, erwartet_bytes: int,
+                              status_prefix: str, spanne: float,
+                              stopp: threading.Event) -> None:
+        """Misst waehrend ``UFS2Tool extract``, was schon im Zielordner liegt.
+
+        ``UFS2Tool extract`` schreibt eine .ffpkg ohne jede Zwischenmeldung
+        heraus - bei einem 51-GB-Titel eine halbe Stunde und laenger. Die
+        Pruefmatrix vom 14.09.2026 zeigte es in drei von drei Laeufen (F1, F3,
+        F5): Statuszeile und Balken standen, die Aufhaenger-Erkennung schrieb
+        nach zwei Minuten einen Fehler samt Stapelabzug ins Protokoll, obwohl
+        alles lief. Abbrechen ging in dieser Zeit auch nicht.
+
+        Gemessen wird, nicht geschaetzt: die Groesse der Dateien im Zielordner.
+        Der Takt waechst mit der Dauer des Nachzaehlens, damit ein Ordner mit
+        zehntausenden Dateien nicht selbst zur Last wird. Der Balken laeuft ueber
+        ``_teilschritt_melden`` - ein Rohwert direkt auf dem Balken sprang in
+        v1.9.12 bis zu 567-mal zurueck.
+
+        Args:
+            lauf: Der laufende UFS2Tool-Prozess, fuer den Abbruch.
+            dest_folder: Wohin entpackt wird.
+            erwartet_bytes: Die Soll-Groesse aus der Dateiliste, 0 wenn unbekannt.
+            status_prefix: Text vor der Statusmeldung.
+            spanne: Wie viele Punkte des Gesamtbalkens das Entpacken einnimmt.
+            stopp: Wird gesetzt, sobald UFS2Tool fertig ist.
+        """
+        takt = float(self._ENTPACK_TAKT_S)
+        while not stopp.wait(takt):
+            if not getattr(self, "is_running", True):
+                try:
+                    lauf.kill()
+                except OSError as exc:
+                    logger.debug("UFS2Tool nicht beendbar: %s", exc)
+                self._append_to_log(self._t("ffpkg.extract_abgebrochen"))
+                return
+            beginn = time.monotonic()
+            geschrieben = 0
+            for wurzel, _ordner, namen in os.walk(dest_folder):
+                for name in namen:
+                    try:
+                        geschrieben += os.path.getsize(os.path.join(wurzel, name))
+                    except OSError:
+                        pass
+            takt = max(float(self._ENTPACK_TAKT_S), (time.monotonic() - beginn) * 5.0)
+            if erwartet_bytes > 0:
+                self._teilschritt_melden("ufs2tool_extract",
+                                         geschrieben * 100.0 / erwartet_bytes, spanne)
+                text = self._t("ffpkg.extract_fortschritt",
+                               erledigt=self._fmt_bytes(geschrieben),
+                               gesamt=self._fmt_bytes(erwartet_bytes))
+            else:
+                text = self._t("ffpkg.extract_fortschritt_offen",
+                               erledigt=self._fmt_bytes(geschrieben))
+            self._set_status(f"{status_prefix}{text}")
+
     def _ffpkg_ueber_unterbefehl_entpacken(
         self,
         src: str,
@@ -26537,6 +26704,7 @@ class PS5ConverterGUI:
         status_prefix: str = "",
         progress_start: float = 0.0,
         progress_end: float = 100.0,
+        erwartet_bytes: int = 0,
     ) -> bool:
         """Entpackt eine .ffpkg mit ``UFS2Tool extract`` - ohne Einhaengen.
 
@@ -26554,6 +26722,8 @@ class PS5ConverterGUI:
             status_prefix: Text vor der Statusmeldung.
             progress_start: Fortschrittswert zu Beginn.
             progress_end: Fortschrittswert am Ende.
+            erwartet_bytes: Soll-Groesse des Inhalts, soweit bekannt - dann
+                laeuft der Balken mit, sonst nur die geschriebene Menge.
 
         Returns:
             ``True`` bei Erfolg.
@@ -26582,14 +26752,25 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0234', v0=exc))
             return False
 
+        stopp = threading.Event()
+        waechter = threading.Thread(
+            target=self._entpacken_beobachten,
+            args=(lauf, dest_folder, int(erwartet_bytes or 0), status_prefix,
+                  max(0.0, float(progress_end) - float(progress_start)), stopp),
+            name="ufs2tool-entpacken", daemon=True)
+        waechter.start()
         letzte = ""
-        for zeile in iter(lauf.stdout.readline, ""):
-            zeile = zeile.rstrip()
-            if not zeile:
-                continue
-            letzte = zeile
-            self._append_to_log(f"[UFS2Tool] {zeile}\n")
-        lauf.wait()
+        try:
+            for zeile in iter(lauf.stdout.readline, ""):
+                zeile = zeile.rstrip()
+                if not zeile:
+                    continue
+                letzte = zeile
+                self._append_to_log(f"[UFS2Tool] {zeile}\n")
+            lauf.wait()
+        finally:
+            stopp.set()
+            waechter.join(timeout=10)
 
         if lauf.returncode != 0:
             self._append_to_log(
@@ -26764,6 +26945,7 @@ class PS5ConverterGUI:
                     status_prefix=status_prefix,
                     progress_start=progress_start,
                     progress_end=progress_end,
+                    erwartet_bytes=total_bytes[0],
                 )
 
             self._copy_total_bytes = max(1, int(total_bytes[0] or 1))

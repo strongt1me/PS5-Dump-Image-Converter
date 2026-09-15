@@ -9,8 +9,9 @@
 //   read --source <Datei>
 //       Liest den aeusseren Container einer PS5-PKG: Kopf,
 //       Content-ID und Eintragstabelle. Die eingebettete PFS bleibt
-//       verschluesselt - dafuer braucht es Schluessel, die hier
-//       niemand hat.
+//       verschluesselt - Debug-Pakete waeren mit dem Passcode lesbar,
+//       diese Fassung der Bibliothek kann sie aber nicht auflisten
+//       (UPSTREAM.md, Korrektur vom 14.09.2026).
 //
 //   inspect --source <Ordner>
 //       Sagt, ob ein Backup als Debug-Paket starten wuerde. Liest nur.
@@ -138,7 +139,8 @@ internal static class Program
     ///
     /// Gelesen wird ausschliesslich der aeussere Container: Kopf, Content-ID
     /// und die Eintragstabelle. Der Inhalt der eingebetteten PFS bleibt
-    /// verschluesselt - dafuer braucht es Schluessel, die hier niemand hat.
+    /// verschluesselt. Debug-Pakete waeren mit dem Passcode lesbar, doch
+    /// LibProsperoPkg 2.5 bricht beim Auflisten ab (UPSTREAM.md, 14.09.2026).
     /// Die Ausgabe sagt das ausdruecklich, statt einen leeren Inhalt als
     /// "nichts drin" erscheinen zu lassen.
     /// </remarks>

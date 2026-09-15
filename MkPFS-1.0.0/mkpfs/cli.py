@@ -1089,7 +1089,7 @@ def _contains_direct_game_markers(root_path: Path) -> bool:
 def _run_post_pack_verify(
     *,
     output_path: Path,
-    source: Path,
+    source: Path | None,
     ekpfs_key: bytes,
     new_crypt: bool,
     verification_mode: PackVerificationMode,
@@ -1100,7 +1100,8 @@ def _run_post_pack_verify(
 
     Args:
         output_path: Written image to verify.
-        source: Source directory compared against the image.
+        source: Source directory compared against the image, or ``None`` to skip
+            the comparison.
         ekpfs_key: EKPFS key material for encrypted images.
         new_crypt: Whether to use the alternate newCrypt derivation.
         verification_mode: Effective post-pack verification mode.
@@ -1285,8 +1286,12 @@ def _run_pack_build(
 
 @contextmanager
 def _stage_single_file_source_root(
-    *, source_file: Path, temp_folder: Path | None = None, staged_file_name: str | None = None
-) -> Iterator[Path]:
+    *,
+    source_file: Path,
+    temp_folder: Path | None = None,
+    staged_file_name: str | None = None,
+    allow_copy: bool = True,
+) -> Iterator[Path | None]:
     """Yield a temporary source root exposing one file, avoiding data copies when possible.
 
     The staged file is created as a hard link when possible, with a symlink
@@ -1306,10 +1311,14 @@ def _stage_single_file_source_root(
         staged_file_name: Optional file name to expose inside the temporary root.
         temp_folder: Optional temporary folder where the staging directory should
             be created.
+        allow_copy: When False and neither link type can be created (exFAT
+            supports neither), yield ``None`` instead of copying the file.
+            Added by PS5 Dump & Image Converter; see UPSTREAM.md.
 
     Yields:
         Temporary directory path containing exactly one file entry with the
-        same file name as ``source_file``.
+        same file name as ``source_file``, or ``None`` when ``allow_copy`` is
+        False and no link could be created.
 
     Raises:
         BuildError: If hard link, symlink, and copy staging all fail.
@@ -1336,6 +1345,13 @@ def _stage_single_file_source_root(
             try:
                 staging_file.symlink_to(target=source_file)
             except OSError:
+                if not allow_copy:
+                    # PS5 Dump & Image Converter: exFAT has neither hard links
+                    # nor symlinks. The copy below wrote a 57 GB source a second
+                    # time onto its own drive, just so a structure check could
+                    # compare one file name and size (measured 12.09.2026).
+                    yield None
+                    return
                 try:
                     shutil.copyfile(source_file, staging_file)
                 except OSError as exc:
@@ -1630,11 +1646,17 @@ def _run_stream_pack_file(*, args: argparse.Namespace, source_file: Path) -> int
 
     # Stage the single file into a temp directory (hardlink, no data copy) so the
     # check compares against a directory tree, mirroring the verify command.
+    # PS5 Dump & Image Converter: only the full check reads the source contents.
+    # For the structure check a copy is not worth it - where no link can be made
+    # (exFAT) the check runs without the name and size comparison instead.
     with _stage_single_file_source_root(
         source_file=source_file,
         temp_folder=temp_folder,
         staged_file_name=internal_file_name,
+        allow_copy=verification_mode == PackVerificationMode.FULL,
     ) as staging_root:
+        if staging_root is None:
+            info("Source file cannot be linked on this file system; the structure check runs without source comparison.")
         rc: int = _run_post_pack_verify(
             output_path=output_path,
             source=staging_root,

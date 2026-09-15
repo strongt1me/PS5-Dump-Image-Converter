@@ -162,7 +162,7 @@ Ein signiertes **und verschlüsseltes** Modul blockiert. Am 29.08.2026 an
 drei echten Backups gemessen: Arkanoid Eternal Battle und Asterix &
 Obelix Heroes waren startbereit, Crazy Chicken Shooter nicht — dort
 lagen fünf verschlüsselte Systembibliotheken in `fakelib/`, die der
-Backport dort eingesetzt hatte.
+Backport dort eingesetzt hatte. **Korrektur (14.09.2026):** Nachgemessen tragen alle fünf die Fake-Autorität `0x3100000000000002` und unverschlüsselte Segmente (Segmentflag `0x…04`); sie haben lediglich die zweite SELF-Magic `54 14 F5 EE`. LibProsperoPkg 2.5 hielt diese Magic pauschal für „signiert und verschlüsselt“ – die Sperre war ein Fehlalarm. Die Upstream-Fassung 2.6.0 (main `748eabf`) unterscheidet seitdem an der Autorität.
 
 ## Linux-Bau (03.09.2026)
 
@@ -256,11 +256,22 @@ Der dritte ist eine **Feststellung, kein Fehler** – die Python-Seite
 (`prosperopkg.paket_lesen`) gibt ihn als `ist_pkg: False` zurück, statt eine
 Ausnahme zu werfen. Nur ein echter Abbruch wirft.
 
-**Was `read` nicht tut:** Die eingebettete PFS bleibt verschlüsselt; dafür
-bräuchte es Schlüssel, die hier niemand hat. Die gelesenen Einträge sind die
-des Pakets (`param.sfo`, `playgo-chunk.dat`, Bilder), nicht die Dateien des
+**Was `read` nicht tut:** Die eingebettete PFS bleibt verschlüsselt. Die
+gelesenen Einträge sind die des Pakets (`param.json`, `playgo-chunk.dat`,
+Bilder), nicht die Dateien des
 Spiels. Die Ausgabe sagt das in einer eigenen `HINWEIS:`-Zeile, damit ein
 leerer Inhalt nicht als „nichts drin" missverstanden wird.
+
+**Korrektur (14.09.2026):** Hier stand bis dahin, zum Entschlüsseln bräuchte
+es „Schlüssel, die hier niemand hat“. Für Debug-Pakete stimmt das nicht: Sie
+sind mit dem Passcode verschlüsselt, bei selbst gebauten Paketen 32 Nullen.
+Gemessen am eigenen 221-MB-Paket (PPSA03117) mit `ProsperoPackageExtractor`
+dieser Bibliothek: Ohne Passcode meldet sie „The outer filesystem is encrypted;
+supply a passcode or image key“, mit Passcode bricht `ListFiles` mit „Stream
+length must be non-negative and less than 2^31 - 1 - origin“ ab. Eine
+Dateiliste des Spielinhalts gibt es also erst mit einer neueren Fassung der
+Bibliothek. PSVIETHOA FPKG Builder 2.1.5 listet und entpackt Debug-Pakete laut
+seinem Quelltext mit einem neueren Stand (aus fpkg-gui 0.6.5).
 
 Bewacht von `test_prosperopkg_lesen.py` (12 Prüfungen, davon zwei an einer
 echten PS5-PKG).

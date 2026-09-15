@@ -27,6 +27,7 @@ import importlib.util
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -244,6 +245,67 @@ class PlatzKlaerenTests(unittest.TestCase):
                       quelle)
         # Und die alte, wirkungslose Warnung ist weg.
         self.assertNotIn('self._t("dialog.msg.low_disk_space"', quelle)
+
+
+@unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
+class EchterDialogTests(unittest.TestCase):
+    """Der Platzdialog wird wirklich gebaut – nicht nur ersetzt.
+
+    Anwendermeldung vom 14.09.2026 zu v1.9.19: Jeder Start, bei dem der Platz
+    knapp schien, brach ab mit
+
+        TypeError: PS5ConverterGUI._build_modern_toplevel() got an unexpected
+        keyword argument 'parent'
+
+    Getroffen hat es vor allem .ffpkg -> .ffpfsc mit AMPR EMU: Das Neu-Packen
+    rechnet den vorübergehenden Dump-Ordner im Ziel mit, erst dadurch wurde
+    es knapp genug für den Dialog. Die Tests darüber ersetzen
+    ``_platz_dialog`` durch eine Attrappe und haben das Fenster nie gebaut.
+    Dasselbe ``parent=`` stand in zwei Fenstern der Bibliothek.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+
+    @staticmethod
+    def _nachmessungen_ablaufen_lassen():
+        # _build_modern_toplevel plant zwei Nachmessungen (80 und 400 ms).
+        # Erst ablaufen lassen, dann schliessen - sonst treffen sie in einem
+        # spaeteren Test auf ein zerstoertes Fenster.
+        time.sleep(0.45)
+        _WURZEL.update()
+
+    def test_der_dialog_laesst_sich_bauen_und_schliessen(self):
+        knapp = [("ziel", os.path.dirname(HAUPTDATEI), 300 * GB, 190 * GB)]
+        gebaut = []
+
+        def _statt_warten(fenster):
+            gebaut.append(fenster.title())
+            self._nachmessungen_ablaufen_lassen()
+            fenster.destroy()      # wie das Schliessen ueber die Titelleiste
+
+        # Ueber die Klasse aufgerufen, nicht ueber die Instanz: Andere Tests
+        # setzen auf ihrer Instanz eine Attrappe an diese Stelle.
+        with mock.patch.object(tk.Toplevel, "grab_set"), \
+                mock.patch.object(self.app.root, "wait_window",
+                                  side_effect=_statt_warten):
+            antwort = self.haupt.PS5ConverterGUI._platz_dialog(self.app, knapp)
+        self.assertEqual("abbrechen", antwort)
+        self.assertEqual([self.app._t("platz.titel")], gebaut)
+
+    def test_parent_bestimmt_den_besitzer(self):
+        """Ohne Angabe das Hauptfenster, sonst das genannte Fenster."""
+        eltern = self.app._build_modern_toplevel("Eltern", 320, 200)
+        kind = self.app._build_modern_toplevel("Kind", 240, 160, parent=eltern)
+        try:
+            self._nachmessungen_ablaufen_lassen()
+            self.assertEqual(str(self.app.root), str(eltern.transient()))
+            self.assertEqual(str(eltern), str(kind.transient()))
+        finally:
+            kind.destroy()
+            eltern.destroy()
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")

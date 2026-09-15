@@ -112,6 +112,40 @@ class DoktorTests(unittest.TestCase):
         self.assertTrue(any(z.startswith(self.haupt.DOKTOR_EGAL)
                             and "Zielordner" in z for z in zeilen))
 
+    def _mit_konfigordner(self, dateien: dict):
+        """Legt Einstellungsdateien in einen eigenen Ordner und prueft dort."""
+        alt = os.environ.get("PS5CONV_KONFIGORDNER")
+        os.environ["PS5CONV_KONFIGORDNER"] = self.ordner
+        try:
+            for name, inhalt in dateien.items():
+                with open(os.path.join(self.ordner, name), "wb") as f:
+                    f.write(inhalt)
+            return self.pruefe(self.ordner, self.ordner)
+        finally:
+            if alt is None:
+                os.environ.pop("PS5CONV_KONFIGORDNER", None)
+            else:
+                os.environ["PS5CONV_KONFIGORDNER"] = alt
+
+    def test_eine_gesicherte_einstellungsdatei_wird_genannt(self) -> None:
+        """Seit dem 14.09.2026 wird eine unlesbare paths.json gesichert statt
+        still ersetzt - der Doktor sagt, dass dabei Einstellungen verloren sind."""
+        zeilen = self._mit_konfigordner({
+            "paths.json": b"{}",
+            "paths.json.unlesbar-20260914-120000": b"{kaputt"})
+        self.assertTrue(any(z.startswith(self.haupt.DOKTOR_HINWEIS)
+                            and "gesichert" in z for z in zeilen),
+                        "%r" % (zeilen,))
+
+    def test_eine_einstellungsdatei_mit_bom_ist_gueltig(self) -> None:
+        """Windows PowerShell 5.1 schreibt mit BOM - das Programm liest sie."""
+        zeilen = self._mit_konfigordner({
+            "paths.json": b"\xef\xbb\xbf" + b'{"language": "de"}'})
+        self.assertTrue(any(z.startswith(self.haupt.DOKTOR_GUT)
+                            and "Einstellungsdatei lesbar" in z for z in zeilen),
+                        "%r" % (zeilen,))
+        self.assertFalse(any("gesichert" in z for z in zeilen))
+
     def test_die_schreibprobe_bleibt_nicht_liegen(self) -> None:
         self.pruefe(self.ordner, self.ordner)
         reste = [n for n in os.listdir(self.ordner) if "doktor_probe" in n]

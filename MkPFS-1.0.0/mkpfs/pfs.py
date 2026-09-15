@@ -6298,6 +6298,7 @@ def inspect_pfs_image(
     ekpfs: bytes | None = None,
     new_crypt: bool = False,
     verify_payloads: bool = True,
+    progress: Progress | None = None,
 ) -> PFSImageInspection:
     """Inspect a PFS image and collect structural validation details.
 
@@ -6310,6 +6311,9 @@ def inspect_pfs_image(
         new_crypt: When True, use the alternate newCrypt key derivation path.
         verify_payloads: When False, skip the payload-content passes (checklist and
             per-file hash verification); structural checks still run.
+        progress: Optional progress reporter handed to the payload passes (hash
+            verification and source comparison). Added by PS5 Dump & Image
+            Converter; see UPSTREAM.md.
 
     Returns:
         A detailed inspection report with parsed tree data, warnings, and errors.
@@ -6431,6 +6435,7 @@ def inspect_pfs_image(
                             inspection.errors,
                             ekpfs=ekpfs,
                             new_crypt=new_crypt,
+                            progress=progress,
                         )
                     except (OSError, ValueError) as exc:
                         inspection.errors.append(f"failed to verify file payload hashes: {exc}")
@@ -6471,6 +6476,7 @@ def inspect_pfs_image(
                         inspection.errors,
                         ekpfs=ekpfs,
                         new_crypt=new_crypt,
+                        progress=progress,
                     )
 
                 inspection.compressed_files = sum(
@@ -6531,6 +6537,7 @@ def verify_pfs_image(
     expected_manifest_sha256: str | None = None,
     ekpfs: bytes | None = None,
     new_crypt: bool = False,
+    progress: Progress | None = None,
 ) -> PFSImageInspection:
     """Verify a PFS image against optional source and hash expectations.
 
@@ -6541,6 +6548,8 @@ def verify_pfs_image(
         expected_manifest_sha256: Optional expected manifest SHA256 digest.
         ekpfs: Optional EKPFS key material for encrypted images.
         new_crypt: When True, use the alternate newCrypt key derivation path.
+        progress: Optional progress reporter for the payload passes. Added by
+            PS5 Dump & Image Converter; see UPSTREAM.md.
 
     Returns:
         A detailed inspection report.
@@ -6552,6 +6561,7 @@ def verify_pfs_image(
         expected_manifest_sha256=expected_manifest_sha256,
         ekpfs=ekpfs,
         new_crypt=new_crypt,
+        progress=progress,
     )
 
 

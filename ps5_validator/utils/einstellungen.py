@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import tempfile
 import threading
 import time
@@ -100,7 +101,9 @@ def lesen(schluessel: str, vorgabe: Any = None, *,
         try:
             if not os.path.isfile(ziel):
                 return vorgabe
-            with open(ziel, "r", encoding="utf-8") as f:
+            # utf-8-sig: Eine Datei mit BOM scheiterte mit "utf-8", und jede
+            # Einstellung fiel still auf die Vorgabe zurueck.
+            with open(ziel, "r", encoding="utf-8-sig") as f:
                 daten = json.load(f)
             return daten.get(schluessel, vorgabe)
         except (PermissionError, json.JSONDecodeError) as exc:
@@ -113,6 +116,69 @@ def lesen(schluessel: str, vorgabe: Any = None, *,
         logger.warning("Einstellung konnte nicht geladen werden: %s",
                        letzter_fehler)
     return vorgabe
+
+
+def vorhandenes_lesen(ziel: str, *,
+                      warten: Callable[[float], Any] = time.sleep) -> dict | None:
+    """Liest die vorhandene Datei, bevor eine Aenderung hinein soll.
+
+    Bis v1.9.19 machte hier - und gleichlautend in
+    ``PS5ConverterGUI._konfiguration_schreiben`` - jeder Lesefehler aus dem
+    Aendern **eines** Schluessels das Ersetzen der ganzen Datei. Ausgeloest
+    hat es am 11.09.2026 eine UTF-8-BOM, wie sie ``Out-File -Encoding utf8``
+    in Windows PowerShell 5.1 schreibt; ``encoding="utf-8"`` weist sie ab.
+
+    Drei Faelle:
+
+    * **Lesbar** (auch mit BOM): der Inhalt.
+    * **Nur gerade belegt** (ueber alle Versuche): ``None`` - lieber diese
+      eine Aenderung verlieren als alle Einstellungen.
+    * **Beschaedigt** (kein gueltiges JSON-Objekt): Die Datei wird neben sich
+      gesichert (``.unlesbar-<Zeit>``), dann gilt ``{}``. Laesst sie sich
+      nicht sichern, ebenfalls ``None``.
+
+    Args:
+        ziel: Die vorhandene Einstellungsdatei.
+        warten: Haelt zwischen zwei Versuchen an.
+
+    Returns:
+        Der Inhalt, ``{}`` nach gesicherter Beschaedigung, oder ``None``, wenn
+        nicht geschrieben werden darf.
+    """
+    letzter: Exception | None = None
+    for versuch in range(LESEVERSUCHE):
+        try:
+            with open(ziel, "r", encoding="utf-8-sig") as f:
+                daten = json.load(f)
+            if isinstance(daten, dict):
+                return daten
+            letzter = ValueError("kein JSON-Objekt")
+            break
+        except FileNotFoundError:
+            return {}
+        except PermissionError as exc:
+            letzter = exc
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            letzter = exc
+        except OSError as exc:
+            letzter = exc
+            break
+        if versuch < LESEVERSUCHE - 1:
+            warten(WARTEZEIT_S)
+    if isinstance(letzter, OSError):
+        logger.warning("Einstellungsdatei gerade nicht lesbar (%s) - Aenderung "
+                       "nicht gespeichert, die vorhandenen bleiben.", letzter)
+        return None
+    sicherung = "%s.unlesbar-%s" % (ziel, time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        shutil.copy2(ziel, sicherung)
+    except OSError as exc:
+        logger.warning("Einstellungsdatei unlesbar (%s) und nicht sicherbar "
+                       "(%s) - Aenderung nicht gespeichert.", letzter, exc)
+        return None
+    logger.warning("Einstellungsdatei unlesbar (%s) - gesichert als %s.",
+                   letzter, sicherung)
+    return {}
 
 
 def schreiben(schluessel: str, wert: Any, *,
@@ -134,12 +200,10 @@ def schreiben(schluessel: str, wert: Any, *,
             ziel = datei or pfad()
             vorhanden: dict = {}
             if os.path.isfile(ziel):
-                try:
-                    with open(ziel, "r", encoding="utf-8") as f:
-                        vorhanden = json.load(f)
-                except Exception as exc:
-                    logger.debug("Vorhandene Konfiguration nicht lesbar: %s",
-                                 exc)
+                gelesen = vorhandenes_lesen(ziel, warten=warten)
+                if gelesen is None:
+                    return
+                vorhanden = gelesen
             vorhanden[schluessel] = wert
 
             neben = "%s.tmp" % ziel

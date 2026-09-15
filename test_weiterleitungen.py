@@ -25,6 +25,14 @@ dem Syntaxbaum und haelt die uebergebenen Schluesselwoerter gegen die
 tatsaechliche Signatur der Zielmethode. Die Helfer werden dabei **nicht**
 von Hand gepflegt, sondern an ihrer Rueckgabeannotation erkannt - ein neuer
 Helfer faellt so von selbst unter die Pruefung.
+
+**Seit dem 14.09.2026 auch die eigenen Methoden.** v1.9.19 brach beim Start
+ab mit ``TypeError: PS5ConverterGUI._build_modern_toplevel() got an
+unexpected keyword argument 'parent'``: Drei Aufrufe gaben ``parent=`` mit,
+die Methode kannte es nicht. Geprueft wird deshalb auch jeder Aufruf
+``self.<methode>(...)`` in ``PS5ConverterGUI`` gegen die Signatur der
+Methode im selben Klassenrumpf - Schluesselwoerter und Zahl der
+Positionsargumente.
 """
 from __future__ import annotations
 
@@ -161,6 +169,137 @@ class WeiterleitungTests(unittest.TestCase):
             "Gegenprobe nichts mehr aus.")
         self.assertIn("base_result", erlaubt,
                       "Die Signatur sieht ganz anders aus als erwartet.")
+
+
+def eigene_methoden(baum):
+    """Die Klasse und ihre Methoden - nur Namen, die genau einmal definiert sind."""
+    klasse = next(k for k in baum.body
+                  if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+    gesehen: dict[str, list] = {}
+    for m in klasse.body:
+        if isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            gesehen.setdefault(m.name, []).append(m)
+    return klasse, {n: d[0] for n, d in gesehen.items() if len(d) == 1}
+
+
+def gesetzte_attribute(baum) -> set[str]:
+    """Namen, die als ``self.<name> = ...`` gesetzt werden.
+
+    Dann ist ``self.<name>`` nicht mehr sicher die Methode aus dem
+    Klassenrumpf - die Pruefung laesst solche Namen aus, statt zu raten.
+    """
+    namen: set[str] = set()
+    for k in ast.walk(baum):
+        if isinstance(k, ast.Assign):
+            ziele = k.targets
+        elif isinstance(k, (ast.AnnAssign, ast.AugAssign)):
+            ziele = [k.target]
+        else:
+            continue
+        for z in ziele:
+            for t in ast.walk(z):
+                if (isinstance(t, ast.Attribute) and isinstance(t.value, ast.Name)
+                        and t.value.id == "self"):
+                    namen.add(t.attr)
+    return namen
+
+
+def unterschrift(defn):
+    """(Positionsnamen ohne self, erlaubte Schluesselwoerter, *args?, **kwargs?).
+
+    ``None`` bei anderen Dekoratoren als staticmethod/classmethod: Deren
+    Signatur steht nicht im Baum.
+    """
+    dekos = [d.id if isinstance(d, ast.Name)
+             else d.attr if isinstance(d, ast.Attribute) else "?"
+             for d in defn.decorator_list]
+    if any(d not in ("staticmethod", "classmethod") for d in dekos):
+        return None
+    a = defn.args
+    positionell = list(a.posonlyargs) + list(a.args)
+    selbst = None
+    if "staticmethod" not in dekos and positionell:
+        selbst = positionell.pop(0).arg
+    erlaubt = {x.arg for x in a.args} | {x.arg for x in a.kwonlyargs}
+    erlaubt.discard(selbst)
+    return ([x.arg for x in positionell], erlaubt,
+            a.vararg is not None, a.kwarg is not None)
+
+
+def _aufrufe(knoten):
+    """Alle Aufrufe darunter - ohne verschachtelte Klassen, dort meint ``self`` etwas anderes."""
+    for kind in ast.iter_child_nodes(knoten):
+        if isinstance(kind, ast.ClassDef):
+            continue
+        if isinstance(kind, ast.Call):
+            yield kind
+        yield from _aufrufe(kind)
+
+
+def signaturfehler(baum) -> tuple[int, list[str]]:
+    """Haelt jeden ``self.<methode>(...)``-Aufruf gegen die eigene Methode."""
+    klasse, methoden = eigene_methoden(baum)
+    gesetzt = gesetzte_attribute(baum)
+    geprueft = 0
+    fehler: list[str] = []
+    for m in klasse.body:
+        if not isinstance(m, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for aufruf in _aufrufe(m):
+            f = aufruf.func
+            if not (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                    and f.value.id == "self" and f.attr in methoden
+                    and f.attr not in gesetzt):
+                continue
+            sig = unterschrift(methoden[f.attr])
+            if sig is None:
+                continue
+            positionell, erlaubt, hat_args, hat_kwargs = sig
+            geprueft += 1
+            if not hat_kwargs:
+                for kw in aufruf.keywords:
+                    if kw.arg is not None and kw.arg not in erlaubt:
+                        fehler.append("Zeile %d: self.%s() kennt %r nicht"
+                                      % (aufruf.lineno, f.attr, kw.arg))
+            if (not hat_args and len(aufruf.args) > len(positionell)
+                    and not any(isinstance(x, ast.Starred) for x in aufruf.args)):
+                fehler.append("Zeile %d: self.%s() mit %d Positionsargumenten, "
+                              "erlaubt sind %d" % (aufruf.lineno, f.attr,
+                                                   len(aufruf.args), len(positionell)))
+    return geprueft, fehler
+
+
+class EigeneMethodenTests(unittest.TestCase):
+    """Aufrufe der eigenen Methoden passen zu deren Signatur."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.baum = ast.parse(QUELLE.read_text(encoding="utf-8", errors="replace"))
+
+    def test_kein_aufruf_passt_nicht_zur_eigenen_methode(self) -> None:
+        geprueft, fehler = signaturfehler(self.baum)
+        # Am 14.09.2026: 765 Methoden, 4865 gepruefte Aufrufe. Faellt die Zahl
+        # stark, greift die Auswertung nicht mehr - dann saehe "keine Fehler"
+        # nur gut aus.
+        self.assertGreater(
+            geprueft, 1000,
+            "Nur %d Aufrufe geprueft - die Auswertung greift nicht mehr." % geprueft)
+        self.assertEqual([], fehler, "\n".join(fehler))
+
+    def test_die_pruefung_meldet_den_fehler_aus_v1919(self) -> None:
+        """Gegenprobe am Muster der Anwendermeldung vom 14.09.2026."""
+        muster = ast.parse(
+            "class PS5ConverterGUI:\n"
+            "    def _build_modern_toplevel(self, title, width, height, *,\n"
+            "                               min_width=None, resizable=True):\n"
+            "        pass\n"
+            "    def _platz_dialog(self):\n"
+            "        self._build_modern_toplevel('t', 1, 2, min_width=3, parent=None)\n"
+            "        self._build_modern_toplevel('t', 1, 2, 3)\n")
+        _geprueft, fehler = signaturfehler(muster)
+        self.assertEqual(2, len(fehler), fehler)
+        self.assertIn("'parent'", fehler[0])
+        self.assertIn("Positionsargumenten", fehler[1])
 
 
 if __name__ == "__main__":

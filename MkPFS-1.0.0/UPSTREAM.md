@@ -95,7 +95,7 @@ sonst die falsche erwischen.
 
 ## Geänderte Zeilen
 
-**Fünf Stellen**, jede in einem eigenen Abschnitt unten. Alle fünf sind
+**Sieben Stellen**, jede in einem eigenen Abschnitt unten. Alle sieben sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
 nachgetragen werden** – am 03.09.2026 haben sie den Austausch überstanden,
 weil vorher nachgesehen wurde, nicht von selbst.
@@ -115,6 +115,8 @@ laufen; keins von beidem ersetzt das andere.
 | `mkpfs/exfat_writer.py` | `ExfatBuildError`, Abweisung von Symlinks und Nicht-ASCII-Namen | `test_mac_befunde.py` |
 | `mkpfs/cli.py` | `--verify-structure` wirkt auch im exFAT-Zweig | `test_mac_befunde.py` |
 | `mkpfs/pfs.py` | Aufräumen fängt `OSError` statt nur `FileNotFoundError` | `test_mkpfs_aufraeumen.py` |
+| `mkpfs/pfs.py` | `progress` für `inspect_pfs_image()` und `verify_pfs_image()` | `test_mkpfs_pruefung_exfat.py` |
+| `mkpfs/cli.py` | Strukturprüfung nach `pack file` ohne Kopie der Quelle, wo kein Link geht | `test_mkpfs_pruefung_exfat.py` |
 
 Nicht abweichend, sondern **weggelassen**: der ganze Ordner `mkpfs/gui/`
 (18 Dateien). Dieses Projekt bringt seine eigene Oberfläche mit; siehe
@@ -216,3 +218,43 @@ PFS-Rohzweig darueber ging immer schon ueber
 `_resolve_pack_verification_mode`; dieser jetzt auch.
 
 Bewacht von `test_mac_befunde.py`.
+
+### `progress` für `inspect_pfs_image()` und `verify_pfs_image()` in `mkpfs/pfs.py`
+
+`verify_file_payload_hashes()` und `validate_source_match()` können Fortschritt
+melden, `inspect_pfs_image()` gab ihnen aber keinen mit – und
+`verify_pfs_image()` hatte gar keinen Parameter dafür. Das Programm prüft jedes
+fertige `.ffpfsc` über `verify_pfs_image()`, und diese Prüfung dekodiert jeden
+Block. Bei einem 51-GB-Titel dauert das eine Viertelstunde und mehr, ohne jede
+Meldung: Die Statuszeile stand still, und die Aufhänger-Erkennung schrieb am
+12.09.2026 mitten in einem normalen Lauf einen Fehler ins Protokoll.
+
+Beide Funktionen nehmen jetzt `progress` und reichen es durch. Ohne Angabe
+bleibt alles wie in der Vorlage.
+
+Bewacht von `test_mkpfs_pruefung_exfat.py`.
+
+### Keine Kopie der Quelle für die Strukturprüfung in `mkpfs/cli.py`
+
+`_run_stream_pack_file()` packt eine Einzeldatei direkt, ohne Zwischenkopie.
+Für die Prüfung danach stellt es die Quelle aber über
+`_stage_single_file_source_root()` in einem Temp-Ordner bereit: Hardlink,
+sonst Symlink, sonst **vollständige Kopie**. exFAT kennt weder Hardlinks noch
+Symlinks – und exFAT ist das Dateisystem, das PS5-Anwender auf ihren externen
+Platten haben. Gemessen am 14.09.2026: 64 MB auf exFAT als Kopie in 2,3 s, auf
+NTFS als Hardlink in 0,003 s. Bei einer 57-GB-`.ffpkg` hieß das: nach dem
+Packen noch einmal 57 GB auf das Laufwerk der Quelle schreiben – für die
+voreingestellte Strukturprüfung, die den Inhalt gar nicht vergleicht
+(`compare_source_contents=False`). Ein am 12.09.2026 abgebrochener Lauf ließ
+davon 24,8 GB neben der Quelle liegen.
+
+`_stage_single_file_source_root()` kennt jetzt `allow_copy`. Ist es aus und
+geht kein Link, liefert es `None`, und die Strukturprüfung läuft ohne den
+Namens- und Größenabgleich mit der Quelle. Nur die vollständige Prüfung
+(`--verify`) kopiert weiter – sie liest den Inhalt der Quelle wirklich.
+`_run_post_pack_verify()` nimmt dafür `source: Path | None`;
+`run_image_check()` kannte `None` schon. Der Test der Vorlage
+`test_stage_single_file_source_root_falls_back_to_copyfile_when_links_unavailable`
+bleibt gültig, weil ohne den neuen Schalter weiter kopiert wird.
+
+Bewacht von `test_mkpfs_pruefung_exfat.py`.

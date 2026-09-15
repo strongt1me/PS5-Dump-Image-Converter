@@ -54,6 +54,7 @@ ORDNER = pruefumgebung.umlenken("schreibwege")
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 from ps5_validator.utils import pkg_writer                  # noqa: E402
+from ps5_validator.utils import einstellungen               # noqa: E402
 
 CFG = os.path.join(ORDNER, "paths.json")
 
@@ -677,6 +678,114 @@ class ArbeitsordnerNichtVerstellenTests(unittest.TestCase):
                 os.path.normpath(ausweich).lower(),
                 str(gui._gespeichert.get("temp_dir", "")).lower(),
                 "Ein echtes Ausweichen des Arbeitsordners wurde nicht gemerkt.")
+
+
+class BomUndBeschaedigtTests(unittest.TestCase):
+    """Eine paths.json mit BOM oder kaputtem Inhalt kostet keine Einstellung.
+
+    Befund der Pruefmatrix vom 11.09.2026: Das Skript legte die Einstellungen
+    mit ``Out-File -Encoding utf8`` aus Windows PowerShell 5.1 an - also mit
+    UTF-8-BOM. ``encoding="utf-8"`` weist die BOM ab ("Unexpected UTF-8
+    BOM"). Beim Lesen fiel jede Einstellung auf die Vorgabe zurueck: Die
+    Laeufe E2-E4 bauten ohne die verlangte Integration, E2 "nur BACKPORT"
+    ergab ein .ffpkg von exakt derselben Groesse wie E1 "ohne". Beim
+    Schreiben galt ``existing = {}``, und die naechste gespeicherte
+    Einstellung ersetzte die ganze Datei.
+    """
+
+    def setUp(self):
+        os.environ["PS5CONV_KONFIGORDNER"] = ORDNER
+        os.makedirs(ORDNER, exist_ok=True)
+        for rest in Path(ORDNER).glob("paths.json*"):
+            rest.unlink()
+        self.gui = _gui()
+
+    def _mit_bom(self, daten: dict) -> None:
+        Path(CFG).write_bytes(b"\xef\xbb\xbf" + json.dumps(daten).encode("utf-8"))
+
+    def test_eine_datei_mit_bom_wird_gelesen(self):
+        self._mit_bom({"integrate_ampr": True, "language": "en"})
+        self.assertIs(True, self.gui._load_setting("integrate_ampr", False))
+        self.assertEqual("en", self.gui._load_setting("language", "de"))
+
+    def test_auch_ohne_instanz(self):
+        self._mit_bom({"language": "en"})
+        self.assertEqual("en", APP.PS5ConverterGUI._load_setting_static("language", "de"))
+
+    def test_speichern_behaelt_die_uebrigen_schluessel(self):
+        vorher = {"integrate_ampr": True, "language": "en", "temp_dir": "E:\\PS5_Temp"}
+        self._mit_bom(vorher)
+        self.gui._save_setting("zstd_level", 6)
+        stand = json.loads(Path(CFG).read_text(encoding="utf-8-sig"))
+        self.assertEqual(dict(vorher, zstd_level=6), stand,
+                         "Das Speichern einer Einstellung hat die uebrigen geloescht.")
+
+    def test_eine_kaputte_datei_wird_gesichert_statt_verschluckt(self):
+        Path(CFG).write_text('{"language": "en", ', encoding="utf-8")
+        self.gui._save_setting("zstd_level", 6)
+        sicherungen = list(Path(ORDNER).glob("paths.json.unlesbar-*"))
+        self.assertEqual(1, len(sicherungen),
+                         "Die beschaedigte Datei wurde nicht gesichert.")
+        self.assertEqual('{"language": "en", ',
+                         sicherungen[0].read_text(encoding="utf-8"))
+        self.assertEqual({"zstd_level": 6},
+                         json.loads(Path(CFG).read_text(encoding="utf-8")))
+
+    def test_eine_belegte_datei_wird_nicht_ueberschrieben(self):
+        Path(CFG).write_text(json.dumps({"language": "en"}), encoding="utf-8")
+        echt_open = builtins.open
+
+        def _lesen_belegt(pfad, *a, **kw):
+            modus = a[0] if a else kw.get("mode", "r")
+            if str(pfad).endswith("paths.json") and "r" in modus:
+                raise PermissionError(13, "gestellt: belegt")
+            return echt_open(pfad, *a, **kw)
+
+        builtins.open = _lesen_belegt
+        try:
+            self.gui._save_setting("zstd_level", 6)
+        finally:
+            builtins.open = echt_open
+        self.assertEqual({"language": "en"},
+                         json.loads(Path(CFG).read_text(encoding="utf-8")),
+                         "Eine nur belegte Datei wurde durch eine einzelne "
+                         "Einstellung ersetzt.")
+
+
+class EinstellungsmodulBomTests(unittest.TestCase):
+    """Dieselbe Regel in ``ps5_validator.utils.einstellungen``."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix="einstellungen_bom_")
+        self.datei = os.path.join(self.tmp.name, "paths.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_lesen_mit_bom(self):
+        Path(self.datei).write_bytes(b"\xef\xbb\xbf" + b'{"language": "en"}')
+        self.assertEqual("en", einstellungen.lesen(
+            "language", "de", datei=self.datei, warten=lambda _s: None))
+
+    def test_schreiben_behaelt_die_uebrigen(self):
+        Path(self.datei).write_bytes(
+            b"\xef\xbb\xbf" + b'{"language": "en", "temp_dir": "E:\\\\X"}')
+        einstellungen.schreiben("zstd_level", 6, datei=self.datei,
+                                warten=lambda _s: None)
+        self.assertEqual({"language": "en", "temp_dir": "E:\\X", "zstd_level": 6},
+                         json.loads(Path(self.datei).read_text(encoding="utf-8")))
+
+    def test_kaputte_datei_wird_gesichert(self):
+        Path(self.datei).write_text("{kaputt", encoding="utf-8")
+        einstellungen.schreiben("zstd_level", 6, datei=self.datei,
+                                warten=lambda _s: None)
+        self.assertEqual(1, len(list(Path(self.tmp.name).glob("paths.json.unlesbar-*"))))
+        self.assertEqual({"zstd_level": 6},
+                         json.loads(Path(self.datei).read_text(encoding="utf-8")))
+
+    def test_das_hauptprogramm_nutzt_dieselbe_regel(self):
+        self.assertIn("einstellungen.vorhandenes_lesen", _baum("_konfiguration_schreiben"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
