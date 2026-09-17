@@ -228,6 +228,25 @@ class IntegrationsablaufTests(unittest.TestCase):
         self.assertEqual(eingebaut.stat().st_size, int(gewaehlt["size"]),
                          "Die eingebaute Datei ist nicht die gewählte Version")
 
+    def test_der_backport_laeuft_vor_dem_ampr_einbau(self) -> None:
+        """Die Reihenfolge selbst, mitgeschrieben.
+
+        Der Test oben vergleicht nur die Groesse der eingebauten
+        libSceAmpr.sprx. In Backport_Fakelibs/ liegt aber keine AMPR-Datei:
+        Der Backport kann sie in keiner Reihenfolge ueberschreiben, und auch
+        "AMPR vor Backport" bliebe dort gruen (Befund T20, 17.09.2026).
+        """
+        from unittest import mock
+
+        g = _gui(ampr=True, backport=True)
+        schritte: list = []
+        with mock.patch.object(g, "_integration_backport",
+                               lambda _o: schritte.append("backport") or True), \
+                mock.patch.object(g, "_integration_ampr",
+                                  lambda _o: schritte.append("ampr") or True):
+            self.assertTrue(g._integration_anwenden(str(self.dump)))
+        self.assertEqual(schritte, ["backport", "ampr"])
+
     def test_kein_kaestchen_schaltet_das_andere_ab(self) -> None:
         """Beide dürfen gleichzeitig gesetzt sein.
 

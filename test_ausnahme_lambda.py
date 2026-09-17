@@ -160,10 +160,13 @@ class BehobeneStellenTests(unittest.TestCase):
                 if not any(isinstance(k, ast.Constant) and k.value == schluessel
                            for k in ast.walk(handler)):
                     continue
-                # Ein after(...) im selben Block, das "meldung" mitnimmt.
+                # Ein after(...) im selben Block, das "meldung" mitnimmt - oder
+                # _spaeter_im_fenster(...), das selbst after() am Fenster ruft
+                # und vorher prueft, ob es noch offen ist (seit 17.09.2026 der
+                # Weg aus allen Arbeitsfaeden, siehe test_debuglauf_befunde).
                 gefunden[schluessel] = any(
                     isinstance(k, ast.Call)
-                    and getattr(k.func, "attr", "") == "after"
+                    and getattr(k.func, "attr", "") in ("after", "_spaeter_im_fenster")
                     and _liest(ast.Module(body=[ast.Expr(a) for a in k.args],
                                           type_ignores=[]), "meldung")
                     for k in ast.walk(handler))

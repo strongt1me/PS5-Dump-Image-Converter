@@ -142,9 +142,15 @@ class FfpkgValidator(BaseValidator):
                     progress_cb=lambda done, total: self._report_progress(
                         done, total, image.name
                     ),
+                    cancel_cb=self._is_cancelled,
                 )
         except OSError as exc:
             result.set_corrupted(f"Datei nicht vollständig lesbar: {exc}")
+            return result
+
+        if self._is_cancelled():
+            # Kein Urteil ueber die Datei - siehe ValidationResult.set_skipped.
+            result.set_skipped("Validierung abgebrochen – die Datei wurde nicht vollständig gelesen.")
             return result
 
         result.hashes[image.name] = file_hash

@@ -301,6 +301,36 @@ class ZeitgrenzeTests(unittest.TestCase):
             "Erst nach %.0f s abgebrochen - die Zeitgrenze greift nicht "
             "waehrend des Lesens." % gebraucht)
 
+    def test_die_grenze_eines_spielbaus_waechst_mit_der_quelle(self) -> None:
+        """Fest zwei Stunden beendeten jeden Bau ab etwa 23 GB (17.09.2026).
+
+        Gemessen sind 3,3 MB/s; ein 50-GB-Titel braucht rund vier Stunden.
+        Geprueft an 30 kB mit einem auf 1 B/s gesetzten Durchsatz.
+        """
+        quelle = os.path.join(self.ordner, "dump")
+        os.makedirs(os.path.join(quelle, "sce_sys"))
+        for name, groesse in (("eboot.bin", 20_000), ("sce_sys/param.json", 10_000)):
+            with open(os.path.join(quelle, name), "wb") as datei:
+                datei.write(b"x" * groesse)
+        gemerkt = {}
+
+        def gefangen(argumente, melden=None, zeitgrenze=None,
+                     prozess_ablage=None, texte=None):
+            gemerkt["zeitgrenze"] = zeitgrenze
+            return (0, ["RESULT: " + self.skript])
+
+        with mock.patch.object(pp, "MINDESTDURCHSATZ_BYTES_S", 1), \
+                mock.patch.object(pp, "MINDESTZEITGRENZE_S", 10.0), \
+                mock.patch.object(pp, "_laufen_lassen", gefangen):
+            self.assertEqual(30_000.0, pp.zeitgrenze_fuer(quelle))
+            self.assertEqual(10.0, pp.zeitgrenze_fuer(self.ordner + "_gibts_nicht"))
+            pp.bauen(quelle, self.ordner)
+            self.assertEqual(30_000.0, gemerkt["zeitgrenze"],
+                             "bauen() reicht die feste Grenze durch.")
+            # Wer eine Grenze nennt, bekommt genau die.
+            pp.bauen(quelle, self.ordner, zeitgrenze=5.0)
+            self.assertEqual(5.0, gemerkt["zeitgrenze"])
+
     def test_ein_kurzer_lauf_wird_nicht_abgebrochen(self) -> None:
         """Gegenrichtung: Der Wecker darf nicht zu frueh zuschlagen."""
         kurz = os.path.join(self.ordner, "kurz.py")
@@ -413,6 +443,27 @@ class FassungsangabeTests(unittest.TestCase):
         self.assertIn("LibProsperoPkg (PKG-Bau)", quelle,
                       "Der Eintrag im Werkzeuginventar heisst anders - dann "
                       "misst dieser Test nichts.")
+
+    def test_lizenzliste_und_oberflaeche_nennen_keine_andere_fassung(self):
+        """Die Lizenzliste nannte bis zum 17.09.2026 noch 2.5, ebenso der
+        Hinweis im PKG-Reader - eingebaut ist seit v1.9.21 die 2.6.0."""
+        import re
+
+        from ps5_validator.utils.i18n import STRINGS
+
+        fassung = str(self._angaben().get("fassung"))
+        with io.open(os.path.join(self.WURZEL, "THIRD_PARTY_LICENSES.md"),
+                     encoding="utf-8") as datei:
+            lizenzen = datei.read()
+        self.assertIn("LibProsperoPkg %s" % fassung, lizenzen)
+        genannt = re.compile(r"LibProsperoPkg (\d+(?:\.\d+)+)", re.I)
+        falsch = sorted({"%s: %s" % (name, treffer)
+                         for name, text in [("THIRD_PARTY_LICENSES.md", lizenzen)]
+                         + [("%s/%s" % (k, s), t) for k, v in STRINGS.items()
+                            for s, t in v.items()]
+                         for treffer in genannt.findall(text)
+                         if treffer != fassung})
+        self.assertEqual([], falsch, "Nennt eine andere als die eingebaute Fassung.")
 
 
 if __name__ == "__main__":

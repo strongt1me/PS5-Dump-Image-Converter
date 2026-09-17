@@ -15,9 +15,11 @@ Beide Fälle lassen sich nur am laufenden Tk-Baum messen, nicht am Quelltext.
 Ohne verfügbare Anzeige werden die Tests übersprungen.
 """
 from pathlib import Path
+import ast
 import io
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -51,6 +53,21 @@ def _lade_hauptprogramm():
     sys.modules["hauptprogramm"] = modul
     spec.loader.exec_module(modul)
     return modul
+
+
+def _leerer_spielordner(testfall):
+    """Ein leerer Ordner fuer das BACKPORT-Fenster, nach dem Test entfernt.
+
+    Das Fenster startet beim Oeffnen die Analyse im Faden. Bis 16.09.2026
+    bekam es hier den Projektordner: Der Faden las dann im Hintergrund jede
+    ausfuehrbare Datei des ganzen Baums samt mitgelieferter Werkzeuge,
+    waehrend laengst andere Tests liefen - und starb in der Testreihe
+    fuenfmal an einem Tk-Zugriff, den niemand sah. Fuer das Layout reicht
+    ein leerer Ordner; gemessen wird sofort nach dem Oeffnen.
+    """
+    ordner = tempfile.TemporaryDirectory(prefix="ps5conv_test_backport_")
+    testfall.addCleanup(ordner.cleanup)
+    return ordner.name
 
 
 def _sammle(widget, art):
@@ -141,7 +158,7 @@ class FensterLayoutTests(unittest.TestCase):
 
     def test_backport_knoepfe_voll_sichtbar(self):
         fenster = self._oeffne(
-            lambda: self.app._render_backport_window(os.path.dirname(HAUPTDATEI)))
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
             zu_klein = _gequetschte_knoepfe(fenster)
             self.assertEqual(zu_klein, [], f"Gequetscht: {zu_klein}")
@@ -166,7 +183,7 @@ class FensterLayoutTests(unittest.TestCase):
         stattdessen angezeigt - siehe unten.
         """
         fenster = self._oeffne(
-            lambda: self.app._render_backport_window(os.path.dirname(HAUPTDATEI)))
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
             self.assertEqual(_leere_comboboxen(fenster), [],
                              "Eine Auswahl ist leer")
@@ -193,7 +210,7 @@ class FensterLayoutTests(unittest.TestCase):
         from ps5_validator.utils import ps5_backport as bp
 
         fenster = self._oeffne(
-            lambda: self.app._render_backport_window(os.path.dirname(HAUPTDATEI)))
+            lambda: self.app._render_backport_window(_leerer_spielordner(self)))
         try:
             texte = [str(w.cget("text")).strip().lower()
                      for w in _sammle(fenster, "Label")]
@@ -456,7 +473,7 @@ class FenstergroesseTests(unittest.TestCase):
 
     def test_backport_fasst_seinen_inhalt(self):
         self._pruefen("Backport", lambda: self.app._render_backport_window(
-            os.path.dirname(HAUPTDATEI)))
+            _leerer_spielordner(self)))
 
 
     def test_ps4_pkg_knoepfe_bleiben_erreichbar(self):
@@ -577,24 +594,59 @@ class DesignwechselFarbenTests(unittest.TestCase):
         return soll, abweichend
 
     def test_alle_designs_und_zurueck(self):
-        # Hin und zurueck, weil ein Fehler nur in eine Richtung auftreten kann.
-        for design in ("dunkel", "mittel", "hell", "dunkel", "hell", "mittel", "dunkel"):
+        """Hin und zurueck, weil ein Fehler nur in eine Richtung auftreten kann.
+
+        Die Designs kommen aus der Tabelle selbst. Bis 16.09.2026 stand hier
+        eine feste Liste mit "mittel" - ein Design, das es seit v1.9.19 nicht
+        mehr gibt. _apply_theme uebergeht unbekannte Namen still; gemessen
+        wurde dann zweimal das vorige Design, und "futuristisch" und
+        "metallisch" nie.
+        """
+        designs = list(self.app._THEMES)
+        self.assertGreaterEqual(len(designs), 2, "Nichts zum Wechseln da.")
+        folge = designs + list(reversed(designs)) + designs[:1]
+        for design in folge:
             soll, abweichend = self._messen(design)
+            self.assertEqual(
+                self.app._current_theme, design,
+                "_apply_theme hat '%s' nicht angenommen - gemessen waere das "
+                "vorige Design." % design)
             self.assertEqual(
                 abweichend, [],
                 "Nach dem Wechsel auf '%s' (fg_primary=%s) tragen diese "
                 "Beschriftungen eine fremde Farbe: %s" % (design, soll, abweichend))
 
     def test_kein_zweiter_schreiber_fuer_das_kaestchen(self):
-        # Der konkrete Rueckfall: _apply_theme() setzte die Schriftfarbe des
-        # Kaestchens noch einmal fest, nachdem die Rollentabelle sie gesetzt
-        # hatte. Zwei Schreiber auf derselben Eigenschaft - der zweite gewinnt.
+        """Der konkrete Rueckfall: _apply_theme() setzte die Schriftfarbe des
+        Kaestchens noch einmal fest, nachdem die Rollentabelle sie gesetzt
+        hatte. Zwei Schreiber auf derselben Eigenschaft - der zweite gewinnt.
+
+        Ueber den Syntaxbaum. Bis 16.09.2026 suchte der Test den Wortlaut mit
+        "\\r\\n" - in einem Text, den io.open schon auf "\\n" umgestellt hatte.
+        Er haette den Rueckfall nie gefunden.
+        """
         with io.open(HAUPTDATEI, encoding="utf-8") as fh:
-            quelle = fh.read()
-        self.assertNotIn('self.shutdown_check.configure(' + '\r\n'
-                         + '                    bg=c["bg_card"], fg=c["fg_secondary"]',
-                         quelle,
-                         "_apply_theme setzt die Schriftfarbe wieder fest.")
+            baum = ast.parse(fh.read())
+        klasse = next(k for k in ast.walk(baum)
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        methode = next(m for m in klasse.body
+                       if isinstance(m, ast.FunctionDef) and m.name == "_apply_theme")
+        aufrufe = [k for k in ast.walk(methode)
+                   if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+                   and k.func.attr in ("configure", "config")
+                   and isinstance(k.func.value, ast.Attribute)
+                   and k.func.value.attr == "shutdown_check"]
+        self.assertTrue(aufrufe, "_apply_theme faerbt das Kaestchen nicht mehr - "
+                                 "der Test misst sonst nichts.")
+        for aufruf in aufrufe:
+            for wort in aufruf.keywords:
+                if wort.arg not in ("fg", "foreground"):
+                    continue
+                fest = (isinstance(wort.value, ast.Subscript)
+                        and isinstance(wort.value.slice, ast.Constant)
+                        and wort.value.slice.value == "fg_secondary")
+                self.assertFalse(fest, "_apply_theme setzt die Schriftfarbe "
+                                       "wieder fest auf fg_secondary.")
 
 
 class RueckrufNachSchliessenTests(unittest.TestCase):
@@ -1244,18 +1296,38 @@ class HinweiszeilenHoeheTests(unittest.TestCase):
                          + "\n  ".join(zu_lang))
 
     def test_der_hinweis_bleibt_unter_drei_zeilen(self):
-        """Bei einem PFS-Container ist er am laengsten: Quelle, Tempo, Rang."""
+        """Bei einem PFS-Container ist er am laengsten: Quelle, Tempo, Rang.
+
+        Bis zum 17.09.2026 setzte dieser Test den Modus "1" (kennt
+        ``_MODE_SOURCE_TYPES`` nicht) und das Etikett ".exfat" (heisst
+        ``.exFAT``) - gemessen wurde ein anderer Hinweis als in jeder echten
+        Aufgabe, der exFAT-Fall ganz ohne Rangzeile, und eine Obergrenze von
+        drei Zeilen stand nirgends (Befund T16). Jetzt mit echter Aufgabe,
+        echten Etiketten und der Rangzeile als Beleg, dass die Wahl ankam.
+        """
         app = self.app
+        vorher = (app._current_language, app.current_mode.get(), app.target_format.get())
+
+        def _zurueck():
+            app._current_language = vorher[0]
+            app.current_mode.set(vorher[1])
+            app.target_format.set(vorher[2])
+        self.addCleanup(_zurueck)
+        modus = "universal_convert"          # nennt alle vier Quellarten
         hoehen = {}
         for sprache in ("de", "en"):
             app._current_language = sprache
-            for fmt in (".ffpfsc", ".ffpkg", ".exfat"):
-                app.current_mode.set("1")
-                app.target_format.set(fmt)
-                app._format_hinweis_setzen("1")
+            for schluessel in ("ffpfsc", "ffpfs", "ffpkg", "exfat"):
+                app.current_mode.set(modus)
+                app.target_format.set(app._t("format." + schluessel))
+                app._format_hinweis_setzen(modus)
                 _WURZEL.update_idletasks()
                 text = app.format_info_label.cget("text")
-                hoehen["%s %s" % (sprache, fmt)] = (
+                rang = app._t(app._SMP_EINSTUFUNG[schluessel])
+                with self.subTest(sprache=sprache, ziel=schluessel):
+                    self.assertIn(rang, text, "Die Zielwahl kam im Hinweis nicht an.")
+                    self.assertLessEqual(text.count("\n") + 1, 3, text)
+                hoehen["%s %s" % (sprache, schluessel)] = (
                     app.format_info_label.winfo_reqheight(),
                     text.count("\n") + 1)
         zu_hoch = ["%s: %d px fuer %d Zeilen" % (k, px, zeilen)

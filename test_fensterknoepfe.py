@@ -38,8 +38,6 @@ pruefumgebung.umlenken("fensterknoepfe")
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 
-G = APP.PS5ConverterGUI
-
 
 def _baum() -> ast.Module:
     with io.open(APP.__file__, "rb") as fh:
@@ -112,39 +110,13 @@ class SchliessenFunktioniertTests(unittest.TestCase):
 
 
 class WebkitFensterTests(unittest.TestCase):
-    """Die Hoehe wird gerechnet, nicht geraten."""
+    """Die Hoehe wird gerechnet, nicht geraten.
 
-    RAND = 14
-
-    def _masse(self, mit_bild: bool) -> tuple[int, int, int]:
-        """(Hoehe, Unterkante des letzten Knopfes, Oberkante SCHLIESSEN).
-
-        Dieselbe Rechnung wie im Fenster - wer sie dort aendert, muss sie
-        hier nachziehen, und genau das ist der Zweck.
-        """
-        versatz = (G._WEBKIT_BILD_KANTE + 16) if mit_bild else 0
-        knopf_oben = self.RAND + 134 + versatz
-        knopf_unten = knopf_oben + 2 * 56 + 44 // 2
-        hoehe = knopf_unten + 16 + 26 + self.RAND
-        schliessen_oben = hoehe - self.RAND - 12 - 13
-        return hoehe, knopf_unten, schliessen_oben
-
-    def test_die_knoepfe_ueberlappen_nicht(self):
-        for mit_bild in (True, False):
-            with self.subTest(bild=mit_bild):
-                _hoehe, unten, schliessen = self._masse(mit_bild)
-                self.assertGreater(
-                    schliessen, unten,
-                    "Der SCHLIESSEN-Knopf liegt auf dem letzten Wege-Knopf.")
-
-    def test_die_alte_feste_hoehe_haette_ueberlappt(self):
-        """Gegenprobe zur Rechnung: 392 px reichten nicht."""
-        _hoehe, unten, _s = self._masse(True)
-        alt_schliessen = 392 - self.RAND - 12 - 13
-        self.assertLess(alt_schliessen, unten,
-                        "Die Gegenprobe trifft nicht mehr - dann sagt der "
-                        "Test oben auch nichts mehr.")
-        self.assertEqual(29, unten - alt_schliessen)
+    Bis zum 17.09.2026 standen hier zwei Tests, die die Rechnung des Fensters
+    im Test nachbauten und mit sich selbst verglichen - rot werden konnten
+    sie nie (Befund T14). Die Lage der Knoepfe misst jetzt
+    test_debuglauf_befunde.WebkitFensterMessungTests am gebauten Fenster.
+    """
 
     def test_die_hoehe_steht_nicht_mehr_fest_im_quelltext(self):
         baum = _baum()
@@ -211,15 +183,34 @@ class MacKnoepfeTests(unittest.TestCase):
         self.assertGreaterEqual(text.count("flach_knopf("), 6)
 
     def test_flach_knopf_vertraegt_dieselben_angaben(self):
-        """Ein Label kennt alle Optionen, die die Aufrufstellen setzen."""
+        """Der echte FlachButton kennt alle Optionen der Aufrufstellen.
+
+        Bis zum 17.09.2026 prueften hier die Optionen eines frischen
+        ``tk.Label`` - die bringt Tk immer mit, und ``FlachButton`` selbst
+        wurde nie angefasst (Befund T15). Jetzt: die Schluesselwoerter aller
+        ``flach_knopf(...)``-Aufrufe aus dem Syntaxbaum, gegen einen echten
+        ``FlachButton`` - samt ``command`` und gesperrtem Zustand.
+        """
         import tkinter as tk
+
+        optionen = sorted({kw.arg for k in ast.walk(_baum())
+                           if isinstance(k, ast.Call) and getattr(k.func, "id", "") == "flach_knopf"
+                           for kw in k.keywords if kw.arg})
+        self.assertGreaterEqual(len(optionen), 10, "Kaum Aufrufstellen gefunden - die Pruefung misst nichts.")
         wurzel = tk._default_root or tk.Tk()
         wurzel.withdraw()
-        label = tk.Label(wurzel)
-        for option in ("bg", "fg", "activebackground", "activeforeground",
-                       "relief", "cursor", "font", "padx", "pady", "state"):
+        gedrueckt: list = []
+        knopf = APP.FlachButton(wurzel, command=lambda: gedrueckt.append(1), default="active")
+        self.addCleanup(knopf.destroy)
+        for option in optionen:
+            if option in ("command", "default"):
+                continue
             with self.subTest(option=option):
-                self.assertIn(option, label.keys())
+                self.assertIn(option, knopf.keys())
+        knopf.invoke()
+        knopf.configure(state="disabled")
+        knopf.invoke()
+        self.assertEqual(gedrueckt, [1], "command fehlt - oder greift auch gesperrt.")
 
 
 if __name__ == "__main__":

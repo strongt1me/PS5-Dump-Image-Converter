@@ -223,12 +223,27 @@ class KonsolenSuchlaufTests(unittest.TestCase):
         self.assertEqual(["Spiel E"], [f["name"] for f in funde])
 
     def test_ein_ablageort_ist_kein_fund(self):
-        """``/mnt/usb0/homebrew`` stand doppelt: als Ort und als Spiel."""
-        ist_ordner, auflisten = self._helfer()
+        """``/mnt/usb0/homebrew`` stand doppelt: als Ort und als Spiel.
+
+        Seit dem 17.09.2026 traegt der Ablageort hier selbst ein Spielmerkmal.
+        Vorher fiel er schon an der Merkmalspruefung heraus, und die eigentliche
+        Regel (Ablageort ist kein Fund) konnte fehlen, ohne dass der Test es
+        merkte.
+        """
+        bestand = dict(self.BESTAND)
+        bestand["/mnt/usb0/homebrew"] = {"dirs": ["sce_sys"],
+                                         "files": ["eboot.bin", "Spiel C.ffpfsc"]}
         funde = bibliothek.konsole_durchsuchen(
             object(), ["/mnt/usb0", "/mnt/usb0/homebrew"],
-            ist_ordner=ist_ordner, auflisten=auflisten)
+            ist_ordner=lambda _ftp, pfad: pfad in bestand,
+            auflisten=lambda _ftp, pfad: bestand[pfad])
         self.assertNotIn("homebrew", [f["name"] for f in funde])
+        # Ohne die Regel waere er ein Fund - sonst misst der Test nichts.
+        ohne_regel = bibliothek.konsole_durchsuchen(
+            object(), ["/mnt/usb0"],
+            ist_ordner=lambda _ftp, pfad: pfad in bestand,
+            auflisten=lambda _ftp, pfad: bestand[pfad])
+        self.assertIn("homebrew", [f["name"] for f in ohne_regel])
 
 
 class BildspeicherTests(unittest.TestCase):

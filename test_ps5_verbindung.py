@@ -338,8 +338,10 @@ class UebersetzungTests(unittest.TestCase):
             with self.subTest(schluessel=schluessel):
                 self.assertIn(schluessel, STRINGS)
                 for sprache in ("de", "en"):
-                    text = translate(sprache, schluessel)
-                    self.assertTrue(text.strip())
+                    # Im Woerterbuch selbst: translate() faellt bei fehlendem
+                    # "en" still auf Deutsch zurueck.
+                    text = str(STRINGS[schluessel].get(sprache) or "")
+                    self.assertTrue(text.strip(), sprache)
                     self.assertNotEqual(text, schluessel)
 
     def test_testmeldungen_tragen_ihre_platzhalter(self):

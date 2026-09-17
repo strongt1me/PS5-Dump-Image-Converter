@@ -21,6 +21,12 @@ EXFAT_OEM_NAME = b"EXFAT   "
 SECTOR_SIZE    = 512
 
 
+def _genau(anzahl: int) -> str:
+    """Groesse gerundet und byte-genau - ein fehlender Block ginge sonst in
+    der Rundung unter ("nennt 6.1 MB, hat nur 6.1 MB")."""
+    return f"{fmt_bytes(anzahl)} ({anzahl:,} Bytes)".replace(",", ".")
+
+
 class ExtfatValidator(BaseValidator):
     """Validiert eine .extfat Container-Datei."""
 
@@ -32,6 +38,24 @@ class ExtfatValidator(BaseValidator):
     ) -> None:
         super().__init__(progress_cb, cancel_flag, verbose)
         self._log = get_logger()
+
+    @staticmethod
+    def _volumen_bytes(boot: bytes, result: ValidationResult) -> int:
+        """Die Volumengroesse laut Boot-Sektor in Bytes, 0 wenn unbrauchbar.
+
+        VolumeLength (Offset 0x48, 8 Bytes) zaehlt Sektoren,
+        BytesPerSectorShift (0x6C) liegt laut exFAT-Spezifikation zwischen
+        9 und 12 (512 bis 4096 Bytes je Sektor).
+        """
+        if len(boot) < 0x70:
+            return 0
+        sektoren = struct.unpack_from("<Q", boot, 0x48)[0]
+        verschiebung = boot[0x6C]
+        if not 9 <= verschiebung <= 12:
+            result.add_error(
+                f"Sektorgröße im Boot-Sektor ungültig (BytesPerSectorShift={verschiebung}).")
+            return 0
+        return sektoren << verschiebung
 
     def validate(self, path: str) -> ValidationResult:
         result = ValidationResult(mode="extfat")
@@ -62,6 +86,7 @@ class ExtfatValidator(BaseValidator):
         # ── exFAT Boot-Sektor parsen ─────────────────────────────────────────
         parse_ok     = False
         cluster_count = 0
+        volumen_bytes = 0
         try:
             with open(fpath, "rb") as fh:
                 boot = fh.read(SECTOR_SIZE)
@@ -77,6 +102,7 @@ class ExtfatValidator(BaseValidator):
                     # Cluster-Anzahl (Offset 0x5C, 4 Bytes LE)
                     if len(boot) >= 0x60:
                         cluster_count = struct.unpack_from("<I", boot, 0x5C)[0]
+                    volumen_bytes = self._volumen_bytes(boot, result)
                     self._log.info(f"exFAT erkannt | Cluster: {cluster_count}")
                 else:
                     oem_str = oem.decode("ascii", errors="replace").strip()
@@ -93,6 +119,25 @@ class ExtfatValidator(BaseValidator):
         result.summary["exfat_detected"]   = parse_ok
         result.summary["cluster_count"]    = cluster_count
 
+        # ── Groesse gegen den Boot-Sektor ────────────────────────────────────
+        # Bis v1.9.24 fehlte dieser Vergleich. Eine abgebrochene Kopie oder
+        # Uebertragung las sich ohne Lesefehler bis zu ihrem (zu fruehen)
+        # Ende, und Aufgabe 8 meldete "OK" - gemessen am 17.09.2026 an einem
+        # auf 1 MB gekuerzten Abbild. Ein vom Programm gebautes .exfat ist
+        # genau VolumeLength Sektoren gross (12 von 12 Abbildern gemessen).
+        if volumen_bytes:
+            result.summary["volume_size"] = fmt_bytes(volumen_bytes)
+            if file_size < volumen_bytes:
+                fehlend = volumen_bytes - file_size
+                result.summary["missing_bytes"] = fehlend
+                result.set_corrupted(
+                    f"Abbild abgeschnitten: Der Boot-Sektor nennt {_genau(volumen_bytes)}, "
+                    f"die Datei hat nur {_genau(file_size)} (es fehlen {_genau(fehlend)}). "
+                    "Typisch für eine abgebrochene Kopie oder Übertragung – die Datei "
+                    "neu kopieren oder neu erzeugen."
+                )
+                return result
+
         # ── Vollständiger Streaming-Read + SHA-256 ───────────────────────────
         read_errors: list[str] = []
         file_hash = ""
@@ -102,9 +147,14 @@ class ExtfatValidator(BaseValidator):
                     fh,
                     total_size=file_size,
                     progress_cb=lambda d, t: self._report_progress(d, t, fpath.name),
+                    cancel_cb=self._is_cancelled,
                 )
         except OSError as exc:
             result.set_corrupted(f"Datei nicht lesbar: {exc}")
+            return result
+
+        if self._is_cancelled():
+            result.set_skipped("Validierung abgebrochen – die Datei wurde nicht vollständig gelesen.")
             return result
 
         result.hashes[fpath.name] = file_hash
@@ -116,8 +166,9 @@ class ExtfatValidator(BaseValidator):
             result.set_corrupted(f"{len(read_errors)} Lesefehler – Container beschädigt.")
         elif not parse_ok:
             result.status = "WARNING"
-        else:
-            result.status = "OK"
+        # Sonst bleibt der Stand stehen. Bis v1.9.24 stand hier
+        # ``result.status = "OK"`` - eine ungueltige Boot-Signatur (add_error
+        # oben) wurde damit wieder zu "OK".
 
         self._log.info(
             f"exFAT-Validierung abgeschlossen: {result.status} | SHA-256: {file_hash[:16]}..."

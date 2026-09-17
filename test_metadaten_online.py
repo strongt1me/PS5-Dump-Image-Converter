@@ -212,10 +212,11 @@ class VerbindungsTests(unittest.TestCase):
         socket.create_connection = self._echt_connect
         self.haupt.urllib.request.urlopen = self._echt_urlopen
 
-    def test_vorgabe_ist_aus(self):
-        """Ohne Zutun darf nichts hinausgehen."""
-        self.assertFalse(self.app._load_setting(
-            self.haupt.PS5ConverterGUI._METADATEN_ONLINE_SETTING, False))
+    # Hier stand bis zum 17.09.2026 test_vorgabe_ist_aus. Er gab die erwartete
+    # Vorgabe selbst mit (_load_setting(..., False)) und bekam sie zurueck -
+    # rot waere er nur bei einer gespeicherten Einstellung geworden. Die echte
+    # Vorgabe ist seit v1.8.92 unter Windows und Linux AN, auf dem Mac aus;
+    # das sichert test_metadaten_vorgabe.py am Programm selbst (Befund T23).
 
     def test_ohne_schalter_keine_verbindung(self):
         """Der Fall, der die Firewall auf den Plan rief.

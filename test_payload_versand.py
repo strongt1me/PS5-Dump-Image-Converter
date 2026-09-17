@@ -424,8 +424,11 @@ class PayloadAntwortTests(unittest.TestCase):
         gui = self._gui("en")
         self._senden(gui, "ELF loaded")
         zusammen = "".join(self.protokoll)
-        self.assertIn(i18n.STRINGS["payload.ausgabe"]["en"].split("{")[0],
-                      zusammen)
+        # Der Anfang "[PAYLOAD] " steht auch im deutschen Text - er trennte
+        # die Sprachen nie. Geprueft wird das englische Verb und das Fehlen
+        # des deutschen.
+        self.assertIn("reports:", zusammen)
+        self.assertNotIn("meldet", zusammen)
 
     def test_eine_leere_antwort_erzeugt_keine_zeile(self):
         """ftpsrv laeuft weiter und sagt nichts - das ist kein Fehler."""

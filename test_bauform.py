@@ -278,10 +278,10 @@ class RohModusTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.baum = ast.parse(cls.QUELLE.read_text(encoding="utf-8", errors="replace"))
 
-    def _argumentlisten_mit_raw(self):
+    def _argumentlisten_mit_raw(self, baum=None):
         """Jede Listen-Literal, in der '--raw' steht, samt ihrer Zeile."""
         raus = []
-        for knoten in ast.walk(self.baum):
+        for knoten in ast.walk(self.baum if baum is None else baum):
             if not isinstance(knoten, (ast.List, ast.Tuple)):
                 continue
             werte = [k.value for k in knoten.elts
@@ -298,22 +298,31 @@ class RohModusTests(unittest.TestCase):
             "Nur %d Argumentliste(n) mit --raw gefunden - die Auswertung "
             "greift nicht mehr." % len(listen))
 
+    @staticmethod
+    def _ohne_no_compress(listen):
+        """Die Regel selbst - dieselbe fuer das Programm und die Gegenprobe."""
+        return [zeile for zeile, werte in listen if "--no-compress" not in werte]
+
     def test_jeder_raw_aufruf_schaltet_die_kompression_ab(self) -> None:
-        ohne = [zeile for zeile, werte in self._argumentlisten_mit_raw()
-                if "--no-compress" not in werte]
+        ohne = self._ohne_no_compress(self._argumentlisten_mit_raw())
         self.assertEqual(
             [], ohne,
             "In Zeile(n) %s steht --raw ohne --no-compress. Damit liest die "
             "Konsole die Dateien falsch, obwohl die Pruefung durchlaeuft." % ohne)
 
     def test_die_pruefung_wuerde_einen_verstoss_melden(self) -> None:
-        """Gegenprobe an einer erfundenen Liste."""
-        erfunden = ast.parse('x = ["pack", "folder", "--raw", "--version"]')
-        werte = [k.value for k in ast.walk(erfunden)
-                 if isinstance(k, ast.Constant) and isinstance(k.value, str)]
-        self.assertIn("--raw", werte)
-        self.assertNotIn("--no-compress", werte,
-                         "Die Gegenprobe traegt selbst den Schalter - sie misst nichts.")
+        """Gegenprobe an einer erfundenen Liste - durch dieselbe Auswertung.
+
+        Bis zum 17.09.2026 las die Gegenprobe die Werte selbst aus und
+        pruefte nur ihr eigenes Literal; ``_argumentlisten_mit_raw`` und die
+        Regel liefen nie ueber sie (Befund T9).
+        """
+        erfunden = ast.parse('x = ["pack", "folder", "--raw", "--version"]\n'
+                             'y = ["pack", "folder", "--raw", "--no-compress"]\n')
+        listen = self._argumentlisten_mit_raw(erfunden)
+        self.assertEqual(len(listen), 2)
+        self.assertEqual(self._ohne_no_compress(listen), [1],
+                         "Die Regel meldet den Verstoss in Zeile 1 nicht.")
 
 
 if __name__ == "__main__":

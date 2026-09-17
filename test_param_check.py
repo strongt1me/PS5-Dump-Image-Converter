@@ -560,7 +560,7 @@ class AnbindungTests(unittest.TestCase):
                 self.assertTrue(STRINGS[schluessel].get(sprache), schluessel)
 
     def test_meldungen_in_beiden_sprachen(self):
-        from ps5_validator.utils.i18n import STRINGS, translate
+        from ps5_validator.utils.i18n import STRINGS
 
         for schluessel in (
             "dialog.msg.param_json_offer_repair",
@@ -576,8 +576,10 @@ class AnbindungTests(unittest.TestCase):
         ):
             with self.subTest(schluessel=schluessel):
                 self.assertIn(schluessel, STRINGS)
+                # Im Woerterbuch selbst: translate() faellt bei fehlendem
+                # "en" still auf Deutsch zurueck.
                 for sprache in ("de", "en"):
-                    self.assertNotEqual(translate(sprache, schluessel), schluessel)
+                    self.assertTrue(STRINGS[schluessel].get(sprache), sprache)
 
 
 class CliSchalterTests(unittest.TestCase):

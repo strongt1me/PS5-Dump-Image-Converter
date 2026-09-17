@@ -39,20 +39,22 @@ def _blank():
 
 
 def _zerlegen(bloecke: list[str]) -> list[str]:
-    """Bildet den Zeilentrenner des Ausgabelesers nach."""
-    puffer = ""
-    zeilen: list[str] = []
+    """Schickt die Bloecke durch den echten Ausgabeleser des Programms.
+
+    Bis zum 17.09.2026 stand hier ein Nachbau des Zeilentrenners, und die
+    Klasse selbst war lokal in ``_execute_mkpfs`` versteckt - die Tests
+    prueften also nur ihre eigene Nachbildung (Befund T26). Ohne ``flush``:
+    Ein angefangener Rest ohne Zeilenende bleibt im Puffer, wie im Lauf.
+    """
+    import queue
+
+    ziel: queue.Queue = queue.Queue()
+    schreiber = APP._QueueWriter(ziel)
     for text in bloecke:
-        puffer += text
-        while True:
-            stellen = [i for i in (puffer.find("\n"), puffer.find("\r")) if i >= 0]
-            if not stellen:
-                break
-            idx = min(stellen)
-            zeile = puffer[:idx].strip()
-            puffer = puffer[idx + 1:]
-            if zeile:
-                zeilen.append(zeile)
+        schreiber.write(text)
+    zeilen: list[str] = []
+    while not ziel.empty():
+        zeilen.append(ziel.get_nowait())
     return zeilen
 
 
@@ -162,8 +164,44 @@ class AmStueckAngeliefertTests(unittest.TestCase):
         stelle = self.text.index("def _append_to_log")
         block = self.text[stelle:stelle + 6000]
         self.assertLess(block.index("_cli_mode"), block.index("zeilen_anzeige"))
-        self.assertLess(block.index("_protokollschwanz_merken"),
-                        block.index("zeilen_anzeige"))
+
+        # Der Puffer - seit 16.09.2026 ueber den Syntaxbaum. Bis dahin stand
+        # _protokollschwanz_merken VOR der Weiche und wirkte fuer jede
+        # Meldung; der mehrzeilige Zweig fuellte ihn ueber _log_engine_zeilen
+        # ein zweites Mal - im Diagnosebericht stand jede solche Zeile doppelt.
+        # Jetzt: der mehrzeilige Zweig ueber _log_engine_zeilen (und kehrt
+        # zurueck), der einzeilige Weg danach selbst.
+        import ast
+
+        klasse = next(k for k in ast.walk(ast.parse(self.text))
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        methode = next(m for m in klasse.body
+                       if isinstance(m, ast.FunctionDef) and m.name == "_append_to_log")
+        weiche = next(k for k in methode.body
+                      if isinstance(k, ast.If) and "zeilen_anzeige" in ast.dump(k.test))
+
+        def _rufe(knoten) -> set:
+            return {getattr(c.func, "attr", "") for c in ast.walk(knoten)
+                    if isinstance(c, ast.Call)}
+
+        self.assertIn("_log_engine_zeilen", _rufe(weiche),
+                      "Der mehrzeilige Zweig fuellt den Puffer nicht mehr.")
+        self.assertIsInstance(weiche.body[-1], ast.Return,
+                              "Der mehrzeilige Zweig kehrt nicht zurueck - die "
+                              "Meldung landete dann doppelt im Puffer.")
+        danach = set()
+        for anweisung in methode.body:
+            if anweisung.lineno > weiche.end_lineno:
+                danach |= _rufe(anweisung)
+        self.assertIn("_protokollschwanz_merken", danach,
+                      "Der einzeilige Weg fuellt den Puffer nicht.")
+        davor = set()
+        for anweisung in methode.body:
+            if anweisung.end_lineno < weiche.lineno:
+                davor |= _rufe(anweisung)
+        self.assertNotIn("_protokollschwanz_merken", davor,
+                         "Der Puffer wird wieder vor der Weiche gefuellt - "
+                         "mehrzeilige Meldungen stehen dann doppelt darin.")
 
 
 class ZusammenfassenTests(unittest.TestCase):

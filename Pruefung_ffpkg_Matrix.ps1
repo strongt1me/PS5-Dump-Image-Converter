@@ -130,7 +130,13 @@ function New-Konfig {
         zstd_level              = 6
         language                = "de"
     }
-    $daten | ConvertTo-Json | Out-File (Join-Path $ordner "paths.json") -Encoding utf8
+    # Ohne BOM schreiben. "Out-File -Encoding utf8" setzt unter Windows
+    # PowerShell 5.1 ein BOM davor; Programmfassungen, die paths.json noch mit
+    # "utf-8" statt "utf-8-sig" lesen, verwarfen die ganze Datei - alle
+    # Einstellungen galten als Vorgabe (Matrix E2-E4 am 11.09.2026 ungueltig).
+    $json = $daten | ConvertTo-Json
+    [System.IO.File]::WriteAllText((Join-Path $ordner "paths.json"), $json,
+        (New-Object System.Text.UTF8Encoding($false)))
     return $ordner
 }
 

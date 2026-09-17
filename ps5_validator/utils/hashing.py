@@ -48,10 +48,16 @@ def sha256_stream(
     fh,
     total_size: int = 0,
     progress_cb: Callable[[int, int], None] | None = None,
+    cancel_cb: Callable[[], bool] | None = None,
 ) -> tuple[str, list[str]]:
     """
     SHA-256 eines bereits geöffneten Datei-Handles berechnen.
     Gibt (hash_hex, errors[]) zurück.
+
+    ``cancel_cb`` wird vor jedem Block gefragt; liefert er True, endet das
+    Lesen dort (der Hash ist dann unvollstaendig - der Aufrufer fragt den
+    Abbruch selbst ab). Bis v1.9.24 fehlte der Parameter: Aufgabe 8 las nach
+    "Abbrechen" ein 100-GB-Abbild noch bis zum Ende.
     """
     h = hashlib.sha256()
     done = 0
@@ -59,6 +65,8 @@ def sha256_stream(
 
     try:
         while True:
+            if cancel_cb is not None and cancel_cb():
+                break
             chunk = fh.read(CHUNK_SIZE)
             if not chunk:
                 break

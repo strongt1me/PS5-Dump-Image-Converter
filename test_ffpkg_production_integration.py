@@ -9,7 +9,6 @@ import hashlib
 import json
 import os
 import queue
-import stat
 import tempfile
 import unittest
 from pathlib import Path
@@ -41,28 +40,17 @@ class _ProgressEngineStub:
 
 
 def _runtime_test_tool(root: Path, embedded_exe: Path) -> str:
-    """Liefert ein ausführbares UFS2Tool für opt-in-Integrationstests."""
-    tool_dll = embedded_exe.with_name("UFS2Tool.dll")
-    if not tool_dll.is_file():
-        raise FileNotFoundError(tool_dll)
+    """Liefert ein ausführbares UFS2Tool für opt-in-Integrationstests.
 
-    if os.name == "nt":
-        wrapper = root / "ufs2tool.cmd"
-        wrapper.write_text(
-            '@echo off\r\n"C:\\Program Files\\dotnet\\dotnet.exe" '
-            + f'"{tool_dll}" %*\r\n'
-            + "exit /b %ERRORLEVEL%\r\n",
-            encoding="utf-8",
-        )
-        return str(wrapper)
-
-    wrapper = root / "ufs2tool"
-    wrapper.write_text(
-        "#!/bin/sh\nexec /usr/bin/dotnet " + repr(str(tool_dll)) + ' "$@"\n',
-        encoding="utf-8",
-    )
-    wrapper.chmod(wrapper.stat().st_mode | stat.S_IXUSR)
-    return str(wrapper)
+    Seit v1.8.72 liegt UFS2Tool je Plattform als eigenstaendiger
+    Einzeldatei-Bau bei - ohne UFS2Tool.dll und ohne dotnet. Bis zum
+    17.09.2026 baute diese Hilfe noch einen dotnet-Aufruf um die DLL, und
+    beide Opt-in-Klassen scheiterten eingeschaltet sofort an deren Fehlen.
+    """
+    del root                                        # frueher: Ort des Wrappers
+    if not embedded_exe.is_file():
+        raise FileNotFoundError(embedded_exe)
+    return str(embedded_exe)
 
 
 def _write_pattern(path: Path, byte_count: int) -> None:
@@ -74,6 +62,96 @@ def _write_pattern(path: Path, byte_count: int) -> None:
             chunk = block[: min(len(block), remaining)]
             handle.write(chunk)
             remaining -= len(chunk)
+
+
+#: Eine param.json, die den Pruefer nicht beanstandet.
+#:
+#: ``HARTE_PFLICHTFELDER`` sind genau diese drei; die uebrigen Felder erzeugen
+#: nur Warnungen. Bis zum 17.09.2026 trugen die Quellen hier bloss
+#: ``{"titleId": ...}`` - damit fand der Pruefer zwei harte Fehler, der Bau
+#: bot die Reparatur an, und im Adminlauf stand ein Fenster, auf das niemand
+#: antwortete. Eine von vornherein gueltige Datei ist der sauberere Weg als
+#: eine automatische Reparatur: Die wuerde die Quelle veraendern - im
+#: 648-MB-Fall waren es danach 192 statt 191 Dateien, und genau diese Zahl
+#: prueft der Regressionsfall.
+def _gueltige_param_json(title_id: str = "PPSA00001") -> str:
+    return json.dumps({
+        "titleId": title_id,
+        "applicationCategoryType": 0,
+        "localizedParameters": {
+            "defaultLanguage": "de-DE",
+            "de-DE": {"titleName": "Integrationstest"},
+        },
+    })
+
+
+def _ohne_rueckfragen(gui) -> None:
+    """Nimmt einer nackten Programminstanz jede Rueckfrage.
+
+    Am 17.09.2026 gemessen: Der Adminlauf der beiden Integrationstests blieb
+    nach 90 Sekunden stehen und tat eine halbe Stunde nichts. Auf dem
+    Bildschirm stand ein Fenster "param.json beanstandet" - die Testquellen
+    tragen mit Absicht nur ``{"titleId": ...}``, und ``_build_ffpkg_from_folder``
+    fragt davor, ob die Datei repariert werden soll. ``_param_frage`` kennt
+    genau einen automatischen Weg: den CLI-Modus. Ohne ihn baut sie einen
+    Dialog - und die Instanz hier hat keinen laufenden Tk-Takt, der ihn
+    beantworten koennte (siehe die Deadlock-Falle in
+    ``_ask_yesno_threadsafe``).
+
+    Die Antwort "ja, reparieren" ist hier die richtige: Es geht um eine
+    Wegwerfdatei im Temp-Ordner, und ohne sie bricht der Bau vor UFS2Tool ab -
+    also vor dem, was diese Tests eigentlich pruefen.
+    """
+    gui._cli_mode = True
+    gui._cli_param_repair = True
+    gui._cli_param_online = False
+
+
+class AdminlaufOhneRueckfrageTests(unittest.TestCase):
+    """Ein Adminlauf darf nicht an einem Fenster stehen bleiben (17.09.2026).
+
+    Gemessen: Der erste Lauf der beiden Integrationstests mit erhoehten
+    Rechten hing eine halbe Stunde. Beide Prozesse untätig, Testordner leer,
+    kein Kindprozess - auf dem Bildschirm stand "param.json beanstandet". Die
+    Tests bauen eine Programminstanz ohne laufenden Tk-Takt; die Rueckfrage
+    erzeugte ein Fenster, das niemand beantworten konnte.
+
+    Diese beiden Pruefungen laufen **ohne** Adminrechte mit und haetten den
+    Fall vorher gefunden.
+    """
+
+    def test_die_testquelle_beanstandet_der_pruefer_nicht(self) -> None:
+        from ps5_validator.utils import param_check
+
+        with tempfile.TemporaryDirectory(prefix="ffpkg-param-") as temp_dir:
+            pfad = Path(temp_dir) / "param.json"
+            pfad.write_text(_gueltige_param_json(), encoding="utf-8")
+            befund = param_check.pruefe_datei(str(pfad))
+        self.assertTrue(
+            befund.ok,
+            "Die Testquelle loest eine Rueckfrage aus: %s"
+            % "; ".join(befund.als_text(mit_hinweisen=False)[:6]))
+
+    def test_beide_adminlaeufe_stellen_rueckfragen_ab(self) -> None:
+        """Gegenstueck zum gueltigen Inhalt: der Riegel im Testaufbau."""
+        import ast
+
+        quelle = Path(__file__).read_text(encoding="utf-8")
+        baum = ast.parse(quelle)
+        gesucht = {
+            "test_productive_builder_creates_validated_atomic_ffpkg_and_live_events",
+            "test_191_files_648mb_builds_to_a_clean_validated_ffpkg",
+        }
+        gefunden = set()
+        for knoten in ast.walk(baum):
+            if not isinstance(knoten, ast.FunctionDef) or knoten.name not in gesucht:
+                continue
+            gefunden.add(knoten.name)
+            aufrufe = {k.func.id for k in ast.walk(knoten)
+                       if isinstance(k, ast.Call) and isinstance(k.func, ast.Name)}
+            self.assertIn("_ohne_rueckfragen", aufrufe,
+                          "%s kann an einer Rueckfrage haengen bleiben" % knoten.name)
+        self.assertEqual(gefunden, gesucht, "Ein Adminlauf heisst nicht mehr so")
 
 
 class FfpkgFallbackSelectionTests(unittest.TestCase):
@@ -131,7 +209,9 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
                 candidate_path.write_bytes(b"candidate")
                 return 0
 
-            def fake_validate(candidate_path: str) -> dict[str, object]:
+            # **_kwargs: Der Bau reicht seit 16.09.2026 einen Abbruch
+            # (abbruch=...) an die Abnahme weiter.
+            def fake_validate(candidate_path: str, **_kwargs) -> dict[str, object]:
                 validation_paths.append(Path(candidate_path))
                 if len(validation_paths) == 1:
                     return {"ok": False, "detail": "fsck_ufs rc=8: Cylinder Group ungültig."}
@@ -205,7 +285,7 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
 
             validation_calls: list[Path] = []
 
-            def target_rejecting_validate(candidate_path: str) -> dict[str, object]:
+            def target_rejecting_validate(candidate_path: str, **_kwargs) -> dict[str, object]:
                 candidate = Path(candidate_path)
                 validation_calls.append(candidate)
                 if ".transfer-" in candidate.name:
@@ -326,15 +406,13 @@ class FfpkgProductionIntegrationTests(unittest.TestCase):
             gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
             gui._mkdtemp = lambda prefix: tempfile.mkdtemp(prefix=prefix)
             embedded_exe = Path(gui._extract_ufs2tool())
-            tool_dll = embedded_exe.with_name("UFS2Tool.dll")
             self.assertTrue(embedded_exe.is_file(), embedded_exe)
-            self.assertTrue(tool_dll.is_file(), tool_dll)
             runtime_tool = _runtime_test_tool(root, embedded_exe)
 
             source = root / "source"
             (source / "sce_sys").mkdir(parents=True)
             (source / "sce_sys" / "param.json").write_text(
-                '{"titleId":"PPSA66666"}\n', encoding="utf-8"
+                _gueltige_param_json("PPSA66666") + "\n", encoding="utf-8"
             )
             _write_pattern(source / "payload" / "game.bin", 9 * 1024 * 1024 + 123)
             for index in range(80):
@@ -349,6 +427,7 @@ class FfpkgProductionIntegrationTests(unittest.TestCase):
             gui.ffpkg_progress_queue = queue.Queue()
             gui._ffpkg_progress_run_id = 0
             gui._extract_ufs2tool = lambda: runtime_tool
+            _ohne_rueckfragen(gui)
             log_lines: list[str] = []
             gui._append_to_log = log_lines.append
 
@@ -403,8 +482,7 @@ class Ffpkg648MbRegressionTests(unittest.TestCase):
             gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
             gui._mkdtemp = lambda prefix: tempfile.mkdtemp(prefix=prefix)
             embedded_exe = Path(gui._extract_ufs2tool())
-            tool_dll = embedded_exe.with_name("UFS2Tool.dll")
-            self.assertTrue(tool_dll.is_file(), tool_dll)
+            self.assertTrue(embedded_exe.is_file(), embedded_exe)
             runtime_tool = _runtime_test_tool(root, embedded_exe)
 
             source = root / "source"
@@ -419,7 +497,7 @@ class Ffpkg648MbRegressionTests(unittest.TestCase):
             # Vorab-Prüfung in _build_ffpkg_from_folder nicht abbricht, ohne
             # die exakte Datei-/Byteanzahl des Regressionsfalls zu verändern.
             (source / "sce_sys").mkdir(parents=True)
-            param_json_text = '{"titleId":"PPSA00001"}'
+            param_json_text = _gueltige_param_json()
             (source / "sce_sys" / "param.json").write_text(
                 param_json_text + " " * (small_file_size - len(param_json_text)),
                 encoding="utf-8",
@@ -437,6 +515,7 @@ class Ffpkg648MbRegressionTests(unittest.TestCase):
             gui.ffpkg_progress_queue = queue.Queue()
             gui._ffpkg_progress_run_id = 0
             gui._extract_ufs2tool = lambda: runtime_tool
+            _ohne_rueckfragen(gui)
             log_lines: list[str] = []
             gui._append_to_log = log_lines.append
 

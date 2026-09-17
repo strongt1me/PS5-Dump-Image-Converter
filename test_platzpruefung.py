@@ -81,10 +81,14 @@ class PlatzbedarfTests(unittest.TestCase):
         cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
 
     def setUp(self):
-        self.app._last_source_size_bytes = int(self.QUELLE_GB * GB)
         # Eine echte Quelle, sonst liefert die Größenermittlung 0 und die
         # Prüfung enthält sich – der Test würde nichts messen.
         self.quelle = os.path.dirname(HAUPTDATEI)
+        # Ueber _quellgroesse_merken, nicht _last_source_size_bytes: Seit
+        # 16.09.2026 gilt eine gemerkte Groesse nur fuer die Quelle, fuer die
+        # sie gemessen wurde. Die nackte Zahl traf zuvor auch jede andere
+        # Quelle - genau der behobene Fehler.
+        self.app._quellgroesse_merken(self.quelle, int(self.QUELLE_GB * GB))
         for name in ("ampr_integrate_var", "backport_integrate_var"):
             var = getattr(self.app, name, None)
             if var is not None:
@@ -143,7 +147,7 @@ class PlatzbedarfTests(unittest.TestCase):
 
     def test_ohne_bekannte_quellgroesse_wird_nicht_geraten(self):
         """Lieber keine Aussage als eine erfundene."""
-        self.app._last_source_size_bytes = 0
+        self.app._quellgroesse_merken(os.path.dirname(HAUPTDATEI), 0)
         temp, ziel = self.app._platzbedarf_schaetzen(
             "pack_folder", os.path.dirname(HAUPTDATEI), "ffpfsc")
         self.assertEqual((0, 0), (temp, ziel))
@@ -160,8 +164,9 @@ class PlatzKlaerenTests(unittest.TestCase):
 
     def setUp(self):
         self.app._cli_mode = False
-        self.app._last_source_size_bytes = int(900 * GB)   # unerfüllbar groß
         self.quelle = os.path.dirname(HAUPTDATEI)
+        # Unerfuellbar gross - und an die Quelle gebunden, siehe PlatzbedarfTests.
+        self.app._quellgroesse_merken(self.quelle, int(900 * GB))
         self.gezeigt = []
 
     def _dialog_abfangen(self, antwort):
@@ -227,7 +232,7 @@ class PlatzKlaerenTests(unittest.TestCase):
 
     def test_genug_platz_fragt_nicht(self):
         self._dialog_abfangen("abbrechen")
-        self.app._last_source_size_bytes = 1024        # ein Kilobyte
+        self.app._quellgroesse_merken(self.quelle, 1024)   # ein Kilobyte
         self.app.dest_path.set(os.path.dirname(HAUPTDATEI))
         self.assertTrue(
             self.app._platz_klaeren("pack_folder", self.quelle, "ffpfsc"))

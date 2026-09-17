@@ -144,8 +144,37 @@ class BauvorschriftTests(unittest.TestCase):
         self.assertIn("lstrip('vV')", self.quelle)
 
     def test_symbol_ist_icns(self):
-        self.assertIn("app_icon.icns", self.quelle)
-        self.assertNotIn("icon='app_icon.ico'", self.quelle)
+        """EXE und BUNDLE bekommen ein .icns - ueber den Syntaxbaum gelesen.
+
+        Bis zum 17.09.2026 genuegte der Kommentar in Zeile 25 fuer das
+        "app_icon.icns", und die Gegenpruefung suchte "icon='app_icon.ico'",
+        was die .spec nie so schreibt (Befund T22). Jetzt: Jedes ``icon=``
+        verweist auf eine Variable, die auf eine .icns-Datei zeigt.
+        """
+        import ast
+
+        baum = ast.parse(self.quelle)
+        werte = {}
+        for knoten in ast.walk(baum):
+            if (isinstance(knoten, ast.Assign) and len(knoten.targets) == 1
+                    and isinstance(knoten.targets[0], ast.Name)):
+                texte = [k.value for k in ast.walk(knoten.value)
+                         if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+                werte[knoten.targets[0].id] = texte
+        symbole = [s.value for k in ast.walk(baum) if isinstance(k, ast.Call)
+                   for s in k.keywords if s.arg == "icon"]
+        self.assertGreaterEqual(len(symbole), 2, "EXE und BUNDLE tragen kein icon=")
+        for wert in symbole:
+            with self.subTest(icon=ast.unparse(wert)):
+                namen = {k.id for k in ast.walk(wert) if isinstance(k, ast.Name)} - {"os"}
+                texte = [t for name in namen for t in werte.get(name, [])]
+                texte += [k.value for k in ast.walk(wert)
+                          if isinstance(k, ast.Constant) and isinstance(k.value, str)]
+                self.assertTrue(texte, "icon= ohne erkennbare Datei")
+                self.assertTrue(all(t.endswith(".icns") for t in texte
+                                    if t.endswith((".ico", ".icns", ".png"))),
+                                texte)
+                self.assertTrue(any(t.endswith(".icns") for t in texte), texte)
 
     def test_windows_nutzlast_ausgeschlossen(self):
         """Seit v1.8.72 gibt es das alte Windows-Modul nicht mehr.

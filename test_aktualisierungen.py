@@ -171,11 +171,25 @@ class AbfrageTests(unittest.TestCase):
         self.assertIn("kein Netz", fehler)
 
     def test_ohne_quelle_wird_nicht_abgefragt(self):
-        def _darf_nicht(_adresse):
-            raise AssertionError("es wurde doch abgefragt")
+        """Mitgeschrieben statt geworfen.
 
-        teile = [ak.Bestandteil("OSFMount", "3.1", ak.OHNE_QUELLE, "https://…")]
-        self.assertEqual(ak.UNBEKANNT, ak.pruefe(teile, _darf_nicht)[0].zustand)
+        Bis zum 17.09.2026 warf die Attrappe - und ``hole_fassung`` fing jede
+        Ausnahme ab. Der Test blieb gruen, auch wenn doch abgefragt wurde.
+        Daneben steht jetzt ein Bestandteil mit Quelle, der genau einmal
+        gefragt werden muss: sonst misst die Pruefung nichts.
+        """
+        gefragt: list = []
+
+        def _abruf(adresse):
+            gefragt.append(adresse)
+            raise OSError("kein Netz")
+
+        teile = [ak.Bestandteil("OSFMount", "3.1", ak.OHNE_QUELLE, "https://…"),
+                 ak.Bestandteil("MkPFS", "1.0.0", ak.GITHUB, "PSBrew/MkPFS")]
+        befunde = ak.pruefe(teile, _abruf)
+        self.assertEqual(ak.UNBEKANNT, befunde[0].zustand)
+        self.assertEqual(1, len(set(gefragt)), gefragt)
+        self.assertNotIn("https://…", gefragt)
 
 
 class ZusammenfassungTests(unittest.TestCase):
@@ -249,13 +263,20 @@ class QuelltextTests(unittest.TestCase):
 
         from ps5_validator.utils.diagnose_befund import Diagnosebericht
 
+        # Mitgeschrieben statt geworfen: bericht_text() faengt jede Ausnahme
+        # eines Abschnitts ab und vermerkt nur "Abschnitt fehlgeschlagen" -
+        # die geworfene Attrappe blieb bis zum 17.09.2026 unsichtbar.
+        aufrufe: list = []
+
         def _platzt(*a, **k):
-            raise AssertionError("Der Bericht ging ins Netz.")
+            aufrufe.append(a[:1])
+            raise OSError("Der Bericht ging ins Netz.")
 
         with mock.patch("urllib.request.urlopen", _platzt), \
                 mock.patch("socket.create_connection", _platzt):
             text = Diagnosebericht().bericht_text()
         self.assertTrue(text.strip(), "Der Bericht blieb leer.")
+        self.assertEqual([], aufrufe, "Der Bericht ging ins Netz.")
 
     def test_knopf_ist_vorhanden(self):
         self.assertIn("diagnostics.update_button", self.quelltext)
@@ -268,7 +289,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn("daemon=True", fenster)
 
     def test_eingebettete_werkzeuge_sind_erfasst(self):
-        for teil in ("MkPFS-1.0.0", "PS4FFPFSC-0.2.8"):
+        for teil in ("MkPFS-1.0.0", "PS4FFPFSC-0.2.9"):
             with self.subTest(teil=teil):
                 self.assertIn(teil, self.quelltext)
 

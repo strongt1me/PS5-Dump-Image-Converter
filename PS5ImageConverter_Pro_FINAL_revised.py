@@ -189,6 +189,7 @@ from ps5_validator.utils.plattform import (
     ist_administrator as _system_ist_administrator,
     konfigurationsordner as _system_konfigurationsordner,
     systemname as _systemname,
+    zertifikate_bereitstellen as _system_zertifikate_bereitstellen,
 )
 
 # ---------------------------------------------------------------------------
@@ -419,6 +420,111 @@ class _KopieAbgebrochen(Exception):
     """
 
 
+#: Ab dieser Groesse kopiert ``_datei_blockweise_kopieren`` statt
+#: ``shutil.copy2``: in Bloecken, mit Meldung und Abbruch dazwischen.
+#:
+#: Gemessen am 15.09.2026 beim Anwender (Ghost of Yotei, Arbeitskopie fuer
+#: AMPR EMU): ``shutil.copy2`` kopierte eine einzelne grosse Datei am Stueck.
+#: Die Anzeige stand 120 s still, der Waechter schrieb einen Stapelabzug als
+#: ERROR ins Protokoll, und abbrechen liess sich der Lauf bis zum Ende dieser
+#: Datei nicht. Kleinere Dateien bleiben bei copy2 - dort ist der Weg des
+#: Betriebssystems schneller, und die Meldung je Datei ist fein genug.
+_KOPIE_BLOCKWEISE_AB = 256 * 1024 * 1024
+
+#: Blockgroesse beim blockweisen Kopieren. 16 MiB halten die Zahl der
+#: Meldungen klein, ohne dass ein Abbruch spuerbar nachhinkt.
+_KOPIE_BLOCK = 16 * 1024 * 1024
+
+
+def _datei_blockweise_kopieren(von: str, nach: str, fortschritt, laeuft) -> None:
+    """Kopiert eine Datei in Bloecken - mit Meldung und Abbruch zwischendurch.
+
+    Args:
+        von: Quelldatei.
+        nach: Zieldatei; wird angelegt oder ersetzt.
+        fortschritt: ``(bytes_dieses_blocks) -> None``, nach jedem Block.
+        laeuft: ``() -> bool``; ``False`` bricht vor dem naechsten Block ab.
+
+    Raises:
+        _KopieAbgebrochen: Abbruch mitten in der Datei. Die halbe Kopie wird
+            entfernt - sie saehe sonst aus wie eine vollstaendige.
+        OSError: Lese- oder Schreibfehler; auch dann bleibt keine halbe Datei.
+    """
+    vollstaendig = False
+    try:
+        with open(von, "rb") as quelle, open(nach, "wb") as ziel:
+            puffer = bytearray(_KOPIE_BLOCK)
+            sicht = memoryview(puffer)
+            while True:
+                if not laeuft():
+                    raise _KopieAbgebrochen()
+                anzahl = quelle.readinto(puffer)
+                if not anzahl:
+                    break
+                ziel.write(sicht[:anzahl])
+                fortschritt(anzahl)
+        vollstaendig = True
+    finally:
+        if not vollstaendig:
+            try:
+                os.remove(nach)
+            except OSError:
+                pass
+    # Zeitstempel wie bei copy2. Scheitert das - etwa auf exFAT ohne
+    # Rechteverwaltung -, sind die Daten trotzdem vollstaendig.
+    try:
+        shutil.copystat(von, nach)
+    except OSError as exc:
+        logger.debug("Zeitstempel nicht uebernommen (%s): %s", nach, exc)
+
+
+class _QueueWriter:
+    """Schreibt Zeilen in eine Queue und puffert unvollständige Zeilen.
+
+    Ersetzt ``sys.stdout``/``sys.stderr``, solange die Engine im Aufgabenfaden
+    laeuft (``_execute_mkpfs``). Bis zum 17.09.2026 war das eine lokale Klasse
+    dort: test_protokollfeld kam nicht an sie heran und pruefte einen Nachbau
+    des Zeilentrenners (Befund T26).
+    """
+
+    def __init__(self, q: queue.Queue) -> None:
+        self._q = q
+        self._buf = ""
+
+    def write(self, text: str) -> int:
+        """Schreibt Text in den Puffer und leert ihn zeilenweise.
+
+        Getrennt wird am **zuerst** auftretenden Zeilenende, egal ob
+        \\n oder \\r. Die frühere Fassung suchte erst nach \\n und
+        erst danach nach \\r: Enthielt ein Block "A\\rB\\nC", wurde
+        "A\\rB" als EINE Zeile genommen - mit eingebettetem \\r. Im
+        Protokollfeld klebten dann zwei Fortschrittsbalken
+        aneinander ("... ETA 1s[####] 48% compress ...").
+        """
+        self._buf += text
+        while True:
+            stellen = [i for i in (self._buf.find("\n"), self._buf.find("\r"))
+                       if i >= 0]
+            if not stellen:
+                break
+            idx = min(stellen)
+            line = self._buf[:idx].strip()
+            self._buf = self._buf[idx + 1:]
+            if line:
+                self._q.put(line)
+        return len(text)
+
+    def flush(self) -> None:
+        """Schreibt verbleibenden Puffer-Inhalt in die Queue."""
+        if self._buf.strip():
+            self._q.put(self._buf.strip())
+            self._buf = ""
+
+    def fileno(self) -> int:  # noqa: D401
+        """Dummy für Kompatibilität mit Bibliotheken die fileno() aufrufen."""
+        raise io.UnsupportedOperation("fileno")
+
+
 def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
     """Löscht einen Baum auch dann, wenn Dateien schreibgeschützt sind.
 
@@ -466,8 +572,16 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.24"
+APP_VERSION = "v1.9.25"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
+
+#: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
+#: gemessen am 17.09.2026 in WSLg: Tk schreibt die Klasse mit grossem ersten
+#: und kleinem Rest ("Ps5dumpimageconverter"). Ohne diesen Namen hiess jedes
+#: Fenster "tk"/"Tk", und StartupWMClass im Linux-Starter traf nie - GNOME
+#: und KDE ordneten das Fenster keinem Menueeintrag zu. Install_Linux.sh
+#: traegt denselben Wert ein; test_debuglauf_befunde haelt beide gleich.
+TK_KLASSENNAME = "PS5DumpImageConverter"
 
 # Bekannte PS4/PS5-Title-ID-Präfixe, u.a. für die heuristische Erkennung aus
 # Datei-/Ordnernamen (FFPKG-Metascan, param.json-Wiederherstellung).
@@ -803,6 +917,32 @@ def _backend_ladbar(backend: str) -> bool:
                        "dem Standard-zlib gepackt.", exc)
         return False
     return True
+
+
+def mkpfs_argumente_ohne_ampr_index(args: list[str]) -> list[str]:
+    """Nimmt MkPFS den eigenen Neubau des ``ampr_emu.index`` ab.
+
+    ``mkpfs pack folder`` baut den Index vor dem Packen **selbst** neu, sobald
+    ``fakelib/libSceAmpr.sprx`` im Ordner liegt (``cli_mkpfs_create_run`` ruft
+    ``ensure_ampr_index``). Das geschah bis zum 17.09.2026 bei jeder
+    ``.ffpfsc`` und ``.ffpfs`` - still, nach unserem eigenen Index und nach
+    dem Asset-Pack. Nachgestellt an einem Testspiel mit Asset-Pack: Der Index
+    wuchs von 7 auf 13 Eintraege (vier Baender, Manifest und Laufzeitdatei
+    kamen dazu), alle 7 fileIds des Manifests zeigten danach auf einen
+    anderen Pfad, und genau dieser Index lag im fertigen Abbild. Die Laufzeit
+    vergleicht Pfad und Groesse je fileId - das ist der Fehler "fileId and
+    path disagree" aus der Anleitung des Entwicklers.
+
+    Ueber den Index entscheidet deshalb nur noch dieses Programm, siehe
+    ``PS5ConverterGUI._ampr_index_vor_dem_packen``.
+
+    Nur ``pack folder`` kennt den Schalter; alles andere bleibt unveraendert.
+    """
+    if len(args) < 2 or args[0] != "pack" or args[1] != "folder":
+        return args
+    if "--no-ampr-index" in args:
+        return args
+    return [*args[:2], "--no-ampr-index", *args[2:]]
 
 # Vorgabe fuer die beiden Hintergrundbilder, solange nichts gewaehlt ist.
 #
@@ -1226,6 +1366,27 @@ def _doktor_ist_programm(pfad: str) -> bool:
     return kopf == b"\x7fELF"
 
 
+def _doktor_passt_architektur(pfad: str) -> bool:
+    """Passt ein Mach-O- oder ELF-Programm zum Prozessor dieses Rechners?
+
+    Die ersten vier Bytes sind bei arm64 und x86_64 gleich. Auf einem
+    Intel-Mac galten die arm64-Helfer von PS4 FFPFSC deshalb als Programm,
+    und ihr Start endete mit "Bad CPU type in executable" - als Defekt
+    gemeldet. Andere Formate (Windows, Fat-Binary) gelten als passend.
+    """
+    try:
+        with open(pfad, "rb") as datei:
+            kopf = datei.read(20)
+    except OSError:
+        return False
+    arm = (platform.machine() or "").lower() in ("arm64", "aarch64")
+    if kopf[:4] == b"\xcf\xfa\xed\xfe" and len(kopf) >= 8:
+        return struct.unpack_from("<I", kopf, 4)[0] == (0x0100000C if arm else 0x01000007)
+    if kopf[:4] == b"\x7fELF" and len(kopf) >= 20:
+        return struct.unpack_from("<H", kopf, 18)[0] == (0xB7 if arm else 0x3E)
+    return True
+
+
 def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
     """Startet jedes mitgelieferte Programm einmal kurz.
 
@@ -1241,7 +1402,14 @@ def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
     ergebnis: list[tuple[str, str]] = []
     braucht_rechte: list[str] = []
     kandidaten: list[str] = []
-    for relpfad in ("PS4FFPFSC-0.2.8/bin", "UFS2Tool-4.1"):
+    ordner_liste = ["PS4FFPFSC-0.2.9/bin"]
+    plattform_bau = PS5ConverterGUI._ufs2tool_plattform()
+    if plattform_bau:
+        # Nur der UFS2Tool-Bau fuer diese Maschine - ihn nimmt auch das
+        # Programm. Bis v1.9.24 lief die Probe ueber alle vier: Auf dem Mac
+        # meldete sie den Bau der anderen Architektur als defekt.
+        ordner_liste.append("UFS2Tool-4.1/" + plattform_bau)
+    for relpfad in ordner_liste:
         try:
             wurzel = PS5ConverterGUI._mitgeliefert_finden(
                 os.path.normpath(relpfad))
@@ -1252,12 +1420,17 @@ def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
         for ordner, _unter, dateien in os.walk(wurzel):
             for name in sorted(dateien):
                 pfad = os.path.join(ordner, name)
-                if _doktor_ist_programm(pfad):
+                if _doktor_ist_programm(pfad) and _doktor_passt_architektur(pfad):
                     kandidaten.append(pfad)
 
     # Mehr als eine Handvoll waere kein Doktor mehr, sondern ein Testlauf.
     for pfad in kandidaten[:6]:
         name = os.path.basename(pfad)
+        if sys.platform != "win32" and not os.access(pfad, os.X_OK):
+            # Das Ausfuehrungsrecht setzt das Programm vor dem ersten Einsatz
+            # selbst (werkzeuge_bereitstellen, _ps4_entpacker_pfad): Aus Git
+            # und aus dem Buendel kommt die Datei ohne. Das ist kein Defekt.
+            continue
         anlauf = {"capture_output": True, "timeout": 20}
         if sys.platform == "win32":
             # Ohne das blitzt fuer jedes Werkzeug ein Fenster auf.
@@ -2751,7 +2924,16 @@ class Drehknopf(tk.Canvas):
 
         # Der Eingabefokus muss sichtbar sein, sonst wirken die Pfeiltasten
         # scheinbar zufaellig.
-        if self.focus_get() is self:
+        #
+        # Nicht ueber focus_get(): Unter X11 liegt der Fokus bei einem offenen
+        # Datei- oder Meldungsdialog in einem von Tcl angelegten Fenster
+        # (.__tk_choosedir), das tkinter nicht kennt - focus_get() warf dann
+        # KeyError, und im Protokoll stand ein "Unbehandelter Fehler".
+        try:
+            hat_fokus = str(self.tk.call("focus")) == str(self)
+        except tk.TclError:
+            hat_fokus = False
+        if hat_fokus:
             self.create_oval(links + 1, 1, links + d - 1, d - 1,
                              outline=self._aktiv, width=1)
 
@@ -3726,7 +3908,7 @@ class PS5ConverterGUI:
             self._sammelmenue_bestuecken()
             x = self._btn_more_tools_title.winfo_rootx()
             y = self._btn_more_tools_title.winfo_rooty() + self._btn_more_tools_title.winfo_height()
-            self._more_tools_menu.post(x, y)
+            self._menue_aufklappen(self._more_tools_menu, x, y)
 
         self._btn_more_tools_title = flach_knopf(
             self._titlebar_right,
@@ -3848,10 +4030,28 @@ class PS5ConverterGUI:
         # Laufende PKG-Merges. Sie haengen nicht an is_running, muessen beim
         # Beenden aber genauso eine Rueckfrage ausloesen (siehe on_closing).
         self._pkg_merge_laeuft = 0
+        # Laufende Bibliotheks-Uebertragungen (FTP zur PS5 und zurueck). Wie der
+        # Merger: Ohne Zaehler faellt das Beenden ohne Rueckfrage durch, und ein
+        # abgebrochener RETR legt ftpsrv auf der Konsole lahm.
+        self._bibliothek_uebertragungen = 0
+        # True, solange "Abbild -> PKG" das Kennzeichen is_running fuer seine
+        # Extraktion haelt (siehe _abbild_zu_dumpordner).
+        self._abbild_pkg_haelt_is_running = False
+        # Was beim Start einer Aufgabe galt - fuer den Aufgabenfaden, der keine
+        # Tk-Variablen lesen darf. None/"" = noch kein Lauf.
+        self._lauf_zielformat: str | None = None
+        self._lauf_ziel = ""
+        self._lauf_variablen: dict[str, Any] | None = None
         # CLI-Automatisierung (siehe _run_cli): unterdrückt Dialoge, spiegelt Log auf stdout
         self._cli_mode = False
         self._cli_umhuellt_ordner = False
         self._cli_umhuellt_neu_packen = False
+        # Asset-Pack: gepackte Originale im Ergebnis weglassen? Beim Start
+        # entschieden (_ampr_originale_klaeren), gilt nur in einer Arbeitskopie
+        # (_ampr_ordner_ist_kopie, gesetzt von _integration_anwenden).
+        self._cli_ampr_originale_weglassen = False
+        self._ampr_originale_weglassen = False
+        self._ampr_ordner_ist_kopie = False
         # Ja in der Umhuell-Rueckfrage: Abbild entpacken, einbauen und wieder
         # zum gewaehlten Container packen (siehe _umhuellenden_weg_klaeren).
         self._umhuellt_neu_packen = False
@@ -3891,6 +4091,7 @@ class PS5ConverterGUI:
         # Werden einmalig in _launch_task gesetzt und nicht pro Schritt zurückgesetzt.
         self.task_start_time: float = 0.0          # Startzeitpunkt der gesamten Aufgabe
         self.task_total_source_bytes: int = 0      # Quellgröße (für Größen-Label)
+        self._gemessene_groessen: dict[str, int] = {}  # je Aufgabe schon vermessen
         self.task_final_output_path: str = ""      # Pfad zur finalen Ausgabedatei
         self.task_progress: float = 0.0            # Ziel-Fortschritt 0.0–100.0 (nur vorwärts)
         self.task_displayed: float = 0.0           # Anzeige-Fortschritt (Easing)
@@ -3910,6 +4111,9 @@ class PS5ConverterGUI:
         self._monitor_total_exact: bool = False    # False wenn nur Quellgröße als Obergrenze bekannt ist
         self._monitor_rate_bps: float = 0.0        # Schreibrate der Ziel-Datei
         self._last_source_size_bytes: int = 0      # zuletzt berechnete Quellgroesse (background)
+        # (Pfad, Groesse) - die Zahl gilt nur fuer diesen Pfad, siehe
+        # _quellgroesse_merken. None = noch nie gemessen.
+        self._quellgroesse_gemerkt: "tuple[str, int] | None" = None
         self._last_engine_output_ts: float = 0.0   # letzter sichtbarer Fortschrittsimpuls
         self._eta_ui_seconds: float | None = None  # ETA nur fuer Anzeige (monoton fallend)
         self._eta_ui_last_ts: float = 0.0          # Zeitstempel der letzten ETA-Anzeige
@@ -4410,9 +4614,41 @@ class PS5ConverterGUI:
 
     def _toggle_language(self) -> None:
         """Wechselt zwischen Deutsch und Englisch und übersetzt die erfassten Widgets live neu."""
+        # Das Zielformat noch im ALTEN Sprachstand lesen. Die Liste bekommt
+        # gleich neue Beschriftungen, und ein Label der alten Sprache kommt
+        # darin nicht mehr vor - bis v1.9.24 sprang die Auswahl deshalb auf den
+        # ersten Eintrag: Aus ".ffpfs (unkomprimiert)" wurde still ".ffpfsc",
+        # und wer danach startete, bekam ein anderes Format.
+        zielformat = ""
+        try:
+            if hasattr(self, "target_format"):
+                zielformat = self._get_selected_target_type()
+        except tk.TclError:
+            zielformat = ""
         self._current_language = "en" if self._current_language == "de" else "de"
         self._save_setting("language", self._current_language)
+        if zielformat:
+            try:
+                self.target_format.set(self._zielformat_label(zielformat))
+            except tk.TclError as exc:
+                logger.debug("Zielformat nicht uebertragbar: %s", exc)
         self._apply_language()
+
+    def _zielformat_label(self, schluessel: str, mode: str = "") -> str:
+        """Die Beschriftung eines Zielformats in der aktuellen Sprache.
+
+        Dieselbe Form wie in ``_refresh_target_format_options``: In Aufgabe 4
+        traegt .ffpkg den Zusatz "(neu validieren)".
+        """
+        if not mode:
+            try:
+                mode = str(self.current_mode.get() or "")
+            except (AttributeError, tk.TclError):
+                mode = ""
+        if schluessel == "ffpkg" and mode == "ffpkg_to_ffpfsc":
+            return "%s %s" % (self._t("format.ffpkg"),
+                              self._t("format.ffpkg_revalidate_suffix"))
+        return self._t("format.%s" % schluessel)
 
     def _apply_language(self) -> None:
         """Setzt den Text aller registrierten und der Sprach-Grundgerüst-Widgets neu."""
@@ -4919,20 +5155,39 @@ class PS5ConverterGUI:
             logger.debug("Checkpoint konnte nicht gespeichert werden: %s", exc)
 
     def _is_managed_temp_path(self, path_str: str) -> bool:
-        """Prüft, ob ein Pfad wie ein verwaltetes ps5conv-Tempartifakt aussieht."""
+        """Prüft, ob ein Pfad ein vom Programm angelegtes ps5conv-Artefakt ist.
+
+        Massgeblich ist allein der Name: der Pfad selbst oder einer seiner
+        Elternordner beginnt mit ``ps5conv_``. So heissen alle Arbeitsordner,
+        die ``_mkdtemp`` anlegt, und nur die werden fuer das Aufraeumen
+        vorgemerkt.
+
+        **Bis v1.9.24 galt zusaetzlich alles unter dem Arbeitsordner als
+        verwaltet.** Liegt das Ziel im Arbeitsordner - Temp und Ziel sind
+        derselbe Ordner, oder der Arbeitsordner ist ein ganzes Laufwerk -,
+        loeschte das Aufraeumen beim Beenden, vor dem Herunterfahren und am
+        Ende jedes ``--cli``-Laufs das fertige Ergebnis; in der
+        Sammelkonvertierung (``task_final_output_path = dst``) den ganzen
+        Zielordner samt fremder Dateien. Am 16.09.2026 nachgestellt.
+
+        Ordner auf Hoehe des Arbeitsordners und darueber zaehlen nicht mit:
+        Heisst der vom Anwender gewaehlte Arbeitsordner selbst zufaellig
+        ``ps5conv_...``, galte sonst wieder alles darin als verwaltet.
+        """
         try:
             if not path_str:
                 return False
             norm = os.path.abspath(path_str)
-            temp_root = os.path.abspath(self._get_runtime_temp_dir())
             try:
-                if os.path.commonpath([norm, temp_root]) == temp_root:
-                    return True
-            except ValueError:
-                pass
+                temp_root = os.path.normcase(
+                    os.path.abspath(self._get_runtime_temp_dir()))
+            except Exception:  # noqa: BLE001
+                temp_root = ""
 
             cur = norm
             while True:
+                if temp_root and os.path.normcase(cur) == temp_root:
+                    return False
                 base = os.path.basename(cur).lower()
                 if base.startswith("ps5conv_"):
                     return True
@@ -5176,7 +5431,6 @@ class PS5ConverterGUI:
 
                         state = str(cp_val.get("state", "") or "").strip().lower()
                         mode = str(cp_val.get("mode", "") or "").strip() or "unbekannt"
-                        found_paths = False
                         for temp_key in ("game_dump_dir", "temp_exfat", "tmp_dir"):
                             raw_path = str(cp_val.get(temp_key, "") or "").strip()
                             if not raw_path:
@@ -5184,7 +5438,6 @@ class PS5ConverterGUI:
                             norm = os.path.abspath(raw_path)
                             if not os.path.exists(norm) or not self._is_managed_temp_path(norm):
                                 continue
-                            found_paths = True
                             prev = candidate_map.get(norm)
                             if prev is None or float(prev.get("age_hours", 0.0) or 0.0) < age_hours:
                                 candidate_map[norm] = {
@@ -5195,8 +5448,15 @@ class PS5ConverterGUI:
                                     "checkpoint_key": cp_key,
                                     "source": "checkpoint",
                                 }
-                        if found_paths:
-                            checkpoint_keys.add(str(cp_key))
+                        # Auch Eintraege OHNE vorhandenen Arbeitsordner gehen
+                        # weg: Sie lassen sich nicht fortsetzen (dafuer braucht
+                        # es den Ordner) und zeigen auf nichts mehr. Bis v1.9.24
+                        # blieben sie fuer immer stehen - gemessen am 16.09.2026
+                        # 103 Eintraege seit dem 24.08., keiner mit Ordner. Der
+                        # Hauptfaden schreibt waehrend eines Laufs unter einem
+                        # anderen Schluessel mit als der Arbeitsfaden, der am
+                        # Ende nur seinen eigenen entfernt.
+                        checkpoint_keys.add(str(cp_key))
         except Exception as exc:
             logger.debug("Startup-Temp-Cleanup: Checkpoints konnten nicht gelesen werden: %s", exc)
 
@@ -5272,6 +5532,10 @@ class PS5ConverterGUI:
 
             candidates, checkpoint_keys = self._collect_stale_temp_cleanup_candidates(min_age_hours)
             if not candidates:
+                # Nichts zu loeschen, aber verwaiste Checkpoint-Eintraege
+                # koennen trotzdem weg - das ist nur die JSON-Datei.
+                if checkpoint_keys:
+                    self._remove_runtime_checkpoint_jobs(checkpoint_keys)
                 return
 
             self.root.after(
@@ -5391,13 +5655,43 @@ class PS5ConverterGUI:
         if mode == "unpack_to_exfat":
             tmp_dir = str(checkpoint.get("tmp_dir", "") or "").strip()
             stage = str(checkpoint.get("stage", "") or "").strip()
-            return bool(tmp_dir and os.path.isdir(tmp_dir) and stage in {
-                "task2_start",
-                "task2_step1_running",
-                "task2_step1_done",
-                "task2_step2_done",
-            })
+            if not (tmp_dir and os.path.isdir(tmp_dir)):
+                return False
+            # Angeboten wird nur, was sich wirklich wiederverwenden laesst. Bis
+            # v1.9.24 galten auch "task2_start" und "task2_step1_running": Der
+            # neue Schritt 1 lief dann in den halb gefuellten Ordner, und
+            # mkpfs unpack brach an der ersten vorhandenen Datei ab. Nach
+            # "task2_step1_done" kann Schritt 2 schon ein _ebene_-Ordner
+            # angefangen haben - siehe _task2_zwischenstand_brauchbar.
+            if stage == "task2_step2_done":
+                spiel = str(checkpoint.get("game_dump_dir", "") or "").strip()
+                return bool(spiel and os.path.isdir(spiel))
+            if stage == "task2_step1_done":
+                return self._task2_zwischenstand_brauchbar(tmp_dir)
+            return False
         return False
+
+    def _task2_zwischenstand_brauchbar(self, tmp_dir: str) -> bool:
+        """Taugt der Arbeitsordner von Aufgabe 2 nach Schritt 1 noch?
+
+        Schritt 2 packt das innere Abbild nach ``_ebene_1`` (und tiefer) aus
+        und loescht es erst danach. Endet der Lauf mittendrin, liegen beide
+        nebeneinander - die Ebenensuche hielt den Ordner dann wegen des
+        Unterordners fuer den fertigen Dump, und Schritt 3 scheiterte an der
+        fehlenden eboot.bin.
+
+        Brauchbar ist der Ordner, wenn Schritt 2 noch keinen _ebene_-Ordner
+        angelegt hat, oder wenn das innere Abbild noch neben ihm liegt: Dann
+        wird das Angefangene verworfen und Schritt 2 beginnt neu. Ist das
+        Abbild schon weg, laesst sich der Stand nicht sicher bestimmen.
+        """
+        eintraege = self._scandir_safe(tmp_dir)
+        ebenen = [e for e in eintraege if e.is_dir() and e.name.startswith("_ebene_")]
+        if not ebenen:
+            return bool(eintraege)
+        uebrige = [e for e in eintraege if e not in ebenen]
+        return (len(uebrige) == 1 and uebrige[0].is_file()
+                and bool(self._sniff_image_kind(uebrige[0].path)))
 
     def _refresh_release_test_gate_badge(self) -> None:
         """Sichtbare Release-Gate-Anzeige ist entfernt; interne Gate-Pruefung bleibt aktiv."""
@@ -5468,6 +5762,49 @@ class PS5ConverterGUI:
         "inspect", "ampr_manager", "dump_validator",
     })
 
+    def _quellgroesse_merken(self, src: str, groesse: int) -> None:
+        """Merkt die im Hintergrund ermittelte Groesse - samt der Quelle dazu.
+
+        Bis v1.9.24 stand hier nur die Zahl. Wechselte der Anwender die Quelle
+        und startete, bevor die neue Messung fertig war, rechnete die
+        Platzpruefung mit der Groesse der VORHERIGEN Quelle; eine spaet fertige
+        alte Messung ueberschrieb sogar die der neuen. Die Zahl gilt jetzt nur
+        fuer den Pfad, fuer den sie gemessen wurde.
+        """
+        schluessel = os.path.normcase(os.path.abspath(src)) if src else ""
+        # Ein Tupel, damit Pfad und Groesse fuer andere Faeden nie
+        # auseinanderfallen.
+        self._quellgroesse_gemerkt = (schluessel, int(groesse or 0))
+        self._last_source_size_bytes = int(groesse or 0)
+
+    def _bekannte_quellgroesse(self, src: str) -> int:
+        """Die gemerkte Groesse - aber nur, wenn sie zu ``src`` gehoert.
+
+        Ohne gemerkten Pfad (aeltere Aufrufer und Pruefungen, die nur die
+        Zahl setzen) gilt die Zahl wie bisher.
+        """
+        gemerkt = getattr(self, "_quellgroesse_gemerkt", None)
+        if gemerkt is None:
+            return int(getattr(self, "_last_source_size_bytes", 0) or 0)
+        pfad, groesse = gemerkt
+        if not src or os.path.normcase(os.path.abspath(src)) != pfad:
+            return 0
+        return int(groesse or 0)
+
+    def _groessenfeld_setzen_wenn_aktuell(self, generation: int, text: str) -> None:
+        """Schreibt eine Vorschau-Groesse - nur, wenn die Messung noch gilt.
+
+        Eine Messung ueber einen 51-GB-Dump auf USB dauert Minuten. War die
+        Quelle inzwischen gewechselt, setzte ihr Ergebnis bis v1.9.24 trotzdem
+        das Groessenfeld: Es zeigte dauerhaft die Groesse der alten Quelle.
+        """
+        if generation != self._calc_generation:
+            return
+        try:
+            self.root.after(0, lambda s=text: self._set_size_label_idle(s))
+        except (RuntimeError, tk.TclError) as exc:
+            logger.debug("Groessenfeld nicht setzbar: %s", exc)
+
     def _quellgroesse_ermitteln(self, src: str) -> int:
         """Groesse der Quelle in Bytes, ohne den Hauptfaden zu blockieren.
 
@@ -5491,7 +5828,7 @@ class PS5ConverterGUI:
             logger.debug("Quellgroesse nicht lesbar: %s", exc)
             return 0
         if os.path.isdir(src):
-            return int(getattr(self, "_last_source_size_bytes", 0) or 0)
+            return self._bekannte_quellgroesse(src)
         return 0
 
     def _platzbedarf_schaetzen(self, mode: str, src: str,
@@ -5506,10 +5843,49 @@ class PS5ConverterGUI:
         Returns:
             ``(temp_bytes, ziel_bytes)``. Beides 0, wenn sich die
             Quellgroesse nicht ermitteln liess.
+
+        Sammelkonvertierung: Alle Ergebnisse landen nacheinander im selben
+        Zielordner, Arbeitsordner und Dump-Ordner werden je Datei wieder frei.
+        Gerechnet wird deshalb mit der Summe der Ziele und dem groessten
+        Zwischenbedarf. Bis v1.9.24 zaehlte nur die erste Quelle: Drei
+        40-GB-Abbilder nach .ffpkg bei 100 GB freiem Platz liefen los, und die
+        dritte Datei scheiterte Stunden spaeter.
+        """
+        # Auch bei einer einzigen Sammelquelle die Liste: Im Feld kann der
+        # Ordner stehen, aus dem sie aufgeloest wurde.
+        quellen = ([q for q in (getattr(self, "_batch_sources", []) or []) if q]
+                   if mode == "batch_convert" else [])
+        if quellen:
+            temp = ziel = dump = 0
+            for einzeln in quellen:
+                t, z, d = self._platzbedarf_je_quelle(einzeln, target_type)
+                temp, ziel, dump = max(temp, t), ziel + z, max(dump, d)
+        else:
+            temp, ziel, dump = self._platzbedarf_je_quelle(src, target_type)
+
+        # Entpacken, einbauen, neu packen (Ja in der Umhuell-Rueckfrage): Der
+        # voruebergehende Dump-Ordner braucht ungefaehr so viel wie die Quelle.
+        # Er liegt normalerweise im Zielordner neben der entstehenden Datei -
+        # beides zugleich, bis gepackt ist. Ist der Dump-Ordner aber in den
+        # Arbeitsordner umgelenkt, faellt dieser Bedarf dort an statt am Ziel.
+        if dump:
+            if self._dump_im_arbeitsordner():
+                temp += dump
+            else:
+                ziel += dump
+        return temp, ziel
+
+    def _platzbedarf_je_quelle(self, src: str,
+                               target_type: str) -> "tuple[int, int, int]":
+        """``(temp, ziel, dump)`` fuer eine einzelne Quelle, alles in Bytes.
+
+        ``dump`` ist der voruebergehende Dump-Ordner beim Neu-Packen (sonst 0);
+        wohin er zaehlt, entscheidet :meth:`_platzbedarf_schaetzen`. Alles 0,
+        wenn sich die Quellgroesse nicht ermitteln liess.
         """
         quelle = self._quellgroesse_ermitteln(src)
         if quelle <= 0:
-            return 0, 0
+            return 0, 0, 0
 
         # Beim Entpacken eines Containers ist die Quelle kleiner als das,
         # was herauskommt. Dafuer gibt es eine genauere Schaetzung, die in
@@ -5522,21 +5898,12 @@ class PS5ConverterGUI:
                                                 self._PLATZFAKTOR_ZIEL[""])
             ziel = int(quelle * faktor)
 
-        # Entpacken, einbauen, neu packen (Ja in der Umhuell-Rueckfrage): Der
-        # voruebergehende Dump-Ordner braucht ungefaehr so viel wie die Quelle.
-        # Er liegt normalerweise im Zielordner neben der entstehenden Datei -
-        # beides zugleich, bis gepackt ist. Ist der Dump-Ordner aber in den
-        # Arbeitsordner umgelenkt, faellt dieser Bedarf dort an statt am Ziel.
         mit_kopie = bool(self._integration_gewuenscht())
         temp = int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
                              else self._PLATZFAKTOR_TEMP_OHNE))
-        if getattr(self, "_umhuellt_neu_packen", False):
-            dump = int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
-            if self._dump_im_arbeitsordner():
-                temp += dump
-            else:
-                ziel += dump
-        return temp, ziel
+        dump = (int(quelle * self._PLATZFAKTOR_ZIEL["folder"])
+                if getattr(self, "_umhuellt_neu_packen", False) else 0)
+        return temp, ziel, dump
 
     def _integration_gewuenscht(self) -> bool:
         """Ist AMPR EMU oder BACKPORT angehakt?
@@ -5588,11 +5955,19 @@ class PS5ConverterGUI:
         return None if self._dump_im_arbeitsordner() else dst
 
     def _freier_platz(self, pfad: str) -> "int | None":
-        """Freie Bytes auf dem Datentraeger von ``pfad``, oder None."""
+        """Freie Bytes auf dem Datentraeger von ``pfad``, oder None.
+
+        Gibt es den Ordner noch nicht - ein neu eingetippter Zielordner, den
+        der Lauf erst anlegt -, zaehlt der naechste vorhandene Elternordner.
+        Bis v1.9.24 fiel die Pruefung fuer ihn still aus.
+        """
         if not pfad:
             return None
+        vorhanden = self._naechster_vorhandener_ordner(pfad)
+        if not vorhanden:
+            return None
         try:
-            return int(shutil.disk_usage(pfad).free)
+            return int(shutil.disk_usage(vorhanden).free)
         except OSError as exc:
             logger.debug("Freier Platz fuer %s nicht ermittelbar: %s", pfad, exc)
             return None
@@ -5681,9 +6056,38 @@ class PS5ConverterGUI:
             # Sonst: Es wurde ein Ordner neu gewaehlt - noch eine Runde.
 
     @staticmethod
+    def _naechster_vorhandener_ordner(pfad: str) -> str:
+        """Der Pfad selbst oder sein naechster Elternordner, den es gibt."""
+        aktuell = os.path.abspath(pfad)
+        while not os.path.exists(aktuell):
+            oben = os.path.dirname(aktuell)
+            if oben == aktuell:
+                return ""
+            aktuell = oben
+        return aktuell
+
+    @staticmethod
     def _selber_datentraeger(einer: str, anderer: str) -> bool:
-        """Liegen beide Pfade auf demselben Datentraeger?"""
+        """Liegen beide Pfade auf demselben Datentraeger?
+
+        Verglichen wird die Geraetekennung (``st_dev``) des naechsten
+        vorhandenen Ordners. Bis v1.9.24 nur der Laufwerksbuchstabe: Unter
+        Linux und macOS liefert ``splitdrive`` fuer jeden Pfad "", zwei Pfade
+        galten dort also immer als derselbe Datentraeger - die Platzpruefung
+        rechnete Temp und Ziel gegen den freien Platz des Temp-Ordners, meldete
+        Mangel, wo keiner war, und uebersah ihn am Ziel. Unter Windows trifft
+        ``st_dev`` auch in Ordner eingehaengte Laufwerke richtig.
+        """
         if not einer or not anderer:
+            return False
+        try:
+            a = PS5ConverterGUI._naechster_vorhandener_ordner(einer)
+            b = PS5ConverterGUI._naechster_vorhandener_ordner(anderer)
+            if a and b:
+                return os.stat(a).st_dev == os.stat(b).st_dev
+        except OSError:
+            pass
+        if os.name != "nt":
             return False
         try:
             return (os.path.splitdrive(os.path.abspath(einer))[0].upper()
@@ -5827,9 +6231,29 @@ class PS5ConverterGUI:
         # Jeder Start entscheidet neu - ein Ja vom letzten Lauf darf nicht in
         # einen Lauf ohne Haken oder auf einem anderen Weg hineinwirken.
         self._umhuellt_neu_packen = False
+        # Aufgaben ohne Zielformat (7 und 8) haben keinen einhuellenden Weg.
+        # Das Feld traegt dort noch den Wert der vorigen Aufgabe oder den
+        # Startwert ".ffpfsc" - bis v1.9.24 fragte Aufgabe 8 deshalb bei
+        # gesetztem AMPR-Haken "neu packen?", brach bei Nein die Pruefung ab
+        # und endete auf der Kommandozeile mit Rueckgabe 1.
+        if mode not in self._MODE_TARGET_OPTIONS:
+            return True
         if not target_type or not self._integration_gewaehlt():
             return True
-        quelle = self._resolve_mode_source_type(mode, src)
+        if mode == "batch_convert":
+            # Die Sammelkonvertierung hat keinen einzelnen Quelltyp. Steht in
+            # der Auswahl eine .exfat/.ffpkg, die nach .ffpfsc eingehuellt
+            # wuerde, gilt dieselbe Frage fuer den ganzen Lauf. Bis v1.9.24
+            # lieferte der Quelltyp hier "", es kam keine Frage, und alle
+            # Dateien wurden still OHNE die angehakten Bestandteile gebaut.
+            typen = []
+            for _pfad in (getattr(self, "_batch_sources", []) or []):
+                _typ = self._detect_source_type(_pfad)
+                if _typ != target_type and (_typ, target_type) in self._EINHUELLENDE_WEGE:
+                    typen.append(_typ)
+            quelle = typen[0] if typen else ""
+        else:
+            quelle = self._resolve_mode_source_type(mode, src)
         if (quelle, target_type) not in self._EINHUELLENDE_WEGE:
             return True
 
@@ -5864,6 +6288,38 @@ class PS5ConverterGUI:
             return False
         self._neu_packen_waehlen(formatname)
         return True
+
+    def _ampr_originale_klaeren(self, mode: str) -> None:
+        """Fragt, ob gepackte Originale im Ergebnis wegbleiben sollen.
+
+        Abschnitt 6 der Anleitung des AMPR-EMU-Entwicklers: Die Originale
+        bleiben fuer den ersten Konsolentest liegen; erst danach werden die
+        gepackten entfernt. Diesen Schritt gab es bis zum 17.09.2026 nicht -
+        jedes Abbild mit Asset-Pack enthielt Originale **und** Baender. Bei
+        Ghost of Yotei gemessen (2 GiB Stichprobe): Baender 64,8 %, zlib der
+        .ffpfsc 60,8 %, ein Band in der .ffpfsc 61,4 % der Rohgroesse - das
+        Abbild wurde also fast doppelt so gross statt kleiner.
+
+        Gefragt wird bei jedem Start neu und mit "Nein" als Vorgabe: Die
+        Anleitung verlangt je Spiel einen vollstaendigen Test mit Originalen.
+        Auf der Kommandozeile entscheidet allein ``--ampr-originale-weglassen``.
+        Ohne Asset-Pack und in Aufgaben ohne Zielformat (7, 8) gibt es nichts
+        zu fragen.
+        """
+        self._ampr_originale_weglassen = False
+        if mode not in self._MODE_TARGET_OPTIONS or not self._assetpack_gewaehlt():
+            return
+        if getattr(self, "_cli_mode", False):
+            antwort = bool(getattr(self, "_cli_ampr_originale_weglassen", False))
+        else:
+            antwort = bool(messagebox.askyesno(
+                self._t("dialog.title.ampr_originale"),
+                self._t("dialog.msg.ampr_originale"),
+                default="no"))
+        self._ampr_originale_weglassen = antwort
+        self._append_to_log(self._t(
+            "ampr_pack.originale_weglassen_gewaehlt" if antwort
+            else "ampr_pack.originale_behalten_gewaehlt"))
 
     def _neu_packen_waehlen(self, formatname: str) -> None:
         """Merkt sich: entpacken, einbauen, wieder zum Container packen.
@@ -5939,16 +6395,89 @@ class PS5ConverterGUI:
             except Exception as exc:
                 warnings.append(self._t("preflight.dest_check_failed", error=exc))
 
-        if mode in ("unpack_to_exfat", "exfat_to_folder"):
-            osf = self._find_osfmount()
-            if not osf:
-                warnings.append(self._t("preflight.osfmount_missing"))
+        # Frueher stand hier eine Warnung, OSFMount fehle - bei Aufgabe 2 und
+        # Aufgabe 3. Sie war zuletzt in beiden Faellen falsch und hat Anwender
+        # dazu gebracht, ein Fremdwerkzeug samt Kernel-Treiber zu installieren,
+        # das dieses Programm nicht mehr braucht:
+        #
+        # * Aufgabe 2 (.ffpfsc -> .exFAT) haengt ueberhaupt nichts ein -
+        #   ``_mode_unpack_to_exfat`` enthaelt keinen einzigen Mount-Aufruf.
+        # * Aufgabe 3 (.exFAT -> Ordner) packt mit dem eingebetteten
+        #   exFAT-Leser aus MkPFS aus (``_extract_exfat_to_folder_mkpfs``).
+        #   OSFMount ist dort nur noch der Rueckfall, falls der Leser an einem
+        #   ungewoehnlichen Abbild scheitert - und das sagt der Lauf dann
+        #   selbst, samt Angebot, es aus dem Programm heraus zu installieren.
+        #
+        # Eine Warnung vor jedem Start fuer einen Fall, der praktisch nie
+        # eintritt, ist keine Vorsorge, sondern Rauschen.
 
         fehlend = self._missing_critical_dump_files(mode, src)
         if fehlend:
             warnings.append(self._t("preflight.incomplete_dump", files=", ".join(fehlend)))
 
+        # PlayGo-Titel ohne PlayGo-Stub: vor dem Start sagen, nicht erst im
+        # Protokoll nach einer Stunde Packen. Nur bei einem Ordner - ein
+        # Abbild ist hier noch nicht geoeffnet; dort kommt der Hinweis beim
+        # Einbau (_integration_ampr).
+        try:
+            ampr_ohne_playgo = (bool(self._tk_wert("ampr_integrate_var", False))
+                                and not bool(self._tk_wert("ampr_playgo_var", False)))
+        except (tk.TclError, RuntimeError):
+            ampr_ohne_playgo = False
+        if (ampr_ohne_playgo and mode in self._MODE_TARGET_OPTIONS
+                and os.path.isdir(src)):
+            merkmal = self._titel_nutzt_playgo(src)
+            if merkmal:
+                warnings.append(self._t("preflight.playgo_empfohlen", datei=merkmal))
+
+        # Einbauten aus einem frueheren Lauf, die ohne Haken trotzdem mitgehen.
+        if mode in self._MODE_TARGET_OPTIONS and os.path.isdir(src):
+            reste = self._fruehere_einbauten(src)
+            if reste:
+                warnings.append(self._t("preflight.einbau_schon_im_dump",
+                                        dateien=", ".join(reste)))
+
         return errors, warnings
+
+    def _fruehere_einbauten(self, ordner: str) -> list[str]:
+        """Was aus einem frueheren Einbau im Ordner liegt und ohne Haken mitginge.
+
+        Die Kaestchen AMPR EMU, PlayGo und BACKPORT legen etwas **dazu** - sie
+        nehmen nichts heraus, was schon da ist. Gemessen am 17.09.2026: Von 31
+        Dumps auf F: trugen drei Einbauten aus frueheren Laeufen direkt im
+        Quellordner (Arbeitskopie verneint oder Aufgabe 7 auf dem Ordner),
+        Crazy Chicken Shooter sogar AMPR EMU, PlayGo und Backport-Bibliotheken.
+        Wer daraus "nur BACKPORT" baute, bekam AMPR EMU und PlayGo trotzdem ins
+        Abbild - fuer den Anwender sah das aus, als waeren die Kaestchen nicht
+        getrennt.
+
+        Returns:
+            Die Fundstellen, die ohne passenden Haken mitgingen; leer, wenn
+            nichts auffaellt.
+        """
+        try:
+            ampr_an = bool(self._tk_wert("ampr_integrate_var", False))
+            playgo_an = ampr_an and bool(self._tk_wert("ampr_playgo_var", False))
+            backport_an = bool(self._tk_wert("backport_integrate_var", False))
+            pack_an = self._assetpack_gewaehlt()
+        except (tk.TclError, RuntimeError):
+            return []
+        fakelib = self._fakelib_pfad(ordner)
+        reste: list[str] = []
+        if not ampr_an and (fakelib / self._AMPR_SPRX_NAME).is_file():
+            reste.append("%s/%s" % (fakelib.name, self._AMPR_SPRX_NAME))
+        if not playgo_an and (fakelib / self._PLAYGO_SPRX_NAME).is_file():
+            reste.append("%s/%s" % (fakelib.name, self._PLAYGO_SPRX_NAME))
+        if not backport_an:
+            try:
+                markierungen = sorted(name for name in os.listdir(fakelib)
+                                      if re.fullmatch(r"fw\d+", name, re.IGNORECASE))
+            except OSError:
+                markierungen = []
+            reste.extend("%s/%s" % (fakelib.name, name) for name in markierungen)
+        if not pack_an and self._ampr_asset_pack_vorhanden(ordner):
+            reste.append(ampr_assetpakete.MANIFEST_NAME)
+        return reste
 
     #: Ohne diese Dateien ist ein Dump-Ordner unvollständig. Dieselbe Liste
     #: nutzt der Validator (ps5_validator.modules.dump_validator.CRITICAL_FILES);
@@ -6028,7 +6557,34 @@ class PS5ConverterGUI:
             logger.debug("Speicherbedarf-Schätzung für Entpacken fehlgeschlagen: %s", exc)
             return None
 
+    def _abbild_pkg_platzbedarf(self, quelle: str) -> "tuple[int, int]":
+        """``(Arbeitsordner, Zielordner)`` in Bytes fuer "Abbild -> PKG".
+
+        Der entpackte Dump liegt im Arbeitsordner, das Paket entsteht daraus
+        im Ziel. Beides richtet sich nach der **Dumpgroesse**, nicht nach der
+        Datei: Bei einer komprimierten .ffpfsc ist der Dump rund doppelt so
+        gross (Pruefmatrix: 24,22 GB .ffpfsc aus 51,08 GB Dump). Bis v1.9.24
+        rechnete die Pruefung mit der Dateigroesse und liess dort halb so viel
+        Platz durchgehen.
+
+        Wirft ``OSError``, wenn die Quelle nicht lesbar ist.
+        """
+        abbild = os.path.getsize(quelle)
+        # Spitzenbedarf beim Entpacken: bis zu 2x die logische Groesse (inneres
+        # Abbild und Dateien zugleich), siehe _estimate_unpack_space_requirement.
+        spitze = int(self._estimate_unpack_space_requirement(quelle) or 0)
+        dump = max(abbild, spitze // 2)
+        return int(max(dump * 1.1, spitze)), int(dump * 1.4)
+
     def _get_selected_target_type(self) -> str:
+        # Im Aufgabenfaden gilt, was beim Start gewaehlt war (_launch_task
+        # haelt es fest). Die Tk-Variable darf dort nicht gelesen werden - und
+        # eine waehrend des Laufs geaenderte Auswahl gehoert nicht in diesen
+        # Lauf. Bis v1.9.24 las der Faden das Feld an vier Stellen selbst.
+        if threading.current_thread() is not threading.main_thread():
+            gemerkt = getattr(self, "_lauf_zielformat", None)
+            if gemerkt is not None:
+                return gemerkt
         return self._format_label_to_key(self.target_format.get().strip())
 
     def _resolve_mode_source_type(self, mode: str, src: str) -> str:
@@ -6103,7 +6659,14 @@ class PS5ConverterGUI:
         # Pfad bekannt ist (.ffpfs vs. .ffpfsc, siehe _detect_source_format).
         genau = self._detect_source_format(source_path) if source_path else source_type
         if genau == target_type and target_type not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
-            return self._t("conversion.same_format")
+            # .ffpfsc -> .ffpfsc in Aufgabe 2 gibt es nur mit AMPR-Asset-Pack:
+            # entpacken, einbauen, neu packen (seit v1.9.20). Bis v1.9.24 sperrte
+            # genau diese Zeile den Weg - "Quelle und Zielformat sind
+            # identisch" -, bevor _umhuellenden_weg_klaeren ihn erreichte. Die
+            # Liste bot ihn an, starten liess er sich nie.
+            if not (mode == "unpack_to_exfat" and genau == "ffpfsc"
+                    and self._ffpfsc_zu_ffpfsc_erlaubt()):
+                return self._t("conversion.same_format")
         if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
             return self._t("conversion.target_format_unknown")
         unsupported = self._UNSUPPORTED_TARGET_HINTS.get((genau, target_type), "")
@@ -6160,6 +6723,35 @@ class PS5ConverterGUI:
     def _verify_output_artifact(self, mode: str, final_path: str):
         """Prueft das Ergebnis eines Laufs. Siehe abbild_pruefen."""
         return self._pruefstand()._verify_output_artifact(mode, final_path)
+
+    def _abschlusspruefung(self, mode: str, final_path: str) -> dict:
+        """Die Ausgabepruefung am Aufgabenende.
+
+        Fuer die Sammelkonvertierung nicht ueber ``final_path``: Dort ist das
+        der ganze Zielordner. Bis v1.9.24 wurde er am Ende jedes Laufs
+        durchlaufen - nach Erfolg, Abbruch und Fehlschlag -, fremde Dateien
+        zaehlten mit, und nach einem Fehlschlag stand deren Zaehlung
+        ("Dateien: 523, Bytes: ...") als gemessener Fehlergrund im Dialog.
+        Jedes Ergebnis wird im Lauf ohnehin einzeln geprueft; ausgewertet wird
+        hier, was dabei herauskam.
+        """
+        if mode != "batch_convert":
+            return self._verify_output_artifact(mode, final_path)
+        eintraege = list(getattr(self, "task_batch_results", []) or [])
+        gut = sum(1 for eintrag in eintraege if eintrag.get("ok"))
+        gruende = [str(eintrag.get("detail") or "") for eintrag in eintraege
+                   if not eintrag.get("ok") and not eintrag.get("skipped")]
+        return {
+            "ok": gut > 0 and not gruende,
+            "mode": mode,
+            "path": final_path or "",
+            "type": "batch",
+            "size_bytes": 0,
+            "sha256": "",
+            "method": "batch-items",
+            "detail": ("; ".join(g for g in gruende[:3] if g) if gruende
+                       else self._t("batch.verify_einzeln", count=gut)),
+        }
 
     def _calc_pack_workers(
         self,
@@ -7800,10 +8392,18 @@ class PS5ConverterGUI:
         # und das Umschalten frischt die Liste ueber _refresh_target_format_options.
         if mode == "unpack_to_exfat" and not self._assetpack_gewaehlt():
             options = tuple(t for t in options if t != "ffpfsc")
+        # Das Selbst-Ziel nach der GENAUEN Endung ausblenden, wie es
+        # _conversion_block_reason beim Start prueft. Bis v1.9.24 filterte die
+        # Liste nach _detect_source_type, das .ffpfs und .ffpfsc zusammenfasst:
+        # Bei einer .ffpfs-Quelle stand ".ffpfs" in der Liste (Start: "Quelle
+        # und Zielformat sind identisch"), und in der Umwandlung fehlte das
+        # erlaubte ".ffpfsc".
+        genau = self._detect_source_format(source_path) if source_path else ""
+        if mode == "unpack_to_exfat":
+            return tuple(t for t in options if not (genau == "ffpfs" and t == "ffpfs"))
         if mode != "universal_convert":
             return options
-        source_type = self._detect_source_type(source_path)
-        return tuple(target for target in options if target != source_type)
+        return tuple(target for target in options if target != genau)
 
     #: Wie ShadowMount+ die Bildformate selbst einstuft.
     #:
@@ -8197,16 +8797,33 @@ class PS5ConverterGUI:
         # Schreiben - und das Bruchstueck bleibt im Zielordner des Nutzers
         # liegen. Dort raeumt niemand auf: _is_managed_temp_path laesst nur
         # Pfade unter dem Laufzeit-Temp oder mit ps5conv_-Namen durch.
-        if self.is_running or self._pkg_merge_laeuft > 0:
-            answer = messagebox.askyesno(
+        laeuft_etwas = (self.is_running or self._pkg_merge_laeuft > 0
+                        or self._bibliothek_uebertragungen > 0)
+        # Zuerst fragen, dann schliessen: Wer hier "Nein" sagt, behaelt auch
+        # seine Werkzeugfenster. Beendet wird die Aufgabe aber erst, wenn auch
+        # die Werkzeugfenster zugestimmt haben (unten).
+        if laeuft_etwas and not messagebox.askyesno(
                 self._t("dialog.title.quit"),
                 self._t("dialog.msg.confirm_quit_while_running"),
-                parent=self.root,
-            )
-            if not answer:
-                # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
-                return
+                parent=self.root):
+            # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
+            return
 
+        # Werkzeugfenster auf ihrem eigenen Weg schliessen. "Abbild -> PKG",
+        # "PKG bauen", der PS4-Wandler und der Debug-PKG-Bauer fragen dort
+        # nach, wenn gerade etwas laeuft, und beenden ihren Unterprozess. Bis
+        # v1.9.24 zerstoerte root.destroy() sie ohne diese Handler: prosperopkg
+        # rechnete unsichtbar weiter und schrieb ins Ziel, und der entpackte
+        # Dump (zweistellige GB) blieb im Arbeitsordner liegen. Lehnt ein
+        # Fenster ab, bleibt das Programm offen - und die Hauptaufgabe laeuft
+        # weiter, weil sie erst danach angehalten wird.
+        for _befehl in list(getattr(self, "_werkzeugfenster", {})):
+            self._werkzeugfenster_schliessen(_befehl)
+        if any(self._fenster_lebt(_w)
+               for _w in getattr(self, "_werkzeugfenster", {}).values()):
+            return
+
+        if laeuft_etwas:
             self._append_to_log(self._t('log.auto.0018'))
             self.is_running = False
             self.monitor_active = False
@@ -8792,12 +9409,30 @@ class PS5ConverterGUI:
             noetig_b, noetig_h = win.winfo_reqwidth(), win.winfo_reqheight()
             grenze_b = win.winfo_screenwidth() - 40
             grenze_h = win.winfo_screenheight() - 80
-            neu_b = max(1, min(max(breite, noetig_b), grenze_b))
-            neu_h = max(1, min(max(hoehe, noetig_h), grenze_h))
-            if (neu_b, neu_h) == (breite, hoehe):
+            # Gegen die JETZIGE Groesse halten, nicht gegen die eingestellte.
+            # Es gibt zwei Anlaeufe (80 und 400 ms). Bis v1.9.24 verglich auch
+            # der zweite mit der Ausgangsgroesse: War das Fenster im ersten
+            # schon gewachsen, setzte er die Geometrie noch einmal, schob ein
+            # inzwischen verschobenes Fenster zurueck in die Mitte und schrieb
+            # "vergroessert" ein zweites Mal ins Protokoll.
+            aktuell_b, aktuell_h, alt_x, alt_y = self._fenster_geometrie(win)
+            basis_b = max(breite, aktuell_b)
+            basis_h = max(hoehe, aktuell_h)
+            neu_b = max(1, min(max(basis_b, noetig_b), grenze_b))
+            neu_h = max(1, min(max(basis_h, noetig_h), grenze_h))
+            if (neu_b, neu_h) == (basis_b, basis_h):
                 return
-            x = max(0, (win.winfo_screenwidth() - neu_b) // 2)
-            y = max(0, (win.winfo_screenheight() - neu_h) // 2)
+            mitte_x = max(0, (win.winfo_screenwidth() - breite) // 2)
+            mitte_y = max(0, (win.winfo_screenheight() - hoehe) // 2)
+            if alt_x is None or (alt_x, alt_y) == (mitte_x, mitte_y):
+                # Noch dort, wo _build_modern_toplevel es hingesetzt hat:
+                # mit der neuen Groesse neu zentrieren.
+                x = max(0, (win.winfo_screenwidth() - neu_b) // 2)
+                y = max(0, (win.winfo_screenheight() - neu_h) // 2)
+            else:
+                # Vom Anwender verschoben: dort lassen, nur auf den Schirm holen.
+                x = max(0, min(alt_x, win.winfo_screenwidth() - neu_b))
+                y = max(0, min(alt_y, win.winfo_screenheight() - neu_h))
             win.geometry("%dx%d+%d+%d" % (neu_b, neu_h, x, y))
             if veraenderbar:
                 # Die Mindestgroesse mitziehen, sonst laesst sich das Fenster
@@ -8807,6 +9442,21 @@ class PS5ConverterGUI:
                         win.title(), neu_b, neu_h, breite, hoehe)
         except Exception as exc:
             logger.debug("Fenster konnte nicht angepasst werden: %s", exc)
+
+    @staticmethod
+    def _fenster_geometrie(win) -> tuple:
+        """(Breite, Hoehe, x, y) aus ``win.geometry()``; x/y None, wenn unlesbar.
+
+        Aus der Geometrie-Zeichenkette statt ``winfo_width``: Vor dem ersten
+        Zeichnen liefert winfo 1x1, die Zeichenkette dagegen die gesetzten Masse.
+        """
+        treffer = re.match(r"^(\d+)x(\d+)([+-]-?\d+)([+-]-?\d+)$",
+                           str(win.geometry()))
+        if not treffer:
+            return 0, 0, None, None
+        return (int(treffer.group(1)), int(treffer.group(2)),
+                int(treffer.group(3).replace("+", "", 1)),
+                int(treffer.group(4).replace("+", "", 1)))
 
     #: Fensterstil, der ein Fenster trotz Besitzer in die Taskleiste und in
     #: den Alt-Tab-Wechsler zurueckholt (WS_EX_APPWINDOW).
@@ -9115,7 +9765,7 @@ class PS5ConverterGUI:
         canvas.bind("<Configure>", _on_canvas_cfg)
 
         def _on_mousewheel(e: "tk.Event") -> None:
-            canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            canvas.yview_scroll(self._rad_einheiten(e), "units")
 
         # Nicht ueber ``bind_all``. Das schrieb in die globale Tabelle "all",
         # und das ``unbind_all`` beim Verlassen loeschte dort **jede**
@@ -9129,11 +9779,37 @@ class PS5ConverterGUI:
         # Eine Bindung am **Toplevel** erreicht daher jedes Kind dieses
         # Fensters - ohne die globale Tabelle anzufassen und ohne Enter/Leave.
         try:
-            canvas.winfo_toplevel().bind("<MouseWheel>", _on_mousewheel, add="+")
+            fenster = canvas.winfo_toplevel()
+            fenster.bind("<MouseWheel>", _on_mousewheel, add="+")
+            # X11 meldet das Rad als Knopf 4 und 5 - ohne diese Bindungen
+            # rollten die Fenster mit diesem Aufbau unter Linux nicht.
+            fenster.bind("<Button-4>", lambda _e: canvas.yview_scroll(-1, "units"), add="+")
+            fenster.bind("<Button-5>", lambda _e: canvas.yview_scroll(1, "units"), add="+")
         except tk.TclError as exc:                    # pragma: no cover
             logger.debug("Mausrad nicht bindbar: %s", exc)
 
         return outer, inner
+
+    @staticmethod
+    def _rad_einheiten(ereignis) -> int:
+        """Rollschritte aus einem <MouseWheel>-Ereignis - auf allen Plattformen.
+
+        Windows meldet ``delta`` in Vielfachen von 120, macOS kleine Werte
+        (+-1 bis +-10), Praezisions-Touchpads unter Windows Bruchteile von 120.
+        Bis v1.9.24 rechneten fuenf Fenster ``int(-delta / 120)``: Unter macOS
+        und auf solchen Touchpads kam 0 heraus - das Rad rollte nicht; in der
+        Bibliothek machte ``or -1`` daraus "rollt immer nach oben".
+
+        Returns:
+            Negative Zahl nach oben, positive nach unten, 0 ohne delta.
+        """
+        delta = int(getattr(ereignis, "delta", 0) or 0)
+        if not delta:
+            return 0
+        schritte = int(-delta / 120)
+        if schritte == 0:
+            schritte = -1 if delta > 0 else 1
+        return schritte
 
     def _apply_window_icon(self) -> None:
         """Setzt das App-Icon auf das Hauptfenster.
@@ -9285,6 +9961,12 @@ class PS5ConverterGUI:
         Das Bibliotheksfenster wurde geschlossen, waehrend sein Suchlauf noch
         lief. Genau das macht ein Nutzer, dem die Suche zu lange dauert.
 
+        Eingeplant wird **am Fenster**, nicht an ``self.root``: Geht das
+        Fenster zu, bevor der Rueckruf dran ist, verwirft Tkinter ihn mit dem
+        Fenster (gemessen am 17.09.2026). Ein ueber ``self.root.after``
+        eingeplanter Rueckruf lief dagegen trotzdem, fasste ein zerstoertes
+        Widget an und stand als [FEHLER] im Protokoll.
+
         Returns:
             True, wenn der Rueckruf eingeplant wurde.
         """
@@ -9300,7 +9982,23 @@ class PS5ConverterGUI:
 
     def _show_context_menu(self, event: tk.Event) -> None:
         """Zeigt das Rechtsklick-Kontextmenü an."""
-        self.context_menu.post(event.x_root, event.y_root)
+        self._menue_aufklappen(self.context_menu, event.x_root, event.y_root)
+
+    @staticmethod
+    def _menue_aufklappen(menue: tk.Menu, x: int, y: int) -> None:
+        """Klappt ein Menue an einer Bildschirmstelle auf - mit Grab.
+
+        Bis zum 17.09.2026 standen hier ``Menu.post``-Aufrufe. Gemessen unter
+        X11 (WSLg): ``post`` setzt keinen Grab, ``tk_popup`` legt ihn auf das
+        Menue. Ohne Grab schloss ein Klick daneben das Menue nicht, und die
+        Tastatur erreichte es nicht. Unter Windows und macOS ist das Menue
+        ohnehin modal; dort aendert sich nichts. Wie beim Bearbeiten-Menue
+        (``_textmenue_zeigen``) wird der Grab danach wieder freigegeben.
+        """
+        try:
+            menue.tk_popup(x, y)
+        finally:
+            menue.grab_release()
 
     def _dpi_wechsel_festhalten(self) -> None:
         """Hält fest, wenn das Fenster auf einen Monitor anderer Skalierung wandert.
@@ -9805,6 +10503,14 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("Titelleistenknopf nicht packbar: %s", exc)
 
+    #: Welche Dateien ein Ordner als Sammelquelle beisteuert - dieselben
+    #: Abbildformate, die die Sammelkonvertierung verarbeitet
+    #: (``abbild_pruefen._ALLE_ABBILDER``). Bis v1.9.24 las
+    #: ``_sammel_ordner_inhalt`` diesen Namen, ohne dass er irgendwo definiert
+    #: war: Jeder Ordner mit mindestens einer Datei darin endete in einem
+    #: AttributeError - im Fenster still, im CLI als Absturz.
+    _SAMMEL_ENDUNGEN: tuple[str, ...] = (".ffpfsc", ".ffpfs", ".exfat", ".ffpkg")
+
     @classmethod
     def _sammel_ordner_inhalt(cls, ordner: str) -> list:
         """Die verwertbaren Quellen unmittelbar in ``ordner``.
@@ -9833,6 +10539,34 @@ class PS5ConverterGUI:
                 logger.debug("Eintrag nicht lesbar (%s): %s",
                              eintrag.name, exc)
         return gefunden
+
+    @classmethod
+    def _sammelquellen_aufloesen(cls, pfade) -> list:
+        """Macht aus gewaehlten Pfaden die Liste, die Aufgabe 5 abarbeitet.
+
+        Eine Abbilddatei und ein Dump-Ordner stehen fuer sich selbst; ein
+        anderer Ordner steht fuer die Abbilder und Dumps darin (eine Ebene,
+        siehe ``_sammel_ordner_inhalt``). Doppelte fallen heraus.
+
+        Bis v1.9.24 nahm die Pruefung einen Ordner voller Abbilder an, die
+        Liste blieb aber leer: ein einzeln abgelegter Pfad setzte
+        ``_batch_sources = []``, das CLI nahm eine einzelne ``--source`` gar
+        nicht erst auf - und der Lauf endete mit "Keine Batch-Quellen".
+        """
+        ergebnis: list = []
+        gesehen: set = set()
+        for pfad in pfade or ():
+            pfad = os.path.normpath(str(pfad))
+            if os.path.isdir(pfad) and not cls._looks_like_dump_folder(pfad):
+                teile = cls._sammel_ordner_inhalt(pfad)
+            else:
+                teile = [pfad]
+            for teil in teile:
+                schluessel = os.path.normcase(os.path.abspath(teil))
+                if schluessel not in gesehen:
+                    gesehen.add(schluessel)
+                    ergebnis.append(teil)
+        return ergebnis
 
     def _sammelmenue_bestuecken(self) -> None:
         """Baut das Sammelmenue neu: Grundeintraege plus die eingefalteten.
@@ -11270,7 +12004,7 @@ class PS5ConverterGUI:
             return
 
         src = self.source_path.get().strip()
-        total = int(getattr(self, "_last_source_size_bytes", 0) or 0)
+        total = self._bekannte_quellgroesse(src)
         if not src or total <= 0 or not os.path.exists(src):
             return
 
@@ -11351,7 +12085,14 @@ class PS5ConverterGUI:
         sonst ungeprueft bis in die Packroutine.
         """
         try:
-            value = int(self.worker_count_var.get())
+            if threading.current_thread() is threading.main_thread():
+                value = int(self.worker_count_var.get())
+            else:
+                # Im Arbeitsfaden die gespeicherte Einstellung, nicht die
+                # Tk-Variable: Ohne laufende Ereignisschleife wirft Tk dort,
+                # und die Ausnahme wurde bis v1.9.24 still verschluckt - die
+                # eingestellte Worker-Zahl galt dann nicht.
+                value = int(self._load_setting("worker_count", 0) or 0)
         except Exception:
             return default
         return max(1, min(self._worker_obergrenze(), value)) if value > 0 else default
@@ -11376,8 +12117,18 @@ class PS5ConverterGUI:
     def _on_shortcut_escape(self, event=None) -> None:
         """Esc: bricht den laufenden Vorgang ab; wird in Eingabefeldern ignoriert."""
         widget = event.widget if event is not None else None
-        if isinstance(widget, (tk.Entry, tk.Text, ttk.Entry, ttk.Combobox, ttk.Spinbox)):
+        if isinstance(widget, (tk.Entry, tk.Text, ttk.Entry, ttk.Combobox, ttk.Spinbox, tk.Menu)):
             return
+        # bind_all trifft jedes Widget in JEDEM Fenster. Bis v1.9.24 brach Esc
+        # deshalb auch aus der Spiel-Info, einem Werkzeugfenster oder einem
+        # offenen Menue heraus die laufende Aufgabe ab - ohne Rueckfrage, und
+        # ausgerechnet dort, wo Esc sonst "Fenster schliessen" bedeutet.
+        if widget is not None:
+            try:
+                if widget.winfo_toplevel() is not self.root:
+                    return
+            except (AttributeError, tk.TclError, KeyError):
+                return
         if hasattr(self, "abort_btn") and str(self.abort_btn["state"]) == tk.NORMAL:
             self._kill_task()
 
@@ -11421,12 +12172,13 @@ class PS5ConverterGUI:
                 if error_msg:
                     messagebox.showerror(self._t("dialog.title.invalid_source"), error_msg, parent=self.root)
                     return
-            self._batch_sources = paths
+            self._batch_sources = self._sammelquellen_aufloesen(paths)
             self._remember_source_dialog_path(paths[0])
             self.source_path.set(paths[0])
             if hasattr(self, "status_label"):
                 self.status_label.config(
-                    text=self._t("main.status_batch_selected_dnd", count=len(paths))
+                    text=self._t("main.status_batch_selected_dnd",
+                                 count=len(self._batch_sources))
                 )
             return
 
@@ -11435,7 +12187,8 @@ class PS5ConverterGUI:
         if error_msg:
             messagebox.showerror(self._t("dialog.title.invalid_source"), error_msg, parent=self.root)
             return
-        self._batch_sources = []
+        self._batch_sources = (self._sammelquellen_aufloesen([path])
+                               if mode == "batch_convert" else [])
         self._remember_source_dialog_path(path)
         self.source_path.set(path)
 
@@ -11763,7 +12516,8 @@ class PS5ConverterGUI:
                 logger.warning("Temp-Ordner nicht nutzbar (%s), nutze System-Temp.", exc)
                 self._temp_warn_last_ts = _now
             fallback = os.path.normpath(tempfile.gettempdir())
-            if hasattr(self, "temp_path"):
+            if hasattr(self, "temp_path") and \
+                    threading.current_thread() is threading.main_thread():
                 self.temp_path.set(fallback)
             if str(self._load_setting("temp_dir", "")).strip() != fallback:
                 self._save_setting("temp_dir", fallback)
@@ -11804,14 +12558,20 @@ class PS5ConverterGUI:
             candidates.append(p)
 
         _add(preferred)
-        if hasattr(self, "temp_path"):
+        # Tk-Variablen nur im Hauptfaden lesen - diese Methode laeuft ueber
+        # _mkdtemp auch in Aufgaben-, Vorschau- und Startfaeden. Dieselbe
+        # Weiche wie in _get_runtime_temp_dir; bis v1.9.24 fehlte sie hier
+        # eine Ebene tiefer.
+        im_hauptfaden = threading.current_thread() is threading.main_thread()
+        if hasattr(self, "temp_path") and im_hauptfaden:
             _add(self.temp_path.get())
         _add(str(self._load_setting("temp_dir", "")).strip())
         _add(tempfile.gettempdir())
 
         try:
             if hasattr(self, "dest_path"):
-                dst = str(self.dest_path.get()).strip()
+                dst = (str(self.dest_path.get()).strip() if im_hauptfaden
+                       else str(getattr(self, "_lauf_ziel", "") or ""))
                 if dst:
                     dst_root = os.path.splitdrive(os.path.abspath(dst))[0]
                     if dst_root:
@@ -12024,7 +12784,8 @@ class PS5ConverterGUI:
             #
             # Gemeldet wird das Ausweichen weiterhin, in beiden Faellen.
             if dir_path is None:
-                if hasattr(self, "temp_path"):
+                if hasattr(self, "temp_path") and \
+                        threading.current_thread() is threading.main_thread():
                     self.temp_path.set(chosen_dir)
                 self._save_setting("temp_dir", chosen_dir)
 
@@ -12066,14 +12827,100 @@ class PS5ConverterGUI:
         if needed and free < needed:
             self._append_to_log(self._t('log.auto.0032', v0=self._fmt_bytes(int(free)), v1=self._fmt_bytes(needed)))
             return final_output
-        staged = os.path.join(tmp_dir, os.path.basename(final_output))
+        # In einen eigenen ps5conv_stage_*-Ordner, nicht direkt in den
+        # Arbeitsordner. Bis v1.9.24 hiess die Zwischendatei dort genau wie
+        # das Ergebnis, und eine gleichnamige Datei des Anwenders im
+        # Arbeitsordner wurde vorher kommentarlos geloescht. Ausserdem erkennt
+        # das Aufraeumen einen abgebrochenen Rest jetzt am Namen
+        # (_is_managed_temp_path).
         try:
-            if os.path.exists(staged):
-                os.remove(staged)
-        except OSError:
-            pass
+            stage_dir = self._mkdtemp(prefix="ps5conv_stage_", dir_path=tmp_dir)
+        except OSError as exc:
+            logger.debug("Staging-Ordner nicht anlegbar, schreibe direkt ins Ziel: %s", exc)
+            return final_output
+        staged = os.path.join(stage_dir, os.path.basename(final_output))
         self._append_to_log(self._t('log.auto.0033'))
         return staged
+
+    def _staging_ergebnis_retten(self, staged_path: str) -> str:
+        """Holt ein fertiges Ergebnis aus seinem Staging-Ordner heraus.
+
+        Scheitert das Verschieben ins Ziel, ist die Datei im Arbeitsordner das
+        einzige Ergebnis. Im ps5conv_stage_*-Ordner raeumten es das Beenden
+        und die Reste-Sichtung nach zwoelf Stunden weg - deshalb wandert es
+        eine Ebene hoeher, unter seinem eigenen Namen (bei Namensgleichheit
+        mit Zaehler). Das ist auf demselben Datentraeger nur ein Umbenennen.
+
+        Returns:
+            Den neuen Ablageort, oder ``staged_path``, wenn nichts zu tun war
+            oder das Umbenennen scheiterte.
+        """
+        stage_dir = os.path.dirname(os.path.abspath(staged_path))
+        if not os.path.basename(stage_dir).lower().startswith("ps5conv_stage_"):
+            return staged_path
+        eltern = os.path.dirname(stage_dir)
+        stamm, endung = os.path.splitext(os.path.basename(staged_path))
+        ziel = os.path.join(eltern, stamm + endung)
+        zaehler = 2
+        while os.path.exists(ziel):
+            ziel = os.path.join(eltern, "%s (%d)%s" % (stamm, zaehler, endung))
+            zaehler += 1
+        try:
+            os.replace(staged_path, ziel)
+        except OSError as exc:
+            logger.warning("Staging-Ergebnis nicht verschiebbar (%s): %s", staged_path, exc)
+            # Dann wenigstens nicht mehr zum Loeschen vormerken.
+            self._forget_exit_cleanup_path(stage_dir)
+            return staged_path
+        try:
+            os.rmdir(stage_dir)
+        except OSError:
+            pass
+        self._forget_exit_cleanup_path(stage_dir)
+        return ziel
+
+    @staticmethod
+    def _pfad_liegt_in(pfad: str, ordner: str) -> bool:
+        """Liegt ``pfad`` in ``ordner`` oder ist er es selbst?
+
+        Vergleicht die normalisierten Pfade Bestandteil fuer Bestandteil -
+        "D:\\Spiele2" liegt nicht in "D:\\Spiele". Verschiedene Laufwerke
+        ergeben False.
+        """
+        if not pfad or not ordner:
+            return False
+        try:
+            p = os.path.normcase(os.path.abspath(pfad))
+            o = os.path.normcase(os.path.abspath(ordner))
+            return os.path.commonpath([p, o]) == o
+        except (ValueError, TypeError):
+            return False
+
+    @staticmethod
+    def _ergebnis_im_ziel(tatsaechlich: str, gewuenscht: str) -> bool:
+        """Liegt das Ergebnis dort, wo der Anwender es haben wollte?
+
+        ``_finalize_staged_pack_output`` gibt bei einem gescheiterten
+        Verschieben den Ort im Arbeitsordner zurueck. Bis v1.9.24 meldeten die
+        Packwege danach trotzdem Erfolg - das Ziel war leer, und das Beenden
+        loeschte das einzige Ergebnis als vermeintlichen Temp-Rest.
+        """
+        try:
+            return (os.path.normcase(os.path.abspath(tatsaechlich))
+                    == os.path.normcase(os.path.abspath(gewuenscht)))
+        except (TypeError, ValueError):
+            return False
+
+    def _staging_ordner_entfernen(self, staged_path: str) -> None:
+        """Entfernt den leeren ps5conv_stage_*-Ordner nach erfolgreicher Uebernahme."""
+        stage_dir = os.path.dirname(os.path.abspath(staged_path))
+        if not os.path.basename(stage_dir).lower().startswith("ps5conv_stage_"):
+            return
+        try:
+            os.rmdir(stage_dir)
+        except OSError:
+            return
+        self._forget_exit_cleanup_path(stage_dir)
 
     def _finalize_staged_pack_output(self, staged_path: str, final_output: str) -> str:
         """Verschiebt eine gestagte Ausgabedatei geprüft (Größenabgleich) an ihr Zielverzeichnis.
@@ -12155,17 +13002,19 @@ class PS5ConverterGUI:
                 )
             os.replace(part_path, final_output)
             os.remove(staged_path)
+            self._staging_ordner_entfernen(staged_path)
             self._copy_done_bytes = self._copy_total_bytes
             self._append_to_log(self._t('log.auto.0035', v0=final_output))
             return final_output
         except OSError as exc:
-            self._append_to_log(self._t('log.auto.0036', v0=exc, v1=staged_path))
             try:
                 if os.path.exists(part_path):
                     os.remove(part_path)
             except OSError:
                 pass
-            return staged_path
+            gerettet = self._staging_ergebnis_retten(staged_path)
+            self._append_to_log(self._t('log.auto.0036', v0=exc, v1=gerettet))
+            return gerettet
 
     def _sample_system_telemetry(self) -> dict[str, Any]:
         """Sammelt Live-Systemmetriken (CPU/RAM/Temp-Speicher) für die Fortschrittsanzeige.
@@ -12221,10 +13070,11 @@ class PS5ConverterGUI:
         if "ram_used" in t and "ram_total" in t:
             parts.append(f"RAM: {self._fmt_bytes(t['ram_used'])} / {self._fmt_bytes(t['ram_total'])}")
         if "temp_used" in t:
-            parts.append(
-                f"Temp: {self._fmt_bytes(t['temp_used'])} (Peak {self._fmt_bytes(t['temp_peak'])}, "
-                f"{self._fmt_bytes(t['temp_free'])} frei)"
-            )
+            parts.append(self._t(
+                "telemetrie.temp",
+                belegt=self._fmt_bytes(t["temp_used"]),
+                spitze=self._fmt_bytes(t["temp_peak"]),
+                frei=self._fmt_bytes(t["temp_free"])))
         if hasattr(self, "telemetry_label"):
             neuer_text = "  |  ".join(parts)
             alter_text = str(self.telemetry_label.cget("text"))
@@ -12632,11 +13482,19 @@ class PS5ConverterGUI:
                                 lambda m=quick_meta: self._update_info_box(m, None, "…", "")
                             )
 
-                        total   = self._get_path_size(src)
-                        self._last_source_size_bytes = int(total)
+                        # Mit Abbruch: Wechselt die Quelle, zaehlt die alte
+                        # Messung nicht weiter (bis v1.9.24 lief sie bei einem
+                        # 51-GB-Dump auf USB noch Minuten neben der neuen - und
+                        # neben einer inzwischen gestarteten Aufgabe - auf
+                        # derselben Platte). Ein Teilwert wird nicht gemerkt.
+                        total   = self._get_path_size(
+                            src, cancel_check=lambda g=my_gen: g != self._calc_generation)
+                        if my_gen != self._calc_generation:
+                            return
+                        self._quellgroesse_merken(src, total)
                         src_str = self._fmt_bytes(total)
                         # Schritt 2: Quellgröße nachreichen
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         # Nur Aufgabe 1 hat hier ein festes komprimiertes Ziel.
                         if mode == "pack_folder":
                             try:
@@ -12667,11 +13525,14 @@ class PS5ConverterGUI:
                                 lambda m=quick_meta: self._update_info_box(m, None, "…", "")
                             )
 
-                        total   = self._get_path_size(src)
-                        self._last_source_size_bytes = int(total)
+                        total   = self._get_path_size(
+                            src, cancel_check=lambda g=my_gen: g != self._calc_generation)
+                        if my_gen != self._calc_generation:
+                            return          # Quelle gewechselt - siehe oben
+                        self._quellgroesse_merken(src, total)
                         src_str = self._fmt_bytes(total)
                         # Nur Quellgröße – keine Zielgröße bei Validator
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         label_text = src_str
                         meta, cover_img = self._read_game_meta_and_cover(src)
                         est_str   = ""
@@ -12683,9 +13544,11 @@ class PS5ConverterGUI:
                         if not batch_sources:
                             return
                         total = sum(os.path.getsize(path) for path in batch_sources)
-                        self._last_source_size_bytes = int(total)
-                        src_str = f"{len(batch_sources)} Dateien · {self._fmt_bytes(total)}"
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._quellgroesse_merken(src, total)
+                        src_str = self._t("groesse.sammelquellen",
+                                          anzahl=len(batch_sources),
+                                          groesse=self._fmt_bytes(total))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         est_str = ""
                         label_text = src_str
                         quick_meta = self._quick_meta_from_path(
@@ -12708,10 +13571,10 @@ class PS5ConverterGUI:
                     ):
                         # --- Datei-Modus: Größe berechnen, Metadaten NUR für Info-Box ---
                         total   = os.path.getsize(src)
-                        self._last_source_size_bytes = int(total)
+                        self._quellgroesse_merken(src, total)
                         src_str = self._fmt_bytes(total)
                         # Schritt 1: sofort nur Quellgröße anzeigen
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         if mode == "pack_file":
                             # Schritt 2: Zielgröße schätzen
                             try:
@@ -12776,10 +13639,10 @@ class PS5ConverterGUI:
                     elif mode == "dump_validator" and os.path.isfile(src):
                         # --- Aufgabe 8: Datei-Modus mit sofortigem Fast-Path für Infobox/Vorschau ---
                         total   = os.path.getsize(src)
-                        self._last_source_size_bytes = int(total)
+                        self._quellgroesse_merken(src, total)
                         src_str = self._fmt_bytes(total)
                         # Nur Quellgröße anzeigen
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         est_str    = ""
                         label_text = src_str
                         quick_meta = self._quick_meta_from_path(src, candidate_roots=preview_candidate_dirs)
@@ -12824,10 +13687,10 @@ class PS5ConverterGUI:
                     elif mode == "ampr_manager" and os.path.isfile(src):
                         # --- Aufgabe 7: Datei-Modus ---
                         total   = os.path.getsize(src)
-                        self._last_source_size_bytes = int(total)
+                        self._quellgroesse_merken(src, total)
                         src_str = self._fmt_bytes(total)
                         # Nur Quellgröße anzeigen
-                        self.root.after(0, lambda s=src_str: self._set_size_label_idle(s))
+                        self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         est_str    = ""
                         label_text = src_str
                         quick_meta = self._quick_meta_from_path(src, candidate_roots=preview_candidate_dirs)
@@ -12910,7 +13773,7 @@ class PS5ConverterGUI:
             threading.Thread(target=_calc, daemon=True).start()
         else:
             # Kein gültiger Quellpfad: Info-Box verstecken, Button deaktivieren, Label leeren
-            self._last_source_size_bytes = 0
+            self._quellgroesse_merken("", 0)
             if hasattr(self, "info_toggle_btn"):
                 self.info_toggle_btn.config(state=tk.DISABLED)
             self.root.after(0, self._hide_info_box)
@@ -13536,6 +14399,69 @@ class PS5ConverterGUI:
             return echt, self._t("info_popup.sdk_backported", v0=laut_param)
         return echt, ""
 
+    def _sdk_stand_anzeigen(self, ordner: str) -> None:
+        """Setzt die Zeile SDK-Stand der Infobox - gelesen im Faden, gemerkt je Datei.
+
+        :meth:`_sdk_stand_lesen` liest die ganze eboot.bin. Gemessen am
+        17.09.2026: Street Fighter 6 (329 MB) 6,1 s beim ersten Lesen und
+        0,6 s aus dem Dateicache, Forza Horizon 5 (159 MB) 1,9 s bzw. 0,23 s.
+        Bis dahin lief das im Fensterfaden, und ``_update_info_box`` kommt je
+        Quellwahl mehrmals - das Hauptfenster stand jedes Mal still.
+
+        Gemerkt wird je Pfad, Groesse, Aenderungszeit und Sprache: Ein
+        Backport aendert die Datei und damit den Schluessel, und der Hinweis
+        in Klammern ist uebersetzt. Ein Ergebnis fuer eine inzwischen
+        gewechselte Quelle wird gemerkt, aber nicht mehr angezeigt.
+        """
+        variable = self._meta_labels["sdk_stand"]
+        strich = chr(0x2013)
+        eboot = os.path.join(ordner, "eboot.bin") if ordner else ""
+        try:
+            datei = os.stat(eboot) if eboot and os.path.isdir(ordner) else None
+        except OSError:
+            datei = None
+        if datei is None:
+            self._sdk_stand_schluessel = None
+            variable.set(strich)
+            return
+        schluessel = (os.path.normcase(os.path.abspath(eboot)), datei.st_size,
+                      datei.st_mtime_ns, getattr(self, "_current_language", ""))
+        self._sdk_stand_schluessel = schluessel
+        merker = getattr(self, "_sdk_stand_merker", None)
+        if merker is None:
+            merker = self._sdk_stand_merker = {}
+        if schluessel in merker:
+            variable.set(merker[schluessel])
+            return
+        variable.set(chr(0x2026))
+        laufend = getattr(self, "_sdk_stand_laufend", None)
+        if laufend is None:
+            laufend = self._sdk_stand_laufend = set()
+        if schluessel in laufend:
+            return
+        laufend.add(schluessel)
+
+        def _fertig(text: str) -> None:
+            laufend.discard(schluessel)
+            if len(merker) >= 64:
+                merker.clear()
+            merker[schluessel] = text
+            if getattr(self, "_sdk_stand_schluessel", None) == schluessel:
+                variable.set(text)
+
+        def _lesen() -> None:
+            text = strich
+            try:
+                wert, hinweis = self._sdk_stand_lesen(ordner)
+                if wert:
+                    text = f"{wert} ({hinweis})" if hinweis else wert
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("SDK-Stand für die Anzeige nicht ermittelbar: %s", exc)
+            if not self._spaeter_im_fenster(self.root, _fertig, text):
+                laufend.discard(schluessel)
+
+        threading.Thread(target=_lesen, daemon=True, name="infobox-sdk-stand").start()
+
     def _ampr_emu_stand(self, quelle: str) -> str:
         """Sagt, ob in der Quelle bereits ein AMPR EMU steckt.
 
@@ -13615,6 +14541,32 @@ class PS5ConverterGUI:
         return self._t("info_popup.ampr_eingebaut" if gefunden
                        else "info_popup.ampr_nicht_eingebaut")
 
+    @staticmethod
+    def _ist_aktive_ampr_bibliothek(rel: str, marke: str) -> bool:
+        """Liegt ``rel`` als aktive AMPR-Bibliothek in genau ``fakelib``?
+
+        Nur die aktive Bibliothek zaehlt, nicht die Sicherung ``.orig``. Und
+        genau "fakelib" als Ordnername, nicht als Teilstring: Bis zum
+        06.09.2026 stand hier ``if "fakelib" in rel``, und das trifft auch
+        "fakelib2". Derselbe Dump beantwortete die Frage dadurch verschieden,
+        je nachdem ob er als Ordner oder als Abbild vorlag - der Ordnerweg
+        geht ueber _fakelib_pfad und laesst nur "fakelib" gelten.
+
+        "fakelib" ist auch die richtige Antwort: Ab ShadowMountPlus 1.7
+        alpha8 wird ein "fakelib2" im Spielordner ignoriert, und zwar ohne
+        Meldung. "Eingebaut" zu melden waere dort schlicht falsch.
+
+        Seit dem 17.09.2026 eine eigene Methode, damit der Test die Regel des
+        Programms prueft und nicht einen Nachbau (Befund T3). Dabei ersetzt
+        die Normalisierung einen einzelnen Backslash - vorher stand dort ein
+        doppelter, und der trifft keinen Windows-Pfad.
+        """
+        rel = str(rel or "").replace("\\", "/").lower()
+        marke = str(marke or "").lower()
+        if not (rel.endswith("/" + marke) or rel == marke):
+            return False
+        return "fakelib" in rel.split("/")
+
     def _ampr_marker_im_container(self, pfad: str) -> bool | None:
         """Sucht die AMPR-Bibliothek in der inneren Ebene eines Containers.
 
@@ -13667,22 +14619,9 @@ class PS5ConverterGUI:
             marke = self._AMPR_SPRX_NAME.lower()
             for eintrag in eintraege:
                 rel = str(getattr(eintrag, "rel_path", "") or
-                          getattr(eintrag, "path", "") or "").replace("\\\\", "/").lower()
-                # Nur die aktive Bibliothek zaehlt, nicht die Sicherung .orig.
-                if rel.endswith("/" + marke) or rel == marke:
-                    # Genau "fakelib" als Ordnername, nicht als Teilstring:
-                    # Bis zum 06.09.2026 stand hier `if "fakelib" in rel`, und
-                    # das trifft auch "fakelib2". Derselbe Dump beantwortete
-                    # die Frage dadurch verschieden, je nachdem ob er als
-                    # Ordner oder als Abbild vorlag - der Ordnerweg geht ueber
-                    # _fakelib_pfad und laesst nur "fakelib" gelten.
-                    #
-                    # "fakelib" ist auch die richtige Antwort: Ab
-                    # ShadowMountPlus 1.7 alpha8 wird ein "fakelib2" im
-                    # Spielordner ignoriert, und zwar ohne Meldung. "Eingebaut"
-                    # zu melden waere dort schlicht falsch.
-                    if "fakelib" in rel.split("/"):
-                        return True
+                          getattr(eintrag, "path", "") or "")
+                if self._ist_aktive_ampr_bibliothek(rel, marke):
+                    return True
             return False
         finally:
             for zu in (virtual_fh, backing_fh):
@@ -13747,10 +14686,12 @@ class PS5ConverterGUI:
                     break
         meta["required_firmware"] = firmware
 
-        # Region: aus der SFO oder aus der Titel-ID abgeleitet.
+        # Region: aus der SFO, sonst aus der Content-ID (Titel-ID nur als
+        # Rueckfall, siehe abbild_metadaten._region_aus_kennungen).
         region = wert("REGION")
         if region == strich:
-            region = self._region_from_title_id(meta["title_id"])
+            region = abbild_metadaten.Metadatenleser._region_aus_kennungen(
+                wert("CONTENT_ID"), meta["title_id"])
         meta["region"] = region
         meta["category"] = wert("CATEGORY")
 
@@ -13823,6 +14764,38 @@ class PS5ConverterGUI:
                 yield decode_inode_payload(payload, entry.inode)
 
         return _VirtualPfsReader()
+
+    #: Bis zu dieser Groesse des einen inneren Abbilds darf die Vorschau als
+    #: letzten Rueckfall auspacken. Darueber bleibt die Anzeige leer - eine
+    #: Vorschau rechtfertigt keine Minuten und keine Gigabyte im Temp-Ordner.
+    _VORSCHAU_ENTPACKEN_HOECHSTENS = 1024 * 1024 * 1024
+
+    def _vorschau_entpacken_vertretbar(self, src: str) -> bool:
+        """Darf die Vorschau ``src`` als letzten Rueckfall auspacken?
+
+        Nur bei genau einem inneren Abbild bis
+        ``_VORSCHAU_ENTPACKEN_HOECHSTENS``. Gelesen werden Kopf, Inode-Tabelle
+        und Verzeichnisse - keine Nutzdaten. Laesst sich das Abbild nicht
+        einmal so lesen, wird auch nicht ausgepackt.
+        """
+        try:
+            if self.mkpfs_dir and self.mkpfs_dir not in sys.path:
+                sys.path.insert(0, self.mkpfs_dir)
+            from mkpfs.pfs import inspect_pfs_image  # noqa: PLC0415  # type: ignore[import-not-found]
+
+            befund = inspect_pfs_image(Path(src), verify_payloads=False)
+            if befund.header is None or len(befund.file_inodes) != 1:
+                return False
+            inode = befund.inodes[next(iter(befund.file_inodes.values()))]
+            groesse = int(getattr(inode, "logical_size", 0) or getattr(inode, "size", 0) or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Vorschau: Abbild nicht pruefbar, kein Auspacken (%s)", exc)
+            return False
+        if groesse > self._VORSCHAU_ENTPACKEN_HOECHSTENS:
+            logger.info("Vorschau: inneres Abbild %s gross, wird nicht ausgepackt (%s)",
+                        self._fmt_bytes(groesse), src)
+            return False
+        return True
 
     def _extract_meta_from_ffpfsc_virtual(self, src: str):
         """Metadaten aus einem .ffpfsc. Siehe abbild_metadaten."""
@@ -14075,6 +15048,18 @@ class PS5ConverterGUI:
             return meta, cover_img
 
         # --- .ffpfsc-Modus (Aufgaben 2, 4, 5): PFS-API nutzen ---
+        # Der folgende Weg packt die aeussere Ebene aus. Das ist nur fuer ein
+        # einzelnes, kleines inneres Abbild vertretbar. Bis v1.9.24 lief er
+        # auch fuer flache .ffpfs (= das ganze Spiel) und fuer ein
+        # eingebettetes .ffpkg beliebiger Groesse - still, bei jeder
+        # Quellauswahl, unter der MkPFS-Sperre. Der virtuelle Leser oben hat
+        # dann schon alles versucht, was ohne Auspacken geht.
+        if not self._vorschau_entpacken_vertretbar(src):
+            if _cache_key is not None:
+                if len(self._preview_cache) >= self._PREVIEW_CACHE_MAX:
+                    self._preview_cache.pop(next(iter(self._preview_cache)))
+                self._preview_cache[_cache_key] = (empty_meta, None)
+            return empty_meta, None
         tmp_outer = self._mkdtemp(prefix="ps5conv_meta_outer_")
         tmp_meta  = self._mkdtemp(prefix="ps5conv_meta_files_")
         try:
@@ -15049,16 +16034,11 @@ class PS5ConverterGUI:
         # Bei Container-Quellen ist eboot.bin nicht direkt lesbar; dann bleibt
         # die Zeile leer, statt etwas Falsches zu behaupten.
         if "sdk_stand" in self._meta_labels:
-            _sdk_text = "–"
             try:
                 _ordner = self.source_path.get().strip()
-                if _ordner and os.path.isdir(_ordner):
-                    _stand, _hinweis = self._sdk_stand_lesen(_ordner)
-                    if _stand:
-                        _sdk_text = f"{_stand} ({_hinweis})" if _hinweis else _stand
-            except Exception as exc:
-                logger.debug("SDK-Stand für die Anzeige nicht ermittelbar: %s", exc)
-            self._meta_labels["sdk_stand"].set(_sdk_text)
+            except Exception:
+                _ordner = ""
+            self._sdk_stand_anzeigen(_ordner)
 
         # Ob ein AMPR EMU schon eingebaut ist, steht in keiner param.json - es
         # zeigt sich nur an der Bibliothek selbst. Bei Ordnern im Dateisystem,
@@ -15076,6 +16056,10 @@ class PS5ConverterGUI:
         # Größenangaben
         self._info_src_size_var.set(src_str)
         self._info_est_size_var.set(f"~{est_str}" if est_str else "–")
+        # Die Rohwerte fuer spaetere Aktualisierungen (_nachschlag_fertig):
+        # Bis v1.9.24 ging dort der schon formatierte Text zurueck, und aus
+        # "~12,3 GB" wurde "~~12,3 GB" - mit jedem Klick ein "~" mehr.
+        self._info_roh_groessen = (src_str, est_str)
         try:
             current_src = self.source_path.get().strip()
             current_mode = self.current_mode.get().strip()
@@ -15188,15 +16172,21 @@ class PS5ConverterGUI:
             self._patch_status_var.set(self._t("info_popup.status_deferred"))
         except Exception as exc:
             logger.debug("Hinweis auf zurückgestellte Metadaten: %s", exc)
-        for attr in ("_info_title_var", "_info_id_var", "_info_version_var",
-                     "_info_firmware_var", "_info_region_var", "_info_category_var",
-                     "_info_publisher_var"):
-            var = getattr(self, attr, None)
+        # Die Anzeige haengt an _meta_labels und den beiden Groessenfeldern.
+        # Bis v1.9.24 setzte diese Methode nur Attribute, die es im Programm
+        # gar nicht gibt (_info_title_var, _info_id_var ...) - Titel, Title-ID
+        # und Version der alten Quelle blieben stehen und sahen stimmig aus.
+        # Der Test dazu setzte genau diese Phantomnamen selbst und war gruen.
+        variablen = list(getattr(self, "_meta_labels", {}).values())
+        variablen += [getattr(self, "_info_src_size_var", None),
+                      getattr(self, "_info_est_size_var", None)]
+        for var in variablen:
             if var is not None:
                 try:
                     var.set("…")
                 except Exception:
                     pass
+        self._cached_title_id = ""
         var = getattr(self, "_info_method_var", None)
         if var is not None:
             try:
@@ -15807,9 +16797,10 @@ class PS5ConverterGUI:
         try:
             if isinstance(neu, dict) and neu:
                 self._letzte_meta = dict(neu)
-                self._update_info_box(neu, cover,
-                                      self._info_src_size_var.get(),
-                                      self._info_est_size_var.get())
+                roh_quelle, roh_schaetzung = getattr(
+                    self, "_info_roh_groessen",
+                    (self._info_src_size_var.get(), ""))
+                self._update_info_box(neu, cover, roh_quelle, roh_schaetzung)
                 if self._info_popup is not None and self._info_popup.winfo_exists():
                     self._prepare_patch_lookup_ui(tid)
                     self._fetch_patches_async(tid)
@@ -16993,10 +17984,6 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("CLI-Protokollausgabe fehlgeschlagen: %s", exc)
 
-        # Log-Tail-Puffer fuer den Diagnosebericht, siehe
-        # _protokollschwanz_merken - derselbe Weg wie fuer die Engine.
-        self._protokollschwanz_merken(clean.splitlines())
-
         # Ein einzelnes \r heisst "ueberschreibe die laufende Zeile" - fuer die
         # Anzeige ist das ein Zeilenwechsel. _clean_log_text entfernt es
         # ersatzlos. Kommt die Ausgabe einer Engine am Stueck herein (Nicht-
@@ -17007,11 +17994,20 @@ class PS5ConverterGUI:
         anzeige = self._clean_log_text(text.replace("\r\n", "\n").replace("\r", "\n"))
         zeilen_anzeige = [z for z in anzeige.split("\n") if z.strip()]
         if len(zeilen_anzeige) > 1:
+            # Den Protokollschwanz fuer den Diagnosebericht fuellt hier
+            # _log_engine_zeilen. Bis v1.9.24 geschah es zusaetzlich oben fuer
+            # jede Meldung - mehrzeilige standen im Bericht doppelt und
+            # verdraengten die Haelfte des 60-Zeilen-Puffers.
             try:
                 self.root.after(0, lambda z=zeilen_anzeige: self._log_engine_zeilen(z))
             except RuntimeError:
                 logger.debug("Log-Update nach Tk-Ende übersprungen")
+                self._protokollschwanz_merken(clean.splitlines())
             return
+
+        # Log-Tail-Puffer fuer den Diagnosebericht, siehe
+        # _protokollschwanz_merken - derselbe Weg wie fuer die Engine.
+        self._protokollschwanz_merken(clean.splitlines())
 
         def _update() -> None:
             ansicht = self.console_view
@@ -17212,7 +18208,13 @@ class PS5ConverterGUI:
         # Der Platz - gemessen, nicht geraten. Beide Orte, denn ein Packlauf
         # braucht sie gleichzeitig.
         for schluessel, pfad in (
-            ("fehlergrund.platz_ziel", str(self.dest_path.get()).strip()
+            # Im Aufgabenfaden das Ziel DIESES Laufs, nicht den Feldinhalt:
+            # Tk darf dort nicht gelesen werden, und das Feld kann inzwischen
+            # etwas anderes zeigen.
+            ("fehlergrund.platz_ziel",
+             (str(self.dest_path.get()).strip()
+              if threading.current_thread() is threading.main_thread()
+              else str(getattr(self, "_lauf_ziel", "") or ""))
              if hasattr(self, "dest_path") else ""),
             ("fehlergrund.platz_temp", self._get_runtime_temp_dir()),
         ):
@@ -17599,8 +18601,30 @@ class PS5ConverterGUI:
         """
         return mode == "ampr_manager" and os.path.isdir(src)
 
+    def _vorgang_laeuft_noch(self) -> bool:
+        """Arbeitet noch ein Aufgaben-Faden - auch ein bereits abgebrochener?
+
+        ``_kill_task`` gibt STARTEN sofort frei, der Faden selbst endet aber
+        erst am naechsten Pruefpunkt: eine Pruefsumme ueber 50 GB, eine
+        exFAT-Extraktion, ein robocopy-Lauf. Bis v1.9.24 startete ein neuer
+        Lauf trotzdem. Der alte ueberschrieb danach dessen Fortschritt, meldete
+        seinen eigenen Erfolg, raeumte die Arbeitsordner des neuen ab und
+        setzte im finally ``is_running = False`` - der neue Lauf brach ab.
+
+        Ebenso zaehlt ``is_running`` selbst: "Abbild -> PKG" setzt es fuer
+        seine Extraktion.
+        """
+        if getattr(self, "is_running", False):
+            return True
+        faden = getattr(self, "_task_thread", None)
+        return bool(faden is not None and faden.is_alive())
+
     def _launch_task(self) -> None:
         """Validiert Eingaben und startet den Konvertierungs-Thread."""
+        if self._vorgang_laeuft_noch():
+            messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"),
+                                self._t("dialog.msg.aufgabe_laeuft"))
+            return
         src = self.source_path.get().strip()
         mode = self.current_mode.get()
         self._active_mode_name = str(mode or "")
@@ -17635,6 +18659,17 @@ class PS5ConverterGUI:
             messagebox.showerror(self._t("dialog.title.invalid_source"), error_msg)
             return
 
+        if mode == "batch_convert":
+            # Die Liste gehoert zur Quelle im Feld. Wurde dort getippt oder ein
+            # einzelner Ordner abgelegt, steht die alte (oder gar keine) Liste
+            # dahinter - dann aus dem Feld neu aufloesen.
+            _liste = list(getattr(self, "_batch_sources", []) or [])
+            # Passt, wenn das Feld einen Eintrag der Liste nennt oder den
+            # Ordner, aus dem sie aufgeloest wurde.
+            _passt = any(self._pfad_liegt_in(eintrag, src) for eintrag in _liste)
+            self._batch_sources = self._sammelquellen_aufloesen(
+                _liste if _passt else [src])
+
         conversion_error = self._validate_requested_conversion(mode, src, target_type)
         if conversion_error:
             messagebox.showerror(self._t("dialog.title.target_format_unavailable"), conversion_error)
@@ -17649,6 +18684,9 @@ class PS5ConverterGUI:
         if not self._umhuellenden_weg_klaeren(mode, src, target_type):
             return
         target_type = self._get_selected_target_type()
+        # Asset-Pack: Originale behalten oder weglassen - vor dem Start, damit
+        # ein stundenlanger Lauf nicht mittendrin auf eine Antwort wartet.
+        self._ampr_originale_klaeren(mode)
 
         # Release-Test-Gate (entfernt)
         pass
@@ -17743,6 +18781,18 @@ class PS5ConverterGUI:
         # gaebe es nichts zu rechnen.
         if not self._platz_klaeren(mode, src, target_type):
             return
+        # Der Platzdialog laesst den Zielordner neu waehlen. Bis v1.9.24 las
+        # der Lauf danach weiter den Wert von vorher: Gepackt wurde in den zu
+        # kleinen Ordner, den die Pruefung gerade abgelehnt hatte, und
+        # _save_paths schrieb ihn zurueck in die Einstellungen.
+        if mode not in ("inspect", "dump_validator") \
+                and not self._aufgabe7_liest_kein_ziel(mode, src):
+            _neues_ziel = self.dest_path.get().strip()
+            if _neues_ziel and _neues_ziel != dst_for_checks:
+                dst_for_checks = _neues_ziel
+                ck_dst = dst_for_checks if mode not in ("inspect",) else ""
+                # Eine angebotene Wiederaufnahme gehoert zum alten Ziel.
+                self._active_resume_checkpoint = None
 
         # UI in "laufend"-Zustand versetzen
         self.run_btn.config(state=tk.DISABLED)
@@ -17775,6 +18825,9 @@ class PS5ConverterGUI:
         # Task-weite Fortschritts-Variablen zurücksetzen
         self.task_start_time         = time.monotonic()
         self.task_total_source_bytes = 0
+        # Groessen, die diese Aufgabe schon gemessen hat (siehe
+        # _quellgroesse_mit_meldung) - gelten nur fuer diesen Lauf.
+        self._gemessene_groessen = {}
         self.task_final_output_path  = ""
         self.task_progress      = 0.0
         self.task_displayed     = 0.0
@@ -17837,6 +18890,10 @@ class PS5ConverterGUI:
         self._task_report_path       = ""
         self._checkpoint_last_save_ts = self.task_start_time
         self._mkpfs_zero_compress_count = 0
+        # Der Rueckgabewert der Packmaschine gehoert zu EINEM Lauf. Bis v1.9.24
+        # blieb er stehen, und jeder spaetere Fehlschlag der Sitzung nannte
+        # "Packmaschine endete mit Rueckgabewert ..." - auch Wege ganz ohne mkpfs.
+        self._letzter_mkpfs_exitcode = None
 
         # Initialer Lauf-Checkpoint.
         self._save_runtime_checkpoint(
@@ -17856,6 +18913,12 @@ class PS5ConverterGUI:
         self.monitor_active = True
         self.root.after(PROGRESS_POLL_MS, self._update_progress_gui)
 
+        # Fuer den Faden festhalten, was beim Start galt - er darf die
+        # Tk-Variablen nicht selbst lesen (_get_selected_target_type,
+        # _fehlergrund_ermitteln, _temp_fallback_candidates).
+        self._lauf_zielformat = self._get_selected_target_type()
+        self._lauf_ziel = dst_for_checks
+        self._lauf_variablen_festhalten()
         self._task_thread = threading.Thread(
             target=self._run_engine_thread,
             args=(mode, src, dst_for_checks),
@@ -17883,8 +18946,16 @@ class PS5ConverterGUI:
 
         self._append_to_log(self._t('log.auto.0040'))
 
-        # OSFMount-Laufwerk beim Abbruch sofort dismounten
-        self._force_dismount_all()
+        # OSFMount-Laufwerk beim Abbruch dismounten - in einem eigenen Faden.
+        # _force_dismount_all wartet bis zu 8 s auf den Aufgabenfaden (join)
+        # und versucht danach bis zu fuenfmal abzuhaengen. Bis v1.9.24 lief das
+        # hier im Fensterfaden: Nach "Abbrechen" stand das Fenster bis zu 8 s
+        # still, und STARTEN kam erst danach zurueck. Beim Beenden laeuft
+        # dieselbe Methode seit jeher in einem Faden (on_closing). Einen
+        # Neustart, solange der alte Faden noch arbeitet, verhindert
+        # _launch_task ueber _vorgang_laeuft_noch.
+        threading.Thread(target=self._force_dismount_all, daemon=True,
+                         name="abbruch-abhaengen").start()
 
         # UI sofort zurücksetzen (nicht auf Thread-Ende warten)
         def _reset_abort() -> None:
@@ -18002,13 +19073,29 @@ class PS5ConverterGUI:
             if jetzt - stand["gemeldet"] < 1.0:
                 return
             stand["gemeldet"] = jetzt
-            self._set_progress(None, size_text=self._t(
-                "status.quelle_wird_vermessen",
-                dateien=dateien, groesse=self._fmt_bytes(bytes_bisher)))
+            text = self._t("status.quelle_wird_vermessen",
+                           dateien=dateien, groesse=self._fmt_bytes(bytes_bisher))
+            self._set_progress(None, size_text=text)
+            # Zusaetzlich in die Statuszeile. Das Groessenfeld allein reichte
+            # nicht: Der Anzeige-Takt setzt es alle 100 ms neu (in dieser
+            # Phase leer), und _stillstand_uhr beobachtet nur Balken und
+            # Statuszeile - bis v1.9.24 schrieb sie trotz dieser Meldung nach
+            # 120 s einen Stapelabzug als ERROR ins Protokoll.
+            self._set_status(text)
 
-        return self._get_path_size(
+        groesse = self._get_path_size(
             src, progress_cb=_melden,
             cancel_check=lambda: not self.is_running)
+        if self.is_running and src:
+            # Fuer den Rest dieser Aufgabe merken: _execute_mkpfs vermass
+            # denselben Ordner bis v1.9.24 direkt danach noch einmal blank.
+            # Nach einem Abbruch ist die Zahl ein Teilwert und bleibt ungemerkt.
+            try:
+                self._gemessene_groessen[os.path.normcase(os.path.abspath(src))] = int(groesse)
+            except AttributeError:
+                self._gemessene_groessen = {
+                    os.path.normcase(os.path.abspath(src)): int(groesse)}
+        return groesse
 
     def _get_path_size(
         self,
@@ -19758,12 +20845,18 @@ class PS5ConverterGUI:
 
     def _install_filezilla(self) -> bool:
         """Laedt FileZilla herunter und startet die Installation (Windows)."""
+        im_hauptfaden = threading.current_thread() is threading.main_thread()
         if sys.platform != "win32":
-            messagebox.showwarning(
-                self._t("dialog.title.filezilla_install"),
-                self._t("dialog.msg.filezilla_windows_only"),
-                parent=self.root,
-            )
+            # Dialoge nur aus dem Hauptfaden. Ressourcen-Punkt 21 ruft diese
+            # Methode im Faden auf; dort meldet _run_background_installer.
+            if im_hauptfaden:
+                messagebox.showwarning(
+                    self._t("dialog.title.filezilla_install"),
+                    self._t("dialog.msg.filezilla_windows_only"),
+                    parent=self.root,
+                )
+            else:
+                self._append_to_log(self._t("dialog.msg.filezilla_windows_only") + "\n")
             return False
 
         url = "https://download.filezilla-project.org/client/FileZilla_latest_win64-setup.exe"
@@ -19810,12 +20903,18 @@ class PS5ConverterGUI:
             # und wartete auf eine Installation; ohne Meldung ging die
             # Statuszeile wortlos auf "Bereit" zurueck, und der Grund stand
             # nur im Protokoll, das dabei niemand aufschlaegt.
-            try:
-                messagebox.showerror(
-                    self._t("filezilla.status_installation"),
-                    self._t("filezilla.installation_fehlgeschlagen", fehler=exc))
-            except Exception:
-                pass
+            #
+            # Aber nur aus dem Hauptfaden: Beide Wege, die hier im Faden
+            # ankommen (Ressourcen-Punkt 21, Installation nach der Suche),
+            # melden den Fehlschlag selbst - bis v1.9.24 kam das Fehlerfenster
+            # dort zweimal, das erste aus dem Arbeitsfaden.
+            if im_hauptfaden:
+                try:
+                    messagebox.showerror(
+                        self._t("filezilla.status_installation"),
+                        self._t("filezilla.installation_fehlgeschlagen", fehler=exc))
+                except Exception:
+                    pass
             return False
         finally:
             # Die heruntergeladene Setup-Datei wieder wegraeumen. Sie lag im
@@ -20060,6 +21159,12 @@ class PS5ConverterGUI:
         Returns:
             True wenn die Installation erfolgreich war.
         """
+        if not IST_WINDOWS:
+            # Nichts herunterladen, was hier nicht laeuft (siehe auch
+            # _run_background_installer, das die Weiche schon vorher stellt).
+            self._append_to_log(self._t("log.manual.osfmount_windows_only",
+                                        system=platform.system()))
+            return False
         url = "https://www.osforensics.com/downloads/osfmount.exe"
         installer = os.path.join(self._get_runtime_temp_dir(), "osfmount_setup.exe")
         try:
@@ -20118,10 +21223,25 @@ class PS5ConverterGUI:
                 pass
             return False
 
-    def _run_background_installer(self, title: str, install_func, verify_func, task_label: str = "") -> None:
-        """Startet einen Installer in einem Daemon-Thread und meldet Ergebnis per UI."""
+    def _run_background_installer(self, title: str, install_func, verify_func, task_label: str = "",
+                                  nur_windows: bool = False) -> None:
+        """Startet einen Installer in einem Daemon-Thread und meldet Ergebnis per UI.
+
+        ``nur_windows``: Die Weiche steht hier, im Hauptfaden, vor dem Faden.
+        Bis v1.9.24 luden die Punkte 19-21 auch unter macOS und Linux einen
+        Windows-Installer herunter (OSFMount) oder meldeten nur
+        "fehlgeschlagen" ohne Grund (Dokan); FileZilla oeffnete seinen Hinweis
+        aus dem Faden - und danach kam das Fehlerfenster ein zweites Mal.
+        """
         prefix = f"[{task_label}] " if task_label else ""
         display_title = f"{prefix}{title}"
+        if nur_windows and not IST_WINDOWS:
+            messagebox.showinfo(
+                display_title,
+                self._t("dialog.msg.install_windows_only", title=title),
+                parent=self.root,
+            )
+            return
         if getattr(self, "_resource_install_running", False):
             messagebox.showinfo(
                 self._t("dialog.title.installation_running"),
@@ -20213,6 +21333,7 @@ class PS5ConverterGUI:
             install_func=self._install_osfmount,
             verify_func=lambda: self._find_osfmount() is not None,
             task_label="19",
+            nur_windows=True,
         )
 
     def _install_dokan2_background(self) -> None:
@@ -20222,6 +21343,7 @@ class PS5ConverterGUI:
             install_func=self._install_dokan2_silent,
             verify_func=self._find_dokan_driver,
             task_label="20",
+            nur_windows=True,
         )
 
     def _install_filezilla_background(self) -> None:
@@ -20231,6 +21353,7 @@ class PS5ConverterGUI:
             install_func=self._install_filezilla,
             verify_func=lambda: self._find_filezilla() is not None,
             task_label="21",
+            nur_windows=True,
         )
 
     def _get_free_drive_letter(self) -> str | None:
@@ -20413,6 +21536,14 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.auto.0070'))
             return False
 
+        if is_pack_folder_cmd:
+            # Ueber den ampr_emu.index entscheidet dieses Programm, nicht
+            # MkPFS - siehe mkpfs_argumente_ohne_ampr_index. Die Quelle steht
+            # bei "pack folder" immer an vorletzter Stelle.
+            if not self._ampr_index_vor_dem_packen(args[-2] if len(args) >= 4 else ""):
+                return False
+            args = mkpfs_argumente_ohne_ampr_index(args)
+
         self._append_to_log(self._t('log.auto.0071', v0=' '.join(args)))
 
         # Queue leeren (Reste aus vorherigem Aufruf entfernen)
@@ -20466,7 +21597,17 @@ class PS5ConverterGUI:
                 if os.path.isfile(monitor_source_file):
                     self._monitor_source_bytes = os.path.getsize(monitor_source_file)
                 elif os.path.isdir(monitor_source_file):
-                    self._monitor_source_bytes = self._get_path_size(monitor_source_file)
+                    # Erst, was schon gemessen ist. Bis v1.9.24 stand hier ein
+                    # blanker os.walk ueber den ganzen Ordner - direkt vor dem
+                    # Packen, ohne Meldung und ohne Abbruch (51 GB mit 17.000
+                    # Dateien auf USB: 37 min), obwohl die Aufgabe ihn meist
+                    # gerade erst vermessen hatte.
+                    schluessel = os.path.normcase(os.path.abspath(monitor_source_file))
+                    bekannt = (getattr(self, "_gemessene_groessen", {}) or {}).get(schluessel, 0) \
+                        or self._bekannte_quellgroesse(monitor_source_file)
+                    self._monitor_source_bytes = (
+                        bekannt if bekannt > 0
+                        else self._quellgroesse_mit_meldung(monitor_source_file))
                 else:
                     self._monitor_source_bytes = self.task_total_source_bytes
             else:
@@ -20479,12 +21620,19 @@ class PS5ConverterGUI:
         # Ergebnis-Container für den Thread
         result: dict[str, object] = {"exit_code": -1}
         engine_done = threading.Event()
-        # Der Abbruchweg braucht einen Griff darauf: _kill_task und die
-        # beiden Beenden-Wege setzen es, um den Messfaden sofort zu
-        # stoppen. Ohne diese Zeile lasen sie ein Attribut, das es nicht
-        # gab - Schritt 3 ihrer Reihenfolge lief ins Leere, und der Faden
-        # pollte weiter, bis mkpfs von sich aus fertig war.
-        self._engine_done_event = engine_done
+        # Der Abbruchweg braucht einen Griff, um den Messfaden sofort zu
+        # stoppen: _kill_task und die beiden Beenden-Wege setzen
+        # _engine_done_event.
+        #
+        # Das ist ein EIGENES Ereignis, nicht engine_done. Bis v1.9.24 war es
+        # dasselbe - der Abbruch meldete damit "Engine fertig", obwohl mkpfs im
+        # Prozess weiterlief (es laesst sich nicht unterbrechen). Die Warte-
+        # schleife unten endete deshalb ohne abort_requested, der Abbruchzweig
+        # lief nie, _pending_mkpfs_engine_done blieb leer, und ein Neustart
+        # geriet an den noch schreibenden alten Lauf: gesperrte .tmp-Datei,
+        # fremde Prozentzeilen im Balken, wartende Sperre.
+        monitor_stop = threading.Event()
+        self._engine_done_event = monitor_stop
 
         def _run_engine() -> None:
             """Führt mkpfs in einem eigenen Thread aus.
@@ -20495,46 +21643,6 @@ class PS5ConverterGUI:
             und aktualisiert Fortschrittsbalken und Log live.
             """
             import traceback as _tb
-
-            class _QueueWriter:
-                """Schreibt Zeilen in eine Queue und puffert unvollständige Zeilen."""
-
-                def __init__(self, q: queue.Queue) -> None:
-                    self._q = q
-                    self._buf = ""
-
-                def write(self, text: str) -> int:
-                    """Schreibt Text in den Puffer und leert ihn zeilenweise.
-
-                    Getrennt wird am **zuerst** auftretenden Zeilenende, egal ob
-                    \\n oder \\r. Die frühere Fassung suchte erst nach \\n und
-                    erst danach nach \\r: Enthielt ein Block "A\\rB\\nC", wurde
-                    "A\\rB" als EINE Zeile genommen - mit eingebettetem \\r. Im
-                    Protokollfeld klebten dann zwei Fortschrittsbalken
-                    aneinander ("... ETA 1s[####] 48% compress ...").
-                    """
-                    self._buf += text
-                    while True:
-                        stellen = [i for i in (self._buf.find("\n"), self._buf.find("\r"))
-                                   if i >= 0]
-                        if not stellen:
-                            break
-                        idx = min(stellen)
-                        line = self._buf[:idx].strip()
-                        self._buf = self._buf[idx + 1:]
-                        if line:
-                            self._q.put(line)
-                    return len(text)
-
-                def flush(self) -> None:
-                    """Schreibt verbleibenden Puffer-Inhalt in die Queue."""
-                    if self._buf.strip():
-                        self._q.put(self._buf.strip())
-                        self._buf = ""
-
-                def fileno(self) -> int:  # noqa: D401
-                    """Dummy für Kompatibilität mit Bibliotheken die fileno() aufrufen."""
-                    raise io.UnsupportedOperation("fileno")
 
             writer = _QueueWriter(self.engine_output_queue)
             old_stdout = sys.stdout
@@ -20674,7 +21782,7 @@ class PS5ConverterGUI:
             prev_observed_bytes: int = 0
             prev_observed_ts: float = start_time
 
-            while not engine_done.is_set():
+            while not engine_done.is_set() and not monitor_stop.is_set():
                 last_engine_phase = str(getattr(self, "_mkpfs_last_engine_phase", "") or "").lower()
                 last_engine_pct = getattr(self, "_mkpfs_last_engine_pct", None)
                 suppress_monitor_progress = (
@@ -20720,7 +21828,7 @@ class PS5ConverterGUI:
                     real_frac = None
 
                 if suppress_monitor_progress:
-                    engine_done.wait(timeout=0.15)
+                    monitor_stop.wait(timeout=0.15)
                     continue
 
                 if real_frac is not None and real_frac > 0.001:
@@ -20755,7 +21863,7 @@ class PS5ConverterGUI:
                 if mapped > self.task_progress:
                     self.task_progress = mapped
 
-                engine_done.wait(timeout=0.15)  # 150ms Intervall
+                monitor_stop.wait(timeout=0.15)  # 150ms Intervall
 
         file_monitor_thread: threading.Thread | None = None
         is_unpack_cmd = len(args) >= 1 and args[0] == "unpack"
@@ -20789,6 +21897,7 @@ class PS5ConverterGUI:
                 # _last_engine_output_ts bleibt ausschliesslich vom Engine-Output getrieben.
 
         # Sicherstellen dass beide Threads fertig sind
+        monitor_stop.set()
         if abort_requested:
             # Beim Abbruch NICHT lange auf Join warten, damit die GUI sofort reagiert.
             engine_thread.join(timeout=0.2)
@@ -20873,8 +21982,11 @@ class PS5ConverterGUI:
         cp_dst = dst if mode not in ("inspect",) else ""
         verification_result: dict[str, Any] | None = None
         task_temp_baseline = self._snapshot_exit_cleanup_paths()
-        # Jede Aufgabe faengt mit unberuehrtem Integrationsstand an.
+        # Jede Aufgabe faengt mit unberuehrtem Integrationsstand an - auch beim
+        # ampr_emu.index (siehe _ampr_index_vor_dem_packen).
         self._integration_erledigt = False
+        self._ampr_index_entschieden = False
+        self._ampr_ordner_ist_kopie = False
 
         self._save_paths(src, dst)
         self._save_runtime_checkpoint(
@@ -20909,6 +22021,29 @@ class PS5ConverterGUI:
         # Wird im Hintergrund-Thread berechnet, Dialog im Haupt-Thread.
         # ------------------------------------------------------------------
         output_exists_path = self._get_expected_output_path(mode, src, dst)
+        if output_exists_path and os.path.isdir(output_exists_path) \
+                and self._pfad_liegt_in(src, output_exists_path):
+            # Die Quelle liegt IN dem Ordner, der als Ergebnis ersetzt wuerde:
+            # "D:\PS5\Spiel\Spiel.exfat" mit ZIEL "D:\PS5" und Zielformat
+            # Dump-Ordner ergibt "D:\PS5\Spiel". Bis v1.9.24 kam hier die
+            # Rueckfrage "existiert bereits - ueberschreiben?", und ein Ja
+            # (im CLI schon --yes) loeschte den ganzen Ordner samt Quelle.
+            # Geschuetzt war nur der Fall, dass Ziel und Quelle dieselbe Datei
+            # sind.
+            meldung = self._t("dialog.msg.ziel_enthaelt_quelle",
+                              ziel=output_exists_path, quelle=src)
+            self._append_to_log(self._t("log.ziel_enthaelt_quelle",
+                                        ziel=output_exists_path))
+            try:
+                self.root.after(0, lambda m=meldung: messagebox.showerror(
+                    self._t("dialog.title.error"), m))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Hinweis Ziel enthaelt Quelle nicht anzeigbar: %s", exc)
+            self._set_status(self._t("status.cancelled"))
+            self.is_running = False
+            self.monitor_active = False
+            self._reset_ui_after_task()
+            return
         if output_exists_path and os.path.exists(output_exists_path):
             # Dialog muss im Haupt-Thread laufen – Event zur Synchronisation
             _overwrite_event  = threading.Event()
@@ -20931,6 +22066,13 @@ class PS5ConverterGUI:
             if not _overwrite_result[0]:
                 self._append_to_log(self._t('log.auto.0075'))
                 self._set_status(self._t("status.cancelled"))
+                # Dieser Ausstieg liegt vor dem try/finally, das die Merker
+                # sonst zuruecksetzt. Bis v1.9.24 blieb is_running danach
+                # stehen: Der Anzeige-Takt lief weiter, die Stillstandsuhr
+                # schrieb nach 120 s einen Stapelabzug als ERROR, und Beenden
+                # fragte nach einer Aufgabe, die gar nicht lief.
+                self.is_running = False
+                self.monitor_active = False
                 self._reset_ui_after_task()
                 return
 
@@ -20960,6 +22102,8 @@ class PS5ConverterGUI:
                 except OSError as exc:
                     self._append_to_log(self._t('log.auto.0078', v0=exc))
                     self._set_status(self._t("status.error"))
+                    self.is_running = False
+                    self.monitor_active = False
                     self._reset_ui_after_task()
                     return
 
@@ -20986,9 +22130,17 @@ class PS5ConverterGUI:
                 success = self._mode_dump_validator(src)
 
             if self.is_running and success:
+                # Sammelkonvertierung: task_final_output_path ist der Zielordner,
+                # und die Engine-Werte stammen nur von der letzten Datei.
+                sammel = mode == "batch_convert"
+                sammel_ergebnisse = [
+                    str(eintrag.get("output") or "")
+                    for eintrag in (getattr(self, "task_batch_results", []) or [])
+                    if eintrag.get("ok") and eintrag.get("output")
+                ] if sammel else []
                 # Größen-Anzeige: Build-Summary-Werte bevorzugen (exakte Engine-Werte),
                 # Fallback auf Dateigrößen-Berechnung.
-                if self.task_uncompressed_str and self.task_stored_str:
+                if not sammel and self.task_uncompressed_str and self.task_stored_str:
                     size_text = (
                         f"{self.task_uncompressed_str} → {self.task_stored_str}"
                     )
@@ -20999,8 +22151,16 @@ class PS5ConverterGUI:
                     # Gigabyte - bei 98 % und bisher ohne ein Wort. Die
                     # meldende Fassung haelt die Anzeige wach und laesst sich
                     # abbrechen; bei einer einzelnen Datei kostet sie nichts.
-                    final_size = self._quellgroesse_mit_meldung(
-                        self.task_final_output_path)
+                    #
+                    # Die Sammelkonvertierung zaehlt ihre eigenen Ergebnisse.
+                    # Bis v1.9.24 wurde dort der ganze Zielordner vermessen -
+                    # samt allem, was sonst darin lag, als "Ergebnisgroesse".
+                    if sammel:
+                        final_size = sum(self._quellgroesse_mit_meldung(pfad)
+                                         for pfad in sammel_ergebnisse)
+                    else:
+                        final_size = self._quellgroesse_mit_meldung(
+                            self.task_final_output_path)
                     if src_size > 0 and final_size > 0:
                         size_text = (
                             f"{self._fmt_bytes(src_size)} → "
@@ -21065,26 +22225,16 @@ class PS5ConverterGUI:
                 self.root.after(0, lambda: self.status_label.config(
                     text=self._format_phase_status(self._completion_status_text(mode, "calc_sizes"))
                 ))
-                size_text = ""  # Standardwert (z.B. dump_validator hat keine Ausgabedatei)
-                if self.task_uncompressed_str and self.task_stored_str:
-                    size_text = (
-                        f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
-                    )
-                elif final_path and os.path.exists(final_path):
-                    src_size   = self.task_total_source_bytes
-                    final_size = self._get_path_size(final_path)
-                    if src_size > 0 and final_size > 0:
-                        size_text = (
-                            f"{self._fmt_bytes(src_size)} \u2192 "
-                            f"{self._fmt_bytes(final_size)}"
-                        )
-                    elif final_size > 0:
-                        size_text = self._fmt_bytes(final_size)
+                # size_text steht seit dem Anfang dieses Blocks fest. Hier lief
+                # bis v1.9.24 eine zweite Messung ueber denselben Pfad - ohne
+                # Meldung und ohne Abbruch, und ihr Ergebnis ersetzte das der
+                # ersten. Die stumme Phase bei 98 %, die v1.9.23 behoben hatte,
+                # kam so bei jedem Ordner-Ergebnis zurueck.
 
                 # Schritt 4: Verifizierung – erst prüfen, dann den Status setzen.
                 # Umgekehrt stünde bei einer fehlgeschlagenen Prüfung weiterhin
                 # "Abschlussprüfung erfolgreich" im Statusfeld.
-                verification_result = self._verify_output_artifact(mode, final_path)
+                verification_result = self._abschlusspruefung(mode, final_path)
                 verification_ok = (
                     mode == "dump_validator"
                     or bool(verification_result.get("ok", False))
@@ -21199,6 +22349,9 @@ class PS5ConverterGUI:
                             time.monotonic() - float(self.task_start_time or 0.0))
                     except (TypeError, ValueError):
                         self._letzte_aufgabe_dauer_s = 0.0
+                    # Womit der Durchsatz verglichen werden darf (Diagnose).
+                    self._letzte_aufgabe_art = (
+                        mode, str(getattr(self, "_lauf_zielformat", "") or ""))
                     if hasattr(self, "size_label") and _size_text:
                         self.size_label.config(text=_size_text)
                     self.run_btn.config(state=tk.NORMAL)
@@ -21225,7 +22378,10 @@ class PS5ConverterGUI:
                         _rep = str(getattr(self, "_task_report_path", "") or "")
                         _msg = self._t("dialog.msg.task_completed_successfully")
                         if _rep:
-                            _msg += f"\n\nBericht:\n{_rep}"
+                            # Bis v1.9.24 stand "Bericht:" hier fest im
+                            # Quelltext - auch in der englischen Oberflaeche,
+                            # nach jeder erfolgreichen Aufgabe.
+                            _msg += "\n\n" + self._t("dialog.msg.bericht_kopf") + "\n" + _rep
                         messagebox.showinfo(
                             self._t("dialog.title.success"), _msg
                         )
@@ -21234,7 +22390,7 @@ class PS5ConverterGUI:
             elif not self.is_running:
                 self._set_status(self._t("status.cancelled"))
                 self._reset_ui_after_task()
-                verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+                verification_result = self._abschlusspruefung(mode, getattr(self, "task_final_output_path", ""))
                 report_path = self._write_task_report(
                     mode=mode,
                     src=src,
@@ -21260,7 +22416,7 @@ class PS5ConverterGUI:
             else:
                 self._set_status(self._t("status.error_occurred"))
                 self._reset_ui_after_task()
-                verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+                verification_result = self._abschlusspruefung(mode, getattr(self, "task_final_output_path", ""))
                 report_path = self._write_task_report(
                     mode=mode,
                     src=src,
@@ -21304,7 +22460,8 @@ class PS5ConverterGUI:
                     error_message += "\n\n" + self._t(
                         "dialog.msg.fehlergrund_kopf") + "\n" + gemessen
                 if report_path:
-                    error_message += f"\n\nBericht:\n{report_path}"
+                    error_message += ("\n\n" + self._t("dialog.msg.bericht_kopf")
+                                      + "\n" + report_path)
                 self.root.after(0, lambda message=error_message, titel=fehler_titel:
                                 messagebox.showerror(titel, message))
 
@@ -21317,7 +22474,7 @@ class PS5ConverterGUI:
                 self._t("dialog.msg.conversion_aborted_unexpected", error=e[:300]),
             ))
             self._reset_ui_after_task()
-            verification_result = self._verify_output_artifact(mode, getattr(self, "task_final_output_path", ""))
+            verification_result = self._abschlusspruefung(mode, getattr(self, "task_final_output_path", ""))
             report_path = self._write_task_report(
                 mode=mode,
                 src=src,
@@ -21444,6 +22601,14 @@ class PS5ConverterGUI:
                 self._ffpkg_progress_percent = None
                 self._ffpkg_progress_step_start = 0.0
                 self._ffpkg_progress_step_end = 0.0
+                # Jede Datei bekommt ihren eigenen Einbau. Der Merker verhindert
+                # nur den doppelten Einbau INNERHALB eines Weges; stand er noch
+                # von Datei 1, kehrte _integration_anwenden bis v1.9.24 bei
+                # Datei 2 bis n sofort zurueck - ohne AMPR EMU, ohne BACKPORT,
+                # ohne Protokollzeile, und trotzdem "erfolgreich".
+                self._integration_erledigt = False
+                self._ampr_index_entschieden = False
+                self._ampr_ordner_ist_kopie = False
                 self._append_to_log(self._t('log.auto.0087', v0=idx, v1=len(sources), v2=os.path.basename(candidate)))
                 source_type = self._detect_source_type(candidate)
                 reason = self._conversion_block_reason(source_type, target_type, mode, candidate)
@@ -21608,7 +22773,8 @@ class PS5ConverterGUI:
         source_name = os.path.basename(os.path.normpath(src)) if os.path.isdir(src) else os.path.splitext(os.path.basename(src))[0]
         return str(normalize_output_path(os.path.join(dst, f"{source_name}.ffpkg")))
 
-    def _validate_ffpkg_artifact(self, image_path: str, *, base_result=None):
+    def _validate_ffpkg_artifact(self, image_path: str, *, base_result=None,
+                                 abbruch=None):
         """Prueft ein fertiges .ffpkg. Siehe abbild_pruefen.
 
         **Kein ``expected_file_count`` mehr.** Bis v1.9.5 nahm diese
@@ -21627,9 +22793,32 @@ class PS5ConverterGUI:
 
         Die Zaehlung selbst ist nicht verlorengegangen; sie laeuft weiterhin
         ueber ``_verify_ffpkg_file_count_via_mount``.
+
+        ``abbruch``: ``() -> bool``, nur vom .ffpkg-Bau mitgegeben. Ohne ihn
+        liest die Abnahme wie bisher bis zum Ende - ein ``not is_running``
+        als Vorgabe haette jede Pruefung ausserhalb einer Aufgabe sofort
+        abgebrochen.
         """
         return self._pruefstand()._validate_ffpkg_artifact(
-            image_path, base_result=base_result)
+            image_path, base_result=base_result, abbruch=abbruch)
+
+    @staticmethod
+    def _ffpkg_schrittgrenze(start: float, ende: float) -> float:
+        """Die Grenze zwischen Schritt 2 und 3 des FFPKG-Baus auf dem Balken.
+
+        Nach dem gemessenen Zeitverhaeltnis rund 55 : 45 (743-MB-Paket: 49 von
+        87 Sekunden entfielen auf Schritt 3). Bis zum 17.09.2026 stand die
+        Rechnung im Bau selbst, mit einer Mindestspanne von 2 - bei einem
+        schmalen Bereich wie 97 bis 98 lag die Grenze dadurch hinter dem Ende
+        (98,1). Der Test rechnete sie nach, statt sie zu pruefen (Befund T17).
+
+        Returns:
+            Ein Wert in ``[start, ende]``; ``start``, wenn der Bereich leer ist.
+        """
+        start, ende = float(start), float(ende)
+        if ende <= start:
+            return start
+        return start + (ende - start) * 0.55
 
     def _build_ffpkg_from_folder(
         self,
@@ -21690,6 +22879,11 @@ class PS5ConverterGUI:
             melden = von is not None and bis is not None and gesamt > 0
             with open(path, "rb") as handle:
                 for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    # Abbruch je MiB. Bis v1.9.24 las Schritt 3 nach
+                    # "Abbrechen" jede Pruefsumme bis zum Ende - bei einem
+                    # 60-GB-Paket zweimal viele Minuten.
+                    if not self.is_running:
+                        raise _KopieAbgebrochen()
                     digest.update(chunk)
                     if melden:
                         gelesen += len(chunk)
@@ -21712,6 +22906,10 @@ class PS5ConverterGUI:
             kopiert = 0
             with open(quelle, "rb") as q, open(ziel, "wb") as z:
                 for chunk in iter(lambda: q.read(4 * 1024 * 1024), b""):
+                    if not self.is_running:
+                        # Die halbe Uebertragungsdatei raeumt der Aufrufer weg
+                        # (transfer_path steht zu diesem Zeitpunkt fest).
+                        raise _KopieAbgebrochen()
                     z.write(chunk)
                     if gesamt > 0:
                         kopiert += len(chunk)
@@ -21769,8 +22967,7 @@ class PS5ConverterGUI:
         # Der Bau bleibt insgesamt im Bereich [progress_start, progress_end], den
         # der Aufrufer vorgibt; nur die Grenze zwischen Schritt 2 und 3 wandert
         # nach dem gemessenen Zeitverhaeltnis (rund 55 : 45).
-        _spanne = max(2.0, float(progress_end) - float(progress_start))
-        _schritt2_ende = float(progress_start) + _spanne * 0.55
+        _schritt2_ende = self._ffpkg_schrittgrenze(progress_start, progress_end)
         self._ffpkg_schritt3_von = _schritt2_ende
         self._ffpkg_schritt3_bis = float(progress_end)
         self.task_num_steps = 3
@@ -21918,7 +23115,14 @@ class PS5ConverterGUI:
                     return _von + (_bis - _von) * max(0.0, min(1.0, anteil))
                 self.task_progress = max(self.task_progress, _s3(0.0))
                 self.progress_engine.begin_validate(self._t("progress.validate.ufs2_staging"))
-                candidate_verification = self._validate_ffpkg_artifact(stage_path)
+                candidate_verification = self._validate_ffpkg_artifact(
+                    stage_path, abbruch=lambda: not self.is_running)
+                # Schritt 3 prueft den Abbruch nach jedem Teilschritt. Bis
+                # v1.9.24 lief er nach "Abbrechen" komplett weiter - Pruefung,
+                # Dateizahl, zwei Pruefsummen, Uebertragung - und legte am Ende
+                # per os.replace trotzdem die fertige Datei ans Ziel.
+                if not self.is_running:
+                    return False
                 self.task_progress = max(self.task_progress, _s3(0.14))
                 attempt_diagnostic["staging_validation"] = candidate_verification
                 if not candidate_verification.get("ok"):
@@ -21935,6 +23139,8 @@ class PS5ConverterGUI:
                 # Inode-Dichte kann sonst ein strukturell gültiges, aber inhaltlich
                 # unvollständiges Image erzeugen, das erst auf der PS5 auffällt.
                 content_check = self._verify_ffpkg_file_count_via_mount(stage_path, file_count)
+                if not self.is_running:
+                    return False
                 self.task_progress = max(self.task_progress, _s3(0.32))
                 attempt_diagnostic["content_check"] = content_check
                 if content_check.get("checked") and not content_check.get("ok"):
@@ -21983,6 +23189,13 @@ class PS5ConverterGUI:
                     attempt_diagnostic["transfer_sha256"] = transfer_sha256
                     if transfer_sha256 != staging_sha256:
                         raise OSError("SHA-256-Abgleich nach Zielvolume-Transfer fehlgeschlagen.")
+                except _KopieAbgebrochen:
+                    # Kein Transferfehler, sondern der Anwender - nicht als
+                    # "Zielvolume-Transfer fehlgeschlagen" protokollieren und
+                    # kein naechstes Profil versuchen. Die Teildatei raeumt
+                    # das finally unten weg.
+                    attempt_diagnostic["result"] = "abgebrochen"
+                    return False
                 except Exception as exc:
                     detail = f"Zielvolume-Transfer fehlgeschlagen: {exc}"
                     attempt_diagnostic["result"] = detail
@@ -21994,7 +23207,10 @@ class PS5ConverterGUI:
                     continue
 
                 self.progress_engine.begin_validate(self._t("progress.validate.ufs2_after_transfer"))
-                target_verification = self._validate_ffpkg_artifact(transfer_path)
+                target_verification = self._validate_ffpkg_artifact(
+                    transfer_path, abbruch=lambda: not self.is_running)
+                if not self.is_running:
+                    return False
                 self.task_progress = max(self.task_progress, _s3(1.0))
                 attempt_diagnostic["target_validation"] = target_verification
                 if not target_verification.get("ok"):
@@ -22021,6 +23237,10 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('log.auto.0105', v0=detail))
                 return False
 
+            # Letzte Gelegenheit: Nach einem Abbruch darf nichts mehr unter dem
+            # Endnamen erscheinen (das finally entfernt die Uebertragungsdatei).
+            if not self.is_running:
+                return False
             os.replace(transfer_path, final_path)
             transfer_path = ""
             self.task_final_output_path = final_path
@@ -22050,9 +23270,8 @@ class PS5ConverterGUI:
         Verzeichniseintrag und kostet weder Zeit noch Platz. Nur wenn Buehne und
         Ziel auf verschiedenen Datentraegern liegen, muss wirklich kopiert werden.
 
-        ``_selber_datentraeger`` vergleicht nur Laufwerksbuchstaben. Ein in einen
-        Ordner eingehaengtes Volume sieht dort gleich aus, ist es aber nicht -
-        dann wirft ``os.replace``, und es wird doch kopiert.
+        ``_selber_datentraeger`` vergleicht die Geraetekennung. Scheitert
+        ``os.replace`` trotzdem (etwa bei Rechten), wird kopiert.
 
         Args:
             kopieren: ``(quelle, ziel) -> None``, die blockweise Kopie mit Anzeige.
@@ -22092,17 +23311,78 @@ class PS5ConverterGUI:
             task_label="Dump-Ordner zu FFPKG",
         )
 
+    def _balkenbereich(self) -> tuple:
+        """Der Abschnitt des Balkens, in dem der laufende Weg gerade arbeitet."""
+        return (balkenzahl(self, "_batch_von", 0.0), balkenzahl(self, "_batch_bis", 100.0))
+
+    def _balkenabschnitt_beginnen(self, aussen: tuple, nummer: int, anzahl: int) -> None:
+        """Legt Stufe ``nummer`` von ``anzahl`` auf ihren Teil des Balkens.
+
+        Zweistufige Wege - erst auspacken, dann neu bauen - liessen bis v1.9.24
+        beide Stufen ueber die volle Skala laufen. Der Fortschritt ist strikt
+        vorwaerts; die zweite Stufe begann also beim Endstand des Auspackens,
+        und der Balken stand ihre ganze Dauer bei 98-99 % - beim Packen oft
+        laenger, als das Auspacken gedauert hatte. Jetzt bekommt jede Stufe
+        ihren Teil, ueber dieselbe Abbildung wie die Dateien der
+        Sammelkonvertierung (siehe _balken_anzeigewert). In der
+        Sammelkonvertierung teilt sich der Abschnitt der Datei.
+
+        Args:
+            aussen: ``_balkenbereich()`` vor dem Weg; der Aufrufer stellt es
+                am Ende wieder her.
+        """
+        von, bis = aussen
+        breite = (bis - von) / max(1, anzahl)
+        self._batch_von = von + (nummer - 1) * breite
+        self._batch_bis = von + nummer * breite
+        if nummer > 1:
+            self._teilfortschritt_zuruecksetzen()
+
+    def _teilfortschritt_zuruecksetzen(self) -> None:
+        """Startet den inneren Fortschritt fuer die naechste Stufe bei null.
+
+        Dieselben Felder, die die Sammelkonvertierung je Datei zuruecksetzt -
+        sonst blockiert der hohe Endstand der vorigen Stufe jeden kleineren Wert.
+        """
+        self.task_progress = 0.0
+        self.task_displayed = 0.0
+        self.task_num_steps = 1
+        self.task_current_step = 0
+        self.task_step_ends = []
+        self.task_stored_str = ""
+        self.task_uncompressed_str = ""
+        self._copy_total_bytes = 0
+        self._copy_done_bytes = 0
+        self._copy_total_exact = False
+        self._monitor_total_bytes = 0
+        self._monitor_done_bytes = 0
+        self._monitor_total_exact = False
+        self._monitor_rate_bps = 0.0
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+        self._mkpfs_eta_initial = 0.0
+        self._mkpfs_last_engine_phase = ""
+        self._mkpfs_last_engine_pct = None
+        self._mkpfs_seen_engine_percent = False
+        self._ffpkg_progress_active = False
+        self._ffpkg_progress_percent = None
+        self._ffpkg_progress_step_start = 0.0
+        self._ffpkg_progress_step_end = 0.0
+
     def _mode_ffpfsc_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 2: FFPFSC in temporären Dump entpacken und als FFPKG neu schreiben."""
         temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_ffpkg_",
                                   dir_path=self._dump_ordner_basis(dst))
+        aussen = self._balkenbereich()
         try:
+            self._balkenabschnitt_beginnen(aussen, 1, 2)
             if not self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=1):
                 return False
             dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
             if not os.path.isdir(dump_dir):
                 self._append_to_log(self._t('log.auto.0107'))
                 return False
+            self._balkenabschnitt_beginnen(aussen, 2, 2)
             # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
             # Arbeitskopie, die Quelle des Benutzers ist eine Datei.
             dump_dir = self._integration_anwenden(dump_dir)
@@ -22115,6 +23395,7 @@ class PS5ConverterGUI:
                 task_label="FFPFSC zu FFPKG",
             )
         finally:
+            self._batch_von, self._batch_bis = aussen
             _rmtree_force(temp_root)
 
     def _mode_ffpfsc_umpacken(self, src: str, dst: str, *, uncompressed: bool) -> bool:
@@ -22137,15 +23418,19 @@ class PS5ConverterGUI:
         """
         temp_root = self._mkdtemp(prefix="ps5conv_ffpfsc_repack_",
                                   dir_path=self._dump_ordner_basis(dst))
+        aussen = self._balkenbereich()
         try:
+            self._balkenabschnitt_beginnen(aussen, 1, 2)
             if not self._mode_unpack_to_game_folder(src, temp_root, progress_task_index=1):
                 return False
             dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
             if not os.path.isdir(dump_dir):
                 self._append_to_log(self._t('log.auto.0107'))
                 return False
+            self._balkenabschnitt_beginnen(aussen, 2, 2)
             return self._mode_pack_folder(dump_dir, dst, uncompressed=uncompressed)
         finally:
+            self._batch_von, self._batch_bis = aussen
             _rmtree_force(temp_root)
 
     def _mode_abbild_zu_ffpfs(self, src: str, dst: str, *, quelle: str,
@@ -22183,7 +23468,9 @@ class PS5ConverterGUI:
         ziel_endung = "ffpfs" if uncompressed else "ffpfsc"
         temp_root = self._mkdtemp(prefix="ps5conv_%s_%s_" % (quelle, ziel_endung),
                                   dir_path=self._dump_ordner_basis(dst))
+        aussen = self._balkenbereich()
         try:
+            self._balkenabschnitt_beginnen(aussen, 1, 2)
             if quelle == "exfat":
                 entpackt = self._mode_exfat_to_folder(src, temp_root, progress_task_index=2)
             elif quelle == "ffpfsc":
@@ -22206,6 +23493,7 @@ class PS5ConverterGUI:
                     self._append_to_log(self._t('log.auto.0108'))
                     return False
                 dump_dir = andere[0]
+            self._balkenabschnitt_beginnen(aussen, 2, 2)
             # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
             # Arbeitskopie, die Quelle des Benutzers ist eine Datei. Der
             # Aufruf muss trotzdem hier stehen: Er setzt den Merker, mit dem
@@ -22216,19 +23504,23 @@ class PS5ConverterGUI:
                 return False
             return self._mode_pack_folder(dump_dir, dst, uncompressed=uncompressed)
         finally:
+            self._batch_von, self._batch_bis = aussen
             _rmtree_force(temp_root)
 
     def _mode_exfat_to_ffpkg(self, src: str, dst: str) -> bool:
         """Aufgabe 3: exFAT in temporären Dump extrahieren und als FFPKG neu schreiben."""
         temp_root = self._mkdtemp(prefix="ps5conv_exfat_ffpkg_",
                                   dir_path=self._dump_ordner_basis(dst))
+        aussen = self._balkenbereich()
         try:
+            self._balkenabschnitt_beginnen(aussen, 1, 2)
             if not self._mode_exfat_to_folder(src, temp_root, progress_task_index=2):
                 return False
             dump_dir = os.path.join(temp_root, os.path.splitext(os.path.basename(src))[0])
             if not os.path.isdir(dump_dir):
                 self._append_to_log(self._t('log.auto.0108'))
                 return False
+            self._balkenabschnitt_beginnen(aussen, 2, 2)
             # Der Ordner liegt im Temp-Verzeichnis - hier braucht es keine
             # Arbeitskopie, die Quelle des Benutzers ist eine Datei.
             dump_dir = self._integration_anwenden(dump_dir)
@@ -22241,6 +23533,7 @@ class PS5ConverterGUI:
                 task_label="exFAT zu FFPKG",
             )
         finally:
+            self._batch_von, self._batch_bis = aussen
             _rmtree_force(temp_root)
 
     def _mode_ffpkg_to_ffpkg(self, src: str, dst: str) -> bool:
@@ -22252,7 +23545,7 @@ class PS5ConverterGUI:
             if not self._extract_ffpkg_to_folder_via_ufs2tool(
                 src,
                 dump_dir,
-                status_prefix="FFPKG-Repack",
+                status_prefix=self._t("status.prefix_ffpkg_repack"),
                 progress_start=5.0,
                 progress_end=50.0,
             ):
@@ -22322,7 +23615,7 @@ class PS5ConverterGUI:
         ok = self._extract_ffpkg_to_folder_via_ufs2tool(
             src,
             final_output,
-            status_prefix="FFPKG-Extraktion",
+            status_prefix=self._t("status.prefix_ffpkg_extraktion"),
             progress_start=5.0,
             progress_end=98.0,
         )
@@ -22549,7 +23842,7 @@ class PS5ConverterGUI:
         _last_phase1_log = [0.0]
         _phase1_start = 1.5
         _phase1_live_end = 4.9
-        _phase1_expected_total = [int(getattr(self, "_last_source_size_bytes", 0) or 0)]
+        _phase1_expected_total = [self._bekannte_quellgroesse(src)]
 
         def _phase1_scan_ping(done_bytes: int, scanned_files: int) -> None:
             if not self.is_running:
@@ -22717,6 +24010,8 @@ class PS5ConverterGUI:
 
         actual_output = self._finalize_staged_pack_output(pack_out, final_output)
         self.task_final_output_path = actual_output
+        if not self._ergebnis_im_ziel(actual_output, final_output):
+            return False
         self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
         set_pct(p3_end)
         set_status(self._t("status.pack_folder_exfat_done"))
@@ -22842,6 +24137,8 @@ class PS5ConverterGUI:
 
         actual_output = self._finalize_staged_pack_output(pack_out, final_output)
         self.task_final_output_path = actual_output
+        if not self._ergebnis_im_ziel(actual_output, final_output):
+            return False
         self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
         set_pct(p3_end)
         set_status(self._t("status.pack_folder_flach_done"))
@@ -23012,6 +24309,8 @@ class PS5ConverterGUI:
 
             actual_output = self._finalize_staged_pack_output(pack_out, final_output)
             self.task_final_output_path = actual_output
+            if not self._ergebnis_im_ziel(actual_output, final_output):
+                return False
             self._seed_preview_cache_from_source(src, actual_output, "pack_folder")
             set_pct(p3_end)
             set_status(self._t("status.phase3_outer_done"))
@@ -23104,6 +24403,14 @@ class PS5ConverterGUI:
 
             # Info-Box mit Metadaten + icon0.png befüllen
             meta = self._read_game_meta(tmp_meta)
+            # Bis v1.9.24 endete die Inspektion immer mit Erfolg - auch wenn
+            # weder param.json noch param.sfo zu lesen war und die Tabelle
+            # darueber nur Striche zeigte (etwa ohne inneres Abbild).
+            leer = {"", "-", chr(0x2013)}
+            if all(str(meta.get(feld, "") or "").strip() in leer
+                   for feld in ("title_id", "title")):
+                self._append_to_log(self._t("inspect.keine_metadaten", pfad=src))
+                return False
             cover_img = self._load_cover_image(tmp_meta)
             src_size  = os.path.getsize(src) if os.path.isfile(src) else 0
             src_str   = self._fmt_bytes(src_size)
@@ -23406,32 +24713,32 @@ class PS5ConverterGUI:
             root_path = root_path.parent
 
         try:
-            if not self.mkpfs_dir:
-                self.mkpfs_dir = self._extract_embedded_mkpfs()
-            if not self.mkpfs_dir:
-                self._append_to_log(self._t('log.auto.0138'))
-                return False
-            if self.mkpfs_dir not in sys.path:
-                sys.path.insert(0, self.mkpfs_dir)
-
-            from mkpfs.ampr import ensure_ampr_index  # noqa: PLC0415  # type: ignore[import-not-found]
-
-            marker = self._fakelib_pfad(root_path) / "libSceAmpr.sprx"
+            # Gebaut wird mit demselben Verfahren wie ueberall sonst
+            # (``_build_ampr_index_local``, nach ``build_ampr_index.py`` des
+            # Entwicklers). Bis zum 17.09.2026 stand hier ``ensure_ampr_index``
+            # aus MkPFS - ein dritter Indexschreiber mit ``str.lower()`` und
+            # Codepunkt-Hash, der bei Nicht-ASCII-Pfaden andere Dateien schrieb.
+            # Dieselbe Bedingung wie dort: ohne AMPR EMU im Ordner kein Index.
+            marker = self._fakelib_pfad(root_path) / self._AMPR_SPRX_NAME
+            if not marker.is_file():
+                self._append_to_log(self._t('log.auto.0141'))
+                return True
             # Liegt eine gepackte Asset-Schicht daneben, wuerde ein Neubau
             # deren Manifest unbrauchbar machen. Kein Fehlschlag: Der
             # vorhandene Index bleibt stehen und ist der richtige.
             if not self._ampr_index_neubau_erlaubt(root_path):
                 self._append_to_log(self._t("ampr.assets_index_kept"))
+                self._ampr_index_entschieden = True
                 return True
-            index_path = ensure_ampr_index(root_path, enabled=True)
-            if index_path:
-                self._append_to_log(self._t('log.auto.0139', v0=index_path))
-                return True
-            if marker.exists():
+            index_path = root_path / self._AMPR_INDEX_NAME
+            try:
+                self._build_ampr_index_local(root_path, index_path)
+            except (OSError, ValueError) as exc:
+                logger.warning("ampr_emu.index nicht gebaut (%s): %s", root_path, exc)
                 self._append_to_log(self._t('log.auto.0140'))
                 return False
-
-            self._append_to_log(self._t('log.auto.0141'))
+            self._ampr_index_entschieden = True
+            self._append_to_log(self._t('log.auto.0139', v0=index_path))
             return True
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0142', v0=exc))
@@ -23445,6 +24752,32 @@ class PS5ConverterGUI:
             (sce_sys / marker).is_file()
             for marker in ("playgo-chunk.dat", "playgo_chunk.dat")
         )
+
+    #: Dateien, mit denen ein Titel PlayGo-Inhalte erklaert (Sprach- und
+    #: Szenario-Pakete). PS5-Titel bringen ``playgo-scenario.json`` mit; die
+    #: beiden ``.dat``-Namen kennt ``_detect_apr_title``.
+    _PLAYGO_MERKMALE: tuple[str, ...] = (
+        "sce_sys/playgo-scenario.json",
+        "sce_sys/playgo-chunk.dat",
+        "sce_sys/playgo_chunk.dat",
+    )
+
+    @classmethod
+    def _titel_nutzt_playgo(cls, ordner: str) -> str:
+        """Erklaert der Titel PlayGo-Inhalte? Liefert das gefundene Merkmal.
+
+        Bewusst getrennt von ``_detect_apr_title``: Das entscheidet ueber eine
+        automatische Versorgung, dieses hier nur ueber einen Hinweis. Der
+        PlayGo-Stub meldet alle Pakete als installiert; ein Titel, der auf ein
+        Sprachpaket wartet, bleibt ohne ihn stehen.
+
+        Returns:
+            Der relative Pfad des ersten gefundenen Merkmals oder "".
+        """
+        for merkmal in cls._PLAYGO_MERKMALE:
+            if os.path.isfile(os.path.join(str(ordner or ""), *merkmal.split("/"))):
+                return merkmal
+        return ""
 
     # ==================================================================
     # Integration beim Erstellen: AMPR EMU und BACKPORT
@@ -23630,9 +24963,22 @@ class PS5ConverterGUI:
         if not tabelle or wahl is None:
             return AMPR_METHODE_NORMAL
         try:
-            return tabelle.get(wahl.get(), AMPR_METHODE_NORMAL)
-        except tk.TclError:
+            return tabelle.get(self._tk_wert("ampr_methode_var", ""),
+                               AMPR_METHODE_NORMAL)
+        except (tk.TclError, RuntimeError):
             return AMPR_METHODE_NORMAL
+
+    def _ffpfsc_zu_ffpfsc_erlaubt(self) -> bool:
+        """Darf Aufgabe 2 eine .ffpfsc wieder als .ffpfsc bauen?
+
+        Nur mit Asset-Pack. Im Hauptfaden entscheidet die Auswahl in der
+        Pfad-Karte; im Arbeitsfaden der Merker aus
+        ``_umhuellenden_weg_klaeren`` - dort darf keine Tk-Variable gelesen
+        werden, und der Merker haelt fest, was beim Start galt.
+        """
+        if threading.current_thread() is threading.main_thread():
+            return self._assetpack_gewaehlt()
+        return bool(getattr(self, "_umhuellt_neu_packen", False))
 
     def _assetpack_gewaehlt(self) -> bool:
         """True, wenn AMPR EMU angehakt UND die Methode Asset-Pack ist.
@@ -23643,10 +24989,9 @@ class PS5ConverterGUI:
         Wird bewusst defensiv gelesen: Steht die Oberflaeche noch nicht (z. B.
         im Kopfteil des Aufbaus), gilt Asset-Pack als nicht gewaehlt.
         """
-        var = getattr(self, "ampr_integrate_var", None)
         try:
-            an = bool(var is not None and var.get())
-        except tk.TclError:
+            an = bool(self._tk_wert("ampr_integrate_var", False))
+        except (tk.TclError, RuntimeError):
             an = False
         return an and self._ampr_methode() == AMPR_METHODE_ASSETPACK
 
@@ -23659,8 +25004,8 @@ class PS5ConverterGUI:
         Werkzeug entscheidet selbst.
         """
         try:
-            return max(0, int(self.worker_count_var.get()))
-        except (AttributeError, tk.TclError, ValueError):
+            return max(0, int(self._tk_wert("worker_count_var", 0)))
+        except (AttributeError, tk.TclError, ValueError, RuntimeError):
             return 0
 
     def _on_ampr_methode_changed(self) -> None:
@@ -23707,12 +25052,53 @@ class PS5ConverterGUI:
 
         self._save_setting("integrate_ampr_methode", methode)
 
+    #: Tk-Variablen, deren Stand ein Aufgabenlauf beim Start festhaelt.
+    _LAUF_VARIABLEN: tuple[str, ...] = (
+        "ampr_integrate_var", "backport_integrate_var", "backport_fw_var",
+        "ampr_version_var", "ampr_playgo_var", "ampr_methode_var",
+        "worker_count_var",
+    )
+
+    def _lauf_variablen_festhalten(self) -> None:
+        """Haelt den Stand der Einbau- und Worker-Einstellungen beim Start fest.
+
+        Die Felder bleiben waehrend eines Laufs bedienbar. Bis v1.9.24 las der
+        Aufgabenfaden sie erst beim Einbauschritt - bei Aufgabe 2 oder 4 also
+        nach minutenlangem Entpacken. Wer den AMPR-Haken dann fuer den
+        naechsten Lauf umstellte, veraenderte den laufenden: Der Container
+        entstand ohne AMPR und wurde als Erfolg gemeldet. Ausserdem darf der
+        Faden Tk-Variablen gar nicht lesen.
+        """
+        stand: dict[str, Any] = {}
+        for name in self._LAUF_VARIABLEN:
+            var = getattr(self, name, None)
+            if var is None:
+                continue
+            try:
+                stand[name] = var.get()
+            except (tk.TclError, RuntimeError):
+                continue
+        self._lauf_variablen = stand
+
+    def _tk_wert(self, name: str, vorgabe: Any = None) -> Any:
+        """Der Wert einer Tk-Variable - im Arbeitsfaden aus dem Startstand.
+
+        Im Hauptfaden wird die Variable gelesen wie bisher. Gibt es sie nicht,
+        kommt ``vorgabe`` zurueck.
+        """
+        if threading.current_thread() is not threading.main_thread():
+            stand = getattr(self, "_lauf_variablen", None)
+            if stand is not None and name in stand:
+                return stand[name]
+        var = getattr(self, name, None)
+        if var is None:
+            return vorgabe
+        return var.get()
+
     def _integration_gewaehlt(self) -> bool:
         """True, wenn mindestens eines der beiden Kaestchen gesetzt ist."""
-        return bool(getattr(self, "ampr_integrate_var", None)
-                    and self.ampr_integrate_var.get()) or bool(
-            getattr(self, "backport_integrate_var", None)
-            and self.backport_integrate_var.get())
+        return bool(self._tk_wert("ampr_integrate_var", False)) or bool(
+            self._tk_wert("backport_integrate_var", False))
 
     def _integration_arbeitskopie(self, quelle: str) -> str:
         """Legt auf Nachfrage eine Arbeitskopie des Quellordners an.
@@ -23746,11 +25132,19 @@ class PS5ConverterGUI:
             if not self.is_running:
                 self._append_to_log(self._t("main.integrate_measure_cancelled"))
                 return ""
-        antwort = self._ask_yesno_threadsafe(
-            self._t("dialog.title.integration_workcopy"),
-            self._t("dialog.msg.integration_workcopy",
-                    path=quelle, size=self._fmt_bytes(groesse)),
-        )
+        if getattr(self, "_cli_mode", False):
+            # Auf der Kommandozeile ist die Rueckfrage durch --yes ersetzt.
+            # Hier waere "Nein" aber die zerstoerende Antwort: Bis v1.9.24
+            # baute ein vorsichtiger Lauf OHNE --yes AMPR EMU und BACKPORT
+            # direkt in den Original-Dump ein - BACKPORT ohne jede Sicherung.
+            self._append_to_log(self._t("main.integrate_cli_arbeitskopie"))
+            antwort = True
+        else:
+            antwort = self._ask_yesno_threadsafe(
+                self._t("dialog.title.integration_workcopy"),
+                self._t("dialog.msg.integration_workcopy",
+                        path=quelle, size=self._fmt_bytes(groesse)),
+            )
         if not antwort:
             self._append_to_log(self._t("main.integrate_in_place", path=quelle))
             return quelle
@@ -23921,11 +25315,24 @@ class PS5ConverterGUI:
                 if not self.is_running:
                     raise _KopieAbgebrochen()
                 von = os.path.join(stamm, name)
-                shutil.copy2(von, os.path.join(zielstamm, name))
+                nach = os.path.join(zielstamm, name)
                 try:
-                    getan += os.path.getsize(von)
+                    dateigroesse = os.path.getsize(von)
                 except OSError:
-                    pass
+                    dateigroesse = 0
+                if dateigroesse >= _KOPIE_BLOCKWEISE_AB:
+                    # Grosse Einzeldateien in Bloecken - sonst stand die
+                    # Anzeige, bis die Datei durch war (siehe
+                    # _KOPIE_BLOCKWEISE_AB).
+                    def _block(anzahl: int) -> None:
+                        nonlocal getan
+                        getan += anzahl
+                        _melden()
+                    _datei_blockweise_kopieren(
+                        von, nach, _block, lambda: bool(self.is_running))
+                else:
+                    shutil.copy2(von, nach)
+                    getan += dateigroesse
                 _melden()
         _melden(erzwingen=True)
 
@@ -23963,11 +25370,18 @@ class PS5ConverterGUI:
             arbeitsordner = self._integration_arbeitskopie(ordner)
             if not arbeitsordner:
                 return ""
+        # Nur in einer Kopie duerfen gepackte Originale weg: Arbeitskopie oder
+        # ein Ordner, der aus einem Abbild entpackt wurde. Im Ordner des
+        # Anwenders ("Nein" zur Arbeitskopie) waeren sie unwiederbringlich.
+        self._ampr_ordner_ist_kopie = (
+            not ist_quellordner
+            or os.path.normcase(os.path.abspath(arbeitsordner))
+            != os.path.normcase(os.path.abspath(ordner)))
 
-        if self.backport_integrate_var.get():
+        if self._tk_wert("backport_integrate_var", False):
             if not self._integration_backport(arbeitsordner):
                 return ""
-        if self.ampr_integrate_var.get():
+        if self._tk_wert("ampr_integrate_var", False):
             if not self._integration_ampr(arbeitsordner):
                 return ""
         self._integration_erledigt = True
@@ -23983,7 +25397,7 @@ class PS5ConverterGUI:
         waere schlimmer als gar keine.
         """
         try:
-            firmware = int(self.backport_fw_var.get())
+            firmware = int(self._tk_wert("backport_fw_var", 0))
             ziel_ps5, ziel_ps4 = ps5_backport.sdk_paar(firmware)
         except (ValueError, ps5_backport.BackportFehler) as exc:
             self._append_to_log(self._t("main.integrate_backport_bad_fw", error=exc))
@@ -24005,10 +25419,22 @@ class PS5ConverterGUI:
                 logger.debug("Backport: %s nicht lesbar: %s", pfad, exc)
                 continue
 
-            kennung, neu, _grund = ps5_backport.datei_verarbeiten(
+            kennung, neu, grund = ps5_backport.datei_verarbeiten(
                 roh, ziel_ps5=ziel_ps5, ziel_ps4=ziel_ps4,
                 libc_zusatz=True, ist_libc_datei=ps5_backport.ist_libc(pfad),
                 texte=self._modul_texte(ps5_backport.MELDUNGEN, "backportmod."))
+            if kennung == ps5_backport.ERG_FEHLER:
+                # Bis v1.9.24 fiel ein Fehlschlag hier unter "continue": nicht
+                # gezaehlt, Grund verworfen, und das Protokoll meldete
+                # "[OK] BACKPORT ... 0 Fehler". Gebaut wurde mit der nicht
+                # herabgesetzten Datei - das Spiel startet auf der
+                # Zielfirmware dann nicht. Das BACKPORT-Fenster zaehlte den
+                # Fall schon immer.
+                fehler += 1
+                self._append_to_log(self._t(
+                    "backport.log_failed",
+                    name=os.path.relpath(pfad, ordner), error=grund))
+                continue
             if kennung != ps5_backport.ERG_GEPATCHT:
                 continue
 
@@ -24034,6 +25460,11 @@ class PS5ConverterGUI:
         if basis:
             quellen = ps5_backport.fakelib_dateien(basis, firmware)
             ziel = ps5_backport.fakelib_ziel(ordner, self._fakelib_ordnername())
+            if not quellen:
+                # Das Fenster fragt in diesem Fall nach; beim Einbau lief es
+                # bis v1.9.24 still weiter.
+                self._append_to_log(self._t(
+                    "main.integrate_backport_no_libs", firmware=firmware))
             if quellen:
                 try:
                     os.makedirs(ziel, exist_ok=True)
@@ -24057,24 +25488,35 @@ class PS5ConverterGUI:
         Modul auf der Konsole seine Dateien nicht. Dieselben Bausteine wie in
         Aufgabe 7, nur ohne deren Dialog.
         """
-        auswahl = getattr(self, "_ampr_versionsauswahl", {}).get(self.ampr_version_var.get())
+        gewaehlte_fassung = self._tk_wert("ampr_version_var", "")
+        auswahl = getattr(self, "_ampr_versionsauswahl", {}).get(gewaehlte_fassung)
         if not auswahl:
             self._append_to_log(self._t("main.integrate_ampr_no_version"))
             return False
 
         self._append_to_log(
-            self._t("main.integrate_ampr_start", version=self.ampr_version_var.get()))
+            self._t("main.integrate_ampr_start", version=gewaehlte_fassung))
         self._set_status(self._t("main.integrate_ampr_status"))
 
         if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
             return False
 
-        if self.ampr_playgo_var.get():
+        if self._tk_wert("ampr_playgo_var", False):
             playgo = self._ampr_playgo_zur_version(auswahl)
             if not playgo:
                 self._append_to_log(self._t("main.integrate_playgo_missing"))
             elif not self._ampr_apply_library(ordner, playgo, "libScePlayGo.sprx"):
                 return False
+        else:
+            # PlayGo kommt nie von selbst dazu (eigenes Kaestchen). Verschweigen
+            # darf das Protokoll aber nicht, wenn der Titel PlayGo-Inhalte
+            # erklaert: Ghost of Yotei ist der einzige von 31 gemessenen Dumps
+            # mit sce_sys/playgo-scenario.json (26 Sprachpakete) - und laut
+            # Anwenderbericht startet er nur mit dem PlayGo-Stub.
+            merkmal = self._titel_nutzt_playgo(ordner)
+            if merkmal:
+                self._append_to_log(self._t(
+                    "main.integrate_playgo_empfohlen", datei=merkmal))
 
         # Der Index zaehlt den Inhalt des Ordners auf; er muss nach dem
         # Austausch neu entstehen.
@@ -24082,8 +25524,11 @@ class PS5ConverterGUI:
             index_pfad = Path(ordner) / self._AMPR_INDEX_NAME
             if not self._ampr_index_neubau_erlaubt(ordner):
                 self._append_to_log(self._t("ampr.assets_index_kept"))
+                self._ampr_index_entschieden = True
                 return True
             anzahl, _doppelte = self._build_ampr_index_local(Path(ordner), index_pfad)
+            # Entschieden - MkPFS darf ihn beim Packen nicht mehr anfassen.
+            self._ampr_index_entschieden = True
             self._append_to_log(self._t("main.integrate_ampr_index", count=anzahl))
         except Exception as exc:
             self._append_to_log(self._t("main.integrate_ampr_index_failed", error=exc))
@@ -24194,10 +25639,17 @@ class PS5ConverterGUI:
         zwischen den Spieldateien. Uebernommen wird erst, wenn die Pruefung
         jedes Byte bestaetigt hat.
 
-        Die Originaldateien bleiben liegen. ``remove-packed-sources``
-        koennte sie entfernen, aber nicht hier: Ob das Spiel wirklich jede
-        Datei ueber den AMPR EMU liest, zeigt erst ein Lauf auf der Konsole
-        - manche Titel lesen ueber ``mmap`` daran vorbei.
+        Die Originaldateien bleiben liegen - ausser beim Start wurde
+        ausdruecklich "Originale weglassen" gewaehlt und der Ordner ist eine
+        Arbeitskopie (siehe ``_ampr_originale_klaeren``). Ob das Spiel wirklich
+        jede Datei ueber den AMPR EMU liest, zeigt erst ein Lauf auf der
+        Konsole - manche Titel lesen ueber ``mmap`` daran vorbei. Die
+        Anleitung verlangt deshalb erst den Test mit Originalen.
+
+        Die Schritte folgen der Bereitschaftsliste der Anleitung: packen,
+        ``verify --root``, ``inspect`` mit den harten Grenzen, ``list --json``
+        mit den losen Dateien, der Speicherblock, dann der vollstaendige Satz
+        in den Spielordner.
         """
         bereit, grund = ampr_assetpakete.einsatzbereit()
         if not bereit:
@@ -24215,12 +25667,18 @@ class PS5ConverterGUI:
             os.path.basename(os.path.abspath(ordner)) + "_ampr_pack")
         self._append_to_log(self._t("ampr_pack.start"))
         self._set_status(self._t("ampr_pack.status"))
+        # Nur einen Ordner wegraeumen, den dieser Lauf selbst angelegt hat.
+        ausgabe_war_da = os.path.exists(ausgabe)
+        uebernommen = False
 
         try:
             profil = ampr_assetpakete.profil_schreiben(
                 os.path.join(ausgabe, "ampr_pack.toml"),
                 arbeiter=self._ampr_pack_arbeiter())
-            self._append_to_log(self._t("ampr_pack.profil", path=profil))
+            eigenes_profil = ampr_assetpakete.profil_ist_eigenes(profil)
+            self._append_to_log(self._t(
+                "ampr_pack.profil" if eigenes_profil else "ampr_pack.profil_anwender",
+                path=profil))
 
             # Das Werkzeug meldet seinen Fortschritt auf stderr
             # ("[pack  42%] packing: ..."). Bis zum 08.09.2026 landeten diese
@@ -24283,8 +25741,36 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_pack.grenze_folge"))
                 return False
 
+            manifest = os.path.join(ausgabe, ampr_assetpakete.MANIFEST_NAME)
+            # Bereitschaftsliste der Anleitung (Abschnitt 5): "list --json"
+            # muss durchlaufen, und jede lose gefuehrte Datei muss im
+            # Spielordner liegen - die Konsole liest sie dort. Beides fehlte
+            # bis zum 17.09.2026.
+            fehlend = ampr_assetpakete.lose_fehlend(
+                ampr_assetpakete.liste(manifest, melden=lambda _z: None), ordner)
+            if fehlend:
+                for pfad in fehlend[:20]:
+                    self._append_to_log(self._t("ampr_pack.lose_fehlt", path=pfad))
+                self._append_to_log(self._t("ampr_pack.lose_folge", count=len(fehlend)))
+                return False
+
+            # Der feste Speicherblock des AMPR EMU (Abschnitt 8). Ohne diese
+            # Rechnung stand nirgends, ob Manifest, Index und Caches
+            # ueberhaupt hineinpassen.
+            if not self._ampr_pack_speicher_einpassen(manifest, index_pfad, uebersicht):
+                return False
+
+            # Nur die Baender, die das Manifest nennt - und danach nachsehen,
+            # ob jedes angekommen ist (Abschnitt 7).
+            baender = ampr_assetpakete.bandnamen(uebersicht)
             ampr_assetpakete.bestand_uebernehmen(
-                ausgabe, ordner, melden=self._append_to_log, text=self._t)
+                ausgabe, ordner, melden=self._append_to_log, text=self._t,
+                baender=baender)
+            uebernommen = True
+            # Der Satz liegt jetzt vollstaendig im Spielordner, die .crc
+            # eingeschlossen. Eine zweite Kopie daneben waere nur Ballast; ein
+            # Profil des Anwenders bleibt stehen.
+            ampr_assetpakete.bestand_aufraeumen(ausgabe, baender, ganz=eigenes_profil)
         except ampr_assetpakete.PackFehler as exc:
             # Ein paar Abbruchgruende nennt das Modul als Uebersetzungs-
             # schluessel, weil es selbst keine Sprache kennt. Sie wuerden
@@ -24304,15 +25790,125 @@ class PS5ConverterGUI:
             # Groessenfeld waehrend des Packens des Containers immer noch
             # "AMPR-Pack: ... %" an - eine Zahl, die dann nichts mehr meint.
             self._pack_infotext = ""
+            # Ohne Uebernahme ist der Ausgabeordner nichts mehr wert. Bis
+            # v1.9.24 blieb er nach jedem Fehlschlag und jedem Abbruch neben
+            # dem Spielordner liegen - die Baender sind eine gepackte Kopie der
+            # Spieldateien, bei einem grossen Spiel viele Gigabyte.
+            if not uebernommen and not ausgabe_war_da and os.path.isdir(ausgabe):
+                _rmtree_force(ausgabe)
 
-        self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
+        if not getattr(self, "_ampr_originale_weglassen", False):
+            self._append_to_log(self._t("ampr_pack.quellen_bleiben"))
+            return True
+        if not getattr(self, "_ampr_ordner_ist_kopie", False):
+            self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
+            return True
+        return self._ampr_originale_entfernen(ordner)
+
+    def _ampr_originale_entfernen(self, ordner: str) -> bool:
+        """Entfernt die gepackten Originale aus der Arbeitskopie (Abschnitt 6).
+
+        Geht ueber ``remove-packed-sources`` des Entwicklers - gegen den Satz,
+        der schon im Ordner liegt, samt ``.crc``. Das Werkzeug prueft davor
+        jedes Band und vergleicht jede gepackte Datei Byte fuer Byte mit dem
+        Original; es weigert sich bei ``eboot.bin``, Modulen, Indizes und
+        Systemordnern. Leer gewordene Ordner verschwinden mit - die Laufzeit
+        blendet sie fuer das Spiel wieder ein.
+
+        Der ``ampr_emu.index`` bleibt, wie er ist: Er ist der Quellindex, auf
+        den sich das Manifest bezieht, und nennt die entfernten Dateien
+        weiterhin.
+        """
+        manifest = os.path.join(ordner, ampr_assetpakete.MANIFEST_NAME)
+        self._append_to_log(self._t("ampr_pack.originale_start"))
+        self._set_status(self._t("ampr_pack.status_entfernen"))
+        self._ampr_pack_uhr_starten("ampr_pack.status_entfernen_uhr")
+        try:
+            ergebnis = ampr_assetpakete.quellen_entfernen(
+                manifest, ordner, melden=self._append_to_log,
+                abbruch=lambda: not self.is_running)
+        except ampr_assetpakete.PackFehler as exc:
+            grund = str(exc)
+            self._append_to_log(
+                self._t(grund) if grund.startswith("ampr_pack.")
+                else self._t("ampr_pack.originale_fehlgeschlagen", error=exc))
+            return False
+        finally:
+            self._ampr_pack_uhr_stoppen()
+        self._append_to_log(self._t(
+            "ampr_pack.originale_entfernt",
+            count=int(ergebnis.get("files") or 0),
+            size=self._fmt_bytes(int(ergebnis.get("bytes") or 0)),
+            dirs=int(ergebnis.get("directories") or 0)))
+        return True
+
+    def _ampr_pack_speicher_einpassen(self, manifest: str, index_pfad: str,
+                                      uebersicht: dict[str, Any]) -> bool:
+        """Haelt Manifest, Index und Caches gegen den Speicherblock des AMPR EMU.
+
+        Die Rechnung aus Abschnitt 8 der Anleitung, mit den **tatsaechlichen**
+        Dateigroessen nach dem Packen. Passen die Caches nicht mit 16 MiB
+        Luft hinein, werden sie verkleinert und die ``.runtime`` ohne neues
+        Packen neu geschrieben - so, wie die Anleitung es vorsieht. Sprengen
+        schon Manifest und Index den Block, bricht der Bau ab: Einen solchen
+        Bestand laedt die Konsole nicht vernuenftig, und das faellt sonst erst
+        dort auf ("apr.pack.caches.disabled reason=no-runtime-reserve").
+
+        Returns:
+            True, wenn der Bestand (gegebenenfalls angepasst) hineinpasst.
+        """
+        try:
+            manifest_bytes = os.path.getsize(manifest)
+            index_bytes = os.path.getsize(index_pfad)
+        except OSError as exc:
+            self._append_to_log(self._t("ampr_pack.fehlgeschlagen", error=exc))
+            return False
+
+        def _mib(anzahl: int) -> str:
+            return "%.1f" % (anzahl / (1024 * 1024))
+
+        vorgabe = ampr_assetpakete.LAUFZEIT_VORGABE
+        roh = uebersicht.get("runtime") or {}
+        bisher = {schluessel: int(roh[schluessel]) if roh.get(schluessel) is not None
+                  else wert for schluessel, wert in vorgabe.items()}
+        passend = ampr_assetpakete.laufzeit_einpassen(manifest_bytes, index_bytes, bisher)
+        if passend is None:
+            self._append_to_log(self._t(
+                "ampr_pack.speicher_zu_klein",
+                bedarf=_mib(ampr_assetpakete.speicherbedarf(
+                    manifest_bytes, index_bytes, bisher)),
+                block=_mib(ampr_assetpakete.POOL_BYTES),
+                manifest=_mib(manifest_bytes), index=_mib(index_bytes)))
+            return False
+        if passend != bisher:
+            ampr_assetpakete.laufzeit_schreiben(manifest, passend,
+                                                melden=self._append_to_log)
+            self._append_to_log(self._t(
+                "ampr_pack.speicher_angepasst",
+                decoded_vorher=_mib(bisher["decoded_cache_bytes"]),
+                decoded=_mib(passend["decoded_cache_bytes"]),
+                physical_vorher=_mib(bisher["physical_cache_bytes"]),
+                physical=_mib(passend["physical_cache_bytes"])))
+        bedarf = ampr_assetpakete.speicherbedarf(manifest_bytes, index_bytes, passend)
+        self._append_to_log(self._t(
+            "ampr_pack.speicher_ok",
+            bedarf=_mib(bedarf), block=_mib(ampr_assetpakete.POOL_BYTES),
+            frei=_mib(ampr_assetpakete.POOL_BYTES - bedarf),
+            manifest=_mib(manifest_bytes), index=_mib(index_bytes)))
         return True
 
     #: Welche PlayGo-Variante zu welcher AMPR-Variante passt. libScePlayGo
     #: stammt aus einem eigenen Projekt (pgo_stub) und zaehlt seine Versionen
     #: getrennt - mitgeliefert ist 0.5 als "log"/"nolog". Eine Suche nach
     #: derselben Versionsnummer wie beim AMPR-Modul findet deshalb nie etwas.
-    _PLAYGO_VARIANTEN: dict[str, str] = {"no debug": "nolog", "debug": "log"}
+    #:
+    #: Die Bauarten ab 0.4.2.1 stehen seit dem 17.09.2026 mit darin. Vorher
+    #: fielen sie auf "die erste vorhandene" zurueck - welche das war, hing an
+    #: der Sortierung, nicht an der gewaehlten Bauart.
+    _PLAYGO_VARIANTEN: dict[str, str] = {
+        "no debug": "nolog", "debug": "log",
+        "test-pack": "nolog", "test-nopack": "nolog", "test-debug-pack": "log",
+    }
 
     def _ampr_playgo_zur_version(self, ampr_eintrag: dict[str, Any]) -> str:
         """Sucht die passende PlayGo-Datei zur gewaehlten AMPR-Variante.
@@ -24409,7 +26005,13 @@ class PS5ConverterGUI:
 
         required_files = (self._AMPR_SPRX_NAME, self._PLAYGO_SPRX_NAME)
         fakelib_path = self._fakelib_pfad(root_path)
-        if all((fakelib_path / name).is_file() for name in required_files):
+        # Liegt die AMPR-Bibliothek schon da, ist der Titel versorgt - PlayGo
+        # ist ein eigenes Projekt und kommt nie von selbst dazu. Bis v1.9.24
+        # galt hier "beide Dateien oder keine": Fehlte nur PlayGo, legte der
+        # Versionsspeicher die NEUESTE AMPR-Fassung ueber die vorhandene und
+        # PlayGo dazu - nachgestellt am 16.09.2026, gewaehlt 0.3.6.6, danach
+        # 0.4.2.1 test-nopack plus PlayGo.
+        if (fakelib_path / self._AMPR_SPRX_NAME).is_file():
             self._append_to_log(self._t('log.auto.0147'))
         else:
             configured_dir = str(
@@ -24905,6 +26507,11 @@ class PS5ConverterGUI:
         Der Zeitstempel im Namen kommt aus der Uhr, nicht aus einem Zähler:
         Zwei Sicherungen am selben Tag sollen sich nicht überschreiben, und wer
         eine zurückspielen will, sucht nach dem Zeitpunkt.
+
+        Angelegt wird exklusiv ("x"), bei Namensgleichheit mit angehaengter
+        Nummer. Bis v1.9.24 oeffnete die Methode mit "w": Zwei Sicherungen in
+        derselben Sekunde trugen denselben Namen, und die zweite ersetzte die
+        erste still.
         """
         if not text:
             return ("", "smpbak.error_empty")
@@ -24913,11 +26520,17 @@ class PS5ConverterGUI:
                 os.makedirs(ort, exist_ok=True)
                 grundname = os.path.basename(ferner_pfad.rstrip("/")) or "config.ini"
                 stempel = time.strftime("%Y-%m-%d_%H-%M-%S")
-                ziel = os.path.join(ort, "%s_%s.bak" % (grundname, stempel))
-                with io.open(ziel, "w", encoding="utf-8", newline="") as datei:
-                    datei.write(text)
-                logger.info("config.ini gesichert: %s", ziel)
-                return (ziel, "")
+                for nummer in range(1, 100):
+                    zusatz = "" if nummer == 1 else "_%d" % nummer
+                    ziel = os.path.join(ort, "%s_%s%s.bak" % (grundname, stempel, zusatz))
+                    try:
+                        with io.open(ziel, "x", encoding="utf-8", newline="") as datei:
+                            datei.write(text)
+                    except FileExistsError:
+                        continue
+                    logger.info("config.ini gesichert: %s", ziel)
+                    return (ziel, "")
+                raise OSError("Kein freier Sicherungsname mehr: %s" % ziel)
             except OSError as fehler:
                 logger.debug("Sicherung nicht ablegbar (%s): %s", ort, fehler)
                 continue
@@ -25062,8 +26675,16 @@ class PS5ConverterGUI:
         ``standard`` aus einem flachen Ordner ohne Variantenangabe), bleibt
         stehen, wie sie ist. Sie einer der beiden Klassen zuzuschlagen wäre
         geraten – so gilt für sie die Regel für unbekannte Varianten.
+
+        Die Bauarten ab 0.4.2.1 (``ampr_updates.BAUARTEN``) bleiben ebenfalls
+        stehen: ``ampr_updates`` legt sie seit dem 17.09.2026 unter genau
+        diesem Namen ab. Als ``no debug`` zusammengefasst, galt etwa ``0.4.2.2
+        test-pack`` schon als vorhanden, sobald 0.4.2.2 als ``test-nopack``
+        dalag - obwohl nur eine der beiden gepackte Baender liest.
         """
         marke = str(variante or "").strip().lower()
+        if marke in ampr_updates.BAUARTEN:
+            return marke
         rang = cls._AMPR_VARIANT_ORDER.get(marke)
         if rang is None:
             return marke
@@ -25414,7 +27035,7 @@ class PS5ConverterGUI:
                 # in den Container.
                 ebenen = self._entpacke_container_ebenen(
                     outer_tmp,
-                    status_prefix="Aufgabe 7",
+                    status_prefix=self._t("main.task_number", number=7),
                     pct_start=15.0,
                     pct_end=29.0,
                     erwartet=self._container_expectations(
@@ -25443,14 +27064,7 @@ class PS5ConverterGUI:
                         # Dateizahl und Bytes zeigen genauso, dass es vorangeht.
                         _cont = {"bytes": 0, "dateien": 0, "ts": 0.0}
 
-                        def _kopiere_und_melde(von: str, nach: str) -> None:
-                            try:
-                                gross = os.path.getsize(von)
-                            except OSError:
-                                gross = 0
-                            shutil.copy2(von, nach)
-                            _cont["bytes"] += gross
-                            _cont["dateien"] += 1
+                        def _melde_kopie() -> None:
                             jetzt = time.monotonic()
                             if jetzt - _cont["ts"] < 1.0:
                                 return
@@ -25460,12 +27074,37 @@ class PS5ConverterGUI:
                                 dateien=_cont["dateien"],
                                 groesse=self._fmt_bytes(_cont["bytes"])))
 
+                        def _kopiere_und_melde(von: str, nach: str) -> None:
+                            try:
+                                gross = os.path.getsize(von)
+                            except OSError:
+                                gross = 0
+                            if gross >= _KOPIE_BLOCKWEISE_AB:
+                                # Grosse Einzeldatei: Meldung und Abbruch auch
+                                # mitten in der Datei (siehe _KOPIE_BLOCKWEISE_AB).
+                                def _block(anzahl: int) -> None:
+                                    _cont["bytes"] += anzahl
+                                    _melde_kopie()
+                                _datei_blockweise_kopieren(
+                                    von, nach, _block, lambda: bool(self.is_running))
+                            else:
+                                shutil.copy2(von, nach)
+                                _cont["bytes"] += gross
+                            _cont["dateien"] += 1
+                            _melde_kopie()
+
                         shutil.copytree(outer_tmp, tmp_extract,
                                         dirs_exist_ok=True,
                                         copy_function=_kopiere_und_melde)
                         search_root = tmp_extract
                     elif not self._move_tree_into(dump_ordner, tmp_extract):
                         search_root = tmp_extract
+            except _KopieAbgebrochen:
+                # Abbruch mitten in einer grossen Datei (_kopiere_und_melde).
+                # search_root bleibt leer - der Lauf endet darunter als
+                # abgebrochen statt mit einem unerwarteten Fehler.
+                self._append_to_log(self._t("main.integrate_copy_cancelled"))
+                search_root = None
             finally:
                 _rmtree_force(outer_tmp)
 
@@ -25485,8 +27124,8 @@ class PS5ConverterGUI:
             if self._extract_exfat_to_folder_mkpfs(
                 src,
                 tmp_extract,
-                status_prefix="Aufgabe 7",
-                log_prefix="fakelib-exFAT extrahiert",
+                status_prefix=self._t("main.task_number", number=7),
+                log_prefix=self._t("log.prefix_fakelib_exfat"),
                 progress_start=3.0,
                 progress_end=24.0,
             ):
@@ -25494,97 +27133,18 @@ class PS5ConverterGUI:
             else:
                 self._append_to_log(self._t('log.auto.0162'))
                 self._set_status(self._t("status.mount_exfat"))
-                # .exfat ist ein exFAT-Dateisystem-Image – Legacy via OSFMount
-                osf_exe = self._find_osfmount()
-                if osf_exe is None:
-                    self._append_to_log(self._t('log.auto.0163'))
-                    if self._install_osfmount():
-                        osf_exe = self._find_osfmount()
-                drive_letter = self._get_free_drive_letter() if osf_exe else None
-                if osf_exe and drive_letter:
-                    mount_point = f"{drive_letter}:"
-                    _cf = _NO_WIN_FLAGS
-                    _si = _silent_startupinfo()
-                    try:
-                        ret = subprocess.run(
-                            [osf_exe, "-a", "-t", "file", "-m", mount_point, "-o", "ro", "-f", src],
-                            timeout=30, capture_output=True,
-                            creationflags=_cf, startupinfo=_si,
-                        ).returncode
-                        if ret == 0:
-                            self._active_mount_drive = drive_letter
-                            self._active_osf_exe = osf_exe
-                            self._register_osf_mount(drive_letter, osf_exe, src)
-                            _TRANSIENT_WERRORS = {2, 3, 5, 21, 1005, 1006, 1392}
-                            _ready = False
-                            self.task_progress = max(self.task_progress, 3.0)
-                            _max_attempts = 16
-                            for _wait_attempt in range(_max_attempts):
-                                time.sleep(1.5 if _wait_attempt < 4 else 1.0)
-                                self.task_progress = max(
-                                    self.task_progress,
-                                    3.0 + (_wait_attempt + 1) / _max_attempts * 12.0,
-                                )
-                                _accessible = False
-                                for _mp_try in (mount_point + "\\", mount_point):
-                                    try:
-                                        _ = os.listdir(_mp_try)
-                                        _accessible = True
-                                        break
-                                    except OSError:
-                                        pass
-                                if _accessible:
-                                    _ready = True
-                                    break
-                                _last_winerr = 0
-                                try:
-                                    os.listdir(mount_point + "\\")
-                                except OSError as _we:
-                                    _last_winerr = getattr(_we, 'winerror', 0)
-                                if _last_winerr in _TRANSIENT_WERRORS or _last_winerr == 0:
-                                    self._append_to_log(self._t('log.auto.0164', v0=_wait_attempt+1, v1=_max_attempts, v2=_last_winerr))
-                                else:
-                                    self._append_to_log(self._t('log.auto.0164', v0=_wait_attempt+1, v1=_max_attempts, v2=_last_winerr))
-                            if _ready:
-                                self.task_progress = max(self.task_progress, 15.0)
-                                try:
-                                    _copy_total = self._get_path_size(mount_point + "\\")
-                                    _copy_done = 0
-
-                                    def _copy_with_progress(src_path: str, dst_path: str) -> None:
-                                        nonlocal _copy_done
-                                        sz = os.path.getsize(src_path) if os.path.isfile(src_path) else 0
-                                        shutil.copy2(src_path, dst_path)
-                                        _copy_done += sz
-                                        if _copy_total > 0:
-                                            frac = min(_copy_done / _copy_total, 1.0)
-                                            self.task_progress = max(
-                                                self.task_progress,
-                                                15.0 + frac * 9.0,
-                                            )
-
-                                    shutil.copytree(
-                                        mount_point + "\\",
-                                        tmp_extract,
-                                        dirs_exist_ok=True,
-                                        copy_function=_copy_with_progress,
-                                    )
-                                    search_root = tmp_extract
-                                except Exception as copy_exc:
-                                    self._append_to_log(self._t('log.auto.0165', v0=copy_exc))
-                                    search_root = tmp_extract
-                            else:
-                                self._append_to_log(self._t('log.auto.0166'))
-                        else:
-                            self._append_to_log(self._t('log.auto.0167'))
-                    finally:
-                        if drive_letter and osf_exe:
-                            if self._safe_dismount_drive(drive_letter, osf_exe, log=True, retries=4):
-                                self._unregister_osf_mount(drive_letter)
-                        self._active_mount_drive = None
-                        self._active_osf_exe = None
-                else:
-                    self._append_to_log(self._t('log.auto.0168'))
+                # Derselbe letzte Ausweg wie in Aufgabe 2 und 4: nur Windows,
+                # nur ein vorhandenes OSFMount, robocopy mit Fehlerauswertung.
+                # Bis v1.9.24 stand hier eine eigene Fassung: Sie lud OSFMount
+                # ungefragt aus dem Netz und installierte es mit /VERYSILENT
+                # (in der EXE ohne UAC-Abfrage, unter Linux/macOS das
+                # Windows-Setup), und ein Kopierfehler mittendrin fuehrte
+                # trotzdem zum Neubau - aus einem unvollstaendigen Ordner, der
+                # danach die Quelle ersetzte.
+                if self._extract_exfat_via_osfmount(
+                        src, tmp_extract, status_prefix=self._t("main.task_number", number=7),
+                        progress_start=3.0, progress_end=24.0):
+                    search_root = tmp_extract
 
         elif src_lower.endswith(".ffpkg"):
             # .ffpkg: 4 Schritte
@@ -25602,7 +27162,7 @@ class PS5ConverterGUI:
             if self._extract_ffpkg_to_folder_via_ufs2tool(
                 src,
                 tmp_extract,
-                status_prefix="Aufgabe 7",
+                status_prefix=self._t("main.task_number", number=7),
                 progress_start=3.0,
                 progress_end=34.0,
             ):
@@ -25965,7 +27525,6 @@ class PS5ConverterGUI:
                 ("ampr.btn_restore", lambda: _finish("ampr_restore")),
                 ("ampr.btn_remove", lambda: _finish("ampr_remove")),
                 ("ampr.btn_index_only", lambda: _finish("ampr_index")),
-                ("ampr.btn_pack_remove", lambda: _finish("ampr_pack_remove")),
             ):
                 flach_knopf(
                     btn_row1, text=self._t(text_key), command=cmd,
@@ -26171,30 +27730,23 @@ class PS5ConverterGUI:
             elif action == "ampr_index":
                 # Reiner Index-Lauf: nichts austauschen, nur neu aufbauen.
                 self.progress_engine.begin_prepare(self._t("progress.prepare.rebuild_index"))
-                changed = True
-
-            elif action == "ampr_pack_remove":
-                # Der Rueckweg aus der neuen Methode. Er funktioniert, weil
-                # das Programm die Originaldateien nie entfernt: Ein
-                # Asset-Pack liegt daneben, nicht anstelle von etwas.
-                self.progress_engine.begin_prepare(
-                    self._t("progress.prepare.remove_asset_pack"))
-                try:
-                    weg = ampr_assetpakete.pack_entfernen(
-                        search_root, melden=self._append_to_log, text=self._t)
-                except ampr_assetpakete.PackFehler as exc:
-                    grund = str(exc)
-                    self._append_to_log(
-                        self._t(grund) if grund.startswith("ampr_pack.")
-                        else self._t("ampr_pack.entfernen_fehlgeschlagen",
-                                     error=exc))
+                # Die Versorgung aus dem Speicher gibt es nur beim reinen
+                # Indexlauf. Nach einem ausdruecklichen Eingriff (Uebernehmen,
+                # Wiederherstellen, Entfernen) hat der Anwender entschieden, was
+                # im fakelib-Ordner liegt. Bis v1.9.24 lief sie nach JEDER
+                # Aktion: "Entfernen" legte beide Bibliotheken sofort wieder
+                # hinein, und "Uebernehmen" einer aelteren Fassung wurde von der
+                # neuesten ueberschrieben.
+                #
+                # Sie steht VOR dem Index. Bis zum 17.09.2026 lief sie danach:
+                # Der Index wurde fuer einen Ordner ohne AMPR EMU gebaut, erst
+                # dann kam die neueste Fassung hinein - und der Index entstand
+                # ein zweites Mal, mit dem Schreiber aus MkPFS.
+                self._set_status(self._t("status.apr_support_setup"))
+                self._append_to_log(self._t('log.auto.0200'))
+                if not self._prepare_ampr_support(search_root, automation_spec):
+                    self._append_to_log(self._t('log.auto.0201'))
                     return False
-                if not weg:
-                    return False
-                # Der ampr_emu.index bleibt gueltig - er entsteht vor dem
-                # Packen und kennt die Baender nicht. Ein Neubau waere
-                # trotzdem richtig, wenn der Anwender ihn will; hier zaehlt
-                # der Container: Er muss danach neu gepackt werden.
                 changed = True
 
             else:
@@ -26202,7 +27754,10 @@ class PS5ConverterGUI:
                 return False
 
             # Der Index bildet den Dateibestand ab – nach jedem Eingriff neu bauen.
-            rebuild_index = bool(spec.get("ampr_rebuild_index", True))
+            # Hat der reine Indexlauf ihn eben schon gebaut (oder bewusst stehen
+            # gelassen), nicht ein zweites Mal.
+            rebuild_index = (bool(spec.get("ampr_rebuild_index", True))
+                             and not getattr(self, "_ampr_index_entschieden", False))
             if (changed and rebuild_index
                     and not self._ampr_index_neubau_erlaubt(search_root)):
                 self._append_to_log(self._t("ampr.assets_index_kept"))
@@ -26220,40 +27775,34 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     self._append_to_log(self._t("ampr.index_failed", error=exc))
                     return False
+            if changed:
+                # Gebaut, stehen gelassen oder per --ampr-no-index abbestellt:
+                # In jedem Fall ist entschieden, und das Zurueckpacken darunter
+                # fasst den Index nicht mehr an (siehe _ampr_index_vor_dem_packen).
+                # Bis zum 17.09.2026 baute MkPFS ihn dort trotzdem neu.
+                self._ampr_index_entschieden = True
 
-            # Die neue Methode gilt auch hier. Sie hing bis zum 08.09.2026 nur
-            # am Kaestchen "AMPR EMU" beim Erstellen - wer sie waehlte und
-            # dann Aufgabe 7 benutzte, bekam stillschweigend den alten Weg.
+            # Aufgabe 7 ist seit dem 17.09.2026 wieder nur der AMPR EMU Manager
+            # (Entscheidung des Anwenders): Sie baut keine Asset-Pack-Baender
+            # und entfernt keine. Baender entstehen allein beim Erstellen eines
+            # Abbilds (Kaestchen AMPR EMU + Methode Asset-Pack), ein vorhandenes
+            # Pack fasst Aufgabe 7 nicht an - den Index darunter schuetzt
+            # weiter ``_ampr_index_neubau_erlaubt``.
             #
-            # Die Fassung wird aus dem Ordner gelesen, nicht aus der Auswahl
-            # dieses Fensters: Der Manager kennt mehrere Wege, eine Bibliothek
-            # hineinzubekommen (Tausch, eigene Datei, reiner Indexlauf), und
-            # entscheidend ist, was am Ende wirklich dort liegt.
-            # ``ampr_pack_remove`` ist ausgenommen, und zwar zwingend: Die
-            # Aktion setzt ``changed``, und stand die Methode auf Asset-Pack,
-            # baute dieser Block das eben entfernte Pack im selben Lauf sofort
-            # wieder auf. Am 08.09.2026 gemessen - der Ordner enthielt danach
-            # wieder alle sechs Dateien, und das Protokoll meldete
-            # "Erfolgreich abgeschlossen". Wer das Pack loswerden wollte,
-            # hatte es also weiterhin, ohne es zu merken.
-            if (changed and action != "ampr_pack_remove"
-                    and self._ampr_methode() == AMPR_METHODE_ASSETPACK):
-                installiert = self._ampr_identify_installed(
-                    search_root, self._ampr_alle_fassungen())
-                eintrag = installiert.get(self._AMPR_SPRX_NAME) or {}
-                if not self._ampr_assetpakete_bauen(
-                        search_root, str(index_path), eintrag):
-                    return False
+            # Vorher baute dieser Block nach jedem Eingriff neue Baender, und
+            # "Asset-Pack entfernen" loeschte Manifest und Baender in der
+            # Annahme, die Originale laegen daneben. Seit gepackte Originale
+            # beim Erstellen weggelassen werden koennen, stimmt das nicht mehr:
+            # Ohne Originale haette der Rueckweg die Spieldaten geloescht, und
+            # ein Neubau der Baender scheiterte an den fehlenden Quellen.
+            #
+            # Wer die Methode beim Erstellen gewaehlt hat, erfaehrt hier, dass
+            # sie in dieser Aufgabe nicht greift.
+            if changed and self._assetpack_gewaehlt():
+                self._append_to_log(self._t("ampr.aufgabe7_ohne_assetpack"))
 
             if not is_container:
                 self._append_to_log(_container_hint)
-
-            if action != "cancel":
-                self._set_status(self._t("status.apr_support_setup"))
-                self._append_to_log(self._t('log.auto.0200'))
-                if not self._prepare_ampr_support(search_root, automation_spec):
-                    self._append_to_log(self._t('log.auto.0201'))
-                    return False
 
             # Dump-Ordner: Fortschritt auf 98% setzen (kein Repack)
             if not is_container and action != "cancel":
@@ -26304,7 +27853,35 @@ class PS5ConverterGUI:
                     if _groesse <= 0:
                         _groesse = self._quellgroesse_mit_meldung(source_dir)
                     profile = self._resolve_pack_profile("pack_folder", _groesse)
-                    uncompressed = str(output_path).lower().endswith(".ffpfs")
+                    # Gebaut wird neben dem Ziel als "<Ziel>.neu". Bis v1.9.24
+                    # pruefte diese Zeile den Baunamen - "Spiel.ffpfs.neu" endet
+                    # nicht auf ".ffpfs", und eine .ffpfs kam komprimiert und
+                    # verschachtelt zurueck. ShadowMount+ erwartet dort
+                    # sce_sys/param.json in der Wurzel und zeigte das Spiel nicht.
+                    _endname = str(output_path)
+                    if _endname.lower().endswith(".neu"):
+                        _endname = _endname[:-4]
+                    uncompressed = _endname.lower().endswith(".ffpfs")
+
+                    if uncompressed:
+                        # .ffpfs ist seit v1.9.10 flach: Spieldateien direkt in
+                        # der Wurzel, unkomprimiert - wie _mode_pack_folder_flach.
+                        return self._execute_mkpfs(
+                            [
+                                "pack", "folder",
+                                "--raw",
+                                "--no-compress",
+                                *self._mkpfs_pruef_argumente(),
+                                "--no-adjust-output-file-extension",
+                                "--version", "PS5",
+                                "--inode-bits", "32",
+                                "--block-size", str(profile["block_size"]),
+                                source_dir, output_path,
+                            ],
+                            monitor_target_path=output_path,
+                            monitor_source_file=source_dir,
+                            advance_step=True,
+                        )
 
                     if bauform == BAUFORM_EXFAT:
                         return self._execute_mkpfs(
@@ -26595,8 +28172,8 @@ class PS5ConverterGUI:
         if self._extract_exfat_to_folder_mkpfs(
             src,
             dest_folder,
-            status_prefix=f"Aufgabe {aufgabe_num}",
-            log_prefix="exFAT extrahiert",
+            status_prefix=self._t("main.task_number", number=aufgabe_num),
+            log_prefix=self._t("log.prefix_exfat_extrahiert"),
             progress_start=5.0,
             progress_end=98.0,
         ):
@@ -26677,10 +28254,9 @@ class PS5ConverterGUI:
                     startupinfo=_silent_startupinfo()
                 )
                 if result.returncode != 0:
-                    raise Exception(
-                        f"Mount fehlgeschlagen (rc={result.returncode}): "
-                        f"{result.stderr or result.stdout}"
-                    )
+                    raise Exception(self._t(
+                        "ffpkg.mount_fehlgeschlagen", rc=result.returncode,
+                        detail=result.stderr or result.stdout))
                 mount_point[0] = free_letter
                 self._register_osf_mount(free_letter, osf, src)
 
@@ -26725,7 +28301,8 @@ class PS5ConverterGUI:
                             self._copy_rate_bps = float(rate)
                             pct = (min(99.0, cur / total_bytes[0] * 100.0)
                                    if total_bytes[0] else 0)
-                            el_str = f"Laufzeit: {ProgressEngine._fmt_eta(el)}"
+                            el_str = self._t("status.laufzeit",
+                                             zeit=ProgressEngine._fmt_eta(el))
                             self.task_progress = max(self.task_progress, pct)
                             self.root.after(0, lambda p=pct, e=el_str, r=rate: (
                                 self.status_label.config(
@@ -26756,9 +28333,13 @@ class PS5ConverterGUI:
                     text=self._t("status.robocopy_running",
                                 task=self._t("main.task_number", number=aufgabe_num))))
 
-                def _log_robo_line(line: str) -> None:
+                def _log_robo_line(line: str) -> bool:
                     if line.strip():
                         self._append_to_log(line + "\n")
+                    # False beendet robocopy (siehe _run_subprocess_logged).
+                    # Bis v1.9.24 kam hier None zurueck - nach "Abbrechen"
+                    # kopierte robocopy bis zum Ende weiter.
+                    return bool(self.is_running)
 
                 rc = self._run_subprocess_logged(
                     robo_cmd,
@@ -26768,10 +28349,12 @@ class PS5ConverterGUI:
                     line_callback=_log_robo_line,
                 )
                 run["on"] = False  # Poller stoppen
+                if not self.is_running:
+                    raise _KopieAbgebrochen()
 
                 # robocopy: 0-7 = Erfolg (1 = Dateien kopiert), >=8 = Fehler
                 if rc >= 8:
-                    raise Exception(f"robocopy fehlgeschlagen (rc={rc})")
+                    raise Exception(self._t("log.robocopy_fehlgeschlagen", rc=rc))
 
                 # Ergebnis zählen
                 n_files, n_bytes = 0, 0
@@ -26788,6 +28371,9 @@ class PS5ConverterGUI:
                     self._copy_done_bytes = self._copy_total_bytes
                 success[0] = True
 
+            except _KopieAbgebrochen:
+                error_msg[0] = self._t("status.cancelled")
+                self._append_to_log(self._t("log.extraktion_abgebrochen"))
             except Exception as exc:
                 error_msg[0] = str(exc)
                 self._append_to_log(self._t('log.auto.0088', v0=exc))
@@ -26904,35 +28490,13 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
-        """Prüft die mitgelieferte Datei gegen ``pruefsummen.json``.
+        """Weiterleitung auf werkzeuge_bereitstellen.ufs2tool_pruefsumme.
 
-        Fehlt die Liste, wird nicht geprüft - aber auch nicht abgebrochen: Ein
-        fehlender Prüfwert ist kein Grund, ein vorhandenes Werkzeug
-        abzulehnen. Ein *falscher* dagegen schon.
+        Bis zum 17.09.2026 stand hier eine eigene Abschrift. Das Programm rief
+        sie nie, nur Tests - und die prueften damit eine Pruefung, die den
+        Wert ``sha256_im_buendel`` des macOS-Baus nicht kannte.
         """
-        liste = os.path.join(wurzel, "pruefsummen.json")
-        if not os.path.isfile(liste):
-            return
-        try:
-            with io.open(liste, encoding="utf-8") as datei:
-                daten = json.load(datei)
-            erwartet = str(((daten.get("plattformen") or {}).get(kennung) or {})
-                           .get("sha256", "")).lower()
-        except Exception as exc:
-            logger.debug("UFS2Tool-Prüfsummen nicht lesbar: %s", exc)
-            return
-        if not re.fullmatch(r"[0-9a-f]{64}", erwartet):
-            return
-        # Mit with: Ohne den blieb die Datei offen, bis der Sammler kam -
-        # der Testlauf meldete das als ResourceWarning, und unter Windows
-        # blockiert eine offene Datei das Aufraeumen des Temp-Ordners.
-        with open(pfad, "rb") as datei:
-            gemessen = hashlib.sha256(datei.read()).hexdigest()
-        if gemessen != erwartet:
-            raise RuntimeError(
-                f"UFS2Tool-v4.1-Integritätsprüfung für {kennung} fehlgeschlagen "
-                f"(erwartet {erwartet}, erhalten {gemessen})."
-            )
+        werkzeuge_bereitstellen.ufs2tool_pruefsumme(wurzel, kennung, pfad)
 
     @staticmethod
     def _fehlende_zieldateien(dest_folder: str, soll: dict[str, int]) -> list[str]:
@@ -26958,6 +28522,15 @@ class PS5ConverterGUI:
 
     #: Takt (Sekunden), in dem das Entpacken per UFS2Tool nachgemessen wird.
     _ENTPACK_TAKT_S: float = 5.0
+
+    @staticmethod
+    def _mit_praefix(praefix: str, text: str) -> str:
+        """``Praefix – Text`` - ein Trenner nur, wenn das Praefix keinen traegt."""
+        if not praefix:
+            return text
+        if praefix.endswith((" ", "-", "–", ":")):
+            return praefix + text
+        return "%s – %s" % (praefix, text)
 
     def _entpacken_beobachten(self, lauf, dest_folder: str, erwartet_bytes: int,
                               status_prefix: str, spanne: float,
@@ -27012,7 +28585,9 @@ class PS5ConverterGUI:
             else:
                 text = self._t("ffpkg.extract_fortschritt_offen",
                                erledigt=self._fmt_bytes(geschrieben))
-            self._set_status(f"{status_prefix}{text}")
+            # Mit Trenner: Die Praefixe ("Aufgabe 7", "FFPKG-Repack") tragen
+            # keinen - bis v1.9.24 stand "FFPKG-RepackEntpacke ..." da.
+            self._set_status(self._mit_praefix(status_prefix, text))
 
     def _ffpkg_ueber_unterbefehl_entpacken(
         self,
@@ -27054,10 +28629,17 @@ class PS5ConverterGUI:
 
         os.makedirs(dest_folder, exist_ok=True)
         self._append_to_log(self._t('log.auto.0235', v0=exe))
-        self._set_status(f"{status_prefix}{self._t('ffpkg.extract_running')}")
-        self._set_progress(progress_start)
+        self._set_status(self._mit_praefix(status_prefix, self._t("ffpkg.extract_running")))
+        # Kein Rohwert auf den Balken: Bis v1.9.24 stand hier und am Ende
+        # _set_progress(progress_start/progress_end). Der Anzeigetakt setzte
+        # den geglaetteten Wert 80 ms spaeter zurueck - der Balken sprang
+        # 0,5 -> 5 -> 0,5 und 93 -> 98 -> 93, in der Sammelkonvertierung von
+        # rund 49 auf 98 und zurueck. Den Fortschritt meldet der Beobachter.
 
         try:
+            # Ohne diese beiden Schalter bekam UFS2Tool.exe in der EXE (ohne
+            # Konsole gebaut) fuer die ganze Entpackdauer ein leeres
+            # Konsolenfenster. Wer es schloss, beendete das Entpacken.
             lauf = subprocess.Popen(
                 [exe, "extract", src, dest_folder],
                 stdout=subprocess.PIPE,
@@ -27065,6 +28647,8 @@ class PS5ConverterGUI:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                creationflags=_NO_WIN_FLAGS,
+                startupinfo=_silent_startupinfo(),
             )
         except OSError as exc:
             self._append_to_log(self._t('log.auto.0234', v0=exc))
@@ -27102,7 +28686,8 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('ffpkg.extract_empty'))
             return False
 
-        self._set_progress(progress_end)
+        if self.task_progress < float(progress_end):
+            self.task_progress = float(progress_end)
         self._append_to_log(self._t('ffpkg.extract_done', count=dateien))
         return True
 
@@ -27290,7 +28875,8 @@ class PS5ConverterGUI:
                         self.task_current_step = max(self.task_current_step, 3)
                         self.task_progress = max(self.task_progress, mapped_pct)
                         self.task_displayed = max(self.task_displayed, mapped_pct)
-                        elapsed_str = f"Laufzeit: {ProgressEngine._fmt_eta(elapsed)}"
+                        elapsed_str = self._t("status.laufzeit",
+                                              zeit=ProgressEngine._fmt_eta(elapsed))
                         self.root.after(
                             0,
                             lambda p=raw_pct, e=elapsed_str, r=rate: self.status_label.config(
@@ -27320,9 +28906,13 @@ class PS5ConverterGUI:
             self._append_to_log("[INFO] " + " ".join(robo_cmd) + "\n\n")
             self.root.after(0, lambda: self.status_label.config(text=self._t("status.robocopy_running", task=status_prefix)))
 
-            def _log_robo_line(line: str) -> None:
+            def _log_robo_line(line: str) -> bool:
                 if line.strip():
                     self._append_to_log(line + "\n")
+                # False beendet robocopy - bis v1.9.24 kam None zurueck, und
+                # nach "Abbrechen" wurde bis zum Ende weiterkopiert. Der
+                # OSFMount-Weg (_extract_exfat_via_osfmount) machte es schon so.
+                return bool(self.is_running)
 
             rc = self._run_subprocess_logged(
                 robo_cmd,
@@ -27332,12 +28922,14 @@ class PS5ConverterGUI:
                 line_callback=_log_robo_line,
             )
             run["on"] = False
+            if not self.is_running:
+                raise _KopieAbgebrochen()
             # Ab 16 ist robocopy gar nicht erst gelaufen (Aufruffehler) - das bleibt
             # sofort toedlich. 8..15 heisst "einzelne Elemente misslangen"; ob das
             # Ergebnis trotzdem vollstaendig ist, entscheidet der Abgleich weiter
             # unten. Frueher brach hier schon rc=9 ab, obwohl alle Bytes da waren.
             if rc >= 16:
-                raise RuntimeError(f"robocopy fehlgeschlagen (rc={rc})")
+                raise RuntimeError(self._t("log.robocopy_fehlgeschlagen", rc=rc))
             if rc >= 8:
                 self._append_to_log(self._t('ufs2_extract.robocopy_partial', rc=rc))
 
@@ -27427,6 +29019,9 @@ class PS5ConverterGUI:
             if self._copy_total_bytes > 0:
                 self._copy_done_bytes = self._copy_total_bytes
             return True
+        except _KopieAbgebrochen:
+            self._append_to_log(self._t("log.extraktion_abgebrochen"))
+            return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0239', v0=exc))
             return False
@@ -27974,7 +29569,7 @@ class PS5ConverterGUI:
             inner_path,
             out_dir,
             status_prefix=status_prefix,
-            log_prefix="exFAT-Image extrahiert",
+            log_prefix=self._t("log.prefix_exfat_image_extrahiert"),
             progress_start=progress_start,
             progress_end=progress_end,
         ):
@@ -28193,7 +29788,9 @@ class PS5ConverterGUI:
             # ── Ebene für Ebene auspacken, bis die Spieldateien erscheinen ──
             ebenen = self._entpacke_container_ebenen(
                 tmp_dir,
-                status_prefix="FFPKG-Extraktion",
+                # Die Aufgabe, nicht "FFPKG-Extraktion": Die Quelle ist hier
+                # eine .ffpfsc/.ffpfs (bis v1.9.24 stand das Falsche da).
+                status_prefix=self._t("main.task_number", number=progress_task_index + 1),
                 pct_start=20.0,
                 pct_end=90.0,
                 erwartet=erwartet,
@@ -28347,6 +29944,8 @@ class PS5ConverterGUI:
             if pack_ok:
                 actual_output = self._finalize_staged_pack_output(pack_out, final_output)
                 self.task_final_output_path = actual_output
+                if not self._ergebnis_im_ziel(actual_output, final_output):
+                    return False
                 self._seed_preview_cache_from_source(src, actual_output, "pack_file")
                 self.progress_engine.begin_validate(self._t("progress.validate.default"))
                 self.progress_engine.commit_task()
@@ -28715,6 +30314,28 @@ class PS5ConverterGUI:
             self._append_to_log(self._t('log.manual.param_json_create_failed', v0=exc))
             return False
 
+    @staticmethod
+    def _exfat_erwartete_dateizahl(ordner: str) -> int:
+        """So viele Dateien schreibt der exFAT-Writer aus ``ordner``.
+
+        Der Writer laesst Systemdateien bewusst weg (``desktop.ini``,
+        ``Thumbs.db``, ``.DS_Store``, ``._*`` und Ordner wie ``__MACOSX``
+        samt Inhalt, siehe ``mkpfs.utils.is_ignored_name``). Bis v1.9.24
+        zaehlte die Pruefung danach mit ``os.walk`` alles mit: Lag im Dump
+        auch nur eine ``desktop.ini``, meldete sie "nur N von N+1 Dateien",
+        und das fertige, korrekte .exfat wurde geloescht.
+        """
+        try:
+            from mkpfs.utils import is_ignored_name  # pyright: ignore[reportMissingImports]
+        except ImportError:
+            def is_ignored_name(_name: str) -> bool:
+                return False
+        anzahl = 0
+        for _wurzel, unterordner, dateien in os.walk(ordner):
+            unterordner[:] = [d for d in unterordner if not is_ignored_name(d)]
+            anzahl += sum(1 for d in dateien if not is_ignored_name(d))
+        return anzahl
+
     def _create_exfat_from_folder(
         self,
         src_dir: str,
@@ -28843,7 +30464,7 @@ class PS5ConverterGUI:
             # ist – nicht, ob der reine Python-Writer tatsächlich alle Quelldateien
             # geschrieben hat. Schließt dieselbe Lücke wie die Dateizahl-Prüfung für
             # .ffpkg (v1.8.9).
-            expected_file_count = sum(len(files) for _, _, files in os.walk(src_path))
+            expected_file_count = self._exfat_erwartete_dateizahl(str(src_path))
             content_check = self._verify_exfat_file_count(str(out_path), expected_file_count)
             if content_check.get("checked") and not content_check.get("ok"):
                 detail = str(content_check.get("detail", "Dateizahl-Prüfung fehlgeschlagen."))
@@ -28965,6 +30586,13 @@ class PS5ConverterGUI:
             bytes_processed: int | None = None,
         ) -> None:
             del phase
+            # Der Rueckruf ist die einzige Stelle, an der die Extraktion
+            # unterbrochen werden kann. Bis v1.9.24 fragte er den Abbruch nie
+            # ab: Nach "Abbrechen" lief sie bis zum Ende weiter, und ein
+            # neuer Lauf traf auf ihren noch schreibenden Faden. Das Fenster
+            # "Abbild -> PKG" macht es auf demselben Weg schon so.
+            if not gui.is_running:
+                raise _KopieAbgebrochen()
             total_units = max(1, int(total or 0))
             done_units = max(0, int(bytes_processed if bytes_processed is not None else current))
             done_units = min(done_units, total_units)
@@ -29008,6 +30636,9 @@ class PS5ConverterGUI:
 
         try:
             result = extract_exfat_image(src_path, dest_path, progress=progress_bridge)
+        except _KopieAbgebrochen:
+            self._append_to_log(self._t("log.extraktion_abgebrochen"))
+            return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0277', v0=exc))
             return False
@@ -29138,9 +30769,35 @@ class PS5ConverterGUI:
                     has_any = bool(os.listdir(tmp_dir))
                 except Exception:
                     has_any = False
-                if has_any:
+                weiter_mit_schritt2 = not (cp_stage == "task2_step2_done"
+                                           and cp_game_dump_dir
+                                           and os.path.isdir(cp_game_dump_dir))
+                if has_any and (not weiter_mit_schritt2
+                                or self._task2_zwischenstand_brauchbar(tmp_dir)):
                     step1_ok = True
+                    if weiter_mit_schritt2:
+                        # Ein angefangenes _ebene_ aus dem unterbrochenen
+                        # Schritt 2 verwerfen - sonst haelt die Ebenensuche
+                        # den Ordner fuer den fertigen Dump.
+                        for eintrag in self._scandir_safe(tmp_dir):
+                            if eintrag.is_dir() and eintrag.name.startswith("_ebene_"):
+                                _rmtree_force(eintrag.path)
                     self._append_to_log(self._t('log.auto.0284'))
+
+            if not step1_ok and cp_tmp_dir and tmp_dir == cp_tmp_dir \
+                    and self._is_managed_temp_path(tmp_dir):
+                # Schritt 1 beginnt neu, im Ordner des alten Laufs. mkpfs unpack
+                # bricht an jeder vorhandenen Datei ab ("--overwrite" gilt nur
+                # fuer den Ordner) - also erst leeren.
+                for eintrag in self._scandir_safe(tmp_dir):
+                    try:
+                        if eintrag.is_dir(follow_symlinks=False):
+                            _rmtree_force(eintrag.path)
+                        else:
+                            os.remove(eintrag.path)
+                    except OSError as exc:
+                        logger.debug("Alter Zwischenstand nicht loeschbar (%s): %s",
+                                     eintrag.path, exc)
 
             if not step1_ok:
                 self._save_runtime_checkpoint(
@@ -29161,7 +30818,7 @@ class PS5ConverterGUI:
                 )
 
             if not step1_ok or not self.is_running:
-                return _fail_keep_tmp("Schritt 1 nicht abgeschlossen")
+                return _fail_keep_tmp(self._t("task2.grund_schritt1"))
 
             self._save_runtime_checkpoint(
                 mode="unpack_to_exfat",
@@ -29189,7 +30846,7 @@ class PS5ConverterGUI:
             else:
                 ebenen = self._entpacke_container_ebenen(
                     tmp_dir,
-                    status_prefix="Aufgabe 2",
+                    status_prefix=self._t("main.task_number", number=2),
                     pct_start=20.0,
                     pct_end=50.0,
                     # Sollwerte des äußeren Containers: Sie gelten, wenn die
@@ -29199,7 +30856,7 @@ class PS5ConverterGUI:
                     ),
                 )
                 if ebenen is None:
-                    return _fail_keep_tmp("Inneres Abbild nicht entpackt")
+                    return _fail_keep_tmp(self._t("task2.grund_inneres_abbild"))
                 game_dump_dir, erwartet = ebenen
                 self._save_runtime_checkpoint(
                     mode="unpack_to_exfat",
@@ -29215,7 +30872,7 @@ class PS5ConverterGUI:
                 )
 
             if not self.is_running:
-                return _fail_keep_tmp("Abbruch während Schritt 2")
+                return _fail_keep_tmp(self._t("task2.grund_abbruch_schritt2"))
 
             # Schrittgeometrie erst jetzt festzurren: Ob eine Zwischenebene
             # ausgepackt werden musste, steht vorher nicht fest. Der
@@ -29238,11 +30895,11 @@ class PS5ConverterGUI:
             # Ein halb entpackter Dump ergibt ein .exfat, das auf der Konsole
             # nicht läuft – und das fällt sonst erst dort auf.
             if not self._pruefe_dump_vollstaendig(game_dump_dir, erwartet):
-                return _fail_keep_tmp("Inneres Abbild unvollständig entpackt")
+                return _fail_keep_tmp(self._t("task2.grund_unvollstaendig"))
 
             game_dump_dir = self._integration_anwenden(game_dump_dir)
             if not game_dump_dir:
-                return _fail_keep_tmp("Integration abgebrochen")
+                return _fail_keep_tmp(self._t("task2.grund_integration"))
 
             self.task_progress = max(self.task_progress, exfat_start)
 
@@ -29256,7 +30913,7 @@ class PS5ConverterGUI:
             eboot_path = os.path.join(game_dump_dir, "eboot.bin")
             if not os.path.isfile(eboot_path):
                 self._append_to_log(self._t('log.auto.0303', v0=eboot_path))
-                return _fail_keep_tmp("eboot.bin fehlt vor Schritt 3")
+                return _fail_keep_tmp(self._t("task2.grund_eboot_fehlt"))
 
             # Zieldatei vorab löschen falls vorhanden
             if os.path.exists(final_output):
@@ -29272,7 +30929,7 @@ class PS5ConverterGUI:
                 pct_end=98.0,
             )
             if not exfat_ok or not self.is_running:
-                return _fail_keep_tmp("Schritt 3 exFAT-Erstellung fehlgeschlagen")
+                return _fail_keep_tmp(self._t("task2.grund_exfat"))
 
             self.task_final_output_path = final_output
             self._seed_preview_cache_from_dir(game_dump_dir, final_output)
@@ -29359,7 +31016,7 @@ class PS5ConverterGUI:
         scroll_canvas.bind("<Configure>", _on_scroll_cfg)
 
         def _on_mw(e):
-            scroll_canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            scroll_canvas.yview_scroll(self._rad_einheiten(e), "units")
         win.bind("<MouseWheel>", _on_mw)
         # X11 schickt kein <MouseWheel>, sondern Knopf 4 und 5. Ohne diese
         # beiden Bindungen liess sich das Fenster unter Linux nur ueber den
@@ -29526,7 +31183,10 @@ class PS5ConverterGUI:
             canvas.itemconfig(inner_id, width=e.width)
         inner.bind("<Configure>", _on_inner_cfg)
         canvas.bind("<Configure>", _on_canvas_cfg)
-        win.bind("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
+        win.bind("<MouseWheel>", lambda e: canvas.yview_scroll(self._rad_einheiten(e), "units"))
+        # X11: Knopf 4 und 5 (bis v1.9.24 rollte dieses Fenster unter Linux nicht).
+        win.bind("<Button-4>", lambda _e: canvas.yview_scroll(-1, "units"))
+        win.bind("<Button-5>", lambda _e: canvas.yview_scroll(1, "units"))
 
         # --- Hilfsfunktion: Abschnitt + Links ---
         def _section(title):
@@ -29616,7 +31276,7 @@ class PS5ConverterGUI:
 
         # Abschnitt 2
         _section(self._t("resources.section_dotnet_vcpp"))
-        _link(".NET Download (aktuell)",
+        _link(self._t("resources.dotnet_download"),
               "https://dotnet.microsoft.com/en-us/download")
         _link(".NET Framework Download",
               "https://dotnet.microsoft.com/en-us/download/dotnet-framework")
@@ -30445,9 +32105,25 @@ class PS5ConverterGUI:
         vorhanden = getattr(self, "_bibliothek_bilder", None)
         if vorhanden is not None:
             return vorhanden
-        ordner = os.path.join(os.path.dirname(self._get_config_path()),
-                              "bibliothek_cover")
-        self._bibliothek_bilder = bibliothek_bestand.Bildspeicher(ordner)
+        # Unter einer Sperre: Die Bildlader laufen in Faeden, und zwei
+        # Speicher auf dieselbe index.json verloeren gegenseitig Eintraege.
+        with PS5ConverterGUI._BIBLIOTHEK_SPEICHER_SPERRE:
+            vorhanden = getattr(self, "_bibliothek_bilder", None)
+            if vorhanden is not None:
+                return vorhanden
+            ordner = os.path.join(os.path.dirname(self._get_config_path()),
+                                  "bibliothek_cover")
+            speicher = bibliothek_bestand.Bildspeicher(ordner)
+            # Einmal je Programmlauf alte Eintraege wegraeumen. aufraeumen()
+            # gab es seit dem Bildspeicher - gerufen wurde es nie, der Ordner
+            # wuchs mit jedem je gesehenen Titel.
+            try:
+                weg = speicher.aufraeumen()
+                if weg:
+                    logger.info("Bibliothek: %d alte Titelbilder entfernt", weg)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bildspeicher nicht aufraeumbar: %s", exc)
+            self._bibliothek_bilder = speicher
         return self._bibliothek_bilder
 
     def _bibliothek_abbild_angaben(self, pfad: str):
@@ -30601,6 +32277,10 @@ class PS5ConverterGUI:
     #: ein Spiel am Bild zu erkennen, klein genug fuer sechs bis acht
     #: nebeneinander.
     _KACHEL_BILD_PT: int = 150
+
+    #: Sperre fuer das einmalige Anlegen des Bildspeichers (siehe
+    #: _bibliothek_bildspeicher) - die Bildlader laufen in Faeden.
+    _BIBLIOTHEK_SPEICHER_SPERRE = threading.Lock()
 
     #: Wie viele Titelbilder gleichzeitig geholt werden.
     #:
@@ -30852,36 +32532,69 @@ class PS5ConverterGUI:
         kante = pt(self._KACHEL_BILD_PT)
         host = str(self._load_setting("ps5_ip", "") or "")
         speicher = self._bibliothek_bildspeicher()
+        # "Kein Bild" fuer Konsoleneintraege gilt nur fuer diesen Programmlauf.
+        # Der Bildspeicher haengt seine Schluessel an Aenderungszeit und Groesse
+        # einer Datei - fuer ps5://-Namen gibt es beides nicht, der Schluessel
+        # bleibt also ewig gleich. Bis v1.9.24 wurde dort ein einziger
+        # Fehlschlag (Verbindung kurz weg) fuer immer als "hat kein Bild"
+        # gemerkt.
+        ohne_bild = getattr(self, "_bibliothek_ps5_ohne_bild", None)
+        if ohne_bild is None:
+            ohne_bild = set()
+            self._bibliothek_ps5_ohne_bild = ohne_bild
+
+        def _setzen(feld, datei: str) -> None:
+            self._spaeter_im_fenster(
+                fenster, self._bibliothek_bild_setzen,
+                feld, datei, kante, generation)
 
         def _arbeit() -> None:
+            # Erst aus dem Speicher - ohne Verbindung. Bis v1.9.24 baute jeder
+            # Aufruf zuerst eine FTP-Sitzung auf, auch wenn alle Bilder schon
+            # dalagen; seit Filtern und Sortieren diesen Lader rufen, waere das
+            # eine Sitzung je Tastendruck.
+            offen = []
+            for eintrag in list(eintraege):
+                if generation != getattr(self, "_bibliothek_generation", 0):
+                    return
+                feld = eintrag.get("_bildfeld")
+                if feld is None:
+                    continue
+                kennung = str(eintrag.get("title_id") or "")
+                # Der Schluessel im Bildspeicher haengt sonst an einer
+                # Datei, die es hier gar nicht gibt - deshalb die Kennung.
+                merkname = "ps5://%s" % (
+                    eintrag["path"] if eintrag.get("kind") == "folder"
+                    else (kennung or eintrag["path"]))
+                datei = speicher.lesen(merkname)
+                if datei or merkname in ohne_bild:
+                    _setzen(feld, datei)
+                else:
+                    offen.append((eintrag, feld, kennung, merkname))
+            if not offen:
+                return
             try:
                 ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Bibliothek: keine Verbindung fuer Titelbilder (%s)", exc)
+                # Nicht "laedt ..." stehen lassen - aber auch nicht merken.
+                for _eintrag, feld, _kennung, _merkname in offen:
+                    _setzen(feld, "")
                 return
             try:
-                for eintrag in list(eintraege):
+                for eintrag, feld, kennung, merkname in offen:
                     if generation != getattr(self, "_bibliothek_generation", 0):
                         return
-                    feld = eintrag.get("_bildfeld")
-                    if feld is None:
-                        continue
-                    kennung = str(eintrag.get("title_id") or "")
-                    # Der Schluessel im Bildspeicher haengt sonst an einer
-                    # Datei, die es hier gar nicht gibt - deshalb die Kennung.
-                    merkname = "ps5://%s" % (
+                    rohbild = self._bibliothek_ps5_cover(
+                        ftp, kennung,
                         eintrag["path"] if eintrag.get("kind") == "folder"
-                        else (kennung or eintrag["path"]))
-                    datei = speicher.lesen(merkname)
-                    if not datei and not speicher.kennt_ohne_bild(merkname):
-                        rohbild = self._bibliothek_ps5_cover(
-                            ftp, kennung,
-                            eintrag["path"] if eintrag.get("kind") == "folder"
-                            else "")
+                        else "")
+                    if rohbild:
                         datei = speicher.schreiben(merkname, rohbild)
-                    self._spaeter_im_fenster(
-                        fenster, self._bibliothek_bild_setzen,
-                        feld, datei, kante, generation)
+                    else:
+                        datei = ""
+                        ohne_bild.add(merkname)
+                    _setzen(feld, datei)
             finally:
                 try:
                     ftp.quit()
@@ -30910,12 +32623,18 @@ class PS5ConverterGUI:
                 continue
         return vorhanden
 
-    def _bibliothek_hochladen(self, fenster, eintrag) -> None:
+    def _bibliothek_hochladen(self, fenster, eintrag, melden=None) -> None:
         """Uebertraegt eine Sicherung vom Rechner auf die Konsole.
 
         Nur Dateien: Einen Dump-Ordner Datei fuer Datei hochzuladen waere bei
         zehntausenden Eintraegen eine Sache von Stunden, und die Konsole
         startet ihn von dort ohnehin nicht - dafuer ist ein Container da.
+
+        Args:
+            melden: ``(text) -> None`` fuer die Statuszeile des Fensters,
+                waehrend im Hintergrund verbunden und gesucht wird; ``""``
+                heisst "fertig, alten Stand zeigen". Wird im Fensterfaden
+                gerufen.
         """
         pfad = str(eintrag.get("path") or "")
         if os.path.isdir(pfad):
@@ -30935,37 +32654,73 @@ class PS5ConverterGUI:
                                  self._t("library.ps5_keine_adresse"),
                                  parent=fenster)
             return
-        try:
-            ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
-        except Exception as exc:  # noqa: BLE001
-            messagebox.showerror(
-                self._t("library.upload_titel"),
-                self._t("library.ps5_keine_verbindung", host=host, error=exc),
-                parent=fenster)
-            return
 
-        try:
-            ziele = self._bibliothek_ziele_auf_ps5(ftp)
-        finally:
+        # Verbinden und Ablageorte suchen im Faden, alles Sichtbare danach im
+        # Fensterfaden. Bis v1.9.24 lief beides hier: die Verbindung mit 30 s
+        # Zeitgrenze und 48 Ablageorte mit je drei FTP-Befehlen. Mit
+        # ausgeschalteter Konsole stand das ganze Programm bis zum Zeitablauf.
+        # Die Sperre haengt am Fenster, nicht am Programm: Geht es waehrend der
+        # Suche zu, verwirft Tk den Rueckruf - eine Sperre am Programm bliebe
+        # dann fuer immer gesetzt.
+        if getattr(fenster, "_ps5conv_ziele_suche", False):
+            return
+        fenster._ps5conv_ziele_suche = True
+        port = self._ps5_ftp_port()
+        if callable(melden):
+            melden(self._t("status.connecting"))
+
+        def _suchen() -> None:
+            ziele: list[str] = []
+            fehler = None
             try:
-                ftp.quit()
-            except Exception:  # noqa: BLE001
-                pass
-        if not ziele:
-            messagebox.showerror(self._t("library.upload_titel"),
-                                 self._t("library.upload_kein_ziel"),
-                                 parent=fenster)
-            return
+                ftp = self._ampr_ftp_connect(host, port)
+            except Exception as exc:  # noqa: BLE001
+                fehler = exc
+            else:
+                try:
+                    ziele = self._bibliothek_ziele_auf_ps5(ftp)
+                finally:
+                    try:
+                        ftp.quit()
+                    except Exception:  # noqa: BLE001
+                        pass
+            self._spaeter_im_fenster(fenster, _gefunden, ziele, fehler)
 
-        ziel = self._bibliothek_ziel_waehlen(fenster, ziele)
-        if not ziel:
-            return
+        def _gefunden(ziele: list[str], fehler) -> None:
+            fenster._ps5conv_ziele_suche = False
+            if callable(melden):
+                melden("")
+            if fehler is not None:
+                messagebox.showerror(
+                    self._t("library.upload_titel"),
+                    self._t("library.ps5_keine_verbindung", host=host, error=fehler),
+                    parent=fenster)
+                return
+            if not ziele:
+                messagebox.showerror(self._t("library.upload_titel"),
+                                     self._t("library.upload_kein_ziel"),
+                                     parent=fenster)
+                return
 
-        groesse = os.path.getsize(pfad)
-        name = os.path.basename(pfad)
-        self._bibliothek_uebertragen(
-            fenster, richtung="hoch", oertlich=pfad,
-            entfernt="%s/%s" % (ziel.rstrip("/"), name), groesse=groesse)
+            ziel = self._bibliothek_ziel_waehlen(fenster, ziele)
+            if not ziel:
+                return
+
+            try:
+                groesse = os.path.getsize(pfad)
+            except OSError:
+                # Waehrend der Suche verschoben oder geloescht.
+                messagebox.showerror(self._t("library.upload_titel"),
+                                     self._t("library.upload_weg", path=pfad),
+                                     parent=fenster)
+                return
+            name = os.path.basename(pfad)
+            self._bibliothek_uebertragen(
+                fenster, richtung="hoch", oertlich=pfad,
+                entfernt="%s/%s" % (ziel.rstrip("/"), name), groesse=groesse)
+
+        threading.Thread(target=_suchen, daemon=True,
+                         name="bibliothek-ziele").start()
 
     def _bibliothek_ziel_waehlen(self, fenster, ziele: list[str]) -> str:
         """Laesst den Ablageort waehlen - aus denen, die es wirklich gibt.
@@ -31040,9 +32795,19 @@ class PS5ConverterGUI:
         if not ziel_ordner:
             return
         name = pfad.rsplit("/", 1)[-1]
+        oertlich = os.path.join(ziel_ordner, name)
+        # Bis v1.9.24 schnitt der Download eine gleichnamige Datei sofort beim
+        # Start auf null Bytes ab - ohne Frage. War das die bisherige Sicherung
+        # und riss die Verbindung ab, war beides weg.
+        if os.path.exists(oertlich) and not messagebox.askyesno(
+                self._t("dialog.title.file_already_exists"),
+                self._t("dialog.msg.target_file_exists_overwrite_confirm",
+                        path=oertlich),
+                default="no", parent=fenster):
+            return
         self._bibliothek_uebertragen(
             fenster, richtung="runter",
-            oertlich=os.path.join(ziel_ordner, name),
+            oertlich=oertlich,
             entfernt=pfad, groesse=int(eintrag.get("size") or 0))
 
     def _bibliothek_uebertragen(self, eltern, *, richtung: str, oertlich: str,
@@ -31071,6 +32836,16 @@ class PS5ConverterGUI:
         self._build_modern_header(fenster, self._t("library.uebertragung_titel"))
 
         lauf = {"an": True, "getan": 0, "fehler": "", "fertig": False}
+        # Heruntergeladen wird in eine .part-Datei, hochgeladen in eine .tmp -
+        # erst ein vollstaendiger Lauf bekommt den endgueltigen Namen. Bis
+        # v1.9.24 schrieb der Download direkt unter dem Endnamen und entfernte
+        # die halbe Datei nur, wenn der Anwender selbst abbrach; bei einem
+        # Verbindungsabbruch blieb sie liegen und sah aus wie eine fertige
+        # Sicherung. Der Upload ueberschrieb ein vorhandenes Abbild auf der
+        # Konsole sofort, ein Abbruch hinterliess dort ein abgeschnittenes -
+        # genau in den Ordnern, die ShadowMount+ einhaengt.
+        teil_lokal = oertlich + ".part"
+        teil_entfernt = entfernt + ".tmp"
         weg = ("%s\n\u2192 %s" % ((entfernt, oertlich) if ist_download
                                   else (oertlich, entfernt)))
 
@@ -31105,6 +32880,19 @@ class PS5ConverterGUI:
         knopfreihe.pack(side="bottom", fill="x")
         koerper.pack(fill="both", expand=True)
 
+        def _schliessen_angefragt() -> None:
+            # Das X des Fensters ist ein Abbrechen, kein stilles Weiterlaufen:
+            # Bis v1.9.24 verschwand das Fenster, die Uebertragung lief
+            # unsichtbar weiter, und ihr Ergebnis meldete niemand mehr.
+            if lauf["fertig"] or not lauf["an"]:
+                return
+            _abbrechen()
+
+        try:
+            fenster.protocol("WM_DELETE_WINDOW", _schliessen_angefragt)
+        except tk.TclError:
+            pass
+
         def _anzeigen() -> None:
             if lauf["fertig"]:
                 return
@@ -31125,7 +32913,7 @@ class PS5ConverterGUI:
             try:
                 ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
                 if ist_download:
-                    with io.open(oertlich, "wb") as ziel:
+                    with io.open(teil_lokal, "wb") as ziel:
                         def _stueck(daten):
                             if not lauf["an"]:
                                 raise _KopieAbgebrochen()
@@ -31133,7 +32921,15 @@ class PS5ConverterGUI:
                             lauf["getan"] += len(daten)
                         ftp.retrbinary("RETR %s" % entfernt, _stueck,
                                        blocksize=1024 * 256)
+                    os.replace(teil_lokal, oertlich)
                 else:
+                    if self._ftp_datei_vorhanden(ftp, entfernt) and \
+                            not self._ask_yesno_threadsafe(
+                                self._t("dialog.title.file_already_exists"),
+                                self._t("dialog.msg.target_file_exists_overwrite_confirm",
+                                        path=entfernt),
+                                default_yes=False):
+                        raise _KopieAbgebrochen()
                     with io.open(oertlich, "rb") as quelle:
                         def _lesen(anzahl=1024 * 256):
                             if not lauf["an"]:
@@ -31141,13 +32937,30 @@ class PS5ConverterGUI:
                             block = quelle.read(anzahl)
                             lauf["getan"] += len(block)
                             return block
-                        ftp.storbinary("STOR %s" % entfernt, _LeseHuelle(_lesen),
-                                       blocksize=1024 * 256)
+                        ftp.storbinary("STOR %s" % teil_entfernt,
+                                       _LeseHuelle(_lesen), blocksize=1024 * 256)
+                    try:
+                        ftp.delete(entfernt)
+                    except Exception:  # noqa: BLE001
+                        pass          # gab es nicht - dann ist nichts zu ersetzen
+                    ftp.rename(teil_entfernt, entfernt)
             except _KopieAbgebrochen:
                 lauf["fehler"] = self._t("library.uebertragung_abgebrochen")
             except Exception as exc:  # noqa: BLE001
                 lauf["fehler"] = str(exc)
             finally:
+                if lauf["fehler"]:
+                    if ist_download:
+                        try:
+                            if os.path.exists(teil_lokal):
+                                os.remove(teil_lokal)
+                        except OSError:
+                            pass
+                    elif ftp is not None:
+                        try:
+                            ftp.delete(teil_entfernt)
+                        except Exception:  # noqa: BLE001
+                            pass
                 if ftp is not None:
                     try:
                         ftp.quit()
@@ -31156,7 +32969,18 @@ class PS5ConverterGUI:
                             ftp.close()
                         except Exception:  # noqa: BLE001
                             pass
-                self._spaeter_im_fenster(fenster, _abschluss)
+                # Zaehler hier herunter, nicht erst in _abschluss: Ist das
+                # Fenster schon zu, laeuft _abschluss nie.
+                self._bibliothek_uebertragungen = max(
+                    0, self._bibliothek_uebertragungen - 1)
+                if not self._spaeter_im_fenster(fenster, _abschluss):
+                    # Fenster weg - das Ergebnis gehoert trotzdem ins Protokoll.
+                    self._append_to_log(
+                        (self._t("library.uebertragung_fehler", error=lauf["fehler"])
+                         if lauf["fehler"] else
+                         self._t("library.uebertragung_fertig",
+                                 size=self._fmt_bytes(int(lauf["getan"]))))
+                        + "\n")
 
         def _abschluss() -> None:
             lauf["fertig"] = True
@@ -31165,13 +32989,6 @@ class PS5ConverterGUI:
             except Exception:  # noqa: BLE001
                 pass
             if lauf["fehler"]:
-                # Ein abgebrochener Download hinterlaesst eine halbe Datei -
-                # die sieht im Zielordner aus wie eine fertige Sicherung.
-                if ist_download and not lauf["an"]:
-                    try:
-                        os.remove(oertlich)
-                    except OSError:
-                        pass
                 messagebox.showwarning(
                     self._t("library.uebertragung_titel"),
                     self._t("library.uebertragung_fehler", error=lauf["fehler"]),
@@ -31184,6 +33001,7 @@ class PS5ConverterGUI:
                 parent=eltern)
 
         _anzeigen()
+        self._bibliothek_uebertragungen += 1
         threading.Thread(target=_arbeit, daemon=True,
                          name="bibliothek-transfer").start()
 
@@ -31240,7 +33058,7 @@ class PS5ConverterGUI:
         # Mausrad: Windows/macOS schicken <MouseWheel>, X11 die Knoepfe 4/5.
         # Dieselbe Stelle ist an vier anderen Fenstern schon so geloest.
         def _rad(e):
-            flaeche.yview_scroll(int(-1 * (e.delta / 120)) or -1, "units")
+            flaeche.yview_scroll(self._rad_einheiten(e), "units")
 
         for ziel in (flaeche, innen):
             ziel.bind("<MouseWheel>", _rad)
@@ -31287,7 +33105,12 @@ class PS5ConverterGUI:
                 padx=6, pady=6)
             kachel.grid(row=zeile, column=spalte, padx=4, pady=4, sticky="n")
 
+            # Mit einem leeren Bild, damit width/height in PIXELN zaehlen. Ein
+            # Label ohne Bild misst sie in Zeichen und Zeilen: Bis v1.9.24 war
+            # jede Kachel ohne (noch nicht geladenes) Titelbild 150 Zeichen
+            # breit und 150 Zeilen hoch.
             bild = tk.Label(kachel, bg=c["bg_card"], width=kante, height=kante,
+                            image=self._kachel_leerbild(),
                             text=self._t("library.kachel_laedt"),
                             fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
                             compound="center")
@@ -31295,26 +33118,69 @@ class PS5ConverterGUI:
 
             angaben = eintrag.get("meta") or {}
             titel = str(angaben.get("title") or eintrag.get("name") or "?")
-            tk.Label(kachel, text=self._kuerzen_auf_breite(titel, 22),
-                     bg=kachel["bg"], fg=c["fg_primary"],
-                     font=(UI_SCHRIFT, pt(9), "bold"),
-                     wraplength=kante).pack(pady=(4, 0))
+            titel_feld = tk.Label(kachel, text=self._kuerzen_auf_breite(titel, 22),
+                                  bg=kachel["bg"], fg=c["fg_primary"],
+                                  font=(UI_SCHRIFT, pt(9), "bold"),
+                                  wraplength=kante)
+            titel_feld.pack(pady=(4, 0))
             unten = " · ".join(x for x in (
                 str(angaben.get("title_id") or ""),
                 self._t("format.%s" % eintrag["kind"])
                 if eintrag.get("kind") in self._FORMAT_LABELS else "",
             ) if x)
-            tk.Label(kachel, text=unten, bg=kachel["bg"],
-                     fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8))).pack()
+            unten_feld = tk.Label(kachel, text=unten, bg=kachel["bg"],
+                                  fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)))
+            unten_feld.pack()
 
-            for teil in (kachel, bild):
+            for teil in (kachel, bild, titel_feld, unten_feld):
                 teil.bind("<Button-1>", lambda _e, x=eintrag: bei_auswahl(x))
                 teil.bind("<Double-Button-1>", lambda _e, x=eintrag: bei_start(x))
                 teil.configure(cursor="hand2")
             eintrag["_bildfeld"] = bild
+            eintrag["_kachel"] = kachel
+            eintrag["_kachel_texte"] = (titel_feld, unten_feld)
 
         for s in range(spalten):
             innen.grid_columnconfigure(s, weight=1)
+
+    def _kachel_leerbild(self) -> "tk.PhotoImage":
+        """Ein 1x1-Bild als Platzhalter - einmal je Programmlauf.
+
+        Solange ein Label ein Bild traegt, zaehlen width/height in Pixeln.
+        Faellt das Bild weg (``image=""``), zaehlen sie wieder in Zeichen -
+        deshalb setzt auch "kein Titelbild" dieses Bild statt keines.
+        """
+        vorhanden = getattr(self, "_kachel_leerbild_obj", None)
+        if vorhanden is None:
+            vorhanden = tk.PhotoImage(width=1, height=1)
+            self._kachel_leerbild_obj = vorhanden
+        return vorhanden
+
+    def _bibliothek_kacheln_markieren(self, eintraege, gewaehlt: str) -> None:
+        """Hebt die gewaehlte Kachel hervor - ohne die Kacheln neu zu bauen.
+
+        Bis v1.9.24 baute jeder Klick alle Kacheln neu: Die Titelbilder waren
+        danach weg (nachgeladen wurde nicht), die Reihenfolge fiel auf die
+        unsortierte Fundliste zurueck, und ein Doppelklick kam nie an - der
+        erste Klick hatte das Widget, das den zweiten bekommen sollte, schon
+        zerstoert.
+        """
+        c = self._COLORS
+        for eintrag in eintraege:
+            kachel = eintrag.get("_kachel")
+            if kachel is None:
+                continue
+            ist_gewaehlt = eintrag.get("path") == gewaehlt
+            grund = c["bg_card"] if ist_gewaehlt else c["console_bg"]
+            try:
+                if not kachel.winfo_exists():
+                    continue
+                kachel.configure(bg=grund, highlightbackground=(
+                    c["fg_accent"] if ist_gewaehlt else c["console_bg"]))
+                for feld in eintrag.get("_kachel_texte", ()):
+                    feld.configure(bg=grund)
+            except tk.TclError:
+                continue
 
     def _bibliothek_bilder_nachladen(self, fenster, eintraege, *, generation):
         """Holt die Titelbilder und haengt sie an die Kacheln - im Hintergrund.
@@ -31364,8 +33230,11 @@ class PS5ConverterGUI:
                 return
         except Exception:  # noqa: BLE001
             return
+        # Ohne Titelbild das Leerbild, nicht image="" - sonst misst das Feld
+        # wieder in Zeichen (siehe _kachel_leerbild).
         if not datei:
-            feld.configure(text=self._t("library.kachel_ohne_bild"), image="")
+            feld.configure(text=self._t("library.kachel_ohne_bild"),
+                           image=self._kachel_leerbild())
             return
         try:
             bild = Image.open(datei)
@@ -31373,7 +33242,8 @@ class PS5ConverterGUI:
             foto = ImageTk.PhotoImage(bild)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: %s nicht darstellbar (%s)", datei, exc)
-            feld.configure(text=self._t("library.kachel_ohne_bild"), image="")
+            feld.configure(text=self._t("library.kachel_ohne_bild"),
+                           image=self._kachel_leerbild())
             return
         # Der Verweis muss bleiben, sonst raeumt Python das Bild weg und die
         # Kachel ist leer - der klassische Tk-Fallstrick.
@@ -31470,9 +33340,14 @@ class PS5ConverterGUI:
 
         # Was gerade gezeigt wird, und welcher Eintrag gewaehlt ist. Die
         # Kacheln kennen keine Treeview-Auswahl, deshalb ein eigener Merker.
+        # "suchlauf": laufende Nummer der Suche. Wer waehrend eines Suchlaufs
+        # die Quelle wechselt (Rechner <-> Konsole), startet einen neuen; das
+        # Ergebnis des alten darf die Liste danach nicht mehr ueberschreiben.
+        # Bis v1.9.24 kam der langsamere zuletzt an - und die Liste zeigte
+        # die Titel der Quelle, die gar nicht mehr gewaehlt war.
         ansicht = {"art": str(self._load_setting("library_ansicht", "kacheln")
                               or "kacheln"),
-                   "gewaehlt": "", "generation": 0}
+                   "gewaehlt": "", "generation": 0, "suchlauf": 0}
 
         search_row = tk.Frame(body, bg=c["bg_main"])
         search_row.grid(row=0, column=0, sticky="ew", pady=(0, 6))
@@ -31593,12 +33468,8 @@ class PS5ConverterGUI:
                     except Exception:  # noqa: BLE001
                         pass
                     break
-            self._bibliothek_kacheln_setzen(
-                kachel_innen, [it for it in all_items
-                               if it["path"] in {e["path"] for e in _sichtbare()}],
-                gewaehlt=ansicht["gewaehlt"],
-                bei_auswahl=_kachel_gewaehlt,
-                bei_start=lambda it: (_kachel_gewaehlt(it), _use_as_source()))
+            # Nur umfaerben, nicht neu bauen - siehe _bibliothek_kacheln_markieren.
+            self._bibliothek_kacheln_markieren(all_items, ansicht["gewaehlt"])
 
         def _sichtbare() -> list:
             query = search_var.get().strip().lower()
@@ -31660,8 +33531,16 @@ class PS5ConverterGUI:
                 gewaehlt=ansicht["gewaehlt"],
                 bei_auswahl=_kachel_gewaehlt,
                 bei_start=lambda it: (_kachel_gewaehlt(it), _use_as_source()))
-            self._bibliothek_bilder_nachladen(
-                win, sichtbare, generation=ansicht["generation"])
+            # Der Bildlader passend zur Quelle. Bis v1.9.24 lief hier immer
+            # der fuer Dateien auf dem PC - bei Quelle "PS5" setzte jedes
+            # Filtern und Sortieren alle Kacheln auf "kein Titelbild", und
+            # beide Lader schrieben zugleich in den Bildspeicher.
+            if quelle_var.get() == "ps5":
+                self._bibliothek_ps5_bilder_nachladen(
+                    win, sichtbare, generation=ansicht["generation"])
+            else:
+                self._bibliothek_bilder_nachladen(
+                    win, sichtbare, generation=ansicht["generation"])
 
         def _rescan() -> None:
             if quelle_var.get() == "ps5":
@@ -31679,6 +33558,8 @@ class PS5ConverterGUI:
                     "library.ordner_verschwunden",
                     anzahl=len(fehlend), namen=", ".join(fehlend[:6])))
             status_var.set(self._t("library.status_scanning"))
+            ansicht["suchlauf"] += 1
+            nummer = ansicht["suchlauf"]
 
             def worker() -> None:
                 collected: list[dict] = []
@@ -31686,6 +33567,8 @@ class PS5ConverterGUI:
                     collected.extend(self._library_scan_folder(folder))
 
                 def _finish() -> None:
+                    if nummer != ansicht["suchlauf"]:
+                        return          # inzwischen neu gesucht - siehe ansicht
                     all_items.clear()
                     all_items.extend(collected)
                     _apply_filter()
@@ -31700,22 +33583,26 @@ class PS5ConverterGUI:
         def _rescan_ps5() -> None:
             """Sucht auf der Konsole. Laeuft im Hintergrund - FTP braucht Zeit."""
             status_var.set(self._t("library.status_scanning"))
+            ansicht["suchlauf"] += 1
+            nummer = ansicht["suchlauf"]
 
             def arbeit() -> None:
                 gefunden, fehler = self._bibliothek_ps5_scannen()
 
                 def _fertig() -> None:
+                    if nummer != ansicht["suchlauf"]:
+                        return          # inzwischen neu gesucht - siehe ansicht
                     all_items.clear()
                     all_items.extend(gefunden)
+                    # _apply_filter startet auch die Titelbilder der Konsole
+                    # (ueber EINE Verbindung) - ein zweiter Lader hier liefe
+                    # doppelt.
                     _apply_filter()
                     if fehler:
                         status_var.set(fehler)
                     else:
                         status_var.set(self._t("library.ps5_status",
                                                count=len(gefunden)))
-                        # Die Titelbilder der Konsole ueber EINE Verbindung.
-                        self._bibliothek_ps5_bilder_nachladen(
-                            win, _sichtbare(), generation=ansicht["generation"])
 
                 self._spaeter_im_fenster(win, _fertig)
 
@@ -31742,7 +33629,9 @@ class PS5ConverterGUI:
                                     self._t("library.upload_nur_dateien"),
                                     parent=win)
                 return
-            self._bibliothek_hochladen(win, eintrag)
+            vorher = status_var.get()
+            self._bibliothek_hochladen(
+                win, eintrag, melden=lambda text: status_var.set(text or vorher))
 
         def _holen() -> None:
             eintrag = _gewaehlter_eintrag()
@@ -32066,6 +33955,8 @@ class PS5ConverterGUI:
             mkpfs_ordner=getattr(self, "mkpfs_dir", "") or "",
             letzte_dauer_s=getattr(self, "_letzte_aufgabe_dauer_s", 0.0) or 0.0,
             quellbytes=getattr(self, "task_total_source_bytes", 0) or 0,
+            letzte_aufgabe_art=getattr(self, "_letzte_aufgabe_art", ("", "")),
+            kompressionsstufen=getattr(self, "_zstd_level_options", None),
             fortschritts_waechter=getattr(self, "fortschritts_waechter", None),
             text=getattr(self, "_t", None),
             aufgabe=getattr(self, "current_mode", None),
@@ -32073,8 +33964,8 @@ class PS5ConverterGUI:
             konfigpfad=getattr(self, "_get_config_path", None),
             schwaerzen_hinweise=getattr(
                 self, "_DIAGNOSTIC_REDACT_KEY_HINTS", ()),
-            # Alle elf Abschnittsbauer ueber einen Rueckruf. Auch die
-            # acht, die das Modul selbst hat: Sonst koennte ein Traeger
+            # Alle zwoelf Abschnittsbauer ueber einen Rueckruf. Auch die
+            # neun, die das Modul selbst hat: Sonst koennte ein Traeger
             # sie nicht ersetzen, und die Kette waere gekappt.
             bauer_holen=lambda name: getattr(self, name, None),
             # Als Rueckruf: _build_log_tail wird beim Kuerzen neu
@@ -32801,10 +34692,10 @@ class PS5ConverterGUI:
     _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
         ("MkPFS (Packmaschine)", "MkPFS-1.0.0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
-        ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.8/mkpfs_1_0_0/mkpfs/__init__.py",
+        ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.9/mkpfs_1_0_0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
-        ("PS4 FFPFSC", "PS4FFPFSC-0.2.8/ps4ffpsc/__init__.py",
-         "ohne_quelle", "GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.8/UPSTREAM.md"),
+        ("PS4 FFPFSC", "PS4FFPFSC-0.2.9/ps4ffpsc/__init__.py",
+         "ohne_quelle", "GPL-3.0-Auszug, siehe PS4FFPFSC-0.2.9/UPSTREAM.md"),
     )
 
     #: Python-Bibliotheken, die das Programm braucht: Anzeigename, Name beim
@@ -32960,6 +34851,15 @@ class PS5ConverterGUI:
     def _diagnose_werkzeugbestand(self):
         """Siehe diagnose_befund.Diagnosebericht._diagnose_werkzeugbestand."""
         return self._diagnosebericht()._diagnose_werkzeugbestand()
+
+    def _diagnose_werkzeugpflege(self):
+        """Siehe diagnose_befund.Diagnosebericht._diagnose_werkzeugpflege.
+
+        Ohne diese Weiterleitung faellt der Abschnitt im Fenster aus: Der
+        Bericht holt seine Bauer ueber ``bauer_holen`` von dieser Klasse und
+        ueberspringt, was sie nicht kennt - stillschweigend.
+        """
+        return self._diagnosebericht()._diagnose_werkzeugpflege()
 
     def _aktualisierungen_holen(self, adresse: str) -> str:
         """Ruft eine Adresse ab und gibt den Rohtext zurueck.
@@ -33443,7 +35343,7 @@ class PS5ConverterGUI:
         zeilen.append("Kompatibilität: hier %s, Python %s"
                       % (platform.system() or "?", platform.python_version()))
         zeilen.append("  Linux und macOS (arm64 + Intel) baut und prüft der "
-                      "CI-Lauf, siehe .github/workflows/macos-bündel.yml")
+                      "CI-Lauf, siehe .github/workflows/macos-buendel.yml")
 
         # -- Eigenschaften (eigenschaftsbasiertes Testen) -----------------
         zeilen.extend(self._diagnose_eigenschaften())
@@ -33586,7 +35486,7 @@ class PS5ConverterGUI:
                     zeilen.extend(str(b) for b in befunde)
                 except Exception as exc:            # noqa: BLE001 - anzeigen
                     zeilen = ["Aktualisierungsprüfung fehlgeschlagen: %s" % exc]
-                self.root.after(0, lambda: _fertig(zeilen))
+                self._spaeter_im_fenster(win, lambda: _fertig(zeilen))
 
             def _fertig(zeilen: list) -> None:
                 _anhaengen(zeilen)
@@ -35630,6 +37530,21 @@ class PS5ConverterGUI:
         Returns:
             Die Zeilen fuers Protokoll - eine je Datei, dann das Ergebnis.
         """
+        return self._ampr_gen_ablegen_mit_ergebnis(
+            generation, ort, lokal=lokal, ziel=ziel, dateien=dateien)[0]
+
+    def _ampr_gen_ablegen_mit_ergebnis(self, generation: str, ort: str, *,
+                                       lokal: bool, ziel: str,
+                                       dateien: list) -> tuple[list[str], bool]:
+        """Wie :meth:`_ampr_gen_ablegen`, dazu: Liegen wirklich alle Dateien?
+
+        Bis v1.9.24 kannte die Automatik nur die Zeilen und meldete danach in
+        jedem Fall "Fertig. Jetzt das Spiel starten" - auch wenn keine einzige
+        Datei abgelegt oder nicht einmal der Zielordner angelegt war.
+
+        Returns:
+            (Zeilen, alle_abgelegt).
+        """
         if not lokal:
             raise ValueError("_ampr_gen_ablegen ist der lokale Weg")
         zeilen: list[str] = []
@@ -35639,8 +37554,9 @@ class PS5ConverterGUI:
         except OSError as exc:
             zeilen.append(self._t("amprgen.mkdir_failed", path=str(zielordner)))
             logger.warning("Zielordner nicht anlegbar (%s): %s", zielordner, exc)
-            return zeilen
+            return zeilen, False
 
+        alle_abgelegt = True
         for quelle in dateien:
             name = os.path.basename(str(quelle))
             zielweg = zielordner / name
@@ -35654,10 +37570,14 @@ class PS5ConverterGUI:
                 shutil.copy2(str(quelle), zielweg)
                 zeilen.append(self._t("amprgen.placed", name=name))
             except OSError as exc:
+                alle_abgelegt = False
                 zeilen.append(self._t("amprgen.place_failed", name=name,
                                       error=exc))
                 logger.warning("Ablegen fehlgeschlagen (%s): %s", zielweg, exc)
 
+        if not alle_abgelegt:
+            zeilen.append(self._t("amprgen.place_incomplete"))
+            return zeilen, False
         zeilen.append(self._t("amprgen.done", path=str(zielordner)))
         try:
             da = [e.name for e in zielordner.parent.iterdir() if e.is_dir()]
@@ -35666,7 +37586,7 @@ class PS5ConverterGUI:
         for meldung in sm_gen.beanstandungen(generation, ort, da,
                                              texte=self._smgen_texte()):
             zeilen.append("!! " + meldung)
-        return zeilen
+        return zeilen, True
 
     def _ampr_gen_profil_adressen(self) -> list[str]:
         """Adressen aus den gespeicherten FTP-Profilen.
@@ -36172,7 +38092,7 @@ class PS5ConverterGUI:
         rollflaeche.bind("<Configure>", lambda e: rollflaeche.itemconfig(
             innen_id, width=e.width))
         dlg.bind("<MouseWheel>", lambda e: rollflaeche.yview_scroll(
-            int(-1 * (e.delta / 120)), "units"))
+            self._rad_einheiten(e), "units"))
         # X11 meldet das Rad als Knopf 4 und 5.
         dlg.bind("<Button-4>", lambda e: rollflaeche.yview_scroll(-1, "units"))
         dlg.bind("<Button-5>", lambda e: rollflaeche.yview_scroll(1, "units"))
@@ -36441,12 +38361,22 @@ class PS5ConverterGUI:
                     gewaehlt = spiele[0]
                     melde(self._t("amprgen.game_single"))
                 else:
+                    # Alle Titel anbieten, PS5-Spiele zuerst. Bis v1.9.24 kamen
+                    # nur die ersten zwoelf in den Dialog - nach Title-ID
+                    # sortiert, also alle CUSA-Eintraege (PS4-Spiele und Apps
+                    # wie Netflix) vor jedem PPSA. Bei zwoelf oder mehr
+                    # PS4-Eintraegen war kein einziges PS5-Spiel waehlbar. Der
+                    # Dialog rollt seit v1.8.92; die Kappung war ueberholt.
+                    reihenfolge = sorted(
+                        spiele, key=lambda s: (
+                            str(s.get("title_id") or "").upper().startswith("CUSA"),
+                            str(s.get("title_id") or s.get("pfad") or "")))
                     optionen = [(s["pfad"],
                                  "%s  (%s)" % (s["name"][:44],
                                                s["title_id"] or "?"),
                                  self._t("amprgen.q_game_entry",
                                          path=s["pfad"]))
-                                for s in spiele[:12]]
+                                for s in reihenfolge]
                     wahl = self._ampr_gen_frage(
                         fenster, self._t("amprgen.q_game"),
                         self._t("amprgen.q_game_why"), optionen)
@@ -36559,22 +38489,32 @@ class PS5ConverterGUI:
             # ── 7. Ablegen und nachsehen ───────────────────────────────
             melde(self._t("amprgen.step_place"))
             dateien = [str(e["path"]) for e in gewaehlt_libs]
+            # Ohne vollstaendige Ablage kein "Fertig" und kein "Spiel starten"
+            # - bis v1.9.24 kamen beide auch nach lauter Fehlschlaegen.
             if lokal:
-                for zeile in self._ampr_gen_ablegen(
-                        generation, ort, lokal=True, ziel=ziel["pfad"],
-                        dateien=dateien):
+                zeilen, abgelegt = self._ampr_gen_ablegen_mit_ergebnis(
+                    generation, ort, lokal=True, ziel=ziel["pfad"],
+                    dateien=dateien)
+                for zeile in zeilen:
                     melde(zeile)
+                if not abgelegt:
+                    return
             else:
                 if not self._ampr_ftp_ensure_dir(ftp, ziel["pfad"]):
                     melde(self._t("amprgen.mkdir_failed", path=ziel["pfad"]))
                     return
+                fehlgeschlagen = 0
                 for quelle in dateien:
                     name = os.path.basename(quelle)
                     if self._ampr_ftp_upload_file(ftp, ziel["pfad"], quelle, name):
                         melde(self._t("amprgen.placed", name=name))
                     else:
+                        fehlgeschlagen += 1
                         melde(self._t("amprgen.place_failed", name=name,
                                       error="FTP"))
+                if fehlgeschlagen:
+                    melde(self._t("amprgen.place_incomplete"))
+                    return
                 melde(self._t("amprgen.done", path=ziel["pfad"]))
                 # Bei den festen Wegen liegen die Dateien direkt im Ziel -
                 # dort ist auch nachzusehen. Bei den Wegen pro Spiel ist der
@@ -36931,12 +38871,35 @@ class PS5ConverterGUI:
                  wraplength=920, justify="left").pack(fill="x", padx=16, pady=(8, 0))
 
         # ---------------------------------------------------------- Knoepfe
-        def _uebernehmen(ergebnis: dict) -> None:
+        # Der Stand des Feldes nach dem letzten Holen oder Schreiben. Weicht
+        # das Feld davon ab, hat der Anwender Aenderungen, die noch nicht auf
+        # der Konsole sind.
+        geladen: dict = {"inhalt": None}
+
+        def _ungespeichert() -> bool:
+            jetzt = feld.get("1.0", "end-1c")
+            if geladen["inhalt"] is None:
+                return bool(jetzt.strip())
+            return jetzt != geladen["inhalt"]
+
+        def _uebernehmen(ergebnis: dict, feld_behalten: bool = False) -> None:
             liste.delete(0, "end")
             for name in ergebnis["dateien"]:
                 liste.insert("end", name)
+            if feld_behalten and _ungespeichert():
+                # Bis v1.9.24 ersetzte jedes Nachladen nach Hochladen, Loeschen
+                # oder Zurueckspielen das Feld - wer die Reihenfolge umgestellt
+                # und vor dem Schreiben noch einen Payload hochgeladen hatte,
+                # verlor seine Aenderungen ohne ein Wort.
+                stand_var.set(self._t("autoloader.state_list_refreshed_kept",
+                                      count=len(ergebnis["dateien"])))
+                return
             feld.delete("1.0", "end")
             feld.insert("1.0", ergebnis["inhalt"])
+            # Aus dem Feld zurueckgelesen, nicht der Rohtext: Tk vereinheitlicht
+            # beim Einfuegen, und der Vergleich in _ungespeichert muss mit dem
+            # rechnen, was wirklich dasteht.
+            geladen["inhalt"] = feld.get("1.0", "end-1c")
             if not ergebnis["inhalt"]:
                 stand_var.set(self._t("autoloader.no_autoload"))
             else:
@@ -36944,7 +38907,20 @@ class PS5ConverterGUI:
                                       count=len(ergebnis["dateien"])))
 
         def _holen() -> None:
+            """Der Knopf: holt die Fassung der Konsole - nach Rueckfrage,
+            wenn im Feld ungespeicherte Aenderungen stehen."""
+            if _ungespeichert() and not messagebox.askyesno(
+                    self._t("autoloader.discard_title"),
+                    self._t("autoloader.discard_message"),
+                    parent=win, default="no"):
+                return
             self._autoloader_auftrag(win, stand_var, self._autoloader_lesen, _uebernehmen)
+
+        def _nachladen() -> None:
+            """Nach eigener Arbeit: Dateiliste auffrischen, Aenderungen im Feld behalten."""
+            self._autoloader_auftrag(
+                win, stand_var, self._autoloader_lesen,
+                lambda ergebnis: _uebernehmen(ergebnis, feld_behalten=True))
 
         def _schreiben() -> None:
             inhalt = feld.get("1.0", "end-1c")
@@ -36977,10 +38953,14 @@ class PS5ConverterGUI:
                                + self._AUTOLOADER_DATEI, _io.BytesIO(roh))
                 return len(roh)
 
-            self._autoloader_auftrag(
-                win, stand_var, _arbeit,
-                lambda n: (stand_var.set(self._t("autoloader.state_saved", bytes=n)),
-                           _holen()))
+            def _gespeichert(n: int) -> None:
+                # Was geschrieben wurde, ist jetzt der Stand der Konsole - das
+                # Nachladen darf das Feld wieder ersetzen, ohne zu fragen.
+                geladen["inhalt"] = inhalt
+                stand_var.set(self._t("autoloader.state_saved", bytes=n))
+                _nachladen()
+
+            self._autoloader_auftrag(win, stand_var, _arbeit, _gespeichert)
 
         def _hochladen() -> None:
             pfad = filedialog.askopenfilename(
@@ -37029,7 +39009,7 @@ class PS5ConverterGUI:
                     messagebox.showwarning(
                         self._t("autoloader.error_title"),
                         self._t("autoloader.not_executable", name=name), parent=win)
-                _holen()
+                _nachladen()
 
             self._autoloader_auftrag(win, stand_var, _arbeit, _fertig)
 
@@ -37070,7 +39050,7 @@ class PS5ConverterGUI:
                         count=len(misslungen),
                         names=", ".join(misslungen)) + "\n")
                 stand_var.set(self._t("autoloader.state_deleted", count=anzahl))
-                _holen()
+                _nachladen()
 
             self._autoloader_auftrag(win, stand_var, _arbeit, _fertig_geloescht)
 
@@ -37190,7 +39170,7 @@ class PS5ConverterGUI:
                         count=len(misslungen),
                         names=", ".join(misslungen)) + "\n")
                 stand_var.set(self._t("autoloader.state_restored", count=anzahl))
-                _holen()
+                _nachladen()
 
             self._autoloader_auftrag(win, stand_var, _arbeit,
                                      _fertig_zurueckgespielt)
@@ -37275,7 +39255,7 @@ class PS5ConverterGUI:
         import io as _io  # noqa: PLC0415
 
         kennung = angaben.kennung
-        melden("MTRW - Systempartition beschreibbar schalten")
+        melden(self._t("appinstall.log_mtrw"))
         try:
             ftp.sendcmd(app_install.BESCHREIBBAR)
         except Exception as exc:
@@ -37290,7 +39270,7 @@ class PS5ConverterGUI:
         for ordner in ziele:
             try:
                 ftp.mkd(ordner)
-                melden("angelegt: " + ordner)
+                melden(self._t("appinstall.log_angelegt", ordner=ordner))
             except Exception as exc:
                 # Nicht jede Ausnahme heisst "gibt es schon". Fehlende
                 # Schreibrechte trotz MTRW und ein Verbindungsabbruch
@@ -37302,7 +39282,7 @@ class PS5ConverterGUI:
                     raise app_install.AppInstallFehler(
                         self._t("appinstall.error_mkdir", ordner=ordner,
                                 error=exc)) from exc
-                melden("vorhanden: " + ordner)
+                melden(self._t("appinstall.log_vorhanden", ordner=ordner))
 
         def _hoch(quelle: str, ziel: str) -> None:
             with open(quelle, "rb") as fh:
@@ -37331,7 +39311,7 @@ class PS5ConverterGUI:
             _hoch(angaben.icon, user_sce + "/icon0.png")
         _hoch_roh((kennung + "\n").encode("ascii"), app_install.KENNUNGSDATEI)
 
-        melden("Payload an %s:%d" % (host, app_install.ELFLDR_PORT))
+        melden(self._t("appinstall.log_payload", host=host, port=app_install.ELFLDR_PORT))
         # elfldr-Pfad durchreichen: Ist Port 9021 zu, wird elfldr sonst
         # nicht geweckt, der Versand faellt auf den Payload Manager
         # zurueck - und der liefert keine Ausgabe, womit
@@ -37593,7 +39573,7 @@ class PS5ConverterGUI:
             stand_var.set(self._t("appinstall.state_connecting", host=host))
 
             def _melden(text: str) -> None:
-                self.root.after(0, lambda: _schreiben(text))
+                self._spaeter_im_fenster(win, lambda: _schreiben(text))
 
             def _lauf() -> None:
                 ftp = None
@@ -37604,9 +39584,13 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     logger.debug("appinstall: %s", exc)
                     meldung = self._t("appinstall.error_generic", error=exc)
-                    self.root.after(0, lambda: stand_var.set(meldung))
-                    self.root.after(0, lambda: _schreiben(meldung))
-                    self.root.after(0, lambda: messagebox.showwarning(
+                    # Der Ausgang gehoert auch ins Programmprotokoll: Wer das
+                    # Fenster waehrend der Uebertragung schliesst, erfuhr bis
+                    # v1.9.24 nie, ob die App angekommen ist.
+                    self._append_to_log(meldung + "\n")
+                    self._spaeter_im_fenster(win, lambda: stand_var.set(meldung))
+                    self._spaeter_im_fenster(win, lambda: _schreiben(meldung))
+                    self._spaeter_im_fenster(win, lambda: messagebox.showwarning(
                         self._t("appinstall.error_title"), meldung, parent=win))
                     return
                 finally:
@@ -37620,8 +39604,9 @@ class PS5ConverterGUI:
                                 pass
                 fertig = self._t("appinstall.state_done",
                                  kennung=angaben.kennung)
-                self.root.after(0, lambda: stand_var.set(fertig))
-                self.root.after(0, lambda: _schreiben(fertig))
+                self._append_to_log(fertig + "\n")
+                self._spaeter_im_fenster(win, lambda: stand_var.set(fertig))
+                self._spaeter_im_fenster(win, lambda: _schreiben(fertig))
 
             threading.Thread(target=_lauf, daemon=True).start()
 
@@ -37719,16 +39704,20 @@ class PS5ConverterGUI:
         # Bewusst ohne textvariable: Eine nur lokal gehaltene StringVar wird
         # eingesammelt, sobald diese Funktion zurueckkehrt - die Combobox zeigt
         # dann ins Leere, obwohl das Widget selbst noch lebt.
+        # Der Bestand, nicht die feste Liste - wie beim Einbau beim Erstellen
+        # (_backport_firmwares). Bis v1.9.24 bot dieses Fenster fest 4 bis 7
+        # an: Ein selbst abgelegter Satz Backport_Fakelibs/8/fakelib/ war beim
+        # Erstellen waehlbar, hier nicht.
+        firmwares = list(self._backport_firmwares())
         auswahlwerte = [
             self._t("backport.firmware_entry", fw=f"{fw}.00")
-            for fw in ps5_backport.FIRMWARE_MIT_FAKELIBS
+            for fw in firmwares
         ]
         fw_box = ttk.Combobox(einstellungen, state="readonly",
                               width=16, values=auswahlwerte)
         fw_box.pack(side="left", padx=(8, 16))
         try:
-            fw_box.current(list(ps5_backport.FIRMWARE_MIT_FAKELIBS).index(
-                ps5_backport.FIRMWARE_STANDARD))
+            fw_box.current(firmwares.index(ps5_backport.FIRMWARE_STANDARD))
         except ValueError:
             fw_box.current(0)
 
@@ -37801,7 +39790,11 @@ class PS5ConverterGUI:
                                wraplength=920, justify="left")
 
         zeilen: dict[str, str] = {}    # Pfad -> Baumzeile
-        laeuft = {"aktiv": False}
+        # "aktiv": Analyse, Platzmessung oder Backport laufen. "backport": nur
+        # der Backport selbst - nur er veraendert den Dump. "abbruch": der
+        # Anwender hat beim Schliessen abgebrochen; der Faden haelt an der
+        # naechsten Datei bzw. am naechsten Kopierblock an.
+        laeuft = {"aktiv": False, "backport": False, "abbruch": False}
 
         def _ziel_firmware() -> int:
             # current() liefert -1, wenn nichts ausgewaehlt ist. Ein blosser
@@ -37811,8 +39804,8 @@ class PS5ConverterGUI:
                 stelle = fw_box.current()
             except (tk.TclError, TypeError):
                 return ps5_backport.FIRMWARE_STANDARD
-            if 0 <= stelle < len(ps5_backport.FIRMWARE_MIT_FAKELIBS):
-                return ps5_backport.FIRMWARE_MIT_FAKELIBS[stelle]
+            if 0 <= stelle < len(firmwares):
+                return firmwares[stelle]
             return ps5_backport.FIRMWARE_STANDARD
 
         def _analysieren() -> None:
@@ -37826,6 +39819,8 @@ class PS5ConverterGUI:
             jedem Wechsel der Ziel-Firmware.
             """
             if laeuft["aktiv"]:
+                # Ein Firmware-Wechsel waehrend des Laufs geht nicht verloren:
+                # _analyse_fertig vergleicht und startet dann neu.
                 return
             laeuft["aktiv"] = True
             analyse_btn.configure(state="disabled")
@@ -37833,10 +39828,18 @@ class PS5ConverterGUI:
             baum.delete(*baum.get_children())
             zeilen.clear()
             stand_var.set(self._t("backport.state_analysing"))
-            threading.Thread(target=_analyse_lauf, daemon=True,
+            # Die Firmware HIER lesen, im Hauptfaden - fw_box ist ein Tk-Widget.
+            # Bis v1.9.24 las _analyse_lauf sie selbst, also aus dem
+            # Arbeitsfaden. Ohne laufende Ereignisschleife wirft Tk dort "main
+            # thread is not in main loop": In der Testreihe starb der Faden
+            # daran fuenfmal je Volllauf, bevor er eine Datei gelesen hatte, und
+            # die Warnung galt als harmlos.
+            firmware = _ziel_firmware()
+            threading.Thread(target=_analyse_lauf, args=(firmware,), daemon=True,
                              name="backport-analyse").start()
 
-        def _analyse_fertig(gesammelt: list, offen: int, leer: bool) -> None:
+        def _analyse_fertig(gesammelt: list, offen: int, leer: bool,
+                            firmware: int) -> None:
             """Im Fensterfaden: die Zeilen einsetzen und wieder freigeben."""
             laeuft["aktiv"] = False
             try:
@@ -37844,6 +39847,12 @@ class PS5ConverterGUI:
                 start_btn.configure(state="normal")
             except tk.TclError:
                 return                      # Fenster schon zu
+            if _ziel_firmware() != firmware:
+                # Waehrend des Laufs wurde eine andere Firmware gewaehlt. Das
+                # Ergebnis gilt nicht fuer sie - "werden herabgesetzt" waere
+                # fuer die falsche Firmware gezaehlt.
+                _analysieren()
+                return
             if leer:
                 stand_var.set(self._t("backport.state_nothing_found"))
                 return
@@ -37851,15 +39860,18 @@ class PS5ConverterGUI:
                 zeilen[pfad] = baum.insert("", "end", values=werte)
             stand_var.set(self._t("backport.state_analysed",
                                   total=len(gesammelt), pending=offen,
-                                  fw=f"{_ziel_firmware()}.00"))
+                                  fw=f"{firmware}.00"))
 
-        def _analyse_lauf() -> None:
-            """Im Arbeitsfaden: lesen und einordnen, nichts an Tk anfassen."""
+        def _analyse_lauf(firmware: int) -> None:
+            """Im Arbeitsfaden: lesen und einordnen, nichts an Tk anfassen.
+
+            ``firmware`` kommt als Zahl aus dem Hauptfaden.
+            """
             gesammelt: list = []
-            ziel_ps5, _ziel_ps4 = ps5_backport.sdk_paar(_ziel_firmware())
+            ziel_ps5, _ziel_ps4 = ps5_backport.sdk_paar(firmware)
             dateien = ps5_backport.kandidaten(ordner)
             if not dateien:
-                self._spaeter_im_fenster(win, _analyse_fertig, [], 0, True)
+                self._spaeter_im_fenster(win, _analyse_fertig, [], 0, True, firmware)
                 return
             offen = 0
             for pfad in dateien:
@@ -37875,6 +39887,11 @@ class PS5ConverterGUI:
                 status = self._t("backport.row_pending")
                 if typ == ps5_backport.TYP_UNBEKANNT:
                     status = self._t("backport.row_not_executable")
+                elif typ == ps5_backport.TYP_ELF_GESTRIPPT:
+                    # Wird nicht signiert (ps5_backport.datei_verarbeiten).
+                    # Bis zum 17.09.2026 zaehlte die Analyse die Datei als
+                    # offen, und der Lauf scheiterte dann an ihr - jedes Mal.
+                    status = self._t("backport.row_elf_ohne_kennung")
                 else:
                     try:
                         with open(pfad, "rb") as fh:
@@ -37893,7 +39910,8 @@ class PS5ConverterGUI:
                         status = self._t("backport.row_unreadable", error=str(exc)[:50])
                 gesammelt.append((pfad, (
                     rel, self._t(f"backport.type_{typ}"), sdk_text, status)))
-            self._spaeter_im_fenster(win, _analyse_fertig, gesammelt, offen, False)
+            self._spaeter_im_fenster(win, _analyse_fertig, gesammelt, offen, False,
+                                     firmware)
 
         def _starten() -> None:
             if laeuft["aktiv"]:
@@ -37906,9 +39924,10 @@ class PS5ConverterGUI:
                         self._t("backport.no_libs_message", fw=f"{firmware}.00"),
                         parent=win, default="no"):
                     return
-            # Der Platz für die Sicherung wird HIER geprüft, nicht im
-            # Arbeitsfaden: Die Rückfrage ist ein Dialog, und der gehört in
-            # den Hauptstrang.
+            # Über den Platz für die Sicherung wird im Fensterfaden entschieden,
+            # nicht im Arbeitsfaden des Backports: Die Rückfrage ist ein Dialog,
+            # und der gehört in den Hauptstrang. (Nur das Vermessen läuft in
+            # einem eigenen Faden, siehe unten.)
             #
             # **Vor** der Hauptrückfrage, nicht danach: Erst wenn feststeht,
             # ob gesichert wird, lässt sich die entscheidende Frage ehrlich
@@ -37917,13 +39936,56 @@ class PS5ConverterGUI:
             # Anwender nicht. Bricht der Lauf mittendrin ab, ist der Dump zum
             # Teil bearbeitet, und ohne Sicherung ist das nicht rückgängig zu
             # machen. Genau das sagte das Programm erst hinterher.
-            sichern = sicherung_var.get()
-            if sichern:
-                antwort = self._backport_platz_pruefen(ordner, win)
-                if antwort is None:
-                    return                      # abgebrochen
-                sichern = antwort               # False = ohne Sicherung weiter
+            if not sicherung_var.get():
+                _nach_der_platzpruefung(firmware, False)
+                return
+            # Vermessen im Faden, entscheiden im Fensterfaden. Bis v1.9.24 lief
+            # beides hier: Ein Dump von 40 bis 100 GB legte das Fenster fuer
+            # Minuten still, und der Zwischenstand erschien erst danach.
+            laeuft["aktiv"] = True
+            start_btn.configure(state="disabled")
+            analyse_btn.configure(state="disabled")
+            # Die Firmware steht fuer diesen Start fest: Ein Wechsel waehrend
+            # des Messens liefe an der Analyse vorbei (laeuft["aktiv"]), und
+            # die Bibliotheksfrage oben galt der alten.
+            fw_box.configure(state="disabled")
+            vorher = stand_var.get()
+            stand_var.set(self._t("status.quelle_wird_vermessen", dateien=0,
+                                  groesse=self._fmt_bytes(0)))
 
+            def _messen() -> None:
+                messung = None
+                try:
+                    messung = self._backport_platz_messen(
+                        ordner,
+                        melden=lambda text: self._spaeter_im_fenster(win, stand_var.set, text))
+                except Exception as exc:  # noqa: BLE001
+                    # Das Fenster muss in jedem Fall wieder frei werden, sonst
+                    # bleiben beide Knoepfe gesperrt. Eine gescheiterte Messung
+                    # gilt wie eine unmessbare (_backport_platz_entscheiden).
+                    logger.debug("Platzmessung für den Backport gescheitert: %s", exc)
+                self._spaeter_im_fenster(win, _platz_gemessen, firmware, messung, vorher)
+
+            threading.Thread(target=_messen, daemon=True,
+                             name="backport-platz").start()
+
+        def _platz_gemessen(firmware: int, messung, vorher: str) -> None:
+            """Im Fensterfaden: die Rueckfrage zum Platz, dann weiter."""
+            laeuft["aktiv"] = False
+            start_btn.configure(state="normal")
+            analyse_btn.configure(state="normal")
+            fw_box.configure(state="readonly")
+            stand_var.set(vorher)
+            if not sicherung_var.get():
+                # Waehrend des Messens abgewaehlt - die Messung ist dann gleich.
+                _nach_der_platzpruefung(firmware, False)
+                return
+            antwort = self._backport_platz_entscheiden(ordner, win, messung)
+            if antwort is None:
+                return                          # abgebrochen
+            _nach_der_platzpruefung(firmware, antwort)   # False = ohne Sicherung
+
+        def _nach_der_platzpruefung(firmware: int, sichern: bool) -> None:
             hinweis = self._t("backport.confirm_backup" if sichern
                               else "backport.confirm_no_backup")
             if not messagebox.askyesno(
@@ -37933,6 +39995,8 @@ class PS5ConverterGUI:
                     parent=win, default="no"):
                 return
             laeuft["aktiv"] = True
+            laeuft["backport"] = True
+            laeuft["abbruch"] = False
             start_btn.configure(state="disabled")
             analyse_btn.configure(state="disabled")
             threading.Thread(
@@ -37942,9 +40006,30 @@ class PS5ConverterGUI:
                       start_btn, analyse_btn, win, deckung_var.get()),
                 daemon=True).start()
 
+        def _beim_schliessen() -> None:
+            """Schliesst das Fenster - bei laufendem Backport erst nach Rueckfrage.
+
+            Bis v1.9.24 schloss SCHLIESSEN das Fenster einfach, und der Faden
+            lief unsichtbar weiter: Die Sicherung (40 bis 100 GB) und das
+            Herabsetzen liessen sich weder hier noch beim Beenden des Programms
+            anhalten, das Fenster hatte keinen eigenen Handler. Jetzt haelt der
+            Faden an der naechsten Datei bzw. am naechsten Kopierblock an und
+            meldet, was schon bearbeitet ist.
+            """
+            if laeuft.get("backport"):
+                if not messagebox.askyesno(
+                        self._t("backport.abort_title"),
+                        self._t("backport.abort_confirm"),
+                        parent=win, default="no"):
+                    return
+                laeuft["abbruch"] = True
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
+                   command=_beim_schliessen).pack(side="right")
         start_btn = ttk.Button(knopfreihe, text=self._t("backport.action_start"),
                                style="Accent.TButton", command=_starten)
         start_btn.pack(side="left")
@@ -38035,17 +40120,36 @@ class PS5ConverterGUI:
             ``True``  – sichern, der Platz reicht;
             ``False`` – ohne Sicherung fortfahren (der Anwender hat zugestimmt);
             ``None``  – abbrechen.
+
+        Messen und Entscheiden in einem Zug. Das Fenster ruft die beiden
+        Haelften getrennt auf (Messen im Faden, siehe
+        :meth:`_backport_platz_messen`).
+        """
+        return self._backport_platz_entscheiden(
+            ordner, win, self._backport_platz_messen(ordner))
+
+    def _backport_platz_messen(self, ordner: str, melden=None) -> "tuple[int, int] | None":
+        """Vermisst den Dump und den freien Platz daneben - ohne Tk.
+
+        Bis v1.9.24 lief das im Fensterfaden, ueber einen Dump von 40 bis
+        100 GB: Das Fenster war minutenlang nicht bedienbar, und die
+        Fortschrittszeilen (ueber after() ins Protokoll) erschienen erst, als
+        alles vorbei war - ``update_idletasks`` zeichnet nur neu, es fuehrt
+        keine after()-Auftraege aus.
+
+        Ein ``cancel_check`` bekommt die Messung bewusst **nicht**: Er haengt
+        anderswo an ``is_running``, und das ist in diesem Fenster gar nicht
+        gesetzt. Die Messung braeche sofort ab, ``noetig`` waere 0 - und die
+        Platzpruefung wuerde jede noch so knappe Platte durchwinken.
+
+        Args:
+            melden: ``(text) -> None`` fuer den Zwischenstand, hoechstens
+                einmal je Sekunde; muss faden-sicher sein.
+
+        Returns:
+            ``(noetig, frei)`` in Bytes, oder ``None``, wenn nicht messbar.
         """
         ziel = os.path.dirname(os.path.abspath(ordner)) or "."
-
-        # Das Vermessen laeuft hier im **Hauptstrang** ueber einen Dump von 40
-        # bis 100 GB. Blank aufgerufen stand das Fenster dabei still und sagte
-        # nichts - vom Anwender nicht von einem Aufhaenger zu unterscheiden.
-        #
-        # Ein ``cancel_check`` bekommt der Aufruf bewusst **nicht**: Er haengt
-        # anderswo an ``is_running``, und das ist in diesem Fenster gar nicht
-        # gesetzt. Die Messung braeche sofort ab, ``noetig`` waere 0 - und die
-        # Platzpruefung darunter wuerde jede noch so knappe Platte durchwinken.
         _messstand = {"ts": 0.0}
 
         def _messfortschritt(bytes_bisher: int, dateien: int) -> None:
@@ -38053,23 +40157,37 @@ class PS5ConverterGUI:
             if jetzt - _messstand["ts"] < 1.0:
                 return
             _messstand["ts"] = jetzt
-            self._append_to_log(self._t(
-                "status.quelle_wird_vermessen", dateien=dateien,
-                groesse=self._fmt_bytes(bytes_bisher)) + chr(10))
-            try:
-                win.update_idletasks()
-            except Exception:  # noqa: BLE001
-                pass
+            text = self._t("status.quelle_wird_vermessen", dateien=dateien,
+                           groesse=self._fmt_bytes(bytes_bisher))
+            self._append_to_log(text + chr(10))
+            if melden is not None:
+                try:
+                    melden(text)
+                except Exception:  # noqa: BLE001
+                    pass
 
         try:
             noetig = self._get_path_size(ordner, progress_cb=_messfortschritt)
             frei = shutil.disk_usage(ziel).free
         except OSError as exc:
+            logger.debug("Platz für die Sicherung nicht prüfbar (%s): %s", ziel, exc)
+            return None
+        return int(noetig), int(frei)
+
+    def _backport_platz_entscheiden(self, ordner: str, win,
+                                    messung: "tuple[int, int] | None") -> "bool | None":
+        """Die zweite Haelfte von :meth:`_backport_platz_pruefen` - im Fensterfaden.
+
+        Returns:
+            Wie :meth:`_backport_platz_pruefen`.
+        """
+        ziel = os.path.dirname(os.path.abspath(ordner)) or "."
+        if messung is None:
             # Nicht messbar heißt nicht "zu wenig": Ein Netzlaufwerk oder ein
             # eingehängtes Abbild kann die Auskunft verweigern. Dann bleibt es
             # beim bisherigen Verhalten - der Lauf versucht es.
-            logger.debug("Platz für die Sicherung nicht prüfbar (%s): %s", ziel, exc)
             return True
+        noetig, frei = messung
         # Etwas Luft: Dateisysteme brauchen Verwaltungsblöcke, und ein
         # randvoller Datenträger macht auch dem laufenden System Ärger.
         if frei >= noetig * 1.05:
@@ -38092,6 +40210,7 @@ class PS5ConverterGUI:
         beginn = time.time()
         gepatcht = uebersprungen = fehler = 0
         sicherungsordner = ""
+        sicherung_fertig = False
         try:
             ziel_ps5, ziel_ps4 = ps5_backport.sdk_paar(firmware)
 
@@ -38137,14 +40256,7 @@ class PS5ConverterGUI:
                 # Quelle -, gemeldet hoechstens jede Sekunde.
                 _sicher = {"bytes": 0, "dateien": 0, "ts": 0.0}
 
-                def _sichern_und_melden(von: str, nach: str) -> None:
-                    try:
-                        gross = os.path.getsize(von)
-                    except OSError:
-                        gross = 0
-                    shutil.copy2(von, nach)
-                    _sicher["bytes"] += gross
-                    _sicher["dateien"] += 1
+                def _sicherung_melden() -> None:
                     jetzt = time.monotonic()
                     if jetzt - _sicher["ts"] < 1.0:
                         return
@@ -38153,12 +40265,41 @@ class PS5ConverterGUI:
                                   dateien=_sicher["dateien"],
                                   groesse=self._fmt_bytes(_sicher["bytes"])))
 
+                def _sichern_und_melden(von: str, nach: str) -> None:
+                    # Vor jeder Datei: Abbruch beim Schliessen des Fensters.
+                    # Eine eigene Ausnahme und keine OSError - die sammelte
+                    # copytree nur ein und kopierte weiter.
+                    if laeuft.get("abbruch"):
+                        raise _KopieAbgebrochen()
+                    try:
+                        gross = os.path.getsize(von)
+                    except OSError:
+                        gross = 0
+                    if gross >= _KOPIE_BLOCKWEISE_AB:
+                        # Grosse Einzeldateien melden auch mitten in der
+                        # Datei - sonst stand die Zeile minutenlang still.
+                        def _block(anzahl: int) -> None:
+                            _sicher["bytes"] += anzahl
+                            _sicherung_melden()
+                        _datei_blockweise_kopieren(von, nach, _block,
+                                                   lambda: not laeuft.get("abbruch"))
+                    else:
+                        shutil.copy2(von, nach)
+                        _sicher["bytes"] += gross
+                    _sicher["dateien"] += 1
+                    _sicherung_melden()
+
                 shutil.copytree(ordner, sicherungsordner,
                                 copy_function=_sichern_und_melden)
+                sicherung_fertig = True
 
             # ---- 2) Dateien einzeln verarbeiten ----
             dateien = ps5_backport.kandidaten(ordner)
             for nummer, pfad in enumerate(dateien, 1):
+                # Zwischen zwei Dateien anhalten: Jede wird fuer sich atomar
+                # ersetzt, ein Abbruch hier laesst keine halbe zurueck.
+                if laeuft.get("abbruch"):
+                    raise _KopieAbgebrochen()
                 rel = os.path.relpath(pfad, ordner)
                 stand(self._t("backport.state_working", current=nummer,
                               total=len(dateien), name=rel))
@@ -38215,6 +40356,8 @@ class PS5ConverterGUI:
             # noch im Backport-Ordner gesucht. Deshalb warnt der Lauf, wenn
             # nach dem Kopieren beide dastehen - und nennt beide Faelle,
             # statt einen zu behaupten (siehe _fakelib_kollision).
+            if laeuft.get("abbruch"):
+                raise _KopieAbgebrochen()
             kopiert = 0
             if libs:
                 basis = self._backport_fakelib_basis()
@@ -38268,6 +40411,36 @@ class PS5ConverterGUI:
                 self.root.after(0, _fertigmeldung)
             except Exception:
                 pass
+        except _KopieAbgebrochen:
+            # Abgebrochen beim Schliessen des Fensters. Kein Fehler, aber
+            # genauso deutlich: Der Dump ist womoeglich nur zum Teil
+            # herabgesetzt, und eine angefangene Sicherung belegt Platz.
+            meldung = self._t("backport.state_cancelled", patched=gepatcht,
+                              skipped=uebersprungen, failed=fehler)
+            self._append_to_log(meldung + chr(10))
+            if not (sicherungsordner and os.path.isdir(sicherungsordner)):
+                sicherung = self._t("backport.no_backup")
+            elif sicherung_fertig:
+                # Abgebrochen erst beim Herabsetzen: Die Sicherung ist
+                # vollstaendig und das Sicherheitsnetz des Anwenders.
+                sicherung = self._t("backport.backup_complete", path=sicherungsordner)
+            else:
+                sicherung = self._t("backport.backup_partial", path=sicherungsordner)
+                self._append_to_log(self._t("backport.log_backup_rest",
+                                            path=sicherungsordner) + chr(10))
+
+            def _abbruchmeldung() -> None:
+                messagebox.showinfo(
+                    self._t("backport.cancelled_title"),
+                    self._t("backport.cancelled_message", patched=gepatcht,
+                            skipped=uebersprungen, failed=fehler,
+                            sicherung=sicherung),
+                    parent=win if win.winfo_exists() else self.root)
+            try:
+                self.root.after(0, lambda: stand_var.set(meldung))
+                self.root.after(0, _abbruchmeldung)
+            except Exception:
+                pass
         except Exception as exc:
             logger.warning("Backport fehlgeschlagen: %s", exc)
             # Meldung hier bilden, nicht erst im Lambda: Python loescht die
@@ -38303,6 +40476,7 @@ class PS5ConverterGUI:
                 pass
         finally:
             laeuft["aktiv"] = False
+            laeuft["backport"] = False
             def _frei() -> None:
                 for knopf in (start_btn, analyse_btn):
                     try:
@@ -38495,6 +40669,14 @@ class PS5ConverterGUI:
             # abgelehnt - und genau dafuer wird dieses Fenster oft benutzt.
             nur_schreibweise = (os.path.normcase(os.path.abspath(ziel))
                                 == os.path.normcase(os.path.abspath(ordner)))
+            if not nur_schreibweise and os.path.exists(ziel):
+                # normcase wirkt nur unter Windows. Auf macOS (APFS) und auf
+                # exFAT unter Linux ist "spiel" trotzdem dieselbe Datei wie
+                # "Spiel" - bis v1.9.24 kam dort "existiert bereits".
+                try:
+                    nur_schreibweise = os.path.samefile(ziel, ordner)
+                except OSError:
+                    pass
             if os.path.exists(ziel) and not nur_schreibweise:
                 messagebox.showwarning(
                     self._t("dump_rename.exists_title"),
@@ -39071,7 +41253,17 @@ class PS5ConverterGUI:
                 return None
             return ["--dump-dir" if art == "dump_dir" else "--pkg-dir", eingabe]
 
-        def _arbeitsordner() -> str:
+        def _arbeitsbasis() -> str:
+            """Wo der Arbeitsordner hin soll - im **Fensterfaden** zu lesen.
+
+            Bis v1.9.24 las ``_arbeitsordner`` Ziel- und Temp-Feld selbst, und
+            zwar aus den Arbeitsfaeden von Einlesen und Erstellen.
+            """
+            return (ziel_var.get().strip()
+                    or (str(self.temp_path.get()).strip() if hasattr(self, "temp_path") else "")
+                    or tempfile.gettempdir())
+
+        def _arbeitsordner(basis: str) -> str:
             """Legt den Arbeitsordner für Zwischenstände an.
 
             Unter Windows wird dabei auf die Pfadlänge geachtet: Der
@@ -39082,10 +41274,10 @@ class PS5ConverterGUI:
             260-Zeichen-Grenze. In dem Fall weicht der Arbeitsordner auf einen
             kurzen Pfad im Stammverzeichnis aus; das fertige Abbild landet
             trotzdem im gewählten Zielordner.
+
+            Args:
+                basis: Aus :func:`_arbeitsbasis`, im Fensterfaden gelesen.
             """
-            basis = (ziel_var.get().strip()
-                     or str(getattr(self, "temp_path", None).get() if hasattr(self, "temp_path") else "").strip()
-                     or tempfile.gettempdir())
             ordner = os.path.join(basis, "ps4ffpsc_arbeit")
             if IST_WINDOWS and len(ordner) > _PS4FFPSC_MAX_ARBEITSPFAD:
                 ausweich = _ps4ffpsc_kurzer_arbeitsordner(basis)
@@ -39107,10 +41299,14 @@ class PS5ConverterGUI:
             laeuft["aktiv"] = True
             _status(self._t("ps4pkg.status_scanning"))
             _balken(0.0)
+            # Felder im Fensterfaden lesen, nicht im Arbeitsfaden.
+            basis = _arbeitsbasis()
+            quelle_text = quelle_var.get().strip()
+            quelle_typ = quelle_art.get()
 
             def _arbeit() -> None:
                 try:
-                    arbeit = _arbeitsordner()
+                    arbeit = _arbeitsordner(basis)
                     rc, ausgabe = self._ps4ffpsc_lauf(
                         ["list", "--json", *argumente, "--work-dir", arbeit, "--unpacked-dir",
                          os.path.join(arbeit, "unpacked")],
@@ -39141,8 +41337,7 @@ class PS5ConverterGUI:
                     spiele = list(daten.values()) if isinstance(daten, dict) else list(daten)
                     # Wer PS5-Pakete hierher legt, bekam bisher nur
                     # "0 Spiel(e) gefunden" - ohne einen Grund dafuer.
-                    sicht = self._ps4ffpsc_quellen_sichten(
-                        quelle_var.get().strip(), quelle_art.get())
+                    sicht = self._ps4ffpsc_quellen_sichten(quelle_text, quelle_typ)
                     if sicht["ps5"]:
                         _protokoll(self._t("ps4pkg.ps5_packages",
                                            anzahl=len(sicht["ps5"])))
@@ -39282,7 +41477,19 @@ class PS5ConverterGUI:
             argumente = _quellen_argumente()
             if argumente is None:
                 return
-            if dlc_var.get() and not messagebox.askyesno(
+            # Alle Einstellungen hier festhalten, im Fensterfaden. Bis v1.9.24
+            # las der Arbeitsfaden Format, Stufe, Worker und DLC-Haken selbst.
+            try:
+                stufe = int(stufe_var.get())
+                worker = int(worker_var.get())
+            except (tk.TclError, ValueError):
+                messagebox.showwarning(self._t("ps4pkg.window_title"),
+                                       self._t("ps4pkg.bad_number"), parent=win)
+                return
+            ausgabeformat = format_var.get()
+            dlc = bool(dlc_var.get())
+            basis = _arbeitsbasis()
+            if dlc and not messagebox.askyesno(
                     self._t("ps4pkg.window_title"), self._t("ps4pkg.dlc_confirm"), parent=win):
                 return
 
@@ -39301,16 +41508,16 @@ class PS5ConverterGUI:
 
             def _arbeit() -> None:
                 try:
-                    arbeit = _arbeitsordner()
+                    arbeit = _arbeitsordner(basis)
                     befehl = [
                         "build", title_id, *argumente,
                         "--output-dir", ziel,
                         "--work-dir", arbeit,
                         "--unpacked-dir", os.path.join(arbeit, "unpacked"),
-                        "--output-format", format_var.get(),
-                        "--compression-level", str(int(stufe_var.get())),
-                        "--compression-workers", str(int(worker_var.get())),
-                        "--dlc-mode", "single-experimental" if dlc_var.get() else "off",
+                        "--output-format", ausgabeformat,
+                        "--compression-level", str(stufe),
+                        "--compression-workers", str(worker),
+                        "--dlc-mode", "single-experimental" if dlc else "off",
                         "--verbose",
                         # Das Werkzeug haengt seinen Protokollschreiber nur an,
                         # wenn dieser Schalter kommt (dort pipeline.py:220).
@@ -39362,7 +41569,7 @@ class PS5ConverterGUI:
                         # bis v1.8.77 der Grund, warum die Pruefung jedes Mal mit
                         # "Permission denied" auf dem Ordnerpfad endete.
                         abbild = self._ps4ffpsc_ergebnis_finden(
-                            ziel, title_id, format_var.get())
+                            ziel, title_id, ausgabeformat)
                         if not abbild:
                             _protokoll(self._t("ps4pkg.check_no_image"))
                             return
@@ -39661,23 +41868,22 @@ class PS5ConverterGUI:
 
             status_var.set(self._t("debug_pkg.building"))
             bau_knopf.configure(state="disabled")
+            # Im Fensterfaden festhalten. Bis v1.9.24 las der Arbeitsfaden
+            # Zielpfad und Content-ID selbst aus den Tk-Variablen.
+            ziel_pfad = ziel_var.get().strip()
+            content_id = cid_var.get().strip()
 
             def _fertig(ergebnis) -> None:
                 bau_knopf.configure(state="normal")
                 zusammenfassung = self._t(
                     "debug_pkg.result",
-                    path=ergebnis.get("path", ziel_var.get()),
+                    path=ergebnis.get("path", ziel_pfad),
                     type=ergebnis.get("type", "-"),
                     size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0)),
                     entries=ergebnis.get("entry_count", "-"),
                     content_id=ergebnis.get("content_id", "-"),
                 )
                 status_var.set(zusammenfassung)
-                # Frueher ging hier das rohe Python-dict ins Protokoll.
-                self._append_to_log(self._t(
-                    "debug_pkg.log_done",
-                    path=ergebnis.get("path", ziel_var.get()),
-                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0))) + chr(10))
                 messagebox.showinfo(
                     self._t("dialog.title.debug_pkg_created"),
                     self._t("dialog.msg.debug_pkg_created") + "\n\n" + zusammenfassung,
@@ -39697,12 +41903,22 @@ class PS5ConverterGUI:
                 # tat es mitten im Schreiben.
                 try:
                     ergebnis = build_debug_pkg(
-                        ziel_var.get().strip(), cid_var.get().strip(), param,
+                        ziel_pfad, content_id, param,
                         pfs_image_path=bild)
                 except (PkgWriteError, OSError, ValueError) as exc:
                     meldung = str(exc)
+                    # Ins Programmprotokoll unabhaengig vom Fenster: Wer es
+                    # waehrend des Baus schliesst (die Rueckfrage erlaubt das),
+                    # erfuhr bis v1.9.24 vom Ausgang nichts.
+                    self._append_to_log(self._t("debug_pkg.failed_title")
+                                        + ": " + meldung + chr(10))
                     self._spaeter_im_fenster(win, _misslungen, meldung)
                     return
+                # Frueher ging hier das rohe Python-dict ins Protokoll.
+                self._append_to_log(self._t(
+                    "debug_pkg.log_done",
+                    path=ergebnis.get("path", ziel_pfad),
+                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0))) + chr(10))
                 self._spaeter_im_fenster(win, _fertig, ergebnis)
 
             threading.Thread(target=_arbeit, daemon=True,
@@ -39881,28 +42097,36 @@ class PS5ConverterGUI:
                 messagebox.showwarning(self._t("dialog.title.invalid_port"), self._t("dialog.msg.port_not_a_number"), parent=win)
                 return
 
-            # Wie bei den FTP-Werkzeugen: Antwortet der eingetragene Port nicht,
-            # werden die bekannten mitprobiert und der wirksame gemerkt.
-            port = self._ps5_port_finden(ip, port, "klog")
-            if str(port_var.get()).strip() != str(port):
-                port_var.set(str(port))
-            self._ps5_wert_merken("klog_ip", ip, self._ps5_ip())
-            self._ps5_wert_merken("klog_port", port, self._ps5_klog_port())
             state["running"] = True
             connect_btn.config(state="disabled")
             disconnect_btn.config(state="normal")
             _set_status(self._t("status.connecting"), c["fg_accent"])
 
+            def _port_merken(wirksam: int) -> None:
+                if str(port_var.get()).strip() != str(wirksam):
+                    port_var.set(str(wirksam))
+                self._ps5_wert_merken("klog_ip", ip, self._ps5_ip())
+                self._ps5_wert_merken("klog_port", wirksam, self._ps5_klog_port())
+
             def worker() -> None:
                 sock = None
                 try:
+                    # Wie bei den FTP-Werkzeugen: Antwortet der eingetragene Port
+                    # nicht, werden die bekannten mitprobiert und der wirksame
+                    # gemerkt. Im Faden: Bis v1.9.24 lief die Suche im Klick,
+                    # und mit ausgeschalteter Konsole stand das Fenster je
+                    # Kandidat 1,5 s still, bevor "Verbinde..." ueberhaupt erschien.
+                    wirksam = self._ps5_port_finden(ip, port, "klog")
+                    self._spaeter_im_fenster(win, _port_merken, wirksam)
+                    if not state["running"]:
+                        return                  # waehrend der Suche getrennt
                     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     sock.settimeout(10)
-                    sock.connect((ip, port))
+                    sock.connect((ip, wirksam))
                     sock.settimeout(None)
                     state["sock"] = sock
-                    win.after(0, _set_status, self._t("status.connected_to", target=f"{ip}:{port}"), c["fg_success"])
-                    win.after(0, lambda: pause_btn.config(state="normal"))
+                    self._spaeter_im_fenster(win, _set_status, self._t("status.connected_to", target=f"{ip}:{wirksam}"), c["fg_success"])
+                    self._spaeter_im_fenster(win, lambda: pause_btn.config(state="normal"))
                     buf = ""
                     while state["running"]:
                         try:
@@ -39916,9 +42140,9 @@ class PS5ConverterGUI:
                             line, buf = buf.split("\n", 1)
                             line = line.rstrip("\r")
                             if line and not state["paused"]:
-                                win.after(0, _render_line, line)
+                                self._spaeter_im_fenster(win, _render_line, line)
                 except OSError as exc:
-                    win.after(0, _set_status, self._t("status.error_detail", error=exc), "#ff5c5c")
+                    self._spaeter_im_fenster(win, _set_status, self._t("status.error_detail", error=exc), "#ff5c5c")
                 finally:
                     try:
                         if sock is not None:
@@ -39927,7 +42151,7 @@ class PS5ConverterGUI:
                         pass
                     state["sock"] = None
                     state["running"] = False
-                    win.after(0, _on_disconnected)
+                    self._spaeter_im_fenster(win, _on_disconnected)
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -40220,23 +42444,30 @@ class PS5ConverterGUI:
 
             laeuft["aktiv"] = True
             _status(self._t("pkgbau.status_building"))
+            # Die Auswahl hier festhalten, im Fensterfaden. Bis v1.9.24 las der
+            # Arbeitsfaden die drei Tk-Variablen selbst - ohne laufende
+            # Ereignisschleife wirft Tk dort, und eine waehrend des Baus
+            # umgestellte Auswahl galt fuer den laufenden Bau.
+            homebrew = art_var.get() == "homebrew"
+            schnell = bool(schnell_var.get())
+            lizenzfrei = bool(lizenzfrei_var.get())
 
             def _arbeit() -> None:
                 try:
-                    if art_var.get() == "homebrew":
+                    if homebrew:
                         pfad = prosperopkg.homebrew_bauen(
                             quelle, ziel, melden=_protokoll,
                             texte=self._modul_texte(prosperopkg.MELDUNGEN,
                                                     "prosperopkg."),
-                            schnell=bool(schnell_var.get()),
+                            schnell=schnell,
                             prozess_ablage=laeuft)
                     else:
                         pfad = prosperopkg.bauen(
                             quelle, ziel, melden=_protokoll,
                             texte=self._modul_texte(prosperopkg.MELDUNGEN,
                                                     "prosperopkg."),
-                            lizenzfrei=bool(lizenzfrei_var.get()),
-                            schnell=bool(schnell_var.get()),
+                            lizenzfrei=lizenzfrei,
+                            schnell=schnell,
                             prozess_ablage=laeuft)
                 except prosperopkg.ProsperoFehler as exc:
                     _protokoll("[FEHLER] %s" % exc)
@@ -40439,21 +42670,26 @@ class PS5ConverterGUI:
             status(self._t("abbildpkg.status_extracting"))
             vorher = self.is_running
             self.is_running = True
+            # Merken, dass das Kennzeichen gerade diesem Werkzeug gehoert - nur
+            # dann darf sein Abbrechen es zuruecksetzen (siehe _abbrechen in
+            # _show_exfat_pkg_builder).
+            self._abbild_pkg_haelt_is_running = True
             try:
                 if not self._extract_inner_image(
                         quelle, dump_ordner, art,
-                        status_prefix="Abbild->PKG",
+                        status_prefix=self._t("status.prefix_abbild_pkg"),
                         progress_start=0.0, progress_end=90.0):
                     protokoll(self._t("abbildpkg.log_extract_failed"))
                     return None
                 res = self._entpacke_container_ebenen(
-                    dump_ordner, status_prefix="Abbild->PKG",
+                    dump_ordner, status_prefix=self._t("status.prefix_abbild_pkg"),
                     pct_start=90.0, pct_end=99.0)
                 if res is None:
                     protokoll(self._t("abbildpkg.log_extract_failed"))
                     return None
                 spielordner = res[0]
             finally:
+                self._abbild_pkg_haelt_is_running = False
                 self.is_running = vorher
             balken(100)
 
@@ -40788,7 +43024,12 @@ class PS5ConverterGUI:
             # PFS/UFS2 hoeren auf das kooperative is_running-Flag; die exFAT-
             # Extraktion bricht ueber den Fortschritts-Rueckruf ab; ein
             # laufender Paketbau-Prozess wird beendet.
-            self.is_running = False
+            #
+            # is_running nur zuruecksetzen, solange dieses Werkzeug es selbst
+            # haelt. Bis v1.9.24 beendete ein Abbrechen hier auch eine
+            # gleichzeitig laufende Aufgabe 1-8 des Hauptfensters.
+            if getattr(self, "_abbild_pkg_haelt_is_running", False):
+                self.is_running = False
             prozess = laeuft.get("prozess")
             if prozess is not None:
                 try:
@@ -40802,6 +43043,12 @@ class PS5ConverterGUI:
             ziel = ziel_var.get().strip()
             arbeit = arbeit_var.get().strip()
             if laeuft["aktiv"]:
+                return
+            # Die Extraktion teilt sich Kennzeichen, Ausgabeschlange und
+            # MkPFS-Sperre mit den Aufgaben 1-8. Laeuft dort etwas, warten.
+            if self._vorgang_laeuft_noch():
+                messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"),
+                                    self._t("dialog.msg.aufgabe_laeuft"), parent=win)
                 return
             if not quelle or not os.path.isfile(quelle) or \
                     not quelle.lower().endswith(self._ABBILD_PKG_ENDUNGEN):
@@ -40824,16 +43071,16 @@ class PS5ConverterGUI:
                                                wert=fw_var.get()), parent=win)
                 return
 
-            # Platz grob pruefen: entpackter Dump ~ Abbildgroesse, das Paket
-            # noch einmal in der Naehe. Knapp heisst warnen, nicht verbieten -
-            # die endgueltige Groesse haengt an der Kompression.
+            # Platz grob pruefen (siehe _abbild_pkg_platzbedarf). Knapp heisst
+            # warnen, nicht verbieten - die endgueltige Groesse haengt an der
+            # Kompression.
             try:
-                abbild = os.path.getsize(quelle)
+                noetig_arbeit, noetig_ziel = self._abbild_pkg_platzbedarf(quelle)
                 frei_arbeit = shutil.disk_usage(arbeit if os.path.isdir(arbeit)
                                                 else os.path.dirname(arbeit) or ".").free
                 frei_ziel = shutil.disk_usage(ziel if os.path.isdir(ziel)
                                               else os.path.dirname(ziel) or ".").free
-                if frei_arbeit < abbild * 1.1 or frei_ziel < abbild * 1.4:
+                if frei_arbeit < noetig_arbeit or frei_ziel < noetig_ziel:
                     if not messagebox.askyesno(
                             self._t("exfatpkg.window_title"),
                             self._t("exfatpkg.space_warn"), parent=win, default="no"):
@@ -40941,13 +43188,23 @@ class PS5ConverterGUI:
                     stand["status"] = self._t("exfatpkg.status_failed")
                     return
                 finally:
-                    laeuft["aktiv"] = False
-                    self._spaeter_im_fenster(win, lambda: _knoepfe_setzen(False))
-                    self._spaeter_im_fenster(win, _takt)
                     if dump_ordner:
                         # Der entpackte Dump ist eine Zwischenstufe (bis zu
                         # zweistellige GB) - das Paket liegt fertig im Ziel.
+                        #
+                        # Erst aufraeumen, dann freigeben. Bis v1.9.24 kamen
+                        # die Knoepfe zurueck, waehrend noch geloescht wurde -
+                        # ein sofortiger Neustart entpackte in genau diesen
+                        # Ordner. Und nach einem Abbruch beim PFS-Entpacken
+                        # laeuft MkPFS im Prozess weiter (es laesst sich nicht
+                        # unterbrechen); geloescht wird erst, wenn es fertig
+                        # ist, sonst schreibt es in den geloeschten Ordner und
+                        # abbildpkg_* bleibt liegen.
+                        self._wait_for_pending_mkpfs_background()
                         _rmtree_force(Path(dump_ordner))
+                    laeuft["aktiv"] = False
+                    self._spaeter_im_fenster(win, lambda: _knoepfe_setzen(False))
+                    self._spaeter_im_fenster(win, _takt)
                 stand["phase"] = "done"
                 groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
                 stand["status"] = self._t("exfatpkg.status_done",
@@ -41900,11 +44157,13 @@ class PS5ConverterGUI:
                 "pass": pass_var.get(),
             }
 
-        def _ftp_connect_blocking(zugang: "dict | None" = None):
+        def _ftp_connect_blocking(zugang: dict):
             import ftplib
-            # Ohne uebergebene Angaben laeuft der Aufruf im Fensterfaden -
-            # dann darf er die Variablen selbst lesen.
-            zugang = zugang if zugang is not None else _ftp_zugang_lesen()
+            # Die Angaben sind Pflicht. Bis v1.9.24 las die Funktion ohne sie
+            # die Tk-Variablen selbst - alle drei Aufrufer laufen aber im
+            # Arbeitsfaden und uebergeben laengst, was _ftp_zugang_lesen im
+            # Fensterfaden abgeholt hat. Der Rueckfall war eine Falle fuer den
+            # naechsten Aufrufer.
             ip = zugang["ip"]
             if not ip:
                 raise ValueError(self._t("dialog.msg.enter_ps5_ip"))
@@ -41979,7 +44238,7 @@ class PS5ConverterGUI:
                               and puffer.tell() == 0
                               and geladen["text"] is None)
                     fehlertext = str(exc)
-                    win.after(0, lambda: _load_failed(meldung, fragen, fehlertext))
+                    self._spaeter_im_fenster(win, lambda: _load_failed(meldung, fragen, fehlertext))
                     return
                 text = puffer.getvalue().decode("utf-8", errors="replace")
                 # Ueber parse_flat_ini_multi, nicht parse_flat_ini: Der
@@ -41987,7 +44246,7 @@ class PS5ConverterGUI:
                 # nur den letzten Wert, und aus drei Suchpfaden wuerde
                 # einer - ohne dass die Zeilenzahl es verriete.
                 loaded = fuer_anzeige(parse_flat_ini_multi(text))
-                win.after(0, _apply_loaded, text, loaded)
+                self._spaeter_im_fenster(win, _apply_loaded, text, loaded)
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -42151,7 +44410,7 @@ class PS5ConverterGUI:
                                 # der Fall, fuer den es _ziel_abweichend gibt -
                                 # sonst laese der Anwender hier eine rohe
                                 # 550-Zeile statt der dafuer gebauten Meldung.
-                                win.after(0, _ziel_abweichend)
+                                self._spaeter_im_fenster(win, _ziel_abweichend)
                                 return
                             # Beim Anlegen ist ein Nein zu erwarten - aber nur
                             # ein dauerhaftes, ohne empfangene Bytes und mit
@@ -42163,7 +44422,7 @@ class PS5ConverterGUI:
                                 raise
                             jetzt = ""
                         if jetzt != roh:
-                            win.after(0, _ziel_abweichend)
+                            self._spaeter_im_fenster(win, _ziel_abweichend)
                             return
                         remote_dir = remote_config_path.rsplit("/", 1)[0]
                         try:
@@ -42177,10 +44436,10 @@ class PS5ConverterGUI:
                             ftp.quit()
                         except Exception:
                             pass
-                    win.after(0, _write_ok)
+                    self._spaeter_im_fenster(win, _write_ok)
                 except Exception as exc:
                     meldung = self._t("remote_ini.status_write_failed", error=exc)
-                    win.after(0, lambda: status_var.set(meldung))
+                    self._spaeter_im_fenster(win, lambda: status_var.set(meldung))
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -42218,7 +44477,7 @@ class PS5ConverterGUI:
                         except Exception:
                             pass
                     os.replace(zwischen, path)
-                    win.after(0, lambda: status_var.set(self._t("remote_ini.status_debug_log_saved", path=path)))
+                    self._spaeter_im_fenster(win, lambda: status_var.set(self._t("remote_ini.status_debug_log_saved", path=path)))
                 except Exception as exc:
                     # Die halbe Datei nicht liegen lassen - sie traegt den
                     # Namen der echten mit angehaengtem .teil und saehe im
@@ -42229,7 +44488,7 @@ class PS5ConverterGUI:
                     except OSError as aufraeum:
                         logger.debug("Zwischendatei nicht loeschbar: %s", aufraeum)
                     meldung = self._t("remote_ini.status_fetch_failed", error=exc)
-                    win.after(0, lambda: status_var.set(meldung))
+                    self._spaeter_im_fenster(win, lambda: status_var.set(meldung))
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -42303,10 +44562,10 @@ class PS5ConverterGUI:
                         s.connect((ip, port))
                         s.sendall(data)
                         s.close()
-                        win.after(0, lambda: status_var.set(self._t("remote_ini.status_payload_sent", bytes=len(data))))
+                        self._spaeter_im_fenster(win, lambda: status_var.set(self._t("remote_ini.status_payload_sent", bytes=len(data))))
                     except Exception as exc:
                         _e = str(exc)
-                        win.after(0, lambda: status_var.set(self._t("remote_ini.status_payload_failed", error=_e)))
+                        self._spaeter_im_fenster(win, lambda: status_var.set(self._t("remote_ini.status_payload_failed", error=_e)))
 
                 threading.Thread(target=worker, daemon=True).start()
 
@@ -43033,7 +45292,7 @@ class PS5ConverterGUI:
             def worker() -> None:
                 try:
                     count, dupes = self._build_ampr_index_local(Path(root), Path(output))
-                    win.after(0, lambda: (
+                    self._spaeter_im_fenster(win, lambda: (
                         status_var.set(self._t("ampr_index.status_done", count=count)),
                         _log(self._t("ampr_index.log_done", count=count, output=output)),
                         _log(self._t("ampr_index.log_dupes", count=dupes)) if dupes else None,
@@ -43041,7 +45300,7 @@ class PS5ConverterGUI:
                     ))
                 except Exception as exc:
                     _exc_text = str(exc)
-                    win.after(0, lambda: (
+                    self._spaeter_im_fenster(win, lambda: (
                         status_var.set(self._t("ampr_index.status_failed")),
                         _log(self._t("ampr_index.log_error", error=_exc_text)),
                         build_btn.config(state="normal"),
@@ -43082,16 +45341,41 @@ class PS5ConverterGUI:
 
         _log(self._t("ampr_index.log_welcome"))
 
-    @staticmethod
-    def _ampr_fnv1a64_path_hash(path: str) -> int:
-        """FNV-1a-64-Hash über den kleingeschriebenen, mit '/' normierten Pfad.
+    #: Faltet nur die Bytes A..Z - wie ``key_for`` in ``build_ampr_index.py``.
+    _AMPR_ASCII_FALTUNG = bytes.maketrans(b"ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+                                          b"abcdefghijklmnopqrstuvwxyz")
+
+    #: Dateien in der Wurzel, die das Skript des Entwicklers nie aufnimmt: der
+    #: Befehlsmitschnitt und das Protokoll eines Debug-Baus.
+    _AMPR_INDEX_NIE: frozenset[bytes] = frozenset({
+        b"/app0/ampr_commands.bin", b"/app0/apr_emu.log",
+    })
+
+    @classmethod
+    def _ampr_pfadschluessel(cls, path: str) -> bytes:
+        """Schluessel eines /app0-Pfads - bytegenau wie die Laufzeit.
+
+        Wie ``key_for`` in ``AMPR_PackTools-4.0/build_ampr_index.py``:
+        Schraegstriche vereinheitlichen, als UTF-8 kodieren und **nur** die
+        ASCII-Buchstaben A..Z falten. Bis zum 17.09.2026 stand hier
+        ``str.lower()`` mit einem Hash ueber Codepunkte: Das faltet auch
+        Nicht-ASCII-Zeichen und rechnet mit Werten ueber 255 - jeder Pfad mit
+        Umlaut, Makron oder japanischen Zeichen bekam einen Hash und einen
+        Platz in der Sortierung, den die Laufzeit nie findet. Fuer reine
+        ASCII-Pfade ist beides gleich (Ghost of Yotei, 84.217 Dateien:
+        byte-gleich bis auf den Index selbst).
+        """
+        return path.replace("\\", "/").encode("utf-8").translate(cls._AMPR_ASCII_FALTUNG)
+
+    @classmethod
+    def _ampr_fnv1a64_path_hash(cls, path: str) -> int:
+        """FNV-1a-64-Hash ueber den Pfadschluessel (siehe ``_ampr_pfadschluessel``).
 
         Muss bitgenau zum PS5-seitigen AMPR-Plugin passen (siehe AMPRIDX3-Format).
         """
-        key = path.replace("\\", "/").lower()
         h = 1469598103934665603
-        for ch in key:
-            h ^= ord(ch)
+        for byte in cls._ampr_pfadschluessel(path):
+            h ^= byte
             h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
         return h or 1
 
@@ -43211,12 +45495,71 @@ class PS5ConverterGUI:
         return bool(self._ask_yesno_threadsafe(
             self._t("ampr.assets_title"), frage, default_yes=False))
 
+    def _ampr_index_vor_dem_packen(self, quelle: str) -> bool:
+        """Bringt den ``ampr_emu.index`` vor ``mkpfs pack folder`` auf Stand.
+
+        Das tat bis zum 17.09.2026 MkPFS selbst, und zwar ohne Ruecksicht: Es
+        baute den Index bei jedem Packen neu, sobald
+        ``fakelib/libSceAmpr.sprx`` im Ordner lag - auch neben einer gepackten
+        Asset-Schicht, deren Manifest danach auf die falschen Dateien zeigte
+        (siehe ``mkpfs_argumente_ohne_ampr_index``). Der Riegel
+        ``_ampr_index_neubau_erlaubt`` lief daran vorbei, und
+        ``--ampr-no-index`` wirkte beim Zurueckpacken nicht.
+
+        Jetzt gilt:
+
+        * Hat dieser Lauf schon ueber den Index entschieden - gebaut beim
+          Einbau oder in Aufgabe 7, oder bewusst stehen gelassen -, bleibt er,
+          wie er ist.
+        * Liegt kein AMPR EMU im Ordner, braucht es keinen (wie bei MkPFS).
+        * Liegt eine Asset-Schicht daneben oder laesst sich das nicht
+          feststellen, bleibt der vorhandene Index stehen: Er gehoert zum
+          Manifest. Gefragt wird hier nicht - einen Neubau hat niemand
+          verlangt, MkPFS hat ihn nur nebenbei gemacht.
+        * Sonst wird er neu gebaut, wie es MkPFS tat - aber nach dem
+          Verfahren aus ``build_ampr_index.py`` des Entwicklers.
+
+        Returns:
+            False nur, wenn ein noetiger Neubau scheitert. Ohne passenden
+            Index findet der AMPR EMU auf der Konsole keine Datei.
+        """
+        if getattr(self, "_ampr_index_entschieden", False) or not quelle:
+            return True
+        wurzel = Path(quelle)
+        if not (self._fakelib_pfad(wurzel) / self._AMPR_SPRX_NAME).is_file():
+            return True
+        if (self._ampr_asset_pack_vorhanden(quelle) is not False
+                or not self._ampr_index_neubau_erlaubt(quelle)):
+            self._append_to_log(self._t("ampr.assets_index_kept"))
+            self._ampr_index_entschieden = True
+            return True
+        self._set_status(self._t("status.rebuilding_ampr_index"))
+        try:
+            anzahl, doppelte = self._build_ampr_index_local(
+                wurzel, wurzel / self._AMPR_INDEX_NAME)
+        except Exception as exc:  # noqa: BLE001
+            self._append_to_log(self._t("ampr.index_failed", error=exc))
+            return False
+        self._append_to_log(self._t("ampr.index_vor_dem_packen", count=anzahl))
+        if doppelte:
+            self._append_to_log(self._t("ampr.index_duplicate_hashes", count=doppelte))
+        self._ampr_index_entschieden = True
+        return True
+
     def _build_ampr_index_local(self, root: Path, output: Path) -> tuple[int, int]:
         """Baut ampr_emu.index aus einem lokalen Ordner (entspricht /app0 auf der PS5).
 
         Rein lesender Verzeichnis-Scan; schreibt die Indexdatei atomar über
         eine .tmp-Datei. Binärformat (Header "AMPRIDX3", Records, Pfad-Blob,
         Hash-Slots) identisch zum PS5-seitigen AMPR-Dateiresolver-Plugin.
+
+        Der Ablauf folgt ``build_index_local`` aus ``build_ampr_index.py`` des
+        Entwicklers Schritt fuer Schritt: sortiert nach dem Pfadschluessel,
+        ohne ``ampr_commands.bin`` und ``apr_emu.log`` in der Wurzel, ohne
+        Pfade mit Tabulator oder Zeilenumbruch, und bei zwei Pfaden, die sich
+        nur in der Schreibung unterscheiden, bleibt der erste (wie mit
+        ``--allow-case-collisions``). Die beiden letzten Faelle stehen im
+        Protokoll, statt still zu verschwinden.
 
         Returns:
             (Anzahl indizierter Dateien, Anzahl doppelter Pfad-Hashes).
@@ -43226,11 +45569,18 @@ class PS5ConverterGUI:
         output.parent.mkdir(parents=True, exist_ok=True)
         tmp = output.with_suffix(output.suffix + ".tmp")
 
-        seen: dict[str, str] = {}
+        def _hinweis(schluessel: str, **werte: Any) -> None:
+            # Auch an einer halb aufgebauten Instanz (Tests bauen sie ueber
+            # __new__) darf das Bauen nicht am Protokoll scheitern.
+            melden = getattr(self, "_append_to_log", None)
+            if callable(melden) and callable(getattr(self, "_t", None)):
+                melden(self._t(schluessel, **werte))
+
+        seen: dict[bytes, str] = {}
         rows: list[tuple[int, int, str]] = []
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames.sort(key=str.lower)
-            filenames.sort(key=str.lower)
+            dirnames.sort(key=self._ampr_pfadschluessel)
+            filenames.sort(key=self._ampr_pfadschluessel)
             for filename in filenames:
                 fpath = Path(dirpath) / filename
                 try:
@@ -43238,6 +45588,10 @@ class PS5ConverterGUI:
                 except OSError:
                     continue
                 if resolved in (output, tmp):
+                    continue
+                indexed_path = "/app0/" + fpath.relative_to(root).as_posix()
+                key = self._ampr_pfadschluessel(indexed_path)
+                if key in self._AMPR_INDEX_NIE:
                     continue
                 try:
                     st = fpath.stat()
@@ -43247,13 +45601,16 @@ class PS5ConverterGUI:
                 # alles ab, was kein Verzeichnis ist - unter Linux und macOS
                 # also auch FIFOs, Sockets und Geraetedateien. Die haben eine
                 # Groesse und wuerden anstandslos in den Index wandern, wo sie
-                # nichts zu suchen haben. Die Vorlage in mkpfs prueft an
+                # nichts zu suchen haben. Das Skript des Entwicklers prueft an
                 # derselben Stelle mit ``if not path.is_file(): continue``.
                 if not stat.S_ISREG(st.st_mode):
                     continue
-                indexed_path = "/app0/" + fpath.relative_to(root).as_posix()
-                key = indexed_path.replace("\\", "/").lower()
+                if any(zeichen in indexed_path for zeichen in "\t\n\r"):
+                    _hinweis("ampr.index_leerraum", path=indexed_path)
+                    continue
                 if key in seen:
+                    _hinweis("ampr.index_schreibung_doppelt",
+                             first=seen[key], second=indexed_path)
                     continue
                 seen[key] = indexed_path
                 rows.append((int(st.st_size), int(st.st_mtime), indexed_path))
@@ -43273,11 +45630,16 @@ class PS5ConverterGUI:
         output = output.resolve()
         output.parent.mkdir(parents=True, exist_ok=True)
         tmp = output.with_suffix(output.suffix + ".tmp")
-        rows = sorted(rows, key=lambda row: row[2].replace("\\", "/").lower())
+        # Sortiert nach dem Byte-Schluessel wie ``write_index`` des
+        # Entwicklers - die Satznummer ist die fileId, auf die sich ein
+        # Asset-Pack-Manifest bezieht.
+        rows = sorted(rows, key=lambda row: self._ampr_pfadschluessel(row[2]))
 
         record_struct = struct.Struct("<IIQq")
         hash_slot_struct = struct.Struct("<QII")
         header_struct = struct.Struct("<8sIIQQQII")
+        if len(rows) > 0xFFFFFFFE:
+            raise ValueError("index has too many records")
 
         path_blob = bytearray()
         records = bytearray()
@@ -43285,6 +45647,8 @@ class PS5ConverterGUI:
             encoded = path.encode("utf-8") + b"\0"
             offset = len(path_blob)
             path_len = len(encoded) - 1
+            if offset > 0xFFFFFFFF or path_len > 0xFFFFFFFF:
+                raise ValueError("index path blob is too large")
             records += record_struct.pack(offset, path_len, size, mtime)
             path_blob += encoded
 
@@ -43328,14 +45692,22 @@ class PS5ConverterGUI:
 
     @staticmethod
     def _ampr_ftp_modify_to_int(value: str) -> int:
-        """MLSD-Zeitstempel (UTC, YYYYMMDDHHMMSS) als kompakte Ganzzahl.
+        """MLSD-Zeitstempel (UTC, YYYYMMDDHHMMSS) in Unix-Sekunden.
 
-        Der Resolver nutzt mtime nur als zwischengespeicherte Metadaten, daher
-        ist die zeitzonenfreie Zahl stabil genug.
+        Dieselbe Darstellung wie der lokale Indexbau (``int(st.st_mtime)``)
+        und die mitgelieferte Vorlage ``AMPR_PackTools-4.0/build_ampr_index.py``.
+        Bis v1.9.24 kam hier die Ziffernfolge selbst heraus (20260916123456) -
+        derselbe Spielordner ergab je nach Weg zwei verschiedene Indexdateien,
+        und ``ampr_pack`` setzte daraus per ``os.utime`` ein Jahr um 640 000.
         """
         text = (value or "").strip()
         if len(text) >= 14 and text[:14].isdigit():
-            return int(text[:14])
+            try:
+                zeit = datetime.datetime.strptime(text[:14], "%Y%m%d%H%M%S")
+                sekunden = int(zeit.replace(tzinfo=datetime.timezone.utc).timestamp())
+            except (ValueError, OverflowError, OSError):
+                return 0
+            return max(0, sekunden)
         return 0
 
     # Übliche FTP-Ports auf einer vorbereiteten PS5 (Reihenfolge = Suchreihenfolge,
@@ -43630,15 +46002,35 @@ class PS5ConverterGUI:
 
         Ein Verbindungsfehler wird deshalb durchgereicht; wer fragt, muss
         ihn behandeln.
+
+        Zwei Aufrufer: der Autoloader-Versand und das Hochladen aus der
+        Bibliothek (Rueckfrage vor dem Ueberschreiben). Am 16.09.2026 stand
+        fuer den zweiten eine eigene Fassung weiter oben in der Klasse - die
+        hier ueberdeckte sie still, weil die spaetere Definition gewinnt.
+
+        ``SIZE`` wird im Binaermodus gefragt: Manche Server lehnen es im
+        ASCII-Modus mit einer 5xx-Absage ab, obwohl die Datei da ist. Lehnt
+        der Server ``SIZE`` trotzdem ab, entscheidet die Ordnerliste - eine
+        Absage zu ``SIZE`` allein heisst noch nicht "gibt es nicht".
         """
         import ftplib  # noqa: PLC0415
+        try:
+            ftp.voidcmd("TYPE I")
+        except ftplib.error_perm:
+            pass
         try:
             ftp.size(pfad)
             return True
         except ftplib.error_perm:
-            # 550 und Verwandte: Die Konsole hat geantwortet, die Datei
-            # gibt es nicht (oder sie ist nicht lesbar).
+            pass
+        ordner, _, name = str(pfad).rpartition("/")
+        try:
+            namen = ftp.nlst(ordner or "/")
+        except ftplib.error_perm:
+            # 550 und Verwandte: Die Konsole hat geantwortet, den Ordner
+            # (und damit die Datei) gibt es nicht.
             return False
+        return any(str(n).rstrip("/").rsplit("/", 1)[-1] == name for n in namen)
 
     def _autoload_ergaenzen(self, inhalt: str, elf_name: str) -> tuple[str, bool]:
         """Haengt den Payload an autoload.txt an.
@@ -43825,6 +46217,14 @@ class PS5ConverterGUI:
         if self._ps5_port_open(host, self._FTPSRV_PORT):
             return self._FTPSRV_PORT
         if getattr(self, "_ftpsrv_declined", False):
+            return 0
+        if getattr(self, "_cli_mode", False):
+            # Auf der Kommandozeile gibt es niemanden, der die Rueckfrage
+            # beantwortet. Bis v1.9.24 oeffnete der FTP-Index hier ein echtes
+            # Dialogfenster - der Lauf hing unbegrenzt, und ein "Ja" schickte
+            # einen Payload an die Konsole. Ohne Frage wird nichts gesendet.
+            self._ftpsrv_declined = True
+            self._append_to_log(self._t("ftpsrv.declined") + "\n")
             return 0
 
         pfad = self._ftpsrv_payload_path()
@@ -44052,7 +46452,10 @@ class PS5ConverterGUI:
         has_fakelib = any(n in names_lower for n in ps5_backport.FAKELIB_ORDNERNAMEN)
 
         if has_eboot and has_sce_sys:
-            detail = self._t("ampr.ftp_validate_ok", fakelib=("ja" if has_fakelib else "nein"))
+            # Ja/Nein ueber die Uebersetzung - bis v1.9.24 stand hier fest
+            # "ja"/"nein", auch in der englischen Oberflaeche.
+            detail = self._t("ampr.ftp_validate_ok",
+                             fakelib=self._t("common.yes" if has_fakelib else "common.no"))
             return True, detail
         missing = []
         if not has_eboot:
@@ -44062,14 +46465,22 @@ class PS5ConverterGUI:
         return False, self._t("ampr.ftp_validate_missing", items=", ".join(missing))
 
     def _ampr_collect_ftp_rows(self, ftp: Any, root: str) -> tuple[int, list[tuple[int, int, str]]]:
-        """Durchläuft das /app0-Verzeichnis auf der PS5 und sammelt Indexzeilen."""
+        """Durchläuft das /app0-Verzeichnis auf der PS5 und sammelt Indexzeilen.
+
+        Wie ``collect_ftp_rows`` in ``build_ampr_index.py`` des Entwicklers:
+        Ausgelassen werden der Index selbst samt ``.tmp``/``.bak``, der
+        Befehlsmitschnitt und das Protokoll eines Debug-Baus; verglichen und
+        sortiert wird ueber den Byte-Schluessel (``_ampr_pfadschluessel``).
+        """
         import ftplib  # noqa: PLC0415
 
-        seen: dict[str, str] = {}
+        seen: dict[bytes, str] = {}
         rows: list[tuple[int, int, str]] = []
         dirs_seen = 0
         stack = [root]
-        skip_keys = {"/app0/" + self._AMPR_INDEX_NAME, "/app0/" + self._AMPR_INDEX_NAME + ".tmp"}
+        skip_keys = {self._ampr_pfadschluessel("/app0/" + name) for name in (
+            self._AMPR_INDEX_NAME, self._AMPR_INDEX_NAME + ".tmp",
+            self._AMPR_INDEX_NAME + ".bak")} | set(self._AMPR_INDEX_NIE)
 
         while stack:
             if not self.is_running:
@@ -44081,7 +46492,7 @@ class PS5ConverterGUI:
             except ftplib.error_perm as exc:
                 self._append_to_log(self._t("ampr.ftp_dir_unreadable", path=current, error=exc))
                 continue
-            entries.sort(key=lambda item: item[0].lower())
+            entries.sort(key=lambda item: self._ampr_pfadschluessel(item[0]))
 
             child_dirs: list[str] = []
             for name, facts in entries:
@@ -44097,8 +46508,16 @@ class PS5ConverterGUI:
 
                 rel = remote[len(root):].lstrip("/") if root != "/" else remote.lstrip("/")
                 indexed = "/app0/" + rel.replace("\\", "/")
-                key = indexed.lower()
-                if key in skip_keys or key in seen:
+                key = self._ampr_pfadschluessel(indexed)
+                if key in skip_keys:
+                    continue
+                if any(zeichen in indexed for zeichen in "\t\n\r"):
+                    self._append_to_log(self._t("ampr.index_leerraum", path=indexed))
+                    continue
+                if key in seen:
+                    self._append_to_log(self._t(
+                        "ampr.index_schreibung_doppelt",
+                        first=seen[key], second=indexed))
                     continue
                 seen[key] = indexed
                 try:
@@ -44347,19 +46766,48 @@ class PS5ConverterGUI:
             for name, size in listing["files"]:
                 listbox.insert(tk.END, f"  {name}  ({self._fmt_bytes(size)})")
 
-        def _connect() -> None:
+        def _connect(danach: str = "/") -> None:
+            if state.get("verbinde"):
+                return
             try:
                 port = int(port_var.get().strip() or 0)
             except ValueError:
                 port = 0
             host = host_var.get().strip()
             if not host:
-                messagebox.showwarning(self._t("ampr.picker_title"), self._t("ampr.picker_no_host"))
+                messagebox.showwarning(self._t("ampr.picker_title"), self._t("ampr.picker_no_host"),
+                                       parent=win)
                 return
-            try:
-                state["ftp"] = self._ampr_ftp_connect(host, port)
-            except Exception as exc:
-                _log(self._t("ampr.picker_connect_failed", error=exc))
+            # Die Verbindung entsteht im Faden. Bis v1.9.24 stand sie hier: 30 s
+            # Zeitgrenze je Port, ohne festen Port zuerst die ftpsrv-Sondierung -
+            # mit ausgeschalteter Konsole war das Programm so lange eingefroren.
+            state["verbinde"] = True
+            status_var.set(self._t("status.connecting"))
+
+            def _arbeit() -> None:
+                try:
+                    ftp, fehler = self._ampr_ftp_connect(host, port), None
+                except Exception as exc:  # noqa: BLE001
+                    ftp, fehler = None, exc
+                else:
+                    # Gemerkt wird nur eine Adresse, unter der wirklich jemand
+                    # antwortete - im selben Rumpf wie der Aufbau (siehe
+                    # test_ps5_verbindung). _save_setting schreibt unter Schloss.
+                    self._save_setting("ps5_ip", host)
+                if not self._spaeter_im_fenster(win, _verbunden, host, port, ftp,
+                                                fehler, danach) and ftp is not None:
+                    try:
+                        ftp.close()             # Fenster schon zu
+                    except Exception:  # noqa: BLE001
+                        pass
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="ampr-auswahl-verbinden").start()
+
+        def _verbunden(host: str, port: int, ftp, fehler, danach: str) -> None:
+            state["verbinde"] = False
+            if fehler is not None:
+                _log(self._t("ampr.picker_connect_failed", error=fehler))
                 # Haeufigster Grund ist ein gar nicht laufender FTP-Payload.
                 # Der Hinweis nennt die geprueften Ports und den schnellsten
                 # der mitgelieferten Payloads (siehe PS5_FTP_PORTS).
@@ -44368,13 +46816,26 @@ class PS5ConverterGUI:
                     ports="/".join(str(p) for p in self._AMPR_FTP_PORTS),
                 ))
                 return
-            self._save_setting("ps5_ip", host)
+            alt = state.get("ftp")
+            if alt is not None and alt is not ftp:
+                # Ein zweites Verbinden liess die erste Sitzung bis v1.9.24
+                # offen liegen.
+                try:
+                    alt.quit()
+                except Exception:  # noqa: BLE001
+                    pass
+            state["ftp"] = ftp
             ftp_port = getattr(state["ftp"], "port", port) or port
             self._ps5_wert_merken("ampr_ftp_port", ftp_port,
                                   self._ps5_ftp_port())
             state["port"] = ftp_port
-            _log(self._t("ampr.picker_connected", host=host, port=port))
-            _render("/")
+            # Die Adresse, mit der die Sitzung steht - nicht die, die gerade
+            # im Feld steht. Der Indexbau las bis v1.9.24 host_var im
+            # Arbeitsfaden: Tk im Faden, und eine inzwischen geaenderte
+            # Adresse fuehrte zu einer anderen Konsole als der angezeigten.
+            state["host"] = host
+            _log(self._t("ampr.picker_connected", host=host, port=ftp_port))
+            _render(danach)
 
         def _open_selected() -> None:
             if not listbox.curselection():
@@ -44388,9 +46849,10 @@ class PS5ConverterGUI:
 
         def _goto(path: str) -> None:
             if state.get("ftp") is None:
-                _connect()
-            if state.get("ftp") is not None:
-                _render(path)
+                # Verbunden wird im Faden - angezeigt wird der Pfad danach.
+                _connect(danach=path)
+                return
+            _render(path)
 
         def _validate() -> None:
             ftp = state.get("ftp")
@@ -44407,17 +46869,20 @@ class PS5ConverterGUI:
                 return
             out = os.path.join(self._get_runtime_temp_dir(), self._AMPR_INDEX_NAME)
             port = int(state.get("port") or 0)
+            host = str(state.get("host") or host_var.get()).strip()
             _log(self._t("ampr.picker_building", path=state["path"]))
 
             def _worker(target_path: str = state["path"]) -> None:
                 ok, count = self._ampr_build_index_ftp(
-                    host_var.get().strip(), port, "anonymous", "anonymous@",
+                    host, port, "anonymous", "anonymous@",
                     target_path, out, upload=True,
                 )
-                self.root.after(0, lambda: _log(
-                    self._t("ampr.picker_build_done", count=count) if ok
-                    else self._t("ampr.picker_build_failed")
-                ))
+                ergebnis = (self._t("ampr.picker_build_done", count=count) if ok
+                            else self._t("ampr.picker_build_failed"))
+                # Ins Programmprotokoll immer, in die Statuszeile nur, solange
+                # das Fenster offen ist (_log schreibt beides).
+                self._append_to_log(ergebnis + "\n")
+                self._spaeter_im_fenster(win, status_var.set, ergebnis)
 
             threading.Thread(target=_worker, daemon=True).start()
 
@@ -44618,7 +47083,12 @@ class PS5ConverterGUI:
                 dlg.destroy()
                 return
 
-            if self.is_running:
+            # Der Neustart beendet den Prozess mit sys.exit - auch einen
+            # laufenden PKG-Merge, eine Bibliotheks-Uebertragung oder ein
+            # Werkzeug mitten im Schreiben. Bis v1.9.24 zaehlte hier nur
+            # is_running; ein 100-GB-Merge endete ohne Meldung als .tmp-Rest.
+            if (self._vorgang_laeuft_noch() or self._pkg_merge_laeuft > 0
+                    or self._bibliothek_uebertragungen > 0):
                 messagebox.showwarning(
                     self._t("dialog.title.restart_not_possible"),
                     self._t("dialog.msg.restart_not_possible_task_running"),
@@ -44628,8 +47098,17 @@ class PS5ConverterGUI:
                 dlg.destroy()
                 return
 
-            self._save_setting("theme", chosen)
             dlg.destroy()
+            # Offene Werkzeugfenster auf ihrem eigenen Weg schliessen - wie
+            # beim Beenden. Lehnt eines ab, weil dort etwas laeuft, wird nur
+            # live umgefaerbt statt neu gestartet.
+            for _befehl in list(getattr(self, "_werkzeugfenster", {})):
+                self._werkzeugfenster_schliessen(_befehl)
+            if any(self._fenster_lebt(_w)
+                   for _w in getattr(self, "_werkzeugfenster", {}).values()):
+                self._apply_theme(chosen)
+                return
+            self._save_setting("theme", chosen)
             self._restart_application()
 
         flach_knopf(btn_row, text=self._t("theme_dialog.apply_button"),
@@ -45179,7 +47658,7 @@ class PS5ConverterGUI:
                     schluessel = ("settings_dialog.ps5_test_ok" if erreichbar
                                   else "settings_dialog.ps5_test_failed")
                     meldung = self._t(schluessel, ip=ip, port=ftp_port)
-                dlg.after(0, lambda: ps5_status_var.set(meldung))
+                self._spaeter_im_fenster(dlg, lambda: ps5_status_var.set(meldung))
 
             threading.Thread(target=_arbeit, daemon=True).start()
 
@@ -45876,6 +48355,17 @@ class PS5ConverterGUI:
         self._COLORS nur einmal beim Erstellen, daher stellt erst ein
         vollständiger Neustart das gewählte Design überall korrekt dar.
         """
+        # Was on_closing vor dem Ende tut, gilt auch hier: Fenstergroesse merken,
+        # eingehaengte Laufwerke loesen, eigene Temp-Reste abraeumen. Bis
+        # v1.9.24 ging der Neustart an allen dreien vorbei.
+        for _schritt in (self._fenstergeometrie_merken,
+                         self._force_dismount_all,
+                         self._cleanup_exit_temp_targets):
+            try:
+                _schritt()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Neustart-Vorbereitung (%s): %s",
+                             getattr(_schritt, "__name__", "?"), exc)
         try:
             if getattr(sys, "frozen", False):
                 args = [sys.executable] + sys.argv[1:]
@@ -46533,7 +49023,7 @@ UFS2TOOL_ORDNER = werkzeuge_bereitstellen.UFS2TOOL_ORDNER
 
 
 #: Ordnername des eingebetteten PS4-FFPFSC-Auszugs (siehe dort UPSTREAM.md).
-PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.8"
+PS4FFPFSC_ORDNER = "PS4FFPFSC-0.2.9"
 
 #: Praefix, mit dem das PS4-Werkzeug seine Fortschrittsmeldungen kennzeichnet
 #: (JSON je Zeile auf stderr, siehe dort pipeline.PROGRESS_PREFIX).
@@ -46690,6 +49180,12 @@ def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     Returns:
         Rückgabewert des aufgerufenen Werkzeugs.
     """
+    # Dieselbe Absicherung wie beim AMPR-Selbstaufruf. In der EXE startet der
+    # Bootloader Python isoliert - PYTHONUTF8/PYTHONIOENCODING aus
+    # _ps4ffpsc_umgebung wirken dort nicht, stdout stand auf cp1252. Titel mit
+    # Zeichen ausserhalb davon ("Ōkami", Kyrillisch) liessen "list --json" mit
+    # UnicodeEncodeError scheitern; ’ ™ é kamen verstuemmelt an.
+    _stroeme_absichern()
     wurzel = _ps4ffpsc_wurzel()
     if not wurzel:
         print(
@@ -47054,6 +49550,15 @@ def _build_cli_parser() -> argparse.ArgumentParser:
              "Ende entfernt. Braucht dort vorübergehend zusätzlich Platz. Hat "
              "Vorrang vor --umhuellt-als-ordner.")
     parser.add_argument(
+        "--ampr-originale-weglassen", action="store_true",
+        help="Wie Ja in der Rückfrage des Fensters: Mit Asset-Pack (Einstellungen "
+             "integrate_ampr und integrate_ampr_methode) werden die gepackten "
+             "Originale nach der Prüfung aus der Arbeitskopie entfernt - erst "
+             "dadurch wird das Ergebnis kleiner. Laut Anleitung des Entwicklers "
+             "erst nach einem vollständigen Konsolentest mit Originalen. Im "
+             "Quellordner selbst wird nie entfernt. Bewusst nicht von --ja "
+             "mitentschieden.")
+    parser.add_argument(
         "--shutdown-on-success", action="store_true",
         help=(
             "Rechner nach erfolgreichem Abschluss herunterfahren (nach dem Lösen "
@@ -47091,11 +49596,10 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     ampr.add_argument(
         "--ampr-action",
         choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index",
-                 "ampr_ftp_index", "ampr_pack_remove"),
+                 "ampr_ftp_index"),
         help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich). "
-             "'ampr_pack_remove' nimmt eine gepackte Asset-Schicht wieder "
-             "heraus: Manifest, .runtime und die .pak-Bänder werden entfernt. "
-             "Die Spieldateien bleiben, sie lagen ohnehin einzeln daneben.",
+             "Aufgabe 7 baut und entfernt keine Asset-Pack-Bänder; die "
+             "entstehen nur beim Erstellen eines Abbilds.",
     )
     ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")
     ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste).")
@@ -47231,6 +49735,9 @@ def _cli_schalter_uebernehmen(app: "PS5ConverterGUI", args: argparse.Namespace) 
     # PS5ConverterGUI._umhuellenden_weg_klaeren.
     app._cli_umhuellt_ordner = bool(getattr(args, "umhuellt_als_ordner", False))
     app._cli_umhuellt_neu_packen = bool(getattr(args, "umhuellt_neu_packen", False))
+    # Asset-Pack ohne Originale, siehe PS5ConverterGUI._ampr_originale_klaeren.
+    app._cli_ampr_originale_weglassen = bool(
+        getattr(args, "ampr_originale_weglassen", False))
 
 
 def _run_cli_ampr_ftp_index(args: argparse.Namespace) -> int:
@@ -47277,7 +49784,7 @@ def _prepare_cli_streams() -> None:
 
 
 def _run_cli(args: argparse.Namespace) -> int:
-    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler, 3=Administratorrechte fehlen)."""
+    """Führt eine Aufgabe ohne sichtbares GUI-Fenster aus. Rückgabe: Exit-Code (0=OK, 1=Fehler, 2=Eingabefehler, 3=Administratorrechte fehlen, 4=nicht geprüft)."""
     _prepare_cli_streams()
     mode = args.mode
     if not mode:
@@ -47317,6 +49824,18 @@ def _run_cli(args: argparse.Namespace) -> int:
     elif args.ampr_action:
         print("[FEHLER] --ampr-* Argumente gelten nur für Aufgabe 7 (ampr_manager).", file=sys.stderr)
         return 2
+
+    # Der Zielordner wie die Quellen VOR dem Start. Bis v1.9.24 fiel ein
+    # fehlendes oder falsches --dest erst in _launch_task auf: als Dialog, und
+    # der Lauf endete mit 1 (Fehler) statt 2 (ungueltige Argumente). Aufgabe 7
+    # bleibt aussen vor - sie liest ein Ziel je nach Quelle gar nicht.
+    if mode not in ("inspect", "dump_validator", "ampr_manager"):
+        if not args.dest:
+            print("[FEHLER] --dest ist für diese Aufgabe erforderlich.", file=sys.stderr)
+            return 2
+        if not os.path.isdir(os.path.normpath(args.dest)):
+            print(f"[FEHLER] Zielordner nicht gefunden: {args.dest}", file=sys.stderr)
+            return 2
 
     _set_windows_app_user_model_id()
     root = tk.Tk()
@@ -47369,7 +49888,11 @@ def _run_cli(args: argparse.Namespace) -> int:
         return 2
 
     app.source_path.set(sources[0])
-    app._batch_sources = sources if len(sources) > 1 else []
+    # Aufgabe 5 nimmt auch EINE Quelle - einen Ordner voller Abbilder oder ein
+    # einzelnes Abbild. Bis v1.9.24 stand hier "nur bei mehr als einer", und
+    # der Lauf endete mit "Bitte einen Quellpfad angeben".
+    app._batch_sources = (app._sammelquellen_aufloesen(sources)
+                          if mode == "batch_convert" else [])
     # Die Konfig-Anzeige an die echte Aufgabe angleichen (Kopf, Untertitel,
     # Formatoptionen, BAUFORM-Sichtbarkeit) - wie ein Klick in der Seitenleiste.
     # Bis 13.09.2026 setzte der CLI-Modus nur current_mode; das Fortschritts-
@@ -47464,6 +49987,68 @@ def _run_cli(args: argparse.Namespace) -> int:
     return 0 if ok else 1
 
 
+def _run_werkzeugpflege(argv: list[str]) -> int:
+    """Haelt die mitgelieferten Nutzlasten gegen ihre Veroeffentlichungen.
+
+    Der **einzige** Weg, auf dem dieses Programm nach neueren Fassungen
+    fremder Werkzeuge sieht. Weder ein Start noch ein Diagnoselauf tut das von
+    selbst: Wer nachsehen will, sagt es hier ausdruecklich - dieselbe Regel
+    wie beim Metadaten-Nachschlag. Ohne Netz laeuft trotzdem der Abgleich
+    zwischen Ordner und Lizenzdatei; er hat am 17.09.2026 drei Abweichungen
+    gefunden, die seit Monaten keinem aufgefallen waren.
+
+    Args:
+        argv: ``--offline`` laesst den Netzteil weg.
+
+    Returns:
+        0, wenn nichts zu tun ist; 1 bei Abweichung, Rueckstand oder wenn die
+        Liste nicht erreichbar war.
+    """
+    _prepare_cli_streams()
+    from ps5_validator.utils import werkzeugstaende
+
+    wurzel = os.path.dirname(os.path.abspath(__file__))
+    ordner = os.path.join(wurzel, "helloworld")
+    lizenz = os.path.join(wurzel, "THIRD_PARTY_LICENSES.md")
+    payloads = werkzeugstaende.payloads_lesen(ordner)
+    befund = werkzeugstaende.bestand_abgleichen(ordner, lizenz)
+    fehler = 0
+
+    print("-- Bestand gegen Lizenzdatei --")
+    print("Mitgelieferte Nutzlasten: %d" % len(payloads))
+    for name in befund["ohne_zeile"]:
+        print("  ohne Zeile in THIRD_PARTY_LICENSES.md: %s" % name)
+        fehler += 1
+    for name in befund["ohne_datei"]:
+        print("  Zeile ohne Datei im Ordner: %s" % name)
+        fehler += 1
+    if not fehler:
+        print("  In Ordnung - jede Datei hat ihre Zeile und umgekehrt.")
+
+    if "--offline" in argv:
+        return 1 if fehler else 0
+
+    print("")
+    print("-- Nachsehen im Netz --")
+    print("Quelle: %s" % werkzeugstaende.SPIEGEL_ADRESSE)
+    try:
+        liste = werkzeugstaende.spiegel_holen()
+    except Exception as exc:  # noqa: BLE001
+        print("  Liste nicht erreichbar: %s" % exc)
+        return 1
+    print("  %d Eintraege gelesen." % len(liste))
+    rueckstand = werkzeugstaende.rueckstaende(payloads, liste)
+    for datei, unsere, ihre, quelle in rueckstand:
+        print("  veraltet: %-40s %-14s -> %-14s %s" % (datei, unsere, ihre, quelle))
+        fehler += 1
+    if not rueckstand:
+        print("  Keine mitgelieferte Nutzlast ist aelter als die Liste.")
+    print("")
+    print("Die Liste kennt nicht jedes mitgelieferte Werkzeug; wo sie nichts")
+    print("sagt, sagt dieser Lauf auch nichts.")
+    return 1 if fehler else 0
+
+
 def _run_anzeige_diagnose(argv: list[str]) -> int:
     """Baut die Oberflaeche auf, prueft die Darstellung und gibt sie aus.
 
@@ -47541,6 +50126,11 @@ if __name__ == "__main__":
     # Ausnahme aufgezeichnet, auch die aus dem Programmstart.
     _haken_setzen()
 
+    # Vor jedem HTTPS-Abruf: Die gebaute Fassung ausserhalb von Windows sucht
+    # Zertifikate sonst dort, wo ihre OpenSSL gebaut wurde - und findet auf
+    # den meisten Rechnern keine (gemessen 17.09.2026, siehe plattform.py).
+    _system_zertifikate_bereitstellen()
+
     # Interne Modi des eingebetteten PS4-Werkzeugs. Sie muessen VOR der
     # Rechtepruefung stehen: Diese Prozesse startet das Programm selbst, sie
     # erben die Rechte des Aufrufers, und eine zweite UAC-Abfrage haette
@@ -47558,6 +50148,12 @@ if __name__ == "__main__":
     # UAC-Abfrage koennte im Terminal niemand beantworten.
     if len(sys.argv) > 1 and sys.argv[1] == "--anzeige-diagnose":
         sys.exit(_run_anzeige_diagnose(sys.argv[2:]))
+
+    # Werkzeugpflege. Ebenfalls ohne Administratorrechte, und der einzige
+    # Lauf, der fuer Fassungen fremder Werkzeuge ins Netz geht - auf
+    # ausdruecklichen Zuruf, nie von selbst.
+    if len(sys.argv) > 1 and sys.argv[1] == "--werkzeuge-pruefen":
+        sys.exit(_run_werkzeugpflege(sys.argv[2:]))
 
     # Umgebungspruefung. Steht vor der Rechtepruefung, weil sie gerade
     # dann gebraucht wird, wenn etwas nicht laeuft - eine UAC-Abfrage
@@ -47614,7 +50210,8 @@ if __name__ == "__main__":
 
     _set_windows_app_user_model_id()
 
-    root = TkinterDnD.Tk() if _DND_AVAILABLE else tk.Tk()
+    root = (TkinterDnD.Tk(className=TK_KLASSENNAME) if _DND_AVAILABLE
+            else tk.Tk(className=TK_KLASSENNAME))
     root.title(APP_TITLE)
 
     # Sofort, nicht erst im Aufbau der Oberflaeche: Sobald tk.Tk() da ist,

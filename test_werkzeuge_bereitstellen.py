@@ -27,6 +27,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest import mock
 
 from ps5_validator.utils import werkzeuge_bereitstellen as wb
 
@@ -124,6 +125,134 @@ class PruefsummeTests(unittest.TestCase):
                       encoding="utf-8") as griff:
                 griff.write("{kein json")
             wb.ufs2tool_pruefsumme(ordner, "win-x64", pfad)
+
+    def _mit_buendelwert(self, ordner: str, inhalt: bytes, im_buendel: str) -> str:
+        pfad = self._bauen(ordner, inhalt, "0" * 64)
+        with open(os.path.join(ordner, "pruefsummen.json"), "w",
+                  encoding="utf-8") as griff:
+            json.dump({"plattformen": {"win-x64": {
+                "sha256": "0" * 64, "sha256_im_buendel": im_buendel}}}, griff)
+        return pfad
+
+    def test_der_wert_aus_dem_macos_bau_gilt_auch(self) -> None:
+        """Den traegt Build_macOS.sh ein, wenn die neue Signatur die Datei aendert."""
+        with tempfile.TemporaryDirectory() as ordner:
+            inhalt = b"neu signiert"
+            pfad = self._mit_buendelwert(ordner, inhalt,
+                                         hashlib.sha256(inhalt).hexdigest())
+            wb.ufs2tool_pruefsumme(ordner, "win-x64", pfad)
+
+    def test_ein_falscher_buendelwert_hilft_nicht(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            pfad = self._mit_buendelwert(ordner, b"etwas anderes", "1" * 64)
+            with self.assertRaises(RuntimeError):
+                wb.ufs2tool_pruefsumme(ordner, "win-x64", pfad)
+
+    def test_ein_leerer_buendelwert_oeffnet_nichts(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            pfad = self._mit_buendelwert(ordner, b"etwas anderes", "")
+            with self.assertRaises(RuntimeError):
+                wb.ufs2tool_pruefsumme(ordner, "win-x64", pfad)
+
+
+class MacBuendelTests(unittest.TestCase):
+    """Build_macOS.sh: Quelle streng pruefen, Buendel nachmessen und nachtragen.
+
+    PyInstaller 6 signiert Mach-O-Dateien beim Mac-Bau neu, die Signatur
+    steht in der Datei. Stimmte die Pruefsumme danach nicht mehr, lehnte die
+    Mac-App UFS2Tool ab und jede .ffpkg-Aufgabe scheiterte. Ob die Bytes sich
+    aendern, war ohne Mac nicht messbar - der Bau misst es jetzt selbst.
+    """
+
+    QUELLE = b"UFS2Tool aus dem Repo"
+    SIGNIERT = b"UFS2Tool nach codesign"
+
+    def _wurzel(self, ordner: str, inhalt: bytes, **zusatz: str) -> str:
+        os.makedirs(os.path.join(ordner, "osx-arm64"))
+        with open(os.path.join(ordner, "osx-arm64", "UFS2Tool"), "wb") as griff:
+            griff.write(inhalt)
+        eintrag = {"datei": "UFS2Tool",
+                   "sha256": hashlib.sha256(self.QUELLE).hexdigest(), **zusatz}
+        with open(os.path.join(ordner, "pruefsummen.json"), "w",
+                  encoding="utf-8") as griff:
+            json.dump({"plattformen": {
+                "osx-arm64": eintrag,
+                "osx-x64": {"datei": "UFS2Tool", "sha256": "2" * 64}}}, griff)
+        return ordner
+
+    def _liste(self, ordner: str) -> dict:
+        with open(os.path.join(ordner, "pruefsummen.json"), encoding="utf-8") as griff:
+            return json.load(griff)["plattformen"]
+
+    def test_unveraendert_bleibt_die_liste_wie_sie_ist(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            self._wurzel(ordner, self.QUELLE)
+            vorher = self._liste(ordner)
+            self.assertEqual(wb.ufs2tool_buendel_nachtragen(ordner),
+                             {"osx-arm64": "unveraendert", "osx-x64": "fehlt"})
+            self.assertEqual(self._liste(ordner), vorher)
+            self.assertEqual(wb.ufs2tool_buendel_pruefen(ordner, ("osx-arm64", "osx-x64")), [])
+
+    def test_neu_signiert_wird_nachgetragen_und_danach_angenommen(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            self._wurzel(ordner, self.SIGNIERT)
+            self.assertEqual(len(wb.ufs2tool_buendel_pruefen(ordner, ("osx-arm64",))), 1,
+                             "Vor dem Nachtrag muss das Programm die Datei ablehnen.")
+            self.assertEqual(wb.ufs2tool_buendel_nachtragen(ordner)["osx-arm64"], "nachgetragen")
+            eintrag = self._liste(ordner)["osx-arm64"]
+            self.assertEqual(eintrag["sha256"], hashlib.sha256(self.QUELLE).hexdigest(),
+                             "Der Wert der Quelle bleibt unberuehrt.")
+            self.assertEqual(eintrag["sha256_im_buendel"], hashlib.sha256(self.SIGNIERT).hexdigest())
+            self.assertEqual(wb.ufs2tool_buendel_pruefen(ordner, ("osx-arm64", "osx-x64")), [])
+
+    def test_ein_alter_nachtrag_verschwindet_wenn_die_datei_wieder_stimmt(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            self._wurzel(ordner, self.QUELLE, sha256_im_buendel="3" * 64)
+            self.assertEqual(wb.ufs2tool_buendel_nachtragen(ordner)["osx-arm64"], "unveraendert")
+            self.assertNotIn("sha256_im_buendel", self._liste(ordner)["osx-arm64"])
+
+    def test_geschrieben_wird_in_die_echte_datei_hinter_dem_verweis(self) -> None:
+        """Im Buendel ist die Liste unter Contents/Frameworks ein Verweis."""
+        with tempfile.TemporaryDirectory() as ordner:
+            frameworks = os.path.join(ordner, "Frameworks")
+            resources = os.path.join(ordner, "Resources")
+            self._wurzel(frameworks, self.SIGNIERT)
+            os.makedirs(resources)
+            echte = os.path.join(resources, "pruefsummen.json")
+            os.replace(os.path.join(frameworks, "pruefsummen.json"), echte)
+            verweis = os.path.join(frameworks, "pruefsummen.json")
+            original = os.path.realpath
+
+            def aufloesen(pfad: str) -> str:
+                return echte if os.path.normcase(pfad) == os.path.normcase(verweis) else original(pfad)
+
+            with open(echte, encoding="utf-8") as griff:
+                inhalt = griff.read()
+            # Der Verweis selbst: dieselbe Liste an beiden Orten, wie im Buendel.
+            with open(verweis, "w", encoding="utf-8") as griff:
+                griff.write(inhalt)
+            with mock.patch.object(wb.os.path, "realpath", side_effect=aufloesen):
+                wb.ufs2tool_buendel_nachtragen(frameworks)
+            self.assertIn("sha256_im_buendel", self._liste(resources)["osx-arm64"])
+            with open(verweis, encoding="utf-8") as griff:
+                self.assertEqual(griff.read(), inhalt, "Der Verweis darf nicht ersetzt werden.")
+
+    def test_die_quelle_muss_genau_stimmen(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            self._wurzel(ordner, self.SIGNIERT,
+                         sha256_im_buendel=hashlib.sha256(self.SIGNIERT).hexdigest())
+            probleme = wb.ufs2tool_quelle_pruefen(ordner, ("osx-arm64", "osx-x64"))
+            self.assertEqual(len(probleme), 2, probleme)
+            self.assertIn("osx-arm64", probleme[0], "Der Buendelwert zaehlt an der Quelle nicht.")
+            self.assertIn("osx-x64", probleme[1])
+
+    def test_die_echte_quelle_passt(self) -> None:
+        self.assertEqual(
+            wb.ufs2tool_quelle_pruefen(str(PROJEKT / "UFS2Tool-4.1"), ("osx-arm64", "osx-x64")), [])
+
+    def test_eine_unlesbare_liste_ist_ein_problem(self) -> None:
+        with tempfile.TemporaryDirectory() as ordner:
+            self.assertEqual(len(wb.ufs2tool_quelle_pruefen(ordner, ("osx-arm64",))), 1)
 
 
 class Ufs2toolTests(unittest.TestCase):
@@ -329,8 +458,15 @@ class LaufzeitpaketeTests(unittest.TestCase):
         self.assertEqual(gestartet, [],
                          "pip wurde gestartet, obwohl nichts fehlte.")
 
-    def test_ohne_rueckrufe_wirft_es_nicht(self) -> None:
-        """Die Vorgaben muessen tragen - sonst platzt es beim ersten Lauf."""
+    def test_die_prozess_rueckrufe_sind_pflicht(self) -> None:
+        """Ohne pip_kommando und prozess_starten geht es nicht - mit Absicht.
+
+        Beide sind Pflicht-Schluesselworte ohne Vorgabe: Das Modul kennt
+        weder die Oberflaeche noch den Weg zum richtigen Python, und eine
+        stille Vorgabe startete pip womoeglich im falschen Interpreter.
+        Bis 16.09.2026 hiess dieser Test "ohne Rueckrufe wirft es nicht"
+        und pruefte doch genau das Werfen.
+        """
         with self.assertRaises(TypeError):
             wb.laufzeitpakete_sicherstellen(tempfile.gettempdir())
 

@@ -781,6 +781,26 @@ ERG_FEHLER = "fehler"
 MELDUNGEN: dict[str, str] = {
     'kein_elf_kein_self':
         'kein ELF und kein SELF',
+    # Bis zum 17.09.2026 standen die folgenden Gruende fest im Quelltext -
+    # die Statusspalte des BACKPORT-Fensters zeigte sie auch auf Englisch.
+    'elf_ohne_kennung':
+        'ELF ohne Kennung – so nicht signierbar, bleibt unverändert',
+    'entpacken_fehlgeschlagen':
+        'Entpacken fehlgeschlagen: {fehler}',
+    'keine_sdk_angabe':
+        'keine SDK-Angabe enthalten',
+    'bereits_niedrig':
+        'bereits {firmware} oder älter',
+    'sdk_nicht_setzbar':
+        'SDK nicht setzbar: {fehler}',
+    'signieren_fehlgeschlagen':
+        'Signieren fehlgeschlagen: {fehler}',
+    'libc_patch_bei':
+        ', libc-Patch bei 0x{stelle}',
+    'libc_bereits_gepatcht':
+        ', libc bereits gepatcht',
+    'libc_muster_fehlt':
+        ', libc-Muster nicht gefunden',
 }
 
 
@@ -807,42 +827,49 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
     typ = dateityp(daten)
     if typ == TYP_UNBEKANNT:
         return ERG_UEBERSPRUNGEN, daten, _satz(texte, "kein_elf_kein_self")
+    if typ == TYP_ELF_GESTRIPPT:
+        # Gemessen am 17.09.2026: Herabsetzen gelang, Signieren scheiterte
+        # danach immer ("Keine ELF-Kennung") - und die Analyse im Fenster
+        # zaehlte die Datei trotzdem als offen. Die Kennung einfach zu
+        # ergaenzen waere geraten: Ob die Konsole so eine Datei annimmt, ist
+        # nicht gemessen.
+        return ERG_FEHLER, daten, _satz(texte, "elf_ohne_kennung")
 
     war_self = typ == TYP_SELF
     try:
         elf = self_zu_elf(daten) if war_self else daten
     except BackportFehler as exc:
-        return ERG_FEHLER, daten, f"Entpacken fehlgeschlagen: {exc}"
+        return ERG_FEHLER, daten, _satz(texte, "entpacken_fehlgeschlagen", fehler=exc)
 
     try:
         aktuell_ps5, _aktuell_ps4 = sdk_lesen(elf)
     except SdkNichtGefunden:
-        return ERG_UEBERSPRUNGEN, daten, "keine SDK-Angabe enthalten"
+        return ERG_UEBERSPRUNGEN, daten, _satz(texte, "keine_sdk_angabe")
 
     if not muss_gepatcht_werden(aktuell_ps5, ziel_ps5):
         return (ERG_UEBERSPRUNGEN, daten,
-                f"bereits {firmware_text(aktuell_ps5)} oder älter")
+                _satz(texte, "bereits_niedrig", firmware=firmware_text(aktuell_ps5)))
 
     try:
         elf, alt_ps5, _alt_ps4 = sdk_setzen(elf, ziel_ps5, ziel_ps4)
     except BackportFehler as exc:
-        return ERG_FEHLER, daten, f"SDK nicht setzbar: {exc}"
+        return ERG_FEHLER, daten, _satz(texte, "sdk_nicht_setzbar", fehler=exc)
 
     zusatz = ""
     if libc_zusatz and ist_libc_datei:
         elf, stelle = libc_patchen(elf)
         if stelle >= 0:
-            zusatz = f", libc-Patch bei 0x{stelle:X}"
+            zusatz = _satz(texte, "libc_patch_bei", stelle="%X" % stelle)
         elif stelle == -2:
-            zusatz = ", libc bereits gepatcht"
+            zusatz = _satz(texte, "libc_bereits_gepatcht")
         else:
-            zusatz = ", libc-Muster nicht gefunden"
+            zusatz = _satz(texte, "libc_muster_fehlt")
 
     # Signieren ist Pflicht - eine unsignierte Datei darf nie zurueckgegeben werden.
     try:
         ergebnis = elf_signieren(elf)
     except BackportFehler as exc:
-        return ERG_FEHLER, daten, f"Signieren fehlgeschlagen: {exc}"
+        return ERG_FEHLER, daten, _satz(texte, "signieren_fehlgeschlagen", fehler=exc)
 
     return (ERG_GEPATCHT, ergebnis,
             f"{firmware_text(alt_ps5)} -> {firmware_text(ziel_ps5)}{zusatz}")

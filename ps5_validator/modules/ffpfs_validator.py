@@ -260,6 +260,53 @@ class FfpfsValidator(BaseValidator):
         except Exception:
             return b""
 
+    def _check_size(self, fpath: Path, file_size: int, result: ValidationResult) -> bool:
+        """Haelt die Dateigroesse gegen die Blockzahl im PFS-Kopf.
+
+        Ein vom Programm gebautes Abbild ist genau ``ndblock * block_size``
+        Bytes gross - am 17.09.2026 an 9 von 9 frisch gebauten .ffpfs und
+        .ffpfsc (komprimiert und unkomprimiert) gemessen. Ist die Datei
+        kleiner, fehlen Bloecke am Ende. Groesser ist kein Fehler (angehaengte
+        Bytes liest niemand) und wird nur vermerkt.
+
+        Returns:
+            False, wenn das Abbild abgeschnitten ist (Ergebnis ist dann gesetzt).
+        """
+        if not _ensure_mkpfs_importable():
+            return True
+        try:
+            from mkpfs import pfs as mkpfs_pfs
+
+            with open(fpath, "rb") as fh:
+                kopf = mkpfs_pfs.parse_image_header(fh)
+        except Exception as exc:
+            self._log.info(f"PFS-Kopf für die Größenprüfung nicht lesbar: {exc}")
+            return True
+        if kopf.magic != PFS_MAGIC_VALUE or kopf.block_size <= 0 or kopf.ndblock <= 0:
+            return True
+
+        soll = int(kopf.ndblock) * int(kopf.block_size)
+        result.summary["image_size"] = fmt_bytes(soll)
+        if file_size >= soll:
+            if file_size > soll:
+                result.summary["trailing_bytes"] = file_size - soll
+            return True
+
+        fehlend = soll - file_size
+        result.summary["missing_bytes"] = fehlend
+        def _genau(anzahl: int) -> str:
+            # Gerundet und byte-genau: ein fehlender Block ginge sonst in der
+            # Rundung unter ("nennt 6.2 MB, hat nur 6.2 MB").
+            return f"{fmt_bytes(anzahl)} ({anzahl:,} Bytes)".replace(",", ".")
+
+        result.set_corrupted(
+            f"Abbild abgeschnitten: Der PFS-Kopf nennt {_genau(soll)} "
+            f"({kopf.ndblock} Blöcke zu je {fmt_bytes(kopf.block_size)}), die Datei hat nur "
+            f"{_genau(file_size)} (es fehlen {_genau(fehlend)}). Typisch für eine "
+            "abgebrochene Kopie oder Übertragung – die Datei neu kopieren oder neu erzeugen."
+        )
+        return False
+
     def _check_critical_files(self, inner_files: dict, result: ValidationResult) -> None:
         """Prüft, ob die Pflichtdateien eines PS5-Dumps im Container liegen.
 
@@ -399,6 +446,14 @@ class FfpfsValidator(BaseValidator):
             # Aeussere Ebene zuerst: Wie viele Eintraege liegen im Container?
             # verify_payloads=False laesst die teuren Nutzdaten-Durchlaeufe weg.
             aussen = mkpfs_pfs.inspect_pfs_image(fpath, verify_payloads=False)
+            # Die Strukturbefunde der aeusseren Ebene (Inode-Bereiche jenseits
+            # des Abbilds, Ueberlappungen, Namenstabellen) wurden bis v1.9.24
+            # verworfen. Fuer unversehrte Abbilder dieses Programms sind es
+            # null (am 17.09.2026 gemessen) - jeder Eintrag ist ein echter Befund.
+            for befund in aussen.errors[:5]:
+                result.add_error(f"Äußere Ebene: {befund}")
+            if len(aussen.errors) > 5:
+                result.add_error(f"Äußere Ebene: {len(aussen.errors) - 5} weitere Befunde")
             aussen_dateien = len(aussen.file_inodes)
             result.summary["outer_files"] = aussen_dateien
 
@@ -600,6 +655,7 @@ class FfpfsValidator(BaseValidator):
         # ── Magic-Header prüfen (erste 16 Bytes) ────────────────────────────
         # PFS-Image-Header: version (int64) @ 0x00, magic (int64) @ 0x08
         magic_info = "unbekannt"
+        ist_pfs_abbild = False
         try:
             with open(fpath, "rb") as fh:
                 header = fh.read(16)
@@ -611,6 +667,7 @@ class FfpfsValidator(BaseValidator):
 
                 if magic == PFS_MAGIC_VALUE:
                     # Korrekter PFS-Image-Container (mkpfs pack file)
+                    ist_pfs_abbild = True
                     ver_name = KNOWN_PFS_VERSIONS.get(version, f"v{version}")
                     magic_info = f"PFS-Image ({ver_name})"
                     self._log.info(
@@ -644,6 +701,14 @@ class FfpfsValidator(BaseValidator):
 
         result.summary["magic"] = magic_info
 
+        # ── Groesse gegen den PFS-Kopf ──────────────────────────────────────
+        # Vor allem anderen: Einem abgeschnittenen Abbild fehlen die Bloecke am
+        # Ende, Kopf und Verzeichnisse am Anfang sind aber da. Bis v1.9.24 kam
+        # es deshalb durch alle Pruefungen - gemessen am 17.09.2026: auf 1 MB
+        # gekuerzte .ffpfs/.ffpfsc galten als bestanden.
+        if ist_pfs_abbild and not self._check_size(fpath, file_size, result):
+            return result
+
         # ── Tiefenprüfung der Verschachtelung ───────────────────────────────
         # Vor dem teuren Streaming-Read, damit ein falsch aufgebauter Container
         # sofort auffällt. Kostet nach Messung unter 1 MB und ~10 ms.
@@ -658,9 +723,14 @@ class FfpfsValidator(BaseValidator):
                     fh,
                     total_size=file_size,
                     progress_cb=lambda d, t: self._report_progress(d, t, fpath.name),
+                    cancel_cb=self._is_cancelled,
                 )
         except OSError as exc:
             result.set_corrupted(f"Datei nicht lesbar: {exc}")
+            return result
+
+        if self._is_cancelled():
+            result.set_skipped("Validierung abgebrochen – die Datei wurde nicht vollständig gelesen.")
             return result
 
         result.hashes[fpath.name] = file_hash

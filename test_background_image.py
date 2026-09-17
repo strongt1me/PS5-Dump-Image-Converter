@@ -28,6 +28,14 @@ import PS5ImageConverter_Pro_FINAL_revised as mod
 from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
 
 
+def _pixelwerte(bild: Image.Image) -> list:
+    """Alle Pixel als Liste - ``getdata()`` ist seit Pillow 12 veraltet und
+    faellt mit Pillow 14 weg; der volle Testlauf meldete es achtmal."""
+    if hasattr(bild, "get_flattened_data"):
+        return list(bild.get_flattened_data())
+    return list(bild.getdata())
+
+
 def _make_gui() -> PS5ConverterGUI:
     gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
     gui._COLORS = {"bg_main": "#101418"}
@@ -437,7 +445,7 @@ class FormatfuellendTests(unittest.TestCase):
         master = self._bild(1920, 1080)
         neu = PS5ConverterGUI._bild_fuellen(master, 960, 540)
         alt = master.resize((960, 540), _LANCZOS)
-        self.assertEqual(list(neu.getdata()), list(alt.getdata()),
+        self.assertEqual(_pixelwerte(neu), _pixelwerte(alt),
                          "Bei passendem Format muss das Ergebnis identisch sein")
 
     def test_breites_ziel_wird_beschnitten_nicht_gestaucht(self):
@@ -507,7 +515,7 @@ class FlaechenbildMerkerTests(unittest.TestCase):
             gemerkt = gui._flaechenbild(master, breite, hoehe)
             direkt = PS5ConverterGUI._bild_fuellen(master, breite, hoehe)
             self.assertEqual(gemerkt.size, (breite, hoehe))
-            self.assertEqual(list(gemerkt.getdata()), list(direkt.getdata()),
+            self.assertEqual(_pixelwerte(gemerkt), _pixelwerte(direkt),
                              "Merker liefert ein anderes Bild bei %dx%d" % (breite, hoehe))
 
     def test_zweiter_aufruf_rechnet_nicht_neu(self):

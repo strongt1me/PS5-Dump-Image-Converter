@@ -28,6 +28,7 @@ import hashlib
 import io
 import json
 import os
+import threading
 import time
 from typing import Any, Callable, Iterable
 
@@ -359,6 +360,10 @@ class Bildspeicher:
         self._verzeichnis = os.path.join(ordner, "index.json")
         self._index: dict[str, dict[str, Any]] = {}
         self._geladen = False
+        # Die Bildlader der Bibliothek laufen in Faeden. Bis v1.9.24 schrieben
+        # zeitweise zwei zugleich (Rechner und Konsole) ohne Sperre in dasselbe
+        # Verzeichnis und ueber dieselbe .tmp-Datei.
+        self._sperre = threading.RLock()
 
     # -- innen ---------------------------------------------------------
     def _laden(self) -> None:
@@ -403,14 +408,15 @@ class Bildspeicher:
     # -- außen ---------------------------------------------------------
     def lesen(self, pfad: str) -> str:
         """Liefert den Dateipfad des gespeicherten Bildes, oder ""."""
-        self._laden()
-        eintrag = self._index.get(self.schluessel(pfad))
-        if not eintrag:
-            return ""
-        bild = os.path.join(self._ordner, str(eintrag.get("datei", "")))
-        if not os.path.isfile(bild):
-            return ""
-        return bild
+        with self._sperre:
+            self._laden()
+            eintrag = self._index.get(self.schluessel(pfad))
+            if not eintrag:
+                return ""
+            bild = os.path.join(self._ordner, str(eintrag.get("datei", "")))
+            if not os.path.isfile(bild):
+                return ""
+            return bild
 
     def kennt_ohne_bild(self, pfad: str) -> bool:
         """True, wenn schon nachgesehen wurde und es kein Bild gab.
@@ -419,46 +425,49 @@ class Bildspeicher:
         wieder jeden Container, der gar kein Titelbild trägt - und das sind
         die teuersten Fälle, weil dabei alles durchsucht wird.
         """
-        self._laden()
-        eintrag = self._index.get(self.schluessel(pfad))
-        return bool(eintrag) and not eintrag.get("datei")
+        with self._sperre:
+            self._laden()
+            eintrag = self._index.get(self.schluessel(pfad))
+            return bool(eintrag) and not eintrag.get("datei")
 
     def schreiben(self, pfad: str, bilddaten: bytes | None,
                   endung: str = "png") -> str:
         """Legt ein Titelbild ab. ``None`` merkt sich "hat keines"."""
-        self._laden()
-        kennung = self.schluessel(pfad)
-        if bilddaten is None:
-            self._index[kennung] = {"datei": "", "zeit": time.time()}
+        with self._sperre:
+            self._laden()
+            kennung = self.schluessel(pfad)
+            if bilddaten is None:
+                self._index[kennung] = {"datei": "", "zeit": time.time()}
+                self._schreiben()
+                return ""
+            name = "%s.%s" % (kennung, endung.lstrip("."))
+            ziel = os.path.join(self._ordner, name)
+            try:
+                os.makedirs(self._ordner, exist_ok=True)
+                with io.open(ziel, "wb") as f:
+                    f.write(bilddaten)
+            except OSError as exc:
+                log.debug("Bildspeicher: %s nicht schreibbar (%s)", ziel, exc)
+                return ""
+            self._index[kennung] = {"datei": name, "zeit": time.time()}
             self._schreiben()
-            return ""
-        name = "%s.%s" % (kennung, endung.lstrip("."))
-        ziel = os.path.join(self._ordner, name)
-        try:
-            os.makedirs(self._ordner, exist_ok=True)
-            with io.open(ziel, "wb") as f:
-                f.write(bilddaten)
-        except OSError as exc:
-            log.debug("Bildspeicher: %s nicht schreibbar (%s)", ziel, exc)
-            return ""
-        self._index[kennung] = {"datei": name, "zeit": time.time()}
-        self._schreiben()
-        return ziel
+            return ziel
 
     def aufraeumen(self) -> int:
         """Wirft weg, was lange niemand gebraucht hat. Liefert die Anzahl."""
-        self._laden()
-        grenze = time.time() - self.MAX_ALTER_TAGE * 86400
-        weg = [k for k, v in self._index.items()
-               if float(v.get("zeit", 0) or 0) < grenze]
-        for k in weg:
-            datei = str(self._index[k].get("datei", ""))
-            if datei:
-                try:
-                    os.remove(os.path.join(self._ordner, datei))
-                except OSError:
-                    pass
-            del self._index[k]
-        if weg:
-            self._schreiben()
-        return len(weg)
+        with self._sperre:
+            self._laden()
+            grenze = time.time() - self.MAX_ALTER_TAGE * 86400
+            weg = [k for k, v in self._index.items()
+                   if float(v.get("zeit", 0) or 0) < grenze]
+            for k in weg:
+                datei = str(self._index[k].get("datei", ""))
+                if datei:
+                    try:
+                        os.remove(os.path.join(self._ordner, datei))
+                    except OSError:
+                        pass
+                del self._index[k]
+            if weg:
+                self._schreiben()
+            return len(weg)

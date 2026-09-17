@@ -124,23 +124,12 @@ class ExfatSchreiberTests(unittest.TestCase):
         self.assertIn("300000", str(fehler.exception))
         self.assertIn("100000", str(fehler.exception))
 
-    def test_der_alte_zustand_waere_still_gewesen(self):
-        """Der Beleg fuer die Schwere - nicht fuer das Verhalten.
-
-        Ohne diese Gegenrechnung stuende oben nur, dass jetzt eine Ausnahme
-        kommt, nicht warum das noetig war: Das Abbild blieb exakt gleich
-        gross, und die fehlenden Bytes standen als Nullen im eboot.bin.
-        """
-        heil = self._bauen()
-        stelle = heil.find(b"E" * 4096)
-        self.assertGreater(stelle, 0)
-        # So sah der Bereich vor dem Fix aus: gleiche Laenge, ein Drittel
-        # Inhalt, zwei Drittel Nullen.
-        nachgebaut = heil[:stelle] + b"E" * 100_000 + bytes(200_000) \
-            + heil[stelle + 300_000:]
-        self.assertEqual(len(heil), len(nachgebaut),
-                         "Die Groesse haette es nie verraten")
-        self.assertEqual(200_000, nachgebaut[stelle:stelle + 300_000].count(b"\x00"))
+    # Hier stand bis zum 17.09.2026 test_der_alte_zustand_waere_still_gewesen:
+    # Er baute den "alten Zustand" selbst nach und pruefte nur die eigene
+    # Konstruktion (Befund T21). Der Beleg fuer die Schwere gilt weiter und
+    # steht hier: Vor dem Fix blieb das Abbild exakt gleich gross, und die
+    # fehlenden Bytes standen als Nullen im eboot.bin (ein Drittel Inhalt,
+    # zwei Drittel Nullen) - an der Groesse haette es niemand gemerkt.
 
     def test_ein_nfd_name_wird_abgewiesen(self):
         # Genau die Form, in der macOS Namen liefert: ASCII plus

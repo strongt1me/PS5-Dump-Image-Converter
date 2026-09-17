@@ -135,9 +135,9 @@ if os.path.isdir(_prosperopkg):
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
 # und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
 # Vorlage ist bewusst nicht dabei.
-_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
+_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.9')
 if os.path.isdir(_ps4ffpsc):
-    _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+    _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.9'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
@@ -206,7 +206,7 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
-        # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.8) braucht.
+        # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.9) braucht.
         # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
         # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
         # Ohne diese Liste bricht der interne Modus mit "No module named
@@ -401,7 +401,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.24',
+    name='PS5_Dump_Image_Converter_v1.9.25',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

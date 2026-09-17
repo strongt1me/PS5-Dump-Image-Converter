@@ -27,9 +27,9 @@ from __future__ import annotations
 
 import ast
 import io
+import subprocess
 import sys
 import unittest
-from contextlib import suppress
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
@@ -96,39 +96,59 @@ class AufraeumenFaengtOSErrorTests(unittest.TestCase):
                       self.quelle)
 
 
+#: Laeuft in einem eigenen Prozess, damit sicher die mitgelieferte MkPFS
+#: gemessen wird - im Gesamtlauf kann ``mkpfs`` schon aus einer anderen Kopie
+#: geladen sein (die Oberflaeche entpackt die eingebettete Engine).
+_AUFRAEUMSTELLE_AUSLOESEN = r'''
+import sys, tempfile
+from pathlib import Path
+from unittest import mock
+sys.path.insert(0, sys.argv[1])
+from mkpfs import pfs
+assert Path(pfs.__file__).resolve().is_relative_to(Path(sys.argv[1]).resolve()), pfs.__file__
+
+def _scheitern(**_werte):
+    raise OSError("die eigentliche Ursache")
+
+def _belegt(self, *_a, **_k):
+    raise PermissionError(32, "Der Prozess kann nicht auf die Datei zugreifen")
+
+with tempfile.TemporaryDirectory() as ordner:
+    quelle = Path(ordner) / "quelle.bin"
+    quelle.write_bytes(b"x" * 16)
+    spool = Path(ordner) / "spool.tmp"
+    try:
+        with mock.patch.object(pfs, "_encode_pfsc_into_handle", _scheitern), \
+                mock.patch.object(type(spool), "unlink", _belegt):
+            pfs._encode_pfsc_file_to_spool(
+                abs_path=quelle, spool_path=spool, threshold_gain=0,
+                min_file_gain=0, zlib_level=6, logical_block_size=65536)
+    except BaseException as fehler:
+        print(type(fehler).__name__ + ": " + str(fehler))
+    else:
+        print("keine Ausnahme")
+'''
+
+
 class VerhaltenTests(unittest.TestCase):
-    """Und was das praktisch bedeutet - an einer echten Datei gemessen."""
+    """Und was das praktisch bedeutet - an einer echten Aufraeumstelle gemessen."""
 
     def test_permissionerror_beim_loeschen_verdeckt_nichts_mehr(self):
-        """Der Fall aus Aufgabe 3, nachgestellt.
+        """Der Fall aus Aufgabe 3, an ``_encode_pfsc_file_to_spool`` nachgestellt.
 
-        Nicht am Quelltext von MkPFS, sondern am Muster: ``suppress(OSError)``
-        lässt die ursprüngliche Ausnahme durch, ``suppress(FileNotFoundError)``
-        nicht.
+        Das Kodieren scheitert, das Loeschen der Zwischendatei scheitert mit
+        ``PermissionError`` (WinError 32). Ankommen muss die urspruengliche
+        Ausnahme. Bis zum 17.09.2026 pruefte dieser Test einen Nachbau und
+        ``contextlib.suppress`` aus der Standardbibliothek - eine Rueckkehr zu
+        ``suppress(FileNotFoundError)`` in pfs.py haette er nie bemerkt
+        (Befund T24).
         """
-        class _Belegt:
-            def unlink(self):
-                raise PermissionError(
-                    32, "Der Prozess kann nicht auf die Datei zugreifen")
-
-        tmp = _Belegt()
-
-        def _mit(faenger):
-            try:
-                raise RuntimeError("die eigentliche Ursache")
-            except Exception:
-                with suppress(faenger):
-                    tmp.unlink()
-                raise
-
-        # So war es: der PermissionError ersetzt die Ursache.
-        with self.assertRaises(PermissionError):
-            _mit(FileNotFoundError)
-
-        # So ist es: die Ursache kommt durch.
-        with self.assertRaises(RuntimeError) as gefangen:
-            _mit(OSError)
-        self.assertIn("die eigentliche Ursache", str(gefangen.exception))
+        lauf = subprocess.run(
+            [sys.executable, "-c", _AUFRAEUMSTELLE_AUSLOESEN, str(PROJEKT / "MkPFS-1.0.0")],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
+        ausgabe = lauf.stdout.strip().splitlines()
+        self.assertEqual(lauf.returncode, 0, lauf.stderr[-2000:])
+        self.assertEqual(ausgabe[-1:], ["OSError: die eigentliche Ursache"], lauf.stdout)
 
 
 class UpstreamNotizTests(unittest.TestCase):

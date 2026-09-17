@@ -108,21 +108,38 @@ class FileZillaAuswahlTests(_Quelltext):
     """Der Auswahldialog gehoert in das "wenn nichts gefunden"."""
 
     def test_der_dialogblock_liegt_im_richtigen_zweig(self) -> None:
+        """Jeder Auswahldialog liegt unter einem ``if not exe``.
+
+        Bis zum 17.09.2026 sah der Test nur Ausdruecke und Zuweisungen auf der
+        obersten Ebene der Methode. Die Dialoge stehen aber in
+        ``if IST_MACOS: ... elif IST_WINDOWS: ... else:`` - also in einem
+        ``If``, das nie betrachtet wurde. Rueckte der Block wieder eine Ebene
+        nach links (der urspruengliche Fehler), bliebe die Liste leer.
+        """
         weiter = self._methode("_filezilla_weiter")
-        # Die Dateidialoge duerfen nicht auf der obersten Ebene der Methode
-        # stehen, sondern muessen unterhalb eines "if" liegen.
-        oberste = [k for k in weiter.body
-                   if isinstance(k, ast.Expr) or isinstance(k, ast.Assign)]
-        namen = []
-        for knoten in oberste:
-            for k in ast.walk(knoten):
-                if isinstance(k, ast.Call) and getattr(k.func, "attr", "") in (
-                        "askdirectory", "askopenfilename"):
-                    namen.append(k.lineno)
+        eltern = {}
+        for knoten in ast.walk(weiter):
+            for kind in ast.iter_child_nodes(knoten):
+                eltern[kind] = knoten
+        dialoge = [k for k in ast.walk(weiter)
+                   if isinstance(k, ast.Call) and getattr(k.func, "attr", "") in (
+                       "askdirectory", "askopenfilename")]
+        self.assertGreaterEqual(len(dialoge), 2, "Die Auswahldialoge sind nicht mehr zu finden.")
+        ohne = []
+        for dialog in dialoge:
+            kind, oben, geschuetzt = dialog, eltern.get(dialog), False
+            while oben is not None:
+                if (isinstance(oben, ast.If) and kind in oben.body
+                        and ast.unparse(oben.test).replace(" ", "") == "notexe"):
+                    geschuetzt = True
+                    break
+                kind, oben = oben, eltern.get(oben)
+            if not geschuetzt:
+                ohne.append(dialog.lineno)
         self.assertEqual(
-            [], namen,
-            "In Zeile(n) %s steht ein Auswahldialog unbedingt - er erscheint "
-            "dann auch nach einer geglueckten Installation." % namen)
+            [], ohne,
+            "In Zeile(n) %s steht ein Auswahldialog ausserhalb von 'if not exe' - "
+            "er erscheint dann auch nach einer geglueckten Installation." % ohne)
 
     def test_die_statuszeile_wird_zurueckgenommen(self) -> None:
         """Sonst steht dort dauerhaft 'FileZilla wird installiert...'."""

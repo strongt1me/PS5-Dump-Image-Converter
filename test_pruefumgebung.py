@@ -141,10 +141,18 @@ class UnberuehrtTests(_MitSauberterUmgebung):
         with open(os.path.join(ordner, "paths.json"), "w", encoding="utf-8") as datei:
             datei.write("{}")
         # bestandsordner() sieht an der Umlenkung vorbei - fuer diese eine
-        # Pruefung muss es sie aber sehen. Deshalb direkt gegen den Ordner.
-        pfad = os.path.join(ordner, "paths.json")
-        self.assertGreater(os.path.getmtime(pfad), vorher,
-                           "Die Datei traegt keinen neueren Zeitstempel.")
+        # Pruefung muss es sie aber sehen. Deshalb wird es auf den Ordner
+        # gestellt. Bis zum 17.09.2026 rief dieser Test unberuehrt() gar nicht
+        # auf: Er pruefte nur, dass eine eben geschriebene Datei juenger ist
+        # als vor einer Minute - der Alarmzweig blieb ungeprueft.
+        from unittest import mock
+        with mock.patch.object(pruefumgebung, "bestandsordner", lambda: ordner):
+            ok, satz = pruefumgebung.unberuehrt(vorher)
+            self.assertFalse(ok, "Eine juengere Einstellungsdatei faellt nicht auf.")
+            self.assertIn("veraendert", satz)
+            # Gegenrichtung: Merken nach dem Schreiben -> unberuehrt.
+            ok, satz = pruefumgebung.unberuehrt(time.time() + 1)
+            self.assertTrue(ok, satz)
 
 
 class UmlenkungHaeltImGesamtlaufTests(unittest.TestCase):

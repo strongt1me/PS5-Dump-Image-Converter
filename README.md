@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.24-blue)
-![Tests](https://img.shields.io/badge/Tests-2851%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.25-blue)
+![Tests](https://img.shields.io/badge/Tests-3105%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -63,9 +63,12 @@ Was sich je Version geändert hat, steht im [Changelog](CHANGELOG.md).
 
 * **Windows 10/11**, eine aktuelle Linux-Distribution oder **macOS 12+**
 * Genug freier Speicherplatz für Quelle, Zwischenstand und Ausgabe
-* **Windows:** Administratorrechte für Mount- und UFS2-Abläufe,
-  [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html) für
-  exFAT-Mounts
+* **Windows:** Administratorrechte für UFS2-Abläufe (`.ffpkg`)
+* **Kein OSFMount nötig.** `.exFAT`-Abbilder liest das Programm mit seinem
+  eingebetteten exFAT-Leser, ohne etwas einzuhängen – auf jedem System.
+  [OSFMount](https://www.osforensics.com/tools/mount-disk-images.html) ist nur
+  der Rückfall für ungewöhnliche Abbilder unter Windows; wird er gebraucht,
+  sagt das Programm es und kann ihn selbst installieren
 * **Aus dem Quelltext:** Python 3.10+ und `pip`
 
 ## Kommandozeile
@@ -92,15 +95,18 @@ python PS5ImageConverter_Pro_FINAL_revised.py --cli --task 1 \
 | `--umhuellt-neu-packen` | `.exFAT`/`.ffpkg` → `.ffpfsc` mit AMPR EMU/BACKPORT: entpacken, einbauen, wieder zu `.ffpfsc` packen |
 | `--umhuellt-als-ordner` | auf demselben Weg stattdessen nur den Dump-Ordner bauen |
 | `--ampr-index-trotz-assets` | `ampr_emu.index` auch bei vorhandenem Asset-Pack neu bauen |
+| `--ampr-originale-weglassen` | beim Asset-Pack die gepackten Originale aus der Arbeitskopie entfernen (nur nach bestandenem Konsolentest sinnvoll) |
 | `--param-json-reparieren` | fehlerhafte `param.json` ohne Rückfrage reparieren |
 | `--param-json-online` | Titel und Content-ID dafür im Netz nachschlagen |
 
-Die letzten fünf entscheiden Rückfragen, die `--yes` bewusst **nicht**
+Die letzten sechs entscheiden Rückfragen, die `--yes` bewusst **nicht**
 beantwortet: Ein Schalter für Überschreib-Rückfragen soll nicht nebenbei den
-Weg wechseln, ein Asset-Pack unbrauchbar machen oder Daten ins Netz schicken.
+Weg wechseln, ein Asset-Pack unbrauchbar machen, Spieldateien entfernen oder
+Daten ins Netz schicken.
 
 Rückgabewerte: `0` Erfolg · `1` Fehler oder Abbruch · `2` ungültige Argumente ·
-`3` fehlende Administratorrechte.
+`3` fehlende Administratorrechte · `4` nicht geprüft (Aufgabe 8 ohne die nötigen
+Rechte – kein Urteil über die Datei).
 
 > Unter Windows fordert `--cli` **keine** Rechte an – ein neu gestarteter
 > Prozess wäre abgekoppelt, seine Ausgabe erreichte den Aufrufer nie. Starten
@@ -130,6 +136,23 @@ Dieselben Angaben stehen im Fenster **DIAGNOSE** im Abschnitt *Doktor*.
 > Eingabeaufforderung deshalb selbst als Administrator. Aus dem Quelltext
 > heraus (`python …`) läuft die Prüfung ohne erhöhte Rechte.
 
+### Werkzeugpflege
+
+`--werkzeuge-pruefen` hält die mitgelieferten Payloads gegen ihre
+Veröffentlichungen:
+
+```bash
+python PS5ImageConverter_Pro_FINAL_revised.py --werkzeuge-pruefen
+```
+
+Der erste Teil läuft **ohne Netz** und vergleicht nur den Ordner `helloworld/`
+mit der Tabelle in `THIRD_PARTY_LICENSES.md`; er steckt auch im Diagnosebericht
+im Abschnitt *Werkzeugpflege*. Der zweite Teil liest eine öffentliche
+Fassungsliste – das ist der **einzige** Netzzugriff dieses Laufs, und er
+geschieht nur, weil Sie den Befehl gegeben haben. Mit `--offline` bleibt er
+weg. Rückgabewerte: `0` nichts zu tun · `1` Abweichung, Rückstand oder Liste
+nicht erreichbar.
+
 ## Selbst bauen
 
 ```powershell
@@ -145,10 +168,19 @@ chmod +x Build_Linux.sh && ./Build_Linux.sh
 chmod +x Build_macOS.sh && ./Build_macOS.sh --dmg
 ```
 
-Die Testreihe läuft mit:
+Die Testreihe läuft mit einem **eigenen Einstellungsordner** – viele Tests
+drücken echte Knöpfe und speichern dabei, und ohne Umlenkung landen diese
+Änderungen in den Einstellungen des Programms:
+
+```powershell
+# Windows (PowerShell)
+$env:PS5CONV_KONFIGORDNER = "$env:TEMP\ps5conv_pruefung\konfig"
+python -m pytest -q
+```
 
 ```bash
-python -m unittest discover -s . -p "test_*.py"
+# Linux und macOS
+PS5CONV_KONFIGORDNER="${TMPDIR:-/tmp}/ps5conv_pruefung/konfig" python -m pytest -q
 ```
 
 ## Plattformunterschiede
@@ -158,7 +190,7 @@ arbeiten überall gleich. Unterschiede gibt es hier:
 
 | Bereich | Linux und macOS |
 | --- | --- |
-| `.ffpkg` lesen und bauen | **Nicht verfügbar** – UFS2Tool und der Dokan-Treiber sind Windows-Software. Das Programm sagt das beim Start einer solchen Aufgabe. |
+| `.ffpkg` lesen und bauen | Verfügbar – UFS2Tool liegt für Windows, Linux und macOS (Intel und Apple Silicon) bei; gelesen wird über `UFS2Tool extract`, gebaut über `newfs`/`makefs`. Nur das Einhängen über den Dokan-Treiber gibt es ausschließlich unter Windows. |
 | OSFMount-Ersatzwege | Nicht verfügbar; die nativen MkPFS-/exFAT-Wege sind vollständig vorhanden. |
 | Erhöhte Rechte | Nicht nötig. |
 | Einstellungen | `~/.config/PS5ImageConverterPro/` bzw. `~/Library/Application Support/PS5ImageConverterPro/` |

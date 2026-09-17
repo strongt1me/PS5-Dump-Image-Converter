@@ -67,6 +67,12 @@ _TITLE_ID_PATTERN = (r"PPSA\d{5}|PPUS\d{5}|PPJP\d{5}|CUSA\d{5}|PUSA\d{5}"
                      r"|PCJS\d{5}|PCAS\d{5}|ECAS\d{5}")
 _TITLE_ID_RE = re.compile(rf"(?<![A-Z0-9])({_TITLE_ID_PATTERN})(?![A-Z0-9])")
 
+#: Die Kennung eines UFS2-Abbilds (.ffpkg): Superblock bei 65536, Magic darin
+#: bei Offset 1372 - dieselben Werte wie in ffpfs_validator.
+_UFS2_SUPERBLOCK_OFFSET = 65536
+_UFS2_MAGIC_OFFSET_IN_SB = 1372
+_UFS2_MAGIC = 0x19540119
+
 
 class Metadatenleser:
     """Liest Metadaten aus einem Abbild.
@@ -129,6 +135,26 @@ class Metadatenleser:
             if tid.startswith(prefix):
                 return region
         return "–"
+
+    #: Regionskennung am Anfang der Content-ID ("EP0001-PPSA01234_00-...").
+    _REGION_JE_CONTENT_ID = {"E": "Europa", "U": "USA", "J": "Japan",
+                             "H": "Asien", "K": "Korea"}
+
+    @classmethod
+    def _region_aus_kennungen(cls, content_id: str, title_id: str) -> str:
+        """Die Region - aus der Content-ID, die Title-ID nur als Rueckfall.
+
+        Das Title-ID-Praefix sagt ueber die Region nichts: PPSA- und
+        CUSA-Nummern vergibt Sony weltweit. Bis v1.9.24 zeigte deshalb jeder
+        PS5-Titel "Europa" und jeder PS4-Titel "USA", auch mit einer
+        Content-ID "UP..." oder "EP..." daneben, die es richtig gewusst haette.
+        """
+        cid = str(content_id or "").strip().upper()
+        if re.match(r"^[A-Z]P\d{4}-", cid):
+            region = cls._REGION_JE_CONTENT_ID.get(cid[0])
+            if region:
+                return region
+        return cls._region_from_title_id(title_id)
 
     @staticmethod
     def _normalize_required_firmware(value: object) -> str:
@@ -240,7 +266,31 @@ class Metadatenleser:
         }
         if not src or not os.path.isfile(src) or not src.lower().endswith(".ffpkg"):
             return meta
+        try:
+            file_size = os.path.getsize(src)
+            with open(src, "rb") as fh:
+                return self._ffpkg_muster_scan(fh, file_size)
+        except Exception as exc:
+            logger.debug("FFPKG-Metascan fehlgeschlagen: %s", exc)
+            return meta
 
+    def _ffpkg_muster_scan(self, fh: Any, file_size: int) -> dict[str, str]:
+        """Der Muster-Scan aus :meth:`_extract_meta_from_ffpkg_file` - auf einem Datenstrom.
+
+        Getrennt, damit er auch auf der virtuellen Sicht eines Containers
+        laeuft (eine .ffpfsc mit eingebettetem .ffpkg), ohne das innere
+        Abbild erst auszupacken. Gelesen werden Stichproben von je 256 KB aus
+        den ersten 64 MB und vom Ende - unabhaengig von der Groesse.
+        """
+        meta: dict[str, str] = {
+            "title": "–",
+            "title_id": "–",
+            "version": "–",
+            "required_firmware": "–",
+            "region": "–",
+            "category": "–",
+            "publisher": "–",
+        }
         title_id_re = _TITLE_ID_RE
         content_id_re = re.compile(
             rf"[A-Z]{{2}}\d{{4}}-({_TITLE_ID_PATTERN})_00-[A-Z0-9]{{8,32}}"
@@ -296,13 +346,11 @@ class Metadatenleser:
                     meta["version"] = match.group(1)
 
         try:
-            file_size = os.path.getsize(src)
-            with open(src, "rb") as fh:
-                for offset in _iter_sample_offsets(file_size):
-                    fh.seek(offset)
-                    chunk = fh.read(256 * 1024)
-                    if chunk:
-                        scan_chunks.append(chunk)
+            for offset in _iter_sample_offsets(file_size):
+                fh.seek(offset)
+                chunk = fh.read(256 * 1024)
+                if chunk:
+                    scan_chunks.append(chunk)
         except Exception as exc:
             logger.debug("FFPKG-Metascan fehlgeschlagen: %s", exc)
             return meta
@@ -858,7 +906,10 @@ class Metadatenleser:
 
         region = _pick_scalar(payload, "region", "defaultLanguage", "defaultLanguageCode")
         if region == "–":
-            region = self._region_from_title_id(meta.get("title_id", ""))
+            cid = _pick_scalar(payload, "contentId", "content_id")
+            if cid == "–":
+                cid = _scalar(lp_flat.get("contentId")) or "–"
+            region = self._region_aus_kennungen(cid, meta.get("title_id", ""))
         meta["region"] = region
 
         cat_raw = payload.get(
@@ -934,12 +985,18 @@ class Metadatenleser:
 
         sfo_region = _sfov("REGION")
         if sfo_region == "–":
-            sfo_region = self._region_from_title_id(meta["title_id"])
+            sfo_region = self._region_aus_kennungen(meta["content_id"], meta["title_id"])
         meta["region"] = sfo_region
         meta["category"] = _sfov("CATEGORY")
 
         publisher = _sfov("PUBTOOLINFO") if _sfov("PUBTOOLINFO") != "–" else "–"
-        if publisher == "–" or publisher.startswith("NP"):
+        # PUBTOOLINFO traegt meist Bauangaben ("c_date=...,sdk_ver=..."), keinen
+        # Namen. Dieselbe Pruefung wie im Hauptprogramm (_meta_aus_sfo) - bis
+        # v1.9.24 fehlte sie hier, und die Vorschau aus einem Container zeigte
+        # die Bauangaben als Hersteller.
+        bauangabe = any(m in publisher.lower()
+                        for m in ("c_date=", "c_time=", "sdk_ver=", "st_size="))
+        if publisher == "–" or publisher.startswith("NP") or bauangabe:
             publisher = _sfov("PUBLISHER") if sfo.get("PUBLISHER") else "–"
         meta["publisher"] = publisher
         return meta
@@ -1047,6 +1104,25 @@ class Metadatenleser:
             from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # type: ignore[import-not-found]
             from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # type: ignore[import-not-found]
 
+            # Zuerst das Abbild selbst lesen: Eine flache .ffpfs (seit dem
+            # 05.09.2026 die Bauform dieses Programms) traegt die Spieldateien
+            # direkt in der Wurzel und hat KEIN inneres Abbild -
+            # open_inner_file_view liefert dort None. Bis v1.9.24 endete der
+            # virtuelle Weg deshalb leer, und die Vorschau packte als Rueckfall
+            # das ganze Spiel in den Temp-Ordner aus (unter der MkPFS-Sperre,
+            # die ein gleichzeitig gestarteter Lauf dann abwarten musste).
+            if self._open_virtual_pfs_reader is not None:
+                try:
+                    with open(src, "rb") as aussen_fh:
+                        aussen_leser = self._open_virtual_pfs_reader(aussen_fh)
+                        if aussen_leser is not None:
+                            meta, cover_img = self._extract_meta_from_exfat_reader(aussen_leser)
+                            if _is_useful(meta, cover_img):
+                                meta["_metadata_method"] = "MkPFS PFS-Reader (flach, read-only)"
+                                return meta, cover_img
+                except Exception as exc:
+                    logger.debug("Flacher PFS-Read fehlgeschlagen, versuche inneres Abbild: %s", exc)
+
             inner_view_info = open_inner_file_view(Path(src))
             if inner_view_info is None:
                 return empty_meta, None
@@ -1072,6 +1148,24 @@ class Metadatenleser:
                             return meta, cover_img
                 except Exception as exc:
                     logger.debug("Virtueller PFS-in-PFS-Read in .ffpfsc fehlgeschlagen: %s", exc)
+
+                # Ein eingebettetes .ffpkg (UFS2): Title-ID und Version per
+                # Muster-Scan aus der virtuellen Sicht - Stichproben, kein
+                # Auspacken. Titel und Bild gibt es auf diesem Weg nicht; bis
+                # v1.9.24 packte die Vorschau dafuer das ganze innere .ffpkg
+                # in den Temp-Ordner aus, bei einem grossen Spiel zweistellige
+                # Gigabyte fuer eine Anzeige.
+                try:
+                    virtual_fh.seek(_UFS2_SUPERBLOCK_OFFSET + _UFS2_MAGIC_OFFSET_IN_SB)
+                    kennung = virtual_fh.read(4)
+                    if len(kennung) == 4 and int.from_bytes(kennung, "little") == _UFS2_MAGIC:
+                        groesse = virtual_fh.seek(0, 2)
+                        meta = self._ffpkg_muster_scan(virtual_fh, int(groesse or 0))
+                        if _is_useful(meta, None):
+                            meta["_metadata_method"] = "MkPFS PFSC + FFPKG-Muster-Scan (read-only)"
+                            return meta, None
+                except Exception as exc:
+                    logger.debug("Virtueller FFPKG-Scan in .ffpfsc fehlgeschlagen: %s", exc)
             finally:
                 try:
                     # _LogicalFileView (das virtual_fh von open_inner_file_view) besitzt kein
@@ -1116,8 +1210,11 @@ class Metadatenleser:
                 "sce_sys/icon0.png",
             )
 
-            # inspect_pfs_image liest Header, Inodes und baut den Dateibaum korrekt auf
-            inspection = inspect_pfs_image(Path(pfs_path))
+            # inspect_pfs_image liest Header, Inodes und baut den Dateibaum korrekt auf.
+            # verify_payloads=False: Ohne das dekodierte die Pruefung JEDE Datei
+            # des Abbilds (Checkliste, Pruefsummen) - fuer drei kleine Dateien
+            # aus sce_sys. Bis v1.9.24 fehlte der Schalter hier.
+            inspection = inspect_pfs_image(Path(pfs_path), verify_payloads=False)
             file_inodes = inspection.file_inodes or {}
             inodes      = inspection.inodes or []
 

@@ -209,58 +209,79 @@ def pruefe_python_version():
         return False
 
 def pruefe_dependencies_frozen():
+    """Haelt requirements.txt gegen die installierten Fassungen.
+
+    Bis zum 17.09.2026 gab die Funktion beide Listen nur aus und lieferte
+    immer True - verglichen wurde nichts. Beim ersten echten Vergleich standen
+    zwei Pins still hinter dem Bau zurueck (cryptography 49.0.0 gegen 50.0.1
+    seit dem 26.08., tkinterdnd2 0.6.2 gegen 0.6.3): Die Bauskripte
+    installieren mit --upgrade, requirements.txt blieb stehen.
+    """
     print_header("TEST: Abhängigkeits-Versionen für Build")
 
     try:
-        import PIL
-        import cryptography
-        import zstandard
+        import importlib.metadata as metadaten
+        from packaging.requirements import Requirement
 
-        versions = {
-            'Pillow': PIL.__version__,
-            'cryptography': cryptography.__version__,
-            'zstandard': zstandard.__version__,
-        }
+        zeilen = (PROJEKT / 'requirements.txt').read_text(encoding='utf-8').splitlines()
+        anforderungen = [Requirement(z.strip()) for z in zeilen
+                         if z.strip() and not z.strip().startswith('#')]
+        if not anforderungen:
+            print(f"  {RED}[FAIL]{RESET}  requirements.txt nennt nichts")
+            return False
 
-        print("  Installierte Versions-Snapshot:")
-        for pkg, ver in versions.items():
-            print(f"    - {pkg:20} {ver}")
-
-        # Prüfe ob sie mit requirements.txt matchen
-        with open('requirements.txt', 'r') as f:
-            reqs = f.read()
-
-        print("\n  requirements.txt Versionen:")
-        for line in reqs.split('\n'):
-            if line.strip() and not line.startswith('#'):
-                print(f"    - {line.strip()}")
-
-        print(f"\n  {GREEN}[OK]{RESET}  Abhängigkeiten sind installiert")
-        return True
+        alles_ok = True
+        for anforderung in anforderungen:
+            try:
+                installiert = metadaten.version(anforderung.name)
+            except metadaten.PackageNotFoundError:
+                print(f"  {RED}[FAIL]{RESET}  {anforderung.name:20} fehlt (verlangt: {anforderung})")
+                alles_ok = False
+                continue
+            if anforderung.specifier and not anforderung.specifier.contains(
+                    installiert, prereleases=True):
+                print(f"  {RED}[FAIL]{RESET}  {anforderung.name:20} {installiert} "
+                      f"passt nicht zu {anforderung.specifier}")
+                alles_ok = False
+            else:
+                print(f"  {GREEN}[OK]{RESET}  {anforderung.name:20} {installiert}")
+        return alles_ok
     except Exception as e:
         print(f"  {RED}[FAIL]{RESET}  Fehler: {e}")
         return False
 
 def pruefe_output_directory():
+    """Sind dist/ und build/ fuer den Bau beschreibbar?
+
+    Bis zum 17.09.2026 haengte die Funktion in beiden Zweigen True an und
+    schrieb nie etwas. Jetzt wird je Ordner eine Probedatei angelegt, die
+    beim Schliessen von selbst verschwindet; fehlt ein Ordner, wird der
+    Projektordner geprueft, in dem PyInstaller ihn anlegt. Angelegt wird
+    kein Ordner.
+    """
+    import tempfile
+
     print_header("TEST: Build-Output-Verzeichnis")
 
-    dist_dir = 'dist'
-    build_dir = 'build'
-
-    print("  Prüfe ob Output-Verzeichnisse leer sind (für sauberen Build):")
-
     results = []
-    for dir_name in [dist_dir, build_dir]:
-        if os.path.exists(dir_name):
-            files = list(Path(dir_name).rglob('*'))
-            file_count = len([f for f in files if f.is_file()])
-            print(f"  {YELLOW}⚠{RESET}  {dir_name}/ existiert mit {file_count} Dateien (wird überschrieben)")
-            results.append(True)  # Das ist OK, wird überschrieben
+    for dir_name in ('dist', 'build'):
+        ordner = PROJEKT / dir_name
+        ziel = ordner if ordner.is_dir() else PROJEKT
+        try:
+            with tempfile.TemporaryFile(dir=ziel, prefix='.bauprobe_'):
+                pass
+        except OSError as e:
+            print(f"  {RED}[FAIL]{RESET}  {dir_name}/ nicht beschreibbar ({ziel}): {e}")
+            results.append(False)
+            continue
+        if ordner.is_dir():
+            file_count = sum(1 for f in ordner.rglob('*') if f.is_file())
+            print(f"  {YELLOW}[i]{RESET}  {dir_name}/ existiert mit {file_count} Dateien (wird überschrieben)")
         else:
-            print(f"  {GREEN}[OK]{RESET}  {dir_name}/ ist leer/neu")
-            results.append(True)
+            print(f"  {GREEN}[OK]{RESET}  {dir_name}/ entsteht neu")
+        results.append(True)
 
-    return all(results)
+    return bool(results) and all(results)
 
 class BauvoraussetzungenTests(unittest.TestCase):
     """Die acht Bau-Voraussetzungen - bis zum 03.09.2026 liefen sie nie mit.

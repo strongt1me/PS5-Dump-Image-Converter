@@ -48,6 +48,25 @@ class PkgMergerTests(unittest.TestCase):
         ])
         self.assertEqual(game.meta, os.path.join(self.tmpdir, "GAME_sc.pkg"))
 
+    def test_ein_ungeteiltes_paket_ist_kein_teilsatz(self) -> None:
+        """Content-ID-Namen ergaben einen erfundenen Teil 0 (17.09.2026).
+
+        ``EP4350-PPSA05399_00-TETRIS0000000000.pkg`` - hinter dem letzten "_"
+        steht "00-TETRIS...", und der fuehrende Zahlenteil galt als Teil 0.
+        Das Fenster zeigte einen vollstaendigen Satz, das Zusammenfuehren
+        scheiterte, und Spiel und Update derselben Title-ID ueberschrieben
+        sich in Teil 0. Ein Name ohne gueltige Kennung legte ausserdem einen
+        leeren Satz an.
+        """
+        self._write("EP4350-PPSA05399_00-TETRIS0000000000.pkg", b"a")
+        self._write("EP4350-PPSA05399_00-TETRISUPDATE0000.pkg", b"b")
+        self._write("My_Game.pkg", b"c")
+        self._write("GAME_0.pkg", b"d")
+        meldungen: list = []
+        sets = discover_split_sets(self.tmpdir, log=meldungen.append)
+        self.assertEqual([s.base_name for s in sets], ["GAME"])
+        self.assertEqual(len(meldungen), 3, meldungen)
+
     def test_validate_and_merge_valid_split_set(self) -> None:
         # Wurzelteil trägt den FIH-Header; cnt_offset muss der tatsächlichen Dateigröße entsprechen,
         # da hier nur ein einziges nummeriertes Teil verwendet wird.

@@ -63,9 +63,15 @@ MANIFEST_NAME = "ampr_assets.index"
 #: einkompilierten Vorgaben - das ist zulaessig, aber nicht gewollt.
 LAUFZEIT_NAME = "ampr_assets.index.runtime"
 
-#: Die Pruefsummenbeilage. Die Konsole liest sie **nie**; sie bleibt beim
-#: PC-Bestand, damit ``verify`` und ``unpack`` spaeter noch arbeiten koennen.
+#: Die Pruefsummenbeilage. Die Konsole liest sie **nie**; ``verify`` und
+#: ``unpack`` brauchen sie aber, und zwar zu genau diesem Bestand. Sie wandert
+#: deshalb mit in den Spielordner (siehe :func:`bestand_uebernehmen`).
 PRUEFSUMMEN_NAME = "ampr_assets.index.crc"
+
+#: Erste Zeile jedes Profils, das dieses Programm schreibt. Daran erkennt
+#: :func:`profil_ist_eigenes` ein eigenes Profil und unterscheidet es von
+#: einem des Anwenders.
+PROFIL_KENNZEILE = "# Vom PS5 Dump & Image Converter erzeugt"
 
 #: Nur diese Varianten des AMPR EMU koennen gepackte Baender lesen. Eine
 #: ``test-nopack``-Bibliothek findet das Manifest zwar, kann damit aber
@@ -94,6 +100,20 @@ NIE_PACKEN: tuple[str, ...] = (
     "system/**",
     "mods/**",
     "save/**",
+    # Die Bibliotheksordner haengt ShadowMount+ direkt aus dem Dateisystem in
+    # die Sandbox - am AMPR EMU vorbei. Die .sprx darin fing schon die Endung
+    # ab, nicht aber die Markierungsdatei des Backports (FW7) und die
+    # Sicherung libSceAmpr.sprx.orig; beide landeten bis zum 17.09.2026 im Band.
+    "fakelib/**",
+    "fakelib2/**",
+    # Laufzeitprotokolle und Einstellungen der Stubs. ASSET_PACKS.md des
+    # Entwicklers: "runtime logs excluded from recursive packing". Die
+    # PlayGo-Einstellung liest der Stub selbst, nicht ueber den AMPR EMU.
+    "ampr_emu.log", "**/ampr_emu.log",
+    "apr_emu.log", "**/apr_emu.log",
+    "ampr_commands.bin", "**/ampr_commands.bin",
+    "playgo_stub.dat", "**/playgo_stub.dat",
+    "playlgo.log", "**/playlgo.log",
     "*.prx", "**/*.prx",
     "*.sprx", "**/*.sprx",
     "*.self", "**/*.self",
@@ -210,7 +230,7 @@ def standardprofil_text(arbeiter: int = 0) -> str:
     """
     ausschluss = "\n".join('  "%s",' % muster for muster in NIE_PACKEN)
     zeilen = [
-        "# Vom PS5 Dump & Image Converter erzeugt - Packprofil ohne Mitschnitte.",
+        PROFIL_KENNZEILE + " - Packprofil ohne Mitschnitte.",
         "# Einheitlich 64 KiB/mixed: die Herstellerempfehlung fuer unbekannte",
         "# Zugriffsmuster. Wer Mitschnitte von der Konsole hat, erzeugt mit",
         "# ampr_pack_profile.py ein feineres Profil und ersetzt diese Datei.",
@@ -281,18 +301,37 @@ def standardprofil_text(arbeiter: int = 0) -> str:
     return "\n".join(zeilen)
 
 
-def profil_schreiben(ziel: str, arbeiter: int = 0) -> str:
-    """Legt das Standardprofil ab, wenn dort noch keines liegt.
+def profil_ist_eigenes(pfad: str) -> bool:
+    """Stammt das Profil von diesem Programm (und nicht vom Anwender)?
 
-    Ein vorhandenes Profil bleibt unangetastet: Wer eines aus Mitschnitten
+    Erkannt an der ersten Zeile, die :func:`standardprofil_text` schreibt.
+    """
+    try:
+        with open(pfad, "r", encoding="utf-8", errors="replace") as datei:
+            return datei.readline().startswith(PROFIL_KENNZEILE)
+    except OSError:
+        return False
+
+
+def profil_schreiben(ziel: str, arbeiter: int = 0) -> str:
+    """Legt das Standardprofil ab - ein eigenes des Anwenders bleibt.
+
+    Ein Profil des Anwenders bleibt unangetastet: Wer eines aus Mitschnitten
     erzeugt und dorthin gelegt hat, will es benutzt sehen - es beim
     naechsten Lauf zu ueberschreiben waere der teuerste Datenverlust, den
     dieses Modul anrichten koennte.
 
+    Ein Profil, das dieses Programm selbst geschrieben hat, wird dagegen
+    **jedes Mal neu** geschrieben. Bis zum 17.09.2026 blieb es liegen: Ein
+    abgebrochener Lauf liess den Ausgabeordner samt Profil neben dem
+    Spielordner zurueck (gemessen bei Ghost of Yotei, 12.09.2026), und jeder
+    spaetere Lauf packte mit dem alten Profil weiter - auch nachdem sich die
+    Ausschlussliste im Programm geaendert hatte.
+
     Returns:
         Der Pfad des Profils.
     """
-    if os.path.isfile(ziel):
+    if os.path.isfile(ziel) and not profil_ist_eigenes(ziel):
         return ziel
     ordner = os.path.dirname(os.path.abspath(ziel))
     if ordner:
@@ -439,6 +478,28 @@ def _lauf(argumente: list[str], melden: Melder,
                              name="ampr-pack-stdout")
     leser.start()
 
+    # Der Abbruch wird zusaetzlich unabhaengig von der Ausgabe abgefragt. Die
+    # Schleife unten fragt ihn nur, wenn eine stderr-Zeile ankommt - "verify"
+    # schreibt waehrend der ganzen Pruefung nichts. Bis v1.9.24 wirkte
+    # Abbrechen dort erst, wenn die Pruefung (bei einem grossen Spiel die
+    # laengste Phase) von selbst zu Ende war.
+    abgebrochen = threading.Event()
+
+    def _abbruch_waechter() -> None:
+        while prozess.poll() is None:
+            if abbruch is not None and abbruch():
+                abgebrochen.set()
+                try:
+                    prozess.terminate()
+                except OSError as exc:
+                    logger.debug("Packwerkzeug nicht beendbar: %s", exc)
+                return
+            abgebrochen.wait(0.5)
+
+    if abbruch is not None:
+        threading.Thread(target=_abbruch_waechter, daemon=True,
+                         name="ampr-pack-abbruch").start()
+
     fehlerzeilen: list[str] = []
     try:
         assert prozess.stderr is not None
@@ -470,6 +531,8 @@ def _lauf(argumente: list[str], melden: Melder,
             if strom is not None:
                 strom.close()
 
+    if abgebrochen.is_set():
+        raise PackFehler("ampr_pack.abgebrochen")
     if prozess.returncode != 0:
         letzte = fehlerzeilen[-1] if fehlerzeilen else ""
         raise PackFehler(letzte or "Rueckgabewert %d" % prozess.returncode)
@@ -568,125 +631,288 @@ def grenzen_ueberschritten(uebersicht_daten: dict[str, Any]) -> list[tuple[str, 
             for name in GRENZEN if gemessen[name] > GRENZEN[name]]
 
 
-def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
-                        melden: Melder = stumm,
-                        text: Textquelle = schluessel_zeigen) -> int:
-    """Legt Manifest, Laufzeitdatei und alle Baender in den Spielordner.
+def liste(manifest: str, melden: Melder = stumm) -> list[dict[str, Any]]:
+    """``list --json``: je Datei des Manifests eine Zeile, gepackt oder lose.
 
-    Die Pruefsummenbeilage bleibt bewusst zurueck: Die Konsole oeffnet sie
-    nie, und im Abbild kostet sie nur Platz. Sie bleibt im Ausgabeordner,
-    wo ``verify`` sie spaeter noch findet.
+    Ein Punkt der Bereitschaftsliste des Entwicklers (Abschnitt 5): "pack,
+    verify --root, inspect, and list --json all finish without errors". Er
+    fehlte bis zum 17.09.2026.
+    """
+    roh = _lauf(["list", "--index", manifest, "--json"], melden)
+    try:
+        daten = json.loads(roh or "[]")
+    except ValueError as exc:
+        raise PackFehler("Dateiliste nicht lesbar: %s" % exc) from exc
+    return daten if isinstance(daten, list) else []
+
+
+def lose_fehlend(zeilen: list[dict[str, Any]], app0: str) -> list[str]:
+    """Welche als lose gefuehrten Dateien liegen nicht im Spielordner?
+
+    Abschnitt 5 der Anleitung: "loose_paths has been reviewed and every listed
+    file remains in /app0". Eine lose Datei, die fehlt, liest die Konsole
+    ueber das Dateisystem - und findet dort nichts.
 
     Returns:
-        Anzahl der uebernommenen Dateien.
+        Die ``/app0``-Pfade der fehlenden Dateien; leer, wenn alle da sind.
     """
-    uebernommen = 0
+    fehlend: list[str] = []
+    for zeile in zeilen:
+        if not isinstance(zeile, dict) or zeile.get("packed"):
+            continue
+        pfad = str(zeile.get("path") or "")
+        rel = pfad[len("/app0/"):] if pfad.lower().startswith("/app0/") else pfad.lstrip("/")
+        if not rel or not os.path.isfile(os.path.join(str(app0), *rel.split("/"))):
+            fehlend.append(pfad)
+    return fehlend
+
+
+#: Der interne Speicherblock der Pack-Bauten des AMPR EMU: fest 384 MiB
+#: (ASSET_PACKS.md, "Runtime memory defaults"). ``[runtime]`` fordert nur
+#: daraus an, es vergroessert ihn nicht.
+POOL_BYTES = 384 * 1024 * 1024
+
+#: Was die Laufzeit vor den Caches fest zuruecklegt: 32 Pipeline-Fenster zu
+#: je 2 MiB und 32 MiB Sicherheitsreserve - zusammen mit einem MiB je
+#: Arbeiter die "100 MiB" aus Abschnitt 8 der Anleitung.
+POOL_FEST_BYTES = 32 * 2 * 1024 * 1024 + 32 * 1024 * 1024
+POOL_JE_ARBEITER = 1024 * 1024
+
+#: Luft, die frei bleiben muss ("at least another 8-16 MiB of headroom").
+#: Genommen wird die obere Grenze: Nachmessen laesst sich das erst an der
+#: Konsole, und dort faellt es niemandem auf.
+POOL_LUFT = 16 * 1024 * 1024
+
+#: Raster der Cachegroessen ("must be a multiple of 16 KiB").
+CACHE_RASTER = 16 * 1024
+
+#: Untergrenze des entpackten Caches, bevor der physische angetastet wird
+#: (die einkompilierte Mindestgroesse der Laufzeit).
+MIN_ENTPACKT = 16 * 1024 * 1024
+
+#: Laufzeitwerte, wenn keine ``.runtime`` daneben liegt - die einkompilierten
+#: Vorgaben aus ASSET_PACKS.md.
+LAUFZEIT_VORGABE: dict[str, int] = {
+    "decoded_cache_bytes": 128 * 1024 * 1024,
+    "physical_cache_bytes": 32 * 1024 * 1024,
+    "workers": 4,
+    "latency_reserve_workers": 1,
+}
+
+
+def speicherbedarf(manifest_bytes: int, index_bytes: int,
+                   laufzeit: dict[str, Any]) -> int:
+    """Der Vorab-Haushalt aus Abschnitt 8 der Anleitung, in Bytes.
+
+    ``ampr_assets.index`` + ``ampr_emu.index`` + beide Caches + 32
+    Pipeline-Fenster zu 2 MiB + ein MiB je Arbeiter + 32 MiB Reserve. Die
+    ``.crc`` zaehlt nicht mit - die Laufzeit laedt sie nie.
+    """
+    return (int(manifest_bytes) + int(index_bytes)
+            + int(laufzeit.get("decoded_cache_bytes") or 0)
+            + int(laufzeit.get("physical_cache_bytes") or 0)
+            + POOL_FEST_BYTES
+            + max(1, int(laufzeit.get("workers") or 1)) * POOL_JE_ARBEITER)
+
+
+def laufzeit_einpassen(manifest_bytes: int, index_bytes: int,
+                       laufzeit: dict[str, Any]) -> dict[str, int] | None:
+    """Verkleinert die Caches, bis der Bestand mit Luft in den Block passt.
+
+    Reihenfolge wie in der Anleitung empfohlen ("reduce caches"): erst der
+    entpackte Cache bis auf 16 MiB, dann der physische, zuletzt der
+    entpackte ganz. Kleine Bloecke zu vergroessern hiesse neu packen - das
+    bleibt dem Anwender.
+
+    Returns:
+        Die Laufzeitwerte, die passen - unveraendert, wenn nichts zu tun war.
+        ``None``, wenn schon Manifest, Index und die festen Anteile den Block
+        sprengen; dann hilft kein Cache mehr.
+    """
+    werte = dict(LAUFZEIT_VORGABE)
+    for schluessel in LAUFZEIT_VORGABE:
+        if (laufzeit or {}).get(schluessel) is not None:
+            werte[schluessel] = int(laufzeit[schluessel])
+    frei =(POOL_BYTES - POOL_LUFT - int(manifest_bytes) - int(index_bytes)
+            - POOL_FEST_BYTES - max(1, werte["workers"]) * POOL_JE_ARBEITER)
+    if frei < 0:
+        return None
+    zuviel = werte["decoded_cache_bytes"] + werte["physical_cache_bytes"] - frei
+    if zuviel <= 0:
+        return werte
+    for schluessel, untergrenze in (("decoded_cache_bytes", MIN_ENTPACKT),
+                                    ("physical_cache_bytes", 0),
+                                    ("decoded_cache_bytes", 0)):
+        abzug = min(zuviel, max(0, werte[schluessel] - untergrenze))
+        werte[schluessel] -= abzug
+        zuviel -= abzug
+    for schluessel in ("decoded_cache_bytes", "physical_cache_bytes"):
+        werte[schluessel] -= werte[schluessel] % CACHE_RASTER
+    return werte
+
+
+def laufzeit_schreiben(manifest: str, laufzeit: dict[str, int],
+                       melden: Melder = stumm) -> None:
+    """Schreibt ``ampr_assets.index.runtime`` neu - ohne neu zu packen.
+
+    Der Weg aus Abschnitt 8 der Anleitung: ``runtime-config`` bindet die
+    Werte an die Build-ID des vorhandenen Manifests. Das Profil dafuer
+    enthaelt nur ``[runtime]`` und wird danach wieder entfernt.
+    """
+    ordner = os.path.dirname(os.path.abspath(manifest))
+    profil = os.path.join(ordner, "ampr_pack.runtime-angepasst.toml")
+    with open(profil, "w", encoding="utf-8", newline="\n") as datei:
+        datei.write("[runtime]\n")
+        datei.writelines("%s = %d\n" % (schluessel, int(laufzeit[schluessel]))
+                         for schluessel in LAUFZEIT_VORGABE)
     try:
-        namen = sorted(os.listdir(ausgabe_ordner))
+        _lauf(["runtime-config", "--index", manifest, "--config", profil], melden)
+    finally:
+        try:
+            os.remove(profil)
+        except OSError as exc:
+            logger.debug("Laufzeitprofil nicht entfernbar: %s", exc)
+
+
+def bandnamen(uebersicht_daten: dict[str, Any]) -> list[str]:
+    """Die Namen aller Baender, die das Manifest nennt (aus ``inspect``)."""
+    namen: list[str] = []
+    for band in uebersicht_daten.get("packs") or []:
+        name = str((band or {}).get("name") or "") if isinstance(band, dict) else ""
+        if name:
+            namen.append(name)
+    return namen
+
+
+def _bestandsdateien(ausgabe_ordner: str, baender: list[str] | None) -> list[str]:
+    """Was zum Laufzeitbestand gehoert - relativ zum Ausgabeordner."""
+    namen = [MANIFEST_NAME, LAUFZEIT_NAME, PRUEFSUMMEN_NAME]
+    if baender is not None:
+        return namen + list(baender)
+    try:
+        return namen + sorted(n for n in os.listdir(ausgabe_ordner)
+                              if n.lower().endswith(".pak"))
     except OSError as exc:
         raise PackFehler("Ausgabeordner nicht lesbar: %s" % exc) from exc
 
-    for name in namen:
-        klein = name.lower()
-        if klein == PRUEFSUMMEN_NAME:
-            continue
-        if klein not in (MANIFEST_NAME, LAUFZEIT_NAME) and not klein.endswith(".pak"):
-            continue
-        quelle = os.path.join(ausgabe_ordner, name)
-        if not os.path.isfile(quelle):
-            continue
+
+def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
+                        melden: Melder = stumm,
+                        text: Textquelle = schluessel_zeigen,
+                        baender: list[str] | None = None) -> int:
+    """Legt den Laufzeitbestand vollstaendig in den Spielordner.
+
+    Abschnitt 7 der Anleitung: ``ampr_assets.index``, dessen ``.runtime`` und
+    **jedes vom Manifest genannte** Band - als ein Satz mit einer Build-ID.
+    Danach wird nachgesehen, ob jede Datei mit ihrer Groesse angekommen ist
+    ("verify that every named volume is present").
+
+    Die Pruefsummenbeilage ``.crc`` geht seit dem 17.09.2026 mit. Die
+    Laufzeit oeffnet sie nie, laut Anleitung ist sie im ``/app0`` aber
+    "harmless and may be convenient for maintenance" - und sie muss beim
+    Bestand bleiben, sonst lassen sich die Baender nie wieder pruefen oder
+    auspacken. Bis dahin blieb sie im Ausgabeordner zurueck, und der lag
+    beim Bau eines Abbilds im Temp-Verzeichnis: Sie war danach verloren.
+
+    Args:
+        baender: Die Bandnamen aus dem Manifest (:func:`bandnamen`). Nur sie
+            werden uebernommen - ein liegen gebliebenes Band eines frueheren
+            Laufs im selben Ordner nicht. Ohne Angabe alle ``.pak``.
+
+    Returns:
+        Anzahl der uebernommenen Dateien.
+
+    Raises:
+        PackFehler: Wenn ein Teil des Bestands fehlt oder nicht vollstaendig
+            ankommt. Ein halber Satz waere schlimmer als keiner.
+    """
+    # Erst vollstaendig nachsehen, dann kopieren: Fehlt ein Teil, soll im
+    # Spielordner gar nichts von diesem Satz landen.
+    vorhanden: list[str] = []
+    for name in _bestandsdateien(ausgabe_ordner, baender):
+        if os.path.isfile(os.path.join(ausgabe_ordner, *name.split("/"))):
+            vorhanden.append(name)
+        elif name != LAUFZEIT_NAME:
+            # Nur die Laufzeitdatei darf fehlen - dann gelten die
+            # einkompilierten Vorgaben (Profil ohne [runtime]).
+            raise PackFehler("%s fehlt im Ausgabeordner" % name)
+
+    uebernommen = 0
+    for name in vorhanden:
+        quelle = os.path.join(ausgabe_ordner, *name.split("/"))
+        ziel = os.path.join(str(app0), *name.split("/"))
         try:
-            shutil.copy2(quelle, os.path.join(app0, name))
-            uebernommen += 1
+            os.makedirs(os.path.dirname(ziel), exist_ok=True)
+            shutil.copy2(quelle, ziel)
         except OSError as exc:
             raise PackFehler("%s nicht uebernehmbar: %s" % (name, exc)) from exc
+        try:
+            angekommen = os.path.getsize(ziel) == os.path.getsize(quelle)
+        except OSError:
+            angekommen = False
+        if not angekommen:
+            raise PackFehler("%s nicht vollstaendig uebernommen" % name)
+        uebernommen += 1
 
     if uebernommen:
         melden(text("ampr_pack.uebernommen", count=uebernommen))
     return uebernommen
 
 
-def packdateien_finden(app0: str) -> list[str] | None:
-    """Die Dateien einer gepackten Asset-Schicht in einem Spielordner.
+def bestand_aufraeumen(ausgabe_ordner: str, baender: list[str] | None,
+                       ganz: bool) -> None:
+    """Entfernt den Bestand aus dem Ausgabeordner, nachdem er uebernommen ist.
 
-    Returns:
-        Die Namen (nicht die vollen Pfade), oder ``None``, wenn sich der
-        Ordner nicht lesen liess.
+    Er liegt danach vollstaendig im Spielordner. Blieb er stehen, lag neben
+    einem Spielordner, in dem ohne Arbeitskopie gebaut wurde, eine zweite
+    Kopie aller Baender - bei einem grossen Spiel viele Gigabyte.
 
-    ``None`` ist nicht dieselbe Aussage wie eine leere Liste: Die eine heisst
-    "keine Schicht da", die andere "konnte nicht nachsehen". Wer beides gleich
-    behandelt, meldet "nichts zu entfernen", ohne hingesehen zu haben.
+    Args:
+        ganz: True entfernt den ganzen Ordner (er enthaelt nur, was dieses
+            Programm hineingelegt hat). False entfernt nur den Bestand und
+            laesst das eigene Profil des Anwenders stehen.
     """
-    try:
-        with os.scandir(str(app0 or "")) as eintraege:
-            namen = [e.name for e in eintraege if e.is_file()]
-    except OSError as exc:
-        logger.debug("Spielordner nicht lesbar (%s): %s", app0, exc)
-        return None
-    treffer = []
-    for name in namen:
-        klein = name.lower()
-        if klein in (MANIFEST_NAME, LAUFZEIT_NAME, PRUEFSUMMEN_NAME):
-            treffer.append(name)
-        elif klein.startswith("ampr_assets") and klein.endswith(".pak"):
-            treffer.append(name)
-    return sorted(treffer)
-
-
-def pack_entfernen(app0: str, melden: Melder = stumm,
-                   text: Textquelle = schluessel_zeigen) -> int:
-    """Nimmt die Asset-Schicht wieder heraus - der Rueckweg.
-
-    Moeglich ist das, weil dieses Programm die Originaldateien **nie**
-    entfernt: Ein Asset-Pack wird danebengelegt, nicht anstelle von etwas.
-    Gemessen am 08.09.2026 an einem Ordner mit elf Dateien - Packen legte
-    sechs dazu, aenderte und entfernte nichts, und nach dem Loeschen dieser
-    sechs war der Ordner byteweise wieder der alte.
-
-    Der ``ampr_emu.index`` bleibt dabei unangetastet und gueltig: Er entsteht
-    **vor** dem Packen und kennt die Baender gar nicht.
-
-    Returns:
-        Anzahl der entfernten Dateien.
-
-    Raises:
-        PackFehler: Wenn der Ordner nicht lesbar ist oder eine Datei sich
-            nicht entfernen laesst. Ein halb entfernter Bestand waere
-            schlimmer als gar keiner - das Manifest naennte dann Baender,
-            die es nicht mehr gibt.
-    """
-    namen = packdateien_finden(app0)
-    if namen is None:
-        raise PackFehler("ampr_pack.ordner_unlesbar")
-    if not namen:
-        melden(text("ampr_pack.nichts_zu_entfernen"))
-        return 0
-    entfernt = 0
-    for name in namen:
-        pfad = os.path.join(str(app0), name)
+    if ganz:
+        shutil.rmtree(ausgabe_ordner, ignore_errors=True)
+        return
+    for name in _bestandsdateien(ausgabe_ordner, baender):
         try:
-            os.remove(pfad)
-        except OSError as exc:
-            raise PackFehler("%s nicht entfernbar: %s" % (name, exc)) from exc
-        entfernt += 1
-        melden(text("ampr_pack.entfernt_datei", name=name))
-    melden(text("ampr_pack.entfernt", count=entfernt))
-    return entfernt
+            os.remove(os.path.join(ausgabe_ordner, *name.split("/")))
+        except OSError:
+            continue
+
+
+# Frueher stand hier ``pack_entfernen``, der Rueckweg aus Aufgabe 7: Er
+# loeschte Manifest, .runtime und Baender in der Annahme, die Originale
+# laegen daneben. Seit gepackte Originale beim Erstellen weggelassen werden
+# koennen, haette er dabei die Spieldaten geloescht. Aufgabe 7 fasst Asset-
+# Packs seit dem 17.09.2026 gar nicht mehr an (Entscheidung des Anwenders).
 
 
 def quellen_entfernen(manifest: str, app0: str, melden: Melder = stumm,
-                      abbruch: Callable[[], bool] | None = None) -> None:
+                      abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Entfernt die Originale, die jetzt in den Baendern liegen.
 
     **Unwiderruflich.** Das Werkzeug prueft vorher noch einmal vollstaendig
     und vergleicht jedes Byte; es weigert sich bei Systemdateien und bei
     allem ausserhalb von ``app0``. Trotzdem gilt: Ohne getesteten Lauf auf
-    der Konsole gehoert dieser Schritt nicht in einen Automatiklauf.
+    der Konsole gehoert dieser Schritt nicht in einen Automatiklauf - das
+    Hauptprogramm fragt deshalb bei jedem Start danach und fuehrt ihn nur in
+    einer Arbeitskopie aus, nie im Ordner des Anwenders.
+
+    Returns:
+        Die Zusammenfassung des Werkzeugs: ``files``, ``bytes``,
+        ``directories``, ``verified``.
     """
-    _lauf([
+    roh = _lauf([
         "remove-packed-sources",
         "--index", manifest,
         "--root", app0,
         "--confirm",
         "--remove-empty-dirs",
     ], melden, abbruch)
+    try:
+        daten = json.loads(roh or "{}")
+    except ValueError as exc:
+        raise PackFehler("Zusammenfassung nicht lesbar: %s" % exc) from exc
+    return daten if isinstance(daten, dict) else {}

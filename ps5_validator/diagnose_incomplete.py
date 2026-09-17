@@ -3,7 +3,7 @@
 Diagnose-Hilfe für unvollständig extrahierte PS5 Dumps
 
 Wenn eine .ffpfsc-Datei nicht vollständig entpackt wird, fehlen kritische Dateien
-wie eboot.bin, sce_sys/param.json und sce_sys/pfs-version.dat.
+wie eboot.bin und sce_sys/param.json.
 
 Häufige Ursachen:
 1. Beschädigte .ffpfsc-Datei (beschädigter Download oder korrupter Sektor)
@@ -54,11 +54,15 @@ MELDUNGEN = {
     "weitere_infos": "Weitere Infos:",
 }
 
-#: Die kritischen Dateien - dieselbe Liste, die auch der Validator führt.
+#: Die kritischen Dateien - dieselbe Liste, die auch der Validator führt
+#: (``dump_validator.CRITICAL_FILES``). Abgeschrieben statt importiert, damit
+#: das Modul allein lauffähig bleibt; test_debuglauf_befunde hält beide
+#: gleich. Bis zum 17.09.2026 stand hier noch ``sce_sys/pfs-version.dat``,
+#: die der Validator seit v1.8.31 nur empfiehlt (30 von 32 echten Dumps
+#: hatten sie) - der Bericht nannte sie als fehlende kritische Datei.
 KRITISCHE_DATEIEN = (
     "eboot.bin",
     "sce_sys/param.json",
-    "sce_sys/pfs-version.dat",
 )
 
 _TRENNLINIE = "=" * 60

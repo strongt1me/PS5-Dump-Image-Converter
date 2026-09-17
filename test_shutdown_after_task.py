@@ -40,10 +40,18 @@ class EntscheidungsregelTests(unittest.TestCase):
         self.assertFalse(gui._should_shutdown_after_task())
 
     def test_abbruch_faehrt_nicht_herunter(self):
-        # Abbruch setzt in _write_task_report success=False/aborted=True,
-        # beides landet als False in _last_task_ok.
-        gui = _make_gui(aktiviert=True, ok=False)
+        """Ein abgebrochener Lauf faehrt nicht herunter - auch mit success=True.
+
+        Bis zum 17.09.2026 war dieser Test mit dem Fehlertest oben gleich
+        (beide ok=False); einen Abbruch stellte er nie nach. Fehlte in
+        _write_task_report das "and not aborted", blieb alles gruen.
+        """
+        gui = _make_gui(aktiviert=True, ok=True)
+        gui._write_task_report("pack_folder", "quelle", "ziel", True, True, None)
         self.assertFalse(gui._should_shutdown_after_task())
+        # Gegenrichtung: derselbe Weg ohne Abbruch faehrt herunter.
+        gui._write_task_report("pack_folder", "quelle", "ziel", True, False, None)
+        self.assertTrue(gui._should_shutdown_after_task())
 
     def test_laufende_aufgabe_faehrt_nicht_herunter(self):
         gui = _make_gui(aktiviert=True, ok=True, laeuft=True)

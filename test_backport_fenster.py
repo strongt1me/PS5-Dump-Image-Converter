@@ -89,6 +89,65 @@ class AnalyseImFadenTests(_Quelltext):
         self.assertEqual([], verboten,
                          "Aus dem Arbeitsfaden heraus an Tk: %s" % (verboten,))
 
+    def test_auch_ueber_hilfsfunktionen_kein_tk(self):
+        """Der Fall vom 16.09.2026: der Zugriff steckte eine Ebene tiefer.
+
+        ``_analyse_lauf`` rief ``_ziel_firmware()``, und die las
+        ``fw_box.current()``. Der Test oben sah nur die Methode selbst und
+        blieb gruen - in der Testreihe starb der Faden fuenfmal je Volllauf
+        an "main thread is not in main loop".
+
+        Verfolgt werden alle lokalen Hilfsfunktionen, die der Faden aufruft.
+        Verboten ist jeder Methodenaufruf auf einem lokalen Tk-Objekt (Widget,
+        Fenster, Tk-Variable).
+        """
+        aussen = self._methode("_render_backport_window")
+        innere = {k.name: k for k in ast.walk(aussen)
+                  if isinstance(k, ast.FunctionDef) and k is not aussen}
+
+        tk_namen = set()
+        for k in ast.walk(aussen):
+            if not (isinstance(k, ast.Assign) and isinstance(k.value, ast.Call)):
+                continue
+            f = k.value.func
+            von_tk = (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
+                      and f.value.id in ("tk", "ttk"))
+            fenster = isinstance(f, ast.Attribute) and f.attr == "_build_modern_toplevel"
+            if von_tk or fenster:
+                tk_namen.update(z.id for z in k.targets if isinstance(z, ast.Name))
+        # Ohne diese Namen misst der Test nichts.
+        for pflicht in ("fw_box", "baum", "stand_var", "win"):
+            self.assertIn(pflicht, tk_namen)
+
+        erreicht, offen = set(), ["_analyse_lauf"]
+        while offen:
+            name = offen.pop()
+            if name in erreicht or name not in innere:
+                continue
+            erreicht.add(name)
+            for k in ast.walk(innere[name]):
+                if (isinstance(k, ast.Call) and isinstance(k.func, ast.Name)
+                        and k.func.id in innere):
+                    offen.append(k.func.id)
+        # Das Ergebnis geht ueber _analyse_fertig zurueck - das ist Absicht
+        # und laeuft im Fensterfaden (Argument, kein Aufruf).
+        self.assertIn("_analyse_lauf", erreicht)
+        self.assertNotIn("_analyse_fertig", erreicht,
+                         "Der Faden ruft _analyse_fertig direkt auf statt ueber "
+                         "_spaeter_im_fenster.")
+
+        verboten = []
+        for name in sorted(erreicht):
+            for k in ast.walk(innere[name]):
+                if (isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+                        and isinstance(k.func.value, ast.Name)
+                        and k.func.value.id in tk_namen):
+                    verboten.append((name, k.lineno,
+                                     "%s.%s" % (k.func.value.id, k.func.attr)))
+        self.assertEqual([], verboten,
+                         "Aus dem Arbeitsfaden heraus an Tk (auch ueber "
+                         "Hilfsfunktionen): %s" % (verboten,))
+
     def test_das_ergebnis_kommt_ueber_den_hausweg_zurueck(self):
         m = self._innere("_render_backport_window", "_analyse_lauf")
         aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(m)
@@ -111,17 +170,42 @@ class PlatzpruefungTests(_Quelltext):
         self._methode("_backport_platz_pruefen")
 
     def test_sie_laeuft_im_hauptstrang_nicht_im_arbeiter(self):
-        """Eine Rueckfrage aus dem Arbeitsfaden waere der bekannte Fehler."""
+        """Eine Rueckfrage aus dem Arbeitsfaden waere der bekannte Fehler.
+
+        Seit dem 17.09.2026 in zwei Haelften: Vermessen in einem eigenen Faden
+        (``_messen``), entscheiden und fragen im Fensterfaden
+        (``_platz_gemessen``). Bis dahin lief beides in ``_starten`` - ueber
+        einen Dump von 40 bis 100 GB stand das Fenster minutenlang. Das
+        Verhalten selbst prueft test_debuglauf_befunde.BackportPlatzImFadenTests.
+        """
+        def _aufrufe(knoten, tief: bool = True) -> set:
+            gefunden, offen = set(), list(ast.iter_child_nodes(knoten))
+            while offen:
+                k = offen.pop()
+                if not tief and isinstance(k, (ast.FunctionDef, ast.Lambda)):
+                    continue            # verschachtelte Funktion: eigener Faden
+                if isinstance(k, ast.Call):
+                    gefunden.add(getattr(k.func, "attr", "")
+                                 or getattr(k.func, "id", ""))
+                offen.extend(ast.iter_child_nodes(k))
+            return gefunden
+
         arbeiter = self._methode("_backport_worker")
-        aufrufe = [getattr(k.func, "attr", "") for k in ast.walk(arbeiter)
-                   if isinstance(k, ast.Call)]
-        self.assertNotIn("_backport_platz_pruefen", aufrufe,
-                         "Die Pruefung zeigt einen Dialog - im Arbeitsfaden "
-                         "waere das falsch.")
+        for name in ("_backport_platz_pruefen", "_backport_platz_entscheiden"):
+            self.assertNotIn(name, _aufrufe(arbeiter),
+                             "Die Pruefung zeigt einen Dialog - im Arbeitsfaden "
+                             "waere das falsch.")
         starter = self._innere("_render_backport_window", "_starten")
-        aufrufe_start = [getattr(k.func, "attr", "") for k in ast.walk(starter)
-                         if isinstance(k, ast.Call)]
-        self.assertIn("_backport_platz_pruefen", aufrufe_start)
+        direkt = _aufrufe(starter, tief=False)
+        for name in ("_backport_platz_pruefen", "_backport_platz_messen"):
+            self.assertNotIn(name, direkt,
+                             "_starten vermisst den Dump wieder selbst - im "
+                             "Fensterfaden steht das Fenster dabei still.")
+        messen = self._innere("_render_backport_window", "_messen")
+        self.assertIn("_backport_platz_messen", _aufrufe(messen))
+        self.assertNotIn("_backport_platz_entscheiden", _aufrufe(messen))
+        gemessen = self._innere("_render_backport_window", "_platz_gemessen")
+        self.assertIn("_backport_platz_entscheiden", _aufrufe(gemessen))
 
     def test_bei_reichlich_platz_wird_nicht_gefragt(self):
         gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
@@ -348,9 +432,15 @@ class RueckfrageNenntDieSicherungTests(unittest.TestCase):
         fenster = next(k for k in ast.walk(baum)
                        if isinstance(k, ast.FunctionDef)
                        and k.name == "_render_backport_window")
-        starten = next(k for k in ast.walk(fenster)
-                       if isinstance(k, ast.FunctionDef) and k.name == "_starten")
-        cls.rumpf = ast.unparse(starten)
+        # Seit dem 17.09.2026 in drei Teilen: _starten (fragt nach den
+        # Bibliotheken, startet die Messung im Faden), _platz_gemessen
+        # (entscheidet im Fensterfaden) und _nach_der_platzpruefung (die
+        # eigentliche Rueckfrage, danach der Arbeitsfaden).
+        cls.teile = {k.name: k for k in ast.walk(fenster)
+                     if isinstance(k, ast.FunctionDef)
+                     and k.name in ("_starten", "_platz_gemessen",
+                                    "_nach_der_platzpruefung")}
+        cls.rumpf = ast.unparse(cls.teile["_nach_der_platzpruefung"])
 
     def test_die_rueckfrage_nennt_den_sicherungsstand(self):
         self.assertIn("backport.confirm_backup", self.rumpf)
@@ -358,8 +448,27 @@ class RueckfrageNenntDieSicherungTests(unittest.TestCase):
 
     def test_die_platzpruefung_laeuft_vor_der_rueckfrage(self):
         """Sonst steht beim Fragen noch nicht fest, was gilt."""
-        platz = self.rumpf.index("_backport_platz_pruefen")
-        frage = self.rumpf.index("backport.confirm_message")
+        import ast
+        for name in ("_starten", "_platz_gemessen"):
+            with self.subTest(teil=name):
+                self.assertNotIn("backport.confirm_message",
+                                 ast.unparse(self.teile[name]),
+                                 "Die Rueckfrage steht wieder vor dem Ende der "
+                                 "Platzpruefung.")
+        # _starten darf direkt nur ohne Sicherung weiter: Mit Sicherung steht
+        # erst nach der Messung fest, ob es bei ihr bleibt.
+        direkt = [k for k in ast.walk(self.teile["_starten"])
+                  if isinstance(k, ast.Call)
+                  and getattr(k.func, "id", "") == "_nach_der_platzpruefung"]
+        self.assertTrue(direkt)
+        for aufruf in direkt:
+            zweites = aufruf.args[1] if len(aufruf.args) > 1 else None
+            self.assertTrue(isinstance(zweites, ast.Constant)
+                            and zweites.value is False,
+                            "_starten fragt mit Sicherung, bevor gemessen ist.")
+        gemessen = ast.unparse(self.teile["_platz_gemessen"])
+        platz = gemessen.index("_backport_platz_entscheiden")
+        frage = gemessen.index("_nach_der_platzpruefung(firmware, antwort)")
         self.assertLess(platz, frage,
                         "Die Platzpruefung steht wieder hinter der "
                         "Rueckfrage - dann nennt die Rueckfrage einen "

@@ -629,15 +629,29 @@ class FruehesFenstersymbolTests(unittest.TestCase):
                         "Das Symbol wird erst nach dem Aufbau der Oberflaeche gesetzt")
 
     def test_aufruf_direkt_nach_dem_fenster(self):
-        abschnitt = self._gui_start()
-        fenster = abschnitt.index("root = TkinterDnD.Tk() if _DND_AVAILABLE else tk.Tk()")
-        symbol = abschnitt.index("_fenstersymbol_sofort_setzen(root)")
-        dazwischen = abschnitt[fenster:symbol]
-        # Nur Titel und Kommentare duerfen dazwischenstehen. Alles Weitere
-        # verlaengert die Zeitspanne, in der die Feder sichtbar ist.
-        code = [z.strip() for z in dazwischen.splitlines()[1:]
-                if z.strip() and not z.strip().startswith("#")]
-        self.assertEqual(code, ["root.title(APP_TITLE)"], f"Dazwischen steht: {code}")
+        """Zwischen Fenster und Symbol steht nur der Titel.
+
+        Am Syntaxbaum des Startblocks statt an der woertlichen Zeile: Die
+        Suche nach "root = TkinterDnD.Tk() if _DND_AVAILABLE else tk.Tk()"
+        starb am 17.09.2026, als das Hauptfenster seinen Klassennamen bekam
+        (``className``, fuer StartupWMClass unter Linux).
+        """
+        import ast
+
+        baum = ast.parse(self.QUELLE)
+        start = next(k for k in baum.body if isinstance(k, ast.If)
+                     and "__main__" in ast.unparse(k.test))
+        anweisungen = start.body
+        fenster = next(i for i, a in enumerate(anweisungen)
+                       if isinstance(a, ast.Assign) and ast.unparse(a.targets[0]) == "root"
+                       and "Tk(" in ast.unparse(a.value))
+        symbol = next(i for i, a in enumerate(anweisungen)
+                      if "_fenstersymbol_sofort_setzen(root)" in ast.unparse(a))
+        # Nur der Titel darf dazwischenstehen (Kommentare kennt der Baum
+        # nicht). Alles Weitere verlaengert die Zeitspanne, in der die Feder
+        # sichtbar ist.
+        dazwischen = [ast.unparse(a) for a in anweisungen[fenster + 1:symbol]]
+        self.assertEqual(dazwischen, ["root.title(APP_TITLE)"], f"Dazwischen steht: {dazwischen}")
 
     def test_drei_quellen_in_der_richtigen_reihenfolge(self):
         block = self.QUELLE[self.QUELLE.index("def _fenstersymbol_sofort_setzen"):]

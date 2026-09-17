@@ -159,6 +159,11 @@ optional_installieren zlib-ng "MkPFS nutzt die langsamere zlib der Standardbibli
 optional_installieren paramiko "kein SFTP."
 optional_installieren tkinterdnd2 "kein Drag & Drop."
 optional_installieren psutil "keine CPU/RAM-Telemetrie."
+# Die .spec nennt lz4 als hiddenimport, PyInstaller uebergeht ein fehlendes
+# Modul aber mit einer Protokollzeile. Bis v1.9.24 stand es hier nicht: Im
+# frischen .venv-macos (CI) fehlte es, und die AMPR-EMU-Methode Asset-Pack war
+# im Buendel nie verfuegbar. Build_EXE.ps1 installiert es genauso.
+optional_installieren lz4 "die AMPR-EMU-Methode Asset-Pack faellt auf 'Normal' zurueck."
 meldung "      PyInstaller $("$PYTHON" -m PyInstaller --version 2>&1) bereit." "$gruen"
 
 # --- Schritt 4: Pflicht-Dateien pruefen -----------------------------------
@@ -183,6 +188,18 @@ if [ -f "MkPFS-1.0.0/mkpfs/__init__.py" ]; then
     meldung "      OK: MkPFS-1.0.0/mkpfs/__init__.py" "$gruen"
 else
     meldung "      FEHLER: MkPFS 1.0.0 fehlt (erwartet: MkPFS-1.0.0/mkpfs/__init__.py)" "$rot"
+    fehlend=$((fehlend + 1))
+fi
+
+# UFS2Tool: Die Mac-Bauten muessen vor dem Einbetten genau die Dateien sein,
+# fuer die pruefsummen.json gilt. Im fertigen Buendel ist das nicht mehr
+# pruefbar - PyInstaller signiert Mach-O-Dateien neu (siehe Schritt 7).
+if UFS2_ABWEICHUNG="$("$PYTHON" -c 'from ps5_validator.utils import werkzeuge_bereitstellen as w; print("\n".join(w.ufs2tool_quelle_pruefen("UFS2Tool-4.1", ("osx-arm64", "osx-x64"))))' 2>&1)" \
+        && [ -z "$UFS2_ABWEICHUNG" ]; then
+    meldung "      OK: UFS2Tool-4.1 (osx-arm64, osx-x64) passt zu pruefsummen.json" "$gruen"
+else
+    meldung "      FEHLER: UFS2Tool-4.1 passt nicht zu pruefsummen.json:" "$rot"
+    printf '%s\n' "$UFS2_ABWEICHUNG" | sed 's/^/              /'
     fehlend=$((fehlend + 1))
 fi
 
@@ -305,6 +322,48 @@ else
     meldung "                 xcode-select --install" "$grau"
 fi
 
+# UFS2Tool im fertigen Buendel nachmessen. PyInstaller signiert jede
+# Mach-O-Datei neu, und oben kam die Signatur des ganzen Buendels dazu. Die
+# Signatur steht in der Datei: Aendert sie deren Pruefsumme, lehnt die
+# Mac-App UFS2Tool ab, und jede .ffpkg-Aufgabe scheitert. Deshalb messen,
+# eine Abweichung als sha256_im_buendel eintragen, neu versiegeln und mit
+# genau der Pruefung gegenpruefen, die das Programm beim Start macht.
+# Reihenfolge wie im Programm (_mitgeliefert_finden): erst _MEIPASS, das im
+# Buendel Contents/Frameworks ist, dann Contents/Resources.
+UFS2_WURZEL=""
+for kandidat in "$BUENDEL/Contents/Frameworks/UFS2Tool-4.1" \
+                "$BUENDEL/Contents/Resources/UFS2Tool-4.1"; do
+    if [ -f "$kandidat/pruefsummen.json" ]; then
+        UFS2_WURZEL="$kandidat"
+        break
+    fi
+done
+if [ -z "$UFS2_WURZEL" ]; then
+    meldung "      WARNUNG: UFS2Tool-4.1 fehlt im Buendel - .ffpkg geht in dieser App nicht." "$gelb"
+else
+    if ! UFS2_STAND="$("$PYTHON" -c 'import sys; from ps5_validator.utils import werkzeuge_bereitstellen as w; print(" ".join("%s=%s" % p for p in sorted(w.ufs2tool_buendel_nachtragen(sys.argv[1]).items())))' "$UFS2_WURZEL" 2>&1)"; then
+        meldung "      FEHLER: UFS2Tool-Pruefsummen im Buendel nicht lesbar:" "$rot"
+        printf '%s\n' "$UFS2_STAND"
+        exit 1
+    fi
+    meldung "      UFS2Tool im Buendel: $UFS2_STAND" "$grau"
+    case "$UFS2_STAND" in
+        *nachgetragen*)
+            # Die Liste liegt unter Contents/Resources und ist versiegelt.
+            codesign --force --deep --sign - "$BUENDEL" 2>/dev/null \
+                || meldung "      WARNUNG: Neu versiegeln nach dem Nachtrag fehlgeschlagen." "$gelb"
+            ;;
+    esac
+    if UFS2_ABLEHNUNG="$("$PYTHON" -c 'import sys; from ps5_validator.utils import werkzeuge_bereitstellen as w; print("\n".join(w.ufs2tool_buendel_pruefen(sys.argv[1], ("osx-arm64", "osx-x64"))))' "$UFS2_WURZEL" 2>&1)" \
+            && [ -z "$UFS2_ABLEHNUNG" ]; then
+        meldung "      OK: UFS2Tool-Pruefsumme im Buendel passt." "$gruen"
+    else
+        meldung "      FEHLER: Die App lehnte UFS2Tool ab - .ffpkg ginge darin nicht:" "$rot"
+        printf '%s\n' "$UFS2_ABLEHNUNG" | sed 's/^/              /'
+        exit 1
+    fi
+fi
+
 GROESSE="$(du -sh "$BUENDEL" | cut -f1)"
 
 # --- Optional: Abbild zum Weitergeben -------------------------------------
@@ -404,7 +463,7 @@ meldung "  Start:            open \"$BUENDEL\"" "$grau"
 meldung "  Kommandozeile:    \"$BUENDEL/Contents/MacOS/PS5_Dump_Image_Converter\" --cli --help" "$grau"
 meldung "  In den Programme-Ordner legen:  ./Install_macOS.sh" "$grau"
 echo
-meldung "  Hinweis: Aufgaben, die OSFMount, Dokan oder UFS2Tool brauchen," "$grau"
-meldung "           laufen nur unter Windows. Das Programm sagt das beim" "$grau"
-meldung "           Start einer solchen Aufgabe ausdruecklich." "$grau"
+meldung "  Hinweis: Die OSFMount-Ersatzwege gibt es nur unter Windows - das" "$grau"
+meldung "           Programm sagt das beim Start einer solchen Aufgabe." "$grau"
+meldung "           .ffpkg lesen und bauen geht auch hier, UFS2Tool liegt bei." "$grau"
 echo

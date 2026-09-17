@@ -166,14 +166,23 @@ class DoktorTests(unittest.TestCase):
         self.assertNotEqual(self.haupt._doktor_dateisystem(self.ordner), "")
 
     def test_fat32_wird_als_fehler_behandelt(self) -> None:
-        """Sich nicht nachstellen lässt sich nur der Datenträger, nicht die
-        Regel: Auf FAT32 endet jede Datei bei 4 GB, und ein PS5-Dump ist
-        immer größer."""
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        anfang = quelle.index("def umgebung_doktor")
-        koerper = quelle[anfang:anfang + 9000]
-        self.assertIn('"FAT32"', koerper)
-        self.assertIn("DOKTOR_FEHLER", koerper)
+        """Auf FAT32 endet jede Datei bei 4 GB, und ein PS5-Dump ist immer groesser.
+
+        Ausgefuehrt statt gelesen. Bis zum 17.09.2026 suchte der Test nur, ob
+        "FAT32" und DOKTOR_FEHLER irgendwo in den ersten 9000 Zeichen stehen -
+        DOKTOR_FEHLER kommt dort fuer andere Befunde mehrfach vor, und ein auf
+        HINWEIS herabgestufter FAT32-Zweig waere gruen geblieben. Der
+        Datentraeger laesst sich nicht nachstellen, die Antwort darauf schon.
+        """
+        from unittest import mock
+
+        with mock.patch.object(self.haupt, "_doktor_dateisystem", lambda _pfad: "FAT32"):
+            zeilen = self.haupt.umgebung_doktor(self.ordner, self.ordner)
+        treffer = [z for z in zeilen if "FAT32" in z]
+        self.assertTrue(treffer, zeilen)
+        self.assertTrue(any(z.lstrip().startswith(self.haupt.DOKTOR_FEHLER)
+                            and "4 GB" in z for z in treffer),
+                        "FAT32 steht nicht als Fehler da: %r" % (treffer,))
 
     def test_der_doktor_geht_nicht_ins_netz(self) -> None:
         """Er läuft auch dann, wenn nichts erreichbar ist - und er darf
@@ -414,11 +423,30 @@ class StartprobeTests(unittest.TestCase):
         self.assertFalse(self.haupt._doktor_ist_programm(pfad))
 
     def test_die_auswahl_haengt_nicht_mehr_am_ausfuehrungsrecht(self) -> None:
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        anfang = quelle.index("def _doktor_werkzeuge_starten")
-        koerper = quelle[anfang:anfang + 3000]
-        self.assertNotIn("os.X_OK", koerper)
-        self.assertIn("_doktor_ist_programm", koerper)
+        """Ueber den Syntaxbaum, nicht ueber eine Textsuche.
+
+        Welche Datei als Programm gilt, entscheidet die Kennung. Seit dem
+        17.09.2026 fragt die Startprobe das Ausfuehrungsrecht wieder ab - aber
+        erst beim Starten: Das Programm setzt es vor dem ersten Einsatz selbst.
+        Die fruehere Textsuche ("os.X_OK" nirgends in der Funktion) haette
+        beides nicht unterschieden.
+        """
+        import ast
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        funktion = next(k for k in ast.walk(baum)
+                        if isinstance(k, ast.FunctionDef)
+                        and k.name == "_doktor_werkzeuge_starten")
+        auswahl = [k for k in ast.walk(funktion) if isinstance(k, ast.If)
+                   and any(isinstance(c, ast.Call)
+                           and getattr(c.func, "attr", "") == "append"
+                           and getattr(getattr(c.func, "value", None), "id", "") == "kandidaten"
+                           for teil in k.body for c in ast.walk(teil))]
+        self.assertTrue(auswahl, "Die Auswahl der Kandidaten ist nicht mehr zu finden.")
+        for knoten in auswahl:
+            bedingung = ast.unparse(knoten.test)
+            self.assertIn("_doktor_ist_programm", bedingung)
+            self.assertNotIn("X_OK", bedingung)
+            self.assertNotIn("access", bedingung)
 
     def test_die_startprobe_meldet_hier_nichts(self) -> None:
         """An den echten mitgelieferten Programmen, nicht an erfundenen."""

@@ -56,34 +56,11 @@ class PlatzhalterTests(unittest.TestCase):
                     self.assertIn("1440", gefuellt)
                     self.assertNotIn("{", gefuellt)
 
-    def test_jeder_deutsche_text_laesst_sich_fuellen(self) -> None:
-        """Ein uebersehener Platzhalter faellt sonst erst im Betrieb auf."""
-        kaputt = []
-        for schluessel, sprachen in STRINGS.items():
-            text = sprachen.get("de")
-            if not isinstance(text, str) or "{" not in text:
-                continue
-            roh = PLATZHALTER.findall(text)
-            # Positionsplatzhalter ({} und {0}) sind zulaessig - sie werden
-            # mit Argumenten gefuellt, nicht mit Namen. Geprueft wird hier
-            # nur, ob die BENANNTEN noch Kennungen sind.
-            if any(n == "" or n.isdigit() for n in roh):
-                continue
-            namen = set(roh)
-            if not all(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", n)
-                       for n in namen):
-                continue
-            try:
-                text.format(**{n: "x" for n in namen})
-            except (KeyError, IndexError) as exc:
-                # Nur der fehlende Name zaehlt. Ein ValueError bedeutet
-                # bloss, dass die Formatangabe eine Zahl erwartet
-                # ({groesse:.1f}) und der Test hier "x" einsetzt - das
-                # sagt ueber den Platzhalternamen nichts aus.
-                kaputt.append((schluessel, str(exc)))
-            except ValueError:
-                pass
-        self.assertEqual(kaputt, [])
+    # Hier stand bis zum 17.09.2026 test_jeder_deutsche_text_laesst_sich_fuellen.
+    # Er fuellte jeden Text mit genau den Namen, die er vorher aus demselben
+    # Text gelesen hatte - ein KeyError war so kaum moeglich (Befund T33).
+    # Einen uebersehenen Platzhalter ({hoehe} gegen hoehe=) finden
+    # test_kein_platzhalter_traegt_einen_umlaut und test_textplatzhalter.py.
 
 
 class UmlautTests(unittest.TestCase):

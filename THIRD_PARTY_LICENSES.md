@@ -26,7 +26,7 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 
 | Datei | Projekt | Autor / Herkunft | Beleg |
 | --- | --- | --- | --- |
-| `ftpsrv-ps5_v0.21.elf` | ftpsrv | ps5-payload-dev | Projektadresse im ELF |
+| `ftpsrv-ps5_v0.21.1.elf` | ftpsrv | ps5-payload-dev | Projektadresse im ELF |
 | `ftpsrv-ps5_v1.15-ng.elf` | ftpsrv-ng | John Törnblom & drakmor | Copyright- und Bannerzeile |
 | `ftpsrv-ps5_v1.16-ng.elf` | ftpsrv-ng | John Törnblom & drakmor | Copyright- und Bannerzeile |
 | `klogsrv-ps5_v0.9.elf` | klogsrv | John Törnblom | Copyright-Zeile im ELF |
@@ -34,22 +34,27 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 | `OffAct_v0.34.elf` | OffAct | ps5-payload-dev | Projektadresse im ELF |
 | `ps5-app-dumper_v1.11_Beta.elf` | ps5-app-dumper | ps5-payload-dev | Projektreihe |
 | `np-fake-signin-v1.3.elf` | NP Fake Signin | earthonion | „NP Fake Signin (by earthonion)" |
-| `garlic-savemgr_v1.12.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
-| `shadowmountplus_v1.7_Beta6.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF |
+| `garlic-savemgr_v1.13.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
+| `shadowmountplus_v1.7alpha13fix1.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF |
 | `nanodns_v0.4.elf` | nanodns | drakmor | „(c) Drakmor" |
-| `game-compressor_v1.0.3.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh" |
+| `game-compressor_v1.0.4.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh" |
 | `pldmgr_v0.5.1.elf` | PS5 Payload Manager | itsPLK | Projektadresse im ELF |
 | `ps5debug-NG_1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR" |
+| `ps5debug-NG_v1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | byteweise dieselbe Datei wie die Zeile darüber |
+| `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |
+| `web-file-mgr-v1.9.elf` | PS5 Web File Manager | owendswang | „Web File Manager / Version: … / Port: …" im ELF |
+| `webkit-autoloader-installer_v0.4.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „Autoloader Installer v… by PLK" im ELF |
+| `ProsperoMgr.elf` | Prospero Manager | – | „Prospero Manager" im ELF, kein Autorenname |
 | `CheatRunner_v0.17.elf` | CheatRunner | maj0r | „CheatRunner v0.17 by maj0r" |
 | `zftpd-ps5-v1.5.0.elf` | zftpd | seregonwar | Projektadresse, MIT-Lizenz (unten) |
 | `zftpd-ps5-zhttp-v1.5.0.elf` | zftpd (zhttp-Variante) | seregonwar | Projektadresse, MIT-Lizenz (unten) |
 | `bdj_unpatch_1340.elf` | Y2JB-P2JB-bdj_unpatch | owendswang | im Fenster CREDITS verlinkt |
-| `PIZZA-HEN-v0.1.elf` | PIZZA-HEN | – | kein Beleg in der Datei |
+| `PIZZA-HEN-v2.00.elf` | PIZZA-HEN | – | kein Beleg in der Datei |
 | `bfpilot_v0.4.4.elf` | bfpilot | – | kein Beleg in der Datei |
 | `dump_installer_v1.07.elf` | Dump Installer | – | kein Beleg in der Datei |
 | `kstuff_lite_v1.10_Beta.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
-| `ps5upload_v5.2.1.elf` | PS5Upload | – | kein Beleg in der Datei |
+| `ps5upload-5.28.0.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.28.0 |
 | `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.0/`) |
 
@@ -104,8 +109,8 @@ SOFTWARE.
 | Bestandteil | Herkunft | Verwendung im Programm |
 | --- | --- | --- |
 | **MkPFS 1.0.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
-| **LibProsperoPkg 2.5** | SvenGDK | Das Werkzeug hinter „PKG bauen“; liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0) |
-| **PS4 FFPFSC 0.2.8** | siehe `PS4FFPFSC-0.2.8/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.8/LICENSES/` liegen |
+| **LibProsperoPkg 2.6.0** | SvenGDK | Das Werkzeug hinter „PKG bauen“; liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0). Der Ordner heißt noch `ProsperoPkg-2.5` – maßgeblich ist `ProsperoPkg-2.5/fassung.json` |
+| **PS4 FFPFSC 0.2.9** | siehe `PS4FFPFSC-0.2.9/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.9/LICENSES/` liegen |
 | **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – **hier für Dateien >2 GB gepatcht** (`UFS2Tool-4.1/patch/`); trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | PS5-Homebrew-Community | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert |
@@ -124,18 +129,26 @@ zusätzlich **gepatcht** – streamendes Entpacken für Dateien über 2 GB
 (`Ufs2Image.ReadFileToStream`, behebt die int32-Grenze beim `.ffpkg`-Auspacken);
 geänderte Quelle und Beschreibung liegen in `UFS2Tool-4.1/patch/`. Es ist hier
 aber **eigenständig** gebaut – `dotnet publish --self-contained true -p:PublishSingleFile=true`,
-siehe `UFS2Tool-4.1/pruefsummen.json` – und trägt Microsofts **.NET-8-**
-**Laufzeit damit in der Programmdatei**. Am 03.09.2026 an den Binärdateien
-nachgemessen:
+siehe `UFS2Tool-4.1/pruefsummen.json` – und trägt Microsofts **.NET-10-**
+**Laufzeit damit in der Programmdatei**. Am 17.09.2026 an den neuen
+Binärdateien nachgemessen:
 
 | Bau | Größe | `System.Private.CoreLib` | `coreclr` |
 | --- | --- | --- | --- |
-| `win-x64` | 12,5 MB | 43× | 15× |
-| `linux-x64` | 13,6 MB | 28× | 16× |
-| `osx-x64` | 13,5 MB | 28× | 77× |
-| `osx-arm64` | 12,8 MB | 28× | 77× |
+| `win-x64` | 12,7 MB | 62× | 17× |
+| `linux-x64` | 14,3 MB | 56× | 13× |
+| `osx-x64` | 13,8 MB | 56× | 75× |
+| `osx-arm64` | 13,0 MB | 56× | 78× |
 
-Eingebettet ist die Fassung **8.0.30**.
+Eingebettet ist die Fassung **10.0.11**.
+
+**Warum .NET 10.** Bis zum 17.09.2026 steckte hier **8.0.30**. Microsofts
+Unterstützung für .NET 8 endet am **10.11.2026**; danach gäbe es für die
+mitgelieferte Laufzeit keine Sicherheitskorrekturen mehr. .NET 10 ist LTS und
+wird bis zum **14.11.2028** gepflegt. Neu gebaut wurde aus derselben Quelle
+(UFS2Tool 4.1.0) mit demselben Patch, nur mit `TargetFramework net10.0`;
+Einzelheiten in `UFS2Tool-4.1/patch/PATCH.md`. Das mitgelieferte ProsperoPkg
+verlangt ohnehin bereits .NET 10.
 
 **Nicht überall MIT.** Der Quellcode von .NET steht unter der MIT-Lizenz, die
 **Windows-Binärdateien** aber unter einem eigenen Vertrag. Microsoft sagt das
@@ -154,9 +167,10 @@ weitergegeben.
 **Keine weiteren Sonderbedingungen.** Issue #108905 nennt vier Dateien mit
 eigenen Verträgen – `D3DCompiler_47_cor3.dll` (Windows SDK License) und
 `vcruntime140_cor3.dll` (Visual C++ Runtime License) unter ihnen. Am
-03.09.2026 im Windows-Bau nachgesehen: **keine davon ist enthalten.** Das
-Bündel gibt Namen unverschleiert preis – `System.Private.CoreLib` steht 43×
-darin –, die Abwesenheit ist also ein Befund und kein Messfehler. UFS2Tool
+03.09.2026 im .NET-8-Bau und am 17.09.2026 erneut in allen vier .NET-10-Bauten
+nachgesehen: **keine davon ist enthalten.** Das Bündel gibt Namen
+unverschleiert preis – `System.Private.CoreLib` steht 62× darin –, die
+Abwesenheit ist also ein Befund und kein Messfehler. UFS2Tool
 ist ein Konsolenprogramm ohne Oberfläche; die betroffenen Dateien gehören
 zur Desktop-Beilage, die hier nicht mitkommt.
 

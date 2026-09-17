@@ -83,8 +83,15 @@ class Diagnosebericht:
         mkpfs_ordner: Wohin die Engine entpackt wurde.
         letzte_dauer_s, quellbytes: Die Messwerte des letzten
             Laufs - aus ihnen rechnet der Bericht den Durchsatz.
+        letzte_aufgabe_art: ``(Modus, Zielformat)`` dieses Laufs. Der
+            Rueckschrittalarm vergleicht nur gleichartige Laeufe.
+        kompressionsstufen: Anzeigename -> Stufe; macht den Vergleich
+            unabhaengig von der Sprache der Oberflaeche.
         fortschritts_waechter: Der Waechter, falls einer laeuft.
     """
+
+    #: Aufgaben, die nichts packen - ihr Durchsatz ist Lesegeschwindigkeit.
+    _NUR_LESENDE_AUFGABEN = frozenset({"dump_validator", "inspect"})
 
     def __init__(self, *, programm_ordner: str = "",
                  hauptdatei: str = "",
@@ -111,6 +118,8 @@ class Diagnosebericht:
                  mkpfs_ordner: str = "",
                  letzte_dauer_s: float = 0.0,
                  quellbytes: int = 0,
+                 letzte_aufgabe_art: tuple = ("", ""),
+                 kompressionsstufen: dict | None = None,
                  fortschritts_waechter: Any = None,
                  text: Textquelle | None = None,
                  aufgabe: Any = None,
@@ -153,6 +162,8 @@ class Diagnosebericht:
         self.mkpfs_dir = mkpfs_ordner
         self._letzte_aufgabe_dauer_s = letzte_dauer_s
         self.task_total_source_bytes = quellbytes
+        self._letzte_aufgabe_art = tuple(letzte_aufgabe_art or ("", ""))
+        self._zstd_level_options = dict(kompressionsstufen or {})
         self.fortschritts_waechter = fortschritts_waechter
         self._t = text or schluessel_zeigen
         self.current_mode = aufgabe
@@ -224,8 +235,70 @@ class Diagnosebericht:
                 zeilen.append(z(name, "nicht gemerkt"))
             else:
                 da = os.path.isfile(pfad) or (pfad.endswith(".app") and os.path.isdir(pfad))
-                zeilen.append(z(name, "%s (%s)" % (pfad, "vorhanden" if da else "FEHLT")))
+                fassung = self._dateifassung(pfad) if da else ""
+                zeilen.append(z(name, "%s (%s%s)" % (
+                    pfad, "vorhanden" if da else "FEHLT",
+                    ", Fassung %s" % fassung if fassung else "")))
         return zeilen
+
+    @staticmethod
+    def _dateifassung(pfad: str) -> str:
+        """Die Fassung einer Windows-Programmdatei, sonst ein leerer Text.
+
+        Steht seit dem 17.09.2026 dabei, weil sie sonst nirgends sichtbar war:
+        Die hier installierte OSFMount-Fassung war 3.1.1003 vom Maerz 2024,
+        waehrend 3.2 einen Treiberabsturz (Bugcheck) und 3.2.1001 einen
+        "incompatible driver error when mounting" behoben haben. Wer das nicht
+        sieht, sucht den Fehler im Programm.
+
+        Gelesen wird ohne Fremdmodul ueber die Windows-API; auf anderen
+        Systemen und bei jedem Fehler bleibt es beim leeren Text - eine
+        fehlende Fassungsangabe ist kein Befund.
+        """
+        if os.name != "nt" or not pfad:
+            return ""
+        # Eine ".com" traegt beim OSFMount-Bau keine Fassungsangabe; die
+        # gleichnamige ".exe" daneben schon.
+        kandidaten = [pfad]
+        stamm, endung = os.path.splitext(pfad)
+        if endung.lower() == ".com":
+            kandidaten.append(stamm + ".exe")
+        try:
+            import ctypes
+            import ctypes.wintypes as wt
+        except Exception:  # noqa: BLE001
+            return ""
+        for kandidat in kandidaten:
+            if not os.path.isfile(kandidat):
+                continue
+            try:
+                groesse = ctypes.windll.version.GetFileVersionInfoSizeW(kandidat, None)
+                if not groesse:
+                    continue
+                puffer = ctypes.create_string_buffer(groesse)
+                if not ctypes.windll.version.GetFileVersionInfoW(
+                        kandidat, 0, groesse, puffer):
+                    continue
+                zeiger = ctypes.c_void_p()
+                laenge = wt.UINT()
+                if not ctypes.windll.version.VerQueryValueW(
+                        puffer, "\\", ctypes.byref(zeiger), ctypes.byref(laenge)):
+                    continue
+
+                class _Fest(ctypes.Structure):
+                    _fields_ = [("dwSignature", wt.DWORD),
+                                ("dwStrucVersion", wt.DWORD),
+                                ("dwFileVersionMS", wt.DWORD),
+                                ("dwFileVersionLS", wt.DWORD)]
+
+                fest = ctypes.cast(zeiger, ctypes.POINTER(_Fest)).contents
+                return "%d.%d.%d.%d" % (fest.dwFileVersionMS >> 16,
+                                        fest.dwFileVersionMS & 0xFFFF,
+                                        fest.dwFileVersionLS >> 16,
+                                        fest.dwFileVersionLS & 0xFFFF)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Fassung von %s nicht lesbar: %s", kandidat, exc)
+        return ""
 
     def _diagnose_speicherplatz(self) -> list[str]:
         """Freier Platz auf Quelle, Ziel und Temp - haeufigste Abbruchursache."""
@@ -241,10 +314,26 @@ class Diagnosebericht:
                 pfad = ""
             if not pfad:
                 continue
-            wurzel = os.path.splitdrive(os.path.abspath(pfad))[0] or "/"
-            if wurzel in gesehen:
+            wurzel = os.path.splitdrive(os.path.abspath(pfad))[0]
+            if not wurzel:
+                # Unter Linux/macOS gibt es keine Laufwerksbuchstaben -
+                # splitdrive liefert immer "". Bis v1.9.24 hiess dann jeder
+                # Pfad "/", und nur die Quelle wurde gemessen; gerade der
+                # Platz am Ziel (/media/..., /Volumes/...) fehlte. Gruppiert
+                # wird dort nach Geraet, beschriftet mit dem Pfad selbst.
+                try:
+                    kennung = str(os.stat(pfad if os.path.exists(pfad)
+                                          else os.path.dirname(pfad) or "/").st_dev)
+                except OSError:
+                    kennung = pfad
+                if kennung in gesehen:
+                    continue
+                gesehen.add(kennung)
+                wurzel = pfad
+            elif wurzel in gesehen:
                 continue
-            gesehen.add(wurzel)
+            else:
+                gesehen.add(wurzel)
             try:
                 _gesamt, _belegt, frei = shutil.disk_usage(pfad if os.path.exists(pfad) else wurzel)
                 zeilen.append(z("%s (%s)" % (name, wurzel),
@@ -424,6 +513,7 @@ class Diagnosebericht:
         ("diagnostics.report_section_doctor", "_diagnose_doktor"),
         ("diagnostics.report_section_runtime", "_diagnose_umgebung"),
         ("diagnostics.report_section_inventory", "_diagnose_werkzeugbestand"),
+        ("diagnostics.report_section_werkzeugpflege", "_diagnose_werkzeugpflege"),
         ("diagnostics.report_section_tools", "_diagnose_werkzeuge"),
         ("diagnostics.report_section_space", "_diagnose_speicherplatz"),
     )
@@ -478,7 +568,11 @@ class Diagnosebericht:
         try:
             cfg_path = self._get_config_path()
             if os.path.isfile(cfg_path):
-                with open(cfg_path, "r", encoding="utf-8") as f:
+                # utf-8-sig wie alle anderen Leser: Eine von PowerShell 5.1
+                # geschriebene paths.json traegt ein BOM. Bis v1.9.24 meldete
+                # der Bericht dann "nicht lesbar", waehrend der Doktor im
+                # selben Bericht "lesbar und gueltig" sagte.
+                with open(cfg_path, "r", encoding="utf-8-sig") as f:
                     cfg = json.load(f)
                 for key, value in cfg.items():
                     if any(hint in key.lower()
@@ -573,6 +667,49 @@ class Diagnosebericht:
                 zeilen.append(z(name, "nicht lesbar: %s" % exc))
         return zeilen
 
+    def _diagnose_werkzeugpflege(self) -> list[str]:
+        """Sagen Ordner und Lizenzdatei dasselbe ueber die Fremdwerkzeuge?
+
+        Ohne Netz - diese Pruefung vergleicht nur, was schon auf der Platte
+        liegt. Am 17.09.2026 fand genau dieser Vergleich drei Abweichungen,
+        die seit Monaten niemandem aufgefallen waren: eine Zeile mit falscher
+        Fassung, eine mit einer Bezeichnung, die es beim Autor nie gab, und
+        fuenf Dateien ohne jede Zeile. Der Rueckstand gegen die
+        Veroeffentlichungen der Autoren steht **nicht** hier: Dafuer muesste
+        der Bericht ins Netz, und das tut er nicht von selbst (siehe
+        ``werkzeugstaende.spiegel_holen``).
+
+        Returns:
+            Die Zeilen des Berichtsabschnitts.
+        """
+        z = self._diagnose_zeile
+        try:
+            from ps5_validator.utils import werkzeugstaende
+        except Exception as exc:  # noqa: BLE001
+            return [z("Pruefung nicht moeglich", exc)]
+        ordner = self._mitgeliefert_finden("helloworld")
+        lizenz = self._mitgeliefert_finden("THIRD_PARTY_LICENSES.md")
+        zeilen: list[str] = []
+        payloads = werkzeugstaende.payloads_lesen(ordner)
+        zeilen.append(z("Nutzlasten gefunden", len(payloads)))
+        if not os.path.isfile(lizenz):
+            zeilen.append(z("Lizenzdatei", "nicht mitgeliefert – kein Abgleich"))
+            return zeilen
+        befund = werkzeugstaende.bestand_abgleichen(ordner, lizenz)
+        ohne_zeile, ohne_datei = befund["ohne_zeile"], befund["ohne_datei"]
+        ohne_fassung = sorted(n for n, f in payloads.items() if not f)
+        if not ohne_zeile and not ohne_datei:
+            zeilen.append(z("Abgleich mit THIRD_PARTY_LICENSES.md",
+                            "in Ordnung – jede Datei hat ihre Zeile"))
+        for name in ohne_zeile:
+            zeilen.append(z("ohne Zeile in der Lizenzdatei", name))
+        for name in ohne_datei:
+            zeilen.append(z("Zeile ohne Datei im Ordner", name))
+        if ohne_fassung:
+            zeilen.append(z("ohne Fassung im Dateinamen",
+                            ", ".join(ohne_fassung)))
+        return zeilen
+
     def _diagnose_eigenschaften(self) -> list[str]:
         """Prueft Zusicherungen, die immer gelten muessen - im fertigen Programm.
 
@@ -642,9 +779,25 @@ class Diagnosebericht:
             stufe = str(self.compression_level_var.get() or "").strip()
         except Exception:
             stufe = ""
-        if dauer > 0.0 and quellbytes > 0:
+        # Die Stufe als Zahl, nicht als Anzeigename: "Schnell" und "Fast" sind
+        # dieselbe Stufe. Bis v1.9.24 fuehrte jede Sprache ihren eigenen Bestwert.
+        stufe = str(dict(getattr(self, "_zstd_level_options", {}) or {}).get(stufe, stufe))
+        modus, ziel = (tuple(getattr(self, "_letzte_aufgabe_art", ("", "")) or ("", ""))
+                       + ("", ""))[:2]
+        if dauer > 0.0 and quellbytes > 0 and modus in self._NUR_LESENDE_AUFGABEN:
+            # Aufgabe 8 liest nur. Bis v1.9.24 zaehlte ihr Durchsatz (NVMe:
+            # rund 1000 MB/s) als Bestwert der Stufe - jede spaetere
+            # Konvertierung schlug danach als "Rueckschritt" an.
+            zeilen.append("Durchsatz: %.1f MB/s (%s in %.1f s) - reine Leseaufgabe, "
+                          "kein Vergleich mit Packlaeufen"
+                          % (quellbytes / dauer / 1048576.0,
+                             self._fmt_bytes(quellbytes), dauer))
+        elif dauer > 0.0 and quellbytes > 0:
             durchsatz = quellbytes / dauer / 1048576.0
-            schluessel = "opt_durchsatz_%s" % (stufe or "unbekannt")
+            # Verglichen wird nur Gleichartiges: Aufgabe und Zielformat
+            # bestimmen den Durchsatz staerker als die Stufe.
+            schluessel = "opt_durchsatz_%s_%s_%s" % (
+                modus or "unbekannt", ziel or "unbekannt", stufe or "unbekannt")
             try:
                 bestwert = float(self._load_setting(schluessel, 0.0) or 0.0)
             except (TypeError, ValueError):
@@ -796,13 +949,21 @@ class Diagnosebericht:
             zeilen.append("Testabdeckung: noch nicht gemessen "
                           "(coverage json -o coverage.json)")
         if not getattr(sys, "frozen", False):
-            zeilen.append("  ruff check --fix .")
-            zeilen.append("  coverage run -m unittest discover -p \"test_*.py\"")
-            zeilen.append("  python -m unittest test_eigenschaften")
+            # Befehle, die jemand abschreibt, muessen stimmen. Bis v1.9.24
+            # stand hier "tools\bisect_prüfung.ps1" (die Datei heisst
+            # bisect_pruefung.ps1), "ruff check --fix ." haette den
+            # mitgelieferten Fremdcode umgeschrieben, und die Testbefehle
+            # liefen ohne PS5CONV_KONFIGORDNER - also gegen die echten
+            # Einstellungen des Anwenders.
+            zeilen.append("  $env:PS5CONV_KONFIGORDNER = \"$env:TEMP\\ps5conv_pruefung\\konfig\""
+                          "   (sonst schreiben die Tests in die echten Einstellungen)")
+            zeilen.append("  ruff check PS5ImageConverter_Pro_FINAL_revised.py ps5_validator")
+            zeilen.append("  coverage run -m pytest -q; coverage json -o coverage.json")
+            zeilen.append("  python -m pytest test_eigenschaften.py -q")
             zeilen.append("  python tools\\mutationstest.py"
                           "        (sind die Tests etwas wert?)")
             zeilen.append("  git bisect run powershell -NoProfile -File "
-                          "tools\\bisect_prüfung.ps1 <testdatei>")
+                          "tools\\bisect_pruefung.ps1 <testdatei>")
 
         # -- Was hier nicht greift, und warum -----------------------------
         zeilen.append("Nicht anwendbar auf dieses Programm:")

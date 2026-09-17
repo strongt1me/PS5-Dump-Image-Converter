@@ -25,8 +25,22 @@ from pathlib import Path
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
 sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+# Das Indexskript des Entwicklers - die Vorlage, an der sich der Index messen
+# lassen muss (siehe test_ampr_assets.IndexWieBeimEntwicklerTests).
+sys.path.insert(0, str(PROJEKT / "AMPR_PackTools-4.0"))
 
 from ps5_validator.utils import ampr_assetpakete as ap  # noqa: E402
+
+
+def _index_bauen(app0: Path) -> Path:
+    """ampr_emu.index mit dem Skript des Entwicklers."""
+    import build_ampr_index
+
+    index = app0 / "ampr_emu.index"
+    rc = build_ampr_index.build_index_local(app0, index, False)
+    if rc != 0:
+        raise AssertionError("build_ampr_index.py endete mit %d" % rc)
+    return index
 
 
 class ProfilAufbau(unittest.TestCase):
@@ -67,6 +81,108 @@ class ProfilAufbau(unittest.TestCase):
         self.assertFalse(ap.variante_kann_packen("no debug"))
 
 
+class ProfilErneuernTests(unittest.TestCase):
+    """Ein eigenes Profil wird neu geschrieben, eines des Anwenders nie.
+
+    Bis zum 17.09.2026 blieb jedes vorhandene Profil stehen. Ein
+    abgebrochener Lauf liess das Profil im Ausgabeordner neben dem
+    Spielordner zurueck (Ghost of Yotei, 12.09.2026), und alle spaeteren
+    Laeufe packten mit diesem alten Stand weiter.
+    """
+
+    def test_altes_eigenes_profil_wird_ersetzt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            pfad = os.path.join(basis, "ampr_pack.toml")
+            with open(pfad, "w", encoding="utf-8") as datei:
+                datei.write(ap.PROFIL_KENNZEILE + " - alter Stand\n[pack]\n")
+            ap.profil_schreiben(pfad)
+            with open(pfad, encoding="utf-8") as datei:
+                self.assertEqual(datei.read(), ap.standardprofil_text())
+
+    def test_profil_des_anwenders_bleibt(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            pfad = os.path.join(basis, "ampr_pack.toml")
+            eigen = "# aus Mitschnitten erzeugt\n[pack]\nworkers = 3\n"
+            with open(pfad, "w", encoding="utf-8") as datei:
+                datei.write(eigen)
+            ap.profil_schreiben(pfad)
+            with open(pfad, encoding="utf-8") as datei:
+                self.assertEqual(datei.read(), eigen)
+            self.assertFalse(ap.profil_ist_eigenes(pfad))
+
+    def test_das_erzeugte_profil_gilt_als_eigenes(self):
+        """Gegenprobe zur Erkennung: sonst wuerde nie etwas ersetzt."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as basis:
+            pfad = ap.profil_schreiben(os.path.join(basis, "neu.toml"))
+            self.assertTrue(ap.profil_ist_eigenes(pfad))
+
+
+class LoseDateienTests(unittest.TestCase):
+    """Abschnitt 5: "every listed file remains in /app0"."""
+
+    def test_fehlende_lose_datei_wird_gemeldet(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as app0:
+            os.makedirs(os.path.join(app0, "sce_sys"))
+            with open(os.path.join(app0, "sce_sys", "param.json"), "wb") as fh:
+                fh.write(b"{}")
+            zeilen = [
+                {"path": "/app0/sce_sys/param.json", "packed": False},
+                {"path": "/app0/eboot.bin", "packed": False},
+                {"path": "/app0/daten/weg.dat", "packed": True},
+            ]
+            self.assertEqual(ap.lose_fehlend(zeilen, app0), ["/app0/eboot.bin"],
+                             "Nur die fehlende lose Datei zaehlt - gepackte "
+                             "duerfen fehlen, sie liegen im Band.")
+
+
+class SpeicherblockTests(unittest.TestCase):
+    """Die Speicherrechnung aus Abschnitt 8 der Anleitung des Entwicklers."""
+
+    MIB = 1024 * 1024
+
+    def _laufzeit(self, entpackt_mib: int, physisch_mib: int) -> dict:
+        return {"decoded_cache_bytes": entpackt_mib * self.MIB,
+                "physical_cache_bytes": physisch_mib * self.MIB,
+                "workers": 4, "latency_reserve_workers": 1}
+
+    def test_beispiel_aus_der_anleitung(self):
+        """7.439.926 Bloecke: 85,16 MiB Manifest, 0,03 MiB Index, 96/64 MiB
+        Caches, vier Arbeiter - "about 345.19 MiB, leaving 38.81 MiB"."""
+        bedarf = ap.speicherbedarf(int(85.16 * self.MIB), int(0.03 * self.MIB),
+                                   self._laufzeit(96, 64))
+        self.assertAlmostEqual(bedarf / self.MIB, 345.19, places=2)
+        self.assertAlmostEqual((ap.POOL_BYTES - bedarf) / self.MIB, 38.81, places=2)
+        self.assertEqual(
+            ap.laufzeit_einpassen(int(85.16 * self.MIB), int(0.03 * self.MIB),
+                                  self._laufzeit(96, 64)),
+            self._laufzeit(96, 64), "Passt mit Luft - nichts zu aendern")
+
+    def test_zu_wenig_luft_verkleinert_den_entpackten_cache(self):
+        """120 MiB: "totals about 369.19 MiB and leaves 14.81 MiB" - unter den
+        16 MiB Luft, also wird der entpackte Cache kleiner, im 16-KiB-Raster."""
+        manifest, index = int(85.16 * self.MIB), int(0.03 * self.MIB)
+        passend = ap.laufzeit_einpassen(manifest, index, self._laufzeit(120, 64))
+        self.assertIsNotNone(passend)
+        self.assertLess(passend["decoded_cache_bytes"], 120 * self.MIB)
+        self.assertEqual(passend["physical_cache_bytes"], 64 * self.MIB)
+        self.assertEqual(passend["decoded_cache_bytes"] % ap.CACHE_RASTER, 0)
+        self.assertLessEqual(ap.speicherbedarf(manifest, index, passend),
+                             ap.POOL_BYTES - ap.POOL_LUFT)
+
+    def test_ohne_platz_fuer_das_manifest_kein_ergebnis(self):
+        self.assertIsNone(ap.laufzeit_einpassen(300 * self.MIB, 12 * self.MIB,
+                                                self._laufzeit(96, 32)))
+
+    def test_ohne_laufzeitdatei_gelten_die_vorgaben(self):
+        """Keine .runtime: die einkompilierten 128/32 MiB zaehlen."""
+        self.assertEqual(ap.laufzeit_einpassen(10 * self.MIB, 1 * self.MIB, {}),
+                         ap.LAUFZEIT_VORGABE)
+
+
 @unittest.skipUnless(ap.einsatzbereit()[0],
                      "Packwerkzeug oder lz4 fehlt")
 class EchterPacklauf(unittest.TestCase):
@@ -85,18 +201,23 @@ class EchterPacklauf(unittest.TestCase):
         (app0 / "libSceTest.sprx").write_bytes(b"\x7fELF" + b"\x00" * 2048)
         (app0 / "sce_sys" / "param.sfo").write_bytes(b"\x00PSF" + b"\x00" * 512)
         (app0 / "sce_module" / "libc.prx").write_bytes(b"\x7fELF" + b"\x00" * 512)
+        # Gut komprimierbar - sonst bliebe ein falsch nicht ausgeschlossenes
+        # Stueck ohnehin lose, und der Test saehe den Fehler nicht.
+        fuellung = b"PACKBAR " * 4096
+        (app0 / "fakelib").mkdir()
+        (app0 / "fakelib" / "FW7").write_bytes(fuellung)
+        (app0 / "fakelib" / "libSceAmpr.sprx.orig").write_bytes(fuellung)
+        for name in ("apr_emu.log", "ampr_emu.log", "playgo_stub.dat"):
+            (app0 / name).write_bytes(fuellung)
         return app0
 
     def test_systemdateien_bleiben_lose(self):
         import tempfile
 
-        from mkpfs.ampr import build_ampr_index
-
         with tempfile.TemporaryDirectory(prefix="ampr_pack_test_") as basis:
             wurzel = Path(basis)
             app0 = self._baum(wurzel)
-            index = app0 / "ampr_emu.index"
-            build_ampr_index(app0, index)
+            index = _index_bauen(app0)
 
             raus = wurzel / "packed"
             profil = ap.profil_schreiben(str(wurzel / "profil.toml"), arbeiter=2)
@@ -108,6 +229,20 @@ class EchterPacklauf(unittest.TestCase):
                 self.assertIn(pflicht, lose,
                               "%s wurde gepackt - das Spiel startet dann nicht"
                               % pflicht)
+            # Seit dem 17.09.2026: Bibliotheksordner (liest ShadowMount+ am
+            # AMPR EMU vorbei) samt Markierung und Sicherung, die
+            # Laufzeitprotokolle und die PlayGo-Einstellung. apr_emu.log in der
+            # Wurzel nimmt schon der Index nicht auf - geprueft wird deshalb
+            # ueber "list --json", was wirklich gepackt ist.
+            gepackt = {str(zeile.get("path")) for zeile in
+                       ap.liste(str(raus / ap.MANIFEST_NAME)) if zeile.get("packed")}
+            self.assertIn("/app0/assets/t0.dat", gepackt,
+                          "Die Liste nennt die Nutzdaten nicht - dann misst "
+                          "die Pruefung darunter nichts.")
+            for pflicht in ("fakelib/FW7", "fakelib/libSceAmpr.sprx.orig",
+                            "apr_emu.log", "ampr_emu.log", "playgo_stub.dat"):
+                self.assertNotIn("/app0/" + pflicht, gepackt,
+                                 "%s liegt im Band" % pflicht)
 
             # Die Nutzdaten sollen sehr wohl im Band liegen, sonst haette
             # die Ausschlussliste zu weit gegriffen.
@@ -118,30 +253,63 @@ class EchterPacklauf(unittest.TestCase):
             # Und die Baender muessen den Inhalt Byte fuer Byte tragen.
             ap.pruefen(str(raus / ap.MANIFEST_NAME), app0=str(app0))
 
-    def test_uebernahme_laesst_pruefsummen_zurueck(self):
-        import tempfile
+    def test_uebernahme_bringt_einen_pruefbaren_satz(self):
+        """Der Satz im Spielordner muss fuer sich allein pruefbar sein.
 
-        from mkpfs.ampr import build_ampr_index
+        Bis zum 17.09.2026 blieb die ``.crc`` im Ausgabeordner - beim Bau
+        eines Abbilds im Temp-Verzeichnis, das danach geloescht wurde. Die
+        Baender im Abbild liessen sich damit nie wieder pruefen oder
+        auspacken. Geprueft wird deshalb nicht die Dateiliste, sondern ob
+        ``verify --root`` gegen den Satz **im Spielordner** durchlaeuft.
+        """
+        import tempfile
 
         with tempfile.TemporaryDirectory(prefix="ampr_pack_test_") as basis:
             wurzel = Path(basis)
             app0 = self._baum(wurzel)
-            index = app0 / "ampr_emu.index"
-            build_ampr_index(app0, index)
+            index = _index_bauen(app0)
 
             raus = wurzel / "packed"
             profil = ap.profil_schreiben(str(wurzel / "profil.toml"))
             ap.packen(str(app0), str(index), str(raus), profil)
-            ap.bestand_uebernehmen(str(raus), str(app0))
+            baender = ap.bandnamen(ap.uebersicht(str(raus / ap.MANIFEST_NAME)))
+            self.assertTrue(baender, "Das Manifest nennt keine Baender")
+            ap.bestand_uebernehmen(str(raus), str(app0), baender=baender)
 
             im_spiel = set(os.listdir(app0))
-            self.assertIn(ap.MANIFEST_NAME, im_spiel)
-            self.assertIn(ap.LAUFZEIT_NAME, im_spiel)
-            self.assertTrue(any(n.endswith(".pak") for n in im_spiel))
-            self.assertNotIn(
-                ap.PRUEFSUMMEN_NAME, im_spiel,
-                "Die Konsole liest die Pruefsummenbeilage nie - sie bleibt "
-                "beim PC-Bestand")
+            for name in (ap.MANIFEST_NAME, ap.LAUFZEIT_NAME, ap.PRUEFSUMMEN_NAME,
+                         *baender):
+                self.assertIn(name, im_spiel)
+            # Der Ausgabeordner ist weg - geprueft wird allein der Satz im Spiel.
+            ap.bestand_aufraeumen(str(raus), baender, ganz=True)
+            self.assertFalse(raus.exists())
+            ap.pruefen(str(app0 / ap.MANIFEST_NAME), app0=str(app0))
+
+    def test_nur_die_genannten_baender_gehen_mit(self):
+        """Ein liegen gebliebenes Band eines frueheren Laufs bleibt draussen."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_pack_test_") as basis:
+            wurzel = Path(basis)
+            app0 = self._baum(wurzel)
+            index = _index_bauen(app0)
+            raus = wurzel / "packed"
+            profil = ap.profil_schreiben(str(wurzel / "profil.toml"))
+            ap.packen(str(app0), str(index), str(raus), profil)
+            baender = ap.bandnamen(ap.uebersicht(str(raus / ap.MANIFEST_NAME)))
+            (raus / "ampr_assets-alt-lane09-vol00-099.pak").write_bytes(b"alt")
+
+            ap.bestand_uebernehmen(str(raus), str(app0), baender=baender)
+            self.assertNotIn("ampr_assets-alt-lane09-vol00-099.pak", os.listdir(app0))
+
+            # Gegenrichtung: Fehlt ein genanntes Band, landet nichts vom Satz
+            # im Ziel - auch nicht Manifest und Laufzeitdatei.
+            (raus / baender[0]).unlink()
+            leer = wurzel / "leer"
+            leer.mkdir()
+            with self.assertRaises(ap.PackFehler):
+                ap.bestand_uebernehmen(str(raus), str(leer), baender=baender)
+            self.assertEqual([], os.listdir(leer))
 
 
 class EigenstaendigkeitTests(unittest.TestCase):
@@ -330,29 +498,40 @@ class VierteStufeTests(unittest.TestCase):
         self.assertEqual(ap.grenzen_ueberschritten({}), [])
 
     def test_der_bauweg_ruft_die_uebersicht_und_bricht_ab(self):
-        """Ohne diesen Aufruf gaebe es die vierte Stufe wieder nicht."""
+        """Ohne diesen Aufruf gaebe es die vierte Stufe wieder nicht.
+
+        Ueber den Syntaxbaum der Methode, nicht ueber die ersten 6000 Zeichen
+        ab ihrem Namen: Die Methode wuchs am 17.09.2026 darueber hinaus, und
+        der Ausschnitt haette die Uebernahme nicht mehr enthalten.
+        """
+        import ast
         haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
             encoding="utf-8")
-        stelle = haupt.index("def _ampr_assetpakete_bauen")
-        block = haupt[stelle:stelle + 6000]
-        self.assertIn("ampr_assetpakete.uebersicht(", block)
-        self.assertIn("grenzen_ueberschritten(", block)
-        # Die Uebernahme in den Spielordner muss NACH der Grenzpruefung
-        # stehen - sonst laege der unbrauchbare Bestand schon im Spiel.
-        self.assertLess(block.index("grenzen_ueberschritten("),
-                        block.index("bestand_uebernehmen("),
-                        "Die Grenzpruefung steht hinter der Uebernahme - dann "
-                        "kommt sie zu spaet.")
+        knoten = next(k for k in ast.walk(ast.parse(haupt))
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_ampr_assetpakete_bauen")
+        block = ast.unparse(knoten)
+        # Die Uebernahme in den Spielordner muss NACH allen Pruefungen der
+        # Bereitschaftsliste stehen - sonst laege ein unbrauchbarer Bestand
+        # schon im Spiel.
+        # lose_fehlend umschliesst den Aufruf von liste - es steht im Text davor.
+        reihenfolge = ["ampr_assetpakete.pruefen(", "ampr_assetpakete.uebersicht(",
+                       "grenzen_ueberschritten(", "lose_fehlend(",
+                       "ampr_assetpakete.liste(", "_ampr_pack_speicher_einpassen(",
+                       "bestand_uebernehmen("]
+        stellen = [block.index(teil) for teil in reihenfolge]
+        self.assertEqual(stellen, sorted(stellen),
+                         "Reihenfolge verletzt: %s" % reihenfolge)
 
 
 
 class WoDieMethodeGreiftTests(unittest.TestCase):
-    """Die neue Methode muss auf beiden Wegen greifen, nicht nur auf einem.
+    """Wo die neue Methode greift - und wo seit dem 17.09.2026 nicht mehr.
 
     Bis zum 08.09.2026 hing sie allein am Kaestchen "AMPR EMU" beim
-    Erstellen. Wer sie waehlte und dann Aufgabe 7 benutzte, bekam
-    stillschweigend den alten Weg - ohne Meldung, ohne Baender, und ohne dass
-    im Fenster etwas anderes gestanden haette.
+    Erstellen; danach baute auch Aufgabe 7 nach jedem Eingriff Baender. Am
+    17.09.2026 hat der Anwender entschieden, dass Aufgabe 7 nur noch der AMPR
+    EMU Manager ist: Baender entstehen allein beim Erstellen eines Abbilds.
     """
 
     HAUPT = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
@@ -370,20 +549,23 @@ class WoDieMethodeGreiftTests(unittest.TestCase):
         import ast
         self.assertIn("_ampr_assetpakete_bauen", ast.unparse(knoten))
 
-    def test_in_aufgabe_sieben(self):
+    def test_nicht_in_aufgabe_sieben(self):
         knoten = self._funktion("_mode_ampr_manager")
         self.assertIsNotNone(knoten, "_mode_ampr_manager heisst nicht mehr so")
         import ast
-        text = ast.unparse(knoten)
-        self.assertIn(
-            "_ampr_assetpakete_bauen", text,
-            "Aufgabe 7 baut keine Baender - wer die neue Methode gewaehlt hat, "
-            "bekommt dort stillschweigend den alten Weg.")
-        # Erst der Index, dann die Baender: ampr_pack.py liest den Index.
-        self.assertLess(text.index("_build_ampr_index_local"),
-                        text.index("_ampr_assetpakete_bauen"),
-                        "Die Baender entstehen vor dem Index - ampr_pack.py "
-                        "liest ihn aber, um die Dateien zuzuordnen.")
+        aufrufe = [k for k in ast.walk(knoten) if isinstance(k, ast.Call)
+                   and isinstance(k.func, ast.Attribute)]
+        self.assertTrue(aufrufe, "Keine Aufrufe gefunden - der Test misst nichts")
+        self.assertNotIn(
+            "_ampr_assetpakete_bauen", {k.func.attr for k in aufrufe},
+            "Aufgabe 7 baut wieder Baender - sie ist seit dem 17.09.2026 nur "
+            "noch der AMPR EMU Manager.")
+        # Auch kein direkter Griff ins Packmodul: weder packen noch pruefen
+        # noch Originale entfernen.
+        ins_modul = [ast.unparse(k.func) for k in aufrufe
+                     if isinstance(k.func.value, ast.Name)
+                     and k.func.value.id == "ampr_assetpakete"]
+        self.assertEqual(ins_modul, [])
 
 
 class KlapplisteTests(unittest.TestCase):
@@ -573,158 +755,72 @@ class FortschrittTests(unittest.TestCase):
                   "Test misst dann nichts.")
 
 
-class RueckwegTests(unittest.TestCase):
-    """Ein gepacktes Backup muss sich wieder entpacken lassen.
+class AufgabeSiebenOhneAssetPackTests(unittest.TestCase):
+    """Aufgabe 7 baut und entfernt seit dem 17.09.2026 keine Asset-Packs.
 
-    Das geht, weil dieses Programm die Originaldateien **nie** entfernt: Ein
-    Asset-Pack liegt daneben, nicht anstelle von etwas. Gemessen am
-    08.09.2026 an einem Ordner mit elf Dateien - Packen legte sechs dazu,
-    aenderte und entfernte nichts.
-
-    Der Rueckweg ist deshalb kein Entpacken, sondern ein Loeschen: Manifest,
-    ``.runtime``, die Baender - und die Pruefsummenbeilage, falls sie
-    jemand mit hineingelegt hat.
+    Bis dahin gab es dort den Knopf "Asset-Pack entfernen" (Kommandozeile:
+    ``--ampr-action ampr_pack_remove``). Er loeschte Manifest, .runtime und
+    Baender in der Annahme, die Originale laegen daneben - gemessen am
+    08.09.2026 an einem Ordner mit elf Dateien. Seit gepackte Originale beim
+    Erstellen weggelassen werden koennen, stimmt die Annahme nicht mehr: Der
+    Rueckweg haette dann die Spieldaten geloescht. Der Anwender hat
+    entschieden, ihn herauszunehmen statt ihn abzusichern; Aufgabe 7 bleibt
+    der AMPR EMU Manager (siehe auch AufgabeSiebenFasstPackNichtAnTests in
+    test_debuglauf_befunde.py fuer das Verhalten).
     """
 
-    @staticmethod
-    def _ordner(basis):
-        app0 = Path(basis, "app0")
-        (app0 / "assets").mkdir(parents=True)
-        (app0 / "assets" / "t.dat").write_bytes(b"X" * 4096)
-        (app0 / "eboot.bin").write_bytes(bytes([127]) + b"ELF" + bytes(512))
-        (app0 / "ampr_emu.index").write_bytes(b"AMPRIDX3" + bytes(64))
-        return app0
+    RUECKWEG_TEXTE = (
+        "ampr.btn_pack_remove", "progress.prepare.remove_asset_pack",
+        "ampr_pack.entfernt", "ampr_pack.entfernt_datei",
+        "ampr_pack.nichts_zu_entfernen", "ampr_pack.ordner_unlesbar",
+        "ampr_pack.entfernen_fehlgeschlagen",
+    )
 
-    def test_findet_genau_die_packdateien(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as basis:
-            app0 = self._ordner(basis)
-            for name in (ap.MANIFEST_NAME, ap.LAUFZEIT_NAME,
-                         ap.PRUEFSUMMEN_NAME,
-                         "ampr_assets-assets-lane00-vol00-000.pak"):
-                (app0 / name).write_bytes(b"x")
-            gefunden = ap.packdateien_finden(str(app0))
-            self.assertEqual(len(gefunden), 4, gefunden)
-            # Gegenprobe: Was nicht dazugehoert, bleibt draussen.
-            for fremd in ("eboot.bin", "ampr_emu.index"):
-                self.assertNotIn(fremd, gefunden)
+    def test_die_kommandozeile_kennt_die_aktion_nicht_mehr(self):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+        parser = APP._build_cli_parser()
+        aktion = next((a for a in parser._actions
+                       if "--ampr-action" in a.option_strings), None)
+        self.assertIsNotNone(aktion, "--ampr-action gibt es nicht mehr")
+        self.assertNotIn("ampr_pack_remove", aktion.choices)
+        # Die Aktionen des AMPR EMU Managers bleiben alle.
+        for bleibt in ("ampr_apply", "ampr_restore", "ampr_remove",
+                       "ampr_index", "ampr_ftp_index"):
+            with self.subTest(aktion=bleibt):
+                self.assertIn(bleibt, aktion.choices)
 
-    def test_ohne_pack_eine_leere_liste(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as basis:
-            app0 = self._ordner(basis)
-            self.assertEqual(ap.packdateien_finden(str(app0)), [])
-
-    def test_unlesbar_ist_nicht_leer(self):
-        """``None`` heisst "konnte nicht nachsehen" - nicht "nichts da".
-
-        Wer beides gleich behandelt, meldet "nichts zu entfernen", ohne
-        hingesehen zu haben.
-        """
-        self.assertIsNone(ap.packdateien_finden(""))
-        self.assertIsNone(ap.packdateien_finden(
-            os.path.join(str(PROJEKT), "gibt-es-nicht-xyz")))
-
-    def test_entfernen_stellt_den_alten_stand_her(self):
-        import hashlib, tempfile
-
-        def inventar(w):
-            r = {}
-            for stamm, _u, namen in os.walk(w):
-                for n in namen:
-                    p = os.path.join(stamm, n)
-                    r[os.path.relpath(p, w).replace(os.sep, "/")] =                         hashlib.sha256(open(p, "rb").read()).hexdigest()
-            return r
-
-        with tempfile.TemporaryDirectory() as basis:
-            app0 = self._ordner(basis)
-            vorher = inventar(str(app0))
-            for name in (ap.MANIFEST_NAME, ap.LAUFZEIT_NAME,
-                         "ampr_assets-a-lane00-vol00-000.pak",
-                         "ampr_assets-a-lane01-vol00-001.pak"):
-                (app0 / name).write_bytes(b"x" * 32)
-
-            weg = ap.pack_entfernen(str(app0))
-            self.assertEqual(weg, 4)
-            self.assertEqual(inventar(str(app0)), vorher,
-                             "Der Ordner ist nicht wieder der von vorher")
-
-    def test_ohne_pack_wird_nichts_geloescht(self):
-        import tempfile
-        with tempfile.TemporaryDirectory() as basis:
-            app0 = self._ordner(basis)
-            meldungen = []
-            self.assertEqual(
-                ap.pack_entfernen(str(app0), melden=meldungen.append), 0)
-            self.assertTrue((app0 / "eboot.bin").is_file())
-            self.assertIn("ampr_pack.nichts_zu_entfernen", meldungen)
-
-    def test_unlesbarer_ordner_wirft(self):
-        """Lieber ein Fehler als ein stilles "nichts zu tun"."""
-        with self.assertRaises(ap.PackFehler):
-            ap.pack_entfernen("")
-
-    def test_der_knopf_und_die_aktion_sind_da(self):
+    def test_weder_knopf_noch_aktion_im_manager(self):
+        """Am Syntaxbaum: keine Zeichenkette des Rueckwegs in Aufgabe 7."""
+        import ast
         haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
             encoding="utf-8")
-        self.assertIn("ampr.btn_pack_remove", haupt, "Der Knopf fehlt")
-        self.assertIn('action == "ampr_pack_remove"', haupt,
-                      "Die Aktion wird nicht behandelt")
-        self.assertIn('"ampr_pack_remove"', haupt)
-        # Auch ueber die Kommandozeile erreichbar - sonst waere der Weg
-        # nur im Fenster da und in keinem Ablauf.
-        stelle = haupt.index("--ampr-action")
-        self.assertIn("ampr_pack_remove", haupt[stelle:stelle + 400])
+        knoten = next((k for k in ast.walk(ast.parse(haupt))
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_mode_ampr_manager"), None)
+        self.assertIsNotNone(knoten, "_mode_ampr_manager heisst nicht mehr so")
+        texte = {k.value for k in ast.walk(knoten)
+                 if isinstance(k, ast.Constant) and isinstance(k.value, str)}
+        # Gegenstueck: Die uebrigen Knoepfe stehen als Zeichenketten darin -
+        # sonst saehe dieser Test gar nichts.
+        self.assertIn("ampr.btn_index_only", texte)
+        self.assertIn("ampr_index", texte)
+        self.assertNotIn("ampr.btn_pack_remove", texte)
+        self.assertNotIn("ampr_pack_remove", texte)
 
+    def test_das_packmodul_hat_keinen_rueckweg_mehr(self):
+        self.assertFalse(hasattr(ap, "pack_entfernen"))
+        self.assertFalse(hasattr(ap, "packdateien_finden"))
+        # Was der Bauweg beim Erstellen braucht, ist weiter da.
+        self.assertTrue(callable(getattr(ap, "quellen_entfernen", None)))
 
-class RueckwegBleibtWegTests(unittest.TestCase):
-    """Das Herausnehmen darf im selben Lauf nicht rueckgaengig gemacht werden.
-
-    Am 08.09.2026 an einer echten Arbeitskopie gemessen: Aufgabe 7 mit
-    ``ampr_pack_remove`` entfernte die sechs Packdateien und legte sie
-    unmittelbar danach wieder an. Der Grund steckt in der Ablauffolge: Die
-    Aktion setzt ``changed``, und der Block dahinter baut bei eingestellter
-    Methode "Asset-Pack" ein Pack, wenn sich etwas geaendert hat. Beides
-    zusammen hob sich auf.
-
-    Sichtbar war davon nichts - das Protokoll meldete "Erfolgreich
-    abgeschlossen", und im Ordner lagen weiterhin Manifest, Laufzeitdatei
-    und vier Baender. Wer das Pack loswerden wollte, hatte es noch.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls.quelle = (Path(__file__).resolve().parent
-                      / "PS5ImageConverter_Pro_FINAL_revised.py"
-                      ).read_text(encoding="utf-8")
-
-    def _packblock(self) -> str:
-        """Der Block in Aufgabe 7, der das Pack baut."""
-        stelle = self.quelle.index("if (changed and action != \"ampr_pack_remove\"")
-        return self.quelle[stelle:stelle + 400]
-
-    def test_die_aktion_ist_vom_packbau_ausgenommen(self):
-        # Wirft KeyError/ValueError, wenn die Bedingung wieder fehlt.
-        block = self._packblock()
-        self.assertIn("AMPR_METHODE_ASSETPACK", block,
-                      "Der gefundene Block ist nicht der Packbau.")
-
-    def test_der_packbau_haengt_weiter_an_der_methode(self):
-        """Anker: Ohne diese Bedingung packte Aufgabe 7 immer - dann waere
-        die Ausnahme oben zwar da, aber sie schuetzte das Falsche.
-        """
-        block = self._packblock()
-        self.assertIn("self._ampr_methode() == AMPR_METHODE_ASSETPACK", block)
-        self.assertIn("_ampr_assetpakete_bauen", block)
-
-    def test_die_uebrigen_aktionen_bleiben_drin(self):
-        """Nur diese eine Aktion ist ausgenommen, nicht etwa jede."""
-        block = self._packblock()
-        for aktion in ("ampr_apply", "ampr_index", "ampr_restore"):
-            with self.subTest(aktion=aktion):
-                self.assertNotIn('action != "%s"' % aktion, block,
-                                 "%s wurde mit ausgenommen - dann greift die "
-                                 "neue Methode dort nicht mehr." % aktion)
+    def test_die_texte_des_rueckwegs_sind_weg(self):
+        from ps5_validator.utils import i18n
+        for schluessel in self.RUECKWEG_TEXTE:
+            with self.subTest(schluessel=schluessel):
+                self.assertNotIn(schluessel, i18n.STRINGS)
+        hinweis = i18n.STRINGS.get("ampr.aufgabe7_ohne_assetpack") or {}
+        self.assertIn("Aufgabe 7", hinweis.get("de", ""))
+        self.assertIn("Task 7", hinweis.get("en", ""))
 
 
 class FassungsschreibweiseTests(unittest.TestCase):

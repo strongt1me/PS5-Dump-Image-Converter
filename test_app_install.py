@@ -109,9 +109,15 @@ class _FtpNachbau:
         self.geschrieben = {}
         self.reihenfolge = []
         self.befehle = []
+        #: Ein gemeinsames Protokoll ueber alle Arten. Bis zum 17.09.2026
+        #: fuehrte jede Art ihre eigene Liste - ob MTRW vor dem Anlegen kam
+        #: oder der Payload nach den Dateien, liess sich so gar nicht
+        #: vergleichen (Befunde T7/T8).
+        self.ereignisse = []
 
     def sendcmd(self, befehl):
         self.befehle.append(befehl)
+        self.ereignisse.append(("cmd", befehl))
         return "200 ok"
 
     #: Ordner, bei denen mkd scheitert und cwd ebenfalls - also ein
@@ -123,6 +129,7 @@ class _FtpNachbau:
             raise OSError("550 geht nicht")
         self.vorhanden.add(pfad)
         self.angelegt.append(pfad)
+        self.ereignisse.append(("mkd", pfad))
 
     def cwd(self, pfad):
         if pfad in self.unerreichbar:
@@ -135,6 +142,7 @@ class _FtpNachbau:
         ziel = befehl.split(" ", 1)[1]
         self.geschrieben[ziel] = strom.read()
         self.reihenfolge.append(ziel)
+        self.ereignisse.append(("stor", ziel))
 
 
 class SelfNachbauTests(unittest.TestCase):
@@ -420,6 +428,7 @@ class UebertragungTests(unittest.TestCase):
 
         def _nachbau(host, daten, **kw):
             self.gesendet.append((host, len(daten)))
+            self.ftp.ereignisse.append(("payload", host))
             return antwort
         app_install.payload_senden = _nachbau
         try:
@@ -436,6 +445,11 @@ class UebertragungTests(unittest.TestCase):
     def test_mtrw_kommt_vor_dem_anlegen(self):
         self._uebertragen()
         self.assertEqual(self.ftp.befehle, [app_install.BESCHREIBBAR])
+        arten = [art for art, _wert in self.ftp.ereignisse]
+        self.assertIn("mkd", arten)
+        self.assertLess(self.ftp.ereignisse.index(("cmd", app_install.BESCHREIBBAR)),
+                        arten.index("mkd"),
+                        "/system_ex wird erst nach dem Anlegen beschreibbar gemacht.")
 
     def test_systemfassung_kommt_zuletzt(self):
         # Vor dem Registrieren geschrieben, sucht die Konsole die Anwendung
@@ -446,12 +460,18 @@ class UebertragungTests(unittest.TestCase):
 
     def test_payload_geht_erst_nach_allen_dateien_raus(self):
         self._uebertragen()
-        vor_dem_payload = self.ftp.reihenfolge[:-1]
+        ereignisse = self.ftp.ereignisse
+        payload = [i for i, (art, _w) in enumerate(ereignisse) if art == "payload"]
+        self.assertEqual(len(payload), 1, ereignisse)
+        vor_dem_payload = [wert for art, wert in ereignisse[:payload[0]] if art == "stor"]
         for erwartet in ("/system_ex/app/FAKE02932/eboot.bin",
                          "/user/app/FAKE02932/sce_sys/param.json",
                          "/user/app/FAKE02932/sce_sys/icon0.png",
                          app_install.KENNUNGSDATEI):
             self.assertIn(erwartet, vor_dem_payload)
+        # Und die Systemfassung erst danach (siehe test_systemfassung_kommt_zuletzt).
+        self.assertIn(("stor", "/system_ex/app/FAKE02932/sce_sys/param.json"),
+                      ereignisse[payload[0]:])
 
     def test_payload_geht_an_die_uebergebene_adresse(self):
         self._uebertragen()

@@ -129,12 +129,21 @@ class FfpkgSchrittdreiTests(unittest.TestCase):
         self.assertNotIn('"step_end": float(progress_end)', self.block)
 
     def test_schrittgrenze_liegt_zwischen_start_und_ende(self) -> None:
-        for start, ende in ((5.0, 98.0), (5.0, 50.0), (55.0, 98.0), (15.0, 29.0)):
-            spanne = max(2.0, ende - start)
-            grenze = start + spanne * 0.55
+        """Gegen die Funktion des Programms, nicht gegen eine Nachrechnung.
+
+        Bis zum 17.09.2026 rechnete dieser Test die Grenze selbst aus und
+        prüfte seine eigene Rechnung (Befund T17). Die schmalen Bereiche
+        unter 2 hätten die alte Mindestspanne entlarvt: 97 bis 98 ergab 98,1.
+        """
+        for start, ende in ((5.0, 98.0), (5.0, 50.0), (55.0, 98.0), (15.0, 29.0),
+                            (97.0, 98.0), (97.5, 98.0)):
+            grenze = PS5ConverterGUI._ffpkg_schrittgrenze(start, ende)
             with self.subTest(bereich=(start, ende)):
                 self.assertGreater(grenze, start)
                 self.assertLess(grenze, ende)
+        self.assertEqual(PS5ConverterGUI._ffpkg_schrittgrenze(50.0, 50.0), 50.0)
+        self.assertIn("_schritt2_ende = self._ffpkg_schrittgrenze(progress_start, progress_end)",
+                      self.block, "Der Bau rechnet die Grenze wieder selbst.")
 
     def test_schritt_drei_meldet_seine_teilschritte(self) -> None:
         """Ohne Zwischenmarken bliebe der Balken innerhalb von Schritt 3 stehen."""

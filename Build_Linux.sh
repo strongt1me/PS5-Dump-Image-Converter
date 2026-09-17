@@ -117,6 +117,11 @@ optional_installieren zlib-ng "MkPFS nutzt die langsamere zlib der Standardbibli
 optional_installieren paramiko "kein SFTP."
 optional_installieren tkinterdnd2 "kein Drag & Drop."
 optional_installieren psutil "keine CPU/RAM-Telemetrie."
+# Die .spec nennt lz4 als hiddenimport, PyInstaller uebergeht ein fehlendes
+# Modul aber mit einer Protokollzeile. Bis v1.9.24 stand es hier nicht: In
+# einer frischen .venv-linux fehlte es, und die AMPR-EMU-Methode Asset-Pack war
+# in der Datei nie verfuegbar. Build_EXE.ps1 installiert es genauso.
+optional_installieren lz4 "die AMPR-EMU-Methode Asset-Pack faellt auf 'Normal' zurueck."
 meldung "      PyInstaller $("$PYTHON" -m PyInstaller --version 2>&1) bereit." "$gruen"
 
 # --- Schritt 4: Pflicht-Dateien pruefen -----------------------------------
@@ -241,7 +246,7 @@ meldung "  Start:            ./$ERGEBNIS" "$grau"
 meldung "  Kommandozeile:    ./$ERGEBNIS --cli --help" "$grau"
 meldung "  Ins Menue legen:  ./Install_Linux.sh" "$grau"
 echo
-meldung "  Hinweis: Aufgaben, die OSFMount, Dokan oder UFS2Tool brauchen," "$grau"
-meldung "           laufen nur unter Windows. Das Programm sagt das beim" "$grau"
-meldung "           Start einer solchen Aufgabe ausdruecklich." "$grau"
+meldung "  Hinweis: Die OSFMount-Ersatzwege gibt es nur unter Windows - das" "$grau"
+meldung "           Programm sagt das beim Start einer solchen Aufgabe." "$grau"
+meldung "           .ffpkg lesen und bauen geht auch hier, UFS2Tool liegt bei." "$grau"
 echo

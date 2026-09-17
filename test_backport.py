@@ -572,9 +572,23 @@ class SdkStandTests(unittest.TestCase):
         self.assertEqual(bp.TYP_SELF, bp.TYP_SELF.lower())
 
     def test_zeile_erscheint_im_fenster(self) -> None:
+        """Seit dem 17.09.2026 setzt _sdk_stand_anzeigen die Zeile, im Faden gelesen.
+
+        Das Verhalten prueft test_debuglauf_befunde.InfoboxSdkImFadenTests;
+        hier nur, dass die Infobox die Zeile ueberhaupt fuellen laesst.
+        """
+        import ast
+
         quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
         self.assertIn('("sdk_stand", self._t("info_popup.meta.sdk"))', quelle)
-        self.assertIn('self._meta_labels["sdk_stand"].set', quelle)
+        klasse = next(k for k in ast.parse(quelle).body
+                      if isinstance(k, ast.ClassDef) and k.name == "PS5ConverterGUI")
+        methoden = {m.name: m for m in klasse.body if isinstance(m, ast.FunctionDef)}
+        gerufen = {getattr(k.func, "attr", "") for k in ast.walk(methoden["_update_info_box"])
+                   if isinstance(k, ast.Call)}
+        self.assertIn("_sdk_stand_anzeigen", gerufen)
+        self.assertIn('self._meta_labels["sdk_stand"]',
+                      ast.get_source_segment(quelle, methoden["_sdk_stand_anzeigen"]))
 
     def test_beide_texte_sind_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS

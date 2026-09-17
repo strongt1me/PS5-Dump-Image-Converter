@@ -216,13 +216,16 @@ class ContainerRueckfallTests(unittest.TestCase):
                       "Der Container-Weg setzt den Engine-Pfad nicht selbst")
 
     def test_sicherung_orig_zaehlt_nicht_als_einbau(self) -> None:
-        """`.orig` ist die weggelegte Originaldatei, kein eingebauter Emulator."""
-        quelle = Path(hauptprogramm.__file__).read_text(encoding="utf-8", errors="replace")
-        anfang = quelle.index("def _ampr_marker_im_container")
-        ende = quelle.index("\n    def ", anfang + 10)
-        rumpf = quelle[anfang:ende]
-        self.assertIn('rel.endswith("/" + marke) or rel == marke', rumpf,
-                      "Der Vergleich trifft sonst auch libSceAmpr.sprx.orig")
+        """`.orig` ist die weggelegte Originaldatei, kein eingebauter Emulator.
+
+        Seit dem 17.09.2026 am Verhalten der Regel geprueft, die der
+        Container-Weg benutzt - vorher suchte der Test den Vergleich woertlich
+        im Rumpf und waere beim Herausziehen der Regel still gestorben.
+        """
+        regel = hauptprogramm.PS5ConverterGUI._ist_aktive_ampr_bibliothek
+        self.assertFalse(regel("fakelib/libSceAmpr.sprx.orig", "libSceAmpr.sprx"),
+                         "Der Vergleich trifft auch libSceAmpr.sprx.orig")
+        self.assertTrue(regel("fakelib/libSceAmpr.sprx", "libSceAmpr.sprx"))
 
 
 class DreiZustaendeTests(unittest.TestCase):
@@ -339,24 +342,24 @@ class GleicheAntwortFuerOrdnerUndAbbildTests(unittest.TestCase):
                       and k.name == "_ampr_marker_im_container")
         cls.block = ast.unparse(knoten)
 
-    def test_der_ordnername_wird_als_ganzes_geprueft(self) -> None:
-        self.assertIn("rel.split('/')", self.block,
-                      "Der Teilstringtest ist zurueck - dann zaehlt "
-                      "fakelib2 wieder mit.")
+    def test_der_container_weg_benutzt_die_regel(self) -> None:
+        self.assertIn("_ist_aktive_ampr_bibliothek", self.block,
+                      "Die Container-Erkennung entscheidet wieder selbst - "
+                      "dann prueft der Test unten nicht mehr das Programm.")
         self.assertNotIn("if 'fakelib' in rel:", self.block)
 
     def test_die_regel_trifft_genau_die_richtigen(self) -> None:
-        """Die Entscheidung selbst, ohne Abbild und ohne Engine."""
-        for rel, erwartet in self.FAELLE:
-            with self.subTest(pfad=rel):
-                self.assertEqual(erwartet, "fakelib" in rel.split("/"))
+        """Die Entscheidung des Programms, ohne Abbild und ohne Engine.
 
-    def test_der_teilstringtest_wuerde_es_falsch_machen(self) -> None:
-        """Gegenprobe: Die alte Regel trifft vier statt zwei."""
-        alt = sum(1 for rel, _ in self.FAELLE if "fakelib" in rel)
-        neu = sum(1 for rel, _ in self.FAELLE if "fakelib" in rel.split("/"))
-        self.assertEqual(5, alt)
-        self.assertEqual(2, neu)
+        Bis zum 17.09.2026 lief die Tabelle gegen einen Ausdruck im Test
+        selbst - ``_ampr_marker_im_container`` wurde nie gerufen (Befund T3).
+        """
+        regel = hauptprogramm.PS5ConverterGUI._ist_aktive_ampr_bibliothek
+        for rel, erwartet in self.FAELLE + (
+                ("app0\\fakelib\\libSceAmpr.sprx", True),
+                ("fakelib/libsceampr.sprx.orig", False)):
+            with self.subTest(pfad=rel):
+                self.assertEqual(erwartet, regel(rel, "libSceAmpr.sprx"))
 
 
 if __name__ == "__main__":

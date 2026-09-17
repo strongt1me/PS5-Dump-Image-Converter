@@ -29,6 +29,16 @@ Aufbau der Veroeffentlichungen (04.09.2026 nachgesehen)::
 
 Die Fassung steht im Dateinamen, nicht in der Marke: Die Marke ``0.3.6``
 traegt Anhaenge bis ``0.3.6.4``. Gelesen wird deshalb der **Anhangsname**.
+
+Ab 0.4.2.1 drei Bauarten je Fassung (17.09.2026 nachgesehen)::
+
+    tag 0.4.2.1  "AMPR Emu 0.4.2.1"
+        libSceAmpr.sprx-0.4.2.1-test-debug-pack   633.094 B
+        libSceAmpr.sprx-0.4.2.1-test-nopack       303.878 B
+        libSceAmpr.sprx-0.4.2.1-test-pack         423.350 B
+
+Sie unterscheiden sich darin, ob sie gepackte Asset-Baender lesen - und
+heissen im mitgelieferten Bestand genau so (``0.4.2.1 test-pack``).
 """
 from __future__ import annotations
 
@@ -58,6 +68,11 @@ PROJEKT = "drakmor/ampr_emu"
 #: die Debug-Fassung, ``...-test`` die stille.
 DEBUG = "debug"
 OHNE_DEBUG = "no debug"
+
+#: Bauarten mit eigenem Namen (ab 0.4.2.1). Sie bleiben eigene Varianten:
+#: ``test-pack`` und ``test-nopack`` sind beide ohne Debug-Ausgabe, aber
+#: nur eine liest gepackte Baender - zusammengefasst waeren sie verloren.
+BAUARTEN = ("test-debug-pack", "test-nopack", "test-pack")
 
 _FASSUNG = re.compile(r"(\d+(?:\.\d+)+)")
 
@@ -91,7 +106,9 @@ def fassung_teile(text: str) -> tuple[int, ...]:
 
 
 def variante_aus_anhang(name: str) -> str:
-    """Debug-Fassung oder nicht - abgelesen am Namen des Anhangs.
+    """Die Variante - abgelesen am Namen des Anhangs.
+
+    Eine der :data:`BAUARTEN`, sonst Debug-Fassung oder nicht.
 
     Ohne Ruecksicht auf Gross- und Kleinschreibung: Der Name kommt aus
     einer fremden Veroeffentlichung, und ein ``-DEBUG`` galt hier bis zum
@@ -99,9 +116,17 @@ def variante_aus_anhang(name: str) -> str:
     nur in der Schreibweise unterschieden, wurden dann in
     :func:`angebote_lesen` als dasselbe Angebot entdoppelt - einer von
     beiden verschwand stillschweigend.
+
+    Dasselbe traf bis zum 17.09.2026 die Bauarten von 0.4.2.1: Keiner der
+    drei Namen endet auf ``-debug``, alle galten als ``no debug``, und
+    uebrig blieb ein einziges Angebot - der Debug-Bau ``test-debug-pack``
+    unter dem Namen ``no debug`` (gemessen an der Releases-Liste).
     """
-    return (DEBUG if str(name or "").rstrip().lower().endswith("-debug")
-            else OHNE_DEBUG)
+    text = str(name or "").rstrip().lower()
+    for bauart in BAUARTEN:
+        if text.endswith("-" + bauart):
+            return bauart
+    return DEBUG if text.endswith("-debug") else OHNE_DEBUG
 
 
 def fassung_aus_anhang(name: str) -> str:
@@ -196,11 +221,12 @@ def neuere(angebote: list[Angebot],
     werden; was ohnehin neuer ist als sein ganzer Bestand, ist dagegen
     ein ehrliches Angebot.
 
-    Der Aufrufer muss die Varianten vorher auf die beiden hier bekannten
-    Namen abbilden (:data:`DEBUG`, :data:`OHNE_DEBUG`). Der Scanner der
-    Oberflaeche liest sie aus Ordnernamen ab und kennt mehr Schreibweisen
-    (``nolog``, ``release``, ``log``); ohne die Abbildung faende hier
-    jede davon als "unbekannt" statt als ihre Klasse.
+    Der Aufrufer muss die Varianten vorher auf die hier bekannten Namen
+    abbilden (:data:`DEBUG`, :data:`OHNE_DEBUG` und die :data:`BAUARTEN`,
+    die unveraendert bleiben). Der Scanner der Oberflaeche liest sie aus
+    Ordnernamen ab und kennt mehr Schreibweisen (``nolog``, ``release``,
+    ``log``); ohne die Abbildung faende hier jede davon als "unbekannt"
+    statt als ihre Klasse.
 
     Gibt es gar nichts im Bestand, gilt alles als neu.
 

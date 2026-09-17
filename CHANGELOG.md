@@ -2,7 +2,93 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.24):** Die Knöpfe wachsen jetzt mit der eingestellten Anzeigeskalierung. Auf grossen, hochauflösenden Bildschirmen wirkten sie zuletzt zu klein, während die Schrift darin mitwuchs – die Verhältnisse stimmen wieder.
+> **Kurz zum aktuellen Stand (v1.9.25):** Jede `.ffpfsc` und `.ffpfs`, die du mit einem AMPR-EMU-Asset-Pack gebaut hast, war bisher unbrauchbar – beim Packen wurde der Index noch einmal neu erzeugt und passte danach nicht mehr zu den Bändern. Das ist behoben. Solche Abbilder musst du einmal neu bauen. Dazu: Aufgabe 7 ist wieder reiner AMPR-EMU-Manager, OSFMount wird nicht mehr verlangt, und die mitgelieferten Fremdwerkzeuge sind auf dem neuesten Stand.
+
+---
+
+## v1.9.25 – 18.09.2026
+
+Ein vollständiger Durchgang durch das ganze Programm: jeder Verdacht nachgemessen, behoben und mit einem Wächtertest festgehalten, der ohne die Reparatur rot wird. Die wichtigste Entdeckung betrifft Abbilder mit Asset-Pack.
+
+### Asset-Pack: der Index wurde beim Packen heimlich neu gebaut
+
+Legst du die Spieldateien in gepackte Bänder (neue Methode des AMPR EMU), entstehen zuerst der `ampr_emu.index` und dann die Bänder, die sich auf dessen Satznummern beziehen. Beim anschliessenden Packen der `.ffpfsc`/`.ffpfs` hat die Engine den Index **noch einmal** neu erzeugt – still, und ohne dass eine Prüfung angeschlagen hätte.
+
+Im Abbild zeigte danach jede Nummer auf eine andere Datei. An einem echten Spiel gemessen: 79 Index-Sätze gegen 72 Dateien im Manifest, **alle 72 falsch zugeordnet** – und das Protokoll meldete „Erfolgreich abgeschlossen". Auf der Konsole führt das zu Ladefehlern oder einem Spiel, das nicht startet.
+
+Jetzt entscheidet allein das Programm über den Index, und die Engine fasst ihn nicht mehr an. **Betroffene Abbilder einmal neu bauen** – `.ffpkg` und `.exFAT` waren nie betroffen.
+
+### Der Weg folgt jetzt der Anleitung des Entwicklers
+
+Beim Bau der Bänder fehlten mehrere Schritte, die der Entwickler der Packwerkzeuge ausdrücklich verlangt. Neu dabei:
+
+- die vollständige Dateiliste des Manifests wird gelesen, und jede lose gebliebene Datei muss wirklich im Spielordner liegen;
+- Manifest, Index und Zwischenspeicher werden gegen den festen Speicherblock der Konsole gerechnet; passt es nicht, werden die Zwischenspeicher verkleinert statt später an der Konsole zu scheitern;
+- die Prüfsummenbeilage `.crc` kommt mit ins Abbild, damit sich die Bänder später prüfen lassen;
+- übernommen werden nur die Bänder, die das Manifest nennt – und danach wird nachgezählt, ob jedes angekommen ist;
+- ein Packprofil aus einem abgebrochenen Lauf wird nicht mehr weiterbenutzt, und der Ausgabeordner neben dem Spiel bleibt nicht mehr liegen;
+- Bibliotheksordner, Laufzeitprotokolle und der PlayGo-Zwischenspeicher wandern nicht mehr in die Bänder.
+
+Der Indexbauer arbeitet ausserdem Byte für Byte wie das Skript des Entwicklers. Vorher waren Pfade mit Umlauten oder japanischen Zeichen falsch eingeordnet.
+
+### Neu: gepackte Originale weglassen
+
+Beim Start mit Asset-Pack fragt das Programm einmal, ob die gepackten Originaldateien im Ergebnis weggelassen werden sollen. Vorgabe ist **Nein**. Entfernt wird ausschliesslich in der Arbeitskopie, nie in deinem Dump-Ordner.
+
+Platz spart das nur bei `.ffpfs`, `.exFAT` und `.ffpkg`. Eine `.ffpfsc` komprimiert besser als die Bänder – sie wurde mit Asset-Pack in keiner Messung kleiner. Und der Reihe nach: erst mit Originalen bauen und auf der Konsole durchspielen, dann ohne.
+
+### Aufgabe 7 ist wieder nur der AMPR EMU Manager
+
+Aufgabe 7 baut keine Asset-Pack-Bänder mehr und entfernt auch keine; ein vorhandenes Pack bleibt unangetastet. Bänder entstehen nur noch beim Erstellen eines Abbilds. Der Knopf „Asset-Pack entfernen" ist entfallen: Er löschte Manifest und Bänder in der Annahme, die Originale lägen daneben – seit sie weggelassen werden können, hätte er Spieldaten gelöscht.
+
+Vorher baute Aufgabe 7 Bänder sogar dann, wenn das Kästchen „AMPR EMU" gar nicht angehakt war.
+
+### PlayGo: ein Hinweis, wo vorher Schweigen war
+
+Erklärt ein Spiel PlayGo-Inhalte (Sprachpakete, nachladbare Teile) und ist der PlayGo-Stub nicht angehakt, sagen das jetzt die Vorabprüfung und das Protokoll. Eingebaut wird er weiterhin nur, wenn du es willst. Die PlayGo-Fassung passt jetzt zur gewählten AMPR-Bauart.
+
+### Warnung vor Einbauten aus früheren Läufen
+
+Enthält dein Quellordner schon eine AMPR-Bibliothek, einen PlayGo-Stub, Backport-Bibliotheken oder ein Asset-Pack aus einem früheren Lauf, sagt die Vorabprüfung das vor dem Start. Die Kästchen legen nur etwas dazu – sie nehmen nichts heraus, und so kommt Altes ungefragt ins neue Abbild.
+
+### OSFMount wird nicht mehr verlangt
+
+Die Vorabprüfung warnte vor Aufgabe 2 und Aufgabe 3, OSFMount fehle. Das stimmte längst nicht mehr: Aufgabe 2 hängt überhaupt nichts ein, und Aufgabe 3 liest `.exFAT`-Abbilder mit dem eingebetteten Leser – ohne Einhängen, ohne Administratorrechte, auf jedem Betriebssystem. OSFMount ist nur noch der Rückfall für ein ungewöhnlich aufgebautes Abbild; wird er wirklich gebraucht, sagt das Programm es und kann ihn selbst installieren.
+
+### Mitgelieferte Fremdwerkzeuge auf neuestem Stand
+
+ShadowMount+ 1.7alpha13fix1 (vorher eine sieben Veröffentlichungen alte Fassung), elfldr 0.26, PS5Upload 5.28.0, PS5 Game Compressor 1.0.4, PS5 Web File Manager 1.9, GarlicSaves 1.13, PIZZA-HEN 2.00, ftpsrv 0.21.1 und PS4 FFPFSC 0.2.9.
+
+**UFS2Tool** ist auf .NET 10 neu gebaut. Die bisher eingebettete .NET-8-Laufzeit wird ab dem 10.11.2026 nicht mehr mit Sicherheitskorrekturen versorgt; .NET 10 hat Unterstützung bis 2028.
+
+### Neue Prüfung: Werkzeugpflege
+
+Der Diagnosebericht vergleicht jetzt die mitgelieferten Payloads mit ihrer Auflistung in der Lizenzdatei – in beide Richtungen. Über `--werkzeuge-pruefen` lässt sich zusätzlich nachsehen, ob es neuere Fassungen gibt; das ist der einzige Netzzugriff dieses Laufs und geschieht nur auf diesen Befehl hin. Der Bericht nennt ausserdem die Fassung selbst installierter Fremdwerkzeuge.
+
+### Abbrechen wirkt jetzt überall
+
+„Abbrechen" wurde an mehreren Stellen erst nach dem nächsten Arbeitsschritt wirksam oder gar nicht: beim Auspacken einer `.exFAT`, beim Prüfen der Bänder, beim `.ffpkg`-Bau (die Datei landete trotzdem am Ziel), beim BACKPORT und beim Kopieren grosser Einzeldateien. Das Fenster fror dabei nicht mehr ein, und angefangene Ergebnisse bleiben nicht mehr liegen.
+
+### Fenster, Fäden und Anzeige
+
+- Kein Arbeitsschritt fasst mehr die Oberfläche direkt an; lange Messungen (BACKPORT-Platzbedarf, SDK-Angabe aus `eboot.bin`) laufen im Hintergrund statt das Fenster einzufrieren.
+- Der Fortschrittsbalken springt nicht mehr und bleibt in der zweiten Stufe nicht mehr bei 98 %.
+- Esc aus einem Werkzeugfenster bricht nicht mehr die laufende Aufgabe ab; „Nein" beim Beenden schliesst nicht mehr trotzdem die Fenster.
+- Menüs klappen unter Linux wieder zuverlässig auf, und der Starter trägt den richtigen Fensternamen.
+- Das Mausrad reagiert auf Touchpads und unter macOS.
+
+### Was sonst noch behoben wurde
+
+- Das Aufräumen beim Beenden konnte fertige Ergebnisse löschen; „Ziel enthält Quelle" löschte in einem Fall die Quelle.
+- Aufgabe 8 hielt abgeschnittene Abbilder für bestanden; die Inspektion meldete Erfolg, auch wenn sie keine einzige Angabe lesen konnte.
+- Die Vollständigkeitsprüfung zählte Dateien mit, die der Schreiber bewusst weglässt.
+- Die Quellvorschau packte flache `.ffpfs` vollständig in den Temp-Ordner aus.
+- „Abbild → PKG" rechnete den Platzbedarf mit der Dateigrösse statt mit dem entpackten Dump.
+- Aufgabe 5 nimmt einen Ordner voller Abbilder an; Wege, die die Oberfläche anbot, sich aber nie starten liessen, sind repariert oder entfernt.
+- Eine gewählte AMPR-Fassung wurde beim Bauen still durch eine andere ersetzt.
+- Das Mac-Bündel veränderte UFS2Tool beim Signieren, wodurch `.ffpkg` dort unbrauchbar war; der Bau misst das jetzt nach.
+- Gebaute Linux- und Mac-Fassungen finden ihre Zertifikate wieder (HTTPS-Abrufe wie die AMPR-Aktualisierung).
+- Im Kommandozeilenbetrieb bleibt keine Rückfrage mehr stehen, die dort niemand beantworten kann.
 
 ---
 

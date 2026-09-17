@@ -185,13 +185,16 @@ class SystembefehleTests(unittest.TestCase):
         cls.mac = _plattform_als("darwin")
 
     def test_datei_oeffnen_nutzt_open(self):
-        # Ueber subprocess.run statt Popen: Nur so ist der Rueckgabewert des
-        # Starters lesbar - Popen lieferte ihn nie, und damit galt jeder
-        # Versuch als geglueckt (siehe oeffnen_versuchen).
+        # Der Rueckgabewert des Starters wird gelesen (wait) - frueher galt
+        # jeder Popen-Versuch ungeprueft als geglueckt (siehe
+        # oeffnen_versuchen). Seit 16.09.2026 wieder Popen, aber mit wait:
+        # subprocess.run mit capture_output wartete 20 s, wenn xdg-open das
+        # Programm im Vordergrund startete.
         ziel = str(PROJEKT / "README.md")
-        fertig = mock.Mock(returncode=0, stdout="", stderr="")
+        prozess = mock.Mock()
+        prozess.wait.return_value = 0
         with mock.patch.object(self.mac.shutil, "which", return_value="/usr/bin/open"), \
-             mock.patch.object(self.mac.subprocess, "run", return_value=fertig) as lauf:
+             mock.patch.object(self.mac.subprocess, "Popen", return_value=prozess) as lauf:
             self.assertTrue(self.mac.datei_oeffnen(ziel))
         self.assertEqual(lauf.call_args[0][0], ["open", ziel])
 
@@ -203,13 +206,34 @@ class SystembefehleTests(unittest.TestCase):
 
     def test_datei_oeffnen_meldet_den_fehler_des_starters(self):
         ziel = str(PROJEKT / "README.md")
-        fertig = mock.Mock(returncode=3, stdout="", stderr="kein Programm dafuer")
+        prozess = mock.Mock()
+        prozess.wait.return_value = 3
         with mock.patch.object(self.mac.shutil, "which", return_value="/usr/bin/open"), \
-             mock.patch.object(self.mac.subprocess, "run", return_value=fertig), \
+             mock.patch.object(self.mac.subprocess, "Popen", return_value=prozess), \
              mock.patch.object(self.mac, "webbrowser", create=True):
             ok, grund = self.mac.oeffnen_versuchen(ziel)
         self.assertFalse(ok)
         self.assertIn("3", grund)
+
+    def test_ein_starter_im_vordergrund_ist_erfolg_und_blockiert_nicht(self):
+        """xdg-open ohne Arbeitsumgebung startet das Programm im Vordergrund.
+
+        Bis v1.9.24: 20 s eingefrorenes Fenster, dann Zeitgrenze, dann
+        oeffnete der Browser-Ausweg die Datei ein zweites Mal.
+        """
+        import subprocess as _sp
+        ziel = str(PROJEKT / "README.md")
+        prozess = mock.Mock()
+        prozess.wait.side_effect = _sp.TimeoutExpired(["open", ziel], 3)
+        browser = mock.Mock()
+        with mock.patch.object(self.mac.shutil, "which", return_value="/usr/bin/open"), \
+             mock.patch.object(self.mac.subprocess, "Popen", return_value=prozess), \
+             mock.patch.dict(sys.modules, {"webbrowser": browser}):
+            ok, grund = self.mac.oeffnen_versuchen(ziel)
+        self.assertTrue(ok)
+        self.assertEqual(grund, "")
+        browser.open.assert_not_called()
+        self.assertLessEqual(prozess.wait.call_args.kwargs.get("timeout", 99), 5)
 
     def test_der_grund_laesst_sich_uebersetzen(self):
         """Das Modul darf i18n nicht kennen - also nimmt es Vorlagen entgegen."""
@@ -549,3 +573,84 @@ class AquaKnopfTests(unittest.TestCase):
         ende = self.quelle.index("\n    @staticmethod", anfang)
         block = self.quelle[anfang:ende]
         self.assertIn('self.root.tk.call("tk", "scaling", vorher * faktor)', block)
+
+
+class ZertifikateTests(unittest.TestCase):
+    """HTTPS in der gebauten Fassung ausserhalb von Windows.
+
+    Gemessen am 17.09.2026: Die eingebettete OpenSSL sucht ihre Zertifikate
+    im Linux-Bau v1.9.24 unter /usr/lib/ssl (nur Debian/Ubuntu), in den
+    Mac-Buendeln v1.8.100 unter Python.framework bzw. /usr/local/etc - auf
+    den meisten Rechnern scheiterte damit jeder HTTPS-Abruf.
+    """
+
+    class _Pfade:
+        def __init__(self, cafile=None, capath=None):
+            self.cafile, self.capath = cafile, capath
+
+    def _rufen(self, umgebung, vorhanden=(), **art):
+        from ps5_validator.utils import plattform
+
+        werte = {"gefroren": True, "ist_windows": False, "standard": self._Pfade()}
+        werte.update(art)
+        return plattform.zertifikate_bereitstellen(
+            umgebung=umgebung, gibt_es=lambda pfad: pfad in vorhanden, **werte)
+
+    def test_fehlt_der_eingebaute_ort_gilt_das_buendel_des_systems(self):
+        umgebung = {}
+        fedora = "/etc/pki/tls/certs/ca-bundle.crt"
+        self.assertEqual(self._rufen(umgebung, vorhanden=(fedora,)), fedora)
+        self.assertEqual(umgebung, {"SSL_CERT_FILE": fedora})
+
+    def test_macos_bekommt_die_datei_von_apple(self):
+        umgebung = {}
+        self.assertEqual(self._rufen(umgebung, vorhanden=("/etc/ssl/cert.pem",)),
+                         "/etc/ssl/cert.pem")
+
+    def test_debian_steht_vor_den_anderen(self):
+        umgebung = {}
+        self.assertEqual(self._rufen(umgebung, vorhanden=(
+            "/etc/ssl/cert.pem", "/etc/ssl/certs/ca-certificates.crt")),
+            "/etc/ssl/certs/ca-certificates.crt")
+
+    def test_ohne_buendel_bleibt_alles_wie_es_ist(self):
+        umgebung = {}
+        self.assertEqual(self._rufen(umgebung), "")
+        self.assertEqual(umgebung, {})
+
+    def test_nichts_zu_tun(self):
+        faelle = {
+            "aus dem Quelltext": {"gefroren": False},
+            "unter Windows": {"ist_windows": True},
+            "eingebaute Datei da": {"standard": self._Pfade(cafile="/usr/lib/ssl/cert.pem")},
+            "eingebauter Ordner da": {"standard": self._Pfade(capath="/usr/lib/ssl/certs")},
+        }
+        for fall, art in faelle.items():
+            with self.subTest(fall=fall):
+                umgebung = {}
+                self.assertEqual(self._rufen(umgebung, vorhanden=("/etc/ssl/cert.pem",), **art), "")
+                self.assertEqual(umgebung, {})
+
+    def test_eine_gesetzte_umgebung_gewinnt(self):
+        for name in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+            with self.subTest(name=name):
+                umgebung = {name: "/eigene/wahl"}
+                self.assertEqual(self._rufen(umgebung, vorhanden=("/etc/ssl/cert.pem",)), "")
+                self.assertEqual(umgebung, {name: "/eigene/wahl"})
+
+    def test_der_programmstart_ruft_es_vor_kommandozeile_und_oberflaeche(self):
+        baum = ast.parse((PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8"))
+        start = next(k for k in baum.body if isinstance(k, ast.If)
+                     and "__main__" in ast.unparse(k.test))
+        stellen = {}
+        for nummer, anweisung in enumerate(start.body):
+            text = ast.unparse(anweisung)
+            for name in ("_system_zertifikate_bereitstellen()", "_run_cli(", "tk.Tk(", "TkinterDnD.Tk("):
+                if name in text:
+                    stellen.setdefault(name, nummer)
+        self.assertIn("_system_zertifikate_bereitstellen()", stellen, "Der Programmstart ruft es nicht.")
+        self.assertIn("_run_cli(", stellen, "Die Messung findet den Kommandozeilenzweig nicht mehr.")
+        for folge in ("_run_cli(", "tk.Tk(", "TkinterDnD.Tk("):
+            if folge in stellen:
+                with self.subTest(folge=folge):
+                    self.assertLess(stellen["_system_zertifikate_bereitstellen()"], stellen[folge])

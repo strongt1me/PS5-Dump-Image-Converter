@@ -260,8 +260,11 @@ class UebersetzungTests(unittest.TestCase):
         for schluessel in self.SCHLUESSEL:
             with self.subTest(schluessel=schluessel):
                 self.assertIn(schluessel, STRINGS)
+                # Im Woerterbuch selbst: translate() faellt bei fehlendem
+                # "en" still auf Deutsch zurueck.
                 for sprache in ("de", "en"):
-                    self.assertTrue(translate(sprache, schluessel).strip())
+                    self.assertTrue(str(STRINGS[schluessel].get(sprache) or "").strip(),
+                                    sprache)
 
     def test_platzhalter_werden_gefuellt(self):
         text = translate("de", "klog.preflight.offer_usb", ip="1.2.3.4", port=3232,

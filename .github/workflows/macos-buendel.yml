@@ -77,7 +77,7 @@ on:
       - 'MkPFS-*/**'
       - 'AMPR_PackTools-*/**'
       - 'ProsperoPkg-2.5/**'
-      - 'PS4FFPFSC-0.2.8/**'
+      - 'PS4FFPFSC-0.2.9/**'
       - 'UFS2Tool-4.1/**'
       - 'helloworld/**'
       - 'Backport_Fakelibs/**'

@@ -8,23 +8,25 @@
   "plattformen": {
     "win-x64": {
       "datei": "UFS2Tool.exe",
-      "sha256": "753b78f78259e722fa91a701715fdb5e7141010e7d25a53240a9a72a3555ea9f",
-      "bytes": 12460254
+      "sha256": "4d60f367ac9a89aa170af36f94836dbcea3c18f0bb86b1584f8204d4d7404d47",
+      "bytes": 13312989
     },
     "linux-x64": {
       "datei": "UFS2Tool",
-      "sha256": "03a6322a299fdb87ce6cc4fd2d2112b141dd0b1b57aa5b35a081394ecfd4acfb",
-      "bytes": 13570309
+      "sha256": "b41f10c13902188b5f6c1328db90645a80aac6f8a2aeb713a136987fb6114e36",
+      "bytes": 15015507
     },
     "osx-x64": {
       "datei": "UFS2Tool",
-      "sha256": "09a1c7d465f4e388c502f10596ef7aee9822c6bac1e1d3c84303f1385e35dfd9",
-      "bytes": 13545753
+      "sha256": "6e3898b9a3e3acefac19395fa007db53c6c337429fef341365e29c7001134a97",
+      "bytes": 14459465
     },
     "osx-arm64": {
       "datei": "UFS2Tool",
-      "sha256": "1a2e079d8629513cc071eddc7e1c820b05a87811decb5e5e0def3c0f9894b6a7",
-      "bytes": 12823561
+      "sha256": "51d88804276b3abb01fb388fc3746c1d094f9061f704e9ba19a8b092bf0e2d92",
+      "bytes": 13671289
     }
-  }
+  },
+  "laufzeit": ".NET 10.0 (LTS, Unterstuetzung bis 14.11.2028). Bis zum 17.09.2026 .NET 8.0.30; .NET 8 endet am 10.11.2026.",
+  "neu_gebaut": "2026-09-17 auf .NET 10 (SDK 10.0.303), Patch unveraendert"
 }

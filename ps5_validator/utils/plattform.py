@@ -23,6 +23,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
+from collections.abc import Callable, MutableMapping
+from typing import Any
 
 logger = logging.getLogger("PS5Converter.plattform")
 
@@ -270,6 +273,12 @@ def _herunterfahr_satz(texte: "dict[str, str] | None", kennung: str,
         return HERUNTERFAHR_MELDUNGEN[kennung].format(**werte)
 
 
+#: So lange wartet :func:`oeffnen_versuchen` auf ``open``/``xdg-open``. Beide
+#: kehren normalerweise sofort zurueck; laeuft der Starter laenger, hat er das
+#: Programm im Vordergrund gestartet.
+_STARTER_WARTEZEIT_S = 3.0
+
+
 def oeffnen_versuchen(pfad: str,
                       texte: "dict[str, str] | None" = None) -> tuple[bool, str]:
     """Oeffnet eine Datei oder einen Ordner - und nennt den Grund bei Misserfolg.
@@ -329,14 +338,31 @@ def oeffnen_versuchen(pfad: str,
         if shutil.which(starter):
             # Nicht mehr nach DEVNULL: Die Fehlerausgabe des Starters ist
             # das Einzige, was ueberhaupt sagt, woran es lag.
-            lauf = subprocess.run(
-                [starter, ziel], capture_output=True, text=True,
-                encoding="utf-8", errors="replace", timeout=20)
-            if lauf.returncode == 0:
-                return (True, "")
-            zeilen = (lauf.stderr or lauf.stdout or "").strip().splitlines()
+            #
+            # Aber in eine Datei, nicht in eine Pipe, und nur kurz gewartet.
+            # Bis v1.9.24 lief hier subprocess.run mit capture_output und 20 s
+            # Zeitgrenze - im Hauptfaden. Ohne erkannte Arbeitsumgebung startet
+            # xdg-open das Programm im Vordergrund; es erbte die Pipes, run
+            # wartete die vollen 20 s (Fenster eingefroren), lief in den
+            # Timeout, und der Browser-Ausweg unten oeffnete die Datei ein
+            # zweites Mal. Laeuft der Starter nach der Wartezeit noch, hat er
+            # das Programm gestartet - das ist Erfolg.
+            with tempfile.TemporaryFile() as fehlerausgabe:
+                lauf = subprocess.Popen(
+                    [starter, ziel], stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=fehlerausgabe,
+                    start_new_session=True)
+                try:
+                    code = lauf.wait(timeout=_STARTER_WARTEZEIT_S)
+                except subprocess.TimeoutExpired:
+                    return (True, "")
+                if code == 0:
+                    return (True, "")
+                fehlerausgabe.seek(0)
+                zeilen = fehlerausgabe.read().decode(
+                    "utf-8", "replace").strip().splitlines()
             return (False, _satz("starter_fehler", starter=starter,
-                                 code=lauf.returncode,
+                                 code=code,
                                  hinweis=(": " + zeilen[0][:160]) if zeilen else ""))
     except Exception as exc:  # noqa: BLE001
         logger.debug("Öffnen über das System fehlgeschlagen (%s): %s", ziel, exc)
@@ -455,6 +481,71 @@ def konfigurationsordner(anwendung: str = "PS5ImageConverterPro") -> str:
 
         return tempfile.gettempdir()
     return os.path.join(basis, anwendung)
+
+
+# ---------------------------------------------------------------------------
+# Zertifikate fuer HTTPS in der gebauten Fassung
+# ---------------------------------------------------------------------------
+#: Wo verbreitete Systeme ihr CA-Buendel ablegen, in der Reihenfolge, die
+#: auch Go durchsucht (crypto/x509/root_linux.go). ``/etc/ssl/cert.pem``
+#: deckt zusaetzlich macOS ab, wo Apple die Datei pflegt.
+CA_BUENDEL_KANDIDATEN = (
+    "/etc/ssl/certs/ca-certificates.crt",                 # Debian, Ubuntu, Gentoo, Arch
+    "/etc/pki/tls/certs/ca-bundle.crt",                   # Fedora, RHEL 6
+    "/etc/ssl/ca-bundle.pem",                             # openSUSE
+    "/etc/pki/tls/cacert.pem",                            # OpenELEC
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # CentOS, RHEL 7
+    "/etc/ssl/cert.pem",                                  # Alpine, macOS
+)
+
+
+def zertifikate_bereitstellen(umgebung: MutableMapping[str, str] | None = None,
+                              gefroren: bool | None = None,
+                              ist_windows: bool = IST_WINDOWS,
+                              standard: Any = None,
+                              gibt_es: Callable[[str], bool] = os.path.isfile) -> str:
+    """Zeigt die mitgebaute OpenSSL auf das CA-Buendel des Systems.
+
+    Die gebaute Fassung bringt ihre eigene OpenSSL mit, und die sucht
+    Zertifikate dort, wo sie gebaut wurde. Gemessen am 17.09.2026: im
+    Linux-Bau v1.9.24 unter ``/usr/lib/ssl`` (nur Debian und Ubuntu haben
+    das), in den Mac-Buendeln v1.8.100 unter
+    ``/Library/Frameworks/Python.framework/Versions/3.12/etc/openssl`` bzw.
+    ``/usr/local/etc/openssl@3``. Fehlt der Ort, scheitert jeder HTTPS-Abruf
+    mit ``CERTIFICATE_VERIFY_FAILED`` - AMPR-Fassungen,
+    Aktualisierungspruefung, Titel-Nachschlag.
+
+    Nichts geschieht unter Windows (Python liest dort den
+    Zertifikatsspeicher des Systems), aus dem Quelltext heraus (die OpenSSL
+    passt dann zum System), wenn ``SSL_CERT_FILE`` oder ``SSL_CERT_DIR``
+    schon gesetzt ist, und wenn der eingebaute Ort vorhanden ist.
+
+    Die Parameter sind fuer Pruefstaende; das Programm ruft ohne.
+
+    Returns:
+        Der gesetzte Pfad, sonst leer.
+    """
+    umgebung = os.environ if umgebung is None else umgebung
+    if gefroren is None:
+        gefroren = bool(getattr(sys, "frozen", False))
+    if ist_windows or not gefroren:
+        return ""
+    if umgebung.get("SSL_CERT_FILE") or umgebung.get("SSL_CERT_DIR"):
+        return ""
+    if standard is None:
+        import ssl
+
+        standard = ssl.get_default_verify_paths()
+    # cafile und capath sind None, wenn es Datei bzw. Ordner nicht gibt.
+    if standard.cafile or standard.capath:
+        return ""
+    for kandidat in CA_BUENDEL_KANDIDATEN:
+        if gibt_es(kandidat):
+            umgebung["SSL_CERT_FILE"] = kandidat
+            logger.info("Zertifikate fuer HTTPS: %s", kandidat)
+            return kandidat
+    logger.warning("Kein CA-Buendel gefunden - HTTPS-Abrufe werden scheitern.")
+    return ""
 
 
 # ---------------------------------------------------------------------------

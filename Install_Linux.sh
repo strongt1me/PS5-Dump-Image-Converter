@@ -101,7 +101,7 @@ Terminal=false
 Categories=Utility;Archiving;Compression;
 Keywords=PS5;Dump;ffpfs;ffpfsc;ffpkg;exFAT;PKG;
 StartupNotify=true
-StartupWMClass=PS5ImageConverter_Pro_FINAL_revised
+StartupWMClass=Ps5dumpimageconverter
 STARTEREOF
 chmod 644 "$STARTER"
 meldung "  Starter:   $STARTER" "$gruen"

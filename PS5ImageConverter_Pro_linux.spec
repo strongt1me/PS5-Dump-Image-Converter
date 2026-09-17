@@ -169,9 +169,9 @@ if os.path.isdir(_prosperopkg):
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
 # und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
 # Vorlage ist bewusst nicht dabei.
-_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.8')
+_ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.9')
 if os.path.isdir(_ps4ffpsc):
-    _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.8'))
+    _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.9'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8

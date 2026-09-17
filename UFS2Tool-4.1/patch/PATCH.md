@@ -45,3 +45,29 @@ Quelle: die unveränderte UFS2Tool-4.1-Quelle (Herkunft oben) mit diesem
 
 Ergebnis-Binärdatei nach `UFS2Tool-4.1/<ziel>/` kopieren und die SHA-256/bytes in
 `UFS2Tool-4.1/pruefsummen.json` nachtragen (die Laufzeit prüft sie).
+
+## Neubau am 17.09.2026: .NET 8 → .NET 10
+
+Grund ist kein Fehler, sondern ein Ablaufdatum: **.NET 8 endet am 10.11.2026**,
+danach gibt es für die mitgelieferte Laufzeit keine Sicherheitskorrekturen mehr.
+.NET 10 ist LTS (bis 14.11.2028) und wird vom mitgelieferten ProsperoPkg
+ohnehin verlangt.
+
+Geändert wurde **nur** `<TargetFramework>net8.0</TargetFramework>` →
+`net10.0` in `UFS2Tool.csproj`; der Patch oben blieb unverändert. Gebaut mit
+SDK 10.0.303, eingebettete Laufzeit **10.0.11**, dieselben vier Ziele und
+dieselben Schalter wie oben. Vor dem Einsetzen geprüft: Das Original
+`Ufs2Image.cs` aus 4.1 enthält `ReadFileToStream` nicht (sonst wäre der Patch
+auf einem fremden Stand gelandet), und jede gebaute Datei hat das erwartete
+Format (Windows PE, ELF x86_64, Mach-O x86_64, Mach-O arm64).
+
+| Ziel | .NET 8 | .NET 10 |
+| --- | --- | --- |
+| `win-x64` | 12.460.254 B | 13.312.989 B |
+| `linux-x64` | 13.570.309 B | 15.015.507 B |
+| `osx-x64` | 13.545.753 B | 14.459.465 B |
+| `osx-arm64` | 12.823.561 B | 13.671.289 B |
+
+**Noch offen:** Der Windows-Bau verlangt per Manifest Administratorrechte, ein
+Probelauf war hier deshalb nicht möglich. Der Beweis über eine echte `.ffpkg`
+steht damit aus – `RUN_FFPKG_INTEGRATION=1` im erhöhten Terminal.

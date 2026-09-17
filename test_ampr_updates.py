@@ -48,6 +48,55 @@ ANTWORT = json.dumps([
 ])
 
 
+#: Die Veroeffentlichung 0.4.2.1 - am 17.09.2026 abgelesen, Namen und
+#: Groessen unveraendert. Drei Bauarten, keine endet auf "-debug".
+ANTWORT_0421 = json.dumps([
+    {"tag_name": "0.4.2.1", "name": "AMPR Emu 0.4.2.1", "assets": [
+        {"name": "ampr-emu-0.4.2.1-fix.zip", "size": 12535407,
+         "browser_download_url": "https://example.invalid/zip"},
+        {"name": "libSceAmpr.sprx-0.4.2.1-test-debug-pack", "size": 633094,
+         "browser_download_url": "https://example.invalid/0421dp"},
+        {"name": "libSceAmpr.sprx-0.4.2.1-test-nopack", "size": 303878,
+         "browser_download_url": "https://example.invalid/0421np"},
+        {"name": "libSceAmpr.sprx-0.4.2.1-test-pack", "size": 423350,
+         "browser_download_url": "https://example.invalid/0421p"},
+    ]},
+])
+
+
+class BauartenTests(unittest.TestCase):
+    """Ab 0.4.2.1 drei Bauarten - sie fielen zu einem Angebot zusammen.
+
+    Bis zum 17.09.2026 galten alle drei als ``no debug`` (keiner der Namen
+    endet auf ``-debug``). ``angebote_lesen`` entdoppelte sie, uebrig blieb
+    der Debug-Bau ``test-debug-pack`` unter dem Namen ``no debug`` -
+    gemessen an der echten Releases-Liste.
+    """
+
+    def test_jede_bauart_wird_ein_eigenes_angebot(self) -> None:
+        angebote = au.angebote_lesen(ANTWORT_0421)
+        self.assertEqual(
+            {("0.4.2.1", "test-debug-pack"), ("0.4.2.1", "test-nopack"), ("0.4.2.1", "test-pack")},
+            {(a.fassung, a.variante) for a in angebote})
+        for angebot in angebote:
+            with self.subTest(anhang=angebot.anhang):
+                self.assertTrue(angebot.anhang.endswith("-" + angebot.variante))
+                self.assertEqual("0.4.2.1 " + angebot.variante, angebot.beschriftung)
+
+    def test_die_ablage_heisst_wie_im_mitgelieferten_bestand(self) -> None:
+        bestand = PROJEKT / "PlayGo & AMPR_EMU" / "AMPR_EMU"
+        for angebot in au.angebote_lesen(ANTWORT_0421):
+            with self.subTest(variante=angebot.variante):
+                ordner = os.path.basename(au.zielordner("x", angebot.fassung, angebot.variante))
+                self.assertTrue((bestand / ordner).is_dir(),
+                                "%s heisst im mitgelieferten Bestand anders." % ordner)
+
+    def test_die_schreibweise_spielt_auch_hier_keine_rolle(self) -> None:
+        self.assertEqual("test-pack", au.variante_aus_anhang("libSceAmpr.sprx-0.4.2.1-TEST-PACK"))
+        self.assertEqual(au.DEBUG, au.variante_aus_anhang("libSceAmpr.sprx-0.3.6.6-test-debug"))
+        self.assertEqual(au.OHNE_DEBUG, au.variante_aus_anhang("libSceAmpr.sprx-0.3.6.6-test"))
+
+
 class LesenTests(unittest.TestCase):
     def setUp(self) -> None:
         self.angebote = au.angebote_lesen(ANTWORT)

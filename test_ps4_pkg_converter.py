@@ -2,7 +2,7 @@
 
 Das Werkzeug wandelt PS4-PKG (Basis, Patch, wahlweise DLC) oder ein bereits
 entpacktes PS4-Spiel in ein ShadowMountPlus-Abbild. Es liegt als Quellauszug
-unter ``PS4FFPFSC-0.2.8/`` im Projekt; seine Qt-Oberfläche bleibt außen vor,
+unter ``PS4FFPFSC-0.2.9/`` im Projekt; seine Qt-Oberfläche bleibt außen vor,
 die Arbeit treibt ein eigenes Fenster über die Kommandozeile an.
 
 Geprüft wird hier dreierlei:
@@ -105,6 +105,28 @@ class InterneModiTests(unittest.TestCase):
         ergebnis = self._aufruf("--ps4-mkpfs", "-V")
         self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr[-400:])
         self.assertIn("1.0.0", ergebnis.stdout + ergebnis.stderr)
+
+    def test_mkpfs_modus_laedt_die_kopie_des_ps4_werkzeugs(self) -> None:
+        """Welche Kopie laeuft, nicht nur welche Fassung sie nennt.
+
+        Beide Kopien (PS4FFPFSC-0.2.9/mkpfs_1_0_0 und MkPFS-1.0.0) melden
+        "MkPFS 1.0.0" - der Test oben sieht den Unterschied nicht (Befund T28,
+        17.09.2026). Am 17.09.2026 gemessen: geladen wird die Kopie des
+        Werkzeugs.
+        """
+        skript = (
+            "import sys, PS5ImageConverter_Pro_FINAL_revised as A\n"
+            "rc = A._run_ps4_subcommand('--ps4-mkpfs', ['-V'])\n"
+            "print('MKPFS-DATEI=' + sys.modules['mkpfs'].__file__)\n"
+            "sys.exit(rc)\n")
+        ergebnis = subprocess.run(
+            [sys.executable, "-c", skript], cwd=str(PROJEKT),
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300)
+        self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr[-400:])
+        zeile = [z for z in ergebnis.stdout.splitlines() if z.startswith("MKPFS-DATEI=")]
+        self.assertTrue(zeile, ergebnis.stdout[-400:])
+        self.assertIn("mkpfs_1_0_0", zeile[0].replace("\\", "/"),
+                      "Der Schalter startet nicht die Kopie des PS4-Werkzeugs.")
 
     def test_doctor_meldet_bereit(self) -> None:
         """Der erste behobene Fehler: doctor verlangte einen Compiler.
@@ -1325,7 +1347,7 @@ class ZwischengespeicherterBestandTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        wurzel = PROJEKT / "PS4FFPFSC-0.2.8"
+        wurzel = PROJEKT / "PS4FFPFSC-0.2.9"
         if str(wurzel) not in sys.path:
             sys.path.insert(0, str(wurzel))
         from ps4ffpsc.pipeline import Settings, inventory_matches_source
@@ -1386,7 +1408,7 @@ class ZwischengespeicherterBestandTests(unittest.TestCase):
         Mit ``refresh=True`` bei ``list`` wuerde jedes Einlesen neu scannen -
         auch das wiederholte Einlesen derselben Quelle, das Minuten kostet.
         """
-        kommandozeile = (PROJEKT / "PS4FFPFSC-0.2.8" / "ps4ffpsc"
+        kommandozeile = (PROJEKT / "PS4FFPFSC-0.2.9" / "ps4ffpsc"
                          / "cli.py").read_text(encoding="utf-8")
         self.assertIn('if args.command == "list":\n            inventory = '
                       'load_or_scan(settings)', kommandozeile)

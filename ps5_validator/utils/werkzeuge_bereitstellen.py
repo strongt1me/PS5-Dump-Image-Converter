@@ -43,7 +43,7 @@ import os
 import platform
 import re
 import sys
-from typing import Callable
+from typing import Any, Callable
 from zipfile import ZipFile
 
 from ps5_validator.utils.nahtstellen import (Melder, Textquelle,
@@ -118,12 +118,42 @@ def ufs2tool_kennung() -> str:
     return ""
 
 
+def _ufs2tool_dateiname(kennung: str) -> str:
+    """Der Dateiname des Baus: ``UFS2Tool.exe`` unter Windows, sonst ``UFS2Tool``."""
+    return "UFS2Tool.exe" if kennung.startswith("win") else "UFS2Tool"
+
+
+def _hexsumme(wert: Any) -> str:
+    """Ein 64-stelliger SHA-256-Wert in Kleinschrift - sonst leer."""
+    text = str(wert or "").strip().lower()
+    return text if re.fullmatch(r"[0-9a-f]{64}", text) else ""
+
+
+def _datei_sha256(pfad: str) -> str:
+    """SHA-256 einer Datei, blockweise gelesen."""
+    summe = hashlib.sha256()
+    # Mit with: Ohne den blieb die Datei offen, bis der Sammler kam - der
+    # Testlauf meldete das als ResourceWarning, und unter Windows blockiert
+    # eine offene Datei das Aufraeumen des Temp-Ordners.
+    with open(pfad, "rb") as datei:
+        for block in iter(lambda: datei.read(1 << 20), b""):
+            summe.update(block)
+    return summe.hexdigest()
+
+
 def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
     """Prueft die mitgelieferte Datei gegen ``pruefsummen.json``.
 
     Fehlt die Liste, wird nicht geprueft - aber auch nicht abgebrochen: Ein
     fehlender Pruefwert ist kein Grund, ein vorhandenes Werkzeug
     abzulehnen. Ein *falscher* dagegen schon.
+
+    Neben ``sha256`` (die Datei, wie sie im Quellordner liegt) gilt auch
+    ``sha256_im_buendel``. Den traegt nur der macOS-Bau ein, siehe
+    :func:`ufs2tool_buendel_nachtragen`: PyInstaller signiert dort jede
+    Mach-O-Datei neu, und die Signatur steht in der Datei selbst. Ohne diesen
+    Wert haette eine geaenderte Signatur jede .ffpkg-Aufgabe der Mac-App an
+    genau dieser Pruefung scheitern lassen.
     """
     liste = os.path.join(wurzel, "pruefsummen.json")
     if not os.path.isfile(liste):
@@ -131,23 +161,124 @@ def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
     try:
         with io.open(liste, encoding="utf-8") as datei:
             daten = json.load(datei)
-        erwartet = str(((daten.get("plattformen") or {}).get(kennung) or {})
-                       .get("sha256", "")).lower()
+        eintrag = (daten.get("plattformen") or {}).get(kennung) or {}
+        erwartet = _hexsumme(eintrag.get("sha256"))
+        im_buendel = _hexsumme(eintrag.get("sha256_im_buendel"))
     except Exception as fehler:  # noqa: BLE001
         logger.debug("UFS2Tool-Pruefsummen nicht lesbar: %s", fehler)
         return
-    if not re.fullmatch(r"[0-9a-f]{64}", erwartet):
+    if not erwartet:
         return
-    # Mit with: Ohne den blieb die Datei offen, bis der Sammler kam - der
-    # Testlauf meldete das als ResourceWarning, und unter Windows blockiert
-    # eine offene Datei das Aufraeumen des Temp-Ordners.
-    with open(pfad, "rb") as datei:
-        gemessen = hashlib.sha256(datei.read()).hexdigest()
-    if gemessen != erwartet:
+    gemessen = _datei_sha256(pfad)
+    if gemessen not in (erwartet, im_buendel):
         raise RuntimeError(
             f"UFS2Tool-v4.1-Integritaetspruefung fuer {kennung} fehlgeschlagen "
             f"(erwartet {erwartet}, erhalten {gemessen})."
         )
+
+
+def ufs2tool_quelle_pruefen(wurzel: str, kennungen: tuple[str, ...]) -> list[str]:
+    """Haelt die Bauten im Quellordner streng gegen ``sha256``.
+
+    Fuer das Bauskript, **vor** dem Einbetten - nur dort ist sicher, dass die
+    Dateien unveraendert sind. ``sha256_im_buendel`` zaehlt hier nicht.
+
+    Returns:
+        Eine Zeile je Abweichung; leer, wenn alles passt.
+    """
+    liste = os.path.join(wurzel, "pruefsummen.json")
+    try:
+        with io.open(liste, encoding="utf-8") as datei:
+            plattformen = json.load(datei).get("plattformen") or {}
+    except (OSError, ValueError, AttributeError) as fehler:
+        return [f"{liste}: nicht lesbar ({fehler})"]
+    probleme = []
+    for kennung in kennungen:
+        eintrag = plattformen.get(kennung) or {}
+        erwartet = _hexsumme(eintrag.get("sha256"))
+        name = str(eintrag.get("datei") or "")
+        pfad = os.path.join(wurzel, kennung, name)
+        if not erwartet or not name:
+            probleme.append(f"{kennung}: kein Pruefwert in {liste}")
+        elif not os.path.isfile(pfad):
+            probleme.append(f"{kennung}: {pfad} fehlt")
+        elif _datei_sha256(pfad) != erwartet:
+            probleme.append(f"{kennung}: {pfad} passt nicht zu {liste}")
+    return probleme
+
+
+def ufs2tool_buendel_pruefen(wurzel: str, kennungen: tuple[str, ...]) -> list[str]:
+    """Prueft die Bauten im fertigen Buendel so, wie das Programm beim Start.
+
+    Kennungen ohne Datei im Buendel werden uebergangen - ein Intel-Buendel
+    muss keinen arm64-Bau enthalten.
+
+    Returns:
+        Eine Zeile je Datei, die das Programm ablehnen wuerde; leer, wenn
+        alles passt.
+    """
+    probleme = []
+    for kennung in kennungen:
+        pfad = os.path.join(wurzel, kennung, _ufs2tool_dateiname(kennung))
+        if not os.path.isfile(pfad):
+            continue
+        try:
+            ufs2tool_pruefsumme(wurzel, kennung, pfad)
+        except RuntimeError as fehler:
+            probleme.append(str(fehler))
+    return probleme
+
+
+def ufs2tool_buendel_nachtragen(wurzel: str) -> dict[str, str]:
+    """Traegt ein, was der macOS-Bau an den eingebetteten Bauten veraendert hat.
+
+    PyInstaller 6 stuft Mach-O-Dateien aus ``datas`` als Programmdateien ein
+    und signiert sie beim Bau neu (``codesign --force``); Build_macOS.sh
+    signiert danach das ganze Buendel. Die Signatur steht in der Datei, also
+    kann sich ihre Pruefsumme aendern. Ob sie es tut, war ohne Mac nicht zu
+    messen (17.09.2026): Die mitgelieferten Bauten sind bereits ad hoc
+    signiert, laden nur Systembibliotheken und tragen keine rpaths - bleibt
+    als Unterschied allein die neue Signatur.
+
+    Weicht eine Datei ab, landet ihr Wert als ``sha256_im_buendel`` in der
+    Liste des Buendels; ``sha256`` bleibt unberuehrt. Nur nach
+    :func:`ufs2tool_quelle_pruefen` aufrufen - sonst segnet das eine falsche
+    Datei ab.
+
+    Returns:
+        Je Kennung der Liste ``"unveraendert"``, ``"nachgetragen"`` oder
+        ``"fehlt"``.
+    """
+    liste = os.path.realpath(os.path.join(wurzel, "pruefsummen.json"))
+    with io.open(liste, encoding="utf-8") as datei:
+        daten = json.load(datei)
+    ergebnis: dict[str, str] = {}
+    geaendert = False
+    for kennung, eintrag in sorted((daten.get("plattformen") or {}).items()):
+        name = str(eintrag.get("datei") or "")
+        pfad = os.path.join(wurzel, kennung, name)
+        if not name or not os.path.isfile(pfad):
+            ergebnis[kennung] = "fehlt"
+            continue
+        gemessen = _datei_sha256(pfad)
+        if gemessen == _hexsumme(eintrag.get("sha256")):
+            ergebnis[kennung] = "unveraendert"
+            if "sha256_im_buendel" in eintrag:
+                del eintrag["sha256_im_buendel"]
+                geaendert = True
+        else:
+            ergebnis[kennung] = "nachgetragen"
+            if eintrag.get("sha256_im_buendel") != gemessen:
+                eintrag["sha256_im_buendel"] = gemessen
+                geaendert = True
+    if geaendert:
+        # In die echte Datei schreiben: Im Buendel ist die Liste unter
+        # Contents/Frameworks ein Verweis nach Contents/Resources, und ein
+        # os.replace setzte an die Stelle des Verweises eine zweite Datei.
+        with io.open(liste, "w", encoding="utf-8", newline="\n") as datei:
+            json.dump(daten, datei, ensure_ascii=False, indent=2)
+            datei.write("\n")
+    return ergebnis
 
 
 def ufs2tool_bereitstellen(wurzel_finden: Callable[[str], str],
@@ -196,9 +327,7 @@ def ufs2tool_bereitstellen(wurzel_finden: Callable[[str], str],
         raise RuntimeError(uebersetzen("werkzeuge.ufs2tool_missing",
                                        system=systemname(),
                                        maschine=platform.machine()))
-    ordner = os.path.join(wurzel, kennung)
-    name = "UFS2Tool.exe" if kennung.startswith("win") else "UFS2Tool"
-    pfad = os.path.join(ordner, name)
+    pfad = os.path.join(wurzel, kennung, _ufs2tool_dateiname(kennung))
     if not os.path.isfile(pfad):
         raise RuntimeError(f"UFS2Tool-v4.1 fehlt: {pfad}")
 

@@ -552,12 +552,22 @@ class QuellgroesseMeldetUndBrichtAbTests(unittest.TestCase):
         echt = app._set_progress
         app._set_progress = lambda *a, **k: (
             gemeldet.append(k.get("size_text", "")), echt(*a, **k))[1]
+        status = []
+        echt_status = app._set_status
+        app._set_status = lambda text: (status.append(text), echt_status(text))[1]
         app.is_running = True
         app._quellgroesse_mit_meldung(str(HAUPTDATEI.parent))
         mit_text = [g for g in gemeldet if g]
         self.assertTrue(mit_text,
                         "Das Vermessen lief stumm - die Aufhaenger-Erkennung "
                         "haelt das fuer einen Absturz.")
+        # Das Groessenfeld allein reicht nicht: der Anzeige-Takt setzt es alle
+        # 100 ms neu, und _stillstand_uhr beobachtet nur Balken und
+        # Statuszeile. Bis v1.9.24 schrieb sie trotz der Meldung nach 120 s
+        # einen Stapelabzug als ERROR ins Protokoll.
+        self.assertTrue([s for s in status if s],
+                        "Das Vermessen meldet sich nicht in der Statuszeile - "
+                        "die Stillstand-Uhr sieht nur die.")
 
     def test_der_abbruch_greift_mitten_im_vermessen(self):
         import threading

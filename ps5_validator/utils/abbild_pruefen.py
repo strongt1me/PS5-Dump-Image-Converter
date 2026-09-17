@@ -210,9 +210,16 @@ class Pruefstand:
 
 
     def _validate_ffpkg_artifact(
-        self, image_path: str, *, base_result: dict[str, Any] | None = None
+        self, image_path: str, *, base_result: dict[str, Any] | None = None,
+        abbruch: Callable[[], bool] | None = None,
     ) -> dict[str, Any]:
-        """Validiert ein FFPKG mit UFS2Tool `info` und read-only `fsck_ufs -fn`."""
+        """Validiert ein FFPKG mit UFS2Tool `info` und read-only `fsck_ufs -fn`.
+
+        ``abbruch`` geht als ``cancel_flag`` an den Validator: Dessen
+        Pruefsumme ueber die ganze Datei liess sich bis v1.9.24 nicht
+        unterbrechen. Abgebrochen gilt die Abnahme als nicht bestanden
+        (``ok`` False) - der Aufrufer fragt den Abbruch selbst ab.
+        """
         result = base_result if base_result is not None else {
             "ok": False,
             "path": image_path,
@@ -239,6 +246,7 @@ class Pruefstand:
                 resume=False,
                 verbose=False,
                 ufs2tool_path=ufs2tool,
+                cancel_flag=abbruch,
             )
             summary = dict(getattr(validation, "summary", {}) or {})
             errors = list(getattr(validation, "errors", []) or [])

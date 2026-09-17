@@ -161,13 +161,20 @@ def _try_parse_name(file_name: str) -> tuple[str, str] | None:
     return stem[:last_underscore], token
 
 
-def _try_parse_leading_int(token: str) -> int | None:
-    i = 0
-    while i < len(token) and token[i].isdigit():
-        i += 1
-    if i == 0:
-        return None
-    return int(token[:i])
+def _teilnummer(token: str) -> int | None:
+    """Die Teilnummer - nur, wenn das Token aus lauter Ziffern besteht.
+
+    Bis zum 17.09.2026 genuegte ein fuehrender Zahlenteil
+    (``_try_parse_leading_int``). Ein ungeteiltes Paket heisst aber meist
+    nach seiner Content-ID, ``EP4350-PPSA05399_00-TETRIS0000000000.pkg``:
+    Hinter dem letzten "_" steht "00-TETRIS...", und daraus wurde Teil 0 -
+    ein Scheinsatz, in dem sich Spiel und Update derselben Title-ID
+    gegenseitig ueberschrieben. LibProsperoPkg nennt als Kennung den Text
+    zwischen "_" und ".", und fuer nummerierte Teile ist das eine Zahl.
+    """
+    if token.isascii() and token.isdigit():
+        return int(token)
+    return None
 
 
 def discover_split_sets(input_dir: str, log: LogFn | None = None,
@@ -192,13 +199,16 @@ def discover_split_sets(input_dir: str, log: LogFn | None = None,
             continue
         base_name, token = parsed
 
-        split_set = sets.setdefault(base_name, SplitSet(base_name=base_name))
-        if token.lower() == META_TOKEN:
-            split_set.meta = full
-            continue
-        number = _try_parse_leading_int(token)
-        if number is None:
+        ist_meta = token.lower() == META_TOKEN
+        number = None if ist_meta else _teilnummer(token)
+        if not ist_meta and number is None:
+            # Erst pruefen, dann den Satz anlegen: Sonst stand fuer "My_Game.pkg"
+            # ein leerer Satz "My" in der Liste statt "keine Saetze gefunden".
             _melde(log, texte, "unbekanntes_token", name=entry)
+            continue
+        split_set = sets.setdefault(base_name, SplitSet(base_name=base_name))
+        if ist_meta:
+            split_set.meta = full
             continue
         split_set.numbered[number] = full
 

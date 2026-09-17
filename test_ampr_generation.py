@@ -391,9 +391,29 @@ class AdresssucheTests(unittest.TestCase):
                 self.assertEqual(len(netz.split(".")), 3)
 
     def test_kaputte_profile_stuerzen_nicht_ab(self) -> None:
-        """Die Datei kann fehlen oder Unsinn enthalten."""
-        adressen = self.GUI._ampr_gen_profil_adressen(_Netzstueck())
-        self.assertIsInstance(adressen, list)
+        """Die Datei kann fehlen oder Unsinn enthalten.
+
+        Bis zum 17.09.2026 las der Test die echte (umgelenkte) Profildatei -
+        eine kaputte wurde nie hergestellt, und ``isinstance(list)`` war auf
+        jedem Weg wahr.
+        """
+        import os
+        import shutil
+        import tempfile
+
+        ordner = tempfile.mkdtemp(prefix="ampr_profile_")
+        self.addCleanup(shutil.rmtree, ordner, True)
+        profile = os.path.join(ordner, "ftp_profiles.json")
+        stueck = _Netzstueck(profil_datei=os.path.join(ordner, "paths.json"))
+        for inhalt in ("{kein json", "[1, 2]", '{"a": "b", "c": {"host": ""}}'):
+            with self.subTest(inhalt=inhalt):
+                with open(profile, "w", encoding="utf-8") as datei:
+                    datei.write(inhalt)
+                self.assertEqual([], self.GUI._ampr_gen_profil_adressen(stueck))
+        # Gegenrichtung: Ein heiles Profil liefert seine Adresse.
+        with open(profile, "w", encoding="utf-8") as datei:
+            datei.write('{"konsole": {"host": "192.0.2.7"}}')
+        self.assertEqual(["192.0.2.7"], self.GUI._ampr_gen_profil_adressen(stueck))
 
     def test_die_suche_bleibt_schnell(self) -> None:
         """Bei 1 s je Adresse braeuchte ein Netz ueber vier Minuten."""

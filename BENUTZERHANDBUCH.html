@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.24</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.25</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.24</span>
-      <span class="marke">Stand 15. September 2026</span>
+      <span class="marke">Version v1.9.25</span>
+      <span class="marke">Stand 18. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -576,7 +576,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h2><span class="nr">7</span> Aufgabe 3 – exFAT konvertieren</h2>
   <div class="kasten">
     <span class="titel">Wof&uuml;r ist das gut?</span>
-    <p>Dasselbe für eine <code>.exFAT</code>-Datei. Sie ist ein echtes Dateisystem-Abbild: Windows kann sie mit OSFMount als Laufwerk einhängen, und Sie sehen den Spielordner wie auf einer Festplatte.</p><p>Gebraucht wird das vor allem zum Nachsehen und für Werkzeuge, die einen Laufwerksbuchstaben erwarten. Zum Weitergeben ist eine <code>.ffpfsc</code> meist die bessere Wahl – sie ist komprimiert.</p>
+    <p>Dasselbe für eine <code>.exFAT</code>-Datei. Sie ist ein echtes Dateisystem-Abbild.</p><p><strong>Zum Auspacken brauchen Sie nichts weiter.</strong> Das Programm liest den Inhalt mit seinem eingebetteten exFAT-Leser direkt aus der Datei – ohne Einhängen, ohne Administratorrechte, auf jedem Betriebssystem. Nur wenn ein Abbild ungewöhnlich aufgebaut ist und der Leser daran scheitert, greift unter Windows der Rückfall über OSFMount; das Programm sagt es dann und kann OSFMount selbst installieren.</p><p>Als Laufwerk einhängen lässt sich eine <code>.exFAT</code> unter Windows trotzdem – praktisch zum Nachsehen und für Werkzeuge, die einen Laufwerksbuchstaben erwarten. Zum Weitergeben ist eine <code>.ffpfsc</code> meist die bessere Wahl – sie ist komprimiert.</p>
   </div>
   <p>Nutzen Sie Aufgabe 3, wenn Ihre Quelle eine <code>.exFAT</code>-Datei ist. Als Ziel stehen Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.ffpkg</code> zur Verfügung.</p>
   <ol class="schritte">
@@ -687,6 +687,18 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
   <h3>11.1 Assetpakete &ndash; die Spieldateien gepackt ablegen</h3>
 
+  <div class="kasten warnung">
+    <span class="titel">Die B&auml;nder entstehen beim <em>Erstellen</em>, nicht in Aufgabe 7</span>
+    <p>Beide Klapplisten geh&ouml;ren zum Einbau beim Erstellen eines Abbilds
+    (Aufgaben 1 bis 6). Aufgabe 7 selbst baut <strong>keine</strong> B&auml;nder
+    und entfernt auch keine: Sie tauscht die Bibliothek, sichert sie, entfernt
+    sie oder baut den Index &ndash; ein vorhandenes Asset-Pack bleibt dabei
+    unangetastet. Der fr&uuml;here Knopf <em>Asset-Pack entfernen</em> ist
+    entfallen; er l&ouml;schte Manifest und B&auml;nder in der Annahme, die
+    Originaldateien l&auml;gen daneben, und das trifft seit der Wahlm&ouml;glichkeit
+    weiter unten nicht mehr in jedem Fall zu.</p>
+  </div>
+
   <p>Neben der Klappliste f&uuml;r die AMPR-Fassung steht seit v1.9.8 eine
   zweite mit zwei Eintr&auml;gen: <strong>Normal</strong> und
   <strong>Neue Methode (Asset-Pack)</strong>. Sie w&auml;hlen dort, wie die
@@ -732,11 +744,26 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   diesen Vergleich sagte nur, dass die B&auml;nder in sich stimmig sind
   &ndash; nicht, dass sie den Spielinhalt tragen.</p>
 
-  <p><strong>Ihre Originaldateien bleiben liegen.</strong> Das Werkzeug
-  k&ouml;nnte sie entfernen; dieses Programm tut es nicht. Ob ein Spiel
-  wirklich jede Datei &uuml;ber den AMPR EMU liest, zeigt erst ein Lauf auf der
-  Konsole &ndash; manche Titel lesen daran vorbei, und das f&auml;llt am PC
-  nicht auf.</p>
+  <p><strong>Ihre Originaldateien bleiben liegen &ndash; wenn Sie nichts
+  anderes sagen.</strong> Beim Start fragt das Programm einmal, ob die
+  gepackten Originale im Ergebnis weggelassen werden sollen; die Vorgabe ist
+  <em>Nein</em>. Entfernt wird ausschlie&szlig;lich in der Arbeitskopie,
+  niemals in Ihrem eigenen Dump-Ordner. In der Kommandozeile hei&szlig;t der
+  Schalter <code>--ampr-originale-weglassen</code>.</p>
+
+  <div class="kasten warnung">
+    <span class="titel">Erst der Konsolentest, dann weglassen</span>
+    <p>Ob ein Spiel wirklich jede Datei &uuml;ber den AMPR EMU liest, zeigt
+    erst ein Lauf auf der Konsole &ndash; manche Titel lesen daran vorbei
+    (etwa &uuml;ber <code>mmap</code>), und das f&auml;llt am PC nicht auf. Der
+    Entwickler der Packwerkzeuge verlangt deshalb den <strong>vollst&auml;ndigen
+    Konsolentest mit den Originalen</strong>, bevor eine Datei verschwindet.
+    Bauen Sie das Abbild also zuerst mit Originalen, spielen Sie es durch, und
+    bauen Sie es erst danach ohne.</p>
+    <p>Platz spart das nur bei <code>.ffpfs</code>, <code>.exFAT</code> und
+    <code>.ffpkg</code>. Eine <code>.ffpfsc</code> komprimiert besser als die
+    B&auml;nder: Sie wurde mit Asset-Pack in keiner Messung kleiner als ohne.</p>
+  </div>
 
   <div class="kasten">
     <span class="titel">Zwei Voraussetzungen &ndash; das Programm sagt sie Ihnen</span>
@@ -1534,7 +1561,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.24), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.25), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1734,8 +1761,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.24</strong></span>
-    <span>Stand 15. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.25</strong></span>
+    <span>Stand 18. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

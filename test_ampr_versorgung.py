@@ -37,11 +37,17 @@ import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
 
 
 def _fassung(wurzel: str, ordnername: str, *libs: str) -> None:
+    """Legt eine Fassung an - mit eigenem Inhalt je Ordner.
+
+    Bis zum 17.09.2026 schrieb jede Fassung dieselben 64 Bytes, und der Test
+    auf "die neueste wird genommen" verglich nur Groessen: Er blieb gruen,
+    auch wenn 0.2.0 statt 0.3.6.6 eingebaut wurde.
+    """
     ziel = os.path.join(wurzel, ordnername)
     os.makedirs(ziel, exist_ok=True)
     for lib in libs:
         with open(os.path.join(ziel, lib), "wb") as fh:
-            fh.write(b"x" * 64)
+            fh.write(("%s/%s" % (ordnername, lib)).encode("utf-8"))
 
 
 class _Lage:
@@ -120,7 +126,9 @@ class VersorgungTests(unittest.TestCase):
         quelle = os.path.join(self.lage.speicher, "0.3.6.6 no debug",
                               "libSceAmpr.sprx")
         ziel = gui._fakelib_pfad(self.lage.dump) / "libSceAmpr.sprx"
-        self.assertEqual(os.path.getsize(quelle), ziel.stat().st_size)
+        with open(quelle, "rb") as fh:
+            self.assertEqual(fh.read(), ziel.read_bytes(),
+                             "Eingebaut wurde nicht die neueste Fassung.")
 
     def test_ohne_playgo_wird_gar_nichts_abgelegt(self):
         """Halb versorgt waere schlechter als gar nicht.

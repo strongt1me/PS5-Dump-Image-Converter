@@ -145,6 +145,45 @@ def _feste_stellen(mit_ausnahmen: bool = True) -> list[tuple[int, str, str]]:
     return sorted(gefunden)
 
 
+def _aufrufname(knoten: ast.Call) -> str:
+    return getattr(knoten.func, "attr", None) or getattr(knoten.func, "id", None) or ""
+
+
+def _angehaengte_stellen(baum: ast.AST | None = None) -> list[tuple[int, str, str]]:
+    """Fester Text, der per ``+=`` an eine Variable kommt, die angezeigt wird.
+
+    Angezeigt heisst: Die Variable steht in den Argumenten einer sichtbaren
+    Stelle (:data:`SICHTBARE_SCHREIBER`) oder in der Vorgabe einer Lambda,
+    deren Rumpf eine solche Stelle ruft - das uebliche Muster fuer Dialoge
+    aus dem Aufgabenfaden (``after(0, lambda m=meldung: showerror(t, m))``).
+    """
+    if baum is None:
+        baum = ast.parse(_quelltext())
+    gefunden: set[tuple[int, str, str]] = set()
+    for funktion in ast.walk(baum):
+        if not isinstance(funktion, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        angezeigt: set[str] = set()
+        for knoten in ast.walk(funktion):
+            if isinstance(knoten, ast.Call) and _aufrufname(knoten) in SICHTBARE_SCHREIBER:
+                for arg in list(knoten.args) + [k.value for k in knoten.keywords]:
+                    angezeigt.update(n.id for n in ast.walk(arg) if isinstance(n, ast.Name))
+            elif isinstance(knoten, ast.Lambda) and any(
+                    isinstance(c, ast.Call) and _aufrufname(c) in SICHTBARE_SCHREIBER
+                    for c in ast.walk(knoten.body)):
+                for vorgabe in list(knoten.args.defaults) + [d for d in knoten.args.kw_defaults if d]:
+                    angezeigt.update(n.id for n in ast.walk(vorgabe) if isinstance(n, ast.Name))
+        for knoten in ast.walk(funktion):
+            if not (isinstance(knoten, ast.AugAssign) and isinstance(knoten.op, ast.Add)
+                    and isinstance(knoten.target, ast.Name)
+                    and knoten.target.id in angezeigt):
+                continue
+            text = _fester_text(knoten.value)
+            if text and EIN_WORT.search(text) and text not in STRINGS and text not in ERLAUBT:
+                gefunden.add((knoten.lineno, knoten.target.id + " +=", text))
+    return sorted(gefunden)
+
+
 class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
     """Der Rundumschlag ueber den Syntaxbaum.
 
@@ -187,6 +226,35 @@ class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
         self.assertEqual([], verwaist,
                          "Diese Ausnahmen betreffen keine Stelle mehr: %s"
                          % verwaist)
+
+    def test_nichts_festes_wird_an_eine_meldung_angehaengt(self):
+        """Fester Text, der per ``+=`` an eine spaeter gezeigte Meldung kommt.
+
+        Der Rundumschlag oben sieht nur, was **direkt** an eine sichtbare
+        Stelle geht. Am 17.09.2026 fand sich zweimal ``_msg +=
+        f"\\n\\nBericht:\\n{pfad}"`` - angezeigt wurde die Variable erst
+        danach, einmal ueber eine Lambda-Vorgabe. "Bericht:" stand damit auf
+        Englisch nach jeder abgeschlossenen und jeder gescheiterten Aufgabe.
+        """
+        stellen = _angehaengte_stellen()
+        self.assertEqual(
+            [], stellen,
+            "Fester Text wird an eine angezeigte Meldung gehaengt:\n%s"
+            % "\n".join("  Zeile %d  %s  %r" % s for s in stellen))
+
+    def test_die_suche_nach_angehaengtem_text_misst_etwas(self):
+        """Ohne diese Probe bliebe die Pruefung darueber still gruen, wenn
+        die Erkennung der angezeigten Variablen nichts mehr faende."""
+        probe = ast.parse(
+            "def f(self):\n"
+            "    meldung = self._t('x')\n"
+            "    meldung += f'\\n\\nBericht:\\n{pfad}'\n"
+            "    self.root.after(0, lambda m=meldung: messagebox.showerror('t', m))\n"
+            "def g(self):\n"
+            "    text = self._t('x')\n"
+            "    text += '\\nFertig'\n"
+            "    messagebox.showinfo('t', text)\n")
+        self.assertEqual([z for z, _w, _t in _angehaengte_stellen(probe)], [3, 7])
 
     #: Die drei Phasen der Fortschrittsanzeige. **Alle drei** - am 10.09.2026
     #: fiel auf, dass hier nur zwei standen: v1.9.7 hatte ``begin_prepare``

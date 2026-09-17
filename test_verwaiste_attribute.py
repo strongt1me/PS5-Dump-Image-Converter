@@ -107,24 +107,82 @@ class VerwaisteAttributeTests(unittest.TestCase):
             "dahinter laeuft nie:\n" + "\n".join(
                 "   %s (Zeilen %s)" % (n, z) for n, z in sorted(verwaist.items())))
 
+    def _methode(self, name: str) -> ast.FunctionDef:
+        klasse = next(k for k in ast.walk(ast.parse(self.quelle))
+                      if isinstance(k, ast.ClassDef)
+                      and k.name == "PS5ConverterGUI")
+        return next(m for m in klasse.body
+                    if isinstance(m, ast.FunctionDef) and m.name == name)
+
     def test_der_abbruch_erreicht_den_messfaden(self) -> None:
-        """Der konkrete Fall von damals, festgehalten.
+        """Der konkrete Fall von damals, festgehalten - ueber den Baum.
 
         ``_kill_task`` nennt in seiner Ablaufbeschreibung Schritt 3
         ausdruecklich. Damit der nicht wieder still ins Leere greift, muss
-        das Ereignis dort entstehen, wo mkpfs laeuft, und auf ``self``
-        liegen.
+        das Ereignis dort entstehen, wo mkpfs laeuft, auf ``self`` liegen und
+        vom Messfaden abgefragt werden.
+
+        Es darf aber NICHT das Fertig-Ereignis der Engine sein. Bis v1.9.24
+        war es dasselbe: Der Abbruch meldete "Engine fertig", obwohl mkpfs im
+        Prozess weiterlief. Die Warteschleife endete ohne abort_requested,
+        der Abbruchzweig lief nie, und ein Neustart geriet an den noch
+        schreibenden alten Lauf.
         """
-        # Bewusst ueber assertTrue und nicht assertIn: assertIn kippt bei
-        # einem Fehlschlag die ganze Quelldatei in die Meldung - beim ersten
-        # Lauf waren das 3,8 MB Ausgabe fuer eine einzige fehlende Zeile.
+        methode = self._methode("_execute_mkpfs")
+
+        veroeffentlicht = [
+            k.value.id for k in ast.walk(methode)
+            if isinstance(k, ast.Assign) and isinstance(k.value, ast.Name)
+            and any(isinstance(z, ast.Attribute) and z.attr == "_engine_done_event"
+                    and isinstance(z.value, ast.Name) and z.value.id == "self"
+                    for z in k.targets)]
+        self.assertEqual(
+            len(veroeffentlicht), 1,
+            "_execute_mkpfs veroeffentlicht das Abbruch-Ereignis nicht mehr "
+            "(genau eine Zuweisung self._engine_done_event = <Ereignis>) - "
+            "der Abbruch kann den Messfaden dann nicht stoppen.")
+        griff = veroeffentlicht[0]
+
+        gewartet = [
+            k.test.operand.func.value.id for k in ast.walk(methode)
+            if isinstance(k, ast.While) and isinstance(k.test, ast.UnaryOp)
+            and isinstance(k.test.op, ast.Not)
+            and isinstance(k.test.operand, ast.Call)
+            and isinstance(k.test.operand.func, ast.Attribute)
+            and k.test.operand.func.attr == "wait"
+            and isinstance(k.test.operand.func.value, ast.Name)]
         self.assertTrue(
-            "self._engine_done_event = engine_done" in self.quelle,
-            "Das Ereignis wird nicht mehr veroeffentlicht - der Abbruch kann "
-            "den Messfaden dann nicht stoppen.")
+            gewartet,
+            "Die Warteschleife 'while not <fertig>.wait(...)' fehlt - der "
+            "Test misst sonst nichts.")
+        self.assertNotIn(
+            griff, gewartet,
+            "Das veroeffentlichte Abbruch-Ereignis ist dasselbe, auf das die "
+            "Warteschleife als 'Engine fertig' wartet. Ein Abbruch beendet "
+            "dann die Schleife ohne abort_requested, obwohl mkpfs weiterlaeuft.")
+
+        abgefragt = any(
+            isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+            and k.func.attr in ("is_set", "wait")
+            and isinstance(k.func.value, ast.Name) and k.func.value.id == griff
+            for innen in ast.walk(methode)
+            if isinstance(innen, ast.FunctionDef) and innen is not methode
+            for k in ast.walk(innen))
         self.assertTrue(
-            'getattr(self, "_engine_done_event", None)' in self.quelle,
-            "Der Abbruchweg liest das Ereignis nicht mehr.")
+            abgefragt,
+            "Kein innerer Faden fragt das Abbruch-Ereignis '%s' ab - der "
+            "Messfaden laeuft nach einem Abbruch weiter." % griff)
+
+        for name in ("_kill_task", "on_closing", "_shutdown_cleanup_and_execute"):
+            with self.subTest(abbruchweg=name):
+                liest = any(
+                    isinstance(k, ast.Call) and isinstance(k.func, ast.Name)
+                    and k.func.id == "getattr" and len(k.args) >= 2
+                    and isinstance(k.args[1], ast.Constant)
+                    and k.args[1].value == "_engine_done_event"
+                    for k in ast.walk(self._methode(name)))
+                self.assertTrue(
+                    liest, "%s liest das Abbruch-Ereignis nicht mehr." % name)
 
 
 if __name__ == "__main__":

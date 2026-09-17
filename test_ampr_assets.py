@@ -217,61 +217,88 @@ class RiegelTests(unittest.TestCase):
                                   "- dieser Test misst dann nichts.")
 
 
-class ZweiSchreiberTests(unittest.TestCase):
-    """Unsere Fassung und die von MkPFS muessen dieselbe Datei liefern.
+class IndexWieBeimEntwicklerTests(unittest.TestCase):
+    """Unser ``ampr_emu.index`` muss byteweise dem Skript des Entwicklers gleichen.
 
-    Es gibt zwei Wege, einen ``ampr_emu.index`` zu schreiben:
-    ``_build_ampr_index_local`` im Hauptprogramm (auch fuer den FTP-Weg, ueber
-    ``_ampr_write_index``) und ``mkpfs.ampr.build_ampr_index`` im eingebetteten
-    Werkzeug. Beide beschreiben denselben Ordner - laufen sie auseinander,
-    haengt es vom Weg ab, welche Datei auf der Konsole landet, und der
-    Unterschied faellt erst dort auf.
+    Vorlage ist ``AMPR_PackTools-4.0/build_ampr_index.py`` - das Werkzeug, mit
+    dem die Anleitung des AMPR-EMU-Entwicklers den Index baut. Bis zum
+    07.09.2026 hielt dieser Test unseren Schreiber gegen den aus MkPFS, und
+    die beiden waren sich einig - beide aber nicht mit der Vorlage: Sie
+    falteten mit ``str.lower()`` und hashten Codepunkte statt UTF-8-Bytes.
+    Bei reinen ASCII-Pfaden faellt das nicht auf (gemessen an Ghost of Yotei,
+    84.217 Dateien, byte-gleich); jeder Pfad mit Umlaut, Makron oder
+    japanischen Zeichen bekam aber einen Hash, den die Laufzeit nicht findet.
+    Den Schreiber aus MkPFS benutzt das Programm seit dem 17.09.2026 nicht
+    mehr (``--no-ampr-index``).
 
-    Am 07.09.2026 wurde behauptet, sie erzeugten bereits unterschiedliche
-    Indexe. Nachgemessen: Sie sind byteweise gleich. Diese Pruefung haelt das
-    fest, statt sich auf die Messung von damals zu verlassen.
+    Der Baum enthaelt deshalb genau die Faelle, in denen die Verfahren
+    auseinanderliefen: Nicht-ASCII-Namen, Grossbuchstaben und die beiden
+    Dateien, die die Vorlage in der Wurzel auslaesst.
     """
 
-    @staticmethod
-    def _spielordner(basis: Path) -> Path:
+    NAMEN = (
+        ("eboot.bin", b"E" * 100),
+        ("sce_sys/param.json", b"{}"),
+        ("fakelib/libSceAmpr.sprx", b"A" * 50),
+        ("daten.bin", b"D" * 1000),
+        ("Ghost_of_Yōtei.dat", b"Y" * 70),
+        ("ÄRGER/ÜBER.bin", b"U" * 30),
+        ("sprache/日本語.txt", b"J" * 20),
+        ("Movies/INTRO.BK2", b"M" * 40),
+        ("ampr_commands.bin", b"C" * 10),
+        ("apr_emu.log", b"L" * 10),
+        ("unter/apr_emu.log", b"L" * 11),
+    )
+
+    @classmethod
+    def _spielordner(cls, basis: Path) -> Path:
         spiel = basis / "spiel"
-        (spiel / "sce_sys").mkdir(parents=True)
-        (spiel / "fakelib").mkdir()
-        for name, inhalt in (("eboot.bin", b"E" * 100),
-                             ("sce_sys/param.json", b"{}"),
-                             ("fakelib/libSceAmpr.sprx", b"A" * 50),
-                             ("daten.bin", b"D" * 1000)):
-            (spiel / name).write_bytes(inhalt)
+        for name, inhalt in cls.NAMEN:
+            ziel = spiel / name
+            ziel.parent.mkdir(parents=True, exist_ok=True)
+            ziel.write_bytes(inhalt)
         return spiel
 
-    def test_beide_wege_liefern_dieselbe_datei(self):
-        import tkinter as tk
+    def test_gleich_dem_skript_des_entwicklers(self):
+        werkzeug = ROOT / "AMPR_PackTools-4.0"
+        if not (werkzeug / "build_ampr_index.py").is_file():
+            self.skipTest("Werkzeugordner nicht mitgeliefert")
+        sys.path.insert(0, str(werkzeug))
         try:
-            wurzel = tk._default_root or tk.Tk()
-            wurzel.withdraw()
-        except Exception:                       # pragma: no cover
-            raise unittest.SkipTest("keine Anzeige verfuegbar")
-        app = GUI(wurzel)
-        if not app.mkpfs_dir:
-            app.mkpfs_dir = app._extract_embedded_mkpfs()
-        if not app.mkpfs_dir:
-            self.skipTest("MkPFS nicht auspackbar")
-        if app.mkpfs_dir not in sys.path:
-            sys.path.insert(0, app.mkpfs_dir)
-        from mkpfs.ampr import build_ampr_index  # noqa: PLC0415
+            import build_ampr_index
+        finally:
+            sys.path.remove(str(werkzeug))
 
+        app = GUI.__new__(GUI)
         with tempfile.TemporaryDirectory() as ordner:
             basis = Path(ordner)
             spiel = self._spielordner(basis)
-            unser, fremd = basis / "unser.index", basis / "fremd.index"
+            unser, vorlage = basis / "unser.index", basis / "vorlage.index"
             app._build_ampr_index_local(spiel, unser)
-            build_ampr_index(spiel, fremd)
+            self.assertEqual(0, build_ampr_index.build_index_local(spiel, vorlage, False))
             self.assertEqual(
-                unser.read_bytes(), fremd.read_bytes(),
-                "Die beiden Index-Schreiber liefern verschiedene Dateien. "
-                "Dann haengt es vom gewaehlten Weg ab, welcher Index auf der "
-                "Konsole landet - und der Unterschied faellt erst dort auf.")
-            self.assertGreater(unser.stat().st_size, 0)
+                unser.read_bytes(), vorlage.read_bytes(),
+                "Unser ampr_emu.index weicht vom Skript des Entwicklers ab. "
+                "Die Laufzeit findet dann Dateien nicht, und ein Asset-Pack "
+                "bekommt andere fileIds.")
+            # Die Gegenprobe gegen einen stumm leeren Vergleich: Die Sonderfaelle
+            # muessen wirklich im Index stehen bzw. fehlen.
+            daten = unser.read_bytes()
+            self.assertIn("Ghost_of_Yōtei.dat".encode(), daten)
+            self.assertIn(b"/app0/unter/apr_emu.log", daten)
+            self.assertNotIn(b"/app0/ampr_commands.bin", daten)
+
+    def test_hash_rechnet_ueber_bytes(self):
+        """Der Hash eines Nicht-ASCII-Pfads folgt dem Byte-Schluessel.
+
+        Ohne Werkzeugordner messbar: Grossbuchstaben ausserhalb von A..Z
+        bleiben stehen, und gerechnet wird ueber die UTF-8-Bytes.
+        """
+        pfad = "/app0/ÄRGER/ÜBER.bin"
+        erwartet = 1469598103934665603
+        for byte in "/app0/Ärger/Über.bin".encode():
+            erwartet = ((erwartet ^ byte) * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+        self.assertEqual(GUI._ampr_fnv1a64_path_hash(pfad), erwartet or 1)
 
 
 class SchalterWirktTests(unittest.TestCase):

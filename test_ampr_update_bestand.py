@@ -236,9 +236,25 @@ class VariantenklasseTests(unittest.TestCase):
 
     def test_jede_klasse_ist_ein_name_den_ampr_updates_kennt(self):
         # Sonst uebersetzte die Methode in eine dritte Sprache.
+        bekannt = (ampr_updates.DEBUG, ampr_updates.OHNE_DEBUG) + ampr_updates.BAUARTEN
         for name in APP.PS5ConverterGUI._AMPR_VARIANT_ORDER:
-            self.assertIn(self.gui._ampr_variantenklasse(name),
-                          (ampr_updates.DEBUG, ampr_updates.OHNE_DEBUG), name)
+            self.assertIn(self.gui._ampr_variantenklasse(name), bekannt, name)
+
+    def test_die_bauarten_bleiben_eigene_varianten(self):
+        """Seit dem 17.09.2026: ampr_updates legt sie unter ihrem Namen ab.
+
+        Zu ``no debug`` zusammengefasst, galt ``0.4.2.2 test-pack`` als
+        vorhanden, sobald 0.4.2.2 als ``test-nopack`` dalag - obwohl nur eine
+        der beiden gepackte Baender liest.
+        """
+        for name in ampr_updates.BAUARTEN:
+            with self.subTest(name=name):
+                self.assertEqual(name, self.gui._ampr_variantenklasse(name.upper()))
+        bestand = [(fassung, self.gui._ampr_variantenklasse(variante))
+                   for fassung, variante in (("0.4.2.1", "test-pack"), ("0.4.2.2", "test-nopack"))]
+        angebote = [_Angebot("0.4.2.2", "test-nopack"), _Angebot("0.4.2.2", "test-pack")]
+        self.assertEqual(["test-pack"],
+                         [a.variante for a in ampr_updates.neuere(angebote, bestand)])
 
     def test_eine_unbekannte_variante_bleibt_stehen(self):
         # "standard" kommt aus einem flachen Ordner ohne Variantenangabe.

@@ -206,12 +206,24 @@ class SicherungTests(unittest.TestCase):
         self.assertTrue(name.endswith(".bak"), name)
 
     def test_zwei_sicherungen_ueberschreiben_sich_nicht(self):
-        """Der Zeitstempel geht auf Sekunden - zwei am selben Tag gehen."""
-        erste, _ = self.gui._smp_sicherung_ablegen("/x/config.ini", "a=1\n")
-        # Der Stempel hat Sekundenaufloesung; ohne Wartezeit waere der Name
-        # gleich. Geprueft wird deshalb der Aufbau, nicht zwei echte Laeufe.
-        self.assertIn("_", os.path.basename(erste))
-        self.assertTrue(os.path.isfile(erste))
+        """Zwei Sicherungen in derselben Sekunde bleiben beide erhalten.
+
+        Bis zum 17.09.2026 pruefte dieser Test nur, dass im Namen ein "_"
+        steht - das kommt aus dem festen Format und stuende auch bei leerem
+        Stempel da. Der Stempel geht auf Sekunden, geoeffnet wurde mit "w":
+        Die zweite Sicherung ersetzte die erste still.
+        """
+        from unittest import mock
+        with mock.patch.object(APP.time, "strftime",
+                               lambda *_a: "2026-09-17_12-00-00"):
+            erste, f1 = self.gui._smp_sicherung_ablegen("/x/config.ini", "a=1\n")
+            zweite, f2 = self.gui._smp_sicherung_ablegen("/x/config.ini", "a=2\n")
+        self.assertEqual(("", ""), (f1, f2))
+        self.assertNotEqual(erste, zweite, "Beide Sicherungen tragen denselben Namen.")
+        with io.open(erste, encoding="utf-8") as fh:
+            self.assertEqual("a=1\n", fh.read(), "Die erste Sicherung wurde ersetzt.")
+        with io.open(zweite, encoding="utf-8") as fh:
+            self.assertEqual("a=2\n", fh.read())
 
     def test_ohne_inhalt_wird_nichts_abgelegt(self):
         pfad, fehler = self.gui._smp_sicherung_ablegen("/x/config.ini", "")
@@ -274,11 +286,22 @@ class SicherungsortTests(unittest.TestCase):
             "Kein Ort liegt im umgelenkten Einstellungsordner: %r" % (orte,))
 
     def test_der_ordner_wird_nicht_im_voraus_angelegt(self):
-        """Ein leerer Ordner neben dem Programm waere nur Verwirrung."""
+        """Ein leerer Ordner neben dem Programm waere nur Verwirrung.
+
+        Bis zum 17.09.2026 prueften die Zusicherungen nur, dass zweimal
+        derselbe Name kommt - ob danach ein Ordner existiert, sah niemand
+        nach. Jetzt an einem Ort, den es sicher noch nicht gibt.
+        """
+        basis = tempfile.mkdtemp(prefix="smpbak_ort_")
+        self.addCleanup(lambda: __import__("shutil").rmtree(basis, ignore_errors=True))
+        orte = [os.path.join(basis, "erster"), os.path.join(basis, "zweiter")]
+        original = APP.PS5ConverterGUI.__dict__["_smp_sicherungsorte"]
+        self.addCleanup(setattr, APP.PS5ConverterGUI, "_smp_sicherungsorte", original)
+        APP.PS5ConverterGUI._smp_sicherungsorte = classmethod(lambda cls, _o=orte: list(_o))
         ordner = APP.PS5ConverterGUI._smp_sicherungsordner()
-        self.assertTrue(ordner, "Es muss ein Ort genannt werden.")
-        # Angelegt wird erst beim Ablegen - der Name allein legt nichts an.
-        self.assertEqual(ordner, APP.PS5ConverterGUI._smp_sicherungsordner())
+        self.assertEqual(orte[0], ordner, "Es muss der erste Ort genannt werden.")
+        self.assertEqual([], os.listdir(basis),
+                         "Die blosse Abfrage hat einen Ordner angelegt.")
 
 
 if __name__ == "__main__":

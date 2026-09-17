@@ -71,16 +71,16 @@ abdecken, bewacht hier bereits `test_mkpfs_fassung.py`.
   gegen das Quellarchiv gezählt). Sie verlangt
   `customtkinter` und `Pillow`; der PS5 Dump & Image Converter bringt sein
   eigenes Fenster mit. Dieselbe Entscheidung wie bei PS4 FFPFSC, siehe
-  `PS4FFPFSC-0.2.8/UPSTREAM.md`.
+  `PS4FFPFSC-0.2.9/UPSTREAM.md`.
 - `tests/`, `.github/`, `assets/`, `scripts/` und die Baudateien der Vorlage.
   Sie gehören zum Entwicklungsstand des Werkzeugs, nicht zu seiner Ausführung.
 
-## Nicht zu verwechseln mit `PS4FFPFSC-0.2.8/mkpfs_1_0_0/`
+## Nicht zu verwechseln mit `PS4FFPFSC-0.2.9/mkpfs_1_0_0/`
 
 Daneben liegt eine **zweite** 1.0.0 – die, welche PS4 FFPFSC 0.2.8 mitliefert,
 samt dessen Patch. Die beiden sind nicht dasselbe:
 
-| | `MkPFS-1.0.0/` (hier) | `PS4FFPFSC-0.2.8/mkpfs_1_0_0/` |
+| | `MkPFS-1.0.0/` (hier) | `PS4FFPFSC-0.2.9/mkpfs_1_0_0/` |
 | --- | --- | --- |
 | Herkunft | PSBrew, Stand 03.09.2026 | Beilage von PS4 FFPFSC 0.2.8 |
 | `fold_inner_name_to_ascii` | ja | nein |

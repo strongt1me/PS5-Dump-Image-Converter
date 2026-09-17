@@ -42,11 +42,20 @@ class _Var:
 
 
 def _gui(**felder):
+    """Die Felder so, wie das Programm sie anlegt (``__init__``, Abschnitt 4).
+
+    Bis 16.09.2026 legte diese Attrappe ``_info_title_var``, ``_info_id_var``
+    usw. an - Namen, die im Programm nie gesetzt werden. Die Methode leerte
+    genau diese Phantome, der Test war gruen, und im echten Fenster blieben
+    Titel, Title-ID und Version der alten Quelle stehen.
+    """
+    from ps5_validator.ui import bedienzustand
+
     gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
     gui._patch_status_var = _Var("Bereit")
-    for name in ("_info_title_var", "_info_id_var", "_info_version_var",
-                 "_info_firmware_var", "_info_region_var", "_info_category_var",
-                 "_info_publisher_var", "_info_method_var"):
+    gui._meta_labels = {schluessel: _Var("alter Wert")
+                        for schluessel in bedienzustand.METADATENFELDER}
+    for name in ("_info_src_size_var", "_info_est_size_var", "_info_method_var"):
         setattr(gui, name, _Var("alter Wert"))
     gui._patch_tree = None
     gui._t = lambda schluessel, **kw: APP.i18n_translate("de", schluessel, **kw)
@@ -68,10 +77,30 @@ class HinweisTests(unittest.TestCase):
         """Das eigentliche Uebel: stimmig aussehende Werte der Vorgaengerquelle."""
         gui = _gui()
         APP.PS5ConverterGUI._show_meta_deferred_hint(gui)
-        for name in ("_info_title_var", "_info_id_var", "_info_version_var",
-                     "_info_region_var"):
+        for schluessel, var in gui._meta_labels.items():
+            with self.subTest(feld=schluessel):
+                self.assertNotEqual(var.get(), "alter Wert")
+        for name in ("_info_src_size_var", "_info_est_size_var"):
             with self.subTest(feld=name):
                 self.assertNotEqual(getattr(gui, name).get(), "alter Wert")
+
+    def test_die_attrappe_nutzt_die_echten_felder(self) -> None:
+        """Jedes Feld, das die Attrappe anlegt, legt auch das Programm an.
+
+        Sonst prueft der Test wieder Phantome - siehe _gui.
+        """
+        import ast
+
+        baum = ast.parse(QUELLDATEI.read_text(encoding="utf-8"))
+        gesetzt = {z.attr for k in ast.walk(baum)
+                   if isinstance(k, (ast.Assign, ast.AnnAssign))
+                   for z in (k.targets if isinstance(k, ast.Assign) else [k.target])
+                   if isinstance(z, ast.Attribute)
+                   and isinstance(z.value, ast.Name) and z.value.id == "self"}
+        attrappe = {n for n in vars(_gui()) if n.startswith("_")
+                    and n not in ("_t", "_append_to_log")}
+        self.assertEqual(sorted(attrappe - gesetzt), [],
+                         "Die Attrappe legt Felder an, die das Programm nie setzt.")
 
     def test_methode_sagt_dass_gewartet_wird(self) -> None:
         gui = _gui()

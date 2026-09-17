@@ -212,7 +212,7 @@ LibProsperoPkg ist verwalteter Code ohne Plattformbindung. Ein
 vorkompiliertes Abbild wird gar nicht gebraucht.
 
 Nachgemessen wurde das Dateiformat, weil genau hier schon einmal ein
-unbrauchbarer Helfer entstand (siehe `PS4FFPFSC-0.2.8/UPSTREAM.md`):
+unbrauchbarer Helfer entstand (siehe `PS4FFPFSC-0.2.9/UPSTREAM.md`):
 
 | Ordner | Größe | Format |
 | --- | --- | --- |

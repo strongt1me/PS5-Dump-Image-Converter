@@ -48,11 +48,16 @@ class I18nTests(unittest.TestCase):
         self.assertEqual(levels, {1, 3, 6, 9})
 
     def test_zstd_level_keys_all_resolve_to_known_translations(self) -> None:
+        # Direkt im Woerterbuch, nicht ueber translate(): Das faellt bei
+        # fehlendem "en" auf den deutschen Text zurueck, und die englische
+        # Haelfte dieses Tests war damit nie rot zu bekommen.
+        from ps5_validator.utils.i18n import STRINGS
+
         for key, _level in ZSTD_LEVEL_KEYS:
             de_text = translate("de", key)
-            en_text = translate("en", key)
             self.assertNotEqual(de_text, key, f"Kein deutscher Text für {key} hinterlegt")
-            self.assertNotEqual(en_text, key, f"Kein englischer Text für {key} hinterlegt")
+            self.assertTrue(STRINGS.get(key, {}).get("en"),
+                            f"Kein englischer Text für {key} hinterlegt")
 
 
 class AnfuehrungszeichenTests(unittest.TestCase):

@@ -398,7 +398,15 @@ def _ids_pruefen(befund: Befund, daten: dict, pfad: str) -> None:
         if spielordner:
             normalisiert = spielordner[:-4] if spielordner.endswith("-app") else spielordner
             if RE_TITLE_ID.match(normalisiert) and normalisiert != title_id:
-                befund.fehler_melden(
+                # Eine Warnung, kein Fehler: In der Datei selbst ist nichts
+                # falsch, und keine Reparatur der param.json kann einen
+                # Ordnernamen aendern. Als Fehler stiess der Befund bis
+                # v1.9.24 die Reparaturkette an - die Nachpruefung scheiterte
+                # am selben Namen, und am Ende wurde angeboten, die komplette
+                # param.json (Sprachbloecke, Altersfreigabe, Attribute) durch
+                # ein Geruest zu ersetzen. In einem Abbild spielt der Name des
+                # Dump-Ordners ohnehin keine Rolle.
+                befund.warnen(
                     f"Ordnername '{spielordner}' passt nicht zu titleId "
                     f"'{title_id}' - Loader finden die Installation sonst nicht"
                 )
@@ -1084,6 +1092,11 @@ def repariere(daten: dict, *, title_id: str = "", content_id: str = "",
     # -- Fehlende Standardfelder ------------------------------------------
     for name, vorgabe in _VORGABEN.items():
         if name not in neu:
+            # Die Inhaltsversion aus pfs-version.dat geht vor - sonst stand
+            # ein gepatchter Dump ohne contentVersion danach als Basisversion
+            # 01.000.000 da, obwohl der Aufrufer die richtige mitgab.
+            if name == "contentVersion":
+                vorgabe = inhalt_vorgabe
             neu[name] = vorgabe
             aenderungen.append(f"{name} ergänzt ({vorgabe!r})")
 

@@ -64,6 +64,38 @@ def plattformordner() -> str:
 BEREIT = "READY"
 NICHT_BEREIT = "NOT_READY"
 
+#: Untergrenze der Zeitgrenze eines Spielbaus, in Sekunden.
+MINDESTZEITGRENZE_S = 7200.0
+
+#: Mit diesem Durchsatz rechnet die Zeitgrenze eines Spielbaus. Gemessen sind
+#: 3,3 MB/s (1,05 GB Dump in 319 s mit ``--schnell``, UPSTREAM.md) - ein
+#: Drittel davon laesst langsamen Platten und schlecht komprimierbaren Daten
+#: Luft.
+MINDESTDURCHSATZ_BYTES_S = 1_000_000
+
+
+def zeitgrenze_fuer(quelle: str) -> float:
+    """Die Zeitgrenze fuer einen Bau aus ``quelle`` - sie waechst mit der Groesse.
+
+    Bis zum 17.09.2026 galten fest zwei Stunden. Beim einzigen gemessenen
+    Durchsatz endete damit jeder Bau ab etwa 23 GB Eingabe hart; ein
+    50-GB-Titel braucht rund vier Stunden. "Abbild -> PKG" loeschte danach
+    den entpackten Dump, und jeder neue Versuch scheiterte an derselben Stelle.
+    Die Grenze soll ein haengendes Werkzeug beenden, nicht einen langsamen
+    Bau - abbrechen kann der Anwender jederzeit selbst.
+
+    Returns:
+        Sekunden, mindestens :data:`MINDESTZEITGRENZE_S`.
+    """
+    gesamt = 0
+    for wurzel, _ordner, dateien in os.walk(quelle):
+        for name in dateien:
+            try:
+                gesamt += os.path.getsize(os.path.join(wurzel, name))
+            except OSError:
+                continue
+    return max(MINDESTZEITGRENZE_S, gesamt / float(MINDESTDURCHSATZ_BYTES_S))
+
 
 class ProsperoFehler(Exception):
     """Das Werkzeug fehlt, bricht ab oder antwortet unverstaendlich."""
@@ -140,9 +172,10 @@ def _laufen_lassen(argumente: list[str],
             damit ein Abbruch ihn beenden kann. Ohne das laeuft er weiter,
             wenn der Aufrufer sein Fenster schliesst - und schreibt weiter in
             den Zielordner. Dasselbe Muster benutzt ``ps4_werkzeug.lauf``.
-        zeitgrenze: Nach so vielen Sekunden wird abgebrochen. Zwei Stunden
-            sind reichlich: Das Packen rechnet die Kraken-Kompression in
-            reinem C#, und die ist bei einem grossen Titel langsam.
+        zeitgrenze: Nach so vielen Sekunden wird abgebrochen. Fuer einen
+            Spielbau rechnet :func:`bauen` sie aus der Quellgroesse (siehe
+            :func:`zeitgrenze_fuer`): Das Packen rechnet die Kraken-Kompression
+            in reinem C#, und die ist bei einem grossen Titel langsam.
 
     Returns:
         ``(Rueckgabewert, Zeilen)``.
@@ -362,7 +395,7 @@ def bauen(quelle: str, zielordner: str,
           lizenzfrei: bool = True,
           fake_signieren: bool = False,
           schnell: bool = True,
-          zeitgrenze: float = 7200.0,
+          zeitgrenze: float | None = None,
           prozess_ablage: dict | None = None) -> str:
     """Baut ein installierbares Debug-Paket aus einem Backup-Ordner.
 
@@ -384,7 +417,8 @@ def bauen(quelle: str, zielordner: str,
             mit dieser Option 319 Sekunden durch. Das Paket wird dabei
             etwas groesser; die Einzelheiten stehen in
             ``ProsperoPkg-2.5/UPSTREAM.md``.
-        zeitgrenze: Sekunden bis zum Abbruch.
+        zeitgrenze: Sekunden bis zum Abbruch. ``None`` rechnet sie aus der
+            Groesse der Quelle (:func:`zeitgrenze_fuer`).
 
     Returns:
         Der Pfad zur fertigen ``.pkg``.
@@ -392,6 +426,8 @@ def bauen(quelle: str, zielordner: str,
     Raises:
         ProsperoFehler: Das Werkzeug fehlt, bricht ab oder nennt keinen Pfad.
     """
+    if zeitgrenze is None:
+        zeitgrenze = zeitgrenze_fuer(quelle)
     argumente = ["build", "--source", quelle, "--out", zielordner]
     if lizenzfrei:
         argumente.append("--license-free")
