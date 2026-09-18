@@ -2,7 +2,27 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.26):** Der **PKG Manager** liegt jetzt als Payload bei – damit installierst du `.pkg`-Dateien direkt von USB oder über das Netzwerk auf der Konsole, auch mehrteilige. Dazu kleinere Verbesserungen an der Diagnose.
+> **Kurz zum aktuellen Stand (v1.9.27):** Erklärt ein Spiel PlayGo-Inhalte und ist PlayGo nicht angehakt, fragt das Programm jetzt **vor** dem Start, ob es PlayGo einschalten soll – statt erst hinterher darauf hinzuweisen. Dazu legt der Einbau des AMPR EMU keine falsche `.orig`-Sicherung mehr an.
+
+---
+
+## v1.9.27 – 18.09.2026
+
+Zwei Korrekturen rund um den AMPR EMU: PlayGo lässt sich jetzt einschalten, solange es noch etwas nützt, und die Sicherung der Originalbibliothek sichert kein falsches Original mehr.
+
+### PlayGo: gefragt wird vor der Arbeit, nicht danach
+
+Manche Spiele erklären PlayGo-Inhalte – Sprach- oder Szenariopakete, erkennbar an `sce_sys/playgo-scenario.json`. Ohne den PlayGo-Stub warten sie unter Umständen auf Pakete, die nie kommen, und starten nicht. Bisher kam der Hinweis darauf zu spät: bei einem Dump-Ordner als Meldung mit nur „OK“ – danach lief die Aufgabe einfach los –, bei einem Abbild sogar erst im Protokoll, nachdem es ausgepackt war.
+
+Jetzt fragt das Programm am Anfang des Laufs, bevor kopiert, entpackt oder gepackt wird: **„PlayGo einschalten?“** Vorbelegt ist *Ja* – das Kästchen wird angehakt, und der Stub kommt gleich mit ins Ergebnis. Mit *Nein* geht es ohne weiter.
+
+Bei Abbildern (`.exFAT`, `.ffpfsc`, `.ffpfs`) sieht das Programm dafür ins Verzeichnis, ohne auszupacken – in Sekundenbruchteilen, auch bei sehr großen Spielen. Nur in ein `.ffpkg` lässt sich so nicht hineinsehen; dort kommt die Frage, sobald die Dateien ausgepackt daliegen, und immer noch vor dem Bau des Ergebnisses. Auf der Kommandozeile und bei der Sammelkonvertierung wird nie gefragt – dort steht ein Hinweis im Protokoll.
+
+### Keine falsche `.orig`-Sicherung mehr
+
+Beim Einbau des AMPR EMU wird eine schon vorhandene Bibliothek als `.orig` gesichert, damit sie sich später wiederherstellen lässt. Lag dort aber schon ein AMPR EMU aus einem früheren Einbau, wurde **dieser** als „Original“ gesichert: Im fertigen Abbild lag dann eine `libSceAmpr.sprx.orig`, die in Wahrheit der Emulator war, und „Zurücksetzen“ hätte ihn wieder zurückgelegt.
+
+Jetzt erkennt das Programm Emulatoren und PlayGo-Stubs am Inhalt und sichert sie nicht mehr; echte Originale werden weiter gesichert. Das gilt für den Einbau beim Erstellen, für Aufgabe 7 und für das Ablegen über die Fenster „AMPR EMU – alte/neue Methode“.
 
 ---
 

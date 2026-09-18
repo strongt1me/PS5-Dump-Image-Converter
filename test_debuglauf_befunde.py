@@ -4062,17 +4062,25 @@ class PlayGoTrennungTests(_TempTest):
         self.assertTrue(self._gui(True)._integration_ampr(spiel))
         self.assertNotIn("main.integrate_playgo_empfohlen", self.protokoll)
 
-    def test_vorabpruefung_warnt_vor_dem_start(self) -> None:
-        """Beim Ordner schon vor dem Start, nicht erst nach dem Packen."""
+    def test_vorab_wird_gefragt_nicht_nur_gewarnt(self) -> None:
+        """Vor der Arbeit, und so, dass sich PlayGo noch einschalten laesst.
+
+        Bis zum 18.09.2026 stand hier eine Meldung in der Vorabpruefung -
+        nur mit "OK", danach lief die Aufgabe los. Jetzt fragt der Anfang
+        des Laufs (mehr in test_playgo_vor_dem_lauf.py).
+        """
         spiel = self._spiel()
-        for playgo, erwartet in ((False, True), (True, False)):
+        for playgo, erwartet in ((False, 1), (True, 0)):
             with self.subTest(playgo=playgo):
                 gui = self._gui(playgo)
                 gui.ampr_integrate_var = self._Wert(True)
-                gui._get_runtime_temp_dir = lambda: self.basis
-                gui._missing_critical_dump_files = lambda *_a: []
-                _fehler, warnungen = gui._run_preflight_checks("pack_folder", spiel, "")
-                self.assertEqual("preflight.playgo_empfohlen" in warnungen, erwartet)
+                gui._lauf_variablen = None
+                gui._save_setting = lambda *_a: None
+                fragen: list = []
+                gui._ask_yesno_threadsafe = (
+                    lambda *a, **_k: fragen.append(a) or False)
+                gui._playgo_vor_dem_lauf_klaeren("pack_folder", spiel)
+                self.assertEqual(erwartet, len(fragen))
 
     def test_titel_ohne_playgo_merkmal_kein_hinweis(self) -> None:
         spiel = self._spiel()

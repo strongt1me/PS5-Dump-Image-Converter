@@ -572,7 +572,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.26"
+APP_VERSION = "v1.9.27"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -4052,6 +4052,11 @@ class PS5ConverterGUI:
         self._cli_ampr_originale_weglassen = False
         self._ampr_originale_weglassen = False
         self._ampr_ordner_ist_kopie = False
+        # PlayGo-Rueckfrage am Anfang des Laufs (_playgo_vor_dem_lauf_klaeren):
+        # schon nachgesehen - oder erst beim Einbau fragen, weil sich das
+        # Abbild vorher nicht lesen liess.
+        self._playgo_geklaert = False
+        self._playgo_beim_einbau_fragen = False
         # Ja in der Umhuell-Rueckfrage: Abbild entpacken, einbauen und wieder
         # zum gewaehlten Container packen (siehe _umhuellenden_weg_klaeren).
         self._umhuellt_neu_packen = False
@@ -6415,20 +6420,12 @@ class PS5ConverterGUI:
         if fehlend:
             warnings.append(self._t("preflight.incomplete_dump", files=", ".join(fehlend)))
 
-        # PlayGo-Titel ohne PlayGo-Stub: vor dem Start sagen, nicht erst im
-        # Protokoll nach einer Stunde Packen. Nur bei einem Ordner - ein
-        # Abbild ist hier noch nicht geoeffnet; dort kommt der Hinweis beim
-        # Einbau (_integration_ampr).
-        try:
-            ampr_ohne_playgo = (bool(self._tk_wert("ampr_integrate_var", False))
-                                and not bool(self._tk_wert("ampr_playgo_var", False)))
-        except (tk.TclError, RuntimeError):
-            ampr_ohne_playgo = False
-        if (ampr_ohne_playgo and mode in self._MODE_TARGET_OPTIONS
-                and os.path.isdir(src)):
-            merkmal = self._titel_nutzt_playgo(src)
-            if merkmal:
-                warnings.append(self._t("preflight.playgo_empfohlen", datei=merkmal))
+        # PlayGo-Titel ohne PlayGo-Stub: Hier stand bis zum 18.09.2026 ein
+        # Hinweis in dieser Liste - nur bei einem Ordner, und nur mit "OK":
+        # Danach lief die Aufgabe los, einschalten liess sich PlayGo nicht
+        # mehr. Bei einem Abbild kam er erst beim Einbau, nach dem Entpacken.
+        # Jetzt fragt _playgo_vor_dem_lauf_klaeren am Anfang des Laufs, bei
+        # Ordner und Abbild, und schaltet PlayGo auf Wunsch gleich ein.
 
         # Einbauten aus einem frueheren Lauf, die ohne Haken trotzdem mitgehen.
         if mode in self._MODE_TARGET_OPTIONS and os.path.isdir(src):
@@ -21987,6 +21984,8 @@ class PS5ConverterGUI:
         self._integration_erledigt = False
         self._ampr_index_entschieden = False
         self._ampr_ordner_ist_kopie = False
+        self._playgo_geklaert = False
+        self._playgo_beim_einbau_fragen = False
 
         self._save_paths(src, dst)
         self._save_runtime_checkpoint(
@@ -22117,6 +22116,10 @@ class PS5ConverterGUI:
                 "pack_folder", "unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
                 "batch_convert", "universal_convert",
             ):
+                # Vor dem ersten Byte Arbeit fragen, ob PlayGo mit hinein
+                # soll - nicht erst, nachdem stundenlang kopiert oder
+                # entpackt wurde.
+                self._playgo_vor_dem_lauf_klaeren(mode, src)
                 success = self._run_flexible_conversion(mode, src, dst)
             elif mode == "inspect":
                 success = self._mode_inspect(src)
@@ -24779,6 +24782,237 @@ class PS5ConverterGUI:
                 return merkmal
         return ""
 
+    @classmethod
+    def _playgo_merkmal_in(cls, pfade) -> str:
+        """Das erste PlayGo-Merkmal in einer Liste relativer Pfade, oder "".
+
+        Das Gegenstueck zu ``_titel_nutzt_playgo`` fuer ein Abbild: Dort gibt
+        es keine Dateien zum Nachsehen, nur die Liste aus dem Verzeichnis.
+        Liegt das Spiel eine Ebene tiefer ("PPSA26344/sce_sys/..."), zaehlt
+        das Merkmal ebenso.
+        """
+        gesehen = {str(p or "").replace("\\", "/").lower().lstrip("/")
+                   for p in pfade}
+        for merkmal in cls._PLAYGO_MERKMALE:
+            if merkmal in gesehen or any(p.endswith("/" + merkmal) for p in gesehen):
+                return merkmal
+        return ""
+
+    def _abbild_eintraege(self, pfad: str) -> list[str] | None:
+        """Die Dateipfade in einem Abbild - ohne es auszupacken.
+
+        Dieselbe leichte Sicht wie die Metadaten- und die AMPR-Anzeige:
+        gelesen werden Kopf, Inode-Tabelle und Verzeichnisse, keine
+        Nutzdaten. Drei Bauformen:
+
+        * rohes ``.exfat`` - der exFAT-Leser direkt auf der Datei,
+        * flache ``.ffpfs``/``.ffpfsc`` - der PFS-Leser direkt auf der Datei,
+        * umhuellende ``.ffpfsc`` - die innere Ebene (exFAT oder PFS) ueber
+          ``open_inner_file_view``.
+
+        Ein ``.ffpkg`` (UFS2) ist so nicht zu lesen.
+
+        Bei exFAT nur die oberen Ebenen: die Wurzel, jeder Ordner darin und
+        darunter nur ``sce_sys``. Der ganze Baum dauerte gemessen (18.09.2026,
+        HDD, kalter Zwischenspeicher) bei DIRT5 mit 67.226 Dateien 137 s, bei
+        Forza Horizon 5 mit 21.484 Dateien 26 s - so lange stuende der Lauf
+        vor der ersten Frage. Die PFS-Leser bauen ihren Baum in einem Stueck;
+        dort kommt er ganz.
+
+        Returns:
+            Die relativen Pfade der gelesenen Dateien, oder None, wenn nicht
+            hineinzusehen war. None heisst "unbekannt", nicht "nichts drin".
+        """
+        # Den Engine-Pfad selbst setzen - wie _ampr_marker_im_container, das
+        # sonst still unbrauchbar wird, wenn kein Metadatenlauf vorausging.
+        _mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
+        if _mkpfs_dir and _mkpfs_dir not in sys.path:
+            sys.path.insert(0, _mkpfs_dir)
+        try:
+            from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # type: ignore[import-not-found]
+            from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # type: ignore[import-not-found]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("MkPFS-Leser fuer %s nicht verfuegbar: %s", pfad, exc)
+            return None
+
+        class _ObererExfatLeser(ExfatReader):
+            """Steigt nur in die Ordner ab, in denen sce_sys liegen kann.
+
+            ``_walk_directory`` ruft sich fuer jeden Unterordner selbst auf;
+            hier endet der Abstieg. Benennt MkPFS die Methode einmal um,
+            wird wieder der ganze Baum gelesen - langsamer, aber richtig.
+            """
+
+            def _walk_directory(self, first_cluster, no_fat_chain, length, rel_dir):
+                teile = [t for t in str(rel_dir).replace("\\", "/").lower().split("/") if t]
+                if len(teile) > 2 or (len(teile) == 2 and teile[1] != "sce_sys"):
+                    return []
+                return super()._walk_directory(first_cluster, no_fat_chain, length, rel_dir)
+
+        def _pfade(leser: Any) -> list[str]:
+            return [str(getattr(e, "rel_path", "") or getattr(e, "path", "") or "")
+                    for e in leser.iter_files()]
+
+        try:
+            with open(pfad, "rb") as fh:
+                # Rohes exFAT: Kennung "EXFAT   " ab Byte 3 des Bootsektors.
+                fh.seek(3)
+                if fh.read(8) == b"EXFAT   ":
+                    fh.seek(0)
+                    return _pfade(_ObererExfatLeser(fh))
+                # Flaches PFS. Eine umhuellende .ffpfsc liest sich hier auch -
+                # als eine einzige Datei, das innere Abbild. Das ist kein
+                # Spielbaum, dann geht es unten eine Ebene tiefer.
+                fh.seek(0)
+                try:
+                    leser = self._open_virtual_pfs_reader(fh)
+                    flach = _pfade(leser) if leser is not None else []
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Kein flaches PFS in %s: %s", pfad, exc)
+                    flach = []
+                if any("sce_sys/" in p.replace("\\", "/").lower() for p in flach):
+                    return flach
+        except OSError as exc:
+            logger.debug("Abbild %s nicht lesbar: %s", pfad, exc)
+            return None
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Abbild %s nicht auszuwerten: %s", pfad, exc)
+            return None
+
+        try:
+            sicht = open_inner_file_view(Path(pfad))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Innere Sicht auf %s nicht zu oeffnen: %s", pfad, exc)
+            return None
+        if sicht is None:
+            return None
+        virtual_fh, backing_fh, _name = sicht
+        try:
+            try:
+                return _pfade(_ObererExfatLeser(virtual_fh))
+            except Exception:  # noqa: BLE001
+                # Kein exFAT - dann der PFS-in-PFS-Adapter.
+                try:
+                    virtual_fh.seek(0)
+                    leser = self._open_virtual_pfs_reader(virtual_fh)
+                    return _pfade(leser) if leser is not None else None
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Innere Ebene von %s nicht lesbar: %s", pfad, exc)
+                    return None
+        finally:
+            for zu in (virtual_fh, backing_fh):
+                try:
+                    zu.close()
+                except Exception:  # noqa: BLE001
+                    pass
+
+    def _playgo_merkmal_der_quelle(self, src: str) -> str | None:
+        """Erklaert die Quelle PlayGo-Inhalte - Ordner wie Abbild?
+
+        Returns:
+            Das Merkmal, "" wenn nachgesehen und nichts gefunden, oder None,
+            wenn nicht hineinzusehen war (etwa bei einem .ffpkg).
+        """
+        if os.path.isdir(src):
+            return self._titel_nutzt_playgo(src)
+        if os.path.isfile(src):
+            pfade = self._abbild_eintraege(src)
+            return None if pfade is None else self._playgo_merkmal_in(pfade)
+        return None
+
+    def _playgo_vor_dem_lauf_klaeren(self, mode: str, src: str) -> None:
+        """Fragt vor der eigentlichen Arbeit, ob PlayGo mit hinein soll.
+
+        Bis zum 18.09.2026 kam der Hinweis zu spaet, um noch etwas zu
+        aendern: bei einem Ordner als Meldung mit nur "OK" vor dem Start,
+        bei einem Abbild erst im Protokoll, nachdem es ausgepackt war. Wer
+        PlayGo daraufhin wollte, musste abbrechen oder das Ergebnis neu
+        bauen - bei Ghost of Yotei (einziger von 31 gemessenen Dumps mit
+        sce_sys/playgo-scenario.json) Stunden.
+
+        Jetzt wird hier gefragt, im Aufgabenfaden, bevor kopiert, entpackt
+        oder gepackt wird. Ein Ordner ist sofort geprueft, ein Abbild ueber
+        sein Verzeichnis (``_abbild_eintraege``). Laesst sich nicht
+        hineinsehen - ein .ffpkg -, fragt ``_integration_ampr`` beim Einbau,
+        sobald die Dateien ausgepackt daliegen: spaeter, aber noch vor dem
+        Bau des Ergebnisses.
+
+        PlayGo kommt nie von selbst dazu. Auf der Kommandozeile gibt es
+        keine Rueckfrage; dort steht nur der Hinweis im Protokoll, und es
+        gilt die gespeicherte Einstellung. Bei einer Sammelkonvertierung
+        wird ebenfalls nicht gefragt - sie soll unbeaufsichtigt durchlaufen.
+        """
+        self._playgo_geklaert = False
+        self._playgo_beim_einbau_fragen = False
+        if mode not in self._MODE_TARGET_OPTIONS or mode == "batch_convert":
+            return
+        if not self._tk_wert("ampr_integrate_var", False) \
+                or self._tk_wert("ampr_playgo_var", False):
+            return
+        self._set_status(self._t("status.playgo_pruefen"))
+        merkmal = self._playgo_merkmal_der_quelle(src)
+        if merkmal is None:
+            if not getattr(self, "_cli_mode", False):
+                self._append_to_log(self._t("main.playgo_nicht_pruefbar"))
+                self._playgo_beim_einbau_fragen = True
+            return
+        # Nachgesehen - der Einbau muss nicht noch einmal davon anfangen.
+        self._playgo_geklaert = True
+        if merkmal and getattr(self, "is_running", True):
+            self._playgo_nachfragen(merkmal)
+
+    def _playgo_nachfragen(self, merkmal: str) -> bool:
+        """Die Rueckfrage selbst. Liefert True, wenn PlayGo jetzt an ist.
+
+        "Ja" wirkt wie das Kaestchen: Es wird angehakt und gespeichert, und
+        der laufende Auftrag nimmt den PlayGo-Stub mit. Vorbelegt ist "Ja" -
+        fuer einen Titel, der PlayGo-Inhalte erklaert, ist das der Weg, auf
+        dem er startet.
+        """
+        self._playgo_beim_einbau_fragen = False
+        if getattr(self, "_cli_mode", False):
+            self._append_to_log(self._t("main.integrate_playgo_empfohlen",
+                                        datei=merkmal))
+            return False
+        ja = self._ask_yesno_threadsafe(
+            self._t("dialog.title.playgo_empfohlen"),
+            self._t("dialog.msg.playgo_empfohlen", datei=merkmal),
+            default_yes=True)
+        if not ja:
+            self._append_to_log(self._t("main.playgo_bleibt_aus", datei=merkmal))
+            return False
+        self._playgo_einschalten()
+        self._append_to_log(self._t("main.playgo_eingeschaltet", datei=merkmal))
+        return True
+
+    def _playgo_einschalten(self) -> None:
+        """Hakt PlayGo an - fuer den laufenden Auftrag und im Fenster.
+
+        Der Aufgabenfaden liest die Kaestchen aus dem Startstand
+        (``_lauf_variablen``), nie aus Tk. Dort wird der Wert gesetzt; das
+        Kaestchen und die Einstellung zieht der Hauptfaden nach.
+        """
+        stand = getattr(self, "_lauf_variablen", None)
+        if stand is None:
+            stand = {}
+            self._lauf_variablen = stand
+        stand["ampr_playgo_var"] = True
+
+        def _im_fenster() -> None:
+            try:
+                self.ampr_playgo_var.set(True)
+                self._save_setting("integrate_playgo", True)
+            except (AttributeError, RuntimeError, tk.TclError) as exc:
+                logger.debug("PlayGo-Kaestchen nicht nachziehbar: %s", exc)
+
+        if threading.current_thread() is threading.main_thread():
+            _im_fenster()
+            return
+        try:
+            self.root.after(0, _im_fenster)
+        except (AttributeError, RuntimeError, tk.TclError) as exc:
+            logger.debug("PlayGo-Kaestchen nicht nachziehbar: %s", exc)
+
     # ==================================================================
     # Integration beim Erstellen: AMPR EMU und BACKPORT
     #
@@ -25501,22 +25735,29 @@ class PS5ConverterGUI:
         if not self._ampr_apply_library(ordner, auswahl["path"], "libSceAmpr.sprx"):
             return False
 
-        if self._tk_wert("ampr_playgo_var", False):
-            playgo = self._ampr_playgo_zur_version(auswahl)
-            if not playgo:
-                self._append_to_log(self._t("main.integrate_playgo_missing"))
-            elif not self._ampr_apply_library(ordner, playgo, "libScePlayGo.sprx"):
-                return False
-        else:
+        playgo_an = bool(self._tk_wert("ampr_playgo_var", False))
+        if not playgo_an:
             # PlayGo kommt nie von selbst dazu (eigenes Kaestchen). Verschweigen
             # darf das Protokoll aber nicht, wenn der Titel PlayGo-Inhalte
             # erklaert: Ghost of Yotei ist der einzige von 31 gemessenen Dumps
             # mit sce_sys/playgo-scenario.json (26 Sprachpakete) - und laut
             # Anwenderbericht startet er nur mit dem PlayGo-Stub.
+            #
+            # Gefragt wird normalerweise schon am Anfang des Laufs
+            # (_playgo_vor_dem_lauf_klaeren). Hier nur, wenn dort nicht
+            # hineinzusehen war - ein .ffpkg liegt erst jetzt ausgepackt da.
             merkmal = self._titel_nutzt_playgo(ordner)
-            if merkmal:
+            if merkmal and getattr(self, "_playgo_beim_einbau_fragen", False):
+                playgo_an = self._playgo_nachfragen(merkmal)
+            elif merkmal and not getattr(self, "_playgo_geklaert", False):
                 self._append_to_log(self._t(
                     "main.integrate_playgo_empfohlen", datei=merkmal))
+        if playgo_an:
+            playgo = self._ampr_playgo_zur_version(auswahl)
+            if not playgo:
+                self._append_to_log(self._t("main.integrate_playgo_missing"))
+            elif not self._ampr_apply_library(ordner, playgo, "libScePlayGo.sprx"):
+                return False
 
         # Der Index zaehlt den Inhalt des Ordners auf; er muss nach dem
         # Austausch neu entstehen.
@@ -26810,6 +27051,30 @@ class PS5ConverterGUI:
             }
         return result
 
+    #: Woran eine Ersatzbibliothek zu erkennen ist, gemessen am 18.09.2026:
+    #: "[AMPR_EMU]" steckt in allen 14 EMU-Fassungen des Bestands (auch den
+    #: Debug-Bauten), "playgo_stub.dat" in beiden PlayGo-Stubs - und keines
+    #: von beiden in einer der 18 Sony-Bibliotheken der BACKPORT-Saetze.
+    _ERSATZ_KENNZEICHEN: tuple[bytes, ...] = (b"[AMPR_EMU]", b"playgo_stub.dat")
+
+    @classmethod
+    def _ist_ersatzbibliothek(cls, pfad) -> bool:
+        """Ist die Datei selbst ein AMPR EMU oder PlayGo-Stub - kein Original?
+
+        Eine solche Datei als ``.orig`` zu sichern ist falsch: Sie stammt aus
+        einem frueheren Einbau, nicht vom Spiel. Gemessen an Ghost of Yotei
+        (18.09.2026): Der Quell-Dump trug den Emulator vom 12.09., das Abbild
+        danach ``libSceAmpr.sprx.orig`` - byte-gleich mit dem Emulator.
+        "Zuruecksetzen" haette den alten Emulator als Original zurueckgelegt.
+        Die Dateien sind klein (unter 1 MB), gelesen wird ganz.
+        """
+        try:
+            daten = Path(pfad).read_bytes()
+        except OSError as exc:
+            logger.debug("Bibliothek nicht lesbar (%s): %s", pfad, exc)
+            return False
+        return any(kennzeichen in daten for kennzeichen in cls._ERSATZ_KENNZEICHEN)
+
     def _ampr_apply_library(
         self, root: str, source_file: str, lib_name: str = "", keep_backup: bool = True
     ) -> bool:
@@ -26818,7 +27083,9 @@ class PS5ConverterGUI:
         Beim ersten Austausch wird die vom Spiel mitgelieferte Datei als
         ``<name>.orig`` gesichert, damit sie später wiederherstellbar bleibt.
         Eine bereits vorhandene Sicherung wird nie überschrieben – sonst ginge
-        das Original nach dem zweiten Wechsel verloren.
+        das Original nach dem zweiten Wechsel verloren. Liegt dort schon ein
+        AMPR EMU oder PlayGo-Stub aus einem früheren Einbau, gibt es kein
+        Original zu sichern (``_ist_ersatzbibliothek``).
         """
         target_name = lib_name or os.path.basename(source_file)
         if target_name not in self._AMPR_LIB_NAMES:
@@ -26840,8 +27107,12 @@ class PS5ConverterGUI:
             backup = fakelib / (target_name + self._AMPR_BACKUP_SUFFIX)
 
             if keep_backup and target.is_file() and not backup.is_file():
-                shutil.copy2(target, backup)
-                self._append_to_log(self._t("log.manual.ampr_backup_created", name=backup.name))
+                if self._ist_ersatzbibliothek(target):
+                    self._append_to_log(self._t(
+                        "log.manual.ampr_backup_ersatz", name=target.name))
+                else:
+                    shutil.copy2(target, backup)
+                    self._append_to_log(self._t("log.manual.ampr_backup_created", name=backup.name))
 
             if target.is_file():
                 try:
@@ -37568,10 +37839,16 @@ class PS5ConverterGUI:
             try:
                 # Ein vorhandenes Original einmal sichern, sonst ist es weg.
                 # Nur einmal: Beim zweiten Lauf laege sonst die bereits
-                # ersetzte Bibliothek als "Original" da.
+                # ersetzte Bibliothek als "Original" da. Und nur ein echtes
+                # Original - ein Emulator aus einem frueheren Einbau ist
+                # keines (siehe _ist_ersatzbibliothek).
                 sicherung = zielordner / (name + self._AMPR_BACKUP_SUFFIX)
                 if zielweg.is_file() and not sicherung.exists():
-                    shutil.copy2(zielweg, sicherung)
+                    if self._ist_ersatzbibliothek(zielweg):
+                        zeilen.append(self._t("amprgen.keine_sicherung_ersatz",
+                                              name=name))
+                    else:
+                        shutil.copy2(zielweg, sicherung)
                 shutil.copy2(str(quelle), zielweg)
                 zeilen.append(self._t("amprgen.placed", name=name))
             except OSError as exc:
