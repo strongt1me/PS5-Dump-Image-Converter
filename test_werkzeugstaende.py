@@ -181,6 +181,30 @@ class RueckstandTests(unittest.TestCase):
         self.assertEqual(ws.rueckstaende({"ftpsrv-ps5_v0.21.elf": "0.21"}, []), [])
 
 
+class EchterBestandTests(unittest.TestCase):
+    """Der wirkliche Bestand dieses Projekts, nicht nur ein Nachbau.
+
+    Die uebrigen Pruefungen arbeiten mit Wegwerfordnern - sie wuerden nicht
+    merken, wenn jemand eine Nutzlast hinzulegt und die Zeile in
+    THIRD_PARTY_LICENSES.md vergisst. Genau das war am 17.09.2026 fuenfmal der
+    Fall. Diese Pruefung sieht in den echten Ordner.
+    """
+
+    def test_helloworld_und_lizenzdatei_stimmen_ueberein(self) -> None:
+        befund = ws.bestand_abgleichen(str(PROJEKT / "helloworld"),
+                                       str(PROJEKT / "THIRD_PARTY_LICENSES.md"))
+        self.assertEqual(befund, {"ohne_zeile": [], "ohne_datei": []})
+
+    def test_es_gibt_ueberhaupt_nutzlasten(self) -> None:
+        """Gegenprobe: Ein leerer Ordner bestuende die Pruefung oben immer."""
+        payloads = ws.payloads_lesen(str(PROJEKT / "helloworld"))
+        self.assertGreater(len(payloads), 20)
+        ohne_fassung = [n for n, f in payloads.items() if not f]
+        self.assertLessEqual(len(ohne_fassung), 4,
+                             "Mehr Dateien ohne Fassung im Namen als erwartet: %s"
+                             % ohne_fassung)
+
+
 class FremdwerkzeugFassungTests(unittest.TestCase):
     """Der Bericht nennt die Fassung selbst installierter Werkzeuge.
 

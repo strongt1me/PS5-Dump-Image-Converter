@@ -122,6 +122,63 @@ class PkgReaderTests(unittest.TestCase):
         finally:
             os.remove(path)
 
+    def test_klartextmarke_wird_erkannt(self) -> None:
+        """Die Marke des Klartext-Profils (PPRPLAIN-NOAUTH!) wird gemeldet.
+
+        Gefunden am 18.09.2026 in einem fremden Baukasten, der Pakete mit dem
+        SDK-Publisher baut und danach als Klartext kennzeichnet. Ohne die Marke
+        versucht ein gewoehnlicher Leser AES-XTS - mit ihr weiss er Bescheid.
+        Uebernommen ist nur diese Formattatsache, kein fremder Code.
+        """
+        from ps5_validator.utils.pkg_reader import PLAINTEXT_SEED
+
+        cnt = _build_meta_cnt("UP0000-TEST00000_00-0000000000000000", b'{"x":true}')
+        fih_cnt_offset = 0x10000
+        for mit_marke in (True, False):
+            with self.subTest(marke=mit_marke):
+                fih = bytearray(fih_cnt_offset)
+                fih[0:4] = FIH_MAGIC
+                fih[0x05] = 0x00
+                struct.pack_into("<H", fih, 0x06, 3)
+                struct.pack_into("<Q", fih, 0x10, fih_cnt_offset)
+                struct.pack_into("<Q", fih, 0x18, 0)
+                struct.pack_into("<Q", fih, 0x58, fih_cnt_offset)
+                if mit_marke:
+                    fih[0x400:0x400 + len(PLAINTEXT_SEED)] = PLAINTEXT_SEED
+                with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
+                    f.write(bytes(fih) + cnt)
+                    path = f.name
+                try:
+                    info = read_pkg(path)
+                    self.assertEqual(info.plaintext_marker, mit_marke)
+                    # Der Rest muss unveraendert gelesen werden.
+                    self.assertEqual(info.type, "full_debug")
+                    self.assertEqual(len(info.entries), 2)
+                finally:
+                    os.remove(path)
+
+    def test_klartextmarke_nur_vor_dem_pfs_abbild(self) -> None:
+        """Was im PFS-Abbild selbst steht, zaehlt nicht als Kennzeichnung."""
+        from ps5_validator.utils.pkg_reader import PLAINTEXT_SEED
+
+        cnt = _build_meta_cnt("UP0000-TEST00000_00-0000000000000000", b'{"x":true}')
+        fih_cnt_offset = 0x10000
+        fih = bytearray(fih_cnt_offset)
+        fih[0:4] = FIH_MAGIC
+        fih[0x05] = 0x00
+        struct.pack_into("<H", fih, 0x06, 3)
+        struct.pack_into("<Q", fih, 0x10, 0x800)   # PFS beginnt frueh
+        struct.pack_into("<Q", fih, 0x18, 0)
+        struct.pack_into("<Q", fih, 0x58, fih_cnt_offset)
+        fih[0x1000:0x1000 + len(PLAINTEXT_SEED)] = PLAINTEXT_SEED  # dahinter
+        with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
+            f.write(bytes(fih) + cnt)
+            path = f.name
+        try:
+            self.assertFalse(read_pkg(path).plaintext_marker)
+        finally:
+            os.remove(path)
+
     def test_unknown_file_raises(self) -> None:
         with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
             f.write(b"NOT-A-PKG-FILE-AT-ALL")

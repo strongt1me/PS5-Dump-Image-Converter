@@ -572,7 +572,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.25"
+APP_VERSION = "v1.9.26"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -34708,6 +34708,11 @@ class PS5ConverterGUI:
         ("zlib-ng", "zlib_ng", "zlib-ng"),
         ("tkinterdnd2", "tkinterdnd2", "tkinterdnd2"),
         ("psutil", "psutil", "psutil"),
+        # lz4 fehlte hier bis zum 18.09.2026 - dabei packt ohne dieses Modul
+        # kein Asset-Pack. Der Bericht nennt zusaetzlich die eingebettete
+        # C-Bibliothek (siehe _eingebettete_c_fassung): Rad und liblz4 laufen
+        # auseinander, und das sieht man sonst nirgends.
+        ("lz4", "lz4", "lz4"),
     )
     # ``paramiko`` und ``requests`` standen hier bis v1.8.93 mit, obwohl das
     # Programm beide nirgends benutzt - es geht ueber ``urllib.request`` ins

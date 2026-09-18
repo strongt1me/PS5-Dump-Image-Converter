@@ -242,6 +242,32 @@ class Diagnosebericht:
         return zeilen
 
     @staticmethod
+    def _eingebettete_c_fassung(modul) -> str:
+        """Die C-Bibliothek hinter einer Python-Bindung, in Klammern.
+
+        Bei ``lz4`` fallen beide auseinander: Das Rad 4.4.5 (November 2025)
+        traegt die eingebettete ``liblz4`` **1.9.4** von 2022, waehrend
+        upstream seit Juli 2024 bei 1.10.0 steht. Das ist unbedenklich - der
+        Bitstrom ist unveraendert, und 1.10.0 bringt vor allem Mehrkern-
+        Kompression im Kommandozeilenwerkzeug -, aber man sieht es sonst
+        nirgends. Steht es im Bericht, faellt der Tag auf, an dem ein neues
+        Rad die Bibliothek nachzieht; dann erledigt sich die Frage von selbst,
+        ohne dass jemand ein eigenes Modul baut (gemessen und entschieden am
+        18.09.2026).
+
+        Returns:
+            ``" (liblz4 1.9.4)"`` oder ein leerer Text, wenn nicht abfragbar.
+        """
+        holen = getattr(modul, "library_version_string", None)
+        if not callable(holen):
+            return ""
+        try:
+            return " (liblz4 %s)" % holen()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("liblz4-Fassung nicht lesbar: %s", exc)
+            return ""
+
+    @staticmethod
     def _dateifassung(pfad: str) -> str:
         """Die Fassung einer Windows-Programmdatei, sonst ein leerer Text.
 
@@ -430,6 +456,11 @@ class Diagnosebericht:
             try:
                 modul = __import__(importname)
                 fassung = str(getattr(modul, "__version__", "") or "vorhanden")
+                if importname == "lz4":
+                    fassung = "%s%s" % (
+                        str(getattr(getattr(modul, "version", None), "version", "")
+                            or fassung),
+                        self._eingebettete_c_fassung(modul))
             except Exception:
                 continue
             teile.append(ak.Bestandteil(anzeigename, fassung, ak.PYPI, paket))

@@ -2,7 +2,30 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.25):** Jede `.ffpfsc` und `.ffpfs`, die du mit einem AMPR-EMU-Asset-Pack gebaut hast, war bisher unbrauchbar – beim Packen wurde der Index noch einmal neu erzeugt und passte danach nicht mehr zu den Bändern. Das ist behoben. Solche Abbilder musst du einmal neu bauen. Dazu: Aufgabe 7 ist wieder reiner AMPR-EMU-Manager, OSFMount wird nicht mehr verlangt, und die mitgelieferten Fremdwerkzeuge sind auf dem neuesten Stand.
+> **Kurz zum aktuellen Stand (v1.9.26):** Der **PKG Manager** liegt jetzt als Payload bei – damit installierst du `.pkg`-Dateien direkt von USB oder über das Netzwerk auf der Konsole, auch mehrteilige. Dazu kleinere Verbesserungen an der Diagnose.
+
+---
+
+## v1.9.26 – 18.09.2026
+
+Ein Nachtrag zu v1.9.25: ein neues Payload und zwei Stellen, an denen der Diagnosebericht mehr sagt als vorher.
+
+### Neu mitgeliefert: PKG Manager
+
+`pkgmgr_v1.0.0.elf` kommt ab sofort mit – ein Paketverwalter für die Konsole mit Weboberfläche (itsPLK, GPL-3.0). Er installiert `.pkg`-Dateien direkt von USB oder über das lokale Netzwerk (Samba/SMB), beherrscht mehrteilige Pakete samt Datenträgerwechsel, erkennt bereits installierte Fassungen und legt auf Wunsch eine Kachel auf den Startbildschirm. Du findest ihn in der Schnellauswahl der Payloads.
+
+### Der Diagnosebericht nennt die Fassung hinter der Fassung
+
+Bei `lz4` fallen zwei Nummern auseinander: das Python-Paket (4.4.5) und die darin eingebettete C-Bibliothek (`liblz4` 1.9.4). Das ist unbedenklich – das Format ist unverändert, und es gibt keine bekannte Schwachstelle –, aber bisher sah man es nirgends. Jetzt steht beides im Bericht. `lz4` selbst fehlte in der Liste der geprüften Bibliotheken ganz, obwohl ohne dieses Modul kein Asset-Pack entsteht.
+
+### Klartext-Pakete werden als solche erkannt
+
+Der eingebaute PKG-Leser erkennt jetzt die Kennung, mit der ein unsigniertes Paket sich als Klartext ausweist, und meldet sie. Gelesen wurden solche Pakete schon vorher richtig – nur benannt wurden sie nicht.
+
+### Kleinigkeiten
+
+- Die Prüfung „Werkzeugpflege" sieht jetzt auch in den echten Payload-Ordner statt nur in Testordner; eine vergessene Zeile in der Lizenzdatei fällt damit schon im Testlauf auf.
+- `lz4` ist in den Abhängigkeiten fest auf 4.4.5 gesetzt – vorher war es die einzige ungenaue Angabe.
 
 ---
 

@@ -21,6 +21,21 @@ from dataclasses import dataclass, field
 CNT_MAGIC = b"\x7fCNT"
 FIH_MAGIC = b"\x7fFIH"
 
+#: Marke des Klartext-Profils von LibProsperoPkg.
+#:
+#: Ein gewoehnliches Paket traegt im aeusseren PFS einen Seed, aus dem ein Leser
+#: den AES-XTS-Schluessel ableitet. Bleibt der Inhalt unverschluesselt, muss das
+#: erkennbar sein, sonst versucht jeder Leser zu entschluesseln. Dafuer steht
+#: diese 16-Byte-Marke an der Seed-Stelle - sie sagt "Klartext, keine Pruefung".
+#:
+#: Am 18.09.2026 in einem fremden Baukasten gefunden (SDK-2.79-Publisher mit
+#: Nachbearbeitung). Uebernommen ist hier nur die Formattatsache, kein Code:
+#: Das Projekt baut Pakete ueber LibProsperoPkg und veraendert **kein** fertiges
+#: Paket nachtraeglich - das dortige Nachversiegeln (PlayGo-CRC-Tabelle im
+#: hinteren SI-Archiv, Neuberechnen der Nicht-RSA-Pruefsummen) betrifft uns
+#: deshalb nicht.
+PLAINTEXT_SEED = b"PPRPLAIN-NOAUTH!"
+
 HEADER_SIZE = 0x5A0
 ENTRY_META_SIZE = 0x20
 CONTENT_ID_SIZE = 0x30
@@ -137,6 +152,9 @@ class PkgInfo:
     fih: FihHeader | None = None
     header: PkgHeader | None = None
     entries: list[PkgEntry] = field(default_factory=list)
+    #: Traegt das Paket die Klartext-Marke (siehe ``PLAINTEXT_SEED``)?
+    #: ``None`` heisst "nicht nachgesehen" - nicht "nein".
+    plaintext_marker: bool | None = None
 
     def find_entry(self, entry_id: int) -> PkgEntry | None:
         for entry in self.entries:
@@ -302,7 +320,8 @@ def read_pkg(path: str) -> PkgInfo:
 
     fih = _read_fih_header(data)
     cnt_base = fih.embedded_cnt_offset
-    info = PkgInfo(path=path, type=pkg_type, fih=fih)
+    info = PkgInfo(path=path, type=pkg_type, fih=fih,
+                   plaintext_marker=_traegt_klartextmarke(data, fih))
     if cnt_base <= 0 or cnt_base + HEADER_SIZE > len(data):
         return info
 
@@ -311,6 +330,23 @@ def read_pkg(path: str) -> PkgInfo:
     info.header = header
     info.entries = entries
     return info
+
+
+def _traegt_klartextmarke(data: bytes, fih: FihHeader) -> bool:
+    """Steht die Klartext-Marke im Kopfbereich vor dem PFS-Abbild?
+
+    Gesucht wird im Bereich zwischen Dateianfang und dem Beginn des
+    PFS-Abbilds. Die genaue Stelle des Seeds im PS5-PFS-Kopf ist hier
+    **nicht** nachgemessen; wer sie behauptet, ohne sie zu kennen, baut eine
+    Pruefung, die beim naechsten Format schweigt. Der begrenzte Suchbereich
+    sagt dasselbe, ohne etwas zu erfinden: Die Marke steht dort oder nicht.
+
+    Returns:
+        True/False; die Marke ist 16 Byte lang und zufaellig nicht zu treffen.
+    """
+    ende = fih.pfs_image_offset if fih.pfs_image_offset > 0 else len(data)
+    ende = min(max(ende, 0), len(data))
+    return PLAINTEXT_SEED in data[:ende]
 
 
 def read_entry_payload(path: str, info: PkgInfo, entry: PkgEntry) -> bytes | None:
