@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.28</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.29</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.28</span>
+      <span class="marke">Version v1.9.29</span>
       <span class="marke">Stand 19. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -433,7 +433,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <div class="kasten">
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
     <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur und das PKG-Bauen erledigen <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht) und <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Der <strong>PS5-FPKG-Builder</strong> von Phoenixx1202 diente als Orientierung für die PKG-Erstellung aus jedem Abbildformat. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
-    <p>Die Lizenzen aller mitgelieferten Fremdkomponenten stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
+    <p>Das Programm selbst steht unter der MIT-Lizenz (Datei <code>LICENSE</code>); für die mitgelieferten Fremdkomponenten gilt sie nicht. Deren Lizenzen stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
   </div>
 </section>
 
@@ -1434,6 +1434,38 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     hin.</p>
   </div>
 
+  <h3>13.13 PS5 Wee Tools &ndash; der NOR-Flash der Konsole</h3>
+  <p><strong>PS5 Wee Tools</strong> von andy-man ist ein mitgeliefertes
+  Fremdwerkzeug (GPL-3.0) &ndash; kein Teil der Umwandlung. Es arbeitet nicht
+  mit Spiel-Dumps, sondern mit dem <strong>NOR-Flash der Konsole</strong>: Es
+  liest aus einem NOR-Dump Modell, SKU, Region, Seriennummern, Firmware und
+  MAC-Adressen, zerlegt den Dump in seine Partitionen und setzt ihn wieder
+  zusammen, zeigt das UART-Protokoll samt EMC-Fehlercodes und kann &uuml;ber
+  einen SPI-Flasher (SPIway auf einem Teensy&nbsp;2.0) den NOR lesen und
+  beschreiben.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS5 Wee Tools
+  (NOR). Nach einer R&uuml;ckfrage &ouml;ffnet sich das Werkzeug in einem
+  eigenen Konsolenfenster, unter Linux und macOS in einem Terminal. Der Start
+  kann bis zu einer Minute dauern: Unter Windows und Linux entpackt sich die
+  Programmdatei daf&uuml;r ein zweites Mal (unter Windows gemessen: 19 bis
+  48&nbsp;Sekunden). Klicken Sie in der Zwischenzeit nicht erneut &ndash; ein
+  zweiter Start &ouml;ffnet ein zweites Fenster. Bedient wird es dort &uuml;ber Zahlen und
+  Buchstaben, <strong>6</strong> im Hauptmen&uuml; beendet es.</p>
+  <p>Gelesene NOR-Dumps (<code>dump_*.bin</code>) und UART-Protokolle
+  (<code>uart_*.txt</code>) legt es im Ordner <strong>PS5 Wee Tools</strong>
+  neben dem Programm ab (unter macOS im Einstellungsordner); dort merkt es
+  sich auch Sprache, Ton und Anschl&uuml;sse. Die Sprache &uuml;bernimmt es
+  beim ersten Start vom Programm.</p>
+  <div class="kasten warnung">
+    <span class="titel">Ein falsch beschriebener NOR macht die Konsole unbrauchbar</span>
+    <p>Lesen ist unbedenklich. Das <em>Beschreiben</em> des NOR und das
+    Umschalten von Merkern (Kiosk-Modus, Modell, aktiver Slot) ver&auml;ndern
+    den Firmware-Speicher der Konsole. Bewahren Sie vorher eine Sicherung des
+    Original-Dumps auf. Der Merker-Umschalter schreibt ohne R&uuml;ckfrage
+    direkt in die ge&ouml;ffnete Datei &ndash; arbeiten Sie deshalb mit einer
+    Kopie.</p>
+  </div>
+
 </section>
 
 <section class="kapitel" id="k14">
@@ -1581,7 +1613,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.28), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.29), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1781,7 +1813,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.28</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.29</strong></span>
     <span>Stand 19. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

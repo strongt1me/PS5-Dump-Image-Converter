@@ -146,6 +146,8 @@ from ps5_validator.utils import titel_online
 from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import ampr_assetpakete
+from ps5_validator.utils import wee_tools
+from ps5_validator.utils import eigene_lizenz
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
     MANIFEST_KNOWN_KEYS,
@@ -572,7 +574,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.28"
+APP_VERSION = "v1.9.29"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3395,6 +3397,9 @@ class PS5ConverterGUI:
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
         ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
+        # Fremdwerkzeug fuer den NOR-Flash der Konsole (seit v1.9.29), kein
+        # Teil der Umwandlung - deshalb ganz am Ende.
+        ("titlebar.wee_tools", "_show_wee_tools"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -35015,6 +35020,10 @@ class PS5ConverterGUI:
         # C-Bibliothek (siehe _eingebettete_c_fassung): Rad und liblz4 laufen
         # auseinander, und das sieht man sonst nirgends.
         ("lz4", "lz4", "lz4"),
+        # Seit v1.9.29 fuer das mitgelieferte PS5 Wee Tools (UART, Flasher).
+        # Das Programm selbst benutzt es nicht - ohne startet aber das
+        # Werkzeug nicht, und genau das soll der Bericht zeigen.
+        ("pyserial", "serial", "pyserial"),
     )
     # ``paramiko`` und ``requests`` standen hier bis v1.8.93 mit, obwohl das
     # Programm beide nirgends benutzt - es geht ueber ``urllib.request`` ins
@@ -43558,6 +43567,68 @@ class PS5ConverterGUI:
             command=_abbrechen, state="disabled")
         abbrechen_btn.pack(side="left", padx=(8, 0))
 
+    def _show_wee_tools(self) -> None:
+        """WEITERE TOOLS: PS5 Wee Tools starten - das NOR-Werkzeug von andy-man.
+
+        Ein mitgeliefertes Fremdwerkzeug (GPL-3.0), kein Teil der Umwandlung:
+        Es arbeitet mit dem NOR-Flash der Konsole. Es laeuft als eigener
+        Prozess in einem eigenen Konsolenfenster (siehe ``wee_tools``). Vorher
+        wird gefragt - Vorgabe Nein -, denn sein Flasher kann den NOR
+        beschreiben, und ein falsch beschriebener NOR macht die Konsole
+        unbrauchbar.
+        """
+        from importlib.util import find_spec  # noqa: PLC0415
+        import shlex  # noqa: PLC0415
+
+        titel = self._t("weetools.title")
+        if not _wee_tools_wurzel():
+            messagebox.showerror(titel, self._t("weetools.fehlt", ordner=wee_tools.ORDNER),
+                                 parent=self.root)
+            return
+        # Ohne pyserial bricht das Werkzeug schon beim Laden ab - im Konsolen-
+        # fenster, das sich danach schliesst. Besser hier sagen, woran es liegt.
+        if find_spec("serial") is None:
+            messagebox.showerror(titel, self._t("weetools.kein_pyserial"), parent=self.root)
+            return
+        arbeitsordner = _wee_tools_arbeitsordner()
+        if not messagebox.askyesno(titel, self._t("weetools.frage", ordner=arbeitsordner),
+                                   parent=self.root, default=messagebox.NO):
+            return
+        try:
+            os.makedirs(arbeitsordner, exist_ok=True)
+        except OSError as exc:
+            messagebox.showerror(titel, self._t("weetools.ordner_fehler",
+                                                ordner=arbeitsordner, fehler=exc),
+                                 parent=self.root)
+            return
+        befehl = wee_tools.startbefehl(eingefroren=bool(getattr(sys, "frozen", False)),
+                                       programm=sys.executable,
+                                       hauptskript=os.path.abspath(__file__))
+        anlauf: dict[str, Any] = {
+            "cwd": arbeitsordner,
+            "env": wee_tools.kindumgebung(
+                os.environ, sprache=getattr(self, "_current_language", "") or "",
+                arbeitsordner=arbeitsordner),
+        }
+        if IST_WINDOWS:
+            anlauf["creationflags"] = wee_tools.CREATE_NEW_CONSOLE
+        else:
+            gewickelt = wee_tools.terminal_befehl(befehl, sys.platform)
+            if gewickelt is None:
+                messagebox.showinfo(titel, self._t("weetools.kein_terminal",
+                                                   befehl=shlex.join(befehl)),
+                                    parent=self.root)
+                return
+            befehl = gewickelt
+        try:
+            subprocess.Popen(befehl, **anlauf)
+        except Exception as exc:  # noqa: BLE001 - der Grund gehoert ins Fenster
+            messagebox.showerror(titel, self._t("weetools.start_fehler", fehler=exc),
+                                 parent=self.root)
+            return
+        self._append_to_log(self._t("weetools.gestartet", ordner=arbeitsordner))
+        self._set_status(self._t("weetools.status"))
+
     #: Der mitgelieferte unjail-Payload (SvenGDK), gesendet ueber elfldr.
     _UNJAIL_ELF = "unjail-ps5app-payload.elf"
 
@@ -49474,6 +49545,58 @@ def _ps4ffpsc_umgebung(arbeitsordner: str = "") -> dict[str, str]:
     return umgebung
 
 
+def _wee_tools_wurzel() -> str:
+    """Der mitgelieferte PS5-Wee-Tools-Ordner, sonst leer.
+
+    Gesucht wird an denselben Stellen wie jeder mitgelieferte Ordner
+    (``_mitgeliefert_finden``, auch ``Contents/Resources`` unter macOS). Der
+    Helfer gibt bei einem Fehlschlag den relativen Namen zurueck - hier wird
+    daraus ein leerer Text, und ein Ordner ohne Einstieg zaehlt nicht.
+    """
+    pfad = PS5ConverterGUI._mitgeliefert_finden(wee_tools.ORDNER)
+    if os.path.isabs(pfad) and os.path.isfile(os.path.join(pfad, wee_tools.EINSTIEG)):
+        return pfad
+    return ""
+
+
+def _wee_tools_arbeitsordner() -> str:
+    """Wohin PS5 Wee Tools schreibt: ``PS5 Wee Tools`` neben dem Programm.
+
+    Dieselbe Stelle wie "AMPR EMU updates" (``_ampr_updates_ordner``) - mit
+    einer Ausnahme: nicht in ein macOS-Buendel. Wer in ``Contents/MacOS``
+    schreibt, bricht dessen Signatur; dort geht es in den Einstellungsordner.
+    Angelegt wird hier nichts.
+    """
+    if getattr(sys, "frozen", False):
+        wurzel = os.path.dirname(sys.executable)
+        if sys.platform == "darwin" and os.path.basename(wurzel) == "MacOS":
+            return os.path.join(_system_konfigurationsordner(),
+                                wee_tools.ARBEITSORDNER_NAME)
+    else:
+        wurzel = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(wurzel, wee_tools.ARBEITSORDNER_NAME)
+
+
+def _run_wee_tools(argumente: list[str]) -> int:
+    """Interner Modus ``--ps5-wee-tools``: fuehrt das mitgelieferte Werkzeug aus.
+
+    Gestartet vom Knopf unter WEITERE TOOLS als eigener Prozess mit eigenem
+    Konsolenfenster (siehe ``wee_tools``). Das Fenster gibt Sprache und
+    Arbeitsordner ueber die Umgebung mit; von Hand gestartet gelten die
+    Vorgaben. Die restlichen Argumente gehen an das Werkzeug.
+    """
+    sprache = os.environ.get(wee_tools.UMGEBUNG_SPRACHE, "")
+    wurzel = _wee_tools_wurzel()
+    if not wurzel:
+        wee_tools.konsole_bereitstellen()
+        print(wee_tools.text("fehlt", sprache) % wee_tools.ORDNER)
+        wee_tools.warten(sprache)
+        return 1
+    arbeitsordner = (os.environ.get(wee_tools.UMGEBUNG_ARBEITSORDNER)
+                     or _wee_tools_arbeitsordner())
+    return wee_tools.ausfuehren(wurzel, arbeitsordner, argumente, sprache)
+
+
 def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     """Führt einen der beiden internen PS4-Modi aus.
 
@@ -49775,26 +49898,10 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
         import winreg  # type: ignore[import]
 
         reg_path = r"Software\PS5DumpImageConverter\License"
-        year = datetime.datetime.now().year
-        mit_text = (
-            "MIT License\n\n"
-            f"Copyright (c) {year} PS5 Dump & Image Converter Contributors\n\n"
-            "Permission is hereby granted, free of charge, to any person obtaining a copy\n"
-            "of this software and associated documentation files (the \"Software\"), to deal\n"
-            "in the Software without restriction, including without limitation the rights\n"
-            "to use, copy, modify, merge, publish, distribute, sublicense, and/or sell\n"
-            "copies of the Software, and to permit persons to whom the Software is\n"
-            "furnished to do so, subject to the following conditions:\n\n"
-            "The above copyright notice and this permission notice shall be included in all\n"
-            "copies or substantial portions of the Software.\n\n"
-            "THE SOFTWARE IS PROVIDED \"AS IS\", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\n"
-            "IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\n"
-            "FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\n"
-            "AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\n"
-            "LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\n"
-            "OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\n"
-            "SOFTWARE.\n"
-        )
+        # Derselbe Text wie in der Datei LICENSE (test_eigene_lizenz.py).
+        # Bis v1.9.28 stand er hier ein zweites Mal - mit anderem Inhaber
+        # und einem Jahr, das mit der Uhr mitlief.
+        mit_text = eigene_lizenz.TEXT
 
         hash_hex = hashlib.sha256(mit_text.encode("utf-8")).hexdigest()
         try:
@@ -49805,7 +49912,7 @@ def _register_mit_license_runtime() -> tuple[bool, str]:
         key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, reg_path)
         try:
             winreg.SetValueEx(key, "LicenseName", 0, winreg.REG_SZ, "MIT")
-            winreg.SetValueEx(key, "SPDX", 0, winreg.REG_SZ, "MIT")
+            winreg.SetValueEx(key, "SPDX", 0, winreg.REG_SZ, eigene_lizenz.SPDX)
             winreg.SetValueEx(key, "LicenseText", 0, winreg.REG_SZ, mit_text)
             winreg.SetValueEx(key, "LicenseHashSHA256", 0, winreg.REG_SZ, hash_hex)
             winreg.SetValueEx(key, "RegisteredAtUTC", 0, winreg.REG_SZ, registered_at)
@@ -50455,6 +50562,12 @@ if __name__ == "__main__":
     # Programm selbst gestartet und darf keine zweite UAC-Abfrage ausloesen.
     if len(sys.argv) > 1 and sys.argv[1] == ampr_assetpakete.SELBSTAUFRUF:
         sys.exit(_run_ampr_pack_subcommand(sys.argv[2:]))
+
+    # PS5 Wee Tools (WEITERE TOOLS): ebenfalls vom Programm selbst gestartet,
+    # als eigener Prozess mit eigenem Konsolenfenster. Adminrechte braucht es
+    # nicht; aus dem Fenster heraus erbt es sie ohnehin.
+    if len(sys.argv) > 1 and sys.argv[1] == wee_tools.SELBSTAUFRUF:
+        sys.exit(_run_wee_tools(sys.argv[2:]))
 
     # Darstellungspruefung. Steht aus demselben Grund vor der
     # Rechtepruefung: Sie braucht keine Administratorrechte, und eine

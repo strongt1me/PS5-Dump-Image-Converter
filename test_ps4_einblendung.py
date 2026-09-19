@@ -15,6 +15,7 @@ import os
 import sys
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -268,32 +269,41 @@ class AblaufTests(unittest.TestCase):
         alt = self.haupt.PS5ConverterGUI._PS4_HINWEIS_DAUER
         self.haupt.PS5ConverterGUI._PS4_HINWEIS_DAUER = 400
         self.wurzel.deiconify()
-        try:
-            self.wurzel.update_idletasks()
-            self.app._ps4_hinweis_zeigen(self.wurzel)
-            karte = self.app._ps4_hinweis_stand["fenster"]
-            self.assertIsNotNone(karte, "Keine Einblendung entstanden")
+        # Mitgeschrieben wird, was das Programm setzt - nicht abgetastet. Die
+        # Abtastung in der Schleife verpasste unter Last den Hoehepunkt: Hing
+        # eine Runde laenger als die verkuerzte Haltedauer, arbeitete das
+        # naechste update() Aufblenden, Halten und Abblenden in einem Zug ab
+        # (Volllauf 19.09.2026: hoechster Messwert 0.65, einzeln 3 von 3
+        # gruen). Aufgezeichnet wird erst nach dem echten Setzen - ohne
+        # -alpha (Linux ohne Compositor) bleibt die Liste leer wie bisher.
+        gesetzt: list[float] = []
+        echt = tk.Wm.attributes
 
-            deckkraefte = []
-            ende = time.perf_counter() + 8.0
-            while (time.perf_counter() < ende
-                   and self.app._ps4_hinweis_stand["laeuft"]):
-                self.wurzel.update()
-                try:
-                    if karte.winfo_exists():
-                        deckkraefte.append(float(karte.attributes("-alpha")))
-                except Exception:
-                    pass
-                time.sleep(0.01)
+        def _mitschreiben(fenster, *argumente):
+            ergebnis = echt(fenster, *argumente)
+            if len(argumente) == 2 and argumente[0] == "-alpha":
+                gesetzt.append(float(argumente[1]))
+            return ergebnis
+
+        try:
+            with mock.patch.object(tk.Wm, "attributes", _mitschreiben):
+                self.wurzel.update_idletasks()
+                self.app._ps4_hinweis_zeigen(self.wurzel)
+                karte = self.app._ps4_hinweis_stand["fenster"]
+                self.assertIsNotNone(karte, "Keine Einblendung entstanden")
+
+                ende = time.perf_counter() + 8.0
+                while (time.perf_counter() < ende
+                       and self.app._ps4_hinweis_stand["laeuft"]):
+                    self.wurzel.update()
+                    time.sleep(0.01)
 
             self.assertFalse(self.app._ps4_hinweis_stand["laeuft"],
                              "Sie ist nicht von selbst verschwunden")
             self.assertIsNone(self.app._ps4_hinweis_stand["fenster"])
-            if deckkraefte:
-                self.assertLess(min(deckkraefte), 0.5,
-                                "Kein Aufblenden erkennbar")
-                self.assertGreater(max(deckkraefte), 0.9,
-                                   "Wird nie ganz sichtbar")
+            if gesetzt:
+                self.assertLess(min(gesetzt), 0.5, "Kein Aufblenden erkennbar")
+                self.assertGreater(max(gesetzt), 0.9, "Wird nie ganz sichtbar")
         finally:
             self.haupt.PS5ConverterGUI._PS4_HINWEIS_DAUER = alt
             self.app._ps4_hinweis_aufraeumen()

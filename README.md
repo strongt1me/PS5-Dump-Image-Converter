@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.28-blue)
-![Tests](https://img.shields.io/badge/Tests-3191%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.29-blue)
+![Tests](https://img.shields.io/badge/Tests-3241%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -221,10 +221,11 @@ Sichern Sie Originaldateien vor jeder Bearbeitung separat.
 
 ## Lizenz
 
-Die Lizenzen der mitgelieferten Fremdkomponenten stehen in
+Das Programm selbst steht unter der [MIT-Lizenz](LICENSE). Für die
+mitgelieferten Fremdkomponenten gilt sie nicht – dort gelten deren eigene
+Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) und sind im Fenster
-**CREDITS** direkt aufrufbar. Einzelne eingebettete Komponenten haben eigene
-Bedingungen – vor einer Weiterverteilung bitte prüfen.
+**CREDITS** direkt aufrufbar – vor einer Weiterverteilung bitte prüfen.
 
 
 ## Credits
@@ -232,6 +233,7 @@ Bedingungen – vor einer Weiterverteilung bitte prüfen.
 * **PSBrew / Renan Barreto** ([@RenanGBarreto](https://github.com/RenanGBarreto)) – [MkPFS](https://github.com/PSBrew/MkPFS), die PFS-Engine dieses Programms
 * **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „PKG bauen“
 * **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
+* **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
 * **kerrdec97** – [ps5-exfat-builder](https://github.com/PSBrew/ps5-exfat-builder), Vorarbeit und Orientierung
 * **AMPR EMU** und **libScePlayGo-Stub** – PS5-Homebrew-Community, Aufgabe 7
 * **PS5 BackPork Kitchen**, **BestPig**, **idlesauce**, **John Törnblom**, **CyB1K** – Verfahren und Vorlagen für BACKPORT

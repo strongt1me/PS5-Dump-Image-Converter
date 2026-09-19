@@ -4,6 +4,10 @@ Diese Datei führt die Komponenten auf, die zusammen mit dem PS5 Dump & Image
 Converter ausgeliefert und in die Windows-EXE eingebettet werden. Sie ist
 Bestandteil jeder Weitergabe des Programms.
 
+Das Programm selbst steht unter der MIT-Lizenz; ihr Text steht in der Datei
+[LICENSE](LICENSE), die ebenfalls jeder Weitergabe beiliegt. Für die hier
+aufgeführten Komponenten gilt sie nicht – für sie gelten ihre eigenen Lizenzen.
+
 Weitere im Programm verwendete oder verlinkte Projekte sind im Fenster **CREDITS**
 sowie im Abschnitt „Referenzen" der [README.md](README.md) aufgeführt. Für Werkzeuge,
 die nicht mitgeliefert, sondern nur heruntergeladen oder verlinkt werden, gelten die
@@ -112,6 +116,7 @@ SOFTWARE.
 | **MkPFS 1.0.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
 | **LibProsperoPkg 2.6.0** | SvenGDK | Das Werkzeug hinter „PKG bauen“; liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0). Der Ordner heißt noch `ProsperoPkg-2.5` – maßgeblich ist `ProsperoPkg-2.5/fassung.json` |
 | **PS4 FFPFSC 0.2.9** | siehe `PS4FFPFSC-0.2.9/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.9/LICENSES/` liegen |
+| **PS5 Wee Tools 0.1.8** | andy-man ([ps5-wee-tools](https://github.com/andy-man/ps5-wee-tools)) | Werkzeug für den NOR-Flash der Konsole (GPL-3.0); unverändert mitgeliefert und als eigenständiges Programm gestartet (WEITERE TOOLS). Quelltext, Lizenz und Herkunft in `PS5-Wee-Tools-0.1.8/` (`LICENSE`, `UPSTREAM.md`, `herkunft.json`) |
 | **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – **hier für Dateien >2 GB gepatcht** (`UFS2Tool-4.1/patch/`); trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | PS5-Homebrew-Community | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert |
@@ -206,7 +211,8 @@ nicht gäbe:
 
 Diese Bibliotheken werden in die EXE eingebettet; es gelten ihre jeweiligen Lizenzen:
 
-**Pillow**, **cryptography**, **zstandard**, **zlib-ng**, **tkinterdnd2**, **psutil**
+**Pillow**, **cryptography**, **zstandard**, **zlib-ng**, **tkinterdnd2**, **psutil**,
+**lz4** (für die Asset-Packs des AMPR EMU) und **pyserial** (BSD-3-Clause, für PS5 Wee Tools)
 sowie **PyInstaller** für den Bau der Windows-EXE.
 
 ---

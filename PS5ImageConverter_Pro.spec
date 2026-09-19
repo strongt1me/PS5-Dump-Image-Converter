@@ -74,6 +74,13 @@ _third_party = os.path.join(_here, 'THIRD_PARTY_LICENSES.md')
 if os.path.isfile(_third_party):
     _datas.append((_third_party, '.'))
 
+# Die Lizenz des Programms selbst (MIT, Text auch in
+# ps5_validator/utils/eigene_lizenz.py). Auch sie verlangt, jeder Kopie
+# beizuliegen - bis v1.9.28 fehlte sie im Repo und damit in jedem Bau.
+_eigene_lizenz = os.path.join(_here, 'LICENSE')
+if os.path.isfile(_eigene_lizenz):
+    _datas.append((_eigene_lizenz, '.'))
+
 # Benutzerhandbuch einbetten - der Knopf BENUTZERHANDBUCH in der Titelleiste
 # oeffnet es. README.md und CHANGELOG.md kommen mit, weil das Handbuch auf beide
 # verlinkt; ohne sie waeren das in der EXE tote Verweise.
@@ -138,6 +145,13 @@ if os.path.isdir(_prosperopkg):
 _ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.9')
 if os.path.isdir(_ps4ffpsc):
     _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.9'))
+
+# Mitgeliefertes PS5 Wee Tools (andy-man, GPL-3.0; NOR-Flash der Konsole,
+# siehe dort UPSTREAM.md). Laeuft als eigener Prozess ueber den internen Modus
+# --ps5-wee-tools, von einer Kopie im Arbeitsordner.
+_wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
+if os.path.isdir(_wee_tools):
+    _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
@@ -206,6 +220,22 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
+        # PS5 Wee Tools (PS5-Wee-Tools-0.1.8) liegt als Datenordner bei und
+        # laeuft von einer Kopie im Arbeitsordner - PyInstaller sieht seine
+        # Importe nicht. Der Waechter test_wee_tools haelt diese Liste gegen
+        # den Quelltext des Werkzeugs.
+        'serial',
+        'serial.tools',
+        'serial.tools.list_ports',
+        'copy',
+        'datetime',
+        'json',
+        'locale',
+        'math',
+        'random',
+        'threading',
+        'time',
+        'winsound',
         # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.9) braucht.
         # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
         # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
@@ -401,7 +431,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.28',
+    name='PS5_Dump_Image_Converter_v1.9.29',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

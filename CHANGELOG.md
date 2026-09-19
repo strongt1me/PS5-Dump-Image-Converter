@@ -2,7 +2,30 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.28):** OSFMount und Dokan gelten nur noch als vorhanden, wenn ihr Treiber wirklich einsatzbereit ist, und der Diagnosebericht sagt bei beiden, was fehlt und wie du es behebst. Dazu hat die neue AMPR-Methode jetzt ihre Anleitung – der Knopf meldete bisher, sie fehle.
+> **Kurz zum aktuellen Stand (v1.9.29):** Neu unter WEITERE TOOLS ist PS5 Wee Tools, ein Werkzeug für den NOR-Flash der Konsole – mitgeliefert und mit Rückfrage vor dem Start. Außerdem liegt die MIT-Lizenz des Programms wieder als Datei bei, im Repo und in jeder gebauten Fassung.
+
+---
+
+## v1.9.29 – 19.09.2026
+
+Ein neues Werkzeug für den NOR-Flash der Konsole – und die eigene Lizenz, die seit Juli fehlte.
+
+### Neu unter WEITERE TOOLS: PS5 Wee Tools
+
+**PS5 Wee Tools** von andy-man (GPL-3.0, Fassung 0.1.8) kommt jetzt mit. Es arbeitet nicht mit Spiel-Dumps, sondern mit dem NOR-Flash der Konsole: Es liest aus einem NOR-Dump Modell, SKU, Region, Seriennummern, Firmware und MAC-Adressen, zerlegt den Dump in seine Partitionen und setzt ihn wieder zusammen, zeigt das UART-Protokoll samt EMC-Fehlercodes und kann über einen SPI-Flasher (SPIway auf einem Teensy 2.0) den NOR lesen und beschreiben.
+
+Du findest es unter **WEITERE TOOLS → PS5 Wee Tools (NOR)**. Vor dem Start fragt das Programm nach, vorbelegt ist *Nein* – ein falsch beschriebener NOR kann die Konsole unbrauchbar machen. Danach öffnet sich das Werkzeug in einem eigenen Konsolenfenster, unter Linux und macOS in einem Terminal, und übernimmt beim ersten Start die Sprache des Programms. Bis das Fenster steht, kann es bis zu einer Minute dauern – unter Windows und Linux entpackt sich die Programmdatei dafür ein zweites Mal. Gelesene Dumps und UART-Protokolle landen im Ordner `PS5 Wee Tools` neben dem Programm, unter macOS im Einstellungsordner.
+
+Das Werkzeug liegt unverändert bei; Quelltext, Lizenz und Herkunft stehen im Ordner `PS5-Wee-Tools-0.1.8`. Der Diagnosebericht führt es mit Fassung und Quelle unter dem, was mitgeliefert wird.
+
+### Die Lizenz des Programms liegt wieder bei
+
+Das Programm steht unter der MIT-Lizenz. Die Datei `LICENSE` mit ihrem Text fehlte seit Juli im Repo und damit in jeder gebauten Fassung – unter Linux und macOS meldete das Programm beim Start trotzdem „MIT-Lizenz liegt bei“. Jetzt liegt sie wieder im Repo und steckt in jeder gebauten Fassung. Der Lizenztext, den das Programm unter Windows beim Start in die Registry schreibt, nennt jetzt denselben Inhaber und dasselbe Jahr wie die Datei; bisher standen dort ein anderer Inhaber und das jeweils laufende Jahr.
+
+### Kleinigkeiten
+
+- Im Fenster **CREDITS** enthielt die englische Fassung eine Zeile mit deutschen Wörtern.
+- `THIRD_PARTY_LICENSES.md` führt jetzt auch `lz4` und `pyserial`.
 
 ---
 

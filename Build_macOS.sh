@@ -164,6 +164,8 @@ optional_installieren psutil "keine CPU/RAM-Telemetrie."
 # frischen .venv-macos (CI) fehlte es, und die AMPR-EMU-Methode Asset-Pack war
 # im Buendel nie verfuegbar. Build_EXE.ps1 installiert es genauso.
 optional_installieren lz4 "die AMPR-EMU-Methode Asset-Pack faellt auf 'Normal' zurueck."
+# Wie lz4: nur als hiddenimport genannt (fuer das mitgelieferte PS5 Wee Tools).
+optional_installieren pyserial "PS5 Wee Tools startet nicht."
 meldung "      PyInstaller $("$PYTHON" -m PyInstaller --version 2>&1) bereit." "$gruen"
 
 # --- Schritt 4: Pflicht-Dateien pruefen -----------------------------------

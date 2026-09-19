@@ -571,6 +571,20 @@ class Diagnosebericht:
         except Exception as exc:
             logger.debug("ProsperoPkg-Fassung nicht lesbar: %s", exc)
 
+        # PS5 Wee Tools liegt seit v1.9.29 bei (WEITERE TOOLS). Auch hier steht
+        # die Fassung nicht in ``__version__``, sondern als ``APP_VERSION`` in
+        # lang/lang.py - gelesen, nicht importiert (das zoege pyserial nach).
+        try:
+            from ps5_validator.utils import wee_tools
+
+            fassung = wee_tools.fassung_lesen(
+                self._mitgeliefert_finden(wee_tools.ORDNER))
+            if fassung:
+                teile.append(ak.Bestandteil("PS5 Wee Tools", fassung, ak.GITHUB,
+                                            wee_tools.QUELLE))
+        except Exception as exc:
+            logger.debug("PS5-Wee-Tools-Fassung nicht lesbar: %s", exc)
+
         for name, schluessel in (("FileZilla", "filezilla_path"),
                                  ("OSFMount", "osfmount_path")):
             try:

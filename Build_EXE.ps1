@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.28 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.29 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.28"
+$EXE_VERSION = "v1.9.29"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -54,7 +54,7 @@ $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 # der Liste zusammenklauben.
 #
 # Die Buendel bleiben dabei ganze Ordner. Sie sind das, was man
-# weitergibt - Programm, README, Changelog und Handbuch zusammen -, und
+# weitergibt - Programm, README, Changelog, Handbuch und Lizenzen -, und
 # duerfen nicht nach Plattform auseinandergenommen werden.
 $ORDNER_WINDOWS = Join-Path $PSScriptRoot "dist\Windows"
 $ORDNER_LINUX   = Join-Path $PSScriptRoot "dist\Linux"
@@ -153,6 +153,11 @@ Write-Host "      lz4 installieren/aktualisieren (AMPR-Assetpakete, optional)...
 & $PYTHON -m pip install lz4 --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNUNG: lz4 konnte nicht installiert werden - die neue AMPR-EMU-Methode (Asset-Pack) faellt dann auf 'Normal' zurueck." -ForegroundColor Yellow
+}
+Write-Host "      pyserial installieren/aktualisieren (PS5 Wee Tools, optional)..." -ForegroundColor Gray
+& $PYTHON -m pip install pyserial --upgrade --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNUNG: pyserial konnte nicht installiert werden - PS5 Wee Tools startet dann nicht." -ForegroundColor Yellow
 }
 Write-Host "      Alle Pakete installiert." -ForegroundColor Green
 
@@ -328,7 +333,8 @@ if (Test-Path $exePath) {
     $mitnehmen  = @(Join-Path $ORDNER_WINDOWS $EXE_NAME)
     $mitnehmen += Join-Path $ORDNER_LINUX $linuxName
     $mitnehmen += $macosNamen | ForEach-Object { Join-Path $ORDNER_MACOS $_ }
-    $mitnehmen += @("README.md", "CHANGELOG.md", "BENUTZERHANDBUCH.pdf") |
+    $mitnehmen += @("README.md", "CHANGELOG.md", "BENUTZERHANDBUCH.pdf",
+                    "LICENSE", "THIRD_PARTY_LICENSES.md") |
                   ForEach-Object { Join-Path $PSScriptRoot $_ }
 
     foreach ($quelle in $mitnehmen) {

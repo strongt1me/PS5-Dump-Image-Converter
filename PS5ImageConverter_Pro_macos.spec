@@ -138,6 +138,14 @@ _third_party = os.path.join(_here, 'THIRD_PARTY_LICENSES.md')
 if os.path.isfile(_third_party):
     _datas.append((_third_party, '.'))
 
+# Die Lizenz des Programms selbst (MIT, Text auch in
+# ps5_validator/utils/eigene_lizenz.py). Auch sie verlangt, jeder Kopie
+# beizuliegen - bis v1.9.28 fehlte sie im Repo und damit in jedem Bau. Die
+# Startmeldung "MIT-Lizenz liegt bei" stimmt erst seitdem.
+_eigene_lizenz = os.path.join(_here, 'LICENSE')
+if os.path.isfile(_eigene_lizenz):
+    _datas.append((_eigene_lizenz, '.'))
+
 # Benutzerhandbuch einbetten - der Knopf BENUTZERHANDBUCH in der Titelleiste
 # oeffnet es ueber open(1). README.md und CHANGELOG.md kommen mit, weil das
 # Handbuch auf beide verlinkt.
@@ -203,6 +211,13 @@ _ps4ffpsc = os.path.join(_here, 'PS4FFPFSC-0.2.9')
 if os.path.isdir(_ps4ffpsc):
     _datas.extend(_dateien_ohne_pycache(_ps4ffpsc, 'PS4FFPFSC-0.2.9'))
 
+# Mitgeliefertes PS5 Wee Tools (andy-man, GPL-3.0; NOR-Flash der Konsole,
+# siehe dort UPSTREAM.md). Laeuft als eigener Prozess ueber den internen Modus
+# --ps5-wee-tools, von einer Kopie im Arbeitsordner.
+_wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
+if os.path.isdir(_wee_tools):
+    _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
+
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
 # installiert sein muss - der frueher eingebettete Windows-Bau war
@@ -261,6 +276,22 @@ a = Analysis(
     binaries=[],
     datas=_datas,
     hiddenimports=[
+        # PS5 Wee Tools (PS5-Wee-Tools-0.1.8) liegt als Datenordner bei und
+        # laeuft von einer Kopie im Arbeitsordner - PyInstaller sieht seine
+        # Importe nicht. Der Waechter test_wee_tools haelt diese Liste gegen
+        # den Quelltext des Werkzeugs. winsound gibt es nur unter Windows;
+        # das Werkzeug importiert es mit Rueckfall.
+        'serial',
+        'serial.tools',
+        'serial.tools.list_ports',
+        'copy',
+        'datetime',
+        'json',
+        'locale',
+        'math',
+        'random',
+        'threading',
+        'time',
         'tomllib',
         # LZ4 fuer das eingebettete AMPR-Packwerkzeug
         # (AMPR_PackTools-4.0/ampr_pack_format.py:987 importiert
@@ -522,7 +553,8 @@ app = BUNDLE(
         # dunklen Design des Programms.
         'NSRequiresAquaSystemAppearance': False,
         'LSMinimumSystemVersion': '11.0',
-        'NSHumanReadableCopyright': 'MIT License - PS5 Dump & Image Converter Contributors',
+        # Beginnt mit der Copyright-Zeile aus LICENSE (test_eigene_lizenz.py).
+        'NSHumanReadableCopyright': 'Copyright (c) 2026 strongt1me - MIT License',
         # Kein CFBundleDocumentTypes: Ohne argv_emulation (siehe oben) bekommt
         # das Programm das Apple-Event zum Oeffnen einer Datei gar nicht zu
         # sehen. Eine Dateizuordnung anzumelden, die dann nichts tut, waere

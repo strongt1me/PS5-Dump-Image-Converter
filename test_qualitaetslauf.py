@@ -976,7 +976,7 @@ class StilTests(unittest.TestCase):
     #: unveraendert uebernommen und nicht von uns gepflegt.
     FREMD = ("MkPFS-", "PS4FFPFSC-", "UFS2Tool-", "ProsperoPkg-", "Backport_Fakelibs/",
              "PS5-AppInstall/", "PS5 WebKit Autoloader/", "PlayGo & AMPR_EMU/",
-             "helloworld/", "tools/")
+             "PS5-Wee-Tools-", "helloworld/", "tools/")
 
     @classmethod
     def eigene_dateien(cls) -> list[str]:

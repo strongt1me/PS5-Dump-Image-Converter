@@ -79,7 +79,15 @@ desktop.ini
 coverage.json
 
 # Zur Laufzeit geholte AMPR-EMU-Fassungen - Anwenderdaten, kein Quelltext.
-"AMPR EMU updates"/
+# Ohne Anfuehrungszeichen: git kennt in .gitignore keine, und bis zum
+# 19.09.2026 passte die Zeile deshalb nur auf einen Ordner namens
+# "AMPR EMU updates" mitsamt den Zeichen - der echte blieb ungeschuetzt
+# (gemessen mit git check-ignore). Leerzeichen im Namen sind kein Problem.
+/AMPR EMU updates/
+
+# Arbeitsordner von PS5 Wee Tools (WEITERE TOOLS): Programmkopie,
+# Einstellungen, gelesene NOR-Dumps und UART-Protokolle - Anwenderdaten.
+/PS5 Wee Tools/
 
 # Die alte Merkdatei des JS-Loaders. Bis v1.9.5 schrieb er sie neben das
 # Programm, und die drei .spec-Dateien betteten eine vorgefundene ip.ini in

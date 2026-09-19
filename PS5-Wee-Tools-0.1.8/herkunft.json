@@ -1,0 +1,180 @@
+{
+  "werkzeug": "PS5 Wee Tools",
+  "fassung": "0.1.8",
+  "autor": "andy-man",
+  "herkunft": "https://github.com/andy-man/ps5-wee-tools",
+  "stand": "main 4232c2e810f0d2602cd71fb448d379fa32960fe7 (18.09.2026) = Tag v0.1.8 (2b9b8c5c5b11f3d5035b0323e36712ce0503ce8e) plus i18n/hu.json",
+  "lizenz": "GPL-3.0 (LICENSE in diesem Ordner)",
+  "quellarchiv_sha256": "a24367a9476dc78c7afd4ef0eca5822ad0c865f936f10504a65c0f32ce361d8f",
+  "veraendert": "nichts - alle Dateien byte-gleich mit dem Quellarchiv",
+  "dateien": {
+    "LICENSE": {
+      "sha256": "3c910cafb2b40fbe571dcf732bc9a548dbf08629f50ac9dc37773c052d107a9c",
+      "bytes": 35114
+    },
+    "README.md": {
+      "sha256": "7637653bf4fd9e1078767eac68ee4c8626f33328b8e4669b372c26df250ee888",
+      "bytes": 2083
+    },
+    "assets/hw/serial/diagram.png": {
+      "sha256": "f2f2a35ec0df4d288610872d6963956dbce21096612b7b116b23559b47ae2d5d",
+      "bytes": 272829
+    },
+    "assets/hw/serial/uart_v0.1_teensy2.0.hex": {
+      "sha256": "90f7572074d20f7fc41148f3284b3970c5b0c07b07bf740e2c65fc864bf69d31",
+      "bytes": 15472
+    },
+    "assets/hw/spiway/diagram.jpg": {
+      "sha256": "4f1decb349734c70328a4b51b3cead75320f49514eb595ba90e6ff68cb05db55",
+      "bytes": 281580
+    },
+    "assets/hw/spiway/spiway_v0.60_teensy2.0.hex": {
+      "sha256": "2ca8be4c50eb904d1ab0b599dae3213c341f24e3b78f3d460b759ae51450b5c1",
+      "bytes": 11416
+    },
+    "assets/splash.png": {
+      "sha256": "d5cad2ca1032cd6d4aa45913c66b8918b84a150fabc5442b8d6a833fae2593ad",
+      "bytes": 47153
+    },
+    "clean.bat": {
+      "sha256": "f6cd328849e40b1a7c17fdbaf5ae71739bfaff5e70526fef68e72beb309993da",
+      "bytes": 47
+    },
+    "config.ini": {
+      "sha256": "b6d808c06bc3084618d1800bde45c6e5758f8daed9d7bacf0a853ceb36a9a11b",
+      "bytes": 20
+    },
+    "data/data.py": {
+      "sha256": "a67cf61e08b28c3826115e42ca7b4e4e3772e122f3f6701c03a0bc52b07f471c",
+      "bytes": 6099
+    },
+    "i18n/ar.json": {
+      "sha256": "75ae2d39660ed57738b6655afeb207294fea11d50e51aed05721290960100565",
+      "bytes": 12098
+    },
+    "i18n/bn.json": {
+      "sha256": "5b5443b40dcba60c3546bd4a913380a2252da30c9d6f332c4a684ae38106c5b6",
+      "bytes": 16113
+    },
+    "i18n/de.json": {
+      "sha256": "389c09dd1173b6c7f0dbd9a87ddd9cca503afaee364d6cf8724fab2116df2383",
+      "bytes": 9305
+    },
+    "i18n/en.json": {
+      "sha256": "f64b17c2afcf1ba93fdca54bb6c256ff4e609b0fed5e6ca58455aa20edcc06ee",
+      "bytes": 9388
+    },
+    "i18n/es.json": {
+      "sha256": "d2f79e47a6157ac7b68d5765d44a16c9fce8866dde0834898777c843933b5dcc",
+      "bytes": 9940
+    },
+    "i18n/fr.json": {
+      "sha256": "176054764e6ee3a35cddc7eed515e0ba900f5849e6c8887bb08b23852a0772e6",
+      "bytes": 10124
+    },
+    "i18n/hi.json": {
+      "sha256": "72a434df941888766bfa5d1f2b05a836c92fbe0430f34acad8cbfc9994f768e4",
+      "bytes": 15445
+    },
+    "i18n/hu.json": {
+      "sha256": "81bf665928cd9717a0cedc95d8d75ca7427983fd39d6ae3c51b64a65be674962",
+      "bytes": 11118
+    },
+    "i18n/id.json": {
+      "sha256": "82b50517107419757c96be1803831102b89017db9e700b1fc83ca96231aa46dc",
+      "bytes": 8997
+    },
+    "i18n/ja.json": {
+      "sha256": "1ac6b2eb0e57c9b27c71dcaa26caa670d0dba2fe4d10a5a4979660d4cf412200",
+      "bytes": 10359
+    },
+    "i18n/ko.json": {
+      "sha256": "b92da1ffc436c1dd1b9c558320fa543377ca26606b914025a24018e69f8f410c",
+      "bytes": 9842
+    },
+    "i18n/mr.json": {
+      "sha256": "0ae6f81cc13f096b5bfd6f4f2bb73bd9699b5c6d1b2f02eeefa62421ba280368",
+      "bytes": 13212
+    },
+    "i18n/pl.json": {
+      "sha256": "9fb14d8c5fc0761555168317c5eaf4fda493c0faa1dd331e8cd9f65666e714bf",
+      "bytes": 9508
+    },
+    "i18n/pt.json": {
+      "sha256": "a3af594c44ad7b3566ee13b5ef00508124e3c45f24349b6332c5f56100f76e3f",
+      "bytes": 9672
+    },
+    "i18n/ru.json": {
+      "sha256": "112b60bfa883781660c56c8012973698e6e7d95be4a3d1eeabc61cebe5cbeee2",
+      "bytes": 12528
+    },
+    "i18n/ta.json": {
+      "sha256": "e9a8d346f22263107ec1a9df1a717b3ce65277a1f4e8b395d94ca8481802fe35",
+      "bytes": 18130
+    },
+    "i18n/te.json": {
+      "sha256": "0d4b62d84d1dcb28c7f8802c9eb79596686af0e5770deebacda623c10c84f84f",
+      "bytes": 16892
+    },
+    "i18n/tr.json": {
+      "sha256": "7625eb1721471c86a59b947bab2321cc055692c2b92a8fe77a75aab4964f9819",
+      "bytes": 9616
+    },
+    "i18n/ur.json": {
+      "sha256": "a6c3f05aeec708c012194f322c93341de329cbba3f7c150392e33fd3bc189031",
+      "bytes": 11929
+    },
+    "i18n/vi.json": {
+      "sha256": "2598d49b43bc4bb1b4f06932b0a6db795aa6737b35dbca4c4b6718ced13808ec",
+      "bytes": 10479
+    },
+    "i18n/zh.json": {
+      "sha256": "a1885625bc7d65ca0caee54b4c649a96097fb55d9a580341cf1afde614f79abd",
+      "bytes": 8705
+    },
+    "lang/en.py": {
+      "sha256": "4d14a4c96624be3e8c098e7ac6bd83f33c53bbf63df389071f3ab99e143692aa",
+      "bytes": 8593
+    },
+    "lang/lang.py": {
+      "sha256": "c8d416f4128c50f2f6f4be747d141ab2836443371e5f9dbf9f102f49ad074407",
+      "bytes": 6407
+    },
+    "ps5-wee-tools.py": {
+      "sha256": "c74d135cfa7d4a55ba28b111122c68d26478db3e8595e300d6115f2dff0ca88c",
+      "bytes": 742
+    },
+    "run.bat": {
+      "sha256": "895c54bb432c0c3e9f9360b7d233e61491fbf7a41507c7c90f2f1c8808e99149",
+      "bytes": 47
+    },
+    "tools/SFlashTools.py": {
+      "sha256": "54c4e36df73f03a550a6c4b439af8612371dff312249d7cdc4b63db90e5cde6e",
+      "bytes": 7499
+    },
+    "tools/Tools.py": {
+      "sha256": "b2beca5f74f7f4feb87f699bafeb3538ff1fe0d265c181610231df4fb3bf08c6",
+      "bytes": 21174
+    },
+    "utils/serial.py": {
+      "sha256": "5d117494a8a8e9d89a621e1495e2f33b5212701a6d6c1510e498266801197bee",
+      "bytes": 4682
+    },
+    "utils/sflash.py": {
+      "sha256": "615cfe8c3659a15162024eb1646466a61cb75bee8c4561bc37b8d45aae12dc5c",
+      "bytes": 12953
+    },
+    "utils/slb2.py": {
+      "sha256": "6dedda199ee2d3391c8da513b71360b661c7ef448ca7369b4b3588e40d044500",
+      "bytes": 2985
+    },
+    "utils/spiway.py": {
+      "sha256": "befdfae0e8b1647ce6e4d498f9e9d7729b893a845da8156e392d24894c8c9841",
+      "bytes": 11272
+    },
+    "utils/utils.py": {
+      "sha256": "4fc6d08ce702eeb6b45c0efc36b470a9bb9f8178b0eab41570e8eb94cfc142d0",
+      "bytes": 9601
+    }
+  }
+}

@@ -67,6 +67,7 @@ on:
       - 'README.md'
       - 'CHANGELOG.md'
       - 'THIRD_PARTY_LICENSES.md'
+      - 'LICENSE'
       - 'Anleitungen/**'
       # Bilder, Symbole und Beigaben
       - 'app_icon.ico'
@@ -78,6 +79,7 @@ on:
       - 'AMPR_PackTools-*/**'
       - 'ProsperoPkg-2.5/**'
       - 'PS4FFPFSC-0.2.9/**'
+      - 'PS5-Wee-Tools-0.1.8/**'
       - 'UFS2Tool-4.1/**'
       - 'helloworld/**'
       - 'Backport_Fakelibs/**'
