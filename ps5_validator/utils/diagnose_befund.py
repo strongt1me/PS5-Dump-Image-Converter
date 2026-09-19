@@ -239,7 +239,37 @@ class Diagnosebericht:
                 zeilen.append(z(name, "%s (%s%s)" % (
                     pfad, "vorhanden" if da else "FEHLT",
                     ", Fassung %s" % fassung if fassung else "")))
+            if schluessel == "osfmount_path":
+                zeile = self._osfmount_treiberzeile(pfad)
+                if zeile:
+                    zeilen.append(z("OSFMount-Treiber", zeile))
         return zeilen
+
+    @staticmethod
+    def _osfmount_treiberzeile(gemerkt: str) -> str:
+        """Der Zustand des OSFMount-Treibers - "vorhanden" allein sagt zu wenig.
+
+        Am 19.09.2026 meldete der Bericht "vorhanden, Fassung 3.3.1000",
+        waehrend der Treiber osfdisk gar nicht installiert war: Einhaengen
+        haette nicht funktioniert. Siehe ``osfmount_treiber``. Ist kein Pfad
+        gemerkt, wird am Standard-Installationsort nachgesehen - gesucht wird
+        OSFMount seit v1.9.25 nicht mehr, installiert sein kann es trotzdem.
+        Keine Suche ueber die Laufwerke; gelesen werden Registry, eine Datei
+        und ``pnputil /enum-drivers``.
+        """
+        if os.name != "nt":
+            return ""
+        from ps5_validator.utils import osfmount_treiber  # noqa: PLC0415
+
+        programm = gemerkt
+        if not (programm and os.path.isfile(programm)):
+            programm = os.path.join(os.environ.get("ProgramFiles") or r"C:\Program Files",
+                                    "OSFMount", "OSFMount.com")
+        try:
+            return osfmount_treiber.berichtszeile(osfmount_treiber.zustand(programm))
+        except Exception as exc:  # noqa: BLE001 - der Bericht darf nicht kippen
+            logger.debug("OSFMount-Treiberzeile nicht baubar: %s", exc)
+            return "nicht feststellbar (%s)" % exc
 
     @staticmethod
     def _eingebettete_c_fassung(modul) -> str:

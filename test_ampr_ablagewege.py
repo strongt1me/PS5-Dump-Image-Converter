@@ -297,6 +297,37 @@ class AnleitungTests(unittest.TestCase):
         self.assertTrue((PROJEKT / "Anleitungen" / name).is_file(),
                         "%s fehlt" % name)
 
+    def test_jede_anleitung_eines_knopfs_liegt_im_repo(self) -> None:
+        """Bis zum 19.09.2026 zeigte der Knopf der neuen Methode ins Leere.
+
+        Geprueft wurde nur die alte Anleitung. Die neue gab es nie, und der
+        Knopf meldete in jeder Fassung "fehlt".
+        """
+        eintraege = PS5ConverterGUI._AMPR_ANLEITUNGEN
+        self.assertGreaterEqual(len(eintraege), 2)
+        for generation, name in eintraege.items():
+            with self.subTest(generation=generation):
+                self.assertTrue((PROJEKT / "Anleitungen" / name).is_file(),
+                                "%s fehlt" % name)
+
+    def test_die_neue_anleitung_passt_zum_programmmodell(self) -> None:
+        """Schluessel, Protokollzeilen und Pfade wie in shadowmount_generation.
+
+        Aendert sich das Modell - ein neuer Schluessel, eine neue Logzeile -,
+        soll die Anleitung nicht still dahinter zurueckbleiben.
+        """
+        name = PS5ConverterGUI._AMPR_ANLEITUNGEN[sg.NEU]
+        text = (PROJEKT / "Anleitungen" / name).read_text(encoding="utf-8")
+        profil = sg.profil(sg.NEU)
+        erwartet = [s for s, _vorgabe in profil["config_schluessel"]]
+        erwartet += [m for m, _bedeutung in profil["log_marken"]]
+        erwartet += [sg.GLOBAL_STANDARD, sg.EMUS_STANDARD, sg.CACHE_ORDNER,
+                     sg.CONFIG_PFAD, sg.DEBUG_LOG, "ab 1.7 alpha8"]
+        self.assertGreaterEqual(len(erwartet), 26)
+        for stelle in erwartet:
+            with self.subTest(stelle=stelle):
+                self.assertIn(stelle, text)
+
     def test_der_ordner_wird_mitgebaut(self) -> None:
         """Ohne Eintrag im .spec waere der Knopf in der EXE leer."""
         for spec in ("PS5ImageConverter_Pro.spec",

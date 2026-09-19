@@ -572,7 +572,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.27"
+APP_VERSION = "v1.9.28"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -21221,7 +21221,7 @@ class PS5ConverterGUI:
             return False
 
     def _run_background_installer(self, title: str, install_func, verify_func, task_label: str = "",
-                                  nur_windows: bool = False) -> None:
+                                  nur_windows: bool = False, fehlergrund=None) -> None:
         """Startet einen Installer in einem Daemon-Thread und meldet Ergebnis per UI.
 
         ``nur_windows``: Die Weiche steht hier, im Hauptfaden, vor dem Faden.
@@ -21229,6 +21229,11 @@ class PS5ConverterGUI:
         Windows-Installer herunter (OSFMount) oder meldeten nur
         "fehlgeschlagen" ohne Grund (Dokan); FileZilla oeffnete seinen Hinweis
         aus dem Faden - und danach kam das Fehlerfenster ein zweites Mal.
+
+        ``fehlergrund``: Liefert den Grund, wenn die Pruefung scheitert, ohne
+        dass eine Ausnahme ihn mitbringt. Sonst stand im Fehlerfenster nur
+        "konnte nicht installiert werden" - bei OSFMount ohne Treiber (seit
+        19.09.2026 geprueft) ohne jeden Hinweis, was fehlt.
         """
         prefix = f"[{task_label}] " if task_label else ""
         display_title = f"{prefix}{title}"
@@ -21278,6 +21283,11 @@ class PS5ConverterGUI:
                 ok = False
             finally:
                 self._resource_install_running = False
+            if not ok and not err_msg and fehlergrund is not None:
+                try:
+                    err_msg = str(fehlergrund() or "")
+                except Exception as exc:  # noqa: BLE001 - der Grund ist Zugabe
+                    logger.debug("Fehlergrund nicht ermittelbar: %s", exc)
 
             def _done() -> None:
                 # Während laufender Hauptaufgaben keine modalen Dialoge anzeigen,
@@ -21328,10 +21338,43 @@ class PS5ConverterGUI:
         self._run_background_installer(
             title="OSFMount",
             install_func=self._install_osfmount,
-            verify_func=lambda: self._find_osfmount() is not None,
+            verify_func=self._osfmount_einsatzbereit,
             task_label="19",
             nur_windows=True,
+            fehlergrund=self._osfmount_fehlergrund,
         )
+
+    def _osfmount_treiberzustand(self):
+        """Zustand von OSFMount samt Treiber osfdisk (siehe ``osfmount_treiber``)."""
+        from ps5_validator.utils import osfmount_treiber  # noqa: PLC0415
+
+        return osfmount_treiber.zustand(self._find_osfmount() or "")
+
+    def _osfmount_einsatzbereit(self) -> bool:
+        """OSFMount gefunden **und** sein Treiber eingerichtet.
+
+        Bis zum 19.09.2026 genuegte hier ``_find_osfmount() is not None``. Auf
+        dem Entwicklungsrechner lag OSFMount 3.3.1000 da, der Treiber osfdisk
+        aber nicht - Punkt 19 haette "bereits installiert und einsatzbereit"
+        gemeldet und nichts getan, und nach einer stillen Installation, die den
+        Treiber auslaesst, "erfolgreich installiert".
+        """
+        from ps5_validator.utils import osfmount_treiber  # noqa: PLC0415
+
+        return self._osfmount_treiberzustand().urteil == osfmount_treiber.BEREIT
+
+    def _osfmount_fehlergrund(self) -> str:
+        """Warum OSFMount nicht einsatzbereit ist - fuer das Fehlerfenster."""
+        from ps5_validator.utils import osfmount_treiber as ot  # noqa: PLC0415
+
+        zustand = self._osfmount_treiberzustand()
+        if zustand.urteil in (ot.BEREIT, ot.NICHT_WINDOWS):
+            return ""
+        if zustand.urteil == ot.NICHT_INSTALLIERT:
+            return self._t("osfmount.nicht_gefunden")
+        return self._t("osfmount.treiber_nicht_bereit",
+                       zustand=self._t("osfmount.zustand." + zustand.urteil),
+                       inf=zustand.inf or r"C:\Program Files\OSFMount\win10\osfdisk.inf")
 
     def _install_dokan2_background(self) -> None:
         """Ressourcen Punkt 20: Dokan2 automatisch im Hintergrund installieren."""
@@ -28695,8 +28738,15 @@ class PS5ConverterGUI:
           - dokan2.sys  (Kernel-Treiber)
           - dokan2.dll  (User-Mode Runtime)
         Die mitgelieferte DokanNet.dll ist nur der .NET-Wrapper.
-        Dokan v1 ist NICHT kompatibel – nur v2 funktioniert.1
+        Dokan v1 ist NICHT kompatibel – nur v2 funktioniert.
         Referenz fuer die Dokan-Treiber-Suche.
+
+        Bis zum 19.09.2026 galt auch dokan1.sys oder dokan.sys als
+        Kernel-Treiber. Die Laufzeit dokan2.dll spricht aber nur mit
+        dokan2.sys: Ein Rest aus Dokan 1 neben einer dokan2.dll hiess
+        "einsatzbereit", Punkt 20 installierte dann nichts, und mount_udf
+        scheiterte trotzdem. Gemessen auf dem Entwicklungsrechner: Dokan
+        2.3.1 legt genau dokan2.sys und dokan2.dll ab, keine der anderen.
         """
         if not sys.platform.startswith('win'):
             return False
@@ -28704,15 +28754,11 @@ class PS5ConverterGUI:
         sysroot = os.environ.get('SystemRoot', r'C:\Windows')
         sys32 = os.path.join(sysroot, 'System32')
         drv = os.path.join(sys32, 'drivers')
-        # Kernel-Treiber prüfen
-        has_driver = False
-        for name in ('dokan2.sys', 'dokan1.sys', 'dokan.sys'):
-            try:
-                if os.path.isfile(os.path.join(drv, name)):
-                    has_driver = True
-                    break
-            except Exception:
-                pass
+        # Kernel-Treiber pruefen - nur der von Dokan 2 (siehe oben).
+        try:
+            has_driver = os.path.isfile(os.path.join(drv, 'dokan2.sys'))
+        except Exception:
+            has_driver = False
         # User-Mode Runtime prüfen
         has_runtime = False
         try:
