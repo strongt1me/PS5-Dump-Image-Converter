@@ -28,6 +28,12 @@ vorhanden, **Dokan2-Treiber installieren** tat nichts, und das Einhängen
 scheiterte trotzdem. Jetzt zählen nur Treiber und Bibliothek von Dokan 2
 zusammen.
 
+Außerdem steht Dokan jetzt im Diagnosebericht, im Abschnitt *Fremdwerkzeuge*
+gleich unter OSFMount: „bereit“ samt Fassung und Dienst – oder was fehlt. Liegen
+Treiber und Bibliothek da, ist der Dienst von Dokan aber abgeschaltet oder gar
+nicht eingetragen, hilft der Knopf nicht, weil er Dokan für installiert hält;
+dann rät der Bericht zur Neuinstallation über die Windows-Einstellungen.
+
 ## Die Anleitung zur neuen Methode ist da
 
 Im Fenster hinter Knopf 7 hat jede der beiden AMPR-Methoden einen Knopf

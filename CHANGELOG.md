@@ -2,7 +2,7 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.28):** OSFMount und Dokan gelten nur noch als vorhanden, wenn ihr Treiber wirklich einsatzbereit ist; bei OSFMount sagt der Diagnosebericht zusätzlich, was fehlt und wie du es behebst. Dazu hat die neue AMPR-Methode jetzt ihre Anleitung – der Knopf meldete bisher, sie fehle.
+> **Kurz zum aktuellen Stand (v1.9.28):** OSFMount und Dokan gelten nur noch als vorhanden, wenn ihr Treiber wirklich einsatzbereit ist, und der Diagnosebericht sagt bei beiden, was fehlt und wie du es behebst. Dazu hat die neue AMPR-Methode jetzt ihre Anleitung – der Knopf meldete bisher, sie fehle.
 
 ---
 
@@ -19,6 +19,8 @@ Jetzt sieht das Programm nach, nur lesend und ohne Administratorrechte: Dienst, 
 ### Dokan: nur Dokan 2 gilt
 
 Einige Wege mit `.ffpkg` hängen das Abbild unter Windows über UFS2Tool ein und brauchen dafür den Treiber Dokan 2. Die Prüfung ließ bisher auch einen Treiber aus Dokan 1 gelten, wenn daneben die Bibliothek von Dokan 2 lag – die arbeitet aber nur mit ihrem eigenen Treiber. In diesem Mischzustand galt Dokan als vorhanden, der Knopf **Dokan2-Treiber installieren** tat nichts, und das Einhängen scheiterte trotzdem. Jetzt zählen nur Treiber und Bibliothek von Dokan 2 zusammen.
+
+Außerdem steht Dokan jetzt im Diagnosebericht, im Abschnitt *Fremdwerkzeuge* gleich unter OSFMount: „bereit“ samt Fassung und Dienst – oder was fehlt. Liegen Treiber und Bibliothek da, ist der Dienst von Dokan aber abgeschaltet oder gar nicht eingetragen, hilft der Knopf nicht, weil er Dokan für installiert hält; dann rät der Bericht zur Neuinstallation über die Windows-Einstellungen.
 
 ### Die Anleitung zur neuen Methode ist da
 

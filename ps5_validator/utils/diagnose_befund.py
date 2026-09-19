@@ -243,7 +243,33 @@ class Diagnosebericht:
                 zeile = self._osfmount_treiberzeile(pfad)
                 if zeile:
                     zeilen.append(z("OSFMount-Treiber", zeile))
+        zeile = self._dokan_treiberzeile()
+        if zeile:
+            zeilen.append(z("Dokan-Treiber", zeile))
         return zeilen
+
+    @staticmethod
+    def _dokan_treiberzeile() -> str:
+        """Der Zustand von Dokan 2 - gebraucht fuer .ffpkg unter Windows.
+
+        Seit dem 19.09.2026 im Bericht. Bis dahin stand Dokan hier gar nicht,
+        obwohl Entpacken, Pruefen und Metadatenlesen von .ffpkg unter Windows
+        ueber ein Dokan-Laufwerk laufen - und ``_find_dokan_driver`` bis
+        v1.9.28 einen Treiber aus Dokan 1 faelschlich gelten liess. Siehe
+        ``dokan_treiber``; gelesen werden nur Dateien und die Registry.
+        """
+        if os.name != "nt":
+            return ""
+        from ps5_validator.utils import dokan_treiber  # noqa: PLC0415
+
+        try:
+            stand = dokan_treiber.zustand()
+            fassung = (Diagnosebericht._dateifassung(dokan_treiber.laufzeit_pfad())
+                       if stand.laufzeit else "")
+            return dokan_treiber.berichtszeile(stand, fassung=fassung)
+        except Exception as exc:  # noqa: BLE001 - der Bericht darf nicht kippen
+            logger.debug("Dokan-Zeile nicht baubar: %s", exc)
+            return "nicht feststellbar (%s)" % exc
 
     @staticmethod
     def _osfmount_treiberzeile(gemerkt: str) -> str:

@@ -28747,32 +28747,17 @@ class PS5ConverterGUI:
         "einsatzbereit", Punkt 20 installierte dann nichts, und mount_udf
         scheiterte trotzdem. Gemessen auf dem Entwicklungsrechner: Dokan
         2.3.1 legt genau dokan2.sys und dokan2.dll ab, keine der anderen.
+
+        Die Pruefung selbst steht seit dem 19.09.2026 in ``dokan_treiber``
+        (``dateien_bereit``). Dort liest auch der Diagnosebericht - so koennen
+        die Meldung im Bericht und diese Entscheidung nicht auseinanderlaufen.
+        Der Dienst dokan2 zaehlt hier bewusst nicht mit; ihn nennt der Bericht.
         """
         if not sys.platform.startswith('win'):
             return False
-        import ctypes as _ct
-        sysroot = os.environ.get('SystemRoot', r'C:\Windows')
-        sys32 = os.path.join(sysroot, 'System32')
-        drv = os.path.join(sys32, 'drivers')
-        # Kernel-Treiber pruefen - nur der von Dokan 2 (siehe oben).
-        try:
-            has_driver = os.path.isfile(os.path.join(drv, 'dokan2.sys'))
-        except Exception:
-            has_driver = False
-        # User-Mode Runtime prüfen
-        has_runtime = False
-        try:
-            if os.path.isfile(os.path.join(sys32, 'dokan2.dll')):
-                has_runtime = True
-        except Exception:
-            pass
-        if not has_runtime:
-            try:
-                _ct.WinDLL('dokan2.dll')
-                has_runtime = True
-            except Exception:
-                pass
-        return bool(has_driver and has_runtime)
+        from ps5_validator.utils import dokan_treiber  # noqa: PLC0415
+
+        return dokan_treiber.dateien_bereit()
 
     def _extract_ufs2tool(self) -> str:
         """Stellt UFS2Tool v4.1 bereit.
