@@ -131,8 +131,14 @@ class KomprimiertGegenUnkomprimiertTests(unittest.TestCase):
 
     def test_andere_formate_unveraendert(self) -> None:
         self.assertEqual(self._grund("spiel.exfat", "ffpfsc"), "")
+        # Ohne Asset-Pack bleibt ein echtes Selbst-Ziel gesperrt: Es
+        # entstuende eine Kopie derselben Datei. Diese Pruefung laeuft
+        # ohne gewaehlten Pack, also greift die Sperre.
         self.assertIn("identisch", self._grund("spiel.exfat", "exfat"))
-        self.assertIn("identisch", self._grund("spiel.ffpkg", "ffpkg"))
+        # .ffpkg dagegen wird ohnehin neu aufgebaut und geprueft - das
+        # ist auch ohne Pack sinnvoll. In Aufgabe 4 ging es immer, seit
+        # v1.9.34 auch in Aufgabe 6 (_SAME_FORMAT_ALLOWED).
+        self.assertEqual(self._grund("spiel.ffpkg", "ffpkg"), "")
 
     def test_genaue_erkennung_trennt_die_beiden_endungen(self) -> None:
         for name, erwartet_typ, erwartet_genau in (

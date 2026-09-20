@@ -8,7 +8,7 @@ Dump-Ordner das Ergebnis IST, bleiben davon unberuehrt.
 
 Geprueft wird das Verhalten der Entscheidung (_dump_ordner_basis /
 _dump_im_arbeitsordner), die Platzbuchung (Arbeitsordner statt Ziel) und die
-Verdrahtung der fuenf Umpack-Wege.
+Verdrahtung der sechs Umpack-Wege.
 """
 from __future__ import annotations
 
@@ -111,7 +111,7 @@ class DumpOrdnerEntscheidungTests(unittest.TestCase):
 
 
 class DumpOrdnerVerdrahtungTests(unittest.TestCase):
-    """Quelltextpruefung: die fuenf Zwischen-Dump-Wege lenken um, die reine
+    """Quelltextpruefung: die sechs Zwischen-Dump-Wege lenken um, die reine
     Entpack-Aufgabe nicht."""
 
     @classmethod
@@ -124,10 +124,13 @@ class DumpOrdnerVerdrahtungTests(unittest.TestCase):
         j = self.quelle.index("\n    def ", i + 1)
         return self.quelle[i:j]
 
-    def test_fuenf_umpack_wege_lenken_um(self):
+    def test_sechs_umpack_wege_lenken_um(self):
+        # _mode_exfat_umpacken ist der sechste, seit v1.9.34: ein
+        # .exFAT-Backup mit Asset-Pack nachruesten laeuft ebenfalls
+        # ueber einen Zwischen-Dump-Ordner.
         for defname in ("_mode_ffpfsc_to_ffpkg", "_mode_ffpfsc_umpacken",
                         "_mode_abbild_zu_ffpfs", "_mode_exfat_to_ffpkg",
-                        "_mode_ffpkg_to_ffpkg"):
+                        "_mode_ffpkg_to_ffpkg", "_mode_exfat_umpacken"):
             rumpf = self._rumpf(defname)
             self.assertIn("_dump_ordner_basis(dst)", rumpf,
                           "%s muss den Dump-Ordner umlenkbar anlegen" % defname)
@@ -139,9 +142,9 @@ class DumpOrdnerVerdrahtungTests(unittest.TestCase):
         self.assertNotIn("_dump_ordner_basis", rumpf,
                          "Die reine Entpack-Aufgabe darf NICHT umgelenkt werden")
 
-    def test_genau_fuenf_aufrufstellen(self):
-        self.assertEqual(5, self.quelle.count("self._dump_ordner_basis(dst)"),
-                         "Es sollen genau die fuenf Umpack-Wege umlenken")
+    def test_genau_sechs_aufrufstellen(self):
+        self.assertEqual(6, self.quelle.count("self._dump_ordner_basis(dst)"),
+                         "Es sollen genau die sechs Umpack-Wege umlenken")
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")

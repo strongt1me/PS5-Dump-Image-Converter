@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.33"
+APP_VERSION = "v1.9.34"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -5686,6 +5686,31 @@ class PS5ConverterGUI:
         # entpacken, Asset-Pack einbauen, wieder als .ffpfsc packen. Ein
         # blosses Einhuellen waere hier Unsinn (Container im Container).
         ("ffpfsc", "ffpfsc"),
+        # exfat -> exfat genauso, seit v1.9.34 (Aufgabe 6). Wer ein
+        # exFAT-Backup hat und ein Asset-Pack hineinbauen will, musste
+        # vorher zweimal laufen lassen - erst nach Dump-Ordner, dann
+        # zurueck - oder das Format wechseln.
+        ("exfat", "exfat"),
+    })
+
+    #: Wo ein Selbst-Ziel (Quelle und Ziel gleiches Format) erlaubt ist -
+    #: und zwar **nur** mit AMPR-EMU-Asset-Pack. Ohne ihn waere der Lauf
+    #: sinnlos: Es entstuende eine Kopie derselben Datei.
+    #:
+    #: Der Weg ist in beiden Faellen derselbe: entpacken, einbauen, neu
+    #: bauen. Gefragt wird deshalb nichts - eine Ja/Nein-Rueckfrage
+    #: ("einhuellen oder neu packen?") haette hier nur eine sinnvolle
+    #: Antwort.
+    _SELBSTZIEL_MIT_ASSETPACK: frozenset = frozenset({
+        ("unpack_to_exfat", "ffpfsc"),    # Aufgabe 2, seit v1.9.20
+        ("universal_convert", "exfat"),   # Aufgabe 6, seit v1.9.34
+        # Aufgabe 6 kann .ffpfsc laengst neu bauen (der Zweig in
+        # _execute_conversion_by_type ist derselbe wie in Aufgabe 2) - die
+        # Sperre stand nur davor. Am 20.09.2026 beim Durchzaehlen der
+        # Selbst-Ziele aufgefallen: Aufgabe 6 versteht sich als "die
+        # Aufgabe fuer alle Faelle", liess aber zwei von drei Formaten
+        # nicht zu.
+        ("universal_convert", "ffpfsc"),  # seit v1.9.34
     })
 
     #: Wie viel Platz das Ergebnis je Zielformat braucht, als Vielfaches
@@ -6235,8 +6260,9 @@ class PS5ConverterGUI:
         # ffpfsc -> ffpfsc: Einhuellen waere hier sinnlos (Container im
         # Container). Diese Kombination bietet Aufgabe 2 nur mit Asset-Pack an,
         # und dann ist der Neu-Packen-Weg der einzig richtige. Deshalb ohne
-        # Ja/Nein-Rueckfrage direkt: entpacken, einbauen, neu packen.
-        if quelle == "ffpfsc" and target_type == "ffpfsc":
+        # Ja/Nein-Rueckfrage direkt: entpacken, einbauen, neu packen. Seit
+        # v1.9.34 gilt das fuer jedes Selbst-Ziel, auch .exfat -> .exfat.
+        if quelle == target_type:
             self._neu_packen_waehlen(formatname)
             return True
 
@@ -6618,6 +6644,12 @@ class PS5ConverterGUI:
     #: "Neuvalidierung" aus. Ueberall sonst waere ein Selbst-Ziel sinnlos.
     _SAME_FORMAT_ALLOWED: dict[str, tuple[str, ...]] = {
         "ffpkg_to_ffpfsc": ("ffpkg",),
+        # Aufgabe 6 nimmt dieselbe .ffpkg und denselben Weg
+        # (_mode_ffpkg_to_ffpkg). Dass es dort gesperrt war, war ein
+        # Versehen: Wer die Aufgabe "fuer alle Faelle" waehlt, bekam fuer
+        # genau diese Umwandlung "Quelle und Zielformat sind identisch",
+        # waehrend Aufgabe 4 sie anstandslos machte. Seit v1.9.34.
+        "universal_convert": ("ffpkg",),
     }
 
     def _detect_source_format(self, path: str) -> str:
@@ -6643,13 +6675,14 @@ class PS5ConverterGUI:
         # Pfad bekannt ist (.ffpfs vs. .ffpfsc, siehe _detect_source_format).
         genau = self._detect_source_format(source_path) if source_path else source_type
         if genau == target_type and target_type not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
-            # .ffpfsc -> .ffpfsc in Aufgabe 2 gibt es nur mit AMPR-Asset-Pack:
-            # entpacken, einbauen, neu packen (seit v1.9.20). Bis v1.9.24 sperrte
+            # Ein Selbst-Ziel gibt es nur mit AMPR-Asset-Pack: entpacken,
+            # einbauen, neu bauen (.ffpfsc seit v1.9.20, .exfat seit
+            # v1.9.34 - siehe _SELBSTZIEL_MIT_ASSETPACK). Bis v1.9.24 sperrte
             # genau diese Zeile den Weg - "Quelle und Zielformat sind
             # identisch" -, bevor _umhuellenden_weg_klaeren ihn erreichte. Die
             # Liste bot ihn an, starten liess er sich nie.
-            if not (mode == "unpack_to_exfat" and genau == "ffpfsc"
-                    and self._ffpfsc_zu_ffpfsc_erlaubt()):
+            if not ((mode, genau) in self._SELBSTZIEL_MIT_ASSETPACK
+                    and self._selbstziel_erlaubt()):
                 return self._t("conversion.same_format")
         if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
             return self._t("conversion.target_format_unknown")
@@ -22953,6 +22986,10 @@ class PS5ConverterGUI:
             # statt sce_sys/param.json. Fuer den .ffpfsc-Container darueber ist
             # genau das richtig, fuer ein Abbild-Spiel nicht.
             return self._mode_abbild_zu_ffpfs(src, dst, quelle="exfat")
+        if source_type == "exfat" and target_type == "exfat":
+            # Nur mit Asset-Pack ueberhaupt erreichbar (siehe
+            # _SELBSTZIEL_MIT_ASSETPACK): entpacken, einbauen, neu bauen.
+            return self._mode_exfat_umpacken(src, dst)
         if source_type == "exfat" and target_type == "folder":
             return self._mode_exfat_to_folder(src, dst)
         if source_type == "exfat" and target_type == "ffpkg":
@@ -23772,6 +23809,76 @@ class PS5ConverterGUI:
                 progress_start=55.0,
                 progress_end=98.0,
             )
+        finally:
+            _rmtree_force(temp_root)
+
+    def _mode_exfat_umpacken(self, src: str, dst: str) -> bool:
+        """Baut eine .exfat neu - mit dem, was in der Pfad-Karte angehakt ist.
+
+        Der Weg, den ein exFAT-Backup braucht, um ein AMPR-EMU-Asset-Pack zu
+        bekommen: entpacken, einbauen, wieder als .exfat bauen. Bis v1.9.33
+        gab es ihn nicht - ``exfat -> exfat`` lief in "Quelle und Zielformat
+        sind identisch", und eine Wegfunktion fehlte ganz. Wer ein Pack in
+        sein Backup wollte, musste **zweimal** starten (erst nach
+        Dump-Ordner, dann zurueck) oder das Format wechseln.
+
+        Erreichbar ist der Weg nur mit Asset-Pack (siehe
+        :data:`_SELBSTZIEL_MIT_ASSETPACK`); ohne ihn entstuende eine Kopie
+        derselben Datei.
+
+        Gearbeitet wird in einem voruebergehenden Ordner, nie in der Quelle.
+        Damit gilt der Ordner als Arbeitskopie, und "Originale weglassen"
+        darf greifen - dasselbe Vorgehen wie bei ``_mode_ffpkg_to_ffpkg``.
+
+        Entpackt wird mit dem eingebetteten exFAT-Leser. Scheitert der an
+        einem ungewoehnlichen Abbild, bricht dieser Weg ab und nennt den
+        Umweg ueber Aufgabe 3 und 1 - der OSFMount-Rueckfall aus
+        ``_mode_exfat_to_folder`` haengt an dessen eigener Fortschrittsphase
+        und liesse den Balken hier auf 100 % springen, mitten im Lauf.
+        """
+        base = os.path.splitext(os.path.basename(src))[0]
+        final_output = os.path.join(dst, base + ".exfat")
+        temp_root = self._mkdtemp(prefix="ps5conv_exfat_repack_",
+                                  dir_path=self._dump_ordner_basis(dst))
+        try:
+            dump_dir = os.path.join(temp_root, base)
+            self.task_final_output_path = final_output
+            self._append_to_log(self._t(
+                "log.exfat_umpacken_start",
+                quelle=os.path.basename(src),
+                ziel=os.path.basename(final_output)))
+            self.progress_engine.start_task(
+                0, self._t("progress.task.exfat_umpacken"))
+            self.progress_engine.begin_prepare(
+                self._t("progress.prepare.extract_exfat"))
+            if not self._extract_exfat_to_folder_mkpfs(
+                src,
+                dump_dir,
+                status_prefix=self._t("status.prefix_exfat_umpacken"),
+                log_prefix=self._t("log.prefix_exfat_extrahiert"),
+                progress_start=3.0,
+                progress_end=45.0,
+            ):
+                self._append_to_log(self._t("log.exfat_umpacken_leser_scheitert"))
+                return False
+
+            # Ohne ist_quellordner: Der Ordner liegt schon im Temp und ist
+            # damit die Arbeitskopie. Eine zweite waere nur Ballast, und die
+            # Rueckfrage danach waere sinnlos.
+            ordner = self._integration_anwenden(dump_dir)
+            if not ordner:
+                return False
+
+            self.task_total_source_bytes = self._quellgroesse_mit_meldung(ordner)
+            ok = self._create_exfat_from_folder(
+                ordner, final_output, pct_start=50.0, pct_end=98.0)
+            if ok:
+                self.progress_engine.begin_validate(
+                    self._t("progress.validate.default"))
+                self.progress_engine.commit_task()
+                self._append_to_log(self._t("log.exfat_umpacken_fertig",
+                                            ziel=final_output))
+            return ok
         finally:
             _rmtree_force(temp_root)
 
@@ -25410,13 +25517,18 @@ class PS5ConverterGUI:
         except (tk.TclError, RuntimeError):
             return AMPR_METHODE_NORMAL
 
-    def _ffpfsc_zu_ffpfsc_erlaubt(self) -> bool:
-        """Darf Aufgabe 2 eine .ffpfsc wieder als .ffpfsc bauen?
+    def _selbstziel_erlaubt(self) -> bool:
+        """Darf ein Abbild wieder in sein eigenes Format gebaut werden?
 
-        Nur mit Asset-Pack. Im Hauptfaden entscheidet die Auswahl in der
-        Pfad-Karte; im Arbeitsfaden der Merker aus
-        ``_umhuellenden_weg_klaeren`` - dort darf keine Tk-Variable gelesen
-        werden, und der Merker haelt fest, was beim Start galt.
+        Nur mit Asset-Pack - sonst entstuende eine Kopie derselben Datei.
+        Betroffen sind .ffpfsc (Aufgabe 2, seit v1.9.20) und .exfat
+        (Aufgabe 6, seit v1.9.34); wo genau, steht in
+        :data:`_SELBSTZIEL_MIT_ASSETPACK`.
+
+        Im Hauptfaden entscheidet die Auswahl in der Pfad-Karte; im
+        Arbeitsfaden der Merker aus ``_umhuellenden_weg_klaeren`` - dort
+        darf keine Tk-Variable gelesen werden, und der Merker haelt fest,
+        was beim Start galt.
         """
         if threading.current_thread() is threading.main_thread():
             return self._assetpack_gewaehlt()

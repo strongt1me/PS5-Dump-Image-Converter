@@ -517,10 +517,10 @@ class FormatwegeTests(unittest.TestCase):
         self.app = _app()
 
     def test_ffpfsc_zu_ffpfsc_mit_assetpack_ist_frei(self) -> None:
-        with mock.patch.object(self.app, "_ffpfsc_zu_ffpfsc_erlaubt", lambda: True):
+        with mock.patch.object(self.app, "_selbstziel_erlaubt", lambda: True):
             self.assertEqual(self.app._conversion_block_reason(
                 "ffpfsc", "ffpfsc", mode="unpack_to_exfat"), "")
-        with mock.patch.object(self.app, "_ffpfsc_zu_ffpfsc_erlaubt", lambda: False):
+        with mock.patch.object(self.app, "_selbstziel_erlaubt", lambda: False):
             self.assertNotEqual(self.app._conversion_block_reason(
                 "ffpfsc", "ffpfsc", mode="unpack_to_exfat"), "",
                 "Gegenprobe: ohne Asset-Pack muss der Weg gesperrt bleiben.")
@@ -533,7 +533,7 @@ class FormatwegeTests(unittest.TestCase):
         with mock.patch.object(self.app, "_assetpack_gewaehlt", _verboten), \
                 mock.patch.object(self.app, "_umhuellt_neu_packen", True, create=True):
             faden = threading.Thread(
-                target=lambda: ergebnis.append(self.app._ffpfsc_zu_ffpfsc_erlaubt()))
+                target=lambda: ergebnis.append(self.app._selbstziel_erlaubt()))
             faden.start()
             faden.join(10)
         self.assertEqual(ergebnis, [True])

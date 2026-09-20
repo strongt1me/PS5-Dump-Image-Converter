@@ -2,7 +2,51 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.33):** Spiele auf Unity lesen ihre Daten am AMPR EMU vorbei. Bei ihnen bleiben die gepackten Originale jetzt liegen, auch wenn du „weglassen“ gewählt hast – sonst startet das Spiel nicht. Wer ein eigenes Packprofil aus Konsolen-Mitschnitten danebenlegt, entscheidet weiterhin selbst.
+> **Kurz zum aktuellen Stand (v1.9.34):** Ein vorhandenes `.exFAT`-Backup lässt sich jetzt in **einem** Lauf mit einem AMPR-EMU-Asset-Pack nachrüsten – Aufgabe 6, `.exFAT` als Quelle **und** als Ziel. Vorher brauchte es zwei Läufe.
+
+---
+
+## v1.9.34 – 20.09.2026
+
+Ein exFAT-Backup nachrüsten, ohne zweimal zu starten.
+
+### Was fehlte
+
+Wer ein `.exFAT`-Backup hatte und ein Asset-Pack hineinbauen wollte, kam nicht direkt hin: `.exFAT` als Quelle **und** Ziel lief in „Quelle und Zielformat sind identisch“, und einen Weg dafür gab es im Programm gar nicht. Blieben zwei Läufe – erst nach Dump-Ordner, dann zurück – oder ein Formatwechsel.
+
+Bei `.ffpfsc` gibt es den Weg seit v1.9.20, bei `.ffpkg` baut Aufgabe 4 sie ohnehin neu auf. Nur exFAT fehlte.
+
+### Was jetzt geht
+
+In **Aufgabe 6** wählst du die `.exFAT` als Quelle und `.exFAT` als Ziel, hakst AMPR EMU an und stellst die Methode auf *Neue Methode (Asset-Pack)*. Das Abbild wird entpackt, das Pack eingebaut, und daraus entsteht das neue Abbild – in einem Zug, mit Fortschritt, und der Zwischenordner verschwindet danach wieder.
+
+Dasselbe Ziel wie die Quelle lässt sich weiterhin **nur** mit Asset-Pack wählen. Ohne ihn wäre der Lauf eine Kopie derselben Datei.
+
+An einem echten Spiel nachgemessen (253 MB): aus 72 Dateien im Backup wurden 79 im Ergebnis – Manifest, Laufzeitdatei, Prüfsummen und vier Bänder kamen dazu –, 253,8 MB wurden 264,6 MB, Dauer 12 Sekunden. Der Quell-Dump blieb unverändert.
+
+### Aufgabe 6 kann jetzt alle drei Formate neu bauen
+
+Beim Nachzählen ist eine zweite Lücke aufgefallen: Aufgabe 6 versteht sich als *die Aufgabe für alle Fälle*, ließ aber zwei von drei Formaten nicht als Ziel zu, wenn die Quelle dasselbe Format hatte – obwohl die Wege dahinter längst da waren. Eine `.ffpkg` neu aufzubauen ging in Aufgabe 4 anstandslos, in Aufgabe 6 kam „Quelle und Zielformat sind identisch“.
+
+Jetzt gilt in Aufgabe 6 für alle drei Abbildformate dasselbe:
+
+| Format | Selbst-Ziel |
+| --- | --- |
+| `.ffpfsc` | nur mit Asset-Pack |
+| `.exFAT` | nur mit Asset-Pack |
+| `.ffpkg` | immer (sie wird ohnehin neu aufgebaut) |
+
+An Aufgabe 2 und 4 ändert sich nichts.
+
+### Warum nicht einfach hineinschreiben
+
+Weil in einem fertigen exFAT-Abbild dieses Programms **kein Platz** ist. Nachgemessen: 95 Zuordnungseinheiten, 95 davon belegt, null frei. Eine Datei nachträglich hineinzulegen hieße, das Abbild zu vergrößern und dabei Bootbereich, Dateizuordnungstabelle und Belegungskarte neu zu schreiben – also neu bauen, nur mit mehr Risiko. Dazu kommt, dass das Packwerkzeug auf einem echten Ordner arbeitet und nicht auf einem Abbild.
+
+Du brauchst deshalb einmal die Spielgröße an freiem Platz im Arbeitsordner.
+
+---
+
+> **Zum Stand v1.9.33:** Spiele auf Unity lesen ihre Daten am AMPR EMU vorbei. Bei ihnen bleiben die gepackten Originale jetzt liegen, auch wenn du „weglassen“ gewählt hast – sonst startet das Spiel nicht. Wer ein eigenes Packprofil aus Konsolen-Mitschnitten danebenlegt, entscheidet weiterhin selbst.
 
 ---
 
