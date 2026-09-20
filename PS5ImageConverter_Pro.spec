@@ -398,11 +398,11 @@ a = Analysis(
         'mkpfs.pbar',
         'mkpfs.pfs',
         'mkpfs.utils',
-        'bcrypt',
-        'nacl',
-        'nacl.bindings',
-        'nacl.public',
-        'nacl.signing',
+        # bcrypt und PyNaCl standen hier bis v1.9.29: Abhaengigkeiten von
+        # paramiko, das das Programm seit v1.8.93 nirgends benutzt (es geht
+        # ueber urllib.request ins Netz und ueber ftplib auf die Konsole).
+        # Gemessen an der v1.9.29-EXE: 23 Module fuer nichts, und zwei
+        # Fremdbibliotheken in jeder Auslieferung, die keine Nennung hatten.
     ],
     hookspath=[],
     hooksconfig={},
@@ -431,7 +431,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.29',
+    name='PS5_Dump_Image_Converter_v1.9.30',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -24,7 +24,6 @@ import ctypes
 import datetime      # noqa: F401
 import errno
 import hashlib       # noqa: F401
-import importlib
 import faulthandler
 import io
 import ipaddress
@@ -58,7 +57,6 @@ import uuid
 import webbrowser
 import zlib
 from typing import Any, Iterator, Literal, cast
-from zipfile import ZipFile
 
 # ---------------------------------------------------------------------------
 # Drittanbieter
@@ -101,7 +99,6 @@ from ps5_validator.utils.ffpkg_support import (
 from ps5_validator.utils.pkg_merger import (
     MELDUNGEN as pkg_merger_meldungen,
     MERGED_SUFFIX,
-    PkgMergeError,
     discover_split_sets,
     merge_split_set,
 )
@@ -184,7 +181,6 @@ from ps5_validator.utils.plattform import (
     UI_SCHRIFT,
     HERUNTERFAHR_MELDUNGEN as _system_herunterfahr_meldungen,
     OEFFNEN_MELDUNGEN as _system_oeffnen_meldungen,
-    datei_oeffnen as _system_datei_oeffnen,
     herunterfahren as _system_herunterfahren,
     im_dateimanager_zeigen as _system_im_dateimanager_zeigen,
     oeffnen_versuchen as _system_oeffnen_versuchen,
@@ -571,10 +567,10 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # ---------------------------------------------------------------------------
 # Globale GUI-Konstanten
 # ---------------------------------------------------------------------------
-# Titel/Fensterma├ƒe werden an mehreren Stellen verwendet (Root-Fenster,
+# Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.29"
+APP_VERSION = "v1.9.30"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -1019,31 +1015,28 @@ except OSError:
     pass  # Log-Datei nicht kritisch
 
 # ---------------------------------------------------------------------------
-# Win32-API-Helfer fuer korrekte Taskleisten-Integration
+# Win32-API-Helfer fuer das Symbol in Taskleiste und Fensterkopf
 # ---------------------------------------------------------------------------
 # Hintergrund:
-#   overrideredirect(True) entfernt den Windows-Rahmen, loescht aber auch
-#   WS_EX_APPWINDOW aus den Extended Window Styles. Ohne dieses Flag zeigt
-#   Windows keine Taskleisten-Vorschau und bringt das Fenster beim Klick
-#   auf den Taskleisteneintrag nicht in den Vordergrund.
-# Loesung:
-#   Nach dem Erstellen des Fensters wird WS_EX_APPWINDOW via SetWindowLongW
-#   explizit gesetzt. Zusaetzlich wird SetForegroundWindow verwendet, um
-#   das Fenster beim Taskleisten-Klick korrekt zu aktivieren.
+#   Tk setzt das Fenstersymbol nur ueber iconbitmap(), und Windows nimmt
+#   dafuer die kleinste Groesse aus der .ico. In der Taskleiste und beim
+#   Umschalten mit Alt+Tab sieht das grob aus. Deshalb werden das grosse
+#   und das kleine Symbol zusaetzlich direkt am Fenster (WM_SETICON) und
+#   an seiner Fensterklasse (GCLP_HICON) gesetzt.
+#
+#   Hier stand bis zum 20.09.2026 ein zweiter Teil: WS_EX_APPWINDOW setzen
+#   und WS_EX_TOOLWINDOW entfernen, damit ein rahmenloses Fenster
+#   (overrideredirect) ueberhaupt in der Taskleiste erscheint, dazu
+#   SetForegroundWindow. Das Hauptfenster traegt heute den nativen
+#   Windows-Rahmen - Windows verwaltet den Taskleisteneintrag selbst, und
+#   gerufen hat den Teil zuletzt niemand mehr.
 # ---------------------------------------------------------------------------
 
 if sys.platform == "win32":
     import ctypes  # noqa: F811
 
     _user32   = ctypes.windll.user32
-    _dwmapi   = ctypes.windll.dwmapi
 
-    GWL_EXSTYLE        = -20
-    WS_EX_APPWINDOW    = 0x00040000
-    WS_EX_TOOLWINDOW   = 0x00000080
-    WS_EX_NOACTIVATE   = 0x08000000
-    SW_MINIMIZE        = 6
-    SW_RESTORE         = 9
     WM_SETICON         = 0x0080
     ICON_SMALL         = 0
     ICON_BIG           = 1
@@ -1060,30 +1053,6 @@ if sys.platform == "win32":
     def _get_hwnd(tk_widget) -> int:
         """Gibt das Win32-HWND fuer ein Tk-Widget zurueck."""
         return _user32.GetParent(tk_widget.winfo_id()) or tk_widget.winfo_id()
-
-    def _apply_appwindow_style(tk_widget) -> None:
-        """Setzt WS_EX_APPWINDOW und entfernt WS_EX_TOOLWINDOW.
-
-        Muss nach overrideredirect(True) und nach dem ersten update_idletasks()
-        aufgerufen werden, damit Windows das Fenster korrekt in der Taskleiste
-        registriert und die DWM-Vorschau aktiviert.
-        """
-        try:
-            hwnd = _get_hwnd(tk_widget)
-            ex_style = _user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            # WS_EX_TOOLWINDOW entfernen (verhindert Taskleisteneintrag)
-            ex_style &= ~WS_EX_TOOLWINDOW
-            # WS_EX_APPWINDOW setzen (erzwingt Taskleisteneintrag + DWM-Vorschau)
-            ex_style |= WS_EX_APPWINDOW
-            _user32.SetWindowLongW(hwnd, GWL_EXSTYLE, ex_style)
-            # Fenster kurz verstecken und wieder anzeigen damit Windows
-            # den neuen Style sofort uebernimmt
-            _user32.SetWindowPos(
-                hwnd, 0, 0, 0, 0, 0,
-                0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020  # SWP_NOMOVE|NOSIZE|NOZORDER|NOACTIVATE|FRAMECHANGED
-            )
-        except Exception as exc:
-            logger.debug("Win32 SetWindowPos fehlgeschlagen (nicht-Windows): %s", exc)
 
     def _apply_win32_window_icon(tk_widget, icon_path: str) -> None:
         """Setzt unter Windows explizit kleine/grosse Fenster-Icons fuer die Taskleiste."""
@@ -1119,23 +1088,17 @@ if sys.platform == "win32":
         except Exception as exc:
             logger.debug("Win32 Taskleisten-Icon konnte nicht gesetzt werden: %s", exc)
 
-    def _bring_to_front(tk_widget) -> None:
-        """Bringt das Fenster in den Vordergrund (umgeht Windows-Fokus-Schutz)."""
-        try:
-            hwnd = _get_hwnd(tk_widget)
-            # AllowSetForegroundWindow + SetForegroundWindow
-            _user32.AllowSetForegroundWindow(0xFFFFFFFF)
-            _user32.ShowWindow(hwnd, SW_RESTORE)
-            _user32.SetForegroundWindow(hwnd)
-            _user32.BringWindowToTop(hwnd)
-        except Exception as exc:
-            logger.debug("Win32 SetForegroundWindow fehlgeschlagen (nicht-Windows): %s", exc)
-else:
-    def _apply_appwindow_style(tk_widget) -> None:  # type: ignore[misc]
-        pass
+    # Hier stand ausserdem ``_bring_to_front`` (AllowSetForegroundWindow,
+    # SetForegroundWindow, BringWindowToTop). Gerufen hat es niemand: Jedes
+    # Fenster holt sich den Vordergrund selbst mit Tk-Mitteln - ``lift()``,
+    # kurz ``-topmost`` und ``focus_force()``. Der Win32-Weg umgeht den
+    # Fokusschutz von Windows und hat hier nichts unbenutzt herumzustehen.
+    #
+    # Ein Zweig fuer andere Systeme ist nicht mehr noetig: Jede Aufrufstelle
+    # von _apply_win32_window_icon steht selbst hinter sys.platform ==
+    # "win32". Der frueher hier stehende Leerlauf-Ersatz gehoerte zum
+    # entfernten _apply_appwindow_style.
 
-    def _bring_to_front(tk_widget) -> None:  # type: ignore[misc]
-        pass
 
 def parse_sfo(data: bytes) -> dict[str, object]:
     """Parst eine param.sfo-Datei und extrahiert Metadaten.
@@ -2289,10 +2252,9 @@ class ProgressEngine:
         self._displayed = max(self._displayed, min(disp, 99.9))
         return self._displayed, self._status_with_eta(self._status_text)
 
-    @property
-    def raw_progress(self) -> float:
-        """Aktueller Rohwert (0ÔÇô100), ohne Easing."""
-        return self._raw_progress
+    # Eine Eigenschaft raw_progress (Rohwert ohne Easing) stand hier, ohne
+    # dass sie jemand las: Innen wird _raw_progress benutzt, nach draussen
+    # geht der geglaettete Wert aus tick().
 
     @property
     def status(self) -> str:
@@ -9816,9 +9778,10 @@ class PS5ConverterGUI:
     def _apply_window_icon(self) -> None:
         """Setzt das App-Icon auf das Hauptfenster.
 
-        Muss nach overrideredirect(True) und _apply_appwindow_style() aufgerufen
-        werden, da overrideredirect den Windows-Fenster-Handle neu erstellt und
-        dabei das zuvor gesetzte Icon löscht.
+        Muss nach jedem Wechsel von overrideredirect aufgerufen werden, da
+        Windows dabei den Fenster-Handle neu erstellt und das zuvor gesetzte
+        Icon löscht. Das Hauptfenster trägt den nativen Rahmen; rahmenlos
+        wird es nur im Vollbild-Rückfallweg (_go_fullscreen).
 
         Auf Windows wird das ICO als temporaere Datei extrahiert und via
         iconbitmap() gesetzt. Die Datei wird nach 5 Sekunden automatisch
@@ -19556,8 +19519,8 @@ class PS5ConverterGUI:
             pe.update_external_progress(self.task_progress)
             # Hol PE-Easing-Wert für Easing-Seiteneffekt + Status mit ETA
             _pe_displayed, pe_status = pe.tick()
-            # Nicht von PE zurück zu task_progress zurückgehen - PE folgt task_progress
-            # (pe.raw_progress sollte nicht größer als task_progress sein)
+            # Nicht von PE zurück zu task_progress zurückgehen - PE folgt
+            # task_progress und bleibt mit seinem Rohwert dahinter.
             # Status-Label aktualisieren
             if pe_status:
                 # PE-Status ist nur dann wirklich live, wenn die ProgressEngine sich
@@ -21158,6 +21121,12 @@ class PS5ConverterGUI:
     def _install_osfmount(self) -> bool:
         """Lädt OSFMount herunter und installiert es automatisch.
 
+        Liegt OSFMount schon da und fehlt nur sein Treiber osfdisk, wird
+        nichts heruntergeladen: Der Treiber kommt aus dem Programmordner
+        (``_osfmount_treiber_einrichten``). Laesst die stille Installation
+        den Treiber aus - so auf dem Entwicklungsrechner gemessen -, wird er
+        danach ebenso eingerichtet.
+
         Returns:
             True wenn die Installation erfolgreich war.
         """
@@ -21167,6 +21136,13 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("log.manual.osfmount_windows_only",
                                         system=platform.system()))
             return False
+        from ps5_validator.utils import osfmount_treiber as ot  # noqa: PLC0415
+
+        zustand = self._osfmount_treiberzustand()
+        if zustand.urteil == ot.BEREIT:
+            return True
+        if zustand.urteil != ot.NICHT_INSTALLIERT:
+            return self._osfmount_treiber_einrichten(zustand.inf)
         url = "https://www.osforensics.com/downloads/osfmount.exe"
         installer = os.path.join(self._get_runtime_temp_dir(), "osfmount_setup.exe")
         try:
@@ -21177,10 +21153,67 @@ class PS5ConverterGUI:
                 [installer, "/VERYSILENT", "/NORESTART"],
                 timeout=120,
             )
-            return ret == 0
+            if ret != 0:
+                return False
         except Exception as exc:
             self._append_to_log(self._t('log.auto.0058', v0=exc))
             return False
+        zustand = self._osfmount_treiberzustand()
+        if zustand.urteil in (ot.BEREIT, ot.NICHT_INSTALLIERT):
+            # Nicht gefunden: Das sagt gleich die Pruefung danach samt Grund.
+            return True
+        return self._osfmount_treiber_einrichten(zustand.inf)
+
+    def _osfmount_treiber_einrichten(self, inf: str) -> bool:
+        """Richtet den Treiber osfdisk aus dem OSFMount-Programmordner ein.
+
+        Wie ``devcon install`` (siehe ``treiber_einrichten``): Das Geraet
+        ``root\\osfdisk`` wird angelegt, falls es fehlt, und der Treiber darauf
+        installiert. ``pnputil /add-driver ... /install`` - bis v1.9.29 der Rat
+        im Diagnosebericht - legt dieses Geraet nicht an. Ohne
+        Administratorrechte wird gar nicht erst angefangen. Das Ergebnis steht
+        danach in ``_osfmount_letzter_versuch`` - fuer Fehlerfenster und
+        Neustart-Hinweis.
+        """
+        from ps5_validator.utils import osfmount_treiber as ot  # noqa: PLC0415
+        from ps5_validator.utils import treiber_einrichten as te  # noqa: PLC0415
+
+        if not _is_admin():
+            ergebnis = te.Ergebnis(False, te.KEINE_RECHTE, te.ERROR_ACCESS_DENIED)
+        else:
+            self._append_to_log(self._t("osfmount.treiber_einrichten", inf=inf))
+            self._set_status(self._t("osfmount.treiber_status"))
+            try:
+                ergebnis = te.einrichten(inf, ot.HARDWARE_ID)
+            except Exception as exc:  # noqa: BLE001 - etwa eine fehlende DLL
+                logger.warning("Treiber osfdisk nicht einrichtbar: %s", exc)
+                ergebnis = te.Ergebnis(False, te.SCHRITT_TREIBER)
+        self._osfmount_letzter_versuch = ergebnis
+        if ergebnis.ok:
+            self._append_to_log(self._t("osfmount.treiber_eingerichtet_neustart"
+                                        if ergebnis.neustart
+                                        else "osfmount.treiber_eingerichtet"))
+        else:
+            self._append_to_log(self._t("osfmount.treiber_gescheitert",
+                                        grund=self._treiber_fehlertext(ergebnis)))
+        return ergebnis.ok
+
+    def _treiber_fehlertext(self, ergebnis) -> str:
+        """Ein Satz zu einem gescheiterten ``treiber_einrichten.einrichten``."""
+        from ps5_validator.utils import treiber_einrichten as te  # noqa: PLC0415
+
+        if ergebnis.schritt in (te.KEINE_RECHTE, te.INF_FEHLT, te.NICHT_WINDOWS):
+            return self._t("treiber.fehler." + ergebnis.schritt)
+        schluessel = te.BEKANNTE_FEHLER.get(ergebnis.code)
+        if schluessel:
+            grund = self._t("treiber.fehler." + schluessel)
+        elif ergebnis.code:
+            text = te.systemtext(ergebnis.code)
+            grund = self._t("treiber.fehler.unbekannt", code="0x%08X" % ergebnis.code,
+                            text=(" – " + text) if text else "")
+        else:
+            grund = self._t("treiber.fehler.ohne_code")
+        return self._t("treiber.schritt." + ergebnis.schritt, grund=grund)
 
     def _install_dokan2_silent(self) -> bool:
         """Lädt Dokan2 herunter und installiert es ohne Zusatzdialoge.
@@ -21226,7 +21259,8 @@ class PS5ConverterGUI:
             return False
 
     def _run_background_installer(self, title: str, install_func, verify_func, task_label: str = "",
-                                  nur_windows: bool = False, fehlergrund=None) -> None:
+                                  nur_windows: bool = False, fehlergrund=None,
+                                  erfolgshinweis=None) -> None:
         """Startet einen Installer in einem Daemon-Thread und meldet Ergebnis per UI.
 
         ``nur_windows``: Die Weiche steht hier, im Hauptfaden, vor dem Faden.
@@ -21239,6 +21273,9 @@ class PS5ConverterGUI:
         dass eine Ausnahme ihn mitbringt. Sonst stand im Fehlerfenster nur
         "konnte nicht installiert werden" - bei OSFMount ohne Treiber (seit
         19.09.2026 geprueft) ohne jeden Hinweis, was fehlt.
+
+        ``erfolgshinweis``: Ein Zusatz zur Erfolgsmeldung, etwa dass Windows
+        nach dem Einrichten eines Treibers einen Neustart verlangt.
         """
         prefix = f"[{task_label}] " if task_label else ""
         display_title = f"{prefix}{title}"
@@ -21293,6 +21330,12 @@ class PS5ConverterGUI:
                     err_msg = str(fehlergrund() or "")
                 except Exception as exc:  # noqa: BLE001 - der Grund ist Zugabe
                     logger.debug("Fehlergrund nicht ermittelbar: %s", exc)
+            zusatz = ""
+            if ok and not already_installed and erfolgshinweis is not None:
+                try:
+                    zusatz = str(erfolgshinweis() or "")
+                except Exception as exc:  # noqa: BLE001 - der Hinweis ist Zugabe
+                    logger.debug("Erfolgshinweis nicht ermittelbar: %s", exc)
 
             def _done() -> None:
                 # Während laufender Hauptaufgaben keine modalen Dialoge anzeigen,
@@ -21304,15 +21347,20 @@ class PS5ConverterGUI:
                         # Bei "bereits installiert" nie Popup: nur Status/Log.
                     else:
                         self._set_status(self._t("status.tool_installed", tool=display_title))
+                        meldung = self._t("dialog.msg.installed_successfully", title=display_title)
+                        if zusatz:
+                            meldung += "\n\n" + zusatz
                         if allow_popup:
                             messagebox.showinfo(
                                 self._t("dialog.title.installed_suffix", title=display_title),
-                                self._t("dialog.msg.installed_successfully", title=display_title),
+                                meldung,
                                 parent=self.root,
                             )
                         else:
                             try:
                                 self._append_to_log(self._t('log.auto.0064', v0=display_title))
+                                if zusatz:
+                                    self._append_to_log(zusatz + "\n")
                             except Exception:
                                 pass
                 else:
@@ -21339,7 +21387,13 @@ class PS5ConverterGUI:
         threading.Thread(target=_worker, daemon=True).start()
 
     def _install_osfmount_background(self) -> None:
-        """Ressourcen Punkt 19: OSFMount automatisch im Hintergrund installieren."""
+        """Ressourcen Punkt 19: OSFMount automatisch im Hintergrund installieren.
+
+        Fehlt nur der Treiber, wird er ohne Download eingerichtet
+        (``_install_osfmount``).
+        """
+        # Ein Ergebnis aus einem frueheren Klick gehoert nicht in diese Meldung.
+        self._osfmount_letzter_versuch = None
         self._run_background_installer(
             title="OSFMount",
             install_func=self._install_osfmount,
@@ -21347,6 +21401,7 @@ class PS5ConverterGUI:
             task_label="19",
             nur_windows=True,
             fehlergrund=self._osfmount_fehlergrund,
+            erfolgshinweis=self._osfmount_erfolgshinweis,
         )
 
     def _osfmount_treiberzustand(self):
@@ -21377,9 +21432,19 @@ class PS5ConverterGUI:
             return ""
         if zustand.urteil == ot.NICHT_INSTALLIERT:
             return self._t("osfmount.nicht_gefunden")
+        versuch = getattr(self, "_osfmount_letzter_versuch", None)
         return self._t("osfmount.treiber_nicht_bereit",
                        zustand=self._t("osfmount.zustand." + zustand.urteil),
-                       inf=zustand.inf or r"C:\Program Files\OSFMount\win10\osfdisk.inf")
+                       versuch=(self._t("osfmount.versuch_gescheitert",
+                                        grund=self._treiber_fehlertext(versuch))
+                                if versuch is not None and not versuch.ok else ""))
+
+    def _osfmount_erfolgshinweis(self) -> str:
+        """Verlangt Windows nach dem Einrichten des Treibers einen Neustart?"""
+        versuch = getattr(self, "_osfmount_letzter_versuch", None)
+        if versuch is not None and versuch.ok and versuch.neustart:
+            return self._t("osfmount.neustart_noetig")
+        return ""
 
     def _install_dokan2_background(self) -> None:
         """Ressourcen Punkt 20: Dokan2 automatisch im Hintergrund installieren."""
@@ -33778,13 +33843,20 @@ class PS5ConverterGUI:
             # Nur umfaerben, nicht neu bauen - siehe _bibliothek_kacheln_markieren.
             self._bibliothek_kacheln_markieren(all_items, ansicht["gewaehlt"])
 
-        def _sichtbare() -> list:
-            query = search_var.get().strip().lower()
-            return [it for it in all_items
-                    if not query or query in " ".join([
-                        str(it["meta"].get("title", "")),
-                        str(it["meta"].get("title_id", "")),
-                        it["path"]]).lower()]
+        def _passt_zur_suche(eintrag: dict, query: str) -> bool:
+            """Titel, Title-ID und Pfad - in genau dieser Zusammenstellung.
+
+            Einmal fuer beide Ansichten: Liste und Kacheln wuerden sonst
+            verschiedene Treffer zeigen, sobald jemand nur eine der beiden
+            Stellen anfasst. Bis zum 20.09.2026 stand dieselbe Bedingung
+            dreimal hier - eine der drei Fassungen rief niemand.
+            """
+            if not query:
+                return True
+            meta = eintrag["meta"]
+            return query in " ".join([
+                str(meta.get("title", "")), str(meta.get("title_id", "")),
+                eintrag["path"]]).lower()
 
         def _ansicht_umschalten() -> None:
             """Kacheln oder Liste - die Wahl wird gemerkt."""
@@ -33812,10 +33884,7 @@ class PS5ConverterGUI:
             sichtbar = 0
             for idx, item in paare:
                 meta = item["meta"]
-                haystack = " ".join([
-                    str(meta.get("title", "")), str(meta.get("title_id", "")), item["path"],
-                ]).lower()
-                if query and query not in haystack:
+                if not _passt_zur_suche(item, query):
                     continue
                 iid = str(idx)
                 tree.insert("", "end", iid=iid, values=(
@@ -33826,11 +33895,7 @@ class PS5ConverterGUI:
                 sichtbar += 1
 
             # Dieselbe gefilterte, sortierte Auswahl auch als Kacheln.
-            sichtbare = [it for _i, it in paare
-                         if not query or query in " ".join([
-                             str(it["meta"].get("title", "")),
-                             str(it["meta"].get("title_id", "")),
-                             it["path"]]).lower()]
+            sichtbare = [it for _i, it in paare if _passt_zur_suche(it, query)]
             ansicht["generation"] += 1
             self._bibliothek_generation = ansicht["generation"]
             self._bibliothek_kacheln_setzen(
@@ -36157,8 +36222,6 @@ class PS5ConverterGUI:
 
     def _show_pkg_reader(self) -> None:
         """Waehlt eine ``.pkg`` und zeigt ihren aeusseren Container an."""
-        from ps5_validator.utils import prosperopkg  # noqa: PLC0415
-
         if not prosperopkg.werkzeug_finden():
             messagebox.showerror(
                 self._t("pkgreader.read_failed_title"),
@@ -39633,13 +39696,24 @@ class PS5ConverterGUI:
             _hoch(angaben.icon, user_sce + "/icon0.png")
         _hoch_roh((kennung + "\n").encode("ascii"), app_install.KENNUNGSDATEI)
 
+        # Ein altes Protokoll unbrauchbar machen, bevor das Payload laeuft:
+        # sonst liesse sich unten nicht unterscheiden, ob das Protokoll von
+        # diesem Lauf stammt oder noch vom letzten.
+        marke = app_install.protokoll_marke_setzen(ftp)
         melden(self._t("appinstall.log_payload", host=host, port=app_install.ELFLDR_PORT))
         # elfldr-Pfad durchreichen: Ist Port 9021 zu, wird elfldr sonst
         # nicht geweckt, der Versand faellt auf den Payload Manager
-        # zurueck - und der liefert keine Ausgabe, womit
-        # antwort_beurteilen() zwangslaeufig fehlschlaegt.
+        # zurueck - und der liefert keine Ausgabe zurueck.
         antwort = app_install.payload_senden(
             host, payload, elfldr_pfad=self._elfldr_payload_path())
+        if not antwort.strip():
+            # Genau dieser Fall: kein Wort zurueck. Das Payload schreibt
+            # dieselben Zeilen auf der Konsole nach /data/appinst.log -
+            # ohne sie waere jede Installation ueber den Payload Manager
+            # ein Fehlschlag, auch die geglueckte.
+            melden(self._t("appinstall.log_protokoll",
+                           datei=app_install.PROTOKOLLDATEI))
+            antwort = app_install.protokoll_abwarten(ftp, marke)
         for zeile in antwort.splitlines():
             melden("  " + zeile)
         geklappt, text = app_install.antwort_beurteilen(antwort)
@@ -42545,8 +42619,6 @@ class PS5ConverterGUI:
         mkpfs und UFS2Tool. Dieses Fenster waehlt aus, zeigt den
         Fortschritt und schreibt das Protokoll mit.
         """
-        from ps5_validator.utils import prosperopkg
-
         c = self._COLORS
         werkzeug = prosperopkg.werkzeug_finden()
         if not werkzeug:
@@ -43102,8 +43174,6 @@ class PS5ConverterGUI:
         Firmware-Schranke der Konsole liest ``requiredSystemSoftwareVersion``
         aus ``param.json`` - und die wird hier gesetzt.
         """
-        from ps5_validator.utils import prosperopkg
-
         c = self._COLORS
         werkzeug = prosperopkg.werkzeug_finden()
         if not werkzeug:
@@ -44159,7 +44229,7 @@ class PS5ConverterGUI:
         Rückgabe: ein PhotoImage oder None. None ist der Normalfall, wenn
         niemand ein Bild hinterlegt hat, und darf das Fenster nicht stören.
         """
-        pfad = _bundled_resource(self._WEBKIT_ORDNER, self._WEBKIT_BILD)
+        pfad = self._webkit_bild_pfad()
         if not pfad or not os.path.isfile(pfad):
             return None
         # Mit der Anzeigeskalierung mitziehen: Der Platz, den das Fenster
@@ -46264,17 +46334,11 @@ class PS5ConverterGUI:
             "loader": bool(elf) and self._ps5_port_open(ip, self._PAYLOAD_SEND_PORT),
         }
 
-    def _klog_vorbereiten(self, parent=None) -> None:
-        """Misst und bietet an - der Weg fuer Aufrufer, die warten duerfen.
-
-        Der Knopf KLOG geht seit dem 05.09.2026 nicht mehr hier entlang: Er
-        oeffnet das Fenster sofort und laesst :meth:`_klog_erreichbarkeit` im
-        Arbeitsfaden laufen. Diese Zusammenfassung bleibt fuer alles, was die
-        Wartezeit nicht stoert.
-        """
-        lage = self._klog_erreichbarkeit()
-        if lage is not None:
-            self._klog_anbieten(lage, parent=parent)
+    # Hier stand ``_klog_vorbereiten``, das Messung und Angebot in einem
+    # Aufruf zusammenfasste. Der Knopf KLOG geht seit dem 05.09.2026 nicht
+    # mehr diesen Weg: Er oeffnet das Fenster sofort und laesst
+    # ``_klog_erreichbarkeit`` im Arbeitsfaden laufen. Seitdem rief die
+    # Zusammenfassung niemand mehr - beide Haelften stehen einzeln bereit.
 
     def _klog_anbieten(self, lage: dict, parent=None) -> None:
         """Bietet an, was die Messung ergeben hat - im Hauptstrang.
@@ -47548,22 +47612,10 @@ class PS5ConverterGUI:
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 8))
 
-        def _vorschauen_auffrischen() -> None:
-            """Zeichnet beide Vorschauen neu.
-
-            Noetig nach jedem Regler fuer Helligkeit oder Kontrast: Die
-            Vorschau zeigt das Bild so, wie es im Fenster ankommt, und muesste
-            sonst luegen. Die Funktionen dahinter entstehen erst weiter
-            unten - deshalb ueber die Sammlung statt ueber feste Namen.
-            """
-            for zeichnen in vorschau_zeichner:
-                try:
-                    zeichnen()
-                except Exception as exc:
-                    logger.debug("Vorschau nicht auffrischbar: %s", exc)
-
-        vorschau_zeichner: list = []
-
+        # Hier stand eine Sammlung "vorschau_zeichner" samt Auffrischer. Sie
+        # gehoerte zu den Reglern fuer Helligkeit und Kontrast; die sind mit
+        # den Bildeffekten ausgebaut worden. Jede Vorschau haengt seit dem
+        # direkt an ihrer Combobox, die Sammlung las niemand mehr.
         status_var = tk.StringVar()
 
         def _refresh_status() -> None:
@@ -47646,7 +47698,6 @@ class PS5ConverterGUI:
                           height=0 if bild else 1)
 
             bundled_combo.bind("<<ComboboxSelected>>", _haupt_vorschau_setzen, add="+")
-            vorschau_zeichner.append(_haupt_vorschau_setzen)
             _haupt_vorschau_setzen()
 
             flach_knopf(
@@ -47794,7 +47845,6 @@ class PS5ConverterGUI:
                           height=0 if bild else 1)
 
             sidebar_combo.bind("<<ComboboxSelected>>", _sidebar_vorschau_setzen, add="+")
-            vorschau_zeichner.append(_sidebar_vorschau_setzen)
             _sidebar_vorschau_setzen()
 
             flach_knopf(
@@ -47854,11 +47904,10 @@ class PS5ConverterGUI:
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_reset_sidebar_image).pack(side="left", padx=(10, 0))
 
-        # --- Trennlinie + Darstellung: Durchsicht, Helligkeit, Kontrast ---
-        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
-
-
-        # --- Trennlinie + Verbindungsdaten der PS5 ---
+        # --- Trennlinie + Metadaten aus dem Netz ---
+        # Hier stand bis zum Ausbau der Bildeffekte ein zweiter Abschnitt
+        # (Durchsicht, Helligkeit, Kontrast). Seine Trennlinie blieb stehen
+        # und zeichnete einen doppelten Strich ohne Inhalt dazwischen.
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         # ── Metadaten aus dem Netz ──────────────────────────────────────
@@ -48283,21 +48332,11 @@ class PS5ConverterGUI:
             logger.debug("Vorschau fuer %s nicht moeglich: %s", pfad, exc)
             return None
 
-    @staticmethod
-    def _ist_sidebar_bild(pfad: str) -> bool:
-        """Ob ein Pfad zu einem Seitenleistenbild gehoert.
-
-        Die mitgelieferten Bilder tragen es im Namen (``sidebar_..``); bei
-        einem selbst gewaehlten Bild entscheidet das Format - die
-        Seitenleiste ist hoch, der Hauptbereich breit.
-        """
-        if os.path.basename(pfad).lower().startswith("sidebar"):
-            return True
-        try:
-            with Image.open(pfad) as img:
-                return img.height > img.width
-        except Exception:
-            return False
+    # Hier stand ``_ist_sidebar_bild`` (mit @staticmethod): erst der
+    # Dateiname (``sidebar..``), dann das Format. Diese Regel ist verworfen -
+    # ein selbst hinzugelegtes Bild heisst nicht zwingend so. Entschieden
+    # wird am Seitenverhaeltnis, in ``_ist_hochformat``; gerufen hat die alte
+    # Fassung niemand mehr.
 
     def _apply_card_tint_live(self) -> None:
         """Wendet eine neu berechnete Kartentönung so weit wie möglich sofort an.
@@ -49584,6 +49623,12 @@ def _run_wee_tools(argumente: list[str]) -> int:
     Konsolenfenster (siehe ``wee_tools``). Das Fenster gibt Sprache und
     Arbeitsordner ueber die Umgebung mit; von Hand gestartet gelten die
     Vorgaben. Die restlichen Argumente gehen an das Werkzeug.
+
+    Bleibt bewusst unten im Startblock: Ein frueher Abzweig ganz oben in der
+    Datei (19.09.2026 erprobt) sparte in der gebauten EXE nichts Messbares -
+    die Zeit geht beim Start der Python-Laufzeit verloren, nicht beim Laden
+    des Moduls -, und sofort nach dem Menue Getipptes ging in 5 von 9 Faellen
+    verloren (so gebaut 0 von 9). Zurueckgebaut.
     """
     sprache = os.environ.get(wee_tools.UMGEBUNG_SPRACHE, "")
     wurzel = _wee_tools_wurzel()

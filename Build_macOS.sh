@@ -156,7 +156,8 @@ pflicht_installieren pillow
 pflicht_installieren cryptography
 pflicht_installieren zstandard
 optional_installieren zlib-ng "MkPFS nutzt die langsamere zlib der Standardbibliothek."
-optional_installieren paramiko "kein SFTP."
+# paramiko stand hier bis v1.9.29 ("kein SFTP") - das Programm benutzt es
+# seit v1.8.93 nirgends und im Bau landete es nie.
 optional_installieren tkinterdnd2 "kein Drag & Drop."
 optional_installieren psutil "keine CPU/RAM-Telemetrie."
 # Die .spec nennt lz4 als hiddenimport, PyInstaller uebergeht ein fehlendes

@@ -66,7 +66,10 @@ class UrteilTests(_Installiert):
         zeile = ot.berichtszeile(z)
         self.assertIn("NICHT INSTALLIERT", zeile)
         self.assertIn("weder Dienst noch Treiberpaket", zeile)
-        self.assertIn('pnputil /add-driver "%s" /install' % self.inf, zeile)
+        # Bis v1.9.29 stand hier pnputil - das legt das Geraet root\osfdisk
+        # nicht an. Der Rat zeigt jetzt auf Punkt 19, der es anlegt.
+        self.assertIn("Punkt 19", zeile)
+        self.assertNotIn("pnputil", zeile)
 
     def test_paket_im_speicher_aber_kein_dienst(self) -> None:
         z = self._zustand(start=None, speicher=True)
@@ -89,6 +92,18 @@ class UrteilTests(_Installiert):
         zeile = ot.berichtszeile(z)
         self.assertIn("root\\osfdisk", zeile)
         self.assertIn(str(self.inf), zeile)
+        self.assertIn("Punkt 19", zeile)
+
+    def test_jeder_mangel_nennt_einen_weg(self) -> None:
+        """Wo Punkt 19 hilft, sagt es der Bericht - auch bei fehlender Datei."""
+        for kwargs in ({"start": None}, {"start": 1, "speicher": True, "datei": False,
+                                         "geraet": True},
+                       {"start": ot.START_DEAKTIVIERT, "speicher": True, "datei": True,
+                        "geraet": True}):
+            with self.subTest(**{k: str(v) for k, v in kwargs.items()}):
+                zeile = ot.berichtszeile(self._zustand(**kwargs))
+                self.assertIn("Punkt 19", zeile)
+                self.assertNotIn("pnputil", zeile)
 
     def test_bereit(self) -> None:
         z = self._zustand(start=3, speicher=True, datei=True, geraet=True)
@@ -238,7 +253,9 @@ class InstallerTests(_Installiert):
             grund = self._gui()._osfmount_fehlergrund()
         self.assertIn("osfmount.treiber_nicht_bereit", grund)
         self.assertIn("zustand=osfmount.zustand.treiber_fehlt", grund)
-        self.assertIn("inf=%s" % self.inf, grund)
+        # Ohne Versuch kein Satz ueber einen Versuch.
+        self.assertIn("|versuch=", grund)
+        self.assertNotIn("osfmount.versuch_gescheitert", grund)
 
     def test_ohne_osfmount_heisst_der_grund_nicht_gefunden(self) -> None:
         gui = self._gui()
@@ -276,6 +293,156 @@ class InstallerTests(_Installiert):
             rueckrufe[0]()
         self.assertEqual([1], installiert, "Installiert wurde gar nicht")
         self.assertIn("GRUND-XYZ", str(fehlerfenster.call_args))
+
+
+class EinrichtenTests(_Installiert):
+    """Punkt 19 richtet den fehlenden Treiber selbst ein - ohne Download.
+
+    Gemessen am 19.09.2026: OSFMount da, Treiber nicht. Punkt 19 haette das
+    Programm erneut still installiert - und die stille Installation laesst
+    den Treiber hier aus. Jetzt kommt er aus dem Programmordner, wie bei
+    ``devcon install``. Anlegen und Installieren aendern das System; hier ist
+    ``treiber_einrichten.einrichten`` ersetzt und schreibt nur mit.
+    """
+
+    def _gui(self, *, programme=None):
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        folge = iter(programme or [])
+        gui._find_osfmount = lambda: next(folge, str(self.programm))
+        gui._t = lambda k, **w: k + "".join("|%s=%s" % (a, b) for a, b in sorted(w.items()))
+        gui.protokoll = []
+        gui._append_to_log = gui.protokoll.append
+        gui._set_status = lambda *_a, **_k: None
+        gui._get_runtime_temp_dir = lambda: str(self.ordner)
+        return gui
+
+    def _ausfuehren(self, gui, *, zustaende, admin=True, ergebnis=None, fehler=None):
+        from ps5_validator.utils import treiber_einrichten as te
+        aufrufe: dict = {"einrichten": [], "download": [], "installer": []}
+        fuehler = iter(zustaende)
+
+        def _einrichten(inf, hardware_id, **_kw):
+            aufrufe["einrichten"].append((inf, hardware_id))
+            if fehler is not None:
+                raise fehler
+            return ergebnis if ergebnis is not None else te.Ergebnis(True)
+
+        with mock.patch.object(APP, "IST_WINDOWS", True), \
+                mock.patch.object(ot.os, "name", "nt"), \
+                mock.patch.object(ot, "echte_messfuehler",
+                                  lambda: _fuehler(**next(fuehler))), \
+                mock.patch.object(APP, "_is_admin", lambda: admin), \
+                mock.patch.object(te, "einrichten", _einrichten), \
+                mock.patch.object(APP.urllib.request, "urlretrieve",
+                                  lambda *a, **k: aufrufe["download"].append(a)), \
+                mock.patch.object(gui, "_run_subprocess_logged",
+                                  lambda befehl, **k: aufrufe["installer"].append(befehl) or 0):
+            ok = gui._install_osfmount()
+        return ok, aufrufe
+
+    FEHLT = {"start": None, "speicher": False}
+    BEREIT = {"start": 3, "speicher": True, "datei": True, "geraet": True}
+
+    def test_nur_der_treiber_fehlt_nichts_wird_geladen(self) -> None:
+        ok, aufrufe = self._ausfuehren(self._gui(), zustaende=[self.FEHLT])
+        self.assertTrue(ok)
+        self.assertEqual([(str(self.inf), ot.HARDWARE_ID)], aufrufe["einrichten"])
+        self.assertEqual([], aufrufe["download"], "OSFMount wurde erneut heruntergeladen")
+        self.assertEqual([], aufrufe["installer"])
+
+    def test_ohne_adminrechte_wird_nichts_versucht(self) -> None:
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        ok, aufrufe = self._ausfuehren(gui, zustaende=[self.FEHLT], admin=False)
+        self.assertFalse(ok)
+        self.assertEqual([], aufrufe["einrichten"])
+        self.assertEqual(te.KEINE_RECHTE, gui._osfmount_letzter_versuch.schritt)
+        self.assertTrue(any("treiber.fehler.keine_rechte" in z for z in gui.protokoll))
+
+    def test_stille_installation_ohne_treiber_wird_nachgeholt(self) -> None:
+        """Nicht installiert -> laden, still installieren, Treiber nachholen."""
+        gui = self._gui(programme=[""])
+        ok, aufrufe = self._ausfuehren(gui, zustaende=[self.FEHLT])
+        self.assertTrue(ok)
+        self.assertEqual(1, len(aufrufe["download"]))
+        self.assertIn("/VERYSILENT", aufrufe["installer"][0])
+        self.assertEqual([(str(self.inf), ot.HARDWARE_ID)], aufrufe["einrichten"])
+
+    def test_bereit_tut_nichts(self) -> None:
+        ok, aufrufe = self._ausfuehren(self._gui(), zustaende=[self.BEREIT])
+        self.assertTrue(ok)
+        self.assertEqual({"einrichten": [], "download": [], "installer": []}, aufrufe)
+
+    def test_gescheitertes_einrichten_steht_im_fehlerfenster(self) -> None:
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        ok, _ = self._ausfuehren(
+            gui, zustaende=[self.FEHLT],
+            ergebnis=te.Ergebnis(False, te.SCHRITT_GERAET, te.ERROR_ACCESS_DENIED))
+        self.assertFalse(ok)
+        with mock.patch.object(ot, "echte_messfuehler", lambda: _fuehler(**self.FEHLT)), \
+                mock.patch.object(ot.os, "name", "nt"):
+            grund = gui._osfmount_fehlergrund()
+        self.assertIn("osfmount.versuch_gescheitert", grund)
+        self.assertIn("treiber.schritt.geraet", grund)
+        self.assertIn("treiber.fehler.rechte", grund)
+
+    def test_eine_ausnahme_wird_ein_ergebnis(self) -> None:
+        """Etwa eine fehlende DLL - das Fehlerfenster braucht trotzdem einen Grund."""
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        ok, _ = self._ausfuehren(gui, zustaende=[self.FEHLT], fehler=OSError("newdev fehlt"))
+        self.assertFalse(ok)
+        self.assertEqual(te.SCHRITT_TREIBER, gui._osfmount_letzter_versuch.schritt)
+        self.assertIn("treiber.fehler.ohne_code", gui._treiber_fehlertext(gui._osfmount_letzter_versuch))
+
+    def test_neustart_kommt_in_die_erfolgsmeldung(self) -> None:
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        self._ausfuehren(gui, zustaende=[self.FEHLT], ergebnis=te.Ergebnis(True, neustart=True))
+        self.assertEqual("osfmount.neustart_noetig", gui._osfmount_erfolgshinweis())
+        self._ausfuehren(gui, zustaende=[self.FEHLT], ergebnis=te.Ergebnis(True))
+        self.assertEqual("", gui._osfmount_erfolgshinweis())
+
+    def test_punkt_19_setzt_zurueck_und_gibt_den_hinweis_mit(self) -> None:
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        gui._osfmount_letzter_versuch = te.Ergebnis(False, te.SCHRITT_GERAET, 5)
+        mitgegeben: dict = {}
+        gui._run_background_installer = lambda **kw: mitgegeben.update(kw)
+        gui._install_osfmount_background()
+        self.assertIsNone(gui._osfmount_letzter_versuch)
+        self.assertEqual(gui._osfmount_erfolgshinweis, mitgegeben["erfolgshinweis"])
+
+    def test_fehlertext_eines_unbekannten_codes(self) -> None:
+        from ps5_validator.utils import treiber_einrichten as te
+        gui = self._gui()
+        versuch = te.Ergebnis(False, te.SCHRITT_TREIBER, 0xE0000999)
+        with mock.patch.object(te, "systemtext", lambda _c: ""):
+            text = gui._treiber_fehlertext(versuch)
+        self.assertIn("treiber.schritt.treiber", text)
+        self.assertIn("code=0xE0000999", text)
+        with mock.patch.object(te, "systemtext", lambda _c: "Systemsatz"):
+            self.assertIn("Systemsatz", gui._treiber_fehlertext(versuch))
+
+    def test_die_erfolgsmeldung_traegt_den_zusatz(self) -> None:
+        import threading
+        gui = self._gui()
+        gui.is_running = False
+        gui._resource_install_running = False
+        rueckrufe: list = []
+        fertig = threading.Event()
+        gui.root = mock.Mock()
+        gui.root.after = lambda _ms, fn: (rueckrufe.append(fn), fertig.set())
+        pruefungen = iter([False, True])
+        gui._run_background_installer(
+            title="OSFMount", install_func=lambda: True,
+            verify_func=lambda: next(pruefungen), nur_windows=False,
+            erfolgshinweis=lambda: "ZUSATZ-XYZ")
+        self.assertTrue(fertig.wait(10), "Der Installer-Faden kam nicht zurueck")
+        with mock.patch.object(APP.messagebox, "showinfo") as meldung:
+            rueckrufe[0]()
+        self.assertIn("ZUSATZ-XYZ", str(meldung.call_args))
 
 
 if __name__ == "__main__":

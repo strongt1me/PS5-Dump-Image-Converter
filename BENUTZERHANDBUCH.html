@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.29</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.30</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.29</span>
-      <span class="marke">Stand 19. September 2026</span>
+      <span class="marke">Version v1.9.30</span>
+      <span class="marke">Stand 20. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -576,7 +576,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h2><span class="nr">7</span> Aufgabe 3 – exFAT konvertieren</h2>
   <div class="kasten">
     <span class="titel">Wof&uuml;r ist das gut?</span>
-    <p>Dasselbe für eine <code>.exFAT</code>-Datei. Sie ist ein echtes Dateisystem-Abbild.</p><p><strong>Zum Auspacken brauchen Sie nichts weiter.</strong> Das Programm liest den Inhalt mit seinem eingebetteten exFAT-Leser direkt aus der Datei – ohne Einhängen, ohne Administratorrechte, auf jedem Betriebssystem. Nur wenn ein Abbild ungewöhnlich aufgebaut ist und der Leser daran scheitert, greift unter Windows der Rückfall über OSFMount; das Programm sagt es dann und kann OSFMount selbst installieren.</p><p>Als Laufwerk einhängen lässt sich eine <code>.exFAT</code> unter Windows trotzdem – praktisch zum Nachsehen und für Werkzeuge, die einen Laufwerksbuchstaben erwarten. Zum Weitergeben ist eine <code>.ffpfsc</code> meist die bessere Wahl – sie ist komprimiert.</p>
+    <p>Dasselbe für eine <code>.exFAT</code>-Datei. Sie ist ein echtes Dateisystem-Abbild.</p><p><strong>Zum Auspacken brauchen Sie nichts weiter.</strong> Das Programm liest den Inhalt mit seinem eingebetteten exFAT-Leser direkt aus der Datei – ohne Einhängen, ohne Administratorrechte, auf jedem Betriebssystem. Nur wenn ein Abbild ungewöhnlich aufgebaut ist und der Leser daran scheitert, greift unter Windows der Rückfall über OSFMount; das Programm sagt es dann und kann OSFMount selbst installieren. Fehlt nur der Treiber von OSFMount, richtet ihn Punkt 19 unter „Was man sonst ev. noch braucht“ ohne Download ein – mit Administratorrechten; Windows fragt dabei eventuell, ob die Gerätesoftware von PassMark installiert werden soll.</p><p>Als Laufwerk einhängen lässt sich eine <code>.exFAT</code> unter Windows trotzdem – praktisch zum Nachsehen und für Werkzeuge, die einen Laufwerksbuchstaben erwarten. Zum Weitergeben ist eine <code>.ffpfsc</code> meist die bessere Wahl – sie ist komprimiert.</p>
   </div>
   <p>Nutzen Sie Aufgabe 3, wenn Ihre Quelle eine <code>.exFAT</code>-Datei ist. Als Ziel stehen Dump-Ordner, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.ffpkg</code> zur Verfügung.</p>
   <ol class="schritte">
@@ -972,7 +972,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → APP DIREKT INSTALLIEREN.</p>
   <p>Selbst gebaute Pakete weist die Konsole mit <code>CE-100096-6</code> zurück. Dieses Werkzeug umgeht das: Es überträgt die Dateien per FTP und meldet die Kachel mit einem kleinen Payload an. Zur Wahl stehen zwei Bauformen – eine Kachel, die beim Antippen eine Adresse öffnet, und der Weg mit eigenem Programm.</p>
-  <p><strong>Vorausgesetzt wird</strong>, dass auf der Konsole <code>ftpsrv</code> (Port 2121) und der Payload-Loader (Port 9021) laufen. Ist 9021 zu, nimmt das Programm von selbst den Umweg über den Payload Manager.</p>
+  <p><strong>Vorausgesetzt wird</strong>, dass auf der Konsole <code>ftpsrv</code> (Port 2121) und der Payload-Loader (Port 9021) laufen. Ist 9021 zu, nimmt das Programm von selbst den Umweg über den Payload Manager. Dieser Weg meldet nichts zurück; das Programm holt sich das Protokoll des Payloads dann über FTP aus <code>/data/appinst.log</code> und wartet dafür bis zu 20 Sekunden. Im Protokollfeld sehen Sie diesen Schritt als eigene Zeile.</p>
   <div class="kasten warnung">
     <span class="titel">Wichtig</span>
     <p>Die Kachel wird ohne Signaturprüfung angelegt. Sie überlebt einen Neustart der Konsole nur, solange die Jailbreak-Umgebung wieder aktiv ist – bitte vor jeder Verwendung selbst prüfen.</p>
@@ -1613,7 +1613,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.29), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.30), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1813,8 +1813,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.29</strong></span>
-    <span>Stand 19. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.30</strong></span>
+    <span>Stand 20. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

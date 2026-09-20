@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.29 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.30 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.29"
+$EXE_VERSION = "v1.9.30"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -133,12 +133,11 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "FEHLER: zlib-ng konnte nicht installiert werden." -ForegroundColor Red
     exit 1
 }
-Write-Host "      paramiko installieren/aktualisieren (SFTP-Unterstuetzung)..." -ForegroundColor Gray
-& $PYTHON -m pip install paramiko --upgrade --quiet
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "FEHLER: paramiko konnte nicht installiert werden." -ForegroundColor Red
-    exit 1
-}
+# paramiko wurde hier bis v1.9.29 installiert (fuer "SFTP-Unterstuetzung").
+# Das Programm benutzt es seit v1.8.93 nirgends - es geht ueber
+# urllib.request ins Netz und ueber ftplib auf die Konsole. In der EXE landete
+# es ohnehin nicht; nur seine Abhaengigkeiten bcrypt und PyNaCl kamen ueber
+# die hiddenimports mit (23 Module fuer nichts, an v1.9.29 gemessen).
 Write-Host "      tkinterdnd2 installieren/aktualisieren (Drag & Drop, optional)..." -ForegroundColor Gray
 & $PYTHON -m pip install tkinterdnd2 --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
@@ -241,7 +240,7 @@ Write-Host "      app_icon.ico synchronisiert." -ForegroundColor Green
 # --- Schritt 5: EXE erstellen ---
 Write-Host ""
 Write-Host "[5/5] Erstelle EXE (dauert 2-5 Minuten)..." -ForegroundColor Yellow
-Write-Host "      (paramiko und cryptography erhoehen die Groesse etwas)" -ForegroundColor Gray
+Write-Host "      (cryptography und die .NET-Werkzeuge erhoehen die Groesse etwas)" -ForegroundColor Gray
 Write-Host "      (UPX-Komprimierung ist deaktiviert, um False Positives zu reduzieren)" -ForegroundColor Gray
 Write-Host ""
 & $PYTHON -m PyInstaller PS5ImageConverter_Pro.spec --clean --noconfirm
@@ -249,7 +248,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host ""
     Write-Host "FEHLER: EXE-Erstellung fehlgeschlagen." -ForegroundColor Red
     Write-Host "Tipp: Fehlermeldung oben lesen. Haeufige Ursachen:" -ForegroundColor Yellow
-    Write-Host "  - Fehlende Pakete: pip install paramiko bcrypt" -ForegroundColor Yellow
+    Write-Host "  - Fehlende Pakete: pip install pillow cryptography zstandard" -ForegroundColor Yellow
     exit 1
 }
 

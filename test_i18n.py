@@ -1,7 +1,12 @@
 """Tests fuer ps5_validator.utils.i18n (De/En-Uebersetzung ueber stabile Schluessel)."""
+import ast
+import re
 import unittest
+from pathlib import Path
 
 from ps5_validator.utils.i18n import DEFAULT_LANGUAGE, SUPPORTED_LANGUAGES, ZSTD_LEVEL_KEYS, translate
+
+PROJEKT = Path(__file__).resolve().parent
 
 
 class I18nTests(unittest.TestCase):
@@ -111,6 +116,118 @@ class AnfuehrungszeichenTests(unittest.TestCase):
                               if isinstance(t, str))]
         self.assertGreater(len(mit_zeichen), 5,
                            "Kaum Texte mit Anfuehrungszeichen gefunden.")
+
+
+class PlatzhalterTests(unittest.TestCase):
+    """Platzhalter in den Texten gegen die Werte an der Aufrufstelle.
+
+    Warum das eine eigene Pruefung braucht: ``translate`` loest bei einem
+    fehlenden Wert keine Ausnahme aus, sondern gibt die Vorlage
+    unformatiert zurueck (siehe der Test weiter oben). Der Anwender liest
+    dann "Ordner {ordner} angelegt" - mit Klammern. Und hat ein Text in
+    einer Sprache einen Platzhalter mehr, fehlt dieser Wert genau dort,
+    wo die Sprache umgestellt ist: beim englischen Anwender, nie hier.
+
+    Gemessen wird ueber den Syntaxbaum, ueber alle vier Wege zum Text.
+    """
+
+    #: Name des Aufrufs -> Stelle des Schluessels in den Argumenten.
+    WEGE = {"_t": 0, "t": 0, "uebersetzen": 0, "translate": 1,
+            "i18n_translate": 1, "_register_translatable": 1}
+
+    #: Eigene Angaben dieser Wege, die nie Platzhalter sind.
+    KEINE_PLATZHALTER = {"config_attr"}
+
+    PLATZ = re.compile(r"\{([A-Za-z_][A-Za-z_0-9]*)[^{}]*\}")
+
+    @classmethod
+    def setUpClass(cls):
+        from ps5_validator.utils.i18n import STRINGS
+
+        cls.STRINGS = STRINGS
+        cls.stellen: list[tuple[str, int, str, set[str], set[str]]] = []
+        dateien = [PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"]
+        dateien += sorted((PROJEKT / "ps5_validator").rglob("*.py"))
+        for pfad in dateien:
+            baum = ast.parse(pfad.read_text(encoding="utf-8", errors="replace"))
+            for knoten in ast.walk(baum):
+                if not isinstance(knoten, ast.Call):
+                    continue
+                name = getattr(knoten.func, "attr", "") or getattr(knoten.func, "id", "")
+                stelle = cls.WEGE.get(name)
+                if stelle is None or len(knoten.args) <= stelle:
+                    continue
+                arg = knoten.args[stelle]
+                if not isinstance(arg, ast.Constant) or not isinstance(arg.value, str):
+                    continue  # zusammengesetzter Schluessel - nicht beurteilbar
+                if any(kw.arg is None for kw in knoten.keywords):
+                    continue  # **werte - von aussen nicht beurteilbar
+                gegeben = {kw.arg for kw in knoten.keywords
+                           if kw.arg and kw.arg not in cls.KEINE_PLATZHALTER}
+                cls.stellen.append((pfad.name, knoten.lineno, arg.value,
+                                    cls._platzhalter_von(arg.value), gegeben))
+            del baum
+
+    @classmethod
+    def _platzhalter_von(cls, schluessel: str) -> set[str]:
+        """Alle Platzhalter beider Sprachen - die Aufrufstelle bedient beide."""
+        eintrag = cls.STRINGS.get(schluessel)
+        if not isinstance(eintrag, dict):
+            return set()
+        gebraucht: set[str] = set()
+        for sprache in ("de", "en"):
+            text = eintrag.get(sprache, "")
+            if isinstance(text, str):
+                gebraucht |= set(cls.PLATZ.findall(text))
+        return gebraucht
+
+    def test_de_und_en_tragen_dieselben_platzhalter(self):
+        schief = []
+        for schluessel, eintrag in self.STRINGS.items():
+            if not isinstance(eintrag, dict):
+                continue
+            de, en = eintrag.get("de", ""), eintrag.get("en", "")
+            if not isinstance(de, str) or not isinstance(en, str) or not en:
+                continue
+            links, rechts = set(self.PLATZ.findall(de)), set(self.PLATZ.findall(en))
+            if links != rechts:
+                schief.append("%s de=%s en=%s" % (schluessel, sorted(links),
+                                                  sorted(rechts)))
+        self.assertEqual([], schief, "Ungleiche Platzhalter: " + " | ".join(schief))
+
+    def test_jede_aufrufstelle_liefert_ihre_platzhalter(self):
+        fehlt = ["%s:%d %s ohne %s" % (datei, zeile, schluessel,
+                                       sorted(gebraucht - gegeben))
+                 for datei, zeile, schluessel, gebraucht, gegeben in self.stellen
+                 if gebraucht - gegeben]
+        self.assertEqual([], fehlt,
+                         "Der Text zeigt die Klammern statt des Werts: "
+                         + " | ".join(fehlt))
+
+    def test_keine_aufrufstelle_gibt_werte_ins_leere(self):
+        # Harmlos in der Anzeige, aber ein Zeichen fuer eine halb
+        # angekommene Umbenennung - und der naechste Platzhalter fehlt dann.
+        ueberzaehlig = ["%s:%d %s ohne Platzhalter fuer %s"
+                        % (datei, zeile, schluessel, sorted(gegeben - gebraucht))
+                        for datei, zeile, schluessel, gebraucht, gegeben in self.stellen
+                        if gegeben - gebraucht]
+        self.assertEqual([], ueberzaehlig, " | ".join(ueberzaehlig))
+
+    def test_jeder_schluessel_an_der_aufrufstelle_ist_hinterlegt(self):
+        unbekannt = ["%s:%d %s" % (datei, zeile, schluessel)
+                     for datei, zeile, schluessel, _g, _v in self.stellen
+                     if schluessel not in self.STRINGS]
+        self.assertEqual([], unbekannt,
+                         "Unbekannter Schluessel - der Anwender liest ihn im "
+                         "Klartext: " + " | ".join(unbekannt))
+
+    def test_die_pruefung_greift_ueberhaupt(self):
+        self.assertGreater(len(self.stellen), 2000,
+                           "kaum Aufrufstellen gefunden - die Pruefung misst nichts")
+        mit_platzhaltern = [s for s in self.stellen if s[3]]
+        self.assertGreater(len(mit_platzhaltern), 200,
+                           "kaum Texte mit Platzhaltern gefunden")
+        self.assertGreater(len(self.STRINGS), 2000)
 
 
 if __name__ == "__main__":

@@ -245,6 +245,14 @@ def zustand(programm: str, *, fuehler: "Messfuehler | None" = None,
     return ergebnis
 
 
+#: Der Weg im Programm, der den Treiber einrichtet (``treiber_einrichten``).
+PUNKT_19 = ("im Programm „Was man sonst ev. noch braucht“ › Punkt 19 (OSFMount "
+            "installieren) – er richtet den Treiber ohne Download ein "
+            "(Administratorrechte; Windows fragt eventuell nach der "
+            "Gerätesoftware)")
+PUNKT_19_KURZ = "Punkt 19 (OSFMount installieren)"
+
+
 def berichtszeile(z: Treiberzustand) -> str:
     """Der Text fuer den Diagnosebericht - leer, wo es nichts zu sagen gibt."""
     inf = z.inf or r"C:\Program Files\OSFMount\win10\osfdisk.inf"
@@ -255,20 +263,25 @@ def berichtszeile(z: Treiberzustand) -> str:
     if z.urteil == TREIBER_FEHLT:
         stand = ("das Paket steht im Treiberspeicher, der Dienst fehlt"
                  if z.im_treiberspeicher else "weder Dienst noch Treiberpaket")
+        # Bis v1.9.29 stand hier "pnputil /add-driver ... /install" - das legt
+        # das virtuelle Geraet root\osfdisk aber nicht an (treiber_einrichten).
         return ("NICHT INSTALLIERT – OSFMount liegt da, sein Treiber osfdisk aber "
                 "nicht (%s). Das Programm braucht OSFMount nicht; als Rückfall "
-                "wäre es so nicht nutzbar. Abhilfe: OSFMount neu installieren, "
-                "den Treiber dabei zulassen, danach neu starten – oder als "
-                "Administrator: pnputil /add-driver \"%s\" /install" % (stand, inf))
+                "wäre es so nicht nutzbar. Abhilfe: %s – oder OSFMount neu "
+                "installieren, den Treiber dabei zulassen, danach neu starten."
+                % (stand, PUNKT_19))
     if z.urteil == DEAKTIVIERT:
         return ("DEAKTIVIERT – der Dienst osfdisk steht auf Start=4. Abhilfe: "
-                "OSFMount neu installieren und danach neu starten.")
+                "OSFMount neu installieren und danach neu starten; %s versucht "
+                "es auch ohne Download." % PUNKT_19_KURZ)
     if z.urteil == DATEI_FEHLT:
         return ("Dienst osfdisk eingetragen, aber osfdisk.sys fehlt in "
-                "System32\\drivers. Abhilfe: OSFMount neu installieren.")
+                "System32\\drivers. Abhilfe: %s – oder OSFMount neu "
+                "installieren." % PUNKT_19)
     if z.urteil == ADAPTER_FEHLT:
         return ("Treiber installiert, aber kein Gerät root\\osfdisk. Abhilfe: "
-                "Geräte-Manager › Aktion › Legacyhardware hinzufügen › "
-                "Datenträger › \"%s\", danach neu starten." % inf)
+                "%s – oder von Hand: Geräte-Manager › Aktion › Legacyhardware "
+                "hinzufügen › Datenträger › \"%s\", danach neu starten."
+                % (PUNKT_19, inf))
     grund = "; ".join(z.hinweise) if z.hinweise else "Geräteliste nicht lesbar"
     return "nicht feststellbar (%s)" % grund

@@ -114,6 +114,10 @@ class _FtpNachbau:
         #: oder der Payload nach den Dateien, liess sich so gar nicht
         #: vergleichen (Befunde T7/T8).
         self.ereignisse = []
+        #: Staende von /data/appinst.log, wie das Payload sie nacheinander
+        #: hinterlaesst. Jeder Blick nimmt den naechsten; ist die Liste
+        #: leer, bleibt stehen, was zuletzt dort landete (also die Marke).
+        self.protokoll_folge = []
 
     def sendcmd(self, befehl):
         self.befehle.append(befehl)
@@ -143,6 +147,18 @@ class _FtpNachbau:
         self.geschrieben[ziel] = strom.read()
         self.reihenfolge.append(ziel)
         self.ereignisse.append(("stor", ziel))
+
+    def retrbinary(self, befehl, rueckruf):
+        ziel = befehl.split(" ", 1)[1]
+        if ziel == app_install.PROTOKOLLDATEI and self.protokoll_folge:
+            # Wie auf der Konsole: Das Payload schreibt die Datei neu, jeder
+            # Blick sieht den Stand von genau diesem Augenblick.
+            self.geschrieben[ziel] = self.protokoll_folge.pop(0)
+        daten = self.geschrieben.get(ziel)
+        self.ereignisse.append(("retr", ziel))
+        if daten is None:
+            raise OSError("550 nicht da")
+        rueckruf(daten)
 
 
 class SelfNachbauTests(unittest.TestCase):
@@ -409,6 +425,110 @@ class AntwortTests(unittest.TestCase):
         self.assertIn("8090000a", text)
 
 
+class ProtokollTests(unittest.TestCase):
+    """Das Protokoll auf der Konsole - der einzige Zeuge des Payload Managers.
+
+    Der Weg ueber den Payload Manager gibt keine Ausgabe zurueck. Bis zum
+    20.09.2026 hiess das: antwort_beurteilen("") meldete zwangslaeufig einen
+    Fehlschlag, obwohl die Anwendung angemeldet sein konnte. Gelesen wird
+    /data/appinst.log, das appinst.c bei jedem Lauf neu schreibt.
+    """
+
+    def setUp(self):
+        self.ftp = _FtpNachbau()
+        self.pausen = []
+
+    def _abwarten(self, marke="", **kw):
+        return app_install.protokoll_abwarten(
+            self.ftp, marke, schlafen=self.pausen.append, **kw)
+
+    def test_marke_landet_in_der_protokolldatei(self):
+        marke = app_install.protokoll_marke_setzen(self.ftp)
+        self.assertTrue(marke.startswith(app_install.PROTOKOLL_MARKE))
+        self.assertEqual(self.ftp.geschrieben[app_install.PROTOKOLLDATEI],
+                         (marke + "\n").encode("ascii"))
+
+    def test_jeder_lauf_bekommt_eine_eigene_marke(self):
+        # Zwei gleiche Marken wuerden das Protokoll des Vorlaufs durchlassen.
+        erste = app_install.protokoll_marke_setzen(self.ftp)
+        zweite = app_install.protokoll_marke_setzen(self.ftp)
+        self.assertNotEqual(erste, zweite)
+
+    def test_unschreibbare_datei_gibt_leere_marke(self):
+        class _Stur(_FtpNachbau):
+            def storbinary(self, befehl, strom):
+                raise OSError("550 nicht erlaubt")
+        self.assertEqual(app_install.protokoll_marke_setzen(_Stur()), "")
+
+    def test_erfolgszeile_macht_das_protokoll_vollstaendig(self):
+        self.assertTrue(app_install.protokoll_vollstaendig(
+            "appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert"))
+
+    def test_fehlschlagzeile_macht_das_protokoll_vollstaendig(self):
+        self.assertTrue(app_install.protokoll_vollstaendig(
+            "appinst: sceAppInstUtilInitialize: 8090000a\n"
+            "appinst: Lauf endet ohne Erfolg"))
+
+    def test_halbes_protokoll_gilt_nicht_als_vollstaendig(self):
+        # Die Konsole arbeitet noch. Wer jetzt urteilt, meldet einen
+        # Fehlschlag mitten im Lauf.
+        self.assertFalse(app_install.protokoll_vollstaendig(
+            "appinst: Lauf beginnt\nappinst: initialisiert"))
+
+    def test_es_wird_gewartet_bis_das_urteil_drinsteht(self):
+        self.ftp.protokoll_folge = [
+            b"appinst: Lauf beginnt\n",
+            b"appinst: Lauf beginnt\nappinst: initialisiert\n",
+            b"appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert\n",
+        ]
+        text = self._abwarten()
+        self.assertTrue(app_install.antwort_beurteilen(text)[0], text)
+        self.assertEqual(len(self.pausen), 2, "es wurde zu oft oder zu selten gewartet")
+
+    def test_die_marke_wird_ausgewartet(self):
+        marke = app_install.protokoll_marke_setzen(self.ftp)
+        self.ftp.protokoll_folge = [
+            (marke + "\n").encode("ascii"),
+            (marke + "\n").encode("ascii"),
+            b"appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert\n",
+        ]
+        text = self._abwarten(marke)
+        self.assertTrue(app_install.antwort_beurteilen(text)[0], text)
+        self.assertNotIn(app_install.PROTOKOLL_MARKE, text)
+
+    def test_nur_die_marke_zaehlt_als_stille(self):
+        # Das Payload lief nicht: Es gibt nichts zu beurteilen, und das alte
+        # Protokoll darf keinen Erfolg vortaeuschen.
+        marke = app_install.protokoll_marke_setzen(self.ftp)
+        self.assertEqual(self._abwarten(marke, versuche=3), "")
+
+    def test_altes_protokoll_taeuscht_keinen_erfolg_vor(self):
+        # Der gefaehrliche Fall: Derselbe Lauf von gestern, Wort fuer Wort
+        # gleich - ohne Marke wuerde er als Erfolg von heute gelesen.
+        self.ftp.geschrieben[app_install.PROTOKOLLDATEI] = (
+            b"appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert\n")
+        marke = app_install.protokoll_marke_setzen(self.ftp)
+        self.assertEqual(self._abwarten(marke, versuche=2), "")
+
+    def test_halbes_protokoll_kommt_nach_ablauf_zurueck(self):
+        # Kein Urteil in der Wartezeit: Dann soll die Fehlermeldung
+        # wenigstens sagen, wie weit die Konsole kam.
+        self.ftp.geschrieben[app_install.PROTOKOLLDATEI] = (
+            b"appinst: Lauf beginnt\nappinst: initialisiert\n")
+        text = self._abwarten(versuche=3)
+        self.assertIn("initialisiert", text)
+        ok, urteil = app_install.antwort_beurteilen(text)
+        self.assertFalse(ok)
+        self.assertIn("initialisiert", urteil)
+
+    def test_fehlendes_protokoll_bleibt_leer(self):
+        self.assertEqual(self._abwarten(versuche=2), "")
+
+    def test_gewartet_wird_zwischen_den_blicken_nicht_davor(self):
+        self._abwarten(versuche=4)
+        self.assertEqual(self.pausen, [app_install.PROTOKOLL_PAUSE] * 3)
+
+
 class UebertragungTests(unittest.TestCase):
     """Die Reihenfolge auf der Konsole - sie ist nicht beliebig."""
 
@@ -418,6 +538,8 @@ class UebertragungTests(unittest.TestCase):
         self.angaben = app_install.pruefen(self.ordner)[0]
         self.ftp = _FtpNachbau()
         self.gesendet = []
+        self.meldungen = []
+        self.wartezeit = []
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -433,9 +555,21 @@ class UebertragungTests(unittest.TestCase):
         app_install.payload_senden = _nachbau
         try:
             return gui._appinstall_uebertragen(
-                self.ftp, self.angaben, "10.0.0.5", b"ELF", lambda t: None)
+                self.ftp, self.angaben, "10.0.0.5", b"ELF", self.meldungen.append)
         finally:
             app_install.payload_senden = echt
+
+    def _ohne_warten(self):
+        """Blendet die Wartezeit aus - hier wird die Verdrahtung geprueft.
+
+        protokoll_abwarten holt time.sleep erst beim Aufruf, deshalb genuegt
+        es, das Modul zu tauschen; der Aufrufer im Programm gibt keine
+        eigene Wartefunktion mit.
+        """
+        import time as _time
+        echt = _time.sleep
+        _time.sleep = self.wartezeit.append
+        self.addCleanup(setattr, _time, "sleep", echt)
 
     def test_alle_vier_ordner_werden_angelegt(self):
         self._uebertragen()
@@ -541,13 +675,64 @@ class UebertragungTests(unittest.TestCase):
         self.assertIn("/system_ex/app/FAKE02932/eboot.bin", self.ftp.geschrieben)
 
     def test_der_elfldr_pfad_wird_durchgereicht(self):
-        # Ohne ihn weckt payload_senden elfldr nicht, faellt auf den
-        # Payload Manager zurueck - und der liefert keine Ausgabe, womit
-        # antwort_beurteilen() zwangslaeufig fehlschlaegt.
+        # Ohne ihn weckt payload_senden elfldr nicht und faellt auf den
+        # Payload Manager zurueck - der liefert keine Ausgabe, und dann
+        # haengt alles am Protokoll auf der Konsole.
         with io.open(HAUPTDATEI, "rb") as fh:
             quelle = fh.read().decode("utf-8")
         self.assertIn("elfldr_pfad=self._elfldr_payload_path()", quelle)
         self.assertNotIn("app_install.payload_senden(host, payload)", quelle)
+
+    def test_die_marke_geht_vor_dem_payload_raus(self):
+        # Danach waere sie nutzlos: Das Payload hat die Datei dann schon
+        # geschrieben, und die Marke wuerde sein Protokoll ueberbuegeln.
+        self._uebertragen()
+        arten = self.ftp.ereignisse
+        self.assertIn(("stor", app_install.PROTOKOLLDATEI), arten)
+        self.assertLess(arten.index(("stor", app_install.PROTOKOLLDATEI)),
+                        [i for i, (art, _w) in enumerate(arten) if art == "payload"][0])
+
+    def test_leere_antwort_liest_das_protokoll_der_konsole(self):
+        # Der Weg ueber den Payload Manager: kein Wort zurueck, aber die
+        # Anwendung ist angemeldet. Vor dem 20.09.2026 brach das hier ab.
+        self.ftp.protokoll_folge = [
+            b"appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert\n"]
+        text = self._uebertragen(antwort="")
+        self.assertIn("registriert", text)
+        self.assertIn(("retr", app_install.PROTOKOLLDATEI), self.ftp.ereignisse)
+        # Und der Lauf geht weiter: die Systemfassung kommt danach.
+        self.assertEqual(self.ftp.reihenfolge[-1],
+                         "/system_ex/app/FAKE02932/sce_sys/param.json")
+
+    def test_leere_antwort_wird_gemeldet(self):
+        self.ftp.protokoll_folge = [
+            b"appinst: Lauf beginnt\nappinst: 'FAKE02932' registriert\n"]
+        self._uebertragen(antwort="")
+        text = "\n".join(self.meldungen)
+        # Das Fenster im Testaufbau uebersetzt nicht, es meldet den Schluessel.
+        self.assertIn("appinstall.log_protokoll", text)
+        self.assertIn("registriert", text)
+
+    def test_der_hinweis_nennt_die_protokolldatei(self):
+        eintrag = i18n.STRINGS["appinstall.log_protokoll"]
+        for sprache in ("de", "en"):
+            self.assertIn("{datei}", eintrag[sprache],
+                          "ohne Platzhalter erfaehrt niemand, welche Datei gemeint ist")
+
+    def test_ohne_frisches_protokoll_bleibt_es_ein_fehlschlag(self):
+        # Die Gegenrichtung: Lief das Payload nicht, darf das alte Protokoll
+        # keinen Erfolg vortaeuschen - und die Systemfassung nicht rausgehen.
+        self._ohne_warten()
+        with self.assertRaises(app_install.AppInstallFehler):
+            self._uebertragen(antwort="")
+        self.assertNotIn("/system_ex/app/FAKE02932/sce_sys/param.json",
+                         self.ftp.geschrieben)
+        self.assertEqual(len(self.wartezeit), app_install.PROTOKOLL_VERSUCHE - 1)
+
+    def test_antwort_vom_payload_braucht_kein_protokoll(self):
+        # Kam die Ausgabe ueber elfldr zurueck, wird nichts nachgeladen.
+        self._uebertragen()
+        self.assertNotIn(("retr", app_install.PROTOKOLLDATEI), self.ftp.ereignisse)
 
 
 class PayloadTests(unittest.TestCase):

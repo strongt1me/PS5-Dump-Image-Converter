@@ -292,5 +292,75 @@ class EingehaengtTests(unittest.TestCase):
                                  "Der Diagnosebericht geht von selbst ins Netz")
 
 
+class NennungTests(unittest.TestCase):
+    """Wird jeder mitgelieferte Fremdbestand in THIRD_PARTY_LICENSES.md genannt?
+
+    Gemessen am 20.09.2026: Zwei Ordner lagen in jeder Auslieferung, ohne in
+    der Lizenzdatei zu stehen - ``AMPR_PackTools-4.0`` (Werkzeugkette zum AMPR
+    EMU, 13 Dateien in der EXE) und ``PS5-AppInstall`` (appinst.elf, abgeleitet
+    vom PS5 Payload SDK, GPL-3). Dieser Waechter zwingt bei jedem neuen Ordner
+    zu einer Entscheidung: eigener Bestand oder Nennung.
+    """
+
+    #: Fremdbestand: Ordner -> ein Text, der dafuer in der Lizenzdatei steht.
+    FREMD = {
+        "AMPR_PackTools-4.0": "AMPR PackTools",
+        "Backport_Fakelibs": "Backport_Fakelibs",
+        "MkPFS-1.0.0": "MkPFS 1.0.0",
+        "PS4FFPFSC-0.2.9": "PS4 FFPFSC",
+        "PS5-AppInstall": "PS5-AppInstall",
+        "PS5-Wee-Tools-0.1.8": "PS5 Wee Tools",
+        "PS5 WebKit Autoloader": "PS5 WebKit Autoloader",
+        "PlayGo & AMPR_EMU": "libScePlayGo-Stub",
+        "ProsperoPkg-2.5": "LibProsperoPkg",
+        "UFS2Tool-4.1": "UFS2Tool",
+        "helloworld": "helloworld",
+    }
+    #: Eigener Bestand - hier gibt es nichts zu nennen.
+    EIGEN = {"ps5_validator", "Hintergrundbilder", "Anleitungen", ".github"}
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import subprocess
+        roh = subprocess.run(["git", "ls-files"], cwd=str(PROJEKT), capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", check=False)
+        cls.ordner = {zeile.split("/", 1)[0] for zeile in roh.stdout.splitlines()
+                      if "/" in zeile}
+        cls.lizenzen = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(
+            encoding="utf-8", errors="replace")
+
+    def test_die_pruefung_sieht_die_ordner_ueberhaupt(self) -> None:
+        """Anker - ohne Git-Arbeitskopie waere alles darunter stumm richtig."""
+        if not self.ordner:
+            self.skipTest("keine Git-Arbeitskopie")
+        self.assertIn("ps5_validator", self.ordner)
+
+    def test_jeder_ordner_ist_eingeordnet(self) -> None:
+        if not self.ordner:
+            self.skipTest("keine Git-Arbeitskopie")
+        unbekannt = sorted(self.ordner - set(self.FREMD) - self.EIGEN)
+        self.assertEqual(
+            [], unbekannt,
+            "Neuer mitgelieferter Ordner: entweder in FREMD mit einer Nennung "
+            "in THIRD_PARTY_LICENSES.md oder in EIGEN aufnehmen:\n  "
+            + "\n  ".join(unbekannt))
+
+    def test_jeder_fremdordner_steht_in_der_lizenzdatei(self) -> None:
+        for ordner, nennung in sorted(self.FREMD.items()):
+            with self.subTest(ordner=ordner):
+                self.assertIn(nennung, self.lizenzen,
+                              "%s liegt bei, wird aber nicht genannt" % ordner)
+
+    def test_die_credits_nennen_die_werkzeuge(self) -> None:
+        """Das Fenster CREDITS nennt die Werkzeuge, nicht nur die Lizenzdatei."""
+        from ps5_validator.utils.i18n import STRINGS
+        zeile = STRINGS["credits.tools_line"]
+        for name in ("UFS2Tool", "LibProsperoPkg", "PS4 FFPFSC", "PS5 Wee Tools",
+                     "AMPR PackTools", "PS5 Payload SDK"):
+            for sprache in ("de", "en"):
+                with self.subTest(name=name, sprache=sprache):
+                    self.assertIn(name, zeile[sprache])
+
+
 if __name__ == "__main__":
     unittest.main()

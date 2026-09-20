@@ -707,6 +707,69 @@ class EingebetteteOrdnerTests(unittest.TestCase):
                     % (spec_name, len(uebrig)))
 
 
+class ToteAbhaengigkeitenTests(unittest.TestCase):
+    """Nichts mitliefern, was das Programm nicht benutzt.
+
+    Gemessen am 20.09.2026 an der v1.9.29-EXE: 23 Module von bcrypt und
+    PyNaCl lagen darin - Abhaengigkeiten von paramiko, das das Programm seit
+    v1.8.93 nirgends benutzt (ins Netz geht es ueber urllib.request, auf die
+    Konsole ueber ftplib). Sie standen als hiddenimports in allen drei .spec,
+    und die Bauskripte installierten paramiko eigens dafuer: zwei
+    Fremdbibliotheken in jeder Auslieferung, die niemand brauchte und die in
+    keiner Nennung standen.
+    """
+
+    SPECS = ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
+             "PS5ImageConverter_Pro_macos.spec")
+    TOT = ("paramiko", "bcrypt", "nacl")
+
+    @staticmethod
+    def _hiddenimports(spec_name):
+        import ast
+        baum = ast.parse((PROJEKT / spec_name).read_text(encoding="utf-8"))
+        for knoten in ast.walk(baum):
+            if (isinstance(knoten, ast.keyword) and knoten.arg == "hiddenimports"
+                    and isinstance(knoten.value, ast.List)):
+                return {e.value for e in knoten.value.elts
+                        if isinstance(e, ast.Constant) and isinstance(e.value, str)}
+        return set()
+
+    def test_die_pruefung_liest_die_hiddenimports(self) -> None:
+        """Anker - sonst waere der Test darunter stumm richtig."""
+        for spec in self.SPECS:
+            with self.subTest(spec=spec):
+                self.assertIn("mkpfs.utils", self._hiddenimports(spec))
+
+    def test_keine_toten_hiddenimports(self) -> None:
+        for spec in self.SPECS:
+            namen = self._hiddenimports(spec)
+            for tot in self.TOT:
+                with self.subTest(spec=spec, modul=tot):
+                    self.assertEqual(
+                        [], sorted(n for n in namen
+                                   if n == tot or n.startswith(tot + ".")),
+                        "%s liefert %s mit, obwohl es niemand importiert" % (spec, tot))
+
+    def test_kein_bauskript_installiert_sie(self) -> None:
+        for skript in ("Build_EXE.ps1", "Build_Linux.sh", "Build_macOS.sh"):
+            text = (PROJEKT / skript).read_text(encoding="utf-8-sig")
+            zeilen = [z for z in text.splitlines() if not z.lstrip().startswith("#")
+                      and ("pip install" in z or "_installieren " in z)]
+            for tot in self.TOT:
+                with self.subTest(skript=skript, modul=tot):
+                    self.assertEqual([], [z.strip() for z in zeilen if tot in z])
+
+    def test_das_programm_benutzt_sie_wirklich_nicht(self) -> None:
+        """Die Gegenprobe zum Streichen: Wird eines doch gebraucht, muss es zurueck."""
+        quellen = [PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"]
+        quellen += sorted((PROJEKT / "ps5_validator").rglob("*.py"))
+        for datei in quellen:
+            text = datei.read_text(encoding="utf-8", errors="replace")
+            for tot in self.TOT:
+                with self.subTest(datei=datei.name, modul=tot):
+                    self.assertNotRegex(text, r"(?m)^\s*(import|from)\s+%s\b" % tot)
+
+
 if __name__ == '__main__':
     sys.exit(main())
 

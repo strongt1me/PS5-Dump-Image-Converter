@@ -418,11 +418,9 @@ a = Analysis(
         'mkpfs.pbar',
         'mkpfs.pfs',
         'mkpfs.utils',
-        'bcrypt',
-        'nacl',
-        'nacl.bindings',
-        'nacl.public',
-        'nacl.signing',
+        # bcrypt und PyNaCl standen hier bis v1.9.29: Abhaengigkeiten von
+        # paramiko, das das Programm seit v1.8.93 nirgends benutzt. Gemessen
+        # an der v1.9.29-EXE: 23 Module fuer nichts.
     ],
     hookspath=[],
     hooksconfig={},

@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.29-blue)
-![Tests](https://img.shields.io/badge/Tests-3241%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.30-blue)
+![Tests](https://img.shields.io/badge/Tests-3329%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -55,7 +55,7 @@ Angeboten werden nur Zielformate, die zur erkannten Quelle passen.
 Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** erklärt die Bedienung in
 einfacher Sprache – alle acht Aufgaben, die Werkzeugleiste, typische Fehler
 und die Besonderheiten unter Linux und macOS. Es liegt auch als
-[PDF](BENUTZERHANDBUCH.pdf) (38 Seiten) bei.
+[PDF](BENUTZERHANDBUCH.pdf) (41 Seiten) bei.
 
 Was sich je Version geändert hat, steht im [Changelog](CHANGELOG.md).
 
@@ -235,7 +235,9 @@ Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 * **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
 * **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
 * **kerrdec97** – [ps5-exfat-builder](https://github.com/PSBrew/ps5-exfat-builder), Vorarbeit und Orientierung
-* **AMPR EMU** und **libScePlayGo-Stub** – PS5-Homebrew-Community, Aufgabe 7
+* **drakmor / Roman Tarasov** – [AMPR EMU](https://github.com/drakmor/ampr_emu) und die **AMPR PackTools** (GPL-3.0), Grundlage von Aufgabe 7 und der Asset-Packs
+* **libScePlayGo-Stub** – PS5-Homebrew-Community, meldet PlayGo-Inhalte als installiert
+* **John Törnblom** – [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk); `appinst.elf` hinter „App direkt installieren“ ist von dessen Beispiel abgeleitet (GPL-3.0)
 * **PS5 BackPork Kitchen**, **BestPig**, **idlesauce**, **John Törnblom**, **CyB1K** – Verfahren und Vorlagen für BACKPORT
 * **PassMark Software** – OSFMount
 * **Dokan-Projekt** – Windows-Dateisystemtreiber

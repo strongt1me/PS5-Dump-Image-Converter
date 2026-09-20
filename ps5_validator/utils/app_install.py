@@ -449,6 +449,94 @@ def protokoll_lesen(ftp) -> str:
     return puffer.getvalue().decode("utf-8", "replace").strip()
 
 
+#: Letzte Zeile des Erfolgswegs im Payload (appinst.c).
+PROTOKOLL_ERFOLG = "registriert"
+
+#: Letzte Zeile jedes Fehlwegs im Payload (Sprungmarke "ende:").
+PROTOKOLL_FEHLSCHLAG = "Lauf endet ohne Erfolg"
+
+#: So lange wird auf das Protokoll gewartet: 20 Blicke im Sekundenabstand.
+#: Das Registrieren selbst dauert auf der Konsole ein paar Sekunden, der
+#: Payload Manager braucht vorher noch Zeit fuer den Start.
+PROTOKOLL_VERSUCHE = 20
+PROTOKOLL_PAUSE = 1.0
+
+#: Damit wird ein altes Protokoll erkennbar gemacht, bevor das Payload laeuft.
+PROTOKOLL_MARKE = "wartet-auf-appinst"
+
+
+def protokoll_marke_setzen(ftp) -> str:
+    """Ueberschreibt /data/appinst.log mit einer einmaligen Marke.
+
+    Das Payload oeffnet die Datei mit "w", schreibt also immer ein
+    frisches Protokoll. Lief es aber gar nicht los, liegt dort noch das
+    Protokoll des letzten Laufs - und das sieht bei derselben Anwendung
+    Wort fuer Wort gleich aus. Die Marke macht den Unterschied sichtbar:
+    Steht sie noch drin, hat das Payload die Datei nicht angefasst.
+
+    Rueckgabe: die gesetzte Marke, oder "" wenn das Schreiben scheiterte.
+    Scheitert es, bleibt nur das Protokoll selbst als Urteil - in diesem
+    Ablauf ist das unwahrscheinlich, denn bis hierher wurden schon
+    mehrere Dateien auf dieselbe Weise abgelegt.
+    """
+    import io as _io
+
+    marke = "%s %s" % (PROTOKOLL_MARKE, os.urandom(8).hex())
+    try:
+        ftp.storbinary("STOR " + PROTOKOLLDATEI,
+                       _io.BytesIO((marke + "\n").encode("ascii")))
+    except Exception:
+        return ""
+    return marke
+
+
+def protokoll_vollstaendig(text: str) -> bool:
+    """Steht im Protokoll schon das Urteil des Payloads?
+
+    Jeder Weg durch appinst.c endet mit einer dieser beiden Zeilen, und
+    jede Zeile wird sofort ausgeschrieben (fflush). Alles davor ist ein
+    halbes Protokoll - wer das beurteilt, meldet einen Fehlschlag,
+    waehrend die Konsole noch arbeitet.
+    """
+    for zeile in text.splitlines():
+        wort = zeile.strip()
+        if wort.endswith(PROTOKOLL_ERFOLG) or PROTOKOLL_FEHLSCHLAG in wort:
+            return True
+    return False
+
+
+def protokoll_abwarten(ftp, marke: str = "", *,
+                       versuche: int = PROTOKOLL_VERSUCHE,
+                       pause: float = PROTOKOLL_PAUSE,
+                       schlafen=None) -> str:
+    """Holt das Protokoll, bis das Payload damit fertig ist.
+
+    Gebraucht nach dem Weg ueber den Payload Manager: Der startet das
+    Payload nebenher und reicht keine Ausgabe zurueck. Ohne diese Datei
+    waere jede solche Installation ein Fehlschlag - auch die geglueckte.
+
+    Rueckgabe: das Protokoll; "" wenn dort nur die Marke steht (dann lief
+    das Payload nicht und es gibt nichts zu beurteilen). Kommt das Urteil
+    nicht in der Wartezeit, wird das halbe Protokoll zurueckgegeben - die
+    letzte Zeile sagt immerhin, wie weit es kam.
+    """
+    if schlafen is None:
+        import time as _time
+        schlafen = _time.sleep
+
+    text = ""
+    for nummer in range(max(1, versuche)):
+        if nummer:
+            schlafen(pause)
+        text = protokoll_lesen(ftp)
+        if marke and marke in text:
+            text = ""  # noch unberuehrt - das Payload war nicht dran
+            continue
+        if protokoll_vollstaendig(text):
+            return text
+    return text
+
+
 def antwort_beurteilen(antwort: str) -> tuple[bool, str]:
     """Liest aus der Payload-Ausgabe, ob das Registrieren geklappt hat."""
     if not antwort:

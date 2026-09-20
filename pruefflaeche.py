@@ -98,11 +98,10 @@ def reicht(fenster) -> tuple[bool, str]:
            frei_b, frei_h, soll_b, soll_h))
 
 
-def sonst_ueberspringen(fenster) -> None:
-    """In setUp oder am Anfang einer Pruefung aufrufen."""
-    ok, grund = reicht(fenster)
-    if not ok:
-        raise unittest.SkipTest(grund)
+# Hier stand ``sonst_ueberspringen(fenster)`` fuer setUp - die pauschale
+# Fassung, die nur den Bildschirm gegen die Mindestmasse haelt. Gerufen hat
+# sie keine Pruefung: Gebraucht wird immer die genaue Frage, ob ein
+# bestimmtes Fenster noch passt (``passt_sonst_ueberspringen``).
 
 
 def passt_sonst_ueberspringen(fenster, breite: int, hoehe: int,

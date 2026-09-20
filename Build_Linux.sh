@@ -114,7 +114,8 @@ pflicht_installieren pillow
 pflicht_installieren cryptography
 pflicht_installieren zstandard
 optional_installieren zlib-ng "MkPFS nutzt die langsamere zlib der Standardbibliothek."
-optional_installieren paramiko "kein SFTP."
+# paramiko stand hier bis v1.9.29 ("kein SFTP") - das Programm benutzt es
+# seit v1.8.93 nirgends und im Bau landete es nie.
 optional_installieren tkinterdnd2 "kein Drag & Drop."
 optional_installieren psutil "keine CPU/RAM-Telemetrie."
 # Die .spec nennt lz4 als hiddenimport, PyInstaller uebergeht ein fehlendes
@@ -209,7 +210,7 @@ if ! "$PYTHON" -m PyInstaller PS5ImageConverter_Pro_linux.spec --clean --noconfi
     meldung "FEHLER: Erstellung fehlgeschlagen." "$rot"
     meldung "Tipp: Fehlermeldung oben lesen. Haeufige Ursachen:" "$gelb"
     meldung "  - Fehlende Systempakete: python3-tk, python3-dev" "$gelb"
-    meldung "  - Fehlende pip-Pakete: pip install paramiko bcrypt" "$gelb"
+    meldung "  - Fehlende pip-Pakete: pip install pillow cryptography zstandard" "$gelb"
     exit 1
 fi
 

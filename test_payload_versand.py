@@ -287,7 +287,9 @@ class WebkitDankTests(unittest.TestCase):
         # auch wenn die Datei fehlte oder unlesbar waere.
         from PIL import Image
         gui = self._gui()
-        pfad = APP._bundled_resource(gui._WEBKIT_ORDNER, gui._WEBKIT_BILD)
+        # Ueber den Helfer des Programms, nicht ueber eine eigene Nachbildung:
+        # So wird auch geprueft, dass der Pfad dort richtig zusammenkommt.
+        pfad = gui._webkit_bild_pfad()
         self.assertTrue(pfad, "%s liegt nicht bei" % gui._WEBKIT_BILD)
         with Image.open(pfad) as bild:
             breite, hoehe = bild.size
