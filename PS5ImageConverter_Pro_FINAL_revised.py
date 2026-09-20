@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.35"
+APP_VERSION = "v1.9.36"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -28365,6 +28365,44 @@ class PS5ConverterGUI:
                 _ampr_choice["ampr_source"] = os.path.normpath(chosen)
                 _finish("ampr_apply")
 
+            def _do_assetpack() -> None:
+                """Baender bauen - mit der Fassung, die oben gewaehlt ist.
+
+                Die Fassung wird **nicht** automatisch gesucht: Der Anwender
+                soll sehen, womit gebaut wird. Steht die Auswahl auf einer
+                Fassung ohne Pack-Unterstuetzung, sagt der Dialog das hier -
+                nicht erst nach einer halben Stunde Packen.
+                """
+                item = lib_entries.get(self._AMPR_SPRX_NAME, {}).get(
+                    lib_combos[self._AMPR_SPRX_NAME].get())
+                if not item:
+                    messagebox.showwarning(
+                        self._t("ampr.dialog_title"),
+                        self._t("ampr.assetpack_keine_fassung"))
+                    return
+                if not ampr_assetpakete.variante_kann_packen(item["variant"]):
+                    messagebox.showwarning(
+                        self._t("ampr.dialog_title"),
+                        self._t("ampr.assetpack_variante_kann_nicht",
+                                version=item["version"], variant=item["variant"]))
+                    return
+                bereit, grund = ampr_assetpakete.einsatzbereit()
+                if not bereit:
+                    # `grund` ist ein Uebersetzungsschluessel, kein Satz -
+                    # ohne das innere _t stuende "ampr_pack.werkzeug_fehlt"
+                    # woertlich im Fenster.
+                    messagebox.showwarning(
+                        self._t("ampr.dialog_title"),
+                        self._t("ampr.assetpack_werkzeug_fehlt",
+                                grund=self._t(grund)))
+                    return
+                _ampr_choice.update({
+                    "ampr_store": store_dir_var.get().strip(),
+                    "ampr_assetpack": {"version": item["version"],
+                                       "variant": item["variant"]},
+                })
+                _finish("ampr_assetpack")
+
             btn_row1 = tk.Frame(sec_c, bg=c["bg_main"])
             btn_row1.pack(fill="x", padx=10, pady=(8, 4))
             for text_key, cmd in (
@@ -28373,6 +28411,7 @@ class PS5ConverterGUI:
                 ("ampr.btn_restore", lambda: _finish("ampr_restore")),
                 ("ampr.btn_remove", lambda: _finish("ampr_remove")),
                 ("ampr.btn_index_only", lambda: _finish("ampr_index")),
+                ("ampr.btn_assetpack", _do_assetpack),
             ):
                 flach_knopf(
                     btn_row1, text=self._t(text_key), command=cmd,
@@ -28597,6 +28636,25 @@ class PS5ConverterGUI:
                     return False
                 changed = True
 
+            elif action == "ampr_assetpack":
+                # Der ausdrueckliche Knopf aus Bereich C. Gebaut wird erst
+                # unten, NACH dem Index - ``ampr_pack.py`` liest ihn, um die
+                # fileIds zu vergeben. Hier wird nur vermerkt, dass gebaut
+                # werden soll, und geprueft, dass die gewaehlte Fassung
+                # ueberhaupt Baender lesen kann.
+                pack_wahl = dict(spec.get("ampr_assetpack") or {})
+                if not pack_wahl:
+                    self._append_to_log(self._t("ampr.assetpack_keine_fassung"))
+                    return False
+                if not ampr_assetpakete.variante_kann_packen(
+                        str(pack_wahl.get("variant", ""))):
+                    self._append_to_log(self._t(
+                        "ampr.assetpack_variante_kann_nicht",
+                        version=pack_wahl.get("version", "?"),
+                        variant=pack_wahl.get("variant", "?")))
+                    return False
+                changed = True
+
             else:
                 self._append_to_log(self._t("ampr.unknown_action", action=action))
                 return False
@@ -28644,9 +28702,27 @@ class PS5ConverterGUI:
             # Ohne Originale haette der Rueckweg die Spieldaten geloescht, und
             # ein Neubau der Baender scheiterte an den fehlenden Quellen.
             #
+            # **Ausnahme seit v1.9.36: der Knopf "Asset-Pack bauen".** Der
+            # Unterschied zum alten Verhalten ist genau der, an dem es
+            # scheiterte: Gebaut wird nur auf ausdruecklichen Knopfdruck, nie
+            # nebenbei nach einer anderen Aktion. Ein "Asset-Pack entfernen"
+            # gibt es weiterhin nicht - ohne Originale waere das der Weg, die
+            # Spieldaten zu loeschen.
+            if action == "ampr_assetpack":
+                self.progress_engine.begin_prepare(
+                    self._t("progress.prepare.assetpack"))
+                index_da = Path(search_root) / self._AMPR_INDEX_NAME
+                if not index_da.is_file():
+                    self._append_to_log(self._t("ampr.assetpack_ohne_index"))
+                    return False
+                if not self._ampr_assetpakete_bauen(
+                        search_root, str(index_da),
+                        dict(spec.get("ampr_assetpack") or {})):
+                    return False
             # Wer die Methode beim Erstellen gewaehlt hat, erfaehrt hier, dass
-            # sie in dieser Aufgabe nicht greift.
-            if changed and self._assetpack_gewaehlt():
+            # sie in dieser Aufgabe nicht von selbst greift - der Knopf ist
+            # der Weg.
+            elif changed and self._assetpack_gewaehlt():
                 self._append_to_log(self._t("ampr.aufgabe7_ohne_assetpack"))
 
             if not is_container:

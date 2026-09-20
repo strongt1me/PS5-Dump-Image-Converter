@@ -1104,12 +1104,16 @@ class SystemdateienImPackTests(unittest.TestCase):
 
 
 class WoDieMethodeGreiftTests(unittest.TestCase):
-    """Wo die neue Methode greift - und wo seit dem 17.09.2026 nicht mehr.
+    """Wo die neue Methode greift - und unter welcher Bedingung.
 
     Bis zum 08.09.2026 hing sie allein am Kaestchen "AMPR EMU" beim
     Erstellen; danach baute auch Aufgabe 7 nach jedem Eingriff Baender. Am
-    17.09.2026 hat der Anwender entschieden, dass Aufgabe 7 nur noch der AMPR
-    EMU Manager ist: Baender entstehen allein beim Erstellen eines Abbilds.
+    17.09.2026 wurde das ausgebaut: Aufgabe 7 war nur noch der AMPR EMU
+    Manager.
+
+    Seit v1.9.36 baut sie wieder - aber **nur auf Knopfdruck**. Der Ausbau
+    galt nie dem Bauen selbst, sondern dem Automatismus drumherum. Genau den
+    prueft dieser Test jetzt, statt das Bauen zu verbieten.
     """
 
     HAUPT = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
@@ -1127,23 +1131,157 @@ class WoDieMethodeGreiftTests(unittest.TestCase):
         import ast
         self.assertIn("_ampr_assetpakete_bauen", ast.unparse(knoten))
 
-    def test_nicht_in_aufgabe_sieben(self):
+    def test_in_aufgabe_sieben_nur_auf_knopfdruck(self):
+        """Der Punkt, an dem es am 17.09.2026 scheiterte.
+
+        Damals baute der Block nach **jedem** Eingriff Baender - auch nach
+        Wiederherstellen und Entfernen, und auch nach einer laengst
+        abgeschalteten Einstellung. Gebaut werden darf nur unter
+        ``action == "ampr_assetpack"``.
+        """
+        import ast
         knoten = self._funktion("_mode_ampr_manager")
         self.assertIsNotNone(knoten, "_mode_ampr_manager heisst nicht mehr so")
+        rufe = [k for k in ast.walk(knoten) if isinstance(k, ast.Call)
+                and isinstance(k.func, ast.Attribute)
+                and k.func.attr == "_ampr_assetpakete_bauen"]
+        self.assertEqual(
+            1, len(rufe),
+            "Erwartet genau einen Aufruf - den aus dem Knopf. Gefunden: %d"
+            % len(rufe))
+
+        def _prueft_die_aktion(test) -> bool:
+            """Steht in der Bedingung ein Vergleich action == 'ampr_assetpack'?
+
+            Die Textsuche taugt hier nicht: Der Name steht auch als Argument
+            in ``spec.get('ampr_assetpack')`` und wuerde den Test gruen
+            halten, waere die Aktionspruefung ausgebaut.
+            """
+            for k in ast.walk(test):
+                if not isinstance(k, ast.Compare):
+                    continue
+                if not (isinstance(k.left, ast.Name) and k.left.id == "action"):
+                    continue
+                for op, rechts in zip(k.ops, k.comparators):
+                    if (isinstance(op, ast.Eq)
+                            and isinstance(rechts, ast.Constant)
+                            and rechts.value == "ampr_assetpack"):
+                        return True
+            return False
+
+        eltern = [k for k in ast.walk(knoten)
+                  if isinstance(k, ast.If) and rufe[0] in list(ast.walk(k))]
+        self.assertTrue(
+            any(_prueft_die_aktion(k.test) for k in eltern),
+            "Der Aufruf haengt an keiner Aktionspruefung - dann baut wieder "
+            "jeder Eingriff Baender.")
+
+    def test_aufgabe_sieben_greift_nur_lesend_ins_packmodul(self):
+        """Entfernen bleibt draussen.
+
+        Ohne die Originale neben den Baendern waere ein "Asset-Pack
+        entfernen" der Weg, die Spieldaten zu loeschen. Erlaubt sind allein
+        die beiden Abfragen, die der Knopf vor dem Bauen braucht.
+        """
         import ast
+        knoten = self._funktion("_mode_ampr_manager")
+        self.assertIsNotNone(knoten, "_mode_ampr_manager heisst nicht mehr so")
         aufrufe = [k for k in ast.walk(knoten) if isinstance(k, ast.Call)
                    and isinstance(k.func, ast.Attribute)]
         self.assertTrue(aufrufe, "Keine Aufrufe gefunden - der Test misst nichts")
-        self.assertNotIn(
-            "_ampr_assetpakete_bauen", {k.func.attr for k in aufrufe},
-            "Aufgabe 7 baut wieder Baender - sie ist seit dem 17.09.2026 nur "
-            "noch der AMPR EMU Manager.")
-        # Auch kein direkter Griff ins Packmodul: weder packen noch pruefen
-        # noch Originale entfernen.
-        ins_modul = [ast.unparse(k.func) for k in aufrufe
+        ins_modul = {k.func.attr for k in aufrufe
                      if isinstance(k.func.value, ast.Name)
-                     and k.func.value.id == "ampr_assetpakete"]
-        self.assertEqual(ins_modul, [])
+                     and k.func.value.id == "ampr_assetpakete"}
+        erlaubt = {"variante_kann_packen", "einsatzbereit"}
+        self.assertLessEqual(
+            ins_modul, erlaubt,
+            "Aufgabe 7 greift neu ins Packmodul: %s" % sorted(ins_modul - erlaubt))
+
+
+class GrundWirdUebersetztTests(unittest.TestCase):
+    """`einsatzbereit()` gibt einen Schluessel zurueck, keinen Satz.
+
+    Am 20.09.2026 stand er roh im Fenster: "Das Packwerkzeug steht nicht
+    bereit: ampr_pack.werkzeug_fehlt". Der Docstring der Funktion sagt es
+    ausdruecklich - trotzdem faellt es leicht durch, weil die Meldung
+    vollstaendig aussieht.
+
+    Geprueft wird das ganze Hauptmodul, nicht nur die eine Stelle: Wer
+    `einsatzbereit()` das naechste Mal aufruft, faellt in dieselbe Grube.
+    """
+
+    HAUPT = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
+
+    @staticmethod
+    def _ist_uebersetzungsruf(knoten) -> bool:
+        """Ist das ein Aufruf von ``self._t(...)`` oder ``_t(...)``?"""
+        import ast
+        if not isinstance(knoten, ast.Call):
+            return False
+        ziel = knoten.func
+        if isinstance(ziel, ast.Attribute):
+            return ziel.attr == "_t"
+        return isinstance(ziel, ast.Name) and ziel.id == "_t"
+
+    def _gruende_der_funktion(self, funktion) -> set:
+        """Welche Namen haelt diese Funktion aus ``einsatzbereit()``?"""
+        import ast
+        namen = set()
+        for k in ast.walk(funktion):
+            if not isinstance(k, ast.Assign):
+                continue
+            wert = k.value
+            if not (isinstance(wert, ast.Call)
+                    and isinstance(wert.func, ast.Attribute)
+                    and wert.func.attr == "einsatzbereit"):
+                continue
+            for ziel in k.targets:
+                # `bereit, grund = ...` - der Grund ist der zweite Eintrag.
+                if isinstance(ziel, ast.Tuple) and len(ziel.elts) == 2:
+                    zweiter = ziel.elts[1]
+                    if isinstance(zweiter, ast.Name):
+                        namen.add(zweiter.id)
+        return namen
+
+    def test_kein_roher_schluessel_in_einer_meldung(self):
+        import ast
+        baum = ast.parse(self.HAUPT.read_text(encoding="utf-8"))
+        stellen = 0
+        funde = []
+        for funktion in ast.walk(baum):
+            if not isinstance(funktion, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            gruende = self._gruende_der_funktion(funktion)
+            if not gruende:
+                continue
+            stellen += 1
+            for k in ast.walk(funktion):
+                if not self._ist_uebersetzungsruf(k):
+                    continue
+                for wort in k.keywords:
+                    if not (isinstance(wort.value, ast.Name)
+                            and wort.value.id in gruende):
+                        continue
+                    funde.append("%s (Zeile %d): %s=%s"
+                                 % (funktion.name, wort.value.lineno,
+                                    wort.arg, wort.value.id))
+        self.assertGreaterEqual(
+            stellen, 1,
+            "Keine Funktion ruft mehr `einsatzbereit()` in der Form "
+            "`bereit, grund = ...` auf - der Test misst nichts.")
+        self.assertEqual(
+            [], funde,
+            "Ein Uebersetzungsschluessel steht roh in einer Meldung. Er "
+            "gehoert in ein eigenes _t(...):\n  " + "\n  ".join(funde))
+
+    def test_der_vertrag_steht_im_docstring(self):
+        """Wer die Funktion liest, muss es erfahren."""
+        import inspect
+        text = inspect.getdoc(ap.einsatzbereit) or ""
+        self.assertIn("schluessel", text.lower(),
+                      "Der Docstring sagt nicht mehr, dass der Grund ein "
+                      "Uebersetzungsschluessel ist - dann faellt die naechste "
+                      "Stelle wieder darauf herein.")
 
 
 class KlapplisteTests(unittest.TestCase):

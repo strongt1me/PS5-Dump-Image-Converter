@@ -2,7 +2,37 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.35):** Dasselbe Format noch einmal bauen – mit Asset-Pack, PlayGo oder BACKPORT – geht jetzt in **allen** Aufgaben 2 bis 6 und für **jedes** Abbildformat. In v1.9.34 ließ sich `.exFAT` zu `.exFAT` zwar starten, aber nicht auswählen.
+> **Kurz zum aktuellen Stand (v1.9.36):** Der AMPR-EMU-Manager (Aufgabe 7) rüstet ein Asset-Pack in ein **fertiges** Backup nach – auf Knopfdruck, für Ordner, `.ffpfsc`, `.exFAT` und `.ffpkg`.
+
+---
+
+## v1.9.36 – 20.09.2026
+
+Ein Asset-Pack nachträglich in ein fertiges Backup bauen.
+
+### Der Knopf „Asset-Pack bauen“ in Aufgabe 7
+
+Bisher entstanden AMPR-EMU-Asset-Pack-Bänder nur beim **Erstellen** eines Abbilds – über das Kästchen „AMPR EMU“ und die Methode „Asset-Pack“. Ein fertiges Backup ließ sich nur nachrüsten, indem man es noch einmal durch eine der Aufgaben 1 bis 6 schickte.
+
+Jetzt macht es der **AMPR-EMU-Manager** direkt: Quelle wählen, im Fenster eine AMPR-Fassung auswählen, auf **Asset-Pack bauen** drücken. Alle vier Quellen, die Aufgabe 7 ohnehin annimmt, sind dabei – **Ordner**, `.ffpfsc`, `.exFAT` und `.ffpkg`. Umhüllende Formate werden nach dem Packen wieder zurückgepackt.
+
+Gepackt wird erst, wenn `ampr_emu.index` steht: Das Packwerkzeug liest ihn, um die fileIds zu vergeben. Ein danach neu gebauter Index würde die fertigen Bänder unbrauchbar machen.
+
+### Gepackt wird mit der Fassung, die im Fenster steht
+
+Gesucht wird nichts automatisch – es zählt die Fassung, die oben im Auswahlfeld steht. Bänder lesen kann nur eine Fassung der Bauart **test-pack** oder **test-debug-pack**. Steht die Auswahl auf einer anderen, sagt das Fenster es sofort, statt eine halbe Stunde zu packen und am Ende Bänder zu hinterlassen, die niemand liest.
+
+Fehlt `ampr_emu.index` im Spielordner, bricht der Lauf mit einem klaren Satz ab. Der Weg ist dann erst **Nur Index neu bauen**, danach das Asset-Pack.
+
+### Die Originale bleiben liegen
+
+Aufgabe 7 fragt **nicht**, ob gepackte Originaldateien entfernt werden sollen – sie bleiben immer. Das Backup wird dadurch **größer**, nicht kleiner: Es enthält danach Originale und Bänder. Wer ein kleineres Abbild möchte, baut es über die Aufgaben 1 bis 6 neu und beantwortet dort die Frage nach den Originalen.
+
+Ein Gegenstück zum **Entfernen** gibt es bewusst nicht. Sobald ein Abbild einmal ohne Originale gebaut wurde, sind die Bänder die einzige Kopie der Spieldaten – ein „Asset-Pack entfernen“ würde sie löschen.
+
+---
+
+> **Zum Stand v1.9.35:** Dasselbe Format noch einmal bauen – mit Asset-Pack, PlayGo oder BACKPORT – geht in **allen** Aufgaben 2 bis 6 und für **jedes** Abbildformat.
 
 ---
 

@@ -3626,10 +3626,13 @@ class AufgabeSiebenTrennungTests(unittest.TestCase):
     "Asset-Pack" gewaehlt und das Kaestchen dann abgeschaltet hatte, bekam
     nach jedem Tausch (auch nach Wiederherstellen und Entfernen) Baender.
 
-    Am 17.09.2026 behoben - und am selben Tag vom Anwender weiter gefasst:
-    Aufgabe 7 baut gar keine Baender mehr (siehe
-    AufgabeSiebenFasstPackNichtAnTests). ``_assetpack_gewaehlt`` bleibt die
-    Frage, die das Erstellen stellt.
+    Am 17.09.2026 behoben - und am selben Tag weiter gefasst: Aufgabe 7 baute
+    gar keine Baender mehr (siehe AufgabeSiebenFasstPackNichtAnTests).
+    ``_assetpack_gewaehlt`` bleibt die Frage, die das Erstellen stellt.
+
+    Seit v1.9.36 baut Aufgabe 7 wieder, aber nur ueber den Knopf
+    "Asset-Pack bauen" - nie nebenbei nach einer anderen Aktion. Die
+    Trennung, um die es dieser Klasse geht, bleibt damit bestehen.
     """
 
     class _Wert:
@@ -3652,17 +3655,33 @@ class AufgabeSiebenTrennungTests(unittest.TestCase):
         self.assertFalse(self._gui(False)._assetpack_gewaehlt())
         self.assertTrue(self._gui(True)._assetpack_gewaehlt())
 
-    def test_aufgabe_sieben_versorgt_vor_dem_index_und_baut_nichts(self) -> None:
+    def test_aufgabe_sieben_versorgt_vor_dem_index(self) -> None:
+        """Und packt erst danach - sonst passen die fileIds nicht.
+
+        Bis v1.9.35 stand hier ``assertNotIn("_ampr_assetpakete_bauen")``:
+        Aufgabe 7 baute gar nichts. Seit v1.9.36 gibt es den Knopf, und die
+        Reihenfolge ist das, was zu schuetzen bleibt - ``ampr_pack.py`` liest
+        den Index, um die fileIds zu vergeben.
+        """
         methode = _methode(_klasse(ast.parse(HAUPTDATEI.read_text(
             encoding="utf-8"))), "_mode_ampr_manager")
         text = ast.unparse(methode)
         # Bibliotheken erst hinein, dann der Index.
         self.assertLess(text.index("_prepare_ampr_support("),
                         text.index("_build_ampr_index_local("))
-        aufrufe = {k.func.attr for k in ast.walk(methode)
-                   if isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)}
-        self.assertIn("_build_ampr_index_local", aufrufe)
-        self.assertNotIn("_ampr_assetpakete_bauen", aufrufe)
+        stellen: dict = {"index": [], "pack": []}
+        for k in ast.walk(methode):
+            if not (isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)):
+                continue
+            if k.func.attr == "_build_ampr_index_local":
+                stellen["index"].append(k.lineno)
+            elif k.func.attr == "_ampr_assetpakete_bauen":
+                stellen["pack"].append(k.lineno)
+        self.assertTrue(stellen["index"], "Kein Index-Aufbau in Aufgabe 7")
+        self.assertTrue(stellen["pack"], "Aufgabe 7 baut gar kein Pack mehr")
+        self.assertLess(
+            min(stellen["index"]), min(stellen["pack"]),
+            "Das Pack entsteht vor dem Index - die fileIds passen dann nicht.")
 
 
 class AufgabeSiebenFasstPackNichtAnTests(_TempTest):
