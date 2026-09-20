@@ -2,7 +2,41 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.32):** Die Filmordner eines Spiels werden jetzt aus dem Ordnerbaum gelesen statt geraten – das Packwerkzeug unterscheidet Groß- und Kleinschreibung, und deshalb landeten bei einem echten Spiel 17 von 17 Filmen im Band, obwohl die Ausschlussliste „movies" kannte.
+> **Kurz zum aktuellen Stand (v1.9.33):** Spiele auf Unity lesen ihre Daten am AMPR EMU vorbei. Bei ihnen bleiben die gepackten Originale jetzt liegen, auch wenn du „weglassen“ gewählt hast – sonst startet das Spiel nicht. Wer ein eigenes Packprofil aus Konsolen-Mitschnitten danebenlegt, entscheidet weiterhin selbst.
+
+---
+
+## v1.9.33 – 20.09.2026
+
+Warum ein Abbild ohne Originale bei manchen Spielen nicht startet – und was das Programm jetzt daraus macht.
+
+### Die Bänder bedienen nicht jeden Lesevorgang
+
+Ein Asset-Pack liefert nur, was ein Spiel über APR liest. Was eine Spiel-Engine mit gewöhnlichem Datei-Zugriff holt, muss als richtige Datei im Abbild liegen – nach „Originale weglassen“ ist es sonst schlicht weg.
+
+An der Konsole gemessen: Ein Unity-Spiel, ohne Originale gebaut. Der Emulator meldete für fünf Dateien der Unity-Laufzeit „No such file or directory“ – er hat sie also nicht aus den Bändern bedient. Im ganzen Mitschnitt stand **keine einzige** Zeile der Pack-Schicht, und das Spiel beendete sich kurz nach dem Start. Dasselbe Spiel mit denselben Bändern **und** den Originalen daneben lief durch.
+
+### Was jetzt gilt
+
+Das Programm erkennt solche Titel an ihren Laufzeitdateien (`data.unity3d`, `globalgamemanagers`, `global-metadata.dat`, `ScriptingAssemblies.json`, `RuntimeInitializeOnLoads.json`) und **lässt die Originale stehen**, auch wenn du das Weglassen gewählt hast. Im Protokoll steht, was gefunden wurde und warum. Das Abbild wird dadurch nicht kleiner – aber es startet.
+
+Von 31 echten Spiel-Dumps sind 12 solche Titel. Die IL2CPP-Metadaten (`global-metadata.dat`) wandern außerdem nie mehr in ein Band, so wie schon die PlayGo-Dateien.
+
+Warum das Programm nicht einfach alle fünf Dateien vom Packen ausnimmt: In dem Abbild, das abstürzte, waren 197 von 259 Dateien gepackt und entfernt – vier der fünf Namen waren dabei. Da aber keine einzige Zeile der Pack-Schicht im Mitschnitt steht, ist nicht belegt, dass für diesen Titel überhaupt *eine* gepackte Datei bedient wurde. Vier Namen mehr auszuschließen hieße raten, dass die übrigen 193 tragen. Und `data.unity3d` trägt bei vielen Titeln den gesamten Spielinhalt – lose gelassen bliebe vom Pack ohnehin nichts.
+
+### Dein eigenes Packprofil hat Vorrang
+
+Legst du eine Datei mit dem Namen deines Dump-Ordners und der Endung `_ampr_pack.toml` **neben** den Dump-Ordner – etwa `Mein Spiel_ampr_pack.toml` neben `Mein Spiel\` –, nimmt das Programm sie, schreibt sie nie um und hält dich auch nicht mehr auf. Wer aus Konsolen-Mitschnitten packt, weiß selbst, was der Titel über APR liest. Bisher war das gar nicht möglich: Gepackt wird in einem Ordner neben der Arbeitskopie, und die liegt in einem frisch erzeugten temporären Ordner.
+
+Wählst du „weglassen“ und das Profil stammt vom Programm, steht der Vorbehalt jetzt gleich beim Bau im Protokoll: Es kann nicht wissen, was dein Titel wirklich über APR liest.
+
+### Wenn der Arbeitsspeicher ausgeht
+
+Ging während eines Laufs der Arbeitsspeicher aus, endete die Meldung im Fenster mit einem Doppelpunkt und nichts dahinter – diese Fehlerart trägt nämlich keinen Text. Jetzt steht dort ein Satz, der sagt, was los ist, samt dem tiefsten während des Laufs gemessenen Wert. Und schon vor dem Start warnt das Programm, wenn weniger als 1 GB frei ist – bei 0,8 GB brach ein Packlauf ab, nach dem Schließen anderer Programme lief derselbe Lauf durch.
+
+---
+
+> **Zum Stand v1.9.32:** Die Filmordner eines Spiels werden jetzt aus dem Ordnerbaum gelesen statt geraten – das Packwerkzeug unterscheidet Groß- und Kleinschreibung, und deshalb landeten bei einem echten Spiel 17 von 17 Filmen im Band, obwohl die Ausschlussliste „movies" kannte.
 
 ---
 

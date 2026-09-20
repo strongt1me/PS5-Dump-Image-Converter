@@ -651,6 +651,317 @@ class FilmordnerTests(unittest.TestCase):
             self.fail("Kein Zweig, der videos prueft")
 
 
+class DirektleserTests(unittest.TestCase):
+    """Engines, die ihre Daten am Emulator vorbei lesen.
+
+    Am 20.09.2026 an der Konsole gemessen ("Wer wird Millionaer", ohne
+    Originale gebaut, Debug-Bau des AMPR EMU 0.4.2.1): Fuer fuenf Dateien
+    der Unity-Laufzeit meldete der Emulator ``io.hook.error ... No such
+    file or directory``, im ganzen Mitschnitt stand keine einzige
+    ``apr.pack``-Zeile, und das Spiel beendete sich nach dem Start. Mit
+    denselben Baendern **und** den Originalen daneben lief es durch.
+    """
+
+    def _unity(self, wurzel: Path, datenordner: str) -> None:
+        (wurzel / datenordner).mkdir(parents=True, exist_ok=True)
+        for name in ("data.unity3d", "globalgamemanagers",
+                     "ScriptingAssemblies.json", "RuntimeInitializeOnLoads.json"):
+            (wurzel / datenordner / name).write_bytes(b"x" * 16)
+        (wurzel / datenordner / "Metadata").mkdir(exist_ok=True)
+        (wurzel / datenordner / "Metadata" / "global-metadata.dat").write_bytes(b"x")
+
+    def test_unity_wird_erkannt(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_dl_") as basis:
+            wurzel = Path(basis)
+            self._unity(wurzel, "Media")
+            (wurzel / "eboot.bin").write_bytes(b"x")
+            engine, merkmale = ap.direktleser_merkmale(str(wurzel))
+            self.assertEqual(engine, "Unity")
+            self.assertIn("Media/data.unity3d", merkmale)
+            self.assertIn("Media/Metadata/global-metadata.dat", merkmale)
+            self.assertEqual(len(merkmale), 5)
+
+    def test_der_datenordner_darf_heissen_wie_er_will(self):
+        """Unity legt ihn je nach Projekt anders an - gemessen unter Media/."""
+        import tempfile
+
+        for ordner in ("Media", "Spiel_Data", "Data", "tief/drin/Game_Data"):
+            with tempfile.TemporaryDirectory(prefix="ampr_dl_") as basis:
+                self._unity(Path(basis), ordner)
+                engine, merkmale = ap.direktleser_merkmale(basis)
+                self.assertEqual(engine, "Unity", ordner)
+                self.assertIn(ordner + "/data.unity3d", merkmale)
+
+    def test_ein_titel_ohne_engine_bleibt_leer(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_dl_") as basis:
+            wurzel = Path(basis)
+            (wurzel / "daten").mkdir()
+            (wurzel / "daten" / "karte0.dat").write_bytes(b"x" * 64)
+            (wurzel / "eboot.bin").write_bytes(b"x")
+            self.assertEqual(ap.direktleser_merkmale(basis), ("", ()))
+
+    def test_unlesbarer_ordner_wirft_nicht(self):
+        self.assertEqual(ap.direktleser_merkmale(r"Z:\gibt-es-nicht"), ("", ()))
+
+    def test_der_hauptbestand_wird_nicht_ausgeschlossen(self):
+        """Die Folge ist "Originale bleiben", nicht "alles lose".
+
+        ``data.unity3d`` traegt praktisch das ganze Spiel. Stuende es in
+        der Ausschlussliste, bliebe fast alles lose und das Pack waere
+        sinnlos - deshalb entscheidet der Riegel beim Entfernen, nicht das
+        Profil.
+        """
+        for name in ("data.unity3d", "globalgamemanagers"):
+            self.assertNotIn(name, ap.NIE_PACKEN, name)
+            self.assertNotIn(name, ap.SYSTEMDATEIEN, name)
+        # Die Metadaten dagegen sind klein und muessen lose bleiben.
+        self.assertIn("global-metadata.dat", ap.NIE_PACKEN)
+
+
+class DirektleserRiegelTests(unittest.TestCase):
+    """Bei einer Engine, die am Emulator vorbei liest, bleiben die Originale.
+
+    Der dritte Riegel - nach den Systemdateien im Band und den fehlenden
+    losen Dateien. Er greift **vor** dem Entfernen, denn danach ist nichts
+    mehr zu retten.
+    """
+
+    def _fenster(self):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._protokoll = []
+        gui._append_to_log = gui._protokoll.append
+        gui._t = lambda schluessel, **werte: (
+            schluessel if not werte else "%s %s" % (schluessel, sorted(werte.values())))
+        return gui
+
+    def _unity_ordner(self, basis: str) -> str:
+        wurzel = Path(basis)
+        (wurzel / "Media" / "Metadata").mkdir(parents=True)
+        (wurzel / "Media" / "data.unity3d").write_bytes(b"x" * 32)
+        (wurzel / "Media" / "Metadata" / "global-metadata.dat").write_bytes(b"x")
+        (wurzel / "eboot.bin").write_bytes(b"x")
+        return str(wurzel)
+
+    def test_unity_haelt_die_originale_fest(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
+            gui = self._fenster()
+            darf = gui._ampr_direktleser_riegel(self._unity_ordner(basis), True)
+            self.assertFalse(darf, "Bei Unity darf nicht entfernt werden.")
+            text = "\n".join(gui._protokoll)
+            self.assertIn("ampr_pack.direktleser_erkannt", text)
+            self.assertIn("Unity", text)
+            self.assertIn("ampr_pack.direktleser_riegel", text)
+            self.assertIn("ampr_pack.direktleser_ausweg", text)
+            self.assertIn("Media/data.unity3d", text,
+                          "Die gefundenen Dateien gehoeren in die Meldung.")
+
+    def test_ein_eigenes_profil_entscheidet_der_anwender(self):
+        """Wer aus Mitschnitten packt, weiss, was der Titel ueber APR liest."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
+            gui = self._fenster()
+            self.assertTrue(
+                gui._ampr_direktleser_riegel(self._unity_ordner(basis), False))
+            self.assertEqual(gui._protokoll, [])
+
+    def test_ohne_merkmal_laeuft_alles_wie_bisher(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
+            (Path(basis) / "daten").mkdir()
+            (Path(basis) / "daten" / "karte0.dat").write_bytes(b"x" * 64)
+            gui = self._fenster()
+            self.assertTrue(gui._ampr_direktleser_riegel(basis, True))
+            self.assertEqual(gui._protokoll, [])
+
+    def test_der_riegel_haengt_wirklich_vor_dem_entfernen(self):
+        """Eine Pruefung, die nur der Test ruft, schuetzt keine Datei."""
+        import ast
+
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_ampr_assetpakete_bauen")
+        zeilen = {}
+        for knoten in ast.walk(methode):
+            if isinstance(knoten, ast.Attribute):
+                zeilen.setdefault(knoten.attr, []).append(knoten.lineno)
+        self.assertIn("_ampr_direktleser_riegel", zeilen,
+                      "Der Riegel wird im Baulauf gar nicht gefragt.")
+        self.assertIn("_ampr_originale_entfernen", zeilen)
+        self.assertLess(min(zeilen["_ampr_direktleser_riegel"]),
+                        min(zeilen["_ampr_originale_entfernen"]),
+                        "Gefragt wird erst nach dem Entfernen - zu spaet.")
+
+    def test_der_hinweis_ohne_mitschnitte_steht_im_baulauf(self):
+        """Wer ohne Originale baut, soll den Vorbehalt vorher lesen."""
+        import ast
+
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_ampr_assetpakete_bauen")
+        texte = [n.value for n in ast.walk(methode)
+                 if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+        self.assertIn("ampr_pack.originale_weglassen_risiko", texte)
+
+    def test_das_handbuch_erklaert_den_fall(self):
+        handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(encoding="utf-8")
+        for stelle in ("data.unity3d", "global-metadata.dat", "Unity",
+                       "_ampr_pack.toml"):
+            self.assertIn(stelle, handbuch, "%s fehlt im Handbuch" % stelle)
+
+
+class EigenesProfilTests(unittest.TestCase):
+    """Der Weg am Riegel vorbei: ein Profil aus Konsolen-Mitschnitten.
+
+    Gepackt wird in einem Ordner neben der Arbeitskopie, und die liegt in
+    einem frisch erzeugten Temp-Ordner - dort kann niemand vorher etwas
+    ablegen. Ohne diese Uebernahme waere die Ausnahme fuer eigene Profile
+    also unerreichbar, und der Riegel haette kein Ventil.
+    """
+
+    def _fenster(self, quelle: str):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._protokoll = []
+        gui._append_to_log = gui._protokoll.append
+        gui._t = lambda schluessel, **werte: (
+            schluessel if not werte else "%s %s" % (schluessel, sorted(map(str, werte.values()))))
+        gui._ampr_quelle_original = quelle
+        return gui
+
+    MITSCHNITT = (
+        '[[rule]]\nmatch = ["daten/**"]\naction = "pack"\n'
+        'compression = "lz4"\n')
+
+    def test_ein_profil_daneben_wird_genommen(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_prof_") as basis:
+            spiel = Path(basis) / "Mein Spiel"
+            spiel.mkdir()
+            (Path(basis) / "Mein Spiel_ampr_pack.toml").write_text(
+                self.MITSCHNITT, encoding="utf-8")
+            ausgabe = Path(basis) / "Mein Spiel_ampr_pack"
+
+            gui = self._fenster(str(spiel))
+            ziel = gui._ampr_eigenes_profil_uebernehmen(str(ausgabe))
+            self.assertTrue(ziel)
+            self.assertTrue(os.path.isfile(ziel))
+            self.assertIn("ampr_pack.eigenes_profil_uebernommen",
+                          "\n".join(gui._protokoll))
+            # Und es gilt ab jetzt als Profil des Anwenders - der Baulauf
+            # schreibt es damit nicht um.
+            self.assertFalse(ap.profil_ist_eigenes(ziel))
+            unveraendert = Path(ziel).read_text(encoding="utf-8")
+            ap.profil_schreiben(ziel, 2, str(spiel))
+            self.assertEqual(Path(ziel).read_text(encoding="utf-8"), unveraendert)
+
+    def test_eine_kopie_unseres_profils_zaehlt_nicht(self):
+        """Sonst haette der Riegel ein Ventil, das nichts weiss."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_prof_") as basis:
+            spiel = Path(basis) / "Mein Spiel"
+            spiel.mkdir()
+            (Path(basis) / "Mein Spiel_ampr_pack.toml").write_text(
+                ap.standardprofil_text(2), encoding="utf-8")
+            gui = self._fenster(str(spiel))
+            self.assertEqual(
+                gui._ampr_eigenes_profil_uebernehmen(str(Path(basis) / "aus")), "")
+            self.assertIn("ampr_pack.eigenes_profil_ist_unseres",
+                          "\n".join(gui._protokoll))
+
+    def test_ohne_datei_geschieht_nichts(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_prof_") as basis:
+            spiel = Path(basis) / "Mein Spiel"
+            spiel.mkdir()
+            gui = self._fenster(str(spiel))
+            self.assertEqual(
+                gui._ampr_eigenes_profil_uebernehmen(str(Path(basis) / "aus")), "")
+            self.assertEqual(gui._protokoll, [])
+
+    def test_ohne_gemerkte_quelle_geschieht_nichts(self):
+        """Aus einem Abbild entpackt - dann gibt es keinen Ordner daneben."""
+        gui = self._fenster("")
+        self.assertEqual(gui._ampr_eigenes_profil_uebernehmen("egal"), "")
+        self.assertEqual(gui._protokoll, [])
+
+    def test_die_uebernahme_steht_vor_dem_profilschreiben(self):
+        import ast
+
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_ampr_assetpakete_bauen")
+        zeilen = {}
+        for knoten in ast.walk(methode):
+            if isinstance(knoten, ast.Attribute):
+                zeilen.setdefault(knoten.attr, []).append(knoten.lineno)
+        self.assertIn("_ampr_eigenes_profil_uebernehmen", zeilen,
+                      "Ein eigenes Profil wird nie gesucht.")
+        self.assertLess(min(zeilen["_ampr_eigenes_profil_uebernehmen"]),
+                        min(zeilen["profil_schreiben"]),
+                        "Gesucht wird erst nach dem Schreiben - zu spaet.")
+
+    def test_die_quelle_wird_vor_der_arbeitskopie_gemerkt(self):
+        """Danach ist es ein Temp-Ordner - daneben liegt nie ein Profil."""
+        import ast
+
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_integration_anwenden")
+        merken = [n.lineno for n in ast.walk(methode)
+                  if isinstance(n, ast.Attribute)
+                  and n.attr == "_ampr_quelle_original"]
+        kopie = [n.lineno for n in ast.walk(methode)
+                 if isinstance(n, ast.Attribute)
+                 and n.attr == "_integration_arbeitskopie"]
+        self.assertTrue(merken, "_integration_anwenden merkt die Quelle nicht.")
+        self.assertTrue(kopie)
+        self.assertLess(min(merken), min(kopie))
+
+    def test_jeder_lauf_faengt_ohne_alte_quelle_an(self):
+        """Sonst zieht Lauf 2 das Profil aus Lauf 1 herein."""
+        import ast
+
+        quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        baum = ast.parse(quelle)
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_run_engine_thread")
+        geleert = [z for z in ast.walk(methode)
+                   if isinstance(z, ast.Assign)
+                   and any(isinstance(t, ast.Attribute)
+                           and t.attr == "_ampr_quelle_original" for t in z.targets)
+                   and isinstance(z.value, ast.Constant) and z.value.value == ""]
+        self.assertTrue(geleert,
+                        "_run_engine_thread leert _ampr_quelle_original nicht.")
+
+
 class KonsolenhinweisTests(unittest.TestCase):
     """Was die Konsole braucht, sagt das Programm beim Bauen.
 
@@ -738,6 +1049,22 @@ class SystemdateienImPackTests(unittest.TestCase):
 
     def _zeile(self, pfad: str, gepackt: bool = True) -> dict:
         return {"path": pfad, "packed": gepackt, "size": 4096}
+
+    def test_unity_metadaten_werden_erkannt(self):
+        """An der Konsole gemessen (20.09.2026): ohne diese Datei kein Start.
+
+        Der Debug-Bau des Emulators meldete beim Start von "Wer wird
+        Millionaer" (ohne Originale gebaut)
+        ``io.hook.error function=open errno=2 ... path=/app0/Media/Metadata/
+        global-metadata.dat``, danach beendete sich das Spiel selbst. Die
+        Unity-Laufzeit liest die IL2CPP-Metadaten an der Emulation vorbei.
+        """
+        self.assertEqual(
+            ap.systemdateien_im_pack([
+                self._zeile("/app0/Media/Metadata/global-metadata.dat")]),
+            ["/app0/Media/Metadata/global-metadata.dat"])
+        self.assertIn("global-metadata.dat", ap.NIE_PACKEN)
+        self.assertIn("**/global-metadata.dat", ap.NIE_PACKEN)
 
     def test_playgo_und_verwandte_werden_erkannt(self):
         getroffen = ap.systemdateien_im_pack([

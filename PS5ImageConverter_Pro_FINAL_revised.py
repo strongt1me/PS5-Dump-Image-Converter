@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.32"
+APP_VERSION = "v1.9.33"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -6366,6 +6366,26 @@ class PS5ConverterGUI:
                         detail=detail_suffix))
             except Exception as exc:
                 warnings.append(self._t("preflight.dest_check_failed", error=exc))
+
+        # Der Arbeitsspeicher - dieselbe Vorsorge wie beim Platz.
+        #
+        # Am 20.09.2026 gemessen: Ein Bau nach .ffpfsc brach mit "MemoryError"
+        # ab, freier Speicher zu dem Zeitpunkt 0,8 GB; derselbe Lauf nach dem
+        # Schliessen anderer Programme lief durch. Die Fehlermeldung nannte
+        # bis dahin nichts, denn MemoryError traegt keinen Text
+        # (_fehlertext_der_ausnahme). Besser vorher fragen als hinterher raten.
+        #
+        # Nur eine Warnung: Wie viel ein bestimmter Lauf wirklich braucht,
+        # haengt an der groessten Datei und am Zielformat - das ist hier nicht
+        # gemessen, also wird es auch nicht behauptet.
+        if psutil is not None and mode not in ("inspect", "dump_validator"):
+            try:
+                frei_ram = int(psutil.virtual_memory().available)
+                if frei_ram < self._RAM_VERDACHT_BYTES:
+                    warnings.append(self._t(
+                        "preflight.ram_low", size=self._fmt_bytes(frei_ram)))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Freier Arbeitsspeicher nicht lesbar: %s", exc)
 
         # Frueher stand hier eine Warnung, OSFMount fehle - bei Aufgabe 2 und
         # Aufgabe 3. Sie war zuletzt in beiden Faellen falsch und hat Anwender
@@ -18143,6 +18163,14 @@ class PS5ConverterGUI:
     #: wie eng es mittendrin war.
     _PLATZ_VERDACHT_BYTES = 2 * 1024 ** 3
 
+    #: Ab wie wenig freiem Arbeitsspeicher die Vorabpruefung warnt.
+    #:
+    #: Gemessen am 20.09.2026: Ein Bau nach .ffpfsc brach mit "MemoryError"
+    #: ab, frei waren zu dem Zeitpunkt 0,8 GB. Die Grenze liegt knapp
+    #: darueber - dieser Rechner hat 7,8 GB, mehr als 1 GB frei ist der
+    #: Normalfall, die Warnung also selten.
+    _RAM_VERDACHT_BYTES = 1024 ** 3
+
     def _fehlergrund_ermitteln(self, verification: dict[str, Any] | None) -> str:
         """Sammelt, was ueber den Fehlschlag **tatsaechlich bekannt** ist.
 
@@ -18201,6 +18229,31 @@ class PS5ConverterGUI:
                                   size=self._fmt_bytes(tief * 1024 ** 2)))
 
         return "\n".join("- " + z for z in zeilen)
+
+    def _fehlertext_der_ausnahme(self, exc: BaseException) -> str:
+        """Macht aus einer Ausnahme einen Satz, den ein Anwender lesen kann.
+
+        Fuer die allermeisten Ausnahmen ist das schlicht ihr Text. Zwei
+        Faelle brauchen mehr:
+
+        * ``MemoryError`` traegt **gar keinen** Text. ``str(exc)`` ist leer,
+          und die Meldung endete deshalb mit einem Doppelpunkt und nichts
+          dahinter. Gemessen am 20.09.2026 beim Bau eines .ffpfsc mit 0,8 GB
+          freiem Arbeitsspeicher: MkPFS starb in ``_iter_logical_blocks``
+          (``buffer += piece``), das Fenster meldete einen leeren Fehler.
+          Liegt ein gemessener Tiefpunkt vor, steht er mit in der Meldung -
+          gemessen wird er ohnehin waehrend jeder Aufgabe
+          (:meth:`_speicher_beobachtung_starten`).
+        * Jede andere textlose Ausnahme bekommt wenigstens ihren Klassennamen.
+        """
+        if isinstance(exc, MemoryError):
+            tief = getattr(self, "_speicher_tiefpunkt_mb", None)
+            if isinstance(tief, int):
+                return self._t("fehler.speicher_erschoepft_tief",
+                               size=self._fmt_bytes(tief * 1024 ** 2))
+            return self._t("fehler.speicher_erschoepft")
+        text = str(exc).strip()
+        return text or type(exc).__name__
 
     #: Unter diesem Tiefpunkt nennt die Fehlermeldung knappen Arbeitsspeicher.
     #:
@@ -22097,6 +22150,11 @@ class PS5ConverterGUI:
         self._integration_erledigt = False
         self._ampr_index_entschieden = False
         self._ampr_ordner_ist_kopie = False
+        # Der Quellordner des VORIGEN Laufs darf hier nicht stehenbleiben -
+        # sonst zoege ein spaeterer Lauf dessen eigenes Packprofil herein
+        # (_ampr_eigenes_profil_uebernehmen). Gesetzt wird er in
+        # _integration_anwenden, bevor daraus eine Arbeitskopie wird.
+        self._ampr_quelle_original = ""
         self._playgo_geklaert = False
         self._playgo_beim_einbau_fragen = False
 
@@ -22582,10 +22640,17 @@ class PS5ConverterGUI:
                                 messagebox.showerror(titel, message))
 
         except Exception as exc:
-            self._append_to_log(self._t('log.auto.0084', v0=exc))
+            # ``MemoryError`` traegt keinen Text: ``str(exc)`` ist leer, und
+            # die Meldung lautete dann "abgebrochen:" - ohne einen Grund
+            # dahinter. Am 20.09.2026 beim Bau eines .ffpfsc gemessen, mit
+            # 0,8 GB freiem Arbeitsspeicher: MkPFS starb in
+            # ``_iter_logical_blocks`` (``buffer += piece``). Der Anwender
+            # sah einen leeren Fehler und suchte den Fehler im Spiel.
+            fehlertext = self._fehlertext_der_ausnahme(exc)
+            self._append_to_log(self._t('log.auto.0084', v0=fehlertext))
             logger.exception("Unerwarteter Fehler im Engine-Thread")
             self._set_status(self._t("status.error"))
-            self.root.after(0, lambda e=str(exc): messagebox.showerror(
+            self.root.after(0, lambda e=fehlertext: messagebox.showerror(
                 self._t("dialog.title.unexpected_error"),
                 self._t("dialog.msg.conversion_aborted_unexpected", error=e[:300]),
             ))
@@ -25712,6 +25777,12 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("main.integrate_no_folder", path=ordner))
             return ""
 
+        # Woher der Lauf kommt - gemerkt, bevor daraus eine Arbeitskopie im
+        # Temp-Ordner wird. Nur hier ist der Ordner noch der des Anwenders,
+        # und nur daneben kann er ein eigenes Packprofil abgelegt haben
+        # (_ampr_eigenes_profil_uebernehmen).
+        self._ampr_quelle_original = ordner if ist_quellordner else ""
+
         arbeitsordner = ordner
         if ist_quellordner:
             arbeitsordner = self._integration_arbeitskopie(ordner)
@@ -26026,6 +26097,12 @@ class PS5ConverterGUI:
         uebernommen = False
 
         try:
+            # Zuerst nachsehen, ob der Anwender ein eigenes Profil aus
+            # Konsolen-Mitschnitten neben den Dump gelegt hat. Ohne diesen
+            # Schritt waere es unerreichbar: Gepackt wird in einem Ordner
+            # neben der Arbeitskopie, und die liegt in einem frisch
+            # erzeugten Temp-Ordner.
+            self._ampr_eigenes_profil_uebernehmen(ausgabe)
             # Der Spielordner geht mit: Daraus entstehen die Ausschluesse
             # fuer die Film- und Videoordner dieses Titels, in der
             # Schreibung des Dateisystems. Ein festes "movies/**" reicht
@@ -26039,6 +26116,12 @@ class PS5ConverterGUI:
             self._append_to_log(self._t(
                 "ampr_pack.profil" if eigenes_profil else "ampr_pack.profil_anwender",
                 path=profil))
+            # Wer ohne Originale bauen laesst, soll hier erfahren, worauf das
+            # hinauslaeuft - nicht erst, wenn das Spiel auf der Konsole
+            # stehenbleibt. Erst an dieser Stelle steht fest, ob das Profil
+            # vom Programm stammt oder aus Mitschnitten des Anwenders.
+            if eigenes_profil and getattr(self, "_ampr_originale_weglassen", False):
+                self._append_to_log(self._t("ampr_pack.originale_weglassen_risiko"))
 
             # Das Werkzeug meldet seinen Fortschritt auf stderr
             # ("[pack  42%] packing: ..."). Bis zum 08.09.2026 landeten diese
@@ -26194,6 +26277,8 @@ class PS5ConverterGUI:
         if not getattr(self, "_ampr_ordner_ist_kopie", False):
             self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
             return True
+        if not self._ampr_direktleser_riegel(ordner, eigenes_profil):
+            return True
         return self._ampr_originale_entfernen(ordner)
 
     def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
@@ -26224,6 +26309,94 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("ampr_pack.konsole_playgo", merkmal=merkmal))
         if not getattr(self, "_ampr_originale_weglassen", False):
             self._append_to_log(self._t("ampr_pack.konsole_originale"))
+
+    #: So heisst ein Packprofil des Anwenders: neben dem Dump-Ordner, mit
+    #: dessen Namen davor - "Wer wird Millionaer_ampr_pack.toml".
+    _EIGENES_PROFIL_ENDUNG = "_ampr_pack.toml"
+
+    def _ampr_eigenes_profil_uebernehmen(self, ausgabe: str) -> str:
+        """Holt ein Packprofil des Anwenders herein, wenn eines daneben liegt.
+
+        Der Entwickler der Packwerkzeuge baut seine Profile aus
+        Konsolen-Mitschnitten: Ins Band darf nur, was ein Titel
+        nachweislich ueber APR liest. Genau das kann das allgemeine Profil
+        dieses Programms nicht wissen - und deshalb haelt
+        :meth:`_ampr_direktleser_riegel` die Originale fest, sobald eine
+        Engine erkannt ist, die daran vorbei liest.
+
+        Ein eigenes Profil ist der Weg daran vorbei. Gepackt wird aber in
+        einem Ordner neben der **Arbeitskopie**, und die liegt in einem
+        frisch erzeugten Temp-Ordner - dort kann niemand vorher etwas
+        ablegen. Deshalb wird hier neben dem Dump-Ordner nachgesehen und
+        die Datei in den Packordner kopiert; ab da gilt sie als Profil des
+        Anwenders und wird nicht ueberschrieben
+        (``ampr_assetpakete.profil_schreiben``).
+
+        Returns:
+            Der Pfad der Kopie, oder "" wenn es nichts zu uebernehmen gab.
+        """
+        quelle = str(getattr(self, "_ampr_quelle_original", "") or "")
+        if not quelle:
+            return ""
+        kandidat = os.path.normpath(os.path.abspath(quelle)) + self._EIGENES_PROFIL_ENDUNG
+        if not os.path.isfile(kandidat):
+            return ""
+        if ampr_assetpakete.profil_ist_eigenes(kandidat):
+            # Eine Kopie unseres eigenen Profils ist kein Mitschnitt-Profil -
+            # sie wuerde den Riegel aushebeln, ohne etwas zu wissen.
+            self._append_to_log(self._t("ampr_pack.eigenes_profil_ist_unseres",
+                                        path=kandidat))
+            return ""
+        try:
+            os.makedirs(ausgabe, exist_ok=True)
+            ziel = os.path.join(ausgabe, "ampr_pack.toml")
+            shutil.copy2(kandidat, ziel)
+        except OSError as exc:
+            self._append_to_log(self._t("ampr_pack.eigenes_profil_fehler",
+                                        path=kandidat, error=exc))
+            return ""
+        self._append_to_log(self._t("ampr_pack.eigenes_profil_uebernommen",
+                                    path=kandidat))
+        return ziel
+
+    def _ampr_direktleser_riegel(self, ordner: str, eigenes_profil: bool) -> bool:
+        """Darf bei diesem Titel ueberhaupt ohne Originale gebaut werden?
+
+        Die Baender bedienen nur Lesevorgaenge, die ueber APR laufen. Was
+        eine Engine mit gewoehnlichem Datei-I/O liest, muss als Datei im
+        Abbild liegen - sonst ist es nach dem Entfernen schlicht weg.
+
+        Am 20.09.2026 an der Konsole gemessen ("Wer wird Millionaer", ohne
+        Originale gebaut, Debug-Bau des AMPR EMU 0.4.2.1): Der Emulator
+        meldete fuer fuenf Dateien der Unity-Laufzeit ``io.hook.error ...
+        No such file or directory``, im ganzen Mitschnitt stand keine
+        einzige ``apr.pack``-Zeile, und das Spiel beendete sich nach dem
+        Start. Derselbe Titel mit denselben Baendern **und** den Originalen
+        daneben lief durch. Siehe
+        :data:`ampr_assetpakete.DIREKTLESER`.
+
+        Der Riegel gilt nur fuer das Profil dieses Programms. Wer ein
+        eigenes aus Konsolen-Mitschnitten danebenlegt, weiss genau, was der
+        Titel ueber APR liest - dann entscheidet er, nicht das Programm.
+
+        Returns:
+            True, wenn die Originale entfernt werden duerfen.
+        """
+        if not eigenes_profil:
+            return True
+        try:
+            engine, merkmale = ampr_assetpakete.direktleser_merkmale(ordner)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Direktleser nicht pruefbar: %s", exc)
+            return True
+        if not engine:
+            return True
+        self._append_to_log(self._t("ampr_pack.direktleser_erkannt", engine=engine))
+        for pfad in merkmale[:8]:
+            self._append_to_log(self._t("ampr_pack.direktleser_merkmal", path=pfad))
+        self._append_to_log(self._t("ampr_pack.direktleser_riegel"))
+        self._append_to_log(self._t("ampr_pack.direktleser_ausweg"))
+        return False
 
     def _ampr_originale_entfernen(self, ordner: str) -> bool:
         """Entfernt die gepackten Originale aus der Arbeitskopie (Abschnitt 6).

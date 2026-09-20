@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.32</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.33</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.32</span>
+      <span class="marke">Version v1.9.33</span>
       <span class="marke">Stand 20. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -772,6 +772,58 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     vorbei, und das Spiel st&uuml;rzte rund eine Sekunde nach dem Start ab.
     Zus&auml;tzlich sieht das Programm nach dem Packen ins fertige Manifest
     und bricht ab, falls doch eine solche Datei darin steht.</p>
+  </div>
+
+  <div class="kasten warnung">
+    <span class="titel">Manche Spiele k&ouml;nnen ohne Originale gar nicht
+    laufen</span>
+    <p>Die B&auml;nder bedienen nur Lesevorg&auml;nge, die &uuml;ber APR
+    laufen. Was eine Spiel-Engine mit gew&ouml;hnlichem Datei-Zugriff liest,
+    muss als richtige Datei im Abbild liegen &ndash; sonst ist es nach dem
+    Weglassen der Originale schlicht weg.</p>
+    <p><strong>An der Konsole gemessen (20.09.2026).</strong> Ein
+    Unity-Spiel, ohne Originale gebaut: Der Emulator meldete f&uuml;r
+    f&uuml;nf Dateien der Unity-Laufzeit &bdquo;No such file or
+    directory&ldquo; &ndash; er hat sie also nicht aus den B&auml;ndern
+    bedient &ndash;, im ganzen Mitschnitt stand keine einzige
+    <code>apr.pack</code>-Zeile, und das Spiel beendete sich kurz nach dem
+    Start. Dasselbe Spiel mit denselben B&auml;ndern <em>und</em> den
+    Originalen daneben lief durch.</p>
+    <p><strong>Seit v1.9.33</strong> erkennt das Programm solche Titel an
+    ihren Laufzeitdateien (<code>data.unity3d</code>,
+    <code>globalgamemanagers</code>, <code>global-metadata.dat</code>,
+    <code>ScriptingAssemblies.json</code>,
+    <code>RuntimeInitializeOnLoads.json</code>) und <strong>l&auml;sst die
+    Originale stehen</strong>, auch wenn Sie das Weglassen gew&auml;hlt
+    haben. Im Protokoll steht, was gefunden wurde und warum. Das Abbild wird
+    dadurch nicht kleiner &ndash; aber es startet.</p>
+    <p><strong>Warum das Programm diese Dateien nicht einfach vom Packen
+    ausschlie&szlig;t.</strong> In dem Abbild, das abst&uuml;rzte, waren
+    197 von 259 Dateien gepackt und entfernt &ndash; vier der f&uuml;nf
+    Namen waren dabei. Im Mitschnitt steht aber keine einzige
+    <code>apr.pack</code>-Zeile: Es ist also nicht belegt, dass f&uuml;r
+    diesen Titel &uuml;berhaupt <em>eine</em> gepackte Datei bedient wurde
+    &ndash; die vier sind nur die, an denen es sofort auffiel. Vier Namen
+    mehr auszuschlie&szlig;en hie&szlig;e raten, dass die &uuml;brigen 193
+    tragen. Und <code>data.unity3d</code> tr&auml;gt bei vielen Titeln den
+    gesamten Spielinhalt; bliebe sie lose, w&auml;re vom Pack ohnehin
+    nichts mehr &uuml;brig.</p>
+    <p><strong>Der Weg dorthin f&uuml;hrt &uuml;ber Mitschnitte.</strong> Das
+    Packprofil dieses Programms ist allgemein: Es kann nicht wissen, was ein
+    bestimmter Titel wirklich &uuml;ber APR liest. Belegt sind zwei Klassen,
+    die nie in ein Band geh&ouml;ren &ndash; die PlayGo-Dateien und die
+    IL2CPP-Metadaten &ndash;, und beide gelten f&uuml;r alle Spiele ihrer
+    Art. Ob ein Titel eine dritte hat, zeigt erst der Start auf der
+    Konsole.</p>
+    <p><strong>Ihr eigenes Profil hat immer Vorrang.</strong> Legen Sie eine
+    Datei mit dem Namen des Dump-Ordners und der Endung
+    <code>_ampr_pack.toml</code> <em>neben</em> den Dump-Ordner &ndash; zum
+    Beispiel <code>F:\Game Dumps\Mein Spiel_ampr_pack.toml</code> neben
+    <code>F:\Game Dumps\Mein Spiel\</code>. Das Programm nimmt sie, schreibt
+    sie nie um und h&auml;lt Sie damit auch nicht mehr auf: Wer aus
+    Mitschnitten packt, wei&szlig; selbst, was der Titel &uuml;ber APR
+    liest. Im Protokoll steht dann &bdquo;Eigenes Packprofil
+    &uuml;bernommen&ldquo;.</p>
   </div>
 
   <div class="kasten">
@@ -1669,7 +1721,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.32), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.33), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1869,7 +1921,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.32</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.33</strong></span>
     <span>Stand 20. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

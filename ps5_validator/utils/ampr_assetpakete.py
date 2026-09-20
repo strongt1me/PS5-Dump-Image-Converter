@@ -143,6 +143,18 @@ NIE_PACKEN: tuple[str, ...] = (
     "playgo.pgm", "**/playgo.pgm",
     "*.packman", "**/*.packman",
     "pgc_*_dummy_file", "**/pgc_*_dummy_file",
+    # Die IL2CPP-Metadaten von Unity. Am 20.09.2026 an der Konsole
+    # gemessen ("Wer wird Millionaer", ohne Originale gebaut): Der
+    # Debug-Bau des Emulators meldete
+    #   io.hook.error function=open errno=2 text=No such file or directory
+    #   path=/app0/Media/Metadata/global-metadata.dat
+    # und das Spiel beendete sich selbst
+    # (SYSTEM_ABNORMAL_TERMINATION_REQUEST). Die Unity-Laufzeit laedt diese
+    # Datei ganz frueh an der Emulation vorbei - genau der Fall aus der
+    # Fehlertabelle der Anleitung ("mmap, direct I/O, or another
+    # unintercepted path"). Jedes IL2CPP-Spiel traegt sie unter diesem
+    # Namen.
+    "global-metadata.dat", "**/global-metadata.dat",
     # Filme sind vorverdichtet; LZ4 bringt nichts und die Anleitung nennt
     # sie als Beispiel fuer Daten, die lose bleiben duerfen. Jedes
     # veroeffentlichte Profil haelt sie lose (Ghost: "movies/**",
@@ -408,6 +420,83 @@ def systemdateien_muster(app0: str) -> tuple[str, ...]:
     except OSError as exc:
         logger.debug("Systemdateien nicht suchbar (%s): %s", app0, exc)
     return tuple(sorted(set(gefunden)))
+
+
+#: Dateien, an denen eine Spielengine erkennbar ist, die ihre Daten **am
+#: Emulator vorbei** liest.
+#:
+#: Am 20.09.2026 an der Konsole gemessen ("Wer wird Millionaer", ohne
+#: Originale gebaut, Debug-Bau des AMPR EMU 0.4.2.1): Der Emulator meldete
+#: fuer genau diese fuenf Dateien der Unity-Laufzeit
+#: ``io.hook.error function=stat|open errno=2 No such file or directory``
+#: (12 x stat, 7 x open, 6 x sceKernelClose) - er hat sie also **nicht** aus
+#: den Baendern bedient. Im ganzen Mitschnitt stand keine einzige
+#: ``apr.pack``-Zeile; das Spiel beendete sich danach selbst. Mit denselben
+#: Baendern **und** den Originalen daneben lief dasselbe Spiel durch.
+#:
+#: Die Baender bedienen nur Lesevorgaenge, die ueber APR laufen. Was eine
+#: Engine mit gewoehnlichem Datei-I/O liest, muss als Datei dort liegen -
+#: genau der Fall, den die Fehlertabelle der Anleitung als "mmap, direct
+#: I/O, or another unintercepted path" fuehrt. Deshalb baut der Entwickler
+#: seine Profile aus Mitschnitten: Ins Band darf nur, was ein Titel
+#: nachweislich ueber APR liest.
+#:
+#: Warum die Folge **keine** laengere Ausschlussliste ist, sondern ein
+#: Riegel: Im Abbild, das abstuerzte, waren 197 von 259 Dateien gepackt und
+#: entfernt (nachgemessen am fertigen Abbild) - darunter vier der fuenf
+#: Namen hier. Im Mitschnitt steht aber **keine einzige** ``apr.pack``-Zeile.
+#: Es gibt also keinen Beleg, dass fuer diesen Titel ueberhaupt **eine**
+#: gepackte Datei bedient wurde; die vier sind nur die, an denen es sofort
+#: auffiel. Vier Namen mehr auszuschliessen hiesse raten, dass die
+#: uebrigen 193 tragen. ``data.unity3d`` ist ausserdem der Hauptbestand des
+#: Spiels - lose gelassen bliebe vom Pack ohnehin nichts.
+DIREKTLESER: dict[str, tuple[str, ...]] = {
+    "Unity": (
+        "global-metadata.dat",
+        "data.unity3d",
+        "globalgamemanagers",
+        "ScriptingAssemblies.json",
+        "RuntimeInitializeOnLoads.json",
+    ),
+}
+
+
+def direktleser_merkmale(app0: str) -> tuple[str, tuple[str, ...]]:
+    """Traegt dieser Titel eine Engine, die am Emulator vorbei liest?
+
+    Gesucht wird nach den Dateinamen aus :data:`DIREKTLESER`, ohne
+    Ruecksicht auf die Schreibung und an jeder Stelle im Baum: Unity legt
+    seinen Datenordner je nach Projekt anders an (gemessen unter
+    ``Media/``, ueblich sind auch ``<Spiel>_Data/`` und ``Data/``).
+
+    Args:
+        app0: Der Spielordner (die spaetere ``/app0``-Wurzel).
+
+    Returns:
+        ``(Name der Engine, gefundene Pfade)`` - relativ zu ``app0`` und in
+        der Schreibung des Dateisystems - oder ``("", ())``, wenn nichts
+        darauf hindeutet.
+    """
+    gesucht = {name.lower(): engine
+               for engine, namen in DIREKTLESER.items()
+               for name in namen}
+    gefunden: dict[str, list[str]] = {}
+    try:
+        for wurzel, _ordner, dateien in os.walk(str(app0)):
+            for name in dateien:
+                engine = gesucht.get(name.lower())
+                if not engine:
+                    continue
+                rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
+                gefunden.setdefault(engine, []).append(rel.replace("\\", "/"))
+    except OSError as exc:
+        logger.debug("Direktleser nicht suchbar (%s): %s", app0, exc)
+    if not gefunden:
+        return "", ()
+    # Bei mehreren Treffern gewinnt die Engine mit den meisten Merkmalen -
+    # eine einzelne gleichnamige Datei soll keinen Titel umdeuten.
+    engine = max(gefunden, key=lambda k: (len(gefunden[k]), k))
+    return engine, tuple(sorted(set(gefunden[engine])))
 
 
 def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
@@ -806,6 +895,8 @@ SYSTEMDATEIEN: tuple[str, ...] = (
     "playgo-chunk.dat",
     "pgc_*_dummy_file",
     "*.packman",
+    # Unity/IL2CPP: an der Konsole gemessen, siehe NIE_PACKEN.
+    "global-metadata.dat",
 )
 
 

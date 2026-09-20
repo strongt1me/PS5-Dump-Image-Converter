@@ -515,6 +515,72 @@ class FehlergrundTests(unittest.TestCase):
         self.assertLess(start_zeile, min(meldung),
                         "Die Messung startet erst nach der Fehlermeldung.")
 
+    # -- MemoryError traegt keinen Text -----------------------------------
+    #
+    # Am 20.09.2026 gemessen: Ein Bau nach .ffpfsc starb mit MemoryError in
+    # MkPFS (_iter_logical_blocks, "buffer += piece"), frei waren 0,8 GB.
+    # str(MemoryError()) ist "" - im Fenster stand "abgebrochen:" und
+    # dahinter nichts.
+
+    def _fehlertext_probe(self, tiefpunkt=None):
+        haupt = self.haupt
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        if tiefpunkt is not None:
+            p._speicher_tiefpunkt_mb = tiefpunkt
+        p._t = lambda s, **w: (s + " " + " ".join(
+            "%s=%s" % (k, v) for k, v in sorted(w.items()))).strip()
+        p._fmt_bytes = lambda z: "%d B" % int(z)
+        p._fehlertext_der_ausnahme = (
+            haupt.PS5ConverterGUI._fehlertext_der_ausnahme.__get__(p))
+        return p
+
+    def test_speichermangel_bekommt_einen_eigenen_satz(self):
+        p = self._fehlertext_probe(tiefpunkt=None)
+        p._speicher_tiefpunkt_mb = None
+        text = p._fehlertext_der_ausnahme(MemoryError())
+        self.assertIn("fehler.speicher_erschoepft", text)
+        self.assertNotEqual(str(MemoryError()), text,
+                            "Der leere Text der Ausnahme darf nicht durchschlagen.")
+
+    def test_der_gemessene_tiefpunkt_steht_mit_drin(self):
+        p = self._fehlertext_probe(tiefpunkt=820)
+        text = p._fehlertext_der_ausnahme(MemoryError())
+        self.assertIn("fehler.speicher_erschoepft_tief", text)
+        self.assertIn("%d B" % (820 * 1024 ** 2), text)
+
+    def test_ohne_messung_wird_kein_wert_erfunden(self):
+        p = self._fehlertext_probe()
+        text = p._fehlertext_der_ausnahme(MemoryError())
+        self.assertIn("fehler.speicher_erschoepft", text)
+        self.assertNotIn("size=", text)
+
+    def test_jede_andere_ausnahme_behaelt_ihren_text(self):
+        p = self._fehlertext_probe()
+        self.assertEqual(p._fehlertext_der_ausnahme(OSError("Datei fehlt")),
+                         "Datei fehlt")
+
+    def test_textlose_ausnahmen_nennen_wenigstens_die_art(self):
+        p = self._fehlertext_probe()
+        self.assertEqual(p._fehlertext_der_ausnahme(KeyboardInterrupt()),
+                         "KeyboardInterrupt")
+
+    def test_der_engine_faden_benutzt_den_helfer_wirklich(self):
+        """Eine Reparatur, die nur der Test ruft, hilft niemandem."""
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_run_engine_thread")
+        self.assertTrue(
+            [n for n in ast.walk(methode)
+             if isinstance(n, ast.Attribute) and n.attr == "_fehlertext_der_ausnahme"],
+            "_run_engine_thread meldet den Fehlertext an _fehlertext_der_ausnahme vorbei.")
+
 
 class QuellgroesseMeldetUndBrichtAbTests(unittest.TestCase):
     """Das Vermessen der Quelle darf nicht stumm und nicht endlos sein.
