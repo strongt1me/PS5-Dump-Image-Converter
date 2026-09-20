@@ -2,7 +2,34 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.31):** Das Asset-Pack packte Dateien mit, die das System selbst liest – allen voran `playgo.pgm`. Wurden die Originale danach entfernt, stürzte das Spiel kurz nach dem Start ab. Das ist behoben, und ein zweiter Riegel bricht den Bau ab, falls es doch wieder passiert.
+> **Kurz zum aktuellen Stand (v1.9.32):** Die Filmordner eines Spiels werden jetzt aus dem Ordnerbaum gelesen statt geraten – das Packwerkzeug unterscheidet Groß- und Kleinschreibung, und deshalb landeten bei einem echten Spiel 17 von 17 Filmen im Band, obwohl die Ausschlussliste „movies" kannte.
+
+---
+
+## v1.9.32 – 20.09.2026
+
+Filme blieben trotz Ausschlussliste im Band. Ursache: Groß- und Kleinschreibung.
+
+### Was war
+
+Beim Prüfen der Reparatur aus v1.9.31 an einem echten Spiel („Wer wird Millionär") fiel auf: Alle 17 Filme lagen im Band, obwohl `movies/**` in der Ausschlussliste steht. Der Ordner heißt dort `Media/StreamingAssets/**Movies**/` – mit großem M. Das Packwerkzeug vergleicht Muster **schreibungsgenau**, `movies` trifft also `Movies` nicht.
+
+### Was jetzt gilt
+
+Das Programm liest die Film- und Videoordner (`movie`, `movies`, `video`, `videos` – in jeder Schreibung) **aus deinem Spielordner** und schließt sie in genau der dort vorhandenen Schreibweise aus. Dasselbe gilt für die Systemdateien: `playgo.pgm`, `*.packman` und die `pgc_*`-Dateien werden ebenfalls im Ordner gesucht, damit auch ein Spiel mit `PlayGo.pgm` richtig gepackt wird statt den Bau anzuhalten.
+
+Nachgemessen am selben Spiel, mit dem Werkzeug des Entwicklers als Prüfer:
+
+| | gepackt | lose | Filme im Band |
+| --- | --- | --- | --- |
+| vorher | 214 | 45 | 17 von 17 |
+| jetzt | 197 | 62 | **0 von 17** |
+
+Landet trotzdem ein Video in einem Band – etwa mit einem eigenen Packprofil –, sagt es das Programm im Protokoll. Abgebrochen wird deswegen nicht: Belegt ist nur, dass alle veröffentlichten Profile Filme lose lassen, nicht dass ein gepacktes Video ein Spiel anhält.
+
+---
+
+> **Zum Stand v1.9.31:** Das Asset-Pack packte Dateien mit, die das System selbst liest – allen voran `playgo.pgm`. Wurden die Originale danach entfernt, stürzte das Spiel kurz nach dem Start ab. Das ist behoben, und ein zweiter Riegel bricht den Bau ab, falls es doch wieder passiert.
 
 ---
 

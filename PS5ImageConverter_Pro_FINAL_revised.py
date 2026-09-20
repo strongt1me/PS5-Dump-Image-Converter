@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.31"
+APP_VERSION = "v1.9.32"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -26026,9 +26026,15 @@ class PS5ConverterGUI:
         uebernommen = False
 
         try:
+            # Der Spielordner geht mit: Daraus entstehen die Ausschluesse
+            # fuer die Film- und Videoordner dieses Titels, in der
+            # Schreibung des Dateisystems. Ein festes "movies/**" reicht
+            # nicht - das Werkzeug vergleicht mit fnmatchcase, und am
+            # 20.09.2026 landeten deshalb 17 von 17 Filmen aus
+            # "Media/StreamingAssets/Movies" im Band.
             profil = ampr_assetpakete.profil_schreiben(
                 os.path.join(ausgabe, "ampr_pack.toml"),
-                arbeiter=self._ampr_pack_arbeiter())
+                arbeiter=self._ampr_pack_arbeiter(), app0=ordner)
             eigenes_profil = ampr_assetpakete.profil_ist_eigenes(profil)
             self._append_to_log(self._t(
                 "ampr_pack.profil" if eigenes_profil else "ampr_pack.profil_anwender",
@@ -26119,6 +26125,17 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t("ampr_pack.systemdatei_folge",
                                             count=len(systemdateien)))
                 return False
+
+            # Videos im Band sind kein Abbruchgrund - belegt ist nur, dass
+            # jedes veroeffentlichte Profil sie lose laesst (die Konsole
+            # spielt sie ueber ihren eigenen Dekoder ab). Also melden, nicht
+            # anhalten.
+            videos = ampr_assetpakete.videos_im_pack(zeilen)
+            if videos:
+                for pfad in videos[:10]:
+                    self._append_to_log(self._t("ampr_pack.video_gepackt", path=pfad))
+                self._append_to_log(self._t("ampr_pack.video_folge",
+                                            count=len(videos)))
 
             fehlend = ampr_assetpakete.lose_fehlend(zeilen, ordner)
             if fehlend:

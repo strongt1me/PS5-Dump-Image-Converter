@@ -231,7 +231,8 @@ def variante_kann_packen(variante: str) -> bool:
     return str(variante or "").strip().lower() in PACKFAEHIGE_VARIANTEN
 
 
-def standardprofil_text(arbeiter: int = 0) -> str:
+def standardprofil_text(arbeiter: int = 0,
+                        zusatz_ausschluss: "tuple[str, ...]" = ()) -> str:
     """Ein Packprofil ohne Mitschnitte - vorsichtig, aber vollstaendig.
 
     Die Werte stammen aus der mitgelieferten ``ampr_pack.example.toml``
@@ -251,7 +252,10 @@ def standardprofil_text(arbeiter: int = 0) -> str:
         arbeiter: Anzahl der Packvorgaenge auf dem PC. 0 laesst das
             Werkzeug selbst waehlen.
     """
-    ausschluss = "\n".join('  "%s",' % muster for muster in NIE_PACKEN)
+    # Die festen Muster plus die Filmordner dieses Spiels. Letztere kommen
+    # aus dem Ordnerbaum, weil das Werkzeug die Schreibung genau nimmt.
+    ausschluss = "\n".join('  "%s",' % muster
+                           for muster in (*NIE_PACKEN, *zusatz_ausschluss))
     zeilen = [
         PROFIL_KENNZEILE + " - Packprofil ohne Mitschnitte.",
         "# Einheitlich 64 KiB/mixed: die Herstellerempfehlung fuer unbekannte",
@@ -336,7 +340,96 @@ def profil_ist_eigenes(pfad: str) -> bool:
         return False
 
 
-def profil_schreiben(ziel: str, arbeiter: int = 0) -> str:
+#: Ordnernamen, hinter denen Filme und Videos liegen - in irgendeiner
+#: Schreibung. Jedes veroeffentlichte Profil haelt diesen Bestand lose:
+#: Ghost of Yotei "movies/**", FF7 Rebirth "end/content/movie/**",
+#: Spider-Man 2 "d/movie", Astro Bot "data/prein/video/*"; Cyberpunk
+#: erreicht dasselbe ueber auto_loose (die Dateien sind gross und schon
+#: verdichtet). Videos liest die Konsole ueber ihren eigenen Dekoder, also
+#: nicht zwingend ueber den AMPR EMU.
+FILMORDNER: tuple[str, ...] = ("movie", "movies", "video", "videos")
+
+
+def filmordner_muster(app0: str) -> tuple[str, ...]:
+    """Ausschlussmuster fuer die Filmordner **dieses** Spiels.
+
+    Warum aus dem Ordnerbaum und nicht aus einer festen Liste: Das Werkzeug
+    vergleicht mit ``fnmatch.fnmatchcase``, also **genau** nach Schreibung
+    (``glob_matches`` in ampr_pack_format.py). Ein festes ``movies/**``
+    trifft deshalb ``Media/StreamingAssets/Movies/`` nicht - am 20.09.2026
+    an "Wer wird Millionaer" gemessen: 17 von 17 Filmen landeten im Band,
+    obwohl die Ausschlussliste "movies" kannte. Aus dem echten Baum
+    gelesen, stimmt die Schreibung immer.
+
+    Args:
+        app0: Der Spielordner (die spaetere ``/app0``-Wurzel).
+
+    Returns:
+        Muster wie ``"Media/StreamingAssets/Movies/**"`` - je gefundenem
+        Ordner eines, in der Schreibung des Dateisystems.
+    """
+    gefunden: list[str] = []
+    try:
+        for wurzel, ordner, _dateien in os.walk(str(app0)):
+            for name in ordner:
+                if name.lower() not in FILMORDNER:
+                    continue
+                rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
+                gefunden.append(rel.replace("\\", "/") + "/**")
+    except OSError as exc:
+        logger.debug("Filmordner nicht suchbar (%s): %s", app0, exc)
+    return tuple(sorted(set(gefunden)))
+
+
+def systemdateien_muster(app0: str) -> tuple[str, ...]:
+    """Ausschlussmuster fuer die Systemdateien **dieses** Spiels.
+
+    Dieselbe Begruendung wie bei :func:`filmordner_muster`: Die festen
+    Muster in :data:`NIE_PACKEN` sind kleingeschrieben, und das Werkzeug
+    vergleicht mit ``fnmatch.fnmatchcase``. Ein Titel mit ``PlayGo.pgm``
+    wuerde sonst am Riegel (:func:`systemdateien_im_pack`) haengen bleiben -
+    der bricht den Bau ab, statt die Datei einfach lose zu lassen. Aus dem
+    Baum gelesen stimmt die Schreibung.
+
+    Returns:
+        Genau die Pfade, die im Spielordner wirklich liegen.
+    """
+    import fnmatch
+
+    gefunden: list[str] = []
+    try:
+        for wurzel, _ordner, dateien in os.walk(str(app0)):
+            for name in dateien:
+                klein = name.lower()
+                if not any(fnmatch.fnmatch(klein, m) for m in SYSTEMDATEIEN):
+                    continue
+                rel = os.path.relpath(os.path.join(wurzel, name), str(app0))
+                gefunden.append(rel.replace("\\", "/"))
+    except OSError as exc:
+        logger.debug("Systemdateien nicht suchbar (%s): %s", app0, exc)
+    return tuple(sorted(set(gefunden)))
+
+
+def videos_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
+    """Welche gepackten Dateien liegen in einem Film-/Videoordner?
+
+    Anders als :func:`systemdateien_im_pack` ist das **kein** Abbruchgrund:
+    Dass ein gepacktes Video ein Spiel wirklich anhaelt, ist hier nicht
+    gemessen - belegt ist nur, dass jedes veroeffentlichte Profil solche
+    Dateien lose laesst. Deshalb eine Warnung, kein Riegel.
+    """
+    getroffen: list[str] = []
+    for zeile in zeilen:
+        if not isinstance(zeile, dict) or not zeile.get("packed"):
+            continue
+        pfad = str(zeile.get("path") or "").replace("\\", "/")
+        teile = [t.lower() for t in pfad.split("/")[:-1]]
+        if any(t in FILMORDNER for t in teile):
+            getroffen.append(pfad)
+    return getroffen
+
+
+def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
     """Legt das Standardprofil ab - ein eigenes des Anwenders bleibt.
 
     Ein Profil des Anwenders bleibt unangetastet: Wer eines aus Mitschnitten
@@ -360,7 +453,9 @@ def profil_schreiben(ziel: str, arbeiter: int = 0) -> str:
     if ordner:
         os.makedirs(ordner, exist_ok=True)
     with open(ziel, "w", encoding="utf-8", newline="\n") as datei:
-        datei.write(standardprofil_text(arbeiter))
+        zusatz = ((*filmordner_muster(app0), *systemdateien_muster(app0))
+                  if app0 else ())
+        datei.write(standardprofil_text(arbeiter, zusatz))
     return ziel
 
 

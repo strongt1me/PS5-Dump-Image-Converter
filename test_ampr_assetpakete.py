@@ -549,6 +549,108 @@ class VierteStufeTests(unittest.TestCase):
 
 
 
+class FilmordnerTests(unittest.TestCase):
+    """Filmordner kommen aus dem Baum, nicht aus einer festen Liste.
+
+    Das Werkzeug vergleicht mit ``fnmatch.fnmatchcase``, also genau nach
+    Schreibung. Ein festes ``movies/**`` traf deshalb
+    ``Media/StreamingAssets/Movies/`` nicht - am 20.09.2026 an "Wer wird
+    Millionaer" gemessen: 17 von 17 Filmen landeten im Band, obwohl die
+    Ausschlussliste "movies" kannte.
+    """
+
+    def _baum(self, wurzel: Path, ordner: list[str]) -> None:
+        for rel in ordner:
+            (wurzel / rel).mkdir(parents=True, exist_ok=True)
+            (wurzel / rel / "film.mp4").write_bytes(b"x" * 16)
+
+    def test_schreibung_kommt_aus_dem_dateisystem(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_film_") as basis:
+            wurzel = Path(basis)
+            self._baum(wurzel, ["Media/StreamingAssets/Movies",
+                                "data/prein/video",
+                                "end/content/movie",
+                                "assets/Textures"])
+            muster = ap.filmordner_muster(str(wurzel))
+            self.assertIn("Media/StreamingAssets/Movies/**", muster)
+            self.assertIn("data/prein/video/**", muster)
+            self.assertIn("end/content/movie/**", muster)
+            self.assertNotIn("assets/Textures/**", muster)
+
+    def test_ohne_filmordner_bleibt_die_liste_leer(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_film_") as basis:
+            self._baum(Path(basis), ["assets/daten"])
+            self.assertEqual(ap.filmordner_muster(basis), ())
+
+    def test_unlesbarer_ordner_wirft_nicht(self):
+        self.assertEqual(ap.filmordner_muster(r"Z:\gibt-es-nicht"), ())
+
+    def test_die_muster_stehen_im_profil(self):
+        text = ap.standardprofil_text(2, ("Media/StreamingAssets/Movies/**",))
+        daten = tomllib.loads(text)
+        self.assertIn("Media/StreamingAssets/Movies/**",
+                      daten["rule"][0]["exclude"])
+        # Die festen Muster duerfen dabei nicht verlorengehen.
+        self.assertIn("eboot.bin", daten["rule"][0]["exclude"])
+
+    def test_systemdateien_mit_abweichender_schreibung(self):
+        """``PlayGo.pgm`` muss im Profil stehen, nicht erst am Riegel haengen."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_sys_") as basis:
+            wurzel = Path(basis)
+            (wurzel / "cache_ps5").mkdir()
+            for name in ("PlayGo.pgm", "Game.Sprig.PACKMAN",
+                         "PGC_Game_Dummy_File", "textur.dat"):
+                (wurzel / "cache_ps5" / name).write_bytes(b"x" * 16)
+            muster = ap.systemdateien_muster(str(wurzel))
+            self.assertIn("cache_ps5/PlayGo.pgm", muster)
+            self.assertIn("cache_ps5/Game.Sprig.PACKMAN", muster)
+            self.assertIn("cache_ps5/PGC_Game_Dummy_File", muster)
+            self.assertNotIn("cache_ps5/textur.dat", muster)
+
+    def test_videos_im_pack_werden_gemeldet(self):
+        gemeldet = ap.videos_im_pack([
+            {"path": "/app0/Media/StreamingAssets/Movies/a.mp4", "packed": True},
+            {"path": "/app0/d/movie/b.bk2", "packed": True},
+            {"path": "/app0/assets/t.dat", "packed": True},
+            {"path": "/app0/movies/c.mp4", "packed": False},
+        ])
+        self.assertEqual(gemeldet, ["/app0/Media/StreamingAssets/Movies/a.mp4",
+                                    "/app0/d/movie/b.bk2"])
+
+    def test_video_meldung_ist_kein_abbruch(self):
+        """Belegt ist nur die Praxis der Profile, nicht ein Schaden.
+
+        Deshalb steht der Aufruf im Bauweg **nicht** vor einem ``return
+        False`` - anders als bei den Systemdateien.
+        """
+        import ast
+
+        haupt = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
+            encoding="utf-8")
+        knoten = next(k for k in ast.walk(ast.parse(haupt))
+                      if isinstance(k, ast.FunctionDef)
+                      and k.name == "_ampr_assetpakete_bauen")
+        for zweig in ast.walk(knoten):
+            if not isinstance(zweig, ast.If):
+                continue
+            quelle = ast.unparse(zweig.test)
+            if "videos" not in quelle:
+                continue
+            rueckgaben = [k for k in ast.walk(zweig)
+                          if isinstance(k, ast.Return)]
+            self.assertEqual(rueckgaben, [],
+                             "Die Videowarnung bricht den Bau ab - sie soll nur melden")
+            break
+        else:
+            self.fail("Kein Zweig, der videos prueft")
+
+
 class KonsolenhinweisTests(unittest.TestCase):
     """Was die Konsole braucht, sagt das Programm beim Bauen.
 
