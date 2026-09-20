@@ -376,19 +376,37 @@ class ZielmatrixTests(unittest.TestCase):
     def test_eine_ffpfsc_kann_in_vier_formate(self) -> None:
         self.assertEqual(("folder", "ffpfs", "exfat", "ffpkg"), self.matrix["ffpfsc"])
 
-    def test_eine_exfat_kann_in_vier_formate(self) -> None:
-        self.assertEqual(("folder", "ffpfsc", "ffpfs", "ffpkg"), self.matrix["exfat"])
+    def test_eine_exfat_kann_in_fuenf_formate(self) -> None:
+        """Seit v1.9.35 auch in sich selbst - sie wird dabei neu aufgebaut."""
+        self.assertEqual(("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
+                         self.matrix["exfat"])
 
-    def test_eine_ffpkg_kann_in_vier_formate(self) -> None:
-        self.assertEqual(("folder", "ffpfsc", "ffpfs", "exfat"), self.matrix["ffpkg"])
+    def test_eine_ffpkg_kann_in_fuenf_formate(self) -> None:
+        """.ffpkg war schon immer ihr eigenes Ziel - in Aufgabe 4.
+
+        Seit v1.9.35 auch in Aufgabe 6; die Sperre dort war ein Versehen.
+        """
+        self.assertEqual(("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
+                         self.matrix["ffpkg"])
 
     def test_ffpkg_steht_jeder_packbaren_quelle_offen(self) -> None:
         for art in ("folder", "ffpfsc", "exfat"):
             with self.subTest(quelle=art):
                 self.assertIn("ffpkg", self.matrix[art])
 
-    def test_ffpkg_ist_kein_ziel_fuer_sich_selbst(self) -> None:
-        self.assertNotIn("ffpkg", self.matrix["ffpkg"])
+    def test_ffpfsc_ist_ohne_einbau_kein_ziel_fuer_sich_selbst(self) -> None:
+        """Ohne Einbau waere das eine Kopie derselben Datei.
+
+        Die Attrappe hat nichts angehakt. Mit Asset-Pack, PlayGo oder
+        BACKPORT gibt `_selbstziel_erlaubt` den Weg frei - geprueft in
+        test_exfat_umpacken.SelbstzielRegelTests.
+
+        .exFAT und .ffpkg sind davon ausgenommen: Sie werden ohnehin
+        entpackt, neu gebaut und dabei geprueft.
+        """
+        self.assertNotIn("ffpfsc", self.matrix["ffpfsc"])
+        self.assertIn("exfat", self.matrix["exfat"])
+        self.assertIn("ffpkg", self.matrix["ffpkg"])
 
     def test_die_getroffene_wahl_ueberlebt_das_neuaufbauen(self) -> None:
         self.assertEqual(".ffpkg", self.gewaehlt)

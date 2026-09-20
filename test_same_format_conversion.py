@@ -34,13 +34,35 @@ class SelbstZielTests(unittest.TestCase):
             with self.subTest(ziel=ziel):
                 self.assertEqual(self.gui._conversion_block_reason("ffpkg", ziel, "ffpkg_to_ffpfsc"), "")
 
-    def test_selbst_ziel_bleibt_sonst_gesperrt(self):
-        for mode, art in (("pack_folder", "folder"), ("unpack_to_exfat", "ffpfsc"),
-                          ("pack_file", "exfat"), ("universal_convert", "exfat"),
-                          ("batch_convert", "ffpkg")):
+    def test_selbst_ziel_bleibt_ohne_einbau_gesperrt(self):
+        """Ohne Einbau waere der Lauf eine Kopie derselben Datei.
+
+        Die Attrappe hat nichts angehakt, also greift die Sperre. Seit
+        v1.9.35 gibt ein Asset-Pack, PlayGo oder BACKPORT sie frei
+        (_selbstziel_erlaubt) - geprueft wird das in
+        test_exfat_umpacken.SelbstzielRegelTests.
+        """
+        for mode, art in (("pack_folder", "folder"),
+                          ("unpack_to_exfat", "ffpfsc"),
+                          ("universal_convert", "ffpfsc")):
             with self.subTest(aufgabe=mode):
                 grund = self.gui._conversion_block_reason(art, art, mode)
                 self.assertIn("identisch", grund)
+
+    def test_neubau_formate_gehen_auch_ohne_einbau(self):
+        """.ffpkg und .exFAT werden ohnehin neu aufgebaut und geprueft.
+
+        Aufgabe 4 nennt das seit jeher "neu validieren"; .exFAT steht seit
+        v1.9.35 daneben - auf Wunsch ausdruecklich "so wie ffpkg zu ffpkg
+        bei Aufgabe 4".
+        """
+        for mode, art in (("ffpkg_to_ffpfsc", "ffpkg"),
+                          ("universal_convert", "ffpkg"),
+                          ("pack_file", "exfat"),
+                          ("universal_convert", "exfat")):
+            with self.subTest(aufgabe=mode, format=art):
+                self.assertEqual(
+                    self.gui._conversion_block_reason(art, art, mode), "")
 
     def test_ohne_aufgabe_bleibt_es_gesperrt(self):
         """Ohne Modusangabe gilt weiterhin die strenge Regel."""
@@ -131,13 +153,12 @@ class KomprimiertGegenUnkomprimiertTests(unittest.TestCase):
 
     def test_andere_formate_unveraendert(self) -> None:
         self.assertEqual(self._grund("spiel.exfat", "ffpfsc"), "")
-        # Ohne Asset-Pack bleibt ein echtes Selbst-Ziel gesperrt: Es
-        # entstuende eine Kopie derselben Datei. Diese Pruefung laeuft
-        # ohne gewaehlten Pack, also greift die Sperre.
-        self.assertIn("identisch", self._grund("spiel.exfat", "exfat"))
-        # .ffpkg dagegen wird ohnehin neu aufgebaut und geprueft - das
-        # ist auch ohne Pack sinnvoll. In Aufgabe 4 ging es immer, seit
-        # v1.9.34 auch in Aufgabe 6 (_SAME_FORMAT_ALLOWED).
+        # .exFAT und .ffpkg werden ohnehin entpackt, neu gebaut und dabei
+        # geprueft - beide sind seit v1.9.35 auch ohne Einbau waehlbar
+        # (_SAME_FORMAT_ALLOWED). Ein .ffpfsc-Selbst-Ziel bleibt dagegen an
+        # den Einbau gebunden; das prueft test_selbst_ziel_bleibt_ohne_
+        # einbau_gesperrt.
+        self.assertEqual(self._grund("spiel.exfat", "exfat"), "")
         self.assertEqual(self._grund("spiel.ffpkg", "ffpkg"), "")
 
     def test_genaue_erkennung_trennt_die_beiden_endungen(self) -> None:

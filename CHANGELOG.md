@@ -2,7 +2,39 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.34):** Ein vorhandenes `.exFAT`-Backup lässt sich jetzt in **einem** Lauf mit einem AMPR-EMU-Asset-Pack nachrüsten – Aufgabe 6, `.exFAT` als Quelle **und** als Ziel. Vorher brauchte es zwei Läufe.
+> **Kurz zum aktuellen Stand (v1.9.35):** Dasselbe Format noch einmal bauen – mit Asset-Pack, PlayGo oder BACKPORT – geht jetzt in **allen** Aufgaben 2 bis 6 und für **jedes** Abbildformat. In v1.9.34 ließ sich `.exFAT` zu `.exFAT` zwar starten, aber nicht auswählen.
+
+---
+
+## v1.9.35 – 20.09.2026
+
+Dasselbe Format noch einmal bauen – jetzt überall und für alles.
+
+### Was kaputt war
+
+In v1.9.34 war `.exFAT` zu `.exFAT` freigegeben, aber die **Auswahlliste** bot es nie an: Sie warf das Selbst-Ziel unabhängig davon immer hinaus. Es gibt zwei Tore – die Liste im Auswahlfeld und die Prüfung beim Start –, und nur das zweite war geöffnet. Wer es benutzen wollte, kam gar nicht erst hin.
+
+### Was jetzt gilt
+
+Eine Regel statt einer Liste von Sonderfällen: **Quelle und Ziel dürfen dasselbe Format haben, sobald beim Bauen etwas hineinkommt.** Als „etwas“ zählt der AMPR-EMU-Asset-Pack, der **PlayGo-Stub** oder **BACKPORT** – PlayGo zählte bisher überhaupt nicht mit.
+
+Das gilt in den **Aufgaben 2 bis 6** und für **jedes** Abbildformat:
+
+| Format | Quelle und Ziel gleich? |
+| --- | --- |
+| `.ffpfsc` / `.ffpfs` | mit Asset-Pack, PlayGo oder BACKPORT |
+| `.exFAT` | **immer** – in der Liste als „.exFAT (neu bauen)“ |
+| `.ffpkg` | **immer** – in der Liste als „.ffpkg (neu validieren)“ |
+
+Ohne Einbau bleibt das Ziel aus der Liste: Der Lauf wäre eine Kopie derselben Datei. `.exFAT` und `.ffpkg` sind ausgenommen, weil sie ohnehin vollständig entpackt, neu gebaut und dabei geprüft werden – der Zusatz in der Liste macht das sichtbar, sonst sähe der Eintrag wie ein Fehler aus.
+
+### Damit das nicht wieder auseinanderläuft
+
+Eine neue Prüfung geht **jede** Kombination aus Aufgabe, Format und Einbau-Zustand durch und verlangt, dass Auswahlliste und Startprüfung dasselbe sagen. Genau daran lag der Fehler in v1.9.34.
+
+---
+
+> **Zum Stand v1.9.34:** Ein vorhandenes `.exFAT`-Backup lässt sich in **einem** Lauf mit einem AMPR-EMU-Asset-Pack nachrüsten – Aufgabe 6, `.exFAT` als Quelle **und** als Ziel. Vorher brauchte es zwei Läufe.
 
 ---
 

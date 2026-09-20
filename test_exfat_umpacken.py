@@ -45,125 +45,331 @@ def _lade_hauptprogramm():
     return modul
 
 
-class WegIstErreichbarTests(unittest.TestCase):
-    """Die Sperre gibt genau dann nach, wenn ein Asset-Pack gebaut wird."""
+class SelbstzielRegelTests(unittest.TestCase):
+    """Eine Regel statt einer Liste von Sonderfällen.
+
+    Gewünscht vom Nutzer (20.09.2026): *"Es soll bei Aufgabe 1-6 für alle
+    Formate möglich sein, das selbe Format aber mit AMPR EMU Asset Pack zu
+    erstellen"* und *"für PlayGo gilt natürlich das selbe"*.
+
+    Also: Quelle und Ziel dürfen dasselbe Format haben, sobald beim Bauen
+    **etwas hineinkommt** — Asset-Pack, PlayGo oder BACKPORT. Ohne Einbau
+    bleibt es gesperrt: Dann wäre der Lauf eine Kopie derselben Datei,
+    Stunden Rechenzeit für nichts.
+
+    Zwei Formate sind davon ausgenommen und immer erlaubt, weil sie ohnehin
+    neu aufgebaut und dabei geprüft werden: ``.ffpkg`` (Aufgabe 4 nennt das
+    seit jeher „neu validieren") und ``.exFAT`` (seit v1.9.35, auf Wunsch
+    ausdrücklich „so wie ffpkg zu ffpkg bei Aufgabe 4").
+    """
 
     @classmethod
     def setUpClass(cls):
         cls.haupt = _lade_hauptprogramm()
 
-    def _probe(self, mit_pack: bool):
-        haupt = self.haupt
+    #: Die Aufgaben mit Zielformat - Aufgabe 1 bis 6.
+    AUFGABEN = ("pack_folder", "unpack_to_exfat", "pack_file",
+                "ffpkg_to_ffpfsc", "batch_convert", "universal_convert")
+
+    def _probe(self, mit_einbau: bool):
+        G = self.haupt.PS5ConverterGUI
 
         class _Probe:
             pass
 
         p = _Probe()
         p._t = lambda s, **w: s
-        for name in ("_SELBSTZIEL_MIT_ASSETPACK", "_SAME_FORMAT_ALLOWED",
-                     "_MODE_TARGET_OPTIONS", "_UNSUPPORTED_TARGET_HINTS"):
-            setattr(p, name, getattr(haupt.PS5ConverterGUI, name))
-        p._selbstziel_erlaubt = lambda: mit_pack
+        for name in ("_SAME_FORMAT_ALLOWED", "_MODE_TARGET_OPTIONS",
+                     "_UNSUPPORTED_TARGET_HINTS"):
+            setattr(p, name, getattr(G, name))
+        p._selbstziel_erlaubt = lambda: mit_einbau
         p._detect_source_format = lambda _pfad: ""
-        p._conversion_block_reason = (
-            haupt.PS5ConverterGUI._conversion_block_reason.__get__(p))
+        p._conversion_block_reason = G._conversion_block_reason.__get__(p)
         return p
 
-    def test_exfat_zu_exfat_nur_mit_assetpack(self):
-        frei = self._probe(mit_pack=True)
-        self.assertEqual(
-            frei._conversion_block_reason("exfat", "exfat",
-                                          mode="universal_convert"), "")
-        gesperrt = self._probe(mit_pack=False)
-        self.assertEqual(
-            gesperrt._conversion_block_reason("exfat", "exfat",
-                                              mode="universal_convert"),
-            "conversion.same_format",
-            "Ohne Asset-Pack waere der Lauf eine Kopie derselben Datei.")
-
-    def test_der_ffpfsc_weg_bleibt_wie_er_war(self):
-        """Die Umbenennung darf den Weg von v1.9.20 nicht mitnehmen."""
-        frei = self._probe(mit_pack=True)
-        self.assertEqual(
-            frei._conversion_block_reason("ffpfsc", "ffpfsc",
-                                          mode="unpack_to_exfat"), "")
-        gesperrt = self._probe(mit_pack=False)
-        self.assertNotEqual(
-            gesperrt._conversion_block_reason("ffpfsc", "ffpfsc",
-                                              mode="unpack_to_exfat"), "")
-
-    def test_in_der_falschen_aufgabe_bleibt_es_gesperrt(self):
-        """Aufgabe 2 ist für .ffpfsc da, nicht für exFAT."""
-        frei = self._probe(mit_pack=True)
-        self.assertEqual(
-            frei._conversion_block_reason("exfat", "exfat",
-                                          mode="unpack_to_exfat"),
-            "conversion.same_format")
-
-    def test_aufgabe_sechs_kann_alle_drei(self):
-        """„Die Aufgabe für alle Fälle" ließ zwei von drei Formaten nicht zu.
-
-        Am 20.09.2026 beim Durchzählen aufgefallen: Die Wege für
-        ``ffpfsc -> ffpfsc`` und ``ffpkg -> ffpkg`` liegen längst in
-        ``_execute_conversion_by_type``; nur die Sperre stand davor. In
-        Aufgabe 4 ging dieselbe ``.ffpkg``-Umwandlung anstandslos.
-        """
-        frei = self._probe(mit_pack=True)
-        for fmt in ("ffpfsc", "exfat", "ffpkg"):
-            self.assertEqual(
-                frei._conversion_block_reason(fmt, fmt,
-                                              mode="universal_convert"), "",
-                "Aufgabe 6 sperrt %s -> %s" % (fmt, fmt))
-
-    def test_ohne_pack_bleibt_nur_die_ffpkg_neuvalidierung(self):
-        """.ffpkg wird bewusst neu aufgebaut - das ist auch ohne Pack sinnvoll.
-
-        Für .ffpfsc und .exFAT wäre ein Selbst-Ziel ohne Pack dagegen nur
-        eine Kopie derselben Datei.
-        """
-        ohne = self._probe(mit_pack=False)
-        self.assertEqual(
-            ohne._conversion_block_reason("ffpkg", "ffpkg",
-                                          mode="universal_convert"), "")
-        for fmt in ("ffpfsc", "exfat"):
-            self.assertEqual(
-                ohne._conversion_block_reason(fmt, fmt,
-                                              mode="universal_convert"),
-                "conversion.same_format", fmt)
-
-    def test_die_tabelle_nennt_alle_faelle(self):
+    def test_mit_einbau_geht_jedes_format_in_jeder_aufgabe(self):
+        frei = self._probe(mit_einbau=True)
         G = self.haupt.PS5ConverterGUI
-        for eintrag in (("unpack_to_exfat", "ffpfsc"),
-                        ("universal_convert", "exfat"),
-                        ("universal_convert", "ffpfsc")):
-            self.assertIn(eintrag, G._SELBSTZIEL_MIT_ASSETPACK, str(eintrag))
-        # .ffpkg braucht keinen Pack - es wird ohnehin neu aufgebaut.
-        self.assertIn("ffpkg", G._SAME_FORMAT_ALLOWED["ffpkg_to_ffpfsc"])
-        self.assertIn("ffpkg", G._SAME_FORMAT_ALLOWED["universal_convert"])
+        for mode in self.AUFGABEN:
+            for fmt in G._MODE_TARGET_OPTIONS[mode]:
+                if fmt == "folder":
+                    continue      # ein Ordner ist kein Abbildformat
+                with self.subTest(aufgabe=mode, format=fmt):
+                    self.assertEqual(
+                        frei._conversion_block_reason(fmt, fmt, mode=mode), "",
+                        "%s sperrt %s -> %s trotz Einbau" % (mode, fmt, fmt))
 
-    def test_zu_jedem_freigegebenen_selbstziel_gibt_es_einen_weg(self):
-        """Eine Freigabe ohne Weg wäre der Fehler von v1.9.20 bis v1.9.24.
-
-        Damals bot die Liste ``ffpfsc -> ffpfsc`` an, und starten ließ es
-        sich nie.
-        """
-        import ast
-
-        quelle = HAUPTDATEI.read_text(encoding="utf-8")
-        weiche = next(k for k in ast.walk(ast.parse(quelle))
-                      if isinstance(k, ast.FunctionDef)
-                      and k.name == "_execute_conversion_by_type")
-        text = ast.unparse(weiche)
-        for fmt in ("ffpfsc", "exfat", "ffpkg"):
-            self.assertIn(
-                "source_type == '%s' and target_type == '%s'" % (fmt, fmt),
-                text, "Kein Zweig fuer %s -> %s" % (fmt, fmt))
-
-    def test_aufgabe_sechs_bietet_exfat_als_quelle_und_ziel(self):
-        """Sonst waere die Freigabe unerreichbar."""
+    def test_ohne_einbau_bleibt_es_gesperrt(self):
+        """Sonst wäre der Lauf eine Kopie derselben Datei."""
+        ohne = self._probe(mit_einbau=False)
         G = self.haupt.PS5ConverterGUI
-        self.assertIn("exfat", G._MODE_SOURCE_TYPES["universal_convert"])
-        self.assertIn("exfat", G._MODE_TARGET_OPTIONS["universal_convert"])
+        for mode in self.AUFGABEN:
+            for fmt in G._MODE_TARGET_OPTIONS[mode]:
+                if fmt == "folder" or fmt in G._SAME_FORMAT_ALLOWED.get(mode, ()):
+                    continue
+                with self.subTest(aufgabe=mode, format=fmt):
+                    self.assertEqual(
+                        ohne._conversion_block_reason(fmt, fmt, mode=mode),
+                        "conversion.same_format",
+                        "%s laesst %s -> %s ohne Einbau zu" % (mode, fmt, fmt))
+
+    def test_ffpkg_und_exfat_gehen_immer(self):
+        """Sie werden ohnehin neu aufgebaut und dabei geprüft."""
+        ohne = self._probe(mit_einbau=False)
+        for mode, fmt in (("ffpkg_to_ffpfsc", "ffpkg"),
+                          ("universal_convert", "ffpkg"),
+                          ("universal_convert", "exfat"),
+                          ("pack_file", "exfat")):
+            with self.subTest(aufgabe=mode, format=fmt):
+                self.assertEqual(
+                    ohne._conversion_block_reason(fmt, fmt, mode=mode), "")
+
+    def test_ausserhalb_der_aufgaben_bleibt_es_gesperrt(self):
+        """Aufgabe 7 und 8 haben kein Zielformat - dort gibt es nichts zu bauen."""
+        frei = self._probe(mit_einbau=True)
+        for mode in ("ampr_manager", "dump_validator", "inspect", ""):
+            with self.subTest(aufgabe=mode):
+                self.assertEqual(
+                    frei._conversion_block_reason("exfat", "exfat", mode=mode),
+                    "conversion.same_format")
+
+    def test_playgo_und_backport_zaehlen_mit(self):
+        """Der ausdrückliche Wunsch: PlayGo soll genauso zählen.
+
+        Gemessen an der echten Methode, mit gestellten Kästchen — nicht an
+        einer Nachbildung.
+        """
+        import threading
+
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        for pack, playgo, backport, erwartet in (
+            (False, False, False, False),
+            (True, False, False, True),      # Asset-Pack
+            (False, True, False, True),      # PlayGo allein
+            (False, False, True, True),      # BACKPORT allein
+        ):
+            p = _Probe()
+            p._assetpack_gewaehlt = lambda w=pack: w
+            werte = {"ampr_playgo_var": playgo,
+                     "backport_integrate_var": backport}
+            p._tk_wert = lambda name, vorgabe=None, _w=werte: _w.get(name, vorgabe)
+            p._selbstziel_erlaubt = G._selbstziel_erlaubt.__get__(p)
+            with self.subTest(pack=pack, playgo=playgo, backport=backport):
+                self.assertIs(threading.current_thread(),
+                              threading.main_thread())
+                self.assertEqual(p._selbstziel_erlaubt(), erwartet)
+
+    def test_im_faden_entscheidet_der_startstand(self):
+        """Tk-Variablen dürfen im Aufgabenfaden nicht gelesen werden."""
+        import threading
+
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+
+        def _verboten(*_a, **_k):
+            raise AssertionError("Tk-Auswahl im Aufgabenfaden gelesen")
+
+        p._assetpack_gewaehlt = _verboten
+        p._tk_wert = _verboten
+        p._umhuellt_neu_packen = True
+        p._selbstziel_erlaubt = G._selbstziel_erlaubt.__get__(p)
+
+        ergebnis: list = []
+        faden = threading.Thread(
+            target=lambda: ergebnis.append(p._selbstziel_erlaubt()))
+        faden.start()
+        faden.join(10)
+        self.assertEqual(ergebnis, [True])
+
+
+class AuswahllisteTests(unittest.TestCase):
+    """Was die Sperre durchlässt, muss die Auswahl auch anbieten.
+
+    Vom Nutzer gemeldet (20.09.2026, nach v1.9.34): *"exFAT zu exFAT (inkl.
+    AMPR EMU Asset Pack) wird nicht angezeigt bzw. kann nicht ausgewählt
+    werden."*
+
+    Er hatte recht. Es gibt **zwei** Tore, und gemessen war nur das zweite:
+
+    1. ``_get_target_options`` baut die Liste im Auswahlfeld. Für Aufgabe 6
+       warf sie das Selbst-Ziel **immer** heraus.
+    2. ``_conversion_block_reason`` prüft beim Start. Dort war es längst
+       freigegeben.
+
+    Freigabe ohne Listeneintrag heißt: Der Anwender kommt gar nicht erst
+    hin. Deshalb prüft diese Klasse das **erste** Tor — und ganz unten, dass
+    beide dasselbe sagen.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+
+    def _liste(self, mode: str, pfad: str, mit_einbau: bool) -> tuple:
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        for name in ("_MODE_TARGET_OPTIONS", "_SAME_FORMAT_ALLOWED"):
+            setattr(p, name, getattr(G, name))
+        p._selbstziel_erlaubt = lambda: mit_einbau
+        for name in ("_detect_source_type", "_detect_source_format",
+                     "_get_target_options"):
+            setattr(p, name, getattr(G, name).__get__(p))
+        return p._get_target_options(mode, pfad)
+
+    def _quelle(self, basis: str, endung: str) -> str:
+        pfad = Path(basis) / ("spiel." + endung)
+        pfad.write_bytes(b"x" * 64)
+        return str(pfad)
+
+    def test_mit_einbau_steht_das_selbstziel_in_der_liste(self):
+        G = self.haupt.PS5ConverterGUI
+        with tempfile.TemporaryDirectory(prefix="auswahl_") as basis:
+            for mode in ("unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+                         "universal_convert"):
+                for endung in ("ffpfsc", "ffpfs", "exfat", "ffpkg"):
+                    pfad = self._quelle(basis, endung)
+                    typ = G._detect_source_type(None, pfad)
+                    if typ not in G._MODE_SOURCE_TYPES.get(mode, ()):
+                        continue
+                    if endung not in G._MODE_TARGET_OPTIONS[mode]:
+                        continue
+                    with self.subTest(aufgabe=mode, format=endung):
+                        self.assertIn(endung, self._liste(mode, pfad, True))
+
+    def test_ohne_einbau_verschwindet_es(self):
+        G = self.haupt.PS5ConverterGUI
+        with tempfile.TemporaryDirectory(prefix="auswahl_") as basis:
+            for mode in ("unpack_to_exfat", "pack_file", "universal_convert"):
+                for endung in ("ffpfsc", "ffpfs", "exfat", "ffpkg"):
+                    pfad = self._quelle(basis, endung)
+                    typ = G._detect_source_type(None, pfad)
+                    if typ not in G._MODE_SOURCE_TYPES.get(mode, ()):
+                        continue
+                    if endung not in G._MODE_TARGET_OPTIONS[mode]:
+                        continue
+                    if endung in G._SAME_FORMAT_ALLOWED.get(mode, ()):
+                        continue    # .ffpkg / .exFAT stehen immer drin
+                    with self.subTest(aufgabe=mode, format=endung):
+                        self.assertNotIn(endung, self._liste(mode, pfad, False))
+
+    def test_das_selbstziel_ist_beschriftet(self):
+        """Ohne Zusatz sähe „.exFAT → .exFAT" wie ein Fehler aus."""
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        p._SAME_FORMAT_ALLOWED = G._SAME_FORMAT_ALLOWED
+        p._SELBSTZIEL_ZUSATZ = G._SELBSTZIEL_ZUSATZ
+        p._MODE_SOURCE_TYPES = G._MODE_SOURCE_TYPES
+        p._t = lambda s, **w: s
+        p._detect_source_format = G._detect_source_format.__get__(p)
+        p._detect_source_type = G._detect_source_type.__get__(p)
+        p._zielformat_label = G._zielformat_label.__get__(p)
+
+        # Aufgabe 3 und 4 haben genau ein Quellformat - dort steht der
+        # Zusatz auch ohne gewaehlte Quelle.
+        self.assertEqual(p._zielformat_label("exfat", "pack_file"),
+                         "format.exfat format.exfat_neubau_suffix")
+        self.assertEqual(p._zielformat_label("ffpkg", "ffpkg_to_ffpfsc"),
+                         "format.ffpkg format.ffpkg_revalidate_suffix")
+        # Kein Selbst-Ziel: kein Zusatz.
+        self.assertEqual(p._zielformat_label("exfat", "pack_folder"),
+                         "format.exfat")
+
+    def test_der_zusatz_haengt_an_der_quelle(self):
+        """In Aufgabe 6 ist .ffpkg fuer eine .ffpfsc-Quelle ganz normal.
+
+        Beim ersten Anlauf haing der Zusatz nur am Modus - dann haette auch
+        eine .ffpfsc-Quelle das Ziel .ffpkg als "(neu validieren)" gezeigt,
+        obwohl es eine gewoehnliche Umwandlung ist.
+        """
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        p._SAME_FORMAT_ALLOWED = G._SAME_FORMAT_ALLOWED
+        p._SELBSTZIEL_ZUSATZ = G._SELBSTZIEL_ZUSATZ
+        p._MODE_SOURCE_TYPES = G._MODE_SOURCE_TYPES
+        p._t = lambda s, **w: s
+        p._detect_source_format = G._detect_source_format.__get__(p)
+        p._detect_source_type = G._detect_source_type.__get__(p)
+        p._zielformat_label = G._zielformat_label.__get__(p)
+
+        with tempfile.TemporaryDirectory(prefix="etikett_") as basis:
+            ffpfsc = self._quelle(basis, "ffpfsc")
+            exfat = self._quelle(basis, "exfat")
+            self.assertEqual(
+                p._zielformat_label("ffpkg", "universal_convert", ffpfsc),
+                "format.ffpkg",
+                "Eine .ffpfsc-Quelle macht .ffpkg nicht zum Selbst-Ziel")
+            self.assertEqual(
+                p._zielformat_label("exfat", "universal_convert", exfat),
+                "format.exfat format.exfat_neubau_suffix")
+
+    def test_beide_tore_sind_sich_einig(self):
+        """Der eigentliche Befund: Liste und Sperre dürfen nicht auseinanderlaufen.
+
+        Für jede Kombination muss gelten: Steht das Selbst-Ziel in der
+        Liste, lässt die Sperre es auch durch — und umgekehrt. Die
+        Sammelkonvertierung bleibt außen vor: Sie hat keinen einzelnen
+        Quelltyp, ihre Liste wird deshalb nie beschnitten; geprüft wird dort
+        je Datei beim Start.
+        """
+        G = self.haupt.PS5ConverterGUI
+
+        class _Probe:
+            pass
+
+        with tempfile.TemporaryDirectory(prefix="auswahl_") as basis:
+            for mode in ("unpack_to_exfat", "pack_file", "ffpkg_to_ffpfsc",
+                         "universal_convert"):
+                for endung in ("ffpfsc", "ffpfs", "exfat", "ffpkg"):
+                    pfad = self._quelle(basis, endung)
+                    typ = G._detect_source_type(None, pfad)
+                    if typ not in G._MODE_SOURCE_TYPES.get(mode, ()):
+                        continue
+                    if endung not in G._MODE_TARGET_OPTIONS[mode]:
+                        continue
+                    for mit_einbau in (True, False):
+                        in_liste = endung in self._liste(mode, pfad, mit_einbau)
+
+                        p = _Probe()
+                        for name in ("_SAME_FORMAT_ALLOWED",
+                                     "_MODE_TARGET_OPTIONS",
+                                     "_UNSUPPORTED_TARGET_HINTS"):
+                            setattr(p, name, getattr(G, name))
+                        p._t = lambda s, **w: s
+                        p._selbstziel_erlaubt = lambda w=mit_einbau: w
+                        p._detect_source_type = G._detect_source_type.__get__(p)
+                        p._detect_source_format = (
+                            G._detect_source_format.__get__(p))
+                        p._conversion_block_reason = (
+                            G._conversion_block_reason.__get__(p))
+                        frei = not p._conversion_block_reason(
+                            typ, endung, mode, pfad)
+
+                        with self.subTest(aufgabe=mode, format=endung,
+                                          einbau=mit_einbau):
+                            self.assertEqual(
+                                in_liste, frei,
+                                "Liste sagt %s, Sperre sagt %s"
+                                % (in_liste, frei))
 
 
 class WegWirdGegangenTests(unittest.TestCase):

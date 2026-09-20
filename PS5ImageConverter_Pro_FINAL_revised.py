@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.34"
+APP_VERSION = "v1.9.35"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3386,7 +3386,11 @@ class PS5ConverterGUI:
     _MODE_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
                 "pack_folder": ("ffpfsc", "ffpfs", "exfat", "ffpkg"),
         "unpack_to_exfat": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
-        "pack_file": ("folder", "ffpfsc", "ffpfs", "ffpkg"),
+        # .exfat steht hier seit v1.9.35: Aufgabe 3 hat eine .exFAT als
+        # Quelle, und ein Backup mit Asset-Pack nachzuruesten gehoert genau
+        # dorthin. Ohne Asset-Pack bleibt es aus der Liste - dann waere es
+        # eine Kopie derselben Datei (_get_target_options).
+        "pack_file": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
         "ffpkg_to_ffpfsc": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "batch_convert": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
         "universal_convert": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
@@ -4606,20 +4610,41 @@ class PS5ConverterGUI:
                 logger.debug("Zielformat nicht uebertragbar: %s", exc)
         self._apply_language()
 
-    def _zielformat_label(self, schluessel: str, mode: str = "") -> str:
+    def _zielformat_label(self, schluessel: str, mode: str = "",
+                          quelle: str = "") -> str:
         """Die Beschriftung eines Zielformats in der aktuellen Sprache.
 
-        Dieselbe Form wie in ``_refresh_target_format_options``: In Aufgabe 4
-        traegt .ffpkg den Zusatz "(neu validieren)".
+        Ein **Selbst-Ziel** traegt einen Zusatz: In Aufgabe 4 heisst .ffpkg
+        ".ffpkg (neu validieren)", seit v1.9.35 in Aufgabe 3 und 6 .exfat
+        ".exFAT (neu bauen)". Ohne ihn saehe der Eintrag wie ein Fehler aus -
+        wieso sollte man .exFAT nach .exFAT bauen?
+        ``_refresh_target_format_options`` baut die Liste ueber genau diese
+        Methode, damit Liste und Einzelbeschriftung nicht auseinanderlaufen.
+
+        **Der Zusatz haengt an der Quelle, nicht nur an der Aufgabe.** In
+        Aufgabe 6 ist .ffpkg fuer eine .ffpfsc-Quelle eine ganz gewoehnliche
+        Umwandlung - dort waere "(neu validieren)" schlicht falsch. Nur wo
+        die Aufgabe ohnehin genau ein Quellformat hat (Aufgabe 3: .exFAT,
+        Aufgabe 4: .ffpkg), steht der Zusatz auch ohne gewaehlte Quelle.
         """
         if not mode:
             try:
                 mode = str(self.current_mode.get() or "")
             except (AttributeError, tk.TclError):
                 mode = ""
-        if schluessel == "ffpkg" and mode == "ffpkg_to_ffpfsc":
-            return "%s %s" % (self._t("format.ffpkg"),
-                              self._t("format.ffpkg_revalidate_suffix"))
+        zusatz = self._SELBSTZIEL_ZUSATZ.get(schluessel, "")
+        if not zusatz or schluessel not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
+            return self._t("format.%s" % schluessel)
+
+        if not quelle:
+            try:
+                quelle = str(self.source_path.get() or "")
+            except (AttributeError, tk.TclError):
+                quelle = ""
+        genau = self._detect_source_format(quelle) if quelle else ""
+        fest = self._MODE_SOURCE_TYPES.get(mode, ()) == (schluessel,)
+        if genau == schluessel or (fest and not genau):
+            return "%s %s" % (self._t("format.%s" % schluessel), self._t(zusatz))
         return self._t("format.%s" % schluessel)
 
     def _apply_language(self) -> None:
@@ -5693,26 +5718,6 @@ class PS5ConverterGUI:
         ("exfat", "exfat"),
     })
 
-    #: Wo ein Selbst-Ziel (Quelle und Ziel gleiches Format) erlaubt ist -
-    #: und zwar **nur** mit AMPR-EMU-Asset-Pack. Ohne ihn waere der Lauf
-    #: sinnlos: Es entstuende eine Kopie derselben Datei.
-    #:
-    #: Der Weg ist in beiden Faellen derselbe: entpacken, einbauen, neu
-    #: bauen. Gefragt wird deshalb nichts - eine Ja/Nein-Rueckfrage
-    #: ("einhuellen oder neu packen?") haette hier nur eine sinnvolle
-    #: Antwort.
-    _SELBSTZIEL_MIT_ASSETPACK: frozenset = frozenset({
-        ("unpack_to_exfat", "ffpfsc"),    # Aufgabe 2, seit v1.9.20
-        ("universal_convert", "exfat"),   # Aufgabe 6, seit v1.9.34
-        # Aufgabe 6 kann .ffpfsc laengst neu bauen (der Zweig in
-        # _execute_conversion_by_type ist derselbe wie in Aufgabe 2) - die
-        # Sperre stand nur davor. Am 20.09.2026 beim Durchzaehlen der
-        # Selbst-Ziele aufgefallen: Aufgabe 6 versteht sich als "die
-        # Aufgabe fuer alle Faelle", liess aber zwei von drei Formaten
-        # nicht zu.
-        ("universal_convert", "ffpfsc"),  # seit v1.9.34
-    })
-
     #: Wie viel Platz das Ergebnis je Zielformat braucht, als Vielfaches
     #: der Quellgroesse.
     #:
@@ -6251,19 +6256,24 @@ class PS5ConverterGUI:
             quelle = typen[0] if typen else ""
         else:
             quelle = self._resolve_mode_source_type(mode, src)
-        if (quelle, target_type) not in self._EINHUELLENDE_WEGE:
-            return True
 
         formatname = (self._t("format." + target_type)
                       if target_type in self._FORMAT_LABELS else target_type)
 
-        # ffpfsc -> ffpfsc: Einhuellen waere hier sinnlos (Container im
-        # Container). Diese Kombination bietet Aufgabe 2 nur mit Asset-Pack an,
-        # und dann ist der Neu-Packen-Weg der einzig richtige. Deshalb ohne
-        # Ja/Nein-Rueckfrage direkt: entpacken, einbauen, neu packen. Seit
-        # v1.9.34 gilt das fuer jedes Selbst-Ziel, auch .exfat -> .exfat.
-        if quelle == target_type:
+        # Ein Selbst-Ziel ist immer der Neu-Bau-Weg: entpacken, einbauen,
+        # neu bauen. Einhuellen waere dort Unsinn (Container im Container),
+        # eine Ja/Nein-Rueckfrage haette nur eine sinnvolle Antwort. Der
+        # Merker muss aber gesetzt werden, denn im Aufgabenfaden liest
+        # _selbstziel_erlaubt genau ihn - Tk-Variablen sind dort tabu.
+        #
+        # Steht VOR der Pruefung auf _EINHUELLENDE_WEGE: Seit v1.9.35 ist
+        # jedes Format ein moegliches Selbst-Ziel, nicht nur die zwei, die
+        # dort eingetragen sind.
+        if quelle and quelle == target_type:
             self._neu_packen_waehlen(formatname)
+            return True
+
+        if (quelle, target_type) not in self._EINHUELLENDE_WEGE:
             return True
 
         if getattr(self, "_cli_mode", False):
@@ -6649,7 +6659,22 @@ class PS5ConverterGUI:
         # Versehen: Wer die Aufgabe "fuer alle Faelle" waehlt, bekam fuer
         # genau diese Umwandlung "Quelle und Zielformat sind identisch",
         # waehrend Aufgabe 4 sie anstandslos machte. Seit v1.9.34.
-        "universal_convert": ("ffpkg",),
+        #
+        # .exfat steht seit v1.9.35 daneben, auf Wunsch des Nutzers
+        # ausdruecklich "so wie ffpkg zu ffpkg bei Aufgabe 4": Das Abbild
+        # wird entpackt, eingebaut und neu gebaut - das prueft es zugleich
+        # vollstaendig durch und haengt nicht am Asset-Pack. Aufgabe 3 hat
+        # die .exFAT ohnehin als Quelle, deshalb steht sie dort ebenso.
+        "universal_convert": ("ffpkg", "exfat"),
+        "pack_file": ("exfat",),
+    }
+
+    #: Der Zusatz, mit dem ein Selbst-Ziel in der Auswahlliste kenntlich
+    #: wird. Ohne ihn wirkt der Eintrag wie ein Fehler ("wieso soll ich
+    #: .exFAT nach .exFAT bauen?").
+    _SELBSTZIEL_ZUSATZ: dict[str, str] = {
+        "ffpkg": "format.ffpkg_revalidate_suffix",
+        "exfat": "format.exfat_neubau_suffix",
     }
 
     def _detect_source_format(self, path: str) -> str:
@@ -6677,11 +6702,12 @@ class PS5ConverterGUI:
         if genau == target_type and target_type not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
             # Ein Selbst-Ziel gibt es nur mit AMPR-Asset-Pack: entpacken,
             # einbauen, neu bauen (.ffpfsc seit v1.9.20, .exfat seit
-            # v1.9.34 - siehe _SELBSTZIEL_MIT_ASSETPACK). Bis v1.9.24 sperrte
+            # v1.9.34, jedes Format seit v1.9.35 - siehe
+            # _selbstziel_erlaubt). Bis v1.9.24 sperrte
             # genau diese Zeile den Weg - "Quelle und Zielformat sind
             # identisch" -, bevor _umhuellenden_weg_klaeren ihn erreichte. Die
             # Liste bot ihn an, starten liess er sich nie.
-            if not ((mode, genau) in self._SELBSTZIEL_MIT_ASSETPACK
+            if not (mode in self._MODE_TARGET_OPTIONS
                     and self._selbstziel_erlaubt()):
                 return self._t("conversion.same_format")
         if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
@@ -8407,7 +8433,7 @@ class PS5ConverterGUI:
         # braechte nichts. Ohne gewaehltes Asset-Pack bleibt die Option deshalb
         # aus der Liste - sie taucht erst auf, wenn Asset-Pack angehakt ist,
         # und das Umschalten frischt die Liste ueber _refresh_target_format_options.
-        if mode == "unpack_to_exfat" and not self._assetpack_gewaehlt():
+        if mode == "unpack_to_exfat" and not self._selbstziel_erlaubt():
             options = tuple(t for t in options if t != "ffpfsc")
         # Das Selbst-Ziel nach der GENAUEN Endung ausblenden, wie es
         # _conversion_block_reason beim Start prueft. Bis v1.9.24 filterte die
@@ -8416,9 +8442,24 @@ class PS5ConverterGUI:
         # und Zielformat sind identisch"), und in der Umwandlung fehlte das
         # erlaubte ".ffpfsc".
         genau = self._detect_source_format(source_path) if source_path else ""
-        if mode == "unpack_to_exfat":
-            return tuple(t for t in options if not (genau == "ffpfs" and t == "ffpfs"))
-        if mode != "universal_convert":
+        # Die Sammelkonvertierung hat keinen einzelnen Quelltyp - ihre Liste
+        # nach dem Format der ersten Datei zu beschneiden waere falsch.
+        if not genau or mode == "batch_convert":
+            return options
+
+        # Ein Selbst-Ziel bleibt in der Liste, wenn es erlaubt ist - sonst
+        # bietet die Auswahl nie an, was die Sperre laengst durchlaesst.
+        #
+        # Genau das ist in v1.9.34 passiert: Die Freigabe stand in
+        # der Freigaberegel und _SAME_FORMAT_ALLOWED, geprueft wurde
+        # sie in _conversion_block_reason - aber die Liste warf das Ziel
+        # vorher heraus. Der Anwender konnte es gar nicht erst waehlen
+        # ("wird nicht angezeigt bzw. kann nicht ausgewaehlt werden"). Zwei
+        # Tore, und gemessen war nur das zweite. Deshalb entscheidet hier
+        # seit v1.9.35 **dieselbe** Regel wie dort, fuer jede Aufgabe -
+        # nicht mehr ein Sonderfall je Aufgabe.
+        if (genau in self._SAME_FORMAT_ALLOWED.get(mode, ())
+                or self._selbstziel_erlaubt()):
             return options
         return tuple(target for target in options if target != genau)
 
@@ -8559,16 +8600,13 @@ class PS5ConverterGUI:
             else:
                 widget.grid_remove()
 
-        # Aufgabe 4 (ffpkg_to_ffpfsc) erlaubt .ffpkg -> .ffpkg als bewusstes
-        # Extrahieren+Neu-Bauen+Neu-Validieren, kein sinnloses Selbst-Ziel.
-        # Das muss im Listeneintrag erkennbar sein, sonst wirkt es wie ein Fehler.
+        # Ein Selbst-Ziel ist ein bewusstes Extrahieren+Neu-Bauen+Pruefen,
+        # kein sinnloses Kopieren. Das muss im Listeneintrag erkennbar sein,
+        # sonst wirkt es wie ein Fehler (_zielformat_label macht dasselbe).
+        quelle = self.source_path.get()
         labels = [
-            (
-                f"{self._t(f'format.{key}')} {self._t('format.ffpkg_revalidate_suffix')}"
-                if key == "ffpkg" and selected_mode == "ffpkg_to_ffpfsc"
-                else self._t(f"format.{key}")
-            )
-            for key in self._get_target_options(selected_mode, self.source_path.get())
+            self._zielformat_label(key, selected_mode, quelle)
+            for key in self._get_target_options(selected_mode, quelle)
             if key in self._FORMAT_LABELS
         ]
         self.format_combo["values"] = labels
@@ -22988,7 +23026,7 @@ class PS5ConverterGUI:
             return self._mode_abbild_zu_ffpfs(src, dst, quelle="exfat")
         if source_type == "exfat" and target_type == "exfat":
             # Nur mit Asset-Pack ueberhaupt erreichbar (siehe
-            # _SELBSTZIEL_MIT_ASSETPACK): entpacken, einbauen, neu bauen.
+            # _selbstziel_erlaubt): entpacken, einbauen, neu bauen.
             return self._mode_exfat_umpacken(src, dst)
         if source_type == "exfat" and target_type == "folder":
             return self._mode_exfat_to_folder(src, dst)
@@ -23823,7 +23861,7 @@ class PS5ConverterGUI:
         Dump-Ordner, dann zurueck) oder das Format wechseln.
 
         Erreichbar ist der Weg nur mit Asset-Pack (siehe
-        :data:`_SELBSTZIEL_MIT_ASSETPACK`); ohne ihn entstuende eine Kopie
+        :meth:`_selbstziel_erlaubt`); ohne Einbau entstuende eine Kopie
         derselben Datei.
 
         Gearbeitet wird in einem voruebergehenden Ordner, nie in der Quelle.
@@ -25520,10 +25558,19 @@ class PS5ConverterGUI:
     def _selbstziel_erlaubt(self) -> bool:
         """Darf ein Abbild wieder in sein eigenes Format gebaut werden?
 
-        Nur mit Asset-Pack - sonst entstuende eine Kopie derselben Datei.
-        Betroffen sind .ffpfsc (Aufgabe 2, seit v1.9.20) und .exfat
-        (Aufgabe 6, seit v1.9.34); wo genau, steht in
-        :data:`_SELBSTZIEL_MIT_ASSETPACK`.
+        **Nur, wenn dabei etwas hineinkommt.** Sonst entstuende eine Kopie
+        derselben Datei - Stunden Rechenzeit fuer nichts. Als "etwas" zaehlt
+        alles, was den Inhalt veraendert:
+
+        * der **AMPR-EMU-Asset-Pack** (AMPR angehakt, Methode Asset-Pack),
+        * der **PlayGo-Stub**,
+        * **BACKPORT**.
+
+        Bis v1.9.34 zaehlte nur der Asset-Pack, und erlaubt war es nur in
+        zwei fest eingetragenen Faellen. Auf Wunsch des Nutzers (20.09.2026)
+        gilt es jetzt in **allen** Aufgaben mit Zielformat und fuer **jedes**
+        Format, das die Aufgabe ohnehin anbietet - PlayGo ausdruecklich
+        eingeschlossen.
 
         Im Hauptfaden entscheidet die Auswahl in der Pfad-Karte; im
         Arbeitsfaden der Merker aus ``_umhuellenden_weg_klaeren`` - dort
@@ -25531,7 +25578,9 @@ class PS5ConverterGUI:
         was beim Start galt.
         """
         if threading.current_thread() is threading.main_thread():
-            return self._assetpack_gewaehlt()
+            return (self._assetpack_gewaehlt()
+                    or bool(self._tk_wert("ampr_playgo_var", False))
+                    or bool(self._tk_wert("backport_integrate_var", False)))
         return bool(getattr(self, "_umhuellt_neu_packen", False))
 
     def _assetpack_gewaehlt(self) -> bool:

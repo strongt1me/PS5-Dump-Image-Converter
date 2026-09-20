@@ -205,6 +205,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'ffpkg.extract_empty': {'de': '[FEHLER] UFS2Tool meldete Erfolg, im Zielordner liegt aber keine Datei.\n', 'en': '[ERROR] UFS2Tool reported success, but the target folder is empty.\n'},
     'format.ffpkg': {'de': '.ffpkg', 'en': '.ffpkg'},
     'format.ffpkg_revalidate_suffix': {'de': '(neu validieren)', 'en': '(re-validate)'},
+    'format.exfat_neubau_suffix': {'de': '(neu bauen)', 'en': '(rebuild)'},
     'main.smp_rang_ffpkg': {'de': 'ShadowMount+ nennt .ffpkg das empfohlene Format für den Normalfall.', 'en': 'ShadowMount+ calls .ffpkg the recommended format for normal use.'},
     'main.smp_rang_exfat': {'de': 'ShadowMount+ führt .exFAT als Ausweichformat für externe Laufwerke.', 'en': 'ShadowMount+ lists .exFAT as the fallback for titles that need an external drive.'},
     'main.smp_rang_pfs': {'de': 'ShadowMount+ stuft das Format als experimentell ein und empfiehlt .ffpkg.', 'en': 'ShadowMount+ rates this format experimental and recommends .ffpkg.'},

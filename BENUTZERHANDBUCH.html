@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.34</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.35</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.34</span>
+      <span class="marke">Version v1.9.35</span>
       <span class="marke">Stand 20. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -648,23 +648,39 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <div class="kasten">
-    <span class="titel">Ein vorhandenes <code>.exFAT</code>-Backup nachr&uuml;sten
-    (seit v1.9.34)</span>
-    <p>Sie haben ein exFAT-Backup und m&ouml;chten ein
-    <strong>AMPR-EMU-Asset-Pack</strong> hineinbekommen? W&auml;hlen Sie in
-    Aufgabe 6 die <code>.exFAT</code>-Datei als Quelle und
-    <strong><code>.exFAT</code> auch als Ziel</strong>. Haken Sie AMPR EMU an
-    und stellen Sie die Methode auf <em>Neue Methode (Asset-Pack)</em>.</p>
-    <p>Dasselbe Ziel wie die Quelle l&auml;sst sich <strong>nur</strong> mit
-    Asset-Pack w&auml;hlen &ndash; ohne ihn entst&uuml;nde eine Kopie
-    derselben Datei. Bei einer <code>.ffpfsc</code> gibt es den Weg schon
-    seit v1.9.20 (in Aufgabe 2), bei einer <code>.ffpkg</code> baut
-    Aufgabe 4 sie ohnehin neu auf.</p>
+    <span class="titel">Dasselbe Format noch einmal bauen &ndash; mit Einbau
+    (seit v1.9.35)</span>
+    <p>Sie haben ein fertiges Abbild und m&ouml;chten nachtr&auml;glich ein
+    <strong>AMPR-EMU-Asset-Pack</strong>, den <strong>PlayGo-Stub</strong>
+    oder <strong>BACKPORT</strong> hineinbekommen? W&auml;hlen Sie dieselbe
+    Datei als Quelle und <strong>dasselbe Format auch als Ziel</strong>,
+    haken Sie an, was hinein soll, und starten Sie.</p>
+    <p>Das geht in den <strong>Aufgaben 2 bis 6</strong> und f&uuml;r
+    <strong>jedes</strong> Abbildformat. Ohne Einbau bleibt das Ziel aus der
+    Auswahlliste: Dann w&auml;re der Lauf eine Kopie derselben Datei und
+    w&uuml;rde nur Zeit kosten. Zwei Formate sind davon ausgenommen und immer
+    w&auml;hlbar, weil sie ohnehin vollst&auml;ndig neu aufgebaut und dabei
+    gepr&uuml;ft werden &ndash; Sie erkennen sie am Zusatz in der Liste:</p>
+    <table>
+      <thead><tr><th>Format</th><th>Quelle und Ziel gleich?</th></tr></thead>
+      <tbody>
+      <tr><td><code>.ffpfsc</code> / <code>.ffpfs</code></td>
+        <td>mit Asset-Pack, PlayGo oder BACKPORT</td></tr>
+      <tr><td><code>.exFAT</code></td>
+        <td><strong>immer</strong> &ndash; in der Liste als
+        &bdquo;.exFAT (neu bauen)&ldquo;</td></tr>
+      <tr><td><code>.ffpkg</code></td>
+        <td><strong>immer</strong> &ndash; in der Liste als
+        &bdquo;.ffpkg (neu validieren)&ldquo;</td></tr>
+      </tbody>
+    </table>
     <p><strong>Was dabei passiert:</strong> Das Abbild wird in einen
     vor&uuml;bergehenden Ordner entpackt, dort wird eingebaut, und daraus
     entsteht das neue Abbild; der Ordner verschwindet danach wieder. Sie
     brauchen also einmal die Spielgr&ouml;&szlig;e an freiem Platz im
-    Arbeitsordner.</p>
+    Arbeitsordner. Eine R&uuml;ckfrage gibt es nicht &ndash; ein Abbild in
+    ein Abbild desselben Formats zu h&uuml;llen w&auml;re Unsinn, der Neubau
+    ist der einzig sinnvolle Weg.</p>
     <p><strong>Warum nicht direkt hineinschreiben?</strong> Ein fertiges
     exFAT-Abbild dieses Programms enth&auml;lt <em>keinen</em> freien Platz
     &ndash; nachgemessen an einem echten Abbild: 95 Zuordnungseinheiten,
@@ -673,20 +689,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Dateizuordnungstabelle und Belegungskarte neu zu schreiben &ndash; das
     ist &bdquo;neu bauen&ldquo;, nur mit mehr Risiko. Hinzu kommt: Das
     Packwerkzeug arbeitet auf einem echten Ordner, nicht auf einem Abbild.</p>
-    <p>Bis v1.9.33 mussten Sie daf&uuml;r <strong>zweimal</strong> starten
-    &ndash; erst nach Dump-Ordner, dann zur&uuml;ck. Das geht weiterhin, wenn
-    Sie den Ordner zwischendurch selbst bearbeiten m&ouml;chten.</p>
-    <p><strong>Dasselbe gilt seit v1.9.34 f&uuml;r alle drei
-    Abbildformate in Aufgabe 6:</strong></p>
-    <table>
-      <thead><tr><th>Format</th><th>Quelle und Ziel gleich?</th></tr></thead>
-      <tbody>
-      <tr><td><code>.ffpfsc</code></td><td>nur mit Asset-Pack</td></tr>
-      <tr><td><code>.exFAT</code></td><td>nur mit Asset-Pack</td></tr>
-      <tr><td><code>.ffpkg</code></td><td>immer &ndash; sie wird ohnehin neu
-        aufgebaut und gepr&uuml;ft (wie in Aufgabe 4)</td></tr>
-      </tbody>
-    </table>
+    <p>Bis v1.9.33 mussten Sie f&uuml;r eine <code>.exFAT</code>
+    <strong>zweimal</strong> starten &ndash; erst nach Dump-Ordner, dann
+    zur&uuml;ck. Das geht weiterhin, wenn Sie den Ordner zwischendurch
+    selbst bearbeiten m&ouml;chten.</p>
   </div>
 </section>
 
@@ -1763,7 +1769,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.34), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.35), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1963,7 +1969,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.34</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.35</strong></span>
     <span>Stand 20. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
