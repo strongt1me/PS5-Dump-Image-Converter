@@ -2,7 +2,60 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.36):** Der AMPR-EMU-Manager (Aufgabe 7) rüstet ein Asset-Pack in ein **fertiges** Backup nach – auf Knopfdruck, für Ordner, `.ffpfsc`, `.exFAT` und `.ffpkg`.
+> **Kurz zum aktuellen Stand (v1.9.37):** Der Knopf „Asset-Pack bauen“ aus v1.9.36 ist jetzt auch auf der Kommandozeile erreichbar (`--ampr-action ampr_assetpack`), und der ShadowMount+-Editor kennt die sechs neuen Einstellungen aus **1.7**. Dazu eine Korrektur: Ein nachgerüstetes Asset-Pack macht die Abbilddatei nicht zwangsläufig größer.
+
+---
+
+## v1.9.37 – 21.09.2026
+
+Der Knopf aus v1.9.36 auch auf der Kommandozeile – und eine Größenangabe, die so nicht stimmte.
+
+### `--ampr-action ampr_assetpack`
+
+Der Knopf „Asset-Pack bauen“ gab es in v1.9.36 nur im Fenster. Die Kommandozeile kannte die Aktion nicht, und ihr Hilfetext behauptete weiterhin, Aufgabe 7 baue keine Bänder. Beides ist berichtigt:
+
+```
+--ampr-action ampr_assetpack --ampr-variant test-pack
+```
+
+Statt `--ampr-variant` geht auch die Schreibweise aus der Klappliste in einem Stück: `--ampr-version "0.4.2.1 test-pack"`.
+
+Der Lauf beginnt **gar nicht**, wenn die Fassung keine Bänder lesen kann oder gar keine angegeben ist. Vorher zu prüfen ist hier wichtiger als im Fenster: Auf der Kommandozeile sitzt niemand davor, der eine Meldung nach einer halben Stunde noch liest.
+
+### ShadowMount+ 1.7: sechs neue Einstellungen im Editor
+
+ShadowMount+ 1.7 bringt Einstellungen mit, die der Editor noch nicht anbot. Nachgetragen, mit den Voreinstellungen von 1.7:
+
+| Einstellung | Vorgabe | Wofür |
+| --- | --- | --- |
+| `api_enabled` | `1` | Die HTTP/JSON-Schnittstelle, über die das Programm die Konsole nach Spielen und Abbildern fragt |
+| `nested_pfs_index_cache` | `0` | Fordert vor dem Einhängen den komprimierten Offset-Index eines verschachtelten PFS an |
+| `fan_target_temperature` | `system` | Lässt die Lüfterregelung bei der Konsole |
+| `auto_remove_missing_games` | `0` | Trägt fehlende Spiele aus der Systembibliothek aus |
+| `auto_remove_games_with_dlc` | `0` | Dasselbe für Spiele mit installiertem DLC |
+| `auto_remove_missing_delay_seconds` | `300` | Wartezeit davor |
+
+Die drei `auto_remove_*` bleiben bewusst auf **aus**: Ein abgezogener USB-Stick ist kein Löschauftrag, und das Programm legt keine Konfiguration an, die auf der Konsole von selbst etwas austrägt.
+
+**Eine vorhandene `config.ini` war nie in Gefahr.** Der Editor gibt Einstellungen, die er nicht kennt, unverändert weiter – ein vollständiger Durchlauf mit einer echten 1.7-Konfiguration erhielt alle 39 Einträge samt Werten und Kommentaren. Die neue Liste greift nur, wenn auf der Konsole noch gar keine Datei liegt. Eine Prüfung hält das jetzt fest, und zwar mit frei erfundenen Einstellungsnamen – so misst sie das Weitergeben und nicht die Liste.
+
+### Korrektur: Ein Asset-Pack macht das Abbild nicht zwangsläufig größer
+
+In den Texten zu v1.9.36 stand, ein nachgerüstetes Asset-Pack mache das Backup „größer, nicht kleiner“. An einem echten Abbild nachgemessen stimmt das so nicht:
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Abbilddatei | 364.904.448 B | 275.972.096 B |
+| Dateien darin | 63 | 71 |
+| **Inhalt** | 260.935.330 B | 271.961.880 B |
+
+Der **Inhalt** wächst – um 4,2 %, denn die Originale bleiben und die Bänder kommen dazu. Die **Datei** wurde trotzdem um 24 % kleiner: Das Ausgangsabbild hatte 28,5 % Verschnitt, und der eingebaute exFAT-Schreiber packt ohne freie Zuordnungseinheiten.
+
+Verlässlich ist also nur der Satz über den Inhalt. Wie sich die Dateigröße ändert, entscheidet die Quelle.
+
+---
+
+> **Zum Stand v1.9.36:** Der AMPR-EMU-Manager (Aufgabe 7) rüstet ein Asset-Pack in ein **fertiges** Backup nach – auf Knopfdruck, für Ordner, `.ffpfsc`, `.exFAT` und `.ffpkg`.
 
 ---
 
@@ -26,7 +79,7 @@ Fehlt `ampr_emu.index` im Spielordner, bricht der Lauf mit einem klaren Satz ab.
 
 ### Die Originale bleiben liegen
 
-Aufgabe 7 fragt **nicht**, ob gepackte Originaldateien entfernt werden sollen – sie bleiben immer. Das Backup wird dadurch **größer**, nicht kleiner: Es enthält danach Originale und Bänder. Wer ein kleineres Abbild möchte, baut es über die Aufgaben 1 bis 6 neu und beantwortet dort die Frage nach den Originalen.
+Aufgabe 7 fragt **nicht**, ob gepackte Originaldateien entfernt werden sollen – sie bleiben immer. Der **Inhalt** wächst dadurch: Das Ergebnis enthält Originale und Bänder. Ob auch die Abbilddatei wächst, hängt vom Verschnitt der Quelle ab – siehe die Messung unter v1.9.37. Wer ein verlässlich kleineres Abbild möchte, baut es über die Aufgaben 1 bis 6 neu und beantwortet dort die Frage nach den Originalen.
 
 Ein Gegenstück zum **Entfernen** gibt es bewusst nicht. Sobald ein Abbild einmal ohne Originale gebaut wurde, sind die Bänder die einzige Kopie der Spieldaten – ein „Asset-Pack entfernen“ würde sie löschen.
 

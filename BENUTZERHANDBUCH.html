@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.36</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.37</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.36</span>
-      <span class="marke">Stand 20. September 2026</span>
+      <span class="marke">Version v1.9.37</span>
+      <span class="marke">Stand 21. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -1007,11 +1007,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <div class="kasten warnung">
-    <span class="titel">Das Abbild wird gr&ouml;&szlig;er, nicht kleiner</span>
+    <span class="titel">Der Inhalt w&auml;chst &ndash; die Datei nicht unbedingt</span>
     <p>Aufgabe 7 fragt <strong>nicht</strong>, ob gepackte Originaldateien
-    entfernt werden sollen &ndash; sie bleiben immer liegen. Das Ergebnis
-    enth&auml;lt danach Originale <em>und</em> B&auml;nder und w&auml;chst
-    entsprechend.</p>
+    entfernt werden sollen &ndash; sie bleiben immer liegen. Der
+    <strong>Inhalt</strong> w&auml;chst dadurch: Das Ergebnis enth&auml;lt
+    Originale <em>und</em> B&auml;nder.</p>
+    <p>Wie sich die <em>Dateigr&ouml;&szlig;e</em> &auml;ndert, entscheidet die
+    Quelle. An einem echten Abbild nachgemessen: Der Inhalt wuchs von
+    260.935.330 auf 271.961.880 Byte (+4,2&nbsp;%), die Abbilddatei wurde aber
+    von 364.904.448 auf 275.972.096 Byte <em>kleiner</em> &ndash; das
+    Ausgangsabbild hatte 28,5&nbsp;% Verschnitt, und der eingebaute
+    exFAT-Schreiber arbeitet ohne freie Zuordnungseinheiten. Rechnen Sie also
+    mit mehr Inhalt, nicht verl&auml;sslich mit einer gr&ouml;&szlig;eren
+    Datei.</p>
     <p>Das ist Absicht: Ist die Quelle ein <em>Dump-Ordner</em>, arbeitet
     Aufgabe 7 unmittelbar in Ihrem Ordner &ndash; anders als beim Erstellen,
     wo das Ergebnis ohnehin neu entsteht. Gel&ouml;schte Originaldateien
@@ -1830,7 +1838,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.36), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.37), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2030,8 +2038,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.36</strong></span>
-    <span>Stand 20. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.37</strong></span>
+    <span>Stand 21. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

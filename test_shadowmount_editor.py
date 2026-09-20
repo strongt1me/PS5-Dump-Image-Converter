@@ -366,5 +366,164 @@ class FehlercodeTests(EditorSchreibwegTests):
             "Die gepflegte config.ini wurde durch die Vorgaben ersetzt.")
 
 
+class FremdeSchluesselUeberlebenTests(unittest.TestCase):
+    """Eine neuere Payload-Fassung bringt Schluessel mit, die wir nicht kennen.
+
+    Am 21.09.2026 an ShadowMountPlus 1.7 gemessen (Release 4102fa7a): Die
+    ``config.ini.example`` fuehrt 39 Schluessel, sechs davon kannte das
+    Programm nicht - ``api_enabled``, ``nested_pfs_index_cache``,
+    ``fan_target_temperature`` und die drei ``auto_remove_*``. Sie sind
+    inzwischen in ``_SHADOWMOUNT_DEFAULTS`` nachgetragen.
+
+    Darauf darf man sich aber nicht verlassen: Die naechste Fassung bringt
+    wieder neue. Entscheidend ist, dass der Editor sie **durchreicht** -
+    ``merge_flat_ini`` laesst Zeilen stehen, die es nicht kennt, und
+    kommentiert nur aus, was im Editor-Woerterbuch fehlt.
+
+    Genau das prueft diese Klasse am Verhalten, mit frei erfundenen
+    Schluesselnamen. Ein Test gegen die sechs echten haette nach dem
+    Nachtragen nichts mehr gemessen.
+    """
+
+    #: Namen, die es in keiner Fassung gibt - so misst der Test die
+    #: Durchreiche, nicht die Vorgabenliste.
+    ERFUNDEN = {
+        "zukunft_eine_zahl": "42",
+        "zukunft_ein_pfad": "/data/shadowmount/irgendwas",
+        "zukunft_ein_wort": "system",
+    }
+
+    def _vorlage(self) -> str:
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        zeilen = ["# Kommentar, der stehen bleiben muss", ""]
+        for schluessel, wert in PS5ConverterGUI._SHADOWMOUNT_DEFAULTS.items():
+            zeilen.append("%s=%s" % (schluessel, wert))
+        zeilen.append("")
+        zeilen.append("# Von einer neueren Fassung mitgebracht:")
+        for schluessel, wert in self.ERFUNDEN.items():
+            zeilen.append("%s=%s" % (schluessel, wert))
+        return "\n".join(zeilen) + "\n"
+
+    def test_unbekannte_schluessel_bleiben_aktiv(self):
+        """Der Fall, der auf der Konsole Einstellungen kosten wuerde."""
+        from ps5_validator.utils.ini_config import (
+            fuer_anzeige, fuer_datei, merge_flat_ini, parse_flat_ini_multi)
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+
+        vorlage = self._vorlage()
+        geladen = parse_flat_ini_multi(vorlage)
+        for schluessel in self.ERFUNDEN:
+            self.assertIn(schluessel, geladen,
+                          "Aufbau: %s wurde nicht einmal gelesen" % schluessel)
+
+        # So baut das Fenster seine Tabelle: geladen, Vorgaben fuer Fehlende.
+        tabelle = dict(PS5ConverterGUI._SHADOWMOUNT_DEFAULTS)
+        tabelle.update(fuer_anzeige(geladen))
+        danach = parse_flat_ini_multi(merge_flat_ini(vorlage, fuer_datei(tabelle)))
+
+        verloren = sorted(k for k in geladen if k not in danach)
+        self.assertEqual(
+            [], verloren,
+            "Diese Schluessel sind beim Speichern verschwunden: %s" % verloren)
+        for schluessel, wert in self.ERFUNDEN.items():
+            self.assertEqual([wert], danach.get(schluessel),
+                             "%s hat seinen Wert verloren" % schluessel)
+
+    def test_kommentare_bleiben_stehen(self):
+        """Die config.ini der Konsole ist zugleich ihre Dokumentation."""
+        from ps5_validator.utils.ini_config import (
+            fuer_anzeige, fuer_datei, merge_flat_ini, parse_flat_ini_multi)
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+
+        vorlage = self._vorlage()
+        tabelle = dict(PS5ConverterGUI._SHADOWMOUNT_DEFAULTS)
+        tabelle.update(fuer_anzeige(parse_flat_ini_multi(vorlage)))
+        neu = merge_flat_ini(vorlage, fuer_datei(tabelle))
+        self.assertIn("# Kommentar, der stehen bleiben muss", neu)
+        self.assertIn("# Von einer neueren Fassung mitgebracht:", neu)
+
+    def test_die_sechs_aus_1_7_sind_nachgetragen(self):
+        """Damit eine fehlende Datei sie auch anbietet.
+
+        Der Editor haette sie ohnehin durchgereicht - aber beim Anlegen einer
+        neuen Datei greift allein diese Liste.
+        """
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        vorgaben = PS5ConverterGUI._SHADOWMOUNT_DEFAULTS
+        erwartet = {
+            "api_enabled": "1",
+            "auto_remove_missing_games": "0",
+            "auto_remove_games_with_dlc": "0",
+            "auto_remove_missing_delay_seconds": "300",
+            "nested_pfs_index_cache": "0",
+            "fan_target_temperature": "system",
+        }
+        for schluessel, wert in erwartet.items():
+            self.assertEqual(wert, vorgaben.get(schluessel), schluessel)
+
+    def test_das_fenster_baut_seine_tabelle_wirklich_so(self):
+        """Der Nachbau oben muss dem Fenster entsprechen.
+
+        Geprueft wird der Syntaxbaum von ``_show_remote_ini_editor``: Die
+        Tabelle beginnt bei den Vorgaben (``dict(defaults)``) und bekommt
+        danach das Geladene darueber (``data.update(loaded)``). Faellt das
+        zweite weg, landen Schluessel einer neueren Fassung nicht mehr in der
+        Tabelle - und ``merge_flat_ini`` wuerde sie folgerichtig
+        auskommentieren, weil sie im Woerterbuch fehlen.
+        """
+        import ast
+        pfad = os.path.join(PROJEKT, "PS5ImageConverter_Pro_FINAL_revised.py")
+        with open(pfad, encoding="utf-8") as fh:
+            quelle = fh.read()
+        methode = next(
+            (k for k in ast.walk(ast.parse(quelle))
+             if isinstance(k, ast.FunctionDef)
+             and k.name == "_show_remote_ini_editor"), None)
+        self.assertIsNotNone(methode, "_show_remote_ini_editor heisst anders")
+
+        aus_vorgaben = []
+        mit_geladen = []
+        for knoten in ast.walk(methode):
+            if not isinstance(knoten, ast.Call):
+                continue
+            # dict(defaults)
+            if (isinstance(knoten.func, ast.Name) and knoten.func.id == "dict"
+                    and len(knoten.args) == 1
+                    and isinstance(knoten.args[0], ast.Name)
+                    and knoten.args[0].id == "defaults"):
+                aus_vorgaben.append(knoten.lineno)
+            # data.update(loaded)
+            if (isinstance(knoten.func, ast.Attribute)
+                    and knoten.func.attr == "update"
+                    and isinstance(knoten.func.value, ast.Name)
+                    and knoten.func.value.id == "data"
+                    and knoten.args
+                    and isinstance(knoten.args[0], ast.Name)
+                    and knoten.args[0].id == "loaded"):
+                mit_geladen.append(knoten.lineno)
+
+        self.assertTrue(aus_vorgaben,
+                        "Die Tabelle beginnt nicht mehr bei dict(defaults)")
+        self.assertTrue(
+            mit_geladen,
+            "Kein data.update(loaded) - dann stehen Schluessel einer neueren "
+            "Payload-Fassung nicht in der Tabelle und werden beim Speichern "
+            "auskommentiert.")
+        self.assertLess(min(aus_vorgaben), min(mit_geladen),
+                        "Die Vorgaben ueberschreiben das Geladene")
+
+    def test_fehlende_spiele_werden_nicht_von_selbst_ausgetragen(self):
+        """Ein abgezogener USB-Stick ist kein Loeschauftrag.
+
+        1.7 kann fehlende Spiele aus der Systembibliothek entfernen. Ab Werk
+        ist das aus, und dabei bleibt es hier: Das Programm legt keine
+        Konfiguration an, die auf der Konsole von selbst etwas austraegt.
+        """
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        vorgaben = PS5ConverterGUI._SHADOWMOUNT_DEFAULTS
+        self.assertEqual("0", vorgaben.get("auto_remove_missing_games"))
+        self.assertEqual("0", vorgaben.get("auto_remove_games_with_dlc"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

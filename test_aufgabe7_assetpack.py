@@ -239,5 +239,149 @@ class AlleFormateTests(unittest.TestCase):
         self.assertIn("is_container", quelle)
 
 
+class KommandozeileKenntDieAktionTests(unittest.TestCase):
+    """Die Fehlerklasse aus v1.9.36: Fenster ja, Kommandozeile nein.
+
+    ``--ampr-action`` hatte eine feste ``choices``-Liste, und der neue Knopf
+    stand nicht darin. Wer ihn im CLI brauchte, bekam von argparse eine
+    Abweisung - und der Hilfetext daneben sagte weiterhin, Aufgabe 7 baue
+    keine Baender. Das ist mit v1.9.36 so veroeffentlicht worden.
+
+    Geprueft wird die Liste gegen die Aktionen, die der Dialog wirklich
+    absetzt, nicht gegen eine zweite von Hand gepflegte Aufzaehlung.
+    """
+
+    #: Keine Aktion, sondern "Fenster zu" - im CLI sinnlos.
+    KEINE_CLI_AKTION = {"cancel"}
+
+    @staticmethod
+    def _cli_auswahl() -> tuple:
+        """Die ``choices`` von ``--ampr-action``, aus dem Syntaxbaum."""
+        baum = ast.parse(_quelle())
+        for k in ast.walk(baum):
+            if not (isinstance(k, ast.Call)
+                    and isinstance(k.func, ast.Attribute)
+                    and k.func.attr == "add_argument"):
+                continue
+            if not (k.args and isinstance(k.args[0], ast.Constant)
+                    and k.args[0].value == "--ampr-action"):
+                continue
+            for wort in k.keywords:
+                if wort.arg == "choices":
+                    return tuple(e.value for e in wort.value.elts
+                                 if isinstance(e, ast.Constant))
+        raise AssertionError("--ampr-action gibt es nicht mehr oder ohne choices")
+
+    @staticmethod
+    def _dialog_aktionen() -> set:
+        """Was der Dialog per ``_finish(...)`` absetzt."""
+        methode = _methode("_mode_ampr_manager")
+        return {k.args[0].value for k in ast.walk(methode)
+                if isinstance(k, ast.Call) and isinstance(k.func, ast.Name)
+                and k.func.id == "_finish" and k.args
+                and isinstance(k.args[0], ast.Constant)}
+
+    def test_jede_aktion_des_fensters_ist_auch_ein_schalter(self):
+        auswahl = set(self._cli_auswahl())
+        dialog = self._dialog_aktionen()
+        self.assertTrue(dialog, "Keine _finish-Aufrufe gefunden - der Test misst nichts")
+        fehlt = dialog - self.KEINE_CLI_AKTION - auswahl
+        self.assertEqual(
+            set(), fehlt,
+            "Diese Aktionen kann das Fenster absetzen, die Kommandozeile "
+            "aber nicht: %s. Entweder in choices aufnehmen oder in "
+            "KEINE_CLI_AKTION begruenden." % sorted(fehlt))
+
+    def test_der_hilfetext_behauptet_nichts_falsches(self):
+        """Er sagte noch, Aufgabe 7 baue keine Baender.
+
+        Gesucht wird nur der Anfang des Satzes: Im Quelltext steht er als
+        zwei aneinandergesetzte Zeichenketten, ein Suchbegriff ueber die
+        Nahtstelle hinweg fände nie etwas und der Test maesse nichts.
+        """
+        quelle = _quelle()
+        satz = "Aufgabe 7 baut und entfernt keine Asset-Pack-B"
+        self.assertNotIn(
+            satz, quelle,
+            "Der alte Hilfetext steht wieder da - seit v1.9.36 baut "
+            "Aufgabe 7 auf Knopfdruck sehr wohl Baender.")
+        # Gegenprobe zur Suche selbst: Der Hilfetext muss ueberhaupt da sein.
+        self.assertIn("ampr_assetpack baut Asset-Pack-B", quelle,
+                      "Der neue Hilfetext fehlt - dann misst die Suche nichts.")
+
+    def test_ampr_assetpack_steht_in_der_auswahl(self):
+        self.assertIn("ampr_assetpack", self._cli_auswahl())
+
+
+class KommandozeilePruefungTests(unittest.TestCase):
+    """Ohne pack-faehige Fassung soll das CLI gar nicht anfangen.
+
+    Am Verhalten gemessen, nicht am Quelltext: ``_validate_ampr_args`` wird
+    mit echten Namespaces gefuettert.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("hauptprogramm", HAUPTDATEI)
+        modul = sys.modules.get("hauptprogramm")
+        if modul is None:
+            modul = importlib.util.module_from_spec(spec)
+            sys.modules["hauptprogramm"] = modul
+            spec.loader.exec_module(modul)
+        cls.APP = modul
+
+    @staticmethod
+    def _args(**kw):
+        import argparse
+        a = argparse.Namespace(
+            ampr_action="ampr_assetpack", ampr_source="", ampr_store="",
+            ampr_version="", ampr_variant="", ampr_lib=[], ampr_host="",
+            ampr_remote_path="", ampr_no_upload=False, ampr_no_backup=False,
+            ampr_no_index=False)
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def test_ohne_fassung_abgewiesen(self):
+        fehler = self.APP._validate_ampr_args(self._args())
+        self.assertTrue(fehler, "Ohne Fassung darf der Lauf nicht anfangen")
+        self.assertIn("test-pack", fehler, "Die Meldung sagt nicht, was noetig ist")
+
+    def test_untaugliche_variante_abgewiesen(self):
+        fehler = self.APP._validate_ampr_args(
+            self._args(ampr_variant="test-nopack"))
+        self.assertIn("test-nopack", fehler)
+
+    def test_packfaehige_varianten_angenommen(self):
+        for variante in ("test-pack", "test-debug-pack"):
+            with self.subTest(variante=variante):
+                self.assertEqual(
+                    "", self.APP._validate_ampr_args(
+                        self._args(ampr_variant=variante)))
+
+    def test_variante_darf_in_der_version_stehen(self):
+        """Die Klappliste zeigt "0.4.2.1 test-pack" in einem Stueck."""
+        self.assertEqual(
+            "", self.APP._validate_ampr_args(
+                self._args(ampr_version="0.4.2.1 test-pack")))
+
+    def test_version_ohne_variante_abgewiesen(self):
+        self.assertTrue(self.APP._validate_ampr_args(
+            self._args(ampr_version="0.4.2.1")))
+
+    def test_die_gewaehlte_fassung_landet_in_der_aufgabe(self):
+        """Der Arbeitsweg liest ``spec["ampr_assetpack"]`` - eine Stelle."""
+        spec = self.APP._build_ampr_automation(
+            self._args(ampr_version="0.4.2.1 test-pack"))
+        self.assertEqual({"version": "0.4.2.1", "variant": "test-pack"},
+                         spec.get("ampr_assetpack"))
+
+    def test_andere_aktionen_tragen_den_eintrag_nicht(self):
+        spec = self.APP._build_ampr_automation(
+            self._args(ampr_action="ampr_index"))
+        self.assertNotIn("ampr_assetpack", spec)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

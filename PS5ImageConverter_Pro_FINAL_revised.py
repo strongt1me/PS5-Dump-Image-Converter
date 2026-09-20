@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.36"
+APP_VERSION = "v1.9.37"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -34902,7 +34902,25 @@ class PS5ConverterGUI:
         "quiet_mode": "0",
         "mount_read_only": "1",
         "force_mount": "0",
+        # Ab 1.7 auf FW 12.00+ nicht mehr noetig: Dort werden einzelne Spiele
+        # ueber die TitleDir-Bruecke registriert. Der Schluessel bleibt, weil
+        # aeltere Fassungen ihn brauchen.
         "app_install_all": "0",
+        # --- neu in 1.7 (Release 4102fa7a, am 21.09.2026 uebernommen) -------
+        # Die HTTP/JSON-API, die shadowmount_api.py liest. Ab Werk lauscht sie
+        # nur auf 127.0.0.1 - vom PC aus erreichbar erst mit api_bind_address.
+        "api_enabled": "1",
+        # Fehlende Spiele aus der Systembibliothek austragen. Ab Werk aus, und
+        # das bleibt hier so: Ein abgezogener USB-Stick ist kein Loeschauftrag.
+        "auto_remove_missing_games": "0",
+        "auto_remove_games_with_dlc": "0",
+        "auto_remove_missing_delay_seconds": "300",
+        # Bittet vor dem Anhaengen den komprimierten Offset-Index eines
+        # verschachtelten PFS an.
+        "nested_pfs_index_cache": "0",
+        # "system" laesst die Luefterregelung der Konsole in Ruhe.
+        "fan_target_temperature": "system",
+        # -------------------------------------------------------------------
         "scan_depth": "1",
         "scan_interval_seconds": "60",
         "stability_wait_seconds": "10",
@@ -50740,10 +50758,13 @@ def _build_cli_parser() -> argparse.ArgumentParser:
     ampr.add_argument(
         "--ampr-action",
         choices=("ampr_apply", "ampr_restore", "ampr_remove", "ampr_index",
-                 "ampr_ftp_index"),
+                 "ampr_ftp_index", "ampr_assetpack"),
         help="Auszuführende AMPR-Aktion (für Aufgabe 7 erforderlich). "
-             "Aufgabe 7 baut und entfernt keine Asset-Pack-Bänder; die "
-             "entstehen nur beim Erstellen eines Abbilds.",
+             "ampr_assetpack baut Asset-Pack-Bänder in ein fertiges Backup "
+             "und braucht dazu eine pack-fähige Fassung (--ampr-variant "
+             "test-pack oder test-debug-pack). Gepackte Originaldateien "
+             "entfernt Aufgabe 7 nie - dafür ist das Erstellen eines "
+             "Abbilds zuständig.",
     )
     ampr.add_argument("--ampr-store", type=str, default="", help="Zusätzlicher Ordner mit AMPR-/PlayGo-Versionen; er hat bei gleicher Fassung Vorrang. Gesucht wird immer auch im mitgelieferten Ordner, im gespeicherten und in den geholten Fassungen. Ohne --ampr-version wird die neueste aus allen genommen.")
     ampr.add_argument("--ampr-version", type=str, default="", help="Gewünschte Version, z.B. 0.2.7.6 (Standard: neueste).")
@@ -50804,6 +50825,16 @@ def _build_ampr_automation(args: argparse.Namespace) -> dict[str, Any]:
         spec["ampr_libs"] = list(args.ampr_lib)
     if args.ampr_source:
         spec["ampr_source"] = os.path.normpath(args.ampr_source)
+    if args.ampr_action == "ampr_assetpack":
+        # Der Knopf im Fenster legt die **gewaehlte** Fassung als eigenen
+        # Eintrag ab (Entscheidung des Anwenders: gepackt wird mit der, die
+        # dasteht, nicht mit einer gesuchten). Auf der Kommandozeile stehen
+        # Fassung und Variante in ampr_version/ampr_variant - hier kommen sie
+        # in dieselbe Form, damit der Arbeitsweg nur eine Stelle kennt.
+        spec["ampr_assetpack"] = {
+            "version": str(spec.get("ampr_version", "")),
+            "variant": str(spec.get("ampr_variant", "")),
+        }
     spec["ampr_keep_backup"] = not args.ampr_no_backup
     spec["ampr_rebuild_index"] = not args.ampr_no_index
     return spec
@@ -50815,7 +50846,8 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
     if not action:
         return (
             "--ampr-action ist für Aufgabe 7 erforderlich "
-            "(ampr_apply, ampr_restore, ampr_remove, ampr_index, ampr_ftp_index)."
+            "(ampr_apply, ampr_restore, ampr_remove, ampr_index, "
+            "ampr_ftp_index, ampr_assetpack)."
         )
     if action == "ampr_apply":
         if args.ampr_source:
@@ -50827,6 +50859,30 @@ def _validate_ampr_args(args: argparse.Namespace) -> str:
         elif not PS5ConverterGUI._ampr_bundled_store():
             # Ohne mitgelieferten Versionsordner braucht es eine Angabe.
             return "--ampr-apply braucht --ampr-source oder --ampr-store."
+    if action == "ampr_assetpack":
+        # Dieselbe Pruefung wie im Fenster, nur früher: Eine Fassung ohne
+        # Pack-Unterstützung würde Bänder hinterlassen, die niemand liest -
+        # und das fällt sonst erst nach einer halben Stunde Packen auf.
+        variante = str(args.ampr_variant or "").strip().lower()
+        if not variante:
+            # "0.4.2.1 test-pack" in --ampr-version ist erlaubt (siehe
+            # _build_ampr_spec); dann steht die Variante dahinter.
+            _fassung, _, dahinter = str(args.ampr_version or "").strip().partition(" ")
+            variante = dahinter.strip().lower()
+        if not variante:
+            return (
+                "--ampr-action ampr_assetpack braucht eine pack-fähige "
+                "Fassung: --ampr-variant test-pack (oder test-debug-pack). "
+                "Ohne sie lägen die Bänder im Abbild und würden nie gelesen."
+            )
+        if not ampr_assetpakete.variante_kann_packen(variante):
+            return (
+                "Die Variante %r liest keine Asset-Pack-Bänder. Nötig ist "
+                "test-pack oder test-debug-pack." % variante
+            )
+        bereit, grund = ampr_assetpakete.einsatzbereit()
+        if not bereit:
+            return "Das Packwerkzeug steht nicht bereit (%s)." % grund
     if action == "ampr_ftp_index":
         if not args.ampr_host:
             return "--ampr-host ist für --ampr-action ampr_ftp_index erforderlich."
