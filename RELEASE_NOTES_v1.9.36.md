@@ -37,10 +37,19 @@ vergeben. Erst **Nur Index neu bauen**, dann das Asset-Pack.
 - Er läuft **nur auf ausdrücklichen Knopfdruck**, nie nebenbei nach einer
   anderen Aktion des AMPR-EMU-Managers.
 - Er entfernt **keine** Originaldateien. Das Abbild enthält danach
-  Originale und Bänder und wird dadurch größer, nicht kleiner. Ein
+  Originale und Bänder, der **Inhalt** wächst also. Ein verlässlich
   kleineres Abbild entsteht über die Aufgaben 1 bis 6.
 - Ein „Asset-Pack entfernen“ gibt es weiterhin nicht: Ohne Originale wären
   die Bänder die einzige Kopie der Spieldaten.
+
+> **Nachträglich berichtigt (21.09.2026).** Hier stand, das Abbild werde
+> „größer, nicht kleiner“. An einem echten Abbild nachgemessen stimmt das so
+> nicht: Der **Inhalt** wuchs um 4,2 % (260.935.330 → 271.961.880 Byte), die
+> **Abbilddatei** wurde aber um 24 % kleiner (364.904.448 → 275.972.096 Byte)
+> – die Quelle hatte 28,5 % Verschnitt, und der eingebaute exFAT-Schreiber
+> arbeitet ohne freie Zuordnungseinheiten. Verlässlich ist nur die Aussage
+> über den Inhalt; die Dateigröße entscheidet die Quelle. Ausführlich in den
+> Notes zu v1.9.37.
 
 ## Downloads
 
