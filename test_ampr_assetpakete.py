@@ -209,6 +209,18 @@ class EchterPacklauf(unittest.TestCase):
         (app0 / "fakelib" / "libSceAmpr.sprx.orig").write_bytes(fuellung)
         for name in ("apr_emu.log", "ampr_emu.log", "playgo_stub.dat"):
             (app0 / name).write_bytes(fuellung)
+        # Seit dem 20.09.2026: Was die Systemschicht selbst liest. PlayGo
+        # holt playgo.pgm und die pgc_*_dummy_file am AMPR EMU vorbei; die
+        # veroeffentlichten Profile fuehren sie unter "MUST REMAIN LOOSE".
+        (app0 / "cache_ps5").mkdir()
+        for name in ("playgo.pgm", "game.sprig.packman", "pgc_00_dummy_file"):
+            (app0 / "cache_ps5" / name).write_bytes(fuellung)
+        # Filme - lose in jedem echten Profil. Einmal in der Wurzel und
+        # einmal tief verschachtelt (so liegt es bei FF7 Rebirth).
+        (app0 / "movies").mkdir()
+        (app0 / "movies" / "intro.mp4").write_bytes(fuellung)
+        (app0 / "end" / "content" / "movie").mkdir(parents=True)
+        (app0 / "end" / "content" / "movie" / "vorspann.mp4").write_bytes(fuellung)
         return app0
 
     def test_systemdateien_bleiben_lose(self):
@@ -240,7 +252,16 @@ class EchterPacklauf(unittest.TestCase):
                           "Die Liste nennt die Nutzdaten nicht - dann misst "
                           "die Pruefung darunter nichts.")
             for pflicht in ("fakelib/FW7", "fakelib/libSceAmpr.sprx.orig",
-                            "apr_emu.log", "ampr_emu.log", "playgo_stub.dat"):
+                            "apr_emu.log", "ampr_emu.log", "playgo_stub.dat",
+                            # Nachgetragen am 20.09.2026, nachdem Ghost of
+                            # Yotei, Assassin's Creed Shadows und Rise of the
+                            # Ronin mit Asset-Pack nicht liefen: Diese Dateien
+                            # liest die Systemschicht, nicht der Emulator.
+                            "cache_ps5/playgo.pgm",
+                            "cache_ps5/game.sprig.packman",
+                            "cache_ps5/pgc_00_dummy_file",
+                            "movies/intro.mp4",
+                            "end/content/movie/vorspann.mp4"):
                 self.assertNotIn("/app0/" + pflicht, gepackt,
                                  "%s liegt im Band" % pflicht)
 
@@ -514,15 +535,143 @@ class VierteStufeTests(unittest.TestCase):
         # Die Uebernahme in den Spielordner muss NACH allen Pruefungen der
         # Bereitschaftsliste stehen - sonst laege ein unbrauchbarer Bestand
         # schon im Spiel.
-        # lose_fehlend umschliesst den Aufruf von liste - es steht im Text davor.
+        # Seit dem 20.09.2026 wird die Dateiliste einmal geholt und zweimal
+        # befragt: erst auf Systemdateien im Band, dann auf fehlende lose
+        # Dateien. Beides vor der Uebernahme.
         reihenfolge = ["ampr_assetpakete.pruefen(", "ampr_assetpakete.uebersicht(",
-                       "grenzen_ueberschritten(", "lose_fehlend(",
-                       "ampr_assetpakete.liste(", "_ampr_pack_speicher_einpassen(",
-                       "bestand_uebernehmen("]
+                       "grenzen_ueberschritten(", "ampr_assetpakete.liste(",
+                       "systemdateien_im_pack(", "lose_fehlend(",
+                       "_ampr_pack_speicher_einpassen(", "bestand_uebernehmen(",
+                       "_ampr_pack_konsolenhinweis("]
         stellen = [block.index(teil) for teil in reihenfolge]
         self.assertEqual(stellen, sorted(stellen),
                          "Reihenfolge verletzt: %s" % reihenfolge)
 
+
+
+class KonsolenhinweisTests(unittest.TestCase):
+    """Was die Konsole braucht, sagt das Programm beim Bauen.
+
+    Auf Wunsch des Nutzers (20.09.2026): Einstellungen von ShadowMount+ und
+    der PlayGo-Stub gehoeren dorthin, wo das Abbild entsteht - und ins
+    Handbuch. Wer erst beim nicht startenden Spiel davon erfaehrt, hat
+    Stunden Bauzeit umsonst aufgewendet.
+    """
+
+    def _fenster(self, merkmal: str = ""):
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._protokoll = []
+        gui._append_to_log = gui._protokoll.append
+        gui._t = lambda schluessel, **werte: (
+            schluessel if not werte else "%s %s" % (schluessel, sorted(werte.values())))
+        gui._titel_nutzt_playgo = classmethod(lambda _cls, _o: merkmal).__get__(gui)
+        return gui
+
+    def test_beide_einstellungen_werden_genannt(self):
+        gui = self._fenster()
+        gui._ampr_pack_konsolenhinweis("egal")
+        text = "\n".join(gui._protokoll)
+        self.assertIn("ampr_pack.konsole_titel", text)
+        self.assertIn("ampr_pack.konsole_fakelib", text)
+        self.assertIn("ampr_pack.konsole_global", text)
+
+    def test_playgo_nur_wenn_der_titel_es_erklaert(self):
+        ohne = self._fenster(merkmal="")
+        ohne._ampr_pack_konsolenhinweis("egal")
+        self.assertNotIn("ampr_pack.konsole_playgo", "\n".join(ohne._protokoll))
+
+        mit = self._fenster(merkmal="sce_sys/playgo-scenario.json")
+        mit._ampr_pack_konsolenhinweis("egal")
+        zeile = next(z for z in mit._protokoll if z.startswith("ampr_pack.konsole_playgo"))
+        self.assertIn("playgo-scenario.json", zeile,
+                      "Das gefundene Merkmal gehoert in die Meldung")
+
+    def test_hinweis_auf_die_originale_nur_wenn_sie_bleiben(self):
+        bleibt = self._fenster()
+        bleibt._ampr_originale_weglassen = False
+        bleibt._ampr_pack_konsolenhinweis("egal")
+        self.assertIn("ampr_pack.konsole_originale", "\n".join(bleibt._protokoll))
+
+        weg = self._fenster()
+        weg._ampr_originale_weglassen = True
+        weg._ampr_pack_konsolenhinweis("egal")
+        self.assertNotIn("ampr_pack.konsole_originale", "\n".join(weg._protokoll))
+
+    def test_eine_unlesbare_quelle_bricht_nichts_ab(self):
+        """Der Hinweis ist Beiwerk - er darf den fertigen Bau nicht kippen."""
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        gui = APP.PS5ConverterGUI.__new__(APP.PS5ConverterGUI)
+        gui._protokoll = []
+        gui._append_to_log = gui._protokoll.append
+        gui._t = lambda schluessel, **werte: schluessel
+
+        def _wirft(_ordner):
+            raise OSError("kein Zugriff")
+        gui._titel_nutzt_playgo = _wirft
+        gui._ampr_pack_konsolenhinweis("egal")
+        self.assertIn("ampr_pack.konsole_fakelib", "\n".join(gui._protokoll))
+
+    def test_das_handbuch_nennt_beide_einstellungen(self):
+        """Zweite Haelfte des Auftrags: es muss auch im Handbuch stehen."""
+        handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(encoding="utf-8")
+        for stelle in ("backport_fakelib", "global_fakelib_priority",
+                       "playgo-scenario.json", "playgo.pgm"):
+            self.assertIn(stelle, handbuch, "%s fehlt im Handbuch" % stelle)
+
+
+class SystemdateienImPackTests(unittest.TestCase):
+    """Der zweite Riegel: gefragt wird das fertige Manifest, nicht das Profil.
+
+    Warum es beide braucht: Die Ausschlussliste steht im Profil, und ein
+    Anwender darf ein eigenes Profil hinterlegen. Am 20.09.2026 lag genau
+    deshalb ein Abbild von Ghost of Yotei vor, dessen Manifest 84.182 von
+    84.219 Dateien als PACK fuehrte - darunter cache_ps5/playgo.pgm, die 23
+    pgc_*_dummy_file und game.sprig.packman. Mit "Originale weglassen"
+    verschwanden sie aus /app0, und das Spiel stuerzte 0,2 s nach dem Start
+    ab (SIGSEGV auf 0x20, im Spielcode, mit jeder EMU-Fassung).
+    """
+
+    def _zeile(self, pfad: str, gepackt: bool = True) -> dict:
+        return {"path": pfad, "packed": gepackt, "size": 4096}
+
+    def test_playgo_und_verwandte_werden_erkannt(self):
+        getroffen = ap.systemdateien_im_pack([
+            self._zeile("/app0/cache_ps5/playgo.pgm"),
+            self._zeile("/app0/cache_ps5/game.sprig.packman"),
+            self._zeile("/app0/cache_ps5/pgc_game_dummy_file"),
+            self._zeile("/app0/cache_ps5/pgc_lang_arabic_dummy_file"),
+            self._zeile("/app0/assets/t0.dat"),
+        ])
+        self.assertEqual(getroffen, [
+            "/app0/cache_ps5/playgo.pgm",
+            "/app0/cache_ps5/game.sprig.packman",
+            "/app0/cache_ps5/pgc_game_dummy_file",
+            "/app0/cache_ps5/pgc_lang_arabic_dummy_file",
+        ])
+
+    def test_lose_gefuehrte_systemdatei_ist_in_ordnung(self):
+        """Lose ist der gewollte Zustand - nur im Band ist sie ein Fehler."""
+        self.assertEqual(ap.systemdateien_im_pack([
+            self._zeile("/app0/cache_ps5/playgo.pgm", gepackt=False)]), [])
+
+    def test_nutzdaten_loesen_keinen_fehlalarm_aus(self):
+        self.assertEqual(ap.systemdateien_im_pack([
+            self._zeile("/app0/cache_ps5/meshes/ui_movie_text.xmesh"),
+            self._zeile("/app0/sounds/scream/_streams/sfx/a.xvag"),
+            self._zeile("/app0/cache_ps5/bitmaps/x.sps")]), [])
+
+    def test_grossschreibung_zaehlt_nicht(self):
+        """Die Laufzeit vergleicht Pfade ohne Ruecksicht auf die Schreibung."""
+        self.assertEqual(
+            ap.systemdateien_im_pack([self._zeile("/app0/cache_ps5/PlayGo.PGM")]),
+            ["/app0/cache_ps5/PlayGo.PGM"])
+
+    def test_leere_liste_bleibt_still(self):
+        self.assertEqual(ap.systemdateien_im_pack([]), [])
+        self.assertEqual(ap.systemdateien_im_pack([{"kein": "pfad"}]), [])
 
 
 class WoDieMethodeGreiftTests(unittest.TestCase):

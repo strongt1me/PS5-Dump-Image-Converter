@@ -127,6 +127,29 @@ NIE_PACKEN: tuple[str, ...] = (
     "ampr_assets.index.crc", "**/ampr_assets.index.crc",
     "ampr_assets.index.runtime", "**/ampr_assets.index.runtime",
     "ampr_assets-*.pak", "**/ampr_assets-*.pak",
+    # --- Was das System selbst liest, nicht der AMPR EMU -----------------
+    # Nachgetragen am 20.09.2026, nachdem drei Spiele mit Asset-Pack nicht
+    # liefen. Die veroeffentlichten Profile der Gemeinschaft fuehren diese
+    # Dateien unter "MUST REMAIN LOOSE" - Ghost of Yotei nennt
+    # ``cache_ps5/playgo.pgm``, ``cache_ps5/game.sprig.packman`` und
+    # ``cache_ps5/pgc_*_dummy_file`` einzeln, FF7 Rebirth und Spider-Man 2
+    # fuehren dieselbe Liste. Der Grund steht in der Fehlertabelle der
+    # Anleitung: "A packed file exists but in-game reading fails - mmap,
+    # direct I/O, or another unintercepted path may be involved". PlayGo
+    # liest seine Dateien ueber die Systemschicht, am Emulator vorbei.
+    # Im echten Dump von Ghost of Yotei sind das playgo.pgm (4,3 MB),
+    # game.sprig.packman und 23 pgc_*_dummy_file - unser Profil packte
+    # bisher alle drei Sorten mit.
+    "playgo.pgm", "**/playgo.pgm",
+    "*.packman", "**/*.packman",
+    "pgc_*_dummy_file", "**/pgc_*_dummy_file",
+    # Filme sind vorverdichtet; LZ4 bringt nichts und die Anleitung nennt
+    # sie als Beispiel fuer Daten, die lose bleiben duerfen. Jedes
+    # veroeffentlichte Profil haelt sie lose (Ghost: "movies/**",
+    # FF7 Rebirth: "end/content/movie/**"). Gemessen: 205 Dateien,
+    # 4,46 GB allein bei Ghost of Yotei.
+    "movies/**", "**/movies/**",
+    "movie/**", "**/movie/**",
 )
 
 
@@ -665,6 +688,53 @@ def lose_fehlend(zeilen: list[dict[str, Any]], app0: str) -> list[str]:
         if not rel or not os.path.isfile(os.path.join(str(app0), *rel.split("/"))):
             fehlend.append(pfad)
     return fehlend
+
+
+#: Dateien, die die Systemschicht selbst liest - sie duerfen unter keinen
+#: Umstaenden in einem Band landen. Geprueft wird am fertigen Manifest, nicht
+#: nur ueber das Profil: Ein eigenes Profil des Anwenders kann die
+#: Ausschlussliste :data:`NIE_PACKEN` umgehen, und dann faellt es erst an der
+#: Konsole auf - dort aber als Absturz ohne jede Meldung.
+#:
+#: Gemessen am 20.09.2026 an einem echten Abbild (Ghost of Yotei, gebaut am
+#: 18.09.): Das Manifest fuehrte 84.182 von 84.219 Dateien als PACK, darunter
+#: cache_ps5/playgo.pgm, cache_ps5/game.sprig.packman und 23
+#: pgc_*_dummy_file. Mit "Originale weglassen" wurden sie aus /app0 entfernt.
+#: Das Spiel stuerzte danach 0,2 s nach dem Start ab - SIGSEGV auf
+#: Adresse 0x20, also ein Nullzeiger, und zwar im Spielcode selbst und mit
+#: jeder EMU-Fassung (0.3.6.6 wie 0.4.2.1 nachgemessen). PlayGo liest seine
+#: Dateien an der Emulation vorbei; fehlt playgo.pgm, gibt es nichts zu
+#: lesen. Alle veroeffentlichten Profile fuehren genau diese Dateien unter
+#: "MUST REMAIN LOOSE".
+SYSTEMDATEIEN: tuple[str, ...] = (
+    "playgo.pgm",
+    "playgo-chunk.dat",
+    "pgc_*_dummy_file",
+    "*.packman",
+)
+
+
+def systemdateien_im_pack(zeilen: list[dict[str, Any]]) -> list[str]:
+    """Welche Systemdateien stehen im Manifest als PACK?
+
+    Args:
+        zeilen: Die Ausgabe von :func:`liste` (``list --json``).
+
+    Returns:
+        Die ``/app0``-Pfade der betroffenen Dateien; leer, wenn alles in
+        Ordnung ist. Ein nicht leeres Ergebnis heisst: nicht ausliefern.
+    """
+    import fnmatch
+
+    getroffen: list[str] = []
+    for zeile in zeilen:
+        if not isinstance(zeile, dict) or not zeile.get("packed"):
+            continue
+        pfad = str(zeile.get("path") or "")
+        name = pfad.replace("\\", "/").rsplit("/", 1)[-1].lower()
+        if any(fnmatch.fnmatch(name, muster) for muster in SYSTEMDATEIEN):
+            getroffen.append(pfad)
+    return getroffen
 
 
 #: Der interne Speicherblock der Pack-Bauten des AMPR EMU: fest 384 MiB

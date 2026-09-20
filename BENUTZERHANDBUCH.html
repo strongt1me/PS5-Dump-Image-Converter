@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.30</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.31</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.30</span>
+      <span class="marke">Version v1.9.31</span>
       <span class="marke">Stand 20. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -763,6 +763,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <p>Platz spart das nur bei <code>.ffpfs</code>, <code>.exFAT</code> und
     <code>.ffpkg</code>. Eine <code>.ffpfsc</code> komprimiert besser als die
     B&auml;nder: Sie wurde mit Asset-Pack in keiner Messung kleiner als ohne.</p>
+    <p><strong>Seit v1.9.31</strong> bleiben Dateien, die das System selbst
+    liest, in jedem Fall als gew&ouml;hnliche Datei liegen:
+    <code>cache_ps5/playgo.pgm</code>, <code>*.packman</code>, die
+    <code>pgc_*_dummy_file</code> und der Ordner <code>movies/</code>. Sie
+    wanderten bis dahin mit in die B&auml;nder und wurden beim Weglassen der
+    Originale gel&ouml;scht &ndash; PlayGo liest sie aber an der Emulation
+    vorbei, und das Spiel st&uuml;rzte rund eine Sekunde nach dem Start ab.
+    Zus&auml;tzlich sieht das Programm nach dem Packen ins fertige Manifest
+    und bricht ab, falls doch eine solche Datei darin steht.</p>
   </div>
 
   <div class="kasten">
@@ -789,7 +798,44 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <code>eboot.bin</code>, <code>sce_sys</code>, die Module und alles
   Ausf&uuml;hrbare bleiben gew&ouml;hnliche Dateien. Das Ladeprogramm der
   Konsole liest sie, bevor der AMPR EMU &uuml;berhaupt geladen ist &ndash;
-  l&auml;gen sie in einem Band, w&uuml;rde das Spiel nicht mehr starten.</p>
+  l&auml;gen sie in einem Band, w&uuml;rde das Spiel nicht mehr starten.
+  Seit v1.9.31 geh&ouml;ren auch <code>cache_ps5/playgo.pgm</code>,
+  <code>*.packman</code>, die <code>pgc_*_dummy_file</code> und der Ordner
+  <code>movies/</code> dazu: <strong>PlayGo liest seine Dateien an der
+  Emulation vorbei.</strong> Lagen sie im Band und wurden die Originale
+  weggelassen, st&uuml;rzte das Spiel rund eine Sekunde nach dem Start ab.</p>
+
+  <div class="kasten">
+    <span class="titel">Was die Konsole f&uuml;r ein Asset-Pack braucht</span>
+    <p>Das Programm schreibt diese Punkte am Ende des Baus auch ins
+    Protokoll &ndash; dort stehen sie genau f&uuml;r das Abbild, das Sie
+    gerade gebaut haben.</p>
+    <table>
+      <thead><tr><th>Wo</th><th>Was</th></tr></thead>
+      <tbody>
+      <tr><td><code>config.ini</code> von ShadowMount+<br>
+        <code>backport_fakelib=1</code></td>
+        <td>H&auml;ngt den Ordner <code>fakelib</code> aus dem Abbild nach
+        <code>common/lib</code> ein. Nur so wird der eingebaute AMPR EMU
+        &uuml;berhaupt geladen. <strong>1 ist die Voreinstellung</strong>
+        &ndash; steht dort 0, bleiben die B&auml;nder ungelesen.</td></tr>
+      <tr><td><code>config.ini</code><br>
+        <code>global_fakelib_priority</code></td>
+        <td>Voreingestellt ist <code>game</code>: Die Fassung aus dem Abbild
+        gewinnt. Steht dort <code>global</code> <em>und</em> liegt in
+        <code>/data/shadowmount/fakelib</code> ein eigenes
+        <code>libSceAmpr.sprx</code>, gewinnt jenes &ndash; es muss dann
+        ebenfalls pack-f&auml;hig sein, sonst findet niemand die
+        B&auml;nder.</td></tr>
+      <tr><td>PlayGo-Stub im Abbild</td>
+        <td>Erkl&auml;rt der Titel PlayGo-Inhalte (Sprach- oder
+        Szenariopakete, erkennbar an
+        <code>sce_sys/playgo-scenario.json</code>), geh&ouml;rt der Stub mit
+        hinein &ndash; sonst wartet das Spiel auf Pakete, die nie kommen. Das
+        Programm fragt vor dem Lauf danach und sagt es im Protokoll.</td></tr>
+      </tbody>
+    </table>
+  </div>
 
   <div class="kasten warnung">
     <span class="titel">Wenn der Lauf abbricht statt fertig zu werden</span>
@@ -1613,7 +1659,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.30), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.31), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -1813,7 +1859,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.30</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.31</strong></span>
     <span>Stand 20. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

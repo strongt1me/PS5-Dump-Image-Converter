@@ -2,7 +2,39 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.30):** Fehlt nur der Treiber von OSFMount, richtet das Programm ihn jetzt selbst ein – ohne Download, über Punkt 19. Und „App direkt installieren“ meldet keinen Fehlschlag mehr, wenn die Installation über den Payload Manager läuft und geklappt hat.
+> **Kurz zum aktuellen Stand (v1.9.31):** Das Asset-Pack packte Dateien mit, die das System selbst liest – allen voran `playgo.pgm`. Wurden die Originale danach entfernt, stürzte das Spiel kurz nach dem Start ab. Das ist behoben, und ein zweiter Riegel bricht den Bau ab, falls es doch wieder passiert.
+
+---
+
+## v1.9.31 – 20.09.2026
+
+Asset-Packs: Spiele stürzten kurz nach dem Start ab. Die Ursache ist gefunden und doppelt abgesichert.
+
+### Warum kein Spiel mit Asset-Pack lief
+
+Beim Packen wanderten auch Dateien in die Bänder, die **das System selbst liest** – nicht der AMPR EMU: `cache_ps5/playgo.pgm`, `cache_ps5/game.sprig.packman` und die `pgc_*_dummy_file`. Solange die Originale liegen blieben, fiel das nicht auf. Wer aber beim Bau „Originale weglassen” wählte, bei dem wurden genau diese Dateien aus dem Spielordner **gelöscht** – und PlayGo liest sie an der Emulation vorbei. Das Spiel fragte, bekam nichts und stürzte rund eine Sekunde nach dem Start ab.
+
+Nachgemessen an einem echten Abbild (Ghost of Yotei, 96,7 GB): Das Manifest führte 84.182 von 84.219 Dateien als gepackt, darunter alle genannten Systemdateien; im Abbild lagen danach noch 57 Dateien. Der Absturz sieht auf der Konsole gleich aus, egal welche Fassung des AMPR EMU eingebaut ist – geprüft mit 0.3.6.6 und 0.4.2.1.
+
+Jetzt gilt: Diese Dateien landen **nie** in einem Band. Ebenso bleiben Filme (`movies/`) außen vor – so halten es auch die veröffentlichten Packprofile für Ghost of Yotei, Final Fantasy VII Rebirth und Spider-Man 2.
+
+### Der zweite Riegel
+
+Die Ausschlussliste allein genügt nicht, denn ein eigenes Packprofil kann sie umgehen. Deshalb sieht das Programm jetzt zusätzlich ins **fertige Manifest**: Steht dort eine solche Systemdatei als gepackt, bricht der Bau ab, **bevor** irgendetwas in den Spielordner übernommen oder gelöscht wird – mit einer Meldung, die die Datei nennt.
+
+### Was die Konsole braucht, steht jetzt beim Bauen im Protokoll
+
+Ein Asset-Pack hängt nicht nur am Abbild, sondern auch an zwei Einstellungen von ShadowMount+ – und je nach Spiel am PlayGo-Stub. Das Programm schreibt diese Punkte jetzt ans Ende des Baus, für genau das Abbild, das gerade entstanden ist:
+
+- **`backport_fakelib=1`** in der `config.ini` von ShadowMount+ hängt den Ordner `fakelib` aus dem Abbild nach `common/lib` – nur so wird der eingebaute AMPR EMU überhaupt geladen. Das ist die Voreinstellung.
+- **`global_fakelib_priority`** steht voreingestellt auf `game`, die Fassung aus dem Abbild gewinnt also. Steht dort `global` und liegt in `/data/shadowmount/fakelib` ein eigenes `libSceAmpr.sprx`, gewinnt jenes – und muss dann ebenfalls pack-fähig sein.
+- **PlayGo:** Erklärt der Titel Sprach- oder Szenariopakete, gehört der Stub mit ins Abbild, sonst wartet das Spiel auf Pakete, die nie kommen.
+
+Dieselben Punkte stehen jetzt auch im Benutzerhandbuch im Abschnitt zur neuen Methode.
+
+### Was das für vorhandene Abbilder heißt
+
+Ein Abbild, das mit „Originale weglassen” gebaut wurde, lässt sich nicht reparieren: Die Dateien fehlen darin physisch. Es muss neu gebaut werden. Die Anleitung des Entwicklers empfiehlt ohnehin, jedes Spiel **zuerst mit behaltenen Originalen** zu testen – so ist es auch voreingestellt.
 
 ---
 

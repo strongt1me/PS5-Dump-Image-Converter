@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.30"
+APP_VERSION = "v1.9.31"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -26100,8 +26100,27 @@ class PS5ConverterGUI:
             # muss durchlaufen, und jede lose gefuehrte Datei muss im
             # Spielordner liegen - die Konsole liest sie dort. Beides fehlte
             # bis zum 17.09.2026.
-            fehlend = ampr_assetpakete.lose_fehlend(
-                ampr_assetpakete.liste(manifest, melden=lambda _z: None), ordner)
+            zeilen = ampr_assetpakete.liste(manifest, melden=lambda _z: None)
+
+            # Zweiter Riegel gegen den Befund vom 20.09.2026: Was die
+            # Systemschicht selbst liest (playgo.pgm, *.packman, die
+            # pgc_*_dummy_file), darf nie in einem Band stehen. Die
+            # Ausschlussliste im Profil allein genuegt nicht - ein eigenes
+            # Profil des Anwenders kann sie umgehen. Gefragt wird deshalb das
+            # fertige Manifest. Ghost of Yotei fuehrte alle 25 dieser Dateien
+            # als PACK; mit "Originale weglassen" verschwanden sie aus /app0,
+            # und das Spiel stuerzte 0,2 s nach dem Start ab (SIGSEGV auf
+            # Adresse 0x20, im Spielcode, mit jeder EMU-Fassung).
+            systemdateien = ampr_assetpakete.systemdateien_im_pack(zeilen)
+            if systemdateien:
+                for pfad in systemdateien[:20]:
+                    self._append_to_log(self._t("ampr_pack.systemdatei_gepackt",
+                                                path=pfad))
+                self._append_to_log(self._t("ampr_pack.systemdatei_folge",
+                                            count=len(systemdateien)))
+                return False
+
+            fehlend = ampr_assetpakete.lose_fehlend(zeilen, ordner)
             if fehlend:
                 for pfad in fehlend[:20]:
                     self._append_to_log(self._t("ampr_pack.lose_fehlt", path=pfad))
@@ -26125,6 +26144,7 @@ class PS5ConverterGUI:
             # eingeschlossen. Eine zweite Kopie daneben waere nur Ballast; ein
             # Profil des Anwenders bleibt stehen.
             ampr_assetpakete.bestand_aufraeumen(ausgabe, baender, ganz=eigenes_profil)
+            self._ampr_pack_konsolenhinweis(ordner)
         except ampr_assetpakete.PackFehler as exc:
             # Ein paar Abbruchgruende nennt das Modul als Uebersetzungs-
             # schluessel, weil es selbst keine Sprache kennt. Sie wuerden
@@ -26158,6 +26178,35 @@ class PS5ConverterGUI:
             self._append_to_log(self._t("ampr_pack.originale_nicht_im_quellordner"))
             return True
         return self._ampr_originale_entfernen(ordner)
+
+    def _ampr_pack_konsolenhinweis(self, ordner: str) -> None:
+        """Sagt beim Bauen, was die Konsole fuer dieses Abbild braucht.
+
+        Ein Asset-Pack haengt nicht nur am Abbild, sondern auch an zwei
+        Einstellungen von ShadowMount+ und - je nach Titel - am PlayGo-Stub.
+        Wer das erst erfaehrt, wenn das Spiel nicht startet, hat Stunden
+        Bauzeit umsonst aufgewendet; deshalb steht es hier, direkt nachdem
+        der Satz im Spielordner liegt.
+
+        Die beiden Einstellungen stehen so in der ``config.ini`` von
+        ShadowMount+ beschrieben (``backport_fakelib``, Vorgabe 1;
+        ``global_fakelib_priority``, Vorgabe "game"). Dass eine globale
+        Bibliothek die Fassung im Abbild wirklich aussticht, ist am
+        20.09.2026 an der Konsole gemessen worden - der Emulator meldete
+        danach die globale Fassung.
+        """
+        self._append_to_log(self._t("ampr_pack.konsole_titel"))
+        self._append_to_log(self._t("ampr_pack.konsole_fakelib"))
+        self._append_to_log(self._t("ampr_pack.konsole_global"))
+        merkmal = ""
+        try:
+            merkmal = self._titel_nutzt_playgo(ordner)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("PlayGo-Merkmal nicht pruefbar: %s", exc)
+        if merkmal:
+            self._append_to_log(self._t("ampr_pack.konsole_playgo", merkmal=merkmal))
+        if not getattr(self, "_ampr_originale_weglassen", False):
+            self._append_to_log(self._t("ampr_pack.konsole_originale"))
 
     def _ampr_originale_entfernen(self, ordner: str) -> bool:
         """Entfernt die gepackten Originale aus der Arbeitskopie (Abschnitt 6).
