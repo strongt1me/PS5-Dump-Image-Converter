@@ -56,7 +56,7 @@ import urllib.request
 import uuid
 import webbrowser
 import zlib
-from typing import Any, Iterator, Literal, cast
+from typing import Any, Callable, Iterator, Literal, cast
 
 # ---------------------------------------------------------------------------
 # Drittanbieter
@@ -18859,6 +18859,8 @@ class PS5ConverterGUI:
         self._teilschritt_merker = None
         # Der Packtext des vorigen Laufs darf nicht in den neuen hineinragen.
         self._pack_infotext = ""
+        # Dasselbe fuer den Text des Vermessens (_quellgroesse_mit_meldung).
+        self._mess_infotext = ""
         self._batch_von, self._batch_bis = 0.0, 100.0
         self._uhr_basis = None
         self._uhr_letzter_wert = -1.0
@@ -19093,6 +19095,12 @@ class PS5ConverterGUI:
             stand["gemeldet"] = jetzt
             text = self._t("status.quelle_wird_vermessen",
                            dateien=dateien, groesse=self._fmt_bytes(bytes_bisher))
+            # Der Merker gehoert dieser Phase: Er sagt dem Anzeige-Takt, dass
+            # das Groessenfeld belegt ist. Ohne ihn setzte der Takt es 100 ms
+            # spaeter wieder auf "" (keiner seiner Zweige greift hier) - der
+            # Text blinkte einmal je Sekunde auf und war 5 % der Zeit zu
+            # sehen, am 20.09.2026 am Widget gemessen.
+            self._mess_infotext = text
             self._set_progress(None, size_text=text)
             # Zusaetzlich in die Statuszeile. Das Groessenfeld allein reichte
             # nicht: Der Anzeige-Takt setzt es alle 100 ms neu (in dieser
@@ -19101,9 +19109,22 @@ class PS5ConverterGUI:
             # 120 s einen Stapelabzug als ERROR ins Protokoll.
             self._set_status(text)
 
-        groesse = self._get_path_size(
-            src, progress_cb=_melden,
-            cancel_check=lambda: not self.is_running)
+        try:
+            groesse = self._get_path_size(
+                src, progress_cb=_melden,
+                cancel_check=lambda: not self.is_running)
+        finally:
+            # Der Merker gehoert dieser Phase. Bliebe er stehen, zeigte das
+            # Groessenfeld waehrend des Kopierens und Packens weiter
+            # "Quelle wird vermessen ..." - dieselbe Falle wie beim
+            # Packtext (_pack_infotext).
+            #
+            # Das Feld selbst wird **nicht** von Hand geleert: Der
+            # Anzeige-Takt tut das beim naechsten Durchlauf von allein,
+            # sobald der Merker leer ist. Ein ``_set_progress`` hier
+            # verlangte ``self.root`` - und diese Methode laeuft auch dort,
+            # wo es kein Fenster gibt (Kommandozeile, Pruefungen).
+            self._mess_infotext = ""
         if self.is_running and src:
             # Fuer den Rest dieser Aufgabe merken: _execute_mkpfs vermass
             # denselben Ordner bis v1.9.24 direkt danach noch einmal blank.
@@ -19666,8 +19687,17 @@ class PS5ConverterGUI:
         # ``else: new_size = ""``. Bei einem grossen Titel sind das Stunden
         # ohne jede Angabe.
         pack_text = str(getattr(self, "_pack_infotext", "") or "")
+        # Dasselbe fuer das Vermessen der Quelle. Ohne diesen Zweig schrieb
+        # der Melder seinen Text einmal pro Sekunde, und dieser Takt loeschte
+        # ihn 100 ms spaeter wieder: Am 20.09.2026 am echten Widget gemessen -
+        # der Text war **5 % der Zeit** zu sehen und blinkte einmal je
+        # Sekunde auf. Bei einem grossen Dump dauert das Vermessen Minuten
+        # bis Stunden (37 min an Aufgabe 8 gemessen).
+        mess_text = str(getattr(self, "_mess_infotext", "") or "")
         if pack_text:
             new_size = pack_text
+        elif mess_text:
+            new_size = mess_text
         elif self.task_stored_str:
             if self.task_uncompressed_str:
                 new_size = f"{self.task_uncompressed_str} \u2192 {self.task_stored_str}"
@@ -27676,22 +27706,46 @@ class PS5ConverterGUI:
                         # dem gleich gelöschten outer_tmp herausgeholt werden.
                         self._append_to_log(self._t('log.auto.0159'))
                         # Auch hier kopiert ``copytree`` am Stueck und meldet
-                        # nichts. Die Schwesterstelle beim Herauskopieren einer
-                        # eingehaengten Quelle zaehlt laengst mit; ihr
-                        # ``_copy_with_progress`` liegt aber in einem anderen
-                        # Zweig und ist hier nicht erreichbar.
+                        # nichts von sich aus.
                         #
-                        # Bewusst **ohne** Prozentzahl: Fuer einen ehrlichen
-                        # Balken braeuchte es eine Gesamtgroesse, und die gaebe
-                        # es nur ueber einen zweiten vollen Durchlauf. Laufende
-                        # Dateizahl und Bytes zeigen genauso, dass es vorangeht.
+                        # Bis zum 20.09.2026 stand hier nur die Statuszeile:
+                        # Balken und Groessenfeld blieben leer, weil in dieser
+                        # Phase keiner der Zweige des Anzeige-Takts greift.
+                        # Der Anwender sah eine Zahl in der Statuszeile und
+                        # sonst nichts - gemeldet zusammen mit dem stummen
+                        # Verschieben (``_move_tree_into``).
+                        #
+                        # Eine Gesamtgroesse gibt es hier doch, ohne einen
+                        # zweiten Durchlauf ueber den Baum: ``
+                        # _pruefe_dump_vollstaendig`` hat denselben Ordner
+                        # unmittelbar davor vermessen und sein Ergebnis
+                        # gemerkt. Damit laeuft die Anzeige ueber dieselben
+                        # Byte-Zaehler wie die Arbeitskopie - Balken im
+                        # Schrittbereich und die gewohnte Zeile daneben.
+                        _gemessen = getattr(self, "_dump_inhalt_gemessen", None)
+                        _gesamt = 0
+                        if (isinstance(_gemessen, tuple) and len(_gemessen) == 3
+                                and _gemessen[0] == os.path.normcase(
+                                    os.path.abspath(outer_tmp))):
+                            _gesamt = int(_gemessen[2] or 0)
                         _cont = {"bytes": 0, "dateien": 0, "ts": 0.0}
+                        _begonnen = time.monotonic()
+                        if _gesamt:
+                            self._copy_total_bytes = _gesamt
+                            self._copy_done_bytes = 0
+                            self._copy_total_exact = True
+                            self._copy_rate_bps = 0.0
+                            self._copy_rate_trend = ""
 
                         def _melde_kopie() -> None:
                             jetzt = time.monotonic()
                             if jetzt - _cont["ts"] < 1.0:
                                 return
                             _cont["ts"] = jetzt
+                            if _gesamt:
+                                self._copy_done_bytes = min(_cont["bytes"], _gesamt)
+                                self._copy_rate_bps = _cont["bytes"] / max(
+                                    0.001, jetzt - _begonnen)
                             self._set_status(self._t(
                                 "status.kopiert_fortschritt",
                                 dateien=_cont["dateien"],
@@ -27716,9 +27770,19 @@ class PS5ConverterGUI:
                             _cont["dateien"] += 1
                             _melde_kopie()
 
-                        shutil.copytree(outer_tmp, tmp_extract,
-                                        dirs_exist_ok=True,
-                                        copy_function=_kopiere_und_melde)
+                        try:
+                            shutil.copytree(outer_tmp, tmp_extract,
+                                            dirs_exist_ok=True,
+                                            copy_function=_kopiere_und_melde)
+                        finally:
+                            # Die Zaehler gehoeren diesem Schritt. Blieben sie
+                            # stehen, zeigte das Groessenfeld die Kopierzahlen
+                            # noch waehrend der naechsten Phase an - dieselbe
+                            # Falle wie bei der Arbeitskopie.
+                            self._copy_total_bytes = 0
+                            self._copy_done_bytes = 0
+                            self._copy_total_exact = False
+                            self._copy_rate_bps = 0.0
                         search_root = tmp_extract
                     elif not self._move_tree_into(dump_ordner, tmp_extract):
                         search_root = tmp_extract
@@ -29869,16 +29933,28 @@ class PS5ConverterGUI:
             logger.debug("Sollwerte des Abbilds nicht ermittelbar (%s): %s", path, exc)
         return None
 
-    def _move_tree_into(self, quelle: str, ziel: str) -> list[str]:
+    def _move_tree_into(self, quelle: str, ziel: str,
+                        melden: "Callable[[int], None] | None" = None) -> list[str]:
         """Verschiebt den Inhalt von ``quelle`` nach ``ziel`` und fuehrt Ordner zusammen.
 
         ``shutil.move`` legt einen Ordner IN einen gleichnamigen Zielordner,
         statt ihn zu verschmelzen - aus ``sce_sys`` wuerde ``sce_sys/sce_sys``.
         Deshalb wird Ebene fuer Ebene zusammengefuehrt.
 
+        **Warum hier gemeldet wird.** Liegen Quelle und Ziel auf demselben
+        Datentraeger, benennt ``shutil.move`` nur um - das dauert nichts.
+        Liegen sie auf **verschiedenen**, kopiert es jede Datei Byte fuer
+        Byte und loescht sie danach. Bei einem Spielordner sind das zig
+        Gigabyte, und bis zum 20.09.2026 geschah das vollstaendig stumm:
+        Der Balken stand bei 95 %, das Groessenfeld war leer, die
+        Statuszeile sagte "Ergebnis wird verschoben" - vom Anwender
+        gemeldet als "man sieht auch nicht, dass kopiert wird".
+
         Args:
             quelle: Ordner, dessen Inhalt verschoben wird.
             ziel:   Zielordner; wird bei Bedarf angelegt.
+            melden: Wird nach jedem Eintrag mit dessen Groesse in Bytes
+                    gerufen. Die Rekursion reicht ihn weiter.
 
         Returns:
             Liste der Fehlertexte. Leer heisst: alles ist im Ziel angekommen.
@@ -29890,17 +29966,126 @@ class PS5ConverterGUI:
             ziel_pfad = os.path.join(ziel, eintrag)
             try:
                 if os.path.isdir(quell_pfad) and os.path.isdir(ziel_pfad):
-                    fehler.extend(self._move_tree_into(quell_pfad, ziel_pfad))
+                    fehler.extend(self._move_tree_into(quell_pfad, ziel_pfad, melden))
                     try:
                         os.rmdir(quell_pfad)
                     except OSError:
                         pass
                 else:
+                    # Die Groesse VOR dem Verschieben lesen - danach ist die
+                    # Datei am alten Ort weg.
+                    geschafft = 0
+                    if melden is not None:
+                        geschafft = self._baumgroesse_still(quell_pfad)
                     shutil.move(quell_pfad, ziel_pfad)
+                    if melden is not None:
+                        melden(geschafft)
             except OSError as exc:
                 fehler.append(f"{eintrag}: {exc}")
                 self._append_to_log(self._t('log.auto.0246', v0=eintrag, v1=exc))
         return fehler
+
+    def _verschiebemelder(self, quelle: str, ziel: str):
+        """Baut den Melder fuer :meth:`_move_tree_into` - oder gibt None.
+
+        ``None`` heisst: Quelle und Ziel liegen auf demselben Datentraeger,
+        ``shutil.move`` benennt also nur um. Dafuer eine Anzeige aufzubauen
+        waere Aufwand fuer einen Vorgang, der keine Zeit braucht - und das
+        Groessenfeld wuerde fuer einen Wimpernschlag etwas anderes zeigen.
+
+        Liegen sie auf verschiedenen, ist jede Datei eine echte Kopie. Dann
+        laeuft die Anzeige ueber dieselben Byte-Zaehler, die auch die
+        Arbeitskopie benutzt (``_copy_total_bytes`` / ``_copy_done_bytes``):
+        Sie treiben den Balken im Schrittbereich und fuellen das
+        Groessenfeld mit der gewohnten Zeile. Ein zweites Getriebe daneben
+        hatte die Anzeige schon einmal leer gelassen.
+
+        Die Gesamtgroesse kommt aus :meth:`_pruefe_dump_vollstaendig`, das
+        denselben Ordner unmittelbar davor vermessen hat. Fehlt sie, wird
+        ohne Gesamtwert gemeldet - laufende Bytes statt einer erfundenen
+        Prozentzahl.
+        """
+        if self._gleicher_datentraeger(quelle, ziel):
+            return None
+
+        gemessen = getattr(self, "_dump_inhalt_gemessen", None)
+        gesamt = 0
+        if (isinstance(gemessen, tuple) and len(gemessen) == 3
+                and gemessen[0] == os.path.normcase(os.path.abspath(quelle))):
+            gesamt = int(gemessen[2] or 0)
+
+        self._append_to_log(self._t("log.verschieben_ueber_laufwerke",
+                                    size=self._fmt_bytes(gesamt) if gesamt else "?"))
+        stand = {"bytes": 0, "ts": 0.0}
+        begonnen = time.monotonic()
+        self._copy_total_bytes = max(1, gesamt)
+        self._copy_done_bytes = 0
+        self._copy_total_exact = bool(gesamt)
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+
+        def _melden(dazu: int) -> None:
+            stand["bytes"] += max(0, int(dazu or 0))
+            jetzt = time.monotonic()
+            if jetzt - stand["ts"] < 1.0:
+                return
+            stand["ts"] = jetzt
+            self._copy_done_bytes = stand["bytes"]
+            self._copy_rate_bps = stand["bytes"] / max(0.001, jetzt - begonnen)
+            # Auch in die Statuszeile: _stillstand_uhr sieht nur Balken und
+            # Statustext. Ohne laufende Zahlen haelt sie eine stundenlange
+            # Kopie fuer einen Aufhaenger und schreibt einen Stapelabzug.
+            self._set_status("%s  %s / %s" % (
+                self._t("status.move_result"),
+                self._fmt_bytes(stand["bytes"]),
+                self._fmt_bytes(gesamt) if gesamt else "?"))
+
+        return _melden
+
+    @staticmethod
+    def _gleicher_datentraeger(a: str, b: str) -> bool:
+        """Liegen zwei Pfade auf demselben Datentraeger?
+
+        Unter Windows entscheidet der Laufwerksbuchstabe, sonst die
+        Geraetenummer. Im Zweifel **True**: Dann wird nur keine Anzeige
+        aufgebaut, und es geht nichts kaputt.
+        """
+        try:
+            a_abs, b_abs = os.path.abspath(a), os.path.abspath(b)
+            if os.name == "nt":
+                return (os.path.splitdrive(a_abs)[0].lower()
+                        == os.path.splitdrive(b_abs)[0].lower())
+            # Das Ziel kann noch fehlen - dann zaehlt sein Elternordner.
+            b_vorhanden = b_abs if os.path.exists(b_abs) else os.path.dirname(b_abs)
+            return os.stat(a_abs).st_dev == os.stat(b_vorhanden).st_dev
+        except OSError as exc:
+            logger.debug("Datentraeger nicht vergleichbar (%s / %s): %s", a, b, exc)
+            return True
+
+    @staticmethod
+    def _baumgroesse_still(pfad: str) -> int:
+        """Bytes einer Datei oder eines ganzen Ordners - ohne jede Meldung.
+
+        Absichtlich stumm und ohne Abbruchpruefung: Gebraucht wird das nur
+        fuer einen einzelnen Eintrag, den ``_move_tree_into`` gerade
+        verschiebt. Fuer ganze Baeume ist ``_quellgroesse_mit_meldung`` da.
+        """
+        try:
+            if os.path.isfile(pfad):
+                return os.path.getsize(pfad)
+        except OSError:
+            return 0
+        summe = 0
+        try:
+            for ordner, _unter, dateien in os.walk(pfad):
+                for name in dateien:
+                    try:
+                        summe += os.path.getsize(os.path.join(ordner, name))
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+        return summe
 
     def _pruefe_dump_vollstaendig(self, ziel: str, erwartet: tuple[int, int] | None) -> bool:
         """Vergleicht den entpackten Ordner mit den Sollwerten des Containers.
@@ -29926,6 +30111,15 @@ class PS5ConverterGUI:
                     ist_bytes += os.path.getsize(os.path.join(ordner, name))
                 except OSError:
                     pass
+
+        # Das Ergebnis dieses Durchlaufs merken: Gleich danach verschiebt
+        # ``_move_tree_into`` denselben Ordner ins Ziel, und liegt das Ziel
+        # auf einem anderen Datentraeger, ist das eine echte Kopie ueber zig
+        # Gigabyte. Sie braucht eine Gesamtgroesse, um sich melden zu
+        # koennen - und die steht hier schon da. Ein zweiter Durchlauf ueber
+        # den Baum waere verschwendet (37 min an Aufgabe 8 gemessen).
+        self._dump_inhalt_gemessen = (os.path.normcase(os.path.abspath(ziel)),
+                                      ist_dateien, ist_bytes)
 
         # Kein Abbruchgrund: Auch ein Container ohne eboot.bin darf sich
         # entpacken lassen. Die Abschlusspruefung der Aufgabe faellt dafuer
@@ -30431,7 +30625,16 @@ class PS5ConverterGUI:
             self.task_displayed = max(self.task_displayed, 95.0)
             self._append_to_log(self._t('log.auto.0250'))
             os.makedirs(final_dst, exist_ok=True)
-            fehler = self._move_tree_into(aktueller_ordner, final_dst)
+            fehler = self._move_tree_into(
+                aktueller_ordner, final_dst,
+                melden=self._verschiebemelder(aktueller_ordner, final_dst))
+            # Die Zaehler gehoeren diesem Schritt - auch wenn gleich danach
+            # Schluss ist. Bliebe die Zeile stehen, zeigte das Groessenfeld
+            # beim Abschluss noch die Kopierzahlen.
+            self._copy_total_bytes = 0
+            self._copy_done_bytes = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
             if fehler:
                 self._append_to_log(
                     self._t('unpack.move_failed', anzahl=len(fehler), liste="; ".join(fehler[:5]))

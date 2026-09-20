@@ -674,6 +674,290 @@ class QuellgroesseMeldetUndBrichtAbTests(unittest.TestCase):
             "Die Arbeitskopie vermisst wieder blank - ohne Anzeige und ohne "
             "Abbruch sieht das fuer den Anwender nach einem Haenger aus.")
 
+    # -- Der Text darf nicht blinken --------------------------------------
+    #
+    # Vom Anwender gemeldet (20.09.2026): "beim Quelle vermessen wird die
+    # Fortschrittsanzeige nicht korrekt angezeigt. Es blinkt zwischendurch
+    # der Text, der rechts daneben erscheint."
+    #
+    # Am echten Widget nachgemessen: Der Melder schrieb den Text einmal je
+    # Sekunde, und der Anzeige-Takt setzte ihn 100 ms spaeter wieder auf ""
+    # (in dieser Phase greift keiner seiner Zweige). Sichtbar war er
+    # **5 % der Zeit**; mit dem Merker 98 %.
+
+    def _vermessungslage(self, app) -> None:
+        """Der Zustand, den ein Lauf waehrend des Vermessens wirklich hat."""
+        app.is_running = True
+        app.monitor_active = False   # kein Selbst-Neustart des Takts im Test
+        app.task_total_source_bytes = 0
+        app.task_uncompressed_str = ""
+        app.task_stored_str = ""
+        app._pack_infotext = ""
+        app._copy_total_bytes = 0
+        app._monitor_total_bytes = 0
+        app._monitor_done_bytes = 0
+
+    def test_der_takt_loescht_den_vermessungstext_nicht(self):
+        app = self._app()
+        self._vermessungslage(app)
+        text = "Quelle wird vermessen: 1234 Dateien, 12.3 GB"
+        app._mess_infotext = text
+        app._set_progress(None, size_text=text)
+        app.root.update()
+        self.assertEqual(str(app.size_label.cget("text")), text)
+
+        # Und jetzt der Takt, der ihn bisher weggewischt hat.
+        app._update_progress_gui()
+        app.root.update()
+        self.assertEqual(
+            str(app.size_label.cget("text")), text,
+            "Der Anzeige-Takt hat den Vermessungstext geloescht - er blinkt "
+            "dann einmal je Sekunde kurz auf.")
+
+    def test_ohne_merker_bleibt_das_feld_leer(self):
+        """Die Gegenrichtung: Ohne Merker gehoert das Feld dem Takt."""
+        app = self._app()
+        self._vermessungslage(app)
+        app._mess_infotext = ""
+        app._set_progress(None, size_text="steht noch da")
+        app.root.update()
+        app._update_progress_gui()
+        app.root.update()
+        self.assertEqual(str(app.size_label.cget("text")), "")
+
+    def test_der_merker_wird_danach_geraeumt(self):
+        """Sonst steht "wird vermessen" noch beim Kopieren und Packen da."""
+        app = self._app()
+        self._vermessungslage(app)
+        app._mess_infotext = "Rest vom vorigen Lauf"
+        app._quellgroesse_mit_meldung(str(HAUPTDATEI.parent))
+        self.assertEqual(getattr(app, "_mess_infotext", ""), "")
+
+    def test_der_melder_setzt_den_merker_wirklich(self):
+        """Eine Reparatur, die nur der Test setzt, hilft niemandem."""
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_quellgroesse_mit_meldung")
+        setzt = [z for z in ast.walk(methode)
+                 if isinstance(z, ast.Assign)
+                 and any(isinstance(t, ast.Attribute)
+                         and t.attr == "_mess_infotext" for t in z.targets)]
+        self.assertGreaterEqual(
+            len(setzt), 2,
+            "_quellgroesse_mit_meldung muss den Merker setzen UND wieder "
+            "raeumen.")
+        # Und der Takt muss ihn lesen.
+        takt = next(k for k in ast.walk(baum)
+                    if isinstance(k, ast.FunctionDef)
+                    and k.name == "_update_progress_gui")
+        self.assertTrue(
+            [n for n in ast.walk(takt)
+             if isinstance(n, ast.Constant) and n.value == "_mess_infotext"],
+            "_update_progress_gui fragt den Merker nicht ab.")
+
+
+class VerschiebenUeberLaufwerkeTests(unittest.TestCase):
+    """Das Verschieben ins Ziel darf nicht stumm sein.
+
+    Vom Anwender gemeldet (20.09.2026): "wenn die Arbeitskopie nicht in den
+    Temp Ordner gelegt wird, sieht man leider auch keinen Fortschritt. Es
+    blinkt zwar nicht, aber man sieht auch nicht, dass kopiert wird."
+
+    Die Ursache: ``shutil.move`` benennt nur um, **solange Quelle und Ziel
+    auf demselben Datenträger liegen**. Liegen sie auf verschiedenen, kopiert
+    es jede Datei Byte für Byte und löscht sie danach - bei einem Spielordner
+    zig Gigabyte. ``_move_tree_into`` hatte dafür weder eine Meldung noch
+    einen Zähler: Der Balken stand bei 95 %, das Größenfeld war leer.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+
+    def _probe(self):
+        haupt = self.haupt
+
+        class _Probe:
+            pass
+
+        p = _Probe()
+        p.protokoll = []
+        p.statuszeilen = []
+        p._append_to_log = p.protokoll.append
+        p._set_status = p.statuszeilen.append
+        p._t = lambda s, **w: s
+        p._fmt_bytes = lambda n: "%d B" % int(n)
+        # Die beiden Methoden an die Attrappe binden; die statischen werden
+        # unverändert übernommen - ein ``__get__`` schöbe ihnen die Attrappe
+        # als erstes Argument unter.
+        for name in ("_move_tree_into", "_verschiebemelder"):
+            setattr(p, name, getattr(haupt.PS5ConverterGUI, name).__get__(p))
+        for name in ("_gleicher_datentraeger", "_baumgroesse_still"):
+            setattr(p, name, getattr(haupt.PS5ConverterGUI, name))
+        return p
+
+    def _baum(self, wurzel, plan):
+        for rel, groesse in plan:
+            pfad = os.path.join(wurzel, *rel.split("/"))
+            os.makedirs(os.path.dirname(pfad), exist_ok=True)
+            with open(pfad, "wb") as fh:
+                fh.write(b"x" * groesse)
+
+    def test_jede_verschobene_datei_wird_gemeldet(self):
+        import tempfile
+
+        plan = [("eboot.bin", 4096), ("sce_sys/param.json", 512),
+                ("daten/tief/karte0.dat", 8192), ("daten/karte1.dat", 1024)]
+        with tempfile.TemporaryDirectory(prefix="verschieb_") as basis:
+            quelle = os.path.join(basis, "von")
+            ziel = os.path.join(basis, "nach")
+            self._baum(quelle, plan)
+            p = self._probe()
+            gemeldet = []
+            fehler = p._move_tree_into(quelle, ziel, melden=gemeldet.append)
+            self.assertEqual(fehler, [])
+            self.assertEqual(sum(gemeldet), sum(g for _r, g in plan),
+                             "Die gemeldeten Bytes decken sich nicht mit dem, "
+                             "was wirklich verschoben wurde.")
+            for rel, groesse in plan:
+                pfad = os.path.join(ziel, *rel.split("/"))
+                self.assertTrue(os.path.isfile(pfad), rel)
+                self.assertEqual(os.path.getsize(pfad), groesse, rel)
+
+    def test_ohne_melder_verschiebt_es_wie_bisher(self):
+        """Der Zusatz darf den Regelfall nicht verändern."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="verschieb_") as basis:
+            quelle = os.path.join(basis, "von")
+            ziel = os.path.join(basis, "nach")
+            self._baum(quelle, [("a/b.bin", 32)])
+            p = self._probe()
+            self.assertEqual(p._move_tree_into(quelle, ziel), [])
+            self.assertTrue(os.path.isfile(os.path.join(ziel, "a", "b.bin")))
+
+    def test_gleiches_laufwerk_braucht_keine_anzeige(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="verschieb_") as basis:
+            p = self._probe()
+            self.assertTrue(p._gleicher_datentraeger(basis, basis))
+            self.assertIsNone(
+                p._verschiebemelder(os.path.join(basis, "von"),
+                                    os.path.join(basis, "nach")),
+                "Ein Umbenennen auf demselben Datentraeger braucht keine "
+                "Anzeige - und soll das Groessenfeld nicht kurz umschreiben.")
+
+    @unittest.skipUnless(os.name == "nt", "Laufwerksbuchstaben nur unter Windows")
+    def test_verschiedene_laufwerke_werden_erkannt(self):
+        p = self._probe()
+        self.assertFalse(p._gleicher_datentraeger(r"C:\a\b", r"E:\c\d"))
+        self.assertTrue(p._gleicher_datentraeger(r"C:\a\b", r"c:\c\d"),
+                        "Gross- und Kleinschreibung des Buchstabens zaehlt nicht.")
+
+    def test_der_melder_fuellt_die_zaehler_der_anzeige(self):
+        """Über dieselben Zähler wie die Arbeitskopie, kein zweites Getriebe."""
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="verschieb_") as basis:
+            quelle = os.path.join(basis, "von")
+            self._baum(quelle, [("gross.bin", 4096)])
+            p = self._probe()
+            p._dump_inhalt_gemessen = (os.path.normcase(os.path.abspath(quelle)),
+                                       1, 4096)
+            p._gleicher_datentraeger = lambda _a, _b: False   # den Fall erzwingen
+            melden = p._verschiebemelder(quelle, os.path.join(basis, "nach"))
+            self.assertIsNotNone(melden)
+            self.assertEqual(p._copy_total_bytes, 4096)
+            self.assertTrue(p._copy_total_exact)
+            # Der erste Aufruf meldet immer: Der Takt zaehlt ab 0.0, und
+            # jede monotone Zeit liegt mehr als eine Sekunde darueber.
+            melden(4096)
+            self.assertEqual(p._copy_done_bytes, 4096)
+            self.assertTrue([z for z in p.statuszeilen if z],
+                            "Die Statuszeile bleibt stumm - die Stillstand-Uhr "
+                            "haelt das fuer einen Aufhaenger.")
+            self.assertIn("log.verschieben_ueber_laufwerke", p.protokoll)
+
+    def test_die_aufrufstelle_reicht_den_melder_wirklich_durch(self):
+        """Eine Reparatur, die nur der Test ruft, hilft niemandem."""
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        rufe = [k for k in ast.walk(baum)
+                if isinstance(k, ast.Call)
+                and isinstance(k.func, ast.Attribute)
+                and k.func.attr == "_move_tree_into"]
+        self.assertTrue(rufe)
+        mit_melder = [k for k in rufe
+                      if any(s.arg == "melden" for s in k.keywords)]
+        self.assertTrue(
+            mit_melder,
+            "Keine Aufrufstelle reicht einen Melder durch - dann verschiebt "
+            "es wieder stumm ueber Laufwerksgrenzen.")
+
+    def test_die_groesse_kommt_aus_der_vorhandenen_messung(self):
+        """Ein zweiter Durchlauf über den Baum wäre verschwendet."""
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        methode = next(k for k in ast.walk(baum)
+                       if isinstance(k, ast.FunctionDef)
+                       and k.name == "_pruefe_dump_vollstaendig")
+        self.assertTrue(
+            [z for z in ast.walk(methode)
+             if isinstance(z, ast.Assign)
+             and any(isinstance(t, ast.Attribute)
+                     and t.attr == "_dump_inhalt_gemessen" for t in z.targets)],
+            "_pruefe_dump_vollstaendig merkt das Ergebnis seines Durchlaufs "
+            "nicht - dann muesste das Verschieben neu vermessen.")
+
+    def test_auch_das_herausholen_aus_dem_container_zaehlt_mit(self):
+        """Die zweite stille Stelle: Dateien lagen direkt im Container.
+
+        Sie schrieb nur die Statuszeile; Balken und Größenfeld blieben leer,
+        weil in dieser Phase keiner der Zweige des Anzeige-Takts greift.
+        """
+        import ast
+
+        quelle = HAUPTDATEI.read_text(encoding="utf-8")
+        anfang = quelle.index("def _melde_kopie")
+        ende = quelle.index("copy_function=_kopiere_und_melde", anfang)
+        block = quelle[anfang:ende]
+        for merkmal in ("_copy_done_bytes", "_copy_rate_bps"):
+            self.assertIn(
+                merkmal, block,
+                "Das Herausholen aus dem Container meldet wieder nur in die "
+                "Statuszeile - Balken und Groessenfeld bleiben leer.")
+        # Und die Gesamtgroesse kommt auch hier aus der vorhandenen Messung.
+        vorspann = quelle[quelle.index("log.auto.0159"):anfang]
+        self.assertIn("_dump_inhalt_gemessen", vorspann,
+                      "Ohne Gesamtgroesse gaebe es keinen ehrlichen Balken - "
+                      "sie steht aus der Vollstaendigkeitspruefung bereit.")
+
+    def test_die_zaehler_werden_nach_beiden_stellen_geraeumt(self):
+        """Sonst zeigt das Größenfeld die Kopierzahlen in der nächsten Phase.
+
+        Dieselbe Falle, die ``_integration_arbeitskopie`` mit ihrem
+        ``finally`` längst vermeidet.
+        """
+        import ast
+
+        baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
+        setzt_null = [
+            z.lineno for z in ast.walk(baum)
+            if isinstance(z, ast.Assign)
+            and any(isinstance(t, ast.Attribute)
+                    and t.attr == "_copy_total_bytes" for t in z.targets)
+            and isinstance(z.value, ast.Constant) and z.value.value == 0]
+        self.assertGreaterEqual(
+            len(setzt_null), 3,
+            "Mindestens drei Stellen muessen die Kopierzaehler wieder "
+            "raeumen: Arbeitskopie, Container-Herausholen, Verschieben.")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

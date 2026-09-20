@@ -30,6 +30,18 @@ Legst du eine Datei mit dem Namen deines Dump-Ordners und der Endung `_ampr_pack
 
 Wählst du „weglassen“ und das Profil stammt vom Programm, steht der Vorbehalt jetzt gleich beim Bau im Protokoll: Es kann nicht wissen, was dein Titel wirklich über APR liest.
 
+### Der Text beim Vermessen der Quelle blinkte
+
+Während das Programm die Quelle vermisst, steht rechts neben dem Balken, wie weit es ist. Dieser Text wurde einmal je Sekunde geschrieben und 100 Millisekunden später vom Anzeige-Takt wieder gelöscht – am Widget nachgemessen war er **5 % der Zeit zu sehen** und blinkte ständig auf. Jetzt steht er durchgehend da (98 % der Zeit gemessen) und verschwindet erst, wenn das Vermessen fertig ist. Bei einem großen Dump dauert diese Phase Minuten bis Stunden.
+
+### Beim Verschieben ins Ziel sah man gar nichts
+
+Am Ende der Wege, die einen Dump-Ordner abliefern, wandert das Ergebnis aus dem Arbeitsordner ins Ziel. Liegt das Ziel auf **demselben** Datenträger, wird nur umbenannt – das dauert nichts. Liegt es auf einem **anderen**, wird jede Datei wirklich kopiert, und das geschah bisher vollständig stumm: Der Balken stand bei 95 %, das Feld daneben war leer, und bei einem Spielordner sind das zig Gigabyte. Jetzt sagt das Programm im Protokoll, dass über Laufwerksgrenzen kopiert wird, und zeigt Fortschritt, Menge und Tempo wie beim Anlegen der Arbeitskopie.
+
+### Kein langer Vorgang mehr ohne Anzeige
+
+Beide Befunde oben gehören zur selben Klasse: Etwas läuft minutenlang und sagt nichts. Damit das nicht wieder wächst, durchsucht eine neue Prüfung das ganze Programm nach Vorgängen, die über einen ganzen Ordnerbaum laufen, und meldet jeden, der überhaupt nichts anzeigt. Der Bestand ist durchgesehen: Was dort noch steht, läuft über kleine, feste Ordner oder räumt auf. Kommt etwas Neues dazu, fällt die Prüfung.
+
 ### Wenn der Arbeitsspeicher ausgeht
 
 Ging während eines Laufs der Arbeitsspeicher aus, endete die Meldung im Fenster mit einem Doppelpunkt und nichts dahinter – diese Fehlerart trägt nämlich keinen Text. Jetzt steht dort ein Satz, der sagt, was los ist, samt dem tiefsten während des Laufs gemessenen Wert. Und schon vor dem Start warnt das Programm, wenn weniger als 1 GB frei ist – bei 0,8 GB brach ein Packlauf ab, nach dem Schließen anderer Programme lief derselbe Lauf durch.

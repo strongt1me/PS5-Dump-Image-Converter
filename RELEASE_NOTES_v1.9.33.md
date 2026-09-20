@@ -65,6 +65,47 @@ Arbeitskopie, und die liegt in einem frisch erzeugten temporären Ordner.
 Wird „weglassen“ gewählt und stammt das Profil vom Programm, steht der
 Vorbehalt jetzt gleich beim Bau im Protokoll.
 
+## Der Text beim Vermessen der Quelle blinkte
+
+Rechts neben dem Balken steht während des Vermessens, wie weit es
+ist. Der Melder schrieb diesen Text einmal je Sekunde, und der
+Anzeige-Takt setzte ihn 100 ms später wieder auf leer – in dieser
+Phase greift keiner seiner Zweige. Am Widget nachgemessen: Der Text
+war **5 % der Zeit** zu sehen und blinkte einmal je Sekunde auf.
+
+Die Phase gehört jetzt einem eigenen Merker, wie schon beim Packen der
+Asset-Bänder. Nachgemessen: 98 % der Zeit sichtbar, 0 Löschungen statt
+4 in 4 Sekunden. Nach dem Vermessen wird der Merker geräumt – sonst
+stünde „Quelle wird vermessen“ noch während des Kopierens da.
+
+## Beim Verschieben ins Ziel sah man gar nichts
+
+Am Ende der Wege, die einen Dump-Ordner abliefern, wandert das
+Ergebnis aus dem Arbeitsordner ins Ziel. shutil.move benennt dabei
+nur um, **solange Quelle und Ziel auf demselben Datenträger liegen**.
+Liegen sie auf verschiedenen, kopiert es jede Datei Byte für Byte und
+löscht sie danach – bei einem Spielordner zig Gigabyte, und bisher
+ohne ein einziges Lebenszeichen: Balken bei 95 %, Größenfeld leer.
+
+Jetzt meldet das Programm im Protokoll, dass über Laufwerksgrenzen
+kopiert wird, und zeigt Fortschritt, Menge und Tempo über dieselben
+Zähler wie das Anlegen der Arbeitskopie. Die Gesamtgröße kostet nichts
+extra: Die Vollständigkeitsprüfung unmittelbar davor hat den Ordner
+ohnehin schon vermessen.
+
+## Kein langer Vorgang mehr ohne Anzeige
+
+Beide Befunde oben gehören zur selben Klasse. `test_stille_aktionen.py`
+durchsucht deshalb Hauptmodul und Hilfsmodule im Syntaxbaum nach
+`copytree`, `rmtree`, `move`, `walk`, `extractall` und `_get_path_size`
+und meldet jede Stelle, deren Funktion gar nichts anzeigt.
+
+Der Bestand (21 Stellen) ist einzeln durchgesehen und begründet: kleine
+feste Ordner, Vorschaubilder, Aufräumen. Gemessen am größten echten Dump
+(84.218 Dateien, 96,7 GB): ein blanker Durchlauf 19,8 s kalt, die drei im
+Packweg zusammen 2,0 s warm. Kommt eine neue stumme Stelle dazu, fällt die
+Prüfung.
+
 ## Wenn der Arbeitsspeicher ausgeht
 
 `MemoryError` trägt keinen Text; die Meldung im Fenster endete deshalb mit
