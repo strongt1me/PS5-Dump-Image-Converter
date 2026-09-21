@@ -2,7 +2,28 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.38):** Gepackte Originaldateien werden **nicht mehr entfernt**, solange das Packprofil vom Programm stammt. An der Konsole gemessen: Zwei von zwei Abbildern ohne Originale stürzten ab – auch eines, das die Engine-Erkennung durchgelassen hatte.
+> **Kurz zum aktuellen Stand (v1.9.39):** Neues Werkzeug **PKG entpacken** unter WEITERE TOOLS: Eine PS4-Paketdatei wird zum gewöhnlichen Spielordner. PS5-Pakete erkennt das Fenster und weist sie ab – dafür gibt es keinen funktionierenden Entpacker.
+
+---
+
+## v1.9.39 – 21.09.2026
+
+Ein neues Werkzeug: aus einer PS4-`.pkg` einen Spielordner machen.
+
+### PKG entpacken
+
+Unter **WEITERE TOOLS → PKG entpacken** wählst du eine `.pkg` (Fake-PKG: Spiel, Patch oder DLC) und einen Zielordner. Darin entsteht ein Unterordner mit der Title-ID – `CUSA00775` für ein Spiel, `CUSA16627_patch_01.02` für einen Patch, `CUSA16627_dlc_<Label>` für ein DLC – mit `eboot.bin`, `sce_sys` und allem Weiteren. Entpackt wird mit demselben Entpacker, den *PS4 PKG → ffpfsc* schon mitbringt.
+
+- Balken, Größenzeile („x von y“) und Statuszeile zeigen den Fortschritt, **Abbrechen** geht jederzeit, **Zielordner öffnen** zeigt danach das Ergebnis.
+- **Nichts wird überschrieben:** Gibt es den Unterordner schon, bricht das Fenster mit einem Hinweis ab.
+- **Kein halber Stand unter dem richtigen Namen:** Geschrieben wird zuerst in einen Ordner mit der Endung `.partial`, umbenannt erst, wenn der Entpacker „fertig“ meldet. Nach einem Fehler oder Abbruch wird der Zwischenordner entfernt – angezeigt, nicht still.
+- **Platz:** Sobald die entpackte Größe feststeht, wird der freie Platz geprüft; reicht er nicht, hört das Fenster sofort auf. Entpackt ist ein Paket oft viel größer als die Datei (gemessen: 124 MB → 404 MB).
+- **Windows-Pfadgrenze:** Der Zielpfad darf höchstens 140 Zeichen lang sein, sonst scheitert der Entpacker an der 260-Zeichen-Grenze.
+- Den Entpacker gibt es nur für Windows (x64) und Macs mit Apple-Prozessor; unter Linux sagt das Fenster, dass keiner beiliegt.
+
+### PS5-Pakete: nicht entpackbar
+
+Ein PS5-Paket erkennt das Fenster an seiner Kennung und weist es ab, mit Verweis auf **PKG lesen**. Die eingebettete PKG-Bibliothek hat zwar einen Entpacker, aber er scheiterte in beiden vorliegenden Fassungen an allen vier geprüften PS5-Paketen – auch an einem, das dieselbe Bibliothek selbst gebaut hatte. Retail-Pakete sind ohnehin an die Konsole gebunden.
 
 ---
 

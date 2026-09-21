@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.38</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.39</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.38</span>
+      <span class="marke">Version v1.9.39</span>
       <span class="marke">Stand 21. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -1128,7 +1128,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>Abbild &rarr; PKG</strong> (baut aus jedem Abbildformat &ndash; <code>.exfat</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> &ndash; ein installierbares Debug-Paket, mit Fortschrittsanzeige und Abbrechen; das K&auml;stchen <em>PlayGo-Felder zur&uuml;cksetzen</em> leert dabei <code>versionFileUri</code> und setzt <code>attribute3</code> auf 0 &ndash; ab Werk <strong>aus</strong>, denn die Wirkung ist unbelegt und <code>attribute3</code> tr&auml;gt auch andere Flags wie HFR und Auto-Scaling; ge&auml;ndert wird ausschlie&szlig;lich die Arbeitskopie im Arbeitsordner, nie Ihr Abbild), <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle) und <strong>unjail senden</strong> (13.12).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>Debug-PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>Abbild &rarr; PKG</strong> (baut aus jedem Abbildformat &ndash; <code>.exfat</code>, <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.ffpkg</code> &ndash; ein installierbares Debug-Paket, mit Fortschrittsanzeige und Abbrechen; das K&auml;stchen <em>PlayGo-Felder zur&uuml;cksetzen</em> leert dabei <code>versionFileUri</code> und setzt <code>attribute3</code> auf 0 &ndash; ab Werk <strong>aus</strong>, denn die Wirkung ist unbelegt und <code>attribute3</code> tr&auml;gt auch andere Flags wie HFR und Auto-Scaling; ge&auml;ndert wird ausschlie&szlig;lich die Arbeitskopie im Arbeitsordner, nie Ihr Abbild), <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle), <strong>PKG entpacken</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1707,6 +1707,52 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Kopie.</p>
   </div>
 
+  <h3>13.14 PKG entpacken &ndash; ein PS4-Paket als Spielordner</h3>
+  <p><strong>PKG entpacken</strong> macht aus einer PS4-Paketdatei
+  (<code>.pkg</code>, Fake-PKG: Spiel, Patch oder DLC) einen gew&ouml;hnlichen
+  Spielordner mit <code>eboot.bin</code> und <code>sce_sys</code>. Entpackt
+  wird mit demselben Entpacker, den das Fenster <em>PS4 PKG &rarr; ffpfsc</em>
+  (13.10) mitbringt.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PKG entpacken.
+  W&auml;hlen Sie die <code>.pkg</code> und einen Zielordner und dr&uuml;cken
+  Sie <strong>Entpacken</strong>. Im Zielordner entsteht ein Unterordner mit
+  der Title-ID, zum Beispiel <code>CUSA00775</code>; bei einem Patch
+  <code>CUSA16627_patch_01.02</code>, bei einem DLC
+  <code>CUSA16627_dlc_&lt;Label&gt;</code>. Balken, Gr&ouml;&szlig;enzeile
+  (&bdquo;x von y&ldquo;) und Statuszeile zeigen den Fortschritt;
+  <strong>Abbrechen</strong> geht jederzeit. Danach &ouml;ffnet
+  <strong>Zielordner &ouml;ffnen</strong> das Ergebnis.</p>
+  <ul>
+    <li><strong>Nichts wird &uuml;berschrieben.</strong> Gibt es den
+    Unterordner schon, bricht das Fenster mit einem Hinweis ab.</li>
+    <li><strong>Kein halber Stand unter dem richtigen Namen.</strong> Der
+    Entpacker schreibt zuerst in einen Ordner mit der Endung
+    <code>.partial</code>; erst wenn er &bdquo;fertig&ldquo; meldet, wird er
+    umbenannt. Nach einem Fehler oder Abbruch wird der Zwischenordner
+    entfernt &ndash; das zeigt die Statuszeile an.</li>
+    <li><strong>Platz.</strong> Sobald der Entpacker die entpackte Gr&ouml;&szlig;e
+    nennt, pr&uuml;ft das Fenster den freien Platz und h&ouml;rt sofort auf,
+    wenn er nicht reicht. Entpackt ist ein Paket oft deutlich gr&ouml;&szlig;er
+    als die <code>.pkg</code> (gemessen: 124&nbsp;MB &rarr; 404&nbsp;MB).</li>
+    <li><strong>Pfadl&auml;nge unter Windows.</strong> Der Entpacker scheitert
+    an der Windows-Pfadgrenze von 260 Zeichen. Der Zielpfad darf deshalb
+    h&ouml;chstens 140 Zeichen lang sein; w&auml;hlen Sie sonst einen
+    k&uuml;rzeren Zielordner.</li>
+    <li><strong>Plattformen.</strong> Den Entpacker gibt es nur f&uuml;r
+    Windows (x64) und f&uuml;r Macs mit Apple-Prozessor. Unter Linux und auf
+    Intel-Macs sagt das Fenster, dass keiner beiliegt.</li>
+  </ul>
+  <div class="kasten achtung">
+    <span class="titel">PS5-Pakete lassen sich nicht entpacken</span>
+    <p>Ein PS5-Paket erkennt das Fenster an seiner Kennung und weist es ab.
+    Die eingebettete PKG-Bibliothek bringt zwar einen Entpacker mit, er
+    scheiterte aber an allen gepr&uuml;ften PS5-Paketen &ndash; auch an einem,
+    das dieselbe Bibliothek selbst gebaut hatte. Retail-Pakete sind ohnehin an
+    die Konsole gebunden. Den Aufbau eines PS5-Pakets (Typ, Content-ID,
+    Eintr&auml;ge) zeigt <strong>PKG lesen</strong>. Retail-PS4-Pakete ohne
+    Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
+  </div>
+
 </section>
 
 <section class="kapitel" id="k14">
@@ -1854,7 +1900,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.38), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.39), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2054,7 +2100,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.38</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.39</strong></span>
     <span>Stand 21. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

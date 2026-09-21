@@ -137,6 +137,7 @@ from ps5_validator.utils import abbild_metadaten
 from ps5_validator.utils import abbild_pruefen
 from ps5_validator.utils import diagnose_befund
 from ps5_validator.utils import ps4_werkzeug
+from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
@@ -570,7 +571,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.38"
+APP_VERSION = "v1.9.39"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3354,6 +3355,7 @@ class PS5ConverterGUI:
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
         ("titlebar.exfat_pkg", "_show_exfat_pkg_builder"),
         ("titlebar.pkg_reader", "_show_pkg_reader"),
+        ("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
         ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
@@ -36937,6 +36939,293 @@ class PS5ConverterGUI:
         region_key = cls._PKG_REGION_SCHLUESSEL.get(
             region_code[:1].upper(), "pkgreader.region_unknown")
         return title_id, region_code, region_key
+
+    def _show_pkg_entpacken(self) -> None:
+        """WEITERE TOOLS: eine PS4-``.pkg`` in einen Spielordner entpacken.
+
+        Entpackt wird mit dem Entpacker, den "PS4 PKG -> ffpfsc" schon
+        mitbringt (siehe ``pkg_entpacken``). Ein PS5-Paket wird erkannt und
+        abgewiesen: Der Entpacker der eingebetteten LibProsperoPkg scheiterte
+        am 21.09.2026 an allen vier vorhandenen PS5-Paketen, auch an einem
+        selbst gebauten. Den Aufbau eines PS5-Pakets zeigt "PKG lesen".
+
+        Der Arbeitsfaden fasst keine Tk-Variable an; er schreibt in ``stand``,
+        und ein Takt im Hauptfaden traegt es in Balken, Groessen- und
+        Statuszeile (siehe Abbild -> PKG).
+        """
+        c = self._COLORS
+        titel = self._t("pkgentpacken.window_title")
+        win = self._build_modern_toplevel(titel, 860, 600,
+                                          min_width=720, min_height=520)
+        self._build_modern_header(win, titel, self._t("pkgentpacken.subtitle"))
+
+        # Knopfreihe zuerst an den unteren Rand, sonst quetscht die
+        # Mindestgroesse sie zusammen (test_fensterlayout).
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        quelle_var = tk.StringVar()
+        ziel_var = tk.StringVar()
+        status_var = tk.StringVar(value=self._t("pkgentpacken.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False, "prozess": None, "abbruch": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": "", "fertig": ""}
+        puffer: list = []
+        cursor = [0]
+
+        def _zeile(text: str, var, waehlen) -> None:
+            reihe = tk.Frame(koerper, bg=c["bg_main"])
+            reihe.pack(fill="x", pady=2)
+            tk.Label(reihe, text=text, width=14, anchor="w",
+                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                     fg=c["fg_secondary"]).pack(side="left")
+            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                     insertbackground=c["fg_primary"]).pack(
+                side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+            ttk.Button(reihe, text="...", width=4, command=waehlen).pack(side="left")
+
+        def _quelle_waehlen() -> None:
+            gewaehlt = filedialog.askopenfilename(
+                title=self._t("pkgentpacken.choose_source"),
+                initialdir=self._get_source_dialog_initial_dir() or None,
+                filetypes=[(self._t("filetype.pkg_package"), "*.pkg"),
+                           (self._t("filetype.all_files"), "*.*")],
+                parent=win)
+            if gewaehlt:
+                quelle_var.set(os.path.normpath(gewaehlt))
+                self._remember_source_dialog_path(gewaehlt)
+                if not ziel_var.get().strip():
+                    ziel_var.set(os.path.dirname(os.path.normpath(gewaehlt)))
+
+        def _ziel_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("pkgentpacken.choose_output"), parent=win)
+            if gewaehlt:
+                ziel_var.set(os.path.normpath(gewaehlt))
+
+        _zeile(self._t("pkgentpacken.source"), quelle_var, _quelle_waehlen)
+        _zeile(self._t("pkgentpacken.output"), ziel_var, _ziel_waehlen)
+
+        hinweis = tk.Label(koerper, text=self._t("pkgentpacken.hint"),
+                           font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                           fg=c["fg_secondary"], anchor="w", justify="left",
+                           wraplength=660)
+        hinweis.pack(fill="x", pady=(6, 4))
+
+        def _umbruch(_ereignis=None) -> None:
+            try:
+                breite = hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                hinweis.configure(wraplength=breite - 8)
+
+        hinweis.bind("<Configure>", _umbruch)
+
+        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
+        balken.pack(fill="x", pady=(6, 2))
+        tk.Label(koerper, textvariable=groesse_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+        protokoll = tk.Text(koerper, height=12, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="none")
+        protokoll.pack(fill="both", expand=True, pady=(4, 4))
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _knoepfe_setzen(laufend: bool) -> None:
+            try:
+                start_btn.configure(state="disabled" if laufend else "normal")
+                abbrechen_btn.configure(state="normal" if laufend else "disabled")
+                oeffnen_btn.configure(
+                    state="normal" if (stand["fertig"] and not laufend) else "disabled")
+            except (tk.TclError, NameError):
+                pass
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                balken.configure(value=max(0.0, min(100.0, stand["pct"])))
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                groesse_var.set(stand["groesse"])
+                neu = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    neu = True
+                if neu:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe_setzen(False)
+
+        def _fortschritt(ereignis: dict) -> None:
+            art = ereignis.get("event")
+            if art in ("extract_start", "extract_progress", "extract_complete"):
+                jetzt = int(ereignis.get("bytes_current", 0) or 0)
+                gesamt = int(ereignis.get("bytes_total", 0) or 0)
+                if art == "extract_complete":
+                    jetzt = gesamt
+                if gesamt > 0:
+                    stand["pct"] = 100.0 * jetzt / gesamt
+                    stand["groesse"] = self._t(
+                        "pkgentpacken.size_progress",
+                        jetzt=self._fmt_bytes(jetzt),
+                        gesamt=self._fmt_bytes(gesamt))
+                stand["status"] = self._t(
+                    "pkgentpacken.status_extracting",
+                    dateien=ereignis.get("files_current", 0),
+                    gesamt=ereignis.get("files_total", 0))
+            elif art == "cleanup":
+                stand["status"] = self._t("pkgentpacken.status_cleanup")
+                _protokoll(self._t("pkgentpacken.log_cleanup",
+                                   pfad=ereignis.get("path", "")))
+            elif art == "finish":
+                stand["status"] = self._t("pkgentpacken.status_finishing")
+
+        def _abbrechen() -> None:
+            if not laeuft["aktiv"] or laeuft["abbruch"]:
+                return
+            laeuft["abbruch"] = True
+            prozess = laeuft.get("prozess")
+            if prozess is not None:
+                try:
+                    prozess.terminate()
+                except OSError as exc:
+                    logger.debug("PKG-Entpacker nicht beendbar: %s", exc)
+            stand["status"] = self._t("pkgentpacken.status_aborting")
+
+        def _starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            quelle = quelle_var.get().strip()
+            basis = ziel_var.get().strip()
+            if not quelle or not os.path.isfile(quelle):
+                messagebox.showwarning(titel, self._t("pkgentpacken.need_source"),
+                                       parent=win)
+                return
+            art = pkg_entpacken.paket_art(quelle)
+            if art == "ps5":
+                messagebox.showinfo(titel, self._t("pkgentpacken.ps5_not_supported",
+                                                   name=os.path.basename(quelle)),
+                                    parent=win)
+                return
+            if art != "ps4":
+                messagebox.showwarning(titel, self._t("pkgentpacken.not_a_pkg",
+                                                      name=os.path.basename(quelle)),
+                                       parent=win)
+                return
+            if not basis:
+                messagebox.showwarning(titel, self._t("pkgentpacken.need_output"),
+                                       parent=win)
+                return
+            entpacker = _ps4ffpsc_entpacker()
+            if not entpacker:
+                messagebox.showerror(titel, self._t("pkgentpacken.no_extractor"),
+                                     parent=win)
+                return
+
+            laeuft.update(aktiv=True, abbruch=False, prozess=None)
+            stand.update(pct=0.0, groesse="", fertig="",
+                         status=self._t("pkgentpacken.status_checking"))
+            _knoepfe_setzen(True)
+            _takt()
+
+            def _arbeit() -> None:
+                try:
+                    _protokoll(self._t("pkgentpacken.log_checking",
+                                       name=os.path.basename(quelle)))
+                    info = pkg_entpacken.pruefen(entpacker, quelle)
+                    if not info.get("supported"):
+                        _protokoll(self._t("pkgentpacken.log_unsupported",
+                                           grund=info.get("reason", "-")))
+                        stand["status"] = self._t("pkgentpacken.status_failed")
+                        return
+                    _protokoll(self._t(
+                        "pkgentpacken.log_info",
+                        title_id=info.get("title_id", "-"),
+                        titel=info.get("title", "-"),
+                        art=info.get("kind", "-"),
+                        version=info.get("app_version", "-")))
+                    ziel = os.path.join(
+                        basis, pkg_entpacken.zielordner_name(info, quelle))
+                    _protokoll(self._t("pkgentpacken.log_target", pfad=ziel))
+                    stand["status"] = self._t("pkgentpacken.status_starting")
+                    erg = pkg_entpacken.entpacken(
+                        entpacker, quelle, ziel, melden=_protokoll,
+                        fortschritt=_fortschritt, prozess_ablage=laeuft,
+                        abbruch=lambda: laeuft["abbruch"])
+                    grund = erg.get("grund", "")
+                    if erg.get("ok"):
+                        stand["fertig"] = erg["ziel"]
+                        stand["pct"] = 100.0
+                        stand["status"] = self._t(
+                            "pkgentpacken.status_done",
+                            groesse=self._fmt_bytes(erg.get("bytes", 0)))
+                        _protokoll(self._t("pkgentpacken.log_done", pfad=erg["ziel"]))
+                        self._append_to_log(
+                            "[INFO] PKG entpackt: %s -> %s\n" % (quelle, erg["ziel"]))
+                        return
+                    if grund == "abgebrochen":
+                        _protokoll(self._t("pkgentpacken.log_aborted"))
+                        stand["status"] = self._t("pkgentpacken.status_aborted")
+                    else:
+                        _protokoll(self._t(
+                            "pkgentpacken.grund_" + grund, pfad=erg.get("ziel", ""),
+                            laenge=len(erg.get("ziel", "")),
+                            hoechstens=pkg_entpacken.MAX_ZIELPFAD,
+                            rc=erg.get("rc", 0),
+                            noetig=self._fmt_bytes(erg.get("noetig", 0)),
+                            frei=self._fmt_bytes(erg.get("frei", 0))))
+                        stand["status"] = self._t("pkgentpacken.status_failed")
+                    stand["pct"] = 0.0
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("PKG entpacken gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    stand["status"] = self._t("pkgentpacken.status_failed")
+                finally:
+                    laeuft["aktiv"] = False
+                    laeuft["prozess"] = None
+                    self._spaeter_im_fenster(win, _takt)
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="pkg-entpacken").start()
+
+        def _ordner_oeffnen() -> None:
+            if stand["fertig"]:
+                self._oeffnen_oder_melden(stand["fertig"], titel, parent=win)
+
+        def _beim_schliessen() -> None:
+            if laeuft["aktiv"]:
+                if not messagebox.askyesno(titel, self._t("pkgentpacken.abort_confirm"),
+                                           parent=win, default="no"):
+                    return
+                _abbrechen()
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=_beim_schliessen).pack(side="right")
+        start_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.start_button"),
+                               style="Accent.TButton", command=_starten)
+        start_btn.pack(side="left")
+        abbrechen_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.abort_button"),
+                                   command=_abbrechen, state="disabled")
+        abbrechen_btn.pack(side="left", padx=(8, 0))
+        oeffnen_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.open_button"),
+                                 command=_ordner_oeffnen, state="disabled")
+        oeffnen_btn.pack(side="left", padx=(8, 0))
 
     def _show_pkg_reader(self) -> None:
         """Waehlt eine ``.pkg`` und zeigt ihren aeusseren Container an."""
