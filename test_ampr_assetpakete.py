@@ -723,11 +723,23 @@ class DirektleserTests(unittest.TestCase):
 
 
 class DirektleserRiegelTests(unittest.TestCase):
-    """Bei einer Engine, die am Emulator vorbei liest, bleiben die Originale.
+    """Mit dem Programmprofil bleiben die Originale - immer.
 
     Der dritte Riegel - nach den Systemdateien im Band und den fehlenden
     losen Dateien. Er greift **vor** dem Entfernen, denn danach ist nichts
     mehr zu retten.
+
+    **Umgedreht am 21.09.2026.** Bis dahin genuegte es, dass ``DIREKTLESER``
+    keine Engine fand. Die Tabelle kennt fuenf Unity-Dateinamen, und
+    "Arkanoid - Eternal Battle" ist keine davon - ein eigenes Geruest mit
+    FMOD-Banks und .gnf-Atlanten. Der Riegel liess die Originale fallen, das
+    Abbild stuerzte an der Konsole ab, dieselbe Quelle mit Originalen lief.
+    Zwei von zwei Versuchen ohne Originale endeten so (vorher Ghost of
+    Yotei), und **kein** Titel hat je gezeigt, dass Baender gelesen werden.
+
+    Eine Aufzaehlung von Engines kann das nicht sichern - sie muesste jede
+    kuenftige schon kennen, und der Fehlschlag trifft den Anwender erst an
+    der Konsole.
     """
 
     def _fenster(self):
@@ -773,15 +785,67 @@ class DirektleserRiegelTests(unittest.TestCase):
                 gui._ampr_direktleser_riegel(self._unity_ordner(basis), False))
             self.assertEqual(gui._protokoll, [])
 
-    def test_ohne_merkmal_laeuft_alles_wie_bisher(self):
+    def test_ohne_erkannte_engine_bleiben_die_originale_trotzdem(self):
+        """Der Fall Arkanoid: nicht erkannt, und doch ein Direktleser.
+
+        Bis zum 21.09.2026 gab der Riegel hier frei
+        (``test_ohne_merkmal_laeuft_alles_wie_bisher``) - und genau so ist
+        ein Abbild entstanden, das an der Konsole abstuerzte.
+        """
         import tempfile
 
         with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
             (Path(basis) / "daten").mkdir()
             (Path(basis) / "daten" / "karte0.dat").write_bytes(b"x" * 64)
             gui = self._fenster()
-            self.assertTrue(gui._ampr_direktleser_riegel(basis, True))
-            self.assertEqual(gui._protokoll, [])
+            self.assertFalse(
+                gui._ampr_direktleser_riegel(basis, True),
+                "Ohne Mitschnitt darf nichts entfernt werden - eine nicht "
+                "erkannte Engine ist kein Beweis, dass sie ueber APR liest.")
+            text = "\n".join(gui._protokoll)
+            self.assertIn("ampr_pack.riegel_ohne_erkennung", text)
+            self.assertIn("ampr_pack.direktleser_ausweg", text,
+                          "Der Ausweg (eigenes Packprofil) muss dastehen.")
+            self.assertNotIn(
+                "ampr_pack.direktleser_erkannt", text,
+                "Es wurde keine Engine erkannt - dann darf auch keine "
+                "genannt werden.")
+
+    def test_die_erkennung_bleibt_als_auskunft(self):
+        """Bei einer bekannten Engine soll die Meldung den Namen nennen.
+
+        Der Riegel sperrt jetzt ohnehin - aber "weil es Unity ist" hilft dem
+        Anwender mehr als "weil kein Mitschnitt vorliegt".
+        """
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
+            gui = self._fenster()
+            gui._ampr_direktleser_riegel(self._unity_ordner(basis), True)
+            text = "\n".join(gui._protokoll)
+            self.assertIn("Unity", text)
+            self.assertNotIn(
+                "ampr_pack.riegel_ohne_erkennung", text,
+                "Bei erkannter Engine gehoert die konkrete Begruendung hin, "
+                "nicht die allgemeine.")
+
+    def test_nur_ein_eigenes_profil_gibt_frei(self):
+        """Die einzige Tuer, die offen bleibt - an beiden Faellen geprueft."""
+        import tempfile
+
+        for name, aufbauen in (("Unity erkannt", True), ("nicht erkannt", False)):
+            with self.subTest(fall=name):
+                with tempfile.TemporaryDirectory(prefix="ampr_riegel_") as basis:
+                    if aufbauen:
+                        self._unity_ordner(basis)
+                    else:
+                        (Path(basis) / "x.dat").write_bytes(b"x")
+                    gui = self._fenster()
+                    self.assertTrue(
+                        gui._ampr_direktleser_riegel(basis, False),
+                        "Mit einem Profil aus Mitschnitten entscheidet der "
+                        "Anwender.")
+                    self.assertEqual(gui._protokoll, [])
 
     def test_der_riegel_haengt_wirklich_vor_dem_entfernen(self):
         """Eine Pruefung, die nur der Test ruft, schuetzt keine Datei."""

@@ -3827,13 +3827,62 @@ class AssetPackBauwegTests(_TempTest):
         self.assertTrue(os.path.isfile(os.path.join(spiel, "daten", "karte0.dat")),
                         "Im Ordner des Anwenders wurde ein Original entfernt")
 
+    def _eigenes_profil_daneben(self, spiel: str) -> str:
+        """Legt ein Packprofil "aus Mitschnitten" neben den Dump-Ordner.
+
+        Inhalt ist das Standardprofil - nur die Kennzeile des Programms
+        fehlt, und genau daran unterscheidet
+        ``ampr_assetpakete.profil_ist_eigenes`` die Herkunft. Eine Kopie
+        **mit** Kennzeile wuerde abgewiesen ("ist unseres"), sonst koennte
+        man den Riegel aushebeln, ohne etwas zu wissen.
+        """
+        from ps5_validator.utils import ampr_assetpakete as ap
+
+        text = ap.standardprofil_text()
+        zeilen = text.splitlines()
+        if zeilen and zeilen[0].startswith(ap.PROFIL_KENNZEILE):
+            zeilen[0] = "# Aus Konsolen-Mitschnitten dieses Titels"
+        else:                                        # pragma: no cover
+            zeilen.insert(0, "# Aus Konsolen-Mitschnitten dieses Titels")
+        pfad = spiel + GUI._EIGENES_PROFIL_ENDUNG
+        _schreiben(pfad, ("\n".join(zeilen) + "\n").encode("utf-8"))
+        self.assertFalse(ap.profil_ist_eigenes(pfad),
+                         "Aufbau: Die Datei gilt noch als Profil des Programms")
+        return pfad
+
+    def test_originale_bleiben_ohne_eigenes_profil(self) -> None:
+        """Der umgedrehte Riegel - am echten Bauweg gemessen.
+
+        Bis v1.9.37 wurden die Originale hier entfernt, sobald
+        ``DIREKTLESER`` keine Engine fand. Arkanoid - Eternal Battle wurde
+        nicht gefunden und stuerzte an der Konsole ab (21.09.2026).
+        """
+        spiel, index = self._spiel_mit_index()
+        gui = self._gui()
+        gui._ampr_originale_weglassen = True
+        gui._ampr_ordner_ist_kopie = True
+        self.assertTrue(gui._ampr_assetpakete_bauen(
+            spiel, index, {"variant": "test-pack"}), self.protokoll)
+        self.assertIn("ampr_pack.riegel_ohne_erkennung", self.protokoll)
+        self.assertNotIn("ampr_pack.originale_entfernt", self.protokoll)
+        self.assertTrue(
+            os.path.isfile(os.path.join(spiel, "daten", "karte0.dat")),
+            "Ohne Profil aus Mitschnitten darf kein Original verschwinden")
+
     def test_originale_weg_in_der_arbeitskopie(self) -> None:
+        """Mit einem Profil aus Mitschnitten entscheidet der Anwender.
+
+        Das ist seit v1.9.38 der einzige Weg dorthin - und er muss
+        funktionieren, sonst gaebe es ihn nur auf dem Papier.
+        """
         from ps5_validator.utils import ampr_assetpakete as ap
 
         spiel, index = self._spiel_mit_index()
         gui = self._gui()
         gui._ampr_originale_weglassen = True
         gui._ampr_ordner_ist_kopie = True
+        gui._ampr_quelle_original = spiel
+        self._eigenes_profil_daneben(spiel)
         vorher = sum(os.path.getsize(os.path.join(w, f))
                      for w, _d, namen in os.walk(os.path.join(spiel, "daten")) for f in namen)
         self.assertTrue(gui._ampr_assetpakete_bauen(spiel, index, {"variant": "test-pack"}),

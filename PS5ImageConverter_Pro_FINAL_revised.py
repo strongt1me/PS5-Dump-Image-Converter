@@ -570,7 +570,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.37"
+APP_VERSION = "v1.9.38"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -26570,22 +26570,43 @@ class PS5ConverterGUI:
         eigenes aus Konsolen-Mitschnitten danebenlegt, weiss genau, was der
         Titel ueber APR liest - dann entscheidet er, nicht das Programm.
 
+        **Seit dem 21.09.2026 sperrt er unabhaengig von der Erkennung.**
+        Bis dahin genuegte es, dass ``DIREKTLESER`` keine Engine fand. Die
+        Tabelle kennt fuenf Unity-Dateinamen - und Arkanoid - Eternal Battle
+        ist keine davon: ein eigenes Geruest mit FMOD-Banks und
+        ``.gnf``-Atlanten bis 357 MB. Der Riegel liess die Originale fallen,
+        das Abbild stuerzte an der Konsole ab, dieselbe Quelle mit Originalen
+        lief. Damit sind es **zwei von zwei** Versuchen ohne Originale, die
+        abstuerzten, und **kein** Titel hat je gezeigt, dass Baender gelesen
+        werden.
+
+        Eine Aufzaehlung von Engines kann das nicht sichern: Sie muesste
+        jede kuenftige schon kennen, und der Fehlschlag trifft den Anwender
+        erst an der Konsole. Die Erkennung bleibt - aber nur noch als
+        Auskunft darueber, **warum** es nicht geht.
+
         Returns:
             True, wenn die Originale entfernt werden duerfen.
         """
         if not eigenes_profil:
+            # Ein Profil aus Konsolen-Mitschnitten: Der Anwender entscheidet.
             return True
         try:
             engine, merkmale = ampr_assetpakete.direktleser_merkmale(ordner)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Direktleser nicht pruefbar: %s", exc)
-            return True
-        if not engine:
-            return True
-        self._append_to_log(self._t("ampr_pack.direktleser_erkannt", engine=engine))
-        for pfad in merkmale[:8]:
-            self._append_to_log(self._t("ampr_pack.direktleser_merkmal", path=pfad))
-        self._append_to_log(self._t("ampr_pack.direktleser_riegel"))
+            engine, merkmale = "", ()
+        if engine:
+            # Bekannte Engine: den Namen und die Merkmale nennen, das erklaert
+            # die Sperre am konkreten Fall.
+            self._append_to_log(self._t("ampr_pack.direktleser_erkannt", engine=engine))
+            for pfad in merkmale[:8]:
+                self._append_to_log(self._t("ampr_pack.direktleser_merkmal", path=pfad))
+            self._append_to_log(self._t("ampr_pack.direktleser_riegel"))
+        else:
+            # Nicht erkannt heisst nicht "liest ueber APR" - Arkanoid war der
+            # Gegenbeweis. Deshalb hier derselbe Riegel mit eigener Begruendung.
+            self._append_to_log(self._t("ampr_pack.riegel_ohne_erkennung"))
         self._append_to_log(self._t("ampr_pack.direktleser_ausweg"))
         return False
 

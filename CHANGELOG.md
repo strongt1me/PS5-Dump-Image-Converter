@@ -2,7 +2,37 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.37):** Der Knopf „Asset-Pack bauen“ aus v1.9.36 ist jetzt auch auf der Kommandozeile erreichbar (`--ampr-action ampr_assetpack`), und der ShadowMount+-Editor kennt die sechs neuen Einstellungen aus **1.7**. Dazu eine Korrektur: Ein nachgerüstetes Asset-Pack macht die Abbilddatei nicht zwangsläufig größer.
+> **Kurz zum aktuellen Stand (v1.9.38):** Gepackte Originaldateien werden **nicht mehr entfernt**, solange das Packprofil vom Programm stammt. An der Konsole gemessen: Zwei von zwei Abbildern ohne Originale stürzten ab – auch eines, das die Engine-Erkennung durchgelassen hatte.
+
+---
+
+## v1.9.38 – 21.09.2026
+
+Eine Sicherung, die auf Erkennung baute, hält nicht. Jetzt hält sie immer.
+
+### Was gemessen wurde
+
+`Arkanoid – Eternal Battle` ist **kein** Unity-Titel – die Engine-Erkennung fand nichts, und das Programm ließ deshalb die gepackten Originaldateien entfernen. Das Abbild **stürzte an der Konsole ab**. Dieselbe Quelle, dieselben Bänder, aber mit den Originalen daneben: läuft.
+
+Damit sind es **zwei von zwei** Versuchen ohne Originale, die abgestürzt sind – vorher schon *Ghost of Yotei*. Und bis heute hat **kein** Titel gezeigt, dass die Bänder überhaupt gelesen werden.
+
+Beim Nachsehen fanden sich in Arkanoid `.gnf`-Texturatlanten bis 357 MB und zehn FMOD-`.bank`-Dateien. FMOD liest über eigene Datei-Rückrufe, große Atlanten werden eingeblendet – beides läuft am AMPR EMU vorbei. Die Erkennung kannte nur fünf Unity-Dateinamen.
+
+### Was sich ändert
+
+Solange das Packprofil **vom Programm** stammt, bleiben die gepackten Originaldateien jetzt **immer** stehen – auch wenn Sie „Originale weglassen“ gewählt haben. Eine Liste von Engines kann das nicht leisten: Sie müsste jede künftige schon kennen, und der Fehlschlag trifft Sie erst an der Konsole.
+
+Die Engine-Erkennung bleibt, aber ihre Rolle hat sich gedreht. Sie sperrt nicht mehr – sie **erklärt**. Wird Unity erkannt, steht der Name samt gefundenen Dateien im Protokoll; sonst steht dort die allgemeine Begründung mit dem Arkanoid-Beleg.
+
+### Der Weg ohne Originale bleibt offen
+
+Er führt über ein **eigenes Packprofil aus Konsolen-Mitschnitten**: eine Datei `<Name des Dump-Ordners>_ampr_pack.toml` neben den Dump-Ordner legen. Wer aus Mitschnitten packt, weiß, was der Titel wirklich über APR liest – dann entscheidet er, nicht das Programm. Daran hat sich nichts geändert.
+
+**Was das praktisch heißt:** Ein Abbild mit Asset-Pack wird über den normalen Weg nicht mehr kleiner als die Quelle, sondern größer – es enthält Originale und Bänder. Der Gewinn an Dateizahl bleibt (bei Arkanoid 1167 lose Dateien gegenüber 32 plus vier Bändern), die Ersparnis an Platz nicht.
+
+---
+
+> **Zum Stand v1.9.37:** Der Knopf „Asset-Pack bauen“ ist auch auf der Kommandozeile erreichbar (`--ampr-action ampr_assetpack`), und der ShadowMount+-Editor kennt die sechs neuen Einstellungen aus 1.7.
 
 ---
 

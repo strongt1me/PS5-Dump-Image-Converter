@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.37</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.38</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.37</span>
+      <span class="marke">Version v1.9.38</span>
       <span class="marke">Stand 21. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -842,14 +842,30 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <code>apr.pack</code>-Zeile, und das Spiel beendete sich kurz nach dem
     Start. Dasselbe Spiel mit denselben B&auml;ndern <em>und</em> den
     Originalen daneben lief durch.</p>
-    <p><strong>Seit v1.9.33</strong> erkennt das Programm solche Titel an
+    <p><strong>Seit v1.9.33</strong> erkannte das Programm solche Titel an
     ihren Laufzeitdateien (<code>data.unity3d</code>,
     <code>globalgamemanagers</code>, <code>global-metadata.dat</code>,
     <code>ScriptingAssemblies.json</code>,
-    <code>RuntimeInitializeOnLoads.json</code>) und <strong>l&auml;sst die
-    Originale stehen</strong>, auch wenn Sie das Weglassen gew&auml;hlt
-    haben. Im Protokoll steht, was gefunden wurde und warum. Das Abbild wird
-    dadurch nicht kleiner &ndash; aber es startet.</p>
+    <code>RuntimeInitializeOnLoads.json</code>) und lie&szlig; die Originale
+    stehen.</p>
+    <p><strong>Das hat nicht gereicht &ndash; gemessen am 21.09.2026.</strong>
+    <em>Arkanoid &ndash; Eternal Battle</em> ist kein Unity-Titel; die
+    Erkennung fand nichts, die Originale wurden entfernt, und das Abbild
+    st&uuml;rzte an der Konsole ab. Dieselbe Quelle mit den Originalen daneben
+    l&auml;uft. Beim Nachsehen: <code>.gnf</code>-Texturatlanten bis 357 MB und
+    zehn FMOD-<code>.bank</code>-Dateien &ndash; FMOD liest &uuml;ber eigene
+    Datei-R&uuml;ckrufe, gro&szlig;e Atlanten werden eingeblendet. Damit sind
+    es zwei von zwei Versuchen ohne Originale, die abst&uuml;rzten, und kein
+    Titel hat je gezeigt, dass die B&auml;nder gelesen werden.</p>
+    <p><strong>Seit v1.9.38 bleiben die Originale deshalb immer stehen</strong>,
+    solange das Packprofil vom Programm stammt &ndash; auch wenn Sie das
+    Weglassen gew&auml;hlt haben. Eine Liste von Engines kann das nicht
+    leisten: Sie m&uuml;sste jede k&uuml;nftige schon kennen, und der
+    Fehlschlag trifft Sie erst an der Konsole. Die Erkennung bleibt, aber sie
+    sperrt nicht mehr &ndash; sie <em>erkl&auml;rt</em>. Wird Unity erkannt,
+    steht der Name samt gefundenen Dateien im Protokoll; sonst die allgemeine
+    Begr&uuml;ndung. Das Abbild wird dadurch nicht kleiner &ndash; aber es
+    startet.</p>
     <p><strong>Warum das Programm diese Dateien nicht einfach vom Packen
     ausschlie&szlig;t.</strong> In dem Abbild, das abst&uuml;rzte, waren
     197 von 259 Dateien gepackt und entfernt &ndash; vier der f&uuml;nf
@@ -1838,7 +1854,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.37), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.38), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2038,7 +2054,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.37</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.38</strong></span>
     <span>Stand 21. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
