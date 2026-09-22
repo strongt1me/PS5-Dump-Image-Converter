@@ -567,7 +567,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.41"
+APP_VERSION = "v1.9.42"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3360,6 +3360,20 @@ class PS5ConverterGUI:
         ("titlebar.wee_tools", "_show_wee_tools"),
     )
 
+    #: Die Knoepfe der zweiten Ansicht "KONSOLE" - (Textschluessel, Kennung).
+    #: Stufe 1 (v1.9.42): Die Ansicht steht, die Knoepfe sagen noch, dass
+    #: ihre Funktion folgt. Die Kennung bleibt fest, auch wenn sich ein Name
+    #: aendert - an ihr haengen spaeter die Fenster.
+    _KONSOLE_KNOEPFE: tuple[tuple[str, str], ...] = (
+        ("konsole.btn_dienste", "dienste"),
+        ("konsole.btn_spiel_holen", "spiel_holen"),
+        ("konsole.btn_zurueck", "zurueckspielen"),
+        ("konsole.btn_spielstaende", "spielstaende"),
+        ("konsole.btn_klog", "klog"),
+        ("konsole.btn_remoteplay", "remoteplay"),
+        ("konsole.btn_prosperolight", "prosperolight"),
+    )
+
     _FORMAT_LABELS: dict[str, str] = {
         "folder": "Dump-Ordner",
         "ffpfsc": ".ffpfsc",
@@ -4647,6 +4661,9 @@ class PS5ConverterGUI:
         """Setzt den Text aller registrierten und der Sprach-Grundgerüst-Widgets neu."""
         for btn, mode in getattr(self, "mode_buttons", []):
             btn.config(text=self._t(f"mode.{mode}"))
+        for btn, schluessel in getattr(self, "_konsole_knoepfe", []):
+            btn.config(text=self._t(schluessel))
+        self._ansicht_beschriften()
         if hasattr(self, "run_btn"):
             self.run_btn.config(text=self._t("action.start"))
         if hasattr(self, "abort_btn"):
@@ -7268,6 +7285,22 @@ class PS5ConverterGUI:
         _sidebar_subtitle_label._caption_fg_role = "fg_primary"
         self._sidebar_caption_labels.append(_sidebar_subtitle_label)
 
+        # Umschalter zwischen den beiden Ansichten. Ein einzelner Knopf direkt
+        # in der Sidebar statt zweier Haelften in einem Rahmen: Ein tk.Frame
+        # malt seine Farbe und stuende als Balken auf dem Hintergrundbild.
+        # Die Beschriftung nennt das Ziel ("KONSOLE ›" bzw. "‹ UMWANDELN").
+        self._ansicht = "umwandeln"
+        self._ansicht_gemerkt: list = []
+        self._vorschau_warteschlange: list = []
+        self._ansicht_knopf = flach_knopf(
+            sidebar, text=self._t("ansicht.to_konsole"),
+            command=self._ansicht_umschalten,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["bg_card"], fg=self._COLORS["fg_accent"],
+            activebackground=self._COLORS["fg_accent"], activeforeground="white",
+            relief="flat", cursor="hand2", padx=10, pady=6, highlightthickness=0)
+        self._ansicht_knopf.pack(fill="x", pady=(0, 10))
+
         # Modus-Buttons in Sidebar
         self.mode_buttons = []
         for text, mode in self._MODE_OPTIONS:
@@ -7299,6 +7332,27 @@ class PS5ConverterGUI:
                     DelayedTooltip(btn, self._t("mode_tooltip." + mode),
                                    delay_ms=2200)
                 )
+
+        # Knoepfe der zweiten Ansicht - angelegt, aber erst beim Umschalten
+        # gepackt. Gleiche Bauart wie die Aufgabenknoepfe, damit die Leiste in
+        # beiden Ansichten gleich aussieht.
+        self._konsole_knoepfe: list[tuple[RoundedButton, str]] = []
+        for schluessel, kennung in self._KONSOLE_KNOEPFE:
+            knopf = RoundedButton(
+                sidebar,
+                text=self._t(schluessel),
+                command=(lambda k=kennung, s=schluessel:
+                         self._konsole_knopf_gedrueckt(k, s)),
+                font=(UI_SCHRIFT, pt(12), "bold"),
+                bg=self._COLORS["bg_card"],
+                fg=self._COLORS["fg_primary"],
+                activebackground=self._COLORS["fg_accent"],
+                activeforeground=self._COLORS["bg_main"],
+                outline=self._COLORS["border"],
+                radius=8,
+                height=40,
+            )
+            self._konsole_knoepfe.append((knopf, schluessel))
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
         # Kein eigener Rahmen: Ein tk.Frame zeichnet immer seine Hintergrundfarbe
@@ -8243,6 +8297,117 @@ class PS5ConverterGUI:
         self._set_mode_from_sidebar("pack_folder")
         self._refresh_release_test_gate_badge()
         self.root.after(1000, self._telemetry_tick)
+
+    # ------------------------------------------------------------------
+    # Zweite Ansicht "KONSOLE" (Stufe 1, v1.9.42)
+    #
+    # Dieselbe Seitenleiste, andere Knoepfe; keine Cover-Vorschau, kein
+    # "Spiel Info", kein "Was man sonst ev. noch braucht"; rechts eine leere
+    # Flaeche fuer Kommendes. Nichts wird abgebaut: Die Widgets der ersten
+    # Ansicht werden nur aus- und wieder eingepackt - Quelle, Ziel und ein
+    # laufender Auftrag ueberstehen das Umschalten.
+    #
+    # Kein Rahmen um die Knoepfe: Ein tk.Frame malt seine Farbe und stuende
+    # als Kasten auf dem Hintergrundbild der Sidebar (siehe _create_widgets).
+    # Die Reihenfolge ergibt sich daraus, dass pack() ans Ende der Packliste
+    # haengt - ausgepackt wird zuerst, eingepackt in der alten Folge.
+    # ------------------------------------------------------------------
+
+    def _ansicht_ist_konsole(self) -> bool:
+        return getattr(self, "_ansicht", "umwandeln") == "konsole"
+
+    def _ansicht_beschriften(self) -> None:
+        """Beschriftet den Umschalter nach seinem Ziel."""
+        knopf = getattr(self, "_ansicht_knopf", None)
+        if knopf is None:
+            return
+        schluessel = ("ansicht.to_umwandeln" if self._ansicht_ist_konsole()
+                      else "ansicht.to_konsole")
+        try:
+            knopf.configure(text=self._t(schluessel))
+        except tk.TclError as exc:
+            logger.debug("Umschalter nicht beschriftbar: %s", exc)
+
+    def _ansicht_umschalten(self) -> None:
+        self._ansicht_setzen("umwandeln" if self._ansicht_ist_konsole()
+                             else "konsole")
+
+    def _ansicht_erste_widgets(self) -> list:
+        """Was in der ersten Ansicht in der Sidebar steht - in Packfolge."""
+        widgets = [knopf for knopf, _modus in getattr(self, "mode_buttons", [])]
+        for name in ("_sidebar_preview_label_text", "_sidebar_preview_img_label",
+                     "_sidebar_preview_title_label", "_sidebar_footer_frame"):
+            widget = getattr(self, name, None)
+            if widget is not None:
+                widgets.append(widget)
+        return widgets
+
+    def _ansicht_setzen(self, ansicht: str, speichern: bool = True) -> None:
+        """Schaltet zwischen "umwandeln" und "konsole" um.
+
+        Args:
+            ansicht: ``"umwandeln"`` oder ``"konsole"``.
+            speichern: Die Wahl fuer den naechsten Start merken.
+        """
+        if ansicht not in ("umwandeln", "konsole"):
+            return
+        if ansicht == getattr(self, "_ansicht", "umwandeln"):
+            return
+        try:
+            if ansicht == "konsole":
+                # Nur merken, was wirklich gepackt ist - die Cover-Vorschau
+                # steht nur da, wenn eine Quelle ein Bild geliefert hat.
+                self._ansicht_gemerkt = []
+                for widget in self._ansicht_erste_widgets():
+                    if widget.winfo_manager() == "pack":
+                        self._ansicht_gemerkt.append((widget, widget.pack_info()))
+                        widget.pack_forget()
+                for knopf, _schluessel in self._konsole_knoepfe:
+                    knopf.pack(fill="x", pady=3)
+                self.content_scroll.grid_remove()
+                self.content_scrollbar.grid_remove()
+                self._hide_info_box()
+                self._ansicht = "konsole"
+            else:
+                for knopf, _schluessel in self._konsole_knoepfe:
+                    knopf.pack_forget()
+                for widget, info in self._ansicht_gemerkt:
+                    widget.pack(**info)
+                self._ansicht_gemerkt = []
+                self.content_scroll.grid()
+                if getattr(self, "_inhalt_rollt", False):
+                    self.content_scrollbar.grid(row=1, column=2, sticky="ns")
+                self._ansicht = "umwandeln"
+                # Was die Cover-Vorschau in der Zwischenzeit bekam, jetzt
+                # nachholen - in der Reihenfolge, in der es kam.
+                warteschlange, self._vorschau_warteschlange = \
+                    self._vorschau_warteschlange, []
+                for cover, titel in warteschlange:
+                    self._update_sidebar_preview(cover, titel)
+                self._schedule_caption_redraw(self._redraw_all_captions)
+                self._schedule_caption_redraw(self._refresh_sidebar_cover_size)
+        except tk.TclError as exc:
+            logger.debug("Ansicht nicht umschaltbar: %s", exc)
+        self._ansicht_beschriften()
+        if speichern:
+            self._save_setting("ansicht", self._ansicht)
+
+    def _ansicht_beim_start_herstellen(self) -> None:
+        """Stellt die zuletzt gewaehlte Ansicht wieder her - nach der Startphase.
+
+        Erst danach: Waehrend des Starts rechnen Cover, Beschriftungen und
+        Rollflaeche noch mit der ersten Ansicht.
+        """
+        if str(self._load_setting("ansicht", "umwandeln")) == "konsole":
+            self._ansicht_setzen("konsole", speichern=False)
+
+    def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
+        """Stufe 1: Die Knoepfe stehen, ihre Funktionen folgen."""
+        name = " ".join(self._t(schluessel).split(".", 1)[-1].split())
+        logger.debug("Konsolenknopf %s gedrueckt (noch ohne Funktion)", kennung)
+        messagebox.showinfo(self._t("konsole.coming_title"),
+                            self._t("konsole.coming_message", name=name),
+                            parent=self.root)
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
@@ -9195,6 +9360,9 @@ class PS5ConverterGUI:
         """Markiert die kritische Startphase als abgeschlossen."""
         self._startup_complete = True
         self.root.after_idle(self._hintergrund_beim_start_nachziehen)
+        # Die zuletzt gewaehlte Ansicht erst jetzt: Waehrend der Startphase
+        # rechnen Cover, Beschriftungen und Rollflaeche mit der ersten.
+        self.root.after_idle(self._ansicht_beim_start_herstellen)
         # Waehrend der Startphase wachsen Fenster und Raster noch; die
         # Beschriftungen tragen dann Ausschnitte, die zur endgueltigen Lage nicht
         # mehr passen und als Kasten stehen bleiben, bis irgendwann eine
@@ -10330,7 +10498,9 @@ class PS5ConverterGUI:
 
             if rollt != getattr(self, "_inhalt_rollt", False):
                 self._inhalt_rollt = rollt
-                if rollt:
+                # In der Ansicht KONSOLE ist die Spalte ausgeblendet; die
+                # Leiste kommt beim Zurueckschalten mit (_ansicht_setzen).
+                if rollt and not self._ansicht_ist_konsole():
                     self.content_scrollbar.grid(row=1, column=2, sticky="ns")
                 else:
                     self.content_scrollbar.grid_remove()
@@ -15752,6 +15922,9 @@ class PS5ConverterGUI:
         dem Fussbereich berechnet und die Haelfte als Polsterung ueber den
         Block aus Bild und Beschriftung gelegt.
         """
+        # pack_configure wuerde ein ausgepacktes Cover wieder einblenden.
+        if self._ansicht_ist_konsole():
+            return
         label = getattr(self, "_sidebar_preview_img_label", None)
         if label is None:
             return
@@ -15901,6 +16074,8 @@ class PS5ConverterGUI:
         Wird nach dem Zur-Ruhe-Kommen des Fensters aufgerufen; ohne das bliebe
         das Bild nach einer Groessenaenderung in der alten Breite stehen.
         """
+        if self._ansicht_ist_konsole():
+            return
         quelle = getattr(self, "_sidebar_cover_source", None)
         if quelle is None:
             return
@@ -15936,6 +16111,8 @@ class PS5ConverterGUI:
         36 px trug, kam ein Vorlauf von 39 statt 3 heraus - das Cover sprang
         beim Start ueber drei Lagen (gemessen 584 -> 548 -> 569 px).
         """
+        if self._ansicht_ist_konsole():
+            return
         titel = self._sidebar_preview_title_label
         bild = self._sidebar_preview_img_label
         if bild.winfo_manager():
@@ -15950,6 +16127,12 @@ class PS5ConverterGUI:
         Bei cover=None werden alle Vorschau-Widgets versteckt.
         """
         if not hasattr(self, "_sidebar_preview_img_label"):
+            return
+        # In der Ansicht KONSOLE gibt es keine Vorschau. Der Aufruf wird
+        # aufgehoben und beim Zurueckschalten nachgeholt - in Reihenfolge,
+        # denn die Aufrufe bauen aufeinander auf (siehe unten).
+        if self._ansicht_ist_konsole():
+            self._vorschau_warteschlange.append((cover, title))
             return
 
         if cover is None:
@@ -49210,7 +49393,8 @@ class PS5ConverterGUI:
         """
         c = self._COLORS
         for name, schriftfarbe in (("info_toggle_btn", "fg_accent"),
-                                   ("resources_btn", "fg_primary")):
+                                   ("resources_btn", "fg_primary"),
+                                   ("_ansicht_knopf", "fg_accent")):
             knopf = getattr(self, name, None)
             if knopf is None:
                 continue
@@ -49347,6 +49531,15 @@ class PS5ConverterGUI:
                 else:
                     btn.configure(bg=c["bg_card"], fg=c["fg_primary"],
                                   activebackground=c["fg_accent"], outline=c["border"])
+        # Die Knoepfe der Ansicht KONSOLE - auch wenn sie gerade nicht
+        # eingepackt sind; sonst traegen sie beim Umschalten das alte Design.
+        for btn, _schluessel in getattr(self, "_konsole_knoepfe", []):
+            try:
+                btn.configure(bg=c["bg_card"], fg=c["fg_primary"],
+                              activebackground=c["fg_accent"],
+                              activeforeground=c["bg_main"], outline=c["border"])
+            except tk.TclError as exc:
+                logger.debug("Konsolenknopf nicht umfärbbar: %s", exc)
 
         # Start-/Abbrechen-Buttons (RoundedButton, wie Sidebar-Buttons)
         if hasattr(self, "run_btn"):

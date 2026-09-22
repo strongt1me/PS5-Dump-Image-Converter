@@ -2,7 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.41):** „PKG bauen“ nimmt jetzt Dump-Ordner und Abbilder; gesperrte Knöpfe sind grau.
+> **Kurz zum aktuellen Stand (v1.9.42):** Neue zweite Ansicht KONSOLE – vorbereitet, die Funktionen folgen.
+
+---
+
+## v1.9.42 – 22.09.2026
+
+- **Neu:** Umschalter **KONSOLE › / ‹ UMWANDELN** oben in der Seitenleiste – eine zweite Ansicht mit eigenen Knöpfen für die Arbeit mit der Konsole. Die Knöpfe stehen, ihre Funktionen kommen in den nächsten Versionen.
 
 ---
 
