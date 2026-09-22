@@ -2,7 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.39):** Neu: **PKG entpacken** – eine PS4-Paketdatei wird zum Spielordner.
+> **Kurz zum aktuellen Stand (v1.9.40):** Die fakelib-Anleitung kennt jetzt ShadowMount+ 1.7beta2.
+
+---
+
+## v1.9.40 – 22.09.2026
+
+- **Anleitung „fakelib – neue Methode“** um ShadowMount+ 1.7beta2 ergänzt: Backports wirken jetzt auch bei installierten PKGs, Emulator-Dateien dort nicht.
 
 ---
 

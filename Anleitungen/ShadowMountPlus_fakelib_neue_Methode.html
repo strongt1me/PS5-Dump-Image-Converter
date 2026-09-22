@@ -211,13 +211,13 @@ footer b{color:#fff}
   <div class="hero">
     <span class="eyebrow">fakelib &amp; fakelib2 · neuere Versionen</span>
     <h1>Backports einhängen
-      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1.</small>
+      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1, ergänzt um 1.7beta2.</small>
     </h1>
     <div class="badges">
       <span class="badge on">Gültig ab 1.7 alpha8</span>
       <span class="badge">Cache statt Schichten</span>
       <span class="badge">fakelib2 exklusiv seit alpha10</span>
-      <span class="badge">Stand: 19. September 2026</span>
+      <span class="badge">Stand: 22. September 2026</span>
     </div>
 
     <div class="alert">
@@ -284,6 +284,7 @@ footer b{color:#fff}
       <p class="path-title">Regeln</p>
       <p style="margin:0 0 12px;font-size:14.5px">Ordnernamen exakt <code class="inline">fakelib</code> bzw. <code class="inline">fakelib2</code>, klein geschrieben. Im Spielordner wirkt <b style="color:var(--warn)">nur <code class="inline">fakelib</code></b> – ein <code class="inline">fakelib2</code> dort wird ohne Meldung übergangen. Im Backport-Ordner steht <code class="inline">fakelib2</code> vor <code class="inline">fakelib</code>; liegen dort beide, gewinnt <code class="inline">fakelib2</code>.</p>
       <p style="margin:0 0 12px;font-size:14.5px;color:var(--muted)">Der <code class="inline">backports</code>-Ordner wird beim normalen Scan übergangen. Ein Backport wirkt aus jedem Scan-Pfad auf das passende Spiel; liefern mehrere Scan-Pfade denselben Titel, gewinnt der Scan-Pfad des Spiels, sonst die Reihenfolge der <code class="inline">scanpath</code>-Einträge. Übliche Orte sind <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/</code> und <code class="inline">/data/etaHEN/games/backports/&lt;TITLE_ID&gt;/</code>.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Installierte PKGs (ab 1.7beta2)</b>: Auch ein als PKG installiertes Spiel bekommt jetzt seinen Backport-Ordner <code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/</code>. Kurz vor dem Spielstart blendet ShadowMount+ dessen <b>ganzen Inhalt</b> in das <code class="inline">app0</code> des Pakets ein – Dateien einzeln, Unterordner, die das Paket nicht hat, als Ganzes, höchstens 256 Einträge je Spiel. Das Paket selbst wird nicht verändert. Danach wird wie gewohnt <code class="inline">fakelib2</code> bzw. <code class="inline">fakelib</code> eingehängt. Bis 1.7 wurde ein externer Backport bei installierten PKGs übergangen; dort zählte nur, was im Paket lag.</p>
       <p style="margin:0;font-size:14.5px;color:var(--muted)">Dieses Programm legt beim Einbau (BACKPORT, AMPR EMU) immer einen Ordner <code class="inline">fakelib</code> an – er wirkt an beiden Stellen.</p>
     </div>
   </section>
@@ -317,7 +318,7 @@ footer b{color:#fff}
     </div>
 
     <div class="card" style="margin-top:18px">
-      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Emulator-Dateien</b> (<code class="inline">update_emulators=1</code>): Eine Datei aus <code class="inline">/data/shadowmount/emus</code> wird nur übernommen, wenn die fakelib des Spiels eine <b style="color:#fff">gleichnamige</b> Datei hat. Liegt ein Name nur im globalen Ordner oder nirgends, wird er übersprungen. Für ein Spiel ohne <code class="inline">libSceAmpr.sprx</code> bringt dieser Weg allein also nichts.</p>
+      <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Emulator-Dateien</b> (<code class="inline">update_emulators=1</code>): Eine Datei aus <code class="inline">/data/shadowmount/emus</code> wird nur übernommen, wenn die fakelib des Spiels eine <b style="color:#fff">gleichnamige</b> Datei hat. Liegt ein Name nur im globalen Ordner oder nirgends, wird er übersprungen. Für ein Spiel ohne <code class="inline">libSceAmpr.sprx</code> bringt dieser Weg allein also nichts. Ab 1.7beta2 gilt das nur für Spiele aus Ordnern und Abbildern – installierte PKGs bekommen keine Emulator-Dateien.</p>
       <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Automatische AMPR-Aktualisierung</b> (<code class="inline">auto_update_ampr=1</code>, ab Werk aus): 30 Sekunden nach dem Start und danach alle vier Stunden prüft ShadowMount+, ob es eine neuere <code class="inline">libSceAmpr.sprx</code> gibt, und legt sie nach <code class="inline">emulators_path</code>. Fehlt sie dort ganz, wird sie gleich geholt. Solange ein Spiel eingehängt ist, wartet der Download. Ins Spiel kommt sie über die Emulator-Dateien – also nur, wenn dessen fakelib schon eine <code class="inline">libSceAmpr.sprx</code> enthält.</p>
       <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Globale fakelib</b>: Gibt es eine globale und eine spiel-eigene fakelib, werden beide im Cache vereint. Gibt es keine spiel-eigene, wird der globale Ordner direkt eingehängt. Mit <code class="inline">global_fakelib_exclude</code> lassen sich einzelne Titel davon ausnehmen.</p>
       <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Seit alpha10</b>: Ein Backport-<code class="inline">fakelib2</code> wird direkt und ausschließlich eingehängt. Weder Emulator-Dateien noch die globale fakelib ersetzen oder ergänzen dort etwas.</p>
@@ -335,8 +336,8 @@ footer b{color:#fff}
         <table>
           <thead><tr><th>Schlüssel</th><th>Standard</th><th>Bedeutung</th></tr></thead>
           <tbody>
-            <tr><td class="key">backport_fakelib</td><td class="val">1</td><td>Hauptschalter. <code class="inline">0</code> schaltet alles ab – auch die globale fakelib und die Emulator-Dateien.</td></tr>
-            <tr><td class="key">update_emulators</td><td class="val">1</td><td>Passende Dateien aus <code class="inline">emulators_path</code> ersetzen gleichnamige in der fakelib des Spiels. Ein <code class="inline">fakelib2</code> bleibt unverändert.</td></tr>
+            <tr><td class="key">backport_fakelib</td><td class="val">1</td><td>Hauptschalter. <code class="inline">0</code> schaltet alles ab – auch die globale fakelib und die Emulator-Dateien. Ausnahme ab 1.7beta2: Bei installierten PKGs wird der Backport-Ordner trotzdem ins <code class="inline">app0</code> eingeblendet; der Schalter betrifft dort nur das Einhängen der fakelib.</td></tr>
+            <tr><td class="key">update_emulators</td><td class="val">1</td><td>Passende Dateien aus <code class="inline">emulators_path</code> ersetzen gleichnamige in der fakelib des Spiels. Ein <code class="inline">fakelib2</code> bleibt unverändert, ab 1.7beta2 auch jedes installierte PKG.</td></tr>
             <tr><td class="key">emulators_path</td><td class="val">/data/shadowmount/emus</td><td>Ordner mit den Emulator-Dateien. Sie liegen direkt darin – verglichen wird nur, was nicht in einem Unterordner steckt.</td></tr>
             <tr><td class="key">auto_update_ampr</td><td class="val">0</td><td><code class="inline">libSceAmpr.sprx</code> selbstständig aus dem Netz holen: 30 s nach dem Start, danach alle vier Stunden.</td></tr>
             <tr><td class="key">ampr_update_url</td><td class="val">drakmor/ampr_emu</td><td>Download-Adresse für die AMPR-Aktualisierung; ab Werk die jeweils neueste Veröffentlichung von <code class="inline">github.com/drakmor/ampr_emu</code>.</td></tr>
@@ -393,7 +394,7 @@ footer b{color:#fff}
         </div>
         <div class="item">
           <h4>Emulator-Dateien ersetzen nur</h4>
-          <p>Übernommen wird eine Datei aus <code class="inline">emulators_path</code> nur, wenn die fakelib des Spiels eine gleichnamige hat. Neue Namen werden übersprungen.</p>
+          <p>Übernommen wird eine Datei aus <code class="inline">emulators_path</code> nur, wenn die fakelib des Spiels eine gleichnamige hat. Neue Namen werden übersprungen. Bei installierten PKGs (ab 1.7beta2) wird gar nichts ersetzt.</p>
         </div>
         <div class="item">
           <h4>Global schlägt Emulator</h4>
@@ -443,6 +444,7 @@ footer b{color:#fff}
             <tr><td>global path is not a directory …</td><td>Globaler Pfad zeigt auf eine Datei.</td></tr>
             <tr><td>handoff active mount pid=X -&gt; pid=Y</td><td>Spielwechsel, alter Mount wird abgeräumt.</td></tr>
             <tr><td>… unmount deferred for …</td><td>Ziel noch belegt (<code class="inline">EBUSY</code>).</td></tr>
+            <tr><td>[BKP][NSFS] …</td><td>Nur installierte PKGs, ab 1.7beta2: Einblenden des Backport-Ordners ins <code class="inline">app0</code> – aktiv, übersprungen oder gescheitert.</td></tr>
             <tr><td style="color:var(--warn)">keine Zeile</td><td>Kein fakelib-Ordner an den drei Stellen (ein <code class="inline">fakelib2</code> im Spielordner zählt nicht) oder <code class="inline">backport_fakelib=0</code>.</td></tr>
           </tbody>
         </table>
@@ -477,7 +479,7 @@ footer b{color:#fff}
   <footer>
     <p style="margin:0 0 6px"><b>Gilt für ShadowMountPlus ab 1.7 alpha8.</b></p>
     <p style="margin:0">Bis einschließlich 1.7 alpha6 gilt die separate Anleitung: Dort werden die Ordner aus der laufenden Sandbox gelesen, und zwei Schichten liegen übereinander.<br>
-    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12 · Stand 19. September 2026.</p>
+    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12. Ergänzt am Quellcode von 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code> · Stand 22. September 2026.</p>
   </footer>
 </main>
 
