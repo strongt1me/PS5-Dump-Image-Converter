@@ -1754,7 +1754,7 @@ class AbbildPkgAufraeumenTests(unittest.TestCase):
 
     def test_erst_warten_dann_loeschen_dann_freigeben(self) -> None:
         fenster = _methode(_klasse(ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))),
-                           "_show_exfat_pkg_builder")
+                           "_show_pkg_bauen")
         umwandeln = next(k for k in ast.walk(fenster)
                          if isinstance(k, ast.FunctionDef) and k.name == "_umwandeln")
         arbeit = next(k for k in ast.walk(umwandeln)

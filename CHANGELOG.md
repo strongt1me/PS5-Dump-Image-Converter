@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.40):** Die fakelib-Anleitung kennt jetzt ShadowMount+ 1.7beta2.
+> **Kurz zum aktuellen Stand (v1.9.41):** „PKG bauen“ nimmt jetzt Dump-Ordner und Abbilder; gesperrte Knöpfe sind grau.
+
+---
+
+## v1.9.41 – 22.09.2026
+
+- **Geändert:** „PKG bauen“ und „Abbild → PKG“ sind ein Fenster – Quelle ist ein Dump-Ordner oder ein Abbild. „DEBUG-PKG BAUEN“ ist entfallen.
+- **Behoben:** Gesperrte Knöpfe sahen aus wie bedienbare; jetzt sind sie grau – auch wenn sie gerade unter der Maus gesperrt werden.
 
 ---
 
@@ -626,7 +633,7 @@ Das eingebaute Paket-Werkzeug wurde aktualisiert.
 
 ### PKG-Erzeugung: neuere Bibliothek
 
-Die eingebettete Bibliothek hinter „Abbild → PKG“ und dem Debug-PKG-Bau wurde
+Die eingebettete Bibliothek hinter „Abbild → PKG“ und „PKG bauen“ wurde
 auf eine neuere Fassung aktualisiert. Sie schreibt die innere Struktur der erzeugten
 Debug-Pakete an mehreren Stellen so, wie es die Konsole erwartet (u. a. die Ausrichtung
 des inneren Dateisystem-Kopfes). Das kann die Chance erhöhen, dass ein gebautes Paket
@@ -3533,13 +3540,12 @@ Ein zweiter Durchgang mit sechs anderen Backups (22 Konvertierungen über alle a
 
 - Fehlt `sce_sys/param.json` oder ist sie beschädigt, bietet das Programm seit jeher an, eine Ersatzdatei anzulegen. Die dafür nötige Titel-ID wurde bisher ausschließlich aus dem **Ordnernamen** geraten – trägt der das Muster nicht, blieb die Ersatzdatei ohne Titel-ID. Jetzt wird zuerst `sce_sys/nptitle.dat` gelesen, eine kleine Metadatendatei direkt neben der `param.json`. In allen 32 geprüften Backups war sie vorhanden und stimmte mit der `param.json` überein. Der Ordnername bleibt der Notnagel, falls die Datei fehlt.
 
-### Drei zusätzliche Werkzeuge
+### Zwei zusätzliche Werkzeuge
 
-Im Menü **WEITERE TOOLS** liegen jetzt auch **PKG-MERGER** und **PARAM/MANIFEST** (bisher eigene Schaltflächen in der Titelleiste) sowie drei neue Einträge:
+Im Menü **WEITERE TOOLS** liegen jetzt auch **PKG-MERGER** und **PARAM/MANIFEST** (bisher eigene Schaltflächen in der Titelleiste) sowie zwei neue Einträge:
 
 - **SELF-Inspektor** – zeigt den Aufbau einer `eboot.bin`, `.self`, `.sprx` oder `.prx`: Container-Art, eingebettetes ELF, Signaturkategorie und die Segmenttabelle. Es wird nur gelesen, nichts entschlüsselt.
 - **Dump umbenennen** – schlägt aus Title-ID, Titel und Version einen sprechenden Ordnernamen vor und benennt auf Wunsch um.
-- **Debug-PKG bauen** – erzeugt aus einem Dump-Ordner einen strukturell gültigen, **unsignierten** `.pkg`-Container für Struktur- und Werkzeugtests.
 
 ### Kleinere Verbesserungen
 

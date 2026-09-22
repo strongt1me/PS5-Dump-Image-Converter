@@ -326,7 +326,6 @@ a = Analysis(
         'ps5_validator.utils.anzeige_diagnose',
         'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',
-        'ps5_validator.utils.pkg_writer',
         # Betriebssystem-Abstraktion (Schriften, Rechte, Dateien oeffnen)
         'ps5_validator.utils.plattform',
         # dpi_upload bewusst NICHT gebuendelt - wie in der Windows-.spec.

@@ -21,15 +21,6 @@ Nachgemessen wurde beides:
   die Datei dabei in 136 von 1600 Versuchen (8,5 %) leer vor.
 
 Nach der Umstellung: 0 verlorene Speicherversuche, 0 leere Lesungen.
-
-**Der Debug-.pkg-Bauer schrieb in die Zieldatei.** ``build_debug_pkg``
-oeffnete ``output_path`` mit ``"wb"`` - das leert die Datei beim ersten
-Byte. Das Fenster schlaegt den Zielpfad ausserdem **selbst vor**: Wer einen
-Quellordner waehlt, bekommt ``<darueber>/<Content-ID>.pkg`` eingetragen,
-also genau den Pfad, unter dem das Paket des letzten Laufs liegt. Gefragt
-wurde nicht. Gemessen: Bricht das Kopieren des PFS-Abbilds ab, stand an der
-Stelle des alten Pakets ein Rumpf von 65.600 Bytes - gross genug, um wie
-ein Ergebnis auszusehen.
 """
 from __future__ import annotations
 
@@ -44,7 +35,6 @@ import threading
 import time
 import unittest
 from pathlib import Path
-from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
@@ -53,7 +43,6 @@ import pruefumgebung                                        # noqa: E402
 ORDNER = pruefumgebung.umlenken("schreibwege")
 
 import PS5ImageConverter_Pro_FINAL_revised as APP           # noqa: E402
-from ps5_validator.utils import pkg_writer                  # noqa: E402
 from ps5_validator.utils import einstellungen               # noqa: E402
 
 CFG = os.path.join(ORDNER, "paths.json")
@@ -344,158 +333,6 @@ class PfadeLesenTests(unittest.TestCase):
         self.assertEqual(("Q", "D:\\Ziel"), gelesen,
                          "Ein einzelner Fehlversuch hat den gemerkten Pfad "
                          "stillschweigend geleert.")
-
-
-class DebugPkgZielTests(unittest.TestCase):
-    """Gefragt wird, bevor ein vorhandenes Paket ueberschrieben wird."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="debugpkg_")
-        self.ordner = Path(self.tmp.name)
-        self.vorhanden = self.ordner / "CUSA00000.pkg"
-        self.vorhanden.write_bytes(b"das alte Paket")
-        self.gefragt: list[str] = []
-        self.gui = _gui()
-        self.gui._t = lambda s, **kw: s
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def _antwort(self, ja: bool):
-        def _fragen(titel, _text, **_kw):
-            self.gefragt.append(titel)
-            return ja
-        return _fragen
-
-    def test_vorhandenes_paket_fragt_nach(self):
-        with mock.patch.object(APP.messagebox, "askyesno",
-                                        self._antwort(True)):
-            self.assertTrue(self.gui._debug_pkg_ziel_freigegeben(
-                str(self.vorhanden), ""))
-        self.assertEqual(1, len(self.gefragt))
-
-    def test_ein_nein_haelt_den_bau_auf(self):
-        with mock.patch.object(APP.messagebox, "askyesno",
-                                        self._antwort(False)):
-            self.assertFalse(self.gui._debug_pkg_ziel_freigegeben(
-                str(self.vorhanden), ""))
-
-    def test_der_speichern_dialog_hat_schon_gefragt(self):
-        """Sonst zwei Rueckfragen fuer dieselbe Entscheidung."""
-        with mock.patch.object(APP.messagebox, "askyesno",
-                                        self._antwort(True)):
-            self.assertTrue(self.gui._debug_pkg_ziel_freigegeben(
-                str(self.vorhanden), str(self.vorhanden)))
-        self.assertEqual([], self.gefragt)
-
-    def test_ein_anderer_bestaetigter_pfad_zaehlt_nicht(self):
-        with mock.patch.object(APP.messagebox, "askyesno",
-                                        self._antwort(True)):
-            self.gui._debug_pkg_ziel_freigegeben(
-                str(self.vorhanden), str(self.ordner / "anderes.pkg"))
-        self.assertEqual(1, len(self.gefragt))
-
-    def test_ohne_vorhandene_datei_wird_nicht_gefragt(self):
-        with mock.patch.object(APP.messagebox, "askyesno",
-                                        self._antwort(True)):
-            self.assertTrue(self.gui._debug_pkg_ziel_freigegeben(
-                str(self.ordner / "neu.pkg"), ""))
-        self.assertEqual([], self.gefragt)
-
-    def test_der_vorschlag_gilt_nicht_als_bestaetigung(self):
-        """_quelle_waehlen traegt einen Pfad ein, ohne zu fragen."""
-        text = _baum("_show_debug_pkg_builder")
-        self.assertIn("bestaetigtes_ziel[0] = pfad", text,
-                      "Der Speichern-Dialog merkt seinen Pfad nicht mehr vor.")
-        self.assertEqual(1, text.count("bestaetigtes_ziel[0] = "),
-                         "Ein zweiter Weg gibt sich als bestaetigt aus.")
-
-    def test_gefragt_wird_vor_dem_bauen(self):
-        text = _baum("_show_debug_pkg_builder")
-        i_frage = text.find("_debug_pkg_ziel_freigegeben")
-        i_bau = text.find("build_debug_pkg(")
-        self.assertGreater(i_frage, 0, "Es wird gar nicht gefragt.")
-        self.assertLess(i_frage, i_bau, "Gefragt wird erst nach dem Bauen.")
-
-
-class PkgDanebenBauenTests(unittest.TestCase):
-    """build_debug_pkg zerstoert das vorhandene Paket nicht mehr."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory(prefix="pkgbau_")
-        self.ordner = Path(self.tmp.name)
-        self.ziel = self.ordner / "CUSA00000.pkg"
-        self.alt = b"DAS ALTE, FUNKTIONIERENDE PAKET" * 100
-        self.ziel.write_bytes(self.alt)
-        self.bild = self.ordner / "abbild.pfs"
-        self.bild.write_bytes(b"\x00" * 4096)
-        self.param = {"titleId": "CUSA00000"}
-        self.kennung = "IV0000-CUSA00000_00-TEST"
-
-    def tearDown(self):
-        self.tmp.cleanup()
-
-    def _mit_voller_platte(self):
-        echt = pkg_writer.shutil.copyfileobj
-
-        def _voll(quelle, strom, length=0):
-            strom.write(quelle.read(64))
-            raise OSError(28, "No space left on device")
-
-        pkg_writer.shutil.copyfileobj = _voll
-        try:
-            with self.assertRaises(OSError):
-                pkg_writer.build_debug_pkg(
-                    str(self.ziel), self.kennung, self.param,
-                    pfs_image_path=str(self.bild))
-        finally:
-            pkg_writer.shutil.copyfileobj = echt
-
-    def test_ein_gescheiterter_bau_laesst_das_alte_paket_stehen(self):
-        self._mit_voller_platte()
-        self.assertEqual(self.alt, self.ziel.read_bytes(),
-                         "Das vorhandene Paket wurde beim Bau zerstoert.")
-
-    def test_und_hinterlaesst_keinen_rumpf(self):
-        self._mit_voller_platte()
-        reste = [p.name for p in self.ordner.glob("*.neu")]
-        self.assertEqual([], reste,
-                         "Ein Rumpf bleibt liegen: %s" % reste)
-
-    def test_auch_das_meta_paket_geht_diesen_weg(self):
-        """Der Zweig ohne PFS-Abbild - einer allein reicht nicht."""
-        echt = os.replace
-        os.replace = lambda a, b: (_ for _ in ()).throw(OSError(28, "voll"))
-        try:
-            with self.assertRaises(OSError):
-                pkg_writer.build_debug_pkg(str(self.ziel), self.kennung,
-                                           self.param)
-        finally:
-            os.replace = echt
-        self.assertEqual(self.alt, self.ziel.read_bytes())
-
-    def test_der_gelungene_bau_landet_unter_dem_richtigen_namen(self):
-        ergebnis = pkg_writer.build_debug_pkg(
-            str(self.ziel), self.kennung, self.param,
-            pfs_image_path=str(self.bild))
-        self.assertEqual(str(self.ziel), ergebnis["path"])
-        self.assertEqual("full_debug", ergebnis["type"])
-        self.assertNotEqual(self.alt, self.ziel.read_bytes())
-        self.assertEqual([], [p.name for p in self.ordner.glob("*.neu")])
-        self.assertEqual(ergebnis["size"], self.ziel.stat().st_size)
-
-    def test_der_bau_nutzt_die_gemeinsame_klammer(self):
-        with io.open(pkg_writer.__file__, "rb") as fh:
-            baum = ast.parse(fh.read().decode("utf-8"))
-        knoten = next(k for k in ast.walk(baum)
-                      if isinstance(k, ast.FunctionDef)
-                      and k.name == "build_debug_pkg")
-        text = ast.unparse(knoten)
-        self.assertEqual(2, text.count("_daneben_bauen("),
-                         "Ein Zweig schreibt wieder direkt in die Zieldatei.")
-        self.assertNotIn("open(output_path", text)
-
-
 
 
 class BelegtesZielartefaktTests(unittest.TestCase):

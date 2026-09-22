@@ -82,7 +82,7 @@ class SchliessenFunktioniertTests(unittest.TestCase):
     #: Knopf-Widget hat: Es zeichnet seine Knoepfe auf eine Canvas. Wer diese
     #: Liste erweitert, muss also erst nachsehen, ob das Fenster ueberhaupt
     #: mit Widgets arbeitet.
-    MIT_KNOPF = ("_show_ps4_pkg_converter", "_show_debug_pkg_builder",
+    MIT_KNOPF = ("_show_ps4_pkg_converter", "_show_pkg_bauen",
                  "_render_dump_rename_window", "_show_js_loader",
                  "_show_ampr_index_builder")
 
@@ -101,7 +101,7 @@ class SchliessenFunktioniertTests(unittest.TestCase):
     def test_die_rueckfragen_gibt_es_in_beiden_sprachen(self):
         from ps5_validator.utils.i18n import STRINGS
         for schluessel in ("ps4pkg.abort_confirm",
-                           "debug_pkg.close_while_building"):
+                           "pkgbau.abort_confirm"):
             with self.subTest(text=schluessel):
                 eintrag = STRINGS[schluessel]
                 self.assertTrue(eintrag.get("de"))

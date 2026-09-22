@@ -41,7 +41,7 @@ class AbbildWeicheBaurichtung(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.quelle = open(HAUPT, encoding="utf-8", errors="replace").read()
-        cls.fenster = _methode(cls.quelle, "_show_exfat_pkg_builder")
+        cls.fenster = _methode(cls.quelle, "_show_pkg_bauen")
         cls.weiche = _methode(cls.quelle, "_abbild_zu_dumpordner")
 
     def test_endungen_decken_alle_vier_formate(self):
@@ -129,7 +129,7 @@ class FadensicherheitWaechter(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.quelle = open(HAUPT, encoding="utf-8", errors="replace").read()
-        cls.fenster = _methode(cls.quelle, "_show_exfat_pkg_builder")
+        cls.fenster = _methode(cls.quelle, "_show_pkg_bauen")
         cls.temp = _methode(cls.quelle, "_get_runtime_temp_dir")
 
     def test_temp_dir_liest_tk_nur_im_hauptfaden(self):

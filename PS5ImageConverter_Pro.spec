@@ -308,7 +308,6 @@ a = Analysis(
         'ps5_validator.utils.anzeige_diagnose',
         'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',
-        'ps5_validator.utils.pkg_writer',
         # dpi_upload bewusst NICHT gebuendelt: der etaHEN-"Direct Package
         # Installer V2" liess sich mangels laufendem Dienst nie erproben. Der
         # Quelltext samt Tests bleibt im Projekt, wandert aber nicht in die EXE.
@@ -431,7 +430,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.40',
+    name='PS5_Dump_Image_Converter_v1.9.41',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -10,7 +10,11 @@ Aufgeloest wurde das so:
 - `dpi_upload` bleibt als Quelltext liegen, wandert aber nicht mehr in die EXE:
   der etaHEN-Dienst, gegen den es arbeiten wuerde, war nie erprobbar.
 
-Diese Tests halten beides fest.
+Am 22.09.2026 ist das Fenster von `pkg_writer` ("DEBUG-PKG BAUEN") samt Modul
+wieder ausgebaut worden: ein unsignierter Eigenbau, an der Konsole nie
+getestet - der schwaechere Doppelgaenger von "PKG bauen" (LibProsperoPkg).
+
+Diese Tests halten alles fest.
 """
 from __future__ import annotations
 
@@ -47,11 +51,20 @@ class MenueVerdrahtungTests(unittest.TestCase):
                 self.assertTrue(STRINGS[schluessel].get("de"))
                 self.assertTrue(STRINGS[schluessel].get("en"))
 
-    def test_die_drei_wiederbelebten_werkzeuge_sind_dabei(self) -> None:
+    def test_die_wiederbelebten_werkzeuge_sind_dabei(self) -> None:
         methoden = {m for _k, m in APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES}
-        for erwartet in ("_show_self_inspector", "_show_dump_rename", "_show_debug_pkg_builder"):
+        for erwartet in ("_show_self_inspector", "_show_dump_rename"):
             with self.subTest(methode=erwartet):
                 self.assertIn(erwartet, methoden)
+
+    def test_debug_pkg_und_abbild_pkg_sind_ausgebaut(self) -> None:
+        """Seit v1.9.41 gibt es nur noch "PKG bauen" - fuer Ordner und Abbilder."""
+        methoden = {m for _k, m in APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES}
+        self.assertIn("_show_pkg_bauen", methoden)
+        for weg in ("_show_debug_pkg_builder", "_show_exfat_pkg_builder"):
+            with self.subTest(methode=weg):
+                self.assertNotIn(weg, methoden)
+                self.assertFalse(hasattr(APP.PS5ConverterGUI, weg))
 
 
 class ErreichbarkeitTests(unittest.TestCase):
@@ -63,12 +76,17 @@ class ErreichbarkeitTests(unittest.TestCase):
         cls.spec = SPEC.read_text(encoding="utf-8")
 
     def test_wiederbelebte_module_werden_importiert(self) -> None:
-        for modul in ("self_reader", "dump_rename", "pkg_writer"):
+        for modul in ("self_reader", "dump_rename"):
             with self.subTest(modul=modul):
                 self.assertIn(f"ps5_validator.utils.{modul} import", self.quelltext)
 
+    def test_pkg_writer_ist_ganz_weg(self) -> None:
+        self.assertNotIn("pkg_writer", self.quelltext)
+        self.assertNotIn("'ps5_validator.utils.pkg_writer'", self.spec)
+        self.assertFalse((PROJEKT / "ps5_validator" / "utils" / "pkg_writer.py").exists())
+
     def test_gebuendelt_wird_nur_was_erreichbar_ist(self) -> None:
-        for modul in ("self_reader", "dump_rename", "pkg_writer"):
+        for modul in ("self_reader", "dump_rename"):
             with self.subTest(modul=modul):
                 self.assertIn(f"'ps5_validator.utils.{modul}'", self.spec)
 
@@ -105,34 +123,6 @@ class DumpUmbenennenTests(unittest.TestCase):
 
     def test_ungueltige_pfadzeichen_verschwinden(self) -> None:
         self.assertEqual(self.dr.sanitize_name('Spiel: "Teil/2"'), "Spiel Teil2")
-
-
-class DebugPaketTests(unittest.TestCase):
-    """Der Bau schreibt ein Paket, das der eigene Reader wieder versteht."""
-
-    def test_rundlauf_mit_echter_param_json(self) -> None:
-        from ps5_validator.utils.pkg_writer import build_debug_pkg
-        from ps5_validator.utils import pkg_reader
-
-        param = {
-            "titleId": "PPSA18089",
-            "contentId": "EP0001-PPSA18089_00-MATCHBOX00000000",
-            "contentVersion": "01.000.001",
-            "localizedParameters": {"defaultLanguage": "de-DE",
-                                    "de-DE": {"titleName": "Testtitel"}},
-        }
-        with tempfile.TemporaryDirectory() as ordner:
-            ziel = os.path.join(ordner, "test.pkg")
-            ergebnis = build_debug_pkg(ziel, param["contentId"], param)
-            self.assertTrue(os.path.isfile(ziel))
-            self.assertEqual(ergebnis["content_id"], param["contentId"])
-            self.assertGreater(ergebnis["size"], 0)
-
-            info = pkg_reader.read_pkg(ziel)
-            self.assertIsNotNone(info.header)
-            assert info.header is not None
-            self.assertEqual(info.header.content_id, param["contentId"])
-            self.assertGreater(len(info.entries), 0)
 
 
 class SammelkonvertierungTests(unittest.TestCase):

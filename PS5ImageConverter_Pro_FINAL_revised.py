@@ -120,10 +120,6 @@ from ps5_validator.utils.dump_rename import (
     compute_confidence as dump_rename_confidence,
     sanitize_name as dump_rename_sanitize,
 )
-from ps5_validator.utils.pkg_writer import (
-    PkgWriteError,
-    build_debug_pkg,
-)
 from ps5_validator.utils import anleitung
 from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ps5_downloads
@@ -571,7 +567,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.40"
+APP_VERSION = "v1.9.41"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3353,10 +3349,8 @@ class PS5ConverterGUI:
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
-        ("titlebar.exfat_pkg", "_show_exfat_pkg_builder"),
         ("titlebar.pkg_reader", "_show_pkg_reader"),
         ("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
-        ("titlebar.debug_pkg", "_show_debug_pkg_builder"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
@@ -6954,9 +6948,15 @@ class PS5ConverterGUI:
                          relief="flat",
                          focuscolor=c["bg_card"],
                          focusthickness=0)
+        # Gesperrt steht vorn: ttk nimmt den ersten passenden Zustand. Ohne
+        # den Eintrag sah ein gesperrter Knopf aus wie ein aktiver - am
+        # 22.09.2026 in der EXE an "PKG entpacken" (Abbrechen, Zielordner
+        # oeffnen im Leerlauf) gesehen. Accent- und Error-Knopf hatten ihn.
         style.map("TButton",
-                  background=[("active", c["accent_btn_hover"])],
-                  foreground=[("active", "#FFFFFF")],
+                  background=[("disabled", c["bg_card"]),
+                              ("active", c["accent_btn_hover"])],
+                  foreground=[("disabled", c["fg_secondary"]),
+                              ("active", "#FFFFFF")],
                   relief=[("focus", "flat")],
                   focuscolor=[("focus", c["bg_card"])])
         # Gestrichelten Fokus-Indikator aus dem clam-Layout entfernen
@@ -6980,11 +6980,14 @@ class PS5ConverterGUI:
                          focuscolor=c["accent_btn"],
                          focusthickness=0,
                          highlightthickness=0)
+        # Gesperrt vor aktiv: Ein Knopf, der unter der Maus gesperrt wird
+        # (der Klick auf STARTEN/Entpacken), traegt beide Zustaende - sonst
+        # bliebe er hell, bis die Maus ihn verlaesst.
         style.map("Accent.TButton",
-                  background=[("active", c["accent_btn_hover"]),
-                               ("disabled", c["bg_card"])],
-                  foreground=[("active", "#FFFFFF"),
-                               ("disabled", c["fg_secondary"])],
+                  background=[("disabled", c["bg_card"]),
+                               ("active", c["accent_btn_hover"])],
+                  foreground=[("disabled", c["fg_secondary"]),
+                               ("active", "#FFFFFF")],
                   relief=[("active", "flat"), ("focus", "flat")],
                   focuscolor=[("focus", c["accent_btn"])])
         try:
@@ -7008,10 +7011,10 @@ class PS5ConverterGUI:
                          focusthickness=0,
                          highlightthickness=0)
         style.map("Error.TButton",
-                  background=[("active", c["error_btn_hover"]),
-                               ("disabled", c["bg_card"])],
-                  foreground=[("active", "#FFFFFF"),
-                               ("disabled", c["fg_secondary"])],
+                  background=[("disabled", c["bg_card"]),
+                               ("active", c["error_btn_hover"])],
+                  foreground=[("disabled", c["fg_secondary"]),
+                               ("active", "#FFFFFF")],
                   relief=[("active", "flat"), ("focus", "flat")],
                   focuscolor=[("focus", c["error_btn"])])
         try:
@@ -8866,8 +8869,8 @@ class PS5ConverterGUI:
             # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
             return
 
-        # Werkzeugfenster auf ihrem eigenen Weg schliessen. "Abbild -> PKG",
-        # "PKG bauen", der PS4-Wandler und der Debug-PKG-Bauer fragen dort
+        # Werkzeugfenster auf ihrem eigenen Weg schliessen. "PKG bauen",
+        # "PKG entpacken" und der PS4-Wandler fragen dort
         # nach, wenn gerade etwas laeuft, und beenden ihren Unterprozess. Bis
         # v1.9.24 zerstoerte root.destroy() sie ohne diese Handler: prosperopkg
         # rechnete unsichtbar weiter und schrieb ins Ziel, und der entpackte
@@ -43078,283 +43081,6 @@ class PS5ConverterGUI:
         ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
                    command=_erstellen).pack(side="left", padx=(8, 0))
 
-    #: Kennzeichen eines rohen PFS-Abbilds: little-endian int64 bei Offset
-    #: 0x08. Derselbe Wert, den ffpfs_validator als PFS_MAGIC_VALUE fuehrt -
-    #: bewusst dieselbe Quelle, damit beide nicht auseinanderlaufen.
-    _PFS_MAGIC = 0x1332A0B
-
-    def _debug_pkg_ziel_freigegeben(self, ziel: str, bestaetigt: str,
-                                    parent=None) -> bool:
-        """Ob über ein vorhandenes Paket geschrieben werden darf.
-
-        Bis zum 06.09.2026 wurde gar nicht gefragt. Das fiel deshalb ins
-        Gewicht, weil das Fenster den Zielpfad **selbst vorschlägt**: Wer
-        einen Quellordner wählt, bekommt ``<darüber>/<Content-ID>.pkg``
-        eingetragen - also genau den Pfad, unter dem das Paket des letzten
-        Laufs liegt. Ein Klick auf ERSTELLEN schrieb darüber, ohne ein Wort.
-
-        Der Speichern-Dialog fragt selbst nach, bevor er einen Pfad
-        zurückgibt. Kommt der Pfad von dort und ist unverändert, wird hier
-        nicht ein zweites Mal gefragt.
-
-        Args:
-            ziel: Der Pfad, auf den ERSTELLEN zeigt.
-            bestaetigt: Der zuletzt vom Speichern-Dialog gelieferte Pfad.
-            parent: Fenster für die Rückfrage.
-
-        Returns:
-            Ob gebaut werden darf.
-        """
-        if not os.path.exists(ziel):
-            return True
-        if bestaetigt and (os.path.normcase(os.path.abspath(ziel))
-                           == os.path.normcase(os.path.abspath(bestaetigt))):
-            return True
-        return bool(messagebox.askyesno(
-            self._t("dialog.title.file_already_exists"),
-            self._t("dialog.msg.target_file_exists_overwrite_confirm", path=ziel),
-            parent=parent, default="no"))
-
-    def _debug_pkg_bild_pruefen(self, pfad: str) -> str:
-        """Prueft ein angegebenes PFS-Abbild grob. Leerer Text heisst: in Ordnung.
-
-        Nur die Faelle, die sicher falsch sind - fehlend, keine gewoehnliche
-        Datei, leer. Ob der Inhalt wirklich ein PFS ist, beantwortet
-        :meth:`_sieht_nach_pfs_aus`; dort wird gefragt statt abgelehnt.
-        """
-        if not os.path.exists(pfad):
-            return self._t("debug_pkg.image_missing", path=pfad)
-        if not os.path.isfile(pfad):
-            return self._t("debug_pkg.image_not_a_file", path=pfad)
-        try:
-            if os.path.getsize(pfad) == 0:
-                return self._t("debug_pkg.image_empty", path=pfad)
-        except OSError as exc:
-            return self._t("debug_pkg.image_unreadable", path=pfad, error=exc)
-        return ""
-
-    @classmethod
-    def _sieht_nach_pfs_aus(cls, pfad: str) -> bool:
-        """Traegt die Datei das PFS-Kennzeichen an der erwarteten Stelle?
-
-        Bewusst nur ein Blick auf die Magic - eine vollstaendige Pruefung
-        gehoert in den Validator, nicht in einen Dateidialog. Bei Zweifeln
-        wird der Anwender gefragt, nicht abgewiesen.
-        """
-        try:
-            with open(pfad, "rb") as datei:
-                kopf = datei.read(16)
-        except OSError:
-            return False
-        if len(kopf) < 16:
-            return False
-        return struct.unpack_from("<q", kopf, 0x08)[0] == cls._PFS_MAGIC
-
-    def _show_debug_pkg_builder(self) -> None:
-        """Öffnet den Bauer für unsignierte Debug-.pkg-Container."""
-        c = self._COLORS
-        win = self._build_modern_toplevel(
-            self._t("debug_pkg.window_title"), 780, 460, min_width=640, min_height=400)
-        self._build_modern_header(
-            win, self._t("debug_pkg.window_title"), self._t("debug_pkg.subtitle"))
-
-        körper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        körper.pack(fill="both", expand=True)
-
-        quelle_var, cid_var = tk.StringVar(), tk.StringVar()
-        image_var, ziel_var = tk.StringVar(), tk.StringVar()
-        status_var = tk.StringVar()
-
-        def _zeile(label_key: str, variable: tk.StringVar, waehler) -> None:
-            tk.Label(körper, text=self._t(label_key), font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x", pady=(8, 2))
-            reihe = tk.Frame(körper, bg=c["bg_main"])
-            reihe.pack(fill="x")
-            tk.Entry(reihe, textvariable=variable, font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                     relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-            if waehler is not None:
-                ttk.Button(reihe, text="…", width=3, command=waehler).pack(side="left", padx=(6, 0))
-
-        def _quelle_waehlen() -> None:
-            ordner = filedialog.askdirectory(
-                title=self._t("debug_pkg.source_label"),
-                initialdir=self._get_source_dialog_initial_dir() or None, parent=win)
-            if not ordner:
-                return
-            quelle_var.set(os.path.normpath(ordner))
-            try:
-                daten = load_param_manifest_json(os.path.join(ordner, "sce_sys", "param.json"))
-            except (OSError, ValueError) as exc:
-                messagebox.showwarning(self._t("debug_pkg.no_param_title"),
-                                       self._t("debug_pkg.no_param_message", error=exc), parent=win)
-                return
-            cid = str(daten.get("contentId") or daten.get("titleId") or "").strip()
-            if cid:
-                cid_var.set(cid)
-            if not ziel_var.get():
-                ziel_var.set(os.path.join(os.path.dirname(ordner), f"{cid or 'debug'}.pkg"))
-
-        def _image_waehlen() -> None:
-            pfad = filedialog.askopenfilename(
-                title=self._t("debug_pkg.choose_image_dialog_title"),
-                filetypes=[(self._t("filetype.all_files"), "*.*")], parent=win)
-            if pfad:
-                image_var.set(pfad)
-
-        #: Der Pfad, den der Speichern-Dialog bestätigt hat. Er fragt beim
-        #: Überschreiben selbst nach, also darf _bauen dafür nicht ein
-        #: zweites Mal fragen. Für jeden anderen Weg in das Feld - den
-        #: Vorschlag aus _quelle_waehlen, die Tastatur - hat niemand gefragt.
-        bestaetigtes_ziel = [""]
-
-        def _ziel_waehlen() -> None:
-            pfad = filedialog.asksaveasfilename(
-                title=self._t("debug_pkg.choose_output_dialog_title"), defaultextension=".pkg",
-                filetypes=[(self._t("filetype.pkg_files"), "*.pkg")], parent=win)
-            if pfad:
-                ziel_var.set(pfad)
-                bestaetigtes_ziel[0] = pfad
-
-        _zeile("debug_pkg.source_label", quelle_var, _quelle_waehlen)
-        _zeile("debug_pkg.content_id_label", cid_var, None)
-        _zeile("debug_pkg.image_label", image_var, _image_waehlen)
-        _zeile("debug_pkg.output_label", ziel_var, _ziel_waehlen)
-
-        tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
-                 wraplength=700, justify="left").pack(fill="x", pady=(12, 0))
-
-        def _bauen() -> None:
-            quelle = quelle_var.get().strip()
-            if not quelle or not os.path.isdir(quelle):
-                messagebox.showwarning(self._t("dialog.title.no_source_folder"),
-                                       self._t("dialog.msg.choose_valid_source_folder"), parent=win)
-                return
-            if not cid_var.get().strip():
-                messagebox.showwarning(self._t("dialog.title.no_content_id"),
-                                       self._t("dialog.msg.enter_content_id"), parent=win)
-                return
-            if not ziel_var.get().strip():
-                messagebox.showwarning(self._t("dialog.title.no_output_path"),
-                                       self._t("dialog.msg.choose_pkg_output_path"), parent=win)
-                return
-            if not self._debug_pkg_ziel_freigegeben(ziel_var.get().strip(),
-                                                    bestaetigtes_ziel[0], win):
-                return
-            try:
-                param = load_param_manifest_json(os.path.join(quelle, "sce_sys", "param.json"))
-            except (OSError, ValueError) as exc:
-                messagebox.showerror(self._t("debug_pkg.no_param_title"),
-                                     self._t("debug_pkg.no_param_message", error=exc), parent=win)
-                return
-
-            bild = image_var.get().strip() or None
-            if bild is not None:
-                # Bis zum 05.09.2026 ging der Pfad ungeprueft weiter: Eine
-                # 0-Byte-Datei ergab ein Paket vom Typ "full_debug", eine PNG
-                # ebenso - beide Male mit der Meldung "Debug-.pkg erstellt".
-                # Der Fehlgriff fiel erst an der Konsole auf.
-                fehler = self._debug_pkg_bild_pruefen(bild)
-                if fehler:
-                    messagebox.showerror(self._t("debug_pkg.failed_title"),
-                                         fehler, parent=win)
-                    return
-                if not self._sieht_nach_pfs_aus(bild):
-                    # Kein hartes Nein: Ein bewusster Sonderfall soll moeglich
-                    # bleiben, der versehentliche Fehlgriff aber auffallen.
-                    if not messagebox.askyesno(
-                            self._t("debug_pkg.image_odd_title"),
-                            self._t("debug_pkg.image_odd_message", path=bild),
-                            parent=win, default="no"):
-                        return
-
-            status_var.set(self._t("debug_pkg.building"))
-            bau_knopf.configure(state="disabled")
-            # Im Fensterfaden festhalten. Bis v1.9.24 las der Arbeitsfaden
-            # Zielpfad und Content-ID selbst aus den Tk-Variablen.
-            ziel_pfad = ziel_var.get().strip()
-            content_id = cid_var.get().strip()
-
-            def _fertig(ergebnis) -> None:
-                bau_knopf.configure(state="normal")
-                zusammenfassung = self._t(
-                    "debug_pkg.result",
-                    path=ergebnis.get("path", ziel_pfad),
-                    type=ergebnis.get("type", "-"),
-                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0)),
-                    entries=ergebnis.get("entry_count", "-"),
-                    content_id=ergebnis.get("content_id", "-"),
-                )
-                status_var.set(zusammenfassung)
-                messagebox.showinfo(
-                    self._t("dialog.title.debug_pkg_created"),
-                    self._t("dialog.msg.debug_pkg_created") + "\n\n" + zusammenfassung,
-                    parent=win)
-
-            def _misslungen(meldung: str) -> None:
-                bau_knopf.configure(state="normal")
-                status_var.set("")
-                messagebox.showerror(self._t("debug_pkg.failed_title"),
-                                     meldung, parent=win)
-
-            def _arbeit() -> None:
-                # In einem eigenen Faden: Bei angegebenem PFS-Image kopiert
-                # build_debug_pkg die ganze Datei in die .pkg. Bei zig Gigabyte
-                # stand die Oberflaeche sonst minutenlang still, Windows meldete
-                # "Keine Rueckmeldung" - und wer das Programm daraufhin abschoss,
-                # tat es mitten im Schreiben.
-                try:
-                    ergebnis = build_debug_pkg(
-                        ziel_pfad, content_id, param,
-                        pfs_image_path=bild)
-                except (PkgWriteError, OSError, ValueError) as exc:
-                    meldung = str(exc)
-                    # Ins Programmprotokoll unabhaengig vom Fenster: Wer es
-                    # waehrend des Baus schliesst (die Rueckfrage erlaubt das),
-                    # erfuhr bis v1.9.24 vom Ausgang nichts.
-                    self._append_to_log(self._t("debug_pkg.failed_title")
-                                        + ": " + meldung + chr(10))
-                    self._spaeter_im_fenster(win, _misslungen, meldung)
-                    return
-                # Frueher ging hier das rohe Python-dict ins Protokoll.
-                self._append_to_log(self._t(
-                    "debug_pkg.log_done",
-                    path=ergebnis.get("path", ziel_pfad),
-                    size=self._fmt_bytes(int(ergebnis.get("size", 0) or 0))) + chr(10))
-                self._spaeter_im_fenster(win, _fertig, ergebnis)
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="debug-pkg-builder").start()
-
-        def _beim_schliessen() -> None:
-            """Schliesst das Fenster – und fragt, wenn noch gebaut wird.
-
-            Siehe ``_show_ps4_pkg_converter``: Bis v1.9.6 gab es diese
-            Funktion nicht, der Knopf warf einen ``NameError``.
-
-            Der Bau läuft in einem Daemon-Faden ohne Prozessgriff; abbrechen
-            lässt er sich nicht. Deshalb wird gefragt statt beendet – wer
-            zumacht, weiß dann, dass im Hintergrund weitergeschrieben wird.
-            """
-            if str(bau_knopf.cget("state")) == "disabled":
-                if not messagebox.askyesno(
-                        self._t("debug_pkg.window_title"),
-                        self._t("debug_pkg.close_while_building"),
-                        parent=win, default="no"):
-                    return
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=_beim_schliessen).pack(side="right")
-        bau_knopf = ttk.Button(knopfreihe, text=self._t("debug_pkg.build_button"),
-                               style="Accent.TButton", command=_bauen)
-        bau_knopf.pack(side="left")
-
     # ==================================================================
     # Klog – Live-Streaming des PS5-Kernel-Logs über einen einfachen
     # TCP-Rohsocket (Standardport 3232, zeilenbasiertes Textprotokoll,
@@ -43619,313 +43345,6 @@ class PS5ConverterGUI:
     # Beide Tools verwenden dasselbe key=value-Format und denselben
     # Lade-/Schreib-Ablauf (siehe ps5_validator.utils.ini_config).
     # ==================================================================
-    def _show_pkg_bauen(self) -> None:
-        """Baut aus einem Dump-Ordner ein installierbares Debug-Paket.
-
-        Die Arbeit macht ``prosperopkg`` als eigener Prozess - so wie
-        mkpfs und UFS2Tool. Dieses Fenster waehlt aus, zeigt den
-        Fortschritt und schreibt das Protokoll mit.
-        """
-        c = self._COLORS
-        werkzeug = prosperopkg.werkzeug_finden()
-        if not werkzeug:
-            messagebox.showerror(
-                self._t("pkgbau.window_title"),
-                self._t("pkgbau.missing_tool",
-                        ordner=prosperopkg.WERKZEUGORDNER),
-                parent=self.root)
-            return
-
-        win = self._build_modern_toplevel(
-            self._t("pkgbau.window_title"), 900, 640,
-            min_width=740, min_height=520)
-        self._build_modern_header(
-            win, self._t("pkgbau.window_title"), self._t("pkgbau.subtitle"))
-
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
-
-        # Die Art entscheidet ueber alles Weitere - deshalb ganz oben,
-        # mit der Erklaerung daneben statt nur im Handbuch.
-        art_var = tk.StringVar(value="homebrew")
-        artreihe = tk.Frame(koerper, bg=c["bg_main"])
-        artreihe.pack(fill="x", pady=(4, 2))
-        for wert, schluessel in (("homebrew", "pkgbau.kind_homebrew"),
-                                 ("spiel", "pkgbau.kind_game")):
-            tk.Radiobutton(
-                artreihe, text=self._t(schluessel), value=wert,
-                variable=art_var, bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_accent"], font=(UI_SCHRIFT, pt(9)),
-                command=lambda: _art_erklaeren(),
-            ).pack(side="left", padx=(0, 14))
-
-        erklaerung = tk.Label(
-            koerper, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-            fg=c["fg_warning"], anchor="w", justify="left", wraplength=820)
-        erklaerung.pack(fill="x", pady=(2, 8))
-
-        # Der Umbruch richtet sich nach der tatsaechlichen Breite, nicht nach
-        # einer festen Zahl. 820 px standen hier fest, das Fenster ist aber
-        # nur 740 px breit zu ziehen (min_width) und der Koerper nimmt links
-        # und rechts je 20 px - der Warntext lief dann ueber den Rand hinaus,
-        # und ausgerechnet er sagt, dass ein so gebautes Paket auf der
-        # Konsole nicht startet.
-        def _umbruch_nachziehen(_ereignis=None) -> None:
-            try:
-                breite = erklaerung.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                erklaerung.configure(wraplength=breite - 8)
-
-        erklaerung.bind("<Configure>", _umbruch_nachziehen)
-
-        def _art_erklaeren() -> None:
-            schluessel = ("pkgbau.explain_homebrew"
-                          if art_var.get() == "homebrew"
-                          else "pkgbau.explain_game")
-            farbe = (c["fg_secondary"] if art_var.get() == "homebrew"
-                     else c["fg_warning"])
-            erklaerung.configure(text=self._t(schluessel), fg=farbe)
-            _lizenzfrei_schalten()
-
-        # Der erste Aufruf steht weiter unten, nach den Kaestchen:
-        # _art_erklaeren schaltet inzwischen auch "Lizenzfrei bauen",
-        # und das Kaestchen gibt es hier oben noch nicht.
-
-        quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
-        schnell_var = tk.BooleanVar(value=True)
-        lizenzfrei_var = tk.BooleanVar(value=True)
-        status_var = tk.StringVar(value=self._t("pkgbau.status_idle"))
-        # "prozess" nimmt den laufenden prosperopkg auf, damit das Schliessen
-        # ihn wirklich beenden kann. Ohne das rief der Knopf nur win.destroy:
-        # Der Kindprozess lief mit seiner Zeitgrenze von bis zu zwei Stunden
-        # weiter und schrieb weiter in den Zielordner, waehrend Protokoll und
-        # Statuszeile ins Leere liefen - der Anwender glaubte abgebrochen zu
-        # haben und erfuhr von einem Fehlschlag nie etwas.
-        laeuft: dict = {"aktiv": False, "prozess": None}
-
-        def _zeile(text: str, var, waehlen) -> None:
-            reihe = tk.Frame(koerper, bg=c["bg_main"])
-            reihe.pack(fill="x", pady=2)
-            tk.Label(reihe, text=text, width=12, anchor="w",
-                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                     fg=c["fg_secondary"]).pack(side="left")
-            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                     insertbackground=c["fg_primary"]).pack(
-                side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-            ttk.Button(reihe, text="...", width=4,
-                       command=waehlen).pack(side="left")
-
-        def _quelle_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                title=self._t("pkgbau.choose_source"),
-                initialdir=self._get_source_dialog_initial_dir() or None,
-                parent=win)
-            if gewaehlt:
-                quelle_var.set(os.path.normpath(gewaehlt))
-                _pruefen()
-
-        def _ziel_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                title=self._t("pkgbau.choose_output"), parent=win)
-            if gewaehlt:
-                ziel_var.set(os.path.normpath(gewaehlt))
-
-        _zeile(self._t("pkgbau.source"), quelle_var, _quelle_waehlen)
-        _zeile(self._t("pkgbau.output"), ziel_var, _ziel_waehlen)
-
-        schalter = tk.Frame(koerper, bg=c["bg_main"])
-        schalter.pack(fill="x", pady=(8, 4))
-        kaestchen: dict[str, tk.Checkbutton] = {}
-        for name, text, var in (("schnell", self._t("pkgbau.fast"), schnell_var),
-                                ("lizenzfrei", self._t("pkgbau.license_free"),
-                                 lizenzfrei_var)):
-            kaestchen[name] = tk.Checkbutton(
-                schalter, text=text, variable=var, bg=c["bg_main"],
-                fg=c["fg_primary"], selectcolor=c["bg_card"],
-                activebackground=c["bg_main"], activeforeground=c["fg_accent"],
-                font=(UI_SCHRIFT, pt(9)),
-            )
-            kaestchen[name].pack(side="left", padx=(0, 14))
-
-        def _lizenzfrei_schalten() -> None:
-            """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
-
-            ``prosperopkg.homebrew_bauen`` kennt den Schalter gar nicht - er
-            steht nur in der Signatur von ``bauen``. Das Kaestchen blieb
-            trotzdem klickbar und weckte den Eindruck, es taete etwas.
-            """
-            try:
-                kaestchen["lizenzfrei"].configure(
-                    state="disabled" if art_var.get() == "homebrew" else "normal")
-            except tk.TclError:
-                pass
-
-        _art_erklaeren()
-
-        protokoll = tk.Text(koerper, height=16, font=("Consolas", pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"],
-                            relief="flat", wrap="none")
-        protokoll.pack(fill="both", expand=True, pady=(6, 4))
-
-        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"],
-                 anchor="w").pack(fill="x")
-
-        def _protokoll(text: str) -> None:
-            def _setzen() -> None:
-                if not protokoll.winfo_exists():
-                    return
-                protokoll.insert("end", str(text).rstrip("\n") + "\n")
-                protokoll.see("end")
-            self._spaeter_im_fenster(win, _setzen)
-
-        def _status(text: str) -> None:
-            self._spaeter_im_fenster(win, lambda: status_var.set(text))
-
-        def _pruefen() -> None:
-            """Sagt vor dem Bauen, ob das Backup ueberhaupt starten koennte."""
-            quelle = quelle_var.get().strip()
-            if laeuft["aktiv"]:
-                return
-            # Bis hierher stieg die Pruefung bei einem untauglichen Quellordner
-            # wortlos aus - kein Dialog, keine Statuszeile, nichts im
-            # Protokoll. Der Anwender drueckte den Knopf und nichts geschah;
-            # ob das Programm haengt oder der Ordner falsch ist, war nicht zu
-            # unterscheiden.
-            if not quelle:
-                _status(self._t("pkgbau.status_no_source"))
-                return
-            if not os.path.isdir(quelle):
-                _status(self._t("pkgbau.status_bad_source"))
-                _protokoll(self._t("pkgbau.log_bad_source", path=quelle))
-                return
-            laeuft["aktiv"] = True
-            _status(self._t("pkgbau.status_checking"))
-
-            def _arbeit() -> None:
-                try:
-                    erg = prosperopkg.pruefen(
-                        quelle, melden=_protokoll,
-                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
-                                                "prosperopkg."))
-                except prosperopkg.ProsperoFehler as exc:
-                    _protokoll("[FEHLER] %s" % exc)
-                    _status(self._t("pkgbau.status_check_failed"))
-                    return
-                finally:
-                    laeuft["aktiv"] = False
-                if erg["bereit"]:
-                    _status(self._t("pkgbau.status_ready"))
-                else:
-                    _status(self._t("pkgbau.status_not_ready",
-                                    anzahl=len(erg["blocker"])))
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="prosperopkg-inspect").start()
-
-        def _bauen() -> None:
-            quelle = quelle_var.get().strip()
-            ziel = ziel_var.get().strip()
-            if laeuft["aktiv"]:
-                return
-            if not os.path.isdir(quelle):
-                messagebox.showwarning(self._t("pkgbau.window_title"),
-                                       self._t("pkgbau.need_source"),
-                                       parent=win)
-                return
-            if not ziel:
-                messagebox.showwarning(self._t("pkgbau.window_title"),
-                                       self._t("pkgbau.need_output"),
-                                       parent=win)
-                return
-
-            laeuft["aktiv"] = True
-            _status(self._t("pkgbau.status_building"))
-            # Die Auswahl hier festhalten, im Fensterfaden. Bis v1.9.24 las der
-            # Arbeitsfaden die drei Tk-Variablen selbst - ohne laufende
-            # Ereignisschleife wirft Tk dort, und eine waehrend des Baus
-            # umgestellte Auswahl galt fuer den laufenden Bau.
-            homebrew = art_var.get() == "homebrew"
-            schnell = bool(schnell_var.get())
-            lizenzfrei = bool(lizenzfrei_var.get())
-
-            def _arbeit() -> None:
-                try:
-                    if homebrew:
-                        pfad = prosperopkg.homebrew_bauen(
-                            quelle, ziel, melden=_protokoll,
-                            texte=self._modul_texte(prosperopkg.MELDUNGEN,
-                                                    "prosperopkg."),
-                            schnell=schnell,
-                            prozess_ablage=laeuft)
-                    else:
-                        pfad = prosperopkg.bauen(
-                            quelle, ziel, melden=_protokoll,
-                            texte=self._modul_texte(prosperopkg.MELDUNGEN,
-                                                    "prosperopkg."),
-                            lizenzfrei=lizenzfrei,
-                            schnell=schnell,
-                            prozess_ablage=laeuft)
-                except prosperopkg.ProsperoFehler as exc:
-                    _protokoll("[FEHLER] %s" % exc)
-                    _status(self._t("pkgbau.status_failed"))
-                    return
-                finally:
-                    laeuft["aktiv"] = False
-                groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
-                _status(self._t("pkgbau.status_done",
-                                groesse=self._fmt_bytes(groesse)))
-                _protokoll("")
-                _protokoll(self._t("pkgbau.result", pfad=pfad))
-                self._append_to_log("[INFO] PKG gebaut: %s\n" % pfad)
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="prosperopkg-build").start()
-
-        def _beim_schliessen() -> None:
-            """Schliesst das Fenster - und beendet einen laufenden Bau.
-
-            Vorher rief der Knopf nur ``win.destroy``. Der prosperopkg-Prozess
-            lief danach unbemerkt weiter (Zeitgrenze bis zu zwei Stunden) und
-            schrieb weiter in den Zielordner; Protokoll und Statuszeile liefen
-            dabei ins Leere, weil sie ueber ``_spaeter_im_fenster`` abgesichert
-            sind. Der Anwender glaubte abgebrochen zu haben und erfuhr von
-            einem Fehlschlag nie etwas.
-            """
-            if laeuft["aktiv"]:
-                if not messagebox.askyesno(
-                        self._t("pkgbau.window_title"),
-                        self._t("pkgbau.abort_confirm"),
-                        parent=win, default="no"):
-                    return
-                prozess = laeuft.get("prozess")
-                if prozess is not None:
-                    try:
-                        prozess.terminate()
-                    except OSError as exc:
-                        logger.debug("PKG-Bau nicht beendbar: %s", exc)
-                # Das Kennzeichen hier zuruecksetzen: Der Arbeitsfaden tut es
-                # zwar selbst, aber erst wenn der Prozess wirklich weg ist -
-                # und bis dahin ist das Fenster schon fort.
-                laeuft["aktiv"] = False
-                self._append_to_log(self._t("pkgbau.log_aborted") + chr(10))
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=_beim_schliessen).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("pkgbau.build_button"),
-                   style="Accent.TButton", command=_bauen).pack(side="left")
-        ttk.Button(knopfreihe, text=self._t("pkgbau.check_button"),
-                   command=_pruefen).pack(side="left", padx=(8, 0))
-
     @staticmethod
     def _sdk_bcd(major: int, minor: int) -> str:
         """Packt Haupt- und Nebenversion als BCD in den 16-stelligen Hex-String
@@ -44073,7 +43492,7 @@ class PS5ConverterGUI:
             self.is_running = True
             # Merken, dass das Kennzeichen gerade diesem Werkzeug gehoert - nur
             # dann darf sein Abbrechen es zuruecksetzen (siehe _abbrechen in
-            # _show_exfat_pkg_builder).
+            # _show_pkg_bauen).
             self._abbild_pkg_haelt_is_running = True
             try:
                 if not self._extract_inner_image(
@@ -44164,37 +43583,42 @@ class PS5ConverterGUI:
             datei.write("\n")
         return geaendert
 
-    def _show_exfat_pkg_builder(self) -> None:
-        """Baut aus einem beliebigen PS5-Abbild ein installierbares Debug-``.pkg``.
+    def _show_pkg_bauen(self) -> None:
+        """WEITERE TOOLS: ein Debug-``.pkg`` bauen - aus einem Dump-Ordner oder einem Abbild.
 
-        Quelle ist ``.exfat``, ``.ffpfsc``, ``.ffpfs`` oder ``.ffpkg`` - die
-        Format-Weiche ``_abbild_zu_dumpordner`` entpackt jedes davon in einen
-        Dump-Ordner (exFAT/PFS nativ per MkPFS ohne OSFMount und ohne
-        Adminrechte; ``.ffpkg`` ueber denselben Weg wie Aufgabe 4, der bei
-        Dateien ueber 2 GB mount-frei liest). Auf Wunsch wird die Ziel-Firmware
-        in ``param.json`` gesetzt, und daraus baut ``prosperopkg``
-        (LibProsperoPkg 2.5) das Paket - wie beim Fenster "PKG bauen", nur mit
-        einem Abbild als Quelle.
+        Bis v1.9.40 waren das zwei Fenster ("PKG bauen" fuer Ordner,
+        "Abbild -> PKG" fuer Abbilder) mit demselben Bau dahinter. Jetzt eins:
 
-        Die ausfuehrbaren ``.sceversion``-Datensaetze werden bewusst nicht
-        umgeschrieben (das koennte nur LibProsperoPkg 1.2.0). Die
-        Firmware-Schranke der Konsole liest ``requiredSystemSoftwareVersion``
-        aus ``param.json`` - und die wird hier gesetzt.
+        * **Dump-Ordner:** wird unveraendert an ``prosperopkg`` gegeben. Nichts
+          wird entpackt, nichts geaendert - Ziel-Firmware und PlayGo sind
+          deshalb gesperrt (sie schrieben sonst in den Ordner des Anwenders).
+          "Pruefen" sagt vorab, ob die Module laufen wuerden.
+        * **Abbild** (``.exfat``/``.ffpfsc``/``.ffpfs``/``.ffpkg``): Die
+          Format-Weiche ``_abbild_zu_dumpordner`` entpackt es in den
+          Arbeitsordner (exFAT/PFS nativ per MkPFS ohne OSFMount und ohne
+          Adminrechte; ``.ffpkg`` ueber denselben Weg wie Aufgabe 4). In dieser
+          Arbeitskopie werden auf Wunsch Ziel-Firmware und PlayGo-Felder
+          gesetzt; danach wird sie geloescht.
+
+        Gebaut wird als Spiel-Backup (``prosperopkg.bauen``) oder als Homebrew
+        (``prosperopkg.homebrew_bauen``, kennt kein "lizenzfrei"). Die
+        ausfuehrbaren ``.sceversion``-Datensaetze werden bewusst nicht
+        umgeschrieben; die Firmware-Schranke der Konsole liest
+        ``requiredSystemSoftwareVersion`` aus ``param.json``.
         """
         c = self._COLORS
+        titel = self._t("pkgbau.window_title")
         werkzeug = prosperopkg.werkzeug_finden()
         if not werkzeug:
             messagebox.showerror(
-                self._t("exfatpkg.window_title"),
+                titel,
                 self._t("pkgbau.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
                 parent=self.root)
             return
 
-        win = self._build_modern_toplevel(
-            self._t("exfatpkg.window_title"), 900, 660,
-            min_width=760, min_height=560)
-        self._build_modern_header(
-            win, self._t("exfatpkg.window_title"), self._t("exfatpkg.subtitle"))
+        win = self._build_modern_toplevel(titel, 920, 760,
+                                          min_width=780, min_height=640)
+        self._build_modern_header(win, titel, self._t("pkgbau.subtitle"))
 
         # Knopfreihe zuerst an den unteren Rand - sonst quetscht die
         # Mindestfenstergroesse sie zusammen (Muster wie beim SELF-Inspektor);
@@ -44204,6 +43628,48 @@ class PS5ConverterGUI:
 
         koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
         koerper.pack(fill="both", expand=True)
+
+        # Die Art entscheidet ueber alles Weitere - deshalb ganz oben, mit der
+        # Erklaerung daneben statt nur im Handbuch. Ab Werk "Spiel-Backup":
+        # So baute "Abbild -> PKG", und Abbilder sind Spiele.
+        art_var = tk.StringVar(value="spiel")
+        artreihe = tk.Frame(koerper, bg=c["bg_main"])
+        artreihe.pack(fill="x", pady=(4, 2))
+        for wert, schluessel in (("spiel", "pkgbau.kind_game"),
+                                 ("homebrew", "pkgbau.kind_homebrew")):
+            tk.Radiobutton(
+                artreihe, text=self._t(schluessel), value=wert,
+                variable=art_var, bg=c["bg_main"], fg=c["fg_primary"],
+                selectcolor=c["bg_card"], activebackground=c["bg_main"],
+                activeforeground=c["fg_accent"], font=(UI_SCHRIFT, pt(9)),
+                command=lambda: _art_erklaeren(),
+            ).pack(side="left", padx=(0, 14))
+
+        erklaerung = tk.Label(
+            koerper, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+            fg=c["fg_warning"], anchor="w", justify="left", wraplength=700)
+        erklaerung.pack(fill="x", pady=(2, 8))
+
+        def _erklaerung_umbrechen(_ereignis=None) -> None:
+            # Der Umbruch folgt der echten Breite; eine feste Zahl lief im
+            # alten Fenster bei Mindestbreite ueber den Rand - und
+            # ausgerechnet dieser Text sagt, dass das Paket nicht startet.
+            try:
+                breite = erklaerung.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                erklaerung.configure(wraplength=breite - 8)
+
+        erklaerung.bind("<Configure>", _erklaerung_umbrechen)
+
+        def _art_erklaeren() -> None:
+            homebrew = art_var.get() == "homebrew"
+            erklaerung.configure(
+                text=self._t("pkgbau.explain_homebrew" if homebrew
+                             else "pkgbau.explain_game"),
+                fg=c["fg_secondary"] if homebrew else c["fg_warning"])
+            _lizenzfrei_schalten()
 
         quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
         arbeit_var = tk.StringVar(value=self._get_runtime_temp_dir())
@@ -44255,7 +43721,29 @@ class PS5ConverterGUI:
             if gewaehlt:
                 arbeit_var.set(os.path.normpath(gewaehlt))
 
-        _zeile(self._t("exfatpkg.source"), quelle_var, _quelle_waehlen)
+        def _ordner_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("pkgbau.choose_source"),
+                initialdir=self._get_source_dialog_initial_dir() or None,
+                parent=win)
+            if gewaehlt:
+                quelle_var.set(os.path.normpath(gewaehlt))
+
+        # Die Quelle ist Ordner ODER Datei - ein Dateidialog kann keinen
+        # Ordner waehlen und umgekehrt, deshalb zwei Knoepfe.
+        quellreihe = tk.Frame(koerper, bg=c["bg_main"])
+        quellreihe.pack(fill="x", pady=2)
+        tk.Label(quellreihe, text=self._t("pkgbau.source_any"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(quellreihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+        ttk.Button(quellreihe, text=self._t("pkgbau.pick_folder"),
+                   command=_ordner_waehlen).pack(side="left", padx=(0, 6))
+        ttk.Button(quellreihe, text=self._t("pkgbau.pick_image"),
+                   command=_quelle_waehlen).pack(side="left")
         _zeile(self._t("exfatpkg.output"), ziel_var, _ziel_waehlen)
         _zeile(self._t("exfatpkg.work"), arbeit_var, _arbeit_waehlen)
 
@@ -44275,14 +43763,50 @@ class PS5ConverterGUI:
 
         schalter = tk.Frame(koerper, bg=c["bg_main"])
         schalter.pack(fill="x", pady=(8, 4))
-        for text, var in ((self._t("pkgbau.fast"), schnell_var),
-                          (self._t("pkgbau.license_free"), lizenzfrei_var),
-                          (self._t("exfatpkg.playgo_fix"), playgo_var)):
-            tk.Checkbutton(
+        kaestchen: dict[str, tk.Checkbutton] = {}
+        for name, text, var in (("schnell", self._t("pkgbau.fast"), schnell_var),
+                                ("lizenzfrei", self._t("pkgbau.license_free"),
+                                 lizenzfrei_var),
+                                ("playgo", self._t("exfatpkg.playgo_fix"), playgo_var)):
+            kaestchen[name] = tk.Checkbutton(
                 schalter, text=text, variable=var, bg=c["bg_main"],
                 fg=c["fg_primary"], selectcolor=c["bg_card"],
                 activebackground=c["bg_main"], activeforeground=c["fg_accent"],
-                font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(0, 14))
+                font=(UI_SCHRIFT, pt(9)))
+            kaestchen[name].pack(side="left", padx=(0, 14))
+
+        def _lizenzfrei_schalten() -> None:
+            """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
+
+            ``prosperopkg.homebrew_bauen`` kennt den Schalter gar nicht - er
+            steht nur in der Signatur von ``bauen``. Klickbar weckte das
+            Kaestchen den Eindruck, es taete etwas.
+            """
+            try:
+                kaestchen["lizenzfrei"].configure(
+                    state="disabled" if art_var.get() == "homebrew" else "normal")
+            except tk.TclError:
+                pass
+
+        def _ist_ordner() -> bool:
+            return os.path.isdir(quelle_var.get().strip())
+
+        def _quelle_art_schalten(*_argumente) -> None:
+            """Ziel-Firmware und PlayGo nur bei Abbildern.
+
+            Beide schreiben in ``param.json``. Bei einem Abbild ist das die
+            Arbeitskopie; bei einem Dump-Ordner waere es der Ordner des
+            Anwenders selbst - das darf dieses Fenster nicht.
+            """
+            ordner = _ist_ordner()
+            try:
+                fw_box.configure(state="disabled" if ordner else "normal")
+                kaestchen["playgo"].configure(state="disabled" if ordner else "normal")
+            except tk.TclError:
+                pass
+            _knoepfe_setzen(laeuft["aktiv"])
+
+        _art_erklaeren()
 
         # Der Hinweis steht in einer eigenen Zeile unter den Kaestchen, nicht
         # daneben: Die Schalterreihe traegt jetzt drei Eintraege, und ein
@@ -44309,6 +43833,22 @@ class PS5ConverterGUI:
                 playgo_hinweis.configure(wraplength=breite - 8)
 
         playgo_hinweis.bind("<Configure>", _playgo_umbruch)
+
+        ordner_hinweis = tk.Label(koerper, text=self._t("pkgbau.only_image_hint"),
+                                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                                  fg=c["fg_secondary"], anchor="w", justify="left",
+                                  wraplength=700)
+        ordner_hinweis.pack(fill="x", pady=(0, 4))
+
+        def _ordner_hinweis_umbruch(_ereignis=None) -> None:
+            try:
+                breite = ordner_hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                ordner_hinweis.configure(wraplength=breite - 8)
+
+        ordner_hinweis.bind("<Configure>", _ordner_hinweis_umbruch)
 
         balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
         balken.pack(fill="x", pady=(6, 2))
@@ -44413,6 +43953,10 @@ class PS5ConverterGUI:
             try:
                 umwandeln_btn.configure(state="disabled" if laufend else "normal")
                 abbrechen_btn.configure(state="normal" if laufend else "disabled")
+                # Pruefen geht nur bei einem Ordner: Ein Abbild muesste dafuer
+                # erst entpackt werden.
+                pruefen_btn.configure(
+                    state="disabled" if (laufend or not _ist_ordner()) else "normal")
             except (tk.TclError, NameError):
                 pass
 
@@ -44443,58 +43987,69 @@ class PS5ConverterGUI:
             arbeit = arbeit_var.get().strip()
             if laeuft["aktiv"]:
                 return
+            ist_ordner = bool(quelle) and os.path.isdir(quelle)
+            ist_abbild = (bool(quelle) and os.path.isfile(quelle)
+                          and quelle.lower().endswith(self._ABBILD_PKG_ENDUNGEN))
+            if not (ist_ordner or ist_abbild):
+                messagebox.showwarning(titel, self._t("pkgbau.need_source_any"),
+                                       parent=win)
+                return
             # Die Extraktion teilt sich Kennzeichen, Ausgabeschlange und
             # MkPFS-Sperre mit den Aufgaben 1-8. Laeuft dort etwas, warten.
-            if self._vorgang_laeuft_noch():
+            # Ein Ordner wird nicht entpackt und stoert dort nichts.
+            if ist_abbild and self._vorgang_laeuft_noch():
                 messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"),
                                     self._t("dialog.msg.aufgabe_laeuft"), parent=win)
                 return
-            if not quelle or not os.path.isfile(quelle) or \
-                    not quelle.lower().endswith(self._ABBILD_PKG_ENDUNGEN):
-                messagebox.showwarning(self._t("exfatpkg.window_title"),
-                                       self._t("exfatpkg.need_source"), parent=win)
-                return
             if not ziel:
-                messagebox.showwarning(self._t("exfatpkg.window_title"),
-                                       self._t("exfatpkg.need_output"), parent=win)
+                messagebox.showwarning(titel, self._t("exfatpkg.need_output"),
+                                       parent=win)
                 return
-            if not arbeit:
-                messagebox.showwarning(self._t("exfatpkg.window_title"),
-                                       self._t("exfatpkg.need_work"), parent=win)
+            if ist_abbild and not arbeit:
+                messagebox.showwarning(titel, self._t("exfatpkg.need_work"),
+                                       parent=win)
                 return
-            try:
-                firmware = self._exfat_pkg_firmware_lesen(fw_var.get())
-            except ValueError:
-                messagebox.showwarning(self._t("exfatpkg.window_title"),
-                                       self._t("exfatpkg.firmware_bad",
-                                               wert=fw_var.get()), parent=win)
-                return
+            firmware = None
+            if ist_abbild:
+                try:
+                    firmware = self._exfat_pkg_firmware_lesen(fw_var.get())
+                except ValueError:
+                    messagebox.showwarning(titel, self._t("exfatpkg.firmware_bad",
+                                                          wert=fw_var.get()),
+                                           parent=win)
+                    return
 
             # Platz grob pruefen (siehe _abbild_pkg_platzbedarf). Knapp heisst
             # warnen, nicht verbieten - die endgueltige Groesse haengt an der
-            # Kompression.
-            try:
-                noetig_arbeit, noetig_ziel = self._abbild_pkg_platzbedarf(quelle)
-                frei_arbeit = shutil.disk_usage(arbeit if os.path.isdir(arbeit)
-                                                else os.path.dirname(arbeit) or ".").free
-                frei_ziel = shutil.disk_usage(ziel if os.path.isdir(ziel)
-                                              else os.path.dirname(ziel) or ".").free
-                if frei_arbeit < noetig_arbeit or frei_ziel < noetig_ziel:
-                    if not messagebox.askyesno(
-                            self._t("exfatpkg.window_title"),
-                            self._t("exfatpkg.space_warn"), parent=win, default="no"):
-                        return
-            except OSError:
-                pass
+            # Kompression. Nur bei Abbildern: Einen Dump-Ordner zu vermessen
+            # hiesse, ihn vorab ganz zu durchlaufen - ohne Anzeige.
+            if ist_abbild:
+                try:
+                    noetig_arbeit, noetig_ziel = self._abbild_pkg_platzbedarf(quelle)
+                    frei_arbeit = shutil.disk_usage(
+                        arbeit if os.path.isdir(arbeit)
+                        else os.path.dirname(arbeit) or ".").free
+                    frei_ziel = shutil.disk_usage(
+                        ziel if os.path.isdir(ziel)
+                        else os.path.dirname(ziel) or ".").free
+                    if frei_arbeit < noetig_arbeit or frei_ziel < noetig_ziel:
+                        if not messagebox.askyesno(
+                                titel, self._t("exfatpkg.space_warn"),
+                                parent=win, default="no"):
+                            return
+                except OSError:
+                    pass
 
             laeuft["aktiv"] = True
             laeuft["abbruch"] = False
             # Woher der Fortschritt kommt: exFAT treiben wir selbst (stand),
             # PFS/UFS2 laufen ueber die Aufgabe-4-Wege (self.progress_var).
+            # Ein Ordner wird nicht entpackt - es geht gleich ans Bauen.
             stand["quelle"] = "self" if quelle.lower().endswith(".exfat") else "app"
-            stand["phase"] = "extract"
+            stand["phase"] = "extract" if ist_abbild else "build"
             stand["pct"] = 0.0
-            stand["status"] = self._t("exfatpkg.status_extracting")
+            stand["status"] = self._t("exfatpkg.status_extracting" if ist_abbild
+                                      else "exfatpkg.status_building")
             try:
                 self.progress_var.set(0)
             except tk.TclError:
@@ -44510,7 +44065,8 @@ class PS5ConverterGUI:
             # und hinterliess nur "Fehlgeschlagen" bei leerem Protokoll.
             lizenzfrei = bool(lizenzfrei_var.get())
             schnell = bool(schnell_var.get())
-            playgo_fix = bool(playgo_var.get())
+            playgo_fix = ist_abbild and bool(playgo_var.get())
+            homebrew = art_var.get() == "homebrew"
             _knoepfe_setzen(True)
             _takt()
 
@@ -44518,14 +44074,20 @@ class PS5ConverterGUI:
                 dump_ordner = ""
                 pfad = ""
                 try:
-                    basis = os.path.splitext(os.path.basename(quelle))[0]
-                    dump_ordner = os.path.join(arbeit, "abbildpkg_" + basis)
+                    if ist_ordner:
+                        # Direkt aus dem Ordner - kein Entpacken, keine
+                        # Arbeitskopie, nichts wird darin geaendert.
+                        wurzel = self._exfat_pkg_spielwurzel(quelle) or quelle
+                        _protokoll(self._t("pkgbau.log_folder", pfad=wurzel))
+                    else:
+                        basis = os.path.splitext(os.path.basename(quelle))[0]
+                        dump_ordner = os.path.join(arbeit, "abbildpkg_" + basis)
 
-                    _protokoll(self._t("exfatpkg.log_extracting", name=basis))
-                    wurzel = self._abbild_zu_dumpordner(
-                        quelle, dump_ordner, protokoll=_protokoll,
-                        status=_status, balken=_balken,
-                        abbruch=lambda: laeuft["abbruch"])
+                        _protokoll(self._t("exfatpkg.log_extracting", name=basis))
+                        wurzel = self._abbild_zu_dumpordner(
+                            quelle, dump_ordner, protokoll=_protokoll,
+                            status=_status, balken=_balken,
+                            abbruch=lambda: laeuft["abbruch"])
                     if wurzel is None:
                         if laeuft["abbruch"]:
                             _protokoll(self._t("exfatpkg.log_aborted"))
@@ -44538,7 +44100,8 @@ class PS5ConverterGUI:
 
                     param = os.path.join(wurzel, "sce_sys", "param.json")
                     if not os.path.isfile(param):
-                        _protokoll(self._t("exfatpkg.log_no_param"))
+                        _protokoll(self._t("pkgbau.log_no_param" if ist_ordner
+                                           else "exfatpkg.log_no_param"))
                         stand["phase"] = "failed"
                         stand["status"] = self._t("exfatpkg.status_failed")
                         return
@@ -44559,13 +44122,16 @@ class PS5ConverterGUI:
 
                     stand["phase"] = "build"
                     stand["status"] = self._t("exfatpkg.status_building")
-                    pfad = prosperopkg.bauen(
-                        wurzel, ziel, melden=_protokoll,
-                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
-                                                "prosperopkg."),
-                        lizenzfrei=lizenzfrei,
-                        schnell=schnell,
-                        prozess_ablage=laeuft)
+                    texte = self._modul_texte(prosperopkg.MELDUNGEN, "prosperopkg.")
+                    if homebrew:
+                        pfad = prosperopkg.homebrew_bauen(
+                            wurzel, ziel, melden=_protokoll, texte=texte,
+                            schnell=schnell, prozess_ablage=laeuft)
+                    else:
+                        pfad = prosperopkg.bauen(
+                            wurzel, ziel, melden=_protokoll, texte=texte,
+                            lizenzfrei=lizenzfrei, schnell=schnell,
+                            prozess_ablage=laeuft)
                 except self._AbbildAbbruch:
                     _protokoll(self._t("exfatpkg.log_aborted"))
                     stand["phase"] = "aborted"
@@ -44610,7 +44176,7 @@ class PS5ConverterGUI:
                                           groesse=self._fmt_bytes(groesse))
                 _protokoll("")
                 _protokoll(self._t("exfatpkg.result", pfad=pfad))
-                self._append_to_log("[INFO] Abbild -> PKG: %s\n" % pfad)
+                self._append_to_log("[INFO] PKG gebaut: %s\n" % pfad)
                 # Nach dem Puffern den Takt planen, damit er die Schlusszeilen
                 # noch ins Textfeld traegt.
                 self._spaeter_im_fenster(win, _takt)
@@ -44618,31 +44184,77 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True,
                              name="abbild-pkg-build").start()
 
+        def _pruefen() -> None:
+            """Sagt vor dem Bauen, ob ein Dump-Ordner ueberhaupt starten koennte."""
+            quelle = quelle_var.get().strip()
+            if laeuft["aktiv"]:
+                return
+            if not quelle or not os.path.isdir(quelle):
+                messagebox.showinfo(titel, self._t("pkgbau.check_only_folder"),
+                                    parent=win)
+                return
+            wurzel = self._exfat_pkg_spielwurzel(quelle) or quelle
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            stand["phase"] = "build"        # unbestimmter Balken
+            stand["status"] = self._t("pkgbau.status_checking")
+            _knoepfe_setzen(True)
+            _takt()
+
+            def _arbeit_pruefen() -> None:
+                try:
+                    erg = prosperopkg.pruefen(
+                        wurzel, melden=_protokoll,
+                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
+                                                "prosperopkg."))
+                    if erg["bereit"]:
+                        stand["status"] = self._t("pkgbau.status_ready")
+                    else:
+                        stand["status"] = self._t("pkgbau.status_not_ready",
+                                                  anzahl=len(erg["blocker"]))
+                except prosperopkg.ProsperoFehler as exc:
+                    _protokoll("[FEHLER] %s" % exc)
+                    stand["status"] = self._t("pkgbau.status_check_failed")
+                finally:
+                    stand["phase"] = "idle"
+                    laeuft["aktiv"] = False
+                    self._spaeter_im_fenster(win, _takt)
+
+            threading.Thread(target=_arbeit_pruefen, daemon=True,
+                             name="prosperopkg-inspect").start()
+
         def _beim_schliessen() -> None:
             if laeuft["aktiv"]:
                 if not messagebox.askyesno(
-                        self._t("exfatpkg.window_title"),
-                        self._t("exfatpkg.abort_confirm"),
+                        titel, self._t("pkgbau.abort_confirm"),
                         parent=win, default="no"):
                     return
                 _abbrechen()
-                self._append_to_log(self._t("exfatpkg.log_aborted") + chr(10))
+                self._append_to_log(self._t("pkgbau.log_aborted") + chr(10))
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
         # Die Knopfreihe wurde oben schon unten verankert; hier kommen nur die
-        # Knoepfe hinein. Abbrechen ist im Leerlauf ausgegraut.
+        # Knoepfe hinein. Abbrechen ist im Leerlauf gesperrt, Pruefen auch,
+        # solange kein Ordner gewaehlt ist.
         ttk.Button(knopfreihe, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
         umwandeln_btn = ttk.Button(
-            knopfreihe, text=self._t("exfatpkg.convert_button"),
+            knopfreihe, text=self._t("pkgbau.build_button"),
             style="Accent.TButton", command=_umwandeln)
         umwandeln_btn.pack(side="left")
         abbrechen_btn = ttk.Button(
             knopfreihe, text=self._t("exfatpkg.abort_button"),
             command=_abbrechen, state="disabled")
         abbrechen_btn.pack(side="left", padx=(8, 0))
+        pruefen_btn = ttk.Button(
+            knopfreihe, text=self._t("pkgbau.check_button"),
+            command=_pruefen, state="disabled")
+        pruefen_btn.pack(side="left", padx=(8, 0))
+
+        quelle_var.trace_add("write", _quelle_art_schalten)
+        _quelle_art_schalten()
 
     def _show_wee_tools(self) -> None:
         """WEITERE TOOLS: PS5 Wee Tools starten - das NOR-Werkzeug von andy-man.

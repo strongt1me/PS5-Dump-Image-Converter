@@ -462,8 +462,8 @@ class FenstergroesseTests(unittest.TestCase):
     def test_klog_fasst_seinen_inhalt(self):
         self._pruefen("KLOG", self.app._show_klog_window)
 
-    def test_debug_pkg_fasst_seinen_inhalt(self):
-        self._pruefen("Debug-PKG", self.app._show_debug_pkg_builder)
+    def test_pkg_bauen_fasst_seinen_inhalt(self):
+        self._pruefen("PKG bauen", self.app._show_pkg_bauen)
 
     def test_downloads_fasst_seinen_inhalt(self):
         self._pruefen("Downloads", self.app._show_downloads_manager)

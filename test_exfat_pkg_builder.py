@@ -227,12 +227,14 @@ class MenueUndTexteTests(unittest.TestCase):
 
         eintraege = next(z for z in klasse.body if _ist_eintragsliste(z))
         paare = ast.literal_eval(eintraege.value)
-        self.assertIn(("titlebar.exfat_pkg", "_show_exfat_pkg_builder"), paare)
+        self.assertIn(("titlebar.pkg_bauen", "_show_pkg_bauen"), paare)
+        # Seit v1.9.41 ein Fenster fuer Ordner und Abbilder.
+        self.assertNotIn("_show_exfat_pkg_builder", [m for _k, m in paare])
 
     def test_alle_texte_zweisprachig(self):
         from ps5_validator.utils import i18n
         schluessel = [k for k in i18n.STRINGS
-                      if k.startswith("exfatpkg.")] + ["titlebar.exfat_pkg"]
+                      if k.startswith(("exfatpkg.", "pkgbau."))] + ["titlebar.pkg_bauen"]
         self.assertGreaterEqual(len(schluessel), 20)
         for k in schluessel:
             with self.subTest(key=k):
@@ -256,7 +258,7 @@ class FensterRauchtest(unittest.TestCase):
         # Dialog. Auf diesem Rechner ist es zwar gebaut, aber der Test soll
         # nicht daran hängen.
         with mock.patch.object(self.haupt, "messagebox"):
-            self.app._show_exfat_pkg_builder()
+            self.app._show_pkg_bauen()
             _WURZEL.update_idletasks()
             neu = [w for w in _WURZEL.winfo_children()
                    if w not in vorher and isinstance(w, tk.Toplevel)]
@@ -265,7 +267,7 @@ class FensterRauchtest(unittest.TestCase):
                 texte = self._sammle_text(neu[0])
                 # Seit v1.9.19 heisst das Fenster "Abbild -> PKG" (nimmt alle
                 # vier Abbildformate), nicht mehr nur "exFAT -> PKG".
-                self.assertTrue(any("Abbild" in t for t in texte))
+                self.assertIn(self.app._t("pkgbau.build_button"), texte)
             finally:
                 for w in neu:
                     w.destroy()
