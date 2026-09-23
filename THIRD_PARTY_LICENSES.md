@@ -43,7 +43,9 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 | `nanodns_v0.4.elf` | nanodns | drakmor | „(c) Drakmor" |
 | `game-compressor_v1.0.4.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh" |
 | `pldmgr_v0.5.1.elf` | PS5 Payload Manager | itsPLK | Projektadresse im ELF |
-| `pkgmgr_v1.0.0.elf` | PS5 PKG Manager | itsPLK | `github.com/itsPLK/ps5-pkg-manager` im ELF; GPL-3.0 (LICENSE im Quellarchiv des Projekts) |
+| `pkgmgr_v1.2.2.elf` | PS5 PKG Manager | itsPLK | `github.com/itsPLK/ps5-pkg-manager` im ELF; GPL-3.0 (LICENSE im Quellarchiv des Projekts) |
+| `actremotelink_agent_v2.0.elf` | ActRemoteLink (Agent) | francoataffarel; Dank an earthonion (np-fake-signin) | `github.com/francoataffarel/ActRemoteLink`, GPL-3.0-or-later (README des Projekts); Fassung aus `VERSION` |
+| `actremotelink_pin_notify_v2.0.elf` | ActRemoteLink (PIN-Anzeige) | francoataffarel | dasselbe Projekt und dieselbe Lizenz wie die Zeile darüber |
 | `ps5debug-NG_1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR" |
 | `ps5debug-NG_v1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | byteweise dieselbe Datei wie die Zeile darüber |
 | `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |

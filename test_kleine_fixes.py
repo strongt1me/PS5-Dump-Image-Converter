@@ -1110,11 +1110,33 @@ class LizenzfreiNurFuerSpieleTests(unittest.TestCase):
     def setUpClass(cls):
         cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
 
+    @classmethod
+    def _rumpf(cls) -> str:
+        """Der ganze Rumpf von ``_show_pkg_bauen`` - bis zur naechsten Methode.
+
+        Bis zum 23.09.2026 stand hier ein festes Fenster von 12.000 Zeichen.
+        Das ist die Falle aus ``project_quelltextsuche_tests``: Dreissig
+        Zeilen mehr im Fenster (das Kaestchen "Mit Sony SDK bauen") schoben
+        die gesuchte Stelle hinaus, und der Test fiel - ohne dass an der
+        geprueften Sache irgendetwas falsch war. Jetzt endet der Ausschnitt
+        dort, wo die Methode endet.
+        """
+        anfang = cls.quelle.index("def _show_pkg_bauen")
+        rest = cls.quelle[anfang:]
+        ende = rest.find("\n    def ", 1)
+        return rest if ende < 0 else rest[:ende]
+
     def test_das_kaestchen_wird_umgeschaltet(self):
-        stelle = self.quelle.index("def _show_pkg_bauen")
-        rumpf = self.quelle[stelle:stelle + 12000]
+        rumpf = self._rumpf()
         self.assertIn("def _lizenzfrei_schalten", rumpf)
         self.assertIn('state="disabled" if art_var.get() == "homebrew"', rumpf)
+
+    def test_der_ausschnitt_endet_an_der_naechsten_methode(self):
+        """Sonst misst der Test wieder eine beliebige Fenstergroesse."""
+        rumpf = self._rumpf()
+        self.assertTrue(rumpf.startswith("def _show_pkg_bauen"))
+        self.assertNotIn("\n    def ", rumpf)
+        self.assertGreater(len(rumpf), 5000, "der Rumpf kann nicht leer sein")
 
     def test_homebrew_bauen_nimmt_den_schalter_wirklich_nicht(self):
         """Anker: Naehme es ihn eines Tages, waere das Ausgrauen falsch."""

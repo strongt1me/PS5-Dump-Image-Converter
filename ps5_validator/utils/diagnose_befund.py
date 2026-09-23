@@ -809,6 +809,47 @@ class Diagnosebericht:
         if ohne_fassung:
             zeilen.append(z("ohne Fassung im Dateinamen",
                             ", ".join(ohne_fassung)))
+        zeilen.extend(self._diagnose_eigene_bibliotheken())
+        return zeilen
+
+    def _diagnose_eigene_bibliotheken(self) -> list[str]:
+        """Laeuft der PKG-Bau mit einer eigenen Bibliothek aus ``libs``?
+
+        Wichtig genug fuer den Bericht: Wer eine eigene
+        ``LibProsperoPkg.dll`` hineinlegt, baut ab dann mit einem anderen
+        Werkzeug als alle anderen - und ein Fehlerbild waere ohne diese
+        Zeile nicht einzuordnen. Steht hier nichts, laeuft das
+        mitgelieferte Werkzeug.
+
+        Returns:
+            Die Zeilen des Berichtsabschnitts.
+        """
+        z = self._diagnose_zeile
+        try:
+            from ps5_validator.utils import eigene_bibliotheken
+        except Exception as exc:  # noqa: BLE001
+            return [z("Eigene Bibliotheken", "nicht pruefbar: %s" % exc)]
+        eintraege = eigene_bibliotheken.stand()
+        ungenutzt = eigene_bibliotheken.unbenutzte_ordner()
+        befund = eigene_bibliotheken.letzter_befund()
+        if not eintraege:
+            zeilen = [z("Eigene Bibliotheken", "keine – mitgeliefertes Werkzeug")]
+        else:
+            zeilen = [z("Eigene Bibliotheken",
+                        "%d gefunden, aber abgelehnt – es läuft das "
+                        "mitgelieferte Werkzeug" % len(eintraege) if befund
+                        else "%d in Benutzung" % len(eintraege))]
+            for eintrag in eintraege:
+                zeilen.append(z("  " + eintrag["name"], "%d Bytes, sha256 %s…"
+                                % (eintrag["bytes"], eintrag["sha256"][:12])))
+        if befund:
+            # Der wichtigste Fall: Die Datei liegt da, wird aber abgelehnt.
+            # Ohne diese Zeile saehe der Anwender nur, dass "etwas benutzt
+            # wird", und wunderte sich ueber einen .NET-Fehler beim Bau.
+            zeilen.append(z("  Grund der Ablehnung", befund[:160]))
+        for name in ungenutzt:
+            zeilen.append(z("  Ordner libs/%s" % name,
+                            "liegt da, wird aber nicht benutzt"))
         return zeilen
 
     def _diagnose_eigenschaften(self) -> list[str]:

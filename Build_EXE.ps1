@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.42 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.43 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.42"
+$EXE_VERSION = "v1.9.43"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -357,6 +357,21 @@ if (Test-Path $exePath) {
     # Der AMPR-Ordner gehoert NICHT mehr ins Buendel - er steckt in der
     # Programmdatei. Ihn danebenzulegen hiesse, dieselben 3 MB zweimal
     # auszuliefern, und der danebenliegende wuerde nie benutzt.
+
+    # Der libs-Ordner dagegen MUSS neben der EXE liegen und darf NICHT in
+    # sie hinein: Eingebettet landet er beim Start im Nur-Lese-Temp-Ordner
+    # (_MEIPASS) - dort koennte niemand eine eigene DLL hineinlegen, und
+    # genau dafuer ist er da. Mitgegeben wird nur die Anleitung; die
+    # Bibliotheken baut der Anwender selbst.
+    $libsZiel = Join-Path $buendel "libs"
+    $libsQuelle = Join-Path $PSScriptRoot "libs\README.md"
+    if (Test-Path $libsQuelle) {
+        New-Item -ItemType Directory -Path $libsZiel -Force | Out-Null
+        Copy-Item $libsQuelle $libsZiel -Force
+        Write-Host "           libs\README.md (Ordner fuer eigene Bibliotheken)" -ForegroundColor Gray
+    } else {
+        Write-Host "           FEHLT: libs\README.md" -ForegroundColor Yellow
+    }
 
     # -Recurse, sonst faellt der Ordnerinhalt aus der Summe.
     $gesamt = (Get-ChildItem $buendel -Recurse -File | Measure-Object -Property Length -Sum).Sum

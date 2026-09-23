@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.42):** Neue zweite Ansicht KONSOLE – vorbereitet, die Funktionen folgen.
+> **Kurz zum aktuellen Stand (v1.9.43):** Die Ansicht KONSOLE ist vollständig – alle sieben Werkzeuge für die Arbeit mit der Konsole.
+
+---
+
+## v1.9.43 – 23.09.2026
+
+- **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände, Kernel-Protokoll, Remote Play und ProsperoLight.
+- **Neu:** Der Ordner **libs** nimmt eigene Bibliotheken auf; liegt dort ein SDK-Baukasten unter `libs/sdk`, baut „PKG bauen“ wahlweise über Sonys Publishing Tools.
+- **Neu:** PKG Manager 1.2.2 und die ActRemoteLink-Payloads liegen bei.
 
 ---
 

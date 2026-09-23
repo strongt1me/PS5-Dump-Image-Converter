@@ -37,6 +37,7 @@ import pathlib       # noqa: F401
 from pathlib import Path
 import pkgutil       # noqa: F401
 import platform
+import posixpath     # Pfade auf der Konsole sind immer Unix-Pfade
 from collections import deque
 import queue
 import re
@@ -134,6 +135,11 @@ from ps5_validator.utils import abbild_pruefen
 from ps5_validator.utils import diagnose_befund
 from ps5_validator.utils import ps4_werkzeug
 from ps5_validator.utils import pkg_entpacken
+from ps5_validator.utils import konsole_dienste
+from ps5_validator.utils import konsole_ftp
+from ps5_validator.utils import remoteplay
+from ps5_validator.utils import remoteplay_agent
+from ps5_validator.utils import sony_sdk
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
@@ -567,7 +573,7 @@ def _rmtree_force(path: str, ignore_errors: bool = True) -> bool:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.42"
+APP_VERSION = "v1.9.43"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -8401,13 +8407,1882 @@ class PS5ConverterGUI:
         if str(self._load_setting("ansicht", "umwandeln")) == "konsole":
             self._ansicht_setzen("konsole", speichern=False)
 
+    #: Welche Kennung der zweiten Ansicht welches Fenster oeffnet. Was hier
+    #: nicht steht, sagt "kommt noch" - so waechst die Ansicht Stufe fuer
+    #: Stufe, ohne dass ein Knopf ins Leere greift.
+    _KONSOLE_FENSTER: dict[str, str] = {
+        "dienste": "_show_konsole_dienste",
+        "spiel_holen": "_show_konsole_spiel_holen",
+        "zurueckspielen": "_show_konsole_zurueckspielen",
+        "spielstaende": "_show_konsole_spielstaende",
+        "klog": "_show_klog_window_geprueft",
+        "remoteplay": "_show_konsole_remoteplay",
+        "prosperolight": "_show_konsole_prosperolight",
+    }
+
     def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
-        """Stufe 1: Die Knoepfe stehen, ihre Funktionen folgen."""
+        """Oeffnet das Fenster hinter dem Knopf - oder sagt, dass es folgt."""
+        befehl = self._KONSOLE_FENSTER.get(kennung, "")
+        if befehl:
+            # Ueber den Umschalter, damit ein zweiter Druck das Fenster
+            # wieder schliesst - wie bei jedem anderen Werkzeugknopf.
+            self._werkzeugfenster_umschalten(befehl)
+            return
         name = " ".join(self._t(schluessel).split(".", 1)[-1].split())
         logger.debug("Konsolenknopf %s gedrueckt (noch ohne Funktion)", kennung)
         messagebox.showinfo(self._t("konsole.coming_title"),
                             self._t("konsole.coming_message", name=name),
                             parent=self.root)
+
+    def _konsole_payload_datei(self, muster: str) -> str:
+        """Die neueste mitgelieferte ELF-Datei zu einem Muster (aus helloworld).
+
+        Sortiert wird ueber die Zahlen im Namen (``_webkit_versionsschluessel``),
+        damit ``v1.16`` hinter ``v1.6`` steht und nicht davor - der uebliche
+        Fehler bei reiner Textsortierung.
+        """
+        if not muster:
+            return ""
+        ordner = self._mitgeliefert_finden("helloworld")
+        if not ordner or not os.path.isdir(ordner):
+            return ""
+        treffer = sorted(Path(ordner).glob(muster),
+                         key=lambda p: self._webkit_versionsschluessel(p.name))
+        return str(treffer[-1]) if treffer else ""
+
+    def _show_konsole_dienste(self) -> None:
+        """KONSOLE: Ampel der Dienste und Startrampe fuer die Payloads.
+
+        Die haeufigste Ursache, wenn etwas mit der Konsole nicht klappt, ist
+        ein Payload, das gar nicht laeuft. Das Fenster fragt alle bekannten
+        Ports gleichzeitig ab (``konsole_dienste.pruefen``) und startet
+        fehlende Dienste aus dem mitgelieferten Ordner ``helloworld`` -
+        ueber denselben erprobten Weg wie jedes andere Payload
+        (``_send_payload_to_ps5``: elfldr 9021, sonst Payload-Manager 8084).
+
+        Was ein offener Port **nicht** sagt: dass der Dienst auch arbeitet.
+        Geprueft wird nur, ob jemand die Verbindung annimmt.
+        """
+        c = self._COLORS
+        titel = self._t("dienste.window_title")
+        win = self._build_modern_toplevel(titel, 900, 660,
+                                          min_width=760, min_height=540)
+        self._build_modern_header(win, titel, self._t("dienste.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        status_var = tk.StringVar(value=self._t("dienste.status_idle"))
+        laeuft = {"aktiv": False}
+
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(8, 2))
+        tk.Label(reihe, text=self._t("dienste.ip_label"), width=14, anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3)
+
+        hinweis = tk.Label(koerper, text=self._t("dienste.hint"),
+                           font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                           fg=c["fg_secondary"], anchor="w", justify="left",
+                           wraplength=700)
+        hinweis.pack(fill="x", pady=(6, 4))
+
+        def _hinweis_umbruch(_ereignis=None) -> None:
+            try:
+                breite = hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                hinweis.configure(wraplength=breite - 8)
+
+        hinweis.bind("<Configure>", _hinweis_umbruch)
+
+        tabellenrahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
+        tabellenrahmen.pack(fill="both", expand=True, pady=(2, 6))
+        spalten = ("dienst", "port", "zustand", "zweck")
+        tabelle = ttk.Treeview(tabellenrahmen, columns=spalten,
+                               show="headings", height=10, selectmode="browse")
+        for spalte, schluessel, breite, dehnen in (
+            ("dienst", "dienste.col_dienst", 190, False),
+            ("port", "dienste.col_port", 70, False),
+            ("zustand", "dienste.col_zustand", 90, False),
+            ("zweck", "dienste.col_zweck", 320, True),
+        ):
+            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
+            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
+        leiste = ttk.Scrollbar(tabellenrahmen, orient="vertical",
+                               command=tabelle.yview)
+        tabelle.configure(yscrollcommand=leiste.set)
+        tabelle.grid(row=0, column=0, sticky="nsew")
+        leiste.grid(row=0, column=1, sticky="ns")
+        tabellenrahmen.grid_columnconfigure(0, weight=1)
+        tabellenrahmen.grid_rowconfigure(0, weight=1)
+
+        protokoll = tk.Text(koerper, height=7, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="word")
+        protokoll.pack(fill="both", expand=True, pady=(0, 4))
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+
+        # Der Arbeitsfaden fasst kein Tk an - auch nicht ueber
+        # _spaeter_im_fenster: Dessen winfo_exists() ist selbst ein
+        # Tcl-Aufruf und blockiert aus einem Faden, solange die
+        # Ereignisschleife nicht laeuft (am 22.09.2026 am haengenden
+        # Arbeitsfaden dieses Fensters gemessen). Der Faden schreibt nur in
+        # ``stand``, ein Takt im Hauptfaden traegt es ins Fenster - dasselbe
+        # Muster wie bei "PKG bauen".
+        stand: dict = {"status": "", "uebersicht": None, "gezeigt": 0}
+        puffer: list = []
+        cursor = [0]
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            zustand = "disabled" if laufend else "normal"
+            for knopf in (pruefen_btn, start_btn, grund_btn, web_btn):
+                try:
+                    knopf.configure(state=zustand)
+                except (tk.TclError, NameError):
+                    pass
+
+        def _tabelle_fuellen(uebersicht) -> None:
+            """Aus dem Arbeitsfaden: nur hinlegen, der Takt zeigt es an."""
+            stand["uebersicht"] = uebersicht
+
+        def _tabelle_zeigen(uebersicht) -> None:
+            if not tabelle.winfo_exists():
+                return
+            tabelle.delete(*tabelle.get_children())
+            for eintrag_stand in uebersicht:
+                eintrag = eintrag_stand.dienst
+                if eintrag_stand.laeuft:
+                    zustand = "dienste.zustand_laeuft"
+                elif eintrag_stand.stumm:
+                    zustand = "dienste.zustand_stumm"
+                else:
+                    zustand = "dienste.zustand_aus"
+                tabelle.insert(
+                    "", "end", iid=eintrag.schluessel,
+                    values=(self._t(eintrag.name_schluessel),
+                            eintrag.port,
+                            self._t(zustand),
+                            self._t(eintrag.zweck_schluessel)))
+                if eintrag_stand.stumm:
+                    _protokoll(self._t("dienste.log_stumm",
+                                       name=self._t(eintrag.name_schluessel),
+                                       port=eintrag.port))
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                neu = stand["uebersicht"]
+                if neu is not None and id(neu) != stand["gezeigt"]:
+                    stand["gezeigt"] = id(neu)
+                    _tabelle_zeigen(neu)
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _adresse() -> str:
+            ip = ip_var.get().strip()
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return ""
+            self._save_setting("ps5_ip", ip)
+            return ip
+
+        def _pruefen() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+            _status(self._t("dienste.status_checking", host=ip))
+
+            def _arbeit() -> None:
+                try:
+                    uebersicht = konsole_dienste.pruefen(ip)
+                    _tabelle_fuellen(uebersicht)
+                    _status(self._t("dienste.status_result",
+                                    laufend=uebersicht.anzahl_laufend,
+                                    gesamt=len(uebersicht),
+                                    urteil=self._t("dienste.bereit_ja"
+                                                   if uebersicht.bereit
+                                                   else "dienste.bereit_nein")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Dienste-Abfrage gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("dienste.status_failed"))
+                finally:
+                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-dienste").start()
+
+        def _senden_und_warten(schluessel: str, ip: str) -> bool:
+            """Schickt das Payload eines Dienstes und prueft danach den Port."""
+            eintrag = konsole_dienste.dienst(schluessel)
+            if eintrag is None:
+                return False
+            name = self._t(eintrag.name_schluessel)
+            pfad = self._konsole_payload_datei(eintrag.payload_muster)
+            if not pfad:
+                _protokoll(self._t("dienste.log_kein_payload", name=name))
+                return False
+            _protokoll(self._t("dienste.log_sende", name=name,
+                               datei=os.path.basename(pfad)))
+            ok, meldung = self._send_payload_to_ps5(ip, pfad)
+            if not ok:
+                _protokoll(self._t("dienste.log_fehlgeschlagen", name=name,
+                                   grund=meldung))
+                return False
+            # Anlaufzeit abwarten, sonst meldet die Gegenprobe "aus", obwohl
+            # der Dienst gerade hochkommt.
+            time.sleep(eintrag.anlaufzeit)
+            laeuft_jetzt = konsole_dienste.port_offen(ip, eintrag.port)
+            _protokoll(self._t("dienste.log_gestartet" if laeuft_jetzt
+                               else "dienste.log_kein_port",
+                               name=name, port=eintrag.port))
+            return laeuft_jetzt
+
+        def _payload_starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            auswahl = tabelle.selection()
+            if not auswahl:
+                messagebox.showinfo(titel, self._t("dienste.need_auswahl"),
+                                    parent=win)
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            schluessel = auswahl[0]
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+            _status(self._t("dienste.status_starting"))
+
+            def _arbeit() -> None:
+                try:
+                    _senden_und_warten(schluessel, ip)
+                    uebersicht = konsole_dienste.pruefen(ip)
+                    _tabelle_fuellen(uebersicht)
+                    _status(self._t("dienste.status_result",
+                                    laufend=uebersicht.anzahl_laufend,
+                                    gesamt=len(uebersicht),
+                                    urteil=self._t("dienste.bereit_ja"
+                                                   if uebersicht.bereit
+                                                   else "dienste.bereit_nein")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Payload-Start gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("dienste.status_failed"))
+                finally:
+                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-payload").start()
+
+        def _grundausstattung() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+            _status(self._t("dienste.status_starting"))
+
+            def _arbeit() -> None:
+                try:
+                    uebersicht = konsole_dienste.pruefen(ip)
+                    for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
+                        eintrag = konsole_dienste.dienst(schluessel)
+                        if eintrag is None:
+                            continue
+                        if uebersicht.laeuft(schluessel):
+                            _protokoll(self._t(
+                                "dienste.log_laeuft_schon",
+                                name=self._t(eintrag.name_schluessel)))
+                            continue
+                        _senden_und_warten(schluessel, ip)
+                    uebersicht = konsole_dienste.pruefen(ip)
+                    _tabelle_fuellen(uebersicht)
+                    _status(self._t("dienste.status_result",
+                                    laufend=uebersicht.anzahl_laufend,
+                                    gesamt=len(uebersicht),
+                                    urteil=self._t("dienste.bereit_ja"
+                                                   if uebersicht.bereit
+                                                   else "dienste.bereit_nein")))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Grundausstattung gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("dienste.status_failed"))
+                finally:
+                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-grundausstattung").start()
+
+        def _web_oeffnen() -> None:
+            auswahl = tabelle.selection()
+            if not auswahl:
+                messagebox.showinfo(titel, self._t("dienste.need_auswahl"),
+                                    parent=win)
+                return
+            eintrag = konsole_dienste.dienst(auswahl[0])
+            ip = ip_var.get().strip()
+            adresse = konsole_dienste.web_adresse(eintrag, ip) if eintrag else ""
+            if not adresse:
+                messagebox.showinfo(titel, self._t("dienste.keine_weboberflaeche"),
+                                    parent=win)
+                return
+            _protokoll(self._t("dienste.log_web", adresse=adresse))
+            webbrowser.open(adresse)
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        pruefen_btn = ttk.Button(knopfreihe, text=self._t("dienste.check_button"),
+                                 style="Accent.TButton", command=_pruefen)
+        pruefen_btn.pack(side="left")
+        start_btn = ttk.Button(knopfreihe, text=self._t("dienste.start_button"),
+                               command=_payload_starten)
+        start_btn.pack(side="left", padx=(8, 0))
+        grund_btn = ttk.Button(knopfreihe, text=self._t("dienste.base_button"),
+                               command=_grundausstattung)
+        grund_btn.pack(side="left", padx=(8, 0))
+        web_btn = ttk.Button(knopfreihe, text=self._t("dienste.web_button"),
+                             command=_web_oeffnen)
+        web_btn.pack(side="left", padx=(8, 0))
+
+        # Beim Oeffnen gleich einmal fragen - das ist die Frage, wegen der
+        # man dieses Fenster aufmacht.
+        # Erst die leere Liste zeigen (damit das Fenster nicht leer aufgeht),
+        # dann - wenn eine Adresse bekannt ist - gleich fragen. Beides im
+        # Hauptfaden, deshalb direkt statt ueber die Fensterschlange.
+        _tabelle_zeigen(konsole_dienste.pruefen(""))
+        if self._ist_plausible_ps5_adresse(ip_var.get().strip()):
+            win.after(120, _pruefen)
+
+    # ------------------------------------------------------------------
+    # KONSOLE, Stufe 3: Spiel holen, zurueckspielen, Spielstaende
+    # ------------------------------------------------------------------
+
+    def _konsole_ftp_geruest(self, win, koerper, knopfreihe, ip_var,
+                             status_var, groesse_var):
+        """Balken, Groessenfeld, Protokoll, Statuszeile - fuer alle drei.
+
+        Die drei Fenster der Stufe 3 unterscheiden sich in ihren Schritten,
+        nicht in ihrer Anzeige: Kein langer Vorgang ohne Balken, Groessenfeld
+        UND Statuszeile (Dauerauftrag des Nutzers vom 20.09.2026). Statt das
+        dreimal hinzuschreiben, steht es einmal hier.
+
+        Returns:
+            (balken, protokoll) - den Rest halten die uebergebenen Variablen.
+        """
+        c = self._COLORS
+        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
+        balken.pack(fill="x", pady=(6, 2))
+        tk.Label(koerper, textvariable=groesse_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+        protokoll = tk.Text(koerper, height=9, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="word")
+        protokoll.pack(fill="both", expand=True, pady=(4, 4))
+        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+        return balken, protokoll
+
+    def _konsole_ip_zeile(self, koerper, ip_var, schluessel="dienste.ip_label"):
+        """Die Adresszeile - in jedem Konsolenfenster dieselbe."""
+        c = self._COLORS
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(8, 2))
+        tk.Label(reihe, text=self._t(schluessel), width=16, anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3)
+        return reihe
+
+    def _konsole_hinweiszeile(self, koerper, schluessel, warnung=False):
+        """Ein Hinweisabsatz, der beim Groesserziehen mitwaechst."""
+        c = self._COLORS
+        farbe = c.get("fg_warning", c["fg_secondary"]) if warnung \
+            else c["fg_secondary"]
+        text = tk.Label(koerper, text=self._t(schluessel),
+                        font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=farbe,
+                        anchor="w", justify="left", wraplength=700)
+        text.pack(fill="x", pady=(6, 2))
+
+        def _umbruch(_ereignis=None) -> None:
+            try:
+                breite = text.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                text.configure(wraplength=breite - 8)
+
+        text.bind("<Configure>", _umbruch)
+        return text
+
+    def _konsole_ftp_bereit(self, ip: str, melden) -> bool:
+        """Laeuft ftpsrv - und antwortet er auch?
+
+        Ein reiner Portscan genuegt hier nicht: Ein haengender ftpsrv nimmt
+        Verbindungen weiter an und schweigt danach (siehe konsole_dienste).
+        Wer in diesem Zustand eine Uebertragung startet, wartet ewig auf
+        die erste Datei. Lieber vorher sagen, was los ist.
+        """
+        eintrag = konsole_dienste.dienst("ftpsrv")
+        if eintrag is None:
+            return True
+        laeuft, stumm = konsole_dienste.dienst_pruefen(ip, eintrag)
+        if laeuft:
+            return True
+        melden(self._t("konsoleftp.log_ftp_stumm" if stumm
+                       else "konsoleftp.log_ftp_aus"))
+        return False
+
+    def _show_konsole_spiel_holen(self) -> None:
+        """KONSOLE: ein Spiel von der Konsole auf den PC holen.
+
+        Drei Schritte, und der mittlere ist der Grund, warum es nicht einer
+        sein kann: ``ps5-app-dumper`` schreibt die Anwendung auf einen
+        **USB-Datentraeger** und kann ausdruecklich kein Netzwerk. Der
+        Datentraeger bleibt stecken, und ftpsrv holt den Ordner von dort.
+
+        Abgebrochen wird nur zwischen zwei Dateien - ein mitten im RETR
+        abgebrochener Download legt ftpsrv lahm (siehe ``konsole_ftp``).
+        """
+        c = self._COLORS
+        titel = self._t("holen.window_title")
+        win = self._build_modern_toplevel(titel, 940, 720,
+                                          min_width=800, min_height=600)
+        self._build_modern_header(win, titel, self._t("holen.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        fern_var = tk.StringVar(value="/mnt/usb0")
+        lokal_var = tk.StringVar(value=self._load_setting("holen_ziel", ""))
+        status_var = tk.StringVar(value=self._t("holen.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False, "abbruch": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": "",
+                       "eintraege": None, "gezeigt": 0}
+        puffer: list = []
+        cursor = [0]
+
+        self._konsole_ip_zeile(koerper, ip_var)
+        self._konsole_hinweiszeile(koerper, "holen.hint_dumper", warnung=True)
+
+        # Schritt 2: Wo auf der Konsole liegt der Dump?
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(6, 2))
+        tk.Label(reihe, text=self._t("holen.label_remote"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        ort_box = ttk.Combobox(reihe, textvariable=fern_var,
+                               font=(UI_SCHRIFT, pt(9)),
+                               values=[ort for ort, _ in konsole_ftp.BEKANNTE_ORTE])
+        ort_box.pack(side="left", fill="x", expand=True, ipady=2)
+
+        tabellenrahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
+        tabellenrahmen.pack(fill="both", expand=True, pady=(4, 4))
+        spalten = ("name", "art", "groesse")
+        tabelle = ttk.Treeview(tabellenrahmen, columns=spalten,
+                               show="headings", height=8, selectmode="browse")
+        for spalte, schluessel, breite, dehnen in (
+            ("name", "holen.col_name", 420, True),
+            ("art", "holen.col_art", 100, False),
+            ("groesse", "holen.col_groesse", 110, False),
+        ):
+            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
+            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
+        leiste = ttk.Scrollbar(tabellenrahmen, orient="vertical",
+                               command=tabelle.yview)
+        tabelle.configure(yscrollcommand=leiste.set)
+        tabelle.grid(row=0, column=0, sticky="nsew")
+        leiste.grid(row=0, column=1, sticky="ns")
+        tabellenrahmen.grid_columnconfigure(0, weight=1)
+        tabellenrahmen.grid_rowconfigure(0, weight=1)
+
+        # Schritt 3: Wohin auf dem PC?
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(2, 2))
+        tk.Label(reihe, text=self._t("holen.label_local"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=lokal_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+
+        def _ziel_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("holen.choose_local"), parent=win)
+            if gewaehlt:
+                lokal_var.set(os.path.normpath(gewaehlt))
+                self._save_setting("holen_ziel", lokal_var.get())
+
+        ttk.Button(reihe, text="...", width=4,
+                   command=_ziel_waehlen).pack(side="left")
+
+        balken, protokoll = self._konsole_ftp_geruest(
+            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            for knopf in (dump_btn, liste_btn, hoch_btn, mess_btn, hol_btn):
+                try:
+                    knopf.configure(state="disabled" if laufend else "normal")
+                except (tk.TclError, NameError):
+                    pass
+            try:
+                stop_btn.configure(state="normal" if laufend else "disabled")
+            except (tk.TclError, NameError):
+                pass
+
+        def _eintraege_zeigen(eintraege) -> None:
+            if not tabelle.winfo_exists():
+                return
+            tabelle.delete(*tabelle.get_children())
+            for nummer, eintrag in enumerate(eintraege):
+                tabelle.insert(
+                    "", "end", iid=str(nummer),
+                    values=(eintrag.name,
+                            self._t("holen.art_ordner" if eintrag.ordner
+                                    else "holen.art_datei"),
+                            "" if eintrag.ordner
+                            else konsole_ftp.menge_lesbar(eintrag.groesse)))
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                neu = stand["eintraege"]
+                if neu is not None and id(neu) != stand["gezeigt"]:
+                    stand["gezeigt"] = id(neu)
+                    _eintraege_zeigen(neu)
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                if stand["groesse"]:
+                    groesse_var.set(stand["groesse"])
+                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _adresse() -> str:
+            ip = ip_var.get().strip()
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return ""
+            self._save_setting("ps5_ip", ip)
+            return ip
+
+        def _dumper_starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            pfad = self._konsole_payload_datei("ps5-app-dumper*.elf")
+            if not pfad:
+                messagebox.showwarning(titel, self._t("holen.no_dumper"),
+                                       parent=win)
+                return
+            _status(self._t("holen.status_dumping"))
+
+            def _arbeit() -> None:
+                try:
+                    _protokoll(self._t("holen.log_dumper",
+                                       datei=os.path.basename(pfad)))
+                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
+                    _protokoll(meldung)
+                    _status(self._t("holen.status_dumped" if ok
+                                    else "holen.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("App-Dumper-Start gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("holen.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-dumper").start()
+
+        def _auflisten() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            pfad = fern_var.get().strip() or "/"
+            port = self._ps5_ftp_port()
+            _status(self._t("holen.status_listing", pfad=pfad))
+
+            def _arbeit() -> None:
+                verbindung = None
+                try:
+                    if not self._konsole_ftp_bereit(ip, _protokoll):
+                        _status(self._t("holen.status_failed"))
+                        return
+                    verbindung = konsole_ftp.verbinden(ip, port)
+                    eintraege = konsole_ftp.auflisten(verbindung, pfad)
+                    stand["eintraege"] = eintraege
+                    _status(self._t("holen.status_listed",
+                                    anzahl=len(eintraege), pfad=pfad))
+                except konsole_ftp.FtpFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("holen.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Auflisten gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("holen.status_failed"))
+                finally:
+                    if verbindung is not None:
+                        konsole_ftp.schliessen(verbindung)
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-auflisten").start()
+
+        def _hoch() -> None:
+            fern_var.set(konsole_ftp.hoehere_ebene(fern_var.get()))
+            _auflisten()
+
+        def _hinein(_ereignis=None) -> None:
+            """Doppelklick auf einen Ordner: eine Ebene hinein."""
+            auswahl = tabelle.selection()
+            eintraege = stand["eintraege"] or []
+            if not auswahl:
+                return
+            try:
+                eintrag = eintraege[int(auswahl[0])]
+            except (ValueError, IndexError):
+                return
+            if not eintrag.ordner:
+                return
+            fern_var.set(posixpath.join(fern_var.get().strip() or "/",
+                                        eintrag.name))
+            _auflisten()
+
+        tabelle.bind("<Double-1>", _hinein)
+
+        def _gewaehlter_pfad() -> str:
+            """Der markierte Ordner - oder der Pfad in der Zeile."""
+            auswahl = tabelle.selection()
+            eintraege = stand["eintraege"] or []
+            if auswahl:
+                try:
+                    eintrag = eintraege[int(auswahl[0])]
+                except (ValueError, IndexError):
+                    eintrag = None
+                if eintrag is not None and eintrag.ordner:
+                    return posixpath.join(fern_var.get().strip() or "/",
+                                          eintrag.name)
+            return fern_var.get().strip()
+
+        def _messen() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            quelle = _gewaehlter_pfad()
+            port = self._ps5_ftp_port()
+            _status(self._t("holen.status_sizing", pfad=quelle))
+
+            def _arbeit() -> None:
+                try:
+                    def _zwischenstand(dateien: int, bytes_: int) -> None:
+                        stand["groesse"] = self._t(
+                            "holen.size_running", dateien=dateien,
+                            menge=konsole_ftp.menge_lesbar(bytes_))
+
+                    dateien, bytes_ = konsole_ftp.groesse_schaetzen(
+                        ip, quelle, port, melden=_zwischenstand)
+                    minuten = int(konsole_ftp.dauer_schaetzen(bytes_) / 60)
+                    stand["groesse"] = self._t(
+                        "holen.size_done", dateien=dateien,
+                        menge=konsole_ftp.menge_lesbar(bytes_),
+                        minuten=max(1, minuten))
+                    _status(self._t("holen.status_sized"))
+                except konsole_ftp.FtpFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("holen.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Groessenermittlung gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("holen.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-groesse").start()
+
+        def _holen() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            quelle = _gewaehlter_pfad()
+            ziel = lokal_var.get().strip()
+            if not ziel:
+                messagebox.showwarning(titel, self._t("holen.need_local"),
+                                       parent=win)
+                return
+            self._save_setting("holen_ziel", ziel)
+            port = self._ps5_ftp_port()
+            unterordner = os.path.join(ziel, posixpath.basename(
+                quelle.rstrip("/")) or "dump")
+            _status(self._t("holen.status_fetching"))
+
+            def _arbeit() -> None:
+                try:
+                    if not self._konsole_ftp_bereit(ip, _protokoll):
+                        _status(self._t("holen.status_failed"))
+                        return
+                    _protokoll(self._t("holen.log_start", quelle=quelle,
+                                       ziel=unterordner))
+                    dateien, bytes_ = konsole_ftp.groesse_schaetzen(
+                        ip, quelle, port)
+                    stand["groesse"] = self._t(
+                        "holen.size_done", dateien=dateien,
+                        menge=konsole_ftp.menge_lesbar(bytes_),
+                        minuten=max(1, int(
+                            konsole_ftp.dauer_schaetzen(bytes_) / 60)))
+
+                    def _fortschritt(fort) -> None:
+                        stand["pct"] = fort.anteil * 100.0
+                        stand["status"] = self._t(
+                            "holen.status_file", datei=fort.aktuell,
+                            dateien=fort.dateien + 1,
+                            gesamt=max(1, fort.dateien_gesamt),
+                            menge=konsole_ftp.menge_lesbar(fort.bytes))
+
+                    ergebnis = konsole_ftp.ordner_holen(
+                        ip, quelle, unterordner, port,
+                        auf_fortschritt=_fortschritt,
+                        abbruch=lambda: laeuft["abbruch"],
+                        dateien_gesamt=dateien, bytes_gesamt=bytes_)
+                    if ergebnis.abgebrochen:
+                        _protokoll(self._t("holen.log_cancelled",
+                                           dateien=ergebnis.dateien))
+                        _status(self._t("holen.status_cancelled"))
+                    else:
+                        stand["pct"] = 100.0
+                        _protokoll(self._t(
+                            "holen.log_done", dateien=ergebnis.dateien,
+                            menge=konsole_ftp.menge_lesbar(ergebnis.bytes),
+                            ziel=unterordner))
+                        _status(self._t("holen.status_done"))
+                except konsole_ftp.FtpFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("holen.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Herunterladen gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("holen.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-holen").start()
+
+        def _abbrechen() -> None:
+            """Nur merken - beendet wird zwischen zwei Dateien."""
+            if not laeuft["aktiv"]:
+                return
+            laeuft["abbruch"] = True
+            _protokoll(self._t("konsoleftp.log_abbruch_gemerkt"))
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        stop_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_cancel"),
+                              style="Error.TButton", command=_abbrechen)
+        stop_btn.pack(side="right", padx=(0, 8))
+        dump_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_dump"),
+                              command=_dumper_starten)
+        dump_btn.pack(side="left")
+        liste_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_list"),
+                               command=_auflisten)
+        liste_btn.pack(side="left", padx=(8, 0))
+        hoch_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_up"),
+                              command=_hoch)
+        hoch_btn.pack(side="left", padx=(8, 0))
+        mess_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_size"),
+                              command=_messen)
+        mess_btn.pack(side="left", padx=(8, 0))
+        hol_btn = ttk.Button(knopfreihe, text=self._t("holen.btn_fetch"),
+                             style="Accent.TButton", command=_holen)
+        hol_btn.pack(side="left", padx=(8, 0))
+        _knoepfe(False)
+
+    def _show_konsole_zurueckspielen(self) -> None:
+        """KONSOLE: einen fertigen Ordner zurueck auf die Konsole bringen.
+
+        Zwei Schritte, die der Konverter sonst offen laesst: uebertragen
+        (FTP, eigener Weg, kein Fremdprogramm) und auf der Konsole
+        einraeumen. Das Verschieben vom USB-Datentraeger auf die interne SSD
+        macht der Web-Dateimanager auf Port 8888 - genau dafuer ist er
+        gebaut. Hier wird nichts in Systemdatenbanken geschrieben.
+        """
+        c = self._COLORS
+        titel = self._t("zurueck.window_title")
+        win = self._build_modern_toplevel(titel, 920, 680,
+                                          min_width=800, min_height=560)
+        self._build_modern_header(win, titel, self._t("zurueck.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        lokal_var = tk.StringVar(value="")
+        fern_var = tk.StringVar(value="/mnt/usb0")
+        status_var = tk.StringVar(value=self._t("zurueck.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False, "abbruch": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": ""}
+        puffer: list = []
+        cursor = [0]
+
+        self._konsole_ip_zeile(koerper, ip_var)
+
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(6, 2))
+        tk.Label(reihe, text=self._t("zurueck.label_local"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=lokal_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+
+        def _quelle_waehlen() -> None:
+            gewaehlt = filedialog.askdirectory(
+                title=self._t("zurueck.choose_local"), parent=win)
+            if gewaehlt:
+                lokal_var.set(os.path.normpath(gewaehlt))
+
+        ttk.Button(reihe, text="...", width=4,
+                   command=_quelle_waehlen).pack(side="left")
+
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(2, 2))
+        tk.Label(reihe, text=self._t("zurueck.label_remote"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        ttk.Combobox(reihe, textvariable=fern_var, font=(UI_SCHRIFT, pt(9)),
+                     values=[ort for ort, _ in konsole_ftp.BEKANNTE_ORTE]).pack(
+            side="left", fill="x", expand=True, ipady=2)
+
+        self._konsole_hinweiszeile(koerper, "zurueck.hint_ftp")
+        self._konsole_hinweiszeile(koerper, "zurueck.hint_move")
+
+        balken, protokoll = self._konsole_ftp_geruest(
+            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            for knopf in (send_btn, fm_start_btn, fm_open_btn):
+                try:
+                    knopf.configure(state="disabled" if laufend else "normal")
+                except (tk.TclError, NameError):
+                    pass
+            try:
+                stop_btn.configure(state="normal" if laufend else "disabled")
+            except (tk.TclError, NameError):
+                pass
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                if stand["groesse"]:
+                    groesse_var.set(stand["groesse"])
+                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _adresse() -> str:
+            ip = ip_var.get().strip()
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return ""
+            self._save_setting("ps5_ip", ip)
+            return ip
+
+        def _senden() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            quelle = lokal_var.get().strip()
+            if not quelle or not os.path.isdir(quelle):
+                messagebox.showwarning(titel, self._t("zurueck.need_local"),
+                                       parent=win)
+                return
+            ziel = fern_var.get().strip()
+            if not ziel:
+                messagebox.showwarning(titel, self._t("zurueck.need_remote"),
+                                       parent=win)
+                return
+            port = self._ps5_ftp_port()
+            zielpfad = posixpath.join(ziel, os.path.basename(
+                os.path.normpath(quelle)))
+            _status(self._t("zurueck.status_sending"))
+
+            def _arbeit() -> None:
+                try:
+                    if not self._konsole_ftp_bereit(ip, _protokoll):
+                        _status(self._t("zurueck.status_failed"))
+                        return
+                    _protokoll(self._t("zurueck.log_start", quelle=quelle,
+                                       ziel=zielpfad))
+
+                    def _fortschritt(fort) -> None:
+                        stand["pct"] = fort.anteil * 100.0
+                        stand["groesse"] = self._t(
+                            "zurueck.size_line",
+                            dateien=max(1, fort.dateien_gesamt),
+                            menge=konsole_ftp.menge_lesbar(fort.bytes_gesamt))
+                        stand["status"] = self._t(
+                            "zurueck.status_file", datei=fort.aktuell,
+                            dateien=fort.dateien + 1,
+                            gesamt=max(1, fort.dateien_gesamt),
+                            menge=konsole_ftp.menge_lesbar(fort.bytes))
+
+                    ergebnis = konsole_ftp.ordner_senden(
+                        ip, quelle, zielpfad, port,
+                        auf_fortschritt=_fortschritt,
+                        abbruch=lambda: laeuft["abbruch"])
+                    if ergebnis.abgebrochen:
+                        _protokoll(self._t("zurueck.log_cancelled",
+                                           dateien=ergebnis.dateien))
+                        _status(self._t("zurueck.status_cancelled"))
+                    else:
+                        stand["pct"] = 100.0
+                        _protokoll(self._t(
+                            "zurueck.log_done", dateien=ergebnis.dateien,
+                            menge=konsole_ftp.menge_lesbar(ergebnis.bytes),
+                            ziel=zielpfad))
+                        _status(self._t("zurueck.status_done"))
+                except konsole_ftp.FtpFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("zurueck.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Zurueckspielen gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("zurueck.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-senden").start()
+
+        def _abbrechen() -> None:
+            if not laeuft["aktiv"]:
+                return
+            laeuft["abbruch"] = True
+            _protokoll(self._t("konsoleftp.log_abbruch_gemerkt"))
+
+        def _dateimanager_starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            eintrag = konsole_dienste.dienst("webfm")
+            pfad = self._konsole_payload_datei(eintrag.payload_muster) \
+                if eintrag else ""
+            if not pfad:
+                messagebox.showwarning(titel, self._t("zurueck.no_webfm"),
+                                       parent=win)
+                return
+            _status(self._t("zurueck.status_webfm"))
+
+            def _arbeit() -> None:
+                try:
+                    _protokoll(self._t("zurueck.log_webfm",
+                                       datei=os.path.basename(pfad)))
+                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
+                    _protokoll(meldung)
+                    if ok:
+                        time.sleep(eintrag.anlaufzeit)
+                        offen = konsole_dienste.port_offen(ip, eintrag.port)
+                        _protokoll(self._t("zurueck.log_webfm_port"
+                                           if offen
+                                           else "zurueck.log_webfm_kein_port",
+                                           port=eintrag.port))
+                    _status(self._t("zurueck.status_idle" if ok
+                                    else "zurueck.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Web-Dateimanager-Start gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("zurueck.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            laeuft["abbruch"] = False
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-webfm").start()
+
+        def _dateimanager_oeffnen() -> None:
+            eintrag = konsole_dienste.dienst("webfm")
+            adresse = konsole_dienste.web_adresse(eintrag, ip_var.get().strip()) \
+                if eintrag else ""
+            if not adresse:
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return
+            _protokoll(self._t("dienste.log_web", adresse=adresse))
+            _takt()
+            webbrowser.open(adresse)
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        stop_btn = ttk.Button(knopfreihe, text=self._t("zurueck.btn_cancel"),
+                              style="Error.TButton", command=_abbrechen)
+        stop_btn.pack(side="right", padx=(0, 8))
+        send_btn = ttk.Button(knopfreihe, text=self._t("zurueck.btn_send"),
+                              style="Accent.TButton", command=_senden)
+        send_btn.pack(side="left")
+        fm_start_btn = ttk.Button(knopfreihe,
+                                  text=self._t("zurueck.btn_webfm_start"),
+                                  command=_dateimanager_starten)
+        fm_start_btn.pack(side="left", padx=(8, 0))
+        fm_open_btn = ttk.Button(knopfreihe, text=self._t("zurueck.btn_webfm"),
+                                 command=_dateimanager_oeffnen)
+        fm_open_btn.pack(side="left", padx=(8, 0))
+        _knoepfe(False)
+
+    def _show_konsole_spielstaende(self) -> None:
+        """KONSOLE: Spielstaende sichern und uebertragen - ueber Garlic.
+
+        ``garlic-savemgr`` bringt seine Bedienung als Webseite auf Port 8082
+        mit und kann Spielstaende ent- und verschluesseln. Diese Oberflaeche
+        ist vollstaendig - nachgebaut wird hier nichts. Das Fenster prueft
+        den Dienst, startet ihn bei Bedarf und oeffnet ihn; dazu die zwei
+        Saetze, die man vorher wissen muss.
+        """
+        c = self._COLORS
+        titel = self._t("spielstaende.window_title")
+        win = self._build_modern_toplevel(titel, 820, 620,
+                                          min_width=720, min_height=520)
+        self._build_modern_header(win, titel, self._t("spielstaende.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        status_var = tk.StringVar(value=self._t("spielstaende.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": ""}
+        puffer: list = []
+        cursor = [0]
+
+        self._konsole_ip_zeile(koerper, ip_var)
+        self._konsole_hinweiszeile(koerper, "spielstaende.usage")
+        self._konsole_hinweiszeile(koerper, "spielstaende.warn_backup",
+                                   warnung=True)
+        self._konsole_hinweiszeile(koerper, "spielstaende.warn_benutzer",
+                                   warnung=True)
+
+        balken, protokoll = self._konsole_ftp_geruest(
+            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            for knopf in (pruef_btn, start_btn, open_btn):
+                try:
+                    knopf.configure(state="disabled" if laufend else "normal")
+                except (tk.TclError, NameError):
+                    pass
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                if stand["groesse"]:
+                    groesse_var.set(stand["groesse"])
+                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _adresse() -> str:
+            ip = ip_var.get().strip()
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return ""
+            self._save_setting("ps5_ip", ip)
+            return ip
+
+        def _pruefen() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            eintrag = konsole_dienste.dienst("garlic")
+            _status(self._t("spielstaende.status_checking"))
+
+            def _arbeit() -> None:
+                try:
+                    offen = konsole_dienste.port_offen(ip, eintrag.port)
+                    stand["pct"] = 100.0 if offen else 0.0
+                    stand["groesse"] = konsole_dienste.web_adresse(eintrag, ip) \
+                        if offen else ""
+                    _status(self._t("spielstaende.running" if offen
+                                    else "spielstaende.stopped",
+                                    adresse=konsole_dienste.web_adresse(
+                                        eintrag, ip)))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Garlic-Pruefung gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("spielstaende.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-garlic-pruefen").start()
+
+        def _garlic_starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            eintrag = konsole_dienste.dienst("garlic")
+            pfad = self._konsole_payload_datei(eintrag.payload_muster)
+            if not pfad:
+                messagebox.showwarning(titel, self._t("spielstaende.no_file"),
+                                       parent=win)
+                return
+            _status(self._t("spielstaende.status_starting"))
+
+            def _arbeit() -> None:
+                try:
+                    _protokoll(self._t("spielstaende.log_start",
+                                       datei=os.path.basename(pfad)))
+                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
+                    _protokoll(meldung)
+                    if ok:
+                        time.sleep(eintrag.anlaufzeit)
+                        offen = konsole_dienste.port_offen(ip, eintrag.port)
+                        stand["pct"] = 100.0 if offen else 0.0
+                        _status(self._t("spielstaende.running" if offen
+                                        else "spielstaende.stopped",
+                                        adresse=konsole_dienste.web_adresse(
+                                            eintrag, ip)))
+                    else:
+                        _status(self._t("spielstaende.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Garlic-Start gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("spielstaende.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="konsole-garlic").start()
+
+        def _oeffnen() -> None:
+            eintrag = konsole_dienste.dienst("garlic")
+            adresse = konsole_dienste.web_adresse(eintrag, ip_var.get().strip())
+            if not adresse:
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return
+            _protokoll(self._t("spielstaende.opened", adresse=adresse))
+            _takt()
+            webbrowser.open(adresse)
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        pruef_btn = ttk.Button(knopfreihe,
+                               text=self._t("spielstaende.btn_check"),
+                               style="Accent.TButton", command=_pruefen)
+        pruef_btn.pack(side="left")
+        start_btn = ttk.Button(knopfreihe, text=self._t("spielstaende.btn_start"),
+                               command=_garlic_starten)
+        start_btn.pack(side="left", padx=(8, 0))
+        open_btn = ttk.Button(knopfreihe, text=self._t("spielstaende.btn_open"),
+                              command=_oeffnen)
+        open_btn.pack(side="left", padx=(8, 0))
+
+    #: Die Beilagen fuer Stufe 4, die **keine** Payloads sind. Der Ordner
+    #: traegt nur das ProsperoLight-Abbild; die beiden ActRemoteLink-ELFs
+    #: liegen wie jedes andere Payload in ``helloworld`` - dort greift die
+    #: Schnellauswahl, und dort haelt die Werkzeugpflege sie gegen
+    #: THIRD_PARTY_LICENSES.md (ein eigener Ordner waere an beidem vorbei).
+    _STREAMING_ORDNER = "Streaming"
+
+    _STREAMING_MUSTER: dict[str, str] = {
+        "prospero": "PPSA99002*.ffpfsc",
+    }
+
+    #: Die Payloads der Kopplung - Muster wie in ``konsole_dienste``.
+    _ACTREMOTELINK_MUSTER: dict[str, str] = {
+        "agent": "actremotelink_agent*.elf",
+        "pin": "actremotelink_pin_notify*.elf",
+    }
+
+    def _streaming_pfad(self, art: str) -> str:
+        """Die neueste Beilage dieser Art - leer, wenn keine da ist.
+
+        ``agent`` und ``pin`` kommen aus ``helloworld`` (wie jedes Payload),
+        ``prospero`` aus dem Ordner ``Streaming``. Fehlt etwas, sagt das
+        Fenster es - statt einen Start zu versuchen, der nicht klappen kann.
+        """
+        if art in self._ACTREMOTELINK_MUSTER:
+            return self._konsole_payload_datei(self._ACTREMOTELINK_MUSTER[art])
+        muster = self._STREAMING_MUSTER.get(art, "")
+        ordner = self._mitgeliefert_finden(self._STREAMING_ORDNER)
+        if not muster or not ordner or not os.path.isdir(ordner):
+            return ""
+        treffer = sorted(Path(ordner).glob(muster),
+                         key=lambda p: self._webkit_versionsschluessel(p.name))
+        return str(treffer[-1]) if treffer else ""
+
+    def _show_konsole_remoteplay(self) -> None:
+        """KONSOLE: Remote Play - Bild von der PS5 auf den PC.
+
+        Drei Teile, die unabhaengig voneinander nuetzlich sind:
+
+        1. **Suchen.** Das Discovery-Protokoll auf UDP 9302 findet die
+           Konsole im Netz und sagt auch, ob sie im Ruhemodus ist - das
+           sieht ein Portscan nicht.
+        2. **Chiaki.** Das Remote-Play-Protokoll wird nicht nachgebaut;
+           Chiaki wird gesucht und mit der gefundenen Adresse gestartet.
+        3. **Koppeln (ActRemoteLink).** Nur dieser Teil schreibt etwas auf
+           die Konsole - account_id und Fake-Anmeldung. **Slot 1 ist
+           unbedingt gesperrt** (siehe ``remoteplay_agent``), und die
+           beiden noetigen Payloads liegen nicht bei.
+        """
+        c = self._COLORS
+        titel = self._t("remoteplay.window_title")
+        win = self._build_modern_toplevel(titel, 960, 760,
+                                          min_width=820, min_height=620)
+        self._build_modern_header(win, titel, self._t("remoteplay.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        chiaki_var = tk.StringVar(value=self._load_setting("chiaki_pfad", ""))
+        slot_var = tk.StringVar(value="2")
+        konto_var = tk.StringVar(value=self._load_setting("account_id", ""))
+        status_var = tk.StringVar(value=self._t("remoteplay.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": "",
+                       "zeilen": None, "gezeigt": 0}
+        puffer: list = []
+        cursor = [0]
+
+        self._konsole_ip_zeile(koerper, ip_var)
+        self._konsole_hinweiszeile(koerper, "remoteplay.hint_suche")
+
+        tabellenrahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
+        tabellenrahmen.pack(fill="both", expand=True, pady=(4, 4))
+        spalten = ("erst", "zweit", "dritt", "viert")
+        tabelle = ttk.Treeview(tabellenrahmen, columns=spalten,
+                               show="headings", height=6, selectmode="browse")
+        for spalte, schluessel, breite, dehnen in (
+            ("erst", "remoteplay.col_adresse", 150, False),
+            ("zweit", "remoteplay.col_name", 220, True),
+            ("dritt", "remoteplay.col_zustand", 120, False),
+            ("viert", "remoteplay.col_firmware", 110, False),
+        ):
+            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
+            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
+        leiste = ttk.Scrollbar(tabellenrahmen, orient="vertical",
+                               command=tabelle.yview)
+        tabelle.configure(yscrollcommand=leiste.set)
+        tabelle.grid(row=0, column=0, sticky="nsew")
+        leiste.grid(row=0, column=1, sticky="ns")
+        tabellenrahmen.grid_columnconfigure(0, weight=1)
+        tabellenrahmen.grid_rowconfigure(0, weight=1)
+
+        # Chiaki
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(2, 2))
+        tk.Label(reihe, text=self._t("remoteplay.label_chiaki"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=chiaki_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+
+        def _chiaki_waehlen() -> None:
+            gewaehlt = filedialog.askopenfilename(
+                title=self._t("remoteplay.choose_chiaki"), parent=win)
+            if gewaehlt:
+                chiaki_var.set(os.path.normpath(gewaehlt))
+                self._save_setting("chiaki_pfad", chiaki_var.get())
+
+        ttk.Button(reihe, text="...", width=4,
+                   command=_chiaki_waehlen).pack(side="left")
+
+        # Kopplung
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(2, 2))
+        tk.Label(reihe, text=self._t("remoteplay.label_slot"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=slot_var, width=6,
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
+                 relief="flat", insertbackground=c["fg_primary"]).pack(
+            side="left", ipady=3, padx=(0, 12))
+        tk.Label(reihe, text=self._t("remoteplay.label_konto"), anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left", padx=(0, 6))
+        tk.Entry(reihe, textvariable=konto_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3)
+
+        self._konsole_hinweiszeile(koerper, "remoteplay.warn_schreibt",
+                                   warnung=True)
+
+        balken, protokoll = self._konsole_ftp_geruest(
+            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            for knopf in (such_btn, chiaki_btn, lesen_btn, koppeln_btn):
+                try:
+                    knopf.configure(state="disabled" if laufend else "normal")
+                except (tk.TclError, NameError):
+                    pass
+
+        def _zeilen_zeigen(zeilen) -> None:
+            if not tabelle.winfo_exists():
+                return
+            tabelle.delete(*tabelle.get_children())
+            for nummer, werte in enumerate(zeilen):
+                tabelle.insert("", "end", iid=str(nummer), values=werte)
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                neu = stand["zeilen"]
+                if neu is not None and id(neu) != stand["gezeigt"]:
+                    stand["gezeigt"] = id(neu)
+                    _zeilen_zeigen(neu)
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                if stand["groesse"]:
+                    groesse_var.set(stand["groesse"])
+                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _adresse() -> str:
+            ip = ip_var.get().strip()
+            if not self._ist_plausible_ps5_adresse(ip):
+                messagebox.showwarning(titel, self._t("dienste.need_ip"),
+                                       parent=win)
+                return ""
+            self._save_setting("ps5_ip", ip)
+            return ip
+
+        def _suchen() -> None:
+            if laeuft["aktiv"]:
+                return
+            gezielt = ip_var.get().strip()
+            _status(self._t("remoteplay.status_searching"))
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+
+            def _arbeit() -> None:
+                try:
+                    gefunden = remoteplay.suchen(gezielt, zeit=3.0)
+                    if not gefunden and gezielt:
+                        gefunden = remoteplay.suchen("", zeit=3.0)
+                    stand["zeilen"] = [
+                        (k.adresse, k.name, self._t(k.status_schluessel),
+                         k.firmware) for k in gefunden]
+                    _status(self._t("remoteplay.status_found",
+                                    anzahl=len(gefunden)))
+                    for k in gefunden:
+                        _protokoll(self._t("remoteplay.log_gefunden",
+                                           adresse=k.adresse,
+                                           name=k.name or "-",
+                                           zustand=self._t(k.status_schluessel)))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Konsolensuche gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("remoteplay.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="remoteplay-suche").start()
+
+        def _uebernehmen(_ereignis=None) -> None:
+            """Doppelklick auf eine gefundene Konsole: Adresse uebernehmen."""
+            auswahl = tabelle.selection()
+            zeilen = stand["zeilen"] or []
+            if not auswahl:
+                return
+            try:
+                ip_var.set(zeilen[int(auswahl[0])][0])
+            except (ValueError, IndexError):
+                return
+
+        tabelle.bind("<Double-1>", _uebernehmen)
+
+        def _chiaki_starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            pfad = remoteplay.chiaki_finden(chiaki_var.get())
+            if not pfad:
+                messagebox.showwarning(titel, self._t("remoteplay.no_chiaki"),
+                                       parent=win)
+                return
+            chiaki_var.set(pfad)
+            self._save_setting("chiaki_pfad", pfad)
+            try:
+                remoteplay.chiaki_starten(pfad, ip)
+                _protokoll(self._t("remoteplay.log_chiaki", pfad=pfad))
+                _status(self._t("remoteplay.status_chiaki"))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Chiaki-Start gescheitert")
+                _protokoll("[FEHLER] %s" % exc)
+                _status(self._t("remoteplay.status_failed"))
+            _takt()
+
+        def _agent_bauen(ip: str):
+            return remoteplay_agent.ActRemoteLink(
+                ip,
+                sende_payload=lambda pfad: self._send_payload_to_ps5(ip, pfad),
+                agent_elf=self._streaming_pfad("agent"),
+                pin_elf=self._streaming_pfad("pin"))
+
+        def _benutzer_lesen() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            _status(self._t("remoteplay.status_users"))
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+
+            def _arbeit() -> None:
+                try:
+                    agent = _agent_bauen(ip)
+                    if not agent.laeuft() and not agent.agent_elf:
+                        _protokoll(self._t("remoteplay.log_kein_agent"))
+                        _status(self._t("remoteplay.status_failed"))
+                        return
+                    leute = agent.benutzer_liste()
+                    stand["zeilen"] = [
+                        (str(b.slot), b.name,
+                         self._t("remoteplay.user_aktiv" if b.aktiviert
+                                 else "remoteplay.user_offen"),
+                         self._t("remoteplay.user_vorn") if b.vordergrund
+                         else "") for b in leute]
+                    _status(self._t("remoteplay.status_users_done",
+                                    anzahl=len(leute)))
+                except remoteplay_agent.AgentFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("remoteplay.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Benutzerliste gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("remoteplay.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="remoteplay-benutzer").start()
+
+        def _koppeln() -> None:
+            if laeuft["aktiv"]:
+                return
+            ip = _adresse()
+            if not ip:
+                return
+            try:
+                slot = int(slot_var.get().strip())
+            except ValueError:
+                messagebox.showwarning(titel, self._t("remoteplay.need_slot"),
+                                       parent=win)
+                return
+            konto = konto_var.get().strip()
+            if konto:
+                self._save_setting("account_id", konto)
+            if not messagebox.askyesno(
+                    titel, self._t("remoteplay.ask_write", slot=slot),
+                    parent=win):
+                return
+            _status(self._t("remoteplay.status_linking"))
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+
+            def _arbeit() -> None:
+                try:
+                    agent = _agent_bauen(ip)
+                    ergebnis = agent.koppeln(slot, konto or None)
+                    _protokoll(self._t(ergebnis.text_schluessel, slot=slot))
+                    _status(self._t("remoteplay.status_reboot"
+                                    if ergebnis.neustart_noetig
+                                    else "remoteplay.status_step_done"))
+                except remoteplay_agent.Slot1Gesperrt as fehler:
+                    _protokoll("[GESPERRT] %s" % fehler)
+                    _status(self._t("remoteplay.status_slot1"))
+                except remoteplay_agent.AgentFehler as fehler:
+                    _protokoll("[FEHLER] %s" % fehler)
+                    _status(self._t("remoteplay.status_failed"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Kopplung gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("remoteplay.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="remoteplay-koppeln").start()
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        such_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_search"),
+                              style="Accent.TButton", command=_suchen)
+        such_btn.pack(side="left")
+        chiaki_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_chiaki"),
+                                command=_chiaki_starten)
+        chiaki_btn.pack(side="left", padx=(8, 0))
+        lesen_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_users"),
+                               command=_benutzer_lesen)
+        lesen_btn.pack(side="left", padx=(8, 0))
+        koppeln_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_link"),
+                                 command=_koppeln)
+        koppeln_btn.pack(side="left", padx=(8, 0))
+
+        if not self._streaming_pfad("agent"):
+            _protokoll(self._t("remoteplay.log_kein_agent"))
+            _takt()
+
+    def _show_konsole_prosperolight(self) -> None:
+        """KONSOLE: ProsperoLight - Bild vom PC auf die PS5.
+
+        Die Gegenrichtung zu Remote Play: ProsperoLight ist ein
+        Moonlight-Client, der **auf** der Konsole laeuft und sich das Bild
+        von einem Sunshine-Host auf diesem Rechner holt. Hier wird der
+        Sunshine-Host geprueft und das mitgelieferte Abbild
+        (``PPSA99002*.ffpfsc``) an die Umwandlung uebergeben - installiert
+        wird es also ueber die gewohnten Wege dieses Programms.
+
+        Die Kopplung selbst laeuft ueber die Weboberflaeche von Sunshine und
+        wird bewusst **nicht** nachgebaut: Sie verlangt deren Zugangsdaten.
+        """
+        c = self._COLORS
+        titel = self._t("prospero.window_title")
+        win = self._build_modern_toplevel(titel, 860, 620,
+                                          min_width=760, min_height=520)
+        self._build_modern_header(win, titel, self._t("prospero.subtitle"))
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
+        koerper.pack(fill="both", expand=True)
+
+        abbild_var = tk.StringVar(value=self._streaming_pfad("prospero"))
+        status_var = tk.StringVar(value=self._t("prospero.status_idle"))
+        groesse_var = tk.StringVar(value="")
+        laeuft: dict = {"aktiv": False}
+        stand: dict = {"pct": 0.0, "status": "", "groesse": ""}
+        puffer: list = []
+        cursor = [0]
+
+        self._konsole_hinweiszeile(koerper, "prospero.hint_richtung")
+
+        reihe = tk.Frame(koerper, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(6, 2))
+        tk.Label(reihe, text=self._t("prospero.label_abbild"), width=16,
+                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(reihe, textvariable=abbild_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"]).pack(
+            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
+
+        def _abbild_waehlen() -> None:
+            gewaehlt = filedialog.askopenfilename(
+                title=self._t("prospero.choose_abbild"),
+                filetypes=[(self._t("filetype.ffpfsc"), "*.ffpfsc"),
+                           (self._t("filetype.all_files"), "*.*")],
+                parent=win)
+            if gewaehlt:
+                abbild_var.set(os.path.normpath(gewaehlt))
+
+        ttk.Button(reihe, text="...", width=4,
+                   command=_abbild_waehlen).pack(side="left")
+
+        self._konsole_hinweiszeile(koerper, "prospero.hint_pin")
+
+        balken, protokoll = self._konsole_ftp_geruest(
+            win, koerper, knopfreihe, abbild_var, status_var, groesse_var)
+
+        def _protokoll(text: str) -> None:
+            puffer.append(str(text).rstrip("\n"))
+
+        def _status(text: str) -> None:
+            stand["status"] = text
+
+        def _knoepfe(laufend: bool) -> None:
+            for knopf in (pruef_btn, web_btn, quelle_btn):
+                try:
+                    knopf.configure(state="disabled" if laufend else "normal")
+                except (tk.TclError, NameError):
+                    pass
+
+        def _takt() -> None:
+            if not win.winfo_exists():
+                return
+            try:
+                if stand["status"]:
+                    status_var.set(stand["status"])
+                if stand["groesse"]:
+                    groesse_var.set(stand["groesse"])
+                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+                gab_neues = False
+                while cursor[0] < len(puffer):
+                    protokoll.insert("end", puffer[cursor[0]] + "\n")
+                    cursor[0] += 1
+                    gab_neues = True
+                if gab_neues:
+                    protokoll.see("end")
+            except tk.TclError:
+                return
+            if laeuft["aktiv"]:
+                win.after(120, _takt)
+            else:
+                _knoepfe(False)
+
+        def _sunshine_pruefen() -> None:
+            if laeuft["aktiv"]:
+                return
+            _status(self._t("prospero.status_checking"))
+            laeuft["aktiv"] = True
+            _knoepfe(True)
+            _takt()
+
+            def _arbeit() -> None:
+                try:
+                    ergebnis = remoteplay.sunshine_pruefen()
+                    if ergebnis.laeuft:
+                        stand["pct"] = 100.0
+                        stand["groesse"] = ergebnis.weboberflaeche
+                        _status(self._t("prospero.sunshine_da",
+                                        name=ergebnis.name or "-",
+                                        fassung=ergebnis.fassung or "-"))
+                    else:
+                        stand["pct"] = 0.0
+                        _status(self._t("prospero.sunshine_weg"))
+                        _protokoll(self._t("prospero.log_kein_sunshine"))
+                except Exception as exc:  # noqa: BLE001
+                    logger.exception("Sunshine-Pruefung gescheitert")
+                    _protokoll("[FEHLER] %s" % exc)
+                    _status(self._t("prospero.status_failed"))
+                finally:
+                    laeuft["aktiv"] = False
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="prospero-sunshine").start()
+
+        def _web_oeffnen() -> None:
+            adresse = remoteplay.sunshine_web_adresse()
+            _protokoll(self._t("dienste.log_web", adresse=adresse))
+            _takt()
+            webbrowser.open(adresse)
+
+        def _als_quelle() -> None:
+            pfad = abbild_var.get().strip()
+            if not pfad or not os.path.isfile(pfad):
+                messagebox.showwarning(titel, self._t("prospero.need_abbild"),
+                                       parent=win)
+                return
+            self._remember_source_dialog_path(pfad)
+            self.source_path.set(pfad)
+            _protokoll(self._t("prospero.log_quelle", pfad=pfad))
+            _status(self._t("prospero.status_quelle"))
+            _takt()
+
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=win.destroy).pack(side="right")
+        pruef_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_check"),
+                               style="Accent.TButton", command=_sunshine_pruefen)
+        pruef_btn.pack(side="left")
+        web_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_web"),
+                             command=_web_oeffnen)
+        web_btn.pack(side="left", padx=(8, 0))
+        quelle_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_source"),
+                                command=_als_quelle)
+        quelle_btn.pack(side="left", padx=(8, 0))
+
+        if not abbild_var.get().strip():
+            _protokoll(self._t("prospero.log_kein_abbild"))
+            _takt()
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
@@ -43766,6 +45641,63 @@ class PS5ConverterGUI:
             datei.write("\n")
         return geaendert
 
+    def _sdk_bauweg(self, wurzel: str, ziel: str, arbeit: str, param: str,
+                    melden, laeuft: dict) -> str:
+        """Baut das Paket mit Sonys Publishing Tools aus ``libs/sdk``.
+
+        Drei Dinge in dieser Reihenfolge, und die Reihenfolge ist der Sinn:
+
+        1. **Dateinamen pruefen.** ``img_create`` weist ``%``, ``;``,
+           Nicht-ASCII und Namen mit Schlusspunkt ab - aber erst *nach* dem
+           Komprimieren. Bei einem grossen Titel sind das Stunden fuer eine
+           Meldung, die in einer Sekunde zu haben ist.
+        2. **GP5-Projekt schreiben** (``gp5_project``) - es beschreibt
+           Quellordner, Content-ID und Volume-Typ.
+        3. ``prospero-pub-cmd img_create --oformat nwonly`` aufrufen.
+
+        Returns:
+            Den Pfad des gebauten Pakets, oder "" bei einem Fehlschlag
+            (der Grund steht dann im Protokoll).
+        """
+        stand = sony_sdk.pruefen()
+        if not stand.vorhanden:
+            melden(self._t("sdk.log_missing"))
+            return ""
+
+        melden(self._t("sdk.log_names"))
+        schlechte = sony_sdk.namen_pruefen(wurzel)
+        if schlechte:
+            melden(self._t("sdk.log_bad_names", anzahl=len(schlechte)))
+            for name in schlechte[:20]:
+                melden("    %s" % name)
+            return ""
+
+        content_id = ""
+        try:
+            with open(param, "r", encoding="utf-8") as datei:
+                content_id = str(json.load(datei).get("contentId", "") or "")
+        except (OSError, ValueError) as fehler:
+            melden(self._t("sdk.log_no_contentid", grund=fehler))
+
+        projekt = os.path.join(arbeit, "sdk_projekt.gp5")
+        sony_sdk.projekt_schreiben(wurzel, projekt, content_id=content_id)
+        melden(self._t("sdk.log_project", pfad=projekt, kennung=content_id or "-"))
+
+        vorher = {str(p) for p in Path(ziel).glob("*.pkg")}
+        rueckgabe, _zeilen = sony_sdk.bauen(
+            stand, projekt, ziel, melden=melden, prozess_ablage=laeuft)
+        if rueckgabe != 0:
+            melden(self._t("sdk.log_failed", code=rueckgabe))
+            return ""
+
+        neu = sorted({str(p) for p in Path(ziel).glob("*.pkg")} - vorher,
+                     key=os.path.getmtime)
+        if not neu:
+            melden(self._t("sdk.log_no_output"))
+            return ""
+        melden(self._t("sdk.log_done", pfad=neu[-1]))
+        return neu[-1]
+
     def _show_pkg_bauen(self) -> None:
         """WEITERE TOOLS: ein Debug-``.pkg`` bauen - aus einem Dump-Ordner oder einem Abbild.
 
@@ -43862,6 +45794,11 @@ class PS5ConverterGUI:
         # Ab Werk AUS: Das Nullen von attribute3 loescht auch dokumentierte
         # Flags, und die Wirkung ist unbelegt - siehe _exfat_pkg_playgo_felder.
         playgo_var = tk.BooleanVar(value=False)
+        # Der zweite Bauweg - nur waehlbar, wenn unter libs/sdk wirklich ein
+        # Baukasten liegt. Ab Werk aus: Der mitgelieferte Weg ist der
+        # gepruefte, der SDK-Weg haengt an Dateien, die niemand hier hat.
+        sdk_stand = sony_sdk.pruefen()
+        sdk_var = tk.BooleanVar(value=False)
         status_var = tk.StringVar(value=self._t("exfatpkg.status_idle"))
         laeuft: dict = {"aktiv": False, "prozess": None, "abbruch": False}
 
@@ -43950,6 +45887,7 @@ class PS5ConverterGUI:
         for name, text, var in (("schnell", self._t("pkgbau.fast"), schnell_var),
                                 ("lizenzfrei", self._t("pkgbau.license_free"),
                                  lizenzfrei_var),
+                                ("sdk", self._t("sdk.use"), sdk_var),
                                 ("playgo", self._t("exfatpkg.playgo_fix"), playgo_var)):
             kaestchen[name] = tk.Checkbutton(
                 schalter, text=text, variable=var, bg=c["bg_main"],
@@ -43957,6 +45895,34 @@ class PS5ConverterGUI:
                 activebackground=c["bg_main"], activeforeground=c["fg_accent"],
                 font=(UI_SCHRIFT, pt(9)))
             kaestchen[name].pack(side="left", padx=(0, 14))
+
+        # Ohne Baukasten bleibt das Kaestchen grau - und darunter steht,
+        # warum. Ein klickbares Kaestchen ohne Wirkung waere schlimmer als
+        # keins (dieselbe Lehre wie bei "lizenzfrei" und Homebrew).
+        if not sdk_stand.vorhanden:
+            try:
+                kaestchen["sdk"].configure(state="disabled")
+            except tk.TclError:
+                pass
+        sdk_hinweis = tk.Label(
+            koerper,
+            text=self._t("sdk.hint_ready" if sdk_stand.vollstaendig
+                         else ("sdk.hint_partial" if sdk_stand.vorhanden
+                               else "sdk.hint_missing")),
+            font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+            fg=c["fg_secondary"] if sdk_stand.vorhanden else c["fg_warning"],
+            anchor="w", justify="left", wraplength=700)
+        sdk_hinweis.pack(fill="x", pady=(0, 4))
+
+        def _sdk_umbrechen(_ereignis=None) -> None:
+            try:
+                breite = sdk_hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                sdk_hinweis.configure(wraplength=breite - 8)
+
+        sdk_hinweis.bind("<Configure>", _sdk_umbrechen)
 
         def _lizenzfrei_schalten() -> None:
             """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
@@ -44248,6 +46214,7 @@ class PS5ConverterGUI:
             # und hinterliess nur "Fehlgeschlagen" bei leerem Protokoll.
             lizenzfrei = bool(lizenzfrei_var.get())
             schnell = bool(schnell_var.get())
+            mit_sdk = bool(sdk_var.get()) and sdk_stand.vorhanden
             playgo_fix = ist_abbild and bool(playgo_var.get())
             homebrew = art_var.get() == "homebrew"
             _knoepfe_setzen(True)
@@ -44306,7 +46273,14 @@ class PS5ConverterGUI:
                     stand["phase"] = "build"
                     stand["status"] = self._t("exfatpkg.status_building")
                     texte = self._modul_texte(prosperopkg.MELDUNGEN, "prosperopkg.")
-                    if homebrew:
+                    if mit_sdk:
+                        pfad = self._sdk_bauweg(wurzel, ziel, arbeit, param,
+                                                _protokoll, laeuft)
+                        if not pfad:
+                            stand["phase"] = "failed"
+                            stand["status"] = self._t("exfatpkg.status_failed")
+                            return
+                    elif homebrew:
                         pfad = prosperopkg.homebrew_bauen(
                             wurzel, ziel, melden=_protokoll, texte=texte,
                             schnell=schnell, prozess_ablage=laeuft)

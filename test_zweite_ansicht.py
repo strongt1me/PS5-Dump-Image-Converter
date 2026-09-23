@@ -175,14 +175,26 @@ class ZweiteAnsichtTests(unittest.TestCase):
             app._ansicht_beim_start_herstellen()
         self.assertTrue(app._ansicht_ist_konsole())
 
-    def test_konsolenknopf_sagt_dass_die_funktion_folgt(self):
+    def test_jeder_konsolenknopf_oeffnet_sein_fenster(self):
+        """Seit Stufe 4 ist jeder der sieben Knoepfe verdrahtet.
+
+        Bis dahin hielt dieser Test fest, dass ein Knopf ohne Fenster das
+        auch sagt; dieser Zweig wird jetzt in test_konsole_dienste direkt
+        geprueft, weil er sich ueber die Seitenleiste nicht mehr ausloesen
+        laesst. Hier zaehlt nun das Gegenstueck: Ein Druck oeffnet wirklich
+        das Fenster, das in der Karte steht - und keine Kennung fehlt.
+        """
         app = self.app
         app._ansicht_setzen("konsole", speichern=False)
-        knopf, schluessel = app._konsole_knoepfe[1]
-        with mock.patch.object(self.haupt, "messagebox") as box:
-            knopf._on_click()
-        box.showinfo.assert_called_once()
-        self.assertIn("Spiel holen", box.showinfo.call_args[0][1])
+        for nummer, (_schluessel, kennung) in enumerate(app._KONSOLE_KNOEPFE):
+            methode = app._KONSOLE_FENSTER.get(kennung, "")
+            with self.subTest(kennung=kennung):
+                self.assertTrue(methode, "Kennung %s ohne Fenster" % kennung)
+                knopf, _s = app._konsole_knoepfe[nummer]
+                with mock.patch.object(app,
+                                       "_werkzeugfenster_umschalten") as um:
+                    knopf._on_click()
+                um.assert_called_once_with(methode)
 
     def test_texte_zweisprachig(self):
         from ps5_validator.utils.i18n import STRINGS

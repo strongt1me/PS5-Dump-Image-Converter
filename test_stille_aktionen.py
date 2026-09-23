@@ -77,6 +77,14 @@ AUSGENOMMEN = {
 #: Er läuft über kleine, feste Ordner (Werkzeuge, sce_sys, Vorschaubilder)
 #: oder räumt auf. Wer einen davon erledigt, nimmt ihn hier heraus.
 BEKANNT_STUMM: set[tuple[str, str, str]] = {
+    # Gemessen am 22.09.2026: Der Werkzeugordner ProsperoPkg-2.5/win-x64 hat
+    # 7 Dateien und 1,4 MB; copytree braucht dafuer 13-17 ms (drei Laeufe).
+    # Dazu geschieht es nur, wenn sich die eigene Bibliothek in libs geaendert
+    # hat - danach folgt ein Bau von Minuten bis Stunden. Eine Meldung waere
+    # hier Laerm, keine Auskunft. Welche Bibliothek gilt, sagt stattdessen der
+    # Diagnosebericht (_diagnose_eigene_bibliotheken).
+    ("eigene_bibliotheken.py", "einsatzordner", "shutil.copytree"),
+    ("eigene_bibliotheken.py", "einsatzordner", "shutil.rmtree"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_art_wechseln", "shutil.move"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_do_build", "os.walk"),
     ("PS5ImageConverter_Pro_FINAL_revised.py", "_doktor_werkzeuge_starten", "os.walk"),

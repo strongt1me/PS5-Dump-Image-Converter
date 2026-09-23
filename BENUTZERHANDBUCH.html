@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.42</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.43</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.42</span>
-      <span class="marke">Stand 22. September 2026</span>
+      <span class="marke">Version v1.9.43</span>
+      <span class="marke">Stand 23. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -440,12 +440,100 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   noch frei. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash; gewählte
   Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten. Das
   Programm merkt sich, welche Ansicht zuletzt offen war.</p>
+  <h4>Konsole &amp; Payloads</h4>
+  <p>Der erste Knopf öffnet die Dienste-Ampel. Tragen Sie die Adresse Ihrer
+  Konsole ein und drücken Sie <em>Prüfen</em>: Das Fenster fragt alle elf
+  bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021 und 9020),
+  Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
+  Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver und ps5upload.
+  Was nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
+  <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
+  <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet
+  <em>Weboberfläche öffnen</em> im Browser.</p>
   <div class="kasten achtung">
-    <span class="titel">Noch im Aufbau</span>
-    <p>Die sieben Knöpfe stehen bereits, ihre Funktionen kommen nach und nach
-    in den nächsten Versionen. Bis dahin sagt ein Klick, dass die Funktion
-    folgt.</p>
+    <span class="titel">„Hängt“ ist etwas anderes als „läuft nicht“</span>
+    <p>Beim FTP-Server wird nicht nur geprüft, ob der Port Verbindungen
+    annimmt, sondern auch, ob er sich meldet. Ein abgebrochener Download kann
+    ftpsrv in einen Zustand bringen, in dem er Verbindungen weiter annimmt und
+    danach schweigt; ein neu geladenes Payload hilft dann nicht, nur ein
+    Neustart der Konsole. Die Ampel zeigt in diesem Fall <em>hängt</em> und
+    schreibt eine Warnung ins Protokoll &ndash; ein gewöhnlicher Portscan
+    würde hier fälschlich „läuft“ melden.</p>
   </div>
+  <h4>Spiel holen</h4>
+  <p>Holt eine installierte Anwendung von der Konsole auf diesen PC. Das
+  geht in drei Schritten, weil sich der mittlere nicht umgehen lässt: Der
+  <em>App-Dumper</em> schreibt die Anwendung auf einen angeschlossenen
+  <strong>USB-Datenträger</strong> und beherrscht kein Netzwerk. Der
+  Datenträger bleibt stecken; danach listet das Fenster die Ordner auf der
+  Konsole auf (Doppelklick geht eine Ebene hinein, <em>Eine Ebene hoch</em>
+  wieder heraus). <em>Größe ermitteln</em> sagt Ihnen vorher, wie viele
+  Dateien und wie viel es ist – und wie lange das bei der gemessenen Leitung
+  von rund 1,1&nbsp;MB/s etwa dauert. <em>Herunterladen</em> holt den Ordner
+  mit Balken, Größenzeile und Protokoll.</p>
+  <div class="kasten achtung">
+    <span class="titel">Abbrechen wirkt erst nach der laufenden Datei</span>
+    <p>Das ist Absicht. Ein mitten in der Übertragung abgebrochener Download
+    legt <code>ftpsrv</code> auf der Konsole lahm: Der Port nimmt weiter
+    Verbindungen an und antwortet nicht mehr, und kein neu geladenes Payload
+    holt ihn zurück – nur ein Neustart der Konsole. Deshalb merkt sich
+    <em>Abbrechen</em> Ihren Wunsch und beendet die Übertragung erst, wenn
+    die laufende Datei vollständig angekommen ist.</p>
+  </div>
+  <h4>Zurückspielen</h4>
+  <p>Der Gegenweg: Ein fertiger Ordner geht über FTP auf die Konsole. Das ist
+  langsamer als ps5upload, dafür vollständig eigen und ohne Zusatzprogramm.
+  Vom USB-Datenträger auf die interne SSD verschiebt anschließend der
+  <em>Web-Dateimanager</em> (Port 8888), den dasselbe Fenster starten und
+  öffnen kann – genau dafür ist er gebaut. Dieses Programm schreibt nichts in
+  die Systemdatenbanken der Konsole.</p>
+  <h4>Spielstände</h4>
+  <p>Sichern, entschlüsseln und zwischen Benutzern übertragen macht der
+  <em>Garlic Save Manager</em> mit seiner eigenen Oberfläche (Port 8082).
+  Das Fenster prüft, ob er läuft, startet ihn und öffnet ihn – nachgebaut
+  wird nichts. Wichtig: vor jedem Zurückschreiben sichern, und wer auf der
+  Konsole einen neuen Benutzer angelegt hat, findet dessen Spielstände leer;
+  die alten bleiben beim ursprünglichen Benutzer.</p>
+  <p><em>Kernel-Protokoll</em> öffnet dasselbe Fenster wie in der Ansicht
+  UMWANDELN.</p>
+  <h4>Remote Play – Bild von der PS5 auf den PC</h4>
+  <p>Drei Teile, die unabhängig voneinander nützlich sind. <em>Konsole
+  suchen</em> spricht dasselbe Protokoll wie Chiaki (UDP&nbsp;9302) und
+  findet die PS5 im Netz – <strong>auch im Ruhemodus</strong>, was die
+  Dienste-Ampel nicht kann, weil im Standby kein Payload läuft. Ein
+  Doppelklick übernimmt die Adresse. <em>Chiaki starten</em> sucht Chiaki
+  bzw. chiaki-ng auf diesem PC und ruft es mit der Adresse auf; das
+  Remote-Play-Protokoll selbst wird nicht nachgebaut. <em>Benutzer lesen</em>
+  und <em>Koppeln</em> sprechen den ActRemoteLink-Agenten auf der Konsole
+  an.</p>
+  <div class="kasten achtung">
+    <span class="titel">Koppeln schreibt auf die Konsole – Slot 1 bleibt tabu</span>
+    <p>Nur dieser eine Knopf im ganzen Programm schreibt in die
+    Benutzerdaten der Konsole: eine <code>account_id</code> und eine
+    vorgetäuschte PSN-Anmeldung. <strong>Slot&nbsp;1 ist unbedingt
+    gesperrt</strong> – es gibt keinen Schalter, der das aufhebt. Genau das
+    schreibt auch der Autor von ActRemoteLink vor: den ersten Benutzer
+    unangetastet lassen, auf der Konsole einen <strong>neuen lokalen
+    Benutzer</strong> anlegen (Slot&nbsp;2 oder höher), auf der PS5 zu ihm
+    wechseln – er muss der aktive Benutzer sein – und nur ihn koppeln. Der
+    Ablauf macht je Druck einen Schritt und sagt, wann die Konsole neu zu
+    starten ist. Die beiden dafür nötigen Payloads
+    (<code>actremotelink_agent</code>, <code>actremotelink_pin_notify</code>,
+    GPL-3.0) liegen seit dem 23.09.2026 im Ordner <code>helloworld</code> bei;
+    fehlen sie einmal, sagt das Fenster es beim Öffnen.</p>
+  </div>
+  <p>Ihre Spielstände bleiben dabei beim alten Benutzer – übertragen lassen
+  sie sich über <em>Spielstände</em>.</p>
+  <h4>ProsperoLight – Bild vom PC auf die PS5</h4>
+  <p>Die Gegenrichtung: ProsperoLight ist ein Moonlight-Client, der
+  <em>auf</em> der Konsole läuft und sich das Bild von einem
+  <strong>Sunshine</strong>-Host auf diesem PC holt. <em>Sunshine
+  prüfen</em> liest dessen <code>/serverinfo</code> (Port&nbsp;47989) und
+  meldet Name und Fassung, <em>Weboberfläche öffnen</em> führt zu
+  Port&nbsp;47990 – dort tragen Sie die PIN ein, die ProsperoLight auf dem
+  Fernseher anzeigt. <em>Als Quelle übernehmen</em> reicht das Abbild
+  <code>PPSA99002.ffpfsc</code> an die normale Umwandlung weiter; installiert
+  wird es also über die gewohnten Wege dieses Programms.</p>
   <div class="kasten">
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
     <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur und das PKG-Bauen erledigen <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht) und <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Der <strong>PS5-FPKG-Builder</strong> von Phoenixx1202 diente als Orientierung für die PKG-Erstellung aus jedem Abbildformat. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
@@ -1255,6 +1343,49 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     für eigene Homebrew <strong>App direkt installieren</strong> (13.4).</p>
   </div>
 
+  <h4>Eigene Bibliothek benutzen – der Ordner <code>libs</code></h4>
+  <p>Neben dem Programm liegt ein Ordner <code>libs</code>. Wer eine
+  <strong>selbst gebaute</strong> <code>LibProsperoPkg.dll</code> (oder
+  <code>libScePubTools.dll</code>) hat, legt sie dort hinein – mehr ist nicht
+  zu tun. Ab dem nächsten PKG-Bau arbeitet das Programm damit; nehmen Sie die
+  Datei wieder heraus, ist alles wie vorher. Eine Datei mit 0&nbsp;Byte wird
+  ignoriert.</p>
+  <p>Überschrieben wird dabei <strong>nichts</strong>: Das Programm spiegelt
+  den Werkzeugordner in den Einstellungsordner und legt Ihre Datei dort
+  darüber. Ob gerade eine eigene Bibliothek gilt – und welche –, steht im
+  Diagnosebericht unter <em>Eigene Bibliotheken</em> samt Größe und Prüfsumme.
+  Eine neuere Fassung wird an der Prüfsumme erkannt, nicht am Datum. Die
+  Anleitung dazu liegt als <code>libs/README.md</code> daneben.</p>
+
+  <h4>Der zweite Bauweg: mit dem Sony SDK</h4>
+  <p>Wer den SDK-Baukasten besitzt, kann das Paket statt mit der eingebauten
+  Engine von <strong>Sonys eigener Befehlszeile</strong> bauen lassen. Dafür
+  muss unter <code>libs/sdk/</code> mindestens Folgendes liegen:</p>
+  <pre>libs/sdk/toolchain/prospero-pub-cmd.exe
+libs/sdk/toolchain/libScePubTools.dll
+libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
+  <p>Dann wird im Fenster <strong>PKG bauen</strong> das Kästchen
+  <em>Mit Sony SDK bauen</em> anklickbar; fehlt der Baukasten, bleibt es grau
+  und darunter steht, was fehlt. Der Ablauf ist derselbe wie beim
+  <code>build-from-folder</code>-Skript des Baukastens: ein GP5-Projekt
+  schreiben, dann <code>img_create --oformat nwonly</code>.</p>
+  <div class="kasten achtung">
+    <span class="titel">Zwei Dinge vorher wissen</span>
+    <p><strong>Ein unverändertes SDK baut ein signiertes Paket</strong> – das
+    nimmt eine gejailbreakte Konsole nicht an. Die im Umlauf befindlichen
+    Baukästen tragen dafür ein verändertes <code>prospero-pub-cmd.exe</code>
+    („plaintext"-Profil). Das Programm prüft diesen Unterschied nicht; es
+    ruft auf, was da liegt.</p>
+    <p><strong>Die Dateinamen werden vorher geprüft.</strong>
+    <code>img_create</code> weist <code>%</code>, <code>;</code>, alles
+    Nicht-ASCII und Namen mit Schlusspunkt ab – aber erst <em>nach</em> dem
+    Komprimieren. Bei einem großen Titel wären das Stunden für eine Meldung,
+    die in einer Sekunde zu haben ist; deshalb prüft das Programm die Namen,
+    bevor der SDK startet, und nennt die beanstandeten Dateien.</p>
+  </div>
+  <p>Diese Dateien gehören Sony, werden nicht mitgeliefert und dürfen nicht
+  weitergegeben werden – weder ins Git noch in ein Bündel.</p>
+
   <h3>13.4 App direkt installieren</h3>
   <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → APP DIREKT INSTALLIEREN.</p>
@@ -1946,7 +2077,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.42), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.43), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2146,8 +2277,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.42</strong></span>
-    <span>Stand 22. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.43</strong></span>
+    <span>Stand 23. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

@@ -99,3 +99,16 @@ ip.ini
 
 # Sicherungen der config.ini von der Konsole - Anwenderdaten, kein Quelltext.
 "SMP Config.ini Backup"/
+
+# Eigene, selbst gebaute Bibliotheken (LibProsperoPkg.dll, libScePubTools.*).
+# Der Ordner und seine Anleitung gehoeren ins Projekt, die Binaerdateien des
+# Anwenders nicht - sie sind sein Bau, und fremde Binaerdateien haben hier
+# ohnehin nichts verloren.
+libs/*
+!libs/README.md
+
+# Das ProsperoLight-Abbild (36 MB) ist Fremdsoftware und gehoert nicht ins
+# Repo - nur der Ordner samt Anleitung. Die Payloads der Kopplung liegen in
+# helloworld/ und sind dort ganz normal mit dabei.
+Streaming/*
+!Streaming/README.md

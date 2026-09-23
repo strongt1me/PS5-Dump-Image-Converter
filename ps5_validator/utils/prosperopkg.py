@@ -18,12 +18,15 @@ Protokollfenster.
 """
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import subprocess
 import sys
 import threading
 from typing import Callable, Iterable
+
+logger = logging.getLogger("PS5Converter.prosperopkg")
 
 #: Der Ordner des Werkzeugs, relativ zum Programm.
 WERKZEUGORDNER = "ProsperoPkg-2.5"
@@ -118,8 +121,35 @@ def _suchwurzeln() -> list[str]:
     return [w for w in wurzeln if w]
 
 
+def _eigene_bibliotheken_vorziehen(pfad: str) -> str:
+    """Liegt in ``libs`` eine eigene Bibliothek, wird aus der Kopie gestartet.
+
+    Der Normalfall - leerer ``libs``-Ordner - kostet nichts: Dann gibt
+    ``einsatzordner`` den mitgelieferten Ordner unveraendert zurueck. Ein
+    Fehler beim Spiegeln darf einen Bau nie verhindern; dann laeuft eben
+    das mitgelieferte Werkzeug.
+    """
+    try:
+        from ps5_validator.utils import eigene_bibliotheken
+        from ps5_validator.utils.einstellungen import konfigurationsordner
+
+        ordner = eigene_bibliotheken.einsatzordner(
+            os.path.dirname(pfad), konfigurationsordner())
+        neuer = os.path.join(ordner, os.path.basename(pfad))
+        if ordner and os.path.isfile(neuer):
+            return neuer
+    except Exception as fehler:  # noqa: BLE001
+        logger.warning("Eigene Bibliothek nicht einsetzbar: %s", fehler)
+    return pfad
+
+
 def werkzeug_finden() -> str:
     """Der Pfad zu ``prosperopkg``.
+
+    Liegt im Ordner ``libs`` eine eigene ``LibProsperoPkg.dll`` (oder
+    ``libScePubTools``), wird stattdessen der Pfad in der Arbeitskopie
+    geliefert, in der diese Datei ueber der mitgelieferten liegt - siehe
+    ``eigene_bibliotheken``. Der mitgelieferte Ordner bleibt unberuehrt.
 
     Returns:
         Der Pfad, oder ein leerer String, wenn das Werkzeug fehlt.
@@ -128,6 +158,7 @@ def werkzeug_finden() -> str:
     for wurzel in _suchwurzeln():
         pfad = os.path.join(wurzel, WERKZEUGORDNER, unterordner, PROGRAMMNAME)
         if os.path.isfile(pfad):
+            pfad = _eigene_bibliotheken_vorziehen(pfad)
             # Das Ausfuehrungsrecht ueberlebt weder NTFS noch eine ZIP-Datei.
             # Ohne diese Zeile startet der Linux-Bau nicht - derselbe Grund,
             # aus dem werkzeuge_bereitstellen es fuer UFS2Tool setzt.
