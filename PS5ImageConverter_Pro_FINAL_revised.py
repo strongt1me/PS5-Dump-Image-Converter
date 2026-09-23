@@ -8373,6 +8373,7 @@ class PS5ConverterGUI:
                 self.content_scroll.grid_remove()
                 self.content_scrollbar.grid_remove()
                 self._hide_info_box()
+                self._konsole_tafel_zeigen()
                 self._ansicht = "konsole"
             else:
                 for knopf, _schluessel in self._konsole_knoepfe:
@@ -8380,6 +8381,7 @@ class PS5ConverterGUI:
                 for widget, info in self._ansicht_gemerkt:
                     widget.pack(**info)
                 self._ansicht_gemerkt = []
+                self._konsole_tafel_verbergen()
                 self.content_scroll.grid()
                 if getattr(self, "_inhalt_rollt", False):
                     self.content_scrollbar.grid(row=1, column=2, sticky="ns")
@@ -8406,6 +8408,202 @@ class PS5ConverterGUI:
         """
         if str(self._load_setting("ansicht", "umwandeln")) == "konsole":
             self._ansicht_setzen("konsole", speichern=False)
+
+    def _konsole_tafel_zeigen(self) -> None:
+        """Die Uebersicht rechts in der Ansicht KONSOLE einblenden.
+
+        Sie wird beim ersten Umschalten gebaut und danach nur noch ein- und
+        ausgeblendet - ein Neuaufbau bei jedem Wechsel waere Arbeit fuer
+        nichts und wuerde den letzten Messwert wegwerfen.
+        """
+        if getattr(self, "_konsole_tafel", None) is None:
+            self._konsole_tafel_bauen()
+        tafel = getattr(self, "_konsole_tafel", None)
+        if tafel is None:
+            return
+        try:
+            tafel.grid(row=1, column=1, sticky="nsew")
+        except tk.TclError as exc:
+            logger.debug("Konsolentafel nicht einblendbar: %s", exc)
+
+    def _konsole_tafel_verbergen(self) -> None:
+        """Beim Zurueckschalten wieder aus dem Weg - der Platz gehoert
+        dann wieder der Rollflaeche der ersten Ansicht."""
+        tafel = getattr(self, "_konsole_tafel", None)
+        if tafel is None:
+            return
+        try:
+            tafel.grid_remove()
+        except tk.TclError:
+            pass
+
+    def _konsole_tafel_bauen(self) -> None:
+        """Baut die Uebersicht: Ist die Konsole da, und was laeuft darauf?
+
+        Das ist die Frage, wegen der man diese Ansicht ueberhaupt aufmacht.
+        Zwei Messungen beantworten sie, und sie ergaenzen einander:
+
+        * **Discovery (UDP 9302)** sagt, ob die Konsole ueberhaupt da ist -
+          und erkennt sie auch im **Ruhemodus**. Ein Portscan sieht dort
+          nichts, weil im Standby kein einziges Payload laeuft.
+        * **Die Dienste-Ampel** sagt, was gerade laeuft; beim FTP-Server
+          wird der Gruss mitgelesen, damit ein haengender Dienst nicht als
+          "laeuft" durchgeht.
+
+        Der Arbeitsfaden fasst kein Tk an (siehe ``_show_konsole_dienste``);
+        er legt in ``stand`` ab, ein Takt im Hauptfaden zeigt es an.
+        """
+        c = self._COLORS
+        tafel = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
+        self._konsole_tafel = tafel
+
+        tk.Label(tafel, text=self._t("tafel.title"), font=(UI_SCHRIFT, pt(15), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x")
+        tk.Label(tafel, text=self._t("tafel.subtitle"), font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
+                 justify="left").pack(fill="x", pady=(2, 12))
+
+        kopf = tk.Frame(tafel, bg=c["bg_main"])
+        kopf.pack(fill="x", pady=(0, 10))
+        ip_var = tk.StringVar(value=self._ps5_ip())
+        self._konsole_tafel_ip = ip_var
+        tk.Label(kopf, text=self._t("dienste.ip_label"), width=14, anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"]).pack(side="left")
+        tk.Entry(kopf, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
+                 insertbackground=c["fg_primary"], width=18).pack(
+            side="left", ipady=3, padx=(0, 10))
+        pruef_btn = ttk.Button(kopf, text=self._t("tafel.check"),
+                               style="Accent.TButton",
+                               command=lambda: self._konsole_tafel_pruefen())
+        pruef_btn.pack(side="left")
+        self._konsole_tafel_knopf = pruef_btn
+
+        zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
+        self._konsole_tafel_zustand = zustand_var
+        tk.Label(tafel, textvariable=zustand_var, font=(UI_SCHRIFT, pt(11)),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
+                 justify="left", wraplength=620).pack(fill="x", pady=(0, 12))
+
+        rahmen = tk.Frame(tafel, bg=c["bg_card"], padx=1, pady=1)
+        rahmen.pack(fill="both", expand=True)
+        spalten = ("dienst", "zustand")
+        tabelle = ttk.Treeview(rahmen, columns=spalten, show="headings",
+                               height=11, selectmode="none")
+        tabelle.heading("dienst", text=self._t("dienste.col_dienst"), anchor="w")
+        tabelle.heading("zustand", text=self._t("dienste.col_zustand"), anchor="w")
+        tabelle.column("dienst", width=260, anchor="w", stretch=True)
+        tabelle.column("zustand", width=120, anchor="w", stretch=False)
+        tabelle.pack(fill="both", expand=True)
+        self._konsole_tafel_tabelle = tabelle
+        self._konsole_tafel_fuellen(konsole_dienste.pruefen(""))
+
+        status_var = tk.StringVar(value=self._t("tafel.status_idle"))
+        self._konsole_tafel_status = status_var
+        tk.Label(tafel, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
+            fill="x", pady=(8, 0))
+
+    def _konsole_tafel_fuellen(self, uebersicht) -> None:
+        """Traegt eine Uebersicht in die Tabelle - nur aus dem Hauptfaden."""
+        tabelle = getattr(self, "_konsole_tafel_tabelle", None)
+        if tabelle is None or not tabelle.winfo_exists():
+            return
+        tabelle.delete(*tabelle.get_children())
+        for stand in uebersicht:
+            if stand.laeuft:
+                zustand = "dienste.zustand_laeuft"
+            elif stand.stumm:
+                zustand = "dienste.zustand_stumm"
+            else:
+                zustand = "dienste.zustand_aus"
+            tabelle.insert("", "end", iid=stand.dienst.schluessel,
+                           values=(self._t(stand.dienst.name_schluessel),
+                                   self._t(zustand)))
+
+    def _konsole_tafel_pruefen(self) -> None:
+        """Misst beides auf einmal: ist die Konsole da, und was laeuft?"""
+        laeuft = getattr(self, "_konsole_tafel_laeuft", None)
+        if laeuft is None:
+            laeuft = self._konsole_tafel_laeuft = {"aktiv": False}
+        if laeuft["aktiv"]:
+            return
+        ip = self._konsole_tafel_ip.get().strip()
+        if not self._ist_plausible_ps5_adresse(ip):
+            self._konsole_tafel_status.set(self._t("dienste.need_ip"))
+            return
+        self._save_setting("ps5_ip", ip)
+
+        stand: dict = {"status": "", "zustand": "", "uebersicht": None,
+                       "gezeigt": 0}
+        self._konsole_tafel_stand = stand
+        laeuft["aktiv"] = True
+        try:
+            self._konsole_tafel_knopf.configure(state="disabled")
+        except tk.TclError:
+            pass
+        stand["status"] = self._t("tafel.status_running")
+        self._konsole_tafel_takt()
+
+        def _arbeit() -> None:
+            try:
+                gefunden = remoteplay.suchen(ip, zeit=2.0)
+                konsole = gefunden[0] if gefunden else None
+                uebersicht = konsole_dienste.pruefen(ip)
+                stand["uebersicht"] = uebersicht
+                if konsole is not None:
+                    stand["zustand"] = self._t(
+                        "tafel.gefunden",
+                        name=konsole.name or "-",
+                        zustand=self._t(konsole.status_schluessel),
+                        firmware=konsole.firmware or "-")
+                elif uebersicht.anzahl_laufend:
+                    # Antwortet die Suche nicht, sagt ein laufender Dienst
+                    # trotzdem, dass die Konsole da ist - manche Router
+                    # lassen Rundrufe nicht durch.
+                    stand["zustand"] = self._t("tafel.nur_dienste")
+                else:
+                    stand["zustand"] = self._t("tafel.nicht_gefunden")
+                stand["status"] = self._t(
+                    "dienste.status_result",
+                    laufend=uebersicht.anzahl_laufend,
+                    gesamt=len(uebersicht),
+                    urteil=self._t("dienste.bereit_ja" if uebersicht.bereit
+                                   else "dienste.bereit_nein"))
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Konsolentafel gescheitert")
+                stand["status"] = "%s" % exc
+            finally:
+                laeuft["aktiv"] = False
+
+        threading.Thread(target=_arbeit, daemon=True,
+                         name="konsole-tafel").start()
+
+    def _konsole_tafel_takt(self) -> None:
+        """Traegt ins Fenster, was der Faden abgelegt hat - alle 120 ms."""
+        stand = getattr(self, "_konsole_tafel_stand", None)
+        laeuft = getattr(self, "_konsole_tafel_laeuft", {"aktiv": False})
+        if stand is None:
+            return
+        try:
+            neu = stand["uebersicht"]
+            if neu is not None and id(neu) != stand["gezeigt"]:
+                stand["gezeigt"] = id(neu)
+                self._konsole_tafel_fuellen(neu)
+            if stand["zustand"]:
+                self._konsole_tafel_zustand.set(stand["zustand"])
+            if stand["status"]:
+                self._konsole_tafel_status.set(stand["status"])
+        except tk.TclError:
+            return
+        if laeuft.get("aktiv"):
+            self.root.after(120, self._konsole_tafel_takt)
+        else:
+            try:
+                self._konsole_tafel_knopf.configure(state="normal")
+            except tk.TclError:
+                pass
 
     #: Welche Kennung der zweiten Ansicht welches Fenster oeffnet. Was hier
     #: nicht steht, sagt "kommt noch" - so waechst die Ansicht Stufe fuer

@@ -436,10 +436,27 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   der Konsole: <em>Konsole &amp; Payloads</em>, <em>Spiel holen</em>,
   <em>Zurückspielen</em>, <em>Spielstände</em>, <em>Kernel-Protokoll</em>,
   <em>Remote Play</em> und <em>ProsperoLight</em>. Titelbild, „Spiel Info“ und
-  „Was man sonst ev. noch braucht“ gibt es dort nicht; der Bereich rechts ist
-  noch frei. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash; gewählte
+  „Was man sonst ev. noch braucht“ gibt es dort nicht; rechts steht seit
+  v1.9.43 der <strong>Zustand der Konsole</strong> (siehe unten). <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash; gewählte
   Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten. Das
   Programm merkt sich, welche Ansicht zuletzt offen war.</p>
+  <h4>Der Zustand der Konsole (rechte Seite)</h4>
+  <p>Sobald Sie auf KONSOLE umschalten, steht rechts eine Übersicht. Ein
+  Druck auf <em>Konsole prüfen</em> macht <strong>zwei</strong> Messungen auf
+  einmal, und sie ergänzen einander:</p>
+  <ul>
+    <li>Die <strong>Suche im Netz</strong> (UDP&nbsp;9302, dasselbe Protokoll
+    wie Chiaki) findet die PS5 und nennt Name, Zustand und Firmware – sie
+    erkennt die Konsole <strong>auch im Ruhemodus</strong>.</li>
+    <li>Die <strong>Dienste-Ampel</strong> sagt, welche der elf Dienste gerade
+    laufen; beim FTP-Server wird der Gruß mitgelesen, damit ein hängender
+    Dienst nicht als „läuft“ durchgeht.</li>
+  </ul>
+  <p>Antwortet die Suche nicht, laufen aber Dienste, sagt die Übersicht das
+  ausdrücklich: Die Konsole ist dann da, nur lässt Ihr Router die Rundrufe
+  nicht durch. Gemessen wird ausschließlich auf Knopfdruck – das Umschalten
+  allein schickt nichts ins Netz.</p>
+
   <h4>Konsole &amp; Payloads</h4>
   <p>Der erste Knopf öffnet die Dienste-Ampel. Tragen Sie die Adresse Ihrer
   Konsole ein und drücken Sie <em>Prüfen</em>: Das Fenster fragt alle elf

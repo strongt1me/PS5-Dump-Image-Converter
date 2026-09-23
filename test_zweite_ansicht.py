@@ -14,6 +14,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import sys
+import threading
 import unittest
 from unittest import mock
 
@@ -205,6 +206,108 @@ class ZweiteAnsichtTests(unittest.TestCase):
             with self.subTest(schluessel=k):
                 self.assertTrue(STRINGS[k].get("de"))
                 self.assertTrue(STRINGS[k].get("en"))
+
+
+@unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")
+class KonsolenTafelTests(unittest.TestCase):
+    """Die Uebersicht rechts in der Ansicht KONSOLE.
+
+    Bis v1.9.43 blieb die rechte Seite dort leer. Jetzt steht da, was die
+    Ansicht ausmacht: ist die Konsole erreichbar, und was laeuft auf ihr.
+    Die Zusage, auf die es beim Umschalten ankommt: **Tafel und Rollflaeche
+    sind nie gleichzeitig da** - sie teilen sich dieselbe Zelle (1, 1).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+        cls.app._current_language = "de"
+
+    def setUp(self):
+        if self.app._ansicht_ist_konsole():
+            self.app._ansicht_setzen("umwandeln", speichern=False)
+            _WURZEL.update()
+
+    def tearDown(self):
+        if self.app._ansicht_ist_konsole():
+            self.app._ansicht_setzen("umwandeln", speichern=False)
+            _WURZEL.update()
+
+    @staticmethod
+    def _sichtbar(widget) -> bool:
+        if widget is None:
+            return False
+        try:
+            return widget.winfo_manager() == "grid" and bool(widget.grid_info())
+        except Exception:  # noqa: BLE001
+            return False
+
+    def test_tafel_erscheint_erst_in_der_konsole(self):
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        tafel = getattr(self.app, "_konsole_tafel", None)
+        self.assertIsNotNone(tafel, "in der Konsole muss die Tafel stehen")
+        self.assertTrue(self._sichtbar(tafel))
+
+    def test_tafel_und_rollflaeche_schliessen_einander_aus(self):
+        """Beide in derselben Zelle - gleichzeitig waere eine ueber der anderen."""
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        tafel = getattr(self.app, "_konsole_tafel", None)
+        self.assertTrue(self._sichtbar(tafel))
+        self.assertFalse(self._sichtbar(self.app.content_scroll))
+
+        self.app._ansicht_setzen("umwandeln", speichern=False)
+        _WURZEL.update()
+        self.assertFalse(self._sichtbar(tafel))
+        self.assertTrue(self._sichtbar(self.app.content_scroll))
+
+    def test_tafel_liegt_in_der_zelle_der_rollflaeche(self):
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        lage = getattr(self.app, "_konsole_tafel").grid_info()
+        self.assertEqual(1, int(lage["row"]))
+        self.assertEqual(1, int(lage["column"]))
+
+    def test_tabelle_nennt_alle_dienste(self):
+        from ps5_validator.utils import konsole_dienste
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        tabelle = getattr(self.app, "_konsole_tafel_tabelle", None)
+        self.assertIsNotNone(tabelle)
+        self.assertEqual([d.schluessel for d in konsole_dienste.KATALOG],
+                         list(tabelle.get_children()))
+
+    def test_umschalten_startet_keinen_faden(self):
+        """Gemessen wird erst auf Knopfdruck - nicht beim Hinsehen."""
+        vorher = {t.name for t in threading.enumerate()}
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        neu = {t.name for t in threading.enumerate()} - vorher
+        self.assertEqual(set(), {n for n in neu if n.startswith("konsole-")})
+
+    def test_zweites_umschalten_baut_nicht_neu(self):
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        erste = getattr(self.app, "_konsole_tafel")
+        self.app._ansicht_setzen("umwandeln", speichern=False)
+        _WURZEL.update()
+        self.app._ansicht_setzen("konsole", speichern=False)
+        _WURZEL.update()
+        self.assertIs(erste, getattr(self.app, "_konsole_tafel"),
+                      "die Tafel wird gebaut, nicht jedes Mal neu")
+
+    def test_texte_zweisprachig(self):
+        from ps5_validator.utils.i18n import STRINGS
+        for schluessel in ("tafel.title", "tafel.subtitle", "tafel.check",
+                           "tafel.unbekannt", "tafel.status_idle",
+                           "tafel.status_running", "tafel.gefunden",
+                           "tafel.nur_dienste", "tafel.nicht_gefunden"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, STRINGS)
+                self.assertTrue(STRINGS[schluessel].get("de"))
+                self.assertTrue(STRINGS[schluessel].get("en"))
 
 
 if __name__ == "__main__":

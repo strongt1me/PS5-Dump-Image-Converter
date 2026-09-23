@@ -8,7 +8,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ## v1.9.43 – 23.09.2026
 
-- **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände, Kernel-Protokoll, Remote Play und ProsperoLight.
+- **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände, Kernel-Protokoll, Remote Play und ProsperoLight – und rechts der **Zustand der Konsole** (findet die PS5 auch im Ruhemodus).
 - **Neu:** Der Ordner **libs** nimmt eigene Bibliotheken auf; liegt dort ein SDK-Baukasten unter `libs/sdk`, baut „PKG bauen“ wahlweise über Sonys Publishing Tools.
 - **Neu:** PKG Manager 1.2.2 und die ActRemoteLink-Payloads liegen bei.
 

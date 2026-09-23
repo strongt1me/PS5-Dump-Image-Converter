@@ -317,7 +317,14 @@ class NennungTests(unittest.TestCase):
         "helloworld": "helloworld",
     }
     #: Eigener Bestand - hier gibt es nichts zu nennen.
-    EIGEN = {"ps5_validator", "Hintergrundbilder", "Anleitungen", ".github"}
+    #: Eigene Ordner. ``libs`` und ``Streaming`` tragen im Repo **nur** die
+    #: eigene Anleitung - was der Anwender hineinlegt (eine eigene
+    #: LibProsperoPkg, ein SDK-Baukasten, das ProsperoLight-Abbild) ist
+    #: gitignoriert und wird nicht mitgeliefert. Sie gehoeren deshalb nicht
+    #: nach FREMD: In THIRD_PARTY_LICENSES.md stuende sonst eine Zeile fuer
+    #: etwas, das wir gar nicht weitergeben.
+    EIGEN = {"ps5_validator", "Hintergrundbilder", "Anleitungen", ".github",
+             "libs", "Streaming"}
 
     @classmethod
     def setUpClass(cls) -> None:

@@ -358,19 +358,24 @@ if (Test-Path $exePath) {
     # Programmdatei. Ihn danebenzulegen hiesse, dieselben 3 MB zweimal
     # auszuliefern, und der danebenliegende wuerde nie benutzt.
 
-    # Der libs-Ordner dagegen MUSS neben der EXE liegen und darf NICHT in
-    # sie hinein: Eingebettet landet er beim Start im Nur-Lese-Temp-Ordner
-    # (_MEIPASS) - dort koennte niemand eine eigene DLL hineinlegen, und
-    # genau dafuer ist er da. Mitgegeben wird nur die Anleitung; die
-    # Bibliotheken baut der Anwender selbst.
-    $libsZiel = Join-Path $buendel "libs"
-    $libsQuelle = Join-Path $PSScriptRoot "libs\README.md"
-    if (Test-Path $libsQuelle) {
-        New-Item -ItemType Directory -Path $libsZiel -Force | Out-Null
-        Copy-Item $libsQuelle $libsZiel -Force
-        Write-Host "           libs\README.md (Ordner fuer eigene Bibliotheken)" -ForegroundColor Gray
-    } else {
-        Write-Host "           FEHLT: libs\README.md" -ForegroundColor Yellow
+    # Diese Ordner MUESSEN neben der EXE liegen und duerfen NICHT in sie
+    # hinein: Eingebettet landen sie beim Start im Nur-Lese-Temp-Ordner
+    # (_MEIPASS) - dort koennte niemand etwas hineinlegen, und genau dafuer
+    # sind sie da. Mitgegeben wird nur die jeweilige Anleitung; die Dateien
+    # selbst (eigene Bibliotheken, ProsperoLight-Abbild) bringt der Anwender.
+    #
+    # Dass sie leer neben der EXE stehen, ist der Sinn: So sieht man auf
+    # einen Blick, wohin die Dateien gehoeren.
+    foreach ($_ordner in @("libs", "Streaming")) {
+        $_ziel = Join-Path $buendel $_ordner
+        $_quelle = Join-Path $PSScriptRoot "$_ordner\README.md"
+        if (Test-Path $_quelle) {
+            New-Item -ItemType Directory -Path $_ziel -Force | Out-Null
+            Copy-Item $_quelle $_ziel -Force
+            Write-Host "           $_ordner\README.md (Ordner neben der EXE)" -ForegroundColor Gray
+        } else {
+            Write-Host "           FEHLT: $_ordner\README.md" -ForegroundColor Yellow
+        }
     }
 
     # -Recurse, sonst faellt der Ordnerinhalt aus der Summe.
