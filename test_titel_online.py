@@ -205,16 +205,15 @@ class VerdrahtungTests(unittest.TestCase):
         self.assertEqual(self._vorbelegung(online_erlaubt=False), True,
                          "Ohne Nachschlag geschieht alles lokal - dann Ja.")
 
-    def test_frage_mit_netz_steht_auf_nein(self):
-        # Ein Ja schickt die Title-ID an prosperopatches.com. Ein
-        # versehentliches Enter darf das nicht ausloesen.
-        #
-        # Bis v1.8.52 hatte der Nachschlag eine eigene Frage mit
-        # default_yes=False. v1.8.53 legte beide Fragen zusammen - und die
-        # verbliebene benutzte die Vorgabe Ja. Gemessen wird deshalb die
-        # Vorbelegung selbst, nicht mehr eine Zeichenkette im Quelltext:
-        # Die haette den Rueckfall nicht bemerkt.
-        self.assertEqual(self._vorbelegung(online_erlaubt=True), False)
+    def test_frage_mit_netz_steht_ebenfalls_auf_ja(self):
+        # Bis 23.09.2026 stand die Frage mit Nachschlag auf "Nein", damit ein
+        # versehentliches Enter die Title-ID nicht an prosperopatches.com
+        # schickt. Seitdem entscheidet ueber den Nachschlag der Haken in den
+        # Einstellungen (unter Windows und Linux ab Werk gesetzt) - Wunsch
+        # des Nutzers: "es soll immer online geprueft werden". Die Frage gilt
+        # nur noch der Ersatzdatei selbst; der Dienst steht in ihrem Text.
+        # Gemessen wird die Vorbelegung selbst, keine Zeichenkette.
+        self.assertEqual(self._vorbelegung(online_erlaubt=True), True)
 
     def _vorbelegung(self, *, online_erlaubt: bool):
         """Fragt _offer_create_param_json, mit welcher Vorbelegung es fragt."""
@@ -240,10 +239,30 @@ class VerdrahtungTests(unittest.TestCase):
         return gemerkt[0]
 
     def test_werte_landen_in_der_ersatzdatei(self):
-        self.assertIn('content_id=online.get("content_id", "")', self.quelle)
+        # Bis 23.09.2026 suchte dieser Test zwei Zeilen woertlich im
+        # Quelltext. Jetzt legt er die Datei wirklich an und liest sie.
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+
+        gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        gui._current_language = "de"
+        gui._append_to_log = lambda *a, **k: None
+        gui._online_nachschlag_erlaubt = lambda: True
+        gui._param_frage = lambda *a, **k: True
+        gui._lookup_param_meta_online = lambda tid: {
+            "title": "Arcade Game Zone",
+            "content_id": "UP8016-PPSA19015_00-0489895718491618"}
+        with tempfile.TemporaryDirectory() as td:
+            ordner = os.path.join(td, "PPSA19015-app0")
+            os.makedirs(os.path.join(ordner, "sce_sys"))
+            self.assertTrue(gui._offer_create_param_json(ordner, missing=True))
+            with io.open(os.path.join(ordner, "sce_sys", "param.json"),
+                         encoding="utf-8") as fh:
+                doc = json.load(fh)
+        self.assertEqual(doc["contentId"], "UP8016-PPSA19015_00-0489895718491618")
+        self.assertEqual(doc["localizedParameters"]["en-US"]["titleName"],
+                         "Arcade Game Zone")
         # Seit v1.8.53 hat der Trophaeen-Container Vorrang vor dem Netz.
-        self.assertIn('title=lokal.get("titleName") or online.get("title", "")',
-                      self.quelle)
+        self.assertIn('lokal.get("titleName") or online.get("title", "")', self.quelle)
 
     def test_info_fenster_nutzt_dieselbe_titelauswertung(self):
         # Sonst stuende dort weiterhin "PPSA19015: Arcade Game Zone".

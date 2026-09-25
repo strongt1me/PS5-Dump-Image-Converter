@@ -903,6 +903,14 @@ class Metadatenleser:
         meta["title_id"] = _pick_scalar(payload, "titleId", "title_id", "contentId")
         meta["version"] = _pick_scalar(payload, "contentVersion", "masterVersion", "appVer", "version")
         meta["required_firmware"] = self._extract_required_firmware_value(payload)
+        # Das SDK, mit dem gebaut wurde - fuer die Detailspalte der Bibliothek
+        # (seit 25.09.2026). Nur wenn die Datei es nennt: Die anderen Leser
+        # (param.sfo) kennen das Feld nicht, und ein Platzhalter hiesse dort
+        # "unbekannt", wo es gar nichts zu wissen gibt.
+        if payload.get("sdkVersion") is not None:
+            sdk = self._normalize_required_firmware(payload.get("sdkVersion"))
+            if sdk != "–":
+                meta["sdk"] = sdk
 
         region = _pick_scalar(payload, "region", "defaultLanguage", "defaultLanguageCode")
         if region == "–":
@@ -1031,15 +1039,18 @@ class Metadatenleser:
                 param_sfo_blob = b"".join(reader.read_file(entry))
             elif rel.endswith("/icon0.png") and icon_blob is None:
                 icon_blob = b"".join(reader.read_file(entry))
-            # Bei großen Titeln (viele tausend Dateien) den Baum nicht bis zum
-            # Ende durchlaufen, wenn bereits alle drei Zieldateien gefunden
-            # wurden – iter_files() liest sonst weiter Verzeichniscluster ein,
-            # obwohl nichts Nützliches mehr folgen kann.
+            # Abgekuerzt wird nur, wenn alle drei Zieldateien da sind - also
+            # praktisch nur bei Titeln mit param.json UND param.sfo. Ein
+            # PS5-Titel hat keine param.sfo und laeuft ganz durch.
             #
-            # Steht der AMPR-Befund noch aus, wird trotzdem abgekuerzt: Der
-            # Baum eines grossen Titels dafuer ganz zu lesen waere teuer, und
-            # die Angabe ist eine Nebensache gegenueber Titel und Bild. Sie
-            # bleibt dann eben offen.
+            # Das kostet nichts: Beide Leser bauen den ganzen Baum auf, bevor
+            # sie die erste Datei liefern (ExfatReader.iter_files ueber
+            # root_entries, der PFS-Leser ueber build_tree_from_uroot). Bis
+            # zur Durchsicht (Runde 19, U1-10) stand hier, iter_files() lese
+            # sonst weiter Verzeichniscluster ein - und der Befund schlug vor,
+            # schon ohne param.sfo abzubrechen. Gespart haette das nichts; nur
+            # die AMPR-Angabe waere bei jedem PS5-Titel von "Nein" zu "nicht
+            # ermittelt" geworden. test_durchsicht_runde19 misst beides.
             if param_json_blob is not None and param_sfo_blob is not None and icon_blob is not None:
                 break
         else:

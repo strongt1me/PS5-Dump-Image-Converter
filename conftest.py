@@ -28,14 +28,47 @@ Die Tk-Wurzel selbst bleibt stehen - eine Wurzel je Prozess, nie zerstoeren
 (sonst kippt Tcl, siehe ``pruefumgebung``). Abgebaut wird nur bei Klassen,
 die selbst ein Programmfenster als Attribut halten; ein modulweit geteiltes
 Fenster (``test_debuglauf_befunde._app``) bleibt unberuehrt.
+
+**Dialogfenster.** Kein Test darf ein echtes, modales Fenster oeffnen - es
+haelt den ganzen Lauf an (``_keine_echten_dialoge``, seit 24.09.2026).
 """
 from __future__ import annotations
 
 import ast
 import gc
+import importlib
 import logging
+import os
 
 import pytest
+
+import pruefumgebung
+
+# Kein Testlauf schreibt in den Einstellungsordner des Anwenders. Viele
+# Testdateien lenken selbst um (pruefumgebung.umlenken), etliche aber nicht -
+# wer eine davon einzeln startete, ohne PS5CONV_KONFIGORDNER zu setzen,
+# veraenderte %APPDATA%\PS5ImageConverterPro\paths.json (Durchsicht vom
+# 23.09.2026, B-1). Hier, vor dem Laden jeder Testdatei, gilt deshalb ein
+# eigener Ordner - es sei denn, der Aufrufer hat schon einen gesetzt.
+if not os.environ.get(pruefumgebung.UMGEBUNGSNAME):
+    pruefumgebung.umlenken("conftest")
+
+# Dieselbe DPI-Einstellung wie das Programm (Kopf des Hauptmoduls) - und zwar
+# bevor irgendeine Testdatei ihre Tk-Wurzel anlegt. Tk uebernimmt die
+# Aufloesung beim Anlegen der Wurzel: Kam eine Testdatei ohne Import des
+# Hauptmoduls zuerst dran, hatte die gemeinsame Wurzel 96 statt 120 dpi
+# ("tk scaling" 1.3346 statt 1.6683). Messungen, die auf 125 % umrechnen,
+# lagen dann je nach Reihenfolge daneben - am 25.09.2026 der Hoehentest der
+# ActRemoteLink-Seite: 719 px, allein gelaufen unter 700.
+if os.name == "nt":
+    import ctypes
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+    except Exception:  # noqa: BLE001 - aeltere Windows-Fassungen
+        try:
+            ctypes.windll.user32.SetProcessDPIAware()
+        except Exception:  # noqa: BLE001
+            pass
 
 try:
     import tkinter as tk
@@ -178,3 +211,78 @@ def _programmfenster_abbauen(request: pytest.FixtureRequest):
     for name, _app in fenster:
         delattr(klasse, name)
     gc.collect()
+
+
+#: Die modalen Tk-Dialoge. Oeffnet ein Test einen davon wirklich, wartet das
+#: Fenster auf einen Klick, den niemand gibt - und mit ihm der ganze Lauf.
+_DIALOGE = {
+    "tkinter.messagebox": ("showinfo", "showwarning", "showerror", "askquestion",
+                           "askokcancel", "askyesno", "askyesnocancel",
+                           "askretrycancel"),
+    "tkinter.filedialog": ("askopenfilename", "askopenfilenames",
+                           "asksaveasfilename", "askdirectory", "askopenfile",
+                           "askopenfiles", "asksaveasfile"),
+    "tkinter.simpledialog": ("askstring", "askinteger", "askfloat"),
+}
+
+
+#: Die Dialoge, wie tkinter sie mitbringt - festgehalten beim Laden dieser
+#: Datei, bevor ein Test etwas ersetzt.
+_ORIGINALE: dict = {}
+for _modulname, _namen in _DIALOGE.items():
+    try:
+        _modul = importlib.import_module(_modulname)
+    except ImportError:  # pragma: no cover - ohne Tk gibt es keine Dialoge
+        continue
+    for _name in _namen:
+        if hasattr(_modul, _name):
+            _ORIGINALE[(_modulname, _name)] = getattr(_modul, _name)
+
+
+class EchterDialogImTest(AssertionError):
+    """Ein Test hat ein echtes, modales Fenster geoeffnet."""
+
+
+def _dialogsperre(name: str, geoeffnet: list):
+    def _dialog(*args, **kwargs):
+        titel = kwargs.get("title", args[0] if args else "")
+        eintrag = "%s(%r)" % (name, titel)
+        geoeffnet.append(eintrag)
+        raise EchterDialogImTest("Echter Dialog im Test: " + eintrag)
+    return _dialog
+
+
+@pytest.fixture(autouse=True)
+def _keine_echten_dialoge(monkeypatch: pytest.MonkeyPatch):
+    """Ein echter Dialog laesst den Test sofort scheitern, statt den Lauf anzuhalten.
+
+    Zweimal ist die Testreihe schon an einem Fenster stehen geblieben, das
+    niemand beantworten konnte: am 17.09.2026 der Adminlauf eine halbe Stunde
+    lang an "param.json beanstandet", am 23.09.2026 der Volllauf an
+    "Content-ID fehlt" (``test_debuglauf_befunde``, der .ffpkg-Bau fragte
+    neuerdings nach). Beide Male war nichts zu sehen als ein stehender
+    Fortschritt - welcher Test es war, liess sich erst mit Zeitgrenzen
+    einkreisen.
+
+    Jetzt ersetzt jeder Test die Dialoge durch eine Sperre. Wird sie
+    ausgeloest, wirft sie ``EchterDialogImTest``, und der Test scheitert beim
+    Abbau mit Titel und Art des Fensters - auch wenn das Programm die Ausnahme
+    selbst verschluckt. Tests, die eine Rueckfrage beantworten wollen, ersetzen
+    den Dialog wie bisher mit ``mock.patch``; das geht der Sperre vor.
+
+    Ersetzt wird nur, was noch der echte Dialog ist. Manche Klassen setzen
+    ihre Antworten schon in ``setUpClass`` (``test_fensterlayout`` oeffnet so
+    jedes Werkzeugfenster samt Ordnerwahl) - die Sperre ueberschrieb sie im
+    ersten Volllauf und liess genau diese Klasse scheitern.
+    """
+    geoeffnet: list[str] = []
+    for (modulname, name), original in _ORIGINALE.items():
+        modul = importlib.import_module(modulname)
+        if getattr(modul, name, None) is not original:
+            continue  # schon durch eine Antwort des Tests ersetzt
+        monkeypatch.setattr(modul, name,
+                            _dialogsperre("%s.%s" % (modulname, name), geoeffnet))
+    yield
+    if geoeffnet:
+        pytest.fail("Der Test hat ein echtes Dialogfenster geoeffnet: "
+                    + "; ".join(geoeffnet), pytrace=False)

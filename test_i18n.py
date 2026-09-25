@@ -22,7 +22,9 @@ class I18nTests(unittest.TestCase):
     def test_known_english_translations(self) -> None:
         self.assertEqual(translate("en", "action.start"), "START")
         self.assertEqual(translate("en", "action.cancel"), "CANCEL")
-        self.assertEqual(translate("en", "titlebar.library"), "LIBRARY")
+        # Seit dem 25.09.2026 steht die Bibliothek in der Ansicht KONSOLE,
+        # nicht mehr als Knopf BIBLIOTHEK in der Titelleiste.
+        self.assertEqual(translate("en", "konsole.btn_bibliothek"), "3. Library")
         self.assertEqual(translate("en", "mode.pack_folder"), "1. Convert dump folder")
 
     def test_unknown_key_falls_back_to_key_itself(self) -> None:

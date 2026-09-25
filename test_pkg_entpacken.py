@@ -109,6 +109,14 @@ class PaketArtTests(unittest.TestCase):
             self.assertEqual("", pe.paket_art(self._datei(ordner, "d.pkg", b"")))
             self.assertEqual("", pe.paket_art(os.path.join(ordner, "fehlt.pkg")))
 
+    def test_update_paket_ist_keine_fremde_datei(self):
+        """PS5-Update-Paket (Delta, Kennung LIH) - erkannt seit 23.09.2026.
+
+        Vorher hiess es "keine PKG-Datei", was nicht stimmt und nicht hilft.
+        """
+        with tempfile.TemporaryDirectory() as ordner:
+            self.assertEqual("ps5_delta", pe.paket_art(self._datei(ordner, "e.pkg", b"\x7fLIH" + b"\0" * 8)))
+
 
 class ZielordnerNameTests(unittest.TestCase):
     def test_spiel_patch_dlc(self):

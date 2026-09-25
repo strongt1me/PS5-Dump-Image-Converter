@@ -64,6 +64,10 @@ SICHTBARE_SCHREIBER = {
     "_set_status", "set_status", "_status", "_append_to_log", "_protokoll",
     "showinfo", "showwarning", "showerror", "askyesno", "askokcancel",
     "askretrycancel", "start_task", "begin_prepare", "begin_payload",
+    # Seit dem 24.09.2026 (Durchsicht, Runde 13): "protokoll" ist der
+    # Schreiber, den _abbild_zu_dumpordner bekommt; _format_phase_status
+    # setzt seinen Text in die Statuszeile.
+    "protokoll", "_format_phase_status",
 }
 
 #: Stellen, die bewusst so bleiben. Jede braucht eine Begruendung - eine
@@ -77,10 +81,28 @@ ERLAUBT: dict[str, str] = {
     "Dokan2": "Name eines fremden Treibers.",
     "FileZilla": "Name eines fremden Werkzeugs.",
     "[INFO] \n\n": "Reines Protokollpraefix, der Inhalt kommt aus einer Variablen.",
-    "[INFO] \n": "Dasselbe.",
-    "[WARN] \n": "Dasselbe.",
+    # "[INFO] \n" und "[WARN] \n" deckten nur die Startmeldung zur
+    # MIT-Lizenz - seit dem 24.09.2026 uebersetzt (Durchsicht H12-13).
     "[INFO]  -> \n": "Dasselbe, mit Pfeil zwischen zwei Werten.",
     "[UFS2Tool] \n": "Praefix mit dem Namen des fremden Werkzeugs.",
+    "[SHADOWMOUNT] %s": "Praefix mit dem Namen des fremden Werkzeugs; der Hinweis "
+                        "kommt uebersetzt aus _ampr_ablage_pruefen (texte=).",
+    # Ausnahmetexte, die der Anwender nicht zu sehen bekommt (seit Runde 16
+    # prueft der Rundumschlag Ausnahme-Konstruktoren mit).
+    "Kein freier Temp-Name in %s nach %d Versuchen":
+        "Erst nach 100 kollidierenden Zufallsnamen - praktisch unerreichbar.",
+    "Kein freier Sicherungsname mehr: %s":
+        "Wird zwei Zeilen tiefer gefangen und nur an logger.debug gegeben.",
+    "after() aus dem Hauptfaden":
+        "Attrappe in der Diagnose, die einen verbotenen Aufruf sichtbar macht.",
+    "_ampr_gen_ablegen ist der lokale Weg":
+        "Programmierwaechter gegen einen falschen Aufruf, kein Anwenderfall.",
+    "Firmware ausserhalb 0..99: %r.%r":
+        "BCD-Kodierung fester Auswahlwerte; nur bei einem Programmfehler.",
+    "index has too many records":
+        "Grenze des AMPRIDX3-Formats (ueber 4 Mrd. Eintraege) - unerreichbar.",
+    "index path blob is too large":
+        "Grenze des AMPRIDX3-Formats (ueber 4 GB Pfade) - unerreichbar.",
 }
 
 
@@ -90,9 +112,17 @@ def _quelltext() -> str:
 
 
 def _fester_text(knoten: ast.AST) -> str | None:
-    """Der feste Textanteil eines Ausdrucks - auch aus f-String und ``+``."""
+    """Der feste Textanteil eines Ausdrucks - auch aus f-String, ``+`` und ``%``.
+
+    Die ``%``-Formatierung kam am 24.09.2026 dazu: ``"[FEHLER] %s" % exc``
+    stand in 28 Protokollzeilen der Konsolenfenster und ging an diesem
+    Rundumschlag vorbei - auf Englisch stand dort weiter "[FEHLER]"
+    (Durchsicht, Runde 13).
+    """
     if isinstance(knoten, ast.Constant) and isinstance(knoten.value, str):
         return knoten.value
+    if isinstance(knoten, ast.BinOp) and isinstance(knoten.op, ast.Mod):
+        return _fester_text(knoten.left)
     if isinstance(knoten, ast.JoinedStr):
         teile = [w.value for w in knoten.values
                  if isinstance(w, ast.Constant) and isinstance(w.value, str)]
@@ -131,6 +161,19 @@ def _feste_stellen(mit_ausnahmen: bool = True) -> list[tuple[int, str, str]]:
             gefunden.append((knoten.lineno, wie, text))
 
         if name in SICHTBARE_SCHREIBER:
+            for arg in knoten.args:
+                _melde(name, arg)
+        # Seit dem 25.09.2026 (Durchsicht, Runde 16) zwei Schreiber mehr, an
+        # denen feste Saetze vorbeigingen: der Schreiber des MkPFS-Laufs
+        # (sieben deutsche Zeilen der zlib-ng-Selbstinstallation) und
+        # Ausnahme-Konstruktoren - ihr Text kommt ueber v0=exc ins Protokoll
+        # oder in einen Dialog (sieben Stellen, u. a. "Gemountetes Laufwerk
+        # ... erschien nicht rechtzeitig").
+        if (name == "write" and isinstance(knoten.func, ast.Attribute)
+                and getattr(knoten.func.value, "id", "") == "writer"):
+            for arg in knoten.args:
+                _melde("writer.write", arg)
+        if name.endswith(("Error", "Exception")):
             for arg in knoten.args:
                 _melde(name, arg)
         if name == "set" and isinstance(knoten.func, ast.Attribute) and knoten.args:
@@ -241,6 +284,14 @@ class KeinFesterTextInDerOberflaecheTests(unittest.TestCase):
             [], stellen,
             "Fester Text wird an eine angezeigte Meldung gehaengt:\n%s"
             % "\n".join("  Zeile %d  %s  %r" % s for s in stellen))
+
+    def test_die_formatierung_mit_prozent_wird_erkannt(self):
+        """Ohne diese Probe bliebe die Erweiterung vom 24.09.2026 ungeprueft."""
+        for quelle, erwartet in (('"[FEHLER] %s" % exc', "[FEHLER] %s"),
+                                 ('"PKG gebaut: %s\\n" % (a, b)', "PKG gebaut: %s\n"),
+                                 ('self._t("x") % wert', None)):
+            with self.subTest(quelle=quelle):
+                self.assertEqual(erwartet, _fester_text(ast.parse(quelle, mode="eval").body))
 
     def test_die_suche_nach_angehaengtem_text_misst_etwas(self):
         """Ohne diese Probe bliebe die Pruefung darueber still gruen, wenn
@@ -510,6 +561,10 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
         ("homebrew_bauen", 1),
         ("zusammenfassung", 1),    # param_check.Befund
         ("herunterfahren", 1),     # ueber _system_herunterfahren
+        # Seit der Durchsicht, Runde 18: die Einzelbefunde und die
+        # Reparaturschritte von param_check.
+        ("pruefe_datei", 4),
+        ("repariere", 1),
     )
 
     def test_die_elf_helfermodule_bekommen_ueberall_vorlagen(self):
@@ -585,6 +640,10 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
         ("ps5_validator.utils.plattform", "OEFFNEN_MELDUNGEN", "oeffnen."),
         ("ps5_validator.utils.plattform", "HERUNTERFAHR_MELDUNGEN",
          "shutdown.reason_"),
+        # Seit der Durchsicht, Runde 17: alle vier Validatoren (vereinigt im
+        # Dispatcher) und die Pruefsaetze von ffpkg_support.
+        ("ps5_validator.core.dispatcher", "MELDUNGEN", "validator."),
+        ("ps5_validator.utils.ffpkg_support", "MELDUNGEN", "ffpkgsupport."),
     )
 
     def test_jedes_modul_hat_seine_schluessel(self):
@@ -624,6 +683,10 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
          "falle_common_lib", {}),
         ("ps5_validator.utils.pkg_merger", "_text", "pkg_merger.log_",
          "kein_fih_kopf", {}),
+        ("ps5_validator.core.dispatcher", "_satz", "validator.",
+         "unbekannter_modus", {"modus": "xyz", "erlaubt": "dump"}),
+        ("ps5_validator.utils.ffpkg_support", "_text", "ffpkgsupport.",
+         "quellordner_leer", {}),
     )
 
     def test_jedes_modul_benutzt_die_vorlagen_auch(self):
@@ -768,6 +831,13 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
         "shutdown.reason_fehlgeschlagen":
             "'{befehl}: {grund}' - reine Formatzeile, beide Teile kommen "
             "von aussen.",
+        # Seit der Durchsicht, Runde 17/18:
+        "paramcheck.laden_fehler_7":
+            "'  -> {wert}' - Pfeil vor der beanstandeten JSON-Zeile.",
+        "validator.dump_param_json":
+            "'param.json: {befund}' - Dateiname vor einem uebersetzten Befund.",
+        "validator.pfs_version_andere":
+            "'v{version}' - Versionskuerzel aus dem PFS-Kopf.",
     }
 
     def test_die_englische_fassung_ist_nicht_die_deutsche(self):
@@ -782,7 +852,10 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
                     "verify.", "werkzeuge.", "self_reader.", "ps4werkzeug.",
                     "payloadmod.", "prosperopkg.", "backportmod.",
                     "paramcheck.", "appinstallmod.", "anzeige.",
-                    "shutdown.reason_", "param_manifest.key_")
+                    "shutdown.reason_", "param_manifest.key_",
+                    # Runden 16/17 der Durchsicht:
+                    "validator.", "ffpkgsupport.", "ffpkg.", "mkpfs.",
+                    "entpacken.")
         gleich = [k for k, v in STRINGS.items()
                   if k.startswith(praefixe)
                   and v.get("de") == v.get("en")

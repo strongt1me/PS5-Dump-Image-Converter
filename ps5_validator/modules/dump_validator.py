@@ -8,7 +8,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
-from ps5_validator.core.validator_base import BaseValidator, ValidationResult
+from ps5_validator.core.validator_base import (
+    GEMEINSAME_MELDUNGEN, BaseValidator, ValidationResult,
+)
 from ps5_validator.utils.hashing import sha256_file
 from ps5_validator.utils.file_io import (
     get_all_files, fmt_bytes, load_cache, save_cache, get_cache_path
@@ -54,6 +56,25 @@ _KNOWN_EMPTY_NAMES = frozenset({
 })
 
 
+#: Die Befunde als Vorlagen (Durchsicht, Runde 17) - deutsch als Vorgabe,
+#: uebersetzt ueber ``texte=`` (Praefix "validator." in i18n).
+MELDUNGEN: dict[str, str] = {
+    **GEMEINSAME_MELDUNGEN,
+    "dump_ordner_fehlt": "Ordner nicht gefunden: {pfad}",
+    "dump_kein_ordner": "Kein Verzeichnis: {pfad}",
+    "dump_ordner_unlesbar": "Verzeichnis nicht lesbar: {fehler}",
+    "dump_pflichtordner_fehlt": "Pflichtordner fehlt: {ordner}/",
+    "dump_kritisch_fehlt": "Kritische Datei fehlt: {datei}",
+    "dump_param_json": "param.json: {befund}",
+    "dump_empfohlen_fehlt": "Empfohlene Datei fehlt: {datei}",
+    "dump_zugriffsfehler": "Zugriffsfehler: {datei}: {fehler}",
+    "dump_leere_datei": "Leere Datei: {datei}",
+    "dump_abgebrochen": "Abgebrochen durch Benutzer.",
+    "dump_hash_fehler": "Hash-Fehler {datei}: {fehler}",
+    "dump_hash_abgebrochen": "abgebrochen",
+}
+
+
 def _is_known_empty(rel_path: str) -> bool:
     """Gibt True zurück wenn die Datei bekanntermaßen leer sein darf."""
     name = rel_path.replace("\\", "/").split("/")[-1].lower()
@@ -68,6 +89,8 @@ def _is_known_empty(rel_path: str) -> bool:
 class DumpValidator(BaseValidator):
     """Validiert einen PS5 Game Dump Ordner."""
 
+    MELDUNGEN = MELDUNGEN
+
     def __init__(
         self,
         threads: int = 4,
@@ -75,10 +98,16 @@ class DumpValidator(BaseValidator):
         progress_cb: Callable | None = None,
         cancel_flag: Callable | None = None,
         verbose: bool = False,
+        texte: dict | None = None,
+        param_texte: dict | None = None,
     ) -> None:
-        super().__init__(progress_cb, cancel_flag, verbose)
+        super().__init__(progress_cb, cancel_flag, verbose, texte=texte)
         self._threads = max(1, threads)
         self._resume  = resume
+        #: Vorlagen fuer die param.json-Pruefung (param_check.MELDUNGEN,
+        #: Durchsicht Runde 18) - ihre Befunde stehen als "param.json: ..."
+        #: in den Fehlern und in summary["param_json"].
+        self._param_texte = param_texte
         self._log     = get_logger()
 
     def validate(self, path: str) -> ValidationResult:
@@ -87,10 +116,10 @@ class DumpValidator(BaseValidator):
 
         # ── Existenz prüfen ──────────────────────────────────────────────────
         if not root.exists():
-            result.set_missing(f"Ordner nicht gefunden: {path}")
+            result.set_missing(self._text("dump_ordner_fehlt", pfad=path))
             return result
         if not root.is_dir():
-            result.set_failed(f"Kein Verzeichnis: {path}")
+            result.set_failed(self._text("dump_kein_ordner", pfad=path))
             return result
 
         self._log.info(f"Starte Dump-Validierung: {root}")
@@ -99,7 +128,7 @@ class DumpValidator(BaseValidator):
         try:
             all_files = get_all_files(root)
         except OSError as exc:
-            result.set_failed(f"Verzeichnis nicht lesbar: {exc}")
+            result.set_failed(self._text("dump_ordner_unlesbar", fehler=exc))
             return result
 
         total_files = len(all_files)
@@ -109,7 +138,7 @@ class DumpValidator(BaseValidator):
         # ── Struktur-Check ───────────────────────────────────────────────────
         for req in REQUIRED_DIRS:
             if not (root / req).is_dir():
-                result.add_error(f"Pflichtordner fehlt: {req}/")
+                result.add_error(self._text("dump_pflichtordner_fehlt", ordner=req))
                 result.summary["missing"].append(str(root / req))
 
         # ── Kritische Dateien prüfen ────────────────────────────────────────
@@ -119,7 +148,7 @@ class DumpValidator(BaseValidator):
             crit_path = root / crit_file
             if not crit_path.exists():
                 missing_critical.append(crit_file)
-                result.add_error(f"Kritische Datei fehlt: {crit_file}")
+                result.add_error(self._text("dump_kritisch_fehlt", datei=crit_file))
                 result.summary["missing"].append(str(crit_path))
 
         # Wenn kritische Dateien fehlen → Dump wahrscheinlich beschädigt oder unvollständig
@@ -142,7 +171,7 @@ class DumpValidator(BaseValidator):
         # führen regelmäßig nur eine Handvoll Felder, und das ist in Ordnung.
         param_pfad = root / "sce_sys" / "param.json"
         if param_pfad.is_file():
-            befund = param_check.pruefe_datei(str(param_pfad))
+            befund = param_check.pruefe_datei(str(param_pfad), texte=self._param_texte)
             result.summary["param_json"] = {
                 "zusammenfassung": befund.zusammenfassung(),
                 "art": befund.art,
@@ -152,7 +181,7 @@ class DumpValidator(BaseValidator):
                 "reparierbar": befund.reparierbar,
             }
             for eintrag in befund.fehler:
-                result.add_error(f"param.json: {eintrag}")
+                result.add_error(self._text("dump_param_json", befund=eintrag))
             if befund.fehler:
                 self._log.warning(
                     f"param.json beanstandet ({len(befund.fehler)} Fehler): {param_pfad}"
@@ -170,7 +199,7 @@ class DumpValidator(BaseValidator):
         ]
         if missing_recommended:
             for rec_file in missing_recommended:
-                result.add_error(f"Empfohlene Datei fehlt: {rec_file}")
+                result.add_error(self._text("dump_empfohlen_fehlt", datei=rec_file))
             self._log.info(
                 f"Empfohlene Dateien fehlen ({len(missing_recommended)}): "
                 f"{', '.join(missing_recommended)}"
@@ -189,7 +218,8 @@ class DumpValidator(BaseValidator):
             try:
                 size = f.stat().st_size
             except OSError as exc:
-                result.add_error(f"Zugriffsfehler: {f.relative_to(root)}: {exc}")
+                result.add_error(self._text("dump_zugriffsfehler",
+                                            datei=f.relative_to(root), fehler=exc))
                 result.summary["corrupted"].append(str(f.relative_to(root)))
                 continue
             file_sizes[f] = size
@@ -199,14 +229,14 @@ class DumpValidator(BaseValidator):
                     known_empty.append(rel)  # Marker-Datei – kein Fehler
                 else:
                     empty_files.append(rel)
-                    result.add_error(f"Leere Datei: {rel}")
+                    result.add_error(self._text("dump_leere_datei", datei=rel))
 
         result.summary["empty_files"] = empty_files
         if known_empty:
             result.summary["marker_files"] = known_empty  # Info, kein Fehler
 
         if self._is_cancelled():
-            result.add_error("Abgebrochen durch Benutzer.")
+            result.add_error(self._text("dump_abgebrochen"))
             return result
 
         # ── Hash-Cache laden (Resume) ────────────────────────────────────────
@@ -231,7 +261,11 @@ class DumpValidator(BaseValidator):
                     cached = cache[rel]
                     if cached.get("mtime") == mtime and cached.get("size") == file_sizes.get(f):
                         return rel, cached["hash"], None, mtime
-                h = sha256_file(f)
+                # Mit Abbruch je Block - sonst wartet "Abbrechen", bis jede
+                # angefangene Datei zu Ende gelesen ist (U4-4).
+                h = sha256_file(f, cancel_cb=self._is_cancelled)
+                if self._is_cancelled():
+                    return rel, None, self._text("dump_hash_abgebrochen"), None
                 return rel, h, None, mtime
             except OSError as exc:
                 return rel, None, str(exc), None
@@ -241,12 +275,12 @@ class DumpValidator(BaseValidator):
             for fut in as_completed(futures):
                 if self._is_cancelled():
                     pool.shutdown(wait=False, cancel_futures=True)
-                    result.add_error("Abgebrochen durch Benutzer.")
+                    result.add_error(self._text("dump_abgebrochen"))
                     break
                 rel, h, err, mtime = fut.result()
                 f = futures[fut]
                 if err:
-                    result.add_error(f"Hash-Fehler {rel}: {err}")
+                    result.add_error(self._text("dump_hash_fehler", datei=rel, fehler=err))
                     result.summary["corrupted"].append(rel)
                 else:
                     hashes[rel] = h

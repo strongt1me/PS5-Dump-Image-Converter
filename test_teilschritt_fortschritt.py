@@ -308,6 +308,9 @@ class SetProgressOhneBalkenTests(unittest.TestCase):
         p.root = _Wurzel()
         p._schedule_caption_redraw = lambda *_a, **_k: None
         p._redraw_content_captions = lambda *_a, **_k: None
+        # Seit dem 24.09.2026 plant _set_progress ueber _hauptfaden_planen
+        # (Durchsicht, Runde 12) - der Weg zur Wurzel bleibt derselbe.
+        p._hauptfaden_planen = haupt.PS5ConverterGUI._hauptfaden_planen.__get__(p)
         p._set_progress = haupt.PS5ConverterGUI._set_progress.__get__(p)
         return p
 

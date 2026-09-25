@@ -68,6 +68,14 @@ NUR_NEU_SCHLUESSEL = ("update_emulators", "emulators_path",
 #: Log-Zeile, die es nur in der neuen Fassung gibt.
 NUR_NEU_LOGZEILE = "using cache for"
 
+#: Schluessel, die einen Ordner nennen. Ihr Standard ist eine Vorgabe, kein
+#: Soll: Wer die Bibliotheken bewusst woanders ablegt, hat nichts falsch
+#: gemacht. Bis zum 24.09.2026 galt ein eigener Pfad als Abweichung, und die
+#: Automatik bot an, ihn auf den Standard "zu berichtigen" - abgelegt wurde
+#: danach trotzdem am eigenen Ort, den ShadowMount+ nicht mehr ansah
+#: (Durchsicht, U2-3).
+PFAD_SCHLUESSEL = ("global_fakelib_path", "emulators_path")
+
 
 GENERATIONEN: dict[str, dict[str, Any]] = {
     ALT: {
@@ -374,7 +382,9 @@ MELDUNGEN: dict[str, str] = {
         "{fakelib2!r} hat Vorrang vor {fakelib!r}; es wird immer nur einer "
         "von beiden eingehängt.",
     "beleg_config_nennt": "config.ini nennt {schluessel}",
-    "beleg_config_keine_neuen": "config.ini nennt keinen der neuen Schlüssel",
+    "beleg_config_keine_neuen":
+        "config.ini nennt keinen der neuen Schlüssel – nur ein Hinweis: Nach "
+        "einem Update bleibt die alte Datei stehen",
     "beleg_cache_da": "{ordner}/ existiert",
     "beleg_log_zeile": "debug.log enthält {zeile!r}",
     "falle_ein_spiel":
@@ -551,7 +561,9 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
         log_text: Inhalt von debug.log.
 
     Returns:
-        ``{"generation": ALT|NEU|"", "belege": [...], "widerspruch": bool}``
+        ``{"generation": ALT|NEU|"", "belege": [...], "widerspruch": bool}``.
+        Ein Beleg mit leerer Kennung ist nur ein Hinweis - er wird gezeigt,
+        entscheidet aber nichts.
     """
     belege: list[tuple[str, str]] = []
 
@@ -560,7 +572,12 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
         belege.append((NEU, _satz(texte, "beleg_config_nennt",
                                   schluessel=", ".join(gefunden))))
     elif config_text:
-        belege.append((ALT, _satz(texte, "beleg_config_keine_neuen")))
+        # Nur ein Hinweis, kein Beleg fuer ALT: ShadowMount+ legt seine
+        # config.ini nur an, wenn keine da ist. Nach dem Umstieg auf alpha8
+        # bleibt die alte stehen - bis zum 24.09.2026 hiess das "ALT", und
+        # die Automatik riet zum Abbruch oder zur alten Ablage, die die neue
+        # Fassung ohne Meldung ignoriert (Durchsicht, U2-2).
+        belege.append(("", _satz(texte, "beleg_config_keine_neuen")))
 
     if cache_ordner_da is True:
         belege.append((NEU, _satz(texte, "beleg_cache_da",
@@ -572,9 +589,9 @@ def generation_erkennen(*, config_text: str = "", cache_ordner_da: bool | None =
         belege.append((NEU, _satz(texte, "beleg_log_zeile",
                                   zeile=NUR_NEU_LOGZEILE)))
 
-    kennungen = {k for k, _ in belege}
+    kennungen = {k for k, _ in belege if k}
     if not kennungen:
-        return {"generation": "", "belege": [], "widerspruch": False}
+        return {"generation": "", "belege": belege, "widerspruch": False}
     if len(kennungen) > 1:
         return {"generation": "", "belege": belege, "widerspruch": True}
     return {"generation": kennungen.pop(), "belege": belege,

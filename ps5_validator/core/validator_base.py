@@ -9,6 +9,39 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
+#: Saetze, die mehrere Validatoren gleich melden - einmal hier, damit sie in
+#: allen Modulen dieselbe Vorlage tragen. Der Dispatcher vereinigt alle
+#: MELDUNGEN unter dem Praefix "validator." (Durchsicht, Runde 17); eine
+#: Kennung darf dort also nur eine Bedeutung haben.
+GEMEINSAME_MELDUNGEN: dict[str, str] = {
+    "datei_fehlt": "Datei nicht gefunden: {pfad}",
+    "keine_regulaere_datei": "Keine reguläre Datei: {pfad}",
+    "groesse_unlesbar": "Dateigröße nicht lesbar: {fehler}",
+    "datei_leer": "Datei ist leer (0 Bytes).",
+    "datei_unlesbar": "Datei nicht lesbar: {fehler}",
+    "abgebrochen_ungelesen": "Validierung abgebrochen – die Datei wurde nicht vollständig gelesen.",
+    "lesefehler_byte": "Lesefehler bei Byte {byte}: {fehler}",
+    "lesefehler_beschaedigt": "{anzahl} Lesefehler - Datei beschädigt.",
+}
+
+
+def vorlage_fuellen(meldungen: dict[str, str], texte: dict[str, str] | None,
+                    kennung: str, /, **werte: Any) -> str:
+    """Die Vorlage zu ``kennung`` - uebersetzt, wenn ``texte`` sie traegt.
+
+    Die Module unter ``ps5_validator`` binden i18n nicht ein; die
+    Oberflaeche reicht die uebersetzten Vorlagen herein (``texte=``). Ohne
+    sie gilt die deutsche Vorgabe aus ``meldungen`` - darauf bauen die
+    eigenstaendige Kommandozeile und die aelteren Tests.
+
+    Die ersten drei Parameter sind nur-positionell, damit ein Platzhalter
+    beliebig heissen darf (Runde 18: ``{kennung}`` stiess mit dem
+    gleichnamigen Parameter zusammen).
+    """
+    vorlage = (texte or {}).get(kennung) or meldungen[kennung]
+    return vorlage.format(**werte) if werte else vorlage
+
+
 @dataclass
 class ValidationResult:
     """Einheitliches JSON-kompatibles Ergebnis-Schema."""
@@ -85,20 +118,36 @@ class ValidationResult:
 class BaseValidator(ABC):
     """Abstrakte Basisklasse für alle Validator-Module."""
 
+    #: Die Saetze des Moduls als Vorlagen; jede Unterklasse setzt ihr dict.
+    MELDUNGEN: dict[str, str] = GEMEINSAME_MELDUNGEN
+
     def __init__(
         self,
         progress_cb: Callable[[int, int, str], None] | None = None,
         cancel_flag: Callable[[], bool] | None = None,
         verbose: bool = False,
+        texte: dict[str, str] | None = None,
     ) -> None:
         """
         :param progress_cb: Callback(bytes_done, bytes_total, current_file)
         :param cancel_flag: Callable das True zurückgibt wenn Abbruch gewünscht
         :param verbose:     Ausführliche Ausgabe
+        :param texte:       Übersetzte Vorlagen je Kennung (``MELDUNGEN``);
+                            bis zur Durchsicht (Runde 17) kamen alle Befunde
+                            deutsch in einer englischen Oberfläche an.
         """
         self._progress_cb  = progress_cb
         self._cancel_flag  = cancel_flag or (lambda: False)
         self._verbose      = verbose
+        self._texte        = dict(texte or {})
+
+    def _vorlage(self, kennung: str) -> str:
+        """Die ungefüllte Vorlage - für Aufrufer, die selbst einsetzen."""
+        return self._texte.get(kennung) or self.MELDUNGEN[kennung]
+
+    def _text(self, kennung: str, /, **werte: Any) -> str:
+        """Ein fertiger Satz aus der Vorlage zu ``kennung``."""
+        return vorlage_fuellen(self.MELDUNGEN, self._texte, kennung, **werte)
 
     def _report_progress(self, done: int, total: int, label: str = "") -> None:
         if self._progress_cb:

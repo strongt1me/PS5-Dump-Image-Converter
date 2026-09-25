@@ -17,11 +17,13 @@ vollstaendig auf der Platte liegt und erst danach Schluss ist.
 from __future__ import annotations
 
 import os
+import posixpath
 import socket
 import sys
 import threading
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -51,8 +53,14 @@ class _FtpStube:
     abbaut.
     """
 
-    def __init__(self, wurzel: Path) -> None:
+    def __init__(self, wurzel: Path, *, mlsd_wie_0211: bool = False) -> None:
         self.wurzel = Path(wurzel)
+        #: Wie ftpsrv 0.21.1 (cmd.c, ftp_cmd_MLSD): MLSD uebergeht seinen
+        #: Pfad und listet das Arbeitsverzeichnis.
+        self.mlsd_wie_0211 = mlsd_wie_0211
+        #: Zaehlt die Auflistungen - ein Klient, der im Kreis laeuft, wird
+        #: nach 300 mit "421" abgewiesen, statt den Test ewig laufen zu lassen.
+        self.auflistungen = 0
         self.horcher = socket.socket()
         self.horcher.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.horcher.bind(("127.0.0.1", 0))
@@ -61,6 +69,8 @@ class _FtpStube:
         self.laeuft = True
         #: Welche Dateien wurden tatsaechlich abgeholt? Das ist die Messung.
         self.geholt: list[str] = []
+        #: Welche RETR hat der Klient bis zum letzten Byte abgenommen?
+        self.fertig_gesendet: list[str] = []
         self.faden = threading.Thread(target=self._bedienen, daemon=True,
                                       name="ftp-stube")
         self.faden.start()
@@ -95,6 +105,7 @@ class _FtpStube:
         steuer.settimeout(10.0)
         datei = steuer.makefile("rwb")
         datenhorcher: "socket.socket | None" = None
+        cwd = "/"
         try:
             self._sagen(datei, "220 ftp-stube bereit")
             while True:
@@ -111,7 +122,27 @@ class _FtpStube:
                 elif befehl == "TYPE":
                     self._sagen(datei, "200 Typ gesetzt")
                 elif befehl == "PWD":
-                    self._sagen(datei, '257 "/"')
+                    self._sagen(datei, '257 "%s"' % cwd)
+                elif befehl == "CWD":
+                    ziel = rest.strip() or "/"
+                    neu = posixpath.normpath(
+                        ziel if ziel.startswith("/") else posixpath.join(cwd, ziel))
+                    if (self.wurzel / neu.lstrip("/")).is_dir():
+                        cwd = neu
+                        self._sagen(datei, "250 OK")
+                    else:
+                        self._sagen(datei, "550 No such directory")
+                elif befehl == "MLSD":
+                    self.auflistungen += 1
+                    if self.auflistungen > 300:
+                        self._sagen(datei, "421 zu viele Auflistungen - im Kreis?")
+                        return
+                    if datenhorcher is None:
+                        self._sagen(datei, "425 kein PASV")
+                        continue
+                    ort = cwd if (self.mlsd_wie_0211 or not rest.strip()) else rest
+                    self._uebertragen(datei, datenhorcher, befehl, ort)
+                    datenhorcher = None
                 elif befehl == "PASV":
                     datenhorcher = socket.socket()
                     datenhorcher.bind(("127.0.0.1", 0))
@@ -121,7 +152,7 @@ class _FtpStube:
                     self._sagen(datei, "227 Entering Passive Mode "
                                        "(127,0,0,1,%d,%d)"
                                 % (port // 256, port % 256))
-                elif befehl in ("MLSD", "RETR", "STOR"):
+                elif befehl in ("RETR", "STOR"):
                     if datenhorcher is None:
                         self._sagen(datei, "425 kein PASV")
                         continue
@@ -168,6 +199,13 @@ class _FtpStube:
                         if not brocken:
                             break
                         daten.sendall(brocken)
+                # Bis zum letzten Byte angenommen - bricht der Klient ab,
+                # wirft sendall vorher (wie bei ftpsrv, das dann haengt).
+                daten.shutdown(socket.SHUT_WR)
+                daten.settimeout(10.0)
+                while daten.recv(8192):
+                    pass
+                self.fertig_gesendet.append(rest.strip())
             else:  # STOR
                 pfad = self._ortsteil(rest)
                 pfad.parent.mkdir(parents=True, exist_ok=True)
@@ -419,32 +457,185 @@ class FehlerTests(unittest.TestCase):
             kf.ordner_senden("127.0.0.1", "/gibt/es/nicht", "/ziel")
 
 
+class _StubenTest(unittest.TestCase):
+    """Baum und Stube fuer die Befunde der Durchsicht vom 23.09.2026."""
+
+    MLSD_WIE_0211 = False
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.fern = Path(self._tmp.name) / "konsole"
+        self.lokal = Path(self._tmp.name) / "pc"
+        self.fern.mkdir(parents=True)
+        self.lokal.mkdir(parents=True)
+        _baum_anlegen(self.fern)
+        self.stube = _FtpStube(self.fern, mlsd_wie_0211=self.MLSD_WIE_0211)
+
+    def tearDown(self):
+        self.stube.schliessen()
+        self._tmp.cleanup()
+
+
+class Ftpsrv0211Tests(_StubenTest):
+    """ftpsrv 0.21.1 uebergeht den Pfad von MLSD (U3-1).
+
+    Die Stube antwortet hier wie dessen cmd.c (``opendir(env->cwd)``). Vorher
+    sah jeder Ordner aus wie "/", und groesse_schaetzen stieg endlos in
+    dieselben Ordner hinab - die Stube bricht nach 300 Auflistungen ab.
+    """
+
+    MLSD_WIE_0211 = True
+
+    def test_auflisten_zeigt_den_gewaehlten_ordner(self):
+        verbindung = kf.verbinden("127.0.0.1", self.stube.port)
+        try:
+            namen = [e.name for e in kf.auflisten(verbindung, "/PPSA01234")]
+        finally:
+            kf.schliessen(verbindung)
+        self.assertEqual(["sce_sys", "eboot.bin", "zweite.bin"], namen)
+
+    def test_groesse_schaetzen_endet_und_stimmt(self):
+        self.assertEqual((3, 200000 + 1000 + 2), kf.groesse_schaetzen(
+            "127.0.0.1", "/PPSA01234", self.stube.port))
+
+    def test_holen_bringt_den_gewaehlten_ordner(self):
+        stand = kf.ordner_holen("127.0.0.1", "/PPSA01234",
+                                self.lokal / "spiel", self.stube.port)
+        self.assertEqual(3, stand.dateien)
+        self.assertEqual(
+            b"{}", (self.lokal / "spiel" / "sce_sys" / "param.json").read_bytes())
+
+    def test_der_ampr_picker_listet_den_gewaehlten_ordner(self):
+        import ftplib
+
+        import PS5ImageConverter_Pro_FINAL_revised as haupt
+        gui = haupt.PS5ConverterGUI.__new__(haupt.PS5ConverterGUI)
+        ftp = ftplib.FTP()
+        ftp.connect("127.0.0.1", self.stube.port, timeout=10)
+        ftp.login()
+        try:
+            eintraege = gui._ampr_ftp_list_entries(ftp, "/PPSA01234")
+        finally:
+            ftp.close()
+        self.assertEqual({"sce_sys", "eboot.bin", "zweite.bin"},
+                         {name for name, _ in eintraege})
+
+    def test_abbrechen_beendet_das_vermessen(self):
+        with self.assertRaises(kf.FtpAbgebrochen):
+            kf.groesse_schaetzen("127.0.0.1", "/PPSA01234", self.stube.port,
+                                 abbruch=lambda: True)
+
+
+class WindowsNamenTests(unittest.TestCase):
+    """H9-9: Ein ":" im Namen legt unter Windows einen alternativen
+    Datenstrom an - die Datei sah danach leer aus."""
+
+    def test_die_pruefung_kennt_die_verbotenen_zeichen(self):
+        if os.name != "nt":
+            self.assertTrue(kf.unter_windows_speicherbar("a:b/c?.bin"))
+            return
+        self.assertTrue(kf.unter_windows_speicherbar("sce_sys/param.json"))
+        for pfad in ("Spiel: Titel/eboot.bin", "daten/a?.bin", "punkt./x", "raum /x"):
+            with self.subTest(pfad=pfad):
+                self.assertFalse(kf.unter_windows_speicherbar(pfad))
+
+    @unittest.skipUnless(os.name == "nt", "nur unter Windows ein Problem")
+    def test_holen_endet_vor_einem_solchen_namen_ohne_retr(self):
+        import tempfile
+
+        class _Verbindung:
+            def __init__(self):
+                self.retr: list = []
+                self.timeout = 10.0
+
+            def retrbinary(self, befehl, *_a, **_k):
+                self.retr.append(befehl)
+
+        verbindung = _Verbindung()
+        eintraege = [("/dump/ok.bin", kf.Eintrag("ok.bin", False, 5)),
+                     ("/dump/Spiel: Titel.bin", kf.Eintrag("Spiel: Titel.bin", False, 5))]
+        with tempfile.TemporaryDirectory() as lokal, \
+                mock.patch.object(kf, "verbinden", lambda *a, **k: verbindung), \
+                mock.patch.object(kf, "schliessen", lambda _v: None), \
+                mock.patch.object(kf, "_durchlaufen", lambda *_a, **_k: iter(eintraege)):
+            with self.assertRaises(kf.FtpFehler) as fehler:
+                kf.ordner_holen("127.0.0.1", "/dump", lokal)
+            self.assertFalse(os.path.exists(os.path.join(lokal, "Spiel")),
+                             "Ein Datenstrom-Rest liegt im Ziel.")
+        self.assertIn("Spiel: Titel.bin", str(fehler.exception))
+        self.assertEqual(["RETR /dump/ok.bin"], verbindung.retr)
+
+    def test_der_bibliotheksdownload_bereinigt_den_namen(self):
+        import PS5ImageConverter_Pro_FINAL_revised as haupt
+        name = haupt.PS5ConverterGUI._windows_dateiname
+        self.assertEqual("Spiel_ Titel.ffpfsc", name("Spiel: Titel.ffpfsc"))
+        self.assertEqual("a_b_c", name('a<b>c.'))
+        self.assertEqual("_", name(":"))
+
+
+class HolenAmPcScheitertTests(_StubenTest):
+    """Scheitert es auf dem PC, darf kein RETR mittendrin abreissen (U3-2).
+
+    Ein abgerissener RETR legt ftpsrv auf der Konsole lahm - auch wenn der
+    Grund ein voller Datentraeger auf dem PC war.
+    """
+
+    def test_zu_wenig_platz_meldet_sich_vor_dem_ersten_retr(self):
+        with mock.patch.object(kf.shutil, "disk_usage",
+                               return_value=mock.Mock(free=1000)):
+            with self.assertRaises(kf.FtpFehler) as fehler:
+                kf.ordner_holen("127.0.0.1", "/PPSA01234", self.lokal / "spiel",
+                                self.stube.port, dateien_gesamt=3,
+                                bytes_gesamt=201002)
+        self.assertIn("Platz", str(fehler.exception))
+        self.assertEqual([], self.stube.geholt)
+
+    def test_ein_schreibfehler_liest_den_download_zu_ende(self):
+        echtes_open = open
+
+        class _VollePlatte:
+            def __init__(self, pfad, modus):
+                self._datei = echtes_open(pfad, modus)
+
+            def write(self, _block):
+                raise OSError(28, "No space left on device")
+
+            def close(self):
+                self._datei.close()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_rest):
+                self.close()
+
+        with mock.patch.object(kf, "open", _VollePlatte, create=True):
+            with self.assertRaises(kf.FtpFehler) as fehler:
+                kf.ordner_holen("127.0.0.1", "/PPSA01234",
+                                self.lokal / "spiel", self.stube.port)
+        self.assertIn("eboot.bin", str(fehler.exception))
+        self.assertIn("/PPSA01234/eboot.bin", self.stube.fertig_gesendet,
+                      "Der RETR wurde mittendrin abgerissen.")
+        self.assertFalse((self.lokal / "spiel" / "eboot.bin").exists(),
+                         "Die halbe Datei blieb liegen.")
+
+
 class TexteTests(unittest.TestCase):
     """Jeder benutzte Schluessel muss zweisprachig dastehen."""
 
+    #: Seit dem 25.09.2026 gibt es "Spiel holen" und "Zurueckspielen" nicht
+    #: mehr als eigene Fenster - beide sind in der Bibliothek aufgegangen.
+    #: Hier stehen die Schluessel, die sie von dort weiter benutzt.
     SCHLUESSEL = (
-        "holen.window_title", "holen.subtitle", "holen.hint_dumper",
-        "holen.label_remote", "holen.label_local", "holen.col_name",
-        "holen.col_art", "holen.col_groesse", "holen.art_ordner",
-        "holen.art_datei", "holen.btn_dump", "holen.btn_list", "holen.btn_up",
-        "holen.btn_size", "holen.btn_fetch", "holen.btn_cancel",
-        "holen.choose_local", "holen.need_local", "holen.no_dumper",
-        "holen.status_idle", "holen.status_dumping", "holen.status_dumped",
-        "holen.status_listing", "holen.status_listed", "holen.status_sizing",
-        "holen.status_sized", "holen.status_fetching", "holen.status_file",
-        "holen.status_done", "holen.status_cancelled", "holen.status_failed",
-        "holen.size_running", "holen.size_done", "holen.log_dumper",
-        "holen.log_start", "holen.log_done", "holen.log_cancelled",
-        "zurueck.window_title", "zurueck.subtitle", "zurueck.label_local",
-        "zurueck.label_remote", "zurueck.choose_local", "zurueck.hint_ftp",
-        "zurueck.hint_move", "zurueck.btn_send", "zurueck.btn_cancel",
-        "zurueck.btn_webfm_start", "zurueck.btn_webfm", "zurueck.need_local",
-        "zurueck.need_remote", "zurueck.no_webfm", "zurueck.status_idle",
-        "zurueck.status_sending", "zurueck.status_file", "zurueck.status_done",
-        "zurueck.status_cancelled", "zurueck.status_failed",
-        "zurueck.status_webfm", "zurueck.size_line", "zurueck.log_start",
-        "zurueck.log_done", "zurueck.log_cancelled", "zurueck.log_webfm",
-        "zurueck.log_webfm_port", "zurueck.log_webfm_kein_port",
+        "holen.hint_dumper", "holen.btn_dump", "holen.no_dumper",
+        "holen.status_dumping", "holen.status_dumped", "holen.status_sizing",
+        "holen.status_file", "holen.status_failed", "holen.size_running",
+        "holen.ziel_vorhanden", "holen.log_dumper", "holen.log_start",
+        "holen.log_done", "holen.log_cancelled",
+        "zurueck.ask_overwrite", "zurueck.log_kept", "zurueck.no_webfm",
+        "zurueck.log_start", "zurueck.log_done", "zurueck.log_cancelled",
+        "zurueck.log_webfm", "zurueck.log_webfm_port", "zurueck.log_webfm_kein_port",
         "spielstaende.window_title", "spielstaende.subtitle",
         "spielstaende.usage", "spielstaende.warn_backup",
         "spielstaende.warn_benutzer", "spielstaende.btn_check",
@@ -454,7 +645,7 @@ class TexteTests(unittest.TestCase):
         "spielstaende.running", "spielstaende.stopped", "spielstaende.opened",
         "spielstaende.no_file", "spielstaende.log_start",
         "konsoleftp.log_ftp_aus", "konsoleftp.log_ftp_stumm",
-        "konsoleftp.log_abbruch_gemerkt",
+        "library.ordner_abbruch_vorgemerkt",
     )
 
     def test_alle_schluessel_zweisprachig(self):
@@ -466,7 +657,7 @@ class TexteTests(unittest.TestCase):
 
     def test_abbruchhinweis_nennt_den_grund(self):
         """Der Anwender soll wissen, warum nicht sofort Schluss ist."""
-        self.assertIn("ftpsrv", STRINGS["konsoleftp.log_abbruch_gemerkt"]["de"])
+        self.assertIn("ftpsrv", STRINGS["library.ordner_abbruch_vorgemerkt"]["de"])
 
 
 @unittest.skipUnless(_TK_DA, "ohne Anzeige kein Fenster")
@@ -507,14 +698,18 @@ class FensterTests(unittest.TestCase):
         _durch(fenster)
         return texte
 
-    def test_alle_drei_kennungen_sind_verdrahtet(self):
+    def test_spielstaende_ist_verdrahtet_holen_und_senden_gibt_es_nicht_mehr(self):
+        """Seit dem 25.09.2026: Holen und Senden stecken in der Bibliothek."""
         karte = self.modul.PS5ConverterGUI._KONSOLE_FENSTER
+        self.assertEqual("_show_konsole_spielstaende", karte.get("spielstaende"))
+        self.assertTrue(hasattr(self.app, "_show_konsole_spielstaende"))
         for kennung, methode in (("spiel_holen", "_show_konsole_spiel_holen"),
-                                 ("zurueckspielen", "_show_konsole_zurueckspielen"),
-                                 ("spielstaende", "_show_konsole_spielstaende")):
+                                 ("zurueckspielen", "_show_konsole_zurueckspielen")):
             with self.subTest(kennung=kennung):
-                self.assertEqual(methode, karte.get(kennung))
-                self.assertTrue(hasattr(self.app, methode))
+                self.assertNotIn(kennung, karte)
+                self.assertFalse(hasattr(self.app, methode),
+                                 "%s ist zurueck - es sollte in der Bibliothek stecken."
+                                 % methode)
 
     def test_jede_kennung_der_seitenleiste_hat_ihr_ziel(self):
         """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen."""
@@ -524,31 +719,6 @@ class FensterTests(unittest.TestCase):
                 continue  # sagt noch "kommt in einer der naechsten Stufen"
             with self.subTest(kennung=kennung):
                 self.assertTrue(callable(getattr(self.app, methode, None)))
-
-    def test_spiel_holen_zeigt_seine_drei_schritte(self):
-        fenster = self._fenster_oeffnen("_show_konsole_spiel_holen")
-        try:
-            texte = self._beschriftungen(fenster)
-            for schluessel in ("holen.btn_dump", "holen.btn_list",
-                               "holen.btn_size", "holen.btn_fetch",
-                               "holen.btn_cancel"):
-                with self.subTest(knopf=schluessel):
-                    self.assertIn(self.app._t(schluessel), texte)
-        finally:
-            fenster.destroy()
-            _WURZEL.update()
-
-    def test_zurueckspielen_hat_uebertragen_und_dateimanager(self):
-        fenster = self._fenster_oeffnen("_show_konsole_zurueckspielen")
-        try:
-            texte = self._beschriftungen(fenster)
-            for schluessel in ("zurueck.btn_send", "zurueck.btn_webfm_start",
-                               "zurueck.btn_webfm", "zurueck.btn_cancel"):
-                with self.subTest(knopf=schluessel):
-                    self.assertIn(self.app._t(schluessel), texte)
-        finally:
-            fenster.destroy()
-            _WURZEL.update()
 
     def test_spielstaende_warnt_vor_dem_schreiben(self):
         fenster = self._fenster_oeffnen("_show_konsole_spielstaende")
@@ -560,12 +730,206 @@ class FensterTests(unittest.TestCase):
             fenster.destroy()
             _WURZEL.update()
 
+    @staticmethod
+    def _knopf(fenster, text: str):
+        """Der Knopf mit dieser Beschriftung - irgendwo im Fenster."""
+        offen = list(fenster.winfo_children())
+        while offen:
+            kind = offen.pop()
+            offen.extend(kind.winfo_children())
+            try:
+                if str(kind.cget("text")) == text:
+                    return kind
+            except Exception:  # noqa: BLE001 - nicht jedes Element hat Text
+                pass
+        raise AssertionError("Kein Knopf %r" % text)
+
+    @staticmethod
+    def _lebt(fenster) -> bool:
+        try:
+            return bool(fenster.winfo_exists())
+        except tk.TclError:
+            return False
+
+    def _uebertragungsfenster(self, **werte):
+        """Startet die Ordneruebertragung der Bibliothek und liefert ihr Fenster."""
+        vorher = set(_WURZEL.winfo_children())
+        self.app._bibliothek_ordner_uebertragen(_WURZEL, **werte)
+        _WURZEL.update()
+        neu = [w for w in _WURZEL.winfo_children() if w not in vorher]
+        self.assertTrue(neu, "Die Uebertragung hat kein Fenster geoeffnet")
+        return neu[-1]
+
+    def _warten_bis_zu(self, fenster, sekunden: float = 5.0) -> None:
+        import time
+        ende = time.monotonic() + sekunden
+        while time.monotonic() < ende and self._lebt(fenster):
+            _WURZEL.update()
+            time.sleep(0.05)
+
+    def test_das_kreuz_wartet_die_laufende_uebertragung_ab(self):
+        """H3-1 (Durchsicht 23.09.2026): Das Kreuz - und damit das Beenden
+        des Programms - riss eine laufende Uebertragung mitten im RETR ab.
+
+        Seit dem 25.09.2026 holt die Bibliothek die Ordner ("Spiel holen" ist
+        in ihr aufgegangen). Das Kreuz ihres Uebertragungsfensters ist ein
+        Abbruch nach der laufenden Datei - das Fenster bleibt so lange stehen.
+        """
+        import tempfile
+
+        freigabe = threading.Event()
+        gestartet = threading.Event()
+
+        def _haengt(*_a, **_k):
+            gestartet.set()
+            freigabe.wait(10)
+            return 3, 201002
+
+        with tempfile.TemporaryDirectory() as lokal, \
+                mock.patch.object(kf, "groesse_schaetzen", _haengt), \
+                mock.patch.object(self.app, "_ps5_ip", return_value="192.168.178.50"), \
+                mock.patch.object(self.app, "_konsole_ftp_bereit", lambda *_a: True), \
+                mock.patch.object(self.app, "_im_hauptfaden", lambda *_a, **_k: False):
+            fenster = self._uebertragungsfenster(
+                richtung="runter", oertlich=os.path.join(lokal, "PPSA01234"),
+                entfernt="/mnt/usb0/PPSA01234")
+            try:
+                self.assertTrue(gestartet.wait(5), "Das Vermessen lief nicht an.")
+                fenster.tk.call(fenster.protocol("WM_DELETE_WINDOW"))
+                _WURZEL.update()
+                self.assertTrue(self._lebt(fenster),
+                                "Das Fenster ging mitten in der Uebertragung zu.")
+                freigabe.set()
+                self._warten_bis_zu(fenster)
+                self.assertFalse(self._lebt(fenster),
+                                 "Nach dem Ende schloss sich das Fenster nicht.")
+            finally:
+                freigabe.set()
+                if self._lebt(fenster):
+                    fenster.destroy()
+                _WURZEL.update()
+
+    def test_holen_fragt_vor_einem_belegten_ordner(self):
+        """H3-5: Ein vorhandener Ordner wurde still mit dem neuen Stand gemischt.
+
+        Seit dem 25.09.2026 an der Ordneruebertragung der Bibliothek.
+        """
+        import tempfile
+
+        fragen: list = []
+
+        def _frage(_funktion, _titel, text, **_k):
+            fragen.append(text)
+            return False
+
+        with tempfile.TemporaryDirectory() as lokal:
+            belegt = os.path.join(lokal, "PPSA01234")
+            os.makedirs(belegt)
+            Path(belegt, "alt.bin").write_bytes(b"alt")
+            with mock.patch.object(kf, "groesse_schaetzen") as messen, \
+                    mock.patch.object(self.app, "_ps5_ip", return_value="192.168.178.50"), \
+                    mock.patch.object(self.app, "_konsole_ftp_bereit", lambda *_a: True), \
+                    mock.patch.object(self.app, "_im_hauptfaden", _frage):
+                fenster = self._uebertragungsfenster(
+                    richtung="runter", oertlich=belegt, entfernt="/mnt/usb0/PPSA01234")
+                self._warten_bis_zu(fenster)
+            self.assertEqual(1, len(fragen))
+            self.assertIn(belegt, fragen[0])
+            self.assertFalse(messen.called, "Nach Nein lief die Uebertragung an.")
+            self.assertEqual(b"alt", Path(belegt, "alt.bin").read_bytes())
+            self.assertFalse(self._lebt(fenster))
+
+    def test_ein_fertiger_download_bleibt_wenn_das_umbenennen_scheitert(self):
+        """H9-7: Scheiterte nur das Umbenennen der fertigen .part, loeschte
+        das finally sie - der ganze Download war weg."""
+        import tempfile
+        import time
+
+        class _Ftp:
+            def retrbinary(self, _befehl, rueckruf, blocksize=0):
+                rueckruf(b"A" * 1000)
+                rueckruf(b"B" * 1000)
+
+            def quit(self):
+                pass
+
+            def close(self):
+                pass
+
+        echtes_replace = os.replace
+
+        def _replace(quelle, ziel):
+            if str(quelle).endswith(".part"):
+                raise PermissionError(13, "Zieldatei gesperrt")
+            return echtes_replace(quelle, ziel)
+
+        with tempfile.TemporaryDirectory() as ordner:
+            oertlich = os.path.join(ordner, "Spiel.ffpfsc")
+            meldungen: list = []
+
+            def _melden(*a, **_k):
+                meldungen.append(" ".join(str(x) for x in a))
+
+            # Ohne laufende Hauptschleife erreicht der Faden das Fenster nicht
+            # (_spaeter_im_fenster) - dann geht das Ergebnis ins Protokoll.
+            # Gemessen wird beides.
+            with mock.patch.object(self.app, "_ampr_ftp_connect",
+                                   lambda *a, **k: _Ftp()), \
+                    mock.patch.object(self.modul.os, "replace", _replace), \
+                    mock.patch.object(self.modul.messagebox, "showwarning", _melden), \
+                    mock.patch.object(self.modul.messagebox, "showinfo", _melden), \
+                    mock.patch.object(self.app, "_append_to_log", _melden):
+                self.app._bibliothek_uebertragen(
+                    _WURZEL, richtung="runter", oertlich=oertlich,
+                    entfernt="/mnt/usb0/Spiel.ffpfsc", groesse=2000)
+                ende = time.monotonic() + 5.0
+                while time.monotonic() < ende and any(
+                        t.name == "bibliothek-transfer" for t in threading.enumerate()):
+                    _WURZEL.update()
+                    time.sleep(0.05)
+                _WURZEL.update()
+            self.assertEqual(2000, os.path.getsize(oertlich + ".part"),
+                             "Die vollstaendige Datei wurde geloescht.")
+            self.assertTrue(any(oertlich + ".part" in m for m in meldungen),
+                            "Keine Meldung, wo die fertige Datei liegt: %r" % meldungen)
+
+    def test_der_ampr_index_zieht_mit_dem_ordner_um(self):
+        """H11-1: Ordner A, dann Ordner B gewaehlt - der Index von B ging in
+        die Ausgabe von A und ueberschrieb deren Index."""
+        import tempfile
+        with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+            antworten = iter([a, b])
+            fenster = self._fenster_oeffnen("_show_ampr_index_builder")
+            try:
+                knoepfe = []
+                offen = list(fenster.winfo_children())
+                while offen:
+                    kind = offen.pop(0)
+                    offen.extend(kind.winfo_children())
+                    try:
+                        if str(kind.cget("text")) == self.app._t("action.browse"):
+                            knoepfe.append(kind)
+                    except Exception:  # noqa: BLE001
+                        pass
+                self.assertEqual(2, len(knoepfe), "Ordner- und Ausgabeknopf erwartet")
+                # Das Ausgabefeld steht in derselben Zeile wie sein Knopf.
+                ausgabe = next(k for k in knoepfe[1].master.winfo_children()
+                               if isinstance(k, tk.Entry))
+                with mock.patch.object(self.modul.filedialog, "askdirectory",
+                                       lambda **_k: next(antworten)):
+                    knoepfe[0].invoke()
+                    self.assertEqual(os.path.join(a, "ampr_emu.index"), ausgabe.get())
+                    knoepfe[0].invoke()
+                self.assertEqual(os.path.join(b, "ampr_emu.index"), ausgabe.get(),
+                                 "Die Ausgabe zeigt noch in den ersten Ordner.")
+            finally:
+                fenster.destroy()
+                _WURZEL.update()
+
     def test_kein_arbeitsfaden_bleibt_stehen(self):
         """Die Fenster duerfen beim Oeffnen keinen Faden starten."""
         vorher = {t.name for t in threading.enumerate()}
-        for name in ("_show_konsole_spiel_holen",
-                     "_show_konsole_zurueckspielen",
-                     "_show_konsole_spielstaende"):
+        for name in ("_show_konsole_spielstaende",):
             fenster = self._fenster_oeffnen(name)
             fenster.destroy()
             _WURZEL.update()

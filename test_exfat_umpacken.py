@@ -146,19 +146,23 @@ class SelbstzielRegelTests(unittest.TestCase):
         class _Probe:
             pass
 
-        for pack, playgo, backport, erwartet in (
-            (False, False, False, False),
-            (True, False, False, True),      # Asset-Pack
-            (False, True, False, True),      # PlayGo allein
-            (False, False, True, True),      # BACKPORT allein
+        for pack, ampr, playgo, backport, erwartet in (
+            (False, False, False, False, False),
+            (True, True, False, False, True),      # Asset-Pack
+            (False, True, True, False, True),      # PlayGo mit AMPR EMU
+            # PlayGo ohne AMPR baut nichts ein - der Stub kommt nur im
+            # AMPR-Schritt dazu (Durchsicht 23.09.2026, H7-2).
+            (False, False, True, False, False),
+            (False, False, False, True, True),     # BACKPORT allein
         ):
             p = _Probe()
             p._assetpack_gewaehlt = lambda w=pack: w
-            werte = {"ampr_playgo_var": playgo,
+            werte = {"ampr_integrate_var": ampr,
+                     "ampr_playgo_var": playgo,
                      "backport_integrate_var": backport}
             p._tk_wert = lambda name, vorgabe=None, _w=werte: _w.get(name, vorgabe)
             p._selbstziel_erlaubt = G._selbstziel_erlaubt.__get__(p)
-            with self.subTest(pack=pack, playgo=playgo, backport=backport):
+            with self.subTest(pack=pack, ampr=ampr, playgo=playgo, backport=backport):
                 self.assertIs(threading.current_thread(),
                               threading.main_thread())
                 self.assertEqual(p._selbstziel_erlaubt(), erwartet)

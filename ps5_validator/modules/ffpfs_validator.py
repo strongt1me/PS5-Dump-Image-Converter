@@ -19,7 +19,9 @@ import sys
 from pathlib import Path
 from typing import Callable
 
-from ps5_validator.core.validator_base import BaseValidator, ValidationResult
+from ps5_validator.core.validator_base import (
+    GEMEINSAME_MELDUNGEN, BaseValidator, ValidationResult,
+)
 from ps5_validator.utils.hashing import sha256_stream
 from ps5_validator.utils.file_io import fmt_bytes
 from ps5_validator.utils.logger import get_logger
@@ -32,11 +34,11 @@ PFS_VERSION_FFPFSC = 2          # Standard-Version für .ffpfsc
 # ── PFSC-Block-Header (innerhalb des PFS-Images) ────────────────────────────
 PFSC_MAGIC_VALUE = 0x43534650  # "PFSC" in little-endian
 
-# Bekannte Magic-Header für PS5 PFS-Container
-# Schlüssel = (version_int64, magic_int64) oder (magic_int32,)
+# Bekannte Versionen im PFS-Kopf - als Kennung der Vorlage in MELDUNGEN
+# (bis zur Durchsicht, Runde 17, stand hier der deutsche Text selbst).
 KNOWN_PFS_VERSIONS = {
-    2: "PFS-Image v2 (ffpfsc, mkpfs pack file)",
-    1: "PFS-Image v1 (ffpfs, unkomprimiert)",
+    2: "pfs_version_2",
+    1: "pfs_version_1",
 }
 
 # ── exFAT-Bootsektor ────────────────────────────────────────────────────────
@@ -56,6 +58,84 @@ UFS2_MAGIC_OFFSET_IN_SB = 1372
 # Dateiendungen, die auf der innersten Ebene nichts zu suchen haben: Wer dort
 # ein weiteres Abbild findet, hat einen falsch verschachtelten Container.
 NESTED_IMAGE_SUFFIXES = (".exfat", ".pfs", ".ffpfs", ".ffpfsc", ".ffpkg", ".img")
+
+_ERNEUT = "Typisch für eine abgebrochene Kopie oder Übertragung – die Datei neu kopieren oder neu erzeugen."
+_FFPFS_KEIN_CONTAINER = (
+    "Eine .ffpfs ist ein Abbild-Spiel, kein Container – sce_sys/param.json muss direkt "
+    "in der Abbildwurzel liegen. ShadowMount+ meldet sonst „missing/invalid param.json“ "
+    "und zeigt das Spiel nicht an. Neu bauen lassen oder als .ffpfsc verwenden.")
+
+#: Befunde und Zusammenfassungswerte als Vorlagen (Durchsicht, Runde 17) -
+#: deutsch als Vorgabe, uebersetzt ueber ``texte=`` (Praefix "validator.").
+#: Die Vorgaben sind wortgleich mit dem frueheren Text: test_validator_nesting
+#: und test_ffpfs_bauform lesen sie. "vollstaendig" ist ein Merker, den
+#: test_incomplete_dump vergleicht - deshalb in Umschrift.
+MELDUNGEN: dict[str, str] = {
+    **GEMEINSAME_MELDUNGEN,
+    "pfs_abgeschnitten": ("Abbild abgeschnitten: Der PFS-Kopf nennt {soll} ({bloecke} Blöcke "
+                          "zu je {blockgroesse}), die Datei hat nur {ist} (es fehlen "
+                          "{fehlend}). " + _ERNEUT),
+    "pfs_empfohlen_fehlt": "Empfohlene Datei fehlt im Container: {dateien}",
+    "pfs_kritisch_vollstaendig": "vollstaendig",
+    "pfs_kritisch_unvollstaendig": "unvollständig ({anzahl} fehlen)",
+    "pfs_pflicht_fehlt": ("Pflichtdateien fehlen im Container: {dateien}. Der Container wurde "
+                          "vermutlich aus einem unvollständigen Dump gebaut und startet auf "
+                          "der Konsole nicht."),
+    "pfs_innen_dateien_unlesbar": "nicht lesbar ({fehler})",
+    "pfs_nesting_exfat_leer": "falsch aufgebaut (exFAT-Abbild ohne Dateien)",
+    "pfs_exfat_leer": "Das exFAT-Abbild im Container enthält keine Dateien.",
+    "pfs_nesting_ohne_mkpfs": "nicht geprüft (mkpfs nicht verfügbar)",
+    "pfs_aussen_befund": "Äußere Ebene: {befund}",
+    "pfs_aussen_weitere": "Äußere Ebene: {anzahl} weitere Befunde",
+    "pfs_nesting_flach_ffpfs": ("flach aufgebaut ({anzahl} Einträge in der Abbildwurzel) "
+                                "– die vorgeschriebene Form für .ffpfs"),
+    "pfs_nesting_flach_container": ("flach aufgebaut ({anzahl} Einträge direkt im Container, "
+                                    "kein inneres Image)"),
+    "pfs_flach_ffpfsc": ("Ungewöhnlicher Aufbau: Der Container enthält {anzahl} Einträge "
+                         "direkt statt genau eines inneren PFS-Images. Eine .ffpfsc ist ein "
+                         "Container und trägt genau ein inneres Abbild."),
+    "pfs_flach_pfs": ("Ungewöhnlicher Aufbau: Der Container enthält {anzahl} Einträge direkt "
+                      "statt genau eines inneren PFS-Images. Sieht aus wie das innere Abbild "
+                      "eines Containers – dann ist nicht diese Datei zu prüfen, sondern die "
+                      ".ffpfsc darum herum."),
+    "pfs_nesting_geschachtelt": "geschachtelt (ein eingebettetes Abbild statt der Spieldateien)",
+    "pfs_ffpfs_eingebettet_name": ("Ungewöhnlicher Aufbau: In der Wurzel dieser .ffpfs liegt "
+                                   "nur „{name}“. " + _FFPFS_KEIN_CONTAINER),
+    "pfs_ffpfs_eingebettet": ("Ungewöhnlicher Aufbau: In der Wurzel dieser .ffpfs liegt nur "
+                              "ein einzelner Eintrag. " + _FFPFS_KEIN_CONTAINER),
+    "pfs_nesting_nicht_zusammenhaengend": "nicht prüfbar (Nutzlast nicht zusammenhängend)",
+    "pfs_nesting_ok_exfat": "in Ordnung (exFAT-Abbild im Container)",
+    "pfs_nesting_ok_ufs2": "in Ordnung (UFS2-Abbild im Container)",
+    "pfs_nesting_weder": "falsch aufgebaut (innen weder PFS- noch exFAT-Abbild)",
+    "pfs_innen_weder": ("Innere Ebene ist weder ein PFS- noch ein exFAT-Abbild "
+                        "(magic=0x{magic}) - der Container enthält nicht das, was eine der "
+                        "beiden regulären Bauformen erwarten lässt."),
+    "pfs_innen_befund": "Innere Ebene: {befund}",
+    "pfs_nesting_innen_leer": "falsch aufgebaut (innere Ebene leer)",
+    "pfs_innen_leer": "Innere Ebene enthält keine Dateien.",
+    "pfs_art_exfat": "exFAT-Abbild",
+    "pfs_art_pfs": "PFS-Image",
+    "pfs_art_weiteres": "weiteres Abbild",
+    "pfs_nesting_falsch": "falsch verschachtelt ({name}, {art})",
+    "pfs_falsch_verschachtelt": ("Falsch verschachtelt: Auf der innersten Ebene liegt {art} "
+                                 "'{name}' statt der Spieldateien. So gebaute Container sind "
+                                 "auf der Konsole unbrauchbar. Ursache ist ein inneres Image "
+                                 "ohne --raw; die Datei muss neu erzeugt werden."),
+    "pfs_nesting_ok": "in Ordnung (Spieldateien auf der innersten Ebene)",
+    "pfs_nesting_nicht_pruefbar": "nicht prüfbar ({fehler})",
+    "pfs_magic_unbekannt": "unbekannt",
+    "pfs_magic_pfs": "PFS-Image ({version})",
+    "pfs_version_2": "PFS-Image v2 (ffpfsc, mkpfs pack file)",
+    "pfs_version_1": "PFS-Image v1 (ffpfs, unkomprimiert)",
+    "pfs_version_andere": "v{version}",
+    "pfs_magic_pfsc_ohne": "PFSC-Block (raw, ohne PFS-Container)",
+    "pfs_magic_pfsc": "PFSC-Block (raw)",
+    "pfs_magic_unbekannt_kopf": "unbekannt (version=0x{version}, magic=0x{magic})",
+    "pfs_magic_unbekannt_32": "unbekannt (0x{magic})",
+    "pfs_kopf_unbekannt": "Unbekannter PFS-Header: version=0x{version}, magic=0x{magic}",
+    "pfs_magic32_unbekannt": "Unbekannter Magic-Header: 0x{magic}",
+    "pfs_kopf_lesefehler": "Header-Lesefehler: {fehler}",
+}
 
 
 def _ensure_mkpfs_importable() -> bool:
@@ -231,13 +311,16 @@ def ermittle_bauform(pfad: str | Path) -> dict[str, object] | None:
 class FfpfsValidator(BaseValidator):
     """Validiert eine .ffpfs oder .ffpfsc Datei."""
 
+    MELDUNGEN = MELDUNGEN
+
     def __init__(
         self,
         progress_cb: Callable | None = None,
         cancel_flag: Callable | None = None,
         verbose: bool = False,
+        texte: dict | None = None,
     ) -> None:
-        super().__init__(progress_cb, cancel_flag, verbose)
+        super().__init__(progress_cb, cancel_flag, verbose, texte=texte)
         self._log = get_logger()
 
     @staticmethod
@@ -299,12 +382,10 @@ class FfpfsValidator(BaseValidator):
             # Rundung unter ("nennt 6.2 MB, hat nur 6.2 MB").
             return f"{fmt_bytes(anzahl)} ({anzahl:,} Bytes)".replace(",", ".")
 
-        result.set_corrupted(
-            f"Abbild abgeschnitten: Der PFS-Kopf nennt {_genau(soll)} "
-            f"({kopf.ndblock} Blöcke zu je {fmt_bytes(kopf.block_size)}), die Datei hat nur "
-            f"{_genau(file_size)} (es fehlen {_genau(fehlend)}). Typisch für eine "
-            "abgebrochene Kopie oder Übertragung – die Datei neu kopieren oder neu erzeugen."
-        )
+        result.set_corrupted(self._text(
+            "pfs_abgeschnitten", soll=_genau(soll), bloecke=kopf.ndblock,
+            blockgroesse=fmt_bytes(kopf.block_size), ist=_genau(file_size),
+            fehlend=_genau(fehlend)))
         return False
 
     def _check_critical_files(self, inner_files: dict, result: ValidationResult) -> None:
@@ -332,20 +413,17 @@ class FfpfsValidator(BaseValidator):
         nur_empfohlen = _fehlend(RECOMMENDED_FILES)
         if nur_empfohlen:
             result.summary["recommended_missing"] = nur_empfohlen
-            result.add_error("Empfohlene Datei fehlt im Container: " + ", ".join(nur_empfohlen))
+            result.add_error(self._text("pfs_empfohlen_fehlt", dateien=", ".join(nur_empfohlen)))
 
         fehlend = _fehlend(CRITICAL_FILES)
         if not fehlend:
-            result.summary["critical_files"] = "vollstaendig"
+            result.summary["critical_files"] = self._text("pfs_kritisch_vollstaendig")
             return
 
         result.summary["critical_missing"] = fehlend
-        result.summary["critical_files"] = f"unvollständig ({len(fehlend)} fehlen)"
-        result.set_failed(
-            "Pflichtdateien fehlen im Container: " + ", ".join(fehlend) +
-            ". Der Container wurde vermutlich aus einem unvollständigen Dump gebaut "
-            "und startet auf der Konsole nicht."
-        )
+        result.summary["critical_files"] = self._text("pfs_kritisch_unvollstaendig",
+                                                      anzahl=len(fehlend))
+        result.set_failed(self._text("pfs_pflicht_fehlt", dateien=", ".join(fehlend)))
 
     def _check_exfat_inner(self, view, result: ValidationResult) -> None:
         """Prueft die Spieldateien in einem exFAT-Abbild innerhalb des Containers.
@@ -371,15 +449,15 @@ class FfpfsValidator(BaseValidator):
             view.seek(0)
             eintraege = list(ExfatReader(view).iter_files())
         except Exception as exc:
-            result.summary["inner_files"] = f"nicht lesbar ({exc})"
+            result.summary["inner_files"] = self._text("pfs_innen_dateien_unlesbar", fehler=exc)
             self._log.info(f"exFAT-Innenebene nicht lesbar: {exc}")
             return
 
         result.summary["inner_files"] = len(eintraege)
         result.summary["inner_bytes"] = sum(max(0, int(e.length)) for e in eintraege)
         if not eintraege:
-            result.summary["nesting"] = "falsch aufgebaut (exFAT-Abbild ohne Dateien)"
-            result.set_failed("Das exFAT-Abbild im Container enthält keine Dateien.")
+            result.summary["nesting"] = self._text("pfs_nesting_exfat_leer")
+            result.set_failed(self._text("pfs_exfat_leer"))
             return
 
         self._check_critical_files({e.rel_path: e for e in eintraege}, result)
@@ -424,13 +502,13 @@ class FfpfsValidator(BaseValidator):
         an den Nutzdaten.
         """
         if not _ensure_mkpfs_importable():
-            result.summary["nesting"] = "nicht geprüft (mkpfs nicht verfügbar)"
+            result.summary["nesting"] = self._text("pfs_nesting_ohne_mkpfs")
             self._log.info("Verschachtelungsprüfung übersprungen: mkpfs nicht importierbar")
             return
         try:
             from mkpfs import pfs as mkpfs_pfs
         except ImportError as exc:
-            result.summary["nesting"] = "nicht geprüft (mkpfs nicht verfügbar)"
+            result.summary["nesting"] = self._text("pfs_nesting_ohne_mkpfs")
             self._log.info(f"Verschachtelungsprüfung übersprungen: {exc}")
             return
 
@@ -451,9 +529,9 @@ class FfpfsValidator(BaseValidator):
             # verworfen. Fuer unversehrte Abbilder dieses Programms sind es
             # null (am 17.09.2026 gemessen) - jeder Eintrag ist ein echter Befund.
             for befund in aussen.errors[:5]:
-                result.add_error(f"Äußere Ebene: {befund}")
+                result.add_error(self._text("pfs_aussen_befund", befund=befund))
             if len(aussen.errors) > 5:
-                result.add_error(f"Äußere Ebene: {len(aussen.errors) - 5} weitere Befunde")
+                result.add_error(self._text("pfs_aussen_weitere", anzahl=len(aussen.errors) - 5))
             aussen_dateien = len(aussen.file_inodes)
             result.summary["outer_files"] = aussen_dateien
 
@@ -462,27 +540,18 @@ class FfpfsValidator(BaseValidator):
                     # Eine .ffpfs mit den Spieldateien in der Wurzel: genau so
                     # gehoert es sich. Geprueft wird dann dasselbe wie bei
                     # einem Dump-Ordner - ob die Pflichtdateien da sind.
-                    result.summary["nesting"] = (
-                        f"flach aufgebaut ({aussen_dateien} Einträge in der Abbildwurzel) "
-                        f"– die vorgeschriebene Form für .ffpfs"
-                    )
+                    result.summary["nesting"] = self._text("pfs_nesting_flach_ffpfs",
+                                                           anzahl=aussen_dateien)
                     self._check_critical_files(aussen.file_inodes, result)
                     return
                 # Die von diesem Programm erzeugten Container sind zweistufig:
                 # aussen genau ein Eintrag (das rohe innere Image). Liegen die
                 # Dateien direkt darin, fehlt diese Stufe.
-                result.summary["nesting"] = (
-                    f"flach aufgebaut ({aussen_dateien} Einträge direkt im Container, "
-                    f"kein inneres Image)"
-                )
-                result.add_error(
-                    f"Ungewöhnlicher Aufbau: Der Container enthält {aussen_dateien} Einträge "
-                    f"direkt statt genau eines inneren PFS-Images. "
-                    + ("Eine .ffpfsc ist ein Container und trägt genau ein inneres Abbild."
-                       if ist_container else
-                       "Sieht aus wie das innere Abbild eines Containers – dann ist "
-                       "nicht diese Datei zu prüfen, sondern die .ffpfsc darum herum.")
-                )
+                result.summary["nesting"] = self._text("pfs_nesting_flach_container",
+                                                       anzahl=aussen_dateien)
+                result.add_error(self._text(
+                    "pfs_flach_ffpfsc" if ist_container else "pfs_flach_pfs",
+                    anzahl=aussen_dateien))
                 return
 
             if ist_abbildspiel:
@@ -497,18 +566,10 @@ class FfpfsValidator(BaseValidator):
                     name_innen = next(iter(aussen.file_inodes))
                 except StopIteration:
                     pass
-                result.summary["nesting"] = (
-                    "geschachtelt (ein eingebettetes Abbild statt der Spieldateien)"
-                )
+                result.summary["nesting"] = self._text("pfs_nesting_geschachtelt")
                 result.add_error(
-                    "Ungewöhnlicher Aufbau: In der Wurzel dieser .ffpfs liegt nur "
-                    + (f"„{name_innen}“" if name_innen else "ein einzelner Eintrag")
-                    + ". Eine .ffpfs ist ein Abbild-Spiel, kein Container – "
-                    "sce_sys/param.json muss direkt in der Abbildwurzel liegen. "
-                    "ShadowMount+ meldet sonst „missing/invalid param.json“ und "
-                    "zeigt das Spiel nicht an. Neu bauen lassen oder als .ffpfsc "
-                    "verwenden."
-                )
+                    self._text("pfs_ffpfs_eingebettet_name", name=name_innen) if name_innen
+                    else self._text("pfs_ffpfs_eingebettet"))
                 return
 
             opened = mkpfs_pfs.open_inner_file_view(fpath)
@@ -516,7 +577,7 @@ class FfpfsValidator(BaseValidator):
                 # Einzeldatei, aber nicht als zusammenhaengende, unsignierte
                 # Nutzlast abgelegt (z. B. signiert oder verstreut). Kein
                 # Fehler - nur nicht auf diesem Weg pruefbar.
-                result.summary["nesting"] = "nicht prüfbar (Nutzlast nicht zusammenhängend)"
+                result.summary["nesting"] = self._text("pfs_nesting_nicht_zusammenhaengend")
                 return
             view, handle, inner_name = opened
             result.summary["inner_image"] = inner_name
@@ -532,7 +593,7 @@ class FfpfsValidator(BaseValidator):
             view.seek(0)
             kopf = view.read(16)
             if kopf[EXFAT_SIGNATURE_OFFSET:EXFAT_SIGNATURE_OFFSET + len(EXFAT_SIGNATURE)] == EXFAT_SIGNATURE:
-                result.summary["nesting"] = "in Ordnung (exFAT-Abbild im Container)"
+                result.summary["nesting"] = self._text("pfs_nesting_ok_exfat")
                 result.summary["inner_kind"] = "exfat"
                 self._log.info(f"Container enthält ein exFAT-Abbild: {inner_name}")
                 self._check_exfat_inner(view, result)
@@ -544,7 +605,7 @@ class FfpfsValidator(BaseValidator):
             except Exception:
                 ufs2_magic = 0
             if ufs2_magic == UFS2_MAGIC_VALUE:
-                result.summary["nesting"] = "in Ordnung (UFS2-Abbild im Container)"
+                result.summary["nesting"] = self._text("pfs_nesting_ok_ufs2")
                 result.summary["inner_kind"] = "ffpkg"
                 self._log.info(f"Container enthält ein UFS2-Abbild: {inner_name}")
                 return
@@ -552,12 +613,9 @@ class FfpfsValidator(BaseValidator):
             view.seek(0)
             inner_header = mkpfs_pfs.parse_image_header(view)
             if inner_header.magic != PFS_MAGIC_VALUE:
-                result.summary["nesting"] = "falsch aufgebaut (innen weder PFS- noch exFAT-Abbild)"
-                result.set_failed(
-                    f"Innere Ebene ist weder ein PFS- noch ein exFAT-Abbild "
-                    f"(magic=0x{inner_header.magic:016X}) - der Container enthält nicht das, "
-                    f"was eine der beiden regulären Bauformen erwarten lässt."
-                )
+                result.summary["nesting"] = self._text("pfs_nesting_weder")
+                result.set_failed(self._text("pfs_innen_weder",
+                                             magic=f"{inner_header.magic:016X}"))
                 return
             result.summary["inner_kind"] = "pfs"
 
@@ -574,11 +632,11 @@ class FfpfsValidator(BaseValidator):
             result.summary["inner_files"] = file_count
             result.summary["inner_dirs"] = dir_count
             for parse_error in parse_errors[:5]:
-                result.add_error(f"Innere Ebene: {parse_error}")
+                result.add_error(self._text("pfs_innen_befund", befund=parse_error))
 
             if file_count == 0:
-                result.summary["nesting"] = "falsch aufgebaut (innere Ebene leer)"
-                result.set_failed("Innere Ebene enthält keine Dateien.")
+                result.summary["nesting"] = self._text("pfs_nesting_innen_leer")
+                result.set_failed(self._text("pfs_innen_leer"))
                 return
 
             # Der eigentliche Fehlerfall: genau ein Eintrag, keine Ordner - und
@@ -592,17 +650,15 @@ class FfpfsValidator(BaseValidator):
                 ist_pfs = len(head) >= 16 and struct.unpack_from("<q", head, 0x08)[0] == PFS_MAGIC_VALUE
                 heisst_wie_abbild = rel_name.lower().endswith(NESTED_IMAGE_SUFFIXES)
                 if ist_exfat or ist_pfs or heisst_wie_abbild:
-                    art = "exFAT-Abbild" if ist_exfat else ("PFS-Image" if ist_pfs else "weiteres Abbild")
-                    result.summary["nesting"] = f"falsch verschachtelt ({rel_name}, {art})"
-                    result.set_failed(
-                        f"Falsch verschachtelt: Auf der innersten Ebene liegt {art} "
-                        f"'{rel_name}' statt der Spieldateien. So gebaute Container sind "
-                        f"auf der Konsole unbrauchbar. Ursache ist ein inneres Image ohne "
-                        f"--raw; die Datei muss neu erzeugt werden."
-                    )
+                    art = self._text("pfs_art_exfat" if ist_exfat else (
+                        "pfs_art_pfs" if ist_pfs else "pfs_art_weiteres"))
+                    result.summary["nesting"] = self._text("pfs_nesting_falsch",
+                                                           name=rel_name, art=art)
+                    result.set_failed(self._text("pfs_falsch_verschachtelt",
+                                                 art=art, name=rel_name))
                     return
 
-            result.summary["nesting"] = "in Ordnung (Spieldateien auf der innersten Ebene)"
+            result.summary["nesting"] = self._text("pfs_nesting_ok")
             self._log.info(
                 f"Verschachtelung geprüft: {file_count} Dateien in {dir_count} Ordnern "
                 f"innerhalb von {inner_name}"
@@ -617,7 +673,7 @@ class FfpfsValidator(BaseValidator):
         except Exception as exc:
             # Eine misslungene Tiefenpruefung darf die uebrige Validierung nicht
             # scheitern lassen - sie wird als Hinweis vermerkt.
-            result.summary["nesting"] = f"nicht prüfbar ({exc})"
+            result.summary["nesting"] = self._text("pfs_nesting_nicht_pruefbar", fehler=exc)
             self._log.info(f"Verschachtelungsprüfung fehlgeschlagen: {exc}")
         finally:
             if handle is not None:
@@ -632,20 +688,20 @@ class FfpfsValidator(BaseValidator):
 
         # ── Existenz prüfen ──────────────────────────────────────────────────
         if not fpath.exists():
-            result.set_missing(f"Datei nicht gefunden: {path}")
+            result.set_missing(self._text("datei_fehlt", pfad=path))
             return result
         if not fpath.is_file():
-            result.set_failed(f"Keine reguläre Datei: {path}")
+            result.set_failed(self._text("keine_regulaere_datei", pfad=path))
             return result
 
         try:
             file_size = fpath.stat().st_size
         except OSError as exc:
-            result.set_failed(f"Dateigröße nicht lesbar: {exc}")
+            result.set_failed(self._text("groesse_unlesbar", fehler=exc))
             return result
 
         if file_size == 0:
-            result.set_corrupted("Datei ist leer (0 Bytes).")
+            result.set_corrupted(self._text("datei_leer"))
             return result
 
         self._log.info(f"Starte FFPFS-Validierung: {fpath.name} ({fmt_bytes(file_size)})")
@@ -654,7 +710,7 @@ class FfpfsValidator(BaseValidator):
 
         # ── Magic-Header prüfen (erste 16 Bytes) ────────────────────────────
         # PFS-Image-Header: version (int64) @ 0x00, magic (int64) @ 0x08
-        magic_info = "unbekannt"
+        magic_info = self._text("pfs_magic_unbekannt")
         ist_pfs_abbild = False
         try:
             with open(fpath, "rb") as fh:
@@ -668,8 +724,10 @@ class FfpfsValidator(BaseValidator):
                 if magic == PFS_MAGIC_VALUE:
                     # Korrekter PFS-Image-Container (mkpfs pack file)
                     ist_pfs_abbild = True
-                    ver_name = KNOWN_PFS_VERSIONS.get(version, f"v{version}")
-                    magic_info = f"PFS-Image ({ver_name})"
+                    kennung = KNOWN_PFS_VERSIONS.get(version)
+                    ver_name = (self._text(kennung) if kennung
+                                else self._text("pfs_version_andere", version=version))
+                    magic_info = self._text("pfs_magic_pfs", version=ver_name)
                     self._log.info(
                         f"PFS-Header erkannt: version={version}, "
                         f"magic=0x{magic:016X} ({magic_info})"
@@ -679,25 +737,26 @@ class FfpfsValidator(BaseValidator):
                     if len(header) >= 4:
                         pfsc_magic = struct.unpack_from("<I", header, 0x00)[0]
                         if pfsc_magic == PFSC_MAGIC_VALUE:
-                            magic_info = "PFSC-Block (raw, ohne PFS-Container)"
+                            magic_info = self._text("pfs_magic_pfsc_ohne")
                             self._log.info(f"PFSC-Magic erkannt (raw): 0x{pfsc_magic:08X}")
                         else:
-                            magic_info = f"unbekannt (version=0x{version:016X}, magic=0x{magic:016X})"
-                            result.add_error(
-                                f"Unbekannter PFS-Header: version=0x{version:016X}, "
-                                f"magic=0x{magic:016X}"
-                            )
+                            magic_info = self._text("pfs_magic_unbekannt_kopf",
+                                                    version=f"{version:016X}",
+                                                    magic=f"{magic:016X}")
+                            result.add_error(self._text("pfs_kopf_unbekannt",
+                                                        version=f"{version:016X}",
+                                                        magic=f"{magic:016X}"))
             elif len(header) >= 4:
                 # Datei zu kurz für vollständigen Header – nur int32 lesen
                 magic32 = struct.unpack_from("<I", header, 0x00)[0]
                 if magic32 == PFSC_MAGIC_VALUE:
-                    magic_info = "PFSC-Block (raw)"
+                    magic_info = self._text("pfs_magic_pfsc")
                 else:
-                    magic_info = f"unbekannt (0x{magic32:08X})"
-                    result.add_error(f"Unbekannter Magic-Header: 0x{magic32:08X}")
+                    magic_info = self._text("pfs_magic_unbekannt_32", magic=f"{magic32:08X}")
+                    result.add_error(self._text("pfs_magic32_unbekannt", magic=f"{magic32:08X}"))
 
         except OSError as exc:
-            result.add_error(f"Header-Lesefehler: {exc}")
+            result.add_error(self._text("pfs_kopf_lesefehler", fehler=exc))
 
         result.summary["magic"] = magic_info
 
@@ -724,13 +783,14 @@ class FfpfsValidator(BaseValidator):
                     total_size=file_size,
                     progress_cb=lambda d, t: self._report_progress(d, t, fpath.name),
                     cancel_cb=self._is_cancelled,
+                    lesefehler=self._vorlage("lesefehler_byte"),
                 )
         except OSError as exc:
-            result.set_corrupted(f"Datei nicht lesbar: {exc}")
+            result.set_corrupted(self._text("datei_unlesbar", fehler=exc))
             return result
 
         if self._is_cancelled():
-            result.set_skipped("Validierung abgebrochen – die Datei wurde nicht vollständig gelesen.")
+            result.set_skipped(self._text("abgebrochen_ungelesen"))
             return result
 
         result.hashes[fpath.name] = file_hash
@@ -739,7 +799,7 @@ class FfpfsValidator(BaseValidator):
         if read_errors:
             for e in read_errors:
                 result.add_error(e)
-            result.set_corrupted(f"{len(read_errors)} Lesefehler - Datei beschädigt.")
+            result.set_corrupted(self._text("lesefehler_beschaedigt", anzahl=len(read_errors)))
         elif not result.errors:
             # Nur OK wenn kein Header-Fehler und keine Lesefehler
             result.status = "OK"

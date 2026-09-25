@@ -256,18 +256,33 @@ class FfpkgBuildSupportTests(unittest.TestCase):
             (nested / "b.bin").write_bytes(b"12345")
             self.assertEqual(validate_source_folder(root), (2, 8))
 
-    def test_empty_source_and_symlink_are_rejected(self) -> None:
+    def test_empty_source_is_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir) / "dump"
             root.mkdir()
             with self.assertRaises(ValueError):
                 validate_source_folder(root)
 
+    def test_symlink_is_rejected(self) -> None:
+        # Windows legt Verweise nur mit Recht bzw. Entwicklermodus an
+        # (WinError 1314). Dann ist der Fall hier nicht nachstellbar - wie in
+        # test_mac_befunde ueberspringen statt scheitern (23.09.2026, neues
+        # Geraet ohne Entwicklermodus).
+        # Eine echte Datei liegt daneben: Sonst hiesse "abgelehnt" womoeglich
+        # nur "leer", und der Test waere auch ohne Symlink-Pruefung gruen.
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir) / "dump"
+            root.mkdir()
+            (root / "eboot.bin").write_bytes(b"\x7fELF")
             target = Path(temp_dir) / "payload.bin"
             target.write_bytes(b"payload")
-            (root / "linked.bin").symlink_to(target)
-            with self.assertRaises(ValueError):
+            try:
+                (root / "linked.bin").symlink_to(target)
+            except (OSError, NotImplementedError) as exc:
+                self.skipTest("Verweise hier nicht anlegbar: %s" % exc)
+            with self.assertRaises(ValueError) as fehler:
                 validate_source_folder(root)
+            self.assertIn("Symbolischer", str(fehler.exception))
 
     def test_validation_commands_are_read_only(self) -> None:
         info, fsck = build_readonly_validation_commands("UFS2Tool.exe", "game.ffpkg")

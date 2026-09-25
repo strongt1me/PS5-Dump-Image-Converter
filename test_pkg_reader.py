@@ -122,60 +122,107 @@ class PkgReaderTests(unittest.TestCase):
         finally:
             os.remove(path)
 
+    @staticmethod
+    def _fih_paket(seed: bytes, *, kopf: "int | None" = None, kennung: bool = True,
+                   im_kopfbereich: bytes = b"") -> bytes:
+        """Ein FIH-Paket mit kleinem PFS-Abbild: PFS-Kopf mit Kennung und Seed.
+
+        Aufbau wie am 24.09.2026 an einem LibProsperoPkg-Paket gemessen: PFS
+        ab 0x10000, FIH+0x20 = absolute Lage eines PFS-Kopfs, darin die
+        Kennung 0x01332A0B bei +0x08 und der Seed bei +0x370.
+        """
+        from ps5_validator.utils.pkg_reader import PFS_MAGIC
+
+        pfs_anfang, pfs_groesse = 0x10000, 0x1000
+        cnt = _build_meta_cnt("UP0000-TEST00000_00-0000000000000000", b'{"x":true}')
+        vorspann = bytearray(pfs_anfang)
+        vorspann[0:4] = FIH_MAGIC
+        vorspann[0x05] = 0x00
+        struct.pack_into("<H", vorspann, 0x06, 3)
+        struct.pack_into("<Q", vorspann, 0x10, pfs_anfang)
+        struct.pack_into("<Q", vorspann, 0x18, pfs_groesse)
+        struct.pack_into("<Q", vorspann, 0x20, pfs_anfang if kopf is None else kopf)
+        struct.pack_into("<Q", vorspann, 0x58, pfs_anfang + pfs_groesse)
+        if im_kopfbereich:
+            vorspann[0x400:0x400 + len(im_kopfbereich)] = im_kopfbereich
+        pfs = bytearray(pfs_groesse)
+        struct.pack_into("<Q", pfs, 0x00, 2)
+        if kennung:
+            struct.pack_into("<Q", pfs, 0x08, PFS_MAGIC)
+        pfs[0x370:0x370 + len(seed)] = seed
+        return bytes(vorspann) + bytes(pfs) + cnt
+
+    @staticmethod
+    def _lesen(inhalt: bytes):
+        with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
+            f.write(inhalt)
+            path = f.name
+        try:
+            return read_pkg(path)
+        finally:
+            os.remove(path)
+
     def test_klartextmarke_wird_erkannt(self) -> None:
         """Die Marke des Klartext-Profils (PPRPLAIN-NOAUTH!) wird gemeldet.
 
         Gefunden am 18.09.2026 in einem fremden Baukasten, der Pakete mit dem
         SDK-Publisher baut und danach als Klartext kennzeichnet. Ohne die Marke
         versucht ein gewoehnlicher Leser AES-XTS - mit ihr weiss er Bescheid.
-        Uebernommen ist nur diese Formattatsache, kein fremder Code.
+        Uebernommen ist nur diese Formattatsache, kein fremder Code. Sie steht
+        an der Seed-Stelle im PFS-Kopf, nicht im Kopfbereich davor (U1-7).
         """
         from ps5_validator.utils.pkg_reader import PLAINTEXT_SEED
 
-        cnt = _build_meta_cnt("UP0000-TEST00000_00-0000000000000000", b'{"x":true}')
-        fih_cnt_offset = 0x10000
-        for mit_marke in (True, False):
+        for seed, mit_marke in ((PLAINTEXT_SEED, True), (bytes(range(16)), False)):
             with self.subTest(marke=mit_marke):
-                fih = bytearray(fih_cnt_offset)
-                fih[0:4] = FIH_MAGIC
-                fih[0x05] = 0x00
-                struct.pack_into("<H", fih, 0x06, 3)
-                struct.pack_into("<Q", fih, 0x10, fih_cnt_offset)
-                struct.pack_into("<Q", fih, 0x18, 0)
-                struct.pack_into("<Q", fih, 0x58, fih_cnt_offset)
-                if mit_marke:
-                    fih[0x400:0x400 + len(PLAINTEXT_SEED)] = PLAINTEXT_SEED
-                with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
-                    f.write(bytes(fih) + cnt)
-                    path = f.name
-                try:
-                    info = read_pkg(path)
-                    self.assertEqual(info.plaintext_marker, mit_marke)
-                    # Der Rest muss unveraendert gelesen werden.
-                    self.assertEqual(info.type, "full_debug")
-                    self.assertEqual(len(info.entries), 2)
-                finally:
-                    os.remove(path)
+                info = self._lesen(self._fih_paket(seed))
+                self.assertEqual(info.plaintext_marker, mit_marke)
+                # Der Rest muss unveraendert gelesen werden.
+                self.assertEqual(info.type, "full_debug")
+                self.assertEqual(len(info.entries), 2)
 
-    def test_klartextmarke_nur_vor_dem_pfs_abbild(self) -> None:
-        """Was im PFS-Abbild selbst steht, zaehlt nicht als Kennzeichnung."""
+    def test_klartextmarke_nur_an_der_seed_stelle(self) -> None:
+        """Im Kopfbereich vor dem PFS zaehlt sie nicht - dort suchte die alte Pruefung."""
         from ps5_validator.utils.pkg_reader import PLAINTEXT_SEED
 
-        cnt = _build_meta_cnt("UP0000-TEST00000_00-0000000000000000", b'{"x":true}')
-        fih_cnt_offset = 0x10000
-        fih = bytearray(fih_cnt_offset)
-        fih[0:4] = FIH_MAGIC
-        fih[0x05] = 0x00
-        struct.pack_into("<H", fih, 0x06, 3)
-        struct.pack_into("<Q", fih, 0x10, 0x800)   # PFS beginnt frueh
-        struct.pack_into("<Q", fih, 0x18, 0)
-        struct.pack_into("<Q", fih, 0x58, fih_cnt_offset)
-        fih[0x1000:0x1000 + len(PLAINTEXT_SEED)] = PLAINTEXT_SEED  # dahinter
+        info = self._lesen(self._fih_paket(bytes(16), im_kopfbereich=PLAINTEXT_SEED))
+        self.assertFalse(info.plaintext_marker)
+
+    def test_klartextmarke_ohne_pfs_kopf_nicht_feststellbar(self) -> None:
+        """Zeigt FIH+0x20 nicht auf einen PFS-Kopf, ist "nein" geraten - also None."""
+        from ps5_validator.utils.pkg_reader import PLAINTEXT_SEED
+
+        for fall, paket in (
+                ("keine PFS-Kennung", self._fih_paket(PLAINTEXT_SEED, kennung=False)),
+                ("vor dem PFS", self._fih_paket(PLAINTEXT_SEED, kopf=0x100)),
+                ("hinter dem PFS", self._fih_paket(PLAINTEXT_SEED, kopf=0x10F00))):
+            with self.subTest(fall=fall):
+                self.assertIsNone(self._lesen(paket).plaintext_marker)
+
+    def test_update_paket_wird_erkannt_aber_nicht_gedeutet(self) -> None:
+        """Ein PS5-Update-Paket (Delta) traegt die Kennung LIH.
+
+        Seit 23.09.2026 erkannt (Formattatsache aus fpkg-builder, kein Code
+        uebernommen). Sein Kopf ist anders aufgebaut als der FIH-Kopf - der
+        Leser meldet deshalb nur die Art und deutet keine Felder, auch wenn
+        an FIH-Stellen Werte stehen, die plausibel aussehen.
+        """
+        from ps5_validator.utils.pkg_reader import LIH_MAGIC
+
+        kopf = bytearray(0x200)
+        kopf[0:4] = LIH_MAGIC
+        struct.pack_into("<Q", kopf, 0x58, 0x100)  # saehe wie ein CNT-Versatz aus
         with tempfile.NamedTemporaryFile(suffix=".pkg", delete=False) as f:
-            f.write(bytes(fih) + cnt)
+            f.write(bytes(kopf))
             path = f.name
         try:
-            self.assertFalse(read_pkg(path).plaintext_marker)
+            self.assertEqual(detect_pkg_type(path), "delta")
+            info = read_pkg(path)
+            self.assertEqual(info.type, "delta")
+            self.assertIsNone(info.fih)
+            self.assertIsNone(info.header)
+            self.assertEqual(info.entries, [])
+            self.assertIsNone(info.plaintext_marker)
         finally:
             os.remove(path)
 

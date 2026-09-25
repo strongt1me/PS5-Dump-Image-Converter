@@ -28,6 +28,34 @@ _MIN_IMAGE_HEADROOM_BYTES = 128 * MiB
 _IMAGE_HEADROOM_RATIO = 0.20
 _PER_FILE_METADATA_RESERVE_BYTES = 16 * 1024
 
+#: Die Saetze, die beim Anwender ankommen, als Vorlagen (Durchsicht, Runde 17)
+#: - deutsch als Vorgabe, uebersetzt ueber ``texte=`` (Praefix
+#: "ffpkgsupport." in i18n). Sie landen ueber log.auto.0093 bzw. den
+#: Aufgabenfehler im Protokoll. Die Profilpruefungen und die Pfadwaechter
+#: der Kommandobauer bleiben bewusst fest: Profile und Pfade setzt das
+#: Programm selbst, ein Anwender erreicht sie nicht.
+MELDUNGEN: dict[str, str] = {
+    "quellordner_fehlt": "FFPKG-Quellordner nicht gefunden: {pfad}",
+    "ordner_link": "Symbolischer Ordner-Link ist nicht zulässig: {pfad}",
+    "datei_link": "Symbolischer Datei-Link ist nicht zulässig: {pfad}",
+    "quelldatei_unlesbar": "Quelldatei nicht lesbar: {pfad}: {fehler}",
+    "keine_regulaere_quelldatei": "Keine reguläre Quelldatei: {pfad}",
+    "quellordner_leer": "Der FFPKG-Quellordner enthält keine Dateien.",
+    "dateiname_fehlt": "Ein gültiger FFPKG-Dateiname ist erforderlich.",
+    "quellgroesse_null": "Die FFPKG-Quellgröße muss größer als 0 Byte sein.",
+    "keine_quelldatei": "Für FFPKG makefs ist mindestens eine Quelldatei erforderlich.",
+    "abbildgroesse_null": "Die FFPKG-Imagegröße muss größer als 0 Byte sein.",
+    "zu_viele_dateien": ("Die FFPKG-Quelle enthält zu viele Dateieinträge für die berechnete "
+                         "Imagegröße. Bitte die Quelle aufteilen oder weniger Dateien pro "
+                         "FFPKG verwenden."),
+}
+
+
+def _text(texte: dict[str, str] | None, kennung: str, /, **werte: object) -> str:
+    """Ein Satz aus MELDUNGEN - uebersetzt, wenn ``texte`` ihn traegt."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    return vorlage.format(**werte) if werte else vorlage
+
 
 @dataclass(frozen=True)
 class FfpkgBuildProfile:
@@ -256,7 +284,8 @@ def compatibility_newfs_profile() -> FfpkgNewfsProfile:
     ).normalized()
 
 
-def validate_source_folder(source_dir: str | os.PathLike[str]) -> tuple[int, int]:
+def validate_source_folder(source_dir: str | os.PathLike[str], *,
+                           texte: dict[str, str] | None = None) -> tuple[int, int]:
     """Prüft einen Ordner auf eine sichere FFPKG-Quelle.
 
     Rückgabe ist ``(Dateianzahl, Gesamtbytes)``. Symbolische Links werden
@@ -264,7 +293,7 @@ def validate_source_folder(source_dir: str | os.PathLike[str]) -> tuple[int, int
     """
     root = Path(source_dir)
     if not root.is_dir():
-        raise ValueError(f"FFPKG-Quellordner nicht gefunden: {root}")
+        raise ValueError(_text(texte, "quellordner_fehlt", pfad=root))
 
     file_count = 0
     total_bytes = 0
@@ -273,31 +302,33 @@ def validate_source_folder(source_dir: str | os.PathLike[str]) -> tuple[int, int
         for dirname in list(dirnames):
             path = current_path / dirname
             if path.is_symlink():
-                raise ValueError(f"Symbolischer Ordner-Link ist nicht zulässig: {path}")
+                raise ValueError(_text(texte, "ordner_link", pfad=path))
         for filename in filenames:
             path = current_path / filename
             if path.is_symlink():
-                raise ValueError(f"Symbolischer Datei-Link ist nicht zulässig: {path}")
+                raise ValueError(_text(texte, "datei_link", pfad=path))
             try:
                 stat = path.stat()
             except OSError as exc:
-                raise ValueError(f"Quelldatei nicht lesbar: {path}: {exc}") from exc
+                raise ValueError(_text(texte, "quelldatei_unlesbar",
+                                       pfad=path, fehler=exc)) from exc
             if not path.is_file():
-                raise ValueError(f"Keine reguläre Quelldatei: {path}")
+                raise ValueError(_text(texte, "keine_regulaere_quelldatei", pfad=path))
             file_count += 1
             total_bytes += int(stat.st_size)
 
     if file_count == 0:
-        raise ValueError("Der FFPKG-Quellordner enthält keine Dateien.")
+        raise ValueError(_text(texte, "quellordner_leer"))
     return file_count, total_bytes
 
 
-def normalize_output_path(output_path: str | os.PathLike[str]) -> Path:
+def normalize_output_path(output_path: str | os.PathLike[str], *,
+                          texte: dict[str, str] | None = None) -> Path:
     """Normalisiert einen FFPKG-Zielpfad und erzwingt die Endung ``.ffpkg``."""
     output = Path(output_path)
     raw_name = output.name
     if not raw_name or raw_name.lower() == ".ffpkg":
-        raise ValueError("Ein gültiger FFPKG-Dateiname ist erforderlich.")
+        raise ValueError(_text(texte, "dateiname_fehlt"))
     if output.suffix.lower() != ".ffpkg":
         output = output.with_suffix(".ffpkg")
     return output
@@ -367,6 +398,8 @@ def calculate_makefs_image_size(
     source_size_bytes: int,
     file_count: int = 1,
     profile: FfpkgBuildProfile | None = None,
+    *,
+    texte: dict[str, str] | None = None,
 ) -> int:
     """Berechnet eine blockausgerichtete, explizite UFS2-Imagegröße.
 
@@ -379,9 +412,9 @@ def calculate_makefs_image_size(
     source_size = int(source_size_bytes)
     files = int(file_count)
     if source_size <= 0:
-        raise ValueError("Die FFPKG-Quellgröße muss größer als 0 Byte sein.")
+        raise ValueError(_text(texte, "quellgroesse_null"))
     if files <= 0:
-        raise ValueError("Für FFPKG makefs ist mindestens eine Quelldatei erforderlich.")
+        raise ValueError(_text(texte, "keine_quelldatei"))
 
     fragment_rounding_reserve = files * (normalized.fragment_size - 1)
     allocated_upper_bound = source_size + fragment_rounding_reserve
@@ -399,23 +432,22 @@ def calculate_makefs_inode_density(
     image_size_bytes: int,
     file_count: int,
     profile: FfpkgBuildProfile | None = None,
+    *,
+    texte: dict[str, str] | None = None,
 ) -> int:
     """Leitet eine sichere Byte-pro-Inode-Dichte für die tatsächliche Baumgröße ab."""
     normalized = (profile or default_build_profile()).normalized()
     image_size = int(image_size_bytes)
     files = int(file_count)
     if image_size <= 0:
-        raise ValueError("Die FFPKG-Imagegröße muss größer als 0 Byte sein.")
+        raise ValueError(_text(texte, "abbildgroesse_null"))
     if files <= 0:
-        raise ValueError("Für FFPKG makefs ist mindestens eine Quelldatei erforderlich.")
+        raise ValueError(_text(texte, "keine_quelldatei"))
 
     required_inodes = max(4096, files * 2 + 2048)
     max_density_for_required_inodes = image_size // required_inodes
     if max_density_for_required_inodes < 4096:
-        raise ValueError(
-            "Die FFPKG-Quelle enthält zu viele Dateieinträge für die berechnete Imagegröße. "
-            "Bitte die Quelle aufteilen oder weniger Dateien pro FFPKG verwenden."
-        )
+        raise ValueError(_text(texte, "zu_viele_dateien"))
     return max(4096, min(normalized.inode_density, int(max_density_for_required_inodes)))
 
 
@@ -427,6 +459,7 @@ def build_makefs_command(
     source_size_bytes: int,
     file_count: int,
     profile: FfpkgBuildProfile | None = None,
+    texte: dict[str, str] | None = None,
 ) -> list[str]:
     """Erzeugt den explizit dimensionierten UFS2Tool-``makefs``-Fallback-Aufruf."""
     normalized = (profile or default_build_profile()).normalized()
@@ -438,8 +471,10 @@ def build_makefs_command(
     if not source_text:
         raise ValueError("FFPKG-Quellordner fehlt.")
 
-    image_size = calculate_makefs_image_size(source_size_bytes, file_count, normalized)
-    inode_density = calculate_makefs_inode_density(image_size, file_count, normalized)
+    image_size = calculate_makefs_image_size(source_size_bytes, file_count, normalized,
+                                             texte=texte)
+    inode_density = calculate_makefs_inode_density(image_size, file_count, normalized,
+                                                   texte=texte)
     fs_options = ",".join(
         (
             "version=2",

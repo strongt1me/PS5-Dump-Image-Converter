@@ -165,10 +165,20 @@ class ErkennungTests(unittest.TestCase):
         befund = sg.generation_erkennen(config_text="update_emulators=1")
         self.assertEqual(befund["generation"], sg.NEU)
 
-    def test_eine_config_ohne_neue_schluessel_spricht_fuer_alt(self) -> None:
+    def test_eine_config_ohne_neue_schluessel_ist_nur_ein_hinweis(self) -> None:
+        """Nach dem Umstieg bleibt die alte config.ini stehen (U2-2).
+
+        ShadowMount+ legt sie nur an, wenn keine da ist. Bis zum 24.09.2026
+        galt eine Datei ohne die neuen Schluessel als Beleg fuer ALT - auf
+        einer umgestiegenen Konsole riet die Automatik dann zur alten
+        Ablage, die alpha8 ohne Meldung ignoriert.
+        """
         befund = sg.generation_erkennen(
             config_text="backport_fakelib=1\nglobal_fakelib=1")
-        self.assertEqual(befund["generation"], sg.ALT)
+        self.assertEqual(befund["generation"], "")
+        self.assertFalse(befund["widerspruch"])
+        # Gezeigt wird der Hinweis trotzdem - mit leerer Kennung.
+        self.assertEqual([k for k, _ in befund["belege"]], [""])
 
     def test_die_logzeile_genuegt_allein(self) -> None:
         befund = sg.generation_erkennen(
@@ -186,11 +196,16 @@ class ErkennungTests(unittest.TestCase):
         self.assertEqual(befund["generation"], "")
         self.assertFalse(befund["widerspruch"])
 
-    def test_ein_widerspruch_wird_gemeldet_statt_geraten(self) -> None:
+    def test_eine_alte_config_widerspricht_dem_cache_nicht(self) -> None:
+        """Der Cache ist ein Beleg, die alte config.ini nur ein Hinweis.
+
+        Bis zum 24.09.2026 stand hier ein "Widerspruch" - genau der Fall
+        einer umgestiegenen Konsole mit stehengebliebener config.ini.
+        """
         befund = sg.generation_erkennen(
             config_text="backport_fakelib=1", cache_ordner_da=True)
-        self.assertTrue(befund["widerspruch"])
-        self.assertEqual(befund["generation"], "")
+        self.assertFalse(befund["widerspruch"])
+        self.assertEqual(befund["generation"], sg.NEU)
         self.assertEqual(len(befund["belege"]), 2)
 
     def test_die_belege_werden_mitgeliefert(self) -> None:

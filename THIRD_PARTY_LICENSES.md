@@ -28,26 +28,32 @@ Alle Dateien werden unverändert in der Form weitergegeben, in der ihre Autoren 
 veröffentlicht haben. Es gelten deren jeweilige Lizenzbedingungen. Wer einzelne
 Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 
+Den Wortlaut der GNU General Public License 3.0 enthält
+`helloworld/LICENSE-GPL-3.0.txt` – der unveränderte Text der Free Software
+Foundation. Er gilt für die Zeilen unten, die GPL-3.0 oder GPL-3.0-or-later
+nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN und
+unjail-ps5app-payload. Wo der Quelltext des jeweiligen Projekts zu finden ist,
+steht in seiner Zeile.
+
 | Datei | Projekt | Autor / Herkunft | Beleg |
 | --- | --- | --- | --- |
 | `ftpsrv-ps5_v0.21.1.elf` | ftpsrv | ps5-payload-dev | Projektadresse im ELF |
 | `ftpsrv-ps5_v1.15-ng.elf` | ftpsrv-ng | John Törnblom & drakmor | Copyright- und Bannerzeile |
-| `ftpsrv-ps5_v1.16-ng.elf` | ftpsrv-ng | John Törnblom & drakmor | Copyright- und Bannerzeile |
+| `ftpsrv-ps5_v1.16-ng-stable.elf` | ftpsrv-ng | John Törnblom & drakmor | Copyright- und Bannerzeile; geladen aus dem Release 1.16-ng-stable |
 | `klogsrv-ps5_v0.9.elf` | klogsrv | John Törnblom | Copyright-Zeile im ELF |
 | `websrv-ps5_v0.34.elf` | websrv | ps5-payload-dev | SDK-Adresse im ELF |
 | `OffAct_v0.34.elf` | OffAct | ps5-payload-dev | Projektadresse im ELF |
 | `ps5-app-dumper_v1.11_Beta.elf` | ps5-app-dumper | ps5-payload-dev | Projektreihe |
 | `np-fake-signin-v1.3.elf` | NP Fake Signin | earthonion | „NP Fake Signin (by earthonion)" |
-| `garlic-savemgr_v1.13.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
-| `shadowmountplus_v1.7alpha13fix1.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF |
+| `garlic-savemgr_v1.13.1.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
+| `shadowmountplus_v1.7beta1.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta1 |
 | `nanodns_v0.4.elf` | nanodns | drakmor | „(c) Drakmor" |
 | `game-compressor_v1.0.4.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh" |
 | `pldmgr_v0.5.1.elf` | PS5 Payload Manager | itsPLK | Projektadresse im ELF |
-| `pkgmgr_v1.2.2.elf` | PS5 PKG Manager | itsPLK | `github.com/itsPLK/ps5-pkg-manager` im ELF; GPL-3.0 (LICENSE im Quellarchiv des Projekts) |
-| `actremotelink_agent_v2.0.elf` | ActRemoteLink (Agent) | francoataffarel; Dank an earthonion (np-fake-signin) | `github.com/francoataffarel/ActRemoteLink`, GPL-3.0-or-later (README des Projekts); Fassung aus `VERSION` |
-| `actremotelink_pin_notify_v2.0.elf` | ActRemoteLink (PIN-Anzeige) | francoataffarel | dasselbe Projekt und dieselbe Lizenz wie die Zeile darüber |
-| `ps5debug-NG_1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR" |
-| `ps5debug-NG_v1.3.0.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | byteweise dieselbe Datei wie die Zeile darüber |
+| `pkgmgr_v1.2.4.elf` | PS5 PKG Manager | itsPLK | `github.com/itsPLK/ps5-pkg-manager` im ELF; GPL-3.0 (LICENSE im Quellarchiv des Projekts); beim Autor heißt die Datei „pkg-manager_v1.2.4.elf“ |
+| `actremotelink_agent_v2.0.elf` | ActRemoteLink (Agent) | francoataffarel; Dank an earthonion (np-fake-signin) | `github.com/francoataffarel/ActRemoteLink`, GPL-3.0-or-later (README des Projekts); Fassung aus `VERSION`; Bauten: `https://github.com/francoataffarel/ActRemoteLink/releases/download/v2.0/ActRemoteLink.zip`, Quelltext: Tag `v2.0` des Projekts |
+| `actremotelink_pin_notify_v2.0.elf` | ActRemoteLink (PIN-Anzeige) | francoataffarel | dasselbe Projekt, dieselbe Lizenz und derselbe Download wie die Zeile darüber |
+| `ps5debug-NG_v1.3.2.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR"; geladen aus dem Release 1.3.2 (Pharaoh2k/ps5debug-NG) |
 | `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |
 | `web-file-mgr-v1.9.elf` | PS5 Web File Manager | owendswang | „Web File Manager / Version: … / Port: …" im ELF |
 | `webkit-autoloader-installer_v0.4.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „Autoloader Installer v… by PLK" im ELF |
@@ -59,9 +65,9 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 | `PIZZA-HEN-v2.00.elf` | PIZZA-HEN | – | kein Beleg in der Datei |
 | `bfpilot_v0.4.4.elf` | bfpilot | – | kein Beleg in der Datei |
 | `dump_installer_v1.07.elf` | Dump Installer | – | kein Beleg in der Datei |
-| `kstuff_lite_v1.10_Beta.elf` | kstuff lite | – | kein Beleg in der Datei |
+| `kstuff_lite_v1.11_Beta.elf` | kstuff lite | EchoStretch | Release v1.11 von `github.com/EchoStretch/kstuff-lite` (Prüfsumme gleich); im ELF der Quellpfad `drakmor/kstuff-lite` |
 | `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
-| `ps5upload-5.28.0.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.28.0 |
+| `ps5upload-5.33.2.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.33.2 |
 | `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.0/`) |
 

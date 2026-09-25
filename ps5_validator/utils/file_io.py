@@ -13,11 +13,23 @@ from typing import Any
 CACHE_FILENAME = ".ps5val_cache.json"
 
 
+def _weiterreichen(fehler: OSError) -> None:
+    raise fehler
+
+
 def get_all_files(root: str | Path) -> list[Path]:
-    """Alle Dateien in einem Verzeichnis rekursiv auflisten."""
+    """Alle Dateien in einem Verzeichnis rekursiv auflisten.
+
+    Raises:
+        OSError: Ein Ordner darin ist nicht lesbar. ``os.walk`` uebergeht
+            solche Ordner sonst still - bis zum 24.09.2026 pruefte die
+            Dump-Pruefung dann nur einen Teil, und das Ergebnis konnte
+            trotzdem "bestanden" lauten (Durchsicht, U4-2). Der Aufrufer
+            faengt den Fehler ab: "Verzeichnis nicht lesbar".
+    """
     root = Path(root)
     files: list[Path] = []
-    for dirpath, _, filenames in os.walk(root):
+    for dirpath, _, filenames in os.walk(root, onerror=_weiterreichen):
         for fn in filenames:
             files.append(Path(dirpath) / fn)
     return sorted(files)

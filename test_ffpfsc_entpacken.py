@@ -131,7 +131,8 @@ def _make_gui() -> PS5ConverterGUI:
     gui._log_lines = protokoll
     gui._backfill_preview_from_dir_for_source = lambda *_a, **_k: None
     gui._ensure_mkpfs_runtime_dependencies = lambda: True
-    gui._wait_for_pending_mkpfs_background = lambda *_a, **_k: None
+    # True = nichts abgebrochen (seit Runde 19 der Rueckgabewert, H6-4).
+    gui._wait_for_pending_mkpfs_background = lambda *_a, **_k: True
     gui._cleanup_stale_mkpfs_output = lambda *_a, **_k: True
     gui._save_runtime_checkpoint = lambda **_kw: None
     gui._seed_preview_cache_from_dir = lambda *_a, **_k: None

@@ -53,7 +53,12 @@ MERKZETTEL = ".eigene_bibliotheken.json"
 #: noch geprueft, und die unpassende Bibliothek war weiter in Benutzung. Zwei
 #: echte Tests scheiterten daran, in einem Einstellungsordner, den niemand
 #: mehr auf dem Schirm hatte.
-MERKZETTEL_FASSUNG = 2
+#:
+#: Fassung 3 (24.09.2026): Unter Linux und macOS suchte der Selbsttest bis
+#: dahin ``prosperopkg.exe`` und erklaerte jede eigene Bibliothek fuer
+#: untauglich - dieser Befund steht in alten Merkzetteln und muss neu
+#: gemessen werden (Durchsicht, U3-8).
+MERKZETTEL_FASSUNG = 3
 
 #: Managed .NET-Assemblys - ueberall ``.dll``.
 VERWALTETE = ("LibProsperoPkg.dll",)
@@ -293,7 +298,7 @@ LADEFEHLER = ("Could not load file or assembly",
 SELBSTTEST = ("read", "--source", "__kein_paket_selbsttest__.pkg")
 
 
-def kopie_taugt(ordner: str, programm: str = "prosperopkg.exe",
+def kopie_taugt(ordner: str, programm: str = "",
                 zeit: float = 60.0) -> "tuple[bool, str]":
     """Ruft das Werkzeug einmal so auf, dass es die Bibliothek laden muss.
 
@@ -302,9 +307,16 @@ def kopie_taugt(ordner: str, programm: str = "prosperopkg.exe",
     erst beim naechsten Bau stellt - und dann als roher .NET-Fehler:
     Passt die eigene Bibliothek zu dieser Huelle?
 
+    Args:
+        programm: Der Dateiname der Huelle. Leer heisst: der dieser
+            Plattform - ``prosperopkg.exe`` nur unter Windows, sonst
+            ``prosperopkg`` (wie ``prosperopkg.PROGRAMMNAME``).
+
     Returns:
         ``(taugt, grund)``. ``grund`` ist die Zeile, die es verraten hat.
     """
+    if not programm:
+        programm = "prosperopkg.exe" if sys.platform == "win32" else "prosperopkg"
     pfad = os.path.join(ordner, programm)
     if not os.path.isfile(pfad):
         return False, "%s fehlt in der Arbeitskopie" % programm

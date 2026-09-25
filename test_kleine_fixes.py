@@ -642,9 +642,12 @@ class FruehesFenstersymbolTests(unittest.TestCase):
         start = next(k for k in baum.body if isinstance(k, ast.If)
                      and "__main__" in ast.unparse(k.test))
         anweisungen = start.body
+        # Seit dem 24.09.2026 entsteht die Wurzel in _hauptfenster_anlegen
+        # (Rueckfall ohne tkdnd, Durchsicht H12-12).
         fenster = next(i for i, a in enumerate(anweisungen)
                        if isinstance(a, ast.Assign) and ast.unparse(a.targets[0]) == "root"
-                       and "Tk(" in ast.unparse(a.value))
+                       and ("Tk(" in ast.unparse(a.value)
+                            or "_hauptfenster_anlegen(" in ast.unparse(a.value)))
         symbol = next(i for i, a in enumerate(anweisungen)
                       if "_fenstersymbol_sofort_setzen(root)" in ast.unparse(a))
         # Nur der Titel darf dazwischenstehen (Kommentare kennt der Baum
@@ -1086,8 +1089,10 @@ class UmbenennenTests(unittest.TestCase):
 
     def test_der_quellpfad_wird_nachgezogen(self):
         rumpf = self._rumpf()
-        stelle = rumpf.index("os.rename(ordner, ziel)")
-        danach = rumpf[stelle:stelle + 1200]
+        # Seit dem 24.09.2026 benennt _ordner_umbenennen um (H10-3) - und
+        # davor steht noch die Pruefung, ob der neue Name wirklich dasteht.
+        stelle = rumpf.index("self._ordner_umbenennen(ordner, ziel, nur_schreibweise)")
+        danach = rumpf[stelle:stelle + 2000]
         self.assertIn("self.source_path.set(ziel)", danach,
                       "Nach dem Umbenennen zeigt das Quellfeld wieder auf "
                       "den alten, nicht mehr vorhandenen Ordner.")

@@ -189,9 +189,19 @@ class ZweiteAnsichtTests(unittest.TestCase):
         app._ansicht_setzen("konsole", speichern=False)
         for nummer, (_schluessel, kennung) in enumerate(app._KONSOLE_KNOEPFE):
             methode = app._KONSOLE_FENSTER.get(kennung, "")
+            seite = app._KONSOLE_SEITEN.get(kennung, "")
             with self.subTest(kennung=kennung):
-                self.assertTrue(methode, "Kennung %s ohne Fenster" % kennung)
+                self.assertTrue(methode or seite, "Kennung %s ohne Fenster" % kennung)
                 knopf, _s = app._konsole_knoepfe[nummer]
+                if seite:
+                    # "ActRemoteLink" (24.09.2026) und "Bibliothek"
+                    # (25.09.2026): rechts eine Seite statt eines Fensters.
+                    with mock.patch.object(app, "_werkzeugfenster_umschalten") as um, \
+                            mock.patch.object(app, seite) as zeigen:
+                        knopf._on_click()
+                    zeigen.assert_called_once_with()
+                    um.assert_not_called()
+                    continue
                 with mock.patch.object(app,
                                        "_werkzeugfenster_umschalten") as um:
                     knopf._on_click()

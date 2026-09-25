@@ -286,11 +286,14 @@ class AbbruchmeldungTests(_Quelltext):
         # obwohl der Aufruf entfernt war - die Gegenprobe blieb gruen.
         # Geprueft wird deshalb, dass die Funktion, die den Dialog zeigt,
         # auch wirklich eingeplant wird.
+        # Eingeplant wird ueber after() oder - seit dem 24.09.2026 - ueber
+        # _hauptfaden_planen bzw. _spaeter_im_fenster (Durchsicht, Runde 12).
         zeiger: set[str] = set()
         for h in fehlerzweige:
             for k in ast.walk(h):
                 if not (isinstance(k, ast.Call)
-                        and getattr(k.func, "attr", "") == "after"):
+                        and getattr(k.func, "attr", "") in (
+                            "after", "_hauptfaden_planen", "_spaeter_im_fenster")):
                     continue
                 for a in k.args:
                     if isinstance(a, ast.Name):

@@ -268,8 +268,10 @@ class FensterLayoutTests(unittest.TestCase):
             fenster = self._oeffne(self.app._show_pkg_merger_dialog)
             try:
                 sichtbar = [b for b in _sammle(fenster, "Button") if b.winfo_ismapped()]
-                self.assertEqual(len(sichtbar), 2,
-                                 "Zusammenführen und Schließen müssen sichtbar sein")
+                # Seit Runde 19 (U1-5) mit "Abbrechen" - drei Knoepfe.
+                self.assertEqual(len(sichtbar), 3,
+                                 "Zusammenführen, Abbrechen und Schließen müssen "
+                                 "sichtbar sein")
                 self.assertEqual(_gequetschte_knoepfe(fenster), [])
             finally:
                 self._schliesse(fenster)
@@ -707,8 +709,11 @@ class RueckrufNachSchliessenTests(unittest.TestCase):
     def test_die_beiden_bekannten_stellen_nutzen_den_helfer(self):
         with io.open(HAUPTDATEI, encoding="utf-8") as fh:
             quelle = fh.read()
-        self.assertIn("self._spaeter_im_fenster(win, _finish)", quelle,
-                      "Der Suchlauf des Bibliotheksfensters ruft wieder direkt after().")
+        # Seit dem 25.09.2026 ist die Bibliothek eine Seite ("seite" statt
+        # "win") - der Rueckruf geht weiter ueber den Helfer.
+        self.assertIn("self._spaeter_im_fenster(seite, _finish)", quelle,
+                      "Der Suchlauf der Bibliothek ruft wieder direkt after().")
+        self.assertNotIn("seite.after(0, _finish)", quelle)
         self.assertNotIn("win.after(0, _finish)", quelle)
 class FensterbindungTests(unittest.TestCase):
     """Werkzeugfenster duerfen nicht hinter das Hauptfenster rutschen.
@@ -907,9 +912,11 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
                       else HAUPTDATEI.read_text(encoding="utf-8"))
 
     def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
+        # _show_library_window fehlt seit dem 25.09.2026: Die Bibliothek ist
+        # eine Seite der Ansicht KONSOLE, kein Fenster mit Titelleistenknopf.
         for methode in ("_show_credits", "_show_js_loader",
                         "_show_webkit_autoloader", "_show_diagnostic_report",
-                        "_show_library_window", "_show_klog_window_geprueft"):
+                        "_show_klog_window_geprueft"):
             with self.subTest(methode=methode):
                 self.assertIn('self._werkzeugknopf("%s")' % methode,
                               self.quelle)

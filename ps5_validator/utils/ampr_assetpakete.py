@@ -1052,10 +1052,34 @@ def _bestandsdateien(ausgabe_ordner: str, baender: list[str] | None) -> list[str
         raise PackFehler("Ausgabeordner nicht lesbar: %s" % exc) from exc
 
 
+#: Blockgroesse beim Uebernehmen der Baender - zwischen zwei Bloecken wird
+#: nach dem Abbruch gefragt (siehe :func:`bestand_uebernehmen`).
+_UEBERNAHME_BLOCK = 8 * 1024 * 1024
+
+
+def _kopieren_mit_abbruch(quelle: str, ziel: str,
+                          abbruch: Callable[[], bool] | None) -> None:
+    """Wie ``shutil.copy2`` - aber zwischen zwei Bloecken abbrechbar.
+
+    Ein Band ist bis zu 8 GiB gross; ``copy2`` liesse sich dazwischen nicht
+    anhalten. Die Zeitstempel kommen wie bei ``copy2`` ueber ``copystat``.
+    """
+    with open(quelle, "rb") as q, open(ziel, "wb") as z:
+        while True:
+            if abbruch is not None and abbruch():
+                raise PackFehler("ampr_pack.abgebrochen")
+            block = q.read(_UEBERNAHME_BLOCK)
+            if not block:
+                break
+            z.write(block)
+    shutil.copystat(quelle, ziel)
+
+
 def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
                         melden: Melder = stumm,
                         text: Textquelle = schluessel_zeigen,
-                        baender: list[str] | None = None) -> int:
+                        baender: list[str] | None = None,
+                        abbruch: Callable[[], bool] | None = None) -> int:
     """Legt den Laufzeitbestand vollstaendig in den Spielordner.
 
     Abschnitt 7 der Anleitung: ``ampr_assets.index``, dessen ``.runtime`` und
@@ -1074,13 +1098,22 @@ def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
         baender: Die Bandnamen aus dem Manifest (:func:`bandnamen`). Nur sie
             werden uebernommen - ein liegen gebliebenes Band eines frueheren
             Laufs im selben Ordner nicht. Ohne Angabe alle ``.pak``.
+        abbruch: Wird waehrend des Kopierens alle 8 MiB gefragt. Bis zur
+            Durchsicht (Runde 19, U2-5) gab es ihn nicht, anders als bei
+            :func:`packen` und :func:`pruefen`: "Abbrechen" wirkte erst nach
+            dem letzten Band, bei einem grossen Spiel nach Dutzenden GB.
+            Abgebrochen wird nur beim Kopieren unter Zwischennamen - das
+            Umbenennen danach laeuft durch, sonst laege ein halber Satz da.
 
     Returns:
         Anzahl der uebernommenen Dateien.
 
     Raises:
         PackFehler: Wenn ein Teil des Bestands fehlt oder nicht vollstaendig
-            ankommt. Ein halber Satz waere schlimmer als keiner.
+            ankommt. Ein halber Satz waere schlimmer als keiner. Beim
+            Abbruch mit dem Schluessel ``ampr_pack.abgebrochen``; die
+            Zwischenstaende sind dann entfernt, ein frueherer Satz steht
+            unberuehrt da.
     """
     # Erst vollstaendig nachsehen, dann kopieren: Fehlt ein Teil, soll im
     # Spielordner gar nichts von diesem Satz landen.
@@ -1093,22 +1126,46 @@ def bestand_uebernehmen(ausgabe_ordner: str, app0: str,
             # einkompilierten Vorgaben (Profil ohne [runtime]).
             raise PackFehler("%s fehlt im Ausgabeordner" % name)
 
-    uebernommen = 0
-    for name in vorhanden:
-        quelle = os.path.join(ausgabe_ordner, *name.split("/"))
-        ziel = os.path.join(str(app0), *name.split("/"))
-        try:
-            os.makedirs(os.path.dirname(ziel), exist_ok=True)
-            shutil.copy2(quelle, ziel)
-        except OSError as exc:
-            raise PackFehler("%s nicht uebernehmbar: %s" % (name, exc)) from exc
-        try:
-            angekommen = os.path.getsize(ziel) == os.path.getsize(quelle)
-        except OSError:
-            angekommen = False
-        if not angekommen:
-            raise PackFehler("%s nicht vollstaendig uebernommen" % name)
-        uebernommen += 1
+    # Erst alles unter Zwischennamen kopieren und nachmessen, dann umbenennen.
+    # Bis zum 24.09.2026 ging jede Datei sofort an ihren Platz: Scheiterte
+    # das dritte von zehn Baendern (voller Datentraeger), lagen Manifest und
+    # zwei Baender im Spielordner - ein halber Satz, den die Laufzeit liest
+    # und an den fehlenden Baendern zerbricht (Durchsicht, U2-1). Ein
+    # vorhandener frueherer Satz bleibt so bis zum Schluss unberuehrt.
+    kopiert: list[tuple[str, str]] = []
+    try:
+        for name in vorhanden:
+            quelle = os.path.join(ausgabe_ordner, *name.split("/"))
+            ziel = os.path.join(str(app0), *name.split("/"))
+            zwischen = ziel + ".uebernahme"
+            # Vor dem Kopieren vormerken: Bricht copy2 mittendrin ab, liegt
+            # schon ein halber Zwischenstand, und den raeumt das finally weg.
+            kopiert.append((zwischen, ziel))
+            try:
+                os.makedirs(os.path.dirname(ziel), exist_ok=True)
+                _kopieren_mit_abbruch(quelle, zwischen, abbruch)
+            except OSError as exc:
+                raise PackFehler("%s nicht uebernehmbar: %s" % (name, exc)) from exc
+            try:
+                angekommen = os.path.getsize(zwischen) == os.path.getsize(quelle)
+            except OSError:
+                angekommen = False
+            if not angekommen:
+                raise PackFehler("%s nicht vollstaendig uebernommen" % name)
+        for zwischen, ziel in kopiert:
+            try:
+                os.replace(zwischen, ziel)
+            except OSError as exc:
+                raise PackFehler("%s nicht uebernehmbar: %s"
+                                 % (os.path.basename(ziel), exc)) from exc
+    finally:
+        for zwischen, _ziel in kopiert:
+            try:
+                if os.path.exists(zwischen):
+                    os.remove(zwischen)
+            except OSError:
+                pass
+    uebernommen = len(kopiert)
 
     if uebernommen:
         melden(text("ampr_pack.uebernommen", count=uebernommen))

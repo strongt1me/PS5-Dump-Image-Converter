@@ -15,16 +15,27 @@
 #  So starten:
 #    1. Windows-Taste druecken, "PowerShell" tippen
 #    2. Rechtsklick -> "Als Administrator ausfuehren"
-#    3. Diesen Befehl einfuegen (mit Anfuehrungszeichen):
+#    3. Diesen Befehl einfuegen (mit Anfuehrungszeichen), mit dem eigenen
+#       Projektordner und den eigenen Ordnern:
 #
-#       & "C:\Users\JBuserc0re\Documents\GitHub PS5 Dump & Image Converter\Pruefung_ffpkg_Matrix.ps1"
+#       & "<Projektordner>\Pruefung_ffpkg_Matrix.ps1" -Dump "F:\Game Dumps\Prince of Persia The Lost Crown" -Ziel "E:\ClaudeMatrix_ffpkg" -Temp "E:\PS5_Temp"
 #
-#  Es veraendert nichts an den Sicherungen auf F: - dort wird nur gelesen.
-#  Geschrieben wird ausschliesslich nach E:\ClaudeMatrix_ffpkg und E:\PS5_Temp.
+#  Ohne Angaben gelten die Ordner des alten Pruefrechners. Den Projektordner
+#  leitet das Skript aus seinem eigenen Ort ab - bis zum 24.09.2026 stand dort
+#  der feste Pfad des alten Rechners.
+#
+#  Es veraendert nichts an der Sicherung unter -Dump - dort wird nur gelesen.
+#  Geschrieben wird ausschliesslich nach -Ziel und -Temp.
 #
 #  Dauer: Ein .ffpkg aus 51 GB dauert rund eine Stunde, die Varianten mit
 #  Asset-Pack deutlich laenger. Das Skript laeuft ohne Rueckfragen durch.
 # =============================================================================
+
+param(
+    [string]$Dump = "F:\Game Dumps\Prince of Persia The Lost Crown",
+    [string]$Ziel = "E:\ClaudeMatrix_ffpkg",
+    [string]$Temp = "E:\PS5_Temp"
+)
 
 $ErrorActionPreference = "Continue"
 
@@ -65,14 +76,15 @@ public static class Konsole {
     Write-Host "  Hinweis: Auswahlmodus liess sich nicht abschalten - bitte NICHT ins Fenster klicken." -ForegroundColor Yellow
 }
 
-$Projekt = "C:\Users\JBuserc0re\Documents\GitHub PS5 Dump & Image Converter"
+$Projekt = $PSScriptRoot
 $Python  = Join-Path $Projekt ".venv\Scripts\python.exe"
 $Haupt   = Join-Path $Projekt "PS5ImageConverter_Pro_FINAL_revised.py"
-$Ziel    = "E:\ClaudeMatrix_ffpkg"
-$Temp    = "E:\PS5_Temp"
 $Bericht = Join-Path $Ziel "_ffpkg_matrix_bericht.txt"
-$Dump    = "F:\Game Dumps\Prince of Persia The Lost Crown"
 $KfgBase = Join-Path $env:TEMP "ps5conv_ffpkg_matrix_kfg"
+# Das Protokoll eines Falls liegt in dessen Ordner - es ist kein Ergebnis.
+# Bis zum 24.09.2026 zaehlte es mit: Ein gescheiterter Lauf mit einem
+# Protokoll ueber 1 MB galt beim naechsten Start als "SCHON DA".
+$LaufLogName = "_lauf.log"
 
 # --- Rechte pruefen ----------------------------------------------------------
 $istAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -150,7 +162,7 @@ function Invoke-Fall {
     # Stunden - das baut niemand zweimal, nur weil das Skript neu startet.
     if (Test-Path $unterordner) {
         $fertig = Get-ChildItem $unterordner -File -ErrorAction SilentlyContinue |
-                  Where-Object { $_.Length -gt 1MB }
+                  Where-Object { $_.Length -gt 1MB -and $_.Name -ne $LaufLogName }
         if ($fertig) {
             $summe = ($fertig | Measure-Object Length -Sum).Sum
             $gbAlt = [math]::Round(($summe / 1GB), 2)
@@ -181,7 +193,7 @@ function Invoke-Fall {
     # voller Fehlerdarstellung. Am 11.09.2026 blieb das Skript genau daran
     # haengen: E1 war nach 2 h 43 min fertig, danach tat sich dreieinhalb
     # Stunden nichts mehr.
-    $laufLog = Join-Path $unterordner "_lauf.log"
+    $laufLog = Join-Path $unterordner $LaufLogName
     $uhr = [Diagnostics.Stopwatch]::StartNew()
     & $Python $Haupt @fertig *> $laufLog
     $code = $LASTEXITCODE
@@ -192,6 +204,7 @@ function Invoke-Fall {
     $anzahl = 0
     if (Test-Path $unterordner) {
         $m = Get-ChildItem $unterordner -Recurse -File -ErrorAction SilentlyContinue |
+             Where-Object { $_.Name -ne $LaufLogName } |
              Measure-Object Length -Sum
         if ($m.Sum) { $bytes = $m.Sum }
         if ($m.Count) { $anzahl = $m.Count }

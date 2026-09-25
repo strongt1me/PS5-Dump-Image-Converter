@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.43):** Die Ansicht KONSOLE ist vollständig – alle sieben Werkzeuge für die Arbeit mit der Konsole.
+> **Kurz zum aktuellen Stand (v1.9.44):** Bibliothek und Koppel-Assistent stecken jetzt in der Ansicht KONSOLE, dazu viele Korrekturen aus einer vollständigen Durchsicht.
+
+---
+
+## v1.9.44 – 25.09.2026
+
+- **Neu:** Die **Bibliothek** ist eine Seite der Ansicht KONSOLE – für den Rechner oder die PS5, mit Holen und Senden, App-Dumper, Firmware-Abgleich, Update-Hinweis und einheitlichem Umbenennen. Der **Koppel-Assistent** führt Schritt für Schritt durch ActRemoteLink.
+- **Behoben:** Viele Fehler aus einer vollständigen Durchsicht – „Abbrechen“ greift jetzt überall, das Fenster wartet nicht mehr auf langsame Laufwerke, und die englische Oberfläche ist vollständig übersetzt.
+- **Geändert:** Beim Start legt das Programm kein Zertifikat und keine Virenschutz-Ausnahmen mehr an. Neue Payload-Fassungen, unter anderem ShadowMount+ 1.7beta1 und PKG Manager 1.2.4.
 
 ---
 

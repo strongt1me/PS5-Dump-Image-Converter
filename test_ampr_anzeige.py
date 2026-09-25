@@ -234,7 +234,8 @@ class DreiZustaendeTests(unittest.TestCase):
     ``AbbildMetadaten`` traegt den AMPR-Befund als ``meta["ampr_emu"]``
     im Vorbeigehen mit, waehrend es den Baum nach param.json, param.sfo
     und icon0.png durchsucht. Sind diese drei beisammen, **bricht die
-    Schleife ab** - bei grossen Titeln waere das Weiterlesen teuer.
+    Schleife ab**. (Teuer waere das Weiterlaufen nicht - die Leser haben den
+    Baum da schon ganz gelesen, gemessen in test_durchsicht_runde19.)
 
     Daraus folgen drei Zustaende, und bis zum 03.09.2026 gab es hier nur
     einen: Ohne Marker blieb das Feld leer, und "es ist keiner drin" sah

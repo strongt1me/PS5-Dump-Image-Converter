@@ -42,6 +42,16 @@ from ps5_validator.utils.plattform import ist_administrator, prozess_flags
 logger = logging.getLogger("PS5Converter.utils.abbild_pruefen")
 
 
+class _PruefungAbgebrochen(Exception):
+    """Der Aufrufer hat die Ergebnispruefung abgebrochen.
+
+    Wird aus dem Fortschrittshoerer der MkPFS-Pruefung geworfen. MkPFS
+    faengt in ``verify_pfs_image`` nur ``OSError``/``ValueError`` - eine
+    eigene Klasse kommt also bis hierher durch (am Quelltext von
+    ``MkPFS-1.0.0/mkpfs/pfs.py`` belegt, Durchsicht Runde 19).
+    """
+
+
 class Pruefstand:
     """Prueft Quellen und Ergebnisse.
 
@@ -56,6 +66,9 @@ class Pruefstand:
         dokan_vorhanden: Ob der Dokan-Treiber da ist.
         status_melden: Schreibt in die Statuszeile - hier der Fortschritt der
             Abschlusspruefung.
+        validator_texte: Die uebersetzten Vorlagen der Validatoren
+            (``dispatcher.MELDUNGEN``) - ihre Befunde stehen in der
+            Einzelheit einer .ffpkg-Pruefung (Durchsicht, Runde 17).
     """
 
     def __init__(self, *,
@@ -67,8 +80,10 @@ class Pruefstand:
                  mkpfs_ordner_holen: Callable[[], str] | None = None,
                  ufs2tool_pfad: Callable[[], str] | None = None,
                  dokan_vorhanden: Callable[[], Any] | None = None,
-                 status_melden: Callable[[str], Any] | None = None) -> None:
+                 status_melden: Callable[[str], Any] | None = None,
+                 validator_texte: dict[str, str] | None = None) -> None:
         self._t = text or schluessel_zeigen
+        self._validator_texte = validator_texte
         self._expects_dump_folder = erwartet_dump_ordner or (lambda *a: False)
         self._looks_like_dump_folder = sieht_aus_wie_dump or (lambda *a: False)
         self._sammel_ordner_inhalt = ordner_inhalt or (lambda *a: None)
@@ -234,7 +249,7 @@ class Pruefstand:
             image_size = os.path.getsize(image_path)
             result["size_bytes"] = int(image_size)
             if image_size <= 0:
-                result["detail"] = "FFPKG-Datei ist leer (0 Bytes)."
+                result["detail"] = self._t("verify.ffpkg_empty")
                 return result
             ufs2tool = self._extract_ufs2tool()
             from ps5_validator.core.dispatcher import validate as validate_ffpkg
@@ -247,6 +262,7 @@ class Pruefstand:
                 verbose=False,
                 ufs2tool_path=ufs2tool,
                 cancel_flag=abbruch,
+                texte=self._validator_texte,
             )
             summary = dict(getattr(validation, "summary", {}) or {})
             errors = list(getattr(validation, "errors", []) or [])
@@ -255,22 +271,28 @@ class Pruefstand:
                 (getattr(validation, "hashes", {}) or {}).get(os.path.basename(image_path), "")
             )
             if result["validation_status"] not in ("OK", "WARNING"):
-                detail = "; ".join(errors[:3]) or "UFS2-Integritätsprüfung fehlgeschlagen."
+                detail = "; ".join(errors[:3]) or self._t("verify.ufs2_failed")
                 result["detail"] = detail
                 return result
             fsck_rc = summary.get("fsck_return_code", 0)
             result["ok"] = True
-            result["detail"] = f"UFS2-Struktur validiert; fsck rc={fsck_rc}."
+            result["detail"] = self._t("verify.ufs2_valid", rc=fsck_rc)
             return result
         except Exception as exc:
-            result["detail"] = f"UFS2-Validierung fehlgeschlagen: {exc}"
+            result["detail"] = self._t("verify.ufs2_error", error=exc)
             return result
 
     #: Hoechstens so oft (Sekunden) geht ein Pruefstand in die Statuszeile.
     _FORTSCHRITT_TAKT_S = 1.0
 
-    def _fortschritt_argument(self, pruefung: Callable[..., Any]) -> dict[str, Any]:
+    def _fortschritt_argument(self, pruefung: Callable[..., Any],
+                              abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
         """``{"progress": ...}`` fuer die MkPFS-Pruefung - wenn sie es annimmt.
+
+        Der Hoerer fragt zugleich ``abbruch``: MkPFS ruft ihn alle 8 MiB, und
+        eine Ausnahme aus ihm beendet die Pruefung (:class:`_PruefungAbgebrochen`).
+        Ohne ``progress`` - eine fremde MkPFS-Fassung - laesst sie sich nicht
+        anhalten.
 
         Die Abschlusspruefung eines .ffpfsc dekodiert jeden Block. Bei einem
         51-GB-Titel dauert das eine Viertelstunde und mehr, und bis v1.9.19
@@ -297,6 +319,10 @@ class Pruefstand:
         zuletzt = [0.0, -1]
 
         def _hoeren(aktion, *werte):
+            # Vor dem Takt: Der Abbruch soll nicht bis zur naechsten
+            # Anzeige warten.
+            if abbruch is not None and abbruch():
+                raise _PruefungAbgebrochen()
             if aktion != "step" or len(werte) < 3:
                 return
             gesamt = max(1, int(werte[2] or 1))
@@ -315,8 +341,23 @@ class Pruefstand:
 
         return {"progress": Progress(enabled=False, listener=_hoeren)}
 
-    def _verify_output_artifact(self, mode: str, final_path: str) -> dict[str, Any]:
-        """Verifiziert ein Ergebnisartefakt schnell und robust."""
+    def _als_abgebrochen(self, result: dict[str, Any]) -> dict[str, Any]:
+        """Kennzeichnet eine abgebrochene Pruefung - nicht bestanden, nicht geprueft."""
+        result.update({"ok": False, "abgebrochen": True,
+                       "detail": self._t("verify.abgebrochen")})
+        return result
+
+    def _verify_output_artifact(self, mode: str, final_path: str,
+                                abbruch: Callable[[], bool] | None = None) -> dict[str, Any]:
+        """Verifiziert ein Ergebnisartefakt schnell und robust.
+
+        ``abbruch`` wird vor und waehrend jeder langen Pruefung gefragt.
+        Bis zur Durchsicht (Runde 19, U1-9) gab es ihn nicht: Nach
+        "Abbrechen" lief die Abschlusspruefung trotzdem ganz - UFS2Tool
+        ``info``, ``fsck`` und SHA-256 ueber eine zweistellige GB-Datei, oder
+        das Dekodieren jedes Blocks einer ``.ffpfsc``. Abgebrochen traegt das
+        Ergebnis ``"abgebrochen": True`` und gilt als nicht bestanden.
+        """
         result: dict[str, Any] = {
             "ok": False,
             "mode": mode,
@@ -334,13 +375,21 @@ class Pruefstand:
             return result
 
         if not os.path.exists(final_path):
-            result["detail"] = "Ausgabepfad existiert nicht."
+            result["detail"] = self._t("verify.output_missing")
             return result
+
+        def _abgebrochen() -> bool:
+            return abbruch is not None and bool(abbruch())
+
+        if _abgebrochen():
+            return self._als_abgebrochen(result)
 
         if os.path.isdir(final_path):
             count = 0
             total = 0
             for dirpath, _dirnames, filenames in os.walk(final_path):
+                if _abgebrochen():
+                    return self._als_abgebrochen(result)
                 for fn in filenames:
                     p = os.path.join(dirpath, fn)
                     try:
@@ -349,7 +398,7 @@ class Pruefstand:
                     except OSError:
                         pass
             ok = count > 0 and total > 0
-            detail = f"Dateien: {count}, Bytes: {total}"
+            detail = self._t("verify.folder_count", files=count, total=total)
             method = "walk-count"
 
             # Zielformat "Dump-Ordner": eine reine Datei-/Byte-Zählung genügt nicht.
@@ -380,17 +429,23 @@ class Pruefstand:
         try:
             size = os.path.getsize(final_path)
         except OSError as exc:
-            result["detail"] = f"Dateigröße nicht lesbar: {exc}"
+            result["detail"] = self._t("verify.size_unreadable", error=exc)
             return result
 
         result["type"] = "file"
         result["size_bytes"] = int(size)
         if size <= 0:
-            result["detail"] = "Datei ist leer (0 Bytes)."
+            result["detail"] = self._t("verify.file_empty")
             return result
 
         if os.path.splitext(final_path)[1].lower() == ".ffpkg":
-            return self._validate_ffpkg_artifact(final_path, base_result=result)
+            result = self._validate_ffpkg_artifact(final_path, base_result=result,
+                                                   abbruch=abbruch)
+            # Der Validator bricht selbst ab (cancel_flag) und meldet das als
+            # Fehlschlag mit seinen eigenen Worten - hier heisst es, was es ist.
+            if not result.get("ok") and _abgebrochen():
+                return self._als_abgebrochen(result)
+            return result
 
         if os.path.splitext(final_path)[1].lower() in {".ffpfs", ".ffpfsc"}:
             try:
@@ -400,24 +455,28 @@ class Pruefstand:
                 from mkpfs.pfs import verify_pfs_image  # type: ignore[import-not-found]
 
                 inspection = verify_pfs_image(
-                    Path(final_path), **self._fortschritt_argument(verify_pfs_image))
+                    Path(final_path),
+                    **self._fortschritt_argument(verify_pfs_image, abbruch))
                 result["method"] = "mkpfs-verify"
                 result["sha256"] = str(getattr(inspection, "manifest_sha256", "") or "")
                 errors = list(getattr(inspection, "errors", []) or [])
                 warnings = list(getattr(inspection, "warnings", []) or [])
                 if errors:
-                    result["detail"] = "MkPFS-Strukturfehler: " + "; ".join(errors[:3])
+                    result["detail"] = self._t("verify.mkpfs_errors", errors="; ".join(errors[:3]))
                     return result
                 result["ok"] = True
                 result["detail"] = (
-                    f"MkPFS-Struktur gültig; Dateien: "
-                    f"{len(getattr(inspection, 'file_inodes', {}) or {})}"
-                    + (f"; Warnungen: {len(warnings)}" if warnings else "")
+                    self._t("verify.mkpfs_valid",
+                            files=len(getattr(inspection, "file_inodes", {}) or {}))
+                    + (self._t("verify.mkpfs_warnings", count=len(warnings)) if warnings else "")
                 )
                 return result
+            except _PruefungAbgebrochen:
+                result["method"] = "mkpfs-verify"
+                return self._als_abgebrochen(result)
             except Exception as exc:
                 result["method"] = "mkpfs-verify"
-                result["detail"] = f"MkPFS-Strukturprüfung fehlgeschlagen: {exc}"
+                result["detail"] = self._t("verify.mkpfs_error", error=exc)
                 return result
 
         try:
@@ -425,6 +484,8 @@ class Pruefstand:
             with open(final_path, "rb") as fh:
                 if size <= 2 * 1024 ** 3:
                     while True:
+                        if _abgebrochen():
+                            return self._als_abgebrochen(result)
                         chunk = fh.read(4 * 1024 * 1024)
                         if not chunk:
                             break
@@ -444,10 +505,10 @@ class Pruefstand:
                     result["method"] = "sha256-sampled"
             result["sha256"] = h.hexdigest()
             result["ok"] = True
-            result["detail"] = "Verifizierung erfolgreich."
+            result["detail"] = self._t("verify.hash_ok")
             return result
         except Exception as exc:
-            result["detail"] = f"Hash-Verifizierung fehlgeschlagen: {exc}"
+            result["detail"] = self._t("verify.hash_error", error=exc)
             return result
 
     def _verify_ffpkg_file_count_via_mount(
@@ -480,7 +541,7 @@ class Pruefstand:
         try:
             exe = self._extract_ufs2tool()
         except Exception as exc:
-            result["detail"] = f"übersprungen (UFS2Tool nicht verfügbar: {exc})"
+            result["detail"] = self._t("verify.count_skipped_no_ufs2tool", error=exc)
             return result
 
         drives_bitmask = _ct.windll.kernel32.GetLogicalDrives()
@@ -490,7 +551,7 @@ class Pruefstand:
                 drive = chr(65 + idx) + ":"
                 break
         if not drive:
-            result["detail"] = "übersprungen (kein freier Laufwerksbuchstabe verfügbar)"
+            result["detail"] = self._t("verify.count_skipped_no_drive")
             return result
 
         mount_proc: subprocess.Popen[str] | None = None
@@ -520,9 +581,8 @@ class Pruefstand:
                         tail = (mount_proc.stdout.read() or "").strip()
                 except Exception:
                     tail = ""
-                result["detail"] = (
-                    f"übersprungen (Mount für Dateizählung fehlgeschlagen: {tail or 'Zeitüberschreitung'})"
-                )
+                result["detail"] = self._t("verify.count_skipped_mount",
+                                           error=tail or self._t("verify.timeout"))
                 return result
 
             actual_count = 0
@@ -533,14 +593,13 @@ class Pruefstand:
             result["actual_file_count"] = actual_count
             if expected_file_count > 0 and actual_count < expected_file_count:
                 result["ok"] = False
-                result["detail"] = (
-                    f"nur {actual_count} von {expected_file_count} Quelldateien im UFS2-Image gefunden"
-                )
+                result["detail"] = self._t("verify.count_ufs2_missing", found=actual_count,
+                                           expected=expected_file_count)
             else:
-                result["detail"] = f"{actual_count} Dateien im UFS2-Image bestätigt"
+                result["detail"] = self._t("verify.count_ufs2_ok", count=actual_count)
             return result
         except Exception as exc:
-            result["detail"] = f"übersprungen (Dateizählung fehlgeschlagen: {exc})"
+            result["detail"] = self._t("verify.count_skipped_error", error=exc)
             return result
         finally:
             if mount_proc is not None:
@@ -583,7 +642,7 @@ class Pruefstand:
         try:
             mkpfs_parent = self._extract_embedded_mkpfs()
             if not mkpfs_parent:
-                result["detail"] = "übersprungen (MkPFS-Engine nicht verfügbar)"
+                result["detail"] = self._t("verify.count_skipped_no_mkpfs")
                 return result
             if mkpfs_parent not in sys.path:
                 sys.path.insert(0, mkpfs_parent)
@@ -597,12 +656,11 @@ class Pruefstand:
             result["actual_file_count"] = actual_count
             if expected_file_count > 0 and actual_count < expected_file_count:
                 result["ok"] = False
-                result["detail"] = (
-                    f"nur {actual_count} von {expected_file_count} Quelldateien im exFAT-Image gefunden"
-                )
+                result["detail"] = self._t("verify.count_exfat_missing", found=actual_count,
+                                           expected=expected_file_count)
             else:
-                result["detail"] = f"{actual_count} Dateien im exFAT-Image bestätigt"
+                result["detail"] = self._t("verify.count_exfat_ok", count=actual_count)
             return result
         except Exception as exc:
-            result["detail"] = f"übersprungen (Dateizählung fehlgeschlagen: {exc})"
+            result["detail"] = self._t("verify.count_skipped_error", error=exc)
             return result

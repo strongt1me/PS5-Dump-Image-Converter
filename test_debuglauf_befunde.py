@@ -188,8 +188,11 @@ class PfadLiegtInTests(unittest.TestCase):
         methode = _methode(_klasse(baum), "_run_engine_thread")
         sperre = [k.lineno for k in ast.walk(methode)
                   if isinstance(k, ast.Call) and getattr(k.func, "attr", "") == "_pfad_liegt_in"]
+        # Seit dem 24.09.2026 fragt der Faden ueber _ask_yesno_threadsafe
+        # (vorher ein eigener askyesno-Weg ohne finally, Durchsicht H6-7).
         frage = [k.lineno for k in ast.walk(methode)
-                 if isinstance(k, ast.Call) and getattr(k.func, "attr", "") == "askyesno"]
+                 if isinstance(k, ast.Call)
+                 and getattr(k.func, "attr", "") in ("askyesno", "_ask_yesno_threadsafe")]
         loeschen = [k.lineno for k in ast.walk(methode)
                     if isinstance(k, ast.Call)
                     and getattr(k.func, "id", "") == "_rmtree_force"]
@@ -606,9 +609,10 @@ class AmprVersorgungTests(_TempTest):
         protokoll: list = []
         with mock.patch.object(app, "_append_to_log", protokoll.append), \
                 mock.patch.object(app, "_ampr_aus_speicher_versorgen",
-                                  side_effect=AssertionError("Speicher angefasst")):
+                                  side_effect=AssertionError("Speicher angefasst")) as speicher:
             ok = app._prepare_ampr_support(dump, {"is_apr": True,
                                                   "ampr_rebuild_index": False})
+        speicher.assert_not_called()
         self.assertTrue(ok)
         with open(ampr, "rb") as fh:
             self.assertEqual(fh.read(), b"gewaehlte Fassung")
@@ -636,8 +640,9 @@ class ZweiterStartTests(unittest.TestCase):
             with mock.patch.object(APP.messagebox, "showinfo",
                                    lambda *a, **k: gemeldet.append(a)), \
                     mock.patch.object(APP.messagebox, "showerror",
-                                      side_effect=AssertionError("Validierung erreicht")):
+                                      side_effect=AssertionError("Validierung erreicht")) as fehler:
                 app._launch_task()
+            fehler.assert_not_called()
             self.assertIs(app._task_thread, alt, "Ein zweiter Faden wurde gestartet.")
             self.assertEqual(len(gemeldet), 1, "Keine Meldung, warum nichts passiert.")
         finally:
@@ -1376,8 +1381,13 @@ class FfpkgBauAbbruchTests(_TempTest):
         from ps5_validator.utils.param_manifest import create_default_param
 
         quelle = os.path.join(self.basis, "source")
+        # Mit Content-ID: Ohne sie fragt der Bau seit dem 23.09.2026, ob ein
+        # Platzhalter eingetragen werden soll - und der Volllauf stand an
+        # diesem Fenster, bis die Dialogsperre in conftest.py kam.
         _schreiben(os.path.join(quelle, "sce_sys", "param.json"),
-                   (json.dumps(create_default_param(title_id="PPSA00001")) + "\n").encode("utf-8"))
+                   (json.dumps(create_default_param(
+                       title_id="PPSA00001",
+                       content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n").encode("utf-8"))
         _schreiben(os.path.join(quelle, "payload", "game.bin"), os.urandom(8192))
         ziel = os.path.join(self.basis, "result.ffpkg")
         buehne = os.path.join(self.basis, "temp")
@@ -1613,7 +1623,7 @@ class InstallerTests(unittest.TestCase):
         app = _app()
         geladen: list = []
         with mock.patch.object(APP, "IST_WINDOWS", False), \
-                mock.patch.object(APP.urllib.request, "urlretrieve",
+                mock.patch.object(app, "_installer_laden",
                                   lambda *a, **k: geladen.append(a)), \
                 mock.patch.object(app, "_run_subprocess_logged", lambda *a, **k: 1), \
                 mock.patch.object(app, "_append_to_log", lambda *a: None):
@@ -2731,7 +2741,8 @@ class AbschlussMessungTests(unittest.TestCase):
         gui = GUI.__new__(GUI)
         gui._t = lambda schluessel, **werte: "%s %s" % (schluessel, werte)
         gerufen: list = []
-        gui._verify_output_artifact = lambda *a: gerufen.append(a) or {"ok": True}
+        # **_k: abbruch= (Durchsicht, Runde 19) - gezaehlt wird der Pfad.
+        gui._verify_output_artifact = lambda *a, **_k: gerufen.append(a) or {"ok": True}
         gui.task_batch_results = [
             {"source": "a", "output": "a.ffpfsc", "ok": True, "detail": "ok"},
             {"source": "b", "output": "", "ok": False, "skipped": True, "detail": "da"},
@@ -3129,8 +3140,10 @@ class KommandozeileZielordnerTests(_TempTest):
         werte.update(argumente)
         with mock.patch.object(APP, "_prepare_cli_streams", lambda: None), \
                 mock.patch.object(APP.tk, "Tk",
-                                  side_effect=AssertionError("Fenster gebaut")):
-            return APP._run_cli(argparse.Namespace(**werte))
+                                  side_effect=AssertionError("Fenster gebaut")) as fenster:
+            code = APP._run_cli(argparse.Namespace(**werte))
+        fenster.assert_not_called()
+        return code
 
     def test_ohne_dest_ist_es_ein_argumentfehler(self) -> None:
         self.assertEqual(self._lauf(), 2)
@@ -3296,7 +3309,12 @@ class FensterklasseTests(unittest.TestCase):
         baum = ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))
         start = next(k for k in baum.body if isinstance(k, ast.If)
                      and "__main__" in ast.unparse(k.test))
-        erzeugt = [k for k in ast.walk(start) if isinstance(k, ast.Call)
+        # Seit dem 24.09.2026 entsteht die Wurzel in _hauptfenster_anlegen
+        # (Rueckfall ohne tkdnd, Durchsicht H12-12) - der Startblock ruft sie.
+        self.assertIn("_hauptfenster_anlegen()", ast.unparse(start))
+        anlegen = next(k for k in baum.body if isinstance(k, ast.FunctionDef)
+                       and k.name == "_hauptfenster_anlegen")
+        erzeugt = [k for k in ast.walk(anlegen) if isinstance(k, ast.Call)
                    and ast.unparse(k.func) in ("tk.Tk", "TkinterDnD.Tk")]
         self.assertTrue(erzeugt, "Die Messung findet das Hauptfenster nicht mehr.")
         for aufruf in erzeugt:
@@ -3946,13 +3964,14 @@ class OriginaleRueckfrageTests(_TempTest):
 
     def test_kommandozeile_nur_mit_eigenem_schalter(self) -> None:
         with mock.patch.object(APP.messagebox, "askyesno",
-                               side_effect=AssertionError("CLI darf nicht fragen")):
+                               side_effect=AssertionError("CLI darf nicht fragen")) as frage:
             gui = self._gui(ampr_an=True, cli=True, schalter=False)
             gui._ampr_originale_klaeren("pack_folder")
             self.assertFalse(gui._ampr_originale_weglassen)
             gui = self._gui(ampr_an=True, cli=True, schalter=True)
             gui._ampr_originale_klaeren("pack_folder")
             self.assertTrue(gui._ampr_originale_weglassen)
+        frage.assert_not_called()
 
     def test_schalter_ist_verdrahtet(self) -> None:
         parser = APP._build_cli_parser()

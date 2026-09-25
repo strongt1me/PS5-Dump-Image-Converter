@@ -333,8 +333,9 @@ class EinrichtenTests(_Installiert):
                                   lambda: _fuehler(**next(fuehler))), \
                 mock.patch.object(APP, "_is_admin", lambda: admin), \
                 mock.patch.object(te, "einrichten", _einrichten), \
-                mock.patch.object(APP.urllib.request, "urlretrieve",
-                                  lambda *a, **k: aufrufe["download"].append(a)), \
+                mock.patch.object(gui, "_installer_laden",
+                                  lambda *a, **k: aufrufe["download"].append(a),
+                                  create=True), \
                 mock.patch.object(gui, "_run_subprocess_logged",
                                   lambda befehl, **k: aufrufe["installer"].append(befehl) or 0):
             ok = gui._install_osfmount()

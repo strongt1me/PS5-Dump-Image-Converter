@@ -125,6 +125,10 @@ PROPS_BLOCK_SIZE_SHIFT = 12
 PROPS_HAS_DIGESTS_SHIFT = 16
 PROPS_SEGMENT_INDEX_SHIFT = 20
 PROPS_SEGMENT_INDEX_MASK = 0xFFFF
+#: Segmentdaten liegen verschluesselt bzw. komprimiert im Container - dieselben
+#: Bits wie ``self_reader.SEGMENT_FLAG_ENCRYPTED``/``_COMPRESSED``.
+PROPS_VERSCHLUESSELT = 0x2
+PROPS_KOMPRIMIERT = 0x8
 
 # --------------------------------------------------------------------------
 # Firmware-Profile
@@ -408,6 +412,37 @@ def sdk_setzen(elf: bytes, ziel_ps5: int, ziel_ps4: int) -> tuple[bytes, int, in
 # --------------------------------------------------------------------------
 # SELF -> ELF
 # --------------------------------------------------------------------------
+
+def self_segmente_verschluesselt(daten: bytes) -> bool:
+    """Ob ein SELF seine Segmente verschluesselt oder komprimiert ablegt.
+
+    :func:`self_zu_elf` setzt die Segmente nur Byte fuer Byte zurueck. Aus
+    einem nicht entschluesselten Container kommt dabei Datensalat, in dem
+    kein Modulkopf zu finden ist - bis zum 24.09.2026 hiess das dann nur
+    "keine SDK-Angabe enthalten", die Datei galt als uebersprungen und der
+    Lauf als gelungen (Durchsicht, U2-4). Geprueft werden nur die
+    Daten-Eintraege (Bit 11); die Meta-Eintraege tragen die Pruefsummen.
+    """
+    if len(daten) < 0x20:
+        return False
+    try:
+        kennung = struct.unpack_from("<I", daten, 0)[0]
+        anzahl = struct.unpack_from("<H", daten, 0x18)[0]
+    except struct.error:
+        return False
+    if kennung not in (MAGIC_SELF_A, MAGIC_SELF_B):
+        return False
+    for index in range(anzahl):
+        eintrag = 0x20 * (1 + index)
+        if eintrag + 0x20 > len(daten):
+            break
+        props = struct.unpack_from("<Q", daten, eintrag)[0]
+        if not (props >> PROPS_HAS_BLOCKS_SHIFT) & 0x1:
+            continue
+        if props & (PROPS_VERSCHLUESSELT | PROPS_KOMPRIMIERT):
+            return True
+    return False
+
 
 def self_zu_elf(daten: bytes) -> bytes:
     """Holt das eingebettete ELF aus einem SELF-Container.
@@ -789,6 +824,8 @@ MELDUNGEN: dict[str, str] = {
         'Entpacken fehlgeschlagen: {fehler}',
     'keine_sdk_angabe':
         'keine SDK-Angabe enthalten',
+    'self_verschluesselt':
+        'SELF verschlüsselt oder komprimiert – nur entschlüsselte Dumps lassen sich backportieren',
     'bereits_niedrig':
         'bereits {firmware} oder älter',
     'sdk_nicht_setzbar':
@@ -844,6 +881,10 @@ def datei_verarbeiten(daten: bytes, *, ziel_ps5: int, ziel_ps4: int,
     try:
         aktuell_ps5, _aktuell_ps4 = sdk_lesen(elf)
     except SdkNichtGefunden:
+        # Ein verschluesselter Container ist kein "nichts zu tun": Die Datei
+        # bleibt auf der hohen Firmware, und das Spiel startet danach nicht.
+        if war_self and self_segmente_verschluesselt(daten):
+            return ERG_FEHLER, daten, _satz(texte, "self_verschluesselt")
         return ERG_UEBERSPRUNGEN, daten, _satz(texte, "keine_sdk_angabe")
 
     if not muss_gepatcht_werden(aktuell_ps5, ziel_ps5):

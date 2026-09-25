@@ -30,6 +30,10 @@ from typing import Callable
 
 MAGIC_PS4 = b"\x7fCNT"
 MAGIC_PS5 = b"\x7fFIH"
+#: PS5-Update-Paket (Delta) - Herkunft und Grenzen siehe ``pkg_reader.LIH_MAGIC``.
+#: Es traegt nur Aenderungen gegenueber einem Grundpaket; allein laesst es sich
+#: nicht entpacken.
+MAGIC_PS5_DELTA = b"\x7fLIH"
 
 #: Hoechstlaenge des Zielordners. Der Entpacker kennt kein "longPathAware"
 #: und scheitert ab 260 Zeichen mit "Failed to write extracted PKG entry".
@@ -53,7 +57,8 @@ def paket_art(pfad: str) -> str:
     """Liest die Konsole aus den ersten vier Bytes.
 
     Returns:
-        ``"ps4"``, ``"ps5"`` oder ``""`` (keine PKG oder nicht lesbar).
+        ``"ps4"``, ``"ps5"``, ``"ps5_delta"`` (Update-Paket) oder ``""``
+        (keine PKG oder nicht lesbar).
     """
     try:
         with open(pfad, "rb") as datei:
@@ -64,6 +69,8 @@ def paket_art(pfad: str) -> str:
         return "ps4"
     if magic == MAGIC_PS5:
         return "ps5"
+    if magic == MAGIC_PS5_DELTA:
+        return "ps5_delta"
     return ""
 
 

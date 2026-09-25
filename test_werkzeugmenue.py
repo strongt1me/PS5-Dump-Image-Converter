@@ -271,6 +271,8 @@ class DesignwechselTests(unittest.TestCase):
 
         Deshalb steht jetzt eine Zahl daneben: Ohne sie merkt niemand,
         wenn der naechste Umbau den Ausdruck wieder ins Leere laufen laesst.
+        Seit dem 25.09.2026 sind es elf: BIBLIOTHEK ist in die Ansicht
+        KONSOLE umgezogen (test_bibliothek_seite).
         """
         tabelle = APP.PS5ConverterGUI._TITELLEISTE_SCHRIFTFARBEN
         import re
@@ -278,7 +280,7 @@ class DesignwechselTests(unittest.TestCase):
             r"self\.(_btn_[a-z0-9_]*title[a-z0-9_]*)\s*=\s*(?:tk\.Button|flach_knopf)",
             self.quelltext))
         self.assertGreaterEqual(
-            len(erzeugt), 12,
+            len(erzeugt), 11,
             "Nur %d Titelknoepfe gefunden - der Suchausdruck passt nicht "
             "mehr zum Quelltext, und die Pruefung darunter sieht nichts an."
             % len(erzeugt))

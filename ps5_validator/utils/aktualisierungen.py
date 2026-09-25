@@ -42,6 +42,42 @@ FEHLER = "fehler"
 VERSUCHE = 3
 
 _ZAHLEN = re.compile(r"\d+")
+#: Ein Zusatz in Klammern, etwa die Fassung einer eingebetteten Bibliothek.
+_KLAMMERN = re.compile(r"\([^)]*\)")
+
+#: Die Saetze dieses Moduls - als Vorgabe deutsch. Das Diagnosefenster reicht
+#: ueber ``texte=`` die uebersetzten herein (i18n ``aktualisierung.*``); bis
+#: zum 24.09.2026 stand dort auch auf Englisch "1 Aktualisierung verfügbar"
+#: (Durchsicht U2-8). Dasselbe Muster wie ``payload_versand.MELDUNGEN``.
+MELDUNGEN: dict[str, str] = {
+    "veraltet": "{fassung} -> {neueste} verfügbar",
+    "aktuell": "{fassung} (aktuell)",
+    "voraus": "{fassung} (neuer als die Quelle: {neueste})",
+    "fehler": "{fassung} (nicht abfragbar: {grund})",
+    "hinweis": "{fassung} ({hinweis})",
+    "unlesbar": "{fassung} (eigene Fassung nicht auslesbar, verfügbar: {neueste})",
+    "ohne_quelle": "{fassung} (keine abfragbare Quelle)",
+    "wert_unbekannt": "unbekannt",
+    "wert_vorhanden": "vorhanden",
+    "kopf": "Aktualisierungen: {teile}",
+    "nichts_zu_pruefen": "Aktualisierungen: nichts zu prüfen",
+    "anzahl_eins": "1 Aktualisierung verfügbar",
+    "anzahl_mehr": "{anzahl} Aktualisierungen verfügbar",
+    "alles_aktuell": "alles auf dem Stand der abgefragten Quellen",
+    "keine_antwort": "keine Quelle hat geantwortet",
+    "nichts_abfragbar": "nichts abfragbar",
+    "nicht_abfragbar": "{anzahl} nicht abfragbar",
+    "ohne_quelle_anzahl": "{anzahl} ohne abfragbare Quelle",
+}
+
+
+def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
+    """Eine Vorlage, uebersetzt wenn moeglich - sonst die Vorgabe."""
+    vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
+    try:
+        return vorlage.format(**werte)
+    except (KeyError, IndexError, ValueError):
+        return MELDUNGEN[kennung].format(**werte)
 
 
 @dataclass(frozen=True)
@@ -66,21 +102,34 @@ class Befund:
     quelle: str = ""
     hinweis: str = ""
 
-    def __str__(self) -> str:
+    def text(self, texte: "dict[str, str] | None" = None) -> str:
+        """Die Zeile fuer den Bericht - uebersetzt, wenn ``texte`` da sind.
+
+        "unbekannt" und "vorhanden" sind als Fassung Merker (sie tragen keine
+        Zahl, siehe :func:`beurteile`) und werden erst hier uebersetzt.
+        """
+        fassung = self.fassung
+        if fassung in ("unbekannt", "vorhanden"):
+            fassung = _satz(texte, "wert_" + fassung)
         if self.zustand == VERALTET:
-            kern = "%s -> %s verfügbar" % (self.fassung, self.neueste)
+            kern = _satz(texte, "veraltet", fassung=fassung, neueste=self.neueste)
         elif self.zustand == AKTUELL:
-            kern = "%s (aktuell)" % self.fassung
+            kern = _satz(texte, "aktuell", fassung=fassung)
         elif self.zustand == VORAUS:
-            kern = "%s (neuer als die Quelle: %s)" % (self.fassung, self.neueste)
+            kern = _satz(texte, "voraus", fassung=fassung, neueste=self.neueste)
         elif self.zustand == FEHLER:
-            kern = "%s (nicht abfragbar: %s)" % (self.fassung, self.hinweis)
+            kern = _satz(texte, "fehler", fassung=fassung, grund=self.hinweis)
         elif self.hinweis:
-            kern = "%s (%s)" % (self.fassung, self.hinweis)
+            kern = _satz(texte, "hinweis", fassung=fassung, hinweis=self.hinweis)
+        elif self.neueste:
+            kern = _satz(texte, "unlesbar", fassung=fassung, neueste=self.neueste)
         else:
-            kern = "%s (keine abfragbare Quelle)" % self.fassung
+            kern = _satz(texte, "ohne_quelle", fassung=fassung)
         wo = ("  %s" % self.quelle) if self.quelle else ""
         return "%s: %s%s" % (self.name, kern, wo)
+
+    def __str__(self) -> str:
+        return self.text()
 
 
 def fassung_teile(text: str) -> tuple[int, ...]:
@@ -93,13 +142,19 @@ def fassung_teile(text: str) -> tuple[int, ...]:
     die aeltere Nummer. Genau dieser Fehler trat 2026-08-20 in der
     AMPR-Versionsliste auf.
 
+    Was in Klammern steht, zaehlt nicht: ``lz4`` meldet sich als
+    ``4.4.5 (liblz4 1.9.4)``, und bis zum 24.09.2026 wurde die 4 aus
+    "liblz4" zur vierten Stelle - ein aktuelles lz4 galt dann als "neuer als
+    die Quelle" (Durchsicht, U2-6).
+
     Args:
         text: Die Fassungsangabe.
 
     Returns:
         Vier Zahlen; fehlende Stellen sind 0.
     """
-    zahlen = [int(t) for t in _ZAHLEN.findall(str(text or ""))][:4]
+    ohne_zusatz = _KLAMMERN.sub(" ", str(text or ""))
+    zahlen = [int(t) for t in _ZAHLEN.findall(ohne_zusatz)][:4]
     return tuple(zahlen + [0] * (4 - len(zahlen)))
 
 
@@ -139,9 +194,10 @@ def beurteile(teil: Bestandteil, neueste: str = "", fehler: str = "") -> Befund:
         # Angabe als 0.0.0.0 - und damit als veraltet, was schlicht
         # falsch ist. Am 21.08.2026 an tkinterdnd2 aufgefallen, das
         # kein __version__ mitbringt.
+        # Ohne Hinweis, mit "neueste": Den Satz dazu ("eigene Fassung nicht
+        # auslesbar, verfuegbar: ...") baut Befund.text - uebersetzbar.
         return Befund(teil.name, teil.fassung, str(neueste), UNBEKANNT,
-                      teil.quelle,
-                      "eigene Fassung nicht auslesbar, verfügbar: %s" % neueste)
+                      teil.quelle, "")
     richtung = vergleiche(teil.fassung, neueste)
     zustand = AKTUELL if richtung == 0 else (VERALTET if richtung < 0 else VORAUS)
     return Befund(teil.name, teil.fassung, str(neueste), zustand,
@@ -234,20 +290,31 @@ def pruefe(teile: list[Bestandteil], holen, versuche: int = VERSUCHE) -> list[Be
     return befunde
 
 
-def zusammenfassung(befunde: list[Befund]) -> str:
-    """Eine Zeile fuer den Kopf des Abschnitts."""
+def zusammenfassung(befunde: list[Befund],
+                    texte: "dict[str, str] | None" = None) -> str:
+    """Eine Zeile fuer den Kopf des Abschnitts.
+
+    ``texte``: uebersetzte Vorlagen zu :data:`MELDUNGEN` (sonst deutsch).
+    """
     if not befunde:
-        return "Aktualisierungen: nichts zu prüfen"
+        return _satz(texte, "nichts_zu_pruefen")
     veraltet = sum(1 for b in befunde if b.zustand == VERALTET)
     fehler = sum(1 for b in befunde if b.zustand == FEHLER)
     offen = sum(1 for b in befunde if b.zustand == UNBEKANNT)
+    beantwortet = sum(1 for b in befunde if b.zustand in (AKTUELL, VERALTET, VORAUS))
     if veraltet:
-        kern = "%d Aktualisierung%s verfügbar" % (veraltet, "" if veraltet == 1 else "en")
+        kern = (_satz(texte, "anzahl_eins") if veraltet == 1
+                else _satz(texte, "anzahl_mehr", anzahl=veraltet))
+    elif beantwortet:
+        kern = _satz(texte, "alles_aktuell")
     else:
-        kern = "alles auf dem Stand der abgefragten Quellen"
+        # Keine einzige Quelle hat geantwortet - offline, oder GitHub/PyPI
+        # brachen ab. Bis zum 24.09.2026 stand dann trotzdem "alles auf dem
+        # Stand" in der ersten Zeile (Durchsicht, U2-7).
+        kern = _satz(texte, "keine_antwort" if fehler else "nichts_abfragbar")
     teile = [kern]
     if fehler:
-        teile.append("%d nicht abfragbar" % fehler)
+        teile.append(_satz(texte, "nicht_abfragbar", anzahl=fehler))
     if offen:
-        teile.append("%d ohne abfragbare Quelle" % offen)
-    return "Aktualisierungen: " + ", ".join(teile)
+        teile.append(_satz(texte, "ohne_quelle_anzahl", anzahl=offen))
+    return _satz(texte, "kopf", teile=", ".join(teile))

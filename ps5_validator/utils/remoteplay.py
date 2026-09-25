@@ -84,6 +84,15 @@ class ChiakiFehlt(RuntimeError):
     """Es wurde keine ausfuehrbare Chiaki-Datei gefunden."""
 
 
+class NameFehlt(ValueError):
+    """Chiaki braucht den Namen, unter dem die Konsole registriert ist.
+
+    ``chiaki stream <nickname> <host>`` - beide sind Pflicht. Bis zum
+    24.09.2026 fiel ein leerer Name still weg, die Adresse rutschte an seine
+    Stelle, und Chiaki zeigte nur seine Hilfe (Durchsicht, U3-6).
+    """
+
+
 @dataclass(frozen=True)
 class Konsole:
     """Was die Konsole auf die Suchanfrage geantwortet hat."""
@@ -250,9 +259,15 @@ def chiaki_befehl(pfad: str, host: str, nickname: str = "",
     Getrennt vom Starten, damit die Oberflaeche zeigen kann, was sie
     aufrufen wuerde, und damit ein Test sie pruefen kann, ohne Chiaki zu
     besitzen.
+
+    Raises:
+        NameFehlt: Die Vorlage verlangt ``{nickname}``, aber es gibt keinen.
+            Weglassen verschiebt die Stellung der folgenden Angaben.
     """
     fertig = [str(pfad)]
     for teil in argumente:
+        if "{nickname}" in str(teil) and not str(nickname or "").strip():
+            raise NameFehlt("Chiaki braucht den Namen der Konsole.")
         text = str(teil).replace("{host}", str(host or ""))
         text = text.replace("{nickname}", str(nickname or ""))
         if not text:

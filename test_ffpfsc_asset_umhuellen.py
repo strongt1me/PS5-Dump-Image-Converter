@@ -109,12 +109,13 @@ class FfpfscAssetTests(unittest.TestCase):
         self._asset_an()
         self.app._umhuellt_neu_packen = False
         with mock.patch.object(self.app, "_ask_yesno_threadsafe",
-                               side_effect=AssertionError("darf nicht fragen")), \
+                               side_effect=AssertionError("darf nicht fragen")) as frage, \
              mock.patch.object(self.app, "_resolve_mode_source_type",
                                return_value="ffpfsc"), \
              mock.patch.object(self.app, "_append_to_log"):
             darf = self.app._umhuellenden_weg_klaeren(
                 "unpack_to_exfat", "Spiel.ffpfsc", "ffpfsc")
+        frage.assert_not_called()
         self.assertTrue(darf)
         self.assertTrue(self.app._umhuellt_neu_packen)
 

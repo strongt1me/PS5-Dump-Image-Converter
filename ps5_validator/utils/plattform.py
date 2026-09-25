@@ -639,3 +639,121 @@ def nur_windows_hinweis(werkzeug: str) -> str:
         f"{werkzeug} gibt es nur unter Windows{zusatz}. "
         f"Unter {systemname()} steht dieser Weg nicht zur Verfügung."
     )
+
+
+# ---------------------------------------------------------------------------
+# Zwischenablage fuer Bilder
+# ---------------------------------------------------------------------------
+def bild_in_zwischenablage(png: bytes) -> bool:
+    """Legt ein PNG-Bild in die Zwischenablage des Systems.
+
+    Tk kann das nicht: ``clipboard_append`` kennt nur Text. Jedes System
+    braucht deshalb einen eigenen Weg - Windows das Format ``CF_DIB`` ueber
+    die Win32-Schnittstelle, macOS ``osascript`` und Linux ``wl-copy``
+    (Wayland) oder ``xclip`` (X11), sofern eines davon installiert ist.
+
+    Gebraucht in der Bibliothek ("Titelbild kopieren", seit 25.09.2026).
+
+    Returns:
+        True, wenn das Bild in der Zwischenablage liegt.
+    """
+    if not png:
+        return False
+    try:
+        if IST_WINDOWS:
+            return _bild_in_zwischenablage_windows(png)
+        if IST_MACOS:
+            return _bild_in_zwischenablage_macos(png)
+        return _bild_in_zwischenablage_linux(png)
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Bild nicht in die Zwischenablage gelegt: %s", exc)
+        return False
+
+
+def _bild_in_zwischenablage_windows(png: bytes) -> bool:
+    """``CF_DIB``: eine BMP-Datei ohne ihren 14 Byte langen Dateikopf."""
+    import ctypes
+    import io
+    from ctypes import wintypes
+
+    from PIL import Image
+
+    puffer = io.BytesIO()
+    Image.open(io.BytesIO(png)).convert("RGB").save(puffer, "BMP")
+    dib = puffer.getvalue()[14:]
+
+    cf_dib, gmem_moveable = 8, 0x0002
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32.GlobalAlloc.argtypes = [wintypes.UINT, ctypes.c_size_t]
+    kernel32.GlobalAlloc.restype = wintypes.HGLOBAL
+    kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+    kernel32.GlobalFree.argtypes = [wintypes.HGLOBAL]
+    user32.OpenClipboard.argtypes = [wintypes.HWND]
+    user32.SetClipboardData.argtypes = [wintypes.UINT, wintypes.HANDLE]
+    user32.SetClipboardData.restype = wintypes.HANDLE
+
+    speicher = kernel32.GlobalAlloc(gmem_moveable, len(dib))
+    if not speicher:
+        return False
+    zeiger = kernel32.GlobalLock(speicher)
+    if not zeiger:
+        kernel32.GlobalFree(speicher)
+        return False
+    ctypes.memmove(zeiger, dib, len(dib))
+    kernel32.GlobalUnlock(speicher)
+    if not user32.OpenClipboard(None):
+        kernel32.GlobalFree(speicher)
+        return False
+    try:
+        user32.EmptyClipboard()
+        if not user32.SetClipboardData(cf_dib, speicher):
+            kernel32.GlobalFree(speicher)
+            return False
+        # Ab hier gehoert der Speicher der Zwischenablage - nicht freigeben.
+        return True
+    finally:
+        user32.CloseClipboard()
+
+
+def _bild_in_zwischenablage_macos(png: bytes) -> bool:
+    """Ueber eine Zwischendatei - ``osascript`` liest das Bild von dort."""
+    with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as datei:
+        datei.write(png)
+        pfad = datei.name
+    try:
+        skript = ('set the clipboard to (read (POSIX file "%s") as «class PNGf»)'
+                  % pfad.replace('"', '\\"'))
+        ergebnis = subprocess.run(["osascript", "-e", skript],
+                                  capture_output=True, timeout=15)
+        return ergebnis.returncode == 0
+    finally:
+        try:
+            os.remove(pfad)
+        except OSError:
+            pass
+
+
+def _bild_in_zwischenablage_linux(png: bytes) -> bool:
+    """``wl-copy`` oder ``xclip`` - beide bleiben im Hintergrund stehen.
+
+    Sie halten die Auswahl, bis ein anderes Programm sie uebernimmt. Mit
+    abgefangener Ausgabe wartete ``subprocess.run`` deshalb bis zur
+    Zeitgrenze auf ein Dateiende, das nie kommt - daher ``DEVNULL``.
+    """
+    for befehl in (["wl-copy", "--type", "image/png"],
+                   ["xclip", "-selection", "clipboard", "-t", "image/png", "-i"]):
+        if not shutil.which(befehl[0]):
+            continue
+        try:
+            ergebnis = subprocess.run(befehl, input=png, timeout=15,
+                                      stdout=subprocess.DEVNULL,
+                                      stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.debug("%s gescheitert: %s", befehl[0], exc)
+            continue
+        if ergebnis.returncode == 0:
+            return True
+    return False

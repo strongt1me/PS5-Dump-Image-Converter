@@ -107,6 +107,62 @@ class PkgReaderWaechter(unittest.TestCase):
         self.assertEqual(self.gui._pkg_content_id_teile(""),
                          ("", "", "pkgreader.region_unknown"))
 
+    def _pkg_lesen_ausfuehren(self, inhalt: bytes):
+        """Fuehrt ``_show_pkg_reader`` wirklich aus - Dialoge und Werkzeug attrappiert."""
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as ordner:
+            pfad = os.path.join(ordner, "paket.pkg")
+            with open(pfad, "wb") as fh:
+                fh.write(inhalt)
+            gui = self.gui.__new__(self.gui)
+            gui._current_language = "de"
+            gui.root = mock.MagicMock()
+            gui._get_source_dialog_initial_dir = lambda: ""
+            gui._remember_source_dialog_path = mock.MagicMock()
+            gui._render_pkg_reader_window = mock.MagicMock()
+            m = self.modul
+            ergebnis = {"ist_pkg": True, "typ": "FullDebug", "kopf": {}, "eintraege": []}
+            with mock.patch.object(m.prosperopkg, "werkzeug_finden", return_value="prosperopkg.exe"), \
+                    mock.patch.object(m.prosperopkg, "paket_lesen", return_value=ergebnis) as lesen, \
+                    mock.patch.object(m.filedialog, "askopenfilename", return_value=pfad), \
+                    mock.patch.object(m.messagebox, "showinfo") as info, \
+                    mock.patch.object(m.messagebox, "showwarning") as warnung:
+                gui._show_pkg_reader()
+        return lesen, info, warnung, gui
+
+    def test_update_paket_wird_erklaert_statt_abgewiesen(self):
+        """Ein Delta (LIH) ist keine "fremde Datei" - es braucht sein Grundpaket.
+
+        LibProsperoPkg kennt die Art nicht und meldete "keine PS5-PKG". Seit
+        23.09.2026 erklaert das Fenster, was ein Update-Paket ist, und nennt
+        den Fehlercode, mit dem die Konsole ein unpassendes abweist.
+        """
+        lesen, info, warnung, _gui = self._pkg_lesen_ausfuehren(b"\x7fLIH" + b"\0" * 60)
+        lesen.assert_not_called()
+        warnung.assert_not_called()
+        self.assertEqual(info.call_count, 1)
+        text = info.call_args[0][1]
+        self.assertIn("CE-107891-6", text)
+        self.assertIn("paket.pkg", text)
+
+    def test_volles_paket_geht_den_gewohnten_weg(self):
+        lesen, info, _warnung, gui = self._pkg_lesen_ausfuehren(b"\x7fFIH\x00\x00" + b"\0" * 60)
+        lesen.assert_called_once()
+        info.assert_not_called()
+        gui._render_pkg_reader_window.assert_called_once()
+
+    def test_pkg_entpacken_erklaert_update_pakete(self):
+        """Die Weiche in "PKG entpacken" faengt das Delta vor "keine PKG" ab."""
+        fenster = _methode(self.quelle, "_show_pkg_entpacken")
+        delta = fenster.find('art == "ps5_delta"')
+        fremd = fenster.find('art != "ps4"')
+        self.assertGreaterEqual(delta, 0, "Zweig fuer Update-Pakete fehlt")
+        self.assertGreaterEqual(fremd, 0, "Anker 'art != \"ps4\"' nicht gefunden")
+        self.assertLess(delta, fremd, "Delta wuerde vorher als 'keine PKG' abgewiesen")
+        self.assertIn("pkgentpacken.ps5_delta", fenster)
+
     def test_alle_pkgreader_schluessel_zweisprachig(self):
         from ps5_validator.utils.i18n import STRINGS
         verwendet = set(re.findall(r"pkgreader\.[a-z_]+", self.quelle))

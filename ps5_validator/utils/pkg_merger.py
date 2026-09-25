@@ -71,10 +71,23 @@ MELDUNGEN = {
     "unerwartetes_signed_byte": "Unerwartetes signed byte 0x{wert} im FIH-Header.",
     "unerwartete_formatversion": "Unerwartete Formatversion {version}.",
     "kein_subcontainer_kopf": "Metadaten-Teil beginnt nicht mit dem Subcontainer-Header.",
+    # Die uebrigen Pruefgruende standen bis zur Durchsicht (Runde 16,
+    # 25.09.2026) als f-Zeichenketten fest im Quelltext und kamen ueber die
+    # Fehlerliste im Fenster deutsch vor einer englischen Oberflaeche an.
+    "wurzelteil_fehlt": "Mindestens das Wurzelteil (_0) wird benoetigt.",
+    "cnt_versatz": "Eingebetteter Subcontainer-Offset {cnt} entspricht nicht Image-Offset+Groesse {soll}.",
+    "teil_fehlt": "Teil fehlt: '{pfad}'.",
+    "summe_passt_nicht": ("Summe der nummerierten Teile ({summe}) entspricht nicht dem "
+                          "eingebetteten Subcontainer-Offset ({cnt})."),
+    "meta_fehlt": "Metadaten-Teil fehlt: '{pfad}'.",
+    "validierung_fehlgeschlagen": "Split-Set-Validierung fehlgeschlagen: {fehler}",
+    # Abbruch durch den Aufrufer (Durchsicht, Runde 19, U1-5). Die .tmp ist
+    # dann schon entfernt - im Zielordner liegt nichts Halbes.
+    "abgebrochen": "[stop] Zusammenfuegen abgebrochen - '{name}' wurde nicht geschrieben.",
 }
 
 
-def _melde(log, texte, kennung: str, **werte) -> None:
+def _melde(log, texte, kennung: str, /, **werte) -> None:
     """Schickt eine Meldung ans Protokoll - uebersetzt, wenn moeglich."""
     if not log:
         return
@@ -82,7 +95,7 @@ def _melde(log, texte, kennung: str, **werte) -> None:
     log(vorlage.format(**werte))
 
 
-def _text(texte, kennung: str, **werte) -> str:
+def _text(texte, kennung: str, /, **werte) -> str:
     """Eine Vorlage, uebersetzt wenn moeglich - fuer Texte ohne Protokoll."""
     vorlage = (texte or {}).get(kennung) or MELDUNGEN[kennung]
     return vorlage.format(**werte)
@@ -101,6 +114,10 @@ LogFn = Callable[[str], None]
 
 class PkgMergeError(Exception):
     """Wird ausgeloest, wenn ein Split-Set die strukturelle Validierung nicht besteht."""
+
+
+class MergeAbgebrochen(PkgMergeError):
+    """Der Aufrufer hat abgebrochen; die angefangene ``.tmp`` ist schon entfernt."""
 
 
 @dataclass
@@ -233,7 +250,7 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
                        texte: dict | None = None) -> MergeValidation:
     """Prüft einen Split-Satz gegen das finalisierte FIH-Layout, ohne etwas zu schreiben."""
     if not numbered_pieces:
-        raise ValueError("Mindestens das Wurzelteil (_0) wird benötigt.")
+        raise ValueError(_text(texte, "wurzelteil_fehlt"))
 
     errors: list[str] = []
     head, lesefehler = _read_head(numbered_pieces[0], _HEAD_READ_SIZE)
@@ -267,28 +284,24 @@ def validate_split_set(numbered_pieces: list[str], meta_piece: str | None,
         cnt_offset = struct.unpack_from("<Q", head, FIH_EMBEDDED_CNT_OFFSET_OFFSET)[0]
 
         if cnt_offset != pfs_offset + pfs_size:
-            errors.append(
-                f"Eingebetteter Subcontainer-Offset {cnt_offset} entspricht nicht "
-                f"Image-Offset+Größe {pfs_offset + pfs_size}."
-            )
+            errors.append(_text(texte, "cnt_versatz", cnt=cnt_offset,
+                                soll=pfs_offset + pfs_size))
 
     numbered_size = 0
     for piece in numbered_pieces:
         if not os.path.isfile(piece):
-            errors.append(f"Teil fehlt: '{piece}'.")
+            errors.append(_text(texte, "teil_fehlt", pfad=piece))
         else:
             numbered_size += os.path.getsize(piece)
 
     if not errors and cnt_offset != numbered_size:
-        errors.append(
-            f"Summe der nummerierten Teile ({numbered_size}) entspricht nicht dem "
-            f"eingebetteten Subcontainer-Offset ({cnt_offset})."
-        )
+        errors.append(_text(texte, "summe_passt_nicht", summe=numbered_size,
+                            cnt=cnt_offset))
 
     meta_size = 0
     if meta_piece is not None:
         if not os.path.isfile(meta_piece):
-            errors.append(f"Metadaten-Teil fehlt: '{meta_piece}'.")
+            errors.append(_text(texte, "meta_fehlt", pfad=meta_piece))
         else:
             meta_size = os.path.getsize(meta_piece)
             meta_head, meta_lesefehler = _read_head(meta_piece, 4)
@@ -324,18 +337,28 @@ def merge_split_set(
     compute_digest: bool = False,
     log: LogFn | None = None,
     texte: dict | None = None,
+    abbruch: Callable[[], bool] | None = None,
 ) -> MergeResult:
     """Fügt einen validierten Split-Satz per Byte-Konkatenation zu `output_path` zusammen.
 
+    ``abbruch`` wird vor jedem Block (1 MiB) gefragt. Bis zur Durchsicht
+    (Runde 19, U1-5) gab es ihn nicht: Ein Satz von 50-100 GB liess sich
+    nicht anhalten, das Fenster verweigerte das Schliessen, und damit blieb
+    auch das Programm offen - nur ein Beenden des Prozesses half, und dann
+    blieb die ``.tmp`` im Zielordner liegen.
+
     Raises:
         PkgMergeError: Der Satz besteht die strukturelle Validierung nicht.
+        MergeAbgebrochen: ``abbruch`` hat True geliefert; die ``.tmp`` ist
+            entfernt.
     """
     if not numbered_pieces:
-        raise ValueError("Mindestens das Wurzelteil (_0) wird benötigt.")
+        raise ValueError(_text(texte, "wurzelteil_fehlt"))
 
     validation = validate_split_set(numbered_pieces, meta_piece, texte)
     if not validation.is_valid:
-        raise PkgMergeError("Split-Set-Validierung fehlgeschlagen: " + "; ".join(validation.errors))
+        raise PkgMergeError(_text(texte, "validierung_fehlgeschlagen",
+                                  fehler="; ".join(validation.errors)))
 
     ordered = list(numbered_pieces)
     if meta_piece is not None:
@@ -354,6 +377,10 @@ def merge_split_set(
                 _melde(log, texte, "haengt_an", name=os.path.basename(piece))
                 with open(piece, "rb") as in_f:
                     while True:
+                        if abbruch is not None and abbruch():
+                            raise MergeAbgebrochen(_text(
+                                texte, "abgebrochen",
+                                name=_base_name_of(numbered_pieces[0])))
                         chunk = in_f.read(_COPY_CHUNK_SIZE)
                         if not chunk:
                             break
@@ -389,10 +416,12 @@ def merge_directory(
     compute_digest: bool = False,
     log: LogFn | None = None,
     texte: dict | None = None,
+    abbruch: Callable[[], bool] | None = None,
 ) -> list[MergeResult]:
     """Findet und führt alle vollständigen Split-Sets in `input_dir` zusammen.
 
     Sets ohne Wurzelteil (`_0`) werden übersprungen und protokolliert.
+    ``abbruch`` siehe :func:`merge_split_set`.
     """
     output_dir = output_dir or input_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -408,7 +437,7 @@ def merge_directory(
                                 split_set.meta is not None, texte))
         results.append(
             merge_split_set(split_set.ordered_numbered, split_set.meta, output_path,
-                            compute_digest, log, texte)
+                            compute_digest, log, texte, abbruch=abbruch)
         )
 
     _melde(log, texte, "fertig_alle")

@@ -45,9 +45,14 @@ def print_header(title):
 
 def pruefe_pyinstaller_installed():
     print_header("TEST: PyInstaller Installation")
+    # Gefragt wird dieselbe Umgebung, mit der Build_EXE.ps1 baut
+    # (``$PYTHON -m PyInstaller``), nicht irgendein ``pyinstaller`` im PATH.
+    # Bis 23.09.2026 stand hier der PATH-Aufruf: Auf dem neuen Rechner fehlte
+    # er, obwohl die .venv PyInstaller hatte - und umgekehrt haette ein
+    # fremdes PyInstaller im PATH eine .venv ohne PyInstaller gedeckt.
     try:
-        result = subprocess.run(['pyinstaller', '--version'],
-                              capture_output=True, text=True, timeout=5)
+        result = subprocess.run([sys.executable, '-m', 'PyInstaller', '--version'],
+                              capture_output=True, text=True, timeout=60)
         if result.returncode == 0:
             version = result.stdout.strip()
             print(f"  {GREEN}[OK]{RESET}  PyInstaller {version}")

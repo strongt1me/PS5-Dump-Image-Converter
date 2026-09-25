@@ -141,7 +141,8 @@ def _datei_sha256(pfad: str) -> str:
     return summe.hexdigest()
 
 
-def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
+def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str, *,
+                        text: Callable[..., str] | None = None) -> None:
     """Prueft die mitgelieferte Datei gegen ``pruefsummen.json``.
 
     Fehlt die Liste, wird nicht geprueft - aber auch nicht abgebrochen: Ein
@@ -154,6 +155,12 @@ def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
     Mach-O-Datei neu, und die Signatur steht in der Datei selbst. Ohne diesen
     Wert haette eine geaenderte Signatur jede .ffpkg-Aufgabe der Mac-App an
     genau dieser Pruefung scheitern lassen.
+
+    Args:
+        text: Uebersetzer fuer die Fehlermeldung - die Oberflaeche zeigt sie
+            beim Start einer .ffpkg-Aufgabe (Durchsicht, Runde 16). Ohne ihn,
+            etwa im Bauskript ueber :func:`ufs2tool_buendel_pruefen`, bleibt
+            es bei der deutschen Vorgabe.
     """
     liste = os.path.join(wurzel, "pruefsummen.json")
     if not os.path.isfile(liste):
@@ -171,6 +178,9 @@ def ufs2tool_pruefsumme(wurzel: str, kennung: str, pfad: str) -> None:
         return
     gemessen = _datei_sha256(pfad)
     if gemessen not in (erwartet, im_buendel):
+        if text is not None:
+            raise RuntimeError(text("werkzeuge.ufs2tool_pruefsumme", kennung=kennung,
+                                    erwartet=erwartet, gemessen=gemessen))
         raise RuntimeError(
             f"UFS2Tool-v4.1-Integritaetspruefung fuer {kennung} fehlgeschlagen "
             f"(erwartet {erwartet}, erhalten {gemessen})."
@@ -318,20 +328,21 @@ def ufs2tool_bereitstellen(wurzel_finden: Callable[[str], str],
 
     wurzel = wurzel_finden(UFS2TOOL_ORDNER)
     kennung = ufs2tool_kennung()
+    # Die Saetze landen in einem Fehlerdialog, nicht nur im Protokoll -
+    # deshalb gehen sie durch den uebergebenen Uebersetzer. Ohne einen
+    # (etwa im Pruefstand) nennt schluessel_zeigen den Schluessel, statt
+    # eine deutsche Vorgabe in eine englische Oberflaeche zu tragen. Bis zur
+    # Durchsicht (Runde 16) galt das nur fuer den ersten der drei Saetze.
+    uebersetzen = text or schluessel_zeigen
     if not kennung:
-        # Der Satz landet in einem Fehlerdialog, nicht nur im Protokoll -
-        # deshalb geht er durch den uebergebenen Uebersetzer. Ohne einen
-        # (etwa im Pruefstand) nennt schluessel_zeigen den Schluessel, statt
-        # eine deutsche Vorgabe in eine englische Oberflaeche zu tragen.
-        uebersetzen = text or schluessel_zeigen
         raise RuntimeError(uebersetzen("werkzeuge.ufs2tool_missing",
                                        system=systemname(),
                                        maschine=platform.machine()))
     pfad = os.path.join(wurzel, kennung, _ufs2tool_dateiname(kennung))
     if not os.path.isfile(pfad):
-        raise RuntimeError(f"UFS2Tool-v4.1 fehlt: {pfad}")
+        raise RuntimeError(uebersetzen("werkzeuge.ufs2tool_datei_fehlt", pfad=pfad))
 
-    ufs2tool_pruefsumme(wurzel, kennung, pfad)
+    ufs2tool_pruefsumme(wurzel, kennung, pfad, text=uebersetzen)
 
     if not IST_WINDOWS:
         # Aus dem Buendel kommt die Datei ohne Ausfuehrungsrecht.

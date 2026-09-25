@@ -30,6 +30,7 @@ elfldr: OnionHEN sagt selbst "The elfldr on port 9021 is REQUIRED".
 """
 from __future__ import annotations
 
+import codecs
 import json
 import os
 import socket
@@ -54,6 +55,10 @@ ELFLDR_NAME = "elfldr-ps5_v0.26.elf"
 #: Wie lange nach dem Start von elfldr auf Port 9021 gewartet wird.
 ELFLDR_WARTEN = 45.0
 
+#: In welchen Stuecken :func:`ueber_elfldr` sendet - die Zeitgrenze gilt je
+#: Stueck (siehe :func:`stueckweise_senden`).
+SENDESTUECK = 64 * 1024
+
 #: Wege, die dieses Modul kennt.
 WEG_ELFLDR = "elfldr"          # 9021 stand schon offen
 WEG_GEWECKT = "geweckt"        # elfldr erst gestartet, dann 9021 benutzt
@@ -77,6 +82,25 @@ def port_offen(host: str, port: int, timeout: float = 1.5) -> bool:
         buchse.close()
 
 
+def stueckweise_senden(verbindung: socket.socket, daten: bytes) -> None:
+    """Sendet alles - mit der Zeitgrenze der Buchse je Stueck.
+
+    Seit Python 3.5 gilt die Zeitgrenze bei ``sendall`` fuer den ganzen
+    Aufruf. Bei den gemessenen 1,1 MB/s der Leitung zur Konsole brauchen
+    62 MB knapp eine Minute - mit 30 s brach der Versand grosser Payloads
+    bis zum 24.09.2026 jedes Mal ab (Durchsicht, U3-5). ``send`` wartet je
+    Aufruf hoechstens die Zeitgrenze; eine wirklich stehende Leitung faellt
+    so trotzdem auf.
+    """
+    ansicht = memoryview(daten)
+    gesendet = 0
+    while gesendet < len(ansicht):
+        anzahl = verbindung.send(ansicht[gesendet:gesendet + SENDESTUECK])
+        if anzahl <= 0:
+            raise ConnectionError("Die Konsole nimmt keine Daten mehr an.")
+        gesendet += anzahl
+
+
 def ueber_elfldr(host: str, daten: bytes, port: int = ELFLDR_PORT,
                  timeout: float = 30.0) -> str:
     """Schiebt das Payload zu elfldr und liest zurueck, was es ausgibt.
@@ -85,10 +109,13 @@ def ueber_elfldr(host: str, daten: bytes, port: int = ELFLDR_PORT,
     deshalb das ``shutdown``. Was danach zurueckkommt, ist die Ausgabe des
     Payloads; ohne sie liesse sich Erfolg nicht von Fehlschlag
     unterscheiden.
+
+    ``timeout`` gilt je Sende- und Leseschritt, nicht fuer den ganzen
+    Versand.
     """
     teile: list[bytes] = []
     with socket.create_connection((host, int(port)), timeout=timeout) as verbindung:
-        verbindung.sendall(daten)
+        stueckweise_senden(verbindung, daten)
         verbindung.shutdown(socket.SHUT_WR)
         while True:
             try:
@@ -99,6 +126,59 @@ def ueber_elfldr(host: str, daten: bytes, port: int = ELFLDR_PORT,
                 break
             teile.append(stueck)
     return b"".join(teile).decode("utf-8", "replace").strip()
+
+
+class Mitleser:
+    """Schickt ein Payload an elfldr und liest seine Ausgabe stueckweise mit.
+
+    :func:`ueber_elfldr` liest, bis die Leitung ``timeout`` Sekunden
+    schweigt, und gibt dann alles auf einmal zurueck. Fuer ein Payload, das
+    minutenlang laeuft und zwischendurch etwas meldet, taugt das nicht: Das
+    PIN-Payload von ActRemoteLink wartet bis zu 300 s auf Chiaki und
+    schreibt erst dann "PAIRING SUCCESS" - der Aufrufer muss zwischendurch
+    nachsehen und abbrechen koennen.
+
+    Gesendet wird sofort im Erzeuger - ein Fehler kommt also dort an, nicht
+    erst beim ersten Lesen. :meth:`lesen` wartet hoechstens ``takt``
+    Sekunden und liefert, was bis dahin kam (bei Stille ""). Schliesst die
+    Konsole die Verbindung - das Payload hat sich beendet -, steht ``zu``.
+    """
+
+    def __init__(self, host: str, daten: bytes, port: int = ELFLDR_PORT,
+                 timeout: float = 30.0, takt: float = 1.0) -> None:
+        self.zu = False
+        self._dekoder = codecs.getincrementaldecoder("utf-8")("replace")
+        self._buchse = socket.create_connection((host, int(port)),
+                                                timeout=timeout)
+        try:
+            stueckweise_senden(self._buchse, daten)
+            self._buchse.shutdown(socket.SHUT_WR)
+            self._buchse.settimeout(takt)
+        except BaseException:
+            self._buchse.close()
+            raise
+
+    def lesen(self) -> str:
+        """Was seit dem letzten Aufruf kam - "" bei Stille oder am Ende."""
+        if self.zu:
+            return ""
+        try:
+            stueck = self._buchse.recv(4096)
+        except (socket.timeout, TimeoutError):
+            return ""
+        except OSError:
+            stueck = b""
+        if not stueck:
+            self.zu = True
+            return self._dekoder.decode(b"", final=True)
+        return self._dekoder.decode(stueck)
+
+    def schliessen(self) -> None:
+        self.zu = True
+        try:
+            self._buchse.close()
+        except OSError:
+            pass
 
 
 def _pldmgr_ruf(host: str, pfad: str, koerper: bytes | None = None,
@@ -192,7 +272,8 @@ def _satz(texte: "dict[str, str] | None", kennung: str, **werte) -> str:
 def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
            pldmgr_port: int = PLDMGR_PORT,
            elfldr_pfad: str = "",
-           texte: "dict[str, str] | None" = None) -> tuple[str, str, str]:
+           texte: "dict[str, str] | None" = None,
+           timeout: float = 30.0) -> tuple[str, str, str]:
     """Nimmt den Weg, der offensteht - elfldr zuerst.
 
     Drei Faelle, in dieser Reihenfolge:
@@ -205,10 +286,13 @@ def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
     3. 9021 zu, kein elfldr zur Hand: das Payload geht direkt ueber den
        Payload Manager - es laeuft, aber ohne Rueckmeldung.
 
+    ``timeout`` geht an :func:`ueber_elfldr` - je Schritt, nicht gesamt.
+
     Rueckgabe: (Weg, Ausgabe, Bemerkung).
     """
     if port_offen(host, elfldr_port):
-        return WEG_ELFLDR, ueber_elfldr(host, daten, port=elfldr_port), ""
+        return (WEG_ELFLDR,
+                ueber_elfldr(host, daten, port=elfldr_port, timeout=timeout), "")
 
     if not port_offen(host, pldmgr_port):
         raise VersandFehler(_satz(texte, "nichts_erreichbar",
@@ -219,7 +303,8 @@ def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
             elfldr_daten = fh.read()
         if elfldr_aufwecken(host, elfldr_daten, os.path.basename(elfldr_pfad),
                             elfldr_port=elfldr_port, pldmgr_port=pldmgr_port):
-            return (WEG_GEWECKT, ueber_elfldr(host, daten, port=elfldr_port),
+            return (WEG_GEWECKT,
+                    ueber_elfldr(host, daten, port=elfldr_port, timeout=timeout),
                     os.path.basename(elfldr_pfad))
 
     ziel = ueber_pldmgr(host, daten, name, port=pldmgr_port)

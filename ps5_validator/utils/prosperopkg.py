@@ -381,12 +381,18 @@ def _zahl(text: str) -> int:
 
 def pruefen(quelle: str,
             melden: Callable[[str], None] | None = None,
-            texte: "dict[str, str] | None" = None) -> dict:
+            texte: "dict[str, str] | None" = None,
+            prozess_ablage: dict | None = None) -> dict:
     """Sagt, ob ein Backup als Debug-Paket starten wuerde.
 
     Args:
         quelle: Der Ordner des Backups (ein entpackter Dump).
         melden: Bekommt jede Ausgabezeile.
+        prozess_ablage: Wie bei :func:`bauen` - nimmt den laufenden Prozess
+            auf, damit "Abbrechen" ihn beenden kann. Bis zur Durchsicht
+            (Runde 19, H11-8) fehlte er hier: Der Knopf war waehrend der
+            Pruefung freigeschaltet, beendete aber hoechstens einen alten,
+            laengst fertigen Bauprozess - inspect lief bis zu 600 s weiter.
 
     Returns:
         ``{"bereit": bool, "blocker": [(Art, Pfad)], "hinweise": [str],
@@ -396,7 +402,8 @@ def pruefen(quelle: str,
         ProsperoFehler: Das Werkzeug fehlt oder bricht ab.
     """
     code, zeilen = _laufen_lassen(["inspect", "--source", quelle], melden,
-                                  zeitgrenze=600.0, texte=texte)
+                                  zeitgrenze=600.0, prozess_ablage=prozess_ablage,
+                                  texte=texte)
     if code != 0:
         raise ProsperoFehler(
             "prosperopkg inspect endete mit %d: %s"

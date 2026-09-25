@@ -789,7 +789,7 @@ class Diagnosebericht:
         except Exception as exc:  # noqa: BLE001
             return [z("Pruefung nicht moeglich", exc)]
         ordner = self._mitgeliefert_finden("helloworld")
-        lizenz = self._mitgeliefert_finden("THIRD_PARTY_LICENSES.md")
+        lizenz = self._mitgeliefert_finden("THIRD_PARTY_LICENSES.md", datei=True)
         zeilen: list[str] = []
         payloads = werkzeugstaende.payloads_lesen(ordner)
         zeilen.append(z("Nutzlasten gefunden", len(payloads)))
@@ -1180,8 +1180,12 @@ class Diagnosebericht:
         """
         waechter = getattr(self, "fortschritts_waechter", None)
         if waechter is None:
-            return ["(kein Wächter vorhanden)"]
-        return waechter.bericht()
+            return [self._t("waechter.kein_waechter")]
+        # Der Waechter kennt keinen Uebersetzer; seine Saetze kommen hier
+        # uebersetzt mit - bis zum 24.09.2026 standen sie auch auf Englisch
+        # deutsch da (Durchsicht H1-12).
+        return waechter.bericht(texte={kennung: self._t("waechter." + kennung)
+                                       for kennung in waechter.MELDUNGEN})
 
     @staticmethod
     def _diagnose_protokolldatei(zeilen_anzahl: int = 80) -> list[str]:

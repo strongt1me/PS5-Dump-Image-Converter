@@ -106,6 +106,20 @@ class DoktorTests(unittest.TestCase):
         self.assertTrue(any(z.startswith(self.haupt.DOKTOR_FEHLER)
                             for z in zeilen))
 
+    def test_der_rechtehinweis_nennt_was_wirklich_rechte_braucht(self) -> None:
+        """Praxisbefund P2 (23.09.2026): "Aufgabe 3 (Einhaengen) braucht
+        sie" war veraltet - .exfat entpackt laengst ohne Rechte."""
+        if sys.platform != "win32":
+            self.skipTest("Der Rechtehinweis gilt nur unter Windows.")
+        from unittest import mock
+        with mock.patch.object(self.haupt, "_system_ist_administrator",
+                               return_value=False):
+            zeilen = self.pruefe(self.ordner, self.ordner)
+        rechte = [z for z in zeilen if "Administratorrechte" in z]
+        self.assertEqual(1, len(rechte), zeilen)
+        self.assertIn(".ffpkg", rechte[0])
+        self.assertNotIn("Aufgabe 3", rechte[0])
+
     def test_kein_zielordner_ist_kein_fehler(self) -> None:
         """Beim Start ist noch keiner gewählt - das ist kein Mangel."""
         zeilen = self.pruefe(self.ordner, "")

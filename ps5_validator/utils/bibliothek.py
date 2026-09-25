@@ -28,6 +28,7 @@ import hashlib
 import io
 import json
 import os
+import re
 import threading
 import time
 from typing import Any, Callable, Iterable
@@ -335,6 +336,357 @@ def name_zuordnen(name: str, verzeichnis: dict[str, str]) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Namen, Fassungen, Firmware
+#
+# Seit dem 25.09.2026 zeigt die Bibliothek mehr als Titel und Fassung: die
+# Mindest-Firmware gegen die der Konsole, die neueste Fassung laut
+# PROSPEROPatches und einheitliche Namen zum Umbenennen. Die Anregung kam aus
+# dem "PKG Viewer" von Loopayeh (MIT-Lizenz); uebernommen sind Ideen, kein
+# Code. Hier steht nur Rechnerei ueber Zeichenketten - ohne Dateisystem,
+# Netz oder Tk.
+# ---------------------------------------------------------------------------
+
+#: Leere Angaben, wie sie die Metadatenleser liefern ("–" ist ein Gedankenstrich).
+_LEER: frozenset = frozenset({"", "-", "–", "?", "unbekannt", "unknown"})
+
+#: Eine Title-ID steht allein - "PPSA01234", "CUSA12345".
+_KENNUNG_RE = re.compile(r"[A-Z]{4}\d{5}")
+
+#: Die Region als Kuerzel nach den ersten beiden Zeichen der Content-ID.
+REGION_KURZ: dict[str, str] = {"EP": "EU", "UP": "US", "JP": "JP",
+                               "HP": "AS", "AP": "AS", "KP": "KR"}
+
+#: Dasselbe aus den Regionsnamen, die die Metadatenleser schreiben - der
+#: aus MkPFS ("EUR", "JPN") und der eigene ("Europa", "Japan").
+_REGION_AUS_NAMEN: dict[str, str] = {
+    "eur": "EU", "europa": "EU", "europe": "EU",
+    "usa": "US", "americas": "US",
+    "jpn": "JP", "japan": "JP",
+    "asia": "AS", "asien": "AS",
+    "kor": "KR", "korea": "KR",
+}
+
+
+def _wert(angaben: dict, schluessel: str) -> str:
+    """Ein Feld der Angaben - Platzhalter wie "–" gelten als leer."""
+    wert = str((angaben or {}).get(schluessel) or "").strip()
+    return "" if wert.lower() in _LEER else wert
+
+
+def region_kurz(angaben: dict) -> str:
+    """Die Region als Kuerzel ("EU", "US", ...), oder "" wenn unbekannt.
+
+    Zuerst aus der Content-ID ("EP0001-PPSA01234_00-..." -> "EU"): Sie traegt
+    die Region verlaesslich. Das Feld ``region`` ist je nach Leser anders
+    beschriftet und kommt deshalb erst danach.
+    """
+    kennung = _wert(angaben, "content_id").upper()
+    if kennung[:2] in REGION_KURZ:
+        return REGION_KURZ[kennung[:2]]
+    return _REGION_AUS_NAMEN.get(_wert(angaben, "region").lower(), "")
+
+
+def fassung_kurz(fassung: str) -> str:
+    """"01.008.000" -> "1.8.0" - fuehrende Nullen je Stelle fallen weg.
+
+    Was nicht nur aus Ziffern und Punkten besteht, bleibt, wie es ist.
+    """
+    text = str(fassung or "").strip()
+    teile = text.split(".")
+    if not text or not all(teil.isdigit() for teil in teile):
+        return text
+    return ".".join(str(int(teil)) for teil in teile)
+
+
+def fassung_teile(fassung: str) -> tuple[int, ...] | None:
+    """Die Zahlen einer Fassung zum Vergleichen, oder None."""
+    zahlen = re.findall(r"\d+", str(fassung or ""))
+    return tuple(int(z) for z in zahlen) if zahlen else None
+
+
+def fassung_vergleichen(eigene: str, andere: str) -> int | None:
+    """-1, 0 oder 1 wie ``eigene`` gegen ``andere`` - None, wenn eine fehlt.
+
+    Stelle fuer Stelle als Zahl: "01.010.000" ist neuer als "01.008.000",
+    auch wenn die Zeichenkette kleiner aussieht. Fehlende Stellen zaehlen als
+    0 ("1.8" == "01.008.000").
+    """
+    links, rechts = fassung_teile(eigene), fassung_teile(andere)
+    if links is None or rechts is None:
+        return None
+    laenge = max(len(links), len(rechts))
+    links += (0,) * (laenge - len(links))
+    rechts += (0,) * (laenge - len(rechts))
+    return (links > rechts) - (links < rechts)
+
+
+def firmware_teile(firmware: str) -> tuple[int, int] | None:
+    """Haupt- und Nebenstand einer Firmware-Angabe, oder None.
+
+    Zwei Schreibweisen kommen vor: die der param.json nach der
+    Aufbereitung ("09.00.00.00", "9.00") und die der Konsolensuche
+    ("system-version: 12000020" - Hauptstand, Nebenstand, Rest).
+    """
+    text = str(firmware or "").strip().lower()
+    if text.startswith("0x"):
+        text = text[2:]
+    if not text or text in _LEER:
+        return None
+    treffer = re.match(r"(\d{1,2})\.(\d{1,2})", text)
+    if treffer:
+        return int(treffer.group(1)), int(treffer.group(2))
+    treffer = re.fullmatch(r"(\d{2})(\d{2})\d{4}(?:\d{8})?", text)
+    if treffer:
+        return int(treffer.group(1)), int(treffer.group(2))
+    return None
+
+
+def firmware_kurz(firmware: str) -> str:
+    """"09.00.00.00" -> "9.00", "12000020" -> "12.00"; unbekannt -> ""."""
+    teile = firmware_teile(firmware)
+    return "%d.%02d" % teile if teile else ""
+
+
+def firmware_vergleichen(verlangt: str, konsole: str) -> int | None:
+    """-1, 0 oder 1 wie die verlangte Firmware gegen die der Konsole.
+
+    ``1`` heisst: Das Spiel verlangt mehr, als die Konsole hat - ohne
+    BACKPORT startet es dort nicht. ``None``, wenn eine Seite unbekannt ist.
+    """
+    links, rechts = firmware_teile(verlangt), firmware_teile(konsole)
+    if links is None or rechts is None:
+        return None
+    return (links > rechts) - (links < rechts)
+
+
+# ---------------------------------------------------------------------------
+# Umbenennen
+# ---------------------------------------------------------------------------
+
+#: Die Namensformen - Kennung und Beispiel. Die ersten drei sind dieselben
+#: wie im Fenster "Dump umbenennen" (``dump_rename.build_presets``), damit
+#: beide Stellen gleich benennen; die vierte ist die Form des PKG Viewers.
+NAMENSFORMEN: tuple[str, ...] = (
+    "titel_kennung_fassung_region",     # Elden Ring - PPSA04610 - v1.17.0 - EU
+    "kennung_titel_fassung",            # PPSA04610 Elden Ring (01.017.000)
+    "kennung_titel",                    # PPSA04610 Elden Ring
+    "kennung",                          # PPSA04610
+)
+
+#: So lang darf der Titel im neuen Namen hoechstens werden. Windows kennt
+#: 260 Zeichen fuer den ganzen Pfad; ein Titel mit Untertitel und Edition
+#: kommt leicht auf 120.
+TITEL_HOECHSTENS: int = 120
+
+#: Die Zustaende eines Plans. Nur "bereit" wird umbenannt.
+BEREIT = "bereit"
+GLEICH = "gleich"
+OHNE_KENNUNG = "ohne_kennung"
+ZIEL_VORHANDEN = "ziel_vorhanden"
+DOPPELT = "doppelt"
+AUF_KONSOLE = "konsole"
+FEHLT = "fehlt"
+
+
+def neuer_name(angaben: dict, form: str) -> str:
+    """Der neue Name **ohne Endung** - oder "", wenn die Angaben nicht reichen.
+
+    Ohne Title-ID gibt es keinen Namen: Sie ist das Einzige, was jede Form
+    traegt, und ohne sie saehe das Ergebnis richtig aus und waere es nicht.
+    """
+    from .dump_rename import (PRESET_PPSA_ONLY, PRESET_PPSA_TITLE,
+                              PRESET_PPSA_TITLE_VERSION, build_presets,
+                              sanitize_name)
+
+    kennung = _wert(angaben, "title_id").upper()
+    if not _KENNUNG_RE.fullmatch(kennung):
+        return ""
+    titel = sanitize_name(_wert(angaben, "title"))[:TITEL_HOECHSTENS].strip()
+    fassung = _wert(angaben, "version")
+    if form == "titel_kennung_fassung_region":
+        teile = [titel] if titel else []
+        teile.append(kennung)
+        if fassung:
+            teile.append("v" + fassung_kurz(fassung))
+        region = region_kurz(angaben)
+        if region:
+            teile.append(region)
+        return sanitize_name(" - ".join(teile))
+    vorlagen = build_presets(kennung, titel, fassung, True, bool(fassung))
+    name = {"kennung_titel_fassung": vorlagen[PRESET_PPSA_TITLE_VERSION],
+            "kennung_titel": vorlagen[PRESET_PPSA_TITLE],
+            "kennung": vorlagen[PRESET_PPSA_ONLY]}.get(form, "")
+    return sanitize_name(name)
+
+
+def _vergleichsform(pfad: str) -> str:
+    return os.path.normcase(os.path.abspath(pfad))
+
+
+def umbenennen_planen(eintraege: Iterable[dict], form: str) -> list[dict[str, Any]]:
+    """Plant das Umbenennen - **ohne etwas anzufassen**.
+
+    Args:
+        eintraege: Eintraege der Bibliothek (``path``, ``kind``, ``meta``,
+            ``ps5``).
+        form: Eine der :data:`NAMENSFORMEN`.
+
+    Returns:
+        Je Eintrag ``{"eintrag", "alt", "neu", "zustand"}``. ``neu`` ist der
+        volle neue Pfad; Endungen bleiben, wie sie waren. Auf der Konsole
+        wird nichts umbenannt: Dort liest ShadowMount+ die Namen, und ein
+        Fehlgriff liesse ein Spiel verschwinden.
+    """
+    plan: list[dict[str, Any]] = []
+    vergeben: set[str] = set()
+    for eintrag in eintraege:
+        alt = str(eintrag.get("path") or "")
+        zeile: dict[str, Any] = {"eintrag": eintrag, "alt": alt, "neu": "",
+                                 "zustand": BEREIT}
+        plan.append(zeile)
+        if eintrag.get("ps5"):
+            zeile["zustand"] = AUF_KONSOLE
+            continue
+        if not alt or not os.path.exists(alt):
+            zeile["zustand"] = FEHLT
+            continue
+        name = neuer_name(eintrag.get("meta") or {}, form)
+        if not name:
+            zeile["zustand"] = OHNE_KENNUNG
+            continue
+        endung = "" if os.path.isdir(alt) else os.path.splitext(alt)[1]
+        neu = os.path.join(os.path.dirname(alt), name + endung)
+        zeile["neu"] = neu
+        if neu == alt:
+            zeile["zustand"] = GLEICH
+            continue
+        ziel = _vergleichsform(neu)
+        # Nur die Schreibweise anders ("elden ring" -> "Elden Ring"): Auf
+        # Windows und macOS "gibt" es das Ziel schon - es ist die Datei
+        # selbst. Das ist kein Hindernis, os.rename kann das.
+        if ziel != _vergleichsform(alt) and os.path.exists(neu):
+            zeile["zustand"] = ZIEL_VORHANDEN
+        elif ziel in vergeben:
+            zeile["zustand"] = DOPPELT
+        else:
+            vergeben.add(ziel)
+    return plan
+
+
+#: Wo die Protokolle zum Rueckgaengigmachen liegen - im Einstellungsordner.
+PROTOKOLL_MUSTER = "umbenannt_%s.json"
+
+
+def _protokoll_schreiben(ordner: str, paare: list[tuple[str, str]]) -> str:
+    """Legt das Protokoll eines Laufs ab - ohne es kann niemand zurueck."""
+    os.makedirs(ordner, exist_ok=True)
+    marke = time.strftime("%Y%m%d-%H%M%S")
+    pfad = os.path.join(ordner, PROTOKOLL_MUSTER % marke)
+    nummer = 1
+    while os.path.exists(pfad):
+        nummer += 1
+        pfad = os.path.join(ordner, PROTOKOLL_MUSTER % ("%s-%d" % (marke, nummer)))
+    zwischen = pfad + ".tmp"
+    with io.open(zwischen, "w", encoding="utf-8") as datei:
+        json.dump({"zeit": time.strftime("%Y-%m-%d %H:%M:%S"),
+                   "paare": [[alt, neu] for alt, neu in paare]},
+                  datei, ensure_ascii=False, indent=1)
+    os.replace(zwischen, pfad)
+    return pfad
+
+
+def umbenennen_ausfuehren(plan: Iterable[dict], protokoll_ordner: str,
+                          umbenennen: Callable[[str, str], None] | None = None
+                          ) -> dict[str, Any]:
+    """Benennt um, was im Plan bereit und gewaehlt ist.
+
+    Direkt davor wird noch einmal nachgesehen: Zwischen Plan und Ausfuehren
+    kann jemand eine Datei gleichen Namens angelegt haben, und
+    ``os.rename`` ueberschreibt unter Linux ohne Frage.
+
+    Args:
+        plan: Aus :func:`umbenennen_planen`; ``gewaehlt`` (Vorgabe True)
+            nimmt einzelne Zeilen heraus.
+        protokoll_ordner: Ablage fuer das Protokoll zum Rueckgaengigmachen.
+        umbenennen: Fuer Tests; Vorgabe ``os.rename``.
+
+    Returns:
+        ``{"erledigt": [(alt, neu)], "fehler": [(alt, text)], "protokoll": pfad}``.
+    """
+    tun = umbenennen or os.rename
+    erledigt: list[tuple[str, str]] = []
+    fehler: list[tuple[str, str]] = []
+    for zeile in plan:
+        if zeile.get("zustand") != BEREIT or not zeile.get("gewaehlt", True):
+            continue
+        alt, neu = str(zeile["alt"]), str(zeile["neu"])
+        if (_vergleichsform(alt) != _vergleichsform(neu)
+                and os.path.exists(neu)):
+            fehler.append((alt, ZIEL_VORHANDEN))
+            continue
+        try:
+            tun(alt, neu)
+        except OSError as exc:
+            fehler.append((alt, str(exc)))
+            continue
+        erledigt.append((alt, neu))
+    protokoll = ""
+    if erledigt:
+        try:
+            protokoll = _protokoll_schreiben(protokoll_ordner, erledigt)
+        except OSError as exc:
+            log.warning("Umbenennen: Protokoll nicht schreibbar (%s)", exc)
+    return {"erledigt": erledigt, "fehler": fehler, "protokoll": protokoll}
+
+
+def protokolle(ordner: str) -> list[str]:
+    """Die Protokolle, die sich noch rueckgaengig machen lassen - neueste zuerst."""
+    try:
+        namen = [n for n in os.listdir(ordner)
+                 if n.startswith("umbenannt_") and n.endswith(".json")]
+    except OSError:
+        return []
+    return [os.path.join(ordner, n) for n in sorted(namen, reverse=True)]
+
+
+def rueckgaengig(protokoll: str,
+                 umbenennen: Callable[[str, str], None] | None = None
+                 ) -> dict[str, Any]:
+    """Macht einen Lauf rueckgaengig - in umgekehrter Reihenfolge.
+
+    Zurueck geht nur, was noch unter dem neuen Namen liegt und dessen alter
+    Name frei ist; alles andere steht danach in ``fehler``. Das Protokoll
+    bekommt die Endung ``.erledigt``, damit es nicht ein zweites Mal
+    angeboten wird.
+    """
+    tun = umbenennen or os.rename
+    with io.open(protokoll, encoding="utf-8") as datei:
+        daten = json.load(datei)
+    paare = [(str(a), str(n)) for a, n in (daten.get("paare") or [])]
+    erledigt: list[tuple[str, str]] = []
+    fehler: list[tuple[str, str]] = []
+    for alt, neu in reversed(paare):
+        if not os.path.exists(neu):
+            fehler.append((neu, FEHLT))
+            continue
+        if (_vergleichsform(alt) != _vergleichsform(neu)
+                and os.path.exists(alt)):
+            fehler.append((alt, ZIEL_VORHANDEN))
+            continue
+        try:
+            tun(neu, alt)
+        except OSError as exc:
+            fehler.append((neu, str(exc)))
+            continue
+        erledigt.append((neu, alt))
+    try:
+        os.replace(protokoll, protokoll + ".erledigt")
+    except OSError as exc:
+        log.debug("Umbenennen: Protokoll %s nicht abgelegt (%s)", protokoll, exc)
+    return {"erledigt": erledigt, "fehler": fehler}
+
+
+# ---------------------------------------------------------------------------
 # Der Bildspeicher
 # ---------------------------------------------------------------------------
 
@@ -424,11 +776,15 @@ class Bildspeicher:
         Ohne diese Auskunft öffnet die Bibliothek bei jedem Aufschlagen
         wieder jeden Container, der gar kein Titelbild trägt - und das sind
         die teuersten Fälle, weil dabei alles durchsucht wird.
+
+        Gefragt wird nach dem **Feld** ``datei``: Seit dem 25.09.2026 kann
+        ein Eintrag auch nur Angaben tragen (:meth:`angaben_schreiben`), und
+        der hat gar nicht nach einem Bild gesucht.
         """
         with self._sperre:
             self._laden()
             eintrag = self._index.get(self.schluessel(pfad))
-            return bool(eintrag) and not eintrag.get("datei")
+            return bool(eintrag) and "datei" in eintrag and not eintrag["datei"]
 
     def schreiben(self, pfad: str, bilddaten: bytes | None,
                   endung: str = "png") -> str:
@@ -436,8 +792,11 @@ class Bildspeicher:
         with self._sperre:
             self._laden()
             kennung = self.schluessel(pfad)
+            # Was schon zum Eintrag gehoert (die Angaben), bleibt stehen.
+            vorher = dict(self._index.get(kennung) or {})
             if bilddaten is None:
-                self._index[kennung] = {"datei": "", "zeit": time.time()}
+                vorher.update(datei="", zeit=time.time())
+                self._index[kennung] = vorher
                 self._schreiben()
                 return ""
             name = "%s.%s" % (kennung, endung.lstrip("."))
@@ -449,9 +808,54 @@ class Bildspeicher:
             except OSError as exc:
                 log.debug("Bildspeicher: %s nicht schreibbar (%s)", ziel, exc)
                 return ""
-            self._index[kennung] = {"datei": name, "zeit": time.time()}
+            vorher.update(datei=name, zeit=time.time())
+            self._index[kennung] = vorher
             self._schreiben()
             return ziel
+
+    def angaben_lesen(self, pfad: str) -> dict[str, Any]:
+        """Die gemerkten erweiterten Angaben zu einer Datei, oder ``{}``.
+
+        Mindest-Firmware, SDK, Kategorie und Content-ID liegen im Abbild;
+        bei einer ``.ffpfsc`` heisst sie lesen, den Container zu oeffnen.
+        Gemerkt werden sie unter demselben Schluessel wie das Titelbild -
+        wird die Datei ersetzt, gelten sie nicht mehr.
+        """
+        with self._sperre:
+            self._laden()
+            eintrag = self._index.get(self.schluessel(pfad)) or {}
+            angaben = eintrag.get("angaben")
+            return dict(angaben) if isinstance(angaben, dict) else {}
+
+    def angaben_schreiben(self, pfad: str, angaben: dict[str, Any]) -> None:
+        """Merkt die erweiterten Angaben zu einer Datei."""
+        with self._sperre:
+            self._laden()
+            kennung = self.schluessel(pfad)
+            eintrag = dict(self._index.get(kennung) or {})
+            eintrag["angaben"] = {str(k): str(v) for k, v in dict(angaben).items()}
+            eintrag.setdefault("zeit", time.time())
+            self._index[kennung] = eintrag
+            self._schreiben()
+
+    def umziehen(self, alter_schluessel: str, neuer_pfad: str) -> bool:
+        """Nach dem Umbenennen: Bild und Angaben gehoeren zum neuen Namen.
+
+        Der Schluessel haengt am Pfad. Ohne Umzug oeffnete die Bibliothek
+        nach dem Umbenennen jeden Container noch einmal, nur um dasselbe
+        Titelbild wieder zu holen. Den alten Schluessel muss der Aufrufer
+        **vor** dem Umbenennen bilden - danach gibt es die Datei unter dem
+        alten Namen nicht mehr, und :meth:`schluessel` kaeme auf etwas
+        anderes.
+        """
+        with self._sperre:
+            self._laden()
+            eintrag = self._index.pop(alter_schluessel, None)
+            if eintrag is None:
+                return False
+            self._index[self.schluessel(neuer_pfad)] = eintrag
+            self._schreiben()
+            return True
 
     def aufraeumen(self) -> int:
         """Wirft weg, was lange niemand gebraucht hat. Liefert die Anzahl."""

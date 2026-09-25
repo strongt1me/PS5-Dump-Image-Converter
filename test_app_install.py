@@ -835,6 +835,9 @@ class OberflaecheTests(unittest.TestCase):
 
     def test_bericht_nennt_die_zielordner(self):
         gui = _gui()
+        # Der Bericht uebersetzt seit dem 24.09.2026 (Durchsicht H10-4) - hier
+        # die echte deutsche Fassung statt des Schluessels.
+        gui._t = lambda key, **kw: i18n.translate("de", key, **kw)
         tmp = tempfile.mkdtemp()
         try:
             angaben = app_install.pruefen(_app_ordner(tmp))[0]
@@ -847,6 +850,7 @@ class OberflaecheTests(unittest.TestCase):
 
     def test_bericht_zeigt_fehler_vor_der_freigabe(self):
         gui = _gui()
+        gui._t = lambda key, **kw: i18n.translate("de", key, **kw)
         text = gui._appinstall_bericht(None, ["etwas stimmt nicht"], [])
         self.assertIn("FEHLER", text)
         self.assertNotIn("Bereit zum Installieren", text)

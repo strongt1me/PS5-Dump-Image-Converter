@@ -426,9 +426,10 @@ def payload_senden(host: str, daten: bytes, port: int = ELFLDR_PORT,
     Manager - liefert nichts zurueck; dann bleibt die Protokolldatei
     auf der Konsole.
     """
+    # timeout ging bis zum 24.09.2026 hier verloren (Durchsicht, U3-14).
     _weg, ausgabe, _bemerkung = payload_versand.senden(
         host, daten, PAYLOAD_NAME, elfldr_port=port,
-        elfldr_pfad=elfldr_pfad)
+        elfldr_pfad=elfldr_pfad, timeout=timeout)
     return ausgabe
 
 

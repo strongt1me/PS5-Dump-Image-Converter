@@ -5,7 +5,8 @@ Ein echtes PS5-.pkg ist ein CNT(+PFS)+FIH-Container mit AES-XTS-Verschluesselung
 RSA-3072-Signatur. Dieses Modul liest ausschliesslich die unverschluesselten Strukturfelder
 (Header, Entry-Tabelle, Namen, Content-ID) und dekodiert optional unverschluesselte
 Klartext-Entries wie param.json. Es entschluesselt keine geschuetzten Entries und benoetigt
-keine privaten Schluessel.
+keine privaten Schluessel. Update-Pakete (Delta, ``LIH_MAGIC``) werden erkannt, aber
+nicht zerlegt.
 
 Byte-Layout durch Gegenlesen des quelloffenen LibProsperoPKG-Readers (GPL-3.0-or-later,
 https://github.com/SvenGDK/LibProsperoPKG) ermittelt; diese Implementierung ist eine
@@ -20,6 +21,21 @@ from dataclasses import dataclass, field
 
 CNT_MAGIC = b"\x7fCNT"
 FIH_MAGIC = b"\x7fFIH"
+
+#: Kennung eines PS5-Update-Pakets (Delta), wie es ``img_create
+#: --ref_pkg_path`` baut (bei uns: ``sony_sdk.befehl_bauen(grundpaket=...)``).
+#: Ein Delta traegt nur die geaenderten Dateien und verweist fuer alles andere
+#: auf Bloecke genau **eines** Grundpakets. Die Konsole prueft vor dem
+#: Zusammenfuehren dessen Digest; ist ein anderes Paket installiert - schon
+#: ein Neubau desselben Spiels hat einen anderen Digest -, endet die
+#: Installation mit CE-107891-6 (``[0x80b21165][DigestErr]``).
+#:
+#: Quelle: fpkg-builder (Drakmor, Tsuramatsu), gelesen am 23.09.2026. Das
+#: Archiv traegt keine Lizenz - uebernommen sind nur diese Formattatsachen,
+#: kein Code. **Nicht selbst gemessen:** Ein echtes Delta lag nicht vor. Der
+#: Kopf eines Deltas ist anders aufgebaut als der FIH-Kopf; deshalb liest
+#: dieser Leser aus einem Delta ausser der Kennung nichts heraus.
+LIH_MAGIC = b"\x7fLIH"
 
 #: Marke des Klartext-Profils von LibProsperoPkg.
 #:
@@ -45,6 +61,9 @@ FIH_SIGNED_BYTE_OFFSET = 0x05
 FIH_FORMAT_VERSION_OFFSET = 0x06
 FIH_PFS_IMAGE_OFFSET_OFFSET = 0x10
 FIH_PFS_IMAGE_SIZE_OFFSET = 0x18
+#: Absolute Lage eines PFS-Kopfs im Paket; darin steht der Seed (siehe
+#: ``_traegt_klartextmarke``).
+FIH_PFS_SUPERBLOCK_OFFSET_OFFSET = 0x20
 FIH_DATA_REGION_BLOCK_COUNT_OFFSET = 0x50
 FIH_EMBEDDED_CNT_OFFSET_OFFSET = 0x58
 FIH_INNER_IMAGE_BLOCK_COUNT_OFFSET = 0x90
@@ -56,6 +75,11 @@ FIH_INNER_IMAGE_LOGICAL_SIZE_OFFSET = 0xA8
 FIH_OUTER_FILE_COUNT_OFFSET = 0xF0
 FIH_FLAT_PATH_TABLE_BLOCK_COUNT_OFFSET = 0xF8
 FIH_HEADER_REGION_SIZE = 0x10000
+#: Kennung eines PFS-Kopfs (20130315) an dessen Stelle +0x08.
+PFS_MAGIC = 0x01332A0B
+PFS_MAGIC_OFFSET = 0x08
+#: Stelle des 16-Byte-Seeds im PFS-Kopf.
+PFS_SEED_OFFSET = 0x370
 FIH_READ_SIZE = 0x100  # genuegt fuer alle oben gelisteten FIH-Felder
 FIH_REQUIRED_FORMAT_VERSION = 3  # von der Konsolen-Mountpfad-Pruefung verlangte Formatversion
 
@@ -148,7 +172,7 @@ class FihHeader:
 @dataclass
 class PkgInfo:
     path: str
-    type: str  # "meta" | "full_debug" | "full_retail"
+    type: str  # "meta" | "full_debug" | "full_retail" | "delta"
     fih: FihHeader | None = None
     header: PkgHeader | None = None
     entries: list[PkgEntry] = field(default_factory=list)
@@ -167,7 +191,8 @@ def detect_pkg_type(path: str) -> str | None:
     """Erkennt den Pakettyp anhand der 4-Byte-Magic (und bei FIH des signed byte).
 
     Returns:
-        "meta", "full_debug", "full_retail" oder None, falls keine erkennbare PS5-PKG-Datei.
+        "meta", "full_debug", "full_retail", "delta" (Update-Paket, siehe
+        ``LIH_MAGIC``) oder None, falls keine erkennbare PS5-PKG-Datei.
     """
     with open(path, "rb") as f:
         head = f.read(6)
@@ -175,6 +200,8 @@ def detect_pkg_type(path: str) -> str | None:
         return None
     if head[:4] == CNT_MAGIC:
         return "meta"
+    if head[:4] == LIH_MAGIC:
+        return "delta"
     if head[:4] == FIH_MAGIC:
         signed_byte = head[5]
         if signed_byte == 0x80:
@@ -309,6 +336,11 @@ def read_pkg(path: str) -> PkgInfo:
     pkg_type = detect_pkg_type(path)
     if pkg_type is None:
         raise PkgParseError(f"Keine erkennbare PS5-PKG-Datei (unbekannte Magic): {path}")
+    if pkg_type == "delta":
+        # Belegt ist nur die Kennung (LIH_MAGIC). Einen Kopf, den niemand
+        # kennt, zu deuten, ergaebe Zahlen, die verbindlich aussehen und
+        # nichts bedeuten - also bleibt es bei der Art.
+        return PkgInfo(path=path, type=pkg_type)
 
     with open(path, "rb") as f:
         data = f.read()
@@ -332,21 +364,37 @@ def read_pkg(path: str) -> PkgInfo:
     return info
 
 
-def _traegt_klartextmarke(data: bytes, fih: FihHeader) -> bool:
-    """Steht die Klartext-Marke im Kopfbereich vor dem PFS-Abbild?
+def _traegt_klartextmarke(data: bytes, fih: FihHeader) -> bool | None:
+    """Traegt das aeussere PFS an seiner Seed-Stelle die Klartext-Marke?
 
-    Gesucht wird im Bereich zwischen Dateianfang und dem Beginn des
-    PFS-Abbilds. Die genaue Stelle des Seeds im PS5-PFS-Kopf ist hier
-    **nicht** nachgemessen; wer sie behauptet, ohne sie zu kennen, baut eine
-    Pruefung, die beim naechsten Format schweigt. Der begrenzte Suchbereich
-    sagt dasselbe, ohne etwas zu erfinden: Die Marke steht dort oder nicht.
+    FIH+0x20 nennt die absolute Lage eines PFS-Kopfs, und darin steht der
+    16-Byte-Seed bei +0x370. So liest auch der Baukasten, aus dem die Marke
+    stammt (ps5-exfat-pkg-builder, ``CntMetadata.cs``: ``sb + 0x370``). Am
+    24.09.2026 an einem mit LibProsperoPkg gebauten Paket nachgemessen:
+    FIH+0x20 = 0x10B0000, dort die PFS-Kennung 0x01332A0B bei +0x08 und bei
+    +0x370 sechzehn Byte Seed.
+
+    Bis dahin wurde nur vor dem PFS-Abbild gesucht, also in den ersten
+    64 KiB. Die Seed-Stelle liegt aber im PFS-Abbild - jedes echte Paket galt
+    so als "geprueft, keine Marke" (Durchsicht, U1-7).
 
     Returns:
-        True/False; die Marke ist 16 Byte lang und zufaellig nicht zu treffen.
+        True/False - oder None, wenn die Seed-Stelle nicht zu finden ist:
+        FIH+0x20 zeigt nicht in das PFS-Abbild, oder dort steht kein PFS-Kopf.
+        "Nein" waere dann geraten.
     """
-    ende = fih.pfs_image_offset if fih.pfs_image_offset > 0 else len(data)
-    ende = min(max(ende, 0), len(data))
-    return PLAINTEXT_SEED in data[:ende]
+    if len(data) < FIH_PFS_SUPERBLOCK_OFFSET_OFFSET + 8:
+        return None
+    kopf = struct.unpack_from("<Q", data, FIH_PFS_SUPERBLOCK_OFFSET_OFFSET)[0]
+    anfang = fih.pfs_image_offset
+    ende = anfang + fih.pfs_image_size if fih.pfs_image_size > 0 else len(data)
+    ende = min(ende, len(data))
+    stelle = kopf + PFS_SEED_OFFSET
+    if anfang <= 0 or kopf < anfang or stelle + len(PLAINTEXT_SEED) > ende:
+        return None
+    if struct.unpack_from("<Q", data, kopf + PFS_MAGIC_OFFSET)[0] != PFS_MAGIC:
+        return None
+    return data[stelle:stelle + len(PLAINTEXT_SEED)] == PLAINTEXT_SEED
 
 
 def read_entry_payload(path: str, info: PkgInfo, entry: PkgEntry) -> bytes | None:

@@ -16,6 +16,7 @@ Testobjekt ersetzt.
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
 
@@ -123,6 +124,34 @@ class AblaufTests(unittest.TestCase):
         gui._force_dismount_all = _kracht
         self.assertTrue(gui._shutdown_cleanup_and_execute())
         self.assertEqual(ablauf, ["dismount", "shutdown"])
+
+    def test_abbruch_waehrend_des_aufraeumens_haelt_den_rechner_an(self):
+        """H5-13 (Durchsicht 23.09.2026): Escape und das Kreuz meldeten auch
+        waehrend des Aufraeumens "abgebrochen" - heruntergefahren wurde
+        trotzdem."""
+        gui, ablauf = self._vorbereiten()
+        self.assertFalse(gui._shutdown_cleanup_and_execute(abgebrochen=lambda: True))
+        self.assertEqual(ablauf, ["dismount", "temp"])
+
+    def test_der_countdownfaden_fragt_den_abbruch_ab(self):
+        """Derselbe Fall ueber den Weg, den der Countdown nimmt."""
+        import PS5ImageConverter_Pro_FINAL_revised as APP
+
+        class _SofortFaden:
+            def __init__(self, target=None, **_k):
+                self._ziel = target
+
+            def start(self):
+                self._ziel()
+
+        gui, ablauf = self._vorbereiten()
+        gui._shutdown_pending = True
+        gui._shutdown_aborted = True          # Escape waehrend des Aufraeumens
+        gui.root = mock.Mock()
+        with mock.patch.object(APP.threading, "Thread", _SofortFaden):
+            gui._run_shutdown_sequence(None)
+        self.assertEqual(ablauf, ["dismount", "temp"])
+        self.assertFalse(gui._shutdown_pending, "Die Sperre blieb stehen.")
 
 
 class EinstellungsTests(unittest.TestCase):

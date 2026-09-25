@@ -1229,6 +1229,121 @@ class KeinUnerreichbarerCodeTests(unittest.TestCase):
         self.assertEqual([], self._unerreichbar(baum))
 
 
+class VerschluckterStubfehlerTests(unittest.TestCase):
+    """Ein Stub mit ``side_effect=AssertionError`` beweist allein nichts.
+
+    Der gemessene Anlass (25.09.2026, Gegenprobe zur Bibliotheksseite): Ein
+    Test setzte ``urlopen`` auf ``side_effect=AssertionError("ins Netz")``
+    und erwartete ``([], False)``. Die Sperre im Programm wurde probeweise
+    entfernt - und der Test blieb gruen: ``_patchseite_lesen`` faengt jede
+    Ausnahme ab, meldet "gescheitert" und liefert genau dieses Ergebnis.
+    ``AssertionError`` ist eine gewoehnliche ``Exception``; jedes
+    ``except Exception`` zwischen Test und Stub schluckt sie still.
+
+    Deshalb muss jede Funktion, die so einen Stub setzt, ihn auch von aussen
+    pruefen: ``stub.assert_not_called()``, gern ueber ``addCleanup``. Die
+    Nebenwirkung darf bleiben - sie haelt den Ablauf an, falls der verbotene
+    Aufruf doch kommt (bei ``_launch_task`` liefe sonst womoeglich echt ein
+    Auftrag los).
+    """
+
+    @staticmethod
+    def _ungeprueft(baum: ast.AST) -> list[int]:
+        """Zeilen mit ``side_effect=AssertionError`` ohne Aussenpruefung.
+
+        Betrachtet werden Methoden und Funktionen der obersten Ebene samt
+        allem, was darin verschachtelt ist - ein Stub in einer inneren
+        Hilfsfunktion darf also von der umgebenden Pruefung abgefragt werden.
+        """
+        aeussere = [k for k in ast.iter_child_nodes(baum)
+                    if isinstance(k, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        for klasse in ast.walk(baum):
+            if isinstance(klasse, ast.ClassDef):
+                aeussere.extend(k for k in klasse.body
+                                if isinstance(k, (ast.FunctionDef, ast.AsyncFunctionDef)))
+        funde: set[int] = set()
+        for funktion in aeussere:
+            werfer = []
+            for knoten in ast.walk(funktion):
+                if not (isinstance(knoten, ast.keyword) and knoten.arg == "side_effect"):
+                    continue
+                wert = knoten.value
+                name = wert.func if isinstance(wert, ast.Call) else wert
+                if isinstance(name, ast.Name) and name.id == "AssertionError":
+                    werfer.append(wert.lineno)
+            if werfer and not any(isinstance(k, ast.Attribute)
+                                  and k.attr == "assert_not_called"
+                                  for k in ast.walk(funktion)):
+                funde.update(werfer)
+        return sorted(funde)
+
+    def test_jeder_werfende_stub_wird_von_aussen_geprueft(self) -> None:
+        funde: list[str] = []
+        for datei in sorted(PROJEKT.glob("test_*.py")):
+            baum = ast.parse(datei.read_text(encoding="utf-8", errors="replace"))
+            funde.extend("%s:%d" % (datei.name, z) for z in self._ungeprueft(baum))
+        self.assertEqual(
+            [], funde,
+            "Hier wirft ein Stub AssertionError, aber niemand prueft von "
+            "aussen, ob er aufgerufen wurde - ein except Exception im Programm "
+            "schluckt den Fehler still. stub.assert_not_called() ergaenzen:\n  "
+            + "\n  ".join(funde))
+
+    def test_die_pruefung_findet_einen_gestellten_fall(self) -> None:
+        """Gegenprobe - sonst bewiese die Pruefung darueber nur ihr Schweigen."""
+        baum = ast.parse(
+            "class T:\n"
+            "    def test_a(self):\n"
+            "        with mock.patch.object(m, 'f',\n"
+            "                               side_effect=AssertionError('nie')):\n"
+            "            m.g()\n")
+        self.assertEqual([4], self._ungeprueft(baum))
+
+    def test_mit_aussenpruefung_ist_es_kein_befund(self) -> None:
+        baum = ast.parse(
+            "class T:\n"
+            "    def _hilfe(self):\n"
+            "        f = mock.Mock(side_effect=AssertionError)\n"
+            "        self.addCleanup(f.assert_not_called)\n"
+            "        return f\n"
+            "    def test_b(self):\n"
+            "        with mock.patch.object(m, 'f', side_effect=AssertionError()) as f:\n"
+            "            m.g()\n"
+            "        f.assert_not_called()\n")
+        self.assertEqual([], self._ungeprueft(baum))
+
+
+class GemeinsameWurzelDpiTests(unittest.TestCase):
+    """Die gemeinsame Tk-Wurzel der Testreihe rechnet mit der echten Aufloesung.
+
+    Der gemessene Anlass (25.09.2026): Die Hoehenmessung des
+    Koppel-Assistenten war nur in bestimmten Reihenfolgen rot. Tk uebernimmt
+    die Aufloesung beim Anlegen der Wurzel, und 22 Testdateien legen sie an,
+    bevor sie das Hauptmodul laden (das den Prozess erst DPI-bewusst macht).
+    Kam eine davon zuerst dran, rechnete die gemeinsame Wurzel mit 96 statt
+    120 dpi - jede Messung in Pixeln stimmte dann nicht mehr. Behoben in
+    ``conftest.py``; hier gemessen statt im Quelltext gesucht.
+    """
+
+    @unittest.skipUnless(os.name == "nt", "die Aufloesungsfalle ist Windows-eigen")
+    def test_die_wurzel_hat_die_aufloesung_des_systems(self) -> None:
+        import ctypes
+        import tkinter as tk
+
+        try:
+            system = int(ctypes.windll.user32.GetDpiForSystem())
+        except (AttributeError, OSError):
+            self.skipTest("GetDpiForSystem fehlt (Windows vor 10/1607)")
+        wurzel = tk._default_root
+        if wurzel is None:
+            wurzel = tk.Tk()
+            wurzel.withdraw()
+        self.assertAlmostEqual(
+            system, wurzel.winfo_fpixels("1i"), delta=1.0,
+            msg="Die Tk-Wurzel entstand, bevor der Prozess DPI-bewusst war "
+                "(conftest.py muss das vor jeder Testdatei erledigen).")
+
+
 class SpracheImPruefstandTests(unittest.TestCase):
     """Wer eine **echte** Oberflaeche baut, muss die Sprache festnageln.
 

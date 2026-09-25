@@ -21,11 +21,14 @@ from __future__ import annotations
 
 import http.server
 import os
+import re
 import socket
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -109,6 +112,8 @@ class _AgentStube:
         #: zur "Konsole" gegangen ist.
         self.kommandos: list[str] = []
         self.antwort_auf: dict = {}
+        #: Geraetezeilen fuer PAIRED, z. B. "DEVICE index=1 user_id=...".
+        self.geraete: list[str] = []
         self.faden = threading.Thread(target=self._bedienen, daemon=True,
                                       name="agent-stube")
         self.faden.start()
@@ -148,8 +153,15 @@ class _AgentStube:
             antwort = "HELP LIST SETID FAKESIGNIN\nEND\n"
         elif wort == "LIST":
             antwort = self.LISTE + "END\n"
-        elif wort == "IS_PAIRED":
-            antwort = "paired=0\nEND\n"
+        elif wort == "PAIRED":
+            # Wie der mitgelieferte Agent 2.0 (cmd_paired): je gekoppeltem
+            # Geraet eine DEVICE-Zeile.
+            antwort = "OK PAIRED\n" + "".join(z + "\n" for z in self.geraete) + "END\n"
+        elif wort not in ("PING", "SETID", "FAKESIGNIN", "PREPARE_PIN", "PIN",
+                          "CURRENT", "B64", "COMPARE", "GETKEY", "SETKEY", "QUIT"):
+            # Auch das wie der echte Agent - bis zum 24.09.2026 beantwortete
+            # die Stube ein erfundenes IS_PAIRED, das es dort nicht gibt.
+            antwort = "ERR unknown_command\nEND\n"
         else:
             antwort = "OK\nEND\n"
         try:
@@ -260,10 +272,23 @@ class ChiakiTests(unittest.TestCase):
         self.assertEqual(["/pfad/chiaki", "stream", "PS5-Wohn",
                           "192.168.1.42"], befehl)
 
-    def test_leerer_platzhalter_faellt_weg(self):
-        befehl = rp.chiaki_befehl("/pfad/chiaki", "192.168.1.42")
-        self.assertNotIn("", befehl)
-        self.assertEqual(["/pfad/chiaki", "stream", "192.168.1.42"], befehl)
+    def test_ohne_namen_kein_befehl(self):
+        """``chiaki stream <nickname> <host>`` - beide Pflicht (U3-6).
+
+        Bis zum 24.09.2026 hielt dieser Test das Gegenteil fest: Der leere
+        Name fiel weg, und die Adresse stand an seiner Stelle - Chiaki
+        zeigte dann nur seine Hilfe.
+        """
+        for name in ("", "   "):
+            with self.subTest(name=name):
+                with self.assertRaises(rp.NameFehlt):
+                    rp.chiaki_befehl("/pfad/chiaki", "192.168.1.42", name)
+
+    def test_eine_vorlage_ohne_namen_braucht_keinen(self):
+        """Eine eigene Vorlage ohne ``{nickname}`` geht weiter ohne Namen."""
+        befehl = rp.chiaki_befehl("/pfad/chiaki", "192.168.1.42",
+                                  argumente=("--host", "{host}"))
+        self.assertEqual(["/pfad/chiaki", "--host", "192.168.1.42"], befehl)
 
     def test_eigener_pfad_schlaegt_die_suche(self):
         import tempfile
@@ -429,20 +454,63 @@ class AgentTests(unittest.TestCase):
             self.agent.fake_anmeldung(2)
         self.assertNotIn("FAKESIGNIN 2", self.stube.kommandos[vorher:])
 
-    def test_koppeln_macht_einen_schritt_und_verlangt_neustart(self):
-        stand = self.agent.koppeln(2, 1234567890)
-        self.assertEqual("setid", stand.schritt)
-        self.assertTrue(stand.neustart_noetig)
-        self.assertEqual("remoteplay.schritt_setid", stand.text_schluessel)
+    # Der Ablauf selbst (frueher ``koppeln``, je Druck ein Schritt) steht seit
+    # dem 24.09.2026 im Koppel-Assistenten - geprueft in test_koppel_assistent.
 
-    def test_koppeln_geht_ohne_kontoid_zur_anmeldung(self):
-        stand = self.agent.koppeln(2)
-        self.assertEqual("signin", stand.schritt)
-        self.assertTrue(stand.neustart_noetig)
+    # -- PAIRED statt IS_PAIRED (Durchsicht 23.09.2026, U3-3) -------------
 
-    def test_koppeln_auf_slot1_wird_abgewiesen(self):
-        with self.assertRaises(ra.Slot1Gesperrt):
-            self.agent.koppeln(1, 1234567890)
+    GERAET_SLOT2 = ("DEVICE index=1 user_id=268435457/0x10000001 "
+                    "regist_key=0x0000abcd client_type=2 aes=00112233...")
+
+    def _slot2_aktiviert(self) -> None:
+        """Slot 2 steht vorne und traegt schon alles fuer Remote Play -
+        so, wie der Agent 2.0 die Zeile schreibt (Benutzer-ID dezimal)."""
+        self.stube.antwort_auf["LIST"] = (
+            'USER slot=2 current=1 user_id=268435457 name="Stream" type="np" '
+            'flags=0x1002 id=0x00000000499602d2 b64=BBBB\nEND\n')
+
+    def test_gekoppelt_fragt_mit_paired(self):
+        self._slot2_aktiviert()
+        self.stube.geraete = [self.GERAET_SLOT2]
+        self.assertTrue(self.agent.gekoppelt(2))
+        self.assertIn("PAIRED", self.stube.kommandos)
+        self.assertNotIn("IS_PAIRED", self.stube.kommandos,
+                         "Das kennt der Agent 2.0 nicht (ERR unknown_command).")
+
+    def test_ein_geraet_eines_anderen_benutzers_zaehlt_nicht(self):
+        self._slot2_aktiviert()
+        self.stube.geraete = ["DEVICE2 index=3 user_id=268435456/0x10000000 "
+                              "regist_key=0x00000001 client_type=2"]
+        self.assertFalse(self.agent.gekoppelt(2))
+        self.assertTrue(self.agent.gekoppelt())
+
+    # -- signin in LIST (Durchsicht 24.09.2026, U3-4) ----------------------
+
+    #: So schreibt der Agent 2.0 die Zeile (actremotelink_agent.c, cmd_list).
+    ZEILE_2_0 = ('USER slot=2 current=1 user_id=268435457 name="Stream" '
+                 'type="np" flags=0x1002 id=0x00000000499602d2 b64=BBBB '
+                 'signin="%s" status=0 ver=0x00000000 online_id="" np_id=""'
+                 '\nEND\n')
+
+    def test_die_zeile_des_agenten_2_0_nennt_die_anmeldung(self):
+        """SETID setzt type=np und flags=0x1002 selbst - ob FAKESIGNIN
+        gelaufen ist, steht erst in ``signin``."""
+        self.stube.antwort_auf["LIST"] = self.ZEILE_2_0 % ""
+        eintrag = self.agent.benutzer(2)
+        self.assertTrue(eintrag.aktiviert)
+        self.assertEqual("", eintrag.anmeldung)
+        self.assertTrue(ra.anmeldung_noetig(eintrag))
+        self.stube.antwort_auf["LIST"] = (
+            self.ZEILE_2_0 % "Stream@a8.de.np.playstation.net")
+        eintrag = self.agent.benutzer(2)
+        self.assertEqual("Stream@a8.de.np.playstation.net", eintrag.anmeldung)
+        self.assertFalse(ra.anmeldung_noetig(eintrag))
+
+    def test_ohne_signin_feld_bleibt_es_beim_merker(self):
+        """Aeltere Agenten melden das Feld nicht - dann zaehlt wie bisher
+        allein :attr:`Benutzer.aktiviert`."""
+        self._slot2_aktiviert()
+        self.assertIsNone(self.agent.benutzer(2).anmeldung)
 
     def test_fehler_wenn_niemand_antwortet(self):
         stumm = ra.ActRemoteLink("127.0.0.1", agent_port=_freier_port(),
@@ -468,21 +536,18 @@ class TexteTests(unittest.TestCase):
         "remoteplay.label_chiaki", "remoteplay.label_slot",
         "remoteplay.label_konto", "remoteplay.choose_chiaki",
         "remoteplay.no_chiaki", "remoteplay.need_slot",
-        "remoteplay.ask_write", "remoteplay.status_idle",
+        "remoteplay.status_idle",
         "remoteplay.status_searching", "remoteplay.status_found",
         "remoteplay.status_failed", "remoteplay.status_chiaki",
         "remoteplay.status_users", "remoteplay.status_users_done",
-        "remoteplay.status_linking", "remoteplay.status_reboot",
-        "remoteplay.status_step_done", "remoteplay.status_slot1",
         "remoteplay.status_an", "remoteplay.status_standby",
         "remoteplay.status_unklar", "remoteplay.user_aktiv",
         "remoteplay.user_offen", "remoteplay.user_vorn",
         "remoteplay.log_gefunden", "remoteplay.log_chiaki",
-        "remoteplay.log_kein_agent", "remoteplay.btn_search",
+        "remoteplay.log_kein_agent", "remoteplay.log_kein_pin",
+        "remoteplay.hint_download", "remoteplay.btn_search",
         "remoteplay.btn_chiaki", "remoteplay.btn_users",
-        "remoteplay.btn_link", "remoteplay.schritt_setid",
-        "remoteplay.schritt_signin", "remoteplay.schritt_pin",
-        "remoteplay.schritt_gekoppelt",
+        "remoteplay.btn_link",
         "prospero.window_title", "prospero.subtitle",
         "prospero.hint_richtung", "prospero.hint_pin",
         "prospero.label_abbild", "prospero.choose_abbild",
@@ -509,10 +574,11 @@ class TexteTests(unittest.TestCase):
                 self.assertIn(konsole.status_schluessel, STRINGS)
 
     def test_jeder_schritt_der_kopplung_hat_seinen_text(self):
-        for schritt in ("setid", "signin", "pin", "gekoppelt"):
-            stand = ra.Kopplungsstand(schritt)
-            with self.subTest(schritt=schritt):
-                self.assertIn(stand.text_schluessel, STRINGS)
+        """Seit dem 24.09.2026 die Schritte des Koppel-Assistenten."""
+        for schritt in ra.ASSISTENT_SCHRITTE:
+            for art in ("schritt", "wer"):
+                with self.subTest(schritt=schritt, art=art):
+                    self.assertIn("rpassist.%s_%s" % (art, schritt), STRINGS)
 
     def test_warnung_nennt_slot1_und_den_ausweg(self):
         text = STRINGS["remoteplay.warn_schreibt"]["de"]
@@ -558,13 +624,23 @@ class FensterTests(unittest.TestCase):
         return texte
 
     def test_alle_sieben_knoepfe_sind_verdrahtet(self):
-        """Nach Stufe 4 zeigt keine Kennung mehr ins Leere."""
+        """Nach Stufe 4 zeigt keine Kennung mehr ins Leere.
+
+        Seit dem 24.09.2026 zeigt "ActRemoteLink" kein Fenster, sondern
+        rechts eine Seite (``_KONSOLE_SEITEN``); seit dem 25.09.2026 auch
+        "Bibliothek", und es sind sechs Knoepfe (Spiel holen und
+        Zurueckspielen stecken in der Bibliothek, KLOG steht nur noch oben).
+        """
+        self.assertEqual(6, len(self.modul.PS5ConverterGUI._KONSOLE_KNOEPFE))
         klasse = self.modul.PS5ConverterGUI
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
             with self.subTest(kennung=kennung):
-                methode = klasse._KONSOLE_FENSTER.get(kennung, "")
+                methode = (klasse._KONSOLE_FENSTER.get(kennung, "")
+                           or klasse._KONSOLE_SEITEN.get(kennung, ""))
                 self.assertTrue(methode, "Kennung %s ohne Fenster" % kennung)
                 self.assertTrue(callable(getattr(self.app, methode, None)))
+        self.assertFalse(set(klasse._KONSOLE_FENSTER) & set(klasse._KONSOLE_SEITEN),
+                         "Eine Kennung ist entweder Fenster oder Seite.")
 
     def test_remoteplay_zeigt_seine_knoepfe(self):
         fenster = self._fenster_oeffnen("_show_konsole_remoteplay")
@@ -574,7 +650,11 @@ class FensterTests(unittest.TestCase):
                                "remoteplay.btn_users", "remoteplay.btn_link"):
                 with self.subTest(knopf=schluessel):
                     self.assertIn(self.app._t(schluessel), texte)
-            self.assertIn(self.app._t("remoteplay.warn_schreibt"), texte)
+            # Der Hinweis nennt den Knopf der Ansicht KONSOLE, wie er gerade
+            # heisst - seit dem 25.09.2026 eingesetzt statt abgeschrieben.
+            knopf = self.app._t("konsole.btn_actremotelink")
+            self.assertIn(self.app._t("remoteplay.warn_schreibt", knopf=knopf), texte)
+            self.assertTrue(any(knopf in t for t in texte))
         finally:
             fenster.destroy()
             _WURZEL.update()
@@ -606,6 +686,124 @@ class FensterTests(unittest.TestCase):
                 pfad = self.app._streaming_pfad(art)
                 if pfad:
                     self.assertIn("helloworld", pfad.replace("\\", "/"))
+
+    # -- Doppelklick und Chiaki (Durchsicht 24.09.2026, H3-9 und U3-6) ----
+
+    @staticmethod
+    def _alle(fenster, klasse) -> list:
+        gefunden: list = []
+
+        def _durch(widget):
+            for kind in widget.winfo_children():
+                if isinstance(kind, klasse):
+                    gefunden.append(kind)
+                _durch(kind)
+
+        _durch(fenster)
+        return gefunden
+
+    def _knopf(self, fenster, schluessel):
+        from tkinter import ttk
+        text = self.app._t(schluessel)
+        for knopf in self._alle(fenster, ttk.Button):
+            if str(knopf.cget("text")) == text:
+                return knopf
+        self.fail("Knopf %s fehlt" % schluessel)
+
+    @staticmethod
+    def _aufraeumen() -> None:
+        """Speicherbereinigung im Hauptfaden.
+
+        Die Fenster dieser Tests starten Arbeitsfaeden. Liegen von frueheren
+        Fenstern noch Tk-Variablen im Kreis-Muell, raeumt sonst der Faden sie
+        ab - und Tk meldet "main thread is not in main loop" als Warnung.
+        """
+        import gc
+        gc.collect()
+
+    @staticmethod
+    def _warten(bedingung, grenze: float = 10.0) -> bool:
+        ende = time.monotonic() + grenze
+        while time.monotonic() < ende:
+            _WURZEL.update()
+            if bedingung():
+                return True
+            time.sleep(0.02)
+        return False
+
+    @staticmethod
+    def _doppelklick(tabelle) -> None:
+        """Ruft die Bindung von <Double-1> auf.
+
+        ``event generate`` kennt keinen Double-Modifikator; die Bindung ist
+        ein Tcl-Befehl, der die Ereignisfelder als Argumente erwartet. "0"
+        statt "??": Die Seriennummer liest tkinter ohne Rueckfall als Zahl.
+        """
+        skript = tabelle.bind("<Double-1>")
+        befehl = re.search(r"\[(\S+)", skript).group(1)
+        tabelle.tk.call(befehl, *(["0"] * len(tabelle._subst_format)))
+
+    def test_doppelklick_auf_einen_benutzer_setzt_den_slot(self):
+        """H3-9: Bis zum 24.09.2026 landete der Slot im Adressfeld."""
+        from tkinter import ttk
+        leute = [ra.Benutzer(slot=3, name="Stream")]
+        self._aufraeumen()
+        with mock.patch.object(self.app, "_ps5_ip", return_value="10.0.0.5"), \
+                mock.patch.object(ra.ActRemoteLink, "laeuft", return_value=True), \
+                mock.patch.object(ra.ActRemoteLink, "benutzer_liste",
+                                  return_value=leute):
+            fenster = self._fenster_oeffnen("_show_konsole_remoteplay")
+            try:
+                self._knopf(fenster, "remoteplay.btn_users").invoke()
+                tabelle = self._alle(fenster, ttk.Treeview)[0]
+                self.assertTrue(self._warten(lambda: len(tabelle.get_children()) == 1))
+                tabelle.selection_set(tabelle.get_children()[0])
+                self._doppelklick(tabelle)
+                eintraege = self._alle(fenster, tk.Entry)
+                self.assertEqual("10.0.0.5", eintraege[0].get(),
+                                 "Der Slot landete im Adressfeld.")
+                self.assertEqual("3", eintraege[2].get())
+            finally:
+                fenster.destroy()
+                _WURZEL.update()
+                self._aufraeumen()
+
+    def test_chiaki_bekommt_den_namen_aus_der_suche(self):
+        """U3-6: ``chiaki stream <name> <adresse>`` - ohne Namen kein Start."""
+        from tkinter import messagebox, ttk
+        gestartet: list = []
+        warnungen: list = []
+        konsolen = [rp.Konsole(adresse="10.0.0.5", name="Wohnzimmer", status=200)]
+        self._aufraeumen()
+        with mock.patch.object(self.app, "_ps5_ip", return_value="10.0.0.5"), \
+                mock.patch.object(rp, "suchen", return_value=konsolen), \
+                mock.patch.object(rp, "chiaki_finden", return_value=sys.executable), \
+                mock.patch.object(rp, "chiaki_starten",
+                                  side_effect=lambda *a, **k: gestartet.append((a, k))), \
+                mock.patch.object(messagebox, "showwarning",
+                                  side_effect=lambda *a, **k: warnungen.append(a)):
+            fenster = self._fenster_oeffnen("_show_konsole_remoteplay")
+            try:
+                chiaki = self._knopf(fenster, "remoteplay.btn_chiaki")
+                chiaki.invoke()
+                self.assertEqual([], gestartet, "Ohne Namen darf Chiaki nicht starten.")
+                self.assertTrue(any(
+                    self.app._t("remoteplay.need_search_for_chiaki") in a
+                    for a in warnungen))
+
+                self._knopf(fenster, "remoteplay.btn_search").invoke()
+                tabelle = self._alle(fenster, ttk.Treeview)[0]
+                self.assertTrue(self._warten(lambda: len(tabelle.get_children()) == 1))
+                self.assertTrue(self._warten(lambda: chiaki.instate(["!disabled"])))
+                chiaki.invoke()
+                self.assertEqual(1, len(gestartet))
+                argumente, benannt = gestartet[0]
+                self.assertEqual("10.0.0.5", argumente[1])
+                self.assertEqual("Wohnzimmer", benannt.get("nickname"))
+            finally:
+                fenster.destroy()
+                _WURZEL.update()
+                self._aufraeumen()
 
     def test_kein_arbeitsfaden_bleibt_stehen(self):
         vorher = {t.name for t in threading.enumerate()}

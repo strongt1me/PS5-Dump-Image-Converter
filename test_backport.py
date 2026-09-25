@@ -451,9 +451,12 @@ class VerdrahtungTests(unittest.TestCase):
             self.assertIn(f"def {name}(", self.quelle, name)
 
     def test_original_wird_atomar_ersetzt(self):
-        # Erst vollstaendig schreiben, dann umbenennen - nie teilweise.
+        # Erst vollstaendig schreiben, dann umbenennen - nie teilweise. Seit dem
+        # 24.09.2026 ueber _datei_ersetzen, das auch schreibgeschuetzte Dateien
+        # ersetzt (Durchsicht, H7-5) und selbst os.replace benutzt.
         self.assertIn('zwischen = pfad + ".neu"', self.quelle)
-        self.assertIn("os.replace(zwischen, pfad)", self.quelle)
+        self.assertIn("_datei_ersetzen(zwischen, pfad)", self.quelle)
+        self.assertIn("os.replace(zwischen, ziel)", self.quelle)
 
     def test_sicherung_vor_der_arbeit(self):
         # Der Aufruf traegt seit dem 15.09.2026 ein ``copy_function`` und steht
@@ -969,7 +972,7 @@ class DeckungTests(unittest.TestCase):
         # Die Homebrew in helloworld/ hat keine NID-Importtabelle. Das ist
         # kein Fehler, muss aber sichtbar sein - sonst sagt der Bericht
         # "alles in Ordnung" ueber Dateien, die er nie gelesen hat.
-        elf = PROJEKT / "helloworld" / "ftpsrv-ps5_v1.16-ng.elf"
+        elf = PROJEKT / "helloworld" / "ftpsrv-ps5_v1.16-ng-stable.elf"
         if not elf.is_file():
             self.skipTest("Homebrew liegt nicht bei")
         bericht = bp.deckung_pruefen([str(elf)], [])

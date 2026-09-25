@@ -261,10 +261,25 @@ class FensterTests(unittest.TestCase):
                 self.assertIn(kennung, [k for _s, k in klasse._KONSOLE_KNOEPFE])
                 self.assertTrue(hasattr(klasse, methode), methode)
 
-    def test_klog_knopf_oeffnet_das_vorhandene_fenster(self):
-        with mock.patch.object(self.app, "_werkzeugfenster_umschalten") as um:
-            self.app._konsole_knopf_gedrueckt("klog", "konsole.btn_klog")
-        um.assert_called_once_with("_show_klog_window_geprueft")
+    def test_klog_steht_nur_noch_oben(self):
+        """Seit dem 25.09.2026 steht an seiner Stelle die Bibliothek.
+
+        So wollte es der Nutzer ("den Knopf oben (Bibliothek) in die neue
+        Ansicht anstatt den Klog-Knopf"); KLOG bleibt in der Titelleiste.
+        """
+        klasse = self.haupt.PS5ConverterGUI
+        kennungen = [k for _s, k in klasse._KONSOLE_KNOEPFE]
+        self.assertNotIn("klog", kennungen)
+        self.assertIn("bibliothek", kennungen)
+        self.assertIn(("_btn_klog_title", "titlebar.klog", "_show_klog_window_geprueft"),
+                      klasse._FALTBARE_TITELKNOEPFE)
+
+    def test_bibliotheksknopf_zeigt_die_seite_statt_eines_fensters(self):
+        with mock.patch.object(self.app, "_konsole_bibliothek_umschalten") as seite, \
+                mock.patch.object(self.app, "_werkzeugfenster_umschalten") as fenster:
+            self.app._konsole_knopf_gedrueckt("bibliothek", "konsole.btn_bibliothek")
+        seite.assert_called_once_with()
+        fenster.assert_not_called()
 
     def test_kennung_ohne_fenster_sagt_dass_es_folgt(self):
         """Das Auffangnetz fuer eine Kennung ohne Fenster.
@@ -280,7 +295,7 @@ class FensterTests(unittest.TestCase):
         with mock.patch.object(self.haupt, "messagebox") as box, \
                 mock.patch.object(self.app, "_werkzeugfenster_umschalten") as um:
             self.app._konsole_knopf_gedrueckt("gibt_es_noch_nicht",
-                                              "konsole.btn_klog")
+                                              "konsole.btn_dienste")
         um.assert_not_called()
         box.showinfo.assert_called_once()
 
@@ -291,7 +306,7 @@ class FensterTests(unittest.TestCase):
             with self.subTest(kennung=kennung):
                 with mock.patch.object(self.app,
                                        "_werkzeugfenster_umschalten") as um:
-                    self.app._konsole_knopf_gedrueckt(kennung, "konsole.btn_klog")
+                    self.app._konsole_knopf_gedrueckt(kennung, "konsole.btn_dienste")
                 um.assert_called_once_with(methode)
 
     def test_fenster_zeigt_alle_dienste(self):

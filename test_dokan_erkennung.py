@@ -202,8 +202,8 @@ class AbhilfeTests(unittest.TestCase):
         gui._find_dokan_driver = lambda: True
         geladen: list = []
         with mock.patch.object(APP.sys, "platform", "win32"), \
-                mock.patch.object(APP.urllib.request, "urlretrieve",
-                                  lambda *a, **_k: geladen.append(a)):
+                mock.patch.object(gui, "_installer_laden",
+                                  lambda *a, **_k: geladen.append(a), create=True):
             self.assertTrue(gui._install_dokan2_silent())
         self.assertEqual([], geladen)
 

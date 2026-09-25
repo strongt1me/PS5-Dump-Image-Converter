@@ -74,9 +74,14 @@ def _write_pattern(path: Path, byte_count: int) -> None:
 #: eine automatische Reparatur: Die wuerde die Quelle veraendern - im
 #: 648-MB-Fall waren es danach 192 statt 191 Dateien, und genau diese Zahl
 #: prueft der Regressionsfall.
+#:
+#: Seit dem 23.09.2026 gehoert die ``contentId`` dazu: Fehlt sie, bietet der
+#: Bau an, einen Platzhalter einzutragen, und legt dabei ``param.json.alt``
+#: daneben - wieder eine Datei mehr in der Quelle.
 def _gueltige_param_json(title_id: str = "PPSA00001") -> str:
     return json.dumps({
         "titleId": title_id,
+        "contentId": "UP0000-%s_00-0000000000000000" % title_id,
         "applicationCategoryType": 0,
         "localizedParameters": {
             "defaultLanguage": "de-DE",
@@ -131,6 +136,9 @@ class AdminlaufOhneRueckfrageTests(unittest.TestCase):
             befund.ok,
             "Die Testquelle loest eine Rueckfrage aus: %s"
             % "; ".join(befund.als_text(mit_hinweisen=False)[:6]))
+        # Auch die Frage nach der Content-ID (seit 23.09.2026) darf nicht kommen.
+        self.assertFalse(param_check.content_id_fehlt(json.loads(_gueltige_param_json())),
+                         "Die Testquelle loest die Content-ID-Rueckfrage aus")
 
     def test_beide_adminlaeufe_stellen_rueckfragen_ab(self) -> None:
         """Gegenstueck zum gueltigen Inhalt: der Riegel im Testaufbau."""
@@ -181,8 +189,11 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
             (source / "sce_sys").mkdir(parents=True)
             (source / "sce_sys" / "param.json").write_text(
                 # Vollstaendig, sonst haelt die inhaltliche Pruefung des
-                # Baus (seit v1.8.51) den Lauf mit einer Rueckfrage an.
-                json.dumps(create_default_param(title_id="PPSA00001")) + "\n",
+                # Baus (seit v1.8.51) den Lauf mit einer Rueckfrage an -
+                # samt Content-ID (Rueckfrage seit 23.09.2026).
+                json.dumps(create_default_param(
+                    title_id="PPSA00001",
+                    content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n",
                 encoding="utf-8")
             _write_pattern(source / "payload" / "game.bin", 8192)
             output = root / "result.ffpkg"
@@ -261,8 +272,11 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
             (source / "sce_sys").mkdir(parents=True)
             (source / "sce_sys" / "param.json").write_text(
                 # Vollstaendig, sonst haelt die inhaltliche Pruefung des
-                # Baus (seit v1.8.51) den Lauf mit einer Rueckfrage an.
-                json.dumps(create_default_param(title_id="PPSA00001")) + "\n",
+                # Baus (seit v1.8.51) den Lauf mit einer Rueckfrage an -
+                # samt Content-ID (Rueckfrage seit 23.09.2026).
+                json.dumps(create_default_param(
+                    title_id="PPSA00001",
+                    content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n",
                 encoding="utf-8")
             output = root / "result.ffpkg"
             staging_root = root / "configured-temp"
@@ -389,7 +403,9 @@ class FfpkgFakelibRegressionTests(unittest.TestCase):
             build_call = build_calls[0]
             self.assertEqual(build_call["final_output"], str(destination_dir / source_image.name))
             self.assertEqual(build_call["task_index"], 6)
-            self.assertEqual(build_call["task_label"], "Aufgabe 7 – FFPKG neu packen")
+            # Seit der Durchsicht (Runde 16) uebersetzt - gefragt wird die
+            # Oberflaeche, nicht der deutsche Wortlaut.
+            self.assertEqual(build_call["task_label"], gui._t("ffpkg.aufgabe.a7_neu_packen"))
             self.assertEqual(build_call["progress_start"], 55.0)
             self.assertEqual(build_call["progress_end"], 98.0)
             self.assertNotIn("keine Schreiblogik vorhanden", "".join(log_lines))

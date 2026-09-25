@@ -180,6 +180,20 @@ class RueckstandTests(unittest.TestCase):
     def test_leere_liste_meldet_nichts(self) -> None:
         self.assertEqual(ws.rueckstaende({"ftpsrv-ps5_v0.21.elf": "0.21"}, []), [])
 
+    def test_pkg_manager_trotz_anderer_schreibweise(self) -> None:
+        """Der Spiegel schreibt "PKG-Manager", unser Ordner "pkgmgr".
+
+        Am 23.09.2026 gemessen: Die Liste fuehrte v1.2.4, bei uns lag 1.2.2 -
+        und der Lauf schwieg, weil er die beiden Namen nie zusammenbrachte.
+        """
+        liste = [{"name": "PKG-Manager", "filename": "PKG-Manager_v1.2.4.elf",
+                  "version": "v1.2.4",
+                  "source": "https://github.com/itsPLK/ps5-pkg-manager/releases"}]
+        befunde = ws.rueckstaende({"pkgmgr_v1.2.2.elf": "1.2.2"}, liste)
+        self.assertEqual([b[:3] for b in befunde],
+                         [("pkgmgr_v1.2.2.elf", "1.2.2", "1.2.4")])
+        self.assertEqual(ws.rueckstaende({"pkgmgr_v1.2.4.elf": "1.2.4"}, liste), [])
+
 
 class EchterBestandTests(unittest.TestCase):
     """Der wirkliche Bestand dieses Projekts, nicht nur ein Nachbau.

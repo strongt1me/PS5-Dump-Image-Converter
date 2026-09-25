@@ -14,23 +14,36 @@
 #  So starten:
 #    1. Windows-Taste drücken, "PowerShell" tippen
 #    2. Rechtsklick -> "Als Administrator ausführen"
-#    3. Diesen Befehl einfügen (mit Anführungszeichen):
+#    3. Diesen Befehl einfügen (mit Anführungszeichen), mit dem eigenen
+#       Projektordner und den eigenen Ordnern:
 #
-#       & "C:\Users\JBuserc0re\Documents\GitHub PS5 Dump & Image Converter\Pruefung_mit_Adminrechten.ps1"
+#       & "<Projektordner>\Pruefung_mit_Adminrechten.ps1" -Dumps "F:\Game Dumps" -Ziel "E:\Test\V100b_admin" -Temp "E:\PS5_Temp"
 #
-#  Es verändert nichts an Ihren Sicherungen auf F: - dort wird nur gelesen.
-#  Geschrieben wird ausschließlich nach E:\Test\V100_admin und E:\PS5_Temp.
+#  Ohne Angaben gelten die Ordner des alten Pruefrechners (F:\Game Dumps,
+#  E:\Test\..., E:\PS5_Temp). Den Projektordner leitet das Skript aus seinem
+#  eigenen Ort ab - bis zum 24.09.2026 stand dort der feste Pfad des alten
+#  Rechners, und auf dem neuen lief nichts an.
+#
+#  Es verändert nichts an den Sicherungen unter -Dumps - dort wird nur gelesen.
+#  Geschrieben wird ausschließlich nach -Ziel und -Temp. Die Einstellungen des
+#  Programms bleiben unberührt: Der Lauf bekommt einen eigenen Einstellungsordner
+#  unter -Ziel (PS5CONV_KONFIGORDNER).
 # =============================================================================
+
+param(
+    [string]$Dumps    = "F:\Game Dumps",
+    [string]$Ziel     = "E:\Test\V100b_admin",
+    [string]$Temp     = "E:\PS5_Temp",
+    # Woher Abschnitt 4 seine .exfat nimmt (Ergebnis der Runde ohne Rechte).
+    [string]$Vorrunde = "E:\Test\V100b"
+)
 
 $ErrorActionPreference = "Continue"
 
-$Projekt = "C:\Users\JBuserc0re\Documents\GitHub PS5 Dump & Image Converter"
+$Projekt = $PSScriptRoot
 $Python  = Join-Path $Projekt ".venv\Scripts\python.exe"
 $Haupt   = Join-Path $Projekt "PS5ImageConverter_Pro_FINAL_revised.py"
-$Ziel    = "E:\Test\V100b_admin"
-$Temp    = "E:\PS5_Temp"
 $Bericht = Join-Path $Ziel "_admin_bericht.txt"
-$Dumps   = "F:\Game Dumps"
 
 # --- Rechte prüfen -----------------------------------------------------------
 $istAdmin = ([Security.Principal.WindowsPrincipal] `
@@ -47,10 +60,22 @@ if (-not $istAdmin) {
     exit 1
 }
 
+if (-not (Test-Path $Python)) {
+    Write-Host "  Kein Python unter $Python - fehlt die .venv im Projektordner?" -ForegroundColor Red
+    Read-Host "  Mit Eingabetaste beenden"
+    exit 1
+}
+
 New-Item -ItemType Directory -Force -Path $Ziel | Out-Null
 New-Item -ItemType Directory -Force -Path $Temp | Out-Null
 "Pruefung mit Adminrechten - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" |
     Out-File $Bericht -Encoding utf8
+
+# Eigener Einstellungsordner fuer diesen Lauf - wie in Pruefung_ffpkg_Matrix.ps1.
+# Ohne ihn schrieben die --cli-Laeufe in die Einstellungen des Anwenders.
+$Konfig = Join-Path $Ziel "_einstellungen"
+New-Item -ItemType Directory -Force -Path $Konfig | Out-Null
+$env:PS5CONV_KONFIGORDNER = $Konfig
 
 Write-Host ""
 Write-Host "  Administratorrechte: vorhanden" -ForegroundColor Green
@@ -151,7 +176,7 @@ Invoke-Fall "AD5-ffpkg" "Aufgabe 5: zwei Dumps -> ffpkg" `
 
 Write-Host ""
 Write-Host "  --- 4) Aufgabe 3 mit echtem Einhaengen ---"
-$exfat = Get-ChildItem "E:\Test\V100b\A1-A-exfat" -Filter *.exfat -ErrorAction SilentlyContinue |
+$exfat = Get-ChildItem (Join-Path $Vorrunde "A1-A-exfat") -Filter *.exfat -ErrorAction SilentlyContinue |
          Select-Object -First 1
 if ($exfat) {
     Invoke-Fall "AD3-folder" "Aufgabe 3: .exFAT -> Ordner (eleviert)" `
@@ -159,6 +184,8 @@ if ($exfat) {
 } else {
     Write-Host "  keine .exfat aus der vorigen Runde gefunden - uebersprungen"
 }
+
+Remove-Item Env:\PS5CONV_KONFIGORDNER -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "  Fertig. Bericht: $Bericht" -ForegroundColor Cyan

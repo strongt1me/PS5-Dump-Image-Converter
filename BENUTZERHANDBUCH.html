@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.43</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.44</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.43</span>
-      <span class="marke">Stand 23. September 2026</span>
+      <span class="marke">Version v1.9.44</span>
+      <span class="marke">Stand 25. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -432,12 +432,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k13">Kapitel 13</a> erklärt.</p>
   <h3>2.1 Die zweite Ansicht: KONSOLE</h3>
   <p>Unter dem Logo in der Seitenleiste schaltet <strong>KONSOLE&nbsp;›</strong>
-  auf eine zweite Ansicht um. Dort stehen links Werkzeuge für die Arbeit mit
-  der Konsole: <em>Konsole &amp; Payloads</em>, <em>Spiel holen</em>,
-  <em>Zurückspielen</em>, <em>Spielstände</em>, <em>Kernel-Protokoll</em>,
-  <em>Remote Play</em> und <em>ProsperoLight</em>. Titelbild, „Spiel Info“ und
-  „Was man sonst ev. noch braucht“ gibt es dort nicht; rechts steht seit
-  v1.9.43 der <strong>Zustand der Konsole</strong> (siehe unten). <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash; gewählte
+  auf eine zweite Ansicht um. Dort stehen links sechs Werkzeuge für die Arbeit
+  mit der Konsole: <em>1.&nbsp;Konsole &amp; Payloads</em>,
+  <em>2.&nbsp;Spielstände</em>, <em>3.&nbsp;Bibliothek</em>,
+  <em>4.&nbsp;Remote Play</em>, <em>5.&nbsp;ProsperoLight</em> und
+  <em>6.&nbsp;ActRemoteLink</em>. Titelbild, „Spiel Info“ und „Was man sonst
+  ev. noch braucht“ gibt es dort nicht. Rechts steht der <strong>Zustand der
+  Konsole</strong> (siehe unten); <em>3.&nbsp;Bibliothek</em> und
+  <em>6.&nbsp;ActRemoteLink</em> zeigen an dieser Stelle ihre eigene Seite, ein
+  zweiter Druck auf denselben Knopf oder <em>‹&nbsp;Übersicht</em> führt
+  zurück. Das Kernel-Protokoll liegt als <strong>KLOG</strong> oben in der
+  Titelleiste. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash; gewählte
   Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten. Das
   Programm merkt sich, welche Ansicht zuletzt offen war.</p>
   <h4>Der Zustand der Konsole (rechte Seite)</h4>
@@ -477,17 +482,38 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     schreibt eine Warnung ins Protokoll &ndash; ein gewöhnlicher Portscan
     würde hier fälschlich „läuft“ melden.</p>
   </div>
-  <h4>Spiel holen</h4>
-  <p>Holt eine installierte Anwendung von der Konsole auf diesen PC. Das
-  geht in drei Schritten, weil sich der mittlere nicht umgehen lässt: Der
-  <em>App-Dumper</em> schreibt die Anwendung auf einen angeschlossenen
-  <strong>USB-Datenträger</strong> und beherrscht kein Netzwerk. Der
-  Datenträger bleibt stecken; danach listet das Fenster die Ordner auf der
-  Konsole auf (Doppelklick geht eine Ebene hinein, <em>Eine Ebene hoch</em>
-  wieder heraus). <em>Größe ermitteln</em> sagt Ihnen vorher, wie viele
-  Dateien und wie viel es ist – und wie lange das bei der gemessenen Leitung
-  von rund 1,1&nbsp;MB/s etwa dauert. <em>Herunterladen</em> holt den Ordner
-  mit Balken, Größenzeile und Protokoll.</p>
+  <h4>Bibliothek</h4>
+  <p>Die Bibliothek zeigt Ihre Sicherungen als <em>Kacheln</em> oder als
+  <em>Liste</em>, mit Titelbild und Angaben daneben. Oben wählen Sie die
+  Quelle:</p>
+  <ul>
+    <li><strong>Rechner</strong> durchsucht die eingetragenen
+    <em>SCAN-ORDNER</em> samt Unterordnern nach Dump-Ordnern und
+    Containerdateien (<em>Ordner hinzufügen…</em>, <em>Entfernen</em>,
+    <em>Neu scannen</em>). Ein neuer Suchlauf beendet einen noch
+    laufenden.</li>
+    <li><strong>PS5</strong> sucht per FTP an den üblichen Ablageorten der
+    Konsole &ndash; intern, auf USB-Datenträgern und auf der
+    M.2-Erweiterung.</li>
+  </ul>
+  <p>Zu jedem Eintrag nennt die Detailspalte Fassung, SDK und die
+  <strong>benötigte Firmware</strong>. Verlangt das Spiel mehr, als Ihre PS5
+  hat, steht dort „BACKPORT nötig“; die Firmware der Konsole kennt die
+  Bibliothek, sobald Sie in der Übersicht einmal <em>Konsole prüfen</em>
+  gedrückt haben. Ist in den Einstellungen <em>Fehlende Metadaten online
+  nachschlagen</em> gesetzt, zeigt sie zusätzlich, ob es ein neueres Update
+  gibt. <em>Bild speichern</em>, <em>Bild kopieren</em> und <em>Angaben
+  kopieren</em> nehmen Titelbild und Angaben mit.</p>
+  <p>Die Knöpfe darunter richten sich nach der gewählten Quelle:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Quelle</th><th>Knöpfe</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Rechner</strong></td><td><em>Als Quelle übernehmen</em> (für die Umwandlung), <em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher), <em>Umbenennen</em> und <em>Alle umbenennen</em> (einheitliche Namensform; jede Zeile ist vorher zu sehen, ein Doppelklick nimmt sie heraus; <em>Rückgängig</em> stellt die alten Namen wieder her), <em>Im Explorer anzeigen</em>.</td></tr>
+      <tr><td><strong>PS5</strong></td><td><em>Herunterladen</em> (nennt vorher Dateizahl, Größe und die ungefähre Dauer bei rund 1,1&nbsp;MB/s), <em>App-Dumper starten</em> (schreibt eine installierte Anwendung auf einen USB-Datenträger an der Konsole &ndash; den Ordner holen Sie danach herunter) und <em>Dateimanager der PS5</em> (Web-Dateimanager, Port&nbsp;8888, etwa um vom USB-Datenträger auf die interne SSD zu verschieben).</td></tr>
+    </tbody>
+  </table>
+  </div>
   <div class="kasten achtung">
     <span class="titel">Abbrechen wirkt erst nach der laufenden Datei</span>
     <p>Das ist Absicht. Ein mitten in der Übertragung abgebrochener Download
@@ -497,13 +523,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <em>Abbrechen</em> Ihren Wunsch und beendet die Übertragung erst, wenn
     die laufende Datei vollständig angekommen ist.</p>
   </div>
-  <h4>Zurückspielen</h4>
-  <p>Der Gegenweg: Ein fertiger Ordner geht über FTP auf die Konsole. Das ist
-  langsamer als ps5upload, dafür vollständig eigen und ohne Zusatzprogramm.
-  Vom USB-Datenträger auf die interne SSD verschiebt anschließend der
-  <em>Web-Dateimanager</em> (Port 8888), den dasselbe Fenster starten und
-  öffnen kann – genau dafür ist er gebaut. Dieses Programm schreibt nichts in
-  die Systemdatenbanken der Konsole.</p>
+  <p>Auf der PS5 benennt die Bibliothek nichts um, und dieses Programm
+  schreibt nichts in die Systemdatenbanken der Konsole.</p>
   <h4>Spielstände</h4>
   <p>Sichern, entschlüsseln und zwischen Benutzern übertragen macht der
   <em>Garlic Save Manager</em> mit seiner eigenen Oberfläche (Port 8082).
@@ -511,8 +532,6 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   wird nichts. Wichtig: vor jedem Zurückschreiben sichern, und wer auf der
   Konsole einen neuen Benutzer angelegt hat, findet dessen Spielstände leer;
   die alten bleiben beim ursprünglichen Benutzer.</p>
-  <p><em>Kernel-Protokoll</em> öffnet dasselbe Fenster wie in der Ansicht
-  UMWANDELN.</p>
   <h4>Remote Play – Bild von der PS5 auf den PC</h4>
   <p>Drei Teile, die unabhängig voneinander nützlich sind. <em>Konsole
   suchen</em> spricht dasselbe Protokoll wie Chiaki (UDP&nbsp;9302) und
@@ -521,26 +540,37 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Doppelklick übernimmt die Adresse. <em>Chiaki starten</em> sucht Chiaki
   bzw. chiaki-ng auf diesem PC und ruft es mit der Adresse auf; das
   Remote-Play-Protokoll selbst wird nicht nachgebaut. <em>Benutzer lesen</em>
-  und <em>Koppeln</em> sprechen den ActRemoteLink-Agenten auf der Konsole
-  an.</p>
+  fragt den ActRemoteLink-Agenten auf der Konsole nach ihren Benutzern;
+  <em>Koppel-Assistent</em> führt zur Seite <em>6.&nbsp;ActRemoteLink</em>.</p>
+  <h4>ActRemoteLink &ndash; Chiaki mit der PS5 koppeln</h4>
+  <p>Damit Chiaki sich verbinden darf, braucht ein Benutzer der PS5 eine
+  <code>account_id</code> und eine Anmeldung. Ohne PSN geht das über die beiden
+  Payloads von ActRemoteLink. Die Seite <em>6.&nbsp;ActRemoteLink</em> führt
+  durch sieben Schritte und zeigt, welcher gerade läuft: <em>Verbindung und
+  Agent</em>, <em>Benutzer wählen</em>, <em>account_id setzen</em>,
+  <em>Offline-Anmeldung</em>, <em>PS5 neu starten</em>, <em>PIN
+  erzeugen</em> und <em>In Chiaki koppeln</em>. Nach <em>Starten</em> läuft das
+  von selbst; wo Sie an der Konsole etwas tun müssen, wartet der Assistent und
+  erkennt, wenn es erledigt ist. PIN und Konto-ID geben Sie am Ende in Chiaki
+  ein (<em>Kopieren</em>, <em>Chiaki öffnen</em>).</p>
   <div class="kasten achtung">
-    <span class="titel">Koppeln schreibt auf die Konsole – Slot 1 bleibt tabu</span>
-    <p>Nur dieser eine Knopf im ganzen Programm schreibt in die
-    Benutzerdaten der Konsole: eine <code>account_id</code> und eine
-    vorgetäuschte PSN-Anmeldung. <strong>Slot&nbsp;1 ist unbedingt
-    gesperrt</strong> – es gibt keinen Schalter, der das aufhebt. Genau das
-    schreibt auch der Autor von ActRemoteLink vor: den ersten Benutzer
-    unangetastet lassen, auf der Konsole einen <strong>neuen lokalen
-    Benutzer</strong> anlegen (Slot&nbsp;2 oder höher), auf der PS5 zu ihm
-    wechseln – er muss der aktive Benutzer sein – und nur ihn koppeln. Der
-    Ablauf macht je Druck einen Schritt und sagt, wann die Konsole neu zu
-    starten ist. Die beiden dafür nötigen Payloads
-    (<code>actremotelink_agent</code>, <code>actremotelink_pin_notify</code>,
-    GPL-3.0) liegen seit dem 23.09.2026 im Ordner <code>helloworld</code> bei;
-    fehlen sie einmal, sagt das Fenster es beim Öffnen.</p>
+    <span class="titel">Der Assistent schreibt auf die Konsole – Slot 1 bleibt tabu</span>
+    <p>Nur dieser Weg im ganzen Programm schreibt in die Benutzerdaten der
+    Konsole: eine <code>account_id</code> und eine vorgetäuschte
+    PSN-Anmeldung. <strong>Slot&nbsp;1 ist unbedingt gesperrt</strong> – es
+    gibt keinen Schalter, der das aufhebt. Genau das schreibt auch der Autor
+    von ActRemoteLink vor: den ersten Benutzer unangetastet lassen, auf der
+    Konsole einen <strong>neuen lokalen Benutzer</strong> anlegen
+    (Slot&nbsp;2 oder höher), auf der PS5 zu ihm wechseln – er muss der aktive
+    Benutzer sein – und nur ihn koppeln. Nach dem Neustart der PS5 starten Sie
+    den Jailbreak wieder; ein ausstehender Neustart übersteht auch das Beenden
+    dieses Programms. Die beiden Payloads (<code>actremotelink_agent</code>,
+    <code>actremotelink_pin_notify</code>, GPL-3.0) liegen im Ordner
+    <code>helloworld</code> bei; fehlen sie einmal, nennt die Seite die
+    Adresse, unter der es sie gibt.</p>
   </div>
   <p>Ihre Spielstände bleiben dabei beim alten Benutzer – übertragen lassen
-  sie sich über <em>Spielstände</em>.</p>
+  sie sich über <em>2.&nbsp;Spielstände</em>.</p>
   <h4>ProsperoLight – Bild vom PC auf die PS5</h4>
   <p>Die Gegenrichtung: ProsperoLight ist ein Moonlight-Client, der
   <em>auf</em> der Konsole läuft und sich das Bild von einem
@@ -1243,13 +1273,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Schaltfläche</th><th>Was sie tut</th></tr></thead>
     <tbody>
-      <tr><td><strong>BIBLIOTHEK</strong></td><td>Durchsucht mehrere gespeicherte Ordner nach Dump-Ordnern und Containerdateien, zeigt Titel und Cover und erlaubt eine schnelle Übernahme als Quelle.</td></tr>
       <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
-      <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle), <strong>PKG entpacken</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
+      <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle; ein Update-Paket erkennt es und sagt, was es zum Installieren braucht), <strong>PKG entpacken</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -2078,23 +2107,25 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   <table>
     <thead><tr><th>Problem</th><th>Was Sie tun können</th></tr></thead>
     <tbody>
+      <tr><td>Virenschutz meldet oder entfernt die EXE</td><td>Programme, die mit PyInstaller gebaut sind, werden gelegentlich fälschlich gemeldet. Das Programm trägt selbst keine Ausnahmen in Ihren Virenschutz ein und installiert keine Zertifikate. Laden Sie die EXE nur von der Release-Seite des Projekts; stimmt die Quelle, können Sie die EXE in Ihrem Virenschutz selbst als Ausnahme eintragen.</td></tr>
       <tr><td>STARTEN bleibt deaktiviert</td><td>Prüfen Sie, ob Quelle, Zielordner und Temp-Ordner vollständig gewählt wurden. Bei Aufgabe 8 wird kein Zielordner benötigt.</td></tr>
       <tr><td>Quelle wird abgelehnt</td><td>Kontrollieren Sie, ob die gewählte Aufgabe zum Dateityp passt. Nutzen Sie bei Bedarf Aufgabe 6 oder prüfen Sie die Quelle mit Aufgabe 8.</td></tr>
-      <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus dem Ordnernamen. Anschließend folgt die zweite Frage <em>Titel online nachschlagen?</em> Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
-      <tr><td>„Titel online nachschlagen?“</td><td>Titel und Content-ID stehen in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Nur die Title-ID ist lokal zu finden. Bei <strong>Ja</strong> werden Titel und Content-ID nachgeschlagen; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Bei <strong>Nein</strong>, ohne Internet oder wenn die Seite nicht antwortet, entsteht die Ersatzdatei trotzdem – nur mit der Title-ID. Die Frage ist absichtlich auf <strong>Nein</strong> voreingestellt.</td></tr>
+      <tr><td>„sce_sys/param.json fehlt“ mit Ja/Nein-Abfrage</td><td>Das Spiel ist unvollständig. Bei <strong>Ja</strong> legt das Programm eine gültige <code>param.json</code> an und der Bau läuft weiter; die Title-ID kommt aus <code>sce_sys/nptitle.dat</code>, ersatzweise aus dem Ordnernamen. Ist in den Einstellungen <em>Fehlende Metadaten online nachschlagen</em> gesetzt (unter Windows und Linux ab Werk), werden Titel und Content-ID dabei gleich nachgeschlagen. Bei <strong>Nein</strong> bricht der Bau ab – erstellen Sie dann am besten ein neues Backup vom Original.</td></tr>
+      <tr><td>Content-ID in der <code>param.json</code> („param.json has no Content ID“)</td><td>Titel und Content-ID stehen in <strong>keiner</strong> Datei eines Backups – auch nicht in der <code>eboot.bin</code>. Nur die Title-ID ist lokal zu finden. Mit dem Haken <em>Fehlende Metadaten online nachschlagen</em> in den Einstellungen schlägt das Programm beides nach; dabei wird ausschließlich die Title-ID an prosperopatches.com gesendet. Ohne Haken, ohne Internet oder wenn die Seite nicht antwortet, bekommt die Datei einen <strong>Platzhalter</strong> als Content-ID (<code>UP0000-&lt;Title-ID&gt;_00-…</code>) – ohne Content-ID brechen Werkzeuge ab, die daraus ein PKG bauen. Fehlt sie in einer vorhandenen <code>param.json</code>, bietet das Programm an, den Platzhalter einzutragen; die alte Datei bleibt als <code>param.json.alt</code> erhalten. Für Updates und DLC muss die echte Content-ID eingetragen werden.</td></tr>
       <tr><td>Zu wenig Speicherplatz</td><td>Schaffen Sie Platz oder wählen Sie einen anderen Ziel- beziehungsweise Temp-Ordner. Wiederholen Sie den Vorgang erst danach.</td></tr>
       <tr><td>Der Vorgang dauert lange</td><td>Beobachten Sie Fortschrittsbalken, Statuszeile und Protokoll. Große Dateien brauchen längere Schreib- und Prüfphasen.</td></tr>
       <tr><td>Der Vorgang wurde abgebrochen</td><td>Warten Sie auf die Abbruchbestätigung. Löschen Sie unvollständige Ergebnisse und starten Sie mit geprüften Pfaden erneut.</td></tr>
       <tr><td>Eine Warnung erscheint</td><td>Lesen Sie die vollständige Meldung im Protokoll. Ändern Sie nicht mehrere Dinge gleichzeitig, sondern beheben Sie zuerst die genannte Ursache.</td></tr>
       <tr><td>Hochgeladenes Spiel startet nicht (<code>CE-107750-0</code>)</td><td>Die Datei ist nicht ausführbar – typischerweise über <strong>zftpd</strong> übertragen. Laden Sie das Spiel mit <strong>ftpsrv auf Port 2121</strong> erneut hoch. Über zftpd übertragene Ordner bleiben unbrauchbar; nachträglich reparieren lässt sich das dort nicht.</td></tr>
       <tr><td>Spiel startet nicht (<code>CE-108255-1</code>)</td><td>Zwei bekannte Ursachen: ein unvollständiges <code>.ffpkg</code> – oder der Start aus dem internen Speicher statt vom USB-Stick. Probieren Sie das Backup vom Stick.</td></tr>
+      <tr><td>Update-Paket lässt sich nicht installieren (<code>CE-107891-6</code>)</td><td>Ein Update-Paket (Delta) enthält nur die Änderungen und gehört zu genau <em>einem</em> Grundpaket. Installiert ist ein anderes – schon ein Neubau desselben Spiels zählt als anderes Paket. Installieren Sie das Grundpaket, gegen das das Update gebaut wurde, oder bauen Sie Grundpaket und Update zusammen neu und installieren Sie beide. Ob eine <code>.pkg</code> ein Update-Paket ist, zeigt <strong>PKG lesen</strong>.</td></tr>
       <tr><td>FTP-, KLog- oder JS-Loader-Werkzeug verbindet nicht</td><td>Prüfen Sie IP-Adresse und Port sowie, ob die PS5 per Jailbreak vorbereitet und im selben Netzwerk erreichbar ist. Auf der Konsole muss ein FTP-Payload laufen – über <strong>JS LOADER</strong> lässt sich einer starten.</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.43), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.44), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2294,8 +2325,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.43</strong></span>
-    <span>Stand 23. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.44</strong></span>
+    <span>Stand 25. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>
