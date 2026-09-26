@@ -214,10 +214,32 @@ if os.path.isdir(_backgrounds):
 # sodass 'tkinterdnd2.TkinterDnD.Tk()' beim Start mit "can't find package
 # tkdnd" abstuerzte. Daher bewusst KEIN manueller collect_data_files-Aufruf.
 
+# Weboberflaechen der Konsole rechts im Programm (seit 26.09.2026, nur
+# Windows): WebView2 ueber pythonnet (ps5_validator/utils/webansicht.py).
+# Aus pywebview kommen nur die beiden DLLs von Microsoft (von Microsoft
+# signiert, BSD-artige Lizenz) in den Ordner 'webview2' - pywebview selbst
+# wird nicht eingebettet (sein Hook greift nur, wer 'webview' importiert).
+# Python.Runtime.dll und der Lader kommen ueber die Hooks von 'clr' und
+# 'clr_loader'. Fehlt etwas, oeffnet das Programm die Oberflaechen wie
+# bisher im Browser (webansicht.verfuegbar).
+_webview2_binaries = []
+try:
+    import importlib.util as _iu
+    _wv_spec = _iu.find_spec('webview')
+    _wv_lib = (os.path.join(list(_wv_spec.submodule_search_locations)[0], 'lib')
+               if _wv_spec and _wv_spec.submodule_search_locations else '')
+except Exception:
+    _wv_lib = ''
+for _wv_teile in (('Microsoft.Web.WebView2.Core.dll',),
+                  ('runtimes', 'win-x64', 'native', 'WebView2Loader.dll')):
+    _wv_pfad = os.path.join(_wv_lib, *_wv_teile) if _wv_lib else ''
+    if _wv_pfad and os.path.isfile(_wv_pfad):
+        _webview2_binaries.append((_wv_pfad, 'webview2'))
+
 a = Analysis(
     ['PS5ImageConverter_Pro_FINAL_revised.py'],
     pathex=[_here, *_mkpfs_roots],
-    binaries=[],
+    binaries=_webview2_binaries,
     datas=_datas,
     hiddenimports=[
         # PS5 Wee Tools (PS5-Wee-Tools-0.1.8) liegt als Datenordner bei und
@@ -325,6 +347,14 @@ a = Analysis(
         'tkinterdnd2',
         # Optionale Live-Systemtelemetrie (CPU/RAM) waehrend laufender Aufgaben
         'psutil',
+        # Weboberflaechen im Programm (webansicht laedt sie erst beim Oeffnen)
+        'pythonnet',
+        'clr',
+        'clr_loader',
+        'clr_loader.netfx',
+        'clr_loader.ffi',
+        'clr_loader.ffi.netfx',
+        'ps5_validator.utils.webansicht',
         # Pillow
         'PIL',
         'PIL.Image',
@@ -430,7 +460,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.45',
+    name='PS5_Dump_Image_Converter_v1.9.46',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

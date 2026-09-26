@@ -83,9 +83,6 @@ class _MitProgramm(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.app = APP.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
-        # Siehe test_koppel_assistent: Eine gemerkte Ansicht "konsole" schaltet
-        # spaeter gebaute Programme mitten in fremden Tests um.
-        cls.app._konfiguration_schreiben({"ansicht": "umwandeln"})
         _WURZEL.update_idletasks()
 
     def setUp(self) -> None:
@@ -95,7 +92,7 @@ class _MitProgramm(unittest.TestCase):
     def tearDown(self) -> None:
         if self.app._current_language != "de":
             self._umschalten()
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
 
     def _umschalten(self) -> None:
@@ -160,7 +157,7 @@ class KonsolentafelTests(_MitProgramm):
     """H2-13: Die Tafel wird einmal gebaut und bleibt stehen."""
 
     def _tafel(self):
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         return self.app._konsole_tafel
 

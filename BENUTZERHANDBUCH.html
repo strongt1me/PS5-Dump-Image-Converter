@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.45</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.46</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.45</span>
-      <span class="marke">Stand 26. September 2026</span>
+      <span class="marke">Version v1.9.46</span>
+      <span class="marke">Stand 27. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -443,7 +443,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <em>‹&nbsp;Konsole &amp; Payloads</em> führt zurück. Das Kernel-Protokoll liegt als <strong>KLOG</strong> oben in
   der Titelleiste. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash;
   gewählte Quelle, Einstellungen und ein laufender Auftrag bleiben dabei
-  erhalten. Das Programm merkt sich, welche Ansicht zuletzt offen war.</p>
+  erhalten. Das Programm startet immer in der Ansicht UMWANDELN &ndash; auch
+  wenn beim Beenden zuletzt KONSOLE offen war.</p>
 
   <h4>Konsole &amp; Payloads (rechte Seite)</h4>
   <p>Beim Programmstart sucht das Programm die PS5 selbst und verbindet sich:
@@ -462,20 +463,37 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   FTP-Dienst muss dafür nicht laufen. Die gefundene Adresse steht danach im
   Feld und wird gespeichert; nur wenn keine PS5 antwortet, tragen Sie sie
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
-  <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole. Darunter
-  fragt sie alle elf bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
+  Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
+  Darunter fragt sie alle elf bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver und ps5upload
-  &ndash; und zeigt zu jedem Port und Zweck; beim FTP-Server wird der Gruß
-  mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Was
+  &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
+  Version ist die der mitgelieferten Datei, die das Programm startet.
+  FTP-Server und Payload-Manager nennen ihre laufende Version selbst; weicht
+  sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
+  die mitgelieferte in Klammern dahinter. ELF-Loader, Kernel-Protokoll,
+  Webserver und BFpilot verraten ihre Version nicht. Was
   nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
   <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
   <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet
-  <em>Weboberfläche öffnen</em> im Browser. Jeder Schritt steht im Protokoll
+  <em>Weboberfläche öffnen</em>. Jeder Schritt steht im Protokoll
   darunter. Antwortet die Konsolensuche nicht, laufen aber Dienste, sagt die
   Seite das ausdrücklich: Die Konsole ist dann da, nur lässt Ihr Router die
   Rundrufe nicht durch. Das Umschalten der Ansicht allein schickt nichts ins
   Netz.</p>
+  <p><strong>Weboberflächen im Programm.</strong> Unter Windows öffnen sich
+  die Weboberflächen der Konsole &ndash; Payload-Manager, PKG Manager,
+  Garlic, Web-Dateimanager und die übrigen &ndash; im Programm und füllen
+  dort die ganze Fläche unter der oberen Leiste; die Seitenleiste weicht so
+  lange. In der Kopfzeile stehen Name, Adresse und Zustand, dazu
+  <em>Neu laden</em>, <em>Im Browser öffnen</em> und <em>‹&nbsp;Zurück</em>
+  zur Seite, von der Sie kamen. Verlassen Sie die Oberfläche, wird sie
+  geschlossen. Angezeigt wird mit WebView2, der
+  Browser-Engine von Edge, die zu Windows gehört. Fehlt sie oder läuft das
+  Programm unter Linux oder macOS, öffnet sich die Oberfläche wie bisher in
+  Ihrem Browser; das Protokoll nennt dann den Grund.</p>
   <p>Ist der ELF-Loader (Port&nbsp;9021) zu, lädt die Seite ihn nach dem
   Suchen und nach <em>Konsole prüfen</em> selbst über den Payload-Manager: Fehlt auf
   der PS5 der Ordner <code>/data/pldmgr/payloads/elfldr</code>, kommt er per
@@ -586,7 +604,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Sichern, entschlüsseln und zwischen Benutzern übertragen macht der
   <em>Garlic Save Manager</em> mit seiner eigenen Oberfläche (Port 8082).
   Die Seite <em>2.&nbsp;Spielstände</em> rechts in der Ansicht prüft auf
-  Knopfdruck, ob er läuft, startet ihn und öffnet ihn im Browser &ndash;
+  Knopfdruck, ob er läuft, startet ihn und öffnet ihn rechts im Programm
+  (unter Linux und macOS im Browser) &ndash;
   nachgebaut wird nichts. Das Adressfeld teilt sie sich mit
   <em>Konsole &amp; Payloads</em>: Was die Suche beim Programmstart gefunden
   hat, steht hier schon drin. Gestartet wird Garlic auf demselben schnellen
@@ -2138,7 +2157,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.45), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.46), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2338,8 +2357,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.45</strong></span>
-    <span>Stand 26. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.46</strong></span>
+    <span>Stand 27. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

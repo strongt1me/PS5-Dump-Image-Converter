@@ -68,7 +68,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
     def tearDown(self):
         # Jede Pruefung endet in der ersten Ansicht - andere Pruefstaende im
         # selben Prozess sollen sie so vorfinden.
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         self.app._vorschau_warteschlange = []
 
     def _packfolge(self):
@@ -81,7 +81,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
     def test_umschalten_tauscht_die_knoepfe(self):
         app = self.app
         vorher = self.grundzustand
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         _WURZEL.update_idletasks()
         gepackt = self._packfolge()
         for knopf, _modus in app.mode_buttons:
@@ -98,7 +98,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
         self.assertEqual("", app.content_scroll.winfo_manager())
         self.assertEqual("", app.content_scrollbar.winfo_manager())
 
-        app._ansicht_setzen("umwandeln", speichern=False)
+        app._ansicht_setzen("umwandeln")
         _WURZEL.update_idletasks()
         self.assertEqual(vorher, self._packangaben(),
                          "Nach dem Zurueckschalten steht die Leiste anders als vorher.")
@@ -107,7 +107,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
     def test_umschalter_nennt_sein_ziel(self):
         app = self.app
         self.assertEqual(app._t("ansicht.to_konsole"), app._ansicht_knopf.cget("text"))
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         self.assertEqual(app._t("ansicht.to_umwandeln"), app._ansicht_knopf.cget("text"))
         app._ansicht_umschalten()
         self.assertFalse(app._ansicht_ist_konsole())
@@ -115,14 +115,14 @@ class ZweiteAnsichtTests(unittest.TestCase):
     def test_quelle_ueberlebt_das_umschalten(self):
         app = self.app
         app.source_path.set(r"C:\irgendwo\PPSA01234")
-        app._ansicht_setzen("konsole", speichern=False)
-        app._ansicht_setzen("umwandeln", speichern=False)
+        app._ansicht_setzen("konsole")
+        app._ansicht_setzen("umwandeln")
         self.assertEqual(r"C:\irgendwo\PPSA01234", app.source_path.get())
         app.source_path.set("")
 
     def test_vorschau_bleibt_in_der_konsole_weg_und_wird_nachgeholt(self):
         app = self.app
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         with mock.patch.object(app, "_pack_sidebar_title") as titel:
             app._update_sidebar_preview(None, "Spieltitel")
             titel.assert_not_called()
@@ -136,7 +136,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
             return echt(cover, titel)
 
         with mock.patch.object(app, "_update_sidebar_preview", _mitschreiben):
-            app._ansicht_setzen("umwandeln", speichern=False)
+            app._ansicht_setzen("umwandeln")
         self.assertEqual([(None, "Spieltitel")], aufrufe)
         self.assertEqual([], app._vorschau_warteschlange)
         app._update_sidebar_preview(None, "")
@@ -151,7 +151,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
         _WURZEL.update()
         self.assertEqual("pack", app._sidebar_preview_img_label.winfo_manager(),
                          "Anker: Das Cover muesste in der ersten Ansicht stehen.")
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         _WURZEL.update()
         app._pack_sidebar_title()
         app._center_sidebar_cover()
@@ -159,22 +159,39 @@ class ZweiteAnsichtTests(unittest.TestCase):
         gepackt = self._packfolge()
         self.assertNotIn(app._sidebar_preview_title_label, gepackt)
         self.assertNotIn(app._sidebar_preview_img_label, gepackt)
-        app._ansicht_setzen("umwandeln", speichern=False)
+        app._ansicht_setzen("umwandeln")
         self.assertEqual("pack", app._sidebar_preview_img_label.winfo_manager(),
                          "Nach dem Zurueckschalten fehlt das Cover.")
         app._update_sidebar_preview(None, "")
 
-    def test_die_ansicht_wird_gemerkt(self):
+    def test_start_immer_in_umwandeln(self):
+        """Nutzerwunsch 26.09.2026: "Das Programm soll bitte in dieser Ansicht
+        gestartet werden (Umwandeln)". Bis dahin stellte der Start die zuletzt
+        gewaehlte Ansicht wieder her - wer mit KONSOLE aufhoerte, landete beim
+        naechsten Start dort."""
         app = self.app
         gespeichert = []
         with mock.patch.object(app, "_save_setting",
                                lambda k, v: gespeichert.append((k, v))):
             app._ansicht_setzen("konsole")
             app._ansicht_setzen("umwandeln")
-        self.assertEqual([("ansicht", "konsole"), ("ansicht", "umwandeln")], gespeichert)
-        with mock.patch.object(app, "_load_setting", return_value="konsole"):
-            app._ansicht_beim_start_herstellen()
-        self.assertTrue(app._ansicht_ist_konsole())
+        self.assertNotIn("ansicht", [k for k, _v in gespeichert],
+                         "Die Ansicht wird wieder fuer den naechsten Start gemerkt.")
+        # Eine Einstellung aus frueheren Fassungen ("ansicht": "konsole") darf
+        # den Start nicht mehr in die Konsole schicken.
+        echt = app._load_setting
+
+        def _alte_einstellung(schluessel, *args, **kwargs):
+            if schluessel == "ansicht":
+                return "konsole"
+            return echt(schluessel, *args, **kwargs)
+
+        with mock.patch.object(app, "_load_setting", _alte_einstellung):
+            app._finish_startup_phase()
+            _WURZEL.update()
+        self.assertFalse(app._ansicht_ist_konsole(),
+                         "Der Start landet in der Ansicht KONSOLE.")
+        self.assertEqual("grid", app.content_scroll.winfo_manager())
 
     def test_jeder_konsolenknopf_oeffnet_sein_fenster(self):
         """Seit Stufe 4 ist jeder der sieben Knoepfe verdrahtet.
@@ -186,7 +203,7 @@ class ZweiteAnsichtTests(unittest.TestCase):
         das Fenster, das in der Karte steht - und keine Kennung fehlt.
         """
         app = self.app
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         for nummer, (_schluessel, kennung) in enumerate(app._KONSOLE_KNOEPFE):
             methode = app._KONSOLE_FENSTER.get(kennung, "")
             seite = app._KONSOLE_SEITEN.get(kennung, "")
@@ -236,12 +253,12 @@ class KonsolenTafelTests(unittest.TestCase):
 
     def setUp(self):
         if self.app._ansicht_ist_konsole():
-            self.app._ansicht_setzen("umwandeln", speichern=False)
+            self.app._ansicht_setzen("umwandeln")
             _WURZEL.update()
 
     def tearDown(self):
         if self.app._ansicht_ist_konsole():
-            self.app._ansicht_setzen("umwandeln", speichern=False)
+            self.app._ansicht_setzen("umwandeln")
             _WURZEL.update()
 
     @staticmethod
@@ -254,7 +271,7 @@ class KonsolenTafelTests(unittest.TestCase):
             return False
 
     def test_tafel_erscheint_erst_in_der_konsole(self):
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         tafel = getattr(self.app, "_konsole_tafel", None)
         self.assertIsNotNone(tafel, "in der Konsole muss die Tafel stehen")
@@ -262,19 +279,19 @@ class KonsolenTafelTests(unittest.TestCase):
 
     def test_tafel_und_rollflaeche_schliessen_einander_aus(self):
         """Beide in derselben Zelle - gleichzeitig waere eine ueber der anderen."""
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         tafel = getattr(self.app, "_konsole_tafel", None)
         self.assertTrue(self._sichtbar(tafel))
         self.assertFalse(self._sichtbar(self.app.content_scroll))
 
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
         self.assertFalse(self._sichtbar(tafel))
         self.assertTrue(self._sichtbar(self.app.content_scroll))
 
     def test_tafel_liegt_in_der_zelle_der_rollflaeche(self):
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         lage = getattr(self.app, "_konsole_tafel").grid_info()
         self.assertEqual(1, int(lage["row"]))
@@ -282,7 +299,7 @@ class KonsolenTafelTests(unittest.TestCase):
 
     def test_tabelle_nennt_alle_dienste(self):
         from ps5_validator.utils import konsole_dienste
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         tabelle = getattr(self.app, "_konsole_tafel_tabelle", None)
         self.assertIsNotNone(tabelle)
@@ -292,18 +309,18 @@ class KonsolenTafelTests(unittest.TestCase):
     def test_umschalten_startet_keinen_faden(self):
         """Gemessen wird erst auf Knopfdruck - nicht beim Hinsehen."""
         vorher = {t.name for t in threading.enumerate()}
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         neu = {t.name for t in threading.enumerate()} - vorher
         self.assertEqual(set(), {n for n in neu if n.startswith("konsole-")})
 
     def test_zweites_umschalten_baut_nicht_neu(self):
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         erste = getattr(self.app, "_konsole_tafel")
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         _WURZEL.update()
         self.assertIs(erste, getattr(self.app, "_konsole_tafel"),
                       "die Tafel wird gebaut, nicht jedes Mal neu")

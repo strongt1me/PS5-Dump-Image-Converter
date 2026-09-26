@@ -102,7 +102,7 @@ class SeitenTests(unittest.TestCase):
             flicken = mock.patch.object(ziel, name, ersatz)
             flicken.start()
             self.addCleanup(flicken.stop)
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         self.app._konsole_seite_setzen("spielstaende")
         _WURZEL.update_idletasks()
         self.assertTrue(_bis(lambda: not self.app._spielstaende_laeuft["aktiv"]))
@@ -121,7 +121,7 @@ class SeitenTests(unittest.TestCase):
     def _zurueck(self) -> None:
         _bis(lambda: not self.app._spielstaende_laeuft["aktiv"])
         self.app._konsole_seite_setzen("uebersicht")
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
         gc.collect()
 
@@ -298,12 +298,17 @@ class SeitenTests(unittest.TestCase):
         self.assertEqual(self.app._t("spielstaende.no_file"), box.showwarning.call_args[0][1])
         self.assertFalse(self.app._spielstaende_laeuft["aktiv"])
 
-    def test_oeffnen_zeigt_garlic_im_browser(self) -> None:
+    def test_oeffnen_zeigt_garlic_im_programm(self) -> None:
+        """Seit dem 26.09.2026 rechts im Programm (sonst im Browser - das
+        entscheidet _webansicht_oeffnen, siehe test_webansicht)."""
         self.feld.insert(0, "10.0.0.9")
         adresse = kd.web_adresse(kd.dienst("garlic"), "10.0.0.9")
-        with mock.patch.object(APP.webbrowser, "open") as oeffnen:
+        with mock.patch.object(self.app, "_webansicht_oeffnen") as oeffnen, \
+                mock.patch.object(APP.webbrowser, "open") as browser:
             self.knopf[self.app._t("spielstaende.btn_open")].invoke()
-        oeffnen.assert_called_once_with(adresse)
+        oeffnen.assert_called_once_with(adresse, kd.dienst("garlic").name_schluessel,
+                                        "spielstaende")
+        browser.assert_not_called()
         self.assertIn(self.app._t("spielstaende.opened", adresse=adresse), self._protokoll())
 
     # -- Sprachwechsel -------------------------------------------------------

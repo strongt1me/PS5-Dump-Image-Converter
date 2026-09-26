@@ -143,6 +143,7 @@ from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import remoteplay
+from ps5_validator.utils import webansicht
 from ps5_validator.utils import sony_sdk
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
@@ -657,7 +658,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.45"
+APP_VERSION = "v1.9.46"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -1612,6 +1613,25 @@ def umgebung_doktor(temp_pfad: str = "", ziel_pfad: str = "",
             da = False
         melde(DOKTOR_GUT if da else DOKTOR_EGAL,
               "%s %s (%s)" % (anzeige, "vorhanden" if da else "fehlt", wozu))
+
+    # -- Weboberflaechen im Programm (seit 26.09.2026) ---------------------
+    #
+    # Fehlt etwas, oeffnen sie im Browser - kein Fehler, aber der Grund, den
+    # man kennen will, wenn eine Oberflaeche "ploetzlich" im Browser aufgeht.
+    # Unter Linux und macOS ist der Browser der vorgesehene Weg.
+    try:
+        from ps5_validator.utils import webansicht as _webansicht
+        from ps5_validator.utils.i18n import STRINGS as _texte
+        _web_ok, _web_grund = _webansicht.verfuegbar()
+        _web_laufzeit = _webansicht.laufzeit_version()
+    except Exception as exc:  # noqa: BLE001
+        _texte, _web_ok, _web_grund, _web_laufzeit = {}, False, str(exc), ""
+    if _web_ok:
+        melde(DOKTOR_GUT, "Weboberflächen öffnen im Programm (WebView2 %s)" % _web_laufzeit)
+    else:
+        melde(DOKTOR_EGAL if _web_grund == "webseite.grund_plattform" else DOKTOR_HINWEIS,
+              "Weboberflächen öffnen im Browser (%s)"
+              % _texte.get(_web_grund, {}).get("de", _web_grund))
 
     # -- Lange Pfade ---------------------------------------------------
     lang = _doktor_lange_pfade()
@@ -4945,6 +4965,11 @@ class PS5ConverterGUI:
                 self._spielstaende_beschriften()
             except tk.TclError:
                 pass
+        # Die Seite einer Weboberflaeche (seit 26.09.2026): Name und Status.
+        try:
+            self._webseite_beschriften()
+        except tk.TclError:
+            pass
 
         # Die Bibliothek steht seit dem 25.09.2026 dauerhaft im Hauptfenster
         # (Seite der Ansicht KONSOLE). Feste Beschriftungen sind registriert;
@@ -8785,12 +8810,14 @@ class PS5ConverterGUI:
                 widgets.append(widget)
         return widgets
 
-    def _ansicht_setzen(self, ansicht: str, speichern: bool = True) -> None:
+    def _ansicht_setzen(self, ansicht: str) -> None:
         """Schaltet zwischen "umwandeln" und "konsole" um.
+
+        Die Wahl wird nicht gemerkt: Das Programm startet immer in der Ansicht
+        UMWANDELN (Nutzerwunsch 26.09.2026).
 
         Args:
             ansicht: ``"umwandeln"`` oder ``"konsole"``.
-            speichern: Die Wahl fuer den naechsten Start merken.
         """
         if ansicht not in ("umwandeln", "konsole"):
             return
@@ -8834,17 +8861,6 @@ class PS5ConverterGUI:
         except tk.TclError as exc:
             logger.debug("Ansicht nicht umschaltbar: %s", exc)
         self._ansicht_beschriften()
-        if speichern:
-            self._save_setting("ansicht", self._ansicht)
-
-    def _ansicht_beim_start_herstellen(self) -> None:
-        """Stellt die zuletzt gewaehlte Ansicht wieder her - nach der Startphase.
-
-        Erst danach: Waehrend des Starts rechnen Cover, Beschriftungen und
-        Rollflaeche noch mit der ersten Ansicht.
-        """
-        if str(self._load_setting("ansicht", "umwandeln")) == "konsole":
-            self._ansicht_setzen("konsole", speichern=False)
 
     def _konsole_tafel_zeigen(self) -> None:
         """Die rechte Seite der Ansicht KONSOLE einblenden.
@@ -8886,10 +8902,13 @@ class PS5ConverterGUI:
         except tk.TclError as exc:
             logger.debug("Konsolentafel nicht einblendbar: %s", exc)
         self._konsole_knopf_hervorheben(gewaehlt)
+        self._webseite_sichtbarkeit(gewaehlt == "web")
 
     def _konsole_knopf_hervorheben(self, seite: str) -> None:
         """Hebt den Knopf der gezeigten Seite hervor - die anderen Seitenknoepfe nicht."""
         c = self._COLORS
+        if seite == "web":
+            seite = getattr(self, "_webseite_herkunft", "uebersicht")
         hervor = self._KONSOLE_SEITENBAU.get(seite, ("", "", ""))[2]
         seitenknoepfe = {knopf for _a, _b, knopf in self._KONSOLE_SEITENBAU.values()
                          if knopf}
@@ -8917,12 +8936,14 @@ class PS5ConverterGUI:
                 seite.grid_remove()
             except tk.TclError:
                 pass
+        self._webseite_sichtbarkeit(False)
 
     #: Spalten der Dienstetabelle: (Spalte, Textschluessel, Breite, dehnbar).
     _KONSOLE_TAFEL_SPALTEN: tuple[tuple[str, str, int, bool], ...] = (
         ("dienst", "dienste.col_dienst", 190, False),
         ("port", "dienste.col_port", 70, False),
         ("zustand", "dienste.col_zustand", 90, False),
+        ("version", "dienste.col_version", 150, False),
         ("zweck", "dienste.col_zweck", 320, True),
     )
 
@@ -9084,10 +9105,27 @@ class PS5ConverterGUI:
                            values=(self._t(stand.dienst.name_schluessel),
                                    stand.dienst.port,
                                    self._t(zustand),
+                                   self._konsole_versionstext(stand),
                                    self._t(stand.dienst.zweck_schluessel)))
         noch_da = [iid for iid in gewaehlt if tabelle.exists(iid)]
         if noch_da:
             tabelle.selection_set(noch_da)
+
+    def _konsole_versionstext(self, stand) -> str:
+        """Die Spalte "Version" der Dienstetabelle - nur aus dem Hauptfaden.
+
+        Nennt der laufende Dienst seine Version selbst (FTP-Server im Gruss,
+        Payload-Manager im Titel seiner Startseite), steht die da; sonst die
+        der mitgelieferten Datei, die das Programm startet. Weichen beide ab,
+        steht die mitgelieferte dahinter. Wunsch des Nutzers vom 26.09.2026:
+        "Hier fehlt mir noch die Version der Payloads".
+        """
+        datei = konsole_dienste.version_aus_dateiname(
+            self._konsole_payload_datei(stand.dienst.payload_muster))
+        laeuft = str(getattr(stand, "version", "") or "")
+        if laeuft and datei and laeuft != datei:
+            return self._t("dienste.version_abweichend", laeuft=laeuft, datei=datei)
+        return laeuft or datei or "–"
 
     def _konsole_tafel_melden(self, schluessel: str, **werte) -> None:
         """Eine Zeile fuers Protokoll der Seite - aus jedem Faden, unuebersetzt."""
@@ -9328,7 +9366,8 @@ class PS5ConverterGUI:
                          name="konsole-grundausstattung").start()
 
     def _konsole_tafel_web(self) -> None:
-        """"Weboberflaeche oeffnen": die des markierten Dienstes im Browser."""
+        """"Weboberflaeche oeffnen": die des markierten Dienstes - rechts im Programm
+        (:meth:`_webansicht_oeffnen`), wo das nicht geht, im Browser."""
         auswahl = self._konsole_tafel_tabelle.selection()
         if not auswahl:
             messagebox.showinfo(self._t("tafel.title"), self._t("dienste.need_auswahl"),
@@ -9343,7 +9382,7 @@ class PS5ConverterGUI:
             return
         self._konsole_tafel_melden("dienste.log_web", adresse=adresse)
         self._konsole_tafel_protokoll_nachtragen()
-        webbrowser.open(adresse)
+        self._webansicht_oeffnen(adresse, eintrag.name_schluessel, "uebersicht")
 
     def _konsole_tafel_zustandstext(self, stand: dict) -> str:
         """Der Satz ueber der Tabelle - aus den Daten der letzten Messung."""
@@ -9351,9 +9390,13 @@ class PS5ConverterGUI:
             return self._t("tafel.unbekannt")
         konsole = stand.get("konsole")
         if konsole is not None:
+            # Die Konsolensuche meldet "12000043" - gezeigt wird die Schreibweise
+            # der Konsole selbst, "12.00" (Wunsch des Nutzers vom 26.09.2026);
+            # gespeichert bleibt der Rohwert (konsole_firmware).
             return self._t("tafel.gefunden", name=konsole.name or "-",
                            zustand=self._t(konsole.status_schluessel),
-                           firmware=konsole.firmware or "-")
+                           firmware=bibliothek_bestand.firmware_kurz(konsole.firmware)
+                           or konsole.firmware or "-")
         uebersicht = stand.get("uebersicht")
         if uebersicht is not None and uebersicht.anzahl_laufend:
             # Antwortet die Suche nicht, sagt ein laufender Dienst trotzdem,
@@ -9489,6 +9532,239 @@ class PS5ConverterGUI:
             if getattr(self, "_konsole_seite", "uebersicht") == "bibliothek"
             else "bibliothek")
 
+    # -- Weboberflaeche als Seite (seit 26.09.2026) --------------------------
+
+    def _webansicht_oeffnen(self, adresse: str, name_schluessel: str,
+                            herkunft: str) -> None:
+        """Zeigt eine Weboberflaeche der Konsole rechts im Programm - sonst im Browser.
+
+        Wunsch des Nutzers vom 26.09.2026: "Wenn eine Weboberflaeche geoeffnet
+        wird (im Programm), soll diese bitte auch im Programm geoeffnet bzw.
+        angezeigt werden." Unter Windows legt WebView2 die Seite in einen
+        Rahmen der Ansicht KONSOLE (:mod:`webansicht`). Fehlt dafuer etwas
+        (anderes System, pythonnet, die DLLs, die Laufzeit), geht wie bisher
+        der Browser auf, und das Hauptprotokoll sagt, warum.
+
+        Args:
+            adresse: http-Adresse der Oberflaeche.
+            name_schluessel: Textschluessel des Dienstes (Kopfzeile der Seite).
+            herkunft: die Seite, zu der "‹ Zurueck" fuehrt.
+        """
+        ok, grund = webansicht.verfuegbar()
+        if not ok:
+            self._webseite_im_browser_statt(adresse, self._t(grund))
+            return
+        self._webseite_herkunft = (herkunft if herkunft in self._KONSOLE_SEITENBAU
+                                   and herkunft != "web" else "uebersicht")
+        self._webseite_url = adresse
+        self._webseite_name_schluessel = name_schluessel
+        if not self._ansicht_ist_konsole():
+            self._ansicht_setzen("konsole")
+        self._konsole_seite_setzen("web")
+        self._webseite_beschriften()
+        engine = getattr(self, "_webseite_engine", None)
+        if engine is None or engine.zustand in ("zu", "fehler"):
+            rahmen = self._webseite_rahmen
+            rahmen.update_idletasks()
+            engine = webansicht.Seite(rahmen.winfo_id(),
+                                      os.path.join(_system_konfigurationsordner(), "WebView2"))
+            engine.groesse_setzen(rahmen.winfo_width(), rahmen.winfo_height())
+            self._webseite_engine = engine
+            engine.starten()
+        engine.navigieren(adresse)
+        engine.sichtbar_setzen(True)
+        self._webseite_melden()
+        if not getattr(self, "_webseite_takt_laeuft", False):
+            self._webseite_takt_laeuft = True
+            self.root.after(50, self._webseite_takt)
+
+    def _webseite_im_browser_statt(self, adresse: str, grund: str) -> None:
+        """Der Ausweg: die Oberflaeche im Browser - mit dem Grund im Hauptprotokoll."""
+        self._append_to_log(self._t("webseite.log_browser", adresse=adresse,
+                                    grund=grund) + "\n")
+        webbrowser.open(adresse)
+
+    def _webseite_bauen(self) -> None:
+        """Die Seite fuer eine Weboberflaeche der Konsole - einmal gebaut.
+
+        Eine einzige Kopfzeile: Name des Dienstes, Adresse, Status, dazu
+        "Neu laden", "Im Browser oeffnen" (der Ausweg, falls eine Oberflaeche
+        eingebettet streikt) und "‹ Zurueck" zur Seite, von der man kam.
+        Alles andere gehoert dem Rahmen, in den WebView2 sein Fenster legt -
+        die Seite fuellt die ganze Flaeche unter der oberen Leiste
+        (:meth:`_webseite_vollflaeche`).
+        """
+        c = self._COLORS
+        seite = tk.Frame(self.root, bg=c["bg_main"], padx=6, pady=0)
+        self._webseite = seite
+        kopf = tk.Frame(seite, bg=c["bg_main"])
+        kopf.pack(fill="x", pady=(4, 4))
+        self._webseite_kopf = kopf
+        self._webseite_titel = tk.StringVar(master=seite, value="")
+        tk.Label(kopf, textvariable=self._webseite_titel, font=(UI_SCHRIFT, pt(12), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(side="left")
+        self._webseite_adresse = tk.StringVar(master=seite, value="")
+        tk.Label(kopf, textvariable=self._webseite_adresse, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(side="left", padx=(12, 0))
+        for schluessel, befehl in (("webseite.zurueck", self._webseite_zurueck),
+                                   ("webseite.im_browser", self._webseite_im_browser),
+                                   ("webseite.neu_laden", self._webseite_neu_laden)):
+            knopf = ttk.Button(kopf, text=self._t(schluessel), style="Klein.TButton",
+                               command=befehl)
+            knopf.pack(side="right", padx=(8, 0))
+            self._register_translatable(knopf, schluessel)
+        self._webseite_status = tk.StringVar(master=seite, value="")
+        tk.Label(kopf, textvariable=self._webseite_status, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
+            side="left", fill="x", expand=True, padx=(12, 0))
+        rahmen = tk.Frame(seite, bg="#000000", highlightthickness=0)
+        rahmen.pack(fill="both", expand=True, pady=(0, 6))
+        rahmen.bind("<Configure>", lambda e: self._webseite_groesse(e.width, e.height))
+        self._webseite_rahmen = rahmen
+
+    def _webseite_vollflaeche(self, an: bool) -> None:
+        """Die Weboberflaeche fuellt die ganze Flaeche unter der oberen Leiste.
+
+        Wunsch des Nutzers vom 27.09.2026: "Die Weboberflaeche der Payloads
+        sollte bitte die gesamte Benutzeroberflaeche ausfuellen, die Web UI
+        sieht sonst gequetscht aus." Solange sie steht, weicht die
+        Seitenleiste; "‹ Zurueck" und der Ansichtswechsel holen sie zurueck.
+        Die obere Leiste liegt per place() ueber dem Raster, und die spaeter
+        gebaute Seite laege in der Stapelreihenfolge darueber - deshalb kommt
+        die Leiste wieder nach vorn, und der Kopf der Seite haelt ihre Hoehe frei.
+        """
+        seite = getattr(self, "_webseite", None)
+        sidebar = getattr(self, "sidebar", None)
+        try:
+            if an and seite is not None:
+                seite.grid(row=1, column=0, columnspan=3, sticky="nsew")
+                if sidebar is not None:
+                    sidebar.grid_remove()
+                leiste = getattr(self, "_main_titlebar", None)
+                if leiste is not None:
+                    leiste.lift()
+                    self._webseite_kopf.pack_configure(
+                        pady=(max(leiste.winfo_height(), 0) + 4, 4))
+            elif sidebar is not None and not sidebar.winfo_manager():
+                sidebar.grid()
+        except tk.TclError as exc:
+            logger.debug("Weboberflaeche nicht auf volle Flaeche: %s", exc)
+
+    def _webseite_melden(self) -> None:
+        """Die Statuszeile aus dem Zustand der eingebetteten Seite - in der aktuellen Sprache."""
+        engine = getattr(self, "_webseite_engine", None)
+        status = getattr(self, "_webseite_status", None)
+        if engine is None or status is None:
+            return
+        if engine.zustand in ("neu", "startet"):
+            text = self._t("webseite.startet")
+        elif engine.zustand == "fehler":
+            text = self._t("webseite.fehler_start", fehler=self._webseite_fehlertext(engine))
+        elif engine.navigation is None:
+            text = self._t("webseite.laedt", adresse=getattr(self, "_webseite_url", ""))
+        elif engine.navigation[0]:
+            text = self._t("webseite.geladen", titel=engine.titel or "-")
+        else:
+            text = self._t("webseite.fehler_laden", status=engine.navigation[1])
+        status.set(text)
+
+    def _webseite_takt(self) -> None:
+        """Holt ab, was WebView2 fertig hat, und schreibt den Status.
+
+        WebView2 antwortet ueber Tks Nachrichtenschleife; hier wird nur
+        nachgefragt, nie gewartet (:mod:`webansicht`). Laesst sich die
+        Anzeige nicht starten, geht die Oberflaeche im Browser auf, und die
+        Seite fuehrt zurueck, von wo sie kam.
+        """
+        engine = getattr(self, "_webseite_engine", None)
+        if engine is None or engine.zustand == "zu":
+            self._webseite_takt_laeuft = False
+            return
+        engine.schritt()
+        self._webseite_melden()
+        if engine.zustand == "fehler":
+            self._webseite_takt_laeuft = False
+            self._webseite_im_browser_statt(getattr(self, "_webseite_url", ""),
+                                            self._webseite_fehlertext(engine))
+            self._webseite_zurueck()
+            return
+        self.root.after(50 if engine.zustand == "startet" or engine.navigation is None
+                        else 250, self._webseite_takt)
+
+    def _webseite_fehlertext(self, engine) -> str:
+        """Der Startfehler lesbar: Schluessel von :mod:`webansicht` uebersetzt,
+        eine Meldung von .NET so, wie sie kam."""
+        fehler = str(getattr(engine, "fehler", "") or "")
+        if not fehler or fehler.startswith("webseite.grund_"):
+            return self._t(fehler or webansicht.GRUND_START)
+        return fehler
+
+    def _webseite_beschriften(self) -> None:
+        """Kopfzeile, Adresse und Status neu - nach dem Oeffnen und beim Sprachwechsel."""
+        if getattr(self, "_webseite", None) is None:
+            return
+        self._webseite_titel.set(self._t(getattr(self, "_webseite_name_schluessel", ""))
+                                 if getattr(self, "_webseite_name_schluessel", "") else "")
+        self._webseite_adresse.set(getattr(self, "_webseite_url", ""))
+        self._webseite_melden()
+
+    def _webseite_zurueck(self) -> None:
+        self._konsole_seite_setzen(getattr(self, "_webseite_herkunft", "uebersicht"))
+
+    def _webseite_im_browser(self) -> None:
+        adresse = getattr(self, "_webseite_url", "")
+        if adresse:
+            webbrowser.open(adresse)
+
+    def _webseite_neu_laden(self) -> None:
+        engine = getattr(self, "_webseite_engine", None)
+        if engine is None:
+            return
+        if engine.navigation is not None and not engine.navigation[0]:
+            # Die letzte Navigation scheiterte - Neu laden hiesse, den Fehler
+            # neu zu laden; also die Adresse noch einmal.
+            engine.navigieren(getattr(self, "_webseite_url", ""))
+        else:
+            engine.neu_laden()
+        self._webseite_melden()
+
+    def _webseite_groesse(self, breite: int, hoehe: int) -> None:
+        engine = getattr(self, "_webseite_engine", None)
+        if engine is not None:
+            engine.groesse_setzen(breite, hoehe)
+
+    def _webseite_sichtbarkeit(self, sichtbar: bool) -> None:
+        """Beim Ein- und Ausblenden der Seite - aus :meth:`_konsole_tafel_zeigen`
+        und :meth:`_konsole_tafel_verbergen`."""
+        self._webseite_vollflaeche(sichtbar)
+        if sichtbar:
+            engine = getattr(self, "_webseite_engine", None)
+            if engine is not None:
+                engine.sichtbar_setzen(True)
+        else:
+            self._webseite_verlassen()
+
+    def _webseite_verlassen(self) -> None:
+        """Die Weboberflaeche geht aus dem Blick (andere Seite, andere Ansicht).
+
+        Entscheidung des Nutzers vom 26.09.2026: **schliessen.** Das gibt die
+        WebView2-Prozesse frei und beendet den Verkehr, den eine Oberflaeche
+        wie die des Payload-Managers im Hintergrund zur Konsole haelt (ihr
+        Skript fragt /processes_list, /autoload_status ...). Beim naechsten
+        Oeffnen baut :meth:`_webansicht_oeffnen` eine neue Engine (rund 0,5 s
+        plus Laden).
+
+        Ist "web" noch die gewaehlte Seite (Wechsel zur Ansicht UMWANDELN),
+        gilt wieder die Seite, von der man kam - sonst stuende beim
+        Zurueckschalten ein leerer Rahmen da.
+        """
+        engine = getattr(self, "_webseite_engine", None)
+        if engine is not None:
+            engine.schliessen()
+        self._webseite_engine = None
+        if getattr(self, "_konsole_seite", "") == "web":
+            self._konsole_seite = getattr(self, "_webseite_herkunft", "uebersicht")
+
     def _konsole_seite_setzen(self, seite: str) -> None:
         """Waehlt die rechte Seite der Ansicht KONSOLE und hebt ihren Knopf hervor.
 
@@ -9531,6 +9807,10 @@ class PS5ConverterGUI:
                          "konsole.btn_spielstaende"),
         "bibliothek": ("_bibliothek_seite", "_bibliothek_seite_bauen",
                        "konsole.btn_bibliothek"),
+        # Eine Weboberflaeche der Konsole (seit 26.09.2026) - ohne eigenen
+        # Knopf: Sie kommt von einer der drei Seiten und fuehrt dorthin
+        # zurueck; hervorgehoben bleibt deren Knopf (_webseite_herkunft).
+        "web": ("_webseite", "_webseite_bauen", ""),
     }
 
     def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
@@ -10068,7 +10348,7 @@ class PS5ConverterGUI:
         threading.Thread(target=_arbeit, daemon=True, name="konsole-garlic").start()
 
     def _spielstaende_oeffnen(self) -> None:
-        """"Oberflaeche oeffnen": Garlic im Browser."""
+        """"Oberflaeche oeffnen": Garlic rechts im Programm, wo das nicht geht, im Browser."""
         adresse = konsole_dienste.web_adresse(konsole_dienste.dienst("garlic"),
                                               self._konsole_ip_var().get().strip())
         if not adresse:
@@ -10077,7 +10357,8 @@ class PS5ConverterGUI:
             return
         self._spielstaende_melden("spielstaende.opened", adresse=adresse)
         self._spielstaende_protokoll_nachtragen()
-        webbrowser.open(adresse)
+        self._webansicht_oeffnen(adresse, konsole_dienste.dienst("garlic").name_schluessel,
+                                 "spielstaende")
 
     def _spielstaende_protokoll_nachtragen(self) -> None:
         """Schreibt neue Protokollzeilen ins Feld - nur aus dem Hauptfaden."""
@@ -11179,9 +11460,9 @@ class PS5ConverterGUI:
         """Markiert die kritische Startphase als abgeschlossen."""
         self._startup_complete = True
         self.root.after_idle(self._hintergrund_beim_start_nachziehen)
-        # Die zuletzt gewaehlte Ansicht erst jetzt: Waehrend der Startphase
-        # rechnen Cover, Beschriftungen und Rollflaeche mit der ersten.
-        self.root.after_idle(self._ansicht_beim_start_herstellen)
+        # Keine Ansicht wiederherstellen: Das Programm startet immer in
+        # UMWANDELN, auch wenn zuletzt KONSOLE offen war (Nutzerwunsch
+        # 26.09.2026). Eine alte Einstellung "ansicht" wird nicht gelesen.
         # Waehrend der Startphase wachsen Fenster und Raster noch; die
         # Beschriftungen tragen dann Ausschnitte, die zur endgueltigen Lage nicht
         # mehr passen und als Kasten stehen bleiben, bis irgendwann eine
@@ -37086,7 +37367,8 @@ class PS5ConverterGUI:
 
         Aus "Zurueckspielen" uebernommen, dort zwei Knoepfe ("starten",
         "oeffnen"). Hier einer, der beides erledigt: Antwortet Port 8888
-        schon, geht der Browser gleich auf; sonst wird das Payload geschickt,
+        schon, geht die Oberflaeche gleich auf (rechts im Programm, sonst im
+        Browser - :meth:`_webansicht_oeffnen`); sonst wird das Payload geschickt,
         die Anlaufzeit abgewartet und dann geoeffnet. Mit ihm verschiebt man
         einen gesendeten Ordner vom USB-Datentraeger auf die interne SSD -
         dieses Programm schreibt nichts in die Systemdatenbanken der Konsole.
@@ -37125,7 +37407,8 @@ class PS5ConverterGUI:
                         "zurueck.log_webfm_port" if offen
                         else "zurueck.log_webfm_kein_port", port=eintrag.port) + "\n")
                 if offen:
-                    self._hauptfaden_planen(webbrowser.open, adresse)
+                    self._hauptfaden_planen(self._webansicht_oeffnen, adresse,
+                                            eintrag.name_schluessel, "bibliothek")
                     self._hauptfaden_planen(melden, self._t("library.dateimanager_offen",
                                                             adresse=adresse))
                 else:

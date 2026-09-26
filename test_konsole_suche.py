@@ -433,7 +433,7 @@ class SeitenTests(unittest.TestCase):
             flicken = mock.patch.object(ziel, name, ersatz)
             flicken.start()
             self.addCleanup(flicken.stop)
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         self.app._konsole_seite_setzen("uebersicht")
         _WURZEL.update_idletasks()
         self.assertTrue(_bis(lambda: not self.app._konsole_tafel_beschaeftigt()))
@@ -455,7 +455,7 @@ class SeitenTests(unittest.TestCase):
 
     def _zurueck(self) -> None:
         _bis(lambda: not self.app._konsole_tafel_beschaeftigt())
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
         gc.collect()
 
@@ -501,8 +501,11 @@ class SeitenTests(unittest.TestCase):
     def test_die_seite_zeigt_alles_was_das_fenster_hatte(self) -> None:
         self.assertEqual([d.schluessel for d in kd.KATALOG], list(self.tabelle.get_children()))
         erste = kd.KATALOG[0]
+        version = kd.version_aus_dateiname(self.app._konsole_payload_datei(erste.payload_muster))
+        self.assertTrue(version, "Anker: Zum ELF-Loader liegt eine Datei mit Version bei.")
         self.assertEqual([self.app._t(erste.name_schluessel), str(erste.port),
-                          self.app._t("dienste.zustand_aus"), self.app._t(erste.zweck_schluessel)],
+                          self.app._t("dienste.zustand_aus"), version,
+                          self.app._t(erste.zweck_schluessel)],
                          [str(w) for w in self.tabelle.item(erste.schluessel, "values")])
         for schluessel in ("tafel.check", "dienste.start_button", "dienste.base_button",
                            "dienste.web_button"):
@@ -511,6 +514,46 @@ class SeitenTests(unittest.TestCase):
         texte = [_text(w) for w in _alle(self.app._konsole_tafel)]
         self.assertIn(self.app._t("dienste.hint"), texte)
         self.assertIn(self.app._t("tafel.title"), texte)
+
+    def test_die_versionsspalte(self) -> None:
+        """Wunsch vom 26.09.2026: "Hier fehlt mir noch die Version der Payloads".
+
+        Laufende Version, wenn der Dienst sie nennt; sonst die der
+        mitgelieferten Datei; weichen beide ab, stehen beide da.
+        """
+        def datei(schluessel: str) -> str:
+            return kd.version_aus_dateiname(
+                self.app._konsole_payload_datei(kd.dienst(schluessel).payload_muster))
+
+        self.assertTrue(datei("ftpsrv") and datei("pldmgr") and datei("klogsrv"),
+                        "Anker: Zu diesen Diensten liegen Dateien mit Version bei.")
+        staende = [kd.Stand(kd.dienst("ftpsrv"), True, False, datei("ftpsrv")),
+                   kd.Stand(kd.dienst("pldmgr"), True, False, "0.0.1-alt"),
+                   kd.Stand(kd.dienst("klogsrv"), True, False, ""),
+                   kd.Stand(kd.dienst("elfldr9020"), False, False, "")]
+        self.app._konsole_tafel_fuellen(kd.Uebersicht("10.0.0.9", staende))
+        self.assertEqual(self.app._t("dienste.col_version"),
+                         self.tabelle.heading("version", "text"))
+        self.assertEqual(datei("ftpsrv"), self.tabelle.set("ftpsrv", "version"))
+        self.assertEqual(self.app._t("dienste.version_abweichend", laeuft="0.0.1-alt",
+                                     datei=datei("pldmgr")),
+                         self.tabelle.set("pldmgr", "version"))
+        self.assertEqual(datei("klogsrv"), self.tabelle.set("klogsrv", "version"))
+        self.assertEqual("–", self.tabelle.set("elfldr9020", "version"))
+
+    def test_die_firmware_wie_die_konsole_sie_schreibt(self) -> None:
+        """Die Suche meldet "12000043"; die Seite zeigt "12.00" (Wunsch vom 26.09.2026)."""
+        for roh, gezeigt in (("12000043", "12.00"), ("12020000", "12.02"),
+                             ("12700000", "12.70"), ("07610001", "7.61"),
+                             ("unbekannt", "unbekannt"), ("", "-")):
+            ps5 = remoteplay.Konsole(adresse="10.0.0.9", name="PS5-TEST", status=200,
+                                     firmware=roh)
+            with self.subTest(roh=roh):
+                self.assertEqual(
+                    self.app._t("tafel.gefunden", name="PS5-TEST",
+                                zustand=self.app._t("remoteplay.status_an"),
+                                firmware=gezeigt),
+                    self.app._konsole_tafel_zustandstext({"geprueft": True, "konsole": ps5}))
 
     # -- Suchen und Pruefen ------------------------------------------------
 
@@ -531,7 +574,7 @@ class SeitenTests(unittest.TestCase):
                          self.tabelle.set("ftpsrv", "zustand"))
         self.assertEqual(self.app._t("tafel.gefunden", name="PS5-TEST",
                                      zustand=self.app._t("remoteplay.status_an"),
-                                     firmware="12000043"),
+                                     firmware="12.00"),
                          self.app._konsole_tafel_zustand.get())
         text = self._text_protokoll()
         self.assertIn(self.app._t("dienste.log_gefunden", name="PS5-TEST", host="10.0.0.9",
@@ -638,13 +681,18 @@ class SeitenTests(unittest.TestCase):
         self.assertIn(self.app._t("dienste.log_laeuft_schon", name=self.app._t(
             kd.dienst("elfldr9021").name_schluessel)), self._text_protokoll())
 
-    def test_weboberflaeche_oeffnet_den_browser(self) -> None:
+    def test_weboberflaeche_oeffnet_im_programm(self) -> None:
+        """Seit dem 26.09.2026 rechts im Programm (sonst im Browser - das
+        entscheidet _webansicht_oeffnen, siehe test_webansicht)."""
         self.feld.insert(0, "10.0.0.9")
         self.tabelle.selection_set("pldmgr")
-        with mock.patch.object(APP.webbrowser, "open") as oeffnen:
+        with mock.patch.object(self.app, "_webansicht_oeffnen") as oeffnen, \
+                mock.patch.object(APP.webbrowser, "open") as browser:
             self.knopf[self.app._t("dienste.web_button")].invoke()
         adresse = kd.web_adresse(kd.dienst("pldmgr"), "10.0.0.9")
-        oeffnen.assert_called_once_with(adresse)
+        oeffnen.assert_called_once_with(adresse, kd.dienst("pldmgr").name_schluessel,
+                                        "uebersicht")
+        browser.assert_not_called()
         self.assertIn(self.app._t("dienste.log_web", adresse=adresse), self._text_protokoll())
 
     # -- Port 9021 zu: elfldr ueber den Payload Manager --------------------
@@ -902,7 +950,7 @@ class QuelltextTests(unittest.TestCase):
         self.assertIn(aufruf, text)
         self.assertLess(text.index(aufruf), text.rindex("root.mainloop()"))
         self.assertEqual(1, text.count("_konsole_beim_start_verbinden"))
-        for name in ("__init__", "_finish_startup_phase", "_ansicht_beim_start_herstellen",
+        for name in ("__init__", "_finish_startup_phase",
                      "_run_anzeige_diagnose", "_run_cli", "_ansicht_setzen"):
             funktion = _methode(baum, name)
             with self.subTest(funktion=name):
@@ -923,7 +971,8 @@ class TexteTests(unittest.TestCase):
                            "dienste.log_elfldr_web", "dienste.log_elfldr_ohne_pldmgr",
                            "dienste.log_elfldr_fehler", "payloadmod.elfldr_belegt",
                            "konsole.start_suche", "konsole.start_ergebnis",
-                           "konsole.start_nichts", "tafel.title", "tafel.subtitle"):
+                           "konsole.start_nichts", "tafel.title", "tafel.subtitle",
+                           "dienste.col_version", "dienste.version_abweichend"):
             for sprache in ("de", "en"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     self.assertTrue(STRINGS[schluessel].get(sprache))
@@ -952,7 +1001,8 @@ class TexteTests(unittest.TestCase):
                        "3&nbsp;Sekunden", "30&nbsp;Sekunden",
                        "<code>/data/pldmgr/payloads/elfldr</code>", "nichts hochgeladen",
                        "über die Weboberfläche des Payload-Managers", "bleibt unangetastet",
-                       "Grundausstattung"):
+                       "Grundausstattung", "(12.00, 12.02, 12.70 &hellip;)",
+                       "Port, Version und Zweck", "verraten ihre Version nicht"):
             with self.subTest(stelle=stelle):
                 self.assertIn(stelle, abschnitt)
         self.assertNotIn("Der Zustand der Konsole (rechte Seite)", handbuch)

@@ -8,3 +8,7 @@ psutil==7.2.2
 lz4==4.4.5
 # Mitgeliefertes PS5 Wee Tools (UART und SPI-Flasher ueber die serielle Schnittstelle)
 pyserial==3.5
+# Weboberflaechen der Konsole im Programm (nur Windows): die .NET-Bruecke und die
+# WebView2-DLLs von Microsoft (aus pywebview; von pywebview selbst wird nichts benutzt)
+pythonnet==3.1.0; sys_platform == "win32"
+pywebview==6.2.1; sys_platform == "win32"

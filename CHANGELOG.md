@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.45):** Das Programm verbindet sich beim Start selbst mit der PS5, und die Ansicht KONSOLE zeigt alles auf Seiten statt in eigenen Fenstern.
+> **Kurz zum aktuellen Stand (v1.9.46):** Weboberflächen der Konsole öffnen unter Windows direkt im Programm, und die Konsolenseite nennt die Versionen der Payloads.
+
+---
+
+## v1.9.46 – 27.09.2026
+
+- **Neu:** Weboberflächen der Konsole (Payload-Manager, Garlic, Web-Dateimanager …) öffnen unter Windows im Programm und füllen dort die ganze Fläche; unter Linux und macOS weiter im Browser.
+- **Neu:** Die Dienstetabelle zeigt die Version jedes Payloads, und die Firmware steht wie auf der Konsole, etwa „12.00“.
+- **Geändert:** Das Programm startet immer in der Ansicht UMWANDELN.
 
 ---
 

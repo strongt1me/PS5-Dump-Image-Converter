@@ -3167,10 +3167,18 @@ class BauskriptPaketeTests(unittest.TestCase):
     anderen Bauten auch.
     """
 
+    #: Nur fuer Windows (seit 26.09.2026): die Weboberflaechen im Programm
+    #: laufen ueber WebView2 und pythonnet; Linux und macOS oeffnen sie im
+    #: Browser (webansicht.verfuegbar) und brauchen die Pakete nicht.
+    NUR_WINDOWS = {"pythonnet", "pywebview"}
+
     def test_linux_und_macos_installieren_dieselben_pakete_wie_windows(self) -> None:
         windows = set(re.findall(r"-m pip install ([A-Za-z0-9_.-]+) --upgrade",
                                  (PROJEKT / "Build_EXE.ps1").read_text(encoding="utf-8-sig")))
         windows.discard("pip")
+        self.assertEqual(self.NUR_WINDOWS, windows & self.NUR_WINDOWS,
+                         "Anker: Build_EXE.ps1 installiert die Windows-Pakete nicht mehr.")
+        windows -= self.NUR_WINDOWS
         self.assertIn("lz4", windows, "Die Auswertung von Build_EXE.ps1 misst nichts mehr.")
         for skript in ("Build_Linux.sh", "Build_macOS.sh"):
             with self.subTest(skript=skript):

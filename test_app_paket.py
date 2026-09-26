@@ -260,17 +260,12 @@ class BibliothekTests(unittest.TestCase):
         cls.APP = APP
         cls.app = APP.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
-        cls.app._konfiguration_schreiben({"ansicht": "umwandeln"})
         _WURZEL.update_idletasks()
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        cls.app._konfiguration_schreiben({"ansicht": "umwandeln"})
 
     def setUp(self) -> None:
         self.ordner = tempfile.mkdtemp(prefix="app_seite_")
         self.addCleanup(lambda: __import__("shutil").rmtree(self.ordner, ignore_errors=True))
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         self.app._konsole_seite_setzen("bibliothek")
         _WURZEL.update()
         self.zustand = self.app._bibliothek
@@ -279,7 +274,7 @@ class BibliothekTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.app._konsole_seite_setzen("uebersicht")
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
 
     def test_der_knopf_nimmt_ein_zip_und_uebertraegt(self) -> None:

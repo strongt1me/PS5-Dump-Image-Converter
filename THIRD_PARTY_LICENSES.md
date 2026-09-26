@@ -133,6 +133,7 @@ SOFTWARE.
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
 | **PS5 WebKit Autoloader 0.4.0** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)) | Legt eine Kachel auf den Startbildschirm der Konsole; liegt als Host, Skript und Installer bei |
 | **Hintergrundbilder** | für dieses Programm erstellt | Haupt- und Sidebar-Hintergründe |
+| **Microsoft WebView2 SDK 1.0.3856.49** (nur Windows) | Microsoft Corporation – `Microsoft.Web.WebView2.Core.dll` und `WebView2Loader.dll` (x64), von Microsoft signiert; entnommen dem Paket **pywebview 6.2.1** (BSD-3-Clause), von dem sonst nichts eingebettet wird | Zeigt die Weboberflächen der Konsole rechts im Programm, über die in Windows enthaltene WebView2-Laufzeit. BSD-artige Lizenz von Microsoft – Wortlaut im eigenen Abschnitt unten |
 
 ---
 
@@ -202,6 +203,41 @@ Quellen, am 03.09.2026 geprüft:
 [Issue #108905](https://github.com/dotnet/runtime/issues/108905) ·
 [.NET Library License](https://dotnet.microsoft.com/en-us/dotnet_library_license.htm)
 
+## Microsoft WebView2 SDK (nur Windows)
+
+Die beiden Dateien `Microsoft.Web.WebView2.Core.dll` und `WebView2Loader.dll`
+stammen aus dem NuGet-Paket **Microsoft.Web.WebView2 1.0.3856.49** (über
+pywebview 6.2.1) und werden unverändert weitergegeben. Die Browser-Engine
+selbst (WebView2-Laufzeit) liegt nicht bei – sie gehört zu Windows. Lizenz
+laut nuget.org, am 26.09.2026 nachgelesen:
+
+```
+Copyright (C) Microsoft Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* The name of Microsoft Corporation, or the names of its contributors may not
+  be used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
 ## Verfahren, die nachgebaut wurden
 
 Kein Fremdcode, aber fremde Vorarbeit – ohne die es die Funktion **BACKPORT**
@@ -223,7 +259,9 @@ Diese Bibliotheken werden in die EXE eingebettet; es gelten ihre jeweiligen Lize
 
 **Pillow**, **cryptography**, **zstandard**, **zlib-ng**, **tkinterdnd2**, **psutil**,
 **lz4** (für die Asset-Packs des AMPR EMU) und **pyserial** (BSD-3-Clause, für PS5 Wee Tools)
-sowie **PyInstaller** für den Bau der Windows-EXE.
+sowie **PyInstaller** für den Bau der Windows-EXE. Nur in der Windows-EXE, für die
+Weboberflächen im Programm: **pythonnet** (MIT) mit **clr_loader** (MIT, Benedikt
+Reinartz), **cffi** (MIT-0) und **pycparser** (BSD-3-Clause) – die Brücke zu .NET.
 
 ---
 

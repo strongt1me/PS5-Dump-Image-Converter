@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.45 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.46 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.45"
+$EXE_VERSION = "v1.9.46"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -157,6 +157,18 @@ Write-Host "      pyserial installieren/aktualisieren (PS5 Wee Tools, optional).
 & $PYTHON -m pip install pyserial --upgrade --quiet
 if ($LASTEXITCODE -ne 0) {
     Write-Host "WARNUNG: pyserial konnte nicht installiert werden - PS5 Wee Tools startet dann nicht." -ForegroundColor Yellow
+}
+# Nur Windows: Weboberflaechen der Konsole rechts im Programm (WebView2 ueber
+# pythonnet; aus pywebview kommen nur die beiden DLLs von Microsoft).
+Write-Host "      pythonnet installieren/aktualisieren (Weboberflaechen im Programm, optional)..." -ForegroundColor Gray
+& $PYTHON -m pip install pythonnet --upgrade --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNUNG: pythonnet konnte nicht installiert werden - Weboberflaechen oeffnen dann im Browser." -ForegroundColor Yellow
+}
+Write-Host "      pywebview installieren/aktualisieren (WebView2-DLLs, optional)..." -ForegroundColor Gray
+& $PYTHON -m pip install pywebview --upgrade --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARNUNG: pywebview konnte nicht installiert werden - Weboberflaechen oeffnen dann im Browser." -ForegroundColor Yellow
 }
 Write-Host "      Alle Pakete installiert." -ForegroundColor Green
 

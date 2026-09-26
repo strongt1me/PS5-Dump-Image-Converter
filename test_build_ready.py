@@ -237,6 +237,11 @@ def pruefe_dependencies_frozen():
 
         alles_ok = True
         for anforderung in anforderungen:
+            # Eine Anforderung nur fuer ein anderes System (seit 26.09.2026:
+            # pythonnet und pywebview mit sys_platform == "win32") gilt hier nicht.
+            if anforderung.marker is not None and not anforderung.marker.evaluate():
+                print(f"  [--]  {anforderung.name:20} gilt hier nicht ({anforderung.marker})")
+                continue
             try:
                 installiert = metadaten.version(anforderung.name)
             except metadaten.PackageNotFoundError:

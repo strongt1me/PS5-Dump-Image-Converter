@@ -368,8 +368,10 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         # Seit dem 26.09.2026 zeigen alle drei Knoepfe eine Seite: "Konsole &
         # Payloads" ist die Uebersicht, und auch die Spielstaende sind kein
         # eigenes Fenster mehr.
-        self.assertEqual({"uebersicht", "spielstaende", "bibliothek"},
+        # Dazu seit dem 26.09.2026 die Seite einer Weboberflaeche - ohne Knopf.
+        self.assertEqual({"uebersicht", "spielstaende", "bibliothek", "web"},
                          set(klasse._KONSOLE_SEITENBAU))
+        self.assertEqual("", klasse._KONSOLE_SEITENBAU["web"][2])
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
             with self.subTest(seite=seite):
                 self.assertTrue(callable(getattr(klasse, bauen, None)))
@@ -612,15 +614,14 @@ class SeiteTests(unittest.TestCase):
     def tearDownClass(cls) -> None:
         cls._speichern.stop()
         cls._laden.stop()
-        cls.app._konfiguration_schreiben({"ansicht": "umwandeln"})
 
     def tearDown(self) -> None:
         self.app._konsole_seite_setzen("uebersicht")
-        self.app._ansicht_setzen("umwandeln", speichern=False)
+        self.app._ansicht_setzen("umwandeln")
         _WURZEL.update()
 
     def _seite(self) -> dict:
-        self.app._ansicht_setzen("konsole", speichern=False)
+        self.app._ansicht_setzen("konsole")
         self.app._konsole_seite_setzen("bibliothek")
         _WURZEL.update()
         return self.app._bibliothek
@@ -637,7 +638,7 @@ class SeiteTests(unittest.TestCase):
 
     def test_der_knopf_zeigt_die_seite_und_nimmt_sie_wieder(self) -> None:
         app = self.app
-        app._ansicht_setzen("konsole", speichern=False)
+        app._ansicht_setzen("konsole")
         vorher = {t.name for t in threading.enumerate()}
         app._konsole_bibliothek_umschalten()
         _WURZEL.update()

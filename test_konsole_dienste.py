@@ -230,6 +230,235 @@ class AbfrageTests(unittest.TestCase):
         self.assertIsNone(uebersicht.loader_port)
 
 
+#: Wortgleich an der Konsole des Nutzers gemessen (26.09.2026).
+FTPSRV_GRUSS = (b"220-Welcome to ftpsrv.elf running on pid 91\r\n",
+                b"220-Version: 1.16-ng-stable (built Sep 20 2026 20:49:12)\r\n"
+                b"220 Service is ready\r\n")
+PLDMGR_TITEL = "Payload Manager v0.5.1 by PLK (eaa2d0a, built at 2026-08-02 13:18:31 UTC)"
+#: Antwort des Payload-Managers auf "/version" (text/plain, 5 Bytes Rumpf).
+PLDMGR_VERSION = b"0.5.1"
+
+
+class _Gruesser:
+    """Ein Dienst, der mehrzeilig gruesst - jede Verbindung, in Stuecken.
+
+    ``danach_offen``: so lange bleibt die Verbindung nach dem letzten Stueck
+    offen, ohne dass noch etwas kommt (ein langsamer oder stummer Dienst).
+    """
+
+    def __init__(self, teile, pause: float = 0.05, danach_offen: float = 0.0):
+        self._teile, self._pause, self._offen = teile, pause, danach_offen
+
+    def __enter__(self):
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._schleife, daemon=True).start()
+        return self
+
+    def _schleife(self):
+        while True:
+            try:
+                verbindung, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._bedienen, args=(verbindung,), daemon=True).start()
+
+    def _bedienen(self, verbindung):
+        import time as _t
+        with verbindung:
+            try:
+                for nummer, teil in enumerate(self._teile):
+                    if nummer:
+                        _t.sleep(self._pause)
+                    verbindung.sendall(teil)
+                _t.sleep(self._offen)
+            except OSError:
+                pass
+
+    def __exit__(self, *_a):
+        self.sock.close()
+        return False
+
+
+class _Webseite:
+    """Eine Weboberflaeche wie die des Payload-Managers.
+
+    "/" ist eine grosse Seite (die echte hat 725.540 Bytes), "/version" nennt
+    die Version (``version=None``: gibt es nicht, 404 wie bei einer aelteren
+    Fassung). Eine Verbindung ohne Anfrage (die blosse Portpruefung) bleibt
+    unbeantwortet.
+    """
+
+    def __init__(self, titel: str = PLDMGR_TITEL, groesse: int = 800_000,
+                 verzoegerung: float = 0.0, version: "bytes | None" = PLDMGR_VERSION):
+        self._titel, self._groesse, self._verzoegerung = titel, groesse, verzoegerung
+        self._version = version
+
+    def __enter__(self):
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._schleife, daemon=True).start()
+        return self
+
+    def _schleife(self):
+        while True:
+            try:
+                verbindung, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._bedienen, args=(verbindung,), daemon=True).start()
+
+    def _bedienen(self, verbindung):
+        import time as _t
+        with verbindung:
+            try:
+                verbindung.settimeout(3.0)
+                anfrage = verbindung.recv(4096)
+                if not anfrage:
+                    return
+                _t.sleep(self._verzoegerung)
+                pfad = anfrage.split(b" ", 2)[1] if anfrage.count(b" ") >= 2 else b"/"
+                if pfad == b"/version" and self._version is not None:
+                    antwort = (b"HTTP/1.1 200 OK\r\nConnection: close\r\n"
+                               b"Content-Type: text/plain\r\n\r\n" + self._version)
+                elif pfad == b"/":
+                    seite = ("<html><head><title>%s</title></head><body>"
+                             % self._titel).encode()
+                    antwort = (b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n"
+                               b"Connection: close\r\n\r\n" + seite
+                               + b"x" * self._groesse + b"</body></html>")
+                else:
+                    antwort = (b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n"
+                               b"Content-Type: text/plain\r\n\r\n404 1.0 Not Found")
+                # In zwei Stuecken mit Pause: Wer nach dem ersten aufhoert, faellt auf.
+                verbindung.sendall(antwort[:2048])
+                _t.sleep(0.05)
+                verbindung.sendall(antwort[2048:])
+            except OSError:
+                pass
+
+    def __exit__(self, *_a):
+        self.sock.close()
+        return False
+
+
+class VersionTests(unittest.TestCase):
+    """Wunsch des Nutzers vom 26.09.2026: "Hier fehlt mir noch die Version der Payloads"."""
+
+    def test_version_aus_dem_dateinamen(self):
+        faelle = {
+            "elfldr-ps5_v0.26.elf": "0.26",
+            "ftpsrv-ps5_v1.16-ng-stable.elf": "1.16-ng-stable",
+            "ftpsrv-ps5_v0.21.1.elf": "0.21.1",
+            "klogsrv-ps5_v0.9.elf": "0.9",
+            "pldmgr_v0.5.1.elf": "0.5.1",
+            "web-file-mgr-v1.9.elf": "1.9",
+            "ps5upload-5.33.2.elf": "5.33.2",
+            "zftpd-ps5-v1.5.0.elf": "1.5.0",
+            "kstuff_lite_v1.2-dr_Beta2.elf": "1.2-dr_Beta2",
+            r"C:\irgendwo\helloworld\bfpilot_v0.4.4.elf": "0.4.4",
+            "bdj_unpatch_1340.elf": "",
+            "unjail-ps5app-payload.elf": "",
+            "ProsperoMgr.elf": "",
+            "": "",
+        }
+        for name, erwartet in faelle.items():
+            with self.subTest(name=name):
+                self.assertEqual(erwartet, kd.version_aus_dateiname(name))
+
+    def test_jede_mitgelieferte_datei_nennt_eine_version(self):
+        """Sonst bliebe die Spalte bei einem Dienst leer, obwohl eine Datei beiliegt."""
+        ordner = PROJEKT / "helloworld"
+        for eintrag in kd.KATALOG:
+            for datei in ordner.glob(eintrag.payload_muster) if eintrag.payload_muster else ():
+                with self.subTest(datei=datei.name):
+                    self.assertTrue(kd.version_aus_dateiname(datei.name))
+
+    def test_der_ftpsrv_nennt_seine_version_im_gruss(self):
+        """Der Gruss kommt in zwei Stuecken - gelesen wird bis zur Version."""
+        with _Gruesser(FTPSRV_GRUSS) as dienst:
+            eintrag = kd.Dienst("ftpsrv", dienst.port, begruessung=True,
+                                version_muster=kd.dienst("ftpsrv").version_muster)
+            self.assertEqual("1.16-ng-stable",
+                             kd.laufende_version("127.0.0.1", eintrag, zeit=1.0))
+
+    @staticmethod
+    def _pldmgr(port: int) -> kd.Dienst:
+        vorbild = kd.dienst("pldmgr")
+        return kd.Dienst("pldmgr", port, web="/", version_muster=vorbild.version_muster,
+                         version_pfad=vorbild.version_pfad)
+
+    def test_der_payload_manager_nennt_seine_version_unter_version(self):
+        """Nicht aus der Startseite (725.540 Bytes, an der Konsole bis 6,5 s)."""
+        self.assertEqual("/version", kd.dienst("pldmgr").version_pfad)
+        with _Webseite() as seite:
+            self.assertEqual("0.5.1", kd.laufende_version("127.0.0.1", self._pldmgr(seite.port),
+                                                          zeit=1.0))
+
+    def test_ohne_versionsabfrage_bleibt_die_version_leer(self):
+        """Eine aeltere Fassung ohne "/version" antwortet 404 - das ist keine Version."""
+        with _Webseite(version=None) as seite:
+            self.assertEqual("", kd.laufende_version("127.0.0.1", self._pldmgr(seite.port),
+                                                     zeit=1.0))
+
+    def test_die_antwort_wird_bis_zum_ende_gelesen(self):
+        """Nicht mittendrin abbrechen - die Antwort kommt hier in zwei Stuecken."""
+        with _Webseite(groesse=50_000) as seite:
+            text = kd._seite_lesen("127.0.0.1", seite.port, "/", 1.0)
+        self.assertTrue(text.endswith("</body></html>"), text[-40:])
+        self.assertGreater(len(text), 50_000)
+
+    def test_eine_uebergrosse_antwort_wird_begrenzt(self):
+        """Eine Versionsantwort hat 157 Bytes; was weit darueber geht, liest
+        die Abfrage nicht bis zum Ende (SEITE_HOECHSTENS)."""
+        with _Webseite(groesse=2_000_000) as seite:
+            text = kd._seite_lesen("127.0.0.1", seite.port, "/", 1.0)
+        self.assertLess(len(text), kd.SEITE_HOECHSTENS + 65536)
+
+    def test_pruefen_traegt_die_versionen_ein(self):
+        with _Gruesser(FTPSRV_GRUSS) as ftp, _Webseite() as web, _Horcher() as ohne:
+            dienste = (kd.Dienst("ftpsrv", ftp.port, begruessung=True,
+                                 version_muster=kd.dienst("ftpsrv").version_muster),
+                       self._pldmgr(web.port),
+                       kd.Dienst("klogsrv", ohne.port))
+            uebersicht = kd.pruefen("127.0.0.1", zeit=1.0, dienste=dienste)
+        self.assertEqual({"ftpsrv": (True, "1.16-ng-stable"), "pldmgr": (True, "0.5.1"),
+                          "klogsrv": (True, "")},
+                         {s.dienst.schluessel: (s.laeuft, s.version) for s in uebersicht})
+
+    def test_ohne_version_im_gruss_laeuft_der_dienst_trotzdem(self):
+        with _Gruesser((b"220 ftpsrv ready\r\n",), danach_offen=1.0) as dienst:
+            eintrag = kd.Dienst("ftpsrv", dienst.port, begruessung=True,
+                                version_muster=kd.dienst("ftpsrv").version_muster)
+            stand = kd.pruefen("127.0.0.1", zeit=0.5, dienste=(eintrag,)).staende[0]
+        self.assertEqual((True, False, ""), (stand.laeuft, stand.stumm, stand.version))
+
+    def test_eine_langsame_version_haelt_den_zustand_nicht_auf(self):
+        """Der Zustand steht vor der Versionsfrage fest; kommt sie zu spaet, fehlt nur sie."""
+        import time as _t
+        with _Webseite(groesse=1000, verzoegerung=3.0) as web:
+            eintrag = self._pldmgr(web.port)
+            beginn = _t.monotonic()
+            stand = kd.pruefen("127.0.0.1", zeit=0.5, dienste=(eintrag,)).staende[0]
+            dauer = _t.monotonic() - beginn
+        self.assertTrue(stand.laeuft)
+        self.assertEqual("", stand.version)
+        self.assertLess(dauer, 2.5)
+
+    def test_ohne_muster_wird_nicht_nach_der_version_gefragt(self):
+        with mock.patch.object(kd, "_gruss_lesen") as gruss, \
+                mock.patch.object(kd, "_seite_lesen") as seite:
+            for schluessel in ("elfldr9021", "klogsrv", "websrv", "bfpilot"):
+                with self.subTest(dienst=schluessel):
+                    self.assertEqual("", kd.laufende_version("10.0.0.5", kd.dienst(schluessel)))
+        gruss.assert_not_called()
+        seite.assert_not_called()
+
+
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")
 class FensterTests(unittest.TestCase):
 
