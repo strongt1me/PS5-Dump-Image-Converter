@@ -775,6 +775,34 @@ class ToteAbhaengigkeitenTests(unittest.TestCase):
                     self.assertNotRegex(text, r"(?m)^\s*(import|from)\s+%s\b" % tot)
 
 
+class LaufzeitordnerIgnoriertTests(unittest.TestCase):
+    """Was das Programm zur Laufzeit neben sich anlegt, gehoert nicht ins Repo.
+
+    Das Repo ist oeffentlich. Bis zum 25.09.2026 stand die Regel fuer die
+    Sicherungen der config.ini in Anfuehrungszeichen - git kennt dort keine,
+    die Regel griff nicht, und eine Sicherung aus einem Quelltextstart waere
+    mit ``git add`` hineingerutscht. Die Namen kommen aus dem Programm, nicht
+    aus dem Test. Dazu zwei Ordner, deren Funktion am selben Tag heraus ist
+    (chiaki-ng, ProsperoLight): Was dort noch liegt, ist Fremdsoftware.
+    """
+
+    def setUp(self):
+        if not (PROJEKT / ".git").exists():
+            self.skipTest("kein git-Arbeitsbaum")
+
+    def test_die_ordner_neben_dem_programm_sind_ignoriert(self):
+        sys.path.insert(0, str(PROJEKT))
+        import PS5ImageConverter_Pro_FINAL_revised as haupt
+        from ps5_validator.utils import ampr_updates, wee_tools
+        for ordner in (ampr_updates.ORDNERNAME, wee_tools.ARBEITSORDNER_NAME,
+                       haupt.PS5ConverterGUI._SMP_BACKUP_DIR, "chiaki-ng", "Streaming"):
+            with self.subTest(ordner=ordner):
+                lauf = subprocess.run(["git", "check-ignore", "-q", ordner + "/probe.bin"],
+                                      cwd=str(PROJEKT), capture_output=True, timeout=60)
+                self.assertEqual(0, lauf.returncode,
+                                 "git check-ignore: 0 = ignoriert, 1 = nicht, 128 = Fehler")
+
+
 if __name__ == '__main__':
     sys.exit(main())
 

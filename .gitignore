@@ -89,6 +89,11 @@ coverage.json
 # Einstellungen, gelesene NOR-Dumps und UART-Protokolle - Anwenderdaten.
 /PS5 Wee Tools/
 
+# chiaki-ng, am 25.09.2026 kurz ueber die Seite Remote Play eingerichtet
+# (Fremdsoftware, AGPL-3.0, 270 MB). Die Funktion ist wieder heraus; die
+# Regel bleibt, solange ein eingerichteter Ordner noch auf der Platte liegt.
+/chiaki-ng/
+
 # Die alte Merkdatei des JS-Loaders. Bis v1.9.5 schrieb er sie neben das
 # Programm, und die drei .spec-Dateien betteten eine vorgefundene ip.ini in
 # den Bau ein - damit waere die Adresse der eigenen Konsole an jeden
@@ -98,7 +103,10 @@ coverage.json
 ip.ini
 
 # Sicherungen der config.ini von der Konsole - Anwenderdaten, kein Quelltext.
-"SMP Config.ini Backup"/
+# Ohne Anfuehrungszeichen - dieselbe Falle wie bei "AMPR EMU updates" oben:
+# Bis zum 25.09.2026 stand die Zeile in Anfuehrungszeichen und schuetzte
+# nichts (gemessen mit git check-ignore).
+/SMP Config.ini Backup/
 
 # Eigene, selbst gebaute Bibliotheken (LibProsperoPkg.dll, libScePubTools.*).
 # Der Ordner und seine Anleitung gehoeren ins Projekt, die Binaerdateien des
@@ -108,7 +116,6 @@ libs/*
 !libs/README.md
 
 # Das ProsperoLight-Abbild (36 MB) ist Fremdsoftware und gehoert nicht ins
-# Repo - nur der Ordner samt Anleitung. Die Payloads der Kopplung liegen in
-# helloworld/ und sind dort ganz normal mit dabei.
-Streaming/*
-!Streaming/README.md
+# Repo. Die Funktion ProsperoLight ist seit dem 25.09.2026 heraus, samt der
+# Anleitung im Ordner; die Regel bleibt, solange dort noch ein Abbild liegt.
+/Streaming/

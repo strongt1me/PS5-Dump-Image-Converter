@@ -67,6 +67,32 @@ _TITLE_ID_PATTERN = (r"PPSA\d{5}|PPUS\d{5}|PPJP\d{5}|CUSA\d{5}|PUSA\d{5}"
                      r"|PCJS\d{5}|PCAS\d{5}|ECAS\d{5}")
 _TITLE_ID_RE = re.compile(rf"(?<![A-Z0-9])({_TITLE_ID_PATTERN})(?![A-Z0-9])")
 
+
+def ps4_fassung(sfo: dict) -> str:
+    """Die Fassung eines PS4-Titels aus seiner param.sfo - die hoehere von APP_VER und VERSION.
+
+    ``APP_VER`` traegt den Patch (in der param.sfo eines Patches "01.09"),
+    ``VERSION`` die Master-Fassung. Die bleibt aber nicht immer "01.00": Ein
+    neu gemastertes Paket fuehrt den eingearbeiteten Stand in ``VERSION`` und
+    ``APP_VER`` steht wieder auf "01.00". An der Konsole des Nutzers am
+    26.09.2026 gemessen bei Gran Turismo 7 (CUSA24767, CATEGORY gd,
+    c_date 2025-09-11): APP_VER 01.00, VERSION 01.63 - in appmeta ebenso wie
+    in der Titeldatenbank der Konsole. Nur eines der beiden Felder zu nehmen,
+    liefert je nach Paket die falsche Fassung; bis v1.9.44 stand hier
+    ``VERSION``, am 26.09.2026 kurz ``APP_VER``.
+
+    Verglichen wird Stelle fuer Stelle als Zahl; bei Gleichstand gilt APP_VER.
+
+    Returns:
+        Die Fassung, oder "" wenn keines der beiden Felder eine traegt.
+    """
+    kandidaten = [str(sfo.get(feld) or "").strip() for feld in ("APP_VER", "VERSION")]
+    kandidaten = [k for k in kandidaten if k]
+    if not kandidaten:
+        return ""
+    return max(kandidaten, key=lambda text: tuple(int(z) for z in re.findall(r"\d+", text)))
+
+
 #: Die Kennung eines UFS2-Abbilds (.ffpkg): Superblock bei 65536, Magic darin
 #: bei Offset 1372 - dieselben Werte wie in ffpfs_validator.
 _UFS2_SUPERBLOCK_OFFSET = 65536
@@ -981,7 +1007,9 @@ class Metadatenleser:
         # PS4-Pakete fuehren die Content-ID unter demselben Namen wie die
         # param.json der PS5.
         meta["content_id"] = _sfov("CONTENT_ID")
-        meta["version"] = _sfov("VERSION")
+        # Die hoehere von APP_VER und VERSION - dieselbe Regel wie in
+        # PS5ConverterGUI._meta_aus_sfo (Begruendung bei ps4_fassung).
+        meta["version"] = ps4_fassung(sfo) or "–"
 
         firmware = "–"
         for fw_key in ("SYSTEM_VER", "SYSTEM_VERSION", "PS5_SYSTEM_VER", "TARGET_SYSTEM_VER"):

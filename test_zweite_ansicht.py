@@ -194,8 +194,8 @@ class ZweiteAnsichtTests(unittest.TestCase):
                 self.assertTrue(methode or seite, "Kennung %s ohne Fenster" % kennung)
                 knopf, _s = app._konsole_knoepfe[nummer]
                 if seite:
-                    # "ActRemoteLink" (24.09.2026) und "Bibliothek"
-                    # (25.09.2026): rechts eine Seite statt eines Fensters.
+                    # "Bibliothek" (seit dem 25.09.2026): rechts eine Seite
+                    # statt eines Fensters.
                     with mock.patch.object(app, "_werkzeugfenster_umschalten") as um, \
                             mock.patch.object(app, seite) as zeigen:
                         knopf._on_click()

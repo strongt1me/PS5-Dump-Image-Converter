@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.44 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.45 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.44"
+$EXE_VERSION = "v1.9.45"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -362,11 +362,13 @@ if (Test-Path $exePath) {
     # hinein: Eingebettet landen sie beim Start im Nur-Lese-Temp-Ordner
     # (_MEIPASS) - dort koennte niemand etwas hineinlegen, und genau dafuer
     # sind sie da. Mitgegeben wird nur die jeweilige Anleitung; die Dateien
-    # selbst (eigene Bibliotheken, ProsperoLight-Abbild) bringt der Anwender.
+    # selbst (eigene Bibliotheken) bringt der Anwender. "Streaming" (das
+    # ProsperoLight-Abbild) ist seit dem 25.09.2026 nicht mehr dabei - die
+    # Funktion ist aus dem Programm genommen.
     #
     # Dass sie leer neben der EXE stehen, ist der Sinn: So sieht man auf
     # einen Blick, wohin die Dateien gehoeren.
-    foreach ($_ordner in @("libs", "Streaming")) {
+    foreach ($_ordner in @("libs")) {
         $_ziel = Join-Path $buendel $_ordner
         $_quelle = Join-Path $PSScriptRoot "$_ordner\README.md"
         if (Test-Path $_quelle) {

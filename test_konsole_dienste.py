@@ -239,20 +239,15 @@ class FensterTests(unittest.TestCase):
         cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
         cls.app._current_language = "de"
 
-    def _oeffnen(self):
-        vorher = set(_WURZEL.winfo_children())
-        self.app._show_konsole_dienste()
-        _WURZEL.update_idletasks()
-        neu = [w for w in _WURZEL.winfo_children()
-               if w not in vorher and isinstance(w, tk.Toplevel)]
-        self.assertTrue(neu, "Kein Fenster geoeffnet.")
-        return neu[0]
-
-    @staticmethod
-    def _alle(widget):
-        for kind in widget.winfo_children():
-            yield kind
-            yield from FensterTests._alle(kind)
+    def setUp(self):
+        # Knopf 1 sucht die PS5 selbst (Rundruf, notfalls das ganze Netz) -
+        # im Test geht nichts ins Netz. Die Seite "Konsole & Payloads", die er
+        # seit dem 26.09.2026 statt eines Fensters zeigt, pruefen die
+        # SeitenTests in test_konsole_suche.
+        flicken = mock.patch.object(self.app, "_konsole_ps5_finden",
+                                    return_value=("", None, None, "dienste.suche_nichts"))
+        flicken.start()
+        self.addCleanup(flicken.stop)
 
     def test_die_knoepfe_der_ansicht_sind_verdrahtet(self):
         klasse = self.haupt.PS5ConverterGUI
@@ -308,43 +303,6 @@ class FensterTests(unittest.TestCase):
                                        "_werkzeugfenster_umschalten") as um:
                     self.app._konsole_knopf_gedrueckt(kennung, "konsole.btn_dienste")
                 um.assert_called_once_with(methode)
-
-    def test_fenster_zeigt_alle_dienste(self):
-        fenster = self._oeffnen()
-        try:
-            tabelle = next(w for w in self._alle(fenster)
-                           if isinstance(w, ttk.Treeview))
-            self.assertEqual([d.schluessel for d in kd.KATALOG],
-                             list(tabelle.get_children()))
-            erste = tabelle.item(kd.KATALOG[0].schluessel, "values")
-            self.assertEqual(self.app._t(kd.KATALOG[0].name_schluessel), erste[0])
-            self.assertEqual(str(kd.KATALOG[0].port), str(erste[1]))
-            self.assertEqual(self.app._t("dienste.zustand_aus"), erste[2])
-            texte = [str(w.cget("text")) for w in self._alle(fenster)
-                     if isinstance(w, ttk.Button)]
-            for schluessel in ("dienste.check_button", "dienste.start_button",
-                               "dienste.base_button", "dienste.web_button"):
-                self.assertIn(self.app._t(schluessel), texte)
-        finally:
-            fenster.destroy()
-
-    def test_ohne_adresse_wird_nichts_geschickt(self):
-        fenster = self._oeffnen()
-        try:
-            # Das Feld traegt die zuletzt gespeicherte Adresse - hier leeren,
-            # damit die Pruefung nicht von der Einstellung abhaengt.
-            feld = next(w for w in self._alle(fenster) if isinstance(w, tk.Entry))
-            feld.delete(0, "end")
-            knopf = next(w for w in self._alle(fenster)
-                         if isinstance(w, ttk.Button)
-                         and str(w.cget("text")) == self.app._t("dienste.base_button"))
-            with mock.patch.object(self.haupt, "messagebox") as box, \
-                    mock.patch.object(self.app, "_send_payload_to_ps5") as senden:
-                knopf.invoke()
-            senden.assert_not_called()
-            box.showwarning.assert_called_once()
-        finally:
-            fenster.destroy()
 
     def test_payload_datei_nimmt_die_neueste_fassung(self):
         """helloworld traegt ftpsrv 0.21.1, 1.15 und 1.16 - 1.16 gewinnt."""

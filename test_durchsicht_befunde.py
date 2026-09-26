@@ -334,13 +334,8 @@ class KonsolenwegeTests(unittest.TestCase):
                      and k.name == name)
         return ast.unparse(innen)
 
-    def test_benutzer_lesen_schickt_den_agenten(self) -> None:
-        """H3-3: Ohne laufenden Agenten scheiterte "Benutzer lesen" - das
-        Koppeln schickte ihn, das Lesen nicht."""
-        text = self._innere("_show_konsole_remoteplay", "_benutzer_lesen")
-        i_start = text.find("agent.starten()")
-        self.assertGreater(i_start, 0, "Der Agent wird nicht geschickt.")
-        self.assertLess(i_start, text.find("agent.benutzer_liste()"))
+    # H3-3 ("Benutzer lesen" ohne Agent) ist mit Remote Play am 25.09.2026
+    # aus dem Programm gegangen - und mit ihm diese Pruefung.
 
     def test_der_osfmount_rueckfall_baut_ebenfalls_ein(self) -> None:
         """H8-2: Ueber OSFMount entpackt kam der Ordner ohne AMPR/BACKPORT an."""

@@ -15,10 +15,11 @@ Am 17.08.2026 an der Konsole des Nutzers erlebt, seitdem Projektregel.
 Darum fragt :func:`ordner_holen` den Abbruch **vor** jeder Datei und nie
 waehrend einer Uebertragung.
 
-Zweite gemessene Tatsache: Die Leitung zur Konsole traegt hier rund
-1,1 MB/s (20.09.2026). Ein Spielordner von 50 GB ist damit kein Vorgang
-von Minuten - deshalb meldet jede Uebertragung Fortschritt, und die
-Gesamtmenge laesst sich vorher getrennt ermitteln
+Zweite gemessene Tatsache: Die Leitung zur Konsole ist langsam - auf dem
+jetzigen Rechner rund 3,4 MB/s beim Holen und 2,5 MB/s beim Senden
+(:data:`TEMPO_RUNTER`, :data:`TEMPO_HOCH`, 26.09.2026). Ein Spielordner von
+50 GB ist damit kein Vorgang von Minuten - deshalb meldet jede Uebertragung
+Fortschritt, und die Gesamtmenge laesst sich vorher getrennt ermitteln
 (:func:`groesse_schaetzen`).
 
 ``ftpsrv`` meldet sich ohne Anmeldung; Benutzer und Kennwort sind beliebig.
@@ -622,17 +623,35 @@ def menge_lesbar(bytes_: int) -> str:
     return "%.1f TB" % menge
 
 
-def dauer_schaetzen(bytes_: int, tempo: float = 1.1 * 1024 * 1024) -> float:
+#: Gemessene Leitung zur Konsole in Byte/s, je Richtung - am 26.09.2026 auf
+#: dem Rechner des Nutzers (seit dem Umzug vom 23.09.2026), jeweils mit dem
+#: Ordner der eben installierten App ProsperoEden (58 Dateien, 99,2 MB):
+#: Holen mit :func:`ordner_holen` zweimal 3,48 und 3,89 MB/s (alle Dateien per
+#: SHA-256 gegen das ZIP geprueft), Senden mit ``app_paket.senden`` 2,57 MB/s.
+#: Abgerundet auf die langsamere Messung - lieber etwas zu lang geschaetzt.
+#: Auf dem alten Rechner (2,4-GHz-WLAN, 20.09.2026) waren es 0,80 beim Holen
+#: und 1,11 MB/s beim Senden; bis zum 26.09.2026 rechnete die Schaetzung in
+#: beide Richtungen mit 1,1 MB/s und nannte hier gut die doppelte Dauer.
+TEMPO_RUNTER = 3.4 * 1024 * 1024
+TEMPO_HOCH = 2.5 * 1024 * 1024
+
+
+def dauer_schaetzen(bytes_: int, tempo: float = TEMPO_HOCH) -> float:
     """Wie lange das etwa dauert, in Sekunden.
 
-    ``tempo`` ist die am 20.09.2026 gemessene Leitungsgeschwindigkeit zur
-    Konsole (1,1 MB/s). Eine Schaetzung, kein Versprechen - aber der
-    Unterschied zwischen "gleich" und "ueber Nacht" ist die Auskunft, die
-    vor einer Uebertragung wirklich fehlt.
+    ``tempo``: :data:`TEMPO_RUNTER` beim Holen, :data:`TEMPO_HOCH` beim
+    Senden. Ohne Angabe gilt die langsamere Richtung. Eine Schaetzung, kein
+    Versprechen - aber der Unterschied zwischen "gleich" und "ueber Nacht"
+    ist die Auskunft, die vor einer Uebertragung wirklich fehlt.
     """
     if bytes_ <= 0 or tempo <= 0:
         return 0.0
     return float(bytes_) / float(tempo)
+
+
+def tempo_lesbar(tempo: float) -> str:
+    """Eine Geschwindigkeit fuer die Rueckfrage - "3.4 MB/s", wie :func:`menge_lesbar`."""
+    return menge_lesbar(int(tempo)) + "/s"
 
 
 if __name__ == "__main__":  # pragma: no cover - Selbsttest von Hand

@@ -259,8 +259,13 @@ class TaktTests(unittest.TestCase):
                  and "win.after(120, _takt)" in ast.unparse(f)]
         # Bis zum 25.09.2026 acht: Die Fenster "Spiel holen" und
         # "Zurueckspielen" gingen mit ihren Takten in der Bibliothek auf -
-        # dort heisst der Takt _anzeigen (Pruefung darunter).
-        self.assertEqual(6, len(takte))
+        # dort heisst der Takt _anzeigen (Pruefung darunter). Am Abend
+        # desselben Tages vier: Die Fenster Remote Play und ProsperoLight
+        # sind aus dem Programm genommen. Seit dem 26.09.2026 zwei: Die
+        # Fenster "Konsole & Payloads" und "Spielstaende" sind Seiten rechts
+        # geworden - ihre Takte heissen _konsole_tafel_takt und
+        # _spielstaende_takt (Pruefungen darunter).
+        self.assertEqual(2, len(takte))
         for takt in takte:
             with self.subTest(zeile=takt.lineno):
                 zuweisungen = [a for a in takt.body if isinstance(a, ast.Assign)
@@ -286,6 +291,22 @@ class TaktTests(unittest.TestCase):
         spaet = [a.lineno for a in takt.body if isinstance(a, ast.If)
                  and "lauf['ende']" in ast.unparse(a.test)]
         self.assertEqual([], spaet, "Nach der Anzeige wird wieder frisch gelesen.")
+
+    def test_die_takte_der_seiten(self) -> None:
+        """Dieselbe Regel fuer die Seiten, die am 26.09.2026 zwei Fenster ersetzten."""
+        baum = _baum()
+        for name in ("_konsole_tafel_takt", "_spielstaende_takt"):
+            takt = next(f for f in ast.walk(baum) if isinstance(f, ast.FunctionDef)
+                        and f.name == name)
+            with self.subTest(takt=name):
+                zuweisungen = [a for a in takt.body if isinstance(a, ast.Assign)
+                               and ast.unparse(a) == "aktiv = bool(laeuft.get('aktiv'))"]
+                self.assertEqual(1, len(zuweisungen), "Der Stand wird nicht vorher gelesen.")
+                erste_anzeige = next(a for a in takt.body if isinstance(a, ast.Try))
+                self.assertLess(zuweisungen[0].lineno, erste_anzeige.lineno)
+                spaet = [a.lineno for a in takt.body if isinstance(a, ast.If)
+                         and "laeuft" in ast.unparse(a.test)]
+                self.assertEqual([], spaet, "Nach der Anzeige wird wieder frisch gelesen.")
 
 
 # ---------------------------------------------------------------- H3-20

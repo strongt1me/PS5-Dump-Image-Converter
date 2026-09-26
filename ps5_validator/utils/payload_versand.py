@@ -27,16 +27,30 @@ bleibt als letzte Stufe, wenn kein elfldr zur Hand ist.
 
 OnionHEN und etaHEN sind uebrigens keine Loesung fuer ein fehlendes
 elfldr: OnionHEN sagt selbst "The elfldr on port 9021 is REQUIRED".
+
+Seit dem 26.09.2026 (Wunsch des Nutzers) kommt elfldr dafuer per FTP in
+den Ordner, in dem der Payload Manager selbst seine Payloads ablegt
+(``/data/pldmgr/payloads/elfldr/``, samt Begleitdatei ``.json``) - und
+nur, wenn es dort noch fehlt. Danach genuegt ``/loadpayload:``. Laeuft
+kein ftpsrv, geht elfldr wie zuvor ueber die Weboberflaeche hinauf.
 """
 from __future__ import annotations
 
-import codecs
+import ftplib
+import io
 import json
+import logging
 import os
 import socket
 import time
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
+from datetime import datetime
+
+from ps5_validator.utils import konsole_ftp
+
+logger = logging.getLogger(__name__)
 
 #: Wo elfldr lauscht (prospero-deploy aus dem SDK nutzt denselben Port).
 ELFLDR_PORT = 9021
@@ -46,6 +60,11 @@ PLDMGR_PORT = 8084
 
 #: Wohin der Payload Manager hochgeladene Payloads legt.
 PLDMGR_ABLAGE = "/data/pldmgr/payloads"
+
+#: Sein Unterordner fuer elfldr - so legt er ihn selbst an, abgelesen auf
+#: der Konsole des Nutzers (26.09.2026): ``elfldr/elfldr-ps5_v0.26.elf``
+#: und daneben ``elfldr-ps5_v0.26.elf.json``.
+ELFLDR_ORDNER = "elfldr"
 
 #: Name des mitgelieferten elfldr-Payloads (in helloworld/).
 #: Am 17.09.2026 von 0.23 auf 0.26 gehoben. Aendert sich der Dateiname, muss er
@@ -64,9 +83,28 @@ WEG_ELFLDR = "elfldr"          # 9021 stand schon offen
 WEG_GEWECKT = "geweckt"        # elfldr erst gestartet, dann 9021 benutzt
 WEG_PLDMGR = "pldmgr"          # ganz ohne elfldr, ohne Rueckmeldung
 
+#: Wie elfldr in den Ordner des Payload Managers kam (:func:`elfldr_laden`).
+ABLAGE_VORHANDEN = "vorhanden"  # lag schon da - nichts hochgeladen
+ABLAGE_FTP = "ftp"              # per FTP hochgeladen
+ABLAGE_WEB = "web"              # kein FTP - ueber die Weboberflaeche
+
 
 class VersandFehler(Exception):
     """Fehler, der dem Anwender wortwoertlich gezeigt werden kann."""
+
+
+class AblageBelegt(VersandFehler):
+    """Unter dem Namen von elfldr liegt eine andere Datei - sie bleibt, wie sie ist."""
+
+
+@dataclass(frozen=True)
+class ElfldrAblage:
+    """Wo elfldr auf der Konsole liegt und wie es dorthin kam."""
+
+    pfad: str
+    art: str
+    #: Warum es nicht per FTP ging (nur bei ``ABLAGE_WEB``) - fuers Protokoll.
+    grund: str = ""
 
 
 def port_offen(host: str, port: int, timeout: float = 1.5) -> bool:
@@ -128,59 +166,6 @@ def ueber_elfldr(host: str, daten: bytes, port: int = ELFLDR_PORT,
     return b"".join(teile).decode("utf-8", "replace").strip()
 
 
-class Mitleser:
-    """Schickt ein Payload an elfldr und liest seine Ausgabe stueckweise mit.
-
-    :func:`ueber_elfldr` liest, bis die Leitung ``timeout`` Sekunden
-    schweigt, und gibt dann alles auf einmal zurueck. Fuer ein Payload, das
-    minutenlang laeuft und zwischendurch etwas meldet, taugt das nicht: Das
-    PIN-Payload von ActRemoteLink wartet bis zu 300 s auf Chiaki und
-    schreibt erst dann "PAIRING SUCCESS" - der Aufrufer muss zwischendurch
-    nachsehen und abbrechen koennen.
-
-    Gesendet wird sofort im Erzeuger - ein Fehler kommt also dort an, nicht
-    erst beim ersten Lesen. :meth:`lesen` wartet hoechstens ``takt``
-    Sekunden und liefert, was bis dahin kam (bei Stille ""). Schliesst die
-    Konsole die Verbindung - das Payload hat sich beendet -, steht ``zu``.
-    """
-
-    def __init__(self, host: str, daten: bytes, port: int = ELFLDR_PORT,
-                 timeout: float = 30.0, takt: float = 1.0) -> None:
-        self.zu = False
-        self._dekoder = codecs.getincrementaldecoder("utf-8")("replace")
-        self._buchse = socket.create_connection((host, int(port)),
-                                                timeout=timeout)
-        try:
-            stueckweise_senden(self._buchse, daten)
-            self._buchse.shutdown(socket.SHUT_WR)
-            self._buchse.settimeout(takt)
-        except BaseException:
-            self._buchse.close()
-            raise
-
-    def lesen(self) -> str:
-        """Was seit dem letzten Aufruf kam - "" bei Stille oder am Ende."""
-        if self.zu:
-            return ""
-        try:
-            stueck = self._buchse.recv(4096)
-        except (socket.timeout, TimeoutError):
-            return ""
-        except OSError:
-            stueck = b""
-        if not stueck:
-            self.zu = True
-            return self._dekoder.decode(b"", final=True)
-        return self._dekoder.decode(stueck)
-
-    def schliessen(self) -> None:
-        self.zu = True
-        try:
-            self._buchse.close()
-        except OSError:
-            pass
-
-
 def _pldmgr_ruf(host: str, pfad: str, koerper: bytes | None = None,
                 port: int = PLDMGR_PORT, timeout: float = 180.0) -> str:
     adresse = "http://%s:%d%s" % (host, int(port), pfad)
@@ -227,11 +212,123 @@ def ueber_pldmgr(host: str, daten: bytes, name: str,
     return ziel
 
 
+def elfldr_begleitdatei(name: str, zeitpunkt: "datetime | None" = None) -> bytes:
+    """Die Begleitdatei ``<name>.json``, wie der Payload Manager sie anlegt.
+
+    Felder und Form abgelesen an der Datei, die er auf der Konsole des
+    Nutzers selbst angelegt hat (26.09.2026). ``install_source`` bleibt
+    ``web_upload``: der einzige Wert, der dort beobachtet ist - einen
+    unbekannten koennte seine Liste anders behandeln.
+    """
+    zeit = (zeitpunkt or datetime.now().astimezone()).strftime("%Y-%m-%dT%H:%M:%S%z")
+    angaben = {
+        "name": name, "filename": name, "url": "", "source": "",
+        "source_direct": "", "description": "", "last_update": "",
+        "version": "", "checksum": "", "category": "", "downloaded_at": zeit,
+        "install_source": "web_upload", "install_source_detail": "",
+        "source_name": "",
+    }
+    return (json.dumps(angaben, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+
+def elfldr_ablegen(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
+                   ftp_port: int = konsole_ftp.FTP_PORT,
+                   texte: "dict[str, str] | None" = None) -> ElfldrAblage:
+    """Legt elfldr per FTP in den Ordner des Payload Managers - nur wenn es fehlt.
+
+    Wunsch des Nutzers vom 26.09.2026: Ist Port 9021 zu, soll der Ordner
+    ``elfldr`` - "falls noch nicht vorhanden auf der PS5" - per FTP nach
+    ``/data/pldmgr/payloads`` und die .elf dann ueber den Payload Manager
+    geladen werden. Bis dahin ging elfldr bei jedem Wecken erneut ueber
+    dessen Weboberflaeche hinauf.
+
+    * Liegt die Datei in derselben Groesse schon da, wird nichts
+      hochgeladen; fehlt nur die Begleitdatei, kommt sie nach.
+    * Hochgeladen wird mit :func:`konsole_ftp.datei_ablegen` - erst unter
+      ``.tmp``, dann umbenannt. Ein Abriss hinterlaesst nie eine halbe
+      elfldr, die der Payload Manager spaeter laden wuerde.
+    * Eine *andere* Datei gleichen Namens bleibt unangetastet
+      (:class:`AblageBelegt`): Sie zu ersetzen hiesse, auf der Konsole
+      etwas zu loeschen - sie zu laden, etwas Unbekanntes zu starten.
+
+    Raises:
+        konsole_ftp.FtpFehler: kein ftpsrv oder ein FTP-Fehler.
+        AblageBelegt: siehe oben.
+    """
+    ordner = "%s/%s" % (PLDMGR_ABLAGE, ELFLDR_ORDNER)
+    ziel = "%s/%s" % (ordner, name)
+    verbindung = konsole_ftp.verbinden(host, ftp_port)
+    try:
+        try:
+            verbindung.cwd(ordner)
+        except ftplib.error_perm:
+            eintraege: "dict[str, konsole_ftp.Eintrag]" = {}
+        except Exception as fehler:  # noqa: BLE001 - ftplib wirft breit
+            raise konsole_ftp.FtpFehler(
+                "%s nicht lesbar: %s" % (ordner, fehler)) from fehler
+        else:
+            eintraege = {e.name: e for e in konsole_ftp.auflisten(verbindung, ordner)}
+
+        vorhanden = eintraege.get(name)
+        if vorhanden is None:
+            konsole_ftp.ordner_anlegen(verbindung, ordner)
+            konsole_ftp.datei_ablegen(verbindung, io.BytesIO(elfldr_daten), ziel)
+        else:
+            groesse = vorhanden.groesse
+            if not vorhanden.ordner and groesse != len(elfldr_daten):
+                # Eine Auflistung ohne Groessenangabe liefert 0 - SIZE fragt nach.
+                try:
+                    groesse = int(verbindung.size(ziel) or 0)
+                except Exception:  # noqa: BLE001 - dann bleibt die Angabe
+                    pass
+            if vorhanden.ordner or groesse != len(elfldr_daten):
+                raise AblageBelegt(_satz(texte, "elfldr_belegt", pfad=ziel,
+                                         ist=groesse, soll=len(elfldr_daten)))
+
+        if name + ".json" not in eintraege:
+            try:
+                konsole_ftp.datei_ablegen(
+                    verbindung, io.BytesIO(elfldr_begleitdatei(name)), ziel + ".json")
+            except konsole_ftp.FtpFehler as fehler:
+                # Sie dient nur der Liste des Payload Managers - geladen wird die .elf.
+                logger.warning("%s.json nicht abgelegt: %s", ziel, fehler)
+        return ElfldrAblage(ziel, ABLAGE_FTP if vorhanden is None else ABLAGE_VORHANDEN)
+    finally:
+        konsole_ftp.schliessen(verbindung)
+
+
+def elfldr_laden(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
+                 pldmgr_port: int = PLDMGR_PORT,
+                 ftp_port: int = konsole_ftp.FTP_PORT,
+                 texte: "dict[str, str] | None" = None) -> ElfldrAblage:
+    """Startet elfldr ueber den Payload Manager - aus dessen eigenem Ordner.
+
+    Erst :func:`elfldr_ablegen` (per FTP, nur wenn es fehlt), dann
+    ``/loadpayload:``. Laeuft kein ftpsrv, geht elfldr wie bis zum
+    26.09.2026 ueber die Weboberflaeche hinauf (:func:`ueber_pldmgr`).
+    Auf Port 9021 wartet erst :func:`elfldr_aufwecken`.
+
+    Raises:
+        AblageBelegt: eine andere Datei unter dem Namen - nichts geladen.
+    """
+    try:
+        ablage = elfldr_ablegen(host, elfldr_daten, name, ftp_port=ftp_port,
+                                texte=texte)
+    except konsole_ftp.FtpFehler as fehler:
+        logger.info("elfldr nicht per FTP abgelegt (%s) - Weboberflaeche", fehler)
+        return ElfldrAblage(ueber_pldmgr(host, elfldr_daten, name, port=pldmgr_port),
+                            ABLAGE_WEB, str(fehler))
+    _pldmgr_ruf(host, "/loadpayload:" + urllib.parse.quote(ablage.pfad),
+                port=pldmgr_port)
+    return ablage
+
 
 def elfldr_aufwecken(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
                      elfldr_port: int = ELFLDR_PORT,
                      pldmgr_port: int = PLDMGR_PORT,
-                     warten: float = ELFLDR_WARTEN) -> bool:
+                     warten: float = ELFLDR_WARTEN,
+                     ftp_port: int = konsole_ftp.FTP_PORT,
+                     texte: "dict[str, str] | None" = None) -> bool:
     """Startet elfldr ueber den Payload Manager und wartet auf den Port.
 
     Das ist der bessere Ausweg, wenn 9021 zu ist: Statt jedes einzelne
@@ -240,14 +337,17 @@ def elfldr_aufwecken(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
     gewohnte Weg offen, mit Rueckmeldung.
 
     Am 29.08.2026 auf einer echten Konsole gemessen: Port 9021 ging nach
-    dem Start binnen weniger Sekunden auf.
+    dem Start binnen weniger Sekunden auf. Seit dem 26.09.2026 ueber
+    :func:`elfldr_laden` (erst FTP, dann Weboberflaeche); der Port wird alle
+    0,5 s gefragt statt alle 2 s.
     """
-    ueber_pldmgr(host, elfldr_daten, name, port=pldmgr_port)
+    elfldr_laden(host, elfldr_daten, name, pldmgr_port=pldmgr_port,
+                 ftp_port=ftp_port, texte=texte)
     ende = time.monotonic() + warten
     while time.monotonic() < ende:
         if port_offen(host, elfldr_port):
             return True
-        time.sleep(2.0)
+        time.sleep(0.5)
     return False
 
 
@@ -258,6 +358,9 @@ def elfldr_aufwecken(host: str, elfldr_daten: bytes, name: str = ELFLDR_NAME,
 MELDUNGEN: dict[str, str] = {
     'nichts_erreichbar':
         'Weder elfldr (Port {elfldr}) noch der Payload Manager (Port {pldmgr}) sind erreichbar.',
+    'elfldr_belegt':
+        'Unter {pfad} liegt schon eine andere Datei ({ist} statt {soll} Bytes). '
+        'Sie bleibt unangetastet – elfldr wurde nicht geladen.',
 }
 
 
@@ -280,7 +383,8 @@ def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
 
     1. 9021 offen: der gewohnte Weg, mit Ausgabe des Payloads.
     2. 9021 zu, Payload Manager da und ``elfldr_pfad`` gesetzt: erst
-       elfldr starten, damit 9021 aufgeht, dann wie Fall 1. Der Port
+       elfldr starten (:func:`elfldr_aufwecken`), damit 9021 aufgeht, dann
+       wie Fall 1 - es sei denn, das Payload *ist* elfldr. Der Port
        bleibt danach offen und steht auch allen weiteren Aufrufen zur
        Verfuegung.
     3. 9021 zu, kein elfldr zur Hand: das Payload geht direkt ueber den
@@ -302,7 +406,12 @@ def senden(host: str, daten: bytes, name: str, elfldr_port: int = ELFLDR_PORT,
         with open(elfldr_pfad, "rb") as fh:
             elfldr_daten = fh.read()
         if elfldr_aufwecken(host, elfldr_daten, os.path.basename(elfldr_pfad),
-                            elfldr_port=elfldr_port, pldmgr_port=pldmgr_port):
+                            elfldr_port=elfldr_port, pldmgr_port=pldmgr_port,
+                            texte=texte):
+            if daten == elfldr_daten:
+                # Das Payload war elfldr selbst - und das laeuft jetzt. Es
+                # noch einmal an 9021 zu schicken, startete es ein zweites Mal.
+                return WEG_GEWECKT, "", os.path.basename(elfldr_pfad)
             return (WEG_GEWECKT,
                     ueber_elfldr(host, daten, port=elfldr_port, timeout=timeout),
                     os.path.basename(elfldr_pfad))

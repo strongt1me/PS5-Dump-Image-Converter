@@ -2,13 +2,20 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.44):** Bibliothek und Koppel-Assistent stecken jetzt in der Ansicht KONSOLE, dazu viele Korrekturen aus einer vollständigen Durchsicht.
+> **Kurz zum aktuellen Stand (v1.9.45):** Das Programm verbindet sich beim Start selbst mit der PS5, und die Ansicht KONSOLE zeigt alles auf Seiten statt in eigenen Fenstern.
+
+---
+
+## v1.9.45 – 26.09.2026
+
+- **Neu:** Beim Start sucht das Programm die PS5 und verbindet sich – fehlt der ELF-Loader, lädt es ihn über den Payload Manager, dazu FTP-Server und Kernel-Protokoll. Dienste starten in Sekunden statt in einer halben Minute.
+- **Neu:** „Konsole & Payloads“ und „Spielstände“ sind Seiten der Ansicht KONSOLE; die Bibliothek installiert Homebrew-Apps aus ihrem ZIP und nennt zu installierten Spielen Fassung und Firmware.
 
 ---
 
 ## v1.9.44 – 25.09.2026
 
-- **Neu:** Die **Bibliothek** ist eine Seite der Ansicht KONSOLE – für den Rechner oder die PS5, mit Holen und Senden, App-Dumper, Firmware-Abgleich, Update-Hinweis und einheitlichem Umbenennen. Der **Koppel-Assistent** führt Schritt für Schritt durch ActRemoteLink.
+- **Neu:** Die **Bibliothek** ist eine Seite der Ansicht KONSOLE – für den Rechner oder die PS5, mit Holen und Senden, App-Dumper, Firmware-Abgleich, Update-Hinweis und einheitlichem Umbenennen.
 - **Behoben:** Viele Fehler aus einer vollständigen Durchsicht – „Abbrechen“ greift jetzt überall, das Fenster wartet nicht mehr auf langsame Laufwerke, und die englische Oberfläche ist vollständig übersetzt.
 - **Geändert:** Beim Start legt das Programm kein Zertifikat und keine Virenschutz-Ausnahmen mehr an. Neue Payload-Fassungen, unter anderem ShadowMount+ 1.7beta1 und PKG Manager 1.2.4.
 
@@ -16,7 +23,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ## v1.9.43 – 23.09.2026
 
-- **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände, Kernel-Protokoll, Remote Play und ProsperoLight – und rechts der **Zustand der Konsole** (findet die PS5 auch im Ruhemodus).
+- **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände und Kernel-Protokoll – und rechts der **Zustand der Konsole** (findet die PS5 auch im Ruhemodus).
 - **Neu:** Der Ordner **libs** nimmt eigene Bibliotheken auf; liegt dort ein SDK-Baukasten unter `libs/sdk`, baut „PKG bauen“ wahlweise über Sonys Publishing Tools.
 - **Neu:** PKG Manager 1.2.2 und die ActRemoteLink-Payloads liegen bei.
 

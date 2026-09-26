@@ -331,22 +331,32 @@ class NennungTests(unittest.TestCase):
         "helloworld": "helloworld",
     }
     #: Eigener Bestand - hier gibt es nichts zu nennen.
-    #: Eigene Ordner. ``libs`` und ``Streaming`` tragen im Repo **nur** die
-    #: eigene Anleitung - was der Anwender hineinlegt (eine eigene
-    #: LibProsperoPkg, ein SDK-Baukasten, das ProsperoLight-Abbild) ist
-    #: gitignoriert und wird nicht mitgeliefert. Sie gehoeren deshalb nicht
-    #: nach FREMD: In THIRD_PARTY_LICENSES.md stuende sonst eine Zeile fuer
-    #: etwas, das wir gar nicht weitergeben.
+    #: Eigene Ordner. ``libs`` traegt im Repo **nur** die eigene Anleitung -
+    #: was der Anwender hineinlegt (eine eigene LibProsperoPkg, ein
+    #: SDK-Baukasten) ist gitignoriert und wird nicht mitgeliefert. Er gehoert
+    #: deshalb nicht nach FREMD: In THIRD_PARTY_LICENSES.md stuende sonst eine
+    #: Zeile fuer etwas, das wir gar nicht weitergeben. (``Streaming`` stand
+    #: hier bis zum 25.09.2026 - mit ProsperoLight ist der Ordner heraus.)
     EIGEN = {"ps5_validator", "Hintergrundbilder", "Anleitungen", ".github",
-             "libs", "Streaming"}
+             "libs"}
 
     @classmethod
     def setUpClass(cls) -> None:
         import subprocess
-        roh = subprocess.run(["git", "ls-files"], cwd=str(PROJEKT), capture_output=True,
-                             text=True, encoding="utf-8", errors="replace", check=False)
-        cls.ordner = {zeile.split("/", 1)[0] for zeile in roh.stdout.splitlines()
-                      if "/" in zeile}
+
+        def _git(*argumente) -> list:
+            lauf = subprocess.run(["git", "ls-files", *argumente], cwd=str(PROJEKT),
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", check=False)
+            return lauf.stdout.splitlines()
+
+        # Geloescht, aber noch nicht eingetragen, liefert kein Bau mehr aus
+        # (25.09.2026: Streaming/README.md stand noch im Index, nachdem
+        # ProsperoLight heraus war). Gleiche Schreibweise in beiden Listen -
+        # deshalb abziehen statt den Pfad auf der Platte nachzusehen.
+        geloescht = set(_git("--deleted"))
+        cls.ordner = {zeile.split("/", 1)[0] for zeile in _git()
+                      if "/" in zeile and zeile not in geloescht}
         cls.lizenzen = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(
             encoding="utf-8", errors="replace")
 
@@ -381,6 +391,48 @@ class NennungTests(unittest.TestCase):
             for sprache in ("de", "en"):
                 with self.subTest(name=name, sprache=sprache):
                     self.assertIn(name, zeile[sprache])
+
+
+class GplTextTests(unittest.TestCase):
+    """Der Wortlaut der GPL liegt bei den GPL-Payloads in ``helloworld``.
+
+    Bis zum 25.09.2026 stand diese Pruefung beim Koppel-Assistenten (Remote
+    Play), der mit ActRemoteLink den Anlass gab. Der Assistent ist heraus -
+    der Text gilt weiter fuer PKG Manager, ActRemoteLink, OnionHEN und unjail.
+    """
+
+    #: SHA-256 des unveraenderten GPL-3.0-Textes der FSF (35.149 Bytes) -
+    #: derselbe wie ``PS4FFPFSC-0.2.9/LICENSES/MkPFS-GPL-3.0.txt``.
+    GPL3_SHA256 = "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+
+    #: Woher die beiden ActRemoteLink-Payloads kommen (Release v2.0).
+    ACTREMOTELINK = ("https://github.com/francoataffarel/ActRemoteLink/releases/"
+                     "download/v2.0/ActRemoteLink.zip")
+
+    def test_der_gpl_text_liegt_bei(self) -> None:
+        """Wunsch des Nutzers (24.09.2026) - und damit in jedem Bau, denn alle
+        drei Specs betten den ganzen Ordner ein."""
+        import hashlib
+        pfad = PROJEKT / "helloworld" / "LICENSE-GPL-3.0.txt"
+        self.assertTrue(pfad.is_file(), "helloworld/LICENSE-GPL-3.0.txt fehlt.")
+        self.assertEqual(self.GPL3_SHA256, hashlib.sha256(pfad.read_bytes()).hexdigest(),
+                         "Der Lizenztext muss unveraendert beiliegen.")
+        liste = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
+        self.assertIn("`helloworld/LICENSE-GPL-3.0.txt`", liste)
+        for spec in ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
+                     "PS5ImageConverter_Pro_macos.spec"):
+            with self.subTest(spec=spec):
+                self.assertIn("_datas.append((_helloworld, 'helloworld'))",
+                              (PROJEKT / spec).read_text(encoding="utf-8"))
+
+    def test_die_lizenzliste_nennt_die_quelle_von_actremotelink(self) -> None:
+        """Die beiden Payloads bleiben in ``helloworld`` - und mit ihnen die Quelle."""
+        liste = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
+        self.assertIn(self.ACTREMOTELINK, liste)
+        for muster in ("actremotelink_agent_v", "actremotelink_pin_notify_v"):
+            with self.subTest(muster=muster):
+                self.assertTrue(any(p.name.startswith(muster)
+                                    for p in (PROJEKT / "helloworld").glob("*.elf")))
 
 
 if __name__ == "__main__":

@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import re
 import string
 import sys
 import tempfile
@@ -338,10 +339,14 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertNotIn("self._btn_library_title =",
                          HAUPTDATEI.read_text(encoding="utf-8"))
 
-    def test_die_ansicht_konsole_hat_sechs_knoepfe(self) -> None:
+    def test_die_ansicht_konsole_hat_drei_knoepfe(self) -> None:
+        """Sechs am 25.09.2026, am Abend kurz fuenf - und dann drei: Remote
+        Play (samt ActRemoteLink) und ProsperoLight sind ganz heraus."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
-        self.assertEqual(["dienste", "spielstaende", "bibliothek", "remoteplay",
-                          "prosperolight", "actremotelink"], kennungen)
+        self.assertEqual(["dienste", "spielstaende", "bibliothek"], kennungen)
+        for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
+                    "konsole.btn_prosperolight"):
+            self.assertNotIn(weg, STRINGS)
         for nummer, (schluessel, _k) in enumerate(APP.PS5ConverterGUI._KONSOLE_KNOEPFE,
                                                   start=1):
             for sprache in ("de", "en"):
@@ -360,19 +365,35 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
 
     def test_drei_seiten_mit_bauplan(self) -> None:
         klasse = APP.PS5ConverterGUI
-        self.assertEqual({"uebersicht", "actremotelink", "bibliothek"},
+        # Seit dem 26.09.2026 zeigen alle drei Knoepfe eine Seite: "Konsole &
+        # Payloads" ist die Uebersicht, und auch die Spielstaende sind kein
+        # eigenes Fenster mehr.
+        self.assertEqual({"uebersicht", "spielstaende", "bibliothek"},
                          set(klasse._KONSOLE_SEITENBAU))
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
             with self.subTest(seite=seite):
                 self.assertTrue(callable(getattr(klasse, bauen, None)))
-        self.assertEqual("_konsole_bibliothek_umschalten",
-                         klasse._KONSOLE_SEITEN["bibliothek"])
+        self.assertEqual({"dienste": "_konsole_dienste_zeigen",
+                          "spielstaende": "_konsole_spielstaende_zeigen",
+                          "bibliothek": "_konsole_bibliothek_umschalten"},
+                         klasse._KONSOLE_SEITEN)
+        self.assertEqual({}, klasse._KONSOLE_FENSTER)
+        self.assertFalse(hasattr(klasse, "_show_konsole_remoteplay"))
 
-    def test_der_warnhinweis_nennt_den_knopf_nicht_fest(self) -> None:
-        for sprache in ("de", "en"):
-            text = STRINGS["remoteplay.warn_schreibt"][sprache]
-            self.assertIn("{knopf}", text)
-            self.assertNotIn("8. ActRemoteLink", text)
+    def test_kein_text_nennt_einen_alten_knopf(self) -> None:
+        """Knoepfe der Ansicht sind umgezogen (8 -> 6 -> in 4) und gegangen.
+
+        Bis zum 25.09.2026 stand "8. ActRemoteLink" fest in einem Hinweis und
+        wurde nach dem ersten Umzug zum falschen Verweis. Kein Text nennt
+        deshalb einen dieser Knoepfe mit Nummer - Remote Play und
+        ProsperoLight gibt es seit dem Abend desselben Tages nicht mehr.
+        """
+        muster = re.compile(r"\d\.\s*(ActRemoteLink|Remote Play|ProsperoLight)")
+        treffer = sorted("%s (%s)" % (schluessel, sprache)
+                         for schluessel, texte in STRINGS.items()
+                         for sprache in ("de", "en")
+                         if muster.search(str(texte.get(sprache, ""))))
+        self.assertEqual([], treffer)
 
 
 class SeitenQuelltextTests(unittest.TestCase):
@@ -417,7 +438,10 @@ class SeitenQuelltextTests(unittest.TestCase):
         gui._konsole_tafel_laeuft = {"aktiv": False}
         gui._konsole_tafel_zustand = mock.Mock()
         gui._konsole_tafel_status = mock.Mock()
-        gui._konsole_tafel_knopf = mock.Mock()
+        gui._konsole_tafel_knoepfe = (mock.Mock(),)
+        gui._konsole_tafel_puffer = []
+        gui._konsole_tafel_gezeigt = 0
+        gui._konsole_tafel_protokoll = mock.Mock()
         gui._konsole_tafel_zustandstext = lambda stand: ""
         gui._konsole_tafel_statustext = lambda stand, aktiv: ""
         gespeichert: dict = {}
@@ -428,6 +452,31 @@ class SeitenQuelltextTests(unittest.TestCase):
         APP.PS5ConverterGUI._konsole_tafel_takt(gui)
         self.assertEqual(1, gui._save_setting.call_count,
                          "Dieselbe Firmware nicht bei jedem Takt schreiben.")
+
+    def test_die_schaetzung_nimmt_die_richtung(self) -> None:
+        """Holen mit TEMPO_RUNTER, Senden und App mit TEMPO_HOCH - gemessen am 26.09.2026.
+
+        Bis dahin rechneten alle drei ohne Angabe mit den festen 1,1 MB/s des
+        alten Rechners, und die Rueckfragen nannten diese Zahl woertlich.
+        """
+        methode = _methode("_bibliothek_ordner_uebertragen")
+        erwartet = {"_holen": "TEMPO_RUNTER", "_senden": "TEMPO_HOCH",
+                    "_app_senden": "TEMPO_HOCH"}
+        for name, tempo in erwartet.items():
+            inner = next(k for k in ast.walk(methode)
+                         if isinstance(k, ast.FunctionDef) and k.name == name)
+            aufrufe = [k for k in ast.walk(inner) if isinstance(k, ast.Call)
+                       and getattr(k.func, "attr", "") == "dauer_schaetzen"]
+            with self.subTest(funktion=name):
+                self.assertEqual(1, len(aufrufe))
+                self.assertEqual(2, len(aufrufe[0].args), "Ohne Richtung gilt nur die Vorgabe.")
+                self.assertEqual("konsole_ftp." + tempo, ast.unparse(aufrufe[0].args[1]))
+        for schluessel in ("library.ordner_holen_frage", "library.ordner_senden_frage"):
+            for sprache in ("de", "en"):
+                text = STRINGS[schluessel][sprache]
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertIn("{tempo}", text)
+                    self.assertNotRegex(text, r"1[.,]1\s?MB/s")
 
     def test_die_ordneruebertragung_schliesst_ueber_den_takt(self) -> None:
         """Der Faden legt nur ``ende`` ab; ein after() aus ihm kaeme nur mit
@@ -609,10 +658,10 @@ class SeiteTests(unittest.TestCase):
 
     def test_die_seiten_verdraengen_einander(self) -> None:
         self._seite()
-        self.app._konsole_seite_setzen("actremotelink")
+        self.app._konsole_seite_setzen("uebersicht")
         _WURZEL.update()
         self.assertFalse(self._gezeigt(self.app._bibliothek_seite))
-        self.assertTrue(self._gezeigt(self.app._rpassist_seite))
+        self.assertTrue(self._gezeigt(self.app._konsole_tafel))
         self.assertEqual(self.app._COLORS["bg_card"], self._knopf("konsole.btn_bibliothek")._bg)
 
     def test_die_knopfreihen_gehoeren_zur_quelle(self) -> None:
@@ -624,8 +673,8 @@ class SeiteTests(unittest.TestCase):
             "library.btn_umbenennen", "library.btn_alle_umbenennen",
             "library.btn_rueckgaengig", "library.reveal_in_explorer_button")], texte["pc"])
         self.assertEqual([self.app._t(s) for s in (
-            "library.download_knopf", "holen.btn_dump", "library.btn_dateimanager",
-            "library.rescan_button")], texte["ps5"])
+            "library.download_knopf", "holen.btn_dump", "library.btn_app_installieren",
+            "library.btn_dateimanager", "library.rescan_button")], texte["ps5"])
         pc, ps5 = (zustand["knoepfe"][q][0].master for q in ("pc", "ps5"))
         self.assertTrue(self._gezeigt(pc))
         self.assertFalse(self._gezeigt(ps5))

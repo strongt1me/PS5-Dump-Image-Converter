@@ -27,12 +27,22 @@ from __future__ import annotations
 
 import socket
 import threading
+import time
 from dataclasses import dataclass, field
 
 #: Wie lange auf eine Verbindung gewartet wird. Im LAN antwortet ein
 #: laufender Dienst weit darunter; ist nichts da, kommt die Ablehnung
 #: sofort. Der Wert greift nur bei stillen Paketverlusten.
 ZEITSCHRANKE = 0.6
+
+#: Wie lange nach dem Senden eines Dienst-Payloads dessen Ausgabe mitgelesen
+#: wird (Sekunden Stille). Ein Dienst laeuft dauerhaft und schliesst die
+#: Verbindung zu elfldr nie; mit der allgemeinen Vorgabe von 30 s wartete
+#: deshalb jeder Start im Fenster "Konsole & Payloads" die vollen 30 s ab,
+#: die Grundausstattung (drei Payloads) ueber anderthalb Minuten (bis zum
+#: 26.09.2026). Seine Startmeldung schreibt ein Dienst sofort; ob er laeuft,
+#: sagt danach :func:`warten_bis_bereit`.
+LESEZEIT = 3.0
 
 
 @dataclass(frozen=True)
@@ -178,6 +188,27 @@ def dienst_pruefen(adresse: str, eintrag: Dienst,
             return (False, True)
     except OSError:
         return (False, False)
+
+
+def warten_bis_bereit(adresse: str, eintrag: Dienst, grenze: "float | None" = None,
+                      takt: float = 0.3, zeit: float = ZEITSCHRANKE) -> bool:
+    """Wartet, bis der Dienst antwortet - hoechstens ``grenze`` Sekunden.
+
+    Ersetzt seit dem 26.09.2026 das feste Abwarten der ``anlaufzeit``: Wer
+    schon nach einer halben Sekunde antwortet, haelt nicht mehr die ganze
+    Anlaufzeit auf; wer laenger braucht, bekommt bis zum Vierfachen davon
+    (mindestens 6 s). Geprueft wird wie in der Ampel, mit Gruss wo einer
+    erwartet wird (:func:`dienst_pruefen`).
+    """
+    frist = grenze if grenze is not None else max(6.0, 4.0 * eintrag.anlaufzeit)
+    ende = time.monotonic() + frist
+    while True:
+        laeuft, _stumm = dienst_pruefen(adresse, eintrag, zeit)
+        if laeuft:
+            return True
+        if time.monotonic() >= ende:
+            return False
+        time.sleep(takt)
 
 
 def pruefen(adresse: str, zeit: float = ZEITSCHRANKE,

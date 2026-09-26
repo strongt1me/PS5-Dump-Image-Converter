@@ -276,10 +276,29 @@ class HilfenTests(unittest.TestCase):
         self.assertEqual("0 B", kf.menge_lesbar(-5))
 
     def test_dauer_nach_gemessener_leitung(self):
-        """1,1 MB/s ist die am 20.09.2026 gemessene Leitung zur Konsole."""
-        sekunden = kf.dauer_schaetzen(1.1 * 1024 * 1024)
-        self.assertAlmostEqual(1.0, sekunden, places=2)
+        """Am 26.09.2026 gemessen: 3,4 MB/s beim Holen, 2,5 MB/s beim Senden.
+
+        Bis dahin rechnete die Schaetzung in beide Richtungen mit den 1,1 MB/s
+        des alten Rechners (20.09.2026) und nannte gut die doppelte Dauer.
+        """
+        self.assertAlmostEqual(3.4 * 1024 * 1024, kf.TEMPO_RUNTER)
+        self.assertAlmostEqual(2.5 * 1024 * 1024, kf.TEMPO_HOCH)
+        self.assertAlmostEqual(1.0, kf.dauer_schaetzen(int(kf.TEMPO_RUNTER), kf.TEMPO_RUNTER),
+                               places=6)
+        self.assertAlmostEqual(1.0, kf.dauer_schaetzen(int(kf.TEMPO_HOCH)), places=6,
+                               msg="Ohne Angabe gilt TEMPO_HOCH, die langsamere Richtung.")
         self.assertEqual(0.0, kf.dauer_schaetzen(0))
+        self.assertEqual("3.4 MB/s", kf.tempo_lesbar(kf.TEMPO_RUNTER))
+        self.assertEqual("2.5 MB/s", kf.tempo_lesbar(kf.TEMPO_HOCH))
+
+    def test_das_handbuch_nennt_die_gemessene_leitung(self):
+        """Aendert sich die Messung, muss das Handbuch mit - es nennt die Zahlen."""
+        handbuch = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(encoding="utf-8")
+        for tempo in (kf.TEMPO_RUNTER, kf.TEMPO_HOCH):
+            zahl = ("%.1f" % (tempo / 1024 / 1024)).replace(".", ",")
+            with self.subTest(tempo=zahl):
+                self.assertIn(zahl + "&nbsp;MB/s", handbuch)
+        self.assertNotIn("1,1&nbsp;MB/s", handbuch)
 
     def test_bekannte_orte_beginnen_beim_usb(self):
         """Der App-Dumper schreibt auf USB - deshalb steht der oben."""
@@ -643,7 +662,7 @@ class TexteTests(unittest.TestCase):
         "spielstaende.status_idle", "spielstaende.status_checking",
         "spielstaende.status_starting", "spielstaende.status_failed",
         "spielstaende.running", "spielstaende.stopped", "spielstaende.opened",
-        "spielstaende.no_file", "spielstaende.log_start",
+        "spielstaende.no_file",
         "konsoleftp.log_ftp_aus", "konsoleftp.log_ftp_stumm",
         "library.ordner_abbruch_vorgemerkt",
     )
@@ -698,37 +717,35 @@ class FensterTests(unittest.TestCase):
         _durch(fenster)
         return texte
 
-    def test_spielstaende_ist_verdrahtet_holen_und_senden_gibt_es_nicht_mehr(self):
-        """Seit dem 25.09.2026: Holen und Senden stecken in der Bibliothek."""
-        karte = self.modul.PS5ConverterGUI._KONSOLE_FENSTER
-        self.assertEqual("_show_konsole_spielstaende", karte.get("spielstaende"))
-        self.assertTrue(hasattr(self.app, "_show_konsole_spielstaende"))
+    def test_spielstaende_ist_eine_seite_holen_und_senden_gibt_es_nicht_mehr(self):
+        """Holen und Senden stecken seit dem 25.09.2026 in der Bibliothek.
+
+        Die Spielstaende sind seit dem 26.09.2026 kein Fenster mehr, sondern
+        eine Seite rechts (Nutzer: "ja, hol die Spielstaende auch als Seite
+        nach rechts") - gemessen in test_spielstaende_seite.
+        """
+        klasse = self.modul.PS5ConverterGUI
+        self.assertEqual("_konsole_spielstaende_zeigen",
+                         klasse._KONSOLE_SEITEN.get("spielstaende"))
+        self.assertNotIn("spielstaende", klasse._KONSOLE_FENSTER)
+        self.assertFalse(hasattr(self.app, "_show_konsole_spielstaende"))
         for kennung, methode in (("spiel_holen", "_show_konsole_spiel_holen"),
                                  ("zurueckspielen", "_show_konsole_zurueckspielen")):
             with self.subTest(kennung=kennung):
-                self.assertNotIn(kennung, karte)
+                self.assertNotIn(kennung, klasse._KONSOLE_FENSTER)
+                self.assertNotIn(kennung, klasse._KONSOLE_SEITEN)
                 self.assertFalse(hasattr(self.app, methode),
                                  "%s ist zurueck - es sollte in der Bibliothek stecken."
                                  % methode)
 
     def test_jede_kennung_der_seitenleiste_hat_ihr_ziel(self):
-        """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen."""
-        for _schluessel, kennung in self.modul.PS5ConverterGUI._KONSOLE_KNOEPFE:
-            methode = self.modul.PS5ConverterGUI._KONSOLE_FENSTER.get(kennung)
-            if not methode:
-                continue  # sagt noch "kommt in einer der naechsten Stufen"
+        """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen - Fenster wie Seite."""
+        klasse = self.modul.PS5ConverterGUI
+        for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
+            methode = klasse._KONSOLE_FENSTER.get(kennung) or klasse._KONSOLE_SEITEN.get(kennung)
             with self.subTest(kennung=kennung):
+                self.assertTrue(methode, "Knopf %s zeigt auf nichts" % kennung)
                 self.assertTrue(callable(getattr(self.app, methode, None)))
-
-    def test_spielstaende_warnt_vor_dem_schreiben(self):
-        fenster = self._fenster_oeffnen("_show_konsole_spielstaende")
-        try:
-            texte = self._beschriftungen(fenster)
-            self.assertIn(self.app._t("spielstaende.warn_backup"), texte)
-            self.assertIn(self.app._t("spielstaende.btn_start"), texte)
-        finally:
-            fenster.destroy()
-            _WURZEL.update()
 
     @staticmethod
     def _knopf(fenster, text: str):
@@ -925,16 +942,6 @@ class FensterTests(unittest.TestCase):
             finally:
                 fenster.destroy()
                 _WURZEL.update()
-
-    def test_kein_arbeitsfaden_bleibt_stehen(self):
-        """Die Fenster duerfen beim Oeffnen keinen Faden starten."""
-        vorher = {t.name for t in threading.enumerate()}
-        for name in ("_show_konsole_spielstaende",):
-            fenster = self._fenster_oeffnen(name)
-            fenster.destroy()
-            _WURZEL.update()
-        neu = {t.name for t in threading.enumerate()} - vorher
-        self.assertEqual(set(), {n for n in neu if n.startswith("konsole-")})
 
 
 if __name__ == "__main__":

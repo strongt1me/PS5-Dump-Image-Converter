@@ -244,6 +244,40 @@ class EinbauTests(unittest.TestCase):
         self.assertIn("offen", text)
 
 
+class LesezeitTests(unittest.TestCase):
+    """``_send_payload_to_ps5(lesezeit=)`` kommt als ``timeout`` beim Versand an.
+
+    Bis zum 25.09.2026 stand diese Pruefung beim Koppel-Assistenten, dessen
+    Agent sie brauchte (er schreibt nie etwas, 30 s Warten je Start). Der
+    Assistent ist heraus, der Schalter ist allgemein geblieben.
+    """
+
+    def test_die_lesezeit_geht_an_den_versand(self):
+        import types
+        aufrufe = []
+
+        def _senden(*_argumente, **benannt):
+            aufrufe.append(benannt)
+            return pv.WEG_ELFLDR, "", ""
+
+        stube = types.SimpleNamespace(
+            _PAYLOAD_SEND_PORT=pv.ELFLDR_PORT, _elfldr_payload_path=lambda: "",
+            _modul_texte=lambda _m, _p: {}, _append_to_log=lambda _t: None,
+            _t=lambda k, **_w: k, _fmt_bytes=lambda n: "%d B" % n)
+        with tempfile.TemporaryDirectory() as ordner:
+            elf = Path(ordner) / "dienst.elf"
+            elf.write_bytes(b"\x7fELF")
+            echt = pv.senden
+            pv.senden = _senden
+            try:
+                senden = APP.PS5ConverterGUI._send_payload_to_ps5
+                self.assertTrue(senden(stube, "10.0.0.5", str(elf), lesezeit=5.0)[0])
+                self.assertTrue(senden(stube, "10.0.0.5", str(elf))[0])
+            finally:
+                pv.senden = echt
+        self.assertEqual([5.0, 30.0], [a["timeout"] for a in aufrufe])
+
+
 class WebkitDankTests(unittest.TestCase):
     """Der Dank an itsPLK und das Bild daneben."""
 

@@ -130,6 +130,7 @@ from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import prosperopkg
 from ps5_validator.utils import payload_versand
 from ps5_validator.utils import app_install
+from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.utils import einstellungen
 from ps5_validator import programmname
@@ -142,7 +143,6 @@ from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import remoteplay
-from ps5_validator.utils import remoteplay_agent
 from ps5_validator.utils import sony_sdk
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
@@ -657,7 +657,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.44"
+APP_VERSION = "v1.9.45"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3547,14 +3547,19 @@ class PS5ConverterGUI:
     #: sendet jetzt auch Ordner), und die Bibliothek steht an der Stelle des
     #: Kernel-Protokolls - KLOG bleibt oben in der Titelleiste. So wollte es
     #: der Nutzer; zwei Plaetze sind damit frei fuer Kommendes.
+    #:
+    #: Noch am selben Abend drei: Remote Play (samt ActRemoteLink-Kopplung
+    #: und chiaki-ng) und ProsperoLight sind ganz heraus - "Diese zwei Knoepfe
+    #: bitte wieder entfernen. Diese moechte ich nicht mehr im Programm".
+    #: Die Konsolensuche (UDP 9302) bleibt: Die Uebersicht rechts braucht sie.
+    #:
+    #: Seit dem 26.09.2026 zeigen alle drei rechts eine Seite statt eines
+    #: Fensters (_KONSOLE_SEITEN) - erst "1. Konsole & Payloads", am Abend
+    #: auch "2. Spielstaende".
     _KONSOLE_KNOEPFE: tuple[tuple[str, str], ...] = (
         ("konsole.btn_dienste", "dienste"),
         ("konsole.btn_spielstaende", "spielstaende"),
-        # Keine Fenster: Beide zeigen rechts eine Seite (_KONSOLE_SEITEN).
         ("konsole.btn_bibliothek", "bibliothek"),
-        ("konsole.btn_remoteplay", "remoteplay"),
-        ("konsole.btn_prosperolight", "prosperolight"),
-        ("konsole.btn_actremotelink", "actremotelink"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -4933,13 +4938,11 @@ class PS5ConverterGUI:
                 self._konsole_tafel_beschriften()
             except tk.TclError:
                 pass
-
-        # Der Koppel-Assistent zeichnet Schritte und "Jetzt" selbst - aus dem
-        # Stand, nicht aus fertigen Saetzen; so folgen sie gleich der Sprache.
-        if getattr(self, "_rpassist", None) is not None:
+        # Ebenso die Seite "Spielstaende" (seit dem 26.09.2026 kein Fenster
+        # mehr): Status und Adresse der Oberflaeche kommen aus ihrem Stand.
+        if getattr(self, "_spielstaende_seite", None) is not None:
             try:
-                self._rpassist["status_var"].set(self._rpassist_statustext())
-                self._rpassist_zeichnen()
+                self._spielstaende_beschriften()
             except tk.TclError:
                 pass
 
@@ -8847,12 +8850,12 @@ class PS5ConverterGUI:
         """Die rechte Seite der Ansicht KONSOLE einblenden.
 
         Dort steht eine von drei Seiten, alle in derselben Zelle (1, 1) wie
-        die Rollflaeche der ersten Ansicht: die Uebersicht ("Zustand der
-        Konsole"), die Bibliothek ("3. Bibliothek") oder der
-        Koppel-Assistent ("6. ActRemoteLink"). Welche, steht in
-        ``_konsole_seite``; die Wahl ueberdauert das Hin- und Herschalten
-        der Ansicht, damit ein laufender Assistent oder eine Uebertragung
-        nicht aus dem Blick geraet. Welche Seiten es gibt, steht in
+        die Rollflaeche der ersten Ansicht: "Konsole & Payloads" (Knopf 1,
+        zugleich der Grundzustand), "Spielstaende" (Knopf 2) oder die
+        Bibliothek (Knopf 3). Welche,
+        steht in ``_konsole_seite``; die Wahl ueberdauert das Hin- und
+        Herschalten der Ansicht, damit eine laufende Uebertragung nicht aus
+        dem Blick geraet. Welche Seiten es gibt, steht in
         :data:`_KONSOLE_SEITENBAU`.
 
         Gebaut wird jede Seite beim ersten Zeigen, danach nur noch ein- und
@@ -8882,6 +8885,26 @@ class PS5ConverterGUI:
             zeigen.grid(row=1, column=1, sticky="nsew")
         except tk.TclError as exc:
             logger.debug("Konsolentafel nicht einblendbar: %s", exc)
+        self._konsole_knopf_hervorheben(gewaehlt)
+
+    def _konsole_knopf_hervorheben(self, seite: str) -> None:
+        """Hebt den Knopf der gezeigten Seite hervor - die anderen Seitenknoepfe nicht."""
+        c = self._COLORS
+        hervor = self._KONSOLE_SEITENBAU.get(seite, ("", "", ""))[2]
+        seitenknoepfe = {knopf for _a, _b, knopf in self._KONSOLE_SEITENBAU.values()
+                         if knopf}
+        for knopf, schluessel in getattr(self, "_konsole_knoepfe", []):
+            if schluessel not in seitenknoepfe:
+                continue
+            try:
+                if schluessel == hervor:
+                    knopf.config(bg=c["fg_accent"], fg=c["bg_main"],
+                                 outline=c["border"])
+                else:
+                    knopf.config(bg=c["bg_card"], fg=c["fg_primary"],
+                                 outline=c["border"])
+            except tk.TclError:
+                pass
 
     def _konsole_tafel_verbergen(self) -> None:
         """Beim Zurueckschalten wieder aus dem Weg - der Platz gehoert
@@ -8895,11 +8918,33 @@ class PS5ConverterGUI:
             except tk.TclError:
                 pass
 
-    def _konsole_tafel_bauen(self) -> None:
-        """Baut die Uebersicht: Ist die Konsole da, und was laeuft darauf?
+    #: Spalten der Dienstetabelle: (Spalte, Textschluessel, Breite, dehnbar).
+    _KONSOLE_TAFEL_SPALTEN: tuple[tuple[str, str, int, bool], ...] = (
+        ("dienst", "dienste.col_dienst", 190, False),
+        ("port", "dienste.col_port", 70, False),
+        ("zustand", "dienste.col_zustand", 90, False),
+        ("zweck", "dienste.col_zweck", 320, True),
+    )
 
-        Das ist die Frage, wegen der man diese Ansicht ueberhaupt aufmacht.
-        Zwei Messungen beantworten sie, und sie ergaenzen einander:
+    class _Uebersetzbar(str):
+        """Ein Textschluessel als Wert einer Meldung der Seite "Konsole & Payloads".
+
+        Die Arbeitsfaeden der Seite legen Meldungen als ``(schluessel,
+        werte)`` ab und uebersetzen nichts (Durchsicht H2-13). Steckt in den
+        Werten ein Name, der selbst uebersetzt werden muss - etwa der eines
+        Dienstes -, traegt er diese Markierung; Text daraus macht erst der
+        Takt im Hauptfaden (:meth:`_konsole_tafel_zeile`).
+        """
+
+    def _konsole_tafel_bauen(self) -> None:
+        """Baut die Seite "Konsole & Payloads" rechts in der Ansicht KONSOLE.
+
+        Bis zum 26.09.2026 gab es dafuer zwei Stellen: rechts die Uebersicht
+        ("Zustand der Konsole") und hinter Knopf 1 ein eigenes Fenster mit
+        derselben Dienste-Ampel. Der Nutzer: "Ich wollte alles in der rechten
+        Ansicht verlegt in einem. Nicht separat." Seitdem ist es eine Seite:
+        Zustand der Konsole, Dienste mit Port und Zweck, Starten,
+        Weboberflaeche und Protokoll. Zwei Messungen ergaenzen einander:
 
         * **Discovery (UDP 9302)** sagt, ob die Konsole ueberhaupt da ist -
           und erkennt sie auch im **Ruhemodus**. Ein Portscan sieht dort
@@ -8908,14 +8953,18 @@ class PS5ConverterGUI:
           wird der Gruss mitgelesen, damit ein haengender Dienst nicht als
           "laeuft" durchgeht.
 
-        Der Arbeitsfaden fasst kein Tk an (siehe ``_show_konsole_dienste``);
-        er legt in ``stand`` ab, ein Takt im Hauptfaden zeigt es an.
+        Die Arbeitsfaeden fassen kein Tk an und uebersetzen nichts: Sie legen
+        in ``_konsole_tafel_stand`` und ``_konsole_tafel_puffer`` ab, der Takt
+        im Hauptfaden zeigt es an (:meth:`_konsole_tafel_takt`).
         """
         c = self._COLORS
         tafel = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
         self._konsole_tafel = tafel
+        #: Protokollzeilen als (Schluessel, Werte); gezeigt ist bis ``_gezeigt``.
+        self._konsole_tafel_puffer = []
+        self._konsole_tafel_gezeigt = 0
 
-        # Die Tafel bleibt stehen, solange das Programm laeuft - ihre festen
+        # Die Seite bleibt stehen, solange das Programm laeuft - ihre festen
         # Texte folgen dem Sprachwechsel ueber _register_translatable, die
         # uebrigen ueber _konsole_tafel_beschriften (Durchsicht H2-13).
         titel = tk.Label(tafel, text=self._t("tafel.title"),
@@ -8931,8 +8980,8 @@ class PS5ConverterGUI:
 
         kopf = tk.Frame(tafel, bg=c["bg_main"])
         kopf.pack(fill="x", pady=(0, 10))
-        ip_var = tk.StringVar(value=self._ps5_ip())
-        self._konsole_tafel_ip = ip_var
+        # Dieselbe Variable wie auf der Seite "Spielstaende" (_konsole_ip_var).
+        ip_var = self._konsole_ip_var()
         ip_beschriftung = tk.Label(kopf, text=self._t("dienste.ip_label"), width=14,
                                    anchor="w", font=(UI_SCHRIFT, pt(9)),
                                    bg=c["bg_main"], fg=c["fg_secondary"])
@@ -8947,38 +8996,82 @@ class PS5ConverterGUI:
                                command=lambda: self._konsole_tafel_pruefen())
         pruef_btn.pack(side="left")
         self._register_translatable(pruef_btn, "tafel.check")
-        self._konsole_tafel_knopf = pruef_btn
 
         zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
         self._konsole_tafel_zustand = zustand_var
         tk.Label(tafel, textvariable=zustand_var, font=(UI_SCHRIFT, pt(11)),
                  bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
-                 justify="left", wraplength=620).pack(fill="x", pady=(0, 12))
+                 justify="left", wraplength=620).pack(fill="x", pady=(0, 8))
 
-        rahmen = tk.Frame(tafel, bg=c["bg_card"], padx=1, pady=1)
-        rahmen.pack(fill="both", expand=True)
-        spalten = ("dienst", "zustand")
-        tabelle = ttk.Treeview(rahmen, columns=spalten, show="headings",
-                               height=11, selectmode="none")
-        tabelle.heading("dienst", text=self._t("dienste.col_dienst"), anchor="w")
-        tabelle.heading("zustand", text=self._t("dienste.col_zustand"), anchor="w")
-        tabelle.column("dienst", width=260, anchor="w", stretch=True)
-        tabelle.column("zustand", width=120, anchor="w", stretch=False)
-        tabelle.pack(fill="both", expand=True)
-        self._konsole_tafel_tabelle = tabelle
-        self._konsole_tafel_fuellen(konsole_dienste.pruefen(""))
+        hinweis = tk.Label(tafel, text=self._t("dienste.hint"),
+                           font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
+                           fg=c["fg_secondary"], anchor="w", justify="left",
+                           wraplength=620)
+        hinweis.pack(fill="x", pady=(0, 8))
+        self._register_translatable(hinweis, "dienste.hint")
 
+        def _hinweis_umbruch(_ereignis=None) -> None:
+            try:
+                breite = hinweis.winfo_width()
+            except tk.TclError:
+                return
+            if breite > 40:
+                hinweis.configure(wraplength=breite - 8)
+
+        hinweis.bind("<Configure>", _hinweis_umbruch)
+
+        # Von unten nach oben: Statuszeile, Protokoll, Knoepfe - die Tabelle
+        # nimmt den Rest und gibt als Erste nach, wenn der Platz knapp wird.
         status_var = tk.StringVar(value=self._t("tafel.status_idle"))
         self._konsole_tafel_status = status_var
         tk.Label(tafel, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
-            fill="x", pady=(8, 0))
+            side="bottom", fill="x", pady=(6, 0))
+        protokoll = tk.Text(tafel, height=7, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["bg_card"], fg=c["fg_primary"],
+                            relief="flat", wrap="word")
+        protokoll.pack(side="bottom", fill="x", pady=(8, 0))
+        self._konsole_tafel_protokoll = protokoll
+
+        knopfreihe = tk.Frame(tafel, bg=c["bg_main"])
+        knopfreihe.pack(side="bottom", fill="x", pady=(8, 0))
+        knoepfe = [pruef_btn]
+        for schluessel, befehl in (
+                ("dienste.start_button", lambda: self._konsole_tafel_starten()),
+                ("dienste.base_button", lambda: self._konsole_tafel_grundausstattung()),
+                ("dienste.web_button", lambda: self._konsole_tafel_web())):
+            knopf = ttk.Button(knopfreihe, text=self._t(schluessel), command=befehl)
+            knopf.pack(side="left", padx=(0 if len(knoepfe) == 1 else 8, 0))
+            self._register_translatable(knopf, schluessel)
+            knoepfe.append(knopf)
+        self._konsole_tafel_knoepfe = tuple(knoepfe)
+
+        rahmen = tk.Frame(tafel, bg=c["bg_card"], padx=1, pady=1)
+        rahmen.pack(fill="both", expand=True)
+        tabelle = ttk.Treeview(rahmen, columns=[s[0] for s in self._KONSOLE_TAFEL_SPALTEN],
+                               show="headings", height=11, selectmode="browse")
+        for spalte, schluessel, breite, dehnen in self._KONSOLE_TAFEL_SPALTEN:
+            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
+            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
+        leiste = ttk.Scrollbar(rahmen, orient="vertical", command=tabelle.yview)
+        tabelle.configure(yscrollcommand=leiste.set)
+        tabelle.grid(row=0, column=0, sticky="nsew")
+        leiste.grid(row=0, column=1, sticky="ns")
+        rahmen.grid_columnconfigure(0, weight=1)
+        rahmen.grid_rowconfigure(0, weight=1)
+        self._konsole_tafel_tabelle = tabelle
+        self._konsole_tafel_fuellen(konsole_dienste.pruefen(""))
 
     def _konsole_tafel_fuellen(self, uebersicht) -> None:
-        """Traegt eine Uebersicht in die Tabelle - nur aus dem Hauptfaden."""
+        """Traegt eine Uebersicht in die Tabelle - nur aus dem Hauptfaden.
+
+        Die Auswahl bleibt stehen: Nach "Ausgewaehltes starten" kommt eine
+        neue Uebersicht, und der Dienst soll danach noch markiert sein.
+        """
         tabelle = getattr(self, "_konsole_tafel_tabelle", None)
         if tabelle is None or not tabelle.winfo_exists():
             return
+        gewaehlt = tabelle.selection()
         tabelle.delete(*tabelle.get_children())
         for stand in uebersicht:
             if stand.laeuft:
@@ -8989,59 +9082,268 @@ class PS5ConverterGUI:
                 zustand = "dienste.zustand_aus"
             tabelle.insert("", "end", iid=stand.dienst.schluessel,
                            values=(self._t(stand.dienst.name_schluessel),
-                                   self._t(zustand)))
+                                   stand.dienst.port,
+                                   self._t(zustand),
+                                   self._t(stand.dienst.zweck_schluessel)))
+        noch_da = [iid for iid in gewaehlt if tabelle.exists(iid)]
+        if noch_da:
+            tabelle.selection_set(noch_da)
 
-    def _konsole_tafel_pruefen(self) -> None:
-        """Misst beides auf einmal: ist die Konsole da, und was laeuft?
+    def _konsole_tafel_melden(self, schluessel: str, **werte) -> None:
+        """Eine Zeile fuers Protokoll der Seite - aus jedem Faden, unuebersetzt."""
+        self._konsole_tafel_puffer.append((schluessel, werte))
 
-        Der Faden legt nur **Daten** ab (Konsole, Uebersicht, Fehler); Saetze
-        daraus macht :meth:`_konsole_tafel_zustandstext` bzw.
-        :meth:`_konsole_tafel_statustext` im Hauptfaden. Bis zum 24.09.2026
-        uebersetzte der Faden selbst - nach einem Sprachwechsel blieb die
-        Tafel dann in der alten Sprache (Durchsicht H2-13).
+    def _konsole_tafel_schritt(self, schluessel: str, **werte) -> None:
+        """Was gerade geschieht (Statuszeile) - aus jedem Faden, unuebersetzt."""
+        stand = getattr(self, "_konsole_tafel_stand", None)
+        if stand is not None:
+            stand["schritt"] = (schluessel, werte)
+
+    def _konsole_tafel_zeile(self, eintrag) -> str:
+        """Macht aus ``(schluessel, werte)`` Text - im Hauptfaden, in der aktuellen Sprache."""
+        schluessel, werte = eintrag
+        return self._t(schluessel, **{
+            name: self._t(wert) if isinstance(wert, self._Uebersetzbar) else wert
+            for name, wert in werte.items()})
+
+    def _konsole_tafel_protokoll_nachtragen(self) -> None:
+        """Schreibt neue Protokollzeilen ins Feld - nur aus dem Hauptfaden."""
+        puffer = self._konsole_tafel_puffer
+        neu = False
+        while self._konsole_tafel_gezeigt < len(puffer):
+            eintrag = puffer[self._konsole_tafel_gezeigt]
+            self._konsole_tafel_gezeigt += 1
+            self._konsole_tafel_protokoll.insert(
+                "end", self._konsole_tafel_zeile(eintrag) + "\n")
+            neu = True
+        if neu:
+            self._konsole_tafel_protokoll.see("end")
+
+    def _konsole_tafel_beschaeftigt(self) -> bool:
+        return bool(getattr(self, "_konsole_tafel_laeuft", {}).get("aktiv"))
+
+    def _konsole_tafel_beginnen(self, schritt: str, **werte) -> "dict | None":
+        """Legt den Stand fuer einen Arbeitsgang an - ``None``, wenn schon einer laeuft.
+
+        Die letzte Messung bleibt stehen, bis eine neue gelingt. Sperrt die
+        Knoepfe und stoesst den Takt an. Den Faden startet der Aufrufer
+        selbst und offen hingeschrieben - ein Helfer, der ihn startet,
+        verdeckt das Fadenziel vor test_fadenhygiene.
         """
         laeuft = getattr(self, "_konsole_tafel_laeuft", None)
         if laeuft is None:
             laeuft = self._konsole_tafel_laeuft = {"aktiv": False}
         if laeuft["aktiv"]:
-            return
-        # Was die letzte Messung ergab, bleibt stehen, bis eine neue gelingt.
+            return None
         vorher = dict(getattr(self, "_konsole_tafel_stand", None) or {})
+        stand: dict = {"konsole": vorher.get("konsole"),
+                       "uebersicht": vorher.get("uebersicht"),
+                       "geprueft": bool(vorher.get("geprueft")),
+                       "gezeigt": vorher.get("gezeigt", 0),
+                       "fehler": "", "hinweis": "", "adresse": "",
+                       "schritt": (schritt, werte)}
+        self._konsole_tafel_stand = stand
+        laeuft["aktiv"] = True
+        for knopf in self._konsole_tafel_knoepfe:
+            try:
+                knopf.configure(state="disabled")
+            except tk.TclError:
+                pass
+        self._konsole_tafel_takt()
+        return stand
+
+    def _konsole_tafel_adresse(self) -> str:
+        """Die Adresse im Feld, wenn sie taugt - sonst ein Hinweis und ``""``."""
         ip = self._konsole_tafel_ip.get().strip()
         if not self._ist_plausible_ps5_adresse(ip):
+            messagebox.showwarning(self._t("tafel.title"), self._t("dienste.need_ip"),
+                                   parent=self.root)
+            return ""
+        self._save_setting("ps5_ip", ip)
+        return ip
+
+    def _konsole_tafel_suchen(self, grundausstattung: bool = False) -> None:
+        """Die PS5 selbst finden und pruefen - Knopf 1, oder "Konsole pruefen" ohne Adresse.
+
+        Wunsch des Nutzers vom 26.09.2026: "damit der Nutzer nicht extra noch
+        selber verbinden muss". Findet :meth:`_konsole_ps5_finden` die PS5
+        ueber eine bekannte Adresse, fragt die Konsolensuche dort noch einmal
+        gezielt nach Name, Zustand und Firmware. Danach wird elfldr geladen,
+        falls Port 9021 zu ist (:meth:`_konsole_elfldr_sicherstellen`).
+
+        Args:
+            grundausstattung: Danach auch ftpsrv und klogsrv starten, soweit
+                sie fehlen - fuer das Verbinden beim Programmstart
+                (:meth:`_konsole_beim_start_verbinden`).
+        """
+        if self._konsole_tafel_beschaeftigt():
+            return
+        vorgabe = self._konsole_tafel_ip.get().strip()
+        texte = self._modul_texte(payload_versand.MELDUNGEN, "payloadmod.")
+        stand = self._konsole_tafel_beginnen("dienste.status_suche")
+        if stand is None:
+            return
+
+        def _arbeit() -> None:
+            try:
+                host, uebersicht, konsole, grund = self._konsole_ps5_finden(
+                    self.root, vorgabe, self._konsole_tafel_schritt)
+                if not host:
+                    stand.update(konsole=None, uebersicht=konsole_dienste.pruefen(""),
+                                 geprueft=True, hinweis=grund)
+                    self._konsole_tafel_melden(grund)
+                    return
+                if konsole is None:
+                    gefunden = remoteplay.suchen(host, zeit=2.0)
+                    konsole = gefunden[0] if gefunden else None
+                else:
+                    self._konsole_tafel_melden(
+                        "dienste.log_gefunden", name=konsole.name or "PS5", host=host,
+                        zustand=self._Uebersetzbar(konsole.status_schluessel))
+                stand.update(adresse=host, konsole=konsole, uebersicht=uebersicht,
+                             geprueft=True)
+                stand["uebersicht"] = self._konsole_elfldr_sicherstellen(
+                    host, uebersicht, texte)
+                if grundausstattung:
+                    stand["uebersicht"] = self._konsole_grundausstattung_nachstarten(
+                        host, stand["uebersicht"])
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("PS5-Suche gescheitert")
+                self._konsole_tafel_melden("log.fehler_zeile", text=str(exc))
+                stand["hinweis"] = "dienste.status_failed"
+            finally:
+                # Der Takt im Hauptfaden gibt die Knoepfe frei.
+                self._konsole_tafel_laeuft["aktiv"] = False
+
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-suche").start()
+
+    def _konsole_tafel_pruefen(self) -> None:
+        """"Konsole pruefen": Zustand und Dienste unter der Adresse im Feld.
+
+        Leeres Feld: suchen (:meth:`_konsole_tafel_suchen`). Der Faden legt nur
+        **Daten** ab (Konsole, Uebersicht, Meldungen); Saetze daraus macht der
+        Takt im Hauptfaden. Bis zum 24.09.2026 uebersetzte der Faden selbst -
+        nach einem Sprachwechsel blieb die Tafel dann in der alten Sprache
+        (Durchsicht H2-13). Ist Port 9021 zu, wird danach elfldr geladen.
+        """
+        if self._konsole_tafel_beschaeftigt():
+            return
+        ip = self._konsole_tafel_ip.get().strip()
+        if not ip:
+            self._konsole_tafel_suchen()
+            return
+        if not self._ist_plausible_ps5_adresse(ip):
+            # Was die letzte Messung ergab, bleibt stehen.
+            vorher = dict(getattr(self, "_konsole_tafel_stand", None) or {})
             vorher.update(hinweis="dienste.need_ip", fehler="")
             self._konsole_tafel_stand = vorher
             self._konsole_tafel_beschriften()
             return
         self._save_setting("ps5_ip", ip)
-
-        stand: dict = {"konsole": vorher.get("konsole"),
-                       "uebersicht": vorher.get("uebersicht"),
-                       "geprueft": bool(vorher.get("geprueft")),
-                       "fehler": "", "hinweis": "", "gezeigt": 0}
-        self._konsole_tafel_stand = stand
-        laeuft["aktiv"] = True
-        try:
-            self._konsole_tafel_knopf.configure(state="disabled")
-        except tk.TclError:
-            pass
-        self._konsole_tafel_takt()
+        texte = self._modul_texte(payload_versand.MELDUNGEN, "payloadmod.")
+        stand = self._konsole_tafel_beginnen("dienste.status_checking", host=ip)
+        if stand is None:
+            return
 
         def _arbeit() -> None:
             try:
                 gefunden = remoteplay.suchen(ip, zeit=2.0)
                 konsole = gefunden[0] if gefunden else None
                 uebersicht = konsole_dienste.pruefen(ip)
-                stand.update(konsole=konsole, uebersicht=uebersicht,
-                             geprueft=True)
+                stand.update(konsole=konsole, uebersicht=uebersicht, geprueft=True)
+                stand["uebersicht"] = self._konsole_elfldr_sicherstellen(
+                    ip, uebersicht, texte)
             except Exception as exc:  # noqa: BLE001
                 logger.exception("Konsolentafel gescheitert")
-                stand["fehler"] = "%s" % exc
+                self._konsole_tafel_melden("log.fehler_zeile", text=str(exc))
+                stand["hinweis"] = "dienste.status_failed"
             finally:
-                laeuft["aktiv"] = False
+                self._konsole_tafel_laeuft["aktiv"] = False
+
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-tafel").start()
+
+    def _konsole_tafel_starten(self) -> None:
+        """"Ausgewaehltes starten": das Payload des markierten Dienstes schicken."""
+        if self._konsole_tafel_beschaeftigt():
+            return
+        auswahl = self._konsole_tafel_tabelle.selection()
+        if not auswahl:
+            messagebox.showinfo(self._t("tafel.title"), self._t("dienste.need_auswahl"),
+                                parent=self.root)
+            return
+        ip = self._konsole_tafel_adresse()
+        if not ip:
+            return
+        schluessel = auswahl[0]
+        stand = self._konsole_tafel_beginnen("dienste.status_starting")
+        if stand is None:
+            return
+
+        def _arbeit() -> None:
+            try:
+                self._konsole_dienst_starten(schluessel, ip)
+                stand.update(uebersicht=konsole_dienste.pruefen(ip), geprueft=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Payload-Start gescheitert")
+                self._konsole_tafel_melden("log.fehler_zeile", text=str(exc))
+                stand["hinweis"] = "dienste.status_failed"
+            finally:
+                self._konsole_tafel_laeuft["aktiv"] = False
+
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-payload").start()
+
+    def _konsole_tafel_grundausstattung(self) -> None:
+        """"Grundausstattung starten": was davon nicht laeuft, der Reihe nach starten."""
+        if self._konsole_tafel_beschaeftigt():
+            return
+        ip = self._konsole_tafel_adresse()
+        if not ip:
+            return
+        stand = self._konsole_tafel_beginnen("dienste.status_starting")
+        if stand is None:
+            return
+
+        def _arbeit() -> None:
+            try:
+                uebersicht = konsole_dienste.pruefen(ip)
+                for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
+                    eintrag = konsole_dienste.dienst(schluessel)
+                    if eintrag is None:
+                        continue
+                    if uebersicht.laeuft(schluessel):
+                        self._konsole_tafel_melden(
+                            "dienste.log_laeuft_schon",
+                            name=self._Uebersetzbar(eintrag.name_schluessel))
+                        continue
+                    self._konsole_dienst_starten(schluessel, ip)
+                stand.update(uebersicht=konsole_dienste.pruefen(ip), geprueft=True)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Grundausstattung gescheitert")
+                self._konsole_tafel_melden("log.fehler_zeile", text=str(exc))
+                stand["hinweis"] = "dienste.status_failed"
+            finally:
+                self._konsole_tafel_laeuft["aktiv"] = False
 
         threading.Thread(target=_arbeit, daemon=True,
-                         name="konsole-tafel").start()
+                         name="konsole-grundausstattung").start()
+
+    def _konsole_tafel_web(self) -> None:
+        """"Weboberflaeche oeffnen": die des markierten Dienstes im Browser."""
+        auswahl = self._konsole_tafel_tabelle.selection()
+        if not auswahl:
+            messagebox.showinfo(self._t("tafel.title"), self._t("dienste.need_auswahl"),
+                                parent=self.root)
+            return
+        eintrag = konsole_dienste.dienst(auswahl[0])
+        ip = self._konsole_tafel_ip.get().strip()
+        adresse = konsole_dienste.web_adresse(eintrag, ip) if eintrag else ""
+        if not adresse:
+            messagebox.showinfo(self._t("tafel.title"),
+                                self._t("dienste.keine_weboberflaeche"), parent=self.root)
+            return
+        self._konsole_tafel_melden("dienste.log_web", adresse=adresse)
+        self._konsole_tafel_protokoll_nachtragen()
+        webbrowser.open(adresse)
 
     def _konsole_tafel_zustandstext(self, stand: dict) -> str:
         """Der Satz ueber der Tabelle - aus den Daten der letzten Messung."""
@@ -9061,8 +9363,11 @@ class PS5ConverterGUI:
         return self._t("tafel.nicht_gefunden")
 
     def _konsole_tafel_statustext(self, stand: dict, aktiv: bool) -> str:
-        """Die Statuszeile der Tafel - aus dem Stand, in der aktuellen Sprache."""
+        """Die Statuszeile der Seite - aus dem Stand, in der aktuellen Sprache."""
         if aktiv:
+            schritt = stand.get("schritt")
+            if schritt:
+                return self._konsole_tafel_zeile(schritt)
             return self._t("tafel.status_running")
         if stand.get("hinweis"):
             return self._t(stand["hinweis"])
@@ -9078,27 +9383,28 @@ class PS5ConverterGUI:
         return self._t("tafel.status_idle")
 
     def _konsole_tafel_beschriften(self) -> None:
-        """Alle wechselnden Texte der Tafel neu - nur aus dem Hauptfaden.
+        """Alle wechselnden Texte der Seite neu - nur aus dem Hauptfaden.
 
         Spaltenkoepfe, Zeilen, Zustand und Status; die festen Beschriftungen
-        erledigt ``_register_translatable``. Aufgerufen vom Takt und von
-        :meth:`_apply_language`.
+        erledigt ``_register_translatable``. Aufgerufen vom Sprachwechsel
+        (:meth:`_apply_language`). Das Protokoll bleibt, wie es geschrieben
+        wurde - es ist ein Verlauf.
         """
         tabelle = getattr(self, "_konsole_tafel_tabelle", None)
         if tabelle is None or not tabelle.winfo_exists():
             return
-        tabelle.heading("dienst", text=self._t("dienste.col_dienst"), anchor="w")
-        tabelle.heading("zustand", text=self._t("dienste.col_zustand"), anchor="w")
+        for spalte, schluessel, _breite, _dehnen in self._KONSOLE_TAFEL_SPALTEN:
+            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
         stand = getattr(self, "_konsole_tafel_stand", None) or {}
         uebersicht = stand.get("uebersicht")
         self._konsole_tafel_fuellen(uebersicht if uebersicht is not None
                                     else konsole_dienste.pruefen(""))
-        aktiv = bool(getattr(self, "_konsole_tafel_laeuft", {}).get("aktiv"))
+        aktiv = self._konsole_tafel_beschaeftigt()
         self._konsole_tafel_zustand.set(self._konsole_tafel_zustandstext(stand))
         self._konsole_tafel_status.set(self._konsole_tafel_statustext(stand, aktiv))
 
     def _konsole_tafel_takt(self) -> None:
-        """Traegt ins Fenster, was der Faden abgelegt hat - alle 120 ms."""
+        """Traegt in die Seite, was der Faden abgelegt hat - alle 120 ms."""
         stand = getattr(self, "_konsole_tafel_stand", None)
         laeuft = getattr(self, "_konsole_tafel_laeuft", {"aktiv": False})
         if stand is None:
@@ -9107,57 +9413,76 @@ class PS5ConverterGUI:
         # Endstand (dieselbe Falle wie Durchsicht H3-14).
         aktiv = bool(laeuft.get("aktiv"))
         try:
+            # Die gefundene Adresse genau einmal ins Feld und in die
+            # Einstellungen - danach geleert, damit eine spaetere Eingabe nicht
+            # ueberschrieben wird. Gespeichert wird nur, was als Adresse taugt.
+            gefunden, stand["adresse"] = str(stand.get("adresse") or ""), ""
+            if gefunden and self._ist_plausible_ps5_adresse(gefunden):
+                if gefunden != self._konsole_tafel_ip.get().strip():
+                    self._konsole_tafel_ip.set(gefunden)
+                if gefunden != self._ps5_ip():
+                    self._save_setting("ps5_ip", gefunden)
+                    self._konsole_tafel_melden("dienste.log_adresse_gespeichert",
+                                               host=gefunden)
             neu = stand.get("uebersicht")
             if neu is not None and id(neu) != stand.get("gezeigt"):
                 stand["gezeigt"] = id(neu)
                 self._konsole_tafel_fuellen(neu)
+                for eintrag_stand in neu:
+                    if eintrag_stand.stumm:
+                        self._konsole_tafel_melden(
+                            "dienste.log_stumm",
+                            name=self._Uebersetzbar(eintrag_stand.dienst.name_schluessel),
+                            port=eintrag_stand.dienst.port)
             self._konsole_tafel_zustand.set(self._konsole_tafel_zustandstext(stand))
             self._konsole_tafel_status.set(self._konsole_tafel_statustext(stand, aktiv))
+            self._konsole_tafel_protokoll_nachtragen()
         except tk.TclError:
             return
         if aktiv:
             self.root.after(120, self._konsole_tafel_takt)
         else:
-            try:
-                self._konsole_tafel_knopf.configure(state="normal")
-            except tk.TclError:
-                pass
+            for knopf in self._konsole_tafel_knoepfe:
+                try:
+                    knopf.configure(state="normal")
+                except tk.TclError:
+                    pass
             # Die Firmware merken: Die Bibliothek vergleicht damit die
             # Mindest-Firmware jedes Spiels - auch nach einem Neustart, bevor
             # jemand wieder "Konsole pruefen" drueckt (seit 25.09.2026).
             firmware = str(getattr(stand.get("konsole"), "firmware", "") or "").strip()
             if firmware and firmware != str(self._load_setting("konsole_firmware", "") or ""):
                 self._save_setting("konsole_firmware", firmware)
+            if self._konsole_start_melden:
+                self._konsole_start_melden = False
+                if stand.get("hinweis") == "dienste.suche_nichts":
+                    zeile = self._t("konsole.start_nichts")
+                else:
+                    zeile = self._t("konsole.start_ergebnis",
+                                    zustand=self._konsole_tafel_zustandstext(stand),
+                                    status=self._konsole_tafel_statustext(stand, False))
+                self._append_to_log(zeile + "\n")
 
-    # -- Rechte Seite: Koppel-Assistent (ActRemoteLink) ---------------------
+    def _konsole_dienste_zeigen(self) -> None:
+        """Knopf "1. Konsole & Payloads": rechts die Seite zeigen und die PS5 suchen.
 
-    #: Wie der Ablauf den Zustand eines Schritts zeigt.
-    _RPASSIST_ZEICHEN: dict[str, str] = {
-        remoteplay_agent.OFFEN: "○",
-        remoteplay_agent.LAEUFT: "►",
-        remoteplay_agent.WARTET: "●",
-        remoteplay_agent.ERLEDIGT: "✓",
-        remoteplay_agent.UEBERSPRUNGEN: "–",
-        remoteplay_agent.FEHLER: "✗",
-    }
-
-    def _konsole_assistent_umschalten(self) -> None:
-        """Knopf "6. ActRemoteLink": rechts den Koppel-Assistenten zeigen.
-
-        Ein zweiter Druck fuehrt zur Uebersicht zurueck - wie ein
-        Fensterknopf, der sein Fenster wieder schliesst.
+        Bis zum 26.09.2026 oeffnete der Knopf ein eigenes Fenster neben der
+        Uebersicht. Der Nutzer: "Ich wollte alles in der rechten Ansicht
+        verlegt in einem. Nicht separat." Jeder Druck sucht - dafuer drueckt
+        man ihn (Wunsch vom selben Tag: "die PS5 automatisch suchen beim
+        Druecken auf den Knopf").
         """
-        self._konsole_seite_setzen(
-            "uebersicht"
-            if getattr(self, "_konsole_seite", "uebersicht") == "actremotelink"
-            else "actremotelink")
+        self._konsole_seite_setzen("uebersicht")
+        if getattr(self, "_konsole_tafel", None) is None:
+            self._konsole_tafel_bauen()
+        self._konsole_tafel_suchen()
 
     def _konsole_bibliothek_umschalten(self) -> None:
         """Knopf "3. Bibliothek": rechts die Bibliothek zeigen.
 
-        Wie beim Koppel-Assistenten fuehrt ein zweiter Druck zur Uebersicht
-        zurueck. Die Bibliothek bleibt dabei gebaut - Suchlauf, Auswahl und
-        Titelbilder sind beim naechsten Mal noch da.
+        Ein zweiter Druck fuehrt zu "Konsole & Payloads" zurueck. Die
+        Bibliothek bleibt dabei gebaut - Suchlauf, Auswahl und Titelbilder
+        sind beim naechsten Mal noch da.
         """
         self._konsole_seite_setzen(
             "uebersicht"
@@ -9169,549 +9494,41 @@ class PS5ConverterGUI:
 
         Args:
             seite: Eine der Seiten aus :data:`_KONSOLE_SEITENBAU` -
-                ``"uebersicht"``, ``"actremotelink"`` oder ``"bibliothek"``.
+                ``"uebersicht"`` ("Konsole & Payloads"), ``"spielstaende"``
+                oder ``"bibliothek"``.
         """
         if seite not in self._KONSOLE_SEITENBAU:
             return
         self._konsole_seite = seite
         if self._ansicht_ist_konsole():
             self._konsole_tafel_zeigen()
-        c = self._COLORS
-        hervor = self._KONSOLE_SEITENBAU[seite][2]
-        seitenknoepfe = {knopf for _a, _b, knopf in self._KONSOLE_SEITENBAU.values()
-                         if knopf}
-        for knopf, schluessel in getattr(self, "_konsole_knoepfe", []):
-            if schluessel not in seitenknoepfe:
-                continue
-            try:
-                if schluessel == hervor:
-                    knopf.config(bg=c["fg_accent"], fg=c["bg_main"],
-                                 outline=c["border"])
-                else:
-                    knopf.config(bg=c["bg_card"], fg=c["fg_primary"],
-                                 outline=c["border"])
-            except tk.TclError:
-                pass
-
-    def _konsole_assistent_oeffnen(self, ip: str = "", slot: str = "",
-                                   konto: str = "") -> None:
-        """Zeigt den Koppel-Assistenten im Hauptfenster.
-
-        Aufgerufen aus dem Fenster Remote Play ("Koppel-Assistent"). Dessen
-        Felder gehen mit, solange der Assistent nicht gerade laeuft - leere
-        Felder ueberschreiben nichts.
-        """
-        if not self._ansicht_ist_konsole():
-            self._ansicht_setzen("konsole")
-        self._konsole_seite_setzen("actremotelink")
-        st = getattr(self, "_rpassist", None)
-        if st is not None and not st["laeuft"]:
-            for wert, var in ((ip, st["ip_var"]), (slot, st["slot_var"]),
-                              (konto, st["konto_var"])):
-                if str(wert or "").strip():
-                    var.set(str(wert).strip())
-        try:
-            self.root.lift()
-        except tk.TclError:
-            pass
-
-    def _actremotelink_fehlende(self) -> list[str]:
-        """Die Muster der ActRemoteLink-Payloads, die in helloworld fehlen."""
-        return [remoteplay_agent.PAYLOAD_MUSTER[art] for art in ("agent", "pin")
-                if not self._streaming_pfad(art)]
-
-    def _actremotelink_download_hinweis(self, koerper, fehlend: list):
-        """Hinweiszeile mit der Download-Adresse - ein Klick oeffnet sie.
-
-        Heruntergeladen wird nichts von selbst: Das entscheidet der Anwender
-        (Wunsch des Nutzers vom 24.09.2026, "falls die elf's nicht
-        mitgeliefert werden duerfen").
-        """
-        werte = {"dateien": ", ".join(fehlend),
-                 "adresse": remoteplay_agent.DOWNLOAD_ADRESSE}
-        zeile = self._konsole_hinweiszeile(
-            koerper, "remoteplay.hint_download", warnung=True, **werte)
-        self._register_translatable(zeile, "remoteplay.hint_download", **werte)
-        zeile.configure(cursor="hand2")
-        zeile.bind("<Button-1>",
-                   lambda _e: self._open_url(remoteplay_agent.DOWNLOAD_ADRESSE))
-        return zeile
-
-    def _konsole_assistent_bauen(self) -> None:
-        """Baut den Koppel-Assistenten - rechts in der Ansicht KONSOLE.
-
-        Oben die Eingaben und Knoepfe; links der **Ablauf**: die sieben
-        Schritte in ihrer festen Reihenfolge, je Schritt, wer ihn erledigt
-        und welches Payload dabei geschickt wird (Frage des Nutzers vom
-        24.09.2026: "Ist eine Reihenfolge wichtig bei den elfs, sollte es
-        klar angezeigt werden"). Rechts daneben **Jetzt**: was gerade
-        geschieht oder was an der PS5 zu tun ist, darunter PIN und Konto-ID
-        zum Kopieren.
-
-        Die Logik steht in ``remoteplay_agent.Kopplungsassistent``. Sein
-        Faden fasst kein Tk an, er legt nur Ereignisse ab; ``_rpassist_takt``
-        zeichnet sie im Hauptfaden.
-        """
-        c = self._COLORS
-        seite = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
-        self._rpassist_seite = seite
-        st: dict = {
-            "laeuft": False, "abbrechen": False, "ergebnis": "",
-            "ereignisse": [], "gelesen": 0, "pin": None, "link": "",
-            "lauf_ip": "",
-            "zustaende": {s: remoteplay_agent.OFFEN
-                          for s in remoteplay_agent.ASSISTENT_SCHRITTE},
-            "jetzt": ("rpassist.jetzt_bereit", {}, remoteplay_agent.OFFEN),
-        }
-        self._rpassist = st
-
-        kopf = tk.Frame(seite, bg=c["bg_main"])
-        kopf.pack(fill="x")
-        titel = tk.Label(kopf, text=self._t("rpassist.title"),
-                         font=(UI_SCHRIFT, pt(15), "bold"), bg=c["bg_main"],
-                         fg=c["fg_primary"], anchor="w")
-        titel.pack(side="left", fill="x", expand=True)
-        self._register_translatable(titel, "rpassist.title")
-        zurueck = ttk.Button(kopf, text=self._t("rpassist.btn_uebersicht"),
-                             command=lambda: self._konsole_seite_setzen("uebersicht"))
-        zurueck.pack(side="right")
-        self._register_translatable(zurueck, "rpassist.btn_uebersicht")
-        # Die Statuszeile zuerst packen (unten): Reicht die Hoehe nicht, gibt
-        # pack den zuletzt gepackten Elementen zuerst zu wenig - das soll das
-        # Protokoll sein, nicht der Status.
-        st["status_var"] = tk.StringVar(value=self._t("rpassist.status_idle"))
-        tk.Label(seite, textvariable=st["status_var"], font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
-            side="bottom", fill="x")
-        # Kein Untertitel: Was er sagte, steht als erste Anweisung unter
-        # "Jetzt" - bei 700 px Fensterhoehe fehlte sonst der letzte Schritt.
-
-        felder = tk.Frame(seite, bg=c["bg_main"])
-        felder.pack(fill="x", pady=(8, 0))
-        st["ip_var"] = tk.StringVar(value=self._ps5_ip())
-        st["slot_var"] = tk.StringVar(value="")
-        st["konto_var"] = tk.StringVar(
-            value=str(self._load_setting("account_id", "") or ""))
-        for schluessel, var, breite in (
-                ("dienste.ip_label", st["ip_var"], 16),
-                ("rpassist.label_slot", st["slot_var"], 4),
-                ("remoteplay.label_konto", st["konto_var"], 22)):
-            beschriftung = tk.Label(felder, text=self._t(schluessel),
-                                    font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                                    fg=c["fg_secondary"])
-            beschriftung.pack(side="left", padx=(0, 6))
-            self._register_translatable(beschriftung, schluessel)
-            tk.Entry(felder, textvariable=var, width=breite,
-                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
-                     fg=c["fg_primary"], relief="flat",
-                     insertbackground=c["fg_primary"]).pack(
-                side="left", ipady=3, padx=(0, 14))
-        self._register_translatable(
-            self._konsole_hinweiszeile(seite, "rpassist.hint_felder"),
-            "rpassist.hint_felder")
-        fehlend = self._actremotelink_fehlende()
-        if fehlend:
-            self._actremotelink_download_hinweis(seite, fehlend)
-
-        knoepfe = tk.Frame(seite, bg=c["bg_main"])
-        knoepfe.pack(fill="x", pady=(6, 6))
-        for name, schluessel, befehl, stil in (
-                ("start_btn", "rpassist.btn_start", self._rpassist_starten,
-                 "Accent.TButton"),
-                ("stop_btn", "rpassist.btn_stop", self._rpassist_abbrechen, ""),
-                ("chiaki_btn", "rpassist.btn_chiaki", self._rpassist_chiaki, "")):
-            knopf = ttk.Button(knoepfe, text=self._t(schluessel), command=befehl,
-                               **({"style": stil} if stil else {}))
-            knopf.pack(side="left", padx=(0 if name == "start_btn" else 8, 0))
-            self._register_translatable(knopf, schluessel)
-            st[name] = knopf
-
-        mitte = tk.Frame(seite, bg=c["bg_main"])
-        mitte.pack(fill="x")
-        mitte.grid_columnconfigure(0, weight=1, uniform="rpassist")
-        mitte.grid_columnconfigure(1, weight=1, uniform="rpassist")
-
-        ablauf = tk.Frame(mitte, bg=c["bg_card"], padx=12, pady=10)
-        ablauf.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        ablauf.grid_columnconfigure(1, weight=1)
-        kopfzeile = tk.Label(ablauf, text=self._t("rpassist.label_ablauf"),
-                             font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_card"],
-                             fg=c["fg_accent"], anchor="w")
-        kopfzeile.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 4))
-        self._register_translatable(kopfzeile, "rpassist.label_ablauf")
-        zeilen: dict = {}
-        for nummer, schritt in enumerate(remoteplay_agent.ASSISTENT_SCHRITTE, 1):
-            zeichen = tk.Label(ablauf, width=2, font=(UI_SCHRIFT, pt(10), "bold"),
-                               bg=c["bg_card"], fg=c["fg_secondary"], anchor="n")
-            zeichen.grid(row=2 * nummer - 1, column=0, sticky="nw")
-            schritt_titel = tk.Label(ablauf, font=(UI_SCHRIFT, pt(9), "bold"),
-                                     bg=c["bg_card"], fg=c["fg_primary"],
-                                     anchor="w")
-            schritt_titel.grid(row=2 * nummer - 1, column=1, sticky="w")
-            wer = tk.Label(ablauf, font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
-                           fg=c["fg_secondary"], anchor="w")
-            wer.grid(row=2 * nummer, column=1, sticky="w", pady=(0, 1))
-            zeilen[schritt] = (zeichen, schritt_titel, wer)
-        st["zeilen"] = zeilen
-
-        rechts = tk.Frame(mitte, bg=c["bg_main"])
-        rechts.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-        jetzt_kopf = tk.Label(rechts, text=self._t("rpassist.label_jetzt"),
-                              font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                              fg=c["fg_accent"], anchor="w")
-        jetzt_kopf.pack(fill="x")
-        self._register_translatable(jetzt_kopf, "rpassist.label_jetzt")
-        jetzt = tk.Label(rechts, font=(UI_SCHRIFT, pt(10)), bg=c["bg_main"],
-                         fg=c["fg_primary"], anchor="nw", justify="left",
-                         wraplength=400)
-        jetzt.pack(fill="x", pady=(2, 10))
-
-        def _umbruch(_ereignis=None) -> None:
-            try:
-                breite = jetzt.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                jetzt.configure(wraplength=breite - 8)
-
-        jetzt.bind("<Configure>", _umbruch)
-        jetzt.bind("<Button-1>", lambda _e: self._rpassist_link_oeffnen())
-        st["jetzt_label"] = jetzt
-
-        # Je Wert eine eigene Zeile unter der Beschriftung: Neben Beschriftung
-        # und Knopf blieb bei 1245 px Fensterbreite fuer die PIN nur "28"
-        # (Aufnahme vom 24.09.2026).
-        pinkarte = tk.Frame(rechts, bg=c["bg_card"], padx=12, pady=8)
-        pinkarte.grid_columnconfigure(0, weight=1)
-        for block, (schluessel, name, schrift, was) in enumerate((
-                ("rpassist.label_pin", "pin_wert", (MONO_SCHRIFT, pt(16), "bold"), "pin"),
-                ("rpassist.label_id", "id_wert", (MONO_SCHRIFT, pt(11), "bold"), "b64"))):
-            beschriftung = tk.Label(pinkarte, text=self._t(schluessel),
-                                    font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
-                                    fg=c["fg_secondary"], anchor="w")
-            beschriftung.grid(row=2 * block, column=0, sticky="w")
-            self._register_translatable(beschriftung, schluessel)
-            kopie = ttk.Button(pinkarte, text=self._t("rpassist.btn_copy"),
-                               command=lambda w=was: self._rpassist_kopieren(w))
-            kopie.grid(row=2 * block, column=1, sticky="e", pady=(2, 0))
-            self._register_translatable(kopie, "rpassist.btn_copy")
-            wert = tk.Label(pinkarte, font=schrift, bg=c["bg_card"],
-                            fg=c["fg_accent"], anchor="w")
-            wert.grid(row=2 * block + 1, column=0, columnspan=2, sticky="w",
-                      pady=(0, 4))
-            st[name] = wert
-        frist = tk.Label(pinkarte, font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"],
-                         fg=c["fg_secondary"], anchor="w")
-        frist.grid(row=4, column=0, columnspan=2, sticky="w")
-        st.update(pinkarte=pinkarte, frist=frist)
-
-        # Wenig Hoehe anfordern, den Rest nehmen: Bei 700 px Fensterhoehe
-        # schob ein Protokoll mit 7 Zeilen die Statuszeile aus dem Fenster.
-        protokoll = tk.Text(seite, height=3, font=(MONO_SCHRIFT, pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                            wrap="word")
-        protokoll.pack(fill="both", expand=True, pady=(10, 4))
-        st["protokoll"] = protokoll
-        self._rpassist_zeichnen()
-
-    def _rpassist_zeichnen(self) -> None:
-        """Zeichnet den Stand des Assistenten - nur aus dem Hauptfaden.
-
-        Alle Texte kommen bei jedem Zeichnen frisch aus ``self._t``: So
-        folgt die Seite auch einem Sprachwechsel.
-        """
-        st = getattr(self, "_rpassist", None)
-        if st is None:
-            return
-        c = self._COLORS
-        fehler_farbe = c.get("error_btn", c.get("fg_warning", c["fg_primary"]))
-        farben = {
-            remoteplay_agent.OFFEN: c["fg_secondary"],
-            remoteplay_agent.LAEUFT: c["fg_accent"],
-            remoteplay_agent.WARTET: c.get("fg_warning", c["fg_accent"]),
-            remoteplay_agent.ERLEDIGT: c.get("fg_success", c["fg_accent"]),
-            remoteplay_agent.UEBERSPRUNGEN: c["fg_secondary"],
-            remoteplay_agent.FEHLER: fehler_farbe,
-        }
-        hervor = (remoteplay_agent.LAEUFT, remoteplay_agent.WARTET,
-                  remoteplay_agent.FEHLER)
-        for nummer, schritt in enumerate(remoteplay_agent.ASSISTENT_SCHRITTE, 1):
-            zeichen, titel, wer = st["zeilen"][schritt]
-            zustand = st["zustaende"].get(schritt, remoteplay_agent.OFFEN)
-            zeichen.configure(text=self._RPASSIST_ZEICHEN.get(zustand, "○"),
-                              fg=farben.get(zustand, c["fg_secondary"]))
-            titel.configure(
-                text="%d. %s" % (nummer, self._t("rpassist.schritt_" + schritt)),
-                fg=farben[zustand] if zustand in hervor else c["fg_primary"])
-            wer.configure(text=self._t("rpassist.wer_" + schritt))
-
-        schluessel, werte, zustand = st["jetzt"]
-        adresse = str(werte.get("adresse", ""))
-        st["link"] = adresse if adresse.startswith(("http://", "https://")) else ""
-        st["jetzt_label"].configure(
-            text=self._t(schluessel, **werte) if schluessel else "",
-            fg=(farben[zustand] if zustand in (remoteplay_agent.WARTET,
-                                               remoteplay_agent.FEHLER)
-                else c.get("fg_success", c["fg_primary"])
-                if (zustand == remoteplay_agent.ERLEDIGT
-                    and schluessel == "rpassist.jetzt_fertig")
-                else c["fg_primary"]),
-            cursor="hand2" if st["link"] else "")
-
-        pin = st["pin"]
-        if pin:
-            if not st["pinkarte"].winfo_manager():
-                st["pinkarte"].pack(fill="x")
-            st["pin_wert"].configure(text=pin.get("pin") or self._t("rpassist.pin_warten"))
-            st["id_wert"].configure(text=pin.get("b64") or "–")
-            rest = float(pin.get("bis", 0.0)) - time.monotonic()
-            if rest <= 0:
-                frist = self._t("rpassist.pin_abgelaufen")
-            elif st["laeuft"]:
-                frist = self._t("rpassist.pin_frist",
-                                zeit="%d:%02d" % divmod(int(rest), 60))
-            else:
-                frist = ""
-            st["frist"].configure(text=frist)
-        elif st["pinkarte"].winfo_manager():
-            st["pinkarte"].pack_forget()
-
-        st["start_btn"].configure(state="disabled" if st["laeuft"] else "normal")
-        st["stop_btn"].configure(state="normal" if st["laeuft"] else "disabled")
-
-    def _rpassist_zeile(self, text: str) -> None:
-        """Eine Zeile ins Protokoll des Assistenten."""
-        st = getattr(self, "_rpassist", None)
-        if st is None:
-            return
-        try:
-            st["protokoll"].insert("end", str(text).rstrip("\n") + "\n")
-            st["protokoll"].see("end")
-        except tk.TclError:
-            pass
-
-    def _rpassist_ereignisse_uebernehmen(self) -> None:
-        """Holt ab, was der Faden seit dem letzten Takt abgelegt hat."""
-        st = self._rpassist
-        ereignisse = st["ereignisse"]
-        while st["gelesen"] < len(ereignisse):
-            ereignis = ereignisse[st["gelesen"]]
-            st["gelesen"] += 1
-            if ereignis.art == "schritt":
-                st["zustaende"][ereignis.schritt] = ereignis.zustand
-                if ereignis.text:
-                    st["jetzt"] = (ereignis.text, dict(ereignis.werte),
-                                   ereignis.zustand)
-            elif ereignis.art == "protokoll":
-                self._rpassist_zeile(self._t(ereignis.text, **ereignis.werte))
-            elif ereignis.art == "ausgabe":
-                self._rpassist_zeile(self._t("rpassist.log_ausgabe",
-                                             zeile=ereignis.text))
-            elif ereignis.art == "pin":
-                st["pin"] = dict(ereignis.werte)
-            elif ereignis.art == "merken" and "neustart_offen" in ereignis.werte:
-                # Den Neustart sieht man der Benutzerliste nicht an - er muss
-                # ein Programmende ueberstehen (siehe Kopplungsassistent).
-                self._save_setting(
-                    "remoteplay_neustart_offen",
-                    st["lauf_ip"] if ereignis.werte["neustart_offen"] else "")
-
-    def _rpassist_takt(self) -> None:
-        """Zeichnet, was der Faden abgelegt hat - alle 200 ms, solange er laeuft."""
-        st = getattr(self, "_rpassist", None)
-        if st is None:
-            return
-        # Vor dem Abholen lesen: Endet der Faden dazwischen, fehlte sonst
-        # sein letztes Ereignis (dieselbe Falle wie Durchsicht H3-14).
-        laeuft = st["laeuft"]
-        try:
-            self._rpassist_ereignisse_uebernehmen()
-            if not laeuft:
-                st["status_var"].set(self._rpassist_statustext())
-            self._rpassist_zeichnen()
-        except tk.TclError:
-            return
-        if laeuft:
-            self.root.after(200, self._rpassist_takt)
-
-    def _rpassist_statustext(self) -> str:
-        """Die Statuszeile des Assistenten - aus dem Stand, in der aktuellen Sprache."""
-        st = self._rpassist
-        if st["laeuft"]:
-            return self._t("rpassist.status_laeuft")
-        return self._t({
-            "gekoppelt": "rpassist.status_gekoppelt",
-            "abgebrochen": "rpassist.status_abgebrochen",
-            "fehler": "rpassist.status_fehler",
-        }.get(st["ergebnis"], "rpassist.status_idle"))
-
-    def _rpassist_starten(self) -> None:
-        """"Starten": prueft die Eingaben und laesst den Assistenten laufen."""
-        st = getattr(self, "_rpassist", None)
-        if st is None or st["laeuft"]:
-            return
-        titel = self._t("rpassist.title")
-        ip = st["ip_var"].get().strip()
-        if not self._ist_plausible_ps5_adresse(ip):
-            st["status_var"].set(self._t("dienste.need_ip"))
-            return
-        slot = st["slot_var"].get().strip()
-        if slot and not slot.isdigit():
-            messagebox.showwarning(titel, self._t("remoteplay.need_slot"),
-                                   parent=self.root)
-            return
-        konto = st["konto_var"].get().strip()
-        port = int(self._PAYLOAD_SEND_PORT)
-        agent = remoteplay_agent.ActRemoteLink(
-            ip,
-            # Der Agent laeuft dauerhaft und schreibt nichts: Nach 5 s Stille
-            # ist er gestartet - nicht erst nach den ueblichen 30.
-            sende_payload=lambda pfad: self._send_payload_to_ps5(
-                ip, pfad, lesezeit=5.0),
-            agent_elf=self._streaming_pfad("agent"),
-            pin_elf=self._streaming_pfad("pin"))
-
-        def _mitlesen(pfad: str):
-            """Das PIN-Payload ueber elfldr - mit seiner Ausgabe (PIN, Erfolg).
-
-            Portpruefung ueber ``_ps5_port_open`` (nicht ``payload_versand``
-            direkt), damit Pruefstaende sie stilllegen koennen.
-            """
-            if not self._ps5_port_open(ip, port):
-                return None
-            with open(pfad, "rb") as fh:
-                daten = fh.read()
-            return payload_versand.Mitleser(ip, daten, port=port)
-
-        def _bestaetigen(eintrag) -> bool:
-            return bool(self._im_hauptfaden(
-                messagebox.askyesno, titel,
-                self._t("rpassist.ask_write", name=eintrag.name or "-",
-                        slot=eintrag.slot),
-                parent=self.root))
-
-        ereignisse: list = []
-        try:
-            assistent = remoteplay_agent.Kopplungsassistent(
-                agent, slot=slot or None, konto_id=konto or None,
-                neustart_offen=(str(self._load_setting(
-                    "remoteplay_neustart_offen", "") or "") == ip),
-                melden=ereignisse.append,
-                bestaetigen=_bestaetigen,
-                abgebrochen=lambda: bool(st["abbrechen"]),
-                lader_erreichbar=lambda: (
-                    self._ps5_port_open(ip, port)
-                    or self._ps5_port_open(ip, payload_versand.PLDMGR_PORT)),
-                pin_mitlesen=_mitlesen)
-        except ValueError:
-            messagebox.showwarning(titel, self._t("rpassist.bad_konto"),
-                                   parent=self.root)
-            return
-        self._save_setting("ps5_ip", ip)
-        if konto:
-            self._save_setting("account_id", konto)
-        st.update(
-            laeuft=True, abbrechen=False, ergebnis="", ereignisse=ereignisse,
-            gelesen=0, pin=None, lauf_ip=ip,
-            zustaende={s: remoteplay_agent.OFFEN
-                       for s in remoteplay_agent.ASSISTENT_SCHRITTE},
-            jetzt=("rpassist.jetzt_verbinden", {"adresse": ip},
-                   remoteplay_agent.LAEUFT))
-        try:
-            st["protokoll"].delete("1.0", "end")
-        except tk.TclError:
-            pass
-        st["status_var"].set(self._t("rpassist.status_laeuft"))
-
-        def _arbeit() -> None:
-            ergebnis = "fehler"
-            try:
-                ergebnis = assistent.lauf()
-            finally:
-                st["ergebnis"] = ergebnis
-                st["laeuft"] = False
-
-        threading.Thread(target=_arbeit, daemon=True,
-                         name="rpassist-lauf").start()
-        self._rpassist_takt()
-
-    def _rpassist_abbrechen(self) -> None:
-        """"Abbrechen": Der Assistent haelt beim naechsten Blick an (<= 1 s)."""
-        st = getattr(self, "_rpassist", None)
-        if st is not None and st["laeuft"]:
-            st["abbrechen"] = True
-
-    def _rpassist_kopieren(self, was: str) -> None:
-        """Kopiert PIN (ohne Leerzeichen, so nimmt Chiaki sie) oder Konto-ID."""
-        st = getattr(self, "_rpassist", None)
-        pin = (st or {}).get("pin") or {}
-        wert = (str(pin.get("pin") or "").replace(" ", "") if was == "pin"
-                else str(pin.get("b64") or ""))
-        if not wert:
-            return
-        try:
-            self.root.clipboard_clear()
-            self.root.clipboard_append(wert)
-        except tk.TclError:
-            return
-        st["status_var"].set(self._t(
-            "rpassist.kopiert",
-            was=self._t("rpassist.label_pin" if was == "pin" else "rpassist.label_id")))
-
-    def _rpassist_chiaki(self) -> None:
-        """"Chiaki oeffnen": ohne Argumente - zum Registrieren der Konsole.
-
-        ``chiaki stream`` taugt hier nicht: Es verlangt eine schon
-        registrierte Konsole, und genau die entsteht erst in diesem Schritt.
-        """
-        st = getattr(self, "_rpassist", None)
-        if st is None:
-            return
-        pfad = remoteplay.chiaki_finden(str(self._load_setting("chiaki_pfad", "") or ""))
-        if not pfad:
-            messagebox.showwarning(self._t("rpassist.title"),
-                                   self._t("remoteplay.no_chiaki"), parent=self.root)
-            return
-        try:
-            remoteplay.chiaki_starten(pfad, st["ip_var"].get().strip(), argumente=())
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Chiaki-Start gescheitert")
-            self._rpassist_zeile(self._t("log.fehler_zeile", text=exc))
-            return
-        self._rpassist_zeile(self._t("remoteplay.log_chiaki", pfad=pfad))
-
-    def _rpassist_link_oeffnen(self) -> None:
-        """Ein Klick auf "Jetzt" oeffnet die Adresse, die dort genannt ist."""
-        st = getattr(self, "_rpassist", None)
-        if st and st.get("link"):
-            self._open_url(st["link"])
+        self._konsole_knopf_hervorheben(seite)
 
     #: Welche Kennung der zweiten Ansicht welches Fenster oeffnet. Was hier
-    #: nicht steht, sagt "kommt noch" - so waechst die Ansicht Stufe fuer
-    #: Stufe, ohne dass ein Knopf ins Leere greift.
-    _KONSOLE_FENSTER: dict[str, str] = {
-        "dienste": "_show_konsole_dienste",
-        "spielstaende": "_show_konsole_spielstaende",
-        "remoteplay": "_show_konsole_remoteplay",
-        "prosperolight": "_show_konsole_prosperolight",
-    }
+    #: nicht steht und auch keine Seite ist, sagt "kommt noch" - so waechst
+    #: die Ansicht, ohne dass ein Knopf ins Leere greift. Seit dem 26.09.2026
+    #: leer: "Konsole & Payloads" und "Spielstaende" sind Seiten rechts
+    #: geworden. Die Karte bleibt fuer ein kuenftiges Fenster.
+    _KONSOLE_FENSTER: dict[str, str] = {}
 
     #: Kennungen, die kein Fenster oeffnen, sondern rechts in der Ansicht
-    #: eine eigene Seite zeigen (Wunsch des Nutzers vom 24.09.2026: "nach
-    #: dem Klick auf den Knopf ActRemoteLink rechts das dazugehoerige"; die
-    #: Bibliothek folgte am 25.09.2026).
+    #: eine Seite zeigen: seit dem 25.09.2026 die Bibliothek, seit dem
+    #: 26.09.2026 auch "Konsole & Payloads" und "Spielstaende" (Remote Play
+    #: stand am 25.09. abends kurz ebenfalls hier und ging dann ganz heraus).
     _KONSOLE_SEITEN: dict[str, str] = {
+        "dienste": "_konsole_dienste_zeigen",
+        "spielstaende": "_konsole_spielstaende_zeigen",
         "bibliothek": "_konsole_bibliothek_umschalten",
-        "actremotelink": "_konsole_assistent_umschalten",
     }
 
     #: Die Seiten rechts in der Ansicht KONSOLE: je Seite das Attribut, unter
     #: dem sie liegt, die Methode, die sie baut, und der Knopf, der sie
-    #: hervorhebt ("" = kein Knopf - die Uebersicht ist der Grundzustand).
+    #: hervorhebt. "uebersicht" ist die Seite "Konsole & Payloads" und
+    #: zugleich der Grundzustand der Ansicht.
     _KONSOLE_SEITENBAU: dict[str, tuple[str, str, str]] = {
-        "uebersicht": ("_konsole_tafel", "_konsole_tafel_bauen", ""),
-        "actremotelink": ("_rpassist_seite", "_konsole_assistent_bauen",
-                          "konsole.btn_actremotelink"),
+        "uebersicht": ("_konsole_tafel", "_konsole_tafel_bauen", "konsole.btn_dienste"),
+        "spielstaende": ("_spielstaende_seite", "_spielstaende_seite_bauen",
+                         "konsole.btn_spielstaende"),
         "bibliothek": ("_bibliothek_seite", "_bibliothek_seite_bauen",
                        "konsole.btn_bibliothek"),
     }
@@ -9750,369 +9567,224 @@ class PS5ConverterGUI:
                          key=lambda p: self._webkit_versionsschluessel(p.name))
         return str(treffer[-1]) if treffer else ""
 
-    def _show_konsole_dienste(self) -> None:
-        """KONSOLE: Ampel der Dienste und Startrampe fuer die Payloads.
+    def _konsole_ps5_finden(self, fenster, vorgabe: str, melden):
+        """Findet die PS5 fuer "Konsole & Payloads" - ohne FTP vorauszusetzen.
 
-        Die haeufigste Ursache, wenn etwas mit der Konsole nicht klappt, ist
-        ein Payload, das gar nicht laeuft. Das Fenster fragt alle bekannten
-        Ports gleichzeitig ab (``konsole_dienste.pruefen``) und startet
-        fehlende Dienste aus dem mitgelieferten Ordner ``helloworld`` -
-        ueber denselben erprobten Weg wie jedes andere Payload
-        (``_send_payload_to_ps5``: elfldr 9021, sonst Payload-Manager 8084).
+        Wunsch des Nutzers vom 26.09.2026: beim Druck auf "1. Konsole &
+        Payloads" die PS5 automatisch suchen, "damit der Nutzer nicht extra
+        noch selber verbinden muss". Anders als die Bibliothek
+        (:meth:`_bibliothek_ps5_finden`) darf die Suche hier kein FTP
+        verlangen: Auf diese Seite kommt man gerade, um ftpsrv erst zu
+        starten. In dieser Reihenfolge:
 
-        Was ein offener Port **nicht** sagt: dass der Dienst auch arbeitet.
-        Geprueft wird nur, ob jemand die Verbindung annimmt.
+        1. Die Adresse im Feld, die der Bibliothek dieses Laufs und die
+           FTP-Profile - sie gilt, sobald dort ein bekannter Dienst antwortet
+           (:func:`konsole_dienste.pruefen`).
+        2. Der Rundruf der Konsolensuche (UDP 9302). Eine Konsole antwortet
+           auch ohne jedes Payload und im Ruhemodus.
+        3. Kommt kein Rundruf durch: jede Adresse der eigenen Netze einzeln
+           (:func:`remoteplay.suchen_in`). Antworten gibt nur eine Konsole,
+           kein Drucker mit zufaellig offenem Port.
+
+        Mehrere Konsolen: Eine unter einer bekannten Adresse gilt, sonst wird
+        gefragt (:meth:`_ampr_gen_frage`). Laeuft im Arbeitsfaden - ``melden``
+        bekommt je Schritt ``(schluessel, **werte)``; uebersetzt wird erst im
+        Hauptfaden (Durchsicht H2-13).
+
+        Returns:
+            ``(adresse, uebersicht, konsole, grund)`` - ``adresse`` leer und
+            ``grund`` der Textschluessel, wenn keine PS5 antwortet;
+            ``konsole`` ist die Antwort der Konsolensuche, wenn sie die PS5
+            gefunden hat.
         """
-        c = self._COLORS
-        titel = self._t("dienste.window_title")
-        win = self._build_modern_toplevel(titel, 900, 660,
-                                          min_width=760, min_height=540)
-        self._build_modern_header(win, titel, self._t("dienste.subtitle"))
+        kandidaten: list[str] = []
+        for host in [vorgabe, self._bibliothek_ps5_adresse(),
+                     *self._ampr_gen_profil_adressen()]:
+            host = str(host or "").strip()
+            if host and self._ist_plausible_ps5_adresse(host) and host not in kandidaten:
+                kandidaten.append(host)
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
+        for host in kandidaten:
+            melden("dienste.suche_pruefe", host=host)
+            uebersicht = konsole_dienste.pruefen(host)
+            if uebersicht.anzahl_laufend:
+                return host, uebersicht, None, ""
 
-        ip_var = tk.StringVar(value=self._ps5_ip())
-        status_var = tk.StringVar(value=self._t("dienste.status_idle"))
-        laeuft = {"aktiv": False}
+        melden("dienste.suche_rundruf")
+        konsolen = remoteplay.suchen("", zeit=2.0)
+        if not konsolen:
+            netze = self._ampr_gen_eigene_netze()
+            if netze:
+                melden("dienste.suche_netz", netze=", ".join(netze))
+                konsolen = remoteplay.suchen_in(
+                    ["%s.%d" % (netz, nummer) for netz in netze for nummer in range(1, 255)])
+        if not konsolen:
+            return "", None, None, "dienste.suche_nichts"
 
-        reihe = tk.Frame(koerper, bg=c["bg_main"])
-        reihe.pack(fill="x", pady=(8, 2))
-        tk.Label(reihe, text=self._t("dienste.ip_label"), width=14, anchor="w",
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3)
+        bekannt = [k for k in konsolen if k.adresse in kandidaten]
+        if bekannt:
+            wahl = bekannt[0]
+        elif len(konsolen) == 1:
+            wahl = konsolen[0]
+        else:
+            nach_adresse = {k.adresse: k for k in konsolen}
+            gewaehlt = self._ampr_gen_frage(
+                fenster, self._t("library.q_welche_konsole"),
+                self._t("dienste.q_welche_konsole_why"),
+                [(k.adresse, k.adresse,
+                  self._t("dienste.konsole_eintrag", name=k.name or "PS5",
+                          host=k.adresse, zustand=self._t(k.status_schluessel)))
+                 for k in konsolen])
+            if gewaehlt not in nach_adresse:
+                return "", None, None, "dienste.suche_nichts"
+            wahl = nach_adresse[gewaehlt]
+        melden("dienste.suche_pruefe", host=wahl.adresse)
+        return wahl.adresse, konsole_dienste.pruefen(wahl.adresse), wahl, ""
 
-        hinweis = tk.Label(koerper, text=self._t("dienste.hint"),
-                           font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                           fg=c["fg_secondary"], anchor="w", justify="left",
-                           wraplength=700)
-        hinweis.pack(fill="x", pady=(6, 4))
+    def _konsole_dienst_starten(self, schluessel: str, ip: str, melden=None) -> bool:
+        """Schickt das Payload eines Dienstes und fragt danach seinen Port ab.
 
-        def _hinweis_umbruch(_ereignis=None) -> None:
-            try:
-                breite = hinweis.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                hinweis.configure(wraplength=breite - 8)
+        Laeuft im Arbeitsfaden einer Seite; Meldungen gehen unuebersetzt ins
+        Protokoll - das von "Konsole & Payloads" (:meth:`_konsole_tafel_melden`)
+        oder das, was ``melden`` angibt (die Seite "Spielstaende"). Ein Dienst
+        schliesst die Verbindung zu elfldr nie - mit der Vorgabe von 30 s
+        Lesezeit wartete jeder Start die vollen 30 s ab (bis zum 26.09.2026).
+        Deshalb nur kurz mitlesen und dann abfragen, bis er antwortet, statt
+        die Anlaufzeit fest abzuwarten.
+        """
+        melden = melden or self._konsole_tafel_melden
+        eintrag = konsole_dienste.dienst(schluessel)
+        if eintrag is None:
+            return False
+        name = self._Uebersetzbar(eintrag.name_schluessel)
+        pfad = self._konsole_payload_datei(eintrag.payload_muster)
+        if not pfad:
+            melden("dienste.log_kein_payload", name=name)
+            return False
+        melden("dienste.log_sende", name=name, datei=os.path.basename(pfad))
+        ok, meldung = self._send_payload_to_ps5(
+            ip, pfad, lesezeit=konsole_dienste.LESEZEIT)
+        if not ok:
+            melden("dienste.log_fehlgeschlagen", name=name, grund=meldung)
+            return False
+        laeuft_jetzt = konsole_dienste.warten_bis_bereit(ip, eintrag)
+        melden("dienste.log_gestartet" if laeuft_jetzt else "dienste.log_kein_port",
+               name=name, port=eintrag.port)
+        return laeuft_jetzt
 
-        hinweis.bind("<Configure>", _hinweis_umbruch)
+    def _konsole_elfldr_sicherstellen(self, ip: str, uebersicht, texte: dict):
+        """Laeuft elfldr nicht, ihn ueber den Payload Manager laden.
 
-        tabellenrahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
-        tabellenrahmen.pack(fill="both", expand=True, pady=(2, 6))
-        spalten = ("dienst", "port", "zustand", "zweck")
-        tabelle = ttk.Treeview(tabellenrahmen, columns=spalten,
-                               show="headings", height=10, selectmode="browse")
-        for spalte, schluessel, breite, dehnen in (
-            ("dienst", "dienste.col_dienst", 190, False),
-            ("port", "dienste.col_port", 70, False),
-            ("zustand", "dienste.col_zustand", 90, False),
-            ("zweck", "dienste.col_zweck", 320, True),
-        ):
-            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
-            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
-        leiste = ttk.Scrollbar(tabellenrahmen, orient="vertical",
-                               command=tabelle.yview)
-        tabelle.configure(yscrollcommand=leiste.set)
-        tabelle.grid(row=0, column=0, sticky="nsew")
-        leiste.grid(row=0, column=1, sticky="ns")
-        tabellenrahmen.grid_columnconfigure(0, weight=1)
-        tabellenrahmen.grid_rowconfigure(0, weight=1)
+        Wunsch des Nutzers vom 26.09.2026: Ist Port 9021 zu, soll der Ordner
+        elfldr - falls noch nicht auf der PS5 - per FTP nach
+        /data/pldmgr/payloads und die .elf ueber den Payload Manager
+        automatisch geladen werden (``payload_versand.elfldr_laden``; ohne
+        FTP ueber dessen Weboberflaeche). Laeuft im Arbeitsfaden, nach dem
+        Suchen und nach "Konsole pruefen"; ``texte`` sind die uebersetzten
+        Meldungen des Moduls, vorher im Hauptfaden geholt. Gibt die
+        Uebersicht danach zurueck.
+        """
+        if uebersicht.laeuft("elfldr9021"):
+            return uebersicht
+        if not uebersicht.laeuft("pldmgr"):
+            self._konsole_tafel_melden("dienste.log_elfldr_ohne_pldmgr")
+            return uebersicht
+        eintrag = konsole_dienste.dienst("elfldr9021")
+        name = self._Uebersetzbar(eintrag.name_schluessel)
+        pfad = self._elfldr_payload_path()
+        if not pfad or not os.path.isfile(pfad):
+            self._konsole_tafel_melden("dienste.log_kein_payload", name=name)
+            return uebersicht
+        self._konsole_tafel_schritt("dienste.status_elfldr")
+        self._konsole_tafel_melden("dienste.log_elfldr_laden")
+        try:
+            with open(pfad, "rb") as fh:
+                daten = fh.read()
+            ablage = payload_versand.elfldr_laden(
+                ip, daten, os.path.basename(pfad), texte=texte)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("elfldr ueber den Payload Manager gescheitert")
+            self._konsole_tafel_melden("dienste.log_elfldr_fehler", grund=str(exc))
+            return uebersicht
+        if ablage.art == payload_versand.ABLAGE_VORHANDEN:
+            self._konsole_tafel_melden("dienste.log_elfldr_vorhanden", pfad=ablage.pfad)
+        elif ablage.art == payload_versand.ABLAGE_FTP:
+            self._konsole_tafel_melden("dienste.log_elfldr_hochgeladen", pfad=ablage.pfad,
+                                       groesse=self._fmt_bytes(len(daten)))
+        else:
+            logger.info("elfldr ueber die Weboberflaeche: %s", ablage.grund)
+            self._konsole_tafel_melden("dienste.log_elfldr_web")
+        laeuft_jetzt = konsole_dienste.warten_bis_bereit(
+            ip, eintrag, grenze=payload_versand.ELFLDR_WARTEN)
+        self._konsole_tafel_melden("dienste.log_gestartet" if laeuft_jetzt
+                                   else "dienste.log_kein_port",
+                                   name=name, port=eintrag.port)
+        return konsole_dienste.pruefen(ip)
 
-        protokoll = tk.Text(koerper, height=7, font=(MONO_SCHRIFT, pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"],
-                            relief="flat", wrap="word")
-        protokoll.pack(fill="both", expand=True, pady=(0, 4))
-        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
+    def _konsole_grundausstattung_nachstarten(self, ip: str, uebersicht):
+        """Startet, was von der Grundausstattung fehlt - nur ueber den ELF-Loader.
 
-        # Der Arbeitsfaden fasst kein Tk an - auch nicht ueber
-        # _spaeter_im_fenster: Dessen winfo_exists() ist selbst ein
-        # Tcl-Aufruf und blockiert aus einem Faden, solange die
-        # Ereignisschleife nicht laeuft (am 22.09.2026 am haengenden
-        # Arbeitsfaden dieses Fensters gemessen). Der Faden schreibt nur in
-        # ``stand``, ein Takt im Hauptfaden traegt es ins Fenster - dasselbe
-        # Muster wie bei "PKG bauen".
-        stand: dict = {"status": "", "uebersicht": None, "gezeigt": 0}
-        puffer: list = []
-        cursor = [0]
+        Fuer das Verbinden beim Programmstart ("FTP, 9021 usw., wenn
+        moeglich"). Laeuft der ELF-Loader nicht, wird nichts versucht - dann
+        ist schon :meth:`_konsole_elfldr_sicherstellen` gescheitert oder kein
+        Payload Manager da, und das Protokoll sagt es. Ein **haengender**
+        Dienst wird nicht noch einmal geschickt: Das hilft laut Messung vom
+        17.08.2026 nicht, nur ein Neustart der Konsole (``dienste.log_stumm``).
+        Laeuft im Arbeitsfaden; gibt die Uebersicht danach zurueck.
+        """
+        if not uebersicht.laeuft("elfldr9021"):
+            return uebersicht
+        staende = {s.dienst.schluessel: s for s in uebersicht}
+        gestartet = False
+        for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
+            stand = staende.get(schluessel)
+            if stand is None or stand.laeuft or stand.stumm:
+                continue
+            self._konsole_dienst_starten(schluessel, ip)
+            gestartet = True
+        return konsole_dienste.pruefen(ip) if gestartet else uebersicht
 
-        def _protokoll(text: str) -> None:
-            puffer.append(str(text).rstrip("\n"))
+    #: Schreibt der Takt das Ergebnis der laufenden Suche ins Hauptprotokoll?
+    #: Nur beim Verbinden zum Programmstart - wer die Ansicht UMWANDELN offen
+    #: hat, sieht die Seite "Konsole & Payloads" nicht (kein stiller Vorgang).
+    _konsole_start_melden: bool = False
 
-        def _status(text: str) -> None:
-            stand["status"] = text
+    def _konsole_beim_start_verbinden(self) -> None:
+        """Beim Programmstart die PS5 suchen und verbinden (seit 26.09.2026).
 
-        def _knoepfe(laufend: bool) -> None:
-            zustand = "disabled" if laufend else "normal"
-            for knopf in (pruefen_btn, start_btn, grund_btn, web_btn):
-                try:
-                    knopf.configure(state=zustand)
-                except (tk.TclError, NameError):
-                    pass
+        Wunsch des Nutzers: "Am besten waere, wenn das Programm beim Start
+        sich automatisch mit der PS5 verbindet (FTP, 9021 usw., wenn
+        moeglich). Somit muss der Nutzer nicht manuell seine PS5 IP eingeben."
+        Dieselbe Suche wie Knopf 1 - die Seite "Konsole & Payloads" wird dafuer
+        gebaut, auch wenn gerade die Ansicht UMWANDELN offen ist -, danach die
+        Grundausstattung (ftpsrv, klogsrv), soweit sie fehlt. Anfang und
+        Ergebnis stehen zusaetzlich im Hauptprotokoll.
 
-        def _tabelle_fuellen(uebersicht) -> None:
-            """Aus dem Arbeitsfaden: nur hinlegen, der Takt zeigt es an."""
-            stand["uebersicht"] = uebersicht
-
-        def _tabelle_zeigen(uebersicht) -> None:
-            if not tabelle.winfo_exists():
-                return
-            tabelle.delete(*tabelle.get_children())
-            for eintrag_stand in uebersicht:
-                eintrag = eintrag_stand.dienst
-                if eintrag_stand.laeuft:
-                    zustand = "dienste.zustand_laeuft"
-                elif eintrag_stand.stumm:
-                    zustand = "dienste.zustand_stumm"
-                else:
-                    zustand = "dienste.zustand_aus"
-                tabelle.insert(
-                    "", "end", iid=eintrag.schluessel,
-                    values=(self._t(eintrag.name_schluessel),
-                            eintrag.port,
-                            self._t(zustand),
-                            self._t(eintrag.zweck_schluessel)))
-                if eintrag_stand.stumm:
-                    _protokoll(self._t("dienste.log_stumm",
-                                       name=self._t(eintrag.name_schluessel),
-                                       port=eintrag.port))
-
-        def _takt() -> None:
-            if not win.winfo_exists():
-                return
-            # Vor der Anzeige lesen: Endet der Faden zwischen Anzeige und
-            # Pruefung, fehlte sonst der Endstand (Durchsicht, H3-14).
-            aktiv = laeuft["aktiv"]
-            try:
-                neu = stand["uebersicht"]
-                if neu is not None and id(neu) != stand["gezeigt"]:
-                    stand["gezeigt"] = id(neu)
-                    _tabelle_zeigen(neu)
-                if stand["status"]:
-                    status_var.set(stand["status"])
-                gab_neues = False
-                while cursor[0] < len(puffer):
-                    protokoll.insert("end", puffer[cursor[0]] + "\n")
-                    cursor[0] += 1
-                    gab_neues = True
-                if gab_neues:
-                    protokoll.see("end")
-            except tk.TclError:
-                return
-            if aktiv:
-                win.after(120, _takt)
-            else:
-                _knoepfe(False)
-
-        def _adresse() -> str:
-            ip = ip_var.get().strip()
-            if not self._ist_plausible_ps5_adresse(ip):
-                messagebox.showwarning(titel, self._t("dienste.need_ip"),
-                                       parent=win)
-                return ""
-            self._save_setting("ps5_ip", ip)
-            return ip
-
-        def _pruefen() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-            _status(self._t("dienste.status_checking", host=ip))
-
-            def _arbeit() -> None:
-                try:
-                    uebersicht = konsole_dienste.pruefen(ip)
-                    _tabelle_fuellen(uebersicht)
-                    _status(self._t("dienste.status_result",
-                                    laufend=uebersicht.anzahl_laufend,
-                                    gesamt=len(uebersicht),
-                                    urteil=self._t("dienste.bereit_ja"
-                                                   if uebersicht.bereit
-                                                   else "dienste.bereit_nein")))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Dienste-Abfrage gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("dienste.status_failed"))
-                finally:
-                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="konsole-dienste").start()
-
-        def _senden_und_warten(schluessel: str, ip: str) -> bool:
-            """Schickt das Payload eines Dienstes und prueft danach den Port."""
-            eintrag = konsole_dienste.dienst(schluessel)
-            if eintrag is None:
-                return False
-            name = self._t(eintrag.name_schluessel)
-            pfad = self._konsole_payload_datei(eintrag.payload_muster)
-            if not pfad:
-                _protokoll(self._t("dienste.log_kein_payload", name=name))
-                return False
-            _protokoll(self._t("dienste.log_sende", name=name,
-                               datei=os.path.basename(pfad)))
-            ok, meldung = self._send_payload_to_ps5(ip, pfad)
-            if not ok:
-                _protokoll(self._t("dienste.log_fehlgeschlagen", name=name,
-                                   grund=meldung))
-                return False
-            # Anlaufzeit abwarten, sonst meldet die Gegenprobe "aus", obwohl
-            # der Dienst gerade hochkommt.
-            time.sleep(eintrag.anlaufzeit)
-            laeuft_jetzt = konsole_dienste.port_offen(ip, eintrag.port)
-            _protokoll(self._t("dienste.log_gestartet" if laeuft_jetzt
-                               else "dienste.log_kein_port",
-                               name=name, port=eintrag.port))
-            return laeuft_jetzt
-
-        def _payload_starten() -> None:
-            if laeuft["aktiv"]:
-                return
-            auswahl = tabelle.selection()
-            if not auswahl:
-                messagebox.showinfo(titel, self._t("dienste.need_auswahl"),
-                                    parent=win)
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            schluessel = auswahl[0]
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-            _status(self._t("dienste.status_starting"))
-
-            def _arbeit() -> None:
-                try:
-                    _senden_und_warten(schluessel, ip)
-                    uebersicht = konsole_dienste.pruefen(ip)
-                    _tabelle_fuellen(uebersicht)
-                    _status(self._t("dienste.status_result",
-                                    laufend=uebersicht.anzahl_laufend,
-                                    gesamt=len(uebersicht),
-                                    urteil=self._t("dienste.bereit_ja"
-                                                   if uebersicht.bereit
-                                                   else "dienste.bereit_nein")))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Payload-Start gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("dienste.status_failed"))
-                finally:
-                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="konsole-payload").start()
-
-        def _grundausstattung() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-            _status(self._t("dienste.status_starting"))
-
-            def _arbeit() -> None:
-                try:
-                    uebersicht = konsole_dienste.pruefen(ip)
-                    for schluessel in konsole_dienste.GRUNDAUSSTATTUNG:
-                        eintrag = konsole_dienste.dienst(schluessel)
-                        if eintrag is None:
-                            continue
-                        if uebersicht.laeuft(schluessel):
-                            _protokoll(self._t(
-                                "dienste.log_laeuft_schon",
-                                name=self._t(eintrag.name_schluessel)))
-                            continue
-                        _senden_und_warten(schluessel, ip)
-                    uebersicht = konsole_dienste.pruefen(ip)
-                    _tabelle_fuellen(uebersicht)
-                    _status(self._t("dienste.status_result",
-                                    laufend=uebersicht.anzahl_laufend,
-                                    gesamt=len(uebersicht),
-                                    urteil=self._t("dienste.bereit_ja"
-                                                   if uebersicht.bereit
-                                                   else "dienste.bereit_nein")))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Grundausstattung gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("dienste.status_failed"))
-                finally:
-                    # Der Takt im Hauptfaden gibt die Knoepfe frei.
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="konsole-grundausstattung").start()
-
-        def _web_oeffnen() -> None:
-            auswahl = tabelle.selection()
-            if not auswahl:
-                messagebox.showinfo(titel, self._t("dienste.need_auswahl"),
-                                    parent=win)
-                return
-            eintrag = konsole_dienste.dienst(auswahl[0])
-            ip = ip_var.get().strip()
-            adresse = konsole_dienste.web_adresse(eintrag, ip) if eintrag else ""
-            if not adresse:
-                messagebox.showinfo(titel, self._t("dienste.keine_weboberflaeche"),
-                                    parent=win)
-                return
-            _protokoll(self._t("dienste.log_web", adresse=adresse))
-            webbrowser.open(adresse)
-
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
-        pruefen_btn = ttk.Button(knopfreihe, text=self._t("dienste.check_button"),
-                                 style="Accent.TButton", command=_pruefen)
-        pruefen_btn.pack(side="left")
-        start_btn = ttk.Button(knopfreihe, text=self._t("dienste.start_button"),
-                               command=_payload_starten)
-        start_btn.pack(side="left", padx=(8, 0))
-        grund_btn = ttk.Button(knopfreihe, text=self._t("dienste.base_button"),
-                               command=_grundausstattung)
-        grund_btn.pack(side="left", padx=(8, 0))
-        web_btn = ttk.Button(knopfreihe, text=self._t("dienste.web_button"),
-                             command=_web_oeffnen)
-        web_btn.pack(side="left", padx=(8, 0))
-
-        # Beim Oeffnen gleich einmal fragen - das ist die Frage, wegen der
-        # man dieses Fenster aufmacht.
-        # Erst die leere Liste zeigen (damit das Fenster nicht leer aufgeht),
-        # dann - wenn eine Adresse bekannt ist - gleich fragen. Beides im
-        # Hauptfaden, deshalb direkt statt ueber die Fensterschlange.
-        _tabelle_zeigen(konsole_dienste.pruefen(""))
-        if self._ist_plausible_ps5_adresse(ip_var.get().strip()):
-            win.after(120, _pruefen)
+        Aufgerufen nur vom normalen Programmstart (vor ``mainloop``), nie aus
+        dem Konstruktor: Tests, Diagnose und Kommandozeile bauen das Programm
+        auch, ohne dass dabei etwas ins Netz gehen darf.
+        """
+        if getattr(self, "_konsole_tafel", None) is None:
+            self._konsole_tafel_bauen()
+        if self._konsole_tafel_beschaeftigt():
+            return
+        self._append_to_log(self._t("konsole.start_suche") + "\n")
+        self._konsole_start_melden = True
+        self._konsole_tafel_suchen(grundausstattung=True)
 
     # ------------------------------------------------------------------
-    # KONSOLE, Stufe 3: Spielstaende (Spiel holen und Zurueckspielen sind
-    # seit dem 25.09.2026 Teil der Bibliothek)
+    # KONSOLE: Spielstaende - seit dem 26.09.2026 eine Seite rechts wie
+    # "Konsole & Payloads" und die Bibliothek (Spiel holen und Zurueckspielen
+    # sind seit dem 25.09.2026 Teil der Bibliothek)
     # ------------------------------------------------------------------
 
-    def _konsole_ftp_geruest(self, win, koerper, knopfreihe, ip_var,
-                             status_var, groesse_var):
-        """Balken, Groessenfeld, Protokoll, Statuszeile - fuer alle Fenster.
+    def _konsole_ftp_geruest(self, koerper, status_var, groesse_var):
+        """Balken, Groessenfeld, Protokoll, Statuszeile.
 
-        Die Konsolenfenster unterscheiden sich in ihren Schritten, nicht in
-        ihrer Anzeige: Kein langer Vorgang ohne Balken, Groessenfeld UND
-        Statuszeile (Dauerauftrag des Nutzers vom 20.09.2026). Statt das
-        mehrfach hinzuschreiben, steht es einmal hier.
+        Kein langer Vorgang ohne Balken, Groessenfeld UND Statuszeile
+        (Dauerauftrag des Nutzers vom 20.09.2026). Bis zum 26.09.2026 stand
+        das Geruest in jedem Konsolenfenster; seitdem sind es Seiten, und nur
+        "Spielstaende" braucht es noch.
 
         Returns:
             (balken, protokoll) - den Rest halten die uebergebenen Variablen.
@@ -10131,13 +9803,15 @@ class PS5ConverterGUI:
         return balken, protokoll
 
     def _konsole_ip_zeile(self, koerper, ip_var, schluessel="dienste.ip_label"):
-        """Die Adresszeile - in jedem Konsolenfenster dieselbe."""
+        """Die Adresszeile - die Beschriftung folgt dem Sprachwechsel."""
         c = self._COLORS
         reihe = tk.Frame(koerper, bg=c["bg_main"])
         reihe.pack(fill="x", pady=(8, 2))
-        tk.Label(reihe, text=self._t(schluessel), width=16, anchor="w",
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
+        beschriftung = tk.Label(reihe, text=self._t(schluessel), width=16, anchor="w",
+                                font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                                fg=c["fg_secondary"])
+        beschriftung.pack(side="left")
+        self._register_translatable(beschriftung, schluessel)
         tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                  insertbackground=c["fg_primary"]).pack(
@@ -10148,6 +9822,7 @@ class PS5ConverterGUI:
         """Ein Hinweisabsatz, der beim Groesserziehen mitwaechst.
 
         ``werte`` fuellen die Platzhalter des Textes (z. B. ``{adresse}``).
+        Der Text folgt dem Sprachwechsel - die Seiten bleiben stehen.
         """
         c = self._COLORS
         farbe = c.get("fg_warning", c["fg_secondary"]) if warnung \
@@ -10156,6 +9831,7 @@ class PS5ConverterGUI:
                         font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"], fg=farbe,
                         anchor="w", justify="left", wraplength=700)
         text.pack(fill="x", pady=(6, 2))
+        self._register_translatable(text, schluessel, **werte)
 
         def _umbruch(_ereignis=None) -> None:
             try:
@@ -10193,763 +9869,258 @@ class PS5ConverterGUI:
                        else "konsoleftp.log_ftp_aus"))
         return False
 
-    def _show_konsole_spielstaende(self) -> None:
-        """KONSOLE: Spielstaende sichern und uebertragen - ueber Garlic.
+    def _konsole_ip_var(self) -> "tk.StringVar":
+        """Die Adresse der PS5 in der Ansicht KONSOLE - ein Feld fuer alle Seiten.
+
+        "Konsole & Payloads" und "Spielstaende" zeigen dieselbe Variable: Was
+        die Suche beim Programmstart findet oder der Nutzer eintippt, steht
+        auf beiden Seiten. Angelegt beim ersten Bedarf, gleich welche Seite
+        zuerst gebaut wird.
+        """
+        variable = getattr(self, "_konsole_tafel_ip", None)
+        if variable is None:
+            variable = self._konsole_tafel_ip = tk.StringVar(value=self._ps5_ip())
+        return variable
+
+    def _konsole_spielstaende_zeigen(self) -> None:
+        """Knopf "2. Spielstaende": rechts die Seite zeigen (seit dem 26.09.2026).
+
+        Bis dahin ein eigenes Fenster - der Nutzer: "ja, hol die Spielstaende
+        auch als Seite nach rechts". Wie beim Fenster fuehrt ein zweiter
+        Druck zurueck, hier zu "Konsole & Payloads". Das Zeigen schickt nichts
+        ins Netz; geprueft wird auf Knopfdruck.
+        """
+        self._konsole_seite_setzen(
+            "uebersicht"
+            if getattr(self, "_konsole_seite", "uebersicht") == "spielstaende"
+            else "spielstaende")
+
+    def _spielstaende_seite_bauen(self) -> None:
+        """Baut die Seite "Spielstaende": Garlic pruefen, starten, oeffnen.
 
         ``garlic-savemgr`` bringt seine Bedienung als Webseite auf Port 8082
         mit und kann Spielstaende ent- und verschluesseln. Diese Oberflaeche
-        ist vollstaendig - nachgebaut wird hier nichts. Das Fenster prueft
-        den Dienst, startet ihn bei Bedarf und oeffnet ihn; dazu die zwei
-        Saetze, die man vorher wissen muss.
+        ist vollstaendig - nachgebaut wird hier nichts. Die Seite prueft den
+        Dienst, startet ihn bei Bedarf und oeffnet ihn; dazu die zwei Saetze,
+        die man vorher wissen muss.
+
+        Wie "Konsole & Payloads" (:meth:`_konsole_tafel_bauen`): einmal
+        gebaut, danach nur ein- und ausgeblendet; die Faeden legen Daten ab
+        und uebersetzen nichts, der Takt im Hauptfaden zeigt sie an.
         """
         c = self._COLORS
-        titel = self._t("spielstaende.window_title")
-        win = self._build_modern_toplevel(titel, 820, 620,
-                                          min_width=720, min_height=520)
-        self._build_modern_header(win, titel, self._t("spielstaende.subtitle"))
+        seite = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
+        self._spielstaende_seite = seite
+        #: Protokollzeilen als (Schluessel, Werte); gezeigt ist bis ``_gezeigt``.
+        self._spielstaende_puffer = []
+        self._spielstaende_gezeigt = 0
+        self._spielstaende_laeuft = {"aktiv": False}
+        self._spielstaende_stand = {"pct": 0.0, "groesse": "",
+                                    "status": ("spielstaende.status_idle", {})}
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
+        kopf = tk.Frame(seite, bg=c["bg_main"])
+        kopf.pack(fill="x")
+        titel = tk.Label(kopf, text=self._t("spielstaende.window_title"),
+                         font=(UI_SCHRIFT, pt(15), "bold"),
+                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        titel.pack(side="left")
+        self._register_translatable(titel, "spielstaende.window_title")
+        zurueck = ttk.Button(kopf, text=self._t("konsole.btn_uebersicht"),
+                             style="Klein.TButton",
+                             command=lambda: self._konsole_seite_setzen("uebersicht"))
+        zurueck.pack(side="right")
+        self._register_translatable(zurueck, "konsole.btn_uebersicht")
+        untertitel = tk.Label(seite, text=self._t("spielstaende.subtitle"),
+                              font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                              fg=c["fg_secondary"], anchor="w", justify="left")
+        untertitel.pack(fill="x", pady=(2, 4))
+        self._register_translatable(untertitel, "spielstaende.subtitle")
 
-        ip_var = tk.StringVar(value=self._ps5_ip())
-        status_var = tk.StringVar(value=self._t("spielstaende.status_idle"))
-        groesse_var = tk.StringVar(value="")
-        laeuft: dict = {"aktiv": False}
-        stand: dict = {"pct": 0.0, "status": "", "groesse": ""}
-        puffer: list = []
-        cursor = [0]
+        self._konsole_ip_zeile(seite, self._konsole_ip_var())
+        self._konsole_hinweiszeile(seite, "spielstaende.usage")
+        self._konsole_hinweiszeile(seite, "spielstaende.warn_backup", warnung=True)
+        self._konsole_hinweiszeile(seite, "spielstaende.warn_benutzer", warnung=True)
 
-        self._konsole_ip_zeile(koerper, ip_var)
-        self._konsole_hinweiszeile(koerper, "spielstaende.usage")
-        self._konsole_hinweiszeile(koerper, "spielstaende.warn_backup",
-                                   warnung=True)
-        self._konsole_hinweiszeile(koerper, "spielstaende.warn_benutzer",
-                                   warnung=True)
+        knopfreihe = tk.Frame(seite, bg=c["bg_main"])
+        knopfreihe.pack(fill="x", pady=(10, 4))
+        knoepfe = []
+        for schluessel, befehl, stil in (
+                ("spielstaende.btn_check", lambda: self._spielstaende_pruefen(),
+                 "Accent.TButton"),
+                ("spielstaende.btn_start", lambda: self._spielstaende_starten(), ""),
+                ("spielstaende.btn_open", lambda: self._spielstaende_oeffnen(), "")):
+            knopf = ttk.Button(knopfreihe, text=self._t(schluessel), command=befehl)
+            if stil:
+                knopf.configure(style=stil)
+            knopf.pack(side="left", padx=(8 if knoepfe else 0, 0))
+            self._register_translatable(knopf, schluessel)
+            knoepfe.append(knopf)
+        self._spielstaende_knoepfe = tuple(knoepfe)
 
-        balken, protokoll = self._konsole_ftp_geruest(
-            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
+        self._spielstaende_status_var = tk.StringVar(
+            value=self._t("spielstaende.status_idle"))
+        self._spielstaende_groesse_var = tk.StringVar(value="")
+        self._spielstaende_balken, self._spielstaende_protokoll = \
+            self._konsole_ftp_geruest(seite, self._spielstaende_status_var,
+                                      self._spielstaende_groesse_var)
 
-        def _protokoll(text: str) -> None:
-            puffer.append(str(text).rstrip("\n"))
+    def _spielstaende_melden(self, schluessel: str, **werte) -> None:
+        """Eine Zeile fuers Protokoll der Seite - aus jedem Faden, unuebersetzt."""
+        self._spielstaende_puffer.append((schluessel, werte))
 
-        def _status(text: str) -> None:
-            stand["status"] = text
+    def _spielstaende_beginnen(self, schluessel: str) -> "dict | None":
+        """Legt den Status fuer einen Arbeitsgang ab - ``None``, wenn schon einer laeuft.
 
-        def _knoepfe(laufend: bool) -> None:
-            for knopf in (pruef_btn, start_btn, open_btn):
-                try:
-                    knopf.configure(state="disabled" if laufend else "normal")
-                except (tk.TclError, NameError):
-                    pass
-
-        def _takt() -> None:
-            if not win.winfo_exists():
-                return
-            # Vor der Anzeige lesen: Endet der Faden zwischen Anzeige und
-            # Pruefung, fehlte sonst der Endstand (Durchsicht, H3-14).
-            aktiv = laeuft["aktiv"]
-            try:
-                if stand["status"]:
-                    status_var.set(stand["status"])
-                if stand["groesse"]:
-                    groesse_var.set(stand["groesse"])
-                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
-                gab_neues = False
-                while cursor[0] < len(puffer):
-                    protokoll.insert("end", puffer[cursor[0]] + "\n")
-                    cursor[0] += 1
-                    gab_neues = True
-                if gab_neues:
-                    protokoll.see("end")
-            except tk.TclError:
-                return
-            if aktiv:
-                win.after(120, _takt)
-            else:
-                _knoepfe(False)
-
-        def _adresse() -> str:
-            ip = ip_var.get().strip()
-            if not self._ist_plausible_ps5_adresse(ip):
-                messagebox.showwarning(titel, self._t("dienste.need_ip"),
-                                       parent=win)
-                return ""
-            self._save_setting("ps5_ip", ip)
-            return ip
-
-        def _pruefen() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            eintrag = konsole_dienste.dienst("garlic")
-            _status(self._t("spielstaende.status_checking"))
-
-            def _arbeit() -> None:
-                try:
-                    offen = konsole_dienste.port_offen(ip, eintrag.port)
-                    stand["pct"] = 100.0 if offen else 0.0
-                    stand["groesse"] = konsole_dienste.web_adresse(eintrag, ip) \
-                        if offen else ""
-                    _status(self._t("spielstaende.running" if offen
-                                    else "spielstaende.stopped",
-                                    adresse=konsole_dienste.web_adresse(
-                                        eintrag, ip)))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Garlic-Pruefung gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("spielstaende.status_failed"))
-                finally:
-                    laeuft["aktiv"] = False
-
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="konsole-garlic-pruefen").start()
-
-        def _garlic_starten() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            eintrag = konsole_dienste.dienst("garlic")
-            pfad = self._konsole_payload_datei(eintrag.payload_muster)
-            if not pfad:
-                messagebox.showwarning(titel, self._t("spielstaende.no_file"),
-                                       parent=win)
-                return
-            _status(self._t("spielstaende.status_starting"))
-
-            def _arbeit() -> None:
-                try:
-                    _protokoll(self._t("spielstaende.log_start",
-                                       datei=os.path.basename(pfad)))
-                    ok, meldung = self._send_payload_to_ps5(ip, pfad)
-                    _protokoll(meldung)
-                    if ok:
-                        time.sleep(eintrag.anlaufzeit)
-                        offen = konsole_dienste.port_offen(ip, eintrag.port)
-                        stand["pct"] = 100.0 if offen else 0.0
-                        _status(self._t("spielstaende.running" if offen
-                                        else "spielstaende.stopped",
-                                        adresse=konsole_dienste.web_adresse(
-                                            eintrag, ip)))
-                    else:
-                        _status(self._t("spielstaende.status_failed"))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Garlic-Start gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("spielstaende.status_failed"))
-                finally:
-                    laeuft["aktiv"] = False
-
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="konsole-garlic").start()
-
-        def _oeffnen() -> None:
-            eintrag = konsole_dienste.dienst("garlic")
-            adresse = konsole_dienste.web_adresse(eintrag, ip_var.get().strip())
-            if not adresse:
-                messagebox.showwarning(titel, self._t("dienste.need_ip"),
-                                       parent=win)
-                return
-            _protokoll(self._t("spielstaende.opened", adresse=adresse))
-            _takt()
-            webbrowser.open(adresse)
-
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
-        pruef_btn = ttk.Button(knopfreihe,
-                               text=self._t("spielstaende.btn_check"),
-                               style="Accent.TButton", command=_pruefen)
-        pruef_btn.pack(side="left")
-        start_btn = ttk.Button(knopfreihe, text=self._t("spielstaende.btn_start"),
-                               command=_garlic_starten)
-        start_btn.pack(side="left", padx=(8, 0))
-        open_btn = ttk.Button(knopfreihe, text=self._t("spielstaende.btn_open"),
-                              command=_oeffnen)
-        open_btn.pack(side="left", padx=(8, 0))
-
-    #: Die Beilagen fuer Stufe 4, die **keine** Payloads sind. Der Ordner
-    #: traegt nur das ProsperoLight-Abbild; die beiden ActRemoteLink-ELFs
-    #: liegen wie jedes andere Payload in ``helloworld`` - dort greift die
-    #: Schnellauswahl, und dort haelt die Werkzeugpflege sie gegen
-    #: THIRD_PARTY_LICENSES.md (ein eigener Ordner waere an beidem vorbei).
-    _STREAMING_ORDNER = "Streaming"
-
-    _STREAMING_MUSTER: dict[str, str] = {
-        "prospero": "PPSA99002*.ffpfsc",
-    }
-
-    #: Die Payloads der Kopplung - die Muster stehen im Modul, damit Fehler-
-    #: meldung, Download-Hinweis und Suche dieselben nennen.
-    _ACTREMOTELINK_MUSTER: dict[str, str] = dict(remoteplay_agent.PAYLOAD_MUSTER)
-
-    def _streaming_pfad(self, art: str) -> str:
-        """Die neueste Beilage dieser Art - leer, wenn keine da ist.
-
-        ``agent`` und ``pin`` kommen aus ``helloworld`` (wie jedes Payload),
-        ``prospero`` aus dem Ordner ``Streaming``. Fehlt etwas, sagt das
-        Fenster es - statt einen Start zu versuchen, der nicht klappen kann.
+        Sperrt die Knoepfe und stoesst den Takt an. Den Faden startet der
+        Aufrufer selbst und offen hingeschrieben (test_fadenhygiene).
         """
-        if art in self._ACTREMOTELINK_MUSTER:
-            return self._konsole_payload_datei(self._ACTREMOTELINK_MUSTER[art])
-        muster = self._STREAMING_MUSTER.get(art, "")
-        ordner = self._mitgeliefert_finden(self._STREAMING_ORDNER)
-        if not muster or not ordner or not os.path.isdir(ordner):
+        if self._spielstaende_laeuft["aktiv"]:
+            return None
+        stand = self._spielstaende_stand
+        stand["status"] = (schluessel, {})
+        self._spielstaende_laeuft["aktiv"] = True
+        for knopf in self._spielstaende_knoepfe:
+            try:
+                knopf.configure(state="disabled")
+            except tk.TclError:
+                pass
+        self._spielstaende_takt()
+        return stand
+
+    def _spielstaende_adresse(self) -> str:
+        """Die Adresse im Feld, wenn sie taugt - sonst ein Hinweis und ``""``."""
+        ip = self._konsole_ip_var().get().strip()
+        if not self._ist_plausible_ps5_adresse(ip):
+            messagebox.showwarning(self._t("spielstaende.window_title"),
+                                   self._t("dienste.need_ip"), parent=self.root)
             return ""
-        treffer = sorted(Path(ordner).glob(muster),
-                         key=lambda p: self._webkit_versionsschluessel(p.name))
-        return str(treffer[-1]) if treffer else ""
+        self._save_setting("ps5_ip", ip)
+        return ip
 
-    def _show_konsole_remoteplay(self) -> None:
-        """KONSOLE: Remote Play - Bild von der PS5 auf den PC.
+    @staticmethod
+    def _spielstaende_ergebnis(stand: dict, ip: str, offen: bool) -> None:
+        """Legt das Ergebnis ab: Balken, Adresse der Oberflaeche, Satz - nur Daten."""
+        adresse = konsole_dienste.web_adresse(konsole_dienste.dienst("garlic"), ip)
+        stand["pct"] = 100.0 if offen else 0.0
+        stand["groesse"] = adresse if offen else ""
+        stand["status"] = ("spielstaende.running" if offen else "spielstaende.stopped",
+                           {"adresse": adresse})
 
-        Drei Teile, die unabhaengig voneinander nuetzlich sind:
+    def _spielstaende_pruefen(self) -> None:
+        """"Zustand pruefen": Antwortet Garlic auf Port 8082?"""
+        if self._spielstaende_laeuft["aktiv"]:
+            return
+        ip = self._spielstaende_adresse()
+        if not ip:
+            return
+        eintrag = konsole_dienste.dienst("garlic")
+        stand = self._spielstaende_beginnen("spielstaende.status_checking")
+        if stand is None:
+            return
 
-        1. **Suchen.** Das Discovery-Protokoll auf UDP 9302 findet die
-           Konsole im Netz und sagt auch, ob sie im Ruhemodus ist - das
-           sieht ein Portscan nicht.
-        2. **Chiaki.** Das Remote-Play-Protokoll wird nicht nachgebaut;
-           Chiaki wird gesucht und mit der gefundenen Adresse gestartet.
-        3. **Koppeln (ActRemoteLink).** Nur dieser Teil schreibt etwas auf
-           die Konsole - account_id und Fake-Anmeldung. **Slot 1 ist
-           unbedingt gesperrt** (siehe ``remoteplay_agent``). Seit dem
-           24.09.2026 macht das der Koppel-Assistent rechts im Hauptfenster
-           ("6. ActRemoteLink"); der Knopf hier fuehrt dorthin und nimmt
-           Adresse, Slot und account_id mit. Fehlen die Payloads in
-           ``helloworld``, nennt das Fenster die Download-Adresse.
-        """
-        c = self._COLORS
-        titel = self._t("remoteplay.window_title")
-        win = self._build_modern_toplevel(titel, 960, 760,
-                                          min_width=820, min_height=620)
-        self._build_modern_header(win, titel, self._t("remoteplay.subtitle"))
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
-
-        ip_var = tk.StringVar(value=self._ps5_ip())
-        chiaki_var = tk.StringVar(value=self._load_setting("chiaki_pfad", ""))
-        # Leer = der Benutzer, der auf der PS5 vorne ist (Koppel-Assistent).
-        slot_var = tk.StringVar(value="")
-        konto_var = tk.StringVar(value=self._load_setting("account_id", ""))
-        status_var = tk.StringVar(value=self._t("remoteplay.status_idle"))
-        groesse_var = tk.StringVar(value="")
-        laeuft: dict = {"aktiv": False}
-        # "art" sagt, was die Tabelle gerade zeigt: gefundene Konsolen oder
-        # die Benutzer einer Konsole - danach richtet sich der Doppelklick.
-        stand: dict = {"pct": 0.0, "status": "", "groesse": "",
-                       "zeilen": None, "gezeigt": 0, "art": ""}
-        #: Adresse -> Name aus der Suchantwort. Chiaki braucht ihn (U3-6).
-        konsolennamen: dict = {}
-        puffer: list = []
-        cursor = [0]
-
-        self._konsole_ip_zeile(koerper, ip_var)
-        self._konsole_hinweiszeile(koerper, "remoteplay.hint_suche")
-
-        tabellenrahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
-        tabellenrahmen.pack(fill="both", expand=True, pady=(4, 4))
-        spalten = ("erst", "zweit", "dritt", "viert")
-        tabelle = ttk.Treeview(tabellenrahmen, columns=spalten,
-                               show="headings", height=6, selectmode="browse")
-        for spalte, schluessel, breite, dehnen in (
-            ("erst", "remoteplay.col_adresse", 150, False),
-            ("zweit", "remoteplay.col_name", 220, True),
-            ("dritt", "remoteplay.col_zustand", 120, False),
-            ("viert", "remoteplay.col_firmware", 110, False),
-        ):
-            tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
-            tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
-        leiste = ttk.Scrollbar(tabellenrahmen, orient="vertical",
-                               command=tabelle.yview)
-        tabelle.configure(yscrollcommand=leiste.set)
-        tabelle.grid(row=0, column=0, sticky="nsew")
-        leiste.grid(row=0, column=1, sticky="ns")
-        tabellenrahmen.grid_columnconfigure(0, weight=1)
-        tabellenrahmen.grid_rowconfigure(0, weight=1)
-
-        # Chiaki
-        reihe = tk.Frame(koerper, bg=c["bg_main"])
-        reihe.pack(fill="x", pady=(2, 2))
-        tk.Label(reihe, text=self._t("remoteplay.label_chiaki"), width=16,
-                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(reihe, textvariable=chiaki_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-
-        def _chiaki_waehlen() -> None:
-            gewaehlt = filedialog.askopenfilename(
-                title=self._t("remoteplay.choose_chiaki"), parent=win)
-            if gewaehlt:
-                chiaki_var.set(os.path.normpath(gewaehlt))
-                self._save_setting("chiaki_pfad", chiaki_var.get())
-
-        ttk.Button(reihe, text="...", width=4,
-                   command=_chiaki_waehlen).pack(side="left")
-
-        # Kopplung
-        reihe = tk.Frame(koerper, bg=c["bg_main"])
-        reihe.pack(fill="x", pady=(2, 2))
-        tk.Label(reihe, text=self._t("remoteplay.label_slot"), width=16,
-                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(reihe, textvariable=slot_var, width=6,
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
-                 relief="flat", insertbackground=c["fg_primary"]).pack(
-            side="left", ipady=3, padx=(0, 12))
-        tk.Label(reihe, text=self._t("remoteplay.label_konto"), anchor="w",
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(0, 6))
-        tk.Entry(reihe, textvariable=konto_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3)
-
-        # Der Knopf wird eingesetzt, nicht abgeschrieben: Bis zum 25.09.2026
-        # stand "8. ActRemoteLink" fest im Text, und mit der neuen
-        # Knopfreihe der Ansicht KONSOLE waere daraus ein falscher Verweis
-        # geworden.
-        self._konsole_hinweiszeile(koerper, "remoteplay.warn_schreibt",
-                                   warnung=True,
-                                   knopf=self._t("konsole.btn_actremotelink"))
-        fehlend = self._actremotelink_fehlende()
-        if fehlend:
-            self._actremotelink_download_hinweis(koerper, fehlend)
-
-        balken, protokoll = self._konsole_ftp_geruest(
-            win, koerper, knopfreihe, ip_var, status_var, groesse_var)
-
-        def _protokoll(text: str) -> None:
-            puffer.append(str(text).rstrip("\n"))
-
-        def _status(text: str) -> None:
-            stand["status"] = text
-
-        def _knoepfe(laufend: bool) -> None:
-            for knopf in (such_btn, chiaki_btn, lesen_btn, koppeln_btn):
-                try:
-                    knopf.configure(state="disabled" if laufend else "normal")
-                except (tk.TclError, NameError):
-                    pass
-
-        def _zeilen_zeigen(zeilen) -> None:
-            if not tabelle.winfo_exists():
-                return
-            tabelle.delete(*tabelle.get_children())
-            for nummer, werte in enumerate(zeilen):
-                tabelle.insert("", "end", iid=str(nummer), values=werte)
-
-        def _takt() -> None:
-            if not win.winfo_exists():
-                return
-            # Vor der Anzeige lesen: Endet der Faden zwischen Anzeige und
-            # Pruefung, fehlte sonst der Endstand (Durchsicht, H3-14).
-            aktiv = laeuft["aktiv"]
+        def _arbeit() -> None:
             try:
-                neu = stand["zeilen"]
-                if neu is not None and id(neu) != stand["gezeigt"]:
-                    stand["gezeigt"] = id(neu)
-                    _zeilen_zeigen(neu)
-                if stand["status"]:
-                    status_var.set(stand["status"])
-                if stand["groesse"]:
-                    groesse_var.set(stand["groesse"])
-                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
-                gab_neues = False
-                while cursor[0] < len(puffer):
-                    protokoll.insert("end", puffer[cursor[0]] + "\n")
-                    cursor[0] += 1
-                    gab_neues = True
-                if gab_neues:
-                    protokoll.see("end")
-            except tk.TclError:
-                return
-            if aktiv:
-                win.after(120, _takt)
-            else:
-                _knoepfe(False)
-
-        def _adresse() -> str:
-            ip = ip_var.get().strip()
-            if not self._ist_plausible_ps5_adresse(ip):
-                messagebox.showwarning(titel, self._t("dienste.need_ip"),
-                                       parent=win)
-                return ""
-            self._save_setting("ps5_ip", ip)
-            return ip
-
-        def _suchen() -> None:
-            if laeuft["aktiv"]:
-                return
-            gezielt = ip_var.get().strip()
-            _status(self._t("remoteplay.status_searching"))
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
-
-            def _arbeit() -> None:
-                try:
-                    gefunden = remoteplay.suchen(gezielt, zeit=3.0)
-                    if not gefunden and gezielt:
-                        gefunden = remoteplay.suchen("", zeit=3.0)
-                    for k in gefunden:
-                        if k.name:
-                            konsolennamen[k.adresse] = k.name
-                    stand["art"] = "konsolen"
-                    stand["zeilen"] = [
-                        (k.adresse, k.name, self._t(k.status_schluessel),
-                         k.firmware) for k in gefunden]
-                    _status(self._t("remoteplay.status_found",
-                                    anzahl=len(gefunden)))
-                    for k in gefunden:
-                        _protokoll(self._t("remoteplay.log_gefunden",
-                                           adresse=k.adresse,
-                                           name=k.name or "-",
-                                           zustand=self._t(k.status_schluessel)))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Konsolensuche gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("remoteplay.status_failed"))
-                finally:
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="remoteplay-suche").start()
-
-        def _uebernehmen(_ereignis=None) -> None:
-            """Doppelklick: Adresse einer Konsole oder Slot eines Benutzers.
-
-            Dieselbe Tabelle zeigt nach "Benutzer lesen" die Benutzer - deren
-            erste Spalte ist der Slot. Bis zum 24.09.2026 landete der dann im
-            Adressfeld ("2" als PS5-Adresse, Durchsicht H3-9).
-            """
-            auswahl = tabelle.selection()
-            zeilen = stand["zeilen"] or []
-            if not auswahl:
-                return
-            try:
-                erste = zeilen[int(auswahl[0])][0]
-            except (ValueError, IndexError):
-                return
-            if stand.get("art") == "benutzer":
-                slot_var.set(erste)
-            else:
-                ip_var.set(erste)
-
-        tabelle.bind("<Double-1>", _uebernehmen)
-
-        def _chiaki_starten() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            pfad = remoteplay.chiaki_finden(chiaki_var.get())
-            if not pfad:
-                messagebox.showwarning(titel, self._t("remoteplay.no_chiaki"),
-                                       parent=win)
-                return
-            chiaki_var.set(pfad)
-            self._save_setting("chiaki_pfad", pfad)
-            # "chiaki stream <name> <adresse>" - ohne Namen rutschte die
-            # Adresse an seine Stelle (U3-6). Der Name kommt aus der Suche.
-            name = konsolennamen.get(ip, "")
-            if not name:
-                messagebox.showwarning(
-                    titel, self._t("remoteplay.need_search_for_chiaki"),
-                    parent=win)
-                return
-            try:
-                remoteplay.chiaki_starten(pfad, ip, nickname=name)
-                _protokoll(self._t("remoteplay.log_chiaki", pfad=pfad))
-                _status(self._t("remoteplay.status_chiaki"))
+                self._spielstaende_ergebnis(
+                    stand, ip, konsole_dienste.port_offen(ip, eintrag.port))
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Chiaki-Start gescheitert")
-                _protokoll(self._t("log.fehler_zeile", text=exc))
-                _status(self._t("remoteplay.status_failed"))
-            _takt()
+                logger.exception("Garlic-Pruefung gescheitert")
+                self._spielstaende_melden("log.fehler_zeile", text=str(exc))
+                stand["status"] = ("spielstaende.status_failed", {})
+            finally:
+                # Der Takt im Hauptfaden gibt die Knoepfe frei.
+                self._spielstaende_laeuft["aktiv"] = False
 
-        def _agent_bauen(ip: str):
-            return remoteplay_agent.ActRemoteLink(
-                ip,
-                # Der Agent schreibt nichts und laeuft dauerhaft - nach 5 s
-                # Stille ist er gestartet, nicht erst nach den ueblichen 30.
-                sende_payload=lambda pfad: self._send_payload_to_ps5(
-                    ip, pfad, lesezeit=5.0),
-                agent_elf=self._streaming_pfad("agent"),
-                pin_elf=self._streaming_pfad("pin"))
+        threading.Thread(target=_arbeit, daemon=True,
+                         name="konsole-garlic-pruefen").start()
 
-        def _benutzer_lesen() -> None:
-            if laeuft["aktiv"]:
-                return
-            ip = _adresse()
-            if not ip:
-                return
-            _status(self._t("remoteplay.status_users"))
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
+    def _spielstaende_starten(self) -> None:
+        """"Garlic starten": das Payload schicken und warten, bis Port 8082 antwortet.
 
-            def _arbeit() -> None:
-                try:
-                    agent = _agent_bauen(ip)
-                    if not agent.laeuft():
-                        if not agent.agent_elf:
-                            _protokoll(self._t(
-                                "remoteplay.log_kein_agent",
-                                adresse=remoteplay_agent.DOWNLOAD_ADRESSE))
-                            _status(self._t("remoteplay.status_failed"))
-                            return
-                        # Laeuft er nicht, wird er geschickt - wie im
-                        # Koppel-Assistenten. Bis zum 24.09.2026 las
-                        # "Benutzer lesen" ohne ihn und scheiterte mit
-                        # "nicht erreichbar" (Durchsicht, H3-3).
-                        if agent.starten():
-                            # Musste er neu geschickt werden, lebt ein Agent
-                            # von vor einem Neustart nicht mehr: Ein Neustart,
-                            # auf den der Assistent noch wartete, ist erfolgt.
-                            self._save_setting("remoteplay_neustart_offen", "")
-                    leute = agent.benutzer_liste()
-                    stand["art"] = "benutzer"
-                    stand["zeilen"] = [
-                        (str(b.slot), b.name,
-                         self._t("remoteplay.user_aktiv" if b.aktiviert
-                                 else "remoteplay.user_offen"),
-                         self._t("remoteplay.user_vorn") if b.vordergrund
-                         else "") for b in leute]
-                    _status(self._t("remoteplay.status_users_done",
-                                    anzahl=len(leute)))
-                except remoteplay_agent.AgentFehler as fehler:
-                    _protokoll(self._t("log.fehler_zeile", text=fehler))
-                    _status(self._t("remoteplay.status_failed"))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Benutzerliste gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("remoteplay.status_failed"))
-                finally:
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="remoteplay-benutzer").start()
-
-        def _koppeln() -> None:
-            """Fuehrt zum Koppel-Assistenten rechts im Hauptfenster.
-
-            Bis zum 24.09.2026 machte dieser Knopf je Druck **einen** Schritt
-            und verlangte danach einen Neustart - wer die Reihenfolge nicht
-            kannte, stand da. Der Assistent geht sie selbst durch und wartet,
-            wo nur der Anwender an der PS5 weiterkommt.
-            """
-            slot = slot_var.get().strip()
-            if slot and not slot.isdigit():
-                messagebox.showwarning(titel, self._t("remoteplay.need_slot"),
-                                       parent=win)
-                return
-            self._konsole_assistent_oeffnen(ip=ip_var.get().strip(), slot=slot,
-                                            konto=konto_var.get().strip())
-
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
-        such_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_search"),
-                              style="Accent.TButton", command=_suchen)
-        such_btn.pack(side="left")
-        chiaki_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_chiaki"),
-                                command=_chiaki_starten)
-        chiaki_btn.pack(side="left", padx=(8, 0))
-        lesen_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_users"),
-                               command=_benutzer_lesen)
-        lesen_btn.pack(side="left", padx=(8, 0))
-        koppeln_btn = ttk.Button(knopfreihe, text=self._t("remoteplay.btn_link"),
-                                 command=_koppeln)
-        koppeln_btn.pack(side="left", padx=(8, 0))
-
-        if not self._streaming_pfad("agent"):
-            _protokoll(self._t("remoteplay.log_kein_agent",
-                               adresse=remoteplay_agent.DOWNLOAD_ADRESSE))
-        if not self._streaming_pfad("pin"):
-            _protokoll(self._t("remoteplay.log_kein_pin",
-                               adresse=remoteplay_agent.DOWNLOAD_ADRESSE))
-        if puffer:
-            _takt()
-
-    def _show_konsole_prosperolight(self) -> None:
-        """KONSOLE: ProsperoLight - Bild vom PC auf die PS5.
-
-        Die Gegenrichtung zu Remote Play: ProsperoLight ist ein
-        Moonlight-Client, der **auf** der Konsole laeuft und sich das Bild
-        von einem Sunshine-Host auf diesem Rechner holt. Hier wird der
-        Sunshine-Host geprueft und das mitgelieferte Abbild
-        (``PPSA99002*.ffpfsc``) an die Umwandlung uebergeben - installiert
-        wird es also ueber die gewohnten Wege dieses Programms.
-
-        Die Kopplung selbst laeuft ueber die Weboberflaeche von Sunshine und
-        wird bewusst **nicht** nachgebaut: Sie verlangt deren Zugangsdaten.
+        Derselbe Weg wie auf "Konsole & Payloads" (:meth:`_konsole_dienst_starten`):
+        kurz mitlesen (``konsole_dienste.LESEZEIT``), dann abfragen. Bis zum
+        26.09.2026 wartete jeder Start 30 s plus feste Anlaufzeit.
         """
-        c = self._COLORS
-        titel = self._t("prospero.window_title")
-        win = self._build_modern_toplevel(titel, 860, 620,
-                                          min_width=760, min_height=520)
-        self._build_modern_header(win, titel, self._t("prospero.subtitle"))
+        if self._spielstaende_laeuft["aktiv"]:
+            return
+        ip = self._spielstaende_adresse()
+        if not ip:
+            return
+        if not self._konsole_payload_datei(konsole_dienste.dienst("garlic").payload_muster):
+            messagebox.showwarning(self._t("spielstaende.window_title"),
+                                   self._t("spielstaende.no_file"), parent=self.root)
+            return
+        stand = self._spielstaende_beginnen("spielstaende.status_starting")
+        if stand is None:
+            return
 
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
-
-        abbild_var = tk.StringVar(value=self._streaming_pfad("prospero"))
-        status_var = tk.StringVar(value=self._t("prospero.status_idle"))
-        groesse_var = tk.StringVar(value="")
-        laeuft: dict = {"aktiv": False}
-        stand: dict = {"pct": 0.0, "status": "", "groesse": ""}
-        puffer: list = []
-        cursor = [0]
-
-        self._konsole_hinweiszeile(koerper, "prospero.hint_richtung")
-
-        reihe = tk.Frame(koerper, bg=c["bg_main"])
-        reihe.pack(fill="x", pady=(6, 2))
-        tk.Label(reihe, text=self._t("prospero.label_abbild"), width=16,
-                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(reihe, textvariable=abbild_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-
-        def _abbild_waehlen() -> None:
-            gewaehlt = filedialog.askopenfilename(
-                title=self._t("prospero.choose_abbild"),
-                filetypes=[(self._t("filetype.ffpfsc"), "*.ffpfsc"),
-                           (self._t("filetype.all_files"), "*.*")],
-                parent=win)
-            if gewaehlt:
-                abbild_var.set(os.path.normpath(gewaehlt))
-
-        ttk.Button(reihe, text="...", width=4,
-                   command=_abbild_waehlen).pack(side="left")
-
-        self._konsole_hinweiszeile(koerper, "prospero.hint_pin")
-
-        balken, protokoll = self._konsole_ftp_geruest(
-            win, koerper, knopfreihe, abbild_var, status_var, groesse_var)
-
-        def _protokoll(text: str) -> None:
-            puffer.append(str(text).rstrip("\n"))
-
-        def _status(text: str) -> None:
-            stand["status"] = text
-
-        def _knoepfe(laufend: bool) -> None:
-            for knopf in (pruef_btn, web_btn, quelle_btn):
-                try:
-                    knopf.configure(state="disabled" if laufend else "normal")
-                except (tk.TclError, NameError):
-                    pass
-
-        def _takt() -> None:
-            if not win.winfo_exists():
-                return
-            # Vor der Anzeige lesen: Endet der Faden zwischen Anzeige und
-            # Pruefung, fehlte sonst der Endstand (Durchsicht, H3-14).
-            aktiv = laeuft["aktiv"]
+        def _arbeit() -> None:
             try:
-                if stand["status"]:
-                    status_var.set(stand["status"])
-                if stand["groesse"]:
-                    groesse_var.set(stand["groesse"])
-                balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
-                gab_neues = False
-                while cursor[0] < len(puffer):
-                    protokoll.insert("end", puffer[cursor[0]] + "\n")
-                    cursor[0] += 1
-                    gab_neues = True
-                if gab_neues:
-                    protokoll.see("end")
-            except tk.TclError:
-                return
-            if aktiv:
-                win.after(120, _takt)
-            else:
-                _knoepfe(False)
+                offen = self._konsole_dienst_starten("garlic", ip,
+                                                     melden=self._spielstaende_melden)
+                self._spielstaende_ergebnis(stand, ip, offen)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Garlic-Start gescheitert")
+                self._spielstaende_melden("log.fehler_zeile", text=str(exc))
+                stand["status"] = ("spielstaende.status_failed", {})
+            finally:
+                self._spielstaende_laeuft["aktiv"] = False
 
-        def _sunshine_pruefen() -> None:
-            if laeuft["aktiv"]:
-                return
-            _status(self._t("prospero.status_checking"))
-            laeuft["aktiv"] = True
-            _knoepfe(True)
-            _takt()
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-garlic").start()
 
-            def _arbeit() -> None:
+    def _spielstaende_oeffnen(self) -> None:
+        """"Oberflaeche oeffnen": Garlic im Browser."""
+        adresse = konsole_dienste.web_adresse(konsole_dienste.dienst("garlic"),
+                                              self._konsole_ip_var().get().strip())
+        if not adresse:
+            messagebox.showwarning(self._t("spielstaende.window_title"),
+                                   self._t("dienste.need_ip"), parent=self.root)
+            return
+        self._spielstaende_melden("spielstaende.opened", adresse=adresse)
+        self._spielstaende_protokoll_nachtragen()
+        webbrowser.open(adresse)
+
+    def _spielstaende_protokoll_nachtragen(self) -> None:
+        """Schreibt neue Protokollzeilen ins Feld - nur aus dem Hauptfaden."""
+        puffer = self._spielstaende_puffer
+        neu = False
+        while self._spielstaende_gezeigt < len(puffer):
+            eintrag = puffer[self._spielstaende_gezeigt]
+            self._spielstaende_gezeigt += 1
+            self._spielstaende_protokoll.insert(
+                "end", self._konsole_tafel_zeile(eintrag) + "\n")
+            neu = True
+        if neu:
+            self._spielstaende_protokoll.see("end")
+
+    def _spielstaende_beschriften(self) -> None:
+        """Status, Adresse und Balken aus dem Stand - im Hauptfaden, in der aktuellen Sprache.
+
+        Aufgerufen vom Takt und vom Sprachwechsel (:meth:`_apply_language`).
+        """
+        stand = self._spielstaende_stand
+        self._spielstaende_status_var.set(self._konsole_tafel_zeile(stand["status"]))
+        self._spielstaende_groesse_var.set(stand["groesse"])
+        self._spielstaende_balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
+
+    def _spielstaende_takt(self) -> None:
+        """Traegt in die Seite, was der Faden abgelegt hat - alle 120 ms."""
+        laeuft = self._spielstaende_laeuft
+        # Vor dem Zeichnen lesen: Endet der Faden dazwischen, fehlte sonst der
+        # Endstand (Durchsicht, H3-14).
+        aktiv = bool(laeuft.get("aktiv"))
+        try:
+            self._spielstaende_beschriften()
+            self._spielstaende_protokoll_nachtragen()
+        except tk.TclError:
+            return
+        if aktiv:
+            self.root.after(120, self._spielstaende_takt)
+        else:
+            for knopf in self._spielstaende_knoepfe:
                 try:
-                    ergebnis = remoteplay.sunshine_pruefen()
-                    if ergebnis.laeuft:
-                        stand["pct"] = 100.0
-                        stand["groesse"] = ergebnis.weboberflaeche
-                        _status(self._t("prospero.sunshine_da",
-                                        name=ergebnis.name or "-",
-                                        fassung=ergebnis.fassung or "-"))
-                    else:
-                        stand["pct"] = 0.0
-                        _status(self._t("prospero.sunshine_weg"))
-                        _protokoll(self._t("prospero.log_kein_sunshine"))
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Sunshine-Pruefung gescheitert")
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    _status(self._t("prospero.status_failed"))
-                finally:
-                    laeuft["aktiv"] = False
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="prospero-sunshine").start()
-
-        def _web_oeffnen() -> None:
-            adresse = remoteplay.sunshine_web_adresse()
-            _protokoll(self._t("dienste.log_web", adresse=adresse))
-            _takt()
-            webbrowser.open(adresse)
-
-        def _als_quelle() -> None:
-            pfad = abbild_var.get().strip()
-            if not pfad or not os.path.isfile(pfad):
-                messagebox.showwarning(titel, self._t("prospero.need_abbild"),
-                                       parent=win)
-                return
-            self._remember_source_dialog_path(pfad)
-            self.source_path.set(pfad)
-            _protokoll(self._t("prospero.log_quelle", pfad=pfad))
-            _status(self._t("prospero.status_quelle"))
-            _takt()
-
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
-        pruef_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_check"),
-                               style="Accent.TButton", command=_sunshine_pruefen)
-        pruef_btn.pack(side="left")
-        web_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_web"),
-                             command=_web_oeffnen)
-        web_btn.pack(side="left", padx=(8, 0))
-        quelle_btn = ttk.Button(knopfreihe, text=self._t("prospero.btn_source"),
-                                command=_als_quelle)
-        quelle_btn.pack(side="left", padx=(8, 0))
-
-        if not abbild_var.get().strip():
-            _protokoll(self._t("prospero.log_kein_abbild"))
-            _takt()
+                    knopf.configure(state="normal")
+                except tk.TclError:
+                    pass
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
@@ -17679,7 +16850,11 @@ class PS5ConverterGUI:
         meta = {
             "title": wert("TITLE"),
             "title_id": wert("TITLE_ID"),
-            "version": wert("VERSION"),
+            # Die hoehere von APP_VER (Patch) und VERSION (Master) - ein neu
+            # gemastertes Paket fuehrt seinen Stand in VERSION, ein Patch in
+            # APP_VER. Begruendung und Messung bei abbild_metadaten.ps4_fassung;
+            # dieselbe Regel gilt im Metadatenleser.
+            "version": abbild_metadaten.ps4_fassung(sfo) or strich,
         }
 
         firmware = strich
@@ -37594,7 +36769,9 @@ class PS5ConverterGUI:
             pass
 
     def _bibliothek_ordner_uebertragen(self, eltern, *, richtung: str,
-                                       oertlich: str, entfernt: str) -> None:
+                                       oertlich: str, entfernt: str,
+                                       paket: "app_paket.AppPaket | None" = None,
+                                       nachher=None) -> None:
         """Holt oder sendet einen ganzen Dump-Ordner - mit Anzeige.
 
         Aus den Fenstern "Spiel holen" und "Zurueckspielen" uebernommen, die
@@ -37605,14 +36782,24 @@ class PS5ConverterGUI:
         wie beim Abbruch einer einzelnen Datei, und das Kreuz des Fensters
         ist ein solcher Abbruch: Das Fenster bleibt, bis die Datei fertig ist.
 
+        Seit dem 26.09.2026 auch fuer eine **App aus ihrem ZIP** (``paket``,
+        :mod:`app_paket` - Wunsch: ProsperoEden auf die PS5): dieselbe Anzeige,
+        dieselbe Abbruchregel, nur kommen die Dateien aus dem Archiv.
+
         Args:
             richtung: ``"runter"`` (Konsole -> PC) oder ``"hoch"``.
-            oertlich: Der Ordner auf dem PC (beim Holen: das neue Ziel).
+            oertlich: Der Ordner auf dem PC (beim Holen: das neue Ziel) -
+                bei ``paket`` das ZIP.
             entfernt: Der Ordner auf der Konsole (beim Senden: das neue Ziel).
+            paket: Eine App aus :func:`app_paket.paket_lesen` - dann wird sie
+                installiert statt ein Ordner gesendet.
+            nachher: Wird im Hauptfaden gerufen, wenn alles geklappt hat
+                (etwa ein neuer Suchlauf der Bibliothek).
         """
         c = self._COLORS
         ist_download = richtung == "runter"
-        titel = self._t("library.uebertragung_titel")
+        titel = self._t("library.app_titel" if paket is not None
+                        else "library.uebertragung_titel")
         fenster = self._build_modern_toplevel(titel, 660, 280, min_width=540,
                                               min_height=240, parent=eltern)
         self._build_modern_header(fenster, titel)
@@ -37704,7 +36891,9 @@ class PS5ConverterGUI:
                 host, entfernt, port, melden=_zwischen, abbruch=_abbruch)
             if not _fragen("library.ordner_holen_frage", dateien=dateien,
                            menge=konsole_ftp.menge_lesbar(bytes_), ziel=oertlich,
-                           minuten=max(1, int(konsole_ftp.dauer_schaetzen(bytes_) / 60))):
+                           tempo=konsole_ftp.tempo_lesbar(konsole_ftp.TEMPO_RUNTER),
+                           minuten=max(1, int(konsole_ftp.dauer_schaetzen(
+                               bytes_, konsole_ftp.TEMPO_RUNTER) / 60))):
                 lauf["nichts"] = True
                 return
             self._append_to_log(self._t("holen.log_start", quelle=entfernt,
@@ -37730,7 +36919,9 @@ class PS5ConverterGUI:
             bytes_ = sum(p.stat().st_size for p in dateien)
             if not _fragen("library.ordner_senden_frage", dateien=len(dateien),
                            menge=konsole_ftp.menge_lesbar(bytes_),
-                           minuten=max(1, int(konsole_ftp.dauer_schaetzen(bytes_) / 60))):
+                           tempo=konsole_ftp.tempo_lesbar(konsole_ftp.TEMPO_HOCH),
+                           minuten=max(1, int(konsole_ftp.dauer_schaetzen(
+                               bytes_, konsole_ftp.TEMPO_HOCH) / 60))):
                 lauf["nichts"] = True
                 return
             # Ein gleichnamiger Ordner auf der Konsole wuerde sonst Datei fuer
@@ -37758,15 +36949,56 @@ class PS5ConverterGUI:
                                        dateien=ergebnis.dateien, menge=menge,
                                        ziel=entfernt)
 
+        def _app_senden(host: str, port: int) -> None:
+            """Installiert die App aus dem ZIP - eine Frage, die sagt, was geschieht.
+
+            Liegt die App schon auf der Konsole, fragt sie nach dem
+            Aktualisieren: Ersetzt werden nur die Dateien aus dem Paket, alles
+            andere im Ordner bleibt (bei ProsperoEden die eigenen Dateien
+            unter ``assets``). Geloescht wird nichts.
+            """
+            schon_da = konsole_ftp.vorhanden(host, paket.ziel, port)
+            if not _fragen("library.app_frage_aktualisieren" if schon_da
+                           else "library.app_frage",
+                           titel=paket.titel, fassung=paket.fassung or "–",
+                           kennung=paket.kennung, ziel=paket.ziel,
+                           dateien=len(paket.dateien),
+                           menge=konsole_ftp.menge_lesbar(paket.bytes_gesamt),
+                           minuten=max(1, int(konsole_ftp.dauer_schaetzen(
+                               paket.bytes_gesamt, konsole_ftp.TEMPO_HOCH) / 60))):
+                lauf["nichts"] = True
+                return
+            self._append_to_log(self._t("library.app_log_start", titel=paket.titel,
+                                        ziel=paket.ziel) + "\n")
+            ergebnis = app_paket.senden(host, paket, port, auf_fortschritt=_fort,
+                                        abbruch=_abbruch)
+            if ergebnis.abgebrochen:
+                self._append_to_log(self._t("zurueck.log_cancelled",
+                                            dateien=ergebnis.dateien) + "\n")
+                lauf["fehler"] = self._t("library.app_abgebrochen",
+                                         dateien=ergebnis.dateien)
+                return
+            menge = konsole_ftp.menge_lesbar(ergebnis.bytes)
+            self._append_to_log(self._t("library.app_log_done", dateien=ergebnis.dateien,
+                                        menge=menge, ziel=paket.ziel) + "\n")
+            text = self._t("library.app_installiert", titel=paket.titel,
+                           dateien=ergebnis.dateien, menge=menge, ziel=paket.ziel)
+            if paket.zusatzordner:
+                text += "\n\n" + self._t("library.app_zusatzordner", ziel=paket.ziel,
+                                         ordner=", ".join(paket.zusatzordner))
+            lauf["ergebnis"] = text
+
         def _arbeit() -> None:
-            host = self._ps5_ip()
+            host = self._bibliothek_ps5_adresse()
             port = self._ps5_ftp_port()
             try:
                 meldungen: list = []
                 if not self._konsole_ftp_bereit(host, meldungen.append):
                     lauf["fehler"] = " ".join(str(m).strip() for m in meldungen)
                     return
-                if ist_download:
+                if paket is not None:
+                    _app_senden(host, port)
+                elif ist_download:
                     _holen(host, port)
                 else:
                     _senden(host, port)
@@ -37800,6 +37032,11 @@ class PS5ConverterGUI:
                                        parent=oben)
                 return
             messagebox.showinfo(titel, lauf["ergebnis"], parent=oben)
+            if nachher is not None:
+                try:
+                    nachher()
+                except Exception as exc:  # noqa: BLE001 - nur ein Nachgang
+                    logger.debug("Bibliothek: Nachgang der Uebertragung (%s)", exc)
 
         _anzeigen()
         self._bibliothek_uebertragungen += 1
@@ -37814,7 +37051,7 @@ class PS5ConverterGUI:
         findet "Neu scannen" den Dump dort, und "Herunterladen" holt ihn.
         """
         titel = self._t("holen.btn_dump")
-        ip = self._ps5_ip()
+        ip = self._bibliothek_ps5_adresse()
         if not self._ist_plausible_ps5_adresse(ip):
             messagebox.showwarning(titel, self._t("library.ps5_keine_adresse"),
                                    parent=self.root)
@@ -37855,7 +37092,7 @@ class PS5ConverterGUI:
         dieses Programm schreibt nichts in die Systemdatenbanken der Konsole.
         """
         titel = self._t("library.btn_dateimanager")
-        ip = self._ps5_ip()
+        ip = self._bibliothek_ps5_adresse()
         if not self._ist_plausible_ps5_adresse(ip):
             messagebox.showwarning(titel, self._t("library.ps5_keine_adresse"),
                                    parent=self.root)
@@ -38169,25 +37406,41 @@ class PS5ConverterGUI:
         + ("/mnt/ext0", "/mnt/ext1")
     ))
 
-    def _bibliothek_ps5_scannen(self, melden=None) -> tuple[list[dict], str]:
-        """Sucht die Sicherungen auf der Konsole - ueber FTP.
+    def _bibliothek_ps5_scannen(self, melden=None, *, fenster=None,
+                                status=None) -> tuple[list[dict], str]:
+        """Sucht die Spiele auf der Konsole - ueber FTP.
 
-        Durchsucht dieselben Ablageorte, die auch ShadowMount+ liest
-        (:data:`_AMPR_GEN_SCANPFADE`): ``/data/homebrew``,
-        ``/data/etaHEN/games`` und die USB- und externen Anschluesse.
+        Seit dem 25.09.2026 (Wunsch des Nutzers: "wenn man auf PS5 klickt,
+        die PS5 automatisch gefunden werden wie beim AMPR EMU in Aufgabe 7
+        und die Spiele von der PS5 anzeigen, auch die PKG-installierten
+        PS4-Spiele") in drei Schritten:
+
+        1. **Die Konsole finden** (:meth:`_bibliothek_ps5_finden`) - statt
+           eine eingetragene Adresse vorauszusetzen.
+        2. **Die Sicherungen** in denselben Ablageorten, die auch
+           ShadowMount+ liest: ``/data/homebrew``, ``/data/etaHEN/games`` und
+           die USB- und externen Anschluesse.
+        3. **Die installierten Titel** (:meth:`_bibliothek_ps5_installiert`)
+           - PS5-Spiele und per PKG installierte PS4-Spiele. Bis dahin kamen
+           sie in der Bibliothek gar nicht vor.
 
         Die Titelbilder kommen **nicht** aus den Spieldateien - dafuer
         muesste jedes Abbild ueber FTP gelesen werden, und das sind bei
         einem 50-GB-Titel Stunden. Sie kommen aus ``/user/appmeta/<ID>/``,
         wo die Konsole sie selbst ablegt: ein paar hundert Kilobyte je Spiel.
 
+        Laeuft im Arbeitsfaden. Args:
+            fenster: Eltern fuer Rueckfragen der Suche (Hauptfenster).
+            status: Rueckruf fuer eine Zeile Stand - was die Suche gerade tut.
+
         Returns:
             ``(eintraege, fehlertext)``. Bei einem Verbindungsfehler ist die
             Liste leer und der Text sagt, woran es lag.
         """
-        host = str(self.ps5_ip_var.get()).strip() if hasattr(self, "ps5_ip_var")             else str(self._load_setting("ps5_ip", "") or "")
+        host, fehler = self._bibliothek_ps5_finden(
+            fenster, status if status is not None else (lambda _text: None))
         if not host:
-            return [], self._t("library.ps5_keine_adresse")
+            return [], fehler or self._t("library.ps5_nicht_gefunden")
 
         try:
             ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
@@ -38215,14 +37468,11 @@ class PS5ConverterGUI:
                     # Namen - "Mednafen" oder "Mafia The Old Country" sagen
                     # der Konsole nichts. Die param.json sind wenige
                     # Kilobyte; bei Abbildern geht das nicht, dafuer muesste
-                    # ein 51-GB-Container ueber FTP gelesen werden.
-                    name, aus_json = self._bibliothek_ps5_ordnerangaben(
-                        ftp, fund["pfad"])
-                    if aus_json:
-                        kennung = aus_json
-                        angaben["title_id"] = aus_json
-                    if name:
-                        angaben["title"] = name
+                    # ein 51-GB-Container ueber FTP gelesen werden. Seit dem
+                    # 26.09.2026 kommen Fassung und Firmware mit.
+                    aus_datei = self._bibliothek_ps5_ordnerangaben(ftp, fund["pfad"])
+                    angaben.update(aus_datei)
+                    kennung = aus_datei.get("title_id") or kennung
                 eintraege.append({
                     "path": fund["pfad"], "kind": fund["art"],
                     "meta": angaben, "size": fund.get("groesse"),
@@ -38239,6 +37489,9 @@ class PS5ConverterGUI:
             # gesehen hat, unter /system_data/priv/appmeta - dort steht der
             # Name neben der Kennung, und darueber laesst sich zuordnen.
             self._bibliothek_ps5_kennungen_nachtragen(ftp, eintraege)
+            # Erst danach: Was eine Kennung hat, steht als Sicherung schon da
+            # und kommt nicht ein zweites Mal als "installiert" hinein.
+            eintraege.extend(self._bibliothek_ps5_installiert(ftp, eintraege))
             return eintraege, ""
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: PS5-Suchlauf (%s)", exc)
@@ -38252,31 +37505,311 @@ class PS5ConverterGUI:
                 except Exception:  # noqa: BLE001
                     pass
 
-    def _bibliothek_ps5_ordnerangaben(self, ftp, pfad: str) -> tuple[str, str]:
-        """Liest Name und Title-ID eines Dump-Ordners auf der Konsole.
+    def _bibliothek_ps5_adresse(self) -> str:
+        """Die Adresse der PS5 fuer die Bibliothek.
+
+        Erst die, die :meth:`_bibliothek_ps5_finden` in diesem Programmlauf
+        gefunden hat, sonst die aus den Einstellungen. Wer eine gefundene
+        Adresse nicht speichern wollte, soll trotzdem Titelbilder sehen,
+        holen und senden koennen - bis zum 25.09.2026 las jede dieser Stellen
+        die Einstellung fuer sich.
+        """
+        return (str(getattr(self, "_bibliothek_ps5_host", "") or "").strip()
+                or self._ps5_ip())
+
+    def _bibliothek_ps5_finden(self, fenster, melden) -> tuple[str, str]:
+        """Findet die PS5 von selbst - wie Aufgabe 7 (:meth:`_ampr_gen_adresse_finden`).
+
+        In dieser Reihenfolge; es gilt die erste Stelle, an der eine PS5
+        antwortet (FTP-Anmeldung und ein Ordner, den es nur auf der Konsole
+        gibt - :meth:`_ampr_gen_ist_ps5`):
+
+        1. Die Adresse dieses Programmlaufs bzw. aus den Einstellungen.
+        2. Die gespeicherten FTP-Profile.
+        3. Der Rundruf der Konsolensuche (UDP 9302) - zwei Sekunden. Antwortet
+           dort eine Konsole, deren FTP schweigt, ist sie gefunden, nur ohne
+           Jailbreak oder ftpsrv. Das Netz abzusuchen braechte dann nichts
+           mehr; das sagt der Fehlertext.
+        4. Das eigene Netz absuchen (:meth:`_ampr_gen_netz_absuchen`).
+
+        Eine Konsole, die nicht in den Einstellungen steht, wird zum
+        Speichern angeboten (:meth:`_ampr_gen_adresse_merken`); fuer diesen
+        Programmlauf gilt sie so oder so (``_bibliothek_ps5_host``).
+
+        Laeuft im Arbeitsfaden - Fragen gehen ueber :meth:`_ampr_gen_frage`.
+
+        Returns:
+            ``(adresse, fehlertext)`` - die Adresse leer, wenn keine PS5 antwortet.
+        """
+        port = self._ps5_ftp_port()
+        eingestellt = self._ps5_ip()
+        kandidaten: list[str] = []
+        for host in [self._bibliothek_ps5_adresse()] + list(self._ampr_gen_profil_adressen()):
+            host = str(host or "").strip()
+            if host and host not in kandidaten:
+                kandidaten.append(host)
+
+        def _gefunden(host: str) -> tuple[str, str]:
+            self._bibliothek_ps5_host = host
+            if host != eingestellt:
+                self._ampr_gen_adresse_merken(fenster, melden, host)
+            return host, ""
+
+        for host in kandidaten:
+            melden(self._t("library.ps5_pruefe", host=host))
+            if self._ampr_gen_ist_ps5(host, port):
+                return _gefunden(host)
+
+        melden(self._t("library.ps5_rundruf"))
+        ohne_ftp = []
+        for konsole in remoteplay.suchen("", zeit=2.0):
+            if (konsole.adresse not in kandidaten
+                    and self._ampr_gen_ist_ps5(konsole.adresse, port)):
+                return _gefunden(konsole.adresse)
+            ohne_ftp.append(konsole)
+        if ohne_ftp:
+            return "", self._t("library.ps5_ohne_ftp", host=ohne_ftp[0].adresse,
+                               zustand=self._t(ohne_ftp[0].status_schluessel))
+
+        gefunden = self._ampr_gen_netz_absuchen(port, melden)
+        if not gefunden:
+            return "", self._t("library.ps5_nicht_gefunden")
+        host = gefunden[0]
+        if len(gefunden) > 1:
+            host = self._ampr_gen_frage(
+                fenster, self._t("library.q_welche_konsole"),
+                self._t("library.q_welche_konsole_why"),
+                [(h, h, self._t("amprgen.q_which_console_entry", host=h))
+                 for h in gefunden])
+            if not host:
+                return "", self._t("library.ps5_nicht_gefunden")
+        return _gefunden(host)
+
+    def _bibliothek_ps5_installiert(self, ftp, vorhandene: list) -> list[dict]:
+        """Die Titel, die die Konsole fuehrt - installierte PS5- und PS4-Spiele.
+
+        Aus :data:`_AMPR_GEN_APPMETA`: Dort fuehrt die Konsole jeden Titel, den
+        sie kennt, samt ``param.json`` (PS5) oder ``param.sfo`` (PS4) - per PKG
+        installierte Spiele ebenso wie eingehaengte Abbilder. Dieselbe Quelle,
+        aus der Aufgabe 7 die Spiele der Konsole liest
+        (:meth:`_ampr_gen_spiele_finden`); am 22.08.2026 fand sie dort elf
+        Titel, wo die Suche nach Ordnern keinen fand.
+
+        Was schon als Sicherung in der Liste steht (gleiche Title-ID), kommt
+        nicht ein zweites Mal hinein; Systemanwendungen (``NPXS...``) bleiben
+        draussen. **Nur gelesen** - der Bereich gehoert der Konsole
+        (:data:`_AMPR_GEN_SYSTEMBEREICHE`).
+
+        Seit dem 26.09.2026 mit allen Angaben der Datei - Fassung, verlangte
+        Firmware, SDK, Content-ID (:meth:`_bibliothek_ps5_titelangaben`);
+        bis dahin nur mit dem Namen. Ohne Fassung konnte die Bibliothek kein
+        Update vergleichen und ohne Firmware keinen BACKPORT-Hinweis geben.
+
+        Eine **Sicherung** derselben Kennung bekommt diese Angaben, wenn sie
+        selbst keine Fassung traegt (:meth:`_bibliothek_ps5_ergaenzen`): Ein
+        Abbild laesst sich ueber FTP nicht lesen, eingehaengt fuehrt die
+        Konsole es aber in appmeta. An der Konsole des Nutzers am 26.09.2026
+        waren das 6 von 9 Sicherungen, die bis dahin ohne Fassung dastanden.
+        Nur bei genau einer Sicherung je Kennung - von zweien laesst sich
+        nicht sagen, welche die Konsole fuehrt.
+
+        Returns:
+            Je Titel ein Eintrag der Art ``"installiert"``, ``plattform``
+            ``"PS5"`` oder ``"PS4"``.
+        """
+        sicherungen: dict[str, list[dict]] = {}
+        for eintrag in vorhandene:
+            kennung = str(eintrag.get("title_id") or "").strip().upper()
+            if kennung:
+                sicherungen.setdefault(kennung, []).append(eintrag)
+        try:
+            ordner = self._ampr_ftp_browse(ftp, self._AMPR_GEN_APPMETA)["dirs"]
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: appmeta nicht lesbar (%s)", exc)
+            return []
+        titel: list[dict] = []
+        erledigt: set[str] = set()
+        for name in sorted(str(o).strip() for o in ordner):
+            kennung = name.upper()
+            if not kennung.startswith(self._AMPR_GEN_SPIELKENNUNGEN) or kennung in erledigt:
+                continue
+            erledigt.add(kennung)
+            gleiche = sicherungen.get(kennung, [])
+            if gleiche:
+                # Steht schon als Sicherung da - kein zweiter Eintrag. Ein
+                # Dump-Ordner bringt seine Fassung selbst mit; dann kein Umlauf.
+                if len(gleiche) == 1 and not str(
+                        (gleiche[0].get("meta") or {}).get("version") or "").strip():
+                    self._bibliothek_ps5_ergaenzen(
+                        gleiche[0], self._bibliothek_ps5_titelangaben(ftp, name))
+                continue
+            ps4 = kennung.startswith(("CUSA", "PUSA"))
+            # Die Kennung ist der Ordnername - sie gilt vor dem, was in der
+            # Datei steht.
+            angaben = self._bibliothek_ps5_titelangaben(ftp, name)
+            angaben["title"] = angaben.get("title") or kennung
+            angaben["title_id"] = kennung
+            titel.append({
+                "path": "%s/%s" % (self._AMPR_GEN_APPMETA, name),
+                "kind": "installiert",
+                "meta": angaben,
+                "size": None, "ps5": True, "installiert": True,
+                "plattform": "PS4" if ps4 else "PS5",
+                "ablage": self._AMPR_GEN_APPMETA, "title_id": kennung,
+            })
+        return titel
+
+    #: Wo die Konsole ihre Anwendungen fuehrt - bei eingehaengten Titeln mit
+    #: einem ``sce_sys``-Ordner darin.
+    _BIBLIOTHEK_APP = "/user/app"
+
+    def _bibliothek_ps5_titelangaben(self, ftp, name: str) -> dict:
+        """Die Angaben eines Titels, den die Konsole fuehrt - erst appmeta, dann /user/app.
+
+        Die Datei der eigenen Plattform zuerst: PS4-Titel fuehren eine
+        ``param.sfo``, PS5-Titel eine ``param.json`` - kein vergeblicher
+        Umlauf je Titel.
+
+        Traegt appmeta keine Fassung, kommt der Rest aus
+        ``/user/app/<ID>/sce_sys``. An der Konsole des Nutzers am 26.09.2026
+        gemessen: Fuer den von ShadowMount+ eingehaengten PS4-Titel Styx
+        (CUSA03877) lag in appmeta nur eine knappe ``param.json`` (Titel und
+        Kennung), die vollstaendige ``param.sfo`` stand unter
+        ``/user/app/CUSA03877/sce_sys``. Bei per PKG installierten Titeln
+        liegt dort kein ``sce_sys`` - fuer sie ist appmeta vollstaendig, und
+        der zweite Ort wird gar nicht erst gefragt. Nur gelesen.
+        """
+        ps4 = name.upper().startswith(("CUSA", "PUSA"))
+        dateien = ("param.sfo", "param.json") if ps4 else ("param.json", "param.sfo")
+        angaben = self._bibliothek_ps5_paramangaben(
+            ftp, "%s/%s" % (self._AMPR_GEN_APPMETA, name), dateien)
+        if not angaben.get("version"):
+            zusatz = self._bibliothek_ps5_paramangaben(
+                ftp, "%s/%s/sce_sys" % (self._BIBLIOTHEK_APP, name), dateien)
+            for schluessel, wert in zusatz.items():
+                angaben.setdefault(schluessel, wert)
+        return angaben
+
+    @staticmethod
+    def _bibliothek_ps5_ergaenzen(eintrag: dict, angaben: dict) -> None:
+        """Ergaenzt eine Sicherung auf der Konsole um die Angaben, die die Konsole zu ihr fuehrt.
+
+        Nur was fehlt - was die Sicherung selbst sagt, bleibt. Der Name der
+        Konsole ersetzt nur einen, der bloss die Kennung ist
+        ("PPSA07230.ffpfsc").
+        """
+        meta = eintrag.setdefault("meta", {})
+        for schluessel, wert in angaben.items():
+            if schluessel != "title" and str(meta.get(schluessel) or "").strip() in ("", "-", "–"):
+                meta[schluessel] = wert
+        kennung = str(eintrag.get("title_id") or meta.get("title_id") or "").strip().upper()
+        titel = str(meta.get("title") or "").strip()
+        if angaben.get("title") and (not titel or titel.upper() == kennung):
+            meta["title"] = angaben["title"]
+
+    @staticmethod
+    def _bibliothek_ist_ps4(eintrag: dict, angaben: dict | None = None) -> bool:
+        """Ist der Eintrag ein PS4-Titel?
+
+        Nach der Plattform, die der Suchlauf der Konsole setzt, sonst nach der
+        Kennung - dieselbe Regel wie beim Update-Nachschlag (CUSA/PUSA gehen
+        an ORBISPatches).
+        """
+        if eintrag.get("plattform"):
+            return eintrag.get("plattform") == "PS4"
+        kennung = str((angaben or eintrag.get("meta") or {}).get("title_id")
+                      or eintrag.get("title_id") or "")
+        return kennung.strip().upper().startswith(("CUSA", "PUSA"))
+
+    def _bibliothek_art_text(self, eintrag: dict) -> str:
+        """Wie die Art eines Eintrags heisst - Format oder "installiert".
+
+        Die Liste nahm dafuer ``format.<art>`` ohne Pruefung; bei den
+        installierten Titeln der Konsole stuende dort der Schluesselname. In
+        ``_FORMAT_LABELS`` gehoeren sie nicht: Dort stehen die Formate, in die
+        das Programm umwandelt (Formatwahl, ``--format``).
+        """
+        art = str(eintrag.get("kind") or "")
+        if art in self._FORMAT_LABELS:
+            return self._t("format.%s" % art)
+        if art == "installiert":
+            return self._t("library.art_installiert_ps4"
+                           if eintrag.get("plattform") == "PS4"
+                           else "library.art_installiert_ps5")
+        return art
+
+    def _bibliothek_ps5_paramangaben(self, ftp, ordner: str,
+                                     dateien: tuple[str, ...]) -> dict:
+        """Die Angaben eines Titels auf der Konsole - aus param.json oder param.sfo.
+
+        Ausgewertet von denselben Lesern wie auf dem Rechner
+        (:meth:`_meta_from_param_json_payload`,
+        :meth:`_meta_from_param_sfo_bytes`): Fassung, verlangte Firmware,
+        SDK und Content-ID heissen hier also wie dort, und Detailspalte,
+        Update-Vergleich und BACKPORT-Hinweis rechnen mit ihnen. Bis zum
+        26.09.2026 las die Bibliothek auf der Konsole nur Name und Title-ID.
+
+        Name und Title-ID einer param.json kommen weiter aus den Helfern von
+        Aufgabe 7 (:meth:`_ampr_gen_name_aus_json`,
+        :meth:`_ampr_gen_titel_aus_json`) - ein Spiel heisst in der
+        Bibliothek so wie dort. Fehlt die Title-ID, gilt die aus der
+        Content-ID ("EP0001-PPSA01234_00-...").
+
+        Es gilt die erste Datei aus ``dateien``, die sich lesen und auswerten
+        laesst. Nur gelesen - ``ordner`` kann im Systembereich liegen.
+
+        Returns:
+            Die Angaben ohne Platzhalter; leer, wenn keine der Dateien taugt.
+        """
+        for datei in dateien:
+            puffer = io.BytesIO()
+            try:
+                ftp.retrbinary("RETR %s/%s" % (ordner.rstrip("/"), datei),
+                               puffer.write)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: %s/%s nicht lesbar (%s)", ordner, datei, exc)
+                continue
+            roh = puffer.getvalue()
+            if not roh:
+                continue
+            if datei.lower().endswith(".sfo"):
+                meta = self._meta_from_param_sfo_bytes(roh)
+            else:
+                try:
+                    daten = json.loads(roh.decode("utf-8", "replace"))
+                except ValueError:
+                    continue
+                if not isinstance(daten, dict):
+                    continue
+                meta = self._meta_from_param_json_payload(daten)
+                meta["title"] = self._ampr_gen_name_aus_json(roh) or meta.get("title")
+                meta["title_id"] = self._ampr_gen_titel_aus_json(roh)
+            angaben = {schluessel: str(wert).strip() for schluessel, wert in meta.items()
+                       if str(wert or "").strip() not in ("", "-", "–")}
+            kennung = angaben.get("title_id", "").upper()
+            if not kennung:
+                treffer = _TITLE_ID_RE.search(angaben.get("content_id", "").upper())
+                kennung = treffer.group(0) if treffer else ""
+            if kennung:
+                angaben["title_id"] = kennung
+            if angaben:
+                return angaben
+        return {}
+
+    def _bibliothek_ps5_ordnerangaben(self, ftp, pfad: str) -> dict:
+        """Liest die Angaben eines Dump-Ordners auf der Konsole.
 
         Aus ``<Ordner>/sce_sys/param.json`` - dieselbe Datei, aus der auch
         die Aufgaben 1-8 ihre Angaben ziehen, nur ueber FTP statt aus dem
-        Dateisystem. Ausgewertet wird sie mit denselben beiden Helfern
-        (:meth:`_ampr_gen_name_aus_json`, :meth:`_ampr_gen_titel_aus_json`),
-        damit Bibliothek und Aufgaben nicht auseinanderlaufen.
+        Dateisystem; ohne sie aus der ``param.sfo`` (PS4-Dump). Ausgewertet
+        wie alles auf der Konsole: :meth:`_bibliothek_ps5_paramangaben`.
 
         Returns:
-            ``(name, title_id)``. Beides leer, wenn es keine param.json gibt
-            - ein Homebrew ohne Dump-Aufbau etwa.
+            Die Angaben - leer, wenn es keine param-Datei gibt, ein Homebrew
+            ohne Dump-Aufbau etwa.
         """
-        puffer = io.BytesIO()
-        try:
-            ftp.retrbinary("RETR %s/sce_sys/param.json" % pfad.rstrip("/"),
-                           puffer.write)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("Bibliothek: keine param.json in %s (%s)", pfad, exc)
-            return "", ""
-        roh = puffer.getvalue()
-        if not roh:
-            return "", ""
-        return (self._ampr_gen_name_aus_json(roh),
-                self._ampr_gen_titel_aus_json(roh))
+        return self._bibliothek_ps5_paramangaben(
+            ftp, "%s/sce_sys" % pfad.rstrip("/"), ("param.json", "param.sfo"))
 
     def _bibliothek_ps5_kennungen_nachtragen(self, ftp, eintraege) -> int:
         """Traegt fehlende Title-IDs ueber den Namen nach.
@@ -38363,6 +37896,9 @@ class PS5ConverterGUI:
             stellen.append("%s/sce_sys" % ordner.rstrip("/"))
         if kennung:
             stellen.append("%s/%s" % (self._BIBLIOTHEK_APPMETA, kennung))
+            # Seit dem 25.09.2026: Die installierten Titel kommen aus diesem
+            # Ordner (_bibliothek_ps5_installiert) - dort liegt ihr Bild auch.
+            stellen.append("%s/%s" % (self._AMPR_GEN_APPMETA, kennung))
         for stelle in stellen:
             for name in self._BIBLIOTHEK_ICONS:
                 puffer = io.BytesIO()
@@ -38383,7 +37919,7 @@ class PS5ConverterGUI:
         gleichzeitigen Sitzungen.
         """
         kante = pt(self._KACHEL_BILD_PT)
-        host = str(self._load_setting("ps5_ip", "") or "")
+        host = self._bibliothek_ps5_adresse()
         speicher = self._bibliothek_bildspeicher()
         # "Kein Bild" fuer Konsoleneintraege gilt nur fuer diesen Programmlauf.
         # Der Bildspeicher haengt seine Schluessel an Aenderungszeit und Groesse
@@ -38504,7 +38040,7 @@ class PS5ConverterGUI:
                                  parent=fenster)
             return
 
-        host = str(self._load_setting("ps5_ip", "") or "")
+        host = self._bibliothek_ps5_adresse()
         if not host:
             messagebox.showerror(self._t("library.upload_titel"),
                                  self._t("library.ps5_keine_adresse"),
@@ -38799,7 +38335,7 @@ class PS5ConverterGUI:
             self._spaeter_nach_ms(fenster, 250, _anzeigen)
 
         def _arbeit() -> None:
-            host = str(self._load_setting("ps5_ip", "") or "")
+            host = self._bibliothek_ps5_adresse()
             ftp = None
             try:
                 ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
@@ -39073,8 +38609,7 @@ class PS5ConverterGUI:
             # abgeschnitten da; wraplength haelt auch lange Formate im Rahmen.
             unten = "\n".join(x for x in (
                 str(angaben.get("title_id") or ""),
-                self._t("format.%s" % eintrag["kind"])
-                if eintrag.get("kind") in self._FORMAT_LABELS else "",
+                self._bibliothek_art_text(eintrag),
             ) if x)
             unten_feld = tk.Label(kachel, text=unten, bg=kachel["bg"],
                                   fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
@@ -39266,11 +38801,11 @@ class PS5ConverterGUI:
                          fg=c["fg_primary"], anchor="w")
         titel.pack(side="left")
         self._register_translatable(titel, "library.window_title")
-        zurueck = ttk.Button(kopf, text=self._t("rpassist.btn_uebersicht"),
+        zurueck = ttk.Button(kopf, text=self._t("konsole.btn_uebersicht"),
                              style="Klein.TButton",
                              command=lambda: self._konsole_seite_setzen("uebersicht"))
         zurueck.pack(side="right")
-        self._register_translatable(zurueck, "rpassist.btn_uebersicht")
+        self._register_translatable(zurueck, "konsole.btn_uebersicht")
         umschalt_knopf = ttk.Button(kopf, style="Klein.TButton",
                                     command=lambda: _ansicht_umschalten())
         umschalt_knopf.pack(side="right", padx=(0, 8))
@@ -39540,6 +39075,11 @@ class PS5ConverterGUI:
                     return self._t("library.fw_wird_gelesen"), "fg_secondary"
                 return "", ""
             fw = bibliothek_bestand.firmware_kurz(verlangt) or verlangt
+            # Ein PS4-Titel verlangt eine PS4-Systemsoftware. Deren Nummern
+            # haben mit der Firmware der PS5 nichts zu tun, und BACKPORT
+            # bearbeitet nur PS5-Titel - also nennen, nicht vergleichen.
+            if self._bibliothek_ist_ps4(item, meta):
+                return self._t("library.fw_ps4", fw=fw), "fg_secondary"
             konsole = self._konsole_firmware()
             vergleich = bibliothek_bestand.firmware_vergleichen(verlangt, konsole)
             if vergleich is None:
@@ -39577,8 +39117,7 @@ class PS5ConverterGUI:
                                   sdk=bibliothek_bestand.firmware_kurz(sdk) or sdk)
                    if sdk else "")
             _zeile("content", _wert(meta, "content_id"))
-            art = self._t("format.%s" % item["kind"]) if item.get("kind") in self._FORMAT_LABELS \
-                else str(item.get("kind") or "")
+            art = self._bibliothek_art_text(item)
             groesse = format_ffpkg_bytes(item["size"]) if item.get("size") is not None else ""
             _zeile("format", " · ".join(t for t in (art, groesse) if t))
             _zeile("pfad", item["path"])
@@ -39762,7 +39301,7 @@ class PS5ConverterGUI:
                 iid = str(idx)
                 tree.insert("", "end", iid=iid, values=(
                     meta.get("title", "–"), meta.get("title_id", "–"),
-                    meta.get("version", "–"), self._t(f"format.{item['kind']}"), item["path"],
+                    meta.get("version", "–"), self._bibliothek_art_text(item), item["path"],
                 ), tags=("gerade" if sichtbar % 2 == 0 else "ungerade",))
                 item_by_iid[iid] = item
                 if item["path"] == ansicht["gewaehlt"]:
@@ -39846,13 +39385,26 @@ class PS5ConverterGUI:
             threading.Thread(target=worker, daemon=True).start()
 
         def _rescan_ps5() -> None:
-            """Sucht auf der Konsole. Laeuft im Hintergrund - FTP braucht Zeit."""
+            """Sucht auf der Konsole. Laeuft im Hintergrund - FTP braucht Zeit.
+
+            Seit dem 25.09.2026 findet der Suchlauf die Konsole selbst (wie
+            Aufgabe 7) und zeigt auch ihre installierten Spiele. Was die
+            Suche gerade tut, steht dabei in der Statuszeile - sie kann bei
+            einer unbekannten Adresse das ganze Netz absuchen.
+            """
             _status("library.status_scanning")
             ansicht["suchlauf"] += 1
             nummer = ansicht["suchlauf"]
 
+            def _zwischenstand(text: str) -> None:
+                if nummer == ansicht["suchlauf"]:
+                    _status_text(text)
+
             def arbeit() -> None:
-                gefunden, fehler = self._bibliothek_ps5_scannen()
+                gefunden, fehler = self._bibliothek_ps5_scannen(
+                    fenster=self.root,
+                    status=lambda text: self._spaeter_im_fenster(
+                        seite, _zwischenstand, str(text)))
 
                 def _fertig() -> None:
                     if nummer != ansicht["suchlauf"]:
@@ -39866,7 +39418,10 @@ class PS5ConverterGUI:
                     if fehler:
                         _status_text(fehler)
                     else:
-                        _status("library.ps5_status", count=len(gefunden))
+                        installiert = sum(1 for e in gefunden if e.get("installiert"))
+                        _status("library.ps5_status_titel", count=len(gefunden),
+                                sicherungen=len(gefunden) - installiert,
+                                installiert=installiert)
 
                 self._spaeter_im_fenster(seite, _fertig)
 
@@ -39909,7 +39464,44 @@ class PS5ConverterGUI:
                 messagebox.showinfo(self._t("library.download_titel"),
                                     self._t("library.nur_konsole"), parent=oben)
                 return
+            if eintrag.get("installiert"):
+                # Ein installiertes Spiel ist keine Datei in einer Ablage -
+                # "Holen" nahm sonst den appmeta-Ordner fuer ein Abbild.
+                messagebox.showinfo(
+                    self._t("library.download_titel"),
+                    self._t("library.installiert_nicht_holen",
+                            name=(eintrag.get("meta") or {}).get("title")
+                            or eintrag.get("title_id", "")),
+                    parent=oben)
+                return
             self._bibliothek_herunterladen(oben, eintrag)
+
+        def _app_installieren() -> None:
+            """Eine Homebrew-App aus ihrem Release-ZIP auf die PS5 (seit 26.09.2026).
+
+            Wunsch des Nutzers: ProsperoEden installieren. Das ZIP waehlt der
+            Anwender, mitgeliefert wird nichts; gelesen und geprueft wird es
+            hier (schnell - nur das Inhaltsverzeichnis und die param.json),
+            uebertragen im Fenster der Ordneruebertragung.
+            """
+            pfad = filedialog.askopenfilename(
+                title=self._t("library.app_zip_waehlen"), parent=oben,
+                filetypes=self._dateitypen([
+                    ("ZIP", "*.zip"), (self._t("filetype.all_files"), "*.*")]))
+            if not pfad:
+                return
+            try:
+                paket = app_paket.paket_lesen(pfad)
+            except app_paket.PaketFehler as fehler:
+                messagebox.showwarning(
+                    self._t("library.app_titel"),
+                    self._t("library.app_kein_paket", datei=os.path.basename(pfad),
+                            grund=self._t(fehler.schluessel, **fehler.werte)),
+                    parent=oben)
+                return
+            self._bibliothek_ordner_uebertragen(
+                oben, richtung="hoch", oertlich=pfad, entfernt=paket.ziel,
+                paket=paket, nachher=_rescan)
 
         def _on_select(_event=None) -> None:
             sel = tree.selection()
@@ -40179,6 +39771,7 @@ class PS5ConverterGUI:
                 ("ps5", (("library.download_knopf", _holen, "KleinAccent.TButton"),
                          ("holen.btn_dump",
                           lambda: self._bibliothek_app_dumper(_status_text), "Klein.TButton"),
+                         ("library.btn_app_installieren", _app_installieren, "Klein.TButton"),
                          ("library.btn_dateimanager",
                           lambda: self._bibliothek_dateimanager(_status_text), "Klein.TButton"),
                          ("library.rescan_button", _rescan, "Klein.TButton")))):
@@ -53029,7 +52622,7 @@ class PS5ConverterGUI:
 
         ``lesezeit``: wie lange nach dem Senden Stille herrschen darf, bis
         die Ausgabe als vollständig gilt. Ein Dienst, der nie etwas schreibt
-        (der Agent von ActRemoteLink), hielte sonst jeden Start 30 s auf.
+        (etwa ein dauerhaft laufender Agent), hielte sonst jeden Start 30 s auf.
         """
         ziel_port = int(port or self._PAYLOAD_SEND_PORT)
         name = os.path.basename(pfad)
@@ -57119,5 +56712,13 @@ if __name__ == "__main__":
         root.attributes("-alpha", 1.0)
     except tk.TclError:
         pass
+
+    # Beim Start die PS5 suchen und verbinden (Wunsch des Nutzers vom
+    # 26.09.2026: "Somit muss der Nutzer nicht manuell seine PS5 IP
+    # eingeben"). Hier und nicht im Konstruktor: Tests, Diagnose und
+    # Kommandozeile bauen das Programm auch, ohne dass etwas ins Netz darf.
+    # Zwei Sekunden Luft, damit die Startphase (700 ms) und das Herstellen
+    # der zuletzt offenen Ansicht vorher fertig sind.
+    root.after(2000, app._konsole_beim_start_verbinden)
 
     root.mainloop()
