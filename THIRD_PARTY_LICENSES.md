@@ -69,7 +69,7 @@ steht in seiner Zeile.
 | `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
 | `ps5upload-5.33.2.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.33.2 |
 | `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
-| `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.0/`) |
+| `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.2/`); aus dem Release v1.2 |
 
 Weitere Payload-Sammlungen und Werkzeuge, die im Fenster **CREDITS** verlinkt sind:
 **aldostools** (PS5-Payloads), **owendswang** (Autoloader, bdj_unpatch),
