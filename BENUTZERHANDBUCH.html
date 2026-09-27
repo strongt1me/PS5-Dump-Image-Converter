@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.46</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.47</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.46</span>
+      <span class="marke">Version v1.9.47</span>
       <span class="marke">Stand 27. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -2025,7 +2025,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </table>
   </div>
   <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
-  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter. Nur die Größenangabe neben der Fortschrittsanzeige behält eine leicht abgedunkelte Fläche, damit sie über unruhigen Bildstellen lesbar bleibt.</p>
+  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile, die Größenangabe und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter.</p>
 
   <div class="kasten">
     <span class="titel">Gro&szlig;e Bildschirme und hohe Anzeigeskalierung</span>
@@ -2098,13 +2098,13 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
       <tr><td><strong>Pfad-Karte</strong></td>
       <td>Wie stark das Bild durch die Karte mit QUELLE, ZIELFORMAT und den
       &uuml;brigen Feldern scheint. 0&nbsp;% l&auml;sst die Fl&auml;che allein
-      tragen, 100&nbsp;% zeigt nur noch das Bild.</td><td>40&nbsp;%</td></tr>
+      tragen, 100&nbsp;% zeigt nur noch das Bild.</td><td>100&nbsp;%</td></tr>
       <tr><td><strong>Knopfleiste unten</strong></td>
       <td>Dasselbe f&uuml;r die Leiste mit STARTEN und ABBRECHEN.</td>
-      <td>30&nbsp;%</td></tr>
+      <td>100&nbsp;%</td></tr>
       <tr><td><strong>Status-Log</strong></td>
       <td>Zieht die Farbe des Protokollfelds zur Farbe des Bildes hin.</td>
-      <td>30&nbsp;%</td></tr>
+      <td>0&nbsp;%</td></tr>
       <tr><td><strong>Hintergrundbild: Helligkeit / Kontrast</strong></td>
       <td>Wirkt auf das Bild im Hauptbereich &ndash; und damit auch auf die
       Ausschnitte, die Karte und Knopfleiste daraus zeigen.</td>
@@ -2122,9 +2122,11 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
     Fl&auml;chenfarbe zur Farbe des Bildes hin. Bei einem sehr dunklen Bild ist
     der Unterschied deshalb klein; das ist kein Fehler.</p>
   </div>
-  <p>Der Knopf <strong>Alle Regler zur&uuml;cksetzen</strong> stellt alle
-  sieben auf die Vorgabe &ndash; also genau den Zustand, den das Programm vor
-  v1.9.0 fest eingebaut hatte.</p>
+  <p>Mit den Vorgabewerten erscheint die Oberfl&auml;che unver&auml;ndert: Karte
+  und Knopfleiste zeigen das Bild ganz, das Status-Log tr&auml;gt seine
+  Design-Farbe, und beide Bilder bleiben so, wie sie in der Datei stehen. Die
+  Regler wirken also erst, wenn Sie sie bewegen. Der Knopf <strong>Alle Regler
+  zur&uuml;cksetzen</strong> stellt alle sieben wieder auf diese Vorgabe.</p>
   <p>Neben den beiden Klapplisten steht au&szlig;erdem eine
   <strong>Miniaturvorschau</strong> des gerade gew&auml;hlten Bildes, damit
   ein Dateiname nicht das Einzige ist, woran man sich orientieren kann. Sie
@@ -2157,7 +2159,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.46), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.47), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2357,7 +2359,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.46</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.47</strong></span>
     <span>Stand 27. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

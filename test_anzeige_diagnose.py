@@ -303,6 +303,31 @@ class LaufruheTests(unittest.TestCase):
             ad.FEHLER)
 
 
+class BedienungTests(unittest.TestCase):
+    """Das Mausrad darf keine Auswahlliste verstellen."""
+
+    def test_leere_liste_gibt_nichts(self):
+        self.assertEqual(ad.pruefe_bedienung(ad.Bedienlage()), [])
+
+    def test_eine_verstellende_klasse_warnt(self):
+        befunde = ad.pruefe_bedienung(ad.Bedienlage(rad_verstellt=("TCombobox",)))
+        self.assertEqual(len(befunde), 1)
+        self.assertEqual(befunde[0].schwere, ad.WARNUNG)
+        self.assertIn("TCombobox", befunde[0].text)
+
+    def test_die_klassen_stehen_im_befund(self):
+        befunde = ad.pruefe_bedienung(
+            ad.Bedienlage(rad_verstellt=("TCombobox", "TSpinbox")))
+        self.assertIn("TCombobox", befunde[0].text)
+        self.assertIn("TSpinbox", befunde[0].text)
+
+    def test_ins_gesamturteil_eingebunden(self):
+        ergebnis = ad.pruefe_alles(
+            bedienung=ad.Bedienlage(rad_verstellt=("TCombobox",)))
+        self.assertFalse(ergebnis.sauber)
+        self.assertEqual(len(ergebnis.warnungen), 1)
+
+
 class GesamtTests(unittest.TestCase):
     """Zusammenspiel und Zusammenfassung."""
 

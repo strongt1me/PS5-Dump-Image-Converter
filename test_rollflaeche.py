@@ -126,13 +126,32 @@ class AufbauTests(unittest.TestCase):
         self.assertIn("after_cancel", self._methode("_on_inhalt_configure"))
 
     def test_mausrad_laesst_die_protokollflaeche_in_ruhe(self):
-        """Sonst rollte ein Rad über der Konsole zwei Dinge gleichzeitig."""
+        """Sonst rollte ein Rad über der Konsole zwei Dinge gleichzeitig.
+
+        Text (das Status-Log) und Listbox werten das Rad selbst aus - über
+        ihnen darf die Spalte nicht zusätzlich rollen. Klapplisten und
+        Zahlenfelder (TCombobox/TSpinbox) stehen seit dem 27.09.2026 NICHT
+        mehr in dieser Ausnahme: Sie verstellen ihren Wert nicht mehr (siehe
+        ``_mausrad_verstellt_nichts``), über ihnen soll die Spalte rollen.
+        """
         rumpf = self._methode("_on_inhalt_mausrad")
-        for klasse in ("Text", "Listbox", "TCombobox", "TSpinbox"):
+        for klasse in ("Text", "Listbox"):
             with self.subTest(klasse=klasse):
                 self.assertIn('"%s"' % klasse, rumpf)
+        for klasse in ("TCombobox", "TSpinbox"):
+            with self.subTest(klasse=klasse):
+                self.assertNotIn('"%s"' % klasse, rumpf)
         # Und gar nichts tun, solange die Spalte ohnehin ganz sichtbar ist.
         self.assertIn("_inhalt_rollt", rumpf)
+
+    def test_klapplisten_verstellen_das_rad_nicht_mehr(self):
+        """Die Ursache lag in Tk selbst: TCombobox wertet das Rad in seiner
+        Klassenbindung aus. Das Programm nimmt ihr diese Bindung."""
+        rumpf = self._methode("_mausrad_verstellt_nichts")
+        self.assertIn("unbind_class", rumpf)
+        for klasse in ("TCombobox", "TSpinbox"):
+            with self.subTest(klasse=klasse):
+                self.assertIn('"%s"' % klasse, self.quelltext)
 
     def test_mausrad_auch_unter_linux(self):
         """X11 meldet das Rad als Button 4 und 5, nicht als delta."""

@@ -180,6 +180,19 @@ class Laufruhelage:
     threads: int = 0
 
 
+@dataclass(frozen=True)
+class Bedienlage:
+    """Wie das Mausrad auf Auswahllisten und Zahlenfelder wirkt.
+
+    ``rad_verstellt`` nennt die Widgetklassen, deren Tk-Klassenbindung das
+    Rad noch als Wertaenderung auswertet (``TCombobox`` waehlt den naechsten
+    Eintrag, ``TSpinbox`` zaehlt weiter). Ist die Liste leer, rollt das Rad
+    ueber ihnen das Fenster, statt die Auswahl zu verstellen.
+    """
+
+    rad_verstellt: tuple[str, ...] = ()
+
+
 @dataclass
 class Pruefergebnis:
     """Alle Befunde eines Durchgangs, nach Schwere sortiert."""
@@ -421,11 +434,36 @@ def pruefe_laufruhe(lage: Laufruhelage) -> list[Befund]:
     return befunde
 
 
+def pruefe_bedienung(lage: Bedienlage) -> list[Befund]:
+    """Prueft, ob das Mausrad Auswahllisten statt des Fensters verstellt.
+
+    Gemeldet am 27.09.2026: Wer im Einstellungsfenster rollte, verstellte die
+    Klapplisten, ueber die der Zeiger gerade glitt. Die Ursache liegt in Tk:
+    ``TCombobox`` und ``TSpinbox`` werten das Rad in ihrer Klassenbindung aus.
+    Das Programm nimmt ihnen diese Bindung (``_mausrad_verstellt_nichts``);
+    bleibt sie an einer Klasse haengen - etwa weil eine neue Tk-Fassung sie
+    nachruestet -, faellt es hier auf.
+
+    Args:
+        lage: Welche Klassen das Rad noch als Wertaenderung auswerten.
+
+    Returns:
+        Die gefundenen Maengel.
+    """
+    if not lage.rad_verstellt:
+        return []
+    return [Befund(
+        WARNUNG, "mausrad_verstellt_auswahl",
+        "Das Mausrad verstellt in %s die Auswahl, statt das Fenster zu "
+        "rollen" % ", ".join(lage.rad_verstellt))]
+
+
 def pruefe_alles(fenster: Fensterlage | None = None,
                  flaechen: list[Flaeche] | None = None,
                  bilder: list[Bildlage] | None = None,
                  skalierung: Skalierungslage | None = None,
-                 laufruhe: Laufruhelage | None = None) -> Pruefergebnis:
+                 laufruhe: Laufruhelage | None = None,
+                 bedienung: Bedienlage | None = None) -> Pruefergebnis:
     """Fuehrt alle Pruefungen aus und sortiert die Befunde nach Schwere.
 
     Jeder Teil ist einzeln abschaltbar: Fehlt eine Messung, entfaellt nur der
@@ -444,6 +482,8 @@ def pruefe_alles(fenster: Fensterlage | None = None,
         befunde.extend(pruefe_skalierung(skalierung))
     if laufruhe is not None:
         befunde.extend(pruefe_laufruhe(laufruhe))
+    if bedienung is not None:
+        befunde.extend(pruefe_bedienung(bedienung))
     befunde.sort(key=lambda b: (_RANG.get(b.schwere, 9), b.kennung, b.text))
     return Pruefergebnis(befunde)
 

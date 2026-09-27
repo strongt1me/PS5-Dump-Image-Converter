@@ -9,11 +9,13 @@ Deckt ab:
   3. Die Aufteilung in Haupt- und Seitenleistenbilder, der Speichern-Knopf
      und das formatfüllende Skalieren.
 
-Was hier **nicht** mehr steht: Die fünf Effektschichten auf dem Bild
-(Helligkeit, Kontrast, Einmischung der Designfarbe, Deckkraft unter Karten
-und Knopfleiste, Kartentönung) sind auf Wunsch des Nutzers ausgebaut. Das
-Bild wird gezeigt, nicht nachgebildet. Dass sie nicht zurückkommen, sichert
-``KeineBildeffekteTests`` weiter unten.
+Die Darstellungsregler (Durchsicht der Flächen, Helligkeit und Kontrast der
+Bilder) sind seit dem 27.09.2026 wieder da - mit dem Nullpunkt von v1.9.6 als
+Vorgabe, sodass die Oberfläche unverändert startet. Dass sie vorhanden bleiben
+und wirken, sichert ``DarstellungsreglerVorhandenTests`` weiter unten; die
+Zahlen dazu stehen in ``test_darstellungsregler.py``. Die zwei festen Schichten
+von damals kommen **nicht** mit zurück: keine Einmischung der Designfarbe ins
+Hintergrundbild und keine Tönung der Kartenfarbe.
 """
 from __future__ import annotations
 
@@ -557,66 +559,92 @@ class FarbrechnungTests(unittest.TestCase):
         self.assertEqual(result, "#6C3A21")
 
 
-class KeineBildeffekteTests(unittest.TestCase):
-    """Die ausgebauten Effekte duerfen nicht zurueckkehren.
+class DarstellungsreglerVorhandenTests(unittest.TestCase):
+    """Die Darstellungsregler muessen vorhanden sein und wirken.
 
-    Fuenf Schichten lagen auf dem Hintergrundbild: Helligkeit und Kontrast
-    ueber PIL, eine Einmischung der Designfarbe, je eine eigene Deckkraft
-    unter Karten und Knopfleiste, und eine Toenung der Kartenfarben zur
-    Durchschnittsfarbe des Bildes. Zusammen sorgten sie dafuer, dass nie das
-    gewaehlte Bild zu sehen war, sondern dessen Nachbildung - und drei
-    Regler wirkten auf dieselbe Stelle.
+    Sieben Regler haengen an der Oberflaeche: die Durchsicht von Pfad-Karte,
+    Knopfleiste und Status-Log sowie Helligkeit und Kontrast von Haupt- und
+    Seitenleistenbild. Sie waren von v1.9.6 bis v1.9.46 ausgebaut; seit dem
+    27.09.2026 sind sie zurueck. Geprueft wird hier ihre **Anwesenheit** an
+    drei Merkmalen (Methoden, Konstanten, das Einmischen des Bildes); die
+    Zahlen dazu stehen in ``test_darstellungsregler.py``.
 
-    Geprueft wird die **Abwesenheit**, und zwar an drei Merkmalen: den
-    Methoden, den Konstanten und dem Aufruf, der die Einmischung machte.
+    Nicht zurueck kommen die zwei festen Schichten von damals: die
+    Einmischung der Designfarbe INS Hintergrundbild
+    (``_blend_bg_image_with_theme``) und die Toenung der Kartenfarbe
+    (``_apply_card_tint_from_bg_image``). Das Bild selbst bleibt unveraendert;
+    gemischt wird nur unter Karte und Leiste, und das steuert der Regler.
     """
 
-    ENTFERNTE_METHODEN = (
-        "_blend_bg_image_with_theme",
+    NOETIGE_METHODEN = (
         "_blend_bg_image_for_card",
         "_blend_bg_image_for_action_bar",
         "_bild_regler_anwenden",
-        "_apply_card_tint_from_bg_image",
         "_average_image_rgb",
         "_regler",
         "_regler_anteil",
         "_regler_uebernehmen",
+        "_regler_zuruecksetzen",
+        "_protokoll_farbe",
     )
 
-    ENTFERNTE_KONSTANTEN = (
-        "BG_IMAGE_OPACITY", "BG_IMAGE_OPACITY_LIGHT",
-        "SIDEBAR_BG_IMAGE_OPACITY", "SIDEBAR_BG_IMAGE_OPACITY_LIGHT",
-        "BG_CARD_TINT_OPACITY", "BG_CARD_IMAGE_OPACITY",
-        "BG_CARD_IMAGE_OPACITY_LIGHT", "ACTION_BAR_DECKKRAFT",
-        "CONSOLE_BG_DECKKRAFT", "CONTENT_CAPTION_BACKDROP_OPACITY",
-        "REGLER_VORGABEN", "REGLER_GRENZEN",
+    NOETIGE_KONSTANTEN = ("REGLER_VORGABEN", "REGLER_GRENZEN")
+
+    #: Diese festen Schichten bleiben ausgebaut - sie liessen sich nicht
+    #: einstellen und bildeten das Bild nach, statt es zu zeigen.
+    FESTE_SCHICHTEN_RAUS = (
+        "_blend_bg_image_with_theme",
+        "_apply_card_tint_from_bg_image",
     )
 
-    def test_keine_der_methoden_ist_zurueck(self) -> None:
-        zurueck = [m for m in self.ENTFERNTE_METHODEN
+    def test_die_regler_methoden_sind_da(self) -> None:
+        fehlt = [m for m in self.NOETIGE_METHODEN
+                 if not hasattr(PS5ConverterGUI, m)]
+        self.assertEqual([], fehlt, "Fehlt: %s" % fehlt)
+
+    def test_die_regler_tabellen_sind_da(self) -> None:
+        fehlt = [k for k in self.NOETIGE_KONSTANTEN if not hasattr(mod, k)]
+        self.assertEqual([], fehlt, "Fehlt: %s" % fehlt)
+        # Beide Tabellen decken genau dieselben sieben Regler ab.
+        self.assertEqual(set(mod.REGLER_VORGABEN), set(mod.REGLER_GRENZEN))
+        self.assertEqual(len(mod.REGLER_VORGABEN), 7)
+
+    def test_die_festen_schichten_bleiben_ausgebaut(self) -> None:
+        """Das Bild wird gezeigt, nicht nachgebildet - der Kern des Ausbaus."""
+        zurueck = [m for m in self.FESTE_SCHICHTEN_RAUS
                    if hasattr(PS5ConverterGUI, m)]
-        self.assertEqual([], zurueck, "Wieder da: %s" % zurueck)
+        self.assertEqual([], zurueck, "Feste Schicht wieder da: %s" % zurueck)
 
-    def test_keine_der_konstanten_ist_zurueck(self) -> None:
-        zurueck = [k for k in self.ENTFERNTE_KONSTANTEN if hasattr(mod, k)]
-        self.assertEqual([], zurueck, "Wieder da: %s" % zurueck)
-
-    def test_das_bild_wird_nicht_mehr_eingemischt(self) -> None:
-        """``Image.blend`` war das Werkzeug aller fuenf Schichten."""
+    def test_das_bild_wird_wieder_eingemischt(self) -> None:
+        """Ohne ``Image.blend`` koennte kein Regler die Flaeche durchscheinen
+        lassen - genau diese eine Stelle steckt in ``_flaeche_ueber_bild``."""
         quelle = Path(mod.__file__).read_text(encoding="utf-8", errors="replace")
-        self.assertNotIn("Image.blend(", quelle,
-                         "Es wird wieder ein Bild eingemischt.")
+        self.assertIn("Image.blend(", quelle)
 
-    def test_pil_effektmodule_sind_nicht_mehr_eingebunden(self) -> None:
-        """Ohne Helligkeit und Kontrast braucht es ImageEnhance nicht mehr."""
+    def test_pil_effektmodule_sind_wieder_eingebunden(self) -> None:
+        """Helligkeit und Kontrast brauchen ImageEnhance, die Mittelfarbe
+        ImageStat."""
         quelle = Path(mod.__file__).read_text(encoding="utf-8", errors="replace")
-        self.assertNotIn("ImageEnhance", quelle)
-        self.assertNotIn("ImageStat", quelle)
+        self.assertIn("ImageEnhance", quelle)
+        self.assertIn("ImageStat", quelle)
 
-    def test_die_pruefung_wuerde_eine_rueckkehr_melden(self) -> None:
-        """Gegenprobe - sonst pruefte sie nur, dass Erfundenes fehlt."""
-        self.assertTrue(hasattr(PS5ConverterGUI, "_blend_hex_color"),
-                        "Der Farbhelfer fehlt - dann misst der Test oben nichts.")
+    def test_die_vorgabe_ist_der_nullpunkt(self) -> None:
+        """Wer nichts verstellt, sieht die Oberflaeche unveraendert.
+
+        Deckkraft der Flaechen: Karte und Leiste ganz durchsichtig (100 =
+        nur Bild), das Status-Log deckend (0 = nur Designfarbe). Helligkeit
+        und Kontrast auf 100.
+        """
+        self.assertEqual(mod.REGLER_VORGABEN["karte_deckkraft"], 100)
+        self.assertEqual(mod.REGLER_VORGABEN["leiste_deckkraft"], 100)
+        self.assertEqual(mod.REGLER_VORGABEN["protokoll_deckkraft"], 0)
+        for schluessel in ("bg_helligkeit", "bg_kontrast",
+                           "sidebar_helligkeit", "sidebar_kontrast"):
+            self.assertEqual(mod.REGLER_VORGABEN[schluessel], 100)
+
+    def test_der_farbhelfer_ist_noch_da(self) -> None:
+        """Gegenprobe - das Status-Log zieht seine Farbe damit."""
+        self.assertTrue(hasattr(PS5ConverterGUI, "_blend_hex_color"))
 
 
 if __name__ == "__main__":

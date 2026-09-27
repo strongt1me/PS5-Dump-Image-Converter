@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.46):** Weboberflächen der Konsole öffnen unter Windows direkt im Programm, und die Konsolenseite nennt die Versionen der Payloads.
+> **Kurz zum aktuellen Stand (v1.9.47):** Die Schieberegler für Durchsicht, Helligkeit und Kontrast des Hintergrundbilds sind wieder in den Einstellungen, und das Einstellungsfenster öffnet größer und lässt sich sauber durchscrollen.
+
+---
+
+## v1.9.47 – 27.09.2026
+
+- **Neu:** In den Einstellungen unter „Darstellung“ regeln Schieberegler wieder, wie stark das Hintergrundbild durch Pfad-Karte, Knopfleiste und Status-Log scheint, sowie Helligkeit und Kontrast beider Bilder. Die Vorgaben lassen die Oberfläche unverändert.
+- **Behoben:** Das Einstellungsfenster öffnet in normaler Größe statt schmal, und beim Scrollen verstellen sich keine Auswahllisten mehr.
 
 ---
 

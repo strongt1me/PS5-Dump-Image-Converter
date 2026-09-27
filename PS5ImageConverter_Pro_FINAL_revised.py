@@ -66,7 +66,7 @@ from typing import Any, Callable, Iterator, Literal, cast
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
-from PIL import Image, ImageDraw, ImageFilter, ImageTk
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageStat, ImageTk
 
 try:
     # Optionale Drag & Drop-Unterstützung (Quelle/Ziel/Temp per Dateimanager ziehen).
@@ -245,23 +245,52 @@ _LANCZOS = getattr(getattr(Image, "Resampling", Image), "LANCZOS", getattr(Image
 _RESIZE_CURSOR = "size_nw_se" if sys.platform == "win32" else "sizing"
 
 # ---------------------------------------------------------------------------
-# Hintergrundbild: keine Effekte mehr
+# Darstellungsregler: Durchsicht, Helligkeit, Kontrast
 #
-# Bis v1.9.5 standen hier zehn Deckkraft-Konstanten und zwei Reglertabellen.
-# Sie steuerten fuenf Schichten, die alle auf dasselbe hinausliefen: Das
-# gewaehlte Bild wurde nicht gezeigt, sondern nachgebildet - mit der
-# Designfarbe verblendet, in Helligkeit und Kontrast verschoben, unter
-# Karten und Knopfleiste noch einmal anders eingemischt, und die Karten
-# selbst zur Durchschnittsfarbe des Bildes hin getoent.
+# Tk kann keine Flaeche wirklich durchsichtig machen. Pfad-Karte und
+# Knopfleiste zeigen deshalb den passenden Ausschnitt des Hintergrundbilds,
+# und die Beschriftungen tragen ihn als eigenes Bild - das ist die
+# "Pseudo-Transparenz" der Oberflaeche. Die Regler im Einstellungsfenster
+# legen fest, wie stark das Bild dort durchscheint und wie es aussieht.
 #
-# Tk kann keine Flaeche wirklich durchsichtig machen; der Eindruck entstand
-# durch Mischen von Farbe und Bild. Genau diese Nachbildung liess sich nicht
-# vorhersagbar einstellen - drei Regler wirkten auf dieselbe Stelle.
+# Geschichte: Mit v1.9.0 kamen sieben Regler. Mit v1.9.6 (04.09.2026) gingen
+# sie auf Wunsch wieder, zusammen mit fuenf fest verdrahteten Schichten, um
+# von einem Nullpunkt aus neu einzustellen. Seit dem 27.09.2026 sind die
+# Regler zurueck, die festen Schichten nicht (keine Einmischung der
+# Designfarbe ins Hintergrundbild, keine Toenung der Kartenfarbe). Die
+# Vorgaben hier sind genau jener Nullpunkt: Wer nichts verstellt, sieht das
+# Programm so wie davor - Bild unveraendert, Karte und Leiste ganz
+# durchsichtig, das Status-Log in seiner Designfarbe. Bis v1.9.5 lauteten
+# sie 40/30/30; wer das alte Bild will, stellt es an den Reglern ein.
 #
-# Ausgebaut auf Wunsch des Nutzers, um von einem klaren Nullpunkt aus neu
-# zu konfigurieren: Das Hintergrundbild wird jetzt unveraendert angezeigt,
-# und keine Flaeche taeuscht Transparenz vor.
+# "Deckkraft" meint jeweils, wie stark das Hintergrundbild durch die Flaeche
+# scheint: 0 = die Flaeche traegt allein, 100 = nur noch Bild. Das Status-Log
+# ist ein Textfeld und kann kein Bild zeigen; sein Regler zieht die
+# Flaechenfarbe zur Farbe des Bildes. Helligkeit und Kontrast sind Prozent
+# auf das Ausgangsbild, 100 laesst es unveraendert.
 # ---------------------------------------------------------------------------
+REGLER_VORGABEN: dict[str, int] = {
+    "karte_deckkraft":     100,
+    "leiste_deckkraft":    100,
+    "protokoll_deckkraft": 0,
+    "bg_helligkeit":       100,
+    "bg_kontrast":         100,
+    "sidebar_helligkeit":  100,
+    "sidebar_kontrast":    100,
+}
+
+#: Zulaessiger Bereich je Regler. Deckkraft geht bis 100, Helligkeit und
+#: Kontrast bis 200 - darunter wird das Bild dunkler bzw. flauer, darueber
+#: heller bzw. haerter. Unter 20 bliebe nur noch Schwarz bzw. Grau.
+REGLER_GRENZEN: dict[str, tuple[int, int]] = {
+    "karte_deckkraft":     (0, 100),
+    "leiste_deckkraft":    (0, 100),
+    "protokoll_deckkraft": (0, 100),
+    "bg_helligkeit":       (20, 200),
+    "bg_kontrast":         (20, 200),
+    "sidebar_helligkeit":  (20, 200),
+    "sidebar_kontrast":    (20, 200),
+}
 
 # ---------------------------------------------------------------------------
 # Logging konfigurieren
@@ -658,7 +687,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.46"
+APP_VERSION = "v1.9.47"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -4194,6 +4223,9 @@ class PS5ConverterGUI:
         # Fenster, nicht dem Inhalt eines Eingabefelds.
         self._textmenue_einrichten()
 
+        # Das Mausrad rollt Fenster, es verstellt keine Auswahl.
+        self._mausrad_verstellt_nichts()
+
         # Prozess-Variablen
         self.is_running = False
         self.monitor_active = False
@@ -4406,10 +4438,12 @@ class PS5ConverterGUI:
                 self._bg_image_cache = None
                 self._bg_image_raw = None
                 return
-            # Das Bild geht unveraendert weiter. Bis v1.9.5 lagen hier
-            # Helligkeit, Kontrast und eine Einmischung der Designfarbe;
-            # alle drei sind ausgebaut, damit der Hintergrund so aussieht wie
-            # die gewaehlte Datei und nicht wie ihr Nachbild.
+            # Helligkeit und Kontrast noch vor allem anderen: Das Rohbild
+            # geht so auch in die Karte und die Knopfleiste, die sich ihren
+            # Ausschnitt spaeter daraus schneiden. Bei 100/100 (Vorgabe)
+            # bleibt das Bild unangetastet. Eine Einmischung der Designfarbe
+            # gibt es seit v1.9.6 nicht mehr - sie kam nicht mit zurueck.
+            img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
             self._bg_image_raw = img
             # Leichte Nachschaerfung fuer klarere Konturen nach dem Skalieren.
             self._bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
@@ -4431,8 +4465,10 @@ class PS5ConverterGUI:
                 self._sidebar_bg_image_cache = None
                 return
             img = Image.open(custom_path).convert("RGB")
-            # Wie beim Hauptbild: unveraendert. Helligkeit, Kontrast und die
-            # Einmischung der Designfarbe sind seit v1.9.6 ausgebaut.
+            # Wie beim Hauptbild, nur mit dem eigenen Reglerpaar: Der Regler
+            # des Hauptbilds fasst die Seitenleiste nicht an.
+            img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
+                                             "sidebar_kontrast")
             self._sidebar_bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
         except Exception as exc:
             logger.warning("Sidebar-Hintergrundbild konnte nicht geladen werden: %s", exc)
@@ -4443,6 +4479,59 @@ class PS5ConverterGUI:
         """#RRGGBB als Zahlentripel - das Gegenstueck zu _blend_hex_color."""
         h = hex_farbe.lstrip("#")
         return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+    @staticmethod
+    def _average_image_rgb(img: "Image.Image") -> tuple[int, int, int]:
+        """Grobe Durchschnittsfarbe eines Bildes (schnell, ueber 16x16 Punkte).
+
+        Nutzt ``ImageStat`` statt ``Image.getdata()``: letzteres ist seit
+        Pillow 12 als veraltet markiert (Entfernung mit Pillow 14) und warf bei
+        jedem Programmstart eine DeprecationWarning.
+        """
+        small = img.resize((16, 16)).convert("RGB")
+        mittel = ImageStat.Stat(small).mean
+        return (round(mittel[0]), round(mittel[1]), round(mittel[2]))
+
+    def _regler(self, schluessel: str) -> int:
+        """Der gespeicherte Reglerwert in Prozent, auf seinen Bereich begrenzt.
+
+        Begrenzt wird auch beim Lesen, nicht nur beim Setzen: In der
+        Einstellungsdatei kann alles stehen, und ein Wert ausserhalb des
+        Bereichs faende sonst erst als schwarzes Bild oder als Ausnahme aus
+        PIL auf.
+        """
+        vorgabe = REGLER_VORGABEN.get(schluessel, 100)
+        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+        try:
+            wert = int(round(float(self._load_setting(schluessel, vorgabe))))
+        except (TypeError, ValueError, OverflowError):
+            return vorgabe
+        return max(klein, min(gross, wert))
+
+    def _regler_anteil(self, schluessel: str) -> float:
+        """Derselbe Wert als Anteil zwischen 0.0 und 1.0 (bzw. 2.0)."""
+        return self._regler(schluessel) / 100.0
+
+    def _bild_regler_anwenden(self, img: "Image.Image", helligkeit: str,
+                              kontrast: str) -> "Image.Image":
+        """Wendet Helligkeit und Kontrast eines Bildreglerpaares an.
+
+        Steht beides auf 100, wird das Bild unangetastet zurueckgegeben - so
+        kostet der unveraenderte Fall nichts, und die Vorgabe zeigt das Bild
+        Pixel fuer Pixel so, wie es in der Datei steht.
+        """
+        h = self._regler(helligkeit) / 100.0
+        k = self._regler(kontrast) / 100.0
+        if h == 1.0 and k == 1.0:
+            return img
+        try:
+            if h != 1.0:
+                img = ImageEnhance.Brightness(img).enhance(h)
+            if k != 1.0:
+                img = ImageEnhance.Contrast(img).enhance(k)
+        except Exception as exc:
+            logger.debug("Helligkeit/Kontrast nicht anwendbar: %s", exc)
+        return img
 
     @staticmethod
     def _blend_hex_color(base_hex: str, tint_rgb: tuple[int, int, int], opacity: float) -> str:
@@ -8690,7 +8779,9 @@ class PS5ConverterGUI:
         console_frame.grid_columnconfigure(0, weight=1)
         console_frame.grid_rowconfigure(0, weight=1)
 
-        self.console_view = tk.Text(console_frame, bg=self._COLORS["console_bg"], fg=self._COLORS["console_fg"],
+        # Flaechenfarbe ueber _protokoll_farbe: Der Regler "Status-Log" kann
+        # sie zur Farbe des Hintergrundbilds ziehen (Vorgabe: Designfarbe).
+        self.console_view = tk.Text(console_frame, bg=self._protokoll_farbe(), fg=self._COLORS["console_fg"],
                        font=(MONO_SCHRIFT, pt(10)), borderwidth=0, padx=15, pady=15, wrap="word",
 
                                    insertbackground="white", selectbackground=self._COLORS["fg_accent"],
@@ -12126,6 +12217,61 @@ class PS5ConverterGUI:
 
         return outer, inner
 
+    #: Widgetklassen, deren Tk-Klassenbindung das Mausrad als Wertaenderung
+    #: auswertet: Klapplisten waehlen den naechsten Eintrag, Zahlenfelder
+    #: zaehlen weiter. Gemessen an Tk 8.6.15 (Windows): ``TCombobox`` und
+    #: ``TSpinbox`` tragen ``<MouseWheel>``; ``TScale``, ``Scale`` und
+    #: ``Spinbox`` tragen keine. Die beiden letzten stehen trotzdem hier -
+    #: eine neuere Tk-Fassung kann sie nachruesten, und die Pruefung unten
+    #: nimmt nur weg, was wirklich da ist.
+    _RAD_OHNE_WERT: tuple[str, ...] = ("TCombobox", "TSpinbox", "TScale",
+                                       "Scale", "Spinbox")
+
+    #: Woran eine Radbindung zu erkennen ist: Windows und macOS melden
+    #: ``<MouseWheel>`` (auch mit Umschalt/Wahltaste), X11 die Knoepfe 4
+    #: und 5, Tk 9 zusaetzlich ``<TouchpadScroll>``.
+    _RAD_MERKMALE: tuple[str, ...] = ("MouseWheel", "Button-4", "Button-5",
+                                      "ButtonPress-4", "ButtonPress-5",
+                                      "TouchpadScroll")
+
+    def _rad_bindungen(self, klasse: str) -> list[str]:
+        """Die Radbindungen, die eine Widgetklasse gerade traegt."""
+        try:
+            folgen = self.root.bind_class(klasse)
+        except tk.TclError:
+            return []
+        return [f for f in folgen
+                if any(merkmal in str(f) for merkmal in self._RAD_MERKMALE)]
+
+    def _mausrad_verstellt_nichts(self) -> None:
+        """Nimmt Klapplisten und Zahlenfeldern das Mausrad.
+
+        Gemeldet am 27.09.2026: Wer im Einstellungsfenster rollte, verstellte
+        dabei die Auswahllisten, ueber die der Zeiger gerade glitt -
+        Hintergrundbild, Seitenleistenbild, Farbsehschwaeche. Die Ursache
+        liegt in Tk selbst: ``TCombobox`` wertet das Rad in seiner
+        Klassenbindung als "naechster Eintrag" aus. Die Bindetags eines
+        Widgets sind (Widget, Klasse, Toplevel, all); die Klassenbindung kam
+        also vor der Rollbindung des Fensters am Toplevel dran und
+        verstellte die Liste, bevor das Fenster rollte.
+
+        Entfernt wird die Klassenbindung - im ganzen Programm, nicht nur im
+        Einstellungsfenster: Dieselbe Falle stand in jedem rollbaren Fenster
+        mit einer Liste und in der rollbaren Inhaltsspalte des Hauptfensters.
+        Das Rad erreicht danach die Rollbindung des Fensters und rollt. Eine
+        Liste waehlt man weiter per Klick oder mit den Pfeiltasten; die
+        aufgeklappte Liste rollt ihr Rad selbst (eigene Klasse ``Listbox``).
+        Der Drehknopf fuer die Worker ist davon nicht betroffen - er ist ein
+        eigenes Widget, fuer das das Rad die Bedienung ist.
+        """
+        for klasse in self._RAD_OHNE_WERT:
+            for folge in self._rad_bindungen(klasse):
+                try:
+                    self.root.unbind_class(klasse, folge)
+                except tk.TclError as exc:
+                    logger.debug("Radbindung %s %s nicht entfernbar: %s",
+                                 klasse, folge, exc)
+
     @staticmethod
     def _rad_einheiten(ereignis) -> int:
         """Rollschritte aus einem <MouseWheel>-Ereignis - auf allen Plattformen.
@@ -12645,7 +12791,13 @@ class PS5ConverterGUI:
 
         Die Protokollflaeche rollt ihren eigenen Text; ein Rad ueber ihr darf
         nicht zusaetzlich die ganze Spalte bewegen. Dasselbe gilt fuer
-        Klapplisten und Zahlenfelder, die das Rad selbst auswerten.
+        Listen, Baeume und Zeichenflaechen (der Drehknopf), die das Rad
+        selbst auswerten.
+
+        Klapplisten und Zahlenfelder stehen seit dem 27.09.2026 nicht mehr
+        in dieser Ausnahme: Sie werten das Rad nicht mehr aus
+        (``_mausrad_verstellt_nichts``) - ueber ihnen rollt die Spalte, statt
+        dass sich ihr Wert verstellt.
         """
         if not getattr(self, "_inhalt_rollt", False):
             return
@@ -12656,7 +12808,7 @@ class PS5ConverterGUI:
             # Nur innerhalb der Inhaltsspalte, und nicht ueber einem Element,
             # das das Rad selbst braucht.
             knoten = widget
-            eigen = ("Text", "Listbox", "TCombobox", "TSpinbox", "Treeview",
+            eigen = ("Text", "Listbox", "Treeview",
                      "Canvas", "Scrollbar", "TScrollbar")
             innerhalb = False
             while knoten is not None:
@@ -13529,6 +13681,14 @@ class PS5ConverterGUI:
         zugeschnitten zu sein. `widget` kann ein beliebiger Nachfahre von
         content_area sein - die Position wird ueber winfo_rootx/rooty relativ zu
         content_area bestimmt, unabhaengig von der Verschachtelungstiefe.
+
+        Fuer die Knopfleiste und alles, was in ihr liegt, gilt deren Regler
+        ("Knopfleiste unten") - an genau **dieser** Stelle und nur hier. So
+        bekommen Leiste und Groessenanzeige dieselbe Mischung: Mischen wirkt
+        Punkt fuer Punkt, der Ausschnitt einer Beschriftung passt deshalb
+        genau auf die Leiste darunter. Mischte zusaetzlich der Aufrufer,
+        waere die Leiste doppelt gemischt und die Beschriftung stuende als
+        Kasten darauf.
         """
         content_area = getattr(self, "content_area", None)
         if self._bg_image_cache is None or content_area is None or width <= 1 or height <= 1:
@@ -13540,9 +13700,8 @@ class PS5ConverterGUI:
                 self._bg_image_cache, content_area, lage, width, height)
             if cropped is None:
                 return None
-            # Der Ausschnitt geht unveraendert zurueck. Bis v1.9.5 lag hier
-            # eine Einmischung der Themefarbe; sie ist mit allen uebrigen
-            # Bildeffekten ausgebaut.
+            if self._liegt_in_knopfleiste(widget):
+                cropped = self._blend_bg_image_for_action_bar(cropped)
             return cropped
         except Exception as exc:
             logger.debug("Content-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
@@ -13800,6 +13959,126 @@ class PS5ConverterGUI:
             except Exception as exc:
                 logger.debug("Sidebar-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
 
+    @staticmethod
+    def _flaeche_ueber_bild(img: "Image.Image", farbe: str,
+                            anteil: float) -> "Image.Image":
+        """Mischt einen Bildausschnitt mit der Farbe der Flaeche darueber.
+
+        ``anteil`` ist der Teil, der vom Bild bleibt: 0.0 = nur die Farbe,
+        1.0 = das Bild unveraendert. Bei 1.0 wird nicht gerechnet, sondern
+        dasselbe Bild zurueckgegeben - das ist die Vorgabe der Regler, und
+        sie soll die Oberflaeche Pixel fuer Pixel so lassen, wie sie war.
+
+        Die **einzige** Stelle, an der ein Bild eingemischt wird. Die
+        festen Schichten vor v1.9.6 hatten je ihren eigenen Aufruf; drei
+        davon wirkten auf dieselbe Flaeche, und keiner liess sich einzeln
+        nachvollziehen.
+        """
+        anteil = max(0.0, min(1.0, float(anteil)))
+        if anteil >= 1.0:
+            return img
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        return Image.blend(Image.new("RGB", img.size, farbe), img, anteil)
+
+    def _blend_bg_image_for_action_bar(self, img: "Image.Image") -> "Image.Image":
+        """Der Bildausschnitt der Knopfleiste, gemischt nach ihrem Regler.
+
+        Die Leiste steht auf der Fensterfarbe (``bg_main``); bei 0 % traegt
+        sie allein, bei 100 % (Vorgabe) scheint das Bild ungemindert durch.
+        Gemeldet am 19.08.2026: Unveraendert wiederholt sich das Motiv dort
+        sichtbar und wirkt wie gespiegelt - wer das so sieht, dreht den
+        Regler herunter.
+        """
+        return self._flaeche_ueber_bild(img, self._COLORS["bg_main"],
+                                        self._regler_anteil("leiste_deckkraft"))
+
+    def _blend_bg_image_for_card(self, img: "Image.Image") -> "Image.Image":
+        """Der Bildausschnitt der Pfad-Karte, gemischt nach ihrem Regler.
+
+        Gemischt wird mit der Kartenfarbe (``bg_card``). Die Beschriftungen
+        und die runden Ecken der Karte holen sich ihr Bild aus
+        ``_compute_card_bg_image`` und damit von hier - sie folgen dem Regler
+        ohne eigenen Weg.
+
+        Bis v1.9.5 galt im hellen Design ein eigener, schwaecherer Anteil.
+        Er kam nicht mit zurueck: Die Vorgabe 100 % muss in jedem Design das
+        unveraenderte Bild zeigen, sonst waere der Nullpunkt keiner.
+        """
+        return self._flaeche_ueber_bild(img, self._COLORS["bg_card"],
+                                        self._regler_anteil("karte_deckkraft"))
+
+    def _liegt_in_knopfleiste(self, widget: object) -> bool:
+        """Ob ``widget`` die Knopfleiste ist oder in ihr liegt."""
+        leiste = getattr(self, "action_bar", None)
+        if leiste is None:
+            return False
+        knoten = widget
+        # Die Leiste liegt zwei Ebenen unter der Inhaltsflaeche; zwoelf
+        # Schritte reichen fuer jede Verschachtelung darin und brechen
+        # sicher ab, falls ein Knoten sich selbst als master meldet.
+        for _ in range(12):
+            if knoten is None:
+                return False
+            if knoten is leiste:
+                return True
+            knoten = getattr(knoten, "master", None)
+        return False
+
+    def _bild_mittelfarbe(self, bild: "Image.Image") -> tuple[int, int, int]:
+        """Die Durchschnittsfarbe von ``bild`` - einmal je Bild gerechnet."""
+        merker = getattr(self, "_mittelfarbe_merker", None)
+        if merker is not None and merker[0] is bild:
+            return merker[1]
+        farbe = self._average_image_rgb(bild)
+        # Das Bild wandert mit in den Merker: So kann seine id() nicht an ein
+        # neu geladenes Bild weitergehen, solange der Eintrag steht.
+        self._mittelfarbe_merker = (bild, farbe)
+        return farbe
+
+    def _protokoll_farbe(self) -> str:
+        """Flaechenfarbe des Status-Logs, nach dem Regler zur Bildfarbe gezogen.
+
+        Das Status-Log ist ein ``tk.Text`` und damit deckend - ein Bild kann
+        dort nicht durchscheinen. Der Regler "Status-Log" zieht deshalb die
+        Flaechenfarbe zur Durchschnittsfarbe des Hintergrundbilds; bei 0 %
+        (Vorgabe) bleibt sie die Farbe des Designs.
+
+        Gerechnet wird immer von der Designfarbe aus, nie von einer schon
+        getoenten, und die Palette bleibt unberuehrt. Die Fassung bis v1.9.5
+        toente die Palette selbst: Jede weitere Aenderung zog die schon
+        getoente Farbe noch einmal nach, der Regler wirkte bei jedem
+        Loslassen staerker als eingestellt, und der Designwechsel erkannte
+        die Flaeche nicht mehr an ihrer Farbe.
+        """
+        basis = self._COLORS.get("console_bg", "#000000")
+        anteil = self._regler_anteil("protokoll_deckkraft")
+        bild = getattr(self, "_bg_image_cache", None)
+        if anteil <= 0.0 or bild is None:
+            return basis
+        try:
+            return self._blend_hex_color(basis, self._bild_mittelfarbe(bild),
+                                         min(1.0, anteil))
+        except Exception as exc:                            # noqa: BLE001
+            logger.debug("Farbe des Status-Logs nicht berechenbar: %s", exc)
+            return basis
+
+    def _protokoll_farbe_anwenden(self) -> None:
+        """Faerbt das Status-Log nach seinem Regler und rundet seine Ecken neu.
+
+        Die Ecken tragen die Flaechenfarbe als Bild (``_kartenecken_runden``)
+        und muessen deshalb mitgezogen werden - sonst stuenden vier Ecken in
+        der alten Farbe an einer neu gefaerbten Flaeche.
+        """
+        ansicht = getattr(self, "console_view", None)
+        if ansicht is not None:
+            try:
+                ansicht.configure(bg=self._protokoll_farbe())
+            except tk.TclError as exc:
+                logger.debug("Status-Log nicht umfärbbar: %s", exc)
+        if getattr(self, "root", None) is not None:
+            self._karten_ecken_planen()
+
     #: Eckenradius der Karten im Hauptbereich.
     _KARTEN_ECKE = 14
 
@@ -13928,8 +14207,10 @@ class PS5ConverterGUI:
         """Rundet beide Karten des Hauptbereichs neu."""
         try:
             self._kartenecken_runden(getattr(self, "path_card", None), 30)
+            # Die Farbe, die das Status-Log gerade traegt - mit dem Regler
+            # "Status-Log" ist das nicht mehr zwingend die des Designs.
             self._kartenecken_runden(getattr(self, "console_frame", None), 1,
-                                     flaeche=self._COLORS["console_bg"])
+                                     flaeche=self._protokoll_farbe())
         except Exception as exc:                           # noqa: BLE001
             logger.debug("Kartenecken nicht nachziehbar: %s", exc)
 
@@ -13979,13 +14260,13 @@ class PS5ConverterGUI:
                 cropped = self._flaechen_ausschnitt(
                     self._bg_image_raw, content_area, lage, width, height)
                 if cropped is not None:
-                    return cropped
+                    return self._blend_bg_image_for_card(cropped)
 
             # Fallback: eigenstaendige Skalierung (z. B. beim allerersten Aufbau,
             # solange content_area/path_card noch keine reale Groesse haben).
             # Dieselbe Geometrie wie ueberall sonst - siehe oben.
             resized_raw = self._bild_fuellen(self._bg_image_raw, width, height)
-            return resized_raw
+            return self._blend_bg_image_for_card(resized_raw)
         except Exception as exc:
             logger.debug("Karten-Hintergrundbild konnte nicht berechnet werden: %s", exc)
             return None
@@ -40355,6 +40636,22 @@ class PS5ConverterGUI:
                 zeilen.append(z(name, "keins"))
         zeilen.append(z("zuletzt angepasst auf",
                         getattr(self, "_last_bg_resize_size", None) or "nie"))
+        # Mausrad: Verstellt es noch Auswahllisten, statt zu rollen? Leer ist
+        # gut - dann hat _mausrad_verstellt_nichts seine Bindungen entfernt.
+        try:
+            verstellt = self._diagnose_bedienung_messen().rad_verstellt
+            zeilen.append(z("Mausrad verstellt Listen",
+                            ", ".join(verstellt) if verstellt else "nein"))
+        except Exception as exc:
+            logger.debug("Mausrad-Diagnose nicht auslesbar: %s", exc)
+        # Reglerstaende, damit ein Bericht zeigt, wie die Oberflaeche gerade
+        # eingestellt ist (Nullpunkt = 100/100/0 und 100 fuer Helligkeit/Kontrast).
+        try:
+            staende = ", ".join("%s=%d" % (s, self._regler(s))
+                                for s in REGLER_VORGABEN)
+            zeilen.append(z("Darstellungsregler", staende))
+        except Exception as exc:
+            logger.debug("Reglerstaende nicht auslesbar: %s", exc)
         return zeilen
 
     # ------------------------------------------------------------------
@@ -40618,6 +40915,23 @@ class PS5ConverterGUI:
             schleife_ms=schleife_ms,
             threads=threads)
 
+    def _diagnose_bedienung_messen(self):
+        """Prueft, ob das Mausrad noch Auswahllisten verstellt.
+
+        Fragt am lebenden Tk ab, welche der Klassen aus ``_RAD_OHNE_WERT``
+        noch eine Radbindung tragen - ``_mausrad_verstellt_nichts`` sollte sie
+        entfernt haben. So faellt es auf, wenn eine neue Tk-Fassung die
+        Bindung nachruestet oder der Aufruf beim Start ausbleibt.
+
+        Returns:
+            Eine ``Bedienlage``.
+        """
+        from ps5_validator.utils import anzeige_diagnose as ad
+
+        verstellt = tuple(k for k in getattr(self, "_RAD_OHNE_WERT", ())
+                          if self._rad_bindungen(k))
+        return ad.Bedienlage(rad_verstellt=verstellt)
+
     def _diagnose_pruefen(self, flaechen: list | None = None):
         """Fuehrt alle Darstellungspruefungen aus.
 
@@ -40642,7 +40956,8 @@ class PS5ConverterGUI:
             flaechen=self._diagnose_flaechen_sammeln() if flaechen is None else flaechen,
             bilder=self._diagnose_bilder_sammeln(),
             skalierung=self._diagnose_skalierung_messen(),
-            laufruhe=self._diagnose_laufruhe_messen())
+            laufruhe=self._diagnose_laufruhe_messen(),
+            bedienung=self._diagnose_bedienung_messen())
 
     #: Ab so vielen Helligkeitsstufen Unterschied ist eine Flaeche von ihrem
     #: Untergrund noch zu unterscheiden. Darunter verschwimmt es. Gemessen am
@@ -53940,6 +54255,15 @@ class PS5ConverterGUI:
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=dlg.destroy).pack(side="left", padx=(10, 0))
 
+    #: Groesse, in der das Einstellungsfenster aufgeht - dieselbe wie die
+    #: grossen Werkzeugfenster (PS4-PKG, Downloads, BACKPORT: 980 breit).
+    #: Bis v1.9.46 waren es 520 x 620; gemeldet am 27.09.2026: "oeffnet
+    #: sich sehr klein und schmal", die Hinweise liefen auf 460 px zu langen
+    #: schmalen Spalten zusammen. Die Hoehe begrenzt der Bildschirm (unten).
+    _EINSTELLUNGEN_GROESSE: tuple[int, int] = (980, 760)
+    #: Kleiner ziehen laesst es sich bis auf die alte Oeffnungsbreite.
+    _EINSTELLUNGEN_MINDESTENS: tuple[int, int] = (520, 360)
+
     def _show_settings_dialog(self) -> None:
         """Zeigt den Einstellungen-Dialog (aktuell: Hintergrundbild)."""
         c = self._COLORS
@@ -53950,8 +54274,20 @@ class PS5ConverterGUI:
         # bietet und dessen untere Knoepfe unerreichbar werden. Mit Scrollbar
         # bleibt jeder Bereich unabhaengig von Bildschirmgroesse/-skalierung
         # erreichbar.
+        breite, hoehe = self._EINSTELLUNGEN_GROESSE
+        # Auf einem kleinen Schirm nicht ueber den Rand hinaus - der Inhalt
+        # rollt ohnehin. Dieselben Abstaende wie _fenster_auf_inhalt_wachsen.
+        try:
+            breite = min(breite, max(self._EINSTELLUNGEN_MINDESTENS[0],
+                                     self.root.winfo_screenwidth() - 40))
+            hoehe = min(hoehe, max(self._EINSTELLUNGEN_MINDESTENS[1],
+                                   self.root.winfo_screenheight() - 80))
+        except tk.TclError:
+            pass
         dlg = self._build_modern_toplevel(
-            self._t("settings_dialog.title_bar"), 520, 620, min_width=420, min_height=360,
+            self._t("settings_dialog.title_bar"), breite, hoehe,
+            min_width=self._EINSTELLUNGEN_MINDESTENS[0],
+            min_height=self._EINSTELLUNGEN_MINDESTENS[1],
         )
         dlg.lift()
         dlg.focus_force()
@@ -53979,10 +54315,18 @@ class PS5ConverterGUI:
                  bg=c["bg_card"], fg=c["fg_secondary"],
                  wraplength=410, justify="left", anchor="w").pack(anchor="w", fill="x", pady=(4, 8))
 
-        # Hier stand eine Sammlung "vorschau_zeichner" samt Auffrischer. Sie
-        # gehoerte zu den Reglern fuer Helligkeit und Kontrast; die sind mit
-        # den Bildeffekten ausgebaut worden. Jede Vorschau haengt seit dem
-        # direkt an ihrer Combobox, die Sammlung las niemand mehr.
+        # Die Vorschauen zeigen das Bild so, wie es nach Helligkeit und
+        # Kontrast im Fenster steht. Aendert sich ein Bildregler, zeichnen
+        # sie neu - dafuer meldet sich jede hier an.
+        vorschau_zeichner: list = []
+
+        def _vorschauen_auffrischen() -> None:
+            for zeichner in vorschau_zeichner:
+                try:
+                    zeichner()
+                except Exception as exc:                     # noqa: BLE001
+                    logger.debug("Vorschau nicht neu zeichenbar: %s", exc)
+
         status_var = tk.StringVar()
 
         def _refresh_status() -> None:
@@ -54056,7 +54400,8 @@ class PS5ConverterGUI:
             haupt_vorschau.pack(anchor="w", pady=(0, 8))
 
             def _haupt_vorschau_setzen(_e=None) -> None:
-                bild = self._vorschaubild(bundled_by_name.get(bundled_combo.get(), ""))
+                bild = self._vorschaubild(bundled_by_name.get(bundled_combo.get(), ""),
+                                          bereich="haupt")
                 vorschauen["haupt"] = bild
                 # Ohne Bild zaehlt width in Zeichen, nicht in Pixeln -
                 # die Flaeche waere sonst absurd breit.
@@ -54065,6 +54410,7 @@ class PS5ConverterGUI:
                           height=0 if bild else 1)
 
             bundled_combo.bind("<<ComboboxSelected>>", _haupt_vorschau_setzen, add="+")
+            vorschau_zeichner.append(_haupt_vorschau_setzen)
             _haupt_vorschau_setzen()
 
             flach_knopf(
@@ -54203,7 +54549,8 @@ class PS5ConverterGUI:
             sidebar_vorschau.pack(anchor="w", pady=(0, 8))
 
             def _sidebar_vorschau_setzen(_e=None) -> None:
-                bild = self._vorschaubild(sidebar_by_name.get(sidebar_combo.get(), ""))
+                bild = self._vorschaubild(sidebar_by_name.get(sidebar_combo.get(), ""),
+                                          bereich="sidebar")
                 vorschauen["sidebar"] = bild
                 # Ohne Bild zaehlt width in Zeichen, nicht in Pixeln -
                 # die Flaeche waere sonst absurd breit.
@@ -54212,6 +54559,7 @@ class PS5ConverterGUI:
                           height=0 if bild else 1)
 
             sidebar_combo.bind("<<ComboboxSelected>>", _sidebar_vorschau_setzen, add="+")
+            vorschau_zeichner.append(_sidebar_vorschau_setzen)
             _sidebar_vorschau_setzen()
 
             flach_knopf(
@@ -54271,10 +54619,115 @@ class PS5ConverterGUI:
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_reset_sidebar_image).pack(side="left", padx=(10, 0))
 
+        # --- Trennlinie + Darstellung: Durchsicht, Helligkeit, Kontrast ---
+        # Von v1.9.6 bis v1.9.46 fehlte dieser Abschnitt (Bildeffekte auf
+        # Wunsch ausgebaut). Seit dem 27.09.2026 ist er zurueck, mit dem
+        # Nullpunkt von damals als Vorgabe - siehe REGLER_VORGABEN.
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        tk.Label(body, text=self._t("settings_dialog.regler_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(4, 10))
+
+        regler_auffrischer: list = []
+
+        def _regler_zeile(eltern, schluessel: str, beschriftung: str,
+                          einheit: str = "%") -> None:
+            """Eine beschriftete Reglerzeile mit Zahl daneben.
+
+            Uebernommen wird erst beim Loslassen: Waehrend des Ziehens wuerde
+            jedes Zwischenbild neu gerechnet, und das ruckelt sichtbar. Das
+            Mausrad verstellt den Regler nicht - es rollt das Fenster (siehe
+            ``_mausrad_verstellt_nichts``).
+            """
+            klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+            zeile = tk.Frame(eltern, bg=c["bg_card"])
+            zeile.pack(fill="x", pady=(0, 6))
+            tk.Label(zeile, text=beschriftung, font=(UI_SCHRIFT, pt(9)),
+                     bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
+                     width=28).pack(side="left")
+            zahl = tk.StringVar(master=zeile,
+                                value="%d %s" % (self._regler(schluessel), einheit))
+            # Am Widget festhalten: Eine StringVar, auf die nur noch ein
+            # Label zeigt, raeumt Python ab - die Zahl stuende dann leer da.
+            zeile._zahl = zahl
+            tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
+                     bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
+                     width=7).pack(side="right")
+            regler = ttk.Scale(zeile, from_=klein, to=gross, orient="horizontal")
+            regler.set(self._regler(schluessel))
+            regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
+            # Fuer Pruefungen und die Diagnose: welcher Wert hier haengt.
+            regler._regler_schluessel = schluessel
+
+            def _bewegt(_wert=None) -> None:
+                zahl.set("%d %s" % (round(float(regler.get())), einheit))
+
+            def _losgelassen(_e=None) -> None:
+                neu = int(round(float(regler.get())))
+                # Tab, Umschalt oder ein Klick ohne Bewegung aendern nichts -
+                # dann auch nichts neu rechnen (beim Hauptbild spuerbar).
+                if neu != self._regler(schluessel):
+                    self._regler_uebernehmen(schluessel, neu)
+                    if self._REGLER_WIRKUNG.get(schluessel) in ("hauptbild",
+                                                                "seitenleiste"):
+                        _vorschauen_auffrischen()
+                zahl.set("%d %s" % (self._regler(schluessel), einheit))
+
+            def _auffrischen() -> None:
+                regler.set(self._regler(schluessel))
+                zahl.set("%d %s" % (self._regler(schluessel), einheit))
+
+            regler.configure(command=_bewegt)
+            # Jede Taste: Nicht nur Knopf 1 verschiebt - der mittlere setzt
+            # den Regler direkt an die Stelle.
+            regler.bind("<ButtonRelease>", _losgelassen, add="+")
+            regler.bind("<KeyRelease>", _losgelassen, add="+")
+            regler_auffrischer.append(_auffrischen)
+
+        for _schluessel, _text in self._REGLER_FLAECHEN:
+            _regler_zeile(body, _schluessel, self._t(_text))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_protokoll_hint"),
+                 font=(UI_SCHRIFT, pt(8)),
+                 bg=c["bg_card"], fg=c["fg_secondary"],
+                 wraplength=460, justify="left", anchor="w").pack(
+                     anchor="w", fill="x", pady=(0, 12))
+
+        tk.Label(body, text=self._t("settings_dialog.regler_bild_section"),
+                 font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w",
+                                                           pady=(0, 6))
+        for _schluessel, _text in self._REGLER_BILDER:
+            _regler_zeile(body, _schluessel, self._t(_text))
+
+        def _regler_zuruecksetzen() -> None:
+            """Alle sieben auf die Vorgabe - das Fenster bleibt offen.
+
+            Bis v1.9.5 schloss sich das Fenster danach, weil die Regler ihre
+            neue Stellung nicht zeigten. Jetzt ziehen sie selbst nach.
+            """
+            self._regler_zuruecksetzen()
+            for auffrischen in regler_auffrischer:
+                auffrischen()
+            _vorschauen_auffrischen()
+            messagebox.showinfo(self._t("settings_dialog.title_bar"),
+                                self._t("settings_dialog.regler_reset_done"),
+                                parent=dlg)
+
+        flach_knopf(body, text=self._t("settings_dialog.regler_reset"),
+                    font=(UI_SCHRIFT, pt(9)),
+                    bg=c["bg_main"], fg=c["fg_secondary"],
+                    activebackground=c["border"], activeforeground=c["fg_primary"],
+                    relief="flat", cursor="hand2", padx=12, pady=5,
+                    command=_regler_zuruecksetzen).pack(anchor="w", pady=(6, 0))
+
         # --- Trennlinie + Metadaten aus dem Netz ---
-        # Hier stand bis zum Ausbau der Bildeffekte ein zweiter Abschnitt
-        # (Durchsicht, Helligkeit, Kontrast). Seine Trennlinie blieb stehen
-        # und zeichnete einen doppelten Strich ohne Inhalt dazwischen.
         tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         # ── Metadaten aus dem Netz ──────────────────────────────────────
@@ -54628,6 +55081,59 @@ class PS5ConverterGUI:
 
         hint_row.bind("<Configure>", _hinweis_umbrechen)
 
+        # Alle uebrigen Hinweise ebenso: Sie wurden mit festen 410 bis 460 px
+        # gebaut. Das Fenster geht seit dem 27.09.2026 in Werkzeugfenster-
+        # Breite auf, und feste Werte liessen dort die rechte Haelfte leer.
+        self._umbruch_an_breite_binden(body)
+
+    def _umbruch_an_breite_binden(self, flaeche: "tk.Frame") -> None:
+        """Laesst die Hinweistexte in ``flaeche`` an deren Breite umbrechen.
+
+        Erfasst werden nur Beschriftungen, die schon mit einer festen
+        Umbruchbreite gebaut wurden (``wraplength`` > 0) - ein Text, der
+        absichtlich in einer Zeile steht, bleibt unberuehrt. Neu gesetzt wird
+        nur, wenn sich die Breite wirklich aendert: Ein anderer Umbruch
+        aendert die Hoehe, und die meldet sich selbst wieder mit <Configure>.
+
+        Args:
+            flaeche: Der Rahmen, dessen Breite gilt. Sein ``padx`` geht ab.
+        """
+        try:
+            polster = 2 * int(float(str(flaeche.cget("padx"))))
+        except (tk.TclError, ValueError):
+            polster = 0
+
+        def _sammeln(knoten, treffer: list) -> list:
+            for kind in knoten.winfo_children():
+                if isinstance(kind, (tk.Label, tk.Checkbutton, tk.Radiobutton)):
+                    try:
+                        if int(float(str(kind.cget("wraplength")))) > 0:
+                            treffer.append(kind)
+                    except (tk.TclError, ValueError):
+                        pass
+                _sammeln(kind, treffer)
+            return treffer
+
+        texte = _sammeln(flaeche, [])
+        zuletzt = {"breite": 0}
+
+        def _umbrechen(ereignis) -> None:
+            if ereignis.widget is not flaeche:
+                return
+            breite = int(ereignis.width)
+            if breite <= 1 or breite == zuletzt["breite"]:
+                return
+            zuletzt["breite"] = breite
+            umbruch = max(200, breite - polster - 8)
+            for text in texte:
+                try:
+                    if text.winfo_exists():
+                        text.configure(wraplength=umbruch)
+                except tk.TclError:
+                    continue
+
+        flaeche.bind("<Configure>", _umbrechen, add="+")
+
     def _apply_custom_background_image(self, path: str) -> bool:
         """Lädt, konvertiert und übernimmt ein vom Nutzer gewähltes Hintergrundbild.
 
@@ -54642,6 +55148,10 @@ class PS5ConverterGUI:
             return False
 
         try:
+            # Dieselben Regler wie beim Programmstart (_load_bg_image_cache).
+            # Bis v1.9.5 fehlten sie auf diesem Weg: Ein neu gewaehltes Bild
+            # erschien bis zum Neustart ohne Helligkeit und Kontrast.
+            img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
             self._bg_image_raw = img
             self._bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
             self._save_setting("background_image_path", self._encode_background_setting(path))
@@ -54666,6 +55176,8 @@ class PS5ConverterGUI:
             return False
 
         try:
+            img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
+                                             "sidebar_kontrast")
             self._sidebar_bg_image_cache = img.filter(ImageFilter.UnsharpMask(radius=1.1, percent=115, threshold=2))
             self._save_setting("sidebar_background_image_path", self._encode_background_setting(path))
             self._refresh_sidebar_bg_label()
@@ -54674,15 +55186,106 @@ class PS5ConverterGUI:
             logger.warning("Sidebar-Hintergrundbild konnte nicht übernommen werden: %s", exc)
             return False
 
+    #: Was nach einem Reglerwechsel neu gezeichnet werden muss. Nicht alles
+    #: haengt an allem: Die Helligkeit des Seitenleistenbilds beruehrt die
+    #: Karten nicht, und die Deckkraft der Karte beruehrt das Bild nicht.
+    _REGLER_WIRKUNG: dict[str, str] = {
+        "karte_deckkraft":     "flaechen",
+        "leiste_deckkraft":    "flaechen",
+        "protokoll_deckkraft": "toenung",
+        "bg_helligkeit":       "hauptbild",
+        "bg_kontrast":         "hauptbild",
+        "sidebar_helligkeit":  "seitenleiste",
+        "sidebar_kontrast":    "seitenleiste",
+    }
+
+    #: Reihenfolge und Beschriftung der Regler im Einstellungsfenster - in
+    #: zwei Gruppen, wie bis v1.9.5. Ausgeschrieben statt zusammengesetzt,
+    #: damit die Pruefung der Uebersetzungen jeden Schluessel sieht.
+    _REGLER_FLAECHEN: tuple[tuple[str, str], ...] = (
+        ("karte_deckkraft", "settings_dialog.regler_karte"),
+        ("leiste_deckkraft", "settings_dialog.regler_leiste"),
+        ("protokoll_deckkraft", "settings_dialog.regler_protokoll"),
+    )
+    _REGLER_BILDER: tuple[tuple[str, str], ...] = (
+        ("bg_helligkeit", "settings_dialog.regler_bg_helligkeit"),
+        ("bg_kontrast", "settings_dialog.regler_bg_kontrast"),
+        ("sidebar_helligkeit", "settings_dialog.regler_sb_helligkeit"),
+        ("sidebar_kontrast", "settings_dialog.regler_sb_kontrast"),
+    )
+
+    def _regler_uebernehmen(self, schluessel: str, wert: object) -> None:
+        """Merkt einen Reglerwert und zeichnet nach, was davon abhaengt.
+
+        Bewusst nicht bei jeder Bewegung des Reglers gerufen, sondern erst
+        beim Loslassen: Ein Hintergrundbild neu zu rechnen kostet je nach
+        Groesse spuerbar Zeit, und waehrend des Ziehens saehe man davon nur
+        ein Ruckeln.
+        """
+        self._regler_speichern(schluessel, wert)
+        self._regler_wirken(self._REGLER_WIRKUNG.get(schluessel, ""))
+
+    def _regler_speichern(self, schluessel: str, wert: object) -> None:
+        """Schreibt einen Reglerwert, auf seinen Bereich begrenzt."""
+        klein, gross = REGLER_GRENZEN.get(schluessel, (0, 200))
+        try:
+            zahl = int(round(float(wert)))
+        except (TypeError, ValueError, OverflowError):
+            zahl = REGLER_VORGABEN.get(schluessel, 100)
+        self._save_setting(schluessel, max(klein, min(gross, zahl)))
+
+    def _regler_wirken(self, wirkung: str) -> None:
+        """Zeichnet neu, was an einer Reglergruppe haengt (siehe _REGLER_WIRKUNG)."""
+        try:
+            if wirkung == "hauptbild":
+                # Das Rohbild traegt Helligkeit und Kontrast; Karte und
+                # Knopfleiste schneiden sich ihren Ausschnitt daraus, und die
+                # Farbe des Status-Logs haengt an seiner Mittelfarbe.
+                self._load_bg_image_cache()
+                self._refresh_bg_label()
+                self._protokoll_farbe_anwenden()
+            elif wirkung == "seitenleiste":
+                self._load_sidebar_bg_image_cache()
+                self._refresh_sidebar_bg_label()
+            elif wirkung == "toenung":
+                # Das Status-Log ist deckend; nur seine Farbe wandert.
+                self._protokoll_farbe_anwenden()
+            else:
+                # Karte und Knopfleiste mischen erst beim Zuschneiden - das
+                # Bild selbst bleibt, nur die Flaechen werden neu gezeichnet.
+                # Die runden Ecken der Karte tragen deren Bild mit.
+                self._refresh_bg_label()
+                self._karten_ecken_planen()
+        except Exception as exc:
+            logger.debug("Reglergruppe %s nicht anwendbar: %s", wirkung, exc)
+
+    def _regler_zuruecksetzen(self) -> None:
+        """Stellt alle sieben Regler auf ihre Vorgabe - den Nullpunkt.
+
+        Erst alle Werte schreiben, dann einmal zeichnen: Einzeln uebernommen
+        luede jeder der beiden Bildregler das Hauptbild von der Platte neu.
+        Die Seitenleiste zuerst - ``_refresh_bg_label`` zeichnet sie mit und
+        braeuchte sonst ihr altes Bild.
+        """
+        for schluessel, vorgabe in REGLER_VORGABEN.items():
+            self._regler_speichern(schluessel, vorgabe)
+        self._regler_wirken("seitenleiste")
+        # "hauptbild" zeichnet Karte und Knopfleiste (ueber _refresh_bg_label)
+        # und das Status-Log samt Ecken gleich mit.
+        self._regler_wirken("hauptbild")
+
     #: Kantenlaenge der Miniaturvorschau im Einstellungsfenster.
     _VORSCHAU_BREITE = 132
     _VORSCHAU_HOEHE = 74
 
-    def _vorschaubild(self, pfad: str, breite: int = 0, hoehe: int = 0):
+    def _vorschaubild(self, pfad: str, breite: int = 0, hoehe: int = 0,
+                      bereich: str = ""):
         """Kleine Vorschau eines Hintergrundbilds (None, wenn es nicht geht).
 
-        Gezeigt wird das Bild unveraendert - genau so kommt es auch ins
-        Fenster, seit die Bildeffekte ausgebaut sind.
+        Gezeigt wird das Bild so, wie es nach Helligkeit und Kontrast
+        aussieht - sonst zeigte die Vorschau etwas anderes als das Fenster.
+        ``bereich`` waehlt das Reglerpaar: ``"haupt"`` oder ``"sidebar"``;
+        leer laesst das Bild unveraendert.
         Das Seitenverhaeltnis bleibt erhalten; der Rest der Flaeche bleibt
         leer, statt das Motiv zu verzerren.
         """
@@ -54694,6 +55297,11 @@ class PS5ConverterGUI:
             with Image.open(pfad) as roh:
                 img = roh.convert("RGB")
             img.thumbnail((breite, hoehe), _LANCZOS)
+            if bereich == "haupt":
+                img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
+            elif bereich == "sidebar":
+                img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
+                                                 "sidebar_kontrast")
             return ImageTk.PhotoImage(img)
         except Exception as exc:
             logger.debug("Vorschau fuer %s nicht moeglich: %s", pfad, exc)
@@ -54719,11 +55327,14 @@ class PS5ConverterGUI:
             self._setup_styles()
         except Exception as exc:
             logger.debug("ttk-Kartenstil konnte nicht live aktualisiert werden: %s", exc)
-        if getattr(self, "console_view", None) is not None:
-            try:
-                self.console_view.configure(bg=self._COLORS["console_bg"])
-            except Exception as exc:
-                logger.debug("Protokollfenster-Farbe konnte nicht live aktualisiert werden: %s", exc)
+        # Das Status-Log samt seinen runden Ecken: Mit dem Regler "Status-Log"
+        # haengt seine Farbe an der Mittelfarbe des Hintergrundbilds, und die
+        # Ecken der Pfad-Karte tragen Ausschnitte des Bildes - beides aendert
+        # sich mit einem neuen Bild.
+        try:
+            self._protokoll_farbe_anwenden()
+        except Exception as exc:
+            logger.debug("Protokollfenster-Farbe konnte nicht live aktualisiert werden: %s", exc)
 
     def _refresh_sidebar_bg_label(self) -> None:
         """Zeigt das aktuell zwischengespeicherte Sidebar-Hintergrundbild sofort an.
@@ -55094,8 +55705,10 @@ class PS5ConverterGUI:
 
         # Konsole
         if hasattr(self, "console_view"):
+            # Die Designfarbe, gegebenenfalls nach dem Regler "Status-Log" zur
+            # Farbe des (eben neu geladenen) Hintergrundbilds gezogen.
             self.console_view.configure(
-                bg=c["console_bg"], fg=c["console_fg"],
+                bg=self._protokoll_farbe(), fg=c["console_fg"],
                 selectbackground=c["fg_accent"])
 
         # Prozent-, Status- und Groessenanzeige werden zusammen mit allen
@@ -55154,6 +55767,10 @@ class PS5ConverterGUI:
 
         # Alle tk.Frame und tk.Label rekursiv neu einfärben
         self._recolor_widget(self.root)
+        # Das Status-Log zuletzt: Die Umfaerbung erkennt Flaechen an ihrer
+        # Designfarbe. Mit dem Regler "Status-Log" traegt es eine gezogene
+        # Farbe, und die koennte zufaellig einer anderen Designfarbe gleichen.
+        self._protokoll_farbe_anwenden()
 
         # Toolbar-Buttons beim Theme-Wechsel aktualisieren
         # Design-Button in Toolbar aktualisieren
