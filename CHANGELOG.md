@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.50):** WK Autoloader ist neu dabei, und die mitgelieferten kstuff-Payloads sind auf die zwei aktuellen Fassungen aufgeräumt.
+> **Kurz zum aktuellen Stand (v1.9.51):** Die Bibliothek ist neu gestaltet, zeigt die Einbauten jedes Spiels und startet Spiele direkt auf der PS5.
+
+---
+
+## v1.9.51 – 27.09.2026
+
+- **Neu:** Die Bibliothek ist neu gestaltet – Titel als Karten, Umschalter für Quelle und Ansicht, Sortierung auch für die Kacheln, kleine Titelbilder in der Liste.
+- **Neu:** Die Bibliothek zeigt, ob ein Spiel schon AMPR EMU, PlayGo, BACKPORT oder ein Asset-Pack enthält, und „Auf PS5 starten“ startet den gewählten Titel direkt auf der Konsole (über websrv).
+- **Behoben:** Beim Anklicken eines Spiels springen die Titelbilder in der Kachelansicht nicht mehr.
 
 ---
 

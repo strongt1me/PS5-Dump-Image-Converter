@@ -142,6 +142,7 @@ from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
 from ps5_validator.utils import konsole_ftp
+from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
 from ps5_validator.utils import webansicht
 from ps5_validator.utils import sony_sdk
@@ -687,7 +688,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.50"
+APP_VERSION = "v1.9.51"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -17322,11 +17323,42 @@ class PS5ConverterGUI:
             sonst None - dann ist die Frage offen, nicht mit Nein
             beantwortet.
         """
+        # Die Auflistung steht seit dem 27.09.2026 in _container_dateien (die
+        # Bibliothek braucht sie fuer alle Einbauten); dort wird auch der
+        # Engine-Pfad (mkpfs_dir) gesetzt.
+        dateien = self._container_dateien(pfad)
+        if not dateien:
+            return None
+        marke = self._AMPR_SPRX_NAME.lower()
+        return any(self._ist_aktive_ampr_bibliothek(rel, marke) for rel in dateien)
+
+    def _container_dateien(self, pfad: str, *, roh_exfat: bool = False) -> list[str] | None:
+        """Die Dateipfade in der inneren Ebene eines Containers - ohne Nutzdaten.
+
+        Gelesen werden nur Kopf, Inode-Tabelle bzw. FAT und Verzeichnisse,
+        dieselbe leichte Sicht wie bei der Metadatenanzeige. Erst ExfatReader
+        (exFAT in .ffpfsc), sonst der PFS-in-PFS-Adapter.
+
+        Args:
+            pfad: Pfad auf den Container.
+            roh_exfat: Auch eine ``.exfat``-Datei ohne Huelle direkt lesen. Die
+                Infobox braucht das nicht (dort liest ``read_game_metadata``
+                diese Dateien), die Bibliothek fuer PlayGo und BACKPORT schon.
+
+        Returns:
+            Relative Pfade, oder ``None``, wenn nichts lesbar war - dann ist
+            die Frage offen, nicht mit "keine Dateien" beantwortet.
+        """
         # Den Engine-Pfad auch hier setzen: Die Methode wird sonst still
         # unbrauchbar, wenn sie einmal ohne vorherigen Metadatenlauf drankommt.
         _mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
         if _mkpfs_dir and _mkpfs_dir not in sys.path:
             sys.path.insert(0, _mkpfs_dir)
+
+        def _pfade(eintraege) -> list[str]:
+            return [str(getattr(e, "rel_path", "") or getattr(e, "path", "") or "")
+                    for e in eintraege]
+
         try:
             from mkpfs.exfat import ExfatReader  # noqa: PLC0415  # type: ignore[import-not-found]
             from mkpfs.pfs import open_inner_file_view  # noqa: PLC0415  # type: ignore[import-not-found]
@@ -17334,9 +17366,17 @@ class PS5ConverterGUI:
             sicht = open_inner_file_view(Path(pfad))
         except Exception as exc:
             logger.debug("Innere Sicht auf %s nicht zu oeffnen: %s", pfad, exc)
-            return None
+            sicht = None
         if sicht is None:
-            return None
+            if not (roh_exfat and str(pfad).lower().endswith(".exfat")):
+                return None
+            try:
+                with open(pfad, "rb") as roh:
+                    dateien = _pfade(ExfatReader(roh).iter_files())
+            except Exception as exc:
+                logger.debug("exFAT %s nicht lesbar: %s", pfad, exc)
+                return None
+            return dateien or None
 
         virtual_fh, backing_fh, _name = sicht
         try:
@@ -17352,15 +17392,7 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     logger.debug("Innere Ebene von %s nicht lesbar: %s", pfad, exc)
                     return None
-            if not eintraege:
-                return None
-            marke = self._AMPR_SPRX_NAME.lower()
-            for eintrag in eintraege:
-                rel = str(getattr(eintrag, "rel_path", "") or
-                          getattr(eintrag, "path", "") or "")
-                if self._ist_aktive_ampr_bibliothek(rel, marke):
-                    return True
-            return False
+            return _pfade(eintraege) or None
         finally:
             for zu in (virtual_fh, backing_fh):
                 try:
@@ -36929,6 +36961,118 @@ class PS5ConverterGUI:
         speicher.angaben_schreiben(pfad, angaben)
         return angaben
 
+    #: Welche Arten sich auf dem Rechner nach Einbauten durchsehen lassen.
+    #: Ein ``.ffpkg`` (UFS2) liest keiner der Leser des Programms.
+    _EINBAU_ABBILDER: tuple[str, ...] = ("ffpfsc", "ffpfs", "exfat")
+
+    def _bibliothek_einbauten(self, eintrag: dict) -> dict:
+        """Traegt ein Eintrag auf dem Rechner AMPR EMU, PlayGo, BACKPORT oder ein Asset-Pack?
+
+        Wunsch des Nutzers vom 27.09.2026: "Leider wird nicht angezeigt, wenn
+        sich ein AMPR EMU, PlayGo oder Backport bereits im Spiel befindet."
+        Laeuft im Faden. Ein Dump-Ordner wird direkt angesehen - nur die
+        Wurzel und die Bibliotheksordner, ein paar Dateiabfragen. Ein Abbild
+        ueber seine innere Ebene (:meth:`_container_dateien`, nur
+        Verzeichnisse); das Ergebnis merkt sich der Bildspeicher, ein
+        ersetztes Abbild bekommt einen neuen Schluessel.
+
+        Returns:
+            ``bibliothek.einbauten_bewerten`` mit ``"zustand": "ok"`` - oder
+            ``{"zustand": "unbekannt", "grund": "format"|"unlesbar"}``: Ein
+            Abbild, in das niemand hineingesehen hat, hat keine Einbauten,
+            von denen man "keine" sagen koennte.
+        """
+        pfad = str(eintrag.get("path") or "")
+        art = str(eintrag.get("kind") or "")
+        pruefen = self._ist_ampr_asset_datei
+        if art == "folder":
+            dateien: list[str] = []
+            ordner: list[str] = []
+            try:
+                with os.scandir(pfad) as wurzel:
+                    for teil in wurzel:
+                        if teil.is_dir() and teil.name.lower() in bibliothek_bestand.FAKELIB_REIHENFOLGE:
+                            ordner.append(teil.name)
+                            with os.scandir(teil.path) as innen:
+                                for unter in innen:
+                                    ziel = "%s/%s" % (teil.name, unter.name)
+                                    (ordner if unter.is_dir() else dateien).append(ziel)
+                        elif teil.is_file():
+                            dateien.append(teil.name)
+            except OSError as exc:
+                logger.debug("Bibliothek: Einbauten in %s nicht lesbar (%s)", pfad, exc)
+                return {"zustand": "unbekannt", "grund": "unlesbar"}
+            ergebnis = bibliothek_bestand.einbauten_bewerten(
+                dateien, ordner=ordner, assetpack_datei=pruefen)
+            ergebnis["zustand"] = "ok"
+            return ergebnis
+        if art not in self._EINBAU_ABBILDER:
+            return {"zustand": "unbekannt", "grund": "format"}
+        speicher = self._bibliothek_bildspeicher()
+        gemerkt = speicher.einbauten_lesen(pfad)
+        if gemerkt is not None:
+            return gemerkt
+        dateien_innen = self._container_dateien(pfad, roh_exfat=True)
+        if dateien_innen is None:
+            return {"zustand": "unbekannt", "grund": "unlesbar"}
+        ergebnis = bibliothek_bestand.einbauten_bewerten(dateien_innen,
+                                                         assetpack_datei=pruefen)
+        ergebnis["zustand"] = "ok"
+        speicher.einbauten_schreiben(pfad, ergebnis)
+        return ergebnis
+
+    def _bibliothek_ps5_einbauten(self, ftp, eintraege, *, generation=None) -> dict[str, dict]:
+        """Die Einbauten der Konsoleneintraege - ueber eine offene FTP-Verbindung.
+
+        Nach der Reihenfolge von ShadowMount+ 1.7beta2 (am Quelltext
+        gemessen, siehe ``bibliothek.FAKELIB_REIHENFOLGE``): Zuerst ein
+        ``<Suchpfad>/backports/<ID>`` - das legt ShadowMount+ ueber das Spiel,
+        auch ueber ein installiertes Paket; liefern mehrere Suchpfade die
+        Kennung, gewinnt der des Spiels. Traegt es keinen Bibliotheksordner,
+        zaehlt der des Spiels. In ein Abbild oder ein installiertes Paket
+        sieht FTP nicht hinein - ohne ``backports`` bleibt die Frage dort offen.
+        Nur Verzeichnislisten, keine Datei wird uebertragen.
+
+        Returns:
+            ``{pfad: ergebnis}`` im Format von :meth:`_bibliothek_einbauten`,
+            bei einem Treffer ueber ``backports`` zusaetzlich ``"ueber"``.
+        """
+        pruefen = self._ist_ampr_asset_datei
+        ueberlagert = bibliothek_bestand.backports_auf_konsole(
+            ftp, self._AMPR_GEN_SCANPFADE, ist_ordner=self._ampr_ftp_is_dir,
+            auflisten=self._ampr_ftp_browse)
+        ergebnisse: dict[str, dict] = {}
+        for eintrag in list(eintraege):
+            if generation is not None and generation != getattr(
+                    self, "_bibliothek_generation", 0):
+                break
+            pfad = str(eintrag.get("path") or "")
+            art = str(eintrag.get("kind") or "")
+            kennung = self._sanitize_title_id(str(
+                eintrag.get("title_id") or (eintrag.get("meta") or {}).get("title_id") or ""))
+            orte = sorted(ueberlagert.get(kennung, []),
+                          key=lambda ort: 0 if pfad.startswith(
+                              ort.rsplit("/%s/" % bibliothek_bestand.BACKPORTS_ORDNER, 1)[0] + "/")
+                          else 1)
+            ergebnis: dict | None = None
+            if orte:
+                auswertung = bibliothek_bestand.einbauten_auf_konsole(
+                    ftp, orte[0], auflisten=self._ampr_ftp_browse, assetpack_datei=pruefen)
+                if auswertung is not None and auswertung.get("ordner"):
+                    ergebnis = dict(auswertung, zustand="ok", ueber=orte[0])
+            if ergebnis is None and art == "folder":
+                auswertung = bibliothek_bestand.einbauten_auf_konsole(
+                    ftp, pfad, auflisten=self._ampr_ftp_browse, assetpack_datei=pruefen)
+                if auswertung is not None:
+                    ergebnis = dict(auswertung, zustand="ok")
+            if ergebnis is None:
+                ergebnis = {"zustand": "unbekannt",
+                            "grund": ("installiert" if art == "installiert"
+                                      else "konsole_abbild" if art != "folder"
+                                      else "unlesbar")}
+            ergebnisse[pfad] = ergebnis
+        return ergebnisse
+
     def _patchseite_lesen(self, basis: str, plattform: str,
                           kennung: str) -> tuple[list, bool]:
         """Liest die Updateliste eines Titels von einer Patchseite.
@@ -37722,7 +37866,8 @@ class PS5ConverterGUI:
                 continue
             zeile, spalte = divmod(nummer, spalten)
             try:
-                kachel.grid(row=zeile, column=spalte, padx=4, pady=4, sticky="n")
+                # Dieselben Abstaende wie beim Aufbau (_bibliothek_spaltenbreite).
+                kachel.grid(row=zeile, column=spalte, padx=3, pady=4, sticky="n")
             except tk.TclError:
                 continue
         try:
@@ -38475,12 +38620,15 @@ class PS5ConverterGUI:
                     return daten
         return None
 
-    def _bibliothek_ps5_bilder_nachladen(self, fenster, eintraege, *, generation):
+    def _bibliothek_ps5_bilder_nachladen(self, fenster, eintraege, *, generation,
+                                         einbauten=None):
         """Holt die Titelbilder der Konsoleneintraege - in einem Rutsch.
 
         **Eine** Verbindung fuer alle: Ein Verbindungsaufbau zur PS5 kostet
         merklich Zeit, und der FTP-Dienst der Konsole mag keine vielen
-        gleichzeitigen Sitzungen.
+        gleichzeitigen Sitzungen. Aus demselben Grund laufen die Einbauten
+        (``einbauten``, siehe :meth:`_bibliothek_bilder_nachladen`) danach in
+        derselben Sitzung.
         """
         kante = pt(self._KACHEL_BILD_PT)
         host = self._bibliothek_ps5_adresse()
@@ -38500,6 +38648,30 @@ class PS5ConverterGUI:
             self._spaeter_im_fenster(
                 fenster, self._bibliothek_bild_setzen,
                 feld, datei, kante, generation)
+
+        def _einbauten_lesen(ftp) -> None:
+            """Zweiter Durchgang: die Einbauten - in derselben Sitzung wie die Bilder.
+
+            ``ftp`` ist ``None``, wenn es keine Verbindung gibt; dann heisst
+            das Ergebnis "keine Verbindung", nicht "keine Einbauten".
+            """
+            if einbauten is None:
+                return
+            offen_einbau, fertig = einbauten
+            if not offen_einbau:
+                return
+            ergebnisse: dict = {}
+            if ftp is not None:
+                try:
+                    ergebnisse = self._bibliothek_ps5_einbauten(
+                        ftp, offen_einbau, generation=generation)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Bibliothek: Einbauten auf der PS5 (%s)", exc)
+            for eintrag in list(offen_einbau):
+                if generation != getattr(self, "_bibliothek_generation", 0):
+                    return
+                fertig(eintrag, ergebnisse.get(str(eintrag.get("path") or ""))
+                       or {"zustand": "unbekannt", "grund": "keine_verbindung"})
 
         def _arbeit() -> None:
             # Erst aus dem Speicher - ohne Verbindung. Bis v1.9.24 baute jeder
@@ -38521,7 +38693,8 @@ class PS5ConverterGUI:
                     _setzen(feld, datei)
                 else:
                     offen.append((eintrag, feld, kennung, merkname))
-            if not offen:
+            # Eine Sitzung nur, wenn Bilder fehlen oder Einbauten offen sind.
+            if not offen and not (einbauten is not None and einbauten[0]):
                 return
             try:
                 ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
@@ -38530,8 +38703,10 @@ class PS5ConverterGUI:
                 # Nicht "laedt ..." stehen lassen - aber auch nicht merken.
                 for _eintrag, feld, _kennung, _merkname in offen:
                     _setzen(feld, "")
+                _einbauten_lesen(None)
                 return
             try:
+                abgebrochen = False
                 for nummer, (eintrag, feld, kennung, merkname) in enumerate(offen):
                     if generation != getattr(self, "_bibliothek_generation", 0):
                         return
@@ -38546,13 +38721,15 @@ class PS5ConverterGUI:
                         logger.debug("Bibliothek: Titelbilder abgebrochen (%s)", exc)
                         for _eintrag, rest, _kennung, _merkname in offen[nummer:]:
                             _setzen(rest, "")
-                        return
+                        abgebrochen = True
+                        break
                     if rohbild:
                         datei = speicher.schreiben(merkname, rohbild)
                     else:
                         datei = ""
                         ohne_bild.add(merkname)
                     _setzen(feld, datei)
+                _einbauten_lesen(None if abgebrochen else ftp)
             finally:
                 try:
                     ftp.quit()
@@ -39108,7 +39285,7 @@ class PS5ConverterGUI:
         return rahmen, flaeche, innen
 
     def _bibliothek_kacheln_setzen(self, innen, eintraege, *, gewaehlt,
-                                   bei_auswahl, bei_start):
+                                   bei_auswahl, bei_start, bei_bild=None):
         """Zeichnet die Kacheln neu und stoesst das Nachladen der Bilder an.
 
         Die Kacheln stehen **sofort** da - mit Titel und einem Platzhalter.
@@ -39122,6 +39299,10 @@ class PS5ConverterGUI:
             gewaehlt: Pfad des hervorgehobenen Eintrags, oder "".
             bei_auswahl: ``(eintrag) -> None``, einfacher Klick.
             bei_start: ``(eintrag) -> None``, Doppelklick.
+            bei_bild: ``(pfad, bild) -> None`` oder ``None``. Bekommt das
+                Titelbild jeder Kachel mit, sobald es geladen ist (``None``
+                heisst "kein Titelbild") - daraus macht die Liste ihre
+                Vorschaubilder, ohne die Container ein zweites Mal zu oeffnen.
 
         Returns:
             Die Spaltenzahl - die Seite merkt sie sich, um beim Ziehen am
@@ -39136,37 +39317,58 @@ class PS5ConverterGUI:
         self._kachel_bilder = {}
 
         kante = pt(self._KACHEL_BILD_PT)
-        spalten = max(1, (innen.winfo_width() or 900) // (kante + pt(18)))
+        spalten = max(1, (innen.winfo_width() or 900)
+                      // self._bibliothek_spaltenbreite(kante))
 
         for nummer, eintrag in enumerate(eintraege):
             zeile, spalte = divmod(nummer, spalten)
             ist_gewaehlt = eintrag["path"] == gewaehlt
+            # Jede Kachel ist eine Karte mit einem 2 px breiten Ring: in der
+            # Randfarbe, gewaehlt in der Akzentfarbe. Der Ring ist immer da
+            # und wechselt nur die Farbe - eine Auswahl verschiebt also nichts.
+            # Bis v1.9.50 wechselte stattdessen der Grund der ganzen Kachel,
+            # und im hellen Design hob sich eine Kachel ohne Rand kaum ab.
             kachel = tk.Frame(
-                innen, bg=c["bg_card"] if ist_gewaehlt else c["console_bg"],
-                highlightthickness=2,
+                innen, bg=c["bg_card"], highlightthickness=2,
                 highlightbackground=(c["fg_accent"] if ist_gewaehlt
-                                     else c["console_bg"]),
-                padx=6, pady=6)
-            kachel.grid(row=zeile, column=spalte, padx=4, pady=4, sticky="n")
+                                     else c["border"]),
+                padx=5, pady=6)
+            kachel.grid(row=zeile, column=spalte, padx=3, pady=4, sticky="n")
 
             # Mit einem leeren Bild, damit width/height in PIXELN zaehlen. Ein
             # Label ohne Bild misst sie in Zeichen und Zeilen: Bis v1.9.24 war
             # jede Kachel ohne (noch nicht geladenes) Titelbild 150 Zeichen
             # breit und 150 Zeilen hoch.
-            bild = tk.Label(kachel, bg=c["bg_card"], width=kante, height=kante,
+            # Das Bildfeld liegt vertieft in der Karte (console_bg) und traegt
+            # einen 1-px-Rahmen; bd=0 und padx/pady=0, damit es in jedem
+            # Zustand genau kante + 2 misst (siehe _bibliothek_spaltenbreite):
+            # Tk rechnet die Polsterung nur dazu, wenn neben dem Bild ein Text
+            # steht - "laedt ..." und "kein Titelbild" waren sonst 2 px breiter
+            # als ein Titelbild, und die Spalte zuckte (am 27.09.2026 gemessen).
+            bild = tk.Label(kachel, bg=c["console_bg"], bd=0, padx=0, pady=0,
+                            width=kante, height=kante,
+                            highlightthickness=1, highlightbackground=c["border"],
                             image=self._kachel_leerbild(),
                             text=self._t("library.kachel_laedt"),
                             fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
                             compound="center")
             bild.pack()
+            if bei_bild is not None:
+                # Am Bildfeld, nicht am Eintrag: _bibliothek_bild_setzen
+                # bekommt von beiden Bildladern (Rechner und PS5) nur das Feld.
+                bild._mini_rueckruf = (  # type: ignore[attr-defined]
+                    lambda vorschau, pfad=eintrag["path"]: bei_bild(pfad, vorschau))
 
             angaben = eintrag.get("meta") or {}
             titel = str(angaben.get("title") or eintrag.get("name") or "?")
+            # bd=0 und padx=0: So misst ein umbrochener Text hoechstens kante
+            # und macht die Kachel nie breiter als ihr Bild.
             titel_feld = tk.Label(kachel, text=self._kuerzen_auf_breite(titel, 22),
-                                  bg=kachel["bg"], fg=c["fg_primary"],
-                                  font=(UI_SCHRIFT, pt(9), "bold"),
+                                  bg=c["bg_card"],
+                                  fg=c["fg_accent"] if ist_gewaehlt else c["fg_primary"],
+                                  font=(UI_SCHRIFT, pt(9), "bold"), bd=0, padx=0,
                                   wraplength=kante)
-            titel_feld.pack(pady=(4, 0))
+            titel_feld.pack(pady=(6, 0))
             # Title-ID und Format untereinander, nicht mit " · " in einer
             # Zeile: "PPSA02572 · Dump-Ordner" ist breiter als eine Kachel auf
             # der Bibliotheksseite (seit 25.09.2026) und stand links und rechts
@@ -39175,10 +39377,10 @@ class PS5ConverterGUI:
                 str(angaben.get("title_id") or ""),
                 self._bibliothek_art_text(eintrag),
             ) if x)
-            unten_feld = tk.Label(kachel, text=unten, bg=kachel["bg"],
+            unten_feld = tk.Label(kachel, text=unten, bg=c["bg_card"],
                                   fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
-                                  wraplength=kante, justify="center")
-            unten_feld.pack()
+                                  bd=0, padx=0, wraplength=kante, justify="center")
+            unten_feld.pack(pady=(2, 0))
 
             rad_binden = getattr(innen, "_rad_binden", None)
             for teil in (kachel, bild, titel_feld, unten_feld):
@@ -39190,6 +39392,9 @@ class PS5ConverterGUI:
             eintrag["_bildfeld"] = bild
             eintrag["_kachel"] = kachel
             eintrag["_kachel_texte"] = (titel_feld, unten_feld)
+            # Fuer die Marken der Einbauten, die spaeter dazukommen.
+            eintrag["_kachel_bindungen"] = (bei_auswahl, bei_start)
+            eintrag.pop("_kachel_marken", None)
 
         # Spalten jenseits der neuen Zahl wieder ohne Gewicht: Der Rahmen
         # bleibt von Suchlauf zu Suchlauf derselbe, und eine alte, breitere
@@ -39211,6 +39416,178 @@ class PS5ConverterGUI:
             self._kachel_leerbild_obj = vorhanden
         return vorhanden
 
+    @staticmethod
+    def _bibliothek_spaltenbreite(kante: int) -> int:
+        """Wie breit eine Kachelspalte wirklich ist - Bild samt allen Raendern.
+
+        Bildfeld ``kante`` + 2 x 1 (Rahmen um das Bild) + 2 x 5 (Polsterung
+        der Kachel) + 2 x 2 (Auswahlring) + 2 x 3 (Abstand im Raster). Die
+        Texte darunter brechen bei ``kante`` um und tragen keinen Rand, sind
+        also nie breiter. Aufbau und Umordnen rechnen mit derselben Zahl; bis
+        v1.9.50 nahmen beide ``kante + pt(18)`` - rund zehn Pixel zu wenig je
+        Spalte, die letzte Kachel einer Reihe konnte angeschnitten stehen.
+        Bei der kleinsten Fenstergroesse (1245 x 700, 125 %) bleiben der
+        Flaeche 405 Pixel: drei Spalten zu je 132.
+        """
+        return int(kante) + 2 + 10 + 4 + 6
+
+    def _bibliothek_tkbilder(self) -> dict:
+        """Zwischenspeicher fuer die gezeichneten Bilder der Bibliothek - je Programmlauf."""
+        speicher = getattr(self, "_bibliothek_tkbilder_obj", None)
+        if speicher is None:
+            speicher = {}
+            self._bibliothek_tkbilder_obj = speicher
+        return speicher
+
+    def _bibliothek_symbol_pil(self, groesse: int, farbe: str) -> "Image.Image":
+        """Das Zeichen "kein Titelbild": ein Bild mit Berg und Sonne, durchgestrichen.
+
+        Gezeichnet statt als Schriftzeichen - ein Symbol aus einer Schrift
+        (Emoji, Symbolschriften) sieht unter Windows, Linux und macOS je
+        anders aus oder fehlt ganz. Vierfach gross gezeichnet und dann
+        verkleinert, damit die Linien auch bei 30 Pixeln weich bleiben.
+        """
+        schluessel = ("pil", int(groesse), str(farbe))
+        speicher = self._bibliothek_tkbilder()
+        vorhanden = speicher.get(schluessel)
+        if vorhanden is not None:
+            return vorhanden
+        g = max(8, int(groesse))
+        s = g * 4
+        voll = tuple(self._hex_zu_rgb(farbe)) + (255,)
+        bild = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        stift = ImageDraw.Draw(bild)
+        breite = max(2, s // 16)
+        stift.rounded_rectangle((s * 0.12, s * 0.22, s * 0.88, s * 0.80),
+                                radius=s * 0.08, outline=voll, width=breite)
+        stift.line([(s * 0.22, s * 0.70), (s * 0.42, s * 0.47), (s * 0.55, s * 0.60),
+                    (s * 0.64, s * 0.52), (s * 0.78, s * 0.70)],
+                   fill=voll, width=breite, joint="curve")
+        r = s * 0.06
+        stift.ellipse((s * 0.66 - r, s * 0.36 - r, s * 0.66 + r, s * 0.36 + r),
+                      outline=voll, width=breite)
+        # Der Strich bekommt eine Luecke: erst frei raeumen (auf RGBA schreibt
+        # ImageDraw die Farbe ohne Mischen, (0,0,0,0) loescht also), dann ziehen.
+        strich = [(s * 0.14, s * 0.12), (s * 0.86, s * 0.90)]
+        stift.line(strich, fill=(0, 0, 0, 0), width=breite * 3)
+        stift.line(strich, fill=voll, width=breite)
+        bild = bild.resize((g, g), _LANCZOS)
+        speicher[schluessel] = bild
+        return bild
+
+    def _bibliothek_symbolbild(self, groesse: int) -> "ImageTk.PhotoImage":
+        """Das Zeichen "kein Titelbild" als Tk-Bild, in der Nebenschrift des Designs."""
+        farbe = self._COLORS.get("fg_secondary", self._THEMES["dunkel"]["fg_secondary"])
+        schluessel = ("symbol", int(groesse), farbe)
+        speicher = self._bibliothek_tkbilder()
+        if schluessel not in speicher:
+            speicher[schluessel] = ImageTk.PhotoImage(
+                self._bibliothek_symbol_pil(groesse, farbe))
+        return speicher[schluessel]
+
+    @staticmethod
+    def _bibliothek_minikante() -> int:
+        """Kantenlaenge der Vorschaubilder in der Liste - rund anderthalb Textzeilen.
+
+        An der Schrift der Liste gemessen, nicht fest: Bei 125 % Skalierung
+        ist eine Textzeile dort 22 statt 18 Pixel hoch.
+        """
+        try:
+            import tkinter.font as tkfont  # noqa: PLC0415
+            zeile = tkfont.Font(font=(UI_SCHRIFT, pt(10))).metrics("linespace")
+        except Exception:  # noqa: BLE001
+            zeile = 18
+        return max(24, int(zeile * 1.5))
+
+    def _bibliothek_minibild(self, bild, kante: int) -> "ImageTk.PhotoImage":
+        """Ein Vorschaubild fuer die Liste - immer ``kante`` x ``kante``.
+
+        Gleich gross fuer alle Zeilen, auch bei Bildern im Quer- oder
+        Hochformat: Die Liste setzt den Titel neben das Bild, und verschieden
+        breite Bilder liessen ihn in jeder Zeile woanders anfangen. Ohne Bild
+        (``None``) steht das Zeichen "kein Titelbild" darin - einmal gebaut
+        fuer alle Zeilen.
+        """
+        kante = max(8, int(kante))
+        if bild is None:
+            farbe = self._COLORS.get("fg_secondary", self._THEMES["dunkel"]["fg_secondary"])
+            schluessel = ("mini_ohne", kante, farbe)
+            speicher = self._bibliothek_tkbilder()
+            if schluessel not in speicher:
+                leinwand = Image.new("RGBA", (kante, kante), (0, 0, 0, 0))
+                zeichen = self._bibliothek_symbol_pil(int(kante * 0.8), farbe)
+                leinwand.paste(zeichen, ((kante - zeichen.width) // 2,
+                                         (kante - zeichen.height) // 2), zeichen)
+                speicher[schluessel] = ImageTk.PhotoImage(leinwand)
+            return speicher[schluessel]
+        klein = bild.copy()
+        klein.thumbnail((kante, kante))
+        if klein.mode != "RGBA":
+            klein = klein.convert("RGBA")
+        leinwand = Image.new("RGBA", (kante, kante), (0, 0, 0, 0))
+        leinwand.paste(klein, ((kante - klein.width) // 2,
+                               (kante - klein.height) // 2), klein)
+        return ImageTk.PhotoImage(leinwand)
+
+    def _bibliothek_leermini(self, kante: int) -> "tk.PhotoImage":
+        """Eine leere, durchsichtige Flaeche in Vorschaugroesse - solange das Bild laedt."""
+        schluessel = ("mini_leer", int(kante))
+        speicher = self._bibliothek_tkbilder()
+        if schluessel not in speicher:
+            speicher[schluessel] = tk.PhotoImage(width=int(kante), height=int(kante))
+        return speicher[schluessel]
+
+    def _bibliothek_segmente(self, eltern, variable, optionen, befehl):
+        """Ein Umschalter aus nebeneinander liegenden Feldern (Rechner | PS5).
+
+        Die Wahl ist die hervorgehobene Flaeche. Radiobuttons im Knopfstil
+        (``indicatoron=0``), nicht mehr mit Kreis: Die Kreise der ersten
+        Fassung lasen sich wie ein Formular, nicht wie der Schalter einer
+        Ansicht. Radiobuttons und keine Labels, damit der Umschalter mit der
+        Tastatur erreichbar bleibt (Tab, Leertaste) und die Fokusanzeige des
+        Programms mitbekommt (:meth:`_fokus_ohne_rahmen_einrichten`).
+
+        Args:
+            eltern: Wohin der Umschalter kommt.
+            variable: Die ``StringVar`` der Wahl.
+            optionen: ``[(wert, schluessel), ...]`` von links nach rechts.
+            befehl: Laeuft nach einem Klick (die Variable steht dann schon).
+
+        Returns:
+            ``(rahmen, faerben)`` - ``faerben()`` malt die Felder in den
+            Farben des aktiven Designs neu (fuer den Designwechsel).
+        """
+        rahmen = tk.Frame(eltern, bd=0, padx=1, pady=1)
+        felder: list = []
+
+        def _faerben(*_a) -> None:
+            c = self._COLORS
+            try:
+                # Der Rahmen scheint als 1-px-Rand und als Trennstrich durch.
+                rahmen.configure(bg=c["border"])
+                for feld, wert in felder:
+                    an = variable.get() == wert
+                    feld.configure(bg=c["bg_main"], selectcolor=c["bg_card"],
+                                   activebackground=c["bg_card"],
+                                   activeforeground=c["fg_primary"],
+                                   fg=c["fg_primary"] if an else c["fg_secondary"])
+            except tk.TclError:
+                pass
+
+        for nummer, (wert, schluessel) in enumerate(optionen):
+            feld = tk.Radiobutton(
+                rahmen, text=self._t(schluessel), value=wert, variable=variable,
+                command=befehl, indicatoron=0, bd=0, relief="flat",
+                offrelief="flat", overrelief="flat", highlightthickness=0,
+                padx=10, pady=2, font=(UI_SCHRIFT, pt(9), "bold"), cursor="hand2")
+            feld.pack(side="left", padx=(0 if nummer == 0 else 1, 0))
+            self._register_translatable(feld, schluessel)
+            felder.append((feld, wert))
+        # Auch wenn die Wahl aus dem Programm kommt (gemerkte Quelle, Tests).
+        variable.trace_add("write", _faerben)
+        _faerben()
+        return rahmen, _faerben
+
     def _bibliothek_kacheln_markieren(self, eintraege, gewaehlt: str) -> None:
         """Hebt die gewaehlte Kachel hervor - ohne die Kacheln neu zu bauen.
 
@@ -39219,6 +39596,11 @@ class PS5ConverterGUI:
         unsortierte Fundliste zurueck, und ein Doppelklick kam nie an - der
         erste Klick hatte das Widget, das den zweiten bekommen sollte, schon
         zerstoert.
+
+        Hervorgehoben werden Ring und Titel; der Grund bleibt der der Karte,
+        und der Ring ist in beiden Faellen gleich breit - es verschiebt sich
+        nichts. Die Farben kommen jedes Mal frisch aus dem aktiven Design,
+        damit taugt dieselbe Stelle auch nach einem Designwechsel.
         """
         c = self._COLORS
         for eintrag in eintraege:
@@ -39226,18 +39608,78 @@ class PS5ConverterGUI:
             if kachel is None:
                 continue
             ist_gewaehlt = eintrag.get("path") == gewaehlt
-            grund = c["bg_card"] if ist_gewaehlt else c["console_bg"]
             try:
                 if not kachel.winfo_exists():
                     continue
-                kachel.configure(bg=grund, highlightbackground=(
-                    c["fg_accent"] if ist_gewaehlt else c["console_bg"]))
-                for feld in eintrag.get("_kachel_texte", ()):
-                    feld.configure(bg=grund)
+                kachel.configure(bg=c["bg_card"], highlightbackground=(
+                    c["fg_accent"] if ist_gewaehlt else c["border"]))
+                texte = eintrag.get("_kachel_texte", ())
+                for feld in texte:
+                    feld.configure(bg=c["bg_card"])
+                if texte:
+                    texte[0].configure(fg=c["fg_accent"] if ist_gewaehlt
+                                       else c["fg_primary"])
+                bildfeld = eintrag.get("_bildfeld")
+                if bildfeld is not None:
+                    bildfeld.configure(bg=c["console_bg"], highlightbackground=c["border"])
             except tk.TclError:
                 continue
 
-    def _bibliothek_bilder_nachladen(self, fenster, eintraege, *, generation):
+    #: Die Marken der Einbauten auf dem Titelbild einer Kachel, von oben nach unten.
+    _KACHEL_MARKEN: tuple[tuple[str, str], ...] = (
+        ("ampr", "library.marke_ampr"),
+        ("playgo", "library.marke_playgo"),
+        ("backport", "library.marke_backport"),
+    )
+
+    def _bibliothek_kachel_marken(self, eintrag: dict, ergebnis: "dict | None") -> None:
+        """Legt die Marken der Einbauten oben rechts auf das Titelbild einer Kachel.
+
+        Ueber das Bild gelegt (``place``), nicht darunter gepackt: Die
+        Ergebnisse kommen nach und nach aus dem Hintergrund, und eine Zeile,
+        die erst spaeter erscheint, schoebe die Kacheln darunter nach unten -
+        genau das Springen, das am 27.09.2026 behoben wurde. Die Farben kommen
+        jedes Mal frisch aus dem Design; beim Designwechsel werden die Kacheln
+        neu gebaut und bekommen ihre Marken aus dem Zwischenspeicher zurueck.
+        """
+        for alt in eintrag.pop("_kachel_marken", None) or ():
+            try:
+                alt.destroy()
+            except tk.TclError:
+                pass
+        kachel = eintrag.get("_kachel")
+        feld = eintrag.get("_bildfeld")
+        if not ergebnis or ergebnis.get("zustand") != "ok" or kachel is None or feld is None:
+            return
+        try:
+            if not kachel.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        c = self._COLORS
+        bei_auswahl, bei_start = eintrag.get("_kachel_bindungen") or (None, None)
+        rad_binden = getattr(kachel.master, "_rad_binden", None)
+        marken: list = []
+        oben = 3
+        for merkmal, schluessel in self._KACHEL_MARKEN:
+            if not ergebnis.get(merkmal):
+                continue
+            marke = tk.Label(kachel, text=self._t(schluessel), bg=c["accent_btn"],
+                             fg="white", font=(UI_SCHRIFT, pt(7), "bold"),
+                             bd=0, padx=4, pady=0, cursor="hand2")
+            marke.place(in_=feld, relx=1.0, x=-3, y=oben, anchor="ne")
+            oben += marke.winfo_reqheight() + 2
+            if bei_auswahl is not None:
+                marke.bind("<Button-1>", lambda _e, x=eintrag: bei_auswahl(x))
+            if bei_start is not None:
+                marke.bind("<Double-Button-1>", lambda _e, x=eintrag: bei_start(x))
+            if rad_binden is not None:
+                rad_binden(marke)
+            marken.append(marke)
+        eintrag["_kachel_marken"] = marken
+
+    def _bibliothek_bilder_nachladen(self, fenster, eintraege, *, generation,
+                                     einbauten=None):
         """Holt die Titelbilder und haengt sie an die Kacheln - im Hintergrund.
 
         Die Kacheln stehen schon; hier kommen nur die Bilder nach. Das ist
@@ -39252,6 +39694,12 @@ class PS5ConverterGUI:
                 waehrenddessen einen neuen, gehoeren die Bilder dieses Laufs
                 nicht mehr auf den Schirm - sonst erscheint das Titelbild
                 eines Spiels, das gar nicht mehr in der Liste steht.
+            einbauten: ``(offen, fertig)`` oder ``None``. Nach den Bildern
+                werden fuer ``offen`` die Einbauten gelesen
+                (:meth:`_bibliothek_einbauten`); ``fertig(eintrag, ergebnis)``
+                laeuft **im Faden** und muss selbst ins Fenster weiterreichen.
+                Derselbe Faden wie die Bilder, damit nicht zwei Leser auf
+                derselben Platte abwechseln.
         """
         kante = pt(self._KACHEL_BILD_PT)
 
@@ -39271,6 +39719,18 @@ class PS5ConverterGUI:
                 self._spaeter_im_fenster(
                     fenster, self._bibliothek_bild_setzen,
                     feld, datei, kante, generation)
+            if einbauten is None:
+                return
+            offen, fertig = einbauten
+            for eintrag in list(offen):
+                if generation != getattr(self, "_bibliothek_generation", 0):
+                    return
+                try:
+                    ergebnis = self._bibliothek_einbauten(eintrag)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Bibliothek: Einbauten %s (%s)", eintrag.get("path"), exc)
+                    ergebnis = {"zustand": "unbekannt", "grund": "unlesbar"}
+                fertig(eintrag, ergebnis)
 
         threading.Thread(target=_arbeit, daemon=True,
                          name="bibliothek-bilder").start()
@@ -39285,11 +39745,27 @@ class PS5ConverterGUI:
                 return
         except Exception:  # noqa: BLE001
             return
-        # Ohne Titelbild das Leerbild, nicht image="" - sonst misst das Feld
-        # wieder in Zeichen (siehe _kachel_leerbild).
+        rueckruf = getattr(feld, "_mini_rueckruf", None)
+
+        def _weitergeben(vorschau) -> None:
+            # Die Liste soll die Kacheln nie aufhalten.
+            if rueckruf is None:
+                return
+            try:
+                rueckruf(vorschau)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Vorschau fuer die Liste (%s)", exc)
+
+        def _ohne_bild() -> None:
+            # Ein Bild, nicht image="" - sonst misst das Feld wieder in
+            # Zeichen (siehe _kachel_leerbild). Das gezeichnete Zeichen ueber
+            # dem Text sagt "hier fehlt das Bild", nicht "hier ist nichts".
+            feld.configure(text=self._t("library.kachel_ohne_bild"), compound="top",
+                           image=self._bibliothek_symbolbild(max(16, kante * 3 // 10)))
+            _weitergeben(None)
+
         if not datei:
-            feld.configure(text=self._t("library.kachel_ohne_bild"),
-                           image=self._kachel_leerbild())
+            _ohne_bild()
             return
         try:
             bild = Image.open(datei)
@@ -39297,8 +39773,7 @@ class PS5ConverterGUI:
             foto = ImageTk.PhotoImage(bild)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: %s nicht darstellbar (%s)", datei, exc)
-            feld.configure(text=self._t("library.kachel_ohne_bild"),
-                           image=self._kachel_leerbild())
+            _ohne_bild()
             return
         # Der Verweis muss bleiben, sonst raeumt Python das Bild weg und die
         # Kachel ist leer - der klassische Tk-Fallstrick.
@@ -39306,6 +39781,7 @@ class PS5ConverterGUI:
             self._kachel_bilder = {}
         self._kachel_bilder[str(feld)] = foto
         feld.configure(image=foto, text="")
+        _weitergeben(bild)
 
     def _kuerzen_auf_breite(self, text: str, zeichen: int) -> str:
         """Schneidet lange Titel ab, damit die Kacheln gleich breit bleiben."""
@@ -39345,7 +39821,16 @@ class PS5ConverterGUI:
             "status": ("library.status_initial", {"count": len(scan_folders)}),
             "erweitert": {}, "erweitert_laeuft": set(),
             "updates": {}, "update_laeuft": set(),
+            # "minis": die Vorschaubilder der Liste je Pfad; "punkt": die
+            # Farbrolle des Punkts vor der Statuszeile.
+            "minis": {}, "punkt": "fg_secondary",
+            # "einbauten": AMPR EMU, PlayGo, BACKPORT, Asset-Pack je Pfad
+            # (_bibliothek_einbauten); "einbauten_einzeln": Pfade, fuer die
+            # die Detailspalte gerade selbst liest.
+            "einbauten": {}, "einbauten_einzeln": set(),
         }
+        if ansicht["art"] not in ("kacheln", "liste"):
+            ansicht["art"] = "kacheln"
 
         def _seite_weg(ereignis) -> None:
             """Mit der Seite verfallen ihre Suchlaeufe (siehe _library_scan_folder)."""
@@ -39370,20 +39855,22 @@ class PS5ConverterGUI:
                              command=lambda: self._konsole_seite_setzen("uebersicht"))
         zurueck.pack(side="right")
         self._register_translatable(zurueck, "konsole.btn_uebersicht")
-        umschalt_knopf = ttk.Button(kopf, style="Klein.TButton",
-                                    command=lambda: _ansicht_umschalten())
-        umschalt_knopf.pack(side="right", padx=(0, 8))
-        # Von rechts nach links gepackt: "Rechner" steht links von "PS5".
-        for wert, schluessel in (("ps5", "library.quelle_ps5"),
-                                 ("pc", "library.quelle_pc")):
-            knopf = tk.Radiobutton(
-                kopf, text=self._t(schluessel), value=wert, variable=quelle_var,
-                command=lambda: _quelle_gewechselt(),
-                bg=c["bg_main"], fg=c["fg_primary"], selectcolor=c["console_bg"],
-                activebackground=c["bg_main"], activeforeground=c["fg_primary"],
-                highlightthickness=0, font=(UI_SCHRIFT, pt(9)))
-            knopf.pack(side="right", padx=(0, 10))
-            self._register_translatable(knopf, schluessel)
+        # Quelle und Ansicht als je ein Umschalter mit zwei Feldern (seit
+        # 27.09.2026). Vorher standen die Quellen als Kreis-Radiobuttons und
+        # die Ansicht als ein Knopf da, dessen Aufschrift die jeweils ANDERE
+        # Ansicht nannte - "Liste" hiess "du siehst gerade Kacheln".
+        # Von rechts nach links gepackt: die Quelle steht links der Ansicht.
+        ansicht_var = tk.StringVar(value=ansicht["art"])
+        ansicht_schalter, ansicht_faerben = self._bibliothek_segmente(
+            kopf, ansicht_var, (("kacheln", "library.ansicht_kacheln"),
+                                ("liste", "library.ansicht_liste")),
+            lambda: _ansicht_umschalten())
+        ansicht_schalter.pack(side="right", padx=(0, 12))
+        quelle_schalter, quelle_faerben = self._bibliothek_segmente(
+            kopf, quelle_var, (("pc", "library.quelle_pc"),
+                               ("ps5", "library.quelle_ps5")),
+            lambda: _quelle_gewechselt())
+        quelle_schalter.pack(side="right", padx=(0, 12))
 
         # --- Suchordner (nur Rechner) ------------------------------------
         # Alles in einer Zeile - Beschriftung, Liste, Knoepfe: Die Seite hat
@@ -39434,9 +39921,19 @@ class PS5ConverterGUI:
         folders_btns.pack(side="left", padx=(8, 0))
         _rollbalken_nachfuehren()
 
-        # --- Suche -------------------------------------------------------
+        # --- Suche, Sortierung, Trefferzahl --------------------------------
+        # Rechts zuerst gepackt, damit das Suchfeld den Rest bekommt. Der
+        # Sortierknopf gilt fuer beide Ansichten: Bis zum 27.09.2026 liess
+        # sich nur ueber die Spaltenkoepfe der Liste sortieren, die Kacheln
+        # hatten dafuer gar nichts.
         search_row = tk.Frame(seite, bg=c["bg_main"])
         search_row.pack(fill="x", pady=(8, 6))
+        treffer_label = tk.Label(search_row, font=(UI_SCHRIFT, pt(9)),
+                                 bg=c["bg_main"], fg=c["fg_secondary"])
+        treffer_label.pack(side="right", padx=(10, 0))
+        sortier_knopf = ttk.Button(search_row, style="Klein.TButton",
+                                   command=lambda: _sortier_menue_zeigen())
+        sortier_knopf.pack(side="right", padx=(10, 0))
         such_label = tk.Label(search_row, text=self._t("library.search_label"),
                               font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                               fg=c["fg_secondary"])
@@ -39452,9 +39949,16 @@ class PS5ConverterGUI:
         # pack den zuletzt gepackten Elementen zu wenig - das soll der Inhalt
         # sein, nicht die Knoepfe (siehe test_fensterlayout).
         status_var = tk.StringVar()
-        tk.Label(seite, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
+        statuszeile = tk.Frame(seite, bg=c["bg_main"])
+        statuszeile.pack(side="bottom", fill="x", pady=(4, 0))
+        # Der Punkt davor sagt auf einen Blick, ob gerade gesucht wird
+        # (Akzent), ob die Suche fertig ist (Erfolg) oder etwas scheiterte.
+        status_punkt = tk.Label(statuszeile, text="●", font=(UI_SCHRIFT, pt(9)),
+                                bg=c["bg_main"], fg=c["fg_secondary"])
+        status_punkt.pack(side="left", padx=(0, 6))
+        tk.Label(statuszeile, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
-                 justify="left").pack(side="bottom", fill="x", pady=(4, 0))
+                 justify="left").pack(side="left", fill="x", expand=True)
         reihen = {"pc": tk.Frame(seite, bg=c["bg_main"]),
                   "ps5": tk.Frame(seite, bg=c["bg_main"])}
 
@@ -39481,8 +39985,21 @@ class PS5ConverterGUI:
         kachel_rahmen, kachel_flaeche, kachel_innen = self._bibliothek_kachelflaeche(body)
         kachel_rahmen.grid(row=0, column=0, sticky="nsew")
 
-        cols = ("title", "title_id", "version", "format", "path")
-        tree = ttk.Treeview(liste_rahmen, columns=cols, show="headings", height=12)
+        cols = ("title", "title_id", "version", "format", "einbauten", "path")
+        # Seit 27.09.2026 mit Vorschaubild je Zeile (Spalte #0). Die Zeilen
+        # werden dafuer hoeher - in einem eigenen Stil, damit die uebrigen
+        # Listen des Programms bei ihren 24 Pixeln bleiben. Die Farben erbt
+        # er von "Treeview", ein Designwechsel faerbt ihn also mit.
+        mini = self._bibliothek_minikante()
+        leer_mini = self._bibliothek_leermini(mini)
+        ttk.Style().configure("Bibliothek.Treeview", rowheight=mini + 6)
+        tree = ttk.Treeview(liste_rahmen, columns=cols, show="tree headings",
+                            height=12, style="Bibliothek.Treeview")
+        tree.column("#0", width=mini + 28, minwidth=mini + 28, stretch=False)
+        tree.heading("#0", text="", anchor="w")
+        # Welche Zeile gehoert zu welchem Pfad - fuer Vorschaubilder, die
+        # erst nach dem Einfuegen der Zeile ankommen.
+        iid_nach_pfad: dict[str, str] = {}
         senkrecht = ttk.Scrollbar(liste_rahmen, orient="vertical", command=tree.yview)
         waagerecht = ttk.Scrollbar(liste_rahmen, orient="horizontal", command=tree.xview)
         tree.configure(yscrollcommand=senkrecht.set, xscrollcommand=waagerecht.set)
@@ -39498,14 +40015,15 @@ class PS5ConverterGUI:
             "title":    dict(schluessel="library.col.title",    width=220, minwidth=150, anchor="w",      stretch=True),
             "title_id": dict(schluessel="library.col.title_id", width=100, minwidth=90,  anchor="center", stretch=False),
             "version":  dict(schluessel="library.col.version",  width=100, minwidth=90,  anchor="center", stretch=False),
-            "format":   dict(schluessel="library.col.format",   width=105, minwidth=95,  anchor="center", stretch=False),
+            "format":   dict(schluessel="library.col.format",   width=120, minwidth=105, anchor="center", stretch=False),
+            "einbauten": dict(schluessel="library.col.einbauten", width=215, minwidth=120, anchor="w",    stretch=False),
             "path":     dict(schluessel="library.col.path",     width=320, minwidth=150, anchor="w",      stretch=True),
         }
 
         sortierung = {"spalte": "title", "rueckwaerts": False}
 
         def _kopf_beschriften() -> None:
-            """Schreibt die Kopfzeilen samt Pfeil der aktiven Sortierspalte."""
+            """Schreibt die Kopfzeilen samt Pfeil der aktiven Sortierspalte - und den Sortierknopf."""
             for schluessel, form in spalten_form.items():
                 pfeil = ""
                 if schluessel == sortierung["spalte"]:
@@ -39513,6 +40031,10 @@ class PS5ConverterGUI:
                 tree.heading(schluessel, text=self._t(str(form["schluessel"])) + pfeil,
                              anchor=str(form["anchor"]),
                              command=lambda s=schluessel: _kopf_klick(s))
+            aktiv = spalten_form.get(sortierung["spalte"], spalten_form["title"])
+            sortier_knopf.configure(text="%s  %s" % (
+                self._t("library.sortiert_nach", spalte=self._t(str(aktiv["schluessel"]))),
+                "▾" if sortierung["rueckwaerts"] else "▴"))
 
         def _kopf_klick(spalte: str) -> None:
             if sortierung["spalte"] == spalte:
@@ -39522,6 +40044,42 @@ class PS5ConverterGUI:
                 sortierung["rueckwaerts"] = False
             _kopf_beschriften()
             _apply_filter()
+
+        # Das Menue des Sortierknopfs. Es wird bei jedem Oeffnen neu gefuellt
+        # und eingefaerbt - so folgt es Sprache und Design ohne eigene Pflege.
+        sortier_menue = tk.Menu(search_row, tearoff=0)
+        sortier_wahl = tk.StringVar(value=sortierung["spalte"])
+        sortier_ab = tk.BooleanVar(value=False)
+
+        def _sortieren_gewaehlt() -> None:
+            sortierung["spalte"] = sortier_wahl.get() or "title"
+            sortierung["rueckwaerts"] = bool(sortier_ab.get())
+            _kopf_beschriften()
+            _apply_filter()
+
+        def _sortier_menue_zeigen() -> None:
+            farben = self._COLORS
+            sortier_menue.configure(bg=farben["bg_card"], fg=farben["fg_primary"],
+                                    activebackground=farben["accent_btn"],
+                                    activeforeground="white",
+                                    selectcolor=farben["fg_accent"])
+            sortier_menue.delete(0, "end")
+            sortier_wahl.set(sortierung["spalte"])
+            sortier_ab.set(bool(sortierung["rueckwaerts"]))
+            for schluessel, form in spalten_form.items():
+                sortier_menue.add_radiobutton(
+                    label=self._t(str(form["schluessel"])), value=schluessel,
+                    variable=sortier_wahl, command=_sortieren_gewaehlt)
+            sortier_menue.add_separator()
+            sortier_menue.add_checkbutton(label=self._t("library.sort_absteigend"),
+                                          variable=sortier_ab,
+                                          command=_sortieren_gewaehlt)
+            try:
+                sortier_menue.tk_popup(
+                    sortier_knopf.winfo_rootx(),
+                    sortier_knopf.winfo_rooty() + sortier_knopf.winfo_height())
+            finally:
+                sortier_menue.grab_release()
 
         for schluessel, form in spalten_form.items():
             tree.column(schluessel, width=int(form["width"]), minwidth=int(form["minwidth"]),
@@ -39540,27 +40098,53 @@ class PS5ConverterGUI:
         # Titelbild links, die drei Knoepfe untereinander daneben - so kostet
         # das Bild keine Zeile ueber den Angaben (bei 700 px Fensterhoehe fiel
         # "Angaben kopieren" sonst unten aus der Seite).
-        detail = tk.Frame(body, bg=c["bg_card"], padx=10, pady=8)
+        #
+        # Seit dem 27.09.2026 ist die Spalte fest breit (_detailbreite_anpassen
+        # am Ende des Aufbaus). Vorher hing ihre Breite am Inhalt: Das
+        # Titelbild-Feld hatte keine Groesse, war ohne Bild 0 Pixel breit und
+        # mit Bild so breit wie das Bild - bei Quer- und Hochformat jedes Mal
+        # anders. Jede Auswahl verschob damit die Kachelflaeche daneben, die
+        # Spaltenzahl wurde neu berechnet, und die Kacheln sprangen (vom
+        # Nutzer mit Bild gemeldet).
+        detail = tk.Frame(body, bg=c["bg_card"], padx=10, pady=8,
+                          highlightthickness=1, highlightbackground=c["border"])
         detail.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
         detail.grid_columnconfigure(1, weight=1)
         umbruch = pt(185)
-        cover_label = tk.Label(detail, bg=c["bg_card"])
+        # Das Titelbild in einem Kasten fester Groesse - mit Leerbild, damit
+        # width/height in Pixeln zaehlen (siehe _kachel_leerbild).
+        # padx/pady=0: Tk polstert nur, wenn neben dem Bild ein Text steht -
+        # "kein Titelbild" war sonst 2 px breiter als ein Titelbild.
+        cover_kante = pt(100)
+        cover_label = tk.Label(detail, bg=c["console_bg"], bd=0, padx=0, pady=0,
+                               width=cover_kante, height=cover_kante,
+                               image=self._kachel_leerbild(), compound="top",
+                               fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(8)),
+                               highlightthickness=1, highlightbackground=c["border"])
         cover_label.grid(row=0, column=0, sticky="nw")
         bild_knoepfe = tk.Frame(detail, bg=c["bg_card"])
         bild_knoepfe.grid(row=0, column=1, sticky="nw", padx=(8, 0))
         zeilen: dict[str, tk.Label] = {}
         for nummer, (name, groesse, fett) in enumerate((
-                ("titel", 10, True), ("kennung", 8, False), ("fassung", 9, False),
-                ("update", 8, False), ("firmware", 8, False), ("sdk", 8, False),
-                ("content", 8, False), ("format", 8, False), ("pfad", 8, False)),
+                ("titel", 11, True), ("kennung", 8, False), ("fassung", 9, False),
+                ("update", 8, False), ("firmware", 8, False), ("einbauten", 8, False),
+                ("sdk", 8, False), ("content", 8, False), ("format", 8, False),
+                ("pfad", 8, False)),
                 start=1):
+            # bd=0 und padx=0: Ein Label misst dann hoechstens seine
+            # Umbruchbreite - die Spaltenbreite laesst sich damit genau
+            # rechnen. (Tk gibt Labels unter Windows 2 Pixel Rand, unter
+            # Linux 1, auch ohne sichtbaren Rahmen.)
             feld = tk.Label(detail, bg=c["bg_card"], fg=c["fg_primary"],
                             font=((UI_SCHRIFT, pt(groesse), "bold") if fett
                                   else (UI_SCHRIFT, pt(groesse))),
-                            anchor="w", justify="left", wraplength=umbruch)
+                            anchor="w", justify="left", wraplength=umbruch,
+                            bd=0, padx=0)
             feld.grid(row=nummer, column=0, columnspan=2, sticky="w",
-                      pady=((6, 1) if name == "titel" else (0, 1)))
+                      pady=((8, 2) if name == "titel" else (0, 2)))
             zeilen[name] = feld
+        # Das Format als Plakette - vertieft wie das Bildfeld.
+        zeilen["format"].configure(bg=c["console_bg"], padx=6, pady=1)
         angaben_knopf = ttk.Button(bild_knoepfe, text=self._t("library.btn_angaben_kopieren"),
                                    style="Klein.TButton",
                                    command=lambda: _angaben_kopieren())
@@ -39572,10 +40156,20 @@ class PS5ConverterGUI:
         # des Baums und gelten damit ohnehin nur fuer diese Seite.
         self._library_cover_cache: dict[str, "ImageTk.PhotoImage"] = {}
 
+        def _punkt(rolle: str) -> None:
+            """Faerbt den Punkt vor der Statuszeile - die Rolle wird gemerkt (Designwechsel)."""
+            ansicht["punkt"] = rolle
+            try:
+                status_punkt.configure(fg=self._COLORS.get(rolle, self._COLORS["fg_secondary"]))
+            except tk.TclError:
+                pass
+
         def _status(schluessel: str, **werte) -> None:
             """Die Statuszeile - als Schluessel gemerkt, damit ein Sprachwechsel sie mitnimmt."""
             ansicht["status"] = (schluessel, werte)
             status_var.set(self._t(schluessel, **werte))
+            _punkt({"library.status_scanning": "fg_accent",
+                    "library.status_initial": "fg_secondary"}.get(schluessel, "fg_success"))
 
         def _status_text(text: str) -> None:
             """Ein fertiger Text fuer die Statuszeile (etwa eine Fehlermeldung)."""
@@ -39654,12 +40248,67 @@ class PS5ConverterGUI:
                         "fg_warning")
             return self._t("library.fw_passt", fw=fw, konsole=konsole_kurz), "fg_success"
 
+        def _einbauten_zeile(item) -> tuple[str, str]:
+            """Die Zeile "Einbauten" der Detailspalte - Text und Farbrolle.
+
+            "keine" sagt sie nur, wenn wirklich nachgesehen wurde; ein Abbild,
+            in das kein Leser hineinkommt, heisst "nicht ermittelbar". Verdeckt
+            ein fakelib2 den Ordner fakelib, steht das dabei (Warnfarbe):
+            ShadowMount+ liest dann nur fakelib2, und was das Programm in
+            fakelib eingebaut hat, wirkt nicht.
+            """
+            ergebnis = ansicht["einbauten"].get(item["path"])
+            if ergebnis is None:
+                return self._t("library.einbauten_liest"), "fg_secondary"
+            if ergebnis.get("zustand") != "ok":
+                grund = str(ergebnis.get("grund") or "unlesbar")
+                return (self._t("library.einbauten_unbekannt",
+                                grund=self._t("library.einbauten_grund." + grund)),
+                        "fg_secondary")
+            teile = []
+            if ergebnis.get("ampr"):
+                teile.append(self._t("library.einbau.ampr"))
+            if ergebnis.get("playgo"):
+                teile.append(self._t("library.einbau.playgo"))
+            if ergebnis.get("backport"):
+                teile.append(self._t("library.einbau.backport",
+                                     fw=", ".join(ergebnis["backport"])))
+            if ergebnis.get("assetpack"):
+                teile.append(self._t("library.einbau.assetpack"))
+            zusatz = []
+            if ergebnis.get("ueber"):
+                zusatz.append(self._t("library.einbauten_zusatz.ueber", ordner="/".join(
+                    str(ergebnis["ueber"]).rstrip("/").split("/")[-2:])))
+            if ergebnis.get("verdeckt"):
+                zusatz.append(self._t("library.einbauten_zusatz.verdeckt"))
+            elif ergebnis.get("ordner") == "fakelib2":
+                zusatz.append(self._t("library.einbauten_zusatz.fakelib2"))
+            text = (self._t("library.einbauten", liste=" · ".join(teile)) if teile
+                    else self._t("library.einbauten_keine"))
+            if zusatz:
+                text += " (" + ", ".join(zusatz) + ")"
+            if ergebnis.get("verdeckt"):
+                return text, "fg_warning"
+            return text, "fg_success" if teile else "fg_secondary"
+
+        def _einbauten_kurz(ergebnis) -> str:
+            """Dasselbe knapp, fuer die Spalte der Liste."""
+            if ergebnis is None:
+                return "…"
+            if ergebnis.get("zustand") != "ok":
+                return "?"
+            teile = [self._t(schluessel) for merkmal, schluessel in self._KACHEL_MARKEN
+                     if ergebnis.get(merkmal)]
+            if ergebnis.get("assetpack"):
+                teile.append(self._t("library.einbau.assetpack"))
+            return " · ".join(teile) or "–"
+
         def _detail_zeichnen(item) -> None:
             """Schreibt die Detailspalte - nur aus dem, was schon da ist."""
             if item is None:
                 _zeile("titel", self._t("library.no_entry_selected"), "fg_secondary")
-                for name in ("kennung", "fassung", "update", "firmware", "sdk",
-                             "content", "format", "pfad"):
+                for name in ("kennung", "fassung", "update", "firmware", "einbauten",
+                             "sdk", "content", "format", "pfad"):
                     _zeile(name, "")
                 bild_knoepfe.grid_remove()
                 return
@@ -39676,6 +40325,7 @@ class PS5ConverterGUI:
                    if fassung else "", "fg_primary")
             _zeile("update", *_update_zeile(item, meta))
             _zeile("firmware", *_firmware_zeile(item, meta))
+            _zeile("einbauten", *_einbauten_zeile(item))
             sdk = _wert(meta, "sdk")
             _zeile("sdk", self._t("library.detail_sdk",
                                   sdk=bibliothek_bestand.firmware_kurz(sdk) or sdk)
@@ -39726,6 +40376,50 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_lesen, daemon=True,
                              name="bibliothek-angaben").start()
+
+        def _einbauten_da(eintrag, ergebnis) -> None:
+            """Einbauten eines Eintrags sind da - Kachel, Liste und Detailspalte nachziehen."""
+            pfad = str(eintrag.get("path") or "")
+            ansicht["einbauten_einzeln"].discard(pfad)
+            ansicht["einbauten"][pfad] = ergebnis
+            self._bibliothek_kachel_marken(eintrag, ergebnis)
+            iid = iid_nach_pfad.get(pfad)
+            if iid is not None:
+                try:
+                    tree.set(iid, "einbauten", _einbauten_kurz(ergebnis))
+                except tk.TclError:
+                    pass
+            aktuell = ansicht.get("angezeigt")
+            if aktuell is not None and aktuell.get("path") == pfad:
+                _detail_zeichnen(aktuell)
+
+        def _einbauten_fertig(eintrag, ergebnis) -> None:
+            """Rueckmeldung der Bildlader - laeuft im Faden, also nur weiterreichen."""
+            self._spaeter_im_fenster(seite, _einbauten_da, eintrag, ergebnis)
+
+        def _einbauten_anstossen(item) -> None:
+            """Liest die Einbauten des gewaehlten Eintrags gleich, statt auf den Durchgang zu warten.
+
+            Nur auf dem Rechner: Der Durchgang der Bildlader nimmt die Titel der
+            Reihe nach, der gewaehlte kann weit hinten stehen. Auf der Konsole
+            laeuft alles ueber die eine FTP-Sitzung der Bildlader.
+            """
+            pfad = item["path"]
+            if (item.get("ps5") or pfad in ansicht["einbauten"]
+                    or pfad in ansicht["einbauten_einzeln"]):
+                return
+            ansicht["einbauten_einzeln"].add(pfad)
+
+            def _lesen() -> None:
+                try:
+                    ergebnis = self._bibliothek_einbauten(item)
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Bibliothek: Einbauten %s (%s)", pfad, exc)
+                    ergebnis = {"zustand": "unbekannt", "grund": "unlesbar"}
+                self._spaeter_im_fenster(seite, _einbauten_da, item, ergebnis)
+
+            threading.Thread(target=_lesen, daemon=True,
+                             name="bibliothek-einbauten").start()
 
         def _update_da(kennung: str, ergebnisse: list, vollstaendig: bool) -> None:
             ansicht["update_laeuft"].discard(kennung)
@@ -39789,6 +40483,8 @@ class PS5ConverterGUI:
                 return str(meta.get("version", "")).lower()
             if spalte == "format":
                 return str(eintrag["kind"]).lower()
+            if spalte == "einbauten":
+                return _einbauten_kurz(ansicht["einbauten"].get(eintrag["path"])).lower()
             if spalte == "path":
                 return str(eintrag["path"]).lower()
             return str(meta.get("title", "")).lower()
@@ -39831,26 +40527,44 @@ class PS5ConverterGUI:
                 eintrag["path"]]).lower()
 
         def _ansicht_umschalten() -> None:
-            """Kacheln oder Liste - die Wahl wird gemerkt."""
-            if ansicht["art"] == "kacheln":
-                ansicht["art"] = "liste"
+            """Kacheln oder Liste - wie im Umschalter gewaehlt; die Wahl wird gemerkt."""
+            art = "liste" if ansicht_var.get() == "liste" else "kacheln"
+            if art == ansicht["art"]:
+                return
+            ansicht["art"] = art
+            if art == "liste":
                 kachel_rahmen.grid_remove()
                 liste_rahmen.grid()
             else:
-                ansicht["art"] = "kacheln"
                 liste_rahmen.grid_remove()
                 kachel_rahmen.grid()
-            _umschalter_beschriften()
-            self._save_setting("library_ansicht", ansicht["art"])
+            self._save_setting("library_ansicht", art)
 
-        def _umschalter_beschriften() -> None:
-            umschalt_knopf.configure(text=self._t(
-                "library.ansicht_liste" if ansicht["art"] == "kacheln"
-                else "library.ansicht_kacheln"))
+        def _mini_setzen(pfad: str, vorschau) -> None:
+            """Das Vorschaubild einer Listenzeile - vom Kachellader mitgeliefert.
+
+            ``vorschau`` ist das schon verkleinerte Titelbild der Kachel oder
+            ``None`` (kein Titelbild). Die Zeile kann es noch nicht geben,
+            oder nicht mehr (neu gefiltert) - gemerkt wird das Bild trotzdem,
+            das naechste Einfuegen nimmt es aus ``ansicht["minis"]``.
+            """
+            try:
+                foto = self._bibliothek_minibild(vorschau, mini)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Vorschau %s (%s)", pfad, exc)
+                return
+            ansicht["minis"][pfad] = foto
+            iid = iid_nach_pfad.get(pfad)
+            if iid is not None:
+                try:
+                    tree.item(iid, image=foto)
+                except tk.TclError:
+                    pass
 
         def _apply_filter() -> None:
             tree.delete(*tree.get_children())
             item_by_iid.clear()
+            iid_nach_pfad.clear()
             query = search_var.get().strip().lower()
             # Die laufende Nummer bleibt am Eintrag haengen, damit die Zuordnung
             # unabhaengig von der Sortierreihenfolge stimmt.
@@ -39863,11 +40577,15 @@ class PS5ConverterGUI:
                 if not _passt_zur_suche(item, query):
                     continue
                 iid = str(idx)
-                tree.insert("", "end", iid=iid, values=(
+                tree.insert("", "end", iid=iid,
+                            image=ansicht["minis"].get(item["path"]) or leer_mini,
+                            values=(
                     meta.get("title", "–"), meta.get("title_id", "–"),
-                    meta.get("version", "–"), self._bibliothek_art_text(item), item["path"],
+                    meta.get("version", "–"), self._bibliothek_art_text(item),
+                    _einbauten_kurz(ansicht["einbauten"].get(item["path"])), item["path"],
                 ), tags=("gerade" if sichtbar % 2 == 0 else "ungerade",))
                 item_by_iid[iid] = item
+                iid_nach_pfad[item["path"]] = iid
                 if item["path"] == ansicht["gewaehlt"]:
                     tree.selection_set(iid)
                 sichtbar += 1
@@ -39875,28 +40593,50 @@ class PS5ConverterGUI:
             # Dieselbe gefilterte, sortierte Auswahl auch als Kacheln.
             sichtbare = [it for _i, it in paare if _passt_zur_suche(it, query)]
             ansicht["sichtbar"] = sichtbare
+            # "12 von 38 Titeln" beim Suchen, sonst nur die Zahl.
+            if not all_items:
+                treffer_label.configure(text="")
+            elif len(sichtbare) == len(all_items):
+                treffer_label.configure(text=self._t("library.anzahl_titel",
+                                                     count=len(all_items)))
+            else:
+                treffer_label.configure(text=self._t("library.anzahl_treffer",
+                                                     sichtbar=len(sichtbare),
+                                                     gesamt=len(all_items)))
             ansicht["generation"] += 1
             self._bibliothek_generation = ansicht["generation"]
             ansicht["spalten"] = self._bibliothek_kacheln_setzen(
                 kachel_innen, sichtbare,
                 gewaehlt=ansicht["gewaehlt"],
                 bei_auswahl=_kachel_gewaehlt,
-                bei_start=_kachel_starten)
+                bei_start=_kachel_starten,
+                bei_bild=_mini_setzen)
+            # Was schon bekannt ist, sofort wieder auf die neuen Kacheln; den
+            # Rest liest der Bildlader nach den Bildern (_bibliothek_einbauten).
+            offen_einbau = []
+            for item in sichtbare:
+                bekannt = ansicht["einbauten"].get(item["path"])
+                if bekannt is None:
+                    offen_einbau.append(item)
+                else:
+                    self._bibliothek_kachel_marken(item, bekannt)
             # Der Bildlader passend zur Quelle. Bis v1.9.24 lief hier immer
             # der fuer Dateien auf dem PC - bei Quelle "PS5" setzte jedes
             # Filtern und Sortieren alle Kacheln auf "kein Titelbild", und
             # beide Lader schrieben zugleich in den Bildspeicher.
             if quelle_var.get() == "ps5":
                 self._bibliothek_ps5_bilder_nachladen(
-                    seite, sichtbare, generation=ansicht["generation"])
+                    seite, sichtbare, generation=ansicht["generation"],
+                    einbauten=(offen_einbau, _einbauten_fertig))
             else:
                 self._bibliothek_bilder_nachladen(
-                    seite, sichtbare, generation=ansicht["generation"])
+                    seite, sichtbare, generation=ansicht["generation"],
+                    einbauten=(offen_einbau, _einbauten_fertig))
 
         def _kacheln_umordnen(ereignis) -> None:
             """Neue Breite: die Kacheln neu verteilen, wenn sich die Spaltenzahl aendert."""
             kante = pt(self._KACHEL_BILD_PT)
-            spalten = max(1, int(ereignis.width) // (kante + pt(18)))
+            spalten = max(1, int(ereignis.width) // self._bibliothek_spaltenbreite(kante))
             if spalten != ansicht["spalten"] and ansicht["sichtbar"]:
                 ansicht["spalten"] = self._bibliothek_kacheln_anordnen(
                     kachel_innen, ansicht["sichtbar"], spalten)
@@ -39904,6 +40644,12 @@ class PS5ConverterGUI:
         kachel_flaeche.bind("<Configure>", _kacheln_umordnen, add="+")
 
         def _rescan() -> None:
+            # Neu suchen heisst auch: Einbauten neu lesen. Wer zwischendurch
+            # AMPR EMU eingebaut hat, saehe sonst den alten Stand. Abbilder
+            # kosten dabei nichts - ihr Ergebnis merkt sich der Bildspeicher
+            # am Stand der Datei.
+            ansicht["einbauten"].clear()
+            ansicht["einbauten_einzeln"].clear()
             if quelle_var.get() == "ps5":
                 _rescan_ps5()
                 return
@@ -39981,6 +40727,7 @@ class PS5ConverterGUI:
                     _apply_filter()
                     if fehler:
                         _status_text(fehler)
+                        _punkt("fg_warning")
                     else:
                         installiert = sum(1 for e in gefunden if e.get("installiert"))
                         _status("library.ps5_status_titel", count=len(gefunden),
@@ -40077,6 +40824,15 @@ class PS5ConverterGUI:
             ansicht["gewaehlt"] = item["path"]
             _details_zeigen(item)
 
+        def _cover_leer(text: str = "") -> None:
+            """Kein Bild im Kasten der Detailspalte - er behaelt trotzdem seine Groesse.
+
+            Mit dem Leerbild statt ``image=""``: Ohne Bild misst ein Label
+            width/height in Zeichen, der Kasten fiele zusammen, und die Spalte
+            daneben wuerde schmaler (siehe _detailbreite_anpassen).
+            """
+            cover_label.configure(image=self._kachel_leerbild(), text=text)
+
         def _details_zeigen(item) -> None:
             """Fuellt die Detailspalte - aus der Liste wie aus einer Kachel.
 
@@ -40093,6 +40849,7 @@ class PS5ConverterGUI:
             _detail_zeichnen(item)
             _erweitert_anstossen(item)
             _update_anstossen(item)
+            _einbauten_anstossen(item)
             # Das Titelbild kommt aus dem Bildspeicher - und der holt es,
             # wenn noetig, auf demselben Weg wie die Aufgaben 1-8
             # (``_read_game_meta_and_cover`` auf der Quelle selbst).
@@ -40121,7 +40878,7 @@ class PS5ConverterGUI:
             if bekannt:
                 _cover_setzen(pfad, fertig)
                 return
-            cover_label.configure(image="")
+            _cover_leer(self._t("library.kachel_laedt"))
 
             def _holen() -> None:
                 datei = ""
@@ -40145,14 +40902,16 @@ class PS5ConverterGUI:
             if datei:
                 try:
                     bild = Image.open(datei)
-                    bild.thumbnail((pt(100), pt(100)))
+                    bild.thumbnail((cover_kante, cover_kante))
                     foto = ImageTk.PhotoImage(bild)
                     self._library_cover_cache[pfad] = foto
-                    cover_label.configure(image=foto)
+                    cover_label.configure(image=foto, text="")
                     return
                 except Exception:  # noqa: BLE001
                     pass
-            cover_label.configure(image="")
+            # Dasselbe Zeichen wie auf der Kachel - im selben festen Kasten.
+            cover_label.configure(image=self._bibliothek_symbolbild(max(16, cover_kante * 3 // 10)),
+                                  text=self._t("library.kachel_ohne_bild"))
 
         tree.bind("<<TreeviewSelect>>", _on_select)
         search_var.trace_add("write", lambda *_a: _apply_filter())
@@ -40234,6 +40993,8 @@ class PS5ConverterGUI:
                     ansicht["cover_fuer"] = ""
                 if bisher in ansicht["erweitert"]:
                     ansicht["erweitert"][jetzt] = ansicht["erweitert"].pop(bisher)
+                if bisher in ansicht["einbauten"]:
+                    ansicht["einbauten"][jetzt] = ansicht["einbauten"].pop(bisher)
             _apply_filter()
             if ansicht["gewaehlt"]:
                 eintrag = _gewaehlter_eintrag()
@@ -40299,10 +41060,105 @@ class PS5ConverterGUI:
             if eintrag is not None:
                 self._bibliothek_bild_kopieren(eintrag, _status_text)
 
+        def _starten() -> None:
+            """Startet den gewaehlten Titel auf der PS5 - ueber websrv (seit 27.09.2026).
+
+            Wunsch des Nutzers: "einen Knopf, damit man von der Bibliothek aus
+            die Spiele starten kann auf der PS5". Gestartet wird ueber die
+            Title-ID (``titelstart``); das geht fuer installierte Titel und
+            fuer Abbilder, die ShadowMount+ eingebunden und registriert hat -
+            auch aus der Quelle "Rechner", wenn derselbe Titel auf der Konsole
+            liegt. websrv beendet vorher ein laufendes Spiel, deshalb die
+            Rueckfrage.
+            """
+            eintrag = _gewaehlt_oder_melden()
+            if eintrag is None:
+                return
+            meta = _angaben(eintrag)
+            kennung = self._sanitize_title_id(
+                _wert(meta, "title_id") or str(eintrag.get("title_id") or ""))
+            if not self._is_valid_title_id(kennung):
+                messagebox.showinfo(self._t("library.start_titel"),
+                                    self._t("library.start_ohne_kennung"), parent=oben)
+                return
+            host = self._bibliothek_ps5_adresse()
+            if not host:
+                messagebox.showinfo(self._t("library.start_titel"),
+                                    self._t("library.start_ohne_adresse"), parent=oben)
+                return
+            name = _wert(meta, "title") or kennung
+            if not messagebox.askyesno(self._t("library.start_titel"),
+                                       self._t("library.start_frage", name=name,
+                                               kennung=kennung),
+                                       parent=oben):
+                return
+            _start_senden(host, kennung, name, websrv_starten=False)
+
+        def _start_senden(host: str, kennung: str, name: str, *,
+                          websrv_starten: bool) -> None:
+            """Der Start selbst - im Faden, die Konsole antwortet erst danach."""
+            _status("library.start_laeuft", name=name)
+            _punkt("fg_accent")
+
+            def _arbeit() -> None:
+                if websrv_starten and not self._konsole_dienst_starten(
+                        "websrv", host, melden=_dienst_meldung):
+                    self._spaeter_im_fenster(seite, _start_ergebnis, "websrv_fehlt", "",
+                                             host, kennung, name, True)
+                    return
+                ergebnis, einzelheit = titelstart.titel_starten(host, kennung)
+                self._spaeter_im_fenster(seite, _start_ergebnis, ergebnis, einzelheit,
+                                         host, kennung, name, websrv_starten)
+
+            threading.Thread(target=_arbeit, daemon=True,
+                             name="bibliothek-start").start()
+
+        def _dienst_meldung(schluessel: str, **werte) -> None:
+            """Meldungen des websrv-Starts - aus dem Faden in die Statuszeile."""
+            self._spaeter_im_fenster(seite, _dienst_meldung_zeigen, schluessel, werte)
+
+        def _dienst_meldung_zeigen(schluessel: str, werte: dict) -> None:
+            werte = {k: (self._t(v) if isinstance(v, self._Uebersetzbar) else v)
+                     for k, v in werte.items()}
+            _status_text(self._t(schluessel, **werte).strip())
+
+        def _start_ergebnis(ergebnis: str, einzelheit: str, host: str, kennung: str,
+                            name: str, websrv_versucht: bool) -> None:
+            """Was aus dem Start wurde - in Statuszeile und, wenn noetig, als Meldung."""
+            if ergebnis == titelstart.GESTARTET:
+                _status("library.start_gesendet", name=name)
+                return
+            _status("library.start_gescheitert", name=name)
+            _punkt("fg_warning")
+            if ergebnis == titelstart.NICHT_ERREICHBAR and not websrv_versucht:
+                # websrv nimmt den Startbefehl entgegen. Er liegt dem Programm
+                # bei (helloworld/) und laesst sich wie auf "Konsole &
+                # Payloads" ueber den ELF-Loader schicken - aber nur auf Zuruf.
+                if messagebox.askyesno(self._t("library.start_titel"),
+                                       self._t("library.start_kein_websrv"), parent=oben):
+                    _start_senden(host, kennung, name, websrv_starten=True)
+                return
+            if ergebnis == titelstart.ABGELEHNT:
+                text = self._t("library.start_abgelehnt", kennung=kennung)
+            elif ergebnis == titelstart.UNBEKANNTER_PFAD:
+                text = self._t("library.start_websrv_alt")
+            elif ergebnis == "websrv_fehlt":
+                text = self._t("library.start_websrv_fehlt")
+            elif ergebnis == titelstart.NICHT_ERREICHBAR:
+                text = self._t("library.start_nicht_erreichbar", grund=einzelheit)
+            else:
+                text = self._t("library.start_fehler", grund=einzelheit)
+            messagebox.showwarning(self._t("library.start_titel"), text, parent=oben)
+
         # Alle Knoepfe der Seite im kompakten Stil (Klein.TButton): Mit der
         # Polsterung des normalen Knopfs passte die Seite nicht in 700 px.
-        # Untereinander neben dem Titelbild; "Angaben kopieren" (oben
-        # angelegt) als dritter.
+        # Untereinander neben dem Titelbild: zuerst "Auf PS5 starten" (seit
+        # 27.09.2026, hervorgehoben), dann die Bildknoepfe, "Angaben kopieren"
+        # (oben angelegt) als letzter.
+        start_knopf = ttk.Button(bild_knoepfe, text=self._t("library.btn_starten"),
+                                 style="KleinAccent.TButton", command=_starten)
+        start_knopf.pack(side="top", fill="x", pady=(0, 4))
+        self._register_translatable(start_knopf, "library.btn_starten")
         for schluessel, befehl in (("library.btn_bild_speichern", _bild_speichern),
                                    ("library.btn_bild_kopieren", _bild_kopieren)):
             knopf = ttk.Button(bild_knoepfe, text=self._t(schluessel),
@@ -40367,12 +41223,65 @@ class PS5ConverterGUI:
             ansicht["angezeigt"] = None
             ansicht["gewaehlt"] = ""
             _detail_zeichnen(None)
-            cover_label.configure(image="")
+            _cover_leer()
             _rescan()
+
+        def _detailbreite_anpassen() -> None:
+            """Gibt der Detailspalte eine feste Breite - gemessen, nicht geraten.
+
+            Die Textbreite ist das Breitere aus dem Mindestmass und "Bildkasten
+            + Abstand + breitester Knopf daneben"; alle Zeilen brechen dort um.
+            Die Spalte reserviert genau das samt Polsterung (2 x 10), Rahmen
+            (2 x 1) und Abstand zur Flaeche (12) - das Raster zaehlt ``padx``
+            in die Spalte mit, ``minsize`` muss es also auch. Kein Inhalt ist
+            danach breiter als die Spalte, und keine Auswahl aendert sie.
+
+            Nach einem Sprachwechsel erneut: Die Knoepfe sind dann anders breit.
+            """
+            try:
+                detail.update_idletasks()
+                knoepfe_breite = max((k.winfo_reqwidth() for k in bild_knoepfe.winfo_children()),
+                                     default=0)
+                text = max(umbruch, cover_label.winfo_reqwidth() + 8 + knoepfe_breite)
+                for name, feld in zeilen.items():
+                    # Die Plakette traegt 2 x 6 Pixel Polsterung.
+                    feld.configure(wraplength=text - (12 if name == "format" else 0))
+                body.grid_columnconfigure(1, weight=0, minsize=text + 2 * 10 + 2 * 1 + 12)
+                ansicht["detailbreite"] = text
+            except tk.TclError as exc:
+                logger.debug("Bibliothek: Detailbreite (%s)", exc)
+
+        def _farben_neu() -> None:
+            """Nach einem Designwechsel: was die Umfaerbung des Programms nicht erreicht.
+
+            ``_recolor_widget`` kennt nur Grund- und Schriftfarben von Rahmen,
+            Labels und Knoepfen. Ringe und Raender, die Umschalter, der Punkt
+            der Statuszeile, die Kachelflaeche (ein Canvas) und die
+            gezeichneten Platzhalter blieben sonst im alten Design stehen.
+            """
+            farben = self._COLORS
+            quelle_faerben()
+            ansicht_faerben()
+            try:
+                kachel_flaeche.configure(bg=farben["console_bg"])
+                kachel_innen.configure(bg=farben["console_bg"])
+                detail.configure(highlightbackground=farben["border"])
+                cover_label.configure(bg=farben["console_bg"], fg=farben["fg_secondary"],
+                                      highlightbackground=farben["border"])
+                zeilen["format"].configure(bg=farben["console_bg"])
+            except tk.TclError as exc:
+                logger.debug("Bibliothek: Designwechsel (%s)", exc)
+            _punkt(ansicht.get("punkt", "fg_secondary"))
+            # Kacheln und Liste neu - die Titelbilder kommen aus dem
+            # Bildspeicher, die gezeichneten Platzhalter in den neuen Farben.
+            ansicht["minis"].clear()
+            _apply_filter()
+            aktuell = ansicht.get("angezeigt")
+            if aktuell is not None:
+                _details_zeigen(aktuell)
 
         def _beschriften() -> None:
             """Nach einem Sprachwechsel: alles, was nicht registriert ist."""
-            _umschalter_beschriften()
             _kopf_beschriften()
             schluessel, werte = ansicht["status"]
             status_var.set(self._t(schluessel, **werte) if schluessel
@@ -40383,13 +41292,19 @@ class PS5ConverterGUI:
                 _detail_zeichnen(None)
             for verteilen in ansicht["umbrechen"]:
                 verteilen()
+            _detailbreite_anpassen()
 
-        # Fuer den Sprachwechsel (_apply_language) und die Tests.
+        # Fuer den Sprachwechsel (_apply_language), den Designwechsel
+        # (_apply_theme) und die Tests.
         self._bibliothek = {"beschriften": _beschriften, "ansicht": ansicht,
                             "eintraege": all_items, "neu_suchen": _rescan,
                             "details": _details_zeigen, "quelle": quelle_var,
                             "filtern": _apply_filter, "zeilen": zeilen,
-                            "knoepfe": knoepfe, "quelle_gewechselt": _quelle_gewechselt}
+                            "knoepfe": knoepfe, "quelle_gewechselt": _quelle_gewechselt,
+                            "farben": _farben_neu, "detail": detail,
+                            "cover": cover_label, "liste": tree,
+                            "kachelflaeche": kachel_flaeche,
+                            "starten": _starten, "start_knopf": start_knopf}
 
         # Die gemerkte Ansicht herstellen. Beide Flaechen liegen im Raster;
         # eine davon wird gleich wieder herausgenommen.
@@ -40397,9 +41312,9 @@ class PS5ConverterGUI:
             liste_rahmen.grid_remove()
         else:
             kachel_rahmen.grid_remove()
-        _umschalter_beschriften()
         _reihe_zeigen()
         _detail_zeichnen(None)
+        _detailbreite_anpassen()
         schluessel, werte = ansicht["status"]
         _status(schluessel, **werte)
 
@@ -55771,6 +56686,14 @@ class PS5ConverterGUI:
         # Designfarbe. Mit dem Regler "Status-Log" traegt es eine gezogene
         # Farbe, und die koennte zufaellig einer anderen Designfarbe gleichen.
         self._protokoll_farbe_anwenden()
+        # Die Bibliothek faerbt selbst nach, was die Umfaerbung nicht kennt
+        # (Ringe, Raender, Umschalter, gezeichnete Platzhalter).
+        bibliothek = getattr(self, "_bibliothek", None)
+        if isinstance(bibliothek, dict) and callable(bibliothek.get("farben")):
+            try:
+                bibliothek["farben"]()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek nicht nachgefaerbt: %s", exc)
 
         # Toolbar-Buttons beim Theme-Wechsel aktualisieren
         # Design-Button in Toolbar aktualisieren

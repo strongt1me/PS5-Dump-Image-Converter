@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.50</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.51</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.50</span>
+      <span class="marke">Version v1.9.51</span>
       <span class="marke">Stand 27. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -536,6 +536,17 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Systemanwendungen der Konsole erscheinen nicht, und ein Spiel, das auch
     als Sicherung vorliegt, steht nur einmal da &ndash; als Sicherung.</li>
   </ul>
+  <p>Quelle und Ansicht wählen Sie mit den beiden Umschaltern oben rechts
+  (<em>Rechner&nbsp;|&nbsp;PS5</em> und <em>Kacheln&nbsp;|&nbsp;Liste</em>);
+  hervorgehoben ist jeweils, was gerade gilt. Auch die Liste zeigt zu jedem
+  Titel ein kleines Titelbild. Neben der Suche sortiert
+  <em>Sortierung</em> beide Ansichten nach Titel, Title-ID, Version, Format
+  oder Pfad, auf Wunsch absteigend; rechts daneben steht, wie viele Titel
+  gerade zu sehen sind („3 von 38 Titeln“ während einer Suche). Die
+  gewählte Kachel erkennen Sie am farbigen Rahmen, ein Titel ohne Titelbild
+  zeigt ein durchgestrichenes Bild. Der Punkt vor der Statuszeile leuchtet
+  während eines Suchlaufs in der Akzentfarbe, danach grün &ndash; und in
+  der Warnfarbe, wenn die Suche auf der PS5 gescheitert ist.</p>
   <p>Die Adresse der Konsole müssen Sie dafür nicht kennen. Wie der AMPR EMU
   Manager (Aufgabe&nbsp;7) versucht die Bibliothek der Reihe nach die Adresse
   aus den Einstellungen, die gespeicherten FTP-Profile, den Rundruf der
@@ -563,6 +574,28 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Bibliothek zusätzlich, ob es ein neueres Update gibt. <em>Bild
   speichern</em>, <em>Bild kopieren</em> und <em>Angaben kopieren</em>
   nehmen Titelbild und Angaben mit.</p>
+  <p><strong>Einbauten.</strong> Die Detailspalte sagt außerdem, ob ein Spiel
+  schon <em>AMPR EMU</em>, den <em>PlayGo</em>-Ersatz,
+  <em>BACKPORT</em>-Bibliotheken (mit ihrem Firmware-Ordner, etwa
+  <code>fw10</code>) oder ein <em>Asset-Pack</em> trägt. Auf der Kachel
+  stehen dieselben Marken oben rechts auf dem Titelbild, in der Liste in der
+  Spalte <em>Einbauten</em>. Nachgesehen wird dort, wo ShadowMount+ sucht, und
+  in seiner Reihenfolge: zuerst ein Ordner <code>backports/&lt;Title-ID&gt;</code>
+  neben den Spielen, dann das Spiel selbst &ndash; jeweils zuerst
+  <code>fakelib2</code>, dann <code>fakelib</code>. Liegen beide im Spiel,
+  steht der Hinweis „fakelib2 verdeckt fakelib“: ShadowMount+ liest dann nur
+  <code>fakelib2</code>. In ein <code>.ffpkg</code>, in ein Abbild auf der PS5
+  und in ein installiertes Paket (ohne <code>backports</code>-Ordner) kann das
+  Programm nicht hineinsehen &ndash; dort steht „nicht ermittelbar“, nie
+  „keine“.</p>
+  <p><strong>Auf PS5 starten.</strong> Der hervorgehobene Knopf neben dem
+  Titelbild startet den gewählten Titel auf der Konsole &ndash; über
+  <em>websrv</em> (Port&nbsp;8080), der dem Programm beiliegt. Läuft auf der
+  PS5 gerade ein Spiel, wird es dabei beendet; das Programm fragt deshalb
+  vorher. Antwortet websrv nicht, bietet es an, ihn über den ELF-Loader zu
+  starten. Starten lassen sich installierte Titel und Abbilder, die
+  ShadowMount+ eingebunden hat &ndash; auch aus der Quelle <em>Rechner</em>,
+  wenn derselbe Titel auf der Konsole liegt.</p>
   <p>Die Knöpfe darunter richten sich nach der gewählten Quelle:</p>
   <div class="tabelle">
   <table>
@@ -2159,7 +2192,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.50), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.51), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2359,7 +2392,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.50</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.51</strong></span>
     <span>Stand 27. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

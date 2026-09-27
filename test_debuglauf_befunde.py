@@ -1286,8 +1286,16 @@ class BibliothekKachelTests(_TempTest):
         self.assertEqual([e["_kachel"] for e in eintraege], vorher)
         self.assertTrue(all(k.winfo_exists() for k in vorher))
         c = self.app._COLORS
-        self.assertEqual(str(eintraege[1]["_kachel"].cget("bg")), c["bg_card"])
-        self.assertEqual(str(eintraege[0]["_kachel"].cget("bg")), c["console_bg"])
+        # Seit dem 27.09.2026 ist jede Kachel eine Karte; gewaehlt wird der
+        # Ring (Akzent statt Randfarbe) - gleich breit, damit nichts springt.
+        gewaehlt, andere = eintraege[1]["_kachel"], eintraege[0]["_kachel"]
+        self.assertEqual(str(gewaehlt.cget("highlightbackground")), c["fg_accent"])
+        self.assertEqual(str(andere.cget("highlightbackground")), c["border"])
+        self.assertEqual(str(gewaehlt.cget("bg")), c["bg_card"])
+        self.assertEqual(str(andere.cget("bg")), c["bg_card"])
+        self.assertEqual(int(gewaehlt.cget("highlightthickness")),
+                         int(andere.cget("highlightthickness")))
+        self.assertEqual(str(eintraege[1]["_kachel_texte"][0].cget("fg")), c["fg_accent"])
 
     def test_kachelklick_und_filter_im_fenster(self) -> None:
         fenster = _methode(_klasse(ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))),

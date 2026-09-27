@@ -207,12 +207,24 @@ class ContainerRueckfallTests(unittest.TestCase):
         self.assertEqual("info_popup.ampr_eingebaut", erg)
 
     def test_rueckfall_setzt_den_engine_pfad_selbst(self) -> None:
-        """Sonst scheitert der Import still und alles heisst 'nicht ermittelbar'."""
-        quelle = Path(hauptprogramm.__file__).read_text(encoding="utf-8", errors="replace")
-        anfang = quelle.index("def _ampr_marker_im_container")
-        ende = quelle.index("def ", anfang + 10)
-        rumpf = quelle[anfang:ende]
-        self.assertIn("mkpfs_dir", rumpf,
+        """Sonst scheitert der Import still und alles heisst 'nicht ermittelbar'.
+
+        Seit dem 27.09.2026 liest ``_container_dateien`` die innere Ebene (die
+        Bibliothek braucht sie fuer alle Einbauten). Dort muss der Pfad gesetzt
+        werden, und der Container-Weg muss ueber sie gehen - am Syntaxbaum
+        geprueft, nicht am Text zwischen zwei ``def``: Ein Kommentar, der
+        ``mkpfs_dir`` nur erwaehnt, haette die alte Textsuche gruen gehalten.
+        """
+        import ast
+        baum = ast.parse(Path(hauptprogramm.__file__).read_text(encoding="utf-8"))
+
+        def _fn(name: str) -> str:
+            return ast.unparse(next(k for k in ast.walk(baum)
+                                    if isinstance(k, ast.FunctionDef) and k.name == name))
+
+        self.assertIn("self._container_dateien(", _fn("_ampr_marker_im_container"),
+                      "Der Container-Weg liest die innere Ebene wieder selbst")
+        self.assertIn("getattr(self, 'mkpfs_dir'", _fn("_container_dateien"),
                       "Der Container-Weg setzt den Engine-Pfad nicht selbst")
 
     def test_sicherung_orig_zaehlt_nicht_als_einbau(self) -> None:

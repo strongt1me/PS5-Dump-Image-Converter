@@ -687,6 +687,179 @@ def rueckgaengig(protokoll: str,
 
 
 # ---------------------------------------------------------------------------
+# Einbauten: AMPR EMU, PlayGo, BACKPORT, Asset-Pack
+# ---------------------------------------------------------------------------
+
+#: Wo ShadowMount+ die Ersatzbibliotheken eines Spiels sucht - der erste
+#: vorhandene Ordner gilt. Gemessen am Quelltext von 1.7beta2
+#: (``sm_fakelib.c``, ``resolve_game_fakelib_source_for_path``): erst
+#: ``backports/<ID>/fakelib2`` und ``backports/<ID>/fakelib``, dann dieselben
+#: beiden im Spiel. ``fakelib2`` wird dort exklusiv eingehaengt - liegt es
+#: neben ``fakelib``, wird ``fakelib`` gar nicht gelesen.
+FAKELIB_REIHENFOLGE: tuple[str, ...] = ("fakelib2", "fakelib")
+
+#: Die Marken der Einbauten dieses Programms (siehe ``_fruehere_einbauten``).
+AMPR_DATEI = "libSceAmpr.sprx"
+PLAYGO_DATEI = "libScePlayGo.sprx"
+#: BACKPORT legt die Bibliotheken je Firmware in ``fakelib/fw<NN>`` ab.
+BACKPORT_ORDNER = re.compile(r"fw\d+", re.IGNORECASE)
+#: Der Ordner neben den Spielen, den ShadowMount+ ab 1.7beta2 ueber das
+#: Spiel legt - auch ueber installierte Pakete: ``<Suchpfad>/backports/<ID>``.
+BACKPORTS_ORDNER = "backports"
+
+#: Huellen vor der Spielwurzel, wie sie manche Abbilder tragen
+#: (``app0/fakelib/...`` - dieselbe Form kennt ``_ist_aktive_ampr_bibliothek``).
+_HUELLEN: tuple[str, ...] = ("app0", "uroot")
+
+
+def _relativ(pfad: str) -> str:
+    """Relativer Pfad mit Schraegstrich, ohne fuehrendes ``./``, ``/`` oder Huelle."""
+    teil = str(pfad or "").replace("\\", "/").strip()
+    while teil.startswith("./"):
+        teil = teil[2:]
+    teil = teil.strip("/")
+    kopf, _, rest = teil.partition("/")
+    if rest and kopf.lower() in _HUELLEN:
+        teil = rest
+    return teil
+
+
+def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
+                       assetpack_datei: Callable[[str], bool] | None = None
+                       ) -> dict[str, Any]:
+    """Welche Einbauten ein Spiel traegt - aus den Pfaden seiner Dateien.
+
+    Gleich fuer Dump-Ordner, Abbilder und die Konsole: Die Aufrufer liefern
+    nur Pfade, relativ zur Spielwurzel. Gross- und Kleinschreibung zaehlt
+    nicht (exFAT unterscheidet sie auch nicht).
+
+    Args:
+        dateien: Dateipfade, etwa ``fakelib/libSceAmpr.sprx``. Ein Ordner
+            zaehlt als vorhanden, sobald eine Datei darin liegt.
+        ordner: Ordnerpfade, die ohne Datei bekannt sind (FTP-Listen).
+        assetpack_datei: ``(name) -> bool`` - gehoert eine Datei in der
+            Wurzel zur gepackten Asset-Schicht? (``_ist_ampr_asset_datei``;
+            dieselbe Regel wie beim Einbau.)
+
+    Returns:
+        ``{"ordner", "verdeckt", "ampr", "playgo", "backport", "assetpack"}``:
+        der Bibliotheksordner, der nach :data:`FAKELIB_REIHENFOLGE` gilt
+        (``""`` ohne), ob er einen zweiten verdeckt, die Marken darin, die
+        BACKPORT-Firmwareordner (sortiert) und ob ein Asset-Pack da ist.
+    """
+    inhalt: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
+    unterordner: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
+    vorhanden: set[str] = set()
+    assetpack = False
+
+    def _merken(teile: list[str], ist_datei: bool) -> None:
+        if not teile or teile[0] not in inhalt:
+            return
+        wurzel = teile[0]
+        vorhanden.add(wurzel)
+        if len(teile) == 2 and ist_datei:
+            inhalt[wurzel].add(teile[1])
+        elif len(teile) >= 2 and (len(teile) > 2 or not ist_datei):
+            unterordner[wurzel].add(teile[1])
+
+    for datei in dateien:
+        rel = _relativ(datei).lower()
+        if not rel:
+            continue
+        if assetpack_datei is not None and "/" not in rel and assetpack_datei(rel):
+            assetpack = True
+        _merken(rel.split("/"), True)
+    for eintrag in ordner:
+        rel = _relativ(eintrag).lower()
+        if rel:
+            _merken(rel.split("/"), False)
+
+    gilt = next((name for name in FAKELIB_REIHENFOLGE if name in vorhanden), "")
+    marken = inhalt.get(gilt, set())
+    return {
+        "ordner": gilt,
+        "verdeckt": len(vorhanden) > 1,
+        "ampr": AMPR_DATEI.lower() in marken,
+        "playgo": PLAYGO_DATEI.lower() in marken,
+        "backport": sorted((n for n in unterordner.get(gilt, set())
+                            if BACKPORT_ORDNER.fullmatch(n)),
+                           key=lambda n: (len(n), n)),
+        "assetpack": assetpack,
+    }
+
+
+def einbauten_auf_konsole(ftp: Any, pfad: str, *,
+                          auflisten: Callable[[Any, str], dict[str, list]],
+                          assetpack_datei: Callable[[str], bool] | None = None
+                          ) -> dict[str, Any] | None:
+    """:func:`einbauten_bewerten` fuer einen Ordner auf der Konsole.
+
+    Hoechstens drei Auflistungen: die Wurzel (welche Bibliotheksordner, liegt
+    das Asset-Pack-Verzeichnis dort) und die Bibliotheksordner selbst. Nur
+    Verzeichnislisten - keine Datei wird uebertragen, also kann auch keine
+    Uebertragung abbrechen (siehe ``konsole_ftp``: ein abgebrochener RETR
+    legt ftpsrv lahm).
+
+    Returns:
+        Das Ergebnis, oder ``None``, wenn die Wurzel nicht lesbar ist.
+    """
+    def _namen(eintraege) -> list[str]:
+        return [str(e[0] if isinstance(e, (tuple, list)) else e) for e in eintraege]
+
+    try:
+        wurzel = auflisten(ftp, pfad)
+    except Exception as exc:  # noqa: BLE001
+        log.debug("Einbauten: %s auf der Konsole nicht lesbar (%s)", pfad, exc)
+        return None
+    dateien = _namen(wurzel.get("files", []))
+    ordner: list[str] = []
+    for name in wurzel.get("dirs", []):
+        if str(name).lower() not in FAKELIB_REIHENFOLGE:
+            continue
+        ordner.append(str(name))
+        try:
+            inhalt = auflisten(ftp, "%s/%s" % (pfad.rstrip("/"), name))
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Einbauten: %s/%s nicht lesbar (%s)", pfad, name, exc)
+            continue
+        dateien.extend("%s/%s" % (name, d) for d in _namen(inhalt.get("files", [])))
+        ordner.extend("%s/%s" % (name, d) for d in inhalt.get("dirs", []))
+    return einbauten_bewerten(dateien, ordner=ordner, assetpack_datei=assetpack_datei)
+
+
+def backports_auf_konsole(ftp: Any, scanpfade: Iterable[str], *,
+                          ist_ordner: Callable[[Any, str], bool],
+                          auflisten: Callable[[Any, str], dict[str, list]]
+                          ) -> dict[str, list[str]]:
+    """Welche Title-IDs einen ``backports``-Ordner haben - und wo.
+
+    ShadowMount+ legt ab 1.7beta2 ``<Suchpfad>/backports/<ID>`` ueber das
+    Spiel mit dieser Kennung, auch ueber ein installiertes Paket. Liefern
+    mehrere Suchpfade dieselbe Kennung, gewinnt der des Spiels, sonst die
+    Reihenfolge der Suchpfade - deshalb je Kennung alle Fundorte in dieser
+    Reihenfolge.
+
+    Returns:
+        ``{"PPSA01234": ["/data/homebrew/backports/PPSA01234", ...]}``.
+    """
+    funde: dict[str, list[str]] = {}
+    for ort in dict.fromkeys(str(p).rstrip("/") for p in scanpfade):
+        wurzel = "%s/%s" % (ort, BACKPORTS_ORDNER)
+        try:
+            if not ist_ordner(ftp, wurzel):
+                continue
+            inhalt = auflisten(ftp, wurzel)
+        except Exception as exc:  # noqa: BLE001
+            log.debug("Einbauten: %s nicht lesbar (%s)", wurzel, exc)
+            continue
+        for name in inhalt.get("dirs", []):
+            kennung = str(name).strip().upper()
+            if kennung:
+                funde.setdefault(kennung, []).append("%s/%s" % (wurzel, name))
+    return funde
+
+
+# ---------------------------------------------------------------------------
 # Der Bildspeicher
 # ---------------------------------------------------------------------------
 
@@ -834,6 +1007,35 @@ class Bildspeicher:
             kennung = self.schluessel(pfad)
             eintrag = dict(self._index.get(kennung) or {})
             eintrag["angaben"] = {str(k): str(v) for k, v in dict(angaben).items()}
+            eintrag.setdefault("zeit", time.time())
+            self._index[kennung] = eintrag
+            self._schreiben()
+
+    def einbauten_lesen(self, pfad: str) -> dict[str, Any] | None:
+        """Die gemerkten Einbauten eines Abbilds (:func:`einbauten_bewerten`), oder ``None``.
+
+        Ein eigenes Feld, nicht Teil der Angaben: ``_bibliothek_erweiterte_angaben``
+        haelt jeden nicht leeren Angaben-Eintrag fuer "schon gelesen" - Einbauten
+        dort hineinzulegen, haette die Firmware-Abfrage uebersprungen.
+        """
+        with self._sperre:
+            self._laden()
+            eintrag = self._index.get(self.schluessel(pfad)) or {}
+            gemerkt = eintrag.get("einbauten")
+            return dict(gemerkt) if isinstance(gemerkt, dict) else None
+
+    def einbauten_schreiben(self, pfad: str, ergebnis: dict[str, Any]) -> None:
+        """Merkt die Einbauten eines Abbilds - unter dem Schluessel der Datei.
+
+        Wird das Abbild ersetzt, aendern sich Groesse oder Zeit und damit der
+        Schluessel: Ein Neubau mit anderen Kaestchen zeigt dann nicht die
+        Einbauten seines Vorgaengers.
+        """
+        with self._sperre:
+            self._laden()
+            kennung = self.schluessel(pfad)
+            eintrag = dict(self._index.get(kennung) or {})
+            eintrag["einbauten"] = json.loads(json.dumps(dict(ergebnis)))
             eintrag.setdefault("zeit", time.time())
             self._index[kennung] = eintrag
             self._schreiben()
