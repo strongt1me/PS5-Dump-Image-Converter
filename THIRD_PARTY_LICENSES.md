@@ -31,8 +31,8 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 Den Wortlaut der GNU General Public License 3.0 enthält
 `helloworld/LICENSE-GPL-3.0.txt` – der unveränderte Text der Free Software
 Foundation. Er gilt für die Zeilen unten, die GPL-3.0 oder GPL-3.0-or-later
-nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN und
-unjail-ps5app-payload. Wo der Quelltext des jeweiligen Projekts zu finden ist,
+nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN,
+unjail-ps5app-payload und WK Autoloader. Wo der Quelltext des jeweiligen Projekts zu finden ist,
 steht in seiner Zeile.
 
 | Datei | Projekt | Autor / Herkunft | Beleg |
@@ -57,6 +57,7 @@ steht in seiner Zeile.
 | `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |
 | `web-file-mgr-v1.9.elf` | PS5 Web File Manager | owendswang | „Web File Manager / Version: … / Port: …" im ELF |
 | `webkit-autoloader-installer_v0.4.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „Autoloader Installer v… by PLK" im ELF |
+| `WK-AutoLoader_v1.05.elf` | WK Autoloader | X-F1REBALL-X | GPL-3.0 (LICENSE im Projekt); `github.com/X-F1REBALL-X/WK-AutoLoader`, Release v1.0.5; nutzt Submodule (itsPLK/ps5-unified-autoloader, slopkit, idlesauce/umtx2, ps5-elfldr) |
 | `ProsperoMgr.elf` | Prospero Manager | – | „Prospero Manager" im ELF, kein Autorenname |
 | `CheatRunner_v0.17.elf` | CheatRunner | maj0r | „CheatRunner v0.17 by maj0r" |
 | `zftpd-ps5-v1.5.0.elf` | zftpd | seregonwar | Projektadresse, MIT-Lizenz (unten) |
@@ -65,8 +66,8 @@ steht in seiner Zeile.
 | `PIZZA-HEN-v2.00.elf` | PIZZA-HEN | – | kein Beleg in der Datei |
 | `bfpilot_v0.4.4.elf` | bfpilot | – | kein Beleg in der Datei |
 | `dump_installer_v1.07.elf` | Dump Installer | – | kein Beleg in der Datei |
-| `kstuff_lite_v1.11_Beta.elf` | kstuff lite | EchoStretch | Release v1.11 von `github.com/EchoStretch/kstuff-lite` (Prüfsumme gleich); im ELF der Quellpfad `drakmor/kstuff-lite` |
-| `kstuff_lite_v1.2-dr_Beta2.elf` | kstuff lite | – | kein Beleg in der Datei |
+| `kstuff_lite_v1.11_Beta_EchoStretch.elf` | kstuff lite (EchoStretch-Build) | EchoStretch | Release v1.11 von `github.com/EchoStretch/kstuff-lite` |
+| `kstuff_v1.13_dr_Beta4.elf` | kstuff (dr) | drakmor | „dr" = drakmor; aktuellste drakmor-Fassung, kein Beleg in der Datei |
 | `ps5upload-5.33.2.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.33.2 |
 | `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.2/`); aus dem Release v1.2 |

@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.49):** Der mitgelieferte unjail-Payload ist auf v1.2 aktualisiert.
+> **Kurz zum aktuellen Stand (v1.9.50):** WK Autoloader ist neu dabei, und die mitgelieferten kstuff-Payloads sind auf die zwei aktuellen Fassungen aufgeräumt.
+
+---
+
+## v1.9.50 – 27.09.2026
+
+- **Neu:** WK Autoloader v1.0.5 liegt bei und steht in „Konsole & Payloads“ zur Verfügung.
+- **Geändert:** Die mitgelieferten kstuff-Payloads sind auf die zwei aktuellen Fassungen reduziert – kstuff v1.13 dr Beta4 (drakmor) und kstuff lite v1.11 Beta (EchoStretch); ältere kstuff-Builds wurden entfernt.
 
 ---
 
