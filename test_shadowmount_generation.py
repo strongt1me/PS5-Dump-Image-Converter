@@ -7,7 +7,10 @@ Aenderungen gehoeren festgenagelt: Wenn hier etwas kippt, merkt man es sonst
 erst an einem Spiel, das ohne seine Ersatzbibliotheken startet.
 
 Quelle sind die beiden Anleitungen vom 22.08.2026, die am Quellcode beider
-Fassungen geprueft wurden.
+Fassungen geprueft wurden. Der Spielordner ist seit 28.09.2026 auf den
+gemessenen Stand von 1.7beta1/beta2 umgestellt (``SPIELORDNER_JE_FASSUNG``):
+Dort wird ``fakelib2`` wieder zuerst gelesen, nur alpha8 bis alpha13fix1
+uebergingen es.
 """
 from __future__ import annotations
 
@@ -33,10 +36,41 @@ class ProfilTests(unittest.TestCase):
         with self.assertRaises(KeyError):
             sg.profil("alpha7")
 
-    def test_der_entscheidende_unterschied(self) -> None:
-        """fakelib2 im Spielordner: frueher wirksam, heute nicht mehr."""
+    def test_fakelib2_im_spielordner_je_fassung(self) -> None:
+        """Wirksam bis alpha6, dazwischen nicht, ab 1.7beta1 wieder.
+
+        Am Quelltext gemessen (``resolve_game_fakelib_source_for_path``).
+        Bis zum 28.09.2026 stand hier ``NEU: False`` - der alpha8-Stand,
+        und die Warnungen nannten ein ``fakelib2`` "ignoriert", das in der
+        beiliegenden 1.7beta2 gewinnt.
+        """
+        self.assertEqual(sg.SPIELORDNER_JE_FASSUNG, (
+            (sg.ALT, "bis 1.7 alpha6", ("fakelib2", "fakelib")),
+            (sg.NEU, "1.7 alpha8 bis alpha13fix1", ("fakelib",)),
+            (sg.NEU, "ab 1.7beta1", ("fakelib2", "fakelib")),
+        ))
         self.assertTrue(sg.profil(sg.ALT)["spiel_fakelib2_wirkt"])
-        self.assertFalse(sg.profil(sg.NEU)["spiel_fakelib2_wirkt"])
+        self.assertTrue(sg.profil(sg.NEU)["spiel_fakelib2_wirkt"])
+
+    def test_das_profil_beschreibt_die_neueste_stufe(self) -> None:
+        for generation in (sg.ALT, sg.NEU):
+            with self.subTest(generation=generation):
+                letzte = [o for g, _f, o in sg.SPIELORDNER_JE_FASSUNG
+                          if g == generation][-1]
+                self.assertEqual(sg.profil(generation)["spiel_ordner"], letzte)
+
+    def test_abgelegt_wird_was_jede_fassung_liest(self) -> None:
+        """``fakelib`` - obwohl ``NEU`` seit 1.7beta1 ``fakelib2`` zuerst liest.
+
+        Nimmt ``ablageordner`` den ersten gelesenen Namen, schreibt das
+        Programm nach ``fakelib2``, und alpha8 bis alpha13fix1 starten das
+        Spiel ohne die Bibliotheken.
+        """
+        alle = set.intersection(*(set(o) for _g, _f, o
+                                  in sg.SPIELORDNER_JE_FASSUNG))
+        self.assertEqual(alle, {"fakelib"})
+        self.assertEqual(sg.ablageordner(sg.NEU, sg.ORT_SPIEL), "fakelib")
+        self.assertEqual(sg.profil(sg.NEU)["spiel_ablage"], "fakelib")
 
     def test_nur_die_neue_fassung_kennt_cache_und_emulatoren(self) -> None:
         self.assertFalse(sg.profil(sg.ALT)["hat_cache"])
@@ -64,18 +98,20 @@ class SuchreihenfolgeTests(unittest.TestCase):
         self.assertLess(wege[0].index("fakelib2"), len(wege[0]))
         self.assertNotIn("fakelib2", wege[1])
 
-    def test_neu_hat_drei_pfade_in_fester_reihenfolge(self) -> None:
+    def test_neu_hat_vier_pfade_in_fester_reihenfolge(self) -> None:
+        """So in ``sm_fakelib.c`` von 1.7beta2 (``candidates[]``)."""
         self.assertEqual(sg.suchreihenfolge(sg.NEU), (
             "<scanpath>/backports/<TITLE_ID>/fakelib2/",
             "<scanpath>/backports/<TITLE_ID>/fakelib/",
+            "<Spielquelle>/fakelib2/",
             "<Spielquelle>/fakelib/",
         ))
 
-    def test_neu_nennt_den_spielordner_nur_mit_fakelib(self) -> None:
-        """Der haeufigste Fehler beim Umstieg."""
-        letzter = sg.suchreihenfolge(sg.NEU)[-1]
-        self.assertIn("<Spielquelle>/fakelib/", letzter)
-        self.assertNotIn("fakelib2", letzter)
+    def test_neu_sucht_im_spielordner_zuletzt(self) -> None:
+        """Der Backport-Ordner schlaegt das Spiel, auch dessen fakelib2."""
+        wege = sg.suchreihenfolge(sg.NEU)
+        self.assertTrue(all("backports" in w for w in wege[:2]))
+        self.assertTrue(all(w.startswith("<Spielquelle>/") for w in wege[2:]))
 
 
 class AblagezielTests(unittest.TestCase):
@@ -110,9 +146,12 @@ class AblagezielTests(unittest.TestCase):
         self.assertFalse(neu["pfad"].endswith("fakelib2"))
 
     def test_die_neue_fassung_raet_vom_spielordner_ab(self) -> None:
+        """Und nennt beide Stufen, statt fakelib2 "ignoriert" zu nennen."""
         neu = sg.ablageziel(sg.NEU, sg.ORT_SPIEL, wurzel="/mnt/usb0/Spiel")
         self.assertFalse(neu["empfohlen"])
-        self.assertIn("ignoriert", neu["hinweis"])
+        self.assertIn("1.7beta1", neu["hinweis"])
+        self.assertIn("alpha13fix1", neu["hinweis"])
+        self.assertNotIn("ignoriert", neu["hinweis"])
 
     def test_windows_pfade_behalten_ihren_trenner(self) -> None:
         ziel = sg.ablageziel(sg.ALT, sg.ORT_SPIEL, wurzel=r"E:\Spiele\PPSA01234")
@@ -127,18 +166,41 @@ class BeanstandungenTests(unittest.TestCase):
     """Was an einer bestehenden Ablage nicht wirkt."""
 
     def test_fakelib2_im_spielordner_wird_bei_neu_beanstandet(self) -> None:
+        """Genau ein Satz: wirkt ab 1.7beta1, nicht in der Zwischenstufe."""
         meldungen = sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["fakelib2"])
-        self.assertTrue(meldungen)
-        self.assertTrue(any("ignoriert" in m for m in meldungen))
+        self.assertEqual(len(meldungen), 1, meldungen)
+        self.assertIn("1.7beta1", meldungen[0])
+        self.assertIn("alpha13fix1", meldungen[0])
+        self.assertIn("umbenennen nach 'fakelib'", meldungen[0])
+        self.assertNotIn("ignoriert", meldungen[0])
 
     def test_dieselbe_ablage_ist_bei_alt_in_ordnung(self) -> None:
         self.assertEqual(sg.beanstandungen(sg.ALT, sg.ORT_SPIEL, ["fakelib2"]), [])
+
+    def test_nur_fakelib_ist_ueberall_in_ordnung(self) -> None:
+        for gen in (sg.ALT, sg.NEU):
+            with self.subTest(generation=gen):
+                self.assertEqual(
+                    sg.beanstandungen(gen, sg.ORT_SPIEL, ["fakelib"]), [])
 
     def test_beide_ordner_im_spiel_warnen_bei_alt(self) -> None:
         """fakelib2 gewinnt, fakelib bleibt ungenutzt - ohne Meldung."""
         meldungen = sg.beanstandungen(sg.ALT, sg.ORT_SPIEL,
                                       ["fakelib", "fakelib2"])
         self.assertTrue(any("ungenutzt" in m for m in meldungen))
+
+    def test_beide_ordner_ein_satz_fuer_beide_generationen(self) -> None:
+        """Wortgleich - sonst stuende er beim Einbau zweimal fast gleich da.
+
+        Er nennt den Gewinner der beiliegenden Fassung und die Ausnahme.
+        """
+        alt = sg.beanstandungen(sg.ALT, sg.ORT_SPIEL, ["fakelib", "fakelib2"])
+        neu = sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["fakelib2", "fakelib"])
+        self.assertEqual(alt, neu)
+        self.assertEqual(len(neu), 1, neu)
+        self.assertIn("'fakelib2' gewinnt", neu[0])
+        self.assertIn("1.7beta1", neu[0])
+        self.assertIn("alpha13fix1", neu[0])
 
     def test_grossschreibung_stoert_nicht(self) -> None:
         self.assertTrue(sg.beanstandungen(sg.NEU, sg.ORT_SPIEL, ["FakeLib2"]))

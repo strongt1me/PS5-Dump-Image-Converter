@@ -228,7 +228,11 @@ FAKELIB_ORDNER = "fakelib"
 #: sagt - ShadowMount+ widerspricht sich in der eigenen Dokumentation, und der
 #: config-Kommentar ist der stehengebliebene Text.
 #:
-#: Es wird weiterhin immer nur EINER von beiden eingehaengt.
+#: Nachtrag 28.09.2026: Ab 1.7beta1 (auch 1.7beta2) liest ShadowMount+ im
+#: Spielordner wieder erst ``fakelib2``, dann ``fakelib`` (am Quelltext
+#: gemessen, README Z. 188 "in the same order") - die Ausnahme ist die Stufe
+#: alpha8 bis alpha13fix1. Es wird weiterhin immer nur EINER von beiden
+#: eingehaengt.
 FAKELIB2_ORDNER = "fakelib2"
 
 #: Beide Namen, fuer Suchen und Pruefungen.
@@ -981,8 +985,8 @@ def fakelib_vorhandene_ordner(spielordner: str) -> list[str]:
     wirkt, sagt diese Funktion bewusst nicht** - es haengt von der
     ShadowMount+-Fassung ab, und die Regeln stehen in
     ``shadowmount_generation``. Bis zum 05.09.2026 behauptete der Docstring
-    hier "dann haengt die Konsole nur fakelib2 ein"; im Spielordner gilt ab
-    1.7 alpha8 das Gegenteil.
+    hier "dann haengt die Konsole nur fakelib2 ein"; im Spielordner galt in
+    1.7 alpha8 bis alpha13fix1 das Gegenteil (ab 1.7beta1 stimmt es wieder).
     """
     da = []
     for name in FAKELIB_ORDNERNAMEN:

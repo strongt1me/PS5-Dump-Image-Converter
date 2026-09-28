@@ -33,6 +33,7 @@ import threading
 import time
 from typing import Any, Callable, Iterable
 
+from . import shadowmount_generation as _smgen
 from .logger import get_logger
 
 log = get_logger(__name__)
@@ -691,12 +692,27 @@ def rueckgaengig(protokoll: str,
 # ---------------------------------------------------------------------------
 
 #: Wo ShadowMount+ die Ersatzbibliotheken eines Spiels sucht - der erste
-#: vorhandene Ordner gilt. Gemessen am Quelltext von 1.7beta2
-#: (``sm_fakelib.c``, ``resolve_game_fakelib_source_for_path``): erst
-#: ``backports/<ID>/fakelib2`` und ``backports/<ID>/fakelib``, dann dieselben
-#: beiden im Spiel. ``fakelib2`` wird dort exklusiv eingehaengt - liegt es
-#: neben ``fakelib``, wird ``fakelib`` gar nicht gelesen.
-FAKELIB_REIHENFOLGE: tuple[str, ...] = ("fakelib2", "fakelib")
+#: vorhandene Ordner gilt. Gemessen am Quelltext (``sm_fakelib.c``,
+#: ``resolve_game_fakelib_source_for_path``) von 1.7beta1 (Archiv "1.7") und
+#: 1.7beta2: erst ``backports/<ID>/fakelib2`` und ``backports/<ID>/fakelib``,
+#: dann dieselben beiden im Spiel. ``fakelib2`` wird dort exklusiv
+#: eingehaengt - liegt es neben ``fakelib``, wird ``fakelib`` gar nicht
+#: gelesen. 1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``;
+#: die Fassung, die dem Programm beiliegt, ist 1.7beta2.
+#:
+#: Seit 28.09.2026 aus ``shadowmount_generation`` statt als eigene Zeile:
+#: Anzeige und Warnungen beim Einbau lesen dieselbe Regel und koennen nicht
+#: mehr auseinanderlaufen - bis dahin zeigte die Bibliothek schon 1.7, die
+#: Warnungen noch alpha8.
+FAKELIB_REIHENFOLGE: tuple[str, ...] = tuple(
+    _smgen.GENERATIONEN[_smgen.NEU]["spiel_ordner"])
+
+#: Stand der Regel in :func:`einbauten_bewerten`. Der Bildspeicher merkt sich
+#: Ergebnisse je Abbild; aendert sich die Regel, gelten gemerkte Ergebnisse
+#: mit einer anderen Nummer nicht mehr. 2: seit 27.09.2026 mit
+#: ``ampr_verdeckt``. Aendert sich ``FAKELIB_REIHENFOLGE``, muss die Nummer
+#: mit - ``test_einbau_warnungen`` haelt beide zusammen fest.
+EINBAU_REGEL = 2
 
 #: Die Marken der Einbauten dieses Programms (siehe ``_fruehere_einbauten``).
 AMPR_DATEI = "libSceAmpr.sprx"
@@ -708,7 +724,8 @@ BACKPORT_ORDNER = re.compile(r"fw\d+", re.IGNORECASE)
 BACKPORTS_ORDNER = "backports"
 
 #: Huellen vor der Spielwurzel, wie sie manche Abbilder tragen
-#: (``app0/fakelib/...`` - dieselbe Form kennt ``_ist_aktive_ampr_bibliothek``).
+#: (``app0/fakelib/...`` - diese Form kannte schon die fruehere AMPR-Regel
+#: der Infobox, bis 27.09.2026 ``_ist_aktive_ampr_bibliothek``).
 _HUELLEN: tuple[str, ...] = ("app0", "uroot")
 
 
@@ -742,10 +759,12 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
             dieselbe Regel wie beim Einbau.)
 
     Returns:
-        ``{"ordner", "verdeckt", "ampr", "playgo", "backport", "assetpack"}``:
-        der Bibliotheksordner, der nach :data:`FAKELIB_REIHENFOLGE` gilt
-        (``""`` ohne), ob er einen zweiten verdeckt, die Marken darin, die
-        BACKPORT-Firmwareordner (sortiert) und ob ein Asset-Pack da ist.
+        ``{"ordner", "verdeckt", "ampr", "playgo", "backport", "assetpack",
+        "ampr_verdeckt", "regel"}``: der Bibliotheksordner, der nach
+        :data:`FAKELIB_REIHENFOLGE` gilt (``""`` ohne), ob er einen zweiten
+        verdeckt, die Marken darin, die BACKPORT-Firmwareordner (sortiert),
+        ob ein Asset-Pack da ist, ob ein AMPR EMU nur im **verdeckten**
+        Ordner liegt (dort wirkt er nicht) und :data:`EINBAU_REGEL`.
     """
     inhalt: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
     unterordner: dict[str, set[str]] = {name: set() for name in FAKELIB_REIHENFOLGE}
@@ -776,15 +795,19 @@ def einbauten_bewerten(dateien: Iterable[str], *, ordner: Iterable[str] = (),
 
     gilt = next((name for name in FAKELIB_REIHENFOLGE if name in vorhanden), "")
     marken = inhalt.get(gilt, set())
+    ampr = AMPR_DATEI.lower() in marken
     return {
         "ordner": gilt,
         "verdeckt": len(vorhanden) > 1,
-        "ampr": AMPR_DATEI.lower() in marken,
+        "ampr": ampr,
         "playgo": PLAYGO_DATEI.lower() in marken,
         "backport": sorted((n for n in unterordner.get(gilt, set())
                             if BACKPORT_ORDNER.fullmatch(n)),
                            key=lambda n: (len(n), n)),
         "assetpack": assetpack,
+        "ampr_verdeckt": not ampr and any(
+            AMPR_DATEI.lower() in inhalt[name] for name in vorhanden if name != gilt),
+        "regel": EINBAU_REGEL,
     }
 
 

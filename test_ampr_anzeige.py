@@ -1,47 +1,74 @@
 #!/usr/bin/env python3
 """Sichert die AMPR-EMU-Anzeige in der Spiel-Infobox ab.
 
-Die Anzeige beantwortet eine Frage, die vorher niemand beantworten konnte:
-Steckt in dieser Quelle schon ein AMPR EMU? Drei Wege fuehren dorthin, und
-jeder hat seine eigene Fehlerquelle:
+Die Anzeige beantwortet: Steckt in dieser Quelle schon ein AMPR EMU - **und
+wirkt er?** Seit dem 27.09.2026 nach der Regel von ShadowMount+ 1.7 (final
+und 1.7beta2, am Quelltext ``sm_fakelib.c`` gemessen): Im Spiel gilt der erste
+vorhandene Ordner, erst ``fakelib2``, dann ``fakelib``; ``fakelib2`` wird
+exklusiv eingehaengt. 1.7alpha8 bis alpha13fix1 lasen nur ``fakelib`` - diese
+Regel stand bis dahin hier fest.
 
-* **Dump-Ordner** - der Marker liegt im Dateisystem, ``_fakelib_pfad``
-  entscheidet ueber den Ordnernamen.
-* **exFAT-basiertes Abbild** - ``mkpfs.game_metadata.read_game_metadata()``.
-* **PFS-in-PFS** - dort liest die Engine nichts; der Rueckfall geht ueber
-  ``open_inner_file_view`` und den vorhandenen PFS-Adapter.
+Die Infobox nimmt dieselbe Auswertung wie die Bibliothek
+(``_bibliothek_einbauten`` -> ``bibliothek.einbauten_bewerten``): Ordner
+direkt, Abbilder ueber ihre innere Ebene (``_container_dateien``). Die Engine
+(``read_game_metadata``) fragt sie nicht mehr - die prueft fest nur
+``fakelib/libSceAmpr.sprx`` und sucht bei ``.ffpkg`` den Dateinamen irgendwo
+in den ersten 8 MB.
 
-Der wichtigste Fall ist der vierte: **Wenn nichts gelesen werden konnte, darf
-nicht "nicht eingebaut" dastehen.** Genau das lieferte die Engine bei
-UFS2-basierten ``.ffpkg`` - ein Nein ueber etwas, in das sie nie hineingesehen
-hat.
+Weiter gilt der Kern von frueher: **Wenn nichts gelesen werden konnte, darf
+nicht "nicht eingebaut" dastehen.**
 """
 
 from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 import PS5ImageConverter_Pro_FINAL_revised as hauptprogramm  # noqa: E402
+from ps5_validator.utils import bibliothek as bib            # noqa: E402
 
 GUI = hauptprogramm.PS5ConverterGUI
+MKPFS_ORDNER = ROOT / "MkPFS-1.0.0"
 
 
-def _attrappe(**felder) -> types.SimpleNamespace:
-    """Baut ein GameMetadata-aehnliches Objekt."""
-    vorgabe = {
-        "game_title": "", "content_id": "", "has_apr_emu": False, "error": "",
-        "title_id": "", "package_type": "", "version": "", "region": "",
-        "icon_bytes": None, "file_size": 0, "file_name": "", "file_path": "",
-    }
-    vorgabe.update(felder)
-    return types.SimpleNamespace(**vorgabe)
+def _gui():
+    gui = GUI.__new__(GUI)
+    gui.mkpfs_dir = str(MKPFS_ORDNER)
+    # _t gibt den Schluessel zurueck: so ist die Entscheidung pruefbar,
+    # ohne an einer Uebersetzung zu haengen.
+    gui._t = lambda key, **kw: key
+    return gui
+
+
+def _dump(basis: Path, dateien: dict[str, bytes]) -> Path:
+    ordner = basis / "PPSA00001"
+    (ordner / "sce_sys").mkdir(parents=True)
+    (ordner / "sce_sys" / "param.json").write_bytes(b'{"titleId":"PPSA00001"}')
+    for rel, inhalt in dateien.items():
+        ziel = ordner / rel
+        ziel.parent.mkdir(parents=True, exist_ok=True)
+        ziel.write_bytes(inhalt)
+    return ordner
+
+
+#: Inhalt des Spielordners -> erwartete Zeile der Infobox (ShadowMount+ 1.7).
+FAELLE = (
+    ({"fakelib/libSceAmpr.sprx": b"a"}, "info_popup.ampr_eingebaut"),
+    ({"fakelib/andere.sprx": b"x"}, "info_popup.ampr_nicht_eingebaut"),
+    ({"fakelib2/libSceAmpr.sprx": b"a"}, "info_popup.ampr_eingebaut_fakelib2"),
+    ({"fakelib/libSceAmpr.sprx": b"a", "fakelib2/andere.sprx": b"x"},
+     "info_popup.ampr_verdeckt"),
+    ({"fakelib/libSceAmpr.sprx.orig": b"o"}, "info_popup.ampr_nicht_eingebaut"),
+    ({}, "info_popup.ampr_nicht_eingebaut"),
+)
 
 
 class AnzeigeImFensterTests(unittest.TestCase):
@@ -73,7 +100,8 @@ class AnzeigeImFensterTests(unittest.TestCase):
     def test_uebersetzungen_vollstaendig(self) -> None:
         from ps5_validator.utils import i18n
         for schluessel in ("info_popup.meta.ampr_emu", "info_popup.ampr_eingebaut",
-                           "info_popup.ampr_nicht_eingebaut", "info_popup.ampr_unlesbar"):
+                           "info_popup.ampr_nicht_eingebaut", "info_popup.ampr_unlesbar",
+                           "info_popup.ampr_eingebaut_fakelib2", "info_popup.ampr_verdeckt"):
             with self.subTest(schluessel=schluessel):
                 eintrag = i18n.STRINGS.get(schluessel)
                 self.assertIsNotNone(eintrag, f"{schluessel} fehlt")
@@ -86,158 +114,147 @@ class AnzeigeImFensterTests(unittest.TestCase):
                       "Die Zeile wird nie befuellt")
 
 
-class ErkennungTests(unittest.TestCase):
-    """Der Weg zur Antwort - mit Attrappen statt echter Abbilder."""
+class OrdnerTests(unittest.TestCase):
+    """Dump-Ordner - nach der Regel von ShadowMount+ 1.7."""
 
-    def setUp(self) -> None:
-        self.gui = GUI.__new__(GUI)
-        self.gui.mkpfs_dir = ""
-        # _t gibt den Schluessel zurueck: so ist die Entscheidung pruefbar,
-        # ohne an einer Uebersetzung zu haengen.
-        self.gui._t = lambda key, **kw: key
+    def test_die_faelle(self) -> None:
+        gui = _gui()
+        for inhalt, erwartet in FAELLE:
+            with self.subTest(inhalt=sorted(inhalt)), tempfile.TemporaryDirectory() as tmp:
+                ordner = _dump(Path(tmp), inhalt)
+                self.assertEqual(erwartet, gui._ampr_emu_stand(str(ordner)))
 
-    # -- Ordner ------------------------------------------------------------
-    def test_ordner_mit_marker(self) -> None:
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "fakelib"
-            fake.mkdir()
-            (fake / GUI._AMPR_SPRX_NAME).write_bytes(b"x")
-            self.gui._fakelib_pfad = lambda wurzel: fake
-            self.assertEqual("info_popup.ampr_eingebaut", self.gui._ampr_emu_stand(tmp))
-
-    def test_ordner_ohne_marker(self) -> None:
-        import tempfile
-        with tempfile.TemporaryDirectory() as tmp:
-            fake = Path(tmp) / "fakelib"
-            fake.mkdir()
-            self.gui._fakelib_pfad = lambda wurzel: fake
-            self.assertEqual("info_popup.ampr_nicht_eingebaut", self.gui._ampr_emu_stand(tmp))
-
-    # -- Nicht vorhandene Quellen -----------------------------------------
     def test_leerer_pfad(self) -> None:
-        self.assertEqual("–", self.gui._ampr_emu_stand(""))
+        self.assertEqual("–", _gui()._ampr_emu_stand(""))
 
     def test_pfad_gibt_es_nicht(self) -> None:
-        self.assertEqual("–", self.gui._ampr_emu_stand(str(ROOT / "gibt-es-nicht.ffpfsc")))
+        self.assertEqual("–", _gui()._ampr_emu_stand(str(ROOT / "gibt-es-nicht.ffpfsc")))
 
 
-class LeeresErgebnisTests(unittest.TestCase):
-    """Der Kern: ein leeres Ergebnis ist kein Nein.
-
-    Bei UFS2-basierten .ffpkg liest ``read_game_metadata`` gar nichts und
-    meldet trotzdem ``has_apr_emu=False``. Wer das anzeigt, behauptet etwas
-    ueber eine Datei, in die niemand hineingesehen hat.
-    """
+class AbbildTests(unittest.TestCase):
+    """Abbilder - ueber die innere Ebene, nie ueber die Engine."""
 
     def setUp(self) -> None:
-        self.gui = GUI.__new__(GUI)
-        self.gui.mkpfs_dir = ""
-        self.gui._t = lambda key, **kw: key
-        # Container-Rueckfall abschalten, damit nur der Metadatenweg zaehlt.
-        self.gui._ampr_marker_im_container = lambda pfad: None
-        self.datei = ROOT / "test_ampr_anzeige.py"      # existiert, Inhalt egal
+        self._ordner = tempfile.TemporaryDirectory()
+        self.addCleanup(self._ordner.cleanup)
+        self.basis = Path(self._ordner.name)
+        self.gui = _gui()
+        speicher = bib.Bildspeicher(str(self.basis / "cover"))
+        self.gui._bibliothek_bildspeicher = lambda: speicher
 
-    def _mit_antwort(self, antwort) -> str:
-        modul = types.ModuleType("mkpfs.game_metadata")
-        modul.read_game_metadata = lambda pfad: antwort
-        paket = types.ModuleType("mkpfs")
-        paket.__path__ = []
-        alt = {k: sys.modules.get(k) for k in ("mkpfs", "mkpfs.game_metadata")}
-        sys.modules["mkpfs"] = paket
-        sys.modules["mkpfs.game_metadata"] = modul
-        try:
-            return self.gui._ampr_emu_stand(str(self.datei))
-        finally:
-            for k, v in alt.items():
-                if v is None:
-                    sys.modules.pop(k, None)
-                else:
-                    sys.modules[k] = v
+    def _datei(self, name: str) -> str:
+        pfad = self.basis / name
+        pfad.write_bytes(b"\0" * 64)
+        return str(pfad)
 
-    def test_leeres_ergebnis_ist_kein_nein(self) -> None:
-        """Kein Titel, keine Content-ID, kein Fehlertext - trotzdem kein Nein."""
-        erg = self._mit_antwort(_attrappe(has_apr_emu=False, package_type="FFPKG"))
-        self.assertEqual("info_popup.ampr_unlesbar", erg)
+    def test_unlesbar_ist_kein_nein(self) -> None:
+        """Konnte niemand hineinsehen, heisst es "nicht ermittelbar"."""
+        for antwort in (None, []):
+            with self.subTest(antwort=antwort), \
+                    mock.patch.object(self.gui, "_container_dateien", return_value=antwort):
+                self.assertEqual("info_popup.ampr_unlesbar",
+                                 self.gui._ampr_emu_stand(self._datei("x%s.ffpfsc" % id(antwort))))
 
-    def test_fehlertext_ist_kein_nein(self) -> None:
-        erg = self._mit_antwort(_attrappe(error="missing exFAT file system signature"))
-        self.assertEqual("info_popup.ampr_unlesbar", erg)
+    def test_ffpkg_fragt_die_engine_nicht(self) -> None:
+        """Die Engine meldete bei .ffpkg einen blossen Namenstreffer als 'eingebaut'."""
+        engine = types.ModuleType("mkpfs.game_metadata")
+        engine.read_game_metadata = mock.Mock(side_effect=AssertionError("Engine gefragt"))
+        with mock.patch.dict(sys.modules, {"mkpfs.game_metadata": engine}):
+            self.assertEqual("info_popup.ampr_unlesbar",
+                             self.gui._ampr_emu_stand(self._datei("spiel.ffpkg")))
+        engine.read_game_metadata.assert_not_called()
 
-    def test_gelesenes_nein_gilt(self) -> None:
-        """Mit Titel ist das Nein belastbar."""
-        erg = self._mit_antwort(_attrappe(game_title="Irgendein Spiel", has_apr_emu=False))
-        self.assertEqual("info_popup.ampr_nicht_eingebaut", erg)
+    def test_die_faelle_ueber_die_innere_ebene(self) -> None:
+        for nummer, (inhalt, erwartet) in enumerate(FAELLE):
+            with self.subTest(inhalt=sorted(inhalt)), \
+                    mock.patch.object(self.gui, "_container_dateien",
+                                      return_value=["sce_sys/param.json", *inhalt]):
+                self.assertEqual(erwartet, self.gui._ampr_emu_stand(
+                    self._datei("fall%d.ffpfsc" % nummer)))
 
-    def test_gelesenes_ja_gilt(self) -> None:
-        erg = self._mit_antwort(_attrappe(game_title="Irgendein Spiel", has_apr_emu=True))
-        self.assertEqual("info_popup.ampr_eingebaut", erg)
+    def test_ordner_und_abbild_bekommen_dieselbe_antwort(self) -> None:
+        """Derselbe Dump, einmal als Ordner, einmal als echtes exFAT-Abbild.
 
-    def test_content_id_genuegt_als_beleg(self) -> None:
-        """Auch ohne Titel ist eine Content-ID ein Zeichen, dass gelesen wurde."""
-        erg = self._mit_antwort(_attrappe(content_id="UP1234-PPSA00001_00-000", has_apr_emu=True))
-        self.assertEqual("info_popup.ampr_eingebaut", erg)
-
-
-class ContainerRueckfallTests(unittest.TestCase):
-    """Der Rueckfall fuer PFS-in-PFS."""
-
-    def setUp(self) -> None:
-        self.gui = GUI.__new__(GUI)
-        self.gui.mkpfs_dir = ""
-        self.gui._t = lambda key, **kw: key
-
-    def test_rueckfall_greift_wenn_metadaten_schweigen(self) -> None:
-        self.gui._ampr_marker_im_container = lambda pfad: True
-        modul = types.ModuleType("mkpfs.game_metadata")
-        modul.read_game_metadata = lambda pfad: _attrappe(error="missing exFAT file system signature")
-        paket = types.ModuleType("mkpfs")
-        paket.__path__ = []
-        alt = {k: sys.modules.get(k) for k in ("mkpfs", "mkpfs.game_metadata")}
-        sys.modules["mkpfs"] = paket
-        sys.modules["mkpfs.game_metadata"] = modul
-        try:
-            erg = self.gui._ampr_emu_stand(str(ROOT / "test_ampr_anzeige.py"))
-        finally:
-            for k, v in alt.items():
-                if v is None:
-                    sys.modules.pop(k, None)
-                else:
-                    sys.modules[k] = v
-        self.assertEqual("info_popup.ampr_eingebaut", erg)
-
-    def test_rueckfall_setzt_den_engine_pfad_selbst(self) -> None:
-        """Sonst scheitert der Import still und alles heisst 'nicht ermittelbar'.
-
-        Seit dem 27.09.2026 liest ``_container_dateien`` die innere Ebene (die
-        Bibliothek braucht sie fuer alle Einbauten). Dort muss der Pfad gesetzt
-        werden, und der Container-Weg muss ueber sie gehen - am Syntaxbaum
-        geprueft, nicht am Text zwischen zwei ``def``: Ein Kommentar, der
-        ``mkpfs_dir`` nur erwaehnt, haette die alte Textsuche gruen gehalten.
+        Bis zum 06.09.2026 sagten beide Wege fuer dasselbe Spiel Verschiedenes
+        (Teilstring ``fakelib`` traf auch ``fakelib2``); am 27.09.2026 lief die
+        Bibliothek nach 1.7, die Infobox noch nach alpha8.
         """
+        sys.path.insert(0, str(MKPFS_ORDNER))
+        self.addCleanup(lambda: sys.path.remove(str(MKPFS_ORDNER))
+                        if str(MKPFS_ORDNER) in sys.path else None)
+        from mkpfs import exfat_writer                      # noqa: PLC0415
+        for nummer, (inhalt, erwartet) in enumerate(FAELLE[:4]):
+            with self.subTest(inhalt=sorted(inhalt)):
+                ordner = _dump(self.basis / ("f%d" % nummer), {
+                    rel: wert * 64 for rel, wert in inhalt.items()})
+                abbild = self.basis / ("f%d.exfat" % nummer)
+                abbild.write_bytes(b"".join(exfat_writer.iter_exfat_image(ordner)))
+                aus_ordner = self.gui._ampr_emu_stand(str(ordner))
+                self.assertEqual(erwartet, aus_ordner)
+                self.assertEqual(aus_ordner, self.gui._ampr_emu_stand(str(abbild)))
+
+
+class GemeinsameRegelTests(unittest.TestCase):
+    """Infobox und Bibliothek entscheiden an derselben Stelle."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
         import ast
         baum = ast.parse(Path(hauptprogramm.__file__).read_text(encoding="utf-8"))
 
-        def _fn(name: str) -> str:
-            return ast.unparse(next(k for k in ast.walk(baum)
-                                    if isinstance(k, ast.FunctionDef) and k.name == name))
+        def _fn(name: str):
+            return next(k for k in ast.walk(baum)
+                        if isinstance(k, ast.FunctionDef) and k.name == name)
 
-        self.assertIn("self._container_dateien(", _fn("_ampr_marker_im_container"),
-                      "Der Container-Weg liest die innere Ebene wieder selbst")
-        self.assertIn("getattr(self, 'mkpfs_dir'", _fn("_container_dateien"),
-                      "Der Container-Weg setzt den Engine-Pfad nicht selbst")
+        cls.stand_knoten = _fn("_ampr_emu_stand")
+        cls.stand = ast.unparse(cls.stand_knoten)
+        cls.lesen = ast.unparse(_fn("_container_dateien"))
+
+    def test_die_infobox_nimmt_die_auswertung_der_bibliothek(self) -> None:
+        """Geprueft an Aufrufen und Importen - die Beschreibung darf die Engine nennen."""
+        import ast
+        self.assertIn("self._bibliothek_einbauten(", self.stand)
+        aufrufe = {getattr(k.func, "attr", getattr(k.func, "id", ""))
+                   for k in ast.walk(self.stand_knoten) if isinstance(k, ast.Call)}
+        importe = {k.module for k in ast.walk(self.stand_knoten)
+                   if isinstance(k, ast.ImportFrom)}
+        self.assertNotIn("read_game_metadata", aufrufe,
+                         "Die Infobox fragt wieder die Engine - die kennt nur fakelib.")
+        self.assertNotIn("mkpfs.game_metadata", importe)
+
+    def test_der_container_weg_setzt_den_engine_pfad_selbst(self) -> None:
+        """Sonst scheitert der Import still und alles heisst 'nicht ermittelbar'."""
+        self.assertIn("getattr(self, 'mkpfs_dir'", self.lesen)
+
+    def test_die_alte_regel_ist_weg(self) -> None:
+        """alpha8-Regel (nur fakelib) und der zweite Container-Weg sind entfernt."""
+        for name in ("_ist_aktive_ampr_bibliothek", "_ampr_marker_im_container"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(GUI, name))
 
     def test_sicherung_orig_zaehlt_nicht_als_einbau(self) -> None:
-        """`.orig` ist die weggelegte Originaldatei, kein eingebauter Emulator.
+        """`.orig` ist die weggelegte Originaldatei, kein eingebauter Emulator."""
+        self.assertFalse(bib.einbauten_bewerten(["fakelib/libSceAmpr.sprx.orig"])["ampr"])
+        self.assertFalse(bib.einbauten_bewerten(["fakelib2/libSceAmpr.sprx.orig"])["ampr"])
 
-        Seit dem 17.09.2026 am Verhalten der Regel geprueft, die der
-        Container-Weg benutzt - vorher suchte der Test den Vergleich woertlich
-        im Rumpf und waere beim Herausziehen der Regel still gestorben.
-        """
-        regel = hauptprogramm.PS5ConverterGUI._ist_aktive_ampr_bibliothek
-        self.assertFalse(regel("fakelib/libSceAmpr.sprx.orig", "libSceAmpr.sprx"),
-                         "Der Vergleich trifft auch libSceAmpr.sprx.orig")
-        self.assertTrue(regel("fakelib/libSceAmpr.sprx", "libSceAmpr.sprx"))
+    def test_verdeckt_heisst_nur_der_verdeckte_ordner(self) -> None:
+        erg = bib.einbauten_bewerten(["fakelib/libSceAmpr.sprx", "fakelib2/x.sprx"])
+        self.assertEqual((False, True), (erg["ampr"], erg["ampr_verdeckt"]))
+        erg = bib.einbauten_bewerten(["fakelib/libSceAmpr.sprx", "fakelib2/libSceAmpr.sprx"])
+        self.assertEqual((True, False), (erg["ampr"], erg["ampr_verdeckt"]))
+
+    def test_alte_merker_werden_neu_gelesen(self) -> None:
+        """Ergebnisse von vor der neuen Regel (ohne ``regel``) gelten nicht mehr."""
+        with tempfile.TemporaryDirectory() as tmp:
+            gui = _gui()
+            speicher = bib.Bildspeicher(os.path.join(tmp, "cover"))
+            gui._bibliothek_bildspeicher = lambda: speicher
+            datei = os.path.join(tmp, "spiel.ffpfsc")
+            Path(datei).write_bytes(b"x")
+            speicher.einbauten_schreiben(datei, {"zustand": "ok", "ampr": True, "ordner": "fakelib"})
+            with mock.patch.object(gui, "_container_dateien",
+                                   return_value=["fakelib/libSceAmpr.sprx", "fakelib2/a.sprx"]):
+                self.assertEqual("info_popup.ampr_verdeckt", gui._ampr_emu_stand(datei))
 
 
 class DreiZustaendeTests(unittest.TestCase):
@@ -252,13 +269,9 @@ class DreiZustaendeTests(unittest.TestCase):
     Daraus folgen drei Zustaende, und bis zum 03.09.2026 gab es hier nur
     einen: Ohne Marker blieb das Feld leer, und "es ist keiner drin" sah
     genauso aus wie "wurde gar nicht zu Ende gesucht".
-
-    Geprueft wird die Weiche selbst, nicht ein ganzes Abbild: Ein
-    Probecontainer mit mehreren tausend Dateien waere fuer diese eine
-    Unterscheidung unverhaeltnismaessig.
     """
 
-    QUELLE = Path("ps5_validator/utils/abbild_metadaten.py")
+    QUELLE = ROOT / "ps5_validator" / "utils" / "abbild_metadaten.py"
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -316,63 +329,57 @@ class DreiZustaendeTests(unittest.TestCase):
                 self.assertIn(schluessel, i18n.STRINGS)
 
 
-class GleicheAntwortFuerOrdnerUndAbbildTests(unittest.TestCase):
-    """Derselbe Dump muss dieselbe Antwort bekommen - egal wie er vorliegt.
+class MetadatenleserRegelTests(unittest.TestCase):
+    """Der Metadatenleser nach der 1.7-Regel - an einem nachgebauten Leser."""
 
-    Die Infobox hat zwei Wege: Beim Dump-Ordner sieht sie ueber
-    ``_fakelib_pfad()`` nach, und das laesst ausschliesslich ``fakelib``
-    gelten. Beim Container entschied bis zum 06.09.2026 ein Teilstringtest
-    ``if "fakelib" in rel`` - und der trifft auch ``fakelib2``.
+    class _Leser:
+        def __init__(self, pfade: list[str]) -> None:
+            self.pfade = pfade
 
-    Gemessen: derselbe Ordner meldete mit ``libSceAmpr.sprx`` in ``fakelib``
-    "eingebaut", mit derselben Datei in ``fakelib2`` "nicht eingebaut" -
-    als Abbild dagegen beide Male "eingebaut".
+        def iter_files(self):
+            for pfad in self.pfade:
+                yield types.SimpleNamespace(rel_path=pfad)
 
-    ``fakelib`` ist auch die richtige Antwort: Ab ShadowMountPlus 1.7 alpha8
-    wird ein ``fakelib2`` im Spielordner ignoriert, und zwar ohne Meldung.
-    Dort "eingebaut" zu melden hiesse, ein Spiel als versorgt auszugeben,
-    das ohne die Bibliotheken startet.
-    """
+        def read_file(self, _eintrag):
+            yield b"{}"
 
-    #: Pfade aus der inneren Ebene und die erwartete Antwort.
-    FAELLE = (
-        ("fakelib/libsceampr.sprx", True),
-        ("app0/fakelib/libsceampr.sprx", True),
-        ("fakelib2/libsceampr.sprx", False),
-        ("app0/fakelib2/libsceampr.sprx", False),
-        ("meinfakelibordner/libsceampr.sprx", False),
-        ("libsceampr.sprx", False),
-    )
+    def _ampr(self, pfade: list[str]) -> str:
+        from ps5_validator.utils import abbild_metadaten
+        leser = abbild_metadaten.Metadatenleser(text=lambda s, **_w: s)
+        meta, _bild = leser._extract_meta_from_exfat_reader(self._Leser(pfade))
+        return meta.get("ampr_emu", "")
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        import ast
-        quelle = (ROOT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(
-            encoding="utf-8")
-        baum = ast.parse(quelle)
-        knoten = next(k for k in ast.walk(baum)
-                      if isinstance(k, ast.FunctionDef)
-                      and k.name == "_ampr_marker_im_container")
-        cls.block = ast.unparse(knoten)
+    def test_ganzer_durchlauf(self) -> None:
+        for pfade, erwartet in (
+                (["fakelib2/libSceAmpr.sprx"], "info_popup.meta.ampr_emu_ja"),
+                (["fakelib/libSceAmpr.sprx"], "info_popup.meta.ampr_emu_ja"),
+                (["fakelib/libSceAmpr.sprx", "fakelib2/a.sprx"], "info_popup.meta.ampr_emu_nein"),
+                (["fakelib/x.sprx"], "info_popup.meta.ampr_emu_nein")):
+            with self.subTest(pfade=pfade):
+                self.assertEqual(erwartet, self._ampr(pfade))
 
-    def test_der_container_weg_benutzt_die_regel(self) -> None:
-        self.assertIn("_ist_aktive_ampr_bibliothek", self.block,
-                      "Die Container-Erkennung entscheidet wieder selbst - "
-                      "dann prueft der Test unten nicht mehr das Programm.")
-        self.assertNotIn("if 'fakelib' in rel:", self.block)
+    def test_dump_ordner(self) -> None:
+        """Der Ordnerweg (``_read_game_meta``): der erste vorhandene Ordner gilt."""
+        from ps5_validator.utils import abbild_metadaten
+        leser = abbild_metadaten.Metadatenleser(text=lambda s, **_w: s)
+        for inhalt, erwartet in (
+                ({"fakelib2/libSceAmpr.sprx": b"a"}, "info_popup.meta.ampr_emu_ja"),
+                ({"fakelib/libSceAmpr.sprx": b"a"}, "info_popup.meta.ampr_emu_ja"),
+                ({"fakelib/libSceAmpr.sprx": b"a", "fakelib2/x.sprx": b"x"},
+                 "info_popup.meta.ampr_emu_nein")):
+            with self.subTest(inhalt=sorted(inhalt)), tempfile.TemporaryDirectory() as tmp:
+                ordner = _dump(Path(tmp), inhalt)
+                self.assertEqual(erwartet, leser._read_game_meta(str(ordner), deep_scan=False)
+                                 .get("ampr_emu"))
 
-    def test_die_regel_trifft_genau_die_richtigen(self) -> None:
-        """Die Entscheidung des Programms, ohne Abbild und ohne Engine.
-
-        Bis zum 17.09.2026 lief die Tabelle gegen einen Ausdruck im Test
-        selbst - ``_ampr_marker_im_container`` wurde nie gerufen (Befund T3).
-        """
-        regel = hauptprogramm.PS5ConverterGUI._ist_aktive_ampr_bibliothek
-        for rel, erwartet in self.FAELLE + (
-                ("app0\\fakelib\\libSceAmpr.sprx", True),
-                ("fakelib/libsceampr.sprx.orig", False)):
-            with self.subTest(pfad=rel):
-                self.assertEqual(erwartet, regel(rel, "libSceAmpr.sprx"))
+    def test_nach_abbruch_nur_was_sicher_ist(self) -> None:
+        """Abbruch nach den drei Zieldateien: ein ungesehenes fakelib2 koennte verdecken."""
+        ziel = ["sce_sys/param.json", "sce_sys/param.sfo", "sce_sys/icon0.png"]
+        self.assertEqual("", self._ampr(["fakelib/libSceAmpr.sprx"] + ziel + ["fakelib2/a"]),
+                         "AMPR in fakelib vor dem Abbruch ist kein sicheres Ja mehr.")
+        self.assertEqual("info_popup.meta.ampr_emu_ja",
+                         self._ampr(["fakelib2/libSceAmpr.sprx"] + ziel + ["x"]),
+                         "AMPR in fakelib2 gewinnt immer - das Ja ist sicher.")
 
 
 if __name__ == "__main__":

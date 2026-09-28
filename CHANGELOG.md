@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.51):** Die Bibliothek ist neu gestaltet, zeigt die Einbauten jedes Spiels und startet Spiele direkt auf der PS5.
+> **Kurz zum aktuellen Stand (v1.9.52):** Der WebKit Autoloader ist aktualisiert (inkl. Payload-Manager v0.5.1 fix2), und die Anzeige der Einbauten folgt jetzt einheitlich ShadowMount+ 1.7.
+
+---
+
+## v1.9.52 – 28.09.2026
+
+- **Neu:** WebKit Autoloader aktualisiert – der Installer enthält jetzt den Payload-Manager v0.5.1 (fix2).
+- **Behoben:** Ob ein AMPR EMU eingebaut ist, richten Infobox, Bibliothek und die Warnungen beim Einbau jetzt einheitlich nach ShadowMount+ 1.7 – ein „fakelib2“ im Spielordner wird dabei wieder berücksichtigt.
 
 ---
 

@@ -368,7 +368,8 @@ class SprachfuehrungTests(unittest.TestCase):
         englisch = self._kollision("en")
         self.assertTrue(englisch, "Es kam gar keine Warnung.")
         for deutsch in ("Beide Ordner vorhanden", "Im Spielordner liegt",
-                        "bleibt ungenutzt", "wird der dort ignoriert"):
+                        "bleibt ungenutzt", "wird der dort ignoriert",
+                        "So liest ShadowMount+", "Eindeutig in jeder Fassung"):
             self.assertNotIn(deutsch, englisch,
                              "Deutscher Satz in der englischen Oberflaeche: %r"
                              % deutsch)
@@ -391,16 +392,22 @@ class SprachfuehrungTests(unittest.TestCase):
         meldungen = smg.beanstandungen(smg.NEU, smg.ORT_SPIEL,
                                        ["fakelib", "fakelib2"])
         self.assertTrue(meldungen)
-        self.assertIn("Spielordner", meldungen[0])
+        # Der eingebaute deutsche Satz. Bis zum 28.09.2026 stand hier
+        # "Spielordner" - das Wort des alpha8-Satzes, der bei beiden Ordnern
+        # nicht mehr kommt.
+        self.assertIn("Beide Ordner vorhanden", meldungen[0])
 
     def test_eine_unbrauchbare_vorlage_sprengt_nichts(self):
         """Ein Platzhalter, den es nicht gibt, darf die Pruefung nicht kippen."""
         from ps5_validator.utils import shadowmount_generation as smg
+        # Die Kennung, die bei beiden Ordnern wirklich benutzt wird - bis zum
+        # 28.09.2026 stand hier eine, die dieser Fall gar nicht mehr las.
         meldungen = smg.beanstandungen(
             smg.NEU, smg.ORT_SPIEL, ["fakelib", "fakelib2"],
-            texte={"spiel_fakelib2_wirkungslos": "kaputt {gibtsnicht}"})
+            texte={"spiel_beide": "kaputt {gibtsnicht}"})
         self.assertTrue(meldungen)
         self.assertNotIn("{gibtsnicht}", meldungen[0])
+        self.assertNotIn("kaputt", meldungen[0])
 
 
 class RueckfrageNenntDieSicherungTests(unittest.TestCase):

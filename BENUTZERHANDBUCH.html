@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.51</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.52</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.51</span>
-      <span class="marke">Stand 27. September 2026</span>
+      <span class="marke">Version v1.9.52</span>
+      <span class="marke">Stand 28. September 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -1691,13 +1691,22 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   <table>
     <thead><tr><th></th><th>alte Methode (bis alpha6)</th><th>neue Methode (ab alpha8)</th></tr></thead>
     <tbody>
-      <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
-      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td><strong>wird ignoriert</strong></td></tr>
+      <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib2</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
+      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta2) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
       <tr><td><strong>global + spieleigen</strong></td><td>zwei Schichten &uuml;bereinander</td><td>vorher in einen Cache zusammenkopiert</td></tr>
       <tr><td><strong>Emulator-Dateien</strong></td><td>gibt es nicht</td><td>aus <code>/data/shadowmount/emus/</code></td></tr>
     </tbody>
   </table>
   </div>
+
+  <p><strong>Warum trotzdem immer <code>fakelib</code>?</strong> Seit 1.7beta1
+  liest ShadowMount+ ein <code>fakelib2</code> im Spielordner wieder &ndash;
+  und dann nur dieses. Den Namen <code>fakelib</code> liest aber jede
+  Fassung, deshalb legen BACKPORT und AMPR EMU dort ab. Liegt im Spiel schon
+  ein <code>fakelib2</code>, steht vor dem Einbau ein Hinweis im Protokoll.
+  Stehen danach beide Ordner da, nennt die Warnung den Schritt, der in jeder
+  Fassung eindeutig ist: fehlende Dateien aus <code>fakelib2</code> nach
+  <code>fakelib</code> kopieren und <code>fakelib2</code> entfernen.</p>
 
   <p><strong>Welchen Knopf?</strong> Sie m&uuml;ssen es nicht wissen. Beide
   pr&uuml;fen beim Start, welche Fassung auf der Konsole l&auml;uft, und sagen
@@ -2192,7 +2201,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.51), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.52), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2392,8 +2401,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.51</strong></span>
-    <span>Stand 27. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.52</strong></span>
+    <span>Stand 28. September 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

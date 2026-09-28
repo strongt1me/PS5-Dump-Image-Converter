@@ -688,7 +688,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.51"
+APP_VERSION = "v1.9.52"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -17141,8 +17141,8 @@ class PS5ConverterGUI:
     def _ampr_stand_anzeigen(self, quelle: str) -> None:
         """Setzt die Zeile "AMPR EMU" der Infobox - bei Abbildern im Faden, gemerkt je Datei.
 
-        Bei einem Abbild liest :meth:`_ampr_emu_stand` den Container
-        (``read_game_metadata``, notfalls ``_ampr_marker_im_container``). Das
+        Bei einem Abbild liest :meth:`_ampr_emu_stand` den Container (ueber
+        ``_bibliothek_einbauten`` und ``_container_dateien``). Das
         lief bis zum 24.09.2026 im Fensterfaden, und ``_update_info_box``
         kommt je Quellwahl mehrmals - jedes Mal wurde neu gelesen (Durchsicht,
         H4-15). Dasselbe Muster wie :meth:`_sdk_stand_anzeigen`.
@@ -17202,16 +17202,26 @@ class PS5ConverterGUI:
         threading.Thread(target=_lesen, daemon=True, name="infobox-ampr-stand").start()
 
     def _ampr_emu_stand(self, quelle: str) -> str:
-        """Sagt, ob in der Quelle bereits ein AMPR EMU steckt.
+        """Sagt, ob in der Quelle ein AMPR EMU steckt, der auch wirkt.
 
-        Zwei Wege, je nach Quelle:
+        Nach der Regel von ShadowMount+ 1.7 (final und 1.7beta2, am Quelltext
+        ``sm_fakelib.c`` gemessen am 27.09.2026): Im Spiel gilt der erste
+        vorhandene Ordner, erst ``fakelib2``, dann ``fakelib``; ``fakelib2``
+        wird exklusiv eingehaengt. Liegt der AMPR EMU in ``fakelib``, daneben
+        aber ein ``fakelib2``, wirkt er nicht - das sagt die Zeile dann auch.
+        (1.7alpha8 bis alpha13fix1 lasen im Spielordner nur ``fakelib``; bis
+        zum 27.09.2026 stand diese Regel hier.)
 
-        * **Dump-Ordner** - direkt im Dateisystem nachsehen. Dafuer braucht es
-          keine Engine, und es geht auch dort, wo ein Abbild nicht lesbar ist.
-        * **Abbild** - ueber ``mkpfs.game_metadata.read_game_metadata()``. Die
-          Funktion liest allerdings nur exFAT-basierte Dateien; ein ``.ffpfsc``
-          mit innerem PFS meldet "missing exFAT file system signature". Dann
-          bleibt es bei "nicht ermittelbar", statt etwas zu behaupten.
+        Seit demselben Tag dieselbe Auswertung wie die Bibliothek
+        (:meth:`_bibliothek_einbauten`, ``bibliothek.einbauten_bewerten``) -
+        vorher konnten Infobox und Bibliothek fuer dasselbe Spiel
+        Verschiedenes sagen. Die Engine (``read_game_metadata``) fragt die
+        Infobox nicht mehr: Sie prueft fest nur ``fakelib/libSceAmpr.sprx``,
+        und bei ``.ffpkg`` sucht sie den Dateinamen irgendwo in den ersten
+        8 MB - ohne ``fakelib``, ``fakelib2`` und die Sicherung ``.orig``
+        unterscheiden zu koennen. Ein ``.ffpkg`` heisst deshalb "nicht
+        ermittelbar", wie in der Bibliothek; ein leeres oder unlesbares
+        Ergebnis ist kein Nein.
 
         Args:
             quelle: Pfad auf einen Dump-Ordner oder ein Abbild.
@@ -17223,114 +17233,25 @@ class PS5ConverterGUI:
         if not quelle or not os.path.exists(quelle):
             return "\u2013"
 
-        # Ordner: der Marker liegt in fakelib/. Welcher Ordner gilt, entscheidet
-        # _fakelib_pfad - ab ShadowMount+ 1.7alpha8 zaehlt nur noch "fakelib".
-        if os.path.isdir(quelle):
-            try:
-                marker = self._fakelib_pfad(Path(quelle)) / self._AMPR_SPRX_NAME
-                vorhanden = marker.is_file()
-            except Exception as exc:
-                logger.debug("AMPR-Marker im Ordner nicht pruefbar: %s", exc)
-                return self._t("info_popup.ampr_unlesbar")
-            return self._t("info_popup.ampr_eingebaut" if vorhanden
-                           else "info_popup.ampr_nicht_eingebaut")
-
-        # Abbild: die Engine fragen. Den Pfad wie ueberall sonst ueber
-        # mkpfs_dir, und nur wenn der leer ist, einmal ermitteln lassen -
-        # _extract_embedded_mkpfs() protokolliert und braucht dafuer einen
-        # aufgebauten Zustand, den eine reine Abfrage nicht voraussetzen darf.
-        mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
-        if not mkpfs_dir:
-            try:
-                mkpfs_dir = self._extract_embedded_mkpfs() or ""
-            except Exception as exc:
-                logger.debug("MkPFS-Ordner nicht ermittelbar: %s", exc)
-                mkpfs_dir = ""
+        # Dieselbe Auswertung wie die Bibliothek: Ordner direkt, Abbilder ueber
+        # die innere Ebene (_container_dateien) - und gemerkt im selben
+        # Bildspeicher, ein Abbild wird also nur einmal gelesen.
+        art = ("folder" if os.path.isdir(quelle)
+               else os.path.splitext(quelle)[1].lower().lstrip("."))
         try:
-            if mkpfs_dir and mkpfs_dir not in sys.path:
-                sys.path.insert(0, mkpfs_dir)
-            from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415  # type: ignore[import-not-found]
-
-            daten = read_game_metadata(quelle)
-        except Exception as exc:
-            logger.debug("AMPR-Stand aus dem Abbild nicht lesbar: %s", exc)
+            ergebnis = self._bibliothek_einbauten({"path": quelle, "kind": art})
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("AMPR-Stand nicht ermittelbar (%s): %s", quelle, exc)
             return self._t("info_popup.ampr_unlesbar")
-
-        # Ein Fehlertext heisst: nicht hineingesehen, nicht "kein AMPR".
-        # read_game_metadata() kommt nur in exFAT-basierte Dateien hinein; bei
-        # PFS-in-PFS meldet es "missing exFAT file system signature". Dafuer
-        # gibt es den zweiten Weg unten - sonst stuende bei jedem selbst
-        # gebauten .ffpfsc "nicht ermittelbar".
-        # Ein leeres Ergebnis ohne Fehlertext ist ebenfalls kein Nein: Bei
-        # UFS2-basierten .ffpkg liest die Funktion gar nichts - kein Titel,
-        # keine Content-ID - und meldet trotzdem has_apr_emu=False. Das als
-        # "nicht eingebaut" anzuzeigen waere eine Aussage ueber etwas, in das
-        # niemand hineingesehen hat.
-        _gelesen = bool(str(getattr(daten, "game_title", "") or "").strip()
-                        or str(getattr(daten, "content_id", "") or "").strip(" -"))
-        if not getattr(daten, "error", "") and _gelesen:
-            return self._t("info_popup.ampr_eingebaut" if getattr(daten, "has_apr_emu", False)
-                           else "info_popup.ampr_nicht_eingebaut")
-        logger.debug("AMPR-Stand nicht aus den Metadaten (%s): %s", quelle,
-                     getattr(daten, "error", "") or "leeres Ergebnis")
-
-        gefunden = self._ampr_marker_im_container(quelle)
-        if gefunden is None:
+        if ergebnis.get("zustand") != "ok":
             return self._t("info_popup.ampr_unlesbar")
-        return self._t("info_popup.ampr_eingebaut" if gefunden
-                       else "info_popup.ampr_nicht_eingebaut")
-
-    @staticmethod
-    def _ist_aktive_ampr_bibliothek(rel: str, marke: str) -> bool:
-        """Liegt ``rel`` als aktive AMPR-Bibliothek in genau ``fakelib``?
-
-        Nur die aktive Bibliothek zaehlt, nicht die Sicherung ``.orig``. Und
-        genau "fakelib" als Ordnername, nicht als Teilstring: Bis zum
-        06.09.2026 stand hier ``if "fakelib" in rel``, und das trifft auch
-        "fakelib2". Derselbe Dump beantwortete die Frage dadurch verschieden,
-        je nachdem ob er als Ordner oder als Abbild vorlag - der Ordnerweg
-        geht ueber _fakelib_pfad und laesst nur "fakelib" gelten.
-
-        "fakelib" ist auch die richtige Antwort: Ab ShadowMountPlus 1.7
-        alpha8 wird ein "fakelib2" im Spielordner ignoriert, und zwar ohne
-        Meldung. "Eingebaut" zu melden waere dort schlicht falsch.
-
-        Seit dem 17.09.2026 eine eigene Methode, damit der Test die Regel des
-        Programms prueft und nicht einen Nachbau (Befund T3). Dabei ersetzt
-        die Normalisierung einen einzelnen Backslash - vorher stand dort ein
-        doppelter, und der trifft keinen Windows-Pfad.
-        """
-        rel = str(rel or "").replace("\\", "/").lower()
-        marke = str(marke or "").lower()
-        if not (rel.endswith("/" + marke) or rel == marke):
-            return False
-        return "fakelib" in rel.split("/")
-
-    def _ampr_marker_im_container(self, pfad: str) -> bool | None:
-        """Sucht die AMPR-Bibliothek in der inneren Ebene eines Containers.
-
-        Gedacht fuer den Fall, den ``read_game_metadata()`` nicht abdeckt:
-        ein ``.ffpfsc``/``.ffpfs``, das ein weiteres PFS umschliesst statt
-        eines exFAT. Gelesen werden nur Kopf, Inode-Tabelle und
-        Verzeichnisbloecke - dieselbe leichte Sicht, die auch die
-        Metadatenanzeige benutzt, keine Nutzdaten.
-
-        Args:
-            pfad: Pfad auf den Container.
-
-        Returns:
-            True/False, wenn die innere Ebene gelesen werden konnte,
-            sonst None - dann ist die Frage offen, nicht mit Nein
-            beantwortet.
-        """
-        # Die Auflistung steht seit dem 27.09.2026 in _container_dateien (die
-        # Bibliothek braucht sie fuer alle Einbauten); dort wird auch der
-        # Engine-Pfad (mkpfs_dir) gesetzt.
-        dateien = self._container_dateien(pfad)
-        if not dateien:
-            return None
-        marke = self._AMPR_SPRX_NAME.lower()
-        return any(self._ist_aktive_ampr_bibliothek(rel, marke) for rel in dateien)
+        if ergebnis.get("ampr"):
+            return self._t("info_popup.ampr_eingebaut_fakelib2"
+                           if ergebnis.get("ordner") == "fakelib2"
+                           else "info_popup.ampr_eingebaut")
+        if ergebnis.get("ampr_verdeckt"):
+            return self._t("info_popup.ampr_verdeckt")
+        return self._t("info_popup.ampr_nicht_eingebaut")
 
     def _container_dateien(self, pfad: str, *, roh_exfat: bool = False) -> list[str] | None:
         """Die Dateipfade in der inneren Ebene eines Containers - ohne Nutzdaten.
@@ -17341,9 +17262,8 @@ class PS5ConverterGUI:
 
         Args:
             pfad: Pfad auf den Container.
-            roh_exfat: Auch eine ``.exfat``-Datei ohne Huelle direkt lesen. Die
-                Infobox braucht das nicht (dort liest ``read_game_metadata``
-                diese Dateien), die Bibliothek fuer PlayGo und BACKPORT schon.
+            roh_exfat: Auch eine ``.exfat``-Datei ohne Huelle direkt lesen
+                (Bibliothek und Infobox ueber :meth:`_bibliothek_einbauten`).
 
         Returns:
             Relative Pfade, oder ``None``, wenn nichts lesbar war - dann ist
@@ -28396,8 +28316,8 @@ class PS5ConverterGUI:
             Die relativen Pfade der gelesenen Dateien, oder None, wenn nicht
             hineinzusehen war. None heisst "unbekannt", nicht "nichts drin".
         """
-        # Den Engine-Pfad selbst setzen - wie _ampr_marker_im_container, das
-        # sonst still unbrauchbar wird, wenn kein Metadatenlauf vorausging.
+        # Den Engine-Pfad selbst setzen - wie _container_dateien, das sonst
+        # still unbrauchbar wird, wenn kein Metadatenlauf vorausging.
         _mkpfs_dir = getattr(self, "mkpfs_dir", "") or ""
         if _mkpfs_dir and _mkpfs_dir not in sys.path:
             sys.path.insert(0, _mkpfs_dir)
@@ -37010,10 +36930,12 @@ class PS5ConverterGUI:
             return {"zustand": "unbekannt", "grund": "format"}
         speicher = self._bibliothek_bildspeicher()
         gemerkt = speicher.einbauten_lesen(pfad)
-        if gemerkt is not None:
+        # Nach einer geaenderten Regel neu lesen (bibliothek.EINBAU_REGEL).
+        if gemerkt is not None and gemerkt.get("regel") == bibliothek_bestand.EINBAU_REGEL:
             return gemerkt
         dateien_innen = self._container_dateien(pfad, roh_exfat=True)
-        if dateien_innen is None:
+        # Auch eine leere Liste ist kein "keine": Dann hat niemand etwas gesehen.
+        if not dateien_innen:
             return {"zustand": "unbekannt", "grund": "unlesbar"}
         ergebnis = bibliothek_bestand.einbauten_bewerten(dateien_innen,
                                                          assetpack_datei=pruefen)
@@ -44786,18 +44708,20 @@ class PS5ConverterGUI:
         Meldung. Deshalb gibt es hier genau eine Antwort, und beide lesen sie.
 
         **Welche Antwort, sagt die Anleitung** (siehe
-        ``ps5_validator/utils/shadowmount_generation``, abgeleitet aus
-        ``sm_fakelib.c``/``sm_scan.c`` von 1.7 alpha6 und alpha8):
+        ``ps5_validator/utils/shadowmount_generation``, gemessen an
+        ``sm_fakelib.c`` der jeweiligen Fassung):
 
         * bis alpha6 gewinnt ``fakelib2``, ``fakelib`` ist der Rueckfall und
           wirkt, solange kein ``fakelib2`` daneben liegt;
-        * ab alpha8 zaehlt im Spielordner ausschliesslich ``fakelib``.
+        * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
+          ``fakelib``;
+        * ab 1.7beta1 (auch die beiliegende 1.7beta2) wieder wie bis alpha6.
 
-        Nur ``fakelib`` wirkt also in beiden Fassungen. Die frueher waehlbare
+        Nur ``fakelib`` wirkt also in allen Fassungen. Die frueher waehlbare
         Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
-        auf ``fakelib2``, startete das Spiel ab alpha8 ohne die Bibliotheken.
-        Sie wird deshalb nicht mehr fuer die Ablage benutzt - wohl aber
-        gelesen, um einmal darauf hinzuweisen.
+        auf ``fakelib2``, startete das Spiel unter alpha8 bis alpha13fix1 ohne
+        die Bibliotheken. Sie wird deshalb nicht mehr fuer die Ablage benutzt -
+        wohl aber gelesen, um einmal darauf hinzuweisen.
         """
         richtig = sm_gen.ablageordner(sm_gen.NEU, sm_gen.ORT_SPIEL)
         # Ueber getattr, weil diese Funktion auch an einer halb aufgebauten
@@ -44810,8 +44734,9 @@ class PS5ConverterGUI:
                 and not getattr(self, "_fakelib_hinweis_gezeigt", False)):
             self._fakelib_hinweis_gezeigt = True
             logger.info(
-                "Eingestellt war %r. Abgelegt wird nach %r: Ab ShadowMountPlus "
-                "1.7 alpha8 wird %r im Spielordner ignoriert, und beide Teile "
+                "Eingestellt war %r. Abgelegt wird nach %r: Diesen Namen lesen "
+                "alle Fassungen von ShadowMountPlus (%r im Spielordner "
+                "übergehen 1.7 alpha8 bis alpha13fix1), und beide Teile "
                 "müssen denselben Ordner benutzen.", wert, richtig, wert)
         return richtig
 
@@ -44821,27 +44746,39 @@ class PS5ConverterGUI:
         **Der Fehler, den das behebt.** Bis v1.8.97 nahm der AMPR EMU Manager
         hier den frei gewaehlten Ordnernamen (``fakelib`` oder ``fakelib2``).
         Diese Wahl stammt aus der Mechanik bis ShadowMountPlus 1.7 alpha6
-        ("fakelib2 wenn vorhanden, sonst fakelib") und gilt ab 1.7 alpha8
-        nicht mehr: **Ein ``fakelib2`` im Spielordner wird dort ignoriert** -
-        ohne Fehlermeldung. Wer mit dieser Wahl in ein Backup integrierte,
-        bekam ein Spiel, das ohne die Ersatzbibliotheken startet.
+        ("fakelib2 wenn vorhanden, sonst fakelib") und galt in 1.7 alpha8 bis
+        alpha13fix1 nicht: **Ein ``fakelib2`` im Spielordner wurde dort
+        ignoriert** - ohne Fehlermeldung. Wer mit dieser Wahl in ein Backup
+        integrierte, bekam ein Spiel, das ohne die Ersatzbibliotheken startet.
 
         **Warum ``fakelib`` und nicht die Generation abfragen.** Die
-        Suchreihenfolge beider Fassungen (siehe
+        Suchreihenfolge aller Fassungen (siehe
         ``ps5_validator/utils/shadowmount_generation``, abgeleitet aus
-        ``sm_fakelib.c``/``sm_scan.c`` von alpha6 und alpha8) laesst genau
-        einen Namen zu, der in **beiden** wirkt:
+        ``sm_fakelib.c``/``sm_scan.c``) laesst genau einen Namen zu, der in
+        **allen** wirkt:
 
         * bis alpha6 wird ``fakelib2`` bevorzugt, ``fakelib`` ist der Rueckfall
           und wird gelesen, solange kein ``fakelib2`` daneben liegt;
-        * ab alpha8 zaehlt im Spielordner ausschliesslich ``fakelib``.
+        * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
+          ``fakelib`` (ab 1.7beta1 wieder wie bis alpha6, siehe unten).
 
         Also ``fakelib``. Damit muss niemand wissen, welche Fassung auf der
         Konsole laeuft - und genau das war die Fehlerquelle.
 
         Der einzige Fall, in dem das nicht genuegt, ist ein bereits
-        vorhandenes ``fakelib2`` im selben Spielordner: Bis alpha6 gewinnt
-        das und verdeckt unseres. Darauf weist ``_ampr_ablage_pruefen`` hin.
+        vorhandenes ``fakelib2`` im selben Spielordner: Bis alpha6 und ab
+        1.7beta1 gewinnt das und verdeckt unseres. Darauf weist
+        ``_ampr_ablage_pruefen`` hin.
+
+        **Nachgemessen am 27.09.2026** (Quelltext ``sm_fakelib.c``): Ab
+        1.7beta1 (das Archiv "1.7" ist derselbe Commit) und in 1.7beta2, der
+        Fassung, die beiliegt, liest ShadowMount+ im Spielordner wieder
+        **erst ``fakelib2``, dann ``fakelib``** - nur alpha8 bis alpha13fix1
+        lasen ausschliesslich ``fakelib``. ``fakelib`` zu schreiben bleibt
+        richtig; ein vorhandenes ``fakelib2`` verdeckt es aber auch dort.
+        Anzeige (Infobox, Bibliothek) und Warnungen beim Einbau folgen seit
+        27./28.09.2026 dieser Regel (``shadowmount_generation``,
+        ``SPIELORDNER_JE_FASSUNG``).
         """
         return Path(str(wurzel)) / sm_gen.ablageordner(sm_gen.NEU,
                                                        sm_gen.ORT_SPIEL)
@@ -44926,6 +44863,13 @@ class PS5ConverterGUI:
         Geprueft wird gegen **beide** Generationen: Ein Ordner, der unter der
         einen wirkt und unter der anderen nicht, ist genau der Fall, den
         niemand bemerkt - das Spiel startet, nur ohne die Bibliotheken.
+
+        Seit 28.09.2026 nach dem Stand von ShadowMount+ 1.7beta1/beta2
+        (``shadowmount_generation.SPIELORDNER_JE_FASSUNG``). Vorher galt der
+        alpha8-Stand, und ein ``fakelib2`` im Spielordner hiess hier
+        "ignoriert" - in der beiliegenden Fassung gewinnt es. Liegen beide
+        Ordner da, liefern beide Generationen denselben Satz; er erscheint
+        deshalb einmal, nicht zweimal fast gleich.
         """
         try:
             vorhanden = ps5_backport.fakelib_vorhandene_ordner(str(wurzel))
@@ -44951,18 +44895,24 @@ class PS5ConverterGUI:
         **Welcher der beiden gewinnt, hängt von der Fassung ab** – und bis
         v1.9.5 stand hier fest die alte:
 
-        =============  =========================================
-        Fassung        Im **Spielordner** wirkt
-        =============  =========================================
-        bis alpha6     ``fakelib2``; ``fakelib`` bleibt ungenutzt
-        ab alpha8      **nur** ``fakelib``; ``fakelib2`` wird
-                       wortlos ignoriert
-        =============  =========================================
+        ==========================  ====================================
+        Fassung                     Im **Spielordner** wirkt
+        ==========================  ====================================
+        bis alpha6                  ``fakelib2``; ``fakelib`` bleibt
+                                    ungenutzt
+        alpha8 bis alpha13fix1      **nur** ``fakelib``; ``fakelib2``
+                                    wird wortlos ignoriert
+        ab 1.7beta1 (auch beta2)    ``fakelib2``, allein eingehängt;
+                                    ``fakelib`` bleibt ungenutzt
+        ==========================  ====================================
 
         Der Backport legt in den Spielordner ab, nicht in einen
         Backport-Ordner. Die feste Aussage "ShadowMount+ hängt nur fakelib2
-        ein" war für jede Fassung ab alpha8 also genau verkehrt herum – und
-        wer ihr folgte, entfernte den Ordner, der wirkt.
+        ein" war für alpha8 bis alpha13fix1 genau verkehrt herum – und wer
+        ihr folgte, entfernte den Ordner, der wirkt. Deshalb rät der
+        Schlusssatz seit 28.09.2026 nicht mehr "einen entfernen, je nach
+        Fassung", sondern zu dem Schritt, der in jeder Fassung eindeutig ist:
+        fehlende Dateien nach ``fakelib`` übernehmen, ``fakelib2`` entfernen.
 
         Die Regeln stehen in ``shadowmount_generation``; hier wird nur
         gefragt. :meth:`_ampr_ablage_pruefen` fragt beide Generationen ab und
@@ -48412,11 +48362,11 @@ class PS5ConverterGUI:
             # einer Klappliste im Fenster - die ist seit v1.8.98 draussen.
             #
             # ShadowMount+ haengt immer nur EINEN der beiden Ordner ein.
-            # Welchen, haengt von der Fassung ab: bis alpha6 gewinnt fakelib2
-            # auch im Spielordner, ab alpha8 wird es dort ignoriert und nur
-            # noch im Backport-Ordner gesucht. Deshalb warnt der Lauf, wenn
-            # nach dem Kopieren beide dastehen - und nennt beide Faelle,
-            # statt einen zu behaupten (siehe _fakelib_kollision).
+            # Welchen, haengt von der Fassung ab: bis alpha6 und wieder ab
+            # 1.7beta1 gewinnt fakelib2 auch im Spielordner, alpha8 bis
+            # alpha13fix1 ignorieren es dort. Deshalb warnt der Lauf, wenn
+            # nach dem Kopieren beide dastehen - und nennt die Faelle, statt
+            # einen zu behaupten (siehe _fakelib_kollision).
             if laeuft.get("abbruch"):
                 raise _KopieAbgebrochen()
             kopiert = 0
@@ -53370,7 +53320,7 @@ class PS5ConverterGUI:
         ``None`` ist ausdruecklich nicht ``False``. Wer beides gleich behandelt,
         meldet "kein Asset-Pack vorhanden", obwohl er gar nicht nachgesehen hat -
         und baut den Index dann guten Gewissens kaputt. Dieselbe Unterscheidung
-        macht ``_ampr_marker_im_container`` bei der AMPR-Anzeige.
+        macht ``_bibliothek_einbauten`` bei der AMPR-Anzeige ("nicht ermittelbar").
 
         Gelesen wird mit ``os.scandir``, nicht mit ``glob`` oder ``is_file``:
         Die beiden verschlucken einen Fehler und liefern eine leere Liste

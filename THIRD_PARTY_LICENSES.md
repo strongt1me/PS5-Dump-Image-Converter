@@ -56,7 +56,7 @@ steht in seiner Zeile.
 | `ps5debug-NG_v1.3.2.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR"; geladen aus dem Release 1.3.2 (Pharaoh2k/ps5debug-NG) |
 | `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |
 | `web-file-mgr-v1.9.elf` | PS5 Web File Manager | owendswang | „Web File Manager / Version: … / Port: …" im ELF |
-| `webkit-autoloader-installer_v0.4.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „Autoloader Installer v… by PLK" im ELF |
+| `webkit-autoloader-installer_v0.4.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „WebKit Autoloader v0.4.3" im ELF; lokaler Build (Dateiname v0.4.0) inkl. Payload-Manager v0.5.1 fix2, Basis itsPLK 0.4.0 (GPL-3.0) |
 | `WK-AutoLoader_v1.05.elf` | WK Autoloader | X-F1REBALL-X | GPL-3.0 (LICENSE im Projekt); `github.com/X-F1REBALL-X/WK-AutoLoader`, Release v1.0.5; nutzt Submodule (itsPLK/ps5-unified-autoloader, slopkit, idlesauce/umtx2, ps5-elfldr) |
 | `ProsperoMgr.elf` | Prospero Manager | – | „Prospero Manager" im ELF, kein Autorenname |
 | `CheatRunner_v0.17.elf` | CheatRunner | maj0r | „CheatRunner v0.17 by maj0r" |
@@ -132,7 +132,7 @@ SOFTWARE.
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community (GPL-3.0) | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert; Quellcode und Lizenztext liegen unter `PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/` bei |
 | **PS5-AppInstall (`appinst.elf`)** | abgeleitet vom Beispiel `samples/install_app` des **PS5 Payload SDK** von **John Törnblom** | Das Werkzeug „App direkt installieren“ schickt es an die Konsole und registriert die Anwendung. GPL-3.0-or-later; Quelltext `appinst.c`, Herkunft und die Abweichungen vom Vorbild in `PS5-AppInstall/NOTICE.md` |
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
-| **PS5 WebKit Autoloader 0.4.0** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)) | Legt eine Kachel auf den Startbildschirm der Konsole; liegt als Host, Skript und Installer bei |
+| **PS5 WebKit Autoloader 0.4.0** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)); lokaler Build inkl. Payload-Manager v0.5.1 fix2 | Legt eine Kachel auf den Startbildschirm der Konsole; liegt als Host, Skript und Installer bei |
 | **Hintergrundbilder** | für dieses Programm erstellt | Haupt- und Sidebar-Hintergründe |
 | **Microsoft WebView2 SDK 1.0.3856.49** (nur Windows) | Microsoft Corporation – `Microsoft.Web.WebView2.Core.dll` und `WebView2Loader.dll` (x64), von Microsoft signiert; entnommen dem Paket **pywebview 6.2.1** (BSD-3-Clause), von dem sonst nichts eingebettet wird | Zeigt die Weboberflächen der Konsole rechts im Programm, über die in Windows enthaltene WebView2-Laufzeit. BSD-artige Lizenz von Microsoft – Wortlaut im eigenen Abschnitt unten |
 

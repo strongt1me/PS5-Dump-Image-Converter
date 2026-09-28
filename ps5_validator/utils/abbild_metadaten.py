@@ -52,6 +52,7 @@ from typing import Any, Callable
 from ps5_validator.utils.nahtstellen import (Melder, Textquelle,
                                              schluessel_zeigen, stumm)
 from ps5_validator.utils.plattform import ist_administrator, prozess_flags
+from ps5_validator.utils import bibliothek as bibliothek_bestand
 
 try:
     from PIL import Image
@@ -530,9 +531,15 @@ class Metadatenleser:
         _spielordner = (os.path.dirname(os.path.dirname(json_path))
                         if json_path else src)
         if _spielordner and os.path.isdir(_spielordner):
+            # Der erste vorhandene Bibliotheksordner gilt - erst fakelib2,
+            # dann fakelib (ShadowMount+ 1.7, bibliothek.FAKELIB_REIHENFOLGE).
+            # Bis zum 27.09.2026 zaehlte hier nur fakelib.
+            _gilt = next((_n for _n in bibliothek_bestand.FAKELIB_REIHENFOLGE
+                          if os.path.isdir(os.path.join(_spielordner, _n))), "fakelib")
             meta["ampr_emu"] = self._t(
                 "info_popup.meta.ampr_emu_ja"
-                if os.path.isfile(os.path.join(_spielordner, "fakelib", "libSceAmpr.sprx"))
+                if os.path.isfile(os.path.join(_spielordner, _gilt,
+                                               bibliothek_bestand.AMPR_DATEI))
                 else "info_popup.meta.ampr_emu_nein")
         # --- Fallback: nur sce_sys-Unterordner bis Tiefe 2 prüfen (kein vollständiger Scan) ---
         if deep_scan and not json_path:
@@ -1046,19 +1053,17 @@ class Metadatenleser:
         param_json_blob: bytes | None = None
         param_sfo_blob: bytes | None = None
         icon_blob: bytes | None = None
-        ampr_gesehen = False
         durchlauf_vollstaendig = False
+        # Die AMPR-Emulation liegt in fakelib2/ oder fakelib/, nicht in
+        # sce_sys/. Die Pfade werden im Vorbeigehen gesammelt und nach dem
+        # Durchgang bewertet (bibliothek.einbauten_bewerten) - der Durchgang
+        # bricht ab, sobald die drei Zieldateien da sind, und darf dafuer
+        # nicht laenger laufen.
+        gesehene_pfade: list[str] = []
 
         for entry in reader.iter_files():
             rel = str(getattr(entry, "rel_path", "") or "").replace("\\", "/").lower()
-            # Die AMPR-Emulation liegt in fakelib/, nicht in sce_sys/. Sie wird
-            # im Vorbeigehen mitgenommen: Der Durchgang unten bricht ab, sobald
-            # die drei Zieldateien da sind, und darf dafuer nicht laenger
-            # laufen. Wurde er vorher abgebrochen, bleibt die Angabe leer -
-            # "nicht vorhanden" waere dann eine Behauptung ueber Dateien, die
-            # gar nicht angesehen wurden.
-            if not ampr_gesehen and rel.endswith("fakelib/libsceampr.sprx"):
-                ampr_gesehen = True
+            gesehene_pfade.append(rel)
             if "sce_sys/" not in rel:
                 continue
             if rel.endswith("/param.json") and param_json_blob is None:
@@ -1109,6 +1114,14 @@ class Metadatenleser:
         # ersten - ohne Marker blieb die Angabe leer, und der Anwender
         # konnte "es ist keiner drin" nicht von "wurde nicht ermittelt"
         # unterscheiden. Beides sah gleich aus.
+        # Nach ShadowMount+ 1.7 gilt der erste vorhandene Ordner, erst
+        # fakelib2, dann fakelib. Ein Ja ist sicher nach vollstaendigem
+        # Durchlauf - oder wenn der AMPR EMU in fakelib2 gesehen wurde, das
+        # gewinnt immer. Ein AMPR EMU in fakelib vor dem Abbruch genuegt seit
+        # dem 27.09.2026 nicht mehr: Ein ungesehenes fakelib2 verdeckte ihn.
+        einbau = bibliothek_bestand.einbauten_bewerten(gesehene_pfade)
+        ampr_gesehen = bool(einbau["ampr"]) and (durchlauf_vollstaendig
+                                                 or einbau["ordner"] == "fakelib2")
         if ampr_gesehen:
             meta["ampr_emu"] = self._t("info_popup.meta.ampr_emu_ja")
         elif durchlauf_vollstaendig:

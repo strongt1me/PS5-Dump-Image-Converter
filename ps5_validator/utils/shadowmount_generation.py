@@ -16,16 +16,31 @@ Cache, Emulator-Dateien und AMPR-Download gibt es nicht.
 
 1. ``<scanpath>/backports/<TITLE_ID>/fakelib2/``
 2. ``<scanpath>/backports/<TITLE_ID>/fakelib/``
-3. ``<Spielquelle>/fakelib/``
+3. ``<Spielquelle>/fakelib2/`` - erst wieder ab 1.7beta1, siehe unten
+4. ``<Spielquelle>/fakelib/``
 
-Ein ``fakelib2`` im **Spielordner** wird hier ignoriert - der haeufigste
-Fehler beim Umstieg. Statt zweier Schichten wird vorab ein Cache unter
-``/data/shadowmount/cache/<TITLE_ID>/fakelib/`` zusammenkopiert.
+Statt zweier Schichten wird vorab ein Cache unter
+``/data/shadowmount/cache/<TITLE_ID>/fakelib/`` zusammenkopiert. Ein
+``fakelib2`` wird nie zusammengesetzt: Es wird allein eingehaengt - ohne
+Cache, ohne globale fakelib, ohne Emulator-Dateien.
 
-Alle Angaben stammen aus den beiden Anleitungen vom 22.08.2026, die am
-Quellcode von alpha6 bzw. alpha8 geprueft wurden (``src/sm_fakelib.c``,
-``src/sm_config_mount.c``, ``src/sm_scan.c``, ``include/sm_paths.h``,
-``config.ini.example``).
+**Der Spielordner je Fassung** - am Quelltext gemessen am 27.09.2026
+(``sm_fakelib.c``, ``resolve_game_fakelib_source_for_path``): 1.7 alpha8
+bis alpha13fix1 lasen dort **nur** ``fakelib``; ein ``fakelib2`` wurde ohne
+Meldung uebergangen, der haeufigste Fehler beim Umstieg. Ab 1.7beta1 (das
+Archiv "1.7" ist derselbe Commit) und in 1.7beta2 wird dort wieder **erst
+``fakelib2``, dann ``fakelib``** gelesen - wie bis alpha6. Bis zum
+28.09.2026 beschrieb dieses Modell noch den alpha8-Stand, und die Warnungen
+beim Einbau nannten ein ``fakelib2`` im Spielordner "ignoriert", obwohl es
+in der beiliegenden Fassung gewinnt. Den Namen ``fakelib`` lesen alle
+Fassungen; deshalb wird dorthin abgelegt (``spiel_ablage``), obwohl
+``spiel_ordner`` mit ``fakelib2`` beginnt. :data:`SPIELORDNER_JE_FASSUNG`
+haelt die drei Stufen fest.
+
+Die Angaben bis alpha8 stammen aus den beiden Anleitungen vom 22.08.2026,
+die am Quellcode von alpha6 bzw. alpha8 geprueft wurden
+(``src/sm_fakelib.c``, ``src/sm_config_mount.c``, ``src/sm_scan.c``,
+``include/sm_paths.h``, ``config.ini.example``).
 """
 from __future__ import annotations
 
@@ -41,6 +56,20 @@ NEU = "neu"
 #: aendern, wenn unser eigener Backport-Teil seine Namen anpasst.
 FAKELIB = "fakelib"
 FAKELIB2 = "fakelib2"
+
+#: Was ShadowMount+ im **Spielordner** liest - je Fassung, in der Reihenfolge,
+#: die entscheidet: Der erste vorhandene Ordner gilt, auch ein leerer
+#: (``stat`` + ``S_ISDIR``, der Inhalt wird nicht angesehen).
+#:
+#: Die mittlere Stufe ist keine eigene Generation. Cache, Emulator-Dateien
+#: und Backport-Ordner teilt sie mit ``NEU``; anders ist nur der Spielordner.
+#: Gemessen: alpha6 ueber die Anleitung vom 22.08.2026, alpha8, alpha13fix1,
+#: 1.7beta1 und 1.7beta2 am Quelltext (27.09.2026).
+SPIELORDNER_JE_FASSUNG: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (ALT, "bis 1.7 alpha6", (FAKELIB2, FAKELIB)),
+    (NEU, "1.7 alpha8 bis alpha13fix1", (FAKELIB,)),
+    (NEU, "ab 1.7beta1", (FAKELIB2, FAKELIB)),
+)
 
 #: Wo die Ablage stattfinden kann.
 #:
@@ -84,6 +113,8 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
         "nicht_fuer": "1.7 alpha8 und neuer",
         # Im Spielordner wirken beide, fakelib2 hat Vorrang.
         "spiel_ordner": (FAKELIB2, FAKELIB),
+        # Abgelegt wird, was hier zuerst gelesen wird.
+        "spiel_ablage": FAKELIB2,
         "spiel_fakelib2_wirkt": True,
         "backport_ordner": (FAKELIB2,),
         "backport_erlaubt": True,
@@ -112,9 +143,15 @@ GENERATIONEN: dict[str, dict[str, Any]] = {
         "kennung": NEU,
         "gilt_fuer": "ShadowMountPlus ab 1.7 alpha8",
         "nicht_fuer": "1.7 alpha6 und älter",
-        # Im Spielordner zaehlt NUR fakelib.
-        "spiel_ordner": (FAKELIB,),
-        "spiel_fakelib2_wirkt": False,
+        # Im Spielordner seit 1.7beta1 wieder beide, fakelib2 zuerst. 1.7
+        # alpha8 bis alpha13fix1 lasen dort nur fakelib (siehe
+        # SPIELORDNER_JE_FASSUNG) - bis zum 28.09.2026 stand hier dieser
+        # Zwischenstand, und fakelib2 galt als wirkungslos.
+        "spiel_ordner": (FAKELIB2, FAKELIB),
+        # Abgelegt wird trotzdem nach fakelib: Den Namen lesen alle
+        # Fassungen, fakelib2 im Spielordner die Zwischenstufe nicht.
+        "spiel_ablage": FAKELIB,
+        "spiel_fakelib2_wirkt": True,
         "backport_ordner": (FAKELIB2, FAKELIB),
         "backport_erlaubt": True,
         "orte": (ORT_BACKPORT, ORT_SPIEL, ORT_GLOBAL, ORT_EMUS),
@@ -188,7 +225,9 @@ def suchreihenfolge(generation: str) -> tuple[str, ...]:
       Spiel gelegt wird. Entschieden wird allein am Ordnernamen:
       ``fakelib2`` vor ``fakelib``.
     * **neu** geht eine feste Liste von Pfaden durch; der erste Treffer
-      gewinnt, und der Spielordner steht darin ganz hinten.
+      gewinnt, und der Spielordner steht darin ganz hinten - seit 1.7beta1
+      wieder mit ``fakelib2`` vor ``fakelib`` (die Stufe alpha8 bis
+      alpha13fix1 steht in :data:`SPIELORDNER_JE_FASSUNG`).
     """
     p = profil(generation)
     if generation == ALT:
@@ -209,13 +248,17 @@ def ablageordner(generation: str, ort: str) -> str:
 
     Returns:
         Der Ordnername, den man nehmen muss - nicht der, den man nehmen
-        koennte. Bei mehreren moeglichen gewinnt der bevorzugte.
+        koennte. Im Backport-Ordner gewinnt der bevorzugte. Im Spielordner
+        gilt ``spiel_ablage``, nicht der erste gelesene: Seit 1.7beta1 liest
+        ``NEU`` dort zuerst ``fakelib2``, die Stufe alpha8 bis alpha13fix1
+        uebergeht ihn aber - wer den ersten naehme, schriebe genau fuer diese
+        Fassungen in einen Ordner, den sie nie ansehen.
     """
     p = profil(generation)
     if ort == ORT_BACKPORT:
         return p["backport_ordner"][0]
     if ort == ORT_SPIEL:
-        return p["spiel_ordner"][0]
+        return p["spiel_ablage"]
     if ort in (ORT_GLOBAL, ORT_EMUS):
         # Bewusst ein Fehler statt einer leeren Zeichenkette: Dort liegen
         # die Dateien direkt im konfigurierten Ordner. Wer hier einen Namen
@@ -316,12 +359,19 @@ def ablageziel(generation: str, ort: str, *, wurzel: str = "",
 #: Wer eigene Formulierungen will, reicht sie als ``texte`` herein – dasselbe
 #: Muster wie in ``pkg_merger.MELDUNGEN``.
 MELDUNGEN: dict[str, str] = {
-    "spiel_fakelib2_wirkungslos":
-        "Im Spielordner liegt {fakelib2!r}. Ab 1.7 alpha8 wird der dort "
-        "ignoriert - umbenennen nach {fakelib!r} oder als Backport ablegen.",
-    "spiel_beide_alt":
+    # Bis zum 28.09.2026 hiessen die beiden ersten "spiel_fakelib2_wirkungslos"
+    # ("ab 1.7 alpha8 ignoriert") und "spiel_beide_alt" - der alpha8-Stand.
+    "spiel_nur_fakelib2":
+        "Im Spielordner liegt {fakelib2!r}. Er gewinnt bis 1.7 alpha6 und "
+        "wieder ab 1.7beta1 - ein {fakelib!r} daneben bliebe dann ungenutzt; "
+        "ab 1.7beta1 kommen zudem weder globale fakelib noch "
+        "Emulator-Dateien dazu. 1.7 alpha8 bis alpha13fix1 übergehen ihn "
+        "ganz. In jeder Fassung wirksam: umbenennen nach {fakelib!r}.",
+    "spiel_beide":
         "Beide Ordner vorhanden: {fakelib2!r} gewinnt, der Inhalt von "
-        "{fakelib!r} bleibt ungenutzt - auch wenn {fakelib2!r} leer ist.",
+        "{fakelib!r} bleibt ungenutzt - auch wenn {fakelib2!r} leer ist. So "
+        "liest ShadowMount+ bis 1.7 alpha6 und wieder ab 1.7beta1; nur 1.7 "
+        "alpha8 bis alpha13fix1 nehmen umgekehrt {fakelib!r}.",
     "spiel_keiner_wirkt":
         "Keiner der gefundenen Ordner wirkt an dieser Stelle. "
         "Wirksam wäre: {wirksam}.",
@@ -375,9 +425,10 @@ MELDUNGEN: dict[str, str] = {
         "Der Backport wird über das Spiel gelegt und erscheint dadurch "
         "ebenfalls in app0.",
     "ziel_spiel_neu":
-        "Hier zählt nur {fakelib!r}. Ein {fakelib2!r} im Spielordner wird ab "
-        "alpha8 ignoriert - ohne Meldung. Empfohlen ist die Ablage als "
-        "Backport.",
+        "Abgelegt wird nach {fakelib!r} - diesen Namen lesen alle Fassungen. "
+        "Ein {fakelib2!r} daneben gewinnt ab 1.7beta1 und lässt {fakelib!r} "
+        "ungenutzt; 1.7 alpha8 bis alpha13fix1 übergehen ihn. Empfohlen ist "
+        "die Ablage als Backport.",
     "ziel_spiel_alt":
         "{fakelib2!r} hat Vorrang vor {fakelib!r}; es wird immer nur einer "
         "von beiden eingehängt.",
@@ -460,11 +511,18 @@ def beanstandungen(generation: str, ort: str,
 
     if ort == ORT_SPIEL:
         wirksam = set(p["spiel_ordner"])
-        if FAKELIB2 in da and not p["spiel_fakelib2_wirkt"]:
-            meldungen.append(_satz("spiel_fakelib2_wirkungslos",
+        if FAKELIB2 in da and FAKELIB in da:
+            # Fuer beide Generationen derselbe Satz, Wort fuer Wort:
+            # fakelib2 gewinnt bis alpha6 und wieder ab 1.7beta1, nur die
+            # Zwischenstufe nimmt fakelib. _ampr_ablage_pruefen fragt beide
+            # ab und zeigt ihn so nur einmal.
+            meldungen.append(_satz("spiel_beide",
                                    fakelib2=FAKELIB2, fakelib=FAKELIB))
-        if generation == ALT and FAKELIB2 in da and FAKELIB in da:
-            meldungen.append(_satz("spiel_beide_alt",
+        elif FAKELIB2 in da and generation == NEU:
+            # Allein wirkt es in beiden Generationen - nur nicht in der
+            # Zwischenstufe alpha8 bis alpha13fix1. Und wer danach nach
+            # fakelib ablegt, legt neben einen Ordner, der gewinnt.
+            meldungen.append(_satz("spiel_nur_fakelib2",
                                    fakelib2=FAKELIB2, fakelib=FAKELIB))
         if da and not (da & wirksam):
             meldungen.append(_satz("spiel_keiner_wirkt",

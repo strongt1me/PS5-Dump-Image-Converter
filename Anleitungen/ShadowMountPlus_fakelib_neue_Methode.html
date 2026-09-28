@@ -211,18 +211,19 @@ footer b{color:#fff}
   <div class="hero">
     <span class="eyebrow">fakelib &amp; fakelib2 · neuere Versionen</span>
     <h1>Backports einhängen
-      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1, ergänzt um 1.7beta2.</small>
+      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1, ergänzt um 1.7beta1 und 1.7beta2.</small>
     </h1>
     <div class="badges">
       <span class="badge on">Gültig ab 1.7 alpha8</span>
       <span class="badge">Cache statt Schichten</span>
       <span class="badge">fakelib2 exklusiv seit alpha10</span>
-      <span class="badge">Stand: 22. September 2026</span>
+      <span class="badge">fakelib2 im Spiel wieder ab 1.7beta1</span>
+      <span class="badge">Stand: 28. September 2026</span>
     </div>
 
     <div class="alert">
       <div class="ic">!</div>
-      <p><strong>Nicht für 1.7 alpha6 und älter.</strong> Dort werden die Ordner noch aus der laufenden Sandbox gelesen, und zwei Schichten liegen übereinander. Dafür gilt die separate Anleitung. <strong>Häufigster Fehler beim Umstieg:</strong> Ein <code class="inline">fakelib2</code> im Spielordner wird ab alpha8 übergangen – ohne jede Meldung. Unsicher, welche Version läuft? <a href="#version" style="color:var(--warn)">Drei Prüfungen am Seitenende.</a></p>
+      <p><strong>Nicht für 1.7 alpha6 und älter.</strong> Dort werden die Ordner noch aus der laufenden Sandbox gelesen, und zwei Schichten liegen übereinander. Dafür gilt die separate Anleitung. <strong>Häufigster Fehler beim Umstieg:</strong> Ein <code class="inline">fakelib2</code> im Spielordner wird von alpha8 bis alpha13fix1 übergangen – ohne jede Meldung. Ab 1.7beta1 wird es wieder gelesen und gewinnt dann gegen ein <code class="inline">fakelib</code> daneben. Unsicher, welche Version läuft? <a href="#version" style="color:var(--warn)">Prüfungen am Seitenende.</a></p>
     </div>
   </div>
 
@@ -233,8 +234,8 @@ footer b{color:#fff}
     <div class="card">
       <ol class="flow">
         <li>Der Watcher meldet <b>PID</b> und <b>TITLE_ID</b> des startenden Spiels.</li>
-        <li>Gesucht wird an drei Stellen in <b>fester Reihenfolge</b>; der erste Treffer gewinnt, es wird immer nur <b>ein</b> Ordner gewählt (Abschnitt 02).</li>
-        <li>Ist das ein <code class="inline">fakelib2</code> aus dem Backport-Ordner, wird er <b>direkt und ausschließlich</b> eingehängt – ohne Cache, ohne Emulator-Dateien, ohne globale fakelib.</li>
+        <li>Gesucht wird in <b>fester Reihenfolge</b> erst im Backport-Ordner, dann in der Spielquelle; der erste Treffer gewinnt, es wird immer nur <b>ein</b> Ordner gewählt (Abschnitt 02).</li>
+        <li>Ist das ein <code class="inline">fakelib2</code> – aus dem Backport-Ordner oder, ab 1.7beta1, aus dem Spiel –, wird er <b>direkt und ausschließlich</b> eingehängt – ohne Cache, ohne Emulator-Dateien, ohne globale fakelib.</li>
         <li>Sonst entsteht unter <code class="inline">/data/shadowmount/cache/&lt;TITLE_ID&gt;/fakelib/</code> ein <b>Cache</b>: die fakelib des Spiels, dazu die globale fakelib und passende Emulator-Dateien (Abschnitt 03).</li>
         <li>Neu gebaut wird der Cache nur, wenn sich eine seiner Quellen geändert hat; sonst wird der vorhandene genommen.</li>
         <li>Eingehängt wird in die Sandbox des Spiels nach <code class="inline">common/lib</code>.</li>
@@ -248,13 +249,14 @@ footer b{color:#fff}
   <!-- 2 -->
   <section id="struktur">
     <div class="sec-head"><span class="sec-mark">02</span><h2>Suchreihenfolge</h2></div>
-    <p class="lede">Drei Stellen, in dieser Reihenfolge. Der erste Treffer gewinnt; was danach käme, bleibt unbeachtet.</p>
+    <p class="lede">Vier Stellen, in dieser Reihenfolge. Der erste vorhandene Ordner gewinnt – auch ein leerer; was danach käme, bleibt unbeachtet.</p>
 
     <div class="card">
       <ol class="flow">
         <li><code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/fakelib2/</code> – gewinnt vor allem anderen und wird seit alpha10 exklusiv eingehängt.</li>
         <li><code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/fakelib/</code></li>
-        <li><code class="inline">&lt;Spielquelle&gt;/fakelib/</code> – hier zählt <b>nur</b> <code class="inline">fakelib</code>, nie <code class="inline">fakelib2</code>.</li>
+        <li><code class="inline">&lt;Spielquelle&gt;/fakelib2/</code> – erst wieder ab 1.7beta1, ebenfalls exklusiv. 1.7 alpha8 bis alpha13fix1 übergehen es ohne Meldung.</li>
+        <li><code class="inline">&lt;Spielquelle&gt;/fakelib/</code> – wirkt in jeder Version, solange kein <code class="inline">fakelib2</code> daneben liegt.</li>
       </ol>
     </div>
 
@@ -274,18 +276,18 @@ footer b{color:#fff}
 <pre>&lt;Spielordner oder Image-Inhalt&gt;/
 ├─ eboot.bin
 ├─ sce_sys/param.json
-├─ <span class="k">fakelib/</span>    <span class="c">← wirkt</span>
+├─ <span class="k">fakelib/</span>    <span class="c">← wirkt in jeder Version</span>
 │  └─ libSceXxx.sprx
-└─ <span class="hi">fakelib2/</span>   <span class="c">← wird übergangen!</span></pre>
+└─ <span class="hi">fakelib2/</span>   <span class="c">← nicht daneben legen!</span></pre>
       </div>
     </div>
 
     <div class="card" style="margin-top:18px">
       <p class="path-title">Regeln</p>
-      <p style="margin:0 0 12px;font-size:14.5px">Ordnernamen exakt <code class="inline">fakelib</code> bzw. <code class="inline">fakelib2</code>, klein geschrieben. Im Spielordner wirkt <b style="color:var(--warn)">nur <code class="inline">fakelib</code></b> – ein <code class="inline">fakelib2</code> dort wird ohne Meldung übergangen. Im Backport-Ordner steht <code class="inline">fakelib2</code> vor <code class="inline">fakelib</code>; liegen dort beide, gewinnt <code class="inline">fakelib2</code>.</p>
+      <p style="margin:0 0 12px;font-size:14.5px">Ordnernamen exakt <code class="inline">fakelib</code> bzw. <code class="inline">fakelib2</code>, klein geschrieben. Im Spielordner liest 1.7beta1 und neuer erst <code class="inline">fakelib2</code>, dann <code class="inline">fakelib</code>; 1.7 alpha8 bis alpha13fix1 lesen dort <b style="color:var(--warn)">nur <code class="inline">fakelib</code></b> und übergehen ein <code class="inline">fakelib2</code> ohne Meldung. In jeder Version sicher ist also nur ein einzelner Ordner <code class="inline">fakelib</code>. Im Backport-Ordner steht <code class="inline">fakelib2</code> vor <code class="inline">fakelib</code>; liegen dort beide, gewinnt <code class="inline">fakelib2</code>.</p>
       <p style="margin:0 0 12px;font-size:14.5px;color:var(--muted)">Der <code class="inline">backports</code>-Ordner wird beim normalen Scan übergangen. Ein Backport wirkt aus jedem Scan-Pfad auf das passende Spiel; liefern mehrere Scan-Pfade denselben Titel, gewinnt der Scan-Pfad des Spiels, sonst die Reihenfolge der <code class="inline">scanpath</code>-Einträge. Übliche Orte sind <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/</code> und <code class="inline">/data/etaHEN/games/backports/&lt;TITLE_ID&gt;/</code>.</p>
       <p style="margin:0 0 12px;font-size:14.5px"><b style="color:#fff">Installierte PKGs (ab 1.7beta2)</b>: Auch ein als PKG installiertes Spiel bekommt jetzt seinen Backport-Ordner <code class="inline">&lt;scanpath&gt;/backports/&lt;TITLE_ID&gt;/</code>. Kurz vor dem Spielstart blendet ShadowMount+ dessen <b>ganzen Inhalt</b> in das <code class="inline">app0</code> des Pakets ein – Dateien einzeln, Unterordner, die das Paket nicht hat, als Ganzes, höchstens 256 Einträge je Spiel. Das Paket selbst wird nicht verändert. Danach wird wie gewohnt <code class="inline">fakelib2</code> bzw. <code class="inline">fakelib</code> eingehängt. Bis 1.7 wurde ein externer Backport bei installierten PKGs übergangen; dort zählte nur, was im Paket lag.</p>
-      <p style="margin:0;font-size:14.5px;color:var(--muted)">Dieses Programm legt beim Einbau (BACKPORT, AMPR EMU) immer einen Ordner <code class="inline">fakelib</code> an – er wirkt an beiden Stellen.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Dieses Programm legt beim Einbau (BACKPORT, AMPR EMU) immer einen Ordner <code class="inline">fakelib</code> an – er wirkt an beiden Stellen und in jeder Version. Liegt schon ein <code class="inline">fakelib2</code> im Spiel, warnt es vorher.</p>
     </div>
   </section>
 
@@ -389,8 +391,8 @@ footer b{color:#fff}
     <div class="card">
       <div class="pit">
         <div class="item">
-          <h4><code class="inline">fakelib2</code> im Spielordner wirkt nicht</h4>
-          <p>Ab alpha8 wird es ohne Meldung übergangen. Umbenennen in <code class="inline">fakelib</code> oder als Backport ablegen.</p>
+          <h4><code class="inline">fakelib2</code> im Spielordner hängt von der Version ab</h4>
+          <p>1.7 alpha8 bis alpha13fix1 übergehen es ohne Meldung. Ab 1.7beta1 gewinnt es und verdeckt ein <code class="inline">fakelib</code> daneben – dann ohne globale fakelib und ohne Emulator-Dateien. In jeder Version wirksam: umbenennen in <code class="inline">fakelib</code> oder als Backport ablegen.</p>
         </div>
         <div class="item">
           <h4>Emulator-Dateien ersetzen nur</h4>
@@ -445,7 +447,7 @@ footer b{color:#fff}
             <tr><td>handoff active mount pid=X -&gt; pid=Y</td><td>Spielwechsel, alter Mount wird abgeräumt.</td></tr>
             <tr><td>… unmount deferred for …</td><td>Ziel noch belegt (<code class="inline">EBUSY</code>).</td></tr>
             <tr><td>[BKP][NSFS] …</td><td>Nur installierte PKGs, ab 1.7beta2: Einblenden des Backport-Ordners ins <code class="inline">app0</code> – aktiv, übersprungen oder gescheitert.</td></tr>
-            <tr><td style="color:var(--warn)">keine Zeile</td><td>Kein fakelib-Ordner an den drei Stellen (ein <code class="inline">fakelib2</code> im Spielordner zählt nicht) oder <code class="inline">backport_fakelib=0</code>.</td></tr>
+            <tr><td style="color:var(--warn)">keine Zeile</td><td>Kein fakelib-Ordner an den gesuchten Stellen (ein <code class="inline">fakelib2</code> im Spielordner zählt erst ab 1.7beta1) oder <code class="inline">backport_fakelib=0</code>.</td></tr>
           </tbody>
         </table>
       </div>
@@ -473,13 +475,14 @@ footer b{color:#fff}
         <div class="verdict"><span class="yn n">nein</span> alte Version (oder bisher kein Start über den Cache)</div>
       </div>
     </div>
-    <p class="note">Mitgeliefert ist ShadowMountPlus 1.7beta1 (<code class="inline">shadowmountplus_v1.7beta1.elf</code>). Was oben „ab 1.7beta2“ heißt – der Backport-Ordner für installierte PKGs –, kann diese Fassung noch nicht. Dass ein Backport-<code class="inline">fakelib2</code> exklusiv bleibt, nennt die Dokumentation erst ab alpha10.</p>
+    <p class="note">Die drei Prüfungen trennen alt und neu. Ob 1.7 alpha8 bis alpha13fix1 oder 1.7beta1 und neuer läuft, zeigen sie nicht – beide unterscheiden sich nur im Spielordner (Abschnitt 02); das verrät erst die Versionsnummer.</p>
+    <p class="note">Mitgeliefert ist ShadowMountPlus 1.7beta2 (<code class="inline">shadowmountplus_v1.7beta2.elf</code>). Sie kann alles, was oben „ab 1.7beta2“ heißt, und liest ein <code class="inline">fakelib2</code> im Spielordner. Dass ein Backport-<code class="inline">fakelib2</code> exklusiv bleibt, nennt die Dokumentation erst ab alpha10.</p>
   </section>
 
   <footer>
     <p style="margin:0 0 6px"><b>Gilt für ShadowMountPlus ab 1.7 alpha8.</b></p>
     <p style="margin:0">Bis einschließlich 1.7 alpha6 gilt die separate Anleitung: Dort werden die Ordner aus der laufenden Sandbox gelesen, und zwei Schichten liegen übereinander.<br>
-    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12. Ergänzt am Quellcode von 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code> · Stand 22. September 2026.</p>
+    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12. Ergänzt am Quellcode von 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>. Reihenfolge im Spielordner nachgemessen an <code class="inline">src/sm_fakelib.c</code> von 1.7 alpha8, alpha13fix1, 1.7beta1 und 1.7beta2 · Stand 28. September 2026.</p>
   </footer>
 </main>
 
