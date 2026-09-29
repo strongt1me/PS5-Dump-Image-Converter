@@ -2,7 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.52):** Der WebKit Autoloader ist aktualisiert (inkl. Payload-Manager v0.5.1 fix2), und die Anzeige der Einbauten folgt jetzt einheitlich ShadowMount+ 1.7.
+> **Kurz zum aktuellen Stand (v1.9.53):** „PKG bauen“ funktioniert jetzt auch für Spiel-Backups mit vielen kleinen Dateien, bei denen der Bau bisher abbrach.
+
+---
+
+## v1.9.53 – 29.09.2026
+
+- **Behoben:** „PKG bauen“ scheiterte bei Spiel-Backups mit vielen kleinen Dateien an einem internen Format-Limit der eingebetteten LibProsperoPkg. Für kleine, einfache Titel baut das Werkzeug jetzt durch; bei größeren oder komplexeren Titeln bleibt die Einschränkung vorerst bestehen.
 
 ---
 

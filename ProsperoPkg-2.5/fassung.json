@@ -2,6 +2,7 @@
   "fassung": "2.6.0",
   "quelle": "SvenGDK/LibProsperoPKG",
   "stand": "748eabf",
-  "gebaut": "2026-09-15",
-  "hinweis": "Der Ordnername sagt 2.5 - das ist die alte Zahl, die in .spec, prosperopkg.py und Tests verdrahtet ist. Massgeblich ist die Fassung hier."
+  "gebaut": "2026-09-29",
+  "patch": "patch/PATCH.md",
+  "hinweis": "Der Ordnername sagt 2.5 - das ist die alte Zahl, die in .spec, prosperopkg.py und Tests verdrahtet ist. Massgeblich ist die Fassung hier. Seit 29.09.2026 zusaetzlich mit dem eigenen NAPS-u2c-Patch (siehe patch/PATCH.md) - behebt den Abbruch 'NAPS u2c ... exceeds the single-byte field' bei KLEINEN/EINFACHEN Titeln mit vielen kleinen Dateien (gemessen: Arkanoid Eternal Battle). LOEST NICHT das allgemeine Problem: bei groesseren/komplexeren Titeln (gemessen: Instant Sports Plus, 2,5 GB) bleibt die Gesamtzahl der Eintraege ueber dem Limit, und ein zweites, unabhaengiges Indirektblock-Limit des aeusseren Containers (~569 MiB je Innendatei) greift zusaetzlich. Die Bibliotheksfassung selbst bleibt 2.6.0 (748eabf); der Patch ist eine eigene, dokumentierte, TEILWEISE Verbesserung obendrauf - siehe patch/PATCH.md Abschnitt 'Tiefere Grenze'."
 }

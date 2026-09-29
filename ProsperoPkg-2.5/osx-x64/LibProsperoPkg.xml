@@ -5181,6 +5181,12 @@
             (block-aligned start and end) so the packed data region begins on a fresh block after it. Other
             sce_sys payload files are Kraken-compressed and packed like app payload.</summary>
         </member>
+        <member name="F:LibProsperoPkg.PFS.ProsperoPs5InnerImageAssembler.FileNode.Grouped">
+            <summary>ps5conv-Patch (siehe patch/PATCH.md): true, wenn diese Datei in ein vorangehendes
+            Buendel eingegangen ist - sie traegt keine eigenen On-Disk-Bytes und keinen eigenen
+            CblockInfo-Eintrag mehr; ihr LogicalOffset bleibt fuer ihren eigenen fidx/afid-Eintrag
+            massgeblich.</summary>
+        </member>
         <member name="M:LibProsperoPkg.PFS.ProsperoPs5InnerImageAssembler.BuildFromFsTree(LibProsperoPkg.PFS.ProsperoFsDir)">
             <summary>
             Bridges the package builder's <see cref="T:LibProsperoPkg.PFS.ProsperoFsDir"/> tree to the assembler: renders every file's
