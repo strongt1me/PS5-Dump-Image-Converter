@@ -55,9 +55,13 @@ LANGE_VORGAENGE = {
 
 #: Woran erkennbar ist, dass eine Funktion sich meldet. Bewusst breit: Der
 #: Test soll neue stumme Stellen finden, nicht über die Form streiten.
+#: "melde(" mit Klammer (nicht bloß "melde"): der bloße Parametername des
+#: Mitschnitt-Assistenten (29.09.2026, Vorbild _ampr_gen_automatik) wäre
+#: sonst zu unspezifisch - viele deutsche Bezeichner enthalten "meld"
+#: (angemeldet, abgemeldet); der Aufruf selbst hat immer die Klammer.
 MELDER = (
     "_set_status", "_set_progress", "_append_to_log", "_teilschritt_melden",
-    "progress_cb", "melden", "_melde", "fortschritt", "copy_function",
+    "progress_cb", "melden", "melde(", "_melde", "fortschritt", "copy_function",
     "_copy_done_bytes", "_copy_total_bytes", "progress_callback",
     "_mess_infotext", "_pack_infotext", "status_label",
     "_update_info_box", "_groessenfeld_setzen_wenn_aktuell",

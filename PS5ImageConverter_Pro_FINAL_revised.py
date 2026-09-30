@@ -688,7 +688,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.53"
+APP_VERSION = "v1.9.54"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3573,6 +3573,7 @@ class PS5ConverterGUI:
         ("titlebar.param_manifest", "_show_param_manifest_editor"),
         ("titlebar.micromount", "_show_micromount_editor"),
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
+        ("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent"),
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_bauen", "_show_pkg_bauen"),
@@ -46632,6 +46633,563 @@ class PS5ConverterGUI:
         # nicht das Oeffnen eines Formulars.
         self._spaeter_im_fenster(win, _starten)
 
+    # ── AMPR-Mitschnitt-Assistent ─────────────────────────────────────
+    #
+    # Erzeugt aus echten Konsolen-Laeufen ein massgeschneidertes Packprofil
+    # (siehe ampr_assetpakete.py:10-21 - genau diese Luecke). Anders als
+    # _ampr_gen_automatik oben dauert ein einzelner Schritt hier moeglicher-
+    # weise Stunden, nicht Sekunden: der Nutzer spielt zwischen zwei
+    # Bestaetigungen wirklich. Deshalb ein eigener, NICHT-modaler Warte-
+    # mechanismus (_ampr_mitschnitt_segment_warten) statt _ampr_gen_frage/
+    # _ampr_gen_dialog, deren grab_set() das ganze Programm fuer die
+    # Wartezeit sperren wuerde.
+
+    #: (Ordner-Kennung, i18n-Schluessel) - Reihenfolge und Inhalt nach der
+    #: Empfehlung des Herstellers (AMPR_PackTools-4.0/USER_GUIDE_EN.md,
+    #: Abschnitt 2 "Recording useful traces").
+    _AMPR_MITSCHNITT_SEGMENTE: tuple[tuple[str, str], ...] = (
+        ("kaltstart_menue", "amprmitschnitt.segment_1"),
+        ("level_regionen", "amprmitschnitt.segment_2"),
+        ("schnellreise_kampf", "amprmitschnitt.segment_3"),
+        ("erneuter_besuch", "amprmitschnitt.segment_4"),
+        ("modi_sprachen_dlc", "amprmitschnitt.segment_5"),
+    )
+
+    #: Grosszuegige Wartegrenze fuer "jetzt spielen" - anders als
+    #: _AMPR_GEN_ANTWORT_GRENZE (600 s, fuer Sekunden-Entscheidungen) kann
+    #: ein einzelner Durchlauf hier Stunden dauern.
+    _AMPR_MITSCHNITT_SPIELZEIT_GRENZE = 6.0 * 3600.0
+
+    def _show_ampr_mitschnitt_assistent(self) -> None:
+        """Fenster: Mitschnitte aufnehmen und daraus ein Packprofil erzeugen.
+
+        Vorbild ist :meth:`_show_ampr_generation` - Protokollbereich,
+        Start-/Schliessen-Knopf, ein Arbeitsfaden. Neu ist der Statusbereich
+        fuer die Wartephase: kein Dialog, kein ``grab_set()`` - waehrend der
+        Nutzer spielt, bleibt der Rest des Programms bedienbar.
+        """
+        c = self._COLORS
+        win = self._build_modern_toplevel(
+            self._t("amprmitschnitt.title"), 940, 760,
+            min_width=820, min_height=580)
+        self._build_modern_header(win, self._t("amprmitschnitt.title"),
+                                  self._t("amprmitschnitt.subtitle"))
+
+        tk.Label(win, text=self._t("amprmitschnitt.what_happens"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(6, 2))
+        tk.Label(win, text=self._t("amprmitschnitt.what_happens_text"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                 fg=c["fg_secondary"], anchor="w", wraplength=880,
+                 justify="left").pack(fill="x", padx=16, pady=(0, 4))
+        tk.Label(win, text=self._t("amprmitschnitt.hint_partial"),
+                 font=(UI_SCHRIFT, pt(9), "italic"), bg=c["bg_main"],
+                 fg=c["accent"], anchor="w", wraplength=880,
+                 justify="left").pack(fill="x", padx=16, pady=(0, 8))
+
+        # ── Statusbereich fuer die Wartephase ────────────────────────────
+        # Immer sichtbar, aber leer/deaktiviert ausserhalb einer Wartephase -
+        # so bleibt die Position im Fenster fest (kein Nachpacken noetig,
+        # das die Reihenfolge der uebrigen Bereiche durcheinanderbraechte).
+        status = tk.Frame(win, bg=c["bg_card"], padx=12, pady=10)
+        status.pack(fill="x", padx=16, pady=(0, 8))
+        status_label = tk.Label(status, text="", font=(UI_SCHRIFT, pt(9), "bold"),
+                                bg=c["bg_card"], fg=c["fg_primary"],
+                                anchor="w", wraplength=860, justify="left")
+        status_label.pack(fill="x")
+        status_knopf = ttk.Button(status, text=self._t("amprmitschnitt.segment_confirm_btn"),
+                                  style="Accent.TButton", state="disabled",
+                                  command=lambda: None)
+        status_knopf.pack(anchor="w", pady=(8, 0))
+        segment_ui: dict[str, Any] = {"label": status_label,
+                                      "knopf": status_knopf, "event": None}
+
+        # ── Protokoll ──────────────────────────────────────────────────
+        tk.Label(win, text=self._t("amprgen.log"),
+                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
+                                                      pady=(4, 2))
+        koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
+        koerper.pack(fill="both", expand=True, pady=(0, 4))
+        feld = tk.Text(koerper, height=12, wrap="word",
+                       font=("Consolas", pt(9)), bg=c["bg_card"],
+                       fg=c["fg_primary"], relief="flat", state="disabled")
+        rolle = ttk.Scrollbar(koerper, orient="vertical", command=feld.yview)
+        feld.configure(yscrollcommand=rolle.set)
+        rolle.pack(side="right", fill="y")
+        feld.pack(side="left", fill="both", expand=True)
+
+        def _protokoll(text: str) -> None:
+            if not feld.winfo_exists():
+                return
+            feld.configure(state="normal")
+            feld.insert("end", text + "\n")
+            feld.see("end")
+            feld.configure(state="disabled")
+
+        def _melde(text: str) -> None:
+            """Aus dem Arbeitsfaden ins Protokoll - immer ueber die Wurzel."""
+            self._spaeter_im_fenster(win, _protokoll, text)
+
+        laeuft = {"aktiv": False}
+        abbruch_zustand = {"aktiv": False}
+        start_knopf: dict[str, Any] = {}
+
+        def _abgebrochen() -> bool:
+            return abbruch_zustand["aktiv"]
+
+        def _schliessen_versuchen() -> None:
+            if not laeuft["aktiv"]:
+                win.destroy()
+                return
+            if self._ask_yesno_threadsafe(
+                    self._t("amprmitschnitt.title"),
+                    self._t("amprmitschnitt.close_confirm"), default_yes=False):
+                abbruch_zustand["aktiv"] = True
+                ereignis = segment_ui.get("event")
+                if ereignis is not None:
+                    ereignis.set()
+                # Das Fenster faellt erst zu, sobald der Arbeitsfaden das
+                # bemerkt (_wieder_frei unten) - ein sofortiges destroy()
+                # wuerde ihm den Boden unter den Fuessen wegziehen, waehrend
+                # er noch in einer FTP-Uebertragung steckt.
+
+        win.protocol("WM_DELETE_WINDOW", _schliessen_versuchen)
+
+        def _starten() -> None:
+            if laeuft["aktiv"]:
+                return
+            laeuft["aktiv"] = True
+            abbruch_zustand["aktiv"] = False
+            knopf = start_knopf.get("widget")
+            if knopf is not None:
+                knopf.configure(state="disabled")
+            _protokoll("")
+            _protokoll("=" * 60)
+            _protokoll(self._t("amprmitschnitt.run_start"))
+
+            def _lauf() -> None:
+                try:
+                    self._ampr_mitschnitt_automatik(win, _melde, segment_ui,
+                                                    _abgebrochen)
+                finally:
+                    laeuft["aktiv"] = False
+
+                    def _wieder_frei() -> None:
+                        k = start_knopf.get("widget")
+                        if k is not None and k.winfo_exists():
+                            k.configure(state="normal")
+                        if not win.winfo_exists():
+                            return
+                        if abbruch_zustand["aktiv"]:
+                            win.destroy()
+                    self._spaeter_im_fenster(win, _wieder_frei)
+            threading.Thread(target=_lauf, daemon=True,
+                             name="ampr-mitschnitt").start()
+
+        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfreihe.pack(side="bottom", fill="x")
+        ttk.Button(knopfreihe, text=self._t("action.close"),
+                   command=_schliessen_versuchen).pack(side="right")
+        start = ttk.Button(knopfreihe, text=self._t("amprmitschnitt.btn_run"),
+                           style="Accent.TButton", command=_starten)
+        start.pack(side="left")
+        start_knopf["widget"] = start
+
+        # Sofort loslegen, wie beim Vorbild _show_ampr_generation - der
+        # Knopf im Hauptfenster ist der Startbefehl, nicht das Oeffnen
+        # eines Formulars.
+        self._spaeter_im_fenster(win, _starten)
+
+    def _ampr_mitschnitt_automatik(self, win, melde, segment_ui,
+                                   abgebrochen: Callable[[], bool]) -> None:
+        """Erledigt den ganzen Ablauf - Vorbild :meth:`_ampr_gen_automatik`.
+
+        Anders als dort dauert ein einzelner Schritt hier moeglicherweise
+        Stunden (das Spielen selbst); siehe
+        :meth:`_ampr_mitschnitt_segment_warten`.
+        """
+        ftp = None
+        try:
+            # ── 1. Lokalen Dump waehlen ──────────────────────────────────
+            melde(self._t("amprmitschnitt.step_dump"))
+            dump = self._ampr_mitschnitt_ordner_fragen(win)
+            if not dump:
+                melde(self._t("amprmitschnitt.no_dump_chosen"))
+                return
+            if not (os.path.isfile(os.path.join(dump, "eboot.bin"))
+                    and os.path.isdir(os.path.join(dump, "sce_sys"))):
+                melde("!! " + self._t("amprmitschnitt.not_a_dump", path=dump))
+                return
+            title_id = self._ampr_mitschnitt_titel_aus_ordner(dump)
+            melde(self._t("amprmitschnitt.dump_chosen",
+                          name=os.path.basename(dump), title_id=title_id or "?"))
+            if abgebrochen():
+                melde(self._t("amprmitschnitt.cancelled"))
+                return
+
+            # ── 2. Konsole finden ────────────────────────────────────────
+            melde(self._t("amprmitschnitt.step_console"))
+            host = self._ampr_gen_adresse_finden(win, melde)
+            if not host:
+                melde(self._t("amprmitschnitt.cancelled"))
+                return
+            try:
+                ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+                melde(self._t("amprgen.console_ok", host=host))
+            except Exception as exc:                          # noqa: BLE001
+                melde(self._t("amprgen.console_failed", error=exc))
+                return
+            if abgebrochen():
+                melde(self._t("amprmitschnitt.cancelled"))
+                return
+
+            # ── 3. Titel auf der Konsole zuordnen ────────────────────────
+            melde(self._t("amprmitschnitt.step_match"))
+            spielpfad = self._ampr_mitschnitt_spiel_zuordnen(win, ftp, title_id, melde)
+            if not spielpfad or abgebrochen():
+                return
+
+            # ── 4. Index bauen, Bibliothek waehlen, hochladen ────────────
+            melde(self._t("amprmitschnitt.step_prepare"))
+            if not self._ampr_mitschnitt_index_bauen(dump, melde):
+                return
+            eintrag = self._ampr_mitschnitt_debug_bibliothek_waehlen(melde)
+            if eintrag is None:
+                return
+            if not self._ampr_mitschnitt_upload_vorbereiten(
+                    ftp, spielpfad, dump, eintrag, melde):
+                return
+            if abgebrochen():
+                melde(self._t("amprmitschnitt.cancelled"))
+                return
+
+            # ── 5. Segmente: warten, holen ────────────────────────────────
+            melde(self._t("amprmitschnitt.step_segments"))
+            mitschnitt_ordner = dump.rstrip("/\\") + "_ampr_mitschnitte"
+            laeufe: list[tuple[str, str]] = []
+            gesamt = len(self._AMPR_MITSCHNITT_SEGMENTE)
+            for nummer, (slug, titel_schluessel) in enumerate(
+                    self._AMPR_MITSCHNITT_SEGMENTE, start=1):
+                if abgebrochen():
+                    break
+                titel = self._t(titel_schluessel)
+                if not self._ampr_mitschnitt_segment_warten(
+                        win, segment_ui, titel, nummer, gesamt, abgebrochen):
+                    break
+                if abgebrochen():
+                    break
+                lauf_ordner = os.path.join(
+                    mitschnitt_ordner, "lauf_%02d_%s" % (nummer, slug))
+                ergebnis = self._ampr_mitschnitt_lauf_herunterladen(
+                    win, ftp, spielpfad, lauf_ordner, titel, melde)
+                if ergebnis == "ok":
+                    laeufe.append((
+                        os.path.join(lauf_ordner, "ampr_commands.bin"),
+                        os.path.join(lauf_ordner, self._AMPR_INDEX_NAME)))
+                elif ergebnis == "stop":
+                    break
+                # "skip" macht mit dem naechsten Segment weiter.
+
+            if not laeufe:
+                melde("!! " + self._t("amprmitschnitt.no_runs"))
+                return
+
+            # ── 6. Profil erzeugen ────────────────────────────────────────
+            melde(self._t("amprmitschnitt.step_profile"))
+            self._ampr_mitschnitt_profil_erzeugen(
+                win, dump, mitschnitt_ordner, laeufe, melde, abgebrochen)
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:                              # noqa: BLE001
+                    try:
+                        ftp.close()
+                    except Exception:                           # noqa: BLE001
+                        pass
+
+    def _ampr_mitschnitt_ordner_fragen(self, fenster) -> str:
+        """Laesst den lokalen Spieldump waehlen - aus dem Arbeitsfaden."""
+        ergebnis: dict[str, str] = {}
+        fertig = threading.Event()
+
+        def _zeigen() -> None:
+            try:
+                ergebnis["pfad"] = filedialog.askdirectory(
+                    parent=fenster, title=self._t("amprmitschnitt.choose_dump")) or ""
+            except Exception as exc:                          # noqa: BLE001
+                logger.debug("Dump-Auswahl: %s", exc)
+                ergebnis["pfad"] = ""
+            finally:
+                fertig.set()
+
+        if not self._spaeter_im_fenster(fenster, _zeigen):
+            return ""
+        if not fertig.wait(self._AMPR_GEN_ANTWORT_GRENZE):
+            return ""
+        return ergebnis.get("pfad", "")
+
+    def _ampr_mitschnitt_titel_aus_ordner(self, dump: str) -> str:
+        """Liest die Title-ID aus der param.json des lokalen Dumps.
+
+        Ueber :meth:`_meta_from_param_json_payload` - "die einzige Stelle,
+        an der eine param.json ausgewertet wird" (abbild_metadaten.py:869) -
+        statt einer eigenen Auswertung.
+        """
+        pfad = os.path.join(dump, "sce_sys", "param.json")
+        try:
+            with open(pfad, "r", encoding="utf-8", errors="replace") as datei:
+                payload = json.load(datei)
+        except (OSError, ValueError) as exc:
+            logger.debug("param.json nicht lesbar (%s): %s", pfad, exc)
+            return ""
+        title_id = self._meta_from_param_json_payload(payload).get("title_id", "")
+        # Der Platzhalter "–" bedeutet "nicht gefunden", nicht "".
+        return "" if title_id in ("", "–") else title_id
+
+    def _ampr_mitschnitt_spiel_zuordnen(self, win, ftp, title_id: str, melde) -> str:
+        """Findet den Ordner auf der Konsole, der zu ``title_id`` passt.
+
+        Nur ``quelle == "Ordner"``-Eintraege kommen infrage (siehe
+        :meth:`_ampr_gen_spiele_finden`): ein ``"appmeta"``-Eintrag ist ein
+        eingehaengtes Abbild ohne eigenen, beschreibbaren Ordner - dorthin
+        liesse sich weder die Aufnahme-Bibliothek noch der Index legen.
+        """
+        spiele = self._ampr_gen_spiele_finden(ftp)
+        ordner_spiele = [s for s in spiele if s.get("quelle") == "Ordner"]
+        treffer = [s for s in ordner_spiele
+                  if title_id and s.get("title_id") == title_id]
+        if len(treffer) == 1:
+            melde(self._t("amprmitschnitt.match_auto", path=treffer[0]["pfad"]))
+            return treffer[0]["pfad"]
+
+        if treffer:
+            auswahl = treffer
+        elif ordner_spiele:
+            auswahl = ordner_spiele
+        else:
+            nur_appmeta = any(s.get("quelle") == "appmeta"
+                              and s.get("title_id") == title_id for s in spiele)
+            if nur_appmeta:
+                melde("!! " + self._t("amprmitschnitt.match_appmeta_only",
+                                     title_id=title_id or "?"))
+            else:
+                melde("!! " + self._t("amprmitschnitt.match_none",
+                                     title_id=title_id or "?"))
+            return ""
+        optionen = [(s["pfad"], "%s  (%s)" % (s["name"][:44], s["title_id"] or "?"),
+                    self._t("amprmitschnitt.q_match_entry", path=s["pfad"]))
+                   for s in auswahl]
+        wahl = self._ampr_gen_frage(
+            win, self._t("amprmitschnitt.q_match"),
+            self._t("amprmitschnitt.q_match_why"), optionen)
+        if not wahl:
+            melde(self._t("amprmitschnitt.cancelled"))
+            return ""
+        return wahl
+
+    def _ampr_mitschnitt_index_bauen(self, dump: str, melde) -> bool:
+        """Baut den lokalen ``ampr_emu.index`` - mit derselben Rueckfrage wie
+        ueberall sonst, wenn daneben schon eine Asset-Schicht liegt."""
+        if not self._ampr_index_neubau_erlaubt(dump, parent=None):
+            melde("!! " + self._t("amprmitschnitt.index_declined"))
+            return False
+        try:
+            anzahl, _doppelte = self._build_ampr_index_local(
+                Path(dump), Path(dump) / self._AMPR_INDEX_NAME)
+        except Exception as exc:                              # noqa: BLE001
+            melde("!! " + self._t("amprmitschnitt.index_failed", error=exc))
+            return False
+        melde(self._t("amprmitschnitt.index_built", count=anzahl))
+        return True
+
+    def _ampr_mitschnitt_debug_bibliothek_waehlen(self, melde) -> "dict[str, Any] | None":
+        """Waehlt die neueste aufnahmefaehige AMPR-EMU-Fassung aus dem Bestand.
+
+        **Nie die neueste ueberhaupt** - ein gewoehnlicher Release-Bau
+        zeichnet nichts auf. :attr:`_AMPR_VARIANT_ORDER` fuehrt
+        ``debug``/``log``/``test-debug-pack`` als eigene Klasse (Rang 1);
+        :meth:`_ampr_alle_fassungen` sortiert je Bibliothek schon nach
+        Version absteigend, der erste Treffer dieser Klasse ist also die
+        neueste passende.
+        """
+        for eintrag in self._ampr_alle_fassungen():
+            if eintrag.get("lib") != self._AMPR_SPRX_NAME:
+                continue
+            if self._AMPR_VARIANT_ORDER.get(
+                    str(eintrag.get("variant", "")).strip().lower()) == 1:
+                melde(self._t("amprmitschnitt.library_chosen",
+                              version=eintrag.get("version", "?"),
+                              variant=eintrag.get("variant", "?")))
+                return eintrag
+        melde("!! " + self._t("amprmitschnitt.no_debug_library"))
+        return None
+
+    def _ampr_mitschnitt_upload_vorbereiten(self, ftp, spielpfad: str, dump: str,
+                                            eintrag: "dict[str, Any]", melde) -> bool:
+        """Legt Aufnahme-Bibliothek und Index auf der Konsole ab.
+
+        Der Index gehoert in die Spielwurzel selbst, **nicht** in den
+        fakelib-Ordner (``shadowmount_generation.ORT_SPIEL``:
+        ``standardpfad="<Spielordner>/"``) - genau dort schreibt/liest ihn
+        auch der Debug-Bau selbst (``/app0/ampr_emu.index``, aus dessen
+        rohen Bytes ausgelesen, nicht geraten).
+        """
+        if self._ampr_gen_systembereich(spielpfad):
+            melde("!! " + self._t("amprgen.target_system_refused", path=spielpfad))
+            return False
+        vorhandene = self._ampr_gen_ordner_ftp(ftp, spielpfad)
+        fakelib_name = vorhandene[0] if vorhandene else sm_gen.FAKELIB
+        ziel_fakelib = "%s/%s" % (spielpfad.rstrip("/"), fakelib_name)
+        if not self._ampr_ftp_upload_file(ftp, ziel_fakelib, eintrag["path"],
+                                          self._AMPR_SPRX_NAME):
+            melde("!! " + self._t("amprmitschnitt.upload_failed",
+                                 name=self._AMPR_SPRX_NAME))
+            return False
+        melde(self._t("amprmitschnitt.uploaded",
+                      path="%s/%s" % (ziel_fakelib, self._AMPR_SPRX_NAME)))
+
+        index_lokal = os.path.join(dump, self._AMPR_INDEX_NAME)
+        if not self._ampr_ftp_upload_file(ftp, spielpfad, index_lokal,
+                                          self._AMPR_INDEX_NAME):
+            melde("!! " + self._t("amprmitschnitt.upload_failed",
+                                 name=self._AMPR_INDEX_NAME))
+            return False
+        melde(self._t("amprmitschnitt.uploaded",
+                      path="%s/%s" % (spielpfad.rstrip("/"), self._AMPR_INDEX_NAME)))
+        return True
+
+    def _ampr_mitschnitt_segment_warten(self, win, segment_ui, titel: str,
+                                        nummer: int, gesamt: int,
+                                        abgebrochen: Callable[[], bool]) -> bool:
+        """Wartet **nicht-modal** auf "fertig gespielt".
+
+        Kein neuer ``Toplevel``, kein ``grab_set()`` - anders als
+        :meth:`_ampr_gen_dialog` (das den ganzen Programm sperrt, siehe
+        dessen ``dlg.grab_set()``). Waehrend der Nutzer spielt - moeglicher-
+        weise Stunden -, bleibt der Rest des Programms bedienbar.
+
+        Returns:
+            ``True`` bei Bestaetigung; ``False`` bei Abbruch (Fenster
+            geschlossen oder die grosszuegige Zeitgrenze erreicht).
+        """
+        ereignis = threading.Event()
+
+        def _anzeigen() -> None:
+            segment_ui["event"] = ereignis
+            segment_ui["label"].configure(text=self._t(
+                "amprmitschnitt.segment_wait", number=nummer, total=gesamt,
+                title=titel))
+            segment_ui["knopf"].configure(state="normal",
+                                          command=lambda: ereignis.set())
+
+        def _zuruecksetzen() -> None:
+            segment_ui["event"] = None
+            if segment_ui["label"].winfo_exists():
+                segment_ui["label"].configure(text="")
+            if segment_ui["knopf"].winfo_exists():
+                segment_ui["knopf"].configure(state="disabled",
+                                              command=lambda: None)
+
+        if not self._spaeter_im_fenster(win, _anzeigen):
+            return False
+        bestaetigt = ereignis.wait(self._AMPR_MITSCHNITT_SPIELZEIT_GRENZE)
+        self._spaeter_im_fenster(win, _zuruecksetzen)
+        return bool(bestaetigt) and not abgebrochen()
+
+    def _ampr_mitschnitt_lauf_herunterladen(self, win, ftp, spielpfad: str,
+                                            lauf_ordner: str, titel: str,
+                                            melde) -> str:
+        """Holt die drei Mitschnitt-Dateien eines Durchlaufs von der Konsole.
+
+        Eine (noch) fehlende Datei ist der **Normalfall**, solange der
+        Nutzer noch spielt (USER_GUIDE_EN.md, Abschnitt 2) - deshalb wird
+        dafuer nachgefragt (Wiederholen empfohlen), nicht stillschweigend
+        abgebrochen.
+
+        Returns:
+            ``"ok"``, ``"skip"`` (dieser Durchlauf wird verworfen, weiter
+            mit dem naechsten) oder ``"stop"`` (keine weiteren Durchlaeufe
+            mehr, bereits erfolgreiche bleiben aber erhalten).
+        """
+        melde(self._t("amprmitschnitt.segment_fetching", title=titel))
+        dateien = ("ampr_commands.bin", self._AMPR_INDEX_NAME, "ampr_emu.log")
+        while True:
+            os.makedirs(lauf_ordner, exist_ok=True)
+            fehler = ""
+            unvollstaendig = False
+            for name in dateien:
+                fern = "%s/%s" % (spielpfad.rstrip("/"), name)
+                ziel = os.path.join(lauf_ordner, name)
+                try:
+                    if not konsole_ftp.datei_holen(ftp, fern, ziel):
+                        unvollstaendig = True
+                        break
+                except konsole_ftp.FtpFehler as exc:
+                    fehler = str(exc)
+                    unvollstaendig = True
+                    break
+            if not unvollstaendig:
+                groesse = os.path.getsize(
+                    os.path.join(lauf_ordner, "ampr_commands.bin"))
+                melde(self._t("amprmitschnitt.segment_ok", title=titel,
+                              size="%.1f MB" % (groesse / (1024 * 1024))))
+                return "ok"
+
+            wahl = self._ampr_gen_frage(
+                win, self._t("amprmitschnitt.q_segment_retry", title=titel),
+                self._t("amprmitschnitt.q_segment_retry_why",
+                        error=fehler or self._t("amprmitschnitt.segment_not_ready")),
+                [("retry", self._t("amprmitschnitt.q_segment_retry_again"),
+                  self._t("amprmitschnitt.q_segment_retry_again_why")),
+                 ("skip", self._t("amprmitschnitt.q_segment_retry_skip"),
+                  self._t("amprmitschnitt.q_segment_retry_skip_why")),
+                 ("stop", self._t("amprmitschnitt.q_segment_retry_stop"),
+                  self._t("amprmitschnitt.q_segment_retry_stop_why"))])
+            if wahl == "retry":
+                continue
+            shutil.rmtree(lauf_ordner, ignore_errors=True)
+            melde(self._t("amprmitschnitt.segment_discarded", title=titel))
+            return "skip" if wahl == "skip" else "stop"
+
+    def _ampr_mitschnitt_profil_erzeugen(self, win, dump: str, mitschnitt_ordner: str,
+                                         laeufe: "list[tuple[str, str]]", melde,
+                                         abgebrochen: Callable[[], bool]) -> None:
+        """Ruft :func:`ampr_assetpakete.profil_generieren` auf und meldet das Ergebnis.
+
+        Zielpfad wie beim "eigenes Profil"-Mechanismus
+        (:attr:`_EIGENES_PROFIL_ENDUNG`, :meth:`_ampr_eigenes_profil_uebernehmen`) -
+        eine Datei mit genau diesem Namen neben dem Dump wird beim naechsten
+        Packen automatisch verwendet, ohne dass diese Methode selbst etwas
+        vermerken muesste.
+        """
+        ausgabe = os.path.normpath(os.path.abspath(dump)) + self._EIGENES_PROFIL_ENDUNG
+        if os.path.isfile(ausgabe):
+            wahl = self._ampr_gen_frage(
+                win, self._t("amprmitschnitt.q_overwrite"),
+                self._t("amprmitschnitt.q_overwrite_why", path=ausgabe),
+                [("nein", self._t("amprmitschnitt.q_overwrite_no"),
+                  self._t("amprmitschnitt.q_overwrite_no_why")),
+                 ("ja", self._t("amprmitschnitt.q_overwrite_yes"),
+                  self._t("amprmitschnitt.q_overwrite_yes_why"))])
+            if wahl != "ja":
+                melde(self._t("amprmitschnitt.cancelled"))
+                return
+        bericht = os.path.join(mitschnitt_ordner, "bericht.md")
+        metriken = os.path.join(mitschnitt_ordner, "metriken.json")
+        try:
+            ampr_assetpakete.profil_generieren(
+                laeufe, ausgabe, bericht=bericht, metriken=metriken,
+                overwrite=True, melden=melde, abbruch=abgebrochen)
+        except ampr_assetpakete.PackFehler as exc:
+            melde("!! " + self._t("amprmitschnitt.profile_failed", error=exc))
+            return
+        melde(self._t("amprmitschnitt.profile_done", count=len(laeufe), path=ausgabe))
+        melde(self._t("amprmitschnitt.report_hint", path=bericht))
+        melde(self._t("amprmitschnitt.hint_partial"))
+
     # ==================================================================
     # ps5_autoloader - die Startreihenfolge der Konsole
     #
@@ -57381,6 +57939,32 @@ def _run_ampr_pack_subcommand(argv: list[str]) -> int:
     return int(ampr_pack_main(argv) or 0)
 
 
+def _run_ampr_pack_profil_subcommand(argv: list[str]) -> int:
+    """Führt :data:`ampr_assetpakete.PACKPROFIL_WERKZEUG` aus.
+
+    Geschwister von :func:`_run_ampr_pack_subcommand`, derselbe Grund:
+    ``ampr_pack_profile.py`` liegt im selben Datenordner und braucht einen
+    Interpreter, den die fertige Programmdatei nicht mitbringt.
+
+    Für Menschen ist der Schalter nicht gedacht.
+    """
+    _stroeme_absichern()
+
+    wurzel = ampr_assetpakete.werkzeugordner_finden()
+    if not wurzel:
+        print(
+            "[FEHLER] Der Ordner %s fehlt - das AMPR-Profilwerkzeug ist "
+            "nicht mitgeliefert." % ampr_assetpakete.PACKWERKZEUG_ORDNER,
+            file=sys.stderr,
+        )
+        return 2
+    if wurzel not in sys.path:
+        sys.path.insert(0, wurzel)
+    from ampr_pack_profile import main as ampr_pack_profile_main  # noqa: PLC0415  # pyright: ignore[reportMissingImports]
+
+    return int(ampr_pack_profile_main(argv) or 0)
+
+
 def _is_admin() -> bool:
     """Prüft ob das Programm mit erhöhten Rechten läuft.
 
@@ -58314,6 +58898,10 @@ if __name__ == "__main__":
     # Programm selbst gestartet und darf keine zweite UAC-Abfrage ausloesen.
     if len(sys.argv) > 1 and sys.argv[1] == ampr_assetpakete.SELBSTAUFRUF:
         sys.exit(_run_ampr_pack_subcommand(sys.argv[2:]))
+
+    # Dasselbe fuer das AMPR-Profilwerkzeug (Mitschnitt-Assistent).
+    if len(sys.argv) > 1 and sys.argv[1] == ampr_assetpakete.PACKPROFIL_SELBSTAUFRUF:
+        sys.exit(_run_ampr_pack_profil_subcommand(sys.argv[2:]))
 
     # PS5 Wee Tools (WEITERE TOOLS): ebenfalls vom Programm selbst gestartet,
     # als eigener Prozess mit eigenem Konsolenfenster. Adminrechte braucht es

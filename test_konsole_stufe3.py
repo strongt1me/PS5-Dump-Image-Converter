@@ -156,8 +156,25 @@ class _FtpStube:
                     if datenhorcher is None:
                         self._sagen(datei, "425 kein PASV")
                         continue
+                    if befehl == "RETR" and not self._ortsteil(rest).is_file():
+                        # Wie ein echter Server: 550 VOR der Datenverbindung,
+                        # nie ein "226" ohne uebertragene Bytes - das haette
+                        # ftplib.retrbinary sonst als leeren Erfolg gemeldet.
+                        self._sagen(datei, "550 No such file")
+                        try:
+                            datenhorcher.close()
+                        except OSError:
+                            pass
+                        datenhorcher = None
+                        continue
                     self._uebertragen(datei, datenhorcher, befehl, rest)
                     datenhorcher = None
+                elif befehl == "SIZE":
+                    pfad = self._ortsteil(rest)
+                    if pfad.is_file():
+                        self._sagen(datei, "213 %d" % pfad.stat().st_size)
+                    else:
+                        self._sagen(datei, "550 No such file")
                 elif befehl == "MKD":
                     (self.wurzel / rest.strip("/")).mkdir(parents=True,
                                                           exist_ok=True)
@@ -638,6 +655,75 @@ class HolenAmPcScheitertTests(_StubenTest):
                       "Der RETR wurde mittendrin abgerissen.")
         self.assertFalse((self.lokal / "spiel" / "eboot.bin").exists(),
                          "Die halbe Datei blieb liegen.")
+
+
+class EinzeldateiHolenTests(_StubenTest):
+    """``datei_holen`` - fuer den AMPR-Mitschnitt-Assistenten (U-Mitschnitt).
+
+    Anders als ``ordner_holen`` gilt eine fehlende Datei hier nicht als
+    Fehler: Solange der Nutzer noch spielt, existiert der Mitschnitt auf der
+    Konsole schlicht noch nicht.
+    """
+
+    def _verbindung(self):
+        v = kf.verbinden("127.0.0.1", self.stube.port)
+        self.addCleanup(kf.schliessen, v)
+        return v
+
+    def test_holt_eine_vorhandene_datei_vollstaendig(self):
+        ziel = self.lokal / "zweite.bin"
+        ok = kf.datei_holen(self._verbindung(), "/PPSA01234/zweite.bin", ziel)
+        self.assertTrue(ok)
+        self.assertEqual((self.fern / "PPSA01234" / "zweite.bin").stat().st_size,
+                         ziel.stat().st_size)
+        self.assertFalse(ziel.with_name(ziel.name + ".tmp").exists())
+
+    def test_fehlende_datei_ist_kein_fehler(self):
+        ziel = self.lokal / "noch_nicht_da.bin"
+        ok = kf.datei_holen(self._verbindung(), "/PPSA01234/noch_nicht_da.bin", ziel)
+        self.assertFalse(ok)
+        self.assertFalse(ziel.exists())
+        self.assertFalse(ziel.with_name(ziel.name + ".tmp").exists())
+        self.assertEqual([], self.stube.fertig_gesendet,
+                         "Fuer eine fehlende Datei darf nie RETR-Erfolg gemeldet werden.")
+
+    def test_ein_schreibfehler_hinterlaesst_keine_halbe_datei(self):
+        echtes_open = open
+
+        class _VollePlatte:
+            def __init__(self, pfad, modus):
+                self._datei = echtes_open(pfad, modus)
+
+            def write(self, _block):
+                raise OSError(28, "No space left on device")
+
+            def close(self):
+                self._datei.close()
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_rest):
+                self.close()
+
+        ziel = self.lokal / "eboot.bin"
+        with mock.patch.object(kf, "open", _VollePlatte, create=True):
+            with self.assertRaises(kf.FtpFehler):
+                kf.datei_holen(self._verbindung(), "/PPSA01234/eboot.bin", ziel)
+        self.assertFalse(ziel.exists())
+        self.assertFalse(ziel.with_name(ziel.name + ".tmp").exists(),
+                         "Die angefangene Zwischendatei blieb liegen.")
+
+    def test_groessenabweichung_nach_der_uebertragung_ist_ein_fehler(self):
+        verbindung = self._verbindung()
+        echte_size = verbindung.size
+        verbindung.size = lambda *_umgeleitet: echte_size(*_umgeleitet) + 1
+        ziel = self.lokal / "zweite.bin"
+        with self.assertRaises(kf.FtpFehler) as fehler:
+            kf.datei_holen(verbindung, "/PPSA01234/zweite.bin", ziel)
+        self.assertIn("unvollstaendig", str(fehler.exception))
+        self.assertFalse(ziel.exists())
+        self.assertFalse(ziel.with_name(ziel.name + ".tmp").exists())
 
 
 class TexteTests(unittest.TestCase):

@@ -394,8 +394,13 @@ class EigenstaendigkeitTests(unittest.TestCase):
                                  and isinstance(k.value, ast.Constant)
                                  and isinstance(k.value.value, str))]
                 text = chr(10).join(ast.unparse(k) for k in rumpf)
+                # Seit der Verallgemeinerung fuer PACKPROFIL_SELBSTAUFRUF
+                # (29.09.2026) steht SELBSTAUFRUF als Parameter-Vorgabe in
+                # der Signatur, nicht mehr als Literal im Rumpf - beides
+                # zaehlt, Hauptsache es steht ueberhaupt irgendwo.
+                signatur = ast.unparse(knoten.args)
                 self.assertNotIn("shutil.which", text)
-                self.assertIn("SELBSTAUFRUF", text)
+                self.assertIn("SELBSTAUFRUF", text + signatur)
                 return
         self.fail("_python_ruf heisst nicht mehr so - dieser Test misst dann "
                   "nichts.")

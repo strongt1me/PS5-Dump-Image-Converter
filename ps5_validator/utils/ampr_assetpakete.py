@@ -53,6 +53,11 @@ PACKWERKZEUG_ORDNER = "AMPR_PackTools-4.0"
 #: Das Werkzeug selbst.
 PACKWERKZEUG = "ampr_pack.py"
 
+#: Liegt im selben Ordner: erzeugt aus Mitschnitten (``ampr_commands.bin`` +
+#: ``ampr_emu.index``) ein maszgeschneidertes TOML-Profil statt des
+#: vorsichtigen Standardprofils - siehe :func:`profil_generieren`.
+PACKPROFIL_WERKZEUG = "ampr_pack_profile.py"
+
 #: Die Fassung des Packformats, die dieser Ordner bedient.
 PACKFORMAT = "AMPRPAK4"
 
@@ -169,8 +174,11 @@ class PackFehler(RuntimeError):
     """Der Packlauf ist gescheitert - mit einer Zeile, die das erklaert."""
 
 
-def werkzeug_finden() -> str:
-    """Sucht ``ampr_pack.py`` in den mitgelieferten Ordnern.
+def werkzeug_finden(name: str = PACKWERKZEUG) -> str:
+    """Sucht ein Werkzeug aus :data:`PACKWERKZEUG_ORDNER` (Vorgabe ``ampr_pack.py``).
+
+    Args:
+        name: Dateiname im Werkzeugordner, z. B. :data:`PACKPROFIL_WERKZEUG`.
 
     Returns:
         Der volle Pfad - oder eine leere Zeichenkette, wenn der
@@ -179,7 +187,7 @@ def werkzeug_finden() -> str:
         Aufrufer entscheidet, ob er die neue Methode dann anbietet.
     """
     for wurzel in suchwurzeln():
-        kandidat = os.path.join(wurzel, PACKWERKZEUG_ORDNER, PACKWERKZEUG)
+        kandidat = os.path.join(wurzel, PACKWERKZEUG_ORDNER, name)
         if os.path.isfile(kandidat):
             return kandidat
     return ""
@@ -553,12 +561,17 @@ def profil_schreiben(ziel: str, arbeiter: int = 0, app0: str = "") -> str:
 #: ``_run_ampr_pack_subcommand``), noch vor der Rechtepruefung.
 SELBSTAUFRUF = "--ampr-pack"
 
+#: Derselbe Selbstaufruf-Trick fuer :data:`PACKPROFIL_WERKZEUG` (siehe dort
+#: ``_run_ampr_pack_profil_subcommand``).
+PACKPROFIL_SELBSTAUFRUF = "--ampr-pack-profil"
 
-def _python_ruf() -> list[str]:
-    """Womit ``ampr_pack.py`` gestartet wird - samt Weg zum Werkzeug.
+
+def _python_ruf(skript: str = PACKWERKZEUG,
+                selbstaufruf: str = SELBSTAUFRUF) -> list[str]:
+    """Womit ``skript`` gestartet wird - samt Weg zum Werkzeug.
 
     **Die fertige Programmdatei ruft sich selbst auf.** ``sys.executable`` ist
-    dort das Programm und kein Python; mit dem Schalter :data:`SELBSTAUFRUF`
+    dort das Programm und kein Python; mit dem Schalter ``selbstaufruf``
     verhaelt es sich aber wie eines. Genau so macht es das eingebettete
     PS4-Werkzeug seit jeher (``ps4_werkzeug.py``, ``--ps4ffpsc``).
 
@@ -572,8 +585,8 @@ def _python_ruf() -> list[str]:
         PackFehler: Wenn das Werkzeug gar nicht mitgeliefert ist.
     """
     if getattr(sys, "frozen", False):
-        return [sys.executable, SELBSTAUFRUF]
-    werkzeug = werkzeug_finden()
+        return [sys.executable, selbstaufruf]
+    werkzeug = werkzeug_finden(skript)
     if not werkzeug:
         raise PackFehler("ampr_pack.werkzeug_fehlt")
     return [sys.executable, werkzeug]
@@ -613,21 +626,29 @@ def fortschritt_lesen(zeile: str) -> tuple[float, str] | None:
 
 def _lauf(argumente: list[str], melden: Melder,
           abbruch: Callable[[], bool] | None = None,
-          fortschritt: Callable[[float, str], None] | None = None) -> str:
+          fortschritt: Callable[[float, str], None] | None = None, *,
+          skript: str = PACKWERKZEUG,
+          selbstaufruf: str = SELBSTAUFRUF) -> str:
     """Startet das Werkzeug und reicht seine Ausgabe durch.
+
+    Standardmaessig ``ampr_pack.py``; :func:`profil_generieren` ruft
+    dieselbe Maschine mit ``skript=PACKPROFIL_WERKZEUG`` fuer
+    ``ampr_pack_profile.py`` auf - beide liegen im selben Werkzeugordner.
 
     ``ampr_pack.py`` schreibt den Fortschritt auf ``stderr`` und haelt
     ``stdout`` fuer das abschliessende JSON frei. Beides wird getrennt
     gelesen, damit die JSON-Zeile nicht zwischen Fortschrittszeilen
-    verlorengeht.
+    verlorengeht. ``ampr_pack_profile.py`` schreibt keine ``[pack NN%]``-
+    Zeilen - jede stderr-Zeile geht dort einfach ins Protokoll
+    (:func:`fortschritt_lesen` findet dann nie ein Muster).
     """
-    werkzeug = werkzeug_finden()
+    werkzeug = werkzeug_finden(skript)
     if not werkzeug:
         raise PackFehler("ampr_pack.werkzeug_fehlt")
 
     # _python_ruf bringt den Weg zum Werkzeug schon mit: In der fertigen
     # Programmdatei ist das der Selbstaufruf, sonst der Pfad der .py-Datei.
-    befehl = _python_ruf() + argumente
+    befehl = _python_ruf(skript, selbstaufruf) + argumente
     logger.debug("AMPR-Packlauf: %s", " ".join(befehl))
 
     startinfo = None
@@ -744,6 +765,50 @@ def _lauf(argumente: list[str], melden: Melder,
         letzte = fehlerzeilen[-1] if fehlerzeilen else ""
         raise PackFehler(letzte or "Rueckgabewert %d" % prozess.returncode)
     return "".join(sammler)
+
+
+def profil_generieren(traces: "list[tuple[str, str]]", ausgabe: str, *,
+                      bericht: str = "", metriken: str = "", name: str = "",
+                      overwrite: bool = True, melden: Melder = stumm,
+                      abbruch: Callable[[], bool] | None = None) -> str:
+    """Erzeugt aus Mitschnitten ein massgeschneidertes TOML-Profil.
+
+    Ruft :data:`PACKPROFIL_WERKZEUG` (``ampr_pack_profile.py generate``) mit
+    einem ``--trace``-Paar je aufgenommenem Lauf auf - derselbe Aufruf, den
+    das Handbuch des Herstellers fuer die eigene GUI beschreibt
+    (``AMPR_PackTools-4.0/USER_GUIDE_EN.md``, Abschnitt 3), hier ohne dessen
+    Tk-Oberflaeche.
+
+    Args:
+        traces: ``(ampr_commands.bin, ampr_emu.index)`` je Lauf, in der
+            Reihenfolge, in der sie aufgenommen wurden.
+        ausgabe: Zielpfad der ``.toml``. Ohne ``overwrite`` bricht das
+            Werkzeug ab, wenn die Datei schon existiert (``ProfileError:
+            refusing to overwrite existing file``) - der Aufrufer soll das
+            vorher selbst entscheiden, nicht diese Funktion.
+        bericht: optionaler Pfad fuer den lesbaren Bericht (``--report``).
+        metriken: optionaler Pfad fuer die Eingabedaten als JSON (``--metrics``).
+
+    Raises:
+        PackFehler: Werkzeug fehlt, kein Mitschnitt uebergeben, oder das
+            Werkzeug selbst meldet einen Fehler (z. B. ein beschaedigter
+            Mitschnitt).
+    """
+    if not traces:
+        raise PackFehler("amprmitschnitt.keine_laeufe")
+    argumente = ["generate", "--output", ausgabe]
+    for commands, index in traces:
+        argumente += ["--trace", commands, index]
+    if name:
+        argumente += ["--name", name]
+    if bericht:
+        argumente += ["--report", bericht]
+    if metriken:
+        argumente += ["--metrics", metriken]
+    if overwrite:
+        argumente.append("--overwrite")
+    return _lauf(argumente, melden, abbruch,
+                skript=PACKPROFIL_WERKZEUG, selbstaufruf=PACKPROFIL_SELBSTAUFRUF)
 
 
 def packen(app0: str, ampr_index: str, ausgabe_ordner: str, profil: str,

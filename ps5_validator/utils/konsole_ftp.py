@@ -585,6 +585,71 @@ def datei_ablegen(verbindung: ftplib.FTP, eingabe, ziel: str,
         raise
 
 
+def _lokale_zwischendatei_loeschen(pfad: Path) -> None:
+    """Raeumt eine lokale ``.tmp``-Datei weg, soweit noch moeglich."""
+    try:
+        pfad.unlink()
+    except OSError as fehler:
+        logger.debug("%s bleibt liegen: %s", pfad, fehler)
+
+
+def datei_holen(verbindung: ftplib.FTP, fern: str, lokal: "str | Path") -> bool:
+    """Holt eine einzelne Datei von der Konsole - nie halb, und nie gar nicht.
+
+    Umgekehrte Zwei-Schritt-Regel wie :func:`datei_ablegen`: Es wird erst
+    nach ``<lokal>.tmp`` geschrieben, danach per ``os.replace`` auf den
+    Endnamen gebracht. Reisst die Verbindung mitten im ``RETR`` ab, bleibt
+    nur die Zwischendatei zurueck; ``lokal`` selbst ist unveraendert.
+
+    Anders als bei :func:`datei_ablegen` ist ein fehlendes Fernziel hier
+    kein Fehler, sondern die Rueckgabe ``False`` - der Normalfall, solange
+    ein Vorgang auf der Konsole noch nicht abgeschlossen ist (z. B. ein
+    Mitschnitt, waehrend das Spiel noch laeuft). Meldet der Server vorher
+    eine Groesse (``SIZE``) und stimmt sie nach der Uebertragung nicht,
+    gilt das als Uebertragungsfehler, nicht als Erfolg mit falscher Groesse
+    - manche Server melden ``SIZE`` nicht, dann entfaellt die Pruefung.
+
+    Args:
+        fern: Pfad auf der Konsole.
+        lokal: Zielpfad auf der Platte.
+
+    Returns:
+        ``True`` bei vollstaendigem Erfolg, ``False`` wenn ``fern`` (noch)
+        nicht existiert.
+
+    Raises:
+        FtpFehler: Verbindungs-, Lese- oder Schreibfehler, oder die Groesse
+            passt nach der Uebertragung nicht. ``lokal`` bleibt dann
+            unveraendert.
+    """
+    lokal_pfad = Path(lokal)
+    zwischen = lokal_pfad.with_name(lokal_pfad.name + ZWISCHEN_ENDUNG)
+    try:
+        erwartet = verbindung.size(fern)
+    except Exception:  # noqa: BLE001 - SIZE ist optional, nicht jeder Server kann es
+        erwartet = None
+    try:
+        with open(zwischen, "wb") as ziel:
+            verbindung.retrbinary("RETR %s" % fern, ziel.write)
+    except ftplib.error_perm as fehler:
+        _lokale_zwischendatei_loeschen(zwischen)
+        logger.debug("%s (noch) nicht auf der Konsole: %s", fern, fehler)
+        return False
+    except Exception as fehler:  # noqa: BLE001 - ftplib wirft breit
+        _lokale_zwischendatei_loeschen(zwischen)
+        raise FtpFehler("%s nicht lesbar: %s" % (fern, fehler)) from fehler
+
+    tatsaechlich = zwischen.stat().st_size
+    if erwartet is not None and tatsaechlich != erwartet:
+        _lokale_zwischendatei_loeschen(zwischen)
+        raise FtpFehler(
+            "%s unvollstaendig uebertragen (%d von %d Byte)"
+            % (fern, tatsaechlich, erwartet))
+
+    os.replace(zwischen, lokal_pfad)
+    return True
+
+
 def ordner_anlegen(verbindung: ftplib.FTP, pfad: str) -> None:
     """Legt den Pfad an, Ebene fuer Ebene. Vorhandenes stoert nicht."""
     teil = ""

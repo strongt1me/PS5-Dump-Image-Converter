@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.53):** „PKG bauen“ funktioniert jetzt auch für Spiel-Backups mit vielen kleinen Dateien, bei denen der Bau bisher abbrach.
+> **Kurz zum aktuellen Stand (v1.9.54):** Neuer Mitschnitt-Assistent führt durch echte Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode.
+
+---
+
+## v1.9.54 – 30.09.2026
+
+- **Neu:** AMPR-Mitschnitt-Assistent (WEITERE TOOLS) – überträgt einen Aufnahme-Bau des AMPR EMU auf die PS5, führt durch mehrere kurze Spieldurchläufe und erzeugt daraus automatisch ein Packprofil, das beim nächsten Packen des Titels verwendet wird.
+- **Aktualisiert:** WebKit Autoloader auf v0.5.0 sowie die mitgelieferten Konsolen-Werkzeuge PKG Manager, Payload Manager, PS5Upload und OffAct auf ihre jeweils neueste Fassung.
 
 ---
 
