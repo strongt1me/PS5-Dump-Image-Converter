@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.54):** Neuer Mitschnitt-Assistent führt durch echte Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode.
+> **Kurz zum aktuellen Stand (v1.9.55):** Prospero Manager ist jetzt eingebunden – eigener Knopf in der Ansicht KONSOLE, schickt das Payload bei Bedarf selbst und öffnet die Weboberfläche.
+
+---
+
+## v1.9.55 – 01.10.2026
+
+- **Neu:** Prospero Manager (Alles-in-einem-Weboberfläche für Dateien, PKGs, Spielstände und Payloads) ist in „Konsole & Payloads" eingebunden und hat einen eigenen Knopf „4. Prospero Manager" in der Ansicht KONSOLE – ein Druck schickt das Payload bei Bedarf selbst und öffnet anschließend die Weboberfläche.
+- **Neu:** ShadowMount+ hat jetzt ebenfalls eine Weboberfläche in „Konsole & Payloads", dazu eine ausführliche Anleitung zu AMPR-Asset-Packs mit eigenem Knopf in der Titelleiste neben BENUTZERHANDBUCH.
+- **Aktualisiert:** ps5-app-dumper, WebKit Autoloader und ps5upload auf ihre jeweils neueste Fassung.
 
 ---
 

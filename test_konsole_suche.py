@@ -940,6 +940,24 @@ class QuelltextTests(unittest.TestCase):
                                       if isinstance(k, ast.Call)
                                       and getattr(k.func, "attr", "") in ("_t", "_modul_texte")])
 
+    def test_prosperomgr_faden_uebersetzt_nicht(self) -> None:
+        """Dieselbe Regel (H2-13) fuer den Sidebar-Knopf "4. Prospero Manager".
+
+        Anders als oben liegt hier vor dem Faden noch Hauptfaden-Code
+        (``_modul_texte`` fuer die elfldr-Texte) - deshalb nicht die ganze
+        Methode pruefen, sondern gezielt die zwei Namen, die wirklich im
+        Arbeitsfaden laufen: ``_arbeit`` und die ``melden``-Weiterreiche
+        ``_melden``.
+        """
+        methode = _methode(_baum(), "_konsole_prosperomgr_oeffnen")
+        for name in ("_arbeit", "_melden"):
+            knoten = next(k for k in ast.walk(methode) if isinstance(k, ast.FunctionDef)
+                          and k.name == name)
+            with self.subTest(funktion=name):
+                self.assertEqual([], [k.lineno for k in ast.walk(knoten)
+                                      if isinstance(k, ast.Call)
+                                      and getattr(k.func, "attr", "") in ("_t", "_modul_texte")])
+
     def test_verbunden_wird_nur_beim_echten_programmstart(self) -> None:
         """Tests, Diagnose und Kommandozeile bauen das Programm auch - ohne Netz."""
         baum = _baum()

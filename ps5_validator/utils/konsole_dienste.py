@@ -111,6 +111,20 @@ KATALOG: tuple[Dienst, ...] = (
     Dienst("garlic", 8082, "garlic-savemgr*.elf", web="/", anlaufzeit=2.0),
     Dienst("bfpilot", 5905, "bfpilot*.elf", web="/"),
     Dienst("websrv", 8080, "websrv-ps5*.elf", web="/"),
+    # Kein payload_muster (bewusst): ShadowMount+ laeuft ueblicherweise
+    # dauerhaft aus dem Autoload, nicht auf Knopfdruck. Ein blosser TCP-Check
+    # kann "aus, weil api_bind_address=127.0.0.1" nicht von "laeuft wirklich
+    # nicht" unterscheiden - "Ausgewaehltes starten" haette sonst leicht eine
+    # zweite Instanz riskiert. Die API/Weboberflaeche lauscht ab Werk nur auf
+    # 127.0.0.1; von diesem PC aus ist sie erst erreichbar, wenn
+    # api_bind_address in der config.ini auf die PS5-Adresse oder 0.0.0.0
+    # zeigt (ShadowMount+-Editor in "WEITERE TOOLS").
+    Dienst("shadowmount", 10101, web="/"),
+    # Alles-in-einem-Weboberflaeche (Dateimanager, PKG-Installer, Spielstaende,
+    # Payloads, Autoloader ...) - ein einzelnes ELF, startet ueblicherweise auf
+    # Knopfdruck wie webfm/pkgmgr, deshalb MIT payload_muster (anders als
+    # ShadowMount+ oben).
+    Dienst("prosperomgr", 7070, "ProsperoMgr*.elf", web="/", anlaufzeit=2.0),
     Dienst("upload", 9113, "ps5upload*.elf"),
 )
 

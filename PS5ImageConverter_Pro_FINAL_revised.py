@@ -688,7 +688,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.54"
+APP_VERSION = "v1.9.55"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3553,6 +3553,7 @@ class PS5ConverterGUI:
         ("_btn_ftp_title", "titlebar.filezilla", "_launch_filezilla"),
         ("_btn_webkit_title", "titlebar.webkit", "_show_webkit_autoloader"),
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
+        ("_btn_assetpack_anleitung_title", "titlebar.assetpack_anleitung", "_open_assetpack_anleitung"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
         ("_btn_diagnostics_title", "titlebar.diagnostics", "_show_diagnostic_report"),
     )
@@ -3611,6 +3612,7 @@ class PS5ConverterGUI:
         ("konsole.btn_dienste", "dienste"),
         ("konsole.btn_spielstaende", "spielstaende"),
         ("konsole.btn_bibliothek", "bibliothek"),
+        ("konsole.btn_prosperomgr", "prosperomgr"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -4188,6 +4190,32 @@ class PS5ConverterGUI:
             self._btn_manual_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
         self._btn_manual_title.bind("<Enter>", _manual_enter)
         self._btn_manual_title.bind("<Leave>", _manual_leave)
+
+        # Asset-Pack-Anleitung. Nach dem Handbuch-Knopf gepackt und damit
+        # links von ihm - derselbe Grund wie beim Handbuch-Knopf oben.
+        self._btn_assetpack_anleitung_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.assetpack_anleitung"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._open_assetpack_anleitung,
+        )
+        self._btn_assetpack_anleitung_title.pack(side="right", padx=(0, 8))
+        def _assetpack_anleitung_enter(e):
+            self._btn_assetpack_anleitung_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _assetpack_anleitung_leave(e):
+            self._btn_assetpack_anleitung_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_assetpack_anleitung_title.bind("<Enter>", _assetpack_anleitung_enter)
+        self._btn_assetpack_anleitung_title.bind("<Leave>", _assetpack_anleitung_leave)
 
         # Die Leiste steht - jetzt laesst sich ihre Reihenfolge festhalten und
         # der Platz zum ersten Mal pruefen.
@@ -4902,6 +4930,24 @@ class PS5ConverterGUI:
         # Meldung auch den Grund.
         self._oeffnen_oder_melden(pfad)
 
+    def _open_assetpack_anleitung(self) -> None:
+        """Öffnet die Asset-Pack-Anleitung im Standardprogramm - wie :meth:`_open_benutzerhandbuch`.
+
+        Liegt unter ``Anleitungen/`` (wird dort als ganzer Ordner mitgeliefert,
+        siehe die drei .spec-Dateien), deshalb zwei Pfadteile für
+        :func:`_bundled_resource`.
+        """
+        pfad = _bundled_resource("Anleitungen", "AMPR_Asset_Packs_Mitschnitt_Assistent.html")
+        if not pfad:
+            logger.warning("Asset-Pack-Anleitung nicht gefunden")
+            messagebox.showwarning(
+                self._t("dialog.title.error"),
+                self._t("dialog.msg.assetpack_guide_missing"),
+                parent=self.root,
+            )
+            return
+        self._oeffnen_oder_melden(pfad)
+
     def _toggle_language(self) -> None:
         """Wechselt zwischen Deutsch und Englisch und übersetzt die erfassten Widgets live neu."""
         # Das Zielformat noch im ALTEN Sprachstand lesen. Die Liste bekommt
@@ -4981,6 +5027,7 @@ class PS5ConverterGUI:
             ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
+            ("_btn_assetpack_anleitung_title", "titlebar.assetpack_anleitung"),
             # Bis zum 24.09.2026 fehlten diese beiden: Sie blieben nach dem
             # Sprachwechsel in der Startsprache (Durchsicht H1-2).
             ("_btn_settings_title", "titlebar.settings"),
@@ -7911,6 +7958,8 @@ class PS5ConverterGUI:
                 height=40,
             )
             self._konsole_knoepfe.append((knopf, schluessel))
+        self._konsole_prosperomgr_knopf = next(
+            (k for k, s in self._konsole_knoepfe if s == "konsole.btn_prosperomgr"), None)
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
         # Kein eigener Rahmen: Ein tk.Frame zeichnet immer seine Hintergrundfarbe
@@ -9906,11 +9955,23 @@ class PS5ConverterGUI:
         "web": ("_webseite", "_webseite_bauen", ""),
     }
 
+    #: Kennungen, die weder eine Seite noch ein Fenster oeffnen, sondern eine
+    #: Direktaktion ausfuehren (z. B. Payload sicherstellen + Weboberflaeche
+    #: oeffnen) - ohne den aktiven Knopf/die Seite zu wechseln, siehe
+    #: :meth:`_konsole_prosperomgr_oeffnen`.
+    _KONSOLE_AKTIONEN: dict[str, str] = {
+        "prosperomgr": "_konsole_prosperomgr_oeffnen",
+    }
+
     def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
         """Oeffnet das Fenster hinter dem Knopf - oder sagt, dass es folgt."""
         seite = self._KONSOLE_SEITEN.get(kennung, "")
         if seite:
             getattr(self, seite)()
+            return
+        aktion = self._KONSOLE_AKTIONEN.get(kennung, "")
+        if aktion:
+            getattr(self, aktion)()
             return
         befehl = self._KONSOLE_FENSTER.get(kennung, "")
         if befehl:
@@ -10093,6 +10154,78 @@ class PS5ConverterGUI:
                                    else "dienste.log_kein_port",
                                    name=name, port=eintrag.port)
         return konsole_dienste.pruefen(ip)
+
+    def _konsole_prosperomgr_protokoll(self, schluessel: str, werte: dict) -> None:
+        """Uebersetzt eine Meldung von :meth:`_konsole_prosperomgr_oeffnen` und
+        schreibt sie ins Hauptprotokoll - nur aus dem Hauptfaden aufzurufen."""
+        self._append_to_log(self._t(schluessel, **werte) + "\n")
+
+    def _konsole_prosperomgr_oeffnen(self) -> None:
+        """"4. Prospero Manager": Payload sicherstellen, dann die Weboberflaeche oeffnen.
+
+        Direktaktion des Sidebar-Knopfs (:data:`_KONSOLE_AKTIONEN`), von jeder
+        Seite aus erreichbar - deshalb Meldungen im Hauptprotokoll, nicht in
+        der Tafel von "Konsole & Payloads" (die vielleicht gar nicht sichtbar
+        ist). Ablauf wie vom Nutzer verlangt: laeuft der Dienst (Port 7070)
+        noch nicht, zuerst den ELF-Loader sicherstellen
+        (:meth:`_konsole_elfldr_sicherstellen`, dieselbe Funktion wie bei
+        "Konsole & Payloads"), danach das Payload ueber ihn schicken
+        (:meth:`_konsole_dienst_starten`, derselbe generische Weg wie fuer
+        jeden anderen Katalogeintrag).
+        """
+        if getattr(self, "_konsole_tafel", None) is None:
+            self._konsole_tafel_bauen()
+        if getattr(self, "_konsole_prosperomgr_laeuft", False):
+            return
+        ip = self._konsole_tafel_adresse()
+        if not ip:
+            return
+        eintrag = konsole_dienste.dienst("prosperomgr")
+        if eintrag is None:
+            return
+        self._konsole_prosperomgr_laeuft = True
+        knopf = getattr(self, "_konsole_prosperomgr_knopf", None)
+        if knopf is not None:
+            try:
+                knopf.configure(state="disabled")
+            except tk.TclError:
+                pass
+        texte = self._modul_texte(payload_versand.MELDUNGEN, "payloadmod.")
+
+        def _melden(schluessel: str, **werte) -> None:
+            # Uebersetzt erst im Hauptfaden (H2-13) - sonst friert die Sprache
+            # der Meldung auf den Stand beim Senden ein, nicht bei der Anzeige.
+            self._hauptfaden_planen(self._konsole_prosperomgr_protokoll, schluessel, werte)
+
+        def _arbeit() -> None:
+            try:
+                _melden("konsole.prosperomgr_start")
+                uebersicht = konsole_dienste.pruefen(ip)
+                bereit = uebersicht.laeuft("prosperomgr")
+                if not bereit:
+                    uebersicht = self._konsole_elfldr_sicherstellen(ip, uebersicht, texte)
+                    bereit = uebersicht.laeuft("prosperomgr")
+                if not bereit:
+                    bereit = self._konsole_dienst_starten("prosperomgr", ip, melden=_melden)
+                if bereit:
+                    adresse = konsole_dienste.web_adresse(eintrag, ip)
+                    self._hauptfaden_planen(self._webansicht_oeffnen, adresse,
+                                            eintrag.name_schluessel, "uebersicht")
+                    _melden("konsole.prosperomgr_offen", adresse=adresse)
+                else:
+                    _melden("konsole.prosperomgr_kein_port", port=eintrag.port)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Prospero Manager gescheitert")
+                _melden("log.fehler_zeile", text=str(exc))
+            finally:
+                self._konsole_prosperomgr_laeuft = False
+
+                def _wieder_frei() -> None:
+                    if knopf is not None and knopf.winfo_exists():
+                        knopf.configure(state="normal")
+                self._hauptfaden_planen(_wieder_frei)
+
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-prosperomgr").start()
 
     def _konsole_grundausstattung_nachstarten(self, ip: str, uebersicht):
         """Startet, was von der Grundausstattung fehlt - nur ueber den ELF-Loader.
@@ -41272,9 +41405,15 @@ class PS5ConverterGUI:
         # aeltere Fassungen ihn brauchen.
         "app_install_all": "0",
         # --- neu in 1.7 (Release 4102fa7a, am 21.09.2026 uebernommen) -------
-        # Die HTTP/JSON-API, die shadowmount_api.py liest. Ab Werk lauscht sie
-        # nur auf 127.0.0.1 - vom PC aus erreichbar erst mit api_bind_address.
+        # Die HTTP/JSON-API, die shadowmount_api.py liest - darueber laeuft
+        # auch die Weboberflaeche, die "Konsole & Payloads" wie bei PKG-/
+        # Payload-Manager verlinkt. Ab Werk lauscht sie nur auf 127.0.0.1: von
+        # diesem PC aus ist sie erst erreichbar, wenn api_bind_address hier
+        # auf die PS5-Adresse oder 0.0.0.0 gesetzt wird - ohne
+        # Authentifizierung, also nie im fremden Netz.
         "api_enabled": "1",
+        "api_bind_address": "127.0.0.1",
+        "api_port": "10101",
         # Fehlende Spiele aus der Systembibliothek austragen. Ab Werk aus, und
         # das bleibt hier so: Ein abgezogener USB-Stick ist kein Loeschauftrag.
         "auto_remove_missing_games": "0",
@@ -56915,6 +57054,7 @@ class PS5ConverterGUI:
         "_btn_more_tools_title":   "fg_secondary",
         "_btn_language_title":     "fg_secondary",
         "_btn_manual_title":       "fg_secondary",
+        "_btn_assetpack_anleitung_title": "fg_secondary",
     }
 
     def _titelleisten_schrift(self, schluessel: str,

@@ -131,6 +131,33 @@ class KatalogTests(unittest.TestCase):
         self.assertEqual("http://10.0.0.5:8844/",
                          kd.web_adresse(eintrag, "10.0.0.5"))
 
+    def test_shadowmount_hat_weboberflaeche_aber_kein_starten(self):
+        """Bewusst ohne ``payload_muster`` (siehe Kommentar im Katalog): Ein
+        TCP-Check kann "aus, weil api_bind_address=127.0.0.1" nicht von
+        "laeuft wirklich nicht" unterscheiden - "Ausgewaehltes starten"
+        haette sonst leicht eine zweite Instanz auf die Konsole geschickt.
+        """
+        eintrag = kd.dienst("shadowmount")
+        self.assertIsNotNone(eintrag)
+        self.assertEqual(10101, eintrag.port)
+        self.assertEqual("/", eintrag.web)
+        self.assertEqual("", eintrag.payload_muster)
+        self.assertEqual("http://10.0.0.5:10101/",
+                         kd.web_adresse(eintrag, "10.0.0.5"))
+
+    def test_prosperomgr_hat_weboberflaeche_und_starten(self):
+        """Anders als ShadowMount+: laeuft ueblicherweise nur auf Knopfdruck,
+        ein TCP-Check kann "laeuft" hier also zuverlaessig von "laeuft nicht"
+        unterscheiden - deshalb MIT ``payload_muster``.
+        """
+        eintrag = kd.dienst("prosperomgr")
+        self.assertIsNotNone(eintrag)
+        self.assertEqual(7070, eintrag.port)
+        self.assertEqual("/", eintrag.web)
+        self.assertTrue(eintrag.payload_muster)
+        self.assertEqual("http://10.0.0.5:7070/",
+                         kd.web_adresse(eintrag, "10.0.0.5"))
+
     def test_zu_jedem_muster_liegt_eine_datei_bei(self):
         """Faengt den Fall "Payload auf neue Fassung getauscht, Muster passt nicht mehr".
 

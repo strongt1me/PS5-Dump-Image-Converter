@@ -150,16 +150,21 @@ class EntferntTests(unittest.TestCase):
 
     def test_drei_knoepfe_und_jeder_ist_verdrahtet(self):
         klasse = APP.PS5ConverterGUI
-        self.assertEqual(["dienste", "spielstaende", "bibliothek"],
+        self.assertEqual(["dienste", "spielstaende", "bibliothek", "prosperomgr"],
                          [k for _s, k in klasse._KONSOLE_KNOEPFE])
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
             with self.subTest(kennung=kennung):
                 methode = (klasse._KONSOLE_FENSTER.get(kennung, "")
-                           or klasse._KONSOLE_SEITEN.get(kennung, ""))
+                           or klasse._KONSOLE_SEITEN.get(kennung, "")
+                           or klasse._KONSOLE_AKTIONEN.get(kennung, ""))
                 self.assertTrue(methode, "Kennung %s ohne Fenster" % kennung)
                 self.assertTrue(callable(getattr(klasse, methode, None)))
-        self.assertFalse(set(klasse._KONSOLE_FENSTER) & set(klasse._KONSOLE_SEITEN),
-                         "Eine Kennung ist entweder Fenster oder Seite.")
+        fenster, seiten, aktionen = (set(klasse._KONSOLE_FENSTER),
+                                    set(klasse._KONSOLE_SEITEN),
+                                    set(klasse._KONSOLE_AKTIONEN))
+        self.assertFalse(fenster & seiten, "Eine Kennung steht in mehr als einer Gruppe.")
+        self.assertFalse(fenster & aktionen, "Eine Kennung steht in mehr als einer Gruppe.")
+        self.assertFalse(seiten & aktionen, "Eine Kennung steht in mehr als einer Gruppe.")
 
     def test_keine_methode_bleibt_zurueck(self):
         klasse = APP.PS5ConverterGUI

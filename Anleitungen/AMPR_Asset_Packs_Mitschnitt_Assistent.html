@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMPR-EMU-Asset-Packs mit dem Mitschnitt-Assistenten</title>
+<style>
+:root{
+  --bg-deep:#04070f;
+  --bg-blue:#0a1a35;
+  --bg-blue-2:#12305e;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.075);
+  --line:rgba(255,255,255,.11);
+  --line-soft:rgba(255,255,255,.06);
+  --text:#eef3fb;
+  --muted:#93a4c0;
+  --accent:#3aa0ff;
+  --accent-soft:rgba(58,160,255,.14);
+  --warn:#ffb32b;
+  --warn-soft:rgba(255,179,43,.12);
+  --ok:#59e0b0;
+  --radius:18px;
+  --mono:"JetBrains Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:"Inter","SF Pro Display","Segoe UI",system-ui,-apple-system,sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:96px}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{animation:none!important;transition:none!important}}
+body{
+  margin:0;background:var(--bg-deep);color:var(--text);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+}
+body::before{
+  content:"";position:fixed;inset:0;z-index:-1;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, #1b4b8f 0%, transparent 62%),
+    radial-gradient(900px 560px at 96% 4%, #0e2a55 0%, transparent 60%),
+    linear-gradient(180deg,var(--bg-blue) 0%, var(--bg-deep) 46%, #050a14 100%);
+}
+.topbar{
+  position:sticky;top:0;z-index:50;backdrop-filter:blur(18px);
+  background:rgba(6,12,24,.72);border-bottom:1px solid var(--line-soft);
+}
+.topbar .inner{max-width:1180px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;gap:20px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.14em;font-size:13px}
+.brand .shapes{display:flex;gap:6px;color:var(--accent);font-size:11px;opacity:.9}
+.brand b{font-weight:800}
+.brand span.plus{color:var(--accent)}
+.nav{margin-left:auto;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}
+.nav::-webkit-scrollbar{display:none}
+.nav a{
+  color:var(--muted);text-decoration:none;font-size:13px;padding:8px 14px;border-radius:999px;
+  white-space:nowrap;transition:background .18s,color .18s;
+}
+.nav a:hover{color:#fff;background:var(--surface)}
+.nav a.active{color:#fff;background:var(--accent-soft);box-shadow:inset 0 0 0 1px rgba(58,160,255,.35)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 24px}
+.hero{padding:78px 0 44px;position:relative}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.22em;
+  text-transform:uppercase;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  background:var(--accent-soft);padding:7px 15px;border-radius:999px;
+}
+h1{
+  font-size:clamp(34px,5.6vw,60px);line-height:1.05;margin:24px 0 0;font-weight:800;letter-spacing:-.03em;
+  background:linear-gradient(180deg,#ffffff 20%,#9dc6ff 130%);-webkit-background-clip:text;background-clip:text;color:transparent;
+}
+h1 small{display:block;font-size:clamp(15px,2vw,21px);font-weight:500;letter-spacing:0;color:var(--muted);margin-top:16px;-webkit-text-fill-color:var(--muted)}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:28px}
+.badge{
+  font-size:12.5px;padding:7px 14px;border-radius:999px;border:1px solid var(--line);
+  background:var(--surface);color:var(--muted);
+}
+.badge.on{color:var(--ok);border-color:rgba(89,224,176,.3);background:rgba(89,224,176,.09)}
+.alert{
+  margin:36px 0 8px;display:flex;gap:16px;align-items:flex-start;padding:20px 22px;
+  border-radius:var(--radius);border:1px solid rgba(255,179,43,.32);background:var(--warn-soft);
+}
+.alert.info{border-color:rgba(58,160,255,.32);background:var(--accent-soft)}
+.alert .ic{flex:0 0 auto;width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+  background:rgba(255,179,43,.18);color:var(--warn);font-weight:800;font-size:15px}
+.alert.info .ic{background:rgba(58,160,255,.18);color:var(--accent)}
+.alert p{margin:0;font-size:14.5px}
+.alert strong{color:var(--warn)}
+.alert.info strong{color:var(--accent)}
+section{padding:56px 0 8px;scroll-margin-top:90px}
+.sec-head{display:flex;align-items:baseline;gap:16px;margin-bottom:8px}
+.sec-mark{
+  font-family:var(--mono);font-size:12px;color:var(--accent);border:1px solid rgba(58,160,255,.3);
+  border-radius:8px;padding:4px 9px;flex:0 0 auto;
+}
+h2{font-size:clamp(22px,2.8vw,30px);margin:0;font-weight:700;letter-spacing:-.02em}
+.lede{color:var(--muted);font-size:15.5px;margin:10px 0 26px;max-width:72ch}
+.card{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:26px;backdrop-filter:blur(8px);
+}
+.grid{display:grid;gap:18px}
+@media(min-width:820px){.grid.two{grid-template-columns:1fr 1fr}}
+ol.flow{list-style:none;counter-reset:s;margin:0;padding:0}
+ol.flow li{
+  counter-increment:s;position:relative;padding:14px 0 14px 58px;border-bottom:1px solid var(--line-soft);
+  font-size:15px;
+}
+ol.flow li:last-child{border-bottom:none}
+ol.flow li::before{
+  content:counter(s,decimal-leading-zero);position:absolute;left:0;top:13px;
+  font-family:var(--mono);font-size:12px;color:var(--accent);
+  width:34px;height:26px;display:grid;place-items:center;border-radius:7px;background:var(--accent-soft);
+}
+ol.flow li b{color:#fff;font-weight:600}
+ul.sub{list-style:disc;margin:10px 0 0;padding-left:20px;color:var(--muted);font-size:14px}
+ul.sub li{counter-increment:none;padding:2px 0;border-bottom:none;font-size:inherit;display:list-item}
+ul.sub li::before{content:none}
+pre{
+  font-family:var(--mono);font-size:13px;line-height:1.75;margin:0;padding:20px;border-radius:14px;
+  background:rgba(0,0,0,.36);border:1px solid var(--line-soft);overflow-x:auto;color:#cfe0f7;
+}
+pre .c{color:var(--muted)}
+pre .hi{color:var(--accent)}
+pre .k{color:var(--ok)}
+code.inline{
+  font-family:var(--mono);font-size:.88em;background:rgba(255,255,255,.08);
+  border:1px solid var(--line-soft);border-radius:6px;padding:1.5px 6px;color:#d8e6fb;white-space:nowrap;
+}
+.path-title{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+.pill-way{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);
+  background:var(--accent-soft);border-radius:999px;padding:4px 12px;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th,td{text-align:left;padding:13px 14px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+th{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:none}
+td.key{font-family:var(--mono);font-size:13px;color:#fff;white-space:nowrap}
+td.val{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:nowrap}
+.table-scroll{overflow-x:auto}
+.prio{display:grid;gap:16px}
+@media(min-width:820px){.prio{grid-template-columns:1fr 1fr}}
+.prio .p{border:1px solid var(--line);border-radius:14px;padding:20px;background:rgba(0,0,0,.22)}
+.prio .p.default{border-color:rgba(58,160,255,.38);background:rgba(58,160,255,.07)}
+.prio h4{margin:0 0 4px;font-family:var(--mono);font-size:13.5px;color:#fff;font-weight:600}
+.prio .tag{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent)}
+.prio p{margin:12px 0 0;font-size:14px;color:var(--muted)}
+.prio ul{margin:12px 0 0;padding-left:18px;font-size:14px;color:var(--muted)}
+.prio li{margin:4px 0}
+.pit{display:grid;gap:14px}
+@media(min-width:820px){.pit{grid-template-columns:1fr 1fr}}
+.pit .item{border-left:2px solid var(--warn);padding:4px 0 4px 18px}
+.pit h4{margin:0 0 6px;font-size:15px;font-weight:650}
+.pit p{margin:0;font-size:14px;color:var(--muted)}
+.checklist{list-style:none;margin:0;padding:0;display:grid;gap:10px}
+.checklist li{display:flex;gap:12px;align-items:flex-start;font-size:14.5px}
+.checklist li::before{content:"✓";flex:0 0 auto;width:22px;height:22px;border-radius:7px;background:rgba(89,224,176,.14);
+  color:var(--ok);font-size:12px;font-weight:800;display:grid;place-items:center;margin-top:1px}
+footer{margin:80px 0 60px;padding-top:26px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:13px}
+footer b{color:#fff}
+.note{font-size:13.5px;color:var(--muted);margin-top:16px}
+.hr{height:1px;background:var(--line-soft);margin:22px 0}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="inner">
+    <div class="brand">
+      <span class="shapes">△ ○ ✕ □</span>
+      <span><b>AMPR</b><span class="plus">-PACK</span></span>
+    </div>
+    <nav class="nav">
+      <a href="#was">Was es ist</a>
+      <a href="#wege">Zwei Wege</a>
+      <a href="#mitschnitt">Mitschnitt-Assistent</a>
+      <a href="#pruefen">Profil prüfen</a>
+      <a href="#bauen">Bauen</a>
+      <a href="#originale">Originale</a>
+      <a href="#grenzen">Grenzen</a>
+      <a href="#konsole">Konsolentest</a>
+      <a href="#probleme">Probleme</a>
+      <a href="#regeln">Regeln</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <div class="hero">
+    <span class="eyebrow">AMPR EMU · Asset-Packs</span>
+    <h1>Asset-Packs selbst erstellen
+      <small>Angepasst an PS5 Dump &amp; Image Converter – inklusive des AMPR-Mitschnitt-Assistenten, der die Aufnahme und das Packprofil jetzt im Programm selbst erledigt.</small>
+    </h1>
+    <div class="badges">
+      <span class="badge on">Mit Mitschnitt-Assistent, seit v1.9.54</span>
+      <span class="badge">AMPR_PackTools-4.0, GPL-3.0</span>
+      <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
+      <span class="badge">Stand: 30. September 2026</span>
+    </div>
+
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Ein Mitschnitt enthält nie alle Spieldaten</strong> – nur das, was während der aufgezeichneten Durchläufe tatsächlich gelesen wurde. Fehlende Level, Sprachen oder DLC müssen von Hand ergänzt werden, bevor irgendetwas gelöscht wird. Das gilt unverändert, egal ob der Mitschnitt vom Programm oder von Hand entstanden ist.</p>
+    </div>
+    <div class="alert info">
+      <div class="ic">i</div>
+      <p><strong>Was sich gegenüber der ursprünglichen Fassung dieser Anleitung ändert:</strong> Sie war für ein Programm namens „PS5 Cooling &amp; System Center" geschrieben, das fertige Pack-Dateien nur hochlädt. Das gibt es hier nicht – <b style="color:#fff">PS5&nbsp;Dump&nbsp;&amp;&nbsp;Image&nbsp;Converter</b> nimmt Mitschnitt, Indexbau und Profilerzeugung selbst vor (Abschnitt „Mitschnitt-Assistent") und packt anschließend direkt beim Erstellen des Abbilds (Abschnitt „Bauen"). Von Hand bleibt nur ein einziger Schritt: das erzeugte Profil prüfen.</p>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <section id="was">
+    <div class="sec-head"><span class="sec-mark">01</span><h2>Was ein Asset-Pack ist – und was nicht</h2></div>
+    <p class="lede">Ein Asset-Pack ersetzt die losen Spieldateien im <code class="inline">/app0</code>-Ordner durch ein oder mehrere seekbare, unabhängig komprimierte LZ4-Bänder (<code class="inline">.pak</code>) plus ein Verzeichnis (<code class="inline">ampr_assets.index</code>). AMPR EMU liest daraus genauso, wie es sonst aus den losen Originaldateien lesen würde – nur schneller und mit weniger Dateizugriffen.</p>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">Der entscheidende Punkt bleibt unverändert: Ein Asset-Pack entsteht <b style="color:#fff">nicht</b> durch bloßes „alle Dateien komprimieren". Der Hersteller empfiehlt, es auf einem <b style="color:#fff">Mitschnitt echter Lesezugriffe</b> (<code class="inline">ampr_commands.bin</code>) aus tatsächlichen Spielsitzungen aufzubauen – daraus entsteht ein Vorschlag (TOML-Profil), den man prüfen und ergänzen soll, bevor gepackt wird. Ohne Mitschnitt geht es auch, dann mit einem vorsichtigen, generischen Profil (Abschnitt „Zwei Wege").</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Quelle: <code class="inline">drakmor/ampr_emu</code>, Verzeichnis <code class="inline">docs/</code> (<code class="inline">ASSET_PACK_WORKFLOW_EN.md</code>), GPL-3.0, sowie das vom Autor gelieferte Werkzeug <code class="inline">AMPR_PackTools-4.0</code> (liegt dem Programm bei und wird von ihm selbst aufgerufen).</p>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section id="wege">
+    <div class="sec-head"><span class="sec-mark">02</span><h2>Zwei Wege zum Asset-Pack</h2></div>
+    <p class="lede">Beide Wege packen am Ende mit demselben Werkzeug und denselben Sicherungen. Der Unterschied liegt allein darin, welches Profil zugrunde liegt.</p>
+    <div class="prio">
+      <div class="p default">
+        <span class="tag">Empfohlen</span>
+        <h4>Mit Mitschnitt-Assistent</h4>
+        <p>Ein maßgeschneidertes Profil aus echten Spieldurchläufen auf der eigenen PS5. Trifft genauer, welche Dateien wirklich gebraucht werden, und liefert sinnvolle Blockgrößen aus gemessenem Zugriffsverhalten statt aus einer pauschalen Annahme.</p>
+        <ul>
+          <li>Braucht eine Debug-Fassung von AMPR EMU (<code class="inline">test-debug-pack</code>) und Zeit zum Durchspielen.</li>
+          <li>Ergebnis liegt als <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> neben dem Dump und wird beim nächsten Packen automatisch verwendet.</li>
+        </ul>
+      </div>
+      <div class="p">
+        <span class="tag">Ohne Mitschnitt</span>
+        <h4>Standardprofil</h4>
+        <p>Das Programm packt mit einem vorsichtigen Sicherheits-Standardprofil (64&nbsp;KiB, gemischter Modus, <code class="inline">include=["**"]</code> mit denselben Schutzregeln wie beim Mitschnitt-Profil). Kein zusätzlicher Schritt nötig – einfach die Methode „Asset-Pack" wählen und erstellen.</p>
+        <ul>
+          <li>Funktioniert für jeden Titel sofort, ohne vorheriges Spielen.</li>
+          <li>Gröbere, generischere Block- und Kompressionswahl als ein mitschnittgestütztes Profil.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="note">Beide Wege schützen automatisch Systemdateien, ausführbare Dateien und Indexe vor dem Packen (<code class="inline">NIE_PACKEN</code>) – mehr, als der reine Herstellerweg von sich aus tut, der das nur beim späteren Entfernen der Originale prüft.</p>
+  </section>
+
+  <!-- 3 -->
+  <section id="mitschnitt">
+    <div class="sec-head"><span class="sec-mark">03</span><h2>Der Mitschnitt-Assistent</h2></div>
+    <p class="lede">Zu finden unter <b style="color:#fff">WEITERE TOOLS → AMPR-MITSCHNITT</b>. Ersetzt das manuelle Anlegen einer Ordnerstruktur, den Aufruf eines Index-Bauskripts und das Starten einer eigenen Profil-GUI vollständig – sechs geführte Schritte in einem Fenster.</p>
+
+    <div class="card">
+      <ol class="flow">
+        <li><b>Spieldump wählen</b> – ein entpackter, lokaler Dump-Ordner (<code class="inline">eboot.bin</code>/<code class="inline">sce_sys</code> müssen vorhanden sein). Installierte Titel ohne eigenen Ordner gehen nicht – der Mitschnitt braucht einen entpackten Spielordner auf der Konsole.</li>
+        <li><b>Verbindung zur PS5</b> – wie überall im Programm, über die gespeicherte oder gefundene Adresse.</li>
+        <li><b>Titel auf der Konsole zuordnen</b> – anhand der Title-ID. Passt mehr als ein Ordner oder keiner eindeutig, fragt das Programm nach, welcher gemeint ist.</li>
+        <li><b>Index bauen und Aufnahme-Bibliothek hochladen</b> – baut <code class="inline">ampr_emu.index</code> neu und legt eine aufnahmefähige AMPR-EMU-Fassung (<code class="inline">test-debug-pack</code>) direkt in die Spielwurzel (<code class="inline">/app0/ampr_emu.index</code>, <b>nicht</b> nach <code class="inline">fakelib/</code>). Fehlt eine solche Fassung im Bestand, sagt das Programm das und verweist auf die AMPR-Aktualisierung.</li>
+        <li><b>Spieldurchläufe aufnehmen</b> – fünf vom Hersteller empfohlene Szenarien, nacheinander:
+          <ul class="sub">
+            <li>Kaltstart durchs Hauptmenü, einen Spielstand laden</li>
+            <li>Mehrere unterschiedliche Level oder große Regionen laden</li>
+            <li>Schnellreise, Zwischensequenzen, Kampf, intensives Streaming</li>
+            <li>Ein bereits besuchtes Gebiet erneut aufsuchen</li>
+            <li>Weitere Modi, Sprachen oder installierte DLC</li>
+          </ul>
+          Nach jedem Durchlauf: Spiel <b style="color:#fff">normal beenden</b> (nicht Ruhemodus), dann im Programm auf „Fertig gespielt – Mitschnitt holen" klicken. Die Bestätigung ist <b>nicht modal</b> – das übrige Programm bleibt bedienbar, während gespielt wird, auch über Stunden. Ein unvollständiger Durchlauf lässt sich erneut versuchen, überspringen oder der ganze Assistent abbrechen; bereits erfolgreiche Durchläufe bleiben dabei erhalten.</li>
+        <li><b>Profil erzeugen</b> – fasst alle erfolgreichen Durchläufe zusammen und schreibt <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> neben den Dump-Ordner, dazu einen lesbaren Bericht und eine Kennzahlen-Datei daneben. Liegt dort schon ein eigenes Profil, fragt das Programm vor dem Ersetzen nach.</li>
+      </ol>
+      <div class="hr"></div>
+      <p class="note">Das erzeugte Profil wird <b style="color:#fff">nicht</b> gesondert „aktiviert" – es liegt einfach neben dem Dump und wird beim nächsten Packen dieses Dumps automatisch erkannt und verwendet (Abschnitt „Bauen"). Kein separater Übernahme-Schritt nötig.</p>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section id="pruefen">
+    <div class="sec-head"><span class="sec-mark">04</span><h2>Das Profil von Hand prüfen (der wichtigste verbleibende Schritt)</h2></div>
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Das übernimmt das Programm nicht.</strong> Der Hersteller nennt diesen Schritt ausdrücklich zwingend („mandatory"). Ein automatisch erzeugtes Profil – ob mit oder ohne Mitschnitt-Assistent – ist nur ein Ausgangspunkt. Auch ein langer Mitschnitt beweist nie, dass eine nie beobachtete Datei niemals gebraucht wird.</p>
+    </div>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">Die erzeugte <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> ist reiner Text und lässt sich in jedem Editor öffnen und anpassen. Wer die gewohnte Übersicht mit „Add files…" / „Add directory…" / „Add pattern…" lieber grafisch prüft, kann weiterhin die eigenständige <code class="inline">ampr_pack_gui.exe</code> aus <code class="inline">AMPR_PackTools-4.0</code> öffnen, dort „Load from profile" auf genau diese Datei anwenden, ändern und unter demselben Pfad wieder speichern – das Programm liest beim nächsten Packen einfach die aktuelle Datei.</p>
+      <p style="margin:0;font-size:14.5px;color:var(--muted)">Besonders wichtig zu prüfen: Level/Karten/Biome, die in keinem Durchlauf vorkamen; jede unterstützte Sprache, Vertonung und Untertitel; DLC, Bonus-Modi, New-Game-Pfade und Schlusskapitel; Daten für Zwischensequenzen, Menüs, Abspann und Fehlerbehandlung.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section id="bauen">
+    <div class="sec-head"><span class="sec-mark">05</span><h2>Bauen – als Teil des Abbilds, kein eigener Schritt</h2></div>
+    <p class="lede">Anders als beim reinen Herstellerweg gibt es keinen separaten „Pack and verify"-Knopf. Gepackt wird automatisch, wenn beim Erstellen eines Abbilds (jede der Aufgaben 1–6) das Kästchen <b style="color:#fff">AMPR EMU</b> gesetzt und als Methode <b style="color:#fff">Asset-Pack</b> statt <b>Normal</b> gewählt ist – mit demselben Dump-Ordner, neben dem gegebenenfalls das Profil aus Abschnitt 03/04 liegt.</p>
+    <div class="card">
+      <ol class="flow">
+        <li>Liegt neben dem Dump ein eigenes Profil (Mitschnitt-Assistent oder von Hand gepflegt), wird es übernommen – im Protokoll steht dann ausdrücklich „Eigenes Packprofil wird benutzt". Sonst gilt das Standardprofil aus Abschnitt 02.</li>
+        <li>Pack-Bänder, <code class="inline">ampr_assets.index</code> und die Prüfdatei <code class="inline">.crc</code> werden gebaut.</li>
+        <li>Jeder Block wird gegen die Quelle verifiziert – <b>Byte für Byte</b>, nicht nur über Prüfsummen.</li>
+        <li>Eine Manifestübersicht prüft die tatsächlichen Datei-, Block- und Bändezahlen gegen die festen Formatgrenzen (Abschnitt „Grenzen"). Wird eine Grenze gerissen, bricht der Bau ab – es wird nichts in den Spielordner übernommen.</li>
+        <li>Das geprüfte Ergebnis (Index, Laufzeitdatei, Bänder) geht direkt in dasselbe Abbild ein, das diese Aufgabe ohnehin baut – kein separater Upload-Schritt.</li>
+      </ol>
+    </div>
+    <p class="path-title" style="margin-top:28px">compress, store oder loose – wovon das Profil das abhängig macht</p>
+    <div class="table-scroll"><table>
+      <tr><th>Aktion</th><th>Wählen, wenn …</th><th>Hauptrisiko</th></tr>
+      <tr><td class="key">compress</td><td>Die Daten sich komprimieren lassen oder ein Gemisch aus komprimierbaren und unkomprimierbaren Blöcken sind.</td><td>LZ4 kostet Rechenzeit; geringer Gewinn rechtfertigt das Decodieren womöglich nicht.</td></tr>
+      <tr><td class="key">store</td><td>Die Daten schon komprimiert sind, die Zusammenfassung in Bänder aber trotzdem nützt (weniger Dateien/Handles).</td><td>Größe sinkt kaum, Zugriffe hängen weiter vom Pack-Laufzeitsystem ab.</td></tr>
+      <tr><td class="key">loose</td><td>mmap oder ein anderer nicht abgefangener Zugriffsweg infrage kommt, die Datei selten gebraucht wird, oder eine große Datei ohne gemessenen Vorteil unkomprimierbar ist.</td><td>Gewöhnliche Dateisystem-Last bleibt bestehen, Original muss erhalten bleiben.</td></tr>
+    </table></div>
+    <p class="path-title" style="margin-top:28px">Blockgröße – wonach sich das Profil richtet</p>
+    <div class="table-scroll"><table>
+      <tr><th>Blockgröße</th><th>Typisch, wenn …</th></tr>
+      <tr><td class="val">16 KiB</td><td>Mitschnitte zeigen sehr kleine wahlfreie Zugriffe auf häufig genutzte Tabellen, Einstellungen oder Lokalisierungsdaten.</td></tr>
+      <tr><td class="val">64 KiB</td><td>Unbekannte oder gemischte Daten – das Standardprofil ohne Mitschnitt nutzt genau diesen sicheren Wert.</td></tr>
+      <tr><td class="val">128–256 KiB</td><td>Zugriffe sind laut Mitschnitt überwiegend groß oder sequenziell.</td></tr>
+      <tr><td class="val">512 KiB–1 MiB</td><td>Nachweislich sequenzielle Ströme und bereits komprimierte Rohmedien.</td></tr>
+    </table></div>
+    <p class="note">Jeder Block kostet 12&nbsp;Byte im mitgeladenen Verzeichnis. Für 100&nbsp;GiB gepackte Daten ergibt das rund 75&nbsp;MiB bei 16&nbsp;KiB, aber nur rund 1,17&nbsp;MiB bei 1&nbsp;MiB Blockgröße. Reicht der interne Speicherpool nicht, verkleinert das Programm die Zwischenspeicher selbst nach und schreibt das ins Protokoll – ohne neu zu packen.</p>
+  </section>
+
+  <!-- 6 -->
+  <section id="originale">
+    <div class="sec-head"><span class="sec-mark">06</span><h2>Originale weglassen</h2></div>
+    <p class="lede">Während desselben Baus fragt das Programm – Vorgabe „Nein" – ob die jetzt gepackten Originaldateien im Ergebnis weggelassen werden sollen. Kein separater Werkzeuglauf, keine eigene GUI dafür nötig.</p>
+    <div class="pit">
+      <div class="item"><h4>Nur in einer Arbeitskopie</h4><p>Direkt im Quellordner wird nichts entfernt – dafür muss eine Arbeitskopie angelegt werden.</p></div>
+      <div class="item"><h4>Danach wird erneut Byte für Byte geprüft</h4><p>Erst wenn jedes Band noch einmal gegen die Quelle verifiziert ist, werden die gepackten Originale entfernt.</p></div>
+      <div class="item"><h4>eboot.bin, PRX/SPRX/SELF/ELF, Indexe, Systemordner</h4><p>Werden nie entfernt, selbst wenn ein fehlerhaftes Profil sie fälschlich als „PACK" führen würde.</p></div>
+      <div class="item"><h4>Erst nach dem Konsolentest</h4><p>Das Programm sagt es selbst im Protokoll: „Erst nach einem erfolgreichen Konsolentest lohnt es, sie zu entfernen." Der erste Bau sollte die Originale also behalten.</p></div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section id="grenzen">
+    <div class="sec-head"><span class="sec-mark">07</span><h2>Feste Grenzen des Formats</h2></div>
+    <p class="lede">Das Programm prüft diese Grenzen automatisch gegen die tatsächlichen Zahlen und bricht ab, statt es die Konsole ablehnen zu lassen.</p>
+    <div class="table-scroll"><table>
+      <tr><th>Objekt</th><th>Grenze</th></tr>
+      <tr><td>Dateien in AMPRPAK4</td><td class="val">2.000.000</td></tr>
+      <tr><td>Blöcke über alle gepackten Dateien</td><td class="val">16.000.000</td></tr>
+      <tr><td>.pak-Bänder im gesamten Verzeichnis</td><td class="val">1.024</td></tr>
+      <tr><td>Pack-Gruppen</td><td class="val">256</td></tr>
+      <tr><td>Blockgröße</td><td class="val">16 KiB – 1 MiB, Zweierpotenz</td></tr>
+      <tr><td>Angeforderter Decodier-Zwischenspeicher</td><td class="val">höchstens 512 MiB</td></tr>
+      <tr><td>Angeforderter physischer Zwischenspeicher</td><td class="val">höchstens 128 MiB</td></tr>
+    </table></div>
+    <p class="note">Die Bändergrenze gilt für das <b style="color:#fff">gesamte</b> Verzeichnis, nicht je Gruppe. Beispiel: 250&nbsp;GiB mit 16-KiB-Blöcken ergeben schon rund 16,38&nbsp;Millionen Blöcke – noch bevor weitere Dateien dazukommen. In so einem Fall hilft eine größere Blockgröße oder bewusst lose gelassene Daten.</p>
+  </section>
+
+  <!-- 8 -->
+  <section id="konsole">
+    <div class="sec-head"><span class="sec-mark">08</span><h2>Auf der Konsole testen</h2></div>
+    <p class="lede">Mindestens prüfen: Start, neues Spiel, mehrere Speicherstände, Levelübergänge, Schnellreise, Zwischensequenzen, starkes Nachladen, Sprachwechsel, DLC, erneuter Besuch eines Bereichs, Abbruch eines Ladevorgangs und normales Beenden.</p>
+    <div class="alert">
+      <div class="ic">!</div>
+      <p><strong>Für die ersten Tests:</strong> Originaldateien unbedingt behalten (Abschnitt „Originale weglassen" auf „Nein" lassen). Ein Original erst entfernen, nachdem alle nötigen Spielwege getestet wurden – und nur für eine Datei, die nachweislich nicht über einen nicht abgefangenen Weg (mmap, direktes E/A) gelesen wird.</p>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section id="probleme">
+    <div class="sec-head"><span class="sec-mark">09</span><h2>Häufige Probleme</h2></div>
+    <div class="table-scroll"><table>
+      <tr><th>Symptom</th><th>Wahrscheinliche Ursache</th><th>Maßnahme</th></tr>
+      <tr><td>fileId und Pfad stimmen nicht überein</td><td>Mitschnitt oder Profil nutzen ein <code class="inline">ampr_emu.index</code> aus einer anderen Version des Dumps.</td><td>Mitschnitt-Assistenten für diesen Dump erneut laufen lassen – er baut Index und Mitschnitt immer als zusammengehöriges Paar.</td></tr>
+      <tr><td>Kein Profil im Bestand, obwohl Mitschnitte gemacht wurden</td><td>Der Assistent wurde abgebrochen, bevor Schritt 6/6 lief, oder kein Durchlauf war vollständig.</td><td>Assistenten erneut starten; einzelne Durchläufe können übersprungen werden, ohne die übrigen zu verlieren.</td></tr>
+      <tr><td>Ein Band fehlt oder besteht die Prüfung nicht</td><td>Baustände wurden gemischt, oder das Kopieren des Abbilds wurde unterbrochen.</td><td>Abbild neu erstellen – Index, Laufzeitdatei und Bänder gehören immer als ein Satz zusammen.</td></tr>
+      <tr><td>Eine gepackte Datei existiert, aber das Lesen im Spiel schlägt fehl</td><td>mmap, direktes E/A oder ein anderer nicht abgefangener Zugriffsweg könnte beteiligt sein.</td><td>Mit Originalen testen (Abschnitt „Originale weglassen"), dann im Profil eine genaue loose-Regel für diese Datei ergänzen (Abschnitt „Profil prüfen") und neu bauen.</td></tr>
+    </table></div>
+  </section>
+
+  <!-- 10 -->
+  <section id="regeln">
+    <div class="sec-head"><span class="sec-mark">10</span><h2>Die wichtigsten Regeln auf einen Blick</h2></div>
+    <div class="card">
+      <ul class="checklist">
+        <li>Mitschnitte sind <b style="color:#fff">nie vollständig</b> – fehlende Level, Sprachen und DLC im erzeugten Profil von Hand ergänzen.</li>
+        <li>Das erzeugte Profil <b style="color:#fff">immer prüfen</b> – der Mitschnitt-Assistent ersetzt diesen Schritt nicht, nur die Aufnahme und die erste Fassung des Profils.</li>
+        <li>Erst <b style="color:#fff">vollständig auf der Konsole testen</b>, dann erst über „Originale weglassen" nachdenken.</li>
+        <li>eboot.bin, PRX-/SPRX-Dateien, Indexe und Systemordner werden nie automatisch gepackt oder entfernt.</li>
+        <li>Index, Laufzeitdatei und alle Bänder gehören immer als <b style="color:#fff">ein zusammengehöriger Satz</b> ins Abbild – nie einzelne Dateien daraus austauschen.</li>
+        <li>Aufgabe 7 (AMPR EMU Manager) baut und entfernt keine Asset-Pack-Bänder – das geschieht ausschließlich beim Erstellen eines Abbilds (Aufgaben 1–6) mit Methode „Asset-Pack".</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    Zusammengestellt aus drakmors eigener Dokumentation (<b>ampr_emu</b>, GPL-3.0) und dem Verhalten von <b>PS5 Dump &amp; Image Converter</b> selbst. Kein Text wird an Dritte weitergegeben; diese Anleitung ist eine eigene, übersetzte Zusammenfassung des dokumentierten Vorgehens für den persönlichen Gebrauch.
+  </footer>
+
+</main>
+</body>
+</html>

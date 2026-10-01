@@ -43,7 +43,7 @@ steht in seiner Zeile.
 | `klogsrv-ps5_v0.9.elf` | klogsrv | John Törnblom | Copyright-Zeile im ELF |
 | `websrv-ps5_v0.34.elf` | websrv | ps5-payload-dev | SDK-Adresse im ELF |
 | `OffAct_v0.4.2.elf` | OffAct | ps5-payload-dev | Projektadresse im ELF; geladen aus dem Release v0.4.2 (die alte Datei hieß „v0.34" - dieses Tag gab es beim Autor nie, vermutlich ein Zahlendreher) |
-| `ps5-app-dumper_v1.11_Beta.elf` | ps5-app-dumper | EchoStretch | `github.com/EchoStretch/ps5-app-dumper`, Release v1.11 (kein Beleg im ELF selbst; frühere Angabe „ps5-payload-dev" war falsch - kein passendes Repo dort) |
+| `ps5-app-dumper_v2.00.elf` | ps5-app-dumper | EchoStretch | `github.com/EchoStretch/ps5-app-dumper`, Release v2.00 (SHA-256 gegen den Release-Anhang geprüft; kein Beleg im ELF selbst, kein LICENSE im Repo) |
 | `np-fake-signin-v1.3.elf` | NP Fake Signin | earthonion | „NP Fake Signin (by earthonion)" |
 | `garlic-savemgr_v1.13.1.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
 | `shadowmountplus_v1.7beta2.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta2 |
@@ -56,9 +56,9 @@ steht in seiner Zeile.
 | `ps5debug-NG_v1.3.2.elf` | ps5debug-NG | OpenSourcereR; Dank an golden, Ctn, SiSTRo, EchoStretch | „Coded by OpenSourcereR"; geladen aus dem Release 1.3.2 (Pharaoh2k/ps5debug-NG) |
 | `elfldr-ps5_v0.26.elf` | elfldr | ps5-payload-dev (John Törnblom) | Quelldateiname `elfldr.c` im ELF; geladen aus dem Release v0.26 |
 | `web-file-mgr-v1.9.elf` | PS5 Web File Manager | owendswang | „Web File Manager / Version: … / Port: …" im ELF |
-| `webkit-autoloader-installer_v0.5.0.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „WebKit Autoloader v0.5.0" im ELF; Original-Release itsPLK 0.5.0 (GPL-3.0) |
+| `webkit-autoloader-installer_v0.5.1.elf` | PS5 WebKit Autoloader (Installer) | itsPLK | „WebKit Autoloader v0.5.1" im ELF; Original-Release itsPLK 0.5.1 (GPL-3.0) |
 | `WK-AutoLoader_v1.05.elf` | WK Autoloader | X-F1REBALL-X | GPL-3.0 (LICENSE im Projekt); `github.com/X-F1REBALL-X/WK-AutoLoader`, Release v1.0.5; nutzt Submodule (itsPLK/ps5-unified-autoloader, slopkit, idlesauce/umtx2, ps5-elfldr) |
-| `ProsperoMgr.elf` | Prospero Manager | – | „Prospero Manager" im ELF, kein Autorenname |
+| `ProsperoMgr_v1.1.elf` | Prospero Manager | notmaj0r | `github.com/notmaj0r/ProsperoMgr`, Release v1.1, GPL-3.0 (LICENSE im Quellarchiv); SHA-256 gegen den Release-Anhang geprüft. Vorherige Datei (unversioniert, ohne Autorenzuordnung) war dieselbe Software in einer älteren Bauart - ersetzt. Achtung: `Phoenixx1202/ProsperoMgr` ist nur ein Fork von notmaj0r, nicht die Quelle. |
 | `CheatRunner_v0.17.elf` | CheatRunner | maj0r | „CheatRunner v0.17 by maj0r" |
 | `zftpd-ps5-v1.5.0.elf` | zftpd | seregonwar | Projektadresse, MIT-Lizenz (unten) |
 | `zftpd-ps5-zhttp-v1.5.0.elf` | zftpd (zhttp-Variante) | seregonwar | Projektadresse, MIT-Lizenz (unten) |
@@ -68,7 +68,7 @@ steht in seiner Zeile.
 | `dump_installer_v1.07.elf` | Dump Installer | – | kein Beleg in der Datei |
 | `kstuff_lite_v1.11_Beta_EchoStretch.elf` | kstuff lite (EchoStretch-Build) | EchoStretch | Release v1.11 von `github.com/EchoStretch/kstuff-lite` |
 | `kstuff_v1.13_dr_Beta4.elf` | kstuff (dr) | drakmor | „dr" = drakmor; aktuellste drakmor-Fassung, kein Beleg in der Datei |
-| `ps5upload-5.39.1.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.39.1 |
+| `ps5upload-5.40.0.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.40.0 |
 | `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.2/`); aus dem Release v1.2 |
 

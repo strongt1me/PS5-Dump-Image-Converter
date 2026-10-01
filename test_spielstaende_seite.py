@@ -389,7 +389,7 @@ class TexteTests(unittest.TestCase):
                        "Das Adressfeld teilt sie sich", "3&nbsp;Sekunden"):
             with self.subTest(stelle=stelle):
                 self.assertIn(stelle, abschnitt)
-        self.assertIn("keines der drei Werkzeuge öffnet ein eigenes Fenster", handbuch)
+        self.assertIn("keines der ersten drei Werkzeuge öffnet ein eigenes Fenster", handbuch)
 
 
 if __name__ == "__main__":

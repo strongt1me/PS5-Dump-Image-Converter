@@ -828,7 +828,9 @@ class FensterTests(unittest.TestCase):
         """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen - Fenster wie Seite."""
         klasse = self.modul.PS5ConverterGUI
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
-            methode = klasse._KONSOLE_FENSTER.get(kennung) or klasse._KONSOLE_SEITEN.get(kennung)
+            methode = (klasse._KONSOLE_FENSTER.get(kennung)
+                      or klasse._KONSOLE_SEITEN.get(kennung)
+                      or klasse._KONSOLE_AKTIONEN.get(kennung))
             with self.subTest(kennung=kennung):
                 self.assertTrue(methode, "Knopf %s zeigt auf nichts" % kennung)
                 self.assertTrue(callable(getattr(self.app, methode, None)))

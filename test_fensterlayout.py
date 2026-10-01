@@ -960,8 +960,9 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
         self.assertIn("self._werkzeugknopf(befehl)", self.quelle)
 
     def test_fremdprogramme_bleiben_aussen_vor(self):
-        """FileZilla und das Handbuch oeffnen kein eigenes Fenster."""
-        for methode in ("_launch_filezilla", "_open_benutzerhandbuch"):
+        """FileZilla, das Handbuch und die Asset-Pack-Anleitung oeffnen kein eigenes Fenster."""
+        for methode in ("_launch_filezilla", "_open_benutzerhandbuch",
+                       "_open_assetpack_anleitung"):
             with self.subTest(methode=methode):
                 self.assertIn("command=self.%s," % methode, self.quelle)
                 self.assertNotIn('self._werkzeugknopf("%s")' % methode,
@@ -1037,7 +1038,8 @@ class KnopfreihenBeiMindestgroesseTests(unittest.TestCase):
 
     #: Fenster, die keinen eigenen Toplevel oeffnen (fremdes Programm,
     #: Systembrowser) oder auf Fremdsoftware warten.
-    OHNE_FENSTER = ("_launch_filezilla", "_open_benutzerhandbuch")
+    OHNE_FENSTER = ("_launch_filezilla", "_open_benutzerhandbuch",
+                   "_open_assetpack_anleitung")
 
     @classmethod
     def setUpClass(cls):

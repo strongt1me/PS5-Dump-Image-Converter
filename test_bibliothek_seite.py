@@ -339,11 +339,13 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertNotIn("self._btn_library_title =",
                          HAUPTDATEI.read_text(encoding="utf-8"))
 
-    def test_die_ansicht_konsole_hat_drei_knoepfe(self) -> None:
-        """Sechs am 25.09.2026, am Abend kurz fuenf - und dann drei: Remote
-        Play (samt ActRemoteLink) und ProsperoLight sind ganz heraus."""
+    def test_die_ansicht_konsole_hat_vier_knoepfe(self) -> None:
+        """Sechs am 25.09.2026, am Abend kurz fuenf, dann drei (Remote Play
+        samt ActRemoteLink und ProsperoLight ganz heraus) - und seit dem
+        30.09.2026 vier: "4. Prospero Manager" dazu."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
-        self.assertEqual(["dienste", "spielstaende", "bibliothek"], kennungen)
+        self.assertEqual(["dienste", "spielstaende", "bibliothek", "prosperomgr"],
+                         kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)

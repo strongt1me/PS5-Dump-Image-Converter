@@ -461,6 +461,27 @@ class FremdeSchluesselUeberlebenTests(unittest.TestCase):
         for schluessel, wert in erwartet.items():
             self.assertEqual(wert, vorgaben.get(schluessel), schluessel)
 
+    def test_api_bind_address_und_port_sind_da(self):
+        """Vorher stand ``api_bind_address`` nur im Kommentar, nicht im
+        Woerterbuch - der Editor konnte sie also gar nicht anbieten, obwohl
+        genau sie die Weboberflaeche von diesem PC aus erreichbar macht.
+        """
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        vorgaben = PS5ConverterGUI._SHADOWMOUNT_DEFAULTS
+        self.assertEqual("127.0.0.1", vorgaben.get("api_bind_address"))
+        self.assertEqual("10101", vorgaben.get("api_port"))
+
+    def test_web_port_stimmt_mit_dem_katalog_ueberein(self):
+        """Zwei unabhaengige Stellen kennen 10101 - sie duerfen nicht
+        auseinanderlaufen, sonst zeigt "Weboberflaeche oeffnen" auf den
+        falschen Port.
+        """
+        from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI
+        from ps5_validator.utils import konsole_dienste as kd
+        self.assertEqual(
+            str(kd.dienst("shadowmount").port),
+            PS5ConverterGUI._SHADOWMOUNT_DEFAULTS.get("api_port"))
+
     def test_das_fenster_baut_seine_tabelle_wirklich_so(self):
         """Der Nachbau oben muss dem Fenster entsprechen.
 

@@ -207,8 +207,10 @@ class ZweiteAnsichtTests(unittest.TestCase):
         for nummer, (_schluessel, kennung) in enumerate(app._KONSOLE_KNOEPFE):
             methode = app._KONSOLE_FENSTER.get(kennung, "")
             seite = app._KONSOLE_SEITEN.get(kennung, "")
+            aktion = app._KONSOLE_AKTIONEN.get(kennung, "")
             with self.subTest(kennung=kennung):
-                self.assertTrue(methode or seite, "Kennung %s ohne Fenster" % kennung)
+                self.assertTrue(methode or seite or aktion,
+                                "Kennung %s ohne Fenster" % kennung)
                 knopf, _s = app._konsole_knoepfe[nummer]
                 if seite:
                     # "Bibliothek" (seit dem 25.09.2026): rechts eine Seite
@@ -217,6 +219,15 @@ class ZweiteAnsichtTests(unittest.TestCase):
                             mock.patch.object(app, seite) as zeigen:
                         knopf._on_click()
                     zeigen.assert_called_once_with()
+                    um.assert_not_called()
+                    continue
+                if aktion:
+                    # "Prospero Manager" (seit dem 30.09.2026): Direktaktion,
+                    # weder Fenster noch Seite.
+                    with mock.patch.object(app, "_werkzeugfenster_umschalten") as um, \
+                            mock.patch.object(app, aktion) as ausgefuehrt:
+                        knopf._on_click()
+                    ausgefuehrt.assert_called_once_with()
                     um.assert_not_called()
                     continue
                 with mock.patch.object(app,

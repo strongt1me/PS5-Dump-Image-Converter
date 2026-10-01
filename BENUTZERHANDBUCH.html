@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.54</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.55</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.54</span>
-      <span class="marke">Stand 30. September 2026</span>
+      <span class="marke">Version v1.9.55</span>
+      <span class="marke">Stand 1. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -432,19 +432,26 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Oben rechts liegt die Werkzeugleiste mit weiteren Funktionen (FILEZILLA, JS LOADER, CREDITS, DESIGN und mehr). Für eine normale Konvertierung brauchen Sie diese Schaltflächen nicht – sie sind in <a href="#k13">Kapitel 13</a> erklärt.</p>
   <h3>2.1 Die zweite Ansicht: KONSOLE</h3>
   <p>Unter dem Logo in der Seitenleiste schaltet <strong>KONSOLE&nbsp;›</strong>
-  auf eine zweite Ansicht um. Dort stehen links drei Werkzeuge für die Arbeit
+  auf eine zweite Ansicht um. Dort stehen links vier Werkzeuge für die Arbeit
   mit der Konsole: <em>1.&nbsp;Konsole &amp; Payloads</em>,
-  <em>2.&nbsp;Spielstände</em> und <em>3.&nbsp;Bibliothek</em>. Titelbild,
+  <em>2.&nbsp;Spielstände</em>, <em>3.&nbsp;Bibliothek</em> und
+  <em>4.&nbsp;Prospero Manager</em>. Titelbild,
   „Spiel Info“ und „Was man sonst ev. noch braucht“ gibt es dort nicht. Rechts
   steht die Seite <strong>Konsole &amp; Payloads</strong> (siehe unten);
   <em>2.&nbsp;Spielstände</em> und <em>3.&nbsp;Bibliothek</em> zeigen an
-  dieser Stelle ihre eigene Seite &ndash; keines der drei Werkzeuge öffnet ein
-  eigenes Fenster. Ein zweiter Druck auf denselben Knopf oder
+  dieser Stelle ihre eigene Seite &ndash; keines der ersten drei Werkzeuge öffnet
+  ein eigenes Fenster. Ein zweiter Druck auf denselben Knopf oder
   <em>‹&nbsp;Konsole &amp; Payloads</em> führt zurück. Das Kernel-Protokoll liegt als <strong>KLOG</strong> oben in
   der Titelleiste. <strong>‹&nbsp;UMWANDELN</strong> führt zurück &ndash;
   gewählte Quelle, Einstellungen und ein laufender Auftrag bleiben dabei
   erhalten. Das Programm startet immer in der Ansicht UMWANDELN &ndash; auch
   wenn beim Beenden zuletzt KONSOLE offen war.</p>
+  <p><strong>4.&nbsp;Prospero Manager</strong> zeigt dagegen keine eigene
+  Seite: Ein Druck prüft, ob das Payload auf der Konsole schon läuft, schickt
+  es bei Bedarf selbst &ndash; samt ELF-Loader, falls Port&nbsp;9021 noch
+  geschlossen ist &ndash; und öffnet dann direkt dessen Weboberfläche, genau
+  wie <em>Weboberfläche öffnen</em> bei „Konsole &amp; Payloads“ (siehe
+  unten). Jeder Schritt steht im Hauptprotokoll.</p>
 
   <h4>Konsole &amp; Payloads (rechte Seite)</h4>
   <p>Beim Programmstart sucht das Programm die PS5 selbst und verbindet sich:
@@ -465,21 +472,29 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle elf bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle dreizehn bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
-  Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver und ps5upload
-  &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
+  Prospero Manager und ps5upload &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
   FTP-Server und Payload-Manager nennen ihre laufende Version selbst; weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
   die mitgelieferte in Klammern dahinter. ELF-Loader, Kernel-Protokoll,
-  Webserver und BFpilot verraten ihre Version nicht. Was
+  Webserver, BFpilot, ShadowMount+ und Prospero Manager verraten ihre Version
+  nicht. Was
   nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
   <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
   <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet
   <em>Weboberfläche öffnen</em>. Jeder Schritt steht im Protokoll
-  darunter. Antwortet die Konsolensuche nicht, laufen aber Dienste, sagt die
+  darunter. Für ShadowMount+ bietet die Seite bewusst kein
+  <em>Ausgewähltes starten</em> an &ndash; es läuft üblicherweise dauerhaft
+  aus dem Autoload, und seine Weboberfläche lauscht ab Werk nur auf der PS5
+  selbst: Erst wenn Sie im ShadowMount+-Editor (<em>WEITERE TOOLS</em>) den
+  Schlüssel <code>api_bind_address</code> auf die PS5-Adresse oder
+  <code>0.0.0.0</code> stellen, öffnet <em>Weboberfläche öffnen</em> sie auch
+  von diesem PC aus &ndash; ohne Authentifizierung, also nicht im fremden
+  Netz. Antwortet die Konsolensuche nicht, laufen aber Dienste, sagt die
   Seite das ausdrücklich: Die Konsole ist dann da, nur lässt Ihr Router die
   Rundrufe nicht durch. Das Umschalten der Ansicht allein schickt nichts ins
   Netz.</p>
@@ -1109,6 +1124,19 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Mitschnitten packt, wei&szlig; selbst, was der Titel &uuml;ber APR
     liest. Im Protokoll steht dann &bdquo;Eigenes Packprofil
     &uuml;bernommen&ldquo;.</p>
+    <p><strong>Muss dieses Profil von Hand geschrieben werden? Nein.</strong>
+    Der <strong>AMPR-Mitschnitt-Assistent</strong> (<em>WEITERE
+    TOOLS</em>, Abschnitt 13) f&uuml;hrt Schritt f&uuml;r Schritt durch
+    mehrere echte Spieldurchl&auml;ufe auf Ihrer PS5 und erzeugt daraus genau
+    diese Datei automatisch &ndash; passend benannt und am richtigen Ort.
+    Eine ausf&uuml;hrliche, bebilderte Anleitung zum ganzen Ablauf (Mitschnitt,
+    Profil pr&uuml;fen, Bauen, Originale weglassen) &ouml;ffnet der Knopf
+    <strong>Asset Packs Anleitung</strong> oben in der Titelleiste, links
+    neben <strong>BENUTZERHANDBUCH</strong> &ndash; genauso bedient wie
+    dieses Handbuch hier. Die Datei liegt auch im Ordner
+    <code>Anleitungen</code> neben dem Programm:
+    <code>AMPR_Asset_Packs_Mitschnitt_Assistent.html</code> bzw.
+    <code>.pdf</code>.</p>
   </div>
 
   <div class="kasten">
@@ -1351,6 +1379,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>EINSTELLUNGEN</strong></td><td>Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads.</td></tr>
       <tr><td><strong>EN / DE</strong></td><td>Schaltet die komplette Oberfläche zwischen Deutsch und Englisch um – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
+      <tr><td><strong>Asset Packs Anleitung</strong></td><td>Öffnet, genauso wie der Knopf daneben, die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
     </tbody>
   </table>
   </div>
@@ -2207,7 +2236,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.54), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.55), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2407,8 +2436,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.54</strong></span>
-    <span>Stand 30. September 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.55</strong></span>
+    <span>Stand 1. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

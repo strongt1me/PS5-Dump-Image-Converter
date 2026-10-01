@@ -108,6 +108,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'titlebar.design': {'de': 'DESIGN', 'en': 'THEME'},
     'titlebar.settings': {'de': 'EINSTELLUNGEN', 'en': 'SETTINGS'},
     'titlebar.manual': {'de': 'BENUTZERHANDBUCH', 'en': 'USER MANUAL'},
+    'titlebar.assetpack_anleitung': {'de': 'Asset Packs Anleitung', 'en': 'Asset Packs Guide'},
     'context.cut': {'de': 'Ausschneiden', 'en': 'Cut'},
     'context.copy': {'de': 'Kopieren', 'en': 'Copy'},
     'context.paste': {'de': 'Einfügen', 'en': 'Paste'},
@@ -1580,6 +1581,7 @@ STRINGS: dict[str, dict[str, str]] = {
     'konsole.btn_dienste': {'de': '1. Konsole & Payloads', 'en': '1. Console & payloads'},
     'konsole.btn_spielstaende': {'de': '2. Spielstände', 'en': '2. Save data'},
     'konsole.btn_bibliothek': {'de': '3. Bibliothek', 'en': '3. Library'},
+    'konsole.btn_prosperomgr': {'de': '4. Prospero Manager', 'en': '4. Prospero Manager'},
     'konsole.btn_uebersicht': {'de': '‹ Konsole & Payloads', 'en': '‹ Console & payloads'},
     # Verbinden beim Programmstart (seit 26.09.2026) - im Hauptprotokoll.
     'konsole.start_suche': {'de': '[SCHRITT] Suche die PS5 und verbinde (ELF-Loader, FTP) …', 'en': '[STEP] Looking for the PS5 and connecting (ELF loader, FTP) …'},
@@ -1605,6 +1607,10 @@ STRINGS: dict[str, dict[str, str]] = {
     'dienst.bfpilot_zweck': {'de': 'zweiter Dateimanager', 'en': 'second file manager'},
     'dienst.websrv': {'de': 'Webserver', 'en': 'Web server'},
     'dienst.websrv_zweck': {'de': 'Homebrew im Browser starten', 'en': 'start homebrew from the browser'},
+    'dienst.shadowmount': {'de': 'ShadowMount+', 'en': 'ShadowMount+'},
+    'dienst.shadowmount_zweck': {'de': 'Spiele/Abbilder einhängen', 'en': 'mounts games/images'},
+    'dienst.prosperomgr': {'de': 'Prospero Manager', 'en': 'Prospero Manager'},
+    'dienst.prosperomgr_zweck': {'de': 'Alles-in-einem-Weboberfläche: Dateien, PKGs, Spielstände, Payloads', 'en': 'all-in-one web interface: files, PKGs, save data, payloads'},
     'dienst.upload': {'de': 'ps5upload', 'en': 'ps5upload'},
     'dienst.upload_zweck': {'de': 'schnellere Übertragung vom PC', 'en': 'faster transfer from the PC'},
     'dienste.ip_label': {'de': 'PS5-Adresse:', 'en': 'PS5 address:'},
@@ -1660,6 +1666,12 @@ STRINGS: dict[str, dict[str, str]] = {
     'dienste.log_kein_port': {'de': '[WARNUNG] {name} wurde geschickt, Port {port} antwortet aber nicht. Manche Payloads brauchen länger – noch einmal prüfen.', 'en': '[WARNING] {name} was sent, but port {port} does not answer. Some payloads take longer – check again.'},
     'dienste.log_kein_payload': {'de': '[FEHLER] Für {name} liegt keine Datei im Ordner „helloworld“.', 'en': '[ERROR] There is no file for {name} in the "helloworld" folder.'},
     'dienste.log_fehlgeschlagen': {'de': '[FEHLER] {name} ließ sich nicht starten: {grund}', 'en': '[ERROR] {name} could not be started: {grund}'},
+    # "4. Prospero Manager" - direkter Sidebar-Knopf, oeffnet die Weboberflaeche
+    # und schickt das Payload vorher, falls noetig (Hauptprotokoll, nicht die
+    # Tafel von "Konsole & Payloads" - der Knopf ist von jeder Seite aus da).
+    'konsole.prosperomgr_start': {'de': '[SCHRITT] Prospero Manager: ELF-Loader und Payload werden geprüft …', 'en': '[STEP] Prospero Manager: checking the ELF loader and payload …'},
+    'konsole.prosperomgr_offen': {'de': '[OK] Prospero Manager: Weboberfläche geöffnet ({adresse}).', 'en': '[OK] Prospero Manager: web interface opened ({adresse}).'},
+    'konsole.prosperomgr_kein_port': {'de': '[WARNUNG] Prospero Manager: Port {port} antwortet nicht – Weboberfläche nicht geöffnet.', 'en': '[WARNING] Prospero Manager: port {port} does not answer – web interface not opened.'},
     'dienste.log_laeuft_schon': {'de': '[INFO] {name} läuft bereits – übersprungen.', 'en': '[INFO] {name} is already running – skipped.'},
     'dienste.log_web': {'de': '[INFO] Öffne {adresse}', 'en': '[INFO] Opening {adresse}'},
     # Ist Port 9021 zu, laedt die Seite "Konsole & Payloads" elfldr selbst ueber
@@ -1938,6 +1950,12 @@ STRINGS: dict[str, dict[str, str]] = {
               'Es sollte neben dem Programm liegen bzw. in der EXE mitgeliefert sein.',
         'en': 'The user manual (BENUTZERHANDBUCH.html) was not found. It should sit '
               'next to the program or ship inside the EXE.'},
+    'dialog.msg.assetpack_guide_missing': {
+        'de': 'Die Asset-Pack-Anleitung (Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent.html) '
+              'wurde nicht gefunden. Sie sollte neben dem Programm liegen bzw. in der EXE '
+              'mitgeliefert sein.',
+        'en': 'The asset pack guide (Anleitungen/AMPR_Asset_Packs_Mitschnitt_Assistent.html) '
+              'was not found. It should sit next to the program or ship inside the EXE.'},
     'klog.preflight.title': {'de': 'KLOG antwortet nicht', 'en': 'KLOG does not answer'},
     'klog.preflight.send_over_loader': {
         'de': 'Auf {ip} lauscht nichts auf Port {port} – klogsrv läuft also noch nicht.\n\n'
