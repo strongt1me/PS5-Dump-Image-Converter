@@ -1103,55 +1103,6 @@ class UmbenennenTests(unittest.TestCase):
         self.assertIn("if os.path.exists(ziel) and not nur_schreibweise:", rumpf)
 
 
-class LizenzfreiNurFuerSpieleTests(unittest.TestCase):
-    """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
-
-    ``prosperopkg.homebrew_bauen`` kennt den Schalter nicht - er steht nur
-    in der Signatur von ``bauen``. Das Kaestchen blieb im Homebrew-Zweig
-    trotzdem klickbar und weckte den Eindruck, es taete etwas.
-    """
-
-    @classmethod
-    def setUpClass(cls):
-        cls.quelle = QUELLDATEI.read_text(encoding="utf-8")
-
-    @classmethod
-    def _rumpf(cls) -> str:
-        """Der ganze Rumpf von ``_show_pkg_bauen`` - bis zur naechsten Methode.
-
-        Bis zum 23.09.2026 stand hier ein festes Fenster von 12.000 Zeichen.
-        Das ist die Falle aus ``project_quelltextsuche_tests``: Dreissig
-        Zeilen mehr im Fenster (das Kaestchen "Mit Sony SDK bauen") schoben
-        die gesuchte Stelle hinaus, und der Test fiel - ohne dass an der
-        geprueften Sache irgendetwas falsch war. Jetzt endet der Ausschnitt
-        dort, wo die Methode endet.
-        """
-        anfang = cls.quelle.index("def _show_pkg_bauen")
-        rest = cls.quelle[anfang:]
-        ende = rest.find("\n    def ", 1)
-        return rest if ende < 0 else rest[:ende]
-
-    def test_das_kaestchen_wird_umgeschaltet(self):
-        rumpf = self._rumpf()
-        self.assertIn("def _lizenzfrei_schalten", rumpf)
-        self.assertIn('state="disabled" if art_var.get() == "homebrew"', rumpf)
-
-    def test_der_ausschnitt_endet_an_der_naechsten_methode(self):
-        """Sonst misst der Test wieder eine beliebige Fenstergroesse."""
-        rumpf = self._rumpf()
-        self.assertTrue(rumpf.startswith("def _show_pkg_bauen"))
-        self.assertNotIn("\n    def ", rumpf)
-        self.assertGreater(len(rumpf), 5000, "der Rumpf kann nicht leer sein")
-
-    def test_homebrew_bauen_nimmt_den_schalter_wirklich_nicht(self):
-        """Anker: Naehme es ihn eines Tages, waere das Ausgrauen falsch."""
-        import inspect
-        from ps5_validator.utils import prosperopkg
-        unterschrift = inspect.signature(prosperopkg.homebrew_bauen)
-        self.assertNotIn("lizenzfrei", unterschrift.parameters)
-        self.assertIn("lizenzfrei", inspect.signature(prosperopkg.bauen).parameters)
-
-
 class StilleFehlschlaegeTests(unittest.TestCase):
     """Wo ein Fehlschlag bisher nur im Protokoll oder gar nirgends stand.
 

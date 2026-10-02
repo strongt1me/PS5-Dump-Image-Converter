@@ -1,14 +1,18 @@
 # libs – eigene Bibliotheken
 
 Dieser Ordner ist für **selbst gebaute Bibliotheken**, die das mitgelieferte
-Werkzeug zum PKG-Bauen ersetzen sollen. Er ist im Auslieferungszustand leer –
-dann arbeitet das Programm wie bisher mit dem mitgelieferten
-`ProsperoPkg-2.5`.
+Werkzeug zum Lesen von PS5-Paketen (WEITERE TOOLS → PS4 & PS5 PKG lesen)
+ersetzen sollen. Er ist im Auslieferungszustand leer – dann arbeitet das
+Programm wie bisher mit dem mitgelieferten `ProsperoPkg-2.5`.
+
+„PKG bauen“ gibt es seit dem 02.10.2026 nicht mehr: Die gebauten Pakete
+installierten sich, starteten auf der Konsole aber nicht (CE-100096-6).
+Eine eigene Bibliothek wirkt deshalb nur noch beim **Lesen**.
 
 ## So wird er benutzt
 
-Datei hier hineinlegen. Mehr nicht. Beim nächsten PKG-Bau nimmt das Programm
-sie von selbst.
+Datei hier hineinlegen. Mehr nicht. Beim nächsten Lesen eines Pakets nimmt
+das Programm sie von selbst.
 
 Beachtet werden genau diese Namen:
 
@@ -37,11 +41,11 @@ kompletter SDK-Baukasten unter `libs/sdk/` mit `prospero-pub-cmd.exe`,
 `toolchain/ext/` und eigenen Skripten – bleibt liegen und bewirkt nichts.
 
 Das ist kein Versehen: Solche Werkzeugketten sind **ein anderes Programm**,
-kein Austausch einer Bibliothek. Sie zu benutzen wäre ein zweiter Bauweg
-(bauen über die Publishing Tools statt über `prosperopkg`) – der ist nicht
-gebaut. Damit niemand vergeblich auf eine Wirkung wartet, nennt der
-Diagnosebericht einen solchen Ordner ausdrücklich als *„liegt da, wird aber
-nicht benutzt"*.
+kein Austausch einer Bibliothek. Den zweiten Bauweg über die Publishing Tools
+(„Mit Sony SDK bauen“) gab es vom 23.09. bis 02.10.2026; er ist mit
+„PKG bauen“ ausgebaut. Damit niemand vergeblich auf eine Wirkung wartet,
+nennt der Diagnosebericht einen solchen Ordner ausdrücklich als *„liegt da,
+wird aber nicht benutzt"*.
 
 ## Wo der Ordner liegen muss
 
@@ -110,6 +114,6 @@ das mitgelieferte Werkzeug.
   `libatrac9.dll` – gehören Sony. Sie dürfen hier lokal liegen, aber **nie
   weitergegeben werden**: nicht ins Git (dafür sorgt die `.gitignore`), nicht
   ins Bündel, nicht in ein Release.
-* Passt die Bibliothek nicht zur erwarteten Schnittstelle, scheitert der Bau
-  mit der Meldung des Werkzeugs. Das Programm prüft den Inhalt nicht – es kann
-  nicht wissen, was Ihre Fassung können soll.
+* Passt die Bibliothek nicht zur erwarteten Schnittstelle, scheitert das
+  Lesen mit der Meldung des Werkzeugs. Das Programm prüft den Inhalt nicht –
+  es kann nicht wissen, was Ihre Fassung können soll.

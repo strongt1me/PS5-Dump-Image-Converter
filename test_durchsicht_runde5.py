@@ -418,38 +418,6 @@ class PayloadVersandTests(unittest.TestCase):
         self.assertEqual(2, quelle.count("payload_versand.stueckweise_senden(s, data)"))
 
 
-class SdkZeitgrenzeTests(unittest.TestCase):
-    """U3-7: Der SDK-Bau bekommt dieselbe mitwachsende Grenze."""
-
-    def test_der_sdk_bau_bekommt_die_mitwachsende_grenze(self) -> None:
-        gui = _gui()
-        gefangen: dict = {}
-
-        def _bauen(*_a, **k):
-            gefangen.update(k)
-            return 0, []
-
-        with tempfile.TemporaryDirectory(prefix="runde5_") as basis:
-            wurzel = Path(basis) / "dump"
-            ziel = Path(basis) / "ziel"
-            wurzel.mkdir()
-            ziel.mkdir()
-            param = Path(basis) / "param.json"
-            param.write_text('{"contentId": "UP0000-PPSA01234_00-0000000000000000"}',
-                             encoding="utf-8")
-            with mock.patch.object(APP.sony_sdk, "pruefen",
-                                   return_value=SimpleNamespace(vorhanden=True)), \
-                    mock.patch.object(APP.sony_sdk, "namen_pruefen", return_value=[]), \
-                    mock.patch.object(APP.sony_sdk, "projekt_schreiben"), \
-                    mock.patch.object(APP.sony_sdk, "bauen", _bauen), \
-                    mock.patch.object(APP.prosperopkg, "zeitgrenze_fuer",
-                                      return_value=54321.0) as grenze:
-                gui._sdk_bauweg(str(wurzel), str(ziel), basis, str(param),
-                                lambda _t: None, {})
-        self.assertEqual(54321.0, gefangen.get("zeitgrenze"))
-        grenze.assert_called_once_with(str(wurzel))
-
-
 class EigeneBibliothekTests(unittest.TestCase):
     """U3-8: Der Selbsttest sucht das Programm dieser Plattform."""
 

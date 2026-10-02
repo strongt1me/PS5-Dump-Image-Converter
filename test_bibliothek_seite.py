@@ -667,6 +667,37 @@ class SeiteTests(unittest.TestCase):
         self.assertTrue(self._gezeigt(self.app._konsole_tafel))
         self.assertEqual(self.app._COLORS["bg_card"], self._knopf("konsole.btn_bibliothek")._bg)
 
+    def test_umschalter_bleibt_nicht_hervorgehoben_bei_maus_darauf(self) -> None:
+        """Regressionstest zur Meldung vom 01.10.2026: Nach "Bibliothek",
+        dann nochmals "Bibliothek" (abwaehlen) blieben beide Knoepfe
+        hervorgehoben, solange die Maus - vom Klick her - noch auf
+        "Bibliothek" stand. Grund war, dass ``_konsole_knopf_hervorheben``
+        nur ``bg``/``fg`` setzte, ``RoundedButton._redraw`` waehrend des
+        Hovers aber ``activebackground`` zeichnet - und das stand weiter auf
+        der Hervorhebungsfarbe aus dem Aufbau."""
+        app = self.app
+        app._ansicht_setzen("konsole")
+        app._konsole_seite_setzen("uebersicht")
+        _WURZEL.update()
+        app._konsole_bibliothek_umschalten()
+        _WURZEL.update()
+        bibliothek_knopf = self._knopf("konsole.btn_bibliothek")
+        # Die Maus steht vom Klick her noch auf dem Knopf - RoundedButton
+        # setzt das sonst erst beim naechsten <Leave>.
+        bibliothek_knopf._hovering = True
+        app._konsole_bibliothek_umschalten()
+        _WURZEL.update()
+
+        def effektive_farbe(knopf):
+            return knopf._activebackground if knopf._hovering else knopf._bg
+
+        self.assertEqual(
+            self.app._COLORS["bg_card"], effektive_farbe(bibliothek_knopf),
+            "Der abgewaehlte Knopf darf nicht weiter die Hervorhebungsfarbe "
+            "zeichnen, nur weil die Maus noch darauf steht.")
+        self.assertEqual(self.app._COLORS["fg_accent"],
+                         effektive_farbe(self._knopf("konsole.btn_dienste")))
+
     def test_die_knopfreihen_gehoeren_zur_quelle(self) -> None:
         zustand = self._seite()
         texte = {q: [k.cget("text") for k in knoepfe]

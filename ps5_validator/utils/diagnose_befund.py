@@ -543,7 +543,8 @@ class Diagnosebericht:
         except Exception as exc:
             logger.debug("UFS2Tool-Fassung nicht lesbar: %s", exc)
 
-        # ProsperoPkg baut und liest die PS5-Pakete. Es passt nicht in
+        # ProsperoPkg liest die PS5-Pakete ("PS4 & PS5 PKG lesen"; gebaut wird
+        # seit dem 02.10.2026 nicht mehr). Es passt nicht in
         # _EINGEBETTETE_WERKZEUGE: Dort wird ``__version__`` aus einer
         # Python-Datei gelesen, ProsperoPkg ist aber ein .NET-Bau. Die Fassung
         # steht deshalb in ``fassung.json`` neben den vier Plattformbauten -
@@ -552,10 +553,8 @@ class Diagnosebericht:
         # Warum das ueberhaupt in den Bericht gehoert: Der Ordner heisst
         # weiterhin "ProsperoPkg-2.5", enthaelt seit v1.9.21 aber
         # LibProsperoPkg 2.6.0. Die Zahl im Namen ist als Versionsangabe also
-        # irrefuehrend - und genau sie entscheidet, ob ein gebautes Paket die
-        # Konsolenkorrekturen der 2.6.0 traegt (U-Block-Ausrichtung,
-        # imagedigs-Digests, u2c-Formel). An der fertigen Programmdatei liess
-        # sich das bisher ueberhaupt nicht ablesen.
+        # irrefuehrend - und an der fertigen Programmdatei liess sich die
+        # wirkliche Fassung bis dahin ueberhaupt nicht ablesen.
         try:
             from ps5_validator.utils import prosperopkg as pp
 
@@ -564,7 +563,7 @@ class Diagnosebericht:
             with io.open(angaben_pfad, encoding="utf-8") as datei:
                 angaben = json.load(datei)
             teile.append(ak.Bestandteil(
-                "LibProsperoPkg (PKG-Bau)",
+                "LibProsperoPkg (PKG lesen)",
                 str(angaben.get("fassung") or "unbekannt"),
                 ak.GITHUB,
                 str(angaben.get("quelle") or "SvenGDK/LibProsperoPKG")))
@@ -813,10 +812,10 @@ class Diagnosebericht:
         return zeilen
 
     def _diagnose_eigene_bibliotheken(self) -> list[str]:
-        """Laeuft der PKG-Bau mit einer eigenen Bibliothek aus ``libs``?
+        """Liest "PS4 & PS5 PKG lesen" mit einer eigenen Bibliothek aus ``libs``?
 
         Wichtig genug fuer den Bericht: Wer eine eigene
-        ``LibProsperoPkg.dll`` hineinlegt, baut ab dann mit einem anderen
+        ``LibProsperoPkg.dll`` hineinlegt, liest ab dann mit einem anderen
         Werkzeug als alle anderen - und ein Fehlerbild waere ohne diese
         Zeile nicht einzuordnen. Steht hier nichts, laeuft das
         mitgelieferte Werkzeug.
@@ -845,7 +844,7 @@ class Diagnosebericht:
         if befund:
             # Der wichtigste Fall: Die Datei liegt da, wird aber abgelehnt.
             # Ohne diese Zeile saehe der Anwender nur, dass "etwas benutzt
-            # wird", und wunderte sich ueber einen .NET-Fehler beim Bau.
+            # wird", und wunderte sich ueber einen .NET-Fehler beim Lesen.
             zeilen.append(z("  Grund der Ablehnung", befund[:160]))
         for name in ungenutzt:
             zeilen.append(z("  Ordner libs/%s" % name,

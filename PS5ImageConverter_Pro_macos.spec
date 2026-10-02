@@ -183,7 +183,8 @@ for _mkpfs_src in _mkpfs_roots:
                                         os.path.basename(_mkpfs_src),
                                         _ohne=('tests',)))
 
-# ProsperoPkg 2.5 - das Werkzeug hinter "PKG bauen". Alle vier Bauten kommen
+# ProsperoPkg 2.5 - das Werkzeug hinter "PS4 & PS5 PKG lesen" ("PKG bauen"
+# ist seit dem 02.10.2026 ausgebaut). Alle vier Bauten kommen
 # mit: Das Programm waehlt zur Laufzeit nach Betriebssystem und Prozessor
 # (prosperopkg.plattformordner()), und wer eine Datei weitergibt, soll sie
 # nicht getrennt danebenlegen muessen. Zusammen rund 6 MB.
@@ -350,7 +351,6 @@ a = Analysis(
         'ps5_validator.utils.logger',
         'ps5_validator.utils.pkg_reader',
         'ps5_validator.utils.pkg_merger',
-        'ps5_validator.utils.gp5_project',
         'ps5_validator.utils.param_manifest',
         'ps5_validator.utils.dump_rename',
         'ps5_validator.utils.i18n',

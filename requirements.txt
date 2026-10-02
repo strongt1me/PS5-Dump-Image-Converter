@@ -1,5 +1,5 @@
 Pillow==12.3.0
-cryptography==50.0.1
+cryptography==50.0.2
 zstandard==0.25.0
 zlib-ng
 tkinterdnd2==0.6.3
@@ -10,5 +10,5 @@ lz4==4.4.5
 pyserial==3.5
 # Weboberflaechen der Konsole im Programm (nur Windows): die .NET-Bruecke und die
 # WebView2-DLLs von Microsoft (aus pywebview; von pywebview selbst wird nichts benutzt)
-pythonnet==3.1.0; sys_platform == "win32"
+pythonnet==3.2.0; sys_platform == "win32"
 pywebview==6.2.1; sys_platform == "win32"

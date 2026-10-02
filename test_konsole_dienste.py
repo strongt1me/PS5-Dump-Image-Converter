@@ -21,6 +21,7 @@ import os
 import socket
 import sys
 import threading
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -195,6 +196,72 @@ class KatalogTests(unittest.TestCase):
         self.assertEqual("http://10.0.0.5:8888/", kd.web_adresse(webfm, "10.0.0.5"))
         self.assertEqual("", kd.web_adresse(webfm, "   "))
         self.assertEqual("", kd.web_adresse(kd.dienst("ftpsrv"), "10.0.0.5"))
+
+
+class WeitereDiensteTests(unittest.TestCase):
+    """Die acht Dienste, die am 02.10.2026 dazukamen.
+
+    Ports und Weboberflaechen stammen aus den Beschreibungen der Autoren (und
+    bei CheatRunner, Game Compressor und gdbsrv zusaetzlich aus einer
+    Zeichenkette im ELF); an der Konsole sind sie noch nicht nachgemessen.
+    """
+
+    #: (Schluessel, Port, Weboberflaeche, Muster der mitgelieferten Datei)
+    ERWARTET = (
+        ("cheatrunner", 9999, "/", "CheatRunner_v*.elf"),
+        ("appdumper", 8081, "/", "ps5-app-dumper_v*.elf"),
+        ("gamecompressor", 5910, "/", "game-compressor_v*.elf"),
+        ("smplusgui", 7777, "/", "SMPlusGui_v*.elf"),
+        ("aria2", 6800, "/", "aria2-v*.elf"),
+        ("zftpd", 2120, "/", "zftpd-ps5-zhttp-v*.elf"),
+        ("gdbsrv", 2159, "", "gdbsrv-ps5_v*.elf"),
+        ("ps5debug", 744, "", "ps5debug-NG_v*.elf"),
+    )
+
+    def test_port_weboberflaeche_und_muster(self):
+        for schluessel, port, web, muster in self.ERWARTET:
+            with self.subTest(dienst=schluessel):
+                eintrag = kd.dienst(schluessel)
+                self.assertIsNotNone(eintrag, "%s fehlt im Katalog" % schluessel)
+                self.assertEqual((port, web, muster),
+                                 (eintrag.port, eintrag.web, eintrag.payload_muster))
+
+    def test_web_adressen(self):
+        erwartet = {"cheatrunner": "http://10.0.0.5:9999/", "appdumper": "http://10.0.0.5:8081/",
+                    "gamecompressor": "http://10.0.0.5:5910/", "smplusgui": "http://10.0.0.5:7777/",
+                    "aria2": "http://10.0.0.5:6800/", "zftpd": "http://10.0.0.5:2120/",
+                    "gdbsrv": "", "ps5debug": ""}
+        for schluessel, adresse in erwartet.items():
+            with self.subTest(dienst=schluessel):
+                self.assertEqual(adresse, kd.web_adresse(kd.dienst(schluessel), "10.0.0.5"))
+
+    def test_die_version_der_mitgelieferten_datei_ist_lesbar(self):
+        """Sonst stuende in der Spalte "Version" nur ein Strich."""
+        ordner = PROJEKT / "helloworld"
+        for schluessel, _port, _web, muster in self.ERWARTET:
+            with self.subTest(dienst=schluessel):
+                dateien = sorted(ordner.glob(muster))
+                self.assertTrue(dateien, "keine Datei zu %s" % muster)
+                self.assertTrue(kd.version_aus_dateiname(dateien[-1].name), dateien[-1].name)
+
+    def test_zftpd_nimmt_nur_die_zhttp_fassung(self):
+        """Nur sie traegt die Weboberflaeche; die schlanke FTP-Fassung darf das Muster nicht treffen."""
+        eintrag = kd.dienst("zftpd")
+        namen = [p.name for p in (PROJEKT / "helloworld").glob(eintrag.payload_muster)]
+        self.assertTrue(namen)
+        self.assertTrue(all("zhttp" in n for n in namen), namen)
+        # Ohne Gruss gefragt: Die Fassung entscheidet bei einer Verbindung, ob FTP oder HTTP
+        # gesprochen wird - ein erwarteter Gruss koennte einen laufenden Dienst als stumm melden.
+        self.assertFalse(eintrag.begruessung)
+
+    def test_bewusst_nicht_aufgenommen(self):
+        """shsrv startet je Verbindung eine Shell (jede Abfrage wuerde einen Prozess erzeugen),
+        MemDBG teilt sich TCP 9020 mit dem zweiten Port des ELF-Loaders, nanoDNS horcht auf UDP."""
+        namen = {d.schluessel for d in kd.KATALOG}
+        for fehlt in ("shsrv", "memdbg", "nanodns", "garlicworker"):
+            with self.subTest(dienst=fehlt):
+                self.assertNotIn(fehlt, namen)
+        self.assertEqual(1, sum(1 for d in kd.KATALOG if d.port == 9020))
 
 
 class AbfrageTests(unittest.TestCase):
@@ -567,6 +634,120 @@ class FensterTests(unittest.TestCase):
         self.assertIn("1.16", os.path.basename(pfad))
         self.assertEqual("", self.app._konsole_payload_datei(""))
         self.assertEqual("", self.app._konsole_payload_datei("gibtesnicht*.elf"))
+
+
+class ProsperoMgrHinweisTests(unittest.TestCase):
+    """Hinweis ohne Knopf waehrend des automatischen Sendens (Wunsch 01.10.2026).
+
+    Erscheint nur, wenn der Dienst wirklich noch gesendet werden muss, und
+    schliesst sich von selbst, sobald :meth:`_konsole_prosperomgr_oeffnen`
+    fertig ist. Die Rueckrufe kommen aus dem Arbeitsfaden ueber
+    ``root.after`` - die kommen nur an, solange eine echte Hauptschleife
+    laeuft (``update()`` allein genuegt nicht; dasselbe Muster wie
+    ``_schleife_bis`` in ``test_bibliothek_seite.py``).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.haupt = _lade_hauptprogramm()
+        cls.app = cls.haupt.PS5ConverterGUI(_WURZEL)
+        cls.app._current_language = "de"
+
+    def setUp(self):
+        if getattr(self.app, "_konsole_tafel", None) is None:
+            self.app._konsole_tafel_bauen()
+        self.app._konsole_tafel_ip.set("127.0.0.1")
+        self.app._konsole_prosperomgr_laeuft = False
+        self.app._konsole_prosperomgr_hinweis_schliessen()
+
+    def tearDown(self):
+        self.app._konsole_prosperomgr_hinweis_schliessen()
+        self.app._konsole_prosperomgr_laeuft = False
+
+    @staticmethod
+    def _uebersicht(laeuft: bool):
+        u = mock.Mock()
+        u.laeuft.side_effect = lambda schl: laeuft if schl == "prosperomgr" else False
+        return u
+
+    @staticmethod
+    def _schleife(sekunden: float, beobachten=None, bis=None) -> None:
+        """Eine echte Hauptschleife fuer hoechstens ``sekunden``.
+
+        ``beobachten`` laeuft bei jedem Takt mit (haelt Zwischenstaende fest,
+        etwa dass das Fenster kurz offen war); ``bis`` beendet die Schleife
+        vorzeitig, sobald es wahr wird.
+        """
+        ende = time.monotonic() + sekunden
+
+        def _takt() -> None:
+            if beobachten is not None:
+                beobachten()
+            if (bis is not None and bis()) or time.monotonic() > ende:
+                _WURZEL.quit()
+            else:
+                _WURZEL.after(10, _takt)
+
+        _WURZEL.after(0, _takt)
+        _WURZEL.mainloop()
+
+    def test_hinweis_erscheint_nur_beim_wirklichen_senden_und_schliesst_sich(self):
+        app = self.app
+
+        def _elfldr_ersatz(_ip, _uebersicht, _texte):
+            time.sleep(0.3)  # haelt den Arbeitsfaden kurz an, wie ein echter Versand
+            return self._uebersicht(True)
+
+        gesehen = {"ja": False}
+
+        def _beobachten():
+            if getattr(app, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+                gesehen["ja"] = True
+
+        with mock.patch.object(self.haupt.konsole_dienste, "pruefen",
+                               return_value=self._uebersicht(False)), \
+                mock.patch.object(app, "_konsole_elfldr_sicherstellen", _elfldr_ersatz), \
+                mock.patch.object(app, "_webansicht_oeffnen") as web:
+            app._konsole_prosperomgr_oeffnen()
+            self._schleife(5.0, beobachten=_beobachten,
+                           bis=lambda: gesehen["ja"] and web.called
+                           and not app._konsole_prosperomgr_laeuft
+                           and app._konsole_prosperomgr_hinweis_fenster is None)
+
+        self.assertTrue(gesehen["ja"], "Der Hinweis ist nie erschienen.")
+        web.assert_called_once()
+        self.assertIsNone(app._konsole_prosperomgr_hinweis_fenster,
+                          "Der Hinweis hat sich nicht von selbst geschlossen.")
+        self.assertFalse(app._konsole_prosperomgr_laeuft)
+
+    def test_kein_hinweis_wenn_der_dienst_schon_laeuft(self):
+        """Wunsch vom 01.10.2026: "Ist der Payload bereits auf der PS5, soll
+        die Meldung nicht erscheinen." Der Lauf muss dabei wirklich bis zur
+        Weboberflaeche kommen - sonst bestuende der Test auch, wenn gar kein
+        Rueckruf ankaeme."""
+        app = self.app
+        gesehen = {"ja": False}
+
+        def _beobachten():
+            if getattr(app, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+                gesehen["ja"] = True
+
+        with mock.patch.object(self.haupt.konsole_dienste, "pruefen",
+                               return_value=self._uebersicht(True)), \
+                mock.patch.object(app, "_konsole_elfldr_sicherstellen") as elfldr, \
+                mock.patch.object(app, "_webansicht_oeffnen") as web:
+            app._konsole_prosperomgr_oeffnen()
+            self._schleife(5.0, beobachten=_beobachten,
+                           bis=lambda: web.called and not app._konsole_prosperomgr_laeuft)
+            # Noch ein paar Takte, damit auch der Abschluss aus ``finally``
+            # durch ist, bevor geurteilt wird.
+            self._schleife(0.2, beobachten=_beobachten)
+
+        web.assert_called_once()
+        elfldr.assert_not_called()
+        self.assertFalse(gesehen["ja"], "Der Hinweis durfte hier nicht erscheinen - "
+                                        "der Dienst lief schon.")
+        self.assertIsNone(app._konsole_prosperomgr_hinweis_fenster)
 
 
 if __name__ == "__main__":

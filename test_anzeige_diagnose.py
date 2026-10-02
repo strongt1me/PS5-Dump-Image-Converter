@@ -190,6 +190,181 @@ class BilderTests(unittest.TestCase):
         self.assertEqual(ad.pruefe_bilder([ad.Bildlage("x")]), [])
 
 
+class HochrechnungsMessungTests(unittest.TestCase):
+    """Eine Hochrechnung ist nur ein Mangel, wenn man sie sieht (02.10.2026).
+
+    Anlass: Auf einem 1920x1200-Schirm (Fenster 1920x1111) meldete der Bericht
+    drei Warnungen - Hintergrund und Inhaltsflaeche mit dem eigenen
+    ChatGPT-Bild des Nutzers (1672x941, +18 %) und die mitgelieferte
+    Seitenleiste (640x1020, +9 %). Gemessen kostete keine davon mehr als 0,8
+    von 255 Stufen; die Groessenzahl allein sagte nichts darueber, ob jemand
+    etwas sieht. Eine Pruefung, die auf jedem normalen Schirm anschlaegt,
+    sagt nichts.
+    """
+
+    def test_der_gemessene_nutzerfall_gibt_nichts(self):
+        """+18 %, Verlust 0,39: das eigene Bild auf dem 1200er Schirm."""
+        lage = ad.Bildlage("Hintergrund", (1672, 941), (1920, 1111), (1920, 1111), 0.39)
+        self.assertEqual(ad.pruefe_bilder([lage]), [])
+
+    def test_die_mitgelieferte_seitenleiste_gibt_nichts(self):
+        lage = ad.Bildlage("Seitenleiste", (640, 1020), (493, 1111), (493, 1111), 0.59)
+        self.assertEqual(ad.pruefe_bilder([lage]), [])
+
+    def test_gemessen_sichtbar_ist_eine_warnung(self):
+        """Das alte bg_19 (1424x752, +35 %) galt als sichtbar weich: Verlust 2,12."""
+        befunde = ad.pruefe_bilder([ad.Bildlage(
+            "Hintergrund", (1424, 752), (1920, 991), (1920, 991), 2.12)])
+        self.assertEqual(_kennungen(befunde), ["bild_hochgerechnet"])
+        self.assertEqual(befunde[0].schwere, ad.WARNUNG)
+        self.assertIn("2.1 von 255 Stufen", befunde[0].text)
+        self.assertIn("+35 %", befunde[0].text)
+
+    def test_zwischenbereich_ist_ein_hinweis(self):
+        """Zwischen den beiden Schwellen: erwaehnt, aber kein Mangel."""
+        lage = ad.Bildlage("Hintergrund", (1672, 941), (1920, 1111), (1920, 1111), 1.5)
+        befunde = ad.pruefe_bilder([lage])
+        self.assertEqual([b.schwere for b in befunde], [ad.HINWEIS])
+        self.assertTrue(ad.pruefe_alles(bilder=[lage]).sauber)
+
+    def test_harte_grenze_gilt_trotz_kleinem_verlust(self):
+        """Die alten 320x1000-Leisten (+54 %) verloren nur 1,0 - und waren weich."""
+        befunde = ad.pruefe_bilder([ad.Bildlage(
+            "Seitenleiste", (320, 1000), (493, 991), (493, 991), 0.98)])
+        self.assertEqual([b.schwere for b in befunde], [ad.WARNUNG])
+
+    def test_ohne_messwert_gilt_die_groessenzahl(self):
+        """Nicht gemessen heisst: wie frueher - jede Hochrechnung ist eine Warnung."""
+        befunde = ad.pruefe_bilder([ad.Bildlage(
+            "Hintergrund", (1920, 1020), (1920, 1111), (1920, 1111))])
+        self.assertEqual([b.schwere for b in befunde], [ad.WARNUNG])
+        self.assertNotIn("Detailverlust", befunde[0].text)
+
+    def test_die_grenzen_im_einzelnen(self):
+        """Die Schwellen sind scharf: ``>`` heisst, der Wert selbst bleibt still."""
+        bewerte = ad.bewerte_hochrechnung
+        self.assertIsNone(bewerte(ad.BILD_FAKTOR_GRENZE, 99.0))
+        self.assertIsNone(bewerte(1.10, ad.BILD_VERLUST_HINWEIS))
+        self.assertEqual(bewerte(1.10, ad.BILD_VERLUST_HINWEIS + 0.01), ad.HINWEIS)
+        self.assertEqual(bewerte(1.10, ad.BILD_VERLUST_WARNUNG), ad.HINWEIS)
+        self.assertEqual(bewerte(1.10, ad.BILD_VERLUST_WARNUNG + 0.01), ad.WARNUNG)
+        self.assertIsNone(bewerte(ad.BILD_FAKTOR_HART, 0.0))
+        self.assertEqual(bewerte(ad.BILD_FAKTOR_HART + 0.01, 0.0), ad.WARNUNG)
+        self.assertEqual(bewerte(1.10, None), ad.WARNUNG)
+
+    def test_beschreibung_nennt_zahl_und_urteil(self):
+        text = ad.beschreibe_hochrechnung(ad.Bildlage(
+            "Hintergrund", (1672, 941), (1920, 1111), (1920, 1111), 0.39))
+        self.assertIn("+18 %", text)
+        self.assertIn("1672x941", text)
+        self.assertIn("0.4 von 255 Stufen", text)
+        self.assertIn("nicht zu sehen", text)
+
+    def test_beschreibung_kennt_alle_drei_urteile(self):
+        def _text(verlust):
+            return ad.beschreibe_hochrechnung(ad.Bildlage(
+                "x", (1672, 941), (1920, 1111), (1920, 1111), verlust))
+        self.assertIn("nicht zu sehen", _text(0.5))
+        self.assertIn("kaum zu sehen", _text(1.5))
+        self.assertIn("sichtbar weich", _text(2.5))
+        self.assertIn("nicht gemessen", ad.beschreibe_hochrechnung(ad.Bildlage(
+            "x", (1672, 941), (1920, 1111), (1920, 1111))))
+
+    def test_beschreibung_schweigt_ohne_hochrechnung(self):
+        self.assertEqual(ad.beschreibe_hochrechnung(ad.Bildlage(
+            "x", (1920, 1200), (1920, 1111), (1920, 1111))), "")
+        self.assertEqual(ad.beschreibe_hochrechnung(ad.Bildlage("x")), "")
+
+    # --- die Messung selbst -------------------------------------------------
+
+    @staticmethod
+    def _verlauf(breite=400, hoehe=300):
+        from PIL import Image
+        bild = Image.new("RGB", (breite, hoehe))
+        bild.putdata([(x * 255 // max(1, breite - 1), 40, 90)
+                      for _y in range(hoehe) for x in range(breite)])
+        return bild
+
+    @staticmethod
+    def _schachbrett(breite=400, hoehe=300):
+        from PIL import Image
+        bild = Image.new("RGB", (breite, hoehe))
+        bild.putdata([(255, 255, 255) if (x + y) % 2 else (0, 0, 0)
+                      for y in range(hoehe) for x in range(breite)])
+        return bild
+
+    def test_ein_glatter_verlauf_verliert_nichts(self):
+        verlust = ad.messe_hochrechnungsverlust(self._verlauf(), 1.18)
+        self.assertLess(verlust, 0.5)
+
+    def test_feine_zeichnung_verliert_viel(self):
+        """Das unterscheidet das Mass von der Groessenzahl: Ein Pixelraster stirbt."""
+        verlust = ad.messe_hochrechnungsverlust(self._schachbrett(), 1.18)
+        self.assertGreater(verlust, 20.0)
+
+    def test_ohne_hochrechnung_kein_verlust(self):
+        self.assertEqual(ad.messe_hochrechnungsverlust(self._schachbrett(), 1.0), 0.0)
+        self.assertEqual(ad.messe_hochrechnungsverlust(self._schachbrett(), 0.5), 0.0)
+
+    def test_ohne_bild_wird_nichts_behauptet(self):
+        self.assertIsNone(ad.messe_hochrechnungsverlust(None, 1.5))
+
+    def test_gemessen_wird_der_mittlere_ausschnitt(self):
+        """Gross gezogen waere die Feinzeichnung weg - gemessen wird in Originalgroesse."""
+        from PIL import Image
+        bild = Image.new("RGB", (600, 600), (30, 30, 60))
+        bild.paste(self._schachbrett(200, 200), (200, 200))
+        vorher = ad._MESS_AUSSCHNITT
+        try:
+            ad._MESS_AUSSCHNITT = (200, 200)
+            mitte = ad.messe_hochrechnungsverlust(bild, 1.18)
+        finally:
+            ad._MESS_AUSSCHNITT = vorher
+        ganz = ad.messe_hochrechnungsverlust(bild, 1.18)
+        self.assertGreater(mitte, ganz * 2)
+
+    # --- der Waechter ueber den echten Bestand ------------------------------
+
+    #: (Fenster, Seitenleiste) wie am Nutzerrechner gemessen (125 %): auf dem
+    #: 1200er Schirm 1920x1111 und 493x1111. QHD mit 150 % macht die Leiste
+    #: 593 breit.
+    SCHIRME = (
+        ("FHD 1080p", (1920, 991), (493, 991)),
+        ("WUXGA 1200p", (1920, 1111), (493, 1111)),
+        ("QHD 1440p", (2560, 1391), (593, 1391)),
+    )
+
+    def test_kein_mitgeliefertes_bild_wird_zum_mangel(self):
+        """Gemessen an allen 40 Bildern: Auf FHD, WUXGA und QHD ist keins sichtbar weich.
+
+        Ein neues Bild, das auf einem dieser Schirme sichtbar weich wuerde (zu
+        klein oder zu fein gezeichnet), faellt hier auf - nicht erst im Bericht
+        eines Anwenders. Auf FHD passen die Bilder genau und melden gar nichts.
+        """
+        from PIL import Image
+
+        ordner = os.path.join(os.path.dirname(HAUPTDATEI), "Hintergrundbilder")
+        namen = sorted(n for n in os.listdir(ordner) if n.lower().endswith(".png"))
+        self.assertGreaterEqual(len(namen), 40, "Bildbestand nicht gefunden")
+        for name in namen:
+            with Image.open(os.path.join(ordner, name)) as roh:
+                bild = roh.convert("RGB")
+            for schirm, fenster, leiste in self.SCHIRME:
+                flaeche = leiste if name.startswith("sidebar_") else fenster
+                lage = ad.Bildlage(name, bild.size, None, flaeche)
+                faktor = ad.hochrechnungsfaktor(lage)
+                verlust = (ad.messe_hochrechnungsverlust(bild, faktor)
+                           if faktor is not None else None)
+                befunde = ad.pruefe_bilder([ad.Bildlage(
+                    name, bild.size, None, flaeche, verlust)])
+                with self.subTest(bild=name, schirm=schirm):
+                    self.assertEqual(
+                        [b for b in befunde if b.schwere != ad.HINWEIS], [],
+                        "%s auf %s: %s" % (name, schirm, befunde))
+                    if schirm == "FHD 1080p":
+                        self.assertEqual(befunde, [])
+
+
 class SkalierungTests(unittest.TestCase):
     """DPI-Bewusstsein, tk scaling und Schriftgröße."""
 
@@ -431,6 +606,18 @@ class QuelltextTests(unittest.TestCase):
 
     def test_ruhendes_fenster_wird_geprueft(self):
         self.assertIn("_hintergruende_nachziehen", self._wache("_on_layout_settled"))
+
+    def test_die_bildmessung_ist_eingehaengt(self):
+        """Ohne sie faellt der Bericht still auf die Groessenzahl zurueck.
+
+        Dann stuenden auf jedem Schirm ueber FHD wieder Warnungen, die niemand
+        sehen kann (02.10.2026) - und kein Test der reinen Regeln wuerde es
+        merken, denn die rechnen mit erfundenen Zahlen.
+        """
+        sammler = self._wache("_diagnose_bilder_sammeln")
+        self.assertIn("messe_hochrechnungsverlust", sammler)
+        self.assertIn("verlust=", sammler)
+        self.assertIn("beschreibe_hochrechnung", self._wache("_diagnose_anzeige"))
 
     def test_diagnosebericht_enthaelt_die_neuen_abschnitte(self):
         """Ausgefuehrt, nicht im Quelltext gesucht.

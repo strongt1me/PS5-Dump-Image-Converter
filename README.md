@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.55-blue)
-![Tests](https://img.shields.io/badge/Tests-4355%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.56-blue)
+![Tests](https://img.shields.io/badge/Tests-4402%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -39,7 +39,7 @@ Quarantäne-Markierung.
 
 | Nr. | Aufgabe | Quelle | Ausgabe |
 | ---: | --- | --- | --- |
-| 1 | Dump-Ordner konvertieren | Dump-Ordner | `.ffpfsc`, `.exfat`, `.ffpkg` |
+| 1 | Dump-Ordner konvertieren | Dump-Ordner | `.ffpfsc`, `.exfat`, `.ffpkg`, Dump-Ordner (mit Einbau) |
 | 2 | FFPFSC konvertieren | `.ffpfsc` | Dump-Ordner, `.exfat`, `.ffpkg` |
 | 3 | exFAT konvertieren | `.exfat` | Dump-Ordner, `.ffpfsc`, `.ffpkg` |
 | 4 | FFPKG konvertieren | `.ffpkg` | Dump-Ordner, `.ffpfsc`, `.exfat` |
@@ -231,7 +231,7 @@ Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 ## Credits
 
 * **PSBrew / Renan Barreto** ([@RenanGBarreto](https://github.com/RenanGBarreto)) – [MkPFS](https://github.com/PSBrew/MkPFS), die PFS-Engine dieses Programms
-* **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „PKG bauen“
+* **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „PS4 & PS5 PKG lesen“
 * **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
 * **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
 * **kerrdec97** – [ps5-exfat-builder](https://github.com/PSBrew/ps5-exfat-builder), Vorarbeit und Orientierung

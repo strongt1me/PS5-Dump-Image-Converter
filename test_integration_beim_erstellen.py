@@ -325,7 +325,8 @@ class OberflaecheTests(unittest.TestCase):
         for name in ("_mode_pack_folder", "_mode_folder_to_exfat", "_mode_folder_to_ffpkg",
                      "_mode_ffpfsc_to_ffpkg", "_mode_exfat_to_ffpkg", "_mode_ffpkg_to_ffpkg",
                      "_mode_ffpkg_to_exfat", "_mode_unpack_to_exfat",
-                     "_mode_unpack_to_game_folder", "_mode_exfat_to_folder"):
+                     "_mode_unpack_to_game_folder", "_mode_exfat_to_folder",
+                     "_mode_ordner_einbau"):
             with self.subTest(weg=name):
                 start = quelle.index(f"    def {name}(")
                 naechste = quelle.index("\n    def ", start + 1)

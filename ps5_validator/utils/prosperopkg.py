@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Ruft ``prosperopkg`` auf - das Werkzeug, das PS5-Pakete baut.
+"""Ruft ``prosperopkg`` auf - das Werkzeug, das PS5-Pakete liest.
 
 Warum ein eigener Prozess und keine eingebundene Bibliothek: Darunter
 liegt LibProsperoPkg unter **GPL-3**. Fest dazugelinkt schlaegt die
@@ -7,14 +7,13 @@ Lizenz auf das ganze Programm durch. Ueber die Prozessgrenze bleibt die
 Trennung sauber - denselben Weg gehen ``mkpfs`` und ``UFS2Tool`` schon.
 Einzelheiten stehen in ``ProsperoPkg-2.5/UPSTREAM.md``.
 
-Das Werkzeug meldet sich zeilenweise. Die letzte Zeile traegt das
-Ergebnis:
+Das Programm nutzt nur noch ``read`` ("PS4 & PS5 PKG lesen"). Die
+Bauwege (``build``, ``homebrew``, ``inspect``) hat die Huelle weiter, aber
+"PKG bauen" ist seit dem 02.10.2026 ausgebaut: Die gebauten Pakete
+installierten sich, starteten auf der Konsole aber nicht (CE-100096-6).
 
-* ``RESULT: READY`` / ``RESULT: NOT_READY`` bei ``inspect``
-* ``RESULT: <Pfad>`` bei ``build``
-
-Alles davor ist Fortschritt und gehoert unveraendert ins
-Protokollfenster.
+Das Werkzeug meldet sich zeilenweise; die letzte Zeile traegt das
+Ergebnis (``RESULT: <Typ>``). Alles davor ist Fortschritt.
 """
 from __future__ import annotations
 
@@ -63,42 +62,6 @@ def plattformordner() -> str:
         return "osx-arm64" if arm else "osx-x64"
     return PLATTFORMORDNER.get(sys.platform, "win-x64")
 
-#: Was ``inspect`` als Ergebnis kennt.
-BEREIT = "READY"
-NICHT_BEREIT = "NOT_READY"
-
-#: Untergrenze der Zeitgrenze eines Spielbaus, in Sekunden.
-MINDESTZEITGRENZE_S = 7200.0
-
-#: Mit diesem Durchsatz rechnet die Zeitgrenze eines Spielbaus. Gemessen sind
-#: 3,3 MB/s (1,05 GB Dump in 319 s mit ``--schnell``, UPSTREAM.md) - ein
-#: Drittel davon laesst langsamen Platten und schlecht komprimierbaren Daten
-#: Luft.
-MINDESTDURCHSATZ_BYTES_S = 1_000_000
-
-
-def zeitgrenze_fuer(quelle: str) -> float:
-    """Die Zeitgrenze fuer einen Bau aus ``quelle`` - sie waechst mit der Groesse.
-
-    Bis zum 17.09.2026 galten fest zwei Stunden. Beim einzigen gemessenen
-    Durchsatz endete damit jeder Bau ab etwa 23 GB Eingabe hart; ein
-    50-GB-Titel braucht rund vier Stunden. "Abbild -> PKG" loeschte danach
-    den entpackten Dump, und jeder neue Versuch scheiterte an derselben Stelle.
-    Die Grenze soll ein haengendes Werkzeug beenden, nicht einen langsamen
-    Bau - abbrechen kann der Anwender jederzeit selbst.
-
-    Returns:
-        Sekunden, mindestens :data:`MINDESTZEITGRENZE_S`.
-    """
-    gesamt = 0
-    for wurzel, _ordner, dateien in os.walk(quelle):
-        for name in dateien:
-            try:
-                gesamt += os.path.getsize(os.path.join(wurzel, name))
-            except OSError:
-                continue
-    return max(MINDESTZEITGRENZE_S, gesamt / float(MINDESTDURCHSATZ_BYTES_S))
-
 
 class ProsperoFehler(Exception):
     """Das Werkzeug fehlt, bricht ab oder antwortet unverstaendlich."""
@@ -126,7 +89,7 @@ def _eigene_bibliotheken_vorziehen(pfad: str) -> str:
 
     Der Normalfall - leerer ``libs``-Ordner - kostet nichts: Dann gibt
     ``einsatzordner`` den mitgelieferten Ordner unveraendert zurueck. Ein
-    Fehler beim Spiegeln darf einen Bau nie verhindern; dann laeuft eben
+    Fehler beim Spiegeln darf einen Aufruf nie verhindern; dann laeuft eben
     das mitgelieferte Werkzeug.
     """
     try:
@@ -203,10 +166,7 @@ def _laufen_lassen(argumente: list[str],
             damit ein Abbruch ihn beenden kann. Ohne das laeuft er weiter,
             wenn der Aufrufer sein Fenster schliesst - und schreibt weiter in
             den Zielordner. Dasselbe Muster benutzt ``ps4_werkzeug.lauf``.
-        zeitgrenze: Nach so vielen Sekunden wird abgebrochen. Fuer einen
-            Spielbau rechnet :func:`bauen` sie aus der Quellgroesse (siehe
-            :func:`zeitgrenze_fuer`): Das Packen rechnet die Kraken-Kompression
-            in reinem C#, und die ist bei einem grossen Titel langsam.
+        zeitgrenze: Nach so vielen Sekunden wird abgebrochen.
 
     Returns:
         ``(Rueckgabewert, Zeilen)``.
@@ -236,8 +196,7 @@ def _laufen_lassen(argumente: list[str],
     # blockiert aber ohne jede Frist: Solange das Werkzeug haengt, ohne seine
     # Ausgabe zu schliessen, wartete der Aufrufer unbegrenzt, und der
     # ``TimeoutExpired``-Zweig war praktisch unerreichbar. Der Fall ist nicht
-    # gedacht - die Dokumentation von bauen() nennt einen Lauf ueber 134
-    # Minuten ohne Ergebnis.
+    # gedacht - ein Bau lief am 29.08.2026 ueber 134 Minuten ohne Ergebnis.
     abgelaufen = threading.Event()
     with subprocess.Popen([programm] + argumente, **anlauf) as lauf:
         if prozess_ablage is not None:
@@ -377,170 +336,3 @@ def _zahl(text: str) -> int:
         return int(str(text).strip())
     except (TypeError, ValueError):
         return 0
-
-
-def pruefen(quelle: str,
-            melden: Callable[[str], None] | None = None,
-            texte: "dict[str, str] | None" = None,
-            prozess_ablage: dict | None = None) -> dict:
-    """Sagt, ob ein Backup als Debug-Paket starten wuerde.
-
-    Args:
-        quelle: Der Ordner des Backups (ein entpackter Dump).
-        melden: Bekommt jede Ausgabezeile.
-        prozess_ablage: Wie bei :func:`bauen` - nimmt den laufenden Prozess
-            auf, damit "Abbrechen" ihn beenden kann. Bis zur Durchsicht
-            (Runde 19, H11-8) fehlte er hier: Der Knopf war waehrend der
-            Pruefung freigeschaltet, beendete aber hoechstens einen alten,
-            laengst fertigen Bauprozess - inspect lief bis zu 600 s weiter.
-
-    Returns:
-        ``{"bereit": bool, "blocker": [(Art, Pfad)], "hinweise": [str],
-        "zeilen": [str]}``
-
-    Raises:
-        ProsperoFehler: Das Werkzeug fehlt oder bricht ab.
-    """
-    code, zeilen = _laufen_lassen(["inspect", "--source", quelle], melden,
-                                  zeitgrenze=600.0, prozess_ablage=prozess_ablage,
-                                  texte=texte)
-    if code != 0:
-        raise ProsperoFehler(
-            "prosperopkg inspect endete mit %d: %s"
-            % (code, " | ".join(zeilen[-3:])))
-
-    blocker = []
-    hinweise = []
-    for zeile in zeilen:
-        if zeile.startswith("BLOCKER:"):
-            rest = zeile.split(":", 1)[1].strip()
-            teile = rest.split("\t", 1)
-            blocker.append((teile[0].strip(),
-                            teile[1].strip() if len(teile) > 1 else ""))
-        elif zeile.startswith("ISSUE:"):
-            hinweise.append(zeile.split(":", 1)[1].strip())
-    return {
-        "bereit": _ergebniszeile(zeilen) == BEREIT,
-        "blocker": blocker,
-        "hinweise": hinweise,
-        "zeilen": zeilen,
-    }
-
-
-def bauen(quelle: str, zielordner: str,
-          melden: Callable[[str], None] | None = None,
-          texte: "dict[str, str] | None" = None,
-          lizenzfrei: bool = True,
-          fake_signieren: bool = False,
-          schnell: bool = True,
-          zeitgrenze: float | None = None,
-          prozess_ablage: dict | None = None) -> str:
-    """Baut ein installierbares Debug-Paket aus einem Backup-Ordner.
-
-    Fehlende Angaben (Content-ID, Title-ID, Titel, Version) holt sich das
-    Werkzeug selbst aus ``sce_sys/param.json`` des Quellordners.
-
-    Args:
-        quelle: Der Ordner des Backups.
-        zielordner: Wohin die ``.pkg`` geschrieben wird.
-        melden: Bekommt jede Ausgabezeile.
-        lizenzfrei: Ohne Lizenzsatz bauen; der Einhaengeschluessel wird
-            aus Content-ID und Passcode abgeleitet. Das ist der Weg fuer
-            ein Debug-Paket, denn ein echter ``rif`` laesst sich am
-            Rechner nicht erzeugen.
-        fake_signieren: Module beim Bauen fake-signieren.
-        schnell: Den teuren Optimal-Parse des Kraken-Encoders abschalten.
-            **Vorgabe an**, und zwar aus Messung: Am 29.08.2026 lief
-            derselbe 1-GB-Dump mit Vorgabe 134 Minuten ohne Ergebnis und
-            mit dieser Option 319 Sekunden durch. Das Paket wird dabei
-            etwas groesser; die Einzelheiten stehen in
-            ``ProsperoPkg-2.5/UPSTREAM.md``.
-        zeitgrenze: Sekunden bis zum Abbruch. ``None`` rechnet sie aus der
-            Groesse der Quelle (:func:`zeitgrenze_fuer`).
-
-    Returns:
-        Der Pfad zur fertigen ``.pkg``.
-
-    Raises:
-        ProsperoFehler: Das Werkzeug fehlt, bricht ab oder nennt keinen Pfad.
-    """
-    if zeitgrenze is None:
-        zeitgrenze = zeitgrenze_fuer(quelle)
-    argumente = ["build", "--source", quelle, "--out", zielordner]
-    if lizenzfrei:
-        argumente.append("--license-free")
-    if fake_signieren:
-        argumente.append("--fake-sign")
-    if schnell:
-        argumente.append("--schnell")
-
-    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
-                                  prozess_ablage=prozess_ablage, texte=texte)
-    if code != 0:
-        raise ProsperoFehler(
-            "prosperopkg build endete mit %d: %s"
-            % (code, " | ".join(zeilen[-3:])))
-    pfad = _ergebniszeile(zeilen)
-    if not pfad or not os.path.isfile(pfad):
-        raise ProsperoFehler(
-            "prosperopkg meldete keinen brauchbaren Pfad: %r" % pfad)
-    return pfad
-
-def homebrew_bauen(quelle: str, zielordner: str,
-                   melden: Callable[[str], None] | None = None,
-                   texte: "dict[str, str] | None" = None,
-                   modulname: str = "",
-                   schnell: bool = True,
-                   zeitgrenze: float = 3600.0,
-                   prozess_ablage: dict | None = None) -> str:
-    """Packt kompiliertes Homebrew in ein installierbares Debug-Paket.
-
-    Der Unterschied zu :func:`bauen` ist nicht bloss der Einstiegspunkt:
-
-    * :func:`bauen` erwartet einen fertigen Anwendungsbaum - einen
-      entpackten Spiel-Dump.
-    * Diese Funktion baut den Baum selbst: Das kompilierte Modul wird zu
-      ``eboot.bin``, ein vorhandener ``sce_sys``-Ordner kommt mit.
-
-    Und vor allem: Das Ergebnis traegt ``RequiresRif = False``. Ein
-    Spiel-Backup scheitert beim Start an der fehlenden Lizenzdatei, die
-    sich am Rechner nicht erzeugen laesst - Homebrew braucht sie nicht.
-    Am 29.08.2026 gemessen: ein 120-KB-Modul in **1 Sekunde** zu einem
-    931-KB-Paket, ``IsLaunchReady`` wahr.
-
-    Args:
-        quelle: Der Ordner mit dem kompilierten Modul. Erwartet wird ein
-            **rohes ELF**; ``sce_sys/`` ist freiwillig, liefert aber
-            Content-ID, Titel und Version, wenn eine ``param.json``
-            darin liegt.
-        zielordner: Wohin die ``.pkg`` geschrieben wird.
-        melden: Bekommt jede Ausgabezeile.
-        modulname: Der Dateiname des Moduls. Leer heisst ``eboot.bin``.
-        schnell: Wie bei :func:`bauen`.
-        zeitgrenze: Sekunden bis zum Abbruch. Eine Stunde genuegt
-            reichlich - Homebrew ist um Groessenordnungen kleiner als
-            ein Spiel.
-
-    Returns:
-        Der Pfad zur fertigen ``.pkg``.
-
-    Raises:
-        ProsperoFehler: Das Werkzeug fehlt, bricht ab oder nennt keinen Pfad.
-    """
-    argumente = ["homebrew", "--source", quelle, "--out", zielordner]
-    if modulname:
-        argumente += ["--module", modulname]
-    if schnell:
-        argumente.append("--schnell")
-
-    code, zeilen = _laufen_lassen(argumente, melden, zeitgrenze,
-                                  prozess_ablage=prozess_ablage, texte=texte)
-    if code != 0:
-        raise ProsperoFehler(
-            "prosperopkg homebrew endete mit %d: %s"
-            % (code, " | ".join(zeilen[-3:])))
-    pfad = _ergebniszeile(zeilen)
-    if not pfad or not os.path.isfile(pfad):
-        raise ProsperoFehler(
-            "prosperopkg meldete keinen brauchbaren Pfad: %r" % pfad)
-    return pfad

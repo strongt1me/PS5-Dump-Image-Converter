@@ -64,9 +64,10 @@ SICHTBARE_SCHREIBER = {
     "_set_status", "set_status", "_status", "_append_to_log", "_protokoll",
     "showinfo", "showwarning", "showerror", "askyesno", "askokcancel",
     "askretrycancel", "start_task", "begin_prepare", "begin_payload",
-    # Seit dem 24.09.2026 (Durchsicht, Runde 13): "protokoll" ist der
-    # Schreiber, den _abbild_zu_dumpordner bekommt; _format_phase_status
-    # setzt seinen Text in die Statuszeile.
+    # Seit dem 24.09.2026 (Durchsicht, Runde 13): "protokoll" war der
+    # Schreiber, den _abbild_zu_dumpordner bekam (bis 02.10.2026, mit "PKG
+    # bauen" ausgebaut); der Name bleibt ein sichtbarer Schreiber.
+    # _format_phase_status setzt seinen Text in die Statuszeile.
     "protokoll", "_format_phase_status",
 }
 
@@ -97,8 +98,6 @@ ERLAUBT: dict[str, str] = {
         "Attrappe in der Diagnose, die einen verbotenen Aufruf sichtbar macht.",
     "_ampr_gen_ablegen ist der lokale Weg":
         "Programmierwaechter gegen einen falschen Aufruf, kein Anwenderfall.",
-    "Firmware ausserhalb 0..99: %r.%r":
-        "BCD-Kodierung fester Auswahlwerte; nur bei einem Programmfehler.",
     "index has too many records":
         "Grenze des AMPRIDX3-Formats (ueber 4 Mrd. Eintraege) - unerreichbar.",
     "index path blob is too large":
@@ -556,9 +555,9 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
         ("abbild_pruefen", 1),
         ("senden", 1),
         ("datei_verarbeiten", 2),
-        ("pruefen", 2),            # app_install und prosperopkg
-        ("bauen", 1),              # "PKG bauen" (seit v1.9.41 auch fuer Abbilder)
-        ("homebrew_bauen", 1),
+        # app_install. Bis 02.10.2026 auch prosperopkg.pruefen, .bauen und
+        # .homebrew_bauen - die gingen mit "PKG bauen".
+        ("pruefen", 1),
         ("zusammenfassung", 1),    # param_check.Befund
         ("herunterfahren", 1),     # ueber _system_herunterfahren
         # Seit der Durchsicht, Runde 18: die Einzelbefunde und die

@@ -46,7 +46,6 @@ from ps5_validator.utils import abbild_metadaten            # noqa: E402
 from ps5_validator.utils import abbild_pruefen              # noqa: E402
 from ps5_validator.utils import ampr_assetpakete as ap      # noqa: E402
 from ps5_validator.utils import pkg_merger                  # noqa: E402
-from ps5_validator.utils import prosperopkg                 # noqa: E402
 from ps5_validator.utils.i18n import STRINGS                # noqa: E402
 from ps5_validator.utils.pkg_reader import FIH_MAGIC        # noqa: E402
 
@@ -588,12 +587,6 @@ class WartenAbbruchTests(unittest.TestCase):
                 self.assertIsInstance(ober, ast.If,
                                       "Der Rueckgabewert wird nicht ausgewertet.")
 
-    def test_pkg_bauen_wartet_ohne_abbruch(self) -> None:
-        """Dort wird NACH einem Abbruch gewartet - sonst loescht es, waehrend MkPFS schreibt."""
-        rufe = _aufrufe(_methode("_show_pkg_bauen"), "_wait_for_pending_mkpfs_background")
-        self.assertEqual(1, len(rufe))
-        self.assertNotIn("abbruch", _schluesselwoerter(rufe[0]))
-
 
 # ---------------------------------------------------------------- H8-7
 
@@ -688,42 +681,6 @@ class BibliothekSucheTests(unittest.TestCase):
         self.assertEqual(1, len(bindungen))
         rueckruf = _innere(seite, bindungen[0].args[1].id)
         self.assertIn('ansicht["suchlauf"] += 1', ast.unparse(rueckruf).replace("'", '"'))
-
-
-# ---------------------------------------------------------------- H11-8
-
-class PkgPruefenTests(unittest.TestCase):
-    """H11-8: "Abbrechen" beim Pruefen beendete den falschen Prozess."""
-
-    def test_pruefen_legt_den_prozess_ab(self) -> None:
-        ablage: dict = {}
-        gesehen: dict = {}
-
-        def _laufen(argumente, melden=None, zeitgrenze=0.0, prozess_ablage=None,
-                    texte=None):
-            gesehen["ablage"] = prozess_ablage
-            return 0, ["RESULT: READY"]
-
-        with mock.patch.object(prosperopkg, "_laufen_lassen", _laufen):
-            prosperopkg.pruefen("D:\\Dump", prozess_ablage=ablage)
-        self.assertIs(ablage, gesehen.get("ablage"))
-
-    def test_das_fenster_gibt_seine_ablage(self) -> None:
-        fenster = _methode("_show_pkg_bauen")
-        pruefen = _innere(fenster, "_pruefen")
-        rufe = _aufrufe(pruefen, "pruefen")
-        self.assertEqual(1, len(rufe))
-        self.assertIn("prozess_ablage", _schluesselwoerter(rufe[0]))
-        self.assertIn('laeuft["prozess"] = None',
-                      ast.unparse(pruefen).replace("'", '"'),
-                      "Ein alter Bauprozess bleibt in der Ablage stehen.")
-
-    def test_schliessen_waehrend_der_pruefung_fragt_nicht_nach_dem_bau(self) -> None:
-        schliessen = _innere(_methode("_show_pkg_bauen"), "_beim_schliessen")
-        text = ast.unparse(schliessen)
-        self.assertIn("pruefung", text)
-        self.assertLess(text.index("pruefung"), text.index("askyesno"),
-                        "Die Frage nach dem Bau kommt vor der Unterscheidung.")
 
 
 # ---------------------------------------------------------------- H7-9
@@ -954,8 +911,7 @@ class TexteTests(unittest.TestCase):
     NEU = ("pkg_merger.log_abgebrochen", "pkg_merger.abort_confirm",
            "pkg_merger.status_stopping", "pkg_merger.status_aborted",
            "verify.abgebrochen", "log.abschlusspruefung_abgebrochen",
-           "log.warten_abgebrochen", "pkgbau.status_check_aborted",
-           "status.reste_raeumen")
+           "log.warten_abgebrochen", "status.reste_raeumen")
 
     def test_beide_sprachen(self) -> None:
         import string

@@ -145,7 +145,6 @@ from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
 from ps5_validator.utils import webansicht
-from ps5_validator.utils import sony_sdk
 from ps5_validator.utils import werkzeuge_bereitstellen
 from ps5_validator.utils import ps5_backport
 from ps5_validator.utils import titel_online
@@ -688,7 +687,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.55"
+APP_VERSION = "v1.9.56"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3577,7 +3576,6 @@ class PS5ConverterGUI:
         ("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent"),
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.dump_rename", "_show_dump_rename"),
-        ("titlebar.pkg_bauen", "_show_pkg_bauen"),
         ("titlebar.pkg_reader", "_show_pkg_reader"),
         ("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
         ("titlebar.appinstall", "_show_app_install"),
@@ -3635,7 +3633,9 @@ class PS5ConverterGUI:
     }
 
     _MODE_TARGET_OPTIONS: dict[str, tuple[str, ...]] = {
-                "pack_folder": ("ffpfsc", "ffpfs", "exfat", "ffpkg"),
+        # "folder" seit dem 01.10.2026 - nur mit Einbau sichtbar, siehe
+        # _get_target_options. Bewusst hinten: Vorgabe bleibt .ffpfsc.
+        "pack_folder": ("ffpfsc", "ffpfs", "exfat", "ffpkg", "folder"),
         "unpack_to_exfat": ("folder", "ffpfsc", "ffpfs", "exfat", "ffpkg"),
         # .exfat steht hier seit v1.9.35: Aufgabe 3 hat eine .exFAT als
         # Quelle, und ein Backup mit Asset-Pack nachzuruesten gehoert genau
@@ -4268,9 +4268,16 @@ class PS5ConverterGUI:
         # Merger: Ohne Zaehler faellt das Beenden ohne Rueckfrage durch, und ein
         # abgebrochener RETR legt ftpsrv auf der Konsole lahm.
         self._bibliothek_uebertragungen = 0
-        # True, solange "Abbild -> PKG" das Kennzeichen is_running fuer seine
-        # Extraktion haelt (siehe _abbild_zu_dumpordner).
-        self._abbild_pkg_haelt_is_running = False
+        # Laufende AMPR-Mitschnitt-Assistenten: Kennung -> {"fenster",
+        # "abbrechen"}. Ihr Faden stellt im finally zurueck, was er an der
+        # Konsole umgestellt hat - das Beenden wartet darauf (on_closing,
+        # _auf_mitschnitt_warten), ein zweiter Klick aufs Kreuz nicht mehr.
+        self._mitschnitt_laeufe: dict[int, dict[str, Any]] = {}
+        self._beenden_wartet_auf_mitschnitt = False
+        self._mitschnitt_nicht_abwarten = False
+        # Was eine Rueckstellung offen liess - das Beenden zeigt es, bevor
+        # das Hauptprotokoll mit dem Fenster verschwindet.
+        self._mitschnitt_rueckstellung_offen = ""
         # Was beim Start einer Aufgabe galt - fuer den Aufgabenfaden, der keine
         # Tk-Variablen lesen darf. None/"" = noch kein Lauf.
         self._lauf_zielformat: str | None = None
@@ -4992,6 +4999,19 @@ class PS5ConverterGUI:
                 mode = str(self.current_mode.get() or "")
             except (AttributeError, tk.TclError):
                 mode = ""
+        if (schluessel == "folder" and mode in self._MODE_TARGET_OPTIONS
+                and mode != "batch_convert"):
+            # Dump-Ordner -> Dump-Ordner gibt es nur mit Einbau (seit
+            # 01.10.2026). Ohne Zusatz wirkte "Dump-Ordner" als Ziel von
+            # "Dump-Ordner umwandeln" wie ein Versehen.
+            if not quelle:
+                try:
+                    quelle = str(self.source_path.get() or "")
+                except (AttributeError, tk.TclError):
+                    quelle = ""
+            if mode == "pack_folder" or (quelle and os.path.isdir(quelle)):
+                return "%s %s" % (self._t("format.folder"),
+                                  self._t("format.folder_einbau_suffix"))
         zusatz = self._SELBSTZIEL_ZUSATZ.get(schluessel, "")
         if not zusatz or schluessel not in self._SAME_FORMAT_ALLOWED.get(mode, ()):
             return self._t("format.%s" % schluessel)
@@ -6403,6 +6423,11 @@ class PS5ConverterGUI:
             ziel = int(quelle * faktor)
 
         mit_kopie = bool(self._integration_gewuenscht())
+        if target_type == "folder" and os.path.isdir(src):
+            # Dump-Ordner -> Dump-Ordner: Die Sicherung entsteht im Ziel (oben
+            # schon gezaehlt), eine Arbeitskopie im Arbeitsordner gibt es auf
+            # diesem Weg nicht (_mode_ordner_einbau).
+            mit_kopie = False
         temp = max(im_arbeitsordner,
                    int(quelle * (self._PLATZFAKTOR_TEMP_MIT_KOPIE if mit_kopie
                                  else self._PLATZFAKTOR_TEMP_OHNE)))
@@ -6744,6 +6769,14 @@ class PS5ConverterGUI:
         if mode not in self._MODE_TARGET_OPTIONS:
             return True
         if not target_type or not self._integration_gewaehlt():
+            return True
+        # Dump-Ordner -> Dump-Ordner (seit 01.10.2026): nichts wird
+        # eingehuellt oder neu gepackt - eingebaut wird im Ordner selbst
+        # (_mode_ordner_einbau), und ob im Original oder in einer Sicherung,
+        # fragt erst der Lauf. Ohne diese Weiche hielte die Zeile unten den
+        # Ordner fuer ein Selbst-Ziel und meldete "wird neu gepackt".
+        if (target_type == "folder" and mode != "batch_convert"
+                and self._resolve_mode_source_type(mode, src) == "folder"):
             return True
         # Selbst-Ziele an der GENAUEN Endung erkennen - so, wie der
         # Aufgabenfaden sie in _conversion_block_reason prueft. Bis zum
@@ -7117,55 +7150,6 @@ class PS5ConverterGUI:
             logger.debug("Speicherbedarf-Schätzung für Entpacken fehlgeschlagen: %s", exc)
             return None
 
-    @staticmethod
-    def _platz_reicht_fuer(arbeit: str, ziel: str, noetig_arbeit: int,
-                           noetig_ziel: int) -> bool:
-        """Reicht der Platz fuer Arbeits- und Zielordner - auch zusammen?
-
-        Liegen beide auf demselben Datentraeger, stehen der entpackte Dump
-        und das Paket dort zugleich: Der Bedarf addiert sich. Bis zum
-        24.09.2026 wurde jeder Bedarf fuer sich gegen denselben freien Platz
-        gehalten, und ein Lauf, der die Summe brauchte, ging ohne Warnung
-        los (Durchsicht, H11-2).
-
-        Raises:
-            OSError: Wenn sich der Platz nicht messen laesst.
-        """
-        def _vorhanden(pfad: str) -> str:
-            pfad = os.path.abspath(pfad or ".")
-            while not os.path.isdir(pfad):
-                eltern = os.path.dirname(pfad)
-                if eltern == pfad:
-                    break
-                pfad = eltern
-            return pfad
-
-        ort_arbeit, ort_ziel = _vorhanden(arbeit), _vorhanden(ziel)
-        frei_arbeit = shutil.disk_usage(ort_arbeit).free
-        if os.stat(ort_arbeit).st_dev == os.stat(ort_ziel).st_dev:
-            return frei_arbeit >= noetig_arbeit + noetig_ziel
-        frei_ziel = shutil.disk_usage(ort_ziel).free
-        return frei_arbeit >= noetig_arbeit and frei_ziel >= noetig_ziel
-
-    def _abbild_pkg_platzbedarf(self, quelle: str) -> "tuple[int, int]":
-        """``(Arbeitsordner, Zielordner)`` in Bytes fuer "Abbild -> PKG".
-
-        Der entpackte Dump liegt im Arbeitsordner, das Paket entsteht daraus
-        im Ziel. Beides richtet sich nach der **Dumpgroesse**, nicht nach der
-        Datei: Bei einer komprimierten .ffpfsc ist der Dump rund doppelt so
-        gross (Pruefmatrix: 24,22 GB .ffpfsc aus 51,08 GB Dump). Bis v1.9.24
-        rechnete die Pruefung mit der Dateigroesse und liess dort halb so viel
-        Platz durchgehen.
-
-        Wirft ``OSError``, wenn die Quelle nicht lesbar ist.
-        """
-        abbild = os.path.getsize(quelle)
-        # Spitzenbedarf beim Entpacken: bis zu 2x die logische Groesse (inneres
-        # Abbild und Dateien zugleich), siehe _estimate_unpack_space_requirement.
-        spitze = int(self._estimate_unpack_space_requirement(quelle) or 0)
-        dump = max(abbild, spitze // 2)
-        return int(max(dump * 1.1, spitze)), int(dump * 1.4)
-
     def _get_selected_target_type(self) -> str:
         # Im Aufgabenfaden gilt, was beim Start gewaehlt war (_launch_task
         # haelt es fest). Die Tk-Variable darf dort nicht gelesen werden - und
@@ -7277,8 +7261,19 @@ class PS5ConverterGUI:
             # genau diese Zeile den Weg - "Quelle und Zielformat sind
             # identisch" -, bevor _umhuellenden_weg_klaeren ihn erreichte. Die
             # Liste bot ihn an, starten liess er sich nie.
-            if not (mode in self._MODE_TARGET_OPTIONS
-                    and self._selbstziel_erlaubt()):
+            #
+            # Dump-Ordner -> Dump-Ordner (seit 01.10.2026) nach derselben
+            # Regel wie die Auswahlliste (_get_target_options): mit jedem
+            # Einbau, nicht nur mit denen von _selbstziel_erlaubt.
+            # _integration_gewaehlt liest im Arbeitsfaden den Stand vom Start.
+            if genau == "folder":
+                erlaubt = (mode in self._MODE_TARGET_OPTIONS
+                           and mode != "batch_convert"
+                           and self._integration_gewaehlt())
+            else:
+                erlaubt = (mode in self._MODE_TARGET_OPTIONS
+                           and self._selbstziel_erlaubt())
+            if not erlaubt:
                 return self._t("conversion.same_format")
         if target_type not in self._MODE_TARGET_OPTIONS.get("universal_convert", ()):
             return self._t("conversion.target_format_unknown")
@@ -9047,7 +9042,16 @@ class PS5ConverterGUI:
         self._webseite_sichtbarkeit(gewaehlt == "web")
 
     def _konsole_knopf_hervorheben(self, seite: str) -> None:
-        """Hebt den Knopf der gezeigten Seite hervor - die anderen Seitenknoepfe nicht."""
+        """Hebt den Knopf der gezeigten Seite hervor - die anderen Seitenknoepfe nicht.
+
+        Setzt ``activebackground``/``activeforeground`` immer mit, nicht nur
+        ``bg``/``fg``: ``RoundedButton._redraw`` zeichnet waehrend die Maus
+        auf dem Knopf steht mit ``activebackground`` statt ``bg``. Blieb das
+        unveraendert auf der Hervorhebungsfarbe aus dem Aufbau stehen, zeigte
+        ein per zweitem Druck abgewaehlter Umschalter (Spielstaende,
+        Bibliothek) sich weiter hervorgehoben, solange die Maus - vom
+        Klick her - noch darauf stand.
+        """
         c = self._COLORS
         if seite == "web":
             seite = getattr(self, "_webseite_herkunft", "uebersicht")
@@ -9060,9 +9064,13 @@ class PS5ConverterGUI:
             try:
                 if schluessel == hervor:
                     knopf.config(bg=c["fg_accent"], fg=c["bg_main"],
+                                 activebackground=c["fg_accent"],
+                                 activeforeground=c["bg_main"],
                                  outline=c["border"])
                 else:
                     knopf.config(bg=c["bg_card"], fg=c["fg_primary"],
+                                 activebackground=c["bg_card"],
+                                 activeforeground=c["fg_primary"],
                                  outline=c["border"])
             except tk.TclError:
                 pass
@@ -10160,6 +10168,59 @@ class PS5ConverterGUI:
         schreibt sie ins Hauptprotokoll - nur aus dem Hauptfaden aufzurufen."""
         self._append_to_log(self._t(schluessel, **werte) + "\n")
 
+    def _konsole_prosperomgr_hinweis_zeigen(self) -> None:
+        """Hinweis ohne Knopf, waehrend der Prospero-Manager-Payload automatisch
+        gesendet wird - nur aus dem Hauptfaden aufzurufen.
+
+        Wunsch des Nutzers vom 01.10.2026: Laeuft der Dienst noch nicht, soll
+        das waehrend des automatischen Sendens sichtbar sein, ohne dass der
+        Nutzer etwas bestaetigen muss (kein Knopf). Schliesst sich von selbst
+        (:meth:`_konsole_prosperomgr_hinweis_schliessen`), sobald
+        :meth:`_konsole_prosperomgr_oeffnen` fertig ist - gleich ob mit oder
+        ohne Erfolg. Laeuft der Dienst schon, ruft niemand diese Methode.
+        """
+        if getattr(self, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+            return
+        c = self._COLORS
+        titel = self._t("konsole.prosperomgr_hinweis_titel")
+        fenster = self._build_modern_toplevel(titel, 460, 210, resizable=False)
+        self._build_modern_header(fenster, titel)
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=20, pady=4)
+        koerper.pack(fill="both", expand=True)
+        tk.Label(koerper, text=self._t("konsole.prosperomgr_hinweis_text"),
+                 bg=c["bg_main"], fg=c["fg_secondary"], justify="left",
+                 anchor="w", font=(UI_SCHRIFT, pt(9)),
+                 wraplength=pt(410)).pack(fill="x", anchor="w")
+        balken = ttk.Progressbar(koerper, mode="indeterminate")
+        balken.pack(fill="x", pady=(14, 4))
+        balken.start(12)
+        try:
+            fenster.lift()
+        except tk.TclError:
+            pass
+        self._konsole_prosperomgr_hinweis_fenster = fenster
+        self._konsole_prosperomgr_hinweis_balken = balken
+
+    def _konsole_prosperomgr_hinweis_schliessen(self) -> None:
+        """Schliesst den Hinweis aus :meth:`_konsole_prosperomgr_hinweis_zeigen`
+        wieder - nur aus dem Hauptfaden aufzurufen; ohne Wirkung, wenn er nie
+        offen war oder der Nutzer ihn schon selbst weggeklickt hat."""
+        balken = getattr(self, "_konsole_prosperomgr_hinweis_balken", None)
+        self._konsole_prosperomgr_hinweis_balken = None
+        if balken is not None:
+            try:
+                balken.stop()
+            except tk.TclError:
+                pass
+        fenster = getattr(self, "_konsole_prosperomgr_hinweis_fenster", None)
+        self._konsole_prosperomgr_hinweis_fenster = None
+        if fenster is not None:
+            try:
+                if fenster.winfo_exists():
+                    fenster.destroy()
+            except tk.TclError:
+                pass
+
     def _konsole_prosperomgr_oeffnen(self) -> None:
         """"4. Prospero Manager": Payload sicherstellen, dann die Weboberflaeche oeffnen.
 
@@ -10172,6 +10233,11 @@ class PS5ConverterGUI:
         "Konsole & Payloads"), danach das Payload ueber ihn schicken
         (:meth:`_konsole_dienst_starten`, derselbe generische Weg wie fuer
         jeden anderen Katalogeintrag).
+
+        Muss dafuer wirklich gesendet werden, zeigt
+        :meth:`_konsole_prosperomgr_hinweis_zeigen` einen Hinweis ohne Knopf,
+        solange das laeuft (Wunsch vom 01.10.2026) - er schliesst sich von
+        selbst im ``finally``. Lief der Dienst schon, erscheint er nicht.
         """
         if getattr(self, "_konsole_tafel", None) is None:
             self._konsole_tafel_bauen()
@@ -10203,6 +10269,11 @@ class PS5ConverterGUI:
                 uebersicht = konsole_dienste.pruefen(ip)
                 bereit = uebersicht.laeuft("prosperomgr")
                 if not bereit:
+                    # Nur jetzt wird wirklich gesendet - der Hinweis gilt nur
+                    # fuer diesen Fall (Wunsch vom 01.10.2026: "Ist der
+                    # Payload bereits auf der PS5, soll die Meldung nicht
+                    # erscheinen").
+                    self._hauptfaden_planen(self._konsole_prosperomgr_hinweis_zeigen)
                     uebersicht = self._konsole_elfldr_sicherstellen(ip, uebersicht, texte)
                     bereit = uebersicht.laeuft("prosperomgr")
                 if not bereit:
@@ -10219,6 +10290,7 @@ class PS5ConverterGUI:
                 _melden("log.fehler_zeile", text=str(exc))
             finally:
                 self._konsole_prosperomgr_laeuft = False
+                self._hauptfaden_planen(self._konsole_prosperomgr_hinweis_schliessen)
 
                 def _wieder_frei() -> None:
                     if knopf is not None and knopf.winfo_exists():
@@ -10832,6 +10904,14 @@ class PS5ConverterGUI:
         # und Zielformat sind identisch"), und in der Umwandlung fehlte das
         # erlaubte ".ffpfsc".
         genau = self._detect_source_format(source_path) if source_path else ""
+        # Dump-Ordner -> Dump-Ordner nur mit Einbau (Wunsch vom 01.10.2026):
+        # AMPR EMU (jede Methode, PlayGo haengt daran) oder BACKPORT. Ohne
+        # Einbau waere es eine blosse Kopie. Aufgabe 1 hat immer einen Ordner
+        # als Quelle - dort gilt die Regel auch ohne gewaehlte Quelle.
+        if mode != "batch_convert" and (mode == "pack_folder" or genau == "folder"):
+            if self._integration_gewaehlt():
+                return options
+            return tuple(t for t in options if t != "folder")
         # Die Sammelkonvertierung hat keinen einzelnen Quelltyp - ihre Liste
         # nach dem Format der ersten Datei zu beschneiden waere falsch.
         if not genau or mode == "batch_convert":
@@ -11223,6 +11303,19 @@ class PS5ConverterGUI:
 
     def on_closing(self) -> None:
         """Behandelt das Schließen des Fensters sicher."""
+        # Zweiter Klick, waehrend das Beenden noch auf die Rueckstellung des
+        # Mitschnitt-Assistenten wartet: Der Abbau laeuft schon - es geht nur
+        # noch darum, ob er das Warten aufgibt.
+        if getattr(self, "_beenden_wartet_auf_mitschnitt", False):
+            if self._mitschnitt_laeuft() and messagebox.askyesno(
+                    self._t("dialog.title.quit"),
+                    self._t("amprmitschnitt.quit_now_confirm"),
+                    default="no", parent=self.root):
+                logger.warning("Beenden, ohne die Rueckstellung des "
+                               "Mitschnitt-Assistenten abzuwarten.")
+                self._mitschnitt_nicht_abwarten = True
+            return
+
         shutdown_mode = ""
         shutdown_src = ""
         shutdown_dst = ""
@@ -11253,19 +11346,47 @@ class PS5ConverterGUI:
             # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
             return
 
-        # Werkzeugfenster auf ihrem eigenen Weg schliessen. "PKG bauen",
-        # "PKG entpacken" und der PS4-Wandler fragen dort
+        # Der AMPR-Mitschnitt-Assistent hat an der Konsole umgestellt
+        # (ShadowMount+-Schluessel, Aufnahme-Bibliothek); zurueck stellt sein
+        # Faden im finally. Endete das Programm vorher, bliebe die Konsole
+        # so. Gefragt wird hier, abgebrochen erst, wenn auch die
+        # Werkzeugfenster zugestimmt haben - und der Abbau unten wartet auf
+        # ihn. Sein eigenes Fenster bleibt dafuer stehen und faellt danach
+        # von selbst zu.
+        mitschnitt = self._mitschnitt_laeuft()
+        if mitschnitt and not messagebox.askyesno(
+                self._t("dialog.title.quit"),
+                self._t("amprmitschnitt.quit_confirm"),
+                default="no", parent=self.root):
+            return
+        mitschnitt_fenster = [lauf["fenster"] for lauf in list(
+            getattr(self, "_mitschnitt_laeufe", {}).values())]
+
+        def _stellt_zurueck(fenster) -> bool:
+            return any(fenster is f for f in mitschnitt_fenster)
+
+        # Werkzeugfenster auf ihrem eigenen Weg schliessen. "PS4 PKG -> Dump
+        # Ordner" und der PS4-Wandler fragen dort
         # nach, wenn gerade etwas laeuft, und beenden ihren Unterprozess. Bis
         # v1.9.24 zerstoerte root.destroy() sie ohne diese Handler: prosperopkg
         # rechnete unsichtbar weiter und schrieb ins Ziel, und der entpackte
         # Dump (zweistellige GB) blieb im Arbeitsordner liegen. Lehnt ein
         # Fenster ab, bleibt das Programm offen - und die Hauptaufgabe laeuft
         # weiter, weil sie erst danach angehalten wird.
-        for _befehl in list(getattr(self, "_werkzeugfenster", {})):
-            self._werkzeugfenster_schliessen(_befehl)
-        if any(self._fenster_lebt(_w)
+        for _befehl, _w in list(getattr(self, "_werkzeugfenster", {}).items()):
+            if not _stellt_zurueck(_w):
+                self._werkzeugfenster_schliessen(_befehl)
+        if any(self._fenster_lebt(_w) and not _stellt_zurueck(_w)
                for _w in getattr(self, "_werkzeugfenster", {}).values()):
             return
+
+        if mitschnitt:
+            self._mitschnitt_rueckstellung_offen = ""
+            self._mitschnitt_nicht_abwarten = False
+            self._beenden_wartet_auf_mitschnitt = True
+            for _lauf in list(getattr(self, "_mitschnitt_laeufe", {}).values()):
+                _lauf["abbrechen"]()
+            self._append_to_log(self._t("amprmitschnitt.quit_waiting") + "\n")
 
         if laeuft_etwas:
             self._append_to_log(self._t('log.auto.0018'))
@@ -11288,6 +11409,18 @@ class PS5ConverterGUI:
 
         # Dismount + destroy in Hintergrund-Thread damit GUI nicht einfriert
         def _shutdown():
+            # Zuerst die Rueckstellung des Mitschnitt-Assistenten: Sie braucht
+            # die Konsole und das Fenster noch. Blieb dabei etwas offen, muss
+            # es der Anwender lesen koennen, bevor das Hauptprotokoll mit dem
+            # Fenster verschwindet.
+            if mitschnitt:
+                if self._auf_mitschnitt_warten():
+                    offen = getattr(self, "_mitschnitt_rueckstellung_offen", "")
+                    if offen:
+                        self._im_hauptfaden_warten(lambda: messagebox.showwarning(
+                            self._t("amprmitschnitt.title"), offen,
+                            parent=self.root))
+                self._beenden_wartet_auf_mitschnitt = False
             # Ein beim Schliessen abgebrochener PKG-Merge raeumt seine .tmp
             # noch weg - erst danach darf der Prozess enden.
             self._auf_pkg_merge_warten()
@@ -15251,7 +15384,7 @@ class PS5ConverterGUI:
         """
         candidate = ""
         # self.temp_path ist eine Tk-Variable und darf nur im Hauptfaden
-        # gelesen werden - aus einem Arbeitsfaden (z.B. Abbild->PKG) wirft Tk
+        # gelesen werden - aus einem Arbeitsfaden (z.B. einer Aufgabe) wirft Tk
         # sonst "main thread is not in main loop". Dort faellt der Wert auf die
         # gespeicherte Einstellung zurueck, die beim letzten Hauptfaden-Lauf
         # aus genau dieser Variable geschrieben wurde.
@@ -21323,6 +21456,8 @@ class PS5ConverterGUI:
             return False
         if self._arbeit_laeuft():
             return False                                   # es laeuft noch etwas
+        if self._mitschnitt_laeuft():
+            return False                                   # muss noch zurueckstellen
         if not bool(getattr(self, "_last_task_ok", False)):
             return False                                   # Fehler oder Abbruch
         if getattr(self, "_shutdown_pending", False):
@@ -21338,6 +21473,39 @@ class PS5ConverterGUI:
         return bool(getattr(self, "is_running", False)
                     or int(getattr(self, "_pkg_merge_laeuft", 0) or 0) > 0
                     or int(getattr(self, "_bibliothek_uebertragungen", 0) or 0) > 0)
+
+    def _mitschnitt_laeuft(self) -> bool:
+        """Laeuft ein AMPR-Mitschnitt-Assistent - samt seiner Rueckstellung?
+
+        Bewusst nicht Teil von :meth:`_arbeit_laeuft`: Beim Beenden hat er
+        eine eigene Rueckfrage, die sagt, was mit der Konsole geschieht.
+        """
+        return bool(getattr(self, "_mitschnitt_laeufe", None))
+
+    def _auf_mitschnitt_warten(self) -> bool:
+        """Wartet, bis jeder Mitschnitt-Assistent zurueckgestellt hat.
+
+        Sein Faden nimmt im ``finally`` zurueck, was er an der Konsole
+        umgestellt hat (ShadowMount+-Schluessel, Aufnahme-Bibliothek). Bis
+        zum 01.10.2026 wartete das Beenden nicht: Das Fenster des
+        Assistenten lehnte das Schliessen ab, solange er zurueckstellte, und
+        das Programm blieb einfach offen.
+
+        Keine feste Frist - jeder FTP-Schritt hat seine eigene (30 s), und
+        ein zweiter Klick aufs Kreuz beendet sofort
+        (``_mitschnitt_nicht_abwarten``).
+
+        Nie im Fensterfaden aufrufen: Der Assistent meldet sich ueber das
+        Fenster und wartete dann auf den, der auf ihn wartet.
+
+        Returns:
+            True, wenn keiner mehr laeuft; False, wenn sofort beendet wird.
+        """
+        while self._mitschnitt_laeuft():
+            if getattr(self, "_mitschnitt_nicht_abwarten", False):
+                return False
+            time.sleep(0.05)
+        return True
 
     #: So lange wartet das Programmende hoechstens auf einen abgebrochenen
     #: PKG-Merge (siehe :meth:`_auf_pkg_merge_warten`).
@@ -21374,6 +21542,12 @@ class PS5ConverterGUI:
         """Startet den Countdown, wenn alle Bedingungen erfuellt sind."""
         try:
             if not self._should_shutdown_after_task():
+                # Nicht still: Wer "Herunterfahren nach Erfolg" gewaehlt hat,
+                # soll wissen, warum der Rechner anbleibt.
+                if (self._mitschnitt_laeuft()
+                        and self._shutdown_after_success_enabled()
+                        and bool(getattr(self, "_last_task_ok", False))):
+                    self._append_to_log(self._t("shutdown.log_mitschnitt") + "\n")
                 return
             self._start_shutdown_countdown()
         except Exception as exc:
@@ -21443,7 +21617,7 @@ class PS5ConverterGUI:
             # Bis zum 24.09.2026 zaehlte der Countdown trotzdem zu Ende, und
             # das Aufraeumen setzte die neue Aufgabe mitten im Lauf auf "aus"
             # (Durchsicht, H5-12).
-            if self._arbeit_laeuft():
+            if self._arbeit_laeuft() or self._mitschnitt_laeuft():
                 self._append_to_log(self._t("shutdown.log_neue_arbeit") + "\n")
                 _abbrechen()
                 return
@@ -21593,8 +21767,7 @@ class PS5ConverterGUI:
         seinen eigenen Erfolg, raeumte die Arbeitsordner des neuen ab und
         setzte im finally ``is_running = False`` - der neue Lauf brach ab.
 
-        Ebenso zaehlt ``is_running`` selbst: "Abbild -> PKG" setzt es fuer
-        seine Extraktion.
+        Ebenso zaehlt ``is_running`` selbst.
         """
         if getattr(self, "is_running", False):
             return True
@@ -24654,10 +24827,6 @@ class PS5ConverterGUI:
         der Lauf trotzdem das Ziel ab. Die Aufgabenwege geben
         ``not is_running`` herein.
 
-        Das Fenster "PKG bauen" gibt bewusst **keinen**: Es wartet dort, bevor
-        es den Arbeitsordner loescht, in den MkPFS noch schreibt - und das
-        gerade nach einem Abbruch.
-
         Returns:
             False, wenn ``abbruch`` das Warten beendet hat - dann faengt der
             Aufrufer nichts mehr an. Sonst True, auch nach Ablauf der Frist
@@ -26175,6 +26344,9 @@ class PS5ConverterGUI:
             return self._mode_folder_to_exfat(src, dst)
         if source_type == "folder" and target_type == "ffpkg":
             return self._mode_folder_to_ffpkg(src, dst)
+        if source_type == "folder" and target_type == "folder":
+            # Nur mit Einbau erreichbar (_conversion_block_reason).
+            return self._mode_ordner_einbau(src, dst)
         if source_type == "ffpfsc" and target_type == "exfat":
             return self._mode_unpack_to_exfat(src, dst)
         if source_type == "ffpfsc" and target_type == "folder":
@@ -27347,6 +27519,14 @@ class PS5ConverterGUI:
                 source_type = self._resolve_mode_source_type(mode, src)
                 target_type = self._get_selected_target_type()
                 base_name = os.path.basename(os.path.normpath(src)) if source_type == "folder" else os.path.splitext(os.path.basename(src))[0]
+                if target_type == "folder" and source_type == "folder":
+                    # Dump-Ordner -> Dump-Ordner: Ob im Ziel ueberhaupt ein
+                    # Ordner entsteht, entscheidet erst die Rueckfrage im Lauf
+                    # (Original oder Sicherung, _mode_ordner_einbau) - dort
+                    # wird auch nach dem Ueberschreiben gefragt. Hier liefe
+                    # sonst vorher die Loeschung eines vorhandenen Ordners,
+                    # selbst wenn danach "Original" gewaehlt wird.
+                    return None
                 if target_type == "folder":
                     return os.path.join(dst, base_name)
                 if target_type == "ffpfsc":
@@ -27369,6 +27549,209 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Ausgabepfad konnte nicht ermittelt werden: %s", exc)
         return None
+
+    def _mode_ordner_einbau(self, src: str, dst: str) -> bool:
+        """Dump-Ordner -> Dump-Ordner: AMPR EMU, PlayGo und BACKPORT einbauen.
+
+        Wunsch des Nutzers vom 01.10.2026: In Aufgabe 1 liess sich kein
+        Dump-Ordner mit AMPR EMU (auch Asset-Pack), PlayGo oder BACKPORT
+        erstellen - jedes Ziel war ein Abbild. Jetzt fragt der Lauf zuerst,
+        wo eingebaut wird (:meth:`_ordner_einbau_wahl`):
+
+        * **Sicherung** - der Dump wird in den Zielordner kopiert und dort
+          veraendert; das Original bleibt unberuehrt.
+        * **Original** - eingebaut wird im gewaehlten Ordner selbst, nach
+          einer Warnung, dass die Dateien danach nicht mehr original sind.
+
+        Der Einbau ist derselbe wie auf jedem anderen Weg
+        (:meth:`_integration_anwenden`). Erreichbar nur mit Einbau
+        (:meth:`_conversion_block_reason`) - auch aus Aufgabe 6, die den Weg
+        mit BACKPORT schon anbot und dann mit "Nicht unterstuetzte
+        Konvertierung" endete.
+        """
+        quelle = os.path.normpath(src)
+        sicherung = os.path.join(dst, os.path.basename(quelle))
+        # Fuer die Groessenzeile am Ende ("Quelle -> Ergebnis"); der Wert
+        # kommt aus der Messung beim Waehlen der Quelle, kostet also nichts.
+        self.task_total_source_bytes = max(0, int(self._quellgroesse_ermitteln(quelle) or 0))
+        wahl = self._ordner_einbau_wahl(quelle, sicherung)
+        if not wahl:
+            self._append_to_log(self._t("ordner_einbau.log_abgebrochen"))
+            return False
+        if wahl == "original":
+            self._append_to_log(self._t("ordner_einbau.log_original", path=quelle))
+            arbeitsordner = quelle
+        else:
+            arbeitsordner = self._ordner_einbau_sicherung(quelle, sicherung)
+            if not arbeitsordner:
+                return False
+
+        ergebnis = self._integration_anwenden(arbeitsordner, herkunft=quelle)
+        if not ergebnis:
+            if wahl == "original":
+                # Der Backport ersetzt Datei fuer Datei - was schon herabgesetzt
+                # ist, bleibt es. Das muss der Anwender wissen.
+                self._append_to_log(self._t("ordner_einbau.log_original_teilweise",
+                                            path=quelle))
+            else:
+                # Eine halb eingebaute Sicherung saehe aus wie ein Ergebnis.
+                # Sie ist hier entstanden (siehe _ordner_einbau_sicherung) -
+                # das Original liegt unberuehrt daneben.
+                _rmtree_force(arbeitsordner)
+                self._append_to_log(self._t("ordner_einbau.log_sicherung_entfernt",
+                                            path=arbeitsordner))
+            return False
+        self.task_final_output_path = ergebnis
+        self._append_to_log(self._t("ordner_einbau.log_fertig", path=ergebnis))
+        return True
+
+    def _ordner_einbau_wahl(self, quelle: str, sicherung: str) -> str:
+        """Wo eingebaut wird: ``"sicherung"``, ``"original"`` oder ``""`` (Abbruch).
+
+        Laeuft im Aufgabenfaden; die Fenster kommen ueber den Hauptfaden.
+        Auf der Kommandozeile gibt es keine Frage - dort immer die Sicherung,
+        aus demselben Grund wie bei ``_integration_arbeitskopie``: "Original"
+        waere die zerstoerende Antwort.
+        """
+        if getattr(self, "_cli_mode", False):
+            self._append_to_log(self._t("ordner_einbau.log_cli_sicherung",
+                                        path=sicherung))
+            return "sicherung"
+        wahl = self._im_hauptfaden(self._ordner_einbau_dialog, quelle, sicherung)
+        if wahl != "original":
+            return wahl or ""
+        # Wunsch des Nutzers: Beim Original darauf hinweisen, dass die
+        # Dateien danach nicht mehr original sind. "Nein" ist vorbelegt -
+        # ein versehentliches Enter soll nichts veraendern.
+        bestaetigt = self._im_hauptfaden(
+            messagebox.askyesno,
+            self._t("ordner_einbau.warnung_titel"),
+            self._t("ordner_einbau.warnung_text", path=quelle),
+            icon=messagebox.WARNING, default=messagebox.NO, parent=self.root)
+        return "original" if bestaetigt else ""
+
+    def _ordner_einbau_dialog(self, quelle: str, sicherung: str) -> str:
+        """Fragt: Sicherung im Zielordner oder Einbau im Original? Nur Hauptfaden.
+
+        Eigene Knoepfe statt Ja/Nein: Bei zwei Wegen mit Folgen soll auf dem
+        Knopf stehen, was geschieht.
+
+        Returns:
+            ``"sicherung"``, ``"original"`` oder ``""`` (abgebrochen).
+        """
+        c = self._COLORS
+        titel = self._t("ordner_einbau.titel")
+        fenster = self._build_modern_toplevel(titel, 640, 330, resizable=False,
+                                              parent=self.root)
+        self._build_modern_header(fenster, titel)
+        ergebnis = {"wahl": ""}
+
+        def _schliessen(wahl: str) -> None:
+            ergebnis["wahl"] = wahl
+            fenster.destroy()
+
+        # Knopfreihe zuerst packen: Sonst draengt der Text sie bei grosser
+        # Schrift aus dem Fenster (Packreihenfolge, siehe GUI-Layoutfallen).
+        reihe = tk.Frame(fenster, bg=c["bg_main"], padx=20, pady=14)
+        reihe.pack(side="bottom", fill="x")
+        ttk.Button(reihe, text=self._t("action.cancel"),
+                   command=lambda: _schliessen("")).pack(side="right")
+        ttk.Button(reihe, text=self._t("ordner_einbau.knopf_original"),
+                   command=lambda: _schliessen("original")).pack(
+                       side="right", padx=(0, 8))
+        ttk.Button(reihe, text=self._t("ordner_einbau.knopf_sicherung"),
+                   style="Accent.TButton",
+                   command=lambda: _schliessen("sicherung")).pack(
+                       side="right", padx=(0, 8))
+
+        koerper = tk.Frame(fenster, bg=c["bg_main"], padx=20, pady=4)
+        koerper.pack(fill="both", expand=True)
+        tk.Label(koerper,
+                 text=self._t("ordner_einbau.text", quelle=quelle, sicherung=sicherung),
+                 bg=c["bg_main"], fg=c["fg_primary"], justify="left", anchor="w",
+                 font=(UI_SCHRIFT, pt(9)), wraplength=pt(590)).pack(fill="x", anchor="w")
+
+        try:
+            fenster.protocol("WM_DELETE_WINDOW", lambda: _schliessen(""))
+            fenster.bind("<Escape>", lambda _e: _schliessen(""))
+            fenster.transient(self.root)
+            fenster.grab_set()
+        except tk.TclError as exc:
+            logger.debug("Einbau-Rueckfrage nicht modal: %s", exc)
+        self.root.wait_window(fenster)
+        return ergebnis["wahl"]
+
+    def _ordner_einbau_sicherung(self, quelle: str, sicherung: str) -> str:
+        """Legt die Sicherung im Zielordner an - mit Balken, abbrechbar.
+
+        Returns:
+            Der Ordner der Sicherung, oder ``""`` (der Grund steht im
+            Protokoll).
+        """
+        # Die Sicherung darf weder die Quelle sein noch in ihr liegen (oder
+        # umgekehrt): "D:\PS5\Spiel" mit ZIEL "D:\PS5" ergaebe die Quelle
+        # selbst, ein ZIEL innerhalb der Quelle kopierte sich endlos in sich
+        # hinein.
+        if self._pfad_liegt_in(sicherung, quelle) or self._pfad_liegt_in(quelle, sicherung):
+            meldung = self._t("ordner_einbau.ziel_ist_quelle", ziel=sicherung, quelle=quelle)
+            self._append_to_log(self._t("log.fehler_zeile", text=meldung) + "\n")
+            self._hauptfaden_planen(messagebox.showerror,
+                                    self._t("dialog.title.error"), meldung)
+            return ""
+        if os.path.exists(sicherung):
+            if not self._ask_yesno_threadsafe(
+                    self._t("dialog.title.file_already_exists"),
+                    self._t("dialog.msg.target_file_exists_overwrite_confirm",
+                            path=sicherung),
+                    default_yes=False):
+                self._append_to_log(self._t("ordner_einbau.log_nicht_ueberschrieben",
+                                            path=sicherung))
+                return ""
+            try:
+                _rmtree_force(sicherung, ignore_errors=False)
+            except OSError as exc:
+                self._append_to_log(self._t("log.auto.0078", v0=exc))
+                return ""
+            self._append_to_log(self._t("log.auto.0076", v0=sicherung))
+
+        groesse = self._quellgroesse_ermitteln(quelle)
+        if groesse <= 0:
+            self._set_status(self._t("main.integrate_measuring_status"))
+            groesse = self._quellgroesse_mit_meldung(quelle)
+            if not self.is_running:
+                self._append_to_log(self._t("main.integrate_measure_cancelled"))
+                return ""
+        self._append_to_log(self._t("ordner_einbau.log_sicherung", path=sicherung,
+                                    size=self._fmt_bytes(groesse)))
+        self._set_status(self._t("ordner_einbau.status_sicherung"))
+        # Dieselben Zaehler wie bei der Arbeitskopie (_integration_arbeitskopie):
+        # Sie treiben Balken und Groessenfeld ueber _update_progress_gui.
+        self.task_num_steps = 1
+        self.task_current_step = 1
+        self.task_step_ends = [self._KOPIE_BALKEN_SPANNE]
+        self._copy_total_bytes = max(1, int(groesse or 0))
+        self._copy_done_bytes = 0
+        self._copy_total_exact = True
+        self._copy_rate_bps = 0.0
+        self._copy_rate_trend = ""
+        try:
+            self._kopieren_mit_fortschritt(quelle, sicherung, groesse,
+                                           status_schluessel="ordner_einbau.status_sicherung")
+        except _KopieAbgebrochen:
+            _rmtree_force(sicherung)
+            self._append_to_log(self._t("ordner_einbau.log_sicherung_abgebrochen"))
+            return ""
+        except OSError as exc:
+            _rmtree_force(sicherung)
+            self._append_to_log(self._t("ordner_einbau.log_sicherung_fehler", error=exc))
+            return ""
+        finally:
+            self._copy_total_bytes = 0
+            self._copy_done_bytes = 0
+            self._copy_total_exact = False
+            self._copy_rate_bps = 0.0
+            self._copy_rate_trend = ""
+        return sicherung
 
     def _mode_pack_folder(self, src: str, dst: str, uncompressed: bool = False) -> bool:
         """Packt einen Game-Dump-Ordner zu einer .FFPFSC- oder unkomprimierten .FFPFS-Datei.
@@ -29213,8 +29596,9 @@ class PS5ConverterGUI:
     #: vier Phasen sind das zusammen 8 Punkte.
     _PACK_BALKEN_SPANNE = 2.0
 
-    def _kopieren_mit_fortschritt(self, quelle: str, ziel: str,
-                                  gesamt: int) -> None:
+    def _kopieren_mit_fortschritt(self, quelle: str, ziel: str, gesamt: int,
+                                  status_schluessel: str = "main.integrate_copying_status",
+                                  ) -> None:
         """Kopiert einen Ordner und meldet dabei, wie weit er ist.
 
         ``shutil.copytree`` kopiert am Stueck und meldet nichts. Bei einem
@@ -29275,7 +29659,7 @@ class PS5ConverterGUI:
                 # nachgestellt: Meldung nach genau 120 s.
                 if groesse is not None:
                     self._set_status("%s  %s" % (
-                        self._t("main.integrate_copying_status"), groesse))
+                        self._t(status_schluessel), groesse))
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Kopierfortschritt nicht anzeigbar: %s", exc)
 
@@ -29320,7 +29704,8 @@ class PS5ConverterGUI:
                 _melden()
         _melden(erzwingen=True)
 
-    def _integration_anwenden(self, ordner: str, *, ist_quellordner: bool = False) -> str:
+    def _integration_anwenden(self, ordner: str, *, ist_quellordner: bool = False,
+                              herkunft: str = "") -> str:
         """Wendet die gewaehlten Integrationen auf einen Dump-Ordner an.
 
         Reihenfolge: erst der Backport, dann der AMPR EMU. Das ist wichtig -
@@ -29332,6 +29717,11 @@ class PS5ConverterGUI:
             ordner:          Der Dump-Ordner, aus dem das Ziel entsteht.
             ist_quellordner: True, wenn das der vom Benutzer gewaehlte Ordner
                              ist - dann wird nach einer Arbeitskopie gefragt.
+            herkunft:        Der Ordner des Anwenders, wenn der Aufrufer schon
+                             selbst entschieden hat, wo eingebaut wird
+                             (:meth:`_mode_ordner_einbau`): ``ordner`` ist
+                             dann genau dieser Ordner (Einbau im Original)
+                             oder eine Sicherung davon. Gefragt wird nicht.
 
         Returns:
             Der zu verwendende Ordner (ggf. die Arbeitskopie), oder "" wenn
@@ -29353,7 +29743,7 @@ class PS5ConverterGUI:
         # Temp-Ordner wird. Nur hier ist der Ordner noch der des Anwenders,
         # und nur daneben kann er ein eigenes Packprofil abgelegt haben
         # (_ampr_eigenes_profil_uebernehmen).
-        self._ampr_quelle_original = ordner if ist_quellordner else ""
+        self._ampr_quelle_original = ordner if ist_quellordner else herkunft
 
         arbeitsordner = ordner
         if ist_quellordner:
@@ -29363,10 +29753,15 @@ class PS5ConverterGUI:
         # Nur in einer Kopie duerfen gepackte Originale weg: Arbeitskopie oder
         # ein Ordner, der aus einem Abbild entpackt wurde. Im Ordner des
         # Anwenders ("Nein" zur Arbeitskopie) waeren sie unwiederbringlich.
-        self._ampr_ordner_ist_kopie = (
-            not ist_quellordner
-            or os.path.normcase(os.path.abspath(arbeitsordner))
-            != os.path.normcase(os.path.abspath(ordner)))
+        if herkunft:
+            self._ampr_ordner_ist_kopie = (
+                os.path.normcase(os.path.abspath(arbeitsordner))
+                != os.path.normcase(os.path.abspath(herkunft)))
+        else:
+            self._ampr_ordner_ist_kopie = (
+                not ist_quellordner
+                or os.path.normcase(os.path.abspath(arbeitsordner))
+                != os.path.normcase(os.path.abspath(ordner)))
 
         if self._tk_wert("backport_integrate_var", False):
             if not self._integration_backport(arbeitsordner):
@@ -35243,8 +35638,7 @@ class PS5ConverterGUI:
             # Der Rueckruf ist die einzige Stelle, an der die Extraktion
             # unterbrochen werden kann. Bis v1.9.24 fragte er den Abbruch nie
             # ab: Nach "Abbrechen" lief sie bis zum Ende weiter, und ein
-            # neuer Lauf traf auf ihren noch schreibenden Faden. Das Fenster
-            # "Abbild -> PKG" macht es auf demselben Weg schon so.
+            # neuer Lauf traf auf ihren noch schreibenden Faden.
             if not gui.is_running:
                 raise _KopieAbgebrochen()
             total_units = max(1, int(total or 0))
@@ -41410,7 +41804,8 @@ class PS5ConverterGUI:
         # Payload-Manager verlinkt. Ab Werk lauscht sie nur auf 127.0.0.1: von
         # diesem PC aus ist sie erst erreichbar, wenn api_bind_address hier
         # auf die PS5-Adresse oder 0.0.0.0 gesetzt wird - ohne
-        # Authentifizierung, also nie im fremden Netz.
+        # Authentifizierung, also nie im fremden Netz. Ab 1.7beta3 legt
+        # api_enabled=0 beim Start auch keine Kachel im PS5-Menue mehr an.
         "api_enabled": "1",
         "api_bind_address": "127.0.0.1",
         "api_port": "10101",
@@ -41613,6 +42008,17 @@ class PS5ConverterGUI:
                 zeilen.append(z(name, "keins"))
         zeilen.append(z("zuletzt angepasst auf",
                         getattr(self, "_last_bg_resize_size", None) or "nie"))
+        # Wird ein Bild hochgerechnet, steht hier um wie viel und was das
+        # kostet - auch wenn das Urteil "keine Auffaelligkeit" lautet. Sonst
+        # saehe man ihm nicht an, dass hier gerechnet wird (02.10.2026).
+        try:
+            from ps5_validator.utils import anzeige_diagnose as _ad
+            for lage in self._diagnose_bilder_sammeln():
+                beschreibung = _ad.beschreibe_hochrechnung(lage)
+                if beschreibung:
+                    zeilen.append(z("Hochrechnung (%s)" % lage.name, beschreibung))
+        except Exception as exc:
+            logger.debug("Hochrechnung nicht auslesbar: %s", exc)
         # Mausrad: Verstellt es noch Auswahllisten, statt zu rollen? Leer ist
         # gut - dann hat _mausrad_verstellt_nichts seine Bindungen entfernt.
         try:
@@ -41791,15 +42197,33 @@ class PS5ConverterGUI:
                 return None
 
         bilder: list = []
+        gemessen: dict = {}
         for anzeigename, quelle, gezeichnet, traeger in (
                 ("Hintergrund", "_bg_image_cache", "bg_photo", "bg_label"),
                 ("Inhaltsfläche", "_bg_image_cache", "content_bg_photo", "content_area"),
                 ("Seitenleiste", "_sidebar_bg_image_cache", "sidebar_bg_photo", "sidebar")):
+            vorlage = getattr(self, quelle, None)
+            quelle_groesse = _groesse(vorlage)
+            flaeche_groesse = _flaeche(traeger)
+            # Was die Hochrechnung wirklich kostet, nur dort messen, wo
+            # ueberhaupt hochgerechnet wird. Die Groessenzahl allein meldete am
+            # 02.10.2026 auf einem 1920x1200-Schirm drei Warnungen, die man nicht
+            # sehen konnte (Detailverlust 0,4 bis 0,8 von 255 Stufen).
+            faktor = ad.hochrechnungsfaktor(ad.Bildlage(
+                name=anzeigename, quelle=quelle_groesse, flaeche=flaeche_groesse))
+            verlust = None
+            if faktor is not None:
+                # Hintergrund und Inhaltsflaeche teilen sich eine Vorlage.
+                schluessel = (id(vorlage), round(faktor, 3))
+                if schluessel not in gemessen:
+                    gemessen[schluessel] = ad.messe_hochrechnungsverlust(vorlage, faktor)
+                verlust = gemessen[schluessel]
             bilder.append(ad.Bildlage(
                 name=anzeigename,
-                quelle=_groesse(getattr(self, quelle, None)),
+                quelle=quelle_groesse,
                 gezeichnet=_groesse(getattr(self, gezeichnet, None)),
-                flaeche=_flaeche(traeger)))
+                flaeche=flaeche_groesse,
+                verlust=verlust))
         return bilder
 
     def _diagnose_dpi_bewusstsein(self):
@@ -43452,10 +43876,9 @@ class PS5ConverterGUI:
         ).pack(side="left")
 
     # ------------------------------------------------------------------
-    # PKG lesen - den aeusseren Container einer .pkg anzeigen.
+    # PS4 & PS5 PKG lesen - den aeusseren Container einer .pkg anzeigen.
     #
-    # Gegenstueck zu "Abbild -> PKG": dort wird gebaut, hier gelesen. Die
-    # eingebettete PFS bleibt verschluesselt; gezeigt wird der Kopf
+    # Die eingebettete PFS bleibt verschluesselt; gezeigt wird der Kopf
     # (Content-ID, Typ, Magic, Flags) und die Eintragstabelle des Pakets.
     # Der schwere Teil steckt in prosperopkg.paket_lesen; hier ist nur die
     # Darstellung - nach demselben Muster wie der SELF-Inspektor.
@@ -43523,17 +43946,19 @@ class PS5ConverterGUI:
         return title_id, region_code, region_key
 
     def _show_pkg_entpacken(self) -> None:
-        """WEITERE TOOLS: eine PS4-``.pkg`` in einen Spielordner entpacken.
+        """WEITERE TOOLS "PS4 PKG -> Dump Ordner": eine PS4-``.pkg`` in einen
+        Spielordner entpacken.
 
         Entpackt wird mit dem Entpacker, den "PS4 PKG -> ffpfsc" schon
         mitbringt (siehe ``pkg_entpacken``). Ein PS5-Paket wird erkannt und
         abgewiesen: Der Entpacker der eingebetteten LibProsperoPkg scheiterte
         am 21.09.2026 an allen vier vorhandenen PS5-Paketen, auch an einem
-        selbst gebauten. Den Aufbau eines PS5-Pakets zeigt "PKG lesen".
+        selbst gebauten. Den Aufbau eines PS5-Pakets zeigt "PS4 & PS5 PKG
+        lesen".
 
         Der Arbeitsfaden fasst keine Tk-Variable an; er schreibt in ``stand``,
         und ein Takt im Hauptfaden traegt es in Balken, Groessen- und
-        Statuszeile (siehe Abbild -> PKG).
+        Statuszeile.
         """
         c = self._COLORS
         titel = self._t("pkgentpacken.window_title")
@@ -43822,7 +44247,7 @@ class PS5ConverterGUI:
         if not prosperopkg.werkzeug_finden():
             messagebox.showerror(
                 self._t("pkgreader.read_failed_title"),
-                self._t("pkgbau.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
+                self._t("pkgreader.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
                 parent=self.root)
             return
 
@@ -44855,7 +45280,7 @@ class PS5ConverterGUI:
           wirkt, solange kein ``fakelib2`` daneben liegt;
         * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
           ``fakelib``;
-        * ab 1.7beta1 (auch die beiliegende 1.7beta2) wieder wie bis alpha6.
+        * ab 1.7beta1 (auch die beiliegende 1.7beta3) wieder wie bis alpha6.
 
         Nur ``fakelib`` wirkt also in allen Fassungen. Die frueher waehlbare
         Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
@@ -46545,7 +46970,7 @@ class PS5ConverterGUI:
                         ist = str(werte.get(schluessel, "") or "").strip()
                         if ist.lower() in ("0", "false", "no", "off"):
                             melde("!! " + self._t("amprgen.place_key_off",
-                                                  key=schluessel))
+                                                  schluessel=schluessel))
                 if not abweichungen:
                     melde(self._t("amprgen.config_ok"))
                 else:
@@ -46874,25 +47299,36 @@ class PS5ConverterGUI:
         laeuft = {"aktiv": False}
         abbruch_zustand = {"aktiv": False}
         start_knopf: dict[str, Any] = {}
+        kennung = id(win)
 
         def _abgebrochen() -> bool:
             return abbruch_zustand["aktiv"]
+
+        def _abbrechen_lassen() -> None:
+            """Bricht den Lauf ab - auch von aussen (on_closing).
+
+            Das Fenster faellt erst zu, sobald der Arbeitsfaden das bemerkt
+            und zurueckgestellt hat (_wieder_frei unten) - ein sofortiges
+            destroy() wuerde ihm den Boden unter den Fuessen wegziehen,
+            waehrend er noch in einer FTP-Uebertragung steckt.
+            """
+            abbruch_zustand["aktiv"] = True
+            ereignis = segment_ui.get("event")
+            if ereignis is not None:
+                ereignis.set()
 
         def _schliessen_versuchen() -> None:
             if not laeuft["aktiv"]:
                 win.destroy()
                 return
+            if abbruch_zustand["aktiv"]:
+                # Schon abgebrochen, er stellt gerade zurueck - danach faellt
+                # das Fenster von selbst zu. Kein zweites Mal fragen.
+                return
             if self._ask_yesno_threadsafe(
                     self._t("amprmitschnitt.title"),
                     self._t("amprmitschnitt.close_confirm"), default_yes=False):
-                abbruch_zustand["aktiv"] = True
-                ereignis = segment_ui.get("event")
-                if ereignis is not None:
-                    ereignis.set()
-                # Das Fenster faellt erst zu, sobald der Arbeitsfaden das
-                # bemerkt (_wieder_frei unten) - ein sofortiges destroy()
-                # wuerde ihm den Boden unter den Fuessen wegziehen, waehrend
-                # er noch in einer FTP-Uebertragung steckt.
+                _abbrechen_lassen()
 
         win.protocol("WM_DELETE_WINDOW", _schliessen_versuchen)
 
@@ -46914,6 +47350,9 @@ class PS5ConverterGUI:
                                                     _abgebrochen)
                 finally:
                     laeuft["aktiv"] = False
+                    # Erst hier, nach der Rueckstellung im finally der
+                    # Automatik, darf ein wartendes Beenden weitermachen.
+                    self._mitschnitt_laeufe.pop(kennung, None)
 
                     def _wieder_frei() -> None:
                         k = start_knopf.get("widget")
@@ -46924,8 +47363,17 @@ class PS5ConverterGUI:
                         if abbruch_zustand["aktiv"]:
                             win.destroy()
                     self._spaeter_im_fenster(win, _wieder_frei)
-            threading.Thread(target=_lauf, daemon=True,
-                             name="ampr-mitschnitt").start()
+            # Vor dem Start angemeldet: Ein Beenden dazwischen faende den Lauf
+            # sonst nicht und wartete nicht auf ihn.
+            self._mitschnitt_laeufe[kennung] = {"fenster": win,
+                                                "abbrechen": _abbrechen_lassen}
+            try:
+                threading.Thread(target=_lauf, daemon=True,
+                                 name="ampr-mitschnitt").start()
+            except Exception:
+                self._mitschnitt_laeufe.pop(kennung, None)
+                laeuft["aktiv"] = False
+                raise
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x")
@@ -46948,8 +47396,15 @@ class PS5ConverterGUI:
         Anders als dort dauert ein einzelner Schritt hier moeglicherweise
         Stunden (das Spielen selbst); siehe
         :meth:`_ampr_mitschnitt_segment_warten`.
+
+        Was der Lauf an der Konsole veraendert - Aufnahme-Bibliothek, Index,
+        voruebergehend umgestellte ShadowMount+-Schluessel -, stellt der
+        ``finally``-Zweig wieder zurueck, auch nach Abbruch oder Fehler
+        (:meth:`_ampr_mitschnitt_zurueckstellen`).
         """
         ftp = None
+        host = ""
+        rueckweg: dict[str, Any] = {"config": None, "dateien": [], "sicherung": ""}
         try:
             # ── 1. Lokalen Dump waehlen ──────────────────────────────────
             melde(self._t("amprmitschnitt.step_dump"))
@@ -46986,11 +47441,27 @@ class PS5ConverterGUI:
 
             # ── 3. Titel auf der Konsole zuordnen ────────────────────────
             melde(self._t("amprmitschnitt.step_match"))
-            spielpfad = self._ampr_mitschnitt_spiel_zuordnen(win, ftp, title_id, melde)
-            if not spielpfad or abgebrochen():
+            spiel = self._ampr_mitschnitt_spiel_zuordnen(win, ftp, title_id, melde)
+            if not spiel or abgebrochen():
+                return
+            spielpfad = spiel["pfad"]
+            mitschnitt_ordner = dump.rstrip("/\\") + "_ampr_mitschnitte"
+            # Je Lauf ein eigener Ordner: Eine Sicherung aus einem frueheren,
+            # nie zurueckgestellten Lauf darf nicht ueberschrieben werden.
+            rueckweg["sicherung"] = os.path.join(
+                mitschnitt_ordner, time.strftime("vorher_%Y%m%d_%H%M%S"))
+
+            # ── 4. Laedt ShadowMount+ die Aufnahme-Bibliothek? ──────────
+            melde(self._t("amprmitschnitt.step_shadowmount"))
+            ziele = self._ampr_mitschnitt_shadowmount_pruefen(
+                win, ftp, spiel, title_id, rueckweg, melde)
+            if not ziele:
+                return
+            if abgebrochen():
+                melde(self._t("amprmitschnitt.cancelled"))
                 return
 
-            # ── 4. Index bauen, Bibliothek waehlen, hochladen ────────────
+            # ── 5. Index bauen, Bibliothek waehlen, hochladen ────────────
             melde(self._t("amprmitschnitt.step_prepare"))
             if not self._ampr_mitschnitt_index_bauen(dump, melde):
                 return
@@ -46998,15 +47469,22 @@ class PS5ConverterGUI:
             if eintrag is None:
                 return
             if not self._ampr_mitschnitt_upload_vorbereiten(
-                    ftp, spielpfad, dump, eintrag, melde):
+                    ftp, spielpfad, dump, eintrag, melde,
+                    ziele=ziele, rueckweg=rueckweg):
                 return
             if abgebrochen():
                 melde(self._t("amprmitschnitt.cancelled"))
                 return
 
-            # ── 5. Segmente: warten, holen ────────────────────────────────
+            # ── 6. Segmente: warten, holen ────────────────────────────────
             melde(self._t("amprmitschnitt.step_segments"))
-            mitschnitt_ordner = dump.rstrip("/\\") + "_ampr_mitschnitte"
+
+            def _verbinden():
+                # Je Abholung eine frische Verbindung: Dazwischen liegt eine
+                # ganze Spielrunde, und ftpsrv laesst eine ruhende Verbindung
+                # fallen (siehe _autoloader_auftrag).
+                return self._ampr_ftp_connect(host, self._ps5_ftp_port())
+
             laeufe: list[tuple[str, str]] = []
             gesamt = len(self._AMPR_MITSCHNITT_SEGMENTE)
             for nummer, (slug, titel_schluessel) in enumerate(
@@ -47022,7 +47500,7 @@ class PS5ConverterGUI:
                 lauf_ordner = os.path.join(
                     mitschnitt_ordner, "lauf_%02d_%s" % (nummer, slug))
                 ergebnis = self._ampr_mitschnitt_lauf_herunterladen(
-                    win, ftp, spielpfad, lauf_ordner, titel, melde)
+                    win, _verbinden, spielpfad, lauf_ordner, titel, melde)
                 if ergebnis == "ok":
                     laeufe.append((
                         os.path.join(lauf_ordner, "ampr_commands.bin"),
@@ -47035,7 +47513,7 @@ class PS5ConverterGUI:
                 melde("!! " + self._t("amprmitschnitt.no_runs"))
                 return
 
-            # ── 6. Profil erzeugen ────────────────────────────────────────
+            # ── 7. Profil erzeugen ────────────────────────────────────────
             melde(self._t("amprmitschnitt.step_profile"))
             self._ampr_mitschnitt_profil_erzeugen(
                 win, dump, mitschnitt_ordner, laeufe, melde, abgebrochen)
@@ -47048,6 +47526,8 @@ class PS5ConverterGUI:
                         ftp.close()
                     except Exception:                           # noqa: BLE001
                         pass
+            if host:
+                self._ampr_mitschnitt_zurueckstellen(host, rueckweg, melde)
 
     def _ampr_mitschnitt_ordner_fragen(self, fenster) -> str:
         """Laesst den lokalen Spieldump waehlen - aus dem Arbeitsfaden."""
@@ -47088,13 +47568,19 @@ class PS5ConverterGUI:
         # Der Platzhalter "–" bedeutet "nicht gefunden", nicht "".
         return "" if title_id in ("", "–") else title_id
 
-    def _ampr_mitschnitt_spiel_zuordnen(self, win, ftp, title_id: str, melde) -> str:
+    def _ampr_mitschnitt_spiel_zuordnen(self, win, ftp, title_id: str,
+                                        melde) -> "dict[str, str]":
         """Findet den Ordner auf der Konsole, der zu ``title_id`` passt.
 
         Nur ``quelle == "Ordner"``-Eintraege kommen infrage (siehe
         :meth:`_ampr_gen_spiele_finden`): ein ``"appmeta"``-Eintrag ist ein
         eingehaengtes Abbild ohne eigenen, beschreibbaren Ordner - dorthin
         liesse sich weder die Aufnahme-Bibliothek noch der Index legen.
+
+        Returns:
+            Der ganze Eintrag (``pfad``, ``title_id``, ``scanpath`` ...) - der
+            Scan-Pfad zeigt, wo ShadowMount+ zuerst nach einem Backport-Ordner
+            sucht. Leer bei Abbruch.
         """
         spiele = self._ampr_gen_spiele_finden(ftp)
         ordner_spiele = [s for s in spiele if s.get("quelle") == "Ordner"]
@@ -47102,7 +47588,7 @@ class PS5ConverterGUI:
                   if title_id and s.get("title_id") == title_id]
         if len(treffer) == 1:
             melde(self._t("amprmitschnitt.match_auto", path=treffer[0]["pfad"]))
-            return treffer[0]["pfad"]
+            return treffer[0]
 
         if treffer:
             auswahl = treffer
@@ -47117,7 +47603,7 @@ class PS5ConverterGUI:
             else:
                 melde("!! " + self._t("amprmitschnitt.match_none",
                                      title_id=title_id or "?"))
-            return ""
+            return {}
         optionen = [(s["pfad"], "%s  (%s)" % (s["name"][:44], s["title_id"] or "?"),
                     self._t("amprmitschnitt.q_match_entry", path=s["pfad"]))
                    for s in auswahl]
@@ -47126,8 +47612,263 @@ class PS5ConverterGUI:
             self._t("amprmitschnitt.q_match_why"), optionen)
         if not wahl:
             melde(self._t("amprmitschnitt.cancelled"))
-            return ""
-        return wahl
+            return {}
+        return next((s for s in auswahl if s["pfad"] == wahl), {})
+
+    #: Welche Begruendung zu welcher Gefahr aus ``sm_gen.aufnahme_gefahren``.
+    _AMPR_MITSCHNITT_GRUENDE: dict[str, str] = {
+        "aus": "amprmitschnitt.sm_grund_aus",
+        sm_gen.VERDRAENGT_EMUS: "amprmitschnitt.sm_grund_emus",
+        sm_gen.VERDRAENGT_GLOBAL: "amprmitschnitt.sm_grund_global",
+    }
+
+    #: Angehaengt an eine Aufnahme-Bibliothek, wo vorher keine lag. Unter
+    #: diesem Namen laedt sie niemand mehr - umbenannt statt geloescht.
+    _AMPR_MITSCHNITT_STILL = ".mitschnitt"
+
+    def _ampr_mitschnitt_shadowmount_pruefen(self, win, ftp, spiel: "dict[str, str]",
+                                             title_id: str, rueckweg: "dict[str, Any]",
+                                             melde) -> "list[str] | None":
+        """Klaert, ob und wo ShadowMount+ die Aufnahme-Bibliothek laedt.
+
+        Frage eines Anwenders vom 01.10.2026: Wie wird der Debug-Emu aktiv,
+        wenn ShadowMount+ ihn ueberschreibt? Drei Dinge entscheiden das (am
+        Quelltext von ShadowMount+ belegt, siehe ``shadowmount_generation``):
+
+        * **Welcher Ordner eingehaengt wird.** Ein Backport-Ordner
+          ``<scanpath>/backports/<TITLE_ID>/`` geht dem Spielordner vor -
+          dorthin legt auch Aufgabe 7 ab. Im Spielordner haengt es an der
+          Fassung (:func:`sm_gen.aufnahme_ablage`). Bis zum 01.10.2026 lud
+          der Assistent immer in den Spielordner und lag neben einem
+          Backport-Ordner wirkungslos.
+        * **Was die Bibliothek verdraengt** - Emulator-Dateien, globale
+          fakelib, der ausgeschaltete Hauptschalter
+          (:func:`sm_gen.aufnahme_gefahren`).
+        * Ob der Anwender das **voruebergehend umstellen** will; zurueck
+          stellt :meth:`_ampr_mitschnitt_zurueckstellen`.
+
+        Returns:
+            Die Ordner auf der Konsole, in die die Bibliothek muss - oder
+            ``None`` bei Abbruch.
+        """
+        smgen_texte = self._smgen_texte()
+        config_text = self._ampr_gen_config_lesen(ftp)
+        if not config_text:
+            melde(self._t("amprmitschnitt.sm_config_fehlt"))
+        befund = sm_gen.generation_erkennen(
+            config_text=config_text,
+            cache_ordner_da=self._ampr_ftp_is_dir(ftp, sm_gen.CACHE_ORDNER),
+            log_text=self._ampr_gen_log_lesen(ftp), texte=smgen_texte)
+        for _kennung, beleg in befund["belege"]:
+            melde("   - " + beleg)
+        generation = befund["generation"]
+        if generation:
+            melde(self._t("amprmitschnitt.sm_fassung", fassung=sm_gen.profil(
+                generation, texte=smgen_texte)["gilt_fuer"]))
+        else:
+            melde(self._t("amprmitschnitt.sm_fassung_unklar"))
+
+        spielpfad = spiel["pfad"]
+        basis, backport_da = self._ampr_mitschnitt_backport_finden(
+            ftp, spiel, title_id, config_text)
+        spiel_da = self._ampr_gen_ordner_ftp(ftp, spielpfad)
+        ablage = sm_gen.aufnahme_ablage(generation, backport=backport_da,
+                                        spiel=spiel_da)
+        if ablage["ort"] == sm_gen.ORT_BACKPORT:
+            melde(self._t("amprmitschnitt.sm_backport", path=basis))
+            hinweise = sm_gen.beanstandungen(generation or sm_gen.NEU,
+                                             sm_gen.ORT_BACKPORT, backport_da,
+                                             texte=smgen_texte)
+        else:
+            basis = spielpfad
+            if len(ablage["ordner"]) > 1:
+                melde(self._t("amprmitschnitt.sm_beide"))
+            hinweise = sm_gen.beanstandungen(generation or sm_gen.NEU,
+                                             sm_gen.ORT_SPIEL, spiel_da,
+                                             texte=smgen_texte)
+        for hinweis in hinweise:
+            melde("   " + hinweis)
+        ziele = ["%s/%s" % (basis.rstrip("/"), name) for name in ablage["ordner"]]
+        for ziel in ziele:
+            if self._ampr_gen_systembereich(ziel):
+                melde("!! " + self._t("amprgen.target_system_refused", path=ziel))
+                return None
+        melde(self._t("amprmitschnitt.sm_ziele", paths=", ".join(ziele)))
+
+        werte = parse_flat_ini(config_text) if config_text else {}
+        emus = (self._ampr_gen_config_pfad(config_text, sm_gen.ORT_EMUS)
+                or sm_gen.EMUS_STANDARD).rstrip("/")
+        global_ordner = (self._ampr_gen_config_pfad(config_text, sm_gen.ORT_GLOBAL)
+                         or sm_gen.GLOBAL_STANDARD).rstrip("/")
+        verdraengbar = ablage["verdraengbar"]
+        gefahren = sm_gen.aufnahme_gefahren(
+            generation, werte, verdraengbar=verdraengbar,
+            emus_hat_ampr=(sm_gen.VERDRAENGT_EMUS in verdraengbar
+                           and self._ampr_mitschnitt_datei_da(
+                               ftp, "%s/%s" % (emus, sm_gen.AMPR_BIBLIOTHEK))),
+            global_hat_ampr=(sm_gen.VERDRAENGT_GLOBAL in verdraengbar
+                             and self._ampr_mitschnitt_datei_da(
+                                 ftp, "%s/%s" % (global_ordner, sm_gen.AMPR_BIBLIOTHEK))),
+            titel_ausgeschlossen=self._ampr_mitschnitt_titel_ausgenommen(
+                config_text, title_id))
+        if not gefahren:
+            melde(self._t("amprmitschnitt.sm_ok"))
+            return ziele
+
+        ordner_je_art = {sm_gen.VERDRAENGT_EMUS: emus,
+                         sm_gen.VERDRAENGT_GLOBAL: global_ordner}
+        gruende = [self._t(self._AMPR_MITSCHNITT_GRUENDE[g["art"]],
+                           path=ordner_je_art.get(g["art"], ""))
+                   for g in gefahren]
+        for grund in gruende:
+            melde("!! " + grund)
+        aenderungen = "\n".join(
+            "   %s: %s -> %s" % (g["schluessel"],
+                                 werte.get(g["schluessel"])
+                                 or self._t("amprmitschnitt.sm_vorgabe"),
+                                 g["vorlaeufig"])
+            for g in gefahren)
+        wahl = self._ampr_gen_frage(
+            win, self._t("amprmitschnitt.q_sm"),
+            self._t("amprmitschnitt.q_sm_why", reasons="\n".join(gruende),
+                    changes=aenderungen),
+            [("umstellen", self._t("amprmitschnitt.q_sm_switch"),
+              self._t("amprmitschnitt.q_sm_switch_why")),
+             ("lassen", self._t("amprmitschnitt.q_sm_keep"),
+              self._t("amprmitschnitt.q_sm_keep_why")),
+             ("stop", self._t("amprmitschnitt.q_sm_stop"),
+              self._t("amprmitschnitt.q_sm_stop_why"))])
+        if wahl == "lassen":
+            melde(self._t("amprmitschnitt.sm_kept"))
+            return ziele
+        if wahl != "umstellen":
+            melde(self._t("amprmitschnitt.cancelled"))
+            return None
+        if not self._ampr_mitschnitt_config_umstellen(
+                ftp, config_text, gefahren, rueckweg, melde):
+            return None
+        return ziele
+
+    def _ampr_mitschnitt_backport_finden(self, ftp, spiel: "dict[str, str]",
+                                         title_id: str,
+                                         config_text: str) -> "tuple[str, list[str]]":
+        """Der Backport-Ordner, den ShadowMount+ fuer diesen Titel nimmt.
+
+        Laut Anleitung wirkt ein Backport aus **jedem** Scan-Pfad; liefern
+        mehrere einen, gewinnt der Scan-Pfad des Spiels, sonst die
+        Reihenfolge der ``scanpath``-Eintraege. Steht keiner in der
+        config.ini, gelten die ueblichen Orte (``_AMPR_GEN_SCANPFADE``).
+        Ab 1.7beta3 zuletzt immer ``/data/homebrew`` - auch wenn eigene
+        Eintraege ihn auslassen (``sm_gen.BACKPORT_RUECKFALL``).
+
+        Returns:
+            ``(Ordner, vorhandene Unterordner)`` - ``("", [])``, wenn es
+            keinen Backport-Ordner mit ``fakelib``/``fakelib2`` gibt.
+        """
+        if not title_id:
+            return "", []
+        eingetragen = [p.strip() for p in (parse_flat_ini_multi(config_text)
+                                           .get("scanpath", []) if config_text else [])
+                       if p.strip()]
+        kandidaten = [str(spiel.get("scanpath") or "").strip()]
+        kandidaten += eingetragen or list(self._AMPR_GEN_SCANPFADE)
+        kandidaten.append(sm_gen.BACKPORT_RUECKFALL)
+        gesehen: set[str] = set()
+        for scanpath in kandidaten:
+            scanpath = scanpath.rstrip("/")
+            if not scanpath or scanpath in gesehen:
+                continue
+            gesehen.add(scanpath)
+            ordner = "%s/backports/%s" % (scanpath, title_id)
+            if not self._ampr_ftp_is_dir(ftp, ordner):
+                continue
+            da = self._ampr_gen_ordner_ftp(ftp, ordner)
+            if da:
+                return ordner, da
+        return "", []
+
+    def _ampr_mitschnitt_datei_da(self, ftp, pfad: str) -> bool:
+        """Liegt auf der Konsole eine Datei unter ``pfad``?
+
+        Ueber ``SIZE``. Ein Server, der ``SIZE`` nicht versteht, antwortet
+        ebenfalls mit 5xx - ftplib macht daraus wie aus "550 fehlt" ein
+        ``error_perm``. Nur 550 heisst also "nicht da"; sonst entscheidet
+        die Auflistung des Ordners.
+        """
+        import ftplib  # noqa: PLC0415
+
+        try:
+            return ftp.size(pfad) is not None
+        except ftplib.error_perm as exc:
+            if str(exc).startswith("550"):
+                return False
+        except ftplib.all_errors as exc:
+            logger.debug("SIZE %s: %s", pfad, exc)
+        ordner, _, name = pfad.rpartition("/")
+        try:
+            eintraege = self._ampr_ftp_list_entries(ftp, ordner or "/")
+        except Exception as exc:                          # noqa: BLE001
+            logger.debug("Auflistung %s: %s", ordner, exc)
+            return False
+        return any(gefunden == name and fakten.get("type", "file") != "dir"
+                   for gefunden, fakten in eintraege)
+
+    @staticmethod
+    def _ampr_mitschnitt_titel_ausgenommen(config_text: str, title_id: str) -> bool:
+        """Steht der Titel in ``global_fakelib_exclude`` (wiederholbar)?"""
+        if not (config_text and title_id):
+            return False
+        kennungen = {teil.strip().upper()
+                     for wert in parse_flat_ini_multi(config_text).get(
+                         "global_fakelib_exclude", [])
+                     for teil in re.split(r"[,;\s]+", wert) if teil.strip()}
+        return title_id.strip().upper() in kennungen
+
+    def _ampr_mitschnitt_config_umstellen(self, ftp, config_text: str,
+                                          gefahren: "list[dict[str, str]]",
+                                          rueckweg: "dict[str, Any]", melde) -> bool:
+        """Stellt ShadowMount+ fuer die Dauer der Aufnahme um.
+
+        Erst wird die bisherige config.ini auf den Rechner gesichert, dann
+        der Rueckweg eingetragen und erst danach geschrieben - scheitert das
+        Schreiben mittendrin, greift das Zurueckstellen trotzdem. Geaendert
+        werden nur die genannten Schluessel (``_ampr_gen_config_schreiben``),
+        und hinterher wird nachgelesen, ob sie wirklich so dastehen.
+        """
+        aenderungen = {g["schluessel"]: g["vorlaeufig"] for g in gefahren}
+        werte = parse_flat_ini(config_text) if config_text else {}
+        kopie = os.path.join(rueckweg["sicherung"], "shadowmount_config.ini")
+        try:
+            os.makedirs(rueckweg["sicherung"], exist_ok=True)
+            with open(kopie, "w", encoding="utf-8", newline="") as datei:
+                datei.write(config_text)
+        except OSError as exc:
+            melde("!! " + self._t("amprmitschnitt.backup_failed",
+                                 path=sm_gen.CONFIG_PFAD, error=exc))
+            return False
+        rueckweg["config"] = {
+            "vorher": config_text, "geschrieben": None,
+            # Ein leerer Wert zaehlt wie ein fehlender: ShadowMount+ nimmt
+            # dann seine Vorgabe.
+            "werte": {k: (werte.get(k) or None) for k in aenderungen}}
+        try:
+            self._ampr_gen_config_schreiben(ftp, config_text, aenderungen)
+        except Exception as exc:                          # noqa: BLE001
+            melde("!! " + self._t("amprmitschnitt.sm_switch_failed", error=exc))
+            return False
+        jetzt = self._ampr_gen_config_lesen(ftp)
+        rueckweg["config"]["geschrieben"] = jetzt
+        gelesen = parse_flat_ini(jetzt) if jetzt else {}
+        falsch = [k for k, v in aenderungen.items()
+                  if str(gelesen.get(k, "")).strip() != v]
+        if falsch:
+            melde("!! " + self._t("amprmitschnitt.sm_switch_unwirksam",
+                                 keys=", ".join(falsch)))
+            return False
+        melde(self._t("amprmitschnitt.sm_switched",
+                      changes=", ".join("%s=%s" % paar for paar in aenderungen.items()),
+                      path=kopie))
+        return True
 
     def _ampr_mitschnitt_index_bauen(self, dump: str, melde) -> bool:
         """Baut den lokalen ``ampr_emu.index`` - mit derselben Rueckfrage wie
@@ -47167,38 +47908,147 @@ class PS5ConverterGUI:
         return None
 
     def _ampr_mitschnitt_upload_vorbereiten(self, ftp, spielpfad: str, dump: str,
-                                            eintrag: "dict[str, Any]", melde) -> bool:
+                                            eintrag: "dict[str, Any]", melde, *,
+                                            ziele: "list[str]",
+                                            rueckweg: "dict[str, Any]") -> bool:
         """Legt Aufnahme-Bibliothek und Index auf der Konsole ab.
+
+        Die Bibliothek kommt in jeden Ordner aus ``ziele``
+        (:meth:`_ampr_mitschnitt_shadowmount_pruefen`). Was dort schon liegt,
+        wird vorher auf den Rechner gesichert und am Ende zurueckgelegt
+        (:meth:`_ampr_mitschnitt_zurueckstellen`); laesst es sich nicht
+        sichern, wird nicht ueberschrieben. In ``rueckweg`` kommt eine Datei
+        erst, wenn sie wirklich abgelegt ist.
+
+        Einen Ordner, den es noch nicht gibt, legt das Hochladen an - er
+        kommt schon **vorher** in ``rueckweg``. ShadowMount+ wertet bereits
+        einen leeren fakelib-Ordner aus (``stat``, nicht der Inhalt; am
+        Quelltext von 1.7beta2 gemessen, ``resolve_game_fakelib_source_for_path``
+        und ``mount_fakelib_for_game_locked``): Bliebe er am Ende stehen,
+        bekaeme das Spiel danach die zusammengesetzte fakelib samt
+        Emulator-Dateien statt wie vorher nur die globale.
 
         Der Index gehoert in die Spielwurzel selbst, **nicht** in den
         fakelib-Ordner (``shadowmount_generation.ORT_SPIEL``:
         ``standardpfad="<Spielordner>/"``) - genau dort schreibt/liest ihn
         auch der Debug-Bau selbst (``/app0/ampr_emu.index``, aus dessen
-        rohen Bytes ausgelesen, nicht geraten).
+        rohen Bytes ausgelesen, nicht geraten). Lag dort keiner, bleibt der
+        neue am Ende liegen: Ohne Bibliothek stoert er nicht, und eine
+        vorhandene macht er erst nutzbar.
         """
         if self._ampr_gen_systembereich(spielpfad):
             melde("!! " + self._t("amprgen.target_system_refused", path=spielpfad))
             return False
-        vorhandene = self._ampr_gen_ordner_ftp(ftp, spielpfad)
-        fakelib_name = vorhandene[0] if vorhandene else sm_gen.FAKELIB
-        ziel_fakelib = "%s/%s" % (spielpfad.rstrip("/"), fakelib_name)
-        if not self._ampr_ftp_upload_file(ftp, ziel_fakelib, eintrag["path"],
-                                          self._AMPR_SPRX_NAME):
-            melde("!! " + self._t("amprmitschnitt.upload_failed",
-                                 name=self._AMPR_SPRX_NAME))
-            return False
-        melde(self._t("amprmitschnitt.uploaded",
-                      path="%s/%s" % (ziel_fakelib, self._AMPR_SPRX_NAME)))
+        for ziel in ziele:
+            neu = self._ampr_mitschnitt_ordner_fehlt(ftp, ziel)
+            kopie: "str | None" = ""
+            if neu:
+                rueckweg["dateien"].append({"ordner": ziel, "name": self._AMPR_SPRX_NAME,
+                                            "sicherung": "", "still_legen": True,
+                                            "ordner_neu": True})
+            else:
+                kopie = self._ampr_mitschnitt_sichern(ftp, ziel, self._AMPR_SPRX_NAME,
+                                                      rueckweg, melde)
+                if kopie is None:
+                    return False
+            if not self._ampr_ftp_upload_file(ftp, ziel, eintrag["path"],
+                                              self._AMPR_SPRX_NAME):
+                melde("!! " + self._t("amprmitschnitt.upload_failed",
+                                     name=self._AMPR_SPRX_NAME))
+                return False
+            if not neu:
+                rueckweg["dateien"].append({"ordner": ziel, "name": self._AMPR_SPRX_NAME,
+                                            "sicherung": kopie, "still_legen": True})
+            melde(self._t("amprmitschnitt.uploaded",
+                          path="%s/%s" % (ziel, self._AMPR_SPRX_NAME)))
 
+        kopie = self._ampr_mitschnitt_sichern(ftp, spielpfad, self._AMPR_INDEX_NAME,
+                                              rueckweg, melde)
+        if kopie is None:
+            return False
         index_lokal = os.path.join(dump, self._AMPR_INDEX_NAME)
         if not self._ampr_ftp_upload_file(ftp, spielpfad, index_lokal,
                                           self._AMPR_INDEX_NAME):
             melde("!! " + self._t("amprmitschnitt.upload_failed",
                                  name=self._AMPR_INDEX_NAME))
             return False
+        if kopie:
+            rueckweg["dateien"].append({"ordner": spielpfad,
+                                        "name": self._AMPR_INDEX_NAME,
+                                        "sicherung": kopie, "still_legen": False})
         melde(self._t("amprmitschnitt.uploaded",
                       path="%s/%s" % (spielpfad.rstrip("/"), self._AMPR_INDEX_NAME)))
         return True
+
+    def _ampr_mitschnitt_sichern(self, ftp, ordner: str, name: str,
+                                 rueckweg: "dict[str, Any]", melde) -> "str | None":
+        """Holt eine vorhandene Datei vor dem Ueberschreiben auf den Rechner.
+
+        Abgelegt unter ``<Sicherungsordner>/<Konsolenpfad mit _>/<name>`` -
+        so bleiben gleichnamige Dateien aus verschiedenen Ordnern getrennt.
+
+        Returns:
+            Pfad der Sicherung; ``""``, wenn es die Datei nicht gab; ``None``,
+            wenn die Sicherung scheiterte - dann wird nicht ueberschrieben.
+        """
+        fern = "%s/%s" % (ordner.rstrip("/"), name)
+        kopie = os.path.join(rueckweg["sicherung"],
+                             ordner.strip("/").replace("/", "_"), name)
+        try:
+            os.makedirs(os.path.dirname(kopie), exist_ok=True)
+            vorhanden = konsole_ftp.datei_holen(ftp, fern, kopie)
+        except (OSError, konsole_ftp.FtpFehler) as exc:
+            melde("!! " + self._t("amprmitschnitt.backup_failed", path=fern, error=exc))
+            return None
+        if not vorhanden:
+            return ""
+        melde(self._t("amprmitschnitt.backup_done", path=fern, copy=kopie))
+        return kopie
+
+    def _ampr_mitschnitt_namen(self, ftp, ordner: str) -> "set[str]":
+        """Die Eintraege eines Ordners auf der Konsole, ohne ``.`` und ``..``.
+
+        Raises:
+            ftplib-Fehler: Der Ordner ist nicht lesbar oder die Verbindung weg.
+        """
+        return {name for name, fakten in self._ampr_ftp_list_entries(ftp, ordner)
+                if name not in (".", "..")
+                and fakten.get("type", "") not in ("cdir", "pdir")}
+
+    def _ampr_mitschnitt_ordner_fehlt(self, ftp, pfad: str) -> bool:
+        """Fehlt der Ordner ``pfad`` auf der Konsole - nachweislich?
+
+        Nur eine gelungene Auflistung des Ordners darueber zaehlt. Eine
+        gestoerte Verbindung heisst "unbekannt" und damit False: Sonst
+        benennte das Zurueckstellen am Ende einen Ordner um, den es vorher
+        schon gab.
+        """
+        oben, _, name = pfad.rstrip("/").rpartition("/")
+        try:
+            return name not in self._ampr_mitschnitt_namen(ftp, oben or "/")
+        except Exception as exc:                          # noqa: BLE001 - Verbindung, ftplib
+            logger.debug("Auflistung %s: %s", oben, exc)
+            return False
+
+    def _ampr_mitschnitt_freier_name(self, ftp, pfad: str) -> str:
+        """``<pfad>.mitschnitt`` - mit Zaehler, wenn es den Namen schon gibt.
+
+        Ein frueherer Lauf kann dort schon etwas stillgelegt haben, und das
+        bleibt stehen: ftpsrv ersetzt beim Umbenennen eine vorhandene Datei,
+        und auf einen vorhandenen Ordner liesse sich gar nicht umbenennen.
+        """
+        oben, _, name = pfad.rstrip("/").rpartition("/")
+        try:
+            belegt = self._ampr_mitschnitt_namen(ftp, oben or "/")
+        except Exception as exc:                          # noqa: BLE001 - Verbindung, ftplib
+            logger.debug("Auflistung %s: %s", oben, exc)
+            belegt = set()
+        kandidat = name + self._AMPR_MITSCHNITT_STILL
+        zaehler = 1
+        while kandidat in belegt:
+            zaehler += 1
+            kandidat = "%s%s%d" % (name, self._AMPR_MITSCHNITT_STILL, zaehler)
+        return "%s/%s" % (oben, kandidat)
 
     def _ampr_mitschnitt_segment_warten(self, win, segment_ui, titel: str,
                                         nummer: int, gesamt: int,
@@ -47234,19 +48084,32 @@ class PS5ConverterGUI:
 
         if not self._spaeter_im_fenster(win, _anzeigen):
             return False
-        bestaetigt = ereignis.wait(self._AMPR_MITSCHNITT_SPIELZEIT_GRENZE)
+        # In kurzen Schritten statt am Stueck: Ein Abbruch, der kommt, bevor
+        # _anzeigen das Ereignis eingetragen hat, findet es nicht - und der
+        # Faden schliefe bis zur Zeitgrenze weiter (Stunden), waehrend das
+        # Beenden auf seine Rueckstellung wartet.
+        frist = time.monotonic() + self._AMPR_MITSCHNITT_SPIELZEIT_GRENZE
+        while not ereignis.wait(0.5):
+            if abgebrochen() or time.monotonic() >= frist:
+                break
         self._spaeter_im_fenster(win, _zuruecksetzen)
-        return bool(bestaetigt) and not abgebrochen()
+        return ereignis.is_set() and not abgebrochen()
 
-    def _ampr_mitschnitt_lauf_herunterladen(self, win, ftp, spielpfad: str,
-                                            lauf_ordner: str, titel: str,
-                                            melde) -> str:
+    def _ampr_mitschnitt_lauf_herunterladen(self, win, verbinden: Callable[[], Any],
+                                            spielpfad: str, lauf_ordner: str,
+                                            titel: str, melde) -> str:
         """Holt die drei Mitschnitt-Dateien eines Durchlaufs von der Konsole.
 
         Eine (noch) fehlende Datei ist der **Normalfall**, solange der
         Nutzer noch spielt (USER_GUIDE_EN.md, Abschnitt 2) - deshalb wird
         dafuer nachgefragt (Wiederholen empfohlen), nicht stillschweigend
         abgebrochen.
+
+        Jeder Versuch holt sich mit ``verbinden`` eine **frische**
+        Verbindung. Bis zum 01.10.2026 lief alles ueber die Verbindung vom
+        Anfang des Laufs - nach einer Spielrunde von einer Stunde ist sie
+        bei ftpsrv laengst weg, und "Erneut versuchen" scheiterte jedes Mal
+        an derselben toten Verbindung.
 
         Returns:
             ``"ok"``, ``"skip"`` (dieser Durchlauf wird verworfen, weiter
@@ -47259,17 +48122,27 @@ class PS5ConverterGUI:
             os.makedirs(lauf_ordner, exist_ok=True)
             fehler = ""
             unvollstaendig = False
-            for name in dateien:
-                fern = "%s/%s" % (spielpfad.rstrip("/"), name)
-                ziel = os.path.join(lauf_ordner, name)
-                try:
+            ftp = None
+            try:
+                ftp = verbinden()
+                for name in dateien:
+                    fern = "%s/%s" % (spielpfad.rstrip("/"), name)
+                    ziel = os.path.join(lauf_ordner, name)
                     if not konsole_ftp.datei_holen(ftp, fern, ziel):
                         unvollstaendig = True
                         break
-                except konsole_ftp.FtpFehler as exc:
-                    fehler = str(exc)
-                    unvollstaendig = True
-                    break
+            except Exception as exc:                      # noqa: BLE001 - Verbindung, ftplib
+                fehler = str(exc)
+                unvollstaendig = True
+            finally:
+                if ftp is not None:
+                    try:
+                        ftp.quit()
+                    except Exception:                     # noqa: BLE001
+                        try:
+                            ftp.close()
+                        except Exception:                 # noqa: BLE001
+                            pass
             if not unvollstaendig:
                 groesse = os.path.getsize(
                     os.path.join(lauf_ordner, "ampr_commands.bin"))
@@ -47328,6 +48201,200 @@ class PS5ConverterGUI:
         melde(self._t("amprmitschnitt.profile_done", count=len(laeufe), path=ausgabe))
         melde(self._t("amprmitschnitt.report_hint", path=bericht))
         melde(self._t("amprmitschnitt.hint_partial"))
+
+    def _ampr_mitschnitt_zurueckstellen(self, host: str, rueckweg: "dict[str, Any]",
+                                        melde) -> bool:
+        """Stellt zurueck, was der Lauf an der Konsole veraendert hat.
+
+        Laeuft im ``finally`` von :meth:`_ampr_mitschnitt_automatik` - nach
+        dem letzten Durchlauf ebenso wie nach Abbruch oder Fehler. Ueber eine
+        **frische** Verbindung: Die des Laufs ruht seit der letzten
+        Spielrunde, und ftpsrv laesst ruhende Verbindungen fallen.
+
+        * Gesicherte Dateien kommen an ihren Platz zurueck.
+        * Eine Aufnahme-Bibliothek, wo vorher keine lag, wird umbenannt
+          (:attr:`_AMPR_MITSCHNITT_STILL`) statt geloescht - stillgelegt,
+          aber nicht weg. Ebenso ein Ordner, den der Lauf angelegt hat
+          (:meth:`_ampr_mitschnitt_ordner_stilllegen`).
+        * Die ShadowMount+-Schluessel bekommen ihre alten Werte
+          (:meth:`_ampr_mitschnitt_config_zurueck`).
+
+        Das Ergebnis steht zusaetzlich im Hauptprotokoll: Wer das Fenster
+        schliesst, sieht dessen Protokoll gleich danach nicht mehr.
+
+        Returns:
+            True, wenn nichts zu tun war oder alles zurueckgestellt ist.
+        """
+        dateien = list(rueckweg.get("dateien") or [])
+        config = rueckweg.get("config")
+        if not dateien and config is None:
+            return True
+
+        def _beides(text: str) -> None:
+            melde(text)
+            self._append_to_log(text + "\n")
+
+        # Je Aufgabe, was der Anwender von Hand tun muesste - erledigte
+        # fallen heraus; was uebrig bleibt, nennt die Schlussmeldung.
+        offen: dict[str, str] = {}
+        for nummer, eintrag in enumerate(dateien):
+            fern = "%s/%s" % (eintrag["ordner"].rstrip("/"), eintrag["name"])
+            if eintrag.get("ordner_neu"):
+                offen["datei%d" % nummer] = self._t(
+                    "amprmitschnitt.restore_todo_ordner",
+                    path=eintrag["ordner"].rstrip("/"))
+                continue
+            offen["datei%d" % nummer] = self._t(
+                "amprmitschnitt.restore_todo_lib" if eintrag["sicherung"]
+                else "amprmitschnitt.restore_todo_still", path=fern)
+        if config is not None:
+            for schluessel, alt in config["werte"].items():
+                # Nicht "key=": So heisst der erste Parameter von _t selbst.
+                offen["config:" + schluessel] = (
+                    self._t("amprmitschnitt.restore_todo_entfernen",
+                            config=sm_gen.CONFIG_PFAD, schluessel=schluessel)
+                    if alt is None else
+                    self._t("amprmitschnitt.restore_todo_wert",
+                            config=sm_gen.CONFIG_PFAD, schluessel=schluessel,
+                            value=alt))
+
+        _beides(self._t("amprmitschnitt.restore_start"))
+        fehler = ""
+        ftp = None
+        try:
+            ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
+            # Rueckwaerts: zuletzt Abgelegtes zuerst.
+            for nummer in reversed(range(len(dateien))):
+                eintrag = dateien[nummer]
+                fern = "%s/%s" % (eintrag["ordner"].rstrip("/"), eintrag["name"])
+                if eintrag["sicherung"]:
+                    if self._ampr_ftp_upload_file(ftp, eintrag["ordner"],
+                                                  eintrag["sicherung"], eintrag["name"]):
+                        offen.pop("datei%d" % nummer, None)
+                        _beides(self._t("amprmitschnitt.restore_lib", path=fern))
+                elif eintrag.get("ordner_neu"):
+                    try:
+                        meldungen = self._ampr_mitschnitt_ordner_stilllegen(
+                            ftp, eintrag["ordner"])
+                    except konsole_ftp.FtpFehler as exc:
+                        fehler = str(exc)
+                        continue
+                    offen.pop("datei%d" % nummer, None)
+                    for text in meldungen:
+                        _beides(text)
+                elif eintrag["still_legen"]:
+                    still = self._ampr_mitschnitt_freier_name(ftp, fern)
+                    try:
+                        konsole_ftp.umbenennen(ftp, fern, still)
+                    except konsole_ftp.FtpFehler as exc:
+                        fehler = str(exc)
+                        continue
+                    offen.pop("datei%d" % nummer, None)
+                    _beides(self._t("amprmitschnitt.restore_lib_still", path=fern,
+                                    name=posixpath.basename(still)))
+                else:
+                    offen.pop("datei%d" % nummer, None)
+            if config is not None and self._ampr_mitschnitt_config_zurueck(ftp, config):
+                for schluessel in config["werte"]:
+                    offen.pop("config:" + schluessel, None)
+                _beides(self._t("amprmitschnitt.restore_config", values=", ".join(
+                    "%s=%s" % (k, v if v is not None
+                               else self._t("amprmitschnitt.sm_vorgabe"))
+                    for k, v in config["werte"].items())))
+        except Exception as exc:                          # noqa: BLE001 - Verbindung, ftplib
+            fehler = str(exc)
+        finally:
+            if ftp is not None:
+                try:
+                    ftp.quit()
+                except Exception:                         # noqa: BLE001
+                    try:
+                        ftp.close()
+                    except Exception:                     # noqa: BLE001
+                        pass
+        if offen:
+            text = self._t(
+                "amprmitschnitt.restore_failed",
+                what="%d/%d" % (len(offen), len(dateien) + len(
+                    (config or {}).get("werte", {}))),
+                error=fehler or "-", todo="; ".join(offen.values()),
+                path=rueckweg.get("sicherung", ""))
+            _beides("!! " + text)
+            # Fuer ein wartendes Beenden (on_closing): Mit dem Fenster
+            # verschwaende das Protokoll, bevor jemand es liest.
+            self._mitschnitt_rueckstellung_offen = text
+            return False
+        _beides(self._t("amprmitschnitt.restore_done"))
+        return True
+
+    def _ampr_mitschnitt_ordner_stilllegen(self, ftp, ordner: str) -> "list[str]":
+        """Nimmt einen Ordner, den der Lauf angelegt hat, wieder aus dem Blick.
+
+        Umbenannt, nicht geloescht (:meth:`_ampr_mitschnitt_freier_name`):
+        ShadowMount+ sieht nur genau ``fakelib``/``fakelib2``. Liegt darin
+        inzwischen mehr als die Aufnahme-Bibliothek, wird der Ordner offenbar
+        gebraucht - dann bleibt er stehen, und nur die Bibliothek wird
+        stillgelegt.
+
+        Returns:
+            Die Meldungen fuers Protokoll; leer, wenn der Ordner nie angelegt
+            wurde (das Hochladen scheiterte vorher).
+
+        Raises:
+            konsole_ftp.FtpFehler: Umbenennen abgewiesen.
+            ftplib-Fehler: Ordner nicht lesbar oder die Verbindung weg.
+        """
+        ordner = ordner.rstrip("/")
+        oben, _, name = ordner.rpartition("/")
+        if name not in self._ampr_mitschnitt_namen(ftp, oben or "/"):
+            return []
+        bibliothek = self._AMPR_SPRX_NAME
+        inhalt = self._ampr_mitschnitt_namen(ftp, ordner)
+        fremd = sorted(inhalt - {bibliothek, bibliothek + konsole_ftp.ZWISCHEN_ENDUNG})
+        if not fremd:
+            still = self._ampr_mitschnitt_freier_name(ftp, ordner)
+            konsole_ftp.umbenennen(ftp, ordner, still)
+            return [self._t("amprmitschnitt.restore_ordner_still", path=ordner,
+                            name=posixpath.basename(still))]
+        meldungen = [self._t("amprmitschnitt.restore_ordner_bleibt", path=ordner,
+                             names=", ".join(fremd))]
+        if bibliothek in inhalt:
+            fern = "%s/%s" % (ordner, bibliothek)
+            still = self._ampr_mitschnitt_freier_name(ftp, fern)
+            konsole_ftp.umbenennen(ftp, fern, still)
+            meldungen.append(self._t("amprmitschnitt.restore_lib_still", path=fern,
+                                     name=posixpath.basename(still)))
+        return meldungen
+
+    def _ampr_mitschnitt_config_zurueck(self, ftp, config: "dict[str, Any]") -> bool:
+        """Gibt den umgestellten ShadowMount+-Schluesseln ihre alten Werte.
+
+        Steht die config.ini noch so da, wie der Lauf sie geschrieben hat,
+        kommt der alte Text Byte fuer Byte zurueck - samt Kommentaren und
+        Reihenfolge. Hat sie seitdem jemand geaendert, werden nur die eigenen
+        Schluessel zurueckgesetzt (ein vorher fehlender wird wieder
+        auskommentiert, dann gilt die Vorgabe), alles andere bleibt stehen.
+
+        Returns:
+            True, wenn die Schluessel danach wirklich ihre alten Werte tragen.
+        """
+        jetzt = self._ampr_gen_config_lesen(ftp)
+        if jetzt == config["vorher"]:
+            return True
+        if config.get("geschrieben") is not None and jetzt == config["geschrieben"]:
+            neu = config["vorher"]
+        else:
+            bestand = parse_flat_ini_multi(jetzt or "")
+            for schluessel, alt in config["werte"].items():
+                if alt is None:
+                    bestand.pop(schluessel, None)
+                else:
+                    bestand[schluessel] = [alt]
+            neu = merge_flat_ini(jetzt or "", bestand)
+        ftp.storbinary("STOR %s" % sm_gen.CONFIG_PFAD, io.BytesIO(neu.encode("utf-8")))
+        gelesen = parse_flat_ini(self._ampr_gen_config_lesen(ftp) or "")
+        return all((gelesen.get(k) or None) == alt
+                   for k, alt in config["werte"].items())
 
     # ==================================================================
     # ps5_autoloader - die Startreihenfolge der Konsole
@@ -50703,1049 +51770,6 @@ class PS5ConverterGUI:
         ttk.Button(btn_row, text=self._t("action.clear"), command=_clear).pack(side="right", padx=(0, 8))
         win.protocol("WM_DELETE_WINDOW", _on_close)
 
-    # ==================================================================
-    # Generischer Remote-INI-Editor – bearbeitet die flache config.ini
-    # eines PS5-Payloads (z.B. ShadowMountPlus, MicroMount) über FTP.
-    # Beide Tools verwenden dasselbe key=value-Format und denselben
-    # Lade-/Schreib-Ablauf (siehe ps5_validator.utils.ini_config).
-    # ==================================================================
-    @staticmethod
-    def _sdk_bcd(major: int, minor: int) -> str:
-        """Packt Haupt- und Nebenversion als BCD in den 16-stelligen Hex-String
-        von ``param.json`` (z.B. ``10, 1`` -> ``'0x1001000000000000'``).
-
-        Dasselbe Packmass, das die Konsole in ``sdkVersion`` und
-        ``requiredSystemSoftwareVersion`` erwartet: das obere Byte die
-        Hauptversion, das naechste die Nebenversion, beide zweistellig BCD.
-        """
-        if not (0 <= major <= 99 and 0 <= minor <= 99):
-            raise ValueError("Firmware ausserhalb 0..99: %r.%r" % (major, minor))
-        b0 = (major // 10 << 4) | (major % 10)
-        b1 = (minor // 10 << 4) | (minor % 10)
-        return "0x%02x%02x000000000000" % (b0, b1)
-
-    @staticmethod
-    def _exfat_pkg_firmware_lesen(text: str) -> "tuple[int, int] | None":
-        """Liest ``9`` oder ``10.01`` als (Haupt, Neben); None bei Leerauswahl.
-
-        Wirft ``ValueError`` bei einer Eingabe, die keine Firmware ist - der
-        Aufrufer faengt das ab und weist sie ab, statt still das Original zu
-        behalten.
-        """
-        roh = " ".join(str(text or "").split())
-        if not roh or roh.startswith("("):
-            return None
-        treffer = re.match(r"^(\d{1,2})(?:\.(\d{1,2}))?$", roh)
-        if not treffer:
-            raise ValueError(roh)
-        return int(treffer.group(1)), int(treffer.group(2) or 0)
-
-    @staticmethod
-    def _exfat_pkg_spielwurzel(ordner: str) -> str:
-        """Findet den Ordner mit ``sce_sys/param.json`` - er selbst oder eine
-        Ebene darunter.
-
-        Ein exFAT-Abbild traegt den Dump manchmal direkt in der Wurzel,
-        manchmal in einem einzelnen Unterordner. Mehr als eine Ebene wird
-        bewusst nicht gesucht: Ein Abbild mit zwei Spielen ist kein Fall fuer
-        diesen Weg, und ein zu tiefer Treffer waere eher ein Irrlaeufer.
-        """
-        if os.path.isfile(os.path.join(ordner, "sce_sys", "param.json")):
-            return ordner
-        try:
-            eintraege = sorted(os.listdir(ordner))
-        except OSError:
-            return ordner
-        treffer = [
-            os.path.join(ordner, name) for name in eintraege
-            if name not in ("System Volume Information", "$RECYCLE.BIN")
-            and os.path.isfile(os.path.join(ordner, name, "sce_sys", "param.json"))
-        ]
-        return treffer[0] if len(treffer) == 1 else ordner
-
-    class _AbbildAbbruch(Exception):
-        """Signal aus dem Fortschritts-Rueckruf: der Anwender hat abgebrochen.
-
-        extract_exfat_image faengt in seiner Schleife nur Datei-Fehler ab
-        (OSError/ValueError/ExfatError); diese Ausnahme gehoert bewusst nicht
-        dazu und laeuft deshalb nach oben durch, statt geschluckt zu werden.
-        """
-
-    _ABBILD_PKG_ENDUNGEN = (".exfat", ".ffpfsc", ".ffpfs", ".ffpkg")
-
-    def _abbild_zu_dumpordner(self, quelle, dump_ordner, *, protokoll, status,
-                              balken, abbruch=None):
-        """Entpackt ein beliebiges Abbild in einen Dump-Ordner (fuer Abbild->PKG).
-
-        Format-Weiche ueber die Kennung (nicht die Endung):
-
-        * ``exfat`` - native MkPFS-exFAT-Extraktion (kein Mount, kein Admin),
-          wie schon beim frueheren exFAT->PKG-Weg.
-        * ``pfs``/``ufs2`` - die erprobten Extraktoren ``_extract_inner_image``
-          (ufs2 = gepatchtes UFS2Tool, auch > 2 GB) plus
-          ``_entpacke_container_ebenen`` fuer die Verschachtelung
-          (.ffpfsc -> inneres exFAT -> Spieldateien). Diese laufen ueber das
-          Task-Flag ``is_running`` und melden in das Hauptprotokoll; das
-          Fensterprotokoll bekommt die Eckdaten.
-
-        Returns:
-            Den Ordner mit ``sce_sys/param.json`` (Spielwurzel), oder ``None``.
-        """
-        _rmtree_force(Path(dump_ordner))
-        os.makedirs(dump_ordner, exist_ok=True)
-
-        art = self._sniff_image_kind(quelle)
-        if not art:
-            low = str(quelle).lower()
-            if low.endswith(".exfat"):
-                art = "exfat"
-            elif low.endswith((".ffpfsc", ".ffpfs")):
-                art = "pfs"
-            elif low.endswith(".ffpkg"):
-                art = "ufs2"
-        if not art:
-            protokoll(self._t("abbildpkg.log_kind_unknown",
-                              name=os.path.basename(str(quelle))))
-            return None
-        protokoll(self._t("abbildpkg.log_kind", art=art,
-                          name=os.path.basename(str(quelle))))
-
-        spielordner = dump_ordner
-        if art == "exfat":
-            mkpfs_parent = self._extract_embedded_mkpfs()
-            if mkpfs_parent and mkpfs_parent not in sys.path:
-                sys.path.insert(0, mkpfs_parent)
-            from mkpfs import pfs as _pfs  # noqa: PLC0415
-            extrahieren = getattr(_pfs, "extract_exfat_image", None)
-            if not callable(extrahieren):
-                protokoll(self._t("abbildpkg.log_extract_fehlt"))
-                return None
-
-            def _fs_status(text):
-                sauber = " ".join(str(text).split())
-                if sauber:
-                    status(sauber)
-
-            def _fs_step(phase, current, total, *, bytes_processed=None):
-                del phase
-                if abbruch is not None and abbruch():
-                    raise self._AbbildAbbruch()
-                gesamt = max(1, int(total or 0))
-                fertig = int(bytes_processed if bytes_processed is not None
-                             else current)
-                balken(max(0, min(fertig, gesamt)) * 100.0 / gesamt)
-
-            bruecke = type("_AbbildFortschritt", (), {})()
-            bruecke.status = _fs_status
-            bruecke.step = _fs_step
-            ergebnis = extrahieren(Path(quelle), Path(dump_ordner), progress=bruecke)
-            for fehler in getattr(ergebnis, "errors", []) or []:
-                protokoll(self._t("log.fehler_zeile", text=fehler))
-            if getattr(ergebnis, "errors", None):
-                return None
-            balken(100)
-            protokoll(self._t(
-                "abbildpkg.log_extracted",
-                dateien=getattr(ergebnis, "files_written", 0),
-                gb=getattr(ergebnis, "bytes_written", 0) / 1073741824))
-        else:
-            # pfs/ufs2: erprobte Extraktion + Ebenen-Drilldown. Die Methoden
-            # haengen am Task-Flag; hier wird es fuer die Dauer gesetzt.
-            status(self._t("abbildpkg.status_extracting"))
-            vorher = self.is_running
-            self.is_running = True
-            # Merken, dass das Kennzeichen gerade diesem Werkzeug gehoert - nur
-            # dann darf sein Abbrechen es zuruecksetzen (siehe _abbrechen in
-            # _show_pkg_bauen).
-            self._abbild_pkg_haelt_is_running = True
-            try:
-                if not self._extract_inner_image(
-                        quelle, dump_ordner, art,
-                        status_prefix=self._t("status.prefix_abbild_pkg"),
-                        progress_start=0.0, progress_end=90.0):
-                    protokoll(self._t("abbildpkg.log_extract_failed"))
-                    return None
-                res = self._entpacke_container_ebenen(
-                    dump_ordner, status_prefix=self._t("status.prefix_abbild_pkg"),
-                    pct_start=90.0, pct_end=99.0)
-                if res is None:
-                    protokoll(self._t("abbildpkg.log_extract_failed"))
-                    return None
-                spielordner = res[0]
-            finally:
-                self._abbild_pkg_haelt_is_running = False
-                self.is_running = vorher
-            balken(100)
-
-        return self._exfat_pkg_spielwurzel(spielordner)
-
-    def _exfat_pkg_param_setzen(self, param_pfad: str, hexwert: str) -> "tuple[str, str]":
-        """Setzt ``sdkVersion`` und ``requiredSystemSoftwareVersion`` in einer
-        ``param.json`` und gibt die vorherigen Werte zurueck.
-
-        Vollstaendiger JSON-Umlauf, Schluesselreihenfolge bleibt erhalten -
-        genauso, wie das Fremdwerkzeug es tut. Geaendert werden nur diese zwei
-        Felder; der Bauer liest sie danach aus dem Ordner.
-        """
-        with open(param_pfad, "r", encoding="utf-8") as datei:
-            daten = json.load(datei)
-        alt_sdk = str(daten.get("sdkVersion", ""))
-        alt_req = str(daten.get("requiredSystemSoftwareVersion", ""))
-        daten["sdkVersion"] = hexwert
-        daten["requiredSystemSoftwareVersion"] = hexwert
-        with open(param_pfad, "w", encoding="utf-8") as datei:
-            json.dump(daten, datei, ensure_ascii=False, indent=2)
-            datei.write("\n")
-        return alt_sdk, alt_req
-
-    def _exfat_pkg_playgo_felder(self, param_pfad: str) -> "list[str]":
-        """Leert ``versionFileUri`` und setzt ``attribute3`` auf 0.
-
-        Hintergrund: Ein FPKG ist **ein einziges Abbild**, PlayGo ist dagegen
-        auf Chunk-Installation gebaut. Die PlayGo-Deskriptoren selbst sind
-        dabei unkritisch - LibProsperoPkg 2.6.0 erzeugt sie in
-        ``ProsperoPkgBuilder`` ohnehin neu aus der Geometrie des gebauten
-        Abbilds und uebernimmt **keine** Quellkopie (nachgesehen 15.09.2026).
-        Diese zwei Felder bleiben aber unberuehrt, und ein fremdes Werkzeug
-        meldet, dass ihr Zuruecksetzen den "Application error" beim Spielstart
-        beseitige.
-
-        **Unbelegt.** Zu einem PlayGo-Bit in ``attribute3`` gibt es keine
-        oeffentliche Dokumentation; genullt wird deshalb das ganze Feld, und
-        damit fallen auch dokumentierte Flags (Video-Out-Info, Share Library
-        Capture API, HFR, High Framerate Mode, Auto Scaling) weg. Genau
-        darum haengt das an einem Kaestchen, das ab Werk **aus** ist.
-
-        Angefasst wird nur die ``param.json`` im entpackten Dump-Ordner des
-        Arbeitsordners - eine Wegwerf-Kopie. Das Quellabbild bleibt unberuehrt,
-        deshalb braucht es hier kein Wiederherstellen.
-
-        Args:
-            param_pfad: Die ``sce_sys/param.json`` im Arbeitsordner.
-
-        Returns:
-            Die Namen der tatsaechlich geaenderten Felder. Leer, wenn keines
-            vorhanden war oder beide schon den Zielwert trugen - der Aufrufer
-            meldet dann nichts.
-        """
-        with open(param_pfad, "r", encoding="utf-8") as datei:
-            daten = json.load(datei)
-        geaendert: list[str] = []
-        # Nur vorhandene Schluessel anfassen: Ein neu angelegter Schluessel
-        # aenderte die Schluesselmenge der Datei, und die Reihenfolge ist hier
-        # Teil des Formats.
-        if "versionFileUri" in daten and daten["versionFileUri"] != "":
-            daten["versionFileUri"] = ""
-            geaendert.append("versionFileUri")
-        if "attribute3" in daten and daten["attribute3"] != 0:
-            daten["attribute3"] = 0
-            geaendert.append("attribute3")
-        if not geaendert:
-            return []
-        with open(param_pfad, "w", encoding="utf-8") as datei:
-            json.dump(daten, datei, ensure_ascii=False, indent=2)
-            datei.write("\n")
-        return geaendert
-
-    def _sdk_bauweg(self, wurzel: str, ziel: str, arbeit: str, param: str,
-                    melden, laeuft: dict) -> str:
-        """Baut das Paket mit Sonys Publishing Tools aus ``libs/sdk``.
-
-        Drei Dinge in dieser Reihenfolge, und die Reihenfolge ist der Sinn:
-
-        1. **Dateinamen pruefen.** ``img_create`` weist ``%``, ``;``,
-           Nicht-ASCII und Namen mit Schlusspunkt ab - aber erst *nach* dem
-           Komprimieren. Bei einem grossen Titel sind das Stunden fuer eine
-           Meldung, die in einer Sekunde zu haben ist.
-        2. **GP5-Projekt schreiben** (``gp5_project``) - es beschreibt
-           Quellordner, Content-ID und Volume-Typ.
-        3. ``prospero-pub-cmd img_create --oformat nwonly`` aufrufen.
-
-        Returns:
-            Den Pfad des gebauten Pakets, oder "" bei einem Fehlschlag
-            (der Grund steht dann im Protokoll).
-        """
-        stand = sony_sdk.pruefen()
-        if not stand.vorhanden:
-            melden(self._t("sdk.log_missing"))
-            return ""
-
-        melden(self._t("sdk.log_names"))
-        schlechte = sony_sdk.namen_pruefen(wurzel)
-        if schlechte:
-            melden(self._t("sdk.log_bad_names", anzahl=len(schlechte)))
-            for name in schlechte[:20]:
-                melden("    %s" % name)
-            return ""
-
-        content_id = ""
-        try:
-            with open(param, "r", encoding="utf-8") as datei:
-                content_id = str(json.load(datei).get("contentId", "") or "")
-        except (OSError, ValueError) as fehler:
-            melden(self._t("sdk.log_no_contentid", grund=fehler))
-
-        projekt = os.path.join(arbeit, "sdk_projekt.gp5")
-        sony_sdk.projekt_schreiben(wurzel, projekt, content_id=content_id)
-        melden(self._t("sdk.log_project", pfad=projekt, kennung=content_id or "-"))
-
-        vorher = {str(p) for p in Path(ziel).glob("*.pkg")}
-        # Dieselbe mitwachsende Grenze wie beim prosperopkg-Bau. Bis zum
-        # 24.09.2026 galten hier fest zwei Stunden - ein grosser Titel wurde
-        # mitten im Komprimieren abgewuergt (Durchsicht, U3-7).
-        rueckgabe, _zeilen = sony_sdk.bauen(
-            stand, projekt, ziel, melden=melden, prozess_ablage=laeuft,
-            zeitgrenze=prosperopkg.zeitgrenze_fuer(wurzel))
-        if rueckgabe != 0:
-            melden(self._t("sdk.log_failed", code=rueckgabe))
-            return ""
-
-        neu = sorted({str(p) for p in Path(ziel).glob("*.pkg")} - vorher,
-                     key=os.path.getmtime)
-        if not neu:
-            melden(self._t("sdk.log_no_output"))
-            return ""
-        melden(self._t("sdk.log_done", pfad=neu[-1]))
-        return neu[-1]
-
-    def _show_pkg_bauen(self) -> None:
-        """WEITERE TOOLS: ein Debug-``.pkg`` bauen - aus einem Dump-Ordner oder einem Abbild.
-
-        Bis v1.9.40 waren das zwei Fenster ("PKG bauen" fuer Ordner,
-        "Abbild -> PKG" fuer Abbilder) mit demselben Bau dahinter. Jetzt eins:
-
-        * **Dump-Ordner:** wird unveraendert an ``prosperopkg`` gegeben. Nichts
-          wird entpackt, nichts geaendert - Ziel-Firmware und PlayGo sind
-          deshalb gesperrt (sie schrieben sonst in den Ordner des Anwenders).
-          "Pruefen" sagt vorab, ob die Module laufen wuerden.
-        * **Abbild** (``.exfat``/``.ffpfsc``/``.ffpfs``/``.ffpkg``): Die
-          Format-Weiche ``_abbild_zu_dumpordner`` entpackt es in den
-          Arbeitsordner (exFAT/PFS nativ per MkPFS ohne OSFMount und ohne
-          Adminrechte; ``.ffpkg`` ueber denselben Weg wie Aufgabe 4). In dieser
-          Arbeitskopie werden auf Wunsch Ziel-Firmware und PlayGo-Felder
-          gesetzt; danach wird sie geloescht.
-
-        Gebaut wird als Spiel-Backup (``prosperopkg.bauen``) oder als Homebrew
-        (``prosperopkg.homebrew_bauen``, kennt kein "lizenzfrei"). Die
-        ausfuehrbaren ``.sceversion``-Datensaetze werden bewusst nicht
-        umgeschrieben; die Firmware-Schranke der Konsole liest
-        ``requiredSystemSoftwareVersion`` aus ``param.json``.
-        """
-        c = self._COLORS
-        titel = self._t("pkgbau.window_title")
-        werkzeug = prosperopkg.werkzeug_finden()
-        if not werkzeug:
-            messagebox.showerror(
-                titel,
-                self._t("pkgbau.missing_tool", ordner=prosperopkg.WERKZEUGORDNER),
-                parent=self.root)
-            return
-
-        win = self._build_modern_toplevel(titel, 920, 760,
-                                          min_width=780, min_height=640)
-        self._build_modern_header(win, titel, self._t("pkgbau.subtitle"))
-
-        # Knopfreihe zuerst an den unteren Rand - sonst quetscht die
-        # Mindestfenstergroesse sie zusammen (Muster wie beim SELF-Inspektor);
-        # die Knoepfe kommen unten hinein, sobald die Rueckrufe definiert sind.
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=20)
-        koerper.pack(fill="both", expand=True)
-
-        # Die Art entscheidet ueber alles Weitere - deshalb ganz oben, mit der
-        # Erklaerung daneben statt nur im Handbuch. Ab Werk "Spiel-Backup":
-        # So baute "Abbild -> PKG", und Abbilder sind Spiele.
-        art_var = tk.StringVar(value="spiel")
-        artreihe = tk.Frame(koerper, bg=c["bg_main"])
-        artreihe.pack(fill="x", pady=(4, 2))
-        for wert, schluessel in (("spiel", "pkgbau.kind_game"),
-                                 ("homebrew", "pkgbau.kind_homebrew")):
-            tk.Radiobutton(
-                artreihe, text=self._t(schluessel), value=wert,
-                variable=art_var, bg=c["bg_main"], fg=c["fg_primary"],
-                selectcolor=c["bg_card"], activebackground=c["bg_main"],
-                activeforeground=c["fg_accent"], font=(UI_SCHRIFT, pt(9)),
-                command=lambda: _art_erklaeren(),
-            ).pack(side="left", padx=(0, 14))
-
-        erklaerung = tk.Label(
-            koerper, text="", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-            fg=c["fg_warning"], anchor="w", justify="left", wraplength=700)
-        erklaerung.pack(fill="x", pady=(2, 8))
-
-        def _erklaerung_umbrechen(_ereignis=None) -> None:
-            # Der Umbruch folgt der echten Breite; eine feste Zahl lief im
-            # alten Fenster bei Mindestbreite ueber den Rand - und
-            # ausgerechnet dieser Text sagt, dass das Paket nicht startet.
-            try:
-                breite = erklaerung.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                erklaerung.configure(wraplength=breite - 8)
-
-        erklaerung.bind("<Configure>", _erklaerung_umbrechen)
-
-        def _art_erklaeren() -> None:
-            homebrew = art_var.get() == "homebrew"
-            erklaerung.configure(
-                text=self._t("pkgbau.explain_homebrew" if homebrew
-                             else "pkgbau.explain_game"),
-                fg=c["fg_secondary"] if homebrew else c["fg_warning"])
-            _lizenzfrei_schalten()
-
-        quelle_var, ziel_var = tk.StringVar(), tk.StringVar()
-        arbeit_var = tk.StringVar(value=self._get_runtime_temp_dir())
-        fw_var = tk.StringVar(value=self._t("exfatpkg.keep_original"))
-        schnell_var = tk.BooleanVar(value=True)
-        lizenzfrei_var = tk.BooleanVar(value=True)
-        # Ab Werk AUS: Das Nullen von attribute3 loescht auch dokumentierte
-        # Flags, und die Wirkung ist unbelegt - siehe _exfat_pkg_playgo_felder.
-        playgo_var = tk.BooleanVar(value=False)
-        # Der zweite Bauweg - nur waehlbar, wenn unter libs/sdk wirklich ein
-        # Baukasten liegt. Ab Werk aus: Der mitgelieferte Weg ist der
-        # gepruefte, der SDK-Weg haengt an Dateien, die niemand hier hat.
-        sdk_stand = sony_sdk.pruefen()
-        sdk_var = tk.BooleanVar(value=False)
-        status_var = tk.StringVar(value=self._t("exfatpkg.status_idle"))
-        laeuft: dict = {"aktiv": False, "prozess": None, "abbruch": False}
-
-        def _zeile(text: str, var, waehlen) -> None:
-            reihe = tk.Frame(koerper, bg=c["bg_main"])
-            reihe.pack(fill="x", pady=2)
-            tk.Label(reihe, text=text, width=16, anchor="w",
-                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                     fg=c["fg_secondary"]).pack(side="left")
-            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
-                     bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                     insertbackground=c["fg_primary"]).pack(
-                side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-            ttk.Button(reihe, text="...", width=4, command=waehlen).pack(side="left")
-
-        def _quelle_waehlen() -> None:
-            gewaehlt = filedialog.askopenfilename(
-                title=self._t("exfatpkg.choose_source"),
-                filetypes=[(self._t("filetype.ps5_image"),
-                            "*.exfat *.ffpfsc *.ffpfs *.ffpkg"),
-                           (self._t("filetype.exfat_image"), "*.exfat"),
-                           (self._t("filetype.ffpfsc_image"), "*.ffpfsc"),
-                           (self._t("filetype.ffpfs_image"), "*.ffpfs"),
-                           (self._t("filetype.ffpkg_package"), "*.ffpkg"),
-                           (self._t("filetype.all_files"), "*.*")],
-                initialdir=self._get_source_dialog_initial_dir() or None,
-                parent=win)
-            if gewaehlt:
-                quelle_var.set(os.path.normpath(gewaehlt))
-
-        def _ziel_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                title=self._t("exfatpkg.choose_output"), parent=win)
-            if gewaehlt:
-                ziel_var.set(os.path.normpath(gewaehlt))
-
-        def _arbeit_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                title=self._t("exfatpkg.choose_work"), parent=win)
-            if gewaehlt:
-                arbeit_var.set(os.path.normpath(gewaehlt))
-
-        def _ordner_waehlen() -> None:
-            gewaehlt = filedialog.askdirectory(
-                title=self._t("pkgbau.choose_source"),
-                initialdir=self._get_source_dialog_initial_dir() or None,
-                parent=win)
-            if gewaehlt:
-                quelle_var.set(os.path.normpath(gewaehlt))
-
-        # Die Quelle ist Ordner ODER Datei - ein Dateidialog kann keinen
-        # Ordner waehlen und umgekehrt, deshalb zwei Knoepfe.
-        quellreihe = tk.Frame(koerper, bg=c["bg_main"])
-        quellreihe.pack(fill="x", pady=2)
-        tk.Label(quellreihe, text=self._t("pkgbau.source_any"), width=16,
-                 anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(quellreihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-        ttk.Button(quellreihe, text=self._t("pkgbau.pick_folder"),
-                   command=_ordner_waehlen).pack(side="left", padx=(0, 6))
-        ttk.Button(quellreihe, text=self._t("pkgbau.pick_image"),
-                   command=_quelle_waehlen).pack(side="left")
-        _zeile(self._t("exfatpkg.output"), ziel_var, _ziel_waehlen)
-        _zeile(self._t("exfatpkg.work"), arbeit_var, _arbeit_waehlen)
-
-        fwreihe = tk.Frame(koerper, bg=c["bg_main"])
-        fwreihe.pack(fill="x", pady=(6, 2))
-        tk.Label(fwreihe, text=self._t("exfatpkg.firmware"), width=16, anchor="w",
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left")
-        fw_box = ttk.Combobox(
-            fwreihe, textvariable=fw_var, width=24, font=(UI_SCHRIFT, pt(9)),
-            values=[self._t("exfatpkg.keep_original"),
-                    "9.00", "9.60", "10.00", "10.01", "11.00", "12.00"])
-        fw_box.pack(side="left")
-        tk.Label(fwreihe, text=self._t("exfatpkg.firmware_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"]).pack(side="left", padx=(10, 0))
-
-        schalter = tk.Frame(koerper, bg=c["bg_main"])
-        schalter.pack(fill="x", pady=(8, 4))
-        kaestchen: dict[str, tk.Checkbutton] = {}
-        for name, text, var in (("schnell", self._t("pkgbau.fast"), schnell_var),
-                                ("lizenzfrei", self._t("pkgbau.license_free"),
-                                 lizenzfrei_var),
-                                ("sdk", self._t("sdk.use"), sdk_var),
-                                ("playgo", self._t("exfatpkg.playgo_fix"), playgo_var)):
-            kaestchen[name] = tk.Checkbutton(
-                schalter, text=text, variable=var, bg=c["bg_main"],
-                fg=c["fg_primary"], selectcolor=c["bg_card"],
-                activebackground=c["bg_main"], activeforeground=c["fg_accent"],
-                font=(UI_SCHRIFT, pt(9)))
-            kaestchen[name].pack(side="left", padx=(0, 14))
-
-        # Ohne Baukasten bleibt das Kaestchen grau - und darunter steht,
-        # warum. Ein klickbares Kaestchen ohne Wirkung waere schlimmer als
-        # keins (dieselbe Lehre wie bei "lizenzfrei" und Homebrew).
-        if not sdk_stand.vorhanden:
-            try:
-                kaestchen["sdk"].configure(state="disabled")
-            except tk.TclError:
-                pass
-        sdk_hinweis = tk.Label(
-            koerper,
-            text=self._t("sdk.hint_ready" if sdk_stand.vollstaendig
-                         else ("sdk.hint_partial" if sdk_stand.vorhanden
-                               else "sdk.hint_missing")),
-            font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-            fg=c["fg_secondary"] if sdk_stand.vorhanden else c["fg_warning"],
-            anchor="w", justify="left", wraplength=700)
-        sdk_hinweis.pack(fill="x", pady=(0, 4))
-
-        def _sdk_umbrechen(_ereignis=None) -> None:
-            try:
-                breite = sdk_hinweis.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                sdk_hinweis.configure(wraplength=breite - 8)
-
-        sdk_hinweis.bind("<Configure>", _sdk_umbrechen)
-
-        def _lizenzfrei_schalten() -> None:
-            """"Lizenzfrei bauen" gilt nur fuer Spiel-Backups.
-
-            ``prosperopkg.homebrew_bauen`` kennt den Schalter gar nicht - er
-            steht nur in der Signatur von ``bauen``. Klickbar weckte das
-            Kaestchen den Eindruck, es taete etwas.
-            """
-            try:
-                kaestchen["lizenzfrei"].configure(
-                    state="disabled" if art_var.get() == "homebrew" else "normal")
-            except tk.TclError:
-                pass
-
-        def _ist_ordner() -> bool:
-            return os.path.isdir(quelle_var.get().strip())
-
-        def _quelle_art_schalten(*_argumente) -> None:
-            """Ziel-Firmware und PlayGo nur bei Abbildern.
-
-            Beide schreiben in ``param.json``. Bei einem Abbild ist das die
-            Arbeitskopie; bei einem Dump-Ordner waere es der Ordner des
-            Anwenders selbst - das darf dieses Fenster nicht.
-            """
-            ordner = _ist_ordner()
-            try:
-                fw_box.configure(state="disabled" if ordner else "normal")
-                kaestchen["playgo"].configure(state="disabled" if ordner else "normal")
-            except tk.TclError:
-                pass
-            _knoepfe_setzen(laeuft["aktiv"])
-
-        _art_erklaeren()
-
-        # Der Hinweis steht in einer eigenen Zeile unter den Kaestchen, nicht
-        # daneben: Die Schalterreihe traegt jetzt drei Eintraege, und ein
-        # vierter langer Text darin haette sie bei Mindestbreite gequetscht.
-        playgo_hinweis = tk.Label(koerper, text=self._t("exfatpkg.playgo_hint"),
-                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                 fg=c["fg_secondary"], anchor="w", justify="left",
-                 wraplength=700)
-        playgo_hinweis.pack(fill="x", pady=(0, 4))
-
-        def _playgo_umbruch(_ereignis=None) -> None:
-            """Der Umbruch folgt der echten Breite, nicht einer festen Zahl.
-
-            Im Fenster "PKG bauen" stand hier einmal eine feste 820, waehrend
-            das Fenster auf 740 px zu ziehen ist - der Text lief ueber den Rand
-            hinaus. Dieses Fenster laesst sich auf 760 px ziehen, abzueglich
-            2 x 20 px Koerperrand.
-            """
-            try:
-                breite = playgo_hinweis.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                playgo_hinweis.configure(wraplength=breite - 8)
-
-        playgo_hinweis.bind("<Configure>", _playgo_umbruch)
-
-        ordner_hinweis = tk.Label(koerper, text=self._t("pkgbau.only_image_hint"),
-                                  font=(UI_SCHRIFT, pt(8)), bg=c["bg_main"],
-                                  fg=c["fg_secondary"], anchor="w", justify="left",
-                                  wraplength=700)
-        ordner_hinweis.pack(fill="x", pady=(0, 4))
-
-        def _ordner_hinweis_umbruch(_ereignis=None) -> None:
-            try:
-                breite = ordner_hinweis.winfo_width()
-            except tk.TclError:
-                return
-            if breite > 40:
-                ordner_hinweis.configure(wraplength=breite - 8)
-
-        ordner_hinweis.bind("<Configure>", _ordner_hinweis_umbruch)
-
-        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
-        balken.pack(fill="x", pady=(6, 2))
-
-        protokoll = tk.Text(koerper, height=14, font=("Consolas", pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"],
-                            relief="flat", wrap="none")
-        protokoll.pack(fill="both", expand=True, pady=(4, 4))
-
-        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
-
-        # Der Fensterbalken wird ueber einen Takt im Hauptfaden gefuettert,
-        # nicht per after(0) aus dem Arbeitsfaden - letzteres ist auf Tk bei
-        # schnellen Aktualisierungen unzuverlaessig, weshalb der Balken bei
-        # grossen Titeln bis zuletzt leer blieb. Der Arbeitsfaden schreibt nur
-        # in ``stand`` (einfache Zuweisung, faden-sicher), der Takt liest daraus:
-        #   quelle "self": Prozent aus stand["pct"] (exFAT-Extraktion, die wir
-        #     selbst treiben);
-        #   quelle "app":  Prozent aus self.progress_var (PFS/UFS2 laufen ueber
-        #     die erprobten Aufgabe-4-Wege, die diesen Wert fuehren);
-        #   phase "build": unbestimmter Balken (Marquee), der Paketbau meldet
-        #     keinen sauberen Prozentwert.
-        stand = {"quelle": "self", "phase": "idle", "pct": 0.0, "status": ""}
-        # Auch das Protokoll laeuft ueber den Takt: der Arbeitsfaden haengt
-        # Zeilen nur an eine Liste (faden-sicher), der Hauptfaden traegt sie
-        # ins Textfeld. after(0) aus dem Faden ging sonst verloren - das
-        # Protokoll blieb bis zuletzt leer.
-        protokoll_puffer: list = []
-        protokoll_cursor = [0]
-
-        def _protokoll(text: str) -> None:
-            protokoll_puffer.append(str(text).rstrip("\n"))
-
-        def _log_leeren() -> None:
-            if not protokoll.winfo_exists():
-                return
-            neu = False
-            while protokoll_cursor[0] < len(protokoll_puffer):
-                protokoll.insert("end",
-                                 protokoll_puffer[protokoll_cursor[0]] + "\n")
-                protokoll_cursor[0] += 1
-                neu = True
-            if neu:
-                protokoll.see("end")
-
-        def _status(text: str) -> None:
-            stand["status"] = text
-
-        def _balken(prozent: float) -> None:
-            try:
-                stand["pct"] = max(0.0, min(100.0, float(prozent)))
-            except (TypeError, ValueError):
-                pass
-
-        def _takt() -> None:
-            if not win.winfo_exists():
-                return
-            # Vor der Anzeige lesen: Endet der Faden zwischen Anzeige und
-            # Pruefung, fehlte sonst der Endstand (Durchsicht, H3-14).
-            aktiv = laeuft["aktiv"]
-            phase = stand["phase"]
-            try:
-                if phase == "build":
-                    if str(balken.cget("mode")) != "indeterminate":
-                        balken.configure(mode="indeterminate")
-                        balken.start(14)
-                else:
-                    if str(balken.cget("mode")) != "determinate":
-                        balken.stop()
-                        balken.configure(mode="determinate")
-                    if phase == "extract":
-                        if stand["quelle"] == "app":
-                            try:
-                                wert = float(self.progress_var.get() or 0.0)
-                            except (tk.TclError, ValueError):
-                                wert = stand["pct"]
-                        else:
-                            wert = stand["pct"]
-                        balken.configure(value=max(0.0, min(100.0, wert)))
-                    elif phase == "done":
-                        balken.configure(value=100.0)
-                    else:  # idle / aborted / failed
-                        balken.configure(value=0.0)
-                if stand["status"]:
-                    status_var.set(stand["status"])
-                _log_leeren()
-            except tk.TclError:
-                return
-            if aktiv:
-                win.after(120, _takt)
-            else:
-                # Abschluss-Tick (Hauptfaden, zuverlaessig): Knoepfe
-                # zuruecksetzen und den Marquee anhalten. Der Faden plant das
-                # per after(0) auch, aber aus dem Arbeitsfaden geht es leicht
-                # verloren - hier ist es sicher.
-                _knoepfe_setzen(False)
-                if phase != "build":
-                    try:
-                        balken.stop()
-                    except tk.TclError:
-                        pass
-
-        def _knoepfe_setzen(laufend: bool) -> None:
-            try:
-                umwandeln_btn.configure(state="disabled" if laufend else "normal")
-                abbrechen_btn.configure(state="normal" if laufend else "disabled")
-                # Pruefen geht nur bei einem Ordner: Ein Abbild muesste dafuer
-                # erst entpackt werden.
-                pruefen_btn.configure(
-                    state="disabled" if (laufend or not _ist_ordner()) else "normal")
-            except (tk.TclError, NameError):
-                pass
-
-        def _abbrechen() -> None:
-            if not laeuft["aktiv"] or laeuft["abbruch"]:
-                return
-            laeuft["abbruch"] = True
-            # PFS/UFS2 hoeren auf das kooperative is_running-Flag; die exFAT-
-            # Extraktion bricht ueber den Fortschritts-Rueckruf ab; ein
-            # laufender Paketbau-Prozess wird beendet.
-            #
-            # is_running nur zuruecksetzen, solange dieses Werkzeug es selbst
-            # haelt. Bis v1.9.24 beendete ein Abbrechen hier auch eine
-            # gleichzeitig laufende Aufgabe 1-8 des Hauptfensters.
-            if getattr(self, "_abbild_pkg_haelt_is_running", False):
-                self.is_running = False
-            prozess = laeuft.get("prozess")
-            if prozess is not None:
-                try:
-                    prozess.terminate()
-                except OSError as exc:
-                    logger.debug("Abbild-PKG-Prozess nicht beendbar: %s", exc)
-            stand["status"] = self._t("exfatpkg.status_aborting")
-
-        def _umwandeln() -> None:
-            quelle = quelle_var.get().strip()
-            ziel = ziel_var.get().strip()
-            arbeit = arbeit_var.get().strip()
-            if laeuft["aktiv"]:
-                return
-            ist_ordner = bool(quelle) and os.path.isdir(quelle)
-            ist_abbild = (bool(quelle) and os.path.isfile(quelle)
-                          and quelle.lower().endswith(self._ABBILD_PKG_ENDUNGEN))
-            if not (ist_ordner or ist_abbild):
-                messagebox.showwarning(titel, self._t("pkgbau.need_source_any"),
-                                       parent=win)
-                return
-            # Die Extraktion teilt sich Kennzeichen, Ausgabeschlange und
-            # MkPFS-Sperre mit den Aufgaben 1-8. Laeuft dort etwas, warten.
-            # Ein Ordner wird nicht entpackt und stoert dort nichts.
-            if ist_abbild and self._vorgang_laeuft_noch():
-                messagebox.showinfo(self._t("dialog.title.aufgabe_laeuft"),
-                                    self._t("dialog.msg.aufgabe_laeuft"), parent=win)
-                return
-            if not ziel:
-                messagebox.showwarning(titel, self._t("exfatpkg.need_output"),
-                                       parent=win)
-                return
-            if ist_abbild and not arbeit:
-                messagebox.showwarning(titel, self._t("exfatpkg.need_work"),
-                                       parent=win)
-                return
-            firmware = None
-            if ist_abbild:
-                try:
-                    firmware = self._exfat_pkg_firmware_lesen(fw_var.get())
-                except ValueError:
-                    messagebox.showwarning(titel, self._t("exfatpkg.firmware_bad",
-                                                          wert=fw_var.get()),
-                                           parent=win)
-                    return
-
-            # Platz grob pruefen (siehe _abbild_pkg_platzbedarf). Knapp heisst
-            # warnen, nicht verbieten - die endgueltige Groesse haengt an der
-            # Kompression. Nur bei Abbildern: Einen Dump-Ordner zu vermessen
-            # hiesse, ihn vorab ganz zu durchlaufen - ohne Anzeige.
-            if ist_abbild:
-                try:
-                    noetig_arbeit, noetig_ziel = self._abbild_pkg_platzbedarf(quelle)
-                    if not self._platz_reicht_fuer(arbeit, ziel, noetig_arbeit,
-                                                   noetig_ziel):
-                        if not messagebox.askyesno(
-                                titel, self._t("exfatpkg.space_warn"),
-                                parent=win, default="no"):
-                            return
-                except OSError:
-                    pass
-
-            laeuft["aktiv"] = True
-            laeuft["abbruch"] = False
-            # Woher der Fortschritt kommt: exFAT treiben wir selbst (stand),
-            # PFS/UFS2 laufen ueber die Aufgabe-4-Wege (self.progress_var).
-            # Ein Ordner wird nicht entpackt - es geht gleich ans Bauen.
-            stand["quelle"] = "self" if quelle.lower().endswith(".exfat") else "app"
-            stand["phase"] = "extract" if ist_abbild else "build"
-            stand["pct"] = 0.0
-            stand["status"] = self._t("exfatpkg.status_extracting" if ist_abbild
-                                      else "exfatpkg.status_building")
-            try:
-                self.progress_var.set(0)
-            except tk.TclError:
-                pass
-            # Den Temp-Ordner jetzt im Hauptfaden aufloesen und in die
-            # Einstellung schreiben - der Arbeitsfaden liest ihn danach
-            # faden-sicher von dort (self.temp_path ist eine Tk-Variable).
-            self._get_runtime_temp_dir()
-            # Die beiden Kaestchen sind Tk-Variablen und werden JETZT im
-            # Hauptfaden gelesen. Ihr Wert im Arbeitsfaden abzufragen warf
-            # "main thread is not in main loop" - die Ausnahme fiel beim
-            # Auswerten der bauen()-Argumente an, noch bevor der Bau begann,
-            # und hinterliess nur "Fehlgeschlagen" bei leerem Protokoll.
-            lizenzfrei = bool(lizenzfrei_var.get())
-            schnell = bool(schnell_var.get())
-            mit_sdk = bool(sdk_var.get()) and sdk_stand.vorhanden
-            playgo_fix = ist_abbild and bool(playgo_var.get())
-            homebrew = art_var.get() == "homebrew"
-            _knoepfe_setzen(True)
-            _takt()
-
-            def _arbeit() -> None:
-                dump_ordner = ""
-                pfad = ""
-                try:
-                    if ist_ordner:
-                        # Direkt aus dem Ordner - kein Entpacken, keine
-                        # Arbeitskopie, nichts wird darin geaendert.
-                        wurzel = self._exfat_pkg_spielwurzel(quelle) or quelle
-                        _protokoll(self._t("pkgbau.log_folder", pfad=wurzel))
-                    else:
-                        basis = os.path.splitext(os.path.basename(quelle))[0]
-                        dump_ordner = os.path.join(arbeit, "abbildpkg_" + basis)
-
-                        _protokoll(self._t("exfatpkg.log_extracting", name=basis))
-                        wurzel = self._abbild_zu_dumpordner(
-                            quelle, dump_ordner, protokoll=_protokoll,
-                            status=_status, balken=_balken,
-                            abbruch=lambda: laeuft["abbruch"])
-                    if wurzel is None:
-                        if laeuft["abbruch"]:
-                            _protokoll(self._t("exfatpkg.log_aborted"))
-                            stand["phase"] = "aborted"
-                            stand["status"] = self._t("exfatpkg.status_aborted")
-                        else:
-                            stand["phase"] = "failed"
-                            stand["status"] = self._t("exfatpkg.status_failed")
-                        return
-
-                    param = os.path.join(wurzel, "sce_sys", "param.json")
-                    if not os.path.isfile(param):
-                        _protokoll(self._t("pkgbau.log_no_param" if ist_ordner
-                                           else "exfatpkg.log_no_param"))
-                        stand["phase"] = "failed"
-                        stand["status"] = self._t("exfatpkg.status_failed")
-                        return
-
-                    if firmware is not None:
-                        hexwert = self._sdk_bcd(firmware[0], firmware[1])
-                        alt_sdk, _alt = self._exfat_pkg_param_setzen(param, hexwert)
-                        _protokoll(self._t("exfatpkg.log_firmware",
-                                           alt=alt_sdk or "-", neu=hexwert))
-
-                    if playgo_fix:
-                        felder = self._exfat_pkg_playgo_felder(param)
-                        if felder:
-                            _protokoll(self._t("exfatpkg.log_playgo",
-                                               felder=", ".join(felder)))
-                        else:
-                            _protokoll(self._t("exfatpkg.log_playgo_nichts"))
-
-                    stand["phase"] = "build"
-                    stand["status"] = self._t("exfatpkg.status_building")
-                    texte = self._modul_texte(prosperopkg.MELDUNGEN, "prosperopkg.")
-                    if mit_sdk:
-                        pfad = self._sdk_bauweg(wurzel, ziel, arbeit, param,
-                                                _protokoll, laeuft)
-                        if not pfad:
-                            stand["phase"] = "failed"
-                            stand["status"] = self._t("exfatpkg.status_failed")
-                            return
-                    elif homebrew:
-                        pfad = prosperopkg.homebrew_bauen(
-                            wurzel, ziel, melden=_protokoll, texte=texte,
-                            schnell=schnell, prozess_ablage=laeuft)
-                    else:
-                        pfad = prosperopkg.bauen(
-                            wurzel, ziel, melden=_protokoll, texte=texte,
-                            lizenzfrei=lizenzfrei, schnell=schnell,
-                            prozess_ablage=laeuft)
-                except self._AbbildAbbruch:
-                    _protokoll(self._t("exfatpkg.log_aborted"))
-                    stand["phase"] = "aborted"
-                    stand["status"] = self._t("exfatpkg.status_aborted")
-                    return
-                except prosperopkg.ProsperoFehler as exc:
-                    if laeuft["abbruch"]:
-                        _protokoll(self._t("exfatpkg.log_aborted"))
-                        stand["phase"] = "aborted"
-                        stand["status"] = self._t("exfatpkg.status_aborted")
-                    else:
-                        _protokoll(self._t("log.fehler_zeile", text=exc))
-                        stand["phase"] = "failed"
-                        stand["status"] = self._t("exfatpkg.status_failed")
-                    return
-                except Exception as exc:  # noqa: BLE001
-                    _protokoll(self._t("log.fehler_zeile", text=exc))
-                    stand["phase"] = "failed"
-                    stand["status"] = self._t("exfatpkg.status_failed")
-                    return
-                finally:
-                    if dump_ordner:
-                        # Der entpackte Dump ist eine Zwischenstufe (bis zu
-                        # zweistellige GB) - das Paket liegt fertig im Ziel.
-                        #
-                        # Erst aufraeumen, dann freigeben. Bis v1.9.24 kamen
-                        # die Knoepfe zurueck, waehrend noch geloescht wurde -
-                        # ein sofortiger Neustart entpackte in genau diesen
-                        # Ordner. Und nach einem Abbruch beim PFS-Entpacken
-                        # laeuft MkPFS im Prozess weiter (es laesst sich nicht
-                        # unterbrechen); geloescht wird erst, wenn es fertig
-                        # ist, sonst schreibt es in den geloeschten Ordner und
-                        # abbildpkg_* bleibt liegen.
-                        # Ohne abbruch: gewartet wird gerade NACH einem
-                        # Abbruch (siehe _wait_for_pending_mkpfs_background).
-                        self._wait_for_pending_mkpfs_background()
-                        _rmtree_force(Path(dump_ordner))
-                    laeuft["aktiv"] = False
-                    self._spaeter_im_fenster(win, lambda: _knoepfe_setzen(False))
-                    self._spaeter_im_fenster(win, _takt)
-                stand["phase"] = "done"
-                groesse = os.path.getsize(pfad) if os.path.isfile(pfad) else 0
-                stand["status"] = self._t("exfatpkg.status_done",
-                                          groesse=self._fmt_bytes(groesse))
-                _protokoll("")
-                _protokoll(self._t("exfatpkg.result", pfad=pfad))
-                self._append_to_log(self._t("pkgbau.log_gebaut", pfad=pfad))
-                # Nach dem Puffern den Takt planen, damit er die Schlusszeilen
-                # noch ins Textfeld traegt.
-                self._spaeter_im_fenster(win, _takt)
-
-            threading.Thread(target=_arbeit, daemon=True,
-                             name="abbild-pkg-build").start()
-
-        def _pruefen() -> None:
-            """Sagt vor dem Bauen, ob ein Dump-Ordner ueberhaupt starten koennte."""
-            quelle = quelle_var.get().strip()
-            if laeuft["aktiv"]:
-                return
-            if not quelle or not os.path.isdir(quelle):
-                messagebox.showinfo(titel, self._t("pkgbau.check_only_folder"),
-                                    parent=win)
-                return
-            wurzel = self._exfat_pkg_spielwurzel(quelle) or quelle
-            laeuft["aktiv"] = True
-            laeuft["abbruch"] = False
-            # Die Pruefung legt ihren Prozess ab, damit "Abbrechen" ihn beenden
-            # kann - und ein alter Bauprozess darf dort nicht stehenbleiben.
-            # Bis zur Durchsicht (Runde 19, H11-8) beendete der Knopf
-            # hoechstens ihn, und inspect lief bis zu 600 s weiter.
-            laeuft["prozess"] = None
-            laeuft["pruefung"] = True
-            stand["phase"] = "build"        # unbestimmter Balken
-            stand["status"] = self._t("pkgbau.status_checking")
-            _knoepfe_setzen(True)
-            _takt()
-
-            def _arbeit_pruefen() -> None:
-                try:
-                    erg = prosperopkg.pruefen(
-                        wurzel, melden=_protokoll,
-                        texte=self._modul_texte(prosperopkg.MELDUNGEN,
-                                                "prosperopkg."),
-                        prozess_ablage=laeuft)
-                    if laeuft["abbruch"]:
-                        stand["status"] = self._t("pkgbau.status_check_aborted")
-                    elif erg["bereit"]:
-                        stand["status"] = self._t("pkgbau.status_ready")
-                    else:
-                        stand["status"] = self._t("pkgbau.status_not_ready",
-                                                  anzahl=len(erg["blocker"]))
-                except prosperopkg.ProsperoFehler as exc:
-                    # Ein beendeter Prozess endet mit einem Fehlercode - das
-                    # ist dann der Abbruch, kein Befund ueber das Backup.
-                    if laeuft["abbruch"]:
-                        stand["status"] = self._t("pkgbau.status_check_aborted")
-                    else:
-                        _protokoll(self._t("log.fehler_zeile", text=exc))
-                        stand["status"] = self._t("pkgbau.status_check_failed")
-                finally:
-                    laeuft["prozess"] = None
-                    laeuft["pruefung"] = False
-                    stand["phase"] = "idle"
-                    laeuft["aktiv"] = False
-                    self._spaeter_im_fenster(win, _takt)
-
-            threading.Thread(target=_arbeit_pruefen, daemon=True,
-                             name="prosperopkg-inspect").start()
-
-        def _beim_schliessen() -> None:
-            if laeuft["aktiv"]:
-                if laeuft.get("pruefung"):
-                    # Eine Pruefung schreibt nichts: beenden ohne die Frage
-                    # nach dem Bau und ohne "PKG-Bau abgebrochen" im
-                    # Protokoll - gebaut wurde ja nichts (Runde 19, H11-8).
-                    _abbrechen()
-                    win.destroy()
-                    return
-                if not messagebox.askyesno(
-                        titel, self._t("pkgbau.abort_confirm"),
-                        parent=win, default="no"):
-                    return
-                _abbrechen()
-                self._append_to_log(self._t("pkgbau.log_aborted") + chr(10))
-            win.destroy()
-
-        win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
-
-        # Die Knopfreihe wurde oben schon unten verankert; hier kommen nur die
-        # Knoepfe hinein. Abbrechen ist im Leerlauf gesperrt, Pruefen auch,
-        # solange kein Ordner gewaehlt ist.
-        ttk.Button(knopfreihe, text=self._t("action.close"),
-                   command=_beim_schliessen).pack(side="right")
-        umwandeln_btn = ttk.Button(
-            knopfreihe, text=self._t("pkgbau.build_button"),
-            style="Accent.TButton", command=_umwandeln)
-        umwandeln_btn.pack(side="left")
-        abbrechen_btn = ttk.Button(
-            knopfreihe, text=self._t("exfatpkg.abort_button"),
-            command=_abbrechen, state="disabled")
-        abbrechen_btn.pack(side="left", padx=(8, 0))
-        pruefen_btn = ttk.Button(
-            knopfreihe, text=self._t("pkgbau.check_button"),
-            command=_pruefen, state="disabled")
-        pruefen_btn.pack(side="left", padx=(8, 0))
-
-        quelle_var.trace_add("write", _quelle_art_schalten)
-        _quelle_art_schalten()
-
     def _show_wee_tools(self) -> None:
         """WEITERE TOOLS: PS5 Wee Tools starten - das NOR-Werkzeug von andy-man.
 
@@ -51980,6 +52004,46 @@ class PS5ConverterGUI:
         while len(teile) < 4:
             teile.append(0)
         return tuple(teile) + (name.lower(),)
+
+    @staticmethod
+    def _webkit_fassung_aus_name(name: str) -> str:
+        """Die Fassung aus dem Dateinamen: ``..._v0.5.2.elf`` wird ``0.5.2``.
+
+        Dieselbe Stelle, nach der ``_webkit_versionsschluessel`` sortiert -
+        angezeigt wird damit genau die Datei, die auch gestartet wird. Ohne
+        erkennbare Nummer bleibt der Text leer.
+        """
+        treffer = re.search(r"_v(\d+(?:\.\d+)*)", name)
+        return treffer.group(1) if treffer else ""
+
+    def _webkit_fassungen(self) -> dict[str, str]:
+        """Die Fassung der drei mitgelieferten Dateien (leer, wo keine liegt)."""
+        return {art: self._webkit_fassung_aus_name(
+                    os.path.basename(self._webkit_datei(art)))
+                for art in ("exe", "py", "elf")}
+
+    def _webkit_fassungszeile(self) -> str:
+        """Die Zeile unter der Ueberschrift des Autoloader-Fensters.
+
+        Gewuenscht am 02.10.2026: "Man weiss ja gar nicht welche man sonst
+        benutzt." Tragen alle vorhandenen Dateien dieselbe Fassung, steht sie
+        einmal da; weichen sie voneinander ab - jemand hat nur eine Datei
+        ersetzt -, steht jede einzeln, damit der Unterschied auffaellt.
+
+        Returns:
+            Der Text, oder ein leerer Text, wenn keine Datei eine Nummer
+            traegt. Dann bleibt das Fenster wie bisher ohne die Zeile.
+        """
+        fassungen = self._webkit_fassungen()
+        vorhanden = {v for v in fassungen.values() if v}
+        if not vorhanden:
+            return ""
+        if len(vorhanden) == 1:
+            return self._t("webkit.version", version=next(iter(vorhanden)))
+        return self._t("webkit.version_mix",
+                       exe=fassungen["exe"] or "-",
+                       py=fassungen["py"] or "-",
+                       elf=fassungen["elf"] or "-")
 
     def _webkit_ordner(self) -> str:
         """Der mitgelieferte Ordner (leer, wenn er fehlt)."""
@@ -52429,13 +52493,29 @@ class PS5ConverterGUI:
             return knopfmass(int(round(px)), fenster)
 
         breite, rand = _m(520), _m(14)
+        innen = breite - 2 * rand - _m(26)
         bild = self._webkit_bild_laden()
         # Dieselbe Rechnung wie in ``_webkit_bild_laden`` - gleiche Eingabe,
         # gleiches Ergebnis. Bild und reservierter Platz bleiben zusammen.
         bildkante = knopfmass(self._WEBKIT_BILD_KANTE, fenster)
         versatz = (bildkante + _m(16)) if bild is not None else 0
+        # Die Fassungszeile unter der Ueberschrift (02.10.2026: "Man weiss ja
+        # gar nicht welche man sonst benutzt"). Sie schiebt alles darunter nach
+        # unten - und gehoert deshalb in dieselbe Rechnung wie das Bild: Jeder
+        # Summand der Hoehe, den man vergisst, laesst SCHLIESSEN wieder in die
+        # Knoepfe ragen. Ihre Hoehe wird gemessen, nicht angenommen: Eine
+        # lange Uebersetzung bricht um und braucht dann zwei Zeilen.
+        fassung = self._webkit_fassungszeile()
+        fassung_oben = rand + _m(40)
+        zeile = 0
+        if fassung:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            fassungsschrift = _tkfont.Font(root=fenster, family=UI_SCHRIFT,
+                                           size=pt(9), weight="bold")
+            fassungszeilen = max(1, -(-fassungsschrift.measure(fassung) // max(1, innen)))
+            zeile = fassungszeilen * fassungsschrift.metrics("linespace") + _m(10)
         #: Oberkante des ersten der drei Wege-Knöpfe.
-        knopf_oben = rand + _m(134) + versatz
+        knopf_oben = rand + _m(134) + versatz + zeile
         #: Unterkante des letzten – drei Knöpfe à 44 px im Abstand von 56.
         knopf_unten = knopf_oben + 2 * _m(56) + _m(44) // 2
         # Darunter Luft, der SCHLIESSEN-Knopf (26 px) und derselbe Rand wie oben.
@@ -52453,9 +52533,13 @@ class PS5ConverterGUI:
                              text=self._t("webkit.title"),
                              fill=c["fg_accent"],
                              font=(UI_SCHRIFT, pt(14), "bold"))
-        innen = breite - 2 * rand - _m(26)
         links = rand + _m(13)
-        leinwand.create_text(breite / 2, rand + _m(64),
+        if fassung:
+            leinwand.create_text(breite / 2, fassung_oben, anchor="n",
+                                 text=fassung, fill=c["fg_primary"], width=innen,
+                                 justify="center",
+                                 font=(UI_SCHRIFT, pt(9), "bold"))
+        leinwand.create_text(breite / 2, rand + _m(64) + zeile,
                              text=self._t("webkit.hint"),
                              fill=c["fg_secondary"], width=innen,
                              font=(UI_SCHRIFT, pt(9)))
@@ -52469,9 +52553,10 @@ class PS5ConverterGUI:
             fenster._webkit_bild = bild
             # Die halbe Bildkante, nicht die feste 42: Sonst saesse das Bild
             # schief, sobald es mit der Anzeigeskalierung waechst.
-            leinwand.create_image(breite / 2, rand + _m(104) + bildkante // 2,
+            leinwand.create_image(breite / 2,
+                                  rand + _m(104) + zeile + bildkante // 2,
                                   image=bild)
-        leinwand.create_text(breite / 2, rand + _m(104) + versatz,
+        leinwand.create_text(breite / 2, rand + _m(104) + versatz + zeile,
                              text=self._t("webkit.credit"),
                              fill=c["fg_secondary"], width=innen,
                              font=(UI_SCHRIFT, pt(9), "italic"))
@@ -52544,6 +52629,12 @@ class PS5ConverterGUI:
             payload_default_port="9021",
         )
 
+    # ==================================================================
+    # Generischer Remote-INI-Editor – bearbeitet die flache config.ini
+    # eines PS5-Payloads (z.B. ShadowMountPlus, MicroMount) über FTP.
+    # Beide Tools verwenden dasselbe key=value-Format und denselben
+    # Lade-/Schreib-Ablauf (siehe ps5_validator.utils.ini_config).
+    # ==================================================================
     def _show_remote_ini_editor(
         self,
         title: str,
@@ -58797,7 +58888,15 @@ def _run_cli(args: argparse.Namespace) -> int:
         # Das übersetzte Label setzen, nicht das deutsche Klassen-Label:
         # _format_label_to_key() liest über self._t() zurück. Bei englischer
         # Spracheinstellung liefe "folder"/"ffpfs" sonst ins Leere.
-        label = app._t(f"format.{args.format}")
+        #
+        # Und zwar so, wie die Liste es beschriftet (_zielformat_label, mit
+        # Zusatz wie "(neu validieren)"): Weiter unten frischt
+        # _on_integration_changed die Liste auf, und ein Label, das darin
+        # nicht vorkommt, ersetzt sie durch den ersten Eintrag. Bis zum
+        # 01.10.2026 wurde so aus "--mode ffpkg_to_ffpfsc --format ffpkg"
+        # still ein Dump-Ordner (nachgestellt in der Reihenfolge dieser
+        # Funktion).
+        label = app._zielformat_label(args.format, mode)
         if label and label != f"format.{args.format}":
             app.target_format.set(label)
             # _set_mode_from_sidebar hat die Formatvorgabe gesetzt - hier ueber-
@@ -58965,7 +59064,7 @@ def _run_anzeige_diagnose(argv: list[str]) -> int:
         0, wenn nichts Ernstes gefunden wurde, sonst 1.
     """
     # UTF-8 erzwingen: Der Bericht enthaelt Zeichen ausserhalb von cp1252
-    # (z. B. "→" in Fensternamen wie "Abbild → PKG"). Ohne das brach die
+    # (z. B. "→" in Fensternamen wie "PS4 PKG → ffpfsc"). Ohne das brach die
     # Ausgabe unter Windows mit einem UnicodeEncodeError ab. Derselbe Grund
     # wie im --doktor- und --cli-Pfad.
     _prepare_cli_streams()

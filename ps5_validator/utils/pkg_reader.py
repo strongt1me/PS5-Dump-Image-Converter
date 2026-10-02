@@ -23,7 +23,7 @@ CNT_MAGIC = b"\x7fCNT"
 FIH_MAGIC = b"\x7fFIH"
 
 #: Kennung eines PS5-Update-Pakets (Delta), wie es ``img_create
-#: --ref_pkg_path`` baut (bei uns: ``sony_sdk.befehl_bauen(grundpaket=...)``).
+#: --ref_pkg_path`` baut.
 #: Ein Delta traegt nur die geaenderten Dateien und verweist fuer alles andere
 #: auf Bloecke genau **eines** Grundpakets. Die Konsole prueft vor dem
 #: Zusammenfuehren dessen Digest; ist ein anderes Paket installiert - schon

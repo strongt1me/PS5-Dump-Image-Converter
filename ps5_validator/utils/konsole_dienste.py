@@ -126,6 +126,31 @@ KATALOG: tuple[Dienst, ...] = (
     # ShadowMount+ oben).
     Dienst("prosperomgr", 7070, "ProsperoMgr*.elf", web="/", anlaufzeit=2.0),
     Dienst("upload", 9113, "ps5upload*.elf"),
+    # --- Weitere Payloads mit Port (seit 02.10.2026) ---------------------------
+    # Ports und Weboberflaechen stammen aus den Beschreibungen der Autoren und,
+    # wo vorhanden, aus einer Zeichenkette im ELF selbst (CheatRunner 9999,
+    # Game Compressor 5910, gdbsrv 2159); an der Konsole noch NICHT nachgemessen.
+    # Bewusst nicht aufgenommen:
+    # * shsrv (Telnet-Shell, 2323): startet je Verbindung einen Shell-Prozess
+    #   (``elfldr_spawn`` in der Annahmeschleife) - der Statuscheck wuerde bei
+    #   jeder Abfrage einen Prozess auf der Konsole erzeugen.
+    # * MemDBG: sein TCP-Port ist 9020, hier der zweite Port des ELF-Loaders.
+    # * garlic-worker: der Port ist nur ein Startparameter, kein Standardwert.
+    # * nanoDNS: horcht auf 53, die Abfrage prueft aber nur TCP.
+    # * OnionHEN (eigene Ladekette auf 9020), PIZZA-HEN (kein Port belegt) und
+    #   ActRemoteLink (Remote Play ist aus dem Programm genommen).
+    Dienst("cheatrunner", 9999, "CheatRunner_v*.elf", web="/", anlaufzeit=2.0),
+    Dienst("appdumper", 8081, "ps5-app-dumper_v*.elf", web="/", anlaufzeit=2.0),
+    Dienst("gamecompressor", 5910, "game-compressor_v*.elf", web="/", anlaufzeit=2.0),
+    Dienst("smplusgui", 7777, "SMPlusGui_v*.elf", web="/", anlaufzeit=2.0),
+    # AriaNg steckt im ELF und liegt auf demselben Port wie die RPC-Schnittstelle.
+    Dienst("aria2", 6800, "aria2-v*.elf", web="/", anlaufzeit=3.0),
+    # Nur die zhttp-Fassung traegt die Weboberflaeche; der HTTP-Port spiegelt
+    # den FTP-Port (auf Konsolen 2120). Ohne Gruss geprueft: Die Fassung
+    # entscheidet bei einer Verbindung, ob FTP oder HTTP gesprochen wird.
+    Dienst("zftpd", 2120, "zftpd-ps5-zhttp-v*.elf", web="/", anlaufzeit=2.5),
+    Dienst("gdbsrv", 2159, "gdbsrv-ps5_v*.elf"),
+    Dienst("ps5debug", 744, "ps5debug-NG_v*.elf", anlaufzeit=2.0),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

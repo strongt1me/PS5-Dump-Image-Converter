@@ -68,12 +68,22 @@ _METHODEN = (
     "_ampr_mitschnitt_ordner_fragen",
     "_ampr_mitschnitt_titel_aus_ordner",
     "_ampr_mitschnitt_spiel_zuordnen",
+    "_ampr_mitschnitt_shadowmount_pruefen",
+    "_ampr_mitschnitt_backport_finden",
+    "_ampr_mitschnitt_config_umstellen",
     "_ampr_mitschnitt_index_bauen",
     "_ampr_mitschnitt_debug_bibliothek_waehlen",
     "_ampr_mitschnitt_upload_vorbereiten",
+    "_ampr_mitschnitt_sichern",
+    "_ampr_mitschnitt_namen",
+    "_ampr_mitschnitt_ordner_fehlt",
+    "_ampr_mitschnitt_freier_name",
     "_ampr_mitschnitt_segment_warten",
     "_ampr_mitschnitt_lauf_herunterladen",
     "_ampr_mitschnitt_profil_erzeugen",
+    "_ampr_mitschnitt_zurueckstellen",
+    "_ampr_mitschnitt_ordner_stilllegen",
+    "_ampr_mitschnitt_config_zurueck",
 )
 
 

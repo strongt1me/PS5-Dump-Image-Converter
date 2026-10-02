@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.55):** Prospero Manager ist jetzt eingebunden – eigener Knopf in der Ansicht KONSOLE, schickt das Payload bei Bedarf selbst und öffnet die Weboberfläche.
+> **Kurz zum aktuellen Stand (v1.9.56):** Aufgabe 1 baut auf Wunsch AMPR EMU, PlayGo oder BACKPORT in einen Dump-Ordner ein, und „Konsole & Payloads“ kennt acht weitere Dienste.
+
+---
+
+## v1.9.56 – 02.10.2026
+
+- **Neu:** Aufgabe 1 baut AMPR EMU (auch als Asset-Pack), PlayGo oder BACKPORT auf Wunsch in einen Dump-Ordner ein – vorher fragt das Programm, ob im Original oder in einer Sicherung eingebaut wird.
+- **Neu:** „Konsole & Payloads“ kennt acht weitere Dienste (CheatRunner, App Dumper, Game Compressor, SMPlusGui, aria2, zftpd, GDB-Server, ps5debug-NG); dazu liegen 19 weitere Payloads bei, und ShadowMount+ (1.7beta3), CheatRunner, ps5upload, zftpd und WebKit Autoloader sind aktualisiert. Das Fenster des WebKit Autoloaders nennt die mitgelieferte Fassung.
+- **Geändert:** „PKG BAUEN“ ist entfallen; „PKG lesen“ heißt jetzt „PS4 & PS5 PKG lesen“, „PKG entpacken“ heißt „PS4 PKG → Dump Ordner“. Der AMPR-Mitschnitt-Assistent prüft vorab ShadowMount+ auf der Konsole und stellt nach dem Lauf alles zurück. Der Diagnosebericht meldet ein hochgerechnetes Hintergrundbild nur noch, wenn man die Hochrechnung sieht.
 
 ---
 
@@ -18,12 +26,6 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 - **Neu:** AMPR-Mitschnitt-Assistent (WEITERE TOOLS) – überträgt einen Aufnahme-Bau des AMPR EMU auf die PS5, führt durch mehrere kurze Spieldurchläufe und erzeugt daraus automatisch ein Packprofil, das beim nächsten Packen des Titels verwendet wird.
 - **Aktualisiert:** WebKit Autoloader auf v0.5.0 sowie die mitgelieferten Konsolen-Werkzeuge PKG Manager, Payload Manager, PS5Upload und OffAct auf ihre jeweils neueste Fassung.
-
----
-
-## v1.9.53 – 29.09.2026
-
-- **Behoben:** „PKG bauen“ scheiterte bei Spiel-Backups mit vielen kleinen Dateien an einem internen Format-Limit der eingebetteten LibProsperoPkg. Für kleine, einfache Titel baut das Werkzeug jetzt durch; bei größeren oder komplexeren Titeln bleibt die Einschränkung vorerst bestehen.
 
 ---
 
@@ -94,7 +96,7 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 ## v1.9.43 – 23.09.2026
 
 - **Neu:** Die Ansicht **KONSOLE** ist fertig: Dienste-Ampel mit Payload-Start, Spiel holen, Zurückspielen, Spielstände und Kernel-Protokoll – und rechts der **Zustand der Konsole** (findet die PS5 auch im Ruhemodus).
-- **Neu:** Der Ordner **libs** nimmt eigene Bibliotheken auf; liegt dort ein SDK-Baukasten unter `libs/sdk`, baut „PKG bauen“ wahlweise über Sonys Publishing Tools.
+- **Neu:** Der Ordner **libs** nimmt eine eigene Bibliothek zum Lesen von PS5-Paketen auf.
 - **Neu:** PKG Manager 1.2.2 und die ActRemoteLink-Payloads liegen bei.
 
 ---
@@ -107,7 +109,6 @@ Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Vers
 
 ## v1.9.41 – 22.09.2026
 
-- **Geändert:** „PKG bauen“ und „Abbild → PKG“ sind ein Fenster – Quelle ist ein Dump-Ordner oder ein Abbild. „DEBUG-PKG BAUEN“ ist entfallen.
 - **Behoben:** Gesperrte Knöpfe sahen aus wie bedienbare; jetzt sind sie grau – auch wenn sie gerade unter der Maus gesperrt werden.
 
 ---
@@ -615,7 +616,6 @@ Der Diagnosebericht vergleicht jetzt die mitgelieferten Payloads mit ihrer Aufli
 - Aufgabe 8 hielt abgeschnittene Abbilder für bestanden; die Inspektion meldete Erfolg, auch wenn sie keine einzige Angabe lesen konnte.
 - Die Vollständigkeitsprüfung zählte Dateien mit, die der Schreiber bewusst weglässt.
 - Die Quellvorschau packte flache `.ffpfs` vollständig in den Temp-Ordner aus.
-- „Abbild → PKG" rechnete den Platzbedarf mit der Dateigrösse statt mit dem entpackten Dump.
 - Aufgabe 5 nimmt einen Ordner voller Abbilder an; Wege, die die Oberfläche anbot, sich aber nie starten liessen, sind repariert oder entfernt.
 - Eine gewählte AMPR-Fassung wurde beim Bauen still durch eine andere ersetzt.
 - Das Mac-Bündel veränderte UFS2Tool beim Signieren, wodurch `.ffpkg` dort unbrauchbar war; der Bau misst das jetzt nach.
@@ -726,20 +726,6 @@ Dump fassen.
 
 ---
 
-## v1.9.21 – 15.09.2026
-
-Das eingebaute Paket-Werkzeug wurde aktualisiert.
-
-### PKG-Erzeugung: neuere Bibliothek
-
-Die eingebettete Bibliothek hinter „Abbild → PKG“ und „PKG bauen“ wurde
-auf eine neuere Fassung aktualisiert. Sie schreibt die innere Struktur der erzeugten
-Debug-Pakete an mehreren Stellen so, wie es die Konsole erwartet (u. a. die Ausrichtung
-des inneren Dateisystem-Kopfes). Das kann die Chance erhöhen, dass ein gebautes Paket
-auf der Konsole angenommen wird. An der Bedienung des Programms ändert sich nichts.
-
----
-
 ## v1.9.20 – 15.09.2026
 
 Ein neuer Weg für Asset-Packs in „ffpfsc konvertieren“ und mehrere Fixes gegen
@@ -775,17 +761,8 @@ ohne Zwischenfrage.
 
 ## v1.9.19 – 13.09.2026
 
-Aus jedem Abbild ein Paket, ein neues Lese-Werkzeug für Pakete, eine bessere
-Fortschrittsanzeige beim Umwandeln, vier neue Designs – und ein wichtiger Fix
+Ein neues Lese-Werkzeug für Pakete, vier neue Designs – und ein wichtiger Fix
 gegen das Einfrieren beim Starten.
-
-### „exFAT → PKG" wird „Abbild → PKG" – jetzt für alle Abbilder
-
-Der Knopf unter „Weitere Tools", der bisher nur ein `.exfat`-Abbild in ein
-installierbares Debug-Paket verwandelte, nimmt jetzt **jedes Abbildformat**:
-`.exfat`, `.ffpfsc`, `.ffpfs` und `.ffpkg`. Du wählst einfach dein Abbild, der
-Rest läuft wie gehabt. An echten Abbildern in allen vier Formaten geprüft –
-jedes ergab dasselbe, gültige Paket.
 
 ### Neu: „PKG lesen"
 
@@ -794,14 +771,6 @@ Ein neues Werkzeug unter „Weitere Tools" zeigt dir die Eckdaten einer fertigen
 Title-ID und Region, Größe und die Eintragstabelle des Pakets. Das eigentliche
 Spiel im Paket ist verschlüsselt und lässt sich nicht auflisten – der äußere
 Rahmen dafür vollständig.
-
-### Fortschritt und Abbrechen beim Umwandeln
-
-Das Fenster „Abbild → PKG" zeigt jetzt beim Auspacken einen laufenden
-Fortschrittsbalken und während des (teils langen) Paketbaus eine sichtbare
-Aktivitätsanzeige. Neu ist außerdem ein **Abbrechen-Knopf**, mit dem du einen
-laufenden Vorgang jederzeit sauber stoppen kannst. Das Protokoll füllt sich
-dabei zuverlässig mit, und am Ende steht klar „Fertig" oder „Abgebrochen".
 
 ### Vier neue Designs
 
@@ -838,9 +807,6 @@ auf USB. Auch das ist behoben.
 
 Im Fenster „unjail senden" wurde die Knopfleiste bei sehr kleinem Fenster
 zusammengedrückt – die Knöpfe sind jetzt immer voll sichtbar.
-
-In den Untertiteln von „Abbild → PKG" und „PKG bauen" stand vor „FIH"
-ein leeres Kästchen – dort steht jetzt schlicht „(FIH)".
 
 Die Zeile rechts neben dem Fortschrittsbalken („Copy: … | Rest: … | … MB/s |
 ETA: …") brach bei einer Anzeigeskalierung von 125 % um – die Restzeit stand in
@@ -891,38 +857,6 @@ Konsole stehen die ganze Zeit im Fenster.
 **Firmware.** Verifiziert ist unjail für 1.00 bis 10.60. Ab Firmware 11.00
 bricht der Daemon beim Start ab, bevor er bereit ist – auf einer 12.00-Konsole
 funktioniert er derzeit nicht. Das Fenster weist deutlich darauf hin.
-
----
-
-## v1.9.16 – 13.09.2026
-
-Ein neuer Knopf unter „Weitere Tools", der ein exFAT-Abbild direkt in ein
-installierbares Paket umwandelt.
-
-### Neu: „exFAT → PKG"
-
-Bisher war der Weg von einem `.exfat`-Abbild zu einer `.pkg` zwei getrennte
-Schritte. Jetzt gibt es dafür einen eigenen Knopf unter **Weitere Tools**.
-
-Du wählst ein exFAT-Abbild, einen Zielordner für die `.pkg` und einen
-Arbeitsordner. Das Programm entpackt das Abbild, baut daraus ein
-finalisiertes Debug-Paket (FIH-Format) und prüft es zum Schluss. Fortschritt und
-Protokoll stehen die ganze Zeit im Fenster; abbrechen geht jederzeit.
-
-**Ziel-Firmware wählbar.** Vor dem Bauen kannst du eine Firmware angeben
-(z.B. `10.01`) – dann trägt das Paket diese als benötigte Systemsoftware.
-Ohne Angabe bleibt die des Abbilds. Wichtig: Das ändert nur die Angabe im
-Paket, es rüstet ein Spiel nicht auf eine ältere Firmware um. Ob ein Titel
-auf einer bestimmten Firmware läuft, hängt weiter an seinem Programm und
-seinen Bibliotheken.
-
-**Ganz im Programm.** Entpackt wird mit der eingebauten Engine – kein
-OSFMount, keine Administratorrechte. Gebaut wird mit dem schon
-mitgelieferten Paketbauer. Es muss nichts nachinstalliert werden.
-
-Getestet wurde die Kette an einem echten Abbild bis zum fertigen Paket; ob
-die Konsole ein so gebautes Paket annimmt, hängt wie immer an ihrer
-Betriebsart und Firmware.
 
 ---
 
@@ -1661,8 +1595,7 @@ nicht mehr da war. Jetzt sagen sie, was schiefging.
 ### Zwei neue Werkzeuge
 
 - **Anwendung installieren:** Legt eine Kachel direkt auf der PS5 an, ohne den
-  Umweg über eine Paketdatei. Selbst gebaute Pakete scheitern dort mit
-  CE-100096-6.
+  Umweg über eine Paketdatei.
 - **Zweiter Sendeweg für Payloads:** Ist Port 9021 zu, geht die Datei über den
   Payload Manager – danach steht der Port wieder offen. Das betrifft alle
   Wege, die etwas an die Konsole schicken.
@@ -1776,12 +1709,6 @@ Neue Zeile **AMPR EMU** in den Spielangaben. Sie beantwortet eine Frage, die
 vorher nur ein Blick in den Dump beantworten konnte. Wo sich die Quelle nicht
 öffnen lässt – etwa bei einem UFS2-basierten `.ffpkg` – steht dort
 **nicht ermittelbar** statt einer Vermutung.
-
-### „PKG bauen“ jetzt auf allen Systemen
-
-Das Werkzeug erzeugt aus einem Dump-Ordner ein `.pkg` und lag bisher nur für
-Windows bei. Es liegt jetzt auch für Linux und für beide Mac-Prozessoren
-bei; das Programm wählt den passenden Bau selbst aus.
 
 ### Behobene Fehler
 

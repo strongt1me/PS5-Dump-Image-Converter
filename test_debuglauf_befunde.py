@@ -1767,32 +1767,6 @@ class AbbrechenOhneEinfrierenTests(unittest.TestCase):
         self.assertEqual(faeden, [False], "Das Abhaengen lief im Fensterfaden.")
 
 
-class AbbildPkgAufraeumenTests(unittest.TestCase):
-    """Knoepfe kamen vor dem Loeschen zurueck; MkPFS schrieb nach dem Loeschen weiter."""
-
-    def test_erst_warten_dann_loeschen_dann_freigeben(self) -> None:
-        fenster = _methode(_klasse(ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))),
-                           "_show_pkg_bauen")
-        umwandeln = next(k for k in ast.walk(fenster)
-                         if isinstance(k, ast.FunctionDef) and k.name == "_umwandeln")
-        arbeit = next(k for k in ast.walk(umwandeln)
-                      if isinstance(k, ast.FunctionDef) and k.name == "_arbeit")
-        versuch = next(k for k in arbeit.body if isinstance(k, ast.Try) and k.finalbody)
-
-        def _zeile(pruefung) -> int:
-            return min((k.lineno for anweisung in versuch.finalbody
-                        for k in ast.walk(anweisung) if pruefung(k)), default=10 ** 9)
-
-        warten = _zeile(lambda k: isinstance(k, ast.Call)
-                        and getattr(k.func, "attr", "") == "_wait_for_pending_mkpfs_background")
-        loeschen = _zeile(lambda k: isinstance(k, ast.Call)
-                          and getattr(k.func, "id", "") == "_rmtree_force")
-        frei = _zeile(lambda k: isinstance(k, ast.Assign)
-                      and "aktiv" in ast.dump(k.targets[0]))
-        self.assertLess(loeschen, frei, "Die Knoepfe kommen vor dem Loeschen zurueck.")
-        self.assertLess(warten, loeschen, "Geloescht wird, waehrend MkPFS noch schreibt.")
-
-
 class ZweistufigerBalkenTests(_TempTest):
     """Die zweite Stufe stand ihre ganze Dauer bei 98-99 %."""
 
@@ -2984,7 +2958,7 @@ class ParameterTexteTests(unittest.TestCase):
     def test_die_neuen_schluessel_gibt_es_zweisprachig(self) -> None:
         from ps5_validator.utils.i18n import STRINGS
         for schluessel in ("status.prefix_ffpkg_repack", "status.prefix_ffpkg_extraktion",
-                           "status.prefix_abbild_pkg", "status.laufzeit",
+                           "status.laufzeit",
                            "log.robocopy_fehlgeschlagen", "ffpkg.mount_fehlgeschlagen",
                            "task2.grund_schritt1", "resources.dotnet_download"):
             with self.subTest(schluessel=schluessel):
@@ -3246,19 +3220,105 @@ class WebkitFensterMessungTests(unittest.TestCase):
     Hier wird es gebaut und die Lage der Knoepfe auf der Leinwand gelesen.
     """
 
-    def _kaesten(self, mit_bild: bool) -> tuple:
+    def _leinwand(self, mit_bild: bool, fassung: str | None = None):
+        """Baut das Fenster und liefert seine Leinwand.
+
+        ``fassung`` ersetzt die Fassungszeile - fuer den Fall, dass sie
+        laenger ist als eine Zeile; ``None`` laesst die echte stehen.
+        """
         app = _app()
         bild = tk.PhotoImage(master=_WURZEL, width=8, height=8) if mit_bild else None
         vorher = {str(w) for w in _WURZEL.winfo_children()}
         with mock.patch.object(app, "_webkit_bild_laden", lambda: bild):
-            app._show_webkit_autoloader()
+            if fassung is None:
+                app._show_webkit_autoloader()
+            else:
+                with mock.patch.object(app, "_webkit_fassungszeile", lambda: fassung):
+                    app._show_webkit_autoloader()
         fenster = [w for w in _WURZEL.winfo_children()
                    if str(w) not in vorher and isinstance(w, tk.Toplevel)][-1]
         self.addCleanup(fenster.destroy)
-        leinwand = [w for w in fenster.winfo_children() if w.winfo_class() == "Canvas"][0]
+        return [w for w in fenster.winfo_children() if w.winfo_class() == "Canvas"][0]
+
+    @staticmethod
+    def _kaesten_von(leinwand) -> tuple:
+        """Die Knopfkaesten (Wege und SCHLIESSEN) von oben nach unten, dazu die Hoehe."""
         kaesten = sorted((leinwand.bbox(eintrag) for eintrag in leinwand.find_all()
                           if leinwand.type(eintrag) == "window"), key=lambda k: k[1])
         return kaesten, int(leinwand.cget("height"))
+
+    def _kaesten(self, mit_bild: bool, fassung: str | None = None) -> tuple:
+        return self._kaesten_von(self._leinwand(mit_bild, fassung))
+
+    @staticmethod
+    def _texte(leinwand) -> list:
+        """Alle Textelemente von oben nach unten: (Text, Oberkante, Unterkante)."""
+        zeilen = []
+        for eintrag in leinwand.find_all():
+            if leinwand.type(eintrag) == "text":
+                kasten = leinwand.bbox(eintrag)
+                zeilen.append((leinwand.itemcget(eintrag, "text"), kasten[1], kasten[3]))
+        return sorted(zeilen, key=lambda z: z[1])
+
+    def test_die_fassung_steht_unter_der_ueberschrift(self) -> None:
+        """Gemessen am gebauten Fenster - gegen den Banner im Installer.
+
+        Wunsch des Nutzers am 02.10.2026: "Man weiss ja gar nicht welche man
+        sonst benutzt." Erwartet wird nicht, was der Dateiname sagt, sondern
+        was die Datei von sich selbst sagt.
+        """
+        app = _app()
+        with open(app._webkit_datei("elf"), "rb") as fh:
+            banner = re.findall(rb"WebKit Autoloader v(\d+(?:\.\d+)+)", fh.read())
+        self.assertTrue(banner, "Kein Fassungstext im Installer")
+        erwartet = "v" + banner[0].decode()
+        for mit_bild in (True, False):
+            with self.subTest(bild=mit_bild):
+                leinwand = self._leinwand(mit_bild)
+                texte = self._texte(leinwand)
+                titel, fassung, hinweis = texte[0], texte[1], texte[2]
+                self.assertEqual(titel[0], "WebKit Autoloader")
+                self.assertIn(erwartet, fassung[0])
+                self.assertGreaterEqual(fassung[1], titel[1], "Die Fassung steht ueber der Ueberschrift.")
+                # Die Textkaesten duerfen sich um ihren Zeilenabstand beruehren
+                # (Titel und Hinweis tun es seit jeher um vier Pixel).
+                self.assertGreaterEqual(hinweis[1] + 8, fassung[2],
+                                        "Der Hinweis beginnt mitten in der Fassungszeile.")
+                # Alles unter der Zeile ist mitgerutscht - auch die Knoepfe. Der
+                # Dank (letzter Text) darf nicht auf dem ersten Knopf liegen;
+                # fehlt die Zeilenhoehe in der Rechnung der Knopf-Oberkante,
+                # liegt er 26 Pixel darauf.
+                kaesten, _hoehe = self._kaesten_von(leinwand)
+                self.assertLessEqual(texte[-1][2], kaesten[0][1] + 4,
+                                     "Der Dank liegt auf dem ersten Knopf.")
+
+    def test_eine_lange_fassungszeile_bricht_um_und_schiebt_alles_mit(self) -> None:
+        """Eine lange Uebersetzung braucht zwei Zeilen - und die Hoehe wird mitgerechnet."""
+        lang = "Fassungen: " + ", ".join("Host v0.5.%d" % n for n in range(12))
+        for mit_bild in (True, False):
+            with self.subTest(bild=mit_bild):
+                leinwand = self._leinwand(mit_bild, fassung=lang)
+                texte = self._texte(leinwand)
+                fassung, hinweis = texte[1], texte[2]
+                self.assertEqual(fassung[0], lang)
+                self.assertGreater(fassung[2] - fassung[1], 30, "Die Zeile ist nicht umgebrochen.")
+                self.assertGreaterEqual(hinweis[1] + 8, fassung[2],
+                                        "Der Hinweis liegt in der umgebrochenen Fassungszeile.")
+                kaesten, hoehe = self._kaesten_von(leinwand)
+                *wege, schliessen = kaesten
+                self.assertLess(wege[-1][3], schliessen[1])
+                self.assertLessEqual(schliessen[3], hoehe, "SCHLIESSEN ragt aus dem Fenster.")
+                self.assertLessEqual(texte[-1][2], wege[0][1] + 4,
+                                     "Der Dank liegt auf dem ersten Knopf.")
+
+    def test_ohne_fassung_bleibt_das_fenster_wie_zuvor(self) -> None:
+        """Findet sich keine Nummer, steht keine Zeile da und es fehlt kein Platz."""
+        mit = self._kaesten(False)[1]
+        ohne = self._kaesten(False, fassung="")[1]
+        self.assertLess(ohne, mit)
+        texte = self._texte(self._leinwand(False, fassung=""))
+        self.assertEqual(texte[0][0], "WebKit Autoloader")
+        self.assertNotIn("Fassung", texte[1][0])
 
     def test_schliessen_liegt_unter_den_wegen_und_im_fenster(self) -> None:
         for mit_bild in (True, False):
@@ -3421,49 +3481,6 @@ class BalkenRohwertTests(unittest.TestCase):
                     verstoesse.append("%s Z.%d" % (methode.name, k.lineno))
         self.assertGreaterEqual(gesehen, 3, "Die Pruefung findet keine Aufrufe mehr.")
         self.assertEqual(verstoesse, [])
-
-
-class AbbildPkgPlatzTests(_TempTest):
-    """"Abbild -> PKG" rechnete mit der Dateigroesse statt mit dem Dump.
-
-    Gemessen am 17.09.2026: 8,39 MB Dump -> 1,00 MB .ffpfsc; verlangt wurden
-    1,15 MB im Arbeits- und 1,47 MB im Zielordner.
-    """
-
-    def test_eine_komprimierte_ffpfsc_braucht_den_platz_des_dumps(self) -> None:
-        import subprocess
-
-        dump = os.path.join(self.basis, "PPSA12345")
-        _schreiben(os.path.join(dump, "sce_sys", "param.json"), b'{"titleId":"PPSA12345"}')
-        for i in range(4):
-            _schreiben(os.path.join(dump, "daten%d.bin" % i), b"\0" * (1024 * 1024))
-        dump_bytes = sum(os.path.getsize(os.path.join(w, f))
-                         for w, _d, namen in os.walk(dump) for f in namen)
-        abbild = os.path.join(self.basis, "Spiel.ffpfsc")
-        lauf = subprocess.run(
-            [sys.executable, "-m", "mkpfs", "pack", "folder", "--raw",
-             "--no-adjust-output-file-extension", "--version", "PS5",
-             "--inode-bits", "32", "--block-size", "65536", dump, abbild],
-            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.0.0"), timeout=300)
-        self.assertEqual(lauf.returncode, 0, lauf.stderr.decode("utf-8", "replace")[-500:])
-        # Ohne Kompression misst der Test nichts.
-        self.assertLess(os.path.getsize(abbild), dump_bytes // 2)
-
-        gui = GUI.__new__(GUI)
-        gui._extract_embedded_mkpfs = lambda: str(PROJEKT / "MkPFS-1.0.0")
-        arbeit, ziel = gui._abbild_pkg_platzbedarf(abbild)
-        self.assertGreaterEqual(arbeit, dump_bytes, "Der entpackte Dump passt nicht hinein.")
-        self.assertGreaterEqual(ziel, dump_bytes, "Das Paket aus dem Dump passt nicht hinein.")
-
-    def test_ein_exfat_abbild_bleibt_bei_der_dateigroesse(self) -> None:
-        """Gegenrichtung: Unkomprimiert ist der Dump so gross wie die Datei."""
-        pfad = os.path.join(self.basis, "Spiel.exfat")
-        with open(pfad, "wb") as fh:
-            fh.truncate(10 * 1024 * 1024)
-        gui = GUI.__new__(GUI)
-        arbeit, ziel = gui._abbild_pkg_platzbedarf(pfad)
-        self.assertEqual((arbeit, ziel), (int(10 * 1024 * 1024 * 1.1),
-                                          int(10 * 1024 * 1024 * 1.4)))
 
 
 # ---------------------------------------------------------------------------

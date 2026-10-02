@@ -24,6 +24,14 @@ Statt zweier Schichten wird vorab ein Cache unter
 ``fakelib2`` wird nie zusammengesetzt: Es wird allein eingehaengt - ohne
 Cache, ohne globale fakelib, ohne Emulator-Dateien.
 
+**Welcher Backport-Ordner** - der Suchpfad des Spiels zuerst, dann die
+Reihenfolge der Suchpfade. Ab 1.7beta3 zuletzt immer noch
+:data:`BACKPORT_RUECKFALL`, auch wenn eigene ``scanpath``-Eintraege ihn
+nicht nennen (``get_backport_scan_path`` in ``sm_config_mount.c``; gemessen
+am 01.10.2026, Commit f0d15ffc). Zum Spielesuchen kommt er damit nicht
+hinzu. ``sm_fakelib.c`` aenderte sich in 1.7beta3 nur in der
+Fehlerbehandlung - Reihenfolge, Cache und Emulator-Dateien wie in 1.7beta2.
+
 **Der Spielordner je Fassung** - am Quelltext gemessen am 27.09.2026
 (``sm_fakelib.c``, ``resolve_game_fakelib_source_for_path``): 1.7 alpha8
 bis alpha13fix1 lasen dort **nur** ``fakelib``; ein ``fakelib2`` wurde ohne
@@ -87,6 +95,9 @@ GLOBAL_STANDARD = "/data/shadowmount/fakelib"
 EMUS_STANDARD = "/data/shadowmount/emus"
 CACHE_ORDNER = "/data/shadowmount/cache"
 CONFIG_PFAD = "/data/shadowmount/config.ini"
+#: Ab 1.7beta3 der letzte Ort, an dem ein Backport-Ordner gesucht wird -
+#: auch mit eigenen ``scanpath``-Eintraegen (``DEFAULT_BACKPORT_SCAN_PATH``).
+BACKPORT_RUECKFALL = "/data/homebrew"
 DEBUG_LOG = "/data/shadowmount/debug.log"
 
 #: Schluessel, die es **nur** ab alpha8 gibt. Steht einer davon in der
@@ -683,6 +694,151 @@ def rangfolge(generation: str, prioritaet: str = "game") -> tuple[str, ...]:
 def cache_pfad(title_id: str) -> str:
     """Wohin die neue Fassung den zusammengefuehrten Cache legt."""
     return posixpath.join(CACHE_ORDNER, title_id, FAKELIB)
+
+
+#: Der Dateiname der AMPR-EMU-Bibliothek. An genau diesem Namen haengen
+#: der Mitschnitt, die Emulator-Dateien und der Vergleich mit der globalen
+#: fakelib.
+AMPR_BIBLIOTHEK = "libSceAmpr.sprx"
+
+#: Was ShadowMount+ als "aus" liest. Die Anleitung nennt als Werte 1/0,
+#: true/false, yes/no, on/off.
+AUS_WERTE = ("0", "false", "no", "off")
+
+#: Wodurch eine Bibliothek im eingehaengten Ordner verdraengt werden kann.
+VERDRAENGT_EMUS = "emus"
+VERDRAENGT_GLOBAL = "global"
+
+
+def schalter_an(werte: "dict[str, str]", schluessel: str,
+                vorgabe: bool = True) -> bool:
+    """Steht ein Schalter der config.ini wirksam auf "an"?
+
+    Ein fehlender oder leerer Schluessel ist keine Abweichung: ShadowMount+
+    liefert seine config.ini auskommentiert aus und laeuft dann auf seinen
+    eingebauten Vorgaben (siehe ``config_schluessel`` der Profile).
+    """
+    roh = str(werte.get(schluessel, "") or "").strip().lower()
+    if not roh:
+        return vorgabe
+    return roh not in AUS_WERTE
+
+
+def aufnahme_ablage(generation: str, *, backport=(), spiel=()) -> dict[str, Any]:
+    """Wohin eine Aufnahme-Bibliothek muss, damit ShadowMount+ sie wirklich laedt.
+
+    Anders als :func:`ablageziel` (die *eine* Ablage, die in jeder Fassung
+    wirkt) geht es hier um einen Ordner, den es **schon gibt**: Liegt dort
+    bereits ein eingehaengter fakelib-Ordner, muss die Bibliothek genau in
+    diesen - eine zweite Ablage daneben bliebe ungenutzt. Der erste vorhandene
+    Ordner gewinnt, auch ein leerer (Abschnitt 02 der Anleitung).
+
+    Weil sich 1.7 alpha8 bis alpha13fix1 und 1.7beta1+ im Spielordner
+    unterscheiden (:data:`SPIELORDNER_JE_FASSUNG`) und die Fassung sich nur in
+    ihrer Generation erkennen laesst, nennt das Ergebnis bei ``fakelib2`` UND
+    ``fakelib`` im Spielordner **beide** - so liegt die Bibliothek in dem, den
+    die laufende Fassung nimmt.
+
+    Args:
+        generation: ``ALT``, ``NEU`` oder ``""`` (nicht erkannt - dann gilt
+            ``NEU``, die Fassung aller aktuellen Veroeffentlichungen).
+        backport: Die Unterordner (``fakelib2``/``fakelib``) im
+            Backport-Ordner ``<scanpath>/backports/<TITLE_ID>/``, den
+            ShadowMount+ fuer diesen Titel nimmt; leer, wenn es keinen gibt.
+        spiel: Die Unterordner im Spielordner.
+
+    Returns:
+        ``{"ort": ORT_BACKPORT|ORT_SPIEL, "ordner": (namen, ...),
+        "anlegen": name|"", "verdraengbar": (VERDRAENGT_..., ...)}`` -
+        ``anlegen`` nennt einen Ordner, den es noch nicht gibt;
+        ``verdraengbar`` sagt, ob Emulator-Dateien oder die globale fakelib
+        die Bibliothek im eingehaengten Ordner ersetzen koennen (ein
+        ``fakelib2`` wird in der neuen Fassung allein eingehaengt, dort
+        nicht).
+    """
+    gen = generation if generation in GENERATIONEN else NEU
+    bp = {str(n).strip().lower() for n in backport if str(n).strip()}
+    sp = {str(n).strip().lower() for n in spiel if str(n).strip()}
+    zusammengesetzt = ((VERDRAENGT_EMUS, VERDRAENGT_GLOBAL) if gen == NEU
+                       else (VERDRAENGT_GLOBAL,))
+    # In der alten Fassung liegt die globale fakelib als zweite Schicht auch
+    # ueber einem fakelib2 - allein eingehaengt wird es erst ab alpha8.
+    allein = () if gen == NEU else (VERDRAENGT_GLOBAL,)
+
+    if FAKELIB2 in bp:
+        return {"ort": ORT_BACKPORT, "ordner": (FAKELIB2,), "anlegen": "",
+                "verdraengbar": allein}
+    if FAKELIB in bp and gen == NEU:
+        # Die alte Fassung liest im Backport-Ordner nur fakelib2.
+        return {"ort": ORT_BACKPORT, "ordner": (FAKELIB,), "anlegen": "",
+                "verdraengbar": zusammengesetzt}
+    if FAKELIB2 in sp and FAKELIB in sp:
+        if gen == NEU:
+            # 1.7beta1+ nimmt fakelib2 (allein), alpha8 bis alpha13fix1
+            # nehmen fakelib (zusammengesetzt) - beide bedienen.
+            return {"ort": ORT_SPIEL, "ordner": (FAKELIB2, FAKELIB),
+                    "anlegen": "", "verdraengbar": zusammengesetzt}
+        return {"ort": ORT_SPIEL, "ordner": (FAKELIB2,), "anlegen": "",
+                "verdraengbar": allein}
+    if FAKELIB2 in sp:
+        return {"ort": ORT_SPIEL, "ordner": (FAKELIB2,), "anlegen": "",
+                "verdraengbar": allein}
+    if FAKELIB in sp:
+        return {"ort": ORT_SPIEL, "ordner": (FAKELIB,), "anlegen": "",
+                "verdraengbar": zusammengesetzt}
+    neu = ablageordner(gen, ORT_SPIEL)
+    return {"ort": ORT_SPIEL, "ordner": (neu,), "anlegen": neu,
+            "verdraengbar": zusammengesetzt if neu == FAKELIB else allein}
+
+
+def aufnahme_gefahren(generation: str, werte: "dict[str, str]", *,
+                      verdraengbar=(), emus_hat_ampr: bool = False,
+                      global_hat_ampr: bool = False,
+                      titel_ausgeschlossen: bool = False) -> list[dict[str, str]]:
+    """Was eine Aufnahme-Bibliothek trotz richtiger Ablage unwirksam macht.
+
+    Drei Faelle, je mit der Einstellung, die fuer die Dauer der Aufnahme
+    hilft:
+
+    * ``backport_fakelib`` aus - der Hauptschalter: Dann wird gar keine
+      fakelib eingehaengt.
+    * Emulator-Dateien (nur neue Fassung): Mit ``update_emulators`` an
+      ersetzt eine ``libSceAmpr.sprx`` aus ``emulators_path`` die
+      gleichnamige im Cache - sie steht in :func:`rangfolge` vor der des
+      Spiels. ``update_emulators=0`` haelt sie heraus; die Datei
+      wegzunehmen genuegt nicht, ``auto_update_ampr`` holt sie sofort
+      wieder.
+    * Globale fakelib mit ``global_fakelib_priority=global`` und einer
+      ``libSceAmpr.sprx`` darin, solange der Titel nicht ausgenommen ist.
+
+    Args:
+        werte: Die config.ini als ``parse_flat_ini``-Woerterbuch.
+        verdraengbar: Aus :func:`aufnahme_ablage`.
+        emus_hat_ampr: Liegt im Emulator-Ordner eine ``libSceAmpr.sprx``?
+        global_hat_ampr: Liegt im globalen Ordner eine?
+        titel_ausgeschlossen: Steht der Titel in ``global_fakelib_exclude``?
+
+    Returns:
+        Je Fall ``{"art", "schluessel", "vorlaeufig"}`` - leer, wenn die
+        Aufnahme-Bibliothek ungestoert geladen wird.
+    """
+    gen = generation if generation in GENERATIONEN else NEU
+    gefahren: list[dict[str, str]] = []
+    if not schalter_an(werte, "backport_fakelib"):
+        gefahren.append({"art": "aus", "schluessel": "backport_fakelib",
+                         "vorlaeufig": "1"})
+    if (VERDRAENGT_EMUS in verdraengbar and profil(gen)["hat_emus"]
+            and emus_hat_ampr and schalter_an(werte, "update_emulators")):
+        gefahren.append({"art": VERDRAENGT_EMUS, "schluessel": "update_emulators",
+                         "vorlaeufig": "0"})
+    prioritaet = str(werte.get("global_fakelib_priority", "") or "game").strip().lower()
+    if (VERDRAENGT_GLOBAL in verdraengbar and global_hat_ampr
+            and not titel_ausgeschlossen and prioritaet == "global"
+            and schalter_an(werte, "global_fakelib")):
+        gefahren.append({"art": VERDRAENGT_GLOBAL,
+                         "schluessel": "global_fakelib_priority",
+                         "vorlaeufig": "game"})
+    return gefahren
 
 
 def stolperfallen(generation: str,

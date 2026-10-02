@@ -105,7 +105,6 @@ BEKANNT_STUMM: set[tuple[str, str, str]] = {
     ("diagnose_befund.py", "_ordnergroesse", "os.walk"),
     ("ffpkg_support.py", "validate_source_folder", "os.walk"),
     ("file_io.py", "get_all_files", "os.walk"),
-    ("prosperopkg.py", "zeitgrenze_fuer", "os.walk"),
     ("ps5_backport.py", "kandidaten", "os.walk"),
     ("wee_tools.py", "kopie_anlegen", "shutil.copytree"),
     ("werkzeuge_bereitstellen.py", "_entpacken", "ZipFile.extractall"),

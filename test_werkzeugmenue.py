@@ -14,6 +14,11 @@ Am 22.09.2026 ist das Fenster von `pkg_writer` ("DEBUG-PKG BAUEN") samt Modul
 wieder ausgebaut worden: ein unsignierter Eigenbau, an der Konsole nie
 getestet - der schwaechere Doppelgaenger von "PKG bauen" (LibProsperoPkg).
 
+Am 02.10.2026 folgte "PKG bauen" selbst, samt SDK-Bauweg (`sony_sdk`) und
+GP5-Projekt (`gp5_project`): Die Pakete installierten sich, starteten auf der
+Konsole aber nicht (CE-100096-6). Uebrig sind "PS4 & PS5 PKG lesen" und
+"PS4 PKG -> Dump Ordner" (Nutzerwunsch, neue Namen).
+
 Diese Tests halten alles fest.
 """
 from __future__ import annotations
@@ -57,14 +62,42 @@ class MenueVerdrahtungTests(unittest.TestCase):
             with self.subTest(methode=erwartet):
                 self.assertIn(erwartet, methoden)
 
-    def test_debug_pkg_und_abbild_pkg_sind_ausgebaut(self) -> None:
-        """Seit v1.9.41 gibt es nur noch "PKG bauen" - fuer Ordner und Abbilder."""
+    def test_pkg_bauen_ist_ausgebaut(self) -> None:
+        """Seit dem 02.10.2026 baut das Programm keine PKG mehr (Nutzerentscheid).
+
+        Davor gab es "DEBUG-PKG BAUEN" und "Abbild -> PKG" (bis v1.9.41),
+        danach ein Fenster "PKG bauen". Keins davon kommt zurueck - auch
+        nicht als Methode ohne Menueeintrag.
+        """
         methoden = {m for _k, m in APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES}
-        self.assertIn("_show_pkg_bauen", methoden)
-        for weg in ("_show_debug_pkg_builder", "_show_exfat_pkg_builder"):
+        schluessel = {k for k, _m in APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES}
+        self.assertNotIn("titlebar.pkg_bauen", schluessel)
+        for weg in ("_show_pkg_bauen", "_show_debug_pkg_builder",
+                    "_show_exfat_pkg_builder", "_sdk_bauweg", "_abbild_zu_dumpordner"):
             with self.subTest(methode=weg):
                 self.assertNotIn(weg, methoden)
                 self.assertFalse(hasattr(APP.PS5ConverterGUI, weg))
+
+    def test_pkg_lesen_und_entpacken_tragen_die_neuen_namen(self) -> None:
+        """Nutzerwunsch 02.10.2026: Der Name sagt, welche Pakete gehen.
+
+        "PKG entpacken" nimmt nur PS4-Pakete an (ein PS5-Paket weist es ab),
+        "PKG lesen" beide. Die Fenstertitel folgen dem Menue.
+        """
+        from ps5_validator.utils.i18n import STRINGS
+        paare = dict(APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
+        self.assertEqual("_show_pkg_reader", paare["titlebar.pkg_reader"])
+        self.assertEqual("_show_pkg_entpacken", paare["titlebar.pkg_entpacken"])
+        self.assertEqual("PS4 & PS5 PKG lesen", STRINGS["titlebar.pkg_reader"]["de"])
+        self.assertEqual("Read PS4 & PS5 PKG", STRINGS["titlebar.pkg_reader"]["en"])
+        self.assertEqual("PS4 PKG → Dump Ordner", STRINGS["titlebar.pkg_entpacken"]["de"])
+        self.assertEqual("PS4 PKG → dump folder", STRINGS["titlebar.pkg_entpacken"]["en"])
+        for sprache in ("de", "en"):
+            with self.subTest(sprache=sprache):
+                self.assertTrue(STRINGS["pkgreader.window_title"][sprache].startswith(
+                    STRINGS["titlebar.pkg_reader"][sprache] + " – "))
+                self.assertEqual(STRINGS["titlebar.pkg_entpacken"][sprache],
+                                 STRINGS["pkgentpacken.window_title"][sprache])
 
 
 class ErreichbarkeitTests(unittest.TestCase):
@@ -84,6 +117,21 @@ class ErreichbarkeitTests(unittest.TestCase):
         self.assertNotIn("pkg_writer", self.quelltext)
         self.assertNotIn("'ps5_validator.utils.pkg_writer'", self.spec)
         self.assertFalse((PROJEKT / "ps5_validator" / "utils" / "pkg_writer.py").exists())
+
+    def test_bauwege_von_pkg_bauen_sind_ganz_weg(self) -> None:
+        """Mit "PKG bauen" gingen am 02.10.2026 auch SDK-Bauweg und GP5-Projekt."""
+        for modul in ("sony_sdk", "gp5_project"):
+            with self.subTest(modul=modul):
+                self.assertNotIn(modul, self.quelltext)
+                for spec in PROJEKT.glob("PS5ImageConverter_Pro*.spec"):
+                    self.assertNotIn("'ps5_validator.utils.%s'" % modul,
+                                     spec.read_text(encoding="utf-8"), spec.name)
+                self.assertFalse((PROJEKT / "ps5_validator" / "utils"
+                                  / ("%s.py" % modul)).exists())
+        from ps5_validator.utils import prosperopkg
+        for weg in ("bauen", "homebrew_bauen", "pruefen", "zeitgrenze_fuer"):
+            with self.subTest(funktion=weg):
+                self.assertFalse(hasattr(prosperopkg, weg))
 
     def test_gebuendelt_wird_nur_was_erreichbar_ist(self) -> None:
         for modul in ("self_reader", "dump_rename"):

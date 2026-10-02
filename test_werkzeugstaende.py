@@ -214,7 +214,12 @@ class EchterBestandTests(unittest.TestCase):
         payloads = ws.payloads_lesen(str(PROJEKT / "helloworld"))
         self.assertGreater(len(payloads), 20)
         ohne_fassung = [n for n, f in payloads.items() if not f]
-        self.assertLessEqual(len(ohne_fassung), 4,
+        # Sieben am 02.10.2026: bdj_unpatch_1340 und unjail-ps5app-payload trugen
+        # nie eine Punktzahl; dazu kamen PoorDS4 (Vorabfassung "rc51", dreimal),
+        # garlic-worker (Freigabe "latest", benannt nach dem Datum) und MemDBG
+        # (Nachtbau, benannt nach dem Datum). Ein kaputter Fassungsleser lieferte
+        # fuer fast alle 53 Dateien nichts - das faengt die Grenze weiter ab.
+        self.assertLessEqual(len(ohne_fassung), 7,
                              "Mehr Dateien ohne Fassung im Namen als erwartet: %s"
                              % ohne_fassung)
 

@@ -1382,7 +1382,7 @@ class SpracheImPruefstandTests(unittest.TestCase):
     ALTBESTAND = frozenset({
         "test_ampr_assetpakete.py", "test_background_image.py",
         "test_beschriftung_flackern.py", "test_cli_ansicht_sync.py",
-        "test_dump_ordner_speicherort.py", "test_exfat_pkg_builder.py",
+        "test_dump_ordner_speicherort.py",
         "test_ffpfsc_asset_umhuellen.py", "test_integration_beim_erstellen.py",
         "test_kartenecken.py", "test_metadaten_online.py",
         "test_metadaten_vorgabe.py", "test_platzpruefung.py",

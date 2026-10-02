@@ -1,11 +1,16 @@
 # -*- coding: utf-8 -*-
 """Tests fuer die Bruecke zu ``prosperopkg``.
 
-Das Werkzeug baut PS5-Pakete und laeuft als eigener Prozess, weil die
-Bibliothek darunter unter GPL-3 steht (siehe
+Das Werkzeug liest PS5-Pakete ("PS4 & PS5 PKG lesen") und laeuft als
+eigener Prozess, weil die Bibliothek darunter unter GPL-3 steht (siehe
 ``ProsperoPkg-2.5/UPSTREAM.md``). Geprueft wird hier vor allem das
 Zusammenspiel: Wie die Ausgabe gelesen wird und was bei einem Abbruch
 geschieht.
+
+Bis zum 02.10.2026 standen hier auch Tests fuer ``pruefen``, ``bauen`` und
+die mitwachsende Bau-Zeitgrenze. Mit "PKG bauen" sind diese Funktionen
+ausgebaut (die Pakete starteten auf der Konsole nicht, CE-100096-6); dass
+sie weg bleiben, haelt ``test_werkzeugmenue.py`` fest.
 
 Die Ausgabe wird nachgestellt, damit die Tests ohne das Werkzeug laufen.
 Am Ende steht ein Test, der das echte Werkzeug benutzt, falls es liegt -
@@ -34,26 +39,6 @@ BEREIT_AUSGABE = [
     "RESULT: READY",
 ]
 
-BLOCKIERT_AUSGABE = [
-    "Modules              : 20",
-    "BLOCKER: SignedEncrypted\tfakelib/libSceAgc.sprx",
-    "BLOCKER: SignedEncrypted\tfakelib/libSceAgcDriver.sprx",
-    "ISSUE: Module 'fakelib/libSceAgc.sprx' is signed and encrypted;"
-    " it will not start on a debug-mode console.",
-    "RESULT: NOT_READY",
-]
-
-
-def _lauf(zeilen, code=0):
-    """Ersetzt _laufen_lassen durch eine feste Ausgabe."""
-    def gefangen(argumente, melden=None, zeitgrenze=None,
-                 prozess_ablage=None, texte=None):
-        if melden is not None:
-            for z in zeilen:
-                melden(z)
-        return (code, list(zeilen))
-    return gefangen
-
 
 class ErgebniszeileTest(unittest.TestCase):
     """Die letzte RESULT-Zeile traegt das Ergebnis."""
@@ -76,107 +61,13 @@ class ErgebniszeileTest(unittest.TestCase):
             r"E:\Test\Spiel.pkg")
 
 
-class PruefenTest(unittest.TestCase):
-    """Was ``inspect`` liefert."""
-
-    def test_ein_startbereites_backup(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen", _lauf(BEREIT_AUSGABE)):
-            erg = pp.pruefen("egal")
-        self.assertTrue(erg["bereit"])
-        self.assertEqual(erg["blocker"], [])
-        self.assertEqual(erg["hinweise"], [])
-
-    def test_ein_blockiertes_backup(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen",
-                               _lauf(BLOCKIERT_AUSGABE)):
-            erg = pp.pruefen("egal")
-        self.assertFalse(erg["bereit"])
-        self.assertEqual(len(erg["blocker"]), 2)
-        self.assertEqual(erg["blocker"][0],
-                         ("SignedEncrypted", "fakelib/libSceAgc.sprx"))
-        self.assertEqual(len(erg["hinweise"]), 1)
-
-    def test_jede_zeile_wird_weitergereicht(self) -> None:
-        """Der Fortschritt gehoert unveraendert ins Protokollfenster."""
-        gesehen = []
-        with mock.patch.object(pp, "_laufen_lassen", _lauf(BEREIT_AUSGABE)):
-            pp.pruefen("egal", melden=gesehen.append)
-        self.assertEqual(gesehen, BEREIT_AUSGABE)
-
-    def test_ein_abbruch_wird_gemeldet(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen",
-                               _lauf(["[FEHLER] kaputt"], code=3)):
-            with self.assertRaises(pp.ProsperoFehler) as fall:
-                pp.pruefen("egal")
-        self.assertIn("3", str(fall.exception))
-
-
-class BauenTest(unittest.TestCase):
-    """Was ``build`` liefert."""
-
-    def setUp(self) -> None:
-        import tempfile
-
-        self.ordner = tempfile.mkdtemp(prefix="ps5conv_pkgbau_")
-        self.pkg = os.path.join(self.ordner, "Spiel.pkg")
-        with open(self.pkg, "wb") as datei:
-            datei.write(b"\x7fFIH")
-
-    def tearDown(self) -> None:
-        import shutil
-
-        shutil.rmtree(self.ordner, ignore_errors=True)
-
-    def test_der_pfad_kommt_zurueck(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen",
-                               _lauf(["Baue ...", "RESULT: " + self.pkg])):
-            self.assertEqual(pp.bauen("quelle", self.ordner), self.pkg)
-
-    def test_ein_pfad_der_nicht_existiert_ist_ein_fehler(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen",
-                               _lauf(["RESULT: C:\\gibtsnicht.pkg"])):
-            with self.assertRaises(pp.ProsperoFehler):
-                pp.bauen("quelle", self.ordner)
-
-    def test_ohne_ergebniszeile_ist_es_ein_fehler(self) -> None:
-        with mock.patch.object(pp, "_laufen_lassen", _lauf(["fertig?"])):
-            with self.assertRaises(pp.ProsperoFehler):
-                pp.bauen("quelle", self.ordner)
-
-    def test_lizenzfrei_ist_die_vorgabe(self) -> None:
-        """Ein echter rif laesst sich am Rechner nicht erzeugen."""
-        gemerkt = {}
-
-        def gefangen(argumente, melden=None, zeitgrenze=None,
-                     prozess_ablage=None, texte=None):
-            gemerkt["argumente"] = argumente
-            return (0, ["RESULT: " + self.pkg])
-
-        with mock.patch.object(pp, "_laufen_lassen", gefangen):
-            pp.bauen("quelle", self.ordner)
-        self.assertIn("--license-free", gemerkt["argumente"])
-        self.assertNotIn("--fake-sign", gemerkt["argumente"])
-
-    def test_fake_signieren_laesst_sich_zuschalten(self) -> None:
-        gemerkt = {}
-
-        def gefangen(argumente, melden=None, zeitgrenze=None,
-                     prozess_ablage=None, texte=None):
-            gemerkt["argumente"] = argumente
-            return (0, ["RESULT: " + self.pkg])
-
-        with mock.patch.object(pp, "_laufen_lassen", gefangen):
-            pp.bauen("quelle", self.ordner, fake_signieren=True)
-        self.assertIn("--fake-sign", gemerkt["argumente"])
-
-
 class FehlendesWerkzeugTest(unittest.TestCase):
     """Fehlt das Werkzeug, steht das im Klartext da."""
 
     def test_die_meldung_nennt_den_erwarteten_ort(self) -> None:
         with mock.patch.object(pp, "werkzeug_finden", return_value=""):
             with self.assertRaises(pp.ProsperoFehler) as fall:
-                pp._laufen_lassen(["inspect"])
+                pp._laufen_lassen(["read"])
         text = str(fall.exception)
         self.assertIn(pp.WERKZEUGORDNER, text)
 
@@ -192,13 +83,14 @@ class EchtesWerkzeugTest(unittest.TestCase):
     def test_es_laesst_sich_starten(self) -> None:
         code, zeilen = pp._laufen_lassen(["--help"], zeitgrenze=60.0)
         self.assertTrue(zeilen, "Das Werkzeug hat nichts gesagt.")
-        self.assertTrue(any("inspect" in z for z in zeilen),
-                        "Die Hilfe nennt inspect nicht: %s" % zeilen[:3])
+        self.assertTrue(any(z.strip().startswith("read") for z in zeilen),
+                        "Die Hilfe nennt read nicht: %s" % zeilen[:3])
 
-    def test_ein_unsinniger_ordner_wird_abgewiesen(self) -> None:
+    def test_eine_fehlende_datei_wird_abgewiesen(self) -> None:
+        """Am 02.10.2026 gemessen: "[FEHLER] Keine Datei", Rueckgabe 3."""
         with self.assertRaises(pp.ProsperoFehler):
-            pp.pruefen(os.path.join(os.path.dirname(self.programm),
-                                    "gibtsnicht"))
+            pp.paket_lesen(os.path.join(os.path.dirname(self.programm),
+                                        "gibtsnicht.pkg"))
 
 
 class AuslieferungTests(unittest.TestCase):
@@ -301,36 +193,6 @@ class ZeitgrenzeTests(unittest.TestCase):
             "Erst nach %.0f s abgebrochen - die Zeitgrenze greift nicht "
             "waehrend des Lesens." % gebraucht)
 
-    def test_die_grenze_eines_spielbaus_waechst_mit_der_quelle(self) -> None:
-        """Fest zwei Stunden beendeten jeden Bau ab etwa 23 GB (17.09.2026).
-
-        Gemessen sind 3,3 MB/s; ein 50-GB-Titel braucht rund vier Stunden.
-        Geprueft an 30 kB mit einem auf 1 B/s gesetzten Durchsatz.
-        """
-        quelle = os.path.join(self.ordner, "dump")
-        os.makedirs(os.path.join(quelle, "sce_sys"))
-        for name, groesse in (("eboot.bin", 20_000), ("sce_sys/param.json", 10_000)):
-            with open(os.path.join(quelle, name), "wb") as datei:
-                datei.write(b"x" * groesse)
-        gemerkt = {}
-
-        def gefangen(argumente, melden=None, zeitgrenze=None,
-                     prozess_ablage=None, texte=None):
-            gemerkt["zeitgrenze"] = zeitgrenze
-            return (0, ["RESULT: " + self.skript])
-
-        with mock.patch.object(pp, "MINDESTDURCHSATZ_BYTES_S", 1), \
-                mock.patch.object(pp, "MINDESTZEITGRENZE_S", 10.0), \
-                mock.patch.object(pp, "_laufen_lassen", gefangen):
-            self.assertEqual(30_000.0, pp.zeitgrenze_fuer(quelle))
-            self.assertEqual(10.0, pp.zeitgrenze_fuer(self.ordner + "_gibts_nicht"))
-            pp.bauen(quelle, self.ordner)
-            self.assertEqual(30_000.0, gemerkt["zeitgrenze"],
-                             "bauen() reicht die feste Grenze durch.")
-            # Wer eine Grenze nennt, bekommt genau die.
-            pp.bauen(quelle, self.ordner, zeitgrenze=5.0)
-            self.assertEqual(5.0, gemerkt["zeitgrenze"])
-
     def test_ein_kurzer_lauf_wird_nicht_abgebrochen(self) -> None:
         """Gegenrichtung: Der Wecker darf nicht zu frueh zuschlagen."""
         kurz = os.path.join(self.ordner, "kurz.py")
@@ -344,7 +206,7 @@ class ZeitgrenzeTests(unittest.TestCase):
 class ProzessAblageTests(unittest.TestCase):
     """Der laufende Prozess muss von aussen erreichbar sein.
 
-    Sonst laesst sich ein Bau nicht abbrechen: Der Schliessen-Knopf des
+    Sonst laesst sich ein Lauf nicht abbrechen: Der Schliessen-Knopf des
     Fensters rief nur ``win.destroy``, der prosperopkg-Prozess lief mit seiner
     Zeitgrenze von bis zu zwei Stunden weiter und schrieb weiter in den
     Zielordner. Protokoll und Statuszeile liefen dabei ins Leere - der
@@ -393,11 +255,10 @@ class FassungsangabeTests(unittest.TestCase):
 
     Der Ordner heisst weiterhin ``ProsperoPkg-2.5``, enthaelt seit v1.9.21
     aber **LibProsperoPkg 2.6.0** - die Zahl im Namen ist als Versionsangabe
-    also irrefuehrend. Gerade sie entscheidet aber, ob ein gebautes Paket die
-    Konsolenkorrekturen der 2.6.0 traegt. An der fertigen Programmdatei war
-    das bis zum 16.09.2026 ueberhaupt nicht abzulesen: Im Diagnosebericht
-    standen MkPFS, UFS2Tool, AMPR EMU und ein Dutzend Bibliotheken - nur
-    ausgerechnet die, die das PKG baut, fehlte.
+    also irrefuehrend. An der fertigen Programmdatei war das bis zum
+    16.09.2026 ueberhaupt nicht abzulesen: Im Diagnosebericht standen MkPFS,
+    UFS2Tool, AMPR EMU und ein Dutzend Bibliotheken - nur ausgerechnet die,
+    die die PS5-Pakete liest (bis 02.10.2026 auch baute), fehlte.
     """
 
     WURZEL = os.path.dirname(os.path.abspath(__file__))
@@ -440,7 +301,7 @@ class FassungsangabeTests(unittest.TestCase):
             quelle = datei.read()
         self.assertIn("fassung.json", quelle,
                       "Der Diagnosebericht liest die Fassungsdatei nicht mehr.")
-        self.assertIn("LibProsperoPkg (PKG-Bau)", quelle,
+        self.assertIn("LibProsperoPkg (PKG lesen)", quelle,
                       "Der Eintrag im Werkzeuginventar heisst anders - dann "
                       "misst dieser Test nichts.")
 

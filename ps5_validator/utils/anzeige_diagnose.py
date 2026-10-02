@@ -16,7 +16,10 @@ gedacht, nicht zum Vorlesen.
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
+
+logger = logging.getLogger(__name__)
 
 # --- Schwellen ------------------------------------------------------------
 # Alle Grenzwerte an einer Stelle, damit Tests sie nennen koennen statt sie
@@ -26,9 +29,36 @@ from dataclasses import dataclass, field
 #: Pixel Toleranz, weil Rahmenbreiten je nach Design um einen Pixel wandern.
 RAND_TOLERANZ = 2
 
-#: Ab welchem Verhaeltnis ein Bild als hochgerechnet gilt. Zwei Prozent sind
-#: unter jeder Wahrnehmungsschwelle; darueber wird es weich.
+#: Ab welchem Verhaeltnis ein Bild als hochgerechnet gilt - und damit
+#: gemessen wird (``messe_hochrechnungsverlust``). Darunter passt es schlicht.
+#:
+#: Bis zum 02.10.2026 war jede Hochrechnung ueber zwei Prozent schon eine
+#: Warnung, auch wenn niemand sie sehen konnte: Auf einem 1920x1200-Schirm
+#: (Fenster 1920x1111) meldete der Bericht mit den mitgelieferten Bildern
+#: (1920x1020, +9 %) drei Warnungen, die nichts bedeuteten. Eine Pruefung,
+#: die auf jedem normalen Schirm anschlaegt, sagt nichts - derselbe Befund
+#: wie bei den Knoepfen am 15.09.2026.
 BILD_FAKTOR_GRENZE = 1.02
+
+#: Ab diesem Verhaeltnis ist es immer eine Warnung, gleich wie glatt das Bild
+#: ist: Eine um die Haelfte aufgeblasene Datei ist weich, und das Korn wird
+#: grob. Die alten Seitenleisten (320x1000 auf einer 493 px breiten Leiste,
+#: +54 %) galten damit als sichtbar weich - zu Recht.
+BILD_FAKTOR_HART = 1.5
+
+#: Detailverlust in Stufen (0..255), ab dem eine Hochrechnung einen Hinweis
+#: bzw. eine Warnung wert ist. Geeicht am 02.10.2026 an Messungen:
+#: * alle 40 mitgelieferten Bilder verlieren auf einem 1920x1200-Schirm hoechstens
+#:   0,82 Stufen (QHD 1,26; 4K 1,61) - sie sind dunkel und weich gezeichnet;
+#: * das Hintergrundbild des Nutzers (ChatGPT, 1672x941, +18 %) verliert 0,39;
+#: * das alte bg_19 (1424x752, +35 %), das als sichtbar weich galt, verlor 2,12.
+BILD_VERLUST_HINWEIS = 1.0
+BILD_VERLUST_WARNUNG = 2.0
+
+#: Groesse des Ausschnitts, an dem der Verlust gemessen wird: mittig und in
+#: Originalaufloesung. Verkleinert man das ganze Bild vorher, verschwindet
+#: gerade die Feinzeichnung, die man messen will.
+_MESS_AUSSCHNITT = (1920, 1080)
 
 #: Unter dieser Zeilenhoehe ist die Schrift auf keiner Plattform mehr
 #: lesbar. Bewusst tief angesetzt: Der Mac-Befund vom 19.08.2026 lag bei
@@ -135,12 +165,17 @@ class Bildlage:
     ``PhotoImage`` und ``flaeche`` das Element, auf dem es liegt. Erst alle
     drei zusammen sagen etwas aus: Die Datei allein verraet nicht, ob sie
     hochgerechnet wurde, und das gezeichnete Bild nicht, ob es noch passt.
+
+    ``verlust`` ist der gemessene Detailverlust der Hochrechnung in Stufen
+    (``messe_hochrechnungsverlust``). Fehlt er, urteilt ``pruefe_bilder`` nur
+    nach der Groessenzahl, wie bis zum 02.10.2026.
     """
 
     name: str
     quelle: tuple[int, int] | None = None
     gezeichnet: tuple[int, int] | None = None
     flaeche: tuple[int, int] | None = None
+    verlust: float | None = None
 
 
 @dataclass(frozen=True)
@@ -215,6 +250,118 @@ class Pruefergebnis:
 
 def _prozent(faktor: float) -> str:
     return "%.0f %%" % ((faktor - 1.0) * 100.0)
+
+
+def hochrechnungsfaktor(b: Bildlage) -> float | None:
+    """Um wie viel das Bild auf seiner Flaeche hochgerechnet wird.
+
+    Returns:
+        Der Faktor (formatfuellend gerechnet, also der groessere der beiden),
+        aber nur, wenn er ueber ``BILD_FAKTOR_GRENZE`` liegt; sonst ``None``.
+        ``None`` auch, wenn eine der Groessen fehlt.
+    """
+    if not (b.quelle and b.flaeche and all(b.quelle) and all(b.flaeche)):
+        return None
+    faktor = max(b.flaeche[0] / b.quelle[0], b.flaeche[1] / b.quelle[1])
+    return faktor if faktor > BILD_FAKTOR_GRENZE else None
+
+
+def bewerte_hochrechnung(faktor: float, verlust: float | None) -> str | None:
+    """Ob eine Hochrechnung einen Befund wert ist, und welchen.
+
+    Gemessen wird nicht die Zahl allein, sondern was die Hochrechnung kostet:
+    Ein dunkles, weich gezeichnetes Bild verliert bei +18 % nichts, was ein
+    Auge erkennt - die Groessenzahl allein meldete es trotzdem.
+
+    Args:
+        faktor: Hochrechnungsfaktor (``hochrechnungsfaktor``).
+        verlust: Gemessener Detailverlust in Stufen, oder ``None`` wenn nicht
+            gemessen. Dann gilt die Groessenzahl wie frueher: jede
+            Hochrechnung ueber ``BILD_FAKTOR_GRENZE`` ist eine Warnung.
+
+    Returns:
+        ``WARNUNG``, ``HINWEIS`` oder ``None`` (nichts zu melden).
+    """
+    if faktor <= BILD_FAKTOR_GRENZE:
+        return None
+    if verlust is None:
+        return WARNUNG
+    if faktor > BILD_FAKTOR_HART or verlust > BILD_VERLUST_WARNUNG:
+        return WARNUNG
+    if verlust > BILD_VERLUST_HINWEIS:
+        return HINWEIS
+    return None
+
+
+def messe_hochrechnungsverlust(bild, faktor: float) -> float | None:
+    """Wie viel Feinzeichnung fehlt einem Bild, das um ``faktor`` hochgerechnet wird?
+
+    Gemessen wird der Rundlauf: das Bild um ``faktor`` verkleinern und wieder
+    auf seine Groesse bringen - das ist, was eine Hochrechnung aus einer um
+    ``faktor`` kleineren Datei liefert. Die mittlere Abweichung zum Original
+    (in Stufen von 0 bis 255, ueber alle Farbkanaele) ist der Anteil
+    Feinzeichnung, der fehlt. Ein von Natur aus weiches Bild verliert dabei
+    nichts, ein feines viel - das unterscheidet das Mass von der blossen
+    Groessenzahl.
+
+    Args:
+        bild: Ein PIL-Bild; gemessen wird sein mittlerer Ausschnitt in
+            Originalaufloesung (hoechstens ``_MESS_AUSSCHNITT``).
+        faktor: Um wie viel es hochgerechnet wird.
+
+    Returns:
+        Die mittlere Abweichung in Stufen; 0.0 bei ``faktor <= 1``; ``None``,
+        wenn sich nichts messen laesst (kein Bild oder ein Fehler beim
+        Rechnen - der Bericht faellt dann auf die Groessenzahl zurueck).
+    """
+    if bild is None:
+        return None
+    if not faktor or faktor <= 1.0:
+        return 0.0
+    try:
+        from PIL import Image, ImageChops, ImageStat
+
+        breite, hoehe = bild.size
+        if breite < 2 or hoehe < 2:
+            return None
+        schnitt_b = min(breite, _MESS_AUSSCHNITT[0])
+        schnitt_h = min(hoehe, _MESS_AUSSCHNITT[1])
+        links = (breite - schnitt_b) // 2
+        oben = (hoehe - schnitt_h) // 2
+        probe = bild.crop((links, oben, links + schnitt_b,
+                           oben + schnitt_h)).convert("RGB")
+        lanczos = getattr(getattr(Image, "Resampling", Image), "LANCZOS", 1)
+        klein = probe.resize((max(1, round(schnitt_b / faktor)),
+                              max(1, round(schnitt_h / faktor))), lanczos)
+        zurueck = klein.resize(probe.size, lanczos)
+        mittel = ImageStat.Stat(ImageChops.difference(probe, zurueck)).mean
+        return float(sum(mittel) / len(mittel))
+    except Exception as exc:
+        logger.debug("Hochrechnungsverlust nicht messbar: %s", exc)
+        return None
+
+
+def beschreibe_hochrechnung(b: Bildlage) -> str:
+    """Eine Zeile fuer den Anzeigeabschnitt: um wie viel, mit welchem Verlust.
+
+    Die Zeile steht im Bericht auch dann, wenn nichts zu beanstanden ist -
+    sonst saehe man dem Urteil "keine Auffaelligkeit" nicht an, dass hier
+    hochgerechnet wird und was das kostet.
+
+    Returns:
+        Der Text, oder ein leerer Text, wenn nicht hochgerechnet wird.
+    """
+    faktor = hochrechnungsfaktor(b)
+    if faktor is None:
+        return ""
+    text = "+%s (Datei %dx%d auf %dx%d)" % (
+        _prozent(faktor), b.quelle[0], b.quelle[1], b.flaeche[0], b.flaeche[1])
+    if b.verlust is None:
+        return text + ", Detailverlust nicht gemessen"
+    schwere = bewerte_hochrechnung(faktor, b.verlust)
+    urteil = {None: "nicht zu sehen", HINWEIS: "kaum zu sehen",
+              WARNUNG: "sichtbar weich"}[schwere]
+    return text + ", Detailverlust %.1f von 255 Stufen - %s" % (b.verlust, urteil)
 
 
 def pruefe_flaechen(fenster: Fensterlage,
@@ -297,23 +444,35 @@ def pruefe_bilder(bilder: list[Bildlage]) -> list[Befund]:
     Datei. Was der Betrachter als "gestretcht" wahrnimmt, ist deshalb fast
     immer eine Hochrechnung - und die steht hier.
 
+    Eine Hochrechnung ist nur dann ein Mangel, wenn man sie sieht: Ist der
+    Detailverlust gemessen (``Bildlage.verlust``), entscheidet er
+    (``bewerte_hochrechnung``) - ein dunkles, weich gezeichnetes Bild darf um
+    ein paar Prozent hochgerechnet werden, ohne dass der Bericht anschlaegt.
+    Ohne Messwert gilt wie frueher die Groessenzahl allein.
+
     Args:
-        bilder: Die drei Groessen je Hintergrundbild.
+        bilder: Die drei Groessen je Hintergrundbild, wenn moeglich mit
+            gemessenem Detailverlust.
 
     Returns:
         Die gefundenen Maengel.
     """
     befunde: list[Befund] = []
     for b in bilder:
-        if b.quelle and b.flaeche and all(b.quelle) and all(b.flaeche):
-            faktor = max(b.flaeche[0] / b.quelle[0], b.flaeche[1] / b.quelle[1])
-            if faktor > BILD_FAKTOR_GRENZE:
+        faktor = hochrechnungsfaktor(b)
+        if faktor is not None:
+            schwere = bewerte_hochrechnung(faktor, b.verlust)
+            if schwere:
+                mass = ("" if b.verlust is None
+                        else ", Detailverlust %.1f von 255 Stufen" % b.verlust)
                 befunde.append(Befund(
-                    WARNUNG, "bild_hochgerechnet",
-                    "%s: Datei %dx%d auf %dx%d hochgerechnet (+%s) - wirkt weich; "
+                    schwere, "bild_hochgerechnet",
+                    "%s: Datei %dx%d auf %dx%d hochgerechnet (+%s)%s - %s; "
                     "mindestens %dx%d wären nötig"
                     % (b.name, b.quelle[0], b.quelle[1],
-                       b.flaeche[0], b.flaeche[1], _prozent(faktor),
+                       b.flaeche[0], b.flaeche[1], _prozent(faktor), mass,
+                       "wirkt weich" if schwere == WARNUNG
+                       else "kaum zu sehen",
                        b.flaeche[0], b.flaeche[1])))
 
         # Das gezeichnete Bild muss die Flaeche genau treffen. Tut es das

@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Waechter fuer "Abbild -> PKG" (jedes Abbildformat) und den PKG-Reader.
+"""Waechter fuer "PS4 & PS5 PKG lesen" (``_show_pkg_reader``).
 
-Hintergrund (13.09.2026): Das Fenster "exFAT -> PKG" nahm nur ``.exfat``
-an. Es heisst jetzt "Abbild -> PKG" und akzeptiert ``.exfat``, ``.ffpfsc``,
-``.ffpfs`` und ``.ffpkg`` ueber die Format-Weiche ``_abbild_zu_dumpordner``.
-Dazu kam der PKG-Reader (``_show_pkg_reader``), der den aeusseren Container
-einer ``.pkg`` ueber ``prosperopkg.paket_lesen`` anzeigt.
+Der Reader zeigt den aeusseren Container einer ``.pkg`` ueber
+``prosperopkg.paket_lesen`` an. Bis zum 02.10.2026 stand hier auch der
+Waechter fuer "Abbild -> PKG" bzw. "PKG bauen" - das Bauen ist seitdem
+ausgebaut (Nutzerentscheid: die Pakete starteten auf der Konsole nicht,
+CE-100096-6). Was davon bleibt, bewacht ``test_werkzeugmenue.py``.
 
-Die Wege sind an echten Abbildern/Paketen geprueft; hier stehen die
+Die Wege sind an echten Paketen geprueft; hier stehen die
 Regressionswaechter.
 """
 from __future__ import annotations
@@ -33,44 +33,6 @@ def _modul():
     modul = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(modul)
     return modul
-
-
-class AbbildWeicheBaurichtung(unittest.TestCase):
-    """Das Baufenster nimmt jedes der vier Abbildformate an."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.quelle = open(HAUPT, encoding="utf-8", errors="replace").read()
-        cls.fenster = _methode(cls.quelle, "_show_pkg_bauen")
-        cls.weiche = _methode(cls.quelle, "_abbild_zu_dumpordner")
-
-    def test_endungen_decken_alle_vier_formate(self):
-        for endung in (".exfat", ".ffpfsc", ".ffpfs", ".ffpkg"):
-            self.assertIn(
-                '"%s"' % endung, self.quelle.split("_ABBILD_PKG_ENDUNGEN", 1)[1][:120],
-                "_ABBILD_PKG_ENDUNGEN deckt %s nicht ab" % endung)
-
-    def test_validierung_nutzt_endungsliste(self):
-        # Nicht mehr fest auf .exfat pruefen, sondern die Vierer-Liste.
-        self.assertIn("endswith(self._ABBILD_PKG_ENDUNGEN)", self.fenster,
-                      "Quellpruefung haengt nicht an _ABBILD_PKG_ENDUNGEN")
-        self.assertNotIn('not quelle.lower().endswith(".exfat")', self.fenster,
-                         "Alte exfat-only-Pruefung noch da")
-
-    def test_dialogfilter_bietet_alle_formate(self):
-        # Der Datei-Dialog muss die vier Muster anbieten.
-        self.assertIn("*.exfat *.ffpfsc *.ffpfs *.ffpkg", self.fenster,
-                      "Der kombinierte Dateifilter fehlt im Quellen-Dialog")
-
-    def test_fenster_ruft_die_weiche(self):
-        self.assertIn("self._abbild_zu_dumpordner(", self.fenster,
-                      "Das Baufenster ruft die Format-Weiche nicht auf")
-
-    def test_weiche_verzweigt_nach_format(self):
-        # exfat -> nativer Bildextraktor; pfs/ufs2 -> erprobter A4-Weg.
-        self.assertIn("extract_exfat_image", self.weiche)
-        self.assertIn("_extract_inner_image", self.weiche)
-        self.assertIn("_entpacke_container_ebenen", self.weiche)
 
 
 class PkgReaderWaechter(unittest.TestCase):
@@ -153,8 +115,16 @@ class PkgReaderWaechter(unittest.TestCase):
         info.assert_not_called()
         gui._render_pkg_reader_window.assert_called_once()
 
+    def test_fehlendes_werkzeug_wird_mit_eigenem_text_gemeldet(self):
+        """Der Text gehoerte bis 02.10.2026 zu "PKG bauen" (``pkgbau.``)."""
+        fenster = _methode(self.quelle, "_show_pkg_reader")
+        self.assertIn('self._t("pkgreader.missing_tool"', fenster)
+        from ps5_validator.utils.i18n import STRINGS
+        self.assertIn("{ordner}", STRINGS["pkgreader.missing_tool"]["de"])
+        self.assertIn("{ordner}", STRINGS["pkgreader.missing_tool"]["en"])
+
     def test_pkg_entpacken_erklaert_update_pakete(self):
-        """Die Weiche in "PKG entpacken" faengt das Delta vor "keine PKG" ab."""
+        """Die Weiche in "PS4 PKG -> Dump Ordner" faengt das Delta vor "keine PKG" ab."""
         fenster = _methode(self.quelle, "_show_pkg_entpacken")
         delta = fenster.find('art == "ps5_delta"')
         fremd = fenster.find('art != "ps4"')
@@ -176,16 +146,13 @@ class PkgReaderWaechter(unittest.TestCase):
 
 
 class FadensicherheitWaechter(unittest.TestCase):
-    """Der Abbild->PKG-Lauf laeuft im Arbeitsfaden - dort duerfen keine
-    Tk-Variablen gelesen werden (sonst "main thread is not in main loop",
-    Absturz mit leerem Protokoll). Alle Tk-Werte werden im Hauptfaden
-    abgegriffen; Balken/Log/Knoepfe laufen ueber einen Haupt-Takt.
+    """Arbeitsfaeden duerfen keine Tk-Variablen lesen (sonst "main thread is
+    not in main loop", Absturz mit leerem Protokoll).
     """
 
     @classmethod
     def setUpClass(cls):
         cls.quelle = open(HAUPT, encoding="utf-8", errors="replace").read()
-        cls.fenster = _methode(cls.quelle, "_show_pkg_bauen")
         cls.temp = _methode(cls.quelle, "_get_runtime_temp_dir")
 
     def test_temp_dir_liest_tk_nur_im_hauptfaden(self):
@@ -194,42 +161,6 @@ class FadensicherheitWaechter(unittest.TestCase):
                       self.temp,
                       "_get_runtime_temp_dir liest self.temp_path ungeschuetzt "
                       "(Absturz aus dem Arbeitsfaden)")
-
-    def test_bauen_nutzt_hauptfaden_werte(self):
-        # Die Kaestchen werden im Hauptfaden gelesen und als einfache Werte
-        # uebergeben - NICHT per .get() im bauen()-Aufruf (der laeuft im
-        # Arbeitsfaden und wuerfe dort "main thread is not in main loop").
-        self.assertIn("lizenzfrei = bool(lizenzfrei_var.get())", self.fenster,
-                      "lizenzfrei wird nicht im Hauptfaden gelesen")
-        self.assertIn("schnell = bool(schnell_var.get())", self.fenster,
-                      "schnell wird nicht im Hauptfaden gelesen")
-        self.assertIn("lizenzfrei=lizenzfrei", self.fenster,
-                      "bauen() nutzt nicht den vorab gelesenen Wert")
-        self.assertIn("schnell=schnell", self.fenster,
-                      "bauen() nutzt nicht den vorab gelesenen Wert")
-        self.assertNotIn("lizenzfrei=bool(lizenzfrei_var.get())", self.fenster,
-                         "bauen() liest lizenzfrei_var im Arbeitsfaden")
-        self.assertNotIn("schnell=bool(schnell_var.get())", self.fenster,
-                         "bauen() liest schnell_var im Arbeitsfaden")
-
-    def test_fortschritt_und_abbrechen_vorhanden(self):
-        # Fortschritts-Takt, Abbrechen-Knopf und Puffer-Protokoll muessen da sein.
-        self.assertIn("def _takt(", self.fenster, "Fortschritts-Takt fehlt")
-        self.assertIn("exfatpkg.abort_button", self.fenster,
-                      "Abbrechen-Knopf fehlt")
-        self.assertIn("protokoll_puffer", self.fenster,
-                      "Protokoll-Puffer (Haupt-Takt) fehlt - Log ginge verloren")
-        self.assertIn("mode=\"indeterminate\"", self.fenster,
-                      "Marquee fuer den Bau fehlt")
-
-    def test_abbruch_i18n_zweisprachig(self):
-        from ps5_validator.utils.i18n import STRINGS
-        for schluessel in ("exfatpkg.abort_button", "exfatpkg.status_aborting",
-                           "exfatpkg.status_aborted"):
-            eintrag = STRINGS.get(schluessel)
-            self.assertIsNotNone(eintrag, "i18n %s fehlt" % schluessel)
-            self.assertTrue(eintrag.get("de") and eintrag.get("en"),
-                            "de/en fuer %s unvollstaendig" % schluessel)
 
 
 if __name__ == "__main__":

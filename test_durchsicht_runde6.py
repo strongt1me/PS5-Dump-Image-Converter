@@ -478,26 +478,6 @@ class Aufgabe7ErsetzenTests(unittest.TestCase):
         gui._ask_yesno_threadsafe.assert_called_once()
 
 
-class PlatzTests(unittest.TestCase):
-    """H11-2: Auf demselben Datentraeger zaehlt die Summe."""
-
-    def test_auf_einem_datentraeger_addiert_sich_der_bedarf(self) -> None:
-        with tempfile.TemporaryDirectory(prefix="runde6_") as basis:
-            arbeit = os.path.join(basis, "arbeit")
-            ziel = os.path.join(basis, "ziel")
-            os.makedirs(arbeit)
-            os.makedirs(ziel)
-            with mock.patch.object(APP.shutil, "disk_usage",
-                                   lambda _p: SimpleNamespace(free=100)):
-                pruefe = APP.PS5ConverterGUI._platz_reicht_fuer
-                self.assertFalse(pruefe(arbeit, ziel, 60, 60))
-                self.assertTrue(pruefe(arbeit, ziel, 60, 40))
-
-    def test_das_fenster_benutzt_die_pruefung(self) -> None:
-        text = ast.unparse(_methode("_show_pkg_bauen"))
-        self.assertIn("self._platz_reicht_fuer(arbeit, ziel, noetig_arbeit, noetig_ziel)", text)
-
-
 class MitgeliefertTests(unittest.TestCase):
     """U4-1: Die Lizenzdatei wird auch in der fertigen Programmdatei gefunden."""
 

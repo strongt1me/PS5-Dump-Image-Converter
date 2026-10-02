@@ -464,8 +464,9 @@ class FenstergroesseTests(unittest.TestCase):
     def test_klog_fasst_seinen_inhalt(self):
         self._pruefen("KLOG", self.app._show_klog_window)
 
-    def test_pkg_bauen_fasst_seinen_inhalt(self):
-        self._pruefen("PKG bauen", self.app._show_pkg_bauen)
+    def test_pkg_entpacken_fasst_seinen_inhalt(self):
+        # Stand bis 02.10.2026 fuer "PKG bauen" hier; das Fenster ist ausgebaut.
+        self._pruefen("PS4 PKG -> Dump Ordner", self.app._show_pkg_entpacken)
 
     def test_downloads_fasst_seinen_inhalt(self):
         self._pruefen("Downloads", self.app._show_downloads_manager)

@@ -147,6 +147,116 @@ class AblageTests(unittest.TestCase):
                 self.assertIn(PS5ConverterGUI._WEBKIT_ORDNER, text)
 
 
+class FassungTests(unittest.TestCase):
+    """Das Fenster nennt die mitgelieferte Fassung (02.10.2026).
+
+    Wunsch des Nutzers: "Man weiss ja gar nicht welche man sonst benutzt."
+    Die Fassung steht im Dateinamen - nach derselben Stelle sortiert das
+    Programm, wenn mehrere Dateien im Ordner liegen. Angezeigt wird also genau
+    die Datei, die auch gestartet wird.
+    """
+
+    @staticmethod
+    def _gui_mit(fassungen: dict[str, str]) -> PS5ConverterGUI:
+        """Ein Prüfling ohne Tk, dessen drei Dateien die genannten Namen tragen."""
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        namen = {
+            "exe": "webkit-autoloader-host_v%s.exe",
+            "py": "webkit-autoloader-host_v%s.py",
+            "elf": "webkit-autoloader-installer_v%s.elf",
+        }
+        g._webkit_datei = lambda art: (
+            "X:/Ordner/" + namen[art] % fassungen[art] if fassungen.get(art) else "")
+        g._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
+        return g
+
+    def test_die_fassung_aus_dem_dateinamen(self) -> None:
+        lesen = PS5ConverterGUI._webkit_fassung_aus_name
+        self.assertEqual(lesen("webkit-autoloader-installer_v0.5.2.elf"), "0.5.2")
+        self.assertEqual(lesen("webkit-autoloader-host_v0.10.0.exe"), "0.10.0",
+                         "zweistellige Teile muessen ganz bleiben")
+        self.assertEqual(lesen("webkit-autoloader-host_v1.py"), "1")
+        self.assertEqual(lesen("webkit-autoloader-installer.elf"), "")
+        self.assertEqual(lesen(""), "")
+
+    def test_ein_name_mit_zweiter_nummer_zaehlt_die_erste(self) -> None:
+        """Dieselbe Stelle wie beim Sortieren - sonst zeigte das Fenster eine
+        andere Datei an als die, die gestartet wird.
+
+        So hiess die Datei, die der Nutzer am 28.09.2026 selbst gebaut hatte:
+        der Payload Manager steckt im Namen, die Fassung davor.
+        """
+        name = "webkit-autoloader-installer_v0.4.0_(inkl. plmgr_v0.5.1 fix2).elf"
+        self.assertEqual(PS5ConverterGUI._webkit_fassung_aus_name(name), "0.4.0")
+        schluessel = PS5ConverterGUI._webkit_versionsschluessel(name)
+        self.assertEqual(schluessel[:3], (0, 4, 0))
+
+    def test_gleiche_fassungen_ergeben_eine_kurze_zeile(self) -> None:
+        g = self._gui_mit({"exe": "0.5.2", "py": "0.5.2", "elf": "0.5.2"})
+        zeile = g._webkit_fassungszeile()
+        self.assertEqual(zeile, STRINGS["webkit.version"]["de"].format(version="0.5.2"))
+        self.assertEqual(zeile.count("0.5.2"), 1)
+
+    def test_abweichende_fassungen_nennt_die_zeile_einzeln(self) -> None:
+        """Hat jemand nur eine Datei ersetzt, soll der Unterschied auffallen."""
+        g = self._gui_mit({"exe": "0.5.2", "py": "0.5.2", "elf": "0.5.1"})
+        zeile = g._webkit_fassungszeile()
+        self.assertIn("v0.5.1", zeile)
+        self.assertEqual(zeile.count("v0.5.2"), 2)
+        self.assertEqual(zeile, STRINGS["webkit.version_mix"]["de"].format(
+            exe="0.5.2", py="0.5.2", elf="0.5.1"))
+
+    def test_eine_fehlende_datei_steht_als_strich_da(self) -> None:
+        g = self._gui_mit({"exe": "", "py": "0.5.1", "elf": "0.5.2"})
+        zeile = g._webkit_fassungszeile()
+        self.assertEqual(zeile, STRINGS["webkit.version_mix"]["de"].format(
+            exe="-", py="0.5.1", elf="0.5.2"))
+
+    def test_fehlt_eine_datei_und_die_uebrigen_gleichen_sich_ist_es_eine_fassung(self) -> None:
+        g = self._gui_mit({"exe": "", "py": "", "elf": "0.5.2"})
+        self.assertEqual(g._webkit_fassungszeile(),
+                         STRINGS["webkit.version"]["de"].format(version="0.5.2"))
+
+    def test_ohne_jede_nummer_keine_zeile(self) -> None:
+        """Das Fenster bleibt dann wie bisher - es erfindet nichts."""
+        g = self._gui_mit({"exe": "", "py": "", "elf": ""})
+        self.assertEqual(g._webkit_fassungszeile(), "")
+
+    def test_beide_sprachen_haben_dieselben_platzhalter(self) -> None:
+        import re
+        for schluessel, erwartet in (("webkit.version", {"version"}),
+                                     ("webkit.version_mix", {"exe", "py", "elf"})):
+            for sprache in ("de", "en"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    text = STRINGS[schluessel][sprache]
+                    self.assertEqual(set(re.findall(r"\{(\w+)\}", text)), erwartet)
+
+    def test_die_mitgelieferte_fassung_stimmt_mit_dem_inneren_der_elf(self) -> None:
+        """Der Name allein beweist nichts: Gelesen wird der Banner der Datei.
+
+        Am 28.09.2026 trug eine Datei den Namen "v0.4.0" und meldete sich
+        innen als 0.4.3-dev. Fuer die mitgelieferte Datei darf das nicht
+        passieren - sonst zeigte das Fenster eine Fassung, die es nicht ist.
+        """
+        import re
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        pfad = g._webkit_datei("elf")
+        self.assertTrue(pfad, "Installer nicht gefunden")
+        with open(pfad, "rb") as fh:
+            roh = fh.read()
+        banner = re.findall(rb"WebKit Autoloader v(\d+(?:\.\d+)+)", roh)
+        self.assertTrue(banner, "Kein Fassungstext im Installer gefunden")
+        self.assertEqual({b.decode() for b in banner},
+                         {g._webkit_fassungen()["elf"]})
+
+    def test_host_und_installer_tragen_dieselbe_fassung(self) -> None:
+        """Sie gehoeren zusammen; ein Bruch im Ordner soll hier auffallen."""
+        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        fassungen = g._webkit_fassungen()
+        self.assertTrue(all(fassungen.values()), fassungen)
+        self.assertEqual(len(set(fassungen.values())), 1, fassungen)
+
+
 class OberflaecheTests(unittest.TestCase):
     """Knopf und Klappliste."""
 

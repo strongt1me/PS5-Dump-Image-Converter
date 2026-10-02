@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.55</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.56</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.55</span>
-      <span class="marke">Stand 1. Oktober 2026</span>
+      <span class="marke">Version v1.9.56</span>
+      <span class="marke">Stand 2. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -451,7 +451,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   es bei Bedarf selbst &ndash; samt ELF-Loader, falls Port&nbsp;9021 noch
   geschlossen ist &ndash; und öffnet dann direkt dessen Weboberfläche, genau
   wie <em>Weboberfläche öffnen</em> bei „Konsole &amp; Payloads“ (siehe
-  unten). Jeder Schritt steht im Hauptprotokoll.</p>
+  unten). Jeder Schritt steht im Hauptprotokoll. Muss das Payload dafür erst
+  gesendet werden, zeigt ein kleines Hinweisfenster, was gerade geschieht – ohne
+  Knopf, Sie müssen nichts bestätigen; es schließt sich von selbst, sobald alles
+  geladen ist. Läuft das Payload schon, erscheint es nicht.</p>
 
   <h4>Konsole &amp; Payloads (rechte Seite)</h4>
   <p>Beim Programmstart sucht das Programm die PS5 selbst und verbindet sich:
@@ -472,17 +475,21 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle dreizehn bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle einundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
-  Prospero Manager und ps5upload &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  Prospero Manager, ps5upload, CheatRunner, App Dumper, Game Compressor,
+  SMPlusGui, aria2, zftpd, gdbsrv und ps5debug-NG &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
   FTP-Server und Payload-Manager nennen ihre laufende Version selbst; weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
-  die mitgelieferte in Klammern dahinter. ELF-Loader, Kernel-Protokoll,
-  Webserver, BFpilot, ShadowMount+ und Prospero Manager verraten ihre Version
-  nicht. Was
+  die mitgelieferte in Klammern dahinter. Alle übrigen Dienste verraten ihre
+  Version nicht. Ports und Weboberflächen der acht zuletzt hinzugekommenen
+  Dienste (CheatRunner bis ps5debug-NG) stammen aus den Beschreibungen ihrer
+  Autoren und sind an der Konsole noch nicht nachgemessen. zftpd legt Dateien
+  ohne Ausführungsrecht ab und taugt deshalb nicht für Spiele (siehe den
+  FTP-Hinweis weiter unten). Was
   nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
   <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
   <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet
@@ -663,7 +670,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   die alten bleiben beim ursprünglichen Benutzer.</p>
   <div class="kasten">
     <span class="titel">Wem dieses Programm zu verdanken ist</span>
-    <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur und das PKG-Bauen erledigen <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht) und <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Der <strong>PS5-FPKG-Builder</strong> von Phoenixx1202 diente als Orientierung für die PKG-Erstellung aus jedem Abbildformat. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
+    <p>Hinter <strong>CREDITS</strong> steht die vollständige Danksagung. Fast alles, was dieses Programm tut, beruht auf Arbeit anderer: Die PFS-Verarbeitung leistet <strong>MkPFS</strong> von PSBrew und Renan Barreto, die UFS2-Struktur erledigt <strong>UFS2Tool</strong> (hier für Dateien über 2&nbsp;GB gepatcht), PS5-Pakete liest <strong>LibProsperoPkg</strong> von SvenGDK, PS4-Pakete wandelt <strong>PS4 FFPFSC</strong> um. Dazu kommen Dutzende Payloads und Werkzeuge aus der Homebrew-Gemeinschaft.</p>
     <p>Das Programm selbst steht unter der MIT-Lizenz (Datei <code>LICENSE</code>); für die mitgelieferten Fremdkomponenten gilt sie nicht. Deren Lizenzen stehen in <code>THIRD_PARTY_LICENSES.md</code> und sind aus dem CREDITS-Fenster aufrufbar. Wer das Programm weitergibt, sollte dort hineinsehen – einige Bestandteile haben eigene Bedingungen.</p>
   </div>
 </section>
@@ -711,6 +718,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <ul>
     <li>Das Herunterfahren erfolgt ohne Rückfragen und beendet auch andere Programme. Ungespeicherte Arbeit in anderen Fenstern geht dabei verloren – speichern Sie vorher.</li>
     <li>Bei aktivem Ankreuzfeld erscheint am Ende <strong>keine</strong> Erfolgsmeldung zum Wegklicken; sie würde auf eine Bestätigung warten, die niemand gibt. Der Erfolg steht in der Statuszeile und im Protokoll.</li>
+    <li>Läuft gerade der AMPR-Mitschnitt-Assistent (Abschnitt 11.1), bleibt der Rechner an – er muss an der Konsole noch zurückstellen, was er umgestellt hat. Das Protokoll sagt es dann.</li>
   </ul>
   <p>Die Einstellung wird gespeichert und gilt auch beim nächsten Start. Im Kommandozeilenmodus übernimmt das der Schalter <code>--shutdown-on-success</code>.</p>
 
@@ -768,9 +776,15 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <h2><span class="nr">5</span> Aufgabe 1 – Dump-Ordner konvertieren</h2>
   <div class="kasten">
     <span class="titel">Wof&uuml;r ist das gut?</span>
-    <p>Aus einem Dump-Ordner wird <strong>eine einzige Datei</strong>. Das brauchen Sie, wenn ein Spiel auf einen USB-Stick soll: Die Konsole liest dort kein loses Verzeichnis, sondern einen Container, den ShadowMount+ einhängt.</p><p>Der Ordner selbst bleibt unangetastet – es entsteht eine Kopie im gewählten Format. Wollen Sie umgekehrt aus einer vorhandenen Datei wieder einen Ordner machen, nehmen Sie Aufgabe 2, 3 oder 4.</p>
+    <p>Aus einem Dump-Ordner wird <strong>eine einzige Datei</strong>. Das brauchen Sie, wenn ein Spiel auf einen USB-Stick soll: Die Konsole liest dort kein loses Verzeichnis, sondern einen Container, den ShadowMount+ einhängt.</p><p>Der Ordner selbst bleibt unangetastet – es entsteht eine Kopie im gewählten Format. Einzige Ausnahme: Beim <em>Dump-Ordner (mit Einbau)</em> wählen Sie ausdrücklich „Im Original“ (siehe unten). Wollen Sie umgekehrt aus einer vorhandenen Datei wieder einen Ordner machen, nehmen Sie Aufgabe 2, 3 oder 4.</p>
   </div>
   <p>Nutzen Sie Aufgabe 1, wenn Ihre Daten bereits als normaler Dump-Ordner vorliegen. Als Ergebnis können Sie <code>.ffpfsc</code> (komprimiert), <code>.ffpfs</code> (unkomprimiert), ein echtes <code>.exFAT</code>-Image oder ein UFS2-basiertes <code>.ffpkg</code> wählen.</p>
+  <p>Ist <strong>AMPR EMU</strong> (auch mit Asset-Pack), <strong>PlayGo</strong> oder <strong>BACKPORT</strong> angehakt (Kapitel 11), steht in der Liste zusätzlich <strong>Dump-Ordner (mit Einbau)</strong>. Dann entsteht kein Abbild, sondern ein Dump-Ordner mit genau diesen Einbauten – zum Beispiel, um ihn danach selbst weiterzuverwenden. Beim Start fragt das Programm, wo eingebaut wird:</p>
+  <ul>
+    <li><strong>In Sicherung (empfohlen)</strong> – der Dump wird in den Zielordner kopiert, und nur die Kopie wird verändert. Ihr Original bleibt unberührt; die Kopie braucht einmal denselben Platz.</li>
+    <li><strong>Im Original</strong> – eingebaut wird direkt in Ihrem gewählten Ordner. Davor warnt das Programm ausdrücklich: Die Dateien sind danach <strong>nicht mehr original</strong>. BACKPORT ersetzt <code>eboot.bin</code> und die Bibliotheken ohne Sicherung; AMPR EMU, Asset-Pack und PlayGo legen Dateien dazu. Das lässt sich nicht rückgängig machen.</li>
+  </ul>
+  <p>Läge die Sicherung dort, wo die Quelle liegt (der Zielordner ist der Ordner, in dem Ihr Dump liegt, oder ein Ordner darin), bricht das Programm ab und bittet um einen anderen Zielordner – oder um „Im Original“. Liegt im Zielordner schon ein Ordner gleichen Namens, wird vor dem Ersetzen gefragt. Auf der Kommandozeile wird immer in einer Sicherung eingebaut.</p>
   <ol class="schritte">
     <li>Klicken Sie auf <strong>Dump Ordner</strong> und wählen Sie den gewünschten Ordner.</li>
     <li>Öffnen Sie die Liste ZIELFORMAT und wählen Sie das benötigte Format.</li>
@@ -1129,6 +1143,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     TOOLS</em>, Abschnitt 13) f&uuml;hrt Schritt f&uuml;r Schritt durch
     mehrere echte Spieldurchl&auml;ufe auf Ihrer PS5 und erzeugt daraus genau
     diese Datei automatisch &ndash; passend benannt und am richtigen Ort.
+    Vorher pr&uuml;ft er, ob ShadowMount+ die Aufnahme-Bibliothek wirklich
+    l&auml;dt, stellt auf Wunsch vor&uuml;bergehend um und am Ende alles
+    wieder zur&uuml;ck &ndash; das Spiel darf dabei nicht laufen. Schlie&szlig;en
+    Sie das Programm, w&auml;hrend er l&auml;uft, wartet es auf das
+    Zur&uuml;ckstellen und schlie&szlig;t danach von selbst.
     Eine ausf&uuml;hrliche, bebilderte Anleitung zum ganzen Ablauf (Mitschnitt,
     Profil pr&uuml;fen, Bauen, Originale weglassen) &ouml;ffnet der Knopf
     <strong>Asset Packs Anleitung</strong> oben in der Titelleiste, links
@@ -1366,12 +1385,12 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Schaltfläche</th><th>Was sie tut</th></tr></thead>
     <tbody>
-      <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, hochgerechnete Hintergrundbilder, Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
+      <tr><td><strong>DIAGNOSE</strong></td><td>Erstellt einen Diagnosebericht (Version, System, letzte Protokollzeilen) zum Teilen bei Problemen. Zugangsdaten werden automatisch geschwärzt. Ganz oben steht ein Urteil über die Darstellung des Fensters: zu enge Beschriftungen, abgeschnittene Bedienelemente, sichtbar hochgerechnete Hintergrundbilder (gemessen an dem, was die Hochrechnung an Feinzeichnung kostet, nicht an der Dateigröße allein), Anzeigeskalierung, Arbeitsspeicher und Reaktionszeit.</td></tr>
       <tr><td><strong>KLOG</strong></td><td>Zeigt den Kernel-Log einer per Netzwerk verbundenen PS5 live an – reines Mitlesen, Standardport 3232.</td></tr>
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>PKG bauen</strong> (13.3), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle; ein Update-Paket erkennt es und sagt, was es zum Installieren braucht), <strong>PKG entpacken</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PS4 &amp; PS5 PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle; ein Update-Paket erkennt es und sagt, was es zum Installieren braucht), <strong>PS4 PKG &rarr; Dump Ordner</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1444,93 +1463,36 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
   <p>Der gewählte Vorschlag landet im Eingabefeld darunter und kann dort frei geändert werden; unter Windows unzulässige Zeichen werden automatisch entfernt. <strong>Umbenennen</strong> benennt ausschließlich den Ordner um – der Inhalt bleibt unangetastet. Existiert daneben bereits ein Ordner dieses Namens, bricht das Programm ab, statt etwas zu überschreiben.</p>
 
-  <h3>13.3 PKG bauen &ndash; aus einem Dump-Ordner oder einem Abbild</h3>
-  <p>Baut ein Debug-Paket (<code>.pkg</code>, finalisiertes FIH-Abbild) mit
-  der eingebetteten LibProsperoPkg. Als Quelle dient ein Dump-Ordner
-  <strong>oder</strong> ein Abbild (<code>.exfat</code>, <code>.ffpfsc</code>,
-  <code>.ffpfs</code>, <code>.ffpkg</code>).</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PKG BAUEN.
-  Oben wählen Sie die Art: <strong>Spiel-Backup</strong> (ab Werk) oder
-  <strong>Homebrew</strong>. Die Quelle wählen Sie über <strong>Ordner …</strong>
-  oder <strong>Abbild …</strong>, dazu den Zielordner für die
-  <code>.pkg</code>. <strong>Paket bauen</strong> startet; Balken, Protokoll und
-  <strong>Abbrechen</strong> begleiten den Lauf.</p>
-  <ul>
-    <li><strong>Dump-Ordner:</strong> wird unverändert gebaut &ndash; nichts wird
-    entpackt, nichts darin geändert. <strong>Prüfen</strong> sagt vorab, ob die
-    Module als Debug-Paket laufen würden.</li>
-    <li><strong>Abbild:</strong> wird zuerst in den <strong>Arbeitsordner</strong>
-    entpackt (ohne OSFMount und ohne Adminrechte; <code>.ffpkg</code> über
-    denselben Weg wie Aufgabe 4). Nur in dieser Arbeitskopie lassen sich die
-    <strong>Ziel-Firmware</strong> (<code>requiredSystemSoftwareVersion</code>
-    und <code>sdkVersion</code> in <code>param.json</code>) und
-    <strong>PlayGo-Felder zurücksetzen</strong> einstellen. Das Kästchen leert
-    <code>versionFileUri</code> und setzt <code>attribute3</code> auf 0 &ndash;
-    ab Werk <strong>aus</strong>, denn die Wirkung ist unbelegt und
-    <code>attribute3</code> trägt auch andere Flags wie HFR und Auto-Scaling.
-    Nach dem Bau wird die Arbeitskopie gelöscht; Ihr Abbild bleibt unberührt.</li>
-    <li><strong>Lizenzfrei bauen</strong> gibt es nur für Spiel-Backups; bei
-    Homebrew ist das Kästchen gesperrt.</li>
-  </ul>
-  <div class="kasten warnung">
-    <span class="titel">Selbst gebaute Pakete starten bisher nicht</span>
-    <p>An der Konsole geprüft: Das Paket installiert sich, beim Start meldet
-    die Konsole aber CE-100096-6 &ndash; sie kann die Schlüssel nicht ableiten.
-    Für Spiel-Backups ist der Weg über <code>/data/homebrew</code> und
-    ShadowMount+ der richtige, für eigene Homebrew
-    <strong>App direkt installieren</strong> (13.4).</p>
-    <p style="margin-top:10px">Die eingebettete LibProsperoPkg scheiterte an
-    echten Spiel-Dumps mit vielen kleinen Dateien (ein internes Format-Limit
-    beim Bauen). Seit v1.9.53 behebt ein eigener Patch das für
-    <strong>kleine, einfache</strong> Titel &ndash; gemessen an einem
-    1,2&nbsp;GB-Dump mit 1166 Dateien, der zuvor gar nicht baute. Bei
-    <strong>größeren oder komplexeren</strong> Titeln (gemessen an einem
-    2,5&nbsp;GB-Dump) bleibt der Bau am selben Limit hängen; dafür reicht die
-    öffentlich verfügbare Quelle der Bibliothek nicht aus.</p>
-  </div>
+  <h3>13.3 PKG bauen &ndash; entfallen</h3>
+  <p>Bis Anfang Oktober 2026 baute das Programm unter WEITERE TOOLS &rarr;
+  PKG BAUEN Debug-Pakete (<code>.pkg</code>) aus einem Dump-Ordner oder einem
+  Abbild. Diese Funktion ist <strong>ausgebaut</strong>: An der Konsole
+  installierten sich die Pakete zwar, beim Start meldete die Konsole aber
+  CE-100096-6 &ndash; sie konnte die Schlüssel nicht ableiten. Mit ihr
+  entfielen der zweite Bauweg über das Sony SDK und die Vorabprüfung eines
+  Dump-Ordners.</p>
+  <p>Für Spiel-Backups ist der Weg über <code>/data/homebrew</code> und
+  ShadowMount+ der richtige, für eigene Homebrew
+  <strong>App direkt installieren</strong> (13.4). Die Eckdaten eines
+  vorhandenen Pakets zeigt <strong>PS4 &amp; PS5 PKG lesen</strong>, ein
+  PS4-Paket entpackt <strong>PS4 PKG &rarr; Dump Ordner</strong> (13.14).</p>
 
   <h4>Eigene Bibliothek benutzen – der Ordner <code>libs</code></h4>
   <p>Neben dem Programm liegt ein Ordner <code>libs</code>. Wer eine
-  <strong>selbst gebaute</strong> <code>LibProsperoPkg.dll</code> (oder
-  <code>libScePubTools.dll</code>) hat, legt sie dort hinein – mehr ist nicht
-  zu tun. Ab dem nächsten PKG-Bau arbeitet das Programm damit; nehmen Sie die
-  Datei wieder heraus, ist alles wie vorher. Eine Datei mit 0&nbsp;Byte wird
+  <strong>selbst gebaute</strong> <code>LibProsperoPkg.dll</code> hat, legt
+  sie dort hinein – mehr ist nicht zu tun. Seit dem Ausbau von
+  „PKG bauen“ wirkt sie nur noch beim <strong>Lesen</strong> eines Pakets
+  (<strong>PS4 &amp; PS5 PKG lesen</strong>). Nehmen Sie die Datei wieder
+  heraus, ist alles wie vorher. Eine Datei mit 0&nbsp;Byte wird
   ignoriert.</p>
   <p>Überschrieben wird dabei <strong>nichts</strong>: Das Programm spiegelt
   den Werkzeugordner in den Einstellungsordner und legt Ihre Datei dort
   darüber. Ob gerade eine eigene Bibliothek gilt – und welche –, steht im
   Diagnosebericht unter <em>Eigene Bibliotheken</em> samt Größe und Prüfsumme.
-  Eine neuere Fassung wird an der Prüfsumme erkannt, nicht am Datum. Die
-  Anleitung dazu liegt als <code>libs/README.md</code> daneben.</p>
-
-  <h4>Der zweite Bauweg: mit dem Sony SDK</h4>
-  <p>Wer den SDK-Baukasten besitzt, kann das Paket statt mit der eingebauten
-  Engine von <strong>Sonys eigener Befehlszeile</strong> bauen lassen. Dafür
-  muss unter <code>libs/sdk/</code> mindestens Folgendes liegen:</p>
-  <pre>libs/sdk/toolchain/prospero-pub-cmd.exe
-libs/sdk/toolchain/libScePubTools.dll
-libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
-  <p>Dann wird im Fenster <strong>PKG bauen</strong> das Kästchen
-  <em>Mit Sony SDK bauen</em> anklickbar; fehlt der Baukasten, bleibt es grau
-  und darunter steht, was fehlt. Der Ablauf ist derselbe wie beim
-  <code>build-from-folder</code>-Skript des Baukastens: ein GP5-Projekt
-  schreiben, dann <code>img_create --oformat nwonly</code>.</p>
-  <div class="kasten achtung">
-    <span class="titel">Zwei Dinge vorher wissen</span>
-    <p><strong>Ein unverändertes SDK baut ein signiertes Paket</strong> – das
-    nimmt eine gejailbreakte Konsole nicht an. Die im Umlauf befindlichen
-    Baukästen tragen dafür ein verändertes <code>prospero-pub-cmd.exe</code>
-    („plaintext"-Profil). Das Programm prüft diesen Unterschied nicht; es
-    ruft auf, was da liegt.</p>
-    <p><strong>Die Dateinamen werden vorher geprüft.</strong>
-    <code>img_create</code> weist <code>%</code>, <code>;</code>, alles
-    Nicht-ASCII und Namen mit Schlusspunkt ab – aber erst <em>nach</em> dem
-    Komprimieren. Bei einem großen Titel wären das Stunden für eine Meldung,
-    die in einer Sekunde zu haben ist; deshalb prüft das Programm die Namen,
-    bevor der SDK startet, und nennt die beanstandeten Dateien.</p>
-  </div>
-  <p>Diese Dateien gehören Sony, werden nicht mitgeliefert und dürfen nicht
-  weitergegeben werden – weder ins Git noch in ein Bündel.</p>
+  Eine neuere Fassung wird an der Prüfsumme erkannt, nicht am Datum. Ein
+  Unterordner <code>libs/sdk</code> (früher für den SDK-Bauweg) wird nicht
+  mehr benutzt; der Bericht nennt ihn als ungenutzt. Die Anleitung liegt als
+  <code>libs/README.md</code> daneben.</p>
 
   <h3>13.4 App direkt installieren</h3>
   <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
@@ -1727,7 +1689,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
     <thead><tr><th></th><th>alte Methode (bis alpha6)</th><th>neue Methode (ab alpha8)</th></tr></thead>
     <tbody>
       <tr><td><strong>Wo gesucht wird</strong></td><td><code>app0/fakelib2</code>, sonst <code>app0/fakelib</code></td><td>feste Reihenfolge: <code>backports/&lt;ID&gt;/fakelib2</code> &rarr; <code>backports/&lt;ID&gt;/fakelib</code> &rarr; <code>&lt;Spiel&gt;/fakelib2</code> &rarr; <code>&lt;Spiel&gt;/fakelib</code></td></tr>
-      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta2) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
+      <tr><td><strong><code>fakelib2</code> im Spielordner</strong></td><td>wirkt</td><td>1.7 alpha8 bis alpha13fix1: <strong>wird ignoriert</strong>; ab 1.7beta1 (beiliegend: 1.7beta3) wirkt es wieder und verdeckt ein <code>fakelib</code> daneben</td></tr>
       <tr><td><strong>global + spieleigen</strong></td><td>zwei Schichten &uuml;bereinander</td><td>vorher in einen Cache zusammenkopiert</td></tr>
       <tr><td><strong>Emulator-Dateien</strong></td><td>gibt es nicht</td><td>aus <code>/data/shadowmount/emus/</code></td></tr>
     </tbody>
@@ -1926,6 +1888,12 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   <p><strong>Zu finden unter:</strong> dem Knopf <strong>WEBKIT
   AUTOLOADER</strong> in der Titelleiste. Er &ouml;ffnet ein rahmenloses
   Fenster mit drei Wegen; <strong>Esc</strong> schlie&szlig;t es wieder.</p>
+  <p>Unter der &Uuml;berschrift nennt das Fenster die <strong>mitgelieferte
+  Fassung</strong>, zum Beispiel <em>Mitgelieferte Fassung: v0.5.2</em>. Sie
+  stammt aus dem Namen der Dateien im Ordner &ndash; es ist also genau die,
+  die gestartet beziehungsweise gesendet wird. Tragen Host und Installer
+  verschiedene Fassungen (etwa weil Sie nur eine Datei ersetzt haben), steht
+  jede einzeln da.</p>
 
   <h4>Die drei Wege</h4>
   <div class="tabelle">
@@ -1982,7 +1950,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
   nimmt jeweils die <strong>h&ouml;chste Versionsnummer</strong>. Die alte
   Datei d&uuml;rfen Sie liegen lassen oder l&ouml;schen; beim n&auml;chsten
   Bau wandert der Ordnerinhalt unver&auml;ndert in das fertige Programm.
-  Zu &auml;ndern ist daf&uuml;r nichts.</p>
+  Zu &auml;ndern ist daf&uuml;r nichts. Welche Fassung gerade gew&auml;hlt ist,
+  steht oben im Fenster.</p>
 
   <h3>13.12 unjail senden &ndash; Homebrew aus der Sandbox heben</h3>
   <p>Homebrew-Anwendungen laufen auf der Konsole in einem eigenen Ordner und
@@ -2039,13 +2008,14 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
     Kopie.</p>
   </div>
 
-  <h3>13.14 PKG entpacken &ndash; ein PS4-Paket als Spielordner</h3>
-  <p><strong>PKG entpacken</strong> macht aus einer PS4-Paketdatei
+  <h3>13.14 PS4 PKG &rarr; Dump Ordner &ndash; ein PS4-Paket als Spielordner</h3>
+  <p><strong>PS4 PKG &rarr; Dump Ordner</strong> (bis Oktober 2026
+  &bdquo;PKG entpacken&ldquo;) macht aus einer PS4-Paketdatei
   (<code>.pkg</code>, Fake-PKG: Spiel, Patch oder DLC) einen gew&ouml;hnlichen
   Spielordner mit <code>eboot.bin</code> und <code>sce_sys</code>. Entpackt
   wird mit demselben Entpacker, den das Fenster <em>PS4 PKG &rarr; ffpfsc</em>
   (13.10) mitbringt.</p>
-  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PKG entpacken.
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; PS4 PKG &rarr; Dump Ordner.
   W&auml;hlen Sie die <code>.pkg</code> und einen Zielordner und dr&uuml;cken
   Sie <strong>Entpacken</strong>. Im Zielordner entsteht ein Unterordner mit
   der Title-ID, zum Beispiel <code>CUSA00775</code>; bei einem Patch
@@ -2081,7 +2051,7 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
     scheiterte aber an allen gepr&uuml;ften PS5-Paketen &ndash; auch an einem,
     das dieselbe Bibliothek selbst gebaut hatte. Retail-Pakete sind ohnehin an
     die Konsole gebunden. Den Aufbau eines PS5-Pakets (Typ, Content-ID,
-    Eintr&auml;ge) zeigt <strong>PKG lesen</strong>. Retail-PS4-Pakete ohne
+    Eintr&auml;ge) zeigt <strong>PS4 &amp; PS5 PKG lesen</strong>. Retail-PS4-Pakete ohne
     Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
   </div>
 
@@ -2229,14 +2199,14 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
       <tr><td>Eine Warnung erscheint</td><td>Lesen Sie die vollständige Meldung im Protokoll. Ändern Sie nicht mehrere Dinge gleichzeitig, sondern beheben Sie zuerst die genannte Ursache.</td></tr>
       <tr><td>Hochgeladenes Spiel startet nicht (<code>CE-107750-0</code>)</td><td>Die Datei ist nicht ausführbar – typischerweise über <strong>zftpd</strong> übertragen. Laden Sie das Spiel mit <strong>ftpsrv auf Port 2121</strong> erneut hoch. Über zftpd übertragene Ordner bleiben unbrauchbar; nachträglich reparieren lässt sich das dort nicht.</td></tr>
       <tr><td>Spiel startet nicht (<code>CE-108255-1</code>)</td><td>Zwei bekannte Ursachen: ein unvollständiges <code>.ffpkg</code> – oder der Start aus dem internen Speicher statt vom USB-Stick. Probieren Sie das Backup vom Stick.</td></tr>
-      <tr><td>Update-Paket lässt sich nicht installieren (<code>CE-107891-6</code>)</td><td>Ein Update-Paket (Delta) enthält nur die Änderungen und gehört zu genau <em>einem</em> Grundpaket. Installiert ist ein anderes – schon ein Neubau desselben Spiels zählt als anderes Paket. Installieren Sie das Grundpaket, gegen das das Update gebaut wurde, oder bauen Sie Grundpaket und Update zusammen neu und installieren Sie beide. Ob eine <code>.pkg</code> ein Update-Paket ist, zeigt <strong>PKG lesen</strong>.</td></tr>
+      <tr><td>Update-Paket lässt sich nicht installieren (<code>CE-107891-6</code>)</td><td>Ein Update-Paket (Delta) enthält nur die Änderungen und gehört zu genau <em>einem</em> Grundpaket. Installiert ist ein anderes – schon ein Neubau desselben Spiels zählt als anderes Paket. Installieren Sie das Grundpaket, gegen das das Update gebaut wurde, oder bauen Sie Grundpaket und Update zusammen neu und installieren Sie beide. Ob eine <code>.pkg</code> ein Update-Paket ist, zeigt <strong>PS4 &amp; PS5 PKG lesen</strong>.</td></tr>
       <tr><td>FTP-, KLog- oder JS-Loader-Werkzeug verbindet nicht</td><td>Prüfen Sie IP-Adresse und Port sowie, ob die PS5 per Jailbreak vorbereitet und im selben Netzwerk erreichbar ist. Auf der Konsole muss ein FTP-Payload laufen – über <strong>JS LOADER</strong> lässt sich einer starten.</td></tr>
     </tbody>
   </table>
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.55), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.56), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2436,8 +2406,8 @@ libs/sdk/toolchain/ext/  (da, fa, p2d, ric, sc2, ispc_texcomp, libatrac9)</pre>
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.55</strong></span>
-    <span>Stand 1. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.56</strong></span>
+    <span>Stand 2. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

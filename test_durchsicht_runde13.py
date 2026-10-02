@@ -87,8 +87,6 @@ class TexteTests(unittest.TestCase):
         for schluessel, platzhalter in (
                 ("log.fehler_zeile", ("{text}",)), ("log.gesperrt_zeile", ("{text}",)),
                 ("pkgentpacken.log_fertig", ("{quelle}", "{ziel}")),
-                ("pkgbau.log_gebaut", ("{pfad}",)),
-                ("abbildpkg.log_extract_fehlt", ()),
                 ("batch.konvertierung_fehlgeschlagen", ())):
             for sprache in ("de", "en"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):

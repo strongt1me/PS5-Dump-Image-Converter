@@ -150,9 +150,9 @@ td.val{font-family:var(--mono);font-size:13px;color:var(--accent);white-space:no
 .pit h4{margin:0 0 6px;font-size:15px;font-weight:650}
 .pit p{margin:0;font-size:14px;color:var(--muted)}
 .checklist{list-style:none;margin:0;padding:0;display:grid;gap:10px}
-.checklist li{display:flex;gap:12px;align-items:flex-start;font-size:14.5px}
-.checklist li::before{content:"✓";flex:0 0 auto;width:22px;height:22px;border-radius:7px;background:rgba(89,224,176,.14);
-  color:var(--ok);font-size:12px;font-weight:800;display:grid;place-items:center;margin-top:1px}
+.checklist li{position:relative;padding-left:34px;font-size:14.5px}
+.checklist li::before{content:"✓";position:absolute;left:0;top:1px;width:22px;height:22px;border-radius:7px;background:rgba(89,224,176,.14);
+  color:var(--ok);font-size:12px;font-weight:800;display:grid;place-items:center}
 footer{margin:80px 0 60px;padding-top:26px;border-top:1px solid var(--line-soft);color:var(--muted);font-size:13px}
 footer b{color:#fff}
 .note{font-size:13.5px;color:var(--muted);margin-top:16px}
@@ -193,7 +193,7 @@ footer b{color:#fff}
       <span class="badge on">Mit Mitschnitt-Assistent, seit v1.9.54</span>
       <span class="badge">AMPR_PackTools-4.0, GPL-3.0</span>
       <span class="badge">drakmor/ampr_emu, GPL-3.0</span>
-      <span class="badge">Stand: 30. September 2026</span>
+      <span class="badge">Stand: 1. Oktober 2026</span>
     </div>
 
     <div class="alert">
@@ -227,6 +227,7 @@ footer b{color:#fff}
         <p>Ein maßgeschneidertes Profil aus echten Spieldurchläufen auf der eigenen PS5. Trifft genauer, welche Dateien wirklich gebraucht werden, und liefert sinnvolle Blockgrößen aus gemessenem Zugriffsverhalten statt aus einer pauschalen Annahme.</p>
         <ul>
           <li>Braucht eine Debug-Fassung von AMPR EMU (<code class="inline">test-debug-pack</code>) und Zeit zum Durchspielen.</li>
+          <li>Prüft vorher, ob ShadowMount+ diese Fassung wirklich lädt, stellt bei Bedarf vorübergehend um und am Ende alles zurück.</li>
           <li>Ergebnis liegt als <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> neben dem Dump und wird beim nächsten Packen automatisch verwendet.</li>
         </ul>
       </div>
@@ -246,14 +247,15 @@ footer b{color:#fff}
   <!-- 3 -->
   <section id="mitschnitt">
     <div class="sec-head"><span class="sec-mark">03</span><h2>Der Mitschnitt-Assistent</h2></div>
-    <p class="lede">Zu finden unter <b style="color:#fff">WEITERE TOOLS → AMPR-MITSCHNITT</b>. Ersetzt das manuelle Anlegen einer Ordnerstruktur, den Aufruf eines Index-Bauskripts und das Starten einer eigenen Profil-GUI vollständig – sechs geführte Schritte in einem Fenster.</p>
+    <p class="lede">Zu finden unter <b style="color:#fff">WEITERE TOOLS → AMPR-MITSCHNITT</b>. Ersetzt das manuelle Anlegen einer Ordnerstruktur, den Aufruf eines Index-Bauskripts und das Starten einer eigenen Profil-GUI vollständig – sieben geführte Schritte in einem Fenster.</p>
 
     <div class="card">
       <ol class="flow">
         <li><b>Spieldump wählen</b> – ein entpackter, lokaler Dump-Ordner (<code class="inline">eboot.bin</code>/<code class="inline">sce_sys</code> müssen vorhanden sein). Installierte Titel ohne eigenen Ordner gehen nicht – der Mitschnitt braucht einen entpackten Spielordner auf der Konsole.</li>
         <li><b>Verbindung zur PS5</b> – wie überall im Programm, über die gespeicherte oder gefundene Adresse.</li>
         <li><b>Titel auf der Konsole zuordnen</b> – anhand der Title-ID. Passt mehr als ein Ordner oder keiner eindeutig, fragt das Programm nach, welcher gemeint ist.</li>
-        <li><b>Index bauen und Aufnahme-Bibliothek hochladen</b> – baut <code class="inline">ampr_emu.index</code> neu und legt eine aufnahmefähige AMPR-EMU-Fassung (<code class="inline">test-debug-pack</code>) direkt in die Spielwurzel (<code class="inline">/app0/ampr_emu.index</code>, <b>nicht</b> nach <code class="inline">fakelib/</code>). Fehlt eine solche Fassung im Bestand, sagt das Programm das und verweist auf die AMPR-Aktualisierung.</li>
+        <li><b>ShadowMount+ prüfen</b> – liest <code class="inline">/data/shadowmount/config.ini</code>, erkennt die Fassung und klärt, ob ShadowMount+ die Aufnahme-Bibliothek überhaupt laden würde (Kasten unten). Wenn nicht, fragt das Programm nach: <b>Vorübergehend umstellen</b> (empfohlen), <b>Nicht ändern, trotzdem aufnehmen</b> oder <b>Abbrechen</b>.</li>
+        <li><b>Index bauen und Aufnahme-Bibliothek hochladen</b> – baut <code class="inline">ampr_emu.index</code> neu und legt ihn in die Spielwurzel (<code class="inline">/app0/ampr_emu.index</code>, <b>nicht</b> nach <code class="inline">fakelib/</code>). Die aufnahmefähige AMPR-EMU-Fassung (<code class="inline">test-debug-pack</code>) kommt in genau den fakelib-Ordner, den ShadowMount+ für diesen Titel einhängt – so, wie es Schritt 4 ermittelt hat. Was dort schon liegt, wird vorher auf den Rechner gesichert; lässt es sich nicht sichern, wird nichts überschrieben. Fehlt eine aufnahmefähige Fassung im Bestand, sagt das Programm das und verweist auf die AMPR-Aktualisierung.</li>
         <li><b>Spieldurchläufe aufnehmen</b> – fünf vom Hersteller empfohlene Szenarien, nacheinander:
           <ul class="sub">
             <li>Kaltstart durchs Hauptmenü, einen Spielstand laden</li>
@@ -262,12 +264,41 @@ footer b{color:#fff}
             <li>Ein bereits besuchtes Gebiet erneut aufsuchen</li>
             <li>Weitere Modi, Sprachen oder installierte DLC</li>
           </ul>
-          Nach jedem Durchlauf: Spiel <b style="color:#fff">normal beenden</b> (nicht Ruhemodus), dann im Programm auf „Fertig gespielt – Mitschnitt holen" klicken. Die Bestätigung ist <b>nicht modal</b> – das übrige Programm bleibt bedienbar, während gespielt wird, auch über Stunden. Ein unvollständiger Durchlauf lässt sich erneut versuchen, überspringen oder der ganze Assistent abbrechen; bereits erfolgreiche Durchläufe bleiben dabei erhalten.</li>
+          Nach jedem Durchlauf: Spiel <b style="color:#fff">normal beenden</b> (nicht Ruhemodus), dann im Programm auf „Fertig gespielt – Mitschnitt holen" klicken. Die Bestätigung ist <b>nicht modal</b> – das übrige Programm bleibt bedienbar, während gespielt wird, auch über Stunden. Ein unvollständiger Durchlauf lässt sich erneut versuchen, überspringen oder der ganze Assistent abbrechen; bereits erfolgreiche Durchläufe bleiben dabei erhalten. Jede Abholung baut eine frische Verbindung auf – nach einer langen Spielrunde hat ftpsrv die alte längst geschlossen.</li>
         <li><b>Profil erzeugen</b> – fasst alle erfolgreichen Durchläufe zusammen und schreibt <code class="inline">&lt;dump&gt;_ampr_pack.toml</code> neben den Dump-Ordner, dazu einen lesbaren Bericht und eine Kennzahlen-Datei daneben. Liegt dort schon ein eigenes Profil, fragt das Programm vor dem Ersetzen nach.</li>
       </ol>
       <div class="hr"></div>
       <p class="note">Das erzeugte Profil wird <b style="color:#fff">nicht</b> gesondert „aktiviert" – es liegt einfach neben dem Dump und wird beim nächsten Packen dieses Dumps automatisch erkannt und verwendet (Abschnitt „Bauen"). Kein separater Übernahme-Schritt nötig.</p>
     </div>
+
+    <p class="path-title" style="margin-top:28px">Schritt 4 im Einzelnen – wohin die Aufnahme-Bibliothek muss</p>
+    <div class="card">
+      <p style="margin:0 0 14px;font-size:14.5px">ShadowMount+ hängt je Titel genau <b style="color:#fff">einen</b> fakelib-Ordner ein – den ersten, den es findet, auch einen leeren. Eine Aufnahme-Bibliothek im falschen Ordner bliebe wirkungslos, und es entstünde nie ein Mitschnitt. Das Programm sucht deshalb in derselben Reihenfolge wie ShadowMount+:</p>
+      <div class="table-scroll"><table>
+        <tr><th>Ort</th><th>Gilt, wenn …</th><th>Hinweis</th></tr>
+        <tr><td><code class="inline">&lt;Suchpfad&gt;/backports/&lt;TITLE-ID&gt;/</code></td><td>es für diesen Titel einen Backport-Ordner gibt – dorthin legt auch Aufgabe 7 ab. Er geht dem Spielordner immer vor.</td><td>Gesucht wird zuerst im Suchpfad des Spiels, dann in den <code class="inline">scanpath</code>-Einträgen der config.ini, ab 1.7beta3 zuletzt immer noch in <code class="inline">/data/homebrew</code>. ShadowMount+ bis 1.7 alpha6 liest dort nur <code class="inline">fakelib2</code>.</td></tr>
+        <tr><td><code class="inline">&lt;Spielordner&gt;/fakelib2</code> oder <code class="inline">/fakelib</code></td><td>es keinen Backport-Ordner gibt.</td><td>Welcher gilt, hängt an der ShadowMount+-Fassung. Liegen beide da, kommt die Bibliothek in beide.</td></tr>
+        <tr><td>neu angelegt</td><td>es keinen der beiden Ordner gibt.</td><td><code class="inline">fakelib</code> ab 1.7 alpha8, <code class="inline">fakelib2</code> bis alpha6. Am Ende wird der Ordner wieder umbenannt (unten).</td></tr>
+      </table></div>
+      <div class="hr"></div>
+      <p style="margin:0 0 14px;font-size:14.5px">Danach prüft das Programm, ob etwas die Aufnahme-Bibliothek verdrängt:</p>
+      <div class="table-scroll"><table>
+        <tr><th>Befund</th><th>Folge</th><th>Vorübergehend</th></tr>
+        <tr><td><code class="inline">backport_fakelib=0</code></td><td>ShadowMount+ hängt gar keine fakelib ein.</td><td class="val">backport_fakelib=1</td></tr>
+        <tr><td><code class="inline">libSceAmpr.sprx</code> in <code class="inline">/data/shadowmount/emus</code> und <code class="inline">update_emulators</code> an (Vorgabe)</td><td>Die Emulator-Datei ersetzt die Aufnahme-Bibliothek. Sie nur wegzunehmen genügt nicht – <code class="inline">auto_update_ampr</code> holt sie sofort wieder.</td><td class="val">update_emulators=0</td></tr>
+        <tr><td><code class="inline">libSceAmpr.sprx</code> in der globalen fakelib und <code class="inline">global_fakelib_priority=global</code></td><td>Die globale Datei gewinnt – außer der Titel steht in <code class="inline">global_fakelib_exclude</code>.</td><td class="val">global_fakelib_priority=game</td></tr>
+      </table></div>
+      <p class="note">Ein <code class="inline">fakelib2</code> hängt ShadowMount+ ab 1.7 alpha8 allein ein, ohne Emulator-Dateien und globale fakelib – dort zählt nur der Hauptschalter. Beim Umstellen sichert das Programm zuerst die bisherige config.ini auf den Rechner, ändert nur die genannten Schlüssel und liest danach nach, ob sie wirklich so dastehen. <b style="color:#fff">Das Spiel darf dabei nicht laufen:</b> ShadowMount+ nimmt bei jeder Änderung an diesen Schlüsseln sofort alle Overlays eines laufenden Spiels heraus.</p>
+    </div>
+
+    <p class="path-title" style="margin-top:28px">Am Ende – alles wird zurückgestellt</p>
+    <div class="pit">
+      <div class="item"><h4>Auch bei Abbruch</h4><p>Nach dem letzten Schritt ebenso wie nach einem Abbruch, einem Fehler oder beim Schließen des Fensters – das Fenster geht erst zu, wenn das Zurückstellen fertig ist. Wer das ganze Programm schließt, wird gefragt; es wartet dann auf das Zurückstellen und schließt danach von selbst. Das Spiel deshalb vorher beenden.</p></div>
+      <div class="item"><h4>Gesichertes kommt zurück</h4><p>Eine vorher vorhandene <code class="inline">libSceAmpr.sprx</code> und ein vorher vorhandener <code class="inline">ampr_emu.index</code> liegen danach wieder genau so da wie vorher.</p></div>
+      <div class="item"><h4>Umbenannt, nicht gelöscht</h4><p>Wo vorher keine Bibliothek lag, heißt die Aufnahme-Bibliothek danach <code class="inline">libSceAmpr.sprx.mitschnitt</code>. Einen Ordner, den es vorher nicht gab, benennt das Programm ebenso um (<code class="inline">fakelib.mitschnitt</code>) – ShadowMount+ wertet schon einen leeren fakelib-Ordner aus und gäbe dem Spiel sonst danach die Emulator-Dateien. Gibt es den Namen schon, wird hochgezählt (<code class="inline">.mitschnitt2</code> …).</p></div>
+      <div class="item"><h4>ShadowMount+ wie vorher</h4><p>Steht die config.ini noch so da, wie der Assistent sie geschrieben hat, kommt die alte Datei Byte für Byte zurück, samt Kommentaren. Hat sie inzwischen jemand anderes geändert, werden nur die eigenen Schlüssel zurückgesetzt.</p></div>
+    </div>
+    <p class="note">Sicherungen liegen unter <code class="inline">&lt;dump&gt;_ampr_mitschnitte/vorher_&lt;Datum&gt;_&lt;Uhrzeit&gt;/</code>, je Lauf ein eigener Ordner. Liegen bleiben die Mitschnitt-Dateien im Spielordner (<code class="inline">ampr_commands.bin</code>, <code class="inline">ampr_emu.log</code>) und ein neuer <code class="inline">ampr_emu.index</code>, wo vorher keiner lag – ohne AMPR EMU stört er nicht. Gelingt das Zurückstellen nicht vollständig, etwa weil die Konsole inzwischen aus ist, steht im Fenster und im Hauptprotokoll genau, was noch von Hand zu tun ist und wo die Sicherungen liegen – beim Beenden des Programms zusätzlich in einer Meldung, bevor das Fenster zugeht. Ein zweites Schließen während des Wartens fragt, ob sofort beendet werden soll; dann bleibt die Konsole umgestellt, und es helfen die Sicherungen. Solange der Assistent läuft, fährt auch „Herunterfahren nach Erfolg“ den Rechner nicht herunter.</p>
   </section>
 
   <!-- 4 -->
@@ -359,7 +390,9 @@ footer b{color:#fff}
     <div class="table-scroll"><table>
       <tr><th>Symptom</th><th>Wahrscheinliche Ursache</th><th>Maßnahme</th></tr>
       <tr><td>fileId und Pfad stimmen nicht überein</td><td>Mitschnitt oder Profil nutzen ein <code class="inline">ampr_emu.index</code> aus einer anderen Version des Dumps.</td><td>Mitschnitt-Assistenten für diesen Dump erneut laufen lassen – er baut Index und Mitschnitt immer als zusammengehöriges Paar.</td></tr>
-      <tr><td>Kein Profil im Bestand, obwohl Mitschnitte gemacht wurden</td><td>Der Assistent wurde abgebrochen, bevor Schritt 6/6 lief, oder kein Durchlauf war vollständig.</td><td>Assistenten erneut starten; einzelne Durchläufe können übersprungen werden, ohne die übrigen zu verlieren.</td></tr>
+      <tr><td>Kein Profil im Bestand, obwohl Mitschnitte gemacht wurden</td><td>Der Assistent wurde abgebrochen, bevor Schritt 7/7 lief, oder kein Durchlauf war vollständig.</td><td>Assistenten erneut starten; einzelne Durchläufe können übersprungen werden, ohne die übrigen zu verlieren.</td></tr>
+      <tr><td>Nach dem Durchlauf fehlt <code class="inline">ampr_commands.bin</code> – jedes Mal</td><td>ShadowMount+ hat nicht die Aufnahme-Bibliothek geladen: In Schritt 4/7 wurde „Nicht ändern, trotzdem aufnehmen" gewählt, oder eine andere <code class="inline">libSceAmpr.sprx</code> gewinnt auf einem Weg, den das Programm nicht kennt.</td><td>Assistenten erneut starten und „Vorübergehend umstellen" wählen. Im Protokoll steht unter „Aufnahme-Bibliothek kommt nach", wohin sie gelegt wurde; <code class="inline">/data/shadowmount/debug.log</code> nennt bei <code class="inline">debug=1</code> in der Zeile „libraries mounted for" den Ordner, den ShadowMount+ wirklich eingehängt hat.</td></tr>
+      <tr><td>„Zurückstellen nicht vollständig"</td><td>Die Verbindung zur Konsole war am Ende weg, oder ftpsrv wies ein Umbenennen ab.</td><td>Die Meldung nennt jeden offenen Punkt einzeln; die Sicherungen liegen im genannten <code class="inline">vorher_…</code>-Ordner. Mit dem Dateimanager der Konsole oder per FTP von Hand nachholen.</td></tr>
       <tr><td>Ein Band fehlt oder besteht die Prüfung nicht</td><td>Baustände wurden gemischt, oder das Kopieren des Abbilds wurde unterbrochen.</td><td>Abbild neu erstellen – Index, Laufzeitdatei und Bänder gehören immer als ein Satz zusammen.</td></tr>
       <tr><td>Eine gepackte Datei existiert, aber das Lesen im Spiel schlägt fehl</td><td>mmap, direktes E/A oder ein anderer nicht abgefangener Zugriffsweg könnte beteiligt sein.</td><td>Mit Originalen testen (Abschnitt „Originale weglassen"), dann im Profil eine genaue loose-Regel für diese Datei ergänzen (Abschnitt „Profil prüfen") und neu bauen.</td></tr>
     </table></div>
@@ -373,6 +406,7 @@ footer b{color:#fff}
         <li>Mitschnitte sind <b style="color:#fff">nie vollständig</b> – fehlende Level, Sprachen und DLC im erzeugten Profil von Hand ergänzen.</li>
         <li>Das erzeugte Profil <b style="color:#fff">immer prüfen</b> – der Mitschnitt-Assistent ersetzt diesen Schritt nicht, nur die Aufnahme und die erste Fassung des Profils.</li>
         <li>Erst <b style="color:#fff">vollständig auf der Konsole testen</b>, dann erst über „Originale weglassen" nachdenken.</li>
+        <li>Während der Mitschnitt-Assistent ShadowMount+ umstellt oder zurückstellt, <b style="color:#fff">darf das Spiel nicht laufen</b> – sonst nimmt ShadowMount+ dessen Overlays heraus.</li>
         <li>eboot.bin, PRX-/SPRX-Dateien, Indexe und Systemordner werden nie automatisch gepackt oder entfernt.</li>
         <li>Index, Laufzeitdatei und alle Bänder gehören immer als <b style="color:#fff">ein zusammengehöriger Satz</b> ins Abbild – nie einzelne Dateien daraus austauschen.</li>
         <li>Aufgabe 7 (AMPR EMU Manager) baut und entfernt keine Asset-Pack-Bänder – das geschieht ausschließlich beim Erstellen eines Abbilds (Aufgaben 1–6) mit Methode „Asset-Pack".</li>

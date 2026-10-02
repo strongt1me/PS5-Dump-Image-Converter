@@ -264,8 +264,10 @@ class TaktTests(unittest.TestCase):
         # sind aus dem Programm genommen. Seit dem 26.09.2026 zwei: Die
         # Fenster "Konsole & Payloads" und "Spielstaende" sind Seiten rechts
         # geworden - ihre Takte heissen _konsole_tafel_takt und
-        # _spielstaende_takt (Pruefungen darunter).
-        self.assertEqual(2, len(takte))
+        # _spielstaende_takt (Pruefungen darunter). Seit dem 02.10.2026
+        # einer: "PKG bauen" ist ausgebaut; es bleibt der Takt von
+        # "PS4 PKG -> Dump Ordner".
+        self.assertEqual(1, len(takte))
         for takt in takte:
             with self.subTest(zeile=takt.lineno):
                 zuweisungen = [a for a in takt.body if isinstance(a, ast.Assign)

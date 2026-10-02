@@ -49,6 +49,10 @@ _GLEICHSETZUNG = {
     "websrv": "websrvps5",
     "zftpd": "zftpdps5",
     "ps5webfilemanager": "webfilemgr",
+    # 02.10.2026: neue Payloads, die der Spiegel unter dem Projektnamen fuehrt,
+    # waehrend unser Ordner den Namen der Datei traegt.
+    "shsrv": "shsrvps5",
+    "backpork": "ps5backpork",
     # 23.09.2026: Der Spiegel fuehrt "PKG-Manager_v1.2.4.elf", unser Ordner
     # "pkgmgr_v1.2.2.elf" - ohne diese Zeile blieb der Rueckstand ungemeldet.
     "pkgmanager": "pkgmgr",

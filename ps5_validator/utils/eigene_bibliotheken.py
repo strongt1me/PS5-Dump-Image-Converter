@@ -4,7 +4,8 @@
 Gedacht fuer den Fall, dass eine selbst geschriebene Fassung von
 ``LibProsperoPkg.dll`` oder ``libScePubTools.dll`` das mitgelieferte
 Werkzeug ersetzen soll: Datei in den Ordner ``libs`` legen - fertig. Das
-Programm findet sie beim naechsten Bau von selbst.
+Programm findet sie beim naechsten Aufruf von selbst. Seit dem 02.10.2026
+ist das nur noch "PS4 & PS5 PKG lesen" - "PKG bauen" ist ausgebaut.
 
 **Warum nicht einfach die Datei im Werkzeugordner ueberschreiben?** Weil
 die mitgelieferte ``LibProsperoPkg.dll`` git-verfolgt ist. Ein
@@ -82,9 +83,9 @@ BEGLEITER = {
 
 #: Unterordner in ``libs``, die das Programm **nicht** benutzt, aber im
 #: Bericht nennt - sonst wundert sich jemand, warum sein dort abgelegter
-#: SDK-Baukasten nichts bewirkt. Ein eigener Bauweg ueber
-#: ``prospero-pub-cmd.exe`` waere ein anderes Programm, kein Tausch einer
-#: Bibliothek (Stand 23.09.2026: nicht gebaut).
+#: SDK-Baukasten nichts bewirkt. Den Bauweg ueber ``prospero-pub-cmd.exe``
+#: ("Mit Sony SDK bauen") gab es vom 23.09. bis 02.10.2026; er ist mit
+#: "PKG bauen" ausgebaut.
 NICHT_BENUTZTE_ORDNER = ("sdk",)
 
 
