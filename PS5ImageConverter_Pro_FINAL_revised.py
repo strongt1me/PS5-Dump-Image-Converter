@@ -136,6 +136,9 @@ from ps5_validator.utils import einstellungen
 from ps5_validator.utils import anzeige_skalierung
 from ps5_validator.utils import bibliothek_raster
 from ps5_validator.utils import bibliothek_zeichnen
+from ps5_validator.utils import bibliothek_fortschritt
+from ps5_validator.utils import bibliothek_paket
+from ps5_validator.utils import exfat_gezielt
 from ps5_validator import programmname
 from ps5_validator.utils import abbild_metadaten
 from ps5_validator.utils import abbild_pruefen
@@ -690,7 +693,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.58"
+APP_VERSION = "v1.9.59"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -17684,7 +17687,8 @@ class PS5ConverterGUI:
             return self._t("info_popup.ampr_verdeckt")
         return self._t("info_popup.ampr_nicht_eingebaut")
 
-    def _container_dateien(self, pfad: str, *, roh_exfat: bool = False) -> list[str] | None:
+    def _container_dateien(self, pfad: str, *, roh_exfat: bool = False,
+                           gezielt: bool = False) -> list[str] | None:
         """Die Dateipfade in der inneren Ebene eines Containers - ohne Nutzdaten.
 
         Gelesen werden nur Kopf, Inode-Tabelle bzw. FAT und Verzeichnisse,
@@ -17695,6 +17699,12 @@ class PS5ConverterGUI:
             pfad: Pfad auf den Container.
             roh_exfat: Auch eine ``.exfat``-Datei ohne Huelle direkt lesen
                 (Bibliothek und Infobox ueber :meth:`_bibliothek_einbauten`).
+            gezielt: Bei einem exFAT nur die Pfade liefern, aus denen sich die
+                Einbauten ergeben (Wurzel, ``fakelib``/``fakelib2`` samt ``fw<NN>``),
+                statt jeder Datei des Spiels. ``iter_files()`` der Engine liest dafuer
+                jeden Verzeichniscluster des Abbilds - an ``DIRT5.exfat`` (104 GB)
+                Minuten, und das ein zweites Mal nach den Angaben
+                (``exfat_gezielt``). Fuer PFS-in-PFS aendert sich nichts.
 
         Returns:
             Relative Pfade, oder ``None``, wenn nichts lesbar war - dann ist
@@ -17723,7 +17733,9 @@ class PS5ConverterGUI:
                 return None
             try:
                 with open(pfad, "rb") as roh:
-                    dateien = _pfade(ExfatReader(roh).iter_files())
+                    leser = ExfatReader(roh)
+                    dateien = (exfat_gezielt.einbau_pfade(leser, bibliothek_bestand.FAKELIB_REIHENFOLGE)
+                               if gezielt else _pfade(leser.iter_files()))
             except Exception as exc:
                 logger.debug("exFAT %s nicht lesbar: %s", pfad, exc)
                 return None
@@ -17733,7 +17745,11 @@ class PS5ConverterGUI:
         try:
             eintraege: list = []
             try:
-                eintraege = list(ExfatReader(virtual_fh).iter_files())
+                leser_exfat = ExfatReader(virtual_fh)
+                if gezielt:
+                    return exfat_gezielt.einbau_pfade(
+                        leser_exfat, bibliothek_bestand.FAKELIB_REIHENFOLGE) or None
+                eintraege = list(leser_exfat.iter_files())
             except Exception:
                 # Kein exFAT - dann der PFS-in-PFS-Adapter.
                 try:
@@ -37444,7 +37460,11 @@ class PS5ConverterGUI:
         sendeten, was die Bibliothek ohnehin zeigt, nur ohne es zu zeigen.
         """
         c = self._COLORS
-        seite = tk.Frame(self.root, bg=c["bg_main"], padx=20, pady=12)
+        # Seitenrand links und rechts: 24 Pixel bei 100 % und mit der Anzeige skaliert
+        # (vorher feste 20). Der Nutzer wollte am 03.10.2026 mehr Abstand der Karten
+        # zum Fenster; die Luecke zum Rollbalken kommt vom Raster (BALKEN_LUECKE).
+        seite = tk.Frame(self.root, bg=c["bg_main"],
+                         padx=self._bibliothek_zeichner().px(24), pady=12)
         self._bibliothek_seite = seite
         scan_folders = list(self._load_setting("library_scan_folders", []) or [])
         self._render_library_window(scan_folders, seite)
@@ -37665,7 +37685,7 @@ class PS5ConverterGUI:
         # Nach einer geaenderten Regel neu lesen (bibliothek.EINBAU_REGEL).
         if gemerkt is not None and gemerkt.get("regel") == bibliothek_bestand.EINBAU_REGEL:
             return gemerkt
-        dateien_innen = self._container_dateien(pfad, roh_exfat=True)
+        dateien_innen = self._container_dateien(pfad, roh_exfat=True, gezielt=True)
         # Auch eine leere Liste ist kein "keine": Dann hat niemand etwas gesehen.
         if not dateien_innen:
             return {"zustand": "unbekannt", "grund": "unlesbar"}
@@ -37675,7 +37695,8 @@ class PS5ConverterGUI:
         speicher.einbauten_schreiben(pfad, ergebnis)
         return ergebnis
 
-    def _bibliothek_ps5_einbauten(self, ftp, eintraege, *, generation=None) -> dict[str, dict]:
+    def _bibliothek_ps5_einbauten(self, ftp, eintraege, *, generation=None,
+                                  fortschritt=None) -> dict[str, dict]:
         """Die Einbauten der Konsoleneintraege - ueber eine offene FTP-Verbindung.
 
         Nach der Reihenfolge von ShadowMount+ 1.7beta2 (am Quelltext
@@ -37687,6 +37708,11 @@ class PS5ConverterGUI:
         sieht FTP nicht hinein - ohne ``backports`` bleibt die Frage dort offen.
         Nur Verzeichnislisten, keine Datei wird uebertragen.
 
+        Args:
+            fortschritt: Die ``SuchlaufAnzeige`` oder ``None``; gemeldet wird die
+                Stufe ``einbauten`` je Eintrag. Beendet wird sie hier nicht - das
+                tut der Lader, der diese Methode ruft.
+
         Returns:
             ``{pfad: ergebnis}`` im Format von :meth:`_bibliothek_einbauten`,
             bei einem Treffer ueber ``backports`` zusaetzlich ``"ueber"``.
@@ -37696,11 +37722,16 @@ class PS5ConverterGUI:
             ftp, self._AMPR_GEN_SCANPFADE, ist_ordner=self._ampr_ftp_is_dir,
             auflisten=self._ampr_ftp_browse)
         ergebnisse: dict[str, dict] = {}
-        for eintrag in list(eintraege):
+        alle = list(eintraege)
+        for nummer, eintrag in enumerate(alle, start=1):
             if generation is not None and generation != getattr(
                     self, "_bibliothek_generation", 0):
                 break
             pfad = str(eintrag.get("path") or "")
+            if fortschritt is not None:
+                fortschritt.melden("einbauten", nummer, len(alle),
+                                   str((eintrag.get("meta") or {}).get("title") or ""),
+                                   letzte=nummer >= len(alle))
             art = str(eintrag.get("kind") or "")
             kennung = self._sanitize_title_id(str(
                 eintrag.get("title_id") or (eintrag.get("meta") or {}).get("title_id") or ""))
@@ -38563,7 +38594,17 @@ class PS5ConverterGUI:
                 sys.path.insert(0, mkpfs_dir)
             from mkpfs.game_metadata import read_game_metadata  # noqa: PLC0415  # type: ignore[import-not-found]
 
-            daten = read_game_metadata(pfad)
+            # exFAT-Abbilder (direkt und in einer .ffpfsc) gezielt lesen: Die Engine laeuft
+            # sonst durch JEDEN Verzeichniscluster, um drei Dateien zu finden - an
+            # ``DIRT5.exfat`` (104 GB) mehr als vier Minuten (03.10.2026), siehe
+            # ``exfat_gezielt``. Ein Fehlschlag dort faellt auf den Weg der Engine zurueck.
+            daten = None
+            try:
+                daten = exfat_gezielt.metadaten(pfad, sys.modules.get("mkpfs.game_metadata"))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: gezieltes Lesen von %s gescheitert (%s)", pfad, exc)
+            if daten is None or getattr(daten, "error", ""):
+                daten = read_game_metadata(pfad)
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: %s nicht lesbar (%s)", pfad, exc)
             return {}, None
@@ -38588,6 +38629,42 @@ class PS5ConverterGUI:
             bild = None
         return {k: v for k, v in angaben.items() if v}, bild
 
+    def _bibliothek_paket_angaben(self, pfad: str):
+        """Liest Angaben **und** Titelbild aus einem Paket (``.pkg``, ``.fpkg``) - nur der Kopf wird gelesen.
+
+        Ueber ``bibliothek_paket.paket_lesen``: Kopf, Eintragstabelle und die wenigen unverschluesselten
+        Eintraege (``param.sfo`` bzw. ``param.json``, ``icon0.png``) - an zehn echten PS4-Paketen von 1,8
+        bis 104 GB am 03.10.2026 in 20 bis 120 Millisekunden (das erste auf kalter Platte 0,9 s).
+        Ausgewertet von denselben Lesern wie ein Dump-Ordner
+        (:meth:`_meta_from_param_sfo_bytes`, :meth:`_meta_from_param_json_payload`): Fassung, Firmware und
+        Region heissen hier also wie dort. Die Content-ID kommt aus dem Kopf, die Title-ID aus ihr.
+
+        Returns:
+            ``(angaben, bilddaten)``: ``angaben`` ohne Platzhalter - leer, wenn das Paket nicht lesbar
+            ist; ``bilddaten`` rohe PNG-Bytes oder ``None``.
+        """
+        teile = bibliothek_paket.paket_lesen(pfad)
+        if teile is None:
+            return {}, None
+        roh: dict = {}
+        try:
+            if teile["sfo"]:
+                roh = dict(self._meta_from_param_sfo_bytes(teile["sfo"]))
+            elif teile["json"]:
+                roh = dict(self._meta_from_param_json_payload(teile["json"]))
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Bibliothek: Angaben aus %s nicht auswertbar (%s)", pfad, exc)
+        angaben = {str(k): str(v) for k, v in roh.items()
+                   if v and str(v).strip() not in ("", "–", "-")}
+        inhalts_id = str(teile.get("content_id") or "").strip()
+        if inhalts_id:
+            angaben.setdefault("content_id", inhalts_id)
+            treffer = _TITLE_ID_RE.search(inhalts_id.upper())
+            if treffer:
+                angaben.setdefault("title_id", treffer.group(0))
+        bild = teile.get("icon")
+        return angaben, (bytes(bild) if bild else None)
+
     def _bibliothek_cover_datei(self, pfad: str) -> str:
         """Liefert eine Titelbilddatei zu einem Eintrag - notfalls durch Oeffnen.
 
@@ -38609,6 +38686,20 @@ class PS5ConverterGUI:
         if fertig:
             return fertig
         if speicher.kennt_ohne_bild(pfad):
+            return ""
+        # Pakete tragen ihr Titelbild im Kopf (``_bibliothek_paket_angaben``); die
+        # Engine fuer Abbilder kennt sie nicht, und der allgemeine Leser unten ebenso
+        # wenig - ein Paket ohne lesbares Bild bekommt keins und wird gemerkt.
+        if (not os.path.isdir(pfad)
+                and os.path.splitext(pfad)[1].lower().lstrip(".") in bibliothek_bestand.PAKET_ENDUNGEN):
+            try:
+                _angaben, rohbild = self._bibliothek_paket_angaben(pfad)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Paket %s nicht lesbar (%s)", pfad, exc)
+                return ""        # ein Fehler ist kein "hat keins" - nichts merken
+            if rohbild:
+                return speicher.schreiben(pfad, bytes(rohbild))
+            speicher.schreiben(pfad, None)
             return ""
         # Abbilder zuerst ueber die Engine: Sie liefert Angaben und Bild in
         # einem Zug und braucht dafuer nicht den ganzen Container.
@@ -38632,57 +38723,198 @@ class PS5ConverterGUI:
             return ""
         try:
             puffer = io.BytesIO()
-            bild.convert("RGBA").save(puffer, format="PNG")
+            # compress_level=1: Das Kodieren war mit Stufe 6 (Vorgabe) drei Viertel der Zeit dieser Stufe
+            # (33 Titelbilder: 0,75 von 1,0 s). Die Datei wird groesser, nicht anders; gelesen wird sie
+            # ohnehin nur von PIL.
+            bild.convert("RGBA").save(puffer, format="PNG", compress_level=1)
             return speicher.schreiben(pfad, puffer.getvalue())
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: Titelbild von %s nicht ablegbar (%s)", pfad, exc)
             speicher.schreiben(pfad, None)
             return ""
 
-    def _library_scan_folder(self, folder: str, abbruch=None) -> list[dict]:
-        """Durchsucht einen Ordner nach Dump-Ordnern und Containern.
+    #: Wie viele Dump-Ordner der Suchlauf zugleich einliest. Eine param.json zu
+    #: lesen ist Warten auf die Platte, keine Rechenarbeit (``E:`` am 03.10.2026:
+    #: 39 ms je Datei bei kaltem Zwischenspeicher); mehrere zugleich ueberlappen
+    #: das Warten. Abbilder und Pakete laufen einzeln - siehe ``_KACHEL_LADER``:
+    #: Mehrere Container zugleich lassen nur die Platte gegeneinander arbeiten.
+    _SCAN_FAEDEN: int = 4
+
+    def _library_funde(self, folder: str, abbruch=None, fortschritt=None) -> list[dict]:
+        """Durchsucht einen Ordner nach Dump-Ordnern, Containern und Paketen - nur die Suche.
 
         **Rekursiv**, seit dem 12.09.2026. Bis dahin ging der Suchlauf genau
         eine Ebene tief: Wer seine Sicherungen sortiert ablegt - etwa in
         ``Downloads/PS5/Spiele/`` -, bekam eine leere Liste und keinen Grund
-        dafuer. Der Suchlauf selbst steht jetzt in
+        dafuer. Der Suchlauf selbst steht in
         ``ps5_validator.utils.bibliothek``, wo er sich ohne Fenster
-        nachmessen laesst.
+        nachmessen laesst. Seit dem 03.10.2026 zaehlen auch ``.pkg`` und
+        ``.fpkg`` mit, und ein Dump-Ordner, der selbst als Scan-Ordner
+        eingetragen ist, ist der eine Fund.
 
-        ``abbruch`` beendet Suche und Einlesen - die Seite reicht "es gibt
-        einen neueren Suchlauf" herein. Bis zur Durchsicht (Runde 19, H8-14)
-        las jeder alte Suchlauf trotzdem alle Abbilder zu Ende (je etwa
-        0,8 s); zweimal "Neu suchen" hiess drei Faeden auf derselben Platte.
+        ``abbruch`` beendet die Suche - die Seite reicht "es gibt einen
+        neueren Suchlauf" herein. ``fortschritt(ordner, funde, ort)`` fuer die
+        Anzeige.
         """
-        funde = bibliothek_bestand.ordner_durchsuchen(
+        return bibliothek_bestand.ordner_durchsuchen(
             folder,
             abbruch=abbruch,
+            fortschritt=fortschritt,
             melden=lambda ort: self._append_to_log(
                 self._t("library.ordner_unlesbar", pfad=ort,
                         fehler=self._t("library.kein_zugriff"))),
         )
-        ergebnis: list[dict] = []
-        for fund in funde:
+
+    def _library_datei_angaben(self, pfad: str, speicher, leser) -> dict:
+        """Angaben zu einer Datei (Abbild oder Paket) - aus dem Bildspeicher, sonst vom ``leser``.
+
+        Ein Abbild oder Paket zu oeffnen kostet auf einer kalten Platte
+        Sekunden (``D:`` am 03.10.2026: 11 s fuer eine 8,7-GB-``.ffpfsc``, danach
+        0,02 s), und der Suchlauf tat es bei jedem Lauf. Jetzt merkt sich der
+        Bildspeicher, was der Leser geliefert hat - unter Pfad, Aenderungszeit
+        und Groesse, ein ersetztes Abbild wird also neu gelesen. Dabei legt er
+        auch gleich das Titelbild ab: Die Bildstufe musste den Container
+        sonst ein zweites Mal oeffnen.
+
+        **Gemerkt wird nur, was der Leser wirklich gelesen hat** (ein Titel
+        steht darin). Ein Fehlschlag - Platte im Schlaf, Datei gesperrt - bleibt
+        ein Fehlschlag von heute und wird beim naechsten Lauf wieder versucht.
+
+        Zuerst die Engine bzw. der Paketleser: Sie lesen den echten Titel aus
+        der Datei. Der Dateiname ist nur die Rueckfallebene - er traegt oft
+        die Title-ID, aber selten den richtigen Namen ("Prince of Persia The
+        Lost Crown" gegen "Prince of Persia: The Lost Crown", am 12.09.2026
+        gemessen).
+        """
+        if speicher is not None:
+            gemerkt = speicher.scan_lesen(pfad)
+            if gemerkt is not None:
+                return gemerkt
+        angaben, bild = leser(pfad)
+        gelesen = bool(angaben.get("title"))
+        aus_namen = self._quick_meta_from_path(
+            pfad, candidate_roots=self._preview_candidate_dirs(pfad, ""))
+        for schluessel, wert in aus_namen.items():
+            if wert and not angaben.get(schluessel):
+                angaben[schluessel] = wert
+        if gelesen and speicher is not None:
+            if bild:
+                speicher.schreiben(pfad, bytes(bild))
+            speicher.scan_schreiben(pfad, angaben)
+        return angaben
+
+    def _library_eintrag(self, fund: dict, speicher=None) -> dict:
+        """Der Eintrag der Bibliothek zu einem Fund: Pfad, Art, Angaben, Groesse."""
+        pfad, art = fund["pfad"], fund["art"]
+        if art == "folder":
+            angaben = self._read_game_meta(pfad, deep_scan=False)
+        elif art in bibliothek_bestand.PAKET_ENDUNGEN:
+            angaben = self._library_datei_angaben(pfad, speicher, self._bibliothek_paket_angaben)
+        else:
+            angaben = self._library_datei_angaben(pfad, speicher, self._bibliothek_abbild_angaben)
+        return {"path": pfad, "kind": art, "meta": angaben, "size": fund["groesse"]}
+
+    def _library_eintraege(self, funde: list[dict], abbruch=None, fortschritt=None) -> list[dict]:
+        """Liest die Angaben zu den Funden - Ordner nebenlaeufig, Abbilder und Pakete einzeln.
+
+        ``abbruch`` wird vor jedem Eintrag gefragt: Bis zur Durchsicht (Runde
+        19, H8-14) las jeder alte Suchlauf trotzdem alle Abbilder zu Ende (je
+        etwa 0,8 s); zweimal "Neu suchen" hiess drei Faeden auf derselben
+        Platte. ``fortschritt(getan, gesamt, name)`` kommt nach jedem Eintrag,
+        aus beliebigem Faden - der Aufrufer drosselt. Die Reihenfolge der
+        Eintraege bleibt die der Funde.
+        """
+        gesamt = len(funde)
+        ergebnis: list[dict | None] = [None] * gesamt
+        zaehler = {"getan": 0}
+        sperre = threading.Lock()
+        speicher = None
+        if any(fund["art"] != "folder" for fund in funde):
+            try:
+                speicher = self._bibliothek_bildspeicher()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: ohne Bildspeicher gelesen (%s)", exc)
+
+        def _lesen(nummer: int) -> None:
             if abbruch is not None and abbruch():
-                break
-            pfad = fund["pfad"]
-            if fund["art"] == "folder":
-                angaben = self._read_game_meta(pfad, deep_scan=False)
-            else:
-                # Zuerst die Engine: Sie liest den echten Titel aus dem
-                # Abbild. Der Dateiname ist nur die Rueckfallebene - er
-                # traegt oft die Title-ID, aber selten den richtigen Namen
-                # ("Prince of Persia The Lost Crown" gegen "Prince of
-                # Persia: The Lost Crown", am 12.09.2026 gemessen).
-                angaben, _bild = self._bibliothek_abbild_angaben(pfad)
-                aus_namen = self._quick_meta_from_path(
-                    pfad, candidate_roots=self._preview_candidate_dirs(pfad, ""))
-                for schluessel, wert in aus_namen.items():
-                    if wert and not angaben.get(schluessel):
-                        angaben[schluessel] = wert
-            ergebnis.append({"path": pfad, "kind": fund["art"],
-                             "meta": angaben, "size": fund["groesse"]})
-        return ergebnis
+                return
+            fund = funde[nummer]
+            ergebnis[nummer] = self._library_eintrag(fund, speicher)
+            with sperre:
+                zaehler["getan"] += 1
+                getan = zaehler["getan"]
+            if fortschritt is not None:
+                fortschritt(getan, gesamt, str(fund.get("name") or os.path.basename(str(fund["pfad"]))))
+
+        ordner = [n for n, fund in enumerate(funde) if fund["art"] == "folder"]
+        dateien = [n for n, fund in enumerate(funde) if fund["art"] != "folder"]
+        if len(ordner) > 1:
+            # Die Abbilder derweil einzeln, hier im Faden; ein Fehler kommt danach heraus.
+            self._nebenlaeufig([lambda n=n: _lesen(n) for n in ordner], self._SCAN_FAEDEN,
+                               "bibliothek-lesen", nebenher=lambda: [_lesen(n) for n in dateien])
+        else:
+            for n in ordner + dateien:
+                _lesen(n)
+        return [eintrag for eintrag in ergebnis if eintrag is not None]
+
+    @staticmethod
+    def _nebenlaeufig(auftraege, faeden: int, name: str, *, nebenher=None) -> None:
+        """Fuehrt ``auftraege`` in bis zu ``faeden`` Daemon-Faeden aus, ``nebenher`` derweil hier - und wartet auf alle.
+
+        Nicht ``concurrent.futures.ThreadPoolExecutor``: Auf dessen Faeden wartet
+        Python beim Beenden (``_python_exit``), auch wenn es Daemon-Faeden sind -
+        und ein Auftrag, der danach noch Tk aus dem Faden ruft, wartet dort rund
+        1 s auf eine Hauptschleife, die es nicht mehr gibt. Gemessen am
+        04.10.2026: Prozessende 6,4 s nach dem Skriptende bei 24 Dump-Ordnern,
+        mit Daemon-Faeden 0,0 s. Wer das Programm waehrend der Titelbilder
+        schloss, liess es so unsichtbar weiter laufen. Daemon-Faeden laesst
+        Python beim Beenden zurueck.
+
+        Raises:
+            Den ersten Fehler eines Auftrags - erst, wenn alle fertig sind.
+        """
+        liste = list(auftraege)
+        offen = iter(liste)
+        sperre = threading.Lock()
+        fehler: list[BaseException] = []
+
+        def _arbeiter() -> None:
+            while True:
+                with sperre:
+                    auftrag = next(offen, None)
+                if auftrag is None:
+                    return
+                try:
+                    auftrag()
+                except BaseException as exc:  # noqa: BLE001 - wird nach dem Warten weitergereicht
+                    with sperre:
+                        fehler.append(exc)
+
+        arbeiter = [threading.Thread(target=_arbeiter, daemon=True, name="%s-%d" % (name, nummer + 1))
+                    for nummer in range(max(1, min(int(faeden), len(liste))))]
+        for faden in arbeiter:
+            faden.start()
+        try:
+            if nebenher is not None:
+                nebenher()
+        finally:
+            for faden in arbeiter:
+                faden.join()
+        if fehler:
+            raise fehler[0]
+
+    def _library_scan_folder(self, folder: str, abbruch=None, fortschritt=None) -> list[dict]:
+        """Durchsucht einen Ordner und liest die Angaben zu allem, was darin liegt.
+
+        Die beiden Teile einzeln: :meth:`_library_funde` (die Suche) und
+        :meth:`_library_eintraege` (das Einlesen). Die Seite ruft sie getrennt -
+        erst alle Ordner absuchen, dann alle Funde einlesen, damit die Anzeige
+        die Gesamtzahl kennt; diese Methode bleibt fuer den einen Ordner.
+
+        ``abbruch`` beendet Suche und Einlesen.
+        """
+        funde = self._library_funde(folder, abbruch=abbruch)
+        return self._library_eintraege(funde, abbruch=abbruch, fortschritt=fortschritt)
 
     #: Kantenlaenge einer Kachel in Punkten (vor der DPI-Umrechnung).
     #:
@@ -38740,7 +38972,8 @@ class PS5ConverterGUI:
     ))
 
     def _bibliothek_ps5_scannen(self, melden=None, *, fenster=None,
-                                status=None) -> tuple[list[dict], str]:
+                                status=None, fortschritt=None,
+                                abbruch=None) -> tuple[list[dict], str]:
         """Sucht die Spiele auf der Konsole - ueber FTP.
 
         Seit dem 25.09.2026 (Wunsch des Nutzers: "wenn man auf PS5 klickt,
@@ -38765,15 +38998,32 @@ class PS5ConverterGUI:
         Laeuft im Arbeitsfaden. Args:
             fenster: Eltern fuer Rueckfragen der Suche (Hauptfenster).
             status: Rueckruf fuer eine Zeile Stand - was die Suche gerade tut.
+            fortschritt: ``(stufe, getan, gesamt, text)`` fuer das
+                Fortschrittsfenster (``bibliothek_fortschritt.PS5_STUFEN``);
+                ``getan``/``gesamt`` sind ``None``, wo die Zahl noch offen ist.
+            abbruch: ``() -> bool`` - ``True`` beendet die Suche zwischen zwei
+                FTP-Befehlen (nie mitten in einer Uebertragung: ein
+                abgebrochener RETR legt ftpsrv lahm).
 
         Returns:
             ``(eintraege, fehlertext)``. Bei einem Verbindungsfehler ist die
             Liste leer und der Text sagt, woran es lag.
         """
+        def _f(stufe: str, getan: "int | None" = None, gesamt: "int | None" = None,
+               text: str = "") -> None:
+            if fortschritt is not None:
+                fortschritt(stufe, getan, gesamt, text)
+
+        def _abgebrochen() -> bool:
+            return abbruch is not None and abbruch()
+
+        _f("konsole")
         host, fehler = self._bibliothek_ps5_finden(
             fenster, status if status is not None else (lambda _text: None))
         if not host:
             return [], fehler or self._t("library.ps5_nicht_gefunden")
+        if _abgebrochen():
+            return [], ""
 
         try:
             ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
@@ -38785,9 +39035,14 @@ class PS5ConverterGUI:
                 ftp, self._BIBLIOTHEK_SCANPFADE,
                 ist_ordner=self._ampr_ftp_is_dir,
                 auflisten=self._ampr_ftp_browse,
+                abbruch=abbruch,
+                fortschritt=lambda nummer, gesamt, ort: _f("ablagen", nummer, gesamt, ort),
             )
             eintraege: list[dict] = []
-            for fund in funde:
+            for nummer, fund in enumerate(funde, start=1):
+                if _abgebrochen():
+                    return [], ""
+                _f("angaben", nummer, len(funde), str(fund["name"]))
                 angaben = {"title": fund["name"]}
                 kennung = ""
                 treffer = _TITLE_ID_RE.search(str(fund["name"]).upper())
@@ -38821,10 +39076,15 @@ class PS5ConverterGUI:
             # Stunden. Die Konsole fuehrt aber jeden Titel, den sie je
             # gesehen hat, unter /system_data/priv/appmeta - dort steht der
             # Name neben der Kennung, und darueber laesst sich zuordnen.
-            self._bibliothek_ps5_kennungen_nachtragen(ftp, eintraege)
+            _f("kennungen")
+            self._bibliothek_ps5_kennungen_nachtragen(ftp, eintraege, fortschritt=fortschritt)
+            if _abgebrochen():
+                return [], ""
             # Erst danach: Was eine Kennung hat, steht als Sicherung schon da
             # und kommt nicht ein zweites Mal als "installiert" hinein.
-            eintraege.extend(self._bibliothek_ps5_installiert(ftp, eintraege))
+            _f("installiert")
+            eintraege.extend(self._bibliothek_ps5_installiert(
+                ftp, eintraege, fortschritt=fortschritt, abbruch=abbruch))
             return eintraege, ""
         except Exception as exc:  # noqa: BLE001
             logger.debug("Bibliothek: PS5-Suchlauf (%s)", exc)
@@ -38918,7 +39178,8 @@ class PS5ConverterGUI:
                 return "", self._t("library.ps5_nicht_gefunden")
         return _gefunden(host)
 
-    def _bibliothek_ps5_installiert(self, ftp, vorhandene: list) -> list[dict]:
+    def _bibliothek_ps5_installiert(self, ftp, vorhandene: list, fortschritt=None,
+                                    abbruch=None) -> list[dict]:
         """Die Titel, die die Konsole fuehrt - installierte PS5- und PS4-Spiele.
 
         Aus :data:`_AMPR_GEN_APPMETA`: Dort fuehrt die Konsole jeden Titel, den
@@ -38946,6 +39207,12 @@ class PS5ConverterGUI:
         Nur bei genau einer Sicherung je Kennung - von zweien laesst sich
         nicht sagen, welche die Konsole fuehrt.
 
+        Args:
+            fortschritt: ``(stufe, getan, gesamt, text)`` fuer das
+                Fortschrittsfenster; gemeldet wird die Stufe ``installiert``.
+            abbruch: ``() -> bool`` - ``True`` beendet das Lesen zwischen zwei
+                Titeln.
+
         Returns:
             Je Titel ein Eintrag der Art ``"installiert"``, ``plattform``
             ``"PS5"`` oder ``"PS4"``.
@@ -38962,11 +39229,17 @@ class PS5ConverterGUI:
             return []
         titel: list[dict] = []
         erledigt: set[str] = set()
-        for name in sorted(str(o).strip() for o in ordner):
+        namen = sorted(str(o).strip() for o in ordner)
+        gesamt = len({n.upper() for n in namen if n.upper().startswith(self._AMPR_GEN_SPIELKENNUNGEN)})
+        for name in namen:
             kennung = name.upper()
             if not kennung.startswith(self._AMPR_GEN_SPIELKENNUNGEN) or kennung in erledigt:
                 continue
+            if abbruch is not None and abbruch():
+                return titel
             erledigt.add(kennung)
+            if fortschritt is not None:
+                fortschritt("installiert", len(erledigt), gesamt, name)
             gleiche = sicherungen.get(kennung, [])
             if gleiche:
                 # Steht schon als Sicherung da - kein zweiter Eintrag. Ein
@@ -39065,6 +39338,8 @@ class PS5ConverterGUI:
         art = str(eintrag.get("kind") or "")
         if art in self._FORMAT_LABELS:
             return self._t("format.%s" % art)
+        if art in bibliothek_bestand.PAKET_ENDUNGEN:
+            return self._t("library.art_%s" % art)
         if art == "installiert":
             return self._t("library.art_installiert_ps4"
                            if eintrag.get("plattform") == "PS4"
@@ -39144,7 +39419,7 @@ class PS5ConverterGUI:
         return self._bibliothek_ps5_paramangaben(
             ftp, "%s/sce_sys" % pfad.rstrip("/"), ("param.json", "param.sfo"))
 
-    def _bibliothek_ps5_kennungen_nachtragen(self, ftp, eintraege) -> int:
+    def _bibliothek_ps5_kennungen_nachtragen(self, ftp, eintraege, fortschritt=None) -> int:
         """Traegt fehlende Title-IDs ueber den Namen nach.
 
         Aus :data:`_AMPR_GEN_APPMETA` - demselben Verzeichnis, aus dem auch
@@ -39153,6 +39428,10 @@ class PS5ConverterGUI:
         waren das 36 Ordner mit 21 Namen in 0,6 Sekunden.
 
         Laeuft nur, wenn ueberhaupt etwas ohne Kennung dasteht.
+
+        Args:
+            fortschritt: ``(stufe, getan, gesamt, text)`` fuer das
+                Fortschrittsfenster; gemeldet wird die Stufe ``kennungen``.
 
         Returns:
             Wie viele Kennungen nachgetragen wurden.
@@ -39167,10 +39446,12 @@ class PS5ConverterGUI:
             return 0
 
         verzeichnis: dict[str, str] = {}
-        for kennung in inhalt.get("dirs", []):
-            kennung = str(kennung)
-            if not kennung.upper().startswith(self._AMPR_GEN_SPIELKENNUNGEN):
-                continue        # NPXS* und Verwandtes sind Systemanwendungen.
+        # NPXS* und Verwandtes sind Systemanwendungen.
+        kandidaten = [str(k) for k in inhalt.get("dirs", [])
+                      if str(k).upper().startswith(self._AMPR_GEN_SPIELKENNUNGEN)]
+        for nummer, kennung in enumerate(kandidaten, start=1):
+            if fortschritt is not None:
+                fortschritt("kennungen", nummer, len(kandidaten), kennung)
             puffer = io.BytesIO()
             try:
                 ftp.retrbinary("RETR %s/%s/param.json"
@@ -39245,7 +39526,7 @@ class PS5ConverterGUI:
         return None
 
     def _bibliothek_ps5_bilder_nachladen(self, fenster, eintraege, *, generation,
-                                         einbauten=None):
+                                         einbauten=None, fortschritt=None):
         """Holt die Titelbilder der Konsoleneintraege - in einem Rutsch.
 
         **Eine** Verbindung fuer alle: Ein Verbindungsaufbau zur PS5 kostet
@@ -39253,6 +39534,11 @@ class PS5ConverterGUI:
         gleichzeitigen Sitzungen. Aus demselben Grund laufen die Einbauten
         (``einbauten``, siehe :meth:`_bibliothek_bilder_nachladen`) danach in
         derselben Sitzung.
+
+        ``fortschritt`` ist die ``SuchlaufAnzeige`` des Suchlaufs, der diesen
+        Lader gestartet hat, oder ``None``: Gemeldet werden ``bilder`` (je
+        Titelbild, das ueber FTP geholt wird) und ``einbauten``; am Ende
+        beendet der Lader die Anzeige - auch wenn er vorzeitig aufgibt.
         """
         kante = pt(self._KACHEL_BILD_PT)
         host = self._bibliothek_ps5_adresse()
@@ -39288,7 +39574,7 @@ class PS5ConverterGUI:
             if ftp is not None:
                 try:
                     ergebnisse = self._bibliothek_ps5_einbauten(
-                        ftp, offen_einbau, generation=generation)
+                        ftp, offen_einbau, generation=generation, fortschritt=fortschritt)
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("Bibliothek: Einbauten auf der PS5 (%s)", exc)
             for eintrag in list(offen_einbau):
@@ -39298,6 +39584,13 @@ class PS5ConverterGUI:
                        or {"zustand": "unbekannt", "grund": "keine_verbindung"})
 
         def _arbeit() -> None:
+            try:
+                _arbeit_innen()
+            finally:
+                if fortschritt is not None:
+                    fortschritt.beenden()
+
+        def _arbeit_innen() -> None:
             # Erst aus dem Speicher - ohne Verbindung. Bis v1.9.24 baute jeder
             # Aufruf zuerst eine FTP-Sitzung auf, auch wenn alle Bilder schon
             # dalagen; seit Filtern und Sortieren diesen Lader rufen, waere das
@@ -39334,6 +39627,11 @@ class PS5ConverterGUI:
                 for nummer, (eintrag, feld, kennung, merkname) in enumerate(offen):
                     if generation != getattr(self, "_bibliothek_generation", 0):
                         return
+                    if fortschritt is not None:
+                        fortschritt.melden("bilder", nummer + 1, len(offen),
+                                           str((eintrag.get("meta") or {}).get("title")
+                                               or eintrag.get("title_id") or ""),
+                                           letzte=nummer + 1 >= len(offen))
                     try:
                         rohbild = self._bibliothek_ps5_cover(
                             ftp, kennung,
@@ -39990,7 +40288,7 @@ class PS5ConverterGUI:
     )
 
     def _bibliothek_bilder_nachladen(self, fenster, eintraege, *, generation,
-                                     einbauten=None):
+                                     einbauten=None, fortschritt=None):
         """Holt die Titelbilder und haengt sie an die Kacheln - im Hintergrund.
 
         Die Kacheln stehen schon; hier kommen nur die Bilder nach. Das ist
@@ -40011,37 +40309,85 @@ class PS5ConverterGUI:
                 laeuft **im Faden** und muss selbst ins Fenster weiterreichen.
                 Derselbe Faden wie die Bilder, damit nicht zwei Leser auf
                 derselben Platte abwechseln.
+            fortschritt: Die ``SuchlaufAnzeige`` des Suchlaufs, der diesen Lader
+                gestartet hat - oder ``None`` (Filtern und Sortieren zeigen
+                kein Fenster). Der Lader meldet die Stufen ``bilder`` und
+                ``einbauten`` und beendet die Anzeige am Ende - auch dann, wenn
+                er vorzeitig aufgibt, weil ein neuerer Lauf begonnen hat.
+
+        Die Titelbilder der **Dump-Ordner** laufen nebenlaeufig
+        (``_SCAN_FAEDEN``): kleine Dateien, und das Umwandeln eines Bilds
+        ist Rechenarbeit, die PIL ohne die Sperre des Interpreters erledigt.
+        Abbilder und Pakete einzeln - ein Container zu oeffnen ist Plattenarbeit,
+        und mehrere zugleich lassen die Platte nur gegeneinander arbeiten.
         """
         kante = pt(self._KACHEL_BILD_PT)
 
+        def _gilt() -> bool:
+            return generation == getattr(self, "_bibliothek_generation", 0)
+
+        def _melden(stufe: str, getan: int, gesamt: int, name: str) -> None:
+            if fortschritt is not None:
+                fortschritt.melden(stufe, getan, gesamt, name, letzte=getan >= gesamt)
+
+        def _bild(eintrag: dict) -> None:
+            pfad = eintrag.get("path") or ""
+            feld = eintrag.get("_bildfeld")
+            try:
+                datei = self._bibliothek_cover_datei(pfad)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Bibliothek: Titelbild %s (%s)", pfad, exc)
+                datei = ""
+            self._spaeter_im_fenster(
+                fenster, self._bibliothek_bild_setzen,
+                feld, datei, kante, generation)
+
         def _arbeit() -> None:
-            for eintrag in list(eintraege):
-                if generation != getattr(self, "_bibliothek_generation", 0):
+            try:
+                zu_holen = [e for e in list(eintraege)
+                            if (e.get("path") or "") and e.get("_bildfeld") is not None]
+                gesamt = len(zu_holen)
+                zaehler = {"getan": 0}
+                sperre = threading.Lock()
+
+                def _eins(eintrag: dict) -> None:
+                    if not _gilt():
+                        return
+                    _bild(eintrag)
+                    with sperre:
+                        zaehler["getan"] += 1
+                        getan = zaehler["getan"]
+                    _melden("bilder", getan, gesamt,
+                            os.path.basename(str(eintrag.get("path") or "").rstrip("/\\")))
+
+                ordner = [e for e in zu_holen if e.get("kind") == "folder"]
+                dateien = [e for e in zu_holen if e.get("kind") != "folder"]
+                if len(ordner) > 1:
+                    # Daemon-Faeden, kein ThreadPoolExecutor - siehe _nebenlaeufig.
+                    self._nebenlaeufig([lambda e=e: _eins(e) for e in ordner], self._SCAN_FAEDEN,
+                                       "bibliothek-bilder",
+                                       nebenher=lambda: [_eins(e) for e in dateien])
+                else:
+                    for eintrag in ordner + dateien:
+                        _eins(eintrag)
+                if not _gilt() or einbauten is None:
                     return
-                pfad = eintrag.get("path") or ""
-                feld = eintrag.get("_bildfeld")
-                if not pfad or feld is None:
-                    continue
-                try:
-                    datei = self._bibliothek_cover_datei(pfad)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("Bibliothek: Titelbild %s (%s)", pfad, exc)
-                    datei = ""
-                self._spaeter_im_fenster(
-                    fenster, self._bibliothek_bild_setzen,
-                    feld, datei, kante, generation)
-            if einbauten is None:
-                return
-            offen, fertig = einbauten
-            for eintrag in list(offen):
-                if generation != getattr(self, "_bibliothek_generation", 0):
-                    return
-                try:
-                    ergebnis = self._bibliothek_einbauten(eintrag)
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("Bibliothek: Einbauten %s (%s)", eintrag.get("path"), exc)
-                    ergebnis = {"zustand": "unbekannt", "grund": "unlesbar"}
-                fertig(eintrag, ergebnis)
+                offen, fertig = einbauten
+                offen = list(offen)
+                for nummer, eintrag in enumerate(offen, start=1):
+                    if not _gilt():
+                        return
+                    try:
+                        ergebnis = self._bibliothek_einbauten(eintrag)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("Bibliothek: Einbauten %s (%s)", eintrag.get("path"), exc)
+                        ergebnis = {"zustand": "unbekannt", "grund": "unlesbar"}
+                    fertig(eintrag, ergebnis)
+                    _melden("einbauten", nummer, len(offen),
+                            os.path.basename(str(eintrag.get("path") or "").rstrip("/\\")))
+            finally:
+                if fortschritt is not None:
+                    fortschritt.beenden()
 
         threading.Thread(target=_arbeit, daemon=True,
                          name="bibliothek-bilder").start()
@@ -40142,6 +40488,9 @@ class PS5ConverterGUI:
             # ist ("" = zu); "filter_geplant": ein verzoegertes Neufiltern ist
             # schon bestellt (Einbauten kommen nacheinander an).
             "filter": "alle", "info_fuer": "", "filter_geplant": False,
+            # "fortschritt": die SuchlaufAnzeige des laufenden Suchlaufs (oder None) -
+            # das Fenster mit Balken und Prozent (_anzeige_neu).
+            "fortschritt": None,
         }
         if ansicht["art"] not in ("kacheln", "liste"):
             ansicht["art"] = "kacheln"
@@ -40150,6 +40499,11 @@ class PS5ConverterGUI:
             """Mit der Seite verfallen ihre Suchlaeufe (siehe _library_scan_folder)."""
             if str(ereignis.widget) == str(seite):
                 ansicht["suchlauf"] += 1
+                # Das Fortschrittsfenster ist ein eigenes Toplevel und ginge nicht mit
+                # der Seite zu (Neuaufbau beim Design- oder Sprachwechsel mitten im Suchlauf).
+                fenster = ansicht.get("fortschritt")
+                if fenster is not None:
+                    fenster.schliessen()
 
         seite.bind("<Destroy>", _seite_weg, add="+")
         quelle_start = str(self._load_setting("library_quelle", "pc") or "pc")
@@ -40330,12 +40684,12 @@ class PS5ConverterGUI:
             rad=self._rad_einheiten)
         kachel_rahmen, kachel_flaeche = raster.rahmen, raster.flaeche
         kachel_rahmen.grid(row=0, column=0, sticky="nsew")
-        # Der Rollbalken der Karten steht ausserhalb der Karten; Kopfkarte, Liste und
-        # Streifen lassen rechts dieselbe Breite frei, damit alles an einer Kante
-        # endet (im Entwurf des Nutzers enden Kopfkarte und Karten buendig).
-        sb_breite = raster.balken.winfo_reqwidth()
-        kopf_karte.pack_configure(padx=(0, sb_breite))
-        liste_karte.grid_configure(padx=(0, sb_breite))
+        # Rechts der Karten stehen eine Luecke und der Rollbalken; Kopfkarte, Liste und
+        # Streifen lassen rechts dieselbe Breite frei (``rechts_frei``), damit alles an
+        # einer Kante endet (im Entwurf des Nutzers enden Kopfkarte und Karten buendig).
+        rechts_frei = raster.rechts_frei()
+        kopf_karte.pack_configure(padx=(0, rechts_frei))
+        liste_karte.grid_configure(padx=(0, rechts_frei))
 
         cols = ("title", "title_id", "version", "format", "einbauten", "path")
         # Seit 27.09.2026 mit Vorschaubild je Zeile (Spalte #0). Die Zeilen
@@ -40628,6 +40982,8 @@ class PS5ConverterGUI:
             ShadowMount+ liest dann nur fakelib2, und was das Programm in
             fakelib eingebaut hat, wirkt nicht.
             """
+            if _ist_paket(item):
+                return "", "fg_secondary"      # Ein Paket traegt keine Einbauten - die Zeile entfaellt
             ergebnis = ansicht["einbauten"].get(item["path"])
             if ergebnis is None:
                 return self._t("library.einbauten_liest"), "fg_secondary"
@@ -40891,10 +41247,11 @@ class PS5ConverterGUI:
             raster.markieren(ansicht["gewaehlt"])
 
         def _kachel_starten(eintrag) -> None:
-            """Doppelklick: auf dem Rechner "Als Quelle uebernehmen", auf der PS5 nur waehlen."""
+            """Doppelklick: auf dem Rechner "Konvertieren" (Quelle uebernehmen, bei einem PS4-Paket das
+            Umwandlungsfenster), auf der PS5 nur waehlen."""
             _kachel_gewaehlt(eintrag)
             if not eintrag.get("ps5"):
-                _use_as_source()
+                _konvertieren(eintrag)
 
         def _passt_zur_suche(eintrag: dict, query: str) -> bool:
             """Titel, Title-ID, Content-ID und Pfad - in genau dieser Zusammenstellung.
@@ -40946,6 +41303,18 @@ class PS5ConverterGUI:
             if kennung.startswith("PPSA"):
                 return "PS5"
             return ""
+
+        def _ist_paket(eintrag: dict) -> bool:
+            """Ein Paket (``.pkg``, ``.fpkg``) - kein Abbild, kein Dump-Ordner, nichts, was ShadowMount+ einhaengt."""
+            return str(eintrag.get("kind") or "") in bibliothek_bestand.PAKET_ENDUNGEN
+
+        def _paket_umwandelbar(eintrag: dict) -> bool:
+            """Kann das Fenster "PS4 PKG -> ffpfsc" dieses Paket umwandeln?
+
+            Es nimmt ``.pkg`` von PS4-Titeln (``CUSA``/``PUSA``). Ein ``.fpkg`` und ein PS5-Paket
+            wandelt dieses Programm nicht in ein Abbild um.
+            """
+            return str(eintrag.get("kind") or "") == "pkg" and _plattform_von(eintrag) == "PS4"
 
         def _hat_einbau(ergebnis) -> bool:
             """Sind AMPR EMU, PlayGo, BACKPORT oder ein Asset-Pack nachgewiesen?
@@ -41046,7 +41415,14 @@ class PS5ConverterGUI:
             except tk.TclError:
                 ansicht["filter_geplant"] = False
 
-        def _apply_filter() -> None:
+        def _apply_filter(*, fortschritt=None) -> None:
+            """Zeigt die gefilterte, sortierte Auswahl - Liste und Karten - und startet die Bildlader.
+
+            ``fortschritt`` ist die ``SuchlaufAnzeige`` eines Suchlaufs, der
+            gerade seine Eintraege geliefert hat: Die Lader melden dann Bilder
+            und Einbauten an sie und beenden sie am Ende. Filtern und
+            Sortieren rufen ohne - dort soll kein Fenster aufgehen.
+            """
             tree.delete(*tree.get_children())
             item_by_iid.clear()
             iid_nach_pfad.clear()
@@ -41105,14 +41481,58 @@ class PS5ConverterGUI:
             if quelle_var.get() == "ps5":
                 self._bibliothek_ps5_bilder_nachladen(
                     seite, sichtbare, generation=ansicht["generation"],
-                    einbauten=(offen_einbau, _einbauten_fertig))
+                    einbauten=(offen_einbau, _einbauten_fertig), fortschritt=fortschritt)
             else:
                 self._bibliothek_bilder_nachladen(
                     seite, sichtbare, generation=ansicht["generation"],
-                    einbauten=(offen_einbau, _einbauten_fertig))
+                    einbauten=(offen_einbau, _einbauten_fertig), fortschritt=fortschritt)
 
         # Neue Breite, neue Spaltenzahl: Das Raster verteilt die Karten selbst neu
         # (KartenRaster._groesse_geaendert); die Seite muss nichts nachfuehren.
+
+        def _suche_abbrechen() -> None:
+            """"Abbrechen" im Fortschrittsfenster: Suche und Bildlader geben auf.
+
+            Ein neuer Suchlauf-Zaehler macht die laufenden Faeden "veraltet"
+            (``_veraltet`` in ``_rescan``), eine neue Generation die Bildlader.
+            Die Liste bleibt, wie sie war; nur die Statuszeile sagt es.
+            """
+            ansicht["suchlauf"] += 1
+            ansicht["generation"] += 1
+            self._bibliothek_generation = ansicht["generation"]
+            ansicht["fortschritt"] = None
+            _status("library.scan_abgebrochen")
+            _punkt("fg_warning")
+
+        def _anzeige_neu(quelle: str) -> "bibliothek_raster.SuchlaufAnzeige":
+            """Das Fortschrittsfenster eines neuen Suchlaufs - es geht erst nach einer Weile auf.
+
+            Seit dem 03.10.2026: Wer lange auf die Suche wartet (eine kalte
+            Platte, ein Abbild, die Konsole im Netz), soll sehen, dass es
+            weitergeht - mit Balken und Prozent. Ein Suchlauf, der in einem
+            Augenblick fertig ist, laesst gar nichts aufblitzen. Ein
+            laufendes Fenster eines vorigen Suchlaufs geht dabei zu.
+            """
+            alt = ansicht.get("fortschritt")
+            if alt is not None:
+                alt.schliessen()
+            ps5 = quelle == "ps5"
+            stufen = bibliothek_fortschritt.PS5_STUFEN if ps5 else bibliothek_fortschritt.PC_STUFEN
+            titel = self._t("library.scan_titel_ps5" if ps5 else "library.scan_titel_pc")
+
+            def _bauen():
+                fenster = self._build_modern_toplevel(
+                    titel, 700, 310, min_width=620, min_height=290, parent=oben)
+                self._build_modern_header(fenster, titel)
+                return fenster
+
+            anzeige = bibliothek_raster.SuchlaufAnzeige(
+                seite, z, bibliothek_fortschritt.Phasen(stufen), bauen=_bauen, text=self._t,
+                abbrechen=_suche_abbrechen,
+                stufen={name: "library.scan_stufe_%s" % name for name, _gewicht in stufen},
+                hinweis="library.scan_hinweis_ps5" if ps5 else "library.scan_hinweis")
+            ansicht["fortschritt"] = anzeige
+            return anzeige
 
         def _rescan() -> None:
             # Neu suchen heisst auch: Einbauten neu lesen. Wer zwischendurch
@@ -41143,25 +41563,63 @@ class PS5ConverterGUI:
                 """Gibt es inzwischen einen neueren Suchlauf (oder keine Seite mehr)?"""
                 return nummer != ansicht["suchlauf"]
 
+            anzeige = _anzeige_neu("pc")
+
             def worker() -> None:
-                collected: list[dict] = []
-                for folder in folders:
+                # Erst alle Ordner absuchen, dann alle Funde einlesen: Die Anzeige
+                # kennt so die Gesamtzahl (der Balken laeuft nach der Suche als
+                # echter Balken) - und das Einlesen kann Ordner nebenlaeufig lesen.
+                uebergeben = False
+                try:
+                    funde: list[dict] = []
+                    for folder in folders:
+                        if _veraltet():
+                            return          # das Ergebnis zaehlte ohnehin nicht mehr
+                        vorher = len(funde)
+
+                        def _suche(_ordner: int, anzahl: int, ort: str, vorher: int = vorher) -> None:
+                            anzeige.melden("ordner", text="%s   ·   %s" % (
+                                self._t("library.scan_funde", funde=vorher + anzahl),
+                                os.path.basename(ort.rstrip("/\\")) or ort))
+
+                        funde.extend(self._library_funde(folder, abbruch=_veraltet,
+                                                         fortschritt=_suche))
                     if _veraltet():
-                        return          # das Ergebnis zaehlte ohnehin nicht mehr
-                    collected.extend(self._library_scan_folder(folder, abbruch=_veraltet))
+                        return
+                    collected = self._library_eintraege(
+                        funde, abbruch=_veraltet,
+                        fortschritt=lambda getan, gesamt, name: anzeige.melden(
+                            "angaben", getan, gesamt, name, letzte=getan >= gesamt))
+                    if _veraltet():
+                        return
 
-                def _finish() -> None:
-                    if nummer != ansicht["suchlauf"]:
-                        return          # inzwischen neu gesucht - siehe ansicht
-                    all_items.clear()
-                    all_items.extend(collected)
-                    _apply_filter()
-                    _status("library.status_scan_result", item_count=len(all_items),
-                            folder_count=len(folders))
+                    def _finish() -> None:
+                        if nummer != ansicht["suchlauf"]:
+                            anzeige.beenden()
+                            return          # inzwischen neu gesucht - siehe ansicht
+                        all_items.clear()
+                        all_items.extend(collected)
+                        # Die Lader (Titelbilder, Einbauten) melden weiter an die Anzeige
+                        # und beenden sie - das Fenster bleibt, bis alles gelesen ist.
+                        try:
+                            _apply_filter(fortschritt=anzeige)
+                        except BaseException:
+                            anzeige.schliessen()    # ohne Lader beendete niemand das Fenster
+                            raise
+                        _status("library.status_scan_result", item_count=len(all_items),
+                                folder_count=len(folders))
 
-                # Ueber die Seite, nicht root.after: Ihr Rueckruf verfaellt mit
-                # ihr, und ein Faden darf Tk ohnehin nicht selbst anfassen.
-                self._spaeter_im_fenster(seite, _finish)
+                    # Ueber die Seite, nicht root.after: Ihr Rueckruf verfaellt mit
+                    # ihr, und ein Faden darf Tk ohnehin nicht selbst anfassen.
+                    uebergeben = self._spaeter_im_fenster(seite, _finish)
+                finally:
+                    # Wer sein Ergebnis nicht in die Seite bringt - Fehler, neuerer
+                    # Lauf, Seite zu, keine Hauptschleife -, beendet die Anzeige
+                    # selbst. Sonst ginge ihr Fenster nach 0,4 s auf und bliebe
+                    # stehen (im Testbetrieb am 03.10.2026 gemessen: sichtbar, fuer
+                    # den Rest des Laufs).
+                    if not uebergeben:
+                        anzeige.beenden()
 
             threading.Thread(target=worker, daemon=True).start()
 
@@ -41176,36 +41634,61 @@ class PS5ConverterGUI:
             _status("library.status_scanning")
             ansicht["suchlauf"] += 1
             nummer = ansicht["suchlauf"]
+            anzeige = _anzeige_neu("ps5")
+
+            def _veraltet() -> bool:
+                return nummer != ansicht["suchlauf"]
 
             def _zwischenstand(text: str) -> None:
                 if nummer == ansicht["suchlauf"]:
                     _status_text(text)
 
+            def _status_aus_dem_faden(text: str) -> None:
+                # Die Zeile Stand fuer die Statuszeile (im Fensterfaden) und fuer das
+                # Fortschrittsfenster (dessen Aufrufe laufen ohnehin ueber after - in
+                # der Reihenfolge der Meldungen, also vor den spaeteren Stufen).
+                self._spaeter_im_fenster(seite, _zwischenstand, text)
+                anzeige.melden("konsole", text=text)
+
             def arbeit() -> None:
-                gefunden, fehler = self._bibliothek_ps5_scannen(
-                    fenster=self.root,
-                    status=lambda text: self._spaeter_im_fenster(
-                        seite, _zwischenstand, str(text)))
+                uebergeben = False
+                try:
+                    gefunden, fehler = self._bibliothek_ps5_scannen(
+                        fenster=self.root,
+                        status=lambda text: _status_aus_dem_faden(str(text)),
+                        fortschritt=anzeige.melden, abbruch=_veraltet)
+                    if _veraltet():
+                        return
 
-                def _fertig() -> None:
-                    if nummer != ansicht["suchlauf"]:
-                        return          # inzwischen neu gesucht - siehe ansicht
-                    all_items.clear()
-                    all_items.extend(gefunden)
-                    # _apply_filter startet auch die Titelbilder der Konsole
-                    # (ueber EINE Verbindung) - ein zweiter Lader hier liefe
-                    # doppelt.
-                    _apply_filter()
-                    if fehler:
-                        _status_text(fehler)
-                        _punkt("fg_warning")
-                    else:
-                        installiert = sum(1 for e in gefunden if e.get("installiert"))
-                        _status("library.ps5_status_titel", count=len(gefunden),
-                                sicherungen=len(gefunden) - installiert,
-                                installiert=installiert)
+                    def _fertig() -> None:
+                        if nummer != ansicht["suchlauf"]:
+                            anzeige.beenden()
+                            return          # inzwischen neu gesucht - siehe ansicht
+                        all_items.clear()
+                        all_items.extend(gefunden)
+                        # _apply_filter startet auch die Titelbilder der Konsole
+                        # (ueber EINE Verbindung) - ein zweiter Lader hier liefe
+                        # doppelt. Er meldet weiter an die Anzeige und beendet sie.
+                        try:
+                            _apply_filter(fortschritt=anzeige)
+                        except BaseException:
+                            anzeige.schliessen()    # ohne Lader beendete niemand das Fenster
+                            raise
+                        if fehler:
+                            _status_text(fehler)
+                            _punkt("fg_warning")
+                        else:
+                            installiert = sum(1 for e in gefunden if e.get("installiert"))
+                            _status("library.ps5_status_titel", count=len(gefunden),
+                                    sicherungen=len(gefunden) - installiert,
+                                    installiert=installiert)
 
-                self._spaeter_im_fenster(seite, _fertig)
+                    uebergeben = self._spaeter_im_fenster(seite, _fertig)
+                finally:
+                    # Wie beim Suchlauf auf dem Rechner: Kommt das Ergebnis nicht in
+                    # die Seite, beendet der Faden die Anzeige selbst.
+                    if not uebergeben:
+                        anzeige.beenden()
 
             threading.Thread(target=arbeit, daemon=True,
                              name="bibliothek-ps5").start()
@@ -41233,6 +41716,10 @@ class PS5ConverterGUI:
             if eintrag.get("ps5"):
                 messagebox.showinfo(self._t("library.upload_titel"),
                                     self._t("library.nur_rechner"), parent=oben)
+                return
+            if _ist_paket(eintrag):
+                messagebox.showinfo(self._t("library.upload_titel"),
+                                    self._t("library.gesperrt_kopieren_paket"), parent=oben)
                 return
             vorher = status_var.get()
             self._bibliothek_hochladen(
@@ -41632,6 +42119,8 @@ class PS5ConverterGUI:
                                else "library.chip_installiert_ps5")
             if art == "folder":
                 return self._t("library.chip_ordner")
+            if art in bibliothek_bestand.PAKET_ENDUNGEN:
+                return self._t("library.chip_%s" % art)
             return {"ffpfsc": "ffpfsc", "ffpfs": "ffpfs", "ffpkg": "ffpkg",
                     "exfat": "exFAT"}.get(art, art or "?")
 
@@ -41657,6 +42146,12 @@ class PS5ConverterGUI:
             if eintrag.get("ps5"):
                 return {"start": self._is_valid_title_id(kennung),
                         "kopieren": not eintrag.get("installiert"), "konvertieren": False}
+            if _ist_paket(eintrag):
+                # Ein Paket wird auf der Konsole installiert, nicht eingehaengt: Die Ablagen,
+                # in die "Kopieren" sendet, sind fuer Abbilder und Dump-Ordner da. Umwandeln
+                # laesst sich ein PS4-Paket (Fenster "PS4 PKG -> ffpfsc").
+                return {"start": self._is_valid_title_id(kennung), "kopieren": False,
+                        "konvertieren": _paket_umwandelbar(eintrag)}
             return {"start": self._is_valid_title_id(kennung), "kopieren": True,
                     "konvertieren": True}
 
@@ -41667,7 +42162,9 @@ class PS5ConverterGUI:
                      or os.path.basename(str(eintrag["path"]).rstrip("/\\")))
             chips = [(_format_chip_text(eintrag), "neutral")]
             ergebnis = ansicht["einbauten"].get(eintrag["path"])
-            if ergebnis is not None:
+            if ergebnis is not None and _ist_paket(eintrag):
+                pass                    # Ein Paket traegt keine Einbauten - auch kein "unbekannt"
+            elif ergebnis is not None:
                 if ergebnis.get("zustand") != "ok":
                     # Ein Abbild, in das niemand hineinsehen kann, hat nicht "keine"
                     # Einbauten - es ist unbekannt (gestrichelter Chip).
@@ -41718,12 +42215,27 @@ class PS5ConverterGUI:
             elif name == "kopieren":
                 (_holen if eintrag.get("ps5") else _senden)()
             elif name == "konvertieren":
+                _konvertieren(eintrag)
+
+        def _konvertieren(eintrag: dict) -> None:
+            """"Konvertieren": ein PS4-Paket geht ins Fenster "PS4 PKG -> ffpfsc", alles andere wird Quelle der Umwandlung.
+
+            Das Fenster kennt seine Quelle nur aus seinem eigenen Feld; der Wunsch wird ueber
+            ``_ps4pkg_vorgabe`` hineingereicht (``_show_ps4_pkg_converter`` liest und leert ihn).
+            Ein Paket, das es nicht umwandeln kann (``.fpkg``, PS5), wird nur gewaehlt.
+            """
+            if _paket_umwandelbar(eintrag):
+                self._ps4pkg_vorgabe = str(eintrag["path"])
+                self._show_ps4_pkg_converter()
+            elif not _ist_paket(eintrag):
                 _use_as_source()
 
         def _karten_gesperrt(name: str, eintrag: dict) -> None:
             """Ein gesperrter Knopf wurde gedrueckt - die Statuszeile sagt, warum er gesperrt ist."""
             if name == "kopieren" and eintrag.get("installiert"):
                 schluessel = "library.gesperrt_kopieren_installiert"
+            elif _ist_paket(eintrag) and name in ("kopieren", "konvertieren"):
+                schluessel = "library.gesperrt_%s_paket" % name
             else:
                 # "Kopieren" ist nur fuer installierte Titel gesperrt (oben); die
                 # uebrigen Eintraege lassen sich immer kopieren.
@@ -41885,7 +42397,7 @@ class PS5ConverterGUI:
             streifen_karte.pack_forget()
             reihen[quelle_var.get()].pack(side="bottom", fill="x", pady=(8, 0), before=body)
             if ansicht["art"] == "liste":
-                streifen_karte.pack(side="bottom", fill="x", pady=(8, 0), padx=(0, sb_breite),
+                streifen_karte.pack(side="bottom", fill="x", pady=(8, 0), padx=(0, rechts_frei),
                                     before=body)
 
         def _streifen_zeigen() -> None:
@@ -46957,7 +47469,8 @@ class PS5ConverterGUI:
             (die Auswahlfelder oder ``None``), ``ampr_hinweis`` und
             ``playgo_hinweis`` (die Saetze darunter), ``playgo_haken`` und
             ``playgo_an`` (der Haken und seine Variable), ``ok`` und
-            ``abbrechen`` (was die Knoepfe tun) und ``antwort``
+            ``abbrechen`` (was die Knoepfe tun), ``abbrechen_knopf`` und
+            ``eingabe`` (die Enter-Weiche des Fensters) und ``antwort``
             (``{"wert": ...}`` - ``None`` bei Abbruch, sonst
             ``{"ampr": Eintrag | None, "playgo": Eintrag | None}``).
         """
@@ -47070,15 +47583,30 @@ class PS5ConverterGUI:
 
         fuss = tk.Frame(innen, bg=c["bg_main"])
         fuss.pack(fill="x", pady=(8, 0))
-        ttk.Button(fuss, text=self._t("action.cancel"),
-                   command=_abbrechen).pack(side="right")
+        abbrechen_knopf = ttk.Button(fuss, text=self._t("action.cancel"),
+                                     command=_abbrechen)
+        abbrechen_knopf.pack(side="right")
         ok_knopf = ttk.Button(fuss, text=self._t("amprgen.fassung_ablegen"),
                               style="Accent.TButton", command=_ok)
         ok_knopf.pack(side="right", padx=(0, 8))
 
-        # Die Tastatur bedient alles: Enter legt ab (die Vorgabe ist die neueste
-        # Fassung ohne PlayGo), Escape bricht ab, Tab geht Feld fuer Feld.
-        dlg.bind("<Return>", lambda _e: _ok())
+        def _eingabe(ereignis=None) -> None:
+            """Enter drueckt, was den Fokus hat: Auf "Abbrechen" bricht es ab, sonst legt es ab.
+
+            Die Bindung sitzt am Fenster, nicht an den Knoepfen - ohne diese Weiche
+            wuerde Enter auch dann ablegen, wenn jemand mit Tab auf "Abbrechen"
+            gewandert ist.
+            """
+            if getattr(ereignis, "widget", None) is abbrechen_knopf:
+                _abbrechen()
+            else:
+                _ok()
+
+        # Die Tastatur bedient alles: Enter (auch der Ziffernblock) legt ab (die
+        # Vorgabe ist die neueste Fassung ohne PlayGo), Escape bricht ab, Tab geht
+        # Feld fuer Feld.
+        dlg.bind("<Return>", _eingabe)
+        dlg.bind("<KP_Enter>", _eingabe)
         dlg.bind("<Escape>", lambda _e: _abbrechen())
         dlg.protocol("WM_DELETE_WINDOW", _abbrechen)
         ok_knopf.focus_set()
@@ -47086,7 +47614,8 @@ class PS5ConverterGUI:
                 "ampr_box": ampr_box, "playgo_box": playgo_box,
                 "ampr_hinweis": ampr_hinweis, "playgo_hinweis": playgo_hinweis,
                 "playgo_haken": haken, "playgo_an": playgo_an,
-                "ok": _ok, "abbrechen": _abbrechen, "antwort": antwort}
+                "ok": _ok, "abbrechen": _abbrechen, "abbrechen_knopf": abbrechen_knopf,
+                "eingabe": _eingabe, "antwort": antwort}
 
     def _ampr_gen_fassungen_dialog(self, eltern,
                                    vorrat: list[dict[str, Any]]) -> "dict[str, Any] | None":
@@ -51534,6 +52063,14 @@ class PS5ConverterGUI:
 
         quelle_art = tk.StringVar(value="pkg_dir")
         quelle_var = tk.StringVar()
+        # Die Bibliothek ("Konvertieren" auf der Karte eines .pkg) reicht ihre Datei ueber
+        # ``_ps4pkg_vorgabe`` herein - einmalig: Wer das Fenster danach selbst oeffnet,
+        # soll es nicht schon gefuellt vorfinden.
+        vorgabe = str(getattr(self, "_ps4pkg_vorgabe", "") or "")
+        self._ps4pkg_vorgabe = ""
+        if vorgabe:
+            quelle_art.set("pkg_file")
+            quelle_var.set(os.path.normpath(vorgabe))
         ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
         format_var = tk.StringVar(value="ffpfsc")
         stufe_var = tk.IntVar(value=7)

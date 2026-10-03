@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.58):** Die Bibliothek zeigt ihre Titel als Karten über die ganze Breite, und Aufgabe 7 lässt die Fassung von AMPR EMU und PlayGo wählen.
+> **Kurz zum aktuellen Stand (v1.9.59):** Die Bibliothek zeigt beim Suchen einen Fortschritt mit Balken und Prozent, sucht deutlich schneller und listet auch Pakete (.pkg, .fpkg).
+
+---
+
+## v1.9.59 – 04.10.2026
+
+- **Neu:** Beim Durchsuchen der Bibliothek – auf dem Rechner und auf der PS5 – zeigt ein Fenster den Fortschritt mit Balken und Prozent und lässt sich abbrechen.
+- **Neu:** Die Bibliothek listet auf dem Rechner auch Pakete (`.pkg`, `.fpkg`) mit Titel, Fassung, Firmware und Titelbild aus dem Paket; „Konvertieren“ öffnet bei einem PS4-Paket das Fenster „PS4 PKG → ffpfsc“ mit der Datei.
+- **Geändert:** Das Durchsuchen ist deutlich schneller – ein Abbild wird nur noch beim ersten Mal geöffnet, und ein Spielordner, den du selbst als Suchordner einträgst, ist sofort ein Treffer; die Karten haben mehr Abstand zum Rand und zum Rollbalken.
 
 ---
 

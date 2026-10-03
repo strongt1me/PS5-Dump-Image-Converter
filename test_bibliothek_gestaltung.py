@@ -327,16 +327,31 @@ class SeitenTests(unittest.TestCase):
         self.assertNotIn(detail.winfo_manager(), ("grid", "pack"))
 
     def test_die_karten_und_die_kopfkarte_enden_an_derselben_kante(self) -> None:
-        """Kopfkarte, Karten, Liste und Streifen lassen rechts dieselbe Breite frei: den Rollbalken."""
-        sb = self.zustand["raster"].balken.winfo_reqwidth()
-        self.assertGreater(sb, 5)
-        self.assertEqual(sb, self._rechtes_polster(self.zustand["kopf"].pack_info()))
+        """Kopfkarte, Karten, Liste und Streifen lassen rechts dieselbe Breite frei: Luecke und Rollbalken."""
+        raster = self.zustand["raster"]
+        frei = raster.rechts_frei()
+        self.assertGreater(frei, raster.balken.winfo_reqwidth(), "Mehr als der Balken allein: auch die Luecke.")
+        self.assertEqual(frei, self._rechtes_polster(self.zustand["kopf"].pack_info()))
         self.zustand["kopf_gruppen"]["ansicht"].chips[1].invoke()
         try:
-            self.assertEqual(sb, self._rechtes_polster(self.zustand["listenkarte"].grid_info()))
-            self.assertEqual(sb, self._rechtes_polster(self.zustand["streifen"].pack_info()))
+            self.assertEqual(frei, self._rechtes_polster(self.zustand["listenkarte"].grid_info()))
+            self.assertEqual(frei, self._rechtes_polster(self.zustand["streifen"].pack_info()))
         finally:
             self.zustand["kopf_gruppen"]["ansicht"].chips[0].invoke()
+
+    def test_die_karten_haben_luft_zum_fenster_und_zum_rollbalken(self) -> None:
+        """03.10.2026: mehr Abstand links und rechts - vor allem zwischen letzter Spalte und Rollbalken."""
+        app, raster = self.app, self.zustand["raster"]
+        z = app._bibliothek_zeichner()
+        luecke = z.px(raster.BALKEN_LUECKE)
+        self.assertGreater(luecke, 0)
+        self.assertEqual(raster._masse.abstand, luecke, "So gross wie der Abstand der Karten untereinander.")
+        self.assertEqual(z.px(24), int(str(app._bibliothek_seite.cget("padx"))),
+                         "Seitenrand 24 Pixel bei 100 %, mit der Anzeige skaliert (vorher feste 20).")
+        # Gemessen, nicht nur eingestellt: der Abstand zwischen Flaeche und Rollbalken.
+        _WURZEL.update_idletasks()
+        flaeche, balken = raster.flaeche, raster.balken
+        self.assertEqual(luecke, balken.winfo_x() - (flaeche.winfo_x() + flaeche.winfo_width()))
 
     # --- Infofenster ---------------------------------------------------------------------------------------
     def test_das_infofenster_haengt_an_keiner_auswahl(self) -> None:

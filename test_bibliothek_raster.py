@@ -717,6 +717,19 @@ class KartenRasterTests(unittest.TestCase):
         self.assertGreaterEqual(self.raster.spalten, 1)
         self._breite.start()
 
+    def test_zwischen_der_letzten_spalte_und_dem_rollbalken_ist_eine_luecke(self) -> None:
+        """03.10.2026: Die letzte Spalte klebte am Rollbalken (Nutzer: mehr Abstand, vor allem rechts)."""
+        luecke = self.z.px(raster.KartenRaster.BALKEN_LUECKE)
+        self.assertGreater(luecke, 0)
+        links = int(str(self.raster.balken.grid_info()["padx"]).strip("()").replace(",", " ").split()[0])
+        self.assertEqual(luecke, links, "Die Luecke steht links vom Balken, nicht rechts davon.")
+        self.assertEqual(luecke + self.raster.balken.winfo_reqwidth(), self.raster.rechts_frei())
+
+    def test_die_luecke_zum_rollbalken_ist_so_gross_wie_der_kartenabstand(self) -> None:
+        """Beide Masse stehen an zwei Stellen - dieser Test haelt sie zusammen."""
+        self.assertEqual(zeichnen.KartenMasse(faktor=self.z.faktor).abstand,
+                         self.z.px(raster.KartenRaster.BALKEN_LUECKE))
+
     # --- Titelbild ---------------------------------------------------------------------------------
     def test_das_titelbild_hat_die_groesse_der_karte_ohne_rand(self) -> None:
         eintraege = self._setzen(2)
@@ -1312,6 +1325,270 @@ class KartenRasterTests(unittest.TestCase):
         self.raster.aktualisieren(eintraege[0])
         self.raster.markieren("x")
         self.assertEqual(0, self.raster.setzen(eintraege), "Ein spaeter Suchlauf nach dem Schliessen wirft nichts.")
+
+
+@unittest.skipUnless(_TK_DA, "ohne Anzeige kein Fenster")
+class SuchlaufAnzeigeTests(unittest.TestCase):
+    """Das Fortschrittsfenster des Suchlaufs (03.10.2026): erscheint erst bei langer Dauer, zeigt Balken und Prozent."""
+
+    TEXTE = {"action.cancel": "ABBRECHEN", "library.scan_hinweis": "Das kann dauern.",
+             "library.scan_zaehlung": "{getan} von {gesamt}",
+             "s.ordner": "Ordner durchsuchen", "s.angaben": "Angaben lesen", "s.bilder": "Titelbilder laden"}
+    STUFEN = {"ordner": "s.ordner", "angaben": "s.angaben", "bilder": "s.bilder"}
+
+    def setUp(self) -> None:
+        self.z, _p = _zeichner()
+        self.seite = tk.Frame(_WURZEL)
+        self.addCleanup(self.seite.destroy)
+        self.fenster: list = []
+        self.abgebrochen: list[bool] = []
+        self.anzeige: raster.SuchlaufAnzeige | None = None
+
+    def _bauen(self):
+        fenster = tk.Toplevel(_WURZEL)
+        fenster.withdraw()
+        self.fenster.append(fenster)
+        self.addCleanup(lambda f=fenster: f.winfo_exists() and f.destroy())
+        return fenster
+
+    def _anzeige(self, verzoegerung_ms: int = 0, nur_sichtbar: bool = False):
+        from ps5_validator.utils import bibliothek_fortschritt as fs
+        text = lambda schluessel, **werte: self.TEXTE[schluessel].format(**werte)       # noqa: E731
+        # nur_sichtbar=False: Die Test-Wurzel ist verborgen, die Seite also nie "zu sehen".
+        anzeige = raster.SuchlaufAnzeige(
+            self.seite, self.z, fs.Phasen([("ordner", 10), ("angaben", 40), ("bilder", 50)]),
+            bauen=self._bauen, text=text, abbrechen=lambda: self.abgebrochen.append(True),
+            stufen=self.STUFEN, verzoegerung_ms=verzoegerung_ms, drossel=fs.Drossel(0.0),
+            nur_sichtbar=nur_sichtbar)
+        self.anzeige = anzeige
+        self.addCleanup(anzeige.beenden)
+        return anzeige
+
+    def _texte(self) -> dict[str, str]:
+        return {name: str(label.cget("text")) for name, label in self.anzeige._labels.items()}
+
+    def _laufen(self) -> None:
+        for _ in range(3):
+            _WURZEL.update()
+
+    def test_ohne_verzoegerung_erscheint_das_fenster_sofort(self) -> None:
+        anzeige = self._anzeige(0)
+        self._laufen()
+        self.assertTrue(anzeige.offen)
+        self.assertEqual(1, len(self.fenster))
+
+    def test_ein_kurzer_suchlauf_laesst_kein_fenster_aufblitzen(self) -> None:
+        """Wer binnen der Verzoegerung fertig wird, zeigt gar nichts."""
+        anzeige = self._anzeige(60000)
+        anzeige.melden("angaben", 1, 3, "x")
+        anzeige.beenden()
+        self._laufen()
+        self.assertEqual([], self.fenster, "Das Fenster wurde gebaut, obwohl der Lauf kurz war.")
+        self.assertFalse(anzeige.offen)
+
+    def test_die_verzoegerung_wird_abgewartet(self) -> None:
+        anzeige = self._anzeige(250)
+        self._laufen()
+        self.assertFalse(anzeige.offen, "Nach 0 ms darf noch nichts da sein.")
+        zeit = time.monotonic() + 3
+        while not anzeige.offen and time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.02)
+        self.assertTrue(anzeige.offen, "Nach der Verzoegerung muss das Fenster da sein.")
+
+    def test_balken_und_prozent_folgen_den_meldungen(self) -> None:
+        anzeige = self._anzeige(0)
+        anzeige.melden("angaben", 5, 10, "Dirt 5")
+        self._laufen()
+        stand = self._texte()
+        self.assertEqual("Angaben lesen", stand["stufe"])
+        self.assertEqual("5 von 10   ·   Dirt 5", stand["detail"])
+        self.assertEqual("30 %", stand["prozent"])           # 10 + 40 * 0,5
+        self.assertAlmostEqual(30.0, float(str(anzeige._balken.cget("value"))), places=3)
+        self.assertEqual("determinate", str(anzeige._balken.cget("mode")))
+        anzeige.melden("bilder", 10, 10, "")
+        self._laufen()
+        self.assertEqual("Titelbilder laden", self._texte()["stufe"])
+        self.assertEqual("99 %", self._texte()["prozent"], "Vor dem Ende steht der Balken nie auf 100 %.")
+        self.assertGreaterEqual(float(str(anzeige._balken.cget("value"))), 90.0)
+
+    def test_eine_stufe_ohne_gesamtzahl_laeuft_als_laufbalken(self) -> None:
+        anzeige = self._anzeige(0)
+        anzeige.melden("ordner", None, None, "12 Spiele gefunden")
+        self._laufen()
+        self.assertEqual("indeterminate", str(anzeige._balken.cget("mode")))
+        self.assertEqual("…", self._texte()["prozent"])
+        self.assertEqual("12 Spiele gefunden", self._texte()["detail"])
+        anzeige.melden("angaben", 1, 4, "")
+        self._laufen()
+        self.assertEqual("determinate", str(anzeige._balken.cget("mode")), "Mit bekannter Zahl wieder ein echter Balken.")
+
+    def test_vor_der_ersten_meldung_zeigt_das_fenster_die_erste_stufe(self) -> None:
+        anzeige = self._anzeige(0)
+        self._laufen()
+        self.assertEqual("Ordner durchsuchen", self._texte()["stufe"])
+        self.assertEqual("…", self._texte()["prozent"])
+        self.assertEqual("Das kann dauern.", self._texte()["hinweis"])
+
+    def test_beenden_schliesst_das_fenster_und_spaetere_meldungen_verpuffen(self) -> None:
+        anzeige = self._anzeige(0)
+        self._laufen()
+        fenster = self.fenster[0]
+        anzeige.beenden()
+        self._laufen()
+        self.assertFalse(fenster.winfo_exists())
+        self.assertFalse(anzeige.offen)
+        anzeige.melden("angaben", 1, 2, "zu spaet")           # darf weder werfen noch ein Fenster bauen
+        self._laufen()
+        self.assertEqual(1, len(self.fenster))
+        anzeige.beenden()                                      # mehrfach ist erlaubt
+
+    def test_schliessen_macht_das_fenster_sofort_zu_auch_ohne_hauptschleife(self) -> None:
+        """Fuer die Seite, die zugeht: ``beenden`` ginge ueber ``after`` der Seite und kaeme nie an."""
+        anzeige = self._anzeige(0)
+        self._laufen()
+        fenster = self.fenster[0]
+        self.seite.destroy()
+        anzeige.schliessen()
+        self.assertFalse(fenster.winfo_exists(), "Das Fenster ist ein eigenes Toplevel und blieb mit der Seite stehen.")
+        self.assertTrue(anzeige.beendet)
+        anzeige.schliessen()                                   # mehrfach ist erlaubt
+
+    def test_abbrechen_verstaendigt_die_seite_einmal_und_schliesst(self) -> None:
+        anzeige = self._anzeige(0)
+        self._laufen()
+        anzeige._abbrechen()
+        anzeige._abbrechen()
+        self.assertEqual([True], self.abgebrochen, "Zweimal Abbrechen darf die Seite nur einmal verstaendigen.")
+        self.assertFalse(self.fenster[0].winfo_exists())
+        self.assertTrue(anzeige.beendet)
+
+    def test_das_kreuz_des_fensters_ist_ein_abbrechen(self) -> None:
+        self._anzeige(0)
+        self._laufen()
+        befehl = self.fenster[0].protocol("WM_DELETE_WINDOW")
+        self.assertTrue(befehl, "Das X des Fensters hat keinen Befehl - es schlosse wortlos und liesse die Faeden laufen.")
+        self.fenster[0].tk.call(befehl)
+        self.assertEqual([True], self.abgebrochen)
+
+    @staticmethod
+    def _alle(widget) -> list:
+        gefunden = [widget]
+        for kind in widget.winfo_children():
+            gefunden.extend(SuchlaufAnzeigeTests._alle(kind))
+        return gefunden
+
+    def test_der_abbrechen_knopf_steht_im_fenster(self) -> None:
+        from tkinter import ttk
+        self._anzeige(0)
+        self._laufen()
+        knoepfe = [w for w in self._alle(self.fenster[0]) if isinstance(w, ttk.Button)]
+        self.assertEqual(["ABBRECHEN"], [str(k.cget("text")) for k in knoepfe])
+        knoepfe[0].invoke()
+        self.assertEqual([True], self.abgebrochen)
+
+    def test_eine_unbekannte_stufe_stoert_nicht(self) -> None:
+        anzeige = self._anzeige(0)
+        anzeige.melden("gibtesnicht", 1, 2, "x")
+        self._laufen()
+        self.assertTrue(anzeige.offen)
+
+    def test_eine_geschlossene_seite_wirft_nichts(self) -> None:
+        anzeige = self._anzeige(0)
+        self.seite.destroy()
+        anzeige.melden("angaben", 1, 2, "x")
+        anzeige.beenden()
+        self.assertTrue(anzeige.beendet)
+
+    def test_aus_einem_faden_gemeldet_ohne_hauptschleife_wirft_nichts(self) -> None:
+        """Ein Arbeitsfaden, der nach dem Programmende meldet, darf nicht abstuerzen (``after`` wirft RuntimeError)."""
+        import threading
+        anzeige = self._anzeige(0)
+        fehler: list[BaseException] = []
+
+        def faden() -> None:
+            try:
+                anzeige.melden("angaben", 1, 2, "x")
+                anzeige.beenden()
+            except BaseException as exc:  # noqa: BLE001
+                fehler.append(exc)
+
+        t = threading.Thread(target=faden)
+        t.start()
+        zeit = time.monotonic() + 3
+        while t.is_alive() and time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.01)
+        t.join(1)
+        self.assertEqual([], fehler)
+
+    def test_der_takt_schliesst_das_fenster_wenn_ein_faden_ohne_hauptschleife_beendet(self) -> None:
+        """Ohne Hauptschleife kam ``beenden`` ueber ``after`` aus einem Faden nie an (03.10.2026 gemessen).
+
+        Dann stand das Fenster fuer den Rest des Volllaufs sichtbar auf dem Schirm. Jetzt setzt der Faden nur
+        das Merkmal, und der Takt im Fensterfaden schliesst.
+        """
+        import threading
+        anzeige = self._anzeige(0)
+        self._laufen()
+        fenster = self.fenster[0]
+        self.assertTrue(fenster.winfo_exists())
+        t = threading.Thread(target=anzeige.beenden)
+        t.start()
+        t.join(5)
+        zeit = time.monotonic() + 3
+        while fenster.winfo_exists() and time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.02)
+        self.assertFalse(fenster.winfo_exists(), "Das Fenster blieb stehen, obwohl die Anzeige beendet ist.")
+        self.assertFalse(anzeige.offen)
+
+    def test_ein_beendeter_lauf_baut_sein_fenster_nicht_mehr(self) -> None:
+        """Beendet, bevor die Verzoegerung um ist (auch aus einem Faden): kein Fenster, auch nicht spaeter."""
+        import threading
+        anzeige = self._anzeige(150)
+        t = threading.Thread(target=anzeige.beenden)
+        t.start()
+        t.join(5)
+        zeit = time.monotonic() + 0.6
+        while time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.02)
+        self.assertEqual([], self.fenster)
+
+    def test_meldungen_aus_einem_faden_fassen_tk_nicht_an_und_kommen_ueber_den_takt(self) -> None:
+        """Ein Faden darf ohne Hauptschleife nicht warten: Frueher hing jede Meldung eine Sekunde (``after`` aus
+        dem Faden wartet auf die Hauptschleife und gibt dann auf). Der Takt zeigt die letzte Meldung an."""
+        import threading
+        anzeige = self._anzeige(0)
+        self._laufen()
+        dauer: list[float] = []
+
+        def faden() -> None:
+            beginn = time.monotonic()
+            for n in range(1, 6):
+                anzeige.melden("angaben", n, 5, "Spiel %d" % n)
+            dauer.append(time.monotonic() - beginn)
+
+        t = threading.Thread(target=faden)
+        t.start()
+        t.join(10)
+        self.assertLess(dauer[0], 0.5, "Meldungen aus dem Faden warten auf die Hauptschleife.")
+        zeit = time.monotonic() + 2
+        while "5 von 5" not in self._texte().get("detail", "") and time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.02)
+        self.assertEqual("5 von 5   ·   Spiel 5", self._texte()["detail"])
+
+    def test_ohne_sichtbare_seite_geht_kein_fenster_auf(self) -> None:
+        """Das Fenster gehoert zur Seite: Ist sie nicht zu sehen (hier: Wurzel verborgen), bleibt es zu."""
+        anzeige = self._anzeige(0, nur_sichtbar=True)
+        zeit = time.monotonic() + 0.4
+        while time.monotonic() < zeit:
+            _WURZEL.update()
+            time.sleep(0.02)
+        self.assertEqual([], self.fenster)
+        self.assertFalse(anzeige.offen)
 
 
 if __name__ == "__main__":

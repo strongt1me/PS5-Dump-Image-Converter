@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.58</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.59</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.58</span>
-      <span class="marke">Stand 3. Oktober 2026</span>
+      <span class="marke">Version v1.9.59</span>
+      <span class="marke">Stand 4. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -547,10 +547,13 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Kopfkarte wählen Sie die Quelle:</p>
   <ul>
     <li><strong>Rechner</strong> durchsucht die eingetragenen
-    <em>SCAN-ORDNER</em> samt Unterordnern nach Dump-Ordnern und
-    Containerdateien (<em>Ordner hinzufügen…</em>, <em>Entfernen</em>,
-    <em>Neu scannen</em>). Ein neuer Suchlauf beendet einen noch
-    laufenden.</li>
+    <em>SCAN-ORDNER</em> samt Unterordnern nach Dump-Ordnern,
+    Containerdateien (<code>.ffpfsc</code>, <code>.ffpfs</code>,
+    <code>.exfat</code>, <code>.ffpkg</code>) und Paketen
+    (<code>.pkg</code>, <code>.fpkg</code>) &ndash; <em>Ordner hinzufügen…</em>,
+    <em>Entfernen</em>, <em>Neu scannen</em>. Ist ein eingetragener Ordner
+    selbst ein Dump-Ordner, ist er der eine Treffer; sein Inneres wird nicht
+    durchsucht. Ein neuer Suchlauf beendet einen noch laufenden.</li>
     <li><strong>PS5</strong> findet die Konsole selbst und zeigt, was auf ihr
     liegt: die <em>Sicherungen</em> an den üblichen Ablageorten &ndash;
     intern, auf USB-Datenträgern und auf der M.2-Erweiterung &ndash; und
@@ -558,8 +561,46 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     installierte PS4-Titel. Die Angabe zur Art unterscheidet sie
     („PS5&nbsp;·&nbsp;installiert“, „PS4&nbsp;·&nbsp;installiert (PKG)“).
     Systemanwendungen der Konsole erscheinen nicht, und ein Spiel, das auch
-    als Sicherung vorliegt, steht nur einmal da &ndash; als Sicherung.</li>
+    als Sicherung vorliegt, steht nur einmal da &ndash; als Sicherung. Pakete
+    (<code>.pkg</code>, <code>.fpkg</code>) listet die Konsolenseite nicht.</li>
   </ul>
+  <p><strong>Fortschritt beim Suchen.</strong> Dauert ein Suchlauf länger als einen
+  Augenblick &ndash; Abbilder auf einer kalten Festplatte, Pakete von hundert
+  Gigabyte, die Konsole im Netz &ndash;, öffnet sich ein Fenster mit Balken und
+  Prozentzahl. Es nennt die laufende Stufe, den Ordner oder Titel, an dem das
+  Programm gerade liest, und &ndash; sobald die Zahl der Funde feststeht &ndash;
+  „getan von gesamt“. Am Rechner laufen die Stufen <em>Ordner werden
+  durchsucht</em>, <em>Angaben werden gelesen</em>, <em>Titelbilder werden
+  geladen</em> und <em>Einbauten werden geprüft</em>; an der PS5 kommen
+  <em>Die PS5 wird gesucht</em>, <em>Ablageorte werden durchsucht</em>,
+  <em>Titelkennungen werden abgeglichen</em> und <em>Installierte Titel werden
+  gelesen</em> davor. Die Prozentzahl ist ein Anhalt, kein Versprechen: Wie lange
+  eine Stufe dauert, hängt von den Dateien ab. <em>Abbrechen</em> (oder das ✕)
+  beendet den Suchlauf; die Liste bleibt, wie sie war, und die Statuszeile sagt,
+  dass abgebrochen wurde. Auf der PS5 greift der Abbruch zwischen zwei
+  FTP-Befehlen, nie mitten in einer Übertragung. Wechseln Sie die Seite oder
+  starten Sie die Suche neu, schließt sich das Fenster von selbst; ein Suchlauf,
+  der in einem Augenblick fertig ist, zeigt es gar nicht.</p>
+  <p>Damit ein zweiter Suchlauf schnell geht, merkt sich das Programm, was es
+  zu einem Abbild oder Paket gelesen hat &ndash; unter Pfad, Änderungszeit und
+  Größe der Datei. Wird die Datei ersetzt, liest es sie neu; Dump-Ordner liest es
+  immer frisch, weil das billig ist. In einem <code>.exfat</code>-Abbild (auch
+  in einer <code>.ffpfsc</code> oder <code>.ffpfs</code>) sieht es nur in die
+  wenigen Ordner, die es braucht &ndash; Wurzel, <code>sce_sys</code> und
+  <code>fakelib</code> &ndash;, nicht in jedes Verzeichnis des Spiels.</p>
+  <p><strong>Pakete.</strong> Eine <code>.pkg</code> oder <code>.fpkg</code> trägt auf
+  ihrer Karte die Marke <em>PKG</em> bzw. <em>FPKG</em>. Titel, Kennung, Fassung,
+  Firmware und Titelbild liest das Programm aus dem Kopf des Pakets &ndash; es
+  lädt die Datei nie, auch nicht bei hundert Gigabyte. Ist ein Eintrag im
+  Paket verschlüsselt, fehlen die zugehörigen Angaben; Kennung und Titel
+  ergänzt das Programm dann aus der Content-ID und dem Dateinamen. <em>Kopieren</em> ist
+  bei Paketen gesperrt: Ein Paket wird auf der Konsole installiert, nicht
+  eingehängt, und die Ablagen, in die <em>Kopieren</em> sendet, sind für
+  Abbilder und Dump-Ordner da. <em>Konvertieren</em> geht nur bei einer
+  <code>.pkg</code> eines PS4-Titels: Es öffnet das Fenster <em>PS4 PKG →
+  ffpfsc</em> mit der Datei schon eingetragen. Eine <code>.fpkg</code> und ein
+  PS5-Paket wandelt das Programm nicht um. Einbauten trägt ein Paket nicht;
+  auf seiner Karte stehen deshalb weder Marken noch eine Zeile dazu.</p>
   <p>Die Kopfkarte fasst zusammen, was gerade zu sehen ist. Quelle und Ansicht
   wählen Sie mit den beiden Umschaltern oben rechts
   (<em>Rechner&nbsp;|&nbsp;PS5</em> und <em>Karten&nbsp;|&nbsp;Liste</em>);
@@ -639,8 +680,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Knopf</th><th>Rechner</th><th>PS5</th></tr></thead>
     <tbody>
-      <tr><td><strong>Kopieren</strong></td><td><em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher).</td><td><em>Herunterladen</em> (nur Sicherungen; nennt vorher Dateizahl, Größe und die ungefähre Dauer &ndash; gerechnet mit der gemessenen Leitung, rund 3,4&nbsp;MB/s beim Holen und 2,5&nbsp;MB/s beim Senden). Ein installiertes Spiel ist gesperrt: Es ist keine Datei; den Weg auf den Rechner zeigt <em>App-Dumper starten</em>.</td></tr>
-      <tr><td><strong>Konvertieren</strong></td><td><em>Als Quelle übernehmen</em>: Der Eintrag wird die Quelle für die Umwandlung.</td><td>Gesperrt &ndash; kopieren Sie den Titel zuerst auf den Rechner.</td></tr>
+      <tr><td><strong>Kopieren</strong></td><td><em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher; bei Paketen gesperrt).</td><td><em>Herunterladen</em> (nur Sicherungen; nennt vorher Dateizahl, Größe und die ungefähre Dauer &ndash; gerechnet mit der gemessenen Leitung, rund 3,4&nbsp;MB/s beim Holen und 2,5&nbsp;MB/s beim Senden). Ein installiertes Spiel ist gesperrt: Es ist keine Datei; den Weg auf den Rechner zeigt <em>App-Dumper starten</em>.</td></tr>
+      <tr><td><strong>Konvertieren</strong></td><td><em>Als Quelle übernehmen</em>: Der Eintrag wird die Quelle für die Umwandlung. Bei einer PS4-<code>.pkg</code> öffnet es stattdessen das Fenster <em>PS4 PKG → ffpfsc</em> mit der Datei; bei einer <code>.fpkg</code> und einem PS5-Paket ist es gesperrt.</td><td>Gesperrt &ndash; kopieren Sie den Titel zuerst auf den Rechner.</td></tr>
     </tbody>
   </table>
   </div>
@@ -2265,7 +2306,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.58), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.59), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2465,8 +2506,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.58</strong></span>
-    <span>Stand 3. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.59</strong></span>
+    <span>Stand 4. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

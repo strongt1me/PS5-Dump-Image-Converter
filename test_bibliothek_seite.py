@@ -500,7 +500,10 @@ class SeitenQuelltextTests(unittest.TestCase):
         ``test_bibliothek_raster``, hier nur, dass es nicht wieder ein ``wraplength`` wird."""
         quelle = (PROJEKT / "ps5_validator" / "utils" / "bibliothek_raster.py").read_text(encoding="utf-8")
         self.assertIn("text_umbrechen", quelle)
-        self.assertNotIn("wraplength", quelle)
+        # Das Fortschrittsfenster (SuchlaufAnzeige, seit dem 03.10.2026, ganz am Ende des Moduls) ist ein
+        # gewoehnliches Fenster mit Labels und bricht mit wraplength um - die Karten nicht.
+        karten_teil = quelle.split("class SuchlaufAnzeige", 1)[0]
+        self.assertNotIn("wraplength", karten_teil)
 
     def test_alle_knoepfe_der_seite_sind_kompakt(self) -> None:
         """Mit dem normalen Knopf (Polsterung 18/11) passte die Seite nicht in 700 px."""

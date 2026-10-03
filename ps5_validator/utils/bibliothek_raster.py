@@ -24,6 +24,7 @@ Widget mit derselben Zeichnung: ein Canvas, der genau einen Knopf zeigt.
 from __future__ import annotations
 
 import os
+import threading
 import time
 import tkinter as tk
 import tkinter.font as tkfont
@@ -35,6 +36,7 @@ from typing import Any, Callable
 from PIL import Image, ImageTk
 
 from ps5_validator.utils import bibliothek_zeichnen as zeichnen
+from ps5_validator.utils.bibliothek_fortschritt import Drossel, Phasen, Stand
 
 def _rad_einheiten_vorgabe(ereignis: Any) -> int:
     """Rolleinheiten fuer ein Mausrad-Ereignis, wenn der Aufrufer keine eigene Regel mitgibt."""
@@ -961,6 +963,11 @@ class KartenRaster:
         rad: ``(ereignis) -> int`` - Rolleinheiten fuer ein Mausrad-Ereignis.
     """
 
+    #: Abstand zwischen der letzten Kartenspalte und dem Rollbalken (Pixel bei 100 %). So gross wie
+    #: der Abstand der Karten untereinander (``KartenMasse.abstand``): Ohne ihn klebte die Spalte am
+    #: Balken (Nutzer, 03.10.2026: "etwas mehr Abstand ... vor allem rechts beim Scrollbalken").
+    BALKEN_LUECKE = 16
+
     def __init__(self, zeichner: Zeichner, eltern: tk.Misc, *, inhalt: Callable[[dict], dict],
                  aktion: Callable[[str, dict], None], bei_auswahl: Callable[[dict], None],
                  bei_start: Callable[[dict], None], bei_gesperrt: Callable[[str, dict], None] | None = None,
@@ -985,7 +992,7 @@ class KartenRaster:
         self.balken = ttk.Scrollbar(self.rahmen, orient="vertical", command=self.flaeche.yview)
         self.flaeche.configure(yscrollcommand=self._rollt)
         self.flaeche.grid(row=0, column=0, sticky="nsew")
-        self.balken.grid(row=0, column=1, sticky="ns")
+        self.balken.grid(row=0, column=1, sticky="ns", padx=(zeichner.px(self.BALKEN_LUECKE), 0))
         self.karten: list[Karte] = []
         self.spalten = 0
         self.kartenbreite = 0
@@ -1029,6 +1036,14 @@ class KartenRaster:
             self._nach = None
 
     # --- Masse -----------------------------------------------------------------------------------------
+    def rechts_frei(self) -> int:
+        """Breite rechts neben den Karten: Luecke plus Rollbalken.
+
+        Kopfkarte, Liste und Streifen der Seite lassen rechts genau so viel frei und
+        enden damit an derselben Kante wie die letzte Kartenspalte.
+        """
+        return int(self.balken.winfo_reqwidth()) + self._z.px(self.BALKEN_LUECKE)
+
     def _masse_neu(self) -> zeichnen.KartenMasse:
         z = self._z
         chip_h = max(z.px(24), z.zeilenhoehe("chip") + z.px(10))
@@ -1586,3 +1601,263 @@ class KartenRaster:
             self.flaeche.yview_moveto(max(0.0, (karte.y - self._masse.rand) / gesamt))
         elif karte.y + karte.h > oben + hoehe:
             self.flaeche.yview_moveto(max(0.0, (karte.y + karte.h + self._masse.rand - hoehe) / gesamt))
+
+
+# ---------------------------------------------------------------------------
+# Das Fortschrittsfenster des Suchlaufs
+# ---------------------------------------------------------------------------
+
+class SuchlaufAnzeige:
+    """Das Fenster "Bibliothek wird durchsucht": Stufe, aktueller Titel, Balken mit Prozent, Abbrechen.
+
+    Die Seite legt je Suchlauf eine Anzeige an. Die Arbeitsfaeden melden ueber :meth:`melden` und
+    beenden mit :meth:`beenden` - beides aus jedem Faden. **Kein Faden fasst dabei Tk an:** Eine Meldung
+    landet nur in einem Merker (die jeweils letzte gilt), ``beenden`` setzt nur ein Merkmal. Ein Takt im
+    Fensterfaden (:attr:`TAKT_MS`) holt beides ab, baut das Fenster, zeichnet und schliesst es - das
+    Takt-Muster des Projekts. Bis zum 03.10.2026 ging jede Meldung ueber ``after`` aus dem Faden: Ohne
+    laufende Hauptschleife (Tests, Programmende) wartete jeder dieser Aufrufe eine Sekunde und kam doch
+    nicht an, und im ersten Volllauf blieb ein sichtbares Fenster fuer den Rest des Laufs stehen.
+
+    **Es erscheint erst nach** ``verzoegerung_ms``: Ein Suchlauf, der in einem Augenblick fertig ist
+    (zwei, drei Ordner voller Dumps), soll kein Fenster aufblitzen lassen. Wer lange wartet - ein Abbild
+    auf einer kalten Platte, die Konsole im Netz -, sieht es und weiss, dass es weitergeht. Und nur,
+    solange die Seite selbst zu sehen ist (``nur_sichtbar``): Das Fenster gehoert zu ihr.
+
+    Args:
+        seite: Das Widget, an dem der Takt laeuft (``after``). Geht es zu, ist auch der Takt weg - die
+            Seite schliesst das Fenster dann ueber :meth:`schliessen`.
+        zeichner: Palette und Schriften.
+        phasen: ``bibliothek_fortschritt.Phasen`` dieses Suchlaufs.
+        bauen: ``() -> tk.Toplevel`` - das Fenster samt Kopfzeile. Kommt vom Programm, damit es aussieht
+            wie seine anderen Fenster (Titel, Symbol, Lage).
+        text: ``(schluessel, **werte) -> str`` - die Uebersetzung. Gebraucht werden ``action.cancel``,
+            ``library.scan_zaehlung`` (``{getan}``, ``{gesamt}``), ``library.scan_hinweis`` und je Stufe der
+            Schluessel aus ``stufen``.
+        abbrechen: ``()`` - der Anwender hat "Abbrechen" (oder das X) gedrueckt. Die Seite beendet damit
+            die Faeden; das Fenster schliesst sich danach selbst.
+        stufen: ``{Stufe: Textschluessel}`` - die Zeile je Stufe, etwa "Angaben werden gelesen ...".
+        verzoegerung_ms: Wie lange der Suchlauf laufen muss, bevor das Fenster aufgeht.
+        drossel: Die Drossel der Meldungen; Tests setzen eine eigene.
+        hinweis: Textschluessel der ruhigen Zeile unter dem Balken (Rechner und Konsole sagen Verschiedenes).
+        nur_sichtbar: Das Fenster nur bauen, solange ``seite`` zu sehen ist (``winfo_viewable``). Tests des
+            Fensters selbst schalten das ab - ihre Wurzel ist verborgen.
+    """
+
+    #: Takt, in dem der Fensterfaden Meldungen abholt, das Fenster baut und es schliesst (Millisekunden).
+    TAKT_MS = 100
+
+    def __init__(self, seite: tk.Misc, zeichner: Zeichner, phasen: Phasen, *,
+                 bauen: Callable[[], tk.Misc], text: Callable[..., str], abbrechen: Callable[[], None],
+                 stufen: dict[str, str], verzoegerung_ms: int = 400, drossel: Drossel | None = None,
+                 hinweis: str = "library.scan_hinweis", nur_sichtbar: bool = True) -> None:
+        self._hinweis = hinweis
+        self._nur_sichtbar = nur_sichtbar
+        self._seite = seite
+        self._z = zeichner
+        self._phasen = phasen
+        self._bauen = bauen
+        self._text = text
+        self._abbrechen_rueckruf = abbrechen
+        self._stufen = dict(stufen)
+        self._drossel = drossel or Drossel(0.08)
+        self._stand: Stand | None = None
+        self._detail = ""
+        self._fenster: tk.Misc | None = None
+        self._balken: ttk.Progressbar | None = None
+        self._modus = ""
+        self._labels: dict[str, tk.Label] = {}
+        self._beendet = False
+        self._gezeigt = False             # das Fenster wurde schon einmal gebaut (oder versucht)
+        self._neu: tuple[str, int | None, int | None, str] | None = None
+        self._sperre = threading.Lock()
+        self._start = time.monotonic()
+        self._verzoegerung = max(0, int(verzoegerung_ms)) / 1000.0
+        self._nach_takt: str | None = None
+        try:
+            self._nach_takt = seite.after(min(max(0, int(verzoegerung_ms)), self.TAKT_MS), self._takt)
+        except tk.TclError:
+            self._beendet = True
+
+    # --- aus jedem Faden -------------------------------------------------------------------------------
+    @property
+    def beendet(self) -> bool:
+        return self._beendet
+
+    @property
+    def offen(self) -> bool:
+        """Steht das Fenster gerade auf dem Schirm?"""
+        return self._fenster is not None and not self._beendet
+
+    @staticmethod
+    def _im_fensterfaden() -> bool:
+        return threading.current_thread() is threading.main_thread()
+
+    def melden(self, stufe: str, getan: int | None = None, gesamt: int | None = None, text: str = "",
+               letzte: bool = False) -> None:
+        """Meldet den Stand einer Stufe - aus jedem Faden. ``letzte`` kommt an der Drossel vorbei.
+
+        Aus einem Arbeitsfaden landet die Meldung nur im Merker, der Takt zeigt sie an. Aus dem Fensterfaden
+        gilt sie sofort.
+        """
+        if self._beendet or not self._drossel.darf(letzte):
+            return
+        if self._im_fensterfaden():
+            self._im_fenster(stufe, getan, gesamt, str(text or ""))
+            return
+        with self._sperre:
+            self._neu = (stufe, getan, gesamt, str(text or ""))
+
+    def beenden(self) -> None:
+        """Beendet die Anzeige: Das Fenster geht zu, spaetere Meldungen verpuffen. Aus jedem Faden, mehrfach.
+
+        Aus einem Arbeitsfaden wird nur das Merkmal gesetzt - der Takt schliesst das Fenster beim naechsten
+        Schlag, ein noch nicht gezeigtes geht gar nicht erst auf. Aus dem Fensterfaden schliesst es sofort.
+        """
+        self._beendet = True
+        if self._im_fensterfaden():
+            self._schliessen()
+
+    def schliessen(self) -> None:
+        """Schliesst das Fenster sofort - nur im Fensterfaden.
+
+        Fuer die Seite, die zugeht oder einen neuen Suchlauf beginnt: Der Takt laeuft an der Seite und
+        endet mit ihr - das Fenster, ein eigenes Toplevel, bliebe sonst stehen.
+        """
+        self._schliessen()
+
+    def _takt(self) -> None:
+        """Ein Schlag im Fensterfaden: Ende abfragen, letzte Meldung uebernehmen, Fenster bauen, weiter."""
+        self._nach_takt = None
+        if self._beendet:
+            self._schliessen()
+            return
+        with self._sperre:
+            neu, self._neu = self._neu, None
+        if neu is not None:
+            self._im_fenster(*neu)
+        if (not self._gezeigt and time.monotonic() - self._start >= self._verzoegerung
+                and self._seite_zu_sehen()):
+            self._gezeigt = True
+            self._zeigen()
+        try:
+            self._nach_takt = self._seite.after(self.TAKT_MS, self._takt)
+        except tk.TclError:
+            self._schliessen()
+
+    def _seite_zu_sehen(self) -> bool:
+        if not self._nur_sichtbar:
+            return True
+        try:
+            return bool(self._seite.winfo_viewable())
+        except tk.TclError:
+            return False
+
+    # --- im Fensterfaden -------------------------------------------------------------------------------
+    def _im_fenster(self, stufe: str, getan: int | None, gesamt: int | None, text: str) -> None:
+        if self._beendet:
+            return
+        try:
+            self._stand = self._phasen.setzen(stufe, getan, gesamt)
+        except ValueError:
+            return                    # eine Stufe, die es nicht gibt, soll den Suchlauf nicht stoeren
+        self._detail = str(text or "")
+        if self._fenster is not None:
+            self._anzeigen()
+
+    def _zeigen(self) -> None:
+        if self._beendet or self._fenster is not None:
+            return
+        try:
+            fenster = self._bauen()
+            palette = self._z.palette
+            hintergrund = palette.get("bg_main", "#000000")
+            koerper = tk.Frame(fenster, bg=hintergrund, padx=20, pady=6)
+            for name, rolle, farbe in (("stufe", "knopf_fett", "fg_primary"), ("detail", "klein", "fg_secondary")):
+                zeile_label = tk.Label(koerper, text="", font=self._z.schrift_angabe(rolle), bg=hintergrund,
+                                       fg=palette.get(farbe, "#ffffff"), anchor="w", justify="left",
+                                       wraplength=self._z.px(520))
+                zeile_label.pack(fill="x", pady=(0, 2))
+                self._labels[name] = zeile_label
+            zeile = tk.Frame(koerper, bg=hintergrund)
+            zeile.pack(fill="x", pady=(8, 4))
+            self._balken = ttk.Progressbar(zeile, mode="determinate", maximum=100.0)
+            self._balken.pack(side="left", fill="x", expand=True)
+            prozent = tk.Label(zeile, text="", width=6, anchor="e", font=self._z.schrift_angabe("klein_fett"),
+                               bg=hintergrund, fg=palette.get("fg_primary", "#ffffff"))
+            prozent.pack(side="left", padx=(10, 0))
+            self._labels["prozent"] = prozent
+            hinweis = tk.Label(koerper, text=self._text(self._hinweis), font=self._z.schrift_angabe("klein"),
+                               bg=hintergrund, fg=palette.get("fg_secondary", "#aaaaaa"), anchor="w",
+                               justify="left", wraplength=self._z.px(520))
+            hinweis.pack(fill="x", pady=(8, 0))
+            self._labels["hinweis"] = hinweis
+            fuss = tk.Frame(fenster, bg=hintergrund, padx=20, pady=12)
+            fuss.pack(side="bottom", fill="x")
+            ttk.Button(fuss, text=self._text("action.cancel"), command=self._abbrechen).pack(side="right")
+            koerper.pack(fill="both", expand=True)
+            fenster.protocol("WM_DELETE_WINDOW", self._abbrechen)
+            self._fenster = fenster
+        except tk.TclError:
+            self._fenster = None
+            return
+        self._anzeigen()
+
+    def _anzeigen(self) -> None:
+        if self._fenster is None or self._balken is None:
+            return
+        stand = self._stand
+        stufe = stand.stufe if stand is not None else next(iter(self._stufen), "")
+        try:
+            self._labels["stufe"].configure(text=self._text(self._stufen[stufe]) if stufe in self._stufen else "")
+            teile: list[str] = []
+            if stand is not None and not stand.unbestimmt and stand.gesamt:
+                teile.append(self._text("library.scan_zaehlung", getan=stand.getan, gesamt=stand.gesamt))
+            if self._detail:
+                teile.append(self._detail)
+            self._labels["detail"].configure(text="   ·   ".join(teile))
+            if stand is None or stand.unbestimmt:
+                if self._modus != "indeterminate":
+                    self._balken.configure(mode="indeterminate")
+                    self._balken.start(14)
+                    self._modus = "indeterminate"
+                self._labels["prozent"].configure(text="…")
+            else:
+                if self._modus != "determinate":
+                    self._balken.stop()
+                    self._balken.configure(mode="determinate")
+                    self._modus = "determinate"
+                self._balken.configure(value=stand.prozent)
+                self._labels["prozent"].configure(text="%d %%" % stand.prozent)
+        except tk.TclError:
+            pass                      # das Fenster ging gerade zu
+
+    def _abbrechen(self) -> None:
+        """Abbrechen oder das X: erst die Seite verstaendigen, dann zumachen - nur einmal."""
+        if self._beendet:
+            return
+        self._beendet = True
+        try:
+            self._abbrechen_rueckruf()
+        finally:
+            self._schliessen()
+
+    def _schliessen(self) -> None:
+        self._beendet = True
+        if self._nach_takt is not None:
+            try:
+                self._seite.after_cancel(self._nach_takt)
+            except tk.TclError:
+                pass
+            self._nach_takt = None
+        fenster, self._fenster = self._fenster, None
+        if self._balken is not None:
+            try:
+                self._balken.stop()
+            except tk.TclError:
+                pass
+            self._balken = None
+        if fenster is not None:
+            try:
+                fenster.destroy()
+            except tk.TclError:
+                pass

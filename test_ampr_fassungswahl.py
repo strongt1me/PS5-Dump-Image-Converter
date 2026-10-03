@@ -23,6 +23,7 @@ from __future__ import annotations
 import ast
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -303,10 +304,27 @@ class FensterTests(unittest.TestCase):
 
     def test_enter_escape_und_das_schliessen_des_fensters_sind_belegt(self) -> None:
         f = self._bauen()
-        for taste in ("<Return>", "<Escape>"):
+        for taste in ("<Return>", "<KP_Enter>", "<Escape>"):
             with self.subTest(taste=taste):
                 self.assertTrue(f["fenster"].bind(taste), "%s ist nicht belegt." % taste)
         self.assertTrue(f["fenster"].protocol("WM_DELETE_WINDOW"), "Das X des Fensters ist nicht belegt.")
+
+    def test_enter_auf_abbrechen_bricht_ab_statt_abzulegen(self) -> None:
+        """tkinter-gui-Pruefung 03.10.2026: Die Enter-Bindung sitzt am Fenster - wer mit Tab auf
+        "Abbrechen" steht und Enter drueckt, darf nichts ablegen."""
+        f = self._bauen()
+        f["eingabe"](types.SimpleNamespace(widget=f["abbrechen_knopf"]))
+        self.assertIsNone(f["antwort"]["wert"], "Enter auf \"Abbrechen\" hat abgelegt.")
+        self.assertFalse(f["fenster"].winfo_exists())
+
+    def test_enter_auf_jedem_anderen_feld_legt_ab(self) -> None:
+        for feld in ("ampr_box", "playgo_haken", None):
+            with self.subTest(feld=feld):
+                f = self._bauen()
+                ereignis = None if feld is None else types.SimpleNamespace(widget=f[feld])
+                f["eingabe"](ereignis)
+                self.assertEqual({"ampr": f["ampr_liste"][0], "playgo": None}, f["antwort"]["wert"])
+                self.assertFalse(f["fenster"].winfo_exists())
 
     def test_ohne_playgo_im_speicher_ist_der_haken_gesperrt(self) -> None:
         f = self._bauen([e for e in _vorrat_durcheinander() if e["lib"] == AMPR])

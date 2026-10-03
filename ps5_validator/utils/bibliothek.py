@@ -41,6 +41,14 @@ log = get_logger(__name__)
 #: Die Endungen, die als fertige Sicherung gelten.
 CONTAINER_ENDUNGEN: tuple[str, ...] = ("ffpfsc", "ffpfs", "exfat", "ffpkg")
 
+#: Pakete: Sonys ``.pkg`` und das ``.fpkg`` der Konsolen mit Jailbreak. Sie liegen auf dem Rechner als Dateien
+#: herum und gehören in die Bibliothek (Wunsch des Nutzers, 03.10.2026); eine Ablage der Konsole sucht der
+#: Suchlauf dort nicht danach ab - ShadowMount+ liest keine Pakete.
+PAKET_ENDUNGEN: tuple[str, ...] = ("pkg", "fpkg")
+
+#: Was der Suchlauf über den Rechner findet: Sicherungen und Pakete.
+RECHNER_ENDUNGEN: tuple[str, ...] = CONTAINER_ENDUNGEN + PAKET_ENDUNGEN
+
 #: Woran ein Dump-Ordner zu erkennen ist. Eines von beiden genügt: Manche
 #: Dumps tragen kein ``eboot.bin`` im Wurzelverzeichnis, aber immer ein
 #: ``sce_sys``.
@@ -83,11 +91,18 @@ def ordner_durchsuchen(
     max_tiefe: int = MAX_TIEFE,
     abbruch: Callable[[], bool] | None = None,
     melden: Callable[[str], None] | None = None,
+    fortschritt: Callable[[int, int, str], None] | None = None,
+    endungen: tuple[str, ...] = RECHNER_ENDUNGEN,
 ) -> list[dict[str, Any]]:
     """Sucht ab ``wurzel`` nach Sicherungen - rekursiv, alle Bauformen.
 
     Ein gefundener Dump-Ordner wird **nicht weiter durchsucht**: Was darin
-    liegt, gehört zu ihm und ist kein eigener Titel.
+    liegt, gehört zu ihm und ist kein eigener Titel. Das gilt auch für
+    ``wurzel`` selbst: Ist der gewählte Ort ein Dump-Ordner, ist er der eine
+    Fund. Bis zum 03.10.2026 prüfte der Suchlauf nur die Unterordner - wer
+    einen Dump-Ordner selbst als Scan-Ordner eintrug, ließ ihn durch sein
+    ganzes Innere laufen (``Dirt 5``: 4297 Verzeichnisse, 36 s) und bekam
+    keinen Treffer.
 
     Args:
         wurzel: Der gewählte Ort.
@@ -97,10 +112,15 @@ def ordner_durchsuchen(
             Liste sieht sonst aus wie "da ist nichts" und nicht wie "durfte
             nicht nachsehen" - derselbe Fehler steckte bis v1.9.11 im alten
             Scan.
+        fortschritt: ``(Ordner gesehen, Funde, aktueller Ordner)`` - nach
+            jedem gelesenen Verzeichnis. Für die Anzeige; wer ihn braucht,
+            drosselt selbst (``bibliothek_fortschritt.Drossel``).
+        endungen: Welche Dateiendungen als Fund zählen; ohne Angabe
+            :data:`RECHNER_ENDUNGEN` (Sicherungen und Pakete).
 
     Returns:
         Je Fund ``{"pfad", "art", "groesse", "name"}``. ``art`` ist
-        ``"folder"`` oder eine der :data:`CONTAINER_ENDUNGEN`.
+        ``"folder"`` oder eine der ``endungen``.
     """
     funde: list[dict[str, Any]] = []
     wurzel = os.path.abspath(wurzel)
@@ -108,6 +128,12 @@ def ordner_durchsuchen(
         if melden:
             melden(wurzel)
         return funde
+    if _ist_dump_ordner(wurzel):
+        name = os.path.basename(wurzel.rstrip("\\/")) or wurzel
+        if fortschritt is not None:
+            fortschritt(1, 1, wurzel)
+        return [{"pfad": wurzel, "art": "folder", "groesse": None, "name": name}]
+    gesehen = [0]
 
     def _gehe(ordner: str, tiefe: int) -> None:
         if abbruch is not None and abbruch():
@@ -121,6 +147,9 @@ def ordner_durchsuchen(
             if melden:
                 melden(ordner)
             return
+        gesehen[0] += 1
+        if fortschritt is not None:
+            fortschritt(gesehen[0], len(funde), ordner)
 
         for eintrag in eintraege:
             if abbruch is not None and abbruch():
@@ -142,12 +171,14 @@ def ordner_durchsuchen(
                         "groesse": None,
                         "name": eintrag.name,
                     })
+                    if fortschritt is not None:
+                        fortschritt(gesehen[0], len(funde), eintrag.path)
                     continue          # nicht hineinsteigen - das ist EIN Titel
                 _gehe(eintrag.path, tiefe + 1)
                 continue
 
             art = _endung(eintrag.name)
-            if art not in CONTAINER_ENDUNGEN:
+            if art not in endungen:
                 continue
             try:
                 groesse = eintrag.stat().st_size
@@ -159,6 +190,8 @@ def ordner_durchsuchen(
                 "groesse": groesse,
                 "name": os.path.splitext(eintrag.name)[0],
             })
+            if fortschritt is not None:
+                fortschritt(gesehen[0], len(funde), eintrag.path)
 
     _gehe(wurzel, 0)
     return funde
@@ -206,6 +239,7 @@ def konsole_durchsuchen(
     ist_ordner: Callable[[Any, str], bool],
     auflisten: Callable[[Any, str], dict[str, list[str]]],
     abbruch: Callable[[], bool] | None = None,
+    fortschritt: Callable[[int, int, str], None] | None = None,
 ) -> list[dict[str, Any]]:
     """Sucht auf der Konsole nach Sicherungen.
 
@@ -223,6 +257,9 @@ def konsole_durchsuchen(
         ist_ordner: ``(ftp, pfad) -> bool``.
         auflisten: ``(ftp, pfad) -> {"dirs": [...], "files": [...]}``.
         abbruch: Wird zwischen den Orten gefragt.
+        fortschritt: ``(Nummer des Ortes, Zahl der Orte, Ort)`` - vor jedem
+            Ort, auch vor einem, den es nicht gibt. Für die Anzeige: Die
+            Zahl der Orte steht von Anfang an fest, anders als die der Funde.
 
     Returns:
         Je Fund ``{"pfad", "art", "groesse", "name", "ablage"}``.
@@ -236,9 +273,11 @@ def konsole_durchsuchen(
     # darin. Ein Ablageort ist kein Fund.
     ist_ablageort = set(orte)
 
-    for ort in orte:
+    for nummer, ort in enumerate(orte, start=1):
         if abbruch is not None and abbruch():
             break
+        if fortschritt is not None:
+            fortschritt(nummer, len(orte), ort)
         try:
             if not ist_ordner(ftp, ort):
                 continue
@@ -1030,6 +1069,39 @@ class Bildspeicher:
             kennung = self.schluessel(pfad)
             eintrag = dict(self._index.get(kennung) or {})
             eintrag["angaben"] = {str(k): str(v) for k, v in dict(angaben).items()}
+            eintrag.setdefault("zeit", time.time())
+            self._index[kennung] = eintrag
+            self._schreiben()
+
+    #: Fassung der gemerkten Suchlauf-Angaben. Ändert sich, welche Felder der Suchlauf liest, hier hochzählen:
+    #: Ältere Einträge gelten dann als nicht vorhanden und werden neu gelesen.
+    SCAN_FASSUNG: int = 1
+
+    def scan_lesen(self, pfad: str) -> dict[str, str] | None:
+        """Die Angaben, die der Suchlauf zu dieser Datei schon einmal gelesen hat, oder ``None``.
+
+        Ein Abbild oder Paket zu öffnen kostet auf einer kalten Platte Sekunden (an einer 8,7-GB-``.ffpfsc`` auf
+        ``D:`` am 03.10.2026 gemessen: 11 s beim ersten Mal, 0,02 s danach), und der Suchlauf tat es bei jedem
+        Lauf neu. Der Schlüssel ist wie beim Bild Pfad, Änderungszeit und Größe: Ein ersetztes Abbild wird
+        neu gelesen. **Nur für Dateien** - bei einem Dump-Ordner sagt die Änderungszeit des Ordners nichts über
+        die ``param.json`` darin, und das Lesen dort ist ohnehin billig.
+        """
+        with self._sperre:
+            self._laden()
+            scan = (self._index.get(self.schluessel(pfad)) or {}).get("scan")
+            if not isinstance(scan, dict) or scan.get("fassung") != self.SCAN_FASSUNG:
+                return None
+            angaben = scan.get("angaben")
+            return dict(angaben) if isinstance(angaben, dict) and angaben else None
+
+    def scan_schreiben(self, pfad: str, angaben: dict[str, Any]) -> None:
+        """Merkt die Angaben des Suchlaufs zu einer Datei (siehe :meth:`scan_lesen`)."""
+        with self._sperre:
+            self._laden()
+            kennung = self.schluessel(pfad)
+            eintrag = dict(self._index.get(kennung) or {})
+            eintrag["scan"] = {"fassung": self.SCAN_FASSUNG,
+                               "angaben": {str(k): str(v) for k, v in dict(angaben).items()}}
             eintrag.setdefault("zeit", time.time())
             self._index[kennung] = eintrag
             self._schreiben()

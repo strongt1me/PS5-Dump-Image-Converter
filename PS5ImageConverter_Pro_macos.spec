@@ -358,6 +358,9 @@ a = Analysis(
         'ps5_validator.utils.anzeige_skalierung',
         'ps5_validator.utils.bibliothek_raster',
         'ps5_validator.utils.bibliothek_zeichnen',
+        'ps5_validator.utils.bibliothek_fortschritt',
+        'ps5_validator.utils.bibliothek_paket',
+        'ps5_validator.utils.exfat_gezielt',
         'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',
         # Betriebssystem-Abstraktion (Schriften, Rechte, Dateien oeffnen)

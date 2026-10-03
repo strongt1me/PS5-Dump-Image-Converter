@@ -668,10 +668,16 @@ class BibliothekSucheTests(unittest.TestCase):
         self.assertEqual([], gui.gelesen, "Trotz Abbruch wurde eingelesen.")
 
     def test_die_seite_gibt_ihn_mit(self) -> None:
+        """Seit dem 03.10.2026 ruft die Seite Suche und Einlesen getrennt (``_library_scan_folder``
+        bleibt als Zusammenfassung fuer einen Ordner): Beide bekommen den Abbruch."""
         seite = _methode("_render_library_window")
-        rufe = _aufrufe(seite, "_library_scan_folder")
-        self.assertEqual(1, len(rufe))
-        self.assertIn("abbruch", _schluesselwoerter(rufe[0]))
+        for name in ("_library_funde", "_library_eintraege"):
+            with self.subTest(aufruf=name):
+                rufe = _aufrufe(seite, name)
+                self.assertEqual(1, len(rufe))
+                self.assertIn("abbruch", _schluesselwoerter(rufe[0]))
+        self.assertEqual([], _aufrufe(seite, "_library_scan_folder"),
+                         "Die Seite soll nicht mehr je Ordner einlesen - dann kennt die Anzeige die Gesamtzahl nicht.")
 
     def test_mit_der_seite_verfallen_ihre_suchen(self) -> None:
         seite = _methode("_render_library_window")

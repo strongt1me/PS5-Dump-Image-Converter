@@ -138,6 +138,52 @@ class SuchlaufTests(unittest.TestCase):
                                               abbruch=lambda: True)
         self.assertEqual([], funde)
 
+    def test_pakete_werden_gefunden(self):
+        """``.pkg`` und ``.fpkg`` gehoeren seit dem 03.10.2026 auf dem Rechner dazu - auch gross geschrieben."""
+        _container(self.wurzel / "Spiel P.pkg")
+        _container(self.wurzel / "Spiel Q.fpkg")
+        _container(self.wurzel / "Spiel R.PKG")
+        funde = bibliothek.ordner_durchsuchen(str(self.wurzel))
+        self.assertEqual({"Spiel P": "pkg", "Spiel Q": "fpkg", "Spiel R": "pkg"},
+                         {f["name"]: f["art"] for f in funde})
+
+    def test_die_endungen_lassen_sich_eingrenzen(self):
+        _container(self.wurzel / "Spiel P.pkg")
+        _container(self.wurzel / "Spiel B.ffpfsc")
+        funde = bibliothek.ordner_durchsuchen(str(self.wurzel),
+                                              endungen=bibliothek.CONTAINER_ENDUNGEN)
+        self.assertEqual(["ffpfsc"], [f["art"] for f in funde],
+                         "Ein Paket zaehlte mit, obwohl die Endung nicht gewuenscht war.")
+
+    def test_ein_dump_ordner_als_wurzel_ist_der_eine_fund(self):
+        """Wer einen Dump-Ordner selbst als Scan-Ordner eintraegt, bekommt ihn als Treffer.
+
+        Bis zum 03.10.2026 pruefte der Suchlauf nur die Unterordner: ``Dirt 5`` lief durch sein ganzes Innere
+        (4297 Verzeichnisse, 36 s) und lieferte nichts.
+        """
+        spiel = _dump(self.wurzel / "Mein Spiel")
+        _container(spiel / "irgendwo" / "Beipack.ffpfsc")       # gehoert zum Spiel, ist kein eigener Titel
+        gesehen: list[str] = []
+        funde = bibliothek.ordner_durchsuchen(
+            str(spiel), fortschritt=lambda ordner, anzahl, ort: gesehen.append(ort))
+        self.assertEqual([("Mein Spiel", "folder")], [(f["name"], f["art"]) for f in funde])
+        self.assertEqual(str(spiel), funde[0]["pfad"])
+        self.assertEqual([str(spiel)], gesehen, "Es wurde in das Spiel hineingestiegen.")
+
+    def test_der_fortschritt_zaehlt_ordner_und_funde(self):
+        _dump(self.wurzel / "A" / "Spiel 1")
+        _dump(self.wurzel / "A" / "Spiel 2")
+        _container(self.wurzel / "B" / "Spiel 3.ffpfsc")
+        meldungen: list[tuple[int, int, str]] = []
+        funde = bibliothek.ordner_durchsuchen(
+            str(self.wurzel), fortschritt=lambda *a: meldungen.append(a))
+        self.assertEqual(3, len(funde))
+        self.assertEqual(3, meldungen[-1][1], "Die letzte Meldung nennt alle Funde.")
+        ordner = [m[0] for m in meldungen]
+        self.assertEqual(sorted(ordner), ordner, "Die Zahl der gesehenen Ordner waechst nur.")
+        self.assertGreaterEqual(max(ordner), 3, "Wurzel, A und B wurden gelesen.")
+        self.assertTrue(all(isinstance(m[2], str) for m in meldungen))
+
 
 class KonsolenSuchlaufTests(unittest.TestCase):
     """Der Suchlauf über FTP - mit gestellter Verbindung."""
@@ -245,6 +291,24 @@ class KonsolenSuchlaufTests(unittest.TestCase):
             auflisten=lambda _ftp, pfad: bestand[pfad])
         self.assertIn("homebrew", [f["name"] for f in ohne_regel])
 
+    def test_der_fortschritt_nennt_jeden_ort_auch_den_fehlenden(self):
+        """Die Zahl der Orte steht von Anfang an fest - daran haengt der Balken der Konsolensuche."""
+        ist_ordner, auflisten = self._helfer()
+        orte = ["/data/homebrew", "/gibt/es/nicht", "/mnt/usb0/homebrew"]
+        meldungen: list[tuple[int, int, str]] = []
+        bibliothek.konsole_durchsuchen(
+            object(), orte, ist_ordner=ist_ordner, auflisten=auflisten,
+            fortschritt=lambda *a: meldungen.append(a))
+        self.assertEqual([(1, 3, orte[0]), (2, 3, orte[1]), (3, 3, orte[2])], meldungen)
+
+    def test_pakete_stehen_nicht_in_den_ablagen_der_konsole(self):
+        """ShadowMount+ liest keine Pakete - die Konsolensuche zeigt sie nicht (der Rechner schon)."""
+        bestand = {"/data/homebrew": {"dirs": [], "files": ["Spiel.pkg", "Spiel.fpkg", "Spiel B.ffpkg"]}}
+        funde = bibliothek.konsole_durchsuchen(
+            object(), ["/data/homebrew"],
+            ist_ordner=lambda _ftp, pfad: pfad in bestand, auflisten=lambda _ftp, pfad: bestand[pfad])
+        self.assertEqual(["Spiel B"], [f["name"] for f in funde])
+
 
 class BildspeicherTests(unittest.TestCase):
     """Einmal geöffnet, bleibt das Titelbild liegen."""
@@ -326,6 +390,49 @@ class BildspeicherTests(unittest.TestCase):
         frisch = bibliothek.Bildspeicher(self.ordner)
         self.assertEqual(1, frisch.aufraeumen())
         self.assertEqual("", frisch.lesen(self.quelle))
+
+    # --- Angaben des Suchlaufs ---------------------------------------------------------------
+    def test_scan_angaben_werden_gemerkt_und_ueberdauern_einen_neustart(self):
+        """Ein Abbild zu oeffnen kostet auf einer kalten Platte Sekunden - der zweite Lauf soll es nicht tun."""
+        sp = bibliothek.Bildspeicher(self.ordner)
+        self.assertIsNone(sp.scan_lesen(self.quelle))
+        sp.scan_schreiben(self.quelle, {"title": "Spiel", "title_id": "CUSA00001", "version": "01.00"})
+        self.assertEqual({"title": "Spiel", "title_id": "CUSA00001", "version": "01.00"},
+                         sp.scan_lesen(self.quelle))
+        zweiter = bibliothek.Bildspeicher(self.ordner)
+        self.assertEqual("Spiel", zweiter.scan_lesen(self.quelle)["title"])
+
+    def test_scan_angaben_einer_ersetzten_datei_gelten_nicht_mehr(self):
+        sp = bibliothek.Bildspeicher(self.ordner)
+        sp.scan_schreiben(self.quelle, {"title": "Alt"})
+        time.sleep(0.01)
+        with io.open(self.quelle, "wb") as f:
+            f.write(b"y" * 4096)
+        self.assertIsNone(sp.scan_lesen(self.quelle), "Die Angaben des Vorgaengers gelten weiter.")
+
+    def test_scan_angaben_einer_anderen_fassung_gelten_nicht(self):
+        sp = bibliothek.Bildspeicher(self.ordner)
+        sp.scan_schreiben(self.quelle, {"title": "Spiel"})
+        sp.SCAN_FASSUNG = sp.SCAN_FASSUNG + 1                 # der Suchlauf liest inzwischen mehr Felder
+        self.assertIsNone(sp.scan_lesen(self.quelle))
+
+    def test_leere_scan_angaben_zaehlen_als_nicht_gemerkt(self):
+        sp = bibliothek.Bildspeicher(self.ordner)
+        sp.scan_schreiben(self.quelle, {})
+        self.assertIsNone(sp.scan_lesen(self.quelle), "Ein leeres Ergebnis darf nichts 'beantworten'.")
+
+    def test_scan_angaben_lassen_bild_angaben_und_einbauten_in_ruhe(self):
+        sp = bibliothek.Bildspeicher(self.ordner)
+        sp.schreiben(self.quelle, b"bild")
+        sp.angaben_schreiben(self.quelle, {"sdk": "9.00"})
+        sp.einbauten_schreiben(self.quelle, {"zustand": "ok", "ampr": True})
+        sp.scan_schreiben(self.quelle, {"title": "Spiel"})
+        self.assertTrue(sp.lesen(self.quelle))
+        self.assertEqual({"sdk": "9.00"}, sp.angaben_lesen(self.quelle))
+        self.assertTrue(sp.einbauten_lesen(self.quelle)["ampr"])
+        # und umgekehrt: ein Bild danach loescht die Scan-Angaben nicht
+        sp.schreiben(self.quelle, b"anderes bild")
+        self.assertEqual("Spiel", sp.scan_lesen(self.quelle)["title"])
 
 
 
