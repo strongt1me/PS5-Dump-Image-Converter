@@ -133,6 +133,7 @@ from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
 from ps5_validator.utils import einstellungen
+from ps5_validator.utils import anzeige_skalierung
 from ps5_validator import programmname
 from ps5_validator.utils import abbild_metadaten
 from ps5_validator.utils import abbild_pruefen
@@ -687,7 +688,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.56"
+APP_VERSION = "v1.9.57"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -772,6 +773,7 @@ def _macos_schriftfaktor() -> float:
     """
     if not IST_MACOS:
         return 1.0
+    basis = MACOS_SCHRIFT_SKALIERUNG
     try:
         # Ueber einstellungen.lesen statt ueber einen selbstgebauten
         # Pfad: Sonst wird am alten Ort gesucht, wenn der Ausweichweg
@@ -779,12 +781,19 @@ def _macos_schriftfaktor() -> float:
         wert = float(einstellungen.lesen("macos_font_scaling",
                                          MACOS_SCHRIFT_SKALIERUNG))
         if 0.5 <= wert <= 4.0:
-            return wert
+            basis = wert
     except Exception:
         # Die Schriftwahl darf den Start nie verhindern. Logger gibt es an
         # dieser Stelle noch nicht.
         pass
-    return MACOS_SCHRIFT_SKALIERUNG
+    # Eine von Hand gewaehlte Skalierung (Einstellungen, Abschnitt Anzeige)
+    # hebt oder senkt die Anhebung im Verhaeltnis zu 125 %, dem Eichpunkt.
+    try:
+        manuell = anzeige_skalierung.skalierung_lesen(einstellungen.lesen(
+            anzeige_skalierung.SCHLUESSEL_SKALIERUNG, None))
+    except Exception:
+        manuell = None
+    return anzeige_skalierung.mac_faktor(basis, manuell)
 
 
 _MACOS_SCHRIFTFAKTOR = _macos_schriftfaktor()
@@ -1070,8 +1079,14 @@ def mkpfs_argumente_ohne_ampr_index(args: list[str]) -> list[str]:
 # hier. Hat der Nutzer dagegen ausdruecklich "kein Bild" gewaehlt, steht ein
 # leerer Text in der Datei - und der bleibt leer. Die Vorgabe uebergeht eine
 # bewusste Abwahl also nicht.
-STANDARD_HINTERGRUND: str = "bundled:bg_19_ray-burst.png"
-STANDARD_SIDEBAR_HINTERGRUND: str = "bundled:sidebar_20_glass-panels.png"
+#
+# Seit dem 02.10.2026 liefert das Programm andere Bilder mit: 20 fuer den
+# Hauptbereich (1920x1200) und 20 fuer die Seitenleiste (500x1200), benannt
+# nach dem Schema bg_NN_<name> und sidebar_NN_<name>. Vorgegeben ist das
+# ruhigste Paar ("navy-curves"): dunkles Marineblau wie die frueheren Vorgaben
+# (ray-burst, glass-panels), unter den hellen Beschriftungen gut lesbar.
+STANDARD_HINTERGRUND: str = "bundled:bg_01_navy-curves.png"
+STANDARD_SIDEBAR_HINTERGRUND: str = "bundled:sidebar_01_navy-curves.png"
 
 # Grosszuegigste Einstellung, die beim Packen noch etwas veraendert.
 #
@@ -3698,6 +3713,10 @@ class PS5ConverterGUI:
         # Anlegen einer Schrift in Pixel um, spaeter gesetzt wirkt es nicht
         # mehr auf bereits erzeugte Schriften.
         self._macos_schrift_skalieren()
+        # Ebenso fruehzeitig: Eine von Hand gewaehlte Skalierung ersetzt
+        # ``tk scaling`` vor dem ersten Bedienelement (Einstellungen,
+        # Abschnitt Anzeige). Ohne Wahl bleibt es bei der automatischen Anpassung.
+        self._anzeige_einstellungen_anwenden()
         self._macos_translokation_melden()
 
         # Ohne diesen Haken landet jeder Fehler aus einem Knopf oder einer
@@ -4777,6 +4796,10 @@ class PS5ConverterGUI:
         if not 0.5 <= faktor <= 4.0:
             logger.info("macos_font_scaling %r außerhalb 0.5-4.0 - unverändert", faktor)
             return
+        # Dieselbe Rechnung wie in _macos_schriftfaktor: Schrift (pt) und
+        # Seitenleiste (tk scaling) duerfen nicht auseinanderlaufen.
+        faktor = anzeige_skalierung.mac_faktor(faktor, anzeige_skalierung.skalierung_lesen(
+            self._load_setting(anzeige_skalierung.SCHLUESSEL_SKALIERUNG, None)))
         try:
             vorher = float(self.root.tk.call("tk", "scaling"))
             self.root.tk.call("tk", "scaling", vorher * faktor)
@@ -4784,6 +4807,114 @@ class PS5ConverterGUI:
                         vorher, vorher * faktor, faktor)
         except Exception as exc:
             logger.debug("Schriftskalierung nicht setzbar: %s", exc)
+
+    #: Was beim Start galt (siehe ``_anzeige_einstellungen_anwenden``). Als
+    #: Klassenwerte, damit auch eine Oberflaeche ohne ``__init__`` - in Tests,
+    #: oder bevor die Einstellungen gelesen sind - eine Antwort hat.
+    _skalierung_system: int = 100
+    _skalierung_manuell: "int | None" = None
+    _aufloesung_manuell: "tuple[int, int] | None" = None
+
+    def _anzeige_einstellungen_anwenden(self) -> None:
+        """Liest Skalierung und Aufloesung aus den Einstellungen und setzt ``tk scaling``.
+
+        **Automatisch ist der Normalfall.** Fehlt ein Wert in der
+        Einstellungsdatei - oder ist er unbrauchbar -, bleibt alles, wie es war:
+        ``tk scaling`` kommt vom System, die Bildschirmgroesse von Tk. Nur wer
+        in den Einstellungen (Abschnitt Anzeige) von Hand etwas gewaehlt hat,
+        bekommt das - bei jedem Start, bis er auf Zuruecksetzen klickt.
+
+        Die Skalierung muss vor jedem Bedienelement stehen (siehe ``__init__``):
+        Tk rechnet Punktgroessen beim Anlegen einer Schrift in Pixel um. Am
+        02.10.2026 an Minimalfenstern gemessen: Ein ``tk scaling``, das vor dem
+        ersten Element gesetzt wird, erfasst die Standardschrift, Tupelschriften
+        und die ttk-Felder (Zeilenhoehe 20 px bei 125 %, 25 px bei 150 %, 32 px
+        bei 200 %) - und ``knopfmass`` folgt, weil es ``tk scaling`` liest.
+
+        Gemerkt wird, was **beim Start** galt: Eine im Einstellungsfenster
+        gespeicherte Aenderung wirkt erst nach einem Neustart, und bis dahin
+        soll die laufende Sitzung in sich stimmig bleiben.
+
+        Unter macOS wirkt die Skalierung ueber die Schriftanhebung
+        (``_macos_schrift_skalieren`` und ``pt()``); hier wird sie nur notiert.
+        """
+        ask = anzeige_skalierung
+        try:
+            vorher = float(self.root.tk.call("tk", "scaling"))
+        except Exception:
+            vorher = 0.0
+        self._skalierung_system = ask.system_prozent(IST_MACOS, vorher)
+        self._skalierung_manuell = ask.skalierung_lesen(
+            self._load_setting(ask.SCHLUESSEL_SKALIERUNG, None))
+        self._aufloesung_manuell = ask.aufloesung_lesen(
+            self._load_setting(ask.SCHLUESSEL_AUFLOESUNG, None))
+        if self._aufloesung_manuell:
+            logger.info("Aufloesung von Hand: %dx%d (erkannt: %dx%d)",
+                        *self._aufloesung_manuell, *self._bildschirm_erkannt())
+        if self._skalierung_manuell is None or IST_MACOS:
+            return
+        try:
+            self.root.tk.call("tk", "scaling", ask.tk_skalierung(self._skalierung_manuell))
+            logger.info("Skalierung von Hand: %d %% (System: %d %%), tk scaling %.4f -> %.4f",
+                        self._skalierung_manuell, self._skalierung_system, vorher,
+                        float(self.root.tk.call("tk", "scaling")))
+        except Exception as exc:
+            logger.warning("Skalierung von %d %% nicht setzbar: %s",
+                           self._skalierung_manuell, exc)
+
+    def _bildschirm_erkannt(self) -> tuple[int, int]:
+        """Was Tk als Bildschirmgroesse meldet - der erste Bildschirm."""
+        try:
+            return int(self.root.winfo_screenwidth()), int(self.root.winfo_screenheight())
+        except Exception:
+            return 1920, 1080
+
+    def _bildschirm_wirksam(self) -> tuple[int, int]:
+        """Die Bildschirmgroesse, nach der sich das Programm richtet.
+
+        Die von Hand gewaehlte Aufloesung, sonst die erkannte. Fuer alles, was
+        eine Groesse *bemisst* (Hintergrundbilder, Empfehlungen) - nicht fuer
+        das, was ein Fenster *platziert*: Dafuer zaehlt der echte Bildschirm.
+        """
+        return anzeige_skalierung.bildschirm_wirksam(
+            self._bildschirm_erkannt(), self._aufloesung_manuell)
+
+    def _bildschirm_fuer_fenster(self) -> tuple[int, int]:
+        """Wie gross ein Fenster hoechstens sein darf.
+
+        Je Richtung der kleinere Wert aus echtem Bildschirm und gewaehlter
+        Aufloesung: Eine kleinere Aufloesung macht die Fenster kleiner, eine
+        groessere nie groesser als der Bildschirm, den es gibt. Ohne Wahl ist
+        es genau der erkannte Bildschirm - die Stellen, die dies aufrufen,
+        verhalten sich dann wie vorher.
+        """
+        return anzeige_skalierung.fenster_obergrenze(
+            self._bildschirm_erkannt(), self._aufloesung_manuell)
+
+    def _aufloesung_verkleinert(self) -> bool:
+        """Ist die gewaehlte Aufloesung kleiner als der echte Bildschirm?
+
+        Nur dann ist etwas nachzustellen, siehe ``_fenster_wie_maximiert``.
+        """
+        return anzeige_skalierung.ist_verkleinert(
+            self._bildschirm_erkannt(), self._aufloesung_manuell)
+
+    def _fenster_wie_maximiert(self) -> None:
+        """Stellt das Hauptfenster so gross hin, wie ein maximiertes auf dem angenommenen Bildschirm.
+
+        Maximieren kennt nur den echten Bildschirm. Ist die gewaehlte
+        Aufloesung kleiner, entsteht stattdessen ein Fenster in der Groesse, die
+        ein maximiertes dort haette (ohne Rahmen, Titelleiste und Taskleiste),
+        mittig auf dem echten Bildschirm. Nie unter ``WINDOW_MIN_*``: Kleiner
+        laesst sich die Oberflaeche nicht darstellen.
+        """
+        echt_b, echt_h = self._bildschirm_erkannt()
+        breite, hoehe = anzeige_skalierung.maximiert_groesse(self._bildschirm_fuer_fenster())
+        breite = max(WINDOW_MIN_WIDTH, min(breite, echt_b))
+        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, echt_h))
+        x = max(0, (echt_b - breite) // 2)
+        y = max(0, (echt_h - hoehe) // 2)
+        self.root.geometry("%dx%d+%d+%d" % (breite, hoehe, x, y))
 
     def _hintergrund_sollmasse(self) -> tuple[int, int, int]:
         """Rechnet aus, wie gross ein Hintergrundbild hier mindestens sein muss.
@@ -4809,11 +4940,9 @@ class PS5ConverterGUI:
         def _aufrunden(wert: int) -> int:
             return int(max(1, -(-int(wert) // 10) * 10))
 
-        try:
-            breite = int(self.root.winfo_screenwidth())
-            hoehe = int(self.root.winfo_screenheight())
-        except Exception:
-            breite, hoehe = 1920, 1080
+        # Die angenommene Bildschirmgroesse: die von Hand gewaehlte
+        # Aufloesung, sonst die erkannte (Einstellungen, Abschnitt Anzeige).
+        breite, hoehe = self._bildschirm_wirksam()
 
         seitenleiste = 0
         widget = getattr(self, "sidebar", None)
@@ -11190,14 +11319,29 @@ class PS5ConverterGUI:
             else:
                 logger.debug('Gemerkte Fenstergroesse unbrauchbar: %r', gemerkt)
 
+        # Eine von Hand gewaehlte, kleinere Aufloesung (Einstellungen, Abschnitt
+        # Anzeige): Maximieren kennt nur den echten Bildschirm, also entsteht
+        # stattdessen ein Fenster in der Groesse, die ein maximiertes dort haette.
+        verkleinert = self._aufloesung_verkleinert()
+
         if breite is None or hoehe is None:
+            if verkleinert:
+                self._fenster_wie_maximiert()
+                return
             self.root.geometry('%dx%d' % (WINDOW_WIDTH, WINDOW_HEIGHT))
             self._maximieren_versuchen()
             return
 
         flaeche_x, flaeche_y, flaeche_b, flaeche_h = self._arbeitsflaeche()
-        breite = max(WINDOW_MIN_WIDTH, min(breite, flaeche_b))
-        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, flaeche_h))
+        # Die gewaehlte Aufloesung begrenzt die Groesse, nicht den Ort. Nur mit
+        # Wahl: Ohne sie waere der erste Bildschirm schon die Grenze, und ein
+        # Fenster ueber zwei Monitore wuerde gegen bisher beschnitten.
+        grenze_b, grenze_h = flaeche_b, flaeche_h
+        if self._aufloesung_manuell:
+            ober_b, ober_h = self._bildschirm_fuer_fenster()
+            grenze_b, grenze_h = min(grenze_b, ober_b), min(grenze_h, ober_h)
+        breite = max(WINDOW_MIN_WIDTH, min(breite, grenze_b))
+        hoehe = max(WINDOW_MIN_HEIGHT, min(hoehe, grenze_h))
 
         # Sichtbar heisst: die Titelleiste ist noch zu fassen - und zwar
         # auf **irgendeinem** Bildschirm. Bis v1.9.3 stand hier
@@ -11218,7 +11362,10 @@ class PS5ConverterGUI:
 
         self.root.geometry('%dx%d+%d+%d' % (breite, hoehe, x, y))
         if maximiert:
-            self._maximieren_versuchen()
+            if verkleinert:
+                self._fenster_wie_maximiert()
+            else:
+                self._maximieren_versuchen()
 
     def _maximieren_versuchen(self) -> None:
         """Maximiert das Fenster, wo der Fenstermanager es hergibt.
@@ -11286,8 +11433,17 @@ class PS5ConverterGUI:
         Behoben ueber die von ``_fensterzustand_verfolgen`` mitgefuehrten
         Werte: Ist das Fenster jetzt minimiert, zaehlt der letzte Zustand
         davor.
+
+        **Mit gewaehlter, kleinerer Aufloesung** (Einstellungen, Abschnitt
+        Anzeige) wird nichts gemerkt: Das Fenster ist dann eine Nachstellung,
+        und die zuletzt gewaehlte Groesse samt Maximieren aus dem
+        automatischen Betrieb soll erhalten bleiben. Nach "Zuruecksetzen"
+        kommt das Fenster so hoch, wie man es gewohnt war - nicht in der
+        verkleinerten Form der Nachstellung.
         """
         try:
+            if self._aufloesung_verkleinert():
+                return
             zustand = str(self.root.state() or 'normal')
             geometrie = str(self.root.winfo_geometry())
             if zustand == 'iconic':
@@ -11943,11 +12099,14 @@ class PS5ConverterGUI:
     def _center_window_safe(self, event=None) -> None:
         """Zentriert das Fenster sicher und stellt die Sichtbarkeit der Unterkante sicher."""
         sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        # Die Groesse richtet sich nach dem angenommenen Bildschirm (eine von
+        # Hand gewaehlte Aufloesung kann kleiner sein), die Lage nach dem echten.
+        fb, fh = self._bildschirm_fuer_fenster()
 
         # Sicher: 70% Breite, 60% Höhe – Taskleiste + Titelleiste immer sichtbar
-        target_w = max(WINDOW_MIN_WIDTH, int(sw * 0.70))
-        # Höhe: 60% der Bildschirmhöhe, maximal sh - 160px (Taskleiste + Rand)
-        target_h = min(int(sh * 0.60), sh - 160)
+        target_w = max(WINDOW_MIN_WIDTH, int(fb * 0.70))
+        # Höhe: 60% der Bildschirmhöhe, maximal fh - 160px (Taskleiste + Rand)
+        target_h = min(int(fh * 0.60), fh - 160)
         target_h = max(WINDOW_MIN_HEIGHT, target_h)
 
         cx = (sw - target_w) // 2
@@ -12102,8 +12261,11 @@ class PS5ConverterGUI:
                 return
             win.update_idletasks()
             noetig_b, noetig_h = win.winfo_reqwidth(), win.winfo_reqheight()
-            grenze_b = win.winfo_screenwidth() - 40
-            grenze_h = win.winfo_screenheight() - 80
+            # Die Obergrenze ist der angenommene Bildschirm: bei einer von Hand
+            # gewaehlten, kleineren Aufloesung ein kleinerer als der echte.
+            ober_b, ober_h = self._bildschirm_fuer_fenster()
+            grenze_b = ober_b - 40
+            grenze_h = ober_h - 80
             # Gegen die JETZIGE Groesse halten, nicht gegen die eingestellte.
             # Es gibt zwei Anlaeufe (80 und 400 ms). Bis v1.9.24 verglich auch
             # der zweite mit der Ausgangsgroesse: War das Fenster im ersten
@@ -30791,6 +30953,8 @@ class PS5ConverterGUI:
         Repariert dabei auch Altbestaende: ein absoluter Pfad, der nicht mehr
         existiert, dessen Dateiname aber zu einem mitgelieferten Bild passt,
         wird auf dieses umgebogen (typisch fuer alte ``_MEIxxxxx``-Pfade).
+        Eine Markierung auf ein mitgeliefertes Bild, das es nicht mehr gibt,
+        wird durch das Vorgabebild ersetzt (``_ersatz_fuer_entfallenes_bild``).
         """
         wert = str(gespeichert or "").strip()
         if not wert:
@@ -30799,7 +30963,9 @@ class PS5ConverterGUI:
         if wert.startswith(cls._BUNDLED_IMAGE_MARKER):
             name = wert[len(cls._BUNDLED_IMAGE_MARKER):]
             kandidat = os.path.join(ordner, name) if ordner else ""
-            return kandidat if kandidat and os.path.isfile(kandidat) else ""
+            if kandidat and os.path.isfile(kandidat):
+                return kandidat
+            return cls._ersatz_fuer_entfallenes_bild(name, ordner)
         if os.path.isfile(wert):
             return wert
         if ordner:
@@ -30808,6 +30974,40 @@ class PS5ConverterGUI:
                 return kandidat
         return ""
 
+    #: Das Namensschema der mitgelieferten Bilder: ``bg_NN_<name>.png`` fuer den
+    #: Hauptbereich, ``sidebar_NN_<name>.png`` fuer die Seitenleiste.
+    _BUNDLED_NAMENSSCHEMA = re.compile(r"^(bg|sidebar)_\d{2}_[A-Za-z0-9._-]+$")
+
+    @classmethod
+    def _ersatz_fuer_entfallenes_bild(cls, name: str, ordner: str) -> str:
+        """Das Vorgabebild fuer ein mitgeliefertes Bild, das es nicht mehr gibt.
+
+        Am 02.10.2026 wurden alle 40 mitgelieferten Bilder ausgetauscht. Wer
+        eines der alten gewaehlt hatte - oder dessen Vorgabe (``bg_19_ray-burst``,
+        ``sidebar_20_glass-panels``) einmal gespeichert hat -, haette sonst eine
+        Markierung ohne Datei: Der Hauptbereich fiele auf das eingebettete Bild
+        zurueck, die Seitenleiste verloere ihr Bild ganz, und beides ohne ein
+        Wort. Bei der Seitenleiste wurde das an der Einstellungsdatei des
+        Entwicklers gemessen (``bundled:sidebar_20_glass-panels.png``).
+
+        Ersetzt werden nur Namen nach dem Schema der mitgelieferten Bilder. Eine
+        Markierung mit anderem Namen bleibt ohne Bild, wie bisher - und eine
+        ausdrueckliche Abwahl (leerer Text) erreicht diese Stelle gar nicht.
+
+        Args:
+            name: Der Dateiname hinter der Markierung ``bundled:``.
+            ordner: Der mitgelieferte Bildordner (leer, wenn es ihn nicht gibt).
+
+        Returns:
+            Der Pfad des Vorgabebildes der passenden Art, sonst ein leerer Text.
+        """
+        treffer = cls._BUNDLED_NAMENSSCHEMA.match(name or "")
+        if not treffer or not ordner:
+            return ""
+        vorgabe = STANDARD_HINTERGRUND if treffer.group(1) == "bg" else STANDARD_SIDEBAR_HINTERGRUND
+        kandidat = os.path.join(ordner, vorgabe[len(cls._BUNDLED_IMAGE_MARKER):])
+        return kandidat if os.path.isfile(kandidat) else ""
+
     @classmethod
     def _bundled_background_images(cls, art: str = "alle") -> list[str]:
         """Listet die mitgelieferten Hintergrundbilder, alphabetisch sortiert.
@@ -30815,15 +31015,15 @@ class PS5ConverterGUI:
         ``art`` trennt die beiden Verwendungen:
 
         ``"haupt"``
-            Bilder fuer den Hauptbereich - Querformat (mitgeliefert 1920x1020).
+            Bilder fuer den Hauptbereich - Querformat (mitgeliefert 1920x1200).
         ``"sidebar"``
-            Bilder fuer die Seitenleiste - Hochformat (mitgeliefert 320x1000).
+            Bilder fuer die Seitenleiste - Hochformat (mitgeliefert 500x1200).
         ``"alle"``
             Beides, wie bisher.
 
         Unterschieden wird am Seitenverhaeltnis, nicht am Dateinamen: Die
-        mitgelieferten Sidebar-Bilder heissen zwar alle ``s..``, ein selbst
-        hinzugelegtes Bild aber nicht zwingend. Das Format sagt dagegen
+        mitgelieferten Sidebar-Bilder heissen zwar alle ``sidebar_..``, ein
+        selbst hinzugelegtes Bild aber nicht zwingend. Das Format sagt dagegen
         eindeutig, wohin ein Bild gehoert - ein Hochformat auf dem breiten
         Hauptbereich saehe genauso falsch aus wie umgekehrt.
         """
@@ -36016,8 +36216,9 @@ class PS5ConverterGUI:
         self._js_loader_win = None  # Y2JB Remote JS Loader Fenster
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        cw = max(520, int(sw * 0.50))
-        ch = max(420, int(sh * 0.65))
+        fb, fh = self._bildschirm_fuer_fenster()    # Groesse: angenommener Bildschirm
+        cw = max(520, int(fb * 0.50))
+        ch = max(420, int(fh * 0.65))
         cx = (sw - cw) // 2
         cy = (sh - ch) // 2
 
@@ -36175,8 +36376,9 @@ class PS5ConverterGUI:
             self._res_win = None
         sw = self.root.winfo_screenwidth()
         sh = self.root.winfo_screenheight()
-        rw = max(560, int(sw * 0.50))
-        rh = max(480, int(sh * 0.70))
+        fb, fh = self._bildschirm_fuer_fenster()    # Groesse: angenommener Bildschirm
+        rw = max(560, int(fb * 0.50))
+        rh = max(480, int(fh * 0.70))
         rx = (sw - rw) // 2
         ry = (sh - rh) // 2
 
@@ -41967,6 +42169,24 @@ class PS5ConverterGUI:
             zeilen.append(z("Vollbild", getattr(self, "is_fullscreen", "?")))
             zeilen.append(z("tk scaling",
                             round(float(self.root.tk.call("tk", "scaling")), 4)))
+            # Was in den Einstellungen steht (Abschnitt Anzeige): ohne diese
+            # Zeilen saehe man einem Bericht nicht an, dass die automatische
+            # Anpassung ausgeschaltet ist.
+            if self._skalierung_manuell is None:
+                zeilen.append(z("Skalierung (Einstellung)",
+                                "automatisch, System %d %%" % self._skalierung_system))
+            else:
+                zeilen.append(z("Skalierung (Einstellung)",
+                                "von Hand %d %% (System %d %%)"
+                                % (self._skalierung_manuell, self._skalierung_system)))
+            erkannt = self._bildschirm_erkannt()
+            if self._aufloesung_manuell is None:
+                zeilen.append(z("Auflösung (Einstellung)",
+                                "automatisch %dx%d" % erkannt))
+            else:
+                zeilen.append(z("Auflösung (Einstellung)",
+                                "von Hand %dx%d (erkannt %dx%d)"
+                                % (*self._aufloesung_manuell, *erkannt)))
             zeilen.append(z("Tcl/Tk", "%s / %s"
                             % (self.root.tk.call("info", "patchlevel"),
                                self.root.tk.call("set", "tk_patchLevel"))))
@@ -42008,6 +42228,15 @@ class PS5ConverterGUI:
                 zeilen.append(z(name, "keins"))
         zeilen.append(z("zuletzt angepasst auf",
                         getattr(self, "_last_bg_resize_size", None) or "nie"))
+        # Wie hell die Bilder sind - die Lesbarkeit der hellen Schrift haengt
+        # daran (siehe pruefe_bildhelligkeit).
+        try:
+            hell = self._diagnose_bildhelligkeit_messen()
+            zeilen.append(z("Bildhelligkeit (0-255)", ", ".join(
+                "%s %s" % (name, "keins" if wert is None else "%.0f" % wert)
+                for name, wert in hell.items())))
+        except Exception as exc:
+            logger.debug("Bildhelligkeit nicht auslesbar: %s", exc)
         # Wird ein Bild hochgerechnet, steht hier um wie viel und was das
         # kostet - auch wenn das Urteil "keine Auffaelligkeit" lautet. Sonst
         # saehe man ihm nicht an, dass hier gerechnet wird (02.10.2026).
@@ -42226,6 +42455,24 @@ class PS5ConverterGUI:
                 verlust=verlust))
         return bilder
 
+    def _diagnose_bildhelligkeit_messen(self) -> dict:
+        """Mittlere Helligkeit der beiden Hintergrundbilder, wie sie im Fenster stehen.
+
+        Gemessen wird nach Helligkeit und Kontrast (``_bg_image_raw`` ist das
+        Bild danach, ``_sidebar_bg_image_cache`` ebenfalls): Wer ein helles Bild
+        mit dem Regler abgedunkelt hat, soll dafuer keine Warnung bekommen.
+
+        Returns:
+            ``{"Hintergrundbild": 34.2, "Seitenleistenbild": None}`` - ``None``
+            heisst: kein Bild oder nicht messbar.
+        """
+        return {
+            "Hintergrundbild": self._bild_helligkeit_messen(
+                getattr(self, "_bg_image_raw", None)),
+            "Seitenleistenbild": self._bild_helligkeit_messen(
+                getattr(self, "_sidebar_bg_image_cache", None)),
+        }
+
     def _diagnose_dpi_bewusstsein(self):
         """Siehe diagnose_befund.Diagnosebericht._diagnose_dpi_bewusstsein."""
         return self._diagnosebericht()._diagnose_dpi_bewusstsein()
@@ -42257,13 +42504,20 @@ class PS5ConverterGUI:
             groesse_pt = int(standard.actual("size"))
         except Exception as exc:
             logger.debug("Schriftmaße nicht auslesbar: %s", exc)
+        manuell = self._skalierung_manuell
         return ad.Skalierungslage(
             plattform=sys.platform,
             dpi_bewusstsein=self._diagnose_dpi_bewusstsein(),
             fenster_dpi=fenster_dpi,
             tk_skalierung=skalierung,
             schrifthoehe_px=hoehe_px,
-            schriftgroesse_pt=groesse_pt)
+            schriftgroesse_pt=groesse_pt,
+            manuell_prozent=manuell,
+            system_prozent=self._skalierung_system,
+            # Unter macOS wirkt die Skalierung ueber die Schriftanhebung, nicht
+            # allein ueber tk scaling - ein Sollwert waere dort falsch.
+            soll_skalierung=(anzeige_skalierung.tk_skalierung(manuell)
+                             if manuell is not None and not IST_MACOS else None))
 
     @staticmethod
     def _diagnose_speicher_mb() -> float:
@@ -42358,7 +42612,9 @@ class PS5ConverterGUI:
             bilder=self._diagnose_bilder_sammeln(),
             skalierung=self._diagnose_skalierung_messen(),
             laufruhe=self._diagnose_laufruhe_messen(),
-            bedienung=self._diagnose_bedienung_messen())
+            bedienung=self._diagnose_bedienung_messen(),
+            bildhelligkeit=self._diagnose_bildhelligkeit_messen(),
+            dunkles_design=self._design_ist_dunkel())
 
     #: Ab so vielen Helligkeitsstufen Unterschied ist eine Flaeche von ihrem
     #: Untergrund noch zu unterscheiden. Darunter verschwimmt es. Gemessen am
@@ -46546,8 +46802,7 @@ class PS5ConverterGUI:
         # Feste Hoehe statt Mitwachsen: Bei 20 Spielen reichte der Dialog
         # ueber den Bildschirmrand hinaus, und die unteren Eintraege waren
         # nicht erreichbar. Die Masse folgen dem JS-Loader-Fenster.
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
+        sw, sh = self._bildschirm_fuer_fenster()    # angenommener Bildschirm
         dlg.geometry("%dx%d" % (max(700, int(sw * 0.42)),
                                 max(560, int(sh * 0.68))))
         dlg.minsize(640, 460)
@@ -53276,8 +53531,7 @@ class PS5ConverterGUI:
             self._js_loader_win = None
 
         c = self._COLORS
-        sw = self.root.winfo_screenwidth()
-        sh = self.root.winfo_screenheight()
+        sw, sh = self._bildschirm_fuer_fenster()    # angenommener Bildschirm
         ww = max(760, int(sw * 0.58))
         wh = max(620, int(sh * 0.75))
 
@@ -55917,6 +56171,287 @@ class PS5ConverterGUI:
     #: Kleiner ziehen laesst es sich bis auf die alte Oeffnungsbreite.
     _EINSTELLUNGEN_MINDESTENS: tuple[int, int] = (520, 360)
 
+    def _anzeige_status_text(self, skala: "int | None",
+                             aufloesung: "tuple[int, int] | None") -> str:
+        """Der Satz unter den Reglern: was gerade gespeichert ist.
+
+        Args:
+            skala: Die von Hand gewaehlte Skalierung in Prozent, ``None`` bei automatisch.
+            aufloesung: Die von Hand gewaehlte Aufloesung, ``None`` bei automatisch.
+        """
+        echt = self._bildschirm_erkannt()
+        if skala is None:
+            teil_skala = self._t("settings_dialog.anzeige_status_skala_auto",
+                                 system=self._skalierung_system)
+        else:
+            teil_skala = self._t("settings_dialog.anzeige_status_skala_hand",
+                                 manuell=skala, system=self._skalierung_system)
+        if aufloesung is None:
+            teil_aufloesung = self._t("settings_dialog.anzeige_status_aufl_auto",
+                                      breite=echt[0], hoehe=echt[1])
+        else:
+            teil_aufloesung = self._t("settings_dialog.anzeige_status_aufl_hand",
+                                      breite=aufloesung[0], hoehe=aufloesung[1],
+                                      echt_breite=echt[0], echt_hoehe=echt[1])
+        return self._t("settings_dialog.anzeige_status",
+                       skala=teil_skala, aufloesung=teil_aufloesung)
+
+    def _neustart_wegen_anzeige(self, dlg) -> bool:
+        """Startet das Programm neu, damit Skalierung und Aufloesung gelten.
+
+        Dieselben Bedingungen wie beim Design-Wechsel (``_show_theme_dialog``):
+        Der Neustart beendet den Prozess - auch einen laufenden PKG-Merge, eine
+        Bibliotheks-Uebertragung oder ein Werkzeug mitten im Schreiben. Laeuft
+        etwas, bleibt es bei der gespeicherten Einstellung, die dann ab dem
+        naechsten Start gilt; eine Anzeige-Einstellung hat anders als das Design
+        keinen Weg, sich ohne Neustart zu zeigen.
+
+        Returns:
+            Wahr, wenn der Neustart angestossen wurde.
+        """
+        titel = self._t("settings_dialog.title_bar")
+        if (self._vorgang_laeuft_noch() or self._pkg_merge_laeuft > 0
+                or self._bibliothek_uebertragungen > 0):
+            messagebox.showinfo(titel, self._t("settings_dialog.anzeige_spaeter"), parent=dlg)
+            return False
+        # Offene Werkzeugfenster auf ihrem eigenen Weg schliessen - wie beim
+        # Beenden. Lehnt eines ab, weil dort etwas laeuft, wird nicht neu gestartet.
+        for _befehl in list(getattr(self, "_werkzeugfenster", {})):
+            self._werkzeugfenster_schliessen(_befehl)
+        if any(self._fenster_lebt(_w)
+               for _w in getattr(self, "_werkzeugfenster", {}).values()):
+            messagebox.showinfo(titel, self._t("settings_dialog.anzeige_spaeter"), parent=dlg)
+            return False
+        try:
+            dlg.destroy()
+        except tk.TclError as exc:
+            logger.debug("Einstellungsfenster vor dem Neustart nicht schliessbar: %s", exc)
+        self._restart_application()
+        return True
+
+    def _einstellungen_anzeige_abschnitt(self, dlg, body) -> dict:
+        """Baut den Abschnitt "Anzeige": Skalierung (Schieberegler) und Aufloesung (Klappliste).
+
+        **Automatisch ist die Vorgabe.** Die Regler zeigen, was das System
+        liefert, solange nichts gewaehlt ist; erst wer sie anfasst, stellt von
+        Hand ein - und das bleibt bei jedem Start, bis "Zuruecksetzen" gedrueckt
+        wird. Gespeichert wird erst mit "Uebernehmen und neu starten": Die
+        Skalierung wirkt nur beim Start (Schriften werden beim Anlegen in Pixel
+        umgerechnet, ein halber Ausgleich waere schlechter als keiner - siehe
+        ``_dpi_wechsel_festhalten``), also gehoert das Anwenden und der Neustart
+        zusammen.
+
+        Args:
+            dlg: Das Einstellungsfenster (Elternfenster der Rueckfragen).
+            body: Der Rahmen, in den der Abschnitt gepackt wird.
+
+        Returns:
+            Die Bedienelemente und Handgriffe, fuer Pruefungen: ``regler``,
+            ``box``, ``status``, ``hinweis``, ``uebernehmen``, ``zuruecksetzen``,
+            ``wahl`` (was die Elemente gerade zeigen; ``None`` = automatisch),
+            ``pruefen``, ``anwenden``, ``zuruecksetzen_aktion``.
+        """
+        c = self._COLORS
+        ask = anzeige_skalierung
+        echt = self._bildschirm_erkannt()
+        system = self._skalierung_system
+
+        def _gespeichert() -> tuple:
+            return (ask.skalierung_lesen(self._load_setting(ask.SCHLUESSEL_SKALIERUNG, None)),
+                    ask.aufloesung_lesen(self._load_setting(ask.SCHLUESSEL_AUFLOESUNG, None)))
+
+        skala0, aufl0 = _gespeichert()
+        #: Was die Bedienelemente gerade zeigen; ``None`` heisst automatisch.
+        wahl: dict = {"skala": skala0, "aufl": aufl0}
+        #: Waehrend ein Regler per Programm gesetzt wird, ist es keine Handlung.
+        intern = {"setzen": False}
+
+        tk.Label(body, text=self._t("settings_dialog.anzeige_section"),
+                 font=(UI_SCHRIFT, pt(11), "bold"),
+                 bg=c["bg_card"], fg=c["fg_primary"]).pack(anchor="w")
+        for schluessel, abstand in (("settings_dialog.anzeige_hint", (4, 4)),
+                                    ("settings_dialog.anzeige_erklaerung", (0, 10))):
+            tk.Label(body, text=self._t(schluessel), font=(UI_SCHRIFT, pt(8)),
+                     bg=c["bg_card"], fg=c["fg_secondary"],
+                     wraplength=460, justify="left", anchor="w").pack(
+                         anchor="w", fill="x", pady=abstand)
+
+        # --- Skalierung: Schieberegler wie die Darstellungsregler ---
+        zeile = tk.Frame(body, bg=c["bg_card"])
+        zeile.pack(fill="x", pady=(0, 6))
+        tk.Label(zeile, text=self._t("settings_dialog.anzeige_skalierung"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", width=28).pack(side="left")
+        zahl = tk.StringVar(master=zeile)
+        # Am Widget festhalten: Eine StringVar, auf die nur noch ein Label
+        # zeigt, raeumt Python ab - die Zahl stuende dann leer da.
+        zeile._zahl = zahl
+        tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
+                 bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
+                 width=7).pack(side="right")
+        regler = ttk.Scale(zeile, from_=ask.SKALIERUNG_MIN, to=ask.SKALIERUNG_MAX,
+                           orient="horizontal")
+        regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
+        grenze_var = tk.StringVar(master=body)
+        grenze_text = tk.Label(body, textvariable=grenze_var, font=(UI_SCHRIFT, pt(8)),
+                               bg=c["bg_card"], fg=c["fg_secondary"], wraplength=460,
+                               justify="left", anchor="w")
+        grenze_text._var = grenze_var
+        grenze_text.pack(anchor="w", fill="x", pady=(0, 8))
+
+        def _zahl_zeigen() -> None:
+            zahl.set("%d %%" % (wahl["skala"] if wahl["skala"] is not None else system))
+
+        def _grenze_nachziehen(mitnehmen: bool = False) -> None:
+            """Der Regler reicht nur so weit, wie die Oberflaeche in die Breite des Bildschirms passt.
+
+            Der Bildschirm ist der angenommene: Eine kleinere Aufloesung senkt die Grenze. Mit
+            ``mitnehmen`` (nach einer neuen Aufloesungswahl) wird eine schon gewaehlte, nun zu grosse
+            Skalierung auf die Grenze gesetzt; beim Oeffnen bleibt eine gespeicherte Wahl, wie sie ist.
+            """
+            breite = ask.fenster_obergrenze(echt, wahl["aufl"])[0]
+            grenze = ask.skalierung_obergrenze(breite, WINDOW_MIN_WIDTH, system)
+            if mitnehmen and wahl["skala"] is not None and wahl["skala"] > grenze:
+                wahl["skala"] = grenze
+            # Eine gespeicherte Wahl ueber der Grenze (auf einem groesseren Schirm
+            # gewaehlt) bleibt sichtbar, damit man sie senken kann.
+            regler.configure(to=max(grenze, wahl["skala"] or 0))
+            grenze_var.set(self._t("settings_dialog.anzeige_grenze", max=grenze, breite=breite))
+
+        def _position_setzen(prozent: int) -> None:
+            intern["setzen"] = True
+            try:
+                regler.set(max(ask.SKALIERUNG_MIN, min(ask.SKALIERUNG_MAX, prozent)))
+            finally:
+                intern["setzen"] = False
+
+        # --- Aufloesung: Klappliste, erster Eintrag = automatisch ---
+        zeile2 = tk.Frame(body, bg=c["bg_card"])
+        zeile2.pack(fill="x", pady=(0, 6))
+        tk.Label(zeile2, text=self._t("settings_dialog.anzeige_aufloesung"),
+                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_secondary"],
+                 anchor="w", width=28).pack(side="left")
+        liste = ask.aufloesungen_anbieten(echt, aufl0)
+        auto_text = self._t("settings_dialog.anzeige_aufloesung_auto",
+                            breite=echt[0], hoehe=echt[1])
+        box = ttk.Combobox(
+            zeile2, state="readonly", font=(UI_SCHRIFT, pt(9)),
+            values=[auto_text] + [ask.aufloesung_anzeige(b, h) for b, h in liste])
+        box.pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        def _box_setzen(aufloesung) -> None:
+            box.set(auto_text if aufloesung is None else ask.aufloesung_anzeige(*aufloesung))
+
+        # --- Zustand, Hinweis, Knoepfe ---
+        status_var = tk.StringVar(master=body)
+        status = tk.Label(body, textvariable=status_var, font=(UI_SCHRIFT, pt(9), "bold"),
+                          bg=c["bg_card"], fg=c["fg_accent"], wraplength=460,
+                          justify="left", anchor="w")
+        status._var = status_var
+        status.pack(anchor="w", fill="x", pady=(8, 4))
+        hinweis = tk.Label(body, text=self._t("settings_dialog.anzeige_geaendert"),
+                           font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_warning"],
+                           wraplength=460, justify="left", anchor="w")
+        knopfreihe = tk.Frame(body, bg=c["bg_card"])
+        knopfreihe.pack(fill="x", pady=(2, 0))
+
+        def _pruefen() -> None:
+            """Zustand, Hinweis und Knopf nachziehen."""
+            status_var.set(self._anzeige_status_text(*_gespeichert()))
+            # Offen ist, was die Elemente zeigen, aber diese Sitzung nicht hat.
+            offen = ((wahl["skala"], wahl["aufl"])
+                     != (self._skalierung_manuell, self._aufloesung_manuell))
+            uebernehmen.config(state="normal" if offen else "disabled")
+            if offen:
+                hinweis.pack(anchor="w", fill="x", pady=(0, 6), before=knopfreihe)
+            else:
+                hinweis.pack_forget()
+
+        def _bewegt(_wert=None) -> None:
+            if intern["setzen"]:
+                return
+            wahl["skala"] = ask.auf_schritt(float(regler.get()))
+            _zahl_zeigen()
+            _pruefen()
+
+        def _losgelassen(_e=None) -> None:
+            # Auf den Reglerschritt einrasten - aber nur, wenn von Hand bewegt
+            # wurde: Tab oder ein Klick ohne Bewegung machen aus "automatisch"
+            # keine Wahl.
+            if wahl["skala"] is not None:
+                _position_setzen(wahl["skala"])
+
+        def _box_gewaehlt(_e=None) -> None:
+            index = box.current()
+            wahl["aufl"] = None if index <= 0 else liste[index - 1]
+            _grenze_nachziehen(mitnehmen=True)
+            _position_setzen(wahl["skala"] if wahl["skala"] is not None else system)
+            _zahl_zeigen()
+            _pruefen()
+
+        def _anwenden() -> None:
+            skala, aufl = wahl["skala"], wahl["aufl"]
+            self._save_setting(ask.SCHLUESSEL_SKALIERUNG, skala)
+            self._save_setting(ask.SCHLUESSEL_AUFLOESUNG,
+                               None if aufl is None else ask.aufloesung_text(*aufl))
+            logger.info("Anzeige gespeichert: Skalierung %s, Aufloesung %s",
+                        "automatisch" if skala is None else "%d %%" % skala,
+                        "automatisch" if aufl is None else ask.aufloesung_text(*aufl))
+            _pruefen()
+            self._neustart_wegen_anzeige(dlg)
+
+        def _zuruecksetzen() -> None:
+            """Beides auf automatisch - sofort gespeichert, wie die anderen Zuruecksetzen-Knoepfe."""
+            wahl["skala"], wahl["aufl"] = None, None
+            self._save_setting(ask.SCHLUESSEL_SKALIERUNG, None)
+            self._save_setting(ask.SCHLUESSEL_AUFLOESUNG, None)
+            _grenze_nachziehen()
+            _position_setzen(system)
+            _zahl_zeigen()
+            _box_setzen(None)
+            _pruefen()
+            if (self._skalierung_manuell, self._aufloesung_manuell) == (None, None):
+                return      # lief schon automatisch - es gibt nichts anzuwenden
+            titel = self._t("settings_dialog.title_bar")
+            if messagebox.askyesno(titel, self._t("settings_dialog.anzeige_zurueck_frage"),
+                                   parent=dlg):
+                self._neustart_wegen_anzeige(dlg)
+            else:
+                messagebox.showinfo(titel, self._t("settings_dialog.anzeige_zurueck_spaeter"),
+                                    parent=dlg)
+
+        uebernehmen = flach_knopf(
+            knopfreihe, text=self._t("settings_dialog.anzeige_uebernehmen"),
+            font=(UI_SCHRIFT, pt(10), "bold"),
+            bg=c["accent_btn"], fg="white",
+            activebackground=c["accent_btn_hover"], activeforeground="white",
+            disabledforeground=c["fg_secondary"],
+            relief="flat", cursor="hand2", padx=16, pady=7, command=_anwenden)
+        uebernehmen.pack(side="left")
+        zuruecksetzen = flach_knopf(
+            knopfreihe, text=self._t("settings_dialog.anzeige_zuruecksetzen"),
+            font=(UI_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"],
+            activebackground=c["border"], activeforeground=c["fg_primary"],
+            relief="flat", cursor="hand2", padx=16, pady=7, command=_zuruecksetzen)
+        zuruecksetzen.pack(side="left", padx=(10, 0))
+
+        # Startstellung: gespeicherte Wahl oder, bei automatisch, der Wert des Systems.
+        _grenze_nachziehen()
+        _position_setzen(skala0 if skala0 is not None else system)
+        _zahl_zeigen()
+        _box_setzen(aufl0)
+        regler.configure(command=_bewegt)
+        regler.bind("<ButtonRelease>", _losgelassen, add="+")
+        regler.bind("<KeyRelease>", _losgelassen, add="+")
+        box.bind("<<ComboboxSelected>>", _box_gewaehlt, add="+")
+        _pruefen()
+
+        return {"regler": regler, "box": box, "status": status, "hinweis": hinweis,
+                "uebernehmen": uebernehmen, "zuruecksetzen": zuruecksetzen,
+                "wahl": wahl, "pruefen": _pruefen, "anwenden": _anwenden,
+                "zuruecksetzen_aktion": _zuruecksetzen, "bewegt": _bewegt,
+                "box_gewaehlt": _box_gewaehlt}
+
     def _show_settings_dialog(self) -> None:
         """Zeigt den Einstellungen-Dialog (aktuell: Hintergrundbild)."""
         c = self._COLORS
@@ -55931,10 +56466,10 @@ class PS5ConverterGUI:
         # Auf einem kleinen Schirm nicht ueber den Rand hinaus - der Inhalt
         # rollt ohnehin. Dieselben Abstaende wie _fenster_auf_inhalt_wachsen.
         try:
-            breite = min(breite, max(self._EINSTELLUNGEN_MINDESTENS[0],
-                                     self.root.winfo_screenwidth() - 40))
-            hoehe = min(hoehe, max(self._EINSTELLUNGEN_MINDESTENS[1],
-                                   self.root.winfo_screenheight() - 80))
+            # Wie ``_fenster_auf_inhalt_wachsen``: der angenommene Bildschirm.
+            ober_b, ober_h = self._bildschirm_fuer_fenster()
+            breite = min(breite, max(self._EINSTELLUNGEN_MINDESTENS[0], ober_b - 40))
+            hoehe = min(hoehe, max(self._EINSTELLUNGEN_MINDESTENS[1], ober_h - 80))
         except tk.TclError:
             pass
         dlg = self._build_modern_toplevel(
@@ -55952,6 +56487,12 @@ class PS5ConverterGUI:
 
         body = tk.Frame(scroll_inner, bg=c["bg_card"], padx=24, pady=16)
         body.pack(fill="both", expand=True)
+
+        # --- Anzeige: Skalierung und Aufloesung, von Hand einstellbar ---
+        # Ganz oben: Es betrifft das ganze Fenster, und die Empfehlungen zur
+        # Bildgroesse darunter richten sich nach der gewaehlten Aufloesung.
+        self._einstellungen_anzeige_abschnitt(dlg, body)
+        tk.Frame(body, bg=c["border"], height=1).pack(fill="x", pady=(18, 14))
 
         # Die Vorschaubilder muessen am Fenster haengen bleiben - eine
         # PhotoImage, auf die niemand mehr zeigt, wird eingesammelt und die
@@ -56051,6 +56592,11 @@ class PS5ConverterGUI:
             haupt_vorschau = tk.Label(
                 body, bg=c["bg_main"], bd=0, highlightthickness=0)
             haupt_vorschau.pack(anchor="w", pady=(0, 8))
+            # Erscheint nur bei einem hellen Bild im dunklen Design.
+            haupt_hell = tk.Label(
+                body, text=self._t("settings_dialog.bild_hell_hinweis"),
+                font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_warning"],
+                wraplength=460, justify="left", anchor="w")
 
             def _haupt_vorschau_setzen(_e=None) -> None:
                 bild = self._vorschaubild(bundled_by_name.get(bundled_combo.get(), ""),
@@ -56061,6 +56607,9 @@ class PS5ConverterGUI:
                 haupt_vorschau.config(image=bild if bild else "",
                           width=0 if bild else 1,
                           height=0 if bild else 1)
+                self._hell_hinweis_zeigen(
+                    haupt_hell, haupt_vorschau,
+                    bundled_by_name.get(bundled_combo.get(), ""), "haupt")
 
             bundled_combo.bind("<<ComboboxSelected>>", _haupt_vorschau_setzen, add="+")
             vorschau_zeichner.append(_haupt_vorschau_setzen)
@@ -56200,6 +56749,11 @@ class PS5ConverterGUI:
             sidebar_vorschau = tk.Label(
                 body, bg=c["bg_main"], bd=0, highlightthickness=0)
             sidebar_vorschau.pack(anchor="w", pady=(0, 8))
+            # Wie beim Hauptbild: nur bei einem hellen Bild im dunklen Design.
+            sidebar_hell = tk.Label(
+                body, text=self._t("settings_dialog.bild_hell_hinweis"),
+                font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_warning"],
+                wraplength=460, justify="left", anchor="w")
 
             def _sidebar_vorschau_setzen(_e=None) -> None:
                 bild = self._vorschaubild(sidebar_by_name.get(sidebar_combo.get(), ""),
@@ -56210,6 +56764,9 @@ class PS5ConverterGUI:
                 sidebar_vorschau.config(image=bild if bild else "",
                           width=0 if bild else 1,
                           height=0 if bild else 1)
+                self._hell_hinweis_zeigen(
+                    sidebar_hell, sidebar_vorschau,
+                    sidebar_by_name.get(sidebar_combo.get(), ""), "sidebar")
 
             sidebar_combo.bind("<<ComboboxSelected>>", _sidebar_vorschau_setzen, add="+")
             vorschau_zeichner.append(_sidebar_vorschau_setzen)
@@ -56959,6 +57516,89 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Vorschau fuer %s nicht moeglich: %s", pfad, exc)
             return None
+
+    @staticmethod
+    def _bild_helligkeit_messen(bild) -> float | None:
+        """Mittlere Helligkeit (0..255) eines PIL-Bildes; ``None``, wenn es nicht geht.
+
+        Dieselbe Gewichtung wie ``_helligkeit`` (0,299 / 0,587 / 0,114) - das
+        ist die Umrechnung von ``convert("L")``. Gemessen wird an einer
+        Miniatur: Fuer einen Mittelwert genuegt sie, und ein 1920x1200-Bild
+        kostet so einige Millisekunden.
+        """
+        if bild is None:
+            return None
+        try:
+            grau = bild.convert("L")
+            grau.thumbnail((64, 64))
+            return float(ImageStat.Stat(grau).mean[0])
+        except Exception as exc:
+            logger.debug("Bildhelligkeit nicht messbar: %s", exc)
+            return None
+
+    def _bild_helligkeit(self, pfad: str, bereich: str = "") -> float | None:
+        """Mittlere Helligkeit eines Bildes, so wie es im Fenster stuende.
+
+        Wie bei ``_vorschaubild`` waehlt ``bereich`` das Reglerpaar
+        (``"haupt"`` oder ``"sidebar"``): Ein mit dem Regler abgedunkeltes
+        Bild zaehlt als dunkel. ``None``, wenn die Datei fehlt oder sich nicht
+        lesen laesst.
+        """
+        if not pfad or not os.path.isfile(pfad):
+            return None
+        try:
+            with Image.open(pfad) as roh:
+                img = roh.convert("RGB")
+            img.thumbnail((64, 64), _LANCZOS)
+            if bereich == "haupt":
+                img = self._bild_regler_anwenden(img, "bg_helligkeit", "bg_kontrast")
+            elif bereich == "sidebar":
+                img = self._bild_regler_anwenden(img, "sidebar_helligkeit",
+                                                 "sidebar_kontrast")
+            return self._bild_helligkeit_messen(img)
+        except Exception as exc:
+            logger.debug("Helligkeit von %s nicht messbar: %s", pfad, exc)
+            return None
+
+    def _design_ist_dunkel(self) -> bool:
+        """Wahr bei Futuristisch, Dunkel und Metallisch - sie schreiben hell.
+
+        Nur das Design Hell schreibt dunkel; die Schrift auf dem Hintergrundbild
+        braucht dort ein helles Bild, in den anderen drei ein dunkles.
+        """
+        return getattr(self, "_current_theme", "dunkel") != "hell"
+
+    def _helles_bild_im_dunklen_design(self, pfad: str, bereich: str = "") -> bool:
+        """Steht auf diesem Bild helle Schrift, die darauf schlecht zu lesen ist?
+
+        Gemessen am 02.10.2026: Ab rund 115 von 255 wird die Schrift an den
+        hellsten Stellen schwach, ab 150 verschwindet sie (siehe
+        ``anzeige_diagnose.BILD_HELL_HINWEIS``). Im Design Hell ist die Frage
+        gegenstandslos.
+        """
+        if not self._design_ist_dunkel():
+            return False
+        from ps5_validator.utils import anzeige_diagnose as _ad
+        hell = self._bild_helligkeit(pfad, bereich)
+        return hell is not None and hell > _ad.BILD_HELL_HINWEIS
+
+    def _hell_hinweis_zeigen(self, hinweis, nach, pfad: str, bereich: str) -> None:
+        """Blendet den Hinweis "Bild ist hell" unter der Vorschau ein oder aus.
+
+        Args:
+            hinweis: Das Label mit dem Text.
+            nach: Das Bedienelement, unter dem der Hinweis stehen soll (die
+                Vorschau).
+            pfad: Das Bild, das gerade in der Klappliste steht.
+            bereich: ``"haupt"`` oder ``"sidebar"`` (waehlt das Reglerpaar).
+        """
+        try:
+            if self._helles_bild_im_dunklen_design(pfad, bereich):
+                hinweis.pack(anchor="w", fill="x", pady=(0, 8), after=nach)
+            else:
+                hinweis.pack_forget()
+        except tk.TclError as exc:
+            logger.debug("Hinweis zur Bildhelligkeit nicht umschaltbar: %s", exc)
 
     # Hier stand ``_ist_sidebar_bild`` (mit @staticmethod): erst der
     # Dateiname (``sidebar..``), dann das Format. Diese Regel ist verworfen -

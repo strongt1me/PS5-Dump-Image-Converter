@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.56</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.57</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,8 +312,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.56</span>
-      <span class="marke">Stand 2. Oktober 2026</span>
+      <span class="marke">Version v1.9.57</span>
+      <span class="marke">Stand 3. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
     </div>
@@ -1395,7 +1395,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
       <tr><td><strong>DESIGN</strong></td><td>Öffnet die Farbschema-Auswahl – siehe <a href="#k14">Kapitel 14</a>.</td></tr>
-      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads.</td></tr>
+      <tr><td><strong>EINSTELLUNGEN</strong></td><td>Ganz oben die Anzeige: Skalierung (Schieberegler) und Bildschirmauflösung (Klappliste) lassen sich von Hand einstellen und mit einem Knopf auf automatisch zurücksetzen (Abschnitt 14.3). Darunter das Hintergrundbild für den Hauptbereich sowie – unabhängig davon – eines nur für die Seitenleiste. Beide Bereiche haben eine eigene Klappliste mit den mitgelieferten Bildern; ein eigenes Bild lässt sich jederzeit wählen und wirkt sofort. Außerdem der Speicherort für Downloads.</td></tr>
       <tr><td><strong>EN / DE</strong></td><td>Schaltet die komplette Oberfläche zwischen Deutsch und Englisch um – Hauptfenster, alle Dialoge und sämtliche Protokollmeldungen.</td></tr>
       <tr><td><strong>BENUTZERHANDBUCH</strong></td><td>Öffnet dieses Handbuch in Ihrem Browser. Es liegt dem Programm bei; eine Internetverbindung ist nicht nötig.</td></tr>
       <tr><td><strong>Asset Packs Anleitung</strong></td><td>Öffnet, genauso wie der Knopf daneben, die ausführliche Anleitung zu AMPR-Assetpaketen und dem Mitschnitt-Assistenten (siehe Abschnitt 11.1) – ebenfalls im Programm enthalten, keine Internetverbindung nötig.</td></tr>
@@ -2082,6 +2082,9 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Bild, dar&uuml;ber werden Kn&ouml;pfe, Ecken und Fenster entsprechend
     gr&ouml;&szlig;er. Auf einem 4K-Schirm mit 200&nbsp;% wird aus einem 44
     Pixel hohen Knopf einer mit 70 Pixeln.</p>
+    <p>Wer die Skalierung selbst bestimmen m&ouml;chte, stellt sie unter
+    <strong>EINSTELLUNGEN</strong> ein (Abschnitt 14.3); automatisch bleibt
+    die Vorgabe.</p>
     <p>Sollte doch einmal eine Beschriftung an ihren Rand sto&szlig;en, meldet
     der Knopf <strong>DIAGNOSE</strong> das im Abschnitt
     &bdquo;Darstellung gepr&uuml;ft&ldquo; &ndash; mit Namen des Elements und
@@ -2094,15 +2097,20 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <table>
     <thead><tr><th>Bereich</th><th>Bilder</th><th>Mitgeliefert</th></tr></thead>
     <tbody>
-      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich</td><td>quer, 1920 × 1020 Pixel</td></tr>
-      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste</td><td>hoch, 640 × 1440 bzw. 640 × 1020 Pixel</td></tr>
+      <tr><td><strong>Hintergrundbild</strong></td><td>die breiten Bilder für den Hauptbereich (20 Stück)</td><td>quer, 1920 × 1200 Pixel</td></tr>
+      <tr><td><strong>Sidebar-Hintergrundbild</strong></td><td>die hohen Bilder für die Seitenleiste (20 Stück)</td><td>hoch, 500 × 1200 Pixel</td></tr>
     </tbody>
   </table>
   </div>
   <p>Wie groß ein Bild <em>sein sollte</em>, hängt an Ihrem Bildschirm und steht deshalb direkt im Einstellungsfenster unter jedem der beiden Bereiche. Der Hauptbereich braucht die Auflösung Ihres Bildschirms, die Seitenleiste deren tatsächliche Breite – bei 125 % Anzeigeskalierung sind das rund 500 statt der angemeldeten 320 Pixel. Ein kleineres Bild wird angenommen, wirkt dann aber weich gezogen; ein größeres schadet nie.</p>
-  <p>Die mitgelieferten Bilder gibt es motivgleich in beiden Formaten – dasselbe Motiv also einmal quer für den Hauptbereich und einmal hoch für die Seitenleiste. Wer mag, stellt beide Bereiche damit aufeinander abgestimmt ein; nötig ist das nicht, jede Kombination ist möglich.</p>
+  <p>Die Dateinamen tragen eine Nummer und einen Namen, etwa <code>bg_01_navy-curves</code> für den Hauptbereich und <code>sidebar_01_navy-curves</code> für die Seitenleiste. <strong>Gleiche Nummer und gleicher Name</strong> heißt: Die beiden gehören zusammen und sind farblich aufeinander abgestimmt – das gibt es fünfzehnmal (01 bis 15). Fünf Hauptbilder und fünf Seitenleisten (16 bis 20) haben kein Gegenstück. Nötig ist die Abstimmung nirgends, jede Kombination ist möglich.</p>
   <p>Bild auswählen, auf <strong>Ausgewähltes übernehmen</strong> klicken – fertig, ohne Neustart. Über <strong>Bild wählen …</strong> lässt sich stattdessen ein eigenes Bild verwenden, <strong>Zurücksetzen</strong> stellt den Ausgangszustand her. Der Knopf <strong>Speichern</strong> unten sichert den Stand und schließt das Fenster; nötig ist er nicht, denn jede Änderung wirkt bereits beim Klick.</p>
-  <p>Beide Bilder werden mit der Hintergrundfarbe des Designs gemischt, damit sie als ruhiges Wasserzeichen wirken und Text darüber lesbar bleibt. Die Seitenleiste tritt dabei etwas weiter zurück als der Hauptbereich – dort liegen keine Karten über dem Bild, sodass es bei gleicher Einstellung kräftiger wirken würde.</p>
+  <p>Die Bilder erscheinen so, wie sie in der Datei stehen; Helligkeit und Kontrast lassen sich unter <strong>Darstellung</strong> verstellen (Abschnitt 14.2). Die Beschriftungen stehen direkt auf dem Bild – deshalb kommt es darauf an, wie hell es ist:</p>
+  <div class="kasten achtung">
+    <span class="titel">Helle Bilder gehören zum Design Hell</span>
+    <p>Die Designs Futuristisch, Dunkel und Metallisch schreiben <em>hell</em>. Auf einem hellen Bild verschwindet diese Schrift: <code>bg_07_porcelain</code>, <code>bg_12_ice-light</code> und <code>bg_19_frost-waves</code> sowie <code>sidebar_07_porcelain</code>, <code>sidebar_12_ice-light</code> und <code>sidebar_16_sand-dunes</code> sind darum für das Design <strong>Hell</strong> gedacht, das dunkel schreibt. Grenzwertig sind <code>bg_04_mist-blue</code>, <code>bg_14_sunset-silk</code> und <code>sidebar_04_mist-blue</code>.</p>
+    <p>Das Einstellungsfenster weist unter der Vorschau darauf hin, sobald ein helles Bild gewählt ist; auch der Diagnosebericht meldet es (<em>Bildhelligkeit</em>). Wer ein helles Bild trotzdem im dunklen Design haben will, senkt unter <strong>Darstellung</strong> die Helligkeit des Bildes – der Hinweis verschwindet dann von selbst.</p>
+  </div>
   <div class="kasten">
     <span class="titel">Warum zwei getrennte Listen</span>
     <p>Die beiden Bereiche haben sehr unterschiedliche Formate. Ein hohes Seitenleisten-Bild im breiten Hauptbereich müsste so stark beschnitten werden, dass vom Motiv kaum etwas übrig bliebe – verzerrt wird nie, aber sinnvoll ist es auch nicht. Deshalb erscheint in jeder Liste nur, was dorthin passt. Unterschieden wird am Format des Bildes, nicht am Dateinamen; ein eigenes Bild landet damit automatisch richtig.</p>
@@ -2180,6 +2188,26 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   zeigt das Bild bereits mit Helligkeit und Kontrast, so wie es im Fenster
   ankommt.</p>
 
+  <h3>14.3 Skalierung und Auflösung von Hand einstellen</h3>
+  <p>Das Programm passt sich dem Bildschirm von selbst an: Die Skalierung übernimmt es vom System, die Fenstergrößen richten sich nach der erkannten Bildschirmgröße. Wer von Hand eingreifen will – etwa weil ein anderer Bildschirm angeschlossen ist oder die Oberfläche zu klein oder zu groß wirkt –, findet unter <strong>EINSTELLUNGEN</strong> ganz oben den Abschnitt <strong>Anzeige: Skalierung und Auflösung</strong>.</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Einstellung</th><th>Was sie tut</th><th>Bedienung</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Skalierung der Oberfläche</strong></td><td>Größe von Schrift und Bedienelementen, in Prozent wie in der Windows-Anzeigeeinstellung (100 % ist ein unskalierter Bildschirm). Unter 125 % schrumpft nur die Schrift, darüber wachsen auch Knöpfe, Ecken und Fenster.</td><td>Schieberegler in Schritten von 5 %, von 100 % bis höchstens 300 %.</td></tr>
+      <tr><td><strong>Bildschirmauflösung</strong></td><td>Die Bildschirmgröße, nach der Fenster und Hintergrundbilder bemessen werden: Die Empfehlung zur Bildgröße richtet sich danach, und kein Fenster wird größer als dieser Bildschirm. Ist sie kleiner als die echte, öffnet sich das Hauptfenster in der Größe eines dort maximierten Fensters, mittig, statt maximiert. Schrift und Knöpfe ändert sie nicht.</td><td>Klappliste; der erste Eintrag ist <em>Automatisch</em> mit der erkannten Auflösung.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p><strong>Automatisch bleibt die Vorgabe.</strong> Solange nichts bewegt wird, zeigen Regler und Liste, was das System liefert (zum Beispiel 125 % und 1920 × 1200). Erst was von Hand gewählt wird, gilt – und zwar bei jedem Start, auch wenn sich der Bildschirm ändert, bis auf <strong>Auf automatisch zurücksetzen</strong> geklickt wird.</p>
+  <p>Gespeichert wird mit <strong>Übernehmen und neu starten</strong>. Die Skalierung wirkt nur beim Start, denn Schriften werden beim Anlegen in Pixel umgerechnet; ein halber Ausgleich im laufenden Betrieb wäre schlechter als keiner. Läuft gerade ein Vorgang (ein PKG-Merge, eine Übertragung) oder lässt sich ein Werkzeugfenster nicht schließen, bleibt es beim Speichern: Die Einstellung gilt ab dem nächsten Start. Der Satz unter den Reglern nennt, was gespeichert ist; der Hinweis <em>Noch nicht angewendet</em> steht da, solange die laufende Sitzung es noch nicht hat. <strong>Auf automatisch zurücksetzen</strong> löscht beide Werte sofort und bietet den Neustart an, wenn diese Sitzung von Hand eingestellt lief.</p>
+  <div class="kasten achtung">
+    <span class="titel">Warum der Regler nicht bis 300 % reicht</span>
+    <p>Die Oberfläche wird mit der Skalierung breiter, und zwar im gleichen Verhältnis (gemessen: 966 Pixel bei 125 %, 1532 bei 200 %, 2292 bei 300 %). Ragt sie seitlich aus dem Bildschirm, gibt es keine Rollleiste nach rechts, und man käme nicht mehr an den Knopf, der die Wahl zurücknimmt. Der Regler reicht deshalb nur so weit, wie die Oberfläche in die Breite des Bildschirms passt: bei 1920 Pixeln Breite bis 190 %, bei 1366 Pixeln bis 135 %. Der Wert, den das System selbst liefert, bleibt immer wählbar. Wird eine kleinere Auflösung gewählt, sinkt die Grenze mit.</p>
+    <p>In der Höhe genügt es, dass die Spalte rollt: Ist das Fenster zu niedrig, erscheint rechts eine Bildlaufleiste.</p>
+  </div>
+  <p>Der Diagnosebericht nennt die Einstellung (<em>Skalierung (Einstellung)</em> und <em>Auflösung (Einstellung)</em>) und meldet als Hinweis, dass von Hand eingestellt ist. Kommt die gewählte Skalierung nicht an, warnt er.</p>
+
 </section>
 
 <section class="kapitel" id="k15">
@@ -2206,7 +2234,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.56), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.57), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2406,8 +2434,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.56</strong></span>
-    <span>Stand 2. Oktober 2026</span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.57</strong></span>
+    <span>Stand 3. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>
 </footer>

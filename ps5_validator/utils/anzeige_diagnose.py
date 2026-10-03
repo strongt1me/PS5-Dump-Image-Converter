@@ -55,6 +55,17 @@ BILD_FAKTOR_HART = 1.5
 BILD_VERLUST_HINWEIS = 1.0
 BILD_VERLUST_WARNUNG = 2.0
 
+#: Mittlere Helligkeit (0..255) eines Hintergrundbilds, ab der die helle Schrift
+#: der dunklen Designs darauf nicht mehr sicher zu lesen ist. Am 02.10.2026 an
+#: Bildschirmaufnahmen des Hauptfensters (Design dunkel, 1920x1200) gemessen:
+#: * 34 (navy-curves, die Vorgabe) und 103 (azure-veil): gut lesbar;
+#: * 120 und 122 (sunset-silk, mist-blue): QUELLE, ZIELFORMAT und die Hilfstexte
+#:   werden an der hellsten Stelle schwach - lesbar, aber nicht mehr bequem;
+#: * 202 und 206 (porcelain, ice-light): die Beschriftungen verschwinden.
+#: Das Design Hell schreibt dunkel und passt zu solchen Bildern.
+BILD_HELL_HINWEIS = 115.0
+BILD_HELL_WARNUNG = 150.0
+
 #: Groesse des Ausschnitts, an dem der Verlust gemessen wird: mittig und in
 #: Originalaufloesung. Verkleinert man das ganze Bild vorher, verschwindet
 #: gerade die Feinzeichnung, die man messen will.
@@ -200,6 +211,15 @@ class Skalierungslage:
     tk_skalierung: float = 0.0
     schrifthoehe_px: int = 0
     schriftgroesse_pt: int = 0
+    #: Von Hand gewaehlte Skalierung in Prozent (Einstellungen, Abschnitt
+    #: Anzeige), ``None`` bei automatisch. Ist sie gesetzt, gilt ihr
+    #: ``tk scaling`` als Soll (``soll_skalierung``), nicht der DPI-Wert des
+    #: Fensters - die Abweichung ist ja gewollt.
+    manuell_prozent: int | None = None
+    #: Was das System von sich aus lieferte, in Prozent (nur zur Anzeige).
+    system_prozent: int | None = None
+    #: ``tk scaling``, das zur gewaehlten Skalierung gehoert (Windows, Linux).
+    soll_skalierung: float | None = None
 
 
 @dataclass(frozen=True)
@@ -491,6 +511,46 @@ def pruefe_bilder(bilder: list[Bildlage]) -> list[Befund]:
     return befunde
 
 
+def pruefe_bildhelligkeit(helligkeiten: "dict[str, float | None]",
+                          dunkles_design: bool) -> list[Befund]:
+    """Steht helle Schrift auf einem hellen Bild?
+
+    Die Beschriftungen der drei dunklen Designs sind hell geschrieben und
+    stehen direkt auf dem Hintergrundbild. Ein helles Bild nimmt ihnen den
+    Kontrast - die Darstellung ist dann nicht beschaedigt, aber unlesbar.
+    Seit dem 02.10.2026 liefert das Programm erstmals auch helle Bilder mit
+    (porcelain, ice-light, frost-waves); eigene Bilder konnten es schon immer.
+
+    Args:
+        helligkeiten: Name des Bildes und seine mittlere Helligkeit (0..255),
+            so wie es im Fenster steht (also nach Helligkeit und Kontrast);
+            ``None`` heisst: nicht messbar oder kein Bild.
+        dunkles_design: Wahr bei Futuristisch, Dunkel und Metallisch, falsch
+            beim Design Hell (dort ist die Schrift dunkel).
+
+    Returns:
+        Die gefundenen Maengel; beim Design Hell nie welche.
+    """
+    if not dunkles_design:
+        return []
+    befunde: list[Befund] = []
+    for name, wert in helligkeiten.items():
+        if wert is None:
+            continue
+        if wert > BILD_HELL_WARNUNG:
+            befunde.append(Befund(
+                WARNUNG, "bild_zu_hell",
+                "%s ist mit %.0f von 255 sehr hell - die helle Schrift des "
+                "Designs ist darauf kaum zu lesen (Design Hell wählen oder "
+                "die Helligkeit des Bildes senken)" % (name, wert)))
+        elif wert > BILD_HELL_HINWEIS:
+            befunde.append(Befund(
+                HINWEIS, "bild_ziemlich_hell",
+                "%s ist mit %.0f von 255 ziemlich hell - die helle Schrift "
+                "kann an den hellsten Stellen schwach wirken" % (name, wert)))
+    return befunde
+
+
 def pruefe_skalierung(lage: Skalierungslage) -> list[Befund]:
     """Prueft DPI-Bewusstsein, ``tk scaling`` und die Schriftgroesse.
 
@@ -511,7 +571,27 @@ def pruefe_skalierung(lage: Skalierungslage) -> list[Befund]:
             "Der Prozess ist nicht DPI-bewusst - Windows zieht das ganze "
             "Fenster als Bitmap hoch, alles wirkt unscharf"))
 
-    if lage.fenster_dpi and lage.tk_skalierung:
+    if lage.manuell_prozent is not None:
+        befunde.append(Befund(
+            HINWEIS, "skalierung_von_hand",
+            "Skalierung von Hand auf %d %% gestellt (System: %s) - die "
+            "automatische Anpassung ist aus"
+            % (lage.manuell_prozent,
+               "%d %%" % lage.system_prozent if lage.system_prozent else "unbekannt")))
+
+    if lage.soll_skalierung and lage.tk_skalierung:
+        # Von Hand gewaehlt: Gemessen wird gegen die Wahl, nicht gegen den
+        # DPI-Wert des Fensters. Stimmt ``tk scaling`` nicht damit ueberein,
+        # ist die Wahl nicht angekommen - das ist der Fehler, den die
+        # Auswahl im Einstellungsfenster nicht sehen koennte.
+        if abs(lage.tk_skalierung - lage.soll_skalierung) > SKALIERUNG_TOLERANZ:
+            befunde.append(Befund(
+                WARNUNG, "skalierung_weicht_ab",
+                "tk scaling steht auf %.4f, gewählt sind aber %s %% "
+                "(erwartet %.4f) - die von Hand gewählte Skalierung ist nicht "
+                "angekommen"
+                % (lage.tk_skalierung, lage.manuell_prozent, lage.soll_skalierung)))
+    elif lage.fenster_dpi and lage.tk_skalierung:
         erwartet = lage.fenster_dpi / 72.0
         if abs(lage.tk_skalierung - erwartet) > SKALIERUNG_TOLERANZ:
             befunde.append(Befund(
@@ -622,7 +702,9 @@ def pruefe_alles(fenster: Fensterlage | None = None,
                  bilder: list[Bildlage] | None = None,
                  skalierung: Skalierungslage | None = None,
                  laufruhe: Laufruhelage | None = None,
-                 bedienung: Bedienlage | None = None) -> Pruefergebnis:
+                 bedienung: Bedienlage | None = None,
+                 bildhelligkeit: "dict[str, float | None] | None" = None,
+                 dunkles_design: bool = True) -> Pruefergebnis:
     """Fuehrt alle Pruefungen aus und sortiert die Befunde nach Schwere.
 
     Jeder Teil ist einzeln abschaltbar: Fehlt eine Messung, entfaellt nur der
@@ -637,6 +719,8 @@ def pruefe_alles(fenster: Fensterlage | None = None,
         befunde.extend(pruefe_flaechen(fenster, flaechen))
     if bilder:
         befunde.extend(pruefe_bilder(bilder))
+    if bildhelligkeit:
+        befunde.extend(pruefe_bildhelligkeit(bildhelligkeit, dunkles_design))
     if skalierung is not None:
         befunde.extend(pruefe_skalierung(skalierung))
     if laufruhe is not None:

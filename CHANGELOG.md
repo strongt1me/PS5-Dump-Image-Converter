@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.56):** Aufgabe 1 baut auf Wunsch AMPR EMU, PlayGo oder BACKPORT in einen Dump-Ordner ein, und „Konsole & Payloads“ kennt acht weitere Dienste.
+> **Kurz zum aktuellen Stand (v1.9.57):** In den Einstellungen lassen sich Skalierung und Bildschirmauflösung von Hand einstellen, und es gibt neue Hintergrundbilder in 1920 × 1200 und 500 × 1200.
+
+---
+
+## v1.9.57 – 03.10.2026
+
+- **Neu:** In den Einstellungen stellt der Abschnitt „Anzeige“ die Skalierung (Schieberegler) und die Bildschirmauflösung (Klappliste) von Hand ein; automatisch bleibt die Vorgabe, was du wählst, bleibt bestehen, und ein Knopf stellt alles zurück.
+- **Neu:** 20 neue Hintergrundbilder für den Hauptbereich (1920 × 1200) und 20 für die Seitenleiste (500 × 1200); auf einem 1920 × 1200-Schirm wird nichts mehr hochgerechnet. Helle Bilder sind für das Design Hell gedacht – in den dunklen Designs weisen die Einstellungen darauf hin, dass die Schrift darauf schlecht zu lesen ist.
+- **Aktualisiert:** Der mitgelieferte Game Compressor ist auf Fassung 1.1.1.
 
 ---
 

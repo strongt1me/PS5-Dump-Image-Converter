@@ -82,6 +82,15 @@ class _Traeger:
     #: pruefte die Reihe gegen eigene Vorgaben statt gegen die des Programms.
     _letzter_fensterzustand = G._letzter_fensterzustand
     _letzte_fenstergeometrie = G._letzte_fenstergeometrie
+    #: Seit 02.10.2026 haengt die Wiederherstellung an der von Hand gewaehlten
+    #: Aufloesung (Einstellungen, Abschnitt Anzeige). Ohne Wahl - und das ist hier
+    #: der Fall - verhalten sich alle Stellen wie vorher; ``test_anzeige_skalierung``
+    #: prueft die Faelle mit Wahl.
+    _aufloesung_manuell = G._aufloesung_manuell
+    _aufloesung_verkleinert = G._aufloesung_verkleinert
+    _bildschirm_erkannt = G._bildschirm_erkannt
+    _bildschirm_fuer_fenster = G._bildschirm_fuer_fenster
+    _fenster_wie_maximiert = G._fenster_wie_maximiert
 
     def _arbeitsflaeche(self):
         """Statt der echten Messung der vorgegebene Wert.

@@ -54,7 +54,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `garlic-savemgr_v1.13.1.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
 | `shadowmountplus_v1.7beta3.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta3 (beim Autor als Vorabfassung markiert; SHA-256 gegen den Release-Anhang geprüft) |
 | `nanodns_v0.4.elf` | nanodns | drakmor | „(c) Drakmor" |
-| `game-compressor_v1.0.4.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh" |
+| `game-compressor_v1.1.1.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh“ im ELF (dazu „Tested by Osama Abualia“); `github.com/juma-sayeh/PS5-Game-Compressor`, dort kein LICENSE; „v1.1.1“ im ELF; die Fassung steht auf der Release-Seite des Projekts noch nicht (Stand 03.10.2026, dort zuletzt 1.0.4), die SHA-256 stimmt mit der SHA256SUMS der Fassung überein |
 | `pldmgr_v0.5.2.elf` | PS5 Payload Manager | itsPLK | Projektadresse im ELF |
 | `pkgmgr_v1.4.1.elf` | PS5 PKG Manager | itsPLK | `github.com/itsPLK/ps5-pkg-manager` im ELF; GPL-3.0 (LICENSE im Quellarchiv des Projekts); beim Autor heißt die Datei „pkg-manager_v1.4.1.elf“ |
 | `actremotelink_agent_v2.0.elf` | ActRemoteLink (Agent) | francoataffarel; Dank an earthonion (np-fake-signin) | `github.com/francoataffarel/ActRemoteLink`, GPL-3.0-or-later (README des Projekts); Fassung aus `VERSION`; Bauten: `https://github.com/francoataffarel/ActRemoteLink/releases/download/v2.0/ActRemoteLink.zip`, Quelltext: Tag `v2.0` des Projekts |

@@ -156,7 +156,31 @@ class WidgetbaumTests(unittest.TestCase):
         cls.wurzel.geometry("1280x860")
         for n in ("showinfo", "showwarning", "showerror", "askyesno"):
             setattr(cls.haupt.messagebox, n, lambda *a, **k: False)
-        cls.app = cls.haupt.PS5ConverterGUI(cls.wurzel)
+        # Ein Probebild mit Struktur statt des mitgelieferten Standardbilds. Das
+        # Verfahren stellt aussen den Bildausschnitt und innen die Kartenflaeche
+        # hin - wie stark beide sich unterscheiden, haengt am Bild. Am 02.10.2026
+        # wechselte das Standardbild zu einem glatten dunklen Blau (navy-curves),
+        # und der Abstand an der Pfad-Karte fiel auf 4 von verlangten 8: Nichts
+        # war kaputt, das Bild war nur glatt. Rauschen unterscheidet sich an jeder
+        # Stelle; ein ausgebliebenes Runden bliebe bei 0.
+        import json
+        import tempfile
+
+        from PIL import Image
+        cls._konfig = tempfile.TemporaryDirectory()
+        bild = os.path.join(cls._konfig.name, "ecken_probe.png")
+        Image.effect_noise((640, 400), 60).convert("RGB").save(bild)
+        with open(os.path.join(cls._konfig.name, "paths.json"), "w", encoding="utf-8") as datei:
+            json.dump({"background_image_path": bild, "theme": "dunkel", "language": "de"}, datei)
+        vorher = os.environ.get("PS5CONV_KONFIGORDNER")
+        os.environ["PS5CONV_KONFIGORDNER"] = cls._konfig.name
+        try:
+            cls.app = cls.haupt.PS5ConverterGUI(cls.wurzel)
+        finally:
+            if vorher is None:
+                os.environ.pop("PS5CONV_KONFIGORDNER", None)
+            else:
+                os.environ["PS5CONV_KONFIGORDNER"] = vorher
         cls.wurzel.update_idletasks()
         cls.wurzel.update()
         cls.app._karten_ecken_nachziehen()
@@ -170,6 +194,7 @@ class WidgetbaumTests(unittest.TestCase):
             cls.wurzel.withdraw()
         except Exception:
             pass
+        cls._konfig.cleanup()
 
     def _punkt(self, foto, x, y):
         roh = self.wurzel.tk.call(str(foto), "get", x, y)

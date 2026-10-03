@@ -328,6 +328,7 @@ a = Analysis(
         'ps5_validator.utils.dump_rename',
         'ps5_validator.utils.i18n',
         'ps5_validator.utils.anzeige_diagnose',
+        'ps5_validator.utils.anzeige_skalierung',
         'ps5_validator.utils.aktualisierungen',
         'ps5_validator.utils.ini_config',
         # dpi_upload bewusst NICHT gebuendelt: der etaHEN-"Direct Package
@@ -460,7 +461,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.56',
+    name='PS5_Dump_Image_Converter_v1.9.57',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

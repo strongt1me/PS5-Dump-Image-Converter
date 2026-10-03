@@ -311,7 +311,14 @@ class SpeichernKnopfTests(unittest.TestCase):
         self._schreibe({"background_image_path": f"bundled:{haupt}",
                         "sidebar_background_image_path": f"bundled:{seite}"})
         dlg = self._dialog()
-        boxen = self._sammle(dlg, "Combobox")
+        # Die Bildlisten an ihrem Inhalt erkennen, nicht an der Stellung: Ganz
+        # oben steht seit dem 02.10.2026 die Klappliste der Bildschirmauflösung
+        # (Abschnitt Anzeige) - wie bei der Farbsehschwäche gilt: Die nächste
+        # kommt bestimmt.
+        boxen = [b for b in self._sammle(dlg, "Combobox")
+                 if any(str(w).lower().endswith(".png")
+                        for w in (b.cget("values") or ()))]
+        self.assertEqual(len(boxen), 2, "erwartet: Haupt- und Sidebar-Bildliste")
         self.assertEqual(boxen[0].get(), haupt)
         self.assertEqual(boxen[1].get(), seite)
 
