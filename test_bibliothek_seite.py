@@ -494,10 +494,13 @@ class SeitenQuelltextTests(unittest.TestCase):
             k for k in ast.walk(methode)
             if isinstance(k, ast.FunctionDef) and k.name == "_anzeigen")))
 
-    def test_die_kachelunterzeile_bricht_um(self) -> None:
-        text = ast.unparse(_methode("_bibliothek_kacheln_setzen"))
-        self.assertIn("'\\n'.join", text)
-        self.assertIn("wraplength=kante", text)
+    def test_der_kartentitel_bricht_ueber_die_rechenregel_um(self) -> None:
+        """Seit v1.9.58 zeichnet das Raster die Karten (``KartenRaster``); der Titel bricht
+        ueber ``text_umbrechen`` auf zwei Zeilen um - die Pruefung am Verhalten steht in
+        ``test_bibliothek_raster``, hier nur, dass es nicht wieder ein ``wraplength`` wird."""
+        quelle = (PROJEKT / "ps5_validator" / "utils" / "bibliothek_raster.py").read_text(encoding="utf-8")
+        self.assertIn("text_umbrechen", quelle)
+        self.assertNotIn("wraplength", quelle)
 
     def test_alle_knoepfe_der_seite_sind_kompakt(self) -> None:
         """Mit dem normalen Knopf (Polsterung 18/11) passte die Seite nicht in 700 px."""
@@ -611,9 +614,15 @@ class SeiteTests(unittest.TestCase):
         cls._speichern = mock.patch.object(cls.app, "_save_setting",
                                            lambda k, v: cls._einstellungen.__setitem__(k, v))
         cls._speichern.start()
+        # Eine Karte zu waehlen fragt nach Updates - und ginge dafuer ins Netz. Seit v1.9.58
+        # waehlt jeder Knopf einer Karte die Karte zuerst; ein Test, der das ausloest, darf
+        # nichts anfragen (und keine Anfrage "laufen" lassen, die den naechsten Test sperrt).
+        cls._online = mock.patch.object(cls.app, "_metadaten_online_erlaubt", return_value=False)
+        cls._online.start()
 
     @classmethod
     def tearDownClass(cls) -> None:
+        cls._online.stop()
         cls._speichern.stop()
         cls._laden.stop()
 
@@ -702,12 +711,12 @@ class SeiteTests(unittest.TestCase):
         zustand = self._seite()
         texte = {q: [k.cget("text") for k in knoepfe]
                  for q, knoepfe in zustand["knoepfe"].items()}
+        # Seit v1.9.58 stehen unten nur noch die Werkzeuge, die zu keinem einzelnen Titel
+        # gehoeren; Starten, Kopieren, Konvertieren und die Einzelaktionen sind auf der Karte.
         self.assertEqual([self.app._t(s) for s in (
-            "library.use_as_source_button", "library.upload_knopf",
-            "library.btn_umbenennen", "library.btn_alle_umbenennen",
-            "library.btn_rueckgaengig", "library.reveal_in_explorer_button")], texte["pc"])
+            "library.btn_alle_umbenennen", "library.btn_rueckgaengig")], texte["pc"])
         self.assertEqual([self.app._t(s) for s in (
-            "library.download_knopf", "holen.btn_dump", "library.btn_app_installieren",
+            "holen.btn_dump", "library.btn_app_installieren",
             "library.btn_dateimanager", "library.rescan_button")], texte["ps5"])
         pc, ps5 = (zustand["knoepfe"][q][0].master for q in ("pc", "ps5"))
         self.assertTrue(self._gezeigt(pc))
@@ -773,9 +782,9 @@ class SeiteTests(unittest.TestCase):
             eintrag = _eintrag(ordner)
             zustand["eintraege"].append(eintrag)
             self.addCleanup(zustand["eintraege"].remove, eintrag)
-            zustand["ansicht"]["gewaehlt"] = ordner
+            # "Konvertieren" auf der Karte ist das fruehere "Als Quelle uebernehmen".
             with mock.patch.object(self.app, "_validate_source_path", return_value=""):
-                zustand["knoepfe"]["pc"][0].invoke()
+                zustand["aktion"]("konvertieren", eintrag)
             _WURZEL.update()
             self.assertEqual(ordner, self.app.source_path.get())
             self.assertFalse(self.app._ansicht_ist_konsole(),
@@ -862,19 +871,32 @@ class SeiteTests(unittest.TestCase):
     def test_die_seite_folgt_dem_sprachwechsel(self) -> None:
         zustand = self._seite()
         pc = zustand["knoepfe"]["pc"]
+        gruppen = zustand["kopf_gruppen"]
+        eintrag = _eintrag("x")
         self.app._current_language = "en"
         try:
             self.app._apply_language()
             _WURZEL.update()
-            self.assertEqual("Use as source", pc[0].cget("text"))
-            self.assertEqual("Rename all", pc[3].cget("text"))
+            self.assertEqual("Rename all", pc[0].cget("text"))
+            self.assertEqual("Undo", pc[1].cget("text"))
             self.assertEqual(STRINGS["library.no_entry_selected"]["en"],
                              zustand["zeilen"]["titel"].cget("text"))
+            # Die Kopfkarte und die Karten sprechen mit: Chips, Platzhalter, Zaehlzeile, Knoepfe.
+            self.assertEqual(["This PC", "PS5"], [c.cget("text") for c in gruppen["quelle"].chips])
+            self.assertEqual(["All", "PS5", "PS4", "Backport · AMPR · PlayGo"],
+                             [c.cget("text") for c in gruppen["filter"].chips])
+            self.assertEqual("Title, title ID, content ID or path",
+                             zustand["such_feld"]._platz.cget("text"))
+            self.assertEqual(["Info & metadata", "Start", "Copy", "Convert"],
+                             [s.text for s in zustand["inhalt"](eintrag)["knoepfe"]])
+            self.assertIn("Title", zustand["sortier_knopf"].cget("text"))
         finally:
             self.app._current_language = "de"
             self.app._apply_language()
             _WURZEL.update()
-        self.assertEqual("Als Quelle übernehmen", pc[0].cget("text"))
+        self.assertEqual("Alle umbenennen", pc[0].cget("text"))
+        self.assertEqual(["Infos & Metadaten", "Starten", "Kopieren", "Konvertieren"],
+                         [s.text for s in zustand["inhalt"](eintrag)["knoepfe"]])
 
     @staticmethod
     def _alle(widget):

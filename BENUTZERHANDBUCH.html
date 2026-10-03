@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.57</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.58</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.57</span>
+      <span class="marke">Version v1.9.58</span>
       <span class="marke">Stand 3. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -540,9 +540,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     würde hier fälschlich „läuft“ melden.</p>
   </div>
   <h4>Bibliothek</h4>
-  <p>Die Bibliothek zeigt Ihre Sicherungen als <em>Kacheln</em> oder als
-  <em>Liste</em>, mit Titelbild und Angaben daneben. Oben wählen Sie die
-  Quelle:</p>
+  <p>Die Bibliothek zeigt Ihre Sicherungen als <em>Karten</em> über die ganze
+  Breite oder als <em>Liste</em>. Jede Karte trägt das Titelbild mit der
+  Plattform (PS4 oder PS5), den Titel, Marken zu Format und Einbauten und
+  vier Knöpfe; eine Spalte mit Angaben daneben gibt es nicht. Oben in der
+  Kopfkarte wählen Sie die Quelle:</p>
   <ul>
     <li><strong>Rechner</strong> durchsucht die eingetragenen
     <em>SCAN-ORDNER</em> samt Unterordnern nach Dump-Ordnern und
@@ -558,17 +560,22 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Systemanwendungen der Konsole erscheinen nicht, und ein Spiel, das auch
     als Sicherung vorliegt, steht nur einmal da &ndash; als Sicherung.</li>
   </ul>
-  <p>Quelle und Ansicht wählen Sie mit den beiden Umschaltern oben rechts
-  (<em>Rechner&nbsp;|&nbsp;PS5</em> und <em>Kacheln&nbsp;|&nbsp;Liste</em>);
-  hervorgehoben ist jeweils, was gerade gilt. Auch die Liste zeigt zu jedem
-  Titel ein kleines Titelbild. Neben der Suche sortiert
-  <em>Sortierung</em> beide Ansichten nach Titel, Title-ID, Version, Format
-  oder Pfad, auf Wunsch absteigend; rechts daneben steht, wie viele Titel
-  gerade zu sehen sind („3 von 38 Titeln“ während einer Suche). Die
-  gewählte Kachel erkennen Sie am farbigen Rahmen, ein Titel ohne Titelbild
-  zeigt ein durchgestrichenes Bild. Der Punkt vor der Statuszeile leuchtet
-  während eines Suchlaufs in der Akzentfarbe, danach grün &ndash; und in
-  der Warnfarbe, wenn die Suche auf der PS5 gescheitert ist.</p>
+  <p>Die Kopfkarte fasst zusammen, was gerade zu sehen ist. Quelle und Ansicht
+  wählen Sie mit den beiden Umschaltern oben rechts
+  (<em>Rechner&nbsp;|&nbsp;PS5</em> und <em>Karten&nbsp;|&nbsp;Liste</em>);
+  hervorgehoben ist jeweils, was gerade gilt. Darunter nennt die Zählzeile,
+  wie viele Spiele es sind („25&nbsp;Spiele · 10&nbsp;PS5, 15&nbsp;PS4 ·
+  4 mit Backport, AMPR oder PlayGo“; während einer Suche „3 von 38 Spielen“).
+  Dann folgen das Suchfeld (Titel, Title-ID, Content-ID oder Pfad), die
+  Filter <em>Alle</em>, <em>PS5</em>, <em>PS4</em> und
+  <em>Backport&nbsp;·&nbsp;AMPR&nbsp;·&nbsp;PlayGo</em> und die
+  <em>Sortierung</em>: Sie ordnet beide Ansichten nach Titel, Title-ID,
+  Version, Format oder Pfad, auf Wunsch absteigend. Die gewählte Karte
+  erkennen Sie am farbigen Rahmen, ein Titel ohne Titelbild zeigt ein
+  durchgestrichenes Bild. Auch die Liste zeigt zu jedem Titel ein kleines
+  Titelbild. Der Punkt vor der Statuszeile leuchtet während eines Suchlaufs in
+  der Akzentfarbe, danach grün &ndash; und in der Warnfarbe, wenn die Suche auf
+  der PS5 gescheitert ist.</p>
   <p>Die Adresse der Konsole müssen Sie dafür nicht kennen. Wie der AMPR EMU
   Manager (Aufgabe&nbsp;7) versucht die Bibliothek der Reihe nach die Adresse
   aus den Einstellungen, die gespeicherten FTP-Profile, den Rundruf der
@@ -579,9 +586,11 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   mehrere Konsolen, fragt sie, welche gemeint ist. Meldet sich die PS5 auf
   den Rundruf, ihr FTP-Dienst aber nicht, sagt sie genau das: Dann fehlen
   Jailbreak oder <code>ftpsrv</code>.</p>
-  <p>Zu jedem Eintrag nennt die Detailspalte Fassung, SDK und die
-  <strong>benötigte Firmware</strong> &ndash; auch bei den installierten
-  Spielen und den Sicherungen auf der PS5. Ein Abbild lässt sich über FTP
+  <p>Der Knopf <em>Infos &amp; Metadaten</em> auf einer Karte klappt ein Fenster
+  auf, das zu dem Eintrag Fassung, SDK und die
+  <strong>benötigte Firmware</strong> nennt &ndash; auch bei den installierten
+  Spielen und den Sicherungen auf der PS5. Es liegt am Knopf und schließt sich
+  mit dem ✕, mit Escape oder mit einem Klick daneben. Ein Abbild lässt sich über FTP
   nicht lesen; ist es eingehängt, übernimmt die Bibliothek die Angaben, die
   die Konsole selbst zu diesem Titel führt. Verlangt das Spiel mehr, als
   Ihre PS5 hat, steht dort „BACKPORT nötig“; die Firmware der Konsole kennt
@@ -596,12 +605,14 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   Bibliothek zusätzlich, ob es ein neueres Update gibt. <em>Bild
   speichern</em>, <em>Bild kopieren</em> und <em>Angaben kopieren</em>
   nehmen Titelbild und Angaben mit.</p>
-  <p><strong>Einbauten.</strong> Die Detailspalte sagt außerdem, ob ein Spiel
+  <p><strong>Einbauten.</strong> Das Fenster sagt außerdem, ob ein Spiel
   schon <em>AMPR EMU</em>, den <em>PlayGo</em>-Ersatz,
   <em>BACKPORT</em>-Bibliotheken (mit ihrem Firmware-Ordner, etwa
-  <code>fw10</code>) oder ein <em>Asset-Pack</em> trägt. Auf der Kachel
-  stehen dieselben Marken oben rechts auf dem Titelbild, in der Liste in der
-  Spalte <em>Einbauten</em>. Nachgesehen wird dort, wo ShadowMount+ sucht, und
+  <code>fw10</code>) oder ein <em>Asset-Pack</em> trägt. Auf der Karte
+  stehen dieselben Marken unter dem Titel, in der Liste in der
+  Spalte <em>Einbauten</em>; lässt sich das nicht ermitteln, steht gestrichelt
+  <em>Anpassungen unbekannt</em>, und passen nicht alle Marken in zwei Zeilen,
+  zählt ein <em>+N</em>, wie viele fehlen. Nachgesehen wird dort, wo ShadowMount+ sucht, und
   in seiner Reihenfolge: zuerst ein Ordner <code>backports/&lt;Title-ID&gt;</code>
   neben den Spielen, dann das Spiel selbst &ndash; jeweils zuerst
   <code>fakelib2</code>, dann <code>fakelib</code>. Liegen beide im Spiel,
@@ -610,24 +621,42 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   und in ein installiertes Paket (ohne <code>backports</code>-Ordner) kann das
   Programm nicht hineinsehen &ndash; dort steht „nicht ermittelbar“, nie
   „keine“.</p>
-  <p><strong>Auf PS5 starten.</strong> Der hervorgehobene Knopf neben dem
-  Titelbild startet den gewählten Titel auf der Konsole &ndash; über
+  <p><strong>Starten.</strong> Der hervorgehobene Knopf <em>Starten</em> auf der
+  Karte startet den Titel auf der Konsole &ndash; über
   <em>websrv</em> (Port&nbsp;8080), der dem Programm beiliegt. Läuft auf der
   PS5 gerade ein Spiel, wird es dabei beendet; das Programm fragt deshalb
   vorher. Antwortet websrv nicht, bietet es an, ihn über den ELF-Loader zu
   starten. Starten lassen sich installierte Titel und Abbilder, die
   ShadowMount+ eingebunden hat &ndash; auch aus der Quelle <em>Rechner</em>,
-  wenn derselbe Titel auf der Konsole liegt.</p>
-  <p>Die Knöpfe darunter richten sich nach der gewählten Quelle:</p>
+  wenn derselbe Titel auf der Konsole liegt. Der Knopf braucht eine gültige
+  Title-ID; fehlt sie, ist er gesperrt, und ein Druck darauf nennt in der
+  Statuszeile den Grund.</p>
+  <p>Außer <em>Infos &amp; Metadaten</em> und <em>Starten</em> trägt jede Karte
+  <em>Kopieren</em> und <em>Konvertieren</em>. Was sie tun, richtet sich nach
+  der gewählten Quelle; was für einen Eintrag nicht geht, ist gesperrt, und ein
+  Druck darauf sagt in der Statuszeile warum:</p>
+  <div class="tabelle">
+  <table>
+    <thead><tr><th>Knopf</th><th>Rechner</th><th>PS5</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Kopieren</strong></td><td><em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher).</td><td><em>Herunterladen</em> (nur Sicherungen; nennt vorher Dateizahl, Größe und die ungefähre Dauer &ndash; gerechnet mit der gemessenen Leitung, rund 3,4&nbsp;MB/s beim Holen und 2,5&nbsp;MB/s beim Senden). Ein installiertes Spiel ist gesperrt: Es ist keine Datei; den Weg auf den Rechner zeigt <em>App-Dumper starten</em>.</td></tr>
+      <tr><td><strong>Konvertieren</strong></td><td><em>Als Quelle übernehmen</em>: Der Eintrag wird die Quelle für die Umwandlung.</td><td>Gesperrt &ndash; kopieren Sie den Titel zuerst auf den Rechner.</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <p>Unter den Karten steht eine Knopfreihe mit dem, was nicht zu einem einzelnen
+  Titel gehört:</p>
   <div class="tabelle">
   <table>
     <thead><tr><th>Quelle</th><th>Knöpfe</th></tr></thead>
     <tbody>
-      <tr><td><strong>Rechner</strong></td><td><em>Als Quelle übernehmen</em> (für die Umwandlung), <em>Auf PS5 senden</em> (per FTP, das Ziel auf der Konsole wählen Sie vorher), <em>Umbenennen</em> und <em>Alle umbenennen</em> (einheitliche Namensform; jede Zeile ist vorher zu sehen, ein Doppelklick nimmt sie heraus; <em>Rückgängig</em> stellt die alten Namen wieder her), <em>Im Explorer anzeigen</em>.</td></tr>
-      <tr><td><strong>PS5</strong></td><td><em>Herunterladen</em> (nur Sicherungen; nennt vorher Dateizahl, Größe und die ungefähre Dauer &ndash; gerechnet mit der gemessenen Leitung, rund 3,4&nbsp;MB/s beim Holen und 2,5&nbsp;MB/s beim Senden), <em>App-Dumper starten</em> (schreibt eine installierte Anwendung auf einen USB-Datenträger an der Konsole &ndash; so kommt auch ein installiertes Spiel auf den Rechner: den Ordner holen Sie danach herunter), <em>App installieren …</em> (bringt eine Homebrew-App aus ihrem Release-ZIP nach <code>/data/homebrew/&lt;ID&gt;</code>, etwa ProsperoEden als <code>PPSA99008</code>; siehe unten) und <em>Dateimanager der PS5</em> (Web-Dateimanager, Port&nbsp;8888, etwa um vom USB-Datenträger auf die interne SSD zu verschieben).</td></tr>
+      <tr><td><strong>Rechner</strong></td><td><em>Alle umbenennen</em> (einheitliche Namensform; jede Zeile ist vorher zu sehen, ein Doppelklick nimmt sie heraus) und <em>Rückgängig</em> (stellt die alten Namen wieder her). Einen einzelnen Eintrag benennen Sie im Fenster <em>Infos &amp; Metadaten</em> um; dort steht auch <em>Im Explorer anzeigen</em>.</td></tr>
+      <tr><td><strong>PS5</strong></td><td><em>App-Dumper starten</em> (schreibt eine installierte Anwendung auf einen USB-Datenträger an der Konsole &ndash; so kommt auch ein installiertes Spiel auf den Rechner: den Ordner holen Sie danach herunter), <em>App installieren …</em> (bringt eine Homebrew-App aus ihrem Release-ZIP nach <code>/data/homebrew/&lt;ID&gt;</code>, etwa ProsperoEden als <code>PPSA99008</code>; siehe unten), <em>Dateimanager der PS5</em> (Web-Dateimanager, Port&nbsp;8888, etwa um vom USB-Datenträger auf die interne SSD zu verschieben) und <em>Neu scannen</em>.</td></tr>
     </tbody>
   </table>
   </div>
+  <p>In der Ansicht <em>Liste</em> stehen die vier Knöpfe der Karte in einem Streifen
+  unter der Liste; sie gelten für die gewählte Zeile.</p>
   <div class="kasten achtung">
     <span class="titel">Abbrechen wirkt erst nach der laufenden Datei</span>
     <p>Das ist Absicht. Ein mitten in der Übertragung abgebrochener Download
@@ -1762,7 +1791,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td>2</td><td>Stellt fest, welche ShadowMount+-Fassung dort l&auml;uft, und nennt die Belege.</td></tr>
       <tr><td>3</td><td>Sucht die Spiele &ndash; sowohl entpackte Ordner als auch Titel aus eingeh&auml;ngten Abbildern.</td></tr>
       <tr><td>4</td><td>Bestimmt den Ablageort. Bei <em>Pro Spiel</em> entscheidet das die Fassung; haben Sie <em>Global</em> oder <em>Emulatoren</em> gew&auml;hlt, gilt Ihr Weg &ndash; und die Schritte davor entfallen, weil kein einzelnes Spiel gemeint ist.</td></tr>
-      <tr><td>5</td><td>W&auml;hlt die neueste <code>libSceAmpr.sprx</code> aus dem mitgelieferten Speicher.</td></tr>
+      <tr><td>5</td><td>Zeigt die Fassungen zur Auswahl: <code>libSceAmpr.sprx</code> (AMPR EMU) und &ndash; nur auf Ihren Haken &ndash; <code>libScePlayGo.sprx</code>. In jeder Liste steht die <strong>neueste Fassung oben</strong> und ist vorgew&auml;hlt; wer nichts &auml;ndert, bekommt die neueste AMPR-EMU-Fassung ohne PlayGo. Unter der Liste steht, was die gew&auml;hlte Variante kann (etwa &bdquo;Debug-Fassung &ndash; schreibt Protokolle&ldquo;) und woher sie stammt. Der Vorrat ist der ganze Bestand: mitgeliefert, nachgeladen und aus eigenen Ordnern &ndash; <strong>ohne die Pack-Bauten</strong> (<code>test-pack</code>, <code>test-debug-pack</code>): Sie geh&ouml;ren zum Asset-Pack beim Erstellen und stehen hier nicht zur Wahl.</td></tr>
       <tr><td>6</td><td>Gleicht die <code>config.ini</code> ab und legt die Bibliotheken ab &ndash; danach wird zur&uuml;ckgelesen und gepr&uuml;ft.</td></tr>
     </tbody>
   </table>
@@ -1774,8 +1803,10 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Unter jeder Antwortm&ouml;glichkeit steht ein Satz, was sie bedeutet, und
     die empfohlene ist gekennzeichnet. Vorkommen k&ouml;nnen f&uuml;nf Fragen:
     welche Konsole (wenn mehrere antworten), ob die gefundene Adresse
-    gespeichert werden soll, welches Spiel (wenn mehrere da sind), ob
-    <code>libScePlayGo.sprx</code> mit dazu soll, und ob abweichende
+    gespeichert werden soll, welches Spiel (wenn mehrere da sind), welche
+    Fassungen von AMPR EMU und &ndash; auf Wunsch &ndash;
+    <code>libScePlayGo.sprx</code> abgelegt werden (ein eigenes Fenster mit
+    zwei Listen; Enter nimmt die Vorgabe), und ob abweichende
     Schl&uuml;ssel in der <code>config.ini</code> angepasst werden sollen.</p>
     <p>Ein Abbruch steigt an jeder Stelle sofort aus, ohne etwas zu
     ver&auml;ndern.</p>
@@ -2234,7 +2265,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.57), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.58), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2434,7 +2465,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.57</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.58</strong></span>
     <span>Stand 3. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

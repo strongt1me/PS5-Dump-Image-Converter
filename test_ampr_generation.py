@@ -129,8 +129,12 @@ class AutomatikTests(unittest.TestCase):
         """
         stelle = QUELLE.index("def _ampr_gen_automatik(")
         rumpf = QUELLE[stelle:QUELLE.index(chr(10) + "    def ", stelle + 10)]
-        aufrufe = [m.start() for m in re.finditer(r"self\._ampr_gen_frage\(", rumpf)]
+        # Auch die Fassungswahl ist eine Frage: Sie liefert bei Abbruch ``None``.
+        aufrufe = [m.start() for m in re.finditer(
+            r"self\._ampr_gen_(?:frage|fassungen_waehlen)\(", rumpf)]
         self.assertTrue(aufrufe, "Die Automatik stellt gar keine Frage.")
+        self.assertTrue(any(rumpf.startswith("self._ampr_gen_fassungen_waehlen(", v) for v in aufrufe),
+                        "Die Fassungswahl steht nicht (mehr) in der Automatik.")
         for versatz in aufrufe:
             danach = rumpf[versatz:versatz + 1200]
             with self.subTest(zeile=rumpf[:versatz].count(chr(10)) + 1):
@@ -143,7 +147,7 @@ class ErklaerteFragenTests(unittest.TestCase):
     """Jede Frage bringt ihre Begruendung mit - und jede Antwort ihre eigene."""
 
     #: Die Fragen, die die Automatik stellen kann.
-    FRAGEN = ("q_offline", "q_wrong_gen", "q_game", "q_playgo",
+    FRAGEN = ("q_offline", "q_wrong_gen", "q_game", "q_fassungen",
               "q_config", "q_which_console", "q_save_addr")
 
     def test_zu_jeder_frage_gibt_es_ein_warum(self) -> None:
@@ -167,7 +171,6 @@ class ErklaerteFragenTests(unittest.TestCase):
         paare = {
             "q_offline": ("local", "stop"),
             "q_wrong_gen": ("stop", "go"),
-            "q_playgo": ("no", "yes"),
             "q_config": ("yes", "no"),
             "q_save_addr": ("yes", "no"),
         }

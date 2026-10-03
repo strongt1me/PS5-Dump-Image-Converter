@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.57):** In den Einstellungen lassen sich Skalierung und Bildschirmauflösung von Hand einstellen, und es gibt neue Hintergrundbilder in 1920 × 1200 und 500 × 1200.
+> **Kurz zum aktuellen Stand (v1.9.58):** Die Bibliothek zeigt ihre Titel als Karten über die ganze Breite, und Aufgabe 7 lässt die Fassung von AMPR EMU und PlayGo wählen.
+
+---
+
+## v1.9.58 – 03.10.2026
+
+- **Neu:** Die Bibliothek zeigt ihre Titel als Karten über die ganze Breite (Titelbild, Plattform, Marken und die Knöpfe „Infos & Metadaten“, „Starten“, „Kopieren“, „Konvertieren“) mit Suche, Filtern und Sortierung in einer Kopfkarte; die Spalte rechts entfällt, die Angaben klappen am Knopf auf.
+- **Neu:** Aufgabe 7 lässt die Fassung von AMPR EMU und – auf Wunsch – von PlayGo wählen; in der Liste steht die neueste oben und ist vorgewählt.
+- **Geändert:** Titelbilder werden nur in der Nähe des sichtbaren Bereichs gebaut – Filtern, Sortieren und Rollen bleiben auch bei vielen Titeln flott.
 
 ---
 

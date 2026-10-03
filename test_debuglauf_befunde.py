@@ -1253,6 +1253,17 @@ class BibliothekKachelTests(_TempTest):
         self.app = _app()
         self.innen = tk.Frame(_WURZEL)
         self.addCleanup(self.innen.destroy)
+        # Seit v1.9.58 zeichnet das Kartenraster die Karten (ps5_validator.utils.bibliothek_raster).
+        from ps5_validator.utils import bibliothek_raster
+        self.palette = dict(GUI._THEMES["dunkel"])
+        self.app._COLORS = self.palette
+        self.raster = bibliothek_raster.KartenRaster(
+            bibliothek_raster.Zeichner(_WURZEL, lambda: self.palette, APP.UI_SCHRIFT, APP.pt), self.innen,
+            inhalt=lambda e: {"titel": e["meta"]["title"], "plattform": "PS5", "chips": [], "knoepfe": []},
+            aktion=lambda *a: None, bei_auswahl=lambda _e: None, bei_start=lambda _e: None)
+        breite = mock.patch.object(self.raster.flaeche, "winfo_width", return_value=900)
+        breite.start()
+        self.addCleanup(breite.stop)
 
     def _eintraege(self, anzahl: int = 3) -> list:
         return [{"path": os.path.join(self.basis, "Spiel%d.ffpfsc" % i), "kind": "ffpfsc",
@@ -1260,42 +1271,39 @@ class BibliothekKachelTests(_TempTest):
                                                  "title_id": "PPSA0000%d" % i}}
                 for i in range(anzahl)]
 
-    def test_kachel_ohne_bild_misst_in_pixeln(self) -> None:
+    def test_karte_ohne_bild_misst_in_pixeln(self) -> None:
+        """Bis v1.9.24 war eine Kachel ohne Bild 150 Zeichen breit. Auf der Zeichenflaeche gibt es
+        nur Pixel - aber auch dort darf "kein Titelbild" die Karte nicht veraendern."""
         eintraege = self._eintraege(1)
-        self.app._bibliothek_kacheln_setzen(self.innen, eintraege, gewaehlt="",
-                                            bei_auswahl=lambda _e: None,
-                                            bei_start=lambda _e: None)
-        _WURZEL.update_idletasks()
+        self.raster.setzen(eintraege)
+        karte = eintraege[0]["_kachel"]
+        vorher = (karte.x, karte.y, karte.b, karte.h)
+        self.assertLessEqual(karte.b, 900, "Die Karte ist hoechstens so breit wie die Flaeche.")
+        self.assertLess(karte.h, karte.b * 3)
         kante = APP.pt(GUI._KACHEL_BILD_PT)
-        feld = eintraege[0]["_bildfeld"]
-        self.assertLess(feld.winfo_reqwidth(), kante * 2,
-                        "Das Bildfeld misst in Zeichen statt in Pixeln.")
-        self.app._bibliothek_bild_setzen(feld, "", kante, getattr(
-            self.app, "_bibliothek_generation", 0))
-        _WURZEL.update_idletasks()
-        self.assertLess(feld.winfo_reqwidth(), kante * 2,
-                        "Nach 'kein Titelbild' misst das Feld wieder in Zeichen.")
+        self.app._bibliothek_bild_setzen(eintraege[0]["_bildfeld"], "", kante,
+                                         getattr(self.app, "_bibliothek_generation", 0))
+        self.assertEqual(vorher, (karte.x, karte.y, karte.b, karte.h),
+                         "Nach 'kein Titelbild' misst die Karte anders.")
 
     def test_markieren_baut_nichts_neu(self) -> None:
         eintraege = self._eintraege(3)
-        self.app._bibliothek_kacheln_setzen(self.innen, eintraege, gewaehlt="",
-                                            bei_auswahl=lambda _e: None,
-                                            bei_start=lambda _e: None)
+        self.raster.setzen(eintraege)
         vorher = [e["_kachel"] for e in eintraege]
-        self.app._bibliothek_kacheln_markieren(eintraege, eintraege[1]["path"])
+        ids = [k.ids["karte"] for k in vorher]
+        self.raster.markieren(eintraege[1]["path"])
         self.assertEqual([e["_kachel"] for e in eintraege], vorher)
-        self.assertTrue(all(k.winfo_exists() for k in vorher))
-        c = self.app._COLORS
-        # Seit dem 27.09.2026 ist jede Kachel eine Karte; gewaehlt wird der
-        # Ring (Akzent statt Randfarbe) - gleich breit, damit nichts springt.
-        gewaehlt, andere = eintraege[1]["_kachel"], eintraege[0]["_kachel"]
-        self.assertEqual(str(gewaehlt.cget("highlightbackground")), c["fg_accent"])
-        self.assertEqual(str(andere.cget("highlightbackground")), c["border"])
-        self.assertEqual(str(gewaehlt.cget("bg")), c["bg_card"])
-        self.assertEqual(str(andere.cget("bg")), c["bg_card"])
-        self.assertEqual(int(gewaehlt.cget("highlightthickness")),
-                         int(andere.cget("highlightthickness")))
-        self.assertEqual(str(eintraege[1]["_kachel_texte"][0].cget("fg")), c["fg_accent"])
+        self.assertEqual(ids, [k.ids["karte"] for k in self.raster.karten],
+                         "Dieselben Zeichenelemente - nichts wurde neu gebaut.")
+        c = self.palette
+        # Gewaehlt wird der Ring (Akzent statt Randfarbe) und die Titelfarbe - gleich gross,
+        # damit nichts springt.
+        flaeche = self.raster.flaeche
+        self.assertEqual(c["fg_accent"], flaeche.itemcget(vorher[1].ids["titel"], "fill"))
+        self.assertEqual(c["fg_primary"], flaeche.itemcget(vorher[0].ids["titel"], "fill"))
+        gewaehlt, andere = vorher[1].fotos["karte"], vorher[0].fotos["karte"]
+        self.assertIsNot(gewaehlt, andere)
+        self.assertEqual((andere.width(), andere.height()), (gewaehlt.width(), gewaehlt.height()))
 
     def test_kachelklick_und_filter_im_fenster(self) -> None:
         fenster = _methode(_klasse(ast.parse(HAUPTDATEI.read_text(encoding="utf-8"))),
@@ -1304,9 +1312,8 @@ class BibliothekKachelTests(_TempTest):
                      if isinstance(k, ast.FunctionDef) and k.name == "_kachel_gewaehlt")
         gerufen = {getattr(k.func, "attr", "") for k in ast.walk(klick)
                    if isinstance(k, ast.Call)}
-        self.assertNotIn("_bibliothek_kacheln_setzen", gerufen,
-                         "Ein Klick baut wieder alle Kacheln neu.")
-        self.assertIn("_bibliothek_kacheln_markieren", gerufen)
+        self.assertNotIn("setzen", gerufen, "Ein Klick baut wieder alle Karten neu.")
+        self.assertIn("markieren", gerufen)
         filter_fn = next(k for k in ast.walk(fenster)
                          if isinstance(k, ast.FunctionDef) and k.name == "_apply_filter")
         gerufen = {getattr(k.func, "attr", "") for k in ast.walk(filter_fn)
@@ -1324,9 +1331,7 @@ class BibliothekKachelTests(_TempTest):
         speicher.schreiben("ps5://PPSA00001", puffer.getvalue())
         eintraege = [{"path": "/mnt/usb0/Spiel.ffpfsc", "kind": "ffpfsc",
                       "title_id": "PPSA00001", "meta": {"title": "Spiel"}}]
-        self.app._bibliothek_kacheln_setzen(self.innen, eintraege, gewaehlt="",
-                                            bei_auswahl=lambda _e: None,
-                                            bei_start=lambda _e: None)
+        self.raster.setzen(eintraege)
         fenster = tk.Toplevel(_WURZEL)
         fenster.withdraw()
         self.addCleanup(fenster.destroy)

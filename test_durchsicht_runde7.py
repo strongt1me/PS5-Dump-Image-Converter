@@ -20,6 +20,7 @@ import hashlib
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -117,26 +118,35 @@ class DownloadDoppeltTests(unittest.TestCase):
 
 @unittest.skipUnless(_TK_DA, "ohne Anzeige kein Fenster")
 class KachelRadTests(unittest.TestCase):
-    """H9-14: Jede Kachel reicht das Mausrad an die Flaeche weiter."""
+    """H9-14: Ueber jeder Karte rollt das Mausrad die Flaeche.
 
-    def test_jede_kachel_rollt_die_flaeche(self) -> None:
-        gui = _gui()
-        gui._COLORS = dict(APP.PS5ConverterGUI._THEMES["dunkel"])
+    Die Karten waren Widgets, und ein Rad-Ereignis geht an das Element unter dem
+    Zeiger, nicht an dessen Eltern - jede Kachel musste die Bindung selbst tragen.
+    Seit v1.9.58 zeichnet das Raster die Karten auf **einer** Zeichenflaeche: Es gibt
+    kein Element mehr, ueber dem nichts rollen koennte.
+    """
+
+    def test_ueber_jeder_karte_rollt_die_flaeche(self) -> None:
+        from ps5_validator.utils import bibliothek_raster
+        palette = dict(APP.PS5ConverterGUI._THEMES["dunkel"])
         fenster = tk.Toplevel(_WURZEL)
         try:
-            _rahmen, _flaeche, innen = gui._bibliothek_kachelflaeche(fenster)
+            raster = bibliothek_raster.KartenRaster(
+                bibliothek_raster.Zeichner(_WURZEL, lambda: palette, APP.UI_SCHRIFT, APP.pt), fenster,
+                inhalt=lambda e: {"titel": "Spiel A", "plattform": "PS5", "chips": [], "knoepfe": []},
+                aktion=lambda *a: None, bei_auswahl=lambda _e: None, bei_start=lambda _e: None)
             eintraege = [{"path": os.path.join("x", "a.ffpfsc"), "name": "A",
                           "kind": "ffpfsc", "meta": {"title": "Spiel A"}}]
-            gui._bibliothek_kacheln_setzen(innen, eintraege, gewaehlt="",
-                                           bei_auswahl=lambda _e: None,
-                                           bei_start=lambda _e: None)
-            eintrag = eintraege[0]
-            teile = [eintrag["_kachel"], eintrag["_bildfeld"], *eintrag["_kachel_texte"]]
-            for teil in teile:
-                with self.subTest(teil=str(teil)):
-                    self.assertTrue(teil.bind("<MouseWheel>"),
-                                    "Ueber dieser Kachel rollt nichts.")
-                    self.assertTrue(teil.bind("<Button-4>"))
+            with mock.patch.object(raster.flaeche, "winfo_width", return_value=900):
+                raster.setzen(eintraege)
+            for ereignis in ("<MouseWheel>", "<Button-4>", "<Button-5>"):
+                with self.subTest(ereignis=ereignis):
+                    self.assertTrue(raster.flaeche.bind(ereignis), "Auf der Flaeche rollt nichts.")
+            self.assertEqual([], raster.flaeche.winfo_children(),
+                             "Eine Karte ist kein Widget - es gibt keine Stelle ohne Rad-Bindung.")
+            with mock.patch.object(raster.flaeche, "yview_scroll") as rollen:
+                raster._mausrad(types.SimpleNamespace(delta=-120))
+            rollen.assert_called_once_with(3, "units")
         finally:
             fenster.destroy()
             _WURZEL.update()

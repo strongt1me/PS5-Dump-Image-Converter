@@ -510,20 +510,49 @@ class SeitenTests(unittest.TestCase):
                 self.assertIn(stueck, feld.cget("text"))
                 self.assertEqual(farbe, str(feld.cget("fg")))
 
-    def test_marken_auf_der_kachel_verschieben_nichts(self) -> None:
+    def _chip_texte(self, eintrag: dict) -> list:
+        """Die Texte der Chips einer Karte - von links nach rechts, von oben nach unten."""
+        flaeche = self.zustand["raster"].flaeche
+        return [flaeche.itemcget(i, "text") for i in eintrag["_kachel"].chip_ids
+                if flaeche.type(i) == "text"]
+
+    def test_chips_auf_der_karte_verschieben_nichts(self) -> None:
+        """Seit v1.9.58 stehen die Einbauten als Chips unter dem Titel (vorher als Marken auf dem Bild).
+
+        Zwei Chipzeilen sind in jeder Karte reserviert - kommt ein Ergebnis nach, springt
+        nichts: weder die Karte noch ihre Knoepfe (am 27.09.2026 sprangen die Kacheln,
+        als die Marken noch eine Zeile darunter belegten).
+        """
         eintrag = self._eintrag(self.alle)
-        texte = [m.cget("text") for m in eintrag.get("_kachel_marken", [])]
-        self.assertEqual(["AMPR", "PlayGo", "BACKPORT"], texte)
-        self.assertTrue(all(m.winfo_manager() == "place" for m in eintrag["_kachel_marken"]))
-        self.assertEqual([], self._eintrag(self.ohne).get("_kachel_marken", []))
-        self.assertEqual([], self._eintrag(self.ffpkg).get("_kachel_marken", []))
-        kachel = eintrag["_kachel"]
+        self.assertEqual(["Dump-Ordner", "AMPR EMU", "PlayGo", "BACKPORT (fw10)"], self._chip_texte(eintrag))
+        self.assertEqual(["Dump-Ordner"], self._chip_texte(self._eintrag(self.ohne)),
+                         "Nichts eingebaut: nur das Format.")
+        self.assertEqual(["Dump-Ordner", self.app._t("library.chip_ampr_verdeckt")],
+                         self._chip_texte(self._eintrag(self.verdeckt)),
+                         "fakelib2 verdeckt fakelib: Der Einbau ist da, wirkt aber nicht - das sieht man.")
+        self.assertEqual(["ffpkg", self.app._t("library.chip_unbekannt")],
+                         self._chip_texte(self._eintrag(self.ffpkg)), "Nicht ermittelbar heisst nicht 'keine'.")
+        raster = self.zustand["raster"]
+        karte = eintrag["_kachel"]
         _WURZEL.update_idletasks()
-        vorher = (kachel.winfo_reqwidth(), kachel.winfo_reqheight())
-        self.app._bibliothek_kachel_marken(eintrag, {"zustand": "ok", "ampr": True})
-        _WURZEL.update_idletasks()
-        self.assertEqual(vorher, (kachel.winfo_reqwidth(), kachel.winfo_reqheight()))
-        self.assertEqual(["AMPR"], [m.cget("text") for m in eintrag["_kachel_marken"]])
+        vorher = (karte.x, karte.y, karte.b, karte.h, [(k.x, k.y, k.b, k.h) for k in karte.knoepfe])
+        self.zustand["ansicht"]["einbauten"][eintrag["path"]] = {"zustand": "ok", "ampr": True}
+        raster.aktualisieren(eintrag)
+        self.assertEqual(["Dump-Ordner", "AMPR EMU"], self._chip_texte(eintrag))
+        self.assertEqual(vorher, (karte.x, karte.y, karte.b, karte.h, [(k.x, k.y, k.b, k.h) for k in karte.knoepfe]))
+
+    def test_die_einbauten_zaehlen_auch_im_filter(self) -> None:
+        zustand = self.zustand
+        zustand["filter"].set("einbau")
+        zustand["filter_gewaehlt"]()
+        try:
+            gesehen = {e["path"] for e in zustand["ansicht"]["sichtbar"]}
+            self.assertEqual({self.alle, self.verdeckt}, gesehen,
+                             "Was AMPR EMU, PlayGo, BACKPORT oder ein Asset-Pack nachweislich traegt - "
+                             "auch den verdeckten (eingebaut, aber wirkungslos).")
+        finally:
+            zustand["filter"].set("alle")
+            zustand["filter_gewaehlt"]()
 
     def test_die_spalte_der_liste(self) -> None:
         baum = self.zustand["liste"]
@@ -621,11 +650,38 @@ class StartTests(unittest.TestCase):
         self.assertIn("PPSA01325", warnung.call_args[0][1])
         self.assertEqual("library.start_gescheitert", self._status())
 
-    def test_der_knopf_steht_in_der_detailspalte(self) -> None:
+    def test_der_knopf_steht_auf_der_karte_und_im_streifen(self) -> None:
+        """Die Detailspalte gibt es nicht mehr: "Starten" ist der Akzentknopf jeder Karte
+        und - fuer die Liste - der des Streifens darunter."""
+        specs = {s.name: s for s in self.zustand["inhalt"](self.eintrag)["knoepfe"]}
+        self.assertEqual("Starten", specs["start"].text)
+        self.assertEqual("akzent", specs["start"].stil)
+        self.assertTrue(specs["start"].aktiv)
         knopf = self.zustand["start_knopf"]
-        self.assertEqual("KleinAccent.TButton", str(knopf.cget("style")))
-        self.assertEqual(STRINGS["library.btn_starten"]["de"], knopf.cget("text"))
-        self.assertIs(self.zustand["detail"], knopf.master.master)
+        self.assertIs(knopf, self.zustand["streifen_knoepfe"]["start"])
+        self.zustand["details"](self.eintrag)
+        _WURZEL.update_idletasks()
+        self.assertEqual("Starten", knopf.cget("text"))
+        self.assertEqual("normal", str(knopf.cget("state")))
+        self.assertEqual("akzent", knopf.stil)
+        self.assertIs(self.zustand["streifen"].innen, knopf.master.master)
+
+    def test_ohne_title_id_ist_starten_gesperrt_und_sagt_warum(self) -> None:
+        ohne = {"path": "C:/x/ohne-kennung", "kind": "folder", "size": None,
+                "meta": {"title": "Ohne Kennung"}}
+        specs = {s.name: s for s in self.zustand["inhalt"](ohne)["knoepfe"]}
+        self.assertFalse(specs["start"].aktiv)
+        self.zustand["gesperrt"]("start", ohne)
+        self.assertEqual(self.app._t("library.gesperrt_start"), self.zustand["ansicht"]["status"][1]["text"])
+
+    def test_der_knopf_der_karte_startet_ueber_dieselbe_funktion(self) -> None:
+        """Eine Karte waehlen und starten: die Rueckfrage kommt, ein Nein schickt nichts."""
+        with mock.patch.object(APP.messagebox, "askyesno", return_value=False) as frage, \
+                mock.patch.object(APP.titelstart, "titel_starten") as starten:
+            self.zustand["aktion"]("start", self.eintrag)
+        frage.assert_called_once()
+        starten.assert_not_called()
+        self.assertEqual(self.eintrag["path"], self.zustand["ansicht"]["gewaehlt"])
 
 
 if __name__ == "__main__":

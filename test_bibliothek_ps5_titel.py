@@ -649,21 +649,35 @@ class SeiteTests(unittest.TestCase):
         self.assertIs(self.app.root, aufrufe[0].get("fenster"),
                       "Rueckfragen der Suche gehen ans Hauptfenster.")
         self.assertTrue(callable(aufrufe[0].get("status")))
-        art = STRINGS["library.art_installiert_ps4"]["de"]
-        self.assertTrue(any(art in _text(w) for w in _alle(self.app._bibliothek_seite)
-                            if isinstance(w, tk.Label)),
-                        "Die Kachel nennt die Art des installierten Titels.")
+        # Seit v1.9.58 steht die Art als Chip auf der Karte (Zeichenflaeche), nicht mehr als Label.
+        flaeche = self.zustand["raster"].flaeche
+        texte = [flaeche.itemcget(i, "text") for i in flaeche.find_all() if flaeche.type(i) == "text"]
+        self.assertIn(self.app._t("library.chip_installiert_ps4"), texte,
+                      "Die Karte nennt die Art des installierten Titels.")
+        self.assertIn(self.app._t("library.chip_ordner"), texte, "Und die der Sicherung.")
+
+    def test_kopieren_gibt_es_fuer_ein_installiertes_spiel_nicht(self) -> None:
+        """Ein installiertes Spiel ist keine Datei in einer Ablage - der Knopf ist gesperrt und sagt warum."""
+        eintrag = self._installiert()
+        self.zustand["eintraege"].append(eintrag)
+        specs = {s.name: s for s in self.zustand["inhalt"](eintrag)["knoepfe"]}
+        self.assertFalse(specs["kopieren"].aktiv)
+        self.assertFalse(specs["konvertieren"].aktiv, "Auch Konvertieren geht nur mit Eintraegen auf dem Rechner.")
+        self.assertTrue(specs["info"].aktiv)
+        with mock.patch.object(self.app, "_bibliothek_herunterladen") as laden:
+            self.zustand["gesperrt"]("kopieren", eintrag)
+        laden.assert_not_called()
+        self.assertEqual(self.app._t("library.gesperrt_kopieren_installiert"),
+                         self.zustand["ansicht"]["status"][1]["text"])
 
     def test_holen_laedt_ein_installiertes_spiel_nicht(self) -> None:
+        """Doppelt gesichert: Selbst wenn die Aktion doch ankaeme, laedt ``_holen`` nichts herunter."""
         from tkinter import messagebox
         eintrag = self._installiert()
         self.zustand["eintraege"].append(eintrag)
-        self.zustand["ansicht"]["gewaehlt"] = eintrag["path"]
-        holen = self.zustand["knoepfe"]["ps5"][0]
-        self.assertEqual(self.app._t("library.download_knopf"), _text(holen))
         with mock.patch.object(self.app, "_bibliothek_herunterladen") as laden, \
                 mock.patch.object(messagebox, "showinfo") as hinweis:
-            holen.invoke()
+            self.zustand["aktion"]("kopieren", eintrag)
         laden.assert_not_called()
         hinweis.assert_called_once()
         self.assertEqual(self.app._t("library.installiert_nicht_holen",
@@ -713,10 +727,12 @@ class SeiteTests(unittest.TestCase):
                    "meta": {"title": "Spiel", "title_id": "PPSA00009"}, "size": 10,
                    "ps5": True, "ablage": "/data/homebrew", "title_id": "PPSA00009"}
         self.zustand["eintraege"].append(eintrag)
-        self.zustand["ansicht"]["gewaehlt"] = eintrag["path"]
+        specs = {s.name: s for s in self.zustand["inhalt"](eintrag)["knoepfe"]}
+        self.assertTrue(specs["kopieren"].aktiv)
         with mock.patch.object(self.app, "_bibliothek_herunterladen") as laden:
-            self.zustand["knoepfe"]["ps5"][0].invoke()
+            self.zustand["aktion"]("kopieren", eintrag)
         laden.assert_called_once()
+        self.assertEqual(eintrag["path"], self.zustand["ansicht"]["gewaehlt"], "Die Karte ist dabei gewaehlt.")
 
 
 def _text(widget) -> str:
@@ -742,7 +758,9 @@ class TexteTests(unittest.TestCase):
         # Inhalt mit einfachen oder doppelten Anfuehrungszeichen - die erste
         # Fassung dieser Pruefung suchte nur eine Schreibweise, und die
         # Gegenprobe ("Liste setzt format.<art> selbst zusammen") blieb gruen.
-        for name in ("_render_library_window", "_bibliothek_kacheln_setzen"):
+        # (Die Karten zeichnet seit v1.9.58 das Raster; ihre Format-Chips entstehen in
+        # ``_format_chip_text`` innerhalb von _render_library_window.)
+        for name in ("_render_library_window",):
             methode = next(k for k in ast.walk(baum)
                            if isinstance(k, ast.FunctionDef) and k.name == name)
             selbst_gebaut = []
