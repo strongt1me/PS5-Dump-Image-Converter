@@ -348,7 +348,7 @@ class KompressionsschalterTests(unittest.TestCase):
     """Jeder ``pack file``-Aufruf sagt ausdruecklich, ob komprimiert wird.
 
     In mkpfs hat ``--compress`` die Vorgabe ``default=True``
-    (MkPFS-1.0.0/mkpfs/cli.py). Eine Aufrufstelle ohne Angabe erzeugt also
+    (MkPFS-1.1.0/mkpfs/cli.py). Eine Aufrufstelle ohne Angabe erzeugt also
     dasselbe wie eine mit ``--compress`` - aber nur so lange, wie diese
     Vorgabe steht. Bis v1.8.55 drueckten die vier Stellen dieselbe Sache auf
     drei verschiedene Arten aus, eine davon gar nicht.

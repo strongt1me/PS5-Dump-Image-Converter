@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 
 PROJEKT = Path(r"C:\PS5-Dump-Image-Converter-WPF")
-ENGINE = PROJEKT / "MkPFS-1.0.0"
+ENGINE = PROJEKT / "MkPFS-1.1.0"
 
 #: Die Schalter, die beide Wege gemeinsam haben - abgelesen an den
 #: Packaufrufen des Programms.

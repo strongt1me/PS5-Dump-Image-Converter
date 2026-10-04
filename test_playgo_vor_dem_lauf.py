@@ -30,7 +30,7 @@ import unittest
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
-MKPFS_DIR = PROJEKT / "MkPFS-1.0.0"
+MKPFS_DIR = PROJEKT / "MkPFS-1.1.0"
 sys.path.insert(0, str(PROJEKT))
 sys.path.insert(0, str(MKPFS_DIR))
 

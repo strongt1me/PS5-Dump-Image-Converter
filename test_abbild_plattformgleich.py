@@ -40,7 +40,7 @@ from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
-sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
 import pruefumgebung                                        # noqa: E402
 pruefumgebung.umlenken("abbild_plattformgleich")

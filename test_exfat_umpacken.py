@@ -483,7 +483,7 @@ class KeinFreierPlatzTests(unittest.TestCase):
     """Warum der Umweg über den Ordner sein muss - am Abbild gemessen."""
 
     def test_ein_gebautes_abbild_hat_keinen_freien_cluster(self):
-        sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+        sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
         from mkpfs.exfat import ExfatReader
         from mkpfs.exfat_writer import write_exfat_image
 

@@ -325,7 +325,7 @@ class NennungTests(unittest.TestCase):
     FREMD = {
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
-        "MkPFS-1.0.0": "MkPFS 1.0.0",
+        "MkPFS-1.1.0": "MkPFS 1.1.0",
         "PS4FFPFSC-0.2.9": "PS4 FFPFSC",
         "PS5-AppInstall": "PS5-AppInstall",
         "PS5-Wee-Tools-0.1.8": "PS5 Wee Tools",

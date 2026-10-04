@@ -22,7 +22,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-MKPFS_DIR = ROOT / "MkPFS-1.0.0"
+MKPFS_DIR = ROOT / "MkPFS-1.1.0"
 
 from PS5ImageConverter_Pro_FINAL_revised import PS5ConverterGUI  # noqa: E402
 

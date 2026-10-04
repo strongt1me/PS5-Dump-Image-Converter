@@ -36,7 +36,7 @@ import PS5ImageConverter_Pro_FINAL_revised as hauptprogramm  # noqa: E402
 from ps5_validator.utils import bibliothek as bib            # noqa: E402
 
 GUI = hauptprogramm.PS5ConverterGUI
-MKPFS_ORDNER = ROOT / "MkPFS-1.0.0"
+MKPFS_ORDNER = ROOT / "MkPFS-1.1.0"
 
 
 def _gui():

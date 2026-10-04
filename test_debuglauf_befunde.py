@@ -29,7 +29,7 @@ PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
 # mkpfs.utils.is_ignored_name - ohne den Pfad zaehlte der Rueckfall alles mit,
 # und der exFAT-Waechter maesse nichts.
-sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
 import pruefumgebung                                        # noqa: E402
 pruefumgebung.umlenken("debuglauf_befunde")
@@ -387,7 +387,7 @@ class AbgeschnitteneAbbilderTests(unittest.TestCase):
              "--no-compress", "--no-adjust-output-file-extension",
              "--version", "PS5", "--inode-bits", "32",
              "--block-size", "65536", dump, cls.ffpfs],
-            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.0.0"), timeout=180)
+            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.1.0"), timeout=180)
         cls.baufehler = lauf.stderr.decode("utf-8", "replace") if lauf.returncode else ""
 
     @classmethod
@@ -1540,7 +1540,7 @@ class VorschauOhneAuspackenTests(unittest.TestCase):
             [sys.executable, "-m", "mkpfs", "pack", "folder", "--raw", "--no-compress",
              "--no-adjust-output-file-extension", "--version", "PS5", "--inode-bits", "32",
              "--block-size", "65536", dump, cls.flach],
-            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.0.0"), timeout=180)
+            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.1.0"), timeout=180)
         cls.baufehler = lauf.stderr.decode("utf-8", "replace") if lauf.returncode else ""
 
     @classmethod
@@ -1564,7 +1564,7 @@ class VorschauOhneAuspackenTests(unittest.TestCase):
 
     def test_flache_ffpfs_wird_nie_ausgepackt(self) -> None:
         gui = GUI.__new__(GUI)
-        gui.mkpfs_dir = str(PROJEKT / "MkPFS-1.0.0")
+        gui.mkpfs_dir = str(PROJEKT / "MkPFS-1.1.0")
         gui._fmt_bytes = lambda n: "%d B" % n
         self.assertFalse(gui._vorschau_entpacken_vertretbar(self.flach),
                          "Die Vorschau wuerde das ganze Spiel auspacken.")
@@ -3539,7 +3539,7 @@ class MkpfsIndexNeubauTests(_TempTest):
     def _packen(self, spiel: str, argumente: list) -> None:
         import subprocess
         umgebung = dict(os.environ)
-        umgebung["PYTHONPATH"] = str(PROJEKT / "MkPFS-1.0.0")
+        umgebung["PYTHONPATH"] = str(PROJEKT / "MkPFS-1.1.0")
         lauf = subprocess.run([sys.executable, "-m", "mkpfs", *argumente],
                               capture_output=True, env=umgebung, timeout=300)
         self.assertEqual(lauf.returncode, 0,

@@ -147,7 +147,7 @@ _appinstall = os.path.join(_here, 'PS5-AppInstall')
 if os.path.isdir(_appinstall):
     _datas.append((_appinstall, 'PS5-AppInstall'))
 
-# MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-1.0.0/)
+# MkPFS-Engine als Quellordner einbetten (z. B. MkPFS-1.1.0/)
 for _mkpfs_src in _mkpfs_roots:
     _datas.extend(_dateien_ohne_pycache(_mkpfs_src,
                                         os.path.basename(_mkpfs_src),

@@ -36,7 +36,7 @@ from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
-sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
 HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 
@@ -157,7 +157,7 @@ class GemesseneBauformTests(unittest.TestCase):
              "--no-compress", "--no-adjust-output-file-extension",
              "--version", "PS5", "--inode-bits", "32",
              "--block-size", "65536", dump, cls.flach],
-            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.0.0"), timeout=180)
+            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.1.0"), timeout=180)
         cls.baufehler = lauf.stderr.decode("utf-8", "replace") if lauf.returncode else ""
 
     @classmethod
@@ -191,7 +191,7 @@ class GemesseneBauformTests(unittest.TestCase):
              "--no-adjust-output-file-extension", "--no-rename-inner-image",
              "--version", "PS5", "--inode-bits", "32",
              self.flach, geschachtelt],
-            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.0.0"), timeout=180)
+            capture_output=True, cwd=str(PROJEKT / "MkPFS-1.1.0"), timeout=180)
         if lauf.returncode or not os.path.isfile(geschachtelt):
             self.skipTest("mkpfs konnte den Vergleichsfall nicht bauen")
 

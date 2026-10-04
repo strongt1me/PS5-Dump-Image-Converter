@@ -49,7 +49,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `klogsrv-ps5_v0.9.elf` | klogsrv | John Törnblom | Copyright-Zeile im ELF |
 | `websrv-ps5_v0.34.elf` | websrv | ps5-payload-dev | SDK-Adresse im ELF |
 | `OffAct_v0.4.2.elf` | OffAct | ps5-payload-dev | Projektadresse im ELF; geladen aus dem Release v0.4.2 (die alte Datei hieß „v0.34" - dieses Tag gab es beim Autor nie, vermutlich ein Zahlendreher) |
-| `ps5-app-dumper_v2.00.elf` | ps5-app-dumper | EchoStretch | `github.com/EchoStretch/ps5-app-dumper`, Release v2.00 (SHA-256 gegen den Release-Anhang geprüft; kein Beleg im ELF selbst, kein LICENSE im Repo) |
+| `ps5-app-dumper_v2.10.elf` | ps5-app-dumper | EchoStretch | `github.com/EchoStretch/ps5-app-dumper`, Release v2.10 (SHA-256 gegen den Release-Anhang geprüft); im ELF die Fußzeile der Weboberfläche „PS5 APP DUMPER · EchoStretch · GPL-3.0“ und `"version": "2.10"`; kein LICENSE im Repo |
 | `np-fake-signin-v1.3.elf` | NP Fake Signin | earthonion | „NP Fake Signin (by earthonion)" |
 | `garlic-savemgr_v1.13.1.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
 | `shadowmountplus_v1.7beta3.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta3 (beim Autor als Vorabfassung markiert; SHA-256 gegen den Release-Anhang geprüft) |
@@ -79,7 +79,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.2/`); aus dem Release v1.2 |
 | `SMPlusGui_v1.0.1.elf` | SMPlusGui | KarnerF | „SMPlusGui by Karner“ im ELF; `github.com/KarnerF/SMPlusGui`, Release v1.0.1, MIT-Lizenz (unten); SHA-256 gegen den Release-Anhang geprüft |
 | `ps5-backpork_v0.1.elf` | BackPork | BestPig; Dank an idlesauce | „Welcome To BackPork 0.1 By BestPig“ im ELF; `github.com/BestPig/BackPork`, Release 0.1, GPL-3.0; beim Autor heißt die Datei „ps5-backpork.elf“; SHA-256 gegen den Release-Anhang geprüft |
-| `aria2-v1.37.0-0.elf` | aria2 für PS5 | Tatsuhiro Tsujikawa (aria2); PS5-Bau: owendswang | „Copyright (C) 2006, 2019 Tatsuhiro Tsujikawa“ im ELF; `github.com/owendswang/ps5-aria2` (GitHub-Fork von `aria2/aria2`), Release v1.37.0-0, GPL-2.0 (Wortlaut: `helloworld/LICENSE-GPL-2.0.txt`); SHA-256 gegen den Release-Anhang geprüft |
+| `aria2-v1.37.0-2.elf` | aria2 für PS5 | Tatsuhiro Tsujikawa (aria2); PS5-Bau: owendswang | „Copyright (C) 2006, 2019 Tatsuhiro Tsujikawa“ im ELF; `github.com/owendswang/ps5-aria2` (GitHub-Fork von `aria2/aria2`), Release v1.37.0-2, GPL-2.0 (Wortlaut: `helloworld/LICENSE-GPL-2.0.txt`); SHA-256 gegen den Release-Anhang geprüft |
 | `shsrv-ps5_v0.20.elf` | shsrv | ps5-payload-dev | `github.com/ps5-payload-dev/shsrv`, Release v0.20, GPL-3.0; kein Beleg im ELF selbst; beim Autor heißt die Datei „shsrv-ps5.elf“; SHA-256 gegen den Release-Anhang geprüft |
 | `gdbsrv-ps5_v0.9.elf` | gdbsrv | John Törnblom (ps5-payload-dev) | „Copyright (C) 2025 John Törnblom“ im ELF; `github.com/ps5-payload-dev/gdbsrv`, Release v0.9, GPL-3.0; beim Autor heißt die Datei „gdbsrv-ps5.elf“; SHA-256 gegen den Release-Anhang geprüft |
 | `MemDBG-ps5_nightly-20260930.elf` | MemDBG | seregonwar | „MemDBG by seregonwar“ im ELF; `github.com/seregonwar/MemDBG`, Freigabe nightly-20260930-g6e493c9, GPL-3.0; beim Autor heißt die Datei „MemDBG-ps5.elf“; SHA-256 gegen den Release-Anhang geprüft |
@@ -233,7 +233,7 @@ your own risk. The authors take no responsibility for misuse.
 
 | Bestandteil | Herkunft | Verwendung im Programm |
 | --- | --- | --- |
-| **MkPFS 1.0.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
+| **MkPFS 1.1.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
 | **LibProsperoPkg 2.6.0** | SvenGDK | Das Werkzeug hinter „PS4 & PS5 PKG lesen“ (bis 02.10.2026 auch hinter „PKG bauen“, das seitdem ausgebaut ist); liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0). Der Ordner heißt noch `ProsperoPkg-2.5` – maßgeblich ist `ProsperoPkg-2.5/fassung.json`. **Seit 29.09.2026 mit einem eigenen Patch** (behebt einen Abbruch beim Bauen von Titeln mit vielen kleinen Dateien), geänderte Quelle und Begründung in `ProsperoPkg-2.5/patch/` |
 | **PS4 FFPFSC 0.2.9** | siehe `PS4FFPFSC-0.2.9/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.9/LICENSES/` liegen |
 | **PS5 Wee Tools 0.1.8** | andy-man ([ps5-wee-tools](https://github.com/andy-man/ps5-wee-tools)) | Werkzeug für den NOR-Flash der Konsole (GPL-3.0); unverändert mitgeliefert und als eigenständiges Programm gestartet (WEITERE TOOLS). Quelltext, Lizenz und Herkunft in `PS5-Wee-Tools-0.1.8/` (`LICENSE`, `UPSTREAM.md`, `herkunft.json`) |

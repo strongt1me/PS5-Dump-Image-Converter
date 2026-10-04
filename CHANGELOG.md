@@ -2,7 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.59):** Die Bibliothek zeigt beim Suchen einen Fortschritt mit Balken und Prozent, sucht deutlich schneller und listet auch Pakete (.pkg, .fpkg).
+> **Kurz zum aktuellen Stand (v1.9.60):** Die eingebaute PFS-Engine MkPFS ist auf Fassung 1.1.0, und zwei mitgelieferte Payloads sind auf dem neuesten Stand.
+
+---
+
+## v1.9.60 – 04.10.2026
+
+- **Aktualisiert:** Die eingebaute PFS-Engine MkPFS ist auf Fassung 1.1.0; die erzeugten Abbilder bleiben dieselben.
+- **Aktualisiert:** Die mitgelieferten Payloads ps5-app-dumper (2.10) und aria2 (1.37.0-2) sind auf dem neuesten Stand.
 
 ---
 

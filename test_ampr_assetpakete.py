@@ -24,7 +24,7 @@ from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
-sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 # Das Indexskript des Entwicklers - die Vorlage, an der sich der Index messen
 # lassen muss (siehe test_ampr_assets.IndexWieBeimEntwicklerTests).
 sys.path.insert(0, str(PROJEKT / "AMPR_PackTools-4.0"))

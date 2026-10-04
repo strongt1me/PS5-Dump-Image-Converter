@@ -286,7 +286,7 @@ class SpecAusfuehrungTests(unittest.TestCase):
         datas = self._kwargs("Analysis")["datas"]
         ziele = {os.path.basename(q) for q, _z in datas}
         ziele |= {Path(z).as_posix().split("/")[0] for _q, z in datas}
-        for pflicht in ("app_icon.ico", "helloworld", "MkPFS-1.0.0",
+        for pflicht in ("app_icon.ico", "helloworld", "MkPFS-1.1.0",
                         "Hintergrundbilder", "BENUTZERHANDBUCH.html",
                         "THIRD_PARTY_LICENSES.md", "Backport_Fakelibs"):
             self.assertIn(pflicht, ziele, f"{pflicht} wird nicht eingebettet")

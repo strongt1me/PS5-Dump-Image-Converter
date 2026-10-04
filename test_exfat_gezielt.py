@@ -26,7 +26,7 @@ from unittest import mock
 PROJEKT = Path(__file__).resolve().parent
 if str(PROJEKT) not in sys.path:
     sys.path.insert(0, str(PROJEKT))
-MKPFS_ORDNER = PROJEKT / "MkPFS-1.0.0"
+MKPFS_ORDNER = PROJEKT / "MkPFS-1.1.0"
 if str(MKPFS_ORDNER) not in sys.path:
     sys.path.insert(0, str(MKPFS_ORDNER))
 

@@ -144,7 +144,7 @@ def _ensure_mkpfs_importable() -> bool:
     Im Programm hängt mkpfs meist schon im Pfad (die Oberfläche entpackt die
     eingebettete Engine beim Start). Beim eigenständigen Aufruf des Validators
     – etwa aus Tests oder der Kommandozeile – steht der Quellordner dagegen nur
-    im Projektstamm, z. B. ``MkPFS-1.0.0/``.
+    im Projektstamm, z. B. ``MkPFS-1.1.0/``.
 
     **Der mitgelieferte Ordner hat Vorrang, und zwar ausdrücklich.** Bis zum
     30.08.2026 stand hier zuerst ein blankes ``import mkpfs`` und die Suche

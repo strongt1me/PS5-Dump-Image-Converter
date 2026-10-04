@@ -99,8 +99,8 @@ class InterneModiTests(unittest.TestCase):
     def test_mkpfs_modus_startet_die_geprüfte_fassung(self) -> None:
         """--ps4-mkpfs muss die eigene Kopie des PS4-Werkzeugs starten.
 
-        Seit das Programm selbst auf 1.0.0 steht, nennen beide dieselbe
-        Fassung. Der Schalter muss trotzdem die Kopie des Werkzeugs nehmen.
+        Das Programm steht seit dem 04.10.2026 auf 1.1.0, die Kopie des
+        Werkzeugs bleibt 1.0.0 - der Schalter muss die Kopie des Werkzeugs nehmen.
         """
         ergebnis = self._aufruf("--ps4-mkpfs", "-V")
         self.assertEqual(ergebnis.returncode, 0, ergebnis.stderr[-400:])
@@ -109,8 +109,8 @@ class InterneModiTests(unittest.TestCase):
     def test_mkpfs_modus_laedt_die_kopie_des_ps4_werkzeugs(self) -> None:
         """Welche Kopie laeuft, nicht nur welche Fassung sie nennt.
 
-        Beide Kopien (PS4FFPFSC-0.2.9/mkpfs_1_0_0 und MkPFS-1.0.0) melden
-        "MkPFS 1.0.0" - der Test oben sieht den Unterschied nicht (Befund T28,
+        Bis zum 04.10.2026 meldeten beide Kopien (PS4FFPFSC-0.2.9/mkpfs_1_0_0 und
+        die des Programms) "MkPFS 1.0.0" - der Test oben sah den Unterschied nicht (Befund T28,
         17.09.2026). Am 17.09.2026 gemessen: geladen wird die Kopie des
         Werkzeugs.
         """

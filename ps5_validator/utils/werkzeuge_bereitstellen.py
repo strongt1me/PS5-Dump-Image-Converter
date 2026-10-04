@@ -54,7 +54,7 @@ from ps5_validator.utils.plattform import (IST_LINUX, IST_MACOS, IST_WINDOWS,
 logger = logging.getLogger("PS5Converter.utils.werkzeuge_bereitstellen")
 
 #: Die MkPFS-Fassung, die dieses Programm voraussetzt.
-MKPFS_ERFORDERLICHE_FASSUNG = "1.0.0"
+MKPFS_ERFORDERLICHE_FASSUNG = "1.1.0"
 
 #: Der Ordner der mitgelieferten UFS2Tool-Baeume. Stand bis zum 30.08.2026
 #: zweimal wortgleich im Monolithen (Zeilen 39787 und 39795).
@@ -381,7 +381,7 @@ def _entpacken(ziel: str, zip_pfad: str) -> str:
 def _quellordner_finden(fassung: str) -> str | None:
     """Findet einen bereits bereitgestellten MkPFS-Quellordner."""
     for wurzel in suchwurzeln():
-        # Variante A: entpackter Ordner "MkPFS-1.0.0/mkpfs"
+        # Variante A: entpackter Ordner "MkPFS-<Fassung>/mkpfs"
         kandidat = os.path.join(wurzel, f"MkPFS-{fassung}")
         if os.path.isfile(os.path.join(kandidat, "mkpfs", "__init__.py")):
             return kandidat

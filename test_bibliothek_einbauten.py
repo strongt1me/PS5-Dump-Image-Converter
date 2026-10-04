@@ -58,7 +58,7 @@ except Exception:  # noqa: BLE001
     _TK_DA = False
 
 HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
-MKPFS_ORDNER = PROJEKT / "MkPFS-1.0.0"
+MKPFS_ORDNER = PROJEKT / "MkPFS-1.1.0"
 GUI = APP.PS5ConverterGUI
 ASSET = GUI._ist_ampr_asset_datei
 

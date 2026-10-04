@@ -97,7 +97,7 @@ class ZielEnthaeltQuelleTests(unittest.TestCase):
 
     def test_der_extraktor_selbst_verweigert_es(self) -> None:
         gui = _gui()
-        gui._extract_embedded_mkpfs = lambda: str(PROJEKT / "MkPFS-1.0.0")
+        gui._extract_embedded_mkpfs = lambda: str(PROJEKT / "MkPFS-1.1.0")
         ok = gui._extract_exfat_to_folder_mkpfs(
             self.quelle, self.spielordner, status_prefix="T", log_prefix="T",
             progress_start=0.0, progress_end=100.0)

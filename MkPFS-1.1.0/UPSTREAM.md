@@ -1,88 +1,111 @@
-# MkPFS 1.0.0 – eingebetteter Quellauszug
+# MkPFS 1.1.0 – eingebetteter Quellauszug
 
-Grundlage ist **MkPFS 1.0.0** von PSBrew (<https://github.com/PSBrew/MkPFS>),
-lizenziert unter GPL-3.0. Sie ersetzt seit dem 01.09.2026 die vorher hier
-liegende Fassung 0.0.9.
+Grundlage ist **MkPFS 1.1.0** von PSBrew (<https://github.com/PSBrew/MkPFS>),
+lizenziert unter GPL-3.0. Sie ersetzt seit dem 03.10.2026 die vorher hier
+liegende Fassung 1.0.0 (Stand vom 03.09.2026), die ihrerseits am 01.09.2026
+die 0.0.9 abgelöst hatte.
 
-**Die Versionsnummer taugt nicht zum Vergleichen.** Die Vorlage wird unter
-derselben Nummer weitergepflegt: Der hier am 01.09.2026 zuerst eingebettete
-Stand und der am 03.09.2026 nachgezogene melden beide `1.0.0`, sind aber
-verschieden. Verlässlich ist ein Prüfsummenvergleich – oder die Frage, ob
-`mkpfs/game_metadata.py` vorhanden ist; die Datei kam mit dem Stand vom 03.09.
-hinzu.
+## Was 1.1.0 gegenüber 1.0.0 ändert
 
-Was der neuere Stand bringt, hier gemessen am 03.09.2026:
+Gemessen am 03.10.2026 durch Dateivergleich der beiden Quellarchive
+`mkpfs-1.0.0.tar.gz` und `mkpfs-1.1.0.tar.gz`. `MkPFS-1.1.0.zip` und
+`MkPFS-main.zip` gleichen dem Quellarchiv 1.1.0 in `mkpfs/` und `tests/`
+byteweise.
 
-| | |
+| Datei | Änderung |
 | --- | --- |
-| `pfs.py` | `_pfs_wraps_single_exfat()` – erkennt, dass ein PFS nur eine innere exFAT-Nutzlast trägt, und lässt die PS5-Prüfliste dann aus. Ohne das meldete `verify_pfs_image` für jeden Container der Bauform **exFAT-in-PFS** drei Warnungen („sce_sys/param.json not found“, „eboot.bin not found“, „sce_sys/pfs-version.dat not found“) für Dateien, die sehr wohl da sind – eine Ebene tiefer. Da diese Bauform die Vorgabe ist, träfe es sonst jeden so gebauten Container. |
-| `batch.py` | erkennt `.ffpfs` und `.ffpfsc` beim Sammelscan, vorher nur `.exfat` und `.ffpkg`. Das Programm benutzt den Sammelscan der Engine nicht; es hat mit Aufgabe 5 einen eigenen. |
-| `cli.py` | `tree` läuft jetzt auch über einen Quellordner, nicht nur über ein Abbild. Der einzige `tree`-Aufruf des Programms übergibt einen Container. |
-| `game_metadata.py` | neues Modul, von keinem anderen Engine-Modul importiert – **vom Programm aber sehr wohl benutzt.** `read_game_metadata()` liefert der Infobox Titel, Content-ID, Fassung, Region, Cover und den AMPR-Marker in einem Aufruf. Es greift nur bei exFAT-basierten Dateien; für alles andere – etwa ein UFS2-`.ffpkg` – bleibt die eigene Kette (`abbild_metadaten.py`) zuständig. Ein leeres Ergebnis ist dort kein Nein. |
+| `compression.py` | `auto` wählt **nie mehr ISA-L**: Die Kette heißt jetzt zlib-ng > zlib (vorher isal > zlib-ng > zlib), ebenso in `init_worker()`. Grund laut Autor (Issue #132, Pull Request #135): ISA-L erzeugt bei manchen Spielen PFSC-Blöcke, die der Hardware-Entpacker der PS5 ablehnt – die Konsole stürzt kurz nach dem Start ab. Von Hand bleibt ISA-L wählbar. |
+| `cli.py` | Warnung, sobald ISA-L ausdrücklich gewählt wird; Hilfetexte der Rechenwerk-Wahl; eine Typangabe (`Generator` statt `Iterator`). |
+| `__init__.py` | `__version__ = "1.1.0"` |
+| `gui/…` | PS4/PS5-Wahl (#136), Metadaten-Ansicht und Sammelvorschau (#124) – hier nicht eingebettet, siehe „Was bewusst fehlt“. |
+| alle übrigen | unverändert, darunter `pfs.py`, `exfat.py`, `exfat_writer.py`, `ampr.py`, `game_metadata.py`. `pyproject.toml` ändert nur die Nummer; die „Dependency updates“ betreffen allein die Entwicklungsumgebung (`uv.lock`). |
 
-**Was die Korrektur NICHT deckt** (gemessen, für den Entwickler der Engine
-vorgemerkt): Ein Container der Bauform **PFS-in-PFS** bekommt dieselben drei
-Warnungen weiterhin, auch aus vollständiger Quelle. Der äußere PFS trägt dort
-einen inneren *PFS* statt eines exFAT, und `_pfs_wraps_single_exfat()` prüft
-nur auf die exFAT-Signatur. Beide Container tragen genau einen Datei-Inode –
-die Anzahl unterscheidet sie also nicht.
+**Für dieses Programm ändert sich am Ergebnis nichts.** Es übergibt bei jedem
+Packaufruf ausdrücklich `--compression-backend zlib-ng` (`MKPFS_BACKEND` im
+Hauptmodul, seit 03.09.2026). ISA-L steht nicht in `requirements.txt`, liegt
+nicht in der `.venv` und steckt in keinem der hier geprüften Bauten (Windows-EXE
+und Linux v1.9.59).
+
+**Gemessen am 04.10.2026:** Mit angehaltener Uhr – MkPFS schreibt
+`int(time.time())` ins Abbild, sonst unterscheiden sich schon zwei Läufe
+derselben Fassung – bauen die bisherige Fassung (1.0.0 mit unseren Zutaten)
+und diese (1.1.0 mit unseren Zutaten) mit den Schaltern des Programms
+**byteweise dieselben Abbilder**: an einer künstlichen Quelle (73 Dateien,
+16 MB) in beiden Bauformen (exFAT-in-PFS und PFS-in-PFS) und an einem echten
+Dump (262 MB Quelle, 157 MB Abbild). Gegenprobe: Stufe 8 statt 9 ergibt andere
+Bytes – der Vergleich ist nicht blind. `verify` meldet 0 Fehler, der Rundlauf
+liefert 73 von 73 Dateien gleich zurück. Mit einem nachgebauten ISA-L wählte
+die bisherige Fassung bei `auto` **isal**, diese **zlib-ng**.
+
+Das PS4-Werkzeug behält seine eigene Kopie (siehe unten). Es übergibt unter
+Windows ausdrücklich `--compression-backend zlib`; unter Linux und macOS gilt
+die `auto`-Kette seiner 1.0.0, die ISA-L nur nähme, wenn es installiert wäre.
 
 ## Was hier liegt
 
 Das Python-Paket `mkpfs/` – 16 Dateien, byte-gleich zur Vorlage bis auf die
-vier unten genannten Stellen. Das Programm legt beim Start das
-**übergeordnete** Verzeichnis auf `sys.path`; `import mkpfs` findet die Engine
-dann von selbst.
+vier unten genannten. Das Programm legt beim Start das **übergeordnete**
+Verzeichnis auf `sys.path`; `import mkpfs` findet die Engine dann von selbst.
 
-Dazu `LICENSE` – der GPL-3.0-Text der Vorlage, unverändert. Er bleibt beim
-Quellcode, den er deckt; die Nennung in `THIRD_PARTY_LICENSES.md` sagt, wozu
-die Engine im Programm dient, ersetzt den Lizenztext aber nicht. Bis zum
-03.09.2026 fehlte er hier als einziger unter allen eingebetteten
-Fremdkomponenten.
+Dazu `LICENSE` – der GPL-3.0-Text der Vorlage, unverändert (in 1.0.0 und 1.1.0
+gleich). Er bleibt beim Quellcode, den er deckt; die Nennung in
+`THIRD_PARTY_LICENSES.md` sagt, wozu die Engine im Programm dient, ersetzt den
+Lizenztext aber nicht.
 
 ## Der Testbestand der Vorlage liegt daneben
 
 Unter `tests/` liegen **vierzehn** der siebzehn Testdateien des Autors samt
-`fixtures/tiny.exfat.gz`. Sie laufen im Vollauf mit – die Brücke dazu ist
+`fixtures/tiny.exfat.gz` – seit dem 03.10.2026 im Stand 1.1.0 (`test_cli.py`
+hat zwei Prüfungen mehr). Sie laufen im Vollauf mit; die Brücke dazu ist
 `test_mkpfs_vorlage.py` im Wurzelverzeichnis.
 
-**Wozu.** Bis zum 06.09.2026 ließ sich nicht prüfen, ob eine der Änderungen
-hier etwas bricht, das der Autor absichtlich so gebaut hat. Beim nächsten
-Umstieg auf eine neuere Vorlage zeigen diese Tests sofort, was sich geändert
-hat – die Versionsnummer taugt dafür nicht, sie bleibt `1.0.0`.
+**Wozu.** Beim Umstieg auf eine neuere Vorlage zeigen diese Tests sofort, ob
+eine Zutat dieses Projekts etwas bricht, das der Autor absichtlich so gebaut
+hat.
 
-**Erste Messung am 06.09.2026:** 459 Prüfungen, eine ausgelassen, ein
-bekannter Fehlschlag. Alle Änderungen dieses Projekts gehen durch.
+**Messung am 04.10.2026 (Stand 1.1.0):** 460 Prüfungen gelaufen,
+0 Fehlschläge, 0 Fehler, 2 ausgelassen (ISA-L nicht installiert;
+`MKPFS_EXFAT_SAMPLE` nicht gesetzt). Erste Messung am 06.09.2026 (1.0.0):
+459 Prüfungen, eine ausgelassen, ein bekannter Fehlschlag.
 
-Der ausgelassene ist `test_cli.TestCliBatchRun.test_batch_nonexistent_source_gives_clean_error`.
-Er vergleicht einen selbst erzeugten Temp-Pfad mit dem Pfad in einer
+Eine weitere lässt die Brücke selbst aus:
+`test_cli.TestCliBatchRun.test_batch_nonexistent_source_gives_clean_error`.
+Sie vergleicht einen selbst erzeugten Temp-Pfad mit dem Pfad in einer
 Fehlermeldung; unter Windows steht in dem einen der 8.3-Kurzname
-(`JBUSER~1`), im anderen der ausgeschriebene. **Gemessen: Er fällt genauso
+(`JBUSER~1`), im anderen der ausgeschriebene. **Gemessen: Sie fällt genauso
 mit der unveränderten Vorlage** – es ist die Umgebung, nicht unsere Fassung.
 
+Eine der neuen Prüfungen (`test_pack_folder_warns_when_isal_backend_is_selected`)
+ruft `pytest.skip`, wenn ISA-L fehlt. Unter dem `unittest`-Läufer der Brücke
+wäre das ein Fehler; die Brücke zählt es deshalb als Auslassung.
+
 **Drei Dateien fehlen** (`test_compression_backends.py`,
-`test_compression_integration.py`, `test_gather.py`): Sie verlangen `pytest`,
-und der Testbestand dieses Projekts kommt ohne aus. Die Ecke, die sie
-abdecken, bewacht hier bereits `test_mkpfs_fassung.py`.
+`test_compression_integration.py`, `test_gather.py`): Sie sind im Stil von
+`pytest` geschrieben, die Brücke fährt `unittest`. Die neue Prüfung aus
+`test_compression_backends.py` („auto wählt nie ISA-L, auch wenn es da ist“)
+steht als eigene in `test_mkpfs_fassung.py`.
 
 ## Was bewusst fehlt
 
-- `mkpfs/gui/` – die mitgelieferte Oberfläche (18 Dateien, am 08.09.2026
-  gegen das Quellarchiv gezählt). Sie verlangt
-  `customtkinter` und `Pillow`; der PS5 Dump & Image Converter bringt sein
-  eigenes Fenster mit. Dieselbe Entscheidung wie bei PS4 FFPFSC, siehe
-  `PS4FFPFSC-0.2.9/UPSTREAM.md`.
-- `tests/`, `.github/`, `assets/`, `scripts/` und die Baudateien der Vorlage.
-  Sie gehören zum Entwicklungsstand des Werkzeugs, nicht zu seiner Ausführung.
+- `mkpfs/gui/` – die mitgelieferte Oberfläche (18 Dateien, in 1.0.0 wie in
+  1.1.0). Sie verlangt `customtkinter` und `Pillow`; der PS5 Dump & Image
+  Converter bringt sein eigenes Fenster mit. Dieselbe Entscheidung wie bei
+  PS4 FFPFSC, siehe `PS4FFPFSC-0.2.9/UPSTREAM.md`.
+- `tests/integration.sh`, `.github/`, `assets/`, `scripts/` und die Baudateien
+  der Vorlage. Sie gehören zum Entwicklungsstand des Werkzeugs, nicht zu seiner
+  Ausführung.
 
 ## Nicht zu verwechseln mit `PS4FFPFSC-0.2.9/mkpfs_1_0_0/`
 
-Daneben liegt eine **zweite** 1.0.0 – die, welche PS4 FFPFSC 0.2.8 mitliefert,
-samt dessen Patch. Die beiden sind nicht dasselbe:
+Daneben liegt eine **zweite** MkPFS – die 1.0.0, welche PS4 FFPFSC 0.2.8
+mitliefert, samt dessen Patch. Sie wird beim Wechsel der Programmfassung
+bewusst **nicht** mitgezogen: Das PS4-Werkzeug ruft die Kopie auf, die es
+selbst geprüft hat.
 
-| | `MkPFS-1.0.0/` (hier) | `PS4FFPFSC-0.2.9/mkpfs_1_0_0/` |
+| | `MkPFS-1.1.0/` (hier) | `PS4FFPFSC-0.2.9/mkpfs_1_0_0/` |
 | --- | --- | --- |
-| Herkunft | PSBrew, Stand 03.09.2026 | Beilage von PS4 FFPFSC 0.2.8 |
+| Herkunft | PSBrew 1.1.0, eingebettet am 03.10.2026 | Beilage von PS4 FFPFSC 0.2.8 (1.0.0) |
+| `auto` nimmt ISA-L | nein | ja, wenn installiert – unter Windows übergibt das Werkzeug `zlib` |
 | `fold_inner_name_to_ascii` | ja | nein |
 | `game_metadata.py` | ja | nein |
 | `_pfs_wraps_single_exfat` | ja | nein |
@@ -97,16 +120,20 @@ sonst die falsche erwischen.
 
 **Sieben Stellen**, jede in einem eigenen Abschnitt unten. Alle sieben sind
 Zutaten dieses Projekts und **müssen bei jedem Fassungswechsel erneut
-nachgetragen werden** – am 03.09.2026 haben sie den Austausch überstanden,
-weil vorher nachgesehen wurde, nicht von selbst.
+nachgetragen werden**.
 
-Bis zum 08.09.2026 stand hier „zwei Stellen“. Ein Abgleich unserer Fassung
-gegen das Quellarchiv `mkpfs-1.0.0.tar.gz` ergab **vier** abweichende
-Dateien; die beiden zuletzt hinzugekommenen waren nie eingetragen worden.
-Verlorengehen konnten sie trotzdem nicht – jede der vier hat ihren Wächter,
-und der Abgleich lief nur deshalb, weil das Archiv gerade zur Hand war. Wer
-die Fassung wechselt, prüft die Liste hier **und** lässt die genannten Tests
-laufen; keins von beidem ersetzt das andere.
+**Wechsel auf 1.1.0 (03.10.2026):** dreiwegig zusammengeführt – Basis das
+Quellarchiv 1.0.0, dazu unsere Fassung und die Vorlage 1.1.0. `pfs.py` und
+`exfat_writer.py` hat die Vorlage nicht angefasst; unsere Fassungen gelten
+unverändert weiter. `compression.py` ging ohne Konflikt zusammen. In `cli.py`
+gab es **einen** Konflikt, die Signatur von `_stage_single_file_source_root`:
+Unsere Zeilen mit `allow_copy` bleiben, die Rückgabe-Angabe folgt der Vorlage
+(`Generator[Path | None, None, None]`). Gegenprobe danach: Der Unterschied
+unserer Fassung zur Vorlage 1.1.0 besteht aus genau denselben Zeilen wie der
+zur Vorlage 1.0.0 – bis auf diese eine Typangabe.
+
+Wer die Fassung wechselt, prüft die Liste hier **und** lässt die genannten
+Tests laufen; keins von beidem ersetzt das andere.
 
 | Datei | Zutat | Wächter |
 | --- | --- | --- |
@@ -164,9 +191,11 @@ weggefallen.
 
 Die neue Hilfsfunktion stellt ihn wieder her: `zlib` schreibt denselben
 Datenstrom, nur langsamer. Bewusst **nicht** über das vorhandene
-`init_worker()` – dessen Kette beginnt bei `isal`, das mit einer eigenen
-Stufenskala arbeitet (1–9 wird auf 0–3 abgebildet) und damit andere Bytes
-erzeugen würde.
+`init_worker()` – dessen Kette begann in 1.0.0 bei `isal`, das mit einer
+eigenen Stufenskala arbeitet (1–9 wird auf 0–3 abgebildet) und damit andere
+Bytes erzeugen würde. Seit 1.1.0 beginnt sie bei `zlib-ng`; gebraucht wird
+die Hilfsfunktion trotzdem: `compress_block()` und `decompress_block()`
+laden das Backend weiterhin ohne Rückfall.
 
 Bewacht von `test_mkpfs_fassung.py`.
 

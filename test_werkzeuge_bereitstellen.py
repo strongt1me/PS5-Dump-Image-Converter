@@ -319,7 +319,7 @@ class MkpfsTests(unittest.TestCase):
         return pfad
 
     def test_der_mitgelieferte_quellordner_wird_gefunden(self) -> None:
-        """Im Projekt liegt MkPFS-1.0.0 - das ist der uebliche Fall."""
+        """Im Projekt liegt MkPFS-1.1.0 - das ist der uebliche Fall."""
         gefunden = wb._quellordner_finden(wb.MKPFS_ERFORDERLICHE_FASSUNG)
         self.assertIsNotNone(gefunden, "Der mitgelieferte Ordner fehlt.")
         self.assertTrue(os.path.isfile(

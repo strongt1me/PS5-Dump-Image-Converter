@@ -1,7 +1,8 @@
 # -*- coding: utf-8 -*-
 """Bewacht die eingebettete MkPFS-Engine.
 
-Angelegt am 03.09.2026, als 0.0.9 durch 1.0.0 ersetzt wurde.
+Angelegt am 03.09.2026, als 0.0.9 durch 1.0.0 ersetzt wurde; seit dem
+04.10.2026 liegt 1.1.0 hier.
 
 Der Austausch war moeglich, weil die Engine ihre Schnittstelle behalten
 hat: dieselben 125 Funktionen in ``pfs.py``, kein entfallener
@@ -12,10 +13,12 @@ beinahe still verlorengegangen, und die stehen hier:
   fehlt. In 0.0.9 stand er oben in ``pfs.py``; 1.0.0 hat das Packen in
   ein eigenes Modul verlegt und bricht dort mit ``ImportError`` ab. Der
   Rueckfall ist als ``_ensure_backend_with_fallback`` wieder da - eine
-  Zutat dieses Projekts, siehe ``MkPFS-1.0.0/UPSTREAM.md``.
+  Zutat dieses Projekts, siehe ``MkPFS-1.1.0/UPSTREAM.md``.
 * Das **Rechenwerk**. 1.0.0 stellt ``--compression-backend`` auf
   ``auto`` und bevorzugt damit ``isal``, das mit einer eigenen
   Stufenskala arbeitet. Diese Fassung legt sich auf ``zlib-ng`` fest.
+  Seit 1.1.0 (04.10.2026 eingebettet) waehlt ``auto`` nie mehr ``isal``
+  (PS5-Absturz, Issue #132 der Vorlage) - ``IsalTests`` haelt das fest.
 * Die **Namen, die das Programm benutzt**. Sie werden hier nicht im
   Quelltext gesucht, sondern am geladenen Modul abgefragt.
 
@@ -202,6 +205,46 @@ class RueckfallTests(unittest.TestCase):
         self.assertEqual("zlib-ng", lauf.stdout.strip(),
                          "Auf diesem Rechner fehlt zlib_ng - dann sagt der "
                          "Rueckfalltest daneben nichts.")
+
+
+class IsalTests(unittest.TestCase):
+    """``auto`` waehlt seit MkPFS 1.1.0 nie mehr ISA-L.
+
+    Laut Autor (Issue #132, Pull Request #135) erzeugt ISA-L bei manchen
+    Spielen PFSC-Bloecke, die der Hardware-Entpacker der PS5 ablehnt - die
+    Konsole stuerzt kurz nach dem Start ab. Das Programm gibt ohnehin
+    ``zlib-ng`` vor (``MKPFS_BACKEND``); dieser Waechter haelt die Vorgabe der
+    Engine selbst fest, falls je ein Aufruf ohne den Schalter dazukommt.
+
+    ISA-L ist hier nicht installiert - ein Nachbau vertritt es. Am 04.10.2026
+    gemessen: Die vorige Engine (1.0.0) nahm mit demselben Nachbau ``isal``.
+    """
+
+    NACHBAU = "\n".join((
+        "import sys",
+        "sys.path.insert(0, sys.argv[1])",
+        "from mkpfs import compression as comp",
+        "class Isal:",
+        "    def compress(self, data, level=2):",
+        "        return b'isal'",
+        "    def decompress(self, data):",
+        "        return b''",
+        "comp._load_isal = lambda: Isal()",
+        "comp.set_backend(sys.argv[2])",
+        "print(comp.get_backend_name())",
+    ))
+
+    def test_auto_waehlt_nie_isal(self) -> None:
+        lauf = _im_unterprozess(_engine_ordner()[0], self.NACHBAU, "auto")
+        self.assertEqual(0, lauf.returncode, lauf.stderr[-400:])
+        self.assertIn(lauf.stdout.strip(), ("zlib-ng", "zlib"),
+                      "auto waehlt ISA-L - die Vorgabe von MkPFS 1.0.0 ist zurueck.")
+
+    def test_der_nachbau_greift_wenn_man_isal_verlangt(self) -> None:
+        """Gegenprobe: Sonst bewiese der Test oben nur, dass der Nachbau gar nicht geladen wird."""
+        lauf = _im_unterprozess(_engine_ordner()[0], self.NACHBAU, "isal")
+        self.assertEqual(0, lauf.returncode, lauf.stderr[-400:])
+        self.assertEqual("isal", lauf.stdout.strip())
 
 
 class BackendTests(unittest.TestCase):
@@ -476,7 +519,7 @@ class PrueflisteTests(unittest.TestCase):
 
         Dass sie das auch bei vollstaendiger Quelle tut, ist ein
         Mangel der Vorlage und fuer deren Entwickler vermerkt; siehe
-        ``MkPFS-1.0.0/UPSTREAM.md``.
+        ``MkPFS-1.1.0/UPSTREAM.md``.
         """
         self.assertIn("pfs_in_pfs", self.gemessen)
         _fehler, warnungen = self.gemessen["pfs_in_pfs"]

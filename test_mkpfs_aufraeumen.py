@@ -20,7 +20,7 @@ Aufräumen, die Ursache (ein ``RuntimeError`` aus ``multiprocessing``) stand
 nur noch als "During handling of the above exception" im Stapel.
 
 Diese Datei ist der Wächter für die fünfte Abweichung in
-``MkPFS-1.0.0/UPSTREAM.md``. Sie muss bei jedem Fassungswechsel erneut
+``MkPFS-1.1.0/UPSTREAM.md``. Sie muss bei jedem Fassungswechsel erneut
 anschlagen, wenn die Zutat verlorengeht.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ import unittest
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
-PFS_PY = PROJEKT / "MkPFS-1.0.0" / "mkpfs" / "pfs.py"
+PFS_PY = PROJEKT / "MkPFS-1.1.0" / "mkpfs" / "pfs.py"
 
 
 class AufraeumenFaengtOSErrorTests(unittest.TestCase):
@@ -144,7 +144,7 @@ class VerhaltenTests(unittest.TestCase):
         (Befund T24).
         """
         lauf = subprocess.run(
-            [sys.executable, "-c", _AUFRAEUMSTELLE_AUSLOESEN, str(PROJEKT / "MkPFS-1.0.0")],
+            [sys.executable, "-c", _AUFRAEUMSTELLE_AUSLOESEN, str(PROJEKT / "MkPFS-1.1.0")],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         ausgabe = lauf.stdout.strip().splitlines()
         self.assertEqual(lauf.returncode, 0, lauf.stderr[-2000:])
@@ -156,7 +156,7 @@ class UpstreamNotizTests(unittest.TestCase):
     Fassungswechsel verloren."""
 
     def test_upstream_fuehrt_die_abweichung(self):
-        notiz = io.open(PROJEKT / "MkPFS-1.0.0" / "UPSTREAM.md",
+        notiz = io.open(PROJEKT / "MkPFS-1.1.0" / "UPSTREAM.md",
                         encoding="utf-8", errors="replace").read()
         self.assertIn("test_mkpfs_aufraeumen.py", notiz,
                       "Diese Datei steht nicht als Waechter in UPSTREAM.md.")

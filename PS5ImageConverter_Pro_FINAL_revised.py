@@ -693,7 +693,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.59"
+APP_VERSION = "v1.9.60"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -908,7 +908,7 @@ ZSTD_STUFEN: frozenset[int] = frozenset(level for _key, level in ZSTD_LEVEL_KEYS
 # seiner Klappliste "9 - Stable / safest (default)", und der zlib-Encoder von
 # LibProsperoPKG 2.5 schreibt ebenfalls mit Maximalstufe. MkPFS selbst hatte
 # in 0.0.9 ebenfalls 9 voreingestellt und stellt seit 1.0.0 nur noch 7 vor
-# (MkPFS-1.0.0/mkpfs/cli.py:797) - das beruehrt uns nicht: alle vier
+# (MkPFS-1.1.0/mkpfs/cli.py:811, in 1.1.0 unveraendert) - das beruehrt uns nicht: alle vier
 # Packaufrufe dieses Programms geben `--compression-level` ausdruecklich mit.
 #
 # Die Stufe ist reine Groessen- und Zeitfrage, keine Kompatibilitaetsfrage:
@@ -921,12 +921,17 @@ ZSTD_VORGABE: int = 9
 # Das Rechenwerk, mit dem MkPFS die PFSC-Bloecke packt.
 #
 # MkPFS 1.0.0 hat `--compression-backend` auf "auto" voreingestellt und
-# bevorzugt damit isal, sobald es auf dem Rechner liegt. isal rechnet mit
+# bevorzugte damit isal, sobald es auf dem Rechner lag. isal rechnet mit
 # einer eigenen Stufenskala - die Stufen 1-9 werden auf 0-3 abgebildet -,
-# und die Abbilder fallen damit anders aus als bisher. Diese Fassung legt
+# und die Abbilder fielen damit anders aus als bisher. Diese Fassung legt
 # sich deshalb ausdruecklich auf zlib-ng fest: dasselbe Rechenwerk wie unter
-# MkPFS 0.0.9, unabhaengig davon, was installiert ist. Siehe
-# MkPFS-1.0.0/UPSTREAM.md.
+# MkPFS 0.0.9, unabhaengig davon, was installiert ist.
+#
+# Seit MkPFS 1.1.0 waehlt "auto" isal nie mehr: Laut Autor (Issue #132)
+# erzeugt isal bei manchen Spielen PFSC-Bloecke, die der Hardware-Entpacker
+# der PS5 ablehnt - die Konsole stuerzt kurz nach dem Start ab. Dieses
+# Programm war davon nie betroffen (Festlegung seit 03.09.2026, isal liegt in
+# keinem Bau); die Festlegung bleibt. Siehe MkPFS-1.1.0/UPSTREAM.md.
 MKPFS_BACKEND: str = "zlib-ng"
 
 # Die Bauform eines Containers: was zwischen Huelle und Spieldateien liegt.
@@ -984,7 +989,7 @@ MKPFS_BACKEND: str = "zlib-ng"
 # Die andere Abhilfe - eine kleinere Blockgroesse - ist hier bewusst NICHT
 # eingebaut: 64 KB ist die Abbildungseinheit der Konsole, und ob ein
 # kleinerer Wert dort ohne Nachteil bleibt, ist an echter Hardware nicht
-# gemessen. MkPFS 1.0.0 koennte es (--block-size auto-fit, 4096..65536).
+# gemessen. MkPFS koennte es seit 1.0.0 (--block-size auto-fit, 4096..65536).
 BAUFORM_EXFAT: str = "exfat"
 BAUFORM_PFS: str = "pfs"
 BAUFORM_VORGABE: str = BAUFORM_EXFAT
@@ -18318,7 +18323,7 @@ class PS5ConverterGUI:
 
             meta      = self._read_game_meta(tmp_meta)
             cover_img = self._load_cover_image(tmp_meta)
-            meta["_metadata_method"] = "MkPFS 1.0.0 (inneres PFS)"
+            meta["_metadata_method"] = "MkPFS %s (inneres PFS)" % MKPFS_REQUIRED_VERSION
             if cover_img is None:
                 cover_img = self._load_fallback_art_image(tmp_meta)
 
@@ -19256,7 +19261,7 @@ class PS5ConverterGUI:
             self._info_format_var.set(self._t(f"format.{source_type}") if source_type in self._FORMAT_LABELS else "–")
             method_labels = {
                 "folder": "param.json / param.sfo",
-                "ffpfsc": "MkPFS 1.0.0 (PFS/PFSC)",
+                "ffpfsc": "MkPFS %s (PFS/PFSC)" % MKPFS_REQUIRED_VERSION,
                 "exfat": "MkPFS exFAT-Reader (read-only)",
                 "ffpkg": self._t("info_popup.method_ffpkg"),
             }
@@ -25402,7 +25407,7 @@ class PS5ConverterGUI:
             except SystemExit as exc:
                 exit_code = exc.code if isinstance(exc.code, int) else 0
             except ModuleNotFoundError as exc:
-                # MkPFS 1.0.0 nutzt zlib_ng. Wenn das Modul fehlt,
+                # MkPFS nutzt seit 1.0.0 zlib_ng. Wenn das Modul fehlt,
                 # versuchen wir eine einmalige automatische Nachinstallation.
                 if str(getattr(exc, "name", "")) == "zlib_ng":
                     writer.write(self._t("mkpfs.zlibng_fehlt"))
@@ -33105,7 +33110,7 @@ class PS5ConverterGUI:
         self, src: str, dst: str, *, progress_task_index: int = 2
     ) -> bool:
         """Extrahiert eine .exfat-Datei in einen Game Dump Ordner.
-                Primärpfad: native MkPFS-1.0.0-exFAT-Extraktion.
+                Primärpfad: native MkPFS-exFAT-Extraktion (eingebettete Engine).
                 Legacy-Fallback: OSFMount-/robocopy-Extraktion, falls der Parser scheitert.
         Args:
             src: Pfad zur .exfat-Datei.
@@ -34059,7 +34064,7 @@ class PS5ConverterGUI:
     def _mode_ffpkg_to_ffpfsc(self, src: str, dst: str) -> bool:
         """Konvertiert eine .ffpkg-Datei direkt zu einer .ffpfsc-Datei (Aufgabe 4).
 
-                Methodik: vendorter MkPFS-1.0.0 pack file.
+                Methodik: eingebettete MkPFS-Engine, pack file.
                     .ffpkg wird als einzelne Datei in einen PFS-Container eingebettet.
                     Identisch zur Behandlung von .exfat in Aufgabe 3 (pack_file).
                     Kein Mount, kein Dokan, kein UFS2Tool noetig.
@@ -43642,7 +43647,7 @@ class PS5ConverterGUI:
     #: Herkunft. Steht dort kein Projekt, gibt es keine abfragbare Quelle -
     #: dann nennt der Bericht nur, was hier liegt.
     _EINGEBETTETE_WERKZEUGE: tuple[tuple[str, str, str, str], ...] = (
-        ("MkPFS (Packmaschine)", "MkPFS-1.0.0/mkpfs/__init__.py",
+        ("MkPFS (Packmaschine)", "MkPFS-1.1.0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
         ("MkPFS (im PS4-Werkzeug)", "PS4FFPFSC-0.2.9/mkpfs_1_0_0/mkpfs/__init__.py",
          "github", "PSBrew/MkPFS"),
@@ -59602,9 +59607,9 @@ def _run_ps4_subcommand(modus: str, argv: list[str]) -> int:
     Schalter ruft das Werkzeug selbst auf (siehe ``pipeline.mkpfs_command``);
     beide sind für Menschen nicht gedacht.
 
-    Beide Wege nutzen inzwischen MkPFS 1.0.0, bleiben aber getrennt: Das
-    PS4-Werkzeug ruft seine eigene, von ihm geprüfte Kopie auf, damit eine
-    künftige Anhebung der Programmfassung es nicht mitzieht.
+    Die Wege bleiben getrennt: Das Programm nutzt seit dem 04.10.2026 MkPFS
+    1.1.0, das PS4-Werkzeug ruft weiter seine eigene, von ihm geprüfte Kopie
+    (1.0.0) auf - eine Anhebung der Programmfassung zieht es nicht mit.
 
     Args:
         modus: ``--ps4ffpsc`` oder ``--ps4-mkpfs``.

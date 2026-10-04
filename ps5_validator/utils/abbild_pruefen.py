@@ -48,7 +48,7 @@ class _PruefungAbgebrochen(Exception):
     Wird aus dem Fortschrittshoerer der MkPFS-Pruefung geworfen. MkPFS
     faengt in ``verify_pfs_image`` nur ``OSError``/``ValueError`` - eine
     eigene Klasse kommt also bis hierher durch (am Quelltext von
-    ``MkPFS-1.0.0/mkpfs/pfs.py`` belegt, Durchsicht Runde 19).
+    ``MkPFS-1.1.0/mkpfs/pfs.py`` belegt, Durchsicht Runde 19).
     """
 
 
@@ -302,7 +302,7 @@ class Pruefstand:
         steht der Prozentwert in der Statuszeile.
 
         ``progress`` kennt erst die eingebettete Fassung (siehe
-        ``MkPFS-1.0.0/UPSTREAM.md``). Eine andere, etwa aus ``site-packages``,
+        ``MkPFS-1.1.0/UPSTREAM.md``). Eine andere, etwa aus ``site-packages``,
         bekaeme sonst einen unbekannten Parameter - und die Pruefung schluege
         fehl, statt nur still zu laufen.
 

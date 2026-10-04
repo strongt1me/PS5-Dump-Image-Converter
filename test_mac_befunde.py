@@ -47,7 +47,7 @@ from unittest import mock
 
 PROJEKT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJEKT))
-sys.path.insert(0, str(PROJEKT / "MkPFS-1.0.0"))
+sys.path.insert(0, str(PROJEKT / "MkPFS-1.1.0"))
 
 import pruefumgebung                                        # noqa: E402
 pruefumgebung.umlenken("mac_befunde")
@@ -162,7 +162,7 @@ class NachpruefungTests(unittest.TestCase):
         """Ueber den Syntaxbaum der Funktion, nicht ueber die ganze Datei."""
         import ast
         import io as _io
-        with _io.open(PROJEKT / "MkPFS-1.0.0" / "mkpfs" / "cli.py",
+        with _io.open(PROJEKT / "MkPFS-1.1.0" / "mkpfs" / "cli.py",
                       "rb") as fh:
             baum = ast.parse(fh.read().decode("utf-8"))
         knoten = next(k for k in ast.walk(baum)

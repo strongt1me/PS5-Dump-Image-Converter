@@ -1,27 +1,31 @@
 # -*- coding: utf-8 -*-
 """Die Tests des MkPFS-Autors gegen unsere eingebettete Fassung.
 
-**Wozu.** Unter ``MkPFS-1.0.0/mkpfs/`` liegt ein Quellauszug von MkPFS 1.0.0
-(PSBrew, GPL-3.0) mit zwei bewussten Abweichungen und den Korrekturen, die
-hier dazugekommen sind - ``MkPFS-1.0.0/UPSTREAM.md`` fuehrt sie einzeln auf.
+**Wozu.** Unter ``MkPFS-1.1.0/mkpfs/`` liegt ein Quellauszug von MkPFS 1.1.0
+(PSBrew, GPL-3.0, seit 04.10.2026; vorher 1.0.0) mit den Zutaten, die hier
+dazugekommen sind - ``MkPFS-1.1.0/UPSTREAM.md`` fuehrt sie einzeln auf.
 Bis zum 06.09.2026 gab es keine Moeglichkeit zu pruefen, ob eine dieser
 Aenderungen etwas bricht, das der Autor absichtlich so gebaut hat: Sein
 Testbestand lag hier nicht.
 
-Er liegt jetzt unter ``MkPFS-1.0.0/tests/`` und laeuft im Vollauf mit. Beim
+Er liegt jetzt unter ``MkPFS-1.1.0/tests/`` und laeuft im Vollauf mit. Beim
 naechsten Umstieg auf eine neuere Vorlage zeigt er sofort, was sich geaendert
-hat - die Versionsnummer taugt dafuer nicht, sie bleibt ``1.0.0``.
+hat - die Versionsnummer allein taugt dafuer nicht (unter "1.0.0" pflegte der
+Autor weiter).
 
 **Erste Messung am 06.09.2026:** 459 Pruefungen, eine ausgelassen, ein
 bekannter Fehlschlag (siehe unten). Alle vier Aenderungen dieses Projekts an
-``exfat_writer.py`` und ``cli.py`` gehen durch.
+``exfat_writer.py`` und ``cli.py`` gehen durch. **Seit 04.10.2026 (1.1.0)**
+traegt ``test_cli.py`` zwei Pruefungen mehr; eine davon ruft ``pytest.skip``,
+wenn ISA-L fehlt - der ``unittest``-Laeufer hier zaehlte das als Fehler, die
+Bruecke wertet es als Auslassung (``_Ergebnis``).
 
-**Was nicht mitkommt.** Drei der siebzehn Dateien der Vorlage verlangen
-``pytest`` (``test_compression_backends``, ``test_compression_integration``,
-``test_gather``). Der Testbestand dieses Projekts kommt ohne aus, und fuer
-eine Abhaengigkeit reicht der Ertrag nicht: Die Ecke, die sie abdecken,
-bewacht hier bereits ``test_mkpfs_fassung.py``. Die uebrigen vierzehn sind
-reines ``unittest``.
+**Was nicht mitkommt.** Drei der siebzehn Dateien der Vorlage sind im Stil von
+``pytest`` geschrieben (``test_compression_backends``,
+``test_compression_integration``, ``test_gather``); die Bruecke faehrt
+``unittest``. Die Ecke, die sie abdecken, bewacht hier ``test_mkpfs_fassung.py``
+(seit 1.1.0 auch "auto waehlt nie ISA-L"). Die uebrigen vierzehn sind reines
+``unittest``.
 
 **Warum die Ausgabe umgeleitet wird.** Die Vorlage-Tests schreiben viel auf
 die Konsole, darunter Zeichen, die die Windows-Konsole in ihrer Vorgabe nicht
@@ -39,12 +43,12 @@ import unittest
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
-VORLAGE = PROJEKT / "MkPFS-1.0.0" / "tests"
+VORLAGE = PROJEKT / "MkPFS-1.1.0" / "tests"
 
-# MkPFS-1.0.0 auf den Pfad, damit "import mkpfs" die eingebettete Fassung
+# MkPFS-1.1.0 auf den Pfad, damit "import mkpfs" die eingebettete Fassung
 # findet - dieselbe, die das Programm benutzt. Und den Testordner, weil die
 # Dateien sich gegenseitig importieren ("from test_cli import ...").
-for pfad in (PROJEKT / "MkPFS-1.0.0", VORLAGE):
+for pfad in (PROJEKT / "MkPFS-1.1.0", VORLAGE):
     if str(pfad) not in sys.path:
         sys.path.insert(0, str(pfad))
 
@@ -54,7 +58,7 @@ for pfad in (PROJEKT / "MkPFS-1.0.0", VORLAGE):
 # der Unterprozess mit Rueckgabewert 1, und der Test liest das als
 # Programmfehler.
 _ALT = os.environ.get("PYTHONPATH", "")
-_NEU = str(PROJEKT / "MkPFS-1.0.0")
+_NEU = str(PROJEKT / "MkPFS-1.1.0")
 if _NEU not in _ALT.split(os.pathsep):
     os.environ["PYTHONPATH"] = (_NEU + os.pathsep + _ALT) if _ALT else _NEU
 
@@ -69,6 +73,32 @@ AUSGELASSEN = {
     ("test_cli", "TestCliBatchRun",
      "test_batch_nonexistent_source_gives_clean_error"),
 }
+
+
+try:
+    import pytest as _pytest_modul
+    _UEBERSPRUNGEN = _pytest_modul.skip.Exception
+except Exception:  # noqa: BLE001 - ohne pytest gibt es auch kein pytest.skip
+    _UEBERSPRUNGEN = None
+
+
+class _Ergebnis(unittest.TextTestResult):
+    """Wertet ``pytest.skip`` aus einem Vorlage-Test als Auslassung, nicht als Fehler.
+
+    ``test_cli.TestRunImageCheck.test_pack_folder_warns_when_isal_backend_is_selected``
+    (neu in 1.1.0) ruft ``pytest.skip``, wenn ISA-L nicht installiert ist. Die
+    Ausnahme ``Skipped`` erbt von ``BaseException``; ``unittest`` kennt sie nicht
+    und haette sie als Fehler gemeldet.
+    """
+
+    def addError(self, test, err):  # noqa: N802 - Name aus unittest
+        # Ueber die oeffentliche Schnittstelle: pytest setzt bei ``Skipped`` das Modul
+        # auf "builtins" (gemessen 04.10.2026) - ein Namensvergleich griffe nicht.
+        art = err[0]
+        if _UEBERSPRUNGEN is not None and art is not None and issubclass(art, _UEBERSPRUNGEN):
+            self.addSkip(test, str(err[1]))
+            return
+        super().addError(test, err)
 
 
 class _Papierkorb(io.TextIOBase):
@@ -128,7 +158,7 @@ class VorlageTests(unittest.TestCase):
         """Nicht irgendein mkpfs aus site-packages."""
         import mkpfs
         self.assertEqual(
-            (PROJEKT / "MkPFS-1.0.0" / "mkpfs").resolve(),
+            (PROJEKT / "MkPFS-1.1.0" / "mkpfs").resolve(),
             Path(mkpfs.__file__).parent.resolve())
 
     def test_die_vorlage_laeuft_gegen_unsere_fassung(self):
@@ -143,7 +173,7 @@ class VorlageTests(unittest.TestCase):
         self.assertGreater(suite.countTestCases(), 400,
                            "Es wurden kaum Tests gefunden - stimmt der Pfad?")
         strom = io.StringIO()
-        laeufer = unittest.TextTestRunner(stream=strom, verbosity=0)
+        laeufer = unittest.TextTestRunner(stream=strom, verbosity=0, resultclass=_Ergebnis)
         # In den Papierkorb, nicht in einen Puffer: Ein Vorlage-Test baut
         # ein grosses Abbild und schreibt dabei viel; gesammelt lief das in
         # einen MemoryError, und der stand dann im Bericht, als waere ein
@@ -158,9 +188,9 @@ class VorlageTests(unittest.TestCase):
             bericht.append("%s\n%s" % (fall, text))
         self.fail(
             "%d von %d Pruefungen der Vorlage schlagen gegen unsere Fassung "
-            "fehl. Das heisst: Eine Aenderung an MkPFS-1.0.0/mkpfs/ bricht "
+            "fehl. Das heisst: Eine Aenderung an MkPFS-1.1.0/mkpfs/ bricht "
             "etwas, das der Autor absichtlich so gebaut hat - oder die "
-            "Vorlage unter MkPFS-1.0.0/tests/ ist neuer als der Quellauszug "
+            "Vorlage unter MkPFS-1.1.0/tests/ ist neuer als der Quellauszug "
             "daneben.\n\n%s"
             % (len(ergebnis.failures) + len(ergebnis.errors),
                suite.countTestCases(), "\n\n".join(bericht)[:8000]))

@@ -34,7 +34,7 @@ import unittest
 from pathlib import Path
 
 PROJEKT = Path(__file__).resolve().parent
-MKPFS_ORDNER = PROJEKT / "MkPFS-1.0.0"
+MKPFS_ORDNER = PROJEKT / "MkPFS-1.1.0"
 sys.path.insert(0, str(PROJEKT))
 
 import pruefumgebung                                        # noqa: E402
