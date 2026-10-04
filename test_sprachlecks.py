@@ -551,7 +551,7 @@ class VorlagenWerdenGefuettertTests(unittest.TestCase):
     #: dabei, damit eine geloeschte Aufrufstelle auffaellt statt still
     #: durchzugehen.
     MIT_VORLAGEN = (
-        ("read_self", 1),
+        ("read_self", 2),          # SELF-Inspektor + ELF -> EBOOT.BIN (04.10.2026)
         ("abbild_pruefen", 1),
         ("senden", 1),
         ("datei_verarbeiten", 2),

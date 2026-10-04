@@ -451,7 +451,9 @@ class SeitenTests(unittest.TestCase):
         self.feld = next(w for w in widgets if isinstance(w, tk.Entry))
         self.tabelle = self.app._konsole_tafel_tabelle
         self.protokoll = self.app._konsole_tafel_protokoll
-        self.knopf = {_text(w): w for w in widgets if isinstance(w, ttk.Button)}
+        # Seit v1.9.62 Pillen (RoundedButton) statt ttk.Button.
+        self.knopf = {_text(w): w for w in widgets
+                      if isinstance(w, (ttk.Button, APP.RoundedButton))}
 
     def _zurueck(self) -> None:
         _bis(lambda: not self.app._konsole_tafel_beschaeftigt())

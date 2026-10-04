@@ -693,7 +693,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.61"
+APP_VERSION = "v1.9.62"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -2813,6 +2813,14 @@ class RoundedButton(tk.Canvas):
         height: int = 42,
         disabledbackground: str | None = None,
         disabledforeground: str | None = None,
+        disabledoutline: str | None = None,
+        pille: bool = False,
+        hintergrund=None,
+        akzent: bool = False,
+        textgruppe: "list | None" = None,
+        bei_zustand=None,
+        breite_nach_text: bool = False,
+        polster_x: int = 20,
         **kwargs,
     ) -> None:
         parent_bg = kwargs.pop("parent_bg", None) or master.cget("bg")
@@ -2846,8 +2854,35 @@ class RoundedButton(tk.Canvas):
         self._radius = radius
         self._disabledbackground = disabledbackground or bg
         self._disabledforeground = disabledforeground or fg
+        self._disabledoutline = disabledoutline
         self._state = initial_state
         self._hovering = False
+        # Pillenform (seit v1.9.62, Nutzerwahl 04.10.2026 "so wie im Bild"):
+        # gezeichnet wie die Knoepfe der Bibliothek (bibliothek_zeichnen) als
+        # geglaettetes Bild statt als Vieleck. Hinter den Rundungen steht dann
+        # nicht die Canvas-Farbe, sondern was ``hintergrund(knopf, b, h)``
+        # liefert - der Bildausschnitt der Flaeche an dieser Stelle.
+        self._pille = bool(pille)
+        self._hintergrund = hintergrund
+        self._akzent = bool(akzent)
+        self._grund_merker: "tuple | None" = None
+        self._foto = None
+        self._schrift_obj = None
+        # Gemeinsame Startlinie: Alle Knoepfe einer Gruppe beginnen ihren Text
+        # an derselben Stelle, der Textblock steht mittig (Aufgaben 1-8).
+        self._textgruppe = textgruppe
+        if textgruppe is not None:
+            textgruppe.append(self)
+        # Gerufen, wenn der Knopf gesperrt oder freigegeben wird (STARTEN:
+        # sein Schein gehoert nur zum freigegebenen Knopf).
+        self._bei_zustand = bei_zustand
+        # So breit wie die Beschriftung plus ``polster_x`` je Seite - wie ein
+        # ttk.Button (Seiten der Ansicht KONSOLE, seit v1.9.62). Sprachwechsel
+        # und Schriftwechsel ziehen die Breite nach (``configure``).
+        self._breite_nach_text = bool(breite_nach_text)
+        self._polster_x = knopfmass(polster_x, master)
+        if self._breite_nach_text:
+            self._breite_anpassen()
         self.configure(cursor="hand2")
         self.bind("<Configure>", lambda _e: self._redraw())
         self.bind("<Button-1>", self._on_click)
@@ -2921,10 +2956,124 @@ class RoundedButton(tk.Canvas):
         else:
             fill = self._activebackground if self._hovering else self._bg
             text_color = self._activeforeground if self._hovering else self._fg
-        points = self._round_rect_points(1, 1, w - 1, h - 1, self._radius)
-        self.create_polygon(points, smooth=True, fill=fill, outline=self._outline or fill)
-        self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
+        if self._pille:
+            self._pille_zeichnen(w, h, fill, text_color, disabled)
+        else:
+            points = self._round_rect_points(1, 1, w - 1, h - 1, self._radius)
+            self.create_polygon(points, smooth=True, fill=fill, outline=self._outline or fill)
+            self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
         self.configure(cursor=("arrow" if disabled else "hand2"))
+
+    def _pille_zeichnen(self, w: int, h: int, fill: str, text_color: str,
+                        disabled: bool) -> None:
+        """Zeichnet den Knopf als Pille: Hintergrundausschnitt, Form, Schrift.
+
+        Die Form kommt aus ``bibliothek_zeichnen`` (vierfach gerechnet und
+        verkleinert, also ohne Treppe an der Rundung); der Akzentknopf
+        (STARTEN) traegt wie "Starten" in der Bibliothek einen waagerechten
+        Verlauf. Die Schrift bleibt echte Tk-Schrift.
+        """
+        bild = self._grund_holen(w, h).convert("RGBA")
+        radius = h / 2.0
+        try:
+            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        fill = self._als_hex(fill)
+        if self._akzent and not disabled:
+            form = bibliothek_zeichnen.verlauf_rechteck(
+                w, h, radius, fill, bibliothek_zeichnen.farbton_verschieben(fill, 32.0))
+        else:
+            rand = (self._disabledoutline if disabled and self._disabledoutline
+                    else (self._outline or fill))
+            form = bibliothek_zeichnen.rund_rechteck(
+                w, h, radius, fill, self._als_hex(rand), faktor)
+        bild.alpha_composite(form)
+        self._foto = ImageTk.PhotoImage(bild, master=self)
+        self.create_image(0, 0, image=self._foto, anchor="nw")
+        x, anker = self._textlage(w, h)
+        self.create_text(x, h / 2, text=self._text, fill=text_color, font=self._font,
+                         anchor=anker)
+
+    def _grund_holen(self, w: int, h: int) -> "Image.Image":
+        """Was hinter dem Knopf liegt - gemerkt, bis ``nachziehen`` es verwirft.
+
+        Beim Ueberfahren mit der Maus wird nur die Form neu gerechnet; der
+        Ausschnitt bleibt derselbe, solange der Knopf nicht wandert.
+        """
+        merker = self._grund_merker
+        if merker is not None and merker[0] == (w, h):
+            return merker[1]
+        bild = None
+        if self._hintergrund is not None:
+            try:
+                bild = self._hintergrund(self, w, h)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Knopfhintergrund nicht berechenbar: %s", exc)
+                bild = None
+        if bild is not None:
+            bild = bild.convert("RGB")
+            if bild.size != (w, h):
+                bild = bild.resize((w, h), _LANCZOS)
+            self._grund_merker = ((w, h), bild)
+            return bild
+        try:
+            r, g, b = (wert // 257 for wert in self.winfo_rgb(super().cget("background")))
+        except tk.TclError:
+            r, g, b = (0, 0, 0)
+        return Image.new("RGB", (w, h), (r, g, b))
+
+    def _als_hex(self, farbe: str) -> str:
+        """Jede Tk-Farbe ("white", "#fff", "#ffffff") als #rrggbb - so rechnet bibliothek_zeichnen."""
+        try:
+            r, g, b = (wert // 257 for wert in self.winfo_rgb(farbe))
+        except tk.TclError:
+            return "#000000"
+        return "#%02x%02x%02x" % (r, g, b)
+
+    def _textbreite(self) -> int:
+        if self._schrift_obj is None:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            self._schrift_obj = _tkfont.Font(root=self, font=self._font)
+        return int(self._schrift_obj.measure(self._text or ""))
+
+    def _breite_anpassen(self) -> None:
+        """Setzt die Breite auf Beschriftung plus Polster (nur mit ``breite_nach_text``)."""
+        try:
+            tk.Canvas.configure(self, width=self._textbreite() + 2 * self._polster_x)
+        except tk.TclError as exc:
+            logger.debug("Knopfbreite nicht setzbar: %s", exc)
+
+    def _textlage(self, w: int, h: int) -> "tuple[float, str]":
+        """Wo die Schrift steht: mittig - oder auf der Startlinie der Gruppe.
+
+        Nutzerwunsch 04.10.2026 fuer die Aufgabenknoepfe: "alle im Knopf
+        zentriert aber linksbuendig, damit die Texte auf der gleichen Linie
+        beginnen". Der laengste Text der Gruppe steht mittig, alle anderen
+        beginnen an seiner Startlinie.
+        """
+        gruppe = self._textgruppe
+        if not gruppe:
+            return w / 2.0, "center"
+        breiten = []
+        for knopf in gruppe:
+            try:
+                if knopf.winfo_exists():
+                    breiten.append(knopf._textbreite())
+            except tk.TclError:
+                continue
+        breitest = max(breiten) if breiten else self._textbreite()
+        luft = max(4.0, h * 0.4)
+        return max(luft, (w - breitest) / 2.0), "w"
+
+    def nachziehen(self) -> None:
+        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
+        self._grund_merker = None
+        self._redraw()
+
+    def invoke(self) -> None:
+        """Loest den Knopf aus wie ``tk.Button.invoke``."""
+        self._on_click()
 
     def _on_click(self, _event: object = None) -> None:
         if self._command and self._state != tk.DISABLED:
@@ -2942,8 +3091,13 @@ class RoundedButton(tk.Canvas):
 
     def configure(self, **kwargs) -> None:  # noqa: A003 - bewusst tk-kompatibler Name
         redraw_needed = False
+        gruppe_neu = False
+        breite_neu = False
         if "text" in kwargs:
-            self._text = kwargs.pop("text")
+            neu = kwargs.pop("text")
+            gruppe_neu = neu != self._text and bool(self._textgruppe)
+            breite_neu = neu != self._text
+            self._text = neu
             redraw_needed = True
         if "bg" in kwargs:
             self._bg = kwargs.pop("bg")
@@ -2963,33 +3117,465 @@ class RoundedButton(tk.Canvas):
         if "disabledforeground" in kwargs:
             self._disabledforeground = kwargs.pop("disabledforeground")
             redraw_needed = True
+        if "disabledoutline" in kwargs:
+            self._disabledoutline = kwargs.pop("disabledoutline")
+            redraw_needed = True
         if "outline" in kwargs:
             self._outline = kwargs.pop("outline")
             redraw_needed = True
         if "font" in kwargs:
             self._font = kwargs.pop("font")
+            self._schrift_obj = None
+            gruppe_neu = bool(self._textgruppe)
+            breite_neu = True
             redraw_needed = True
         if "command" in kwargs:
             self._command = kwargs.pop("command")
+        if breite_neu and getattr(self, "_breite_nach_text", False):
+            self._breite_anpassen()
+        zustand_neu = False
         if "state" in kwargs:
-            self._state = kwargs.pop("state")
+            neu = kwargs.pop("state")
+            zustand_neu = str(neu) != str(self._state)
+            self._state = neu
             redraw_needed = True
         if kwargs:
             super().configure(**kwargs)
+        if zustand_neu and callable(getattr(self, "_bei_zustand", None)):
+            try:
+                self._bei_zustand()
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Rueckruf beim Zustandswechsel fehlgeschlagen: %s", exc)
+        if gruppe_neu:
+            # Die Startlinie haengt am laengsten Text der Gruppe - nach einem
+            # Sprachwechsel kann das ein anderer sein, also alle nachziehen.
+            for knopf in list(self._textgruppe):
+                try:
+                    if knopf is not self and knopf.winfo_exists():
+                        knopf._redraw()
+                except tk.TclError:
+                    continue
         if redraw_needed:
             self._redraw()
+
+    #: Was ``cget`` aus dem Knopf selbst liefert - ein Canvas kennt diese
+    #: Optionen nicht. "bg"/"background" bleiben beim Canvas (die Farbe hinter
+    #: der Rundung), so wie es ``_theme_rundknoepfe_nachziehen`` erwartet.
+    _EIGENE_OPTIONEN = {
+        "text": "_text", "fg": "_fg", "foreground": "_fg", "font": "_font",
+        "command": "_command", "activebackground": "_activebackground",
+        "activeforeground": "_activeforeground", "outline": "_outline",
+        "disabledbackground": "_disabledbackground",
+        "disabledforeground": "_disabledforeground",
+        "disabledoutline": "_disabledoutline",
+    }
 
     def cget(self, key: str):  # noqa: A003 - bewusst tk-kompatibler Name
         if key == "state":
             return self._state
+        if key in self._EIGENE_OPTIONEN:
+            return getattr(self, self._EIGENE_OPTIONEN[key])
         return super().cget(key)
 
     def __getitem__(self, key: str):
-        if key == "state":
-            return self._state
-        return super().__getitem__(key)
+        return self.cget(key)
 
     config = configure
+
+
+class RunderHaken(tk.Canvas):
+    """Ankreuzfeld als Zeichnung: gerundetes Kaestchen, Schrift direkt auf dem Hintergrund.
+
+    Tritt im Hauptfenster an die Stelle von ``tk.Checkbutton`` (seit v1.9.62,
+    Pillenform nach Nutzerwahl vom 04.10.2026). Ein tk.Checkbutton malt hinter
+    seiner Beschriftung immer ein Rechteck in seiner Hintergrundfarbe - auf dem
+    Hintergrundbild stand das als dunkler Kasten. Hier liegt hinter Kaestchen
+    und Schrift der Bildausschnitt der Flaeche (``hintergrund``).
+
+    Versteht, was das Programm von seinen Kaestchen nutzt: ``configure``/
+    ``cget`` mit text, font, fg/foreground, bg/background, state, variable,
+    command, disabledforeground; ``toggle``/``invoke``; Leertaste und Fokus.
+    Gesetzt wird ueber die Variable - ``select``/``deselect`` braucht niemand. Optionen, die nur ein tk.Checkbutton kennt
+    (selectcolor, activebackground, padx, ...), werden angenommen und dienen
+    nur dem Groessenzwilling: Das Feld ist auf das Pixel so gross, wie der
+    tk.Checkbutton waere - die Kartenzeilen ordnen sich danach.
+    """
+
+    _NUR_CHECKBUTTON = ("selectcolor", "activebackground", "activeforeground", "anchor",
+                        "bd", "borderwidth", "highlightthickness", "padx", "pady",
+                        "relief", "indicatoron", "justify")
+
+    def __init__(self, master: tk.Widget, text: str = "", variable=None, command=None,
+                 font: tuple = (UI_SCHRIFT, pt(9)), fg: str = "#ffffff", bg: str | None = None,
+                 disabledforeground: str | None = None, hintergrund=None, palette=None,
+                 **kwargs) -> None:
+        self._zwilling_optionen = {name: kwargs.pop(name) for name in self._NUR_CHECKBUTTON
+                                   if name in kwargs}
+        zustand = kwargs.pop("state", tk.NORMAL)
+        if bg is None:
+            try:
+                bg = master.cget("bg")
+            except tk.TclError:
+                bg = "#000000"
+        super().__init__(master, bg=bg, highlightthickness=0, bd=0, takefocus=1,
+                         cursor="hand2", **kwargs)
+        self._text = text
+        self._variable = variable
+        self._command = command
+        self._font = font
+        self._fg = fg
+        self._disabledforeground = disabledforeground
+        self._state = zustand
+        self._hintergrund = hintergrund
+        self._palette = palette
+        self._grund_merker: "tuple | None" = None
+        self._foto = None
+        self._schrift_obj = None
+        self._hover = False
+        self._fokus = False
+        self._spur = None
+        self._variable_beobachten()
+        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
+        self.bind("<ButtonRelease-1>", self._klick, add="+")
+        self.bind("<Enter>", lambda _e: self._hover_setzen(True), add="+")
+        self.bind("<Leave>", lambda _e: self._hover_setzen(False), add="+")
+        self.bind("<FocusIn>", lambda _e: self._fokus_setzen(True), add="+")
+        self.bind("<FocusOut>", lambda _e: self._fokus_setzen(False), add="+")
+        self.bind("<KeyPress-space>", lambda _e: self.invoke(), add="+")
+        self._groesse_setzen()
+
+    # --- Groesse und Zustand ---------------------------------------------------------
+    def _groesse_setzen(self) -> None:
+        """Genau so gross wie ein tk.Checkbutton mit derselben Schrift und Polsterung."""
+        try:
+            zwilling = tk.Checkbutton(self.master, text=self._text, font=self._font,
+                                      **{k: v for k, v in self._zwilling_optionen.items()
+                                         if k in ("bd", "borderwidth", "highlightthickness",
+                                                  "padx", "pady", "anchor")})
+            breite, hoehe = zwilling.winfo_reqwidth(), zwilling.winfo_reqheight()
+            zwilling.destroy()
+        except tk.TclError:
+            breite, hoehe = 120, 24
+        super().configure(width=breite, height=hoehe)
+
+    def _variable_beobachten(self) -> None:
+        if self._variable is None:
+            return
+        try:
+            self._spur = self._variable.trace_add("write", lambda *_a: self._redraw())
+        except (tk.TclError, AttributeError):
+            self._spur = None
+
+    def _ist_an(self) -> bool:
+        if self._variable is None:
+            return False
+        try:
+            return bool(self._variable.get())
+        except (tk.TclError, ValueError):
+            return False
+
+    def _hover_setzen(self, an: bool) -> None:
+        self._hover = an
+        self._redraw()
+
+    def _fokus_setzen(self, an: bool) -> None:
+        self._fokus = an
+        self._redraw()
+
+    # --- Bedienung -------------------------------------------------------------------
+    def _klick(self, ereignis=None) -> None:
+        if ereignis is not None:
+            if not (0 <= ereignis.x < self.winfo_width() and 0 <= ereignis.y < self.winfo_height()):
+                return                       # Maus ausserhalb losgelassen
+        self.invoke()
+
+    def toggle(self) -> None:
+        if self._variable is not None:
+            self._variable.set(not self._ist_an())
+
+    def invoke(self):
+        """Wie tk.Checkbutton.invoke: umschalten, dann den Befehl - nicht, wenn gesperrt."""
+        if self._state == tk.DISABLED:
+            return None
+        self.toggle()
+        if self._command:
+            return self._command()
+        return None
+
+    # --- Zeichnen --------------------------------------------------------------------
+    def _farben(self) -> dict:
+        p = self._palette() if callable(self._palette) else {}
+        tief = str(p.get("console_bg", "#121216"))
+        karte = str(p.get("bg_card", "#1d1d23"))
+        rand = str(p.get("border", "#34353d"))
+        akzent = str(p.get("accent_btn", "#2e6be6"))
+        akzent_hell = str(p.get("fg_accent", "#7fb2ff"))
+        sekundaer = str(p.get("fg_secondary", "#9a9ca6"))
+        mische = bibliothek_zeichnen.mischen
+        return {"tief": tief, "karte": karte, "rand": rand, "akzent": akzent,
+                "akzent_hell": akzent_hell, "sekundaer": sekundaer, "mische": mische}
+
+    def _kaestchen_bild(self, groesse: int, faktor: float) -> "Image.Image":
+        f = self._farben()
+        mische = f["mische"]
+        an = self._ist_an()
+        if self._state == tk.DISABLED:
+            fuellung = mische(f["karte"], f["tief"], 0.5)
+            umrandung = mische(f["rand"], f["karte"], 0.5)
+        elif an:
+            fuellung = f["akzent"]
+            umrandung = mische(f["akzent"], f["akzent_hell"], 0.55)
+        else:
+            fuellung = f["tief"]
+            umrandung = mische(f["rand"], f["sekundaer"], 0.35)
+        if (self._hover or self._fokus) and self._state != tk.DISABLED:
+            umrandung = mische(f["rand"], f["akzent_hell"], 0.75)
+        bild = bibliothek_zeichnen.rund_rechteck(groesse, groesse, max(2.0, groesse * 0.27),
+                                                 fuellung, umrandung, faktor)
+        if an:
+            ueber = 4
+            gross = Image.new("RGBA", (groesse * ueber, groesse * ueber), (0, 0, 0, 0))
+            s = groesse * ueber
+            farbe = bibliothek_zeichnen.kontrastfarbe(fuellung)
+            ImageDraw.Draw(gross).line(
+                [(s * 0.26, s * 0.52), (s * 0.43, s * 0.68), (s * 0.74, s * 0.34)],
+                fill=bibliothek_zeichnen._rgba(farbe), width=max(1, int(round(1.8 * faktor * ueber))),
+                joint="curve")
+            bild.alpha_composite(gross.resize((groesse, groesse), _LANCZOS))
+        return bild
+
+    def _grund_holen(self, w: int, h: int) -> "Image.Image":
+        merker = self._grund_merker
+        if merker is not None and merker[0] == (w, h):
+            return merker[1]
+        bild = None
+        if self._hintergrund is not None:
+            try:
+                bild = self._hintergrund(self, w, h)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Kaestchenhintergrund nicht berechenbar: %s", exc)
+        if bild is not None:
+            bild = bild.convert("RGB")
+            if bild.size != (w, h):
+                bild = bild.resize((w, h), _LANCZOS)
+            self._grund_merker = ((w, h), bild)
+            return bild
+        try:
+            r, g, b = (wert // 257 for wert in self.winfo_rgb(super().cget("background")))
+        except tk.TclError:
+            r, g, b = (0, 0, 0)
+        return Image.new("RGB", (w, h), (r, g, b))
+
+    def _redraw(self) -> None:
+        try:
+            w, h = self.winfo_width(), self.winfo_height()
+            if w <= 1 or h <= 1:
+                w, h = self.winfo_reqwidth(), self.winfo_reqheight()
+        except tk.TclError:
+            return
+        if w <= 1 or h <= 1:
+            return
+        try:
+            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        if self._schrift_obj is None:
+            import tkinter.font as _tkfont  # noqa: PLC0415
+            self._schrift_obj = _tkfont.Font(root=self, font=self._font)
+        zeile = int(self._schrift_obj.metrics("linespace"))
+        groesse = max(10, min(h - 2, int(round(zeile * 0.72))))
+        bild = self._grund_holen(w, h).convert("RGBA")
+        bild.alpha_composite(self._kaestchen_bild(groesse, faktor), (1, (h - groesse) // 2))
+        self.delete("all")
+        self._foto = ImageTk.PhotoImage(bild, master=self)
+        self.create_image(0, 0, image=self._foto, anchor="nw")
+        if self._state == tk.DISABLED:
+            schrift = self._disabledforeground or self._farben()["sekundaer"]
+        else:
+            schrift = self._fg
+        self.create_text(1 + groesse + max(4, int(round(zeile * 0.3))), h / 2.0, text=self._text,
+                         font=self._font, fill=schrift, anchor="w")
+        try:
+            super().configure(cursor=("arrow" if self._state == tk.DISABLED else "hand2"))
+        except tk.TclError:
+            pass
+
+    def nachziehen(self) -> None:
+        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
+        self._grund_merker = None
+        self._redraw()
+
+    # --- tk-kompatible Optionen ------------------------------------------------------
+    def configure(self, cnf=None, **kwargs):  # noqa: A003 - bewusst tk-kompatibler Name
+        if isinstance(cnf, dict):
+            kwargs = {**cnf, **kwargs}
+        neu_messen = False
+        zeichnen = False
+        if "text" in kwargs:
+            self._text = kwargs.pop("text")
+            neu_messen = zeichnen = True
+        if "font" in kwargs:
+            self._font = kwargs.pop("font")
+            self._schrift_obj = None
+            neu_messen = zeichnen = True
+        for schluessel in ("fg", "foreground"):
+            if schluessel in kwargs:
+                self._fg = kwargs.pop(schluessel)
+                zeichnen = True
+        if "disabledforeground" in kwargs:
+            self._disabledforeground = kwargs.pop("disabledforeground")
+            zeichnen = True
+        if "state" in kwargs:
+            self._state = kwargs.pop("state")
+            zeichnen = True
+        if "command" in kwargs:
+            self._command = kwargs.pop("command")
+        if "variable" in kwargs:
+            if self._variable is not None and self._spur is not None:
+                try:
+                    self._variable.trace_remove("write", self._spur)
+                except (tk.TclError, ValueError):
+                    pass
+            self._variable = kwargs.pop("variable")
+            self._variable_beobachten()
+            zeichnen = True
+        for name in self._NUR_CHECKBUTTON:
+            if name in kwargs:
+                self._zwilling_optionen[name] = kwargs.pop(name)
+                neu_messen = True
+        if "bg" in kwargs or "background" in kwargs:
+            self._grund_merker = None
+            zeichnen = True
+        if kwargs:
+            super().configure(**kwargs)
+        if neu_messen:
+            self._groesse_setzen()
+        if zeichnen:
+            self._redraw()
+
+    config = configure
+
+    _EIGENE_OPTIONEN = {"text": "_text", "font": "_font", "fg": "_fg", "foreground": "_fg",
+                        "command": "_command", "disabledforeground": "_disabledforeground"}
+
+    def cget(self, key: str):  # noqa: A003 - bewusst tk-kompatibler Name
+        if key == "state":
+            return self._state
+        if key == "variable":
+            return str(self._variable) if self._variable is not None else ""
+        if key in self._EIGENE_OPTIONEN:
+            return getattr(self, self._EIGENE_OPTIONEN[key])
+        if key in self._NUR_CHECKBUTTON:
+            return self._zwilling_optionen.get(key, "")
+        return super().cget(key)
+
+    def __getitem__(self, key: str):
+        return self.cget(key)
+
+
+class RunderBalken(tk.Canvas):
+    """Fortschrittsbalken als Pille - Rinne und Balken mit runden Enden.
+
+    Fuer die Seiten der Ansicht KONSOLE (seit v1.9.62, Pillenform wie in der
+    Ansicht UMWANDELN). Ein ttk.Progressbar zeichnet Rinne und Balken als
+    Rechtecke; hier ist die Rinne eine Pille in der Feldfarbe mit Rand, der
+    Balken eine Pille im Verlauf des Akzentknopfs. Er beginnt nie schmaler als
+    hoch, sonst stuende bei wenigen Prozent ein Strich statt einer Kuppe da.
+
+    Versteht, was die Seiten von ihrem Balken nutzen: ``["value"]`` lesen und
+    setzen, ``configure``/``cget`` mit ``value`` und ``maximum``.
+
+    Args:
+        palette: ``() -> dict`` - die aktive Palette, bei jedem Zeichnen frisch.
+        grund: Rolle der Palette, auf der der Balken steht (Ecken der Rinne).
+        hoehe: Hoehe bei 100 %; waechst mit der Anzeige (``knopfmass``).
+    """
+
+    def __init__(self, master: tk.Widget, *, palette, grund: str = "bg_main", hoehe: int = 12,
+                 maximum: float = 100.0, value: float = 0.0, **kwargs) -> None:
+        self._palette = palette
+        self._grund = grund
+        self._maximum = float(maximum) or 100.0
+        self._wert = float(value)
+        self._foto = None
+        super().__init__(master, height=knopfmass(hoehe, master), bg=self._farbe(grund, "#000000"),
+                         highlightthickness=0, bd=0, **kwargs)
+        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
+
+    def _farbe(self, rolle: str, vorgabe: str) -> str:
+        p = self._palette() if callable(self._palette) else {}
+        return str(p.get(rolle) or vorgabe)
+
+    def _hex(self, rolle: str, vorgabe: str) -> str:
+        """Eine Farbe der Palette als #rrggbb - so rechnet bibliothek_zeichnen."""
+        try:
+            r, g, b = (wert // 257 for wert in self.winfo_rgb(self._farbe(rolle, vorgabe)))
+        except tk.TclError:
+            return vorgabe
+        return "#%02x%02x%02x" % (r, g, b)
+
+    def _redraw(self) -> None:
+        try:
+            w, h = self.winfo_width(), self.winfo_height()
+        except tk.TclError:
+            return
+        if w <= 2 or h <= 2:
+            return
+        try:
+            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        bild = Image.new("RGBA", (w, h), self._hex(self._grund, "#000000"))
+        bild.alpha_composite(bibliothek_zeichnen.rund_rechteck(
+            w, h, h / 2.0, self._hex("console_bg", "#121216"), self._hex("border", "#34353d"),
+            faktor))
+        anteil = max(0.0, min(1.0, self._wert / self._maximum))
+        if anteil > 0.0:
+            links = self._hex("progress_fill", self._hex("accent_btn", "#2e6be6"))
+            bild.alpha_composite(bibliothek_zeichnen.verlauf_rechteck(
+                min(w, max(h, int(round(w * anteil)))), h, h / 2.0, links,
+                bibliothek_zeichnen.farbton_verschieben(links, 32.0)))
+        self.delete("all")
+        self._foto = ImageTk.PhotoImage(bild, master=self)
+        self.create_image(0, 0, image=self._foto, anchor="nw")
+
+    def nachziehen(self) -> None:
+        """Nach einem Designwechsel: Grund und Zeichnung in den neuen Farben."""
+        try:
+            super().configure(bg=self._farbe(self._grund, "#000000"))
+        except tk.TclError:
+            return
+        self._redraw()
+
+    def configure(self, cnf=None, **kwargs):  # noqa: A003 - bewusst tk-kompatibler Name
+        if isinstance(cnf, dict):
+            kwargs = {**cnf, **kwargs}
+        zeichnen = False
+        if "value" in kwargs:
+            self._wert = float(kwargs.pop("value") or 0.0)
+            zeichnen = True
+        if "maximum" in kwargs:
+            self._maximum = float(kwargs.pop("maximum") or 100.0) or 100.0
+            zeichnen = True
+        if kwargs:
+            super().configure(**kwargs)
+        if zeichnen:
+            self._redraw()
+
+    config = configure
+
+    def cget(self, key: str):  # noqa: A003 - bewusst tk-kompatibler Name
+        if key == "value":
+            return self._wert
+        if key == "maximum":
+            return self._maximum
+        return super().cget(key)
+
+    def __getitem__(self, key: str):
+        return self.cget(key)
+
+    def __setitem__(self, key: str, wert) -> None:
+        self.configure({key: wert})
 
 
 # ---------------------------------------------------------------------------
@@ -3601,6 +4187,7 @@ class PS5ConverterGUI:
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
         ("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent"),
         ("titlebar.self_inspector", "_show_self_inspector"),
+        ("titlebar.elf_eboot", "_show_elf_zu_eboot"),
         ("titlebar.dump_rename", "_show_dump_rename"),
         ("titlebar.pkg_reader", "_show_pkg_reader"),
         ("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
@@ -5294,6 +5881,9 @@ class PS5ConverterGUI:
                 widget.config(**{config_attr: self._t(key, **kwargs)})
             except Exception:
                 pass
+        # Mit den Texten aendert sich die gemeinsame Breite der Seitenleistenknoepfe
+        # (die Fussknoepfe sind erst hier neu beschriftet).
+        self._seitenleiste_breite_anpassen()
 
         # Tooltips: die mit festem Schluessel (_tooltip) und die drei, deren
         # Text errechnet wird (Durchsicht H1-3/H2-14).
@@ -7947,6 +8537,30 @@ class PS5ConverterGUI:
                          background=c["bg_card"],
                          troughcolor=c["bg_main"],
                          width=12)
+        # Rollbalken des Status-Logs (seit v1.9.62): schmal, ohne Pfeile, Rinne
+        # in der Logfarbe - er verschwindet in der runden Logflaeche statt als
+        # heller Streifen an ihrem Rand zu stehen. Die Rinne zieht
+        # _protokoll_farbe_anwenden nach dem Regler "Status-Log" nach.
+        try:
+            style.layout("Protokoll.Vertical.TScrollbar", [
+                ("Vertical.Scrollbar.trough", {"sticky": "ns", "children": [
+                    ("Vertical.Scrollbar.thumb", {"expand": "1", "sticky": "nswe"})]})])
+        except tk.TclError as exc:
+            logger.debug("Rollbalken des Status-Logs nicht einrichtbar: %s", exc)
+        self._protokoll_rollbalken_faerben(c["console_bg"])
+        # Dieselbe Form fuer Tabellen und Listen der Ansicht KONSOLE - mit der
+        # Rinne in der Farbe der Flaeche, in der sie stehen.
+        for _stil, _rolle in self._SCHMALE_ROLLBALKEN.items():
+            _richtung = "Horizontal" if ".Horizontal." in _stil else "Vertical"
+            try:
+                style.layout(_stil, [
+                    ("%s.Scrollbar.trough" % _richtung, {
+                        "sticky": "ew" if _richtung == "Horizontal" else "ns", "children": [
+                            ("%s.Scrollbar.thumb" % _richtung,
+                             {"expand": "1", "sticky": "nswe"})]})])
+            except tk.TclError as exc:
+                logger.debug("Rollbalken %s nicht einrichtbar: %s", _stil, exc)
+            self._rollbalken_faerben(_stil, c[_rolle])
 
         # Treeview (Profil-/Patch-/Spiele-/Warteschlangenlisten) – ohne dies
         # rendert ttk mit dem "clam"-Standardlook (helles Grau/Schwarz), egal
@@ -8014,7 +8628,15 @@ class PS5ConverterGUI:
 
         # 1. Sidebar (Links) – startet in Zeile 1
         sidebar = tk.Frame(self.root, bg=self._COLORS["bg_main"], width=320, padx=10, pady=10)
-        sidebar.grid(row=1, column=0, sticky="nsw")
+        # Die Leiste bleibt so breit wie bisher. Diese Breite ergab sich aus der
+        # Vorgabebreite eines Canvas (10 cm): Die Aufgabenknoepfe hatten keine
+        # eigene Breite und fuellten die Leiste. Seit v1.9.62 sind die Knoepfe nur
+        # so breit wie ihr laengster Text (Nutzerwunsch 04.10.2026: "zu viel
+        # leeren Platz links und rechts vom Text", _seitenleiste_breite_anpassen) -
+        # die Leiste haelt ihre Breite ueber die Mindestbreite der Spalte.
+        self._seitenleiste_breite = int(round(self.root.winfo_fpixels("10c"))) + 2 * 10
+        self.root.grid_columnconfigure(0, weight=0, minsize=self._seitenleiste_breite)
+        sidebar.grid(row=1, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
         self.sidebar = sidebar
 
@@ -8088,17 +8710,24 @@ class PS5ConverterGUI:
         self._ansicht = "umwandeln"
         self._ansicht_gemerkt: list = []
         self._vorschau_warteschlange: list = []
-        self._ansicht_knopf = flach_knopf(
+        # Gezeichnet (RoundedButton) statt tk.Button: als Pille wie die
+        # Aufgabenknoepfe; ein Canvas ist auch auf Aqua kein Systemknopf.
+        self._ansicht_knopf = RoundedButton(
             sidebar, text=self._t("ansicht.to_konsole"),
             command=self._ansicht_umschalten,
             font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["bg_card"], fg=self._COLORS["fg_accent"],
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["fg_accent"], activeforeground="white",
-            relief="flat", cursor="hand2", padx=10, pady=6, highlightthickness=0)
-        self._ansicht_knopf.pack(fill="x", pady=(0, 10))
+            outline=self._COLORS["border"], height=43,
+            pille=True, hintergrund=self._rund_hintergrund)
+        # Ohne fill: Die Knoepfe der Leiste stehen mittig in gemeinsamer Breite
+        # (_seitenleiste_breite_anpassen).
+        self._ansicht_knopf.pack(pady=(0, 10))
 
-        # Modus-Buttons in Sidebar
+        # Modus-Buttons in Sidebar - als Pillen; die Texte beginnen alle auf
+        # derselben Linie, der Block steht mittig (Nutzerwunsch 04.10.2026).
         self.mode_buttons = []
+        self._aufgaben_textgruppe: list = []
         for text, mode in self._MODE_OPTIONS:
             # Aufgabe 7 fuehrt nicht in den Hauptbereich, sondern oeffnet die
             # Wahl zwischen den beiden AMPR-Methoden. Ueber
@@ -8113,15 +8742,17 @@ class PS5ConverterGUI:
                 text=self._t(f"mode.{mode}"),
                 command=befehl,
                 font=(UI_SCHRIFT, pt(12), "bold"),
-                bg=self._COLORS["bg_card"],
+                bg=self._COLORS["console_bg"],
                 fg=self._COLORS["fg_primary"],
                 activebackground=self._COLORS["fg_accent"],
                 activeforeground=self._COLORS["bg_main"],
                 outline=self._COLORS["border"],
                 radius=8,
                 height=40,
+                pille=True, hintergrund=self._rund_hintergrund,
+                textgruppe=self._aufgaben_textgruppe,
             )
-            btn.pack(fill="x", pady=3)
+            btn.pack(pady=3)
             self.mode_buttons.append((btn, mode))
             if mode in self._MODE_TOOLTIPS:
                 self._mode_tooltip_handles.append(
@@ -8132,6 +8763,7 @@ class PS5ConverterGUI:
         # gepackt. Gleiche Bauart wie die Aufgabenknoepfe, damit die Leiste in
         # beiden Ansichten gleich aussieht.
         self._konsole_knoepfe: list[tuple[RoundedButton, str]] = []
+        self._konsole_textgruppe: list = []
         for schluessel, kennung in self._KONSOLE_KNOEPFE:
             knopf = RoundedButton(
                 sidebar,
@@ -8139,13 +8771,15 @@ class PS5ConverterGUI:
                 command=(lambda k=kennung, s=schluessel:
                          self._konsole_knopf_gedrueckt(k, s)),
                 font=(UI_SCHRIFT, pt(12), "bold"),
-                bg=self._COLORS["bg_card"],
+                bg=self._COLORS["console_bg"],
                 fg=self._COLORS["fg_primary"],
                 activebackground=self._COLORS["fg_accent"],
                 activeforeground=self._COLORS["bg_main"],
                 outline=self._COLORS["border"],
                 radius=8,
                 height=40,
+                pille=True, hintergrund=self._rund_hintergrund,
+                textgruppe=self._konsole_textgruppe,
             )
             self._konsole_knoepfe.append((knopf, schluessel))
         self._konsole_prosperomgr_knopf = next(
@@ -8208,41 +8842,50 @@ class PS5ConverterGUI:
         footer_frame.pack(side="bottom", fill="x", pady=(4, 2))
         # Referenz fuer die Cover-Groesse: das Bild darf nur bis hierher reichen.
         self._sidebar_footer_frame = footer_frame
+        # Ein tk.Frame malt seine Farbe - zwischen und neben den Pillen staende
+        # sonst ein dunkler Kasten auf dem Seitenleistenbild. Darunter liegt
+        # deshalb der passende Ausschnitt (_fuss_grund_nachziehen).
+        self._fuss_grund = tk.Label(footer_frame, bd=0, highlightthickness=0,
+                                    padx=0, pady=0, bg=self._COLORS["bg_main"])
+        self._fuss_grund.place(x=0, y=0, relwidth=1, relheight=1)
+        self._fuss_grund.lower()
+        self._runde_nachzieher: list = [self._fuss_grund_nachziehen]
 
-        # flach_knopf statt tk.Button: Aqua ignoriert bei einem Systemknopf die
-        # Hintergrundfarbe. Uebrig blieb eine helle Systemflaeche, auf der die
-        # hellen Schriftfarben (fg_accent / fg_primary) standen - beide
-        # Beschriftungen waren auf dem Mac nicht mehr zu entziffern.
-        self.info_toggle_btn = flach_knopf(
+        # Gezeichnet (RoundedButton) statt Systemknopf: Aqua ignoriert bei einem
+        # tk.Button die Hintergrundfarbe - eine helle Systemflaeche mit heller
+        # Schrift war auf dem Mac nicht zu entziffern. Ein Canvas malt ueberall
+        # selbst (seit v1.9.62 als Pille).
+        self.info_toggle_btn = RoundedButton(
             footer_frame,
             text=self._t("sidebar.game_info_button"),
             command=self._toggle_info_box,
             font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["bg_card"],
+            bg=self._COLORS["console_bg"],
             fg=self._COLORS["fg_accent"],
             activebackground=self._COLORS["fg_accent"],
             activeforeground="white",
-            # Ohne eigene Angabe nimmt Tk hierfuer ein helles Grau, das auf der
-            # dunklen Kartenflaeche kaum steht. fg_secondary ist gedaempft
-            # genug, um "noch nicht verfuegbar" zu zeigen, und bleibt lesbar.
+            # fg_secondary ist gedaempft genug, um "noch nicht verfuegbar" zu
+            # zeigen, und bleibt lesbar.
             disabledforeground=self._COLORS["fg_secondary"],
-            relief="flat", cursor="hand2", padx=10, pady=6,
-            highlightthickness=0,
+            outline=self._COLORS["border"], height=43,
+            pille=True, hintergrund=self._rund_hintergrund,
             state=tk.DISABLED,  # Erst aktiv wenn Quelle geladen
         )
         self._register_translatable(self.info_toggle_btn, "sidebar.game_info_button")
-        self.info_toggle_btn.pack(fill="x", pady=(0, 3))
+        self.info_toggle_btn.pack(pady=(0, 3))
 
-        self.resources_btn = flach_knopf(footer_frame, text=self._t("sidebar.resources_button"),
-                  command=self._show_resources,
-                  font=(UI_SCHRIFT, pt(9), "bold"),
-                  bg=self._COLORS["bg_card"], fg=self._COLORS["fg_primary"],
-                  activebackground=self._COLORS["fg_accent"], activeforeground="white",
-                  relief="flat", cursor="hand2", padx=10, pady=6,
-                  highlightthickness=0
-                  )
-        self.resources_btn.pack(fill="x", pady=(0, 3))
+        self.resources_btn = RoundedButton(
+            footer_frame, text=self._t("sidebar.resources_button"),
+            command=self._show_resources,
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
+            activebackground=self._COLORS["fg_accent"], activeforeground="white",
+            outline=self._COLORS["border"], height=43,
+            pille=True, hintergrund=self._rund_hintergrund,
+        )
+        self.resources_btn.pack(pady=(0, 3))
         self._register_translatable(self.resources_btn, "sidebar.resources_button")
+        self._seitenleiste_breite_anpassen()
 
         # Design- und Credits-Buttons sind in der Titelleiste (DESIGN | CREDITS)
 
@@ -8368,6 +9011,9 @@ class PS5ConverterGUI:
         )
         self.src_kind_label.grid(row=0, column=1, columnspan=2, sticky="w", padx=(14, 0))
         self.src_kind_label.grid_remove()
+        # Die Rolle wechselt mit dem Befund (_zeige_quell_bauform); bis dahin die
+        # Farbe, mit der das Label entsteht - ein Designwechsel zieht sie nach.
+        self.src_kind_label._caption_fg_role = "fg_success"
         self._card_caption_labels.append(self.src_kind_label)
         # Der Hinweis selbst bleibt kurz, damit er die Spaltenbreite der Karte
         # nicht auseinanderzieht. Was die Bauform bedeutet, steht im Tooltip.
@@ -8379,10 +9025,12 @@ class PS5ConverterGUI:
         self.src_browse_btn = RoundedButton(
             path_card, text=self._t("main.dump_folder_button"), command=self._browse_source,
             font=(UI_SCHRIFT, pt(11), "bold"),
-            bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
+            outline=self._COLORS["border"],
             radius=8, height=44, width=150,
             parent_bg=self._COLORS["bg_card"],
+            pille=True, hintergrund=self._rund_hintergrund,
         )
         self.src_browse_btn.grid(row=1, column=2, padx=(10, 0), pady=(5, 15))
 
@@ -8542,7 +9190,12 @@ class PS5ConverterGUI:
             state="readonly",
             font=(UI_SCHRIFT, pt(10)),
             values=list(self._verify_optionen.keys()),
-            width=12,
+            # 11 Zeichen = 99 px Textfeld; der laengste Eintrag
+            # ("Vollstaendig") misst 85 px. Die neun Pixel, die ein Zeichen
+            # weniger spart, braucht die Karte bei Mindestbreite: Die Pille
+            # von WORKER schiebt die Pruefstufe seit v1.9.62 nach rechts
+            # (_worker_ueberstand).
+            width=11,
         )
         self.verify_combo.bind("<<ComboboxSelected>>", self._on_verify_stufe_changed)
         self.mkpfs_verify = _gespeichert
@@ -8591,7 +9244,7 @@ class PS5ConverterGUI:
             value=bool(self._load_setting("integrate_backport", False))
         )
 
-        self.ampr_integrate_check = tk.Checkbutton(
+        self.ampr_integrate_check = RunderHaken(
             path_card,
             text=self._t("main.integrate_ampr"),
             variable=self.ampr_integrate_var,
@@ -8603,6 +9256,7 @@ class PS5ConverterGUI:
             activebackground=self._COLORS["bg_card"],
             activeforeground=self._COLORS["fg_primary"],
             anchor="w", bd=0, highlightthickness=0, padx=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.ampr_integrate_check, "main.integrate_ampr")
         # Ohne "n"/"s" zentriert das Raster senkrecht in der Zeile. Das ist
@@ -8659,7 +9313,7 @@ class PS5ConverterGUI:
         self._tooltip(self.ampr_methode_combo, "ampr_pack.methode_hint",
                       delay_ms=900, wraplength=430)
 
-        self.ampr_playgo_check = tk.Checkbutton(
+        self.ampr_playgo_check = RunderHaken(
             path_card,
             text=self._t("main.integrate_playgo"),
             variable=self.ampr_playgo_var,
@@ -8671,12 +9325,13 @@ class PS5ConverterGUI:
             activebackground=self._COLORS["bg_card"],
             activeforeground=self._COLORS["fg_primary"],
             anchor="w", bd=0, highlightthickness=0, padx=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.ampr_playgo_check, "main.integrate_playgo")
         self._tooltip(self.ampr_playgo_check, "ampr.lib_hint",
                       delay_ms=900, wraplength=430)
 
-        self.backport_integrate_check = tk.Checkbutton(
+        self.backport_integrate_check = RunderHaken(
             path_card,
             text=self._t("main.integrate_backport"),
             variable=self.backport_integrate_var,
@@ -8688,6 +9343,7 @@ class PS5ConverterGUI:
             activebackground=self._COLORS["bg_card"],
             activeforeground=self._COLORS["fg_primary"],
             anchor="w", bd=0, highlightthickness=0, padx=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.backport_integrate_check, "main.integrate_backport")
         self._tooltip(self.backport_integrate_check, "main.integrate_backport_hint",
@@ -8826,10 +9482,12 @@ class PS5ConverterGUI:
         self.dest_btn = RoundedButton(
             path_card, text=self._t("main.choose_folder_button"), command=self._browse_dest,
             font=(UI_SCHRIFT, pt(11), "bold"),
-            bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
+            outline=self._COLORS["border"],
             radius=8, height=44, width=150,
             parent_bg=self._COLORS["bg_card"],
+            pille=True, hintergrund=self._rund_hintergrund,
         )
         self._register_translatable(self.dest_btn, "main.choose_folder_button")
         self.dest_btn.grid(row=9, column=2, padx=(10, 0), pady=(5, 0))
@@ -8851,10 +9509,12 @@ class PS5ConverterGUI:
         self.temp_btn = RoundedButton(
             path_card, text=self._t("main.choose_temp_button"), command=self._browse_temp_dir,
             font=(UI_SCHRIFT, pt(11), "bold"),
-            bg=self._COLORS["border"], fg=self._COLORS["fg_primary"],
+            bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
+            outline=self._COLORS["border"],
             radius=8, height=44, width=150,
             parent_bg=self._COLORS["bg_card"],
+            pille=True, hintergrund=self._rund_hintergrund,
         )
         self._register_translatable(self.temp_btn, "main.choose_temp_button")
         self.temp_btn.grid(row=11, column=2, padx=(10, 0), pady=(5, 0))
@@ -8868,7 +9528,7 @@ class PS5ConverterGUI:
         self.shutdown_after_success = tk.BooleanVar(
             value=bool(self._load_setting("shutdown_after_success", False))
         )
-        self.shutdown_check = tk.Checkbutton(
+        self.shutdown_check = RunderHaken(
             path_card,
             text=self._t("main.shutdown_after_success"),
             variable=self.shutdown_after_success,
@@ -8882,6 +9542,7 @@ class PS5ConverterGUI:
             anchor="w",
             bd=0,
             highlightthickness=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.shutdown_check, "main.shutdown_after_success")
         self.shutdown_check.grid(row=12, column=0, columnspan=3, sticky="w", pady=(16, 0))
@@ -8895,7 +9556,7 @@ class PS5ConverterGUI:
         self.dump_in_arbeitsordner = tk.BooleanVar(
             value=bool(self._load_setting("dump_in_arbeitsordner", False))
         )
-        self.dump_ordner_check = tk.Checkbutton(
+        self.dump_ordner_check = RunderHaken(
             path_card,
             text=self._t("main.dump_in_workdir"),
             variable=self.dump_in_arbeitsordner,
@@ -8909,6 +9570,7 @@ class PS5ConverterGUI:
             anchor="w",
             bd=0,
             highlightthickness=0,
+            hintergrund=self._rund_hintergrund, palette=lambda: self._COLORS,
         )
         self._register_translatable(self.dump_ordner_check, "main.dump_in_workdir")
         self.dump_ordner_check.grid(row=13, column=0, columnspan=3, sticky="w", pady=(8, 0))
@@ -8941,16 +9603,29 @@ class PS5ConverterGUI:
             self.action_bar_bg_label.lower()
             action_bar.bind("<Configure>", self._on_action_bar_configure)
 
+        # Gesperrt wie ein gesperrter Knopf der Bibliothek: dunkle Flaeche mit
+        # gedaempftem Rand (bibliothek_zeichnen.knopf_farben "gesperrt").
+        _gesperrt = bibliothek_zeichnen.knopf_farben(self._COLORS, "flaeche", "gesperrt")
+        # STARTEN als Akzentknopf: Verlauf wie "Starten" in der Bibliothek.
         self.run_btn = RoundedButton(
             action_bar, text=self._t("action.start"),
             command=self._launch_task,
             font=(UI_SCHRIFT, pt(13), "bold"),
             bg=self._COLORS["accent_btn"], fg="white",
             activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
-            disabledbackground=self._COLORS["bg_card"], disabledforeground=self._COLORS["fg_secondary"],
+            disabledbackground=_gesperrt["fuellung"], disabledforeground=self._COLORS["fg_secondary"],
+            disabledoutline=_gesperrt["rand"],
             radius=10, height=48, width=190,
+            pille=True, hintergrund=self._rund_hintergrund, akzent=True,
+            bei_zustand=self._startschein_neu,
         )
         self.run_btn.grid(row=0, column=0, padx=(0, 12))
+        # Die Flaeche fuer den Schein ausserhalb der Knopfleiste (siehe
+        # _startschein_bild). Kind der Inhaltsflaeche, damit sie ueber die
+        # Leiste hinausreichen darf; liegt direkt unter der Leiste.
+        self._startschein_flaeche = tk.Canvas(content_area, highlightthickness=0, bd=0,
+                                              takefocus=0, bg=self._COLORS["bg_main"])
+        self._runde_nachzieher.append(self._startschein_zeichnen)
 
         self.abort_btn = RoundedButton(
             action_bar, text=self._t("action.cancel"),
@@ -8959,8 +9634,10 @@ class PS5ConverterGUI:
             bg=self._COLORS["error_btn"], fg=lesbare_schrift(self._COLORS["error_btn"]),
             activebackground=self._COLORS["error_btn_hover"],
             activeforeground=lesbare_schrift(self._COLORS["error_btn_hover"]),
-            disabledbackground=self._COLORS["bg_card"], disabledforeground=self._COLORS["fg_secondary"],
+            disabledbackground=_gesperrt["fuellung"], disabledforeground=self._COLORS["fg_secondary"],
+            disabledoutline=_gesperrt["rand"],
             radius=10, height=48, width=170,
+            pille=True, hintergrund=self._rund_hintergrund,
         )
         self.abort_btn.grid(row=0, column=1, padx=(0, 24))
 
@@ -9029,9 +9706,11 @@ class PS5ConverterGUI:
                                    highlightthickness=0)
         self.console_view.grid(row=0, column=0, sticky="nsew")
 
-        sb = ttk.Scrollbar(console_frame, command=self.console_view.yview)
+        sb = ttk.Scrollbar(console_frame, command=self.console_view.yview,
+                           style="Protokoll.Vertical.TScrollbar")
         sb.grid(row=0, column=1, sticky="ns")
         self.console_view.config(yscrollcommand=sb.set)
+        self._protokoll_rollbalken_faerben(self._protokoll_farbe())
 
         # Status Footer
         self.status_label = ttk.Label(
@@ -9040,7 +9719,9 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9), "italic"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
-        self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 0))
+        # Unten etwas Luft: Seit v1.9.62 steht die Zeile auf einer Pille, deren
+        # Rand sonst auf der letzten Fensterzeile laege.
+        self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 6))
         self._content_caption_labels.append(self.status_label)
 
         # Live-Systemtelemetrie (CPU/RAM/Temp-Speicher) – nur sichtbar während einer laufenden Aufgabe
@@ -9075,6 +9756,11 @@ class PS5ConverterGUI:
             (self.format_info_label, self._KARTEN_TEXT_ROLLE),
             (self.dest_title, self._KARTEN_TEXT_ROLLE),
             (self.temp_title, self._KARTEN_TEXT_ROLLE),
+            # Bis v1.9.62 fehlten diese beiden: Nach einem Designwechsel im
+            # laufenden Betrieb behielten sie die Schrift des Startdesigns - auf
+            # der hellen Pille des Designs "hell" war sie unsichtbar.
+            (self.integrate_title, self._KARTEN_TEXT_ROLLE),
+            (self.bauform_title, self._KARTEN_TEXT_ROLLE),
             # Die drei Kaestchen der Integrationszeile sitzen auf derselben
             # Karte und brauchen dieselbe Behandlung wie die Beschriftungen -
             # sonst faerben sie sich beim Design-Wechsel nicht mit.
@@ -9092,6 +9778,10 @@ class PS5ConverterGUI:
             (self.percent_label, "fg_accent"),
         ):
             _label._caption_fg_role = _rolle
+
+        # Felder und Klapplisten als Pillen (seit v1.9.62) - erst jetzt, weil
+        # ihre bisherige Groesse gemessen und beibehalten wird.
+        self._pillenfelder_einrichten()
 
         # Initialen Modus setzen
         self._set_mode_from_sidebar("pack_folder")
@@ -9127,6 +9817,45 @@ class PS5ConverterGUI:
             knopf.configure(text=self._t(schluessel))
         except tk.TclError as exc:
             logger.debug("Umschalter nicht beschriftbar: %s", exc)
+        self._seitenleiste_breite_anpassen()
+
+    #: Luft zwischen dem laengsten Text und dem Rand der Seitenleistenknoepfe
+    #: (je Seite, Pixel bei 100 %; waechst mit der Anzeige).
+    _SEITENLEISTE_LUFT = 32
+
+    def _seitenleiste_knoepfe(self) -> list:
+        """Alle Pillen der Seitenleiste: Umschalter, Aufgaben 1-8, KONSOLE 1-4, Fuss."""
+        knoepfe = [knopf for knopf, _modus in getattr(self, "mode_buttons", [])]
+        knoepfe += [knopf for knopf, _s in getattr(self, "_konsole_knoepfe", [])]
+        for name in ("_ansicht_knopf", "info_toggle_btn", "resources_btn"):
+            knopf = getattr(self, name, None)
+            if knopf is not None:
+                knoepfe.append(knopf)
+        return knoepfe
+
+    def _seitenleiste_breite_anpassen(self) -> None:
+        """Gibt allen Knoepfen der Seitenleiste dieselbe Breite: laengster Text plus Luft.
+
+        Nutzerwunsch vom 04.10.2026: "Kannst du die Knoepfe in der Side Bar bitte
+        weniger breit machen. Es hat zu viel leeren Platz links und rechts vom
+        Text." Bis dahin fuellten sie die ganze Leiste. Gemessen wird ueber beide
+        Ansichten und den Fuss, damit beim Umschalten nichts springt; nach einem
+        Sprachwechsel neu (``_apply_language``). Nie breiter als die Leiste.
+        """
+        knoepfe = self._seitenleiste_knoepfe()
+        if not knoepfe:
+            return
+        try:
+            luft = knopfmass(self._SEITENLEISTE_LUFT, self.root)
+            breite = max(knopf._textbreite() for knopf in knoepfe) + 2 * luft
+            obergrenze = int(getattr(self, "_seitenleiste_breite", 0) or 0) - 20
+            if obergrenze > 0:
+                breite = min(breite, obergrenze)
+            for knopf in knoepfe:
+                if int(float(knopf.cget("width"))) != breite:
+                    tk.Canvas.configure(knopf, width=breite)
+        except tk.TclError as exc:
+            logger.debug("Seitenleistenknoepfe nicht einpassbar: %s", exc)
 
     def _ansicht_umschalten(self) -> None:
         self._ansicht_setzen("umwandeln" if self._ansicht_ist_konsole()
@@ -9165,7 +9894,7 @@ class PS5ConverterGUI:
                         self._ansicht_gemerkt.append((widget, widget.pack_info()))
                         widget.pack_forget()
                 for knopf, _schluessel in self._konsole_knoepfe:
-                    knopf.pack(fill="x", pady=3)
+                    knopf.pack(pady=3)
                 self.content_scroll.grid_remove()
                 self.content_scrollbar.grid_remove()
                 self._hide_info_box()
@@ -9193,6 +9922,9 @@ class PS5ConverterGUI:
         except tk.TclError as exc:
             logger.debug("Ansicht nicht umschaltbar: %s", exc)
         self._ansicht_beschriften()
+        # Rechts der Leiste steht jetzt das Inhaltsbild oder eine einfarbige
+        # Seite - die runden Ecken der Leiste zeigen, was dort liegt.
+        self._seitenleiste_ecken_nachziehen()
 
     def _konsole_tafel_zeigen(self) -> None:
         """Die rechte Seite der Ansicht KONSOLE einblenden.
@@ -9263,8 +9995,8 @@ class PS5ConverterGUI:
                                  activeforeground=c["bg_main"],
                                  outline=c["border"])
                 else:
-                    knopf.config(bg=c["bg_card"], fg=c["fg_primary"],
-                                 activebackground=c["bg_card"],
+                    knopf.config(bg=c["console_bg"], fg=c["fg_primary"],
+                                 activebackground=c["console_bg"],
                                  activeforeground=c["fg_primary"],
                                  outline=c["border"])
             except tk.TclError:
@@ -9353,15 +10085,17 @@ class PS5ConverterGUI:
                                    bg=c["bg_main"], fg=c["fg_secondary"])
         ip_beschriftung.pack(side="left")
         self._register_translatable(ip_beschriftung, "dienste.ip_label")
-        tk.Entry(kopf, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"], width=18).pack(
-            side="left", ipady=3, padx=(0, 10))
-        pruef_btn = ttk.Button(kopf, text=self._t("tafel.check"),
-                               style="Accent.TButton",
-                               command=lambda: self._konsole_tafel_pruefen())
+        # Seit v1.9.62 Pillen wie in der Ansicht UMWANDELN: das Adressfeld ein
+        # ttk.Entry mit Pillenbild, "Konsole pruefen" im Akzentstil.
+        ip_feld = ttk.Entry(kopf, textvariable=ip_var, font=(UI_SCHRIFT, pt(10)), width=18)
+        ip_feld.pack(side="left", padx=(0, 10))
+        try:
+            self._pillenfeld(ip_feld, mit_pfeil=False)
+        except tk.TclError as exc:
+            logger.debug("Adressfeld nicht als Pille einrichtbar: %s", exc)
+        pruef_btn = self._seitenpille(kopf, "tafel.check",
+                                      lambda: self._konsole_tafel_pruefen(), akzent=True)
         pruef_btn.pack(side="left")
-        self._register_translatable(pruef_btn, "tafel.check")
 
         zustand_var = tk.StringVar(value=self._t("tafel.unbekannt"))
         self._konsole_tafel_zustand = zustand_var
@@ -9393,36 +10127,42 @@ class PS5ConverterGUI:
         tk.Label(tafel, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
             side="bottom", fill="x", pady=(6, 0))
-        protokoll = tk.Text(tafel, height=7, font=(MONO_SCHRIFT, pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"],
-                            relief="flat", wrap="word")
-        protokoll.pack(side="bottom", fill="x", pady=(8, 0))
+        # Protokoll und Tabelle in runden Flaechen wie das Status-Log der
+        # Ansicht UMWANDELN (seit v1.9.62).
+        protokoll_karte = self._runde_seitenkarte(tafel, "console_bg", polster=(6, 6))
+        protokoll_karte.pack(side="bottom", fill="x", pady=(10, 0))
+        protokoll = tk.Text(protokoll_karte.innen, height=7, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["console_bg"], fg=c["console_fg"],
+                            selectbackground=c["fg_accent"],
+                            relief="flat", wrap="word", padx=10, pady=6)
+        protokoll.pack(fill="both", expand=True)
         self._konsole_tafel_protokoll = protokoll
 
         knopfreihe = tk.Frame(tafel, bg=c["bg_main"])
-        knopfreihe.pack(side="bottom", fill="x", pady=(8, 0))
+        knopfreihe.pack(side="bottom", fill="x", pady=(10, 0))
         knoepfe = [pruef_btn]
         for schluessel, befehl in (
                 ("dienste.start_button", lambda: self._konsole_tafel_starten()),
                 ("dienste.base_button", lambda: self._konsole_tafel_grundausstattung()),
                 ("dienste.web_button", lambda: self._konsole_tafel_web())):
-            knopf = ttk.Button(knopfreihe, text=self._t(schluessel), command=befehl)
+            knopf = self._seitenpille(knopfreihe, schluessel, befehl)
             knopf.pack(side="left", padx=(0 if len(knoepfe) == 1 else 8, 0))
-            self._register_translatable(knopf, schluessel)
             knoepfe.append(knopf)
         self._konsole_tafel_knoepfe = tuple(knoepfe)
 
-        rahmen = tk.Frame(tafel, bg=c["bg_card"], padx=1, pady=1)
-        rahmen.pack(fill="both", expand=True)
+        tabellen_karte = self._runde_seitenkarte(tafel, "bg_card")
+        tabellen_karte.pack(fill="both", expand=True)
+        rahmen = tabellen_karte.innen
         tabelle = ttk.Treeview(rahmen, columns=[s[0] for s in self._KONSOLE_TAFEL_SPALTEN],
                                show="headings", height=11, selectmode="browse")
         for spalte, schluessel, breite, dehnen in self._KONSOLE_TAFEL_SPALTEN:
             tabelle.heading(spalte, text=self._t(schluessel), anchor="w")
             tabelle.column(spalte, width=breite, anchor="w", stretch=dehnen)
-        leiste = ttk.Scrollbar(rahmen, orient="vertical", command=tabelle.yview)
+        leiste = ttk.Scrollbar(rahmen, orient="vertical", command=tabelle.yview,
+                               style="Karte.Vertical.TScrollbar")
         tabelle.configure(yscrollcommand=leiste.set)
         tabelle.grid(row=0, column=0, sticky="nsew")
-        leiste.grid(row=0, column=1, sticky="ns")
+        leiste.grid(row=0, column=1, sticky="ns", padx=(4, 0))
         rahmen.grid_columnconfigure(0, weight=1)
         rahmen.grid_rowconfigure(0, weight=1)
         self._konsole_tafel_tabelle = tabelle
@@ -9954,10 +10694,8 @@ class PS5ConverterGUI:
         for schluessel, befehl in (("webseite.zurueck", self._webseite_zurueck),
                                    ("webseite.im_browser", self._webseite_im_browser),
                                    ("webseite.neu_laden", self._webseite_neu_laden)):
-            knopf = ttk.Button(kopf, text=self._t(schluessel), style="Klein.TButton",
-                               command=befehl)
+            knopf = self._seitenpille(kopf, schluessel, befehl, klein=True)
             knopf.pack(side="right", padx=(8, 0))
-            self._register_translatable(knopf, schluessel)
         self._webseite_status = tk.StringVar(master=seite, value="")
         tk.Label(kopf, textvariable=self._webseite_status, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(
@@ -10563,14 +11301,20 @@ class PS5ConverterGUI:
             (balken, protokoll) - den Rest halten die uebergebenen Variablen.
         """
         c = self._COLORS
-        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
-        balken.pack(fill="x", pady=(6, 2))
+        # Seit v1.9.62 rund wie die Ansicht UMWANDELN: Balken als Pille,
+        # Protokoll in einer runden Flaeche.
+        balken = RunderBalken(koerper, palette=lambda: self._COLORS, grund="bg_main",
+                              maximum=100)
+        balken.pack(fill="x", pady=(8, 4))
         tk.Label(koerper, textvariable=groesse_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
-        protokoll = tk.Text(koerper, height=9, font=(MONO_SCHRIFT, pt(9)),
-                            bg=c["bg_card"], fg=c["fg_primary"],
-                            relief="flat", wrap="word")
-        protokoll.pack(fill="both", expand=True, pady=(4, 4))
+        protokoll_karte = self._runde_seitenkarte(koerper, "console_bg", polster=(6, 6))
+        protokoll_karte.pack(fill="both", expand=True, pady=(6, 6))
+        protokoll = tk.Text(protokoll_karte.innen, height=9, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["console_bg"], fg=c["console_fg"],
+                            selectbackground=c["fg_accent"],
+                            relief="flat", wrap="word", padx=10, pady=6)
+        protokoll.pack(fill="both", expand=True)
         tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
         return balken, protokoll
@@ -10585,10 +11329,13 @@ class PS5ConverterGUI:
                                 fg=c["fg_secondary"])
         beschriftung.pack(side="left")
         self._register_translatable(beschriftung, schluessel)
-        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
-                 insertbackground=c["fg_primary"]).pack(
-            side="left", fill="x", expand=True, ipady=3)
+        # Ein ttk.Entry mit Pillenbild wie in der Ansicht UMWANDELN (seit v1.9.62).
+        feld = ttk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(10)))
+        feld.pack(side="left", fill="x", expand=True)
+        try:
+            self._pillenfeld(feld, mit_pfeil=False)
+        except tk.TclError as exc:
+            logger.debug("Adressfeld nicht als Pille einrichtbar: %s", exc)
         return reihe
 
     def _konsole_hinweiszeile(self, koerper, schluessel, warnung=False, **werte):
@@ -10698,11 +11445,10 @@ class PS5ConverterGUI:
                          bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
         titel.pack(side="left")
         self._register_translatable(titel, "spielstaende.window_title")
-        zurueck = ttk.Button(kopf, text=self._t("konsole.btn_uebersicht"),
-                             style="Klein.TButton",
-                             command=lambda: self._konsole_seite_setzen("uebersicht"))
+        zurueck = self._seitenpille(kopf, "konsole.btn_uebersicht",
+                                    lambda: self._konsole_seite_setzen("uebersicht"),
+                                    klein=True)
         zurueck.pack(side="right")
-        self._register_translatable(zurueck, "konsole.btn_uebersicht")
         untertitel = tk.Label(seite, text=self._t("spielstaende.subtitle"),
                               font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                               fg=c["fg_secondary"], anchor="w", justify="left")
@@ -10717,16 +11463,12 @@ class PS5ConverterGUI:
         knopfreihe = tk.Frame(seite, bg=c["bg_main"])
         knopfreihe.pack(fill="x", pady=(10, 4))
         knoepfe = []
-        for schluessel, befehl, stil in (
-                ("spielstaende.btn_check", lambda: self._spielstaende_pruefen(),
-                 "Accent.TButton"),
-                ("spielstaende.btn_start", lambda: self._spielstaende_starten(), ""),
-                ("spielstaende.btn_open", lambda: self._spielstaende_oeffnen(), "")):
-            knopf = ttk.Button(knopfreihe, text=self._t(schluessel), command=befehl)
-            if stil:
-                knopf.configure(style=stil)
+        for schluessel, befehl, akzent in (
+                ("spielstaende.btn_check", lambda: self._spielstaende_pruefen(), True),
+                ("spielstaende.btn_start", lambda: self._spielstaende_starten(), False),
+                ("spielstaende.btn_open", lambda: self._spielstaende_oeffnen(), False)):
+            knopf = self._seitenpille(knopfreihe, schluessel, befehl, akzent=akzent)
             knopf.pack(side="left", padx=(8 if knoepfe else 0, 0))
-            self._register_translatable(knopf, schluessel)
             knoepfe.append(knopf)
         self._spielstaende_knoepfe = tuple(knoepfe)
 
@@ -10914,14 +11656,14 @@ class PS5ConverterGUI:
             self.subtitle_label.config(text=self._t("main.config_for", task=full_text))
         self._refresh_target_format_options(mode)
 
-        # Sidebar-Buttons hervorheben
+        # Sidebar-Buttons hervorheben (ungewaehlt: die dunkle Flaeche der Pillen)
         if hasattr(self, "mode_buttons"):
             for btn, m in self.mode_buttons:
                 if m == mode:
                     btn.config(bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                                outline=self._COLORS["border"])
                 else:
-                    btn.config(bg=self._COLORS["bg_card"], fg=self._COLORS["fg_primary"],
+                    btn.config(bg=self._COLORS["console_bg"], fg=self._COLORS["fg_primary"],
                                outline=self._COLORS["border"])
 
         # UI-Elemente ein/ausblenden
@@ -13787,9 +14529,32 @@ class PS5ConverterGUI:
         finally:
             self._zeilen_ordnen_laeuft = False
 
+    #: Mindestluft zwischen zwei Beschriftungspillen derselben Zeile.
+    _ZEILE_ABSTAND_PILLEN = 8
+
+    def _worker_ueberstand(self) -> int:
+        """Wie weit die Pille von WORKER ueber den Drehknopf darunter hinausragt.
+
+        Seit v1.9.62 steht jede Beschriftung der Karte auf einer Pille, und die
+        von WORKER ist breiter als der Drehknopf. Linksbuendig ueber ihm
+        (alle Beschriftungen stehen so) stiesse sie sonst an die von PRUEFUNG;
+        die Pruefstufe rueckt deshalb um diesen Ueberstand nach rechts.
+        """
+        knopf = getattr(self, "worker_knob", None)
+        titel = getattr(self, "worker_title", None)
+        if knopf is None or titel is None:
+            return 0
+        try:
+            return max(0, int(titel.winfo_reqwidth()) - int(knopf.winfo_reqwidth()))
+        except tk.TclError:
+            return 0
+
     def _kartenzeilen(self):
         """Die beiden Bedienzeilen der Karte samt Soll-Abstaenden."""
         eng, gruppe = self._ZEILE_ABSTAND_ENG, self._ZEILE_ABSTAND_GRUPPE
+        # Der Abstand zur Pruefstufe reicht fuer den Drehknopf, nicht fuer die
+        # breitere Pille seiner Beschriftung (_worker_ueberstand).
+        vor_pruefung = max(gruppe, self._worker_ueberstand() + self._ZEILE_ABSTAND_PILLEN)
         return (
             # Zielformat, Kompression, Worker und Pruefung sind vier
             # eigenstaendige Einstellungen - alle gleich weit auseinander.
@@ -13797,7 +14562,7 @@ class PS5ConverterGUI:
             # "PRUEFUNG" fast aneinander und lasen sich als ein Wort.
             [(getattr(self, "compression_combo", None), 0),
              (getattr(self, "worker_knob", None), gruppe),
-             (getattr(self, "verify_combo", None), gruppe)],
+             (getattr(self, "verify_combo", None), vor_pruefung)],
             # AMPR EMU samt Fassung, Methode und PlayGo bilden eine Gruppe,
             # BACKPORT samt Firmware die zweite - der groessere Abstand zeigt
             # das. Die Methode steht neben der Fassung, weil beide zusammen
@@ -14081,6 +14846,8 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Content-Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
         self._redraw_content_captions()
+        # Die Ecken der Seitenleiste setzen den linken Rand dieses Bilds fort.
+        self._seitenleiste_ecken_nachziehen()
 
     def _flaechenbild(self, quelle: "Image.Image", breite: int, hoehe: int):
         """Liefert `quelle` formatfuellend auf (breite, hoehe) - und merkt sich das.
@@ -14198,7 +14965,9 @@ class PS5ConverterGUI:
                 return None
             if self._liegt_in_knopfleiste(widget):
                 cropped = self._blend_bg_image_for_action_bar(cropped)
-            return cropped
+            # Der Schein um STARTEN gehoert zum Untergrund: Knopfleiste,
+            # beide Knoepfe und die Flaeche darunter tragen ihn gleich.
+            return self._startschein_auftragen(cropped, lage)
         except Exception as exc:
             logger.debug("Content-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
             return None
@@ -14257,15 +15026,112 @@ class PS5ConverterGUI:
             return (max(1, int(label.winfo_reqwidth())),
                     max(1, int(label.winfo_reqheight())))
 
+    # --- Texthintergrund als Pille (seit v1.9.62) ----------------------------------
+    #
+    # Nutzerwahl vom 04.10.2026 ("A: Pille mit Rand", auch fuer die weiteren
+    # Beschriftungen): Ueberschrift, Untertitel, Statuszeile und die
+    # Beschriftungen der Karte stehen auf einer Pille in der Farbe der
+    # Eingabefelder, mit duennem Rand. Gezeichnet in denselben Bildausschnitt,
+    # den die Beschriftung ohnehin traegt - das Bild ist nur um die Luft der
+    # Pille groesser als der Text.
+
+    #: Beschriftungen der Inhaltsflaeche mit Pille (die der Karte haben alle eine).
+    _TEXTPILLEN_INHALT: tuple[str, ...] = ("header_label", "subtitle_label", "status_label")
+
+    def _beschriftung_zeilenhoehe(self, label) -> int:
+        """Zeilenhoehe der Schrift einer Beschriftung - 0, wenn sie sich nicht bestimmen laesst."""
+        import tkinter.font as _tkfont  # noqa: PLC0415
+        try:
+            schrift = label.cget("font")
+            if not str(schrift):
+                stil = str(label.cget("style")) or label.winfo_class()
+                schrift = ttk.Style().lookup(stil, "font") or "TkDefaultFont"
+            merker = getattr(self, "_zeilenhoehen_merker", None)
+            if merker is None:
+                merker = self._zeilenhoehen_merker = {}
+            schluessel = str(schrift)
+            if schluessel not in merker:
+                merker[schluessel] = int(_tkfont.Font(root=self.root, font=schrift)
+                                         .metrics("linespace"))
+            return merker[schluessel]
+        except (tk.TclError, ValueError, TypeError):
+            return 0
+
+    def _texthintergrund_masse(self, label, breite: int, hoehe: int) -> "tuple[int, int, float]":
+        """Breite, Hoehe und Eckenradius der Pille hinter einer Beschriftung.
+
+        Einzeilig eine Pille (Radius = halbe Hoehe) mit gut einer halben
+        Zeilenhoehe Luft links und rechts. Ein mehrzeiliger Hinweis (der
+        Formathinweis der Karte) bekommt ein rundes Rechteck - eine Pille ueber
+        drei Zeilen wuerde zur Linse.
+        """
+        zeile = self._beschriftung_zeilenhoehe(label) or hoehe
+        if hoehe >= 1.6 * zeile:
+            luft_x, luft_y = max(8, round(zeile * 0.7)), max(3, round(zeile * 0.25))
+            return breite + 2 * luft_x, hoehe + 2 * luft_y, float(zeile)
+        luft_x, luft_y = max(6, round(hoehe * 0.45)), max(2, round(hoehe * 0.12))
+        return breite + 2 * luft_x, hoehe + 2 * luft_y, (hoehe + 2 * luft_y) / 2.0
+
+    def _texthintergrund_auftragen(self, bild, radius: float):
+        """Legt die Pille (Feldfarbe, duenner Rand - wie die Eingabefelder) auf den Ausschnitt."""
+        c = self._COLORS
+        try:
+            faktor = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        rgba = bild.convert("RGBA")
+        rgba.alpha_composite(bibliothek_zeichnen.rund_rechteck(
+            rgba.width, rgba.height, radius, self._farbe_als_hex(c["console_bg"]),
+            self._farbe_als_hex(c["border"]), faktor))
+        return rgba.convert("RGB")
+
+    def _texthintergrund_groesse_merken(self, label, groesse: "tuple[int, int]") -> bool:
+        """Merkt die Bildgroesse einer Beschriftung mit Pille - ``True``, wenn sie neu ist.
+
+        Waechst eine Beschriftung um ihre Pille, verschiebt sich das Raster, und
+        der eben gerechnete Ausschnitt einer Nachbarin passt nicht mehr an ihre
+        Stelle. Ein zweiter Durchgang (:meth:`_beschriftungen_nachlauf`) rechnet
+        an der neuen Lage; er aendert keine Groesse mehr und loest deshalb
+        keinen dritten aus - die Endlosschleifen-Falle aus
+        :meth:`_redraw_card_captions` bleibt zu.
+        """
+        neu = getattr(label, "_texthintergrund_groesse", None) != groesse
+        label._texthintergrund_groesse = groesse
+        return neu
+
+    def _beschriftungen_nachlauf(self) -> None:
+        """Ein zweiter Durchgang fuer Karte und Inhaltsflaeche, wenn eine Pille gewachsen ist."""
+        if getattr(self, "_beschriftungen_nachlauf_id", None) is not None:
+            return
+        try:
+            self._beschriftungen_nachlauf_id = self.root.after(
+                40, self._beschriftungen_nachlauf_ausfuehren)
+        except tk.TclError:
+            self._beschriftungen_nachlauf_id = None
+
+    def _beschriftungen_nachlauf_ausfuehren(self) -> None:
+        self._beschriftungen_nachlauf_id = None
+        # Die per place gesetzten Beschriftungen (WORKER, PRUEFUNG, Einbau)
+        # rechnen ihre Lage aus der eigenen Groesse - die ist jetzt eine andere.
+        try:
+            self._kartenzeilen_ordnen(nachmessen=False)
+        except Exception as exc:                           # noqa: BLE001
+            logger.debug("Kartenzeilen nach Pillen nicht ausgerichtet: %s", exc)
+        self._redraw_card_captions()
+        self._redraw_content_captions()
+
     def _redraw_content_captions(self) -> None:
         """Zeichnet Header/Untertitel/Status/Groessen-Beschriftungen mit Bildausschnitt neu.
 
         Gleiches Prinzip wie _redraw_card_captions (siehe dortiger Kommentar zur
         Endlosschleifen-Falle bei staendiger Neuvermessung), nur relativ zum
-        Content-Bereich statt zur Quelle-Karte.
+        Content-Bereich statt zur Quelle-Karte. Ueberschrift, Untertitel und
+        Statuszeile stehen seit v1.9.62 auf einer Pille (_TEXTPILLEN_INHALT).
         """
         if self._bg_image_cache is None:
             return
+        pillen = [getattr(self, name, None) for name in self._TEXTPILLEN_INHALT]
+        gewachsen = False
         for label in getattr(self, "_content_caption_labels", []):
             try:
                 if not label.winfo_exists() or not label.winfo_ismapped():
@@ -14281,14 +15147,23 @@ class PS5ConverterGUI:
                     label._caption_natural_size = natural_size
                     label._caption_natural_text = text
                 w, h = natural_size
-                crop = self._compute_content_bg_crop(label, w, h)
+                pille = any(label is kandidat for kandidat in pillen) and bool(text.strip())
+                breite, hoehe, radius = (self._texthintergrund_masse(label, w, h) if pille
+                                         else (w, h, 0.0))
+                crop = self._compute_content_bg_crop(label, breite, hoehe)
                 if crop is None:
                     continue
+                if pille:
+                    crop = self._texthintergrund_auftragen(crop, radius)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
                 label.config(image=photo, compound="center")
+                if pille and self._texthintergrund_groesse_merken(label, (breite, hoehe)):
+                    gewachsen = True
             except Exception as exc:
                 logger.debug("Content-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
+        if gewachsen:
+            self._beschriftungen_nachlauf()
 
     def _on_action_bar_configure(self, event: tk.Event) -> None:
         """Behandelt Größenänderung der Action-Bar (Start/Abbrechen/Fortschritt)."""
@@ -14379,7 +15254,7 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._bild_fuellen(self._sidebar_bg_image_cache, width, height)
+            resized = self._seitenleistenbild(width, height)
             self.sidebar_bg_photo = ImageTk.PhotoImage(resized)
             self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
             self._last_sidebar_bg_resize_size = (width, height)
@@ -14403,7 +15278,10 @@ class PS5ConverterGUI:
             s_height = sidebar.winfo_height()
             if s_width <= 1 or s_height <= 1:
                 return None
-            full_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
+            # Dasselbe Bild wie hinter der Leiste - samt runden Ecken.
+            full_resized = self._seitenleistenbild(s_width, s_height)
+            if full_resized is None:
+                return None
             wx = widget.winfo_rootx() - sidebar.winfo_rootx()
             wy = widget.winfo_rooty() - sidebar.winfo_rooty()
             crop_box = (
@@ -14421,6 +15299,113 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Sidebar-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
             return None
+
+    # --- Runde Ecken der Seitenleiste (seit v1.9.62) ----------------------------------
+    #
+    # Nutzerwunsch vom 04.10.2026: "Kannst du die Ecken bei der Sidebar (alle vier
+    # Ecken) ebenfalls noch rund machen". Die Rundung steckt im Bild der Leiste
+    # selbst (_seitenleistenbild): Hintergrund, Logo-Beschriftungen, Pillen und
+    # Fussrahmen schneiden ihre Ausschnitte aus diesem einen Bild und tragen die
+    # Ecken damit von selbst mit.
+
+    #: Eckenradius der Seitenleiste bei 100 % (die Karten haben 14 - die Leiste ist
+    #: eine grosse Flaeche und vertraegt etwas mehr).
+    _SEITENLEISTE_ECKE = 18
+
+    def _seitenleiste_oberkante(self) -> int:
+        """Wo die Leiste sichtbar beginnt: unter der Titelleiste, die ueber ihr liegt."""
+        leiste = getattr(self, "_main_titlebar", None)
+        if leiste is None:
+            return 0
+        try:
+            hoehe = int(leiste.winfo_height())
+            return hoehe if hoehe > 1 else int(leiste.winfo_reqheight())
+        except tk.TclError:
+            return 0
+
+    def _seitenleiste_eckgrund_schluessel(self) -> tuple:
+        """Woraus die Ecken gefuellt werden - als Schluessel fuer den Merker.
+
+        In UMWANDELN liegt rechts der Leiste das Bild der Inhaltsflaeche: Die
+        Ecken setzen dessen linken Rand fort, damit kein Bruch entsteht (die
+        Inhaltsflaeche skaliert das Bild anders als das Fenster). In KONSOLE
+        steht dort eine einfarbige Seite - dann ihre Farbe.
+        """
+        inhalt = getattr(self, "content_area", None)
+        try:
+            konsole = self._ansicht_ist_konsole()
+        except Exception:                                  # noqa: BLE001
+            konsole = False
+        if self._bg_image_cache is not None and inhalt is not None and not konsole:
+            try:
+                breite, hoehe = int(inhalt.winfo_width()), int(inhalt.winfo_height())
+            except tk.TclError:
+                breite = hoehe = 0
+            if breite > 1 and hoehe > 1:
+                return ("bild", id(self._bg_image_cache), breite, hoehe)
+        return ("farbe", str(self._COLORS["bg_main"]))
+
+    def _seitenleistenbild_schluessel(self, breite: int, hoehe: int) -> tuple:
+        """Alles, wovon das Bild der Leiste abhaengt: Quelle, Groesse, Oberkante, Radius, Eckgrund."""
+        return (id(self._sidebar_bg_image_cache), int(breite), int(hoehe),
+                self._seitenleiste_oberkante(),
+                knopfmass(self._SEITENLEISTE_ECKE, self.root),
+                self._seitenleiste_eckgrund_schluessel())
+
+    def _seitenleistenbild(self, breite: int, hoehe: int) -> "Image.Image | None":
+        """Das Bild der Seitenleiste in ihrer Groesse - mit vier runden Ecken.
+
+        Die oberen Ecken sitzen unter der Titelleiste (sie liegt ueber dem oberen
+        Rand der Leiste), die unteren am Fensterrand. Gemerkt, bis sich Bild,
+        Groesse, Titelleiste oder das Nachbarbild aendern: Jede Pille der Leiste
+        schneidet ihren Ausschnitt hieraus.
+        """
+        quelle = self._sidebar_bg_image_cache
+        if quelle is None or breite <= 1 or hoehe <= 1:
+            return None
+        schluessel = self._seitenleistenbild_schluessel(breite, hoehe)
+        _id, _b, _h, oben, radius, grund = schluessel
+        merker = getattr(self, "_seitenleistenbild_merker", None)
+        if merker is not None and merker[0] == schluessel and merker[1] is quelle:
+            return merker[2]
+        bild = self._bild_fuellen(quelle, breite, hoehe).convert("RGB")
+        if hoehe - oben > 2 * radius and breite > 2 * radius:
+            rand = (self._flaechenbild(self._bg_image_cache, grund[2], grund[3])
+                    if grund[0] == "bild" else None)
+            if rand is not None:
+                # Die linke Spalte der Inhaltsflaeche, nach links fortgesetzt;
+                # Leiste und Inhaltsflaeche beginnen beide an der Fensteroberkante.
+                hinten = rand.crop((0, 0, 1, grund[3])).convert("RGB").resize(
+                    (breite, hoehe), Image.NEAREST)
+            else:
+                hinten = Image.new("RGB", (breite, hoehe),
+                                   self._hex_zu_rgb(str(self._COLORS["bg_main"])))
+            maske = Image.new("L", (breite, hoehe), 255)
+            maske.paste(bibliothek_zeichnen._maske(breite, hoehe - oben, radius), (0, oben))
+            bild = Image.composite(bild, hinten, maske)
+        self._seitenleistenbild_merker = (schluessel, quelle, bild)
+        return bild
+
+    def _seitenleiste_ecken_nachziehen(self) -> None:
+        """Zeichnet die Leiste neu, wenn sich ihr Eckgrund geaendert hat.
+
+        Nach einem Ansichtswechsel (rechts Inhaltsbild oder einfarbige Seite)
+        und nach einer neuen Groesse der Inhaltsflaeche (ihr Bild skaliert
+        anders). Nichts geaendert - nichts zu tun.
+        """
+        sidebar = getattr(self, "sidebar", None)
+        if sidebar is None or self._sidebar_bg_image_cache is None:
+            return
+        try:
+            breite, hoehe = int(sidebar.winfo_width()), int(sidebar.winfo_height())
+        except tk.TclError:
+            return
+        if breite <= 1 or hoehe <= 1:
+            return
+        merker = getattr(self, "_seitenleistenbild_merker", None)
+        if merker is not None and merker[0] == self._seitenleistenbild_schluessel(breite, hoehe):
+            return
+        self._refresh_sidebar_bg_label()
 
     def _redraw_sidebar_captions(self) -> None:
         """Zeichnet die Sidebar-Logo-Beschriftungen (Icons/Titel/Untertitel) neu ein.
@@ -14572,8 +15557,37 @@ class PS5ConverterGUI:
                 ansicht.configure(bg=self._protokoll_farbe())
             except tk.TclError as exc:
                 logger.debug("Status-Log nicht umfärbbar: %s", exc)
+            self._protokoll_rollbalken_faerben(self._protokoll_farbe())
         if getattr(self, "root", None) is not None:
             self._karten_ecken_planen()
+
+    def _protokoll_rollbalken_faerben(self, rinne: str) -> None:
+        """Faerbt den Rollbalken des Status-Logs: Rinne = Logflaeche, Griff gedaempft."""
+        self._rollbalken_faerben("Protokoll.Vertical.TScrollbar", rinne)
+
+    #: Schmale Rollbalken ohne Pfeile wie der des Status-Logs (seit v1.9.62) -
+    #: Stilname und die Rolle der Flaeche, in der sie stehen (= ihre Rinne).
+    _SCHMALE_ROLLBALKEN: dict[str, str] = {
+        "Karte.Vertical.TScrollbar": "bg_card",
+        "Karte.Horizontal.TScrollbar": "bg_card",
+        "Tief.Vertical.TScrollbar": "console_bg",
+        "Grund.Vertical.TScrollbar": "bg_main",
+    }
+
+    def _rollbalken_faerben(self, stil: str, rinne: str) -> None:
+        """Faerbt einen schmalen Rollbalken: Rinne in der Flaechenfarbe, Griff gedaempft."""
+        c = self._COLORS
+        griff = bibliothek_zeichnen.mischen(self._farbe_als_hex(c["border"]),
+                                            self._farbe_als_hex(c["fg_secondary"]), 0.35)
+        try:
+            ttk.Style().configure(stil, troughcolor=rinne,
+                                  background=griff, bordercolor=rinne, lightcolor=griff,
+                                  darkcolor=griff, arrowsize=8, gripcount=0)
+            ttk.Style().map(stil,
+                            background=[("active", bibliothek_zeichnen.mischen(
+                                griff, self._farbe_als_hex(c["fg_accent"]), 0.35))])
+        except tk.TclError as exc:
+            logger.debug("Rollbalken %s nicht faerbbar: %s", stil, exc)
 
     #: Eckenradius der Karten im Hauptbereich.
     _KARTEN_ECKE = 14
@@ -14709,6 +15723,8 @@ class PS5ConverterGUI:
                                      flaeche=self._protokoll_farbe())
         except Exception as exc:                           # noqa: BLE001
             logger.debug("Kartenecken nicht nachziehbar: %s", exc)
+        # Was in der Karte liegt, hat mit ihr seine Lage gewechselt.
+        self._runde_flaechen_planen()
 
     def _karten_ecken_planen(self, _ereignis=None) -> None:
         """Buendelt die Anforderungen - waehrend einer Groessenaenderung
@@ -14724,6 +15740,521 @@ class PS5ConverterGUI:
     def _ecken_jetzt(self) -> None:
         self._ecken_after_id = None
         self._karten_ecken_nachziehen()
+
+    # ------------------------------------------------------------------
+    # Pillenform (seit v1.9.62)
+    #
+    # Nutzerwahl vom 04.10.2026 ("ich haette es gerne so wie im Bild"):
+    # Knoepfe, Felder und Klapplisten des Hauptfensters als Pillen, gezeichnet
+    # wie die Knoepfe der Bibliothek (bibliothek_zeichnen). Tk kennt keine
+    # Durchsicht - in den Ecken steht deshalb, was hinter dem Element liegt:
+    # derselbe Bildausschnitt, den auch die Beschriftungen bekommen.
+    # ------------------------------------------------------------------
+
+    def _rund_hintergrund(self, widget, breite: int, hoehe: int) -> "Image.Image | None":
+        """Was hinter einem runden Bedienelement liegt (fuer die Ecken der Pille).
+
+        Dieselben Rechenwege wie die Beschriftungen: Seitenleiste, Karte oder
+        Inhaltsflaeche samt Knopfleiste - je nachdem, worin das Element liegt.
+        ``None`` ohne Hintergrundbild; das Element nimmt dann seine Grundfarbe.
+        """
+        if breite <= 1 or hoehe <= 1:
+            return None
+
+        def liegt_in(vorfahr) -> bool:
+            knoten = widget
+            for _ in range(24):
+                if knoten is None:
+                    return False
+                if knoten is vorfahr:
+                    return True
+                knoten = getattr(knoten, "master", None)
+            return False
+
+        try:
+            seitenleiste = getattr(self, "sidebar", None)
+            if seitenleiste is not None and liegt_in(seitenleiste):
+                return self._compute_sidebar_bg_crop(widget, breite, hoehe)
+            karte = getattr(self, "path_card", None)
+            if karte is not None and liegt_in(karte):
+                if self._bg_image_raw is None:
+                    return None
+                versatz = (widget.winfo_rootx() - karte.winfo_rootx(),
+                           widget.winfo_rooty() - karte.winfo_rooty())
+                return self._compute_card_bg_image(breite, hoehe, offset=versatz)
+            inhalt = getattr(self, "content_area", None)
+            if inhalt is not None and liegt_in(inhalt):
+                return self._compute_content_bg_crop(widget, breite, hoehe)
+        except Exception as exc:                           # noqa: BLE001
+            logger.debug("Hintergrund fuer Pille nicht berechenbar: %s", exc)
+        return None
+
+    def _runde_flaechen_planen(self, _ereignis=None) -> None:
+        """Buendelt das Nachziehen aller Pillen (wie ``_karten_ecken_planen``)."""
+        if getattr(self, "root", None) is None:
+            return
+        if getattr(self, "_runde_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._runde_after_id)
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("after_cancel (Pillen) fehlgeschlagen: %s", exc)
+        try:
+            self._runde_after_id = self.root.after(60, self._runde_flaechen_jetzt)
+        except tk.TclError:
+            self._runde_after_id = None
+
+    def _runde_flaechen_jetzt(self) -> None:
+        """Zeichnet alle Pillen mit dem Ausschnitt ihrer jetzigen Lage neu."""
+        self._runde_after_id = None
+        stapel = [self.root]
+        while stapel:
+            knoten = stapel.pop()
+            try:
+                kinder = knoten.winfo_children()
+            except tk.TclError:
+                continue
+            for kind in kinder:
+                if isinstance(kind, (RunderHaken, RunderBalken)) or (
+                        isinstance(kind, RoundedButton) and kind._pille):
+                    try:
+                        kind.nachziehen()
+                    except tk.TclError as exc:
+                        logger.debug("Pille nicht nachziehbar: %s", exc)
+                stapel.append(kind)
+        for nachziehen in list(getattr(self, "_runde_nachzieher", []) or []):
+            try:
+                nachziehen()
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Rundes Element nicht nachziehbar: %s", exc)
+
+    #: Die Felder des Hauptfensters, die als Pille gezeichnet werden
+    #: (Attributname, mit Pfeil). Alle sind ttk-Widgets und bleiben es.
+    _PILLENFELDER: tuple[tuple[str, bool], ...] = (
+        ("src_entry", False), ("dest_entry", False), ("temp_entry", False),
+        ("format_combo", True), ("compression_combo", True), ("verify_combo", True),
+        ("ampr_version_combo", True), ("ampr_methode_combo", True),
+        ("backport_fw_combo", True), ("bauform_combo", True),
+    )
+
+    def _pillen_nummer(self) -> int:
+        """Naechste freie Nummer fuer Stil-, Element- und Bildnamen eines Pillenfelds.
+
+        Diese Namen gelten im ganzen Tk-Interpreter - gezaehlt wird deshalb auch
+        dort (Tcl-Variable), nicht je Objekt und nicht je Klasse. Ein Zaehler je
+        Objekt stiess beim zweiten Objekt auf derselben Wurzel auf
+        "Pille1.field"; ein Klassenzaehler reicht ebenfalls nicht, sobald ein
+        Test das Hauptprogramm ein zweites Mal als Modul laedt
+        (test_fensterlayout) - beide Klassen zaehlen dann getrennt.
+        """
+        return int(self.root.tk.call("incr", "::ps5conv_pillenzaehler"))
+
+    def _pillenfelder_einrichten(self) -> None:
+        """Macht die Eingabefelder und Klapplisten des Hauptfensters zu Pillen."""
+        for name, mit_pfeil in self._PILLENFELDER:
+            feld = getattr(self, name, None)
+            if feld is None:
+                continue
+            try:
+                self._pillenfeld(feld, mit_pfeil)
+            except tk.TclError as exc:
+                logger.debug("Pillenfeld %s nicht einrichtbar: %s", name, exc)
+
+    def _pillenfeld(self, feld, mit_pfeil: bool) -> None:
+        """Zeichnet ein ttk.Entry/ttk.Combobox als Pille - und laesst es ein ttk-Widget.
+
+        Das Feld bekommt einen eigenen Stil mit einem Bildelement als Flaeche.
+        Das Bild traegt in den Ecken den Ausschnitt dessen, was hinter dem Feld
+        liegt, und wird bei jeder Lageaenderung neu gerechnet
+        (``_pillenfeld_zeichnen``). ``width``/``height`` = 1 am Element: Sonst
+        bestimmte die Bildgroesse die Feldgroesse, und das Feld wuechse mit
+        jedem Neuzeichnen (am 04.10.2026 im Versuch: 300 statt 80 px).
+
+        Die Groesse bleibt auf das Pixel die alte: Die Polsterung wird so
+        gesetzt, dass die angeforderte Groesse genau der bisherigen entspricht -
+        die Zeilen der Karte ordnen sich nach diesen Massen.
+        """
+        style = ttk.Style()
+        # Stile, Elemente und benannte Bilder gelten im ganzen Tk-Interpreter -
+        # die Nummer kommt deshalb von dort (_pillen_nummer). Bauen zwei Objekte
+        # oder zwei Modulkopien auf derselben Wurzel (die Tests tun das), stiess
+        # das zweite sonst auf "Pille1.field" und der Seitenaufbau brach ab.
+        zaehler = self._pillen_nummer()
+        innen = "Combobox" if mit_pfeil else "Entry"
+        stil = "Pille%d.T%s" % (zaehler, innen)
+        element = "Pille%d.field" % zaehler
+        alt_b, alt_h = feld.winfo_reqwidth(), feld.winfo_reqheight()
+        # Nie leer und ohne Rand am Element: Mit border=4 und einem leeren
+        # oder 1x1 grossen Bild kachelt ttk einen Mittelteil der Breite null -
+        # eine Endlosschleife im Zeichnen (04.10.2026 eingegrenzt: die blosse
+        # Stilzuweisung liess den Programmstart haengen). Bis zum ersten
+        # Zeichnen traegt jedes Bild 32 x 32 Punkte in der Feldfarbe.
+        bilder = {}
+        for zustand in ("normal", "hover", "aus"):
+            foto = tk.PhotoImage(name="pillenfeld%d_%s" % (zaehler, zustand),
+                                 master=self.root, width=32, height=32)
+            foto.put(self._COLORS["console_bg"], to=(0, 0, 32, 32))
+            bilder[zustand] = foto
+        style.element_create(element, "image", bilder["normal"],
+                             ("disabled", bilder["aus"]), ("hover", bilder["hover"]),
+                             border=0, padding=0, width=1, height=1, sticky="nsew")
+        aufbau = [(element, {"sticky": "nswe", "children": [
+            (innen + ".padding", {"expand": "1", "sticky": "nswe", "children": [
+                (innen + ".textarea", {"sticky": "nswe"})]})]})]
+        hoehe = max(alt_h, 1)
+        # Klapplisten sind schmal: Links nur so viel Luft, wie die Rundung
+        # auf Schrifthoehe braucht, damit rechts der Pfeil Platz behaelt.
+        links = (max(6, int(round(hoehe * 0.22))) if mit_pfeil
+                 else max(8, int(round(hoehe * 0.32))))
+        # Erst messen, dann den endgueltigen Stil vergeben. Ein Stil, den ein
+        # Widget schon traegt, meldet eine geaenderte Polsterung erst nach dem
+        # Leerlauf - und update_idletasks mitten im Aufbau hing (04.10.2026,
+        # gemessen mit faulthandler). Eine neue Stilzuweisung gilt sofort.
+        messstil = "Pille%dm.T%s" % (zaehler, innen)
+        style.layout(messstil, aufbau)
+        style.configure(messstil, padding=(links, 0, links, 0))
+        feld.configure(style=messstil)
+        text_b = feld.winfo_reqwidth() - 2 * links
+        text_h = feld.winfo_reqheight()
+        rechts = max(2, alt_b - links - text_b)
+        oben = max(0, (alt_h - text_h) // 2)
+        unten = max(0, alt_h - text_h - oben)
+        style.layout(stil, aufbau)
+        style.configure(stil, padding=(links, oben, rechts, unten))
+        feld.configure(style=stil)
+        if (feld.winfo_reqwidth(), feld.winfo_reqheight()) != (alt_b, alt_h):
+            logger.debug("Pillenfeld %s: Groesse %sx%s statt %sx%s", stil, feld.winfo_reqwidth(),
+                         feld.winfo_reqheight(), alt_b, alt_h)
+        feld._pille = {"stil": stil, "bilder": bilder, "pfeil": mit_pfeil, "nach": None}
+        feld.bind("<Configure>", lambda _e, f=feld: self._pillenfeld_planen(f), add="+")
+        nachzieher = getattr(self, "_runde_nachzieher", None)
+        if nachzieher is None:
+            nachzieher = self._runde_nachzieher = []
+        nachzieher.append(lambda f=feld: self._pillenfeld_zeichnen(f))
+
+    def _pillenfeld_planen(self, feld) -> None:
+        info = getattr(feld, "_pille", None)
+        if not info or info.get("nach") is not None:
+            return
+        try:
+            info["nach"] = feld.after_idle(lambda: self._pillenfeld_zeichnen(feld))
+        except tk.TclError:
+            info["nach"] = None
+
+    @staticmethod
+    def _png64(bild: "Image.Image") -> bytes:
+        puffer = io.BytesIO()
+        bild.save(puffer, "PNG", compress_level=1)
+        return base64.b64encode(puffer.getvalue())
+
+    def _pillenfeld_zeichnen(self, feld) -> None:
+        """Rechnet die Bilder eines Pillenfelds fuer seine jetzige Lage und Groesse."""
+        info = getattr(feld, "_pille", None)
+        if not info:
+            return
+        info["nach"] = None
+        try:
+            if not feld.winfo_exists():
+                return
+            breite, hoehe = feld.winfo_width(), feld.winfo_height()
+        except tk.TclError:
+            return
+        if breite <= 2 or hoehe <= 2:
+            return
+        c = self._COLORS
+        grund = self._rund_hintergrund(feld, breite, hoehe)
+        if grund is None:
+            # Ohne Bildausschnitt (Seiten der Ansicht KONSOLE, kein Hintergrundbild):
+            # die Farbe der Flaeche, auf der das Feld steht.
+            grund = Image.new("RGB", (breite, hoehe),
+                              self._hex_zu_rgb(self._grundfarbe_von(feld)))
+        grund = grund.convert("RGB")
+        if grund.size != (breite, hoehe):
+            grund = grund.resize((breite, hoehe), _LANCZOS)
+        try:
+            faktor = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            faktor = 1.0
+        style = ttk.Style()
+        stil = info["stil"]
+        schrift_an = style.lookup(stil, "foreground", ["readonly"]) or c["fg_primary"]
+        schrift_aus = style.lookup(stil, "foreground", ["disabled"]) or c["fg_secondary"]
+        normal = bibliothek_zeichnen.knopf_farben(c, "auswahl", "normal")
+        hover = bibliothek_zeichnen.knopf_farben(c, "auswahl", "hover")
+        # Gesperrt behaelt die Flaeche, nur Schrift und Pfeil werden gedaempft -
+        # so sah es im gewaehlten Beispielbild aus.
+        for zustand, farben, schrift in (("normal", normal, schrift_an),
+                                         ("hover", hover, schrift_an),
+                                         ("aus", normal, schrift_aus)):
+            bild = grund.convert("RGBA")
+            bild.alpha_composite(bibliothek_zeichnen.rund_rechteck(
+                breite, hoehe, hoehe / 2.0, farben["fuellung"], farben["rand"], faktor))
+            if info["pfeil"]:
+                groesse = max(8, int(round(hoehe * 0.38)))
+                pfeil = bibliothek_zeichnen.chevron(groesse, self._farbe_als_hex(schrift),
+                                                    max(1.4, 1.6 * faktor))
+                bild.alpha_composite(pfeil, (int(breite - hoehe * 0.36 - groesse / 2.0),
+                                             int((hoehe - groesse) / 2.0)))
+            try:
+                # Erst die genaue Groesse, dann der Inhalt - ein Foto mit
+                # fester Groesse schnitte groessere Daten sonst ab.
+                foto = info["bilder"][zustand]
+                foto.configure(width=breite, height=hoehe)
+                foto.configure(data=self._png64(bild.convert("RGB")))
+            except tk.TclError as exc:
+                logger.debug("Pillenfeld-Bild nicht setzbar: %s", exc)
+        # Die Markierung einer schreibgeschuetzten Klappliste im Fokus faerbt
+        # sonst ein Rechteck in bg_card hinter den Text.
+        style.map(stil, selectbackground=[("readonly", normal["fuellung"])],
+                  selectforeground=[("readonly", schrift_an)])
+
+    def _farbe_als_hex(self, farbe: str) -> str:
+        """Eine beliebige Tk-Farbe als #rrggbb."""
+        try:
+            r, g, b = (wert // 257 for wert in self.root.winfo_rgb(farbe))
+        except tk.TclError:
+            return "#ffffff"
+        return "#%02x%02x%02x" % (r, g, b)
+
+    def _grundfarbe_von(self, widget) -> str:
+        """Die Farbe der Flaeche hinter einem Element: der naechste Vorfahr mit eigener Farbe.
+
+        Ein tk-Rahmen nennt sie in ``bg``, ein ttk-Rahmen in seinem Stil. Ohne
+        Treffer ``bg_card`` - die Karte des Hauptfensters, auf der die ersten
+        Pillenfelder standen.
+        """
+        knoten = getattr(widget, "master", None)
+        for _ in range(24):
+            if knoten is None:
+                break
+            try:
+                return self._farbe_als_hex(str(knoten.cget("bg")))
+            except tk.TclError:
+                try:
+                    stil = str(knoten.cget("style")) or knoten.winfo_class()
+                    farbe = ttk.Style().lookup(stil, "background")
+                    if farbe:
+                        return self._farbe_als_hex(str(farbe))
+                except tk.TclError:
+                    pass
+            knoten = getattr(knoten, "master", None)
+        return self._farbe_als_hex(self._COLORS["bg_card"])
+
+    # --- Seiten der Ansicht KONSOLE in Pillenform (seit v1.9.62) ---------------------
+    #
+    # Wunsch des Nutzers vom 04.10.2026: "Den Bereich Konsole bitte ebenfalls
+    # ueberarbeiten wie ... mit dem Bereich Umwandeln". Die Seiten stehen auf der
+    # einfarbigen Flaeche bg_main; hinter den Rundungen liegt also kein
+    # Bildausschnitt, sondern diese Farbe.
+
+    def _seitenpille(self, eltern, schluessel: str, befehl, *, akzent: bool = False,
+                     klein: bool = False) -> "RoundedButton":
+        """Ein Knopf der Konsolenseiten als Pille, so breit wie seine Beschriftung.
+
+        ``akzent`` ist der Hauptknopf einer Seite (Verlauf wie STARTEN),
+        ``klein`` ein Knopf am Kopf einer Seite ("‹ Konsole & Payloads",
+        "Neu laden"). Die Beschriftung folgt dem Sprachwechsel, die Farben dem
+        Designwechsel (``_seitenpillen`` in :meth:`_apply_theme`).
+        """
+        knopf = RoundedButton(
+            eltern, text=self._t(schluessel), command=befehl,
+            font=(UI_SCHRIFT, pt(9 if klein else 11), "bold"),
+            height=32 if klein else 44, pille=True, akzent=akzent,
+            breite_nach_text=True, polster_x=14 if klein else 22)
+        self._register_translatable(knopf, schluessel)
+        pillen = getattr(self, "_seitenpillen", None)
+        if pillen is None:
+            pillen = self._seitenpillen = []
+        pillen.append((knopf, akzent))
+        self._seitenpille_faerben(knopf, akzent)
+        return knopf
+
+    def _seitenpille_faerben(self, knopf, akzent: bool) -> None:
+        """Die Farben einer Seitenpille - wie die Pillen der Ansicht UMWANDELN."""
+        c = self._COLORS
+        gesperrt = bibliothek_zeichnen.knopf_farben(c, "flaeche", "gesperrt")
+        if akzent:
+            farben = {"bg": c["accent_btn"], "fg": "white",
+                      "activebackground": c["accent_btn_hover"], "activeforeground": "white"}
+        else:
+            farben = {"bg": c["console_bg"], "fg": c["fg_primary"],
+                      "activebackground": c["accent_btn_hover"], "activeforeground": "white",
+                      "outline": c["border"]}
+        knopf.configure(disabledbackground=gesperrt["fuellung"],
+                        disabledforeground=c["fg_secondary"],
+                        disabledoutline=gesperrt["rand"], **farben)
+
+    def _runde_seitenkarte(self, eltern, fuellung: str = "console_bg", *,
+                           polster: tuple = (8, 8)) -> "bibliothek_raster.RundeKarte":
+        """Eine runde Flaeche fuer Tabelle oder Protokoll einer Konsolenseite.
+
+        Ecken wie die Karten der Ansicht UMWANDELN (``_KARTEN_ECKE``). Die
+        Widgets kommen in ``karte.innen``; nach einem Designwechsel malt
+        :meth:`_apply_theme` das Bild neu (``_seitenkarten``).
+        """
+        karte = bibliothek_raster.RundeKarte(
+            eltern, self._bibliothek_zeichner(), fuellung=fuellung, rand="border",
+            grund="bg_main", radius=self._KARTEN_ECKE, polster=polster, fuellend=True)
+        karten = getattr(self, "_seitenkarten", None)
+        if karten is None:
+            karten = self._seitenkarten = []
+        karten.append(karte)
+        return karte
+
+    # --- Der Schein um STARTEN -------------------------------------------------------
+    #
+    # Wie "Starten" in der Bibliothek liegt unter dem Akzentknopf ein weicher
+    # Schein in seiner Farbe. Er reicht ueber den Knopf hinaus - Tk schneidet
+    # aber jedes Widget an seinem Elternteil ab. Deshalb ist der Schein Teil des
+    # Untergrunds: ``_compute_content_bg_crop`` traegt ihn auf, und damit haben
+    # ihn die Knopfleiste, STARTEN und ABBRECHEN in ihren Ecken. Ausserhalb der
+    # Knopfleiste (Rand links, Luft darueber und darunter) zeigt ihn eine eigene
+    # Flaeche, die direkt unter der Knopfleiste liegt.
+
+    #: Unschaerfe und Versatz des Scheins bei 100 % (die Bibliothek nimmt 7/4;
+    #: 6/3 passt in die 20 Punkte Luft unter der Knopfleiste).
+    _SCHEIN_UNSCHAERFE = 6.0
+    _SCHEIN_VERSATZ = 3.0
+
+    def _startschein_bild(self) -> "tuple[Image.Image, tuple[int, int]] | None":
+        """Der Schein als RGBA-Bild und seine Lage in der Inhaltsflaeche - oder ``None``."""
+        knopf = getattr(self, "run_btn", None)
+        inhalt = getattr(self, "content_area", None)
+        if knopf is None or inhalt is None or not getattr(knopf, "_akzent", False):
+            return None
+        try:
+            if str(knopf.cget("state")) == str(tk.DISABLED) or not knopf.winfo_ismapped():
+                return None
+            breite, hoehe = knopf.winfo_width(), knopf.winfo_height()
+            x = knopf.winfo_rootx() - inhalt.winfo_rootx()
+            y = knopf.winfo_rooty() - inhalt.winfo_rooty()
+            faktor = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96.0 / 72.0))
+        except (tk.TclError, ValueError):
+            return None
+        if breite <= 2 or hoehe <= 2:
+            return None
+        farbe = self._farbe_als_hex(knopf._bg)
+        unschaerfe = self._SCHEIN_UNSCHAERFE * faktor
+        versatz = self._SCHEIN_VERSATZ * faktor
+        schluessel = (breite, hoehe, x, y, farbe, round(unschaerfe, 2))
+        merker = getattr(self, "_startschein_merker", None)
+        if merker is not None and merker[0] == schluessel:
+            return merker[1]
+        rand = int(math.ceil(unschaerfe * 2.0))
+        oben = max(0, rand - int(math.floor(versatz)))
+        unten = rand + int(math.ceil(versatz))
+        maske = Image.new("L", (breite + 2 * rand, hoehe + oben + unten), 0)
+        maske.paste(bibliothek_zeichnen._maske(breite, hoehe, hoehe / 2.0),
+                    (rand, oben + int(round(versatz))))
+        maske = maske.filter(ImageFilter.GaussianBlur(unschaerfe))
+        maske = maske.point(lambda p: int(p * 0.55))
+        schein = Image.new("RGBA", maske.size, self._hex_zu_rgb(farbe) + (255,))
+        schein.putalpha(maske)
+        ergebnis = (schein, (x - rand, y - oben))
+        self._startschein_merker = (schluessel, ergebnis)
+        return ergebnis
+
+    def _startschein_auftragen(self, bild, lage: "tuple[int, int]"):
+        """Traegt den Schein auf einen Ausschnitt der Inhaltsflaeche auf, der bei ``lage`` liegt."""
+        if bild is None:
+            return bild
+        schein = self._startschein_bild()
+        if schein is None:
+            return bild
+        glanz, (gx, gy) = schein
+        dx, dy = gx - lage[0], gy - lage[1]
+        x0, y0 = max(0, dx), max(0, dy)
+        x1, y1 = min(bild.width, dx + glanz.width), min(bild.height, dy + glanz.height)
+        if x1 <= x0 or y1 <= y0:
+            return bild
+        stueck = glanz.crop((x0 - dx, y0 - dy, x1 - dx, y1 - dy))
+        rgba = bild.convert("RGBA")
+        rgba.alpha_composite(stueck, (x0, y0))
+        return rgba.convert("RGB")
+
+    def _startschein_zeichnen(self) -> None:
+        """Legt die Scheinflaeche unter die Knopfleiste - oder nimmt sie weg."""
+        flaeche = getattr(self, "_startschein_flaeche", None)
+        knopf = getattr(self, "run_btn", None)
+        leiste = getattr(self, "action_bar", None)
+        if flaeche is None or knopf is None or leiste is None:
+            return
+        try:
+            if not flaeche.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        schein = self._startschein_bild()
+        if schein is None:
+            flaeche.place_forget()
+            return
+        glanz, (gx, gy) = schein
+        try:
+            # place zaehlt in einem tk.Frame ab der gepolsterten Kante (siehe
+            # content_bg_label: x=-40 gleicht padx=40 aus).
+            polster_x = int(float(self.content_area.cget("padx")))
+            polster_y = int(float(self.content_area.cget("pady")))
+        except (tk.TclError, ValueError):
+            polster_x = polster_y = 0
+        breite, hoehe = glanz.size
+        # Immer an der Stelle rechnen, an die die Flaeche gleich kommt - nicht
+        # an ihrer bisherigen (sie wandert mit dem Knopf).
+        try:
+            grund = self._flaechen_ausschnitt(self._bg_image_cache, self.content_area,
+                                              (gx, gy), breite, hoehe)
+        except Exception:                                  # noqa: BLE001
+            grund = None
+        if grund is None:
+            grund = Image.new("RGB", (breite, hoehe), self._hex_zu_rgb(self._COLORS["bg_main"]))
+        grund = self._startschein_auftragen(grund.convert("RGB"), (gx, gy))
+        foto = ImageTk.PhotoImage(grund)
+        flaeche.delete("all")
+        flaeche.create_image(0, 0, image=foto, anchor="nw")
+        flaeche._bild = foto            # Referenz halten, sonst weg
+        # Feste Lage statt place(in_=Knopf): Mit "in_" hob Tk die Flaeche bei
+        # jeder Nachfuehrung wieder ueber die Knopfleiste - der Schein lag dann
+        # ueber STARTEN (04.10.2026 an der Stapelfolge gemessen). Wandert der
+        # Knopf, zieht _runde_flaechen_planen die Flaeche nach.
+        flaeche.place(x=gx - polster_x, y=gy - polster_y, width=breite, height=hoehe)
+        try:
+            # Nicht flaeche.lower(): Bei einem tk.Canvas ist das tag_lower und
+            # senkt Zeichenobjekte, nicht das Fenster.
+            self.root.tk.call("lower", str(flaeche), str(leiste))
+        except tk.TclError as exc:
+            logger.debug("Scheinflaeche nicht unter die Knopfleiste: %s", exc)
+
+    def _startschein_neu(self) -> None:
+        """STARTEN wurde gesperrt oder freigegeben: Schein und Untergruende neu."""
+        self._startschein_merker = None
+        leiste = getattr(self, "action_bar", None)
+        if leiste is not None and getattr(self, "action_bar_bg_label", None) is not None:
+            try:
+                self._apply_action_bar_bg_resize(leiste.winfo_width(), leiste.winfo_height())
+            except Exception as exc:                       # noqa: BLE001
+                logger.debug("Knopfleiste nicht nachziehbar: %s", exc)
+        self._startschein_zeichnen()
+        for name in ("run_btn", "abort_btn"):
+            knopf = getattr(self, name, None)
+            if knopf is not None and getattr(knopf, "_pille", False):
+                try:
+                    knopf.nachziehen()
+                except tk.TclError as exc:
+                    logger.debug("%s nicht nachziehbar: %s", name, exc)
+
+    def _fuss_grund_nachziehen(self) -> None:
+        """Legt den Bildausschnitt unter den Fussrahmen der Seitenleiste."""
+        rahmen = getattr(self, "_sidebar_footer_frame", None)
+        schild = getattr(self, "_fuss_grund", None)
+        if rahmen is None or schild is None or not schild.winfo_exists():
+            return
+        breite, hoehe = rahmen.winfo_width(), rahmen.winfo_height()
+        bild = self._rund_hintergrund(rahmen, breite, hoehe)
+        if bild is None:
+            schild.configure(image="", bg=self._COLORS["bg_main"])
+            schild._bild = None
+            return
+        foto = ImageTk.PhotoImage(bild)
+        schild.configure(image=foto)
+        schild._bild = foto          # Referenz halten, sonst weg
 
     def _compute_card_bg_image(
         self, width: int, height: int, offset: tuple[int, int] = (0, 0)
@@ -14895,6 +16426,7 @@ class PS5ConverterGUI:
         self._redraw_card_captions()
         self._redraw_content_captions()
         self._redraw_sidebar_captions()
+        self._runde_flaechen_planen()
 
     def _make_caption_borderless(self, label: object) -> None:
         """Nimmt einer Beschriftung die Polsterung, die sonst als Kasten stehen bleibt.
@@ -14957,6 +16489,7 @@ class PS5ConverterGUI:
         """
         if self._bg_image_raw is None:
             return
+        gewachsen = False
         for label in getattr(self, "_card_caption_labels", []):
             try:
                 # winfo_ismapped: ZIELFORMAT und der Formathinweis werden je
@@ -14977,16 +16510,26 @@ class PS5ConverterGUI:
                     label._caption_natural_size = natural_size
                     label._caption_natural_text = text
                 w, h = natural_size
+                # Seit v1.9.62 steht jede Beschriftung der Karte auf einer Pille.
+                pille = bool(text.strip())
+                breite, hoehe, radius = (self._texthintergrund_masse(label, w, h) if pille
+                                         else (w, h, 0.0))
                 lx = label.winfo_x()
                 ly = label.winfo_y()
-                crop = self._compute_card_bg_image(w, h, offset=(lx, ly))
+                crop = self._compute_card_bg_image(breite, hoehe, offset=(lx, ly))
                 if crop is None:
                     continue
+                if pille:
+                    crop = self._texthintergrund_auftragen(crop, radius)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
                 label.config(image=photo, compound="center")
+                if pille and self._texthintergrund_groesse_merken(label, (breite, hoehe)):
+                    gewachsen = True
             except Exception as exc:
                 logger.debug("Karten-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
+        if gewachsen:
+            self._beschriftungen_nachlauf()
 
     def _sync_docked_windows(self, event=None) -> None:
         """Synchronisiert Position und Größe der angedockten Fenster."""
@@ -40657,8 +42200,14 @@ class PS5ConverterGUI:
                                 fg=c["fg_secondary"])
         ordner_titel.pack(side="left", anchor="n", padx=(0, 8))
         self._register_translatable(ordner_titel, "library.scan_folders_label")
+        # Seit v1.9.62 in einer runden Flaeche wie die Felder der Ansicht
+        # UMWANDELN; der Rollbalken steht mit darin.
+        ordner_karte = bibliothek_raster.RundeKarte(
+            folders_row, z, fuellung="console_bg", rand="border", grund="bg_card",
+            radius=12, polster=(10, 5))
+        ordner_karte.pack(side="left", fill="x", expand=True)
         folders_list = tk.Listbox(
-            folders_row, height=2, font=(UI_SCHRIFT, pt(9)),
+            ordner_karte.innen, height=2, font=(UI_SCHRIFT, pt(9)),
             bg=c["console_bg"], fg=c["fg_primary"],
             selectbackground=c["fg_accent"], selectforeground=c["bg_card"],
             # Kein Fokusrahmen - die Flaeche uebernimmt das, siehe
@@ -40673,8 +42222,9 @@ class PS5ConverterGUI:
         # weniger bliebe sonst ein leerer Streifen stehen. Er gehoert direkt
         # hinter die Liste (after=): Bis zum 25.09.2026 landete er nach dem
         # ersten neuen Ordner rechts neben den Knoepfen.
-        folders_sb = ttk.Scrollbar(folders_row, orient="vertical",
-                                   command=folders_list.yview)
+        folders_sb = ttk.Scrollbar(ordner_karte.innen, orient="vertical",
+                                   command=folders_list.yview,
+                                   style="Tief.Vertical.TScrollbar")
 
         def _rollbalken_nachfuehren(*_a) -> None:
             # winfo_manager, nicht winfo_ismapped: Auf einer gerade verdeckten
@@ -40744,6 +42294,9 @@ class PS5ConverterGUI:
                                     else "library.kachel_ohne_bild"),
             rad=self._rad_einheiten)
         kachel_rahmen, kachel_flaeche = raster.rahmen, raster.flaeche
+        # Schmal und ohne Pfeile wie im Status-Log (seit v1.9.62) - vor
+        # ``rechts_frei``, das seine Breite mitrechnet.
+        raster.balken.configure(style="Grund.Vertical.TScrollbar")
         kachel_rahmen.grid(row=0, column=0, sticky="nsew")
         # Rechts der Karten stehen eine Luecke und der Rollbalken; Kopfkarte, Liste und
         # Streifen lassen rechts dieselbe Breite frei (``rechts_frei``), damit alles an
@@ -40767,8 +42320,10 @@ class PS5ConverterGUI:
         # Welche Zeile gehoert zu welchem Pfad - fuer Vorschaubilder, die
         # erst nach dem Einfuegen der Zeile ankommen.
         iid_nach_pfad: dict[str, str] = {}
-        senkrecht = ttk.Scrollbar(liste_rahmen, orient="vertical", command=tree.yview)
-        waagerecht = ttk.Scrollbar(liste_rahmen, orient="horizontal", command=tree.xview)
+        senkrecht = ttk.Scrollbar(liste_rahmen, orient="vertical", command=tree.yview,
+                                  style="Karte.Vertical.TScrollbar")
+        waagerecht = ttk.Scrollbar(liste_rahmen, orient="horizontal", command=tree.xview,
+                                   style="Karte.Horizontal.TScrollbar")
         tree.configure(yscrollcommand=senkrecht.set, xscrollcommand=waagerecht.set)
         tree.grid(row=0, column=0, sticky="nsew")
         senkrecht.grid(row=0, column=1, sticky="ns")
@@ -42558,7 +44113,7 @@ class PS5ConverterGUI:
             # erreicht (Rahmen und Labels), faerbt es ohnehin.
             for teil in (kopf_karte, titel_zeile, such_zeile, such_feld, quelle_gruppe,
                          ansicht_gruppe, filter_gruppe, zurueck, sortier_knopf,
-                         streifen_karte, streifen_zeile, liste_karte):
+                         streifen_karte, streifen_zeile, liste_karte, ordner_karte):
                 teil.neu_faerben()
             for kind in (*streifen_knoepfe.values(), *folders_btns.winfo_children(),
                          *(k for liste in knoepfe.values() for k in liste)):
@@ -44813,6 +46368,112 @@ class PS5ConverterGUI:
             btn_row, text=self._t("self_inspector.copy_button"),
             style="Accent.TButton", command=_copy_report,
         ).pack(side="left")
+
+    def _show_elf_zu_eboot(self) -> None:
+        """WEITERE TOOLS "ELF -> EBOOT.BIN": ein ELF in eine eboot.bin verpacken.
+
+        Verpackt wird mit ``ps5_backport.elf_signieren`` - dem Nachbau von
+        ``make_fself``, mit dem BACKPORT seit v1.8.35 jede Datei zuruecksetzt
+        und den die PS5 annimmt. Das Ergebnis ist ein Fake-SELF ohne echte
+        Signatur; es startet nur auf einer gejailbreakten Konsole.
+
+        Zur Kontrolle wird die geschriebene Datei mit ``read_self`` wieder
+        gelesen: Erst wenn sie dort als SELF mit eingebettetem ELF erscheint,
+        meldet das Fenster Erfolg.
+        """
+        titel = self._t("titlebar.elf_eboot")
+        quelle = filedialog.askopenfilename(
+            title=self._t("elf_eboot.choose_title"),
+            initialdir=self._get_source_dialog_initial_dir() or None,
+            filetypes=[
+                (self._t("elf_eboot.filetype_elf"), "*.elf"),
+                (self._t("filetype.all_files"), "*.*"),
+            ],
+            parent=self.root,
+        )
+        if not quelle:
+            return
+        self._remember_source_dialog_path(quelle)
+        name = os.path.basename(quelle)
+
+        try:
+            with open(quelle, "rb") as fh:
+                elf = fh.read()
+        except OSError as exc:
+            messagebox.showerror(titel, self._t("elf_eboot.read_failed", error=exc),
+                                 parent=self.root)
+            return
+
+        typ = ps5_backport.dateityp(elf[:64])
+        if typ != ps5_backport.TYP_ELF:
+            schluessel = {
+                ps5_backport.TYP_SELF: "elf_eboot.already_self",
+                ps5_backport.TYP_ELF_GESTRIPPT: "elf_eboot.stripped",
+            }.get(typ, "elf_eboot.not_elf")
+            messagebox.showerror(titel, self._t(schluessel, name=name), parent=self.root)
+            return
+
+        ziel = filedialog.asksaveasfilename(
+            title=self._t("elf_eboot.save_title"),
+            initialdir=os.path.dirname(quelle),
+            initialfile="eboot.bin",
+            defaultextension=".bin",
+            filetypes=[
+                (self._t("elf_eboot.filetype_bin"), "*.bin"),
+                (self._t("filetype.all_files"), "*.*"),
+            ],
+            parent=self.root,
+        )
+        if not ziel:
+            return
+
+        self._set_status(self._t("elf_eboot.status_running", name=name))
+        try:
+            eboot = ps5_backport.elf_signieren(elf)
+        except (ps5_backport.BackportFehler, struct.error) as exc:
+            self._set_status("")
+            messagebox.showerror(titel, self._t("elf_eboot.sign_failed", error=exc),
+                                 parent=self.root)
+            return
+
+        # Erst in eine Nebendatei, dann umbenennen: Ein Abbruch mitten im
+        # Schreiben laesst so keine halbe eboot.bin zurueck - und waehlt der
+        # Anwender die Quelle selbst als Ziel, ist sie bis zuletzt heil.
+        zwischen = ziel + ".tmp"
+        try:
+            with open(zwischen, "wb") as fh:
+                fh.write(eboot)
+            os.replace(zwischen, ziel)
+        except OSError as exc:
+            try:
+                os.remove(zwischen)
+            except OSError:
+                pass
+            self._set_status("")
+            messagebox.showerror(titel, self._t("elf_eboot.write_failed", error=exc),
+                                 parent=self.root)
+            return
+
+        try:
+            info = read_self(ziel, texte=self._modul_texte(
+                self_reader_meldungen, "self_reader."))
+            if info.container == CONTAINER_ELF or info.elf_header is None:
+                raise SelfParseError(self._t("elf_eboot.verify_no_self"))
+        except (SelfParseError, OSError) as exc:
+            self._set_status("")
+            messagebox.showerror(titel, self._t("elf_eboot.verify_failed", error=exc),
+                                 parent=self.root)
+            return
+
+        self._set_status(self._t("elf_eboot.status_done", name=os.path.basename(ziel)))
+        messagebox.showinfo(
+            self._t("elf_eboot.done_title"),
+            self._t("elf_eboot.done_message",
+                    quelle=quelle, quelle_groesse=self._fmt_bytes(len(elf)),
+                    ziel=ziel, ziel_groesse=self._fmt_bytes(len(eboot)),
+                    segmente=len(info.segments)),
+            parent=self.root,
+        )
 
     # ------------------------------------------------------------------
     # PS4 & PS5 PKG lesen - den aeusseren Container einer .pkg anzeigen.
@@ -50293,17 +51954,28 @@ class PS5ConverterGUI:
             zeilen.append(t("appinstall.bericht.bereit"))
         return "\n".join(zeilen)
 
-    def _appinstall_uebertragen(self, ftp, angaben, host, payload, melden) -> str:
+    def _appinstall_uebertragen(self, ftp, angaben, host, payload, melden,
+                                kategorie: "int | None" = None) -> str:
         """Legt die Dateien ab und laesst die Konsole die Anwendung anmelden.
 
         Die Reihenfolge stammt aus samples/install_app des Payload-SDK und ist
         nicht beliebig: param.json.system darf erst nach dem Registrieren
         kommen. Wird es vorher geschrieben, sucht die Konsole die Anwendung
         schon in /system_ex, waehrend sie noch unter /user/app liegt.
+
+        ``kategorie`` ist die Wahl "Kachel unter Medien/Spiele" aus dem Fenster
+        (seit v1.9.62) und landet in der param.json, mit der sich die Anwendung
+        anmeldet. Ohne Angabe bleibt es beim Bisherigen: 0 fuer ein eigenes
+        Programm, 65536 fuer eine Kachel mit Adresse.
         """
         import io as _io  # noqa: PLC0415
 
         kennung = angaben.kennung
+        if kategorie is not None:
+            bereich = (self._t("appinstall.bereich_medien")
+                       if kategorie == app_install.KATEGORIE_DEEPLINK
+                       else self._t("appinstall.bereich_spiele"))
+            melden(self._t("appinstall.log_bereich", bereich=bereich, kategorie=kategorie))
         melden(self._t("appinstall.log_mtrw"))
         try:
             ftp.sendcmd(app_install.BESCHREIBBAR)
@@ -50349,12 +52021,14 @@ class PS5ConverterGUI:
             # Die Kachel ist fertig, wie sie ist - keine Zwischenfassung mit
             # anderer Kategorie, weil nichts nach /system_ex nachgereicht
             # wird. So sehen die Kacheln aus, die auf der Konsole laufen.
-            _hoch_roh(app_install.als_json(angaben.param_daten),
-                      user_sce + "/param.json")
+            param = (angaben.param_daten if kategorie is None
+                     else app_install.deeplink_fassung(angaben.param_daten, kategorie))
+            _hoch_roh(app_install.als_json(param), user_sce + "/param.json")
         else:
             _hoch(angaben.eboot, system_ordner + "/eboot.bin")
-            _hoch_roh(app_install.als_json(
-                app_install.installfassung(angaben.param_daten)),
+            _hoch_roh(app_install.als_json(app_install.installfassung(
+                angaben.param_daten,
+                app_install.KATEGORIE_INSTALL if kategorie is None else kategorie)),
                 user_sce + "/param.json")
         if angaben.icon:
             _hoch(angaben.icon, user_sce + "/icon0.png")
@@ -50445,6 +52119,33 @@ class PS5ConverterGUI:
                                  (app_install.ART_PROGRAMM, "appinstall.art_programm")):
             ttk.Radiobutton(artwahl, text=self._t(schluessel), value=wert,
                             variable=art_var).pack(side="left", padx=(0, 18))
+
+        # Wo die Kachel erscheint: Medien oder Spiele (seit v1.9.62, Wunsch des
+        # Nutzers vom 04.10.2026 "Man soll waehlen koennen"). Gilt fuer beide
+        # Bauformen, gelesen erst beim Installieren und gemerkt fuer das
+        # naechste Mal. Vorgabe Medien - dort liegen die Kacheln, die auf der
+        # Konsole laufen.
+        gemerkt = str(self._load_setting("appinstall_bereich", app_install.BEREICH_MEDIEN)
+                      or app_install.BEREICH_MEDIEN)
+        bereich_var = tk.StringVar(value=gemerkt if gemerkt in app_install.BEREICHE
+                                   else app_install.BEREICH_MEDIEN)
+        bereichwahl = tk.Frame(win, bg=c["bg_main"], padx=16)
+        bereichwahl.pack(fill="x", pady=(8, 0))
+        bereich_titel = tk.Label(bereichwahl, text=self._t("appinstall.bereich_label"),
+                                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
+                                 fg=c["fg_primary"])
+        bereich_titel.pack(side="left", padx=(0, 12))
+        # Die Erklaerung steht im Tooltip statt als eigene Zeile: Das Fenster
+        # ist bei Mindestgroesse ohnehin voll (test_fensterlayout).
+        self._tooltip(bereich_titel, "appinstall.bereich_hint")
+        for wert, schluessel in ((app_install.BEREICH_MEDIEN, "appinstall.bereich_medien"),
+                                 (app_install.BEREICH_SPIELE, "appinstall.bereich_spiele")):
+            radio = ttk.Radiobutton(bereichwahl, text=self._t(schluessel), value=wert,
+                                    variable=bereich_var)
+            radio.pack(side="left", padx=(0, 18))
+            self._tooltip(radio, "appinstall.bereich_hint")
+        bereich_var.trace_add("write", lambda *_a: self._save_setting(
+            "appinstall_bereich", bereich_var.get()))
 
         # Zwei Formulare, von denen immer nur eines liegt. Beide gleichzeitig
         # zu zeigen waere ehrlicher gegenueber dem Code, aber nicht gegenueber
@@ -50538,6 +52239,17 @@ class PS5ConverterGUI:
 
         stand_var = tk.StringVar(value="")
 
+        # Knopfreihe und Statuszeile zuerst und unten packen: Reicht die Hoehe
+        # nicht, gibt pack den zuletzt gepackten Elementen zu wenig. Das soll
+        # das Protokoll treffen, nicht die Knoepfe (seit der Zeile "Kachel
+        # unter" fiel die Reihe bei Mindestgroesse auf 12 px zusammen).
+        knopfbereich = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
+        knopfbereich.pack(side="bottom", fill="x")
+        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
+                 wraplength=940, justify="left").pack(side="bottom", fill="x",
+                                                      padx=16, pady=(8, 0))
+
         tk.Label(win, text=self._t("appinstall.report_label"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
@@ -50547,11 +52259,6 @@ class PS5ConverterGUI:
                           insertbackground=c["fg_primary"], relief="flat",
                           highlightthickness=0)
         bericht.pack(fill="both", expand=True, padx=16)
-
-        tk.Label(win, textvariable=stand_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
-                 wraplength=940, justify="left").pack(fill="x", padx=16,
-                                                      pady=(8, 0))
 
         # Der zuletzt gepruefte Ordner. Ohne diesen Zwischenstand muesste der
         # Installieren-Knopf erneut pruefen, und der Anwender saehe einen
@@ -50623,10 +52330,15 @@ class PS5ConverterGUI:
                     self._t("appinstall.error_title"),
                     self._t("appinstall.error_generic", error=exc), parent=win)
                 return
+            # Hier im Hauptfaden lesen - der Faden unten fasst keine Tk-Variable an.
+            kategorie = app_install.bereich_kategorie(bereich_var.get())
+            bereich_text = (self._t("appinstall.bereich_medien")
+                            if kategorie == app_install.KATEGORIE_DEEPLINK
+                            else self._t("appinstall.bereich_spiele"))
             if not messagebox.askyesno(
                     self._t("appinstall.confirm_title"),
                     self._t("appinstall.confirm_message", name=angaben.name,
-                            kennung=angaben.kennung, host=host),
+                            kennung=angaben.kennung, host=host, bereich=bereich_text),
                     parent=win, default="no"):
                 return
 
@@ -50640,7 +52352,7 @@ class PS5ConverterGUI:
                 try:
                     ftp = self._ampr_ftp_connect(host, self._ps5_ftp_port())
                     self._appinstall_uebertragen(ftp, angaben, host, payload,
-                                                 _melden)
+                                                 _melden, kategorie)
                 except Exception as exc:
                     logger.debug("appinstall: %s", exc)
                     meldung = self._t("appinstall.error_generic", error=exc)
@@ -50670,8 +52382,6 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_lauf, daemon=True).start()
 
-        knopfbereich = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfbereich.pack(fill="x")
         ttk.Button(knopfbereich, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
         ttk.Button(knopfbereich, text=self._t("appinstall.action_guide"),
@@ -58675,6 +60385,8 @@ class PS5ConverterGUI:
         Vollstaendig unabhaengig vom Haupt-Hintergrundbild (self._bg_image_cache) -
         eigene Cache-Variable, eigene Einstellung, eigener Wahl-/Zuruecksetzen-Dialog.
         """
+        # Die Pillen der Seitenleiste tragen Ausschnitte dieses Bilds.
+        self._runde_flaechen_planen()
         sidebar = getattr(self, "sidebar", None)
         if sidebar is None:
             return
@@ -58698,7 +60410,9 @@ class PS5ConverterGUI:
             self.sidebar_bg_label.lower()
             sidebar.bind("<Configure>", self._on_sidebar_configure)
 
-        sidebar_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
+        # Mit runden Ecken (seit v1.9.62) - dasselbe Bild, aus dem die
+        # Beschriftungen und Pillen der Leiste ihre Ausschnitte schneiden.
+        sidebar_resized = self._seitenleistenbild(s_width, s_height)
         self.sidebar_bg_photo = ImageTk.PhotoImage(sidebar_resized)
         self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
         self._last_sidebar_bg_resize_size = (s_width, s_height)
@@ -58716,6 +60430,8 @@ class PS5ConverterGUI:
         unabhaengiges Hintergrundbild (siehe _refresh_sidebar_bg_label).
         """
         self._refresh_sidebar_bg_label()
+        # Pillen in Karte und Knopfleiste tragen Ausschnitte dieser Bilder.
+        self._runde_flaechen_planen()
 
         if self._bg_image_cache is None:
             if getattr(self, "bg_label", None) is not None:
@@ -58929,9 +60645,12 @@ class PS5ConverterGUI:
             if knopf is None:
                 continue
             try:
-                knopf.configure(bg=c["bg_card"], fg=c[schriftfarbe],
+                # Seit v1.9.62 Pillen: dunkle Flaeche mit Rand wie die Aufgabenknoepfe.
+                knopf.configure(bg=c["console_bg"], fg=c[schriftfarbe],
                                 activebackground=c["fg_accent"],
-                                disabledforeground=c["fg_secondary"])
+                                disabledbackground=c["console_bg"],
+                                disabledforeground=c["fg_secondary"],
+                                outline=c["border"])
             except tk.TclError as exc:
                 logger.debug("Fußknopf %s nicht umfärbbar: %s", name, exc)
         rahmen = getattr(self, "_sidebar_footer_frame", None)
@@ -59054,41 +60773,44 @@ class PS5ConverterGUI:
         if hasattr(self, "release_gate_label"):
             self._refresh_release_test_gate_badge()
 
-        # Sidebar-Buttons
+        # Sidebar-Buttons (Pillen: ungewaehlt die dunkle Flaeche mit Rand)
         if hasattr(self, "mode_buttons"):
             active_mode = self.current_mode.get()
             for btn, m in self.mode_buttons:
                 if m == active_mode:
                     btn.configure(bg=c["fg_accent"], fg=c["bg_main"], outline=c["border"])
                 else:
-                    btn.configure(bg=c["bg_card"], fg=c["fg_primary"],
+                    btn.configure(bg=c["console_bg"], fg=c["fg_primary"],
                                   activebackground=c["fg_accent"], outline=c["border"])
         # Die Knoepfe der Ansicht KONSOLE - auch wenn sie gerade nicht
         # eingepackt sind; sonst traegen sie beim Umschalten das alte Design.
         for btn, _schluessel in getattr(self, "_konsole_knoepfe", []):
             try:
-                btn.configure(bg=c["bg_card"], fg=c["fg_primary"],
+                btn.configure(bg=c["console_bg"], fg=c["fg_primary"],
                               activebackground=c["fg_accent"],
                               activeforeground=c["bg_main"], outline=c["border"])
             except tk.TclError as exc:
                 logger.debug("Konsolenknopf nicht umfärbbar: %s", exc)
 
-        # Start-/Abbrechen-Buttons (RoundedButton, wie Sidebar-Buttons)
+        # Start-/Abbrechen-Buttons (Pillen; gesperrt wie in der Bibliothek)
+        _gesperrt = bibliothek_zeichnen.knopf_farben(c, "flaeche", "gesperrt")
         if hasattr(self, "run_btn"):
             self.run_btn.configure(
                 bg=c["accent_btn"], fg="white",
                 activebackground=c["accent_btn_hover"], activeforeground="white",
-                disabledbackground=c["bg_card"], disabledforeground=c["fg_secondary"],
+                disabledbackground=_gesperrt["fuellung"], disabledforeground=c["fg_secondary"],
+                disabledoutline=_gesperrt["rand"],
             )
         if hasattr(self, "abort_btn"):
             self.abort_btn.configure(
                 bg=c["error_btn"], fg=lesbare_schrift(c["error_btn"]),
                 activebackground=c["error_btn_hover"],
                 activeforeground=lesbare_schrift(c["error_btn_hover"]),
-                disabledbackground=c["bg_card"], disabledforeground=c["fg_secondary"],
+                disabledbackground=_gesperrt["fuellung"], disabledforeground=c["fg_secondary"],
+                disabledoutline=_gesperrt["rand"],
             )
 
-        # Durchsuchen-Buttons in der Quelle-Karte (RoundedButton)
+        # Durchsuchen-Buttons in der Quelle-Karte (Pillen)
         for _browse_btn in (
             getattr(self, "src_browse_btn", None),
             getattr(self, "dest_btn", None),
@@ -59096,9 +60818,24 @@ class PS5ConverterGUI:
         ):
             if _browse_btn is not None:
                 _browse_btn.configure(
-                    bg=c["border"], fg=c["fg_primary"],
+                    bg=c["console_bg"], fg=c["fg_primary"],
                     activebackground=c["accent_btn_hover"], activeforeground="white",
+                    outline=c["border"],
                 )
+
+        # Pillen und runde Flaechen der Seiten der Ansicht KONSOLE (seit v1.9.62)
+        for _pille, _akzent in getattr(self, "_seitenpillen", []):
+            try:
+                if _pille.winfo_exists():
+                    self._seitenpille_faerben(_pille, _akzent)
+            except tk.TclError as exc:
+                logger.debug("Seitenpille nicht umfärbbar: %s", exc)
+        for _karte in getattr(self, "_seitenkarten", []):
+            try:
+                if _karte.winfo_exists():
+                    _karte.neu_faerben()
+            except tk.TclError as exc:
+                logger.debug("Runde Seitenflaeche nicht umfärbbar: %s", exc)
 
         # Alle tk.Frame und tk.Label rekursiv neu einfärben
         self._recolor_widget(self.root)
@@ -59319,7 +61056,9 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     logger.debug("Listbox/Text-Highlight konnte nicht gesetzt werden: %s", exc)
             # Checkbutton / Radiobutton
-            elif cls in ("Checkbutton", "Radiobutton"):
+            # RunderHaken: die gezeichneten Kaestchen des Hauptfensters (seit
+            # v1.9.62) - sie verstehen dieselben Optionen wie ein Checkbutton.
+            elif cls in ("Checkbutton", "Radiobutton", "RunderHaken"):
                 cur_bg = widget.cget("bg")
                 cur_fg = widget.cget("fg")
                 for theme_name, palette in self._THEMES.items():

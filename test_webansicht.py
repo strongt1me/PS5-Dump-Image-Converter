@@ -560,7 +560,8 @@ class ProgrammseiteTests(unittest.TestCase):
         app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "spielstaende")
         farben = {schluessel: knopf._bg for knopf, schluessel in app._konsole_knoepfe}
         self.assertEqual(app._COLORS["fg_accent"], farben["konsole.btn_spielstaende"])
-        self.assertEqual(app._COLORS["bg_card"], farben["konsole.btn_dienste"])
+        # Ungewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
+        self.assertEqual(app._COLORS["console_bg"], farben["konsole.btn_dienste"])
 
     def test_sprachwechsel(self):
         app = self.app

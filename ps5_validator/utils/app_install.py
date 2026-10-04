@@ -78,6 +78,21 @@ PAYLOAD_ORDNER = "PS5-AppInstall"
 #: den Kacheln, die auf der Konsole tatsaechlich laufen.
 KATEGORIE_DEEPLINK = 65536
 
+#: Wo die Kachel auf dem Startbildschirm erscheint - die Wahl im Fenster
+#: (seit v1.9.62). Die Konsole liest applicationCategoryType beim Anmelden:
+#: 0 legt die Kachel unter "Spiele", 0x10000 unter "Medien" - dort liegen die
+#: Kacheln, die auf der Konsole laufen (Payload Manager, Homebrew Launcher,
+#: WebKit Autoload). Umstellen laesst es sich nur mit einer neuen Installation.
+BEREICH_MEDIEN = "medien"
+BEREICH_SPIELE = "spiele"
+BEREICHE: dict[str, int] = {BEREICH_MEDIEN: KATEGORIE_DEEPLINK,
+                            BEREICH_SPIELE: KATEGORIE_INSTALL}
+
+
+def bereich_kategorie(bereich: str) -> int:
+    """applicationCategoryType fuer die Wahl im Fenster; Unbekanntes wird "Medien"."""
+    return BEREICHE.get(str(bereich or "").strip().lower(), KATEGORIE_DEEPLINK)
+
 #: Die beiden Betriebsarten.
 ART_PROGRAMM = "programm"    # eigenes eboot.bin, Vorbild samples/install_app
 ART_DEEPLINK = "deeplink"    # nur Metadaten, oeffnet eine Weboberflaeche
@@ -212,14 +227,25 @@ def _mit_kategorie(param: dict, kategorie: int) -> dict:
     return kopie
 
 
-def installfassung(param: dict) -> dict:
+def installfassung(param: dict, kategorie: int = KATEGORIE_INSTALL) -> dict:
     """param.json fuer den Registrierungsschritt.
 
     Die Kategorie wird bewusst gesetzt statt uebernommen: Steht in der
     Vorlage schon die Systemkategorie, laeuft die Registrierung ins Leere
-    und niemand sieht, woran es lag.
+    und niemand sieht, woran es lag. ``kategorie`` ist die Wahl im Fenster
+    (0 = Spiele, 65536 = Medien; seit v1.9.62) - die Systemkategorie kommt
+    erst nach dem Registrieren (:func:`systemfassung`) und ist hier verboten.
     """
-    return _mit_kategorie(param, KATEGORIE_INSTALL)
+    if kategorie == KATEGORIE_SYSTEM:
+        raise ValueError("Die Systemkategorie wird erst nach dem Registrieren nachgereicht.")
+    return _mit_kategorie(param, kategorie)
+
+
+def deeplink_fassung(param: dict, kategorie: int = KATEGORIE_DEEPLINK) -> dict:
+    """param.json einer Deeplink-Kachel mit der Kategorie aus dem Fenster (seit v1.9.62)."""
+    if kategorie == KATEGORIE_SYSTEM:
+        raise ValueError("Eine Deeplink-Kachel traegt nie die Systemkategorie.")
+    return _mit_kategorie(param, kategorie)
 
 
 def systemfassung(param: dict) -> dict:

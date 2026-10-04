@@ -176,10 +176,16 @@ class KartenzeilenTests(unittest.TestCase):
     def _zeilen(self):
         eng = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_ENG
         gruppe = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_GRUPPE
+        # Die Pille von WORKER ist breiter als der Drehknopf darunter
+        # (v1.9.62); die Pruefstufe rueckt um den Ueberstand nach rechts, damit
+        # die Pillen von WORKER und PRUEFUNG nicht aneinanderstossen.
+        vor_pruefung = max(
+            gruppe, self.app._worker_ueberstand()
+            + self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_PILLEN)
         return (
             ("Pruefzeile", [("compression_combo", None),
                             ("worker_knob", gruppe),
-                            ("verify_combo", gruppe)]),
+                            ("verify_combo", vor_pruefung)]),
             ("Einbauzeile", [("ampr_integrate_check", None),
                              ("ampr_version_combo", eng),
                              ("ampr_methode_combo", eng),
@@ -247,13 +253,17 @@ class KartenzeilenTests(unittest.TestCase):
 
     def test_die_beschriftungen_ueberlappen_einander_nicht(self):
         folge = ("perf_title", "worker_title", "verify_title")
+        luft = self.haupt.PS5ConverterGUI._ZEILE_ABSTAND_PILLEN
         for links_name, rechts_name in zip(folge, folge[1:]):
             links = getattr(self.app, links_name)
             rechts = getattr(self.app, rechts_name)
-            self.assertLessEqual(
-                links.winfo_rootx() + links.winfo_width(),
-                rechts.winfo_rootx(),
-                "%s laeuft in %s hinein" % (links_name, rechts_name))
+            abstand = rechts.winfo_rootx() - (links.winfo_rootx()
+                                              + links.winfo_width())
+            self.assertGreaterEqual(
+                abstand, luft,
+                "%s laeuft in %s hinein oder steht nur %d px davor "
+                "(verlangt: %d px zwischen zwei Pillen)"
+                % (links_name, rechts_name, abstand, luft))
 
     def test_hinweistext_klebt_nicht_an_den_kaestchen(self):
         kaestchen = self.app.ampr_integrate_check

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.61</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.62</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,7 +144,7 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.61</span>
+      <span class="marke">Version v1.9.62</span>
       <span class="marke">Stand 4. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
@@ -439,6 +439,17 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Wie mache ich aus einem ELF eine eboot.bin?</h3>
+    <p><strong>ELF → EBOOT.BIN</strong> (unter WEITERE TOOLS) verpackt eine <code>.elf</code> – etwa ein selbst gebautes Homebrew – als <code>eboot.bin</code>: eine SELF-Hülle mit dem ELF darin. Danach liest das Programm die Datei zur Kontrolle wieder ein. Eine Datei, die schon ein SELF ist, ein gestripptes ELF und alles, was kein ELF ist, lehnt das Fenster mit einem Hinweis ab.</p>
+    <p class="warnung">Die <code>eboot.bin</code> ist ein Fake-SELF ohne echte Signatur und startet nur auf einer gejailbreakten Konsole.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Erscheint eine selbst angelegte Kachel unter Spiele oder unter Medien?</h3>
+    <p>Das entscheidet nicht die <code>eboot.bin</code>, sondern die <code>sce_sys/param.json</code>: Ihr Feld <code>applicationCategoryType</code> legt die Kachel mit <strong>0</strong> unter <strong>Spiele</strong> und mit <strong>65536</strong> unter <strong>Medien</strong>. Die Konsole liest es beim Installieren bzw. Anmelden; ändern lässt es sich danach nur mit einer neuen Installation. In <strong>App direkt installieren</strong> (WEITERE TOOLS) wählen Sie es unter <em>Kachel unter</em>, vorgegeben ist Medien.</p>
+  </div>
+
+  <div class="frage">
     <h3>Kann ich auch PS4-Spiele verwenden?</h3>
     <p>Ja. <strong>PS4 PKG → ffpfsc</strong> (WEITERE TOOLS) macht aus PS4-Paketen – Basis, Patch, wahlweise DLC – ein Abbild für ShadowMount+. <strong>PS4 PKG → Dump Ordner</strong> macht aus einem PS4-Paket einen normalen Spielordner. PS5-Pakete lassen sich nicht entpacken.</p>
     <p class="hinweis"><strong>Trophäen:</strong> Ein PS4-Spiel, das aus einem Abbild startet, registriert seine Trophäen nicht (<em>Trophy registration failed, 0x80551618</em>). Das ist so vorgesehen und liegt nicht am Abbild. Wer die Trophäen braucht, installiert das Spiel über den Package Installer. PS5-Titel sind nicht betroffen.</p>
@@ -564,7 +575,7 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.61</strong></span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.62</strong></span>
   <span>Stand 4. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 

@@ -1337,8 +1337,12 @@ class HinweiszeilenHoeheTests(unittest.TestCase):
                 with self.subTest(sprache=sprache, ziel=schluessel):
                     self.assertIn(rang, text, "Die Zielwahl kam im Hinweis nicht an.")
                     self.assertLessEqual(text.count("\n") + 1, 3, text)
+                # Die Hoehe des TEXTES, nicht die des Etiketts: Seit v1.9.62
+                # steht der Hinweis auf einer Pille (Nutzerwunsch 04.10.2026),
+                # und deren Luft ober- und unterhalb zaehlt zur Etikettenhoehe.
+                # Gemeint ist hier, dass nichts zusaetzlich umbricht.
                 hoehen["%s %s" % (sprache, schluessel)] = (
-                    app.format_info_label.winfo_reqheight(),
+                    app._caption_natuerliche_groesse(app.format_info_label)[1],
                     text.count("\n") + 1)
         zu_hoch = ["%s: %d px fuer %d Zeilen" % (k, px, zeilen)
                    for k, (px, zeilen) in hoehen.items()

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.61</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.62</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,7 +144,7 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.61</span>
+      <span class="marke">Version v1.9.62</span>
       <span class="marke">As of 4 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
@@ -439,6 +439,17 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>How do I turn an ELF into an eboot.bin?</h3>
+    <p><strong>ELF → EBOOT.BIN</strong> (under MORE TOOLS) wraps an <code>.elf</code> – for example a homebrew you built yourself – as <code>eboot.bin</code>: a SELF wrapper with the ELF inside. Afterwards the program reads the file back as a check. A file that is already a SELF, a stripped ELF and anything that is not an ELF are refused with a note.</p>
+    <p class="warnung">The <code>eboot.bin</code> is a fake SELF without a real signature and only starts on a jailbroken console.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Does a tile I create appear under Games or under Media?</h3>
+    <p>That is not decided by the <code>eboot.bin</code> but by <code>sce_sys/param.json</code>: its field <code>applicationCategoryType</code> puts the tile under <strong>Games</strong> with <strong>0</strong> and under <strong>Media</strong> with <strong>65536</strong>. The console reads it when the app is installed or registered; afterwards it can only be changed by installing again. In <strong>Install app directly</strong> (MORE TOOLS) you choose it under <em>Tile under</em>; Media is preset.</p>
+  </div>
+
+  <div class="frage">
     <h3>Can I use PS4 games too?</h3>
     <p>Yes. <strong>PS4 PKG → ffpfsc</strong> (MORE TOOLS) turns PS4 packages – base, patch, optionally DLC – into an image for ShadowMount+. <strong>PS4 PKG → dump folder</strong> turns a PS4 package into a normal game folder. PS5 packages cannot be unpacked.</p>
     <p class="hinweis"><strong>Trophies:</strong> a PS4 game that starts from an image does not register its trophies (<em>Trophy registration failed, 0x80551618</em>). This is by design and not caused by the image. If you need the trophies, install the game with the Package Installer. PS5 titles are not affected.</p>
@@ -564,7 +575,7 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.61</strong></span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.62</strong></span>
   <span>As of 4 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 

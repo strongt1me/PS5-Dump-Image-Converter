@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.61):** Neu sind die häufigen Fragen (FAQ) auf Deutsch und Englisch und eine Warnung, wenn ShadowMount+ ein Spiel von allen fakelibs ausnimmt; ShadowMount+ 1.7beta4 liegt bei.
+> **Kurz zum aktuellen Stand (v1.9.62):** Die Oberfläche ist jetzt rund – Knöpfe, Felder und Beschriftungen in Pillenform in beiden Ansichten –, WEITERE TOOLS verpackt ein ELF als eboot.bin, und eine direkt installierte Kachel landet wahlweise unter Medien oder Spiele.
+
+---
+
+## v1.9.62 – 04.10.2026
+
+- **Neu:** Runde Oberfläche in Pillenform – Knöpfe, Eingabefelder, Klapplisten und Beschriftungen in den Ansichten UMWANDELN und KONSOLE, dazu runde Ecken und schmalere, gleich breite Knöpfe in der Seitenleiste.
+- **Neu:** WEITERE TOOLS → „ELF → EBOOT.BIN“ verpackt eine ELF-Datei als eboot.bin (Fake-SELF für gejailbreakte Konsolen), und „App direkt installieren“ lässt wählen, ob die Kachel unter Medien oder Spiele erscheint.
+- **Behoben:** Die Beschriftungen „BEIM ERSTELLEN EINBAUEN“ und „BAUFORM“ wechseln beim Designwechsel ihre Schriftfarbe jetzt mit.
 
 ---
 

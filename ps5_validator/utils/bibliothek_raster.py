@@ -214,9 +214,13 @@ class Zeichner:
 
     # --- Knopfbilder -------------------------------------------------------------------------------------
     def knopf_foto(self, stil: str, zustand: str, breite: int, hoehe: int) -> tuple["ImageTk.PhotoImage", tuple[int, int]]:
-        """Das Bild eines Knopfs und der Versatz seines Rechtecks darin (wegen des Scheins)."""
+        """Das Bild eines Knopfs und der Versatz seines Rechtecks darin (wegen des Scheins).
+
+        Jeder Knopf ist eine Pille (Radius = halbe Hoehe) - seit v1.9.62 wie in der
+        Ansicht UMWANDELN; vorher hatten nur die Chips runde Enden, die uebrigen 10 px.
+        """
         farben = zeichnen.knopf_farben(self.palette, stil, zustand)
-        radius = hoehe / 2.0 if stil in ("chip", "chip_an") else self.px(10)
+        radius = hoehe / 2.0
         schluessel = ("knopf", stil, zustand, breite, hoehe)
         if stil == "akzent":
             foto = self.foto(schluessel, lambda: zeichnen.akzent_knopf(
@@ -660,14 +664,15 @@ class RundeKarte(tk.Frame):
     Args:
         fuellung, rand, grund: Rollen der Palette - Kartenflaeche, Rand und
             der Grund, auf dem die Karte steht.
-        radius: Eckenradius bei 100 %.
+        radius: Eckenradius bei 100 % - oder ``None`` fuer eine Pille (halbe
+            Hoehe, das Suchfeld).
         polster: ``(waagerecht, senkrecht)`` bei 100 % zwischen Rand und Inhalt.
         fuellend: Der Inhalt fuellt die Karte aus (Liste) und gibt ihr keine
             eigene Hoehe vor.
     """
 
     def __init__(self, master: tk.Misc, zeichner: Zeichner, *, fuellung: str = "bg_card", rand: str = "border",
-                 grund: str = "bg_main", radius: float = 16, polster: tuple[float, float] = (20, 16),
+                 grund: str = "bg_main", radius: float | None = 16, polster: tuple[float, float] = (20, 16),
                  randbreite: float = 1.0, fuellend: bool = False, **kwargs: Any) -> None:
         self._z = zeichner
         self._rollen = (fuellung, rand, grund)
@@ -699,7 +704,8 @@ class RundeKarte(tk.Frame):
             return
         p = self._z.palette
         fuellung, rand, _grund = self._rollen
-        bild = zeichnen.rund_rechteck(breite, hoehe, self._z.px(self._radius), p.get(fuellung, "#000000"),
+        radius = hoehe / 2.0 if self._radius is None else self._z.px(self._radius)
+        bild = zeichnen.rund_rechteck(breite, hoehe, radius, p.get(fuellung, "#000000"),
                                       p.get(rand, "#000000"), max(1.0, self._randbreite * self._z.faktor))
         self._foto = ImageTk.PhotoImage(bild, master=self._z.wurzel)
         self._groesse_gemalt = (breite, hoehe)
@@ -839,8 +845,9 @@ class SuchFeld(RundeKarte):
 
     def __init__(self, master: tk.Misc, zeichner: Zeichner, variable: tk.StringVar, platzhalter: str,
                  *, grund: str = "bg_card") -> None:
-        super().__init__(master, zeichner, fuellung="console_bg", rand="border", grund=grund, radius=10,
-                         polster=(14, 6))
+        # Eine Pille wie die Felder der Ansicht UMWANDELN (seit v1.9.62; vorher Radius 10).
+        super().__init__(master, zeichner, fuellung="console_bg", rand="border", grund=grund, radius=None,
+                         polster=(18, 6))
         p = zeichner.palette
         self.variable = variable
         self._platzhalter_text = platzhalter

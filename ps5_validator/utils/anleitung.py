@@ -194,6 +194,8 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "**Symbolbild** wählen: eine PNG-Datei, am besten "
                     "512×512.",
                     "**PS5-Adresse** prüfen – die IP Ihrer Konsole.",
+                    "**Kachel unter** wählen: **Medien** (vorgegeben – dort "
+                    "liegen die üblichen Kacheln) oder **Spiele**.",
                     "**Prüfen** drücken. Im Feld darunter steht, ob "
                     "etwas fehlt.",
                     "**Installieren** drücken und bestätigen. Danach "
@@ -204,6 +206,7 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "Oben **Anwendung mit eigenem Programm** wählen.",
                     "**Ordner wählen** – der Ordner mit "
                     "`eboot.bin` und `sce_sys`.",
+                    "**Kachel unter** wählen: **Medien** oder **Spiele**.",
                     "**Prüfen** drücken. Steht dort eine "
                     "Autorität von `0x38`, hören Sie hier "
                     "auf: Die App würde mit `CE-108262-9` "
@@ -220,7 +223,9 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "geschaltet.",
                     "Die Dateien werden nach `/user/app/<Title-ID>/` "
                     "und `/system_ex/app/<Title-ID>/` gelegt.",
-                    "Die Konsole wird aufgefordert, die App anzumelden.",
+                    "Die Konsole wird aufgefordert, die App anzumelden – mit "
+                    "der Kategorie aus **Kachel unter** "
+                    "(`applicationCategoryType` 65536 = Medien, 0 = Spiele).",
                     "Erst danach wird `param.json.system` geschrieben "
                     "– die Reihenfolge ist nicht beliebig.",
                 ]),
@@ -258,13 +263,21 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                 ]),
             ]},
             {"h": "Woher das bekannt ist", "bloecke": [
-                ("gut", "Alles hier ist gemessen, nicht vermutet",
+                ("gut", "Gemessen, nicht vermutet",
                  "Beide Bauformen wurden am 29.08.2026 auf einer echten "
                  "Konsole ausprobiert. Die Kachel für eine "
                  "Weboberfläche startet zuverlässig; die Anwendung "
                  "mit eigenem Programm startet, sobald die Autorität "
                  "stimmt. Die Reihenfolge der Schritte stammt aus "
                  "`samples/install_app` des Payload-SDK."),
+                ("warn", "Noch nicht erprobt",
+                 "Die Wahl **Kachel unter** gibt es seit v1.9.62. Erprobt "
+                 "sind die Kachel für eine Weboberfläche unter **Medien** und "
+                 "die Anwendung mit eigenem Programm unter **Spiele** – so "
+                 "meldeten sich beide bis dahin an. Die beiden anderen "
+                 "Kombinationen sind auf der Konsole noch nicht ausprobiert. "
+                 "Erscheint eine Kachel nicht oder startet sie nicht, wählen "
+                 "Sie die erprobte Seite und installieren noch einmal."),
             ]},
         ],
         "fuss": "PS5 Dump &amp; Image Converter – Anleitung zum Werkzeug "
@@ -336,6 +349,8 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "Choose an **icon image**: a PNG file, ideally "
                     "512×512.",
                     "Check the **PS5 address** – your console's IP.",
+                    "Choose **Tile under**: **Media** (preset – where the usual "
+                    "tiles sit) or **Games**.",
                     "Press **Check**. The field below says what is missing.",
                     "Press **Install** and confirm. The tile is then in the "
                     "menu.",
@@ -345,6 +360,7 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "Select **Application with its own program** at the top.",
                     "**Choose folder** – the one holding "
                     "`eboot.bin` and `sce_sys`.",
+                    "Choose **Tile under**: **Media** or **Games**.",
                     "Press **Check**. If it reports an authority of "
                     "`0x38`, stop here: the app would crash with "
                     "`CE-108262-9`. It has to be re-signed with "
@@ -359,7 +375,9 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                     "The files are placed into "
                     "`/user/app/<Title ID>/` and "
                     "`/system_ex/app/<Title ID>/`.",
-                    "The console is asked to register the app.",
+                    "The console is asked to register the app – with the "
+                    "category from **Tile under** "
+                    "(`applicationCategoryType` 65536 = Media, 0 = Games).",
                     "Only afterwards is `param.json.system` written "
                     "– the order is not arbitrary.",
                 ]),
@@ -395,12 +413,20 @@ APPINSTALL: dict[str, dict[str, Any]] = {
                 ]),
             ]},
             {"h": "Where this is known from", "bloecke": [
-                ("gut", "Everything here was measured, not guessed",
+                ("gut", "Measured, not guessed",
                  "Both shapes were tried on a real console on 29 Aug 2026. The "
                  "tile for a web interface starts reliably; the application "
                  "with its own program starts as soon as the authority is "
                  "right. The order of the steps comes from "
                  "`samples/install_app` of the payload SDK."),
+                ("warn", "Not tried yet",
+                 "The **Tile under** choice exists since v1.9.62. Proven are "
+                 "the tile for a web interface under **Media** and the "
+                 "application with its own program under **Games** – that is "
+                 "how both registered until then. The other two combinations "
+                 "have not been tried on the console yet. If a tile does not "
+                 "appear or does not start, choose the proven side and "
+                 "install once more."),
             ]},
         ],
         "fuss": "PS5 Dump &amp; Image Converter – guide to the "

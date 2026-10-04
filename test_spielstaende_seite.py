@@ -116,7 +116,9 @@ class SeitenTests(unittest.TestCase):
         self.addCleanup(self._zurueck)
         widgets = list(_alle(self.app._spielstaende_seite))
         self.feld = next(w for w in widgets if isinstance(w, tk.Entry))
-        self.knopf = {_text(w): w for w in widgets if isinstance(w, ttk.Button)}
+        # Seit v1.9.62 Pillen (RoundedButton) statt ttk.Button.
+        self.knopf = {_text(w): w for w in widgets
+                      if isinstance(w, (ttk.Button, APP.RoundedButton))}
 
     def _zurueck(self) -> None:
         _bis(lambda: not self.app._spielstaende_laeuft["aktiv"])
@@ -153,7 +155,8 @@ class SeitenTests(unittest.TestCase):
         self.assertFalse(_gezeigt(getattr(self.app, "_konsole_tafel", None)))
         c = self.app._COLORS
         self.assertEqual(c["fg_accent"], self._knopf_der_leiste("konsole.btn_spielstaende")._bg)
-        self.assertEqual(c["bg_card"], self._knopf_der_leiste("konsole.btn_dienste")._bg)
+        # Ungewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
+        self.assertEqual(c["console_bg"], self._knopf_der_leiste("konsole.btn_dienste")._bg)
 
     def test_zweiter_druck_fuehrt_zurueck(self) -> None:
         self.app._konsole_knopf_gedrueckt("spielstaende", "konsole.btn_spielstaende")

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.61</title>
+<title>PS5 Dump &amp; Image Converter – Benutzerhandbuch v1.9.62</title>
 <style>
 :root{
   --bg:#070b14;
@@ -312,7 +312,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Benutzerhandbuch</span></h1>
     <p class="unter">Eine verständliche Schritt-für-Schritt-Anleitung für die ersten sicheren Konvertierungen und Prüfungen – dazu ein vollständiger Überblick über alle acht Aufgaben und sämtliche Zusatzwerkzeuge der Werkzeugleiste.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.61</span>
+      <span class="marke">Version v1.9.62</span>
       <span class="marke">Stand 4. Oktober 2026</span>
       <span class="marke grau">Windows &middot; Linux &middot; macOS</span>
       <span class="marke grau">Deutsch / English</span>
@@ -1473,7 +1473,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
       <tr><td><strong>WEBKIT AUTOLOADER</strong></td><td>Öffnet ein kleines Fenster mit drei Wegen: den Host als Windows-Programm oder als Python-Skript starten und den Installer auf die Konsole bringen – siehe <a href="#k13">Abschnitt 13.11</a>.</td></tr>
       <tr><td><strong>PARAM/MANIFEST</strong></td><td>Editor für <code>sce_sys/param.json</code> und <code>manifest.json</code>.</td></tr>
       <tr><td><strong>PKG-MERGER</strong></td><td>Führt geteilte <code>.pkg</code>-Dateien wieder zu einer Datei zusammen. Ein laufender Satz lässt sich abbrechen; die angefangene Datei wird dabei entfernt.</td></tr>
-      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>Dump umbenennen</strong> (13.2), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PS4 &amp; PS5 PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle; ein Update-Paket erkennt es und sagt, was es zum Installieren braucht), <strong>PS4 PKG &rarr; Dump Ordner</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
+      <tr><td><strong>WEITERE TOOLS</strong></td><td>Aufklappmenü mit den Zusatzwerkzeugen (unter anderem): <strong>SHADOWMOUNT+</strong> (Konfigurationseditor für das ShadowMount+-Payload, per FTP laden und schreiben), <strong>MicroMount</strong>, <strong>AMPR-Index-Builder</strong>, <strong>AMPR-Mitschnitt-Assistent</strong> (führt Schritt für Schritt durch das Aufnehmen echter Spieldurchläufe auf der PS5 und erzeugt daraus ein maßgeschneidertes Packprofil für die Asset-Pack-Methode), <strong>SELF-Inspektor</strong> (13.1), <strong>ELF &rarr; EBOOT.BIN</strong> (13.15), <strong>Dump umbenennen</strong> (13.2), <strong>App direkt installieren</strong> (13.4), <strong>DOWNLOADS</strong> (13.5), <strong>BACKPORT</strong> (13.6), <strong>ps5_autoloader</strong> (13.8), <strong>PS4 PKG &rarr; ffpfsc</strong> (13.10), <strong>PS4 &amp; PS5 PKG lesen</strong> (zeigt die Eckdaten einer <code>.pkg</code>: Typ, Content-ID, Title-ID, Region und Eintragstabelle; ein Update-Paket erkennt es und sagt, was es zum Installieren braucht), <strong>PS4 PKG &rarr; Dump Ordner</strong> (13.14) und <strong>unjail senden</strong> (13.12).</td></tr>
       <tr><td><strong>FILEZILLA</strong></td><td>Startet Ihre FileZilla-Installation für den Dateiaustausch mit der PS5. Wo FileZilla liegt, sucht das Programm selbst – siehe <a href="#k13">Abschnitt 13.7</a>. Auch über <strong>Strg+Umschalt+T</strong> erreichbar.</td></tr>
       <tr><td><strong>JS LOADER</strong></td><td>Sendet JS- oder ELF-Payloads an eine bereits gejailbreakte PS5 (Ports 50000/9021) samt kleinem Log-Server. Mitgeliefert und voreingestellt ist <code>ftpsrv-ps5</code> auf <strong>Port 2121</strong>.</td></tr>
       <tr><td><strong>CREDITS</strong></td><td>Zeigt Projektinformationen und verwendete Quellen und Bibliotheken.</td></tr>
@@ -1582,6 +1582,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   <p>Legt eine Kachel unmittelbar auf der PS5 an – ohne den Umweg über eine Paketdatei.</p>
   <p><strong>Zu finden unter:</strong> WEITERE TOOLS → APP DIREKT INSTALLIEREN.</p>
   <p>Selbst gebaute Pakete weist die Konsole mit <code>CE-100096-6</code> zurück. Dieses Werkzeug umgeht das: Es überträgt die Dateien per FTP und meldet die Kachel mit einem kleinen Payload an. Zur Wahl stehen zwei Bauformen – eine Kachel, die beim Antippen eine Adresse öffnet, und der Weg mit eigenem Programm.</p>
+  <p><strong>Kachel unter Medien oder Spiele.</strong> Wo die Kachel auf dem Startbildschirm erscheint, wählen Sie im Fenster unter <em>Kachel unter</em>: <strong>Medien</strong> (vorgegeben – dort liegen die üblichen Kacheln wie Payload Manager oder WebKit Autoload) oder <strong>Spiele</strong>. Die Konsole liest das beim Anmelden aus der <code>param.json</code> (<code>applicationCategoryType</code>: Medien 65536, Spiele 0); umstellen lässt es sich nur mit einer neuen Installation. Erprobt sind die Kachel für eine Weboberfläche unter Medien und die Anwendung mit eigenem Programm unter Spiele; die beiden anderen Kombinationen sind auf der Konsole noch nicht ausprobiert – erscheint eine Kachel nicht oder startet sie nicht, wählen Sie die erprobte Seite.</p>
   <p><strong>Vorausgesetzt wird</strong>, dass auf der Konsole <code>ftpsrv</code> (Port 2121) und der Payload-Loader (Port 9021) laufen. Ist 9021 zu, nimmt das Programm von selbst den Umweg über den Payload Manager. Dieser Weg meldet nichts zurück; das Programm holt sich das Protokoll des Payloads dann über FTP aus <code>/data/appinst.log</code> und wartet dafür bis zu 20 Sekunden. Im Protokollfeld sehen Sie diesen Schritt als eigene Zeile.</p>
   <div class="kasten warnung">
     <span class="titel">Wichtig</span>
@@ -2146,6 +2147,32 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
     Fake-Signatur lehnt der Entpacker ebenfalls ab.</p>
   </div>
 
+  <h3>13.15 ELF &rarr; EBOOT.BIN &ndash; ein ELF als eboot.bin verpacken</h3>
+  <p>Verpackt eine ausführbare ELF-Datei – etwa ein selbst gebautes Homebrew –
+  als <code>eboot.bin</code>: eine SELF-Hülle mit dem ELF darin, so wie die PS5
+  sie startet.</p>
+  <p><strong>Zu finden unter:</strong> WEITERE TOOLS &rarr; ELF &rarr; EBOOT.BIN.
+  Wählen Sie die <code>.elf</code>, danach den Speicherort (vorgeschlagen wird
+  <code>eboot.bin</code> im selben Ordner). Verpackt wird mit demselben
+  Verfahren, mit dem BACKPORT (13.6) Dateien zurücksetzt. Danach liest das
+  Programm das Ergebnis zur Kontrolle wieder ein; erst wenn es dort als SELF mit
+  eingebettetem ELF erscheint, meldet das Fenster Erfolg – mit der Größe vorher
+  und nachher und der Zahl der Segmente.</p>
+  <ul>
+    <li><strong>Nur für gejailbreakte Konsolen.</strong> Die <code>eboot.bin</code>
+    ist ein Fake-SELF ohne echte Signatur und wird nicht komprimiert. Erprobt ist
+    das Verpacken selbst (BACKPORT nutzt es seit langem); den Start einer so
+    erzeugten <code>eboot.bin</code> auf der Konsole hat das Programm noch nicht
+    erprobt.</li>
+    <li><strong>Was abgelehnt wird:</strong> eine Datei, die schon ein SELF ist
+    (sie muss nicht umgewandelt werden), ein gestripptes ELF ohne Kennung am
+    Dateianfang und alles, was kein ELF ist.</li>
+    <li><strong>Kein halber Stand.</strong> Geschrieben wird zuerst in eine
+    Nebendatei, erst danach ersetzt sie das Ziel. Auch wenn Sie die Quelle selbst
+    als Ziel wählen, bleibt sie bis zuletzt unversehrt.</li>
+  </ul>
+  <p>Den Aufbau des Ergebnisses zeigt der SELF-Inspektor (13.1).</p>
+
 </section>
 
 <section class="kapitel" id="k14">
@@ -2163,7 +2190,8 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </table>
   </div>
   <p>Die Wahl wird pro Benutzer gespeichert. Nach Klick auf <strong>ANWENDEN</strong> startet das Programm automatisch neu, damit die Oberfläche vollständig im neuen Design erscheint. Läuft gerade eine Aufgabe, wird der Neustart zurückgestellt – bitte danach von Hand neu starten.</p>
-  <p>Ist ein Hintergrundbild eingestellt, stehen die Beschriftungen (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER, die Überschrift, die Statuszeile, die Größenangabe und die Texte in der Seitenleiste) direkt auf dem Bild – ohne farbige Fläche dahinter.</p>
+  <p>Knöpfe, Eingabefelder und Klapplisten sind in allen Designs abgerundet (Pillenform) – in beiden Ansichten, UMWANDELN und KONSOLE. Die Knöpfe der Seitenleiste sind gleich breit und richten sich nach dem längsten Text; die Seitenleiste selbst hat runde Ecken.</p>
+  <p>Ist ein Hintergrundbild eingestellt, stehen die Überschrift, ihr Untertitel, die Statuszeile und die Beschriftungen der Karte (QUELLE, ZIELFORMAT, KOMPRESSION, ZIELORDNER, TEMP-ORDNER …) auf einer abgerundeten Fläche in der Farbe der Eingabefelder – so bleiben sie auf jedem Bild lesbar. Die Größenangabe und die Texte in der Seitenleiste stehen direkt auf dem Bild.</p>
 
   <div class="kasten">
     <span class="titel">Gro&szlig;e Bildschirme und hohe Anzeigeskalierung</span>
@@ -2324,7 +2352,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   </div>
 
   <h3>15.1 Was gehört in eine hilfreiche Fehlermeldung?</h3>
-  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.61), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
+  <p>Wenn Sie Unterstützung benötigen, notieren Sie die Programmversion (v1.9.62), die gewählte Aufgabe, den Quelltyp und die letzte sichtbare Protokollmeldung – am einfachsten über den Knopf <strong>DIAGNOSE</strong>. Geben Sie keine privaten Pfade oder persönlichen Daten weiter, wenn diese für die Fehlersuche nicht benötigt werden.</p>
   <div class="kasten tipp">
     <span class="titel">Bitte nicht sofort löschen</span>
     <p>Bewahren Sie das Protokoll und die unveränderte Quelle auf, bis Sie die Ursache verstanden haben. So lässt sich ein Fehler leichter nachvollziehen.</p>
@@ -2524,7 +2552,7 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
 
 <footer>
   <div class="zeile">
-    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.61</strong></span>
+    <span>PS5 Dump &amp; Image Converter – Benutzerhandbuch <strong>v1.9.62</strong></span>
     <span>Stand 4. Oktober 2026</span>
   </div>
   <p>Dieses Handbuch beschreibt die sichtbare Bedienung des Programms. Ergänzende Versions- und Funktionsangaben stehen in der gemeinsam ausgelieferten <a href="README.md">README.md</a> und <a href="CHANGELOG.md">CHANGELOG.md</a>.</p>

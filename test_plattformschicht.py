@@ -447,11 +447,13 @@ class AquaKnopfTests(unittest.TestCase):
                          "In der Titelleiste steht wieder ein Systemknopf.")
 
     def test_fussknoepfe_gehen_ueber_die_weiche(self):
+        """Kein Systemknopf im Fuss: frueher ueber flach_knopf, seit v1.9.62 als
+        gezeichnete Pille (RoundedButton) - ein Canvas malt auch auf Aqua selbst."""
         for name in ("self.info_toggle_btn = ", "self.resources_btn = "):
-            stelle = self.quelle.index(name)
+            stelle = self.quelle.index(name) + len(name)
             self.assertTrue(
-                self.quelle[stelle:stelle + len(name) + 12].endswith("flach_knopf("),
-                f"{name.strip()} entsteht nicht ueber flach_knopf.")
+                self.quelle[stelle:stelle + 14].startswith(("flach_knopf(", "RoundedButton(")),
+                f"{name.strip()} entsteht weder ueber flach_knopf noch als RoundedButton.")
 
     def test_weiche_liefert_je_system_das_richtige(self):
         import tkinter as tk

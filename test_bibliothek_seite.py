@@ -669,7 +669,8 @@ class SeiteTests(unittest.TestCase):
         _WURZEL.update()
         self.assertFalse(self._gezeigt(seite))
         self.assertTrue(self._gezeigt(app._konsole_tafel))
-        self.assertEqual(app._COLORS["bg_card"], self._knopf("konsole.btn_bibliothek")._bg)
+        # Abgewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
+        self.assertEqual(app._COLORS["console_bg"], self._knopf("konsole.btn_bibliothek")._bg)
 
     def test_die_seiten_verdraengen_einander(self) -> None:
         self._seite()
@@ -677,7 +678,8 @@ class SeiteTests(unittest.TestCase):
         _WURZEL.update()
         self.assertFalse(self._gezeigt(self.app._bibliothek_seite))
         self.assertTrue(self._gezeigt(self.app._konsole_tafel))
-        self.assertEqual(self.app._COLORS["bg_card"], self._knopf("konsole.btn_bibliothek")._bg)
+        self.assertEqual(self.app._COLORS["console_bg"],
+                         self._knopf("konsole.btn_bibliothek")._bg)
 
     def test_umschalter_bleibt_nicht_hervorgehoben_bei_maus_darauf(self) -> None:
         """Regressionstest zur Meldung vom 01.10.2026: Nach "Bibliothek",
@@ -704,7 +706,7 @@ class SeiteTests(unittest.TestCase):
             return knopf._activebackground if knopf._hovering else knopf._bg
 
         self.assertEqual(
-            self.app._COLORS["bg_card"], effektive_farbe(bibliothek_knopf),
+            self.app._COLORS["console_bg"], effektive_farbe(bibliothek_knopf),
             "Der abgewaehlte Knopf darf nicht weiter die Hervorhebungsfarbe "
             "zeichnen, nur weil die Maus noch darauf steht.")
         self.assertEqual(self.app._COLORS["fg_accent"],
