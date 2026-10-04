@@ -264,6 +264,30 @@ class WeitereDiensteTests(unittest.TestCase):
         self.assertEqual(1, sum(1 for d in kd.KATALOG if d.port == 9020))
 
 
+class AnyPadTests(unittest.TestCase):
+    """AnyPad PS5 (04.10.2026): Bluetooth-Controller an der PS5, Weboberflaeche auf 8095.
+
+    Wunsch des Nutzers: ueber "Konsole & Payloads" starten und die Weboberflaeche
+    oeffnen. Port und Pfad stammen aus dem README des Autors (v0.5.5-beta) und aus
+    dem ELF selbst; an der Konsole noch nicht nachgemessen.
+    """
+
+    def test_port_weboberflaeche_und_muster(self):
+        eintrag = kd.dienst("anypad")
+        self.assertIsNotNone(eintrag, "anypad fehlt im Katalog")
+        self.assertEqual((8095, "/", "AnyPad-PS5-*.elf"),
+                         (eintrag.port, eintrag.web, eintrag.payload_muster))
+        self.assertEqual("http://10.0.0.5:8095/", kd.web_adresse(eintrag, "10.0.0.5"))
+
+    def test_die_mitgelieferte_datei_nennt_ihre_seite_und_fassung(self):
+        """Gegen die Datei selbst: Sie verweist auf ihre Seite unter 8095, und die
+        Spalte "Version" bekommt eine Fassung aus dem Namen."""
+        dateien = sorted((PROJEKT / "helloworld").glob(kd.dienst("anypad").payload_muster))
+        self.assertEqual(1, len(dateien), dateien)
+        self.assertIn(b"http://127.0.0.1:8095/", dateien[0].read_bytes())
+        self.assertTrue(kd.version_aus_dateiname(dateien[0].name), dateien[0].name)
+
+
 class AbfrageTests(unittest.TestCase):
 
     def test_offener_port_wird_erkannt(self):

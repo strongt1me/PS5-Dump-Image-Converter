@@ -1,5 +1,6 @@
 # PS5 Dump & Image Converter v1.9.60
 
+- **Neu:** Der Payload AnyPad PS5 (0.5.5-beta) liegt bei und macht Bluetooth-Controller wie DualShock 4, Xbox oder Switch Pro an der PS5 nutzbar; „Konsole & Payloads“ startet ihn und öffnet seine Kopplungsseite.
 - **Aktualisiert:** Die eingebaute PFS-Engine MkPFS ist auf Fassung 1.1.0; die erzeugten Abbilder bleiben dieselben.
 - **Aktualisiert:** Die mitgelieferten Payloads ps5-app-dumper (2.10) und aria2 (1.37.0-2) sind auf dem neuesten Stand.
 

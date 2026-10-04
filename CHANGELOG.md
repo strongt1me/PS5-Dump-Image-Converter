@@ -2,12 +2,13 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.60):** Die eingebaute PFS-Engine MkPFS ist auf Fassung 1.1.0, und zwei mitgelieferte Payloads sind auf dem neuesten Stand.
+> **Kurz zum aktuellen Stand (v1.9.60):** Neu ist der Payload AnyPad PS5 für Bluetooth-Controller; die PFS-Engine MkPFS ist auf Fassung 1.1.0, und zwei mitgelieferte Payloads sind auf dem neuesten Stand.
 
 ---
 
 ## v1.9.60 – 04.10.2026
 
+- **Neu:** Der Payload AnyPad PS5 (0.5.5-beta) liegt bei und macht Bluetooth-Controller wie DualShock 4, Xbox oder Switch Pro an der PS5 nutzbar; „Konsole & Payloads“ startet ihn und öffnet seine Kopplungsseite.
 - **Aktualisiert:** Die eingebaute PFS-Engine MkPFS ist auf Fassung 1.1.0; die erzeugten Abbilder bleiben dieselben.
 - **Aktualisiert:** Die mitgelieferten Payloads ps5-app-dumper (2.10) und aria2 (1.37.0-2) sind auf dem neuesten Stand.
 

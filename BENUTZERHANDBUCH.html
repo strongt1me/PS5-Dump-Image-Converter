@@ -475,21 +475,27 @@ footer .zeile{display:flex; flex-wrap:wrap; gap:8px 22px; align-items:center}
   selbst ein und drücken <em>Konsole prüfen</em>.</p>
   <p>Oben nennt die Seite Name, Zustand und Firmware der Konsole &ndash; die
   Firmware so, wie die Konsole sie selbst schreibt (12.00, 12.02, 12.70 &hellip;).
-  Darunter fragt sie alle einundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
+  Darunter fragt sie alle zweiundzwanzig bekannten Ports gleichzeitig ab &ndash; ELF-Loader (9021
   und 9020), Payload-Manager, FTP-Server, Kernel-Protokoll, PKG Manager,
   Web-Dateimanager, Garlic Save Manager, BFpilot, Webserver, ShadowMount+,
   Prospero Manager, ps5upload, CheatRunner, App Dumper, Game Compressor,
-  SMPlusGui, aria2, zftpd, gdbsrv und ps5debug-NG &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
+  SMPlusGui, aria2, zftpd, gdbsrv, ps5debug-NG und AnyPad PS5 &ndash; und zeigt zu jedem Port, Version und Zweck; beim FTP-Server wird der Gruß
   mitgelesen, damit ein hängender Dienst nicht als „läuft“ durchgeht. Die
   Version ist die der mitgelieferten Datei, die das Programm startet.
   FTP-Server und Payload-Manager nennen ihre laufende Version selbst; weicht
   sie ab, etwa weil ein älteres Payload von anderswo gestartet wurde, steht
   die mitgelieferte in Klammern dahinter. Alle übrigen Dienste verraten ihre
-  Version nicht. Ports und Weboberflächen der acht zuletzt hinzugekommenen
-  Dienste (CheatRunner bis ps5debug-NG) stammen aus den Beschreibungen ihrer
-  Autoren und sind an der Konsole noch nicht nachgemessen. zftpd legt Dateien
+  Version nicht. Ports und Weboberflächen der acht am 2. Oktober 2026
+  hinzugekommenen Dienste (CheatRunner bis ps5debug-NG) und von AnyPad PS5
+  stammen aus den Beschreibungen ihrer Autoren und sind an der Konsole noch
+  nicht nachgemessen. zftpd legt Dateien
   ohne Ausführungsrecht ab und taugt deshalb nicht für Spiele (siehe den
-  FTP-Hinweis weiter unten). Was
+  FTP-Hinweis weiter unten). AnyPad PS5 macht Bluetooth-Controller
+  (DualShock&nbsp;4, Xbox, Switch Pro, 8BitDo &hellip;) an der PS5 nutzbar;
+  gekoppelt wird auf seiner Weboberfläche, die ohne PIN jedem im selben Netz
+  offensteht. Laut Autor muss der Controller einem zweiten Konsolenbenutzer
+  gehören, sonst sehen Spiele ihn nicht; beenden Sie AnyPad über seine
+  Weboberfläche, bevor Sie es erneut starten. Was
   nicht läuft, starten Sie mit <em>Ausgewähltes starten</em> oder
   <em>Grundausstattung starten</em> direkt aus dem mitgelieferten Ordner
   <code>helloworld</code>; Dienste mit eigener Weboberfläche öffnet

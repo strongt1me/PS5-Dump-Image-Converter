@@ -151,6 +151,15 @@ KATALOG: tuple[Dienst, ...] = (
     Dienst("zftpd", 2120, "zftpd-ps5-zhttp-v*.elf", web="/", anlaufzeit=2.5),
     Dienst("gdbsrv", 2159, "gdbsrv-ps5_v*.elf"),
     Dienst("ps5debug", 744, "ps5debug-NG_v*.elf", anlaufzeit=2.0),
+    # --- AnyPad PS5 (seit 04.10.2026) -----------------------------------------
+    # Bluetooth-Controller (DualShock 4, Xbox, Switch Pro, 8BitDo ...) an der
+    # PS5. Port und Weboberflaeche (koppeln, vergessen, Protokoll, beenden) aus
+    # dem README des Autors (v0.5.5-beta) und aus dem ELF selbst ("deeplinkUri":
+    # "http://127.0.0.1:8095/"); an der Konsole noch NICHT nachgemessen. Die
+    # Seite fragt keine PIN ab. Eine zweite Instanz verhindert das Payload
+    # selbst (Sperrdatei); gestartet wird hier ohnehin nur, wenn der Port zu
+    # ist. Anlaufzeit geschaetzt (Bluetooth kommt mit hoch), nicht gemessen.
+    Dienst("anypad", 8095, "AnyPad-PS5-*.elf", web="/", anlaufzeit=3.0),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,

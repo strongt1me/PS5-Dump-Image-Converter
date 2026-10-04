@@ -96,6 +96,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `PoorDS4-status_rc51.elf` | PoorDS4 (Statusanzeige) | ItsBlurf | dasselbe Projekt und dieselbe Lizenz wie die Zeile darüber; beim Autor heißt die Datei „PoorDS4-status.elf“ |
 | `PoorDS4-stop_rc51.elf` | PoorDS4 (Beenden) | ItsBlurf | dasselbe Projekt und dieselbe Lizenz wie oben; beim Autor heißt die Datei „PoorDS4-stop.elf“ |
 | `garlic-worker-ps5_2026-04-09.elf` | garlic-worker | earthonion | `github.com/earthonion/garlic-worker`, Freigabe „latest“ vom 09.04.2026 (beim Autor als Vorabfassung markiert), GPL-3.0; kein Beleg im ELF selbst; beim Autor heißt die Datei „garlic-worker-ps5.elf“; SHA-256 gegen den Release-Anhang geprüft |
+| `AnyPad-PS5-0.5.5-beta.elf` | AnyPad PS5 | sinfiltros | „AnyPad PS5“, „0.5.5-beta“ und die eigene Seite `http://127.0.0.1:8095/` im ELF; `github.com/sinfiltros/AnyPad-PS5`, Release v0.5.5-beta (beim Autor als Vorabfassung markiert), GPL-3.0-or-later (README, LICENSE im Projekt); SHA-256 gegen den Release-Anhang geprüft |
 
 Weitere Payload-Sammlungen und Werkzeuge, die im Fenster **CREDITS** verlinkt sind:
 **aldostools** (PS5-Payloads), **owendswang** (Autoloader, bdj_unpatch),

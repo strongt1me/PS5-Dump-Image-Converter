@@ -1679,6 +1679,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'dienst.gdbsrv_zweck': {'de': 'Spiele mit einem Debugger untersuchen', 'en': 'examine games with a debugger'},
     'dienst.ps5debug': {'de': 'ps5debug-NG', 'en': 'ps5debug-NG'},
     'dienst.ps5debug_zweck': {'de': 'Debugger-Server (Speicher, Prozesse)', 'en': 'debugger server (memory, processes)'},
+    'dienst.anypad': {'de': 'AnyPad PS5', 'en': 'AnyPad PS5'},
+    'dienst.anypad_zweck': {'de': 'Bluetooth-Controller an der PS5 nutzen (Weboberfläche)', 'en': 'use Bluetooth gamepads on the PS5 (web interface)'},
     'dienste.ip_label': {'de': 'PS5-Adresse:', 'en': 'PS5 address:'},
     'dienste.hint': {'de': 'Geprüft wird nur, ob an einem Port jemand die Verbindung annimmt. Das heißt: Der Dienst läuft – ob er auch arbeitet, zeigt erst der eigentliche Aufruf. Gestartet wird aus dem mitgelieferten Ordner „helloworld“, über den ELF-Loader (Port 9021) oder, wenn der zu ist, über den Payload-Manager (Port 8084). Die Version ist die der mitgelieferten Datei; FTP-Server und Payload-Manager nennen ihre laufende Version selbst – weicht sie ab, steht die mitgelieferte in Klammern dahinter.', 'en': 'The check only asks whether someone accepts a connection on a port. That means the service is running – whether it also works shows only on the real call. Payloads are started from the bundled "helloworld" folder, via the ELF loader (port 9021) or, if that is closed, via the payload manager (port 8084). The version is that of the bundled file; the FTP server and the payload manager report their running version themselves – if it differs, the bundled one follows in brackets.'},
     'dienste.col_dienst': {'de': 'Dienst', 'en': 'Service'},
