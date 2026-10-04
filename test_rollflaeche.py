@@ -122,8 +122,15 @@ class AufbauTests(unittest.TestCase):
         self.assertIn("flaeche.itemcget(", rumpf)
         self.assertLess(rumpf.index("flaeche.itemcget("),
                         rumpf.index("flaeche.itemconfigure("))
-        # Und der Anstoss vom Inhalt her ist entprellt.
-        self.assertIn("after_cancel", self._methode("_on_inhalt_configure"))
+        # Und der Anstoss vom Inhalt her ist entprellt - ueber dieselbe Stelle, die
+        # auch die Karte und der zweite Beschriftungsdurchgang nutzen.
+        self.assertIn("_rollpruefung_planen", self._methode("_on_inhalt_configure"))
+        self.assertIn("after_cancel", self._methode("_rollpruefung_planen"))
+        for name in ("_on_card_configure", "_beschriftungen_nachlauf_ausfuehren"):
+            with self.subTest(anstoss=name):
+                self.assertIn("self._rollpruefung_planen()", self._methode(name),
+                              "Wuchs die Zeile, merkt die Spalte es sonst erst bei der naechsten "
+                              "Groessenaenderung des Fensters.")
 
     def test_mausrad_laesst_die_protokollflaeche_in_ruhe(self):
         """Sonst rollte ein Rad über der Konsole zwei Dinge gleichzeitig.

@@ -13968,6 +13968,20 @@ class PS5ConverterGUI:
         """
         if event.widget is not self.content_area:
             return
+        self._rollpruefung_planen()
+
+    def _rollpruefung_planen(self) -> None:
+        """Bestellt die Rollpruefung entprellt (60 ms) - von jeder Stelle, die die Spalte wachsen laesst.
+
+        Der Rahmen der Spalte hat eine feste Hoehe (``itemconfigure``); waechst der
+        Inhalt, bekommt er davon kein Configure. Seit die Beschriftungen auf
+        Pillen stehen (v1.9.62), wachsen Karte und Zeilen nach dem ersten Zeichnen
+        noch um bis zu 70 px - gemessen bei 1366 x 820: Der Rahmen blieb bei 1000
+        px, der Bedarf stieg auf 1070, und unten wurde abgeschnitten (unter WSLg
+        meldete die Darstellungspruefung den Hinweistext um 25 px zu tief). Deshalb
+        fragen auch die Karte (``_on_card_configure``) und der zweite
+        Beschriftungsdurchgang nach.
+        """
         if getattr(self, "_rollpruefung_after_id", None) is not None:
             try:
                 self.root.after_cancel(self._rollpruefung_after_id)
@@ -15119,6 +15133,9 @@ class PS5ConverterGUI:
             logger.debug("Kartenzeilen nach Pillen nicht ausgerichtet: %s", exc)
         self._redraw_card_captions()
         self._redraw_content_captions()
+        # Ueberschrift, Untertitel und Statuszeile sind hier gewachsen - die
+        # Spalte hat davon kein Configure bekommen.
+        self._rollpruefung_planen()
 
     def _redraw_content_captions(self) -> None:
         """Zeichnet Header/Untertitel/Status/Groessen-Beschriftungen mit Bildausschnitt neu.
@@ -16302,6 +16319,10 @@ class PS5ConverterGUI:
         """Behandelt Größenänderung der QUELLE-/Zielformat-Karte."""
         if event.widget != getattr(self, "path_card", None):
             return
+        # Wuchs oder schrumpfte die Karte (Beschriftung mit Pille, Aufgaben- oder
+        # Sprachwechsel), stimmt die Entscheidung "rollt / passt" der Spalte nicht
+        # mehr - auch ohne Hintergrundbild (siehe _rollpruefung_planen).
+        self._rollpruefung_planen()
         if not self._bg_image_raw or getattr(self, "card_bg_label", None) is None:
             return
 

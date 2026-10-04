@@ -224,6 +224,46 @@ class HauptfensterTests(unittest.TestCase):
         breite, hoehe, radius = app._texthintergrund_masse(app.src_title, 300, 3 * zeile)
         self.assertEqual(float(zeile), radius, "mehrzeilig ein rundes Rechteck, keine Linse")
 
+    @staticmethod
+    def _ruhen(sekunden: float) -> None:
+        import time
+        ende = time.perf_counter() + sekunden
+        while time.perf_counter() < ende:
+            _WURZEL.update()
+            time.sleep(0.01)
+
+    def test_die_rollflaeche_folgt_dem_wachsenden_inhalt(self) -> None:
+        """Seit die Beschriftungen auf Pillen stehen, waechst die Spalte nach dem ersten Zeichnen.
+
+        Gemessen bei 1366 x 820: Rahmenhoehe 1000, Bedarf 1070 - und unter WSLg
+        meldete die Darstellungspruefung den Hinweistext der Karte um 25 px zu
+        tief. Der Rahmen der Inhaltsspalte hat eine feste Hoehe und bekommt vom
+        Wachsen seines Inhalts kein Configure; die Karte und der zweite
+        Beschriftungsdurchgang bestellen deshalb die Rollpruefung.
+        """
+        app = self.app
+        _WURZEL.deiconify()
+        zusatz = None
+        try:
+            _WURZEL.state("normal")
+            _WURZEL.geometry("1300x700")
+            self._ruhen(1.5)
+            vorher = int(float(app.content_scroll.itemcget(app._content_fenster, "height")))
+            self.assertEqual(vorher, app._inhalt_mindesthoehe(), "Ausgangslage: Rahmen = Bedarf")
+            # Eine weitere Zeile in der Karte - wie ein spaeter wachsender Text.
+            zusatz = tk.Frame(app.path_card, height=40, width=1)
+            zusatz.grid(row=99, column=0, columnspan=3)
+            self._ruhen(0.8)
+            nachher = int(float(app.content_scroll.itemcget(app._content_fenster, "height")))
+            self.assertGreaterEqual(nachher, vorher + 35,
+                                    "Der Rahmen der Spalte ist dem wachsenden Inhalt nicht gefolgt.")
+            self.assertEqual(nachher, app._inhalt_mindesthoehe())
+        finally:
+            if zusatz is not None:
+                zusatz.destroy()
+            self._ruhen(0.3)
+            _WURZEL.withdraw()
+
     def test_texthintergrund_liegt_in_der_feldfarbe(self) -> None:
         app = self.app
         grund = Image.new("RGB", (120, 30), (255, 0, 0))
