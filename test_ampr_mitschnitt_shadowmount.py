@@ -660,6 +660,38 @@ class AblaufTests(_KonsolenTest):
         self.assertEqual([SPIEL + "/fakelib"], self._pruefen())
         self.assertIn(_text("amprmitschnitt.sm_ok"), self.zeilen)
 
+    def test_von_jeder_fakelib_ausgenommener_titel_warnt(self) -> None:
+        """Ab 1.7beta4 haengt fakelib_exclude fuer den Titel gar nichts ein.
+
+        Nutzerentscheid 04.10.2026: warnen. Abbrechen aendert nichts.
+        """
+        self._ablegen(CONFIG, VORLAGE + "fakelib_exclude=CUSA00001\r\n"
+                      "fakelib_exclude=%s\r\n" % TITEL)
+        vorher = self._lesen(CONFIG)
+        self.assertIsNone(self._pruefen("stop"))
+        self.app._ampr_gen_frage.assert_called_once()
+        frage = self.app._ampr_gen_frage.call_args.args
+        self.assertEqual(_text("amprmitschnitt.q_excluded"), frage[1])
+        self.assertIn("fakelib_exclude=%s" % TITEL, frage[2])
+        self.assertEqual(["stop", "weiter"], [o[0] for o in frage[3]])
+        self.assertIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL), self.zeilen)
+        self.assertIn(_text("amprmitschnitt.cancelled"), self.zeilen)
+        self.assertEqual(vorher, self._lesen(CONFIG))
+        self.assertIsNone(self.rueckweg["config"])
+
+    def test_ausgenommener_titel_trotzdem_aufnehmen(self) -> None:
+        self._ablegen(CONFIG, VORLAGE + "fakelib_exclude=%s\r\n" % TITEL.lower())
+        self.assertEqual([SPIEL + "/fakelib"], self._pruefen("weiter"))
+        self.assertIn(_text("amprmitschnitt.sm_ok"), self.zeilen)
+
+    def test_fakelib_exclude_eines_anderen_titels_fragt_nicht(self) -> None:
+        """Gegenprobe: ein anderer Titel - und global_fakelib_exclude ist etwas anderes."""
+        self._ablegen(CONFIG, VORLAGE + "fakelib_exclude=CUSA00001\r\n"
+                      "global_fakelib_exclude=%s\r\n"
+                      "# fakelib_exclude=%s\r\n" % (TITEL, TITEL))
+        self.assertEqual([SPIEL + "/fakelib"], self._pruefen())
+        self.assertNotIn("!! " + _text("amprmitschnitt.sm_excluded", title_id=TITEL), self.zeilen)
+
     def test_hauptschalter_aus(self) -> None:
         self._ablegen(CONFIG, VORLAGE + "backport_fakelib=0\r\n")
         self._pruefen("umstellen")

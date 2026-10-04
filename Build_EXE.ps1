@@ -1,5 +1,5 @@
 ﻿# =============================================================================
-# PS5 Dump & Image Converter v1.9.60 - EXE Build-Skript
+# PS5 Dump & Image Converter v1.9.61 - EXE Build-Skript
 # =============================================================================
 # Einfach per Doppelklick starten - keine manuelle Execution Policy noetig!
 # Das Skript startet sich bei Bedarf automatisch mit Bypass-Policy neu.
@@ -43,7 +43,7 @@ if ($ExecutionContext.SessionState.LanguageMode -ne "FullLanguage") {
 $ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 
-$EXE_VERSION = "v1.9.60"
+$EXE_VERSION = "v1.9.61"
 $EXE_NAME    = "PS5_Dump_Image_Converter_$EXE_VERSION.exe"
 
 # Ablage unter dist/ - je Plattform ein Ordner.
@@ -345,6 +345,7 @@ if (Test-Path $exePath) {
     $mitnehmen += Join-Path $ORDNER_LINUX $linuxName
     $mitnehmen += $macosNamen | ForEach-Object { Join-Path $ORDNER_MACOS $_ }
     $mitnehmen += @("README.md", "CHANGELOG.md", "BENUTZERHANDBUCH.pdf",
+                    "FAQ.pdf", "FAQ_EN.pdf",
                     "LICENSE", "THIRD_PARTY_LICENSES.md") |
                   ForEach-Object { Join-Path $PSScriptRoot $_ }
 

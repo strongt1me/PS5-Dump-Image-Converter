@@ -211,7 +211,7 @@ footer b{color:#fff}
   <div class="hero">
     <span class="eyebrow">fakelib &amp; fakelib2 · neuere Versionen</span>
     <h1>Backports einhängen
-      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1, ergänzt um 1.7beta1, 1.7beta2 und 1.7beta3.</small>
+      <small>Wie ShadowMount+ die Bibliotheken eines Spiels ersetzt — geprüft am Quellcode von 1.7 alpha13fix1, ergänzt um 1.7beta1, 1.7beta2, 1.7beta3 und 1.7beta4.</small>
     </h1>
     <div class="badges">
       <span class="badge on">Gültig ab 1.7 alpha8</span>
@@ -347,6 +347,7 @@ footer b{color:#fff}
             <tr><td class="key">global_fakelib_path</td><td class="val">/data/shadowmount/fakelib</td><td>Ort des globalen Ordners. Die Bibliotheken liegen direkt darin; ein Unterordner <code class="inline">fakelib</code> würde mitkopiert, aber nicht eingehängt. Darf nicht auf den Cache zeigen.</td></tr>
             <tr><td class="key">global_fakelib_priority</td><td class="val">game</td><td><code class="inline">game</code> oder <code class="inline">global</code> – wer bei gleichem Dateinamen gewinnt (Abschnitt 03).</td></tr>
             <tr><td class="key">global_fakelib_exclude</td><td class="val">—</td><td>Wiederholbar. Nimmt Titel von der globalen fakelib aus; die spiel-eigene bleibt aktiv.</td></tr>
+            <tr><td class="key">fakelib_exclude</td><td class="val">—</td><td>Ab 1.7beta4. Wiederholbar, bis zu 128 Title-IDs (<code class="inline">PPSA</code>, <code class="inline">CUSA</code>, <code class="inline">LAPY</code>, <code class="inline">FAKE</code>). Schaltet für diese Titel <b>jede</b> fakelib ab – <code class="inline">fakelib</code>, <code class="inline">fakelib2</code>, die globale und den Cache. Ein dort abgelegter AMPR EMU wird dann nicht geladen. Wirkt beim nächsten Spielstart.</td></tr>
           </tbody>
         </table>
       </div>
@@ -476,13 +477,14 @@ footer b{color:#fff}
       </div>
     </div>
     <p class="note">Die drei Prüfungen trennen alt und neu. Ob 1.7 alpha8 bis alpha13fix1 oder 1.7beta1 und neuer läuft, zeigen sie nicht – beide unterscheiden sich nur im Spielordner (Abschnitt 02); das verrät erst die Versionsnummer.</p>
-    <p class="note">Mitgeliefert ist ShadowMountPlus 1.7beta3 (<code class="inline">shadowmountplus_v1.7beta3.elf</code>, beim Autor als Vorabfassung markiert). Sie kann alles, was oben „ab 1.7beta2“ und „ab 1.7beta3“ heißt, und liest ein <code class="inline">fakelib2</code> im Spielordner. Dass ein Backport-<code class="inline">fakelib2</code> exklusiv bleibt, nennt die Dokumentation erst ab alpha10.</p>
+    <p class="note">Mitgeliefert ist ShadowMountPlus 1.7beta4 (<code class="inline">shadowmountplus_v1.7beta4.elf</code>, beim Autor als Vorabfassung markiert). Sie kann alles, was oben „ab 1.7beta2“, „ab 1.7beta3“ und „ab 1.7beta4“ heißt, und liest ein <code class="inline">fakelib2</code> im Spielordner. Dass ein Backport-<code class="inline">fakelib2</code> exklusiv bleibt, nennt die Dokumentation erst ab alpha10.</p>
+    <p class="note">Ab 1.7beta4 löscht ShadowMount+ vor dem Start eines <b>installierten Pakets</b> <code class="inline">libSceAmpr.sprx</code>, <code class="inline">libScePlayGo.sprx</code> und <code class="inline">libkernel.sprx</code> aus <code class="inline">/data/homebrew/backports/&lt;TITLE_ID&gt;/fakelib</code>. Für Spiele aus einem Abbild gilt das nicht. Die Suchreihenfolge oben ist in 1.7beta4 unverändert.</p>
   </section>
 
   <footer>
     <p style="margin:0 0 6px"><b>Gilt für ShadowMountPlus ab 1.7 alpha8.</b></p>
     <p style="margin:0">Bis einschließlich 1.7 alpha6 gilt die separate Anleitung: Dort werden die Ordner aus der laufenden Sandbox gelesen, und zwei Schichten liegen übereinander.<br>
-    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12. Ergänzt am Quellcode von 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>. Reihenfolge im Spielordner nachgemessen an <code class="inline">src/sm_fakelib.c</code> von 1.7 alpha8, alpha13fix1, 1.7beta1 und 1.7beta2. Abgeglichen mit 1.7beta3 (<code class="inline">include/sm_paths.h</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">src/sm_scan.c</code>, <code class="inline">src/sm_fakelib.c</code>, <code class="inline">README.md</code>): neu ist nur der Rückfall auf <code class="inline">/data/homebrew/backports</code> · Stand 1. Oktober 2026.</p>
+    Geprüft am Quellcode von 1.7 alpha13fix1: <code class="inline">src/sm_fakelib.c</code>, <code class="inline">include/sm_paths.h</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>; Versionsangaben an den README-Fassungen alpha8 bis alpha12. Ergänzt am Quellcode von 1.7beta2: <code class="inline">src/sm_pkg_backport.c</code>, <code class="inline">src/sm_shellcore_service.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>. Reihenfolge im Spielordner nachgemessen an <code class="inline">src/sm_fakelib.c</code> von 1.7 alpha8, alpha13fix1, 1.7beta1 und 1.7beta2. Abgeglichen mit 1.7beta3 (<code class="inline">include/sm_paths.h</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">src/sm_scan.c</code>, <code class="inline">src/sm_fakelib.c</code>, <code class="inline">README.md</code>): neu ist nur der Rückfall auf <code class="inline">/data/homebrew/backports</code>. Abgeglichen mit 1.7beta4 (<code class="inline">src/sm_fakelib.c</code>, <code class="inline">src/sm_config_mount.c</code>, <code class="inline">config.ini.example</code>, <code class="inline">README.md</code>): neu sind <code class="inline">fakelib_exclude</code> und das Aufräumen bei installierten Paketen, die Reihenfolge ist unverändert · Stand 4. Oktober 2026.</p>
   </footer>
 </main>
 

@@ -148,7 +148,7 @@ class ErklaerteFragenTests(unittest.TestCase):
 
     #: Die Fragen, die die Automatik stellen kann.
     FRAGEN = ("q_offline", "q_wrong_gen", "q_game", "q_fassungen",
-              "q_config", "q_which_console", "q_save_addr")
+              "q_config", "q_which_console", "q_save_addr", "q_excluded")
 
     def test_zu_jeder_frage_gibt_es_ein_warum(self) -> None:
         for frage in self.FRAGEN:
@@ -171,6 +171,7 @@ class ErklaerteFragenTests(unittest.TestCase):
         paare = {
             "q_offline": ("local", "stop"),
             "q_wrong_gen": ("stop", "go"),
+            "q_excluded": ("stop", "go"),
             "q_config": ("yes", "no"),
             "q_save_addr": ("yes", "no"),
         }

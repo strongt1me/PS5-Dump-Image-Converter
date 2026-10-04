@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.61</title>
+<style>
+:root{
+  --bg:#070b14;
+  --bg2:#0c1322;
+  --karte:#111a2c;
+  --karte2:#16223a;
+  --rand:#1f3050;
+  --rand-hell:#2c4470;
+  --text:#dce6f5;
+  --text-leise:#8ea3c4;
+  --blau:#2f8fff;
+  --blau-hell:#6fb4ff;
+  --gruen:#3ddc84;
+  --gelb:#ffcc4d;
+  --rot:#ff5f6d;
+  --schrift:"Segoe UI",-apple-system,BlinkMacSystemFont,Roboto,Helvetica,Arial,sans-serif;
+  --mono:"Cascadia Mono",Consolas,"SF Mono",Menlo,monospace;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--schrift);
+  font-size:16px;
+  line-height:1.65;
+  -webkit-font-smoothing:antialiased;
+}
+a{color:var(--blau-hell); text-decoration:none}
+a:hover{text-decoration:underline}
+code{
+  font-family:var(--mono); font-size:.9em;
+  background:rgba(47,143,255,.10); border:1px solid var(--rand);
+  border-radius:6px; padding:1px 6px; color:#cfe3ff;
+  overflow-wrap:anywhere;
+}
+pre{
+  background:var(--bg2); border:1px solid var(--rand); border-radius:10px;
+  padding:12px 14px; overflow-x:auto; margin:10px 0 4px;
+}
+pre code{background:none; border:0; padding:0}
+
+/* ---------- Header ---------- */
+.kopf{
+  position:relative; overflow:hidden;
+  padding:56px 24px 44px;
+  background:
+    radial-gradient(1200px 400px at 15% -10%, rgba(47,143,255,.28), transparent 60%),
+    radial-gradient(900px 380px at 85% 0%, rgba(15,76,156,.35), transparent 65%),
+    linear-gradient(180deg,#0a1224 0%, var(--bg2) 100%);
+  background-color:var(--bg2);
+  border-bottom:1px solid var(--rand);
+}
+.kopf-inhalt{max-width:980px; margin:0 auto}
+.kopf h1{margin:0 0 10px; font-size:40px; line-height:1.15; font-weight:700; letter-spacing:-.5px}
+.kopf h1 .akzent{
+  background:linear-gradient(92deg,var(--blau-hell),var(--blau));
+  -webkit-background-clip:text; background-clip:text; color:transparent;
+}
+.kopf .unter{color:var(--text-leise); font-size:18px; margin:0 0 22px; max-width:72ch}
+.marken{display:flex; flex-wrap:wrap; gap:10px}
+.marke{
+  padding:6px 14px; border-radius:999px;
+  border:1px solid var(--rand-hell); background:rgba(47,143,255,.10);
+  color:var(--blau-hell); font-size:13px; font-weight:600; letter-spacing:.4px;
+}
+.marke.grau{background:rgba(140,160,190,.08); color:var(--text-leise); border-color:var(--rand)}
+
+/* ---------- Content ---------- */
+main{max-width:980px; margin:0 auto; padding:32px 24px 80px}
+nav.inhalt{
+  border:1px solid var(--rand); border-radius:14px;
+  background:linear-gradient(180deg,var(--karte),rgba(17,26,44,.55));
+  padding:20px 22px; margin-bottom:36px;
+}
+nav.inhalt h2{margin:0 0 12px; font-size:12px; letter-spacing:1.6px; text-transform:uppercase; color:var(--text-leise)}
+nav.inhalt ol{margin:0; padding-left:22px; columns:2; column-gap:36px}
+nav.inhalt li{margin:3px 0; break-inside:avoid}
+section.abschnitt{margin:0 0 40px}
+section.abschnitt > h2{
+  font-size:26px; margin:0 0 16px; padding-bottom:10px;
+  border-bottom:1px solid var(--rand);
+}
+section.abschnitt > h2 .nr{
+  display:inline-grid; place-items:center; width:38px; height:38px; margin-right:12px;
+  border-radius:10px; background:rgba(47,143,255,.14); border:1px solid var(--rand-hell);
+  color:var(--blau-hell); font-size:18px; vertical-align:2px;
+}
+.frage{
+  border:1px solid var(--rand); border-radius:12px;
+  background:linear-gradient(180deg,var(--karte),rgba(17,26,44,.6));
+  padding:16px 20px; margin:0 0 14px;
+  break-inside:avoid;
+}
+.frage h3{margin:0 0 8px; font-size:18px; line-height:1.4; color:#eef4ff}
+.frage h3::before{content:"Q"; display:inline-grid; place-items:center; width:24px; height:24px; margin-right:10px;
+  border-radius:50%; background:var(--blau); color:#fff; font-size:13px; font-weight:700; vertical-align:2px}
+.frage p{margin:6px 0}
+.frage ul, .frage ol{margin:6px 0; padding-left:22px}
+.frage li{margin:3px 0}
+table{width:100%; border-collapse:collapse; margin:10px 0 6px; font-size:15px}
+th, td{border:1px solid var(--rand); padding:7px 10px; text-align:left; vertical-align:top}
+th{background:var(--karte2); color:var(--blau-hell); font-weight:600}
+.tabelle{overflow-x:auto}
+.hinweis{
+  border-left:4px solid var(--gelb); background:rgba(255,204,77,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+.warnung{
+  border-left:4px solid var(--rot); background:rgba(255,95,109,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+.tipp{
+  border-left:4px solid var(--gruen); background:rgba(61,220,132,.07);
+  border-radius:8px; padding:8px 12px; margin:10px 0 4px;
+}
+footer{
+  max-width:980px; margin:0 auto; padding:24px; color:var(--text-leise);
+  border-top:1px solid var(--rand); font-size:14px;
+  display:flex; flex-wrap:wrap; justify-content:space-between; gap:10px;
+}
+@media (max-width:720px){
+  .kopf h1{font-size:30px}
+  nav.inhalt ol{columns:1}
+}
+@media print{
+  body{-webkit-print-color-adjust:exact; print-color-adjust:exact}
+  .frage{break-inside:avoid}
+  a{text-decoration:none}
+}
+</style>
+</head>
+<body>
+
+<header class="kopf">
+  <div class="kopf-inhalt">
+    <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
+    <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
+    <div class="marken">
+      <span class="marke">Version v1.9.61</span>
+      <span class="marke">As of 4 October 2026</span>
+      <span class="marke grau">Windows · Linux · macOS</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<nav class="inhalt">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#a1">General</a></li>
+    <li><a href="#a2">Installation and start</a></li>
+    <li><a href="#a3">Converting and formats</a></li>
+    <li><a href="#a4">On the PS5</a></li>
+    <li><a href="#a5">Console, library and payloads</a></li>
+    <li><a href="#a6">Problems and help</a></li>
+  </ol>
+</nav>
+
+<!-- ======================================================= 1 -->
+<section class="abschnitt" id="a1">
+  <h2><span class="nr">1</span>General</h2>
+
+  <div class="frage">
+    <h3>What does the PS5 Dump &amp; Image Converter do?</h3>
+    <p>It converts backups of PS5 games between the common formats, unpacks them, packs them and checks them – through an interface with eight clearly separated tasks. On top of that come tools for working with a PS5 that is already jailbroken: finding the console, starting payloads, library, save data, AMPR EMU, BACKPORT and more.</p>
+    <p class="hinweis">The program is meant only for content you <strong>own and acquired legally</strong>.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Which formats does the program know?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Format</th><th>What it is</th></tr></thead>
+      <tbody>
+        <tr><td>Dump folder</td><td>A normal folder with the game's files (<code>eboot.bin</code>, <code>sce_sys</code> …).</td></tr>
+        <tr><td><code>.ffpfsc</code></td><td>Compact, compressed container – one single file.</td></tr>
+        <tr><td><code>.ffpfs</code></td><td>Like <code>.ffpfsc</code>, but uncompressed: larger, but faster to build.</td></tr>
+        <tr><td><code>.exFAT</code></td><td>A real file system image in exFAT format.</td></tr>
+        <tr><td><code>.ffpkg</code></td><td>Container with a UFS2 file system; checked automatically after writing. Windows only.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The program can read packages (<code>.pkg</code>, <code>.fpkg</code>) and show them in the library; PS4 packages are converted with dedicated tools (see <a href="#a4">section 4</a>).</p>
+  </div>
+
+  <div class="frage">
+    <h3>Which target format should I choose?</h3>
+    <p>For a USB drive and for passing a game on, <strong><code>.ffpfsc</code></strong> is usually the best choice – it is compressed. <code>.ffpfs</code> builds faster but is larger. You only need <code>.exFAT</code> and <code>.ffpkg</code> when another workflow expects exactly that format.</p>
+    <p>On a USB drive the console does not read a loose folder but a container that ShadowMount+ mounts. That is exactly why task&nbsp;1 turns a dump folder into one single file.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Which task fits my source?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>What do you have?</th><th>Task</th><th>What for</th></tr></thead>
+      <tbody>
+        <tr><td>A dump folder</td><td>1</td><td>Convert to <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> or <code>.ffpkg</code>.</td></tr>
+        <tr><td>An <code>.ffpfsc</code></td><td>2</td><td>Unpack into a folder or convert to another format.</td></tr>
+        <tr><td>An <code>.exFAT</code></td><td>3</td><td>Unpack or convert to <code>.ffpfsc</code>/<code>.ffpfs</code>/<code>.ffpkg</code>.</td></tr>
+        <tr><td>An <code>.ffpkg</code></td><td>4</td><td>Unpack, convert or build again as a verified <code>.ffpkg</code>.</td></tr>
+        <tr><td>Several containers</td><td>5</td><td>All of them, one after another, into the same target format.</td></tr>
+        <tr><td>You are not sure what it is</td><td>6</td><td>The source is detected automatically and exported.</td></tr>
+        <tr><td>Set up or switch AMPR EMU</td><td>7</td><td>Apply a version, back up the original, build the index – also directly on the PS5.</td></tr>
+        <tr><td>Only check</td><td>8</td><td>Check integrity without changing anything.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="frage">
+    <h3>Which systems does the program run on?</h3>
+    <p>On <strong>Windows</strong> (ready-made EXE), <strong>Linux</strong> and <strong>macOS</strong>. On Linux and macOS two paths are missing that only work with Windows tools:</p>
+    <ul>
+      <li>reading and creating <code>.ffpkg</code> – that is, task&nbsp;4 and <code>.ffpkg</code> as target format (UFS2Tool and the Dokan driver exist only for Windows),</li>
+      <li>the fallback paths via OSFMount (these only kick in for unusual images anyway).</li>
+    </ul>
+    <p>Everything else – dump folder, <code>.ffpfsc</code>, <code>.ffpfs</code> and <code>.exFAT</code> in every direction, batch conversion, AMPR EMU Manager and Validator – is fully available there.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What does the program cost, and which license applies?</h3>
+    <p>The program is free and released under the <strong>MIT license</strong> (file <code>LICENSE</code>). It does not cover the bundled third-party components: their licenses are listed in <code>THIRD_PARTY_LICENSES.md</code> and can be reached via <strong>CREDITS</strong>. Almost everything the program does builds on the work of others – for example MkPFS (PFS processing), UFS2Tool, LibProsperoPkg, PS4 FFPFSC and dozens of payloads from the homebrew community.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 2 -->
+<section class="abschnitt" id="a2">
+  <h2><span class="nr">2</span>Installation and start</h2>
+
+  <div class="frage">
+    <h3>Why does Windows ask for administrator rights at startup?</h3>
+    <p>The Windows version always requires administrator rights – among other things for the <code>.ffpkg</code> paths (UFS2) and for mounting with OSFMount. If you decline the prompt, the program does not start. On Linux and macOS it starts as a normal user.</p>
+  </div>
+
+  <div class="frage">
+    <h3>My antivirus flags or removes the EXE. What can I do?</h3>
+    <p>Programs built with PyInstaller are occasionally flagged by mistake. The program does not add any exceptions to your antivirus and does not install certificates. Only get the EXE from the project's own source; if the source is right, you can add the file as an exception in your antivirus yourself.</p>
+  </div>
+
+  <div class="frage">
+    <h3>The Linux file does not start. Why?</h3>
+    <ol>
+      <li>Make the file executable once (<code>X.Y.Z</code> stands for your version):
+        <pre><code>chmod +x PS5_Dump_Image_Converter_vX.Y.Z_linux_x86_64</code></pre></li>
+      <li>The ready-made Linux file needs a <strong>current system</strong> (system library glibc 2.42 or newer, for example Ubuntu 26.04). It does not start on older systems such as Ubuntu 24.04, Linux Mint 22 or Debian 13.</li>
+      <li>In that case build the program on your own computer – in the project folder with <code>./Build_Linux.sh</code>, <strong>without</strong> <code>sudo</code>. If Tcl/Tk is missing, the script names the matching install command.</li>
+    </ol>
+  </div>
+
+  <div class="frage">
+    <h3>On the Mac, “the developer cannot be verified” appears.</h3>
+    <p>macOS marks everything that arrives via browser, mail or AirDrop. The install script (<code>Install_macOS.sh</code> or <code>Erste Installation.command</code> from the disk image) removes the mark itself. By hand it works like this:</p>
+    <pre><code>xattr -dr com.apple.quarantine "/Applications/PS5 Dump &amp; Image Converter.app"</code></pre>
+    <p>Note: a Mac version only fits Macs of the same type – a version for Apple Silicon does not run on an Intel Mac and vice versa.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Do I need OSFMount, Dokan or other additional programs?</h3>
+    <p>Normally not. The program reads <code>.exFAT</code> images with its built-in reader – without mounting, without administrator rights, on every system. OSFMount is only the fallback on Windows for unusually built images; the program then says so and can install OSFMount itself. FileZilla is optional and only needed for the <strong>FILEZILLA</strong> button.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Where does the program store its settings?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>System</th><th>Folder</th></tr></thead>
+      <tbody>
+        <tr><td>Windows</td><td><code>%APPDATA%\PS5ImageConverterPro</code></td></tr>
+        <tr><td>Linux</td><td><code>~/.config/PS5ImageConverterPro/</code></td></tr>
+        <tr><td>macOS</td><td><code>~/Library/Application Support/PS5ImageConverterPro/</code></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>The diagnostic reports are stored there too. If the settings file is damaged, the program starts with default values – it then looks as if it had forgotten everything. The environment check (“doctor”, <a href="#a6">section 6</a>) detects that.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 3 -->
+<section class="abschnitt" id="a3">
+  <h2><span class="nr">3</span>Converting and formats</h2>
+
+  <div class="frage">
+    <h3>How do I convert safely?</h3>
+    <ol>
+      <li>Choose the matching task on the left.</li>
+      <li>Choose the source with the button next to SOURCE.</li>
+      <li>If shown, choose the TARGET FORMAT – and, if needed, compression and workers.</li>
+      <li>Choose a <strong>separate</strong> TARGET FOLDER and a writable TEMP FOLDER.</li>
+      <li>Check all paths and press START.</li>
+      <li>Keep the program open until the log reports successful completion.</li>
+    </ol>
+    <p class="tipp"><strong>Rule of thumb:</strong> keep a copy → matching task → separate target folder → enough space → wait for the success message. Delete the originals only once the result is finished and, if needed, checked with task&nbsp;8.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How much free space do I need?</h3>
+    <p>The program calculates this before starting and tells you if it is not enough. As a guide, relative to the size of the source:</p>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Target format</th><th>Space needed, roughly</th></tr></thead>
+      <tbody>
+        <tr><td><code>.ffpfsc</code></td><td>0.75 times</td></tr>
+        <tr><td><code>.ffpfs</code>, <code>.exFAT</code></td><td>1.1 times</td></tr>
+        <tr><td><code>.ffpkg</code></td><td>1.3 times</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p>If <strong>AMPR EMU</strong> or <strong>BACKPORT</strong> is ticked, a complete working copy of the game is also created in the work folder. If the work and target folders are on the same drive, the sum counts.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Which compression level is right?</h3>
+    <p>1 is the fastest, 9 gives the smallest file; for a start, “6 – Balanced” is enough. Don't expect miracles: PS5 game data is largely compressed already. Measured on a 664&nbsp;MB dump, levels&nbsp;1 and&nbsp;9 differed by only about 5&nbsp;% in size – higher levels mainly cost time.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What do WORKERS and VERIFY mean?</h3>
+    <p><strong>WORKERS</strong> sets how many operations run at the same time. One processor core always stays free, and very large images are throttled further. You set it with the rotary knob – turn it with the mouse, use the mouse wheel or the arrow keys; a double-click resets it.</p>
+    <p><strong>VERIFY</strong> decides whether the finished image is checked after packing: “Quick” checks the structure, “Full” also reads everything back and takes considerably longer.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Can I change a finished image afterwards?</h3>
+    <p>Not directly – a finished image has no free space for additional files. There are two ways, though:</p>
+    <ul>
+      <li><strong>Build the same format again, with integration</strong> (tasks 2 to 6): the same file as source, the same format as target, tick what should go in (asset pack, PlayGo, BACKPORT) and start. The program unpacks, integrates and rebuilds; you need the game's size once as free space in the work folder.</li>
+      <li>Unpack into a <strong>dump folder</strong>, edit the folder yourself and pack it again.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>What is “Dump folder (with integration)”?</h3>
+    <p>If AMPR EMU, PlayGo or BACKPORT is ticked in task&nbsp;1, this target format appears in addition. Then no image is created, but a dump folder with exactly these integrations. At the start the program asks where to integrate:</p>
+    <ul>
+      <li><strong>Into a backup (recommended)</strong> – the dump is copied into the target folder and only the copy is changed.</li>
+      <li><strong>Into the original</strong> – directly in your folder. The files are no longer original afterwards; BACKPORT replaces <code>eboot.bin</code> and libraries without a backup. This cannot be undone.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Can the computer shut down on its own after a long conversion?</h3>
+    <p>Yes – with the checkbox <strong>Shut down the computer after a successful run</strong> under TEMP FOLDER. Only after a <em>successful</em> run does a window appear that counts down 60 seconds (cancel with the button or ESC). Then images are unmounted, working files removed and the log saved, and the computer shuts down without further questions. After an error or a cancellation it stays on. Save your work in other programs beforehand.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Does it also work without the interface, from the command line?</h3>
+    <p>Yes, every task also runs without a window – using the same workflow logic as the interface (<code>X.Y.Z</code> stands for your version):</p>
+    <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --cli --task 1 --source "D:\Dumps\Game" --dest "D:\Output" --format ffpfsc --yes</code></pre>
+    <p><code>--format</code> knows <code>folder</code>, <code>ffpfsc</code>, <code>ffpfs</code>, <code>exfat</code> and <code>ffpkg</code>; <code>--yes</code> confirms prompts, <code>--shutdown-on-success</code> shuts down afterwards. On Windows, open the command prompt or PowerShell <strong>as administrator</strong> – otherwise the call stops with return code&nbsp;3.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I convert several files at once?</h3>
+    <p>With <strong>task&nbsp;5 – Batch conversion</strong>: choose all files (<code>.ffpfsc</code>, <code>.exFAT</code> or <code>.ffpkg</code>) at once, set one common target format, start. Every file is processed and checked on its own; if one fails, the others still run to the end. Test a single file first and check that there is space for all results.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I check a backup without changing anything?</h3>
+    <p>With <strong>task&nbsp;8 – Validator</strong>. It reports missing required files, a damaged file system or wrong nesting. For <code>.ffpfsc</code> and <code>.ffpfs</code> it looks one level deeper without unpacking: <code>nesting: fine</code> is the result you want, <code>wrongly nested</code> means the file has to be created again.</p>
+    <p class="hinweis"><strong>Not checked is not a verdict:</strong> an <code>.ffpkg</code> can only be checked with administrator rights. Without them the result is NOT CHECKED – not “failed”. On the command line, task&nbsp;8 then returns 4 (0 = fine, 1 = problems found).</p>
+  </div>
+
+  <div class="frage">
+    <h3>A run was cancelled or failed. What now?</h3>
+    <p>After CANCEL, wait for the confirmation in the log. Do not keep using an incomplete result – delete it and start again with checked paths. If a warning appears, read the full message and fix the stated cause first instead of changing several things at once. Keep the log and the source until the cause is clear.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 4 -->
+<section class="abschnitt" id="a4">
+  <h2><span class="nr">4</span>On the PS5</h2>
+
+  <div class="frage">
+    <h3>What has to be prepared on the console?</h3>
+    <ul>
+      <li>A PS5 that has already been prepared with a jailbreak method of its own – the program does not perform this step.</li>
+      <li><strong>ShadowMount+</strong>, which mounts the images.</li>
+      <li>For transfers, an FTP payload: <strong>ftpsrv on port 2121</strong>. The program starts it on request via the ELF loader (port 9021).</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Where does the image go on the USB drive?</h3>
+    <p><strong>Directly into the root of the drive</strong> – or into the folders <code>homebrew</code> or <code>etaHEN/games</code> on it. ShadowMount+ only searches fixed places (USB drives <code>usb0</code> to <code>usb7</code>, plus <code>/data/homebrew</code>, <code>/data/etaHEN/games</code> and the M.2 expansion). An image in a subfolder of your own is not found.</p>
+    <p class="hinweis">An entry in ShadowMount+'s <code>manual.lst</code> does make a folder of your own reachable, but it does not reliably survive a restart: with several USB devices attached, the drive number can change.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Which FTP payload should I use?</h3>
+    <p>Bundled and preset is <strong>ftpsrv-ps5 on port 2121</strong>; the program has been tested with it. After every upload the program checks whether the files are executable and warns in the log otherwise.</p>
+  </div>
+
+  <div class="frage">
+    <h3>The game does not start. What do the error codes mean?</h3>
+    <div class="tabelle">
+    <table>
+      <thead><tr><th>Code</th><th>Cause and remedy</th></tr></thead>
+      <tbody>
+        <tr><td><code>CE-108255-1</code></td><td>An incomplete <code>.ffpkg</code> – or starting from internal storage instead of the USB stick. Try the backup from the stick.</td></tr>
+        <tr><td><code>CE-107891-6</code></td><td>An update package does not match the installed base package (even a rebuild of the same game counts as a different package). Install the matching base package or rebuild both together. Whether a <code>.pkg</code> is an update is shown by <strong>Read PS4 &amp; PS5 PKG</strong>.</td></tr>
+        <tr><td><code>CE-100096-6</code></td><td>The console rejects a self-built package. For game backups the way via image and ShadowMount+ is the right one; for your own homebrew use <strong>Install app directly</strong>.</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </div>
+
+  <div class="frage">
+    <h3>What is AMPR EMU, and when do I need it?</h3>
+    <p>When a game starts, the PS5 asks its APR file resolver where the game files are. If the game runs from a mounted image, the resolver gets no usable answer – and the game does not start. AMPR EMU is a replacement library that answers this question on its behalf. You need it for games that are meant to run from an image.</p>
+    <p>You can integrate it while creating (checkbox <strong>AMPR EMU</strong> in tasks 1 to 6) or via <strong>button&nbsp;7</strong>: it opens a selection with the <em>new method</em> (ShadowMount+ from 1.7 alpha8), the <em>old method</em> (up to alpha6) and <em>Build AMPR EMU into the backup</em>. The program checks itself which ShadowMount+ version runs on the console and, if necessary, advises you to use the other button.</p>
+    <p>If AMPR EMU has no effect, check the ShadowMount+ <code>config.ini</code>: if the game's title ID is listed under <code>fakelib_exclude</code>, ShadowMount+ from version 1.7beta4 on mounts no <code>fakelib</code> at all for this title. Button&nbsp;7 and the AMPR trace assistant ask in this case before placing anything; you remove the entry under <strong>MORE TOOLS</strong> → <strong>SHADOWMOUNT+</strong>.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What are asset packs?</h3>
+    <p>With the method <strong>Asset pack</strong>, the game files are additionally put into packed bands (<code>ampr_assets-*.pak</code>) that AMPR EMU reads block by block from version 0.4.2.1 on. This saves space and file descriptors on the console. For this, <strong>both</strong> drop-down lists must be right: AMPR version <code>test-pack</code> (or <code>test-debug-pack</code> for troubleshooting) and method <em>Asset pack</em> – the version <code>test-nopack</code> that is preselected at the top cannot do it.</p>
+    <p>Every packed block is checked byte by byte against the original file. Your original files stay in place unless you choose otherwise; only leave them out after a successful test on the console. The detailed guide opens with the <strong>Asset Packs Guide</strong> button.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What does the “PlayGo” checkbox do?</h3>
+    <p>It places a replacement for <code>libScePlayGo.sprx</code> in the game that reports all language and scenario packages as installed. Most games do not need this, so it is off by default. If a title declares PlayGo content and the checkbox is not set, the program asks at the beginning of the run – before anything is copied, unpacked or packed.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What does BACKPORT do?</h3>
+    <p>A PS5 game records which development kit (SDK) it was built with; the console starts nothing that is newer than its firmware. <strong>BACKPORT</strong> (under MORE TOOLS) lowers this value to a target firmware – <strong>4.00, 5.00, 6.00 or 7.00</strong> – and places matching replacement libraries in a <code>fakelib</code> folder. Beforehand the list shows every file and what would happen to it; a backup of the folder is preset.</p>
+    <p class="warnung">The result only runs on a jailbroken console. Whether a game starts after the backport cannot be told in advance – keep the backup until it runs on the console. The <strong>Check coverage</strong> option shows whether functions the game requires are missing from the replacement libraries.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Can I use PS4 games too?</h3>
+    <p>Yes. <strong>PS4 PKG → ffpfsc</strong> (MORE TOOLS) turns PS4 packages – base, patch, optionally DLC – into an image for ShadowMount+. <strong>PS4 PKG → dump folder</strong> turns a PS4 package into a normal game folder. PS5 packages cannot be unpacked.</p>
+    <p class="hinweis"><strong>Trophies:</strong> a PS4 game that starts from an image does not register its trophies (<em>Trophy registration failed, 0x80551618</em>). This is by design and not caused by the image. If you need the trophies, install the game with the Package Installer. PS5 titles are not affected.</p>
+  </div>
+
+  <div class="frage">
+    <h3>A game hangs on the loading screen.</h3>
+    <p>Some titles stay at a “Please wait” when started from the image, while the same package runs when installed with the Package Installer. Ruled out so far: the storage location, missing PlayGo content, an online check and an incomplete image – <strong>the cause is still open</strong>. By no means every title is affected.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 5 -->
+<section class="abschnitt" id="a5">
+  <h2><span class="nr">5</span>Console, library and payloads</h2>
+
+  <div class="frage">
+    <h3>What does the CONSOLE view show?</h3>
+    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with four tools: <em>Console &amp; payloads</em>, <em>Save data</em>, <em>Library</em> and <em>Prospero Manager</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
+    <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
+  </div>
+
+  <div class="frage">
+    <h3>The FTP server is shown as “hangs”. What does that mean?</h3>
+    <p>An aborted download can put <code>ftpsrv</code> into a state in which it keeps accepting connections and then stays silent. A freshly loaded payload does not help then – only a <strong>restart of the console</strong>. That is why the program checks not only the port but also whether the service answers.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Why does “Cancel” stop a download from the PS5 only after the current file?</h3>
+    <p>On purpose: a download aborted in the middle of a transfer cripples <code>ftpsrv</code> (see above). The program remembers your request and ends the transfer as soon as the current file has arrived completely.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What can the library do?</h3>
+    <ul>
+      <li><strong>This PC:</strong> searches your scan folders for dump folders, images and packages and shows them as cards or a list – with cover image, platform, format and integrations.</li>
+      <li><strong>PS5:</strong> shows the backups at the usual storage locations and the installed PS5 and PS4 games.</li>
+      <li><strong>Info &amp; metadata</strong> names version, SDK and required firmware – and “BACKPORT required” when the game needs more than your PS5 has.</li>
+      <li><strong>Start</strong> starts a title on the console via websrv (port 8080); if a game is running there, it is closed – the program asks first.</li>
+      <li><strong>Copy</strong> sends to the PS5 or downloads from it, <strong>Convert</strong> takes an entry over as the source.</li>
+    </ul>
+    <p>A longer search shows a window with a progress bar and percentage and can be cancelled.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I back up save data?</h3>
+    <p>Backing up, decrypting and transferring between users is done by the <strong>Garlic Save Manager</strong> with its own interface (port 8082). The <em>Save data</em> page checks whether it is running, starts it and opens it. Make a backup before every write-back. A newly created console user finds its save data empty – the old saves stay with the original user.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I use other controllers on the PS5 (AnyPad PS5)?</h3>
+    <p>Since v1.9.60 the payload <strong>AnyPad PS5</strong> is bundled. It makes Bluetooth controllers such as the DualShock&nbsp;4, Xbox, Switch Pro or 8BitDo usable on the PS5. On <em>Console &amp; payloads</em> you start it with <strong>Start selected</strong> and open its pairing page (port 8095) with <strong>Open web interface</strong>.</p>
+    <ul>
+      <li>According to its author, the controller must belong to a <strong>second console user</strong> – otherwise games do not see it.</li>
+      <li>Stop AnyPad via its web interface before starting it again.</li>
+      <li>The page asks for no PIN: anyone on the same network can use it.</li>
+    </ul>
+    <p class="hinweis">The author marks AnyPad as a pre-release; port and page come from the author's information.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Does the program change anything on my console?</h3>
+    <p>Only what you trigger: it sends payloads (they run until the console's next restart) and transfers files via FTP to the places you choose. In the library it renames nothing on the PS5, it only reads the list of installed games, and it writes <strong>nothing into the console's system databases</strong>.</p>
+  </div>
+</section>
+
+<!-- ======================================================= 6 -->
+<section class="abschnitt" id="a6">
+  <h2><span class="nr">6</span>Problems and help</h2>
+
+  <div class="frage">
+    <h3>START stays greyed out.</h3>
+    <p>Check whether source, target folder and temp folder are all chosen. Task&nbsp;8 needs no target folder. If the source is rejected, the chosen task does not fit the file type – then use task&nbsp;6 or check the source with task&nbsp;8.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Message “sce_sys/param.json missing” or “param.json has no Content ID”.</h3>
+    <p><strong>param.json missing:</strong> the game is incomplete. With <em>Yes</em> the program creates a valid <code>param.json</code> and carries on building; with <em>No</em> it stops – in that case it is better to create a new backup from the original.</p>
+    <p><strong>Content ID missing:</strong> title and content ID are not in any file of a backup, only the title ID. With <em>Look up missing metadata online</em> (settings) the program fetches both. Otherwise it enters a placeholder (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); the old file is kept as <code>param.json.alt</code>. For updates and DLC the real content ID has to be entered.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I get help with an error quickly?</h3>
+    <p>Press <strong>DIAGNOSTICS</strong>. The report contains version, system, the last log lines and an assessment of the display; credentials are blacked out automatically. It is saved as <code>Diagnosebericht_&lt;date&gt;.txt</code> in the settings folder. Also mention the chosen task, the source type and the last visible message – private paths or personal data only if they are needed for troubleshooting.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What is the “doctor”?</h3>
+    <p>The environment check answers the most common causes within seconds: long paths in Windows, the file system of the folders (FAT32 ends at 4&nbsp;GB per file), free space and write permission, whether the bundled programs start, whether the settings file is intact. Run it in the program folder – on Windows in a command prompt opened <strong>as administrator</strong> (<code>X.Y.Z</code> stands for your version):</p>
+    <pre><code>PS5_Dump_Image_Converter_vX.Y.Z.exe --doktor "E:\PS5_Temp" "E:\Target"</code></pre>
+    <p>Both folder arguments are optional. <code>[ ok ]</code> means fine, <code>[ !! ]</code> a note, <code>[FEHL]</code> a real error, <code>[ -- ]</code> not needed. The check makes no connection to the internet; the same information appears in the DIAGNOSTICS window.</p>
+  </div>
+
+  <div class="frage">
+    <h3>The interface is too small or too large.</h3>
+    <p>Under <strong>SETTINGS</strong> → <em>Display: scaling and resolution</em> you set the scaling (slider, 100 to at most 300&nbsp;%, limited by the screen width) and the screen resolution by hand. Apply with <strong>Apply and restart</strong>; <strong>Reset to automatic</strong> restores the default.</p>
+  </div>
+
+  <div class="frage">
+    <h3>How do I change theme, background image and language?</h3>
+    <ul>
+      <li><strong>THEME:</strong> four color schemes (Futuristic, Dark, Light, Metallic); after APPLY the program restarts.</li>
+      <li><strong>SETTINGS:</strong> 20 bundled images each for the main area and the sidebar, or an image of your own, plus sliders for see-through, brightness and contrast. Light images are meant for the Light theme.</li>
+      <li><strong>EN / DE:</strong> switches the whole interface including the log between English and German – this FAQ then also opens in German.</li>
+    </ul>
+  </div>
+
+  <div class="frage">
+    <h3>Does the program send data to the internet?</h3>
+    <p>On its own only a lookup of missing metadata: if title, publisher or category are missing, the game's <strong>title ID</strong> goes to store.playstation.com as well as prosperopatches.com (PS5) or orbispatches.com (PS4). Fetched details are kept for 30 days. By default this is on under Windows and Linux and off on the Mac; you can change it in the settings under <em>Metadata from the internet</em>. At startup the program also searches for the PS5 in your own network – that does not leave your home network. Downloads and updates only run when you press the button.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Where can I find more help?</h3>
+    <ul>
+      <li>This <strong>FAQ</strong> opens with the <strong>FAQ</strong> button at the top, left of <strong>USER MANUAL</strong> – in English or German, depending on the selected language.</li>
+      <li>The <strong>user manual</strong> opens with the button of that name – it is bundled with the program, no internet connection is needed. The manual is currently written in German. Manual and FAQ are also included as PDF next to the program file.</li>
+      <li>The guides on asset packs and on ShadowMount+ (old and new method) open with the <strong>Guide</strong> and <strong>Asset Packs Guide</strong> buttons.</li>
+      <li>What changed in each version is listed in <code>CHANGELOG.md</code>.</li>
+    </ul>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.61</strong></span>
+  <span>As of 4 October 2026 · Only for content you own and acquired legally</span>
+</footer>
+
+</body>
+</html>

@@ -64,6 +64,8 @@ on:
       - '.github/workflows/macos-buendel.yml'
       # Dokumente, die das Programm selbst öffnet
       - 'BENUTZERHANDBUCH.html'
+      - 'FAQ.html'
+      - 'FAQ_EN.html'
       - 'README.md'
       - 'CHANGELOG.md'
       - 'THIRD_PARTY_LICENSES.md'

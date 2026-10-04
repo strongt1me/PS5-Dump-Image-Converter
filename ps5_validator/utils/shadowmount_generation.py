@@ -32,6 +32,17 @@ am 01.10.2026, Commit f0d15ffc). Zum Spielesuchen kommt er damit nicht
 hinzu. ``sm_fakelib.c`` aenderte sich in 1.7beta3 nur in der
 Fehlerbehandlung - Reihenfolge, Cache und Emulator-Dateien wie in 1.7beta2.
 
+**1.7beta4** (Diff zu beta3 gelesen am 04.10.2026): Reihenfolge und
+Aufloesung (``resolve_game_fakelib_source_for_path``,
+``resolve_backport_path_for_title``) unveraendert. Neu sind zwei Dinge, die
+dieses Modell (noch) nicht abbildet: ``fakelib_exclude=<Title-ID>``
+(wiederholbar, ``sm_config_mount.c``) schaltet fuer den Titel **jede**
+fakelib ab - spiel-eigene, globale und Cache; und vor dem Start eines
+installierten Pakets (``ppr_pfs``) loescht ``cleanup_ppr_backport_fakelib``
+``libSceAmpr.sprx``, ``libScePlayGo.sprx`` und ``libkernel.sprx`` aus
+``/data/homebrew/backports/<ID>/fakelib``. Abbilder sind davon nicht
+betroffen.
+
 **Der Spielordner je Fassung** - am Quelltext gemessen am 27.09.2026
 (``sm_fakelib.c``, ``resolve_game_fakelib_source_for_path``): 1.7 alpha8
 bis alpha13fix1 lasen dort **nur** ``fakelib``; ein ``fakelib2`` wurde ohne
@@ -708,6 +719,13 @@ AUS_WERTE = ("0", "false", "no", "off")
 #: Wodurch eine Bibliothek im eingehaengten Ordner verdraengt werden kann.
 VERDRAENGT_EMUS = "emus"
 VERDRAENGT_GLOBAL = "global"
+
+#: Ab 1.7beta4: ``fakelib_exclude=<TITLE_ID>`` (wiederholbar, bis 128 Zeilen)
+#: schaltet fuer den Titel **jede** fakelib ab - die des Spiels, fakelib2,
+#: Backport, globale und den Cache (Diff 1.7beta3...1.7beta4, 04.10.2026).
+#: Nicht zu verwechseln mit ``global_fakelib_exclude``, das den Titel nur von
+#: der globalen fakelib ausnimmt. Die alte Fassung kennt den Schluessel nicht.
+FAKELIB_AUSSCHLUSS = "fakelib_exclude"
 
 
 def schalter_an(werte: "dict[str, str]", schluessel: str,

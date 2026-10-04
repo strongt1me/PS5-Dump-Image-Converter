@@ -148,8 +148,10 @@ if os.path.isfile(_eigene_lizenz):
 
 # Benutzerhandbuch einbetten - der Knopf BENUTZERHANDBUCH in der Titelleiste
 # oeffnet es ueber open(1). README.md und CHANGELOG.md kommen mit, weil das
-# Handbuch auf beide verlinkt.
-for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
+# Handbuch auf beide verlinkt. Die FAQ (deutsch und englisch) oeffnet der Knopf
+# FAQ links daneben (seit 04.10.2026).
+for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md',
+             'FAQ.html', 'FAQ_EN.html'):
     _doc_pfad = os.path.join(_here, _doc)
     if os.path.isfile(_doc_pfad):
         _datas.append((_doc_pfad, '.'))

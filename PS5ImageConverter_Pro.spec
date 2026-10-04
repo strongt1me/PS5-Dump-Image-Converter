@@ -83,8 +83,10 @@ if os.path.isfile(_eigene_lizenz):
 
 # Benutzerhandbuch einbetten - der Knopf BENUTZERHANDBUCH in der Titelleiste
 # oeffnet es. README.md und CHANGELOG.md kommen mit, weil das Handbuch auf beide
-# verlinkt; ohne sie waeren das in der EXE tote Verweise.
-for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md'):
+# verlinkt; ohne sie waeren das in der EXE tote Verweise. Die FAQ (deutsch und
+# englisch) oeffnet der Knopf FAQ links daneben (seit 04.10.2026).
+for _doc in ('BENUTZERHANDBUCH.html', 'README.md', 'CHANGELOG.md',
+             'FAQ.html', 'FAQ_EN.html'):
     _doc_pfad = os.path.join(_here, _doc)
     if os.path.isfile(_doc_pfad):
         _datas.append((_doc_pfad, '.'))
@@ -466,7 +468,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.60',
+    name='PS5_Dump_Image_Converter_v1.9.61',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

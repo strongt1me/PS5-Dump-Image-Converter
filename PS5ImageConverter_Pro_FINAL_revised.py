@@ -693,7 +693,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.60"
+APP_VERSION = "v1.9.61"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -3576,6 +3576,7 @@ class PS5ConverterGUI:
         ("_btn_jsloader_title", "titlebar.jsloader", "_show_js_loader"),
         ("_btn_ftp_title", "titlebar.filezilla", "_launch_filezilla"),
         ("_btn_webkit_title", "titlebar.webkit", "_show_webkit_autoloader"),
+        ("_btn_faq_title", "titlebar.faq", "_open_faq"),
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_assetpack_anleitung_title", "titlebar.assetpack_anleitung", "_open_assetpack_anleitung"),
         ("_btn_credits_title", "titlebar.credits", "_show_credits"),
@@ -4220,8 +4221,36 @@ class PS5ConverterGUI:
         self._btn_manual_title.bind("<Enter>", _manual_enter)
         self._btn_manual_title.bind("<Leave>", _manual_leave)
 
-        # Asset-Pack-Anleitung. Nach dem Handbuch-Knopf gepackt und damit
-        # links von ihm - derselbe Grund wie beim Handbuch-Knopf oben.
+        # FAQ. Direkt nach dem Handbuch-Knopf gepackt und damit unmittelbar
+        # links von ihm (Wunsch vom 04.10.2026: "links neben den Knopf
+        # Benutzerhandbuch"). Oeffnet je nach Sprache FAQ.html oder
+        # FAQ_EN.html (:meth:`_open_faq`).
+        self._btn_faq_title = flach_knopf(
+            self._titlebar_right,
+            text=self._t("titlebar.faq"),
+            font=(UI_SCHRIFT, pt(9), "bold"),
+            bg=self._COLORS["header_bg"],
+            fg=self._COLORS["fg_secondary"],
+            activebackground=self._COLORS["bg_card"],
+            activeforeground="white",
+            relief="flat",
+            cursor="hand2",
+            padx=10,
+            pady=0,
+            bd=0,
+            highlightthickness=0,
+            command=self._open_faq,
+        )
+        self._btn_faq_title.pack(side="right", padx=(0, 8))
+        def _faq_enter(e):
+            self._btn_faq_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
+        def _faq_leave(e):
+            self._btn_faq_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
+        self._btn_faq_title.bind("<Enter>", _faq_enter)
+        self._btn_faq_title.bind("<Leave>", _faq_leave)
+
+        # Asset-Pack-Anleitung. Nach dem FAQ-Knopf gepackt und damit links
+        # von ihm - derselbe Grund wie beim Handbuch-Knopf oben.
         self._btn_assetpack_anleitung_title = flach_knopf(
             self._titlebar_right,
             text=self._t("titlebar.assetpack_anleitung"),
@@ -5076,6 +5105,32 @@ class PS5ConverterGUI:
         # Meldung auch den Grund.
         self._oeffnen_oder_melden(pfad)
 
+    #: Die FAQ je Sprache der Oberflaeche. Beide liegen wie das Handbuch im
+    #: Projektordner und werden in allen drei .spec eingebettet; als PDF gehen
+    #: sie ins Auslieferungsbuendel (Build_EXE.ps1).
+    _FAQ_DATEIEN: dict[str, str] = {"de": "FAQ.html", "en": "FAQ_EN.html"}
+
+    def _open_faq(self) -> None:
+        """Öffnet die mitgelieferte FAQ in der eingestellten Sprache – wie :meth:`_open_benutzerhandbuch`.
+
+        Bei englischer Oberfläche ``FAQ_EN.html``, sonst ``FAQ.html`` (Wunsch
+        vom 04.10.2026: "Die FAQ soll auch in der Englischen Version
+        anklickbar sein"). Fehlt die Datei, nennt eine Meldung ihren Namen,
+        statt still nichts zu tun.
+        """
+        sprache = str(getattr(self, "_current_language", "de") or "de")
+        datei = self._FAQ_DATEIEN.get(sprache, self._FAQ_DATEIEN["de"])
+        pfad = _bundled_resource(datei)
+        if not pfad:
+            logger.warning("FAQ nicht gefunden: %s", datei)
+            messagebox.showwarning(
+                self._t("dialog.title.error"),
+                self._t("dialog.msg.faq_missing", datei=datei),
+                parent=self.root,
+            )
+            return
+        self._oeffnen_oder_melden(pfad)
+
     def _open_assetpack_anleitung(self) -> None:
         """Öffnet die Asset-Pack-Anleitung im Standardprogramm - wie :meth:`_open_benutzerhandbuch`.
 
@@ -5186,6 +5241,7 @@ class PS5ConverterGUI:
             ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
+            ("_btn_faq_title", "titlebar.faq"),
             ("_btn_assetpack_anleitung_title", "titlebar.assetpack_anleitung"),
             # Bis zum 24.09.2026 fehlten diese beiden: Sie blieben nach dem
             # Sprachwechsel in der Startsprache (Durchsicht H1-2).
@@ -46163,7 +46219,7 @@ class PS5ConverterGUI:
           wirkt, solange kein ``fakelib2`` daneben liegt;
         * alpha8 bis alpha13fix1 lesen im Spielordner ausschliesslich
           ``fakelib``;
-        * ab 1.7beta1 (auch die beiliegende 1.7beta3) wieder wie bis alpha6.
+        * ab 1.7beta1 (auch die beiliegende 1.7beta4) wieder wie bis alpha6.
 
         Nur ``fakelib`` wirkt also in allen Fassungen. Die frueher waehlbare
         Einstellung ``fakelib_variante`` entschied das noch von Hand; stand sie
@@ -47971,6 +48027,7 @@ class PS5ConverterGUI:
             # sie sich nicht geaendert haben, und die festen Ablagewege
             # brauchen ihre Pfade schon vor der Spielwahl.
             config_text = ""
+            erkannt = ""
             if not lokal:
                 melde(self._t("amprgen.step_version"))
                 config_text = self._ampr_gen_config_lesen(ftp)
@@ -47981,6 +48038,7 @@ class PS5ConverterGUI:
                     texte=smgen_texte)
                 for _kennung, beleg in befund["belege"]:
                     melde("   - " + beleg)
+                erkannt = befund["generation"] or ""
                 if befund["generation"] == generation:
                     melde(self._t("amprgen.diag_match"))
                 elif befund["generation"] == andere:
@@ -48106,6 +48164,23 @@ class PS5ConverterGUI:
                     melde(self._t("amprgen.no_title_id_fallback"))
             melde(self._t("amprgen.target", path=ziel["pfad"]))
             melde("   " + ziel["hinweis"])
+
+            # Ab ShadowMount+ 1.7beta4 schaltet "fakelib_exclude=<ID>" fuer den
+            # Titel jede fakelib ab - abgelegt wuerde, geladen nicht.
+            if (not lokal and not fester_weg and title_id
+                    and self._ampr_titel_ohne_fakelib(config_text, title_id,
+                                                      erkannt or generation)):
+                melde("!! " + self._t("amprgen.excluded", title_id=title_id))
+                wahl = self._ampr_gen_frage(
+                    fenster, self._t("amprgen.q_excluded"),
+                    self._t("amprgen.q_excluded_why", title_id=title_id),
+                    [("stop", self._t("amprgen.q_excluded_stop"),
+                      self._t("amprgen.q_excluded_stop_why")),
+                     ("weiter", self._t("amprgen.q_excluded_go"),
+                      self._t("amprgen.q_excluded_go_why"))])
+                if wahl != "weiter":
+                    melde(self._t("amprgen.cancelled"))
+                    return
 
             # ── 5. Welche Bibliotheken? ────────────────────────────────
             melde(self._t("amprgen.step_libs"))
@@ -48871,6 +48946,22 @@ class PS5ConverterGUI:
                 return None
         melde(self._t("amprmitschnitt.sm_ziele", paths=", ".join(ziele)))
 
+        # Ab 1.7beta4 haengt ShadowMount+ fuer einen Titel unter
+        # fakelib_exclude gar keine fakelib ein - auch die Aufnahme-Bibliothek
+        # nicht. Umgestellt wird das hier nicht; der Anwender entscheidet.
+        if self._ampr_titel_ohne_fakelib(config_text, title_id, generation):
+            melde("!! " + self._t("amprmitschnitt.sm_excluded", title_id=title_id))
+            wahl = self._ampr_gen_frage(
+                win, self._t("amprmitschnitt.q_excluded"),
+                self._t("amprmitschnitt.q_excluded_why", title_id=title_id),
+                [("stop", self._t("amprmitschnitt.q_excluded_stop"),
+                  self._t("amprmitschnitt.q_excluded_stop_why")),
+                 ("weiter", self._t("amprmitschnitt.q_excluded_go"),
+                  self._t("amprmitschnitt.q_excluded_go_why"))])
+            if wahl != "weiter":
+                melde(self._t("amprmitschnitt.cancelled"))
+                return None
+
         werte = parse_flat_ini(config_text) if config_text else {}
         emus = (self._ampr_gen_config_pfad(config_text, sm_gen.ORT_EMUS)
                 or sm_gen.EMUS_STANDARD).rstrip("/")
@@ -48990,15 +49081,35 @@ class PS5ConverterGUI:
                    for gefunden, fakten in eintraege)
 
     @staticmethod
-    def _ampr_mitschnitt_titel_ausgenommen(config_text: str, title_id: str) -> bool:
-        """Steht der Titel in ``global_fakelib_exclude`` (wiederholbar)?"""
+    def _ampr_mitschnitt_titel_ausgenommen(config_text: str, title_id: str,
+                                           schluessel: str = "global_fakelib_exclude") -> bool:
+        """Steht der Titel unter ``schluessel`` (wiederholbar)?
+
+        Vorgabe ``global_fakelib_exclude``; :meth:`_ampr_titel_ohne_fakelib`
+        fragt damit auch ``fakelib_exclude`` ab.
+        """
         if not (config_text and title_id):
             return False
         kennungen = {teil.strip().upper()
-                     for wert in parse_flat_ini_multi(config_text).get(
-                         "global_fakelib_exclude", [])
+                     for wert in parse_flat_ini_multi(config_text).get(schluessel, [])
                      for teil in re.split(r"[,;\s]+", wert) if teil.strip()}
         return title_id.strip().upper() in kennungen
+
+    @classmethod
+    def _ampr_titel_ohne_fakelib(cls, config_text: str, title_id: str,
+                                 generation: str = "") -> bool:
+        """Haengt ShadowMount+ fuer diesen Titel gar keine fakelib ein?
+
+        Ab 1.7beta4 schaltet ``fakelib_exclude=<ID>`` fuer den Titel jede
+        fakelib ab (``sm_gen.FAKELIB_AUSSCHLUSS``) - dort abgelegte
+        Bibliotheken wirkten dann still nicht. Deshalb fragen Aufgabe 7 und
+        der Mitschnitt-Assistent nach (Nutzerentscheid 04.10.2026: warnen).
+        Die alte Fassung (bis alpha13fix1) kennt den Schluessel nicht.
+        """
+        if generation == sm_gen.ALT:
+            return False
+        return cls._ampr_mitschnitt_titel_ausgenommen(
+            config_text, title_id, sm_gen.FAKELIB_AUSSCHLUSS)
 
     def _ampr_mitschnitt_config_umstellen(self, ftp, config_text: str,
                                           gefahren: "list[dict[str, str]]",
@@ -58714,6 +58825,7 @@ class PS5ConverterGUI:
         "_btn_more_tools_title":   "fg_secondary",
         "_btn_language_title":     "fg_secondary",
         "_btn_manual_title":       "fg_secondary",
+        "_btn_faq_title":          "fg_secondary",
         "_btn_assetpack_anleitung_title": "fg_secondary",
     }
 

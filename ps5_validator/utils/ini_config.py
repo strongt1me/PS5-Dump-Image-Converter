@@ -25,6 +25,8 @@ WIEDERHOLBARE_SCHLUESSEL: tuple[str, ...] = (
     "kstuff_delay",
     "kstuff_no_pause",
     "global_fakelib_exclude",
+    # Ab ShadowMount+ 1.7beta4: schaltet fuer einen Titel jede fakelib ab.
+    "fakelib_exclude",
 )
 
 #: Womit mehrere Werte in **einer** Editorzeile getrennt werden.

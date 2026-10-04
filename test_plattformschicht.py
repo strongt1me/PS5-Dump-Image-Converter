@@ -347,7 +347,11 @@ class SchriftskalierungTests(unittest.TestCase):
         # stehen.
         quelle = (PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
         anfang = quelle.index("    def __init__(self, root: tk.Tk) -> None:")
-        block = quelle[anfang:anfang + 40000]
+        # Bis zur naechsten Methode statt einer festen Zeichenzahl: Mit festen
+        # 40000 Zeichen fiel der Test am 04.10.2026 um, als __init__ durch den
+        # FAQ-Knopf auf 42112 Zeichen wuchs - ohne dass sich an der Reihenfolge
+        # etwas geaendert hatte.
+        block = quelle[anfang:quelle.index("\n    def ", anfang + 10)]
         self.assertLess(block.index("self._macos_schrift_skalieren()"),
                         block.index("self._create_widgets()"),
                         "Die Skalierung wirkt nicht mehr auf die Schriften.")

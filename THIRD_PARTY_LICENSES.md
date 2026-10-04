@@ -52,7 +52,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `ps5-app-dumper_v2.10.elf` | ps5-app-dumper | EchoStretch | `github.com/EchoStretch/ps5-app-dumper`, Release v2.10 (SHA-256 gegen den Release-Anhang geprüft); im ELF die Fußzeile der Weboberfläche „PS5 APP DUMPER · EchoStretch · GPL-3.0“ und `"version": "2.10"`; kein LICENSE im Repo |
 | `np-fake-signin-v1.3.elf` | NP Fake Signin | earthonion | „NP Fake Signin (by earthonion)" |
 | `garlic-savemgr_v1.13.1.elf` | GarlicSaves Save-Manager | earthonion | Sponsorenlink im ELF |
-| `shadowmountplus_v1.7beta3.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta3 (beim Autor als Vorabfassung markiert; SHA-256 gegen den Release-Anhang geprüft) |
+| `shadowmountplus_v1.7beta4.elf` | ShadowMount+ | drakmor; Dank an VoidWhisper, Gezine, earthonion, EchoStretch | Bannerzeile im ELF; aus dem Release 1.7beta4 (beim Autor als Vorabfassung markiert; SHA-256 gegen den Release-Anhang geprüft); beim Autor heißt die Datei „shadowmountplus.elf“ |
 | `nanodns_v0.4.elf` | nanodns | drakmor | „(c) Drakmor" |
 | `game-compressor_v1.1.1.elf` | PS5 Game Compressor | Juma Sayeh | „Built by Juma Sayeh“ im ELF (dazu „Tested by Osama Abualia“); `github.com/juma-sayeh/PS5-Game-Compressor`, dort kein LICENSE; „v1.1.1“ im ELF; die Fassung steht auf der Release-Seite des Projekts noch nicht (Stand 03.10.2026, dort zuletzt 1.0.4), die SHA-256 stimmt mit der SHA256SUMS der Fassung überein |
 | `pldmgr_v0.5.2.elf` | PS5 Payload Manager | itsPLK | Projektadresse im ELF |

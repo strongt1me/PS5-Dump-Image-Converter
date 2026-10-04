@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.60-blue)
-![Tests](https://img.shields.io/badge/Tests-4897%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.61-blue)
+![Tests](https://img.shields.io/badge/Tests-4932%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -55,7 +55,12 @@ Angeboten werden nur Zielformate, die zur erkannten Quelle passen.
 Das **[Benutzerhandbuch](BENUTZERHANDBUCH.html)** erklärt die Bedienung in
 einfacher Sprache – alle acht Aufgaben, die Werkzeugleiste, typische Fehler
 und die Besonderheiten unter Linux und macOS. Es liegt auch als
-[PDF](BENUTZERHANDBUCH.pdf) (43 Seiten) bei.
+[PDF](BENUTZERHANDBUCH.pdf) bei.
+
+Die **[FAQ](FAQ.html)** beantwortet die häufigsten Fragen kurz – auch auf
+Englisch ([FAQ_EN](FAQ_EN.html)); beide liegen als PDF bei
+([FAQ.pdf](FAQ.pdf), [FAQ_EN.pdf](FAQ_EN.pdf)). Im Programm öffnet sie der
+Knopf **FAQ** links neben BENUTZERHANDBUCH, in der Sprache der Oberfläche.
 
 Was sich je Version geändert hat, steht im [Changelog](CHANGELOG.md).
 
