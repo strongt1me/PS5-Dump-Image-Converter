@@ -1,0 +1,68 @@
+{
+  "werkzeug": "Direct Stream for PlayStation 5",
+  "fassung": "2.8.5",
+  "autor": "ChillQuant (https://github.com/ChillQuant); die LICENSE selbst nennt keinen Namen",
+  "herkunft": "https://github.com/ChillQuant/direct-stream-ps5 - Freigabe v2.8.5 (05.10.2026), Anhang DIRECT-STREAM-FOR-PLAYSTATION-5-PurePython.zip",
+  "stand": "Fassung 2.8.5 (ps5_streamer.VERSION); Archiv-SHA-256 gleich dem digest der GitHub-Freigabe (am 06.10.2026 gemessen). Die vorher eingebaute 2.8.1 war byte-gleich mit der Freigabe v2.8.1.",
+  "lizenz": "MIT (LICENSE in diesem Ordner)",
+  "quellarchiv_sha256": "5b8136e522009484a338cba651fdb04441580e0541fb9c41f5bd5352e96598d5",
+  "veraendert": "nichts - alle Dateien byte-gleich mit dem Quellarchiv",
+  "nicht_uebernommen": [
+    "tests/",
+    "requirements-dev.txt",
+    ".gitignore",
+    "run_android.sh",
+    "install_android.sh"
+  ],
+  "eigene_beigaben": {
+    "UPSTREAM.md": "Herkunft und Einbindung",
+    "herkunft.json": "diese Datei",
+    "entwickler_chillquant.png": "GitHub-Profilbild von ChillQuant (avatars.githubusercontent.com/u/213100242, 420x420, SHA-256 3cc3def84a8db467ea6e71443f2cf937035028cf0e900b8757a9380b358f6278), am 06.10.2026 auf Wunsch des Projektinhabers geladen"
+  },
+  "dateien": {
+    "LICENSE": {
+      "sha256": "68c4a547d7be4a22734e357fa061ad49b98a8e3d4b0895aecb74a10e567cf6ee",
+      "bytes": 1061
+    },
+    "README.md": {
+      "sha256": "4a07e4727899ec7f04abffcd948b274f22d6a1c8695815823e70e4f3c3557a98",
+      "bytes": 8247
+    },
+    "VALIDATION.md": {
+      "sha256": "13031f926a18ebd5e2a2027c31b01f1286d062be9584c77531369ea11b6cff43",
+      "bytes": 5820
+    },
+    "requirements.txt": {
+      "sha256": "dab87c934929924cc8e6f73a862c9739dd51ab120d81dd11a0c44142fee10c86",
+      "bytes": 276
+    },
+    "ps5_streamer.py": {
+      "sha256": "ba4e358405d50c64e82c666e63d42505dbb829205fdf626cf5a75d95ae459323",
+      "bytes": 47944
+    },
+    "transfer_core.py": {
+      "sha256": "e66fb76e6a54e6ae804bdb5849a78d3bfbedebab159f253288117ec9895e326f",
+      "bytes": 34541
+    },
+    "web/app.js": {
+      "sha256": "ff6755e50d1c5a43a3cd79412f26adaa9845556a678b5b22c5c533389f5fbe10",
+      "bytes": 52467
+    },
+    "web/icon.svg": {
+      "sha256": "4840baf781ff6031beb57638dc707916e3d35eb5ff47828049cad73a3676730f",
+      "bytes": 262
+    },
+    "web/index.html": {
+      "sha256": "44b7e6e6d8c882353b99ce91dea9afe090c05df447314921480fff9c6097a2d4",
+      "bytes": 49200
+    },
+    "web/style.css": {
+      "sha256": "9c0a678097c6a9123378a78f3a8e5c73aa41a755a5f18fbe435074586cceaab3",
+      "bytes": 40993
+    },
+    "web/manifest.json": {
+      "sha256": "ca57e32fc925b3d7af9c61dc5b0547e6de1e3a7aff68274e2caf51682f91e43f",
+      "bytes": 390
+    }
+  }
+}

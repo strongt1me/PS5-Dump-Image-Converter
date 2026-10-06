@@ -1,0 +1,217 @@
+{
+ "beschreibung": "GitHub-Profilbilder der Entwickler im Fenster Credits & Community (ps5_validator/utils/credits_daten.py); einmal geladen, auf 160 x 160 px als PNG gespeichert.",
+ "abgerufen": "2026-10-06",
+ "bilder": {
+  "strongt1me.png": {
+   "login": "strongt1me",
+   "quelle": "https://avatars.githubusercontent.com/u/279990554?v=4&s=160",
+   "sha256": "6b83a58c477fb8a2afb03b480ac72caac43575bfdf45f054e5627e0f3d70ee43"
+  },
+  "renangbarreto.png": {
+   "login": "RenanGBarreto",
+   "quelle": "https://avatars.githubusercontent.com/u/3581945?v=4&s=160",
+   "sha256": "a214495b9115e5dfa7e9a43f8074389dc486c9fe10d8afcbe172b18f1429e9ed"
+  },
+  "svengdk.png": {
+   "login": "SvenGDK",
+   "quelle": "https://avatars.githubusercontent.com/u/84620?v=4&s=160",
+   "sha256": "37cbbcc445c1f398921535f9ced4d9b356cc04d85754151aa4a5ca558a9ed4fc"
+  },
+  "drakmor.png": {
+   "login": "drakmor",
+   "quelle": "https://avatars.githubusercontent.com/u/1344732?v=4&s=160",
+   "sha256": "334345f140d718b4eea31db03d443f28ef72cf68c52e4ed1e3184b2f74f18114"
+  },
+  "gezine.png": {
+   "login": "Gezine",
+   "quelle": "https://avatars.githubusercontent.com/u/30000519?v=4&s=160",
+   "sha256": "1c37831ed395083d8519a419ffcf06b15d34bf32631d1d88dccaf2a5d75f288e"
+  },
+  "owendswang.png": {
+   "login": "owendswang",
+   "quelle": "https://avatars.githubusercontent.com/u/9076865?v=4&s=160",
+   "sha256": "aa708191f7a3bcdab4c6e0388089fbd7bfbbeb235c7b4d5a75316564de361ba0"
+  },
+  "john-tornblom.png": {
+   "login": "john-tornblom",
+   "quelle": "https://avatars.githubusercontent.com/u/547534?v=4&s=160",
+   "sha256": "f61dc113dc4defee73cc8620d5b377a25f229db0a689ff47a73b563372cdcf1e"
+  },
+  "echostretch.png": {
+   "login": "EchoStretch",
+   "quelle": "https://avatars.githubusercontent.com/u/98502641?v=4&s=160",
+   "sha256": "28276c66741432fbfa9b8e11e85668a4936a0fc5d4e1c6ecc8fae6ee55ca1f18"
+  },
+  "itsplk.png": {
+   "login": "itsPLK",
+   "quelle": "https://avatars.githubusercontent.com/u/209955039?v=4&s=160",
+   "sha256": "85047272e8631967c9774e311c976dd3ac98e60798a6617ff8b3523e120a987b"
+  },
+  "idlesauce.png": {
+   "login": "idlesauce",
+   "quelle": "https://avatars.githubusercontent.com/u/148508202?v=4&s=160",
+   "sha256": "979f4a9ba9e6b6a9e94e0b1db46fbe7dcf78c37d5a66ca1cc0bb7e52c0d00180"
+  },
+  "bestpig.png": {
+   "login": "BestPig",
+   "quelle": "https://avatars.githubusercontent.com/u/363342?v=4&s=160",
+   "sha256": "013d73f2727a2d5976e62fc23f92d30d5bc90fac9f47a4ad3ade8fafb153d9fd"
+  },
+  "cyb1k.png": {
+   "login": "CyB1K",
+   "quelle": "https://avatars.githubusercontent.com/u/40731714?v=4&s=160",
+   "sha256": "78edeb429183bff8710d658211717e2e61c4dba8290f0c4deed7fb4fb8a74667"
+  },
+  "pearlxcore.png": {
+   "login": "pearlxcore",
+   "quelle": "https://avatars.githubusercontent.com/u/36906814?v=4&s=160",
+   "sha256": "f979ead47376c74c9fa7ccdcababf7800008e9ab142aac86ae8bffcc10d6b056"
+  },
+  "andy-man.png": {
+   "login": "andy-man",
+   "quelle": "https://avatars.githubusercontent.com/u/138187789?v=4&s=160",
+   "sha256": "633fbe6e3f77d427f1a3fb310a955d899710ffac4549903396327e0cfffd8c5b"
+  },
+  "chillquant.png": {
+   "login": "ChillQuant",
+   "quelle": "https://avatars.githubusercontent.com/u/213100242?v=4&s=160",
+   "sha256": "9ac1ea689df010910dd046766d6eff616cf2b79c377b68d15e5a8f495aefe3ca"
+  },
+  "kerrdec97.png": {
+   "login": "kerrdec97",
+   "quelle": "https://avatars.githubusercontent.com/u/278731968?v=4&s=160",
+   "sha256": "c815e24d41603ec9f4a30dcfe341af72f670b69639e6ba8430752e313d4ab610"
+  },
+  "earthonion.png": {
+   "login": "earthonion",
+   "quelle": "https://avatars.githubusercontent.com/u/3332298?v=4&s=160",
+   "sha256": "2ef4bc0cf8d4c99b69b4765461bb2be07163de218336ddaaaaf5513c515fe205"
+  },
+  "notmaj0r.png": {
+   "login": "notmaj0r",
+   "quelle": "https://avatars.githubusercontent.com/u/253086874?v=4&s=160",
+   "sha256": "41173d0f3f653197651b6eeedc45cc4d9df5cf610790b701c6570bac7ef12c1e"
+  },
+  "seregonwar.png": {
+   "login": "seregonwar",
+   "quelle": "https://avatars.githubusercontent.com/u/109359355?v=4&s=160",
+   "sha256": "ab6fabcee82428bb22b16fb6c1a09ee913b009aa4386d6beb3c2665d8e2eeb0e"
+  },
+  "aydencharles.png": {
+   "login": "aydencharles",
+   "quelle": "https://avatars.githubusercontent.com/u/222953547?v=4&s=160",
+   "sha256": "2e14ecbb5feed078d21e83b39bf1fc7370379087bc4b28420e8cc6514caff597"
+  },
+  "onionbuddies.png": {
+   "login": "OnionBuddies",
+   "quelle": "https://avatars.githubusercontent.com/u/323526930?v=4&s=160",
+   "sha256": "dbc086956714638b1e66ca7178c731e2cf4bbaf58d3f76ea53a8d35ce6c11716"
+  },
+  "pharaoh2k.png": {
+   "login": "Pharaoh2k",
+   "quelle": "https://avatars.githubusercontent.com/u/5753365?v=4&s=160",
+   "sha256": "3b14694b5ecf51ee3f41dc7e68f3acb25a08fc7fac98e6989a45cf8fa161ca24"
+  },
+  "opensourcerer-dev.png": {
+   "login": "OpenSourcereR-dev",
+   "quelle": "https://avatars.githubusercontent.com/u/45182707?v=4&s=160",
+   "sha256": "7ded4b7a35134175672d057945794fd9a5b1d7b1ae8c1c78e8e07365b3a345d4"
+  },
+  "juma-sayeh.png": {
+   "login": "juma-sayeh",
+   "quelle": "https://avatars.githubusercontent.com/u/52501618?v=4&s=160",
+   "sha256": "c85dd77ffa7aa9b86b74bafa178b90f23d7ceb0e4e01cc4b33aa5dfa5d9e64ed"
+  },
+  "francoataffarel.png": {
+   "login": "francoataffarel",
+   "quelle": "https://avatars.githubusercontent.com/u/26504139?v=4&s=160",
+   "sha256": "525fa141be4c4931c4a46ca515510bcceae3e8ca179837b2d6f87f0395bd8135"
+  },
+  "x-f1reball-x.png": {
+   "login": "X-F1REBALL-X",
+   "quelle": "https://avatars.githubusercontent.com/u/55192632?v=4&s=160",
+   "sha256": "3eabde66dc4b093a725193fe3e0e2c518777de2e37587d3a7c46e07cea633df2"
+  },
+  "phantomptr.png": {
+   "login": "phantomptr",
+   "quelle": "https://avatars.githubusercontent.com/u/254021847?v=4&s=160",
+   "sha256": "f12ff29bb7df480824741ae9d0f28f929e938751863c7a59f83e3f0dfd5bc631"
+  },
+  "karnerf.png": {
+   "login": "KarnerF",
+   "quelle": "https://avatars.githubusercontent.com/u/270745392?v=4&s=160",
+   "sha256": "0c36d3ef97e54d416a360af4cd63db568fc3d05d1cf203cf8c727614c1b7f454"
+  },
+  "itsblurf.png": {
+   "login": "ItsBlurf",
+   "quelle": "https://avatars.githubusercontent.com/u/192821704?v=4&s=160",
+   "sha256": "afb1f02d10da4f297d3f96b29c2a2fe34bb38459f89524054c1272363b1befdc"
+  },
+  "stonedmodder.png": {
+   "login": "StonedModder",
+   "quelle": "https://avatars.githubusercontent.com/u/16449821?v=4&s=160",
+   "sha256": "0e2137f1a54873fe83c9f60faead5414602d7f5851fcd372d925a0540ec8fb77"
+  },
+  "arksama.png": {
+   "login": "ArkSama",
+   "quelle": "https://avatars.githubusercontent.com/u/60140407?v=4&s=160",
+   "sha256": "836fbcd6d8e4a264d3b1166fda8002736a131f4201af67578957da3d3f4d63c4"
+  },
+  "theofficialflow.png": {
+   "login": "TheOfficialFloW",
+   "quelle": "https://avatars.githubusercontent.com/u/14246466?v=4&s=160",
+   "sha256": "c413845913873f7d301483719d2fb70225bace3672c8de55be47400bcbe9a62e"
+  },
+  "cryptogenic.png": {
+   "login": "Cryptogenic",
+   "quelle": "https://avatars.githubusercontent.com/u/9409828?v=4&s=160",
+   "sha256": "d2ad5e48ade67239232c4c933f142cc7551fb5dcc2c1b51688181ed298e4e73e"
+  },
+  "sleirsgoevy.png": {
+   "login": "sleirsgoevy",
+   "quelle": "https://avatars.githubusercontent.com/u/17355512?v=4&s=160",
+   "sha256": "9dd47d5b2594bb093ee6aabd373633c635e93c709822d80ad844c68d5821e512"
+  },
+  "chendochap.png": {
+   "login": "ChendoChap",
+   "quelle": "https://avatars.githubusercontent.com/u/39858639?v=4&s=160",
+   "sha256": "e378ef14e2e693de4a78c5969182019936684f053bd670f50dc3ca74673ef0a3"
+  },
+  "zecoxao.png": {
+   "login": "zecoxao",
+   "quelle": "https://avatars.githubusercontent.com/u/1857828?v=4&s=160",
+   "sha256": "f69f2f623ba11cdb543051c9d4f2d1053fcd1295deebb86f3254777bf6dd9e6f"
+  },
+  "flatz.png": {
+   "login": "flatz",
+   "quelle": "https://avatars.githubusercontent.com/u/1294972?v=4&s=160",
+   "sha256": "0545dd1999713cfb1896518df0b4ea3b98b5c99dce566e3f445c972fc3c878e2"
+  },
+  "al-azif.png": {
+   "login": "Al-Azif",
+   "quelle": "https://avatars.githubusercontent.com/u/33132478?v=4&s=160",
+   "sha256": "c9e2384862f77776322cde2760f8807264529d697d09f9e8314a9c2e6c8e243b"
+  },
+  "lightningmods.png": {
+   "login": "LightningMods",
+   "quelle": "https://avatars.githubusercontent.com/u/34066913?v=4&s=160",
+   "sha256": "11347e895ff0101d4a5f3e55b4ef504d358572583c7765fc70dce8635b3988ed"
+  },
+  "sistr0.png": {
+   "login": "SiSTR0",
+   "quelle": "https://avatars.githubusercontent.com/u/40022338?v=4&s=160",
+   "sha256": "10b4dcd2aa05d8db449f192047ac6fa3ccab44fc59279d5ce5000d422a1165ba"
+  }
+ },
+ "banner": {
+  "psxtools_de_banner.png": {
+   "quelle": "vom Projektinhaber bereitgestellt (psxtools.de.png, 2172 x 374)",
+   "ziel": "https://psxtools.de/",
+   "groesse": [
+    1086,
+    187
+   ],
+   "sha256": "dc78b4997e323688096259097daa46a1a7eccebd4d22d92e9e8d298ee150bf8a"
+  }
+ }
+}

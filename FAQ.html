@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.63</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.64</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,7 +144,7 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.63</span>
+      <span class="marke">Version v1.9.64</span>
       <span class="marke">Stand 6. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
@@ -319,6 +319,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>Ein Lauf brach ab mit „Der Quellordner wurde während des Baus geleert“. Was ist passiert?</h3>
+    <p>Die Arbeitskopie im Temp-Ordner hat während des Baus ihre Dateien verloren – nicht durch das Programm. Häufige Ursache ist die <strong>Windows-Speicheroptimierung</strong>: Wird der Platz knapp, löscht sie Dateien im Windows-Temp-Ordner. Wählen Sie unten bei <strong>TEMP-ORDNER</strong> einen eigenen Ordner auf einem großen Laufwerk (z.&nbsp;B. <code>D:\PS5-Temp</code>) und wiederholen Sie den Lauf. Das Programm warnt beim Start eines Laufs, wenn der Temp-Ordner gefährdet ist; die Sammelkonvertierung räumt Arbeitskopien nach jedem Spiel weg. Mit <strong>Dump-Ordner: Arbeitskopie vorher anlegen</strong> entfällt außerdem die Rückfrage vor einem Einbau.</p>
+  </div>
+
+  <div class="frage">
     <h3>Welche Kompressionsstufe ist die richtige?</h3>
     <p>1 ist am schnellsten, 9 ergibt die kleinste Datei; für den Einstieg reicht „6 – Ausgewogen“. Erwarten Sie keine Wunder: PS5-Spieldaten sind weitgehend schon komprimiert. An einem 664-MB-Dump gemessen lagen zwischen Stufe&nbsp;1 und Stufe&nbsp;9 nur rund 5&nbsp;% Größenunterschied – höhere Stufen kosten vor allem Zeit.</p>
   </div>
@@ -476,7 +481,7 @@ footer{
     <p>Unter dem Logo schaltet <strong>KONSOLE ›</strong> auf eine zweite Ansicht mit acht Werkzeugen: <em>Konsole &amp; Payloads</em>, <em>WebKit Autoloader</em>, <em>Bibliothek</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> und <em>Direct Stream</em>. <strong>‹ UMWANDELN</strong> führt zurück; Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten.</p>
     <p><strong>Konsole &amp; Payloads</strong> sucht die PS5 schon beim Programmstart selbst – eine Adresse müssen Sie nicht eintragen. Die Seite fragt alle bekannten Ports ab, zeigt zu jedem Dienst Zustand, Version und Zweck, startet fehlende Dienste aus dem mitgelieferten Ordner <code>helloworld</code> und öffnet Weboberflächen. Unter Windows erscheinen diese direkt im Programm, sonst im Browser.</p>
     <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (das PS5 Cooling &amp; System Center, Port 8086), <strong>ShadowMount+</strong> und <strong>SMPlusGui</strong> haben keine eigene Seite: Ein Druck prüft, ob das Payload auf der Konsole schon läuft, schickt es bei Bedarf selbst – samt ELF-Loader, falls Port 9021 noch zu ist – und öffnet dann seine Weboberfläche.</p>
-    <p><strong>Direct Stream</strong> schickt nichts an die Konsole: Es ist ein kleiner Server nur auf diesem Rechner (<code>127.0.0.1</code>), der einen Download oder eine lokale Datei per FTP direkt in den Speicher der PS5 überträgt. Der Knopf startet ihn und zeigt seine Seite rechts; PS5-Adresse und FTP-Port trägt das Programm beim ersten Start selbst ein. Er läuft weiter, wenn Sie die Seite verlassen, und endet mit dem Programm – läuft dann gerade eine Übertragung, fragt das Programm vorher. Probieren Sie es zuerst mit einer kleinen Datei.</p>
+    <p><strong>Direct Stream</strong> schickt nichts an die Konsole: Es ist ein kleiner Server nur auf diesem Rechner (<code>127.0.0.1</code>), der einen Download oder eine lokale Datei per FTP direkt in den Speicher der PS5 überträgt. Der Knopf startet ihn und zeigt seine Seite rechts – auf Deutsch, mit Entwickler und GitHub-Link; PS5-Adresse und FTP-Port trägt das Programm beim ersten Start selbst ein. Ziel ist <code>/data/homebrew</code>, Pakete (<code>.pkg</code>) gehen von selbst nach <code>/data/pkg</code>; der Knopf <em>Ziel: … ▾</em> wechselt auf einen USB-Datenträger an der PS5. Die Auswahl bietet auch <code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code> und <code>.exfat</code> an; Dump-Ordner überträgt Direct Stream nicht. Er läuft weiter, wenn Sie die Seite verlassen, und endet mit dem Programm – läuft dann gerade eine Übertragung, fragt das Programm vorher. Probieren Sie es zuerst mit einer kleinen Datei.</p>
   </div>
 
   <div class="frage">
@@ -604,7 +609,7 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.63</strong></span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.64</strong></span>
   <span>Stand 6. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 

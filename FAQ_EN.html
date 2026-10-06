@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.63</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.64</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,7 +144,7 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.63</span>
+      <span class="marke">Version v1.9.64</span>
       <span class="marke">As of 6 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
@@ -319,6 +319,11 @@ footer{
   </div>
 
   <div class="frage">
+    <h3>A run stopped with “The source folder was emptied during the build”. What happened?</h3>
+    <p>The working copy in the temp folder lost its files during the build – not through the program. A common cause is <strong>Windows Storage Sense</strong>: when space runs low it deletes files in the Windows temp folder. Choose your own folder on a large drive under <strong>TEMP FOLDER</strong> below (e.g. <code>D:\PS5-Temp</code>) and repeat the run. The program warns at the start of a run when the temp folder is at risk; batch conversion removes working copies after each game. With <strong>Dump folder: create a working copy first</strong> the question before an integration is also skipped.</p>
+  </div>
+
+  <div class="frage">
     <h3>Which compression level is right?</h3>
     <p>1 is the fastest, 9 gives the smallest file; for a start, “6 – Balanced” is enough. Don't expect miracles: PS5 game data is largely compressed already. Measured on a 664&nbsp;MB dump, levels&nbsp;1 and&nbsp;9 differed by only about 5&nbsp;% in size – higher levels mainly cost time.</p>
   </div>
@@ -476,7 +481,7 @@ footer{
     <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>Direct Stream</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
     <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
     <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong> and <strong>SMPlusGui</strong> have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
-    <p><strong>Direct Stream</strong> sends nothing to the console: it is a small server on this computer only (<code>127.0.0.1</code>) that transfers a download or a local file straight into the PS5 storage over FTP. The button starts it and shows its page on the right; the program fills in the PS5 address and FTP port the first time. It keeps running when you leave the page and ends with the program – if a transfer is running then, the program asks first. Try it with a small file first.</p>
+    <p><strong>Direct Stream</strong> sends nothing to the console: it is a small server on this computer only (<code>127.0.0.1</code>) that transfers a download or a local file straight into the PS5 storage over FTP. The button starts it and shows its page on the right – in the program's language, with developer and GitHub link; the program fills in the PS5 address and FTP port the first time. The target is <code>/data/homebrew</code>, packages (<code>.pkg</code>) go to <code>/data/pkg</code> by themselves; the <em>Target: … ▾</em> button switches to a USB drive on the PS5. The file selection also offers <code>.ffpkg</code>, <code>.ffpfsc</code>, <code>.ffpfs</code> and <code>.exfat</code>; Direct Stream does not transfer dump folders. It keeps running when you leave the page and ends with the program – if a transfer is running then, the program asks first. Try it with a small file first.</p>
   </div>
 
   <div class="frage">
@@ -604,7 +609,7 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.63</strong></span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.64</strong></span>
   <span>As of 6 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 

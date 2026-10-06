@@ -58,7 +58,7 @@ HAUPTDATEI = PROJEKT / "PS5ImageConverter_Pro_FINAL_revised.py"
 SPECS = ("PS5ImageConverter_Pro.spec", "PS5ImageConverter_Pro_linux.spec",
          "PS5ImageConverter_Pro_macos.spec")
 #: Neben den Dateien des Werkzeugs liegen nur diese beiden von uns.
-EIGENE_BEIGABEN = {"UPSTREAM.md", "herkunft.json"}
+EIGENE_BEIGABEN = {"UPSTREAM.md", "herkunft.json", "entwickler_chillquant.png"}
 #: Die eigenen Module des Werkzeugs - sie sind keine Fremdimporte.
 EIGENE_MODULE = {"transfer_core", "ps5_streamer"}
 #: Nur die Einzelinstanz-Sperre von ``main()`` braucht sie; sie laeuft im Programm nie.
@@ -163,9 +163,9 @@ class OrdnerTests(unittest.TestCase):
         self.assertTrue(kopf.startswith("MIT License"))
 
     def test_die_fassung_wird_gelesen(self) -> None:
-        self.assertEqual("2.8.1", direct_stream.fassung_lesen(str(ORDNER)))
-        self.assertEqual("2.8.1", self.herkunft["fassung"])
-        self.assertTrue(direct_stream.ORDNER.endswith("2.8.1"))
+        self.assertEqual("2.8.5", direct_stream.fassung_lesen(str(ORDNER)))
+        self.assertEqual("2.8.5", self.herkunft["fassung"])
+        self.assertTrue(direct_stream.ORDNER.endswith("2.8.5"))
 
     def test_ohne_ordner_keine_fassung(self) -> None:
         self.assertEqual("", direct_stream.fassung_lesen(""))
@@ -174,9 +174,9 @@ class OrdnerTests(unittest.TestCase):
     def test_die_lizenzdatei_des_projekts_nennt_es(self) -> None:
         text = (PROJEKT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
         zeile = next(z for z in text.splitlines()
-                     if "Direct Stream for PlayStation 5 2.8.1" in z)
+                     if "Direct Stream for PlayStation 5 2.8.5" in z)
         self.assertIn("MIT-Lizenz", zeile)
-        self.assertIn("DirectStream-2.8.1/LICENSE", zeile)
+        self.assertIn("DirectStream-2.8.5/LICENSE", zeile)
 
 
 class BauTests(unittest.TestCase):
@@ -251,7 +251,7 @@ class ModulTests(unittest.TestCase):
                      "validated_settings", "atomic_json"):
             with self.subTest(name=name):
                 self.assertTrue(hasattr(self.modul, name), name)
-        self.assertEqual("2.8.1", self.modul.VERSION)
+        self.assertEqual("2.8.5", self.modul.VERSION)
         for name in ("lock", "current", "snapshot", "stop"):
             with self.subTest(manager=name):
                 self.assertTrue(hasattr(self.modul.Manager, name) or name in ("lock", "current"),
@@ -337,14 +337,14 @@ class VorbelegenTests(unittest.TestCase):
                                      "Mehr als Adresse, Port und Zielordner wurde veraendert.")
         self.assertNotIn("password", einstellungen)
         self.assertEqual([], zustand["jobs"])
-        self.assertEqual("2.8.1", zustand["version"])
+        self.assertEqual("2.8.5", zustand["version"])
 
     def test_ohne_port_bleibt_der_vorgabewert(self) -> None:
         self.assertTrue(direct_stream.vorbelegen(self.modul, self.ordner, "192.0.2.7"))
         self.assertEqual(self.modul.DEFAULTS["port"], self._lesen()["settings"]["port"])
 
     def test_gespeicherte_adresse_und_zielordner_bleiben(self) -> None:
-        self.datei.write_text(json.dumps({"version": "2.8.1", "jobs": [],
+        self.datei.write_text(json.dumps({"version": "2.8.5", "jobs": [],
                                           "settings": {"host": "10.0.0.5", "port": 1337,
                                                        "folder": "/mnt/usb0"}}),
                               encoding="utf-8")
@@ -353,7 +353,7 @@ class VorbelegenTests(unittest.TestCase):
         self.assertEqual(vorher, self.datei.read_bytes(), "Die Datei wurde angefasst.")
 
     def test_ein_gespeicherter_zielordner_bleibt_auch_bei_neuer_adresse(self) -> None:
-        self.datei.write_text(json.dumps({"version": "2.8.1", "jobs": [],
+        self.datei.write_text(json.dumps({"version": "2.8.5", "jobs": [],
                                           "settings": {"host": "", "folder": "/mnt/usb0"}}),
                               encoding="utf-8")
         self.assertTrue(direct_stream.vorbelegen(self.modul, self.ordner, "192.0.2.7", 2121))
@@ -362,7 +362,7 @@ class VorbelegenTests(unittest.TestCase):
         self.assertEqual("192.0.2.7", einstellungen["host"])
 
     def test_eine_gespeicherte_adresse_ohne_zielordner_bekommt_ihn(self) -> None:
-        self.datei.write_text(json.dumps({"version": "2.8.1", "jobs": [],
+        self.datei.write_text(json.dumps({"version": "2.8.5", "jobs": [],
                                           "settings": {"host": "10.0.0.5", "port": 1337}}),
                               encoding="utf-8")
         self.assertFalse(direct_stream.vorbelegen(self.modul, self.ordner, "192.0.2.7", 2121),
@@ -375,7 +375,7 @@ class VorbelegenTests(unittest.TestCase):
     def test_leere_adresse_wird_gefuellt_und_die_warteschlange_bleibt(self) -> None:
         job = {"id": "abc", "name": "x.pkg", "source": "http://example.com/x.pkg",
                "kind": "url", "state": "paused"}
-        self.datei.write_text(json.dumps({"version": "2.8.1", "jobs": [job],
+        self.datei.write_text(json.dumps({"version": "2.8.5", "jobs": [job],
                                           "settings": {"host": "", "streams": 8}}),
                               encoding="utf-8")
         self.assertTrue(direct_stream.vorbelegen(self.modul, self.ordner, "192.0.2.7", 2121))
@@ -441,17 +441,44 @@ class ServerTests(unittest.TestCase):
         sitzung = self._starten()
         self.assertEqual("127.0.0.1", sitzung._server.server_address[0])
 
-    def test_die_vier_dateien_der_oberflaeche_mit_richtigem_typ(self) -> None:
+    def test_die_dateien_der_oberflaeche_mit_richtigem_typ(self) -> None:
         sitzung = self._starten()
-        for pfad, typ, datei in (("/", "text/html", "index.html"),
-                                 ("/app.js", "text/javascript", "app.js"),
+        for pfad, typ, datei in (("/app.js", "text/javascript", "app.js"),
                                  ("/style.css", "text/css", "style.css"),
-                                 ("/icon.svg", "image/svg+xml", "icon.svg")):
+                                 ("/icon.svg", "image/svg+xml", "icon.svg"),
+                                 ("/manifest.json", "application/manifest+json", "manifest.json")):
             with self.subTest(pfad=pfad):
                 status, antwort_typ, inhalt = self._anfrage(sitzung, pfad)
                 self.assertEqual(200, status)
                 self.assertEqual(typ, antwort_typ)
                 self.assertEqual((ORDNER / "web" / datei).read_bytes(), inhalt)
+
+    def test_die_seite_bringt_das_uebersetzungsskript_vor_app_js(self) -> None:
+        """index.html bleibt im Ordner unveraendert; ausgeliefert wird sie mit dem Skript im Kopf."""
+        sitzung = self._starten(sprache="de")
+        status, typ, inhalt = self._anfrage(sitzung, "/")
+        self.assertEqual((200, "text/html; charset=utf-8"), (status, typ))
+        seite = inhalt.decode("utf-8")
+        self.assertIn('<html lang="de">', seite)
+        marke = '<script src="/ps5conv-texte.js"></script>'
+        self.assertEqual(1, seite.count(marke))
+        self.assertLess(seite.index(marke), seite.index('src="/app.js"'))
+        status, typ, skript = self._anfrage(sitzung, "/ps5conv-texte.js")
+        self.assertEqual((200, "text/javascript; charset=utf-8"), (status, typ))
+        self.assertIn("Übertragungen".encode("utf-8"), skript)
+
+    def test_die_sprache_gilt_ab_dem_naechsten_laden(self) -> None:
+        sitzung = self._starten(sprache="de")
+        sitzung.sprache = "en"
+        self.assertEqual("en", sitzung.sprache)
+        self.assertIn(b'<html lang="en">', self._anfrage(sitzung, "/")[2])
+        skript = self._anfrage(sitzung, "/ps5conv-texte.js")[2]
+        self.assertIn(b"Computer-to-PS5", skript)
+        self.assertNotIn("Übertragungen".encode("utf-8"), skript)
+
+    def test_auch_das_skript_prueft_den_host(self) -> None:
+        sitzung = self._starten()
+        self.assertEqual(403, self._anfrage(sitzung, "/ps5conv-texte.js", host="beispiel.test:80")[0])
 
     def test_ein_falscher_typ_in_der_registry_stoert_nicht(self) -> None:
         """Windows liest die Typen aus der Registry; ein falsches .js liesse die Seite leer."""
@@ -472,7 +499,7 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(401, self._anfrage(sitzung, "/api/state", marke="falsch")[0])
         status, _typ, inhalt = self._anfrage(sitzung, "/api/state", marke=sitzung.marke)
         self.assertEqual(200, status)
-        self.assertEqual("2.8.1", json.loads(inhalt)["version"])
+        self.assertEqual("2.8.5", json.loads(inhalt)["version"])
 
     def test_adresse_und_port_stehen_in_den_einstellungen(self) -> None:
         sitzung = self._starten(host="192.0.2.7", ftp_port=2121)
@@ -1013,7 +1040,7 @@ class BerichtTests(unittest.TestCase):
         bericht = Diagnosebericht(mitgeliefert_finden=lambda rel: str(PROJEKT / rel))
         teile = {t.name: t for t in bericht._bestandteile_sammeln()}
         self.assertIn("Direct Stream", teile)
-        self.assertEqual("2.8.1", teile["Direct Stream"].fassung)
+        self.assertEqual("2.8.5", teile["Direct Stream"].fassung)
         # Eine oeffentliche Quelle ist nicht bekannt - also keine Abfrage.
         self.assertEqual("ohne_quelle", teile["Direct Stream"].art)
 

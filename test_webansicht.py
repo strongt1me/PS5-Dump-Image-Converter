@@ -561,7 +561,7 @@ class ProgrammseiteTests(unittest.TestCase):
         farben = {schluessel: knopf._bg for knopf, schluessel in app._konsole_knoepfe}
         self.assertEqual(app._COLORS["fg_accent"], farben["konsole.btn_webkit"])
         # Ungewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
-        self.assertEqual(app._COLORS["console_bg"], farben["konsole.btn_dienste"])
+        self.assertEqual(app._COLORS["seitenknopf_bg"], farben["konsole.btn_dienste"])
 
     def test_sprachwechsel(self):
         app = self.app

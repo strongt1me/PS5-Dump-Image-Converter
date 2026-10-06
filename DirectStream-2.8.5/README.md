@@ -27,19 +27,61 @@ A high-performance parallel transfer engine and local browser dashboard for stre
 
 ## Quick Start
 
-1. Ensure **Python 3.9 or later** is installed. (Download from [python.org](https://www.python.org/downloads/macos/) if needed).
-2. Extract the **entire ZIP or clone the repository**.
-3. Double-click **`Launch PS5 Streamer.command`**, or launch **`PS5 Direct Streamer.app`**.
+### macOS & Windows
+1. Ensure **Python 3.9 or later** is installed.
+2. Double-click **`Launch PS5 Streamer.command`** (macOS) or **`Launch Direct Stream for PlayStation 5.bat`** (Windows).
    *(Alternatively, run `python3 ps5_streamer.py` directly from terminal).*
-4. The dashboard will automatically open in your default browser at `http://127.0.0.1:<port>/?token=...`.
-5. Open **Settings**, configure your PS5 IP address, FTP port, and destination folder (e.g. `/data/PS5Direct`), and click **Test connection**.
-6. Click **New Transfer**, paste your download URLs or choose a local file, and click **Start queue**.
-7. When done, click **Quit app** in the sidebar or Settings page to safely terminate the background server.
+3. The dashboard will automatically open in your default browser at `http://127.0.0.1:<port>/#session=...`.
+4. Open **Settings**, configure your PS5 IP address, FTP port, and destination folder, and click **Test connection**.
+5. Click **New Transfer**, paste your download URLs or choose a local file, and start streaming!
 
 > [!NOTE]
-> The app is unsigned. If macOS Gatekeeper alerts you on first open, follow the standard macOS Privacy & Security confirmation ("Open Anyway"). If permissions are lost, run `chmod +x launch.sh "Launch PS5 Streamer.command"`.
+> On macOS, if Gatekeeper alerts you on first open, follow the standard confirmation ("Open Anyway"). If permissions are lost, run `chmod +x launch.sh "Launch PS5 Streamer.command"`.
 
-Optional: Run `bash install_to_applications.sh` to install the app cleanly to `~/Applications` without requiring administrator privileges.
+### Android (via Termux)
+Direct Stream runs natively on Android phones with **raw Wi-Fi throughput** and zero root required:
+
+#### ⚡ 1-Line Quick Setup (Recommended)
+Paste this single command into Termux to install prerequisites, download the app, and launch immediately:
+
+```bash
+curl -sSL https://raw.githubusercontent.com/ChillQuant/direct-stream-ps5/main/install_android.sh | bash
+```
+
+#### 🚀 Everyday Launch (Fastest)
+Once installed, you never need to type git commands or change folders again. Simply open Termux and type:
+```bash
+ps5
+```
+
+#### 📱 1-Tap Home Screen Launcher (No Terminal!)
+- **Chrome PWA**: When the dashboard opens in Chrome on your phone, tap the **3 dots** menu (⋮) → **"Add to Home screen"** / **"Install app"**. Tapping the icon on your home screen launches the app in full-screen standalone mode!
+- **Termux:Widget**: If you have the free [Termux:Widget](https://f-droid.org/en/packages/com.termux.widget/) add-on installed, add the **"PS5_Streamer"** widget to your home screen to launch with 1 tap.
+
+#### 🛠️ Manual Setup
+```bash
+# 1. Update packages & install python + git
+pkg update -y && pkg install -y python git
+
+# 2. Clone the repository
+git clone https://github.com/ChillQuant/direct-stream-ps5.git
+cd direct-stream-ps5
+
+# 3. Start the streamer (auto-registers 'ps5' global command)
+./run_android.sh
+```
+
+
+- **Background WakeLock**: Automatically enables Android WakeLock so your phone won't sleep or throttle Wi-Fi during 50GB+ streaming transfers.
+- **Remote Access (`--host 0.0.0.0`)**: Pass `--host 0.0.0.0` (or `ps5 --host 0.0.0.0`) if you want to control the Android stream server from your PC, Mac, or tablet on the same Wi-Fi.
+- **Phone Storage Access**: Run `termux-setup-storage` to stream local packages directly from `/sdcard/Download/`.
+
+#### 🔑 Android Permissions (One-Time Setup)
+When launching for the first time, Android will prompt you for two system permissions:
+1. **📂 Storage / File Access**: Tap **Allow** when prompted so Direct Stream can access and stream local `.pkg` packages from your phone's `Downloads` folder.
+2. **🔋 Energy / Battery Optimization**: Tap **Allow** (or choose **Unrestricted** under *Android Settings → Apps → Termux → Battery*). This prevents Android from putting Wi-Fi to sleep or killing the background process when your screen locks during huge 50GB–100GB transfers!
+
+
 
 ---
 

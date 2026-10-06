@@ -121,7 +121,11 @@ class FfpkgSchrittdreiTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.quelltext = Path("PS5ImageConverter_Pro_FINAL_revised.py").read_text(encoding="utf-8")
         stelle = cls.quelltext.index("def _build_ffpkg_from_folder")
-        cls.block = cls.quelltext[stelle:stelle + 24000]
+        # Bis zur naechsten Methode der Klasse, nicht nach fester Laenge: Am
+        # 06.10.2026 wuchs die Funktion ueber 24000 Zeichen, und die Marke
+        # _s3(1.0) fiel aus dem Ausschnitt, obwohl sie im Quelltext stand.
+        ende = cls.quelltext.find("\n    def ", stelle + 1)
+        cls.block = cls.quelltext[stelle:ende if ende > 0 else len(cls.quelltext)]
 
     def test_der_bau_meldet_nur_bis_zur_schrittgrenze(self) -> None:
         """Das Kernstueck: step_end darf nicht mehr progress_end sein."""

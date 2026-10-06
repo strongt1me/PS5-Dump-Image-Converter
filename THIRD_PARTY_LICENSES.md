@@ -242,7 +242,7 @@ your own risk. The authors take no responsibility for misuse.
 | **OrbisPkgTool 1.0.0** | pearlxcore ([OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool), Commit `5cd42a5`) | Die Befehlszeile hinter „PS4 PKG → OTA“: PS4-Pakete lesen, entpacken, prüfen, zusammenführen, neu packen und bauen. **MIT-Lizenz**, Text in `OrbisPkgTool-1.0.0/LICENSE`. Eigenständig gebaut und deshalb mit .NET-10-Laufzeit (siehe den Abschnitt unten), nur für Windows; **eine Änderung am Quelltext** (die Ausgabe wird als UTF-8 geschrieben), Herkunft, Bauparameter und Prüfsummen in `OrbisPkgTool-1.0.0/` (`UPSTREAM.md`, `pruefsummen.json`, `patch/`). Das **PS4 PKG Tool** von pearlxcore (GPL-3.0), das dieselbe Bibliothek benutzt, diente nur als Anregung für das Fenster – aus ihm ist kein Code übernommen |
 | **PS4 FFPFSC 0.2.9** | siehe `PS4FFPFSC-0.2.9/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.9/LICENSES/` liegen |
 | **PS5 Wee Tools 0.1.8** | andy-man ([ps5-wee-tools](https://github.com/andy-man/ps5-wee-tools)) | Werkzeug für den NOR-Flash der Konsole (GPL-3.0); unverändert mitgeliefert und als eigenständiges Programm gestartet (WEITERE TOOLS). Quelltext, Lizenz und Herkunft in `PS5-Wee-Tools-0.1.8/` (`LICENSE`, `UPSTREAM.md`, `herkunft.json`) |
-| **Direct Stream for PlayStation 5 2.8.1** | in der Lizenzdatei ist kein Urheber genannt; eine öffentliche Quelle ist nicht bekannt | Knopf „8. Direct Stream“ der Ansicht KONSOLE: holt HTTP/HTTPS-Downloads mit mehreren Strömen und schickt sie per FTP direkt in den Speicher der Konsole, oder lädt lokale Dateien hoch. **MIT-Lizenz**, Text in `DirectStream-2.8.1/LICENSE`. Unverändert mitgeliefert (Prüfsummen in `herkunft.json`, Herkunft in `UPSTREAM.md`) und im Programm selbst gestartet – nur auf `127.0.0.1`. Reine Python-Standardbibliothek, keine weiteren Abhängigkeiten |
+| **Direct Stream for PlayStation 5 2.8.5** | ChillQuant ([direct-stream-ps5](https://github.com/ChillQuant/direct-stream-ps5)) | Knopf „8. Direct Stream“ der Ansicht KONSOLE: holt HTTP/HTTPS-Downloads mit mehreren Strömen und schickt sie per FTP direkt in den Speicher der Konsole, oder lädt lokale Dateien hoch. **MIT-Lizenz**, Text in `DirectStream-2.8.5/LICENSE`. Unverändert mitgeliefert (Prüfsummen in `herkunft.json`, Herkunft in `UPSTREAM.md`) und im Programm selbst gestartet – nur auf `127.0.0.1`. Reine Python-Standardbibliothek, keine weiteren Abhängigkeiten |
 | **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – **hier für Dateien >2 GB gepatcht** (`UFS2Tool-4.1/patch/`); trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | drakmor / Roman Tarasov (`drakmor/ampr_emu`, GPL-3.0-or-later – Copyright-Zeile im Quellprojekt) | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver. Mitgeliefert sind gebaute `libSceAmpr.sprx` mehrerer Fassungen; der Quellcode liegt öffentlich unter https://github.com/drakmor/ampr_emu |
 | **AMPR PackTools 4.0** | drakmor / Roman Tarasov – aus der AMPR-EMU-Ausgabe `ampr-emu-0.4.2.1-fix` (Ordner `ampr-pack-tools-windows-x64`) | Baut, prüft und entpackt die Asset-Packs (`.pak`) für den AMPR EMU; liegt als Python-Werkzeug in `AMPR_PackTools-4.0/` bei, mit `USER_GUIDE_EN.md` und `BUILD_INFO.txt`. Das Packformat nutzt LZ4 – dessen Lizenztext liegt daneben (`LICENSE-LZ4.txt`: `lib/` BSD-2-Clause, sonst GPL-2.0-or-later). Seit 29.09.2026 wird daraus auch `ampr_pack_profile.py` aktiv aus dem Programm heraus aufgerufen (Mitschnitt-Assistent, eigener Selbstaufruf `--ampr-pack-profil`), nicht mehr nur mitgeliefert |
@@ -378,6 +378,17 @@ nicht gäbe:
 | **John Törnblom** | `make_fself.py` – Signieren von ELF zu SELF |
 | **CyB1K** | SelfUtil, dessen Entpackverfahren hier nachgebaut ist |
 | **PS5 BackPork Kitchen** | Vorlage für Firmware-Profile und Ersatzbibliotheken |
+
+---
+
+## Profilbilder im Fenster CREDITS
+
+Der Ordner `credits/` enthält die öffentlichen GitHub-Profilbilder der Entwicklerinnen
+und Entwickler, denen das Fenster **Credits & Community** dankt (Liste:
+`ps5_validator/utils/credits_daten.py`). Sie dienen allein der Namensnennung, wurden
+einmal von GitHub geladen und auf 160 × 160 px verkleinert; Herkunft und Prüfsumme
+jedes Bildes stehen in `credits/herkunft.json`. Die Rechte an den Bildern liegen bei
+den jeweiligen Kontoinhabern. Zur Laufzeit lädt das Programm nichts aus dem Netz.
 
 ---
 

@@ -74,8 +74,13 @@ def _gui(*, offene_ports: set[int], usb: list[str] | None = None) -> PS5Converte
         return g.ftp
 
     g._ampr_ftp_connect = _connect
-    g._send_payload_to_ps5 = lambda ip, pfad, port=0: (
-        g.gesendet.append((ip, pfad)) or (True, "4711 Bytes"))
+    def _senden(ip, pfad, port=0, lesezeit=30.0, rueckmeldung=None):
+        g.gesendet.append((ip, pfad))
+        if rueckmeldung is not None:
+            rueckmeldung.update(weg="elfldr", ausgabe="", bemerkung="", bytes=4711, dauer=0.2)
+        return True, "4711 Bytes"
+
+    g._send_payload_to_ps5 = _senden
 
     # Seit dem 05.09.2026 laeuft der Sendeweg ueber Arbeitsfaeden:
     # Sondierung und Upload blockierten sonst den Hauptstrang. Die
@@ -362,6 +367,85 @@ class HostTests(unittest.TestCase):
         haupt.subprocess.Popen = lambda *a, **k: gestartet.append(a)
         g._webkit_host_starten("py")
         self.assertEqual(gestartet, [], "der Host lief trotz Absage an")
+
+
+class SendeanzeigeTests(InstallerwegTests):
+    """Das grosse Feld der Seite zeigt jeden Schritt (Nutzer 06.10.2026: "wie und ob die elf
+    gesendet worden ist ... angekommen und geladen")."""
+
+    def _protokoll(self, g) -> str:
+        return "".join(g._log_lines)
+
+    def _text(self, schluessel: str) -> str:
+        """Der feste Anfang eines Textes (bis zum ersten Platzhalter)."""
+        return STRINGS[schluessel]["de"].split("{", 1)[0]
+
+    def setUp(self) -> None:
+        super().setUp()
+        import PS5ImageConverter_Pro_FINAL_revised as haupt
+        alt = getattr(haupt.PS5ConverterGUI, "_current_language", None)
+        haupt.PS5ConverterGUI._current_language = "de"
+        self.addCleanup(setattr, haupt.PS5ConverterGUI, "_current_language", alt)
+
+    def test_direkter_weg_zeigt_start_port_senden_angekommen_geladen(self) -> None:
+        g = _gui(offene_ports={9021, 2121})
+        self._mit_dialogen(g, True)
+        g._webkit_installer_senden()
+        _fertig_abwarten()
+        text = self._protokoll(g)
+        for schluessel in ("webkit.log_start", "webkit.log_pruefe_port", "webkit.log_port_offen",
+                           "webkit.log_sende", "webkit.log_angekommen", "webkit.log_weg_elfldr",
+                           "webkit.log_keine_ausgabe"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(self._text(schluessel), text)
+        self.assertLess(text.index(self._text("webkit.log_sende")),
+                        text.index(self._text("webkit.log_angekommen")))
+
+    def test_die_antwort_der_konsole_steht_im_feld(self) -> None:
+        g = _gui(offene_ports={9021})
+        self._mit_dialogen(g, True)
+
+        def _senden(ip, pfad, port=0, lesezeit=30.0, rueckmeldung=None):
+            rueckmeldung.update(weg="elfldr", ausgabe="autoloader installed", dauer=1.0)
+            return True, "4711 B"
+
+        g._send_payload_to_ps5 = _senden
+        g._webkit_installer_senden()
+        _fertig_abwarten()
+        self.assertIn("autoloader installed", self._protokoll(g))
+        self.assertNotIn(self._text("webkit.log_keine_ausgabe"), self._protokoll(g))
+
+    def test_nein_steht_als_abgebrochen_im_feld(self) -> None:
+        g = _gui(offene_ports={9021})
+        self._mit_dialogen(g, False)
+        g._webkit_installer_senden()
+        _fertig_abwarten()
+        self.assertIn(self._text("webkit.log_abgebrochen"), self._protokoll(g))
+        self.assertEqual([], g.gesendet)
+
+    def test_usb_weg_prueft_die_groesse_auf_der_konsole(self) -> None:
+        g = _gui(offene_ports={2121})
+        self._mit_dialogen(g, True)
+        groesse = os.path.getsize(g._webkit_datei("elf"))
+        g.ftp.size = lambda _pfad: groesse
+        g._webkit_installer_senden()
+        _fertig_abwarten()
+        text = self._protokoll(g)
+        for schluessel in ("webkit.log_usb_ftp", "webkit.log_usb_verbunden", "webkit.log_usb_gefunden",
+                           "webkit.log_usb_lade", "webkit.log_usb_geprueft", "webkit.log_usb"):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(self._text(schluessel), text)
+
+    def test_usb_weg_mit_falscher_groesse_ist_ein_fehler(self) -> None:
+        g = _gui(offene_ports={2121})
+        self._mit_dialogen(g, True)
+        g.ftp.size = lambda _pfad: 3
+        g._webkit_installer_senden()
+        _fertig_abwarten()
+        text = self._protokoll(g)
+        self.assertIn(self._text("webkit.log_usb_groesse_falsch"), text)
+        self.assertNotIn(self._text("webkit.log_usb_geprueft"), text)
+        self.assertNotIn("[OK] Installer", text)
 
 
 if __name__ == "__main__":

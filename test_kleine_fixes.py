@@ -337,8 +337,9 @@ class SidebarCoverTests(unittest.TestCase):
     gegen 97 px rechts, senkrecht klebte es direkt unter den Modusknoepfen und
     liess den gesamten Rest bis zum Fussbereich als Leerraum stehen.
 
-    Die Groesse bleibt dabei ausdruecklich unveraendert - hoechstens ein Pixel
-    kleiner, damit der Restplatz gerade aufgeht und Tk ihn gleichmaessig
+    Seit dem 06.10.2026 ist es so breit wie die Knoepfe ("passend groesser",
+    Nutzer), begrenzt durch die Hoehe bis zur Fussleiste - und hoechstens ein
+    Pixel kleiner, damit der Restplatz gerade aufgeht und Tk ihn gleichmaessig
     verteilen kann.
     """
 
@@ -372,22 +373,25 @@ class SidebarCoverTests(unittest.TestCase):
         gui.sidebar = self._Fake(width=knopfbreite + 20)
         return gui
 
-    def test_cover_wird_nicht_groesser(self):
-        """Kernanforderung: die Groesse bleibt, nur die Lage aendert sich."""
+    def test_cover_so_breit_wie_die_knoepfe(self):
+        """Seit 06.10.2026 (Nutzer: "passend groesser"): buendig mit den Knoepfen."""
         gui = self._gui(knopfbreite=473)
-        self.assertLessEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui),
-                             APP.PS5ConverterGUI._SIDEBAR_COVER_SIZE)
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 473)
 
-    def test_ungerader_restplatz_wird_ausgeglichen(self):
-        """473 - 300 = 173 waere ungerade und ergaebe 96/97 px."""
+    def test_die_hoehe_bis_zur_fussleiste_begrenzt(self):
+        """Ist die Leiste niedrig, passt das Bild samt Spielname zwischen Knoepfe und Fussleiste."""
         gui = self._gui(knopfbreite=473)
+        gui.mode_buttons = [(self._Fake(width=473, y=400, height=40), "pack_folder")]
+        gui._sidebar_footer_frame = self._Fake(y=740)
+        gui._sidebar_titel_hoehe = lambda: 30
         groesse = APP.PS5ConverterGUI._sidebar_cover_width(gui)
-        self.assertEqual((473 - groesse) % 2, 0)
-        self.assertEqual(groesse, 299)
+        frei = 740 - 440 - 30 - 3 * APP.PS5ConverterGUI._SIDEBAR_COVER_ABSTAND
+        self.assertLessEqual(groesse, frei)
+        self.assertEqual((473 - groesse) % 2, 0, "ungerader Restplatz ergaebe 96/97 px")
 
     def test_gerader_restplatz_bleibt_unangetastet(self):
         gui = self._gui(knopfbreite=474)
-        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 300)
+        self.assertEqual(APP.PS5ConverterGUI._sidebar_cover_width(gui), 474)
 
     def test_schmale_sidebar_schneidet_nicht_ab(self):
         gui = self._gui(knopfbreite=200)

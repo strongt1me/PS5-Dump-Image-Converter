@@ -338,7 +338,7 @@ class SeitenTests(unittest.TestCase):
         self.assertFalse(_gezeigt(getattr(self.app, "_konsole_tafel", None)))
         c = self.app._COLORS
         self.assertEqual(c["fg_accent"], self._knopf_der_leiste("konsole.btn_webkit")._bg)
-        self.assertEqual(c["console_bg"], self._knopf_der_leiste("konsole.btn_dienste")._bg)
+        self.assertEqual(c["seitenknopf_bg"], self._knopf_der_leiste("konsole.btn_dienste")._bg)
 
     def test_der_knopf_heisst_webkit_autoloader_und_steht_an_zweiter_stelle(self) -> None:
         self.assertEqual(("konsole.btn_webkit", "webkit"), KLASSE._KONSOLE_KNOEPFE[1])

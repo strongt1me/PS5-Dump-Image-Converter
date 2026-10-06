@@ -837,6 +837,15 @@ class VorlagenHabenSchluesselTests(unittest.TestCase):
             "'param.json: {befund}' - Dateiname vor einem uebersetzten Befund.",
         "validator.pfs_version_andere":
             "'v{version}' - Versionskuerzel aus dem PFS-Kopf.",
+        # Teilschritte der Fortschrittsanzeige (06.10.2026):
+        "progress.teil_prozent_ohne_rest":
+            "'{text} – {prozent} %' - der Text kommt uebersetzt herein.",
+        "progress.log_taetigkeit":
+            "'[…] {text}' - Protokollpraefix vor einem uebersetzten Text.",
+        "progress.log_teil_start":
+            "'[…] {text} …' - dasselbe.",
+        "progress.log_teil_stand_ohne_rest":
+            "'[…] {text}: {prozent} %' - dasselbe.",
     }
 
     def test_die_englische_fassung_ist_nicht_die_deutsche(self):

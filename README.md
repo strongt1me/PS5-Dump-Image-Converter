@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.63-blue)
-![Tests](https://img.shields.io/badge/Tests-5622%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.64-blue)
+![Tests](https://img.shields.io/badge/Tests-5759%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -241,8 +241,8 @@ Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 * **pearlxcore** – [OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool) (MIT), die Engine hinter „PS4 PKG → OTA“; die Anregung zum Fenster gab das PS4 PKG Tool, aus dessen Code nichts übernommen ist
 * **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
 * **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
-* **Direct Stream for PlayStation 5** 2.8.1 – Werkzeug, das Downloads und lokale Dateien per FTP direkt in den Speicher der PS5 schickt (MIT; in der Lizenzdatei ist kein Urheber genannt), Knopf 8 der Ansicht KONSOLE
-* **kerrdec97** – [ps5-exfat-builder](https://github.com/PSBrew/ps5-exfat-builder), Vorarbeit und Orientierung
+* **ChillQuant** – [Direct Stream for PlayStation 5](https://github.com/ChillQuant/direct-stream-ps5) 2.8.5, Werkzeug, das Downloads und lokale Dateien per FTP direkt in den Speicher der PS5 schickt (MIT), Knopf 8 der Ansicht KONSOLE
+* **kerrdec97** – [ps5-exfat-builder](https://github.com/kerrdec97/ps5-exfat-builder), Vorarbeit und Orientierung
 * **drakmor / Roman Tarasov** – [AMPR EMU](https://github.com/drakmor/ampr_emu) und die **AMPR PackTools** (GPL-3.0), Grundlage von Aufgabe 7 und der Asset-Packs
 * **libScePlayGo-Stub** – PS5-Homebrew-Community, meldet PlayGo-Inhalte als installiert
 * **John Törnblom** – [PS5 Payload SDK](https://github.com/ps5-payload-dev/sdk); `appinst.elf` hinter „App direkt installieren“ ist von dessen Beispiel abgeleitet (GPL-3.0)
@@ -251,7 +251,7 @@ Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 * **Dokan-Projekt** – Windows-Dateisystemtreiber
 * **PyInstaller-Projekt** – Programmbündelung
 
-Die vollständige Danksagung – auch der mitgelieferten Payloads und ihrer Autorinnen und Autoren – steht im Fenster **CREDITS** und in
+Die vollständige Danksagung – mit Bild, Werken und GitHub-Links der Entwicklerinnen und Entwickler, auch der mitgelieferten Payloads und vieler bekannter Köpfe der Community – steht im Fenster **CREDITS** und in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 Die Funktion **BACKPORT** setzt auf Verfahren auf, die in der Szene

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Direct Stream - mitgeliefert und im Programm selbst gestartet (seit v1.9.63).
 
-DIRECT STREAM FOR PLAYSTATION 5 (Fassung 2.8.1, MIT-Lizenz) holt HTTP/HTTPS-
+DIRECT STREAM FOR PLAYSTATION 5 (Fassung 2.8.5, MIT-Lizenz) holt HTTP/HTTPS-
 Downloads mit mehreren Stroemen gleichzeitig und schickt sie ueber FTP direkt
 in den Speicher der Konsole - ohne die Datei vorher auf der Platte abzulegen.
 Auch lokale Dateien lassen sich hochladen; dazu kommen ein Geschwindigkeitstest
@@ -9,7 +9,7 @@ und ein Dateibrowser fuer den Speicher der Konsole. Das Werkzeug ist ein
 kleiner Webserver aus der Standardbibliothek (``ps5_streamer.py`` und
 ``transfer_core.py``) mit einer Oberflaeche aus HTML und JavaScript (``web/``).
 Es liegt unveraendert bei; Herkunft und Stand stehen in
-``DirectStream-2.8.1/UPSTREAM.md``.
+``DirectStream-2.8.5/UPSTREAM.md``.
 
 **Warum im selben Prozess.** Der Server lauscht nur auf 127.0.0.1 (eigener,
 zufaelliger Port, dazu eine Sitzungsmarke in der Adresse), hat weder Fenster
@@ -43,13 +43,16 @@ import re
 import secrets
 import sys
 import threading
+import urllib.parse
 from pathlib import Path
 from types import ModuleType
+
+from . import direct_stream_texte
 
 logger = logging.getLogger(__name__)
 
 #: Der mitgelieferte Ordner (siehe dort UPSTREAM.md und herkunft.json).
-ORDNER = "DirectStream-2.8.1"
+ORDNER = "DirectStream-2.8.5"
 #: Der Einstieg des Werkzeugs und sein Kern (``ps5_streamer`` importiert ihn).
 EINSTIEG = "ps5_streamer.py"
 KERN = "transfer_core.py"
@@ -63,13 +66,25 @@ ZUSTAND = "state.json"
 #: ``/data/ShadowMount`` mit; ShadowMount+ durchsucht aber ``/data/homebrew``
 #: immer - was dort ankommt, sieht die Konsole sofort (Nutzerwunsch 06.10.2026).
 ZIELORDNER = "/data/homebrew"
+#: Pakete gehen in einen eigenen Ordner (Nutzer 06.10.2026: "Wenn Pakete (pkg)
+#: hochgeladen werden, sollen diese in den Ordner data/pkg") - aber nur, solange
+#: :data:`ZIELORDNER` eingestellt ist; einen selbst gewaehlten Ordner (etwa einen
+#: USB-Datentraeger) laesst die Regel in Ruhe (:func:`zielordner_fuer`).
+PAKET_ORDNER = "/data/pkg"
+PAKET_ENDUNGEN = (".pkg",)
+#: Was "Datei waehlen" und "Ordner hinzufuegen" anbieten: die Endungen des
+#: Werkzeugs plus die Abbildformate des Programms (Nutzer 06.10.2026).
+AUSWAHL_ENDUNGEN = (".pkg", ".ffpkg", ".ffpfsc", ".ffpfs", ".exfat", ".bin", ".iso", ".tar")
+#: Hoechstens so viele Dateien aus einem Ordner - wie beim Werkzeug.
+AUSWAHL_HOECHSTENS = 100
 #: Die Typen, die die Oberflaeche braucht. Das Werkzeug fragt ``mimetypes``,
 #: und unter Windows liest das die Registry - die kennt ``.js`` und ``.css``
 #: nicht immer richtig. Der Server schickt ``nosniff``: Ein falscher Typ
 #: heisst, dass der Browser das Skript nicht ausfuehrt, die Seite also leer
 #: bleibt.
 MIME_TYPEN = ((".js", "text/javascript"), (".css", "text/css"),
-              (".html", "text/html"), (".svg", "image/svg+xml"))
+              (".html", "text/html"), (".svg", "image/svg+xml"),
+              (".json", "application/manifest+json"))
 
 #: Module, die einmal je Ordner geladen werden (Schluessel: Pfad des Einstiegs).
 _geladen: dict[str, ModuleType] = {}
@@ -148,8 +163,127 @@ def module_laden(wurzel: str) -> ModuleType:
             else:
                 sys.modules[name] = alt
         raise DirectStreamFehler("%s: %s" % (type(exc).__name__, exc)) from exc
+    _transfer_umleiten(modul)
     _geladen[schluessel] = modul
     return modul
+
+
+def zielordner_fuer(name: str, ordner: str) -> str:
+    """Wohin eine Datei auf der PS5 geht: Pakete nach :data:`PAKET_ORDNER`, sonst ``ordner``.
+
+    Nur, wenn ``ordner`` die Vorgabe des Programms ist - ein selbst gewaehlter
+    Zielordner gilt fuer alles.
+    """
+    if (str(ordner or "").rstrip("/") == ZIELORDNER
+            and str(name or "").lower().endswith(PAKET_ENDUNGEN)):
+        return PAKET_ORDNER
+    return ordner
+
+
+def _transfer_umleiten(modul: ModuleType) -> None:
+    """Legt sich um ``transfer`` des Werkzeugs: Der Zielordner kommt je Datei aus :func:`zielordner_fuer`.
+
+    Das Werkzeug kennt nur einen Zielordner fuer alle Auftraege und liest ihn
+    allein in ``transfer`` (``settings["folder"]``: Ordner anlegen, freien
+    Platz pruefen, hochladen). ``ps5_streamer`` ruft ``transfer`` ueber seinen
+    eigenen Namensraum - dort wird ersetzt, die Datei bleibt unveraendert. Die
+    Ziel-Pruefung des Werkzeugs beim Fortsetzen vergleicht die Einstellungen,
+    nicht den Ordner je Datei; ein fortgesetztes Paket geht deshalb wieder
+    nach :data:`PAKET_ORDNER`.
+    """
+    original = getattr(modul, "transfer", None)
+    if original is None or getattr(original, "_ps5conv_umgeleitet", False):
+        return
+
+    def transfer(job, cfg, *args, **kwargs):
+        ordner = zielordner_fuer(job.get("name", ""), cfg.get("folder", ""))
+        if ordner != cfg.get("folder"):
+            cfg = dict(cfg, folder=ordner)
+        return original(job, cfg, *args, **kwargs)
+
+    transfer._ps5conv_umgeleitet = True  # type: ignore[attr-defined]
+    transfer.__wrapped__ = original  # type: ignore[attr-defined]
+    modul.transfer = transfer
+
+
+def _auswahl_dialog(art: str, sprache: str) -> tuple[list[str], str, bool]:
+    """Datei- oder Ordnerauswahl wie im Werkzeug - mit den Abbildformaten des Programms.
+
+    Returns:
+        ``(dateien, ordner, nicht_moeglich)`` - wie die Werte, die das Werkzeug
+        in ``/api/pick`` ermittelt.
+    """
+    import shutil  # noqa: PLC0415
+    import subprocess  # noqa: PLC0415
+    de = sprache == "de"
+    titel_datei = "Dateien für die PS5 wählen" if de else "Choose files to send to PS5"
+    titel_ordner = "Ordner mit Paketen oder Abbildern wählen" if de else "Choose folder containing packages or images"
+    muster = ";".join("*" + e for e in AUSWAHL_ENDUNGEN)
+    dateien: list[str] = []
+    ordner = ""
+    try:
+        if sys.platform == "win32":
+            if art == "folder":
+                befehl = ("Add-Type -AssemblyName System.Windows.Forms; $f = New-Object "
+                          "System.Windows.Forms.FolderBrowserDialog; $f.Description = '%s'; "
+                          "if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
+                          "{ Write-Output $f.SelectedPath }" % titel_ordner.replace("'", "''"))
+            else:
+                filter_text = ("%s (%s)|%s|%s (*.*)|*.*" % (
+                    "Pakete und Abbilder" if de else "Packages and images", muster, muster,
+                    "Alle Dateien" if de else "All files"))
+                befehl = ("Add-Type -AssemblyName System.Windows.Forms; $f = New-Object "
+                          "System.Windows.Forms.OpenFileDialog; $f.Title = '%s'; $f.Multiselect = $true; "
+                          "$f.Filter = '%s'; if ($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) "
+                          "{ $f.FileNames | ForEach-Object { Write-Output $_ } }"
+                          % (titel_datei.replace("'", "''"), filter_text.replace("'", "''")))
+            lauf = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", befehl],
+                                  capture_output=True, text=True, timeout=600,
+                                  creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        elif sys.platform == "darwin":
+            if art == "folder":
+                skript = 'POSIX path of (choose folder with prompt "%s")' % titel_ordner
+            else:
+                skript = ('set chosen to choose file with prompt "%s" with multiple selections allowed\n'
+                          'set outPaths to ""\nrepeat with aFile in chosen\n'
+                          '  set outPaths to outPaths & (POSIX path of aFile) & linefeed\nend repeat\n'
+                          'return outPaths' % titel_datei)
+            lauf = subprocess.run(["/usr/bin/osascript", "-e", skript], capture_output=True, text=True,
+                                  timeout=600)
+        elif shutil.which("zenity"):
+            if art == "folder":
+                befehl_z = ["zenity", "--file-selection", "--directory", "--title=" + titel_ordner]
+            else:
+                befehl_z = ["zenity", "--file-selection", "--multiple", "--separator=\n",
+                            "--title=" + titel_datei,
+                            "--file-filter=%s | %s" % (titel_datei, " ".join("*" + e for e in AUSWAHL_ENDUNGEN)),
+                            "--file-filter=* | *"]
+            lauf = subprocess.run(befehl_z, capture_output=True, text=True, timeout=600)
+        else:
+            return [], "", True
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("Direct Stream: Auswahl nicht moeglich: %s", exc)
+        return [], "", True
+    zeilen = [z.strip() for z in (lauf.stdout or "").splitlines() if z.strip()] if lauf.returncode == 0 else []
+    if art == "folder":
+        ordner = zeilen[0] if zeilen else ""
+    else:
+        dateien = zeilen
+    return dateien, ordner, False
+
+
+def ordner_durchsuchen(ordner: str) -> list[str]:
+    """Die Dateien eines Ordners mit :data:`AUSWAHL_ENDUNGEN` - hoechstens :data:`AUSWAHL_HOECHSTENS`."""
+    gefunden: list[str] = []
+    if not ordner or not os.path.isdir(ordner):
+        return gefunden
+    for stamm, _unter, namen in os.walk(ordner):
+        for name in sorted(namen):
+            if name.lower().endswith(AUSWAHL_ENDUNGEN):
+                gefunden.append(os.path.join(stamm, name))
+                if len(gefunden) >= AUSWAHL_HOECHSTENS:
+                    return gefunden
+    return gefunden
 
 
 def vorbelegen(modul: ModuleType, ordner: str, host: str, ftp_port: int = 0) -> bool:
@@ -230,6 +364,74 @@ def _mime_typen_festlegen() -> None:
         mimetypes.add_type(typ, endung)
 
 
+def handler_klasse(modul: ModuleType) -> type:
+    """``Handler`` des Werkzeugs, der die Seite in der Sprache des Programms ausliefert.
+
+    Nur zwei Pfade weichen ab: ``/`` liefert ``index.html`` mit dem Skript aus
+    :mod:`direct_stream_texte` im Kopf, und unter
+    :data:`direct_stream_texte.SKRIPT_PFAD` liegt dieses Skript. Gleiche
+    Herkunft, also erlaubt es die Inhaltsrichtlinie des Werkzeugs
+    (``script-src 'self'``); dieselbe Pruefung von Host und Herkunft
+    (``allowed``) gilt auch hier. Alles andere bleibt beim Original.
+
+    Die Sprache steht am Server (``server.sprache``, :attr:`Sitzung.sprache`)
+    und gilt ab der naechsten geladenen Seite - ein Sprachwechsel im Programm
+    braucht keinen Neustart des Servers, der eine Uebertragung abbraeche.
+    """
+    seite_pfad = Path(modul.BASE) / "web" / "index.html"
+    skripte: dict[str, bytes] = {}
+
+    class Handler(modul.Handler):
+        def do_GET(self):  # noqa: N802 - Name von BaseHTTPRequestHandler
+            pfad = urllib.parse.urlsplit(self.path).path
+            if pfad not in ("/", direct_stream_texte.SKRIPT_PFAD):
+                super().do_GET()
+                return
+            if not self.allowed(False):
+                return
+            sprache = "de" if getattr(self.server, "sprache", "") == "de" else "en"
+            if pfad == "/":
+                seite = direct_stream_texte.seite_einrichten(
+                    seite_pfad.read_text(encoding="utf-8"), sprache)
+                self.send(200, seite.encode("utf-8"), "text/html; charset=utf-8")
+                return
+            if sprache not in skripte:
+                skripte[sprache] = direct_stream_texte.skript(sprache).encode("utf-8")
+            self.send(200, skripte[sprache], "text/javascript; charset=utf-8")
+
+        def do_POST(self):  # noqa: N802 - Name von BaseHTTPRequestHandler
+            """``/api/pick`` mit den Abbildformaten des Programms - alles andere wie das Werkzeug."""
+            if urllib.parse.urlsplit(self.path).path != "/api/pick":
+                super().do_POST()
+                return
+            if not self.allowed(True):
+                return
+            try:
+                if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
+                    raise ValueError("Expected a JSON request.")
+                laenge = int(self.headers.get("Content-Length", 0))
+                if not 0 < laenge <= 512 * 1024:
+                    raise ValueError("Invalid request size.")
+                daten = json.loads(self.rfile.read(laenge))
+                if not isinstance(daten, dict):
+                    raise ValueError("Invalid request.")
+            except (ValueError, TypeError) as exc:
+                self.send(400, {"error": str(exc)})
+                return
+            art = "folder" if daten.get("type") == "folder" else "file"
+            sprache = "de" if getattr(self.server, "sprache", "") == "de" else "en"
+            dateien, ordner, nicht_moeglich = _auswahl_dialog(art, sprache)
+            if art == "folder":
+                ergebnis = {"paths": ordner_durchsuchen(ordner), "path": ordner,
+                            "picker_unsupported": nicht_moeglich and not ordner}
+            else:
+                ergebnis = {"paths": dateien, "path": dateien[0] if dateien else "",
+                            "picker_unsupported": nicht_moeglich and not dateien}
+            self.send(200, ergebnis)
+
+    return Handler
+
+
 class Sitzung:
     """Ein laufender Direct-Stream-Server im Programm.
 
@@ -286,6 +488,33 @@ class Sitzung:
         return "http://%s:%d/#session=%s" % (ADRESSE, self.port, self.marke)
 
     @property
+    def sprache(self) -> str:
+        """Die Sprache der Seite (``"de"`` oder sonst englisch neutral) - gilt ab dem naechsten Laden."""
+        return str(getattr(self._server, "sprache", "en"))
+
+    @sprache.setter
+    def sprache(self, wert: str) -> None:
+        self._server.sprache = wert
+
+    @property
+    def zielordner(self) -> str:
+        """Der Zielordner auf der PS5, wie er in den Einstellungen des Werkzeugs steht."""
+        return str((getattr(self._server.manager, "settings", {}) or {}).get("folder", ""))
+
+    def zielordner_setzen(self, ordner: str) -> None:
+        """Stellt den Zielordner um - ueber ``configure`` des Werkzeugs, also mit dessen Pruefung.
+
+        Das Werkzeug lehnt das ab, solange uebertragen oder gemessen wird
+        (``TransferError``) - die Meldung geht an den Aufrufer. Adresse, Port,
+        Kennwort und die uebrigen Einstellungen bleiben, wie sie sind.
+        """
+        manager = self._server.manager
+        einstellungen = dict(getattr(manager, "settings", {}) or {})
+        einstellungen["folder"] = str(ordner)
+        einstellungen["password"] = getattr(manager, "password", "") or ""
+        manager.configure(einstellungen)
+
+    @property
     def laeuft(self) -> bool:
         return self._faden.is_alive()
 
@@ -326,7 +555,8 @@ class Sitzung:
         return not self._faden.is_alive()
 
 
-def starten(wurzel: str, ordner: str, *, host: str = "", ftp_port: int = 0) -> Sitzung:
+def starten(wurzel: str, ordner: str, *, host: str = "", ftp_port: int = 0,
+            sprache: str = "en") -> Sitzung:
     """Startet Direct Stream: Server auf 127.0.0.1, eigener Port, frische Marke.
 
     Args:
@@ -334,6 +564,8 @@ def starten(wurzel: str, ordner: str, *, host: str = "", ftp_port: int = 0) -> S
         ordner: Der Datenordner (:func:`datenordner`); wird angelegt.
         host: Adresse der Konsole fuer die Einstellungen (:func:`vorbelegen`).
         ftp_port: Port des FTP-Servers der Konsole.
+        sprache: Sprache des Programms; ``"de"`` zeigt die Seite deutsch,
+            alles andere englisch ohne Mac-Bezug (:func:`handler_klasse`).
 
     Raises:
         DirectStreamFehler: Der Ordner ist unvollstaendig oder das Werkzeug
@@ -348,8 +580,9 @@ def starten(wurzel: str, ordner: str, *, host: str = "", ftp_port: int = 0) -> S
         pass
     vorbelegt = vorbelegen(modul, ordner, host, ftp_port)
     _mime_typen_festlegen()
-    server = modul.ThreadingHTTPServer((ADRESSE, 0), modul.Handler)
+    server = modul.ThreadingHTTPServer((ADRESSE, 0), handler_klasse(modul))
     server.daemon_threads = True
+    server.sprache = sprache
     server.token = secrets.token_urlsafe(32)
     try:
         server.manager = modul.Manager(ordner)

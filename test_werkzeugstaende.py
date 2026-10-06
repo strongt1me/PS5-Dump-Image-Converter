@@ -325,7 +325,7 @@ class NennungTests(unittest.TestCase):
     FREMD = {
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
-        "DirectStream-2.8.1": "Direct Stream",
+        "DirectStream-2.8.5": "Direct Stream",
         "MkPFS-1.1.0": "MkPFS 1.1.0",
         "OrbisPkgTool-1.0.0": "OrbisPkgTool",
         "PS4FFPFSC-0.2.9": "PS4 FFPFSC",

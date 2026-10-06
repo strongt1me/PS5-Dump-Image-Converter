@@ -191,14 +191,19 @@ _wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
 if os.path.isdir(_wee_tools):
     _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
 
-# Mitgeliefertes Direct Stream (Fassung 2.8.1, MIT-Lizenz; HTTP/HTTPS-Downloads
+# Mitgeliefertes Direct Stream (Fassung 2.8.5, MIT-Lizenz; HTTP/HTTPS-Downloads
 # per FTP direkt in den Speicher der Konsole, siehe dort UPSTREAM.md). Laeuft im
 # Programm selbst (ps5_validator/utils/direct_stream.py): Python-Teil und
 # Oberflaeche liegen als Datenordner bei und werden zur Laufzeit aus der Datei
 # geladen.
-_direct_stream = os.path.join(_here, 'DirectStream-2.8.1')
+_direct_stream = os.path.join(_here, 'DirectStream-2.8.5')
 if os.path.isdir(_direct_stream):
-    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.1'))
+    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.5'))
+
+# Profilbilder der Entwickler im Fenster "Credits & Community" (credits_daten).
+_credits_bilder = os.path.join(_here, 'credits')
+if os.path.isdir(_credits_bilder):
+    _datas.extend(_dateien_ohne_pycache(_credits_bilder, 'credits'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
@@ -274,7 +279,7 @@ a = Analysis(
         'threading',
         'time',
         'tomllib',
-        # Direct Stream (DirectStream-2.8.1) liegt als Datenordner bei und wird zur
+        # Direct Stream (DirectStream-2.8.5) liegt als Datenordner bei und wird zur
         # Laufzeit aus der Datei geladen - PyInstaller sieht seine Importe nicht.
         # Der Waechter test_direct_stream haelt diese Liste gegen den Quelltext des
         # Werkzeugs (ohne fcntl und msvcrt: die braucht nur die Einzelinstanz-Sperre

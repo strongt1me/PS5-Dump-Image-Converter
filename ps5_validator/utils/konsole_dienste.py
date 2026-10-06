@@ -87,6 +87,17 @@ class Dienst:
     #: Wie ``version_pfad``, aber als ``POST`` mit leerem JSON-Objekt - so fragt die
     #: Schnittstelle von ShadowMount+ (jede Anfrage dort ist ein POST).
     version_post: str = ""
+    #: Ein **Plugin**, keine eigenstaendige ELF: Pfad auf der Konsole, unter dem es
+    #: liegen muss, damit sein Wirt (``plugin_wirt``) es beim Start laedt. Solche
+    #: Eintraege schickt "Ausgewaehltes starten" nie an den ELF-Loader; die Seite
+    #: legt sie stattdessen per FTP dorthin (Nutzer 06.10.2026, DPI v2 fuer OnionHEN).
+    plugin_pfad: str = ""
+    #: Das Programm auf der Konsole, das das Plugin laedt - es muss installiert sein.
+    plugin_wirt: str = ""
+
+    @property
+    def ist_plugin(self) -> bool:
+        return bool(self.plugin_pfad)
 
     @property
     def name_schluessel(self) -> str:
@@ -190,7 +201,8 @@ KATALOG: tuple[Dienst, ...] = (
     # main() verbindet sich beim Start mit dem OnionHEN-Daemon (Quelltext main.c) -,
     # "Ausgewaehltes starten" soll es nicht ueber den ELF-Loader schicken. Aus der
     # Datei kommt nur die Version der Spalte.
-    Dienst("dpiv2", 12800, web="/", datei_muster="dpiv2-*.elf"),
+    Dienst("dpiv2", 12800, web="/", datei_muster="dpiv2-*.elf",
+           plugin_pfad="/data/OnionHEN/plugins/DPIV00001.elf", plugin_wirt="OnionHEN"),
     # --- PS5 Cooling & System Center - Pro (seit 05.10.2026) -------------------
     # Die eigene App des Projektinhabers (helloworld/PS5_Cooling_System_Center_v1.48.0.elf):
     # Luefter- und Temperatursteuerung, Systeminfo, Spielebibliothek, Pakete installieren ... im

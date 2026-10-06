@@ -2,7 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.63):** Die Ansicht KONSOLE hat acht Knöpfe – darunter das PS5 Cooling & System Center und Direct Stream –, die Sammelkonvertierung nimmt mehrere Dump-Ordner auf einmal, und „PS4 PKG → OTA“ bündelt die PS4-Paketwerkzeuge in einem Fenster.
+> **Kurz zum aktuellen Stand (v1.9.64):** Lange Schritte zeigen Fortschritt und Restzeit auch im Statusprotokoll, Meldungen erscheinen in der Optik des Programms, und Direct Stream ist deutsch, wählt das Ziel (intern oder USB) und legt Pakete nach /data/pkg.
+
+---
+
+## v1.9.64 – 06.10.2026
+
+- **Neu:** Lange Schritte (Prüfen, Prüfsummen, Übertragen, Arbeitskopie) zeigen Prozent und Restzeit in Statuszeile und Statusprotokoll; die Sammelkonvertierung zeigt Cover und Namen des jeweiligen Spiels; beim Wählen einer Quelle steht im Protokoll, was schon eingebaut ist und ob PlayGo nötig wäre; neues Kästchen „Dump-Ordner: Arbeitskopie vorher anlegen“.
+- **Neu:** Direct Stream (Knopf 8) auf Deutsch mit Entwickler-Zeile, Zielwahl intern oder USB, Pakete automatisch nach /data/pkg und Abbildformate in der Auswahl; DPI v2 wird als OnionHEN-Plugin auf die PS5 gelegt; der WebKit Autoloader zeigt jeden Sendeschritt; Credits mit Bildern und Links der Entwickler.
+- **Geändert/Behoben:** Meldungen und Rückfragen in der Optik des Programms, blaugraue Seitenleisten-Knöpfe, größeres Cover mit runden Ecken; die Sammelkonvertierung räumt Arbeitskopien nach jedem Spiel weg und bricht klar ab, wenn ein Quellordner während des Baus geleert wird.
 
 ---
 

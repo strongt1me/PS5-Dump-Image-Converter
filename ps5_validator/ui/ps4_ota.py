@@ -34,6 +34,7 @@ from typing import Callable
 from ps5_validator.ui import ps4_ota_bausteine as bs
 from ps5_validator.ui import ps4_ota_dialoge as dlg
 from ps5_validator.utils import bibliothek_raster as raster
+from ps5_validator.utils import bildecken
 from ps5_validator.utils import ps4pkg_aufgaben as au
 from ps5_validator.utils import ps4pkg_bibliothek as bib
 from ps5_validator.utils import ps4pkg_ota as ota
@@ -927,7 +928,8 @@ class Ps4OtaFenster:
                 bild = Image.open(io.BytesIO(roh))
                 bild.load()
                 bild.thumbnail(grenze)
-                foto = ImageTk.PhotoImage(bild)
+                # Runde Ecken wie die Kacheln im Homescreen der PS5; die Ecken in der Farbe des Feldes
+                foto = ImageTk.PhotoImage(bildecken.runde_ecken(bild, etikett.cget("bg")))
             except Exception:  # noqa: BLE001
                 etikett.configure(image="", text=self.t("ps4ota.bild_fehler"))
                 continue

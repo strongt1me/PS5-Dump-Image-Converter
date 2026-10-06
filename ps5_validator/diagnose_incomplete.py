@@ -110,7 +110,7 @@ def diagnose_incomplete_extraction(dump_path: str,
         "",
         _satz("weitere_infos"),
         "- mkpfs: https://github.com/PSBrew/MkPFS",
-        "- PS5-exfat-builder (kerrdec97): https://github.com/PSBrew/ps5-exfat-builder",
+        "- PS5-exfat-builder (kerrdec97): https://github.com/kerrdec97/ps5-exfat-builder",
         _TRENNLINIE,
         "",
     ))
