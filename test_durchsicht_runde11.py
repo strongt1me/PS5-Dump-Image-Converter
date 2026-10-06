@@ -263,8 +263,10 @@ class TaktTests(unittest.TestCase):
         # desselben Tages vier: Die Fenster Remote Play und ProsperoLight
         # sind aus dem Programm genommen. Seit dem 26.09.2026 zwei: Die
         # Fenster "Konsole & Payloads" und "Spielstaende" sind Seiten rechts
-        # geworden - ihre Takte heissen _konsole_tafel_takt und
-        # _spielstaende_takt (Pruefungen darunter). Seit dem 02.10.2026
+        # geworden - ihre Takte hiessen _konsole_tafel_takt und
+        # _spielstaende_takt (Pruefungen darunter; die Spielstaende-Seite ist seit
+        # dem 04.10.2026 ersetzt durch den WebKit Autoloader, dessen Seite keinen
+        # Takt braucht: ihre Faeden tragen nichts in Felder ein). Seit dem 02.10.2026
         # einer: "PKG bauen" ist ausgebaut; es bleibt der Takt von
         # "PS4 PKG -> Dump Ordner".
         self.assertEqual(1, len(takte))
@@ -297,7 +299,7 @@ class TaktTests(unittest.TestCase):
     def test_die_takte_der_seiten(self) -> None:
         """Dieselbe Regel fuer die Seiten, die am 26.09.2026 zwei Fenster ersetzten."""
         baum = _baum()
-        for name in ("_konsole_tafel_takt", "_spielstaende_takt"):
+        for name in ("_konsole_tafel_takt",):
             takt = next(f for f in ast.walk(baum) if isinstance(f, ast.FunctionDef)
                         and f.name == name)
             with self.subTest(takt=name):

@@ -216,8 +216,8 @@ class EinbauTests(unittest.TestCase):
             cls.quelle = fh.read().decode("utf-8")
 
     def test_der_zentrale_sender_benutzt_das_modul(self):
-        # Alle Wege - ftpsrv nachladen, KLOG, MicroMount, Autoloader - gehen
-        # durch _send_payload_to_ps5. Nur dort eingesetzt, wirkt es ueberall.
+        # Alle Wege - ftpsrv nachladen, KLOG, Autoloader - gehen durch
+        # _send_payload_to_ps5. Nur dort eingesetzt, wirkt es ueberall.
         self.assertIn("payload_versand.senden", self.quelle)
 
     def test_das_mitgelieferte_elfldr_wird_durchgereicht(self):

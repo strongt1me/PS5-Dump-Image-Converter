@@ -78,26 +78,56 @@ class MenueVerdrahtungTests(unittest.TestCase):
                 self.assertNotIn(weg, methoden)
                 self.assertFalse(hasattr(APP.PS5ConverterGUI, weg))
 
-    def test_pkg_lesen_und_entpacken_tragen_die_neuen_namen(self) -> None:
-        """Nutzerwunsch 02.10.2026: Der Name sagt, welche Pakete gehen.
+    def test_micromount_ist_ausgebaut(self) -> None:
+        """Nutzerwunsch 05.10.2026: "Der Knopf MicroMount inkl. Funktion ... wieder entfernen."
 
-        "PKG entpacken" nimmt nur PS4-Pakete an (ein PS5-Paket weist es ab),
-        "PKG lesen" beide. Die Fenstertitel folgen dem Menue.
+        Weg sind der Menueeintrag, das Fenster samt Vorgaben und der Sendeblock im
+        Editor der Konfiguration, der nur fuer MicroMount da war
+        (``payload_default_port``). Der Editor selbst bleibt: Er gehoert zu ShadowMount+.
+        """
+        import inspect
+        from ps5_validator.utils.i18n import STRINGS
+        gui = APP.PS5ConverterGUI
+        eintraege = [(k, m) for k, m in gui._MORE_TOOLS_ENTRIES
+                     if "micromount" in (k + m).lower()]
+        self.assertEqual([], eintraege, "Der Menueeintrag ist zurueckgekommen.")
+        reste = sorted(n for n in vars(gui) if "micromount" in n.lower())
+        self.assertEqual([], reste, "Ein Rest des ausgebauten Werkzeugs im Programm.")
+        texte = sorted(k for k, t in STRINGS.items()
+                       if "micromount" in k.lower()
+                       or any("micromount" in str(t.get(s, "")).lower() for s in ("de", "en")))
+        self.assertEqual([], texte, "Ein Text spricht noch von dem ausgebauten Werkzeug.")
+        parameter = inspect.signature(gui._show_remote_ini_editor).parameters
+        self.assertNotIn("payload_default_port", parameter,
+                         "Der Sendeblock des Editors gehoerte nur zu MicroMount.")
+        self.assertTrue(callable(getattr(gui, "_show_shadowmount_editor", None)),
+                        "Der Editor bleibt - er gehoert zu ShadowMount+.")
+
+    def test_unter_weitere_tools_steht_nur_ein_knopf_fuer_ps4_pakete(self) -> None:
+        """Nutzerwunsch 05.10.2026: "Nicht dass mehrere PS4 PKG ... Knoepfe in der Liste zu sehen sind."
+
+        Der eine Knopf heisst "PS4 PKG -> OTA". "PS4 PKG -> ffpfsc", "PS4 PKG -> Dump
+        Ordner" und "PS4 & PS5 PKG lesen" sind als Eintraege weg - ihre Fenster bleiben
+        ueber "PS4 PKG -> OTA" erreichbar (-> ffpfsc, Entpacken ohne OrbisPkgTool, Paketkopf
+        lesen im Mehr-Menue); der Leser ist der einzige Weg, ein **PS5**-Paket zu lesen.
         """
         from ps5_validator.utils.i18n import STRINGS
         paare = dict(APP.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertEqual("_show_pkg_reader", paare["titlebar.pkg_reader"])
-        self.assertEqual("_show_pkg_entpacken", paare["titlebar.pkg_entpacken"])
-        self.assertEqual("PS4 & PS5 PKG lesen", STRINGS["titlebar.pkg_reader"]["de"])
-        self.assertEqual("Read PS4 & PS5 PKG", STRINGS["titlebar.pkg_reader"]["en"])
-        self.assertEqual("PS4 PKG → Dump Ordner", STRINGS["titlebar.pkg_entpacken"]["de"])
-        self.assertEqual("PS4 PKG → dump folder", STRINGS["titlebar.pkg_entpacken"]["en"])
+        self.assertEqual("_show_ps4_pkg_ota", paare["titlebar.ps4_ota"])
+        self.assertEqual("PS4 PKG → OTA", STRINGS["titlebar.ps4_ota"]["de"])
+        self.assertEqual("PS4 PKG → OTA", STRINGS["titlebar.ps4_ota"]["en"])
+        for weg in ("titlebar.ps4pkg", "titlebar.pkg_entpacken", "titlebar.pkg_reader"):
+            with self.subTest(eintrag=weg):
+                self.assertNotIn(weg, paare)
+                self.assertNotIn(weg, STRINGS, "Ein Text ohne Eintrag waere ein toter Schluessel.")
         for sprache in ("de", "en"):
             with self.subTest(sprache=sprache):
-                self.assertTrue(STRINGS["pkgreader.window_title"][sprache].startswith(
-                    STRINGS["titlebar.pkg_reader"][sprache] + " – "))
-                self.assertEqual(STRINGS["titlebar.pkg_entpacken"][sprache],
-                                 STRINGS["pkgentpacken.window_title"][sprache])
+                nennen_ps4_pakete = [k for k in paare if "PS4 PKG" in STRINGS[k][sprache]]
+                self.assertEqual(["titlebar.ps4_ota"], nennen_ps4_pakete)
+        for methode in ("_show_ps4_pkg_converter", "_show_pkg_entpacken", "_show_pkg_reader"):
+            with self.subTest(methode=methode):
+                self.assertTrue(callable(getattr(APP.PS5ConverterGUI, methode, None)),
+                                "Das alte Fenster ist ueber das neue noch erreichbar.")
 
 
 class ErreichbarkeitTests(unittest.TestCase):
@@ -219,7 +249,9 @@ class SammelkonvertierungTests(unittest.TestCase):
         gui = self._pruefer([])
         grund = APP.PS5ConverterGUI._validate_requested_conversion(
             gui, "batch_convert", "", "ffpfsc")
-        self.assertIn("Quelldateien", grund)
+        # Seit 05.10.2026 "Quellen" statt "Quelldateien": Dump-Ordner sind auch Quellen.
+        self.assertIn("Quellen", grund)
+        self.assertIn("Dump-Ordner", grund)
 
     def test_ueberspringer_gilt_nicht_als_fehlschlag(self) -> None:
         block = self.quelltext[self.quelltext.index("bereits_im_zielformat"):][:900]

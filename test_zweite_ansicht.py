@@ -196,11 +196,12 @@ class ZweiteAnsichtTests(unittest.TestCase):
     def test_jeder_konsolenknopf_oeffnet_sein_fenster(self):
         """Seit Stufe 4 ist jeder der sieben Knoepfe verdrahtet.
 
-        Bis dahin hielt dieser Test fest, dass ein Knopf ohne Fenster das
-        auch sagt; dieser Zweig wird jetzt in test_konsole_dienste direkt
-        geprueft, weil er sich ueber die Seitenleiste nicht mehr ausloesen
-        laesst. Hier zaehlt nun das Gegenstueck: Ein Druck oeffnet wirklich
-        das Fenster, das in der Karte steht - und keine Kennung fehlt.
+        "5. CoolSysCent-Pro" sagte vom 04. bis zum 05.10.2026 "kommt noch"; seither ist es
+        eine Direktaktion wie Prospero Manager (Weboberflaeche des PS5 Cooling & System
+        Center). Der Zweig "Knopf ohne Fenster sagt, dass es folgt" wird in
+        test_konsole_dienste direkt geprueft, weil er sich ueber die Seitenleiste nicht
+        mehr ausloesen laesst. Hier zaehlt das Gegenstueck: Ein Druck oeffnet wirklich
+        das, was in der Karte steht - und keine Kennung fehlt.
         """
         app = self.app
         app._ansicht_setzen("konsole")

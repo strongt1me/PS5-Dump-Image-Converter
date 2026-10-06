@@ -26,6 +26,7 @@ Nur Standardbibliothek.
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -299,6 +300,43 @@ LADEFEHLER = ("Could not load file or assembly",
 SELBSTTEST = ("read", "--source", "__kein_paket_selbsttest__.pkg")
 
 
+@contextlib.contextmanager
+def _ohne_fehlerfenster():
+    """Windows: Ein nicht startbares Programm soll kein modales Fenster aufmachen.
+
+    Startet ``CreateProcess`` eine Datei, die mit ``MZ`` beginnt, aber kein
+    gueltiges Programm ist (eine Attrappe, ein abgeschnittener Download), zeigt
+    Windows „Nicht unterstuetzte 16 Bit-Anwendung“ - und ``CreateProcess``
+    kehrt erst zurueck, wenn jemand das Fenster schliesst. Am 05.10.2026
+    gemessen: 17 Sekunden Stillstand je Aufruf, in einem Testlauf ohne
+    Bedienung eine Dreiviertelstunde. ``SetThreadErrorMode`` gilt nur fuer den
+    aufrufenden Faden und nur fuer die Dauer des Blocks; der Start scheitert
+    dann sofort mit einer ``OSError``.
+
+    Unter Linux und macOS tut der Block nichts.
+    """
+    alt = None
+    kernel = None
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            kernel = ctypes.windll.kernel32
+            alt = ctypes.c_uint(0)
+            # SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+            if not kernel.SetThreadErrorMode(0x8003, ctypes.byref(alt)):
+                alt = None
+        except Exception:  # noqa: BLE001 - der Selbsttest darf daran nie scheitern
+            alt = None
+    try:
+        yield
+    finally:
+        if alt is not None and kernel is not None:
+            try:
+                kernel.SetThreadErrorMode(alt.value, None)
+            except Exception:  # noqa: BLE001
+                pass
+
+
 def kopie_taugt(ordner: str, programm: str = "",
                 zeit: float = 60.0) -> "tuple[bool, str]":
     """Ruft das Werkzeug einmal so auf, dass es die Bibliothek laden muss.
@@ -327,7 +365,8 @@ def kopie_taugt(ordner: str, programm: str = "",
     if sys.platform == "win32":
         anlauf["creationflags"] = 0x08000000   # CREATE_NO_WINDOW
     try:
-        lauf = subprocess.run([pfad, *SELBSTTEST], **anlauf)
+        with _ohne_fehlerfenster():
+            lauf = subprocess.run([pfad, *SELBSTTEST], **anlauf)
     except (OSError, subprocess.SubprocessError) as fehler:
         # Laesst sich das Programm gar nicht starten, ist das **nicht** der
         # Befund, um den es hier geht. Die Huelle stammt aus dem eigenen

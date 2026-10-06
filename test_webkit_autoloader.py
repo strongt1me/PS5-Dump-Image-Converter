@@ -1,8 +1,9 @@
-"""Tests für den WebKit Autoloader (Knopf, Fenster, drei Wege).
+"""Tests für den WebKit Autoloader (Dateien, Fassungen, drei Wege).
 
-Der Knopf sitzt dort, wo bis v1.8.100 SHADOWMOUNT+ stand; jener ist ins
-Menü „WEITERE TOOLS" gewandert. Dahinter liegt ein rahmenloses Fenster mit
-drei Wegen:
+Bis v1.9.62 gab es dafür einen Knopf in der Titelleiste (er saß dort, wo bis
+v1.8.100 SHADOWMOUNT+ stand; jener ist ins Menü „WEITERE TOOLS" gewandert) und
+ein rahmenloses Fenster; seit v1.9.63 ist es die Seite „2. WebKit Autoloader“ der
+Ansicht KONSOLE (test_webkit_seite). Die drei Wege sind geblieben:
 
 * der Host als Windows-Programm,
 * derselbe Host als Python-Skript,
@@ -148,27 +149,14 @@ class AblageTests(unittest.TestCase):
 
 
 class FassungTests(unittest.TestCase):
-    """Das Fenster nennt die mitgelieferte Fassung (02.10.2026).
+    """Die Fassung steckt im Dateinamen (02.10.2026; seit v1.9.63 waehlt die Seite).
 
-    Wunsch des Nutzers: "Man weiss ja gar nicht welche man sonst benutzt."
-    Die Fassung steht im Dateinamen - nach derselben Stelle sortiert das
-    Programm, wenn mehrere Dateien im Ordner liegen. Angezeigt wird also genau
-    die Datei, die auch gestartet wird.
+    Wunsch des Nutzers: "Man weiss ja gar nicht welche man sonst benutzt." Die
+    Fassung steht im Dateinamen - nach derselben Stelle sortiert das Programm,
+    wenn mehrere Dateien im Ordner liegen, und nach ihr bietet die Seite "WebKit
+    Autoloader" die Auswahl an. Welche Fassungen beiliegen und ob jede vollstaendig
+    ist, prueft test_webkit_seite.
     """
-
-    @staticmethod
-    def _gui_mit(fassungen: dict[str, str]) -> PS5ConverterGUI:
-        """Ein Prüfling ohne Tk, dessen drei Dateien die genannten Namen tragen."""
-        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
-        namen = {
-            "exe": "webkit-autoloader-host_v%s.exe",
-            "py": "webkit-autoloader-host_v%s.py",
-            "elf": "webkit-autoloader-installer_v%s.elf",
-        }
-        g._webkit_datei = lambda art: (
-            "X:/Ordner/" + namen[art] % fassungen[art] if fassungen.get(art) else "")
-        g._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
-        return g
 
     def test_die_fassung_aus_dem_dateinamen(self) -> None:
         lesen = PS5ConverterGUI._webkit_fassung_aus_name
@@ -180,7 +168,7 @@ class FassungTests(unittest.TestCase):
         self.assertEqual(lesen(""), "")
 
     def test_ein_name_mit_zweiter_nummer_zaehlt_die_erste(self) -> None:
-        """Dieselbe Stelle wie beim Sortieren - sonst zeigte das Fenster eine
+        """Dieselbe Stelle wie beim Sortieren - sonst zeigte die Auswahl eine
         andere Datei an als die, die gestartet wird.
 
         So hiess die Datei, die der Nutzer am 28.09.2026 selbst gebaut hatte:
@@ -191,82 +179,35 @@ class FassungTests(unittest.TestCase):
         schluessel = PS5ConverterGUI._webkit_versionsschluessel(name)
         self.assertEqual(schluessel[:3], (0, 4, 0))
 
-    def test_gleiche_fassungen_ergeben_eine_kurze_zeile(self) -> None:
-        g = self._gui_mit({"exe": "0.5.2", "py": "0.5.2", "elf": "0.5.2"})
-        zeile = g._webkit_fassungszeile()
-        self.assertEqual(zeile, STRINGS["webkit.version"]["de"].format(version="0.5.2"))
-        self.assertEqual(zeile.count("0.5.2"), 1)
-
-    def test_abweichende_fassungen_nennt_die_zeile_einzeln(self) -> None:
-        """Hat jemand nur eine Datei ersetzt, soll der Unterschied auffallen."""
-        g = self._gui_mit({"exe": "0.5.2", "py": "0.5.2", "elf": "0.5.1"})
-        zeile = g._webkit_fassungszeile()
-        self.assertIn("v0.5.1", zeile)
-        self.assertEqual(zeile.count("v0.5.2"), 2)
-        self.assertEqual(zeile, STRINGS["webkit.version_mix"]["de"].format(
-            exe="0.5.2", py="0.5.2", elf="0.5.1"))
-
-    def test_eine_fehlende_datei_steht_als_strich_da(self) -> None:
-        g = self._gui_mit({"exe": "", "py": "0.5.1", "elf": "0.5.2"})
-        zeile = g._webkit_fassungszeile()
-        self.assertEqual(zeile, STRINGS["webkit.version_mix"]["de"].format(
-            exe="-", py="0.5.1", elf="0.5.2"))
-
-    def test_fehlt_eine_datei_und_die_uebrigen_gleichen_sich_ist_es_eine_fassung(self) -> None:
-        g = self._gui_mit({"exe": "", "py": "", "elf": "0.5.2"})
-        self.assertEqual(g._webkit_fassungszeile(),
-                         STRINGS["webkit.version"]["de"].format(version="0.5.2"))
-
-    def test_ohne_jede_nummer_keine_zeile(self) -> None:
-        """Das Fenster bleibt dann wie bisher - es erfindet nichts."""
-        g = self._gui_mit({"exe": "", "py": "", "elf": ""})
-        self.assertEqual(g._webkit_fassungszeile(), "")
-
     def test_beide_sprachen_haben_dieselben_platzhalter(self) -> None:
         import re
-        for schluessel, erwartet in (("webkit.version", {"version"}),
-                                     ("webkit.version_mix", {"exe", "py", "elf"})):
+        for schluessel, erwartet in (("webkit.fassung_neueste", {"version"}),
+                                     ("webkit.fassung_unvollstaendig", {"fehlt"}),
+                                     ("webkit.log_gesendet", {"datei", "ip", "groesse"}),
+                                     ("webkit.log_usb", {"datei", "usb"})):
             for sprache in ("de", "en"):
                 with self.subTest(schluessel=schluessel, sprache=sprache):
                     text = STRINGS[schluessel][sprache]
                     self.assertEqual(set(re.findall(r"\{(\w+)\}", text)), erwartet)
 
-    def test_die_mitgelieferte_fassung_stimmt_mit_dem_inneren_der_elf(self) -> None:
-        """Der Name allein beweist nichts: Gelesen wird der Banner der Datei.
-
-        Am 28.09.2026 trug eine Datei den Namen "v0.4.0" und meldete sich
-        innen als 0.4.3-dev. Fuer die mitgelieferte Datei darf das nicht
-        passieren - sonst zeigte das Fenster eine Fassung, die es nicht ist.
-        """
-        import re
+    def test_die_neueste_fassung_liegt_vollstaendig_bei(self) -> None:
+        """Ohne Nummer gewinnt die hoechste - alle drei Arten tragen dieselbe."""
         g = PS5ConverterGUI.__new__(PS5ConverterGUI)
-        pfad = g._webkit_datei("elf")
-        self.assertTrue(pfad, "Installer nicht gefunden")
-        with open(pfad, "rb") as fh:
-            roh = fh.read()
-        banner = re.findall(rb"WebKit Autoloader v(\d+(?:\.\d+)+)", roh)
-        self.assertTrue(banner, "Kein Fassungstext im Installer gefunden")
-        self.assertEqual({b.decode() for b in banner},
-                         {g._webkit_fassungen()["elf"]})
-
-    def test_host_und_installer_tragen_dieselbe_fassung(self) -> None:
-        """Sie gehoeren zusammen; ein Bruch im Ordner soll hier auffallen."""
-        g = PS5ConverterGUI.__new__(PS5ConverterGUI)
-        fassungen = g._webkit_fassungen()
-        self.assertTrue(all(fassungen.values()), fassungen)
-        self.assertEqual(len(set(fassungen.values())), 1, fassungen)
+        nummern = {art: PS5ConverterGUI._webkit_fassung_aus_name(Path(g._webkit_datei(art)).name)
+                   for art in ("exe", "py", "elf")}
+        self.assertTrue(all(nummern.values()), nummern)
+        self.assertEqual(1, len(set(nummern.values())), nummern)
 
 
 class OberflaecheTests(unittest.TestCase):
     """Knopf und Klappliste."""
 
-    def test_webkit_steht_in_der_leiste(self) -> None:
+    def test_webkit_steht_nicht_mehr_in_der_titelleiste(self) -> None:
+        """Seit dem 04.10.2026 eine Seite der Ansicht KONSOLE (Knopf 2), kein Fenster."""
         namen = [n for n, _k, _b in PS5ConverterGUI._FALTBARE_TITELKNOEPFE]
-        self.assertIn("_btn_webkit_title", namen)
-        eintrag = [z for z in PS5ConverterGUI._FALTBARE_TITELKNOEPFE
-                   if z[0] == "_btn_webkit_title"][0]
-        self.assertEqual(eintrag[1], "titlebar.webkit")
-        self.assertEqual(eintrag[2], "_show_webkit_autoloader")
+        self.assertNotIn("_btn_webkit_title", namen)
+        self.assertEqual(("konsole.btn_webkit", "webkit"), PS5ConverterGUI._KONSOLE_KNOEPFE[1])
+        self.assertFalse(hasattr(PS5ConverterGUI, "_show_webkit_autoloader"))
 
     def test_shadowmount_ist_in_die_klappliste_gewandert(self) -> None:
         namen = [n for n, _k, _b in PS5ConverterGUI._FALTBARE_TITELKNOEPFE]
@@ -275,7 +216,7 @@ class OberflaecheTests(unittest.TestCase):
         befehle = [b for _k, b in PS5ConverterGUI._MORE_TOOLS_ENTRIES]
         self.assertIn("_show_shadowmount_editor", befehle)
 
-    def test_kein_verwaister_verweis_auf_den_alten_knopf(self) -> None:
+    def test_kein_verwaister_verweis_auf_die_alten_knoepfe(self) -> None:
         """Sprachwechsel und Farbtabelle nennen Knöpfe beim Namen.
 
         Bleibt dort ein Name stehen, den es nicht mehr gibt, faellt das
@@ -285,15 +226,16 @@ class OberflaecheTests(unittest.TestCase):
                      encoding="utf-8") as fh:
             quelle = fh.read()
         self.assertNotIn("_btn_shadowmount_title", quelle)
+        self.assertNotIn("_btn_webkit_title", quelle)
 
     def test_texte_sind_zweisprachig(self) -> None:
-        schluessel = [k for k in STRINGS
-                      if k.startswith("webkit.") or k == "titlebar.webkit"]
-        self.assertGreaterEqual(len(schluessel), 15)
+        schluessel = [k for k in STRINGS if k.startswith("webkit.")]
+        self.assertGreaterEqual(len(schluessel), 25)
         for name in schluessel:
             with self.subTest(name):
                 self.assertTrue(STRINGS[name].get("de"))
                 self.assertTrue(STRINGS[name].get("en"))
+        self.assertNotIn("titlebar.webkit", STRINGS)
 
 
 class FtpPortTests(unittest.TestCase):

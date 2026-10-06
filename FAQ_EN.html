@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.62</title>
+<title>PS5 Dump &amp; Image Converter – Frequently Asked Questions (FAQ) v1.9.63</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Frequently Asked Questions (FAQ)</span></h1>
     <p class="unter">Short answers to the questions that come up most often when working with the program – from the first start through converting to the PS5. The user manual covers everything in detail.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.62</span>
-      <span class="marke">As of 4 October 2026</span>
+      <span class="marke">Version v1.9.63</span>
+      <span class="marke">As of 6 October 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -360,8 +360,8 @@ footer{
   </div>
 
   <div class="frage">
-    <h3>How do I convert several files at once?</h3>
-    <p>With <strong>task&nbsp;5 – Batch conversion</strong>: choose all files (<code>.ffpfsc</code>, <code>.exFAT</code> or <code>.ffpkg</code>) at once, set one common target format, start. Every file is processed and checked on its own; if one fails, the others still run to the end. Test a single file first and check that there is space for all results.</p>
+    <h3>How do I convert several files or dump folders at once?</h3>
+    <p>With <strong>task&nbsp;5 – Batch conversion</strong>: click <strong>Choose sources</strong> and decide whether they are dump folders or image files (<code>.ffpfsc</code>, <code>.exFAT</code> or <code>.ffpkg</code>). For dump folders the Windows folder dialog opens: mark several folders with Ctrl or Shift, then click <strong>Select Folder</strong>. A folder that is not a dump itself (such as <em>Game Dumps</em>) stands for all the dumps and images inside it. Then set one common target format and start. Every source is processed and checked on its own; if one fails, the others still run to the end. Test a single source first and check that there is space for all results.</p>
   </div>
 
   <div class="frage">
@@ -407,7 +407,7 @@ footer{
       <thead><tr><th>Code</th><th>Cause and remedy</th></tr></thead>
       <tbody>
         <tr><td><code>CE-108255-1</code></td><td>An incomplete <code>.ffpkg</code> – or starting from internal storage instead of the USB stick. Try the backup from the stick.</td></tr>
-        <tr><td><code>CE-107891-6</code></td><td>An update package does not match the installed base package (even a rebuild of the same game counts as a different package). Install the matching base package or rebuild both together. Whether a <code>.pkg</code> is an update is shown by <strong>Read PS4 &amp; PS5 PKG</strong>.</td></tr>
+        <tr><td><code>CE-107891-6</code></td><td>An update package does not match the installed base package (even a rebuild of the same game counts as a different package). Install the matching base package or rebuild both together. Whether a <code>.pkg</code> is an update is shown by <strong>PS4 PKG → OTA</strong> in the <em>Type</em> column.</td></tr>
         <tr><td><code>CE-100096-6</code></td><td>The console rejects a self-built package. For game backups the way via image and ShadowMount+ is the right one; for your own homebrew use <strong>Install app directly</strong>.</td></tr>
       </tbody>
     </table>
@@ -451,8 +451,14 @@ footer{
 
   <div class="frage">
     <h3>Can I use PS4 games too?</h3>
-    <p>Yes. <strong>PS4 PKG → ffpfsc</strong> (MORE TOOLS) turns PS4 packages – base, patch, optionally DLC – into an image for ShadowMount+. <strong>PS4 PKG → dump folder</strong> turns a PS4 package into a normal game folder. PS5 packages cannot be unpacked.</p>
+    <p>Yes. <strong>PS4 PKG → OTA</strong> (MORE TOOLS) collects your PS4 packages in a table. From there you unpack a package into a normal game folder (<strong>Extract …</strong>) or turn packages – base, patch, optionally DLC – into an image for ShadowMount+ (<strong>→ ffpfsc …</strong>). PS5 packages cannot be unpacked; <strong>More → Read package header</strong> shows their structure.</p>
     <p class="hinweis"><strong>Trophies:</strong> a PS4 game that starts from an image does not register its trophies (<em>Trophy registration failed, 0x80551618</em>). This is by design and not caused by the image. If you need the trophies, install the game with the Package Installer. PS5 titles are not affected.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Can I send a package to the console over the network?</h3>
+    <p>Yes, with <strong>PS4 PKG → OTA</strong> (MORE TOOLS): load packages into the table, choose one, enter the console's address on the <em>OTA</em> tab and press <strong>Send via OTA</strong>. There are two ways: on a PS5 the OnionHEN package manager (called <em>DPI v2</em> in <em>Console &amp; payloads</em>) receives the package and installs it; a PS4 fetches it from the PC through the Remote Package Installer. <strong>Detect</strong> asks which service answers at the address.</p>
+    <p class="hinweis"><strong>Untested:</strong> sending has not yet been tried on a console – both ways are tested against stand-ins for the services. Whether a particular package starts afterwards can only be told by trying.</p>
   </div>
 
   <div class="frage">
@@ -467,8 +473,10 @@ footer{
 
   <div class="frage">
     <h3>What does the CONSOLE view show?</h3>
-    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with four tools: <em>Console &amp; payloads</em>, <em>Save data</em>, <em>Library</em> and <em>Prospero Manager</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
+    <p>Below the logo, <strong>CONSOLE ›</strong> switches to a second view with eight tools: <em>Console &amp; payloads</em>, <em>WebKit Autoloader</em>, <em>Library</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> and <em>Direct Stream</em>. <strong>‹ CONVERT</strong> leads back; the source, settings and a running job are kept.</p>
     <p><strong>Console &amp; payloads</strong> already finds the PS5 by itself when the program starts – you do not have to enter an address. The page queries all known ports, shows state, version and purpose for every service, starts missing services from the bundled <code>helloworld</code> folder and opens web interfaces. On Windows these appear directly in the program, otherwise in the browser.</p>
+    <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (the PS5 Cooling &amp; System Center, port 8086), <strong>ShadowMount+</strong> and <strong>SMPlusGui</strong> have no page of their own: one press checks whether the payload is already running on the console, sends it by itself if needed – together with the ELF loader if port 9021 is still closed – and then opens its web interface.</p>
+    <p><strong>Direct Stream</strong> sends nothing to the console: it is a small server on this computer only (<code>127.0.0.1</code>) that transfers a download or a local file straight into the PS5 storage over FTP. The button starts it and shows its page on the right; the program fills in the PS5 address and FTP port the first time. It keeps running when you leave the page and ends with the program – if a transfer is running then, the program asks first. Try it with a small file first.</p>
   </div>
 
   <div class="frage">
@@ -495,7 +503,23 @@ footer{
 
   <div class="frage">
     <h3>How do I back up save data?</h3>
-    <p>Backing up, decrypting and transferring between users is done by the <strong>Garlic Save Manager</strong> with its own interface (port 8082). The <em>Save data</em> page checks whether it is running, starts it and opens it. Make a backup before every write-back. A newly created console user finds its save data empty – the old saves stay with the original user.</p>
+    <p>Backing up, decrypting and transferring between users is done by the <strong>Garlic Save Manager</strong> with its own interface (port 8082). There is no page of its own for it: on <em>Console &amp; payloads</em> you select it in the table, start it with <strong>Start selected</strong> and open its interface with <strong>Open web interface</strong>. Make a backup before every write-back. A newly created console user finds its save data empty – the old saves stay with the original user.</p>
+  </div>
+
+  <div class="frage">
+    <h3>What does the WebKit Autoloader do, and which version should I use?</h3>
+    <p>It creates the tile <strong>WebKit Autoload</strong> on the console (home screen, under <em>Media</em>) so that the entry can be repeated with one press. It consists of a <strong>host</strong> on your computer – as a Windows program or as a Python script – and an <strong>installer</strong> that runs once on the console. Both are under <strong>CONSOLE › WebKit Autoloader</strong>.</p>
+    <ul>
+      <li><strong>Version:</strong> Several are bundled, from v0.4.0 to v0.5.2. The latest is preselected; the program remembers your choice, and it applies to all three paths (host as Windows program, host as Python script, send installer). If the latest does not work for you, try an older one.</li>
+      <li><strong>Host:</strong> It occupies DNS (UDP 53) and HTTPS (TCP 443) and therefore needs administrator rights.</li>
+      <li><strong>Installer:</strong> It goes to the console via port 9021. If the port is closed, it goes via FTP to the root of a USB drive; you pick it up there with the Payload Manager.</li>
+    </ul>
+    <p>If a new version appears, put its three files into the folder <code>PS5 WebKit Autoloader</code> in addition; the older ones stay selectable.</p>
+  </div>
+
+  <div class="frage">
+    <h3>The ShadowMount+ button does not open a web interface. Why?</h3>
+    <p>By default ShadowMount+ listens only on the PS5 itself (<code>api_bind_address=127.0.0.1</code>). From your PC, port 10101 is then closed even though ShadowMount+ is running – and the button still sends the payload once more. If the port does not answer afterwards, the log states the reason. So set the key <code>api_bind_address</code> in the ShadowMount+ editor (<em>MORE TOOLS</em>) to the PS5 address or <code>0.0.0.0</code>. The interface has no login – do not use this on a network you do not control.</p>
   </div>
 
   <div class="frage">
@@ -528,6 +552,11 @@ footer{
     <h3>Message “sce_sys/param.json missing” or “param.json has no Content ID”.</h3>
     <p><strong>param.json missing:</strong> the game is incomplete. With <em>Yes</em> the program creates a valid <code>param.json</code> and carries on building; with <em>No</em> it stops – in that case it is better to create a new backup from the original.</p>
     <p><strong>Content ID missing:</strong> title and content ID are not in any file of a backup, only the title ID. With <em>Look up missing metadata online</em> (settings) the program fetches both. Otherwise it enters a placeholder (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); the old file is kept as <code>param.json.alt</code>. For updates and DLC the real content ID has to be entered.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Message “eboot.bin not found in the source folder”.</h3>
+    <p>An image has to carry the game directly in its root: <code>eboot.bin</code> and <code>sce_sys/param.json</code> sit in the folder itself, not in a subfolder – that is what ShadowMount+ requires. The program checks this before building (for <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> and <code>.ffpkg</code>) and stops otherwise, instead of the problem only showing up on the console. Usually the chosen folder is one level too high – pick the folder in which <code>eboot.bin</code> sits directly.</p>
   </div>
 
   <div class="frage">
@@ -575,8 +604,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.62</strong></span>
-  <span>As of 4 October 2026 · Only for content you own and acquired legally</span>
+  <span>PS5 Dump &amp; Image Converter – Frequently Asked Questions <strong>v1.9.63</strong></span>
+  <span>As of 6 October 2026 · Only for content you own and acquired legally</span>
 </footer>
 
 </body>

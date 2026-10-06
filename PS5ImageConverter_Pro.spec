@@ -141,6 +141,20 @@ if os.path.isdir(_prosperopkg):
     _datas.extend(_dateien_ohne_pycache(_prosperopkg, 'ProsperoPkg-2.5',
                                         _ohne=('bin', 'obj')))
 
+# OrbisPkgTool 1.0.0 (pearlxcore, MIT) - die Befehlszeile hinter "PS4 PKG -> OTA": PS4-Pakete
+# lesen, entpacken, pruefen, zusammenfuehren, neu packen und bauen. Eigenstaendig (keine .NET-
+# Laufzeit beim Anwender). Es gibt nur den Windows-Bau; fuer Linux und macOS ist keiner gebaut
+# (siehe UPSTREAM.md), deshalb steht der Ordner nur in dieser .spec.
+_orbispkg = os.path.join(_here, 'OrbisPkgTool-1.0.0')
+if os.path.isdir(_orbispkg):
+    for _beilage in ('LICENSE', 'UPSTREAM.md', 'pruefsummen.json'):
+        _quelle = os.path.join(_orbispkg, _beilage)
+        if os.path.isfile(_quelle):
+            _datas.append((_quelle, 'OrbisPkgTool-1.0.0'))
+    _bau = os.path.join(_orbispkg, 'win-x64')
+    if os.path.isdir(_bau):
+        _datas.append((_bau, os.path.join('OrbisPkgTool-1.0.0', 'win-x64')))
+
 # Eingebettetes PS4-FFPFSC (PS4 PKG -> ffpfsc, siehe dort UPSTREAM.md).
 # Der Ordner enthaelt neben dem Python-Teil die beiden nativen Helfer in bin/
 # und die von diesem Werkzeug geprueften MkPFS-Quellen; die Qt-Oberflaeche der
@@ -155,6 +169,15 @@ if os.path.isdir(_ps4ffpsc):
 _wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
 if os.path.isdir(_wee_tools):
     _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
+
+# Mitgeliefertes Direct Stream (Fassung 2.8.1, MIT-Lizenz; HTTP/HTTPS-Downloads
+# per FTP direkt in den Speicher der Konsole, siehe dort UPSTREAM.md). Laeuft im
+# Programm selbst (ps5_validator/utils/direct_stream.py): Python-Teil und
+# Oberflaeche liegen als Datenordner bei und werden zur Laufzeit aus der Datei
+# geladen.
+_direct_stream = os.path.join(_here, 'DirectStream-2.8.1')
+if os.path.isdir(_direct_stream):
+    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.1'))
 
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
@@ -261,6 +284,20 @@ a = Analysis(
         'threading',
         'time',
         'winsound',
+        # Direct Stream (DirectStream-2.8.1) liegt als Datenordner bei und wird zur
+        # Laufzeit aus der Datei geladen - PyInstaller sieht seine Importe nicht.
+        # Der Waechter test_direct_stream haelt diese Liste gegen den Quelltext des
+        # Werkzeugs (ohne fcntl und msvcrt: die braucht nur die Einzelinstanz-Sperre
+        # von main(), die im Programm nie laeuft).
+        'copy',
+        'ftplib',
+        'http.client',
+        'http.server',
+        'mimetypes',
+        'secrets',
+        'signal',
+        'ssl',
+        'urllib.error',
         # Module, die das eingebettete PS4-Werkzeug (PS4FFPFSC-0.2.9) braucht.
         # Es liegt als Datenordner bei und wird erst zur Laufzeit ueber
         # sys.path geladen - PyInstaller sieht seine Importe deshalb nicht.
@@ -468,7 +505,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='PS5_Dump_Image_Converter_v1.9.62',
+    name='PS5_Dump_Image_Converter_v1.9.63',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

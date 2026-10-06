@@ -212,6 +212,84 @@ def ist_administrator() -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Bildschirm
+# ---------------------------------------------------------------------------
+def arbeitsbereich(erkannt: tuple[int, int]) -> tuple[int, int, int, int]:
+    """Der nutzbare Teil des ersten Bildschirms ohne Taskleiste: ``(x, y, breite, hoehe)``.
+
+    ``winfo_screenheight`` meldet den ganzen Bildschirm, die Taskleiste eingerechnet. Ein Fenster, das so
+    hoch wird, wie der Bildschirm abzueglich einer festen Reserve erlaubt, liegt mit dem unteren Rand unter
+    der Taskleiste - und seine Knopfreihe ganz unten ist nicht mehr zu sehen (Meldung vom 05.10.2026: "Das
+    Fenster ist zu hoch. Man sieht die Knoepfe unten nicht mehr"; gemessen: 1200 Punkte Bildschirm, 1152 im
+    Arbeitsbereich). Unter Windows fragt diese Funktion den Arbeitsbereich (``SPI_GETWORKAREA``); sonst, oder
+    wenn die Frage scheitert, gilt der erkannte Bildschirm.
+
+    Args:
+        erkannt: ``(breite, hoehe)`` laut Tk - die Rueckfallgroesse.
+    """
+    breite, hoehe = int(erkannt[0]), int(erkannt[1])
+    if IST_WINDOWS:
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            rechteck = wintypes.RECT()
+            if ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rechteck), 0):  # type: ignore[attr-defined]
+                b, h = rechteck.right - rechteck.left, rechteck.bottom - rechteck.top
+                if b > 0 and h > 0:
+                    return int(rechteck.left), int(rechteck.top), int(b), int(h)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Arbeitsbereich nicht lesbar: %s", exc)
+    return 0, 0, breite, hoehe
+
+
+def titelleistenhoehe(dpi: int = 0) -> int:
+    """Wie hoch die Titelleiste eines Fensters ist, in Pixeln (``SM_CYCAPTION``); 0, wenn unbekannt.
+
+    Args:
+        dpi: Die DPI des Fensters (``GetDpiForWindow``). Ohne Angabe gilt die Systemeinstellung.
+    """
+    if not IST_WINDOWS:
+        return 0
+    try:
+        import ctypes
+
+        benutzer = ctypes.windll.user32  # type: ignore[attr-defined]
+        if int(dpi) > 0:
+            try:
+                return int(benutzer.GetSystemMetricsForDpi(4, int(dpi)))
+            except AttributeError:                       # vor Windows 10 (1607)
+                pass
+        return int(benutzer.GetSystemMetrics(4))
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Titelleistenhoehe nicht lesbar: %s", exc)
+        return 0
+
+
+def maximierte_flaeche(erkannt: tuple[int, int], dpi: int = 0) -> "tuple[int, int] | None":
+    """Die Flaeche *im Rahmen* eines maximierten Fensters: ``(breite, hoehe)``, oder ``None``, wenn unbekannt.
+
+    Ein maximiertes Fenster fuellt den Arbeitsbereich (ohne Taskleiste); oben nimmt seine Titelleiste ihre
+    Hoehe, seitlich und unten ragen nur die unsichtbaren Rahmen ueber den Bildschirm hinaus. Gemessen am
+    05.10.2026 an einem Bildschirm mit 1920 x 1200 Punkten bei 125 %, Taskleiste unten: Arbeitsbereich
+    1920 x 1140, Titelleiste 29 - und das Hauptfenster meldete maximiert genau 1920 x 1111. Nur unter Windows
+    bekannt; sonst (oder wenn eine der Fragen scheitert) ``None``, und der Aufrufer rechnet mit einer festen
+    Reserve (``anzeige_skalierung.maximiert_groesse``).
+
+    Args:
+        erkannt: ``(breite, hoehe)`` des Bildschirms laut Tk - die Rueckfallgroesse des Arbeitsbereichs.
+        dpi: Die DPI des Fensters, siehe :func:`titelleistenhoehe`.
+    """
+    if not IST_WINDOWS:
+        return None
+    _x, _y, breite, hoehe = arbeitsbereich(erkannt)
+    titel = titelleistenhoehe(dpi)
+    if titel <= 0 or hoehe - titel <= 0:
+        return None
+    return int(breite), int(hoehe - titel)
+
+
+# ---------------------------------------------------------------------------
 # Prozessstart ohne sichtbares Fenster
 # ---------------------------------------------------------------------------
 def prozess_flags() -> dict[str, object]:

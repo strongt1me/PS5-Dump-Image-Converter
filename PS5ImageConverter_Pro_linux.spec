@@ -191,6 +191,15 @@ _wee_tools = os.path.join(_here, 'PS5-Wee-Tools-0.1.8')
 if os.path.isdir(_wee_tools):
     _datas.extend(_dateien_ohne_pycache(_wee_tools, 'PS5-Wee-Tools-0.1.8'))
 
+# Mitgeliefertes Direct Stream (Fassung 2.8.1, MIT-Lizenz; HTTP/HTTPS-Downloads
+# per FTP direkt in den Speicher der Konsole, siehe dort UPSTREAM.md). Laeuft im
+# Programm selbst (ps5_validator/utils/direct_stream.py): Python-Teil und
+# Oberflaeche liegen als Datenordner bei und werden zur Laufzeit aus der Datei
+# geladen.
+_direct_stream = os.path.join(_here, 'DirectStream-2.8.1')
+if os.path.isdir(_direct_stream):
+    _datas.extend(_dateien_ohne_pycache(_direct_stream, 'DirectStream-2.8.1'))
+
 # UFS2Tool 4.1 fuer diese Plattform. Eigenstaendig gebaut (getrimmt,
 # ohne Globalisierung), damit auf dem Zielrechner kein .NET 8
 # installiert sein muss - der frueher eingebettete Windows-Bau war
@@ -265,6 +274,20 @@ a = Analysis(
         'threading',
         'time',
         'tomllib',
+        # Direct Stream (DirectStream-2.8.1) liegt als Datenordner bei und wird zur
+        # Laufzeit aus der Datei geladen - PyInstaller sieht seine Importe nicht.
+        # Der Waechter test_direct_stream haelt diese Liste gegen den Quelltext des
+        # Werkzeugs (ohne fcntl und msvcrt: die braucht nur die Einzelinstanz-Sperre
+        # von main(), die im Programm nie laeuft).
+        'copy',
+        'ftplib',
+        'http.client',
+        'http.server',
+        'mimetypes',
+        'secrets',
+        'signal',
+        'ssl',
+        'urllib.error',
         # LZ4 fuer das eingebettete AMPR-Packwerkzeug
         # (AMPR_PackTools-4.0/ampr_pack_format.py:987 importiert
         # lz4.block erst zur Laufzeit). Der Quelltext dieses Programms

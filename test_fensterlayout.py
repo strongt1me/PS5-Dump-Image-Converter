@@ -233,7 +233,7 @@ class FensterLayoutTests(unittest.TestCase):
             self._schliesse(fenster)
 
     def test_remote_ini_editor_knoepfe_voll_sichtbar(self):
-        # ShadowMount+ und MicroMount teilen sich diesen Editor.
+        # Der Editor gehoert zu ShadowMount+; der AMPR-EMU-Manager oeffnet ihn mit.
         fenster = self._oeffne(self.app._show_shadowmount_editor)
         try:
             zu_klein = _gequetschte_knoepfe(fenster)
@@ -314,7 +314,7 @@ class QuelltextTests(unittest.TestCase):
 
     def test_backport_firmware_box_ohne_lokale_stringvar(self):
         # Eine nur lokal gehaltene StringVar würde eingesammelt.
-        stelle = self.quelle.index('fw_box = ttk.Combobox(')
+        stelle = self.quelle.index('fw_box = self._pw.Combobox(')
         block = self.quelle[stelle:stelle + 200]
         self.assertNotIn("textvariable", block)
 
@@ -915,8 +915,9 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
     def test_fensterknoepfe_gehen_ueber_den_umschalter(self):
         # _show_library_window fehlt seit dem 25.09.2026: Die Bibliothek ist
         # eine Seite der Ansicht KONSOLE, kein Fenster mit Titelleistenknopf.
+        # _show_webkit_autoloader fehlt seit dem 04.10.2026 aus demselben Grund.
         for methode in ("_show_credits", "_show_js_loader",
-                        "_show_webkit_autoloader", "_show_diagnostic_report",
+                        "_show_diagnostic_report",
                         "_show_klog_window_geprueft"):
             with self.subTest(methode=methode):
                 self.assertIn('self._werkzeugknopf("%s")' % methode,
@@ -1337,12 +1338,8 @@ class HinweiszeilenHoeheTests(unittest.TestCase):
                 with self.subTest(sprache=sprache, ziel=schluessel):
                     self.assertIn(rang, text, "Die Zielwahl kam im Hinweis nicht an.")
                     self.assertLessEqual(text.count("\n") + 1, 3, text)
-                # Die Hoehe des TEXTES, nicht die des Etiketts: Seit v1.9.62
-                # steht der Hinweis auf einer Pille (Nutzerwunsch 04.10.2026),
-                # und deren Luft ober- und unterhalb zaehlt zur Etikettenhoehe.
-                # Gemeint ist hier, dass nichts zusaetzlich umbricht.
                 hoehen["%s %s" % (sprache, schluessel)] = (
-                    app._caption_natuerliche_groesse(app.format_info_label)[1],
+                    app.format_info_label.winfo_reqheight(),
                     text.count("\n") + 1)
         zu_hoch = ["%s: %d px fuer %d Zeilen" % (k, px, zeilen)
                    for k, (px, zeilen) in hoehen.items()

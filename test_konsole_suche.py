@@ -541,7 +541,11 @@ class SeitenTests(unittest.TestCase):
                                      datei=datei("pldmgr")),
                          self.tabelle.set("pldmgr", "version"))
         self.assertEqual(datei("klogsrv"), self.tabelle.set("klogsrv", "version"))
-        self.assertEqual("–", self.tabelle.set("elfldr9020", "version"))
+        # Der zweite ELF-Loader-Port ist derselbe Dienst wie 9021 und zeigt seit dem
+        # 05.10.2026 die Version der beiliegenden Datei (datei_muster) statt eines Strichs
+        # - Nutzer: "bei elfldr 9020 ebenfalls".
+        self.assertEqual(datei("elfldr9021"), self.tabelle.set("elfldr9020", "version"))
+        self.assertNotEqual("–", self.tabelle.set("elfldr9020", "version"))
 
     def test_die_firmware_wie_die_konsole_sie_schreibt(self) -> None:
         """Die Suche meldet "12000043"; die Seite zeigt "12.00" (Wunsch vom 26.09.2026)."""
@@ -901,7 +905,7 @@ class QuelltextTests(unittest.TestCase):
     """Was sich am laufenden Programm schlecht messen laesst."""
 
     def test_keine_feste_anlaufzeit_und_kurze_lesezeit(self) -> None:
-        """Seit dem 26.09.2026 - und die Spielstaende starten Garlic auf demselben Weg."""
+        """Seit dem 26.09.2026 - und die Knoepfe der Seitenleiste starten ihre Payloads auf demselben Weg."""
         baum = _baum()
         methode = _methode(baum, "_konsole_dienst_starten")
         text = ast.unparse(methode)
@@ -914,10 +918,10 @@ class QuelltextTests(unittest.TestCase):
             self.assertEqual(["konsole_dienste.LESEZEIT"],
                              [ast.unparse(k.value) for k in aufruf.keywords
                               if k.arg == "lesezeit"])
-        garlic = ast.unparse(_methode(baum, "_spielstaende_starten"))
-        self.assertIn("self._konsole_dienst_starten('garlic'", garlic)
-        self.assertNotIn("_send_payload_to_ps5", garlic,
-                         "Die Spielstaende schicken selbst - an der kurzen Lesezeit vorbei.")
+        webdienst = ast.unparse(_methode(baum, "_konsole_webdienst_oeffnen"))
+        self.assertIn("self._konsole_dienst_starten(", webdienst)
+        self.assertNotIn("_send_payload_to_ps5", webdienst,
+                         "Die Webdienst-Knoepfe schicken selbst - an der kurzen Lesezeit vorbei.")
 
     def test_die_faeden_der_seite_uebersetzen_nicht(self) -> None:
         """Durchsicht H2-13 fuer alle Arbeitsgaenge der Seite.
@@ -942,8 +946,9 @@ class QuelltextTests(unittest.TestCase):
                                       if isinstance(k, ast.Call)
                                       and getattr(k.func, "attr", "") in ("_t", "_modul_texte")])
 
-    def test_prosperomgr_faden_uebersetzt_nicht(self) -> None:
-        """Dieselbe Regel (H2-13) fuer den Sidebar-Knopf "4. Prospero Manager".
+    def test_webdienst_faden_uebersetzt_nicht(self) -> None:
+        """Dieselbe Regel (H2-13) fuer die Sidebar-Knoepfe 4, 6 und 7 (Prospero Manager,
+        ShadowMount+, SMPlusGui - alle ueber ``_konsole_webdienst_oeffnen``).
 
         Anders als oben liegt hier vor dem Faden noch Hauptfaden-Code
         (``_modul_texte`` fuer die elfldr-Texte) - deshalb nicht die ganze
@@ -951,7 +956,7 @@ class QuelltextTests(unittest.TestCase):
         Arbeitsfaden laufen: ``_arbeit`` und die ``melden``-Weiterreiche
         ``_melden``.
         """
-        methode = _methode(_baum(), "_konsole_prosperomgr_oeffnen")
+        methode = _methode(_baum(), "_konsole_webdienst_oeffnen")
         for name in ("_arbeit", "_melden"):
             knoten = next(k for k in ast.walk(methode) if isinstance(k, ast.FunctionDef)
                           and k.name == name)

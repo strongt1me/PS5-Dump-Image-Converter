@@ -76,10 +76,14 @@ VORGABEN = {"api_port": "9021", "scanpath": "/mnt/usb0",
 
 
 def _sammle(widget, art):
-    """Alle Nachfahren, deren Tk-Klasse auf ``art`` endet."""
+    """Alle Nachfahren, deren Tk-Klasse auf ``art`` endet - oder deren Python-Klasse so heisst.
+
+    Die runden Ersatzteile (``fenster_pillen``) heissen wie ihre Vorbilder (``Button``, ``Combobox``), sind
+    aber gezeichnete Canvas-Widgets: Ihre Tk-Klasse ist ``Canvas``.
+    """
     raus = []
     for kind in widget.winfo_children():
-        if kind.winfo_class().endswith(art):
+        if kind.winfo_class().endswith(art) or kind.__class__.__name__ == art:
             raus.append(kind)
         raus += _sammle(kind, art)
     return raus

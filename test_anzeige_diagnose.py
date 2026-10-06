@@ -339,7 +339,12 @@ class HochrechnungsMessungTests(unittest.TestCase):
 
         Ein neues Bild, das auf einem dieser Schirme sichtbar weich wuerde (zu
         klein oder zu fein gezeichnet), faellt hier auf - nicht erst im Bericht
-        eines Anwenders. Auf FHD passen die Bilder genau und melden gar nichts.
+        eines Anwenders. Auf FHD und WUXGA passen die Bilder (die Flaeche rechts
+        der Leiste ist hoechstens so gross wie das Bild) und melden gar nichts.
+
+        Die Flaeche des Hauptbilds ist das Fenster **minus Seitenleiste** (Nutzerhinweis
+        05.10.2026: "nur den Platz, der uebrig bleibt, nach der Sidebar"); ein Bild hinter
+        dem ganzen Fenster gibt es nicht mehr.
         """
         from PIL import Image
 
@@ -350,7 +355,7 @@ class HochrechnungsMessungTests(unittest.TestCase):
             with Image.open(os.path.join(ordner, name)) as roh:
                 bild = roh.convert("RGB")
             for schirm, fenster, leiste in self.SCHIRME:
-                flaeche = leiste if name.startswith("sidebar_") else fenster
+                flaeche = leiste if name.startswith("sidebar_") else (fenster[0] - leiste[0], fenster[1])
                 lage = ad.Bildlage(name, bild.size, None, flaeche)
                 faktor = ad.hochrechnungsfaktor(lage)
                 verlust = (ad.messe_hochrechnungsverlust(bild, faktor)
@@ -361,7 +366,7 @@ class HochrechnungsMessungTests(unittest.TestCase):
                     self.assertEqual(
                         [b for b in befunde if b.schwere != ad.HINWEIS], [],
                         "%s auf %s: %s" % (name, schirm, befunde))
-                    if schirm == "FHD 1080p":
+                    if schirm in ("FHD 1080p", "WUXGA 1200p"):
                         self.assertEqual(befunde, [])
 
 
@@ -569,11 +574,14 @@ class QuelltextTests(unittest.TestCase):
         weiter = self.quelltext.index("\n    def ", anfang + 10)
         return self.quelltext[anfang:weiter]
 
+    #: Die drei Flaechen mit eigenem Bild. Ein Bild hinter dem ganzen Fenster gibt es seit dem 05.10.2026
+    #: nicht mehr: Das Hauptbild liegt nur rechts neben der Seitenleiste (Nutzerhinweis "zwei Bilder, getrennt").
+    _BILDWACHEN = (("_on_content_area_configure", "_content_bg_resize_after_id"),
+                   ("_on_action_bar_configure", "_action_bar_bg_resize_after_id"),
+                   ("_on_sidebar_configure", "_sidebar_bg_resize_after_id"))
+
     def test_abbestellen_steht_vor_der_abkuerzung(self):
-        for wache, merker in (("_on_root_configure", "_bg_resize_after_id"),
-                              ("_on_content_area_configure", "_content_bg_resize_after_id"),
-                              ("_on_action_bar_configure", "_action_bar_bg_resize_after_id"),
-                              ("_on_sidebar_configure", "_sidebar_bg_resize_after_id")):
+        for wache, merker in self._BILDWACHEN:
             with self.subTest(wache=wache):
                 rumpf = self._wache(wache)
                 abbestellen = rumpf.index("after_cancel(self.%s)" % merker)
@@ -584,21 +592,38 @@ class QuelltextTests(unittest.TestCase):
 
     def test_merker_wird_geleert(self):
         """Sonst bestellt der nächste Durchgang eine bereits gelaufene Kennung ab."""
-        for wache, merker in (("_on_root_configure", "_bg_resize_after_id"),
-                              ("_on_content_area_configure", "_content_bg_resize_after_id"),
-                              ("_on_action_bar_configure", "_action_bar_bg_resize_after_id"),
-                              ("_on_sidebar_configure", "_sidebar_bg_resize_after_id")):
+        for wache, merker in self._BILDWACHEN:
             with self.subTest(wache=wache):
                 self.assertIn("self.%s = None" % merker, self._wache(wache))
 
     def test_wachen_fragen_das_bild_nicht_den_merker(self):
         """Der gemerkte Wert kann von der Wirklichkeit abdriften, das Bild nicht."""
-        for merker in ("_last_bg_resize_size", "_last_content_bg_resize_size",
+        for merker in ("_last_content_bg_resize_size",
                        "_last_action_bar_bg_resize_size",
                        "_last_sidebar_bg_resize_size"):
             with self.subTest(merker=merker):
                 self.assertNotIn("if self.%s == (width, height):" % merker,
                                  self.quelltext)
+
+    def test_es_gibt_kein_bild_hinter_dem_ganzen_fenster(self):
+        """Das Hauptbild nur rechts der Seitenleiste: Nichts davon liegt unter ihr.
+
+        Nutzerhinweis 05.10.2026: "Das Hauptbild darf nur den Platz einnehmen, der uebrig bleibt (1427x1111)
+        nach der Sidebar (493x1111)." Vorher lag eine zweite Kopie des Hauptbilds in Fenstergroesse hinter
+        beiden Flaechen - unsichtbar unter ihren deckenden Rahmen, aber bei jeder Groessenaenderung neu
+        skaliert und der Grund, warum die Einstellungen die ganze Bildschirmgroesse nannten.
+        """
+        for name in ("bg_label", "bg_photo", "_apply_bg_resize", "_bg_resize_after_id", "_last_bg_resize_size"):
+            with self.subTest(name=name):
+                self.assertIsNone(re.search(r"(?<![A-Za-z_])%s\b" % re.escape(name), self.quelltext),
+                                  "%s: Das ganzflaechige Fensterbild ist abbestellt" % name)
+
+    def test_die_fenstergroesse_wird_selbst_gemerkt(self):
+        """Eine Verschiebung des Fensters meldet dieselbe Groesse und schneidet nichts neu."""
+        rumpf = self._wache("_on_root_configure")
+        self.assertIn("_fenstergroesse_ist_aktuell", rumpf)
+        self.assertNotIn("_hintergrund_ist_aktuell", rumpf)
+        self.assertIn("_letzte_fenstergroesse", self._wache("_on_layout_settled"))
 
     def test_startphase_zieht_die_hintergruende_nach(self):
         rumpf = self._wache("_finish_startup_phase")

@@ -44,12 +44,19 @@ class PkgReaderWaechter(unittest.TestCase):
         cls.modul = _modul()
         cls.gui = cls.modul.PS5ConverterGUI
 
-    def test_menueeintrag_vorhanden(self):
-        self.assertIn(('titlebar.pkg_reader', '_show_pkg_reader'),
-                      self.gui._MORE_TOOLS_ENTRIES,
-                      "PKG-Reader haengt nicht im WEITERE-TOOLS-Menue")
+    def test_der_leser_haengt_im_ota_fenster(self):
+        """Seit dem 05.10.2026 ohne eigenen Menueeintrag: "PS4 PKG -> OTA" ruft ihn im Mehr-Menue.
+
+        Der Leser ist der einzige Weg, den aeusseren Container eines **PS5**-Pakets zu
+        lesen (ProsperoPkg) - OrbisPkgTool kennt nur PS4-Pakete. Er darf mit dem
+        Menueeintrag nicht verschwinden.
+        """
+        self.assertNotIn(('titlebar.pkg_reader', '_show_pkg_reader'), self.gui._MORE_TOOLS_ENTRIES)
         self.assertTrue(callable(getattr(self.gui, "_show_pkg_reader", None)),
                         "_show_pkg_reader fehlt")
+        fenster = open(os.path.join(HIER, "ps5_validator", "ui", "ps4_ota.py"), encoding="utf-8").read()
+        self.assertIn("self.g._show_pkg_reader()", fenster)
+        self.assertIn("ps4ota.mehr_container_lesen", fenster)
 
     def test_magic_nach_ascii(self):
         self.assertEqual(self.gui._pkg_magic_ascii("7F-43-4E-54"), ".CNT")
@@ -136,7 +143,6 @@ class PkgReaderWaechter(unittest.TestCase):
     def test_alle_pkgreader_schluessel_zweisprachig(self):
         from ps5_validator.utils.i18n import STRINGS
         verwendet = set(re.findall(r"pkgreader\.[a-z_]+", self.quelle))
-        verwendet.add("titlebar.pkg_reader")
         self.assertIn("pkgreader.window_title", verwendet)  # Scan greift
         for schluessel in sorted(verwendet):
             eintrag = STRINGS.get(schluessel)

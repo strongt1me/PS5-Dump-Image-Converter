@@ -433,7 +433,8 @@ class SeitenTests(unittest.TestCase):
     def test_die_pc_knoepfe_im_infofenster_nur_fuer_den_rechner(self) -> None:
         zustand = self.zustand
         konsole = dict(self.eintraege[0], ps5=True, path="/data/homebrew/auf_der_konsole", kind="folder")
-        pfad = [k for k in _alle(zustand["detail"]) if k.winfo_class() == "TButton"
+        # Seit 05.10.2026 Pillen aus dem Fenster-Kit (KartenKnopf, Klasse "Canvas") statt ttk.Button.
+        pfad = [k for k in _alle(zustand["detail"]) if isinstance(k, raster.KartenKnopf)
                 and str(k.cget("text")) in (self.app._t("library.btn_umbenennen"),
                                            self.app._t("library.reveal_in_explorer_button"))]
         self.assertEqual(2, len(pfad))

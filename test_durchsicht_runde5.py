@@ -105,8 +105,9 @@ class HerunterfahrenTests(unittest.TestCase):
         gui._COLORS = collections.defaultdict(lambda: "#000000")
         gui._build_modern_toplevel = mock.MagicMock()
         gui._run_shutdown_sequence = mock.MagicMock()
-        with mock.patch.object(APP.tk, "Label", mock.MagicMock()), \
-                mock.patch.object(APP, "flach_knopf", mock.MagicMock()):
+        # Die runden Teile der Fenster (``self._pw``) gibt es hier nur als Attrappe; ``gui`` ist ohne Tk gebaut.
+        gui._pw_teile = mock.MagicMock()
+        with mock.patch.object(APP.tk, "Label", mock.MagicMock()):
             gui._start_shutdown_countdown()
             # Der erste Takt lief sofort und hat den naechsten bestellt.
             naechster = gui.root.after.call_args[0][1]
@@ -415,7 +416,9 @@ class PayloadVersandTests(unittest.TestCase):
     def test_das_hauptprogramm_sendet_nirgends_mit_sendall(self) -> None:
         quelle = Path(APP.__file__).read_text(encoding="utf-8")
         self.assertNotIn("s.sendall(data)", quelle)
-        self.assertEqual(2, quelle.count("payload_versand.stueckweise_senden(s, data)"))
+        # Eine Stelle verschickt von Hand: der JS Loader. Der Sendeblock im Editor der
+        # Konfiguration (zweite Stelle) ging am 05.10.2026 mit MicroMount.
+        self.assertEqual(1, quelle.count("payload_versand.stueckweise_senden(s, data)"))
 
 
 class EigeneBibliothekTests(unittest.TestCase):

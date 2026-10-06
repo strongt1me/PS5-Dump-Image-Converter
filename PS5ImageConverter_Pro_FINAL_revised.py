@@ -128,10 +128,13 @@ from ps5_validator.utils import anleitung
 from ps5_validator.utils import bibliothek as bibliothek_bestand
 from ps5_validator.utils import ps5_downloads
 from ps5_validator.utils import prosperopkg
+from ps5_validator.utils import orbispkg
 from ps5_validator.utils import payload_versand
 from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
+from ps5_validator.ui import ps4_ota
+from ps5_validator.ui import fenster_pillen
 from ps5_validator.utils import einstellungen
 from ps5_validator.utils import anzeige_skalierung
 from ps5_validator.utils import bibliothek_raster
@@ -158,6 +161,8 @@ from ps5_validator.utils import param_check
 from ps5_validator.utils import shadowmount_generation as sm_gen
 from ps5_validator.utils import ampr_assetpakete
 from ps5_validator.utils import wee_tools
+from ps5_validator.utils import direct_stream
+from ps5_validator.utils import ordnerwahl
 from ps5_validator.utils import eigene_lizenz
 from ps5_validator.utils.param_manifest import (
     APPLICATION_DRM_TYPES,
@@ -198,6 +203,8 @@ from ps5_validator.utils.plattform import (
     bild_in_zwischenablage as _system_bild_in_zwischenablage,
     herunterfahren as _system_herunterfahren,
     im_dateimanager_zeigen as _system_im_dateimanager_zeigen,
+    arbeitsbereich as _system_arbeitsbereich,
+    maximierte_flaeche as _system_maximierte_flaeche,
     oeffnen_versuchen as _system_oeffnen_versuchen,
     ist_administrator as _system_ist_administrator,
     konfigurationsordner as _system_konfigurationsordner,
@@ -693,7 +700,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.62"
+APP_VERSION = "v1.9.63"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -1091,8 +1098,11 @@ def mkpfs_argumente_ohne_ampr_index(args: list[str]) -> list[str]:
 # bewusste Abwahl also nicht.
 #
 # Seit dem 02.10.2026 liefert das Programm andere Bilder mit: 20 fuer den
-# Hauptbereich (1920x1200) und 20 fuer die Seitenleiste (500x1200), benannt
-# nach dem Schema bg_NN_<name> und sidebar_NN_<name>. Vorgegeben ist das
+# Hauptbereich und 20 fuer die Seitenleiste, benannt nach dem Schema
+# bg_NN_<name> und sidebar_NN_<name>. Seit dem 05.10.2026 haben sie genau die
+# Masse der Flaechen im maximierten Fenster eines 1920x1200-Schirms bei 125 %:
+# Hauptbereich 1427x1111 (rechts neben der Seitenleiste), Seitenleiste 493x1111.
+# Vorgegeben ist das
 # ruhigste Paar ("navy-curves"): dunkles Marineblau wie die frueheren Vorgaben
 # (ray-burst, glass-panels), unter den hellen Beschriftungen gut lesbar.
 STANDARD_HINTERGRUND: str = "bundled:bg_01_navy-curves.png"
@@ -1196,6 +1206,30 @@ if sys.platform == "win32":
         """Gibt das Win32-HWND fuer ein Tk-Widget zurueck."""
         return _user32.GetParent(tk_widget.winfo_id()) or tk_widget.winfo_id()
 
+    #: Die Symbole je Datei - einmal geladen, von allen Fenstern geteilt. ``LoadImageW`` legt bei jedem
+    #: Aufruf ein neues Symbol an, und niemand gab es je wieder frei: Jedes Fenster kostete 24 GDI- und
+    #: 8 USER-Objekte, die bis zum Programmende stehen blieben (am 05.10.2026 an einem leeren Toplevel
+    #: gemessen). Windows erlaubt zehntausend GDI-Objekte je Prozess; die Testreihe ist daran abgestuerzt
+    #: (Tk bricht mit 0x80000003 ab), und ein Anwender, der viele Fenster oeffnet, kaeme irgendwann dorthin.
+    #: Die Symbole gehoeren dem Programm, nicht dem Fenster.
+    _WIN32_SYMBOLE: dict[str, tuple[int, int]] = {}
+
+    def _win32_symbole(icon_path: str) -> tuple[int, int]:
+        """Das grosse und das kleine Symbol der Datei ``icon_path`` - beim ersten Mal geladen."""
+        vorhanden = _WIN32_SYMBOLE.get(icon_path)
+        if vorhanden is None:
+            big_w = max(1, int(_user32.GetSystemMetrics(SM_CXICON) or 32))
+            big_h = max(1, int(_user32.GetSystemMetrics(SM_CYICON) or 32))
+            small_w = max(1, int(_user32.GetSystemMetrics(SM_CXSMICON) or 16))
+            small_h = max(1, int(_user32.GetSystemMetrics(SM_CYSMICON) or 16))
+            load_flags = LR_LOADFROMFILE | LR_DEFAULTSIZE
+            vorhanden = (
+                _user32.LoadImageW(None, icon_path, IMAGE_ICON, big_w, big_h, load_flags),
+                _user32.LoadImageW(None, icon_path, IMAGE_ICON, small_w, small_h, load_flags),
+            )
+            _WIN32_SYMBOLE[icon_path] = vorhanden
+        return vorhanden
+
     def _apply_win32_window_icon(tk_widget, icon_path: str) -> None:
         """Setzt unter Windows explizit kleine/grosse Fenster-Icons fuer die Taskleiste."""
         try:
@@ -1206,13 +1240,7 @@ if sys.platform == "win32":
             except Exception:
                 pass
             hwnd = _get_hwnd(tk_widget)
-            big_w = max(1, int(_user32.GetSystemMetrics(SM_CXICON) or 32))
-            big_h = max(1, int(_user32.GetSystemMetrics(SM_CYICON) or 32))
-            small_w = max(1, int(_user32.GetSystemMetrics(SM_CXSMICON) or 16))
-            small_h = max(1, int(_user32.GetSystemMetrics(SM_CYSMICON) or 16))
-            load_flags = LR_LOADFROMFILE | LR_DEFAULTSIZE
-            big_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, big_w, big_h, load_flags)
-            small_icon = _user32.LoadImageW(None, icon_path, IMAGE_ICON, small_w, small_h, load_flags)
+            big_icon, small_icon = _win32_symbole(icon_path)
             if big_icon:
                 _user32.SendMessageW(hwnd, WM_SETICON, ICON_BIG, big_icon)
                 try:
@@ -1516,6 +1544,11 @@ def _doktor_werkzeuge_starten() -> list[tuple[str, str]]:
         # Programm. Bis v1.9.24 lief die Probe ueber alle vier: Auf dem Mac
         # meldete sie den Bau der anderen Architektur als defekt.
         ordner_liste.append("UFS2Tool-4.1/" + plattform_bau)
+    if sys.platform == "win32":
+        # OrbisPkgTool (PS4 PKG -> OTA) gibt es nur als Windows-Bau; unter
+        # Linux und macOS fehlt der Ordner, und das ist kein Befund.
+        ordner_liste.append(
+            "OrbisPkgTool-1.0.0/" + orbispkg.PLATTFORMORDNER["win32"])
     for relpfad in ordner_liste:
         try:
             wurzel = PS5ConverterGUI._mitgeliefert_finden(
@@ -2817,7 +2850,6 @@ class RoundedButton(tk.Canvas):
         pille: bool = False,
         hintergrund=None,
         akzent: bool = False,
-        textgruppe: "list | None" = None,
         bei_zustand=None,
         breite_nach_text: bool = False,
         polster_x: int = 20,
@@ -2868,11 +2900,6 @@ class RoundedButton(tk.Canvas):
         self._grund_merker: "tuple | None" = None
         self._foto = None
         self._schrift_obj = None
-        # Gemeinsame Startlinie: Alle Knoepfe einer Gruppe beginnen ihren Text
-        # an derselben Stelle, der Textblock steht mittig (Aufgaben 1-8).
-        self._textgruppe = textgruppe
-        if textgruppe is not None:
-            textgruppe.append(self)
         # Gerufen, wenn der Knopf gesperrt oder freigegeben wird (STARTEN:
         # sein Schein gehoert nur zum freigegebenen Knopf).
         self._bei_zustand = bei_zustand
@@ -2991,9 +3018,7 @@ class RoundedButton(tk.Canvas):
         bild.alpha_composite(form)
         self._foto = ImageTk.PhotoImage(bild, master=self)
         self.create_image(0, 0, image=self._foto, anchor="nw")
-        x, anker = self._textlage(w, h)
-        self.create_text(x, h / 2, text=self._text, fill=text_color, font=self._font,
-                         anchor=anker)
+        self.create_text(w / 2, h / 2, text=self._text, fill=text_color, font=self._font)
 
     def _grund_holen(self, w: int, h: int) -> "Image.Image":
         """Was hinter dem Knopf liegt - gemerkt, bis ``nachziehen`` es verwirft.
@@ -3044,28 +3069,6 @@ class RoundedButton(tk.Canvas):
         except tk.TclError as exc:
             logger.debug("Knopfbreite nicht setzbar: %s", exc)
 
-    def _textlage(self, w: int, h: int) -> "tuple[float, str]":
-        """Wo die Schrift steht: mittig - oder auf der Startlinie der Gruppe.
-
-        Nutzerwunsch 04.10.2026 fuer die Aufgabenknoepfe: "alle im Knopf
-        zentriert aber linksbuendig, damit die Texte auf der gleichen Linie
-        beginnen". Der laengste Text der Gruppe steht mittig, alle anderen
-        beginnen an seiner Startlinie.
-        """
-        gruppe = self._textgruppe
-        if not gruppe:
-            return w / 2.0, "center"
-        breiten = []
-        for knopf in gruppe:
-            try:
-                if knopf.winfo_exists():
-                    breiten.append(knopf._textbreite())
-            except tk.TclError:
-                continue
-        breitest = max(breiten) if breiten else self._textbreite()
-        luft = max(4.0, h * 0.4)
-        return max(luft, (w - breitest) / 2.0), "w"
-
     def nachziehen(self) -> None:
         """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
         self._grund_merker = None
@@ -3091,11 +3094,9 @@ class RoundedButton(tk.Canvas):
 
     def configure(self, **kwargs) -> None:  # noqa: A003 - bewusst tk-kompatibler Name
         redraw_needed = False
-        gruppe_neu = False
         breite_neu = False
         if "text" in kwargs:
             neu = kwargs.pop("text")
-            gruppe_neu = neu != self._text and bool(self._textgruppe)
             breite_neu = neu != self._text
             self._text = neu
             redraw_needed = True
@@ -3126,7 +3127,6 @@ class RoundedButton(tk.Canvas):
         if "font" in kwargs:
             self._font = kwargs.pop("font")
             self._schrift_obj = None
-            gruppe_neu = bool(self._textgruppe)
             breite_neu = True
             redraw_needed = True
         if "command" in kwargs:
@@ -3146,15 +3146,6 @@ class RoundedButton(tk.Canvas):
                 self._bei_zustand()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Rueckruf beim Zustandswechsel fehlgeschlagen: %s", exc)
-        if gruppe_neu:
-            # Die Startlinie haengt am laengsten Text der Gruppe - nach einem
-            # Sprachwechsel kann das ein anderer sein, also alle nachziehen.
-            for knopf in list(self._textgruppe):
-                try:
-                    if knopf is not self and knopf.winfo_exists():
-                        knopf._redraw()
-                except tk.TclError:
-                    continue
         if redraw_needed:
             self._redraw()
 
@@ -3242,7 +3233,25 @@ class RunderHaken(tk.Canvas):
         self.bind("<FocusIn>", lambda _e: self._fokus_setzen(True), add="+")
         self.bind("<FocusOut>", lambda _e: self._fokus_setzen(False), add="+")
         self.bind("<KeyPress-space>", lambda _e: self.invoke(), add="+")
+        self.bind("<Destroy>", self._spur_loesen, add="+")
         self._groesse_setzen()
+
+    def _spur_loesen(self, ereignis=None) -> None:
+        """Nimmt die Spur der Variable mit ins Grab - und laesst das Bild los.
+
+        Der Tcl-Befehl einer Spur haelt den Rueckruf, also das Kaestchen, fuer immer am Leben (siehe
+        ``bibliothek_raster.spur_bis_zerstoert``). Jedes Fenster mit einem Haken liess so sein Kaestchen samt
+        Tk-Bild stehen.
+        """
+        if ereignis is not None and ereignis.widget is not self:
+            return
+        if self._variable is not None and self._spur is not None:
+            try:
+                self._variable.trace_remove("write", self._spur)
+            except (tk.TclError, ValueError):
+                pass
+        self._spur = None
+        self._foto = None
 
     # --- Groesse und Zustand ---------------------------------------------------------
     def _groesse_setzen(self) -> None:
@@ -3473,111 +3482,6 @@ class RunderHaken(tk.Canvas):
         return self.cget(key)
 
 
-class RunderBalken(tk.Canvas):
-    """Fortschrittsbalken als Pille - Rinne und Balken mit runden Enden.
-
-    Fuer die Seiten der Ansicht KONSOLE (seit v1.9.62, Pillenform wie in der
-    Ansicht UMWANDELN). Ein ttk.Progressbar zeichnet Rinne und Balken als
-    Rechtecke; hier ist die Rinne eine Pille in der Feldfarbe mit Rand, der
-    Balken eine Pille im Verlauf des Akzentknopfs. Er beginnt nie schmaler als
-    hoch, sonst stuende bei wenigen Prozent ein Strich statt einer Kuppe da.
-
-    Versteht, was die Seiten von ihrem Balken nutzen: ``["value"]`` lesen und
-    setzen, ``configure``/``cget`` mit ``value`` und ``maximum``.
-
-    Args:
-        palette: ``() -> dict`` - die aktive Palette, bei jedem Zeichnen frisch.
-        grund: Rolle der Palette, auf der der Balken steht (Ecken der Rinne).
-        hoehe: Hoehe bei 100 %; waechst mit der Anzeige (``knopfmass``).
-    """
-
-    def __init__(self, master: tk.Widget, *, palette, grund: str = "bg_main", hoehe: int = 12,
-                 maximum: float = 100.0, value: float = 0.0, **kwargs) -> None:
-        self._palette = palette
-        self._grund = grund
-        self._maximum = float(maximum) or 100.0
-        self._wert = float(value)
-        self._foto = None
-        super().__init__(master, height=knopfmass(hoehe, master), bg=self._farbe(grund, "#000000"),
-                         highlightthickness=0, bd=0, **kwargs)
-        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
-
-    def _farbe(self, rolle: str, vorgabe: str) -> str:
-        p = self._palette() if callable(self._palette) else {}
-        return str(p.get(rolle) or vorgabe)
-
-    def _hex(self, rolle: str, vorgabe: str) -> str:
-        """Eine Farbe der Palette als #rrggbb - so rechnet bibliothek_zeichnen."""
-        try:
-            r, g, b = (wert // 257 for wert in self.winfo_rgb(self._farbe(rolle, vorgabe)))
-        except tk.TclError:
-            return vorgabe
-        return "#%02x%02x%02x" % (r, g, b)
-
-    def _redraw(self) -> None:
-        try:
-            w, h = self.winfo_width(), self.winfo_height()
-        except tk.TclError:
-            return
-        if w <= 2 or h <= 2:
-            return
-        try:
-            faktor = max(1.0, float(self.tk.call("tk", "scaling")) / (96.0 / 72.0))
-        except (tk.TclError, ValueError):
-            faktor = 1.0
-        bild = Image.new("RGBA", (w, h), self._hex(self._grund, "#000000"))
-        bild.alpha_composite(bibliothek_zeichnen.rund_rechteck(
-            w, h, h / 2.0, self._hex("console_bg", "#121216"), self._hex("border", "#34353d"),
-            faktor))
-        anteil = max(0.0, min(1.0, self._wert / self._maximum))
-        if anteil > 0.0:
-            links = self._hex("progress_fill", self._hex("accent_btn", "#2e6be6"))
-            bild.alpha_composite(bibliothek_zeichnen.verlauf_rechteck(
-                min(w, max(h, int(round(w * anteil)))), h, h / 2.0, links,
-                bibliothek_zeichnen.farbton_verschieben(links, 32.0)))
-        self.delete("all")
-        self._foto = ImageTk.PhotoImage(bild, master=self)
-        self.create_image(0, 0, image=self._foto, anchor="nw")
-
-    def nachziehen(self) -> None:
-        """Nach einem Designwechsel: Grund und Zeichnung in den neuen Farben."""
-        try:
-            super().configure(bg=self._farbe(self._grund, "#000000"))
-        except tk.TclError:
-            return
-        self._redraw()
-
-    def configure(self, cnf=None, **kwargs):  # noqa: A003 - bewusst tk-kompatibler Name
-        if isinstance(cnf, dict):
-            kwargs = {**cnf, **kwargs}
-        zeichnen = False
-        if "value" in kwargs:
-            self._wert = float(kwargs.pop("value") or 0.0)
-            zeichnen = True
-        if "maximum" in kwargs:
-            self._maximum = float(kwargs.pop("maximum") or 100.0) or 100.0
-            zeichnen = True
-        if kwargs:
-            super().configure(**kwargs)
-        if zeichnen:
-            self._redraw()
-
-    config = configure
-
-    def cget(self, key: str):  # noqa: A003 - bewusst tk-kompatibler Name
-        if key == "value":
-            return self._wert
-        if key == "maximum":
-            return self._maximum
-        return super().cget(key)
-
-    def __getitem__(self, key: str):
-        return self.cget(key)
-
-    def __setitem__(self, key: str, wert) -> None:
-        self.configure({key: wert})
-
-
 # ---------------------------------------------------------------------------
 # Hauptklasse: GUI
 # ---------------------------------------------------------------------------
@@ -3609,6 +3513,11 @@ class Drehknopf(tk.Canvas):
         command:     Wird nach jeder Aenderung gerufen.
         durchmesser: Aussenmass in Bildpunkten.
         vorgabe:     Wert fuer den Doppelklick; ohne Angabe ``von``.
+        hintergrund: ``(knopf, breite, hoehe) -> Bild`` oder ``None``: was hinter
+                     dem Knopf liegt. Ein Canvas malt immer seine eigene Farbe;
+                     auf dem Hintergrundbild stand der Knopf deshalb als dunkle
+                     Kachel (Hinweis des Nutzers am 05.10.2026). Mit Ausschnitt
+                     liegt der Knopf frei auf dem Bild, wie die Beschriftungen.
     """
 
     #: Der Knopf laesst oben eine Luecke, damit Anfang und Ende des Bereichs
@@ -3631,11 +3540,15 @@ class Drehknopf(tk.Canvas):
         aktiv: str = "#3b82f6",
         fg: str = "#ffffff",
         font: tuple | None = None,
+        hintergrund=None,
         **kwargs,
     ) -> None:
         self._breite = int(breite) if breite else int(durchmesser)
         super().__init__(master, width=self._breite, height=durchmesser,
                          bg=bg, highlightthickness=0, bd=0, **kwargs)
+        self._hintergrund = hintergrund
+        #: ``((breite, hoehe), foto oder None)`` - gemerkt, bis ``nachziehen`` es verwirft.
+        self._grund_merker: "tuple | None" = None
         self._variable = variable
         self._von = int(von)
         self._bis = max(int(bis), int(von))
@@ -3668,8 +3581,21 @@ class Drehknopf(tk.Canvas):
             self._spur = variable.trace_add("write", self._bei_aenderung)
         except AttributeError:                       # sehr alte Tk-Fassungen
             self._spur = variable.trace("w", self._bei_aenderung)
+        # Mit dem Knopf geht die Spur: Sonst haelt ihr Tcl-Befehl den Drehknopf fuer immer am Leben.
+        self.bind("<Destroy>", self._spur_loesen, add="+")
 
         self._zeichnen()
+
+    def _spur_loesen(self, ereignis=None) -> None:
+        if ereignis is not None and ereignis.widget is not self:
+            return
+        spur, self._spur = self._spur, None
+        if spur is None:
+            return
+        try:
+            self._variable.trace_remove("write", spur)
+        except (tk.TclError, ValueError, AttributeError):
+            pass
 
     # ── Zeichnen ────────────────────────────────────────────────────────
     def _anteil(self) -> float:
@@ -3685,8 +3611,43 @@ class Drehknopf(tk.Canvas):
         except (tk.TclError, ValueError):
             return self._von
 
+    def _grund_holen(self) -> "ImageTk.PhotoImage | None":
+        """Der Bildausschnitt hinter dem Knopf - ``None`` ohne ``hintergrund`` oder Hintergrundbild.
+
+        Beim Ziehen zeichnet der Knopf viele Male je Sekunde; den Ausschnitt
+        braucht er nur einmal, danach liegt er im Merker (auch ein ``None``:
+        ohne Hintergrundbild soll nicht bei jedem Zeichnen neu gefragt werden).
+        """
+        if self._hintergrund is None:
+            return None
+        groesse = (int(self._breite), int(self._durchmesser))
+        merker = self._grund_merker
+        if merker is not None and merker[0] == groesse:
+            return merker[1]
+        foto = None
+        try:
+            bild = self._hintergrund(self, groesse[0], groesse[1])
+            if bild is not None:
+                bild = bild.convert("RGB")
+                if bild.size != groesse:
+                    bild = bild.resize(groesse, _LANCZOS)
+                foto = ImageTk.PhotoImage(bild, master=self)
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("Drehknopf-Hintergrund nicht berechenbar: %s", exc)
+            foto = None
+        self._grund_merker = (groesse, foto)
+        return foto
+
+    def nachziehen(self) -> None:
+        """Holt den Hintergrund neu und zeichnet - nach Verschieben, Design- oder Bildwechsel."""
+        self._grund_merker = None
+        self._zeichnen()
+
     def _zeichnen(self) -> None:
         self.delete("all")
+        grund = self._grund_holen()
+        if grund is not None:
+            self.create_image(0, 0, image=grund, anchor="nw")
         d = self._durchmesser
         rand = max(3, d // 10)
         # Der Kreis sitzt mittig auf einer moeglicherweise breiteren Flaeche.
@@ -3821,6 +3782,7 @@ class Drehknopf(tk.Canvas):
         """Zieht den Knopf beim Designwechsel nach."""
         self.configure(bg=bg)
         self._ring, self._aktiv, self._fg = ring, aktiv, fg
+        self._grund_merker = None
         self._zeichnen()
 
     def invoke(self) -> None:
@@ -4161,7 +4123,6 @@ class PS5ConverterGUI:
         ("_btn_klog_title", "titlebar.klog", "_show_klog_window_geprueft"),
         ("_btn_jsloader_title", "titlebar.jsloader", "_show_js_loader"),
         ("_btn_ftp_title", "titlebar.filezilla", "_launch_filezilla"),
-        ("_btn_webkit_title", "titlebar.webkit", "_show_webkit_autoloader"),
         ("_btn_faq_title", "titlebar.faq", "_open_faq"),
         ("_btn_manual_title", "titlebar.manual", "_open_benutzerhandbuch"),
         ("_btn_assetpack_anleitung_title", "titlebar.assetpack_anleitung", "_open_assetpack_anleitung"),
@@ -4175,26 +4136,28 @@ class PS5ConverterGUI:
     _TITELLEISTE_LUFT = 24
 
     _MORE_TOOLS_ENTRIES: tuple[tuple[str, str], ...] = (
-        # SHADOWMOUNT+ sass bis v1.8.100 als eigener Knopf in der Leiste. An
-        # seinen Platz ist der WebKit Autoloader gerueckt; der Config-Editor
-        # wird seltener gebraucht und liegt deshalb hier.
+        # SHADOWMOUNT+ sass bis v1.8.100 als eigener Knopf in der Leiste (an seinen
+        # Platz rueckte danach der WebKit Autoloader, seit v1.9.63 eine Seite der
+        # Ansicht KONSOLE); der Config-Editor wird seltener gebraucht und liegt
+        # deshalb hier.
         ("titlebar.shadowmount", "_show_shadowmount_editor"),
         ("titlebar.backport", "_show_backport"),
         ("titlebar.downloads", "_show_downloads_manager"),
         ("titlebar.pkg_merger", "_show_pkg_merger_dialog"),
         ("titlebar.param_manifest", "_show_param_manifest_editor"),
-        ("titlebar.micromount", "_show_micromount_editor"),
         ("titlebar.ampr_index", "_show_ampr_index_builder"),
         ("titlebar.ampr_mitschnitt", "_show_ampr_mitschnitt_assistent"),
         ("titlebar.self_inspector", "_show_self_inspector"),
         ("titlebar.elf_eboot", "_show_elf_zu_eboot"),
         ("titlebar.dump_rename", "_show_dump_rename"),
-        ("titlebar.pkg_reader", "_show_pkg_reader"),
-        ("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
+        # Seit dem 05.10.2026 der EINE Knopf fuer PS4-Pakete (Nutzerwunsch): Er ersetzt
+        # "PS4 PKG -> ffpfsc", "PS4 PKG -> Dump Ordner" und "PS4 & PS5 PKG lesen". Die
+        # alten Fenster bleiben ueber das Fenster erreichbar (-> ffpfsc, Entpacken ohne
+        # OrbisPkgTool, "Paketkopf lesen" im Mehr-Menue), nur der Eintrag hier ist weg.
+        ("titlebar.ps4_ota", "_show_ps4_pkg_ota"),
         ("titlebar.appinstall", "_show_app_install"),
         ("titlebar.autoloader", "_show_autoloader"),
         ("titlebar.unjail", "_show_unjail_sender"),
-        ("titlebar.ps4pkg", "_show_ps4_pkg_converter"),
         # Fremdwerkzeug fuer den NOR-Flash der Konsole (seit v1.9.29), kein
         # Teil der Umwandlung - deshalb ganz am Ende.
         ("titlebar.wee_tools", "_show_wee_tools"),
@@ -4219,11 +4182,28 @@ class PS5ConverterGUI:
     #: Seit dem 26.09.2026 zeigen alle drei rechts eine Seite statt eines
     #: Fensters (_KONSOLE_SEITEN) - erst "1. Konsole & Payloads", am Abend
     #: auch "2. Spielstaende".
+    #:
+    #: Seit dem 04.10.2026 sieben: Knopf 2 ist der WebKit Autoloader (er loest
+    #: die Spielstaende-Seite ab; Garlic startet weiter ueber "Konsole &
+    #: Payloads"), dazu "5. CoolSysCent-Pro", "6. ShadowMount+" und "7. SMPlusGui" -
+    #: alle drei oeffnen wie "4. Prospero Manager" die Weboberflaeche und schicken ihr
+    #: Payload vorher, falls noetig (_KONSOLE_WEBDIENSTE). Knopf 5 ist seit dem
+    #: 05.10.2026 das PS5 Cooling & System Center des Projektinhabers (Port 8086).
+    #:
+    #: Am selben Tag acht: "8. Direct Stream" - der Nutzer wollte "einen Knopf 7"
+    #: fuer diese Funktion; die 7 gehoert seit dem 04.10.2026 SMPlusGui, deshalb
+    #: steht der neue Knopf hinten. Er schickt nichts an die Konsole, sondern startet
+    #: einen kleinen Server auf diesem Rechner und zeigt seine Seite rechts
+    #: (_konsole_directstream_oeffnen, Modul ``direct_stream``).
     _KONSOLE_KNOEPFE: tuple[tuple[str, str], ...] = (
         ("konsole.btn_dienste", "dienste"),
-        ("konsole.btn_spielstaende", "spielstaende"),
+        ("konsole.btn_webkit", "webkit"),
         ("konsole.btn_bibliothek", "bibliothek"),
         ("konsole.btn_prosperomgr", "prosperomgr"),
+        ("konsole.btn_coolsyscent", "coolsyscent"),
+        ("konsole.btn_shadowmount", "shadowmount"),
+        ("konsole.btn_smplusgui", "smplusgui"),
+        ("konsole.btn_directstream", "directstream"),
     )
 
     _FORMAT_LABELS: dict[str, str] = {
@@ -4239,7 +4219,12 @@ class PS5ConverterGUI:
         "unpack_to_exfat": ("ffpfsc",),
         "pack_file": ("exfat",),
         "ffpkg_to_ffpfsc": ("ffpkg",),
-        "batch_convert": ("ffpfsc", "exfat", "ffpkg"),
+        # Dump-Ordner stehen seit dem 05.10.2026 auch hier: Die Verarbeitung nahm sie
+        # schon lange (_sammelquellen_aufloesen, "folder"-Zweige in
+        # _execute_conversion_by_type), nur Auswahl und Hinweistext ("Quelle: ...")
+        # nannten sie nicht - Wunsch des Nutzers: "Bei der Sammelkonvertierung fehlt
+        # die Auswahl Dump-Ordner als Quelle."
+        "batch_convert": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "universal_convert": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "ampr_manager": ("folder", "ffpfsc", "exfat", "ffpkg"),
         "dump_validator": ("folder", "ffpfsc", "exfat", "ffpkg"),
@@ -4395,6 +4380,10 @@ class PS5ConverterGUI:
         self.target_format = tk.StringVar(value=self._t("format.ffpfsc"))
         self.temp_path = tk.StringVar(value=self._load_runtime_temp_dir())
         self._batch_sources: list[str] = []
+        #: Die Groesse jedes Ordners der Sammelkonvertierung (Schluessel: normalisierter
+        #: Pfad), im Hintergrund ermittelt - siehe _sammel_groessen_ermitteln. Dateien
+        #: stehen hier nicht: Ihre Groesse liest die Platzpruefung selbst.
+        self._sammel_ordnergroessen: dict[str, int] = {}
         self._mode_tooltip_handles: list[DelayedTooltip] = []
         #: Tooltips mit festem Schluessel - _apply_language schreibt sie neu
         #: (Durchsicht H1-3/H2-14: sie blieben in der Startsprache).
@@ -4440,8 +4429,10 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Gespeicherte last_title_id konnte nicht geladen werden: %s", exc)
         self._startup_complete = False
-        self._bg_resize_after_id: str | None = None
-        self._last_bg_resize_size: tuple[int, int] | None = None
+        # Auf welche Fenstergroesse zuletzt nachgeschnitten wurde (_on_layout_settled): Eine blosse
+        # Verschiebung des Fensters meldet dieselbe Groesse und braucht nichts. Ein ganzflaechiges
+        # Fensterbild gibt es seit dem 05.10.2026 nicht mehr - das Hauptbild liegt nur rechts der Leiste.
+        self._letzte_fenstergroesse: tuple[int, int] | None = None
         # Monitorwechsel mit anderer Skalierung: siehe _dpi_wechsel_festhalten.
         # None heisst "noch nicht gemessen", False in _dpi_abfrage_moeglich
         # heisst "diese Windows-Fassung kann es nicht, nicht mehr fragen".
@@ -4620,35 +4611,12 @@ class PS5ConverterGUI:
         # PKG-MERGER und PARAM/MANIFEST sitzen nicht mehr als Einzelknoepfe in
         # der Titelleiste, sondern im Menue "WEITERE TOOLS" (siehe
         # _MORE_TOOLS_ENTRIES). Die Leiste war sonst schon bei normaler
-        # Fenstergroesse zu voll - derselbe Grund, aus dem MicroMount und der
-        # AMPR-Index-Builder bereits dort liegen.
+        # Fenstergroesse zu voll - derselbe Grund, aus dem der AMPR-Index-Builder
+        # und die uebrigen Zusatzwerkzeuge bereits dort liegen.
 
-        # WebKit-Autoloader-Knopf. Er steht dort, wo bis v1.8.100 der
-        # ShadowMount+-Config-Editor sass; der ist ins Menue "WEITERE TOOLS"
-        # gewandert (siehe _MORE_TOOLS_ENTRIES).
-        self._btn_webkit_title = flach_knopf(
-            self._titlebar_right,
-            text=self._t("titlebar.webkit"),
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["header_bg"],
-            fg=self._COLORS["fg_secondary"],
-            activebackground=self._COLORS["bg_card"],
-            activeforeground="white",
-            relief="flat",
-            cursor="hand2",
-            padx=10,
-            pady=0,
-            bd=0,
-            highlightthickness=0,
-            command=self._werkzeugknopf("_show_webkit_autoloader"),
-        )
-        self._btn_webkit_title.pack(side="right", padx=(0, 8))
-        def _webkit_enter(e):
-            self._btn_webkit_title.config(fg=self._COLORS["fg_primary"], bg=self._COLORS["bg_card"])
-        def _webkit_leave(e):
-            self._btn_webkit_title.config(fg=self._COLORS["fg_secondary"], bg=self._COLORS["header_bg"])
-        self._btn_webkit_title.bind("<Enter>", _webkit_enter)
-        self._btn_webkit_title.bind("<Leave>", _webkit_leave)
+        # Kein Knopf WEBKIT AUTOLOADER mehr: Seit dem 04.10.2026 ist er eine
+        # Seite der Ansicht KONSOLE ("2. WebKit Autoloader", Wunsch des Nutzers:
+        # das Fenster in die rechte Seite verlegen) - wie die Bibliothek unten.
 
         # Kein Knopf BIBLIOTHEK mehr: Seit dem 25.09.2026 ist die Bibliothek
         # eine Seite der Ansicht KONSOLE ("3. Bibliothek", Wunsch des
@@ -4704,8 +4672,8 @@ class PS5ConverterGUI:
         self._btn_diagnostics_title.bind("<Enter>", _diagnostics_enter)
         self._btn_diagnostics_title.bind("<Leave>", _diagnostics_leave)
 
-        # "Weitere Tools"-Sammelknopf (Y2JB, MicroMount, AMPR-Index-Builder,
-        # Dump-Rename) statt vier Einzelknöpfen - die Titelleiste war mit
+        # "Weitere Tools"-Sammelknopf (Y2JB, AMPR-Index-Builder, Dump-Rename
+        # und weitere) statt vieler Einzelknöpfe - die Titelleiste war mit
         # 4 zusätzlichen Einzelknöpfen bereits bei Standardfenstergröße zu
         # voll (der Sprachumschalter fiel dadurch aus dem sichtbaren Bereich).
         self._more_tools_menu = tk.Menu(
@@ -5517,6 +5485,31 @@ class PS5ConverterGUI:
         return anzeige_skalierung.fenster_obergrenze(
             self._bildschirm_erkannt(), self._aufloesung_manuell)
 
+    #: Titelleiste und Rahmen eines Fensters in Pixeln bei 125 % (gemessen am 05.10.2026: 38 oben, 9 unten).
+    #: ``geometry()`` meint die Flaeche *im* Rahmen - der Rahmen kommt oben drauf.
+    _FENSTER_RAHMEN_HOEHE = 47
+
+    def _arbeitsbereich_fenster(self) -> tuple[int, int, int, int]:
+        """Wo ein Fenster stehen darf: ``(x, y, breite, hoehe)`` des ersten Bildschirms ohne Taskleiste.
+
+        Die Grenze fuer die Groesse eines Fensters war der ganze Bildschirm. Ein Fenster, das bis dorthin
+        wuchs (Bildschirm minus 80), ragte mit seinem unteren Rand unter die Taskleiste: bei 1200 Punkten
+        Bildschirm und 60 Punkten Taskleiste ueber 60 Punkte - und die Knopfreihe ganz unten war nicht mehr
+        zu sehen (Meldung vom 05.10.2026 an "App direkt installieren").
+        """
+        return _system_arbeitsbereich(self._bildschirm_erkannt())
+
+    def _fenster_mitte(self, win, breite: int, hoehe: int) -> tuple[int, int]:
+        """``(x, y)`` fuer ein Fenster der Groesse ``breite`` x ``hoehe`` (Flaeche im Rahmen) mittig im Arbeitsbereich.
+
+        Der Rahmen (Titelleiste, Ecken) zaehlt mit, die Taskleiste nicht; nie ueber den Rand hinaus.
+        """
+        bereich_x, bereich_y, bereich_b, bereich_h = self._arbeitsbereich_fenster()
+        rahmen = knopfmass(self._FENSTER_RAHMEN_HOEHE, win)
+        x = bereich_x + max(0, (bereich_b - breite) // 2)
+        y = bereich_y + max(0, (bereich_h - hoehe - rahmen) // 2)
+        return x, y
+
     def _aufloesung_verkleinert(self) -> bool:
         """Ist die gewaehlte Aufloesung kleiner als der echte Bildschirm?
 
@@ -5559,29 +5552,62 @@ class PS5ConverterGUI:
         Bauvorgabe schon rund 490 geworden. Deshalb wird sie gemessen und
         nicht angenommen.
 
+        Das Hauptbild liegt nur **rechts neben der Seitenleiste**; sie hat ihr
+        eigenes Bild und deckt den linken Teil des Fensters ab (Nutzerhinweis
+        05.10.2026: "zwei Hintergrundbilder, getrennt"). Seine Flaeche ist
+        deshalb die Breite des maximierten Fensters minus Seitenleiste, und
+        beide sind so hoch wie das maximierte Fenster. Genaue Zahlen, nicht auf
+        Zehner gerundet - der Nutzer richtet seine Bilder darauf aus. Gemessen an
+        einem 1920 x 1200-Schirm bei 125 %: Hauptbild 1427 x 1111, Seitenleiste
+        493 x 1111.
+
         Returns:
-            ``(Breite, Hoehe, Seitenleistenbreite)``, aufgerundet auf volle
-            Zehner.
+            ``(Breite der Flaeche rechts, Hoehe, Seitenleistenbreite)`` in Pixeln.
         """
-        def _aufrunden(wert: int) -> int:
-            return int(max(1, -(-int(wert) // 10) * 10))
+        return anzeige_skalierung.hintergrund_masse(
+            self._fenster_maximal(), self._seitenleiste_pixel())
 
-        # Die angenommene Bildschirmgroesse: die von Hand gewaehlte
-        # Aufloesung, sonst die erkannte (Einstellungen, Abschnitt Anzeige).
-        breite, hoehe = self._bildschirm_wirksam()
+    def _fenster_maximal(self) -> tuple[int, int]:
+        """Die Flaeche eines maximierten Hauptfensters ``(Breite, Hoehe)`` auf dem angenommenen Bildschirm.
 
-        seitenleiste = 0
+        Hat der Nutzer eine Aufloesung von Hand gewaehlt, gilt sie (``maximiert_groesse``, mit fester
+        Reserve fuer Rahmen und Taskleiste). Sonst wird gerechnet, was Windows maximiert wirklich laesst:
+        Arbeitsbereich ohne Taskleiste, abzueglich der Titelleiste (``plattform.maximierte_flaeche``) - das
+        trifft die Messung am echten Fenster auf den Pixel. Wo das nicht zu erfahren ist (Linux, macOS), gilt
+        ebenfalls die feste Reserve.
+        """
+        if not getattr(self, "_aufloesung_manuell", None):
+            dpi = 0
+            if IST_WINDOWS:
+                try:
+                    dpi = int(ctypes.windll.user32.GetDpiForWindow(self.root.winfo_id()))
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("Fenster-DPI nicht lesbar: %s", exc)
+            gemessen = _system_maximierte_flaeche(self._bildschirm_erkannt(), dpi)
+            if gemessen:
+                return gemessen
+        return anzeige_skalierung.maximiert_groesse(self._bildschirm_wirksam())
+
+    def _seitenleiste_pixel(self) -> int:
+        """Wie breit die Seitenleiste ist, in Pixeln - gemessen, nicht angenommen.
+
+        Sie haengt an der Schriftgroesse und damit an der Bildschirmskalierung (bei 125 % sind aus den 320
+        Pixeln der Bauvorgabe 493 geworden). Vorrang hat die Spaltenbreite, mit der das Fenster sie aufbaut
+        (``_seitenleiste_breite``), dann die gezeichnete Breite; vor dem ersten Zeichnen die Bauvorgabe mit der
+        Skalierung hochgerechnet.
+        """
+        fest = int(getattr(self, "_seitenleiste_breite", 0) or 0)
+        if fest > 1:
+            return fest
         widget = getattr(self, "sidebar", None)
         if widget is not None:
             try:
-                seitenleiste = int(widget.winfo_width())
-            except Exception:
-                seitenleiste = 0
-        if seitenleiste <= 1:
-            # Noch nicht gezeichnet: die Bauvorgabe mit der Skalierung hochrechnen.
-            seitenleiste = int(320 * max(1.0, pt(10) / 10.0))
-
-        return _aufrunden(breite), _aufrunden(hoehe), _aufrunden(seitenleiste)
+                gezeichnet = int(widget.winfo_width())
+            except Exception:  # noqa: BLE001
+                gezeichnet = 0
+            if gezeichnet > 1:
+                return gezeichnet
+        return int(320 * max(1.0, pt(10) / 10.0))
 
     @staticmethod
     def _bild_fuellen(master, breite: int, hoehe: int):
@@ -5825,7 +5851,6 @@ class PS5ConverterGUI:
             ("_btn_ftp_title", "titlebar.filezilla"),
             ("_btn_diagnostics_title", "titlebar.diagnostics"),
             ("_btn_klog_title", "titlebar.klog"),
-            ("_btn_webkit_title", "titlebar.webkit"),
             ("_btn_design_title", "titlebar.design"),
             ("_btn_manual_title", "titlebar.manual"),
             ("_btn_faq_title", "titlebar.faq"),
@@ -5901,11 +5926,11 @@ class PS5ConverterGUI:
                 self._konsole_tafel_beschriften()
             except tk.TclError:
                 pass
-        # Ebenso die Seite "Spielstaende" (seit dem 26.09.2026 kein Fenster
-        # mehr): Status und Adresse der Oberflaeche kommen aus ihrem Stand.
-        if getattr(self, "_spielstaende_seite", None) is not None:
+        # Ebenso die Seite "WebKit Autoloader" (seit 04.10.2026): Auswahl der
+        # Fassung ("neueste"), Satz darunter und Statuszeile.
+        if getattr(self, "_webkit_seite", None) is not None:
             try:
-                self._spielstaende_beschriften()
+                self._webkit_seite_beschriften()
             except tk.TclError:
                 pass
         # Die Seite einer Weboberflaeche (seit 26.09.2026): Name und Status.
@@ -7057,12 +7082,63 @@ class PS5ConverterGUI:
         self._quellgroesse_gemerkt = (schluessel, int(groesse or 0))
         self._last_source_size_bytes = int(groesse or 0)
 
+    def _sammel_groessen_ermitteln(self, quellen, abbruch=None,
+                                   fortschritt=None) -> "tuple[int, dict[str, int]]":
+        """Summe der Sammelquellen und die Groesse jedes Ordners - fuer Anzeige und Platzpruefung.
+
+        Eine Datei zaehlt mit ihrer Dateigroesse. Ein Ordner wird durchlaufen
+        (:meth:`_get_path_size`, mit Abbruch) - das dauert bei einem Dump mit
+        17.000 Dateien, deshalb laeuft dies nur im Hintergrundfaden. Die Groesse
+        jedes Ordners gehoert in :attr:`_sammel_ordnergroessen`; die Platzpruefung
+        liest sie ueber :meth:`_bekannte_quellgroesse`.
+
+        Args:
+            quellen: Dateien und Ordner der Sammelkonvertierung.
+            abbruch: ``() -> bool``; wahr heisst: Auswahl gewechselt, aufhoeren. Ein
+                Teilergebnis wird dann nicht gemerkt - der Aufrufer prueft das selbst.
+            fortschritt: ``(getan, anzahl, summe_bisher)`` nach jeder Quelle - damit
+                das Messen mehrerer grosser Dumps sichtbar ist (keine stillen
+                Vorgaenge, Waechter ``test_stille_aktionen``).
+
+        Returns:
+            ``(summe, groesse_je_ordner)``; die Schluessel sind normalisierte Pfade.
+        """
+        summe = 0
+        je_ordner: dict[str, int] = {}
+        quellen = list(quellen)
+        for getan, pfad in enumerate(quellen):
+            if callable(fortschritt) and getan:
+                fortschritt(getan, len(quellen), summe)
+            if callable(abbruch) and abbruch():
+                break
+            if os.path.isfile(pfad):
+                try:
+                    summe += os.path.getsize(pfad)
+                except OSError as exc:
+                    logger.debug("Quellgroesse nicht lesbar (%s): %s", pfad, exc)
+            elif os.path.isdir(pfad):
+                groesse = int(self._get_path_size(pfad, cancel_check=abbruch) or 0)
+                if callable(abbruch) and abbruch():
+                    break
+                je_ordner[os.path.normcase(os.path.abspath(pfad))] = groesse
+                summe += groesse
+        return summe, je_ordner
+
     def _bekannte_quellgroesse(self, src: str) -> int:
         """Die gemerkte Groesse - aber nur, wenn sie zu ``src`` gehoert.
 
         Ohne gemerkten Pfad (aeltere Aufrufer und Pruefungen, die nur die
         Zahl setzen) gilt die Zahl wie bisher.
+
+        Die Ordner der Sammelkonvertierung haben eine eigene Tabelle: Gemerkt
+        wird sonst nur **eine** Quelle, und bei drei gewaehlten Dump-Ordnern
+        kennte die Platzpruefung nur den letzten.
         """
+        ordner = getattr(self, "_sammel_ordnergroessen", None)
+        if ordner and src:
+            treffer = ordner.get(os.path.normcase(os.path.abspath(src)))
+            if treffer is not None:
+                return int(treffer)
         gemerkt = getattr(self, "_quellgroesse_gemerkt", None)
         if gemerkt is None:
             return int(getattr(self, "_last_source_size_bytes", 0) or 0)
@@ -7438,7 +7514,7 @@ class PS5ConverterGUI:
                  anchor="w").pack(fill="x", pady=(0, 12))
 
         for was, ordner, noetig, frei in knapp:
-            karte = tk.Frame(koerper, bg=c["console_bg"], padx=14, pady=10)
+            karte = self._pw.Karte(koerper, bg=c["console_bg"], padx=14, pady=10)
             karte.pack(fill="x", pady=(0, 8))
             tk.Label(karte, text=self._t("platz.wo_%s" % was),
                      bg=c["console_bg"], fg=c["fg_primary"],
@@ -7485,19 +7561,19 @@ class PS5ConverterGUI:
 
         reihe = tk.Frame(fenster, bg=c["bg_main"], padx=18, pady=14)
         reihe.pack(side="bottom", fill="x")
-        ttk.Button(reihe, text=self._t("action.cancel"),
+        self._pw.Button(reihe, text=self._t("action.cancel"),
                    command=lambda: _schliessen("abbrechen")).pack(side="right")
-        ttk.Button(reihe, text=self._t("platz.trotzdem"),
+        self._pw.Button(reihe, text=self._t("platz.trotzdem"),
                    command=lambda: _schliessen("trotzdem")).pack(
                        side="right", padx=(0, 8))
         # Angeboten wird nur, was auch knapp ist - ein Knopf fuer einen
         # Ordner, an dem es nicht fehlt, waere eine falsche Faehrte.
         betroffen = {w for w, *_ in knapp}
         if betroffen & {"temp", "beides"}:
-            ttk.Button(reihe, text=self._t("platz.temp_knopf"),
+            self._pw.Button(reihe, text=self._t("platz.temp_knopf"),
                        command=lambda: _waehlen("temp")).pack(side="left")
         if betroffen & {"ziel", "beides"}:
-            ttk.Button(reihe, text=self._t("platz.ziel_knopf"),
+            self._pw.Button(reihe, text=self._t("platz.ziel_knopf"),
                        style="Accent.TButton",
                        command=lambda: _waehlen("ziel")).pack(
                            side="left", padx=(8, 0))
@@ -8612,12 +8688,12 @@ class PS5ConverterGUI:
 
     def _create_widgets(self) -> None:
         """Erstellt und platziert alle GUI-Widgets im modernen Sidebar-Layout."""
-        # --- Hintergrundbild (Vollbildfähig) ---
-        if self._bg_image_cache is not None:
-            self.bg_photo = ImageTk.PhotoImage(self._bg_image_cache)
-            self.bg_label = tk.Label(self.root, image=self.bg_photo, bg=self._COLORS["bg_main"])
-            self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-            self.bg_label.lower()
+        # Ein Hintergrundbild hinter dem ganzen Fenster gibt es nicht (mehr): Das Hauptbild liegt nur in der
+        # Inhaltsflaeche rechts neben der Seitenleiste (content_bg_label), die Leiste hat ihr eigenes Bild
+        # (sidebar_bg_label) - zwei Bilder, getrennt (Nutzerhinweis 05.10.2026). Das ganzflaechige Bild lag
+        # bis dahin hinter beiden und war von ihren deckenden Rahmen verdeckt; es kostete bei jeder
+        # Groessenaenderung eine Skalierung ueber 1920 x 1111 Pixel und liess die Einstellungen die ganze
+        # Bildschirmgroesse nennen.
 
         # --- Hauptcontainer (Sidebar + Content) ---
         # Zeile 0 = 0px (Titelleiste ist place-basiert, kein Grid-Platzhalter nötig)
@@ -8724,10 +8800,10 @@ class PS5ConverterGUI:
         # (_seitenleiste_breite_anpassen).
         self._ansicht_knopf.pack(pady=(0, 10))
 
-        # Modus-Buttons in Sidebar - als Pillen; die Texte beginnen alle auf
-        # derselben Linie, der Block steht mittig (Nutzerwunsch 04.10.2026).
+        # Modus-Buttons in Sidebar - als Pillen, der Text mittig im Knopf
+        # (Nutzerwunsch 05.10.2026: wieder zentriert; die gemeinsame
+        # Startlinie vom 04.10. sah schlechter aus).
         self.mode_buttons = []
-        self._aufgaben_textgruppe: list = []
         for text, mode in self._MODE_OPTIONS:
             # Aufgabe 7 fuehrt nicht in den Hauptbereich, sondern oeffnet die
             # Wahl zwischen den beiden AMPR-Methoden. Ueber
@@ -8750,7 +8826,6 @@ class PS5ConverterGUI:
                 radius=8,
                 height=40,
                 pille=True, hintergrund=self._rund_hintergrund,
-                textgruppe=self._aufgaben_textgruppe,
             )
             btn.pack(pady=3)
             self.mode_buttons.append((btn, mode))
@@ -8763,7 +8838,6 @@ class PS5ConverterGUI:
         # gepackt. Gleiche Bauart wie die Aufgabenknoepfe, damit die Leiste in
         # beiden Ansichten gleich aussieht.
         self._konsole_knoepfe: list[tuple[RoundedButton, str]] = []
-        self._konsole_textgruppe: list = []
         for schluessel, kennung in self._KONSOLE_KNOEPFE:
             knopf = RoundedButton(
                 sidebar,
@@ -8779,11 +8853,14 @@ class PS5ConverterGUI:
                 radius=8,
                 height=40,
                 pille=True, hintergrund=self._rund_hintergrund,
-                textgruppe=self._konsole_textgruppe,
             )
             self._konsole_knoepfe.append((knopf, schluessel))
-        self._konsole_prosperomgr_knopf = next(
-            (k for k, s in self._konsole_knoepfe if s == "konsole.btn_prosperomgr"), None)
+        # Die Knoepfe, die ein Payload sicherstellen und eine Weboberflaeche
+        # oeffnen (4, 6, 7): sie werden waehrend einer solchen Aktion gesperrt.
+        _kennung_zu_text = {schluessel: kennung for schluessel, kennung in self._KONSOLE_KNOEPFE}
+        self._konsole_webdienst_knoepfe = [
+            knopf for knopf, schluessel in self._konsole_knoepfe
+            if _kennung_zu_text.get(schluessel) in self._KONSOLE_WEBDIENSTE]
 
         # icon0.png Vorschau-Bereich (zwischen Buttons und Footer)
         # Kein eigener Rahmen: Ein tk.Frame zeichnet immer seine Hintergrundfarbe
@@ -8927,12 +9004,10 @@ class PS5ConverterGUI:
         # andere Felder, und damit aendert sich die noetige Hoehe.
         content_area.bind("<Configure>", self._on_inhalt_configure, add="+")
 
-        # Hintergrundbild im Content-Bereich: der äußere Vollbild-Hintergrund
-        # (weiter oben) liegt hinter dem Sidebar-/Content-Grid und ist dadurch
-        # von deren durchgehend deckenden Rahmen komplett verdeckt. Ein eigenes,
-        # auf content_area skaliertes Hintergrund-Label an unterster Z-Ebene
-        # macht das Bild in den Rand-/Zwischenräumen um QUELLE/ZIELFORMAT usw.
-        # tatsächlich sichtbar.
+        # Hauptbild im Content-Bereich: ein eigenes, auf content_area skaliertes
+        # Hintergrund-Label an unterster Z-Ebene - das Bild steht in den Rand-/
+        # Zwischenräumen um QUELLE/ZIELFORMAT usw. und nur dort, rechts neben der
+        # Seitenleiste (deren Bild ist ein anderes, siehe sidebar_bg_label).
         if self._bg_image_cache is not None:
             self.content_bg_label = tk.Label(content_area, bg=self._COLORS["bg_main"])
             # x/width gleichen content_area's eigenes padx=40 aus (pady=0, daher
@@ -9157,6 +9232,9 @@ class PS5ConverterGUI:
             aktiv=self._COLORS["fg_accent"],
             fg=self._COLORS["fg_primary"],
             font=(UI_SCHRIFT, pt(10), "bold"),
+            # Ohne Ausschnitt stuende der Knopf als dunkle Kachel auf dem
+            # Hintergrundbild (Hinweis des Nutzers am 05.10.2026).
+            hintergrund=self._rund_hintergrund,
         )
         # Direkt neben der Kompressionsstufe statt in der breiten, rechtsbündigen
         # Browse-Button-Spalte platziert (sonst reisst die stretchy Spalte 1 einen
@@ -9190,12 +9268,7 @@ class PS5ConverterGUI:
             state="readonly",
             font=(UI_SCHRIFT, pt(10)),
             values=list(self._verify_optionen.keys()),
-            # 11 Zeichen = 99 px Textfeld; der laengste Eintrag
-            # ("Vollstaendig") misst 85 px. Die neun Pixel, die ein Zeichen
-            # weniger spart, braucht die Karte bei Mindestbreite: Die Pille
-            # von WORKER schiebt die Pruefstufe seit v1.9.62 nach rechts
-            # (_worker_ueberstand).
-            width=11,
+            width=12,
         )
         self.verify_combo.bind("<<ComboboxSelected>>", self._on_verify_stufe_changed)
         self.mkpfs_verify = _gespeichert
@@ -9626,6 +9699,7 @@ class PS5ConverterGUI:
         self._startschein_flaeche = tk.Canvas(content_area, highlightthickness=0, bd=0,
                                               takefocus=0, bg=self._COLORS["bg_main"])
         self._runde_nachzieher.append(self._startschein_zeichnen)
+        self._runde_nachzieher.append(self._knopfleiste_nachziehen)
 
         self.abort_btn = RoundedButton(
             action_bar, text=self._t("action.cancel"),
@@ -9719,9 +9793,7 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9), "italic"),
             foreground=self._COLORS[self._KARTEN_TEXT_ROLLE],
         )
-        # Unten etwas Luft: Seit v1.9.62 steht die Zeile auf einer Pille, deren
-        # Rand sonst auf der letzten Fensterzeile laege.
-        self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 6))
+        self.status_label.grid(row=5, column=0, sticky="e", pady=(10, 0))
         self._content_caption_labels.append(self.status_label)
 
         # Live-Systemtelemetrie (CPU/RAM/Temp-Speicher) – nur sichtbar während einer laufenden Aufgabe
@@ -9757,8 +9829,7 @@ class PS5ConverterGUI:
             (self.dest_title, self._KARTEN_TEXT_ROLLE),
             (self.temp_title, self._KARTEN_TEXT_ROLLE),
             # Bis v1.9.62 fehlten diese beiden: Nach einem Designwechsel im
-            # laufenden Betrieb behielten sie die Schrift des Startdesigns - auf
-            # der hellen Pille des Designs "hell" war sie unsichtbar.
+            # laufenden Betrieb behielten sie die Schrift des Startdesigns.
             (self.integrate_title, self._KARTEN_TEXT_ROLLE),
             (self.bauform_title, self._KARTEN_TEXT_ROLLE),
             # Die drei Kaestchen der Integrationszeile sitzen auf derselben
@@ -9922,16 +9993,13 @@ class PS5ConverterGUI:
         except tk.TclError as exc:
             logger.debug("Ansicht nicht umschaltbar: %s", exc)
         self._ansicht_beschriften()
-        # Rechts der Leiste steht jetzt das Inhaltsbild oder eine einfarbige
-        # Seite - die runden Ecken der Leiste zeigen, was dort liegt.
-        self._seitenleiste_ecken_nachziehen()
 
     def _konsole_tafel_zeigen(self) -> None:
         """Die rechte Seite der Ansicht KONSOLE einblenden.
 
         Dort steht eine von drei Seiten, alle in derselben Zelle (1, 1) wie
         die Rollflaeche der ersten Ansicht: "Konsole & Payloads" (Knopf 1,
-        zugleich der Grundzustand), "Spielstaende" (Knopf 2) oder die
+        zugleich der Grundzustand), "WebKit Autoloader" (Knopf 2) oder die
         Bibliothek (Knopf 3). Welche,
         steht in ``_konsole_seite``; die Wahl ueberdauert das Hin- und
         Herschalten der Ansicht, damit eine laufende Uebertragung nicht aus
@@ -9975,7 +10043,7 @@ class PS5ConverterGUI:
         ``bg``/``fg``: ``RoundedButton._redraw`` zeichnet waehrend die Maus
         auf dem Knopf steht mit ``activebackground`` statt ``bg``. Blieb das
         unveraendert auf der Hervorhebungsfarbe aus dem Aufbau stehen, zeigte
-        ein per zweitem Druck abgewaehlter Umschalter (Spielstaende,
+        ein per zweitem Druck abgewaehlter Umschalter (WebKit Autoloader,
         Bibliothek) sich weiter hervorgehoben, solange die Maus - vom
         Klick her - noch darauf stand.
         """
@@ -10078,7 +10146,7 @@ class PS5ConverterGUI:
 
         kopf = tk.Frame(tafel, bg=c["bg_main"])
         kopf.pack(fill="x", pady=(0, 10))
-        # Dieselbe Variable wie auf der Seite "Spielstaende" (_konsole_ip_var).
+        # Dieselbe Variable wie auf der Seite "WebKit Autoloader" (_konsole_ip_var).
         ip_var = self._konsole_ip_var()
         ip_beschriftung = tk.Label(kopf, text=self._t("dienste.ip_label"), width=14,
                                    anchor="w", font=(UI_SCHRIFT, pt(9)),
@@ -10131,7 +10199,10 @@ class PS5ConverterGUI:
         # Ansicht UMWANDELN (seit v1.9.62).
         protokoll_karte = self._runde_seitenkarte(tafel, "console_bg", polster=(6, 6))
         protokoll_karte.pack(side="bottom", fill="x", pady=(10, 0))
-        protokoll = tk.Text(protokoll_karte.innen, height=7, font=(MONO_SCHRIFT, pt(9)),
+        # Fuenf statt sieben Zeilen (seit 05.10.2026): Mit dem 23. Dienst (DPI v2) liefe
+        # die letzte Tabellenzeile sonst auf dem gewohnten Bildschirm (1920x1200, 125 %)
+        # unter den Rand und waere nur durch Rollen zu sehen - das Protokoll rollt ohnehin.
+        protokoll = tk.Text(protokoll_karte.innen, height=5, font=(MONO_SCHRIFT, pt(9)),
                             bg=c["console_bg"], fg=c["console_fg"],
                             selectbackground=c["fg_accent"],
                             relief="flat", wrap="word", padx=10, pady=6)
@@ -10205,8 +10276,12 @@ class PS5ConverterGUI:
         steht die mitgelieferte dahinter. Wunsch des Nutzers vom 26.09.2026:
         "Hier fehlt mir noch die Version der Payloads".
         """
+        # ``datei_muster``: Dienste, die das Programm nicht selbst startet (ShadowMount+,
+        # zweiter ELF-Loader-Port, DPI v2), zeigen trotzdem die Version der beiliegenden
+        # Datei - Wunsch des Nutzers vom 05.10.2026: "bei ShadowMount+ steht nie die Version".
         datei = konsole_dienste.version_aus_dateiname(
-            self._konsole_payload_datei(stand.dienst.payload_muster))
+            self._konsole_payload_datei(
+                stand.dienst.payload_muster or stand.dienst.datei_muster))
         laeuft = str(getattr(stand, "version", "") or "")
         if laeuft and datei and laeuft != datei:
             return self._t("dienste.version_abweichend", laeuft=laeuft, datei=datei)
@@ -10663,9 +10738,23 @@ class PS5ConverterGUI:
             self._webseite_takt_laeuft = True
             self.root.after(50, self._webseite_takt)
 
+    @staticmethod
+    def _adresse_ohne_marke(adresse: str) -> str:
+        """Die Adresse ohne Fragment - so steht sie in der Kopfzeile und im Protokoll.
+
+        Direct Stream traegt seine Sitzungsmarke im Fragment
+        (``http://127.0.0.1:<port>/#session=<marke>``). Geoeffnet wird die volle
+        Adresse; angezeigt und ins Protokoll geschrieben wird sie ohne die Marke -
+        das Protokoll laesst sich speichern und weitergeben, und ein Bildschirmfoto
+        der Kopfzeile soll keine Zugangsdaten zeigen. Die Adressen der Konsole
+        haben kein Fragment und bleiben, wie sie sind.
+        """
+        return str(adresse or "").split("#", 1)[0]
+
     def _webseite_im_browser_statt(self, adresse: str, grund: str) -> None:
         """Der Ausweg: die Oberflaeche im Browser - mit dem Grund im Hauptprotokoll."""
-        self._append_to_log(self._t("webseite.log_browser", adresse=adresse,
+        self._append_to_log(self._t("webseite.log_browser",
+                                    adresse=self._adresse_ohne_marke(adresse),
                                     grund=grund) + "\n")
         webbrowser.open(adresse)
 
@@ -10744,7 +10833,8 @@ class PS5ConverterGUI:
         elif engine.zustand == "fehler":
             text = self._t("webseite.fehler_start", fehler=self._webseite_fehlertext(engine))
         elif engine.navigation is None:
-            text = self._t("webseite.laedt", adresse=getattr(self, "_webseite_url", ""))
+            text = self._t("webseite.laedt",
+                           adresse=self._adresse_ohne_marke(getattr(self, "_webseite_url", "")))
         elif engine.navigation[0]:
             text = self._t("webseite.geladen", titel=engine.titel or "-")
         else:
@@ -10788,7 +10878,7 @@ class PS5ConverterGUI:
             return
         self._webseite_titel.set(self._t(getattr(self, "_webseite_name_schluessel", ""))
                                  if getattr(self, "_webseite_name_schluessel", "") else "")
-        self._webseite_adresse.set(getattr(self, "_webseite_url", ""))
+        self._webseite_adresse.set(self._adresse_ohne_marke(getattr(self, "_webseite_url", "")))
         self._webseite_melden()
 
     def _webseite_zurueck(self) -> None:
@@ -10853,8 +10943,8 @@ class PS5ConverterGUI:
 
         Args:
             seite: Eine der Seiten aus :data:`_KONSOLE_SEITENBAU` -
-                ``"uebersicht"`` ("Konsole & Payloads"), ``"spielstaende"``
-                oder ``"bibliothek"``.
+                ``"uebersicht"`` ("Konsole & Payloads"), ``"webkit"``
+                ("WebKit Autoloader") oder ``"bibliothek"``.
         """
         if seite not in self._KONSOLE_SEITENBAU:
             return
@@ -10866,17 +10956,21 @@ class PS5ConverterGUI:
     #: Welche Kennung der zweiten Ansicht welches Fenster oeffnet. Was hier
     #: nicht steht und auch keine Seite ist, sagt "kommt noch" - so waechst
     #: die Ansicht, ohne dass ein Knopf ins Leere greift. Seit dem 26.09.2026
-    #: leer: "Konsole & Payloads" und "Spielstaende" sind Seiten rechts
-    #: geworden. Die Karte bleibt fuer ein kuenftiges Fenster.
+    #: leer: "Konsole & Payloads" und der WebKit Autoloader (damals noch die
+    #: Spielstaende) sind Seiten rechts geworden. Die Karte bleibt fuer ein
+    #: kuenftiges Fenster; "5. CoolSysCent-Pro" ist seit dem 05.10.2026 eine
+    #: Direktaktion (_KONSOLE_AKTIONEN).
     _KONSOLE_FENSTER: dict[str, str] = {}
 
     #: Kennungen, die kein Fenster oeffnen, sondern rechts in der Ansicht
     #: eine Seite zeigen: seit dem 25.09.2026 die Bibliothek, seit dem
     #: 26.09.2026 auch "Konsole & Payloads" und "Spielstaende" (Remote Play
     #: stand am 25.09. abends kurz ebenfalls hier und ging dann ganz heraus).
+    #: Seit dem 04.10.2026 steht an der Stelle der Spielstaende der WebKit
+    #: Autoloader.
     _KONSOLE_SEITEN: dict[str, str] = {
         "dienste": "_konsole_dienste_zeigen",
-        "spielstaende": "_konsole_spielstaende_zeigen",
+        "webkit": "_konsole_webkit_zeigen",
         "bibliothek": "_konsole_bibliothek_umschalten",
     }
 
@@ -10886,8 +10980,7 @@ class PS5ConverterGUI:
     #: zugleich der Grundzustand der Ansicht.
     _KONSOLE_SEITENBAU: dict[str, tuple[str, str, str]] = {
         "uebersicht": ("_konsole_tafel", "_konsole_tafel_bauen", "konsole.btn_dienste"),
-        "spielstaende": ("_spielstaende_seite", "_spielstaende_seite_bauen",
-                         "konsole.btn_spielstaende"),
+        "webkit": ("_webkit_seite", "_webkit_seite_bauen", "konsole.btn_webkit"),
         "bibliothek": ("_bibliothek_seite", "_bibliothek_seite_bauen",
                        "konsole.btn_bibliothek"),
         # Eine Weboberflaeche der Konsole (seit 26.09.2026) - ohne eigenen
@@ -10896,12 +10989,31 @@ class PS5ConverterGUI:
         "web": ("_webseite", "_webseite_bauen", ""),
     }
 
+    #: Die Direktaktionen der Seitenleiste, die ein Payload sicherstellen und danach
+    #: dessen Weboberflaeche oeffnen: Kennung des Knopfs -> (Dienst im Katalog,
+    #: Muster der ELF-Datei, falls der Katalog keines traegt). ShadowMount+ steht im
+    #: Katalog bewusst ohne ``payload_muster`` - "Ausgewaehltes starten" soll es nicht
+    #: von der Tabelle aus schicken (eine zweite Instanz waere moeglich, wenn die API
+    #: nur auf 127.0.0.1 lauscht). Sein eigener Knopf tut es, so wie der Nutzer es am
+    #: 04.10.2026 verlangt hat.
+    _KONSOLE_WEBDIENSTE: dict[str, tuple[str, str]] = {
+        "prosperomgr": ("prosperomgr", ""),
+        "coolsyscent": ("coolsyscent", ""),
+        "shadowmount": ("shadowmount", "shadowmountplus_v*.elf"),
+        "smplusgui": ("smplusgui", ""),
+    }
+
     #: Kennungen, die weder eine Seite noch ein Fenster oeffnen, sondern eine
     #: Direktaktion ausfuehren (z. B. Payload sicherstellen + Weboberflaeche
-    #: oeffnen) - ohne den aktiven Knopf/die Seite zu wechseln, siehe
-    #: :meth:`_konsole_prosperomgr_oeffnen`.
+    #: oeffnen) - ohne den aktiven Knopf/die Seite zu wechseln. Die Knoepfe 4 bis
+    #: 7 laufen alle ueber :meth:`_konsole_webdienst_oeffnen`; Knopf 8 startet
+    #: den lokalen Direct Stream (:meth:`_konsole_directstream_oeffnen`).
     _KONSOLE_AKTIONEN: dict[str, str] = {
         "prosperomgr": "_konsole_prosperomgr_oeffnen",
+        "coolsyscent": "_konsole_coolsyscent_oeffnen",
+        "shadowmount": "_konsole_shadowmount_oeffnen",
+        "smplusgui": "_konsole_smplusgui_oeffnen",
+        "directstream": "_konsole_directstream_oeffnen",
     }
 
     def _konsole_knopf_gedrueckt(self, kennung: str, schluessel: str) -> None:
@@ -11016,23 +11128,29 @@ class PS5ConverterGUI:
         melden("dienste.suche_pruefe", host=wahl.adresse)
         return wahl.adresse, konsole_dienste.pruefen(wahl.adresse), wahl, ""
 
-    def _konsole_dienst_starten(self, schluessel: str, ip: str, melden=None) -> bool:
+    def _konsole_dienst_starten(self, schluessel: str, ip: str, melden=None,
+                                muster: str = "") -> bool:
         """Schickt das Payload eines Dienstes und fragt danach seinen Port ab.
 
         Laeuft im Arbeitsfaden einer Seite; Meldungen gehen unuebersetzt ins
         Protokoll - das von "Konsole & Payloads" (:meth:`_konsole_tafel_melden`)
-        oder das, was ``melden`` angibt (die Seite "Spielstaende"). Ein Dienst
+        oder das, was ``melden`` angibt (die Knoepfe der Seitenleiste, siehe
+        :meth:`_konsole_webdienst_oeffnen`). Ein Dienst
         schliesst die Verbindung zu elfldr nie - mit der Vorgabe von 30 s
         Lesezeit wartete jeder Start die vollen 30 s ab (bis zum 26.09.2026).
         Deshalb nur kurz mitlesen und dann abfragen, bis er antwortet, statt
         die Anlaufzeit fest abzuwarten.
+
+        ``muster``: Muster der ELF-Datei, wenn der Katalog keines traegt
+        (ShadowMount+ - dort bewusst nicht, damit "Ausgewaehltes starten" es
+        nicht schickt; nur sein Knopf in der Seitenleiste tut es).
         """
         melden = melden or self._konsole_tafel_melden
         eintrag = konsole_dienste.dienst(schluessel)
         if eintrag is None:
             return False
         name = self._Uebersetzbar(eintrag.name_schluessel)
-        pfad = self._konsole_payload_datei(eintrag.payload_muster)
+        pfad = self._konsole_payload_datei(muster or eintrag.payload_muster)
         if not pfad:
             melden("dienste.log_kein_payload", name=name)
             return False
@@ -11096,57 +11214,173 @@ class PS5ConverterGUI:
                                    name=name, port=eintrag.port)
         return konsole_dienste.pruefen(ip)
 
-    def _konsole_prosperomgr_protokoll(self, schluessel: str, werte: dict) -> None:
-        """Uebersetzt eine Meldung von :meth:`_konsole_prosperomgr_oeffnen` und
-        schreibt sie ins Hauptprotokoll - nur aus dem Hauptfaden aufzurufen."""
-        self._append_to_log(self._t(schluessel, **werte) + "\n")
+    def _konsole_prosperomgr_oeffnen(self) -> None:
+        """Knopf "4. Prospero Manager" (Weboberflaeche auf Port 7070)."""
+        self._konsole_webdienst_oeffnen("prosperomgr")
 
-    def _konsole_prosperomgr_hinweis_zeigen(self) -> None:
-        """Hinweis ohne Knopf, waehrend der Prospero-Manager-Payload automatisch
-        gesendet wird - nur aus dem Hauptfaden aufzurufen.
+    def _konsole_coolsyscent_oeffnen(self) -> None:
+        """Knopf "5. CoolSysCent-Pro" - das PS5 Cooling & System Center (Weboberflaeche auf Port 8086).
 
-        Wunsch des Nutzers vom 01.10.2026: Laeuft der Dienst noch nicht, soll
-        das waehrend des automatischen Sendens sichtbar sein, ohne dass der
-        Nutzer etwas bestaetigen muss (kein Knopf). Schliesst sich von selbst
-        (:meth:`_konsole_prosperomgr_hinweis_schliessen`), sobald
-        :meth:`_konsole_prosperomgr_oeffnen` fertig ist - gleich ob mit oder
-        ohne Erfolg. Laeuft der Dienst schon, ruft niemand diese Methode.
+        Laeuft die App noch nicht auf der Konsole, wird ihre ELF an Port 9021 gesendet; ist der zu, wird er
+        vorher geoeffnet - derselbe Ablauf wie bei Prospero Manager (``_konsole_webdienst_oeffnen``).
         """
-        if getattr(self, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+        self._konsole_webdienst_oeffnen("coolsyscent")
+
+    def _konsole_shadowmount_oeffnen(self) -> None:
+        """Knopf "6. ShadowMount+" (Weboberflaeche auf Port 10101)."""
+        self._konsole_webdienst_oeffnen("shadowmount")
+
+    def _konsole_smplusgui_oeffnen(self) -> None:
+        """Knopf "7. SMPlusGui" (Weboberflaeche auf Port 7777)."""
+        self._konsole_webdienst_oeffnen("smplusgui")
+
+    #: Der laufende Direct-Stream-Server (:class:`direct_stream.Sitzung`) - ``None``,
+    #: solange der Knopf nie gedrueckt wurde oder das Programm ihn beendet hat.
+    _direct_stream_sitzung: "direct_stream.Sitzung | None" = None
+
+    def _konsole_directstream_oeffnen(self) -> None:
+        """Knopf "8. Direct Stream": den mitgelieferten Streamer starten, seine Seite rechts zeigen.
+
+        Wunsch des Nutzers vom 05.10.2026 (Archive im Anhang): "einen Knopf ... mit
+        dieser Funktion". Anders als bei den Knoepfen 4 bis 7 laeuft hier nichts auf
+        der Konsole. Direct Stream ist ein kleiner Webserver auf diesem Rechner (nur
+        127.0.0.1, siehe :mod:`direct_stream`), der Downloads oder lokale Dateien
+        ueber FTP in den Speicher der PS5 schickt - es gibt weder ELF-Loader noch
+        Port 9021 zu pruefen. Der Knopf startet den Server beim ersten Druck, traegt
+        Adresse und FTP-Port der PS5 ein, wo noch keine stehen, und zeigt die Seite
+        ueber :meth:`_webansicht_oeffnen` (unter Windows rechts im Programm, sonst im
+        Browser).
+
+        Der Server laeuft weiter, wenn man die Seite verlaesst: Eine Uebertragung
+        soll nicht abreissen, weil man kurz in die Bibliothek schaut. Ein zweiter
+        Druck zeigt dieselbe Sitzung wieder. Beendet wird er mit dem Programm
+        (:meth:`_direct_stream_beenden`) oder von der Seite selbst ("Quit app") -
+        dann startet der naechste Druck eine neue Sitzung.
+        """
+        titel = self._t("directstream.titel")
+        wurzel = _direct_stream_wurzel()
+        if not wurzel:
+            messagebox.showerror(titel, self._t("directstream.fehlt", ordner=direct_stream.ORDNER),
+                                 parent=self.root)
+            return
+        sitzung = self._direct_stream_sitzung
+        if sitzung is None or not sitzung.laeuft:
+            adresse = self._direct_stream_adresse()
+            port = self._ps5_ftp_port()
+            try:
+                sitzung = direct_stream.starten(wurzel, _direct_stream_datenordner(),
+                                                host=adresse, ftp_port=port)
+            except Exception as exc:  # noqa: BLE001 - der Grund gehoert in die Meldung
+                logger.exception("Direct Stream nicht gestartet")
+                self._append_to_log(self._t("directstream.log_fehler", fehler=exc) + "\n")
+                messagebox.showerror(titel, self._t("directstream.start_fehler", fehler=exc),
+                                     parent=self.root)
+                return
+            self._direct_stream_sitzung = sitzung
+            self._append_to_log(self._t("directstream.log_gestartet", port=sitzung.port) + "\n")
+            if sitzung.vorbelegt:
+                self._append_to_log(self._t("directstream.log_vorbelegt",
+                                            adresse=adresse, port=port) + "\n")
+        self._webansicht_oeffnen(sitzung.url, "directstream.titel", "uebersicht")
+
+    def _direct_stream_adresse(self) -> str:
+        """Die Adresse der PS5, soweit das Programm sie kennt - ohne Rueckfrage und ohne Hinweisfenster.
+
+        Das Feld der Ansicht KONSOLE gilt zuerst (dort steht, was die Suche beim
+        Programmstart gefunden hat), danach die gemerkte Adresse aus den
+        Einstellungen. Fehlt beides, bleibt Direct Stream ohne Adresse: Sie laesst
+        sich auf seiner Seite eintragen, der Knopf soll deshalb nie an ihr scheitern.
+        """
+        feld = getattr(self, "_konsole_tafel_ip", None)
+        wert = feld.get().strip() if feld is not None else ""
+        if not self._ist_plausible_ps5_adresse(wert):
+            wert = self._ps5_ip()
+        return wert if self._ist_plausible_ps5_adresse(wert) else ""
+
+    def _direct_stream_uebertraegt(self) -> bool:
+        """Laeuft gerade eine Uebertragung in Direct Stream? Dann unterbricht das Beenden sie."""
+        sitzung = self._direct_stream_sitzung
+        return bool(sitzung is not None and sitzung.laeuft and sitzung.uebertraegt())
+
+    def _direct_stream_beenden(self) -> None:
+        """Haelt Direct Stream an (mit dem Programm) - ohne Wirkung, wenn es nicht lief.
+
+        Ein laufender Auftrag wird abgebrochen; seine unvollstaendige Datei bleibt
+        auf der Konsole, der Stand in der Warteschlange (das Werkzeug setzt ihn
+        beim naechsten Start auf "pausiert"). Laeuft im Abbau-Faden des Beendens.
+        """
+        sitzung = self._direct_stream_sitzung
+        self._direct_stream_sitzung = None
+        if sitzung is not None and not sitzung.beenden():
+            logger.warning("Direct Stream liess sich nicht innerhalb der Frist anhalten.")
+
+    def _konsole_webdienst_protokoll(self, schluessel: str, werte: dict) -> None:
+        """Uebersetzt eine Meldung von :meth:`_konsole_webdienst_oeffnen` und
+        schreibt sie ins Hauptprotokoll - nur aus dem Hauptfaden aufzurufen.
+
+        Ueber ``_konsole_tafel_zeile``, damit auch der Name eines Dienstes
+        (``_Uebersetzbar``) als Name erscheint und nicht als Textschluessel.
+        """
+        self._append_to_log(self._konsole_tafel_zeile((schluessel, werte)) + "\n")
+
+    def _konsole_webdienst_knoepfe_sperren(self, sperren: bool) -> None:
+        """Sperrt die Knoepfe der Weboberflaechen waehrend einer Direktaktion - nur im Hauptfaden.
+
+        Alle vier teilen sich den ELF-Loader; zwei Sendungen gleichzeitig
+        wuerden einander ins Gehege kommen.
+        """
+        for knopf in getattr(self, "_konsole_webdienst_knoepfe", []):
+            try:
+                if knopf.winfo_exists():
+                    knopf.configure(state="disabled" if sperren else "normal")
+            except tk.TclError:
+                pass
+
+    def _konsole_webdienst_hinweis_zeigen(self, name_schluessel: str) -> None:
+        """Hinweis ohne Knopf, waehrend ein Payload automatisch gesendet wird - nur aus dem Hauptfaden.
+
+        Wunsch des Nutzers vom 01.10.2026 (Prospero Manager): Laeuft der Dienst
+        noch nicht, soll das waehrend des automatischen Sendens sichtbar sein,
+        ohne dass der Nutzer etwas bestaetigen muss (kein Knopf). Schliesst sich
+        von selbst (:meth:`_konsole_webdienst_hinweis_schliessen`), sobald
+        :meth:`_konsole_webdienst_oeffnen` fertig ist - gleich ob mit oder ohne
+        Erfolg. Laeuft der Dienst schon, ruft niemand diese Methode.
+        """
+        if getattr(self, "_konsole_webdienst_hinweis_fenster", None) is not None:
             return
         c = self._COLORS
-        titel = self._t("konsole.prosperomgr_hinweis_titel")
+        name = self._t(name_schluessel)
+        titel = self._t("konsole.webdienst_hinweis_titel", name=name)
         fenster = self._build_modern_toplevel(titel, 460, 210, resizable=False)
         self._build_modern_header(fenster, titel)
         koerper = tk.Frame(fenster, bg=c["bg_main"], padx=20, pady=4)
         koerper.pack(fill="both", expand=True)
-        tk.Label(koerper, text=self._t("konsole.prosperomgr_hinweis_text"),
+        tk.Label(koerper, text=self._t("konsole.webdienst_hinweis_text", name=name),
                  bg=c["bg_main"], fg=c["fg_secondary"], justify="left",
                  anchor="w", font=(UI_SCHRIFT, pt(9)),
                  wraplength=pt(410)).pack(fill="x", anchor="w")
-        balken = ttk.Progressbar(koerper, mode="indeterminate")
+        balken = self._pw.Progressbar(koerper, mode="indeterminate")
         balken.pack(fill="x", pady=(14, 4))
         balken.start(12)
         try:
             fenster.lift()
         except tk.TclError:
             pass
-        self._konsole_prosperomgr_hinweis_fenster = fenster
-        self._konsole_prosperomgr_hinweis_balken = balken
+        self._konsole_webdienst_hinweis_fenster = fenster
+        self._konsole_webdienst_hinweis_balken = balken
 
-    def _konsole_prosperomgr_hinweis_schliessen(self) -> None:
-        """Schliesst den Hinweis aus :meth:`_konsole_prosperomgr_hinweis_zeigen`
-        wieder - nur aus dem Hauptfaden aufzurufen; ohne Wirkung, wenn er nie
-        offen war oder der Nutzer ihn schon selbst weggeklickt hat."""
-        balken = getattr(self, "_konsole_prosperomgr_hinweis_balken", None)
-        self._konsole_prosperomgr_hinweis_balken = None
+    def _konsole_webdienst_hinweis_schliessen(self) -> None:
+        """Schliesst den Hinweis wieder - nur aus dem Hauptfaden; ohne Wirkung, wenn er
+        nie offen war oder der Nutzer ihn schon selbst weggeklickt hat."""
+        balken = getattr(self, "_konsole_webdienst_hinweis_balken", None)
+        self._konsole_webdienst_hinweis_balken = None
         if balken is not None:
             try:
                 balken.stop()
             except tk.TclError:
                 pass
-        fenster = getattr(self, "_konsole_prosperomgr_hinweis_fenster", None)
-        self._konsole_prosperomgr_hinweis_fenster = None
+        fenster = getattr(self, "_konsole_webdienst_hinweis_fenster", None)
+        self._konsole_webdienst_hinweis_fenster = None
         if fenster is not None:
             try:
                 if fenster.winfo_exists():
@@ -11154,83 +11388,88 @@ class PS5ConverterGUI:
             except tk.TclError:
                 pass
 
-    def _konsole_prosperomgr_oeffnen(self) -> None:
-        """"4. Prospero Manager": Payload sicherstellen, dann die Weboberflaeche oeffnen.
+    def _konsole_webdienst_oeffnen(self, kennung: str) -> None:
+        """Direktaktion der Knoepfe 4 bis 7: Payload sicherstellen, dann die Weboberflaeche oeffnen.
 
-        Direktaktion des Sidebar-Knopfs (:data:`_KONSOLE_AKTIONEN`), von jeder
-        Seite aus erreichbar - deshalb Meldungen im Hauptprotokoll, nicht in
-        der Tafel von "Konsole & Payloads" (die vielleicht gar nicht sichtbar
-        ist). Ablauf wie vom Nutzer verlangt: laeuft der Dienst (Port 7070)
-        noch nicht, zuerst den ELF-Loader sicherstellen
+        Von jeder Seite aus erreichbar (:data:`_KONSOLE_AKTIONEN`) - deshalb
+        Meldungen im Hauptprotokoll, nicht in der Tafel von "Konsole &
+        Payloads" (die vielleicht gar nicht sichtbar ist). Ablauf wie vom
+        Nutzer verlangt: Laeuft der Dienst (sein Port im Katalog) noch nicht,
+        zuerst den ELF-Loader sicherstellen
         (:meth:`_konsole_elfldr_sicherstellen`, dieselbe Funktion wie bei
-        "Konsole & Payloads"), danach das Payload ueber ihn schicken
-        (:meth:`_konsole_dienst_starten`, derselbe generische Weg wie fuer
-        jeden anderen Katalogeintrag).
+        "Konsole & Payloads" - ist Port 9021 zu, wird er ueber den Payload
+        Manager geoeffnet), danach das Payload ueber ihn schicken
+        (:meth:`_konsole_dienst_starten`, derselbe Weg wie fuer jeden anderen
+        Katalogeintrag).
 
-        Muss dafuer wirklich gesendet werden, zeigt
-        :meth:`_konsole_prosperomgr_hinweis_zeigen` einen Hinweis ohne Knopf,
-        solange das laeuft (Wunsch vom 01.10.2026) - er schliesst sich von
-        selbst im ``finally``. Lief der Dienst schon, erscheint er nicht.
+        Muss wirklich gesendet werden, zeigt
+        :meth:`_konsole_webdienst_hinweis_zeigen` einen Hinweis ohne Knopf,
+        solange das laeuft - er schliesst sich von selbst im ``finally``. Lief
+        der Dienst schon, erscheint er nicht.
+
+        Es laeuft immer nur eine dieser Aktionen (``_konsole_webdienst_aktiv``);
+        waehrenddessen sind die vier Knoepfe gesperrt.
         """
+        if kennung not in self._KONSOLE_WEBDIENSTE:
+            return
         if getattr(self, "_konsole_tafel", None) is None:
             self._konsole_tafel_bauen()
-        if getattr(self, "_konsole_prosperomgr_laeuft", False):
+        if getattr(self, "_konsole_webdienst_aktiv", ""):
             return
         ip = self._konsole_tafel_adresse()
         if not ip:
             return
-        eintrag = konsole_dienste.dienst("prosperomgr")
+        dienst_schluessel, muster = self._KONSOLE_WEBDIENSTE[kennung]
+        eintrag = konsole_dienste.dienst(dienst_schluessel)
         if eintrag is None:
             return
-        self._konsole_prosperomgr_laeuft = True
-        knopf = getattr(self, "_konsole_prosperomgr_knopf", None)
-        if knopf is not None:
-            try:
-                knopf.configure(state="disabled")
-            except tk.TclError:
-                pass
+        self._konsole_webdienst_aktiv = kennung
+        self._konsole_webdienst_knoepfe_sperren(True)
         texte = self._modul_texte(payload_versand.MELDUNGEN, "payloadmod.")
+        name = self._Uebersetzbar(eintrag.name_schluessel)
 
         def _melden(schluessel: str, **werte) -> None:
             # Uebersetzt erst im Hauptfaden (H2-13) - sonst friert die Sprache
             # der Meldung auf den Stand beim Senden ein, nicht bei der Anzeige.
-            self._hauptfaden_planen(self._konsole_prosperomgr_protokoll, schluessel, werte)
+            self._hauptfaden_planen(self._konsole_webdienst_protokoll, schluessel, werte)
 
         def _arbeit() -> None:
             try:
-                _melden("konsole.prosperomgr_start")
+                _melden("konsole.webdienst_start", name=name)
                 uebersicht = konsole_dienste.pruefen(ip)
-                bereit = uebersicht.laeuft("prosperomgr")
+                bereit = uebersicht.laeuft(dienst_schluessel)
                 if not bereit:
                     # Nur jetzt wird wirklich gesendet - der Hinweis gilt nur
                     # fuer diesen Fall (Wunsch vom 01.10.2026: "Ist der
                     # Payload bereits auf der PS5, soll die Meldung nicht
                     # erscheinen").
-                    self._hauptfaden_planen(self._konsole_prosperomgr_hinweis_zeigen)
+                    self._hauptfaden_planen(self._konsole_webdienst_hinweis_zeigen,
+                                            eintrag.name_schluessel)
                     uebersicht = self._konsole_elfldr_sicherstellen(ip, uebersicht, texte)
-                    bereit = uebersicht.laeuft("prosperomgr")
+                    bereit = uebersicht.laeuft(dienst_schluessel)
                 if not bereit:
-                    bereit = self._konsole_dienst_starten("prosperomgr", ip, melden=_melden)
+                    bereit = self._konsole_dienst_starten(
+                        dienst_schluessel, ip, melden=_melden, muster=muster)
                 if bereit:
                     adresse = konsole_dienste.web_adresse(eintrag, ip)
                     self._hauptfaden_planen(self._webansicht_oeffnen, adresse,
                                             eintrag.name_schluessel, "uebersicht")
-                    _melden("konsole.prosperomgr_offen", adresse=adresse)
+                    _melden("konsole.webdienst_offen", name=name, adresse=adresse)
                 else:
-                    _melden("konsole.prosperomgr_kein_port", port=eintrag.port)
+                    _melden("konsole.webdienst_kein_port", name=name, port=eintrag.port)
+                    if dienst_schluessel == "shadowmount":
+                        _melden("konsole.shadowmount_loopback")
+                    elif dienst_schluessel == "coolsyscent":
+                        _melden("konsole.coolsyscent_port")
             except Exception as exc:  # noqa: BLE001
-                logger.exception("Prospero Manager gescheitert")
+                logger.exception("Weboberflaeche %s gescheitert", kennung)
                 _melden("log.fehler_zeile", text=str(exc))
             finally:
-                self._konsole_prosperomgr_laeuft = False
-                self._hauptfaden_planen(self._konsole_prosperomgr_hinweis_schliessen)
+                self._konsole_webdienst_aktiv = ""
+                self._hauptfaden_planen(self._konsole_webdienst_hinweis_schliessen)
+                self._hauptfaden_planen(self._konsole_webdienst_knoepfe_sperren, False)
 
-                def _wieder_frei() -> None:
-                    if knopf is not None and knopf.winfo_exists():
-                        knopf.configure(state="normal")
-                self._hauptfaden_planen(_wieder_frei)
-
-        threading.Thread(target=_arbeit, daemon=True, name="konsole-prosperomgr").start()
+        threading.Thread(target=_arbeit, daemon=True, name="konsole-" + kennung).start()
 
     def _konsole_grundausstattung_nachstarten(self, ip: str, uebersicht):
         """Startet, was von der Grundausstattung fehlt - nur ueber den ELF-Loader.
@@ -11284,40 +11523,10 @@ class PS5ConverterGUI:
         self._konsole_tafel_suchen(grundausstattung=True)
 
     # ------------------------------------------------------------------
-    # KONSOLE: Spielstaende - seit dem 26.09.2026 eine Seite rechts wie
-    # "Konsole & Payloads" und die Bibliothek (Spiel holen und Zurueckspielen
-    # sind seit dem 25.09.2026 Teil der Bibliothek)
+    # KONSOLE: Bausteine der Seiten rechts (Adresszeile, Hinweisabsatz) und die
+    # Seite "WebKit Autoloader" weiter unten. Die Seite "Spielstaende" (seit dem
+    # 26.09.2026) gibt es nicht mehr: Garlic startet ueber "Konsole & Payloads".
     # ------------------------------------------------------------------
-
-    def _konsole_ftp_geruest(self, koerper, status_var, groesse_var):
-        """Balken, Groessenfeld, Protokoll, Statuszeile.
-
-        Kein langer Vorgang ohne Balken, Groessenfeld UND Statuszeile
-        (Dauerauftrag des Nutzers vom 20.09.2026). Bis zum 26.09.2026 stand
-        das Geruest in jedem Konsolenfenster; seitdem sind es Seiten, und nur
-        "Spielstaende" braucht es noch.
-
-        Returns:
-            (balken, protokoll) - den Rest halten die uebergebenen Variablen.
-        """
-        c = self._COLORS
-        # Seit v1.9.62 rund wie die Ansicht UMWANDELN: Balken als Pille,
-        # Protokoll in einer runden Flaeche.
-        balken = RunderBalken(koerper, palette=lambda: self._COLORS, grund="bg_main",
-                              maximum=100)
-        balken.pack(fill="x", pady=(8, 4))
-        tk.Label(koerper, textvariable=groesse_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
-        protokoll_karte = self._runde_seitenkarte(koerper, "console_bg", polster=(6, 6))
-        protokoll_karte.pack(fill="both", expand=True, pady=(6, 6))
-        protokoll = tk.Text(protokoll_karte.innen, height=9, font=(MONO_SCHRIFT, pt(9)),
-                            bg=c["console_bg"], fg=c["console_fg"],
-                            selectbackground=c["fg_accent"],
-                            relief="flat", wrap="word", padx=10, pady=6)
-        protokoll.pack(fill="both", expand=True)
-        tk.Label(koerper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
-                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
-        return balken, protokoll
 
     def _konsole_ip_zeile(self, koerper, ip_var, schluessel="dienste.ip_label"):
         """Die Adresszeile - die Beschriftung folgt dem Sprachwechsel."""
@@ -11392,7 +11601,7 @@ class PS5ConverterGUI:
     def _konsole_ip_var(self) -> "tk.StringVar":
         """Die Adresse der PS5 in der Ansicht KONSOLE - ein Feld fuer alle Seiten.
 
-        "Konsole & Payloads" und "Spielstaende" zeigen dieselbe Variable: Was
+        "Konsole & Payloads" und "WebKit Autoloader" zeigen dieselbe Variable: Was
         die Suche beim Programmstart findet oder der Nutzer eintippt, steht
         auf beiden Seiten. Angelegt beim ersten Bedarf, gleich welche Seite
         zuerst gebaut wird.
@@ -11402,241 +11611,256 @@ class PS5ConverterGUI:
             variable = self._konsole_tafel_ip = tk.StringVar(value=self._ps5_ip())
         return variable
 
-    def _konsole_spielstaende_zeigen(self) -> None:
-        """Knopf "2. Spielstaende": rechts die Seite zeigen (seit dem 26.09.2026).
+    # --- Die Seite "WebKit Autoloader" (Knopf 2 der Ansicht KONSOLE) ---------------
+    #
+    # Wunsch des Nutzers vom 04.10.2026: unter den Fassungen 0.4.0 bis 0.5.2
+    # waehlen koennen, neuere Fassungen kommen von selbst dazu - und das
+    # Autoloader-Fenster soll in die rechte Seite, an die Stelle der bisherigen
+    # Spielstaende (deren Funktion ganz heraus ist; Garlic laeuft weiter ueber
+    # "Konsole & Payloads").
 
-        Bis dahin ein eigenes Fenster - der Nutzer: "ja, hol die Spielstaende
-        auch als Seite nach rechts". Wie beim Fenster fuehrt ein zweiter
-        Druck zurueck, hier zu "Konsole & Payloads". Das Zeigen schickt nichts
-        ins Netz; geprueft wird auf Knopfdruck.
+    def _konsole_webkit_zeigen(self) -> None:
+        """Knopf "2. WebKit Autoloader": rechts die Seite zeigen.
+
+        Ein zweiter Druck fuehrt zu "Konsole & Payloads" zurueck. Das Zeigen
+        schickt nichts ins Netz und startet nichts; gearbeitet wird erst auf
+        Knopfdruck.
         """
         self._konsole_seite_setzen(
             "uebersicht"
-            if getattr(self, "_konsole_seite", "uebersicht") == "spielstaende"
-            else "spielstaende")
+            if getattr(self, "_konsole_seite", "uebersicht") == "webkit"
+            else "webkit")
 
-    def _spielstaende_seite_bauen(self) -> None:
-        """Baut die Seite "Spielstaende": Garlic pruefen, starten, oeffnen.
+    def _webkit_seite_bauen(self) -> None:
+        """Baut die Seite: Fassung waehlen, Host starten, Installer senden.
 
-        ``garlic-savemgr`` bringt seine Bedienung als Webseite auf Port 8082
-        mit und kann Spielstaende ent- und verschluesseln. Diese Oberflaeche
-        ist vollstaendig - nachgebaut wird hier nichts. Die Seite prueft den
-        Dienst, startet ihn bei Bedarf und oeffnet ihn; dazu die zwei Saetze,
-        die man vorher wissen muss.
-
-        Wie "Konsole & Payloads" (:meth:`_konsole_tafel_bauen`): einmal
-        gebaut, danach nur ein- und ausgeblendet; die Faeden legen Daten ab
-        und uebersetzen nichts, der Takt im Hauptfaden zeigt sie an.
+        Wie die uebrigen Seiten der Ansicht KONSOLE einmal gebaut, danach nur
+        ein- und ausgeblendet. Von unten nach oben gepackt, was nie
+        zusammengedrueckt werden darf (Statuszeile); das Protokoll nimmt zuletzt
+        den Rest und gibt als Erstes nach, wenn der Platz knapp wird.
         """
         c = self._COLORS
         seite = tk.Frame(self.root, bg=c["bg_main"], padx=24, pady=18)
-        self._spielstaende_seite = seite
-        #: Protokollzeilen als (Schluessel, Werte); gezeigt ist bis ``_gezeigt``.
-        self._spielstaende_puffer = []
-        self._spielstaende_gezeigt = 0
-        self._spielstaende_laeuft = {"aktiv": False}
-        self._spielstaende_stand = {"pct": 0.0, "groesse": "",
-                                    "status": ("spielstaende.status_idle", {})}
+        self._webkit_seite = seite
+        self._webkit_anzeige: dict[str, str] = {}
+        self._webkit_status_ruhe = True
 
+        self._webkit_status_var = tk.StringVar(value=self._t("webkit.status_idle"))
+        tk.Label(seite, textvariable=self._webkit_status_var, font=(UI_SCHRIFT, pt(9)),
+                 bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(side="bottom", fill="x")
+
+        # Kopf: das Bild von itsPLK (liegt keins bei, bleibt der Platz leer),
+        # Titel mit Dank, rechts der Weg zurueck.
         kopf = tk.Frame(seite, bg=c["bg_main"])
         kopf.pack(fill="x")
-        titel = tk.Label(kopf, text=self._t("spielstaende.window_title"),
-                         font=(UI_SCHRIFT, pt(15), "bold"),
-                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
-        titel.pack(side="left")
-        self._register_translatable(titel, "spielstaende.window_title")
+        bild = self._webkit_bild_laden()
+        if bild is not None:
+            schild = tk.Label(kopf, image=bild, bg=c["bg_main"], bd=0)
+            schild._bild = bild            # Referenz halten, sonst raeumt der Sammler das Bild weg
+            schild.pack(side="left", padx=(0, 14))
         zurueck = self._seitenpille(kopf, "konsole.btn_uebersicht",
                                     lambda: self._konsole_seite_setzen("uebersicht"),
                                     klein=True)
-        zurueck.pack(side="right")
-        untertitel = tk.Label(seite, text=self._t("spielstaende.subtitle"),
-                              font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                              fg=c["fg_secondary"], anchor="w", justify="left")
-        untertitel.pack(fill="x", pady=(2, 4))
-        self._register_translatable(untertitel, "spielstaende.subtitle")
+        zurueck.pack(side="right", anchor="n")
+        titelblock = tk.Frame(kopf, bg=c["bg_main"])
+        titelblock.pack(side="left", fill="x", expand=True)
+        titel = tk.Label(titelblock, text=self._t("webkit.title"),
+                         font=(UI_SCHRIFT, pt(15), "bold"),
+                         bg=c["bg_main"], fg=c["fg_primary"], anchor="w")
+        titel.pack(fill="x")
+        self._register_translatable(titel, "webkit.title")
+        dank = tk.Label(titelblock, text=self._t("webkit.credit"),
+                        font=(UI_SCHRIFT, pt(9), "italic"), bg=c["bg_main"],
+                        fg=c["fg_secondary"], anchor="w", justify="left", wraplength=700)
+        dank.pack(fill="x", pady=(2, 0))
+        # Bei Mindestbreite ist die Zeile breiter als der Platz neben dem Bild (18 px
+        # abgeschnitten, 04.10.2026 gemessen): umbrechen wie die Hinweiszeilen.
+        dank.bind("<Configure>",
+                  lambda e: dank.configure(wraplength=max(100, e.width - 8)))
+        self._register_translatable(dank, "webkit.credit")
 
+        self._konsole_hinweiszeile(seite, "webkit.hint")
+
+        # Die Adresse der Konsole - dieselbe Variable wie auf den anderen
+        # Seiten (_konsole_ip_var); gebraucht nur fuer den Installer.
         self._konsole_ip_zeile(seite, self._konsole_ip_var())
-        self._konsole_hinweiszeile(seite, "spielstaende.usage")
-        self._konsole_hinweiszeile(seite, "spielstaende.warn_backup", warnung=True)
-        self._konsole_hinweiszeile(seite, "spielstaende.warn_benutzer", warnung=True)
 
-        knopfreihe = tk.Frame(seite, bg=c["bg_main"])
-        knopfreihe.pack(fill="x", pady=(10, 4))
-        knoepfe = []
-        for schluessel, befehl, akzent in (
-                ("spielstaende.btn_check", lambda: self._spielstaende_pruefen(), True),
-                ("spielstaende.btn_start", lambda: self._spielstaende_starten(), False),
-                ("spielstaende.btn_open", lambda: self._spielstaende_oeffnen(), False)):
-            knopf = self._seitenpille(knopfreihe, schluessel, befehl, akzent=akzent)
-            knopf.pack(side="left", padx=(8 if knoepfe else 0, 0))
-            knoepfe.append(knopf)
-        self._spielstaende_knoepfe = tuple(knoepfe)
-
-        self._spielstaende_status_var = tk.StringVar(
-            value=self._t("spielstaende.status_idle"))
-        self._spielstaende_groesse_var = tk.StringVar(value="")
-        self._spielstaende_balken, self._spielstaende_protokoll = \
-            self._konsole_ftp_geruest(seite, self._spielstaende_status_var,
-                                      self._spielstaende_groesse_var)
-
-    def _spielstaende_melden(self, schluessel: str, **werte) -> None:
-        """Eine Zeile fuers Protokoll der Seite - aus jedem Faden, unuebersetzt."""
-        self._spielstaende_puffer.append((schluessel, werte))
-
-    def _spielstaende_beginnen(self, schluessel: str) -> "dict | None":
-        """Legt den Status fuer einen Arbeitsgang ab - ``None``, wenn schon einer laeuft.
-
-        Sperrt die Knoepfe und stoesst den Takt an. Den Faden startet der
-        Aufrufer selbst und offen hingeschrieben (test_fadenhygiene).
-        """
-        if self._spielstaende_laeuft["aktiv"]:
-            return None
-        stand = self._spielstaende_stand
-        stand["status"] = (schluessel, {})
-        self._spielstaende_laeuft["aktiv"] = True
-        for knopf in self._spielstaende_knoepfe:
-            try:
-                knopf.configure(state="disabled")
-            except tk.TclError:
-                pass
-        self._spielstaende_takt()
-        return stand
-
-    def _spielstaende_adresse(self) -> str:
-        """Die Adresse im Feld, wenn sie taugt - sonst ein Hinweis und ``""``."""
-        ip = self._konsole_ip_var().get().strip()
-        if not self._ist_plausible_ps5_adresse(ip):
-            messagebox.showwarning(self._t("spielstaende.window_title"),
-                                   self._t("dienste.need_ip"), parent=self.root)
-            return ""
-        self._save_setting("ps5_ip", ip)
-        return ip
-
-    @staticmethod
-    def _spielstaende_ergebnis(stand: dict, ip: str, offen: bool) -> None:
-        """Legt das Ergebnis ab: Balken, Adresse der Oberflaeche, Satz - nur Daten."""
-        adresse = konsole_dienste.web_adresse(konsole_dienste.dienst("garlic"), ip)
-        stand["pct"] = 100.0 if offen else 0.0
-        stand["groesse"] = adresse if offen else ""
-        stand["status"] = ("spielstaende.running" if offen else "spielstaende.stopped",
-                           {"adresse": adresse})
-
-    def _spielstaende_pruefen(self) -> None:
-        """"Zustand pruefen": Antwortet Garlic auf Port 8082?"""
-        if self._spielstaende_laeuft["aktiv"]:
-            return
-        ip = self._spielstaende_adresse()
-        if not ip:
-            return
-        eintrag = konsole_dienste.dienst("garlic")
-        stand = self._spielstaende_beginnen("spielstaende.status_checking")
-        if stand is None:
-            return
-
-        def _arbeit() -> None:
-            try:
-                self._spielstaende_ergebnis(
-                    stand, ip, konsole_dienste.port_offen(ip, eintrag.port))
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Garlic-Pruefung gescheitert")
-                self._spielstaende_melden("log.fehler_zeile", text=str(exc))
-                stand["status"] = ("spielstaende.status_failed", {})
-            finally:
-                # Der Takt im Hauptfaden gibt die Knoepfe frei.
-                self._spielstaende_laeuft["aktiv"] = False
-
-        threading.Thread(target=_arbeit, daemon=True,
-                         name="konsole-garlic-pruefen").start()
-
-    def _spielstaende_starten(self) -> None:
-        """"Garlic starten": das Payload schicken und warten, bis Port 8082 antwortet.
-
-        Derselbe Weg wie auf "Konsole & Payloads" (:meth:`_konsole_dienst_starten`):
-        kurz mitlesen (``konsole_dienste.LESEZEIT``), dann abfragen. Bis zum
-        26.09.2026 wartete jeder Start 30 s plus feste Anlaufzeit.
-        """
-        if self._spielstaende_laeuft["aktiv"]:
-            return
-        ip = self._spielstaende_adresse()
-        if not ip:
-            return
-        if not self._konsole_payload_datei(konsole_dienste.dienst("garlic").payload_muster):
-            messagebox.showwarning(self._t("spielstaende.window_title"),
-                                   self._t("spielstaende.no_file"), parent=self.root)
-            return
-        stand = self._spielstaende_beginnen("spielstaende.status_starting")
-        if stand is None:
-            return
-
-        def _arbeit() -> None:
-            try:
-                offen = self._konsole_dienst_starten("garlic", ip,
-                                                     melden=self._spielstaende_melden)
-                self._spielstaende_ergebnis(stand, ip, offen)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception("Garlic-Start gescheitert")
-                self._spielstaende_melden("log.fehler_zeile", text=str(exc))
-                stand["status"] = ("spielstaende.status_failed", {})
-            finally:
-                self._spielstaende_laeuft["aktiv"] = False
-
-        threading.Thread(target=_arbeit, daemon=True, name="konsole-garlic").start()
-
-    def _spielstaende_oeffnen(self) -> None:
-        """"Oberflaeche oeffnen": Garlic rechts im Programm, wo das nicht geht, im Browser."""
-        adresse = konsole_dienste.web_adresse(konsole_dienste.dienst("garlic"),
-                                              self._konsole_ip_var().get().strip())
-        if not adresse:
-            messagebox.showwarning(self._t("spielstaende.window_title"),
-                                   self._t("dienste.need_ip"), parent=self.root)
-            return
-        self._spielstaende_melden("spielstaende.opened", adresse=adresse)
-        self._spielstaende_protokoll_nachtragen()
-        self._webansicht_oeffnen(adresse, konsole_dienste.dienst("garlic").name_schluessel,
-                                 "spielstaende")
-
-    def _spielstaende_protokoll_nachtragen(self) -> None:
-        """Schreibt neue Protokollzeilen ins Feld - nur aus dem Hauptfaden."""
-        puffer = self._spielstaende_puffer
-        neu = False
-        while self._spielstaende_gezeigt < len(puffer):
-            eintrag = puffer[self._spielstaende_gezeigt]
-            self._spielstaende_gezeigt += 1
-            self._spielstaende_protokoll.insert(
-                "end", self._konsole_tafel_zeile(eintrag) + "\n")
-            neu = True
-        if neu:
-            self._spielstaende_protokoll.see("end")
-
-    def _spielstaende_beschriften(self) -> None:
-        """Status, Adresse und Balken aus dem Stand - im Hauptfaden, in der aktuellen Sprache.
-
-        Aufgerufen vom Takt und vom Sprachwechsel (:meth:`_apply_language`).
-        """
-        stand = self._spielstaende_stand
-        self._spielstaende_status_var.set(self._konsole_tafel_zeile(stand["status"]))
-        self._spielstaende_groesse_var.set(stand["groesse"])
-        self._spielstaende_balken["value"] = max(0.0, min(100.0, float(stand["pct"])))
-
-    def _spielstaende_takt(self) -> None:
-        """Traegt in die Seite, was der Faden abgelegt hat - alle 120 ms."""
-        laeuft = self._spielstaende_laeuft
-        # Vor dem Zeichnen lesen: Endet der Faden dazwischen, fehlte sonst der
-        # Endstand (Durchsicht, H3-14).
-        aktiv = bool(laeuft.get("aktiv"))
+        reihe = tk.Frame(seite, bg=c["bg_main"])
+        reihe.pack(fill="x", pady=(8, 2))
+        beschriftung = tk.Label(reihe, text=self._t("webkit.fassung_label"), width=16,
+                                anchor="w", font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                                fg=c["fg_secondary"])
+        beschriftung.pack(side="left")
+        self._register_translatable(beschriftung, "webkit.fassung_label")
+        self._webkit_fassung_var = tk.StringVar(value="")
+        box = ttk.Combobox(reihe, textvariable=self._webkit_fassung_var, state="readonly",
+                           font=(UI_SCHRIFT, pt(10)), width=18)
+        box.pack(side="left")
         try:
-            self._spielstaende_beschriften()
-            self._spielstaende_protokoll_nachtragen()
-        except tk.TclError:
+            self._pillenfeld(box, mit_pfeil=True)
+        except tk.TclError as exc:
+            logger.debug("Fassungsauswahl nicht als Pille einrichtbar: %s", exc)
+        box.bind("<<ComboboxSelected>>", lambda _e: self._webkit_fassung_gewaehlt())
+        self._webkit_fassung_box = box
+        # Was von der gewaehlten Fassung vorliegt - eigene Zeile, damit auch ein
+        # langer Satz (etwa "es fehlt: ...") bei Mindestbreite Platz hat.
+        self._webkit_info_var = tk.StringVar(value="")
+        info = tk.Label(seite, textvariable=self._webkit_info_var, font=(UI_SCHRIFT, pt(8)),
+                        bg=c["bg_main"], fg=c["fg_secondary"], anchor="w", justify="left",
+                        wraplength=700)
+        info.pack(fill="x", pady=(2, 0))
+        info.bind("<Configure>",
+                  lambda e: info.configure(wraplength=max(100, e.width - 8)))
+
+        # Die drei Wege. Host und Skript nebeneinander (zwei Pillen passen auch
+        # bei Mindestbreite in eine Zeile), der Installer darunter im Akzentstil.
+        host_reihe = tk.Frame(seite, bg=c["bg_main"])
+        host_reihe.pack(fill="x", pady=(14, 0))
+        installer_reihe = tk.Frame(seite, bg=c["bg_main"])
+        installer_reihe.pack(fill="x", pady=(8, 0))
+        knoepfe = []
+        for eltern, schluessel, befehl, akzent in (
+                (host_reihe, "webkit.host_exe",
+                 lambda: self._webkit_host_starten("exe", fassung=self._webkit_gewaehlt()), False),
+                (host_reihe, "webkit.host_py",
+                 lambda: self._webkit_host_starten("py", fassung=self._webkit_gewaehlt()), False),
+                (installer_reihe, "webkit.installer",
+                 lambda: self._webkit_installer_von_seite(), True)):
+            knopf = self._seitenpille(eltern, schluessel, befehl, akzent=akzent)
+            knopf.pack(side="left", padx=(8 if eltern is host_reihe and knoepfe else 0, 0))
+            knoepfe.append(knopf)
+        self._webkit_knoepfe = tuple(knoepfe)
+
+        protokoll_karte = self._runde_seitenkarte(seite, "console_bg", polster=(6, 6))
+        protokoll_karte.pack(fill="both", expand=True, pady=(14, 8))
+        protokoll = tk.Text(protokoll_karte.innen, height=6, font=(MONO_SCHRIFT, pt(9)),
+                            bg=c["console_bg"], fg=c["console_fg"],
+                            selectbackground=c["fg_accent"],
+                            relief="flat", wrap="word", padx=10, pady=6)
+        protokoll.pack(fill="both", expand=True)
+        self._webkit_protokoll = protokoll
+
+        self._webkit_fassungen_anzeigen()
+
+    def _webkit_gewaehlt(self) -> str:
+        """Die Fassung, mit der die Knoepfe der Seite arbeiten.
+
+        Zuerst die Wahl in der Auswahl, sonst die gemerkte, sonst die neueste.
+        Leer, wenn im Ordner keine Fassung mit Nummer liegt - dann nehmen die
+        Wege die neueste Datei, wie vor der Auswahl.
+        """
+        var = getattr(self, "_webkit_fassung_var", None)
+        if var is not None:
+            nummer = getattr(self, "_webkit_anzeige", {}).get(var.get(), "")
+            if nummer:
+                return nummer
+        liste = self._webkit_fassungen_liste()
+        gemerkt = str(self._load_setting(self._WEBKIT_EINSTELLUNG, "") or "")
+        if gemerkt in liste:
+            return gemerkt
+        return liste[0] if liste else ""
+
+    def _webkit_fassungen_anzeigen(self) -> None:
+        """Fuellt die Auswahl - beim Bau der Seite und nach jedem Sprachwechsel.
+
+        Angezeigt wird die Nummer, bei der neuesten mit dem Zusatz "(neueste)";
+        die Zuordnung Anzeigetext zu Nummer haelt ``_webkit_anzeige``. Die
+        bisherige Wahl wird vor dem Umbau gelesen - danach passte ihr Text nicht
+        mehr zur Tabelle.
+        """
+        box = getattr(self, "_webkit_fassung_box", None)
+        var = getattr(self, "_webkit_fassung_var", None)
+        if box is None or var is None:
             return
-        if aktiv:
-            self.root.after(120, self._spielstaende_takt)
-        else:
-            for knopf in self._spielstaende_knoepfe:
-                try:
-                    knopf.configure(state="normal")
-                except tk.TclError:
-                    pass
+        gewaehlt = self._webkit_gewaehlt()
+        liste = self._webkit_fassungen_liste()
+        anzeige: dict[str, str] = {}
+        for nummer in liste:
+            text = "v%s" % nummer
+            if nummer == liste[0]:
+                text = self._t("webkit.fassung_neueste", version=text)
+            anzeige[text] = nummer
+        self._webkit_anzeige = anzeige
+        try:
+            box.configure(values=list(anzeige))
+        except tk.TclError as exc:
+            logger.debug("Fassungsliste nicht setzbar: %s", exc)
+        var.set(next((text for text, nummer in anzeige.items() if nummer == gewaehlt), ""))
+        self._webkit_info_aktualisieren()
+
+    def _webkit_fassung_gewaehlt(self) -> None:
+        """Eine Fassung wurde gewaehlt: merken und beschreiben."""
+        nummer = self._webkit_gewaehlt()
+        if nummer:
+            self._save_setting(self._WEBKIT_EINSTELLUNG, nummer)
+        self._webkit_info_aktualisieren()
+
+    def _webkit_info_aktualisieren(self) -> None:
+        var = getattr(self, "_webkit_info_var", None)
+        if var is not None:
+            var.set(self._webkit_fassung_info(self._webkit_gewaehlt()))
+
+    def _webkit_fassung_info(self, fassung: str) -> str:
+        """Der Satz hinter der Auswahl: was von dieser Fassung vorliegt."""
+        if not fassung:
+            return self._t("webkit.keine_fassung")
+        fehlt = [self._t("webkit.art_" + art)
+                 for art, pfad in self._webkit_fassung_dateien(fassung).items() if not pfad]
+        if fehlt:
+            return self._t("webkit.fassung_unvollstaendig", fehlt=", ".join(fehlt))
+        return self._t("webkit.fassung_vollstaendig")
+
+    def _webkit_seite_beschriften(self) -> None:
+        """Texte der Seite, die nicht ueber ``_register_translatable`` laufen - beim Sprachwechsel."""
+        self._webkit_fassungen_anzeigen()
+        var = getattr(self, "_webkit_status_var", None)
+        if var is not None and getattr(self, "_webkit_status_ruhe", True):
+            var.set(self._t("webkit.status_idle"))
+
+    def _webkit_status(self, text: str) -> None:
+        """Eine Statusmeldung des WebKit-Wegs - auf der Seite und in der Statuszeile des Hauptfensters.
+
+        Auf der Seite steht sie, weil die Statuszeile des Hauptfensters in der
+        Ansicht KONSOLE nicht zu sehen ist. Nach zehn Sekunden kehrt die Seite
+        zu "Bereit." zurueck - sofern dann nichts Neueres dasteht.
+        """
+        var = getattr(self, "_webkit_status_var", None)
+        if var is not None:
+            var.set(text)
+            self._webkit_status_ruhe = False
+            try:
+                self.root.after(10000, lambda: self._webkit_status_zuruecksetzen(text))
+            except (tk.TclError, RuntimeError, AttributeError) as exc:
+                logger.debug("WebKit-Status nicht rueckstellbar: %s", exc)
+        self._set_status_fluechtig(text)
+
+    def _webkit_status_zuruecksetzen(self, text: str) -> None:
+        var = getattr(self, "_webkit_status_var", None)
+        try:
+            if var is not None and var.get() == text:
+                var.set(self._t("webkit.status_idle"))
+                self._webkit_status_ruhe = True
+        except tk.TclError as exc:
+            logger.debug("WebKit-Status nicht rueckgestellt: %s", exc)
+
+    def _webkit_zeile(self, text: str) -> None:
+        """Eine Zeile ins Hauptprotokoll und, wenn die Seite steht, in deren eigenes Protokoll.
+
+        Aus jedem Faden aufrufbar: Ins Feld schreibt der Fensterfaden.
+        """
+        self._append_to_log(text)
+        if getattr(self, "_webkit_protokoll", None) is not None:
+            self._hauptfaden_planen(self._webkit_protokoll_schreiben, text)
+
+    def _webkit_protokoll_schreiben(self, text: str) -> None:
+        feld = getattr(self, "_webkit_protokoll", None)
+        if feld is None:
+            return
+        try:
+            feld.insert("end", text if text.endswith("\n") else text + "\n")
+            feld.see("end")
+        except tk.TclError as exc:
+            logger.debug("WebKit-Protokoll nicht beschreibbar: %s", exc)
 
     def _set_mode_from_sidebar(self, mode: str) -> None:
         """Aktualisiert das UI basierend auf dem in der Sidebar gewählten Modus."""
@@ -12310,6 +12534,17 @@ class PS5ConverterGUI:
             # Benutzer hat "Nein" gewählt -> Fenster bleibt offen
             return
 
+        # Direct Stream laeuft im Programm (seit 05.10.2026): Mit dem Fenster endet
+        # auch der Server, und eine laufende Uebertragung bricht ab. Die unvollstaendige
+        # Datei bleibt auf der Konsole, die Warteschlange merkt sich den Stand - das
+        # Werkzeug setzt den Auftrag beim naechsten Start fort. Gefragt wird nur, wenn
+        # wirklich gerade ein Auftrag laeuft; ein Server ohne Arbeit schliesst still.
+        if self._direct_stream_uebertraegt() and not messagebox.askyesno(
+                self._t("dialog.title.quit"),
+                self._t("directstream.quit_confirm"),
+                default="no", parent=self.root):
+            return
+
         # Der AMPR-Mitschnitt-Assistent hat an der Konsole umgestellt
         # (ShadowMount+-Schluessel, Aufnahme-Bibliothek); zurueck stellt sein
         # Faden im finally. Endete das Programm vorher, bliebe die Konsole
@@ -12388,6 +12623,9 @@ class PS5ConverterGUI:
             # Ein beim Schliessen abgebrochener PKG-Merge raeumt seine .tmp
             # noch weg - erst danach darf der Prozess enden.
             self._auf_pkg_merge_warten()
+            # Direct Stream anhalten (speichert die Warteschlange) - vor dem Abbau
+            # der Fenster, aber nach den Aufgaben, die noch auf die Konsole warten.
+            self._direct_stream_beenden()
             self._force_dismount_all()
             self._cleanup_exit_temp_targets(
                 checkpoint_mode=shutdown_mode,
@@ -13006,7 +13244,12 @@ class PS5ConverterGUI:
             win_any = cast(Any, win)
             icon_file = self._find_app_icon_file()
             if sys.platform == "win32" and icon_file:
-                win_any.iconbitmap(icon_file)
+                # Nur das Hauptfenster laedt die Datei - als Vorgabe fuer alle weiteren Fenster. Ein
+                # ``iconbitmap(datei)`` je Toplevel kostete 19 GDI- und 6 USER-Objekte, die Tk nach dem
+                # Schliessen nie freigibt (am 05.10.2026 gemessen; die Testreihe stuerzte daran ab).
+                if isinstance(win_any, tk.Tk):
+                    win_any.iconbitmap(icon_file)
+                    win_any.iconbitmap(default=icon_file)
                 _apply_win32_window_icon(win_any, icon_file)
                 return
 
@@ -13072,6 +13315,11 @@ class PS5ConverterGUI:
             # Die Obergrenze ist der angenommene Bildschirm: bei einer von Hand
             # gewaehlten, kleineren Aufloesung ein kleinerer als der echte.
             ober_b, ober_h = self._bildschirm_fuer_fenster()
+            # Der Arbeitsbereich zaehlt, nicht der ganze Bildschirm: Unter der Taskleiste ist nichts zu sehen.
+            # Ohne das wuchs ein Fenster bis auf Bildschirm minus 80 und ragte mit seiner Knopfreihe darunter
+            # (05.10.2026: "Das Fenster ist zu hoch. Man sieht die Knoepfe unten nicht mehr").
+            bereich_x, bereich_y, bereich_b, bereich_h = self._arbeitsbereich_fenster()
+            ober_b, ober_h = min(ober_b, bereich_b), min(ober_h, bereich_h)
             grenze_b = ober_b - 40
             grenze_h = ober_h - 80
             # Gegen die JETZIGE Groesse halten, nicht gegen die eingestellte.
@@ -13083,21 +13331,36 @@ class PS5ConverterGUI:
             aktuell_b, aktuell_h, alt_x, alt_y = self._fenster_geometrie(win)
             basis_b = max(breite, aktuell_b)
             basis_h = max(hoehe, aktuell_h)
-            neu_b = max(1, min(max(basis_b, noetig_b), grenze_b))
+            # Waechst das Fenster in die Breite, nicht auf den Punkt genau: Eine Knopfreihe mit Gruppen links und
+            # rechts stuende sonst Kante an Kante (Platz-Dialog, 05.10.2026 - der Hauptknopf stiess an den Nachbarn).
+            luft_b = knopfmass(16, win) if noetig_b > basis_b else 0
+            neu_b = max(1, min(max(basis_b, noetig_b + luft_b), grenze_b))
             neu_h = max(1, min(max(basis_h, noetig_h), grenze_h))
             if (neu_b, neu_h) == (basis_b, basis_h):
+                if veraenderbar:
+                    # Gross genug - aber auch das *Minimum*? Von Hand eingetragene Mindestmasse passen zu
+                    # den Knoepfen von gestern: Mit den runden Knoepfen (breiter und hoeher) quetschte sich
+                    # bei Mindestgroesse die Knopfreihe zusammen ('Trennen' 69 statt 109 Punkte). Das
+                    # Minimum ist nie kleiner als das, was der Inhalt verlangt.
+                    try:
+                        mindest_b, mindest_h = win.minsize()
+                        neu_mindest = (max(mindest_b, min(noetig_b, grenze_b)),
+                                       max(mindest_h, min(noetig_h, grenze_h)))
+                        if neu_mindest != (mindest_b, mindest_h):
+                            win.minsize(*neu_mindest)
+                    except tk.TclError as exc:
+                        logger.debug("Mindestgroesse nicht anhebbar: %s", exc)
                 return
-            mitte_x = max(0, (win.winfo_screenwidth() - breite) // 2)
-            mitte_y = max(0, (win.winfo_screenheight() - hoehe) // 2)
+            mitte_x, mitte_y = self._fenster_mitte(win, breite, hoehe)
             if alt_x is None or (alt_x, alt_y) == (mitte_x, mitte_y):
                 # Noch dort, wo _build_modern_toplevel es hingesetzt hat:
                 # mit der neuen Groesse neu zentrieren.
-                x = max(0, (win.winfo_screenwidth() - neu_b) // 2)
-                y = max(0, (win.winfo_screenheight() - neu_h) // 2)
+                x, y = self._fenster_mitte(win, neu_b, neu_h)
             else:
-                # Vom Anwender verschoben: dort lassen, nur auf den Schirm holen.
-                x = max(0, min(alt_x, win.winfo_screenwidth() - neu_b))
-                y = max(0, min(alt_y, win.winfo_screenheight() - neu_h))
+                # Vom Anwender verschoben: dort lassen, nur in den Arbeitsbereich holen.
+                rahmen = knopfmass(self._FENSTER_RAHMEN_HOEHE, win)
+                x = max(bereich_x, min(alt_x, bereich_x + bereich_b - neu_b))
+                y = max(bereich_y, min(alt_y, bereich_y + bereich_h - neu_h - rahmen))
             win.geometry("%dx%d+%d+%d" % (neu_b, neu_h, x, y))
             if veraenderbar:
                 # Die Mindestgroesse mitziehen, sonst laesst sich das Fenster
@@ -13350,8 +13613,7 @@ class PS5ConverterGUI:
         win = tk.Toplevel(self.root, bg=c["bg_main"])
         win.title(title)
         self._fenster_an_hauptfenster_binden(win, parent)
-        x = (win.winfo_screenwidth() - width) // 2
-        y = (win.winfo_screenheight() - height) // 2
+        x, y = self._fenster_mitte(win, width, height)
         win.geometry(f"{width}x{height}+{x}+{y}")
         win.resizable(resizable, resizable)
         if resizable:
@@ -13413,7 +13675,10 @@ class PS5ConverterGUI:
         outer = tk.Frame(parent, bg=c["bg_main"])
         canvas = tk.Canvas(outer, bg=c["bg_main"], highlightthickness=0)
         canvas.pack(side="left", fill="both", expand=True)
-        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        # Der schmale Rollbalken der Flaeche (ohne Pfeile, Rinne in der Farbe des
+        # Grundes) - wie in allen runden Fenstern, nicht der eckige Standardbalken.
+        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview,
+                            style="Grund.Vertical.TScrollbar")
         vsb.pack(side="right", fill="y")
         canvas.configure(yscrollcommand=vsb.set)
 
@@ -13833,28 +14098,19 @@ class PS5ConverterGUI:
             return
         if not getattr(self, "_startup_complete", False):
             return
-        # Ein noch offener Auftrag wurde fuer eine fruehere Groesse bestellt
-        # und ist damit veraltet - er muss weg, bevor abgekuerzt wird. Stand
-        # das Abbestellen hinter der Abkuerzung, ueberschrieb er 80 ms spaeter
-        # das laengst richtige Bild mit einer Zwischengroesse. Am 20.08.2026
-        # beim Designwechsel nachgezeichnet: Die Flaeche meldet erst 1600,
-        # dann 1427; die zweite Meldung kuerzte ab, die erste gewann.
-        if self._bg_resize_after_id is not None:
-            try:
-                self.root.after_cancel(self._bg_resize_after_id)
-            except Exception as exc:
-                logger.debug("after_cancel fehlgeschlagen: %s", exc)
-            self._bg_resize_after_id = None
-
-        if self._hintergrund_ist_aktuell("bg_photo", width, height):
+        # Dieselbe Groesse wie beim letzten Nachschneiden: Das Fenster wurde nur
+        # verschoben - ein Configure meldet auch das, und beim Ziehen an der
+        # Titelleiste kaeme es dutzendfach.
+        if self._fenstergroesse_ist_aktuell(width, height):
             return
 
         # Nach dem Ende der Groessenaenderung alle Beschriftungen nachschneiden.
         # Waehrend des Ziehens am Fensterrand laufen die Hintergrundbilder der
-        # Entprellung wegen hinterher; danach muessen die Ausschnitte wieder zur
-        # neuen Lage passen, sonst bleibt an jeder Beschriftung ein Kasten aus
-        # der alten Geometrie stehen. Etwas spaeter als das Bild-Resize (80 ms),
-        # damit zuerst die Flaechen und dann die Ausschnitte darauf entstehen.
+        # Entprellung wegen hinterher (80 ms, je Flaeche); danach muessen die
+        # Ausschnitte wieder zur neuen Lage passen, sonst bleibt an jeder
+        # Beschriftung ein Kasten aus der alten Geometrie stehen. Etwas spaeter
+        # als das Bild-Resize, damit zuerst die Flaechen und dann die Ausschnitte
+        # darauf entstehen.
         if self._caption_settle_after_id is not None:
             try:
                 self.root.after_cancel(self._caption_settle_after_id)
@@ -13862,14 +14118,29 @@ class PS5ConverterGUI:
                 logger.debug("after_cancel (caption_settle) fehlgeschlagen: %s", exc)
         self._caption_settle_after_id = self.root.after(160, self._on_layout_settled)
 
-        self._bg_resize_after_id = self.root.after(
-            80,
-            lambda w=width, h=height: self._apply_bg_resize(w, h),
-        )
+    def _fenstergroesse_ist_aktuell(self, breite: int, hoehe: int) -> bool:
+        """Ob auf diese Fenstergroesse schon nachgeschnitten wurde (``_on_layout_settled``).
+
+        Fruehere Fassungen fragten dafuer das gezeichnete Hintergrundbild hinter dem ganzen Fenster; es gibt
+        seit dem 05.10.2026 nicht mehr (das Hauptbild liegt nur rechts der Seitenleiste). Gemerkt wird die Groesse
+        jetzt selbst.
+
+        Returns:
+            ``True``, wenn nichts zu tun ist.
+        """
+        zuletzt = self._letzte_fenstergroesse
+        if zuletzt is None:
+            return False
+        return (abs(zuletzt[0] - breite) <= self._HINTERGRUND_TOLERANZ
+                and abs(zuletzt[1] - hoehe) <= self._HINTERGRUND_TOLERANZ)
 
     def _on_layout_settled(self) -> None:
         """Zeichnet alle Beschriftungen neu, nachdem das Fenster zur Ruhe gekommen ist."""
         self._caption_settle_after_id = None
+        try:
+            self._letzte_fenstergroesse = (int(self.root.winfo_width()), int(self.root.winfo_height()))
+        except tk.TclError:
+            self._letzte_fenstergroesse = None
         # Zuerst die Umbruchbreite, dann erst einbrennen: Der eingebrannte
         # Bildausschnitt bekommt die Groesse, die das Label gerade hat.
         # Umgekehrt behielte er die Breite des ungebrochenen Textes, und die
@@ -13974,13 +14245,12 @@ class PS5ConverterGUI:
         """Bestellt die Rollpruefung entprellt (60 ms) - von jeder Stelle, die die Spalte wachsen laesst.
 
         Der Rahmen der Spalte hat eine feste Hoehe (``itemconfigure``); waechst der
-        Inhalt, bekommt er davon kein Configure. Seit die Beschriftungen auf
-        Pillen stehen (v1.9.62), wachsen Karte und Zeilen nach dem ersten Zeichnen
-        noch um bis zu 70 px - gemessen bei 1366 x 820: Der Rahmen blieb bei 1000
-        px, der Bedarf stieg auf 1070, und unten wurde abgeschnitten (unter WSLg
-        meldete die Darstellungspruefung den Hinweistext um 25 px zu tief). Deshalb
-        fragen auch die Karte (``_on_card_configure``) und der zweite
-        Beschriftungsdurchgang nach.
+        Inhalt, bekommt er davon kein Configure. Karte und Zeilen konnten nach dem
+        ersten Zeichnen noch um bis zu 70 px wachsen - gemessen am 04.10.2026 bei
+        1366 x 820: Der Rahmen blieb bei 1000 px, der Bedarf stieg auf 1070, und
+        unten wurde abgeschnitten (unter WSLg meldete die Darstellungspruefung den
+        Hinweistext um 25 px zu tief). Deshalb fragt auch die Karte
+        (``_on_card_configure``) nach.
         """
         if getattr(self, "_rollpruefung_after_id", None) is not None:
             try:
@@ -14212,7 +14482,7 @@ class PS5ConverterGUI:
         quetscht es zusammen. Ein Knopf mit 26 statt 189 Pixeln ist aber
         weder lesbar noch zu treffen. Deshalb werden Knoepfe hier ganz
         weggenommen und stattdessen im Sammelmenue angeboten, in dem aus
-        demselben Grund schon MicroMount und der AMPR-Index-Builder liegen.
+        demselben Grund schon der AMPR-Index-Builder und weitere Werkzeuge liegen.
         """
         self._titelleiste_after_id = None
         if not getattr(self, "_titelleiste_ordnung", None):
@@ -14543,32 +14813,9 @@ class PS5ConverterGUI:
         finally:
             self._zeilen_ordnen_laeuft = False
 
-    #: Mindestluft zwischen zwei Beschriftungspillen derselben Zeile.
-    _ZEILE_ABSTAND_PILLEN = 8
-
-    def _worker_ueberstand(self) -> int:
-        """Wie weit die Pille von WORKER ueber den Drehknopf darunter hinausragt.
-
-        Seit v1.9.62 steht jede Beschriftung der Karte auf einer Pille, und die
-        von WORKER ist breiter als der Drehknopf. Linksbuendig ueber ihm
-        (alle Beschriftungen stehen so) stiesse sie sonst an die von PRUEFUNG;
-        die Pruefstufe rueckt deshalb um diesen Ueberstand nach rechts.
-        """
-        knopf = getattr(self, "worker_knob", None)
-        titel = getattr(self, "worker_title", None)
-        if knopf is None or titel is None:
-            return 0
-        try:
-            return max(0, int(titel.winfo_reqwidth()) - int(knopf.winfo_reqwidth()))
-        except tk.TclError:
-            return 0
-
     def _kartenzeilen(self):
         """Die beiden Bedienzeilen der Karte samt Soll-Abstaenden."""
         eng, gruppe = self._ZEILE_ABSTAND_ENG, self._ZEILE_ABSTAND_GRUPPE
-        # Der Abstand zur Pruefstufe reicht fuer den Drehknopf, nicht fuer die
-        # breitere Pille seiner Beschriftung (_worker_ueberstand).
-        vor_pruefung = max(gruppe, self._worker_ueberstand() + self._ZEILE_ABSTAND_PILLEN)
         return (
             # Zielformat, Kompression, Worker und Pruefung sind vier
             # eigenstaendige Einstellungen - alle gleich weit auseinander.
@@ -14576,7 +14823,7 @@ class PS5ConverterGUI:
             # "PRUEFUNG" fast aneinander und lasen sich als ein Wort.
             [(getattr(self, "compression_combo", None), 0),
              (getattr(self, "worker_knob", None), gruppe),
-             (getattr(self, "verify_combo", None), vor_pruefung)],
+             (getattr(self, "verify_combo", None), gruppe)],
             # AMPR EMU samt Fassung, Methode und PlayGo bilden eine Gruppe,
             # BACKPORT samt Firmware die zweite - der groessere Abstand zeigt
             # das. Die Methode steht neben der Fassung, weil beide zusammen
@@ -14761,22 +15008,23 @@ class PS5ConverterGUI:
     def _hintergruende_nachziehen(self) -> None:
         """Rechnet stehengebliebene Hintergrundbilder auf ihre Flaeche nach.
 
-        Jede der vier Flaechen rechnet ihr Bild ueber ein eigenes
-        Configure-Ereignis neu und merkt sich dabei die zuletzt verwendete
-        Groesse. Bleibt eine Anpassung aus - weil das Ereignis nicht kam oder
-        auf eine Zwischengroesse gerechnet wurde -, holt sie nichts nach: Der
-        naechste Anstoss kaeme erst bei der naechsten Groessenaenderung, und
-        bis dahin steht ein Bild in falscher Groesse auf der Flaeche.
+        Jede der drei Flaechen (Inhaltsflaeche rechts, Seitenleiste, Knopfleiste)
+        rechnet ihr Bild ueber ein eigenes Configure-Ereignis neu und merkt sich
+        dabei die zuletzt verwendete Groesse. Bleibt eine Anpassung aus - weil
+        das Ereignis nicht kam oder auf eine Zwischengroesse gerechnet wurde -,
+        holt sie nichts nach: Der naechste Anstoss kaeme erst bei der naechsten
+        Groessenaenderung, und bis dahin steht ein Bild in falscher Groesse auf
+        der Flaeche. (Ein Bild hinter dem ganzen Fenster gibt es seit dem
+        05.10.2026 nicht mehr.)
 
         Am 20.08.2026 im Belastungslauf gemessen: Inhaltsflaeche 1600x991
         gezeichnet auf einer Flaeche von 1427x991, Seitenleiste 320x991 auf
         493x991 - beides blieb ueber alle folgenden Runden stehen.
 
         Die Pruefung vergleicht nur gezeichnete Groesse gegen Flaeche und
-        rechnet bei Abweichung neu. Stimmt alles, kostet sie vier Abfragen.
+        rechnet bei Abweichung neu. Stimmt alles, kostet sie drei Abfragen.
         """
         for traeger, foto, anwenden in (
-                (self.root, "bg_photo", self._apply_bg_resize),
                 (getattr(self, "content_area", None), "content_bg_photo",
                  self._apply_content_bg_resize),
                 (getattr(self, "sidebar", None), "sidebar_bg_photo",
@@ -14795,23 +15043,6 @@ class PS5ConverterGUI:
                     anwenden(breite, hoehe)
             except Exception as exc:
                 logger.debug("Nachziehen von %s fehlgeschlagen: %s", foto, exc)
-
-    def _apply_bg_resize(self, width: int, height: int) -> None:
-        """Skaliert das Hintergrundbild entkoppelt vom Configure-Event."""
-        self._bg_resize_after_id = None
-        # Ohne Vollbild-Ausnahme: siehe _on_root_configure. Das Bild muss auch
-        # dort auf die tatsaechliche Flaeche gerechnet werden.
-        if not self._bg_image_cache:
-            return
-        if width <= 1 or height <= 1:
-            return
-        try:
-            resized = self._flaechenbild(self._bg_image_cache, width, height)
-            self.bg_photo = ImageTk.PhotoImage(resized)
-            self.bg_label.config(image=self.bg_photo)
-            self._last_bg_resize_size = (width, height)
-        except Exception as exc:
-            logger.debug("Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
 
     def _on_content_area_configure(self, event: tk.Event) -> None:
         """Behandelt Größenänderung des Content-Bereichs (rechte Fensterhälfte)."""
@@ -14860,8 +15091,6 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Content-Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
         self._redraw_content_captions()
-        # Die Ecken der Seitenleiste setzen den linken Rand dieses Bilds fort.
-        self._seitenleiste_ecken_nachziehen()
 
     def _flaechenbild(self, quelle: "Image.Image", breite: int, hoehe: int):
         """Liefert `quelle` formatfuellend auf (breite, hoehe) - und merkt sich das.
@@ -14978,13 +15207,88 @@ class PS5ConverterGUI:
             if cropped is None:
                 return None
             if self._liegt_in_knopfleiste(widget):
-                cropped = self._blend_bg_image_for_action_bar(cropped)
+                # Gemischt wird erst ab dem Beginn der Kachel (hinter ABBRECHEN),
+                # nicht hinter STARTEN und ABBRECHEN selbst.
+                cropped = self._knopfleiste_mischen(cropped, lage[0])
             # Der Schein um STARTEN gehoert zum Untergrund: Knopfleiste,
             # beide Knoepfe und die Flaeche darunter tragen ihn gleich.
             return self._startschein_auftragen(cropped, lage)
         except Exception as exc:
             logger.debug("Content-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
             return None
+
+    #: Luft zwischen ABBRECHEN und der Kachel der Knopfleiste, in Pixeln (wie die
+    #: Abstaende der Leiste unskaliert).
+    _KACHEL_ABSTAND = 8
+
+    def _knopfleiste_kachel_x(self) -> "int | None":
+        """Wo die Kachel der Knopfleiste beginnt - in Pixeln der Inhaltsflaeche.
+
+        Nutzerwunsch vom 04.10.2026 (mit Bild von STARTEN und ABBRECHEN): "Hinter
+        diesen Knoepfen moechte ich bitte keine Kachel sehen." Die Flaeche der
+        Knopfleiste - die der Regler "Knopfleiste unten" mit der Fensterfarbe
+        mischt, bei kleinem Wert also ein dunkler Kasten - beginnt deshalb erst
+        ``_KACHEL_ABSTAND`` Pixel rechts von ABBRECHEN, dort, wo Fortschritt,
+        Prozent und Groessenanzeige stehen. Davor, hinter beiden Knoepfen, liegt
+        das Hintergrundbild unveraendert.
+
+        Returns:
+            ``None``, solange die Knoepfe noch nicht stehen - dann gilt die ganze
+            Leiste als Kachel, und die naechste Rechnung (bei jeder
+            Groessenaenderung der Leiste) holt es nach.
+        """
+        knopf = getattr(self, "abort_btn", None)
+        inhalt = getattr(self, "content_area", None)
+        if knopf is None or inhalt is None:
+            return None
+        try:
+            if knopf.winfo_width() <= 1:
+                return None
+            return (knopf.winfo_rootx() + knopf.winfo_width() - inhalt.winfo_rootx()
+                    + self._KACHEL_ABSTAND)
+        except tk.TclError:
+            return None
+
+    def _knopfleiste_nachziehen(self) -> None:
+        """Rechnet das Bild der Knopfleiste neu, wenn der Beginn ihrer Kachel gewandert ist.
+
+        Das Bild der Leiste wird bei jeder Groessenaenderung der Leiste neu
+        gerechnet. Steht ABBRECHEN dabei noch nicht (erster Aufbau) oder
+        verschiebt es sich, ohne dass die Leiste ihre Groesse aendert, bliebe die
+        Kachel sonst an der falschen Stelle stehen. Eingehaengt bei den runden
+        Flaechen (``_runde_nachzieher``), die nach jeder Lageaenderung laufen.
+        """
+        leiste = getattr(self, "action_bar", None)
+        if leiste is None or getattr(self, "action_bar_bg_label", None) is None:
+            return
+        if self._knopfleiste_kachel_x() == getattr(self, "_kachel_x_gezeichnet", None):
+            return
+        self._apply_action_bar_bg_resize(leiste.winfo_width(), leiste.winfo_height())
+
+    def _knopfleiste_mischen(self, ausschnitt: "Image.Image", links: int) -> "Image.Image":
+        """Mischt einen Ausschnitt der Knopfleiste nach dem Regler - aber erst ab dem Beginn der Kachel.
+
+        Args:
+            ausschnitt: Der Bildausschnitt, ungemischt.
+            links: Wo seine linke Kante in der Inhaltsflaeche liegt.
+
+        Was links vom Beginn der Kachel liegt (hinter STARTEN und ABBRECHEN),
+        bleibt das Bild. Gemischt wird Punkt fuer Punkt; deshalb passt jeder
+        Ausschnitt - die Leiste, die Pillenecken eines Knopfs, die Groessenanzeige -
+        genau auf das Bild darunter, wo immer die Grenze ihn schneidet.
+        """
+        gemischt = self._blend_bg_image_for_action_bar(ausschnitt)
+        kachel = self._knopfleiste_kachel_x()
+        if kachel is None:
+            return gemischt
+        grenze = kachel - links
+        if grenze <= 0:
+            return gemischt
+        if grenze >= ausschnitt.width:
+            return ausschnitt
+        bild = gemischt.convert("RGB")
+        bild.paste(ausschnitt.convert("RGB").crop((0, 0, grenze, ausschnitt.height)), (0, 0))
+        return bild
 
     def _caption_natuerliche_groesse(self, label: "tk.Label") -> tuple[int, int]:
         """Groesse einer Beschriftung ohne ihren untergelegten Bildausschnitt.
@@ -15040,115 +15344,18 @@ class PS5ConverterGUI:
             return (max(1, int(label.winfo_reqwidth())),
                     max(1, int(label.winfo_reqheight())))
 
-    # --- Texthintergrund als Pille (seit v1.9.62) ----------------------------------
-    #
-    # Nutzerwahl vom 04.10.2026 ("A: Pille mit Rand", auch fuer die weiteren
-    # Beschriftungen): Ueberschrift, Untertitel, Statuszeile und die
-    # Beschriftungen der Karte stehen auf einer Pille in der Farbe der
-    # Eingabefelder, mit duennem Rand. Gezeichnet in denselben Bildausschnitt,
-    # den die Beschriftung ohnehin traegt - das Bild ist nur um die Luft der
-    # Pille groesser als der Text.
-
-    #: Beschriftungen der Inhaltsflaeche mit Pille (die der Karte haben alle eine).
-    _TEXTPILLEN_INHALT: tuple[str, ...] = ("header_label", "subtitle_label", "status_label")
-
-    def _beschriftung_zeilenhoehe(self, label) -> int:
-        """Zeilenhoehe der Schrift einer Beschriftung - 0, wenn sie sich nicht bestimmen laesst."""
-        import tkinter.font as _tkfont  # noqa: PLC0415
-        try:
-            schrift = label.cget("font")
-            if not str(schrift):
-                stil = str(label.cget("style")) or label.winfo_class()
-                schrift = ttk.Style().lookup(stil, "font") or "TkDefaultFont"
-            merker = getattr(self, "_zeilenhoehen_merker", None)
-            if merker is None:
-                merker = self._zeilenhoehen_merker = {}
-            schluessel = str(schrift)
-            if schluessel not in merker:
-                merker[schluessel] = int(_tkfont.Font(root=self.root, font=schrift)
-                                         .metrics("linespace"))
-            return merker[schluessel]
-        except (tk.TclError, ValueError, TypeError):
-            return 0
-
-    def _texthintergrund_masse(self, label, breite: int, hoehe: int) -> "tuple[int, int, float]":
-        """Breite, Hoehe und Eckenradius der Pille hinter einer Beschriftung.
-
-        Einzeilig eine Pille (Radius = halbe Hoehe) mit gut einer halben
-        Zeilenhoehe Luft links und rechts. Ein mehrzeiliger Hinweis (der
-        Formathinweis der Karte) bekommt ein rundes Rechteck - eine Pille ueber
-        drei Zeilen wuerde zur Linse.
-        """
-        zeile = self._beschriftung_zeilenhoehe(label) or hoehe
-        if hoehe >= 1.6 * zeile:
-            luft_x, luft_y = max(8, round(zeile * 0.7)), max(3, round(zeile * 0.25))
-            return breite + 2 * luft_x, hoehe + 2 * luft_y, float(zeile)
-        luft_x, luft_y = max(6, round(hoehe * 0.45)), max(2, round(hoehe * 0.12))
-        return breite + 2 * luft_x, hoehe + 2 * luft_y, (hoehe + 2 * luft_y) / 2.0
-
-    def _texthintergrund_auftragen(self, bild, radius: float):
-        """Legt die Pille (Feldfarbe, duenner Rand - wie die Eingabefelder) auf den Ausschnitt."""
-        c = self._COLORS
-        try:
-            faktor = max(1.0, float(self.root.tk.call("tk", "scaling")) / (96.0 / 72.0))
-        except (tk.TclError, ValueError):
-            faktor = 1.0
-        rgba = bild.convert("RGBA")
-        rgba.alpha_composite(bibliothek_zeichnen.rund_rechteck(
-            rgba.width, rgba.height, radius, self._farbe_als_hex(c["console_bg"]),
-            self._farbe_als_hex(c["border"]), faktor))
-        return rgba.convert("RGB")
-
-    def _texthintergrund_groesse_merken(self, label, groesse: "tuple[int, int]") -> bool:
-        """Merkt die Bildgroesse einer Beschriftung mit Pille - ``True``, wenn sie neu ist.
-
-        Waechst eine Beschriftung um ihre Pille, verschiebt sich das Raster, und
-        der eben gerechnete Ausschnitt einer Nachbarin passt nicht mehr an ihre
-        Stelle. Ein zweiter Durchgang (:meth:`_beschriftungen_nachlauf`) rechnet
-        an der neuen Lage; er aendert keine Groesse mehr und loest deshalb
-        keinen dritten aus - die Endlosschleifen-Falle aus
-        :meth:`_redraw_card_captions` bleibt zu.
-        """
-        neu = getattr(label, "_texthintergrund_groesse", None) != groesse
-        label._texthintergrund_groesse = groesse
-        return neu
-
-    def _beschriftungen_nachlauf(self) -> None:
-        """Ein zweiter Durchgang fuer Karte und Inhaltsflaeche, wenn eine Pille gewachsen ist."""
-        if getattr(self, "_beschriftungen_nachlauf_id", None) is not None:
-            return
-        try:
-            self._beschriftungen_nachlauf_id = self.root.after(
-                40, self._beschriftungen_nachlauf_ausfuehren)
-        except tk.TclError:
-            self._beschriftungen_nachlauf_id = None
-
-    def _beschriftungen_nachlauf_ausfuehren(self) -> None:
-        self._beschriftungen_nachlauf_id = None
-        # Die per place gesetzten Beschriftungen (WORKER, PRUEFUNG, Einbau)
-        # rechnen ihre Lage aus der eigenen Groesse - die ist jetzt eine andere.
-        try:
-            self._kartenzeilen_ordnen(nachmessen=False)
-        except Exception as exc:                           # noqa: BLE001
-            logger.debug("Kartenzeilen nach Pillen nicht ausgerichtet: %s", exc)
-        self._redraw_card_captions()
-        self._redraw_content_captions()
-        # Ueberschrift, Untertitel und Statuszeile sind hier gewachsen - die
-        # Spalte hat davon kein Configure bekommen.
-        self._rollpruefung_planen()
-
     def _redraw_content_captions(self) -> None:
         """Zeichnet Header/Untertitel/Status/Groessen-Beschriftungen mit Bildausschnitt neu.
 
         Gleiches Prinzip wie _redraw_card_captions (siehe dortiger Kommentar zur
         Endlosschleifen-Falle bei staendiger Neuvermessung), nur relativ zum
-        Content-Bereich statt zur Quelle-Karte. Ueberschrift, Untertitel und
-        Statuszeile stehen seit v1.9.62 auf einer Pille (_TEXTPILLEN_INHALT).
+        Content-Bereich statt zur Quelle-Karte.
+
+        Der Text steht direkt auf dem Hintergrundbild: Die Pille hinter den
+        Beschriftungen (v1.9.62) hat der Nutzer am 05.10.2026 wieder abbestellt.
         """
         if self._bg_image_cache is None:
             return
-        pillen = [getattr(self, name, None) for name in self._TEXTPILLEN_INHALT]
-        gewachsen = False
         for label in getattr(self, "_content_caption_labels", []):
             try:
                 if not label.winfo_exists() or not label.winfo_ismapped():
@@ -15164,23 +15371,29 @@ class PS5ConverterGUI:
                     label._caption_natural_size = natural_size
                     label._caption_natural_text = text
                 w, h = natural_size
-                pille = any(label is kandidat for kandidat in pillen) and bool(text.strip())
-                breite, hoehe, radius = (self._texthintergrund_masse(label, w, h) if pille
-                                         else (w, h, 0.0))
-                crop = self._compute_content_bg_crop(label, breite, hoehe)
+                crop = self._compute_content_bg_crop(label, w, h)
                 if crop is None:
                     continue
-                if pille:
-                    crop = self._texthintergrund_auftragen(crop, radius)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
                 label.config(image=photo, compound="center")
-                if pille and self._texthintergrund_groesse_merken(label, (breite, hoehe)):
-                    gewachsen = True
             except Exception as exc:
                 logger.debug("Content-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
-        if gewachsen:
-            self._beschriftungen_nachlauf()
+        self._rollpruefung_nach_beschriftung()
+
+    def _rollpruefung_nach_beschriftung(self) -> None:
+        """Bestellt die Rollpruefung, nachdem Beschriftungen ihr Bild bekommen haben.
+
+        Ein Label mit Bild (``compound="center"``) kann hoeher werden als dasselbe Label ohne - gemessen
+        am 05.10.2026: 20 Punkte mehr Bedarf der Inhaltsspalte (1434 statt 1454) nach dem Nachzeichnen.
+        Der Rahmen der Spalte hat eine feste Hoehe und bekommt davon kein Configure; ohne diese Bestellung
+        blieb er bei 1012 stehen, waehrend 1032 noetig waren - die untersten 20 Punkte lagen ausserhalb der
+        Rollflaeche. Entprellt (``_rollpruefung_planen``) und ohne Wirkung, wenn nichts zu aendern ist.
+        """
+        try:
+            self._rollpruefung_planen()
+        except tk.TclError as exc:
+            logger.debug("Rollpruefung nicht bestellbar: %s", exc)
 
     def _on_action_bar_configure(self, event: tk.Event) -> None:
         """Behandelt Größenänderung der Action-Bar (Start/Abbrechen/Fortschritt)."""
@@ -15227,6 +15440,8 @@ class PS5ConverterGUI:
                 self.action_bar_bg_photo = ImageTk.PhotoImage(crop)
                 self.action_bar_bg_label.config(image=self.action_bar_bg_photo)
                 self._last_action_bar_bg_resize_size = (width, height)
+                # Woran sich ``_knopfleiste_nachziehen`` erkennt, dass es neu rechnen muss.
+                self._kachel_x_gezeichnet = self._knopfleiste_kachel_x()
         except Exception as exc:
             logger.debug("Action-Bar-Hintergrundbild konnte nicht aktualisiert werden: %s", exc)
         self._redraw_content_captions()
@@ -15271,7 +15486,7 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             return
         try:
-            resized = self._seitenleistenbild(width, height)
+            resized = self._bild_fuellen(self._sidebar_bg_image_cache, width, height)
             self.sidebar_bg_photo = ImageTk.PhotoImage(resized)
             self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
             self._last_sidebar_bg_resize_size = (width, height)
@@ -15295,10 +15510,7 @@ class PS5ConverterGUI:
             s_height = sidebar.winfo_height()
             if s_width <= 1 or s_height <= 1:
                 return None
-            # Dasselbe Bild wie hinter der Leiste - samt runden Ecken.
-            full_resized = self._seitenleistenbild(s_width, s_height)
-            if full_resized is None:
-                return None
+            full_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
             wx = widget.winfo_rootx() - sidebar.winfo_rootx()
             wy = widget.winfo_rooty() - sidebar.winfo_rooty()
             crop_box = (
@@ -15316,113 +15528,6 @@ class PS5ConverterGUI:
         except Exception as exc:
             logger.debug("Sidebar-Hintergrundausschnitt konnte nicht berechnet werden: %s", exc)
             return None
-
-    # --- Runde Ecken der Seitenleiste (seit v1.9.62) ----------------------------------
-    #
-    # Nutzerwunsch vom 04.10.2026: "Kannst du die Ecken bei der Sidebar (alle vier
-    # Ecken) ebenfalls noch rund machen". Die Rundung steckt im Bild der Leiste
-    # selbst (_seitenleistenbild): Hintergrund, Logo-Beschriftungen, Pillen und
-    # Fussrahmen schneiden ihre Ausschnitte aus diesem einen Bild und tragen die
-    # Ecken damit von selbst mit.
-
-    #: Eckenradius der Seitenleiste bei 100 % (die Karten haben 14 - die Leiste ist
-    #: eine grosse Flaeche und vertraegt etwas mehr).
-    _SEITENLEISTE_ECKE = 18
-
-    def _seitenleiste_oberkante(self) -> int:
-        """Wo die Leiste sichtbar beginnt: unter der Titelleiste, die ueber ihr liegt."""
-        leiste = getattr(self, "_main_titlebar", None)
-        if leiste is None:
-            return 0
-        try:
-            hoehe = int(leiste.winfo_height())
-            return hoehe if hoehe > 1 else int(leiste.winfo_reqheight())
-        except tk.TclError:
-            return 0
-
-    def _seitenleiste_eckgrund_schluessel(self) -> tuple:
-        """Woraus die Ecken gefuellt werden - als Schluessel fuer den Merker.
-
-        In UMWANDELN liegt rechts der Leiste das Bild der Inhaltsflaeche: Die
-        Ecken setzen dessen linken Rand fort, damit kein Bruch entsteht (die
-        Inhaltsflaeche skaliert das Bild anders als das Fenster). In KONSOLE
-        steht dort eine einfarbige Seite - dann ihre Farbe.
-        """
-        inhalt = getattr(self, "content_area", None)
-        try:
-            konsole = self._ansicht_ist_konsole()
-        except Exception:                                  # noqa: BLE001
-            konsole = False
-        if self._bg_image_cache is not None and inhalt is not None and not konsole:
-            try:
-                breite, hoehe = int(inhalt.winfo_width()), int(inhalt.winfo_height())
-            except tk.TclError:
-                breite = hoehe = 0
-            if breite > 1 and hoehe > 1:
-                return ("bild", id(self._bg_image_cache), breite, hoehe)
-        return ("farbe", str(self._COLORS["bg_main"]))
-
-    def _seitenleistenbild_schluessel(self, breite: int, hoehe: int) -> tuple:
-        """Alles, wovon das Bild der Leiste abhaengt: Quelle, Groesse, Oberkante, Radius, Eckgrund."""
-        return (id(self._sidebar_bg_image_cache), int(breite), int(hoehe),
-                self._seitenleiste_oberkante(),
-                knopfmass(self._SEITENLEISTE_ECKE, self.root),
-                self._seitenleiste_eckgrund_schluessel())
-
-    def _seitenleistenbild(self, breite: int, hoehe: int) -> "Image.Image | None":
-        """Das Bild der Seitenleiste in ihrer Groesse - mit vier runden Ecken.
-
-        Die oberen Ecken sitzen unter der Titelleiste (sie liegt ueber dem oberen
-        Rand der Leiste), die unteren am Fensterrand. Gemerkt, bis sich Bild,
-        Groesse, Titelleiste oder das Nachbarbild aendern: Jede Pille der Leiste
-        schneidet ihren Ausschnitt hieraus.
-        """
-        quelle = self._sidebar_bg_image_cache
-        if quelle is None or breite <= 1 or hoehe <= 1:
-            return None
-        schluessel = self._seitenleistenbild_schluessel(breite, hoehe)
-        _id, _b, _h, oben, radius, grund = schluessel
-        merker = getattr(self, "_seitenleistenbild_merker", None)
-        if merker is not None and merker[0] == schluessel and merker[1] is quelle:
-            return merker[2]
-        bild = self._bild_fuellen(quelle, breite, hoehe).convert("RGB")
-        if hoehe - oben > 2 * radius and breite > 2 * radius:
-            rand = (self._flaechenbild(self._bg_image_cache, grund[2], grund[3])
-                    if grund[0] == "bild" else None)
-            if rand is not None:
-                # Die linke Spalte der Inhaltsflaeche, nach links fortgesetzt;
-                # Leiste und Inhaltsflaeche beginnen beide an der Fensteroberkante.
-                hinten = rand.crop((0, 0, 1, grund[3])).convert("RGB").resize(
-                    (breite, hoehe), Image.NEAREST)
-            else:
-                hinten = Image.new("RGB", (breite, hoehe),
-                                   self._hex_zu_rgb(str(self._COLORS["bg_main"])))
-            maske = Image.new("L", (breite, hoehe), 255)
-            maske.paste(bibliothek_zeichnen._maske(breite, hoehe - oben, radius), (0, oben))
-            bild = Image.composite(bild, hinten, maske)
-        self._seitenleistenbild_merker = (schluessel, quelle, bild)
-        return bild
-
-    def _seitenleiste_ecken_nachziehen(self) -> None:
-        """Zeichnet die Leiste neu, wenn sich ihr Eckgrund geaendert hat.
-
-        Nach einem Ansichtswechsel (rechts Inhaltsbild oder einfarbige Seite)
-        und nach einer neuen Groesse der Inhaltsflaeche (ihr Bild skaliert
-        anders). Nichts geaendert - nichts zu tun.
-        """
-        sidebar = getattr(self, "sidebar", None)
-        if sidebar is None or self._sidebar_bg_image_cache is None:
-            return
-        try:
-            breite, hoehe = int(sidebar.winfo_width()), int(sidebar.winfo_height())
-        except tk.TclError:
-            return
-        if breite <= 1 or hoehe <= 1:
-            return
-        merker = getattr(self, "_seitenleistenbild_merker", None)
-        if merker is not None and merker[0] == self._seitenleistenbild_schluessel(breite, hoehe):
-            return
-        self._refresh_sidebar_bg_label()
 
     def _redraw_sidebar_captions(self) -> None:
         """Zeichnet die Sidebar-Logo-Beschriftungen (Icons/Titel/Untertitel) neu ein.
@@ -15588,7 +15693,9 @@ class PS5ConverterGUI:
         "Karte.Vertical.TScrollbar": "bg_card",
         "Karte.Horizontal.TScrollbar": "bg_card",
         "Tief.Vertical.TScrollbar": "console_bg",
+        "Tief.Horizontal.TScrollbar": "console_bg",
         "Grund.Vertical.TScrollbar": "bg_main",
+        "Grund.Horizontal.TScrollbar": "bg_main",
     }
 
     def _rollbalken_faerben(self, stil: str, rinne: str) -> None:
@@ -15831,7 +15938,7 @@ class PS5ConverterGUI:
             except tk.TclError:
                 continue
             for kind in kinder:
-                if isinstance(kind, (RunderHaken, RunderBalken)) or (
+                if isinstance(kind, (RunderHaken, Drehknopf)) or (
                         isinstance(kind, RoundedButton) and kind._pille):
                     try:
                         kind.nachziehen()
@@ -16117,6 +16224,39 @@ class PS5ConverterGUI:
         karten.append(karte)
         return karte
 
+    def _fenster_drehknopf(self, eltern, variable, von: int, bis: int, *, hintergrund: str = "",
+                           command=None, durchmesser: int = 34) -> "Drehknopf":
+        """Ein Drehknopf fuer Nebenfenster (einfarbiger Grund) - an der Stelle einer ``ttk.Spinbox``."""
+        c = self._COLORS
+        return Drehknopf(eltern, variable, von, bis, command=command, vorgabe=von,
+                         durchmesser=durchmesser, bg=hintergrund or c["bg_main"], ring=c["border"],
+                         aktiv=c["fg_accent"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10), "bold"))
+
+    @property
+    def _pw(self) -> "fenster_pillen.Widgets":
+        """Die runden Ersatzteile fuer die Nebenfenster (``ps5_validator/ui/fenster_pillen.py``).
+
+        ``self._pw.Button(...)``, ``self._pw.Entry(...)`` usw. nehmen die Optionen von ``ttk.Button``,
+        ``tk.Entry`` & Co. - ein Fenster wechselt nur den Namen. Einmal gebaut und fuer alle Fenster geteilt:
+        Die Teile teilen sich einen Bildspeicher, statt dass jedes Fenster seinen eigenen anlegt.
+        """
+        teile = self.__dict__.get("_pw_teile")
+        if teile is None:
+            teile = self.__dict__["_pw_teile"] = fenster_pillen.Widgets(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+        return teile
+
+    def _runder_haken(self, eltern, text: str, variable, *, command=None, schrift=None,
+                      farbe: str = "fg_primary") -> "RunderHaken":
+        """Ein Ankreuzfeld in Pillenform fuer Nebenfenster (einfarbiger Grund, kein Hintergrundbild).
+
+        Hinter Kaestchen und Schrift liegt die Farbe des Elternteils. ``farbe`` ist
+        eine Rolle der Palette (``fg_primary``, ``fg_warning`` ...) oder eine
+        Farbe. Fuer „PS4 PKG -> OTA“ und seine Dialoge.
+        """
+        return RunderHaken(eltern, text=text, variable=variable, command=command,
+                           font=schrift or (UI_SCHRIFT, pt(9)),
+                           fg=self._COLORS.get(farbe, farbe), palette=lambda: self._COLORS)
+
     # --- Der Schein um STARTEN -------------------------------------------------------
     #
     # Wie "Starten" in der Bibliothek liegt unter dem Akzentknopf ein weicher
@@ -16319,8 +16459,8 @@ class PS5ConverterGUI:
         """Behandelt Größenänderung der QUELLE-/Zielformat-Karte."""
         if event.widget != getattr(self, "path_card", None):
             return
-        # Wuchs oder schrumpfte die Karte (Beschriftung mit Pille, Aufgaben- oder
-        # Sprachwechsel), stimmt die Entscheidung "rollt / passt" der Spalte nicht
+        # Wuchs oder schrumpfte die Karte (Aufgaben- oder Sprachwechsel,
+        # spaetes Zeichnen der Pillen), stimmt die Entscheidung "rollt / passt" der Spalte nicht
         # mehr - auch ohne Hintergrundbild (siehe _rollpruefung_planen).
         self._rollpruefung_planen()
         if not self._bg_image_raw or getattr(self, "card_bg_label", None) is None:
@@ -16510,7 +16650,6 @@ class PS5ConverterGUI:
         """
         if self._bg_image_raw is None:
             return
-        gewachsen = False
         for label in getattr(self, "_card_caption_labels", []):
             try:
                 # winfo_ismapped: ZIELFORMAT und der Formathinweis werden je
@@ -16531,26 +16670,17 @@ class PS5ConverterGUI:
                     label._caption_natural_size = natural_size
                     label._caption_natural_text = text
                 w, h = natural_size
-                # Seit v1.9.62 steht jede Beschriftung der Karte auf einer Pille.
-                pille = bool(text.strip())
-                breite, hoehe, radius = (self._texthintergrund_masse(label, w, h) if pille
-                                         else (w, h, 0.0))
                 lx = label.winfo_x()
                 ly = label.winfo_y()
-                crop = self._compute_card_bg_image(breite, hoehe, offset=(lx, ly))
+                crop = self._compute_card_bg_image(w, h, offset=(lx, ly))
                 if crop is None:
                     continue
-                if pille:
-                    crop = self._texthintergrund_auftragen(crop, radius)
                 photo = ImageTk.PhotoImage(crop)
                 label._caption_bg_photo = photo  # Referenz halten (sonst GC durch Tk)
                 label.config(image=photo, compound="center")
-                if pille and self._texthintergrund_groesse_merken(label, (breite, hoehe)):
-                    gewachsen = True
             except Exception as exc:
                 logger.debug("Karten-Beschriftung konnte nicht neu gezeichnet werden: %s", exc)
-        if gewachsen:
-            self._beschriftungen_nachlauf()
+        self._rollpruefung_nach_beschriftung()
 
     def _sync_docked_windows(self, event=None) -> None:
         """Synchronisiert Position und Größe der angedockten Fenster."""
@@ -16926,6 +17056,131 @@ class PS5ConverterGUI:
             return
         self.temp_path.set(path)
 
+    #: Die beiden Arten von Quellen der Sammelkonvertierung. Die zuletzt gewaehlte
+    #: Art steht als ``batch_quellart`` in den Einstellungen und ist beim naechsten
+    #: Mal vorgewaehlt.
+    _SAMMEL_ART_ORDNER = "ordner"
+    _SAMMEL_ART_DATEIEN = "dateien"
+
+    def _sammelquellen_waehlen(self, initial_dir: str) -> list[str]:
+        """Aufgabe 5, "Quellen waehlen": erst die Art, dann die Quellen selbst.
+
+        Bis zum 05.10.2026 oeffnete der Knopf gleich den Dateidialog - und der zeigt
+        keine Ordner zur Auswahl: Wer in einen Dump-Ordner ging, sah ``Media``,
+        ``sce_module`` und ``sce_sys``, aber nichts, was sich waehlen liess
+        (Nutzerwunsch: "Bei der Sammelkonvertierung fehlt die Auswahl Dump-Ordner
+        als Quelle"). Die Verarbeitung konnte Dump-Ordner schon lange - nur der Weg
+        dorthin fehlte.
+
+        Gefragt wird mit dem Auswahlfenster des Programms (zwei Beschriftungen statt
+        "Ja/Nein"); vorgewaehlt ist, was beim letzten Mal gewaehlt wurde.
+
+        * **Dump-Ordner:** unter Windows der Ordnerdialog des Systems mit
+          Mehrfachauswahl (:mod:`ordnerwahl`) - Ordner mit Strg oder Umschalt
+          markieren, "Ordner auswaehlen". Sonst ein Ordner je Dialog mit der
+          Nachfrage, ob noch einer dazukommt. Ein Ordner, der selbst kein Dump ist,
+          steht fuer die Dumps und Abbilder darin (``_sammelquellen_aufloesen``).
+        * **Abbilddateien:** der Dateidialog mit Mehrfachauswahl wie bisher.
+
+        Returns:
+            Die gewaehlten Pfade, normalisiert; leer bei Abbruch.
+        """
+        ordner = self._t("batch.wahl_ordner")
+        dateien = self._t("batch.wahl_dateien")
+        zuletzt = str(self._load_setting("batch_quellart", self._SAMMEL_ART_ORDNER) or "")
+        eintraege = ([dateien, ordner] if zuletzt == self._SAMMEL_ART_DATEIEN
+                     else [ordner, dateien])
+        art = self._auswahl_dialog(self._t("dialog.title.choose_source_type"),
+                                   self._t("dialog.msg.choose_source_type_batch"),
+                                   eintraege, parent=self.root)
+        if not art:
+            return []
+        self._save_setting("batch_quellart",
+                           self._SAMMEL_ART_ORDNER if art == ordner else self._SAMMEL_ART_DATEIEN)
+        if art == ordner:
+            return self._sammel_ordner_waehlen(initial_dir)
+        paths = filedialog.askopenfilenames(
+            title=self._t("filedialog.choose_multiple_sources"),
+            initialdir=initial_dir,
+            filetypes=[
+                (self._t("filetype.ps5_image"), "*.ffpfsc *.ffpfs *.exfat *.ffpkg"),
+                (self._t("filetype.ffpfsc_image"), "*.ffpfsc"),
+                (self._t("filetype.ffpfs_image"), "*.ffpfs"),
+                (self._t("filetype.exfat_image"), "*.exfat"),
+                (self._t("filetype.ffpkg_package"), "*.ffpkg"),
+                (self._t("filetype.all_files"), "*.*"),
+            ],
+        )
+        return [os.path.normpath(p) for p in paths] if paths else []
+
+    def _sammel_ordner_waehlen(self, initial_dir: str) -> list[str]:
+        """Mehrere Dump-Ordner waehlen - mit dem Ordnerdialog des Systems, wo es ihn gibt.
+
+        Windows: Ein Dialog, Ordner markieren (Strg, Umschalt), "Ordner auswaehlen".
+        Ohne markierten Ordner gilt der, in dem der Dialog steht - so waehlt man
+        auch einen Ordner voller Dumps in einem Zug. Anderswo (oder falls der
+        Systemdialog sich nicht anlegen laesst) der Rueckfall von Tk.
+
+        Returns:
+            Die Ordner in der Reihenfolge der Auswahl; leer bei Abbruch.
+        """
+        try:
+            besitzer = int(self.root.wm_frame(), 16)
+        except (AttributeError, tk.TclError, TypeError, ValueError):
+            besitzer = 0
+        gewaehlt = ordnerwahl.ordner_waehlen(
+            titel=self._t("filedialog.choose_batch_dump_folders"),
+            startordner=initial_dir, besitzer=besitzer)
+        if gewaehlt is not None:
+            return [os.path.normpath(p) for p in gewaehlt]
+        return self._sammel_ordner_schrittweise(initial_dir)
+
+    def _sammel_ordner_schrittweise(self, initial_dir: str) -> list[str]:
+        """Rueckfall ohne Mehrfachauswahl: ein Ordner je Dialog, danach die Frage nach dem naechsten.
+
+        Tk kennt nur den Ordnerdialog mit einer Wahl. Jeder Ordner wird sofort
+        geprueft; ein untauglicher bekommt seine Meldung, und der Dialog geht
+        wieder auf (Abbrechen beendet). Der naechste Dialog beginnt im
+        uebergeordneten Ordner - dort stehen die Geschwister.
+        """
+        gewaehlt: list[str] = []
+        start = initial_dir
+        while True:
+            ordner = filedialog.askdirectory(
+                title=self._t("filedialog.choose_batch_dump_folder"), initialdir=start)
+            if not ordner:
+                break
+            ordner = os.path.normpath(ordner)
+            fehler = self._validate_source_path(ordner, "batch_convert")
+            if fehler:
+                messagebox.showerror(self._t("dialog.title.invalid_source"), fehler,
+                                     parent=self.root)
+                continue
+            if ordner not in gewaehlt:
+                gewaehlt.append(ordner)
+            start = os.path.dirname(ordner) or ordner
+            if not messagebox.askyesno(self._t("dialog.title.batch_more_folders"),
+                                       self._t("dialog.msg.batch_more_folders",
+                                               count=len(gewaehlt)),
+                                       parent=self.root, default=messagebox.NO):
+                break
+        return gewaehlt
+
+    def _sammelquellen_protokollieren(self, quellen: list[str], zeigen: int = 12) -> None:
+        """Schreibt die Auswahl ins Hauptprotokoll: was gleich umgewandelt wird, soll man lesen koennen.
+
+        Ein Ordner voller Dumps wird zu vielen Quellen; die Statuszeile nennt nur
+        die Zahl. Hier stehen die Namen - die ersten ``zeigen``, danach "und N
+        weitere".
+        """
+        if not quellen:
+            return
+        namen = [os.path.basename(q.rstrip("\\/")) or q for q in quellen]
+        sichtbar = ", ".join(namen[:zeigen])
+        if len(namen) > zeigen:
+            sichtbar += self._t("batch.auswahl_weitere", count=len(namen) - zeigen)
+        self._append_to_log(self._t("batch.log_auswahl", count=len(quellen), namen=sichtbar) + "\n")
+
     def _browse_source(self) -> None:
         """Öffnet einen Datei- oder Verzeichnis-Dialog für den Quellpfad.
 
@@ -16949,33 +17204,31 @@ class PS5ConverterGUI:
                 initialdir=initial_dir,
             )
         elif mode == "batch_convert":
-            paths = filedialog.askopenfilenames(
-                title=self._t("filedialog.choose_multiple_sources"),
-                initialdir=initial_dir,
-                filetypes=[
-                    (self._t("filetype.ps5_image"), "*.ffpfsc *.ffpfs *.exfat *.ffpkg"),
-                    (self._t("filetype.ffpfsc_image"), "*.ffpfsc"),
-                    (self._t("filetype.ffpfs_image"), "*.ffpfs"),
-                    (self._t("filetype.exfat_image"), "*.exfat"),
-                    (self._t("filetype.ffpkg_package"), "*.ffpkg"),
-                    (self._t("filetype.all_files"), "*.*"),
-                ],
-            )
-            if not paths:
+            # Dump-Ordner (mehrere in einem Dialog) oder Abbilddateien - seit dem
+            # 05.10.2026; bis dahin nur Dateien (siehe _sammelquellen_waehlen).
+            normalized_paths = self._sammelquellen_waehlen(initial_dir)
+            if not normalized_paths:
                 return
-            normalized_paths = [os.path.normpath(p) for p in paths]
             for candidate in normalized_paths:
                 error_msg = self._validate_source_path(candidate, mode)
                 if error_msg:
                     messagebox.showerror(self._t("dialog.title.invalid_source"), error_msg, parent=self.root)
                     return
-            self._batch_sources = normalized_paths
-            self._remember_source_dialog_path(normalized_paths[0])
-            self.source_path.set(normalized_paths[0])
+            # Ein Ordner voller Dumps steht fuer die Dumps darin - dieselbe
+            # Aufloesung wie beim Ablegen (_on_source_dropped) und beim Start.
+            aufgeloest = self._sammelquellen_aufloesen(normalized_paths)
+            self._batch_sources = aufgeloest
+            erste = normalized_paths[0]
+            # Bei Ordnern gilt der uebergeordnete als Startordner des naechsten Mals:
+            # Dort stehen die Geschwister, die man als Naechstes markieren will.
+            self._remember_source_dialog_path(
+                os.path.dirname(erste) if os.path.isdir(erste) else erste)
+            self.source_path.set(erste)
             if hasattr(self, "status_label"):
                 self.status_label.config(
-                    text=self._t("main.status_batch_selected", count=len(normalized_paths))
+                    text=self._t("main.status_batch_quellen", count=len(aufgeloest))
                 )
+            self._sammelquellen_protokollieren(aufgeloest)
             return
         elif mode == "universal_convert":
             choice = messagebox.askquestion(
@@ -18077,6 +18330,11 @@ class PS5ConverterGUI:
         src_valid = False
         if mode in folder_modes and src and os.path.isdir(src):
             src_valid = True
+        elif mode == "batch_convert" and src and os.path.isdir(src):
+            # Sammelkonvertierung mit Ordnern (seit 05.10.2026): Das Feld nennt den
+            # ersten gewaehlten Ordner, die Liste dahinter entscheidet. Bis dahin blieb
+            # hier alles leer - Infobox, Groesse, Vorschau.
+            src_valid = bool(getattr(self, "_batch_sources", []))
         elif mode in file_modes and src and os.path.isfile(src):
             # Dateiendungs-Validierung: nur erlaubte Endungen akzeptieren
             if mode == "pack_file":
@@ -18266,29 +18524,55 @@ class PS5ConverterGUI:
                         meta, cover_img = self._read_game_meta_and_cover(src)
                         est_str   = ""
                     elif mode == "batch_convert":
+                        # Dateien und Ordner (Ordner seit 05.10.2026). Vorschau und
+                        # Infobox zeigen die erste Quelle der Liste - nicht das Feld:
+                        # Dort kann ein Ordner voller Dumps stehen.
                         batch_sources = [
                             path for path in (getattr(self, "_batch_sources", []) or [])
-                            if os.path.isfile(path)
+                            if os.path.exists(path)
                         ]
                         if not batch_sources:
                             return
-                        total = sum(os.path.getsize(path) for path in batch_sources)
-                        self._quellgroesse_merken(src, total)
+                        total, ordner_groessen = self._sammel_groessen_ermitteln(
+                            batch_sources,
+                            abbruch=lambda g=my_gen: g != self._calc_generation,
+                            fortschritt=lambda getan, anzahl, bisher:
+                            self._groessenfeld_setzen_wenn_aktuell(my_gen, self._t(
+                                "groesse.sammelquellen_messung", getan=getan,
+                                anzahl=anzahl, groesse=self._fmt_bytes(bisher))))
+                        if my_gen != self._calc_generation:
+                            return          # Auswahl gewechselt - siehe oben
+                        self._sammel_ordnergroessen = ordner_groessen
+                        # Die Summe unter dem Pfad des Feldes - aber nur bei einer
+                        # Datei: Bei einem Ordner gehoert unter seinen Pfad seine
+                        # eigene Groesse (_bekannte_quellgroesse), nicht die Summe.
+                        if os.path.isfile(src):
+                            self._quellgroesse_merken(src, total)
                         src_str = self._t("groesse.sammelquellen",
                                           anzahl=len(batch_sources),
                                           groesse=self._fmt_bytes(total))
                         self._groessenfeld_setzen_wenn_aktuell(my_gen, src_str)
                         est_str = ""
                         label_text = src_str
+                        vorschau = src if os.path.isfile(src) else batch_sources[0]
+                        vorschau_dirs = (
+                            preview_candidate_dirs
+                            if os.path.normcase(os.path.abspath(vorschau))
+                            == os.path.normcase(os.path.abspath(src))
+                            else self._preview_candidate_dirs(
+                                vorschau, mode, include_report_source=True))
                         quick_meta = self._quick_meta_from_path(
-                            src, candidate_roots=preview_candidate_dirs
+                            vorschau, candidate_roots=vorschau_dirs
                         )
-                        meta, cover_img = self._extract_meta_from_file(
-                            src,
-                            mode,
-                            _my_gen=my_gen,
-                            _candidate_dirs=preview_candidate_dirs,
-                        )
+                        if os.path.isdir(vorschau):
+                            meta, cover_img = self._read_game_meta_and_cover(vorschau)
+                        else:
+                            meta, cover_img = self._extract_meta_from_file(
+                                vorschau,
+                                mode,
+                                _my_gen=my_gen,
+                                _candidate_dirs=vorschau_dirs,
+                            )
                     elif mode in (
                         "unpack_to_exfat",
                         "pack_file",
@@ -20056,17 +20340,15 @@ class PS5ConverterGUI:
             popup.destroy()
 
         # --- Titelleiste ---
-        title_bar = tk.Frame(popup, bg=self._COLORS["header_bg"], height=34, cursor="fleur")
+        # Hoehe mit der Skalierung: Der Schliessen-Knopf ist eine kleine Pille und soll nicht angeschnitten sein.
+        title_bar = tk.Frame(popup, bg=self._COLORS["header_bg"], height=knopfmass(34, popup), cursor="fleur")
         title_bar.pack(fill="x")
         title_bar.pack_propagate(False)
         tk.Label(title_bar, text=self._t("info_popup.title_bar"),
                  font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
-        flach_knopf(title_bar, text="✕", command=_on_close,
-                  font=(UI_SCHRIFT, pt(11), "bold"),
-                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
-                  activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
-                  relief="flat", cursor="hand2", padx=10).pack(side="right")
+        self._pw.Button(title_bar, text="✕", command=_on_close, style="Klein.TButton",
+                        bg=self._COLORS["header_bg"]).pack(side="right", padx=6)
 
         _pd = {"x": 0, "y": 0}
         def _drag_start(e):
@@ -20133,22 +20415,19 @@ class PS5ConverterGUI:
         # Nachschlagen - nur sichtbar, wenn etwas fehlt. Bewusst ein Knopf
         # und kein Automatismus: Hier entsteht die einzige Verbindung nach
         # draussen, die dieses Fenster ueberhaupt aufbaut.
-        self._meta_nachschlag_knopf = flach_knopf(
+        self._meta_nachschlag_knopf = self._pw.Button(
             container, text=self._t("info_popup.lookup_button"),
             command=self._nachschlag_ausloesen,
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["accent_btn"], fg="white",
-            activebackground=self._COLORS["accent_btn_hover"],
-            activeforeground="white", relief="flat", cursor="hand2",
-            pady=6)
+            style="Accent.TButton")
         self._tooltip(self._meta_nachschlag_knopf, "info_popup.lookup_hint",
                       delay_ms=600, wraplength=420)
-        size_bar = tk.Frame(container, bg=self._COLORS["bg_card"], padx=10, pady=6)
+        size_bar = self._pw.Karte(container, bg=self._COLORS["bg_card"], padx=10, pady=6)
         # Der Knopf wird erst spaeter eingeblendet. Ohne festen Bezug haengt
         # ihn "pack" dann ans Ende des Containers - dort ist kein Platz mehr,
         # und er bleibt unsichtbar, obwohl er verwaltet wird (gemessen
-        # 21.08.2026: verwalter=pack, ismapped=False). Deshalb der Anker.
-        self._meta_nachschlag_anker = size_bar
+        # 21.08.2026: verwalter=pack, ismapped=False). Deshalb der Anker -
+        # die aeussere runde Karte, denn nur sie steht im Container.
+        self._meta_nachschlag_anker = getattr(size_bar, "_huelle", size_bar)
         self._nachschlag_knopf_pruefen()
         size_bar.pack(fill="x", pady=(0, 0))
         size_bar.grid_columnconfigure(1, weight=1)
@@ -20214,22 +20493,22 @@ class PS5ConverterGUI:
                  wraplength=740,
                  fg=self._COLORS["fg_secondary"],
                  bg=self._COLORS["bg_main"]).pack(fill="x", pady=(0, 4))
-        self._patch_abruf_knopf = flach_knopf(
+        self._patch_abruf_knopf = self._pw.Button(
             self._patch_hinweis_rahmen,
             text=self._t("info_popup.fetch_button"),
-            command=self._patch_abruf_ausloesen,
-            font=(UI_SCHRIFT, pt(9), "bold"),
-            bg=self._COLORS["bg_card"], fg=self._COLORS["fg_accent"],
-            activebackground=self._COLORS["fg_accent"], activeforeground="white",
-            disabledforeground=self._COLORS["fg_secondary"],
-            relief="flat", cursor="hand2", padx=10, pady=5,
-            highlightthickness=0)
+            command=self._patch_abruf_ausloesen)
         self._patch_abruf_knopf.pack(anchor="w")
         self._register_translatable(self._patch_abruf_knopf,
                                     "info_popup.fetch_button")
 
+        # ── Schließen-Button ───────────────────────────────────────────────────────────────────────────
+        # Vor der Tabelle gepackt, unten: Die Pillen sind hoeher als die frueheren flachen Knoepfe, und was zuletzt
+        # gepackt wird, bekommt bei knappem Platz zuerst zu wenig - der Knopf stuende sonst halb im Fenster.
+        self._pw.Button(container, text=self._t("info_popup.close_button"), style="Accent.TButton",
+                        command=_on_close).pack(side="bottom", pady=10)
+
         # ── Treeview (füllt restliche Höhe) ────────────────────────────────────────────────────────
-        patch_outer = tk.Frame(container, bg=self._COLORS["bg_card"])
+        patch_outer = self._pw.Rahmen(container)
         patch_outer.pack(fill="both", expand=True)
         patch_outer.grid_columnconfigure(0, weight=1)
         patch_outer.grid_rowconfigure(0, weight=1)
@@ -20258,7 +20537,7 @@ class PS5ConverterGUI:
                    foreground=[("selected", self._COLORS["bg_main"])])
 
         cols = ("platform", "version", "size", "firmware", "date", "link")
-        self._patch_tree = ttk.Treeview(
+        self._patch_tree = self._pw.Treeview(
             patch_outer, columns=cols, show="headings",
             style="Patch.Treeview", selectmode="browse",
         )
@@ -20283,7 +20562,7 @@ class PS5ConverterGUI:
                 stretch=(col == "version"),
             )
 
-        tv_vsb = ttk.Scrollbar(patch_outer, orient="vertical", command=self._patch_tree.yview)
+        tv_vsb = self._pw.Scrollbar(patch_outer, orient="vertical", command=self._patch_tree.yview)
         self._patch_tree.configure(yscrollcommand=tv_vsb.set)
         self._patch_tree.grid(row=0, column=0, sticky="nsew")
         tv_vsb.grid(row=0, column=1, sticky="ns")
@@ -20311,14 +20590,6 @@ class PS5ConverterGUI:
                 foreground=_hdr_fg)
         self._patch_tree.bind("<Motion>", _fix_heading_hover, add="+")
         self._patch_tree.bind("<Leave>", _fix_heading_leave, add="+")
-
-        # ── Schließen-Button ───────────────────────────────────────────────────────────────────────────
-        flach_knopf(container, text=self._t("info_popup.close_button"),
-                  font=(UI_SCHRIFT, pt(10), "bold"),
-                  bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
-                  activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
-                  relief="flat", cursor="hand2", padx=20, pady=8,
-                  command=_on_close).pack(pady=10)
 
         # Einmalig in den Vordergrund – danach normales Fensterverhalten
         popup.after(50, lambda: popup.attributes("-topmost", True))
@@ -23389,7 +23660,7 @@ class PS5ConverterGUI:
             wraplength=540, justify="center",
         ).pack(pady=(10, 0), padx=24)
 
-        abbrechen = flach_knopf(
+        abbrechen = self._pw.Button(
             win, text=self._t("shutdown.abort_button"),
             font=(UI_SCHRIFT, pt(12), "bold"),
             bg=c["error_btn"], fg=lesbare_schrift(c["error_btn"]),
@@ -28376,6 +28647,17 @@ class PS5ConverterGUI:
             except OSError:
                 pass
 
+        # Wie in den uebrigen Bauwegen (.ffpfsc, .exfat): Ohne eboot.bin im Wurzelverzeichnis
+        # ist das Abbild auf der Konsole unbrauchbar - ShadowMount+ behandelt eine Quelle
+        # ohne eboot.bin als verwaist und haengt sie wieder aus (sm_filesystem.c und
+        # sm_scan.c im Quelltext). Das fiele sonst erst dort auf, nach Stunden Bauzeit.
+        # Befund vom 05.10.2026: Nur dieser Weg hatte die Vorabpruefung nicht.
+        eboot_path = os.path.join(source_dir, "eboot.bin")
+        if not os.path.isfile(eboot_path):
+            self._append_to_log(self._t('log.auto.0115', v0=eboot_path))
+            self._last_ffpkg_build_diagnostics = {"preflight": "eboot_missing"}
+            return False
+
         if not self._ensure_param_json(source_dir):
             return False
 
@@ -29459,12 +29741,12 @@ class PS5ConverterGUI:
         # Schrift aus dem Fenster (Packreihenfolge, siehe GUI-Layoutfallen).
         reihe = tk.Frame(fenster, bg=c["bg_main"], padx=20, pady=14)
         reihe.pack(side="bottom", fill="x")
-        ttk.Button(reihe, text=self._t("action.cancel"),
+        self._pw.Button(reihe, text=self._t("action.cancel"),
                    command=lambda: _schliessen("")).pack(side="right")
-        ttk.Button(reihe, text=self._t("ordner_einbau.knopf_original"),
+        self._pw.Button(reihe, text=self._t("ordner_einbau.knopf_original"),
                    command=lambda: _schliessen("original")).pack(
                        side="right", padx=(0, 8))
-        ttk.Button(reihe, text=self._t("ordner_einbau.knopf_sicherung"),
+        self._pw.Button(reihe, text=self._t("ordner_einbau.knopf_sicherung"),
                    style="Accent.TButton",
                    command=lambda: _schliessen("sicherung")).pack(
                        side="right", padx=(0, 8))
@@ -32658,9 +32940,9 @@ class PS5ConverterGUI:
         ``art`` trennt die beiden Verwendungen:
 
         ``"haupt"``
-            Bilder fuer den Hauptbereich - Querformat (mitgeliefert 1920x1200).
+            Bilder fuer den Hauptbereich - Querformat (mitgeliefert 1427x1111).
         ``"sidebar"``
-            Bilder fuer die Seitenleiste - Hochformat (mitgeliefert 500x1200).
+            Bilder fuer die Seitenleiste - Hochformat (mitgeliefert 493x1111).
         ``"alle"``
             Beides, wie bisher.
 
@@ -33816,7 +34098,7 @@ class PS5ConverterGUI:
             body.pack(fill="both", expand=True, padx=16)
 
             # ---- Bereich A: aktueller Zustand ----
-            sec_a = tk.LabelFrame(
+            sec_a = self._pw.LabelFrame(
                 body, text=self._t("ampr.section_status"),
                 font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
@@ -33856,7 +34138,7 @@ class PS5ConverterGUI:
             ).pack(side="left", fill="x", expand=True)
 
             # ---- Bereich B: Versionsordner und Auswahl ----
-            sec_b = tk.LabelFrame(
+            sec_b = self._pw.LabelFrame(
                 body, text=self._t("ampr.section_versions"),
                 font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
@@ -33864,7 +34146,7 @@ class PS5ConverterGUI:
 
             store_row = tk.Frame(sec_b, bg=c["bg_main"])
             store_row.pack(fill="x", padx=10, pady=(8, 4))
-            tk.Entry(
+            self._pw.Entry(
                 store_row, textvariable=store_dir_var, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
             ).pack(side="left", fill="x", expand=True, ipady=4)
@@ -33884,7 +34166,7 @@ class PS5ConverterGUI:
                     row, text=lib_name, font=(UI_SCHRIFT, pt(9), "bold"),
                     fg=c["fg_primary"], bg=c["bg_main"], width=20, anchor="w",
                 ).pack(side="left")
-                combo = ttk.Combobox(row, state="readonly", font=(UI_SCHRIFT, pt(9)))
+                combo = self._pw.Combobox(row, state="readonly", font=(UI_SCHRIFT, pt(9)))
                 combo.pack(side="left", fill="x", expand=True)
                 lib_combos[lib_name] = combo
                 lib_entries[lib_name] = {}
@@ -33901,7 +34183,7 @@ class PS5ConverterGUI:
             # auf GitHub standen schon 0.3.6.4 und 0.3.6.6.
             _update_reihe = tk.Frame(sec_b, bg=c["bg_main"])
             _update_reihe.pack(anchor="w", fill="x", padx=10, pady=(0, 4))
-            flach_knopf(
+            self._pw.Button(
                 _update_reihe, text=self._t("ampr.update_knopf"),
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -33969,14 +34251,14 @@ class PS5ConverterGUI:
                         self._save_setting("ampr_store_dir", store_dir_var.get())
                     _refresh_versions()
 
-            flach_knopf(
+            self._pw.Button(
                 store_row, text=self._t("ampr.btn_choose_store"), command=_choose_store,
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, cursor="hand2",
             ).pack(side="left", padx=(8, 0))
 
             # ---- Bereich C: Aktionen ----
-            sec_c = tk.LabelFrame(
+            sec_c = self._pw.LabelFrame(
                 body, text=self._t("ampr.section_actions"),
                 font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
@@ -34086,14 +34368,14 @@ class PS5ConverterGUI:
                 ("ampr.btn_index_only", lambda: _finish("ampr_index")),
                 ("ampr.btn_assetpack", _do_assetpack),
             ):
-                flach_knopf(
+                self._pw.Button(
                     btn_row1, text=self._t(text_key), command=cmd,
                     font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                     relief="flat", padx=12, pady=6, cursor="hand2",
                 ).pack(side="left", padx=(0, 6))
 
             # ---- Bereich D: PS5 über FTP ----
-            sec_d = tk.LabelFrame(
+            sec_d = self._pw.LabelFrame(
                 body, text=self._t("ampr.section_ftp"),
                 font=(UI_SCHRIFT, pt(10), "bold"), fg=c["fg_accent"], bg=c["bg_main"],
             )
@@ -34103,14 +34385,14 @@ class PS5ConverterGUI:
                 font=(UI_SCHRIFT, pt(9)), fg=c["fg_secondary"], bg=c["bg_main"],
                 wraplength=_fw - 80, justify="left", anchor="w",
             ).pack(fill="x", padx=10, pady=(8, 4))
-            flach_knopf(
+            self._pw.Button(
                 sec_d, text=self._t("ampr.btn_open_picker"),
                 command=lambda: self._show_ampr_ftp_picker(parent=dlg),
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=12, pady=6, cursor="hand2",
             ).pack(anchor="w", padx=10, pady=(0, 10))
 
-            flach_knopf(
+            self._pw.Button(
                 dlg, text=self._t("action.cancel_ellipsis"),
                 command=lambda: _finish("cancel"),
                 font=(UI_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_primary"],
@@ -37885,7 +38167,7 @@ class PS5ConverterGUI:
 
         # --- Scrollbarer Inhalts-Frame (direkt im Fenster, kein Canvas-Overlay) ---
         scroll_canvas = tk.Canvas(win, bg=self._COLORS["bg_main"], highlightthickness=0)
-        vsb = ttk.Scrollbar(win, orient="vertical", command=scroll_canvas.yview)
+        vsb = self._pw.Scrollbar(win, orient="vertical", command=scroll_canvas.yview)
         # Erst die Leiste packen, dann die Flaeche. Andersherum nimmt der
         # Canvas mit fill="both"/expand=True den Hohlraum zuerst, und fuer die
         # Leiste bleibt nur der Rest darunter: An einem Nachbau gemessen war
@@ -37996,7 +38278,7 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(9), "italic"),
                  bg=self._COLORS["bg_main"], fg=self._COLORS["fg_secondary"]).pack(**pad)
 
-        flach_knopf(inner, text=self._t("action.close_lowercase"),
+        self._pw.Button(inner, text=self._t("action.close_lowercase"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
@@ -38036,17 +38318,15 @@ class PS5ConverterGUI:
             win.destroy()
 
         # --- Eigene Titelleiste ---
-        title_bar = tk.Frame(win, bg=self._COLORS["header_bg"], height=34, cursor="fleur")
+        # Hoehe mit der Skalierung: Der Schliessen-Knopf ist eine kleine Pille und soll nicht angeschnitten sein.
+        title_bar = tk.Frame(win, bg=self._COLORS["header_bg"], height=knopfmass(34, win), cursor="fleur")
         title_bar.pack(fill="x")
         title_bar.pack_propagate(False)
         tk.Label(title_bar, text=self._t("resources.title_bar"),
                  font=(UI_SCHRIFT, pt(10), "bold"),
                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_accent"]).pack(side="left", padx=8)
-        flach_knopf(title_bar, text="✕", command=_on_close,
-                  font=(UI_SCHRIFT, pt(11), "bold"),
-                  bg=self._COLORS["header_bg"], fg=self._COLORS["fg_secondary"],
-                  activebackground=self._COLORS["error_btn_hover"], activeforeground="white",
-                  relief="flat", cursor="hand2", padx=10).pack(side="right")
+        self._pw.Button(title_bar, text="✕", command=_on_close, style="Klein.TButton",
+                        bg=self._COLORS["header_bg"]).pack(side="right", padx=6)
 
         _cd = {"x": 0, "y": 0}
         def _drag_start(e):
@@ -38062,7 +38342,7 @@ class PS5ConverterGUI:
         outer.pack(fill="both", expand=True, padx=2, pady=2)
 
         canvas = tk.Canvas(outer, bg=self._COLORS["bg_main"], highlightthickness=0)
-        vsb = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
+        vsb = self._pw.Scrollbar(outer, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
@@ -38139,7 +38419,7 @@ class PS5ConverterGUI:
             )
             left.pack(side="left", fill="x", expand=True)
 
-            flach_knopf(
+            self._pw.Button(
                 row,
                 text=self._t("resources.install_button"),
                 font=(UI_SCHRIFT, pt(9), "bold"),
@@ -38236,7 +38516,7 @@ class PS5ConverterGUI:
         )
 
         # Schließen-Button
-        flach_knopf(inner, text=self._t("action.close_lowercase"),
+        self._pw.Button(inner, text=self._t("action.close_lowercase"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=self._COLORS["fg_accent"], fg=self._COLORS["bg_main"],
                   activebackground=self._COLORS["accent_btn_hover"], activeforeground="white",
@@ -38409,7 +38689,7 @@ class PS5ConverterGUI:
         body.grid_columnconfigure(0, weight=1)
 
         cols = ("base", "pieces", "meta", "status")
-        tree = ttk.Treeview(body, columns=cols, show="headings", height=10)
+        tree = self._pw.Treeview(body, columns=cols, show="headings", height=10)
         # Die Ueberschrift bekommt denselben Anker wie ihre Spalte. Ohne das
         # zentriert Tk sie, waehrend die Daten links stehen - bei breitem
         # Fenster stehen Ueberschrift und Werte dann weit auseinander.
@@ -38445,14 +38725,14 @@ class PS5ConverterGUI:
             log_frame, text=self._t("pkg_merger.log_label"), font=(UI_SCHRIFT, pt(9), "bold"),
             bg=c["bg_main"], fg=c["fg_primary"], anchor="w",
         ).pack(fill="x")
-        log_text_frame = tk.Frame(log_frame, bg=c["bg_card"], padx=1, pady=1)
+        log_text_frame = self._pw.Rahmen(log_frame)
         log_text_frame.pack(fill="both", expand=True, pady=(4, 0))
-        log_text = tk.Text(
+        log_text = self._pw.Text(
             log_text_frame, height=8, wrap="word", font=(MONO_SCHRIFT, pt(9)), borderwidth=0,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0, padx=8, pady=8,
         )
-        log_sb = ttk.Scrollbar(log_text_frame, orient="vertical", command=log_text.yview)
+        log_sb = self._pw.Scrollbar(log_text_frame, orient="vertical", command=log_text.yview)
         log_text.configure(yscrollcommand=log_sb.set)
         log_text.grid(row=0, column=0, sticky="nsew")
         log_sb.grid(row=0, column=1, sticky="ns")
@@ -38669,13 +38949,13 @@ class PS5ConverterGUI:
             win.destroy()
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        ttk.Button(btn_row, text=self._t("action.close"), command=_beim_schliessen).pack(side="right")
-        merge_btn = ttk.Button(
+        self._pw.Button(btn_row, text=self._t("action.close"), command=_beim_schliessen).pack(side="right")
+        merge_btn = self._pw.Button(
             btn_row, text=self._t("pkg_merger.merge_selected_button"),
             style="Accent.TButton", command=_merge_selected,
         )
         merge_btn.pack(side="left")
-        abbrechen_btn = ttk.Button(
+        abbrechen_btn = self._pw.Button(
             btn_row, text=self._t("action.cancel"), command=_abbrechen,
             state="disabled",
         )
@@ -38795,9 +39075,9 @@ class PS5ConverterGUI:
             ).grid(row=row, column=col, sticky="w", padx=(0 if col == 0 else 16, 4))
             var = tk.StringVar(value=str(data.get(key, "")))
             if values:
-                widget = ttk.Combobox(quick, textvariable=var, state="readonly", values=values, width=16)
+                widget = self._pw.Combobox(quick, textvariable=var, state="readonly", values=values, width=16)
             else:
-                widget = ttk.Entry(quick, textvariable=var, font=(UI_SCHRIFT, pt(10)))
+                widget = self._pw.Entry(quick, textvariable=var, font=(UI_SCHRIFT, pt(10)))
             widget.grid(row=row, column=col + 1, sticky="ew")
             return var
 
@@ -38828,7 +39108,7 @@ class PS5ConverterGUI:
         body.grid_columnconfigure(0, weight=1)
 
         cols = ("key", "value")
-        tree = ttk.Treeview(body, columns=cols, show="headings", height=14)
+        tree = self._pw.Treeview(body, columns=cols, show="headings", height=14)
         tree.heading("key", text=self._t("param_manifest.col.key"), anchor="w")
         tree.heading("value", text=self._t("param_manifest.col.value"), anchor="w")
         tree.column("key", width=220, anchor="w")
@@ -38877,7 +39157,7 @@ class PS5ConverterGUI:
 
             tk.Label(frm, text=self._t("param_manifest.key_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             key_var = tk.StringVar(value=initial_key)
-            key_entry = ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled"))
+            key_entry = self._pw.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled"))
             key_entry.pack(fill="x", pady=(2, 10))
 
             tk.Label(
@@ -38885,7 +39165,7 @@ class PS5ConverterGUI:
                 text=self._t("param_manifest.value_label"),
                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"],
             ).pack(anchor="w")
-            value_text = tk.Text(frm, height=8, wrap="word", font=(MONO_SCHRIFT, pt(9)))
+            value_text = self._pw.Text(frm, height=8, wrap="word", font=(MONO_SCHRIFT, pt(9)))
             value_text.insert("1.0", initial_value_text)
             value_text.pack(fill="both", expand=True, pady=(2, 10))
 
@@ -38907,8 +39187,8 @@ class PS5ConverterGUI:
 
             btns = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=10)
             btns.pack(fill="x")
-            ttk.Button(btns, text=self._t("action.cancel_ellipsis"), command=dlg.destroy).pack(side="right")
-            ttk.Button(btns, text=self._t("action.apply"), style="Accent.TButton", command=_confirm).pack(side="right", padx=(0, 8))
+            self._pw.Button(btns, text=self._t("action.cancel_ellipsis"), command=dlg.destroy).pack(side="right")
+            self._pw.Button(btns, text=self._t("action.apply"), style="Accent.TButton", command=_confirm).pack(side="right", padx=(0, 8))
 
             dlg.transient(win)
             dlg.grab_set()
@@ -39016,9 +39296,9 @@ class PS5ConverterGUI:
 
         list_btn_row = tk.Frame(body, bg=c["bg_main"])
         list_btn_row.grid(row=2, column=0, sticky="ew", pady=(8, 0))
-        ttk.Button(list_btn_row, text=self._t("param_manifest.add_button"), command=_add_row).pack(side="left")
-        ttk.Button(list_btn_row, text=self._t("param_manifest.edit_button"), command=_edit_row).pack(side="left", padx=(8, 0))
-        ttk.Button(list_btn_row, text=self._t("param_manifest.remove_button"), command=_remove_row).pack(side="left", padx=(8, 0))
+        self._pw.Button(list_btn_row, text=self._t("param_manifest.add_button"), command=_add_row).pack(side="left")
+        self._pw.Button(list_btn_row, text=self._t("param_manifest.edit_button"), command=_edit_row).pack(side="left", padx=(8, 0))
+        self._pw.Button(list_btn_row, text=self._t("param_manifest.remove_button"), command=_remove_row).pack(side="left", padx=(8, 0))
 
         # Der Stand beim Oeffnen - zum Vergleich, wenn geschlossen wird.
         #
@@ -39059,9 +39339,9 @@ class PS5ConverterGUI:
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(side="bottom", fill="x")
-        ttk.Button(btn_row, text=self._t("action.close"),
+        self._pw.Button(btn_row, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
-        ttk.Button(
+        self._pw.Button(
             btn_row, text=self._t("param_manifest.save_as_button"),
             style="Accent.TButton", command=_save,
         ).pack(side="left")
@@ -39622,7 +39902,7 @@ class PS5ConverterGUI:
         reihe.pack(fill="x", pady=(0, 8))
         tk.Label(reihe, text=self._t("library.form_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Combobox(reihe, textvariable=form_var, values=list(namen),
+        self._pw.Combobox(reihe, textvariable=form_var, values=list(namen),
                      state="readonly", width=40,
                      font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 0))
 
@@ -39641,7 +39921,7 @@ class PS5ConverterGUI:
                      font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                      anchor="w").pack(fill="x", pady=(10, 2))
             name_var = tk.StringVar()
-            ttk.Entry(koerper, textvariable=name_var,
+            self._pw.Entry(koerper, textvariable=name_var,
                       font=(UI_SCHRIFT, pt(10))).pack(fill="x")
             hinweis = tk.Label(koerper, text="", font=(UI_SCHRIFT, pt(8)),
                                bg=c["bg_main"], fg=c["fg_warning"], anchor="w",
@@ -39683,13 +39963,14 @@ class PS5ConverterGUI:
                     [{"eintrag": eintrag, "alt": alt, "neu": neu,
                       "zustand": bibliothek_bestand.BEREIT}], fertig)
 
-            form_var.trace_add("write", _vorschlagen)
+            # Die Spur geht mit dem Fenster: Ihr Tcl-Befehl haelt sonst Fenster, Bilder und Zeichner fuer immer.
+            bibliothek_raster.spur_bis_zerstoert(win, form_var, _vorschlagen)
             _vorschlagen()
         else:
-            rahmen = tk.Frame(koerper, bg=c["bg_card"], padx=1, pady=1)
+            rahmen = self._pw.Rahmen(koerper)
             rahmen.pack(fill="both", expand=True)
             spalten = ("wahl", "bisher", "neu", "zustand")
-            tabelle = ttk.Treeview(rahmen, columns=spalten, show="headings",
+            tabelle = self._pw.Treeview(rahmen, columns=spalten, show="headings",
                                    selectmode="browse", height=12)
             for spalte, schluessel, breite, dehnen, anker in (
                     ("wahl", "", 34, False, "center"),
@@ -39699,7 +39980,7 @@ class PS5ConverterGUI:
                 tabelle.heading(spalte, text=self._t(schluessel) if schluessel else "",
                                 anchor=anker)
                 tabelle.column(spalte, width=breite, stretch=dehnen, anchor=anker)
-            leiste = ttk.Scrollbar(rahmen, orient="vertical", command=tabelle.yview)
+            leiste = self._pw.Scrollbar(rahmen, orient="vertical", command=tabelle.yview)
             tabelle.configure(yscrollcommand=leiste.set)
             tabelle.grid(row=0, column=0, sticky="nsew")
             leiste.grid(row=0, column=1, sticky="ns")
@@ -39767,17 +40048,17 @@ class PS5ConverterGUI:
                 self._bibliothek_umbenennen_anwenden(plan, fertig)
 
             tabelle.bind("<Double-1>", _umschalten)
-            form_var.trace_add("write", _planen)
+            bibliothek_raster.spur_bis_zerstoert(win, form_var, _planen)
             _planen()
 
-        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("library.btn_umbenennen"),
+        self._pw.Button(knopfreihe, text=self._t("library.btn_umbenennen"),
                    style="Accent.TButton", command=_ausfuehren).pack(side="left")
         if not einzeln:
-            ttk.Button(knopfreihe, text=self._t("library.btn_alle"),
+            self._pw.Button(knopfreihe, text=self._t("library.btn_alle"),
                        command=lambda: _alle(True)).pack(side="left", padx=(8, 0))
-            ttk.Button(knopfreihe, text=self._t("library.btn_keine"),
+            self._pw.Button(knopfreihe, text=self._t("library.btn_keine"),
                        command=lambda: _alle(False)).pack(side="left", padx=(8, 0))
         try:
             win.grab_set()
@@ -39829,7 +40110,7 @@ class PS5ConverterGUI:
                  justify="left", font=(UI_SCHRIFT, pt(9)),
                  wraplength=pt(560)).pack(anchor="w")
         balken_wert = tk.DoubleVar(value=0.0)
-        ttk.Progressbar(koerper, variable=balken_wert, maximum=100.0,
+        self._pw.Progressbar(koerper, variable=balken_wert, maximum=100.0,
                         mode="determinate").pack(fill="x", pady=(10, 4))
         stand = tk.StringVar(value=lauf["text"])
         tk.Label(koerper, textvariable=stand, bg=c["bg_main"], fg=c["fg_primary"],
@@ -39843,7 +40124,7 @@ class PS5ConverterGUI:
             lauf["an"] = False
             lauf["text"] = self._t("library.ordner_abbruch_vorgemerkt")
 
-        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"),
                    command=_abbrechen).pack(side="right")
         knopfreihe.pack(side="bottom", fill="x")
         koerper.pack(fill="both", expand=True)
@@ -41432,7 +41713,7 @@ class PS5ConverterGUI:
 
         wahl = tk.StringVar(value=geordnet[0] if geordnet else "")
         for ort in geordnet:
-            tk.Radiobutton(
+            self._pw.Radiobutton(
                 koerper, text=ort, value=ort, variable=wahl,
                 bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["console_bg"], activebackground=c["bg_main"],
@@ -41443,7 +41724,7 @@ class PS5ConverterGUI:
                  bg=c["bg_main"], fg=c["fg_secondary"],
                  font=(UI_SCHRIFT, pt(9))).pack(anchor="w", pady=(10, 2))
         eigen = tk.StringVar()
-        ttk.Entry(koerper, textvariable=eigen,
+        self._pw.Entry(koerper, textvariable=eigen,
                   font=(UI_SCHRIFT, pt(10))).pack(fill="x")
 
         knopfreihe = tk.Frame(fenster_wahl, bg=c["bg_main"], padx=16, pady=12)
@@ -41454,9 +41735,9 @@ class PS5ConverterGUI:
                 self._save_setting("library_upload_ziel", ergebnis["pfad"])
             fenster_wahl.destroy()
 
-        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"),
                    command=fenster_wahl.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("action.apply"),
+        self._pw.Button(knopfreihe, text=self._t("action.apply"),
                    style="Accent.TButton",
                    command=_uebernehmen).pack(side="right", padx=(0, 8))
         # Erst die Knopfreihe, dann der dehnbare Koerper - sonst quetscht das
@@ -41570,7 +41851,7 @@ class PS5ConverterGUI:
                  wraplength=pt(560)).pack(anchor="w")
 
         balken_wert = tk.DoubleVar(value=0.0)
-        ttk.Progressbar(koerper, variable=balken_wert, maximum=100.0,
+        self._pw.Progressbar(koerper, variable=balken_wert, maximum=100.0,
                         mode="determinate").pack(fill="x", pady=(10, 4))
         stand = tk.StringVar(value=self._t("library.uebertragung_start"))
         tk.Label(koerper, textvariable=stand, bg=c["bg_main"],
@@ -41590,7 +41871,7 @@ class PS5ConverterGUI:
             lauf["an"] = False
             stand.set(self._t("library.uebertragung_abbruch_laeuft"))
 
-        ttk.Button(knopfreihe, text=self._t("action.cancel"),
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"),
                    command=_abbrechen).pack(side="right")
         knopfreihe.pack(side="bottom", fill="x")
         koerper.pack(fill="both", expand=True)
@@ -42262,7 +42543,10 @@ class PS5ConverterGUI:
 
         folders_list.configure(yscrollcommand=folders_sb.set)
         folders_btns = tk.Frame(folders_row, bg=c["bg_card"])
-        folders_btns.pack(side="left", padx=(8, 0))
+        # Rechts und vor der Karte gepackt: Pack kuerzt bei zu wenig Breite das zuletzt
+        # Gepackte - das soll die Liste sein, nicht "Neu scannen" (unter 1366 px
+        # Fensterbreite war der Knopf 44 px zu schmal, 04.10.2026 gemessen).
+        folders_btns.pack(side="right", padx=(8, 0), before=ordner_karte)
         _rollbalken_nachfuehren()
 
         # --- unten zuerst: Statuszeile, dann die Knopfreihen --------------
@@ -42499,9 +42783,9 @@ class PS5ConverterGUI:
             zeilen[name] = feld
         # Das Format als Plakette - vertieft wie das Bildfeld.
         zeilen["format"].configure(bg=c["console_bg"], padx=6, pady=1)
-        angaben_knopf = ttk.Button(bild_knoepfe, text=self._t("library.btn_angaben_kopieren"),
-                                   style="Klein.TButton",
-                                   command=lambda: _angaben_kopieren())
+        angaben_knopf = self._pw.Button(bild_knoepfe, text=self._t("library.btn_angaben_kopieren"),
+                                        style="Klein.TButton",
+                                        command=lambda: _angaben_kopieren())
         self._register_translatable(angaben_knopf, "library.btn_angaben_kopieren")
         # Schliessen oben rechts im Infofenster; die Knoepfe nur fuer Eintraege auf
         # dem Rechner (Umbenennen, im Dateimanager zeigen) folgen mit den
@@ -43510,7 +43794,7 @@ class PS5ConverterGUI:
                                   text=self._t("library.kachel_ohne_bild"))
 
         tree.bind("<<TreeviewSelect>>", _on_select)
-        search_var.trace_add("write", lambda *_a: _apply_filter())
+        bibliothek_raster.spur_bis_zerstoert(seite, search_var, lambda *_a: _apply_filter())
 
         def _add_folder() -> None:
             chosen = filedialog.askdirectory(title=self._t("library.add_scan_folder_dialog_title"),
@@ -43949,15 +44233,15 @@ class PS5ConverterGUI:
         # "Auf PS5 starten" steht jetzt auf der Karte (und im Streifen der Liste).
         for schluessel, befehl in (("library.btn_bild_speichern", _bild_speichern),
                                    ("library.btn_bild_kopieren", _bild_kopieren)):
-            knopf = ttk.Button(bild_knoepfe, text=self._t(schluessel),
-                               style="Klein.TButton", command=befehl)
+            knopf = self._pw.Button(bild_knoepfe, text=self._t(schluessel),
+                                    style="Klein.TButton", command=befehl)
             knopf.pack(side="top", fill="x", pady=(0, 4))
             self._register_translatable(knopf, schluessel)
         angaben_knopf.pack(side="top", fill="x")
         for schluessel, befehl in (("library.btn_umbenennen", _umbenennen_einzeln),
                                    ("library.reveal_in_explorer_button", _reveal_in_explorer)):
-            knopf = ttk.Button(bild_knoepfe, text=self._t(schluessel),
-                               style="Klein.TButton", command=befehl)
+            knopf = self._pw.Button(bild_knoepfe, text=self._t(schluessel),
+                                    style="Klein.TButton", command=befehl)
             self._register_translatable(knopf, schluessel)
             pc_knoepfe.append(knopf)
 
@@ -44137,6 +44421,7 @@ class PS5ConverterGUI:
                          streifen_karte, streifen_zeile, liste_karte, ordner_karte):
                 teil.neu_faerben()
             for kind in (*streifen_knoepfe.values(), *folders_btns.winfo_children(),
+                         *bild_knoepfe.winfo_children(),
                          *(k for liste in knoepfe.values() for k in liste)):
                 neu = getattr(kind, "neu_faerben", None)
                 if neu is not None:
@@ -44314,31 +44599,6 @@ class PS5ConverterGUI:
         "md_ufs_sector_size": "4096",
     }
 
-    # MicroMount: alternatives Drittanbieter-Mount-Tool zu ShadowMount+
-    # (eigenes Projekt, eigene config.ini/Pfade/Payload-Port, siehe README/
-    # config.ini.example von github.com/*/micromount).
-    _MICROMOUNT_REMOTE_CONFIG = "/data/micromount/config.ini"
-    _MICROMOUNT_REMOTE_DEBUG_LOG = "/data/micromount/debug.log"
-    _MICROMOUNT_DEFAULTS: dict[str, str] = {
-        "target_directory": "/data/homebrew",
-        "scan_depth": "1",
-        "scan_interval_seconds": "30",
-        "debug": "1",
-        "lvd_image_type": "0",
-        "lvd_sector_size": "65536",
-        "lvd_secondary_unit": "65536",
-        "lvd_raw_flags": "0x9",
-        "pfs_fstype": "pfs",
-        "pfs_mkeymode": "AC",
-        "pfs_budgetid": "system",
-        "pfs_sigverify": "0",
-        "pfs_playgo": "0",
-        "pfs_disc": "0",
-        "pfs_use_ekpfs": "1",
-        "pfs_read_only": "1",
-        "pfs_force": "0",
-    }
-
     def _diagnosebericht(self) -> "diagnose_befund.Diagnosebericht":
         """Baut den Systemteil des Berichts mit den Werten dieser Instanz.
 
@@ -44477,8 +44737,7 @@ class PS5ConverterGUI:
         # ist die Anpassung stehengeblieben. Genau diese Zahl fehlte im ersten
         # Bericht vom Mac (19.08.2026) - die Vorlage allein sagt darueber
         # nichts, sie ist immer die Groesse der Bilddatei.
-        for name, attribut in (("Hintergrundbild (gezeichnet)", "bg_photo"),
-                               ("Inhaltsfläche (gezeichnet)", "content_bg_photo"),
+        for name, attribut in (("Inhaltsfläche (gezeichnet)", "content_bg_photo"),
                                ("Seitenleiste (gezeichnet)", "sidebar_bg_photo")):
             foto = getattr(self, attribut, None)
             try:
@@ -44486,7 +44745,15 @@ class PS5ConverterGUI:
             except Exception:
                 zeilen.append(z(name, "keins"))
         zeilen.append(z("zuletzt angepasst auf",
-                        getattr(self, "_last_bg_resize_size", None) or "nie"))
+                        getattr(self, "_last_content_bg_resize_size", None) or "nie"))
+        # Wie gross die beiden Bilder sein sollen: Hauptbild = Fenster minus Seitenleiste, Seitenleiste =
+        # ihre Breite, beide so hoch wie das maximierte Fenster (die Einstellungen nennen dieselben Zahlen).
+        try:
+            soll_b, soll_h, soll_leiste = self._hintergrund_sollmasse()
+            zeilen.append(z("Bildmaße (Soll, maximiert)", "Hauptbild %dx%d, Seitenleiste %dx%d"
+                            % (soll_b, soll_h, soll_leiste, soll_h)))
+        except Exception as exc:
+            logger.debug("Sollmaße der Bilder nicht auslesbar: %s", exc)
         # Wie hell die Bilder sind - die Lesbarkeit der hellen Schrift haengt
         # daran (siehe pruefe_bildhelligkeit).
         try:
@@ -44687,7 +44954,6 @@ class PS5ConverterGUI:
         bilder: list = []
         gemessen: dict = {}
         for anzeigename, quelle, gezeichnet, traeger in (
-                ("Hintergrund", "_bg_image_cache", "bg_photo", "bg_label"),
                 ("Inhaltsfläche", "_bg_image_cache", "content_bg_photo", "content_area"),
                 ("Seitenleiste", "_sidebar_bg_image_cache", "sidebar_bg_photo", "sidebar")):
             vorlage = getattr(self, quelle, None)
@@ -44701,7 +44967,7 @@ class PS5ConverterGUI:
                 name=anzeigename, quelle=quelle_groesse, flaeche=flaeche_groesse))
             verlust = None
             if faktor is not None:
-                # Hintergrund und Inhaltsflaeche teilen sich eine Vorlage.
+                # Gleiche Vorlage und gleicher Faktor muessen nur einmal gemessen werden.
                 schluessel = (id(vorlage), round(faktor, 3))
                 if schluessel not in gemessen:
                     gemessen[schluessel] = ad.messe_hochrechnungsverlust(vorlage, faktor)
@@ -46040,14 +46306,14 @@ class PS5ConverterGUI:
             self._t("diagnostics.saved_at_label", path=report_path),
         )
 
-        text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        text_frame = self._pw.Rahmen(win)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-        text_widget = tk.Text(
+        text_widget = self._pw.Text(
             text_frame, wrap="word", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=12, pady=12,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0,
         )
-        text_sb = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+        text_sb = self._pw.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
         text_widget.configure(yscrollcommand=text_sb.set)
         text_widget.insert("1.0", report_text)
         text_widget.configure(state="disabled")
@@ -46131,13 +46397,13 @@ class PS5ConverterGUI:
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(fill="x")
-        ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        update_btn = ttk.Button(
+        self._pw.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        update_btn = self._pw.Button(
             btn_row, text=self._t("diagnostics.update_button"),
             command=_aktualisierungen_pruefen)
         update_btn.pack(side="right", padx=(0, 8))
-        ttk.Button(btn_row, text=self._t("diagnostics.open_folder_button"), command=_open_folder).pack(side="right", padx=(0, 8))
-        ttk.Button(
+        self._pw.Button(btn_row, text=self._t("diagnostics.open_folder_button"), command=_open_folder).pack(side="right", padx=(0, 8))
+        self._pw.Button(
             btn_row, text=self._t("diagnostics.copy_to_clipboard_button"),
             style="Accent.TButton", command=_copy_to_clipboard,
         ).pack(side="left")
@@ -46317,15 +46583,15 @@ class PS5ConverterGUI:
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(side="bottom", fill="x")
 
-        text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        text_frame = self._pw.Rahmen(win)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-        text_widget = tk.Text(
+        text_widget = self._pw.Text(
             text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=12, pady=12,
             bg=c["console_bg"], fg=c["console_fg"], insertbackground=c["fg_primary"],
             selectbackground=c["fg_accent"], highlightthickness=0,
         )
-        text_vsb = ttk.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
-        text_hsb = ttk.Scrollbar(text_frame, orient="horizontal", command=text_widget.xview)
+        text_vsb = self._pw.Scrollbar(text_frame, orient="vertical", command=text_widget.yview)
+        text_hsb = self._pw.Scrollbar(text_frame, orient="horizontal", command=text_widget.xview)
         text_widget.configure(yscrollcommand=text_vsb.set, xscrollcommand=text_hsb.set)
         text_widget.insert("1.0", bericht)
         text_widget.configure(state="disabled")
@@ -46341,10 +46607,10 @@ class PS5ConverterGUI:
                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
             ).pack(fill="x", padx=20, pady=(4, 2))
 
-            tree_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+            tree_frame = self._pw.Rahmen(win)
             tree_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
             spalten = ("index", "segment_id", "offset", "file_size", "mem_size", "flags")
-            tree = ttk.Treeview(tree_frame, columns=spalten, show="headings", height=8)
+            tree = self._pw.Treeview(tree_frame, columns=spalten, show="headings", height=8)
             for spalte, schluessel, breite, anker in (
                 ("index", "self_inspector.col_index", 40, "e"),
                 ("segment_id", "self_inspector.col_segment_id", 90, "e"),
@@ -46364,7 +46630,7 @@ class PS5ConverterGUI:
                     self._fmt_bytes(segment.memory_size),
                     self._self_segment_flag_text(segment),
                 ))
-            tv_vsb = ttk.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
+            tv_vsb = self._pw.Scrollbar(tree_frame, orient="vertical", command=tree.yview)
             tree.configure(yscrollcommand=tv_vsb.set)
             tree.grid(row=0, column=0, sticky="nsew")
             tv_vsb.grid(row=0, column=1, sticky="ns")
@@ -46384,8 +46650,8 @@ class PS5ConverterGUI:
                 parent=win,
             )
 
-        ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        ttk.Button(
+        self._pw.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        self._pw.Button(
             btn_row, text=self._t("self_inspector.copy_button"),
             style="Accent.TButton", command=_copy_report,
         ).pack(side="left")
@@ -46609,11 +46875,11 @@ class PS5ConverterGUI:
             tk.Label(reihe, text=text, width=14, anchor="w",
                      font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                      fg=c["fg_secondary"]).pack(side="left")
-            tk.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
+            self._pw.Entry(reihe, textvariable=var, font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                      insertbackground=c["fg_primary"]).pack(
                 side="left", fill="x", expand=True, ipady=3, padx=(0, 6))
-            ttk.Button(reihe, text="...", width=4, command=waehlen).pack(side="left")
+            self._pw.Button(reihe, text="...", width=4, command=waehlen).pack(side="left")
 
         def _quelle_waehlen() -> None:
             gewaehlt = filedialog.askopenfilename(
@@ -46653,11 +46919,11 @@ class PS5ConverterGUI:
 
         hinweis.bind("<Configure>", _umbruch)
 
-        balken = ttk.Progressbar(koerper, mode="determinate", maximum=100)
+        balken = self._pw.Progressbar(koerper, mode="determinate", maximum=100)
         balken.pack(fill="x", pady=(6, 2))
         tk.Label(koerper, textvariable=groesse_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(fill="x")
-        protokoll = tk.Text(koerper, height=12, font=(MONO_SCHRIFT, pt(9)),
+        protokoll = self._pw.Text(koerper, height=12, font=(MONO_SCHRIFT, pt(9)),
                             bg=c["bg_card"], fg=c["fg_primary"],
                             relief="flat", wrap="none")
         protokoll.pack(fill="both", expand=True, pady=(4, 4))
@@ -46851,15 +47117,15 @@ class PS5ConverterGUI:
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
-        start_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.start_button"),
+        start_btn = self._pw.Button(knopfreihe, text=self._t("pkgentpacken.start_button"),
                                style="Accent.TButton", command=_starten)
         start_btn.pack(side="left")
-        abbrechen_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.abort_button"),
+        abbrechen_btn = self._pw.Button(knopfreihe, text=self._t("pkgentpacken.abort_button"),
                                    command=_abbrechen, state="disabled")
         abbrechen_btn.pack(side="left", padx=(8, 0))
-        oeffnen_btn = ttk.Button(knopfreihe, text=self._t("pkgentpacken.open_button"),
+        oeffnen_btn = self._pw.Button(knopfreihe, text=self._t("pkgentpacken.open_button"),
                                  command=_ordner_oeffnen, state="disabled")
         oeffnen_btn.pack(side="left", padx=(8, 0))
 
@@ -47008,16 +47274,16 @@ class PS5ConverterGUI:
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         btn_row.pack(side="bottom", fill="x")
 
-        text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        text_frame = self._pw.Rahmen(win)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-        text_widget = tk.Text(
+        text_widget = self._pw.Text(
             text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0,
             padx=12, pady=12, bg=c["console_bg"], fg=c["console_fg"],
             insertbackground=c["fg_primary"], selectbackground=c["fg_accent"],
             highlightthickness=0)
-        text_vsb = ttk.Scrollbar(text_frame, orient="vertical",
+        text_vsb = self._pw.Scrollbar(text_frame, orient="vertical",
                                  command=text_widget.yview)
-        text_hsb = ttk.Scrollbar(text_frame, orient="horizontal",
+        text_hsb = self._pw.Scrollbar(text_frame, orient="horizontal",
                                  command=text_widget.xview)
         text_widget.configure(yscrollcommand=text_vsb.set,
                               xscrollcommand=text_hsb.set)
@@ -47036,10 +47302,10 @@ class PS5ConverterGUI:
                 font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_main"],
                 fg=c["fg_accent"], anchor="w").pack(fill="x", padx=20, pady=(4, 2))
 
-            tree_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+            tree_frame = self._pw.Rahmen(win)
             tree_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
             spalten = ("name", "id", "offset", "size", "enc", "key")
-            tree = ttk.Treeview(tree_frame, columns=spalten, show="headings",
+            tree = self._pw.Treeview(tree_frame, columns=spalten, show="headings",
                                 height=8)
             for spalte, schluessel, breite, anker, dehnen in (
                 ("name", "pkgreader.col_name", 240, "w", True),
@@ -47063,7 +47329,7 @@ class PS5ConverterGUI:
                     verschluesselt,
                     eintrag.get("schluesselindex", 0),
                 ))
-            tv_vsb = ttk.Scrollbar(tree_frame, orient="vertical",
+            tv_vsb = self._pw.Scrollbar(tree_frame, orient="vertical",
                                    command=tree.yview)
             tree.configure(yscrollcommand=tv_vsb.set)
             tree.grid(row=0, column=0, sticky="nsew")
@@ -47079,9 +47345,9 @@ class PS5ConverterGUI:
                 self._t("dialog.msg.report_copied_to_clipboard"),
                 parent=win)
 
-        ttk.Button(btn_row, text=self._t("action.close"),
+        self._pw.Button(btn_row, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(btn_row, text=self._t("pkgreader.copy_button"),
+        self._pw.Button(btn_row, text=self._t("pkgreader.copy_button"),
                    style="Accent.TButton", command=_copy_report).pack(side="left")
 
     # ==================================================================
@@ -47194,7 +47460,7 @@ class PS5ConverterGUI:
         def _ort_aendern() -> None:
             if self._download_basis_waehlen(win):
                 _ort_anzeigen()
-        ttk.Button(kopf, text=self._t("downloads.storage_change"),
+        self._pw.Button(kopf, text=self._t("downloads.storage_change"),
                    command=_ort_aendern).pack(side="left")
 
         # Der Rueckweg aus dem Einstellungsdialog: Wer dort den Ort umstellt
@@ -47212,9 +47478,9 @@ class PS5ConverterGUI:
         # Wird erst ganz zum Schluss gepackt: Der Rahmen dehnt sich aus und
         # wuerde sonst die festen Zeilen darunter zusammenquetschen, bis deren
         # Knopfbeschriftungen wegfallen.
-        rahmen = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        rahmen = self._pw.Rahmen(win)
         spalten = ("datei", "title_id", "art", "groesse", "fortschritt", "status")
-        baum = ttk.Treeview(rahmen, columns=spalten, show="headings", height=12)
+        baum = self._pw.Treeview(rahmen, columns=spalten, show="headings", height=12)
         for spalte, schluessel, breite, anker in (
             ("datei", "downloads.col_file", 330, "w"),
             ("title_id", "downloads.col_title_id", 90, "w"),
@@ -47225,7 +47491,7 @@ class PS5ConverterGUI:
         ):
             baum.heading(spalte, text=self._t(schluessel), anchor=anker)
             baum.column(spalte, width=breite, anchor=anker, stretch=(spalte == "status"))
-        vsb = ttk.Scrollbar(rahmen, orient="vertical", command=baum.yview)
+        vsb = self._pw.Scrollbar(rahmen, orient="vertical", command=baum.yview)
         baum.configure(yscrollcommand=vsb.set)
         baum.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
@@ -47293,7 +47559,7 @@ class PS5ConverterGUI:
             tk.Label(dlg, text=self._t("downloads.paste_hint_more"), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
                      wraplength=640, justify="left").pack(fill="x", padx=16, pady=(0, 6))
-            feld = tk.Text(dlg, height=7, wrap="word", font=(MONO_SCHRIFT, pt(9)),
+            feld = self._pw.Text(dlg, height=7, wrap="word", font=(MONO_SCHRIFT, pt(9)),
                            bg=c["console_bg"], fg=c["console_fg"],
                            insertbackground=c["fg_primary"], relief="flat")
             feld.pack(fill="both", expand=True, padx=16)
@@ -47312,8 +47578,8 @@ class PS5ConverterGUI:
 
             reihe = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=12)
             reihe.pack(fill="x")
-            ttk.Button(reihe, text=self._t("action.close"), command=dlg.destroy).pack(side="right")
-            ttk.Button(reihe, text=self._t("action.start"),
+            self._pw.Button(reihe, text=self._t("action.close"), command=dlg.destroy).pack(side="right")
+            self._pw.Button(reihe, text=self._t("action.start"),
                        style="Accent.TButton", command=_uebernehmen).pack(side="left")
 
         def _vorhandene(still: bool = False) -> None:
@@ -47358,16 +47624,16 @@ class PS5ConverterGUI:
 
         # Der Abstand gehoert an pack(): tk.Frame nimmt bei pady nur einen Wert.
         werkzeuge = tk.Frame(win, bg=c["bg_main"], padx=16)
-        ttk.Button(werkzeuge, text=self._t("downloads.from_clipboard"),
+        self._pw.Button(werkzeuge, text=self._t("downloads.from_clipboard"),
                    style="Accent.TButton", command=_aus_zwischenablage).pack(side="left")
-        ttk.Button(werkzeuge, text=self._t("downloads.paste_dialog_title"),
+        self._pw.Button(werkzeuge, text=self._t("downloads.paste_dialog_title"),
                    command=_einfuegen).pack(side="left", padx=(8, 0))
-        ttk.Button(werkzeuge, text=self._t("downloads.scan_existing"),
+        self._pw.Button(werkzeuge, text=self._t("downloads.scan_existing"),
                    command=_vorhandene).pack(side="left", padx=(8, 0))
 
         # Der eigentliche Wunsch: im Browser Rechtsklick auf den Link,
         # "Linkadresse kopieren" - und mehr nicht.
-        haken = ttk.Checkbutton(werkzeuge, text=self._t("downloads.watch_label"),
+        haken = self._pw.Checkbutton(werkzeuge, text=self._t("downloads.watch_label"),
                                 variable=self._zwischenablage_var_holen(),
                                 command=self._zwischenablage_umschalten)
         haken.pack(side="left", padx=(16, 0))
@@ -47476,17 +47742,17 @@ class PS5ConverterGUI:
         # zeigen danach auf zerstoerte Widgets. Nur das X der Titelleiste lief
         # bisher den richtigen Weg. Als Lambda, weil _beim_schliessen weiter
         # unten steht - die Closure loest den Namen erst beim Druecken auf.
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=lambda: _beim_schliessen()).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("downloads.action_open_folder"),
+        self._pw.Button(knopfreihe, text=self._t("downloads.action_open_folder"),
                    command=_ordner_oeffnen).pack(side="right", padx=(0, 8))
-        ttk.Button(knopfreihe, text=self._t("downloads.action_cancel"),
+        self._pw.Button(knopfreihe, text=self._t("downloads.action_cancel"),
                    command=_abbrechen).pack(side="left")
-        ttk.Button(knopfreihe, text=self._t("downloads.action_retry"),
+        self._pw.Button(knopfreihe, text=self._t("downloads.action_retry"),
                    command=_erneut).pack(side="left", padx=(8, 0))
         # Kurze Beschriftung, sonst passt die Reihe nicht mehr ins Fenster; die
         # Erklaerung steht im Tooltip.
-        umsortieren_btn = ttk.Button(knopfreihe,
+        umsortieren_btn = self._pw.Button(knopfreihe,
                                      text=self._t("downloads.action_switch_kind"),
                                      command=_art_wechseln)
         umsortieren_btn.pack(side="left", padx=(8, 0))
@@ -48419,7 +48685,7 @@ class PS5ConverterGUI:
                 font=(UI_SCHRIFT, pt(9), "bold"),
                 bg=c["bg_main"], fg=c["fg_secondary"],
                 activebackground=c["fg_accent"], activeforeground=c["bg_main"],
-                outline=c["border"], radius=8, height=28,
+                outline=c["border"], radius=8, height=28, pille=True,
                 parent_bg=c["bg_card"])
             wegknoepfe[kennung] = knopf
             leinwand.create_window(
@@ -48462,6 +48728,7 @@ class PS5ConverterGUI:
                 outline=c["border"],
                 radius=10,
                 height=44,
+                pille=True,
                 parent_bg=c["bg_card"],
             )
             leinwand.create_window(links + eigene / 2, hoch,
@@ -48480,6 +48747,7 @@ class PS5ConverterGUI:
                 outline=c["border"],
                 radius=8,
                 height=44,
+                pille=True,
                 parent_bg=c["bg_card"],
             )
             leinwand.create_window(links + innen - hilfsbreite / 2, hoch,
@@ -48491,7 +48759,7 @@ class PS5ConverterGUI:
             font=(UI_SCHRIFT, pt(9)),
             bg=c["bg_card"], fg=c["fg_secondary"],
             activebackground=c["bg_main"], activeforeground=c["fg_primary"],
-            outline=c["bg_card"], radius=8, height=26,
+            outline=c["bg_card"], radius=8, height=26, pille=True,
             parent_bg=c["bg_card"])
         leinwand.create_window(breite / 2, hoehe - rand - _m(12),
                                window=schliessen, width=_m(140), height=_m(26))
@@ -49243,7 +49511,7 @@ class PS5ConverterGUI:
 
         def _liste(rahmen, eintraege: list[dict[str, Any]]):
             """Ein Auswahlfeld mit den Eintraegen und darunter der Satz zur gewaehlten Fassung."""
-            box = ttk.Combobox(
+            box = self._pw.Combobox(
                 rahmen, state="readonly", font=(UI_SCHRIFT, pt(9)), width=48,
                 values=[self._ampr_fassung_zeile(e) for e in eintraege])
             hinweis = tk.Label(rahmen, text="", font=(UI_SCHRIFT, pt(8)),
@@ -49262,7 +49530,7 @@ class PS5ConverterGUI:
             return box, hinweis
 
         # ── AMPR EMU ───────────────────────────────────────────────────
-        karte_a = tk.Frame(innen, bg=c["bg_card"], padx=12, pady=10)
+        karte_a = self._pw.Karte(innen, bg=c["bg_card"], padx=12, pady=10)
         karte_a.pack(fill="x", pady=(0, 8))
         tk.Label(karte_a, text=self._t("amprgen.fassung_ampr"),
                  font=(UI_SCHRIFT, pt(10), "bold"), bg=c["bg_card"],
@@ -49279,7 +49547,7 @@ class PS5ConverterGUI:
                      wraplength=umbruch).pack(fill="x", pady=(6, 0))
 
         # ── PlayGo: nur auf ausdruecklichen Haken ──────────────────────
-        karte_p = tk.Frame(innen, bg=c["bg_card"], padx=12, pady=10)
+        karte_p = self._pw.Karte(innen, bg=c["bg_card"], padx=12, pady=10)
         karte_p.pack(fill="x", pady=(0, 8))
         playgo_an = tk.BooleanVar(value=False)
         playgo_box = playgo_hinweis = None
@@ -49288,7 +49556,7 @@ class PS5ConverterGUI:
             if playgo_box is not None:
                 playgo_box.configure(state="readonly" if playgo_an.get() else "disabled")
 
-        haken = tk.Checkbutton(
+        haken = self._pw.Checkbutton(
             karte_p, text=self._t("amprgen.fassung_playgo"), variable=playgo_an,
             command=_playgo_schalten, font=(UI_SCHRIFT, pt(10), "bold"),
             bg=c["bg_card"], fg=c["fg_primary"], selectcolor=c["bg_main"],
@@ -49326,10 +49594,10 @@ class PS5ConverterGUI:
 
         fuss = tk.Frame(innen, bg=c["bg_main"])
         fuss.pack(fill="x", pady=(8, 0))
-        abbrechen_knopf = ttk.Button(fuss, text=self._t("action.cancel"),
+        abbrechen_knopf = self._pw.Button(fuss, text=self._t("action.cancel"),
                                      command=_abbrechen)
         abbrechen_knopf.pack(side="right")
-        ok_knopf = ttk.Button(fuss, text=self._t("amprgen.fassung_ablegen"),
+        ok_knopf = self._pw.Button(fuss, text=self._t("amprgen.fassung_ablegen"),
                               style="Accent.TButton", command=_ok)
         ok_knopf.pack(side="right", padx=(0, 8))
 
@@ -49492,13 +49760,13 @@ class PS5ConverterGUI:
         # dieselbe Falle wie schon einmal bei den Werkzeugfenstern.
         fuss = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=12)
         fuss.pack(side="bottom", fill="x")
-        ttk.Button(fuss, text=self._t("action.cancel"),
+        self._pw.Button(fuss, text=self._t("action.cancel"),
                    command=lambda: _waehlen("")).pack(side="right")
 
         # Rollflaeche fuer die Auswahl - dasselbe Muster wie im
         # CREDITS-Fenster.
         rollflaeche = tk.Canvas(dlg, bg=c["bg_main"], highlightthickness=0)
-        leiste = ttk.Scrollbar(dlg, orient="vertical",
+        leiste = self._pw.Scrollbar(dlg, orient="vertical",
                                command=rollflaeche.yview)
         leiste.pack(side="right", fill="y")
         rollflaeche.pack(side="left", fill="both", expand=True)
@@ -49516,11 +49784,11 @@ class PS5ConverterGUI:
         dlg.bind("<Button-5>", lambda e: rollflaeche.yview_scroll(1, "units"))
 
         for nummer, (wert, beschriftung, erlaeuterung) in enumerate(optionen):
-            karte = tk.Frame(innen, bg=c["bg_card"], padx=12, pady=10)
+            karte = self._pw.Karte(innen, bg=c["bg_card"], padx=12, pady=10)
             karte.pack(fill="x", padx=20, pady=(0, 8))
             reihe = tk.Frame(karte, bg=c["bg_card"])
             reihe.pack(fill="x")
-            ttk.Button(reihe, text=beschriftung,
+            self._pw.Button(reihe, text=beschriftung,
                        style="Accent.TButton" if nummer == 0 else "TButton",
                        command=lambda w=wert: _waehlen(w)).pack(side="left")
             if nummer == 0:
@@ -50014,7 +50282,7 @@ class PS5ConverterGUI:
                                   self._t("amprgen.subtitle_%s" % generation))
 
         # ── Geltungsbereich - damit niemand das falsche Fenster nimmt ───
-        gilt = tk.Frame(win, bg=c["bg_card"], padx=12, pady=8)
+        gilt = self._pw.Karte(win, bg=c["bg_card"], padx=12, pady=8)
         gilt.pack(fill="x", padx=16, pady=(10, 6))
         tk.Label(gilt, text=self._t("amprgen.applies", value=p["gilt_fuer"]),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_card"],
@@ -50045,10 +50313,10 @@ class PS5ConverterGUI:
                                                       pady=(4, 2))
         koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
         koerper.pack(fill="both", expand=True, pady=(0, 4))
-        feld = tk.Text(koerper, height=14, wrap="word",
+        feld = self._pw.Text(koerper, height=14, wrap="word",
                        font=("Consolas", pt(9)), bg=c["bg_card"],
                        fg=c["fg_primary"], relief="flat", state="disabled")
-        rolle = ttk.Scrollbar(koerper, orient="vertical", command=feld.yview)
+        rolle = self._pw.Scrollbar(koerper, orient="vertical", command=feld.yview)
         feld.configure(yscrollcommand=rolle.set)
         rolle.pack(side="right", fill="y")
         feld.pack(side="left", fill="both", expand=True)
@@ -50113,11 +50381,11 @@ class PS5ConverterGUI:
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("amprgen.btn_config"),
+        self._pw.Button(knopfreihe, text=self._t("amprgen.btn_config"),
                    command=_config).pack(side="left")
-        start = ttk.Button(knopfreihe, text=self._t("amprgen.btn_run"),
+        start = self._pw.Button(knopfreihe, text=self._t("amprgen.btn_run"),
                            style="Accent.TButton", command=_starten)
         start.pack(side="left", padx=(8, 0))
         start_knopf["widget"] = start
@@ -50189,13 +50457,13 @@ class PS5ConverterGUI:
         # Immer sichtbar, aber leer/deaktiviert ausserhalb einer Wartephase -
         # so bleibt die Position im Fenster fest (kein Nachpacken noetig,
         # das die Reihenfolge der uebrigen Bereiche durcheinanderbraechte).
-        status = tk.Frame(win, bg=c["bg_card"], padx=12, pady=10)
+        status = self._pw.Karte(win, bg=c["bg_card"], padx=12, pady=10)
         status.pack(fill="x", padx=16, pady=(0, 8))
         status_label = tk.Label(status, text="", font=(UI_SCHRIFT, pt(9), "bold"),
                                 bg=c["bg_card"], fg=c["fg_primary"],
                                 anchor="w", wraplength=860, justify="left")
         status_label.pack(fill="x")
-        status_knopf = ttk.Button(status, text=self._t("amprmitschnitt.segment_confirm_btn"),
+        status_knopf = self._pw.Button(status, text=self._t("amprmitschnitt.segment_confirm_btn"),
                                   style="Accent.TButton", state="disabled",
                                   command=lambda: None)
         status_knopf.pack(anchor="w", pady=(8, 0))
@@ -50209,10 +50477,10 @@ class PS5ConverterGUI:
                                                       pady=(4, 2))
         koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
         koerper.pack(fill="both", expand=True, pady=(0, 4))
-        feld = tk.Text(koerper, height=12, wrap="word",
+        feld = self._pw.Text(koerper, height=12, wrap="word",
                        font=("Consolas", pt(9)), bg=c["bg_card"],
                        fg=c["fg_primary"], relief="flat", state="disabled")
-        rolle = ttk.Scrollbar(koerper, orient="vertical", command=feld.yview)
+        rolle = self._pw.Scrollbar(koerper, orient="vertical", command=feld.yview)
         feld.configure(yscrollcommand=rolle.set)
         rolle.pack(side="right", fill="y")
         feld.pack(side="left", fill="both", expand=True)
@@ -50310,9 +50578,9 @@ class PS5ConverterGUI:
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x")
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=_schliessen_versuchen).pack(side="right")
-        start = ttk.Button(knopfreihe, text=self._t("amprmitschnitt.btn_run"),
+        start = self._pw.Button(knopfreihe, text=self._t("amprmitschnitt.btn_run"),
                            style="Accent.TButton", command=_starten)
         start.pack(side="left")
         start_knopf["widget"] = start
@@ -51504,7 +51772,7 @@ class PS5ConverterGUI:
         tk.Label(kopf, text=self._t("autoloader.ip_label"), font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_main"], fg=c["fg_primary"]).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_ip())
-        ip_feld = ttk.Entry(kopf, textvariable=ip_var, width=18)
+        ip_feld = self._pw.Entry(kopf, textvariable=ip_var, width=18)
         ip_feld.pack(side="left", padx=(8, 12))
 
         def _ip_merken(*_a) -> None:
@@ -51542,7 +51810,7 @@ class PS5ConverterGUI:
         tk.Label(links, text=self._t("autoloader.files_label"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x")
-        liste = tk.Listbox(links, selectmode="extended", font=(MONO_SCHRIFT, pt(9)),
+        liste = self._pw.Listbox(links, selectmode="extended", font=(MONO_SCHRIFT, pt(9)),
                            bg=c["console_bg"], fg=c["console_fg"],
                            selectbackground=c["fg_accent"], relief="flat",
                            highlightthickness=0)
@@ -51553,7 +51821,7 @@ class PS5ConverterGUI:
         tk.Label(rechts, text=self._t("autoloader.sequence_label"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x")
-        feld = tk.Text(rechts, wrap="none", font=(MONO_SCHRIFT, pt(9)),
+        feld = self._pw.Text(rechts, wrap="none", font=(MONO_SCHRIFT, pt(9)),
                        bg=c["console_bg"], fg=c["console_fg"],
                        insertbackground=c["fg_primary"], relief="flat",
                        highlightthickness=0)
@@ -51901,7 +52169,7 @@ class PS5ConverterGUI:
         reihe_unten = tk.Frame(knopfbereich, bg=c["bg_main"])
         reihe_unten.pack(fill="x", pady=(8, 0))
 
-        ttk.Button(reihe_unten, text=self._t("action.close"),
+        self._pw.Button(reihe_unten, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
         for reihe, beschriftung, befehl, stil in (
                 (reihe_oben, "autoloader.action_load", _holen, "Accent.TButton"),
@@ -51910,7 +52178,7 @@ class PS5ConverterGUI:
                 (reihe_unten, "autoloader.action_delete", _loeschen, ""),
                 (reihe_unten, "autoloader.action_snapshot", _schnappschuss, ""),
                 (reihe_unten, "autoloader.action_restore", _zurueckspielen, "")):
-            knopf = ttk.Button(reihe, text=self._t(beschriftung), command=befehl)
+            knopf = self._pw.Button(reihe, text=self._t(beschriftung), command=befehl)
             if stil:
                 knopf.configure(style=stil)
             knopf.pack(side="left", padx=(0, 8))
@@ -52138,7 +52406,7 @@ class PS5ConverterGUI:
         artwahl.pack(fill="x", pady=(14, 0))
         for wert, schluessel in ((app_install.ART_DEEPLINK, "appinstall.art_deeplink"),
                                  (app_install.ART_PROGRAMM, "appinstall.art_programm")):
-            ttk.Radiobutton(artwahl, text=self._t(schluessel), value=wert,
+            self._pw.Radiobutton(artwahl, text=self._t(schluessel), value=wert,
                             variable=art_var).pack(side="left", padx=(0, 18))
 
         # Wo die Kachel erscheint: Medien oder Spiele (seit v1.9.62, Wunsch des
@@ -52161,11 +52429,11 @@ class PS5ConverterGUI:
         self._tooltip(bereich_titel, "appinstall.bereich_hint")
         for wert, schluessel in ((app_install.BEREICH_MEDIEN, "appinstall.bereich_medien"),
                                  (app_install.BEREICH_SPIELE, "appinstall.bereich_spiele")):
-            radio = ttk.Radiobutton(bereichwahl, text=self._t(schluessel), value=wert,
+            radio = self._pw.Radiobutton(bereichwahl, text=self._t(schluessel), value=wert,
                                     variable=bereich_var)
             radio.pack(side="left", padx=(0, 18))
             self._tooltip(radio, "appinstall.bereich_hint")
-        bereich_var.trace_add("write", lambda *_a: self._save_setting(
+        bibliothek_raster.spur_bis_zerstoert(win, bereich_var, lambda *_a: self._save_setting(
             "appinstall_bereich", bereich_var.get()))
 
         # Zwei Formulare, von denen immer nur eines liegt. Beide gleichzeitig
@@ -52194,19 +52462,19 @@ class PS5ConverterGUI:
                      font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                      fg=c["fg_primary"]).pack(side="left")
             if breite:
-                ttk.Entry(zeile, textvariable=variable,
+                self._pw.Entry(zeile, textvariable=variable,
                           width=breite).pack(side="left")
             else:
-                ttk.Entry(zeile, textvariable=variable).pack(
+                self._pw.Entry(zeile, textvariable=variable).pack(
                     side="left", fill="x", expand=True, padx=(0, 8))
             if variable is icon_var:
-                ttk.Button(zeile, text=self._t("appinstall.choose_icon"),
+                self._pw.Button(zeile, text=self._t("appinstall.choose_icon"),
                            command=lambda: _icon_waehlen()).pack(side="left")
 
         tk.Label(programm_form, text=self._t("appinstall.folder_label"),
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"]).pack(side="left")
-        ttk.Entry(programm_form, textvariable=ordner_var).pack(
+        self._pw.Entry(programm_form, textvariable=ordner_var).pack(
             side="left", fill="x", expand=True, padx=(8, 8))
         kopf = programm_form
 
@@ -52215,7 +52483,7 @@ class PS5ConverterGUI:
             (programm_form if deeplink else deeplink_form).pack_forget()
             (deeplink_form if deeplink else programm_form).pack(
                 fill="x", pady=(8, 0))
-        art_var.trace_add("write", _form_zeigen)
+        bibliothek_raster.spur_bis_zerstoert(win, art_var, _form_zeigen)
         _form_zeigen()
 
         def _icon_waehlen() -> None:
@@ -52232,7 +52500,7 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"]).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_ip())
-        ip_feld = ttk.Entry(zweite, textvariable=ip_var, width=18)
+        ip_feld = self._pw.Entry(zweite, textvariable=ip_var, width=18)
         ip_feld.pack(side="left", padx=(8, 12))
 
         def _ip_merken(*_a) -> None:
@@ -52275,7 +52543,7 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
                  fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
                                                       pady=(14, 4))
-        bericht = tk.Text(win, wrap="word", font=(MONO_SCHRIFT, pt(9)),
+        bericht = self._pw.Text(win, wrap="word", font=(MONO_SCHRIFT, pt(9)),
                           bg=c["console_bg"], fg=c["console_fg"],
                           insertbackground=c["fg_primary"], relief="flat",
                           highlightthickness=0)
@@ -52328,7 +52596,7 @@ class PS5ConverterGUI:
                 ordner_var.set(ordner)
                 _pruefen()
 
-        ttk.Button(kopf, text=self._t("appinstall.choose_folder"),
+        self._pw.Button(kopf, text=self._t("appinstall.choose_folder"),
                    command=_waehlen).pack(side="left")
 
         def _installieren() -> None:
@@ -52403,16 +52671,16 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_lauf, daemon=True).start()
 
-        ttk.Button(knopfbereich, text=self._t("action.close"),
+        self._pw.Button(knopfbereich, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(knopfbereich, text=self._t("appinstall.action_guide"),
+        self._pw.Button(knopfbereich, text=self._t("appinstall.action_guide"),
                    command=lambda: self._anleitung_oeffnen(
                        anleitung.APPINSTALL, "anleitung_appinstall",
                        parent=win)).pack(side="right", padx=(0, 8))
-        knopf = ttk.Button(knopfbereich, text=self._t("appinstall.action_check"),
+        knopf = self._pw.Button(knopfbereich, text=self._t("appinstall.action_check"),
                            command=_pruefen)
         knopf.pack(side="left", padx=(0, 8))
-        knopf_install = ttk.Button(knopfbereich,
+        knopf_install = self._pw.Button(knopfbereich,
                                    text=self._t("appinstall.action_install"),
                                    command=_installieren, style="Accent.TButton")
         knopf_install.pack(side="left", padx=(0, 8))
@@ -52504,7 +52772,7 @@ class PS5ConverterGUI:
             self._t("backport.firmware_entry", fw=f"{fw}.00")
             for fw in firmwares
         ]
-        fw_box = ttk.Combobox(einstellungen, state="readonly",
+        fw_box = self._pw.Combobox(einstellungen, state="readonly",
                               width=16, values=auswahlwerte)
         fw_box.pack(side="left", padx=(8, 16))
         try:
@@ -52541,7 +52809,7 @@ class PS5ConverterGUI:
                                 (libs_var, "backport.option_fakelibs"),
                                 (libc_var, "backport.option_libc"),
                                 (deckung_var, "backport.option_coverage")):
-            tk.Checkbutton(
+            self._pw.Checkbutton(
                 einstellungen, text=self._t(schluessel), variable=var,
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
@@ -52557,9 +52825,9 @@ class PS5ConverterGUI:
         # sich aus und wuerde sonst die darunter liegende Knopfleiste
         # zusammenquetschen, bis deren Beschriftungen wegfallen. Erst kommen
         # Statuszeile und Knoepfe an den unteren Rand, dann der Rest an ihn.
-        rahmen = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        rahmen = self._pw.Rahmen(win)
         spalten = ("datei", "typ", "sdk", "status")
-        baum = ttk.Treeview(rahmen, columns=spalten, show="headings", height=12)
+        baum = self._pw.Treeview(rahmen, columns=spalten, show="headings", height=12)
         for spalte, schluessel, breite, anker in (
             ("datei", "backport.col_file", 380, "w"),
             ("typ", "backport.col_type", 90, "w"),
@@ -52568,7 +52836,7 @@ class PS5ConverterGUI:
         ):
             baum.heading(spalte, text=self._t(schluessel), anchor=anker)
             baum.column(spalte, width=breite, anchor=anker, stretch=(spalte == "status"))
-        vsb = ttk.Scrollbar(rahmen, orient="vertical", command=baum.yview)
+        vsb = self._pw.Scrollbar(rahmen, orient="vertical", command=baum.yview)
         baum.configure(yscrollcommand=vsb.set)
         baum.grid(row=0, column=0, sticky="nsew")
         vsb.grid(row=0, column=1, sticky="ns")
@@ -52825,12 +53093,12 @@ class PS5ConverterGUI:
         win.protocol("WM_DELETE_WINDOW", _beim_schliessen)
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
-        start_btn = ttk.Button(knopfreihe, text=self._t("backport.action_start"),
+        start_btn = self._pw.Button(knopfreihe, text=self._t("backport.action_start"),
                                style="Accent.TButton", command=_starten)
         start_btn.pack(side="left")
-        analyse_btn = ttk.Button(knopfreihe, text=self._t("backport.action_analyse"),
+        analyse_btn = self._pw.Button(knopfreihe, text=self._t("backport.action_analyse"),
                                  command=_analysieren)
         analyse_btn.pack(side="left", padx=(8, 0))
 
@@ -53452,7 +53720,7 @@ class PS5ConverterGUI:
                 gesehen.add(name)
                 vorhandene.append((bezeichnung, name))
         for bezeichnung, name in vorhandene:
-            tk.Radiobutton(
+            self._pw.Radiobutton(
                 körper,
                 text="%s:  %s" % (self._dump_rename_uebersetzen(bezeichnung), name),
                 value=name, variable=auswahl,
@@ -53472,7 +53740,7 @@ class PS5ConverterGUI:
         tk.Label(körper, text=self._t("dump_rename.custom_label"),
                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w").pack(fill="x", pady=(10, 2))
-        tk.Entry(körper, textvariable=eigener, font=(UI_SCHRIFT, pt(10)),
+        self._pw.Entry(körper, textvariable=eigener, font=(UI_SCHRIFT, pt(10)),
                  bg=c["bg_card"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"], relief="flat").pack(fill="x", ipady=4)
 
@@ -53541,9 +53809,9 @@ class PS5ConverterGUI:
         # Hier läuft nichts im Hintergrund - das Umbenennen ist sofort fertig.
         # Bis v1.9.6 stand hier trotzdem ein Aufruf auf ein nicht vorhandenes
         # _beim_schliessen, und der Knopf warf bei jedem Druck einen NameError.
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("dump_rename.rename_button"),
+        self._pw.Button(knopfreihe, text=self._t("dump_rename.rename_button"),
                    style="Accent.TButton", command=_umbenennen).pack(side="left")
 
     # ==================================================================
@@ -53761,8 +54029,18 @@ class PS5ConverterGUI:
         zustand["laeuft"] = True
         zustand["fenster"] = karte
 
-        innen = tk.Frame(karte, bg=c["bg_card"], padx=20, pady=16)
-        innen.pack(padx=2, pady=2)
+        # Runde Ecken wie im AMPR-Auswahlfenster: Ausserhalb der Rundung ist das Fenster durchsichtig (nur unter
+        # Windows). Wo das fehlt, bleibt es eckig mit dem Rand in der Warnfarbe - der Hinweis geht vor.
+        rund = False
+        try:
+            karte.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
+            karte.configure(bg=self._AUSWAHL_DURCHSICHTIG)
+            rund = True
+        except tk.TclError:
+            logger.debug("Durchsichtige Ecken hier nicht verfügbar - der Hinweis bleibt eckig.")
+        leinwand = tk.Canvas(karte, bg=self._AUSWAHL_DURCHSICHTIG if rund else c["fg_warning"],
+                             highlightthickness=0, bd=0)
+        innen = tk.Frame(leinwand, bg=c["bg_card"], padx=20, pady=16)
         tk.Label(innen, text=self._t("ps4pkg.place_title"),
                  font=(UI_SCHRIFT, pt(12), "bold"), bg=c["bg_card"],
                  fg=c["fg_warning"], anchor="w", justify="left").pack(
@@ -53787,8 +54065,21 @@ class PS5ConverterGUI:
                  fg=c["fg_warning"], anchor="w", justify="left",
                  wraplength=560).pack(fill="x", pady=(8, 0))
 
-        karte.update_idletasks()
-        breite, hoehe = karte.winfo_reqwidth(), karte.winfo_reqheight()
+        # Die Karte wird um den Inhalt gezeichnet: Rand 8 Punkte, damit die Ecken des Inhalts innerhalb der
+        # Rundung (Radius 18) bleiben; ohne Rundung ein Rechteck mit 2 Punkten Rand in der Warnfarbe.
+        innen.update_idletasks()
+        luft = knopfmass(8, karte)
+        breite, hoehe = innen.winfo_reqwidth() + 2 * luft, innen.winfo_reqheight() + 2 * luft
+        leinwand.configure(width=breite, height=hoehe)
+        if rund:
+            leinwand.create_polygon(
+                rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, knopfmass(18, karte)),
+                smooth=True, fill=c["bg_card"], outline=c["fg_warning"], width=2)
+        else:
+            leinwand.create_rectangle(1, 1, breite - 1, hoehe - 1, fill=c["bg_card"], outline=c["fg_warning"],
+                                      width=2)
+        leinwand.create_window(luft, luft, window=innen, anchor="nw")
+        leinwand.pack()
         x = fenster.winfo_rootx() + (fenster.winfo_width() - breite) // 2
         y = fenster.winfo_rooty() + (fenster.winfo_height() - hoehe) // 2
         karte.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
@@ -53876,6 +54167,16 @@ class PS5ConverterGUI:
             except Exception:
                 pass
 
+    def _show_ps4_pkg_ota(self) -> None:
+        """Öffnet „PS4 PKG → OTA“ - oder holt das offene Fenster nach vorn.
+
+        Der eine Knopf fuer PS4-Pakete: Sammlung mit Tabelle und Filtern,
+        Einzelheiten, entpacken, pruefen, zusammenfuehren, neu packen, bauen,
+        umbenennen und ordnen, Updates holen und per Netzwerk an die Konsole
+        senden (``ps5_validator/ui/ps4_ota.py``).
+        """
+        ps4_ota.oeffnen(self, UI_SCHRIFT, MONO_SCHRIFT, pt)
+
     def _show_ps4_pkg_converter(self) -> None:
         """Öffnet das Fenster „PS4 PKG → ffpfsc".
 
@@ -53916,8 +54217,10 @@ class PS5ConverterGUI:
         vorgabe = str(getattr(self, "_ps4pkg_vorgabe", "") or "")
         self._ps4pkg_vorgabe = ""
         if vorgabe:
+            # Mehrere Pakete (aus "PS4 PKG -> OTA") kommen mit ``os.pathsep`` getrennt -
+            # wie sie auch der Auswahldialog eintraegt; jedes einzeln glaetten.
             quelle_art.set("pkg_file")
-            quelle_var.set(os.path.normpath(vorgabe))
+            quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in vorgabe.split(os.pathsep) if p.strip()))
         ziel_var = tk.StringVar(value=self.dest_path.get().strip() if hasattr(self, "dest_path") else "")
         format_var = tk.StringVar(value="ffpfsc")
         stufe_var = tk.IntVar(value=7)
@@ -53937,7 +54240,7 @@ class PS5ConverterGUI:
             ("pkg_file", "ps4pkg.source_kind_files"),
             ("dump_dir", "ps4pkg.source_kind_dump"),
         ):
-            tk.Radiobutton(
+            self._pw.Radiobutton(
                 art_reihe, text=self._t(schluessel), value=wert, variable=quelle_art,
                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_primary"],
                 selectcolor=c["bg_card"], activebackground=c["bg_main"],
@@ -53946,7 +54249,7 @@ class PS5ConverterGUI:
 
         pfad_reihe = tk.Frame(körper, bg=c["bg_main"])
         pfad_reihe.pack(fill="x", pady=(6, 0))
-        tk.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
+        self._pw.Entry(pfad_reihe, textvariable=quelle_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                  relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
 
@@ -53966,7 +54269,7 @@ class PS5ConverterGUI:
             if ordner:
                 quelle_var.set(os.path.normpath(ordner))
 
-        ttk.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
+        self._pw.Button(pfad_reihe, text="…", width=3, command=_quelle_waehlen).pack(side="left", padx=(6, 0))
 
         # ── Gefundene Spiele ────────────────────────────────────────────
         tk.Label(körper, text=self._t("ps4pkg.games_label"), font=(UI_SCHRIFT, pt(9), "bold"),
@@ -53974,7 +54277,7 @@ class PS5ConverterGUI:
         liste_rahmen = tk.Frame(körper, bg=c["bg_main"])
         liste_rahmen.pack(fill="both", expand=True)
         spalten = ("title_id", "plattform", "titel", "version", "teile")
-        liste = ttk.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
+        liste = self._pw.Treeview(liste_rahmen, columns=spalten, show="headings", height=4)
         for spalte, breite in zip(spalten, (110, 80, 350, 100, 190)):
             # anchor auch in der Kopfzeile: column(anchor=...) stellt nur die
             # Werte links, die Ueberschrift zentriert Tk sonst weiter.
@@ -53985,7 +54288,7 @@ class PS5ConverterGUI:
         liste.tag_configure("ps5", foreground=c["fg_warning"])
         liste.tag_configure("unbekannt", foreground=c["fg_secondary"])
         liste.pack(side="left", fill="both", expand=True)
-        liste_scroll = ttk.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
+        liste_scroll = self._pw.Scrollbar(liste_rahmen, orient="vertical", command=liste.yview)
         liste_scroll.pack(side="right", fill="y")
         liste.configure(yscrollcommand=liste_scroll.set)
 
@@ -53994,7 +54297,7 @@ class PS5ConverterGUI:
                  bg=c["bg_main"], fg=c["fg_primary"], anchor="w").pack(fill="x", pady=(10, 4))
         ziel_reihe = tk.Frame(körper, bg=c["bg_main"])
         ziel_reihe.pack(fill="x")
-        tk.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
+        self._pw.Entry(ziel_reihe, textvariable=ziel_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                  relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
 
@@ -54003,23 +54306,23 @@ class PS5ConverterGUI:
             if ordner:
                 ziel_var.set(os.path.normpath(ordner))
 
-        ttk.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
+        self._pw.Button(ziel_reihe, text="…", width=3, command=_ziel_waehlen).pack(side="left", padx=(6, 0))
 
         einstell = tk.Frame(körper, bg=c["bg_main"])
         einstell.pack(fill="x", pady=(8, 0))
         tk.Label(einstell, text=self._t("ps4pkg.format_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
+        self._pw.Combobox(einstell, textvariable=format_var, state="readonly", width=10,
                      values=("ffpfsc", "exfat"), font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
         tk.Label(einstell, text=self._t("ps4pkg.level_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
+        self._pw.Spinbox(einstell, from_=0, to=9, textvariable=stufe_var, width=4,
                     font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
         tk.Label(einstell, text=self._t("ps4pkg.workers_label"), font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"]).pack(side="left")
-        ttk.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
+        self._pw.Spinbox(einstell, from_=1, to=max(1, os.cpu_count() or 4), textvariable=worker_var,
                     width=4, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(6, 18))
-        dlc_kasten = tk.Checkbutton(
+        dlc_kasten = self._pw.Checkbutton(
             einstell, text=self._t("ps4pkg.dlc_label"), variable=dlc_var,
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"], fg=c["fg_warning"],
             selectcolor=c["bg_card"], activebackground=c["bg_main"],
@@ -54035,7 +54338,7 @@ class PS5ConverterGUI:
         # _ps4_hinweis_zeigen.
 
         # ── Fortschritt und Protokoll ───────────────────────────────────
-        balken = ttk.Progressbar(körper, mode="determinate", maximum=100.0)
+        balken = self._pw.Progressbar(körper, mode="determinate", maximum=100.0)
         balken.pack(fill="x", pady=(10, 3))
         tk.Label(körper, textvariable=status_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w",
@@ -54049,7 +54352,7 @@ class PS5ConverterGUI:
         # Anwender braucht, wenn ein Paket nicht durchgeht. Mit Umbruch
         # entfaellt der Rollbalken; sechs Zeilen Grundhoehe, weil eine solche
         # Meldung umgebrochen selten in vier passt.
-        protokoll = tk.Text(körper, height=6, font=("Consolas", pt(9)),
+        protokoll = self._pw.Text(körper, height=6, font=("Consolas", pt(9)),
                             bg=c["console_bg"], fg=c["console_fg"], relief="flat",
                             insertbackground=c["console_fg"], wrap="word")
         protokoll.pack(fill="both", expand=True, pady=(6, 0))
@@ -54522,12 +54825,12 @@ class PS5ConverterGUI:
 
         knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
         knopfreihe.pack(side="bottom", fill="x", before=körper)
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=_beim_schliessen).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
+        self._pw.Button(knopfreihe, text=self._t("action.cancel"), command=_abbrechen).pack(side="right", padx=(0, 8))
+        self._pw.Button(knopfreihe, text=self._t("ps4pkg.scan_button"),
                    command=_einlesen).pack(side="left")
-        ttk.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
+        self._pw.Button(knopfreihe, text=self._t("ps4pkg.build_button"), style="Accent.TButton",
                    command=_erstellen).pack(side="left", padx=(8, 0))
 
     # ==================================================================
@@ -54556,10 +54859,10 @@ class PS5ConverterGUI:
         conn_row.pack(fill="x", pady=(0, 12))
         tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_wert_oder_zentral("klog_ip", self._ps5_ip()))
-        ttk.Entry(conn_row, textvariable=ip_var, width=16, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
+        self._pw.Entry(conn_row, textvariable=ip_var, width=16, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
         tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         port_var = tk.StringVar(value=self._ps5_wert_oder_zentral("klog_port", self._ps5_klog_port()))
-        ttk.Entry(conn_row, textvariable=port_var, width=8, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
+        self._pw.Entry(conn_row, textvariable=port_var, width=8, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 12))
 
         status_var = tk.StringVar(value=self._t("status.disconnected"))
         status_lbl = tk.Label(
@@ -54572,22 +54875,22 @@ class PS5ConverterGUI:
         toolbar.pack(fill="x")
         tk.Label(toolbar, text=self._t("klog.filter_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         filter_var = tk.StringVar()
-        ttk.Entry(toolbar, textvariable=filter_var, font=(UI_SCHRIFT, pt(10))).pack(
+        self._pw.Entry(toolbar, textvariable=filter_var, font=(UI_SCHRIFT, pt(10))).pack(
             side="left", fill="x", expand=True, padx=(4, 12)
         )
         autoscroll_var = tk.BooleanVar(value=True)
         timestamps_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(toolbar, text=self._t("klog.autoscroll_checkbox"), variable=autoscroll_var).pack(side="left")
-        ttk.Checkbutton(toolbar, text=self._t("klog.timestamps_checkbox"), variable=timestamps_var).pack(side="left", padx=(8, 0))
+        self._pw.Checkbutton(toolbar, text=self._t("klog.autoscroll_checkbox"), variable=autoscroll_var).pack(side="left")
+        self._pw.Checkbutton(toolbar, text=self._t("klog.timestamps_checkbox"), variable=timestamps_var).pack(side="left", padx=(8, 0))
 
-        text_frame = tk.Frame(win, bg=c["bg_card"], padx=1, pady=1)
+        text_frame = self._pw.Rahmen(win)
         text_frame.pack(fill="both", expand=True, padx=16, pady=(0, 8))
-        console = tk.Text(
+        console = self._pw.Text(
             text_frame, wrap="none", font=(MONO_SCHRIFT, pt(9)), borderwidth=0, padx=8, pady=8,
             bg="#05070a", fg="#39ff6a", insertbackground="#39ff6a", highlightthickness=0,
         )
-        console_vsb = ttk.Scrollbar(text_frame, orient="vertical", command=console.yview)
-        console_hsb = ttk.Scrollbar(text_frame, orient="horizontal", command=console.xview)
+        console_vsb = self._pw.Scrollbar(text_frame, orient="vertical", command=console.yview)
+        console_hsb = self._pw.Scrollbar(text_frame, orient="horizontal", command=console.xview)
         console.configure(yscrollcommand=console_vsb.set, xscrollcommand=console_hsb.set)
         console.grid(row=0, column=0, sticky="nsew")
         console_vsb.grid(row=0, column=1, sticky="ns")
@@ -54650,7 +54953,7 @@ class PS5ConverterGUI:
             if autoscroll_var.get():
                 console.see("end")
 
-        filter_var.trace_add("write", _reapply_filter)
+        bibliothek_raster.spur_bis_zerstoert(win, filter_var, _reapply_filter)
 
         def _set_status(text: str, color: str) -> None:
             status_var.set(text)
@@ -54777,11 +55080,11 @@ class PS5ConverterGUI:
             except OSError as exc:
                 messagebox.showerror(self._t("dialog.title.export_failed"), str(exc), parent=win)
 
-        connect_btn = ttk.Button(conn_row, text=self._t("action.connect"), style="Accent.TButton", command=_connect)
+        connect_btn = self._pw.Button(conn_row, text=self._t("action.connect"), style="Accent.TButton", command=_connect)
         connect_btn.pack(side="left", padx=(12, 6))
-        disconnect_btn = ttk.Button(conn_row, text=self._t("action.disconnect"), command=_disconnect, state="disabled")
+        disconnect_btn = self._pw.Button(conn_row, text=self._t("action.disconnect"), command=_disconnect, state="disabled")
         disconnect_btn.pack(side="left")
-        pause_btn = ttk.Button(toolbar, text=self._t("action.pause"), command=_toggle_pause, state="disabled")
+        pause_btn = self._pw.Button(toolbar, text=self._t("action.pause"), command=_toggle_pause, state="disabled")
         pause_btn.pack(side="left", padx=(8, 0))
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
@@ -54791,9 +55094,9 @@ class PS5ConverterGUI:
             _disconnect()
             win.destroy()
 
-        ttk.Button(btn_row, text=self._t("action.close"), command=_on_close).pack(side="right")
-        ttk.Button(btn_row, text=self._t("action.export_ellipsis"), command=_export).pack(side="right", padx=(0, 8))
-        ttk.Button(btn_row, text=self._t("action.clear"), command=_clear).pack(side="right", padx=(0, 8))
+        self._pw.Button(btn_row, text=self._t("action.close"), command=_on_close).pack(side="right")
+        self._pw.Button(btn_row, text=self._t("action.export_ellipsis"), command=_export).pack(side="right", padx=(0, 8))
+        self._pw.Button(btn_row, text=self._t("action.clear"), command=_clear).pack(side="right", padx=(0, 8))
         win.protocol("WM_DELETE_WINDOW", _on_close)
 
     def _show_wee_tools(self) -> None:
@@ -54916,12 +55219,12 @@ class PS5ConverterGUI:
         tk.Label(reihe, text=self._t("unjail.ip_label"), width=14, anchor="w",
                  font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
                  fg=c["fg_secondary"]).pack(side="left")
-        tk.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
+        self._pw.Entry(reihe, textvariable=ip_var, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                  insertbackground=c["fg_primary"]).pack(
             side="left", fill="x", expand=True, ipady=3)
 
-        protokoll = tk.Text(koerper, height=12, font=("Consolas", pt(9)),
+        protokoll = self._pw.Text(koerper, height=12, font=("Consolas", pt(9)),
                             bg=c["bg_card"], fg=c["fg_primary"],
                             relief="flat", wrap="word")
         protokoll.pack(fill="both", expand=True, pady=(8, 4))
@@ -54966,9 +55269,9 @@ class PS5ConverterGUI:
             threading.Thread(target=_arbeit, daemon=True,
                              name="unjail-send").start()
 
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=win.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text=self._t("unjail.send_button"),
+        self._pw.Button(knopfreihe, text=self._t("unjail.send_button"),
                    style="Accent.TButton", command=_senden).pack(side="left")
 
     def _show_shadowmount_editor(self) -> None:
@@ -54984,29 +55287,40 @@ class PS5ConverterGUI:
     # ------------------------------------------------------------------
     # WebKit Autoloader
     #
-    # Drei Teile, die zusammengehoeren und deshalb hinter einem Knopf liegen:
+    # Drei Teile, die zusammengehoeren und deshalb auf einer Seite liegen
+    # (Knopf 2 der Ansicht KONSOLE, seit v1.9.63 - davor ein Fenster hinter
+    # einem Knopf der Titelleiste):
     #
     #   * der Host als Windows-Programm  - taeuscht der Konsole
     #     manuals.playstation.net vor und liefert ihr den Autoloader aus
     #   * derselbe Host als Python-Skript - fuer alles ausser Windows
     #   * der Installer (.elf)            - legt die Kachel auf der Konsole an
     #
-    # Der Knopf sitzt dort, wo bis v1.8.100 SHADOWMOUNT+ stand; jener ist ins
-    # Menue "WEITERE TOOLS" gewandert.
+    # Mehrere Fassungen liegen nebeneinander im Ordner; die Seite laesst
+    # waehlen, mit welcher gearbeitet wird.
     # ------------------------------------------------------------------
-    #: Der Ordner, in dem die drei Dateien liegen. Er gehoert dem Benutzer:
-    #: Wer dort eine neuere Fassung ablegt, bekommt sie beim naechsten Start
-    #: und beim naechsten Bau - ohne dass hier etwas zu aendern waere.
+    #: Der Ordner, in dem die Dateien aller Fassungen liegen. Er gehoert dem
+    #: Benutzer: Wer dort eine weitere Fassung ablegt (drei Dateien mit der
+    #: Nummer im Namen), findet sie beim naechsten Mal in der Auswahl der
+    #: Seite - ohne dass hier etwas zu aendern waere.
     _WEBKIT_ORDNER = "PS5 WebKit Autoloader"
 
     #: Gesucht wird nach Muster, nicht nach festem Namen. Die Versionsnummer
-    #: steckt im Dateinamen (webkit-autoloader-host_v0.4.0.exe); liegen
-    #: mehrere Fassungen im Ordner, gewinnt die hoechste Nummer.
+    #: steckt im Dateinamen (webkit-autoloader-host_v0.4.0.exe); ohne Wahl
+    #: gewinnt die hoechste Nummer.
     _WEBKIT_MUSTER: dict[str, str] = {
         "exe": "webkit-autoloader-host_*.exe",
         "py": "webkit-autoloader-host_*.py",
         "elf": "webkit-autoloader-installer_*.elf",
     }
+
+    #: Eine Fassung wie ``0.5.1`` - nur Ziffern und Punkte. Die Nummer geht in
+    #: ein Dateimuster ein und kommt aus der Einstellungsdatei; alles andere
+    #: (``*``, ``..``, Pfadtrenner) wird nie zu einem Muster.
+    _WEBKIT_FASSUNG_MUSTER = re.compile(r"\d+(?:\.\d+)*")
+
+    #: Einstellung (paths.json): die zuletzt gewaehlte Fassung, z. B. ``0.5.1``.
+    _WEBKIT_EINSTELLUNG = "webkit_fassung"
 
     #: FTP-Ports, auf denen der Installer abgelegt werden kann. Die Konsole
     #: hat je nach gestartetem Payload den einen oder den anderen offen;
@@ -55042,60 +55356,71 @@ class PS5ConverterGUI:
         treffer = re.search(r"_v(\d+(?:\.\d+)*)", name)
         return treffer.group(1) if treffer else ""
 
-    def _webkit_fassungen(self) -> dict[str, str]:
-        """Die Fassung der drei mitgelieferten Dateien (leer, wo keine liegt)."""
-        return {art: self._webkit_fassung_aus_name(
-                    os.path.basename(self._webkit_datei(art)))
-                for art in ("exe", "py", "elf")}
+    def _webkit_dateimuster(self, art: str, fassung: str = "") -> str:
+        """Das Dateimuster einer Art - mit der Nummer, wenn eine Fassung gemeint ist.
 
-    def _webkit_fassungszeile(self) -> str:
-        """Die Zeile unter der Ueberschrift des Autoloader-Fensters.
-
-        Gewuenscht am 02.10.2026: "Man weiss ja gar nicht welche man sonst
-        benutzt." Tragen alle vorhandenen Dateien dieselbe Fassung, steht sie
-        einmal da; weichen sie voneinander ab - jemand hat nur eine Datei
-        ersetzt -, steht jede einzeln, damit der Unterschied auffaellt.
-
-        Returns:
-            Der Text, oder ein leerer Text, wenn keine Datei eine Nummer
-            traegt. Dann bleibt das Fenster wie bisher ohne die Zeile.
+        Args:
+            art: ``"exe"``, ``"py"`` oder ``"elf"``.
+            fassung: Eine Nummer wie ``"0.5.1"``; leer fuer das allgemeine Muster.
         """
-        fassungen = self._webkit_fassungen()
-        vorhanden = {v for v in fassungen.values() if v}
-        if not vorhanden:
-            return ""
-        if len(vorhanden) == 1:
-            return self._t("webkit.version", version=next(iter(vorhanden)))
-        return self._t("webkit.version_mix",
-                       exe=fassungen["exe"] or "-",
-                       py=fassungen["py"] or "-",
-                       elf=fassungen["elf"] or "-")
+        muster = self._WEBKIT_MUSTER.get(art, "")
+        if fassung and self._WEBKIT_FASSUNG_MUSTER.fullmatch(fassung):
+            return muster.replace("_*", "_v%s" % fassung, 1)
+        return muster
+
+    def _webkit_fassungen_liste(self) -> list[str]:
+        """Alle Fassungen, von denen im Ordner mindestens eine Datei liegt - die neueste zuerst.
+
+        Die Liste entsteht beim Hinsehen aus dem Ordner, nicht aus einer
+        Tabelle: Eine weitere Fassung (drei Dateien mit der Nummer im Namen)
+        steht beim naechsten Mal in der Auswahl, ohne dass hier etwas zu
+        aendern waere. Aeltere bleiben liegen und bleiben waehlbar. Sortiert
+        wird nach den Zahlen, nicht nach dem Text (``0.10.0`` kommt nach
+        ``0.9.0``).
+        """
+        ordner = self._webkit_ordner()
+        if not ordner or not os.path.isdir(ordner):
+            return []
+        nummern = {self._webkit_fassung_aus_name(datei.name)
+                   for muster in self._WEBKIT_MUSTER.values()
+                   for datei in Path(ordner).glob(muster)}
+        nummern.discard("")
+        return sorted(nummern, reverse=True,
+                      key=lambda nummer: self._webkit_versionsschluessel("_v" + nummer))
+
+    def _webkit_fassung_dateien(self, fassung: str) -> dict[str, str]:
+        """Die drei Dateien einer Fassung - leer, wo eine fehlt."""
+        return {art: self._webkit_datei(art, fassung) for art in self._WEBKIT_MUSTER}
 
     def _webkit_ordner(self) -> str:
         """Der mitgelieferte Ordner (leer, wenn er fehlt)."""
         return _bundled_resource(self._WEBKIT_ORDNER)
 
-    def _webkit_datei(self, art: str) -> str:
-        """Die neueste Datei dieser Art im Ordner (leer, wenn keine da ist).
+    def _webkit_datei(self, art: str, fassung: str = "") -> str:
+        """Die Datei dieser Art im Ordner (leer, wenn keine da ist).
 
         Args:
             art: ``"exe"``, ``"py"`` oder ``"elf"``.
+            fassung: Eine Nummer wie ``"0.5.1"`` - dann genau die Datei dieser
+                Fassung. Leer: die neueste.
         """
         ordner = self._webkit_ordner()
-        muster = self._WEBKIT_MUSTER.get(art, "")
+        muster = self._webkit_dateimuster(art, fassung)
         if not ordner or not muster or not os.path.isdir(ordner):
+            return ""
+        if fassung and not self._WEBKIT_FASSUNG_MUSTER.fullmatch(fassung):
             return ""
         treffer = sorted(Path(ordner).glob(muster),
                          key=lambda p: self._webkit_versionsschluessel(p.name))
         return str(treffer[-1]) if treffer else ""
 
-    def _webkit_host_pfad(self, art: str) -> str:
+    def _webkit_host_pfad(self, art: str, fassung: str = "") -> str:
         """Pfad zum mitgelieferten Host - im Skript wie in der EXE."""
-        return self._webkit_datei("exe" if art == "exe" else "py")
+        return self._webkit_datei("exe" if art == "exe" else "py", fassung)
 
-    def _webkit_installer_pfad(self) -> str:
+    def _webkit_installer_pfad(self, fassung: str = "") -> str:
         """Pfad zum mitgelieferten Installer-Payload."""
-        return self._webkit_datei("elf")
+        return self._webkit_datei("elf", fassung)
 
     def _webkit_python(self) -> str:
         """Ein Python, mit dem sich das Host-Skript starten laesst.
@@ -55112,21 +55437,26 @@ class PS5ConverterGUI:
                 return gefunden
         return ""
 
-    def _webkit_host_starten(self, art: str, parent=None) -> None:
+    def _webkit_host_starten(self, art: str, parent=None, fassung: str = "") -> None:
         """Startet den Host in einem eigenen Fenster.
 
         Ein eigenes Fenster ist noetig, weil der Host laufend ausgibt, worauf
         es ankommt - allen voran die Adresse, auf die der DNS der Konsole
         gestellt werden muss - und bis zum Abbruch stehen bleibt.
+
+        Args:
+            art: ``"exe"`` (Windows-Programm) oder ``"py"`` (Python-Skript).
+            fassung: Die gewaehlte Fassung (``"0.5.1"``); leer = die neueste.
         """
         eltern = parent or self.root
-        pfad = self._webkit_host_pfad(art)
+        pfad = (self._webkit_host_pfad(art, fassung) if fassung
+                else self._webkit_host_pfad(art))
         if not pfad or not os.path.isfile(pfad):
             messagebox.showerror(
                 self._t("webkit.title"),
                 self._t("webkit.host_missing",
-                        datei=self._WEBKIT_MUSTER["exe" if art == "exe"
-                                                  else "py"]),
+                        datei=self._webkit_dateimuster(
+                            "exe" if art == "exe" else "py", fassung)),
                 parent=eltern)
             return
 
@@ -55209,11 +55539,11 @@ class PS5ConverterGUI:
                 parent=eltern)
             return
 
-        self._append_to_log(self._t("webkit.host_started",
-                                    datei=os.path.basename(pfad)))
+        self._webkit_zeile(self._t("webkit.host_started",
+                                   datei=os.path.basename(pfad)))
         if protokolldatei:
-            self._append_to_log(self._t("webkit.host_logfile",
-                                        pfad=protokolldatei))
+            self._webkit_zeile(self._t("webkit.host_logfile",
+                                       pfad=protokolldatei))
 
     def _webkit_ftp_port(self, ip: str) -> int:
         """Der erste FTP-Port der Konsole, auf dem jemand antwortet."""
@@ -55222,21 +55552,36 @@ class PS5ConverterGUI:
                 return port
         return 0
 
-    def _webkit_installer_senden(self, parent=None) -> None:
+    def _webkit_installer_von_seite(self) -> None:
+        """Knopf "Installer an die PS5 senden" der Seite.
+
+        Es gilt die Adresse im Feld der Seite: Sie wird geprueft und
+        gespeichert (``_konsole_tafel_adresse``), erst dann geht es mit der
+        gewaehlten Fassung an den eigentlichen Weg.
+        """
+        if not self._konsole_tafel_adresse():
+            return
+        self._webkit_installer_senden(fassung=self._webkit_gewaehlt())
+
+    def _webkit_installer_senden(self, parent=None, fassung: str = "") -> None:
         """Bringt den Installer auf die Konsole.
 
         Zuerst der kurze Weg ueber den Payload-Loader auf Port 9021. Lauscht
         dort niemand, bleibt der Weg ueber FTP: Die Datei kommt ins
         Wurzelverzeichnis eines USB-Datentraegers, und von dort schickt sie
         der Payload Manager der Konsole.
+
+        Args:
+            fassung: Die gewaehlte Fassung (``"0.5.1"``); leer = die neueste.
         """
         eltern = parent or self.root
-        elf = self._webkit_installer_pfad()
+        elf = (self._webkit_installer_pfad(fassung) if fassung
+               else self._webkit_installer_pfad())
         if not elf or not os.path.isfile(elf):
             messagebox.showerror(
                 self._t("webkit.title"),
                 self._t("webkit.elf_missing",
-                        datei=self._WEBKIT_MUSTER["elf"]),
+                        datei=self._webkit_dateimuster("elf", fassung)),
                 parent=eltern)
             return
 
@@ -55257,10 +55602,13 @@ class PS5ConverterGUI:
         # adressiert, stand das Programm bis zum Zeitablauf.
         def _gesendet(ok: bool, meldung: str) -> None:
             if ok:
+                self._webkit_zeile(self._t("webkit.log_gesendet", datei=name,
+                                           ip=ip, groesse=meldung))
                 messagebox.showinfo(self._t("webkit.title"),
                                     self._t("webkit.send_ok", groesse=meldung),
                                     parent=eltern)
             else:
+                self._webkit_zeile(self._t("log.fehler_zeile", text=meldung) + "\n")
                 messagebox.showerror(self._t("webkit.title"),
                                      self._t("webkit.send_failed", fehler=meldung),
                                      parent=eltern)
@@ -55277,7 +55625,7 @@ class PS5ConverterGUI:
             # Der USB-Weg im Faden: Portsuche, Verbindung, USB-Liste und
             # Hochladen standen bis zum 24.09.2026 im Klick (H11-3). Seine
             # Rueckfragen gehen ueber _im_hauptfaden.
-            self._set_status_fluechtig(self._t("webkit.status_usb"))
+            self._webkit_status(self._t("webkit.status_usb"))
             threading.Thread(target=self._webkit_auf_usb_ablegen,
                              args=(ip, elf), kwargs={"parent": eltern},
                              daemon=True, name="webkit-usb").start()
@@ -55290,7 +55638,7 @@ class PS5ConverterGUI:
                                 ip=ip, port=self._PAYLOAD_SEND_PORT),
                         parent=eltern):
                     return
-                self._set_status_fluechtig(self._t("webkit.status_senden"))
+                self._webkit_status(self._t("webkit.status_senden"))
                 threading.Thread(target=_senden, daemon=True,
                                  name="webkit-senden").start()
                 return
@@ -55328,7 +55676,7 @@ class PS5ConverterGUI:
 
             # Ueber den Payload Manager: Das laeuft wieder durch
             # _send_payload_to_ps5 und gehoert damit in den Faden.
-            self._set_status_fluechtig(self._t("webkit.status_senden"))
+            self._webkit_status(self._t("webkit.status_senden"))
             threading.Thread(target=_senden, daemon=True,
                              name="webkit-senden").start()
 
@@ -55351,7 +55699,7 @@ class PS5ConverterGUI:
                     logger.debug("Payload-Manager-Sondierung fehlgeschlagen: %s", exc)
             self._spaeter_im_fenster(eltern, _weiter, offen, pldmgr)
 
-        self._set_status_fluechtig(self._t("webkit.status_sondieren"))
+        self._webkit_status(self._t("webkit.status_sondieren"))
         threading.Thread(target=_sondieren, daemon=True,
                          name="webkit-sondieren").start()
 
@@ -55375,7 +55723,7 @@ class PS5ConverterGUI:
             # Auch ins Protokoll: Nach dem Wegklicken des Fensters war
             # der Fehler sonst verloren - er stand weder im Protokoll
             # noch im Diagnosebericht, und niemand konnte ihn melden.
-            self._append_to_log(
+            self._webkit_zeile(
                 self._t("webkit.usb_failed", fehler=exc) + "\n")
             self._im_hauptfaden(
                 messagebox.showerror, self._t("webkit.title"),
@@ -55405,7 +55753,7 @@ class PS5ConverterGUI:
             # Auch ins Protokoll: Nach dem Wegklicken des Fensters war
             # der Fehler sonst verloren - er stand weder im Protokoll
             # noch im Diagnosebericht, und niemand konnte ihn melden.
-            self._append_to_log(
+            self._webkit_zeile(
                 self._t("webkit.usb_failed", fehler=exc) + "\n")
             self._im_hauptfaden(
                 messagebox.showerror, self._t("webkit.title"),
@@ -55417,14 +55765,17 @@ class PS5ConverterGUI:
             except Exception:
                 pass
 
+        self._webkit_zeile(self._t("webkit.log_usb", datei=name, usb=usb))
         self._im_hauptfaden(
             messagebox.showinfo, self._t("webkit.title"),
             self._t("webkit.usb_done", datei=name, usb=usb), parent=parent)
 
-    #: Bild neben der Überschrift des Autoloader-Fensters. Liegt es nicht im
-    #: Ordner, bleibt der Platz leer – das Fenster funktioniert ohne.
+    #: Bild neben der Überschrift der Seite "WebKit Autoloader". Liegt es nicht
+    #: im Ordner, bleibt der Platz leer – die Seite funktioniert ohne. 64 statt der
+    #: 84 Punkte des früheren Fensters: Im Kopf der Seite steht es neben Titel und
+    #: Dank, nicht über den Knöpfen.
     _WEBKIT_BILD = "itsplk.png"
-    _WEBKIT_BILD_KANTE = 84
+    _WEBKIT_BILD_KANTE = 64
 
     def _webkit_bild_pfad(self) -> str:
         """Pfad zum Autoloader-Bild, ohne es zu laden.
@@ -55435,18 +55786,17 @@ class PS5ConverterGUI:
         return _bundled_resource(self._WEBKIT_ORDNER, self._WEBKIT_BILD)
 
     def _webkit_bild_laden(self):
-        """Lädt das Bild für das Autoloader-Fenster, rund beschnitten.
+        """Lädt das Bild für die Seite "WebKit Autoloader", rund beschnitten.
 
         Rückgabe: ein PhotoImage oder None. None ist der Normalfall, wenn
-        niemand ein Bild hinterlegt hat, und darf das Fenster nicht stören.
+        niemand ein Bild hinterlegt hat, und darf die Seite nicht stören.
         """
         pfad = self._webkit_bild_pfad()
         if not pfad or not os.path.isfile(pfad):
             return None
-        # Mit der Anzeigeskalierung mitziehen: Der Platz, den das Fenster
-        # dafuer freihaelt, wird aus derselben Zahl gerechnet (``versatz`` in
-        # ``_show_webkit_autoloader``). Bliebe das Bild fest, entstuende dort
-        # auf einem hochaufloesenden Schirm eine Luecke.
+        # Mit der Anzeigeskalierung mitziehen, wie die Knoepfe daneben: Bliebe
+        # das Bild fest, saesse es auf einem hochaufloesenden Schirm klein
+        # neben dem groesser werdenden Titel.
         kante = knopfmass(self._WEBKIT_BILD_KANTE)
         try:
             bild = Image.open(pfad).convert("RGBA")
@@ -55464,202 +55814,11 @@ class PS5ConverterGUI:
             logger.debug("Autoloader-Bild nicht ladbar (%s): %s", pfad, exc)
             return None
 
-    def _show_webkit_autoloader(self) -> None:
-        """Rahmenloses Fenster mit den drei Wegen des WebKit Autoloaders.
-
-        Gebaut wie das Auswahlfenster hinter Knopf 7: ``overrideredirect``
-        nimmt den Rahmen weg, die runden Ecken entstehen zeichnerisch, und
-        ``-transparentcolor`` macht den Rest durchsichtig. Diese Eigenschaft
-        gibt es nur unter Windows - fehlt sie, bleibt das Fenster eckig und
-        randlos, die Auswahl arbeitet unveraendert.
-        """
-        c = self._COLORS
-        fenster = tk.Toplevel(self.root, bg=c["bg_main"])
-        fenster.withdraw()
-        try:
-            fenster.transient(self.root)
-        except tk.TclError:
-            pass
-        # Beim Umschalter anmelden, damit der zweite Druck auf den Knopf
-        # wieder schliesst statt ein zweites Fenster zu oeffnen.
-        if getattr(self, "_fenster_schluessel", ""):
-            self._fenster_sammlung.append(fenster)
-        try:
-            fenster.overrideredirect(True)
-        except tk.TclError as exc:
-            logger.debug("Rahmenlos nicht möglich: %s", exc)
-
-        durchsichtig = False
-        try:
-            fenster.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
-            durchsichtig = True
-        except tk.TclError:
-            logger.debug("Durchsichtige Ecken hier nicht verfügbar - "
-                         "das Fenster bleibt rechteckig.")
-        grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
-        fenster.configure(bg=grund)
-
-        # Die Höhe wird gerechnet, nicht gesetzt. Bis v1.9.6 stand hier fest
-        # 392 – und das reichte nicht: Mit geladenem Bild rücken die drei
-        # Knöpfe um 100 px nach unten, der letzte endet dann bei 382, während
-        # der SCHLIESSEN-Knopf schon bei 353 beginnt. Nachgerechnet: **29 px
-        # Überlappung**, und der Dank darunter wurde mitten im Wort
-        # abgeschnitten. Das war keine Eigenheit einer Plattform, sondern
-        # schlicht falsch addiert.
-        # Alle Masse ziehen mit der Anzeigeskalierung mit - wie im
-        # Auswahlfenster hinter Knopf 7. Die Knoepfe bekommen ihre Groesse
-        # hier per ``create_window`` von aussen; die innere Skalierung von
-        # ``RoundedButton`` kommt also nicht zum Tragen, ein doppelter Faktor
-        # kann nicht entstehen.
-        #
-        # **Jeder** Summand der Hoehe wird umgerechnet. Einen zu uebersehen
-        # waere genau der Fehler, den der Kommentar oben beschreibt.
-        def _m(px: float) -> int:
-            """Ein Mass dieses Fensters auf die Anzeigeskalierung umrechnen."""
-            return knopfmass(int(round(px)), fenster)
-
-        breite, rand = _m(520), _m(14)
-        innen = breite - 2 * rand - _m(26)
-        bild = self._webkit_bild_laden()
-        # Dieselbe Rechnung wie in ``_webkit_bild_laden`` - gleiche Eingabe,
-        # gleiches Ergebnis. Bild und reservierter Platz bleiben zusammen.
-        bildkante = knopfmass(self._WEBKIT_BILD_KANTE, fenster)
-        versatz = (bildkante + _m(16)) if bild is not None else 0
-        # Die Fassungszeile unter der Ueberschrift (02.10.2026: "Man weiss ja
-        # gar nicht welche man sonst benutzt"). Sie schiebt alles darunter nach
-        # unten - und gehoert deshalb in dieselbe Rechnung wie das Bild: Jeder
-        # Summand der Hoehe, den man vergisst, laesst SCHLIESSEN wieder in die
-        # Knoepfe ragen. Ihre Hoehe wird gemessen, nicht angenommen: Eine
-        # lange Uebersetzung bricht um und braucht dann zwei Zeilen.
-        fassung = self._webkit_fassungszeile()
-        fassung_oben = rand + _m(40)
-        zeile = 0
-        if fassung:
-            import tkinter.font as _tkfont  # noqa: PLC0415
-            fassungsschrift = _tkfont.Font(root=fenster, family=UI_SCHRIFT,
-                                           size=pt(9), weight="bold")
-            fassungszeilen = max(1, -(-fassungsschrift.measure(fassung) // max(1, innen)))
-            zeile = fassungszeilen * fassungsschrift.metrics("linespace") + _m(10)
-        #: Oberkante des ersten der drei Wege-Knöpfe.
-        knopf_oben = rand + _m(134) + versatz + zeile
-        #: Unterkante des letzten – drei Knöpfe à 44 px im Abstand von 56.
-        knopf_unten = knopf_oben + 2 * _m(56) + _m(44) // 2
-        # Darunter Luft, der SCHLIESSEN-Knopf (26 px) und derselbe Rand wie oben.
-        hoehe = knopf_unten + _m(16) + _m(26) + rand
-        leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
-                             highlightthickness=0, bd=0)
-        leinwand.pack(fill="both", expand=True)
-        # Die 2 px Rahmenabstand bleiben ungerechnet: Eine Haarlinie soll
-        # auch auf einem hochaufloesenden Schirm eine Haarlinie bleiben.
-        leinwand.create_polygon(
-            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, _m(22)),
-            smooth=True, fill=c["bg_card"], outline=c["border"])
-
-        leinwand.create_text(breite / 2, rand + _m(22),
-                             text=self._t("webkit.title"),
-                             fill=c["fg_accent"],
-                             font=(UI_SCHRIFT, pt(14), "bold"))
-        links = rand + _m(13)
-        if fassung:
-            leinwand.create_text(breite / 2, fassung_oben, anchor="n",
-                                 text=fassung, fill=c["fg_primary"], width=innen,
-                                 justify="center",
-                                 font=(UI_SCHRIFT, pt(9), "bold"))
-        leinwand.create_text(breite / 2, rand + _m(64) + zeile,
-                             text=self._t("webkit.hint"),
-                             fill=c["fg_secondary"], width=innen,
-                             font=(UI_SCHRIFT, pt(9)))
-
-        # Bild und Dank. Beides hängt am selben Versatz: Ohne Bild rücken die
-        # Knöpfe hoch, statt eine Lücke stehen zu lassen. ``bild`` und
-        # ``versatz`` stehen schon oben – die Höhe des Fensters hängt daran.
-        if bild is not None:
-            # Referenz am Fenster halten – sonst räumt der Sammler das Bild
-            # weg und die Fläche bleibt leer.
-            fenster._webkit_bild = bild
-            # Die halbe Bildkante, nicht die feste 42: Sonst saesse das Bild
-            # schief, sobald es mit der Anzeigeskalierung waechst.
-            leinwand.create_image(breite / 2,
-                                  rand + _m(104) + zeile + bildkante // 2,
-                                  image=bild)
-        leinwand.create_text(breite / 2, rand + _m(104) + versatz + zeile,
-                             text=self._t("webkit.credit"),
-                             fill=c["fg_secondary"], width=innen,
-                             font=(UI_SCHRIFT, pt(9), "italic"))
-
-        def _mit_zu(aktion) -> None:
-            """Erst das Fenster schliessen, dann handeln.
-
-            Sonst liegt das rahmenlose Fenster ueber der Rueckfrage und
-            laesst sich nicht mehr wegklicken.
-            """
-            try:
-                fenster.destroy()
-            except tk.TclError:
-                pass
-            aktion()
-
-        for lfd, (schluessel, aktion) in enumerate((
-                ("webkit.host_exe", lambda: self._webkit_host_starten("exe")),
-                ("webkit.host_py", lambda: self._webkit_host_starten("py")),
-                ("webkit.installer", self._webkit_installer_senden))):
-            knopf = RoundedButton(
-                leinwand,
-                text=self._t(schluessel),
-                command=(lambda a=aktion: _mit_zu(a)),
-                font=(UI_SCHRIFT, pt(11), "bold"),
-                bg=c["bg_main"], fg=c["fg_primary"],
-                activebackground=c["fg_accent"], activeforeground=c["bg_main"],
-                outline=c["border"], radius=10, height=44,
-                parent_bg=c["bg_card"])
-            leinwand.create_window(links + innen / 2,
-                                   knopf_oben + lfd * _m(56),
-                                   window=knopf, width=innen, height=_m(44))
-
-        schliessen = RoundedButton(
-            leinwand, text=self._t("webkit.close"),
-            command=lambda: fenster.destroy(),
-            font=(UI_SCHRIFT, pt(9)),
-            bg=c["bg_card"], fg=c["fg_secondary"],
-            activebackground=c["bg_main"], activeforeground=c["fg_primary"],
-            outline=c["bg_card"], radius=8, height=26,
-            parent_bg=c["bg_card"])
-        leinwand.create_window(breite / 2, hoehe - rand - _m(12),
-                               window=schliessen, width=_m(140), height=_m(26))
-
-        self.root.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width() - breite) // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - hoehe) // 3
-        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
-        fenster.deiconify()
-        fenster.lift()
-        try:
-            fenster.focus_force()
-        except tk.TclError:
-            pass
-        # Ein rahmenloses Fenster hat keinen Schliessknopf des Systems.
-        fenster.bind("<Escape>", lambda _e: fenster.destroy())
-
-    def _show_micromount_editor(self) -> None:
-        """Öffnet den Config-Editor für MicroMount (/data/micromount/config.ini).
-
-        Analog zu ShadowMount+ (gleicher generischer Editor), zusätzlich mit
-        Payload-Sektion zum Senden von micromount.elf per TCP (Standardport 9021).
-        """
-        self._show_remote_ini_editor(
-            self._t("remote_ini.micromount_title"),
-            self._MICROMOUNT_REMOTE_CONFIG,
-            self._MICROMOUNT_REMOTE_DEBUG_LOG,
-            self._MICROMOUNT_DEFAULTS,
-            "micromount",
-            payload_default_port="9021",
-        )
-
     # ==================================================================
     # Generischer Remote-INI-Editor – bearbeitet die flache config.ini
-    # eines PS5-Payloads (z.B. ShadowMountPlus, MicroMount) über FTP.
-    # Beide Tools verwenden dasselbe key=value-Format und denselben
-    # Lade-/Schreib-Ablauf (siehe ps5_validator.utils.ini_config).
+    # eines PS5-Payloads über FTP (heute die von ShadowMountPlus; der
+    # AMPR-EMU-Manager öffnet ihn mit Vorrangwerten). Das key=value-Format
+    # und der Lade-/Schreib-Ablauf stehen in ps5_validator.utils.ini_config.
     # ==================================================================
     def _show_remote_ini_editor(
         self,
@@ -55668,7 +55827,6 @@ class PS5ConverterGUI:
         remote_debug_log_path: str,
         defaults: dict[str, str],
         settings_prefix: str,
-        payload_default_port: str | None = None,
         vorrang_werte: dict[str, str] | None = None,
     ) -> None:
         """Baut den generischen Editor für eine flache PS5-Payload-config.ini auf.
@@ -55719,16 +55877,16 @@ class PS5ConverterGUI:
         conn_row.pack(fill="x")
         tk.Label(conn_row, text=self._t("common.ip_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         ip_var = tk.StringVar(value=self._ps5_wert_oder_zentral(f"{settings_prefix}_ftp_ip", self._ps5_ip()))
-        ttk.Entry(conn_row, textvariable=ip_var, width=15, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        self._pw.Entry(conn_row, textvariable=ip_var, width=15, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
         tk.Label(conn_row, text=self._t("common.port_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         port_var = tk.StringVar(value=self._ps5_wert_oder_zentral(f"{settings_prefix}_ftp_port", self._ps5_ftp_port()))
-        ttk.Entry(conn_row, textvariable=port_var, width=6, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        self._pw.Entry(conn_row, textvariable=port_var, width=6, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
         tk.Label(conn_row, text=self._t("common.user_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         user_var = tk.StringVar(value=str(self._load_setting(f"{settings_prefix}_ftp_user", "anonymous")))
-        ttk.Entry(conn_row, textvariable=user_var, width=10, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
+        self._pw.Entry(conn_row, textvariable=user_var, width=10, font=(UI_SCHRIFT, pt(10))).pack(side="left", padx=(4, 10))
         tk.Label(conn_row, text=self._t("common.password_label"), bg=c["bg_main"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
         pass_var = tk.StringVar()
-        ttk.Entry(conn_row, textvariable=pass_var, width=10, font=(UI_SCHRIFT, pt(10)), show="*").pack(side="left", padx=(4, 0))
+        self._pw.Entry(conn_row, textvariable=pass_var, width=10, font=(UI_SCHRIFT, pt(10)), show="*").pack(side="left", padx=(4, 0))
 
         status_var = tk.StringVar(value=self._t("status.not_loaded_defaults_shown"))
         tk.Label(
@@ -55740,7 +55898,7 @@ class PS5ConverterGUI:
         # dehnt sich aus und ließ den Knöpfen sonst zu wenig Höhe.
         body = tk.Frame(win, bg=c["bg_main"], padx=16, pady=8)
         cols = ("key", "value")
-        tree = ttk.Treeview(body, columns=cols, show="headings", height=12)
+        tree = self._pw.Treeview(body, columns=cols, show="headings", height=12)
         tree.heading("key", text=self._t("common.key_column"), anchor="w")
         tree.heading("value", text=self._t("common.value_column"), anchor="w")
         tree.column("key", width=280, anchor="w")
@@ -55758,8 +55916,8 @@ class PS5ConverterGUI:
             # * Jeder ANDERE Schluessel, der mehrfach dasteht, bleibt
             #   unangetastet: Die Tabelle kann ihn nicht abbilden, und
             #   merge_flat_ini laesst solche Zeilen woertlich stehen. Das
-            #   betrifft MicroMount, das denselben Editor mit eigenen
-            #   Schluesseln benutzt, und jede kuenftige Payload-Fassung.
+            #   betrifft jede Payload-Fassung, die einen Schluessel doppelt
+            #   fuehrt (und jede kuenftige).
             wiederholt = mehrfach_schluessel(geladen.get("text") or "")
             for key, value in data.items():
                 anzeige = value
@@ -55779,10 +55937,10 @@ class PS5ConverterGUI:
             frm.pack(fill="both", expand=True)
             tk.Label(frm, text=self._t("common.key_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             key_var = tk.StringVar(value=initial_key)
-            ttk.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled")).pack(fill="x", pady=(2, 10))
+            self._pw.Entry(frm, textvariable=key_var, font=(UI_SCHRIFT, pt(10)), state=("normal" if key_editable else "disabled")).pack(fill="x", pady=(2, 10))
             tk.Label(frm, text=self._t("common.value_label"), font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"], fg=c["fg_secondary"]).pack(anchor="w")
             value_var = tk.StringVar(value=initial_value)
-            ttk.Entry(frm, textvariable=value_var, font=(UI_SCHRIFT, pt(10))).pack(fill="x", pady=(2, 10))
+            self._pw.Entry(frm, textvariable=value_var, font=(UI_SCHRIFT, pt(10))).pack(fill="x", pady=(2, 10))
             result: dict = {}
 
             def _confirm() -> None:
@@ -55796,8 +55954,8 @@ class PS5ConverterGUI:
 
             btns = tk.Frame(dlg, bg=c["bg_main"], padx=16, pady=10)
             btns.pack(fill="x")
-            ttk.Button(btns, text=self._t("action.cancel_ellipsis"), command=dlg.destroy).pack(side="right")
-            ttk.Button(btns, text=self._t("action.apply"), style="Accent.TButton", command=_confirm).pack(side="right", padx=(0, 8))
+            self._pw.Button(btns, text=self._t("action.cancel_ellipsis"), command=dlg.destroy).pack(side="right")
+            self._pw.Button(btns, text=self._t("action.apply"), style="Accent.TButton", command=_confirm).pack(side="right", padx=(0, 8))
             dlg.transient(win)
             dlg.grab_set()
             win.wait_window(dlg)
@@ -56186,96 +56344,16 @@ class PS5ConverterGUI:
 
         list_btn_row = tk.Frame(body, bg=c["bg_main"])
         list_btn_row.pack(fill="x", pady=(8, 0))
-        ttk.Button(list_btn_row, text=self._t("action.add_ellipsis"), command=_add_row).pack(side="left")
-        ttk.Button(list_btn_row, text=self._t("action.edit_ellipsis"), command=_edit_row).pack(side="left", padx=(8, 0))
-        ttk.Button(list_btn_row, text=self._t("action.remove"), command=_remove_row).pack(side="left", padx=(8, 0))
-        ttk.Button(list_btn_row, text=self._t("action.default_values"), command=_reset_defaults).pack(side="left", padx=(8, 0))
-
-        if payload_default_port:
-            payload_row = tk.Frame(body, bg=c["bg_card"])
-            payload_row.pack(fill="x", pady=(12, 0))
-            tk.Label(
-                payload_row, text=self._t("remote_ini.payload_label"),
-                bg=c["bg_card"], fg=c["fg_accent"], font=(UI_SCHRIFT, pt(9), "bold"),
-            ).pack(side="left", padx=(10, 8), pady=8)
-            payload_path_var = tk.StringVar()
-            tk.Entry(
-                payload_row, textvariable=payload_path_var,
-                bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                relief="flat", bd=0, font=(UI_SCHRIFT, pt(9)),
-            ).pack(side="left", fill="x", expand=True, padx=(0, 8))
-            tk.Label(payload_row, text=self._t("remote_ini.payload_port_label"),
-                     bg=c["bg_card"], fg=c["fg_secondary"], font=(UI_SCHRIFT, pt(9))).pack(side="left")
-            payload_port_var = tk.StringVar(value=str(self._load_setting(f"{settings_prefix}_payload_port", payload_default_port)))
-            tk.Entry(payload_row, textvariable=payload_port_var, width=7,
-                     bg=c["bg_main"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
-                     relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", padx=(4, 8))
-
-            def _browse_payload() -> None:
-                path = filedialog.askopenfilename(
-                    parent=win, title=self._t("remote_ini.title_choose_payload"),
-                    filetypes=[(self._t("filetype.js_elf_files"), "*.elf *.js"), (self._t("filetype.all_files"), "*.*")],
-                )
-                if path:
-                    payload_path_var.set(path)
-
-            flach_knopf(
-                payload_row, text=self._t("action.browse"),
-                bg=c["fg_accent"], fg=c["bg_main"],
-                activebackground=c["accent_btn_hover"], activeforeground="white",
-                relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
-                command=_browse_payload,
-            ).pack(side="left", padx=(0, 8))
-
-            def _send_payload() -> None:
-                path = payload_path_var.get().strip()
-                if not path or not os.path.isfile(path):
-                    messagebox.showwarning(title, self._t("remote_ini.msg_no_payload_selected"), parent=win)
-                    return
-                ip = ip_var.get().strip()
-                if not ip:
-                    messagebox.showwarning(title, self._t("dialog.msg.enter_ps5_ip"), parent=win)
-                    return
-                try:
-                    port = int(payload_port_var.get().strip() or payload_default_port)
-                except ValueError:
-                    messagebox.showwarning(title, self._t("y2jb.msg_invalid_port"), parent=win)
-                    return
-                self._save_setting(f"{settings_prefix}_payload_port", str(port))
-                status_var.set(self._t("remote_ini.status_sending_payload", name=os.path.basename(path)))
-
-                def worker() -> None:
-                    import socket as _sock
-                    try:
-                        with open(path, "rb") as f:
-                            data = f.read()
-                        with _sock.socket(_sock.AF_INET, _sock.SOCK_STREAM) as s:
-                            s.settimeout(10)
-                            s.connect((ip, port))
-                            # Stueckweise: Bei sendall galten die 10 s fuer
-                            # die ganze Datei - bei 1,1 MB/s reichte das fuer
-                            # rund 11 MB (U3-5).
-                            payload_versand.stueckweise_senden(s, data)
-                        self._spaeter_im_fenster(win, lambda: status_var.set(self._t("remote_ini.status_payload_sent", bytes=len(data))))
-                    except Exception as exc:
-                        _e = str(exc)
-                        self._spaeter_im_fenster(win, lambda: status_var.set(self._t("remote_ini.status_payload_failed", error=_e)))
-
-                threading.Thread(target=worker, daemon=True).start()
-
-            flach_knopf(
-                payload_row, text=self._t("y2jb.send_button"),
-                bg=c["accent_btn"], fg="white",
-                activebackground=c["accent_btn_hover"], activeforeground="white",
-                relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
-                command=_send_payload,
-            ).pack(side="left", padx=(0, 10))
+        self._pw.Button(list_btn_row, text=self._t("action.add_ellipsis"), command=_add_row).pack(side="left")
+        self._pw.Button(list_btn_row, text=self._t("action.edit_ellipsis"), command=_edit_row).pack(side="left", padx=(8, 0))
+        self._pw.Button(list_btn_row, text=self._t("action.remove"), command=_remove_row).pack(side="left", padx=(8, 0))
+        self._pw.Button(list_btn_row, text=self._t("action.default_values"), command=_reset_defaults).pack(side="left", padx=(8, 0))
 
         btn_row = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        ttk.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
-        ttk.Button(btn_row, text=self._t("action.load_from_ps5"), command=_load_from_ps5).pack(side="right", padx=(0, 8))
-        ttk.Button(btn_row, text=self._t("action.fetch_debug_log_ellipsis"), command=_fetch_debug_log).pack(side="right", padx=(0, 8))
-        ttk.Button(
+        self._pw.Button(btn_row, text=self._t("action.close"), command=win.destroy).pack(side="right")
+        self._pw.Button(btn_row, text=self._t("action.load_from_ps5"), command=_load_from_ps5).pack(side="right", padx=(0, 8))
+        self._pw.Button(btn_row, text=self._t("action.fetch_debug_log_ellipsis"), command=_fetch_debug_log).pack(side="right", padx=(0, 8))
+        self._pw.Button(
             btn_row, text=self._t("action.write_to_ps5_ellipsis"),
             style="Accent.TButton", command=_push_to_ps5,
         ).pack(side="left")
@@ -56359,7 +56437,7 @@ class PS5ConverterGUI:
                 wrap, text=title_text, font=(UI_SCHRIFT, pt(9), "bold"),
                 bg=c["bg_main"], fg=c["fg_accent"], anchor="w",
             ).pack(fill="x", pady=(0, 4))
-            card = tk.Frame(wrap, bg=c["bg_card"])
+            card = self._pw.Karte(wrap, bg=c["bg_card"])
             card.pack(fill="x")
             return card
 
@@ -56376,7 +56454,7 @@ class PS5ConverterGUI:
         # den Einstellungen; nur wenn dort nichts steht, bleibt der alte Wert
         # als Beispiel stehen.
         ip_var = tk.StringVar(value=self._ps5_ip("192.168.1.94") or "192.168.1.94")
-        ip_entry = tk.Entry(ip_row, textvariable=ip_var, width=18,
+        ip_entry = self._pw.Entry(ip_row, textvariable=ip_var, width=18,
                             bg=c["bg_main"], fg=c["fg_primary"],
                             insertbackground=c["fg_primary"],
                             relief="flat", bd=0,
@@ -56388,7 +56466,7 @@ class PS5ConverterGUI:
                  font=(UI_SCHRIFT, pt(10))).pack(side="left")
         js_port_var = tk.StringVar(
             value=self._ps5_wert_oder_zentral("jsloader_js_port", 50000))
-        tk.Entry(ip_row, textvariable=js_port_var, width=8,
+        self._pw.Entry(ip_row, textvariable=js_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
                  relief="flat", bd=0,
@@ -56400,7 +56478,7 @@ class PS5ConverterGUI:
         elf_port_var = tk.StringVar(
             value=self._ps5_wert_oder_zentral("jsloader_elf_port",
                                              self._PAYLOAD_SEND_PORT))
-        tk.Entry(ip_row, textvariable=elf_port_var, width=8,
+        self._pw.Entry(ip_row, textvariable=elf_port_var, width=8,
                  bg=c["bg_main"], fg=c["fg_primary"],
                  insertbackground=c["fg_primary"],
                  relief="flat", bd=0,
@@ -56436,7 +56514,7 @@ class PS5ConverterGUI:
         file_row = tk.Frame(file_frame, bg=c["bg_card"])
         file_row.pack(fill="x", padx=10, pady=6)
         file_var = tk.StringVar(value="")
-        file_entry = tk.Entry(file_row, textvariable=file_var,
+        file_entry = self._pw.Entry(file_row, textvariable=file_var,
                               bg=c["bg_main"], fg=c["fg_primary"],
                               insertbackground=c["fg_primary"],
                               relief="flat", bd=0,
@@ -56452,7 +56530,7 @@ class PS5ConverterGUI:
             if path:
                 file_var.set(path)
 
-        flach_knopf(file_row, text=self._t("action.browse"),
+        self._pw.Button(file_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2",
@@ -56480,7 +56558,7 @@ class PS5ConverterGUI:
             )
 
         quick_elf_var = tk.StringVar(value=_helloworld_elfs[0] if _helloworld_elfs else "")
-        quick_elf_combo = ttk.Combobox(
+        quick_elf_combo = self._pw.Combobox(
             quick_elf_row,
             textvariable=quick_elf_var,
             values=_helloworld_elfs,
@@ -56501,7 +56579,7 @@ class PS5ConverterGUI:
         # Dieses Fenster hatte als einziges keinen SCHLIESSEN-Knopf – es liess
         # sich nur ueber das X der Fensterleiste zumachen. Der Handler dafuer
         # (``_on_close``, haelt den Protokollserver an) gab es laengst.
-        flach_knopf(action_frame2, text=self._t("action.close"),
+        self._pw.Button(action_frame2, text=self._t("action.close"),
                     bg=c["bg_card"], fg=c["fg_primary"],
                     activebackground=c["bg_main"], activeforeground=c["fg_primary"],
                     relief="flat", cursor="hand2",
@@ -56509,7 +56587,7 @@ class PS5ConverterGUI:
                     command=_on_close).pack(side="right", padx=(8, 0))
 
         # `console` entsteht weiter unten; der Befehl greift erst beim Klick zu.
-        flach_knopf(action_frame2, text=self._t("action.clear_console"),
+        self._pw.Button(action_frame2, text=self._t("action.clear_console"),
                   bg=c["bg_card"], fg=c["fg_primary"],
                   activebackground=c["bg_main"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2",
@@ -56605,7 +56683,7 @@ class PS5ConverterGUI:
             return roh if roh.isdigit() and len(roh) <= 5 else "?"
 
         # JS senden
-        btn_js = flach_knopf(action_frame,
+        btn_js = self._pw.Button(action_frame,
                   text=self._t("jsloader.send_js_button", port=_portziffern(js_port_var)),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -56615,7 +56693,7 @@ class PS5ConverterGUI:
         btn_js.pack(side="left", padx=(0, 8))
 
         # ELF senden
-        btn_elf = flach_knopf(action_frame,
+        btn_elf = self._pw.Button(action_frame,
                   text=self._t("jsloader.send_elf_button", port=_portziffern(elf_port_var)),
                   bg=c["elf_btn"], fg="white",
                   activebackground=c["elf_btn_hover"], activeforeground="white",
@@ -56638,12 +56716,13 @@ class PS5ConverterGUI:
                     knopf.config(text=self._t(schluessel, port=_portziffern(variable)))
                 except tk.TclError:
                     pass
-            variable.trace_add("write", _nachziehen)
+            # Mit dem Knopf verschwindet die Spur (sonst haelt sie das ganze Fenster am Leben).
+            bibliothek_raster.spur_bis_zerstoert(knopf, variable, _nachziehen)
 
         _knopftext_nachziehen(btn_js, js_port_var, "jsloader.send_js_button")
         _knopftext_nachziehen(btn_elf, elf_port_var, "jsloader.send_elf_button")
 
-        flach_knopf(action_frame,
+        self._pw.Button(action_frame,
               text=self._t("jsloader.send_quick_payload_button"),
               bg=c["accent_btn"], fg="white",
               activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -56785,7 +56864,7 @@ class PS5ConverterGUI:
                 except Exception as exc:
                     _log(self._t('log.console.0046', v0=exc))
 
-        btn_logserver = flach_knopf(action_frame2,
+        btn_logserver = self._pw.Button(action_frame2,
                                   text=self._t("jsloader.start_logserver_button",
                                              port=self._JS_LOGSERVER_PORT),
                                   bg=c["accent_btn"], fg="white",
@@ -56801,10 +56880,10 @@ class PS5ConverterGUI:
         # Ohne Zierrahmen: highlightthickness an einem Frame ist kein
         # Fokusrahmen - ein Frame bekommt keinen Tastaturfokus -, sondern nur
         # eine Linie in Akzentfarbe.
-        console_outer = tk.Frame(main, bg=c["bg_card"])
+        console_outer = self._pw.Rahmen(main)
         console_outer.pack(fill="both", expand=True)
 
-        console = tk.Text(console_outer,
+        console = self._pw.Text(console_outer,
                           bg=c["bg_main"], fg=c["fg_primary"],
                           insertbackground=c["fg_primary"],
                           font=(MONO_SCHRIFT, pt(10)),
@@ -56812,9 +56891,9 @@ class PS5ConverterGUI:
                           wrap="none")
         console.grid(row=0, column=0, sticky="nsew")
 
-        vsb = ttk.Scrollbar(console_outer, orient="vertical", command=console.yview)
+        vsb = self._pw.Scrollbar(console_outer, orient="vertical", command=console.yview)
         vsb.grid(row=0, column=1, sticky="ns")
-        hsb = ttk.Scrollbar(console_outer, orient="horizontal", command=console.xview)
+        hsb = self._pw.Scrollbar(console_outer, orient="horizontal", command=console.xview)
         hsb.grid(row=1, column=0, sticky="ew")
         console.config(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
@@ -56889,7 +56968,7 @@ class PS5ConverterGUI:
         tk.Label(root_row, text=self._t("ampr_index.root_label"), width=16, anchor="w",
                  bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
         root_var = tk.StringVar()
-        tk.Entry(root_row, textvariable=root_var,
+        self._pw.Entry(root_row, textvariable=root_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                  relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
@@ -56911,7 +56990,7 @@ class PS5ConverterGUI:
                     output_var.set(neu)
                     abgeleitet["ausgabe"] = neu
 
-        flach_knopf(root_row, text=self._t("action.browse"),
+        self._pw.Button(root_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
@@ -56921,7 +57000,7 @@ class PS5ConverterGUI:
         out_row.pack(fill="x", pady=(0, 12))
         tk.Label(out_row, text=self._t("ampr_index.output_label"), width=16, anchor="w",
                  bg=c["bg_main"], fg=c["fg_primary"], font=(UI_SCHRIFT, pt(10))).pack(side="left")
-        tk.Entry(out_row, textvariable=output_var,
+        self._pw.Entry(out_row, textvariable=output_var,
                  bg=c["bg_card"], fg=c["fg_primary"], insertbackground=c["fg_primary"],
                  relief="flat", bd=0, font=(UI_SCHRIFT, pt(9))).pack(side="left", fill="x", expand=True, padx=(4, 8))
 
@@ -56934,7 +57013,7 @@ class PS5ConverterGUI:
             if path:
                 output_var.set(path)
 
-        flach_knopf(out_row, text=self._t("action.browse"),
+        self._pw.Button(out_row, text=self._t("action.browse"),
                   bg=c["fg_accent"], fg=c["bg_main"],
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", font=(UI_SCHRIFT, pt(9), "bold"), padx=10, pady=2,
@@ -57013,7 +57092,7 @@ class PS5ConverterGUI:
 
             threading.Thread(target=worker, daemon=True).start()
 
-        build_btn = flach_knopf(
+        build_btn = self._pw.Button(
             main, text=self._t("ampr_index.build_button"),
             bg=c["accent_btn"], fg="white",
             activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -57030,17 +57109,17 @@ class PS5ConverterGUI:
         # 51 px zusammengedrueckt - der Fehler aus v1.8.69.
         btn_row = tk.Frame(main, bg=c["bg_main"], pady=8)
         btn_row.pack(side="bottom", fill="x")
-        ttk.Button(btn_row, text=self._t("action.close"),
+        self._pw.Button(btn_row, text=self._t("action.close"),
                    command=_on_close).pack(side="right")
 
         # Kein Zierrahmen, siehe oben.
-        console_outer = tk.Frame(main, bg=c["bg_card"])
+        console_outer = self._pw.Rahmen(main)
         console_outer.pack(fill="both", expand=True)
-        console = tk.Text(console_outer, bg=c["bg_main"], fg=c["fg_primary"],
+        console = self._pw.Text(console_outer, bg=c["bg_main"], fg=c["fg_primary"],
                            insertbackground=c["fg_primary"], font=(MONO_SCHRIFT, pt(9)),
                            relief="flat", state="disabled", wrap="word")
         console.pack(fill="both", expand=True, side="left")
-        vsb = ttk.Scrollbar(console_outer, orient="vertical", command=console.yview)
+        vsb = self._pw.Scrollbar(console_outer, orient="vertical", command=console.yview)
         vsb.pack(side="right", fill="y")
         console.config(yscrollcommand=vsb.set)
 
@@ -57433,7 +57512,7 @@ class PS5ConverterGUI:
     _FTPSRV_PORT = 2121
     #: Rechte, die eine hochgeladene Datei tragen muss, damit die PS5 sie startet.
     _PS5_BENOETIGTER_MODUS = 0o777
-    #: Port, auf dem der Payload-Loader der Konsole lauscht (JS Loader/MicroMount).
+    #: Port, auf dem der Payload-Loader der Konsole lauscht (JS Loader, elfldr).
     _PAYLOAD_SEND_PORT = 9021
     #: Port, auf dem der Log-Server des JS-Loaders die Ausgaben der Konsole
     #: entgegennimmt. Die Nummer stand an drei Stellen getrennt: im Aufruf von
@@ -57525,7 +57604,7 @@ class PS5ConverterGUI:
 
         gewaehlt = tk.StringVar(value=eintraege[0])
         for eintrag in eintraege:
-            tk.Radiobutton(dlg, text=eintrag, variable=gewaehlt, value=eintrag,
+            self._pw.Radiobutton(dlg, text=eintrag, variable=gewaehlt, value=eintrag,
                            bg=c["bg_main"], fg=c["fg_primary"],
                            selectcolor=c["bg_card"], activebackground=c["bg_main"],
                            activeforeground=c["fg_primary"],
@@ -57538,9 +57617,9 @@ class PS5ConverterGUI:
             ergebnis["wert"] = gewaehlt.get()
             dlg.destroy()
 
-        ttk.Button(knopfreihe, text=self._t("action.close"),
+        self._pw.Button(knopfreihe, text=self._t("action.close"),
                    command=dlg.destroy).pack(side="right")
-        ttk.Button(knopfreihe, text="OK", style="Accent.TButton",
+        self._pw.Button(knopfreihe, text="OK", style="Accent.TButton",
                    command=_ok).pack(side="right", padx=(0, 8))
 
         dlg.update_idletasks()
@@ -58475,13 +58554,13 @@ class PS5ConverterGUI:
         ):
             tk.Label(conn, text=self._t(label_key), font=(UI_SCHRIFT, pt(9)),
                      fg=c["fg_secondary"], bg=c["bg_main"]).pack(side="left", padx=(0, 4))
-            tk.Entry(conn, textvariable=var, width=width, font=(UI_SCHRIFT, pt(9)),
+            self._pw.Entry(conn, textvariable=var, width=width, font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_primary"], relief="flat").pack(side="left", padx=(0, 10), ipady=3)
 
         path_var = tk.StringVar(value="/")
         status_var = tk.StringVar(value=self._t("ampr.picker_not_connected"))
 
-        listbox = tk.Listbox(
+        listbox = self._pw.Listbox(
             win, font=(MONO_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_primary"],
             selectbackground=c["fg_accent"], relief="flat", activestyle="none",
         )
@@ -58748,7 +58827,7 @@ class PS5ConverterGUI:
             _im_faden(lambda: self._ampr_ftp_upload_file(ftp, remote_dir, chosen, name),
                       _hochgeladen, self._t("ampr.picker_uploading", path=remote_dir))
 
-        flach_knopf(conn, text=self._t("ampr.picker_connect"), command=_connect,
+        self._pw.Button(conn, text=self._t("ampr.picker_connect"), command=_connect,
                   font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
                   relief="flat", padx=12, cursor="hand2").pack(side="left")
 
@@ -58757,13 +58836,13 @@ class PS5ConverterGUI:
         tk.Label(quick, text=self._t("ampr.picker_quick"), font=(UI_SCHRIFT, pt(9)),
                  fg=c["fg_secondary"], bg=c["bg_main"]).pack(side="left", padx=(0, 6))
         for quick_path in self._AMPR_FTP_QUICK_PATHS:
-            flach_knopf(
+            self._pw.Button(
                 quick, text=quick_path, command=lambda p=quick_path: _goto(p),
                 font=(UI_SCHRIFT, pt(8)), bg=c["bg_card"], fg=c["fg_primary"],
                 relief="flat", padx=8, cursor="hand2",
             ).pack(side="left", padx=(0, 4))
 
-        tk.Entry(win, textvariable=path_var, font=(MONO_SCHRIFT, pt(10)), bg=c["bg_card"],
+        self._pw.Entry(win, textvariable=path_var, font=(MONO_SCHRIFT, pt(10)), bg=c["bg_card"],
                  fg=c["fg_primary"], relief="flat").pack(fill="x", padx=14, pady=(4, 6), ipady=4)
         listbox.pack(fill="both", expand=True, padx=14)
         listbox.bind("<Double-Button-1>", lambda _e: _open_selected())
@@ -58777,7 +58856,7 @@ class PS5ConverterGUI:
             ("ampr.picker_hotswap_set", _swap_set),
             ("ampr.picker_hotswap", _swap_single),
         ):
-            flach_knopf(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, pt(9)),
+            self._pw.Button(actions, text=self._t(key), command=cmd, font=(UI_SCHRIFT, pt(9)),
                       bg=c["bg_card"], fg=c["fg_primary"], relief="flat",
                       padx=12, pady=6, cursor="hand2").pack(side="left", padx=(0, 6))
 
@@ -58857,7 +58936,7 @@ class PS5ConverterGUI:
             tk.Frame(preview, bg=acc_prev, width=12, height=36).pack(side="right")
 
             # Radio + Text
-            rb = tk.Radiobutton(
+            rb = self._pw.Radiobutton(
                 row, text=label, variable=theme_var, value=key,
                 font=(UI_SCHRIFT, pt(10), "bold"),
                 bg=c["bg_card"], fg=c["fg_primary"],
@@ -58919,14 +58998,14 @@ class PS5ConverterGUI:
             self._save_setting("theme", chosen)
             self._restart_application()
 
-        flach_knopf(btn_row, text=self._t("theme_dialog.apply_button"),
+        self._pw.Button(btn_row, text=self._t("theme_dialog.apply_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=20, pady=7,
                   command=_apply).pack(side="left")
 
-        flach_knopf(btn_row, text=self._t("action.cancel_ellipsis"),
+        self._pw.Button(btn_row, text=self._t("action.cancel_ellipsis"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59060,7 +59139,7 @@ class PS5ConverterGUI:
         tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
                  bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
                  width=7).pack(side="right")
-        regler = ttk.Scale(zeile, from_=ask.SKALIERUNG_MIN, to=ask.SKALIERUNG_MAX,
+        regler = self._pw.Scale(zeile, from_=ask.SKALIERUNG_MIN, to=ask.SKALIERUNG_MAX,
                            orient="horizontal")
         regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
         grenze_var = tk.StringVar(master=body)
@@ -59105,7 +59184,7 @@ class PS5ConverterGUI:
         liste = ask.aufloesungen_anbieten(echt, aufl0)
         auto_text = self._t("settings_dialog.anzeige_aufloesung_auto",
                             breite=echt[0], hoehe=echt[1])
-        box = ttk.Combobox(
+        box = self._pw.Combobox(
             zeile2, state="readonly", font=(UI_SCHRIFT, pt(9)),
             values=[auto_text] + [ask.aufloesung_anzeige(b, h) for b, h in liste])
         box.pack(side="left", fill="x", expand=True, padx=(8, 0))
@@ -59191,7 +59270,7 @@ class PS5ConverterGUI:
                 messagebox.showinfo(titel, self._t("settings_dialog.anzeige_zurueck_spaeter"),
                                     parent=dlg)
 
-        uebernehmen = flach_knopf(
+        uebernehmen = self._pw.Button(
             knopfreihe, text=self._t("settings_dialog.anzeige_uebernehmen"),
             font=(UI_SCHRIFT, pt(10), "bold"),
             bg=c["accent_btn"], fg="white",
@@ -59199,7 +59278,7 @@ class PS5ConverterGUI:
             disabledforeground=c["fg_secondary"],
             relief="flat", cursor="hand2", padx=16, pady=7, command=_anwenden)
         uebernehmen.pack(side="left")
-        zuruecksetzen = flach_knopf(
+        zuruecksetzen = self._pw.Button(
             knopfreihe, text=self._t("settings_dialog.anzeige_zuruecksetzen"),
             font=(UI_SCHRIFT, pt(10)), bg=c["bg_card"], fg=c["fg_secondary"],
             activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59325,7 +59404,7 @@ class PS5ConverterGUI:
             ).pack(anchor="w", fill="x", pady=(0, 4))
 
             bundled_by_name = {os.path.basename(p): p for p in bundled_images}
-            bundled_combo = ttk.Combobox(
+            bundled_combo = self._pw.Combobox(
                 body, state="readonly", font=(UI_SCHRIFT, pt(9)),
                 values=sorted(bundled_by_name.keys()),
             )
@@ -59386,7 +59465,7 @@ class PS5ConverterGUI:
             vorschau_zeichner.append(_haupt_vorschau_setzen)
             _haupt_vorschau_setzen()
 
-            flach_knopf(
+            self._pw.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
                 command=_apply_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
@@ -59429,14 +59508,14 @@ class PS5ConverterGUI:
         btn_row = tk.Frame(body, bg=c["bg_card"])
         btn_row.pack(fill="x", pady=(0, 0))
 
-        flach_knopf(btn_row, text=self._t("settings_dialog.choose_image_button"),
+        self._pw.Button(btn_row, text=self._t("settings_dialog.choose_image_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_image).pack(side="left")
 
-        flach_knopf(btn_row, text=self._t("settings_dialog.reset_image_button"),
+        self._pw.Button(btn_row, text=self._t("settings_dialog.reset_image_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59487,7 +59566,7 @@ class PS5ConverterGUI:
             ).pack(anchor="w", fill="x", pady=(0, 4))
 
             sidebar_by_name = {os.path.basename(p): p for p in sidebar_bundled}
-            sidebar_combo = ttk.Combobox(
+            sidebar_combo = self._pw.Combobox(
                 body, state="readonly", font=(UI_SCHRIFT, pt(9)),
                 values=sorted(sidebar_by_name.keys()),
             )
@@ -59543,7 +59622,7 @@ class PS5ConverterGUI:
             vorschau_zeichner.append(_sidebar_vorschau_setzen)
             _sidebar_vorschau_setzen()
 
-            flach_knopf(
+            self._pw.Button(
                 body, text=self._t("settings_dialog.background_bundled_apply"),
                 command=_apply_sidebar_bundled, font=(UI_SCHRIFT, pt(9)),
                 bg=c["bg_main"], fg=c["fg_primary"], relief="flat",
@@ -59586,14 +59665,14 @@ class PS5ConverterGUI:
         sidebar_btn_row = tk.Frame(body, bg=c["bg_card"])
         sidebar_btn_row.pack(fill="x", pady=(0, 0))
 
-        flach_knopf(sidebar_btn_row, text=self._t("settings_dialog.choose_image_button"),
+        self._pw.Button(sidebar_btn_row, text=self._t("settings_dialog.choose_image_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_sidebar_image).pack(side="left")
 
-        flach_knopf(sidebar_btn_row, text=self._t("settings_dialog.reset_image_button"),
+        self._pw.Button(sidebar_btn_row, text=self._t("settings_dialog.reset_image_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59640,7 +59719,7 @@ class PS5ConverterGUI:
             tk.Label(zeile, textvariable=zahl, font=(UI_SCHRIFT, pt(9), "bold"),
                      bg=c["bg_card"], fg=c["fg_accent"], anchor="e",
                      width=7).pack(side="right")
-            regler = ttk.Scale(zeile, from_=klein, to=gross, orient="horizontal")
+            regler = self._pw.Scale(zeile, from_=klein, to=gross, orient="horizontal")
             regler.set(self._regler(schluessel))
             regler.pack(side="left", fill="x", expand=True, padx=(8, 8))
             # Fuer Pruefungen und die Diagnose: welcher Wert hier haengt.
@@ -59701,7 +59780,7 @@ class PS5ConverterGUI:
                                 self._t("settings_dialog.regler_reset_done"),
                                 parent=dlg)
 
-        flach_knopf(body, text=self._t("settings_dialog.regler_reset"),
+        self._pw.Button(body, text=self._t("settings_dialog.regler_reset"),
                     font=(UI_SCHRIFT, pt(9)),
                     bg=c["bg_main"], fg=c["fg_secondary"],
                     activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59732,7 +59811,7 @@ class PS5ConverterGUI:
             logger.info("Metadaten-Nachschlag %s",
                         "erlaubt" if metadaten_var.get() else "abgeschaltet")
 
-        metadaten_kasten = tk.Checkbutton(
+        metadaten_kasten = self._pw.Checkbutton(
             body, text=self._t("settings_dialog.metadata_checkbox"),
             variable=metadaten_var, command=_metadaten_umschalten,
             font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
@@ -59777,7 +59856,7 @@ class PS5ConverterGUI:
         schwaeche_var = tk.StringVar(
             value=_schwaeche_namen.get(getattr(self, "_farbschwaeche", "keine"),
                                        _schwaeche_namen["keine"]))
-        schwaeche_combo = ttk.Combobox(
+        schwaeche_combo = self._pw.Combobox(
             body, textvariable=schwaeche_var, state="readonly",
             values=[_schwaeche_namen[s] for s in FARBSCHWAECHEN],
             font=(UI_SCHRIFT, pt(9)))
@@ -59832,7 +59911,7 @@ class PS5ConverterGUI:
             tk.Label(ps5_raster, text=self._t(schluessel), font=(UI_SCHRIFT, pt(9)),
                      bg=c["bg_card"], fg=c["fg_secondary"], anchor="w",
                      width=14).grid(row=zeile, column=0, sticky="w", pady=2)
-            ttk.Entry(ps5_raster, textvariable=var, width=breite,
+            self._pw.Entry(ps5_raster, textvariable=var, width=breite,
                       font=(UI_SCHRIFT, pt(10))).grid(row=zeile, column=1, sticky="w", pady=2)
 
         ps5_status_var = tk.StringVar(value="")
@@ -59896,7 +59975,7 @@ class PS5ConverterGUI:
 
             threading.Thread(target=_arbeit, daemon=True).start()
 
-        flach_knopf(body, text=self._t("settings_dialog.ps5_test_button"),
+        self._pw.Button(body, text=self._t("settings_dialog.ps5_test_button"),
                   font=(UI_SCHRIFT, pt(9)),
                   bg=c["bg_main"], fg=c["fg_primary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59940,13 +60019,13 @@ class PS5ConverterGUI:
 
         downloads_btn_row = tk.Frame(body, bg=c["bg_card"])
         downloads_btn_row.pack(fill="x")
-        flach_knopf(downloads_btn_row, text=self._t("settings_dialog.downloads_choose_button"),
+        self._pw.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_choose_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=_choose_download_dir).pack(side="left")
-        flach_knopf(downloads_btn_row, text=self._t("settings_dialog.downloads_reset_button"),
+        self._pw.Button(downloads_btn_row, text=self._t("settings_dialog.downloads_reset_button"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
@@ -59956,7 +60035,7 @@ class PS5ConverterGUI:
         # Derselbe Haken wie im Download-Fenster, auf derselben Variablen.
         # Ohne ihn waere die Ueberwachung nur erreichbar, indem man das
         # Download-Fenster oeffnet - obwohl sie unabhaengig davon laeuft.
-        ttk.Checkbutton(body, text=self._t("settings_dialog.downloads_watch"),
+        self._pw.Checkbutton(body, text=self._t("settings_dialog.downloads_watch"),
                         variable=self._zwischenablage_var_holen(),
                         command=self._zwischenablage_umschalten).pack(
                             anchor="w", pady=(12, 0))
@@ -60031,13 +60110,13 @@ class PS5ConverterGUI:
         # Hinweis darueber steht.
         close_row = tk.Frame(body, bg=c["bg_card"])
         close_row.pack(fill="x", side="bottom", pady=(8, 0))
-        flach_knopf(close_row, text=self._t("action.close"),
+        self._pw.Button(close_row, text=self._t("action.close"),
                   font=(UI_SCHRIFT, pt(10)),
                   bg=c["bg_card"], fg=c["fg_secondary"],
                   activebackground=c["border"], activeforeground=c["fg_primary"],
                   relief="flat", cursor="hand2", padx=16, pady=7,
                   command=dlg.destroy).pack(side="right")
-        flach_knopf(close_row, text=self._t("settings_dialog.save_button"),
+        self._pw.Button(close_row, text=self._t("settings_dialog.save_button"),
                   font=(UI_SCHRIFT, pt(10), "bold"),
                   bg=c["accent_btn"], fg="white",
                   activebackground=c["accent_btn_hover"], activeforeground="white",
@@ -60431,32 +60510,26 @@ class PS5ConverterGUI:
             self.sidebar_bg_label.lower()
             sidebar.bind("<Configure>", self._on_sidebar_configure)
 
-        # Mit runden Ecken (seit v1.9.62) - dasselbe Bild, aus dem die
-        # Beschriftungen und Pillen der Leiste ihre Ausschnitte schneiden.
-        sidebar_resized = self._seitenleistenbild(s_width, s_height)
+        sidebar_resized = self._bild_fuellen(self._sidebar_bg_image_cache, s_width, s_height)
         self.sidebar_bg_photo = ImageTk.PhotoImage(sidebar_resized)
         self.sidebar_bg_label.config(image=self.sidebar_bg_photo)
         self._last_sidebar_bg_resize_size = (s_width, s_height)
         self._redraw_sidebar_captions()
 
     def _refresh_bg_label(self) -> None:
-        """Zeigt das aktuell zwischengespeicherte Hintergrundbild sofort im Hauptfenster an.
+        """Zeigt das aktuell zwischengespeicherte Hauptbild sofort im Hauptfenster an.
 
-        Aktualisiert den Vollbild-Hintergrund (self.bg_label, hinter dem
-        gesamten Fenster) sowie die eigenen Hintergrund-Labels von Titelleiste
-        und Content-Bereich – Letztere sind noetig, weil diese Bereiche eine
-        eigene, durchgehend deckende Hintergrundfarbe haben und das Vollbild-
-        Hintergrundbild sonst vollstaendig verdecken wuerden (siehe Kommentar
-        bei dessen Erstellung in _create_widgets). Die Sidebar hat ein eigenes,
-        unabhaengiges Hintergrundbild (siehe _refresh_sidebar_bg_label).
+        Aktualisiert die eigenen Hintergrund-Labels von Content-Bereich,
+        Knopfleiste und Pfad-Karte: Das Hauptbild liegt nur dort, rechts neben
+        der Seitenleiste - ein Bild hinter dem ganzen Fenster gibt es seit dem
+        05.10.2026 nicht mehr. Die Sidebar hat ein eigenes, unabhaengiges
+        Hintergrundbild (siehe _refresh_sidebar_bg_label).
         """
         self._refresh_sidebar_bg_label()
         # Pillen in Karte und Knopfleiste tragen Ausschnitte dieser Bilder.
         self._runde_flaechen_planen()
 
         if self._bg_image_cache is None:
-            if getattr(self, "bg_label", None) is not None:
-                self.bg_label.place_forget()
             if getattr(self, "content_bg_label", None) is not None:
                 self.content_bg_label.place_forget()
             if getattr(self, "action_bar_bg_label", None) is not None:
@@ -60476,22 +60549,12 @@ class PS5ConverterGUI:
         if width <= 1 or height <= 1:
             width, height = WINDOW_WIDTH, WINDOW_HEIGHT
 
-        if getattr(self, "bg_label", None) is None:
-            self.bg_label = tk.Label(self.root, bg=self._COLORS["bg_main"])
-            self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-            self.bg_label.lower()
-
-        resized = self._bild_fuellen(self._bg_image_cache, width, height)
-        self.bg_photo = ImageTk.PhotoImage(resized)
-        self.bg_label.config(image=self.bg_photo)
-        self._last_bg_resize_size = (width, height)
-
         content_area = getattr(self, "content_area", None)
         if content_area is not None:
             c_width = content_area.winfo_width()
             c_height = content_area.winfo_height()
             if c_width <= 1 or c_height <= 1:
-                c_width, c_height = max(width - 320, 1), max(height - 32, 1)
+                c_width, c_height = max(width - self._seitenleiste_pixel(), 1), max(height - 32, 1)
 
             if getattr(self, "content_bg_label", None) is None:
                 self.content_bg_label = tk.Label(content_area, bg=self._COLORS["bg_main"])
@@ -60556,7 +60619,6 @@ class PS5ConverterGUI:
         "_btn_credits_title":      "fg_accent",
         "_btn_jsloader_title":     "fg_warning",
         "_btn_ftp_title":          "fg_success",
-        "_btn_webkit_title":       "fg_secondary",
         "_btn_klog_title":         "fg_secondary",
         "_btn_diagnostics_title":  "fg_secondary",
         "_btn_more_tools_title":   "fg_secondary",
@@ -61443,6 +61505,30 @@ def _wee_tools_arbeitsordner() -> str:
     else:
         wurzel = os.path.dirname(os.path.abspath(__file__))
     return os.path.join(wurzel, wee_tools.ARBEITSORDNER_NAME)
+
+
+def _direct_stream_wurzel() -> str:
+    """Der mitgelieferte Direct-Stream-Ordner, sonst leer.
+
+    Gesucht wird wie bei jedem mitgelieferten Ordner (``_mitgeliefert_finden``,
+    auch ``Contents/Resources`` unter macOS). Ein Ordner ohne Einstieg oder ohne
+    Kern zaehlt nicht - ohne beide laesst sich das Werkzeug nicht laden.
+    """
+    pfad = PS5ConverterGUI._mitgeliefert_finden(direct_stream.ORDNER)
+    if os.path.isabs(pfad) and all(os.path.isfile(os.path.join(pfad, datei))
+                                   for datei in (direct_stream.EINSTIEG, direct_stream.KERN)):
+        return pfad
+    return ""
+
+
+def _direct_stream_datenordner() -> str:
+    """Wohin Direct Stream schreibt: ``DirectStream`` im Einstellungsordner des Programms.
+
+    Im Einstellungsordner, nicht neben dem Programm: Dort liegt auch die Zustandsdatei
+    des Programms, und unter macOS darf nichts ins Buendel (Signatur). Angelegt
+    wird hier nichts - das tut :func:`direct_stream.starten`.
+    """
+    return direct_stream.datenordner(_system_konfigurationsordner())
 
 
 def _run_wee_tools(argumente: list[str]) -> int:

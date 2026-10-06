@@ -168,12 +168,13 @@ class KatalogTests(unittest.TestCase):
         """
         ordner = PROJEKT / "helloworld"
         for eintrag in kd.KATALOG:
-            if not eintrag.payload_muster:
-                continue
-            with self.subTest(dienst=eintrag.schluessel):
-                self.assertTrue(
-                    list(ordner.glob(eintrag.payload_muster)),
-                    "keine Datei zu %s" % eintrag.payload_muster)
+            for muster in (eintrag.payload_muster, eintrag.datei_muster):
+                if not muster:
+                    continue
+                with self.subTest(dienst=eintrag.schluessel, muster=muster):
+                    self.assertTrue(
+                        list(ordner.glob(muster)),
+                        "keine Datei zu %s" % muster)
 
     def test_grundausstattung_steht_im_katalog(self):
         for schluessel in kd.GRUNDAUSSTATTUNG:
@@ -464,6 +465,88 @@ class _Webseite:
         return False
 
 
+class _ShadowMountApi:
+    """Die Schnittstelle von ShadowMount+ (docs/api.md): jede Anfrage ein POST mit JSON-Objekt.
+
+    ``/api/v1/version`` antwortet mit ``shadowmount_version``; ein GET bekommt 405,
+    jeder andere Pfad 404 - genau daran scheiterte der GET-Leser, der bis zum
+    05.10.2026 der einzige Weg zur laufenden Version war. ``anfragen`` haelt fest,
+    was ankam: (Methode, Pfad, Koerper).
+    """
+
+    def __init__(self, version: str = "1.7beta4", antwort: "bytes | None" = None):
+        self._version = version
+        self._antwort = antwort
+        self.anfragen: "list[tuple[str, str, bytes]]" = []
+
+    def __enter__(self):
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._schleife, daemon=True).start()
+        return self
+
+    def _schleife(self):
+        while True:
+            try:
+                verbindung, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._bedienen, args=(verbindung,), daemon=True).start()
+
+    def _bedienen(self, verbindung):
+        import json as _json
+        with verbindung:
+            try:
+                verbindung.settimeout(3.0)
+                roh = b""
+                while b"\r\n\r\n" not in roh:
+                    stueck = verbindung.recv(4096)
+                    if not stueck:
+                        return          # blosse Portpruefung ohne Anfrage
+                    roh += stueck
+                kopf, _trenner, rest = roh.partition(b"\r\n\r\n")
+                zeilen = kopf.split(b"\r\n")
+                methode, pfad, _fassung = zeilen[0].split(b" ", 2)
+                laenge = 0
+                for zeile in zeilen[1:]:
+                    if zeile.lower().startswith(b"content-length:"):
+                        laenge = int(zeile.split(b":", 1)[1])
+                while len(rest) < laenge:
+                    stueck = verbindung.recv(4096)
+                    if not stueck:
+                        break
+                    rest += stueck
+                self.anfragen.append((methode.decode(), pfad.decode(), rest))
+                json_typ = any(z.lower().startswith(b"content-type: application/json")
+                               for z in zeilen[1:])
+                if self._antwort is not None:
+                    antwort = self._antwort
+                elif methode == b"POST" and pfad == b"/api/v1/version" and json_typ:
+                    koerper = _json.dumps({
+                        "status": 0, "api_version": 1,
+                        "shadowmount_version": self._version,
+                        "capabilities": ["list_images", "list_games"]}).encode()
+                    antwort = (b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                               b"Connection: close\r\n\r\n" + koerper)
+                elif methode != b"POST":
+                    antwort = (b"HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n"
+                               b"Content-Type: application/json\r\n\r\n"
+                               b'{"status":1,"error":"POST required"}')
+                else:
+                    antwort = (b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n"
+                               b"Content-Type: application/json\r\n\r\n"
+                               b'{"status":2,"error":"no such route"}')
+                verbindung.sendall(antwort)
+            except OSError:
+                pass
+
+    def __exit__(self, *_a):
+        self.sock.close()
+        return False
+
+
 class VersionTests(unittest.TestCase):
     """Wunsch des Nutzers vom 26.09.2026: "Hier fehlt mir noch die Version der Payloads"."""
 
@@ -478,6 +561,16 @@ class VersionTests(unittest.TestCase):
             "ps5upload-5.33.2.elf": "5.33.2",
             "zftpd-ps5-v1.5.0.elf": "1.5.0",
             "kstuff_lite_v1.2-dr_Beta2.elf": "1.2-dr_Beta2",
+            # Stufe ohne Trenner direkt hinter der Zahl (05.10.2026: "bei ShadowMount+
+            # steht nie die Version" - das Muster verlangte vor "beta4" einen Strich).
+            "shadowmountplus_v1.7beta4.elf": "1.7beta4",
+            "shadowmountplus_v1.7alpha13fix1.elf": "1.7alpha13fix1",
+            "AnyPad-PS5-0.5.5-beta.elf": "0.5.5-beta",
+            "OnionHEN_v0.9.0-beta1.elf": "0.9.0-beta1",
+            "dpiv2-13.60-1.00.elf": "1.00",
+            # Mit Leerzeichen statt Unterstrich liest das Namensschema keine Fassung -
+            # deshalb heisst die Datei im Ordner OnionHEN_v0.9.0-beta1.elf.
+            "OnionHEN v0.9.0-beta1.elf": "",
             r"C:\irgendwo\helloworld\bfpilot_v0.4.4.elf": "0.4.4",
             "bdj_unpatch_1340.elf": "",
             "unjail-ps5app-payload.elf": "",
@@ -492,7 +585,8 @@ class VersionTests(unittest.TestCase):
         """Sonst bliebe die Spalte bei einem Dienst leer, obwohl eine Datei beiliegt."""
         ordner = PROJEKT / "helloworld"
         for eintrag in kd.KATALOG:
-            for datei in ordner.glob(eintrag.payload_muster) if eintrag.payload_muster else ():
+            muster = eintrag.payload_muster or eintrag.datei_muster
+            for datei in ordner.glob(muster) if muster else ():
                 with self.subTest(datei=datei.name):
                     self.assertTrue(kd.version_aus_dateiname(datei.name))
 
@@ -575,6 +669,270 @@ class VersionTests(unittest.TestCase):
                     self.assertEqual("", kd.laufende_version("10.0.0.5", kd.dienst(schluessel)))
         gruss.assert_not_called()
         seite.assert_not_called()
+
+
+class VersionOhneStartenTests(unittest.TestCase):
+    """05.10.2026: "bei ShadowMount+ steht leider nie die Version bei Konsole & Payloads"
+    und "bei elfldr 9020 ebenfalls".
+
+    Beide Zeilen starten bewusst nichts aus der Tabelle (ShadowMount+ laeuft ueblicherweise
+    aus dem Autoload, 9020 ist derselbe Dienst wie 9021); ohne Datei zum Starten stand bei
+    ihnen aber immer ein Strich. Jetzt zeigt ``datei_muster`` die Version der beiliegenden
+    Datei, und ShadowMount+ nennt - wenn seine Schnittstelle von diesem PC aus erreichbar
+    ist - die laufende Fassung selbst.
+    """
+
+    def test_beide_zeilen_starten_nichts_und_zeigen_trotzdem_eine_version(self):
+        for schluessel, muster in (("shadowmount", "shadowmountplus_v*.elf"),
+                                   ("elfldr9020", "elfldr*.elf")):
+            with self.subTest(dienst=schluessel):
+                eintrag = kd.dienst(schluessel)
+                self.assertEqual("", eintrag.payload_muster,
+                                 "Die Zeile darf nichts aus der Tabelle starten.")
+                self.assertEqual(muster, eintrag.datei_muster)
+                dateien = sorted((PROJEKT / "helloworld").glob(eintrag.datei_muster))
+                self.assertTrue(dateien, "keine Datei zu %s" % muster)
+                self.assertTrue(kd.version_aus_dateiname(dateien[-1].name), dateien[-1].name)
+
+    def test_dpiv2_steht_mit_weboberflaeche_in_der_tabelle(self):
+        """Auftrag vom 05.10.2026: Was von den ELFs in helloworld/ eine Weboberflaeche hat,
+        steht in "Konsole & Payloads" wie die anderen Payloads.
+
+        Port 12800 = WebUI laut README des Autors (einstellbar; 9090 ist der
+        Uebertragungsport desselben Plugins). Kein Start aus der Tabelle: Das Plugin
+        liegt in /data/OnionHEN/plugins und wird von OnionHEN gestartet.
+        """
+        eintrag = kd.dienst("dpiv2")
+        self.assertIsNotNone(eintrag, "DPI v2 fehlt im Katalog")
+        self.assertEqual((12800, "/", "", "dpiv2-*.elf"),
+                         (eintrag.port, eintrag.web, eintrag.payload_muster, eintrag.datei_muster))
+        self.assertEqual("http://10.0.0.5:12800/", kd.web_adresse(eintrag, "10.0.0.5"))
+        dateien = sorted((PROJEKT / "helloworld").glob(eintrag.datei_muster))
+        self.assertEqual(1, len(dateien), dateien)
+        # Gegen die Datei selbst: Sie traegt ihre Weboberflaeche und den Pfad ihrer Ablage.
+        inhalt = dateien[0].read_bytes()
+        self.assertIn(b"DPIV00001", inhalt)
+        self.assertIn(b"<!doctype html", inhalt.lower())
+
+    def test_shadowmount_nennt_die_laufende_version_per_post(self):
+        """``POST /api/v1/version`` mit ``{}`` - nur so antwortet die Schnittstelle."""
+        vorbild = kd.dienst("shadowmount")
+        self.assertEqual("/api/v1/version", vorbild.version_post)
+        with _ShadowMountApi("1.7beta4") as api:
+            eintrag = kd.Dienst("shadowmount", api.port, web="/",
+                                version_muster=vorbild.version_muster,
+                                version_post=vorbild.version_post)
+            self.assertEqual("1.7beta4", kd.laufende_version("127.0.0.1", eintrag, zeit=1.0))
+        self.assertEqual([("POST", "/api/v1/version", b"{}")], api.anfragen)
+
+    def test_pruefen_traegt_die_version_von_shadowmount_ein(self):
+        vorbild = kd.dienst("shadowmount")
+        with _ShadowMountApi("1.7") as api:
+            eintrag = kd.Dienst("shadowmount", api.port, web="/",
+                                version_muster=vorbild.version_muster,
+                                version_post=vorbild.version_post)
+            stand = kd.pruefen("127.0.0.1", zeit=1.0, dienste=(eintrag,)).staende[0]
+        self.assertEqual((True, "1.7"), (stand.laeuft, stand.version))
+
+    def test_ohne_brauchbare_antwort_bleibt_die_version_leer(self):
+        """Fehlerseite, kein JSON, anderes Feld: Der Zustand bleibt, nur die Version fehlt."""
+        vorbild = kd.dienst("shadowmount")
+        antworten = {
+            "404": (b"HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n"
+                    b'{"status":2,"error":"no such route"}'),
+            "kein JSON": b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n<html>Hallo</html>",
+            "anderes Feld": (b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n"
+                             b'{"status":0,"version":"9.9"}'),
+        }
+        for name, antwort in antworten.items():
+            with self.subTest(fall=name), _ShadowMountApi(antwort=antwort) as api:
+                eintrag = kd.Dienst("shadowmount", api.port, web="/",
+                                    version_muster=vorbild.version_muster,
+                                    version_post=vorbild.version_post)
+                self.assertEqual("", kd.laufende_version("127.0.0.1", eintrag, zeit=1.0))
+                stand = kd.pruefen("127.0.0.1", zeit=1.0, dienste=(eintrag,)).staende[0]
+                self.assertTrue(stand.laeuft, "Der Zustand haengt nicht an der Version.")
+
+    def test_ein_get_leser_bekaeme_hier_keine_version(self):
+        """Gegenprobe: Die Schnittstelle antwortet auf GET mit 405 - deshalb gibt es ``version_post``."""
+        with _ShadowMountApi() as api:
+            text = kd._seite_lesen("127.0.0.1", api.port, "/api/v1/version", 1.0)
+        self.assertEqual("", text)
+        self.assertEqual("GET", api.anfragen[0][0])
+
+    def test_der_koerper_geht_mit_laenge_und_inhaltstyp_hinaus(self):
+        with _ShadowMountApi() as api:
+            text = kd._seite_lesen("127.0.0.1", api.port, "/api/v1/version", 1.0, post=b"{}")
+        self.assertIn('"shadowmount_version"', text)
+
+    def test_die_tabelle_zeigt_die_version_der_beiliegenden_datei(self):
+        """Der Text der Spalte: ohne laufende Version die der Datei (aus ``datei_muster``)."""
+        modul = _lade_hauptprogramm()
+        app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
+        app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
+        erwartet = {"shadowmount": "1.7beta4", "elfldr9020": "0.26", "dpiv2": "1.00",
+                    "elfldr9021": "0.26"}
+        for schluessel, version in erwartet.items():
+            with self.subTest(dienst=schluessel):
+                stand = kd.Stand(kd.dienst(schluessel))
+                text = app._konsole_versionstext(stand)
+                self.assertTrue(text and text != "–", "Die Spalte zeigt nur einen Strich.")
+                if schluessel != "shadowmount":
+                    self.assertEqual(version, text)
+        # Nennt ShadowMount+ eine andere Fassung als die beiliegende, stehen beide da.
+        stand = kd.Stand(kd.dienst("shadowmount"), laeuft=True, version="1.7")
+        text = app._konsole_versionstext(stand)
+        self.assertIn("1.7", text)
+        self.assertIn(kd.version_aus_dateiname(
+            sorted((PROJEKT / "helloworld").glob("shadowmountplus_v*.elf"))[-1].name), text)
+
+
+class _CoolSysCentApi:
+    """Die Weboberflaeche des PS5 Cooling & System Center: ``GET /api/v1/system`` nennt ``app_version``.
+
+    Wie die echte Antwort ein JSON-Objekt (zusammengesetzt, mit der Fassung als eines von vielen Feldern);
+    jeder andere Pfad antwortet 404. ``anfragen`` haelt (Methode, Pfad) fest.
+    """
+
+    def __init__(self, version: str = "1.48.0", kompakt: bool = True, antwort: "bytes | None" = None):
+        self._version, self._kompakt, self._antwort = version, kompakt, antwort
+        self.anfragen: "list[tuple[str, str]]" = []
+
+    def __enter__(self):
+        self.sock = socket.socket()
+        self.sock.bind(("127.0.0.1", 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        threading.Thread(target=self._schleife, daemon=True).start()
+        return self
+
+    def _schleife(self):
+        while True:
+            try:
+                verbindung, _ = self.sock.accept()
+            except OSError:
+                return
+            threading.Thread(target=self._bedienen, args=(verbindung,), daemon=True).start()
+
+    def _bedienen(self, verbindung):
+        import json as _json
+        with verbindung:
+            try:
+                verbindung.settimeout(3.0)
+                roh = verbindung.recv(4096)
+                if not roh:
+                    return                              # blosse Portpruefung ohne Anfrage
+                methode, pfad = (roh.split(b" ", 2) + [b"", b""])[:2]
+                self.anfragen.append((methode.decode(), pfad.decode()))
+                if self._antwort is not None:
+                    antwort = self._antwort
+                elif methode == b"GET" and pfad == b"/api/v1/system":
+                    daten = {"ok": True, "model": "CFI-1216A", "firmware_version": "12.00",
+                             "uptime_sec": 3600, "app_version": self._version, "ip": "192.0.2.10"}
+                    koerper = (_json.dumps(daten, separators=(",", ":")) if self._kompakt
+                               else _json.dumps(daten, indent=2)).encode()
+                    antwort = (b"HTTP/1.0 200 OK\r\nContent-Type: application/json\r\n"
+                               b"Connection: close\r\n\r\n" + koerper)
+                else:
+                    antwort = (b"HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\n"
+                               b'{"ok":false,"error":"not_found"}')
+                verbindung.sendall(antwort)
+            except OSError:
+                pass
+
+    def __exit__(self, *_a):
+        self.sock.close()
+        return False
+
+
+class CoolSysCentTests(unittest.TestCase):
+    """PS5 Cooling & System Center - Pro: die eigene App des Projektinhabers (05.10.2026).
+
+    Auftrag: "Bitte bei Konsole & Payloads implementieren wie alle anderen auch, mit Version, Web UI Port usw.
+    ... Knopf 5 ... wie der Prospero Manager im rechten Bereich die Web UI oeffnen. Laeuft die App noch nicht,
+    soll die ELF an Port 9021 gesendet werden; ist der Port nicht offen, soll er geoeffnet werden."
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.dateien = sorted((PROJEKT / "helloworld").glob("PS5_Cooling_System_Center_v*.elf"))
+
+    def test_der_katalog_kennt_die_app(self):
+        eintrag = kd.dienst("coolsyscent")
+        self.assertIsNotNone(eintrag, "PS5 Cooling & System Center fehlt im Katalog")
+        self.assertEqual((8086, "/"), (eintrag.port, eintrag.web))
+        self.assertEqual("PS5_Cooling_System_Center_v*.elf", eintrag.payload_muster,
+                         "Mit payload_muster - die App startet auf Knopfdruck")
+        self.assertEqual("/api/v1/system", eintrag.version_pfad)
+        self.assertEqual("http://10.0.0.5:8086/", kd.web_adresse(eintrag, "10.0.0.5"))
+
+    def test_die_datei_liegt_bei_und_nennt_ihre_version(self):
+        self.assertEqual(1, len(self.dateien), self.dateien)
+        self.assertEqual("1.48.0", kd.version_aus_dateiname(self.dateien[0].name))
+
+    def test_die_elf_traegt_port_pfad_und_version_des_katalogs(self):
+        """Gegen die Datei selbst: Wer die ELF austauscht und den Port aendert, faellt hier auf.
+
+        Gemessen am 05.10.2026 an v1.48.0: ``"deeplinkUri": "http://127.0.0.1:8086"`` (Vorgabe von
+        ``http_port``), die Route ``/api/v1/system`` mit dem Feld ``app_version`` und die Kopfzeile
+        "PS5 Cooling & System Center - Pro 1.48.0".
+        """
+        eintrag = kd.dienst("coolsyscent")
+        for datei in self.dateien:
+            inhalt = datei.read_bytes()
+            version = kd.version_aus_dateiname(datei.name)
+            with self.subTest(datei=datei.name):
+                self.assertIn(b'"deeplinkUri": "http://127.0.0.1:%d"' % eintrag.port, inhalt)
+                self.assertIn(eintrag.version_pfad.encode(), inhalt)
+                self.assertIn(b"app_version", inhalt)
+                self.assertIn(("PS5 Cooling & System Center - Pro %s" % version).encode(), inhalt)
+                self.assertIn(b"<!doctype html", inhalt.lower())
+
+    def test_die_app_nennt_ihre_laufende_version(self):
+        vorbild = kd.dienst("coolsyscent")
+        for kompakt in (True, False):
+            with self.subTest(kompakt=kompakt), _CoolSysCentApi("1.48.0", kompakt=kompakt) as api:
+                eintrag = kd.Dienst("coolsyscent", api.port, web="/", version_muster=vorbild.version_muster,
+                                    version_pfad=vorbild.version_pfad)
+                self.assertEqual("1.48.0", kd.laufende_version("127.0.0.1", eintrag, zeit=1.0))
+                self.assertEqual([("GET", "/api/v1/system")], api.anfragen)
+
+    def test_pruefen_traegt_die_version_ein(self):
+        vorbild = kd.dienst("coolsyscent")
+        with _CoolSysCentApi("1.49.2") as api:
+            eintrag = kd.Dienst("coolsyscent", api.port, web="/", version_muster=vorbild.version_muster,
+                                version_pfad=vorbild.version_pfad)
+            stand = kd.pruefen("127.0.0.1", zeit=1.0, dienste=(eintrag,)).staende[0]
+        self.assertEqual((True, "1.49.2"), (stand.laeuft, stand.version))
+
+    def test_ohne_brauchbare_antwort_bleibt_die_version_leer_und_der_dienst_laeuft(self):
+        vorbild = kd.dienst("coolsyscent")
+        antworten = {
+            "404": b"HTTP/1.0 404 Not Found\r\nConnection: close\r\n\r\n{}",
+            "ohne Feld": b'HTTP/1.0 200 OK\r\nConnection: close\r\n\r\n{"ok":true,"model":"x"}',
+            "Fehlerseite": b"HTTP/1.0 200 OK\r\nConnection: close\r\n\r\n<html>Abgelehnt</html>",
+        }
+        for name, antwort in antworten.items():
+            with self.subTest(fall=name), _CoolSysCentApi(antwort=antwort) as api:
+                eintrag = kd.Dienst("coolsyscent", api.port, web="/", version_muster=vorbild.version_muster,
+                                    version_pfad=vorbild.version_pfad)
+                self.assertEqual("", kd.laufende_version("127.0.0.1", eintrag, zeit=1.0))
+                stand = kd.pruefen("127.0.0.1", zeit=1.0, dienste=(eintrag,)).staende[0]
+                self.assertTrue(stand.laeuft, "Der Zustand haengt nicht an der Version.")
+
+    def test_die_zeile_steht_mit_beiden_texten_und_ohne_strich_in_der_tabelle(self):
+        eintrag = kd.dienst("coolsyscent")
+        for schluessel in (eintrag.name_schluessel, eintrag.zweck_schluessel):
+            for sprache in ("de", "en"):
+                with self.subTest(schluessel=schluessel, sprache=sprache):
+                    self.assertTrue(STRINGS[schluessel][sprache].strip())
+        modul = _lade_hauptprogramm()
+        app = modul.PS5ConverterGUI.__new__(modul.PS5ConverterGUI)
+        app._t = lambda schluessel, **werte: STRINGS[schluessel]["de"].format(**werte)
+        # Ohne laufende Version zeigt die Spalte die der beiliegenden Datei - nie nur einen Strich.
+        text = app._konsole_versionstext(kd.Stand(eintrag))
+        self.assertTrue(text and text != "–", "Die Spalte zeigt nur einen Strich.")
+        self.assertIn("1.48.0", text)
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfuegbar")
@@ -681,12 +1039,12 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
         if getattr(self.app, "_konsole_tafel", None) is None:
             self.app._konsole_tafel_bauen()
         self.app._konsole_tafel_ip.set("127.0.0.1")
-        self.app._konsole_prosperomgr_laeuft = False
-        self.app._konsole_prosperomgr_hinweis_schliessen()
+        self.app._konsole_webdienst_aktiv = False
+        self.app._konsole_webdienst_hinweis_schliessen()
 
     def tearDown(self):
-        self.app._konsole_prosperomgr_hinweis_schliessen()
-        self.app._konsole_prosperomgr_laeuft = False
+        self.app._konsole_webdienst_hinweis_schliessen()
+        self.app._konsole_webdienst_aktiv = False
 
     @staticmethod
     def _uebersicht(laeuft: bool):
@@ -725,7 +1083,7 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
         gesehen = {"ja": False}
 
         def _beobachten():
-            if getattr(app, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+            if getattr(app, "_konsole_webdienst_hinweis_fenster", None) is not None:
                 gesehen["ja"] = True
 
         with mock.patch.object(self.haupt.konsole_dienste, "pruefen",
@@ -735,14 +1093,14 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
             app._konsole_prosperomgr_oeffnen()
             self._schleife(5.0, beobachten=_beobachten,
                            bis=lambda: gesehen["ja"] and web.called
-                           and not app._konsole_prosperomgr_laeuft
-                           and app._konsole_prosperomgr_hinweis_fenster is None)
+                           and not app._konsole_webdienst_aktiv
+                           and app._konsole_webdienst_hinweis_fenster is None)
 
         self.assertTrue(gesehen["ja"], "Der Hinweis ist nie erschienen.")
         web.assert_called_once()
-        self.assertIsNone(app._konsole_prosperomgr_hinweis_fenster,
+        self.assertIsNone(app._konsole_webdienst_hinweis_fenster,
                           "Der Hinweis hat sich nicht von selbst geschlossen.")
-        self.assertFalse(app._konsole_prosperomgr_laeuft)
+        self.assertFalse(app._konsole_webdienst_aktiv)
 
     def test_kein_hinweis_wenn_der_dienst_schon_laeuft(self):
         """Wunsch vom 01.10.2026: "Ist der Payload bereits auf der PS5, soll
@@ -753,7 +1111,7 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
         gesehen = {"ja": False}
 
         def _beobachten():
-            if getattr(app, "_konsole_prosperomgr_hinweis_fenster", None) is not None:
+            if getattr(app, "_konsole_webdienst_hinweis_fenster", None) is not None:
                 gesehen["ja"] = True
 
         with mock.patch.object(self.haupt.konsole_dienste, "pruefen",
@@ -762,7 +1120,7 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
                 mock.patch.object(app, "_webansicht_oeffnen") as web:
             app._konsole_prosperomgr_oeffnen()
             self._schleife(5.0, beobachten=_beobachten,
-                           bis=lambda: web.called and not app._konsole_prosperomgr_laeuft)
+                           bis=lambda: web.called and not app._konsole_webdienst_aktiv)
             # Noch ein paar Takte, damit auch der Abschluss aus ``finally``
             # durch ist, bevor geurteilt wird.
             self._schleife(0.2, beobachten=_beobachten)
@@ -771,7 +1129,7 @@ class ProsperoMgrHinweisTests(unittest.TestCase):
         elfldr.assert_not_called()
         self.assertFalse(gesehen["ja"], "Der Hinweis durfte hier nicht erscheinen - "
                                         "der Dienst lief schon.")
-        self.assertIsNone(app._konsole_prosperomgr_hinweis_fenster)
+        self.assertIsNone(app._konsole_webdienst_hinweis_fenster)
 
 
 if __name__ == "__main__":

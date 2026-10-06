@@ -112,8 +112,12 @@ class AnalyseImFadenTests(_Quelltext):
             f = k.value.func
             von_tk = (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Name)
                       and f.value.id in ("tk", "ttk"))
+            # Seit dem 05.10.2026 bauen die Fenster ihre Teile mit ``self._pw.<Name>(...)`` (runde
+            # Ersatzteile aus fenster_pillen.py) - es sind weiter Tk-Widgets.
+            von_pw = (isinstance(f, ast.Attribute) and isinstance(f.value, ast.Attribute)
+                      and f.value.attr == "_pw")
             fenster = isinstance(f, ast.Attribute) and f.attr == "_build_modern_toplevel"
-            if von_tk or fenster:
+            if von_tk or von_pw or fenster:
                 tk_namen.update(z.id for z in k.targets if isinstance(z, ast.Name))
         # Ohne diese Namen misst der Test nichts.
         for pflicht in ("fw_box", "baum", "stand_var", "win"):

@@ -2,13 +2,17 @@
 """Wächter für die mitgelieferten Hintergrundbilder und ihre Verwendung.
 
 Am 02.10.2026 wurden alle 40 mitgelieferten Bilder durch andere ersetzt: 20
-für den Hauptbereich (1920x1200) und 20 für die Seitenleiste (500x1200),
-benannt nach dem Schema ``bg_NN_<name>`` und ``sidebar_NN_<name>``. Was hier
-steht, sind die Zusicherungen, an denen die Auslieferung hängt:
+für den Hauptbereich und 20 für die Seitenleiste, benannt nach dem Schema
+``bg_NN_<name>`` und ``sidebar_NN_<name>``. Am 05.10.2026 wurden sie auf die
+Flächen im Fenster gebracht (Nutzerauftrag: "Das Hauptbild darf nur den Platz
+einnehmen, der übrig bleibt (1427x1111) nach der Sidebar (493x1111)"; gestreckt,
+ohne das Seitenverhältnis zu halten, wie in Paint): Hauptbereich 1427x1111,
+Seitenleiste 493x1111 - das maximierte Fenster eines 1920x1200-Schirms bei 125 %.
+Was hier steht, sind die Zusicherungen, an denen die Auslieferung hängt:
 
 * Der Bestand folgt dem Schema und hat genau die Maße, auf die Handbuch und
   Darstellungsdiagnose gerechnet sind - ein Bild in anderer Größe würde auf
-  einem 1920x1200-Schirm hochgerechnet (die alten Seitenleisten um 54 %).
+  diesem Schirm hochgerechnet oder beschnitten.
 * Eine gespeicherte Wahl, die auf ein entfallenes mitgeliefertes Bild zeigt,
   fällt auf die Vorgabe zurück statt auf nichts. Gemessen an der
   Einstellungsdatei des Entwicklers: ``bundled:sidebar_20_glass-panels.png``
@@ -79,13 +83,24 @@ class BestandTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.seite), 20)
 
     def test_masse_stimmen(self):
-        """1920x1200 für den Hauptbereich, 500x1200 für die Seitenleiste."""
+        """1427x1111 für den Hauptbereich (rechts neben der Leiste), 493x1111 für die Seitenleiste."""
         for pfad in self.haupt:
             with self.subTest(datei=pfad.name), Image.open(pfad) as bild:
-                self.assertEqual(bild.size, (1920, 1200))
+                self.assertEqual(bild.size, (1427, 1111))
         for pfad in self.seite:
             with self.subTest(datei=pfad.name), Image.open(pfad) as bild:
-                self.assertEqual(bild.size, (500, 1200))
+                self.assertEqual(bild.size, (493, 1111))
+
+    def test_beide_bilder_zusammen_fuellen_die_breite_des_fensters(self):
+        """Hauptbild plus Seitenleiste nebeneinander: so breit wie das maximierte Fenster (1920), gleich hoch."""
+        with Image.open(self.haupt[0]) as haupt, Image.open(self.seite[0]) as seite:
+            self.assertEqual(haupt.size[0] + seite.size[0], 1920)
+            self.assertEqual(haupt.size[1], seite.size[1])
+
+    def test_die_masse_sind_die_der_einstellungen_auf_diesem_schirm(self):
+        """Dieselbe Rechnung wie ``_hintergrund_sollmasse``: Fenster 1920x1111, Leiste 493 (gemessen)."""
+        from ps5_validator.utils import anzeige_skalierung as ask
+        self.assertEqual((1427, 1111, 493), ask.hintergrund_masse((1920, 1111), 493))
 
     def test_nur_rgb_ohne_alphakanal(self):
         """Der Lader macht ``convert("RGB")`` und verwirft den Alphakanal.
@@ -136,8 +151,8 @@ class BestandTests(unittest.TestCase):
         html = (PROJEKT / "BENUTZERHANDBUCH.html").read_text(encoding="utf-8")
         self.assertIn("(%d Stück)" % len(self.haupt), html)
         self.assertIn("(%d Stück)" % len(self.seite), html)
-        self.assertIn("1920 × 1200", html)
-        self.assertIn("500 × 1200", html)
+        self.assertIn("1427 × 1111", html)
+        self.assertIn("493 × 1111", html)
 
     def _helligkeit(self, pfad: Path) -> float:
         with Image.open(pfad) as bild:

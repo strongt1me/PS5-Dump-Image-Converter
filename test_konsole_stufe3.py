@@ -741,14 +741,6 @@ class TexteTests(unittest.TestCase):
         "zurueck.ask_overwrite", "zurueck.log_kept", "zurueck.no_webfm",
         "zurueck.log_start", "zurueck.log_done", "zurueck.log_cancelled",
         "zurueck.log_webfm", "zurueck.log_webfm_port", "zurueck.log_webfm_kein_port",
-        "spielstaende.window_title", "spielstaende.subtitle",
-        "spielstaende.usage", "spielstaende.warn_backup",
-        "spielstaende.warn_benutzer", "spielstaende.btn_check",
-        "spielstaende.btn_start", "spielstaende.btn_open",
-        "spielstaende.status_idle", "spielstaende.status_checking",
-        "spielstaende.status_starting", "spielstaende.status_failed",
-        "spielstaende.running", "spielstaende.stopped", "spielstaende.opened",
-        "spielstaende.no_file",
         "konsoleftp.log_ftp_aus", "konsoleftp.log_ftp_stumm",
         "library.ordner_abbruch_vorgemerkt",
     )
@@ -803,17 +795,18 @@ class FensterTests(unittest.TestCase):
         _durch(fenster)
         return texte
 
-    def test_spielstaende_ist_eine_seite_holen_und_senden_gibt_es_nicht_mehr(self):
+    def test_webkit_ist_eine_seite_holen_und_senden_gibt_es_nicht_mehr(self):
         """Holen und Senden stecken seit dem 25.09.2026 in der Bibliothek.
 
-        Die Spielstaende sind seit dem 26.09.2026 kein Fenster mehr, sondern
-        eine Seite rechts (Nutzer: "ja, hol die Spielstaende auch als Seite
-        nach rechts") - gemessen in test_spielstaende_seite.
+        Die Spielstaende waren seit dem 26.09.2026 eine Seite rechts; seit dem
+        04.10.2026 steht an ihrer Stelle der WebKit Autoloader (Nutzer: "die
+        urspruengliche Funktion (Spielstaende) wieder heraus nimmst") - gemessen
+        in test_webkit_seite. Garlic bleibt ueber "Konsole & Payloads".
         """
         klasse = self.modul.PS5ConverterGUI
-        self.assertEqual("_konsole_spielstaende_zeigen",
-                         klasse._KONSOLE_SEITEN.get("spielstaende"))
-        self.assertNotIn("spielstaende", klasse._KONSOLE_FENSTER)
+        self.assertEqual("_konsole_webkit_zeigen", klasse._KONSOLE_SEITEN.get("webkit"))
+        self.assertNotIn("webkit", klasse._KONSOLE_FENSTER)
+        self.assertNotIn("spielstaende", klasse._KONSOLE_SEITEN)
         self.assertFalse(hasattr(self.app, "_show_konsole_spielstaende"))
         for kennung, methode in (("spiel_holen", "_show_konsole_spiel_holen"),
                                  ("zurueckspielen", "_show_konsole_zurueckspielen")):
@@ -825,7 +818,12 @@ class FensterTests(unittest.TestCase):
                                  % methode)
 
     def test_jede_kennung_der_seitenleiste_hat_ihr_ziel(self):
-        """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen - Fenster wie Seite."""
+        """Kein Knopf der Ansicht darf auf eine fehlende Methode zeigen - Fenster wie Seite.
+
+        "5. CoolSysCent-Pro" sagte vom 04. bis zum 05.10.2026 "kommt noch"; seither ist es
+        eine Direktaktion (``_konsole_coolsyscent_oeffnen``) wie Prospero Manager - jeder
+        der sieben Knoepfe hat wieder ein Ziel.
+        """
         klasse = self.modul.PS5ConverterGUI
         for _schluessel, kennung in klasse._KONSOLE_KNOEPFE:
             methode = (klasse._KONSOLE_FENSTER.get(kennung)
@@ -1017,9 +1015,16 @@ class FensterTests(unittest.TestCase):
                     except Exception:  # noqa: BLE001
                         pass
                 self.assertEqual(2, len(knoepfe), "Ordner- und Ausgabeknopf erwartet")
-                # Das Ausgabefeld steht in derselben Zeile wie sein Knopf.
-                ausgabe = next(k for k in knoepfe[1].master.winfo_children()
-                               if isinstance(k, tk.Entry))
+                # Das Ausgabefeld steht in derselben Zeile wie sein Knopf - seit dem 05.10.2026 in einer Pille
+                # (runde Karte), also eine Ebene tiefer als der Knopf.
+                zeile = [knoepfe[1].master]
+                ausgabe = None
+                while zeile and ausgabe is None:
+                    w = zeile.pop(0)
+                    zeile.extend(w.winfo_children())
+                    if isinstance(w, tk.Entry):
+                        ausgabe = w
+                self.assertIsNotNone(ausgabe, "Kein Ausgabefeld in der Zeile des Knopfes")
                 with mock.patch.object(self.modul.filedialog, "askdirectory",
                                        lambda **_k: next(antworten)):
                     knoepfe[0].invoke()

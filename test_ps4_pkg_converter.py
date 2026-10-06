@@ -72,16 +72,19 @@ class EinbettungTests(unittest.TestCase):
         treffer = sorted(p.name for p in PROJEKT.glob("MkPFS-*") if p.is_dir())
         self.assertEqual(treffer, [f"MkPFS-{hauptprogramm.MKPFS_REQUIRED_VERSION}"])
 
-    def test_menueeintrag_und_methode(self) -> None:
+    def test_kein_eigener_menueeintrag_mehr_aber_ueber_ota_erreichbar(self) -> None:
+        """Seit dem 05.10.2026 ruft ihn "PS4 PKG -> OTA" (Knopf "-> ffpfsc") und die Bibliothek."""
         eintraege = dict(PS5ConverterGUI._MORE_TOOLS_ENTRIES)
-        self.assertIn("titlebar.ps4pkg", eintraege)
-        self.assertEqual(eintraege["titlebar.ps4pkg"], "_show_ps4_pkg_converter")
+        self.assertNotIn("titlebar.ps4pkg", eintraege)
+        self.assertNotIn("_show_ps4_pkg_converter", eintraege.values())
         self.assertTrue(callable(getattr(PS5ConverterGUI, "_show_ps4_pkg_converter", None)))
+        fenster = (PROJEKT / "ps5_validator" / "ui" / "ps4_ota.py").read_text(encoding="utf-8")
+        self.assertIn("self.g._show_ps4_pkg_converter()", fenster)
 
     def test_texte_sind_zweisprachig(self) -> None:
         schluessel = [k for k in STRINGS if k.startswith("ps4pkg.")]
         self.assertGreaterEqual(len(schluessel), 20)
-        for name in [*schluessel, "titlebar.ps4pkg"]:
+        for name in schluessel:
             with self.subTest(schluessel=name):
                 self.assertTrue(STRINGS[name].get("de"))
                 self.assertTrue(STRINGS[name].get("en"))

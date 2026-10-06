@@ -1,6 +1,6 @@
 """Generischer Parser/Writer für flache `key=value`-Konfigurationsdateien.
 
-Deckt das Format ab, das PS5-Payloads wie ShadowMountPlus und MicroMount für ihre
+Deckt das Format ab, das PS5-Payloads wie ShadowMountPlus für ihre
 `config.ini` verwenden: eine Zeile pro Eintrag, `#`/`;` leiten Kommentarzeilen ein,
 keine `[Abschnitte]`. Kommentare/Formatierung sind beim Schreiben bewusst auf das
 Nötigste reduziert - für den PS5-seitigen Parser zählen nur die reinen
@@ -15,8 +15,8 @@ from __future__ import annotations
 #: Die Liste dient der **Anzeige** im Editor: Nur benannte Schlüssel werden zu
 #: einer bearbeitbaren Zeile zusammengezogen. Ob ein Schlüssel tatsächlich
 #: mehrfach dasteht, entscheidet daneben weiterhin :func:`mehrfach_schluessel`
-#: an dem, was in der Datei steht – MicroMount benutzt denselben Editor mit
-#: eigenen Schlüsseln, und die nächste Payload-Fassung kann weitere bringen.
+#: an dem, was in der Datei steht – die nächste Payload-Fassung kann weitere
+#: Schlüssel bringen.
 WIEDERHOLBARE_SCHLUESSEL: tuple[str, ...] = (
     "scanpath",
     "image_ro",
@@ -138,8 +138,7 @@ def mehrfach_schluessel(text: str) -> set[str]:
     :func:`parse_flat_ini` gewinnt der letzte, die übrigen fallen weg.
 
     Aufgezählt wird hier nicht nach Namen, sondern nach dem, was wirklich
-    dasteht: Eine feste Liste ginge an der nächsten Payload-Fassung vorbei,
-    und MicroMount benutzt denselben Editor mit eigenen Schlüsseln.
+    dasteht: Eine feste Liste ginge an der nächsten Payload-Fassung vorbei.
     """
     gesehen: set[str] = set()
     mehrfach: set[str] = set()

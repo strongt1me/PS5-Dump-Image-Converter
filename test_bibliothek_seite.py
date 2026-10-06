@@ -339,13 +339,17 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
         self.assertNotIn("self._btn_library_title =",
                          HAUPTDATEI.read_text(encoding="utf-8"))
 
-    def test_die_ansicht_konsole_hat_vier_knoepfe(self) -> None:
+    def test_die_ansicht_konsole_hat_acht_knoepfe(self) -> None:
         """Sechs am 25.09.2026, am Abend kurz fuenf, dann drei (Remote Play
-        samt ActRemoteLink und ProsperoLight ganz heraus) - und seit dem
-        30.09.2026 vier: "4. Prospero Manager" dazu."""
+        samt ActRemoteLink und ProsperoLight ganz heraus), seit dem
+        30.09.2026 vier ("4. Prospero Manager" dazu), seit dem 04.10.2026
+        sieben (Knopf 2 ist der WebKit Autoloader statt der Spielstaende, dazu
+        CoolSysCent-Pro, ShadowMount+ und SMPlusGui) und seit dem 05.10.2026
+        acht: "8. Direct Stream"."""
         kennungen = [k for _s, k in APP.PS5ConverterGUI._KONSOLE_KNOEPFE]
-        self.assertEqual(["dienste", "spielstaende", "bibliothek", "prosperomgr"],
-                         kennungen)
+        self.assertEqual(["dienste", "webkit", "bibliothek", "prosperomgr",
+                          "coolsyscent", "shadowmount", "smplusgui",
+                          "directstream"], kennungen)
         for weg in ("konsole.btn_actremotelink", "konsole.btn_remoteplay",
                     "konsole.btn_prosperolight"):
             self.assertNotIn(weg, STRINGS)
@@ -368,17 +372,17 @@ class KnoepfeUndTitelleisteTests(unittest.TestCase):
     def test_drei_seiten_mit_bauplan(self) -> None:
         klasse = APP.PS5ConverterGUI
         # Seit dem 26.09.2026 zeigen alle drei Knoepfe eine Seite: "Konsole &
-        # Payloads" ist die Uebersicht, und auch die Spielstaende sind kein
-        # eigenes Fenster mehr.
+        # Payloads" ist die Uebersicht, und auch der WebKit Autoloader (damals
+        # noch die Spielstaende) ist kein eigenes Fenster mehr.
         # Dazu seit dem 26.09.2026 die Seite einer Weboberflaeche - ohne Knopf.
-        self.assertEqual({"uebersicht", "spielstaende", "bibliothek", "web"},
+        self.assertEqual({"uebersicht", "webkit", "bibliothek", "web"},
                          set(klasse._KONSOLE_SEITENBAU))
         self.assertEqual("", klasse._KONSOLE_SEITENBAU["web"][2])
         for seite, (_attr, bauen, _knopf) in klasse._KONSOLE_SEITENBAU.items():
             with self.subTest(seite=seite):
                 self.assertTrue(callable(getattr(klasse, bauen, None)))
         self.assertEqual({"dienste": "_konsole_dienste_zeigen",
-                          "spielstaende": "_konsole_spielstaende_zeigen",
+                          "webkit": "_konsole_webkit_zeigen",
                           "bibliothek": "_konsole_bibliothek_umschalten"},
                          klasse._KONSOLE_SEITEN)
         self.assertEqual({}, klasse._KONSOLE_FENSTER)
@@ -831,9 +835,9 @@ class SeiteTests(unittest.TestCase):
             _WURZEL.update()
             fenster = next(w for w in _WURZEL.winfo_children() if w not in vorher)
             try:
-                # Ohne die Combobox der Namensform - sie ist in ttk ein Entry.
-                felder = [w for w in self._alle(fenster) if isinstance(w, tk.ttk.Entry)
-                          and not isinstance(w, tk.ttk.Combobox)]
+                # Das Namensfeld ist ein ``Entry`` der runden Ersatzteile; die Klappliste der Namensform ist
+                # seit dem 05.10.2026 keins mehr (in ttk war sie ein Entry).
+                felder = [w for w in self._alle(fenster) if w.__class__.__name__ == "Entry"]
                 self.assertEqual(1, len(felder))
                 self.assertEqual("Elden Ring - PPSA04610 - v1.17.0 - EU.ffpfsc",
                                  felder[0].get())

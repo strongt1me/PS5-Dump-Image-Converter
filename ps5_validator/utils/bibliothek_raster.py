@@ -50,6 +50,33 @@ def _rad_einheiten_vorgabe(ereignis: Any) -> int:
 #: Marke fuer "den sichtbaren Bereich der Flaeche noch erfragen" (``None`` heisst dort: nicht gemessen).
 _ERFRAGEN = object()
 
+
+def spur_bis_zerstoert(widget: tk.Misc, variable: tk.Variable, rueckruf: Callable, modus: str = "write") -> str:
+    """``variable.trace_add``, die mit ``widget`` verschwindet.
+
+    Der Tcl-Befehl einer Spur steht im Befehlsverzeichnis des Interpreters - und haelt den Rueckruf, also
+    das Widget und alles, was daran haengt (Bilder, Zeichner, Eltern), fuer immer am Leben. Eine ``StringVar``,
+    die dem Widget gehoert, hilft nicht: Sie wird erst frei, wenn das Widget frei ist. Am 05.10.2026 so
+    gemessen am Fenster "PS4 PKG -> OTA": Jedes Schliessen liess 93 GDI-Objekte und 69 Tk-Bilder stehen, nach
+    rund 100 Fenstern waere das Programm am Limit von 10 000 GDI-Objekten abgestuerzt (in der Testreihe tat
+    es das). Hier wird die Spur beim Zerstoeren des Widgets entfernt.
+
+    Returns:
+        Den Namen des Tcl-Befehls (wie ``trace_add``).
+    """
+    name = variable.trace_add(modus, rueckruf)
+
+    def _weg(ereignis: Any) -> None:
+        if ereignis.widget is not widget:
+            return
+        try:
+            variable.trace_remove(modus, name)
+        except (tk.TclError, ValueError):
+            pass
+
+    widget.bind("<Destroy>", _weg, add="+")
+    return name
+
 #: Die Rollen der Palette, an denen ein gezeichnetes Bild haengt. Aendert sich
 #: eine, sind alle zwischengespeicherten Bilder alt - sie stehen im Schluessel.
 _PALETTE_ROLLEN = ("bg_main", "bg_card", "console_bg", "border", "fg_primary", "fg_secondary", "fg_accent",
@@ -604,7 +631,7 @@ class ChipGruppe(tk.Frame):
                                command=lambda w=wert: self._gewaehlt(w), stil="chip", grund=grund, hoehe=hoehe)
             chip.pack(side="left", padx=(0 if nummer == 0 else zeichner.px(abstand), 0))
             self._chips.append((wert, text, chip))
-        variable.trace_add("write", self._nachziehen)
+        spur_bis_zerstoert(self, variable, self._nachziehen)
         self._nachziehen()
 
     def _gewaehlt(self, wert: str) -> None:
@@ -689,6 +716,16 @@ class RundeKarte(tk.Frame):
         self._groesse_gemalt = (0, 0)
         self._nach: str | None = None
         self.bind("<Configure>", self._groesse, add="+")
+        self.bind("<Destroy>", self._bild_freigeben, add="+")
+
+    def _bild_freigeben(self, e: Any) -> None:
+        """Laesst das Tk-Bild der Karte los, wenn die Karte zerstoert wird.
+
+        Ein Widget, das noch gehalten wird (ein Rueckruf, eine Spur), soll kein Bild mehr festhalten: Jedes
+        Tk-Bild kostet ein GDI-Objekt, und das Programm hat zehntausend davon.
+        """
+        if e.widget is self:
+            self._foto = None
 
     def _groesse(self, e: Any) -> None:
         if (int(e.width), int(e.height)) != self._groesse_gemalt and self._nach is None:
@@ -861,7 +898,7 @@ class SuchFeld(RundeKarte):
                                fg=p.get("fg_secondary", "#9a9ca6"), font=zeichner.schrift_angabe("eingabe"),
                                bd=0, padx=0, anchor="w", cursor="xterm")
         self._platz.bind("<Button-1>", self._platzhalter_klick)
-        variable.trace_add("write", self._platzhalter_nachziehen)
+        spur_bis_zerstoert(self, variable, self._platzhalter_nachziehen)
         self.eingabe.bind("<FocusIn>", self._platzhalter_nachziehen, add="+")
         self.eingabe.bind("<FocusOut>", self._platzhalter_nachziehen, add="+")
         self._platzhalter_nachziehen()

@@ -547,7 +547,8 @@ class FensterTests(unittest.TestCase):
         while offen:
             w = offen.pop()
             offen.extend(w.winfo_children())
-            if isinstance(w, ttk.Button) and str(w.cget("text")) == text:
+            # Die Knoepfe der Fenster sind seit dem 05.10.2026 runde Ersatzteile (``fenster_pillen.Button``).
+            if w.__class__.__name__ == "Button" and str(w.cget("text")) == text:
                 return w
         raise AssertionError("Knopf %r fehlt" % text)
 

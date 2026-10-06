@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.62</title>
+<title>PS5 Dump &amp; Image Converter – Häufige Fragen (FAQ) v1.9.63</title>
 <style>
 :root{
   --bg:#070b14;
@@ -144,8 +144,8 @@ footer{
     <h1>PS5 Dump &amp; Image Converter<br><span class="akzent">Häufige Fragen (FAQ)</span></h1>
     <p class="unter">Kurze Antworten auf die Fragen, die bei der Arbeit mit dem Programm am häufigsten auftauchen – vom ersten Start über das Umwandeln bis zur PS5. Ausführlich steht alles im Benutzerhandbuch.</p>
     <div class="marken">
-      <span class="marke">Version v1.9.62</span>
-      <span class="marke">Stand 4. Oktober 2026</span>
+      <span class="marke">Version v1.9.63</span>
+      <span class="marke">Stand 6. Oktober 2026</span>
       <span class="marke grau">Windows · Linux · macOS</span>
     </div>
   </div>
@@ -360,8 +360,8 @@ footer{
   </div>
 
   <div class="frage">
-    <h3>Wie wandle ich mehrere Dateien auf einmal um?</h3>
-    <p>Mit <strong>Aufgabe&nbsp;5 – Sammelkonvertierung</strong>: alle Dateien (<code>.ffpfsc</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) auf einmal wählen, ein gemeinsames Zielformat angeben, starten. Jede Datei wird einzeln verarbeitet und geprüft; fällt eine durch, laufen die übrigen trotzdem zu Ende. Testen Sie vorher eine einzelne Datei und prüfen Sie den Platz für alle Ergebnisse.</p>
+    <h3>Wie wandle ich mehrere Dateien oder Dump-Ordner auf einmal um?</h3>
+    <p>Mit <strong>Aufgabe&nbsp;5 – Sammelkonvertierung</strong>: auf <strong>Quellen wählen</strong> klicken und entscheiden, ob es Dump-Ordner oder Abbilddateien (<code>.ffpfsc</code>, <code>.exFAT</code> oder <code>.ffpkg</code>) sind. Bei Dump-Ordnern öffnet sich der Ordnerdialog von Windows: mehrere Ordner mit Strg oder Umschalt markieren, dann <strong>Ordner auswählen</strong>. Ein Ordner, der selbst kein Dump ist (etwa <em>Game Dumps</em>), steht für alle Dumps und Abbilder darin. Dann ein gemeinsames Zielformat angeben und starten. Jede Quelle wird einzeln verarbeitet und geprüft; fällt eine durch, laufen die übrigen trotzdem zu Ende. Testen Sie vorher eine einzelne Quelle und prüfen Sie den Platz für alle Ergebnisse.</p>
   </div>
 
   <div class="frage">
@@ -407,7 +407,7 @@ footer{
       <thead><tr><th>Code</th><th>Ursache und Abhilfe</th></tr></thead>
       <tbody>
         <tr><td><code>CE-108255-1</code></td><td>Ein unvollständiges <code>.ffpkg</code> – oder der Start aus dem internen Speicher statt vom USB-Stick. Probieren Sie die Sicherung vom Stick.</td></tr>
-        <tr><td><code>CE-107891-6</code></td><td>Ein Update-Paket passt nicht zum installierten Grundpaket (schon ein Neubau desselben Spiels zählt als anderes Paket). Das passende Grundpaket installieren oder beide zusammen neu bauen. Ob eine <code>.pkg</code> ein Update ist, zeigt <strong>PS4 &amp; PS5 PKG lesen</strong>.</td></tr>
+        <tr><td><code>CE-107891-6</code></td><td>Ein Update-Paket passt nicht zum installierten Grundpaket (schon ein Neubau desselben Spiels zählt als anderes Paket). Das passende Grundpaket installieren oder beide zusammen neu bauen. Ob eine <code>.pkg</code> ein Update ist, zeigt <strong>PS4 PKG → OTA</strong> in der Spalte <em>Typ</em>.</td></tr>
         <tr><td><code>CE-100096-6</code></td><td>Die Konsole weist ein selbst gebautes Paket zurück. Für Spielsicherungen ist der Weg über Abbild und ShadowMount+ der richtige, für eigene Homebrew <strong>App direkt installieren</strong>.</td></tr>
       </tbody>
     </table>
@@ -451,8 +451,14 @@ footer{
 
   <div class="frage">
     <h3>Kann ich auch PS4-Spiele verwenden?</h3>
-    <p>Ja. <strong>PS4 PKG → ffpfsc</strong> (WEITERE TOOLS) macht aus PS4-Paketen – Basis, Patch, wahlweise DLC – ein Abbild für ShadowMount+. <strong>PS4 PKG → Dump Ordner</strong> macht aus einem PS4-Paket einen normalen Spielordner. PS5-Pakete lassen sich nicht entpacken.</p>
+    <p>Ja. <strong>PS4 PKG → OTA</strong> (WEITERE TOOLS) sammelt Ihre PS4-Pakete in einer Tabelle. Von dort aus entpacken Sie ein Paket in einen normalen Spielordner (<strong>Entpacken …</strong>) oder machen aus Paketen – Basis, Patch, wahlweise DLC – ein Abbild für ShadowMount+ (<strong>→ ffpfsc …</strong>). PS5-Pakete lassen sich nicht entpacken; ihren Aufbau zeigt <strong>Mehr → Paketkopf lesen</strong>.</p>
     <p class="hinweis"><strong>Trophäen:</strong> Ein PS4-Spiel, das aus einem Abbild startet, registriert seine Trophäen nicht (<em>Trophy registration failed, 0x80551618</em>). Das ist so vorgesehen und liegt nicht am Abbild. Wer die Trophäen braucht, installiert das Spiel über den Package Installer. PS5-Titel sind nicht betroffen.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Kann ich ein Paket übers Netzwerk an die Konsole senden?</h3>
+    <p>Ja, mit <strong>PS4 PKG → OTA</strong> (WEITERE TOOLS): Pakete in die Tabelle laden, eines wählen, auf dem Reiter <em>OTA</em> die Adresse der Konsole eintragen und <strong>Per OTA senden</strong> drücken. Es gibt zwei Wege: Auf einer PS5 nimmt der OnionHEN-Paketmanager (in <em>Konsole &amp; Payloads</em> als <em>DPI v2</em>) das Paket entgegen und installiert es; eine PS4 holt es über den Remote Package Installer vom PC. <strong>Erkennen</strong> fragt nach, welcher Dienst an der Adresse antwortet.</p>
+    <p class="hinweis"><strong>Ungeprüft:</strong> Das Senden ist an einer Konsole noch nicht erprobt – beide Wege sind gegen Nachbildungen der Dienste getestet. Ob ein bestimmtes Paket danach startet, zeigt nur der Versuch.</p>
   </div>
 
   <div class="frage">
@@ -467,8 +473,10 @@ footer{
 
   <div class="frage">
     <h3>Was zeigt die Ansicht KONSOLE?</h3>
-    <p>Unter dem Logo schaltet <strong>KONSOLE ›</strong> auf eine zweite Ansicht mit vier Werkzeugen: <em>Konsole &amp; Payloads</em>, <em>Spielstände</em>, <em>Bibliothek</em> und <em>Prospero Manager</em>. <strong>‹ UMWANDELN</strong> führt zurück; Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten.</p>
+    <p>Unter dem Logo schaltet <strong>KONSOLE ›</strong> auf eine zweite Ansicht mit acht Werkzeugen: <em>Konsole &amp; Payloads</em>, <em>WebKit Autoloader</em>, <em>Bibliothek</em>, <em>Prospero Manager</em>, <em>CoolSysCent-Pro</em>, <em>ShadowMount+</em>, <em>SMPlusGui</em> und <em>Direct Stream</em>. <strong>‹ UMWANDELN</strong> führt zurück; Quelle, Einstellungen und ein laufender Auftrag bleiben dabei erhalten.</p>
     <p><strong>Konsole &amp; Payloads</strong> sucht die PS5 schon beim Programmstart selbst – eine Adresse müssen Sie nicht eintragen. Die Seite fragt alle bekannten Ports ab, zeigt zu jedem Dienst Zustand, Version und Zweck, startet fehlende Dienste aus dem mitgelieferten Ordner <code>helloworld</code> und öffnet Weboberflächen. Unter Windows erscheinen diese direkt im Programm, sonst im Browser.</p>
+    <p><strong>Prospero Manager</strong>, <strong>CoolSysCent-Pro</strong> (das PS5 Cooling &amp; System Center, Port 8086), <strong>ShadowMount+</strong> und <strong>SMPlusGui</strong> haben keine eigene Seite: Ein Druck prüft, ob das Payload auf der Konsole schon läuft, schickt es bei Bedarf selbst – samt ELF-Loader, falls Port 9021 noch zu ist – und öffnet dann seine Weboberfläche.</p>
+    <p><strong>Direct Stream</strong> schickt nichts an die Konsole: Es ist ein kleiner Server nur auf diesem Rechner (<code>127.0.0.1</code>), der einen Download oder eine lokale Datei per FTP direkt in den Speicher der PS5 überträgt. Der Knopf startet ihn und zeigt seine Seite rechts; PS5-Adresse und FTP-Port trägt das Programm beim ersten Start selbst ein. Er läuft weiter, wenn Sie die Seite verlassen, und endet mit dem Programm – läuft dann gerade eine Übertragung, fragt das Programm vorher. Probieren Sie es zuerst mit einer kleinen Datei.</p>
   </div>
 
   <div class="frage">
@@ -495,7 +503,23 @@ footer{
 
   <div class="frage">
     <h3>Wie sichere ich Spielstände?</h3>
-    <p>Sichern, entschlüsseln und zwischen Benutzern übertragen macht der <strong>Garlic Save Manager</strong> mit seiner eigenen Oberfläche (Port 8082). Die Seite <em>Spielstände</em> prüft, ob er läuft, startet ihn und öffnet ihn. Sichern Sie vor jedem Zurückschreiben. Ein neu angelegter Konsolenbenutzer findet seine Spielstände leer – die alten bleiben beim ursprünglichen Benutzer.</p>
+    <p>Sichern, entschlüsseln und zwischen Benutzern übertragen macht der <strong>Garlic Save Manager</strong> mit seiner eigenen Oberfläche (Port 8082). Eine eigene Seite dafür gibt es nicht: Auf <em>Konsole &amp; Payloads</em> wählen Sie ihn in der Tabelle, starten ihn mit <strong>Ausgewähltes starten</strong> und öffnen seine Oberfläche mit <strong>Weboberfläche öffnen</strong>. Sichern Sie vor jedem Zurückschreiben. Ein neu angelegter Konsolenbenutzer findet seine Spielstände leer – die alten bleiben beim ursprünglichen Benutzer.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Was macht der WebKit Autoloader, und welche Fassung soll ich nehmen?</h3>
+    <p>Er legt auf der Konsole die Kachel <strong>WebKit Autoload</strong> an (Startbildschirm, unter <em>Medien</em>), damit sich der Einstieg mit einem Druck wiederholen lässt. Dazu gehören ein <strong>Host</strong> auf Ihrem Rechner – als Windows-Programm oder als Python-Skript – und ein <strong>Installer</strong>, der einmal auf der Konsole läuft. Beides steht unter <strong>KONSOLE › WebKit Autoloader</strong>.</p>
+    <ul>
+      <li><strong>Fassung:</strong> Es liegen mehrere bei, von v0.4.0 bis v0.5.2. Vorgegeben ist die neueste; Ihre Wahl merkt sich das Programm, und sie gilt für alle drei Wege (Host als Windows-Programm, Host als Python-Skript, Installer senden). Läuft die neueste bei Ihnen nicht, probieren Sie eine ältere.</li>
+      <li><strong>Host:</strong> Er belegt DNS (UDP 53) und HTTPS (TCP 443) und braucht deshalb Administratorrechte.</li>
+      <li><strong>Installer:</strong> Er geht über Port 9021 an die Konsole. Ist der Port zu, geht er per FTP in die Wurzel eines USB-Datenträgers; dort holen Sie ihn mit dem Payload Manager ab.</li>
+    </ul>
+    <p>Erscheint eine neue Fassung, legen Sie ihre drei Dateien zusätzlich in den Ordner <code>PS5 WebKit Autoloader</code>; die älteren bleiben wählbar.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Der Knopf ShadowMount+ öffnet keine Weboberfläche. Woran liegt das?</h3>
+    <p>ShadowMount+ lauscht ab Werk nur auf der PS5 selbst (<code>api_bind_address=127.0.0.1</code>). Von Ihrem PC aus ist Port 10101 dann zu, obwohl ShadowMount+ läuft – und der Knopf schickt das Payload trotzdem noch einmal. Antwortet der Port danach nicht, nennt das Protokoll den Grund. Stellen Sie deshalb im ShadowMount+-Editor (<em>WEITERE TOOLS</em>) den Schlüssel <code>api_bind_address</code> auf die PS5-Adresse oder <code>0.0.0.0</code>. Die Oberfläche hat keine Anmeldung – nutzen Sie das nicht in einem fremden Netz.</p>
   </div>
 
   <div class="frage">
@@ -528,6 +552,11 @@ footer{
     <h3>Meldung „sce_sys/param.json fehlt“ oder „param.json has no Content ID“.</h3>
     <p><strong>param.json fehlt:</strong> Das Spiel ist unvollständig. Bei <em>Ja</em> legt das Programm eine gültige <code>param.json</code> an und baut weiter; bei <em>Nein</em> bricht es ab – erstellen Sie dann besser ein neues Backup vom Original.</p>
     <p><strong>Content-ID fehlt:</strong> Titel und Content-ID stehen in keiner Datei eines Backups, nur die Title-ID. Mit <em>Fehlende Metadaten online nachschlagen</em> (Einstellungen) holt das Programm beides nach. Sonst trägt es einen Platzhalter ein (<code>UP0000-&lt;Title-ID&gt;_00-…</code>); die alte Datei bleibt als <code>param.json.alt</code> erhalten. Für Updates und DLC muss die echte Content-ID eingetragen werden.</p>
+  </div>
+
+  <div class="frage">
+    <h3>Meldung „eboot.bin nicht im Quellordner gefunden“.</h3>
+    <p>Ein Abbild muss das Spiel direkt in seiner Wurzel tragen: <code>eboot.bin</code> und <code>sce_sys/param.json</code> liegen im Ordner selbst, nicht in einem Unterordner – so verlangt es ShadowMount+. Das Programm prüft das vor dem Bau (bei <code>.ffpfsc</code>, <code>.ffpfs</code>, <code>.exFAT</code> und <code>.ffpkg</code>) und bricht sonst ab, statt dass es erst an der Konsole auffällt. Meist ist der gewählte Ordner eine Ebene zu hoch – wählen Sie den Ordner, in dem <code>eboot.bin</code> direkt liegt.</p>
   </div>
 
   <div class="frage">
@@ -575,8 +604,8 @@ footer{
 </main>
 
 <footer>
-  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.62</strong></span>
-  <span>Stand 4. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
+  <span>PS5 Dump &amp; Image Converter – Häufige Fragen <strong>v1.9.63</strong></span>
+  <span>Stand 6. Oktober 2026 · Nur für eigene, rechtmäßig erworbene Inhalte</span>
 </footer>
 
 </body>

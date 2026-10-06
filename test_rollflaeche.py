@@ -123,10 +123,10 @@ class AufbauTests(unittest.TestCase):
         self.assertLess(rumpf.index("flaeche.itemcget("),
                         rumpf.index("flaeche.itemconfigure("))
         # Und der Anstoss vom Inhalt her ist entprellt - ueber dieselbe Stelle, die
-        # auch die Karte und der zweite Beschriftungsdurchgang nutzen.
+        # auch die Karte nutzt.
         self.assertIn("_rollpruefung_planen", self._methode("_on_inhalt_configure"))
         self.assertIn("after_cancel", self._methode("_rollpruefung_planen"))
-        for name in ("_on_card_configure", "_beschriftungen_nachlauf_ausfuehren"):
+        for name in ("_on_card_configure",):
             with self.subTest(anstoss=name):
                 self.assertIn("self._rollpruefung_planen()", self._methode(name),
                               "Wuchs die Zeile, merkt die Spalte es sonst erst bei der naechsten "

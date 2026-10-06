@@ -445,5 +445,56 @@ class MacSuchwurzelTests(unittest.TestCase):
         self.assertNotIn(str(Path(ordner).parent), wurzeln)
 
 
+@unittest.skipUnless(sys.platform == "win32", "Das Fehlerfenster gibt es nur unter Windows.")
+class FehlerfensterTests(unittest.TestCase):
+    """Befund vom 05.10.2026: Die Attrappe ``MZ-werkzeug`` hielt den Volllauf an.
+
+    ``EinsatzordnerTests`` legt eine ``prosperopkg.exe`` aus den Bytes
+    ``MZ-werkzeug`` an und spiegelt sie; ``kopie_taugt`` startet sie dann.
+    Windows zeigt dafuer „Nicht unterstuetzte 16 Bit-Anwendung“, und
+    ``CreateProcess`` kehrt erst nach dem Schliessen zurueck - im Volllauf
+    vom 05.10.2026 stand der Lauf je Test still (17 Sekunden gemessen, ohne
+    Bedienung eine Dreiviertelstunde). Der Selbsttest unterdrueckt das Fenster
+    jetzt fuer den eigenen Faden (``_ohne_fehlerfenster``).
+
+    Die Probe stellt den schlechtesten Fall her - Fehlermodus 0, also mit
+    Fenster - und misst, ob der Aufruf trotzdem sofort zurueckkehrt.
+    """
+
+    def test_eine_attrappe_oeffnet_kein_fenster(self):
+        import ctypes
+        import time
+        kernel = ctypes.windll.kernel32
+        with tempfile.TemporaryDirectory() as wo:
+            ordner = Path(wo) / "werkzeug"
+            ordner.mkdir()
+            (ordner / "prosperopkg.exe").write_bytes(b"MZ-werkzeug")
+            alt = kernel.SetErrorMode(0)
+            try:
+                start = time.monotonic()
+                taugt, _grund = eb.kopie_taugt(str(ordner), zeit=10.0)
+                dauer = time.monotonic() - start
+            finally:
+                kernel.SetErrorMode(alt)
+        self.assertLess(dauer, 8.0, "Der Selbsttest hat auf ein Fehlerfenster gewartet.")
+        self.assertTrue(taugt, "Ein nicht startbares Programm ist kein Befund ueber die Bibliothek.")
+
+    def test_der_fehlermodus_wird_zurueckgestellt(self):
+        import ctypes
+        kernel = ctypes.windll.kernel32
+        vorher = ctypes.c_uint(0)
+        kernel.SetThreadErrorMode(0x0, ctypes.byref(vorher))
+        try:
+            with eb._ohne_fehlerfenster():
+                innen = ctypes.c_uint(0)
+                kernel.SetThreadErrorMode(0x8003, ctypes.byref(innen))   # liest den gesetzten Wert
+                self.assertEqual(0x8003, innen.value)
+            nachher = ctypes.c_uint(0)
+            kernel.SetThreadErrorMode(0x0, ctypes.byref(nachher))
+            self.assertEqual(0x0, nachher.value, "Der Fehlermodus des Fadens wurde nicht zurueckgestellt.")
+        finally:
+            kernel.SetThreadErrorMode(vorher.value, None)
+
+
 if __name__ == "__main__":
     unittest.main()

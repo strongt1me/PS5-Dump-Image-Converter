@@ -61,6 +61,14 @@ class Dienst:
     port: int
     #: Muster der mitgelieferten ELF-Datei (helloworld/), "" = keine.
     payload_muster: str = ""
+    #: Muster einer mitgelieferten Datei, aus der **nur die Version** der Spalte
+    #: "Version" kommt - ohne dass der Eintrag daraus gestartet wird
+    #: (``payload_muster`` bleibt leer). Fuer Dienste, die das Programm bewusst
+    #: nicht selbst schickt: ShadowMount+ (laeuft ueblicherweise aus dem Autoload),
+    #: der zweite Port des ELF-Loaders (derselbe Dienst wie 9021) und DPI v2 (ein
+    #: OnionHEN-Plugin, das OnionHEN selbst startet). Seit dem 05.10.2026 -
+    #: vorher stand dort immer ein Strich.
+    datei_muster: str = ""
     #: Pfad der Weboberflaeche, oder "" fuer keine.
     web: str = ""
     #: Nur einer aus dieser Gruppe muss laufen (die beiden Loader-Ports).
@@ -76,6 +84,9 @@ class Dienst:
     version_muster: str = ""
     #: HTTP-Pfad, unter dem der Dienst seine Version nennt, "" = keiner.
     version_pfad: str = ""
+    #: Wie ``version_pfad``, aber als ``POST`` mit leerem JSON-Objekt - so fragt die
+    #: Schnittstelle von ShadowMount+ (jede Anfrage dort ist ein POST).
+    version_post: str = ""
 
     @property
     def name_schluessel(self) -> str:
@@ -97,7 +108,9 @@ class Dienst:
 #: ("Homebrew Launcher") und BFpilot nennen auf ihrer Startseite keine.
 KATALOG: tuple[Dienst, ...] = (
     Dienst("elfldr9021", 9021, "elfldr*.elf", gruppe="elfldr", anlaufzeit=2.5),
-    Dienst("elfldr9020", 9020, "", gruppe="elfldr"),
+    # Derselbe Dienst auf dem zweiten bekannten Port: gestartet wird er ueber die
+    # Zeile 9021, hier steht nur die Version der beiliegenden Datei (seit 05.10.2026).
+    Dienst("elfldr9020", 9020, "", gruppe="elfldr", datei_muster="elfldr*.elf"),
     Dienst("pldmgr", 8084, "pldmgr*.elf", web="/", anlaufzeit=2.0,
            version_muster=r"^\s*v?(\d[\w.-]*)", version_pfad="/version"),
     Dienst("ftpsrv", 2121, "ftpsrv-ps5*.elf", begruessung=True,
@@ -119,7 +132,14 @@ KATALOG: tuple[Dienst, ...] = (
     # 127.0.0.1; von diesem PC aus ist sie erst erreichbar, wenn
     # api_bind_address in der config.ini auf die PS5-Adresse oder 0.0.0.0
     # zeigt (ShadowMount+-Editor in "WEITERE TOOLS").
-    Dienst("shadowmount", 10101, web="/"),
+    #
+    # Version seit dem 05.10.2026 (der Nutzer: "bei ShadowMount+ steht nie die Version"):
+    # Ist die Schnittstelle von diesem PC aus erreichbar, nennt ShadowMount+ sie selbst -
+    # ``POST /api/v1/version`` liefert ``"shadowmount_version"`` (docs/api.md). Sonst
+    # (Normalfall: nur 127.0.0.1) steht die Version der beiliegenden Datei da.
+    Dienst("shadowmount", 10101, web="/", datei_muster="shadowmountplus_v*.elf",
+           version_muster=r'"shadowmount_version"\s*:\s*"([^"]+)"',
+           version_post="/api/v1/version"),
     # Alles-in-einem-Weboberflaeche (Dateimanager, PKG-Installer, Spielstaende,
     # Payloads, Autoloader ...) - ein einzelnes ELF, startet ueblicherweise auf
     # Knopfdruck wie webfm/pkgmgr, deshalb MIT payload_muster (anders als
@@ -160,6 +180,30 @@ KATALOG: tuple[Dienst, ...] = (
     # selbst (Sperrdatei); gestartet wird hier ohnehin nur, wenn der Port zu
     # ist. Anlaufzeit geschaetzt (Bluetooth kommt mit hoch), nicht gemessen.
     Dienst("anypad", 8095, "AnyPad-PS5-*.elf", web="/", anlaufzeit=3.0),
+    # --- DPI v2 (seit 05.10.2026) ----------------------------------------------
+    # Paketinstaller im Browser, ein Plugin fuer OnionHEN. Auftrag des Nutzers: Was von
+    # den ELFs in helloworld/ eine Weboberflaeche hat, steht in dieser Tabelle. Port
+    # 12800 (WebUI) laut README des Autors (OnionBuddies/onionHEN-dpiv2-plugin), dort
+    # einstellbar; der Uebertragungsport 9090 gehoert zum selben Plugin. An der Konsole
+    # noch NICHT nachgemessen. Kein payload_muster (bewusst): Das Plugin liegt unter
+    # /data/OnionHEN/plugins/DPIV00001.elf und wird von OnionHEN gestartet - sein
+    # main() verbindet sich beim Start mit dem OnionHEN-Daemon (Quelltext main.c) -,
+    # "Ausgewaehltes starten" soll es nicht ueber den ELF-Loader schicken. Aus der
+    # Datei kommt nur die Version der Spalte.
+    Dienst("dpiv2", 12800, web="/", datei_muster="dpiv2-*.elf"),
+    # --- PS5 Cooling & System Center - Pro (seit 05.10.2026) -------------------
+    # Die eigene App des Projektinhabers (helloworld/PS5_Cooling_System_Center_v1.48.0.elf):
+    # Luefter- und Temperatursteuerung, Systeminfo, Spielebibliothek, Pakete installieren ... im
+    # Browser. Port und Weboberflaeche aus dem ELF selbst: ``"deeplinkUri": "http://127.0.0.1:8086"``,
+    # der Port ist die Einstellung ``http_port`` (Vorgabe 8086), ``bind_address`` steht ab Werk auf
+    # 0.0.0.0 (im LAN erreichbar). Die Weboberflaeche lehnt Anfragen ab, die nicht ueber die IP-Adresse
+    # der Konsole kommen (``forbidden_origin``) - hier geht alles ueber die IP. Die laufende Version
+    # nennt ``GET /api/v1/system`` als ``"app_version"``. Mit payload_muster: startet auf Knopfdruck
+    # (Knopf 5 der Ansicht KONSOLE) und ueber "Ausgewaehltes starten". Ist ein anderer Port eingestellt,
+    # gilt die Zeile nicht - Anlaufzeit geschaetzt (Sensoren und Kachel-Dienst kommen mit hoch). An der
+    # Konsole noch NICHT nachgemessen.
+    Dienst("coolsyscent", 8086, "PS5_Cooling_System_Center_v*.elf", web="/", anlaufzeit=3.0,
+           version_muster=r'"app_version"\s*:\s*"([^"]+)"', version_pfad="/api/v1/system"),
 )
 
 #: Die Grundausstattung, in dieser Reihenfolge: Ohne Loader geht nichts,
@@ -268,13 +312,16 @@ def version_aus_dateiname(name: str) -> str:
     """Die Version im Namen einer mitgelieferten ELF-Datei, oder "".
 
     ``elfldr-ps5_v0.26.elf`` -> ``0.26``, ``ftpsrv-ps5_v1.16-ng-stable.elf`` ->
-    ``1.16-ng-stable``, ``ps5upload-5.33.2.elf`` -> ``5.33.2``. Eine Zahl ohne
-    Punkt (``bdj_unpatch_1340.elf``) gilt nicht als Version.
+    ``1.16-ng-stable``, ``ps5upload-5.33.2.elf`` -> ``5.33.2``,
+    ``shadowmountplus_v1.7beta4.elf`` -> ``1.7beta4`` (Stufe ohne Trenner direkt
+    hinter der Zahl, seit 05.10.2026). Eine Zahl ohne Punkt
+    (``bdj_unpatch_1340.elf``) gilt nicht als Version.
     """
     stamm = os.path.basename(str(name or ""))
     if stamm.lower().endswith(".elf"):
         stamm = stamm[:-4]
-    treffer = re.search(r"[_-]v?(\d+(?:\.\d+)+(?:[-_][A-Za-z0-9]+)*)$", stamm)
+    treffer = re.search(
+        r"[_-]v?(\d+(?:\.\d+)+(?:[A-Za-z][A-Za-z0-9]*)?(?:[-_][A-Za-z0-9]+)*)$", stamm)
     return treffer.group(1) if treffer else ""
 
 
@@ -293,6 +340,9 @@ def laufende_version(adresse: str, eintrag: Dienst, zeit: float = ZEITSCHRANKE) 
             text = _gruss_lesen(adresse, eintrag.port, muster, zeit)
         elif eintrag.version_pfad:
             text = _seite_lesen(adresse, eintrag.port, eintrag.version_pfad, zeit)
+        elif eintrag.version_post:
+            text = _seite_lesen(adresse, eintrag.port, eintrag.version_post, zeit,
+                                post=b"{}")
         else:
             return ""
     except OSError:
@@ -327,16 +377,28 @@ def _gruss_lesen(adresse: str, port: int, muster: "re.Pattern[str]",
     return gelesen.decode("utf-8", "replace")
 
 
-def _seite_lesen(adresse: str, port: int, pfad: str, zeit: float) -> str:
+def _seite_lesen(adresse: str, port: int, pfad: str, zeit: float,
+                 post: "bytes | None" = None) -> str:
     """Der Rumpf einer HTTP-Antwort - gelesen, bis die Konsole schliesst.
 
     HTTP/1.0 mit ``Connection: close``: Das Ende der Verbindung ist das Ende
     der Antwort. Abgebrochen wird nur bei :data:`SEITE_HOECHSTENS` oder wenn
     die Konsole mitten in der Antwort verstummt. Antwortet sie nicht mit 200
     (etwa 404 bei einer aelteren Fassung ohne diesen Pfad), ergibt das "".
+
+    ``post``: ein JSON-Koerper - dann geht die Anfrage als ``POST`` mit
+    ``Content-Type: application/json`` und ``Content-Length`` hinaus (so
+    verlangt es die Schnittstelle von ShadowMount+: jede Anfrage dort ist ein
+    POST mit einem Objekt, hoechstens 4096 Bytes).
     """
-    anfrage = ("GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n"
-               % (pfad or "/", adresse)).encode("ascii")
+    if post is None:
+        anfrage = ("GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n"
+                   % (pfad or "/", adresse)).encode("ascii")
+    else:
+        kopf = ("POST %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n"
+                "Content-Type: application/json\r\nContent-Length: %d\r\n\r\n"
+                % (pfad or "/", adresse, len(post))).encode("ascii")
+        anfrage = kopf + post
     teile: list[bytes] = []
     menge = 0
     with socket.create_connection((adresse, int(port)), timeout=zeit) as verbindung:

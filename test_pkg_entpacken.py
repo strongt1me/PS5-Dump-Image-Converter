@@ -284,7 +284,6 @@ class TexteTests(unittest.TestCase):
         # Kennung - die Texte dazu prueft test_jeder_grund_hat_einen_text.
         schluessel = {k for k in re.findall(r'"(pkgentpacken\.[a-z_]+)"', quelle)
                       if not k.endswith("_")}
-        schluessel.add("titlebar.pkg_entpacken")
         self.assertGreater(len(schluessel), 20)
         for k in sorted(schluessel):
             with self.subTest(schluessel=k):
@@ -305,9 +304,18 @@ class FensterTests(unittest.TestCase):
         # Pruefmoduls (siehe test_qualitaetslauf.SpracheImPruefstandTests).
         cls.app._current_language = "de"
 
-    def test_menueeintrag(self):
-        self.assertIn(("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
-                      self.haupt.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
+    def test_kein_eigener_menueeintrag_mehr_aber_der_ota_knopf_faellt_darauf_zurueck(self):
+        """Seit dem 05.10.2026 entpackt "PS4 PKG -> OTA" mit OrbisPkgTool (nur Windows).
+
+        Wo das Werkzeug fehlt (Linux, macOS), oeffnet "Entpacken" dieses Fenster - sonst
+        ginge dort verloren, was bisher ging.
+        """
+        self.assertNotIn(("titlebar.pkg_entpacken", "_show_pkg_entpacken"),
+                         self.haupt.PS5ConverterGUI._MORE_TOOLS_ENTRIES)
+        self.assertTrue(callable(getattr(self.haupt.PS5ConverterGUI, "_show_pkg_entpacken", None)))
+        fenster = os.path.join(os.path.dirname(HAUPTDATEI), "ps5_validator", "ui", "ps4_ota.py")
+        with open(fenster, encoding="utf-8") as datei:
+            self.assertIn('getattr(self.g, "_show_pkg_entpacken", None)', datei.read())
 
     def _oeffnen(self):
         vorher = set(_WURZEL.winfo_children())

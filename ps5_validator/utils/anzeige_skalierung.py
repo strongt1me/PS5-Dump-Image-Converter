@@ -292,3 +292,22 @@ def maximiert_groesse(bildschirm: tuple[int, int]) -> tuple[int, int]:
     """Die Groesse, die ein maximiertes Fenster auf diesem Bildschirm haette."""
     return (max(1, bildschirm[0] - FENSTER_RAND_BREITE),
             max(1, bildschirm[1] - FENSTER_RAND_HOEHE))
+
+
+def hintergrund_masse(fenster: tuple[int, int], seitenleiste: int) -> tuple[int, int, int]:
+    """Wie gross die beiden Hintergrundbilder sein sollen: ``(Hauptbild-Breite, Hoehe, Seitenleisten-Breite)``.
+
+    Das Hauptbild liegt nur **rechts neben der Seitenleiste**, die Seitenleiste hat ihr eigenes Bild - beide
+    nebeneinander, keines unter dem anderen (Nutzerhinweis 05.10.2026). Beide sind so hoch wie das Fenster; das
+    Hauptbild ist so breit wie das, was neben der Leiste uebrig bleibt. Gemessen an einem maximierten Fenster von
+    1920 x 1111 bei einer Leiste von 493: Hauptbild 1427 x 1111, Seitenleiste 493 x 1111.
+
+    Args:
+        fenster: ``(breite, hoehe)`` des Fensters, auf das sich die Bilder beziehen (maximiert).
+        seitenleiste: Die Breite der Seitenleiste in Pixeln.
+
+    Returns:
+        ``(breite, hoehe, leiste)`` - jede Zahl mindestens 1.
+    """
+    leiste = max(1, int(seitenleiste))
+    return max(1, int(fenster[0]) - leiste), max(1, int(fenster[1])), leiste

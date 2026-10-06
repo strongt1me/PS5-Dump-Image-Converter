@@ -2,8 +2,8 @@
 
 ![Plattform](https://img.shields.io/badge/Plattform-Windows%20%7C%20Linux%20%7C%20macOS-0078D6)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB)
-![Version](https://img.shields.io/badge/Version-v1.9.62-blue)
-![Tests](https://img.shields.io/badge/Tests-4972%20gr%C3%BCn-brightgreen)
+![Version](https://img.shields.io/badge/Version-v1.9.63-blue)
+![Tests](https://img.shields.io/badge/Tests-5622%20gr%C3%BCn-brightgreen)
 
 Konvertiert, entpackt, packt und prüft PS5-Dump-Formate – über eine grafische
 Oberfläche mit acht klar getrennten Aufgaben. Unterstützt werden Dump-Ordner,
@@ -196,6 +196,7 @@ arbeiten überall gleich. Unterschiede gibt es hier:
 | Bereich | Linux und macOS |
 | --- | --- |
 | `.ffpkg` lesen und bauen | Verfügbar – UFS2Tool liegt für Windows, Linux und macOS (Intel und Apple Silicon) bei; gelesen wird über `UFS2Tool extract`, gebaut über `newfs`/`makefs`. Nur das Einhängen über den Dokan-Treiber gibt es ausschließlich unter Windows. |
+| PS4 PKG → OTA | OrbisPkgTool gibt es nur als Windows-Programm. Entpacken öffnet dort das bisherige Fenster; Prüfen, Zusammenführen, Neu packen, Bauen und das Auslesen der Dateien eines Pakets brauchen das Werkzeug. Sammlung, Einzelheiten, Umbenennen, Verschieben, Update-Abfrage und Senden gehen überall. |
 | OSFMount-Ersatzwege | Nicht verfügbar; die nativen MkPFS-/exFAT-Wege sind vollständig vorhanden. |
 | Erhöhte Rechte | Nicht nötig. |
 | Einstellungen | `~/.config/PS5ImageConverterPro/` bzw. `~/Library/Application Support/PS5ImageConverterPro/` |
@@ -236,9 +237,11 @@ Lizenzen, manche mit eigenen Bedingungen (etwa GPL-3.0). Sie stehen in
 ## Credits
 
 * **PSBrew / Renan Barreto** ([@RenanGBarreto](https://github.com/RenanGBarreto)) – [MkPFS](https://github.com/PSBrew/MkPFS), die PFS-Engine dieses Programms
-* **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „PS4 & PS5 PKG lesen“
+* **SvenGDK und Mitwirkende** – [UFS2Tool](https://github.com/SvenGDK/UFS2Tool) und **LibProsperoPkg**, das Werkzeug hinter „Paketkopf lesen“ in „PS4 PKG → OTA“
+* **pearlxcore** – [OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool) (MIT), die Engine hinter „PS4 PKG → OTA“; die Anregung zum Fenster gab das PS4 PKG Tool, aus dessen Code nichts übernommen ist
 * **PS4 FFPFSC** – PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later)
 * **andy-man** – [PS5 Wee Tools](https://github.com/andy-man/ps5-wee-tools), Werkzeug für den NOR-Flash der Konsole (GPL-3.0), unter WEITERE TOOLS
+* **Direct Stream for PlayStation 5** 2.8.1 – Werkzeug, das Downloads und lokale Dateien per FTP direkt in den Speicher der PS5 schickt (MIT; in der Lizenzdatei ist kein Urheber genannt), Knopf 8 der Ansicht KONSOLE
 * **kerrdec97** – [ps5-exfat-builder](https://github.com/PSBrew/ps5-exfat-builder), Vorarbeit und Orientierung
 * **drakmor / Roman Tarasov** – [AMPR EMU](https://github.com/drakmor/ampr_emu) und die **AMPR PackTools** (GPL-3.0), Grundlage von Aufgabe 7 und der Asset-Packs
 * **libScePlayGo-Stub** – PS5-Homebrew-Community, meldet PlayGo-Inhalte als installiert

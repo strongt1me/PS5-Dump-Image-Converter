@@ -31,7 +31,7 @@ Payloads weiterverteilt, sollte die Bedingungen des jeweiligen Projekts prüfen.
 Den Wortlaut der GNU General Public License 3.0 enthält
 `helloworld/LICENSE-GPL-3.0.txt` – der unveränderte Text der Free Software
 Foundation. Er gilt für die Zeilen unten, die GPL-3.0 oder GPL-3.0-or-later
-nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN,
+nennen: PS5 PKG Manager, ActRemoteLink (Agent und PIN-Anzeige), OnionHEN, DPI v2 (OnionHEN-Plugin),
 unjail-ps5app-payload, WK Autoloader, Prospero Manager, WebKit Autoloader (Installer), CheatRunner,
 BackPork, shsrv, gdbsrv, MemDBG, ps5-hwinfo, ps5-syslang, ps5-unified-autoloader, PoorDS4 und
 garlic-worker. Wo der Quelltext des jeweiligen Projekts zu finden ist, steht in seiner Zeile.
@@ -75,7 +75,9 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `kstuff_lite_v1.11_Beta_EchoStretch.elf` | kstuff lite (EchoStretch-Build) | EchoStretch | Release v1.11 von `github.com/EchoStretch/kstuff-lite` |
 | `kstuff_v1.13_dr_Beta4.elf` | kstuff (dr) | drakmor | „dr" = drakmor; aktuellste drakmor-Fassung, kein Beleg in der Datei |
 | `ps5upload-5.41.0.elf` | PS5Upload | phantomptr | Eigenname `ps5upload` im ELF; geladen aus dem Release v5.41.0 (SHA-256 gegen den Release-Anhang geprüft) |
-| `OnionHEN_v0.0.13.elf` | OnionHEN | – | GPL-3.0 (LICENSE im Projekt-ZIP) |
+| `OnionHEN_v0.0.13.elf` | OnionHEN | aydencharles | Projektadresse im ELF (`github.com/aydencharles/onionHEN`); GPL-3.0 (LICENSE im Projekt); aus dem Release v0.0.13, SHA-256 gegen den Release-Anhang geprüft; beim Autor heißt die Datei „OnionHEN.elf“ |
+| `OnionHEN_v0.9.0-beta1.elf` | OnionHEN | aydencharles | Projektadresse im ELF (`github.com/aydencharles/onionHEN`); GPL-3.0 (LICENSE im Projekt); aus dem Release v0.9.0-beta1 (beim Autor als Vorabfassung markiert), SHA-256 gegen den Release-Anhang geprüft; beim Autor heißt die Datei „OnionHEN.elf“ |
+| `dpiv2-13.60-1.00.elf` | DPI v2 (OnionHEN-Plugin) | OnionBuddies | „DPI v2“, „DPIV00001“ und Pfade unter `/data/OnionHEN/` im ELF; Quelltext `github.com/OnionBuddies/onionHEN-dpiv2-plugin`, GPL-3.0 (LICENSE im Projekt); beim Autor gibt es dazu keine Freigabe (keine Release-Anhänge) – die Datei hat der Nutzer geliefert, ihre SHA-256 lässt sich gegen nichts prüfen; ein Plugin für OnionHEN, das auf der Konsole im Ordner „/data/OnionHEN/plugins“ als „DPIV00001.elf“ liegt und von OnionHEN gestartet wird |
 | `unjail-ps5app-payload.elf` | unjail-ps5app-payload | SvenGDK | GPL-3.0 (Lizenztext + Quellcode in `helloworld/unjail-ps5app-payload-1.2/`); aus dem Release v1.2 |
 | `SMPlusGui_v1.0.1.elf` | SMPlusGui | KarnerF | „SMPlusGui by Karner“ im ELF; `github.com/KarnerF/SMPlusGui`, Release v1.0.1, MIT-Lizenz (unten); SHA-256 gegen den Release-Anhang geprüft |
 | `ps5-backpork_v0.1.elf` | BackPork | BestPig; Dank an idlesauce | „Welcome To BackPork 0.1 By BestPig“ im ELF; `github.com/BestPig/BackPork`, Release 0.1, GPL-3.0; beim Autor heißt die Datei „ps5-backpork.elf“; SHA-256 gegen den Release-Anhang geprüft |
@@ -97,6 +99,7 @@ die MIT-Lizenz; ihre Texte stehen unten, wie bei zftpd. ps5-self-pager steht unt
 | `PoorDS4-stop_rc51.elf` | PoorDS4 (Beenden) | ItsBlurf | dasselbe Projekt und dieselbe Lizenz wie oben; beim Autor heißt die Datei „PoorDS4-stop.elf“ |
 | `garlic-worker-ps5_2026-04-09.elf` | garlic-worker | earthonion | `github.com/earthonion/garlic-worker`, Freigabe „latest“ vom 09.04.2026 (beim Autor als Vorabfassung markiert), GPL-3.0; kein Beleg im ELF selbst; beim Autor heißt die Datei „garlic-worker-ps5.elf“; SHA-256 gegen den Release-Anhang geprüft |
 | `AnyPad-PS5-0.5.5-beta.elf` | AnyPad PS5 | sinfiltros | „AnyPad PS5“, „0.5.5-beta“ und die eigene Seite `http://127.0.0.1:8095/` im ELF; `github.com/sinfiltros/AnyPad-PS5`, Release v0.5.5-beta (beim Autor als Vorabfassung markiert), GPL-3.0-or-later (README, LICENSE im Projekt); SHA-256 gegen den Release-Anhang geprüft |
+| `PS5_Cooling_System_Center_v1.48.0.elf` | PS5 Cooling & System Center – Pro | Projektinhaber (eigene Entwicklung, keine Fremdsoftware) | „PS5 Cooling & System Center - Pro 1.48.0“ und die eigene Seite `http://127.0.0.1:8086` im ELF; vom Projektinhaber selbst in `helloworld/` gelegt (05.10.2026); eine eigene Lizenzangabe für die App steht noch aus |
 
 Weitere Payload-Sammlungen und Werkzeuge, die im Fenster **CREDITS** verlinkt sind:
 **aldostools** (PS5-Payloads), **owendswang** (Autoloader, bdj_unpatch),
@@ -236,15 +239,17 @@ your own risk. The authors take no responsibility for misuse.
 | --- | --- | --- |
 | **MkPFS 1.1.0** | PSBrew / Renan Barreto (@RenanGBarreto) | PFS-Verarbeitung – die Kern-Engine für `.ffpfs`/`.ffpfsc` |
 | **LibProsperoPkg 2.6.0** | SvenGDK | Das Werkzeug hinter „PS4 & PS5 PKG lesen“ (bis 02.10.2026 auch hinter „PKG bauen“, das seitdem ausgebaut ist); liegt als `prosperopkg` für vier Plattformen bei (GPL-3.0). Der Ordner heißt noch `ProsperoPkg-2.5` – maßgeblich ist `ProsperoPkg-2.5/fassung.json`. **Seit 29.09.2026 mit einem eigenen Patch** (behebt einen Abbruch beim Bauen von Titeln mit vielen kleinen Dateien), geänderte Quelle und Begründung in `ProsperoPkg-2.5/patch/` |
+| **OrbisPkgTool 1.0.0** | pearlxcore ([OrbisPkgTool](https://github.com/pearlxcore/OrbisPkgTool), Commit `5cd42a5`) | Die Befehlszeile hinter „PS4 PKG → OTA“: PS4-Pakete lesen, entpacken, prüfen, zusammenführen, neu packen und bauen. **MIT-Lizenz**, Text in `OrbisPkgTool-1.0.0/LICENSE`. Eigenständig gebaut und deshalb mit .NET-10-Laufzeit (siehe den Abschnitt unten), nur für Windows; **eine Änderung am Quelltext** (die Ausgabe wird als UTF-8 geschrieben), Herkunft, Bauparameter und Prüfsummen in `OrbisPkgTool-1.0.0/` (`UPSTREAM.md`, `pruefsummen.json`, `patch/`). Das **PS4 PKG Tool** von pearlxcore (GPL-3.0), das dieselbe Bibliothek benutzt, diente nur als Anregung für das Fenster – aus ihm ist kein Code übernommen |
 | **PS4 FFPFSC 0.2.9** | siehe `PS4FFPFSC-0.2.9/UPSTREAM.md` | PS4-Pakete nach `.ffpfsc` (GPL-3.0-or-later); bringt eigene Fremdbestandteile mit, deren Lizenzen in `PS4FFPFSC-0.2.9/LICENSES/` liegen |
 | **PS5 Wee Tools 0.1.8** | andy-man ([ps5-wee-tools](https://github.com/andy-man/ps5-wee-tools)) | Werkzeug für den NOR-Flash der Konsole (GPL-3.0); unverändert mitgeliefert und als eigenständiges Programm gestartet (WEITERE TOOLS). Quelltext, Lizenz und Herkunft in `PS5-Wee-Tools-0.1.8/` (`LICENSE`, `UPSTREAM.md`, `herkunft.json`) |
+| **Direct Stream for PlayStation 5 2.8.1** | in der Lizenzdatei ist kein Urheber genannt; eine öffentliche Quelle ist nicht bekannt | Knopf „8. Direct Stream“ der Ansicht KONSOLE: holt HTTP/HTTPS-Downloads mit mehreren Strömen und schickt sie per FTP direkt in den Speicher der Konsole, oder lädt lokale Dateien hoch. **MIT-Lizenz**, Text in `DirectStream-2.8.1/LICENSE`. Unverändert mitgeliefert (Prüfsummen in `herkunft.json`, Herkunft in `UPSTREAM.md`) und im Programm selbst gestartet – nur auf `127.0.0.1`. Reine Python-Standardbibliothek, keine weiteren Abhängigkeiten |
 | **UFS2Tool** | SvenGDK und Mitwirkende | Erzeugen und Prüfen der UFS2-Struktur in `.ffpkg` – **hier für Dateien >2 GB gepatcht** (`UFS2Tool-4.1/patch/`); trägt die .NET-Laufzeit in sich, siehe eigenen Abschnitt unten |
 | **AMPR EMU** | drakmor / Roman Tarasov (`drakmor/ampr_emu`, GPL-3.0-or-later – Copyright-Zeile im Quellprojekt) | Aufgabe 7: Ersatzmodul für den APR-Dateiresolver. Mitgeliefert sind gebaute `libSceAmpr.sprx` mehrerer Fassungen; der Quellcode liegt öffentlich unter https://github.com/drakmor/ampr_emu |
 | **AMPR PackTools 4.0** | drakmor / Roman Tarasov – aus der AMPR-EMU-Ausgabe `ampr-emu-0.4.2.1-fix` (Ordner `ampr-pack-tools-windows-x64`) | Baut, prüft und entpackt die Asset-Packs (`.pak`) für den AMPR EMU; liegt als Python-Werkzeug in `AMPR_PackTools-4.0/` bei, mit `USER_GUIDE_EN.md` und `BUILD_INFO.txt`. Das Packformat nutzt LZ4 – dessen Lizenztext liegt daneben (`LICENSE-LZ4.txt`: `lib/` BSD-2-Clause, sonst GPL-2.0-or-later). Seit 29.09.2026 wird daraus auch `ampr_pack_profile.py` aktiv aus dem Programm heraus aufgerufen (Mitschnitt-Assistent, eigener Selbstaufruf `--ampr-pack-profil`), nicht mehr nur mitgeliefert |
 | **libScePlayGo-Stub (pgo_stub) 0.5** | PS5-Homebrew-Community (GPL-3.0) | Aufgabe 7: meldet PlayGo-Inhalte als vollständig installiert; Quellcode und Lizenztext liegen unter `PlayGo & AMPR_EMU/PlayGo_v0.5/Quellcode/` bei |
 | **PS5-AppInstall (`appinst.elf`)** | abgeleitet vom Beispiel `samples/install_app` des **PS5 Payload SDK** von **John Törnblom** | Das Werkzeug „App direkt installieren“ schickt es an die Konsole und registriert die Anwendung. GPL-3.0-or-later; Quelltext `appinst.c`, Herkunft und die Abweichungen vom Vorbild in `PS5-AppInstall/NOTICE.md` |
 | **Ersatzbibliotheken für BACKPORT** | PS5 BackPork Kitchen | Firmware-Profile 4.00 bis 7.00 im Ordner `Backport_Fakelibs/` |
-| **PS5 WebKit Autoloader 0.5.0** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)) | Legt eine Kachel auf den Startbildschirm der Konsole; liegt als Host, Skript und Installer bei |
+| **PS5 WebKit Autoloader 0.4.0, 0.5.0, 0.5.1 und 0.5.2** | itsPLK ([ps5-webkit-autoloader](https://github.com/itsPLK/ps5-webkit-autoloader)) | Legt eine Kachel auf den Startbildschirm der Konsole; liegt je Fassung als Host (Windows-Programm), Skript und Installer im Ordner `PS5 WebKit Autoloader/` bei, die Fassung wählt man auf der Seite „WebKit Autoloader“. Unveränderte Original-Releases v0.4.0, v0.5.0, v0.5.1 und v0.5.2; GPL-3.0 (LICENSE im Projekt, an jedem dieser Tags vorhanden); SHA-256 aller zwölf Dateien gegen den Release-Anhang geprüft |
 | **Hintergrundbilder** | für dieses Programm erstellt | Haupt- und Sidebar-Hintergründe |
 | **Microsoft WebView2 SDK 1.0.3856.49** (nur Windows) | Microsoft Corporation – `Microsoft.Web.WebView2.Core.dll` und `WebView2Loader.dll` (x64), von Microsoft signiert; entnommen dem Paket **pywebview 6.2.1** (BSD-3-Clause), von dem sonst nichts eingebettet wird | Zeigt die Weboberflächen der Konsole rechts im Programm, über die in Windows enthaltene WebView2-Laufzeit. BSD-artige Lizenz von Microsoft – Wortlaut im eigenen Abschnitt unten |
 
@@ -303,6 +308,16 @@ unverschleiert preis – `System.Private.CoreLib` steht 62× darin –, die
 Abwesenheit ist also ein Befund und kein Messfehler. UFS2Tool
 ist ein Konsolenprogramm ohne Oberfläche; die betroffenen Dateien gehören
 zur Desktop-Beilage, die hier nicht mitkommt.
+
+**Dasselbe gilt für `OrbisPkgTool`** (seit 05.10.2026, nur `win-x64`): Auch diese
+Befehlszeile ist eigenständig gebaut (`PublishSingleFile`, getrimmt, 12,8 MB) und
+trägt die .NET-**10.0.12**-Laufzeit in sich – es gilt für sie also die .NET Library
+License wie für den Windows-Bau von `UFS2Tool`, und die Weitergabe ist aus demselben
+Grund erlaubt. Auf die vier Dateien mit eigenen Verträgen aus Issue #108905 am
+05.10.2026 in der fertigen Datei nachgesehen: keine davon ist enthalten (weder
+`D3DCompiler_47_cor3.dll` noch `vcruntime140_cor3.dll` noch ein anderer `*_cor3.dll`-Name);
+`System.Private.CoreLib` und `coreclr` stehen darin, die Abwesenheit ist also ein
+Befund und kein Messfehler. Gebaut ist `net10.0-windows` ohne Windows Forms und ohne WPF.
 
 **Nicht betroffen:** `ProsperoPkg-2.5` ist bewusst framework-abhängig gebaut
 (`--self-contained false`) und enthält keine Laufzeit – nachgemessen: 1,3 MB

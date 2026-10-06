@@ -129,6 +129,99 @@ class PlattformschichtTests(unittest.TestCase):
         self.assertNotIn("UFS2Tool", self.mac.NUR_WINDOWS_WERKZEUGE)
 
 
+class ArbeitsbereichTests(unittest.TestCase):
+    """Der Teil des Bildschirms ohne Taskleiste (Meldung vom 05.10.2026: "Man sieht die Knoepfe unten nicht mehr")."""
+
+    def test_ausserhalb_von_windows_gilt_der_ganze_bildschirm(self):
+        for system in ("darwin", "linux"):
+            with self.subTest(system=system):
+                modul = _plattform_als(system)
+                self.assertEqual((0, 0, 1920, 1200), modul.arbeitsbereich((1920, 1200)))
+
+    def test_unter_windows_fehlt_hoechstens_die_taskleiste(self):
+        if sys.platform != "win32":
+            self.skipTest("nur unter Windows")
+        modul = _plattform_als("win32")
+        x, y, breite, hoehe = modul.arbeitsbereich((1920, 1200))
+        self.assertGreater(breite, 0)
+        self.assertGreater(hoehe, 0)
+        # Die Taskleiste kann unten, oben oder an der Seite liegen - der Arbeitsbereich ist nie groesser
+        # als der Bildschirm (Tk meldet hier 1920x1200 nur, wenn es auch so ist).
+        self.assertLessEqual(hoehe, 4320)
+
+    def test_scheitert_die_frage_gilt_der_bildschirm(self):
+        modul = _plattform_als("win32")
+
+        class Kaputt:
+            @property
+            def windll(self):
+                raise OSError("keine Windows-DLL")
+
+        with mock.patch.dict(sys.modules, {"ctypes": Kaputt()}):
+            self.assertEqual((0, 0, 1366, 768), modul.arbeitsbereich((1366, 768)))
+
+
+class MaximierteFlaecheTests(unittest.TestCase):
+    """Die Flaeche im Rahmen eines maximierten Fensters (Nutzerhinweis 05.10.2026: Hauptbild 1427x1111, Leiste 493x1111)."""
+
+    def test_ausserhalb_von_windows_ist_nichts_bekannt(self):
+        for system in ("darwin", "linux"):
+            with self.subTest(system=system):
+                modul = _plattform_als(system)
+                self.assertIsNone(modul.maximierte_flaeche((1920, 1200), 120))
+                self.assertEqual(0, modul.titelleistenhoehe(120))
+
+    def test_arbeitsbereich_minus_titelleiste(self):
+        """Gemessen: Arbeitsbereich 1920 x 1140, Titelleiste 29 - das maximierte Fenster meldete 1920 x 1111."""
+        modul = _plattform_als("win32")
+        with mock.patch.object(modul, "arbeitsbereich", return_value=(0, 0, 1920, 1140)), \
+                mock.patch.object(modul, "titelleistenhoehe", return_value=29):
+            self.assertEqual((1920, 1111), modul.maximierte_flaeche((1920, 1200), 120))
+
+    def test_unbekannte_titelleiste_oder_unsinn_ergibt_none(self):
+        modul = _plattform_als("win32")
+        with mock.patch.object(modul, "arbeitsbereich", return_value=(0, 0, 1920, 1140)), \
+                mock.patch.object(modul, "titelleistenhoehe", return_value=0):
+            self.assertIsNone(modul.maximierte_flaeche((1920, 1200), 0))
+        with mock.patch.object(modul, "arbeitsbereich", return_value=(0, 0, 1920, 20)), \
+                mock.patch.object(modul, "titelleistenhoehe", return_value=29):
+            self.assertIsNone(modul.maximierte_flaeche((1920, 1200), 120))
+
+    def test_unter_windows_ist_die_titelleiste_eine_kleine_zahl(self):
+        if sys.platform != "win32":
+            self.skipTest("nur unter Windows")
+        modul = _plattform_als("win32")
+        for dpi in (0, 96, 120, 144):
+            with self.subTest(dpi=dpi):
+                hoehe = modul.titelleistenhoehe(dpi)
+                self.assertGreater(hoehe, 10)
+                self.assertLess(hoehe, 100)
+        # Mehr DPI, hoehere Titelleiste.
+        self.assertGreaterEqual(modul.titelleistenhoehe(144), modul.titelleistenhoehe(96))
+
+    def test_unter_windows_passt_die_flaeche_in_den_arbeitsbereich(self):
+        if sys.platform != "win32":
+            self.skipTest("nur unter Windows")
+        modul = _plattform_als("win32")
+        _x, _y, bereich_b, bereich_h = modul.arbeitsbereich((1920, 1200))
+        flaeche = modul.maximierte_flaeche((1920, 1200), 120)
+        self.assertIsNotNone(flaeche)
+        self.assertEqual(bereich_b, flaeche[0])
+        self.assertLess(flaeche[1], bereich_h)
+
+    def test_scheitert_die_frage_gilt_keine_zahl(self):
+        modul = _plattform_als("win32")
+
+        class Kaputt:
+            @property
+            def windll(self):
+                raise OSError("keine Windows-DLL")
+
+        with mock.patch.dict(sys.modules, {"ctypes": Kaputt()}):
+            self.assertEqual(0, modul.titelleistenhoehe(120))
+            self.assertIsNone(modul.maximierte_flaeche((1366, 768), 120))
+
+
 class SchriftwahlTests(unittest.TestCase):
     """Die Schriftwahl sieht in den Schriftordnern des Systems nach."""
 

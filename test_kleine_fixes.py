@@ -1164,7 +1164,9 @@ class StilleFehlschlaegeTests(unittest.TestCase):
         rumpf = next(
             ast.unparse(k) for k in ast.walk(baum)
             if isinstance(k, ast.FunctionDef) and k.name == "_webkit_auf_usb_ablegen")
-        self.assertEqual(2, rumpf.count("self._append_to_log"),
+        # Seit dem 04.10.2026 (WebKit als Seite der Ansicht KONSOLE) geht das Protokoll ueber
+        # die Zeile der Seite (_webkit_zeile) - sie schreibt auch ins Hauptprotokoll.
+        self.assertEqual(2, rumpf.count("self._webkit_zeile(self._t('webkit.usb_failed'"),
                          "Die USB-Fehler des WebKit-Wegs stehen wieder nur "
                          "im Meldungsfenster.")
         self.assertEqual(2, rumpf.count("messagebox.showerror"),

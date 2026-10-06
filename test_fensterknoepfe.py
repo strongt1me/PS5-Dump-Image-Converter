@@ -16,7 +16,9 @@ gesehen und hier nachgerechnet:
   auf 392 px, waehrend der Inhalt mit geladenem Bild bis 382 px reicht und
   der SCHLIESSEN-Knopf bei 353 beginnt: **29 px Ueberlappung**, und der
   Dank darunter wurde mitten im Wort abgeschnitten. Keine Eigenheit einer
-  Plattform - schlicht falsch addiert.
+  Plattform - schlicht falsch addiert. (Das Fenster gibt es seit v1.9.63 nicht
+  mehr: Der WebKit Autoloader ist eine Seite der Ansicht KONSOLE, siehe
+  test_webkit_seite.)
 * **Aufgabe 7 blieb offen stehen.** Sie ist die einzige Aufgabe der
   Seitenleiste, die ein Fenster oeffnet. Wer danach Aufgabe 1 anklickte,
   hatte beides.
@@ -78,10 +80,10 @@ class SchliessenFunktioniertTests(unittest.TestCase):
     #: sich nur ueber das X der Fensterleiste loswerden. Die vier davor hatten
     #: dasselbe Problem, es war nur schon gemeldet worden.
     #:
-    #: Nicht in der Liste steht das WebKit-Fenster, obwohl es ebenfalls keinen
-    #: Knopf-Widget hat: Es zeichnet seine Knoepfe auf eine Canvas. Wer diese
-    #: Liste erweitert, muss also erst nachsehen, ob das Fenster ueberhaupt
-    #: mit Widgets arbeitet.
+    #: Nicht in der Liste stand das WebKit-Fenster (bis v1.9.63), obwohl es
+    #: ebenfalls keinen Knopf-Widget hatte: Es zeichnete seine Knoepfe auf eine
+    #: Canvas. Wer diese Liste erweitert, muss also erst nachsehen, ob das
+    #: Fenster ueberhaupt mit Widgets arbeitet.
     #:
     #: "PKG bauen" stand hier bis zu seinem Ausbau am 02.10.2026; an seine
     #: Stelle rueckte "PS4 PKG -> Dump Ordner", das ebenso einen Lauf hat.
@@ -110,25 +112,6 @@ class SchliessenFunktioniertTests(unittest.TestCase):
                 self.assertTrue(eintrag.get("de"))
                 self.assertTrue(eintrag.get("en"))
                 self.assertNotEqual(eintrag["de"], eintrag["en"])
-
-
-class WebkitFensterTests(unittest.TestCase):
-    """Die Hoehe wird gerechnet, nicht geraten.
-
-    Bis zum 17.09.2026 standen hier zwei Tests, die die Rechnung des Fensters
-    im Test nachbauten und mit sich selbst verglichen - rot werden konnten
-    sie nie (Befund T14). Die Lage der Knoepfe misst jetzt
-    test_debuglauf_befunde.WebkitFensterMessungTests am gebauten Fenster.
-    """
-
-    def test_die_hoehe_steht_nicht_mehr_fest_im_quelltext(self):
-        baum = _baum()
-        knoten = next(k for k in ast.walk(baum)
-                      if isinstance(k, ast.FunctionDef)
-                      and k.name == "_show_webkit_autoloader")
-        text = ast.unparse(knoten)
-        self.assertNotIn("breite, hoehe, rand = 520, 392, 14", text)
-        self.assertIn("hoehe = knopf_unten", text)
 
 
 class AufgabeSiebenTests(unittest.TestCase):
@@ -183,7 +166,9 @@ class MacKnoepfeTests(unittest.TestCase):
         self.assertEqual(0, text.count("tk.Button("),
                          "Rohe tk.Button im Y2JB-Fenster - auf dem Mac "
                          "bleiben die Beschriftungen unlesbar.")
-        self.assertGreaterEqual(text.count("flach_knopf("), 6)
+        # Seit dem 05.10.2026 stehen dort die runden Knoepfe (``self._pw.Button``): gezeichnete Canvas-Widgets,
+        # auf Aqua so lesbar wie ``FlachButton``.
+        self.assertGreaterEqual(text.count("flach_knopf(") + text.count("self._pw.Button("), 6)
 
     def test_flach_knopf_vertraegt_dieselben_angaben(self):
         """Der echte FlachButton kennt alle Optionen der Aufrufstellen.

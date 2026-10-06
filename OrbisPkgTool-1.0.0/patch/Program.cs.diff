@@ -1,0 +1,20 @@
+--- a/OrbisPkgTool/Program.cs
++++ b/OrbisPkgTool/Program.cs
+@@ -6,6 +6,17 @@
+ // Run with no arguments (or --help) to see the command list, or
+ // pass '<command> --help' for detailed help on a single command.
+ 
++// PS5 Image Converter patch (the only change to the 1.0.0 sources): always write UTF-8.
++// Started from another program with redirected output, .NET would use the console's OEM
++// code page - file names with umlauts or accents would then arrive garbled. The raw
++// streams are wrapped instead of setting Console.OutputEncoding, which fails when the
++// process has no console attached.
++{
++    var utf8 = new System.Text.UTF8Encoding(false);
++    Console.SetOut(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true });
++    Console.SetError(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true });
++}
++
+ var cmdArgs = Environment.GetCommandLineArgs().Skip(1).ToArray();
+ if (cmdArgs.Length == 0 || (cmdArgs.Length == 1 && cmdArgs[0] is "-h" or "--help"))
+ {

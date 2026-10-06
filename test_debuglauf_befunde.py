@@ -1402,6 +1402,8 @@ class FfpkgBauAbbruchTests(_TempTest):
                        title_id="PPSA00001",
                        content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n").encode("utf-8"))
         _schreiben(os.path.join(quelle, "payload", "game.bin"), os.urandom(8192))
+        # Seit dem 05.10.2026 verlangt der Bau eine eboot.bin im Wurzelverzeichnis.
+        _schreiben(os.path.join(quelle, "eboot.bin"), os.urandom(4096))
         ziel = os.path.join(self.basis, "result.ffpkg")
         buehne = os.path.join(self.basis, "temp")
         os.makedirs(buehne)
@@ -1478,6 +1480,40 @@ class FensterWachstumTests(unittest.TestCase):
         vergroessert = [c for c in protokoll.call_args_list
                         if "vergr" in str(c.args[0] if c.args else "")]
         self.assertEqual(len(vergroessert), 1, "Das Wachsen steht mehrfach im Protokoll.")
+
+    def test_ein_hohes_fenster_bleibt_ueber_der_taskleiste(self) -> None:
+        """Gemeldet am 05.10.2026: "Das Fenster ist zu hoch. Man sieht die Knoepfe unten nicht mehr".
+
+        Die Grenze war der ganze Bildschirm (1200 Punkte, minus 80): Das Fenster wuchs bis 1120, sein Rahmen
+        kam obendrauf, und die Taskleiste (60 Punkte) deckte die Knopfreihe ab. Jetzt zaehlt der Arbeitsbereich.
+        """
+        app = _app()
+        rahmen = APP.knopfmass(GUI._FENSTER_RAHMEN_HOEHE, _WURZEL)
+        for name, verschieben in (("mittig", False), ("verschoben", True)):
+            with self.subTest(fall=name):
+                win = tk.Toplevel(_WURZEL)
+                self.addCleanup(win.destroy)
+                with mock.patch.object(app, "_arbeitsbereich_fenster", return_value=(0, 0, 1920, 1140)), \
+                        mock.patch.object(app, "_bildschirm_fuer_fenster", return_value=(1920, 1200)):
+                    x, y = app._fenster_mitte(win, 400, 300)
+                    win.geometry("400x300+%d+%d" % ((40, 700) if verschieben else (x, y)))
+                    tk.Frame(win, width=500, height=3000).pack()          # braucht mehr als der ganze Schirm
+                    app._fenster_auf_inhalt_wachsen(win, 400, 300, True)
+                    win.update_idletasks()
+                breite, hoehe, wx, wy = GUI._fenster_geometrie(win)
+                self.assertLessEqual(hoehe, 1140 - 80)
+                self.assertLessEqual(wy + hoehe + rahmen, 1140, "Der untere Rand liegt unter der Taskleiste.")
+                self.assertGreaterEqual(wy, 0)
+
+    def test_die_mitte_liegt_im_arbeitsbereich(self) -> None:
+        app = _app()
+        win = tk.Toplevel(_WURZEL)
+        self.addCleanup(win.destroy)
+        rahmen = APP.knopfmass(GUI._FENSTER_RAHMEN_HOEHE, win)
+        with mock.patch.object(app, "_arbeitsbereich_fenster", return_value=(100, 50, 1920, 1140)):
+            x, y = app._fenster_mitte(win, 800, 600)
+        self.assertEqual(100 + (1920 - 800) // 2, x)
+        self.assertEqual(50 + (1140 - 600 - rahmen) // 2, y)
 
 
 @unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
@@ -2056,7 +2092,7 @@ class BackportPlatzImFadenTests(_TempTest):
             fenster = neu[-1]
             self.addCleanup(fenster.destroy)
             start = [w for w in self._widgets(fenster)
-                     if w.winfo_class() == "TButton"
+                     if w.__class__.__name__ == "Button"
                      and str(w.cget("text")) == app._t("backport.action_start")]
             self.assertEqual(len(start), 1)
             start = start[0]
@@ -2116,12 +2152,12 @@ class BackportPlatzImFadenTests(_TempTest):
             fenster = [w for w in _WURZEL.winfo_children()
                        if str(w) not in vorher and isinstance(w, tk.Toplevel)][-1]
             self.addCleanup(fenster.destroy)
-            boxen = [w for w in self._widgets(fenster) if w.winfo_class() == "TCombobox"]
+            boxen = [w for w in self._widgets(fenster) if w.__class__.__name__ == "Combobox"]
             self.assertEqual(len(boxen), 1)
             werte = list(boxen[0].cget("values"))
             self.assertIn(app._t("backport.firmware_entry", fw="8.00"), werte)
             start = [w for w in self._widgets(fenster)
-                     if w.winfo_class() == "TButton"
+                     if w.__class__.__name__ == "Button"
                      and str(w.cget("text")) == app._t("backport.action_start")][0]
             self._in_schleife(lambda: str(start.cget("state")) == "normal")
             boxen[0].current(werte.index(app._t("backport.firmware_entry", fw="8.00")))
@@ -2275,7 +2311,7 @@ class BackportAbbruchTests(_TempTest):
                        if str(w) not in vorher and isinstance(w, tk.Toplevel)][-1]
             self.addCleanup(lambda: fenster.winfo_exists() and fenster.destroy())
             start = [w for w in BackportPlatzImFadenTests._widgets(fenster)
-                     if w.winfo_class() == "TButton"
+                     if w.__class__.__name__ == "Button"
                      and str(w.cget("text")) == app._t("backport.action_start")][0]
             schleife(lambda: str(start.cget("state")) == "normal")
             start.invoke()
@@ -3214,126 +3250,6 @@ class BauskriptHinweisTests(unittest.TestCase):
                 for satz in einschraenkungen:
                     self.assertNotIn("UFS2Tool", satz, "%s: %s" % (skript, satz))
                     self.assertNotIn(".ffpkg", satz, "%s: %s" % (skript, satz))
-
-
-@unittest.skipUnless(TK_DA, "Keine Anzeige verfügbar")
-class WebkitFensterMessungTests(unittest.TestCase):
-    """SCHLIESSEN darf nicht auf dem letzten Wege-Knopf liegen - gemessen.
-
-    Befund T14: test_fensterknoepfe rechnete die Fensterhoehe im Test nach
-    und verglich die Rechnung mit sich selbst; das Fenster wurde nie gebaut.
-    Hier wird es gebaut und die Lage der Knoepfe auf der Leinwand gelesen.
-    """
-
-    def _leinwand(self, mit_bild: bool, fassung: str | None = None):
-        """Baut das Fenster und liefert seine Leinwand.
-
-        ``fassung`` ersetzt die Fassungszeile - fuer den Fall, dass sie
-        laenger ist als eine Zeile; ``None`` laesst die echte stehen.
-        """
-        app = _app()
-        bild = tk.PhotoImage(master=_WURZEL, width=8, height=8) if mit_bild else None
-        vorher = {str(w) for w in _WURZEL.winfo_children()}
-        with mock.patch.object(app, "_webkit_bild_laden", lambda: bild):
-            if fassung is None:
-                app._show_webkit_autoloader()
-            else:
-                with mock.patch.object(app, "_webkit_fassungszeile", lambda: fassung):
-                    app._show_webkit_autoloader()
-        fenster = [w for w in _WURZEL.winfo_children()
-                   if str(w) not in vorher and isinstance(w, tk.Toplevel)][-1]
-        self.addCleanup(fenster.destroy)
-        return [w for w in fenster.winfo_children() if w.winfo_class() == "Canvas"][0]
-
-    @staticmethod
-    def _kaesten_von(leinwand) -> tuple:
-        """Die Knopfkaesten (Wege und SCHLIESSEN) von oben nach unten, dazu die Hoehe."""
-        kaesten = sorted((leinwand.bbox(eintrag) for eintrag in leinwand.find_all()
-                          if leinwand.type(eintrag) == "window"), key=lambda k: k[1])
-        return kaesten, int(leinwand.cget("height"))
-
-    def _kaesten(self, mit_bild: bool, fassung: str | None = None) -> tuple:
-        return self._kaesten_von(self._leinwand(mit_bild, fassung))
-
-    @staticmethod
-    def _texte(leinwand) -> list:
-        """Alle Textelemente von oben nach unten: (Text, Oberkante, Unterkante)."""
-        zeilen = []
-        for eintrag in leinwand.find_all():
-            if leinwand.type(eintrag) == "text":
-                kasten = leinwand.bbox(eintrag)
-                zeilen.append((leinwand.itemcget(eintrag, "text"), kasten[1], kasten[3]))
-        return sorted(zeilen, key=lambda z: z[1])
-
-    def test_die_fassung_steht_unter_der_ueberschrift(self) -> None:
-        """Gemessen am gebauten Fenster - gegen den Banner im Installer.
-
-        Wunsch des Nutzers am 02.10.2026: "Man weiss ja gar nicht welche man
-        sonst benutzt." Erwartet wird nicht, was der Dateiname sagt, sondern
-        was die Datei von sich selbst sagt.
-        """
-        app = _app()
-        with open(app._webkit_datei("elf"), "rb") as fh:
-            banner = re.findall(rb"WebKit Autoloader v(\d+(?:\.\d+)+)", fh.read())
-        self.assertTrue(banner, "Kein Fassungstext im Installer")
-        erwartet = "v" + banner[0].decode()
-        for mit_bild in (True, False):
-            with self.subTest(bild=mit_bild):
-                leinwand = self._leinwand(mit_bild)
-                texte = self._texte(leinwand)
-                titel, fassung, hinweis = texte[0], texte[1], texte[2]
-                self.assertEqual(titel[0], "WebKit Autoloader")
-                self.assertIn(erwartet, fassung[0])
-                self.assertGreaterEqual(fassung[1], titel[1], "Die Fassung steht ueber der Ueberschrift.")
-                # Die Textkaesten duerfen sich um ihren Zeilenabstand beruehren
-                # (Titel und Hinweis tun es seit jeher um vier Pixel).
-                self.assertGreaterEqual(hinweis[1] + 8, fassung[2],
-                                        "Der Hinweis beginnt mitten in der Fassungszeile.")
-                # Alles unter der Zeile ist mitgerutscht - auch die Knoepfe. Der
-                # Dank (letzter Text) darf nicht auf dem ersten Knopf liegen;
-                # fehlt die Zeilenhoehe in der Rechnung der Knopf-Oberkante,
-                # liegt er 26 Pixel darauf.
-                kaesten, _hoehe = self._kaesten_von(leinwand)
-                self.assertLessEqual(texte[-1][2], kaesten[0][1] + 4,
-                                     "Der Dank liegt auf dem ersten Knopf.")
-
-    def test_eine_lange_fassungszeile_bricht_um_und_schiebt_alles_mit(self) -> None:
-        """Eine lange Uebersetzung braucht zwei Zeilen - und die Hoehe wird mitgerechnet."""
-        lang = "Fassungen: " + ", ".join("Host v0.5.%d" % n for n in range(12))
-        for mit_bild in (True, False):
-            with self.subTest(bild=mit_bild):
-                leinwand = self._leinwand(mit_bild, fassung=lang)
-                texte = self._texte(leinwand)
-                fassung, hinweis = texte[1], texte[2]
-                self.assertEqual(fassung[0], lang)
-                self.assertGreater(fassung[2] - fassung[1], 30, "Die Zeile ist nicht umgebrochen.")
-                self.assertGreaterEqual(hinweis[1] + 8, fassung[2],
-                                        "Der Hinweis liegt in der umgebrochenen Fassungszeile.")
-                kaesten, hoehe = self._kaesten_von(leinwand)
-                *wege, schliessen = kaesten
-                self.assertLess(wege[-1][3], schliessen[1])
-                self.assertLessEqual(schliessen[3], hoehe, "SCHLIESSEN ragt aus dem Fenster.")
-                self.assertLessEqual(texte[-1][2], wege[0][1] + 4,
-                                     "Der Dank liegt auf dem ersten Knopf.")
-
-    def test_ohne_fassung_bleibt_das_fenster_wie_zuvor(self) -> None:
-        """Findet sich keine Nummer, steht keine Zeile da und es fehlt kein Platz."""
-        mit = self._kaesten(False)[1]
-        ohne = self._kaesten(False, fassung="")[1]
-        self.assertLess(ohne, mit)
-        texte = self._texte(self._leinwand(False, fassung=""))
-        self.assertEqual(texte[0][0], "WebKit Autoloader")
-        self.assertNotIn("Fassung", texte[1][0])
-
-    def test_schliessen_liegt_unter_den_wegen_und_im_fenster(self) -> None:
-        for mit_bild in (True, False):
-            with self.subTest(bild=mit_bild):
-                kaesten, hoehe = self._kaesten(mit_bild)
-                self.assertEqual(len(kaesten), 4, "Drei Wege und SCHLIESSEN erwartet.")
-                *wege, schliessen = kaesten
-                self.assertLess(wege[-1][3], schliessen[1],
-                                "SCHLIESSEN liegt auf dem letzten Wege-Knopf.")
-                self.assertLessEqual(schliessen[3], hoehe, "SCHLIESSEN ragt aus dem Fenster.")
 
 
 class MenueGrabTests(unittest.TestCase):

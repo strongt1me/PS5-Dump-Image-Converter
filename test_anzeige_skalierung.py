@@ -425,12 +425,61 @@ class BildschirmTests(unittest.TestCase):
         self.assertEqual(gui._bildschirm_erkannt(), (1920, 1080))
 
     def test_bildempfehlung_richtet_sich_nach_der_wirksamen_groesse(self):
+        """Das Hauptbild liegt nur rechts neben der Seitenleiste: Bildschirmbreite minus Leiste, aufgerundet.
+
+        Hinweis vom 05.10.2026 ("zwei Hintergrundbilder, getrennt ... jetzt ist es ja 1920x1200, das wuerde
+        aber nicht stimmen"): Gemessen an einem 1920 x 1200-Schirm bei 125 % ist die Leiste 493 Pixel breit,
+        die Flaeche des Hauptbilds 1427 - die Einstellungen nannten die ganze Bildschirmbreite.
+        """
         gui = _oberflaeche()
-        self.assertEqual(gui._hintergrund_sollmasse()[:2], (1920, 1200))
+        gui.sidebar = mock.Mock()
+        gui.sidebar.winfo_width.return_value = 493
+        # Ohne Wahl rechnet das System: maximiertes Fenster 1920 x 1111 (gemessen), genaue Zahlen.
+        with mock.patch.object(mod, "_system_maximierte_flaeche", return_value=(1920, 1111)):
+            self.assertEqual(gui._hintergrund_sollmasse(), (1427, 1111, 493))
+        # Von Hand gewaehlte Aufloesung: Bildschirm minus feste Reserve fuer Rahmen und Taskleiste.
         gui._aufloesung_manuell = (2560, 1440)
-        self.assertEqual(gui._hintergrund_sollmasse()[:2], (2560, 1440))
+        rand_b, rand_h = ask.FENSTER_RAND_BREITE, ask.FENSTER_RAND_HOEHE
+        self.assertEqual(gui._hintergrund_sollmasse(), (2560 - rand_b - 493, 1440 - rand_h, 493))
         gui._aufloesung_manuell = (1366, 768)
-        self.assertEqual(gui._hintergrund_sollmasse()[:2], (1370, 770))     # auf Zehner aufgerundet
+        self.assertEqual(gui._hintergrund_sollmasse(), (1366 - rand_b - 493, 768 - rand_h, 493))
+
+    def test_bildempfehlung_ohne_systemwert_nimmt_die_reserve(self):
+        """Wo das System die maximierte Flaeche nicht nennt (Linux, macOS), gilt die feste Reserve."""
+        gui = _oberflaeche()
+        gui.sidebar = mock.Mock()
+        gui.sidebar.winfo_width.return_value = 493
+        with mock.patch.object(mod, "_system_maximierte_flaeche", return_value=None):
+            self.assertEqual(gui._hintergrund_sollmasse(),
+                             (1920 - ask.FENSTER_RAND_BREITE - 493, 1200 - ask.FENSTER_RAND_HOEHE, 493))
+
+    def test_bildempfehlung_bleibt_positiv_bei_schmalem_schirm(self):
+        """Eine Leiste, die breiter ist als der angenommene Schirm, ergibt nie eine Breite unter 1 Pixel."""
+        gui = _oberflaeche()
+        gui.sidebar = mock.Mock()
+        gui.sidebar.winfo_width.return_value = 700
+        gui._aufloesung_manuell = (640, 480)
+        breite, hoehe, leiste = gui._hintergrund_sollmasse()
+        self.assertEqual(1, breite)
+        self.assertEqual((hoehe, leiste), (480 - ask.FENSTER_RAND_HOEHE, 700))
+
+    def test_seitenleiste_pixel_bevorzugt_die_spaltenbreite(self):
+        """Gemessen, nicht angenommen: erst die Spalte des Aufbaus, dann die gezeichnete Breite, dann die Vorgabe."""
+        gui = _oberflaeche()
+        gui.sidebar = mock.Mock()
+        gui.sidebar.winfo_width.return_value = 480
+        self.assertEqual(480, gui._seitenleiste_pixel())
+        gui._seitenleiste_breite = 493
+        self.assertEqual(493, gui._seitenleiste_pixel())
+        del gui._seitenleiste_breite
+        gui.sidebar.winfo_width.return_value = 1                # noch nicht gezeichnet
+        self.assertGreaterEqual(gui._seitenleiste_pixel(), 320)
+
+    def test_hintergrund_masse_rechnet_fenster_minus_leiste(self):
+        """Die reine Rechnung: Hauptbild rechts neben der Leiste, beide so hoch wie das Fenster."""
+        self.assertEqual((1427, 1111, 493), ask.hintergrund_masse((1920, 1111), 493))
+        self.assertEqual((1, 1, 1), ask.hintergrund_masse((0, 0), 0))
+        self.assertEqual((1, 600, 700), ask.hintergrund_masse((640, 600), 700))
 
 
 class FensterRestaurierenTests(unittest.TestCase):
@@ -598,11 +647,9 @@ class QuelltextTests(unittest.TestCase):
         "_arbeitsflaeche": "Arbeitsflaeche aller Monitore (Messung)",
         "_bildschirm_erkannt": "die eine Quelle fuer den erkannten Schirm",
         "_build_info_popup": "zentriert ein festes Fenster",
-        "_build_modern_toplevel": "zentriert",
         "_center_window_safe": "Lage am echten Schirm (die Groesse nimmt _bildschirm_fuer_fenster)",
         "_diagnose_anzeige": "Bericht nennt den echten Schirm",
         "_diagnose_pruefen": "Messwert fuer die Pruefung",
-        "_fenster_auf_inhalt_wachsen": "zentriert und holt auf den Schirm (die Grenze nimmt _bildschirm_fuer_fenster)",
         "_fenstergeometrie_wiederherstellen": "holt ein verlorenes Fenster auf den ersten Schirm",
         "_go_fullscreen": "Vollbild fuellt den echten Schirm",
         "_mode_ampr_manager._show_ampr_dialog": "zentriert",
@@ -675,9 +722,16 @@ class QuelltextTests(unittest.TestCase):
                         rumpf.index("settings_dialog.background_section_label"))
 
     def test_bildempfehlung_liest_die_wirksame_groesse(self):
+        """Die Empfehlung folgt der angenommenen Aufloesung: ueber ``_fenster_maximal`` - nie am echten Schirm."""
         beginn = QUELLE.index("    def _hintergrund_sollmasse(self)")
         rumpf = QUELLE[beginn:beginn + 2500]
+        self.assertIn("self._fenster_maximal()", rumpf)
+        self.assertIn("self._seitenleiste_pixel()", rumpf)
+        self.assertNotIn("winfo_screenwidth", rumpf)
+        beginn = QUELLE.index("    def _fenster_maximal(self)")
+        rumpf = QUELLE[beginn:beginn + 2500]
         self.assertIn("self._bildschirm_wirksam()", rumpf)
+        self.assertIn("_aufloesung_manuell", rumpf)
         self.assertNotIn("winfo_screenwidth", rumpf)
 
     def test_handbuch_beschreibt_den_abschnitt_mit_den_worten_der_oberflaeche(self):

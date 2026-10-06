@@ -196,6 +196,9 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
                     content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n",
                 encoding="utf-8")
             _write_pattern(source / "payload" / "game.bin", 8192)
+            # Seit dem 05.10.2026 verlangt der Bau eine eboot.bin im Wurzelverzeichnis
+            # (ShadowMount+ haengt eine Quelle ohne sie wieder aus).
+            _write_pattern(source / "eboot.bin", 4096)
             output = root / "result.ffpkg"
 
             gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
@@ -278,6 +281,7 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
                     title_id="PPSA00001",
                     content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n",
                 encoding="utf-8")
+            _write_pattern(source / "eboot.bin", 4096)      # Pflicht seit dem 05.10.2026
             output = root / "result.ffpkg"
             staging_root = root / "configured-temp"
             staging_root.mkdir()
@@ -317,6 +321,99 @@ class FfpkgFallbackSelectionTests(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertEqual(len([path for path in validation_calls if ".transfer-" in path.name]), 3)
             self.assertFalse(list(root.glob("*.transfer-*.ffpkg")))
+
+
+class FfpkgOhneEbootBinTests(unittest.TestCase):
+    """Befund vom 05.10.2026: Nur der .ffpkg-Bau hatte die Vorabpruefung auf eboot.bin nicht.
+
+    Die Wege nach .ffpfsc und .exfat brechen ohne eboot.bin im Wurzelverzeichnis vor der
+    Arbeit ab - "ohne eboot.bin und param.json ist der Dump auf der Konsole unbrauchbar".
+    ShadowMount+ behandelt eine Quelle ohne eboot.bin als verwaist und haengt sie wieder
+    aus (``sm_filesystem.c``, ``sm_scan.c``); ein .ffpkg ohne sie wuerde also erst nach
+    Stunden Bauzeit an der Konsole auffallen. Auch "ein Ordner zu viel" zaehlt nicht:
+    ``sce_sys/param.json`` und ``eboot.bin`` muessen direkt im Abbild-Wurzelverzeichnis liegen.
+    """
+
+    def setUp(self) -> None:
+        self._original_is_admin = ps5converter._is_admin
+        self._original_ist_windows = ps5converter.IST_WINDOWS
+        ps5converter._is_admin = lambda: True
+        ps5converter.IST_WINDOWS = True
+
+    def tearDown(self) -> None:
+        ps5converter._is_admin = self._original_is_admin
+        ps5converter.IST_WINDOWS = self._original_ist_windows
+
+    def _bauen(self, root: Path, source: Path):
+        from unittest import mock
+        output = root / "result.ffpkg"
+        gui = PS5ConverterGUI.__new__(PS5ConverterGUI)
+        gui.is_running = True
+        gui.task_progress = 0.0
+        gui.progress_engine = _ProgressEngineStub()
+        gui.ffpkg_progress_queue = queue.Queue()
+        gui._ffpkg_progress_run_id = 0
+        gui._extract_ufs2tool = lambda: "UFS2Tool.exe"
+        staging_root = root / "configured-temp"
+        staging_root.mkdir()
+        gui._mkdtemp = lambda prefix: tempfile.mkdtemp(prefix=prefix, dir=staging_root)
+        log_lines: list[str] = []
+        gui._append_to_log = log_lines.append
+        # Rueckgabe 1 = "UFS2Tool scheitert": Ob der Bau bis hierher kommt, sagen die Tests
+        # ueber ``called`` / ``assert_not_called`` von aussen.
+        gui._run_subprocess_logged = mock.Mock(return_value=1)
+        ok = gui._build_ffpkg_from_folder(
+            str(source), str(output), task_index=0, task_label="Ohne eboot.bin")
+        return ok, output, gui, log_lines
+
+    @staticmethod
+    def _param(source: Path) -> None:
+        (source / "sce_sys").mkdir(parents=True, exist_ok=True)
+        (source / "sce_sys" / "param.json").write_text(
+            json.dumps(create_default_param(
+                title_id="PPSA00001",
+                content_id="UP0000-PPSA00001_00-0000000000000000")) + "\n",
+            encoding="utf-8")
+
+    def test_ohne_eboot_bin_bricht_der_bau_vor_ufs2tool_ab(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="ffpkg-ohne-eboot-") as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            self._param(source)
+            _write_pattern(source / "payload" / "game.bin", 8192)       # Daten, aber keine eboot.bin
+            ok, output, gui, log_lines = self._bauen(root, source)
+            self.assertFalse(ok)
+            self.assertFalse(output.exists())
+            gui._run_subprocess_logged.assert_not_called()
+            text = "".join(log_lines)
+            self.assertIn("eboot.bin", text)
+            self.assertIn(str(source / "eboot.bin"), text, "Die Meldung nennt den gesuchten Pfad nicht.")
+            self.assertEqual({"preflight": "eboot_missing"}, gui._last_ffpkg_build_diagnostics)
+
+    def test_eine_eboot_bin_im_unterordner_zaehlt_nicht(self) -> None:
+        """Ein falsch gewaehlter Ordner eine Ebene zu hoch: Das Abbild bekaeme einen Zusatzordner."""
+        with tempfile.TemporaryDirectory(prefix="ffpkg-eboot-unterordner-") as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            self._param(source)
+            _write_pattern(source / "PPSA00001" / "eboot.bin", 4096)
+            ok, output, gui, _log = self._bauen(root, source)
+            self.assertFalse(ok)
+            self.assertFalse(output.exists())
+            gui._run_subprocess_logged.assert_not_called()
+
+    def test_mit_eboot_bin_geht_der_bau_weiter(self) -> None:
+        """Gegenprobe: Mit eboot.bin laeuft der Bau bis zum Aufruf von UFS2Tool."""
+        with tempfile.TemporaryDirectory(prefix="ffpkg-mit-eboot-") as temp_dir:
+            root = Path(temp_dir)
+            source = root / "source"
+            self._param(source)
+            _write_pattern(source / "eboot.bin", 4096)
+            ok, _output, gui, log_lines = self._bauen(root, source)
+            self.assertTrue(gui._run_subprocess_logged.called,
+                            "Mit eboot.bin muss der Bau bis zu UFS2Tool kommen.")
+            self.assertNotIn("eboot.bin nicht im Quellordner", "".join(log_lines))
+            self.assertFalse(ok, "Der Stub meldet Rueckgabe 1 - kein Kandidat darf entstehen.")
 
 
 class FfpkgFakelibRegressionTests(unittest.TestCase):
@@ -430,6 +527,7 @@ class FfpkgProductionIntegrationTests(unittest.TestCase):
             (source / "sce_sys" / "param.json").write_text(
                 _gueltige_param_json("PPSA66666") + "\n", encoding="utf-8"
             )
+            _write_pattern(source / "eboot.bin", 4096)      # Pflicht seit dem 05.10.2026
             _write_pattern(source / "payload" / "game.bin", 9 * 1024 * 1024 + 123)
             for index in range(80):
                 file_path = source / "assets" / f"group_{index % 8}" / f"asset_{index:04d}.bin"
@@ -519,10 +617,12 @@ class Ffpkg648MbRegressionTests(unittest.TestCase):
                 encoding="utf-8",
             )
             for index in range(1, file_count - 1):
-                _write_pattern(
-                    source / f"dir_{index % directory_count:02d}" / f"file_{index:03d}.bin",
-                    small_file_size,
-                )
+                # Die erste der kleinen Dateien ist die eboot.bin im Wurzelverzeichnis
+                # (Pflicht seit dem 05.10.2026) - gleiche Groesse, gleiche Dateizahl.
+                ziel_datei = (source / "eboot.bin" if index == 1
+                              else source / f"dir_{index % directory_count:02d}"
+                              / f"file_{index:03d}.bin")
+                _write_pattern(ziel_datei, small_file_size)
 
             output = root / "result_648mb.ffpkg"
             gui.is_running = True

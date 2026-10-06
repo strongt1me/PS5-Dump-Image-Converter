@@ -325,7 +325,9 @@ class NennungTests(unittest.TestCase):
     FREMD = {
         "AMPR_PackTools-4.0": "AMPR PackTools",
         "Backport_Fakelibs": "Backport_Fakelibs",
+        "DirectStream-2.8.1": "Direct Stream",
         "MkPFS-1.1.0": "MkPFS 1.1.0",
+        "OrbisPkgTool-1.0.0": "OrbisPkgTool",
         "PS4FFPFSC-0.2.9": "PS4 FFPFSC",
         "PS5-AppInstall": "PS5-AppInstall",
         "PS5-Wee-Tools-0.1.8": "PS5 Wee Tools",
@@ -391,7 +393,7 @@ class NennungTests(unittest.TestCase):
         """Das Fenster CREDITS nennt die Werkzeuge, nicht nur die Lizenzdatei."""
         from ps5_validator.utils.i18n import STRINGS
         zeile = STRINGS["credits.tools_line"]
-        for name in ("UFS2Tool", "LibProsperoPkg", "PS4 FFPFSC", "PS5 Wee Tools",
+        for name in ("UFS2Tool", "LibProsperoPkg", "PS4 FFPFSC", "OrbisPkgTool", "PS5 Wee Tools",
                      "AMPR PackTools", "PS5 Payload SDK"):
             for sprache in ("de", "en"):
                 with self.subTest(name=name, sprache=sprache):

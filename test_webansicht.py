@@ -374,7 +374,7 @@ class AufrufstellenTests(unittest.TestCase):
     """Jede Stelle, die eine Weboberflaeche der Konsole oeffnet, geht ueber die Seite."""
 
     def test_die_drei_stellen_oeffnen_im_programm(self):
-        for name in ("_konsole_tafel_web", "_spielstaende_oeffnen", "_bibliothek_dateimanager"):
+        for name in ("_konsole_tafel_web", "_konsole_webdienst_oeffnen", "_bibliothek_dateimanager"):
             quelltext = ast.unparse(_methode(name))
             with self.subTest(methode=name):
                 self.assertIn("_webansicht_oeffnen", quelltext)
@@ -454,12 +454,12 @@ class ProgrammseiteTests(unittest.TestCase):
     def test_oeffnen_zeigt_die_seite_im_programm(self):
         app = self.app
         app._ansicht_setzen("konsole")
-        app._konsole_seite_setzen("spielstaende")
-        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "spielstaende")
+        app._konsole_seite_setzen("webkit")
+        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "webkit")
         _WURZEL.update_idletasks()
         self.assertEqual("web", app._konsole_seite)
         self.assertEqual("grid", app._webseite.winfo_manager())
-        self.assertEqual("", app._spielstaende_seite.winfo_manager())
+        self.assertEqual("", app._webkit_seite.winfo_manager())
         # Wunsch vom 27.09.2026: die ganze Flaeche unter der oberen Leiste -
         # ueber Seitenleiste und Inhalt, die Seitenleiste weicht.
         lage = app._webseite.grid_info()
@@ -484,9 +484,9 @@ class ProgrammseiteTests(unittest.TestCase):
     def test_zurueck_fuehrt_dorthin_wo_man_herkam(self):
         app = self.app
         app._ansicht_setzen("konsole")
-        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "spielstaende")
+        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "webkit")
         app._webseite_zurueck()
-        self.assertEqual("spielstaende", app._konsole_seite)
+        self.assertEqual("webkit", app._konsole_seite)
         self.assertEqual("", app._webseite.winfo_manager())
         self.assertIn("schliessen", self.engines[-1].aufrufe)
         self.assertEqual("grid", app.sidebar.winfo_manager(), "Die Seitenleiste fehlt danach.")
@@ -557,9 +557,9 @@ class ProgrammseiteTests(unittest.TestCase):
     def test_der_knopf_der_herkunft_bleibt_hervorgehoben(self):
         app = self.app
         app._ansicht_setzen("konsole")
-        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "spielstaende")
+        app._webansicht_oeffnen("http://10.0.0.5:8082/", "dienst.garlic", "webkit")
         farben = {schluessel: knopf._bg for knopf, schluessel in app._konsole_knoepfe}
-        self.assertEqual(app._COLORS["fg_accent"], farben["konsole.btn_spielstaende"])
+        self.assertEqual(app._COLORS["fg_accent"], farben["konsole.btn_webkit"])
         # Ungewaehlt die dunkle Pillenflaeche (seit v1.9.62; vorher bg_card).
         self.assertEqual(app._COLORS["console_bg"], farben["konsole.btn_dienste"])
 

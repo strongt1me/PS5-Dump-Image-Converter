@@ -1,0 +1,57 @@
+{
+  "werkzeug": "Direct Stream for PlayStation 5",
+  "fassung": "2.8.1",
+  "autor": "in der LICENSE nicht genannt",
+  "herkunft": "vom Projektinhaber am 05.10.2026 bereitgestelltes Archiv DIRECT-STREAM-FOR-PLAYSTATION-5-PurePython.zip; eine oeffentliche Quelle ist nicht bekannt",
+  "stand": "Fassung 2.8.1 (ps5_streamer.VERSION); ps5_streamer.py, transfer_core.py und web/ sind in allen fuenf bereitgestellten Archiven (PurePython, Windows, macOS, direct-stream-ps5-2.8.1.zip/.tar.gz) byte-gleich (am 05.10.2026 per SHA-256 gemessen)",
+  "lizenz": "MIT (LICENSE in diesem Ordner; kein Urheber genannt)",
+  "quellarchiv_sha256": "f5167b0cd47be228b6f70c8c93c680f91a06034c988db3708f2d9bfecfd8992b",
+  "veraendert": "nichts - alle Dateien byte-gleich mit dem Quellarchiv",
+  "nicht_uebernommen": [
+    "tests/",
+    "requirements-dev.txt",
+    ".gitignore"
+  ],
+  "dateien": {
+    "LICENSE": {
+      "sha256": "68c4a547d7be4a22734e357fa061ad49b98a8e3d4b0895aecb74a10e567cf6ee",
+      "bytes": 1061
+    },
+    "README.md": {
+      "sha256": "dcbe8fb4cd50e60c3a99398c111742b0d055edb3e72832e45db52c524a4615ac",
+      "bytes": 6263
+    },
+    "VALIDATION.md": {
+      "sha256": "13031f926a18ebd5e2a2027c31b01f1286d062be9584c77531369ea11b6cff43",
+      "bytes": 5820
+    },
+    "requirements.txt": {
+      "sha256": "dab87c934929924cc8e6f73a862c9739dd51ab120d81dd11a0c44142fee10c86",
+      "bytes": 276
+    },
+    "ps5_streamer.py": {
+      "sha256": "e64dcecf392cee4a0e0f1395083fcdb42bb91abbfddc88fa766725e01c3ebd73",
+      "bytes": 46020
+    },
+    "transfer_core.py": {
+      "sha256": "e66fb76e6a54e6ae804bdb5849a78d3bfbedebab159f253288117ec9895e326f",
+      "bytes": 34541
+    },
+    "web/app.js": {
+      "sha256": "6587788bba6d34ba46629fc4344c33bbe1aa88210eaa115fc284765e552fab9b",
+      "bytes": 51566
+    },
+    "web/icon.svg": {
+      "sha256": "4840baf781ff6031beb57638dc707916e3d35eb5ff47828049cad73a3676730f",
+      "bytes": 262
+    },
+    "web/index.html": {
+      "sha256": "6e105cb005bac41111063d2a58e97e4ecbab08ced39b96b527f5fc7a6931cd1d",
+      "bytes": 48358
+    },
+    "web/style.css": {
+      "sha256": "b7a7cf86261ffc16e4cb9c8fe7f8d0181d99d56e5cea13f4163033cc932c3e36",
+      "bytes": 36799
+    }
+  }
+}

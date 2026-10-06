@@ -16,8 +16,8 @@ Bis v1.9.5 half sich dieses Projekt damit, solche Zeilen **unangetastet** zu
 lassen - kein Verlust, aber auch nicht bearbeitbar. Jetzt werden die sieben
 benannten Schluessel mit ``" | "`` zu einer Editorzeile zusammengezogen und
 beim Schreiben wieder verteilt. Jeder ANDERE mehrfache Schluessel bleibt
-weiterhin woertlich stehen: MicroMount benutzt denselben Editor mit eigenen
-Schluesseln, und die naechste Payload-Fassung kann weitere bringen.
+weiterhin woertlich stehen: Die naechste Payload-Fassung kann eigene
+Schluessel bringen.
 """
 from __future__ import annotations
 
@@ -153,9 +153,9 @@ class FremdeSchluesselTests(unittest.TestCase):
     FREMD = "eigener_pfad=/x\neigener_pfad=/y\ndebug=1\n"
 
     def test_ein_unbekannter_mehrfachschluessel_wird_nicht_gleichgemacht(self):
-        """MicroMount benutzt denselben Editor mit eigenen Schluesseln.
+        """Eine Payload-Fassung kann eigene Mehrfachschluessel bringen.
 
-        Ohne diese Sperre bekaeme jede seiner Zeilen denselben Wert - der
+        Ohne diese Sperre bekaeme jede ihrer Zeilen denselben Wert - der
         Verlust, den die Namensliste allein nicht verhindert.
         """
         self.assertNotIn("eigener_pfad", WIEDERHOLBARE_SCHLUESSEL)

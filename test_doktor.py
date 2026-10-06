@@ -468,6 +468,18 @@ class StartprobeTests(unittest.TestCase):
         kaputt = [(n, b) for n, b in befunde if b]
         self.assertEqual(kaputt, [], "Fehlalarm: %r" % (kaputt,))
 
+    @unittest.skipUnless(sys.platform == "win32", "nur unter Windows")
+    def test_die_startprobe_startet_die_engine_von_ps4_pkg_ota(self) -> None:
+        """Gemessen am 05.10.2026: vier Programme, darunter OrbisPkgTool.
+
+        Die Probe nimmt höchstens sechs (``kandidaten[:6]``). Käme ein Ordner
+        mit vielen Programmen davor, fiele die Engine hinten heraus - und ein
+        fehlendes Laufzeitteil bliebe dem Doktor verborgen, obwohl das ganze
+        Fenster PS4 PKG -> OTA an ihr hängt.
+        """
+        befunde, _rechte = self.haupt._doktor_werkzeuge_starten()
+        self.assertIn("OrbisPkgTool.exe", [n for n, _b in befunde])
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -2,13 +2,21 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.62):** Die Oberfläche ist jetzt rund – Knöpfe, Felder und Beschriftungen in Pillenform in beiden Ansichten –, WEITERE TOOLS verpackt ein ELF als eboot.bin, und eine direkt installierte Kachel landet wahlweise unter Medien oder Spiele.
+> **Kurz zum aktuellen Stand (v1.9.63):** Die Ansicht KONSOLE hat acht Knöpfe – darunter das PS5 Cooling & System Center und Direct Stream –, die Sammelkonvertierung nimmt mehrere Dump-Ordner auf einmal, und „PS4 PKG → OTA“ bündelt die PS4-Paketwerkzeuge in einem Fenster.
+
+---
+
+## v1.9.63 – 06.10.2026
+
+- **Neu:** Ansicht KONSOLE mit acht Knöpfen: „2. WebKit Autoloader“ ist eine Seite mit Fassungswahl, „5. CoolSysCent-Pro“ öffnet das PS5 Cooling & System Center, „6. ShadowMount+“ und „7. SMPlusGui“ öffnen ihre Weboberflächen (Payload wird bei Bedarf selbst gesendet), und „8. Direct Stream“ überträgt Downloads und lokale Dateien per FTP direkt in den Speicher der PS5.
+- **Neu:** Die Sammelkonvertierung nimmt Dump-Ordner als Quelle – mehrere in einem Dialog markieren oder einen Ordner voller Dumps wählen; WEITERE TOOLS → „PS4 PKG → OTA“ fasst Lesen, Entpacken, Prüfen, Zusammenführen und Bauen von PS4-Paketen in einem Fenster zusammen, MicroMount ist entfernt.
+- **Geändert:** Alle Fenster in runder Pillenoptik; das Hauptbild füllt nur noch den Bereich rechts der Seitenleiste (beide Bilder getrennt, Maße in den Einstellungen), die Seitenleiste ist wieder eckig mit mittigen Knopftexten; „Konsole & Payloads“ zeigt OnionHEN 0.9.0-beta1 und DPI v2 sowie die Versionen von ShadowMount+ und dem zweiten ELF-Loader.
 
 ---
 
 ## v1.9.62 – 04.10.2026
 
-- **Neu:** Runde Oberfläche in Pillenform – Knöpfe, Eingabefelder, Klapplisten und Beschriftungen in den Ansichten UMWANDELN und KONSOLE, dazu runde Ecken und schmalere, gleich breite Knöpfe in der Seitenleiste.
+- **Neu:** Runde Oberfläche in Pillenform – Knöpfe, Eingabefelder und Klapplisten in den Ansichten UMWANDELN und KONSOLE, dazu schmalere, gleich breite Knöpfe in der Seitenleiste.
 - **Neu:** WEITERE TOOLS → „ELF → EBOOT.BIN“ verpackt eine ELF-Datei als eboot.bin (Fake-SELF für gejailbreakte Konsolen), und „App direkt installieren“ lässt wählen, ob die Kachel unter Medien oder Spiele erscheint.
 - **Behoben:** Die Beschriftungen „BEIM ERSTELLEN EINBAUEN“ und „BAUFORM“ wechseln beim Designwechsel ihre Schriftfarbe jetzt mit.
 
@@ -1314,7 +1322,7 @@ gemeldet war:
 | KLOG (Breite) | 115 px | 135 px |
 
 Dazu ein fünfter, der **nur auf Deutsch** auftrat: „Auf PS5 schreiben…“ bekam
-im ShadowMount+- und MicroMount-Editor 158 statt 242 px. Die englischen
+im ShadowMount+-Editor 158 statt 242 px. Die englischen
 Beschriftungen sind kürzer – deshalb ist es nie jemandem aufgefallen.
 
 ### Wenn etwas misslingt, sagt es das Programm
@@ -3250,7 +3258,7 @@ Zwei neue Prüfungen sichern das ab: Eine schaltet durch alle drei Farbschemata 
 
 - **Das helle Design ist wieder hell.** Das Hintergrundbild ist dunkel gehalten und wurde bisher in jedem Design gleich stark eingemischt. Im hellen Design saßen helle Karten und Knöpfe dadurch vor fast schwarzem Grund, und Beschriftungen lagen je nach Stelle auf hellem oder dunklem Untergrund. Jetzt bleibt das Bild dort ein dezentes Wasserzeichen.
 - **Kein fremdes Symbol mehr beim Start.** Für etwa eine Sekunde stand das Standardsymbol von Tkinter in der Taskleiste, bevor das richtige erschien. Das eigene Symbol wird jetzt gesetzt, sobald das Fenster entsteht.
-- **Tabellenüberschriften sitzen über ihren Werten.** In allen Tabellen – param.json-Editor, Bibliothek, PKG-Merger, MicroMount und ShadowMount+ – waren die Überschriften zentriert, die Werte darunter linksbündig. Bei einem breit gezogenen Fenster standen sie weit auseinander.
+- **Tabellenüberschriften sitzen über ihren Werten.** In allen Tabellen – param.json-Editor, Bibliothek, PKG-Merger und ShadowMount+ – waren die Überschriften zentriert, die Werte darunter linksbündig. Bei einem breit gezogenen Fenster standen sie weit auseinander.
 
 ---
 
@@ -3384,7 +3392,7 @@ Zwei neue Prüfungen sichern das ab: Eine schaltet durch alle drei Farbschemata 
 ### PS5-Verbindung an einer Stelle
 
 - In den **EINSTELLUNGEN** gibt es den neuen Abschnitt **PS5-Verbindung**: IP-Adresse, FTP-Port und KLOG-Port. Gespeichert wird beim Druck auf **Speichern**.
-- Alle Fenster, die eine Verbindung brauchen – FTP-Übertragung, **KLOG**, **ShadowMount+/MicroMount**, AMPR Picker und **JS LOADER** – schlagen diese Werte vor. Bisher hielt jedes Fenster seine eigene Adresse, und beim JS Loader stand sie sogar fest im Programm. Wer die Konsole umzieht, musste sie an vier Stellen nachtragen.
+- Alle Fenster, die eine Verbindung brauchen – FTP-Übertragung, **KLOG**, **ShadowMount+**, AMPR Picker und **JS LOADER** – schlagen diese Werte vor. Bisher hielt jedes Fenster seine eigene Adresse, und beim JS Loader stand sie sogar fest im Programm. Wer die Konsole umzieht, musste sie an vier Stellen nachtragen.
 - Ein Fenster, in dem Sie bewusst etwas anderes eintragen, behält seine eigene Angabe.
 - **Stimmt ein Port nicht, findet das Programm ihn selbst.** Antwortet der eingetragene nicht, werden die bekannten durchprobiert (FTP: 2121, 1337, 21, 2120) und der wirksame übernommen und gemerkt.
 - Ein Knopf **Verbindung testen** sagt sofort, ob die Konsole antwortet – und über welchen Port.
@@ -3421,7 +3429,7 @@ Zwei neue Prüfungen sichern das ab: Eine schaltet durch alle drei Farbschemata 
 ### Fehlermeldungen, die stumm blieben
 
 - Schlug ein **BACKPORT** fehl, blieb die Statuszeile auf dem alten Stand stehen, statt den Grund zu nennen. Sie zeigt ihn jetzt wieder.
-- Dasselbe galt im Fenster **ShadowMount+/MicroMount** beim Laden und Schreiben der Konfiguration und beim Holen des Debug-Logs: Ging etwas schief, war das an der Oberfläche nicht zu sehen.
+- Dasselbe galt im Fenster **ShadowMount+** beim Laden und Schreiben der Konfiguration und beim Holen des Debug-Logs: Ging etwas schief, war das an der Oberfläche nicht zu sehen.
 
 ### Kleinere Verbesserung
 
@@ -3512,7 +3520,7 @@ Im neuen **BACKPORT**-Fenster waren die drei Knöpfe am unteren Rand leer – ma
 | **PKG-MERGER** | **Gar keine Knöpfe** – weder „Zusammenführen" noch „Schließen" |
 | **BACKPORT** | Drei Knöpfe ohne Beschriftung, Firmware-Auswahl leer |
 | **DOWNLOADS** | Fünf Knöpfe der unteren Reihe beschnitten |
-| **ShadowMount+ / MicroMount** | Knöpfe der Listenzeile beschnitten, „Auf PS5 schreiben…" seitlich gekappt |
+| **ShadowMount+** | Knöpfe der Listenzeile beschnitten, „Auf PS5 schreiben…" seitlich gekappt |
 | **JS Loader** | „Konsole leeren" auf 8 Pixel Breite geschrumpft, praktisch unsichtbar |
 
 Der **PKG-Merger** war dabei am stärksten betroffen: Dort blieb von der Knopfleiste nichts übrig, das Fenster ließ sich also nur über das Kreuz in der Titelzeile schließen und die Zusammenführung gar nicht auslösen. Aufgefallen ist das erst beim zweiten Durchgang – im ersten öffnete sich das Fenster nicht, weil es einen Ordner mit geteilten `.pkg`-Dateien voraussetzt.
@@ -3521,7 +3529,7 @@ Der **PKG-Merger** war dabei am stärksten betroffen: Dort blieb von der Knopfle
 
 - Die **Firmware-Auswahl im Backport-Fenster** blieb leer, weil der interne Wert nach dem Öffnen des Fensters verworfen wurde. Dass trotzdem „Firmware 7.00" in der Statuszeile stand, war Zufall – ohne Auswahl griff das Programm auf den letzten Listeneintrag zurück, und das ist zufällig ebenfalls 7.00. Jetzt zeigt das Feld seinen Wert an, und ohne Auswahl gilt ausdrücklich die Voreinstellung.
 - Im **JS Loader** stehen die Aktionsknöpfe jetzt in zwei Zeilen. Alle fünf nebeneinander brauchten mehr Breite, als das Fenster hat.
-- Bei **ShadowMount+ und MicroMount** ist das Fenster etwas breiter; die Tabelle zeigt 12 statt 16 Zeilen auf einmal und lässt sich wie bisher scrollen.
+- Bei **ShadowMount+** ist das Fenster etwas breiter; die Tabelle zeigt 12 statt 16 Zeilen auf einmal und lässt sich wie bisher scrollen.
 - Im Download-Fenster heißt der Knopf jetzt kurz **Umsortieren**; was er tut, steht im Hinweis beim Darüberfahren.
 
 Ein neuer Test öffnet die betroffenen Fenster und misst jeden Knopf aus, damit diese Fehlerklasse nicht unbemerkt zurückkehrt.
@@ -3733,7 +3741,7 @@ Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19
 
 ### Zwei Werkzeuge entfernt
 
-- **Y2JB** und **Dump umbenennen** sind aus dem Menü "Weitere Tools" entfernt. Dort verbleiben MicroMount und der AMPR-Index-Builder.
+- **Y2JB** und **Dump umbenennen** sind aus dem Menü "Weitere Tools" entfernt. Dort verbleibt der AMPR-Index-Builder.
 - Der JS Loader ist davon nicht betroffen und bleibt unverändert erhalten.
 
 ### AMPR und PlayGo getrennt wählbar
@@ -3836,7 +3844,6 @@ Alle acht Aufgaben wurden mit echten Backups in allen Formaten durchgetestet (19
 
 ### Neue Werkzeuge in "Weitere Tools"
 
-- **MicroMount**: Konfigurationseditor für das gleichnamige Drittanbieter-Mount-Tool (`/data/micromount/config.ini`), analog zu SHADOWMOUNT+, zusätzlich mit Payload-Versand per TCP an die PS5.
 - **AMPR-Index-Builder**: Baut aus einem lokalen Ordner die Indexdatei `ampr_emu.index` für den AMPR-Dateiresolver.
 
 Diese Werkzeuge sind über einen neuen Knopf "Weitere Tools" in der Titelleiste erreichbar, um die Knopfreihe nicht zu überladen.
