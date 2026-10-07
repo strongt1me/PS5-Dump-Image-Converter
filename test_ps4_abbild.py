@@ -92,6 +92,23 @@ class GruppierenTests(unittest.TestCase):
         self.assertEqual("neu.pkg", s.basis.pfad)
         self.assertTrue(s.mehrere_basen)
 
+    def test_alle_basen_bleiben_waehlbar(self) -> None:
+        """Der Anwender waehlt selbst (07.10.2026): ``basen`` haelt alle, ``basis_setzen`` nimmt eine davon."""
+        s = ab.spiele_gruppieren([_eintrag("neu.pkg", bib.TYP_BASIS, app_ver="01.02"),
+                                  _eintrag("alt.pkg", bib.TYP_BASIS, app_ver="01.00")])[0]
+        self.assertEqual(["alt.pkg", "neu.pkg"], [b.pfad for b in s.basen], "aufsteigend nach Fassung")
+        self.assertEqual("neu.pkg", s.basis.pfad)
+        self.assertFalse(s.basis_gewaehlt)
+        s.basis_setzen(_eintrag("ALT.pkg" if os.name == "nt" else "alt.pkg", bib.TYP_BASIS, app_ver="01.00"))
+        self.assertEqual("alt.pkg", s.basis.pfad)
+        self.assertTrue(s.basis_gewaehlt)
+        with self.assertRaises(ValueError):
+            s.basis_setzen(_eintrag("fremd.pkg", bib.TYP_BASIS))
+
+    def test_dasselbe_paket_zweimal_ist_keine_zweite_basis(self) -> None:
+        s = ab.spiele_gruppieren([_eintrag("a.pkg", bib.TYP_BASIS), _eintrag("a.pkg", bib.TYP_BASIS)])[0]
+        self.assertEqual(1, len(s.basen))
+
     def test_zwei_updates_gleicher_fassung_ergeben_eines(self) -> None:
         s = ab.spiele_gruppieren([_eintrag("b.pkg", bib.TYP_BASIS), _eintrag("u.pkg", bib.TYP_UPDATE, app_ver="01.05"),
                                   _eintrag("u2.pkg", bib.TYP_UPDATE, app_ver="01.05")])[0]

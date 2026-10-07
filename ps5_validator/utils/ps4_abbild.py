@@ -62,6 +62,19 @@ class Spiel:
     dump_ordner: str = ""                             #: gesetzt: ein entpacktes Spiel (keine Pakete)
     dump_version: str = ""
     mehrere_basen: bool = False
+    #: Alle Basispakete des Titels (aufsteigend nach Fassung); ``basis`` ist das gewaehlte, anfangs das neueste.
+    basen: list = field(default_factory=list)
+    #: Der Anwender hat das Basispaket selbst gewaehlt - dann wird nicht noch einmal gefragt.
+    basis_gewaehlt: bool = False
+
+    def basis_setzen(self, eintrag) -> None:
+        """Waehlt eines der vorhandenen Basispakete (nach Pfad verglichen)."""
+        for kandidat in self.basen:
+            if os.path.normcase(kandidat.pfad) == os.path.normcase(eintrag.pfad):
+                self.basis = kandidat
+                self.basis_gewaehlt = True
+                return
+        raise ValueError("Kein Basispaket dieses Titels: %s" % eintrag.pfad)
 
     @property
     def baubar(self) -> bool:
@@ -103,6 +116,8 @@ def spiele_gruppieren(eintraege) -> list[Spiel]:
             continue
         s = gruppen.setdefault(e.title_id, Spiel(title_id=e.title_id))
         if e.typ in (bib.TYP_BASIS, bib.TYP_APP):
+            if all(os.path.normcase(b.pfad) != os.path.normcase(e.pfad) for b in s.basen):
+                s.basen.append(e)
             if s.basis is not None:
                 s.mehrere_basen = True
                 neu = (bib.fassung_zahlen(e.app_ver), e.groesse)
@@ -118,6 +133,7 @@ def spiele_gruppieren(eintraege) -> list[Spiel]:
             if all(z.pfad != e.pfad for z in s.zusaetze):
                 s.zusaetze.append(e)
     for s in gruppen.values():
+        s.basen.sort(key=lambda b: (bib.fassung_zahlen(b.app_ver), b.groesse))
         s.updates.sort(key=lambda u: bib.fassung_zahlen(u.app_ver))
         namensgeber = s.basis or (s.updates[-1] if s.updates else (s.zusaetze[0] if s.zusaetze else None))
         s.titel = (namensgeber.titel if namensgeber else "") or s.title_id

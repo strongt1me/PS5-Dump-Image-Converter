@@ -151,6 +151,97 @@ class FensterTests(unittest.TestCase):
             lesen.assert_called_once()
             self.assertEqual(os.path.normpath(tmp), f.quelle_var.get())
 
+    def test_der_balken_zeigt_die_prozentzahl_und_die_suche_wandert(self) -> None:
+        f = self._fenster()
+        f._balken_setzen(42.4)
+        self.assertEqual("42 %", f.prozent_var.get())
+        f._balken_setzen(None)
+        self.assertEqual("…", f.prozent_var.get())
+        self.assertTrue(f._balken_unbestimmt)
+        f._balken_setzen(100.0)
+        self.assertEqual("100 %", f.prozent_var.get())
+        self.assertFalse(f._balken_unbestimmt, "Nach der Suche ist der Balken wieder bestimmt.")
+        f._balken_setzen(250)
+        self.assertEqual("100 %", f.prozent_var.get())
+
+    def test_nach_dem_einlesen_steht_der_balken_nicht_irgendwo(self) -> None:
+        """Meldung 07.10.2026: Der Balken blieb nach dem Einlesen auf dem Wert des letzten Pakets stehen."""
+        from ps5_validator.utils import ps4pkg_bibliothek as bib
+        f = self._fenster()
+        f._balken_setzen(65.0)
+        fremd = bib.PkgEintrag(pfad="E:/x.pkg", lesbar=False, fehler="kein PS4-Paket (Kennung fehlt)")
+        defekt = bib.PkgEintrag(pfad="E:/y.pkg", lesbar=False, fehler="Pruefsumme falsch")
+        f._z.update(scan_fertig=True, scan_fehler="", scan_ergebnis=([fremd, defekt], None))
+        f._scan_fertig()
+        self.assertEqual("100 %", f.prozent_var.get())
+        text = f.protokoll.get("1.0", "end")
+        self.assertIn(STRINGS["ps4dib.nicht_ps4_header"]["de"].format(anzahl=1), text)
+        self.assertIn(STRINGS["ps4pkg.rejected_header"]["de"].format(anzahl=1), text)
+
+    def test_ein_fehler_beim_einlesen_setzt_den_balken_zurueck(self) -> None:
+        f = self._fenster()
+        f._balken_setzen(65.0)
+        f._z.update(scan_fertig=True, scan_fehler="Absturz", scan_ergebnis=None)
+        f._scan_fertig()
+        self.assertEqual("0 %", f.prozent_var.get())
+
+    def _zwei_basen(self):
+        from ps5_validator.utils import ps4pkg_bibliothek as bib
+        eintraege = [bib.PkgEintrag(pfad="E:/a.pkg", lesbar=True, title_id="CUSA00001", titel="X", typ=bib.TYP_BASIS,
+                                    app_ver="01.00", groesse=10),
+                     bib.PkgEintrag(pfad="E:/b.pkg", lesbar=True, title_id="CUSA00001", titel="X", typ=bib.TYP_BASIS,
+                                    app_ver="01.02", groesse=20)]
+        f = self._fenster()
+        f.pakete = eintraege
+        f._gruppieren()
+        return f, f.spiele["CUSA00001"]
+
+    def test_bei_mehreren_basispaketen_wird_gefragt_aber_nur_einmal(self) -> None:
+        f, spiel = self._zwei_basen()
+        self.assertEqual(2, len(spiel.basen))
+
+        def waehle(s):
+            s.basis_setzen(s.basen[0])
+            f._basis_wahl[s.title_id] = s.basis.pfad
+            return True
+
+        with mock.patch.object(f, "_basis_waehlen", side_effect=waehle) as dlg:
+            self.assertTrue(f._basen_klaeren([spiel]))
+            self.assertTrue(f._basen_klaeren([spiel]))
+            dlg.assert_called_once()
+        self.assertEqual("E:/a.pkg", spiel.basis.pfad)
+        f._basis_wahl.clear()
+        with mock.patch.object(f, "_basis_waehlen", return_value=False):
+            _, neu = self._zwei_basen()
+            self.assertFalse(f._basen_klaeren([neu]), "Abbruch im Dialog bricht den Lauf ab.")
+
+    def test_die_wahl_ueberlebt_ein_neues_gruppieren(self) -> None:
+        f, spiel = self._zwei_basen()
+        spiel.basis_setzen(spiel.basen[0])
+        f._basis_wahl["CUSA00001"] = spiel.basis.pfad
+        f._gruppieren()
+        neu = f.spiele["CUSA00001"]
+        self.assertEqual("E:/a.pkg", neu.basis.pfad)
+        self.assertTrue(neu.basis_gewaehlt)
+
+    def test_ein_geladenes_update_meldet_den_erfolg_und_fuellt_den_balken(self) -> None:
+        """Meldung 07.10.2026: Der Balken blieb bei 99 %, ein Abschluss wurde nicht gemeldet."""
+        from ps5_validator.utils import ps4pkg_aufgaben as au
+        with tempfile.TemporaryDirectory() as tmp:
+            pkg = os.path.join(tmp, "CUSA00001-patch-v01.02.pkg")
+            with open(pkg, "wb") as datei:
+                datei.write(b"\x7fCNT" + b"\x00" * 100)
+            f = self._fenster()
+            f._balken_setzen(99.0)
+            a = au.Aufgabe(kennung=7, art="update", titel="Update")
+            a.status, a.ergebnis = au.FERTIG, pkg
+            with mock.patch.object(fenster_modul.messagebox, "showinfo") as box:
+                f._update_geladen(a)
+            self.assertEqual("100 %", f.prozent_var.get())
+            self.assertIn("✓", f.status_var.get())
+            self.assertIn("CUSA00001-patch-v01.02.pkg", f.status_var.get())
+            box.assert_called_once()
+
     def test_die_quellknoepfe_rufen_die_wahl_auf(self) -> None:
         quelle = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
         self.assertIn("command=self._quelle_gewaehlt", quelle)

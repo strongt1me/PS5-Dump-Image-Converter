@@ -84,6 +84,7 @@ class Ps4DumpImageFenster:
         self.pt = pt
         self.pakete: list[bib.PkgEintrag] = []
         self.spiele: dict[str, ab.Spiel] = {}
+        self._basis_wahl: dict[str, str] = {}      # Title-ID -> Pfad des gewaehlten Basispakets
         self._z: dict = {"scan_laeuft": False, "scan_abbruch": False, "scan_text": None, "scan_ergebnis": None,
                          "scan_fehler": "", "update": None, "ota_erkannt": None}
         self._schliesst = False
@@ -125,6 +126,26 @@ class Ps4DumpImageFenster:
 
     def _status(self, text: str) -> None:
         self.status_var.set(text)
+
+    def _balken_setzen(self, wert: "float | None") -> None:
+        """Der Balken samt Prozentzahl daneben. ``None`` = Dauer unbekannt (Suche): der Balken wandert, die Zahl zeigt „…“."""
+        try:
+            if wert is None:
+                if not self._balken_unbestimmt:
+                    self.balken.configure(mode="indeterminate")
+                    self.balken.start()
+                    self._balken_unbestimmt = True
+                self.prozent_var.set("…")
+                return
+            if self._balken_unbestimmt:
+                self.balken.stop()
+                self.balken.configure(mode="determinate")
+                self._balken_unbestimmt = False
+            wert = max(0.0, min(100.0, float(wert)))
+            self.balken.configure(value=wert)
+            self.prozent_var.set("%d %%" % int(wert))
+        except tk.TclError:
+            pass
 
     def _frei(self) -> bool:
         """Laeuft nichts (weder Einlesen noch Aufgaben)?"""
@@ -234,8 +255,14 @@ class Ps4DumpImageFenster:
             tooltip(dlc, t("ps4pkg.dlc_hint"), delay_ms=600, wraplength=420)
 
         # ── Fortschritt und Protokoll ───────────────────────────────────
-        self.balken = pw.Progressbar(koerper, mode="determinate", maximum=100.0)
-        self.balken.pack(fill="x", pady=(10, 3))
+        balken_reihe = tk.Frame(koerper, bg=c["bg_main"])
+        balken_reihe.pack(fill="x", pady=(10, 3))
+        self.prozent_var = tk.StringVar(value="0 %")
+        tk.Label(balken_reihe, textvariable=self.prozent_var, width=6, anchor="e", font=(F, pt(10), "bold"),
+                 bg=c["bg_main"], fg=c["fg_primary"]).pack(side="right", padx=(8, 0))
+        self.balken = pw.Progressbar(balken_reihe, mode="determinate", maximum=100.0)
+        self.balken.pack(side="left", fill="x", expand=True)
+        self._balken_unbestimmt = False
         tk.Label(koerper, textvariable=self.status_var, font=(F, pt(9)), bg=c["bg_main"], fg=c["fg_secondary"],
                  anchor="w", wraplength=920, justify="left").pack(fill="x")
         self.protokoll = pw.Text(koerper, height=6, font=(self.M, pt(9)), bg=c["console_bg"], fg=c["console_fg"],
@@ -380,7 +407,7 @@ class Ps4DumpImageFenster:
         self._z.update(scan_laeuft=True, scan_abbruch=False, scan_text=None, scan_ergebnis=None, scan_fehler="")
         zwischen = self._zwischenspeicher()
         self._status(self.t("ps4pkg.status_scanning"))
-        self.balken.configure(value=0.0)
+        self._balken_setzen(None)
         eingabe, art_fuer_sicht = self.quelle_var.get().strip(), art
 
         def arbeit() -> None:
@@ -410,10 +437,13 @@ class Ps4DumpImageFenster:
             meldung = self.t("ps4pkg.status_scan_crashed", error=self._z["scan_fehler"])
             self._status(meldung)
             self._protokoll(meldung)
+            self._balken_setzen(0.0)
             return
         ergebnis = self._z["scan_ergebnis"]
         if not ergebnis:
+            self._balken_setzen(0.0)
             return
+        self._balken_setzen(100.0)
         eintraege, sicht = ergebnis
         self.pakete = list(eintraege)
         if sicht and sicht.get("ps5"):
@@ -423,16 +453,84 @@ class Ps4DumpImageFenster:
             if len(sicht["ps5"]) > 12:
                 self._protokoll(self.t("ps4pkg.and_more", anzahl=len(sicht["ps5"]) - 12))
         unlesbar = [e for e in self.pakete if not e.lesbar and not (sicht and e.pfad in (sicht.get("ps5") or []))]
-        if unlesbar:
-            self._protokoll(self.t("ps4pkg.rejected_header", anzahl=len(unlesbar)))
-            for e in unlesbar[:12]:
+        # "Kennung fehlt" heisst: kein PS4-Paket (meist PS5 oder DLC-Freischalter) - kein Fehler, nur uebersprungen.
+        fremd = [e for e in unlesbar if "kein PS4-Paket" in (e.fehler or "")]
+        defekt = [e for e in unlesbar if e not in fremd]
+        if fremd:
+            self._protokoll(self.t("ps4dib.nicht_ps4_header", anzahl=len(fremd)))
+            for e in fremd[:12]:
+                self._protokoll("    %s" % e.datei)
+            if len(fremd) > 12:
+                self._protokoll(self.t("ps4pkg.and_more", anzahl=len(fremd) - 12))
+        if defekt:
+            self._protokoll(self.t("ps4pkg.rejected_header", anzahl=len(defekt)))
+            for e in defekt[:12]:
                 self._protokoll(self.t("ps4pkg.rejected_entry", name=e.datei, grund=e.fehler or "?"))
         self._gruppieren()
         self._status(self.t("ps4pkg.status_found", count=len(self.spiele)))
 
+    # ------------------------------------------------------------------
+    # Mehrere Basispakete: der Anwender waehlt
+    # ------------------------------------------------------------------
+    def _basen_klaeren(self, spiele: "list[ab.Spiel]") -> bool:
+        """Fragt bei jedem Titel mit mehreren Basispaketen, welches gelten soll (einmal je Titel). ``False`` = Abbruch."""
+        for s in spiele:
+            if len(s.basen) > 1 and not s.basis_gewaehlt:
+                if not self._basis_waehlen(s):
+                    return False
+        return True
+
+    def _basis_menue(self) -> None:
+        for s in self._gewaehlt():
+            if len(s.basen) > 1:
+                if self._basis_waehlen(s):
+                    self._liste_fuellen(auswaehlen=s.title_id)
+                return
+
+    def _basis_waehlen(self, spiel: "ab.Spiel") -> bool:
+        """Dialog mit allen Basispaketen des Titels; ``True``, wenn eines gewaehlt wurde."""
+        t, c, F, pt = self.t, self.c, self.F, self.pt
+        pw = self.g._pw
+        dlg = self.g._build_modern_toplevel(t("ps4dib.basis_titel"), 760, 400, min_width=620, min_height=300)
+        self.g._build_modern_header(dlg, t("ps4dib.basis_titel"),
+                                    t("ps4dib.basis_untertitel", titel=spiel.titel or spiel.title_id,
+                                      title_id=spiel.title_id))
+        rahmen = tk.Frame(dlg, bg=c["bg_main"], padx=20, pady=8)
+        rahmen.pack(fill="both", expand=True)
+        aktuell = next((i for i, b in enumerate(spiel.basen) if b is spiel.basis), len(spiel.basen) - 1)
+        wahl = tk.StringVar(value=str(aktuell))
+        for i, b in enumerate(spiel.basen):
+            text = t("ps4dib.basis_zeile", fassung=b.app_ver or b.version or "-",
+                     groesse=self.g._fmt_bytes(b.groesse) if b.groesse else "-", datei=b.datei or b.pfad)
+            pw.Radiobutton(rahmen, text=text, value=str(i), variable=wahl, font=(F, pt(9)),
+                           bg=c["bg_main"], fg=c["fg_primary"], selectcolor=c["bg_card"],
+                           activebackground=c["bg_main"], activeforeground=c["fg_primary"],
+                           highlightthickness=0, bd=0).pack(anchor="w", pady=3)
+        ergebnis = {"ok": False}
+
+        def uebernehmen() -> None:
+            spiel.basis_setzen(spiel.basen[int(wahl.get())])
+            self._basis_wahl[spiel.title_id] = spiel.basis.pfad
+            ergebnis["ok"] = True
+            dlg.destroy()
+
+        knoepfe = tk.Frame(rahmen, bg=c["bg_main"])
+        knoepfe.pack(fill="x", pady=(14, 0))
+        pw.Button(knoepfe, text=t("ps4dib.basis_nehmen"), style="Accent.TButton", command=uebernehmen).pack(side="left")
+        pw.Button(knoepfe, text=t("action.cancel"), command=dlg.destroy).pack(side="right")
+        dlg.transient(self.win)
+        dlg.grab_set()
+        self.win.wait_window(dlg)
+        return ergebnis["ok"]
+
     def _gruppieren(self) -> None:
         self.spiele = {s.title_id: s for s in ab.spiele_gruppieren(self.pakete)}
         for s in self.spiele.values():
+            gemerkt = self._basis_wahl.get(s.title_id)
+            if gemerkt and len(s.basen) > 1:
+                for b in s.basen:
+                    if os.path.normcase(b.pfad) == os.path.normcase(gemerkt):
+                        s.basis_setzen(b)
             if s.mehrere_basen:
                 self._protokoll(self.t("ps4dib.mehrere_basen", title_id=s.title_id,
                                        fassung=(s.basis.app_ver if s.basis else "-")))
@@ -450,6 +548,8 @@ class Ps4DumpImageFenster:
                 teile = self.t("ps4dib.teile_dump")
             else:
                 teile = self.t("ps4pkg.parts", patches=len(s.updates), dlc=len(s.zusaetze))
+                if len(s.basen) > 1:
+                    teile = self.t("ps4dib.basen_zaehler", anzahl=len(s.basen)) + ", " + teile
                 if not s.baubar:
                     teile = self.t("ps4pkg.not_buildable") + " - " + teile
             tags = ("ps5",) if plattform == "ps5" else (() if s.baubar else ("nicht_baubar",))
@@ -496,6 +596,8 @@ class Ps4DumpImageFenster:
         except (tk.TclError, ValueError):
             self._warnung("ps4pkg.bad_number")
             return
+        if not self._basen_klaeren(gewaehlt):
+            return
         kennung = self._format_name()
         mit_dlc = bool(self.dlc_var.get()) and kennung in (ab.FORMAT_FFPFSC, ab.FORMAT_EXFAT, ab.FORMAT_DUMP)
         for s in gewaehlt:
@@ -515,7 +617,7 @@ class Ps4DumpImageFenster:
             return
         self._batch, self._gemeldet, self._gelesen = [], set(), {}
         self._batch_beginn = time.monotonic()
-        self.balken.configure(value=0.0)
+        self._balken_setzen(0.0)
         hinweis_texte = self.g._modul_texte(ps4_werkzeug.MELDUNGEN, "ps4werkzeug.")
         arbeit = self._arbeitsbasis(ziel) if kennung in ab.ABBILD_FORMATE else ""
         if arbeit:
@@ -642,9 +744,10 @@ class Ps4DumpImageFenster:
                 art, a, g, d = roh
                 if art == "suche":
                     self._status(self.t("ps4dib.suche", anzahl=a))
+                    self._balken_setzen(None)
                 elif g:
                     self._status(self.t("ps4dib.lese_paket", aktuell=a, gesamt=g, datei=d))
-                    self.balken.configure(value=100.0 * a / g)
+                    self._balken_setzen(100.0 * a / g)
         if self._z.get("scan_fertig"):
             self._scan_fertig()
         self._aufgaben_anzeigen()
@@ -697,7 +800,7 @@ class Ps4DumpImageFenster:
                 self._aufgabe_beendet(a)
         laeuft = next((a for a in stapel if a.status == au.LAEUFT), None)
         prozent = sum(100.0 if a.status in au.ENDZUSTAENDE else a.prozent for a in stapel) / len(stapel)
-        self.balken.configure(value=prozent)
+        self._balken_setzen(prozent)
         if self._batch_hinweis is not None and self.g._ps4_hinweis_faellig(prozent):
             self.g._ps4_hinweis_zeigen(self.win)
         if laeuft is not None:
@@ -735,7 +838,7 @@ class Ps4DumpImageFenster:
             self._status(t("ps4dib.status_mit_fehlern", fehler=fehler, gesamt=len(stapel)))
         else:
             ziel = stapel[-1].ergebnis or stapel[-1].ziel
-            self.balken.configure(value=100.0)
+            self._balken_setzen(100.0)
             self._status(t("ps4pkg.status_done", path=ziel))
 
     # ------------------------------------------------------------------
@@ -830,7 +933,13 @@ class Ps4DumpImageFenster:
                 self.pakete.append(eintrag)
             self._protokoll(t("ps4dib.update_in_liste", pfad=a.ergebnis))
             self._gruppieren()
-            self._status(t("ps4dib.update_in_liste", pfad=a.ergebnis))
+            self._balken_setzen(100.0)
+            groesse = self.g._fmt_bytes(eintrag.groesse) if eintrag.groesse else "-"
+            fertig = t("ps4dib.update_fertig", datei=os.path.basename(a.ergebnis), groesse=groesse)
+            self._status(fertig)
+            self._protokoll(fertig)
+            self._liste_fuellen(auswaehlen=eintrag.title_id)
+            messagebox.showinfo(t("ps4pkg.window_title"), fertig, parent=self.win)
         elif a.status == au.FEHLER:
             self._status(t("ps4ota.update_fehler", fehler=a.fehler))
             self._protokoll(a.fehler)
@@ -839,7 +948,7 @@ class Ps4DumpImageFenster:
 
     def _kurz_laeuft(self, a: au.Aufgabe) -> None:
         """Eine Aufgabe ausserhalb des Stapels (Update laden, senden, pruefen) zeigt ihren Stand."""
-        self.balken.configure(value=a.prozent)
+        self._balken_setzen(a.prozent)
         self._status("%s – %s" % (a.titel, a.text or "…"))
         gesehen = self._gelesen.get(a.kennung, 0)
         if len(a.protokoll) > gesehen:
@@ -854,7 +963,7 @@ class Ps4DumpImageFenster:
             self._protokoll(zeile)
         self._gelesen[a.kennung] = len(a.protokoll)
         if a.status == au.FERTIG:
-            self.balken.configure(value=100.0)
+            self._balken_setzen(100.0)
             self._status(a.text or t("ps4dib.fertig_kurz", titel=a.titel))
             self._protokoll(t("ps4dib.log_ok", titel=a.titel, pfad=a.ergebnis or a.ziel))
         elif a.status == au.ABGEBROCHEN:
@@ -875,6 +984,8 @@ class Ps4DumpImageFenster:
             return
         if any(s.dump_ordner for s in gewaehlt):
             self._warnung("ps4dib.senden_nur_pakete")
+            return
+        if not self._basen_klaeren(gewaehlt):
             return
         pakete = [p for s in gewaehlt for p in s.pakete(mit_zusaetzen=True)]
         if not pakete:
@@ -1049,6 +1160,9 @@ class Ps4DumpImageFenster:
     def _mehr_menue(self) -> None:
         t = self.t
         menue = self._menue()
+        mehrere = any(len(s.basen) > 1 for s in self._gewaehlt())
+        menue.add_command(label=t("ps4dib.mehr_basis"), command=self._basis_menue,
+                          state="normal" if mehrere else "disabled")
         menue.add_command(label=t("ps4dib.mehr_pruefen"), command=self._pakete_pruefen)
         menue.add_command(label=t("ps4dib.mehr_kopf"), command=self._paketkopf)
         if not orbispkg.verfuegbar():

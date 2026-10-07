@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.66):** Der AMPR EMU Manager steht als Seite im Hauptfenster, der PS4-Konverter öffnet die Quellauswahl direkt, und Online-Updates für PS4-Spiele werden nicht mehr fälschlich als beschädigt abgelehnt.
+> **Kurz zum aktuellen Stand (v1.9.67):** Im PS4-Konverter wählst du bei mehreren Basispaketen selbst, Downloads melden ihren Abschluss, und Fortschrittsbalken zeigen die Prozentzahl.
 
 ---
+
+## v1.9.67 – 07.10.2026
+
+- **Neu:** Im „PS4 PKG Dump & Image Converter“ wählst du bei mehreren Basispaketen eines Spiels selbst, welches gilt; Balken zeigen die Prozentzahl, die Suche nach Paketen wandert, und PS5-Pakete im Ordner werden neutral als „keine PS4-Pakete“ übersprungen.
+- **Geändert:** Die Design-Namen heißen „Dunkel“, „Hell“ und „Metallisch“ (ohne PS3-Zusatz); die Rückfrage zur DLC-Einbettung nennt ihre Grenzen genauer.
+- **Behoben:** Ein fertig geladenes Update meldet seinen erfolgreichen Abschluss und füllt den Balken auf 100 %.
 
 ## v1.9.66 – 07.10.2026
 
