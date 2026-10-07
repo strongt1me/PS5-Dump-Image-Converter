@@ -2,9 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.67):** Im PS4-Konverter wählst du bei mehreren Basispaketen selbst, Downloads melden ihren Abschluss, und Fortschrittsbalken zeigen die Prozentzahl.
+> **Kurz zum aktuellen Stand (v1.9.68):** Der Hinweis während der Umwandlung läuft wieder fehlerfrei, und Rückfragen kommen nach vorn, statt hinter anderen Fenstern zu stehen.
 
 ---
+
+## v1.9.68 – 07.10.2026
+
+- **Behoben:** Die Einblendung des PS4-Hinweises während der Umwandlung warf seit v1.9.66 einen Fehler; Rückfragen und Meldungen kommen jetzt als oberstes Fenster nach vorn und lassen die Taskleiste blinken, und eine offene Rückfrage gilt nicht mehr als Stillstand.
+- **Neu:** Bei der Konvertierung mehrerer Titel lässt sich die Rückfrage zu einer fehlerhaften param.json mit „Ja, für alle“ oder „Nein, für alle“ für den ganzen Lauf beantworten.
 
 ## v1.9.67 – 07.10.2026
 

@@ -703,7 +703,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.67"
+APP_VERSION = "v1.9.68"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -25809,6 +25809,11 @@ class PS5ConverterGUI:
             self._uhr_seit = jetzt
             return
 
+        # Eine offene Rueckfrage ist kein Stillstand: Das Programm wartet auf den Anwender (und der Stapelabzug
+        # im Protokoll sah im Bericht eines Anwenders wie ein Absturz aus, 07.10.2026).
+        if meldungen.offene_meldungen():
+            self._uhr_seit = jetzt
+            return
         seit = jetzt - float(getattr(self, "_uhr_seit", jetzt))
         if seit < self._STILLSTAND_UHR_AB_S:
             return
@@ -28765,6 +28770,9 @@ class PS5ConverterGUI:
             # ihn. Bliebe sie stehen, entschiede der vorige Lauf ueber die
             # Dateien des naechsten, ohne dass jemand gefragt wird.
             self._batch_ueberschreiben = None
+            # Antworten "fuer alle" der param.json-Fragen gelten nur fuer diesen Lauf.
+            self._param_antworten = {}
+            self._param_batch_aktiv = len(sources) > 1
             # Was dieser Lauf schon geschrieben hat - siehe
             # _batch_ueberschreiben_klaeren.
             self._batch_erzeugte_ziele = set()
@@ -28775,6 +28783,7 @@ class PS5ConverterGUI:
             for idx, candidate in enumerate(sources, start=1):
                 if not self.is_running:
                     self._batch_von, self._batch_bis = 0.0, 100.0
+                    self._param_batch_aktiv = False
                     return False
                 # Jede Datei bekommt ihren Abschnitt des Balkens: Datei 1 von 2
                 # fuellt 0-50 %, Datei 2 dann 50-100 %.
@@ -28934,6 +28943,7 @@ class PS5ConverterGUI:
                 self._append_to_log(self._t('batch.nothing_to_do'))
                 all_ok = False
             self._batch_von, self._batch_bis = 0.0, 100.0
+            self._param_batch_aktiv = False
             self.task_final_output_path = dst
             return all_ok
 
@@ -37843,7 +37853,33 @@ class PS5ConverterGUI:
         if getattr(self, "_cli_mode", False):
             schalter = "_cli_param_online" if online else "_cli_param_repair"
             return bool(getattr(self, schalter, False))
+        if getattr(self, "_param_batch_aktiv", False) and not online:
+            return self._param_frage_fuer_alle(titel, text, default_yes)
         return self._ask_yesno_threadsafe(titel, text, default_yes=default_yes)
+
+    def _param_frage_fuer_alle(self, titel: str, text: str, default_yes: bool) -> bool:
+        """Die Frage im Stapellauf: einmal beantworten, "fuer alle" gilt dann fuer jeden weiteren Titel.
+
+        Anwenderbericht 07.10.2026: Bei zwoelf Titeln fragte das Programm bei jedem mit fehlerhafter param.json,
+        und ein Lauf hing an der unbeachteten Frage. Gemerkt wird je Frage (Titel des Dialogs), nur fuer diesen
+        Lauf. Der Online-Nachschlag bleibt davon ausgenommen: Er schickt die Title-ID an einen fremden Dienst
+        und wird jedes Mal einzeln gefragt.
+        """
+        antworten = self.__dict__.setdefault("_param_antworten", {})
+        if titel in antworten:
+            self._append_to_log(self._t("log.param_antwort_ja_alle" if antworten[titel]
+                                        else "log.param_antwort_nein_alle"))
+            return antworten[titel]
+        vorgabe = "yes" if default_yes else "no"
+        if threading.current_thread() is threading.main_thread():
+            antwort = meldungen.frage_fuer_alle(self, titel, text, vorgabe)
+        else:
+            antwort = self._im_hauptfaden_warten(
+                lambda: meldungen.frage_fuer_alle(self, titel, text, vorgabe),
+                vorgabe="no", fehler_im_hauptfaden=True)
+        if antwort in ("yes_all", "no_all"):
+            antworten[titel] = antwort == "yes_all"
+        return antwort in ("yes", "yes_all")
 
     def _validator_param_json_anbieten(self, quellordner: str) -> None:
         """Prueft die param.json zu Beginn von Aufgabe 8 und bietet Hilfe an.
@@ -49557,6 +49593,11 @@ class PS5ConverterGUI:
     #: aufgibt. Ohne diese Grenze haengt er fuer immer, wenn das Fenster
     #: waehrend der Frage geschlossen wird.
     _AMPR_GEN_ANTWORT_GRENZE = 600.0
+
+    #: Die Farbe, die in der Einblendung des PS4-Hinweises durchsichtig wird (``_ps4_hinweis_zeigen``). Sie darf
+    #: sonst nirgends vorkommen - jeder Bildpunkt in genau diesem Ton wird zum Loch. Stand bis v1.9.66 beim
+    #: AMPR-Auswahlfenster und fiel mit ihm weg, obwohl die Einblendung sie weiter braucht (Volllauf 07.10.2026).
+    _AUSWAHL_DURCHSICHTIG = "#FF00FE"
 
     def _show_ampr_auswahl(self) -> None:
         """Aufgabe 7: zeigt die Seite "AMPR EMU Manager" im rechten Bereich der Ansicht UMWANDELN.

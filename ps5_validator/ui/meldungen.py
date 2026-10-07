@@ -40,11 +40,25 @@ TEXTE = {
     "ja": {"de": "Ja", "en": "Yes"},
     "nein": {"de": "Nein", "en": "No"},
     "abbrechen": {"de": "Abbrechen", "en": "Cancel"},
+    "ja_alle": {"de": "Ja, für alle", "en": "Yes, for all"},
+    "nein_alle": {"de": "Nein, für alle", "en": "No, for all"},
     "wiederholen": {"de": "Wiederholen", "en": "Retry"},
 }
 
 #: Die Originale aus ``tkinter.messagebox`` - fuer den Rueckfall und :func:`aufheben`.
 _ORIGINALE: dict[str, object] = {}
+
+#: Die vier Antworten der Frage "fuer alle Titel dieses Laufs" (:func:`frage_fuer_alle`).
+FUER_ALLE = (("yes", "ja"), ("no", "nein"), ("yes_all", "ja_alle"), ("no_all", "nein_alle"))
+
+#: Wie viele Meldungen gerade auf eine Antwort warten. Eine offene Rueckfrage ist kein Stillstand der Anzeige:
+#: Die Ueberwachung des Programms (``_stillstand_uhr``) fragt das ab.
+_OFFEN = 0
+
+
+def offene_meldungen() -> int:
+    """Zahl der Meldungen und Rueckfragen, die gerade auf eine Antwort warten."""
+    return _OFFEN
 
 
 def ergebnis(art: str, antwort: "str | None"):
@@ -72,11 +86,15 @@ def _ohne_antwort(art: str) -> str:
 class Meldung:
     """Ein modales Meldungsfenster in der Optik des Programms."""
 
-    def __init__(self, gui, art: str, titel: str, text: str, eltern=None, vorgabe: str = "") -> None:
+    def __init__(self, gui, art: str, titel: str, text: str, eltern=None, vorgabe: str = "",
+                 knoepfe_eigen: "tuple | None" = None) -> None:
         self.gui = gui
         self.art = art
         self.antwort: "str | None" = None
+        self._roh = knoepfe_eigen is not None      # eigene Knopfreihe: die Antwort kommt unuebersetzt zurueck
         knoepfe, zeichen, rolle = ARTEN[art]
+        if knoepfe_eigen is not None:
+            knoepfe = knoepfe_eigen
         c = gui._COLORS
         sprache = "de" if getattr(gui, "_current_language", "de") == "de" else "en"
         eltern = eltern if eltern is not None else gui.root
@@ -160,11 +178,36 @@ class Meldung:
             pass
         self.win.destroy()
 
+    def _nach_vorn(self) -> None:
+        """Holt die Meldung vor alle Fenster und lässt die Taskleiste blinken.
+
+        Meldung des Anwenders (07.10.2026): Bei der Ordner-zu-exFAT-Konvertierung von zwölf Titeln fragte das Programm
+        nach dem neunten, ob eine fehlerhafte param.json repariert werden soll - und der Anwender sah nichts davon:
+        Das Fenster stand hinter anderen Programmen, das Hauptfenster war gesperrt (die Meldung ist modal), und es
+        sah aus, als sei das Programm abgestuerzt. Windows laesst ein Programm im Hintergrund keinen Fokus nehmen -
+        ``focus_force`` allein reicht dort nicht. Deshalb: oberstes Fenster, ein minimiertes Hauptfenster wird
+        zurueckgeholt, und die Taskleistenschaltflaeche blinkt, bis das Programm vorn ist.
+        """
+        win = self.win
+        try:
+            win.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        try:
+            oben = self.gui.root
+            if oben.state() == "iconic":
+                oben.deiconify()
+        except tk.TclError:
+            pass
+        _blinken(self.gui.root)
+
     def zeigen(self):
         """Zeigt das Fenster, wartet auf die Antwort und gibt sie wie ``tkinter.messagebox`` zurueck."""
+        global _OFFEN
         win = self.win
         win.deiconify()
         win.lift()
+        self._nach_vorn()
         try:
             win.grab_set()
         except tk.TclError:
@@ -174,8 +217,44 @@ class Meldung:
             (knopf or win).focus_force()
         except tk.TclError:
             pass
-        win.wait_window()
+        _OFFEN += 1
+        try:
+            win.wait_window()
+        finally:
+            _OFFEN -= 1
+        if self._roh:
+            return self.antwort or "no"
         return ergebnis(self.art, self.antwort)
+
+
+def frage_fuer_alle(gui, titel: str, text: str, vorgabe: str = "yes") -> str:
+    """Eine Ja/Nein-Frage mit "fuer alle" - nur im Hauptfaden.
+
+    Returns:
+        ``"yes"``, ``"no"``, ``"yes_all"`` oder ``"no_all"``; das Fenster-X und Esc gelten als ``"no"``.
+    """
+    meldung = Meldung(gui, "askyesno", titel, text, vorgabe=vorgabe, knoepfe_eigen=FUER_ALLE)
+    return meldung.zeigen()
+
+
+def _blinken(fenster) -> None:
+    """Die Taskleistenschaltflaeche des Hauptfensters blinken lassen (nur Windows); ohne Wirkung sonst."""
+    import sys
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class _FLASHWINFO(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND), ("dwFlags", wintypes.DWORD),
+                        ("uCount", wintypes.UINT), ("dwTimeout", wintypes.DWORD)]
+
+        hwnd = ctypes.windll.user32.GetParent(fenster.winfo_id()) or fenster.winfo_id()
+        info = _FLASHWINFO(ctypes.sizeof(_FLASHWINFO), hwnd, 0x00000003 | 0x0000000C, 0, 0)  # ALL | TIMERNOFG
+        ctypes.windll.user32.FlashWindowEx(ctypes.byref(info))
+    except Exception as exc:  # noqa: BLE001 - Blinken ist Beiwerk
+        logger.debug("Taskleiste nicht zum Blinken gebracht: %s", exc)
 
 
 def zeigen(gui, art: str, title=None, message=None, **optionen):

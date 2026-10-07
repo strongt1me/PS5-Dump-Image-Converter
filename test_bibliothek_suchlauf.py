@@ -675,25 +675,14 @@ class SuchlaufSeiteTests(unittest.TestCase):
         vorher = set(self.app.root.winfo_children())
 
         def _eintraege() -> list:
-            neu = [w for w in self.app.root.winfo_children() if w not in vorher and isinstance(w, tk.Toplevel)]
-            gefunden: list = []
-
-            def _suche(widget) -> None:
-                for kind in widget.winfo_children():
-                    if isinstance(kind, tk.Entry):
-                        name = str(kind.cget("textvariable"))
-                        if name:
-                            gefunden.append(self.app.root.globalgetvar(name))
-                    _suche(kind)
-
-            for fenster in neu:
-                _suche(fenster)
-            return gefunden
+            # Seit 07.10.2026 hat das Fenster kein Pfadfeld mehr; die Vorgabe steht in seiner Quellvariable.
+            fenster = getattr(self.app, "_ps4_dib_fenster", None)
+            return [fenster.quelle_var.get()] if fenster is not None else []
 
         self.app._ps4pkg_vorgabe = pfad
         self.app._show_ps4_pkg_converter()
         try:
-            self.assertIn(os.path.normpath(pfad), _eintraege(), "Die Datei steht nicht im Quellfeld.")
+            self.assertIn(os.path.normpath(pfad), _eintraege(), "Die Datei steht nicht in der Quelle.")
             self.assertEqual("", self.app._ps4pkg_vorgabe, "Die Vorgabe gilt nur fuer ein Oeffnen.")
         finally:
             for w in list(self.app.root.winfo_children()):

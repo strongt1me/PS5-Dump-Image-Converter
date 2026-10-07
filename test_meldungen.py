@@ -94,6 +94,90 @@ class FensterTests(unittest.TestCase):
         self.assertIs(False, meldungen.ergebnis("askyesno", m.antwort))
         self.assertFalse(m.win.winfo_exists())
 
+    def test_die_frage_fuer_alle_liefert_die_vier_antworten(self) -> None:
+        for knopf, erwartet in (("yes", "yes"), ("no", "no"), ("yes_all", "yes_all"), ("no_all", "no_all")):
+            with self.subTest(knopf=knopf):
+                m = meldungen.Meldung(self.app, "askyesno", "T", "X", knoepfe_eigen=meldungen.FUER_ALLE)
+                self.addCleanup(lambda m=m: m.win.winfo_exists() and m.win.destroy())
+                self.assertEqual({"yes", "no", "yes_all", "no_all"}, set(m.knoepfe))
+                m.win.after(30, lambda k=knopf, m=m: m._fertig(k))
+                with mock.patch.object(meldungen, "_blinken"):
+                    self.assertEqual(erwartet, m.zeigen())
+
+    def test_das_fenster_x_gilt_bei_der_frage_fuer_alle_als_nein(self) -> None:
+        m = meldungen.Meldung(self.app, "askyesno", "T", "X", knoepfe_eigen=meldungen.FUER_ALLE)
+        self.addCleanup(lambda: m.win.winfo_exists() and m.win.destroy())
+        m.win.after(30, lambda: m._fertig(meldungen._ohne_antwort("askyesno")))
+        with mock.patch.object(meldungen, "_blinken"):
+            self.assertEqual("no", m.zeigen())
+
+    def test_param_frage_im_stapel_merkt_die_antwort_fuer_alle(self) -> None:
+        """Anwenderbericht 07.10.2026: Bei zwoelf Titeln wurde bei jedem einzeln gefragt."""
+        app = self.app
+        app._param_batch_aktiv, app._param_antworten = True, {}
+        self.addCleanup(lambda: setattr(app, "_param_batch_aktiv", False))
+        with mock.patch.object(meldungen, "frage_fuer_alle", return_value="yes_all") as frage,                 mock.patch.object(app, "_append_to_log") as protokoll:
+            self.assertTrue(app._param_frage("Titel A", "Text"))
+            self.assertTrue(app._param_frage("Titel A", "Text"))
+            self.assertTrue(app._param_frage("Titel A", "Text"))
+            self.assertEqual(1, frage.call_count, "Nach \"Ja, fuer alle\" wird nicht mehr gefragt.")
+            self.assertEqual(2, protokoll.call_count)
+            frage.return_value = "no"
+            self.assertFalse(app._param_frage("Titel B", "Text"))
+            self.assertFalse(app._param_frage("Titel B", "Text"))
+            self.assertEqual(3, frage.call_count, "Ein einfaches Nein wird nicht gemerkt.")
+            frage.return_value = "no_all"
+            self.assertFalse(app._param_frage("Titel C", "Text"))
+            self.assertFalse(app._param_frage("Titel C", "Text"))
+            self.assertEqual(4, frage.call_count, "Auch \"Nein, fuer alle\" wird gemerkt.")
+
+    def test_die_online_frage_bleibt_im_stapel_einzeln(self) -> None:
+        app = self.app
+        app._param_batch_aktiv, app._param_antworten = True, {}
+        self.addCleanup(lambda: setattr(app, "_param_batch_aktiv", False))
+        with mock.patch.object(meldungen, "frage_fuer_alle") as alle,                 mock.patch.object(app, "_ask_yesno_threadsafe", return_value=True) as einzel:
+            self.assertTrue(app._param_frage("Online", "Text", online=True))
+            alle.assert_not_called()
+            einzel.assert_called_once()
+
+    def test_ohne_stapel_gilt_die_einfache_frage(self) -> None:
+        app = self.app
+        app._param_batch_aktiv = False
+        with mock.patch.object(meldungen, "frage_fuer_alle") as alle,                 mock.patch.object(app, "_ask_yesno_threadsafe", return_value=False) as einzel:
+            self.assertFalse(app._param_frage("Titel", "Text"))
+            alle.assert_not_called()
+            einzel.assert_called_once()
+
+    def test_die_meldung_kommt_nach_vorn(self) -> None:
+        """Meldung 07.10.2026: Eine Rueckfrage aus einem langen Lauf stand hinter anderen Fenstern."""
+        m = self._meldung("askyesno")
+        with mock.patch.object(meldungen, "_blinken") as blinken:
+            m._nach_vorn()
+        self.assertTrue(m.win.attributes("-topmost"))
+        blinken.assert_called_once_with(self.app.root)
+
+    def test_eine_offene_meldung_wird_gezaehlt(self) -> None:
+        m = self._meldung("askyesno")
+        gesehen: list[int] = []
+
+        def antworten() -> None:
+            gesehen.append(meldungen.offene_meldungen())
+            m._fertig("yes")
+
+        vorher = meldungen.offene_meldungen()
+        m.win.after(50, antworten)
+        with mock.patch.object(meldungen, "_blinken"):
+            m.zeigen()
+        self.assertEqual([vorher + 1], gesehen)
+        self.assertEqual(vorher, meldungen.offene_meldungen())
+
+    def test_der_stillstandwaechter_kennt_offene_meldungen(self) -> None:
+        quelle = Path(APP.__file__).read_text(encoding="utf-8")
+        anfang = quelle.index("def _stillstand_uhr(self")
+        rumpf = quelle[anfang:quelle.index("    def _balken_anzeigewert", anfang)]
+        self.assertIn("meldungen.offene_meldungen()", rumpf)
+        self.assertLess(rumpf.index("meldungen.offene_meldungen()"), rumpf.index("_stapelabzug_bei_stillstand(seit)"))
+
     def test_englische_knoepfe(self) -> None:
         with mock.patch.object(self.app, "_current_language", "en"):
             m = self._meldung("askyesno")

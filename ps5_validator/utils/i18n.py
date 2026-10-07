@@ -334,6 +334,8 @@ STRINGS: dict[str, dict[str, str]] = {
     'log.manual.param_json_ok': {'de': '[param.json] Prüfung bestanden – keine Beanstandungen.\n', 'en': '[param.json] Check passed – no findings.\n'},
     'log.manual.param_json_repaired': {'de': '[param.json] Repariert, {v0} Änderung(en) vorgenommen:\n', 'en': '[param.json] Repaired, {v0} change(s) made:\n'},
     'log.manual.param_json_repair_line': {'de': '[param.json]   • {v0}\n', 'en': '[param.json]   • {v0}\n'},
+    'log.param_antwort_ja_alle': {'de': '[Info] param.json: Die Antwort „Ja“ gilt für alle weiteren Titel dieses Laufs.', 'en': '[Info] param.json: the answer “Yes” applies to all remaining titles of this run.'},
+    'log.param_antwort_nein_alle': {'de': '[Info] param.json: Die Antwort „Nein“ gilt für alle weiteren Titel dieses Laufs.', 'en': '[Info] param.json: the answer “No” applies to all remaining titles of this run.'},
     'log.manual.param_json_repair_declined': {'de': '[Info] Reparatur der param.json vom Nutzer abgelehnt.\n', 'en': '[Info] User declined to repair param.json.\n'},
     'log.manual.param_json_repair_failed': {'de': '[FEHLER] param.json konnte nicht repariert werden: {v0}\n', 'en': '[ERROR] Could not repair param.json: {v0}\n'},
     'log.manual.param_json_backup': {'de': '[param.json] Die bisherige Fassung liegt als {v0} daneben.\n', 'en': '[param.json] The previous version is kept next to it as {v0}.\n'},
