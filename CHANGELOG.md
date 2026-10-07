@@ -2,9 +2,15 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.68):** Der Hinweis während der Umwandlung läuft wieder fehlerfrei, und Rückfragen kommen nach vorn, statt hinter anderen Fenstern zu stehen.
+> **Kurz zum aktuellen Stand (v1.9.69):** Weboberflächen der Konsole öffnen sich am Handy per QR-Code, und ps5upload, OnionHEN und der WebKit Autoloader liegen in neueren Fassungen bei.
 
 ---
+
+## v1.9.69 – 08.10.2026
+
+- **Neu:** Der Knopf „QR-Code“ zeigt die Adresse einer Weboberfläche der Konsole als QR-Code, den die Kamera des Handys liest; die App Dumper-Zeile nennt jetzt auch ihre laufende Version.
+- **Neu:** Neuere Fassungen liegen bei: ps5upload 6.3.1, OnionHEN 0.9.0-beta2 und der WebKit Autoloader 0.6.0 (zur Auswahl neben den älteren).
+- **Behoben:** In der Ansicht KONSOLE bleibt die Knopfleiste oben sichtbar und wird nicht mehr von den Seiten verdeckt.
 
 ## v1.9.68 – 07.10.2026
 

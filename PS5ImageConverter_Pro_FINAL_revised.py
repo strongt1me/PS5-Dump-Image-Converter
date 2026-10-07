@@ -152,6 +152,7 @@ from ps5_validator.utils import ps4_werkzeug
 from ps5_validator.utils import pkg_entpacken
 from ps5_validator.utils import pkg_reader
 from ps5_validator.utils import konsole_dienste
+from ps5_validator.utils import qr_klein
 from ps5_validator.utils import konsole_ftp
 from ps5_validator.utils import titelstart
 from ps5_validator.utils import remoteplay
@@ -703,7 +704,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.68"
+APP_VERSION = "v1.9.69"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -10157,6 +10158,29 @@ class PS5ConverterGUI:
             logger.debug("Ansicht nicht umschaltbar: %s", exc)
         self._ansicht_beschriften()
 
+    def _titelleiste_hoehe(self) -> int:
+        """Wie hoch die Knopfleiste oben ist - so viel Platz lassen die Seiten der Ansichten KONSOLE und AMPR frei.
+
+        Die Leiste (DIAGNOSE, FAQ, BENUTZERHANDBUCH ...) liegt per ``place`` ueber dem Fenster. Die Rollflaeche der
+        Ansicht UMWANDELN hat dafuer einen Kopfabstand; die Seiten der Ansicht KONSOLE hatten keinen und deckten die
+        Leiste zu (Meldung 07.10.2026: "Sonst sieht man sie nicht").
+        """
+        leiste = getattr(self, "_main_titlebar", None)
+        try:
+            return max(32, int(leiste.winfo_height() or leiste.winfo_reqheight())) if leiste is not None else 32
+        except tk.TclError:
+            return 32
+
+    def _titelleiste_nach_vorn(self) -> None:
+        """Die Knopfleiste ueber alle Seiten legen - spaeter gebaute Seiten liegen sonst darueber."""
+        leiste = getattr(self, "_main_titlebar", None)
+        if leiste is None:
+            return
+        try:
+            leiste.lift()
+        except tk.TclError:
+            pass
+
     def _konsole_tafel_zeigen(self) -> None:
         """Die rechte Seite der Ansicht KONSOLE einblenden.
 
@@ -10193,9 +10217,10 @@ class PS5ConverterGUI:
         if zeigen is None:
             return
         try:
-            zeigen.grid(row=1, column=1, sticky="nsew")
+            zeigen.grid(row=1, column=1, sticky="nsew", pady=(self._titelleiste_hoehe(), 0))
         except tk.TclError as exc:
             logger.debug("Konsolentafel nicht einblendbar: %s", exc)
+        self._titelleiste_nach_vorn()
         self._konsole_knopf_hervorheben(gewaehlt)
         self._webseite_sichtbarkeit(gewaehlt == "web")
 
@@ -10376,9 +10401,10 @@ class PS5ConverterGUI:
         for schluessel, befehl in (
                 ("dienste.start_button", lambda: self._konsole_tafel_starten()),
                 ("dienste.base_button", lambda: self._konsole_tafel_grundausstattung()),
-                ("dienste.web_button", lambda: self._konsole_tafel_web())):
+                ("dienste.web_button", lambda: self._konsole_tafel_web()),
+                ("dienste.qr_button", lambda: self._konsole_tafel_qr())):
             knopf = self._seitenpille(knopfreihe, schluessel, befehl)
-            knopf.pack(side="left", padx=(0 if len(knoepfe) == 1 else 8, 0))
+            knopf.pack(side="left", padx=(0 if len(knoepfe) == 1 else 4, 0))
             knoepfe.append(knopf)
         self._konsole_tafel_start_knopf = knoepfe[1]
         self._konsole_tafel_knopfreihe = knopfreihe
@@ -10846,6 +10872,49 @@ class PS5ConverterGUI:
         self._konsole_tafel_protokoll_nachtragen()
         self._webansicht_oeffnen(adresse, eintrag.name_schluessel, "uebersicht")
 
+    def _konsole_tafel_qr(self) -> None:
+        """"QR-Code fuers Handy": die Adresse der Weboberflaeche des markierten Dienstes als Bild.
+
+        Die Idee stammt aus webhb (0.3): Ein Handy oeffnet die Seite, indem es den Code abfotografiert.
+        Gezeigt wird nur die Adresse - Zugangscodes einzelner Payloads stehen nicht darin.
+        """
+        auswahl = self._konsole_tafel_tabelle.selection()
+        if not auswahl:
+            messagebox.showinfo(self._t("tafel.title"), self._t("dienste.need_auswahl"), parent=self.root)
+            return
+        eintrag = konsole_dienste.dienst(auswahl[0])
+        ip = self._konsole_tafel_ip.get().strip()
+        adresse = konsole_dienste.web_adresse(eintrag, ip) if eintrag else ""
+        if not adresse:
+            messagebox.showinfo(self._t("tafel.title"), self._t("dienste.keine_weboberflaeche"), parent=self.root)
+            return
+        self._qr_zeigen(adresse)
+
+    def _qr_zeigen(self, adresse: str) -> None:
+        """Ein kleines Fenster mit dem QR-Code zu ``adresse`` (``ps5_validator.utils.qr_klein``)."""
+        t, c = self._t, self._COLORS
+        adresse = self._adresse_ohne_marke(adresse)
+        try:
+            bild = qr_klein.als_bild(adresse, modul=8)
+        except ValueError:
+            messagebox.showinfo(t("qr.titel"), t("qr.zu_lang", adresse=adresse), parent=self.root)
+            return
+        win = self._build_modern_toplevel(t("qr.titel"), 460, 600, min_width=400, min_height=520)
+        self._build_modern_header(win, t("qr.titel"), t("qr.untertitel"))
+        rahmen = tk.Frame(win, bg=c["bg_main"], padx=22, pady=10)
+        rahmen.pack(fill="both", expand=True)
+        foto = ImageTk.PhotoImage(bild, master=win)
+        marke = tk.Label(rahmen, image=foto, bg="white", bd=0)
+        marke._foto = foto            # Referenz halten, sonst raeumt der Sammler das Bild weg
+        marke.pack(pady=(6, 12))
+        tk.Label(rahmen, text=adresse, font=(UI_SCHRIFT, pt(11), "bold"), bg=c["bg_main"],
+                 fg=c["fg_primary"]).pack()
+        hinweis = tk.Label(rahmen, text=t("qr.hinweis"), font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
+                           fg=c["fg_secondary"], justify="left", anchor="w", wraplength=400)
+        hinweis.pack(fill="x", pady=(10, 0))
+        hinweis.bind("<Configure>", lambda e: hinweis.configure(wraplength=max(120, e.width - 8)))
+        self._pw.Button(rahmen, text=t("action.close"), command=win.destroy).pack(pady=(14, 0))
+
     def _konsole_tafel_zustandstext(self, stand: dict) -> str:
         """Der Satz ueber der Tabelle - aus den Daten der letzten Messung."""
         if not stand.get("geprueft"):
@@ -11085,6 +11154,7 @@ class PS5ConverterGUI:
         tk.Label(kopf, textvariable=self._webseite_adresse, font=(UI_SCHRIFT, pt(9)),
                  bg=c["bg_main"], fg=c["fg_secondary"], anchor="w").pack(side="left", padx=(12, 0))
         for schluessel, befehl in (("webseite.zurueck", self._webseite_zurueck),
+                                   ("webseite.qr", self._webseite_qr),
                                    ("webseite.im_browser", self._webseite_im_browser),
                                    ("webseite.neu_laden", self._webseite_neu_laden)):
             knopf = self._seitenpille(kopf, schluessel, befehl, klein=True)
@@ -11255,6 +11325,12 @@ class PS5ConverterGUI:
 
     def _webseite_zurueck(self) -> None:
         self._konsole_seite_setzen(getattr(self, "_webseite_herkunft", "uebersicht"))
+
+    def _webseite_qr(self) -> None:
+        """QR-Code der gerade gezeigten Weboberflaeche - fuers Handy im selben Netz."""
+        adresse = getattr(self, "_webseite_url", "")
+        if adresse:
+            self._qr_zeigen(adresse)
 
     def _webseite_im_browser(self) -> None:
         adresse = getattr(self, "_webseite_url", "")
@@ -49619,8 +49695,9 @@ class PS5ConverterGUI:
             self.content_scroll.grid_remove()
             self.content_scrollbar.grid_remove()
             self._hide_info_box()
-            rahmen.grid(row=1, column=1, sticky="nsew")
+            rahmen.grid(row=1, column=1, sticky="nsew", pady=(self._titelleiste_hoehe(), 0))
             rahmen.lift()
+            self._titelleiste_nach_vorn()
         except tk.TclError as exc:
             logger.debug("AMPR-Seite nicht einblendbar: %s", exc)
         self._ampr_seite_sichtbar = True

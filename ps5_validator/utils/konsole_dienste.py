@@ -171,7 +171,10 @@ KATALOG: tuple[Dienst, ...] = (
     # * OnionHEN (eigene Ladekette auf 9020), PIZZA-HEN (kein Port belegt) und
     #   ActRemoteLink (Remote Play ist aus dem Programm genommen).
     Dienst("cheatrunner", 9999, "CheatRunner_v*.elf", web="/", anlaufzeit=2.0),
-    Dienst("appdumper", 8081, "ps5-app-dumper_v*.elf", web="/", anlaufzeit=2.0),
+    # Die laufende Version nennt der App Dumper selbst: ``GET /api/whb/self`` (webhb-Kern, seit 2.x) liefert
+    # ``{"version":"2.10", ...}``. Aus dem Quelltext 2.10 gelesen, an der Konsole noch nicht nachgemessen.
+    Dienst("appdumper", 8081, "ps5-app-dumper_v*.elf", web="/", anlaufzeit=2.0,
+           version_muster=r'"version"\s*:\s*"([^"]+)"', version_pfad="/api/whb/self"),
     Dienst("gamecompressor", 5910, "game-compressor_v*.elf", web="/", anlaufzeit=2.0),
     Dienst("smplusgui", 7777, "SMPlusGui_v*.elf", web="/", anlaufzeit=2.0),
     # AriaNg steckt im ELF und liegt auf demselben Port wie die RPC-Schnittstelle.
