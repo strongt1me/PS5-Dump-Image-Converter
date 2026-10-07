@@ -34,10 +34,8 @@ class KnoepfeTests(unittest.TestCase):
     """Zwei Wege, je einer pro Generation - seit v1.8.98 im Auswahlfenster."""
 
     def _auswahl(self) -> str:
-        """Der Rumpf von ``_show_ampr_auswahl``."""
-        anfang = QUELLE.index("    def _show_ampr_auswahl(self)")
-        naechste = QUELLE.index(chr(10) + "    def ", anfang + 10)
-        return QUELLE[anfang:naechste]
+        """Die Seite ``ui/ampr_seite.py`` (seit 07.10.2026 statt des Auswahlfensters)."""
+        return (PROJEKT / "ps5_validator" / "ui" / "ampr_seite.py").read_text(encoding="utf-8")
 
     def test_beide_beschriftungen_gibt_es(self) -> None:
         for schluessel in ("titlebar.ampr_alt", "titlebar.ampr_neu"):
@@ -47,9 +45,10 @@ class KnoepfeTests(unittest.TestCase):
     def test_beide_stehen_im_auswahlfenster(self) -> None:
         """Seit v1.8.98 fuehrt nur noch Knopf 7 dorthin."""
         rumpf = self._auswahl()
-        for methode in ("_show_ampr_alte_methode", "_show_ampr_neue_methode"):
-            with self.subTest(methode=methode):
-                self.assertIn(methode, rumpf)
+        for schluessel, generation in (("titlebar.ampr_alt", "sm_gen.ALT"), ("titlebar.ampr_neu", "sm_gen.NEU")):
+            with self.subTest(schluessel=schluessel):
+                self.assertIn(schluessel, rumpf)
+                self.assertIn(generation, rumpf)
 
     def test_die_titelleiste_hat_sie_nicht_mehr(self) -> None:
         """Sie standen dort provisorisch, bis das Auswahlfenster stand.
@@ -73,8 +72,9 @@ class KnoepfeTests(unittest.TestCase):
         abgefangen; seit sie weg sind, muss es das Auswahlfenster tun.
         """
         rumpf = self._auswahl()
-        self.assertIn("self._werkzeugfenster_umschalten(methode)", rumpf)
-        self.assertNotIn("getattr(self, methode)()", rumpf)
+        self.assertIn("self.zeigen_ablauf(gen)", rumpf)
+        self.assertNotIn("Toplevel", rumpf, "Die Seite oeffnet kein eigenes Fenster mehr.")
+        self.assertNotIn("_werkzeugfenster_umschalten", rumpf)
 
     def test_jeder_knopf_fuehrt_auf_seine_generation(self) -> None:
         for methode, kennung in (("_show_ampr_alte_methode", "sm_gen.ALT"),
@@ -93,12 +93,11 @@ class AutomatikTests(unittest.TestCase):
     """Das Fenster arbeitet, statt ausgefuellt zu werden."""
 
     def _fenster(self) -> str:
-        anfang = QUELLE.index("def _show_ampr_generation(self, generation: str)")
-        ende = QUELLE.index("\n    # ==", anfang)
-        return QUELLE[anfang:ende]
+        """Der Ablauf steht seit 07.10.2026 in ``ui/ampr_seite.py``."""
+        return (PROJEKT / "ps5_validator" / "ui" / "ampr_seite.py").read_text(encoding="utf-8")
 
     def test_der_lauf_startet_beim_oeffnen(self) -> None:
-        self.assertIn("_spaeter_im_fenster(win, _starten)", self._fenster())
+        self.assertIn("g._spaeter_im_fenster(g.root, self._starten)", self._fenster())
 
     def test_das_fenster_hat_keine_eingabemaske_mehr(self) -> None:
         """Kein Feld fuer Title-ID, Scan-Pfad oder Spielordner."""
@@ -109,7 +108,7 @@ class AutomatikTests(unittest.TestCase):
 
     def test_der_lauf_geht_in_einen_eigenen_faden(self) -> None:
         """Sonst friert das Fenster waehrend der FTP-Arbeit ein."""
-        self.assertIn("threading.Thread(target=_lauf, daemon=True)", self._fenster())
+        self.assertIn("threading.Thread(target=_lauf, daemon=True", self._fenster())
 
     def test_die_automatik_hat_alle_sechs_schritte(self) -> None:
         for schluessel in ("amprgen.step_console", "amprgen.step_version",

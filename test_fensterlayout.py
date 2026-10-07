@@ -950,7 +950,8 @@ class UmschalterVerdrahtungTests(unittest.TestCase):
         trotzdem dazwischen liegen: sonst baut der zweite Druck ein zweites
         Fenster. Geprueft wird deshalb der Aufruf mit der Variablen.
         """
-        self.assertIn("self._werkzeugfenster_umschalten(methode)", self.quelle)
+        # Seit 07.10.2026 gibt es keine Fenster dazu mehr: Auswahl und Ablauf sind eine Seite.
+        self.assertNotIn("self._werkzeugfenster_umschalten(methode)", self.quelle)
         for methode in ("_show_ampr_alte_methode", "_show_ampr_neue_methode"):
             with self.subTest(methode=methode):
                 self.assertNotIn("command=self.%s," % methode, self.quelle)

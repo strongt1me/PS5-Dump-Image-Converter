@@ -129,8 +129,8 @@ class AufgabeSiebenTests(unittest.TestCase):
                       if isinstance(k, ast.FunctionDef)
                       and k.name == "_set_mode_from_sidebar")
         text = ast.unparse(knoten)
-        self.assertIn("_werkzeugfenster_schliessen('_show_ampr_auswahl')", text,
-                      "Aufgabe 7 laesst ihr Fenster wieder stehen, wenn man "
+        self.assertIn("self._ampr_seite_verbergen()", text,
+                      "Aufgabe 7 laesst ihre Seite wieder stehen, wenn man "
                       "eine andere Aufgabe waehlt.")
 
     def test_es_wird_nur_bei_einem_wechsel_geschlossen(self):

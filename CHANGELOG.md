@@ -2,9 +2,14 @@
 
 Dieser Changelog beschreibt in einfacher Sprache, was sich in den einzelnen Versionen für dich als Nutzer verändert hat. Neuste Version steht oben. Rein technische Änderungen (z. B. am Bauprozess oder an internen Tests) sind hier bewusst weggelassen.
 
-> **Kurz zum aktuellen Stand (v1.9.65):** Ein einziges Fenster „PS4 PKG Dump & Image Converter“ macht aus PS4-Paketen Dump-Ordner, Abbilder oder zusammengeführte Pakete, lädt Updates und sendet an die Konsole; Knopf 8 der Ansicht KONSOLE ist BFpilot.
+> **Kurz zum aktuellen Stand (v1.9.66):** Der AMPR EMU Manager steht als Seite im Hauptfenster, der PS4-Konverter öffnet die Quellauswahl direkt, und Online-Updates für PS4-Spiele werden nicht mehr fälschlich als beschädigt abgelehnt.
 
 ---
+
+## v1.9.66 – 07.10.2026
+
+- **Neu:** Aufgabe 7 (AMPR EMU Manager) zeigt Ablageweg, Methode, Ablauf und Protokoll als Seite im rechten Bereich statt in eigenen Fenstern; im „PS4 PKG Dump & Image Converter“ öffnen die Quellknöpfe gleich die Auswahl, ein entpacktes Spiel lässt nur Abbilder zu, und die Knöpfe unter den Tabellen der Ansicht KONSOLE sind türkis.
+- **Behoben:** Online-Updates für PS4-Spiele galten immer als „beschädigt“ (Sony prüft je Teil mit SHA-1); die verlangte Firmware steht als Fassung (z. B. 4.73) statt als Zahl.
 
 ## v1.9.65 – 07.10.2026
 

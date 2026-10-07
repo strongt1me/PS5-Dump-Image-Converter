@@ -280,7 +280,8 @@ class EigenerPfadTests(unittest.TestCase):
         self.assertEqual(["backport_fakelib"], [k for k, _i, _s in abw])
 
     def test_der_editor_setzt_eigene_ordner_nicht_zurueck(self) -> None:
-        aussen = _methode("_show_ampr_generation")
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "ampr_seite.py").read_text(encoding="utf-8")
+        aussen = ast.parse(quelle)
         innen = next(k for k in ast.walk(aussen)
                      if isinstance(k, ast.FunctionDef) and k.name == "_config")
         text = ast.unparse(innen)

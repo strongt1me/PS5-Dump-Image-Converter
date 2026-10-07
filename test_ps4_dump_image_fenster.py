@@ -118,6 +118,43 @@ class FensterTests(unittest.TestCase):
         f = self._fenster()
         self.assertEqual(set(ab.FORMATE), set(f._formate))
 
+    def test_ein_entpacktes_spiel_laesst_nur_abbilder_zu(self) -> None:
+        """Meldung 07.10.2026: Bei \"Entpacktes PS4-Spiel\" durfte \"Dump-Ordner\" gewaehlt werden."""
+        f = self._fenster()
+        f.format_var.set(f._formate[ab.FORMAT_DUMP])
+        f.art_var.set(fenster_modul.QUELLE_DUMP)
+        _WURZEL.update()
+        werte = tuple(f.format_box.cget("values"))
+        self.assertEqual({f._formate[ab.FORMAT_FFPFSC], f._formate[ab.FORMAT_EXFAT]}, set(werte))
+        self.assertEqual(f._formate[ab.FORMAT_FFPFSC], f.format_var.get(), "Ein ungueltiges Format wird ersetzt.")
+        f.art_var.set(fenster_modul.QUELLE_ORDNER)
+        self.assertEqual(set(ab.FORMATE), set(f._formate))
+        self.assertEqual(len(f._formate), len(tuple(f.format_box.cget("values"))))
+
+    def test_ein_druck_auf_einen_quellknopf_oeffnet_die_wahl(self) -> None:
+        f = self._fenster()
+        for art, dialog in ((fenster_modul.QUELLE_ORDNER, "askdirectory"), (fenster_modul.QUELLE_DATEIEN, "askopenfilenames"),
+                            (fenster_modul.QUELLE_DUMP, "askdirectory")):
+            with self.subTest(art=art), mock.patch.object(fenster_modul.filedialog, dialog, return_value="") as dlg:
+                f.art_var.set(art)
+                f._quelle_gewaehlt()
+                dlg.assert_called_once()
+
+    def test_die_gewaehlte_quelle_wird_gleich_eingelesen_ohne_eingabefeld(self) -> None:
+        """Seit 07.10.2026 gibt es kein Pfadfeld mehr: Die Wahl im Dialog gilt und liest ein."""
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
+        self.assertNotIn("pw.Entry(pfad_reihe", quelle)
+        f = self._fenster()
+        f.art_var.set(fenster_modul.QUELLE_ORDNER)
+        with tempfile.TemporaryDirectory() as tmp,                 mock.patch.object(fenster_modul.filedialog, "askdirectory", return_value=tmp),                 mock.patch.object(f, "_einlesen") as lesen:
+            f._quelle_waehlen()
+            lesen.assert_called_once()
+            self.assertEqual(os.path.normpath(tmp), f.quelle_var.get())
+
+    def test_die_quellknoepfe_rufen_die_wahl_auf(self) -> None:
+        quelle = (PROJEKT / "ps5_validator" / "ui" / "ps4_dump_image.py").read_text(encoding="utf-8")
+        self.assertIn("command=self._quelle_gewaehlt", quelle)
+
     def test_schliessen_setzt_das_programm_zurueck(self) -> None:
         f = self._fenster()
         f._schliessen()

@@ -133,6 +133,7 @@ from ps5_validator.utils import payload_versand
 from ps5_validator.utils import app_install
 from ps5_validator.utils import app_paket
 from ps5_validator.ui import bedienzustand
+from ps5_validator.ui import ampr_seite
 from ps5_validator.ui import ps4_dump_image
 from ps5_validator.ui import fenster_pillen
 from ps5_validator.ui import meldungen
@@ -702,7 +703,7 @@ def _konfigurationsdatei() -> str:
 # Titel/Fenstermaße werden an mehreren Stellen verwendet (Root-Fenster,
 # Splash/About, Restore-Logik). Sie sind hier zentral definiert, damit
 # Import-Szenarien und direkter Start identisches Verhalten haben.
-APP_VERSION = "v1.9.65"
+APP_VERSION = "v1.9.66"
 APP_TITLE = programmname.titel_gross(APP_VERSION)
 
 #: Tk-Klassenname des Hauptfensters. Unter X11 wird daraus WM_CLASS -
@@ -4075,6 +4076,8 @@ class PS5ConverterGUI:
             "fg_accent":        "#2BE7E7",
             "accent_btn":       "#0C9CB2",
             "accent_btn_hover": "#12BFD6",
+            "tuerkis_btn":      "#0E9C9A",
+            "tuerkis_btn_hover": "#14BDB9",
             "error_btn":        "#FF5C74",
             "error_btn_hover":  "#E23E58",
             "console_bg":       "#020D14",
@@ -4104,6 +4107,8 @@ class PS5ConverterGUI:
             "fg_accent":        "#7FB2FF",
             "accent_btn":       "#2E6BE6",
             "accent_btn_hover": "#3F7DF5",
+            "tuerkis_btn":      "#138F94",
+            "tuerkis_btn_hover": "#1AB0B6",
             "error_btn":        "#D65B57",
             "error_btn_hover":  "#B94541",
             "console_bg":       "#121216",
@@ -4132,6 +4137,8 @@ class PS5ConverterGUI:
             "fg_accent":        "#0F6FB8",
             "accent_btn":       "#0F6FB8",
             "accent_btn_hover": "#0B5A97",
+            "tuerkis_btn":      "#0C8486",
+            "tuerkis_btn_hover": "#0A6B6D",
             "error_btn":        "#C0392B",
             "error_btn_hover":  "#A93226",
             "console_bg":       "#F4F2EC",
@@ -4160,6 +4167,8 @@ class PS5ConverterGUI:
             "fg_accent":        "#9FB6CC",
             "accent_btn":       "#566A82",
             "accent_btn_hover": "#6B82A0",
+            "tuerkis_btn":      "#2B9090",
+            "tuerkis_btn_hover": "#37AFAF",
             "error_btn":        "#D66A62",
             "error_btn_hover":  "#B5504A",
             "console_bg":       "#25282E",
@@ -8937,7 +8946,7 @@ class PS5ConverterGUI:
             # _werkzeugfenster_umschalten, damit ein zweiter Druck sie wieder
             # schliesst - wie bei jedem anderen Fensterknopf.
             if mode == "ampr_manager":
-                befehl = self._werkzeugknopf("_show_ampr_auswahl")
+                befehl = self._show_ampr_auswahl
             else:
                 befehl = (lambda m=mode: self._set_mode_from_sidebar(m))
             btn = RoundedButton(
@@ -10119,6 +10128,7 @@ class PS5ConverterGUI:
                         widget.pack_forget()
                 for knopf, _schluessel in self._konsole_knoepfe:
                     knopf.pack(pady=3)
+                self._ampr_seite_verbergen()
                 self.content_scroll.grid_remove()
                 self.content_scrollbar.grid_remove()
                 self._hide_info_box()
@@ -12161,7 +12171,7 @@ class PS5ConverterGUI:
         # werden. Die übrigen Aufgabenknöpfe stellen nur den Hauptbereich um
         # und lassen deshalb nichts zurück.
         if mode != "ampr_manager":
-            self._werkzeugfenster_schliessen("_show_ampr_auswahl")
+            self._ampr_seite_verbergen()
         self.current_mode.set(mode)
         full_text = self._t(f"mode.{mode}")
         if hasattr(self, "header_label"):
@@ -16464,6 +16474,7 @@ class PS5ConverterGUI:
         pillen = getattr(self, "_seitenpillen", None)
         if pillen is None:
             pillen = self._seitenpillen = []
+        knopf._seitenpille_klein = klein
         pillen.append((knopf, akzent))
         self._seitenpille_faerben(knopf, akzent)
         return knopf
@@ -16475,6 +16486,10 @@ class PS5ConverterGUI:
         if akzent:
             farben = {"bg": c["accent_btn"], "fg": "white",
                       "activebackground": c["accent_btn_hover"], "activeforeground": "white"}
+        elif not getattr(knopf, "_seitenpille_klein", False):
+            # Die Knoepfe unter den Tabellen der Konsolenseiten sind tuerkis (07.10.2026).
+            farben = {"bg": c["tuerkis_btn"], "fg": "white", "outline": c["tuerkis_btn"],
+                      "activebackground": c["tuerkis_btn_hover"], "activeforeground": "white"}
         else:
             farben = {"bg": c["console_bg"], "fg": c["fg_primary"],
                       "activebackground": c["accent_btn_hover"], "activeforeground": "white",
@@ -49543,253 +49558,47 @@ class PS5ConverterGUI:
     #: waehrend der Frage geschlossen wird.
     _AMPR_GEN_ANTWORT_GRENZE = 600.0
 
-    #: Die Farbe, die im Auswahlfenster durchsichtig wird. Sie darf sonst
-    #: nirgends vorkommen - jeder Bildpunkt in genau diesem Ton wird zum Loch.
-    #: Ein grelles Magenta kommt in keinem der drei Designs vor.
-    _AUSWAHL_DURCHSICHTIG = "#FF00FE"
-
     def _show_ampr_auswahl(self) -> None:
-        """Rahmenloses Fenster mit runden Ecken zur Wahl der AMPR-Methode.
+        """Aufgabe 7: zeigt die Seite "AMPR EMU Manager" im rechten Bereich der Ansicht UMWANDELN.
 
-        Aufgabe 7 fuehrt seit v1.8.98 nicht mehr in den Hauptbereich, sondern
-        hierher. Die beiden Methoden sind eigene Fenster; welche die richtige
-        ist, haengt an der Fassung von ShadowMountPlus, und diese Frage stellt
-        sich vor allem anderen.
-
-        **Runde Ecken ohne Rahmen.** Tk kennt beides nicht von sich aus:
-        ``overrideredirect`` nimmt den Fensterrahmen weg, hinterlaesst aber ein
-        Rechteck. Die Ecken entstehen daher zeichnerisch - ein Vieleck auf
-        einer Leinwand - und der Rest der Flaeche wird ueber
-        ``-transparentcolor`` durchsichtig gestellt.
-
-        Diese Eigenschaft gibt es nur unter Windows. Fehlt sie, bleibt das
-        Fenster rechteckig und randlos; die Auswahl arbeitet unveraendert.
-        Ein Fenster, das anderswo gar nicht aufginge, waere der schlechtere
-        Tausch.
+        Bis v1.9.65 war das ein rahmenloses Auswahlfenster mit runden Ecken und danach ein zweites Fenster
+        fuer den Lauf. Jetzt gibt es keine eigenen Fenster mehr: Ablageweg, Methode, Ablauf und Protokoll
+        stehen in der Seite (``ui/ampr_seite.py``). Ein zweiter Druck aendert nichts. Der Knopf "7." der
+        Seitenleiste wird dabei der gewaehlte (``_set_mode_from_sidebar`` laesst die Seite stehen).
         """
-        c = self._COLORS
-        # Farbe schon im Erzeuger: Sonst blitzt das Fenster kurz weiss auf,
-        # bevor es dunkel wird.
-        fenster = tk.Toplevel(self.root, bg=c["bg_main"])
-        fenster.withdraw()
+        if self.current_mode.get() != "ampr_manager":
+            self._set_mode_from_sidebar("ampr_manager")
+        ampr_seite.zeigen(self)
+
+    def _ampr_seite_einblenden(self, rahmen: "tk.Frame") -> None:
+        """Legt die Seite in die Zelle der Rollflaeche (1, 1) und blendet diese aus."""
+        if getattr(self, "_ansicht", "umwandeln") != "umwandeln":
+            self._ansicht_setzen("umwandeln")
         try:
-            fenster.transient(self.root)
-        except tk.TclError:
-            pass
-        # Beim Fenster-Umschalter anmelden, damit ein zweiter Druck auf den
-        # Knopf wieder schliesst. Sonst oeffnete jeder Druck ein weiteres -
-        # gemessen: nach dem zweiten Druck standen zwei da.
-        #
-        # Von Hand statt ueber _fenster_an_hauptfenster_binden: Jenes holt
-        # zusaetzlich den Taskleisteneintrag zurueck, und ein kleines
-        # Auswahlfenster gehoert nicht in die Taskleiste.
-        if getattr(self, "_fenster_schluessel", ""):
-            self._fenster_sammlung.append(fenster)
-        try:
-            fenster.overrideredirect(True)
+            self.content_scroll.grid_remove()
+            self.content_scrollbar.grid_remove()
+            self._hide_info_box()
+            rahmen.grid(row=1, column=1, sticky="nsew")
+            rahmen.lift()
         except tk.TclError as exc:
-            logger.debug("Rahmenlos nicht möglich: %s", exc)
+            logger.debug("AMPR-Seite nicht einblendbar: %s", exc)
+        self._ampr_seite_sichtbar = True
 
-        durchsichtig = False
+    def _ampr_seite_verbergen(self) -> None:
+        """Nimmt die AMPR-Seite weg und stellt die Rollflaeche wieder her - ohne Wirkung, wenn sie nicht steht."""
+        if not getattr(self, "_ampr_seite_sichtbar", False):
+            return
+        self._ampr_seite_sichtbar = False
+        s = getattr(self, ampr_seite.SEITE_ATTRIBUT, None)
         try:
-            fenster.wm_attributes("-transparentcolor", self._AUSWAHL_DURCHSICHTIG)
-            durchsichtig = True
-        except tk.TclError:
-            logger.debug("Durchsichtige Ecken hier nicht verfügbar - "
-                         "das Fenster bleibt rechteckig.")
-        grund = self._AUSWAHL_DURCHSICHTIG if durchsichtig else c["bg_main"]
-        fenster.configure(bg=grund)
-
-        # Alle Masse dieses Fensters ziehen mit der Anzeigeskalierung mit.
-        # Es ist der einzige Ort, an dem die Knoepfe ihre Groesse ueber
-        # ``create_window`` von **aussen** bekommen - die innere Skalierung
-        # von ``RoundedButton`` kommt hier also nicht zum Tragen, und ein
-        # doppelter Faktor kann nicht entstehen (die aeussere Angabe
-        # gewinnt). Die Leinwand hat eine feste Groesse und waechst nicht
-        # von selbst mit, deshalb muss sie hier mitgerechnet werden.
-        def _m(px: float) -> int:
-            """Ein Mass dieses Fensters auf die Anzeigeskalierung umrechnen."""
-            return knopfmass(int(round(px)), fenster)
-
-        # Hoehe: 332 statt 384, seit der dritte Knopf weg ist. Die 52 sind
-        # genau eine Knopfzeile des Rasters (hoch = 196 + lfd * 52); der
-        # Abstand zwischen dem letzten Knopf und dem Schliessen-Knopf bleibt
-        # damit bei 23 px wie zuvor.
-        breite, hoehe, rand = _m(520), _m(332), _m(14)
-        leinwand = tk.Canvas(fenster, width=breite, height=hoehe, bg=grund,
-                             highlightthickness=0, bd=0)
-        leinwand.pack(fill="both", expand=True)
-        # Die 2 px Rahmenabstand bleiben ungerechnet: Eine Haarlinie soll
-        # auch auf einem hochaufloesenden Schirm eine Haarlinie bleiben.
-        leinwand.create_polygon(
-            rundes_rechteck_punkte(2, 2, breite - 2, hoehe - 2, _m(22)),
-            smooth=True, fill=c["bg_card"], outline=c["border"])
-
-        leinwand.create_text(breite / 2, rand + _m(22),
-                             text=self._t("ampr_auswahl.title"),
-                             fill=c["fg_accent"],
-                             font=(UI_SCHRIFT, pt(14), "bold"))
-        leinwand.create_text(breite / 2, rand + _m(56),
-                             text=self._t("ampr_auswahl.hint"),
-                             fill=c["fg_secondary"],
-                             width=breite - 2 * rand - _m(20),
-                             font=(UI_SCHRIFT, pt(9)))
-
-        innen = breite - 2 * rand - _m(26)    # nutzbare Breite fuer Knoepfe
-        links = rand + _m(13)                 # linker Rand der Knopfspalte
-
-        # ── Ablageweg ───────────────────────────────────
-        # ShadowMountPlus kennt drei Stellen, an denen Bibliotheken liegen
-        # koennen: pro Spiel, im globalen Ordner und - ab 1.7 alpha8 - im
-        # Emulator-Ordner. Welche davon gemeint ist, entschied das Programm
-        # bis v1.8.98 allein; jetzt steht sie hier zur Wahl.
-        leinwand.create_text(links, _m(96), anchor="w",
-                             text=self._t("ampr_auswahl.ablage"),
-                             fill=c["fg_primary"],
-                             font=(UI_SCHRIFT, pt(9), "bold"))
-        erklaerung = leinwand.create_text(
-            breite / 2, _m(158), text="", fill=c["fg_secondary"],
-            width=innen, font=(UI_SCHRIFT, pt(8)))
-
-        wegknoepfe: dict[str, Any] = {}
-
-        def _wege_zeichnen() -> None:
-            """Hebt den gewaehlten Weg hervor - farbig UND mit Haken.
-
-            Allein ueber die Farbe waere er fuer jemanden mit
-            Farbsehschwaeche nicht zu erkennen. Der Haken traegt dieselbe
-            Aussage ohne Farbe, und die Erklaerung darunter nennt sie
-            noch einmal in Worten.
-            """
-            aktuell = self._ampr_ablage_wahl()
-            for kennung, knopf in wegknoepfe.items():
-                if not knopf.winfo_exists():
-                    continue
-                beschriftung = self._t("ampr_auswahl.ablage_%s" % kennung)
-                gewaehlt = kennung == aktuell
-                knopf.config(
-                    text=("\u2713 " + beschriftung) if gewaehlt else beschriftung,
-                    bg=c["fg_accent"] if gewaehlt else c["bg_main"],
-                    fg=c["bg_main"] if gewaehlt else c["fg_secondary"])
-            leinwand.itemconfigure(
-                erklaerung,
-                text=self._t("ampr_auswahl.ablage_%s_why" % aktuell))
-
-        def _weg_waehlen(kennung: str) -> None:
-            self._ampr_ablage_merken(kennung)
-            _wege_zeichnen()
-
-        wegbreite = (innen - _m(16)) / 3
-        for lfd, kennung in enumerate(self.ABLAGE_WEGE):
-            knopf = RoundedButton(
-                leinwand, text="",
-                command=(lambda k=kennung: _weg_waehlen(k)),
-                font=(UI_SCHRIFT, pt(9), "bold"),
-                bg=c["bg_main"], fg=c["fg_secondary"],
-                activebackground=c["fg_accent"], activeforeground=c["bg_main"],
-                outline=c["border"], radius=8, height=28, pille=True,
-                parent_bg=c["bg_card"])
-            wegknoepfe[kennung] = knopf
-            leinwand.create_window(
-                links + wegbreite / 2 + lfd * (wegbreite + _m(8)), _m(126),
-                window=knopf, width=wegbreite, height=_m(28))
-        _wege_zeichnen()
-
-        def _waehlen(methode: str) -> None:
-            # Erst schliessen, dann oeffnen: Sonst liegt das rahmenlose
-            # Fenster ueber dem neuen und laesst sich nicht mehr wegklicken.
-            try:
-                fenster.destroy()
-            except tk.TclError:
-                pass
-            # Ueber den Umschalter, nicht per getattr daran vorbei. Solange
-            # die Titelleisten-Knoepfe dastanden, hingen sie am Umschalter
-            # und haben das erledigt; seit sie weg sind, ist das hier der
-            # einzige Weg zu den beiden Fenstern. Ohne den Umschalter
-            # oeffnet der zweite Druck ein zweites Fenster -
-            # _show_ampr_generation baut jedes Mal ein neues Toplevel.
-            self._werkzeugfenster_umschalten(methode)
-
-        # Die beiden Fassungen bekommen je einen Knopf zu ihrer Anleitung.
-        hilfsbreite = _m(88)
-        for lfd, (schluessel, methode, generation) in enumerate((
-                ("titlebar.ampr_neu", "_show_ampr_neue_methode", sm_gen.NEU),
-                ("titlebar.ampr_alt", "_show_ampr_alte_methode", sm_gen.ALT))):
-            hoch = _m(196) + lfd * _m(52)
-            eigene = innen - hilfsbreite - _m(8) if generation else innen
-            knopf = RoundedButton(
-                leinwand,
-                text=self._t(schluessel),
-                command=(methode if callable(methode)
-                         else (lambda m=methode: _waehlen(m))),
-                font=(UI_SCHRIFT, pt(11), "bold"),
-                bg=c["bg_main"],
-                fg=c["fg_primary"],
-                activebackground=c["fg_accent"],
-                activeforeground=c["bg_main"],
-                outline=c["border"],
-                radius=10,
-                height=44,
-                pille=True,
-                parent_bg=c["bg_card"],
-            )
-            leinwand.create_window(links + eigene / 2, hoch,
-                                   window=knopf, width=eigene, height=_m(44))
-            if not generation:
-                continue
-            hilfe = RoundedButton(
-                leinwand,
-                text=self._t("ampr_auswahl.anleitung"),
-                command=(lambda g=generation: self._show_ampr_anleitung(g)),
-                font=(UI_SCHRIFT, pt(9)),
-                bg=c["bg_main"],
-                fg=c["fg_secondary"],
-                activebackground=c["fg_accent"],
-                activeforeground=c["bg_main"],
-                outline=c["border"],
-                radius=8,
-                height=44,
-                pille=True,
-                parent_bg=c["bg_card"],
-            )
-            leinwand.create_window(links + innen - hilfsbreite / 2, hoch,
-                                   window=hilfe, width=hilfsbreite, height=_m(44))
-
-        schliessen = RoundedButton(
-            leinwand, text=self._t("ampr_auswahl.close"),
-            command=lambda: fenster.destroy(),
-            font=(UI_SCHRIFT, pt(9)),
-            bg=c["bg_card"], fg=c["fg_secondary"],
-            activebackground=c["bg_main"], activeforeground=c["fg_primary"],
-            outline=c["bg_card"], radius=8, height=26, pille=True,
-            parent_bg=c["bg_card"])
-        leinwand.create_window(breite / 2, hoehe - rand - _m(12),
-                               window=schliessen, width=_m(140), height=_m(26))
-
-        # Mittig ueber dem Hauptfenster.
-        self.root.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width() - breite) // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - hoehe) // 3
-        fenster.geometry("%dx%d+%d+%d" % (breite, hoehe, max(0, x), max(0, y)))
-        fenster.deiconify()
-        fenster.lift()
-        try:
-            fenster.focus_force()
-        except tk.TclError:
-            pass
-
-        # Wegklicken: Escape oder der Schliessen-Knopf. Ein rahmenloses
-        # Fenster hat keinen Schliessknopf des Systems - ohne diese Wege
-        # bliebe es stehen.
-        #
-        # KEIN Schliessen bei <FocusOut>: Der Knopf in der Seitenleiste ist
-        # ein Umschalter. Beim zweiten Druck nimmt der Klick dem Fenster den
-        # Fokus, es haette sich geschlossen, und der Umschalter haette sofort
-        # ein neues geoeffnet - fuer den Betrachter passiert dann nichts.
-        # Gemessen am 25.08.2026: offen nach dem ersten Druck 1, nach dem
-        # zweiten wieder 1.
-        fenster.bind("<Escape>", lambda _e: fenster.destroy())
-        return fenster
+            if s is not None:
+                s.rahmen.grid_remove()
+            if getattr(self, "_ansicht", "umwandeln") == "umwandeln":
+                self.content_scroll.grid()
+                if getattr(self, "_inhalt_rollt", False):
+                    self.content_scrollbar.grid(row=1, column=2, sticky="ns")
+        except tk.TclError as exc:
+            logger.debug("AMPR-Seite nicht entfernbar: %s", exc)
 
     #: Die Anleitungen zu den beiden Fassungen. Sie liegen im Ordner
     #: ``Anleitungen`` neben dem Programm und werden mit eingebettet.
@@ -51267,138 +51076,13 @@ class PS5ConverterGUI:
 
 
     def _show_ampr_generation(self, generation: str) -> None:
-        """Das Fenster beider Methoden - es arbeitet von selbst.
+        """Der Ablauf beider Methoden - er steht in der Seite und arbeitet von selbst.
 
-        Frueher war das eine Eingabemaske: Arbeitsort, Spielordner,
-        Title-ID, Scan-Pfad, Bibliotheken - alles von Hand. Wer die
-        Unterschiede zwischen den Fassungen nicht auswendig kennt, konnte
-        dort still das Falsche einstellen. Jetzt laeuft alles von selbst,
-        und gefragt wird nur, wo es wirklich etwas zu entscheiden gibt.
+        Frueher war das eine Eingabemaske (Arbeitsort, Spielordner, Title-ID ...), dann ein eigenes Fenster.
+        Jetzt laeuft alles von selbst, und gefragt wird nur, wo es wirklich etwas zu entscheiden gibt
+        (kurze Dialoge ueber dem Hauptfenster).
         """
-        c = self._COLORS
-        p = sm_gen.profil(generation, texte=self._smgen_texte())
-        titel = self._t("amprgen.title_%s" % generation)
-        win = self._build_modern_toplevel(titel, 940, 740,
-                                          min_width=820, min_height=560)
-        self._build_modern_header(win, titel,
-                                  self._t("amprgen.subtitle_%s" % generation))
-
-        # ── Geltungsbereich - damit niemand das falsche Fenster nimmt ───
-        gilt = self._pw.Karte(win, bg=c["bg_card"], padx=12, pady=8)
-        gilt.pack(fill="x", padx=16, pady=(10, 6))
-        tk.Label(gilt, text=self._t("amprgen.applies", value=p["gilt_fuer"]),
-                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_card"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x")
-        tk.Label(gilt, text=self._t("amprgen.not_for", value=p["nicht_fuer"]),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_card"],
-                 fg=c["fg_secondary"], anchor="w").pack(fill="x")
-
-        # ── Was gleich passiert, in Klartext ───────────────────────────
-        tk.Label(win, text=self._t("amprgen.what_happens"),
-                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
-                                                      pady=(6, 2))
-        tk.Label(win, text=self._t("amprgen.what_happens_text",
-                                   folder=sm_gen.ablageordner(
-                                       generation,
-                                       sm_gen.ORT_BACKPORT
-                                       if generation == sm_gen.NEU
-                                       else sm_gen.ORT_SPIEL)),
-                 font=(UI_SCHRIFT, pt(9)), bg=c["bg_main"],
-                 fg=c["fg_secondary"], anchor="w", wraplength=880,
-                 justify="left").pack(fill="x", padx=16, pady=(0, 8))
-
-        # ── Protokoll ──────────────────────────────────────────────────
-        tk.Label(win, text=self._t("amprgen.log"),
-                 font=(UI_SCHRIFT, pt(9), "bold"), bg=c["bg_main"],
-                 fg=c["fg_primary"], anchor="w").pack(fill="x", padx=16,
-                                                      pady=(4, 2))
-        koerper = tk.Frame(win, bg=c["bg_main"], padx=16)
-        koerper.pack(fill="both", expand=True, pady=(0, 4))
-        feld = self._pw.Text(koerper, height=14, wrap="word",
-                       font=("Consolas", pt(9)), bg=c["bg_card"],
-                       fg=c["fg_primary"], relief="flat", state="disabled")
-        rolle = self._pw.Scrollbar(koerper, orient="vertical", command=feld.yview)
-        feld.configure(yscrollcommand=rolle.set)
-        rolle.pack(side="right", fill="y")
-        feld.pack(side="left", fill="both", expand=True)
-
-        def _protokoll(text: str) -> None:
-            if not feld.winfo_exists():
-                return
-            feld.configure(state="normal")
-            feld.insert("end", text + "\n")
-            feld.see("end")
-            feld.configure(state="disabled")
-
-        def _melde(text: str) -> None:
-            """Aus dem Arbeitsfaden ins Protokoll - immer ueber die Wurzel."""
-            self._spaeter_im_fenster(win, _protokoll, text)
-
-        laeuft = {"aktiv": False}
-        start_knopf: dict[str, Any] = {}
-
-        def _starten() -> None:
-            if laeuft["aktiv"]:
-                return
-            laeuft["aktiv"] = True
-            knopf = start_knopf.get("widget")
-            if knopf is not None:
-                knopf.configure(state="disabled")
-            _protokoll("")
-            _protokoll("=" * 60)
-            _protokoll(self._t("amprgen.run_start"))
-
-            def _lauf() -> None:
-                try:
-                    self._ampr_gen_automatik(generation, win, _melde)
-                finally:
-                    laeuft["aktiv"] = False
-
-                    def _wieder_frei() -> None:
-                        k = start_knopf.get("widget")
-                        if k is not None and k.winfo_exists():
-                            k.configure(state="normal")
-                    self._spaeter_im_fenster(win, _wieder_frei)
-            threading.Thread(target=_lauf, daemon=True).start()
-
-        def _config() -> None:
-            """Der vorhandene Editor - vorbelegt mit den Schluesseln dieser Fassung."""
-            # Die Sollwerte dieser Fassung gehen zusaetzlich als Vorrangwerte
-            # mit: Der Editor verlangt jetzt ein Laden vor dem Schreiben, und
-            # ein Laden holte sonst genau die alten Konsolenwerte zurueck, die
-            # dieser Knopf setzen soll.
-            # Die Ordnerschluessel nur als Vorgabe, nie mit Vorrang: Ein
-            # eigener Ordner auf der Konsole ist eine Wahl, und der Vorrang
-            # haette ihn beim naechsten Speichern still auf den Standard
-            # gesetzt (U2-3).
-            fassungswerte = {k: v for k, v in p["config_schluessel"]
-                             if v and k not in sm_gen.PFAD_SCHLUESSEL}
-            vorgaben = dict(self._SHADOWMOUNT_DEFAULTS)
-            vorgaben.update({k: v for k, v in p["config_schluessel"] if v})
-            self._show_remote_ini_editor(
-                self._t("remote_ini.shadowmount_title"),
-                sm_gen.CONFIG_PFAD, sm_gen.DEBUG_LOG, vorgaben, "shadowmount",
-                vorrang_werte=fassungswerte)
-
-        knopfreihe = tk.Frame(win, bg=c["bg_main"], padx=16, pady=12)
-        knopfreihe.pack(side="bottom", fill="x")
-        self._pw.Button(knopfreihe, text=self._t("action.close"),
-                   command=win.destroy).pack(side="right")
-        self._pw.Button(knopfreihe, text=self._t("amprgen.btn_config"),
-                   command=_config).pack(side="left")
-        start = self._pw.Button(knopfreihe, text=self._t("amprgen.btn_run"),
-                           style="Accent.TButton", command=_starten)
-        start.pack(side="left", padx=(8, 0))
-        start_knopf["widget"] = start
-
-        for falle in sm_gen.stolperfallen(generation,
-                                          texte=self._smgen_texte()):
-            _protokoll("* " + falle)
-
-        # Sofort loslegen: Der Knopf im Hauptfenster ist der Startbefehl,
-        # nicht das Oeffnen eines Formulars.
-        self._spaeter_im_fenster(win, _starten)
+        ampr_seite.zeigen(self, generation)
 
     # ── AMPR-Mitschnitt-Assistent ─────────────────────────────────────
     #

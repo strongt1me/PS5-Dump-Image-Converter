@@ -178,14 +178,10 @@ class Ps4DumpImageFenster:
         for wert, schluessel in ((QUELLE_ORDNER, "ps4pkg.source_kind_dir"), (QUELLE_DATEIEN, "ps4pkg.source_kind_files"),
                                  (QUELLE_DUMP, "ps4pkg.source_kind_dump")):
             pw.Radiobutton(art_reihe, text=t(schluessel), value=wert, variable=self.art_var, font=(F, pt(9)),
+                           command=self._quelle_gewaehlt,
                            bg=c["bg_main"], fg=c["fg_primary"], selectcolor=c["bg_card"],
                            activebackground=c["bg_main"], activeforeground=c["fg_primary"], highlightthickness=0,
                            bd=0).pack(side="left", padx=(0, 14))
-        pfad_reihe = tk.Frame(koerper, bg=c["bg_main"])
-        pfad_reihe.pack(fill="x", pady=(6, 0))
-        pw.Entry(pfad_reihe, textvariable=self.quelle_var, font=(F, pt(9)), bg=c["bg_card"], fg=c["fg_primary"],
-                 insertbackground=c["fg_primary"], relief="flat").pack(side="left", fill="x", expand=True, ipady=3)
-        pw.Button(pfad_reihe, text="…", width=3, command=self._quelle_waehlen).pack(side="left", padx=(6, 0))
 
         # ── Gefundene Spiele ────────────────────────────────────────────
         tk.Label(koerper, text=t("ps4pkg.games_label"), font=(F, pt(9), "bold"), bg=c["bg_main"],
@@ -266,6 +262,8 @@ class Ps4DumpImageFenster:
         self.win.protocol("WM_DELETE_WINDOW", self._schliessen)
         self.win.bind("<Destroy>", self._bei_zerstoerung, add="+")
         raster.spur_bis_zerstoert(self.win, self.format_var, self._format_geaendert)
+        raster.spur_bis_zerstoert(self.win, self.art_var, self._formate_anpassen)
+        self._formate_anpassen()
         # Eine Vorgabe (aus der Bibliothek) wird gleich eingelesen - der Anwender hat sie ja gerade gewaehlt.
         if vorgabe:
             self.win.after(200, self._einlesen)
@@ -286,6 +284,22 @@ class Ps4DumpImageFenster:
                 return kennung
         return ab.FORMAT_FFPFSC
 
+    def _formate_anpassen(self, *_a) -> None:
+        """Ein bereits entpacktes Spiel laesst sich nur zu einem Abbild bauen: Dump-Ordner und Paket stehen dann
+        nicht zur Wahl (und ein gewaehltes wird zu ffpfsc)."""
+        nur_abbild = self.art_var.get() == QUELLE_DUMP
+        erlaubt = [text for kennung, text in self._formate.items() if not nur_abbild or kennung in ab.ABBILD_FORMATE]
+        try:
+            self.format_box.configure(values=tuple(erlaubt))
+            if self.format_var.get() not in erlaubt:
+                self.format_var.set(self._formate[ab.FORMAT_FFPFSC])
+        except (tk.TclError, AttributeError):
+            pass
+
+    def _quelle_gewaehlt(self) -> None:
+        """Ein Druck auf einen der drei Quellknoepfe oeffnet gleich die Wahl dazu (Ordner, Dateien, Spielordner)."""
+        self._quelle_waehlen()
+
     def _format_geaendert(self, *_a) -> None:
         """Merkt das Format. Stufe und Worker gelten nur fuer ffpfsc (Worker auch fuer Pakete); die uebrigen
         Formate ignorieren sie einfach - die Drehknoepfe lassen sich nicht sperren."""
@@ -300,12 +314,18 @@ class Ps4DumpImageFenster:
             pfade = filedialog.askopenfilenames(title=self.t("ps4pkg.choose_files"),
                                                 filetypes=[(self.t("ps4pkg.filetype_pkg"), "*.pkg")], parent=self.win)
             if pfade:
-                self.quelle_var.set(os.pathsep.join(os.path.normpath(p) for p in pfade))
+                self._quelle_uebernehmen(os.pathsep.join(os.path.normpath(p) for p in pfade))
             return
-        ordner = filedialog.askdirectory(title=self.t("ps4pkg.choose_dir"),
+        ordner = filedialog.askdirectory(title=self.t("ps4dib.choose_dump" if art == QUELLE_DUMP else "ps4pkg.choose_dir"),
                                          initialdir=self.g._get_source_dialog_initial_dir() or None, parent=self.win)
         if ordner:
-            self.quelle_var.set(os.path.normpath(ordner))
+            self._quelle_uebernehmen(os.path.normpath(ordner))
+
+    def _quelle_uebernehmen(self, wert: str) -> None:
+        """Die gewaehlte Quelle gilt gleich und wird eingelesen - ein Eingabefeld dafuer gibt es nicht mehr."""
+        self.quelle_var.set(wert)
+        self._protokoll(self.t("ps4dib.quelle_gewaehlt", pfad=wert.replace(os.pathsep, "; ")))
+        self._einlesen()
 
     def _ziel_waehlen(self) -> None:
         ordner = filedialog.askdirectory(title=self.t("ps4pkg.choose_output"), parent=self.win)
@@ -775,7 +795,7 @@ class Ps4DumpImageFenster:
         self._protokoll(t("ps4ota.log_update_gefunden", title_id=title_id, version=info.version))
         zeilen = [t("ps4ota.update_online_version", version=info.version or "-"),
                   t("ps4ota.update_online_groesse", groesse=self.g._fmt_bytes(info.groesse) if info.groesse else "-"),
-                  t("ps4ota.update_online_system", system=info.system_ver or "-"),
+                  t("ps4ota.update_online_system", system=info.firmware_text or "-"),
                   t("ps4ota.update_online_pflicht", pflicht=t("ps4ota.ja") if info.pflicht else t("ps4ota.nein"))]
         for zeile in zeilen:
             self._protokoll(zeile)

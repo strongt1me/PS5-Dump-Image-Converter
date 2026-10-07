@@ -94,6 +94,30 @@ class UpdateInfo:
     patchgo: bool = False
     verzeichnis: "UpdateVerzeichnis | None" = None
 
+    @property
+    def firmware_text(self) -> str:
+        """Die verlangte Firmware lesbar: ``74645504`` oder ``0x04730000`` -> ``4.73``; sonst der Rohwert."""
+        return system_ver_text(self.system_ver)
+
+
+def system_ver_text(roh: "str | int") -> str:
+    """Die Firmware aus ``system_ver``: Sony nennt sie als Zahl (dezimal oder ``0x``), ``0x04730000`` heisst 4.73.
+
+    Die Fassung steht als BCD in den oberen zwei Byte; die unteren tragen Kennzeichen. Ein Wert, der keine
+    Zahl ist oder keine gueltige Fassung ergibt, bleibt unveraendert (leer -> leer).
+    """
+    text = str(roh or "").strip()
+    if not text:
+        return ""
+    try:
+        wert = int(text, 0)
+    except ValueError:
+        return text
+    haupt, neben = (wert >> 24) & 0xFF, (wert >> 16) & 0xFF
+    if wert <= 0 or not ("%02X%02X" % (haupt, neben)).isdigit():
+        return text
+    return "%d.%02d" % (int("%02X" % haupt), int("%02X" % neben))
+
 
 def title_id_gueltig(title_id: str) -> bool:
     """Vier Grossbuchstaben und fuenf Ziffern (``CUSA00001``)."""
@@ -259,6 +283,20 @@ def dateiname_vorschlag(info: UpdateInfo) -> str:
     return "%s-patch-v%s.pkg" % (info.title_id or "TITLE", sauber)
 
 
+def _pruefsumme_fuer(wert: str):
+    """Das Pruefsummenobjekt zu einem ``hashValue``: 40 Hexstellen = SHA-1, 64 = SHA-256; sonst ``None``.
+
+    Sony nennt je Teil eine **SHA-1** (am 07.10.2026 an CUSA03877 gemessen: 40 Stellen). Bis dahin wurde
+    immer SHA-256 gerechnet - jedes echte Update galt deshalb als "beschaedigt", obwohl es vollstaendig war.
+    Ein unbekanntes Format prueft nur die Groesse, statt ein gutes Teil zu verwerfen.
+    """
+    if re.fullmatch(r"[0-9a-fA-F]{40}", wert or ""):
+        return hashlib.sha1()
+    if re.fullmatch(r"[0-9a-fA-F]{64}", wert or ""):
+        return hashlib.sha256()
+    return None
+
+
 def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                   fortschritt: "Callable[[int, int], None] | None" = None,
                   abbruch: "Callable[[], bool] | None" = None,
@@ -309,7 +347,7 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                 if nummer < fertig_teile:
                     continue
                 ausgabe.seek(teil.versatz)
-                pruefsumme = hashlib.sha256()
+                pruefsumme = _pruefsumme_fuer(teil.hash)
                 geschrieben = 0
                 try:
                     with opener(teil.url) as antwort:
@@ -320,7 +358,8 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                             if not block:
                                 break
                             ausgabe.write(block)
-                            pruefsumme.update(block)
+                            if pruefsumme is not None:
+                                pruefsumme.update(block)
                             geschrieben += len(block)
                             if fortschritt is not None:
                                 fortschritt(geladen + geschrieben, gesamt)
@@ -328,7 +367,7 @@ def herunterladen(info: UpdateInfo, ziel_ordner: str, *,
                     raise UpdateFehler("http", "HTTP %d: %s" % (fehler.code, teil.url)) from fehler
                 except (urllib.error.URLError, OSError, TimeoutError) as fehler:
                     raise UpdateFehler("netz", str(fehler)) from fehler
-                if teil.hash and pruefsumme.hexdigest() != teil.hash:
+                if teil.hash and pruefsumme is not None and pruefsumme.hexdigest() != teil.hash:
                     raise UpdateFehler("hash", "Teil %d: %s" % (nummer + 1, teil.url))
                 if teil.groesse and geschrieben != teil.groesse:
                     raise UpdateFehler("hash", "Teil %d hat %d statt %d Bytes" % (nummer + 1, geschrieben, teil.groesse))

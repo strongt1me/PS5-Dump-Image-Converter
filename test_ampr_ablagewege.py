@@ -263,11 +263,11 @@ class FensterTests(unittest.TestCase):
     """Was im rahmenlosen Auswahlfenster stehen muss."""
 
     def _rumpf(self) -> str:
-        anfang = QUELLE.index("    def _show_ampr_auswahl(self)")
-        return QUELLE[anfang:QUELLE.index(chr(10) + "    def ", anfang + 10)]
+        """Seit 07.10.2026 steht die Auswahl in der Seite ``ui/ampr_seite.py`` (kein Fenster mehr)."""
+        return (Path(__file__).resolve().parent / "ps5_validator" / "ui" / "ampr_seite.py").read_text(encoding="utf-8")
 
     def test_alle_drei_wege_stehen_zur_wahl(self) -> None:
-        self.assertIn("self.ABLAGE_WEGE", self._rumpf())
+        self.assertIn("g.ABLAGE_WEGE", self._rumpf())
         self.assertEqual(PS5ConverterGUI.ABLAGE_WEGE,
                          ("auto", sg.ORT_GLOBAL, sg.ORT_EMUS))
 
@@ -283,7 +283,7 @@ class FensterTests(unittest.TestCase):
         self.assertTrue(haken, "Der gewaehlte Weg traegt nur ueber die Farbe")
 
     def test_beide_anleitungen_sind_verknuepft(self) -> None:
-        self.assertIn("self._show_ampr_anleitung(g)", self._rumpf())
+        self.assertIn("g._show_ampr_anleitung(gen)", self._rumpf())
         for generation in (sg.ALT, sg.NEU):
             with self.subTest(generation=generation):
                 self.assertIn(generation, PS5ConverterGUI._AMPR_ANLEITUNGEN)

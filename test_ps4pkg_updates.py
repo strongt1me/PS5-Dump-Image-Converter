@@ -327,5 +327,48 @@ class HerunterladenTests(unittest.TestCase):
         self.assertEqual("hash", ctx.exception.schluessel)
 
 
+class FirmwareTextTests(unittest.TestCase):
+    """Sony nennt ``system_ver`` als Zahl - angezeigt wird die Firmware (07.10.2026: stand roh da)."""
+
+    def test_dezimal_und_hex_geben_dieselbe_fassung(self) -> None:
+        self.assertEqual("4.73", upd.system_ver_text("74645504"))
+        self.assertEqual("4.73", upd.system_ver_text("0x04730000"))
+        self.assertEqual("5.05", upd.system_ver_text(0x05050000))
+        self.assertEqual("9.00", upd.system_ver_text("150994944"))
+
+    def test_unlesbares_bleibt_stehen(self) -> None:
+        self.assertEqual("", upd.system_ver_text(""))
+        self.assertEqual("abc", upd.system_ver_text("abc"))
+        self.assertEqual("0", upd.system_ver_text("0"))
+
+    def test_die_update_info_liefert_den_text(self) -> None:
+        self.assertEqual("4.73", upd.UpdateInfo(system_ver="74645504").firmware_text)
+
+
+class PruefsummeTests(unittest.TestCase):
+    """Sonys ``hashValue`` ist je Teil eine SHA-1 (40 Stellen) - SHA-256 galt bis 07.10.2026 faelschlich."""
+
+    def test_die_laenge_bestimmt_das_verfahren(self) -> None:
+        self.assertEqual("sha1", upd._pruefsumme_fuer("a" * 40).name)
+        self.assertEqual("sha256", upd._pruefsumme_fuer("b" * 64).name)
+        self.assertIsNone(upd._pruefsumme_fuer("xyz"))
+        self.assertIsNone(upd._pruefsumme_fuer(""))
+
+    def test_ein_teil_mit_sha1_wird_angenommen_ein_falsches_nicht(self) -> None:
+        daten = b"Testteil" * 1000
+
+        def mit_hash(wert: str):
+            teil = upd.UpdateTeil(url="http://x/a.pkg", versatz=0, groesse=len(daten), hash=wert)
+            info = upd.UpdateInfo(title_id="CUSA00001", version="01.00",
+                                  verzeichnis=upd.UpdateVerzeichnis(gesamtgroesse=len(daten), teile=[teil]))
+            with tempfile.TemporaryDirectory() as ordner:
+                return upd.herunterladen(info, ordner, oeffnen=lambda adresse: io.BytesIO(daten)) and True
+
+        self.assertTrue(mit_hash(hashlib.sha1(daten).hexdigest()))
+        with self.assertRaises(upd.UpdateFehler) as ctx:
+            mit_hash("0" * 40)
+        self.assertEqual("hash", ctx.exception.schluessel)
+
+
 if __name__ == "__main__":
     unittest.main()
